@@ -307,7 +307,10 @@ describe("shared features", () => {
   it.each(["forlorne-lykona-dragon-form", "forlorne-lykona-faun-form"])("%s: Transform and Feed on Fear", (id) => {
     const t = runUse(id, "Transform", []);
     expect(t.self.after.stress).toBe(1);
-    expect(prompts(t, "manual")[0]!.text).toMatch(/swap her stat block/);
+    // Lanes-2, S4.4 (dcm-3ag5): a changeForm on herself to the other form; no manual step left.
+    const other = id === "forlorne-lykona-dragon-form" ? "forlorne-lykona-faun-form" : "forlorne-lykona-dragon-form";
+    expect(ofKind(t, "changeForm")).toEqual([expect.objectContaining({ targetId: "self", adversaryId: other })]);
+    expect(prompts(t, "manual")).toEqual([]);
     expect(fires(id, "Feed on Fear", "main", { kind: "pcRolls", roll: pcRoll(), band: "close" })).toBe(true);
     expect(fires(id, "Feed on Fear", "main", { kind: "pcRolls", roll: pcRoll({ success: true }), band: "close" })).toBe(false);
     expect(fires(id, "Feed on Fear", "main", { kind: "pcRolls", roll: pcRoll(), band: "far" })).toBe(false);
@@ -702,10 +705,30 @@ describe("Dragon Mother Mitera (HF p.92)", () => {
     const eight = runUse("dragon-mother-mitera", "Seven-Headed", [8], { spotlit: false, tokens: 5 });
     expect(eight.self.tokens).toEqual({ before: 5, after: 4 });
     expect(ofKind(eight, "countdown")).toEqual([{ kind: "countdown", op: "tick", label: "Diamond Hide", amount: 1, loop: false }]);
-    const remove = runUse("dragon-mother-mitera", "Seven-Headed", [3], { spotlit: false, tokens: 5, options: { head: ["remove"] } });
+    // Lanes-2, S4.4 (dcm-qw4f): a 3 removes 3. Acid for good (a permanent effect with features.removeOptions on Mitera).
+    const acid = { feature: "Elemental Breath", choose: "head", option: "acid" };
+    const remove = runUse("dragon-mother-mitera", "Seven-Headed", [3], { spotlit: false, tokens: 5 });
     expect(remove.self.tokens.after).toBe(5);
-    expect(prompts(remove, "manual")[0]!.text).toMatch(/Permanently remove/);
-    expect(runUse("dragon-mother-mitera", "Seven-Headed", [3], { spotlit: false, tokens: 5, options: { head: ["removed"] } }).self.tokens.after).toBe(4);
+    expect(ofKind(remove, "countdown")).toEqual([]);
+    expect(ofKind(remove, "effect")).toEqual([
+      expect.objectContaining({ targetId: "self", label: "Elemental Breath 3. Acid removed", duration: "permanent", mods: [{ kind: "features", removeOptions: [acid] }] }),
+    ]);
+    expect(prompts(remove, "manual")).toEqual([]);
+    // Another head gone: Acid still goes.
+    const other = runUse("dragon-mother-mitera", "Seven-Headed", [3], { spotlit: false, tokens: 5, removedOptions: [{ ...acid, option: "fire" }] });
+    expect(ofKind(other, "effect")).toHaveLength(1);
+    expect(other.self.tokens.after).toBe(5);
+    // Acid gone already: Diamond Hide ticks (removing it again changes nothing).
+    const gone = runUse("dragon-mother-mitera", "Seven-Headed", [3], { spotlit: false, tokens: 5, removedOptions: [acid] });
+    expect(gone.self.tokens.after).toBe(4);
+    expect(ofKind(gone, "countdown")).toEqual([expect.objectContaining({ op: "tick", label: "Diamond Hide" })]);
+    const known = runUse("dragon-mother-mitera", "Seven-Headed", [3], { spotlit: false, tokens: 5, removedOptions: [acid], effectsOn: { self: ["Elemental Breath 3. Acid removed"] } });
+    expect(ofKind(known, "effect")).toEqual([]);
+    expect(known.self.tokens.after).toBe(4);
+    // 6. Darkness: its cloud dissipates.
+    const dark = runUse("dragon-mother-mitera", "Seven-Headed", [6], { spotlit: false, tokens: 5 });
+    expect(ofKind(dark, "effect")[0]).toMatchObject({ mods: [{ kind: "features", removeOptions: [{ ...acid, option: "darkness" }] }] });
+    expect(prompts(dark, "manual")[0]!.text).toMatch(/Darkness cloud dissipates/);
   });
 });
 
@@ -1021,9 +1044,10 @@ describe("Harbinger of War (HF p.95)", () => {
 });
 
 describe("Owl Witch (HF p.95)", () => {
-  it("Ill Omen and Witch Barrier: the Fear Die bonus is a manual note; resistant to magic", () => {
-    const plan = runUse("owl-witch", "Ill Omen", [], { spotlit: false, trigger: { subject: mira } });
-    expect(prompts(plan, "manual")[0]!.targetIds).toEqual(["mira"]);
+  it("Ill Omen and Witch Barrier: the PC's Fear Die gains the GM's Fear (dcm-of7v); resistant to magic", () => {
+    const plan = runUse("owl-witch", "Ill Omen", [], { spotlit: false, gmFear: 4, trigger: { subject: mira } });
+    expect(ofKind(plan, "fold")).toEqual([expect.objectContaining({ targetIds: ["mira"], amount: 4, step: expect.objectContaining({ change: { kind: "dieBonus", die: "fear", amount: { kind: "gmFear" } } }) })]);
+    expect(prompts(plan, "manual")).toEqual([]);
     expect(passiveSummary(effectsOf("owl-witch"), state()).resistance).toEqual({ physical: "none", magic: "resistant" });
   });
 
@@ -1085,14 +1109,16 @@ describe("Severed Shadow (HF p.95)", () => {
 });
 
 describe("Supreme Demiurge Adonix (HF p.96)", () => {
-  it("Elemental Archon 1, Fire Beam: an Agility roll; Severe / Minor damage marks 3 / 1 HP outright (dcm-6rke)", () => {
+  it("Elemental Archon 1, Fire Beam: an Agility roll; Severe / Minor damage marks 3 / 1 fire HP outright (dcm-6rke, dcm-n7kt)", () => {
     const plan = runUse("supreme-demiurge-adonix", "Elemental Archon", [1], { followUp: [mira] });
     expect(plan.self.after.stress).toBe(1);
     const step = saveStep(saves(plan)[0]!);
+    // The Fireproof reminder stays until the direct mark path applies it (dcm-vvg1).
+    const fireproof = { kind: "manual", to: "targets", text: expect.stringMatching(/Fireproof/) };
     expect(step).toMatchObject({
       trait: "agility",
-      onFail: [{ kind: "markHp", to: "targets", amount: { kind: "fixed", value: 3 } }],
-      onSuccess: [{ kind: "markHp", to: "targets", amount: { kind: "fixed", value: 1 } }],
+      onFail: [{ kind: "markHp", to: "targets", amount: { kind: "fixed", value: 3 }, keyword: "fire" }, fireproof],
+      onSuccess: [{ kind: "markHp", to: "targets", amount: { kind: "fixed", value: 1 }, keyword: "fire" }, fireproof],
     });
   });
 

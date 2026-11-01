@@ -325,7 +325,10 @@ export const T3_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // attack, they can spend a handful of gold instead of marking HP (1 handful per HP). Add a handful of gold to the Demon
   // for each handful of gold spent by PCs on this feature."
   // Four uses: the disadvantage (unless the attacker pays: a situation the GM confirms), the starting hoard (the GM's
-  // party), the GM button that adds the handfuls PCs spent, and the PC's option to pay gold instead of HP (manual).
+  // party), the GM button that adds the handfuls PCs spent (Collect, kept), and the PC's option to pay gold instead of HP.
+  // Lanes-2, S4.4 (dcm-5cn5): the option is an `optional` each hit PC decides (`by: "targets"`) converting HP marks into
+  // gold; the damage window offers it as the `gold` grant on the standard attack (E2.3 `goldForHp`) and caps it at the
+  // HP the hit marks.
   entry(
     "demon-of-avarice",
     "Money Talks",
@@ -351,7 +354,15 @@ export const T3_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       {
         id: "pay-instead",
         targets: TRIGGER_SUBJECT,
-        steps: [manual("The target can spend a handful of gold instead of marking each HP (1 handful per HP); add those handfuls to the Demon.", "targets")],
+        steps: [
+          {
+            kind: "optional",
+            id: "gold",
+            label: "Spend handfuls of gold instead of marking HP (1 handful per HP)",
+            by: { to: "targets" },
+            steps: [{ kind: "convertMarks", to: "targets", from: "hp", into: "gold" }],
+          },
+        ],
       },
     ),
   ),
@@ -660,14 +671,17 @@ export const T3_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   forcedArmor("greater-earth-elemental", "Crushing Blows"),
   // "Immovable Object: An attack that would move the Elemental moves them two fewer ranges (for example, Far becomes Very
   // Close). When the Elemental takes physical damage, reduce it by 7."
-  // Two uses: the damage reduction (automatic) and the shortened push (a GM button; manual: no forced-movement modifier).
+  // Three uses: the damage reduction (automatic), the shortened push as a passive `forcedMoveReduce` 2 (Lanes-2, S4.4,
+  // dcm-1yo: the server's forced moves read it, `forcedMoveReduceOf`), and the GM button for a move made by hand (a
+  // knockback the GM drags), which the server can't shorten: its reminder stays.
   entry(
     "greater-earth-elemental",
     "Immovable Object",
     auto({ kind: "onDamaged", stage: "would", damageType: "physical" }, { id: "reduce", steps: [{ kind: "reduceDamage", to: "self", amount: fixed(7) }] }),
+    passive({ id: "push", modifiers: [{ kind: "mod", mod: { kind: "forcedMoveReduce", steps: 2 } }] }),
     reaction(situation("An attack would move the Elemental"), {
       id: "immovable",
-      steps: [manual("The attack moves the Elemental two fewer ranges (Far becomes Very Close).")],
+      steps: [manual("A move made by hand: the attack moves the Elemental two fewer ranges (Far becomes Very Close). Server-made moves are shortened already.")],
     }),
   ),
   // "Rockslide: Mark a Stress to create a rockslide that buries the land in front of Elemental within Close range with

@@ -297,15 +297,12 @@ const feedOnFear = (adversaryId: string) =>
 
 /**
  * "Transform: Mark a Stress to have Forlorne shift between her Dragon Form and Faun Form. While she embodies a form, she
- * uses its statistics and features." (both forms). Swapping the stat block is an evolution-like change the vocabulary
- * has no step for (dcm-gx3).
+ * uses its statistics and features." (both forms). Lanes-2, S4.4 (dcm-3ag5, dcm-f70y): a `changeForm` on herself to the
+ * other form; the server stores it as a `form` modifier on the instance, whose stat block, numbers and features the engine
+ * then reads (HP and Stress marked carry over).
  */
-const transform = (adversaryId: string) =>
-  entry(
-    adversaryId,
-    "Transform",
-    action({ costs: STRESS, steps: [manual("Forlorne shifts between her Dragon Form and Faun Form: swap her stat block (HP and Stress marked carry over).")] }),
-  );
+const transform = (adversaryId: string, other: string) =>
+  entry(adversaryId, "Transform", action({ costs: STRESS, steps: [{ kind: "changeForm", to: "self", adversaryId: other }] }));
 
 /** The countdown's three uses: activate, tick and the effect when it triggers (a GM button). */
 const countdownUses = (
@@ -333,6 +330,44 @@ const DIAMOND_TICK: readonly AdversaryStep[] = [
   { kind: "tokens", to: "self", op: "spend", amount: one, note: "Diamond Hide's Difficulty bonus drops by 1" },
   { kind: "countdown", op: "tick", label: "Diamond Hide" },
 ];
+
+/**
+ * Fire Beam (HF p.96) is fire: Fireproof (HF p.22) makes a target immune (user answer, dcm-n7kt). The marks carry the
+ * keyword, but the direct mark path doesn't apply Fireproof yet (Lanes-2 (dcm-vvg1)): the reminder stays until it does.
+ */
+const FIRE_BEAM_FIREPROOF: AdversaryStep = { kind: "manual", to: "targets", text: "Fire: a target with Fireproof (Emberkin) is immune and marks no HP from the beam." };
+
+/** Mitera's seven Elemental Breath heads (the `head` choose step's option ids), in d8 order (HF p.92). */
+const HEADS: readonly (readonly [string, string])[] = [
+  ["fire", "1. Fire"],
+  ["lightning", "2. Lightning"],
+  ["acid", "3. Acid"],
+  ["poison", "4. Poison"],
+  ["ice", "5. Ice"],
+  ["darkness", "6. Darkness"],
+  ["light", "7. Light"],
+];
+
+/**
+ * Seven-Headed (HF p.92): "Permanently remove the “Elemental Breath” option that corresponds to the result. … or if the
+ * corresponding option has already been removed, tick down the Diamond Hide countdown." Lanes-2, S4.4 (dcm-qw4f).
+ */
+const removeHead = (option: string, label: string): AdversaryStep[] => {
+  const head = { feature: "Elemental Breath", choose: "head", option };
+  const gone = { kind: "optionRemoved" as const, option: head };
+  return [
+    {
+      kind: "effect",
+      to: "self",
+      label: `Elemental Breath ${label} removed`,
+      duration: "permanent",
+      mods: [{ kind: "features", removeOptions: [head] }],
+      stacking: "refuse",
+    },
+    ...(option === "darkness" ? [manual("The Darkness cloud dissipates.")] : []),
+    ...DIAMOND_TICK.map((s) => ({ ...s, when: [{ kind: "requires" as const, requirement: { kind: "situation" as const, text: `Elemental Breath ${label} was removed already`, check: gone } }] })),
+  ];
+};
 
 /** Plan lanes, SRD-A2: the forms an evolution gives are tags on the adversary itself, read by `hasCondition`. */
 const OMEGA_FORM = tag("Omega Form");
@@ -423,9 +458,9 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // subcutaneous wrigglers. Each PC within Close range must make an Agility Reaction Roll. Targets who fail are covered in
   // 2d4 leechpoles, which burrow under their skin. Until the leechpoles are dug out with a successful Finesse Roll (21),
   // any damage the target takes gains a +1 bonus for each leechpole under their skin."
-  // Lanes-2, S4: the Leechpoles tag carries a `damageTaken` `add` of the bearer's "leechpole" tokens (dcm-kvx4). Manual
-  // until the engine reads it (Lanes-2 (dcm-n3mp): no token store on a PC for the 2d4; Lanes-2 (dcm-12kx): a PC hit
-  // doesn't read an adversary condition's mods yet), so the reminder stays.
+  // Lanes-2, S4: the Leechpoles tag carries a `damageTaken` `add` of the bearer's "leechpole" tokens (dcm-kvx4). A PC hit
+  // reads it now (dcm-12kx) and a PC sheet holds named tokens (dcm-wiwi), but the condition's sheet effect id is over the
+  // 40-character cap and can't be saved (Lanes-2 (dcm-s7hd)), so the 2d4 tokens step and the reminder's drop wait on it.
   entry(
     "cephilith-abomination",
     "Burrowing Leechpoles",
@@ -980,7 +1015,8 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
     ),
   ),
   // "Elemental Breath: Mark a Stress to have Mitera unleash elemental energy from one head of your choice: …" (the seven
-  // options on each branch below). The GM picks the head; heads removed by Seven-Headed are tracked by hand (dcm-gx3).
+  // options on each branch below). The GM picks the head; heads Seven-Headed removed are listed on the instance (its
+  // `optionsRemoved`), but the pick still offers them (Lanes-2 (dcm-biaq)).
   // Each head's creatures are the follow-up targets the GM picks (no map: Q18); "1d4+1 targets", "1d6 targets" are the
   // follow-up's count.
   entry(
@@ -1154,7 +1190,12 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // "Seven-Headed: When Mitera takes damage, roll a d8. Permanently remove the “Elemental Breath” option that corresponds
   // to the result. On a result of 8, or if the corresponding option has already been removed, tick down the Diamond Hide
   // countdown (see “Diamond Hide”)."
-  // Removing an option is manual (dcm-gx3); the GM says whether it was already gone.
+  // Lanes-2, S4.4 (dcm-qw4f): a d8 table (`dieBranches`); results 1-7 remove that head for good, a permanent effect on
+  // Mitera with `features.removeOptions` (stored as the instance's `optionsRemoved`); an 8, or a head gone already
+  // (`optionRemoved`, read from the instance's removed heads), ticks Diamond Hide. The removal itself is not gated: with
+  // no head recorded yet the run can't decide `optionRemoved` (no facts), and a step without targets can't take a
+  // per-target gate; removing a gone head again changes nothing (`stacking: "refuse"` drops the copy where the run knows
+  // the effects on it). Elemental Breath doesn't hide a removed head from the GM's pick yet (Lanes-2 (dcm-biaq)).
   entry(
     "dragon-mother-mitera",
     "Seven-Headed",
@@ -1162,24 +1203,12 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
       { kind: "onDamaged" },
       {
         steps: [
-          {
-            kind: "check",
-            note: "Roll a d8",
-            dice: { count: one, sides: 8 },
-            test: { kind: "totalAtLeast", value: 8 },
-            then: DIAMOND_TICK,
-            otherwise: [
-              {
-                kind: "choose",
-                id: "head",
-                label: "Is that Elemental Breath option still there?",
-                options: [
-                  { id: "remove", label: "Remove it", steps: [manual("Permanently remove the Elemental Breath option matching the d8 result (Darkness: its cloud dissipates).")] },
-                  { id: "removed", label: "Already removed: tick Diamond Hide", steps: DIAMOND_TICK },
-                ],
-              },
-            ],
-          },
+          dieBranches(
+            8,
+            HEADS.map(([option, label], i) => ({ upTo: i + 1, note: label, steps: removeHead(option, label) })),
+            DIAMOND_TICK,
+            "Roll a d8",
+          ),
         ],
       },
     ),
@@ -1250,7 +1279,7 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // "Relentless (4): Forlorne can be spotlighted up to four times per GM turn. Spend Fear as usual to spotlight her."
   relentless("forlorne-lykona-dragon-form", 4),
   // "Transform: Mark a Stress to have Forlorne shift between her Dragon Form and Faun Form. …"
-  transform("forlorne-lykona-dragon-form"),
+  transform("forlorne-lykona-dragon-form", "forlorne-lykona-faun-form"),
   // "Feed on Fear: When a PC within Close range fails with Fear, Forlorne can clear a HP or a Stress."
   feedOnFear("forlorne-lykona-dragon-form"),
   // "Flying: While flying, Forlorne gains a +3 bonus to her Difficulty."
@@ -1310,7 +1339,7 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // "Relentless (4): Forlorne can be spotlighted up to four times per GM turn. Spend Fear as usual to spotlight her."
   relentless("forlorne-lykona-faun-form", 4),
   // "Transform: Mark a Stress to have Forlorne shift between her Dragon Form and Faun Form. …"
-  transform("forlorne-lykona-faun-form"),
+  transform("forlorne-lykona-faun-form", "forlorne-lykona-dragon-form"),
   // "Feed on Fear: When a PC within Close range fails with Fear, Forlorne can clear a HP or a Stress."
   feedOnFear("forlorne-lykona-faun-form"),
   // "Battle Teleport: Before or after making a standard attack, you can mark a Stress to have Forlorne teleport to a
@@ -1649,7 +1678,8 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // Harbinger is spotlighted. When it triggers, all PCs within Far range mark a Stress and become Ravenous. While
   // Ravenous, a PC can't spend Hope until they clear the condition with a successful Instinct Roll."
   // Plan lanes, SRD-A2 (dcm-m5s): a decreasing countdown (`direction`). Lanes-2, S4: Ravenous carries the
-  // `cannotSpendHope` flag (dcm-5kxg); the reminder stays until a PC's payers read it (Lanes-2 (dcm-hgvx), dcm-12kx).
+  // `cannotSpendHope` flag (dcm-5kxg). Card / feature costs and the damage window refuse a Hope spend now (dcm-hgvx,
+  // dcm-12kx); a roll's Hope spends (an Experience, Help an Ally) don't yet: the reminder stays (Lanes-2 (dcm-akc0)).
   entry(
     "harbinger-of-famine",
     "Hunger Pangs",
@@ -1903,13 +1933,18 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // ---- Owl Witch (Support, HF p.95)
   // "Ill Omen: When a PC within Close range makes an action roll, their Fear Die gains a bonus equal to the amount of
   // Fear you have."
-  // Manual: a bonus on a PC's Fear Die (dcm-3ou); shown on each action roll near the Witch.
+  // Lanes-2, S4.4 (dcm-of7v): a `modifyRoll` `dieBonus` of the GM's Fear on the PC's Fear Die. The PC roll paths (plain
+  // duality rolls, attacks, card and feature rolls; E1.4a / E1.4b, dcm-m7tm) run this auto through `pcRollAdversaryUses`
+  // and fold the bonus with `withDieBonuses` (it only decides Hope vs Fear, never a critical; a tie is with Fear).
   entry(
     "owl-witch",
     "Ill Omen",
     auto(
       { kind: "pcRolls", roll: "action", within: "close" },
-      { targets: TRIGGER_SUBJECT, steps: [manual("Their Fear Die gains a bonus equal to the GM's Fear.", "targets")] },
+      {
+        targets: TRIGGER_SUBJECT,
+        steps: [{ kind: "modifyRoll", to: "targets", change: { kind: "dieBonus", die: "fear", amount: { kind: "gmFear" } }, note: "Their Fear Die gains a bonus equal to the GM's Fear." }],
+      },
     ),
   ),
   // "Witch Barrier: The Owl Witch has resistance to magic damage."
@@ -1928,8 +1963,8 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // "Nightmare Stare: Spend a Fear to have the Owl Witch Afflict a PC within Far range with waking nightmares unless the
   // target succeeds on a Knowledge Reaction Roll. While Afflicted, the target can't clear HP or Stress. The condition is
   // cleared when another PC uses a downtime move to comfort the Afflicted creature."
-  // Lanes-2, S4: Afflicted carries `cannotClearHp` / `cannotClearStress` (dcm-5kxg); the reminder stays until clear steps
-  // read them (Lanes-2 (dcm-hgvx), dcm-12kx).
+  // Lanes-2, S4: Afflicted carries `cannotClearHp` / `cannotClearStress` (dcm-5kxg). Card clear steps read them; rest and
+  // downtime clears don't yet: the reminder stays (Lanes-2 (dcm-v3ek)).
   entry(
     "owl-witch",
     "Nightmare Stare",
@@ -2071,7 +2106,8 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
             // "1. Fire Beam. Adonix manifests a beam of elemental fire with a Very Close width from themself to the edge
             // of the battlefield. Each target in the beam's path must make an Agility Reaction Roll. Targets who fail take
             // Severe damage. Targets who succeed take Minor damage." User answer 2026-10-31 (dcm-6rke): 3 / 1 HP marked
-            // outright (no armor, no damage type).
+            // outright (no armor, no damage type). Lanes-2, S4.4: the marks carry `keyword: "fire"`; Fireproof makes an
+            // Emberkin immune (user answer, dcm-n7kt; E2.4: riders honour it; this direct mark after dcm-vvg1, reminder kept).
             {
               upTo: 1,
               note: "1. Fire Beam",
@@ -2083,8 +2119,8 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
                     save(
                       "agility",
                       OWN_DIFFICULTY,
-                      [{ kind: "markHp", to: "targets", amount: fixed(3), note: "Severe damage: 3 HP" }],
-                      [{ kind: "markHp", to: "targets", amount: one, note: "Minor damage: 1 HP" }],
+                      [{ kind: "markHp", to: "targets", amount: fixed(3), keyword: "fire", note: "Severe damage: 3 HP" }, FIRE_BEAM_FIREPROOF],
+                      [{ kind: "markHp", to: "targets", amount: one, keyword: "fire", note: "Minor damage: 1 HP" }, FIRE_BEAM_FIREPROOF],
                     ),
                   ],
                 },

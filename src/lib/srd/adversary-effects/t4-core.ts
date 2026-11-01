@@ -897,8 +897,9 @@ export const T4_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // that area must succeed on a Knowledge Reaction Roll or become Unstuck from reality until the end of the scene. When an
   // Unstuck target spends Hope or marks Armor Slots, HP, or Stress, they must double the amount spent or marked."
   // Lanes-2, S4: the Unstuck tag carries `marksMultiplier` x2 (dcm-fbsr; E2 doubles a hit's marks from it, an Armor Slot
-  // needs two free slots, dcm-3m5k). The reminder stays: a PC hit doesn't read an adversary condition's mods yet
-  // (Lanes-2 (dcm-12kx)), and spends and other marks wait on Lanes-2 (dcm-q40t).
+  // needs two free slots, dcm-3m5k). A PC hit reads it now (dcm-12kx), but the condition's sheet effect id is over the
+  // 40-character cap and can't be saved (Lanes-2 (dcm-s7hd)); spends and other marks wait on Lanes-2 (dcm-q40t). The
+  // reminder stays.
   entry(
     "outer-realms-abomination",
     "Reality Quake",

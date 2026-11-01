@@ -359,12 +359,16 @@ describe("Demon of Avarice (CB p.228)", () => {
     expect(hoard.self.tokens).toEqual({ before: 0, after: 3 });
   });
 
-  it("Money Talks: handfuls the PCs spend go to the Demon; paying gold instead of HP is the PC's (manual)", () => {
+  it("Money Talks: handfuls the PCs spend go to the Demon; the hit PC may pay gold instead of HP (dcm-5cn5)", () => {
     const collect = runUse("demon-of-avarice", "Money Talks", [], { useId: "collect", tokens: 1, trigger: { amount: 2 } });
     expect(collect.self.tokens).toEqual({ before: 1, after: 3 });
     expect(fired("demon-of-avarice", { kind: "onTargetMarksHp", attack: "standard" })).toEqual(["Money Talks:pay-instead:auto"]);
     expect(fired("demon-of-avarice", { kind: "onTargetMarksHp", attack: "feature" })).toEqual([]);
-    expect(prompts(runUse("demon-of-avarice", "Money Talks", [], { useId: "pay-instead", trigger: { subject: mira } }), "manual")[0]).toMatchObject({ targetIds: ["mira"] });
+    // Lanes-2, S4.4: an optional each hit PC decides, converting HP marks into gold (the damage window's gold grant).
+    expect(effectOf("demon-of-avarice", "Money Talks").uses.find((u) => u.id === "pay-instead")!.steps).toEqual([
+      expect.objectContaining({ kind: "optional", by: { to: "targets" }, steps: [{ kind: "convertMarks", to: "targets", from: "hp", into: "gold" }] }),
+    ]);
+    expect(prompts(runUse("demon-of-avarice", "Money Talks", [], { useId: "pay-instead", trigger: { subject: mira } }), "manual")).toEqual([]);
   });
 
   it("Numbers Must Go Up: the handfuls add to its attack rolls", () => {
@@ -568,11 +572,16 @@ describe("Dryad (CB p.230)", () => {
 });
 
 describe("Greater Earth Elemental (CB p.230)", () => {
-  it("Immovable Object: physical damage is reduced by 7; a push is a manual two ranges shorter", () => {
+  it("Immovable Object: physical damage is reduced by 7; a forced move is two ranges shorter (passive), by hand a manual", () => {
     expect(fired("greater-earth-elemental", { kind: "onDamaged", stage: "would", damageType: "physical" })).toEqual(["Immovable Object:reduce:auto"]);
     expect(fired("greater-earth-elemental", { kind: "onDamaged", stage: "would", damageType: "magic" })).toEqual([]);
     expect(ofKind(runUse("greater-earth-elemental", "Immovable Object", [], { useId: "reduce" }), "fold")).toEqual([expect.objectContaining({ targetIds: ["self"], amount: 7 })]);
     expect(prompts(runUse("greater-earth-elemental", "Immovable Object", [], { useId: "immovable" }), "manual")).toHaveLength(1);
+    // Lanes-2, S4.4 (dcm-1yo): the passive the server's forced moves read (forcedMoveReduceOf).
+    expect(effectOf("greater-earth-elemental", "Immovable Object").uses.find((u) => u.id === "push")).toMatchObject({
+      activation: { kind: "passive" },
+      modifiers: [{ kind: "mod", mod: { kind: "forcedMoveReduce", steps: 2 } }],
+    });
   });
 
   it("Rockslide: a Stress; an Agility save (19) in front within Close: 2d12+5 and Vulnerable, half on a success", () => {
