@@ -112,7 +112,7 @@ export const FEATURE_CLASSIFICATION: Readonly<Record<string, FeatureClass>> = {
   // Seraph
   "hope:seraph": c("action", "3 Hope: an ally within Close clears 1 HP"),
   "class:seraph:prayer-dice": c("reaction", "Session d4s = Spellcast; spend on any PC within Far: reduce incoming damage, add to a roll after it, or gain Hope"),
-  "subclass:divine-wielder:spirit-weapon": c("rider", "Melee/Very Close weapon attacks within Close; mark a Stress for one more target, same roll"),
+  "subclass:divine-wielder:spirit-weapon": c("rider", "The Attack bar's Use as Spirit Weapon box: a Melee/Very Close weapon attacks within Close; mark a Stress for one more target, same roll"),
   "subclass:divine-wielder:sparing-touch": c("action", "Once per long rest (twice with Devout): touch, clear 2 HP or 2 Stress"),
   "subclass:divine-wielder:devout": p("passive", "Prayer Dice: roll one extra, drop the lowest; Sparing Touch twice"),
   "subclass:divine-wielder:sacred-resonance": p("passive", "Spirit Weapon damage: matching dice are doubled"),
@@ -203,7 +203,7 @@ export const FEATURE_CLASSIFICATION: Readonly<Record<string, FeatureClass>> = {
   "subclass:pact-of-the-wrathful:menacing-reach": c("action", "Spend a Favor: primary weapon range +1 step until a successful attack with it"),
   "subclass:pact-of-the-wrathful:diminish-my-foes": c("rider", "Success with Hope vs a target: spend any Favor, it marks that many Stress"),
   "subclass:pact-of-the-wrathful:fearsome-attack": c("rider", "Spend a Favor to reroll any damage dice, repeatable"),
-  "subclass:pact-of-the-wrathful:otherworldly-ire": c("reaction", "Once per rest when you take damage: spend Favor, Patron Dice, the highest = targets within Close that mark 1 HP"),
+  "subclass:pact-of-the-wrathful:otherworldly-ire": c("action", "Once per rest when you take damage: spend Favor, Patron Dice, the highest = targets within Close that mark 1 HP"),
   // Witch
   "hope:witch": c("reaction", "You or an ally within Far fails an action roll: 3 Hope, success with Fear (after-roll window, Q1)"),
   "class:witch:hex": c("action", "Mark a Stress: Hex a target within Far, - tier to its damage rolls and Difficulty; up to Spellcast targets"),

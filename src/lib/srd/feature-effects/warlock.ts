@@ -406,8 +406,12 @@ export const WARLOCK_EFFECTS: readonly FeatureEffect[] = [
   // Otherworldly Ire (mastery, HF p.15): "Once per rest when you take damage, you can spend any number of Favor to roll that
   // many Patron Dice and target a number of creatures within Close range equal to the highest result. Each target must
   // mark a Hit Point."
-  // The targets are picked after the dice show how many, which one use cannot do (vocabulary gap): the Favor and the dice
-  // are automated (the check step shows the results), the targets and their Hit Points are a manual step.
+  // Lanes-2 wave 10 (S2.4; dcm-q3t1, dcm-atiu, dcm-szfg): the targets are picked after the dice show how many. The count
+  // is rolled first (`upTo` `rolledFirst`: the drawer's roll, convex/featurePrompts.ts `rollCount`, rolls the chosen
+  // Favor's Patron Dice and keeps the highest), every cost is paid at that roll (user answer 2026-10-31), and the use then
+  // takes at most that many creatures within Close range, each marking a Hit Point. The roll comes from the drawer, so the
+  // use is a drawer action after you take damage (the player confirms "when you take damage"), not a hit-window
+  // reaction: the window has no count roll to offer first. "Creatures" (HF p.15): enemies here; an ally is never asked.
   {
     featureId: `subclass:${WRATHFUL}:otherworldly-ire`,
     source: "subclass",
@@ -417,26 +421,13 @@ export const WARLOCK_EFFECTS: readonly FeatureEffect[] = [
       {
         id: "main",
         name: "Otherworldly Ire",
-        activation: { kind: "reaction", trigger: { kind: "whenYouTakeDamage" } },
+        activation: { kind: "action" },
+        requires: [situation("You just took damage")],
         limit: { per: "rest" },
         choices: [favorChoice],
         costs: [anyFavor],
-        steps: [
-          {
-            kind: "check",
-            dice: patronDice({ kind: "spent", resource: "favor" }),
-            test: { kind: "anyAtLeast", value: 1 },
-            note: "Roll that many Patron Dice.",
-            then: [
-              {
-                kind: "manual",
-                to: "self",
-                text: "Target a number of creatures within Close range equal to the highest Patron Die result. Each target must mark a Hit Point.",
-              },
-            ],
-            otherwise: [],
-          },
-        ],
+        targets: { side: "enemy", range: "close", count: { kind: "upTo", rolledFirst: true, n: { kind: "dice", dice: patronDice({ kind: "chosen", choice: "favor" }), keep: "highest" } } },
+        steps: [{ kind: "markHp", to: "targets", amount: n(1), note: "Each target must mark a Hit Point." }],
       },
     ],
   },

@@ -74,6 +74,8 @@ describe("the Warlock table", () => {
           situations: (u.requires ?? []).flatMap((r) => (r.kind === "situation" ? [r.text] : [])),
           targets: [adversary("bandit")],
           trigger: { amount: 2, source: adversary("bandit") },
+          // Otherworldly Ire's count is rolled first (S2.4); any count lets the cost check run.
+          rolledTargetCount: 1,
         });
         expect(result, `${e.featureId}:${u.id}`).toMatchObject({ ok: false, reason: "cost", detail: "tokens" });
       }
@@ -264,11 +266,11 @@ describe("Pact of the Wrathful (HF p.15)", () => {
     expect(again.actor.after.favor).toBe(1);
   });
 
-  it("Otherworldly Ire: when you take damage, 2 Favor roll 2 Patron Dice (shown); the targets are a manual step; once per rest", () => {
-    const plan = use(`subclass:pact-of-the-wrathful:otherworldly-ire`, undefined, { actor: wActor(), choices: { favor: 2 }, dice: [2, 5] });
-    expect(plan.actor.after.favor).toBe(1);
-    expect(ofKind(plan, "check")[0]).toMatchObject({ dice: [2, 5], passed: true });
-    expect(ofKind(plan, "prompt")[0]).toMatchObject({ prompt: "manual", text: expect.stringMatching(/highest Patron Die result/) });
+  it("Otherworldly Ire: the count is rolled first; up to that many enemies within Close each mark a Hit Point; once per rest (S2.4)", () => {
+    const ire = effectOf(`subclass:pact-of-the-wrathful:otherworldly-ire`);
+    expect(ire.uses[0]!.targets).toEqual({ side: "enemy", range: "close", count: { kind: "upTo", rolledFirst: true, n: { kind: "dice", dice: { count: { kind: "chosen", choice: "favor" }, sides: 6, sidesOf: "patron" }, keep: "highest" } } });
+    const plan = use(ire.featureId, undefined, { actor: wActor(), choices: { favor: 2 }, rolledTargetCount: 2, situations: ["You just took damage"], targets: [adversary("a"), adversary("b")] });
+    expect(ofKind(plan, "mark")).toMatchObject([{ targetId: "a", track: "hp", amount: 1 }, { targetId: "b", track: "hp", amount: 1 }]);
     expect(plan.limit).toMatchObject({ key: "feat:subclass:pact-of-the-wrathful:otherworldly-ire", until: "rest" });
   });
 });

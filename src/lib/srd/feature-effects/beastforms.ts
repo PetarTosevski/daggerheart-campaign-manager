@@ -310,6 +310,11 @@ const fragile = (formId: string): FeatureEffect =>
 // airborne, you can ask the GM a question about the scene below you without needing to roll. The first time a character
 // makes a roll to act on this information, they gain advantage on the roll." Flying is the drawer's toggle (Q16); the
 // question is the GM's answer (text).
+// Lanes-2 wave 10 (S2.4): kept manual. The data would be an `effect` to `selfAndAllies` (picked allies, any range) with
+// an `advantage` mod on a marked situation, `endsOn: ["benefitGranted"]` and `sharedGrant: true`. It was tried through
+// the real path: the copies are written and the first roll that acts on it has advantage, but the other copies stay,
+// because each sheet numbers the feature's effects from 1 and cardRows `endSharedGrants` skips a copy whose id equals
+// one that ended (follow-up dcm-q9wc, lane w1-e6). Switch once that is fixed (silent reminders rule, dcm-s9md).
 const birdsEyeView = (formId: string): FeatureEffect =>
   entry(formId, "Bird’s-Eye View", [
     formUse({ id: "main", name: "Bird’s-Eye View (fly at will)", activation: { kind: "passive" }, mods: [], steps: [] }),
@@ -488,12 +493,10 @@ const FEATURES: readonly FeatureEffect[] = [
       name: "Armored Shell (in your shell)",
       activation: { kind: "auto", trigger: { kind: "whenYouWouldTakeDamage", damageType: "physical" } },
       requires: [{ kind: "situation", text: "While in your shell", check: { kind: "featureEffect", featureId: "beastform:armored-sentry:armored-shell", option: "retracted" } }],
-      // Plan lanes, SRD-F1: `reduceDamage` by `{ kind: "stat", stat: "armorScore", who: "self" }` would say it, but the
-      // feature runner and the hit window don't fill the actor's stats yet (dcm-me3), so it would reduce by 0: the
-      // reduction stays the table's (dcm-bxp.99.19.4). Lanes-2 wave 9 (S2): still manual. E8 binds `stat` on the feature
-      // path (`pickFeature`), but this use runs in the incoming-hit window, whose actor (adversaryHits `featureActor`)
-      // carries no `stats` (E2 follow-up dcm-91tx).
-      steps: [{ kind: "manual", to: "self", text: "In your shell: reduce this physical damage by your Armor Score (after applying resistance)." }],
+      // Lanes-2 wave 10 (S2.4; dcm-i9c1, dcm-bxp.99.19.4): `reduceDamage` by the Armor Score. The incoming-hit window's
+      // feature actor carries the sheet's stats (E2.4 `featureActor` from `sheetNumbers`, with the Beastform's effects),
+      // so the `stat` number reads the real Armor Score. "After applying resistance" is the window's order (CB p.107).
+      steps: [{ kind: "reduceDamage", to: "self", amount: { kind: "stat", stat: "armorScore", who: "self" }, note: "In your shell: physical damage is reduced by your Armor Score (after applying resistance)." }],
     }),
   ]),
   // Cannonball (Armored Sentry), CB p.33: "Mark a Stress to allow an ally to throw or launch you at an adversary. To do so,

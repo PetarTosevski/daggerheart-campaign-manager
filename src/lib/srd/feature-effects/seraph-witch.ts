@@ -124,30 +124,18 @@ export const SERAPH_WITCH_EFFECTS: readonly FeatureEffect[] = [
   // Spirit Weapon (Divine Wielder foundation, CB p.44): "When you have an equipped weapon with a range of Melee or Very
   // Close, it can fly from your hand to attack an adversary within Close range and then return to you. You can mark a
   // Stress to target an additional adversary within range with the same attack roll."
-  // Lanes-2 wave 9 (S2): unchanged. User answer 2026-10-31 (dcm-xbtw): a per-attack "Use as Spirit Weapon" check box;
-  // its engine half (attack arg, Attack bar box) is E1.3b's this wave, so the data switch is wave 10's.
+  // User answer 2026-10-31 (dcm-xbtw): a per-attack "Use as Spirit Weapon" check box. Lanes-2 wave 10 (S2.4): the box
+  // is the attack's `spiritWeapon` arg (E1.3b; stored rolls keep it since dcm-1sk4), and the server decides it from the
+  // feature held and the weapon's range (convex/lib/combatActions.ts `spiritWeaponOn`): ticked, the attack reaches
+  // Close and may take one more adversary for a Stress. So the entry is a passive with nothing to apply: the old
+  // always-on `meleeWeaponRange` mod (read by nothing) and the confirm-and-pay rider (which would offer the extra
+  // target a second time beside the box) are gone.
   {
     featureId: "subclass:divine-wielder:spirit-weapon",
     source: "subclass",
     owner: "divine-wielder",
     card: "foundation",
-    uses: [
-      {
-        id: "reach",
-        name: "Spirit Weapon",
-        activation: { kind: "passive" },
-        mods: [{ kind: "set", stat: "meleeWeaponRange", to: n(2) }],
-        steps: [],
-      },
-      {
-        id: "extra-target",
-        name: "Spirit Weapon: an additional adversary",
-        activation: { kind: "rider", trigger: { kind: "beforeYouRoll", roll: "weaponAttack" } },
-        requires: [{ kind: "situation", text: "You attack with your Spirit Weapon (an equipped weapon with a range of Melee or Very Close)" }],
-        costs: [{ kind: "stress", amount: n(1) }],
-        steps: [{ kind: "addTargets", to: "self", count: n(1), targets: { side: "enemy", range: "close", count: { kind: "one" } }, damage: "same" }],
-      },
-    ],
+    uses: [{ id: "reach", name: "Spirit Weapon", activation: { kind: "passive" }, mods: [], steps: [] }],
   },
 
   // Sparing Touch (Divine Wielder foundation, CB p.44): "Once per long rest, touch a creature and clear 2 Hit Points or 2
@@ -184,22 +172,16 @@ export const SERAPH_WITCH_EFFECTS: readonly FeatureEffect[] = [
 
   // Sacred Resonance (Divine Wielder mastery, CB p.44): "When you roll damage for your 'Spirit Weapon' feature, if any of
   // the die results match, double the value of each matching die. For example, if you roll two 5s, they count as two
-  // 10s." Which attacks are Spirit Weapon attacks is open (task doc, question 1); until it is answered the player
-  // confirms it on the attack (Q13).
+  // 10s." User answer 2026-10-31 (dcm-xbtw): a Spirit Weapon attack is one with the "Use as Spirit Weapon" box ticked.
+  // Lanes-2 wave 10 (S2.4): the attack path doubles the matching dice itself on such an attack when this feature is held
+  // (convex/lib/combatActions.ts `sacredResonance`), so the per-attack confirm rider is gone (it would double them a
+  // second time, or on an attack that was no Spirit Weapon attack).
   {
     featureId: "subclass:divine-wielder:sacred-resonance",
     source: "subclass",
     owner: "divine-wielder",
     card: "mastery",
-    uses: [
-      {
-        id: "main",
-        name: "Sacred Resonance",
-        activation: { kind: "rider", trigger: { kind: "whenYouAttack", result: "success", weapon: true } },
-        requires: [{ kind: "situation", text: "You roll damage for your Spirit Weapon" }],
-        steps: [{ kind: "modifyDamage", to: "targets", change: { kind: "doubleDice", which: "matching" } }],
-      },
-    ],
+    uses: [{ id: "main", name: "Sacred Resonance", activation: { kind: "passive" }, mods: [], steps: [] }],
   },
 
   // Wings of Light (Winged Sentinel foundation, CB p.45): "You can fly. While flying, you can do the following: • Mark a

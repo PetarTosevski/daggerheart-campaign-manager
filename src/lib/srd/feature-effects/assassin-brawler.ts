@@ -179,10 +179,12 @@ export const ASSASSIN_BRAWLER_EFFECTS: readonly FeatureEffect[] = [
             to: "targets",
             condition: MARKED,
             duration: "rest",
-            endsWhen: "Until you take a rest, the target is defeated, or the GM spends Fear equal to your tier to clear it",
-            // Lanes-2 wave 9 (S2; dcm-8bv, dcm-kmr): the GM's Fear end costs the assassin's tier (E6 `gmFearToEnd` reads
-            // it). The GM intent that spends it is still dcm-kmr's, so the `endsWhen` words stay the reminder.
-            endsOn: ["gmSpendsFear"],
+            // Lanes-2 wave 9 (S2; dcm-8bv): the GM's Fear end costs the assassin's tier (E6 `gmFearToEnd` reads it).
+            // Lanes-2 wave 10 (S2.4; dcm-kmr, dcm-qxb6, dcm-mvoo): all three ends run, so the `endsWhen` reminder is gone.
+            // The rest is the duration. `targetDefeated` ends the mark when its adversary is defeated: an effect naming
+            // its instance (`targetInstanceId`, E6.4) ends only on that one, so a second assassin keeps their own mark.
+            // `gmSpendsFear` is the GM's tier-Fear clear (convex/combatEffects.ts `endByFear`, the token panel's button).
+            endsOn: ["targetDefeated", "gmSpendsFear"],
             endFear: { kind: "byTier", values: [1, 2, 3, 4] },
           },
           { kind: "delegate", to: "self", feature: "markedForDeath" },

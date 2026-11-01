@@ -175,7 +175,7 @@ describe("Marked for Death (HF p.8)", () => {
     expect(plan.exclusive).toBe(true);
     expect(plan.actor.after.stress).toBe(2);
     expect(ofKind(plan, "condition")).toEqual([
-      expect.objectContaining({ targetId: "bandit", condition: { kind: "tag", tag: MARKED_FOR_DEATH }, duration: "rest", endsOn: ["gmSpendsFear"] }),
+      expect.objectContaining({ targetId: "bandit", condition: { kind: "tag", tag: MARKED_FOR_DEATH }, duration: "rest", endsOn: ["targetDefeated", "gmSpendsFear"] }),
     ]);
     // Lanes-2 S2 (dcm-8bv, dcm-kmr): the GM's Fear end costs the assassin's tier.
     expect(ofKind(ok(go("class:assassin:marked-for-death", "main", [], { actor: actorOf(sheet, { tier: 3 }), sheet, targets: [adv("bandit")], delegateRoll: actionRoll("successHope") })), "condition")[0]).toMatchObject({ endFear: 3 });

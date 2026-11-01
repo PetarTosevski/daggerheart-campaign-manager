@@ -161,21 +161,17 @@ export const STANCE_EFFECTS: readonly FeatureEffect[] = [
   ]),
 
   // Defensive (HF p.12): "Attack rolls targeting you from within Melee range have disadvantage unless the attacker marks a
-  // Stress to negate the disadvantage." Plan lanes V widened the vocabulary for it (`disadvantageAgainst` with `from:
-  // "melee"` and `buyOff`), but the passive totals (src/lib/domain/feature-effects/passives.ts) and the adversary attack
-  // engine ignore `from` and `buyOff` and there is no pay prompt before the roll (dcm-eut, E7 "not"): the passive mod
-  // would give every attack disadvantage. Until then, a manual step on each Melee attack (docs/tasks/TASK-LN-SRD-F1.md).
+  // Stress to negate the disadvantage." Lanes-2 wave 10 (S2.4; dcm-eut): a passive `disadvantageAgainst` gated `from:
+  // "melee"` with a `buyOff` of 1 Stress. The passive totals keep it out of the always-on list (E5 `guarded`); the
+  // adversary attack counts it only from an attacker within Melee of the stance holder's token (no live map: the
+  // distance is unknown and it does not count) and offers the buy-off in the GM feed; the GM pays it with `buyOffs` and
+  // the attacker marks the Stress (E7 round 3).
   stance("defensive", [
     {
       id: "main",
-      activation: { kind: "auto", trigger: { kind: "whenAttacked", stage: "targeted", from: "melee" } },
-      steps: [
-        {
-          kind: "manual",
-          to: "triggerSource",
-          text: "Defensive stance: this attack roll from within Melee range has disadvantage unless the attacker marks a Stress to negate the disadvantage.",
-        },
-      ],
+      activation: { kind: "passive" },
+      mods: [{ kind: "disadvantageAgainst", on: "attack", from: "melee", buyOff: [{ kind: "stress", amount: fixed(1) }] }],
+      steps: [],
     },
   ]),
 

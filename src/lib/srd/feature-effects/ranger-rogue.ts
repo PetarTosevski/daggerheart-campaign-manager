@@ -95,6 +95,8 @@ const COMPANION_BUILDS_ON: Step = {
 
 /** Contacts Everywhere's three benefits (CB p.43); Reliable Backup adds two (`RELIABLE_BACKUP_OPTIONS`). */
 const CONTACT_CHOOSE = "benefit";
+/** The supply benefit's pick: gold, or a tool / object the GM names. */
+const SUPPLY_CHOOSE = "supply";
 const contactEffect = (option: string, label: string, extra: Partial<Extract<Step, { kind: "effect" }>> = {}): Step => ({
   kind: "effect",
   to: "self",
@@ -570,13 +572,13 @@ export const RANGER_ROGUE_EFFECTS: readonly FeatureEffect[] = [
   // The following options are added to the list of benefits you can choose from when you use that feature:
   // • When you mark 1 or more Hit Points, they can rush out to shield you, reducing the Hit Points marked by 1.
   // • When you make a Presence Roll in conversation, they back you up. You can roll a d20 as your Hope Die."
-  // NV3: three times per session and the two options; their riders "shield" and "backup". Plan lanes SRD-F3 (dcm-3ea):
-  // the backup benefit ends on your next Presence Roll (`endsOnRoll`); "in conversation" is the player's check box on the
-  // rider (not detectable, E6 Q5).
-  // Lanes-2 wave 9 (S2; dcm-vf7i): the "supply" benefit stays a manual step. An `inventory` `giveGold` / `giveItem` step
-  // becomes a plan `inventory` step in the runner (E3), but the feature runner writes gifts only from manual prompts
-  // (E8 `giftsOf`), so the gift would be neither written nor shown (tests/convex/lane3-s2-features.test.ts pins it;
-  // follow-up for lane w1-e8). The handful of gold is also only one of three things the contact can bring.
+  // NV3: three times per session and the two options. "shield" is a rider; "backup" (lanes-2 wave 10, S2.4; dcm-hqk1)
+  // is the waiting effect's own d20 Hope Die mod, read on a Presence Roll the player marks "in conversation", which
+  // also ends it (the rider "backup" is gone).
+  // Lanes-2 wave 10 (S2.4; dcm-vf7i, dcm-h1y9): the "supply" benefit gives the gift. The player picks which of the
+  // three (a nested `choose`): the gold is written (`inventory` `giveGold`, 1 handful, E8.4 `giftsOf`); "a unique tool,
+  // or a mundane object that the situation requires" is the GM's pick (`giveItem` without `text`: a feed note, nothing
+  // written).
   {
     featureId: ID.contactsEverywhere,
     source: "subclass",
@@ -594,7 +596,21 @@ export const RANGER_ROGUE_EFFECTS: readonly FeatureEffect[] = [
             id: CONTACT_CHOOSE,
             label: "Choose the contact's help",
             options: [
-              { id: "supply", label: "1 handful of gold, a unique tool, or a mundane object", steps: [{ kind: "manual", to: "self", text: "They provide 1 handful of gold, a unique tool, or a mundane object that the situation requires." }] },
+              {
+                id: "supply",
+                label: "1 handful of gold, a unique tool, or a mundane object",
+                steps: [
+                  {
+                    kind: "choose",
+                    id: SUPPLY_CHOOSE,
+                    label: "What the contact provides",
+                    options: [
+                      { id: "gold", label: "1 handful of gold", steps: [{ kind: "inventory", to: "self", op: "giveGold", amount: n(1) }] },
+                      { id: "item", label: "A unique tool or a mundane object that the situation requires (the GM picks it)", steps: [{ kind: "inventory", to: "self", op: "giveItem" }] },
+                    ],
+                  },
+                ],
+              },
               { id: "die", label: "+3 to your Hope or Fear Die on your next action roll", steps: [contactEffect("die", "Contacts Everywhere: +3 to your Hope or Fear Die", { duration: "nextRoll" })] },
               { id: "snipe", label: "+2d8 the next time you deal damage", steps: [contactEffect("snipe", "Contacts Everywhere: +2d8 to your next damage", { endsOn: ["dealDamage"] })] },
             ],
@@ -622,13 +638,6 @@ export const RANGER_ROGUE_EFFECTS: readonly FeatureEffect[] = [
         requires: [contactWaiting("shield")],
         steps: [{ kind: "adjustHpMarked", to: "self", change: "fewer", amount: n(1), note: "They rush out to shield you, reducing the Hit Points marked by 1." }],
       },
-      {
-        id: "backup",
-        name: "Contacts Everywhere: backup",
-        activation: { kind: "rider", trigger: { kind: "beforeYouRoll", roll: "presence" } },
-        requires: [contactWaiting("backup"), situation(S.conversation)],
-        steps: [{ kind: "modifyRoll", to: "self", change: { kind: "hopeDie", sides: 20 }, note: "They back you up: roll a d20 as your Hope Die." }],
-      },
     ],
     upgrades: [
       { when: { kind: "feature", featureId: ID.reliableBackup }, useId: "main", patch: { limitTimes: 3 }, note: "Reliable Backup" },
@@ -642,7 +651,16 @@ export const RANGER_ROGUE_EFFECTS: readonly FeatureEffect[] = [
             {
               id: "backup",
               label: "Back you up: a d20 Hope Die on a Presence Roll in conversation",
-              steps: [contactEffect("backup", "Contacts Everywhere: d20 Hope Die in conversation", { endsWhen: "you make a Presence Roll in conversation", endsOnRoll: { roll: "presence" } })],
+              // Lanes-2 wave 10 (S2.4; dcm-hqk1, user answer 2026-10-31): the d20 Hope Die is the effect's own mod, read
+              // on a roll the player marks "in conversation" (the dice box's check box; convex/lib/rolls.ts
+              // `situationalHopeDie`), and only such a Presence Roll ends it (`RollEnd.situation`). The label stays the
+              // effect's text: the dice box and `liveMods` find the mod by it.
+              steps: [
+                contactEffect("backup", "Contacts Everywhere: d20 Hope Die in conversation", {
+                  mods: [{ kind: "dualityDie", die: "hope", sides: 20, situation: S.conversation }],
+                  endsOnRoll: { roll: "presence", situation: S.conversation },
+                }),
+              ],
             },
           ],
         },

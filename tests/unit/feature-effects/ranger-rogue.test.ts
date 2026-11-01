@@ -350,7 +350,11 @@ describe("Syndicate (CB p.43)", () => {
 
   it("Contacts Everywhere: once per session, one of three benefits", () => {
     const supply = contact(syndicate(), "supply");
-    expect(ofKind(supply, "prompt")[0]?.text).toBe("They provide 1 handful of gold, a unique tool, or a mundane object that the situation requires.");
+    // S2.4 (dcm-h1y9): the supply asks which gift (gold, or a tool / object the GM picks), then gives it as an inventory step.
+    expect(ofKind(supply, "prompt")[0]).toMatchObject({ prompt: "choose", text: "What the contact provides" });
+    const gold = runFeature(entry(ID.contactsEverywhere), "main", { actor: actorOf(syndicate()), gmFear: 0, rng: queueRng([]), options: { benefit: ["supply"], supply: ["gold"] } });
+    if (!gold.ok) throw new Error(gold.detail);
+    expect(gold.plan.steps).toContainEqual(expect.objectContaining({ kind: "inventory", op: "giveGold" }));
     expect(supply.limit).toEqual({ key: "feat:subclass:syndicate:contacts-everywhere", until: "session", consumed: true });
     expect(ofKind(contact(syndicate(), "die"), "effect")[0]).toMatchObject({ option: "die", duration: "nextRoll", mods: [] });
     expect(ofKind(contact(syndicate(), "snipe"), "effect")[0]).toMatchObject({ option: "snipe", duration: "manual", endsOn: ["dealDamage"] });
@@ -367,13 +371,14 @@ describe("Syndicate (CB p.43)", () => {
     expect(() => contact(sheet, "supply")).toThrow();
     const fresh = syndicate({ subclassRank: "mastery" });
     expect(ofKind(contact(fresh, "shield"), "effect")[0]).toMatchObject({ option: "shield", endsOn: ["markHp"] });
-    expect(ofKind(contact(fresh, "backup"), "effect")[0]).toMatchObject({ option: "backup", duration: "manual", endsWhen: "you make a Presence Roll in conversation" });
+    // S2.4 (dcm-hqk1): the waiting backup carries its d20 Hope Die for a roll marked "in conversation".
+    expect(ofKind(contact(fresh, "backup"), "effect")[0]).toMatchObject({ option: "backup", duration: "manual", mods: [{ kind: "dualityDie", die: "hope", sides: 20, situation: S.conversation }] });
     // SRD-F3 (dcm-3ea): the waiting backup ends on your next Presence Roll, and only on one (E6 roll ends). The option is
     // Reliable Backup's upgrade, which the server's lookup (srdUses) does not read yet (follow-up bead), so the lookup here
     // is the upgraded entry.
     const upgraded = applyUpgrades(entry(ID.contactsEverywhere), holdingsFor(fresh, owned(fresh), "syndicate"));
     const backupEnds = stepEnds(ID.contactsEverywhere, "Contacts Everywhere: d20 Hope Die in conversation", () => upgraded.uses)!.ends;
-    expect(backupEnds.endsOnRoll).toEqual({ roll: "presence" });
+    expect(backupEnds.endsOnRoll).toEqual({ roll: "presence", situation: S.conversation });
     expect(endsOnOccurrence(backupEnds, { kind: "roll", roll: { kind: "action", trait: "presence", success: true, duality: "hope" } }, "bearer")).toBe(true);
     expect(endsOnOccurrence(backupEnds, { kind: "roll", roll: { kind: "action", trait: "agility", success: true, duality: "hope" } }, "bearer")).toBe(false);
     expect(entry(ID.reliableBackup).uses[0]!.mods).toEqual([]);
@@ -384,8 +389,8 @@ describe("Syndicate (CB p.43)", () => {
     expect(folds(plan(ID.contactsEverywhere, "die", [], { actor: waiting("die") }, syndicate()))).toEqual([{ kind: "modifyRoll", targetIds: ["pc"], amount: 3 }]);
     expect(folds(plan(ID.contactsEverywhere, "snipe", [5, 6], { actor: waiting("snipe"), targets: [adversary("bandit")] }, syndicate()))).toEqual([{ kind: "modifyDamage", targetIds: ["bandit"], amount: 11 }]);
     expect(folds(plan(ID.contactsEverywhere, "shield", [], { actor: waiting("shield") }, syndicate()))).toEqual([{ kind: "adjustHpMarked", targetIds: ["pc"], amount: 1 }]);
-    const backup = plan(ID.contactsEverywhere, "backup", [], { actor: waiting("backup"), situations: [S.conversation] }, syndicate());
-    expect(ofKind(backup, "fold")[0]!.step).toMatchObject({ kind: "modifyRoll", change: { kind: "hopeDie", sides: 20 } });
+    // S2.4 (dcm-hqk1): the d20 Hope Die is the waiting effect's own mod (the dice box reads it); no rider is left.
+    expect(entry(ID.contactsEverywhere).uses.map((u) => u.id)).not.toContain("backup");
     // Another benefit waiting (the engine knows): refused.
     expect(refusal(ID.contactsEverywhere, "snipe", { actor: waiting("die") }, syndicate())).toMatchObject({ ok: false, reason: "requirement" });
   });

@@ -522,16 +522,16 @@ export const DRUID_SORCERER_EFFECTS: readonly FeatureEffect[] = [
             id: "option",
             label: "Do one of the following",
             options: [
-              // Lanes-2 wave 9 (S2; dcm-x7p, dcm-76l5): the `reach` fold widens the range of the attack's added targets (E1
-              // `addRange`), but this rider runs after the roll, when the attack's own targets were already range-checked,
-              // and the options are exclusive (no added target in the same use). So the reminder stays beside the data
-              // until a reach picked with the attack widens its own target check (follow-up, lane w1-e1).
+              // Lanes-2 wave 10 (S2.4; dcm-lbai, user answer 2026-10-31): the reach is picked with the attack and widens
+              // the attack's own target check (convex/lib/combatActions.ts `setupReach`), so the attack reminder is gone.
+              // A spell's range is not widened by any path yet (the card runner checks a card's range without riders),
+              // so the line stays for spells only.
               {
                 id: "reach",
                 label: "Extend the reach by one range",
                 steps: [
                   { kind: "modifyRoll", to: "self", change: { kind: "reach", steps: 1 } },
-                  { kind: "manual", to: "self", text: "Extend the spell or attack's reach by one range." },
+                  { kind: "manual", to: "self", text: "On a spell: extend the spell's reach by one range (a weapon attack's reach is already widened)." },
                 ],
               },
               { id: "roll", label: "+2 to the action roll's result", steps: [{ kind: "modifyRoll", to: "self", change: { kind: "add", amount: n(2) } }] },

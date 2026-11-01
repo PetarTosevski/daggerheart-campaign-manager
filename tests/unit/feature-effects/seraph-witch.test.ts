@@ -153,14 +153,9 @@ describe("Prayer Dice (CB p.44, p.107): spend any number on yourself or an ally 
 });
 
 describe("Spirit Weapon (CB p.44)", () => {
-  it("lets a Melee or Very Close weapon attack within Close", () => {
-    expect(entry("subclass:divine-wielder:spirit-weapon").uses.find((u) => u.id === "reach")!.mods).toEqual([{ kind: "set", stat: "meleeWeaponRange", to: { kind: "fixed", value: 2 } }]);
-  });
-
-  it("a Stress adds one more adversary within Close to the same attack roll", () => {
-    const plan = ok("subclass:divine-wielder:spirit-weapon", "extra-target", { actor: seraph({ stress: 1 }), situations: ["You attack with your Spirit Weapon (an equipped weapon with a range of Melee or Very Close)"] });
-    expect(plan.actor.after.stress).toBe(2);
-    expect(ofKind(plan, "fold")[0]).toMatchObject({ step: { kind: "addTargets", targets: { side: "enemy", range: "close" }, damage: "same" }, amount: 1 });
+  it("is the Attack bar's box: a passive with nothing to apply (lanes-2 wave 10 S2.4, dcm-xbtw)", () => {
+    // The server decides it (convex/lib/combatActions.ts `spiritWeaponOn`): ticked, Close reach and one more adversary for a Stress.
+    expect(entry("subclass:divine-wielder:spirit-weapon").uses).toEqual([{ id: "reach", name: "Spirit Weapon", activation: { kind: "passive" }, mods: [], steps: [] }]);
   });
 });
 
@@ -188,10 +183,8 @@ describe("Sparing Touch (CB p.44) and Devout's second use", () => {
 });
 
 describe("Sacred Resonance (CB p.44): matching Spirit Weapon damage dice are doubled", () => {
-  it("rides on a successful weapon attack once the player confirms the Spirit Weapon", () => {
-    const plan = ok("subclass:divine-wielder:sacred-resonance", undefined, { actor: seraph(), targets: [adversary("bandit")], situations: ["You roll damage for your Spirit Weapon"] });
-    expect(ofKind(plan, "fold")[0]).toMatchObject({ step: { kind: "modifyDamage", change: { kind: "doubleDice", which: "matching" } } });
-    expect(refused("subclass:divine-wielder:sacred-resonance", undefined, { actor: seraph() })).toMatchObject({ ok: false, reason: "requirement" });
+  it("is read by the attack path on a ticked Spirit Weapon attack: a passive with nothing to apply (S2.4, dcm-xbtw)", () => {
+    expect(entry("subclass:divine-wielder:sacred-resonance").uses).toEqual([{ id: "main", name: "Sacred Resonance", activation: { kind: "passive" }, mods: [], steps: [] }]);
   });
 });
 

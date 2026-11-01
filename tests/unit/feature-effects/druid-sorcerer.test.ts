@@ -336,7 +336,8 @@ describe("Primal Origin (CB p.47)", () => {
     expect(JSON.stringify(entry("subclass:primal-origin:manipulate-magic"))).toContain('"hostRange":true');
     const reach = run("reach");
     expect(folds(reach)).toMatchObject([{ kind: "modifyRoll", change: { kind: "reach", steps: 1 } }]);
-    expect(ofKind(reach, "prompt")).toMatchObject([{ prompt: "manual", text: "Extend the spell or attack's reach by one range." }]);
+    // S2.4 (dcm-lbai): a weapon attack's reach is widened at setup; the line stays for spells only.
+    expect(ofKind(reach, "prompt")).toMatchObject([{ prompt: "manual", text: expect.stringContaining("On a spell") }]);
     expect(refused("subclass:primal-origin:manipulate-magic", undefined, { actor: actorOf(sorcerer), options: { option: ["roll"] } })).toMatchObject({ ok: false, reason: "requirement" });
   });
 

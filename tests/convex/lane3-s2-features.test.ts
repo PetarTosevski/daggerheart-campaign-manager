@@ -213,9 +213,9 @@ describe("lanes-2 S2: Contacts Everywhere's supply stays manual (dcm-vf7i)", () 
     if (!result.ok) throw new Error(`refused: ${result.reason} ${result.detail}`);
     expect(result.plan.steps.some((s) => s.kind === "inventory")).toBe(true);
     expect(giftsOf(result.plan, () => true).byTarget.get("pc")).toEqual([{ kind: "gold", handfuls: 1 }]);
-    // The real entry keeps the manual step (a prompt the table sees).
+    // Lanes-2 wave 10 S2.4 switched the real entry (tests/convex/lane4-s2-features.test.ts): it asks which gift first.
     const kept = runFeature(real, "main", { actor: actorOf(sheet), gmFear: 2, rng: queueRng([]), options: { [CONTACT_CHOOSE]: ["supply"] } });
     if (!kept.ok) throw new Error(`refused: ${kept.reason} ${kept.detail}`);
-    expect(kept.plan.steps).toContainEqual(expect.objectContaining({ kind: "prompt", prompt: "manual" }));
+    expect(kept.plan.steps).toContainEqual(expect.objectContaining({ kind: "prompt", prompt: "choose" }));
   });
 });

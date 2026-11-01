@@ -255,7 +255,8 @@ describe("Tier 2 features (CB p.33)", () => {
     const outside = inForm("armored-sentry", { facts: { beastformId: "armored-sentry", featureEffects: [] } });
     expect(runFeature(e, "shell", { actor: outside, gmFear: 0, rng: queueRng([]) })).toMatchObject({ ok: false, reason: "requirement" });
     const inside = inForm("armored-sentry", { facts: { beastformId: "armored-sentry", featureEffects: [{ featureId: e.featureId, option: "retracted" }] } });
-    expect(ofKind(ok(e, "shell", { actor: inside, rng: queueRng([]) }), "prompt")[0]!.text).toContain("Armor Score");
+    // S2.4 (dcm-i9c1): the reduction reads the actor's Armor Score (the window binds the sheet's stats).
+    expect(ofKind(ok(e, "shell", { actor: { ...inside, stats: { armorScore: 5 } } as never, rng: queueRng([]) }), "fold")[0]).toMatchObject({ amount: 5, step: { kind: "reduceDamage" } });
   });
 
   it("Cannonball: the druid's use marks a Stress and sends the throw to the ally (DA13; the second target's Hope is paid at the ally's roll)", () => {

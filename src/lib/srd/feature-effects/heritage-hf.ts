@@ -135,8 +135,9 @@ export const HERITAGE_HF_EFFECTS: readonly FeatureEffect[] = [
   // Fireproof (Emberkin, HF p.22): "You are immune to damage from magical or mundane flame." CB p.99: "If a target is
   // immune to a damage type, they ignore incoming damage of that type." The trigger names the fire keyword (plan lanes V,
   // dcm-dv6). Lanes-2 wave 9 (S2): hits carry the attacker's `damage` step keyword (E2 `hitKeyword`), so the check box is
-  // gone: the window offers Fireproof on a fire hit, never on a hit with another keyword, and on a hit whose keyword is
-  // unknown (a standard attack) the reaction is still offered and choosing it is the player's confirmation (Q13).
+  // gone. Lanes-2 wave 10 (E2.4, dcm-sk4r, user answer 2026-10-31): a fire hit applies Fireproof directly; a hit the data
+  // can't settle (a custom adversary, a feature whose damage steps disagree) asks the GM "Was this hit fire?"; a standard
+  // attack takes its stat block's keyword. No data change (S2.4).
   {
     featureId: "ancestry:emberkin:fireproof",
     source: "ancestry",

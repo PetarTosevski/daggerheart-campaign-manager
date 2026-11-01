@@ -494,12 +494,11 @@ export const GUARDIAN_WARRIOR_EFFECTS: readonly FeatureEffect[] = [
 
   // Weapon Specialist (Call of the Slayer specialization, CB p.48): "You can wield multiple weapons with dangerous ease.
   // When you succeed on an attack, you can spend a Hope to add one of the damage dice from your secondary weapon to the
-  // damage roll. Additionally, once per long rest when you roll your Slayer Dice, reroll any 1s." The reroll stays a
-  // manual Use, once per long rest (open point 5): V's `RollChange` `rerollHeld` names it, but the runner does not apply
-  // it yet (dcm-inou, dcm-sa2); the dice box and map attacks already reroll the 1s (convex/lib/rolls.ts). Lanes-2 wave 9
-  // (S2): still manual. E3's runner rerolls held dice only inside the use that spent them (`rerollHeld` after a held-die
-  // cost), and the Slayer Dice are spent by Slayer's own rider, so a separate use has nothing to reroll. Moving the reroll
-  // onto that rider (with its once per long rest) is listed for wave 10 (dcm-q40t / dcm-inou).
+  // damage roll. Additionally, once per long rest when you roll your Slayer Dice, reroll any 1s." Lanes-2 wave 10 (E8.4,
+  // dcm-7l0g / dcm-40rt): the reroll is automatic. Any use that spends Slayer Dice (Slayer's own rider) rerolls their 1s
+  // once per long rest (feature-effects/run.ts `actorExtras` `heldRerolls`), as the dice box and map attacks do, all on
+  // one key (`WEAPON_SPECIALIST_KEY`). S2.4: the `slayer-ones` use stays as the hand fallback for dice rolled at the
+  // table; it spends the same key, so the reroll can't be taken twice.
   {
     featureId: "subclass:call-of-the-slayer:weapon-specialist",
     source: "subclass",
@@ -518,7 +517,7 @@ export const GUARDIAN_WARRIOR_EFFECTS: readonly FeatureEffect[] = [
         name: "Weapon Specialist: reroll Slayer 1s",
         activation: { kind: "action" },
         limit: { per: "longRest" },
-        steps: [{ kind: "manual", to: "self", text: "Reroll any 1s on the Slayer Dice you just rolled; the new results stand (CB p.107)." }],
+        steps: [{ kind: "manual", to: "self", text: "Slayer Dice rolled at the table: reroll any 1s; the new results stand (CB p.107). Dice the app rolls reroll their 1s on their own." }],
       },
     ],
   },
