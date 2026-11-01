@@ -75,6 +75,7 @@ export function TimeArc({ campaignId, readOnly = false }: { campaignId: Id<"camp
   const advance = useIntent(api.campaignTime.endDay);
   const setDay = useIntent(api.campaignTime.setDay);
   const [notice, setNotice] = useState<string | null>(null);
+  const [lastEnd, setLastEnd] = useState<Id<"actionLog"> | null>(null);
 
   if (time === undefined) return <div className="h-[230px]" aria-busy="true" />;
 
@@ -84,7 +85,10 @@ export function TimeArc({ campaignId, readOnly = false }: { campaignId: Id<"camp
   const error = advance.error ?? setDay.error;
   const passDay = async () => {
     const result = await advance.fire({ campaignId });
-    if (result) setNotice(endDayNotice(result));
+    if (result) {
+      setNotice(endDayNotice(result));
+      setLastEnd(result.entryId);
+    }
   };
 
   return (
@@ -137,7 +141,9 @@ export function TimeArc({ campaignId, readOnly = false }: { campaignId: Id<"camp
               aria-current={current ? "step" : undefined}
               disabled={readOnly || setDay.pending || advance.pending}
               onClick={() => {
-                if (!current) void setDay.fire({ campaignId, cycleDay: day });
+                if (current) return;
+                setLastEnd(null);
+                void setDay.fire({ campaignId, cycleDay: day });
               }}
               style={style}
             >
@@ -211,6 +217,15 @@ export function TimeArc({ campaignId, readOnly = false }: { campaignId: Id<"camp
       <p role="status" aria-live="polite" className="m-0 min-h-0 text-[13px] text-[#c9d2cf] empty:hidden" data-testid="end-day-notice">
         {notice}
       </p>
+      {lastEnd !== null && !readOnly ? (
+        <UndoEndDay
+          entryId={lastEnd}
+          onUndone={() => {
+            setLastEnd(null);
+            setNotice("End day undone.");
+          }}
+        />
+      ) : null}
       <p role="status" aria-live="polite" className="m-0 min-h-0 text-[13px] text-danger empty:hidden">
         {error}
       </p>
@@ -222,6 +237,35 @@ const endDayButton =
   "min-h-11 cursor-pointer rounded-full border border-white/25 bg-black/45 px-5 font-display text-[14px] font-bold tracking-[0.06em] text-[#e6ecea] hover:bg-black/60 disabled:cursor-default disabled:opacity-60";
 
 type EndDayResult = { week: number; day: number; newWeek: boolean; ended: number };
+
+/**
+ * Undo of the End day just pressed (plan lanes-2 CT2, dcm-jq4b): `actionLog.undo` on its campaign row gives the uses
+ * back and, while it is the latest day's end, moves the day (and the time of day it reset) back. The feed's Undo does
+ * the same for any End day row; an older one gives back its uses only (user answer 2026-11-01).
+ */
+function UndoEndDay({ entryId, onUndone }: { entryId: Id<"actionLog">; onUndone: () => void }) {
+  const undo = useIntent(api.actionLog.undo);
+  return (
+    <>
+      <button
+        type="button"
+        className={endDayButton}
+        disabled={undo.pending}
+        data-testid="undo-end-day"
+        onClick={() =>
+          void undo.fire({ entryId }).then((r) => {
+            if (r) onUndone();
+          })
+        }
+      >
+        {"Undo the day's end"}
+      </button>
+      <p role="status" aria-live="polite" className="m-0 min-h-0 text-[13px] text-danger empty:hidden">
+        {undo.error}
+      </p>
+    </>
+  );
+}
 
 /** The line after an End day: what passed and how many limits came back. */
 function endDayNotice(r: EndDayResult): string {
@@ -238,6 +282,7 @@ export function CampaignDay({ campaignId, readOnly = false }: { campaignId: Id<"
   const calendar = useQuery(api.campaignTime.calendar, { campaignId });
   const endDay = useIntent(api.campaignTime.endDay);
   const [notice, setNotice] = useState<string | null>(null);
+  const [lastEnd, setLastEnd] = useState<Id<"actionLog"> | null>(null);
   if (calendar === undefined) return <div className="h-[86px]" aria-busy="true" />;
   return (
     <section aria-label="Campaign day" className="flex flex-col items-center gap-2 self-center" data-testid="campaign-day">
@@ -256,7 +301,9 @@ export function CampaignDay({ campaignId, readOnly = false }: { campaignId: Id<"
           data-testid="end-day"
           onClick={() =>
             void endDay.fire({ campaignId }).then((r) => {
-              if (r) setNotice(endDayNotice(r));
+              if (!r) return;
+              setNotice(endDayNotice(r));
+              setLastEnd(r.entryId);
             })
           }
         >
@@ -266,6 +313,15 @@ export function CampaignDay({ campaignId, readOnly = false }: { campaignId: Id<"
       <p role="status" aria-live="polite" className="m-0 min-h-0 text-[13px] text-[#c9d2cf] empty:hidden" data-testid="end-day-notice">
         {notice}
       </p>
+      {lastEnd !== null && !readOnly ? (
+        <UndoEndDay
+          entryId={lastEnd}
+          onUndone={() => {
+            setLastEnd(null);
+            setNotice("End day undone.");
+          }}
+        />
+      ) : null}
       <p role="status" aria-live="polite" className="m-0 min-h-0 text-[13px] text-danger empty:hidden">
         {endDay.error}
       </p>

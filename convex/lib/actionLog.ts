@@ -19,6 +19,9 @@
  *   HP; U1); everything else is public.
  * - A combat action passes `adversaryBefore` (the instances before it, on its GM row); undo restores them (U4) unless an
  *   instance changed after the group's newest row (UNDO_STALE), and declines the group's open Minion offer.
+ * - End day / a Witherwild day jump forward passes `timeChange` (the calendar before and after, CT2, dcm-jq4b) on its
+ *   campaign row; undo moves the calendar (and the time of day End day reset) back while it still stands at `after`
+ *   (the latest day's end). Undoing an older one gives back its uses only, with a feed line (user answer 2026-11-01).
  *
  * ```ts
  * const groupId = newGroupId();
@@ -29,6 +32,7 @@
  * });
  * ```
  */
+import { formatCalendarDay } from "../../src/lib/domain/campaign-time/index";
 import { appError } from "../../src/lib/errors/app-error";
 import type { CharacterSheetInput } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -37,8 +41,9 @@ import { assertOneActive, readSheet, storedSheet } from "./characterSheet";
 import { closeRequest, declineGroupOffers, openRequests } from "./combatRequests";
 import { revertTicks } from "./countdownTicks";
 import { revertFear } from "./fear";
+import { recordHistory } from "../tables/history";
 import { campaignAccess } from "./permissions";
-import type { ActionKind, AdversaryBefore, StoredRoll, Visibility } from "./validators/actionLog";
+import type { ActionKind, AdversaryBefore, CampaignTimeSnapshot, StoredRoll, TimeChange, Visibility } from "./validators/actionLog";
 
 /** The longest feed line; longer summaries are cut. */
 export const SUMMARY_MAX = 300;
@@ -69,6 +74,8 @@ export type LogEntry = {
   fearDelta?: number;
   /** An action roll with Hope: whether it gave the Hope (`rolls.storeSlayerDie` takes it back). */
   hopeGained?: boolean;
+  /** End day / a day jump forward (CT2): the calendar before and after, on the group's campaign row. */
+  timeChange?: TimeChange;
   undoable: boolean;
 };
 
@@ -169,6 +176,43 @@ async function declineGroupHits(ctx: MutationCtx, campaignId: Id<"campaigns">, g
   for (const r of await openRequests(ctx, campaignId)) {
     if (r.payload.kind === "incomingHit" && r.payload.groupId === groupId) await closeRequest(ctx, r._id, "declined", by);
   }
+}
+
+const sameDay = (a: CampaignTimeSnapshot, b: CampaignTimeSnapshot) => a.week === b.week && a.cycle === b.cycle && a.cycleDay === b.cycleDay;
+
+/**
+ * The calendar half of undoing an End day / a day jump (CT2, dcm-jq4b; user answer 2026-11-01). While the campaign still
+ * stands on the day the action reached (`after`: no later day has passed), the calendar goes back to `before` (recorded
+ * in `history` as every time change is) and the time of day End day reset comes back. Otherwise a later day stands: the
+ * group's uses come back (the caller restores them) and the calendar stays, with a public feed line saying so.
+ */
+async function restoreTime(ctx: MutationCtx, user: Doc<"users">, row: Doc<"actionLog">, time: TimeChange): Promise<void> {
+  const current = await ctx.db
+    .query("campaignTime")
+    .withIndex("by_campaign", (q) => q.eq("campaignId", row.campaignId))
+    .unique();
+  if (current !== null && sameDay(current, time.after)) {
+    const before = { week: time.before.week, cycle: time.before.cycle, cycleDay: time.before.cycleDay };
+    await ctx.db.patch("campaignTime", current._id, before);
+    await recordHistory(ctx, user._id, {
+      campaignId: row.campaignId,
+      kind: "campaignTime",
+      action: "undoEndDay",
+      before: { week: current.week, cycle: current.cycle, cycleDay: current.cycleDay },
+      after: before,
+    });
+    if (time.timeOfDayBefore !== undefined) await ctx.db.patch("campaigns", row.campaignId, { timeOfDay: time.timeOfDayBefore });
+    return;
+  }
+  const stands = current === null ? "" : `; the calendar stays on ${formatCalendarDay(current.week, current.cycleDay)}`;
+  await logAction(ctx, {
+    campaignId: row.campaignId,
+    actorId: user._id,
+    kind: "session",
+    visibility: "public",
+    summary: `End of ${formatCalendarDay(time.before.week, time.before.cycleDay)} undone: its uses are back${stands} (a later day has passed)`,
+    undoable: false,
+  });
 }
 
 /**
@@ -290,5 +334,9 @@ export async function undoEntry(
   );
 
   for (const r of group) await ctx.db.patch("actionLog", r._id, { undoneAt: now, undoneBy: user._id });
+
+  // CT2: an End day / day jump moves the calendar back when it is the latest (after marking, so its feed line is newer).
+  const timeRow = group.find((r) => r.timeChange !== undefined);
+  if (timeRow?.timeChange !== undefined) await restoreTime(ctx, user, timeRow, timeRow.timeChange);
   return { undone: group.map((r) => r._id), fearReverted };
 }

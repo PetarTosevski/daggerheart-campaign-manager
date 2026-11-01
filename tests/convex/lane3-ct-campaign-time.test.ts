@@ -91,10 +91,13 @@ describe("campaign days and weeks for every frame", () => {
     expect(await usesOf(w, w.characterB)).toEqual(["daily"]);
   });
 
-  it("writes no log rows when nothing ends", async () => {
+  // CT2 (dcm-jq4b, user answer 2026-10-31 Q4): End day always writes its campaign row (the day itself is undoable).
+  it("writes only the campaign row when nothing ends", async () => {
     const w = await buildWorld({ frameId: "beast-feast" });
-    expect(await endDay(w)).toMatchObject({ ended: 0, entryId: null });
-    expect(await w.t.run((ctx) => ctx.db.query("actionLog").collect())).toEqual([]);
+    expect(await endDay(w)).toMatchObject({ ended: 0 });
+    const rows = await w.t.run((ctx) => ctx.db.query("actionLog").collect());
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.characterId).toBeUndefined();
   });
 
   it("replays a retried End day", async () => {
@@ -125,8 +128,8 @@ describe("campaign days and weeks for every frame", () => {
     expect(await keys()).toEqual(["b", "c"]);
     await w.as("gm").mutation(api.actionLog.undo, { entryId: entryId!, idempotencyKey: key() });
     expect(await keys()).toEqual(["a", "b", "c"]);
-    // The undo gave the use back but not the day (still day 2): five End days reach day 7, the sixth passes the week.
-    for (let day = 3; day <= 7; day++) await endDay(w);
+    // CT2 (dcm-jq4b): the undo gave the use back and the day (day 1 again): six End days reach day 7, the seventh passes the week.
+    for (let day = 2; day <= 7; day++) await endDay(w);
     expect(await keys()).toEqual(["b", "c"]);
     await endDay(w);
     expect(await keys()).toEqual(["c"]);

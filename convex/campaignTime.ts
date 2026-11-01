@@ -7,7 +7,9 @@
  *   entries on the instances of running encounters); after day 7 a week passes and weekly uses end too ("week");
  * - `expireParty` is shared with the GM turn's end (`encounterTracking.endGmTurn` fires "gmTurn").
  * Sheet and instance changes are one undoable `actionLog` group (kind `session`, like the scene end); the time change
- * itself is recorded in `history` (recordHistory), as every time change is.
+ * itself is recorded in `history` (recordHistory), as every time change is. Since CT2 (dcm-jq4b) End day and a day-icon
+ * jump forward always write the group's campaign row with the calendar move (`timeChange`), so undoing the latest one
+ * moves the day (and End day's time of day) back too; undoing an older one gives back its uses only (`undoEntry`).
  */
 import { v } from "convex/values";
 
@@ -29,7 +31,7 @@ import { MAX_CHARACTERS_PER_CAMPAIGN, readSheet, saveSheet } from "./lib/charact
 import { MAX_INSTANCES } from "./lib/encounters";
 import { campaignQuery, keyedGmMutation } from "./lib/functions";
 import { applyRule, assertMechanicEnabled } from "./lib/mechanics";
-import type { AdversaryBefore } from "./lib/validators/actionLog";
+import type { AdversaryBefore, TimeChange } from "./lib/validators/actionLog";
 import type { InstanceFeatureUse } from "./lib/validators/encounters";
 import { recordHistory } from "./tables/history";
 
@@ -128,11 +130,12 @@ export const setDay = keyedGmMutation({
       const next = applyRule("TIME_RULE", RangeError, () => withCycleDay(current, cycleDay));
       const after = await changeTime(ctx, row, "setDay", next);
       // User answer 2026-10-31 (CT Q3): a jump forward by N days counts as N ended days (within the week, so once-per-day
-      // uses end; a week only passes through End day on day 7). A jump back ends nothing.
+      // uses end; a week only passes through End day on day 7). A jump back ends nothing. CT2: the jump forward is
+      // undoable with its uses (its campaign row carries the calendar move).
       const from = current.currentCycleDay;
       if (next.currentCycleDay > from) {
         const label = next.currentCycleDay - from === 1 ? `Day ${from} ended` : `Days ${from}-${next.currentCycleDay - 1} ended`;
-        await expireParty(ctx, ctx.campaign, ctx.user._id, "day", label);
+        await expireParty(ctx, ctx.campaign, ctx.user._id, "day", label, { before: toView(current), after });
       }
       return after;
     });
@@ -159,7 +162,7 @@ const RUNNING_MAX = 10;
 export type PartyExpiry = {
   /** Feature uses ended across the party and the running encounters' instances. */
   ended: number;
-  /** The campaign row of the undo group, or null when nothing ended. */
+  /** The campaign row of the undo group, or null when nothing ended (and no `time` was passed). */
   entryId: Id<"actionLog"> | null;
 };
 
@@ -188,7 +191,9 @@ async function instanceEnds(ctx: MutationCtx, campaignId: Id<"campaigns">, until
 /**
  * Ends the party's feature uses of a period (`expire(sheet, event)` for every active PC) and, for a day or a week, the
  * running encounters' instance uses of that period. One undoable `actionLog` group: a row per changed PC (`before`) and
- * a campaign row `summary` carrying the instances' `adversaryBefore`. Nothing to end writes nothing.
+ * a campaign row `summary` carrying the instances' `adversaryBefore`. Nothing to end writes nothing, unless `time` (the
+ * calendar move of End day / a day jump, CT2) is passed: then the campaign row is always written and carries it, so the
+ * day itself can be undone.
  */
 export async function expireParty(
   ctx: MutationCtx,
@@ -196,6 +201,7 @@ export async function expireParty(
   actorId: Id<"users">,
   event: PeriodEnd,
   summary: string,
+  time?: TimeChange,
 ): Promise<PartyExpiry> {
   const campaignId = campaign._id;
   const characters = await ctx.db
@@ -217,7 +223,7 @@ export async function expireParty(
     });
   if (sheets.length > PARTY_MAX) throw appError("INVALID", `At most ${PARTY_MAX} characters can be updated at once; remove some from the campaign.`);
   const instances = await instanceEnds(ctx, campaignId, INSTANCE_UNTIL[event]);
-  if (sheets.length === 0 && instances.length === 0) return { ended: 0, entryId: null };
+  if (sheets.length === 0 && instances.length === 0 && time === undefined) return { ended: 0, entryId: null };
 
   const groupId = newGroupId();
   const now = Date.now();
@@ -243,9 +249,10 @@ export async function expireParty(
     actorId,
     kind: "session",
     visibility: "public",
-    summary: `${summary}; ${ended} limit${ended === 1 ? "" : "s"} refreshed`,
+    summary: ended === 0 ? summary : `${summary}; ${ended} limit${ended === 1 ? "" : "s"} refreshed`,
     groupId,
     ...(adversaryBefore.length > 0 ? { adversaryBefore } : {}),
+    ...(time !== undefined ? { timeChange: time } : {}),
     undoable: true,
   });
   return { ended, entryId };
@@ -292,11 +299,13 @@ export const endDay = keyedGmMutation({
       const { next, newWeek } = passDay(current, cycles);
       const after = await changeTime(ctx, row, "endDay", next);
       // User answer 2026-10-31 (CT Q2): a new day starts in daylight. In the Witherwild the time phase sets the light.
-      if (!cycles && (ctx.campaign.timeOfDay ?? "day") !== "day") {
-        await ctx.db.patch("campaigns", ctx.campaign._id, { timeOfDay: "day" });
-      }
+      const timeOfDayBefore = ctx.campaign.timeOfDay ?? "day";
+      const resetLight = !cycles && timeOfDayBefore !== "day";
+      if (resetLight) await ctx.db.patch("campaigns", ctx.campaign._id, { timeOfDay: "day" });
       const label = newWeek ? `Week ${current.currentWeek} ended` : `Day ${current.currentCycleDay} ended`;
-      const { ended, entryId } = await expireParty(ctx, ctx.campaign, ctx.user._id, newWeek ? "week" : "day", label);
+      // CT2 (dcm-jq4b): the group's campaign row always carries the calendar move, so undo can move the day back.
+      const time: TimeChange = { before: toView(current), after, ...(resetLight ? { timeOfDayBefore } : {}) };
+      const { ended, entryId } = await expireParty(ctx, ctx.campaign, ctx.user._id, newWeek ? "week" : "day", label, time);
       return { week: after.week, day: after.cycleDay, cycle: after.cycle, newWeek, ended, entryId };
     });
   },
