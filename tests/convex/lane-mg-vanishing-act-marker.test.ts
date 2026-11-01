@@ -63,7 +63,12 @@ async function usedBeforeDeploy(r: Rogue): Promise<Effect[]> {
   expect(conditionSources(used, "cloaked")).toEqual([VANISHING_ACT]);
   await r.edit((s) => ({ effects: s.effects.filter((e) => e.text !== "cloaked") }));
   expect(conditionSources(await r.sheet(), "cloaked")).toEqual([]);
-  return used.effects;
+  // Plan lanes-2 E8.4 (dcm-lztq): a use now records its caster; a use from before the deploy did not (the migration
+  // writes the marker without one, E6.4's sheetEffectCaster backfill adds it).
+  return used.effects.map(({ casterId: _casterId, ...e }) => {
+    void _casterId;
+    return e;
+  });
 }
 
 /** Runs the migration and expects the stored sheet unchanged. */

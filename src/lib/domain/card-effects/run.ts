@@ -174,6 +174,20 @@ export interface ActorState extends Combatant {
   readonly stats?: MarkedTracks["stats"];
   /** dcm-b9hc (CB p.40: "Choose whether they deal physical or magic damage"): the companion's damage type; default physical. */
   readonly companionDamageType?: DamageType;
+  /**
+   * Plan lanes-2 E8.4 (dcm-7l0g): limited rerolls of held dice the actor holds, applied when any use spends dice of that
+   * kind (Weapon Specialist, CB p.48: the Slayer Dice's 1s once per long rest). Spent: `key` is in `featureUses`.
+   */
+  readonly heldRerolls?: readonly HeldRerollGrant[];
+}
+
+/** A once-per reroll of held dice (`ActorState.heldRerolls`): the dice of kind `die` showing `atMost` or less. */
+export interface HeldRerollGrant {
+  readonly die: HeldDieKind;
+  readonly atMost: number;
+  /** The `featureUses` key the reroll spends, and until when. */
+  readonly key: string;
+  readonly until: FeatureUse["until"];
 }
 
 /** A held die as the runner spends it: `value` when it was rolled on receipt (Prayer Dice), else it is rolled when spent. */
@@ -1058,7 +1072,24 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     const picks = context.heldDicePicks ?? [];
     const ofKind = held.filter((d) => d.kind === pool);
     const dice = [...ofKind.filter((d) => picks.includes(d.id)), ...ofKind.filter((d) => !picks.includes(d.id))].slice(0, c.amount);
-    const values = dice.map((d) => d.value ?? rng(d.sides));
+    let values = dice.map((d) => d.value ?? rng(d.sides));
+    // Plan lanes-2 E8.4 (dcm-7l0g, dcm-40rt; Weapon Specialist, CB p.48: "once per long rest when you roll your Slayer
+    // Dice, reroll any 1s"): an unspent `heldRerolls` grant of this kind rerolls the low dice just rolled, once each, and
+    // spends its key (the dice box's own `WEAPON_SPECIALIST_KEY`), whichever use spent the dice (Slayer's own rider).
+    for (const g of actor.heldRerolls ?? []) {
+      if (g.die !== pool || actor.featureUses.some((u) => u.key === g.key) || !values.some((n) => n <= g.atMost)) continue;
+      const before: number[] = [];
+      const after: number[] = [];
+      values = values.map((n, i) => {
+        if (n > g.atMost) return n;
+        const next = rng(dice[i]!.sides);
+        before.push(n);
+        after.push(next);
+        return next;
+      });
+      actor = { ...actor, featureUses: [...actor.featureUses, { key: g.key, until: g.until }] };
+      steps.push({ kind: "heldReroll", die: pool, before, after });
+    }
     const ids = new Set(dice.map((d) => d.id));
     actor = { ...actor, heldDice: held.filter((d) => !ids.has(d.id)) };
     spent.heldDie = (spent.heldDie ?? 0) + values.reduce((s, n) => s + n, 0);

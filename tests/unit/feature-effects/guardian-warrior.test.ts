@@ -413,7 +413,8 @@ describe("Call of the Slayer (CB p.48)", () => {
     const ws = "subclass:call-of-the-slayer:weapon-specialist";
     const plan = ok(ws, "slayer-ones", ctx(actorOf(warrior), []));
     expect(ofKind(plan, "prompt").map((p) => p.prompt)).toEqual(["manual"]);
-    expect(plan.limit).toEqual({ key: "feat:subclass:call-of-the-slayer:weapon-specialist:slayer-ones", until: "longRest", consumed: true });
+    // Plan lanes-2 E8.4 (dcm-40rt): the limit shares the dice box's key, so one reroll per long rest across every path.
+    expect(plan.limit).toEqual({ key: "weaponSpecialistReroll", until: "longRest", consumed: true });
   });
 });
 

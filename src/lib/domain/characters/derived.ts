@@ -6,6 +6,7 @@ import { lunarBonuses } from "../session-features/lunar";
 import type { CharacterSheet } from "../../validation/characters";
 import type { TraitId } from "../../srd/types";
 import { passiveMods, type PassiveSheet, type PassiveState } from "../feature-effects/passives";
+import { permanentThresholds } from "../level-up/on-choose";
 import { damageThresholds, equipmentModifiers, type Thresholds } from "./index";
 
 type SubclassBonus = { thresholds?: number; severe?: number; evasion?: number };
@@ -91,11 +92,18 @@ export function withPassiveTraits<T extends Pick<CharacterSheet, "traits"> & Sub
 
 /**
  * Damage thresholds: armor base + level (CB 18, 111) + the passive features' bonuses (Unwavering, Shell, Stoneskin, Rugged,
- * ...; the Severe threshold alone for Ascendant and Rugged) + a Full moon die (+3 to both, HF 17).
+ * ...; the Severe threshold alone for Ascendant and Rugged) + a Full moon die (+3 to both, HF 17) + the permanent bonuses
+ * of chosen cards (plan lanes-2 E8.4, dcm-u9pv: Vitality's "+2 bonus to your damage thresholds", CB p.330, recorded in
+ * `slotBonuses` by level-up/on-choose.ts).
  */
-export function derivedThresholds(sheet: Pick<CharacterSheet, "level" | "armorId"> & SubclassFields & MoonFields, scope?: FeatureScope, state: PassiveState = {}): Thresholds {
+export function derivedThresholds(
+  sheet: Pick<CharacterSheet, "level" | "armorId"> & SubclassFields & MoonFields & Partial<Pick<CharacterSheet, "slotBonuses">>,
+  scope?: FeatureScope,
+  state: PassiveState = {},
+): Thresholds {
   const armor = sheet.armorId ? getArmor(sheet.armorId) : undefined;
   const passives = passiveMods(sheet, state, ownedScope(scope));
-  const t = damageThresholds(sheet.level, armor?.baseThresholds ?? null, passives.majorThreshold + moon(sheet, scope).thresholds);
-  return { major: t.major, severe: t.severe + (passives.severeThreshold - passives.majorThreshold) };
+  const chosen = permanentThresholds(sheet);
+  const t = damageThresholds(sheet.level, armor?.baseThresholds ?? null, passives.majorThreshold + moon(sheet, scope).thresholds + chosen.major);
+  return { major: t.major, severe: t.severe + (passives.severeThreshold - passives.majorThreshold) + (chosen.severe - chosen.major) };
 }

@@ -176,34 +176,25 @@ function countChoiceIds(use: CardUse): Set<string> {
   return new Set(countChoices(use, {}).map((c) => c.id));
 }
 
-/** Whether a cost's amount reads one of `ids` (`{kind: "chosen", choice}` anywhere inside it). */
-function readsChoice(cost: Cost, ids: ReadonlySet<string>): boolean {
-  const walk = (v: unknown): boolean => {
-    if (Array.isArray(v)) return v.some(walk);
-    if (v === null || typeof v !== "object") return false;
-    const o = v as Record<string, unknown>;
-    if (o.kind === "chosen" && typeof o.choice === "string" && ids.has(o.choice)) return true;
-    return Object.values(o).some(walk);
-  };
-  return walk(cost);
-}
-
 /**
  * dcm-atiu (Otherworldly Ire, HF p.15: "spend any number of Favor to roll that many Patron Dice"; user answer 2026-10-31:
- * the Favor is paid at the roll, the player cannot back out): the use's costs whose amount reads a number its rolled
- * count reads. `rollCount` pays them; the use skips them (`withoutRollCosts`). Empty for any other use.
+ * the Favor is paid at the roll, the player cannot back out). Plan lanes-2 E8.4 (dcm-szfg, user answer 2026-10-31: ALL
+ * the use's costs are paid at the roll): once the rolled count reads a number the player chose, every cost of the use
+ * is paid by `rollCount`, none at resolution; the use skips them (`withoutRollCosts`). Empty for any other use (Warden's
+ * Protection's fixed 1d4 pays with the use).
  */
 export function paidAtRoll(use: CardUse): Cost[] {
   if (!isRolledFirst(use)) return [];
-  const ids = countChoiceIds(use);
-  return ids.size === 0 ? [] : (use.costs ?? []).filter((c) => readsChoice(c, ids));
+  return countChoiceIds(use).size === 0 ? [] : [...(use.costs ?? [])];
 }
 
 /** The use without the costs `rollCount` paid (`paidAtRoll`); the same object when there are none. */
 export function withoutRollCosts(use: CardUse): CardUse {
   const paid = paidAtRoll(use);
   if (paid.length === 0) return use;
-  return { ...use, costs: (use.costs ?? []).filter((c) => !paid.includes(c)) };
+  const { costs: _costs, ...rest } = use;
+  void _costs;
+  return rest;
 }
 
 /** The fixed or chosen amount of a cost paid at the roll (other number kinds are not read here: INVALID). */
@@ -215,7 +206,7 @@ function rollCostAmount(cost: Cost, choices: Readonly<Record<string, number>>): 
   throw appError("INVALID", "That cost can't be paid at the roll.");
 }
 
-/** The sheet with the roll's costs paid: Favor, Focus, Hope or Stress. INVALID for another kind. */
+/** The sheet with the roll's costs paid: Favor, Focus, Hope, Stress or Hit Points. INVALID for another kind. */
 export function payRollCosts(sheet: CharacterSheet, costs: readonly Cost[], choices: Readonly<Record<string, number>>): CharacterSheet {
   let out = sheet;
   for (const cost of costs) {
@@ -228,6 +219,7 @@ export function payRollCosts(sheet: CharacterSheet, costs: readonly Cost[], choi
       out = { ...out, classState: { ...out.classState, martial: { ...out.classState.martial, focus: Math.max(0, out.classState.martial.focus - n) } } };
     } else if (cost.kind === "hope") out = { ...out, hope: Math.max(0, out.hope - n) };
     else if (cost.kind === "stress") out = { ...out, stress: Math.min(out.stressMax, out.stress + n) };
+    else if (cost.kind === "hp") out = { ...out, hp: Math.min(out.hpMax, out.hp + n) };
     else throw appError("INVALID", "That cost can't be paid at the roll.");
   }
   return out;
@@ -238,7 +230,7 @@ function rollCostWords(costs: readonly Cost[], choices: Readonly<Record<string, 
   const words = costs.flatMap((c) => {
     const n = rollCostAmount(c, choices);
     if (n <= 0) return [];
-    const what = c.kind === "tokens" ? (c.pool === "focus" ? "Focus" : "Favor") : c.kind === "hope" ? "Hope" : "Stress";
+    const what = c.kind === "tokens" ? (c.pool === "focus" ? "Focus" : "Favor") : c.kind === "hope" ? "Hope" : c.kind === "hp" ? "Hit Point" + (n === 1 ? "" : "s") : "Stress";
     return [`${n} ${what}`];
   });
   return words.join(" and ") || "nothing";

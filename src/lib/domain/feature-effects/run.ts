@@ -44,9 +44,20 @@ import { createDelegator, delegatedExhaustion, heldDiceState } from "./delegate"
 import { featureKey } from "./ids";
 import type { FeatureEffect } from "./types";
 import { applyUpgrades, upgradedDieSides, type Holdings } from "./upgrades";
+import { holdsWeaponSpecialist } from "../session-features/holders";
+import { WEAPON_SPECIALIST_KEY } from "../session-features/slayer";
 
-/** The `featureUses` key of a feature's limit: `feat:<featureId>[:<useId>][:<targetId>]` (no `:main`). */
+/** Weapon Specialist (Call of the Slayer specialization, CB p.48) and its once-per-long-rest reroll of Slayer 1s. */
+export const WEAPON_SPECIALIST_FEATURE = "subclass:call-of-the-slayer:weapon-specialist";
+export const WEAPON_SPECIALIST_REROLL_USE = "slayer-ones";
+
+/**
+ * The `featureUses` key of a feature's limit: `feat:<featureId>[:<useId>][:<targetId>]` (no `:main`). Plan lanes-2 E8.4
+ * (dcm-40rt): Weapon Specialist's `slayer-ones` use spends the dice box's own key (`WEAPON_SPECIALIST_KEY`), so the dice
+ * box, a map attack, Slayer's rider and the use share one reroll per long rest.
+ */
 export function featureLimitKey(featureIdValue: string, useId?: string, targetId?: string): string {
+  if (featureIdValue === WEAPON_SPECIALIST_FEATURE && useId === WEAPON_SPECIALIST_REROLL_USE && targetId === undefined) return WEAPON_SPECIALIST_KEY;
   const base = featureKey(featureIdValue, useId === undefined || useId === "main" ? undefined : useId);
   return targetId ? `${base}:${targetId}` : base;
 }
@@ -217,7 +228,7 @@ export function flagsOf(mods: readonly { kind: string; flag?: string }[]): strin
  * held dice, and the class dice sizes for `sidesOf` (Rally d6 / d8 from level 5, CB p.28; Prayer d4, CB p.44; Patron d6 /
  * d8, HF p.14; Slayer d6, CB p.48; the Combo die, HF p.10; the Unstoppable die, CB p.36).
  */
-export function actorExtras(sheet: CharacterSheet): Pick<ActorState, "favor" | "focus" | "heldDice" | "dieSides"> {
+export function actorExtras(sheet: CharacterSheet): Pick<ActorState, "favor" | "focus" | "heldDice" | "dieSides" | "heldRerolls"> {
   // Slayer Dice are a count of unrolled d6s (session-features); they spend as held dice of kind `slayer`.
   const slayer = sheet.sessionFeatures?.slayerDice ?? 0;
   const heldDice: HeldDieState[] = [...heldDiceState(sheet), ...Array.from({ length: slayer }, (_, i): HeldDieState => ({ id: `slayer-${i + 1}`, kind: "slayer", sides: 6 }))];
@@ -236,6 +247,8 @@ export function actorExtras(sheet: CharacterSheet): Pick<ActorState, "favor" | "
       combo: sheet.classState.comboDie ?? 4,
       unstoppable: sheet.classState.unstoppable?.max ?? unstoppableMax(sheet.level),
     },
+    // Plan lanes-2 E8.4 (dcm-7l0g): Weapon Specialist rerolls the 1s of the Slayer Dice any use spends, once per long rest.
+    ...(holdsWeaponSpecialist(sheet) ? { heldRerolls: [{ die: "slayer" as const, atMost: 1, key: WEAPON_SPECIALIST_KEY, until: "longRest" as const }] } : {}),
   };
 }
 

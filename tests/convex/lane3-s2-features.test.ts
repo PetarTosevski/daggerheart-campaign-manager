@@ -197,7 +197,7 @@ describe("lanes-2 S2: Venomancer poisons on map attacks (dcm-kkx, dcm-d1b, dcm-n
 });
 
 describe("lanes-2 S2: Contacts Everywhere's supply stays manual (dcm-vf7i)", () => {
-  it("an inventory gift step becomes a plan inventory step, which giftsOf doesn't read: switching would drop the gift", () => {
+  it("an inventory gift step becomes a plan inventory step, which giftsOf reads since lanes-2 E8.4 (dcm-h1y9): the switch is ready", () => {
     const real = featureEffect(CONTACTS)!;
     const supply = { kind: "inventory" as const, to: "self" as const, op: "giveGold" as const };
     const switched: FeatureEffect = {
@@ -212,7 +212,7 @@ describe("lanes-2 S2: Contacts Everywhere's supply stays manual (dcm-vf7i)", () 
     const result = runFeature(switched, "main", { actor: actorOf(sheet), gmFear: 2, rng: queueRng([]), options: { [CONTACT_CHOOSE]: ["supply"] } });
     if (!result.ok) throw new Error(`refused: ${result.reason} ${result.detail}`);
     expect(result.plan.steps.some((s) => s.kind === "inventory")).toBe(true);
-    expect(giftsOf(result.plan, () => true).byTarget.size).toBe(0);
+    expect(giftsOf(result.plan, () => true).byTarget.get("pc")).toEqual([{ kind: "gold", handfuls: 1 }]);
     // The real entry keeps the manual step (a prompt the table sees).
     const kept = runFeature(real, "main", { actor: actorOf(sheet), gmFear: 2, rng: queueRng([]), options: { [CONTACT_CHOOSE]: ["supply"] } });
     if (!kept.ok) throw new Error(`refused: ${kept.reason} ${kept.detail}`);

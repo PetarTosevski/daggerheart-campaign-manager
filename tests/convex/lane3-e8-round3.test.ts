@@ -57,9 +57,9 @@ const ire = {
 } as unknown as CardUse;
 
 describe("dcm-atiu / dcm-nw7h: Otherworldly Ire pays its Favor at the roll", () => {
-  it("only the costs that read the count's chosen number are paid at the roll; the use skips them", () => {
-    expect(paidAtRoll(ire)).toEqual([ire.costs![0]]);
-    expect(withoutRollCosts(ire).costs).toEqual([ire.costs![1]]);
+  it("every cost is paid at the roll (lanes-2 E8.4, dcm-szfg); the use skips them", () => {
+    expect(paidAtRoll(ire)).toEqual(ire.costs);
+    expect(withoutRollCosts(ire).costs).toBeUndefined();
     // Warden's Protection (a fixed 1d4 count) pays everything with the use.
     const warden = { ...ire, costs: [{ kind: "hope", amount: { kind: "fixed", value: 2 } }], targets: { side: "ally", range: "close", count: { kind: "upTo", rolledFirst: true, n: { kind: "dice", dice: { count: { kind: "fixed", value: 1 }, sides: 4 } } } } } as unknown as CardUse;
     expect(paidAtRoll(warden)).toEqual([]);

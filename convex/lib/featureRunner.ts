@@ -594,13 +594,38 @@ function giftOf(step: Step | undefined): Gift | null {
 }
 
 /**
- * The gifts of a plan's manual `inventory` steps (`giveGold` / `giveItem`, run.ts's fallback prompt) whose recipients are
- * all PCs (`isPc`): by recipient, the prompt texts they answer, and a note per recipient.
+ * The gift of a plan `inventory` step (run.ts's own step; plan lanes-2 E8.4, dcm-h1y9): `giveGold` its handfuls,
+ * `giveItem` its named item, `"gmPick"` for an item it doesn't name ("a mundane object that the situation requires", CB
+ * p.43: the GM's pick, a note). Null for any other step (`take`, `takeGold`, `damageWeapon` are adversary-side).
+ */
+function planGiftOf(step: RunPlan["steps"][number]): Gift | "gmPick" | null {
+  if (step.kind !== "inventory") return null;
+  if (step.op === "giveGold") {
+    const handfuls = Math.trunc(step.amount ?? 1);
+    return handfuls > 0 ? { kind: "gold", handfuls } : null;
+  }
+  if (step.op !== "giveItem") return null;
+  const name = step.text?.trim() ?? "";
+  return name === "" ? "gmPick" : { kind: "item", name: name.slice(0, 200) };
+}
+
+/**
+ * The gifts of a plan's `inventory` steps (`giveGold` / `giveItem`) whose recipients are PCs (`isPc`): run.ts's own plan
+ * steps (dcm-h1y9: Contacts Everywhere's supply as data) and its manual fallback prompts. By recipient, the prompt texts
+ * they answer, and a note per recipient (an unnamed item: the GM's pick).
  */
 export function giftsOf(plan: RunPlan, isPc: (id: string) => boolean): { byTarget: Map<string, Gift[]>; texts: Set<string>; notes: (name: (id: string) => string) => string[] } {
   const byTarget = new Map<string, Gift[]>();
   const texts = new Set<string>();
+  const gmPicks: string[] = [];
   for (const s of plan.steps) {
+    const planned = planGiftOf(s);
+    if (planned !== null && s.kind === "inventory") {
+      if (!isPc(s.targetId)) continue;
+      if (planned === "gmPick") gmPicks.push(s.targetId);
+      else byTarget.set(s.targetId, [...(byTarget.get(s.targetId) ?? []), planned]);
+      continue;
+    }
     if (s.kind !== "prompt" || s.prompt !== "manual") continue;
     const gift = giftOf(s.step);
     if (gift === null || s.targetIds.length === 0 || !s.targetIds.every(isPc)) continue;
@@ -608,7 +633,29 @@ export function giftsOf(plan: RunPlan, isPc: (id: string) => boolean): { byTarge
     for (const id of s.targetIds) byTarget.set(id, [...(byTarget.get(id) ?? []), gift]);
   }
   const words = (g: Gift) => (g.kind === "gold" ? `${g.handfuls} ${g.handfuls === 1 ? "handful" : "handfuls"} of gold` : g.name);
-  return { byTarget, texts, notes: (name) => [...byTarget].map(([id, list]) => `${name(id)}: ${list.map(words).join(", ")}`) };
+  return {
+    byTarget,
+    texts,
+    notes: (name) => [...[...byTarget].map(([id, list]) => `${name(id)}: ${list.map(words).join(", ")}`), ...gmPicks.map((id) => `${name(id)}: an item the GM picks`)],
+  };
+}
+
+/**
+ * Plan lanes-2 E8.4 (dcm-lztq, user 2026-10-31: a sheet effect records its caster): the effects this use wrote on a
+ * sheet (`after`'s effects of the feature that `before` did not hold) carry the using PC's character id as `casterId`
+ * (two Skykin's Eye of the Storm, CB heritage: each ends with its own caster). Effects already there are left as they
+ * are (another PC's cast of the same feature keeps its caster). The same sheet when nothing is new.
+ */
+export function withFeatureCaster(before: CharacterSheet, after: CharacterSheet, featureId: string, casterId: Id<"characters">): CharacterSheet {
+  const keyOf = (e: CharacterSheet["effects"][number]) => `${e.id}|${e.source}|${e.text}`;
+  const old = new Set(before.effects.map(keyOf));
+  let touched = false;
+  const effects = after.effects.map((e) => {
+    if (old.has(keyOf(e)) || e.casterId !== undefined || !ownsEffect(e, featureId)) return e;
+    touched = true;
+    return { ...e, casterId };
+  });
+  return touched ? { ...after, effects } : after;
 }
 
 /** The most handfuls of gold the sheet can still take before it would need a second chest (CB p.104), up to `cap`. */
@@ -864,6 +911,10 @@ export async function resolveFeatureUse(
     }
     if (passed.dropped > 0) notes.push(`${from} can't carry ${passed.dropped} handful${passed.dropped === 1 ? "" : "s"} of gold: dropped (CB p.104)`);
   }
+
+  // dcm-lztq: the effects this use wrote record the PC who used it.
+  next = withFeatureCaster(sheet, next, pick.featureId, character._id);
+  for (const [id, o] of others) others.set(id, { ...o, after: withFeatureCaster(o.before, o.after, pick.featureId, character._id) });
 
   const writes = instanceWrites(plan, built.creatures, pick.name);
   await writeInstances(ctx, writes);
