@@ -117,3 +117,7 @@ The user went to bed and asked: take a default on every open question; ask on re
 - E1.4b Bearer riders follow each condition's wording (before / after the roll), not all before (change -> bead).
 - E8.4 Weapon Specialist: ask the player before spending the once-per-long-rest reroll of 1s (change -> dcm-bdu7).
 - E8.4 Vitality: recall from the vault is blocked; it shows as Permanent (change -> dcm-o03c).
+- S3.4 Beguile (HF p.75): on each roll with Fear the player picks Stress or the attack (two-half popup); the attack opens a forced-attack request at the Gobstalker's chosen target (change -> bead).
+- S4.4 Immovable Object (CB p.230): only moves caused by an attack are shortened; Hold the Line and other non-attack moves keep their full range (change -> bead).
+- S2.4 Otherworldly Ire: a sheet action right after taking damage, enemies only (kept).
+- S1.4 Eclipse stays on the square where it was cast (kept). Through Your Eyes / Sensory Projection end on another spell card only (kept).
