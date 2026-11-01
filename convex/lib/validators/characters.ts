@@ -125,7 +125,9 @@ export const effectValidator = v.object({
       damage: v.optional(v.number()),
       trait: v.optional(v.object({ id: traitIdValidator, delta: v.number() })),
     }),
-  ),
+  ),  /** Who cast it / which instance it targets (V4, dcm-lztq, dcm-qxb6; zod effectSchema). */
+  casterId: v.optional(v.string()),
+  targetInstanceId: v.optional(v.string()),
 });
 
 export const heldDieValidator = v.object({
@@ -182,6 +184,8 @@ const d5SheetFields = {
   ),
   /** Tokens on domain cards (`cardTokensSchema`, plan combat-actions CA0): one `{cardId, count}` per card holding any. */
   cardTokens: v.optional(v.array(v.object({ cardId: v.string(), count: v.number() }))),
+  /** Named creature tokens on the PC (V4, dcm-wiwi; zod creatureTokens). */
+  creatureTokens: v.optional(v.array(v.object({ name: v.string(), count: v.number() }))),
 };
 
 /** The current sheet (`characterSheetSchema`, version 2) as queries return it. Keep in step with the zod schema. */

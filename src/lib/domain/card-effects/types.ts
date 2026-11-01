@@ -276,6 +276,11 @@ export interface RollEnd {
   targetsCreature?: boolean;
   result?: RollResult;
   weapon?: "primary" | "secondary";
+  /**
+   * Plan lanes-2, V4 (widened; dcm-hqk1): only a roll the player marks as this ends it (Reliable Backup, CB p.43: "When you
+   * make a Presence Roll in conversation"; the dice box's check box). Absent: every matching roll (as before).
+   */
+  situation?: string;
 }
 
 /**
@@ -1145,7 +1150,11 @@ export type Mod =
   /** "Any time you would be Hidden, you are instead Cloaked" (CB p.42; dcm-bhp). */
   | { kind: "replaceCondition"; from: StandardCondition; to: StandardCondition }
   /** A duality die of the bearer's rolls changes size (Your Struggle Is Pointless: d8 Hope Die; Battle Lust: d20 Fear Die; dcm-kti). */
-  | { kind: "dualityDie"; die: "hope" | "fear"; sides: DieSides }
+  /**
+   * Plan lanes-2, V4 (widened; dcm-hqk1): `situation`: only on rolls the player marks as this (Reliable Backup, CB p.43: "a
+   * d20 as your Hope Die" on "a Presence Roll in conversation"). Absent: every roll (as before).
+   */
+  | { kind: "dualityDie"; die: "hope" | "fear"; sides: DieSides; situation?: string }
   /**
    * The GM controls the bearer (Enthralled, HF p.92: "spotlight them … as if they were an adversary … using a d20";
    * Weredrake Curse, HF p.143: `asAdversary` names the adversary stat block; dcm-idz).
@@ -1472,6 +1481,11 @@ export type OutcomeStep =
       distribution?: "each" | "split";
       maxPer?: number;
       reduceWith?: "hope";
+      /**
+       * Plan lanes-2, V4 (widened; dcm-n7kt): the keyword of these forced HP (Fire Beam, HF p.96: "must mark 3 HP" from a
+       * beam of fire; Fireproof, HF p.22: "immune to damage from magical or mundane flame"). Absent: none (as before).
+       */
+      keyword?: DamageKeyword;
     })
   /**
    * "must mark a Stress"; a full track marks 1 HP instead (R5, CB p.92).

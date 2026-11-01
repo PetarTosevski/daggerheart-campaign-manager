@@ -1,5 +1,6 @@
 import { v, type Infer } from "convex/values";
 
+import type { DamageKeyword } from "../../../src/lib/domain/card-effects/types";
 import { rollValidator } from "./actionLog";
 import { conditionValidator, effectValidator, traitIdValidator } from "./characters";
 
@@ -74,6 +75,8 @@ export const combatRequestKindValidator = v.union(
   v.literal("serverMove"),
   v.literal("allyRoll"),
   v.literal("difficulty"),
+  v.literal("cloakPrompt"),
+  v.literal("forcedAttack"),
 );
 
 /** `open` until answered; `resolved` (approved / hit applied) or `declined` (the GM refused a sanction). */
@@ -111,6 +114,11 @@ export const sanctionRollOptionsValidator = v.object({
    * while it applies (the player fishing for a critical). Unset or `true`: on.
    */
   riseToTheChallenge: v.optional(v.boolean()),
+  /**
+   * Plan lanes-2, V4 (widened; dcm-1sk4, dcm-xbtw): the attack's ticked Spirit Weapon box (`attackRollFields.spiritWeapon`,
+   * convex/lib/combatActions.ts), so a held attack keeps it. Unset: not ticked.
+   */
+  spiritWeapon: v.optional(v.boolean()),
 });
 
 /** A player's pick for a card use (`NumberChoice` amounts, `choose` / `optional` option ids; card-effects/types.ts). */
@@ -175,6 +183,11 @@ export const sanctionActionValidator = v.union(
     targetTokenIds: v.array(v.id("combatTokens")),
     choices: v.array(cardChoiceValidator),
     roll: v.optional(sanctionRollOptionsValidator),
+    /**
+     * Plan lanes-2, V4 (widened; dcm-mcgj): the riders taken with the feature's roll (`useFeature`'s `riders`), replayed on
+     * approval as the card action's. At most `MAX_RIDERS_PER_ATTACK`. Absent: none sent (only automatic riders run).
+     */
+    riders: v.optional(v.array(riderValidator)),
     /**
      * Plan lanes-2, E2.3 (widened; dcm-6y00 (3)): the square a point area is placed on (`useFeature`'s `point`), so an
      * approved out-of-range use can place it. Absent: none picked (as before).
@@ -272,6 +285,33 @@ export const afterHitValidator = v.object({
   deathMove: v.boolean(),
 });
 
+/**
+ * Plan lanes-2, V4: a damage keyword (`DamageKeyword`, src/lib/domain/card-effects/types.ts: "fire"). Keep in step with
+ * the type (checked below).
+ */
+export const damageKeywordValidator = v.literal("fire");
+const damageKeywordInStep: [Infer<typeof damageKeywordValidator>] extends [DamageKeyword] ? ([DamageKeyword] extends [Infer<typeof damageKeywordValidator>] ? true : false) : false = true;
+void damageKeywordInStep;
+
+/**
+ * Plan lanes-2, V4 (widened; dcm-sk4r, user 2026-10-31): a hit with no known type or keyword on a PC whose resistance names
+ * a keyword (Fireproof, HF p.22: "immune to damage from magical or mundane flame") waits for the GM: "Was this hit
+ * fire?". `characterId` holds the resistance, `feature` is its printed name; `answer` is the GM's (`keywordAnswerValidator`):
+ * unset until answered, `true` the hit carries the keyword, `false` it doesn't. Stored here, not in `responses` (a GM
+ * answer, not a responder's choice).
+ */
+export const keywordAskValidator = v.object({
+  keyword: damageKeywordValidator,
+  characterId: v.id("characters"),
+  feature: v.string(),
+  answer: v.optional(v.boolean()),
+  /** The user who answered (the GM). */
+  answeredBy: v.optional(v.id("users")),
+});
+
+/** Plan lanes-2, V4 (dcm-sk4r): the GM's answer to a hit's `keywordAsk`: `carries` true, the hit carries `keyword`. */
+export const keywordAnswerValidator = v.object({ keyword: damageKeywordValidator, carries: v.boolean() });
+
 export const incomingHitPayloadValidator = v.object({
   schemaVersion: v.literal(1),
   kind: v.literal("incomingHit"),
@@ -300,6 +340,8 @@ export const incomingHitPayloadValidator = v.object({
   attackTotal: v.optional(v.number()),
   /** DA8 (widened): disadvantage this target puts on the roll beyond the whole roll's (DA1), for its forced rerolls. */
   attackDisadvantage: v.optional(v.number()),
+  /** Plan lanes-2, V4 (widened; dcm-sk4r): the GM's keyword question on this hit (`keywordAskValidator`). */
+  keywordAsk: v.optional(keywordAskValidator),
 });
 
 /** The most riders one hit carries. */
@@ -531,6 +573,40 @@ export const difficultyPayloadValidator = v.object({
   ask: difficultyAskValidator,
 });
 
+/**
+ * `cloakPrompt` (plan lanes-2, V4; dcm-vx5n, user 2026-10-31; CB p.42 Cloaked, CB p.99): a Cloaked PC's action roll that
+ * targets an enemy but is not an attack, waiting for the GM's "Does <name>'s Cloaked end?". Yes ends Cloaked in the use's
+ * undo group (`groupId`), no declines. `label` is the use's name ("Words of Discord"); `targetTokenIds` the enemies the
+ * use targets (at most 20). Closed when the use is undone.
+ */
+export const cloakPromptPayloadValidator = v.object({
+  schemaVersion: v.literal(1),
+  kind: v.literal("cloakPrompt"),
+  characterId: v.id("characters"),
+  /** The Cloaked PC's token on the map. */
+  tokenId: v.id("combatTokens"),
+  label: v.string(),
+  groupId: v.string(),
+  targetTokenIds: v.array(v.id("combatTokens")),
+});
+
+/**
+ * `forcedAttack` (plan lanes-2, V4; dcm-uxsd, user 2026-10-31): an adversary feature forces a PC to attack (Beguiled,
+ * HF p.75; Tentacle Rays). The player's request opens their Attack bar with `targetTokenIds` locked; the attack resolves
+ * the request in the forcing use's actionLog group (`groupId`). `instanceId` / `instanceLabel` are the forcing adversary
+ * ("Gobstalker"), `feature` the printed feature name. At most 20 targets.
+ */
+export const forcedAttackPayloadValidator = v.object({
+  schemaVersion: v.literal(1),
+  kind: v.literal("forcedAttack"),
+  characterId: v.id("characters"),
+  instanceId: v.id("encounterAdversaries"),
+  instanceLabel: v.string(),
+  feature: v.string(),
+  targetTokenIds: v.array(v.id("combatTokens")),
+  groupId: v.string(),
+});
+
 /** The payload of a `combatRequests` row; `kind` matches the row's `kind`. */
 export const combatRequestPayloadValidator = v.union(
   sanctionPayloadValidator,
@@ -543,6 +619,8 @@ export const combatRequestPayloadValidator = v.union(
   serverMovePayloadValidator,
   allyRollPayloadValidator,
   difficultyPayloadValidator,
+  cloakPromptPayloadValidator,
+  forcedAttackPayloadValidator,
 );
 
 /**
@@ -618,3 +696,7 @@ export type ServerMovePayload = Infer<typeof serverMovePayloadValidator>;
 export type AllyRollPayload = Infer<typeof allyRollPayloadValidator>;
 export type DifficultyPayload = Infer<typeof difficultyPayloadValidator>;
 export type DifficultyAsk = Infer<typeof difficultyAskValidator>;
+export type KeywordAsk = Infer<typeof keywordAskValidator>;
+export type KeywordAnswer = Infer<typeof keywordAnswerValidator>;
+export type CloakPromptPayload = Infer<typeof cloakPromptPayloadValidator>;
+export type ForcedAttackPayload = Infer<typeof forcedAttackPayloadValidator>;

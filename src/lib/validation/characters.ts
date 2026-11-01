@@ -149,6 +149,18 @@ export const effectSchema = z.object({
       trait: z.object({ id: z.enum(TRAIT_IDS), delta: modifier }).optional(),
     })
     .optional(),
+  /**
+   * Plan lanes-2, V4 (widened, no version bump; dcm-lztq): the character who made this effect, as a plain id string, so a
+   * caster-tied end ("until you take Severe damage", Eye of the Storm, HF p.23) ends only that caster's effects. Absent:
+   * the old single-holder guess (effects stored before it).
+   */
+  casterId: z.string().min(1).max(40).optional(),
+  /**
+   * Plan lanes-2, V4 (widened, no version bump; dcm-qxb6): the adversary instance this effect is about, as a plain id string
+   * (Marked for Death, HF p.8: "until the current adversary Marked for Death is defeated"), so its defeat ends only this
+   * effect. Absent: the instance's tag is the link (as before).
+   */
+  targetInstanceId: z.string().min(1).max(40).optional(),
 });
 
 export const heldDieSchema = z.object({
@@ -226,6 +238,16 @@ export const classStateSchema = z.object({
   martial: martialStateSchema.optional(),
 });
 
+/** The most token names one sheet keeps (`creatureTokens`; as an adversary instance's `MAX_CREATURE_TOKEN_KINDS`). */
+export const MAX_SHEET_CREATURE_TOKEN_KINDS = 10;
+
+/**
+ * Named tokens a feature put on a PC (plan lanes-2, V4, dcm-wiwi): "place a number of leechpole tokens on the target"
+ * (Burrowing Leechpoles, HF p.90), counted by name as an adversary instance's `creatureTokens`. An entry with no tokens
+ * left is dropped.
+ */
+export const sheetCreatureTokensSchema = z.object({ name: z.string().min(1).max(40), count: z.number().int().min(0).max(CARD_TOKENS_MAX) });
+
 /** The most Slayer Dice or Know the Tide tokens a sheet can hold: Proficiency and level both stop at 10. */
 export const SESSION_POOL_MAX = 10;
 
@@ -250,6 +272,7 @@ export type Effect = z.infer<typeof effectSchema>;
 export type HeldDie = z.infer<typeof heldDieSchema>;
 export type FeatureUse = z.infer<typeof featureUseSchema>;
 export type CardTokens = z.infer<typeof cardTokensSchema>;
+export type SheetCreatureTokens = z.infer<typeof sheetCreatureTokensSchema>;
 export type ClassState = z.infer<typeof classStateSchema>;
 export type SessionFeatures = z.infer<typeof sessionFeaturesSchema>;
 
@@ -324,6 +347,11 @@ export const characterSheetSchema = characterSheetV1Schema.extend({
   sessionFeatures: sessionFeaturesSchema.optional(),
   /** Tokens on domain cards, one entry per card holding any (plan combat-actions, CA0; optional, widened, no version bump). */
   cardTokens: z.array(cardTokensSchema).max(20).optional(),
+  /**
+   * Named tokens an adversary or a feature put on this character (plan lanes-2, V4, dcm-wiwi; optional, widened, no version
+   * bump). At most `MAX_SHEET_CREATURE_TOKEN_KINDS` names.
+   */
+  creatureTokens: z.array(sheetCreatureTokensSchema).max(MAX_SHEET_CREATURE_TOKEN_KINDS).optional(),
   /**
    * How the `pronouns` field is labelled for this character (dcm-bxp.35, F9): "Gender" when missing or "gender",
    * "Pronouns" when "pronouns". Label only; the text stays in `pronouns`. Optional (widened, no version bump).

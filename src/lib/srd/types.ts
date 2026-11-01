@@ -1,6 +1,8 @@
 // Shared types for the Daggerheart rules data (Core Rulebook + Hope & Fear).
 // Pure types: no framework imports, relative imports only (bundled into Convex).
 
+import type { DamageKeyword } from "../domain/card-effects/types";
+
 /** Which book a piece of content comes from, so campaigns can hide expansion content. */
 export type Source = "core" | "hope-and-fear";
 
@@ -258,6 +260,11 @@ export interface AdversaryDef {
     range: Range;
     /** Verbatim damage, e.g. "1d12+2 phy", "2 phy", "40 direct phy". */
     damage: string;
+    /**
+     * Plan lanes-2, V4 (widened; dcm-dztv): the damage keyword of the standard attack (Minor Fire Elemental's Elemental
+     * Blast, CB p.214; Redcap Candlemaker's Burning Candlestick, HF p.67). Absent: none.
+     */
+    keyword?: DamageKeyword;
   };
   experiences: readonly { name: string; value: number }[];
   features: readonly AdversaryFeature[];
