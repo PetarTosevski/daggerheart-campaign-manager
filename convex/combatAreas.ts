@@ -42,6 +42,8 @@ import { blockOf } from "./lib/adversaryFeatures";
 import { parseChoices } from "./lib/cardChoices";
 import { gmLines, instanceWrites, writeInstances } from "./lib/cardRows";
 import { actorSheetAfter, buildRun, instanceModsOn, runCard, sheetModsOn, tokenIdsOf, type UsePick } from "./lib/cardRunner";
+import type { CharacterSheet } from "../src/lib/validation/characters";
+import { FEATURE_KEY_PREFIX } from "../src/lib/domain/feature-effects/ids";
 import { readSheet, saveSheet } from "./lib/characterSheet";
 import type { AttackScene } from "./lib/combatActions";
 import { loadScene, viewOf } from "./lib/combatVision";
@@ -111,13 +113,63 @@ export function areaSpecOf(sourceId: string, useId: string | undefined, label: s
   return uses.flatMap((u) => areaSteps(u.steps)).find((a) => a.label === label);
 }
 
-/** The live areas on a map. */
-export async function activeAreasOnMap(ctx: QueryCtx, mapId: Id<"combatMaps">): Promise<Doc<"combatAreas">[]> {
+/** The map's rows still marked live, spent ones included (`placeArea` ends the old copy of a redrawn area through them). */
+async function liveAreaRows(ctx: QueryCtx, mapId: Id<"combatMaps">): Promise<Doc<"combatAreas">[]> {
   const rows = await ctx.db
     .query("combatAreas")
     .withIndex("by_map", (q) => q.eq("mapId", mapId))
     .take(MAX_MAP_AREAS);
   return rows.filter((a) => a.status === "active");
+}
+
+/**
+ * The live areas on a map. Plan lanes-2 E4.4 (dcm-ii4): an area whose spec ends on `tokensGone` is not live while its
+ * caster holds no tokens of its card or feature (Circle of Power, HF p.16: "This spell lasts until the last token is
+ * removed"), whichever path spent the last one (the caster's use, an ally's roll, an evaded attack, a hand edit of the
+ * sheet). Read, not written: undoing the spend gives the tokens and the area back. `combatCards.afterUse` and
+ * `endTokensGone` (cardRows) still end the row when the caster's own use spends the last token.
+ */
+export async function activeAreasOnMap(ctx: QueryCtx, mapId: Id<"combatMaps">): Promise<Doc<"combatAreas">[]> {
+  const rows = await liveAreaRows(ctx, mapId);
+  const spent = await spentAreaIds(ctx, rows);
+  return spent.size === 0 ? rows : rows.filter((a) => !spent.has(a._id));
+}
+
+/** The `cardTokens` key of an area's source: the card id for a card, `feat:<featureId>` for a feature (featureRunner). */
+export function areaTokenKey(sourceId: string): string {
+  return cardEffect(sourceId) !== undefined ? sourceId : `${FEATURE_KEY_PREFIX}${sourceId}`;
+}
+
+/** Whether the sheet holds no tokens under `key`. */
+export function tokensGoneOn(sheet: Pick<CharacterSheet, "cardTokens">, key: string): boolean {
+  return ((sheet.cardTokens ?? []).find((t) => t.cardId === key)?.count ?? 0) <= 0;
+}
+
+/**
+ * The ids of the rows whose spec ends on `tokensGone` and whose caster holds none of those tokens (dcm-ii4). One
+ * character read per caster with such an area; an unreadable or foreign sheet leaves its areas live.
+ */
+async function spentAreaIds(ctx: QueryCtx, rows: readonly Doc<"combatAreas">[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  const sheets = new Map<string, Pick<CharacterSheet, "cardTokens"> | null>();
+  for (const area of rows) {
+    if (!(areaSpecOf(area.featureId, area.useId, area.label)?.endsOn ?? []).includes("tokensGone")) continue;
+    if (!sheets.has(area.characterId)) {
+      const character = await ctx.db.get("characters", area.characterId);
+      let sheet: Pick<CharacterSheet, "cardTokens"> | null = null;
+      if (character !== null && character.campaignId === area.campaignId) {
+        try {
+          sheet = readSheet(character.sheet);
+        } catch {
+          sheet = null;
+        }
+      }
+      sheets.set(area.characterId, sheet);
+    }
+    const sheet = sheets.get(area.characterId);
+    if (sheet && tokensGoneOn(sheet, areaTokenKey(area.featureId))) out.add(area._id);
+  }
+  return out;
 }
 
 const asPoint = (p: readonly number[]): Point => [p[0] ?? 0, p[1] ?? 0];
@@ -187,7 +239,7 @@ export async function placeArea(ctx: MutationCtx, input: PlaceInput): Promise<Id
     centre = { kind: "square", x: token.x, y: token.y };
   }
   if (input.keepOld !== true) {
-    for (const old of await activeAreasOnMap(ctx, input.map._id)) {
+    for (const old of await liveAreaRows(ctx, input.map._id)) {
       if (old.characterId === input.characterId && old.featureId === input.sourceId && old.label === spec.label) await endArea(ctx, old);
     }
   }
@@ -590,6 +642,30 @@ export async function areasAfterMove(
 }
 
 /**
+ * Plan lanes-2 E4.4 (dcm-ii4): ends the map's live areas whose spec ends on `ownerLeavesArea` and whose caster's token now
+ * stands outside them or is off the map (Circle of Power, HF p.16: "This spell lasts until ... you exit the circle"). The
+ * mover's own step out is `areasAfterMove`'s; this catches the rest: a carried caster, a forced move (`forcedMove`), the
+ * caster's token taken off the map (`combatTokens.remove` / `clear`). A wall or a token-centred area that lost its token
+ * is left alone. One public feed row per ended area. Returns the ended areas' labels.
+ */
+export async function endAreasOwnerLeft(ctx: MutationCtx, input: { campaignId: Id<"campaigns">; mapId: Id<"combatMaps">; actorId: Id<"users"> }): Promise<string[]> {
+  const areas = (await liveAreaRows(ctx, input.mapId)).filter((a) => (areaSpecOf(a.featureId, a.useId, a.label)?.endsOn ?? []).includes("ownerLeavesArea"));
+  if (areas.length === 0) return [];
+  const tokens = await tokensOnMap(ctx, input.mapId);
+  const out: string[] = [];
+  for (const area of areas) {
+    const shape = areaShape(area, tokens);
+    if (shape === null || shape.shape === "wall") continue;
+    const owner = tokens.find((t) => t.ref.kind === "pc" && t.ref.characterId === area.characterId && t.duplicateOf === undefined);
+    if (owner !== undefined && inArea(owner, shape)) continue;
+    await endArea(ctx, area);
+    await logAction(ctx, { campaignId: input.campaignId, characterId: area.characterId, actorId: input.actorId, kind: "combat", visibility: "public", summary: `${area.label} ends: its caster left it`, undoable: false });
+    out.push(area.label);
+  }
+  return out;
+}
+
+/**
  * Plan lanes E4 (dcm-bpr): after an enemy token moved, the PCs it came within range of whose loadout holds a card with a
  * `whenEnemyEntersRange` use (Hold the Line, CB p.342: "If an adversary moves within Very Close range, they're pulled
  * into Melee range and Restrained") get a public feed row naming the card, so the player answers with it. Reads the PC
@@ -747,6 +823,8 @@ export async function forcedMove(
   const at = range === null ? { x: token.x, y: token.y } : reducedBy > 0 ? alongTo(token, target, range) : { x: input.to.x, y: input.to.y };
   const moved = at.x !== token.x || at.y !== token.y;
   if (moved) await ctx.db.patch("combatTokens", token._id, at);
+  // dcm-ii4: a caster forced out of their own Circle of Power has exited it.
+  if (moved && token.ref.kind === "pc") await endAreasOwnerLeft(ctx, { campaignId: input.campaignId, mapId: input.map._id, actorId: input.actorId });
   if (reducedBy > 0) await logAction(ctx, { campaignId: input.campaignId, actorId: input.actorId, kind: "combat", visibility: "gm", summary: `${input.label}: the move is ${reducedBy} range${reducedBy === 1 ? "" : "s"} shorter${moved ? "" : "; it stays"}`, undoable: false });
   return { ...at, reducedBy, moved };
 }

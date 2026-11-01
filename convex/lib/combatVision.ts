@@ -29,9 +29,11 @@ import { pcPortrait, type TokenView } from "../combatTokens";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { derivedTraits } from "../../src/lib/domain/characters/derived";
+import type { FeatureScope } from "../../src/lib/domain/class-features/types";
 import { withEffects } from "../../src/lib/domain/characters/effects";
 import { activeAreasOnMap, areaSightBlocks, viewerSeesThrough, type AreaSightBlock } from "../combatAreas";
 import { readSheet } from "./characterSheet";
+import { featureScope } from "./featureScope";
 import { adversaryArtSrc } from "./encounters";
 import { CELL_TILE_ROWS, MAX_MAP_H, objectsOnMap, tokensOnMap } from "./combatMaps";
 import { atLeast, permissionFor } from "./permissions";
@@ -125,6 +127,11 @@ export type Scene = {
   readonly areaBlocks: readonly AreaSightBlock[];
   /** The blocking grid without the named areas' discs (a viewer who sees through them); `prepared` when none. */
   readonly preparedWithout: (areaIds: ReadonlySet<string>) => PreparedMap;
+  /**
+   * Plan lanes-2 E4.4 (dcm-bxp.99.19.64): the campaign's feature scope (its frame's options), so a viewer's Instinct reads
+   * the passive features the rolls read (`withPassiveTraits(withEffects(sheet), featureScope(campaign))`). Absent: core.
+   */
+  readonly scope?: FeatureScope;
 };
 
 /**
@@ -260,6 +267,7 @@ export async function loadScene(ctx: QueryCtx, campaign: Doc<"campaigns">, map: 
     light,
     areaBlocks,
     preparedWithout,
+    scope: featureScope(campaign),
   };
 }
 
@@ -289,9 +297,9 @@ async function packSettingExtends(ctx: QueryCtx, map: Doc<"combatMaps">): Promis
  * The character's Instinct (R6) after effects and passive features (a Beastform's trait bonus, CB p.30; plan lanes E4,
  * dcm-bxp.99.19.64); an unreadable sheet counts as 0.
  */
-function instinctOf(character: Doc<"characters">): number {
+function instinctOf(character: Doc<"characters">, scope?: FeatureScope): number {
   try {
-    return derivedTraits(withEffects(readSheet(character.sheet))).instinct;
+    return derivedTraits(withEffects(readSheet(character.sheet)), scope).instinct;
   } catch {
     return 0;
   }
@@ -317,7 +325,7 @@ export type Viewer = { readonly index: number; readonly instinct: number; readon
 export function viewOf(scene: Scene, character: Doc<"characters">): Viewer | null {
   const index = tokenIndexOf(scene, character._id);
   if (index < 0) return null;
-  const instinct = instinctOf(character);
+  const instinct = instinctOf(character, scene.scope);
   const view = createView(
     preparedFor(scene, character._id),
     { token: scene.visionTokens[index]!, characterId: character._id, instinct },

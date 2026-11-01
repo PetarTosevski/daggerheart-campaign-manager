@@ -162,6 +162,15 @@ export const SIGHT_MODES = ["block", "cover", "none"] as const;
 export type SightMode = (typeof SIGHT_MODES)[number];
 export const sightModeValidator = literals(SIGHT_MODES);
 
+/**
+ * Per-object light override of a sprite object (dcm-bxp.84, dcm-klr8; sprite packs Q1: none / faint glow / torch /
+ * campfire, as `SPRITE_LIGHTS` in validators/spritePacks.ts, which imports this module, so the literals live here).
+ * Absent = the sprite's own light trait.
+ */
+export const OBJECT_LIGHTS = ["none", "faintglow", "torch", "campfire"] as const;
+export type ObjectLight = (typeof OBJECT_LIGHTS)[number];
+export const objectLightValidator = literals(OBJECT_LIGHTS);
+
 /** A map object's stored fields (`combatMapObjects`), one row each so one edit or light switch writes one row. */
 export const combatObjectFields = {
   mapId: v.id("combatMaps"),
@@ -195,6 +204,11 @@ export const combatObjectFields = {
    * sprite's kind is a light kind of the same reach) and `sight` stays the GM's override (D3).
    */
   sprite: v.optional(spriteRefValidator),
+  /**
+   * Plan lanes-2 E4.4 (dcm-bxp.84, widen only): sprite objects only, the GM's light override (`combatVision.setObjectLight`).
+   * Absent = the sprite's light trait. Read by `objectTraits` (vision, light switches) and the sprite painter's glow.
+   */
+  light: v.optional(objectLightValidator),
 };
 
 /**

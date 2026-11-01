@@ -22,7 +22,17 @@ export const CHARGE_FEATURE = "ancestry:firbolg:charge";
 export type ServerUse =
   | { kind: "count"; use: CardUse; name: string; range: string }
   | { kind: "charge"; use: CardUse; name: string }
-  | { kind: "area"; use: CardUse; name: string; area: AreaSpec };
+  | { kind: "area"; use: CardUse; name: string; area: AreaSpec; picks: AreaPicks };
+
+/**
+ * How many squares an area use picks (plan lanes-2 E4.4, AO follow-up): `one` centre, a `wall`'s two ends (Wall of Flame,
+ * CB p.332), or a `count` area's squares, one area each (Forest Sprites, CB p.339: "appear at points you choose"): a
+ * `fixed` number, or a number the player picks (`choice`: the use's choice id the count reads, sent as `n:<choice>`).
+ */
+export type AreaPicks = { kind: "one" } | { kind: "wall" } | { kind: "count"; fixed: number | null; choice: string | null };
+
+/** The most squares one use sends (the server's MAX_AREA_COUNT, convex/combatAreas.ts). */
+export const MAX_PICKED_SQUARES = 10;
 
 export const RANGE_LABEL: Record<string, string> = { melee: "Melee", veryClose: "Very Close", close: "Close", far: "Far", veryFar: "Very Far" };
 
@@ -46,7 +56,7 @@ export function areaStepsOf(steps: readonly Step[]): AreaSpec[] {
 /**
  * The area a use places on a square the player picks (plan lanes-2 AO, dcm-u2wx): its first `point`-centred circle
  * (Dark Cloud, CB p.42: "a point ... within Close range"), when the use names no targets (a targeted use needs the
- * general flow, SD7). Walls take two squares, which `useFeature` does not accept yet (wave-10 follow-up). Else null.
+ * general flow, SD7). Walls take two squares (`pickAreaOf`, which the drawer reads since plan lanes-2 E4.4). Else null.
  */
 export function pointAreaOf(use: CardUse): AreaSpec | null {
   if (use.targets !== undefined) return null;
@@ -67,14 +77,54 @@ export function areaUseLine(name: string, label: string, out: UseOutcome): strin
   return out.success ? `${rolled}${label} is on the map.${notes}` : `${rolled}${name} failed.${notes}`;
 }
 
+/**
+ * The area a use places on squares the player picks, and how many (plan lanes-2 E4.4): the first `point`-centred area
+ * step, walls and `count` areas included, when the use names no targets. Else null.
+ */
+export function pickAreaOf(use: CardUse): { area: AreaSpec; picks: AreaPicks } | null {
+  if (use.targets !== undefined) return null;
+  const area = areaStepsOf(use.steps).find((a) => a.centre === "point");
+  if (area === undefined) return null;
+  if (area.shape === "wall") return { area, picks: { kind: "wall" } };
+  const count = area.count;
+  if (count === undefined) return { area, picks: { kind: "one" } };
+  const fixed = count.kind === "fixed" ? Math.max(1, Math.min(MAX_PICKED_SQUARES, Math.trunc(count.value))) : null;
+  return { area, picks: { kind: "count", fixed, choice: count.kind === "chosen" ? count.choice : null } };
+}
+
+/** The squares a use picks: 2 for a wall, the count for a `count` area (`n`: the player's number), else 1. */
+export function squaresToPick(picks: AreaPicks, n: number): number {
+  if (picks.kind === "one") return 1;
+  if (picks.kind === "wall") return 2;
+  return picks.fixed ?? Math.max(1, Math.min(MAX_PICKED_SQUARES, Math.trunc(n)));
+}
+
+/** The banner prompt for the i-th square (0-based) of `total`. */
+export function pickPrompt(area: AreaSpec, picks: AreaPicks, i: number, total: number, within: string): string {
+  if (picks.kind === "wall") return i === 0 ? `Pick one end of ${area.label}${within}` : `Pick the other end of ${area.label}${within}`;
+  if (picks.kind === "count" && total > 1) return `Pick square ${i + 1} of ${total} for ${area.label}${within}`;
+  return `Pick the centre of ${area.label}${within}`;
+}
+
+/**
+ * The squares and choices `combatFeatures.useFeature` takes for picked squares: the first as `point`, the rest as
+ * `points` (a wall's second end, a `count` area's others), and a chosen count as `n:<choice>`.
+ */
+export function areaUseArgs(picks: AreaPicks, squares: readonly { x: number; y: number }[]): { point: { x: number; y: number }; points?: { x: number; y: number }[]; choices: { id: string; value: number }[] } {
+  const [point, ...rest] = squares;
+  if (point === undefined) throw new Error("No square picked.");
+  const choices = picks.kind === "count" && picks.choice !== null ? [{ id: `n:${picks.choice}`, value: squares.length }] : [];
+  return { point, ...(rest.length > 0 ? { points: rest.slice(0, MAX_PICKED_SQUARES - 1) } : {}), choices };
+}
+
 export function serverUseOf(featureId: string, useId: string | undefined): ServerUse | null {
   const entry = featureEffect(featureId);
   if (entry === undefined) return null;
   const use = pickUse(asCardEffect(entry), useId);
   if (use === undefined) return null;
   if (featureId === CHARGE_FEATURE) return { kind: "charge", use, name: use.name };
-  const area = pointAreaOf(use);
-  if (area !== null) return { kind: "area", use, name: use.name, area };
+  const placed = pickAreaOf(use);
+  if (placed !== null) return { kind: "area", use, name: use.name, area: placed.area, picks: placed.picks };
   const spec = use.targets;
   if (spec !== undefined && spec.side !== "trigger" && spec.count.kind === "upTo" && spec.count.rolledFirst === true) {
     return { kind: "count", use, name: use.name, range: RANGE_LABEL[spec.range] ?? "range" };

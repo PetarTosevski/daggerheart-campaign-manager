@@ -13,7 +13,7 @@ import { CLASSES } from "../src/lib/srd/classes";
 import type { AdversaryType } from "../src/lib/srd/types";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { areasAfterMove, carryAlong, endAreasOnCasterEvent, moveRules, rangeTriggersAfterMove } from "./combatAreas";
+import { areasAfterMove, carryAlong, endAreasOnCasterEvent, endAreasOwnerLeft, moveRules, rangeTriggersAfterMove } from "./combatAreas";
 import { partyOf, readSheet } from "./lib/characterSheet";
 import {
   MAX_TOKEN_NAME,
@@ -673,6 +673,8 @@ export const remove = gmMutation({
     const token = await loadCombatToken(ctx, ctx.campaign._id, tokenId);
     await ctx.db.delete("combatTokens", token._id);
     await removeDuplicates(ctx, token);
+    // Plan lanes-2 E4.4 (dcm-ii4): a caster taken off the map has left their Circle of Power.
+    if (token.ref.kind === "pc") await endAreasOwnerLeft(ctx, { campaignId: ctx.campaign._id, mapId: token.mapId, actorId: ctx.user._id });
     return null;
   },
 });
@@ -724,6 +726,8 @@ export const clear = gmMutation({
     const map = await loadCombatMap(ctx, ctx.campaign._id, mapId);
     const tokens = await tokensOnMap(ctx, map._id);
     for (const token of tokens) await ctx.db.delete("combatTokens", token._id);
+    // Plan lanes-2 E4.4 (dcm-ii4): with every token gone, no caster stands in their circle.
+    await endAreasOwnerLeft(ctx, { campaignId: ctx.campaign._id, mapId: map._id, actorId: ctx.user._id });
     return { removed: tokens.length };
   },
 });
@@ -788,6 +792,8 @@ export const move = campaignMutation({
     if (!stays) await uncloakAfterMove(ctx, ctx.campaign, map, { ...token, ...next }, ctx.user._id, { byGm });
     // Plan lanes E4 (dcm-cma, dcm-wuu, dcm-ii4): live areas that react to entering, passing through, crossing or leaving.
     const areas = stays ? [] : await areasAfterMove(ctx, ctx.campaign._id, map._id, token, { ...token, ...next }, ctx.user._id, nameOf);
+    // Plan lanes-2 E4.4 (dcm-ii4): a caster carried out of their own circle has exited it too.
+    if (carried.length > 0) await endAreasOwnerLeft(ctx, { campaignId: ctx.campaign._id, mapId: map._id, actorId: ctx.user._id });
     // dcm-bpr: an enemy coming within a PC's Hold the Line range is named in the feed.
     if (!stays && map.live) await rangeTriggersAfterMove(ctx, ctx.campaign._id, map._id, token, { ...token, ...next }, ctx.user._id, nameOf);
     return {

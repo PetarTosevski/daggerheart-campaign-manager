@@ -9,6 +9,7 @@ import {
   combatObjectKindValidator,
   combatTerrainValidator,
   sightModeValidator,
+  type ObjectLight,
   type SettingRef,
   type SpriteRef,
 } from "./validators/combatMaps";
@@ -67,18 +68,23 @@ export async function resolveRefs(
   return rows;
 }
 
-/** The vision traits of an object's sprite (catalog or uploaded row), or null: no sprite, unknown key, deleted row (D1, D9). */
-export function objectTraits(object: { sprite?: SpriteRef }, uploaded: UploadedSprites): VisionTraits | null {
+/**
+ * The vision traits of an object's sprite (catalog or uploaded row), or null: no sprite, unknown key, deleted row (D1,
+ * D9). The object's own `light` (the GM's override, plan lanes-2 E4.4, dcm-bxp.84) replaces the sprite's light trait,
+ * so vision, the light switch (`toggleLight`, `updateObject`'s `lit`) and movement read the same light.
+ */
+export function objectTraits(object: { sprite?: SpriteRef; light?: ObjectLight }, uploaded: UploadedSprites): VisionTraits | null {
   if (object.sprite === undefined) return null;
   const traits = spriteTraits(object.sprite, { uploaded: (id) => uploaded.get(id) });
-  return traits === null ? null : visionTraitsOf(traits);
+  if (traits === null) return null;
+  return visionTraitsOf(object.light === undefined ? traits : { ...traits, light: object.light });
 }
 
 /** One object's sprite traits, reading its uploaded row if it has one (toggleLight; scenes use `resolveRefs`). */
 export async function loadObjectTraits(
   ctx: QueryCtx,
   campaignId: Id<"campaigns">,
-  object: { sprite?: SpriteRef },
+  object: { sprite?: SpriteRef; light?: ObjectLight },
 ): Promise<VisionTraits | null> {
   return objectTraits(object, await resolveRefs(ctx, campaignId, [object.sprite]));
 }

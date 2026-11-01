@@ -51,7 +51,7 @@ import {
 import { campaignMutation, campaignQuery, gmMutation, gmQuery } from "./lib/functions";
 import { loadObjectTraits, resolveRefs, type UploadedSprites } from "./lib/spriteSources";
 import { atLeast, permissionFor, type Permission } from "./lib/permissions";
-import { carriedLightValidator } from "./lib/validators/combatMaps";
+import { carriedLightValidator, objectLightValidator } from "./lib/validators/combatMaps";
 
 /**
  * Vision on the server (D9 C7, plan `.omc/plans/d9-combat-map.yaml`; R8–R12, Q1, Q3, Q4).
@@ -390,6 +390,28 @@ export const toggleLight = campaignMutation({
     }
     if ((object.lit !== false) !== lit) await ctx.db.patch("combatMapObjects", object._id, { lit });
     return { lit };
+  },
+});
+
+/**
+ * GM: a sprite object's light (plan lanes-2 E4.4, dcm-bxp.84 + dcm-klr8; sprite packs Q1: "none / faint glow / torch /
+ * campfire" for any sprite). `light` is the wanted override, `default` drops it (the sprite's own light trait again).
+ * An intent: one field on one row. Vision, the light switches and the sprite painter's glow read it (`objectTraits`).
+ * A light other than `default` on an object without a sprite (a Classic kind keeps its own light) is INVALID;
+ * `default` always succeeds (nothing to clear is a no-op).
+ */
+export const setObjectLight = gmMutation({
+  args: { objectId: v.string(), light: v.union(objectLightValidator, v.literal("default")) },
+  returns: v.null(),
+  handler: async (ctx, { objectId, light }) => {
+    const { object } = await loadCombatObject(ctx, ctx.campaign._id, objectId);
+    if (light === "default") {
+      if (object.light !== undefined) await ctx.db.patch("combatMapObjects", object._id, { light: undefined });
+      return null;
+    }
+    if (object.sprite === undefined) throw appError("INVALID", "Only sprite objects take a light setting.");
+    if (object.light !== light) await ctx.db.patch("combatMapObjects", object._id, { light });
+    return null;
   },
 });
 

@@ -11,8 +11,21 @@ import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { FeatureUseProps } from "../../slots";
 import { DrawerBoundary } from "../boundary";
 import { DifficultyRequests, useWaitingDifficulty } from "../../requests";
-import { startAreaPick } from "../../map-view/area-pick";
-import { areaUseLine, chargeLine, RANGE_LABEL, serverUseOf, squareLabels, targetLabel, validAllies } from "./model";
+import { startAreaPick, type AreaPickRequest, type Square } from "../../map-view/area-pick";
+import {
+  areaUseArgs,
+  areaUseLine,
+  chargeLine,
+  MAX_PICKED_SQUARES,
+  pickPrompt,
+  RANGE_LABEL,
+  serverUseOf,
+  squareLabels,
+  squaresToPick,
+  targetLabel,
+  validAllies,
+  type AreaPicks,
+} from "./model";
 import "./use.css";
 
 /**
@@ -30,7 +43,8 @@ import "./use.css";
  *   character types it; a player's Charge goes to the GM as a request (plan lanes B2, dcm-bxp.99.19.61), and the drawer
  *   shows it waiting until the GM answers (the GM's drawer lists it with a Difficulty box, `DifficultyRequests`).
  * - A point-centred area (plan lanes-2 AO, dcm-u2wx; Dark Cloud, CB p.42): pick the square on the map, then Use with
- *   `point` (`AreaUse`).
+ *   `point` (`AreaUse`). Plan lanes-2 E4.4: a wall picks its two ends and a `count` area one square per area, sent as
+ *   `point` + `points`.
  */
 export function FeatureUse({ campaignId, role, map, characterId, featureId, useId, onClose }: FeatureUseProps) {
   const server = serverUseOf(featureId, useId);
@@ -50,7 +64,7 @@ export function FeatureUse({ campaignId, role, map, characterId, featureId, useI
         ) : server.kind === "count" ? (
           <CountUse campaignId={campaignId} characterId={characterId} mapId={mapId} featureId={featureId} useId={server.use.id} name={server.name} range={server.range} />
         ) : server.kind === "area" ? (
-          <AreaUse campaignId={campaignId} characterId={characterId} mapId={mapId} featureId={featureId} useId={server.use.id} name={server.name} area={server.area} onClose={onClose} />
+          <AreaUse campaignId={campaignId} characterId={characterId} mapId={mapId} featureId={featureId} useId={server.use.id} name={server.name} area={server.area} picks={server.picks} onClose={onClose} />
         ) : (
           <ChargeUse campaignId={campaignId} characterId={characterId} mapId={mapId} gm={role === "gm"} />
         )}
@@ -67,17 +81,22 @@ type Here = { campaignId: Id<"campaigns">; characterId: Id<"characters">; mapId:
  * drawer closes so the map can be clicked; the map board's pick banner asks for the square, then sends
  * `combatFeatures.useFeature` with `point` (the server checks `placeWithin`) and shows the result.
  */
-function AreaUse({ campaignId, characterId, mapId, featureId, useId, name, area, onClose }: Here & { featureId: string; useId: string; name: string; area: AreaSpec; onClose: () => void }) {
+function AreaUse({ campaignId, characterId, mapId, featureId, useId: featureUseId, name, area, picks, onClose }: Here & { featureId: string; useId: string; name: string; area: AreaSpec; picks: AreaPicks; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  const countId = useId();
+  const [n, setN] = useState(1);
   const sendUse = useMutation(api.combatFeatures.useFeature);
   const within = area.placeWithin ? ` within ${RANGE_LABEL[area.placeWithin] ?? area.placeWithin} range` : "";
+  const total = squaresToPick(picks, n);
   function pick() {
-    startAreaPick({
-      prompt: `Pick the centre of ${area.label}${within}`,
+    pickSquaresInTurn({
       mapId,
-      ...(area.radius !== "veryFar" ? { radius: area.radius } : {}),
-      onPick: async (point) => {
-        const out = await sendUse({ campaignId, idempotencyKey: crypto.randomUUID(), characterId, mapId, featureId, useId, targetTokenIds: [], choices: [], point });
+      total,
+      prompt: (i) => pickPrompt(area, picks, i, total, within),
+      // A wall is a line: no circle preview around its ends.
+      ...(picks.kind !== "wall" && area.radius !== "veryFar" ? { radius: area.radius } : {}),
+      onDone: async (squares) => {
+        const out = await sendUse({ campaignId, idempotencyKey: crypto.randomUUID(), characterId, mapId, featureId, useId: featureUseId, targetTokenIds: [], ...areaUseArgs(picks, squares) });
         return areaUseLine(name, area.label, out);
       },
     });
@@ -88,13 +107,44 @@ function AreaUse({ campaignId, characterId, mapId, featureId, useId, name, area,
   return (
     <div className="sdu-body" ref={ref}>
       <p className="sdu-note">
-        {area.label} covers {RANGE_LABEL[area.radius] ?? area.radius} range around a square you pick{within}.
+        {picks.kind === "wall"
+          ? `${area.label} is a wall between two squares you pick${within}.`
+          : `${area.label} covers ${RANGE_LABEL[area.radius] ?? area.radius} range around ${picks.kind === "count" ? "each square" : "a square"} you pick${within}.`}
       </p>
+      {picks.kind === "count" && picks.fixed === null ? (
+        <label className="sdu-row" htmlFor={countId}>
+          How many
+          <input id={countId} className="cm-in" type="number" min={1} max={MAX_PICKED_SQUARES} value={n} onChange={(e) => setN(Math.max(1, Math.min(MAX_PICKED_SQUARES, Number(e.target.value) || 1)))} />
+        </label>
+      ) : null}
       <button type="button" className="cm-btn" onClick={pick}>
-        Pick the square on the map
+        {total === 1 ? "Pick the square on the map" : `Pick ${total} squares on the map`}
       </button>
     </div>
   );
+}
+
+/**
+ * Picks `total` squares one after another through the map board's pick banner (`startAreaPick`: each pick starts the
+ * next, which `finishAreaPick` keeps running), then runs `onDone` with all of them; its line is the banner's.
+ */
+export function pickSquaresInTurn(input: { mapId: string; total: number; prompt: (i: number) => string; radius?: AreaPickRequest["radius"]; onDone: (squares: Square[]) => Promise<string | null> }): void {
+  const squares: Square[] = [];
+  const next = (i: number) =>
+    startAreaPick({
+      prompt: input.prompt(i),
+      mapId: input.mapId,
+      ...(input.radius ? { radius: input.radius } : {}),
+      onPick: async (square) => {
+        squares.push(square);
+        if (squares.length < input.total) {
+          next(i + 1);
+          return null;
+        }
+        return input.onDone([...squares]);
+      },
+    });
+  next(0);
 }
 
 function CountUse({ campaignId, characterId, mapId, featureId, useId, name, range }: Here & { featureId: string; useId: string; name: string; range: string }) {

@@ -257,6 +257,7 @@ const vision: Entry[] = [
   { fn: api.combatVision.unrevealTo, access: "gm", args: (w) => ({ tokenId: w.ids.customTokenId }) },
   { fn: api.combatVision.setCarriedLight, access: "view", args: () => ({ light: "torch" }) },
   { fn: api.combatVision.toggleLight, access: "view", setup: inReach, args: (w) => ({ objectId: w.ids.campfireId, lit: false }) },
+  { fn: api.combatVision.setObjectLight, access: "gm", args: (w) => ({ objectId: w.ids.campfireId, light: "default" }) },
   // The player lists and switches only doors their character has seen (the setup's door is in view), from Melee (B4).
   { fn: api.combatVision.doors, access: "view", expect: { otherPlayer: "ok" } },
   { fn: api.combatVision.toggleDoor, access: "view", setup: inReach, args: () => ({ open: true }) },

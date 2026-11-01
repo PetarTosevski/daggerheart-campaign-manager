@@ -4,7 +4,7 @@ import { useMutation } from "convex/react";
 import type { OptimisticLocalStore } from "convex/browser";
 
 import { errorMessage } from "@/lib/convex-errors";
-import type { SpriteRef } from "../../../../convex/lib/validators/combatMaps";
+import type { ObjectLight, SpriteRef } from "../../../../convex/lib/validators/combatMaps";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
@@ -147,6 +147,14 @@ export function useEditMutations(campaignId: Id<"campaigns">, mapId: Id<"combatM
       return args.sight === "default" ? rest : { ...rest, sight: args.sight };
     }),
   );
+  // Plan lanes-2 E4.4 (dcm-bxp.84): a sprite object's light override; "default" drops it.
+  const setObjectLight = useMutation(api.combatVision.setObjectLight).withOptimisticUpdate((store, args) =>
+    updateObjectInLayouts(store, args.objectId, (o) => {
+      const { light, ...rest } = o;
+      void light;
+      return args.light === "default" ? rest : { ...rest, light: args.light };
+    }),
+  );
   const updateObject = useMutation(api.combatMapEdit.updateObject).withOptimisticUpdate((store, args) =>
     updateObjectInLayouts(store, args.objectId, (o) => ({
       ...o,
@@ -209,6 +217,12 @@ export function useEditMutations(campaignId: Id<"campaigns">, mapId: Id<"combatM
       if (!isReal(objectId)) return;
       setError(null);
       setObjectSight({ campaignId, objectId, sight }).catch(fail);
+    },
+    /** A sprite object's light (none / faint glow / torch / campfire), or "default" for the sprite's own. */
+    setLight(objectId: string, light: ObjectLight | "default") {
+      if (!isReal(objectId)) return;
+      setError(null);
+      setObjectLight({ campaignId, objectId, light }).catch(fail);
     },
     update(objectId: string, patch: { r?: number; rot?: number; lit?: boolean }) {
       if (!isReal(objectId)) return;
