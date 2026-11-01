@@ -215,16 +215,9 @@ export const GRACE_EFFECTS: readonly CardEffect[] = [
         name: "Invisibility: the Invisible creature acts",
         activation: { kind: "action" },
         costs: [{ kind: "tokens", amount: ONE }],
-        // Spending the last token ends the Invisible effect (`endsOn: ["tokensGone"]` above).
-        steps: [
-          // Lanes-2 S1 (dcm-ky8b, dcm-s9md): the table's reminder until the card paths end `tokensGone` effects; remove it
-          // when dcm-m48i (dcm-erhv) merges.
-          {
-            kind: "manual",
-            to: "self",
-            text: "If that was the last Invisibility token: after this action is resolved, the effect ends (remove Invisible).",
-          },
-        ],
+        // Spending the last token ends the Invisible effect (`endsOn: ["tokensGone"]` above): the card path ends it on
+        // the caster's and the ally's sheet (cardRows `endTokensGone`; lanes-2 S1.4 dropped the table's reminder).
+        steps: [],
       },
     ],
   },
@@ -241,7 +234,8 @@ export const GRACE_EFFECTS: readonly CardEffect[] = [
         activation: { kind: "action" },
         targets: { side: "any", range: "veryFar", count: { kind: "one" }, excludeSelf: true },
         steps: [
-          { kind: "effect", to: "self", label: "Through Your Eyes", mods: [], duration: "rest", endsWhen: "you cast another spell" },
+          // Lanes-2 S1.4: casting another spell ends it (the card path's `endSpellCast`, dcm-m48i); the rest ends it too.
+          { kind: "effect", to: "self", label: "Through Your Eyes", mods: [], duration: "rest", endsWhen: "you cast another spell", endsOn: ["castsSpell"] },
           { kind: "manual", to: "targets", text: "You can see through the target's eyes and hear through their ears (the GM describes it)." },
         ],
       },
@@ -501,15 +495,9 @@ export const GRACE_EFFECTS: readonly CardEffect[] = [
         targets: { side: "trigger", who: "subject" },
         steps: [
           // Lanes-2 S1 (dcm-m5fy, dcm-86z): the damage takes the trigger's type (`sameAsTrigger` typed `weapon`, E3's
-          // runner). Until cardRunner fills the trigger's damage type (dcm-q40t) it reads as physical, so the reminder
-          // below stays; remove it when dcm-q40t merges.
+          // runner). Lanes-2 S1.4: the Hand asks the ally's damage type and cardRunner passes it (`triggerDamageType`), so
+          // the "physical for now" reminder is gone.
           { kind: "damage", to: "targets", when: ["hit"], roll: { kind: "sameAsTrigger" }, type: "weapon" },
-          {
-            kind: "manual",
-            to: "targets",
-            when: ["hit"],
-            text: "Encore deals the same type of damage your ally dealt. It is applied as physical for now: if your ally's damage was magic, the GM corrects it for resistance.",
-          },
           { kind: "toVault", to: "self", when: ["success", "withFear"] },
         ],
       },

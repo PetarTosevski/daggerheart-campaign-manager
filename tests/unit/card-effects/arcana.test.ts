@@ -169,8 +169,8 @@ describe("Rune Ward (L1, CB p.328): the holder spends a Hope to reduce damage by
     expect(plan.actor.after.hope).toBe(2);
     // Lanes-2 S1 (dcm-uj0): the use's cost is paid by the holder (`paidBy: "triggerSubject"`), not by you.
     expect(ofKind(plan, "pay")[0]).toMatchObject({ phase: "upfront", paid: true, payerId: "mira" });
-    // Until the server describes payers (dcm-q40t), the holder's Hope is the table's reminder.
-    expect(prompts(plan, "manual").map((p) => p.text)).toEqual(["The ward's holder spends a Hope; if they have none, they can't use the ward (undo this)."]);
+    // Lanes-2 S1.4: the server passes the holder's Hope (dcm-q40t), so no reminder.
+    expect(prompts(plan, "manual")).toEqual([]);
   });
   it("an ally holds it with no Hope: refused, you pay nothing (paidBy)", () => {
     expect(run(effectOf("rune-ward"), ctx([3], { useId: "ally", hopeOf: { mira: 0 }, trigger: { amount: 9, subject: ally("mira") } }))).toMatchObject({ ok: false, reason: "cost" });
@@ -499,10 +499,8 @@ describe("Confusing Aura (L8, CB p.329)", () => {
     expect(ofKind(broken, "fold")).toEqual([]);
     // Lanes SRD-C1 (dcm-8x8): the spell's own effect ends (an `endEffect` for the server).
     expect(ofKind(broken, "endEffect")).toEqual([{ kind: "endEffect", targetId: "pc", of: "confusing-aura", own: true }]);
-    // Lanes-2 R1 (dcm-s9md): beside it, one manual reminder for the table until dcm-9z2z applies `endEffect`.
-    expect(prompts(broken, "manual").map((p) => p.text)).toEqual([
-      "All the results are 4 or lower: you take the damage and this spell ends (remove the Confusing Aura effect).",
-    ]);
+    // Lanes-2 S1.4: the card path applies `endEffect` (dcm-m48i), so no reminder.
+    expect(prompts(broken, "manual")).toEqual([]);
     // A layer that holds shows no reminder.
     const saved = ok("confusing-aura", ctx([2, 5, 1], { useId: "attacked", actor: aura }));
     expect(prompts(saved, "manual")).toEqual([]);
@@ -542,7 +540,7 @@ describe("Earthquake (L9, CB p.329)", () => {
 describe("Sensory Projection (L9, CB p.329)", () => {
   it("once per rest (used up by the attempt): Spellcast (15) for the vision", () => {
     const plan = ok("sensory-projection", ctx([9, 4]));
-    expect(ofKind(plan, "effect")[0]).toMatchObject({ label: "Sensory Projection", endsWhen: "you take damage or cast another spell", endsOn: ["takeDamage"] });
+    expect(ofKind(plan, "effect")[0]).toMatchObject({ label: "Sensory Projection", endsWhen: "you take damage or cast another spell", endsOn: ["takeDamage", "castsSpell"] });
     const fail = ok("sensory-projection", ctx([2, 3]));
     expect(ofKind(fail, "effect")).toEqual([]);
     expect(fail.actor.featureUses).toEqual([{ key: "card:sensory-projection", until: "rest" }]);

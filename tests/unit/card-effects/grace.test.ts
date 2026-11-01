@@ -267,8 +267,8 @@ describe("Invisibility (CB p.334)", () => {
   it("each action of the Invisible creature spends a token; the last one ends the effect (tokensGone, dcm-7n7)", () => {
     const plan = ok(run(invis, ctx([], { useId: "spend-token", actor: actor({ cardTokens: 1 }) })));
     expect(plan.actor.after.cardTokens).toBe(0);
-    // Lanes-2 S1 (dcm-ky8b): the reminder is back until the card paths end tokensGone effects (dcm-m48i).
-    expect(manualTexts(plan)).toEqual(["If that was the last Invisibility token: after this action is resolved, the effect ends (remove Invisible)."]);
+    // Lanes-2 S1.4: the card path ends tokensGone effects (dcm-m48i / dcm-erhv), so no reminder.
+    expect(manualTexts(plan)).toEqual([]);
     expect(run(invis, ctx([], { useId: "spend-token" }))).toMatchObject({ ok: false, reason: "cost" });
     const cast = ok(run(invis, ctx([4, 3], { targets: [ally("mira")] })));
     expect(ofKind(cast, "effect")[0]).toMatchObject({ label: "Invisible", endsOn: ["tokensGone"] });
@@ -278,7 +278,7 @@ describe("Invisibility (CB p.334)", () => {
 describe("Through Your Eyes (CB p.335)", () => {
   it("an effect on you until your next rest (or another spell) and the senses as a manual step", () => {
     const plan = ok(run(effectOf("through-your-eyes"), ctx([], { targets: [adv("a")] })));
-    expect(ofKind(plan, "effect")[0]).toMatchObject({ targetId: "pc", label: "Through Your Eyes", duration: "rest", endsWhen: "you cast another spell" });
+    expect(ofKind(plan, "effect")[0]).toMatchObject({ targetId: "pc", label: "Through Your Eyes", duration: "rest", endsWhen: "you cast another spell", endsOn: ["castsSpell"] });
     expect(ofKind(plan, "prompt")[0]).toMatchObject({ prompt: "manual", targetIds: ["a"] });
     expect(plan.roll).toBeNull();
   });
@@ -467,12 +467,12 @@ describe("Encore (CB p.335)", () => {
     expect(ofKind(plan, "toVault")).toEqual([]);
   });
 
-  it("the damage takes the trigger's type (sameAsTrigger typed weapon, dcm-m5fy); the reminder stays until dcm-q40t", () => {
+  it("the damage takes the trigger's type (sameAsTrigger typed weapon, dcm-m5fy); no reminder (lanes-2 S1.4)", () => {
     const magic = ok(run(encore, ctx([9, 4], { trigger: { amount: 9, subject: bandit, damageType: "magic" } })));
     expect(ofKind(magic, "damageRoll")[0]).toMatchObject({ type: "magic" });
     const physical = ok(run(encore, ctx([9, 4], { trigger: { amount: 9, subject: bandit, damageType: "physical" } })));
     expect(ofKind(physical, "damageRoll")[0]).toMatchObject({ type: "physical" });
-    expect(manualTexts(magic)).toHaveLength(1);
+    expect(manualTexts(magic)).toEqual([]);
     expect(manualTexts(ok(run(encore, ctx([2, 5], { trigger: { amount: 9, subject: bandit } }))))).toEqual([]);
   });
 

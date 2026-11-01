@@ -229,20 +229,45 @@ export const BLADE_EFFECTS: readonly CardEffect[] = [
 
   // Vitality (Level 5, CB p.330): "When you choose this card, permanently gain two of the following benefits: • One Stress
   // slot • One Hit Point slot • +2 bonus to your damage thresholds Then place this card in your vault permanently."
-  // A level-up pick the sheet applies; nothing happens on the map. Gap: no ModStat for Hit Point or Stress slots.
+  // Lanes-2 S1.4 (dcm-40mj, dcm-31hq): the level-up runs this use once when the card is taken (convex/levelUp.ts
+  // `runOnChoose`): the player picks two distinct benefits in the level-up draft, the slots and the threshold bonus are
+  // kept for good (src/lib/domain/level-up/on-choose.ts), and the card goes to the vault. Nothing happens on the map.
   {
     cardId: "vitality",
     uses: [
       {
         id: "main",
         name: "Vitality",
-        activation: { kind: "passive" },
+        activation: { kind: "auto", trigger: { kind: "whenYouChooseThisCard" } },
         steps: [
           {
-            kind: "manual",
-            to: "self",
-            text: "When you choose this card, permanently gain two of the following benefits: one Stress slot, one Hit Point slot, +2 bonus to your damage thresholds. Then place this card in your vault permanently.",
+            kind: "choose",
+            id: "benefits",
+            label: "Two benefits",
+            count: fixed(2),
+            distinct: true,
+            options: [
+              { id: "stress", label: "One Stress slot", steps: [{ kind: "effect", to: "self", label: "Vitality", duration: "permanent", mods: [{ kind: "stat", stat: "stressMax", delta: one }] }] },
+              { id: "hp", label: "One Hit Point slot", steps: [{ kind: "effect", to: "self", label: "Vitality", duration: "permanent", mods: [{ kind: "stat", stat: "hpMax", delta: one }] }] },
+              {
+                id: "thresholds",
+                label: "+2 to your damage thresholds",
+                steps: [
+                  {
+                    kind: "effect",
+                    to: "self",
+                    label: "Vitality",
+                    duration: "permanent",
+                    mods: [
+                      { kind: "stat", stat: "majorThreshold", delta: fixed(2) },
+                      { kind: "stat", stat: "severeThreshold", delta: fixed(2) },
+                    ],
+                  },
+                ],
+              },
+            ],
           },
+          { kind: "toVault", to: "self", permanent: true },
         ],
       },
     ],

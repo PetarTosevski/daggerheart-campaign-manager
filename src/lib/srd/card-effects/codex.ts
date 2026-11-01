@@ -186,14 +186,7 @@ export const CODEX_EFFECTS: readonly CardEffect[] = [
             area: { label: "Mysterious Mist", centre: "point", radius: "veryClose", placeWithin: "veryClose", side: "all", blocksSight: true, duration: "temporary" },
             note: "The fog heavily obscures this area and everything in it: no one sees into or through it.",
           },
-          // Lanes-2 S1 (dcm-gzmo): the table's reminder until the card paths place their areas (dcm-9nlr / dcm-m48i);
-          // remove it when that merges.
-          {
-            kind: "manual",
-            to: "self",
-            when: ["success"],
-            text: "A temporary thick fog gathers at a point within Very Close range, filling a Very Close area around it; no one can see into or through it (draw the area on the map).",
-          },
+          // Lanes-2 S1.4 (dcm-9nlr): the Hand picks the square and useCard places the area, so the reminder is gone.
         ],
       },
     ],
@@ -529,10 +522,8 @@ export const CODEX_EFFECTS: readonly CardEffect[] = [
         targets: { side: "any", range: "unlimited", count: { kind: "one" } },
         // On a success the spell holds (nothing changes); on a failure it isn't maintained and ends.
         steps: [
+          // Lanes-2 S1.4: the card path applies `endEffect` (cardRows `applyUseEnds`, dcm-m48i), so the reminder is gone.
           { kind: "endEffect", to: "self", when: ["failure"], note: "Time Lock ends: the creature moves the object." },
-          // Lanes-2 R1 (dcm-s9md): the table's reminder until the server applies `endEffect`; remove it when dcm-9z2z
-          // merges. Card: "If a creature tries to move it, make a Spellcast Roll against them to maintain this spell."
-          { kind: "manual", to: "self", when: ["failure"], text: "Time Lock isn't maintained: the creature moves the object and the spell ends (remove the Time Lock effect)." },
         ],
       },
       // "Wall of Flame: Make a Spellcast Roll (15). On a success, create a temporary wall of magical flame between two

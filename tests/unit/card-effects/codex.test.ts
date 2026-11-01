@@ -211,12 +211,12 @@ describe("Book of Tyfar (CB p.332)", () => {
   it("Magic Hand is for the table", () => {
     expect(prompts(plan("book-of-tyfar", "magic-hand", []), "manual")).toHaveLength(1);
   });
-  it("Mysterious Mist: Spellcast (13), the fog is for the table", () => {
-    expect(prompts(plan("book-of-tyfar", "mysterious-mist", [8, 5]), "manual")).toHaveLength(1);
+  it("Mysterious Mist: Spellcast (13); the area is placed on the picked square, no reminder (lanes-2 S1.4, dcm-9nlr)", () => {
+    expect(prompts(plan("book-of-tyfar", "mysterious-mist", [8, 5]), "manual")).toHaveLength(0);
     expect(prompts(plan("book-of-tyfar", "mysterious-mist", [4, 5]), "manual")).toHaveLength(0);
   });
 
-  it("Mysterious Mist (user answer, dcm-gzmo): a point within Very Close, Very Close radius, blocks sight; the reminder stays", () => {
+  it("Mysterious Mist (user answer, dcm-gzmo): a point within Very Close, Very Close radius, blocks sight", () => {
     const p = plan("book-of-tyfar", "mysterious-mist", [8, 5]);
     expect(ofKind(p, "area")[0]!.area).toMatchObject({ label: "Mysterious Mist", centre: "point", radius: "veryClose", placeWithin: "veryClose", side: "all", blocksSight: true, duration: "temporary" });
     expect(ofKind(plan("book-of-tyfar", "mysterious-mist", [4, 5]), "area")).toEqual([]);
@@ -380,10 +380,8 @@ describe("Book of Grynn (CB p.333)", () => {
     expect(prompts(hold, "manual")).toEqual([]);
     const lose = plan("book-of-grynn", "time-lock-maintain", [2, 3], { targets: [adv("a")], situations });
     expect(ofKind(lose, "endEffect")).toEqual([{ kind: "endEffect", targetId: "pc", of: "book-of-grynn", own: true }]);
-    // Lanes-2 R1 (dcm-s9md): beside the `endEffect`, one manual reminder for the table until dcm-9z2z applies it.
-    expect(prompts(lose, "manual").map((p) => p.text)).toEqual([
-      "Time Lock isn't maintained: the creature moves the object and the spell ends (remove the Time Lock effect).",
-    ]);
+    // Lanes-2 S1.4: the card path applies the `endEffect` (dcm-m48i), so no reminder.
+    expect(prompts(lose, "manual")).toEqual([]);
   });
   it("Wall of Flame: Spellcast (15); whatever passes through later takes 4d10+3 magic", () => {
     expect(prompts(plan("book-of-grynn", "wall-of-flame", [8, 5]), "manual")).toHaveLength(1);

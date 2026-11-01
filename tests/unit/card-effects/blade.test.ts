@@ -7,6 +7,8 @@ import { run, type ActorState, type PlanStep, type RunContext, type RunPlan } fr
 import type { CardEffect, CardUse, Step } from "@/lib/domain/card-effects/types";
 import type { Combatant } from "@/lib/domain/combat-actions";
 import { queueRng } from "@/lib/domain/dice";
+import { onChooseUse, runOnChoose } from "@/lib/domain/feature-effects/run";
+import { chosenPicks } from "@/lib/domain/level-up/on-choose";
 import { BLADE_EFFECTS } from "@/lib/srd/card-effects/blade";
 import { CARD_CLASSIFICATION } from "@/lib/srd/card-effects/classification";
 import { DOMAIN_CARDS } from "@/lib/srd/domain-cards";
@@ -395,11 +397,19 @@ describe("Champion's Edge (CB p.330)", () => {
 });
 
 describe("Vitality (CB p.330)", () => {
-  it("is a level-up pick: a passive card whose only step is the card's words", () => {
-    expect(useOf("vitality").activation).toEqual({ kind: "passive" });
-    const plan = ok(runCard("vitality", []));
-    expect(ofKind(plan, "prompt")).toMatchObject([{ prompt: "manual" }]);
-    expect(ofKind(plan, "prompt")[0]!.text).toContain("Then place this card in your vault permanently");
+  // Lanes-2 S1.4 (dcm-40mj): the use the level-up runs once when the card is chosen (convex/levelUp.ts).
+  const choose = (benefits?: string[]) => {
+    const out = runOnChoose(effectOf("vitality"), { actor: actor(), gmFear: 0, rng: queueRng([]), targets: [], options: benefits ? { benefits } : {} });
+    if (out === null || !out.ok) throw new Error("expected a plan");
+    return chosenPicks(out.plan, "pc");
+  };
+  it("is a level-up pick: two distinct benefits when the card is chosen, then the vault", () => {
+    expect(onChooseUse(effectOf("vitality"))?.activation).toEqual({ kind: "auto", trigger: { kind: "whenYouChooseThisCard" } });
+    expect(choose(["hp", "thresholds"])).toMatchObject({ hp: 1, stress: 0, major: 2, severe: 2, toVault: true, missing: [], manual: [] });
+    expect(choose(["stress", "hp"])).toMatchObject({ hp: 1, stress: 1, major: 0, severe: 0, toVault: true });
+  });
+  it("without the picks the plan asks for them", () => {
+    expect(choose().missing).toEqual(["Two benefits"]);
   });
 });
 

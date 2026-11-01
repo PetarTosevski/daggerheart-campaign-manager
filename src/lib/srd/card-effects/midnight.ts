@@ -185,7 +185,9 @@ export const MIDNIGHT_EFFECTS: readonly CardEffect[] = [
   // Veil of Night (L3, CB p.336): "Make a Spellcast Roll (13). On a success, you can create a temporary curtain of
   // darkness between two points within Far range. Only you can see through this darkness. You're considered Hidden to
   // adversaries on the other side of the veil, and you have advantage on attacks you make through the darkness. The veil
-  // remains until you cast another spell." SRD-C2: the one-way darkness stays a manual step (gap dcm-o44e).
+  // remains until you cast another spell." Lanes-2 S1.4 (dcm-o44e): the curtain is a wall area between the two squares
+  // the Hand picks within Far range; it blocks sight for everyone but you (`seeThrough: "owner"`), you are Hidden to
+  // those it blocks (`ownerPerObserver`), and casting another spell ends it and the effect (`castsSpell`).
   {
     cardId: "veil-of-night",
     uses: [
@@ -196,12 +198,25 @@ export const MIDNIGHT_EFFECTS: readonly CardEffect[] = [
         roll: vsFixed(13),
         exclusive: true,
         steps: [
-          { kind: "effect", to: "self", when: ["success"], label: "Veil of Night", mods: [], duration: "manual", endsWhen: "you cast another spell" },
+          { kind: "effect", to: "self", when: ["success"], label: "Veil of Night", mods: [], duration: "manual", endsWhen: "you cast another spell", endsOn: ["castsSpell"] },
           {
-            kind: "manual",
+            kind: "area",
             to: "self",
             when: ["success"],
-            text: "Place a curtain of darkness between two points within Far range. Only you can see through it; you're Hidden to adversaries on the other side of the veil.",
+            area: {
+              label: "Veil of Night",
+              shape: "wall",
+              centre: "point",
+              radius: "melee",
+              placeWithin: "far",
+              side: "all",
+              blocksSight: true,
+              seeThrough: "owner",
+              ownerPerObserver: "hidden",
+              duration: "manual",
+              endsOnCaster: ["castsSpell"],
+            },
+            note: "A curtain of darkness between two points within Far range. Only you can see through it; you're Hidden to adversaries on the other side of the veil.",
           },
         ],
       },
@@ -278,8 +293,8 @@ export const MIDNIGHT_EFFECTS: readonly CardEffect[] = [
   // The roll is against the target only. Silenced is the `silenced` flag (can't make noise or cast spells). SRD-C2
   // (dcm-cma): everything within Very Close of the target is an area centred on it that follows it (`follows`), whose
   // members are Silenced while inside; the server places card areas once dcm-9nlr lands. The GM's Fear ends both
-  // (`gmSpendsFear`); your Major damage ends the target's silence (`endsOnCaster`); an area has no caster end yet, so
-  // that stays in the target effect's `endsWhen` for the area too (gap dcm-rx1k).
+  // (`gmSpendsFear`); your Major damage ends the target's silence and the area (`endsOnCaster`; lanes-2 S1.4: the hit
+  // path ends the caster's areas, incomingHits `hitCasterEnds`, dcm-rx1k).
   {
     cardId: "hush",
     uses: [
@@ -315,6 +330,7 @@ export const MIDNIGHT_EFFECTS: readonly CardEffect[] = [
               mods: [{ kind: "flag", flag: "silenced" }],
               duration: "manual",
               endsOn: ["gmSpendsFear"],
+              endsOnCaster: ["majorDamage"],
               follows: true,
             },
             note: "The silence encompasses everything within Very Close range of the target and follows them as they move.",
@@ -603,7 +619,9 @@ export const MIDNIGHT_EFFECTS: readonly CardEffect[] = [
   // You and the allies within Far (`allies`, passed by the server) get the effect; your own successes with Hope mark the
   // Stress by themselves (`shadow`), and SRD-C2 (dcm-0gi) an ally's too (`ally-shadow`, an `afterAllyRolls` auto
   // against an adversary within Far of you). The end: the GM's Fear (`gmSpendsFear`) or your Severe damage
-  // (`endsOnCaster`). The darkness itself (only you and your allies see through it) stays a manual step (gap dcm-o44e).
+  // (`endsOnCaster`). Lanes-2 S1.4 (dcm-o44e): the darkness is an area of Far radius on the square you stand on when you
+  // cast it (`anchored`) that blocks sight for everyone but you and your allies (`seeThrough: "ownerAndAllies"`), with
+  // the same ends.
   {
     cardId: "eclipse",
     uses: [
@@ -627,10 +645,22 @@ export const MIDNIGHT_EFFECTS: readonly CardEffect[] = [
             endsOnCaster: ["takeSevere"],
           },
           {
-            kind: "manual",
+            kind: "area",
             to: "self",
             when: ["success"],
-            text: "The area within Far range is in complete darkness only you and your allies can see through.",
+            area: {
+              label: "Eclipse",
+              centre: "self",
+              anchored: true,
+              radius: "far",
+              side: "all",
+              blocksSight: true,
+              seeThrough: "ownerAndAllies",
+              duration: "manual",
+              endsOn: ["gmSpendsFear"],
+              endsOnCaster: ["takeSevere"],
+            },
+            note: "The area within Far range is in complete darkness only you and your allies can see through.",
           },
         ],
       },

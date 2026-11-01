@@ -430,9 +430,9 @@ export const VALOR_EFFECTS: readonly CardEffect[] = [
   // Hold the Line (Valor 9, CB p.342): "Describe the defensive stance you take and spend a Hope. If an adversary moves
   // within Very Close range, they're pulled into Melee range and Restrained. This condition lasts until you move or fail a
   // roll with Fear, or the GM spends 2 Fear on their turn to clear it." Two uses: the stance (a sheet effect) and, while
-  // it holds, the pull for an adversary that moved in. SRD-C2: the vocabulary has the trigger (`whenEnemyEntersRange`,
-  // dcm-bpr), but the Hand only starts `action` uses and nothing runs that trigger yet (E4 only names it in the feed), so
-  // the player still starts the pull (follow-up dcm-g90o). The ends are now engine-read.
+  // it holds, the pull for an adversary that moved in. Lanes-2 S1.4 (dcm-trib, dcm-g90o): the pull is `auto` on
+  // `whenEnemyEntersRange`: the server runs it when an adversary's move ends within Very Close of you
+  // (convex/combatAreas.ts `rangeTriggersAfterMove`), pulls it into Melee and Restrains it.
   {
     cardId: "hold-the-line",
     uses: [
@@ -451,24 +451,18 @@ export const VALOR_EFFECTS: readonly CardEffect[] = [
             endsWhen: "Until you move or fail a roll with Fear",
             endsOn: ["moves", "failWithFear"],
           },
-          {
-            kind: "manual",
-            to: "self",
-            text: "While you hold the line, an adversary that moves within Very Close range is pulled into Melee range and Restrained: use Hold the Line (adversary moves in) on it.",
-          },
         ],
       },
       {
         id: "pull",
         name: "Hold the Line (adversary moves in)",
-        activation: { kind: "action" },
-        requires: [{ kind: "effectActive", cardId: "hold-the-line" }, situation("The adversary moved within Very Close range of you")],
-        targets: { side: "enemy", range: "veryClose", count: { kind: "one" } },
+        activation: { kind: "auto", trigger: { kind: "whenEnemyEntersRange", range: "veryClose" } },
+        requires: [{ kind: "effectActive", cardId: "hold-the-line" }],
         steps: [
-          { kind: "move", to: "targets", mode: "pull", range: "melee", relativeTo: "self", note: "Pull the adversary into Melee range" },
+          { kind: "move", to: "triggerSource", mode: "intoMelee", range: "melee", relativeTo: "self", note: "Pulled into Melee range" },
           {
             kind: "condition",
-            to: "targets",
+            to: "triggerSource",
             condition: { kind: "standard", condition: "restrained" },
             duration: "manual",
             endsWhen: "Until you move or fail a roll with Fear, or the GM spends 2 Fear on their turn to clear it",
@@ -485,8 +479,10 @@ export const VALOR_EFFECTS: readonly CardEffect[] = [
   // Lead by Example (Valor 9, CB p.342): "When you deal damage to an adversary, you can mark a Stress and describe how you
   // encourage your allies. The next PC to make an attack against that adversary can clear a Stress or gain a Hope."
   // User answer 2026-10-31 (dcm-903q): other PCs only; the caster's own next attack doesn't count (`attackedRider` with
-  // `by: "others"` and `attackerSteps`). Lanes-2 (dcm-903q): the benefit stays a manual step until the PC attack path
-  // reads a bearer's attackedRider (engine E1.3b; dcm-yd5h / dcm-kso9), then the data switches (wave 10).
+  // `by: "others"` and `attackerSteps`). Lanes-2 S1.4 (dcm-kso9, dcm-903q): the PC attack path reads the tag's
+  // `attackedRider` (E1.4b): another PC's next attack on the adversary (not yours: the tag's marker records you as its
+  // caster, E1.4a) offers the pick in the Attack bar before the roll, and that attack uses it up, hit or miss (user
+  // answer 2026-11-01).
   {
     cardId: "lead-by-example",
     uses: [
@@ -503,11 +499,25 @@ export const VALOR_EFFECTS: readonly CardEffect[] = [
             condition: LED_BY_EXAMPLE,
             duration: "manual",
             endsWhen: "The next other PC (not you) to make an attack against this adversary can clear a Stress or gain a Hope",
-          },
-          {
-            kind: "manual",
-            to: "targets",
-            text: "The next other PC to make an attack against this adversary (other PCs only, not you) can clear a Stress or gain a Hope. Then clear Lead by Example.",
+            mods: [
+              {
+                kind: "attackedRider",
+                rider: {
+                  by: "others",
+                  attackerSteps: [
+                    {
+                      kind: "choose",
+                      id: "benefit",
+                      label: "Lead by Example: clear a Stress or gain a Hope",
+                      options: [
+                        { id: "stress", label: "Clear a Stress", steps: [{ kind: "clear", to: "self", track: "stress", amount: fixed(1) }] },
+                        { id: "hope", label: "Gain a Hope", steps: [{ kind: "hope", to: "self", change: "gain", amount: fixed(1) }] },
+                      ],
+                    },
+                  ],
+                },
+              },
+            ],
           },
         ],
       },

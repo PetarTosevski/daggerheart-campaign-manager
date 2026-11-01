@@ -390,8 +390,9 @@ export const BONE_EFFECTS: readonly CardEffect[] = [
             endsWhen: "The next successful attack against this target deals an extra 2d12 damage",
             mods: [{ kind: "attackedRider", rider: { by: "others", onSuccess: true, damage: { kind: "add", amount: dice(2, 12) } } }],
           },
-          // Lanes-2 S1 (dcm-ky8b, dcm-s9md): the table's reminder until another PC's attack reads the tag's
-          // `attackedRider` (PC attacks, dcm-yd5h); remove it when that merges. Your own next attack adds it (`extra`).
+          // Lanes-2 S1 (dcm-ky8b, dcm-s9md): the table's reminder. Lanes-2 S1.4: another PC's attack reads the tag now
+          // (dcm-yd5h), but the attack that places it also runs `extra` below, whose clearCondition sees the new tag and
+          // removes it at once (follow-up for lane E1, TASK-LN4-S1.md); keep the reminder until that is fixed.
           {
             kind: "manual",
             to: "targets",

@@ -513,21 +513,23 @@ describe("Hold the Line (CB p.342)", () => {
       endsWhen: "Until you move or fail a roll with Fear",
       endsOn: ["moves", "failWithFear"],
     });
-    expect(ofKind(plan, "prompt")[0]).toMatchObject({ prompt: "manual" });
+    // Lanes-2 S1.4 (dcm-trib): the pull runs by itself, so the stance has no reminder.
+    expect(ofKind(plan, "prompt")).toEqual([]);
   });
   it("the Restrained condition ends on the caster's move or failure with Fear, or a GM Fear spend (dcm-bpr)", () => {
     const restrained = cardUse("hold-the-line", "pull").steps.find((s) => s.kind === "condition");
     expect(restrained).toMatchObject({ endsOn: ["gmSpendsFear"], endsOnCaster: ["moves", "failWithFear"] });
-    const plan = ok("hold-the-line", ctx([], { useId: "pull", actor: actor({ activeCardEffects: ["hold-the-line"] }), targets: [adv("a")], situations: situations("hold-the-line", "pull") }));
+    const plan = ok("hold-the-line", ctx([], { useId: "pull", actor: actor({ activeCardEffects: ["hold-the-line"] }), trigger: { source: adv("a") } }));
     expect(ofKind(plan, "condition")[0]).toMatchObject({ endsOn: ["gmSpendsFear"] });
   });
-  it("while it holds, an adversary that moves within Very Close is pulled into Melee and Restrained", () => {
+  it("while it holds, an adversary that moves within Very Close is pulled into Melee and Restrained (auto, dcm-trib)", () => {
+    expect(cardUse("hold-the-line", "pull").activation).toEqual({ kind: "auto", trigger: { kind: "whenEnemyEntersRange", range: "veryClose" } });
     const holding = actor({ activeCardEffects: ["hold-the-line"] });
-    const plan = ok("hold-the-line", ctx([], { useId: "pull", actor: holding, targets: [adv("a")], situations: situations("hold-the-line", "pull") }));
-    expect(ofKind(plan, "prompt")[0]).toMatchObject({ prompt: "move", targetIds: ["a"], text: "Pull the adversary into Melee range" });
+    const plan = ok("hold-the-line", ctx([], { useId: "pull", actor: holding, trigger: { source: adv("a") } }));
+    expect(ofKind(plan, "prompt")[0]).toMatchObject({ prompt: "move", targetIds: ["a"], step: { mode: "intoMelee" } });
     expect(ofKind(plan, "condition")[0]).toMatchObject({ targetId: "a", condition: { kind: "standard", condition: "restrained" }, duration: "manual" });
     expect(plan.actor.after.hope).toBe(2);
-    expect(run(entry("hold-the-line"), ctx([], { useId: "pull", targets: [adv("a")], situations: situations("hold-the-line", "pull") }))).toMatchObject({
+    expect(run(entry("hold-the-line"), ctx([], { useId: "pull", trigger: { source: adv("a") } }))).toMatchObject({
       ok: false,
       reason: "requirement",
       detail: "effectActive",
@@ -540,12 +542,32 @@ describe("Lead by Example (CB p.342)", () => {
     const plan = ok("lead-by-example", ctx([], { trigger: { subject: adv("a") } }));
     expect(plan.actor.after.stress).toBe(2);
     expect(ofKind(plan, "condition")[0]).toMatchObject({ targetId: "a", condition: { kind: "tag", tag: "Lead by Example" } });
-    expect(ofKind(plan, "prompt")[0]).toMatchObject({ prompt: "manual", targetIds: ["a"] });
+    // Lanes-2 S1.4 (dcm-kso9): the attack path reads the benefit, so no reminder.
+    expect(ofKind(plan, "prompt")).toEqual([]);
   });
 
-  it("user answer (dcm-903q): the reminder says other PCs only; the caster's own attack doesn't count", () => {
-    const plan = ok("lead-by-example", ctx([], { trigger: { subject: adv("a") } }));
-    expect(JSON.stringify(ofKind(plan, "prompt")[0])).toContain("other PCs only, not you");
+  it("user answer (dcm-903q): other PCs only, through the tag's attackedRider; the benefit is the attacker's pick", () => {
+    const condition = cardUse("lead-by-example").steps.find((s) => s.kind === "condition");
+    expect(condition).toMatchObject({
+      mods: [
+        {
+          kind: "attackedRider",
+          rider: {
+            by: "others",
+            attackerSteps: [
+              {
+                kind: "choose",
+                id: "benefit",
+                options: [
+                  { id: "stress", steps: [{ kind: "clear", to: "self", track: "stress" }] },
+                  { id: "hope", steps: [{ kind: "hope", to: "self", change: "gain" }] },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    });
   });
 });
 

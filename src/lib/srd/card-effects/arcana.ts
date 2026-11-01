@@ -48,20 +48,16 @@ export const ARCANA_EFFECTS: readonly CardEffect[] = [
       },
       {
         // The holder is an ally: the ally spends their own Hope. Lanes-2 S1 (dcm-uj0, dcm-a9c): the use's cost is paid
-        // by the trigger's subject (`paidBy`; run.ts charges them and refuses when their known Hope is short). The
-        // server doesn't describe payers to the run yet (dcm-q40t), so an unknown Hope is taken as enough and the manual
-        // step below is the reminder; remove it when dcm-q40t merges. Lanes SRD-C1 (dcm-uj0): the ward works at any range
-        // (`unlimited`); `range` stays for a reader that doesn't know it (dcm-ofo).
+        // by the trigger's subject (`paidBy`; run.ts charges them and refuses when their known Hope is short). Lanes-2
+        // S1.4: cardRunner passes the holder's Hope (`hopeOf`, dcm-q40t), so the reminder is gone. Lanes SRD-C1
+        // (dcm-uj0): the ward works at any range (`unlimited`); `range` stays for a reader that doesn't know it (dcm-ofo).
         id: "ally",
         name: "Rune Ward (an ally holds it)",
         activation: { kind: "reaction", trigger: { kind: "whenAllyWouldTakeDamage", range: "veryFar", unlimited: true } },
         targets: { side: "trigger", who: "subject" },
         costs: [{ kind: "hope", amount: n(1) }],
         paidBy: "triggerSubject",
-        steps: [
-          { kind: "manual", to: "triggerSubject", text: "The ward's holder spends a Hope; if they have none, they can't use the ward (undo this)." },
-          ...runeWard("triggerSubject"),
-        ],
+        steps: runeWard("triggerSubject"),
       },
     ],
   },
@@ -565,10 +561,8 @@ export const ARCANA_EFFECTS: readonly CardEffect[] = [
             otherwise: [
               { kind: "tokens", to: "self", op: "clear" },
               // Lanes SRD-C1 (dcm-8x8): "you take the damage and this spell ends".
+              // Lanes-2 S1.4: the card path applies `endEffect` (cardRows `applyUseEnds`, dcm-m48i), so the reminder is gone.
               { kind: "endEffect", to: "self", note: "All the results are 4 or lower: you take the damage and Confusing Aura ends." },
-              // Lanes-2 R1 (dcm-s9md): the table's reminder until the server applies `endEffect`; remove it when dcm-9z2z
-              // merges. Card: "If all the results are 4 or lower, you take the damage and this spell ends."
-              { kind: "manual", to: "self", text: "All the results are 4 or lower: you take the damage and this spell ends (remove the Confusing Aura effect)." },
             ],
           },
         ],
@@ -635,8 +629,9 @@ export const ARCANA_EFFECTS: readonly CardEffect[] = [
             mods: [],
             duration: "manual",
             endsWhen: "you take damage or cast another spell",
-            // Lanes SRD-C1 (dcm-utu): taking damage ends it by itself; casting another spell is ended by hand.
-            endsOn: ["takeDamage"],
+            // Lanes SRD-C1 (dcm-utu): taking damage ends it by itself. Lanes-2 S1.4: casting another spell ends it too
+            // (the card path's `endSpellCast`, dcm-m48i).
+            endsOn: ["takeDamage", "castsSpell"],
           },
           {
             kind: "manual",

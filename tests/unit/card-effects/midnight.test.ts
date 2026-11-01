@@ -228,11 +228,14 @@ describe("Chokehold (L3, CB p.336)", () => {
 describe("Veil of Night (L3, CB p.336)", () => {
   it("Spellcast (13): on a success the veil lasts until you cast another spell", () => {
     const p = plan("veil-of-night", "main", [7, 4]);
-    expect(ofKind(p, "effect")).toEqual([{ kind: "effect", targetId: "pc", label: "Veil of Night", mods: [], duration: "manual", endsWhen: "you cast another spell" }]);
-    expect(prompts(p, "manual")[0]!.text).toMatch(/Hidden to adversaries on the other side/);
+    expect(ofKind(p, "effect")).toEqual([{ kind: "effect", targetId: "pc", label: "Veil of Night", mods: [], duration: "manual", endsWhen: "you cast another spell", endsOn: ["castsSpell"] }]);
+    // Lanes-2 S1.4 (dcm-o44e): the curtain is a wall area only you see through; you're Hidden to those it blocks.
+    expect(ofKind(p, "area")[0]!.area).toMatchObject({ label: "Veil of Night", shape: "wall", centre: "point", placeWithin: "far", blocksSight: true, seeThrough: "owner", ownerPerObserver: "hidden", endsOnCaster: ["castsSpell"] });
+    expect(prompts(p, "manual")).toEqual([]);
     expect(p.exclusive).toBe(true);
     const fail = plan("veil-of-night", "main", [2, 3]);
     expect(ofKind(fail, "effect")).toEqual([]);
+    expect(ofKind(fail, "area")).toEqual([]);
     expect(prompts(fail, "manual")).toEqual([]);
   });
   it("attacks through the darkness get advantage while the veil stands", () => {
@@ -288,7 +291,7 @@ describe("Hush (L5, CB p.336)", () => {
     expect(ofKind(p, "area")).toEqual([
       {
         kind: "area",
-        area: { label: "Hush", centre: "target", radius: "veryClose", side: "all", mods: [{ kind: "flag", flag: "silenced" }], duration: "manual", endsOn: ["gmSpendsFear"], follows: true },
+        area: { label: "Hush", centre: "target", radius: "veryClose", side: "all", mods: [{ kind: "flag", flag: "silenced" }], duration: "manual", endsOn: ["gmSpendsFear"], endsOnCaster: ["majorDamage"], follows: true },
         centreId: "a",
         targetIds: ["a"],
       },
@@ -488,11 +491,16 @@ describe("Eclipse (L10, CB p.337)", () => {
     expect(ofKind(p, "mark")).toEqual([{ kind: "mark", targetId: "a", track: "stress", amount: 1, hpMarked: 0, overflow: false }]);
     expect(refusal("eclipse", "ally-shadow", { targets: [adv("a")] })).toMatchObject({ reason: "requirement" });
   });
-  it("the darkness ends on a GM Fear spend or your Severe damage; only the darkness itself stays manual", () => {
+  it("the darkness is an area of Far radius where you stand that you and your allies see through; same ends (dcm-o44e)", () => {
     const p = plan("eclipse", "main", [9, 8], { allies: [ally("mira")] });
     expect(ofKind(p, "effect")[0]).toMatchObject({ endsOn: ["gmSpendsFear"] });
     expect(effectOf("eclipse").uses[0]!.steps.find((s) => s.kind === "effect")).toMatchObject({ endsOnCaster: ["takeSevere"] });
-    expect(prompts(p, "manual").map((m) => m.text)).toEqual(["The area within Far range is in complete darkness only you and your allies can see through."]);
+    expect(ofKind(p, "area")[0]).toMatchObject({
+      centreId: "pc",
+      area: { label: "Eclipse", centre: "self", anchored: true, radius: "far", blocksSight: true, seeThrough: "ownerAndAllies", endsOn: ["gmSpendsFear"], endsOnCaster: ["takeSevere"] },
+    });
+    expect(prompts(p, "manual")).toEqual([]);
+    expect(ofKind(plan("eclipse", "main", [2, 3], { allies: [ally("mira")] }), "area")).toEqual([]);
   });
 });
 
