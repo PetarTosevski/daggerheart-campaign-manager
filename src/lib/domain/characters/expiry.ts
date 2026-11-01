@@ -394,3 +394,40 @@ export function tokensGoneKeys(before: Pick<Expirable, "cardTokens">, after: Pic
   const left = new Map((after.cardTokens ?? []).map((t) => [t.cardId, t.count]));
   return (before.cardTokens ?? []).filter((t) => t.count > 0 && (left.get(t.cardId) ?? 0) <= 0).map((t) => t.cardId);
 }
+
+// ---------------------------------------------------------------- plan lanes-2 wave 10, tracer E6.4 (dcm-lztq)
+
+/**
+ * Whether the caster made this effect, for a caster-tied end (Eye of the Storm, HF p.23: "until you take Severe damage";
+ * two Skykin may hold it). The effect's stored `casterId` decides when it has one: equal to the caster's id when the
+ * caller knows it, otherwise naming none of the other party members (`otherIds`) while the caster holds the effect's
+ * source (`caster.holds`). An effect stored before `casterId` existed: `guess`, the old single-holder rule.
+ */
+export function madeByCaster(effect: Pick<Effect, "casterId">, caster: { id?: string; holds: boolean }, otherIds: ReadonlySet<string>, guess: () => boolean): boolean {
+  if (effect.casterId === undefined) return guess();
+  if (caster.id !== undefined) return effect.casterId === caster.id;
+  return caster.holds && !otherIds.has(effect.casterId);
+}
+
+/**
+ * dcm-qxb6: whether a defeat ends this effect's link to its creature. An effect that names its instance
+ * (`targetInstanceId`, Marked for Death, HF p.8: "the current adversary Marked for Death is defeated") ends only on that
+ * instance's defeat; one without (stored before) keeps the tag link (`hasTag`: the defeated instance carries the tag the
+ * effect's step names).
+ */
+export function defeatEnds(effect: Pick<Effect, "targetInstanceId">, defeatedId: string | undefined, hasTag: boolean): boolean {
+  if (effect.targetInstanceId !== undefined && defeatedId !== undefined) return effect.targetInstanceId === defeatedId;
+  return hasTag;
+}
+
+/**
+ * dcm-lztq writers (D5 class actions; cards and features stamp their own): the effects new or rewritten in `after` (no
+ * equal effect with that id in `before`; D5 rewrites an effect under its fixed id, Marked for Death on a new target)
+ * that have no caster get `casterId`. Effects left as they were keep what they have.
+ */
+export function withCasterOnNew<T extends { effects: readonly Effect[] }>(before: { effects: readonly Effect[] }, after: T, casterId: string): T {
+  const old = new Map(before.effects.map((e) => [e.id, JSON.stringify(e)]));
+  const fresh = (e: Effect) => e.casterId === undefined && old.get(e.id) !== JSON.stringify(e);
+  if (!after.effects.some(fresh)) return after;
+  return { ...after, effects: after.effects.map((e) => (fresh(e) ? { ...e, casterId } : e)) };
+}

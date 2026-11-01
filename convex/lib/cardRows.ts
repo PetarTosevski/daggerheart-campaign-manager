@@ -14,7 +14,7 @@ import { v, type Infer } from "convex/values";
 
 import type { PlanStep, ResolvedMod, RunPlan } from "../../src/lib/domain/card-effects/run";
 import type { CardUse, ConditionRef, Duration, EndEvent, NumberSource, RollEnd, Step, Upgrade } from "../../src/lib/domain/card-effects/types";
-import { endEffects, endsOnOccurrence, gmFearToEnd, tokensGoneKeys, withoutLapsedUnstoppable, type EffectEnds, type EndOccurrence, type EndRole } from "../../src/lib/domain/characters/expiry";
+import { defeatEnds, endEffects, endsOnOccurrence, gmFearToEnd, madeByCaster, tokensGoneKeys, withoutLapsedUnstoppable, type EffectEnds, type EndOccurrence, type EndRole } from "../../src/lib/domain/characters/expiry";
 import { tierForLevel } from "../../src/lib/domain/characters/index";
 import { FEATURE_KEY_PREFIX } from "../../src/lib/domain/feature-effects/ids";
 import type { RollRecord } from "../../src/lib/domain/duality";
@@ -703,20 +703,47 @@ export function holdsSource(sheet: CharacterSheet, sourceId: string): boolean {
   return isFeatureUseId(sourceId) && owned(sheet).some((f) => f.featureId === sourceId);
 }
 
+/** A party key as a character id (keys are character ids, or null for "the caster itself" in some callers). */
+function keyId(key: unknown): string | undefined {
+  return typeof key === "string" ? key : undefined;
+}
+
 /**
- * Caster side on the party's sheets (Eye of the Storm on an ally, HF p.23: "until you take Severe damage"). A sheet
- * effect does not name who made it, so the caster is the one party member holding its card or feature; when two hold it
- * the effect is left for the GM to end by hand (Q3 in the task). Returns the sheets that changed.
+ * Plan lanes-2 wave 10, E6.4 (dcm-lztq): whether `caster` made a party member's effect. The effect's stored `casterId`
+ * decides (`madeByCaster`): the caster's id is `casterId`, or the key of the party entry holding the caster's own sheet
+ * object; unknown, a `casterId` naming another member is theirs. Without a stored caster (effects from before), the old
+ * guess: the caster holds the source and at most one listed member does (Q3: with two holders the GM ends it by hand).
+ */
+function casterMade<K>(caster: CharacterSheet, party: readonly { key: K; sheet: CharacterSheet }[], casterId?: string): (e: Effect, sourceId: string) => boolean {
+  const id = casterId ?? keyId(party.find((p) => p.sheet === caster)?.key);
+  const others = new Set(party.flatMap((p) => {
+    const k = keyId(p.key);
+    return p.sheet === caster || k === undefined || k === id ? [] : [k];
+  }));
+  return (e, sourceId) => {
+    const holds = holdsSource(caster, sourceId);
+    return madeByCaster(e, { ...(id !== undefined ? { id } : {}), holds }, others, () => holds && party.filter((p) => holdsSource(p.sheet, sourceId)).length <= 1);
+  };
+}
+
+/**
+ * Caster side on the party's sheets (Eye of the Storm on an ally, HF p.23: "until you take Severe damage"). The effect's
+ * stored caster decides (E6.4, dcm-lztq: two Skykin each end only their own); an effect stored before it falls back to
+ * the one party member holding its card or feature, and with two holders it is left for the GM (Q3). `casterId`: the
+ * caster's character id when the caller has it (else read from the party entry holding `caster`, or derived as
+ * `casterMade` says). Returns the sheets that changed.
  */
 export function endForCasterOnSheets<K>(
   caster: CharacterSheet,
   party: readonly { key: K; sheet: CharacterSheet }[],
   occ: EndOccurrence,
   lookup?: SourceLookup,
+  casterId?: string,
 ): { key: K; sheet: CharacterSheet; ended: Effect[]; lines: string[] }[] {
+  const made = casterMade(caster, party, casterId);
   const mine = (e: Effect) => {
     const source = effectSource(e);
-    return source !== null && holdsSource(caster, source.sourceId) && party.filter((p) => holdsSource(p.sheet, source.sourceId)).length <= 1;
+    return source !== null && made(e, source.sourceId);
   };
   const out: { key: K; sheet: CharacterSheet; ended: Effect[]; lines: string[] }[] = [];
   for (const p of party) {
@@ -727,13 +754,15 @@ export function endForCasterOnSheets<K>(
 }
 
 /**
- * `targetDefeated` (Marked for Death, HF p.8: "the current adversary Marked for Death is defeated"): a PC's effects whose
- * step names a tag the defeated instance carries end. The sheet does not record which creature an effect is about; the
- * tag on the instance is the link.
+ * `targetDefeated` (Marked for Death, HF p.8: "the current adversary Marked for Death is defeated"): a PC's effects about
+ * the defeated instance end. E6.4 (dcm-qxb6): an effect that names its instance (`targetInstanceId`) ends only on that
+ * instance's defeat, so one assassin's kill leaves another assassin's mark; one without (stored before, or a writer that
+ * does not stamp it yet) keeps the old link, a tag the defeated instance carries that the effect's step names. The
+ * instance's `_id` is read when the caller passes the whole row.
  */
-export function endOnDefeat(sheet: CharacterSheet, defeated: Pick<Doc<"encounterAdversaries">, "tags">, lookup?: SourceLookup): ReturnType<typeof endOnSheet> {
+export function endOnDefeat(sheet: CharacterSheet, defeated: Pick<Doc<"encounterAdversaries">, "tags"> & { _id?: Id<"encounterAdversaries"> }, lookup?: SourceLookup): ReturnType<typeof endOnSheet> {
   const tags = new Set(defeated.tags ?? []);
-  return endOnSheet(sheet, { kind: "event", event: "targetDefeated" }, { only: (e) => tags.has(effectSource(e)?.label ?? ""), ...(lookup ? { lookup } : {}) });
+  return endOnSheet(sheet, { kind: "event", event: "targetDefeated" }, { only: (e) => defeatEnds(e, defeated._id, tags.has(effectSource(e)?.label ?? "")), ...(lookup ? { lookup } : {}) });
 }
 
 /**
@@ -842,12 +871,14 @@ export function tokenKeySource(key: string): string {
 }
 
 /** The party member's effects from `sourceIds` the caster made (their own; on another PC only when no other member holds the source, Q3). */
-function castersEffect<K>(caster: CharacterSheet, member: CharacterSheet, party: readonly PartySheet<K>[], sourceIds: ReadonlySet<string>): (e: Effect) => boolean {
+function castersEffect<K>(caster: PartySheet<K>, member: CharacterSheet, party: readonly PartySheet<K>[], sourceIds: ReadonlySet<string>): (e: Effect) => boolean {
+  const made = casterMade(caster.sheet, party, keyId(caster.key));
   return (e) => {
     const source = effectSource(e);
     if (source === null || !sourceIds.has(source.sourceId)) return false;
-    if (member === caster) return true;
-    return holdsSource(caster, source.sourceId) && party.filter((p) => holdsSource(p.sheet, source.sourceId)).length <= 1;
+    // E6.4 (dcm-lztq): on the caster's own sheet, an effect another member made (its stored caster) is not the caster's.
+    if (member === caster.sheet) return e.casterId === undefined || keyId(caster.key) === undefined || e.casterId === keyId(caster.key);
+    return made(e, source.sourceId);
   };
 }
 
@@ -863,7 +894,7 @@ export function endOnTokensGone<K>(caster: PartySheet<K>, party: readonly PartyS
   const members = [caster, ...party.filter((p) => p.key !== caster.key)];
   const out: SheetEnd<K>[] = [];
   for (const p of members) {
-    const only = castersEffect(caster.sheet, p.sheet, members, ids);
+    const only = castersEffect(caster, p.sheet, members, ids);
     const ended = endOnSheet(p.sheet, { kind: "event", event: "tokensGone" }, { only, ...(lookup ? { lookup } : {}) });
     if (ended.ended.length > 0) out.push({ key: p.key, sheet: withoutEffects(p.sheet, new Set(ended.ended.map((e) => e.id))), ended: ended.ended, lines: ended.lines });
   }
@@ -953,13 +984,14 @@ export function endOnSpellCast<K>(caster: PartySheet<K>, party: readonly PartySh
   const occ: EndOccurrence = { kind: "event", event: "castsSpell" };
   const other = (e: Effect) => effectSource(e)?.sourceId !== castCardId;
   const members = [caster, ...party.filter((p) => p.key !== caster.key)];
+  const byCaster = casterMade(caster.sheet, members, keyId(caster.key));
   const out: SheetEnd<K>[] = [];
   for (const p of members) {
     const own = p.key === caster.key ? endOnSheet(p.sheet, occ, { only: other, ...(lookup ? { lookup } : {}) }) : null;
     const base = own?.sheet ?? p.sheet;
     const made = (e: Effect) => {
       const source = effectSource(e);
-      return other(e) && source !== null && holdsSource(caster.sheet, source.sourceId) && members.filter((m) => holdsSource(m.sheet, source.sourceId)).length <= 1;
+      return other(e) && source !== null && byCaster(e, source.sourceId);
     };
     const theirs = endOnSheet(base, occ, { role: "caster", only: made, ...(lookup ? { lookup } : {}) });
     const ended = [...(own?.ended ?? []), ...theirs.ended];
@@ -1323,4 +1355,59 @@ export function endSheetEffectByGmFear(sheet: CharacterSheet, effectId: string, 
 export function endInstanceEffectByGmFear(instance: InstanceState & { label: string }, effectId: string, lookup?: SourceLookup): { patch: NonNullable<ReturnType<typeof endInstanceEffects>["patch"]>; lines: string[] } | null {
   const out = endInstanceEffects(instance, { kind: "event", event: "gmSpendsFear" }, { only: (e) => e.id === effectId, ...(lookup ? { lookup } : {}) });
   return out.patch === null ? null : { patch: out.patch, lines: out.ended.map((e) => endedLine(instance.label, e.label, e.source)) };
+}
+
+// ---------------------------------------------------------------- plan lanes-2 wave 10, tracer E6.4 (docs/tasks/TASK-LN4-E6.md)
+
+/** D5's Marked for Death effect id on the assassin's sheet (src/lib/domain/class-features/classes/assassin.ts `MARKED`). */
+export const MARKED_FOR_DEATH_EFFECT = "marked-for-death";
+
+/**
+ * dcm-qxb6 writer: the sheet with its effect `effectId` naming the placing PC (`casterId`) and the instance it is about
+ * (`targetInstanceId`). Marked for Death (HF p.8): the attack path that runs the rider stamps the assassin's D5 effect
+ * with the attacked instance, so its defeat ends only this assassin's mark (`endOnDefeat`) and ending the effect lifts
+ * the tag from that instance (`liftTargetTags`). The same sheet when the effect is missing.
+ */
+export function withEffectTarget(sheet: CharacterSheet, effectId: string, casterId: string, targetInstanceId: string): CharacterSheet {
+  if (!sheet.effects.some((e) => e.id === effectId)) return sheet;
+  return { ...sheet, effects: sheet.effects.map((e) => (e.id === effectId ? { ...e, casterId, targetInstanceId } : e)) };
+}
+
+/**
+ * dcm-mvoo engine note: ending a sheet effect that names its instance (`targetInstanceId`) lifts what it stands for there:
+ * the tag (or condition) its entry's step names and that step's condition markers on the instance. Marked for Death (HF
+ * p.8): the assassin's D5 effect ends (its End button, a GM Fear spend) and the adversary is no longer Marked for Death.
+ * The tag stays while a sheet in `still` keeps an effect naming the same instance and label (a second assassin's mark on
+ * it). An effect without `targetInstanceId` lifts nothing (the GM removes the tag by hand, as before). Patches the
+ * instances and logs one GM row (`adversaryBefore`, undoable) in `groupId`; returns the feed lines.
+ */
+export async function liftTargetTags(
+  ctx: MutationCtx,
+  input: { campaignId: Id<"campaigns">; ended: readonly Effect[]; still: readonly CharacterSheet[]; groupId: string; actorId: Id<"users">; lookup?: SourceLookup },
+): Promise<string[]> {
+  const before: AdversaryBefore[] = [];
+  const lines: string[] = [];
+  for (const effect of input.ended) {
+    if (effect.targetInstanceId === undefined) continue;
+    const source = effectSource(effect);
+    const step = source === null ? undefined : stepEnds(source.sourceId, source.label, input.lookup);
+    if (source === null || step?.kind !== "condition") continue;
+    const label = step.label;
+    if (input.still.some((s) => s.effects.some((k) => k.targetInstanceId === effect.targetInstanceId && effectSource(k)?.label === label))) continue;
+    const id = ctx.db.normalizeId("encounterAdversaries", effect.targetInstanceId);
+    const instance = id === null ? null : await ctx.db.get("encounterAdversaries", id);
+    if (instance === null || instance.campaignId !== input.campaignId) continue;
+    const marker = (m: InstanceEffect) => m.label === label && instanceEffectSource(m)?.sourceId === source.sourceId;
+    const tags = (instance.tags ?? []).filter((t) => t !== label);
+    const conditions = instance.conditions.filter((c) => c !== label);
+    const effects = (instance.effects ?? []).filter((m) => !marker(m));
+    if (tags.length === (instance.tags ?? []).length && conditions.length === instance.conditions.length && effects.length === (instance.effects ?? []).length) continue;
+    before.push(adversaryBefore(instance, true));
+    await ctx.db.patch("encounterAdversaries", instance._id, { tags, conditions, effects, updatedAt: Date.now() });
+    lines.push(endedLine(instance.label, label, effect.source));
+  }
+  if (before.length > 0) {
+    await logAction(ctx, { campaignId: input.campaignId, actorId: input.actorId, kind: "combat", visibility: "gm", summary: lines.join("; ").slice(0, 1000), groupId: input.groupId, adversaryBefore: before, undoable: true });
+  }
+  return lines;
 }

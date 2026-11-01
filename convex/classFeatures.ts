@@ -17,7 +17,7 @@
  */
 import { v } from "convex/values";
 
-import { expire } from "../src/lib/domain/characters/expiry";
+import { expire, withCasterOnNew } from "../src/lib/domain/characters/expiry";
 import { findFeature, hopeFeature } from "../src/lib/domain/class-features/hooks";
 import { rallyDieStress } from "../src/lib/domain/class-features/held-dice";
 import { CLASS_FEATURES, classFeaturesAvailable } from "../src/lib/domain/class-features/index";
@@ -28,7 +28,8 @@ import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { logAction, newGroupId } from "./lib/actionLog";
-import { afterUnstoppable } from "./lib/cardRows";
+import { partyMembers } from "./lib/adversaryHits";
+import { afterUnstoppable, liftTargetTags } from "./lib/cardRows";
 import { assertCanAct, editable, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { payCost } from "./lib/classFeatureCost";
 import { rollDie } from "./lib/dice";
@@ -138,7 +139,14 @@ export const use = keyedUserMutation({
 
       const used = feature.use({ sheet: paid, params, rng: rollDie, others: others.map(({ characterId, sheet }) => ({ characterId, sheet })), roll });
       // Plan lanes-2 E6.3 (dcm-v17): once a D5 Unstoppable action removed the die, the feature's sheet effect ends too.
-      const result = UNSTOPPABLE_ACTIONS.has(featureKey) ? { ...used, sheet: afterUnstoppable(used.sheet) } : used;
+      const lapsed = UNSTOPPABLE_ACTIONS.has(featureKey) ? { ...used, sheet: afterUnstoppable(used.sheet) } : used;
+      // Plan lanes-2 wave 10, E6.4 (dcm-lztq): the effects this use writes record their caster, on the user's sheet and
+      // on the others' (Life Support, Witch's Charm), so caster-tied ends find them.
+      const result = {
+        ...lapsed,
+        sheet: withCasterOnNew(sheet, lapsed.sheet, character._id),
+        ...(lapsed.others ? { others: lapsed.others.map((o) => ({ ...o, sheet: withCasterOnNew(others.find((x) => x.characterId === o.characterId)?.sheet ?? { effects: [] }, o.sheet, character._id) })) } : {}),
+      };
       const fearDelta = await changeFear(ctx, campaign._id, result.fearDelta ?? 0);
 
       const loaded = new Map<string, { id: Id<"characters">; before: CharacterSheet }>([
@@ -198,8 +206,17 @@ export const endEffect = keyedUserMutation({
       if (effect === undefined) throw appError("CLASS_FEATURE_RULE", "That effect has already ended.");
       const ending = new Set([effectId, ...(ENDS_WITH[effectId] ?? [])]);
       const ended = sheet.effects.filter((e) => ending.has(e.id));
-      await saveSheet(ctx, character._id, { ...sheet, effects: sheet.effects.filter((e) => !ending.has(e.id)) });
+      const after = { ...sheet, effects: sheet.effects.filter((e) => !ending.has(e.id)) };
+      await saveSheet(ctx, character._id, after);
+      // Plan lanes-2 wave 10, E6.4 (dcm-mvoo): an ended effect that names its instance (Marked for Death, HF p.8) lifts
+      // the tag there, in the same undo group.
+      const groupId = ended.some((e) => e.targetInstanceId !== undefined) ? newGroupId() : undefined;
+      if (groupId !== undefined) {
+        const still = [after, ...(await partyMembers(ctx, campaign._id)).filter((m) => m.character._id !== character._id).map((m) => m.sheet)];
+        await liftTargetTags(ctx, { campaignId: campaign._id, ended, still, groupId, actorId: ctx.user._id });
+      }
       await logAction(ctx, {
+        ...(groupId !== undefined ? { groupId } : {}),
         campaignId: campaign._id,
         characterId: character._id,
         actorId: ctx.user._id,

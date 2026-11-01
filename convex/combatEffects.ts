@@ -5,7 +5,8 @@ import { appError } from "../src/lib/errors/app-error";
 import type { Doc } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { logAction, newGroupId } from "./lib/actionLog";
-import { adversaryBefore, endInstanceEffectByGmFear, endSheetEffectByGmFear, fearEndsOnInstance, fearEndsOnSheet, type FearEnd } from "./lib/cardRows";
+import { partyMembers } from "./lib/adversaryHits";
+import { adversaryBefore, endInstanceEffectByGmFear, endSheetEffectByGmFear, fearEndsOnInstance, fearEndsOnSheet, liftTargetTags, type FearEnd } from "./lib/cardRows";
 import { readSheet, saveSheet } from "./lib/characterSheet";
 import { spendFear } from "./lib/fear";
 import { gmQuery, keyedGmMutation } from "./lib/functions";
@@ -103,7 +104,12 @@ export const endByFear = keyedGmMutation({
           ...(cost > 0 ? { fearDelta: -cost } : {}),
           undoable: true,
         });
-        return { spent: cost, lines: out.lines };
+        // Plan lanes-2 wave 10, E6.4 (dcm-mvoo): Marked for Death's effect names its instance; clearing it lifts the tag
+        // there (HF p.8: "the GM spends a number of Fear equal to your tier to clear it"), in the same undo group.
+        const ended = sheet.effects.filter((e) => e.id === effectId);
+        const still = [out.sheet, ...(await partyMembers(ctx, campaignId)).filter((m) => m.character._id !== character._id).map((m) => m.sheet)];
+        const lifted = await liftTargetTags(ctx, { campaignId, ended, still, groupId, actorId: ctx.user._id });
+        return { spent: cost, lines: [...out.lines, ...lifted] };
       }
       const instance = await loadInstanceHere(ctx, campaignId, target.instanceId);
       const out = endInstanceEffectByGmFear(instance, effectId);

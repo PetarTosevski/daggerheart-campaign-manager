@@ -137,6 +137,7 @@ import type * as migrations_maps from "../migrations/maps.js";
 import type * as migrations_motherboardEconomy from "../migrations/motherboardEconomy.js";
 import type * as migrations_run from "../migrations/run.js";
 import type * as migrations_sessions from "../migrations/sessions.js";
+import type * as migrations_sheetEffectCaster from "../migrations/sheetEffectCaster.js";
 import type * as migrations_slotBonuses from "../migrations/slotBonuses.js";
 import type * as migrations_targetCountExpiresAt from "../migrations/targetCountExpiresAt.js";
 import type * as migrations_trackers from "../migrations/trackers.js";
@@ -327,6 +328,7 @@ declare const fullApi: ApiFromModules<{
   "migrations/motherboardEconomy": typeof migrations_motherboardEconomy;
   "migrations/run": typeof migrations_run;
   "migrations/sessions": typeof migrations_sessions;
+  "migrations/sheetEffectCaster": typeof migrations_sheetEffectCaster;
   "migrations/slotBonuses": typeof migrations_slotBonuses;
   "migrations/targetCountExpiresAt": typeof migrations_targetCountExpiresAt;
   "migrations/trackers": typeof migrations_trackers;
