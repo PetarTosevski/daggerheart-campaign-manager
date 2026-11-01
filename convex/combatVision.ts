@@ -59,7 +59,8 @@ import { carriedLightValidator, objectLightValidator } from "./lib/validators/co
  * - `playerView` (every member, for their own character on the live map) and `previewAs` (GM, any character):
  *   the tokens that character can see now under the campaign's time and the map's lights, filtered here with
  *   C1's engine so a hidden token never reaches the player (R10, R11); adversary, ally, neutral and custom
- *   tokens carry name, size, side and facing only (R4); every PC token is shown with its public sheet numbers
+ *   tokens carry name, size, side and facing only (R4), plus their condition names (Combat HUD HD1, answer 10a: names,
+ *   never numbers); every PC token is shown with its public sheet numbers
  *   (Q4); plus the character's vision masks for the fog (the client never learns where hidden torch-bearers
  *   stand, Q3). The layout itself stays C3's `combatMaps.live` (Q1).
  * - `revealTo` / `unrevealTo` (GM): a dim-light token shown to one character (R10).
@@ -101,7 +102,7 @@ const viewOkValidator = v.object({
   vision: visionMaskValidator,
   /** Every PC token on the map, the viewer's own included (`mine`), with public sheet numbers (Q4). */
   pcs: v.array(tokenViewValidator),
-  /** Other tokens the character sees now (R10, R11), without stats (R4). */
+  /** Other tokens the character sees now (R10, R11), without stats (R4); condition names only (HD1). */
   others: v.array(otherTokenValidator),
 });
 

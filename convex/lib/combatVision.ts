@@ -33,6 +33,7 @@ import type { FeatureScope } from "../../src/lib/domain/class-features/types";
 import { withEffects } from "../../src/lib/domain/characters/effects";
 import { activeAreasOnMap, areaSightBlocks, viewerSeesThrough, type AreaSightBlock } from "../combatAreas";
 import { readSheet } from "./characterSheet";
+import { hudConditionValidator, hudConditions } from "./combatHud";
 import { featureScope } from "./featureScope";
 import { adversaryArtSrc } from "./encounters";
 import { CELL_TILE_ROWS, MAX_MAP_H, objectsOnMap, tokensOnMap } from "./combatMaps";
@@ -62,7 +63,8 @@ export const lightLevelValidator = timeOfDayValidator;
 
 /**
  * A token a player sees that is not a PC (adversary, ally, neutral, custom): name, size, side and facing only
- * (R4: never HP, Stress, Difficulty, conditions or anything else), plus an adversary's rulebook art; without art
+ * (R4: never HP, Stress, Difficulty, thresholds or anything else), plus an adversary's rulebook art and its condition
+ * names (Combat HUD HD1, answer 10a); without art
  * the client draws initials from the name. `revealed`: in dim light at night and shown only because the GM revealed
  * it to this character (R10); the client marks it (the board's dashed outline).
  */
@@ -81,6 +83,12 @@ export const otherTokenValidator = v.object({
    * (and every custom token's row) is exactly the D9 shape; `null` is accepted for the client's portrait type.
    */
   portrait: v.optional(v.union(v.object({ kind: v.literal("url"), url: v.string() }), v.null())),
+  /**
+   * Combat HUD HD1 (user answer 10a, bead dcm-bxp.99.32.8): the token's conditions as names only (the tracker
+   * instance's for an adversary, the custom token's own), for the HUD's badges. Never a number. Sent only when there
+   * is one, so a row without conditions is exactly the D9 shape (widened, optional).
+   */
+  conditions: v.optional(v.array(hudConditionValidator)),
 });
 export type OtherToken = Infer<typeof otherTokenValidator>;
 
@@ -422,20 +430,23 @@ async function pcView(
 }
 
 /**
- * A non-PC token's name (the tracker instance's label for an adversary, or the custom name) and, for an adversary,
- * its rulebook art (`adversaryArtSrc`). Nothing else is read (R4). With no art the portrait is `null`, never absent.
+ * A non-PC token's name (the tracker instance's label for an adversary, or the custom name), for an adversary its
+ * rulebook art (`adversaryArtSrc`), and its condition names when it has any (HD1, answer 10a). Nothing else is read
+ * (R4). With no art the portrait is `null`, never absent.
  */
 async function otherIdentity(
   ctx: QueryCtx,
   campaign: Doc<"campaigns">,
   token: Doc<"combatTokens">,
-): Promise<Pick<OtherToken, "name" | "portrait">> {
-  if (token.ref.kind === "custom") return { name: token.ref.name, portrait: null };
+): Promise<Pick<OtherToken, "name" | "portrait" | "conditions">> {
+  const named = (ids: readonly string[]) => (ids.length > 0 ? { conditions: hudConditions(ids) } : {});
+  if (token.ref.kind === "custom") return { name: token.ref.name, portrait: null, ...named(token.ref.conditions) };
   if (token.ref.kind === "adversary") {
     const instance = await ctx.db.get("encounterAdversaries", token.ref.adversaryId);
     if (instance === null || instance.campaignId !== campaign._id) return { name: "Unknown", portrait: null };
     const url = await adversaryArtSrc(ctx, campaign._id, instance);
-    return url === null ? { name: instance.label, portrait: null } : { name: instance.label, portrait: { kind: "url", url } };
+    const portrait = url === null ? null : { kind: "url" as const, url };
+    return { name: instance.label, portrait, ...named(instance.conditions) };
   }
   return { name: "Unknown", portrait: null };
 }
