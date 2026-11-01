@@ -603,6 +603,9 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
     ...(context.goldOf ? { goldOf: context.goldOf } : {}),
     ...(context.chain ? { chain: context.chain } : {}),
     ...(context.effectsOn ? { effectsOn: context.effectsOn } : {}),
+    // Plan lanes-2, E7.4 (dcm-eg6h): the live map's creatures reach the card runner's numbers (`creatureCount` in a fear
+    // gain, damage or Stress step: Hive Mind HF p.65, Pack Fury).
+    ...(context.creatures ? { creatures: context.creatures } : {}),
     situations: context.situations ?? [],
     roll: {
       modifier: rollModifier,

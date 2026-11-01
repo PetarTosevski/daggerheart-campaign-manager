@@ -29,6 +29,15 @@ const USE_LABEL = { action: "Action", reaction: "Reaction", auto: "Automatic", p
 
 export type ChoiceArgs = ReturnType<typeof choiceArgs>;
 
+/** What a split divides (plan lanes-2 E7.4, dcm-mvgc: Hope, Stress and HP splits too). */
+function splitLegend(s: FeatureAsk["splits"][number]): string {
+  if (s.what === "damage") return "Divide the damage";
+  if (s.what === "hope") return "Divide the Hope gained";
+  if (s.what === "stress") return "Divide the Stress marked";
+  if (s.what === "hp") return "Divide the Hit Points marked";
+  return `Divide the ${s.track ?? "marks"} cleared`;
+}
+
 function countText(cap: number | null, count: string): string {
   if (count === "one") return "pick one";
   return cap === null ? "pick any" : `pick up to ${cap}`;
@@ -190,7 +199,7 @@ function ChoicesForm({
         const ids = s.among === "targets" ? (pickable(ask.targets) ? a.targets : panelTargets) : LIST_KEYS.includes(s.among as never) ? a[s.among as keyof Pick<Answers, "picked" | "allies" | "followUp">] : [];
         return (
           <fieldset key={i} className="trk-ask-set">
-            <legend>{s.what === "damage" ? "Divide the damage" : `Divide the ${s.track ?? "marks"} cleared`} (rolled as it runs; leave empty to split later)</legend>
+            <legend>{splitLegend(s)} (rolled as it runs; leave empty to split later)</legend>
             {ids.length === 0 ? <p className="trk-ask-note">Pick the {s.among} first.</p> : null}
             {ids.map((id) => (
               <label key={id} className="trk-ask-field">

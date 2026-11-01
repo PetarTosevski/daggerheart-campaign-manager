@@ -81,6 +81,7 @@ import type * as lib_featurePrompts from "../lib/featurePrompts.js";
 import type * as lib_featureRunner from "../lib/featureRunner.js";
 import type * as lib_featureScope from "../lib/featureScope.js";
 import type * as lib_files from "../lib/files.js";
+import type * as lib_forcedAttacks from "../lib/forcedAttacks.js";
 import type * as lib_functions from "../lib/functions.js";
 import type * as lib_incomingHits from "../lib/incomingHits.js";
 import type * as lib_inviteEmail from "../lib/inviteEmail.js";
@@ -272,6 +273,7 @@ declare const fullApi: ApiFromModules<{
   "lib/featureRunner": typeof lib_featureRunner;
   "lib/featureScope": typeof lib_featureScope;
   "lib/files": typeof lib_files;
+  "lib/forcedAttacks": typeof lib_forcedAttacks;
   "lib/functions": typeof lib_functions;
   "lib/incomingHits": typeof lib_incomingHits;
   "lib/inviteEmail": typeof lib_inviteEmail;

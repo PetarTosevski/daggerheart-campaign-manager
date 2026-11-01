@@ -368,8 +368,7 @@ export type AdversaryEvent =
    * Plan lanes-2, lane E7 (dcm-xobk): a PC escaped what this adversary put on them (Encumber's bramble tokens, CB p.218:
    * "All bramble tokens can be removed by succeeding on a Finesse Roll (12 + the number of bramble tokens)"; Drain and
    * Multiply spawns a Minion per token removed). `tokens`: how many came off, `name` their name, `condition` the condition
-   * escaped. No `AdversaryTrigger` matches it yet: the trigger kind is a vocabulary gap (filed for V3); until then
-   * `matchesTrigger` answers false (kinds differ) and the GM fires the reaction by hand with `trigger.amount` = `tokens`.
+   * escaped. The trigger `pcEscapes` (V3) matches it (E7.4); the run's `trigger.amount` is `tokens`.
    */
   | { kind: "pcEscapes"; tokens: number; name?: string; condition?: string; band?: Range };
 
@@ -546,8 +545,13 @@ export function matchesTrigger(trigger: AdversaryTrigger, event: AdversaryEvent)
       const e = event as Extract<AdversaryEvent, { kind: "pcHope" }>;
       return e.change === trigger.change && within(e.band, trigger.within);
     }
-    case "pcEscapes":
-      return false; // matched in wave 10 (dcm-0hlq, dcm-thwj)
+    case "pcEscapes": {
+      // Plan lanes-2, E7.4 (dcm-0hlq, dcm-thwj; Drain and Multiply, CB p.218): the tokens' name and the condition escaped,
+      // compared by name (the event carries the condition's name), within the trigger's range.
+      const e = event as Extract<AdversaryEvent, { kind: "pcEscapes" }>;
+      const wanted = trigger.condition === undefined ? undefined : trigger.condition.kind === "standard" ? trigger.condition.condition : trigger.condition.tag;
+      return nameOk(trigger.name, e.name) && nameOk(wanted, e.condition) && within(e.band, trigger.within);
+    }
     case "onSpotlight": {
       const e = event as Extract<AdversaryEvent, { kind: "onSpotlight" }>;
       // Lane E7 (dcm-2gn): Intimidating (HF p.89) only when the GM spent a Fear to spotlight it.

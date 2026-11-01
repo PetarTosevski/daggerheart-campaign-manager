@@ -20,9 +20,12 @@ const isHeld = (w: object) => "preRoll" in w && w.preRoll === true;
  */
 export function ReactionWindows({ campaignId, encounterId, acts }: { campaignId: Id<"campaigns">; encounterId: string; acts: AdversaryActions }) {
   const windows = useQuery(api.adversaryActions.windows, { campaignId });
+  // Plan lanes-2 E7.4 (dcm-wiwi, dcm-0hlq): named tokens on the PCs (bramble) and the GM's "Escaped" button.
+  const pcTokens = useQuery(api.adversaryActions.pcTokens, { campaignId });
   const [resolving, setResolving] = useState<string | null>(null);
   const open = (windows ?? []).filter((w) => w.encounterId === undefined || w.encounterId === encounterId);
-  if (open.length === 0) return null;
+  const held = pcTokens ?? [];
+  if (open.length === 0 && held.length === 0) return null;
 
   async function resolve(requestId: Id<"combatRequests">) {
     setResolving(requestId);
@@ -30,9 +33,38 @@ export function ReactionWindows({ campaignId, encounterId, acts }: { campaignId:
     setResolving(null);
   }
 
+  async function escape(characterId: Id<"characters">, name: string) {
+    setResolving(`${characterId}:${name}`);
+    await acts.escape(characterId, name);
+    setResolving(null);
+  }
+
   return (
     <section className="trk-windows" aria-label="Reaction windows">
-      <h3 className="trk-windows-h">Waiting on the players</h3>
+      {held.length > 0 ? (
+        <>
+          <h3 className="trk-windows-h">Tokens on the PCs</h3>
+          <ul>
+            {held.map((t) => (
+              <li key={`${t.characterId}:${t.name}`} className="trk-window" data-testid="tracker-pc-tokens">
+                <div className="trk-window-what">
+                  <b>{t.pcName}</b>: {t.count} {t.name}
+                </div>
+                <button
+                  type="button"
+                  className="trk-btn"
+                  disabled={resolving === `${t.characterId}:${t.name}`}
+                  aria-label={`${t.pcName} escaped the ${t.name} tokens`}
+                  onClick={() => void escape(t.characterId, t.name)}
+                >
+                  Escaped
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      {open.length > 0 ? <h3 className="trk-windows-h">Waiting on the players</h3> : null}
       <ul>
         {open.map((w) => (
           <li key={w.requestId} className="trk-window" data-testid="tracker-window">

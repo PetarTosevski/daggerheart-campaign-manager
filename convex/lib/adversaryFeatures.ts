@@ -17,7 +17,8 @@ import type { AdversaryCost, AdversaryFeatureEffect, AdversaryFeatureUse, Advers
 import { passiveSummary, spotlightCost, triggeredUses, unmetAdversaryRequirements, type AdversaryEvent, type AdversaryState, type PassiveSummary, type TriggeredUse } from "../../src/lib/domain/adversary-actions/index";
 import { featureFearCost, hordeDamage, relentlessValue } from "../../src/lib/domain/adversaries/index";
 import type { PlanStep, ResolvedMod } from "../../src/lib/domain/card-effects/run";
-import type { AttackedRider, BearerRider, ConditionRef, Duration, Escape, Gate, Limit, Mod, NumberSource, RollEnd, Step, TargetSpec, TriggerTargets } from "../../src/lib/domain/card-effects/types";
+import type { AttackedRider, BearerRider, ConditionRef, Duration, EndEvent, Escape, Gate, Limit, Mod, NumberSource, RollEnd, RollResult, Step, TargetSpec, TriggerTargets } from "../../src/lib/domain/card-effects/types";
+import { endsOnOccurrence, type EffectEnds, type EndOccurrence, type EndRole, type EndRoll } from "../../src/lib/domain/characters/expiry";
 import { tokenDistance, type Combatant } from "../../src/lib/domain/combat-actions/index";
 import type { MapCreature } from "../../src/lib/domain/combat-actions/numbers";
 import { turnSpotlights } from "../../src/lib/domain/encounters/spotlight";
@@ -423,7 +424,7 @@ export type FeatureAsk = {
   /** Texts the GM confirms (`situations`): this use's requirements and gates, the passives and attack triggers that read them. */
   situations: { text: string; feature: string }[];
   /** Damage or clears "divided however you wish": pass `splits [{id: creature id, amount}]` among `among`. */
-  splits: { what: "damage" | "clear"; among: string; track?: string }[];
+  splits: { what: "damage" | "clear" | "hope" | "stress" | "hp"; among: string; track?: string }[];
   /** `either` costs in the order the runner meets them: pass the picked option index per entry as `eitherCosts`. */
   eitherCosts: { index: number; options: (CostAsk & { index: number })[] }[];
   /** The Fear `useFeature` will ask for (`confirmFear`), with the first option of each `either` cost; `perTrigger`: the
@@ -616,6 +617,11 @@ export async function featureAsk(ctx: QueryCtx, campaign: Doc<"campaigns">, args
       else if (s.to === "allies" || s.to === "selfAndAllies") ask.allies ??= targetAsk(s.pick);
     } else if ("to" in s && (s.to === "allies" || s.to === "selfAndAllies")) ask.allies ??= { side: "ally", range: "unlimited", count: "any", max: null, sight: false };
     if ((s.kind === "damage" || s.kind === "clear") && s.distribution === "split") ask.splits.push({ what: s.kind, among: s.to, ...(s.kind === "clear" ? { track: s.track } : {}) });
+    // Plan lanes-2 E7.4 (dcm-mvgc): a Hope gain "distributed among the PCs however they wish" (Stone of Omens, HF p.62),
+    // Stress "distributed among allies as it chooses" (Mind Meld, HF p.74) and split HP are asked the same way.
+    else if (s.kind === "hope" && s.change === "gain" && s.distribution === "split") ask.splits.push({ what: "hope", among: s.to });
+    else if (s.kind === "markStress" && s.distribution === "split") ask.splits.push({ what: "stress", among: s.to });
+    else if (s.kind === "markHp" && s.distribution === "split") ask.splits.push({ what: "hp", among: s.to });
   });
 
   // Situations the GM confirms: this use's, the passives' (they read the same list), and an attack's own triggers.
@@ -810,6 +816,58 @@ export function withoutClearedConditions(effects: readonly InstanceEffect[], con
   return effects.filter((e) => e.condition === undefined || held.has(e.condition));
 }
 
+// ---------------------------------------------------------------- plan lanes-2 E7.4 (dcm-thwj): instance condition ends
+
+/**
+ * The ends a stored condition modifier carries (`conditionInstanceEffect`), as the sheet ends read them; undefined for a
+ * modifier tied to no condition or carrying no end. Stored names are `EndEvent` / `RollFilter` / `RollResult` strings.
+ */
+export function instanceEffectEnds(e: InstanceEffect): EffectEnds | undefined {
+  if (e.condition === undefined) return undefined;
+  const ends: EffectEnds = {
+    ...(e.endsOn && e.endsOn.length > 0 ? { endsOn: e.endsOn as EndEvent[] } : {}),
+    ...(e.endsOnCaster && e.endsOnCaster.length > 0 ? { endsOnCaster: e.endsOnCaster as EndEvent[] } : {}),
+    ...(e.endsOnRoll
+      ? { endsOnRoll: { roll: e.endsOnRoll.roll as RollEnd["roll"], ...(e.endsOnRoll.by ? { by: e.endsOnRoll.by } : {}), ...(e.endsOnRoll.result ? { result: e.endsOnRoll.result as RollResult } : {}) } }
+      : {}),
+  };
+  return Object.keys(ends).length > 0 ? ends : undefined;
+}
+
+/** What an instance holds that a condition end changes. */
+export type InstanceConditionState = { effects: readonly InstanceEffect[]; conditions: readonly string[]; tags: readonly string[] };
+
+/**
+ * The instance after `occ` (plan lanes-2 E7.4, dcm-thwj; dcm-iedr stored the fields). `role: "bearer"`: its own condition
+ * modifiers whose `endsOn` / bearer `endsOnRoll` hold (it took damage, it rolled). `role: "caster"` with `casterId`: the
+ * modifiers that creature gave it whose `endsOnCaster` / caster `endsOnRoll` hold ("until the caster takes Severe
+ * damage"). Each ended modifier takes its condition or tag with it unless another modifier still holds it. `ended`: the
+ * condition names that went. Pure; callers write and log it (undo puts the before-state back).
+ */
+export function endInstanceConditions(state: InstanceConditionState, occ: EndOccurrence, opts: { role: EndRole; casterId?: string }): InstanceConditionState & { ended: string[] } {
+  const gone: InstanceEffect[] = [];
+  for (const e of state.effects) {
+    if (opts.role === "caster" && (e.casterId === undefined || e.casterId !== opts.casterId)) continue;
+    const ends = instanceEffectEnds(e);
+    if (ends !== undefined && endsOnOccurrence(ends, occ, opts.role)) gone.push(e);
+  }
+  if (gone.length === 0) return { ...state, ended: [] };
+  const ids = new Set(gone.map((e) => e.id));
+  const effects = state.effects.filter((e) => !ids.has(e.id));
+  const stillHeld = new Set(effects.flatMap((e) => (e.condition === undefined ? [] : [e.condition])));
+  const ended = [...new Set(gone.flatMap((e) => (e.condition === undefined ? [] : [e.condition])))].filter((c) => !stillHeld.has(c));
+  const drop = new Set(ended);
+  return { effects, conditions: state.conditions.filter((c) => !drop.has(c)), tags: state.tags.filter((t) => !drop.has(t)), ended };
+}
+
+/**
+ * The made roll of an adversary's own action as an end reads it (its attack roll, or a feature's action roll): `success`
+ * is the roll's result (an attack: it hit a target). An adversary rolls a d20, so no Duality Die applies.
+ */
+export function adversaryEndRoll(input: { attack: boolean; success: boolean }): EndRoll {
+  return { kind: "action", ...(input.attack ? { attack: "other" as const } : {}), success: input.success };
+}
+
 /**
  * Lane E7 round 3 (dcm-3ag5, Transform, HF p.142-143): the `changeForm` modifier: the instance now uses the SRD stat
  * block `adversaryId` (its marked HP and Stress stay). Replaces an earlier form modifier.
@@ -926,6 +984,39 @@ function tagEntry(tag: string): { source: string; mods: readonly Mod[] } | undef
     TAG_ENTRIES = map;
   }
   return TAG_ENTRIES.get(tag);
+}
+
+/** Plan lanes-2 E7.4: what a bearer rider does to its own bearer, when the server can run every step of it. */
+export type SelfRiderSteps = { damage: { count: number; sides: number; plus: number; type: "physical" | "magic"; direct: boolean }[]; stress: number; hp: number };
+
+/**
+ * Plan lanes-2 E7.4 (dcm-mm0f adversary half, dcm-0wj1, dcm-f0m, dcm-bxp.99.19.3, dcm-kti): a bearer rider whose steps
+ * all land on the bearer itself with fixed numbers (Cinder Grasp's On Fire, CB p.328: "an extra 2d6 magic damage";
+ * Poisoned, CB p.32-33: "1d10 direct physical damage each time they act"; a Stress per action): the server runs them.
+ * Null when any step is something else (a choice, a roll, another creature, a non-fixed number): the GM keeps the prompt.
+ * Costs on the rider (a Hope to act, Shadow Shackles) are the PC's and keep the prompt too.
+ */
+export function selfRiderSteps(rider: BearerRider): SelfRiderSteps | null {
+  if ((rider.costs?.length ?? 0) > 0 || rider.roll !== undefined) return null;
+  const out: SelfRiderSteps = { damage: [], stress: 0, hp: 0 };
+  const fixed = (n: NumberSource | undefined, fallback: number) => (n === undefined ? fallback : n.kind === "fixed" ? n.value : null);
+  for (const s of rider.steps) {
+    if (!("to" in s) || s.to !== "self" || ("when" in s && s.when !== undefined)) return null;
+    if (s.kind === "damage") {
+      if (s.roll?.kind !== "dice" || (s.type !== "physical" && s.type !== "magic")) return null;
+      const d = s.roll.dice as { count: NumberSource; sides?: number; plus?: NumberSource };
+      const count = fixed(d.count, 1);
+      const plus = fixed(d.plus, 0);
+      if (count === null || plus === null || d.sides === undefined) return null;
+      out.damage.push({ count, sides: d.sides, plus, type: s.type, direct: s.direct === true });
+    } else if (s.kind === "markStress" || s.kind === "markHp") {
+      const n = fixed(s.amount, 1);
+      if (n === null || s.distribution === "split") return null;
+      if (s.kind === "markStress") out.stress += n;
+      else out.hp += n;
+    } else return null;
+  }
+  return out.damage.length > 0 || out.stress > 0 || out.hp > 0 ? out : null;
 }
 
 /** A short line for a rider's steps (a GM prompt): the step kinds, with the dice of a damage step when they are fixed. */

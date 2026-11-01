@@ -9,7 +9,7 @@ import { appError } from "../src/lib/errors/app-error";
 import { COUNTDOWN_DETAILS_MAX_LENGTH } from "../src/lib/validation/countdowns";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { adversaryAction, afterHitTriggers, forcedStandardAttack, gmControlledAttack as gmControlledAttackOf, isPreRollRow, replayHeld, respondPreRoll, type ActionArgs, type PreRollRow } from "./lib/adversaryActions";
+import { adversaryAction, afterHitTriggers, forcedStandardAttack, gmControlledAttack as gmControlledAttackOf, isPreRollRow, pcEscape as pcEscapeOf, replayHeld, respondPreRoll, type ActionArgs, type PreRollRow } from "./lib/adversaryActions";
 import { answeringFeatures, hopeAndFearOf } from "./lib/adversaryHits";
 import { blockOf, countdownTickOn, featureAsk as featureAskOf } from "./lib/adversaryFeatures";
 import { rollDice } from "./lib/dice";
@@ -208,6 +208,43 @@ export const forcedAttack = keyedGmMutation({
     }),
 });
 
+/**
+ * Plan lanes-2 E7.4 (dcm-0hlq, dcm-thwj): a PC escaped the named tokens an adversary put on them (Encumber's bramble
+ * tokens, CB p.218); the table rolled, the GM records the success. The tokens come off the sheet and the running
+ * encounter hears `pcEscapes` (Drain and Multiply). GM only, keyed. INVALID without such tokens; NOT_FOUND outside the party.
+ */
+export const pcEscape = keyedGmMutation({
+  args: { characterId: v.id("characters"), name: v.string() },
+  returns: v.object({
+    groupId: v.string(),
+    tokens: v.number(),
+    lines: v.array(v.string()),
+    prompts: v.array(v.object({ kind: v.string(), text: v.string() })),
+    offers: v.array(v.object({ instanceId: v.id("encounterAdversaries"), feature: v.string(), useId: v.string() })),
+  }),
+  handler: async (ctx, args) =>
+    ctx.once("adversary_pc_escape", args, async () => {
+      if (args.name.length === 0 || args.name.length > 40) throw appError("INVALID", "Token names are 1 to 40 characters.");
+      return pcEscapeOf(ctx, ctx.campaign, ctx.user, args);
+    }),
+});
+
+/**
+ * Plan lanes-2 E7.4 (dcm-wiwi, dcm-0hlq): the named tokens on the party's sheets (`creatureTokens`; Encumber's bramble
+ * tokens), for the GM's "Escaped" button. Reads only. GM only.
+ */
+export const pcTokens = gmQuery({
+  args: {},
+  returns: v.array(v.object({ characterId: v.id("characters"), pcName: v.string(), name: v.string(), count: v.number() })),
+  handler: async (ctx) => {
+    const out = [];
+    for (const m of await partyMembers(ctx, ctx.campaign._id)) {
+      for (const t of m.sheet.creatureTokens ?? []) if (t.count > 0) out.push({ characterId: m.character._id, pcName: m.sheet.name, name: t.name, count: t.count });
+    }
+    return out;
+  },
+});
+
 const targetAskValidator = v.union(
   v.null(),
   v.object({ side: v.string(), range: v.string(), count: v.union(v.literal("one"), v.literal("upTo"), v.literal("all"), v.literal("any")), max: v.union(v.number(), v.null()), sight: v.boolean() }),
@@ -236,7 +273,7 @@ const featureAskValidator = v.object({
   options: v.array(v.object({ id: v.string(), label: v.string(), count: v.union(v.number(), v.null()), distinct: v.boolean(), options: v.array(v.object({ id: v.string(), label: v.string() })) })),
   optionals: v.array(v.object({ id: v.string(), label: v.string(), fear: v.number(), stress: v.number() })),
   situations: v.array(v.object({ text: v.string(), feature: v.string() })),
-  splits: v.array(v.object({ what: v.union(v.literal("damage"), v.literal("clear")), among: v.string(), track: v.optional(v.string()) })),
+  splits: v.array(v.object({ what: v.union(v.literal("damage"), v.literal("clear"), v.literal("hope"), v.literal("stress"), v.literal("hp")), among: v.string(), track: v.optional(v.string()) })),
   eitherCosts: v.array(v.object({ index: v.number(), options: v.array(v.object({ index: v.number(), ...costAskValidator })) })),
   fear: v.object({ total: v.number(), spotlight: v.number(), feature: v.number(), perTrigger: v.boolean(), gmFear: v.number(), enough: v.boolean() }),
   stress: v.number(),

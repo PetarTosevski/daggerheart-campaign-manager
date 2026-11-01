@@ -83,6 +83,10 @@ const entries: Entry[] = [
   { fn: api.adversaryActions.gmControlledAttack, access: "gm", args: (w) => ({ characterId: w.characterA, targets: [w.ids.bear] }), okCodes: ["INVALID"] },
   // Lanes-2 E7 round 3 (dcm-f70y): a forced standard attack outside the spotlight.
   { fn: api.adversaryActions.forcedAttack, access: "gm", args: (w) => ({ instanceId: w.ids.bear, targets: [w.characterA] }) },
+  // Plan lanes-2 E7.4 (dcm-0hlq): a PC escaped named tokens; characterA holds none, so the GM gets INVALID past the check.
+  { fn: api.adversaryActions.pcEscape, access: "gm", args: (w) => ({ characterId: w.characterA, name: "bramble" }), okCodes: ["INVALID"] },
+  // Plan lanes-2 E7.4 (dcm-wiwi): the party's named tokens (GM only).
+  { fn: api.adversaryActions.pcTokens, access: "gm" },
 ];
 
 const area: Area = { area: "adversary-actions", setup, entries };

@@ -31,11 +31,11 @@ import { resolveOptions } from "../../src/lib/frames/options";
 import { featureFearCost } from "../../src/lib/domain/adversaries/index";
 import type { PlanStep } from "../../src/lib/domain/card-effects/run";
 import type { Cost, Range } from "../../src/lib/domain/card-effects/types";
-import { applyStressTo, lineOfSight, rangeCheck, tokenDistance, type Combatant } from "../../src/lib/domain/combat-actions/index";
+import { applyDamageTo, applyHpTo, applyStressTo, lineOfSight, rangeCheck, tokenDistance, type Combatant } from "../../src/lib/domain/combat-actions/index";
 import { applySpotlight } from "../../src/lib/domain/encounters/spotlight";
 import type { RollRecord } from "../../src/lib/domain/duality";
 import { appError } from "../../src/lib/errors/app-error";
-import type { CharacterSheet, FeatureUse } from "../../src/lib/validation/characters";
+import { CARD_TOKENS_MAX, MAX_SHEET_CREATURE_TOKEN_KINDS, type CharacterSheet, type FeatureUse } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction, newGroupId } from "./actionLog";
@@ -44,6 +44,8 @@ import {
   gmControlOf,
   adversaryInstanceEffect,
   conditionInstanceEffect,
+  endInstanceConditions,
+  adversaryEndRoll,
   formInstanceEffect,
   instanceStatsOf,
   withoutClearedConditions,
@@ -60,6 +62,7 @@ import {
   mapCreatures,
   optionalIds,
   riderStepsText,
+  selfRiderSteps,
   ridersOf,
   runOrThrow,
   selfCombatant,
@@ -72,6 +75,9 @@ import {
 } from "./adversaryFeatures";
 import { answeringFeatures, featureActor, featureChoices, featureReplayActor, seededRng, SPENT_DICE } from "./adversaryHits";
 import { actorSheetAfter, pcCombatant, writeSheetChanges } from "./cardRunner";
+import { endAdversaryConditions, withAdversaryConditionMarkers } from "./cardRows";
+import { openForcedAttacks } from "./forcedAttacks";
+import type { EndOccurrence, EndRoll } from "../../src/lib/domain/characters/expiry";
 import { saveSheet } from "./characterSheet";
 import { logUnshakable, unshake } from "./unshakable";
 import { closeRequest } from "./combatRequests";
@@ -242,6 +248,70 @@ class Work {
     this.baseUses = instanceUses(instance, encounter, session);
   }
 
+  /** Plan lanes-2 E7.4 (dcm-thwj): conditions an end took off an instance that is neither itself nor an ally of the plans. */
+  readonly conditionsAfter = new Map<string, { conditions: string[]; tags: string[] }>();
+
+  /**
+   * Plan lanes-2 E7.4 (dcm-thwj): the stored condition ends this action set off, before the commit.
+   * - `roll` (its attack or action roll): its own modifiers whose bearer `endsOnRoll` holds; the modifiers it gave other
+   *   instances and the markers it gave PCs (cardRows.ts) whose caster `endsOnRoll` holds.
+   * - the HP each instance marked in the plans (itself, allies): its own `endsOn` (`takeDamage`, `majorDamage`, ...) and the
+   *   caster side of what it gave (`endsOnCaster`: Envelop's "until the Shark takes Severe damage", CB p.215).
+   * A PC whose hit still waits keeps its markers until the hit lands (the end runs on the sheet as it is now).
+   */
+  settleEnds(roll: EndRoll | null) {
+    const selfId = this.instance._id as string;
+    const all = [this.instance, ...this.encounterInstances.filter((a) => a._id !== this.instance._id)];
+    const stateOf = (a: Doc<"encounterAdversaries">) => {
+      const id = a._id as string;
+      const c = id === selfId ? this.selfAfter : this.allies.get(id)?.after;
+      const held = this.conditionsAfter.get(id);
+      return {
+        effects: this.instanceEffects.get(id) ?? a.effects ?? [],
+        conditions: c ? [...c.conditions] : (held?.conditions ?? [...a.conditions]),
+        tags: c ? [...(c.tags ?? [])] : (held?.tags ?? [...(a.tags ?? [])]),
+      };
+    };
+    const write = (a: Doc<"encounterAdversaries">, next: ReturnType<typeof endInstanceConditions>) => {
+      if (next.ended.length === 0) return;
+      const id = a._id as string;
+      this.instanceEffects.set(id, [...next.effects]);
+      if (id === selfId) this.selfAfter = { ...this.selfAfter, conditions: [...next.conditions], tags: [...next.tags] };
+      else {
+        const ally = this.allies.get(id);
+        if (ally) ally.after = { ...ally.after, conditions: [...next.conditions], tags: [...next.tags] };
+        else this.conditionsAfter.set(id, { conditions: [...next.conditions], tags: [...next.tags] });
+      }
+      for (const c of next.ended) this.gm.push(`${a.label} is no longer ${c}`);
+    };
+    const pcSide = (casterId: string, occ: EndOccurrence) => {
+      for (const member of this.party) {
+        const id = member.character._id as string;
+        const sheet = this.sheets.get(id)?.after ?? member.sheet;
+        const r = endAdversaryConditions(sheet, occ, { role: "caster", casterId });
+        if (r.ended.length === 0) continue;
+        this.sheets.set(id, { member, after: r.sheet });
+        this.gm.push(...r.lines);
+      }
+    };
+    if (roll !== null) {
+      const occ: EndOccurrence = { kind: "roll", roll };
+      write(this.instance, endInstanceConditions(stateOf(this.instance), occ, { role: "bearer" }));
+      for (const a of all) if (a._id !== this.instance._id) write(a, endInstanceConditions(stateOf(a), occ, { role: "caster", casterId: selfId }));
+      pcSide(selfId, occ);
+    }
+    for (const a of all) {
+      const id = a._id as string;
+      const after = id === selfId ? this.selfAfter : this.allies.get(id)?.after;
+      const marked = after ? after.hp - a.hp : 0;
+      if (!after || marked <= 0) continue;
+      const occ: EndOccurrence = { kind: "damageTaken", severity: marked >= 3 ? "severe" : marked === 2 ? "major" : "minor", hpMarked: marked, lastHp: after.hp >= after.hpMax };
+      write(a, endInstanceConditions(stateOf(a), occ, { role: "bearer" }));
+      for (const b of all) if (b._id !== a._id) write(b, endInstanceConditions(stateOf(b), occ, { role: "caster", casterId: id }));
+      pcSide(id, occ);
+    }
+  }
+
   nameOf(id: string): string {
     if (id === this.instance._id) return this.instance.label;
     const m = this.party.find((p) => p.character._id === id);
@@ -266,10 +336,16 @@ class Work {
       if (!member) continue;
       const prior = this.hits.find((h) => h.targetId === member.character._id);
       if (prior) {
+        // Plan lanes-2 E7.4 (dcm-spj0): a 0-damage window opened for forced HP takes the real hit's type and directness.
+        const placeholder = prior.hit.amount === 0;
         prior.hit.amount += hit.amount;
-        prior.hit.direct ||= hit.direct;
+        prior.hit.direct = placeholder ? hit.direct : prior.hit.direct || hit.direct;
         prior.hit.forcedArmor += hit.forcedArmor;
-        if (prior.hit.type !== hit.type) prior.hit.type = "both";
+        if (placeholder) {
+          prior.hit.type = hit.type;
+          prior.hit.critical = hit.critical;
+          if (hit.attackTotal !== undefined) prior.hit.attackTotal = hit.attackTotal;
+        } else if (prior.hit.type !== hit.type) prior.hit.type = "both";
       } else {
         this.hits.push({ targetId: member.character._id, hit: { amount: hit.amount, type: hit.type, direct: hit.direct, forcedArmor: hit.forcedArmor, critical: hit.critical, ...(hit.attackTotal !== undefined ? { attackTotal: hit.attackTotal } : {}) }, riders: [] });
       }
@@ -310,6 +386,16 @@ class Work {
           if (armor !== sheet.armorMarked) this.sheets.set(c.id, { member, after: { ...sheet, armorMarked: armor } });
           continue;
         }
+        // Plan lanes-2 E7.4 (dcm-spj0; Doom, HF p.75: "they can spend any number of Hope to reduce the number of HP marked
+        // this way"): forced HP the PC may buy down with Hope and no hit waiting open a window of their own (a 0-damage hit
+        // carrying the HP as its rider; E2.3 makes its target a responder), so the Hope is always offered. The rest of
+        // the plan's marks on them land now.
+        const hopeHp = marks(c.id, "hp", undefined, true);
+        if (hopeHp > 0) {
+          this.hits.push({ targetId: member.character._id, hit: { amount: 0, type: "physical", direct: true, forcedArmor: 0, critical: false }, riders: [{ kind: "hp", amount: hopeHp, reduceWithHope: true }] });
+          this.sheets.set(c.id, { member, after: { ...sheet, hp: Math.min(sheet.hpMax, Math.max(sheet.hp, c.after.hp - hopeHp)), stress: Math.min(sheet.stressMax, c.after.stress), armorMarked: c.after.armor ?? sheet.armorMarked } });
+          continue;
+        }
         this.sheets.set(c.id, { member, after: { ...sheet, hp: Math.min(sheet.hpMax, c.after.hp), stress: Math.min(sheet.stressMax, c.after.stress), armorMarked: c.after.armor ?? sheet.armorMarked } });
         continue;
       }
@@ -344,7 +430,16 @@ class Work {
         // dcm-n3mp: named tokens on an instance are stored; on a PC the sheet has no field yet (follow-up), so the GM notes them.
         const owner = ownerOf(s.targetId);
         if (owner === undefined) {
-          this.gm.push(`${this.nameOf(s.targetId)}: ${s.name} ${s.before} -> ${s.after} (note it on the sheet)`);
+          // Plan lanes-2 E7.4 (dcm-wiwi): on a PC the tokens go on the sheet (`creatureTokens`, V4; Encumber's bramble
+          // tokens, CB p.218); a PC with a hit waiting gets them now too (they are no mark the hit could reduce).
+          const member = this.party.find((m) => m.character._id === s.targetId);
+          if (member === undefined) {
+            this.gm.push(`${this.nameOf(s.targetId)}: ${s.name} ${s.before} -> ${s.after} (note it on the sheet)`);
+            continue;
+          }
+          const sheet = this.sheets.get(s.targetId)?.after ?? member.sheet;
+          this.sheets.set(s.targetId, { member, after: withSheetCreatureTokens(sheet, s.name, s.after) });
+          this.gm.push(`${member.sheet.name}: ${s.name} ${s.before} -> ${Math.max(0, s.after)}`);
           continue;
         }
         const held = this.creatureTokens.get(owner._id) ?? new Map((owner.creatureTokens ?? []).map((t) => [t.name, t.count]));
@@ -371,7 +466,15 @@ class Work {
       const member = this.party.find((m) => m.character._id === id);
       if (!member) continue;
       const sheet = this.sheets.get(id)?.after ?? member.sheet;
-      const after = writeSheetChanges(sheet, cardSteps, id, `${plan.adversaryId}/${plan.feature}`, feature, false, false);
+      // Plan lanes-2, E7.4 (dcm-1alq): a condition with an end the server runs (`endsOnCaster`: Envelop, Hold Them Down,
+      // Encumber; `endsOnRoll`: Slowed, Rattled) carries its `ac:<n>` marker (cardRows.ts), so the end finds it.
+      const after = withAdversaryConditionMarkers(writeSheetChanges(sheet, cardSteps, id, `${plan.adversaryId}/${plan.feature}`, feature, false, false), id, {
+        casterId: this.instance._id,
+        casterName: this.instance.label,
+        adversaryId: plan.adversaryId,
+        feature: plan.feature,
+        details: plan.conditionDetails,
+      });
       const hit = pending(id);
       if (hit) {
         hit.riders.push(...ridersOf(sheet, after, cardSteps, id));
@@ -461,6 +564,30 @@ export function creatureTokensOf(instances: readonly { _id: string; creatureToke
   return out;
 }
 
+/**
+ * Plan lanes-2 E7.4 (dcm-wiwi): the sheet with `count` tokens of `name` (`creatureTokens`, V4: at most
+ * `MAX_SHEET_CREATURE_TOKEN_KINDS` kinds, 0..99 each); 0 takes the kind off.
+ */
+export function withSheetCreatureTokens(sheet: CharacterSheet, name: string, count: number): CharacterSheet {
+  const key = name.slice(0, 40);
+  const n = Math.max(0, Math.min(CARD_TOKENS_MAX, Math.trunc(count)));
+  const rest = (sheet.creatureTokens ?? []).filter((t) => t.name !== key);
+  const next = n > 0 ? [...rest, { name: key, count: n }].slice(-MAX_SHEET_CREATURE_TOKEN_KINDS) : rest;
+  if (next.length === 0) {
+    const { creatureTokens: _gone, ...without } = sheet;
+    void _gone;
+    return without;
+  }
+  return { ...sheet, creatureTokens: next };
+}
+
+/** Plan lanes-2 E7.4 (dcm-wiwi): the run context's `creatureTokens` of the PCs, read from their sheets. */
+export function sheetCreatureTokensOf(party: readonly { character: { _id: string }; sheet: { creatureTokens?: CharacterSheet["creatureTokens"] } }[]): Record<string, Record<string, number>> {
+  const out: Record<string, Record<string, number>> = {};
+  for (const m of party) if (m.sheet.creatureTokens && m.sheet.creatureTokens.length > 0) out[m.character._id] = Object.fromEntries(m.sheet.creatureTokens.map((t) => [t.name, t.count]));
+  return out;
+}
+
 /** Lane E7 round 3 (dcm-n3mp): named tokens as the instance stores them (empty names dropped, capped). */
 function storedCreatureTokens(held: ReadonlyMap<string, number>): { name: string; count: number }[] {
   return [...held].filter(([, count]) => count > 0).map(([name, count]) => ({ name: name.slice(0, 40), count })).slice(0, MAX_CREATURE_TOKEN_KINDS);
@@ -513,14 +640,22 @@ async function commit(ctx: MutationCtx, w: Work, log: { campaignId: Id<"campaign
     });
   }
   // Lane E7, round 2 (dcm-gx3): an ally that only gained a modifier (round 3: or named tokens).
-  for (const id of new Set([...w.instanceEffects.keys(), ...w.creatureTokens.keys()])) {
+  for (const id of new Set([...w.instanceEffects.keys(), ...w.creatureTokens.keys(), ...w.conditionsAfter.keys()])) {
     if (id === w.instance._id || w.allies.has(id)) continue;
     const instance = w.encounterInstances.find((a) => a._id === id);
     if (!instance) continue;
     const effects = w.instanceEffects.get(id);
     const tokens = w.creatureTokens.get(id);
+    // Plan lanes-2 E7.4 (dcm-thwj): a condition an end took off it.
+    const held = w.conditionsAfter.get(id);
+    const conditions = held ? [...new Set(held.conditions.filter((c): c is EncounterCondition => ENCOUNTER_SET.has(c)))] : undefined;
     before.push({ ...beforeOf(instance), ...(effects ? { effects: instance.effects ?? [] } : {}) });
-    await ctx.db.patch("encounterAdversaries", instance._id, { ...(effects ? { effects } : {}), ...(tokens ? { creatureTokens: storedCreatureTokens(tokens) } : {}), updatedAt: now });
+    await ctx.db.patch("encounterAdversaries", instance._id, {
+      ...(effects ? { effects } : {}),
+      ...(tokens ? { creatureTokens: storedCreatureTokens(tokens) } : {}),
+      ...(held && conditions ? { conditions, tags: [...new Set(held.tags)].slice(0, 20) } : {}),
+      updatedAt: now,
+    });
   }
   // Group Attack (CB p.201): the other Minions are spotlighted with it.
   if (spotlight) {
@@ -948,7 +1083,8 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
     ...(chain.length ? { chain } : {}),
     ...(Object.keys(attackedRiders).length > 0 ? { attackedRiders } : {}),
     // Lane E7 round 3 (dcm-n3mp, dcm-0n1u): named tokens on the encounter's instances, and each PC's handfuls of gold.
-    creatureTokens: creatureTokensOf([instance, ...others]),
+    // Plan lanes-2 E7.4 (dcm-wiwi): and on each PC sheet (`creatureTokens`).
+    creatureTokens: { ...creatureTokensOf([instance, ...others]), ...sheetCreatureTokensOf(scene.party) },
     goldOf: Object.fromEntries(scene.party.map((m) => [m.character._id, m.sheet.gold.handfuls])),
     // dcm-qw4f: the options its features lost for good (Seven-Headed).
     removedOptions: (instance.effects ?? []).flatMap((e) => e.optionsRemoved ?? []),
@@ -982,7 +1118,33 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
   // Lane E7, round 2 (dcm-mm0f, adversary bearer; dcm-f0m, dcm-bxp.99.19.3): riders on what it carries fire when it acts
   // (On Fire, Poisoned: "each time they act") or attacks; the GM applies their steps.
   const firing = instanceBearerRiders(instance, [...(needsSpotlight ? (["acts"] as const) : []), ...(attack ? (["attack"] as const) : [])]);
-  for (const r of firing) w.prompts.push({ kind: "manual", text: `${r.label} (${r.source}): ${label} ${r.rider.on === "acts" ? "acts" : "attacks"}: ${riderStepsText(r.rider.steps)}` });
+  for (const r of firing) {
+    // Plan lanes-2 E7.4 (dcm-mm0f, dcm-0wj1, dcm-f0m, dcm-bxp.99.19.3): steps on itself with fixed numbers run here (On
+    // Fire's 2d6 magic "if they are still On Fire at the end of their action", Poisoned's 1d10 direct physical); the rest
+    // stays a prompt.
+    const auto = selfRiderSteps(r.rider);
+    const held = [...w.selfAfter.conditions, ...(w.selfAfter.tags ?? [])].some((c) => c.toLowerCase() === r.label.toLowerCase());
+    if (auto === null || (r.rider.timing === "after" && !held)) {
+      if (auto === null) w.prompts.push({ kind: "manual", text: `${r.label} (${r.source}): ${label} ${r.rider.on === "acts" ? "acts" : "attacks"}: ${riderStepsText(r.rider.steps)}` });
+      continue;
+    }
+    const parts: string[] = [];
+    for (const d of auto.damage) {
+      const rolled = Array.from({ length: d.count }, () => rollDie(d.sides)).reduce((a, b) => a + b, 0) + d.plus;
+      const res = applyDamageTo(w.selfAfter, rolled, d.type);
+      w.selfAfter = res.after;
+      parts.push(`${rolled} ${d.direct ? "direct " : ""}${d.type} damage (${res.hpMarked} HP)`);
+    }
+    if (auto.stress > 0) {
+      w.selfAfter = applyStressTo(w.selfAfter, auto.stress).after;
+      parts.push(`${auto.stress} Stress`);
+    }
+    if (auto.hp > 0) {
+      w.selfAfter = applyHpTo(w.selfAfter, auto.hp).after;
+      parts.push(`${auto.hp} HP`);
+    }
+    w.gm.push(`${r.label} (${r.source}): ${label} ${r.rider.on === "acts" ? "acts" : "attacks"} and takes ${parts.join(", ")}`);
+  }
   // DA1: each hit carries its target's own attack total (the window compares Evasion answers with it).
   if (plan.roll && residual.size > 0) {
     const modifier = plan.roll.record.total - natural;
@@ -1005,7 +1167,11 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
         const change = s.step.change;
         for (const h of w.hits) {
           if (s.targetIds.length > 0 && !s.targetIds.includes(h.targetId)) continue;
-          if (change.kind === "add") h.hit.amount += typeof s.amount === "number" ? s.amount : 0;
+          if (change.kind === "add") {
+            h.hit.amount += typeof s.amount === "number" ? s.amount : 0;
+            // Plan lanes-2 E7.4 (dcm-i55; CB p.99): added damage of the other type makes the hit physical and magic.
+            if (change.type !== undefined && change.type !== h.hit.type && h.hit.type !== "both") h.hit.type = "both";
+          }
           else if (change.kind === "multiply") h.hit.amount *= change.factor;
           else if (change.kind === "halve") h.hit.amount = Math.floor(h.hit.amount / 2);
         }
@@ -1074,13 +1240,37 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
   if (experience) gmText.push(`Experience ${experience.name} +${experience.value} (1 Fear)`);
   for (const h of w.hits) gmText.push(`${w.nameOf(h.targetId)}: ${h.hit.amount} ${h.hit.type}${h.hit.direct ? " direct" : ""}${h.hit.forcedArmor ? `, ${h.hit.forcedArmor} forced Armor Slot` : ""}${h.riders.length ? `, ${h.riders.length} rider${h.riders.length === 1 ? "" : "s"} with the hit` : ""} (waiting for armor)`);
   w.fearDelta -= spotlightFear;
-  // Lane E7 round 3 (dcm-f70y): a forced attack by a PC is the player's roll; the GM is told.
+  // Lane E7 round 3 (dcm-f70y): a forced attack by a PC is the player's roll. Plan lanes-2 E7.4 (dcm-uxsd): the player
+  // gets a `forcedAttack` request (opened after the commit, in this group); the GM row names it.
+  const forcedPcs: { characterIds: Id<"characters">[]; againstIds: string[] }[] = [];
   for (const f of w.forcedAttacks) {
-    const pcs = f.attackerIds.filter((id) => scene.party.some((m) => m.character._id === id));
+    const pcs = scene.party.filter((m) => f.attackerIds.includes(m.character._id)).map((m) => m.character._id);
+    if (pcs.length === 0) continue;
+    forcedPcs.push({ characterIds: pcs, againstIds: f.againstIds });
     const against = f.againstIds.length > 0 ? f.againstIds.map((id) => w.nameOf(id)).join(", ") : "a target the GM picks";
-    if (pcs.length > 0) w.prompts.push({ kind: "manual", text: `${pcs.map((id) => w.nameOf(id)).join(", ")} must make an attack against ${against}` });
+    w.gm.push(`${pcs.map((id) => w.nameOf(id)).join(", ")} must make an attack against ${against} (roll request sent)`);
   }
+  // Plan lanes-2 E7.4 (dcm-thwj): stored condition ends on its roll and on the HP the plans marked on instances.
+  w.settleEnds(plan.roll ? adversaryEndRoll({ attack, success: attack ? hitIds.size > 0 : plan.success }) : null);
   const result = await finish(ctx, { campaign, user, encounter, w, groupId, spotlight: needsSpotlight && !spotlit, spotlightFear: 0, roll, success: plan.success, outcomes, offers, publicText, gmText, ...(args.feature !== undefined ? { attackerFeature: args.feature } : {}) });
+  if (forcedPcs.length > 0) {
+    const live = await liveCombatMap(ctx, campaign._id);
+    const tokens = live ? await tokensOnMap(ctx, live._id) : [];
+    for (const f of forcedPcs) {
+      await openForcedAttacks(ctx, {
+        campaignId: campaign._id,
+        encounterId: encounter._id,
+        ...(live ? { mapId: live._id } : {}),
+        createdBy: user._id,
+        groupId,
+        instance,
+        feature: featureName,
+        characterIds: f.characterIds,
+        againstIds: f.againstIds,
+        tokens,
+      });
+    }
+  }
   // An adversary attacker makes its standard attack now (its own log group), unless this already is a forced attack.
   if (!opts?.forced) {
     for (const f of w.forcedAttacks) {
@@ -1273,6 +1463,7 @@ export async function afterHitTriggers(ctx: MutationCtx, res: HitResolution, act
     lines.push(`${t.effect.feature} (automatic)`);
   }
   if (lines.length === 0) return;
+  w.settleEnds(null);
   const log = { campaignId: instance.campaignId, actorId, groupId };
   const fearDelta = await applyFear(ctx, instance.campaignId, w.fearDelta);
   const adversaryBefore = await commit(ctx, w, log, null);
@@ -1681,6 +1872,101 @@ export async function pcRollAdversaryUses(
       const manual = plan.steps.flatMap((s) => (s.kind === "prompt" ? [s.text] : []));
       out.lines.push(`${instance.label} ${t.effect.feature} (${t.mode === "auto" ? "automatic" : "reaction"}) on ${member.sheet.name}'s roll${manual.length > 0 ? `: ${manual.join("; ")}` : ""}`);
     }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- plan lanes-2 E7.4: a PC escapes (dcm-0hlq, dcm-thwj)
+
+export type EscapeResult = { groupId: string; tokens: number; lines: string[]; prompts: Prompt[]; offers: { instanceId: Id<"encounterAdversaries">; feature: string; useId: string }[] };
+
+/**
+ * A PC escaped the named tokens an adversary put on them (Encumber, CB p.218: "All bramble tokens can be removed by
+ * succeeding on a Finesse Roll (12 + the number of bramble tokens)"). The table makes the roll; the GM records the
+ * success here. Every token of `name` comes off the sheet (`creatureTokens`) and the running encounter's instances hear
+ * `pcEscapes` with `trigger.amount` = the tokens removed (Drain and Multiply: a Minion per token): automatic uses run,
+ * reactions are named for the GM. One undoable group. INVALID when the PC holds no such tokens; NOT_FOUND for a PC
+ * outside the party.
+ */
+export async function pcEscape(ctx: MutationCtx, campaign: Doc<"campaigns">, user: Doc<"users">, args: { characterId: Id<"characters">; name: string }): Promise<EscapeResult> {
+  const party = await partyMembers(ctx, campaign._id);
+  const member = party.find((m) => m.character._id === args.characterId);
+  if (!member) throw appError("NOT_FOUND");
+  const tokens = (member.sheet.creatureTokens ?? []).find((t) => t.name === args.name)?.count ?? 0;
+  if (tokens <= 0) throw appError("INVALID", "The PC holds no such tokens.");
+  const groupId = newGroupId();
+  const log = { campaignId: campaign._id, actorId: user._id, groupId };
+  const cleared = withSheetCreatureTokens(member.sheet, args.name, 0);
+  await saveSheet(ctx, member.character._id, cleared);
+  await logAction(ctx, { ...log, characterId: member.character._id, kind: "adversary", visibility: "public", summary: `${member.sheet.name} escaped the ${args.name} tokens (${tokens})`, before: member.sheet, undoable: true });
+  const out: EscapeResult = { groupId, tokens, lines: [], prompts: [], offers: [] };
+  const encounter = await ctx.db
+    .query("encounters")
+    .withIndex("by_campaign_status_updated", (q) => q.eq("campaignId", campaign._id).eq("status", "running"))
+    .first();
+  if (encounter === null) return out;
+  const instances = await ctx.db
+    .query("encounterAdversaries")
+    .withIndex("by_encounter_order", (q) => q.eq("encounterId", encounter._id))
+    .take(MAX_INSTANCES + 1);
+  const map = await liveCombatMap(ctx, campaign._id);
+  const mapTokens = map ? await tokensOnMap(ctx, map._id) : [];
+  const pcToken = mapTokens.find((t) => t.ref.kind === "pc" && t.ref.characterId === args.characterId);
+  const sessionStartedAt = (await campaignFearState(ctx, campaign._id)).sessionStartedAt;
+  for (const instance of instances) {
+    if (instance.defeated) continue;
+    const block = await blockOf(ctx, instance);
+    if (block === null || block.effects.length === 0) continue;
+    const selfToken = mapTokens.find((t) => t.ref.kind === "adversary" && t.ref.adversaryId === instance._id);
+    const band = selfToken && pcToken ? rangeCheck(selfToken, pcToken, "melee").band : undefined;
+    const event: AdversaryEvent = { kind: "pcEscapes", tokens, name: args.name, ...(band ? { band } : {}) };
+    const fired = triggered(block, instance, [event]);
+    if (fired.length === 0) continue;
+    const w = new Work(instance, block, await partyMembers(ctx, campaign._id), instances, encounter, sessionStartedAt);
+    const subject = pcCombatant(member.character._id, cleared);
+    const fear = (await campaignFearState(ctx, campaign._id)).fear;
+    const lines: string[] = [];
+    for (const t of fired) {
+      if (t.mode === "reaction") {
+        out.offers.push({ instanceId: instance._id, feature: t.effect.feature, useId: t.use.id });
+        lines.push(`Reaction available: ${t.effect.feature} (trigger amount ${tokens})`);
+        continue;
+      }
+      const plan = runOrThrow(t.effect, {
+        adversaryId: block.adversaryId,
+        self: w.selfAfter,
+        attack: block.attack,
+        tier: block.tier,
+        tokens: w.tokensAfter,
+        featureUses: w.baseUses,
+        gmFear: Math.max(0, fear + w.fearDelta),
+        spotlit: true,
+        fearConfirmed: true,
+        useId: t.use.id,
+        targets: [subject],
+        trigger: { amount: tokens, subject, source: selfCombatant(instance, block) },
+        optionals: optionalIds(t.use),
+        situations: [],
+        attackDiceOnAttacks: true,
+        rng: rollDie,
+      });
+      w.absorb(plan, t.effect.feature);
+      lines.push(`${t.effect.feature} (automatic)`);
+    }
+    w.settleEnds(null);
+    const fearDelta = await applyFear(ctx, campaign._id, w.fearDelta);
+    const adversaryBefore = await commit(ctx, w, log, null);
+    await logAction(ctx, {
+      ...log,
+      kind: "adversary",
+      visibility: "gm",
+      summary: `${instance.label} → ${member.sheet.name} escaped (${tokens} ${args.name}): ${[...lines, ...w.gm, ...w.prompts.map((p) => `${p.kind}: ${p.text}`)].join("; ")}`,
+      adversaryBefore,
+      ...(fearDelta !== 0 ? { fearDelta } : {}),
+      undoable: true,
+    });
+    out.lines.push(...lines.map((l) => `${instance.label}: ${l}`), ...w.gm);
+    out.prompts.push(...w.prompts);
   }
   return out;
 }
