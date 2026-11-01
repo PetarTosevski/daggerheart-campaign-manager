@@ -66,9 +66,10 @@ import { featureScope } from "./featureScope";
 import { campaignFearState, gainFear } from "./fear";
 import { applyRule } from "./mechanics";
 import { actorSheetAfter, cardActor, cardIdOfEffect, conditionMarkerOf, endConditionsOnRoll, endRollOf, featureIdOfEffect, tokenKeyOf, type HostRoll } from "./cardRunner";
-import { effectSource, endGrantedBenefit, endOnSheet, endSharedGrants } from "./cardRows";
+import { effectEndsOf, effectSource, endAdversaryConditionsOnRoll, endGrantedBenefit, endOnSheet, endSharedGrants } from "./cardRows";
 import { riderStepsText } from "./adversaryFeatures";
 import { partyMembers } from "./adversaryHits";
+import { pcRollAdversaryUses } from "./adversaryActions";
 import { rollValidator } from "./validators/actionLog";
 import { traitIdValidator } from "./validators/characters";
 
@@ -232,15 +233,27 @@ export function liveMods(sheet: CharacterSheet, scope: Pick<FeatureScope, "hopeA
   for (const effect of sheet.effects ?? []) {
     const cardId = cardIdOfEffect(effect);
     const featureId = cardId === null ? featureIdOfEffect(effect) : null;
-    const uses = cardId !== null ? (cardEffect(cardId)?.uses ?? []) : featureId !== null ? (featureEffect(featureId)?.uses ?? []) : [];
+    const entry = cardId !== null ? cardEffect(cardId) : featureId !== null ? featureEffect(featureId) : undefined;
     const label = effect.text.split("; ")[0];
-    for (const use of uses) {
-      for (const step of nestedSteps(use.steps)) {
+    // E1.4b (dcm-hqk1): an upgrade's added options carry effect steps too (Reliable Backup's "backup", CB p.43).
+    const stepLists: (readonly Step[])[] = [...(entry?.uses ?? []).map((u) => u.steps), ...upgradeOptionSteps(entry)];
+    for (const list of stepLists) {
+      for (const step of nestedSteps(list)) {
         if (step.kind !== "effect" || step.label !== label) continue;
         const endsOnAttack = (step.endsOn ?? []).includes("bearerAttacks");
         for (const mod of step.mods) out.push({ mod, effectId: effect.id, ...(endsOnAttack ? { endsOnAttack } : {}) });
       }
     }
+  }
+  return out;
+}
+
+/** The steps of the options an entry's upgrades add (`patch.extraOptions`, Reliable Backup's two benefits, CB p.43). */
+function upgradeOptionSteps(entry: object | undefined): (readonly Step[])[] {
+  const out: (readonly Step[])[] = [];
+  const upgrades = entry !== undefined && "upgrades" in entry ? (entry.upgrades as readonly { patch?: { extraOptions?: readonly { steps: readonly Step[] }[] } }[] | undefined) : undefined;
+  for (const up of upgrades ?? []) {
+    for (const o of up.patch?.extraOptions ?? []) out.push(o.steps);
   }
   return out;
 }
@@ -383,6 +396,34 @@ export function situationalAdvantage(sheet: CharacterSheet, args: Pick<DualityAr
   return { advantage, labels, effectIds };
 }
 
+/**
+ * Plan lanes-2 wave 10, E1.4b (dcm-hqk1; user answer 2026-10-31): a live `dualityDie` mod with a `situation` changes the
+ * Hope Die only on a roll the player marks as that situation (Reliable Backup, CB p.43: "When you make a Presence Roll in
+ * conversation, they back you up. You can roll a d20 as your Hope Die"; the dice box's "In conversation" check box).
+ * Mods without a situation are not read here. Only the Hope Die is swapped (no SRD entry gives a situational Fear Die).
+ */
+export function situationalHopeDie(mods: readonly LiveMod[], situations: readonly string[] | undefined): { sides: number | undefined; labels: string[] } {
+  const marked = situations ?? [];
+  let sides: number | undefined;
+  const labels: string[] = [];
+  for (const { mod } of mods) {
+    if (mod.kind !== "dualityDie" || mod.die !== "hope" || mod.situation === undefined || !marked.includes(mod.situation)) continue;
+    sides = Math.max(sides ?? 0, mod.sides);
+    labels.push(`d${mod.sides} Hope Die: ${mod.situation}`);
+  }
+  return { sides, labels };
+}
+
+/**
+ * E1.4b (dcm-hqk1): whether a sheet effect may end on this roll by its `RollEnd.situation` (CB p.43: the backup ends on "a
+ * Presence Roll in conversation"): an end without a situation always may; one with a situation only when the player marked
+ * the roll as it. The rest of the `RollEnd` is E6's end engine (`endOnSheet`).
+ */
+export function rollEndSituationHolds(effect: Effect, situations: readonly string[] | undefined): boolean {
+  const situation = effectEndsOf(effect)?.endsOnRoll?.situation;
+  return situation === undefined || (situations ?? []).includes(situation);
+}
+
 const ADV_SHEET_EFFECT = /^card:([^/:]+)\/(.+):\d+$/;
 
 /** The steps of the entry a sheet effect came from: an adversary feature (`card:<adversaryId>/<feature>:n`) or a card / PC feature. */
@@ -412,6 +453,17 @@ export function sheetBearerMods(sheet: Pick<CharacterSheet, "effects">): { label
   return out;
 }
 
+/** E1.4b (dcm-b41o): every lasting mod of what a PC carries, read back from the entry that gave it (flags included). */
+export function sheetCarriedMods(sheet: Pick<CharacterSheet, "effects">): { label: string; mod: Mod }[] {
+  const out: { label: string; mod: Mod }[] = [];
+  for (const e of sheet.effects ?? []) {
+    const found = sheetEffectSteps(e);
+    if (found === null) continue;
+    for (const mod of lastingModsOf(found.steps, found.label)) out.push({ label: found.label, mod });
+  }
+  return out;
+}
+
 /**
  * E1.3b (dcm-mm0f): what the bearer's mods do to this roll. A `disadvantage` mod covering the roll with nothing the server
  * can't see (`beyond`, `unlessTarget`, `situation` are left out here: the map attack reads `beyond`) gives one
@@ -428,13 +480,121 @@ export function bearerRollMods(sheet: Pick<CharacterSheet, "effects">, args: Pic
       if (!filterCoversRoll(mod.on, args)) continue;
       disadvantage += 1;
       labels.push(`disadvantage: ${label}`);
-    } else if (mod.kind === "bearerRider") {
-      const on = mod.rider.on;
-      const fires = (on === "actionRoll" && args.kind === "action") || (on === "acts" && args.kind === "action") || (on === "attack" && args.attack);
-      if (fires) reminders.push(`${label}: ${riderStepsText(mod.rider.steps)}`);
     }
+    // E1.4b (dcm-l1er, user answer 2026-10-31): a bearerRider on the roll runs in `bearerRiderRuns`; no reminder here.
   }
   return { disadvantage, labels, reminders };
+}
+
+/** Whether a `bearerRider` rides on this roll: `actionRoll` / `acts` on an action roll, `attack` on an attack, its `roll` filter. */
+export function bearerRiderFires(rider: Extract<Mod, { kind: "bearerRider" }>["rider"], args: Pick<DualityArgs, "kind" | "trait" | "attack" | "weapon">): boolean {
+  const on = rider.on;
+  const fires = (on === "actionRoll" && args.kind === "action") || (on === "acts" && args.kind === "action") || (on === "attack" && args.attack);
+  return fires && (rider.roll === undefined || filterCoversRoll(rider.roll, args));
+}
+
+/** "marks 1 Stress", "marks 2 HP", "spends 1 Hope": what a rider changed on the bearer. */
+function changesText(before: CharacterSheet, after: CharacterSheet): string {
+  const parts: string[] = [];
+  const d = (n: number, word: string, up: string, down: string) => {
+    if (n > 0) parts.push(`${up} ${n} ${word}`);
+    else if (n < 0) parts.push(`${down} ${-n} ${word}`);
+  };
+  d(after.stress - before.stress, "Stress", "marks", "clears");
+  d(after.hp - before.hp, "HP", "marks", "clears");
+  d(after.hope - before.hope, "Hope", "gains", "spends");
+  d(after.armorMarked - before.armorMarked, "Armor Slot", "marks", "clears");
+  return parts.length > 0 ? parts.join(", ") : "no change";
+}
+
+/**
+ * Plan lanes-2 wave 10, E1.4b (dcm-l1er; user answer 2026-10-31: "Bearer riders on a PC's own rolls run automatically"):
+ * the `bearerRider`s of what the PC carries that ride on this roll run as a plan on the bearer, before the roll, in the
+ * roll's row: Poisoned's d6 before each action roll (CB p.211: on 4 or lower, mark a Stress), Envelop's Stress, Ignite's
+ * 1d4 (CB p.215-216), Shadow Shackles' Hope (CB p.222: "must spend a Hope to make an action roll"). The rider's dice are
+ * the server's (`rng`, as Slayer Dice: a typed-in roll types only its own dice). A cost the bearer can't pay refuses the
+ * roll (DICE_RULE); a rider the runner can't run stays a reminder line.
+ */
+export function bearerRiderRuns(sheet: CharacterSheet, args: Pick<DualityArgs, "kind" | "trait" | "attack" | "weapon">, rng: Rng): { sheet: CharacterSheet; lines: string[] } {
+  let next = sheet;
+  const lines: string[] = [];
+  for (const { label, mod } of sheetBearerMods(sheet)) {
+    if (mod.kind !== "bearerRider" || !bearerRiderFires(mod.rider, args)) continue;
+    const use: CardUse = { id: "bearer", name: label, activation: { kind: "action" }, ...(mod.rider.costs ? { costs: mod.rider.costs } : {}), steps: mod.rider.steps };
+    const result = runCardUse({ cardId: `bearer-${label}`, uses: [use] } as never, { actor: cardActor("self", next, "", undefined), gmFear: 0, useId: "bearer", targets: [], rng });
+    if (!result.ok) {
+      if (result.reason === "cost") throw new DiceRuleError(`${label}: pay its cost to make this roll (${riderStepsText(mod.rider.steps) || "a cost"}).`);
+      lines.push(`${label}: ${riderStepsText(mod.rider.steps)} (not automated)`);
+      continue;
+    }
+    const after = actorSheetAfter(next, result.plan, "self", label, { rng });
+    const prompts = result.plan.steps.flatMap((s) => (s.kind === "prompt" ? [s.text] : []));
+    lines.push(`${label}: ${changesText(next, after)}${prompts.length > 0 ? ` (${prompts.join("; ")})` : ""}`);
+    next = after;
+  }
+  return { sheet: next, lines };
+}
+
+// ---------------------------------------------------------------- die changes (moved from ./combatActions, E1.4b)
+
+/** Recomputes a roll record's total from its dice (the dropped ones don't count). */
+export function retotal(record: RollRecord): RollRecord {
+  return { ...record, total: record.dice.reduce((s, d) => s + (d.dropped ? 0 : d.value), 0) + record.modifier };
+}
+
+/**
+ * DA2 (Rise to the Challenge, CB p.48: "roll a d20 as your Hope Die"): a die source whose next 12-sided draw, once armed,
+ * draws `sides` instead. A Duality roll draws its Hope Die first (`rollDuality`: Hope, Fear, then the advantage dice), so
+ * arming it right before the roll swaps the Hope Die only. Put it outside a recorder so the held attack replays the value.
+ */
+export function hopeDieSwitch(base: Rng): { rng: Rng; arm: (sides: number | undefined) => void } {
+  let next: number | undefined;
+  return {
+    rng: (sides) => {
+      if (next !== undefined && sides === 12) {
+        const s = next;
+        next = undefined;
+        return base(s);
+      }
+      return base(sides);
+    },
+    arm: (sides) => {
+      next = sides !== undefined && sides !== 12 ? sides : undefined;
+    },
+  };
+}
+
+/**
+ * Plan lanes, E1 (dcm-3ou, dcm-jog): the roll with bonuses added to the duality dice's results (Backhanded Guidance, HF
+ * p.87: "add 1d6 to the result of their Fear Die"; Ill Omen, HF p.95: "their Fear Die gains a bonus equal to the amount
+ * of Fear you have"), its total and its outcome read again. The die keeps its sides; its value is the result with the bonus.
+ *
+ * User answer 2026-10-31: a bonus never makes a critical; a critical needs the dice to match as rolled (a roll that was
+ * a critical stays one). Otherwise the bonus only decides Hope vs Fear, and a tie after the bonus is WITH FEAR.
+ */
+export function withDieBonuses(record: RollRecord, bonuses: readonly { die: "hope" | "fear"; amount: number }[]): RollRecord {
+  const add = { hope: 0, fear: 0 };
+  for (const b of bonuses) add[b.die] += b.amount;
+  if (add.hope === 0 && add.fear === 0) return record;
+  const dice = record.dice.map((d) => ((d.role === "hope" || d.role === "fear") && !d.dropped ? { ...d, value: d.value + add[d.role] } : d));
+  const next = retotal({ ...record, dice });
+  if (record.outcome === "critical") return next;
+  const hope = dice.find((d) => d.role === "hope" && !d.dropped)?.value ?? 0;
+  const fear = dice.find((d) => d.role === "fear" && !d.dropped)?.value ?? 0;
+  const success = record.difficulty === undefined || next.total >= record.difficulty;
+  const outcome: RollRecord["outcome"] = hope > fear ? (success ? "successHope" : "failHope") : success ? "successFear" : "failFear";
+  return { ...next, outcome };
+}
+
+/** `withDieBonuses` with one bonus. */
+export function withDieBonus(record: RollRecord, die: "hope" | "fear", amount: number): RollRecord {
+  return withDieBonuses(record, [{ die, amount }]);
+}
+
+/** The roll record with its Hope Die's sides set (the value was already drawn from those sides). */
+export function withHopeSides(record: RollRecord, sides: number | undefined): RollRecord {
+  if (sides === undefined || sides === 12) return record;
+  return { ...record, dice: record.dice.map((d) => (d.role === "hope" ? { ...d, sides } : d)) };
 }
 
 /** Pays a Duality roll's costs (Experiences, roll options) and builds the resolver's input. */
@@ -549,10 +709,18 @@ export async function resolveDuality(ctx: QueryCtx, loaded: Loaded, args: Dualit
   assertCanAct(character, sheet);
   const scope = featureScope(campaign);
   const ikonis = args.ikonis ? await loadIkonis(ctx, campaign, character, sheet) : null;
-  const { paid, input, extras } = rules(() => prepareDuality(sheet, args, scope, ikonis));
+  // E1.4b (dcm-l1er): the bearer's riders on this roll run first, with the server's dice, on the sheet the roll pays from.
+  const riders = rules(() => bearerRiderRuns(sheet, args, rollDie));
+  const { paid, input, extras: prepared } = rules(() => prepareDuality(riders.sheet, args, scope, ikonis));
   const trait = ikonis?.trait ?? args.trait;
-  const rolled = rules(() => rollDuality(input, rng));
-  const roll: RollRecord = { ...rolled.roll, manual };
+  // E1.4b (dcm-hqk1): a situational d20 Hope Die the player marked (Reliable Backup); the Hope Die is drawn first.
+  const hopeDie = situationalHopeDie(args.situations && args.situations.length > 0 ? liveMods(sheet, scope) : [], args.situations);
+  const swap = hopeDieSwitch(rng);
+  swap.arm(hopeDie.sides);
+  const rolled = rules(() => rollDuality(input, swap.rng));
+  swap.arm(undefined);
+  const roll: RollRecord = withHopeSides({ ...rolled.roll, manual }, hopeDie.sides);
+  const extras = [...prepared, ...hopeDie.labels, ...riders.lines];
   const effects = dualityEffects(args.kind, roll.outcome);
   // A roll with Fear places a Know the Tide token in the same saved sheet and row, so undoing the roll takes it back (U4).
   const next = placeTideToken(applyDualityEffects(paid, effects), roll.outcome, args.kind).sheet;
@@ -564,11 +732,12 @@ export async function resolveDuality(ctx: QueryCtx, loaded: Loaded, args: Dualit
  * on it (`endConditionsOnRoll`), then every other effect whose entry ends on the roll (`endOnSheet`). `labels` name what
  * ended ("X ends") for the roll's summary. A damage or free roll ends nothing.
  */
-export function rollEndsOnSheet(sheet: CharacterSheet, record: RollRecord, extra: Omit<EndRoll, "kind" | "success" | "duality">): { sheet: CharacterSheet; labels: string[]; ended: Effect[] } {
+export function rollEndsOnSheet(sheet: CharacterSheet, record: RollRecord, extra: Omit<EndRoll, "kind" | "success" | "duality">, situations?: readonly string[]): { sheet: CharacterSheet; labels: string[]; ended: Effect[] } {
   const base = endRollOf(record, extra.attack);
   if (base === null) return { sheet, labels: [], ended: [] };
   const markers = endConditionsOnRoll(sheet, record, extra.attack);
-  const own = endOnSheet(markers.sheet, { kind: "roll", roll: { ...base, ...extra } }, { only: (e) => conditionMarkerOf(e) === null });
+  // E1.4b (dcm-hqk1): an end that names a situation waits for a roll the player marked as it.
+  const own = endOnSheet(markers.sheet, { kind: "roll", roll: { ...base, ...extra } }, { only: (e) => conditionMarkerOf(e) === null && rollEndSituationHolds(e, situations) });
   const labels = [...markers.ended.map((e) => `${e.condition} ends`), ...own.ended.map((e) => `${e.text.split("; ")[0] ?? e.source} ends`)];
   return { sheet: own.sheet, labels, ended: own.ended };
 }
@@ -603,20 +772,38 @@ export function grantEndsOnRoll<K>(
 export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded, args: DualityArgs, rng: Rng, manual: boolean) {
   const { campaign, character, sheet } = loaded;
   const resolved = await resolveDuality(ctx, loaded, args, rng, manual);
-  const { scope, paid, trait, rolled, roll, effects } = resolved;
+  const { scope, paid, trait, rolled } = resolved;
+  let { roll, effects } = resolved;
+  let rolledNext = resolved.next;
+  // E1.4b (dcm-m7tm, roll half): the running encounter's adversary uses on this PC's roll (Ill Omen, HF p.95; Backhanded
+  // Guidance, HF p.87). Their die bonuses decide Hope vs Fear only (user answer 2026-10-31: never a critical, a tie is
+  // with Fear; `withDieBonuses`), so the roll's Hope, Stress and Fear follow the changed outcome.
+  const advUses = await pcRollAdversaryUses(ctx, campaign, {
+    characterId: character._id,
+    roll: { kind: args.kind, trait, attack: args.attack, weapon: args.weapon !== undefined, ...hostRollOfRecord(roll), total: roll.total },
+  });
+  if (advUses.bonuses.length > 0) {
+    roll = withDieBonuses(roll, advUses.bonuses);
+    effects = dualityEffects(args.kind, roll.outcome);
+    rolledNext = placeTideToken(applyDualityEffects(paid, effects), roll.outcome, args.kind).sheet;
+  }
   // Plan lanes, E1: the automatic uses the roll sets off (Courage), with the server's dice, in the same row (undo reverts them).
-  const autos = plainRollAutos(resolved.next, args, roll, scope, (await campaignFearState(ctx, campaign._id)).fear, rollDie);
+  const autos = plainRollAutos(rolledNext, args, roll, scope, (await campaignFearState(ctx, campaign._id)).fear, rollDie);
   // Plan lanes-2, E1 (dcm-wn7): the roller's effects and sourced conditions that end on this roll (Spectral Mist, HF p.181:
   // "until you make an action roll"; Reliable Backup, CB p.43: "a Presence Roll"; duration nextRoll), in the same row.
   // E1.3b (dcm-6qrn): an attack roll with a named weapon is a weapon attack with that weapon; without one, "other".
   const attackEnd = args.attack ? (args.weapon !== undefined ? { attack: "weapon" as const, weapon: args.weapon } : { attack: "other" as const }) : {};
-  const ends = rollEndsOnSheet(autos.sheet, roll, { trait, ...attackEnd });
+  const rolledEnds = rollEndsOnSheet(autos.sheet, roll, { trait, ...attackEnd }, args.situations);
+  // E1.4b (dcm-wli0, roll half): adversary-given conditions that end on the bearer's roll (Slowed, Rattled, HF p.69).
+  const advEnds = endAdversaryConditionsOnRoll(rolledEnds.sheet, roll, "attack" in attackEnd ? attackEnd.attack : undefined);
+  const ends = { ...rolledEnds, sheet: advEnds.sheet, labels: [...rolledEnds.labels, ...advEnds.ended.map((m) => `${m.condition} ends`)] };
   // E1.3b (dcm-79v1): a granted benefit the roll used ends; a shared grant's copies on the other sheets with it.
   const usedGrants = rules(() => situationalAdvantage(sheet, args, scope)).effectIds;
   const others = usedGrants.length > 0 || ends.ended.length > 0 ? (await partyMembers(ctx, campaign._id)).filter((m) => m.character._id !== character._id) : [];
   const grants = grantEndsOnRoll(ends.sheet, usedGrants, ends.ended, others.map((m) => ({ key: m, sheet: m.sheet })));
   const next = grants.sheet;
-  const extras = [...resolved.extras, ...autos.names, ...ends.labels, ...grants.labels];
+  const advNames = advUses.bonuses.map((b) => `${b.feature} ${b.amount >= 0 ? "+" : ""}${b.amount} ${b.die === "hope" ? "Hope" : "Fear"} Die`);
+  const extras = [...resolved.extras, ...advNames, ...autos.names, ...ends.labels, ...grants.labels];
   const { gained: rolledFear } = effects.fear > 0 ? await gainFear(ctx, campaign._id, effects.fear) : { gained: 0 };
   const gained = rolledFear + (autos.gmFearDelta > 0 ? (await gainFear(ctx, campaign._id, autos.gmFearDelta)).gained : 0);
   const sheetChanged = changed(sheet, next);
@@ -639,6 +826,10 @@ export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded:
   for (const p of grants.party) {
     await saveSheet(ctx, p.key.character._id, p.sheet);
     await logAction(ctx, { campaignId: campaign._id, characterId: p.key.character._id, actorId: ctx.user._id, kind: "feature", visibility: "public", summary: p.lines.join("; ").slice(0, 1000), before: p.key.sheet, undoable: true });
+  }
+  // E1.4b (dcm-m7tm): what the adversary uses did, for the GM (their own writes are E7's).
+  if (advUses.lines.length > 0) {
+    await logAction(ctx, { campaignId: campaign._id, actorId: ctx.user._id, kind: "combat", visibility: "gm", summary: advUses.lines.join("; ").slice(0, 1000), undoable: false });
   }
   // Armed countdowns tick right after the action roll resolves (countdowns-advanced K1, CB p.162); never a reaction roll (CB p.99).
   if (countsAsActionRoll(roll, { logKind: "roll", undone: false })) {

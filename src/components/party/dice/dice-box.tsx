@@ -28,6 +28,7 @@ import type { CharacterView } from "../../../../convex/characters";
 import { play3d } from "./dice3d";
 import { AdvantageStepper, BoardDiceToggles, CountStepper, DiceTiles } from "./parts";
 import { canAnimate3d, useDiceSettings } from "./settings";
+import { situationalDice } from "./situations";
 import { SlayerOffer } from "./slayer";
 import { playRollSound } from "./sound";
 import { TagTeam } from "./tag-team";
@@ -186,6 +187,8 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
   // Session features (U3, U5): local form state until the roll, reset after it.
   const [slayerSpend, setSlayerSpend] = useState(0);
   const [tideSpend, setTideSpend] = useState(0);
+  // E1.4b (dcm-hqk1): the situations ticked for this roll ("In conversation", Reliable Backup, CB p.43).
+  const [situations, setSituations] = useState<string[]>([]);
   const [result, setResult] = useState<Result | null>(null);
   const [history, setHistory] = useState<Result[]>([]);
   const [rolling, setRolling] = useState(false);
@@ -249,6 +252,9 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
   const tideHeld = sheet ? tideTokens(sheet) : 0;
   const showTide = sheet !== null && holdsTide(sheet) && mode === "action";
   const tideCount = showTide ? Math.min(tideSpend, tideHeld) : 0;
+  // E1.4b (dcm-hqk1): a held situational Hope Die (Reliable Backup's d20) is offered on a Presence Roll only.
+  const situational = mode !== "damage" && rollTrait === "presence" ? situationalDice(view.effects) : [];
+  const ticked = situations.filter((x) => situational.some((o) => o.situation === x));
 
   /** What the result row says the roll was: "Presence +2 action roll vs 12", "Primary: Rapier (1d8) · Waxing Moon +2 · critical". */
   function rollLabel(): string {
@@ -323,11 +329,13 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
       ...(useIkonis ? { ikonis: true } : {}),
       ...(slayerCount > 0 ? { slayerDice: slayerCount } : {}),
       ...(tideCount > 0 ? { tideTokens: tideCount } : {}),
+      ...(ticked.length > 0 ? { situations: ticked } : {}),
     };
     const out = await actionRoll.fire({ characterId: character._id, ...args });
     if (out) {
       setSlayerSpend(0);
       setTideSpend(0);
+      setSituations([]);
       await show(out.entryId, out.roll, out.prompts, label, slayerCount, out.fearGained);
     }
   }
@@ -504,6 +512,15 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
                 </Chip>
               ) : null}
               <CountStepper label="Help dice" value={help} max={ADVANTAGE_LIMIT} onChange={setHelp} />
+            </div>
+          ) : null}
+          {situational.length > 0 ? (
+            <div className="dc-group" data-testid="dice-situations">
+              {situational.map((o) => (
+                <Chip key={o.situation} checked={ticked.includes(o.situation)} onChange={(on) => setSituations((xs) => (on ? [...xs, o.situation] : xs.filter((x) => x !== o.situation)))}>
+                  In conversation: use {o.label} (d{o.sides} Hope Die)
+                </Chip>
+              ))}
             </div>
           ) : null}
           {showSlayer || showTide ? (

@@ -2,8 +2,10 @@ import { v } from "convex/values";
 
 import { appError } from "../src/lib/errors/app-error";
 import type { Doc } from "./_generated/dataModel";
-import type { QueryCtx } from "./_generated/server";
-import { readSheet } from "./lib/characterSheet";
+import { env, internalMutation, type QueryCtx } from "./_generated/server";
+import { isE2EDeployment } from "./lib/allowlist";
+import { findCharacter, readSheet } from "./lib/characterSheet";
+import { atLeast } from "./lib/permissions";
 import { attackScene, awaitingAttackValidator, checkTargets, equippedWeapon, resolveAttack, resolvedAttackValidator, rollFromStored, withoutTargets } from "./lib/combatActions";
 import { closeRequest, encounterRunning, loadOpenRequest, openRequests } from "./lib/combatRequests";
 import { campaignQuery, keyedGmMutation } from "./lib/functions";
@@ -23,6 +25,8 @@ import { rollValidator } from "./lib/validators/actionLog";
  * - SD5: an approved sanction may itself be held for an after-roll feature (`awaiting`).
  * - `difficulties` (plan lanes B2): the rolls waiting for the GM's Difficulty (a player's Charge, a Cloaked rogue seen
  *   dimly by enemies without one); the GM answers them with `featurePrompts.answerDifficulty`.
+ * - `forcedAttacks` (plan lanes-2 wave 10, E1.4b; dcm-uxsd): the forced PC attacks waiting on the caller's characters
+ *   (Beguiled, HF p.75); the player answers one with `combatActions.attack` and its `forcedRequestId`.
  * Card sanctions (CA4) and incoming hits (AA2) are answered by their own tracers' functions.
  */
 
@@ -260,5 +264,86 @@ export const difficulties = campaignQuery({
       });
     }
     return views;
+  },
+});
+
+/** E1.4b (dcm-uxsd): a forced PC attack as `forcedAttacks` shows it (names only, U1). */
+const forcedAttackView = v.object({
+  requestId: v.id("combatRequests"),
+  characterId: v.id("characters"),
+  characterName: v.string(),
+  createdAt: v.number(),
+  /** The forcing adversary's label and the printed feature ("Gobstalker", "Beguile"). */
+  instanceLabel: v.string(),
+  feature: v.string(),
+  /** The locked targets. */
+  targets: v.array(namedToken),
+});
+
+/**
+ * Plan lanes-2 wave 10, E1.4b (dcm-uxsd; user answer 2026-10-31: "a roll request opens the player's attack with the target
+ * locked"): the open forced PC attacks on characters the caller edits (the GM: every one of the campaign). The player opens
+ * the Attack bar from one; `combatActions.attack` with `forcedRequestId` answers it. Requests whose encounter is no longer
+ * running are left out. Oldest first.
+ */
+export const forcedAttacks = campaignQuery({
+  need: "view",
+  enough: "owner",
+  args: {},
+  returns: v.array(forcedAttackView),
+  handler: async (ctx) => {
+    const gm = ctx.permission === "owner";
+    const views = [];
+    for (const row of await openRequests(ctx, ctx.campaign._id)) {
+      const p = row.payload;
+      if (p.kind !== "forcedAttack") continue;
+      if (!gm) {
+        const found = await findCharacter(ctx, ctx.user, p.characterId, "edit");
+        if (found === null || found.campaign._id !== ctx.campaign._id || !atLeast(found.permission, "edit")) continue;
+      }
+      if (!(await encounterRunning(ctx, row))) continue;
+      const targets = [];
+      for (const tokenId of p.targetTokenIds) targets.push({ tokenId, name: await tokenName(ctx, row, tokenId) });
+      views.push({
+        requestId: row._id,
+        characterId: p.characterId,
+        characterName: await characterName(ctx, row, p.characterId),
+        createdAt: row.createdAt,
+        instanceLabel: p.instanceLabel,
+        feature: p.feature,
+        targets,
+      });
+    }
+    return views;
+  },
+});
+
+/**
+ * E1.4b (dcm-uxsd) test seeding for tests/e2e/lane4-forced-attack.spec.ts: opens a forced-attack request on a character
+ * against locked target tokens, as E7.4's opener (convex/lib/forcedAttacks.ts) will. Internal (admin key only,
+ * `convex run`), and refused on anything but the local e2e backend.
+ */
+export const seedForcedAttackForE2e = internalMutation({
+  args: { characterId: v.id("characters"), targetTokenIds: v.array(v.id("combatTokens")), instanceLabel: v.string(), feature: v.string() },
+  returns: v.id("combatRequests"),
+  handler: async (ctx, { characterId, targetTokenIds, instanceLabel, feature }) => {
+    if (!isE2EDeployment(env)) throw new Error("seedForcedAttackForE2e runs only on the local e2e backend.");
+    const character = await ctx.db.get("characters", characterId);
+    const target = targetTokenIds[0] === undefined ? null : await ctx.db.get("combatTokens", targetTokenIds[0]);
+    if (character === null || target === null || target.ref.kind !== "adversary") throw new Error("Seed a character and an adversary token.");
+    const instance = await ctx.db.get("encounterAdversaries", target.ref.adversaryId);
+    const campaign = await ctx.db.get("campaigns", character.campaignId);
+    if (instance === null || campaign === null) throw new Error("No such instance.");
+    return ctx.db.insert("combatRequests", {
+      campaignId: character.campaignId,
+      encounterId: instance.encounterId,
+      mapId: target.mapId,
+      createdBy: campaign.ownerId,
+      status: "open",
+      createdAt: Date.now(),
+      responses: [],
+      kind: "forcedAttack",
+      payload: { schemaVersion: 1, kind: "forcedAttack", characterId, instanceId: instance._id, instanceLabel, feature, targetTokenIds, groupId: `e2e-forced-${Date.now()}` },
+    });
   },
 });

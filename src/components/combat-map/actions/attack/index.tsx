@@ -176,6 +176,12 @@ function AttackForm({ campaignId, map, role, characterId, enemies, allies }: Act
   const [pickFor, setPickFor] = useState<Id<"combatRequests"> | null>(null);
   const [riderPicks, setRiderPicks] = useState<RiderPicks>({});
   const riderList = useQuery(api.combatActions.riders, { campaignId, characterId, slot });
+  // E1.4b (dcm-uxsd): a forced attack waiting on this character (Beguiled, HF p.75) opens the bar with its targets locked.
+  const forcedRows = useQuery(api.combatRequests.forcedAttacks, { campaignId });
+  const [forcedId, setForcedId] = useState<Id<"combatRequests"> | null>(null);
+  // E1.4b (dcm-kso9; user answer 2026-11-01): a target's rider benefit (Lead by Example) is picked before rolling.
+  const hints = useQuery(api.combatActions.targets, { campaignId, characterId, mapId: map._id, slot });
+  const [benefitPick, setBenefitPick] = useState<string | null>(null);
 
   if (character === undefined) {
     return (
@@ -198,13 +204,18 @@ function AttackForm({ campaignId, map, role, characterId, enemies, allies }: Act
   // A plain weapon attack targets one enemy (user answer 2026-10-22, CB p.96): the latest picks, one more per extra
   // target (Parallela, CB p.332; a ticked Spirit Weapon's extra adversary for a Stress, CB p.44).
   const most = 1 + extraTargets(mods) + (spirit ? 1 : 0);
-  const picked = seenTargets(targetTokenIds, enemies).slice(-most);
-  const names = new Map<string, string>([...enemies, ...allies].map((t) => [t._id, t.name]));
+  const waitingForced = (forcedRows ?? []).filter((r) => r.characterId === characterId);
+  const forced = waitingForced.find((r) => r.requestId === forcedId) ?? null;
+  const picked = forced !== null ? forced.targets.map((t) => t.tokenId) : seenTargets(targetTokenIds, enemies).slice(-most);
+  const names = new Map<string, string>([...enemies, ...allies, ...(forced?.targets ?? []).map((t) => ({ _id: t.tokenId, name: t.name }))].map((t) => [t._id, t.name]));
   const roller: Roller = { experiences: sheet.experiences, hope: sheet.hope };
   const notEnoughHope = rollProblem(roller, rollValues);
   const riders = riderList ?? [];
   const riderMissing = riderProblem(riders, riderPicks);
   const others = enemies.filter((e) => !picked.includes(e._id));
+  const benefits = (hints ?? []).filter((h) => picked.includes(h.tokenId)).flatMap((h) => h.benefits ?? []);
+  const benefitOptions = benefits.flatMap((b) => b.options.map((o) => ({ ...o, from: b.label })));
+  const benefit = benefitOptions.find((o) => o.id === benefitPick)?.id ?? benefitOptions[0]?.id;
   const canAttack = chosen !== undefined && picked.length > 0 && !attack.pending && !notEnoughHope && !riderMissing;
 
   async function fire() {
@@ -226,8 +237,12 @@ function AttackForm({ campaignId, map, role, characterId, enemies, allies }: Act
       options: [],
       riders: ridersToSend(riders, riderPicks),
       ...(riseToSend(riders, riderPicks) === false ? { riseToTheChallenge: false } : {}),
+      ...(forced !== null ? { forcedRequestId: forced.requestId } : {}),
+      ...(benefit !== undefined ? { benefit } : {}),
     });
     if (!out) return;
+    setForcedId(null);
+    setBenefitPick(null);
     setRollValues((v) => ({ ...v, experienceIds: [] }));
     setRiderPicks({});
     setSpiritWeapon(false);
@@ -277,7 +292,40 @@ function AttackForm({ campaignId, map, role, characterId, enemies, allies }: Act
           <span>Use as Spirit Weapon (reach Close; mark a Stress for one more target)</span>
         </label>
       ) : null}
-      {most > 1 ? <p className="cm-muted cma-small cma-note">Up to {most} targets with this attack.</p> : null}
+      {waitingForced.length > 0 && forced === null ? (
+        <ul className="cma-requests" aria-label="Forced attacks">
+          {waitingForced.map((r) => (
+            <li key={r.requestId} className="cma-request" data-testid="combat-forced-attack">
+              <span>
+                {r.instanceLabel}&apos;s {r.feature}: you must attack {r.targets.map((t) => t.name).join(", ")}.
+              </span>
+              <button type="button" className="cm-btn cm-sm" onClick={() => setForcedId(r.requestId)} data-testid="combat-forced-attack-open">
+                Make the attack
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {forced !== null ? (
+        <p className="cma-small cma-note" role="status" data-testid="combat-forced-attack-locked">
+          Forced by {forced.instanceLabel}&apos;s {forced.feature}: the target is locked ({forced.targets.map((t) => t.name).join(", ")}).{" "}
+          <button type="button" className="cm-btn cm-sm" onClick={() => setForcedId(null)}>
+            Not now
+          </button>
+        </p>
+      ) : null}
+      {most > 1 && forced === null ? <p className="cm-muted cma-small cma-note">Up to {most} targets with this attack.</p> : null}
+      {benefitOptions.length > 0 ? (
+        <fieldset className="cma-field" data-testid="combat-attack-benefit">
+          <legend className="cm-lbl">{[...new Set(benefitOptions.map((o) => o.from))].join(", ")}: your benefit from this attack</legend>
+          {benefitOptions.map((o) => (
+            <label key={`${o.from}:${o.id}`} className="cma-check">
+              <input type="radio" name={`benefit-${characterId}`} checked={benefit === o.id} onChange={() => setBenefitPick(o.id)} />
+              <span>{o.label}</span>
+            </label>
+          ))}
+        </fieldset>
+      ) : null}
       <RollOptions roller={roller} values={rollValues} onChange={(patch) => setRollValues((v) => ({ ...v, ...patch }))} />
       <RiderToggles options={riders} picks={riderPicks} onChange={setRiderPicks} enemies={others} allies={allies} />
       {notEnoughHope ? <p className="cma-error">{notEnoughHope}</p> : null}

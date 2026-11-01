@@ -392,6 +392,8 @@ const attacks: Entry[] = [
   { fn: api.combatActions.pickMinions, access: "view", setup: attacked, args: (w) => ({ entryId: w.ids.entryId, instanceIds: [w.ids.packId] }), expect: NOT_THEIRS },
   { fn: api.combatRequests.sanction, access: "gm", setup: sanctioned, args: (w) => ({ requestId: w.ids.requestId, approve: false }) },
   { fn: api.combatRequests.mine, access: "view", setup: sanctioned, expect: { otherPlayer: "ok" } },
+  // E1.4b (dcm-uxsd): the forced attacks on the caller's characters (another player's are left out: an empty list).
+  { fn: api.combatRequests.forcedAttacks, access: "view", setup: arena, expect: { otherPlayer: "ok" } },
 ];
 
 /**

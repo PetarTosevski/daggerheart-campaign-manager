@@ -27,8 +27,8 @@
  */
 import { ConvexError, v, type Infer } from "convex/values";
 
-import { featureUseKey, keyAvailability, requirementMet, stateCheckMet } from "../../src/lib/domain/card-effects/availability";
-import { rollMatches, type PlanStep, type RunPlan } from "../../src/lib/domain/card-effects/run";
+import { featureUseKey, keyAvailability, requirementMet, stateCheckMet, type CreatureFacts } from "../../src/lib/domain/card-effects/availability";
+import { rollMatches, run as runCardUse, type PlanStep, type RunPlan } from "../../src/lib/domain/card-effects/run";
 import type { AttackedRider, CardUse, CreatureKey, DamageKeyword, DamageType, Mod, Range, RollFilter, RollResult, RollSpec, Step, TargetSpec, Trigger } from "../../src/lib/domain/card-effects/types";
 import { adversaryNumberEnv, passiveSummary, type PassiveSummary } from "../../src/lib/domain/adversary-actions/index";
 import { conditionName, conditionStepsOf, lastingModsOf } from "../../src/lib/domain/adversary-effects/run";
@@ -39,10 +39,10 @@ import { tokenVisibility } from "../../src/lib/domain/combat-map/index";
 import { countsAsActionRoll } from "../../src/lib/domain/countdowns/advanced";
 import { afterDualityRoll, rollOptions } from "../../src/lib/domain/class-features/hooks";
 import { CLASS_FEATURES } from "../../src/lib/domain/class-features/index";
-import { applyDualityEffects, dualityEffects, typedLabel, type Rng } from "../../src/lib/domain/dice/index";
+import { advantagePlan, applyDualityEffects, dualityEffects, typedLabel, type Rng } from "../../src/lib/domain/dice/index";
 import { actionOutcome, type RollRecord } from "../../src/lib/domain/duality";
 import { holdingsFor, owned, type OwnedFeature } from "../../src/lib/domain/feature-effects/owned";
-import { actorExtras, featureAvailability, featureCostShort } from "../../src/lib/domain/feature-effects/run";
+import { actorExtras, featureAvailability, featureCostShort, flagsOf } from "../../src/lib/domain/feature-effects/run";
 import type { FeatureEffect } from "../../src/lib/domain/feature-effects/types";
 import { applyUpgrades } from "../../src/lib/domain/feature-effects/upgrades";
 import { SEVERITY_LABEL } from "../../src/lib/domain/encounters/damage";
@@ -63,7 +63,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction, newGroupId } from "./actionLog";
 import { parseChoices, type CardChoice, type ParsedChoices } from "./cardChoices";
-import { adversaryBefore, cardPromptValidator, endForCasterOnInstances, endForCasterOnSheets, endOnDefeat, endOnInstance, endOnSheet, gmLines, holdsSource, instanceEffectSource, instanceWrites, promptsOf, srdUses, writeInstances, type CardPrompt, type InstanceWrite, type SourceLookup } from "./cardRows";
+import { adversaryBefore, cardPromptValidator, endAdversaryConditionsForCaster, endAdversaryConditionsOnRoll, endForCasterOnInstances, endForCasterOnSheets, endOnDefeat, endOnInstance, endOnSheet, gmLines, holdsSource, instanceEffectSource, instanceWrites, promptsOf, srdUses, writeInstances, type CardPrompt, type InstanceWrite, type SourceLookup } from "./cardRows";
 import { adversaryState, blockOf as adversaryBlockOf, riderStepsText } from "./adversaryFeatures";
 import { activeAreasOnMap, memberConditionsFor, observerConditions } from "../combatAreas";
 import {
@@ -93,14 +93,18 @@ import { saveSheet } from "./characterSheet";
 import { loadCombatMap } from "./combatMaps";
 import { loadScene, viewOf, type Scene, type Viewer } from "./combatVision";
 import { costText, limitText } from "./featureDrawer";
-import { factsOf, ownedHere, pickFeature } from "./featureRunner";
+import { factsOf, ownedHere, pickFeature, withCreatureAreas } from "./featureRunner";
 import { featureScope } from "./featureScope";
 import { campaignFearState, gainFear, spendFear } from "./fear";
 import { closeRequest, openAfterRoll, openMinionOffer, openRiderPick } from "./combatRequests";
 import { bandsOnMap, partyMembers } from "./adversaryHits";
+import { pcRollAdversaryUses } from "./adversaryActions";
 import { openIncomingHit } from "./incomingHits";
 import { readSheet } from "./characterSheet";
-import { changed, liveMods, resolveDamage, resolveDuality, rollResultHolds, sheetBearerMods, type DualityArgs, type LiveMod, type Loaded } from "./rolls";
+import { changed, hopeDieSwitch, liveMods, sheetCarriedMods, prepareDuality, resolveDamage, resolveDuality, retotal, rollResultHolds, rules, sheetBearerMods, withDieBonus, withDieBonuses, withHopeSides, type DualityArgs, type LiveMod, type Loaded } from "./rolls";
+
+// E1.4b: these moved to ./rolls (the plain roll uses them too); re-exported for the existing callers.
+export { hopeDieSwitch, withDieBonus, withDieBonuses, withHopeSides };
 import type { AdversaryBefore } from "./validators/actionLog";
 import { traitIdValidator } from "./validators/characters";
 import { MAX_RIDERS_PER_ATTACK, rangeBandValidator, sanctionRollOptionsValidator, type AfterRollChange, type AfterRollChoice, type Rider, type RiderPickChoice } from "./validators/combatRequests";
@@ -216,6 +220,11 @@ export const targetHintValidator = v.object({
   inRange: v.boolean(),
   lineOfSight: v.boolean(),
   cover: v.boolean(),
+  /**
+   * E1.4b (dcm-kso9): what this target's riders let the attacker pick before rolling (Lead by Example, CB p.342: clear a
+   * Stress or gain a Hope). Absent: none. Names only (U1).
+   */
+  benefits: v.optional(v.array(v.object({ label: v.string(), options: v.array(v.object({ id: v.string(), label: v.string() })) }))),
 });
 
 // ---------------------------------------------------------------- the scene around the attacker
@@ -266,14 +275,17 @@ export function weaponIn(sheet: CharacterSheet, slot: WeaponSlot): Weapon | unde
 }
 
 /** `combatActions.targets`: every enemy token the character sees that can be attacked, with its band and hints. */
-export async function targetHints(ctx: QueryCtx, campaign: Doc<"campaigns">, s: AttackScene, weapon: Weapon | undefined): Promise<Infer<typeof targetHintValidator>[]> {
+export async function targetHints(ctx: QueryCtx, campaign: Doc<"campaigns">, s: AttackScene, weapon: Weapon | undefined, attacker?: { sheet: CharacterSheet; characterId: string }): Promise<Infer<typeof targetHintValidator>[]> {
   const hints: Infer<typeof targetHintValidator>[] = [];
   for (const [i, token] of s.scene.tokens.entries()) {
     if (i === s.viewer.index || token.side !== "enemy" || !seenBy(s, i)) continue;
-    if ((await enemyInstance(ctx, campaign._id, token)) === null) continue;
+    const linked = await enemyInstance(ctx, campaign._id, token);
+    if (linked === null) continue;
     const check = rangeCheck(s.attacker, token, weapon ? rangeFromWeapon(weapon.range) : "melee");
     const sight = sightTo(s, token);
-    hints.push({ tokenId: token._id, band: check.band, inRange: weapon !== undefined && check.inRange, lineOfSight: sight.lineOfSight, cover: sight.cover });
+    // E1.4b (dcm-kso9): the rider benefits the attacker would get on this target.
+    const benefits = attacker ? riderBenefits(instanceAttackedRiders(linked.instance, attacker.sheet, { tokenId: s.attacker._id, characterId: attacker.characterId })) : [];
+    hints.push({ tokenId: token._id, band: check.band, inRange: weapon !== undefined && check.inRange, lineOfSight: sight.lineOfSight, cover: sight.cover, ...(benefits.length > 0 ? { benefits } : {}) });
   }
   return hints;
 }
@@ -300,12 +312,13 @@ export const WEAPON_ATTACK_TARGETS = 1;
  * COMBAT_TARGET_INVALID). Seen first, so a token the player can't see answers the same whatever it is. Kept as a list
  * (a stored sanction holds `targetTokenIds`); several targets would have to share one encounter.
  */
-export async function checkTargets(ctx: QueryCtx, campaign: Doc<"campaigns">, s: AttackScene, weapon: Weapon, tokenIds: readonly Id<"combatTokens">[], roll: Pick<AttackRoll, "spiritWeapon"> = {}): Promise<CheckedTarget[]> {
+export async function checkTargets(ctx: QueryCtx, campaign: Doc<"campaigns">, s: AttackScene, weapon: Weapon, tokenIds: readonly Id<"combatTokens">[], roll: Pick<AttackRoll, "spiritWeapon"> = {}, reach = 0): Promise<CheckedTarget[]> {
   // E1.3b (dcm-xbtw): a ticked Spirit Weapon reaches Close and may take one more target (its Stress is paid in the attack).
   const spirit = roll.spiritWeapon === true && (await spiritWeaponFor(ctx, campaign, s, weapon, roll));
   const most = Math.min(MAX_TARGETS, WEAPON_ATTACK_TARGETS + (spirit ? 1 : 0) + (await extraAttackTargets(ctx, campaign, s)));
   if (tokenIds.length === 0 || tokenIds.length > most || new Set(tokenIds).size !== tokenIds.length) throw appError("COMBAT_TARGET_INVALID");
-  const range = spirit ? "close" : rangeFromWeapon(weapon.range);
+  // E1.4b (dcm-lbai): a reach picked with the attack widens its own range check (`setupReach`).
+  const range = widenRange(spirit ? "close" : rangeFromWeapon(weapon.range), reach);
   const checked: CheckedTarget[] = [];
   for (const id of tokenIds) {
     const index = s.scene.tokens.findIndex((t) => t._id === id);
@@ -320,6 +333,29 @@ export async function checkTargets(ctx: QueryCtx, campaign: Doc<"campaigns">, s:
   }
   if (new Set(checked.map((c) => c.encounter._id)).size > 1) throw appError("COMBAT_TARGET_INVALID");
   return checked;
+}
+
+/**
+ * Plan lanes-2 wave 10, E1.4b (dcm-lbai; user answer 2026-10-31: "the reach option is picked at attack setup and widens the
+ * attack's target range"): the range steps the riders taken with the attack add (`modifyRoll` `reach`; Manipulate Magic,
+ * CB p.47: "Extend the spell or attack's reach by one range"), counting a `choose` step's options the player picked.
+ */
+export function setupReach(picked: readonly PickedRider[]): number {
+  let reach = 0;
+  for (const r of picked) {
+    const uses: readonly CardUse[] = r.source === "card" ? (cardEffect(r.id)?.uses ?? []) : (featureEffect(r.id)?.uses ?? []);
+    const use = uses.find((u) => u.id === r.useId);
+    if (use === undefined) continue;
+    const options = parseChoices(r.choices).options;
+    const walk = (steps: readonly Step[]): void => {
+      for (const st of steps) {
+        if (st.kind === "modifyRoll" && st.change.kind === "reach") reach += st.change.steps;
+        else if (st.kind === "choose") for (const o of st.options) if ((options[st.id] ?? []).includes(o.id)) walk(o.steps);
+      }
+    };
+    walk(use.steps);
+  }
+  return Math.max(0, Math.min(reach, RANGE_ORDER.length));
 }
 
 /**
@@ -481,6 +517,13 @@ export type AttackRequest = {
   held?: { dice: readonly number[]; answer: AfterRollChoice };
   /** DA2: rider-added targets out of range that the GM approved (Q1). */
   waived?: readonly Id<"combatTokens">[];
+  /** E1.4b (dcm-kso9): the option the attacker picked for a target's rider benefit (Lead by Example's Stress or Hope). */
+  benefit?: string;
+  /**
+   * Plan lanes-2 wave 10, E1.4b (dcm-uxsd): the actionLog group the attack's rows join (a forced attack joins the forcing
+   * use's group, so undoing that use undoes the attack too). Absent: a new group.
+   */
+  groupId?: string;
 };
 
 // ---------------------------------------------------------------- riders (plan sheet-drawer SD5)
@@ -955,8 +998,8 @@ export function rollFromStored(roll: Infer<typeof sanctionRollOptionsValidator>)
     ...(roll.slayerDice !== undefined ? { slayerDice: roll.slayerDice } : {}),
     ...(roll.tideTokens !== undefined ? { tideTokens: roll.tideTokens } : {}),
     ...(roll.riseToTheChallenge !== undefined ? { riseToTheChallenge: roll.riseToTheChallenge } : {}),
-    // E1.3b (dcm-xbtw): a stored roll keeps the Spirit Weapon box once the stored shape is widened to carry it.
-    ...("spiritWeapon" in roll && typeof roll.spiritWeapon === "boolean" ? { spiritWeapon: roll.spiritWeapon } : {}),
+    // E1.4b (dcm-1sk4, V4 widened the stored shape): a held or sanctioned attack keeps the Spirit Weapon box.
+    ...(roll.spiritWeapon !== undefined ? { spiritWeapon: roll.spiritWeapon } : {}),
   };
 }
 
@@ -1040,6 +1083,36 @@ export async function autoPicked(env: Pick<RiderEnv, "ctx" | "campaign" | "scene
   return out;
 }
 
+/**
+ * Plan lanes-2 wave 10, E1.4b (dcm-b41o, dcm-7udv, dcm-iia9): the facts a feature rider's checks read: the target's and
+ * the trigger subject's (`creatureFacts`) with the live areas their tokens stand in (`withCreatureAreas`; Circle of Power,
+ * HF p.16: "you or an ally within the circle"), and the attacking weapon's range (`weapons.attacking`; Surrounded, HF
+ * p.10: "an attack with a Melee weapon").
+ */
+export async function riderFacts(env: Pick<RiderEnv, "ctx" | "campaign" | "scene" | "host">, target: CheckedTarget | undefined, subject: string | undefined): Promise<NonNullable<Parameters<typeof pickFeature>[0]["extraFacts"]>> {
+  const targetFacts = target ? await withCreatureAreas(env.ctx, env.scene, target.token, creatureFacts(target.instance, env.scene, target.token)) : undefined;
+  let subjectFacts: CreatureFacts | undefined;
+  if (subject !== undefined && target !== undefined && subject === target.token._id) subjectFacts = targetFacts;
+  else if (subject !== undefined) {
+    const token = env.scene.scene.tokens.find((t) => t._id === subject);
+    if (token?.ref.kind === "adversary") {
+      const instance = await env.ctx.db.get("encounterAdversaries", token.ref.adversaryId);
+      if (instance !== null && instance.campaignId === env.campaign._id) subjectFacts = await withCreatureAreas(env.ctx, env.scene, token, creatureFacts(instance, env.scene, token));
+    } else if (token?.ref.kind === "pc") {
+      const character = await env.ctx.db.get("characters", token.ref.characterId);
+      if (character !== null && character.campaignId === env.campaign._id) {
+        const sh = readSheet(character.sheet);
+        subjectFacts = await withCreatureAreas(env.ctx, env.scene, token, { conditions: sh.conditions, hp: sh.hp, hpMax: sh.hpMax, stress: sh.stress, stressMax: sh.stressMax, hope: sh.hope }, character._id);
+      }
+    }
+  }
+  return {
+    ...(targetFacts ? { target: targetFacts } : {}),
+    ...(subjectFacts ? { subject: subjectFacts } : {}),
+    ...(env.host.weaponRange !== null ? { weapons: { attacking: env.host.weaponRange } } : {}),
+  };
+}
+
 /** `whole`: the full use with its move gates bound (a damage-phase rider runs once, after the damage). */
 type RunPart = RiderPart | "whole";
 
@@ -1054,8 +1127,7 @@ export async function runRiderPart(env: RiderEnv, rider: PickedRider, sheet: Cha
   try {
     let pick: UsePick;
     if (rider.source === "feature") {
-      const facts = target ? { target: creatureFacts(target.instance, env.scene, target.token) } : {};
-      pick = pickFeature({ sheet, campaign: env.campaign, featureId: rider.id, useId: rider.useId, times: 1, rollUsedExperience: env.rollUsedExperience, party: [], transform, extraFacts: facts });
+      pick = pickFeature({ sheet, campaign: env.campaign, featureId: rider.id, useId: rider.useId, times: 1, rollUsedExperience: env.rollUsedExperience, party: [], transform, extraFacts: await riderFacts(env, target, subject) });
     } else {
       const base = pickCard(sheet, rider.id, rider.useId);
       const use = transform(base.use);
@@ -1475,7 +1547,8 @@ export function afterRollOffers(sheet: CharacterSheet, campaign: Doc<"campaigns"
       if (change.kind === "reroll" && change.hopeAtMost !== undefined && hopeDie > change.hopeAtMost) continue;
       if (change.kind === "outcome" && hostRoll.success) continue;
       if (featureAvailability(sheet, entry, use.id, { holdings }).state !== "ready") continue;
-      if (featureCostShort(actor, use, Object.fromEntries((use.choices ?? []).map((c) => [c.id, c.min]))).length > 0) continue;
+      // E1.4b (dcm-b41o): the payer's flags (Ravenous's cannotSpendHope, HF p.94) keep a cost it can't pay out.
+      if (featureCostShort(actor, use, Object.fromEntries((use.choices ?? []).map((c) => [c.id, c.min])), payerFlags(sheet, campaign)).length > 0) continue;
       const pools = (use.costs ?? []).flatMap((c) => (c.kind === "tokens" && c.pool !== undefined && c.pool !== "card" && c.pool !== "favor" && c.pool !== "focus" ? [c.pool] : []));
       if (pools.some((p) => !(actor.heldDice ?? []).some((d) => d.kind === p))) continue;
       // A condition the engine knows to be false leaves the feature out; one it can't read is the player's to confirm.
@@ -1490,11 +1563,6 @@ export function afterRollOffers(sheet: CharacterSheet, campaign: Doc<"campaigns"
 /** A Duality roll's outcome from its dice (no Difficulty: an attack's success is its hits, R1). */
 function outcomeFrom(hope: number, fear: number): RollRecord["outcome"] {
   return actionOutcome(hope, fear, 0, undefined);
-}
-
-/** Recomputes a roll record's total from its dice (the dropped ones don't count). */
-function retotal(record: RollRecord): RollRecord {
-  return { ...record, total: record.dice.reduce((s, d) => s + (d.dropped ? 0 : d.value), 0) + record.modifier };
 }
 
 /**
@@ -1547,61 +1615,6 @@ export function recorder(base: Rng): { rng: Rng; values: number[] } {
       return n;
     },
   };
-}
-
-/**
- * DA2 (Rise to the Challenge, CB p.48: "roll a d20 as your Hope Die"): a die source whose next 12-sided draw, once armed,
- * draws `sides` instead. A Duality roll draws its Hope Die first (`rollDuality`: Hope, Fear, then the advantage dice), so
- * arming it right before the roll swaps the Hope Die only. Put it outside a recorder so the held attack replays the value.
- */
-export function hopeDieSwitch(base: Rng): { rng: Rng; arm: (sides: number | undefined) => void } {
-  let next: number | undefined;
-  return {
-    rng: (sides) => {
-      if (next !== undefined && sides === 12) {
-        const s = next;
-        next = undefined;
-        return base(s);
-      }
-      return base(sides);
-    },
-    arm: (sides) => {
-      next = sides !== undefined && sides !== 12 ? sides : undefined;
-    },
-  };
-}
-
-/**
- * Plan lanes, E1 (dcm-3ou, dcm-jog): the roll with bonuses added to the duality dice's results (Backhanded Guidance, HF
- * p.87: "add 1d6 to the result of their Fear Die"; Ill Omen, HF p.95: "their Fear Die gains a bonus equal to the amount
- * of Fear you have"), its total and its outcome read again. The die keeps its sides; its value is the result with the bonus.
- *
- * User answer 2026-10-31: a bonus never makes a critical; a critical needs the dice to match as rolled (a roll that was
- * a critical stays one). Otherwise the bonus only decides Hope vs Fear, and a tie after the bonus is WITH FEAR.
- */
-export function withDieBonuses(record: RollRecord, bonuses: readonly { die: "hope" | "fear"; amount: number }[]): RollRecord {
-  const add = { hope: 0, fear: 0 };
-  for (const b of bonuses) add[b.die] += b.amount;
-  if (add.hope === 0 && add.fear === 0) return record;
-  const dice = record.dice.map((d) => ((d.role === "hope" || d.role === "fear") && !d.dropped ? { ...d, value: d.value + add[d.role] } : d));
-  const next = retotal({ ...record, dice });
-  if (record.outcome === "critical") return next;
-  const hope = dice.find((d) => d.role === "hope" && !d.dropped)?.value ?? 0;
-  const fear = dice.find((d) => d.role === "fear" && !d.dropped)?.value ?? 0;
-  const success = record.difficulty === undefined || next.total >= record.difficulty;
-  const outcome: RollRecord["outcome"] = hope > fear ? (success ? "successHope" : "failHope") : success ? "successFear" : "failFear";
-  return { ...next, outcome };
-}
-
-/** `withDieBonuses` with one bonus. */
-export function withDieBonus(record: RollRecord, die: "hope" | "fear", amount: number): RollRecord {
-  return withDieBonuses(record, [{ die, amount }]);
-}
-
-/** The roll record with its Hope Die's sides set (the value was already drawn from those sides). */
-export function withHopeSides(record: RollRecord, sides: number | undefined): RollRecord {
-  if (sides === undefined || sides === 12) return record;
-  return { ...record, dice: record.dice.map((d) => (d.role === "hope" ? { ...d, sides } : d)) };
 }
 
 /**
@@ -1751,20 +1764,36 @@ function tagRiderEntry(tag: string): { source: TagRiderSource; mods: readonly Mo
  * feature that made it (an adversary's own rider never); `others`: the PC doesn't (Breaking Blow, Chokehold: the caster's
  * own attacks add the extra damage through their own `auto` use, so it is never added twice).
  */
-function attackedByHolds(rider: AttackedRider, source: TagRiderSource, attacker: CharacterSheet): boolean {
+function attackedByHolds(rider: AttackedRider, source: TagRiderSource, attacker: CharacterSheet, caster?: string, me?: AttackerIds): boolean {
   if (rider.by === "anyone" || rider.by === "pcs") return true;
-  const mine = source.kind === "pc" && holdsSource(attacker, source.sourceId);
+  // E1.4b (dcm-j5aw, user answer 2026-10-31): the placing PC recorded on the instance (its marker's caster) is excluded,
+  // not every holder of the card; without a recorded caster, the old holder rule.
+  const mine = caster !== undefined && me !== undefined ? caster === me.tokenId || caster === me.characterId : source.kind === "pc" && holdsSource(attacker, source.sourceId);
   return rider.by === "caster" ? mine : !mine;
 }
+
+/** The attacker as an instance marker may name it (`~<caster>`: a token id; a character id from E1.4a's `casterId`). */
+export type AttackerIds = { tokenId: string; characterId: string };
 
 /**
  * dcm-yd5h / dcm-9gw / dcm-kso9: the `attackedRider`s a PC's attack on this instance gets, read back from the entries of
  * what it carries (E7's `adv:` instance modifiers, a card's or feature's `card:` / `feat:` modifier, and a bare tag or
  * condition a card left: Breaking Blow, CB p.331; Chokehold, CB p.336).
  */
-export function instanceAttackedRiders(instance: Pick<Doc<"encounterAdversaries">, "effects" | "tags" | "conditions">, attacker: CharacterSheet): { label: string; rider: AttackedRider }[] {
+export function instanceAttackedRiders(instance: Pick<Doc<"encounterAdversaries">, "effects" | "tags" | "conditions">, attacker: CharacterSheet, me?: AttackerIds): { label: string; rider: AttackedRider }[] {
   const out: { label: string; rider: AttackedRider }[] = [];
   const seen = new Set<string>();
+  // E1.4b (dcm-j5aw): the caster a marker of this label records (a tag's caster lives on its marker).
+  // Orchestrator (merge with E1.4a): the stored `casterId` (E1.4a's `castWrites`, a character id) wins over the id's `~` suffix.
+  const casterIn = (e: NonNullable<typeof instance.effects>[number], src: ReturnType<typeof instanceEffectSource>) => e.casterId ?? src?.caster;
+  const casterOf = (label: string) => {
+    for (const e of instance.effects ?? []) {
+      const src = instanceEffectSource(e);
+      const caster = src !== null && src.label === label ? casterIn(e, src) : undefined;
+      if (caster !== undefined) return caster;
+    }
+    return undefined;
+  };
   for (const e of instance.effects ?? []) {
     const adv = ADV_INSTANCE_EFFECT.exec(e.id);
     const src = adv ? null : instanceEffectSource(e);
@@ -1772,15 +1801,63 @@ export function instanceAttackedRiders(instance: Pick<Doc<"encounterAdversaries"
     seen.add(e.label);
     const steps = adv ? entryStepsOf({ adversaryId: adv[1]!, feature: adv[2]! }) : entryStepsOf({ sourceId: src!.sourceId });
     const source: TagRiderSource = adv ? { kind: "adversary" } : { kind: "pc", sourceId: src!.sourceId };
-    for (const m of lastingModsOf(steps, e.label)) if (m.kind === "attackedRider" && attackedByHolds(m.rider, source, attacker)) out.push({ label: e.label, rider: m.rider });
+    for (const m of lastingModsOf(steps, e.label)) if (m.kind === "attackedRider" && attackedByHolds(m.rider, source, attacker, src === null ? undefined : casterIn(e, src), me)) out.push({ label: e.label, rider: m.rider });
   }
   for (const tag of [...(instance.tags ?? []), ...instance.conditions]) {
     if (seen.has(tag)) continue;
     seen.add(tag);
     const found = tagRiderEntry(tag);
-    if (found) for (const m of found.mods) if (m.kind === "attackedRider" && attackedByHolds(m.rider, found.source, attacker)) out.push({ label: tag, rider: m.rider });
+    if (found) for (const m of found.mods) if (m.kind === "attackedRider" && attackedByHolds(m.rider, found.source, attacker, casterOf(tag), me)) out.push({ label: tag, rider: m.rider });
   }
   return out;
+}
+
+/**
+ * E1.4b (dcm-kso9): runs a rider benefit's steps on the attacker (`self`), as a card use would, with the attack's dice.
+ * `line` names what changed ("Lead by Example: clears 1 Stress").
+ */
+export function attackerStepsRun(sheet: CharacterSheet, label: string, steps: readonly Step[], rng: Rng): { sheet: CharacterSheet; line: string } {
+  const use: CardUse = { id: "benefit", name: label, activation: { kind: "action" }, steps };
+  const result = runCardUse({ cardId: `benefit-${label}`, uses: [use] } as never, { actor: cardActor("self", sheet, "", undefined), gmFear: 0, useId: "benefit", targets: [], rng });
+  if (!result.ok) return { sheet, line: `${label}: ${riderStepsText(steps)} (not automated)` };
+  const after = actorSheetAfter(sheet, result.plan, "self", label, { rng });
+  const parts: string[] = [];
+  if (after.stress < sheet.stress) parts.push(`clears ${sheet.stress - after.stress} Stress`);
+  if (after.stress > sheet.stress) parts.push(`marks ${after.stress - sheet.stress} Stress`);
+  if (after.hope > sheet.hope) parts.push(`gains ${after.hope - sheet.hope} Hope`);
+  if (after.hope < sheet.hope) parts.push(`spends ${sheet.hope - after.hope} Hope`);
+  return { sheet: after, line: `${label}: ${parts.length > 0 ? parts.join(", ") : "no change"}` };
+}
+
+/** E1.4b (dcm-b41o): the rules flags on a payer's sheet: its live mods and what it carries (adversary-applied effects too). */
+export function payerFlags(sheet: CharacterSheet, campaign: Doc<"campaigns">): string[] {
+  return flagsOf([...liveMods(sheet, featureScope(campaign)).map((m) => m.mod), ...sheetCarriedMods(sheet).map((m) => m.mod)]);
+}
+
+/** One choice an attacker makes before the roll for a target's `attackedRider` (Lead by Example: clear a Stress or gain a Hope). */
+export type RiderBenefit = { label: string; options: { id: string; label: string }[] };
+
+/**
+ * Plan lanes-2 wave 10, E1.4b (dcm-kso9; user answer 2026-11-01, Q3): the benefits a target's riders give the attacker
+ * (`attackerSteps`; Lead by Example, CB p.342: "The next PC to make an attack against that adversary can clear a Stress or
+ * gain a Hope"). A `choose` among the steps is the attacker's pick before rolling.
+ */
+export function riderBenefits(riders: readonly { label: string; rider: AttackedRider }[]): RiderBenefit[] {
+  return riders.flatMap(({ label, rider }) => {
+    const steps = rider.attackerSteps ?? [];
+    if (steps.length === 0) return [];
+    const choose = steps.find((st): st is Extract<Step, { kind: "choose" }> => st.kind === "choose");
+    return [{ label, options: choose ? choose.options.map((o) => ({ id: o.id, label: o.label })) : [] }];
+  });
+}
+
+/**
+ * E1.4b (dcm-kso9): the attacker steps with the picked option in place of their `choose` (`option` absent: the attacker took
+ * none, so a `choose` gives nothing); null when there is nothing to run.
+ */
+export function benefitSteps(steps: readonly Step[], option: string | undefined): Step[] | null {
+  const out = steps.flatMap((st) => (st.kind === "choose" ? (st.options.find((o) => o.id === option)?.steps ?? []) : [st]));
+  return out.length > 0 ? out : null;
 }
 
 /** What one adversary target brings to a PC's attack (dcm-c09o, dcm-wuu, dcm-bhp, dcm-yd5h). */
@@ -1796,14 +1873,14 @@ export type TargetFacts = {
  * inside the area; `memberConditionsFor`), dcm-bhp (a sight-blocking area between the two: `observerConditions`),
  * dcm-yd5h (instance riders): the target as the attack reads it.
  */
-export async function targetFacts(ctx: QueryCtx, s: AttackScene, areas: readonly Doc<"combatAreas">[], target: Pick<CheckedTarget, "instance" | "token">, attacker: CharacterSheet): Promise<TargetFacts> {
+export async function targetFacts(ctx: QueryCtx, s: AttackScene, areas: readonly Doc<"combatAreas">[], target: Pick<CheckedTarget, "instance" | "token">, attacker: CharacterSheet, me?: AttackerIds): Promise<TargetFacts> {
   const block = await adversaryBlockOf(ctx, target.instance);
   const passives = block === null ? null : passiveSummary(block.effects, { ...adversaryState(target.instance), situations: [] }, block.tier);
   const conditions = new Set<string>([...target.instance.conditions, ...(target.instance.tags ?? [])]);
   for (const c of passives?.selfConditions ?? []) conditions.add(conditionName(c));
   for (const m of memberConditionsFor(areas, s.scene.tokens, target.token)) conditions.add(conditionName(m.condition));
   for (const o of observerConditions(areas, s.scene.tokens, target.token, s.attacker)) conditions.add(o.condition);
-  return { passives, conditions: [...conditions], riders: instanceAttackedRiders(target.instance, attacker) };
+  return { passives, conditions: [...conditions], riders: instanceAttackedRiders(target.instance, attacker, me) };
 }
 
 /**
@@ -1814,13 +1891,68 @@ export async function targetFacts(ctx: QueryCtx, s: AttackScene, areas: readonly
  */
 export function targetsEdge(facts: readonly TargetFacts[], host: Pick<Host, "spec" | "trait">): { advantage: number; disadvantage: number } {
   if (facts.length === 0) return { advantage: 0, disadvantage: 0 };
-  const each = facts.map((f) => {
-    const edge = conditionEdge(f.conditions);
-    const against = (f.passives?.disadvantageAgainst ?? []).filter((on) => hostMatches(on, host) || on === "any").length;
-    const riderAdvantage = f.riders.some((r) => r.rider.advantage === true) ? 1 : 0;
-    return { advantage: edge.advantage + riderAdvantage, disadvantage: edge.disadvantage + against };
-  });
+  const each = facts.map((f) => targetEdge(f, host));
   return { advantage: Math.min(...each.map((e) => e.advantage)), disadvantage: Math.min(...each.map((e) => e.disadvantage)) };
+}
+
+export type Edge = { advantage: number; disadvantage: number };
+
+/** One target's own edge on the attack roll (see `targetsEdge`). */
+export function targetEdge(f: TargetFacts, host: Pick<Host, "spec" | "trait">): Edge {
+  const edge = conditionEdge(f.conditions);
+  const against = (f.passives?.disadvantageAgainst ?? []).filter((on) => hostMatches(on, host) || on === "any").length;
+  const riderAdvantage = f.riders.some((r) => r.rider.advantage === true) ? 1 : 0;
+  return { advantage: edge.advantage + riderAdvantage, disadvantage: edge.disadvantage + against };
+}
+
+/** Whether every target gives the same edge (then the roll takes it as before, no per-target total). */
+export function sameEdges(edges: readonly Edge[]): boolean {
+  return edges.every((e) => e.advantage === edges[0]!.advantage && e.disadvantage === edges[0]!.disadvantage);
+}
+
+/**
+ * Plan lanes-2 wave 10, E1.4b (dcm-svux; user answers 2026-10-31 and 2026-11-01): an attack on several targets is ONE roll
+ * (CB p.104: "you only make one attack roll and compare its result to the Difficulty of each eligible target"), compared per
+ * target with that target's own advantage / disadvantage (CB p.100: "you add a d6 advantage die to your total ... you
+ * subtract a d6 disadvantage die"). One d6 is rolled once: added against a target that leaves the roll with advantage,
+ * subtracted against one that leaves it with disadvantage, ignored otherwise.
+ *
+ * `record` was rolled with `own` (the roller's effective advantage, disadvantage and help, no target edge). Each target's
+ * dice follow `advantagePlan(own + its edge)` read from one pool: the record's advantage / disadvantage die (the shared
+ * d6) and its help dice; a die the pool lacks is drawn once with `draw` and shared. `deltas[i]`: what target i's total
+ * differs from `record.total`; `drawn`: the dice drawn here (for the log).
+ */
+export function perTargetDeltas(record: RollRecord, own: { advantage: number; disadvantage: number; help: number }, edges: readonly Edge[], draw: (sides: number) => number): { deltas: number[]; drawn: number[]; edgeDie: number | null } {
+  const drawn: number[] = [];
+  let edgeDie = record.dice.find((d) => d.role === "advantage" || d.role === "disadvantage")?.value ?? null;
+  const helps = record.dice.filter((d) => d.role === "help").map((d) => d.value);
+  const shared = () => {
+    if (edgeDie === null) {
+      edgeDie = draw(6);
+      drawn.push(edgeDie);
+    }
+    return edgeDie;
+  };
+  const help = (i: number) => {
+    while (helps.length <= i) {
+      const v = draw(6);
+      drawn.push(v);
+      helps.push(v);
+    }
+    return helps[i]!;
+  };
+  const valueOf = (advantage: number, disadvantage: number): number => {
+    const plan = advantagePlan(Math.min(advantage, 6), Math.min(disadvantage, 6), own.help);
+    if (plan.length === 0) return 0;
+    if (plan[0] === "disadvantage") return -shared();
+    let best = 0;
+    let h = 0;
+    for (const role of plan) best = Math.max(best, role === "advantage" ? shared() : help(h++));
+    return best;
+  };
+  const base = valueOf(own.advantage, own.disadvantage);
+  const deltas = edges.map((e) => valueOf(own.advantage + e.advantage, own.disadvantage + e.disadvantage) - base);
+  return { deltas, drawn, edgeDie };
 }
 
 /** Whether a passive weakness (Made of Straw, HF p.79: "double damage from fire") matches the attack's damage. */
@@ -1856,7 +1988,6 @@ export function attackedRiderDamage(riders: readonly { label: string; rider: Att
         labels.push(`${label} ×${d.factor}`);
       } else manual.push(`${label}: ${d.kind} (not automated)`);
     }
-    if (rider.attackerSteps && rider.attackerSteps.length > 0) manual.push(`${label}: ${riderStepsText(rider.attackerSteps)}`);
   }
   return { add, multiply, dice, labels, manual };
 }
@@ -2019,12 +2150,16 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   const factsOf = async (t: CheckedTarget) => {
     const known = facts.get(t.token._id);
     if (known !== undefined) return known;
-    const read = await targetFacts(ctx, req.scene, areas, t, sheet0);
+    const read = await targetFacts(ctx, req.scene, areas, t, sheet0, { tokenId: req.scene.attacker._id, characterId: character._id });
     facts.set(t.token._id, read);
     return read;
   };
   for (const t of allTargets) await factsOf(t);
-  const edge = targetsEdge(allTargets.map((t) => facts.get(t.token._id)!), host);
+  // E1.4b (dcm-svux): every target its own edge; when they differ the roll is made without them and compared per target.
+  const edgesOf = (list: readonly CheckedTarget[]) => list.map((t) => targetEdge(facts.get(t.token._id)!, host));
+  const targetEdges = edgesOf(allTargets);
+  const uniformEdge = targetEdges.length === 0 || sameEdges(targetEdges);
+  const edge: Edge = uniformEdge ? { ...(targetEdges[0] ?? { advantage: 0, disadvantage: 0 }) } : { advantage: 0, disadvantage: 0 };
   // E1.3b (dcm-mm0f): a bearer's disadvantage on attacks from beyond a range (Sandstorm, CB p.339: "Attacks made from beyond
   // Melee range have disadvantage"); the ones without a range are counted in `prepareDuality`.
   edge.disadvantage += sheetBearerMods(sheet0).filter(({ mod }) => mod.kind === "disadvantage" && mod.beyond !== undefined && mod.unlessTarget === undefined && mod.situation === undefined && hostMatches(mod.on, host) && allTargets.some((t) => !rangeAtMost(t.check.band, mod.beyond!))).length;
@@ -2053,6 +2188,8 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   let roll = withHopeSides(duality.roll, folds.hopeDie);
   let effects = duality.effects;
   let finalSheet = duality.next;
+  /** The sheet the roll's own Hope / Stress apply to (after its costs): changes when an after-roll feature paid from it. */
+  let effectsBase = duality.paid;
   // Plan lanes, E1: a bonus on one duality die (dcm-3ou, dcm-jog) changes the roll, so its Hope, Stress and Fear follow it.
   if (folds.dieBonus.length > 0) {
     roll = withDieBonuses(roll, folds.dieBonus);
@@ -2061,7 +2198,19 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   }
   let rolled = { ...duality.rolled, roll };
   let forced = false;
-  const hitsOf = (r: RollRecord) => resolveHits(r.total, r.outcome === "critical", allTargets.map((t) => ({ id: t.token._id, difficulty: difficultyOf(t.instance) })));
+  // E1.4b (dcm-svux): per-target totals when the targets' edges differ (one shared d6, `perTargetDeltas`).
+  const ownDice = uniformEdge ? null : rules(() => prepareDuality(sheetBeforeRoll, args, featureScope(campaign), null)).input;
+  const deltas = new Map<string, number>();
+  let edgeDie: number | null = null;
+  const readDeltas = (r: RollRecord, list: readonly CheckedTarget[]) => {
+    if (ownDice === null || list.length === 0) return;
+    const out = perTargetDeltas(r, ownDice, edgesOf(list), hope.rng);
+    edgeDie = out.edgeDie;
+    for (const [i, t] of list.entries()) deltas.set(t.token._id, out.deltas[i]!);
+  };
+  readDeltas(roll, allTargets);
+  const totalFor = (r: RollRecord, t: CheckedTarget) => r.total + (deltas.get(t.token._id) ?? 0);
+  const hitsOf = (r: RollRecord, list: readonly CheckedTarget[] = allTargets) => list.map((t) => resolveHits(totalFor(r, t), r.outcome === "critical", [{ id: t.token._id, difficulty: difficultyOf(t.instance) }])[0]!);
   let hits = hitsOf(roll);
   const pcHitsOf = (r: RollRecord, more: readonly PcTarget[] = pcTargets) => resolveHits(r.total, forced || r.outcome === "critical", more.map((t) => ({ id: t.token._id, difficulty: t.evasion })));
   const hostRollOf = (r: RollRecord, h: readonly { hit: boolean }[]): HostRoll => {
@@ -2127,6 +2276,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
       hope.arm(undefined);
       roll = withHopeSides(again.roll, folds.hopeDie);
       rolled = { ...again.rolled, roll };
+      readDeltas(roll, allTargets);
     } else {
       const changed = changedRecord(roll, change, hope.rng);
       roll = changed.roll;
@@ -2134,7 +2284,22 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
       rolled = { ...rolled, hope: roll.dice.find((d) => d.role === "hope")?.value ?? rolled.hope, roll };
     }
     effects = dualityEffects("action", roll.outcome);
+    effectsBase = base;
     finalSheet = placeTideToken(applyDualityEffects(base, effects), roll.outcome, "action").sheet;
+    hits = forced ? hits.map((h) => ({ ...h, hit: true })) : hitsOf(roll);
+  }
+  // E1.4b (dcm-m7tm, roll half): the running encounter's adversary uses on a PC's roll (Ill Omen, HF p.95; Backhanded
+  // Guidance, HF p.87) once the attack resolves (never on a held one: it writes). Their die bonuses decide Hope vs Fear
+  // only (user answer 2026-10-31: no critical, a tie is with Fear; `withDieBonuses`).
+  const advUses = await pcRollAdversaryUses(ctx, campaign, {
+    characterId: character._id,
+    roll: { kind: "action", trait: host.trait ?? args.trait, attack: true, weapon: true, ...hostRollOf(roll, hits), total: roll.total },
+  });
+  if (advUses.bonuses.length > 0) {
+    roll = withDieBonuses(roll, advUses.bonuses);
+    rolled = { ...rolled, roll };
+    effects = dualityEffects("action", roll.outcome);
+    finalSheet = placeTideToken(applyDualityEffects(effectsBase, effects), roll.outcome, "action").sheet;
     hits = forced ? hits.map((h) => ({ ...h, hit: true })) : hitsOf(roll);
   }
   sheet = finalSheet;
@@ -2166,7 +2331,9 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   }
   for (const add of folds.addTargets.splice(0)) {
     const more = await addedTargets(ctx, campaign, req.scene, weapon, add, taken(), main!.encounter._id, waived, folds.reach);
-    const moreHits = resolveHits(roll.total, critical || forced, more.adversaries.map((t) => ({ id: t.token._id, difficulty: difficultyOf(t.instance) })));
+    for (const t of more.adversaries) await factsOf(t);
+    readDeltas(roll, more.adversaries);
+    const moreHits = hitsOf(roll, more.adversaries).map((h) => ({ ...h, hit: h.hit || critical || forced }));
     allTargets.push(...more.adversaries);
     pcTargets.push(...more.pcs);
     hits = [...hits, ...moreHits];
@@ -2224,7 +2391,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     if (!hit || damageRecord === null) {
       results.push({ target: t, hit: false, defeated: false, severity: "none", hpMarked: 0, half: false });
       publicParts.push(`${label}: Miss`);
-      gmParts.push(`${label}: miss (${roll.total} vs Difficulty ${difficultyOf(t.instance)})`);
+      gmParts.push(`${label}: miss (${totalFor(roll, t)} vs Difficulty ${difficultyOf(t.instance)})`);
       continue;
     }
     snapshots.push(t.instance);
@@ -2361,10 +2528,45 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     riderFear += afterRun.plan.gmFearDelta;
   }
 
+  // ---- E1.4b (dcm-kso9; user answer 2026-11-01, Q3): a target's rider benefit for the attacker (Lead by Example, CB p.342:
+  // "The next PC to make an attack against that adversary can clear a Stress or gain a Hope"): the pick made before the
+  // roll (`benefit`) runs on the attacker, and the attack uses the rider up, hit or miss (its tag and marker go).
+  const consumed: { target: CheckedTarget; label: string }[] = [];
+  const benefitLines: string[] = [];
+  for (const [i, t] of allTargets.entries()) {
+    for (const { label, rider } of facts.get(t.token._id)?.riders ?? []) {
+      if (!rider.attackerSteps || rider.attackerSteps.length === 0) continue;
+      if (rider.onSuccess === true && !hits[i]!.hit) continue;
+      consumed.push({ target: t, label });
+      const steps = benefitSteps(rider.attackerSteps, req.benefit);
+      if (steps === null) {
+        benefitLines.push(`${label}: no benefit taken`);
+        continue;
+      }
+      const ran = attackerStepsRun(sheet, label, steps, hope.rng);
+      sheet = ran.sheet;
+      benefitLines.push(ran.line);
+    }
+  }
+  const consumedBefore: AdversaryBefore[] = [];
+  for (const { target, label } of consumed) {
+    const live = await ctx.db.get("encounterAdversaries", target.instance._id);
+    if (live === null) continue;
+    const tags = (live.tags ?? []).filter((x) => x !== label);
+    const conditions = live.conditions.filter((x) => x !== label);
+    const effects = (live.effects ?? []).filter((e) => e.label !== label);
+    if (tags.length === (live.tags ?? []).length && conditions.length === live.conditions.length && effects.length === (live.effects ?? []).length) continue;
+    await ctx.db.patch("encounterAdversaries", live._id, { tags, conditions, effects, updatedAt: Date.now() });
+    consumedBefore.push(adversaryBefore(target.instance, true));
+  }
+
   // ---- Lane C2: the attack roll ends the attacker's sourced conditions that end on it (Vanishing Act's Cloaked on a roll
   // with Fear, CB p.42); then CB p.42: "After you make an attack … you are no longer Cloaked." (an ordinary Cloaked only).
   const rollEnds = endConditionsOnRoll(sheet, roll, "weapon");
-  sheet = uncloakedByAttack(rollEnds.sheet);
+  // E1.4b (dcm-wli0, roll half): the adversary-given conditions that end on the bearer's roll (Slowed, Rattled, HF p.69:
+  // "until they roll with Hope").
+  const advRollEnds = endAdversaryConditionsOnRoll(rollEnds.sheet, roll, "weapon");
+  sheet = uncloakedByAttack(advRollEnds.sheet);
   // Plan lanes, E1 (dcm-y3e): an effect that gave this attack its extra target ends with it (Parallela, CB p.332: "The next
   // time the target makes an attack"), as does one that ends when its bearer attacks.
   sheet = endedByAttack(sheet, mods);
@@ -2397,12 +2599,18 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   if (sheetChanged) await saveSheet(ctx, character._id, finalSheet);
 
   // U4: each instance as it was before the attack; with its conditions, tags and effects when a rider changed them too.
-  const touched = new Set<string>([...riderWrites.map((w) => w.before.instanceId), ...attackEnds.touched]);
+  const touched = new Set<string>([...riderWrites.map((w) => w.before.instanceId), ...attackEnds.touched, ...consumedBefore.map((b) => b.instanceId)]);
   const before: AdversaryBefore[] = snapshots.map((i) => (touched.has(i._id) ? adversaryBefore(i, true) : beforeOf(i)));
   // An instance a caster-side end changed that the attack did not touch otherwise (Timejammer's Time Lock elsewhere).
   const inGroup = new Set<string>([...before.map((b) => b.instanceId), ...riderWrites.map((w) => w.before.instanceId)]);
   before.push(...attackEnds.casterBefore.filter((b) => !inGroup.has(b.instanceId)));
-  const groupId = newGroupId();
+  // E1.4b (dcm-kso9): a missed target whose rider this attack used up.
+  for (const b of consumedBefore) {
+    if (inGroup.has(b.instanceId) || attackEnds.casterBefore.some((c) => c.instanceId === b.instanceId)) continue;
+    before.push(b);
+    inGroup.add(b.instanceId);
+  }
+  const groupId = req.groupId ?? newGroupId();
   for (const { target, amount } of pcHitTotals) {
     await openIncomingHit(ctx, {
       campaignId: campaign._id,
@@ -2419,8 +2627,13 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     });
   }
   const riderNames = [...new Set([...(afterRun ? [featureName(afterRun)] : []), ...runs.map((r) => r.name), ...posts.map((r) => r.name), ...(damageOptions.includes(SNEAK_ATTACK) ? ["Sneak Attack"] : []), ...(spirit ? ["Spirit Weapon"] : []), ...(resonance && damageRecord !== null ? ["Sacred Resonance"] : []), ...publicExtras])];
-  const using = [...duality.extras, ...riderNames].length > 0 ? ` (${[...duality.extras, ...riderNames].join(", ")})` : "";
-  const head = `${sheet0.name} attacks with ${weapon.name}: ${TRAIT_LABEL[args.trait]} ${roll.total}${typedLabel(args.modifier)} ${rollWord(roll)}${using}`;
+  // E1.4b (dcm-m7tm): the adversary bonuses on the roll's dice, named in the public row ("Ill Omen +3 Fear Die").
+  const advBonusNames = advUses.bonuses.map((b) => `${b.feature} ${b.amount >= 0 ? "+" : ""}${b.amount} ${b.die === "hope" ? "Hope" : "Fear"} Die`);
+  const usingList = [...duality.extras, ...riderNames, ...advBonusNames];
+  const using = usingList.length > 0 ? ` (${usingList.join(", ")})` : "";
+  // E1.4b (dcm-svux): the per-target totals when the targets' edges differ ("edge d6 4: Shade 15, Brute 7").
+  const perTarget = deltas.size > 0 && [...deltas.values()].some((d) => d !== 0) ? ` [edge d6 ${edgeDie ?? "-"}: ${allTargets.map((t) => `${t.instance.label} ${totalFor(roll, t)}`).join(", ")}]` : "";
+  const head = `${sheet0.name} attacks with ${weapon.name}: ${TRAIT_LABEL[args.trait]} ${roll.total}${typedLabel(args.modifier)}${perTarget} ${rollWord(roll)}${using}`;
   const damageText = damageRecord === null ? "" : `; ${critical ? "critical " : ""}damage ${damageRecord.total} (${[damageLabel, diceList(damageRecord)].filter((s) => s !== "").join(": ")}${folds.damageAdd !== 0 ? ` ${typedLabel(folds.damageAdd)}` : ""}${folds.multiply !== 1 ? ` ×${folds.multiply}` : ""})`;
   const entryId = await logAction(ctx, {
     campaignId: campaign._id,
@@ -2448,10 +2661,15 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     ...(before.length > 0 ? { adversaryBefore: before } : {}),
     undoable: true,
   });
-  // E1.3b (dcm-kso9): what a target's rider gives the attacker that the attack can't apply yet (Lead by Example's benefit).
+  // E1.4b (dcm-kso9): the rider benefits taken (Lead by Example's Stress or Hope), in the attack's group.
+  if (benefitLines.length > 0) {
+    await logAction(ctx, { campaignId: campaign._id, characterId: character._id, actorId: req.actorId, kind: "feature", visibility: "public", summary: `${sheet0.name}: ${benefitLines.join("; ")}`.slice(0, 1000), groupId, undoable: true });
+  }
+  // E1.3b: what a target's rider asks that the attack can't apply (its damage kinds the engine doesn't run).
   for (const text of [...new Set(riderManual)]) {
     await logAction(ctx, { campaignId: campaign._id, characterId: character._id, actorId: req.actorId, kind: "feature", visibility: "public", summary: `${sheet0.name}: ${text}`.slice(0, 1000), groupId, undoable: true });
   }
+  riderLines.push(...advUses.lines);
   if (riderLines.length > 0 || riderWrites.length > 0 || folds.unsupported.length > 0) {
     await logAction(ctx, {
       campaignId: campaign._id,
@@ -2464,14 +2682,14 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
       undoable: true,
     });
   }
-  if (rollEnds.ended.length > 0) {
+  if (rollEnds.ended.length > 0 || advRollEnds.lines.length > 0) {
     await logAction(ctx, {
       campaignId: campaign._id,
       characterId: character._id,
       actorId: req.actorId,
       kind: "feature",
       visibility: "public",
-      summary: rollEnds.ended.map((e) => endedConditionLine(sheet0.name, e)).join("; "),
+      summary: [...rollEnds.ended.map((e) => endedConditionLine(sheet0.name, e)), ...advRollEnds.lines].join("; ").slice(0, 1000),
       groupId,
       undoable: true,
     });
@@ -2492,6 +2710,15 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     const ran = allyRuns.filter((r) => r.character._id === a.character._id).map((r) => r.run.name);
     const parts = [...(ran.length > 0 ? [`${a.before.name}: ${ran.join(", ")} on ${sheet0.name}'s roll`] : []), ...(partyLines.get(a.character._id) ?? [])];
     await logAction(ctx, { campaignId: campaign._id, characterId: a.character._id, actorId: req.actorId, kind: "feature", visibility: "public", summary: parts.join("; ").slice(0, 1000), groupId, before: a.before, undoable: true });
+  }
+
+  // E1.4b (dcm-wli0, attack half): an instance this attack damaged ends the PC conditions it gave that end on its damage
+  // (Envelop's Restrained on Severe; Hold Them Down / Encumber on Major or more). Last, on the sheets as saved above; each
+  // changed sheet is its own row in this group (undo puts it back).
+  for (const r of results) {
+    if (!r.hit || (r.hpMarked <= 0 && r.severity === "none")) continue;
+    const severity: EndSeverity = r.severity === "defeat" ? "minor" : r.severity;
+    await endAdversaryConditionsForCaster(ctx, { campaignId: campaign._id, casterId: r.target.instance._id, occ: { kind: "damageTaken", severity, hpMarked: Math.max(0, r.hpMarked), lastHp: r.defeated && !wasDefeated.has(r.target.instance._id) }, groupId, actorId: req.actorId });
   }
 
   // Armed countdowns tick right after the attack roll, as for `actionRoll` (countdowns-advanced K1, CB p.162).
