@@ -87,6 +87,9 @@ const entries: Entry[] = [
   { fn: api.adversaryActions.pcEscape, access: "gm", args: (w) => ({ characterId: w.characterA, name: "bramble" }), okCodes: ["INVALID"] },
   // Plan lanes-2 E7.4 (dcm-wiwi): the party's named tokens (GM only).
   { fn: api.adversaryActions.pcTokens, access: "gm" },
+  // Lanes-2 E2.4 (dcm-sk4r): the GM's keyword ask on a hit (the area's hit asks nothing: INVALID past the check).
+  { fn: api.hitKeywords.answer, access: "gm", args: (w) => ({ requestId: w.ids.requestId, answer: { keyword: "fire", carries: true } }), okCodes: ["INVALID"] },
+  { fn: api.hitKeywords.asks, access: "gm" },
 ];
 
 const area: Area = { area: "adversary-actions", setup, entries };

@@ -48,6 +48,7 @@ import type * as fear from "../fear.js";
 import type * as featurePrompts from "../featurePrompts.js";
 import type * as feed from "../feed.js";
 import type * as history from "../history.js";
+import type * as hitKeywords from "../hitKeywords.js";
 import type * as http from "../http.js";
 import type * as levelUp from "../levelUp.js";
 import type * as lib_actionLog from "../lib/actionLog.js";
@@ -242,6 +243,7 @@ declare const fullApi: ApiFromModules<{
   featurePrompts: typeof featurePrompts;
   feed: typeof feed;
   history: typeof history;
+  hitKeywords: typeof hitKeywords;
   http: typeof http;
   levelUp: typeof levelUp;
   "lib/actionLog": typeof lib_actionLog;

@@ -11,6 +11,10 @@ import { applyStressTo, rangeCheck, type Combatant } from "../../src/lib/domain/
 import { rollD20, run as runCardUse, type ActorState, type HeldDieState, type PlanStep, type RunPlan, type RunRefusal } from "../../src/lib/domain/card-effects/run";
 import type { CardEffect, DamageKeyword, Mod, Range, Step } from "../../src/lib/domain/card-effects/types";
 import type { AdversaryFeatureEffect } from "../../src/lib/domain/adversary-effects/types";
+import { lastingModsOf } from "../../src/lib/domain/adversary-effects/run";
+import { adversaryEffects } from "../../src/lib/srd/adversary-effects/index";
+import { ADVERSARIES } from "../../src/lib/srd/adversaries";
+import type { AdversaryDef } from "../../src/lib/srd/types";
 import { derivedThresholds } from "../../src/lib/domain/characters/derived";
 import { hopeMax } from "../../src/lib/domain/characters/index";
 import {
@@ -30,7 +34,7 @@ import { maxDamage, parseDamage } from "../../src/lib/domain/adversaries/index";
 import { rollDamage, type Rng } from "../../src/lib/domain/dice/index";
 import type { RollRecord } from "../../src/lib/domain/duality";
 import { activeBeastformId, holdingsFor, owned } from "../../src/lib/domain/feature-effects/owned";
-import { actorExtras } from "../../src/lib/domain/feature-effects/run";
+import { actorExtras, sheetNumbers } from "../../src/lib/domain/feature-effects/run";
 import type { FeatureEffect } from "../../src/lib/domain/feature-effects/types";
 import { applyUpgrades } from "../../src/lib/domain/feature-effects/upgrades";
 import { appError } from "../../src/lib/errors/app-error";
@@ -43,7 +47,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { blockOf } from "./adversaryFeatures";
 import { parseChoices, type CardChoice } from "./cardChoices";
-import { cardActor, cardIdOfEffect, effectOption, featureIdOfEffect, pcCombatant, writeSheetChanges } from "./cardRunner";
+import { cardActor, cardIdOfEffect, effectOption, endConditionsOnRoll, endedConditionLine, featureIdOfEffect, pcCombatant, writeSheetChanges, type EndedCondition } from "./cardRunner";
 import { partyOf, readSheet } from "./characterSheet";
 import { tokensOnMap } from "./combatMaps";
 import { activeAreasOnMap, areaFactsFor } from "../combatAreas";
@@ -58,6 +62,12 @@ export type HitDraft = {
   critical: boolean;
   /** Kept only in memory (an Evasion fold compares against it at once); never stored (Q14). */
   attackTotal?: number;
+  /**
+   * Plan lanes-2, E2.4 (dcm-5gng, dcm-7vei): the keyword of the damage step that dealt this hit, when the caller knows it
+   * (the branch the plan took: Fire Jets but not Mana Beam). Wins over the feature's data (`hitKeywordInfo`); stored on
+   * the hit as an answered `keywordAsk` when the data alone can't tell (`openIncomingHit`).
+   */
+  keyword?: DamageKeyword;
 };
 
 export type HitAttacker = IncomingHitPayload["attacker"];
@@ -111,6 +121,9 @@ export async function bandsOnMap(ctx: QueryCtx, mapId: Id<"combatMaps"> | undefi
 /** The sheet effect the Flying toggle writes (Q16; SD3's `FLYING_EFFECT_ID` in ./featureRunner.ts). */
 const FLYING_EFFECT_ID = "flying";
 
+/** An adversary feature's effect on a PC sheet (`card:<adversaryId>/<feature>:<n>`, lane E7; as ./cardRunner.ts). */
+const ADVERSARY_SHEET_EFFECT = /^card:([^/:]+)\/(.+):\d+$/;
+
 /**
  * What a PC's feature answers need besides the sheet (SD4): the campaign's Hope & Fear option, the band to the attacker.
  * Plan lanes-2, E2: the hit's keyword (dcm-dv6) and the areas the attacker stands in (dcm-nt4), for the PC's resistance.
@@ -125,6 +138,9 @@ export function featureActor(id: string, sheet: CharacterSheet): ActorState {
   return {
     ...cardActor(id, sheet, "", undefined),
     ...actorExtras(sheet),
+    // Plan lanes-2, E2.4 (dcm-i9c1): the sheet's derived stats (`stat` numbers: Armored Shell's Armor Score, CB p.33),
+    // with the active effects (a Beastform's armor) counted, as the feature path's `actorFill` binds them.
+    stats: { ...sheetNumbers(sheet).stats },
     facts: {
       conditions: sheet.conditions,
       tags: sheet.effects.map((e) => e.text.split("; ")[0] ?? ""),
@@ -204,7 +220,9 @@ export function windowPcOf(member: PartyMember, bandToTarget?: Range, scope?: Fe
     featureUses: sheet.featureUses,
     cards,
     ...(bandToTarget !== undefined ? { bandToTarget } : {}),
-    ...(scope ? { actor: featureActor(character._id, sheet), features: answeringFeatures(sheet, scope.hopeAndFear) } : {}),
+    // Plan lanes-2, E2.4 (dcm-sk4r): keyword guards (Fireproof) aren't answers: a hit carrying the keyword applies them as
+    // immunity (`pcResistance`), and on a hit whose keyword is unknown the GM decides (`keywordAsk`).
+    ...(scope ? { actor: featureActor(character._id, sheet), features: answeringFeatures(sheet, scope.hopeAndFear).filter((f) => !isKeywordGuardFeature(f)) } : {}),
     ...(scope?.bandToAttacker !== undefined ? { bandToAttacker: scope.bandToAttacker } : {}),
   };
 }
@@ -215,12 +233,18 @@ type Level = "none" | "resistant" | "immune";
 const LEVELS: readonly Level[] = ["none", "resistant", "immune"];
 const stronger = (a: Level, b: Level): Level => (LEVELS.indexOf(a) >= LEVELS.indexOf(b) ? a : b);
 
-/** Every step of a use, nested optional / choose / check steps included. */
+/**
+ * Every step of a use, nested optional / choose / check steps included. Plan lanes-2, E2.4 (dcm-5gng, dcm-7vei): also a
+ * reaction roll's `onFail` / `onSuccess` (Fireball, Breath of Fire), a `followUp`'s steps (Fire Jets) and a check
+ * table's rows (Randomized Tactics, Broken Magic).
+ */
 function everyStep(steps: readonly Step[]): Step[] {
   return steps.flatMap((s): Step[] => {
     if (s.kind === "optional") return [s, ...everyStep(s.steps)];
     if (s.kind === "choose") return [s, ...s.options.flatMap((o) => everyStep(o.steps))];
-    if (s.kind === "check") return [s, ...everyStep(s.then), ...everyStep(s.otherwise)];
+    if (s.kind === "check") return [s, ...everyStep(s.then), ...everyStep(s.otherwise), ...(s.table ?? []).flatMap((r) => everyStep(r.steps))];
+    if (s.kind === "save") return [s, ...everyStep(s.onFail), ...everyStep(s.onSuccess)];
+    if (s.kind === "followUp") return [s, ...everyStep(s.steps)];
     return [s];
   });
 }
@@ -264,6 +288,14 @@ export function pcMods(sheet: CharacterSheet, hopeAndFear: boolean): { mod: Mod;
   const out: { mod: Mod; sourceId: string }[] = [];
   for (const e of sheet.effects) {
     const label = e.text.split("; ")[0] ?? "";
+    // Plan lanes-2, E2.4 (dcm-12kx): an adversary's condition or effect on the PC (`card:<adversaryId>/<feature>:<n>`,
+    // lane E7): Unstuck's marks multiplier (CB p.237), Leechpoles' damage taken (HF p.90), Ravenous' flag (HF p.94).
+    const adv = ADVERSARY_SHEET_EFFECT.exec(e.id);
+    if (adv) {
+      const steps = (adversaryEffects(adv[1]!).find((f) => f.feature === adv[2]!)?.uses ?? []).map((u) => u.steps);
+      for (const mod of lastingModsOf(steps, label)) out.push({ mod, sourceId: `${adv[1]!}/${adv[2]!}` });
+      continue;
+    }
     const cardId = cardIdOfEffect(e);
     if (cardId !== null) for (const mod of effectMods(cardEffect(cardId), label)) out.push({ mod, sourceId: cardId });
     const featureId = featureIdOfEffect(e);
@@ -290,7 +322,63 @@ export function pcResistance(sheet: CharacterSheet, scope: { hopeAndFear: boolea
     if (m.type === "physical" || m.type === "both") physical = stronger(physical, m.level);
     if (m.type === "magic" || m.type === "both") magic = stronger(magic, m.level);
   }
+  // Plan lanes-2, E2.4 (dcm-sk4r, user answer 2026-10-31): a hit carrying a guarded keyword applies the guard directly
+  // (Fireproof, HF p.22: "You are immune to damage from magical or mundane flame"; CB p.99: "If a target is immune to a
+  // damage type, they ignore incoming damage of that type").
+  if (scope.keyword !== undefined && keywordGuards(sheet, scope.hopeAndFear).some((g) => g.immune && g.keyword === scope.keyword)) {
+    physical = "immune";
+    magic = "immune";
+  }
   return physical === "none" && magic === "none" ? undefined : { physical, magic };
+}
+
+// ---------------------------------------------------------------- keyword guards (E2.4, dcm-sk4r, dcm-n7kt)
+
+/**
+ * Plan lanes-2, E2.4: what guards a PC against damage carrying a keyword. `featureId` / `feature`: the entry and its
+ * printed name (for the GM's "Was this hit fire?" ask and the feed). `immune`: the guard ignores that damage outright.
+ */
+export type KeywordGuard = { keyword: DamageKeyword; featureId: string; feature: string; immune: boolean };
+
+/**
+ * The keyword a use guards against: a reaction or automatic use set off by "you would take damage" with a `keyword`, no
+ * requirement, whose steps negate the damage (Fireproof's entry, heritage-hf.ts). Null for any other use.
+ */
+function guardKeyword(use: FeatureEffect["uses"][number]): DamageKeyword | null {
+  const a = use.activation;
+  if ((a.kind !== "reaction" && a.kind !== "auto") || a.trigger.kind !== "whenYouWouldTakeDamage" || a.trigger.keyword === undefined) return null;
+  if ((use.requires ?? []).length > 0) return null;
+  return everyStep(use.steps).some((s) => s.kind === "negate" && s.what === "damage") ? a.trigger.keyword : null;
+}
+
+/** Whether a feature entry is a keyword guard (its reaction uses all are): the window doesn't offer it as an answer. */
+export function isKeywordGuardFeature(effect: Pick<FeatureEffect, "uses">): boolean {
+  const reacting = effect.uses.filter((u) => u.activation.kind === "reaction" || u.activation.kind === "auto");
+  return reacting.length > 0 && reacting.every((u) => guardKeyword(u) !== null);
+}
+
+/**
+ * Plan lanes-2, E2.4 (dcm-sk4r, dcm-n7kt): a PC's keyword guards: the features they hold whose damage reaction negates
+ * keyword damage (Fireproof), and the keyword resistances their sheet holds (`pcMods`, a `resistance` mod with a
+ * `keyword`; `immune` when its level is). One per keyword and entry.
+ */
+export function keywordGuards(sheet: CharacterSheet, hopeAndFear: boolean): KeywordGuard[] {
+  const out: KeywordGuard[] = [];
+  const add = (g: KeywordGuard) => {
+    if (!out.some((x) => x.keyword === g.keyword && x.featureId === g.featureId)) out.push(g);
+  };
+  for (const f of owned(sheet, { hopeAndFear })) {
+    for (const u of featureEffect(f.featureId)?.uses ?? []) {
+      const keyword = guardKeyword(u);
+      if (keyword) add({ keyword, featureId: f.featureId, feature: u.name ?? f.featureId, immune: true });
+    }
+  }
+  for (const { mod, sourceId } of pcMods(sheet, hopeAndFear)) {
+    if (mod.kind !== "resistance" || mod.keyword === undefined) continue;
+    const name = featureEffect(sourceId)?.uses[0]?.name ?? getDomainCard(sourceId)?.name ?? sourceId;
+    add({ keyword: mod.keyword, featureId: sourceId, feature: name, immune: mod.level === "immune" && mod.type === "both" });
+  }
+  return out;
 }
 
 /**
@@ -304,6 +392,10 @@ export function pcDamageMods(sheet: CharacterSheet, hopeAndFear: boolean): Pick<
   const of = new Set<"hope" | "hp" | "stress" | "armor">();
   for (const { mod } of pcMods(sheet, hopeAndFear)) {
     if (mod.kind === "damageTaken" && mod.change.kind === "add" && mod.change.amount.kind === "fixed") bonus += mod.change.amount.value;
+    // Plan lanes-2, E2.4 (dcm-12kx): "+1 damage for each leechpole under their skin" (HF p.90): the bearer's named tokens
+    // on the sheet (`creatureTokens`, plan lanes-2 V4, dcm-wiwi).
+    const amount = mod.kind === "damageTaken" && mod.change.kind === "add" ? mod.change.amount : null;
+    if (amount?.kind === "creatureTokens" && amount.who === "self") bonus += Math.max(0, (sheet.creatureTokens ?? []).find((t) => t.name === amount.name)?.count ?? 0);
     if (mod.kind === "marksMultiplier" && mod.factor > 1) {
       factor = Math.max(factor, Math.trunc(mod.factor));
       for (const t of mod.of) of.add(t);
@@ -399,37 +491,116 @@ export async function armorCostOf(ctx: QueryCtx, row: { campaignId: Id<"campaign
   return block ? hitArmorCost(block.effects, attacker.feature) : undefined;
 }
 
-/** Every `damage` step keyword in a list of steps (nested steps included). */
-function damageKeywords(steps: readonly Step[]): DamageKeyword[] {
-  return everyStep(steps).flatMap((st) => (st.kind === "damage" && st.keyword !== undefined ? [st.keyword] : []));
+/**
+ * Plan lanes-2, E2.4: what the data says of a hit's keyword. `known` false: the data can't tell (its damage steps carry
+ * different keywords, as Randomized Tactics' Fire Jets and Mana Beam, or there is no data: a custom adversary, a feature
+ * with no damage step); `known` true with no `keyword`: the damage carries none.
+ */
+export type KeywordInfo = { keyword?: DamageKeyword; known: boolean };
+
+/** The keyword the `kind` steps of a list carry when they all agree (nested steps included); null when there are none. */
+function stepsKeyword(steps: readonly Step[], kind: "damage" | "markHp"): KeywordInfo | null {
+  const found = everyStep(steps).flatMap((st) => (st.kind === "damage" && kind === "damage" ? [st.keyword] : st.kind === "markHp" && kind === "markHp" ? [st.keyword] : []));
+  if (found.length === 0) return null;
+  const keywords = new Set(found);
+  if (keywords.size > 1) return { known: false };
+  const keyword = found[0];
+  return keyword !== undefined ? { keyword, known: true } : { known: true };
+}
+
+/** The keyword of the `kind` steps in the attacking feature's own action or reaction uses (`stepsKeyword`). */
+function featureKeyword(effects: readonly AdversaryFeatureEffect[], feature: string, kind: "damage" | "markHp"): KeywordInfo | null {
+  const steps = effects
+    .filter((e) => e.feature === feature)
+    .flatMap((e) => e.uses.filter((u) => u.activation.kind === "action" || u.activation.kind === "reaction").flatMap((u) => [...(u.steps as readonly Step[])]));
+  return stepsKeyword(steps, kind);
 }
 
 /**
  * Plan lanes-2, E2 (dcm-dv6): the keyword the hit's damage carries (Fireproof, HF p.22: "damage from magical or mundane
- * flame"): a `damage` step's `keyword` in the attacking feature's own action or reaction uses; none for the standard
- * attack (its stat block names no keyword).
+ * flame"): the `damage` steps' `keyword` in the attacking feature's own action or reaction uses. E2.4 (dcm-5gng,
+ * dcm-7vei): reaction-roll branches, follow-ups and check-table rows count; a feature whose damage steps disagree (one
+ * branch fire, another not) gives none (`hitKeywordInfo`: not known). None for the standard attack (`hitKeywordInfo`).
  */
 export function hitKeyword(effects: readonly AdversaryFeatureEffect[], feature: string | undefined): DamageKeyword | undefined {
   if (feature === undefined) return undefined;
-  for (const effect of effects) {
-    if (effect.feature !== feature) continue;
-    for (const use of effect.uses) {
-      if (use.activation.kind !== "action" && use.activation.kind !== "reaction") continue;
-      const found = damageKeywords(use.steps as readonly Step[])[0];
-      if (found) return found;
-    }
-  }
-  return undefined;
+  return featureKeyword(effects, feature, "damage")?.keyword;
 }
 
-/** E2 (dcm-dv6): the hit's keyword from its attacking instance's stat block, or (a PC attacker) the card's damage steps. */
-export async function hitKeywordOf(ctx: QueryCtx, row: { campaignId: Id<"campaigns">; payload: Pick<IncomingHitPayload, "attacker"> }): Promise<DamageKeyword | undefined> {
+/**
+ * Plan lanes-2, E2.4: the hit's keyword as the data knows it. The standard attack (`feature` unset) reads its stat block's
+ * `attack.keyword` (dcm-dztv; Elemental Blast, CB p.214): known when the block is the SRD's (`attack` given). A feature
+ * reads its damage steps (`hitKeyword`); disagreeing or missing steps are not known.
+ */
+export function hitKeywordInfo(effects: readonly AdversaryFeatureEffect[], feature: string | undefined, attack?: { keyword?: DamageKeyword }): KeywordInfo {
+  if (feature === undefined) return attack === undefined ? { known: false } : attack.keyword !== undefined ? { keyword: attack.keyword, known: true } : { known: true };
+  return featureKeyword(effects, feature, "damage") ?? { known: false };
+}
+
+/** E2.4: `hitKeywordInfo` from the attacking instance's stat block (a custom block: not known), or a PC's card's damage steps. */
+export async function hitKeywordInfoOf(ctx: QueryCtx, row: { campaignId: Id<"campaigns">; payload: Pick<IncomingHitPayload, "attacker"> }): Promise<KeywordInfo> {
   const attacker = row.payload.attacker;
-  if (isPcAttacker(attacker)) return damageKeywords(cardEffect(attacker.cardId)?.uses.flatMap((u) => [...u.steps]) ?? [])[0];
+  if (isPcAttacker(attacker)) return stepsKeyword(cardEffect(attacker.cardId)?.uses.flatMap((u) => [...u.steps]) ?? [], "damage") ?? { known: false };
+  const instance = await ctx.db.get("encounterAdversaries", attacker.instanceId);
+  if (instance === null || instance.campaignId !== row.campaignId) return { known: false };
+  const block = await blockOf(ctx, instance);
+  if (!block) return { known: false };
+  return hitKeywordInfo(block.effects, attacker.feature, srdAttack(block));
+}
+
+let srdById: Map<string, AdversaryDef> | null = null;
+
+/**
+ * The SRD stat block's standard attack with its keyword (dcm-dztv), when the block's attack is still the printed one; an
+ * Evolution's new standard attack (`evolvedBlock`, a different name) carries none. Undefined for a custom block.
+ */
+function srdAttack(block: { adversaryId: string; attack: { name: string } }): { keyword?: DamageKeyword } | undefined {
+  srdById ??= new Map(ADVERSARIES.map((a) => [a.id, a]));
+  const def = srdById.get(block.adversaryId);
+  if (!def) return undefined;
+  return def.attack.name === block.attack.name ? def.attack : {};
+}
+
+/**
+ * The keyword the hit carries: the data's, else the GM's "yes" to the hit's `keywordAsk` (dcm-sk4r: `answer` true; an
+ * ask stored with `answer` and no `answeredBy` is the opener's own known keyword, `openIncomingHit`).
+ */
+export function effectiveKeyword(info: KeywordInfo, payload: Pick<IncomingHitPayload, "keywordAsk">): DamageKeyword | undefined {
+  if (info.keyword !== undefined) return info.keyword;
+  const ask = payload.keywordAsk;
+  return ask?.answer === true ? ask.keyword : undefined;
+}
+
+/** E2 (dcm-dv6): the hit's keyword from its data and its GM answer (`effectiveKeyword`). */
+export async function hitKeywordOf(ctx: QueryCtx, row: { campaignId: Id<"campaigns">; payload: Pick<IncomingHitPayload, "attacker" | "keywordAsk"> }): Promise<DamageKeyword | undefined> {
+  return effectiveKeyword(await hitKeywordInfoOf(ctx, row), row.payload);
+}
+
+/**
+ * Plan lanes-2, E2.4 (dcm-n7kt): the keyword of the attacking feature's outright HP marks (`markHp` steps; Fire Beam, HF
+ * p.96, "a beam of elemental fire"): their `keyword` when they all agree. None for a PC attacker or the standard attack.
+ */
+export function markHpKeyword(effects: readonly AdversaryFeatureEffect[], feature: string | undefined): DamageKeyword | undefined {
+  return feature === undefined ? undefined : featureKeyword(effects, feature, "markHp")?.keyword;
+}
+
+/** E2.4 (dcm-n7kt): `markHpKeyword` from the attacking instance's stat block. */
+export async function markHpKeywordOf(ctx: QueryCtx, row: { campaignId: Id<"campaigns">; payload: Pick<IncomingHitPayload, "attacker"> }): Promise<DamageKeyword | undefined> {
+  const attacker = row.payload.attacker;
+  if (isPcAttacker(attacker)) return undefined;
   const instance = await ctx.db.get("encounterAdversaries", attacker.instanceId);
   if (instance === null || instance.campaignId !== row.campaignId) return undefined;
   const block = await blockOf(ctx, instance);
-  return block ? hitKeyword(block.effects, attacker.feature) : undefined;
+  return block ? markHpKeyword(block.effects, attacker.feature) : undefined;
+}
+
+/**
+ * Plan lanes-2, E2.4 (dcm-n7kt): the guard that stops a PC's outright HP marks of this keyword (Fireproof vs Fire Beam),
+ * or null. For the direct path (`convex/lib/adversaryActions.ts`, a `markHp` with no hit) and the hit's `hp` riders.
+ */
+export function markHpGuard(sheet: CharacterSheet, hopeAndFear: boolean, keyword: DamageKeyword | undefined): KeywordGuard | null {
+  if (keyword === undefined) return null;
+  return keywordGuards(sheet, hopeAndFear).find((g) => g.immune && g.keyword === keyword) ?? null;
 }
 
 /**
@@ -802,7 +973,10 @@ export function cardRefusal(r: RunRefusal) {
 /** The responder's sheet after paying a reaction card: resources, its once-per entry, tokens, effects, the vault (CB p.101). */
 export function sheetAfterCard(sheet: CharacterSheet, plan: RunPlan, who: string, cardName: string): CharacterSheet {
   const after = plan.actor.after;
-  const base = writeSheetChanges(sheet, plan.steps, who, plan.cardId, cardName, plan.exclusive, true);
+  // Plan lanes-2, E2.4 (dcm-8fc2): the card's own roll ends the responder's sourced conditions first (Vanishing Act, CB
+  // p.42: "until you roll with Fear"), as the feature path's `actorSheetAfter` does; `rollEndLines` names them.
+  const rolled = rollEnds(sheet, plan).sheet;
+  const base = writeSheetChanges(rolled, plan.steps, who, plan.cardId, cardName, plan.exclusive, true);
   const others = (sheet.cardTokens ?? []).filter((t) => t.cardId !== plan.cardId);
   const cardTokens = after.cardTokens > 0 ? [...others, { cardId: plan.cardId, count: Math.min(99, after.cardTokens) }] : others;
   const toVault = plan.steps.some((s: PlanStep) => s.kind === "toVault");
@@ -816,6 +990,19 @@ export function sheetAfterCard(sheet: CharacterSheet, plan: RunPlan, who: string
     cardTokens,
     ...(toVault ? { domainCards: { ...sheet.domainCards, loadout: sheet.domainCards.loadout.filter((c) => c !== plan.cardId) } } : {}),
   };
+}
+
+/**
+ * Plan lanes-2, E2.4 (dcm-8fc2): what a reaction card's or feature's own roll in the hit window ends on its roller
+ * (`endConditionsOnRoll`: Vanishing Act's Cloaked on a roll with Fear, CB p.42). The sheet unchanged without a roll.
+ */
+export function rollEnds(sheet: CharacterSheet, plan: Pick<RunPlan, "roll">): { sheet: CharacterSheet; ended: EndedCondition[] } {
+  return plan.roll === null ? { sheet, ended: [] } : endConditionsOnRoll(sheet, plan.roll.record);
+}
+
+/** E2.4 (dcm-8fc2): the feed words of `rollEnds` ("Ash: Cloaked ends (Vanishing Act)"). */
+export function rollEndLines(name: string, sheet: CharacterSheet, plan: Pick<RunPlan, "roll">): string[] {
+  return rollEnds(sheet, plan).ended.map((e) => endedConditionLine(name, e));
 }
 
 // ---------------------------------------------------------------- riders and after-hit uses (AA2b)

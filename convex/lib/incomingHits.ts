@@ -64,7 +64,7 @@ import {
   type WindowResolution,
 } from "../../src/lib/domain/adversary-actions/index";
 import type { PlanStep, RunPlan, RunRefusal } from "../../src/lib/domain/card-effects/run";
-import { expire, payMaintain, type EndOccurrence } from "../../src/lib/domain/characters/expiry";
+import { expire, payMaintain, takenSeverity, type EndOccurrence } from "../../src/lib/domain/characters/expiry";
 import { activeBeastform, owned } from "../../src/lib/domain/feature-effects/owned";
 import { beastformEndsOn } from "../../src/lib/srd/feature-effects/beastforms";
 import { runFeature } from "../../src/lib/domain/feature-effects/run";
@@ -82,7 +82,13 @@ import {
   attackerAreasOnMap,
   attackerBandsOnMap,
   attackerCombatant,
-  hitKeywordOf,
+  effectiveKeyword,
+  hitKeywordInfoOf,
+  keywordGuards,
+  markHpGuard,
+  markHpKeywordOf,
+  rollEndLines,
+  type KeywordInfo,
   attackRollOf,
   featureActor,
   featureChoices,
@@ -124,7 +130,8 @@ import { closeRequest } from "./combatRequests";
 import { dropStance } from "./stanceDrop";
 import { logUnshakable, UNSHAKABLE_ID, unshake, unshakableText, unshakePlan, type UnshakableRoll } from "./unshakable";
 import type { AdversaryBefore } from "./validators/actionLog";
-import { MAX_RIDERS, type AfterHit, type HitResponder, type HitRider } from "./validators/combatRequests";
+import { MAX_RIDERS, type AfterHit, type HitResponder, type HitRider, type KeywordAnswer, type KeywordAsk } from "./validators/combatRequests";
+import type { DamageKeyword } from "../../src/lib/domain/card-effects/types";
 
 // The building blocks moved to ./adversaryHits.ts (AA2c, CH9); callers keep importing them from here.
 export {
@@ -168,6 +175,33 @@ export function beastformEnds(sheet: CharacterSheet, hit: { lastHp: boolean; sev
   return { sheet: { ...sheet, effects: sheet.effects.filter((e) => !BEASTFORM_EFFECTS.has(e.id)) }, words: "drops out of Beastform" };
 }
 
+// ---------------------------------------------------------------- the GM's keyword ask (E2.4, dcm-sk4r)
+
+/**
+ * Plan lanes-2, E2.4 (dcm-sk4r; user answer 2026-10-31: "Fireproof on an untyped hit: the GM decides whether the hit is
+ * fire; a fire-tagged hit applies it directly"): the ask a new hit stores. When the data can't settle the hit's keyword
+ * (`info.known` false) and the target holds a keyword guard (Fireproof, HF p.22): with the caller's own step keyword
+ * (`draft`), an ask already answered by it (no `answeredBy`: the data's, not the GM's); otherwise an open ask the GM
+ * answers. Null when nothing needs asking.
+ */
+export function openingKeywordAsk(info: KeywordInfo, draft: DamageKeyword | undefined, target: PartyMember | undefined, hopeAndFear: boolean): KeywordAsk | null {
+  if (info.known || target === undefined) return null;
+  const guard = keywordGuards(target.sheet, hopeAndFear)[0];
+  if (!guard) return null;
+  const ask: KeywordAsk = { keyword: draft ?? guard.keyword, characterId: target.character._id, feature: guard.feature };
+  return draft !== undefined ? { ...ask, answer: true } : ask;
+}
+
+/** Whether the hit's keyword ask still waits for the GM. */
+export function keywordAskOpen(ask: KeywordAsk | null | undefined): boolean {
+  return ask !== null && ask !== undefined && ask.answer === undefined;
+}
+
+/** The GM's question: "Was this hit fire? (Fireproof)". */
+export function keywordAskQuestion(ask: Pick<KeywordAsk, "keyword" | "feature">): string {
+  return `Was this hit ${ask.keyword}? (${ask.feature})`;
+}
+
 /** The most responders one window lists (the party cap the validator names, CD8). */
 export const MAX_RESPONDERS = 12;
 
@@ -205,7 +239,10 @@ export async function openIncomingHit(ctx: MutationCtx, input: OpenHitInput): Pr
   const hopeAndFear = await hopeAndFearOf(ctx, input.campaignId);
   const toAttacker = await attackerBandsOnMap(ctx, input.mapId, input.attacker);
   // Plan lanes-2, E2: the hit's keyword (dcm-dv6) and the areas the attacker stands in (dcm-nt4), as `rebuildWindow`.
-  const keyword = await hitKeywordOf(ctx, { campaignId: input.campaignId, payload: { attacker: input.attacker } });
+  // E2.4 (dcm-sk4r): the step's own keyword wins; a guarded target on a hit the data can't settle gets the GM's ask.
+  const info = await hitKeywordInfoOf(ctx, { campaignId: input.campaignId, payload: { attacker: input.attacker } });
+  const keywordAsk = openingKeywordAsk(info, input.hit.keyword, input.party.find((m) => m.character._id === input.targetCharacterId), hopeAndFear);
+  const keyword = effectiveKeyword(input.hit.keyword !== undefined ? { keyword: input.hit.keyword, known: true } : info, keywordAsk ? { keywordAsk } : {});
   const attackerAreas = await attackerAreasOnMap(ctx, input.mapId, input.attacker);
   const party = windowParty(respondingParty(input.party, input.attacker), input.targetCharacterId, input.bands, { hopeAndFear, toAttacker, ...(keyword ? { keyword } : {}), ...(attackerAreas ? { attackerAreas } : {}) });
   const attacker = await openingAttacker(ctx, input);
@@ -246,9 +283,11 @@ export async function openIncomingHit(ctx: MutationCtx, input: OpenHitInput): Pr
       ...(riders.length > 0 ? { riders: [...riders] } : {}),
       ...(own.total !== undefined ? { attackTotal: own.total } : {}),
       ...(own.disadvantage > 0 ? { attackDisadvantage: own.disadvantage } : {}),
+      ...(keywordAsk ? { keywordAsk } : {}),
     },
   });
-  if (!isComplete({ ...state, responders: state.responders.slice(0, MAX_RESPONDERS) })) return { requestId, resolution: null };
+  // E2.4 (dcm-sk4r): an open ask holds the hit until the GM answers (`answerKeywordAsk`) or resolves it now (not fire).
+  if (keywordAskOpen(keywordAsk) || !isComplete({ ...state, responders: state.responders.slice(0, MAX_RESPONDERS) })) return { requestId, resolution: null };
   const row = await ctx.db.get("combatRequests", requestId);
   if (row === null || !isHitRow(row)) throw new Error("openIncomingHit: the row just written is gone.");
   return { requestId, resolution: await resolveIncomingHit(ctx, { row, by: input.createdBy, early: false, ...(input.hit.attackTotal !== undefined ? { attackTotal: input.hit.attackTotal } : {}) }) };
@@ -379,7 +418,8 @@ export async function respondToHit(ctx: MutationCtx, input: RespondInput): Promi
     const u = unshakePlan(member.sheet, sheetAfterCard(member.sheet, run.result.plan, characterId, cardName), run.result.plan, characterId, true);
     if (u.roll) unshaken.push(u.roll);
     // Plan lanes-2, E2.3 (TASK-LN2-R1's finding): the card's manual words go on its line, as a feature answer's do.
-    paid = { sheet: u.sheet, cardName, manual: manualWords(run.result.plan) };
+    // Plan lanes-2, E2.4 (dcm-8fc2): what the card's own roll ended on the responder (Vanishing Act's Cloaked) is named.
+    paid = { sheet: u.sheet, cardName, manual: [...manualWords(run.result.plan), ...rollEndLines(member.sheet.name, member.sheet, run.result.plan)] };
   }
   if (choice.kind === "feature") {
     const pc = rebuilt.party.find((p) => p.id === characterId);
@@ -420,7 +460,8 @@ export async function respondToHit(ctx: MutationCtx, input: RespondInput): Promi
   }
   if (feature) {
     await saveSheet(ctx, characterId, feature.sheet);
-    const manual = manualWords(feature.plan);
+    // E2.4 (dcm-8fc2): `actorSheetAfter` already ended what the feature's own roll ends; the line names it.
+    const manual = [...manualWords(feature.plan), ...rollEndLines(member.sheet.name, member.sheet, feature.plan)];
     await logAction(ctx, {
       campaignId: row.campaignId,
       characterId,
@@ -448,7 +489,8 @@ export async function respondToHit(ctx: MutationCtx, input: RespondInput): Promi
   }
   for (const roll of unshaken) await logUnshakable(ctx, { campaignId: row.campaignId, characterId, actorId: row.createdBy, name: member.sheet.name, groupId: row.payload.groupId }, roll);
   await ctx.db.patch("combatRequests", row._id, { responses: [...row.responses, { characterId, choice: feature ? feature.choice : (choice as Exclude<AnswerChoice, { kind: "feature" }>), by: input.by, at: Date.now() }] });
-  return { complete: isComplete(next.state) };
+  // E2.4 (dcm-sk4r): an open keyword ask holds the hit for the GM's answer.
+  return { complete: isComplete(next.state) && !keywordAskOpen(row.payload.keywordAsk) };
 }
 
 // ---------------------------------------------------------------- resolving
@@ -536,12 +578,23 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
     }
     // The attack's riders land on whoever took the hit (user answer 2026-10-22, AA2b), also when only its damage was
     // negated or reflected; a miss or full avoidance stops them (AA2c, user answer 2026-10-22).
-    if (!res.missed && (p.riders?.length ?? 0) > 0) {
+    // Plan lanes-2, E2.4 (dcm-sk4r): a hit carrying a guarded keyword was ignored by the guard (Fireproof, HF p.22).
+    const hopeAndFear = await hopeAndFearOf(ctx, row.campaignId);
+    const hitKeyword = rebuilt.state.hit.keyword;
+    const hitGuard = hitKeyword !== undefined && !res.missed ? markHpGuard(sheet, hopeAndFear, hitKeyword) : null;
+    if (hitGuard) gm.push(`${targetName}: ${hitGuard.feature} (immune to ${hitKeyword} damage)`);
+    // E2.4 (dcm-n7kt): the attacking feature's outright HP marks carry its `markHp` keyword (Fire Beam, HF p.96); a guard
+    // of that keyword stops them (Fireproof: "immune to damage from magical or mundane flame").
+    const hpKeyword = !res.missed && (p.riders ?? []).some((r) => r.kind === "hp") ? await markHpKeywordOf(ctx, row) : undefined;
+    const hpGuard = markHpGuard(sheet, hopeAndFear, hpKeyword);
+    if (hpGuard) gm.push(`${targetName}: ${hpGuard.feature} (immune to ${hpKeyword}): no Hit Points marked from ${p.attacker.feature ?? p.attacker.label}`);
+    const riders = hpGuard ? (p.riders ?? []).filter((r) => r.kind !== "hp") : (p.riders ?? []);
+    if (!res.missed && riders.length > 0) {
       // DA8: after Dark Aegis the conditions still land, any extra "mark HP" doesn't (user answer 2026-10-29).
       // Plan lanes-2, E2 (dcm-t8c): conditions the PC's effects forbid stay off (Unstoppable, CB p.36, dcm-v17).
       // Plan lanes-2, E2.3 (dcm-nnbl, HF p.75): the Hope the target chose to spend comes off the riders' forced HP.
       const defense = rebuilt.party.find((x) => x.id === target.character._id);
-      const landed = applyRiders(next, p.riders ?? [], res.conditionNegated, res.hpRidersIgnored, refusedConditions(next), { amount: grants.hope, factor: defense ? marksFactor(defense, "hope") : 1 });
+      const landed = applyRiders(next, riders, res.conditionNegated, res.hpRidersIgnored, refusedConditions(next), { amount: grants.hope, factor: defense ? marksFactor(defense, "hope") : 1 });
       next = landed.sheet;
       ridersApplied = landed.applied;
       gm.push(
@@ -613,10 +666,15 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
     // (HF p.12), and what ends with it (Grappling's Restrain).
     const lastHp = next.hpMax > 0 && sheet.hp < next.hpMax && next.hp >= next.hpMax;
     // User answer 2026-10-31: Fragile's "take Major or greater damage" and the stance's "Severe damage" need a marked HP too.
-    const formEnds = beastformEnds(next, { lastHp, severity: occ.severity });
+    // Plan lanes-2, E2.4 (dcm-hs6u; same answer: "severity follows the HP actually marked after armor (Major = 2 HP,
+    // Severe = 3 HP)"): the severity of the HP this hit's damage marked (`takenSeverity`, E6's reading: 1 Minor, 2 Major,
+    // 3 Severe; on the last HP the hit's own severity when higher). Gold paid instead and forced HP riders don't count.
+    const damageHp = Math.max(0, result.hpMarked - goldSpent);
+    const markedSeverity = takenSeverity({ severity: damageHp > 0 ? result.severity : "none", hpMarked: damageHp, lastHp });
+    const formEnds = beastformEnds(next, { lastHp, severity: markedSeverity });
     if (formEnds) next = formEnds.sheet;
     const endedWords: string[] = [...(formEnds ? [formEnds.words] : []), ...ended.names.map((n) => `${n} ends`), ...hitEnds.names.map((n) => `${n} ends`), ...casterEnds.areas.map((n) => `${n} ends`)];
-    if (lastHp || occ.severity === "severe") {
+    if (lastHp || markedSeverity === "severe") {
       const dropped = await dropStance(ctx, row.campaignId, next);
       if (dropped.dropped) {
         next = dropped.sheet;
@@ -625,6 +683,7 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
         adversaryBefore.push(...dropped.before);
       }
     }
+    const guardWords = hitGuard ? ` (${hitGuard.feature}: immune to ${hitKeyword})` : hpGuard ? ` (${hpGuard.feature}: no Hit Points from ${hpKeyword})` : "";
     await saveSheet(ctx, target.character._id, next);
     // The sheet's death move is due at once (user answer 2026-10-22; CB p.91): a new last HP clears an earlier "spent".
     if (deathMove) await ctx.db.patch("characters", target.character._id, { deathMoveSpent: undefined });
@@ -638,7 +697,7 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
         ? `${targetName} avoided ${p.attacker.label}'s hit`
         : res.negated
           ? `${targetName} took no damage from ${p.attacker.label}'s hit`
-          : `${targetName} took ${p.attacker.label}'s hit${deathMove ? " and must make a death move" : ""}${autos.length > 0 ? ` (${autos.join(", ")})` : ""}${endedWords.length > 0 ? `; ${endedWords.join(", ")}` : ""}`,
+          : `${targetName} took ${p.attacker.label}'s hit${guardWords}${deathMove ? " and must make a death move" : ""}${autos.length > 0 ? ` (${autos.join(", ")})` : ""}${endedWords.length > 0 ? `; ${endedWords.join(", ")}` : ""}`,
       groupId: p.groupId,
       before: sheet,
       undoable: true,
@@ -1250,4 +1309,71 @@ export async function hitView(ctx: QueryCtx, row: HitRow, characterId: Id<"chara
     return { ...view, damage: prompt.damage, severity: prompt.severity, direct: row.payload.direct, maxSlots: prompt.maxSlots, armorPreview: preview };
   }
   return view;
+}
+
+// ---------------------------------------------------------------- the GM's keyword answer (E2.4, dcm-sk4r)
+
+/** What the GM's row shows of an open keyword ask (convex/hitKeywords.ts `asks`). GM only: the hit's numbers are fine. */
+export type KeywordAskView = {
+  requestId: Id<"combatRequests">;
+  attackerLabel: string;
+  feature?: string;
+  targetCharacterId: Id<"characters">;
+  targetName: string;
+  keyword: DamageKeyword;
+  /** The guard's printed name (Fireproof). */
+  guard: string;
+  question: string;
+  damage: number;
+  damageType: HitRow["payload"]["damageType"];
+  createdAt: number;
+};
+
+/** The GM's view of a hit's open keyword ask, or null when it has none (or it was answered). */
+export function keywordAskView(row: HitRow, targetName: string): KeywordAskView | null {
+  const ask = row.payload.keywordAsk;
+  if (!ask || !keywordAskOpen(ask) || row.payload.afterHit) return null;
+  const p = row.payload;
+  return {
+    requestId: row._id,
+    attackerLabel: p.attacker.label,
+    ...(p.attacker.feature !== undefined ? { feature: p.attacker.feature } : {}),
+    targetCharacterId: ask.characterId,
+    targetName,
+    keyword: ask.keyword,
+    guard: ask.feature,
+    question: keywordAskQuestion(ask),
+    damage: p.damage,
+    damageType: p.damageType,
+    createdAt: row.createdAt,
+  };
+}
+
+/**
+ * Plan lanes-2, E2.4 (dcm-sk4r): records the GM's answer to a hit's keyword ask (`carries`: the hit was fire) on the
+ * payload (`keywordAsk.answer` / `answeredBy`, plan lanes-2 V4) with a GM feed line in the hit's group. INVALID when the
+ * hit has no ask or the answer names another keyword; REQUEST_NOT_OPEN once answered. Returns whether the window is now
+ * complete (the caller then resolves the hit). A "yes" makes the guard apply (`effectiveKeyword`, `pcResistance`).
+ */
+export async function answerKeywordAsk(ctx: MutationCtx, input: { row: HitRow; answer: KeywordAnswer; by: Id<"users"> }): Promise<{ complete: boolean; row: HitRow }> {
+  const { row, answer } = input;
+  const ask = row.payload.keywordAsk;
+  if (!ask) throw appError("INVALID", "This hit asks nothing.");
+  if (!keywordAskOpen(ask) || row.payload.afterHit) throw appError("REQUEST_NOT_OPEN");
+  if (answer.keyword !== ask.keyword) throw appError("INVALID", `This hit asks about ${ask.keyword}.`);
+  const payload = { ...row.payload, keywordAsk: { ...ask, answer: answer.carries, answeredBy: input.by } };
+  await ctx.db.patch("combatRequests", row._id, { payload });
+  const fresh: HitRow = { ...row, payload };
+  const { state, members } = await rebuildWindow(ctx, fresh);
+  const name = members.find((m) => m.character._id === ask.characterId)?.sheet.name ?? "the target";
+  await logAction(ctx, {
+    campaignId: row.campaignId,
+    actorId: input.by,
+    kind: isPcAttacker(row.payload.attacker) ? "combat" : "adversary",
+    visibility: "gm",
+    summary: `${row.payload.attacker.label} → ${name}: the hit ${answer.carries ? "was" : "wasn't"} ${ask.keyword} (${ask.feature}${answer.carries ? " applies" : " doesn't apply"})`,
+    groupId: row.payload.groupId,
+    undoable: true,
+  });
+  return { complete: isComplete(state), row: fresh };
 }

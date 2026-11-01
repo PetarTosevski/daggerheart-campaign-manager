@@ -22,6 +22,7 @@ import { ReactionWindows } from "../../../adversaries/tracker/actions/windows";
 import { rulesFor } from "../../../adversaries/tracker/rules";
 import type { AdversaryPanelProps } from "../../slots";
 import { BAND_TEXT, SIGHT_TEXT, rangeRows, type RangeRow } from "./model";
+import { KeywordAsks } from "./keyword-asks";
 import { PartBoundary } from "./part-boundary";
 import { useLiveSight } from "./sight";
 
@@ -58,6 +59,11 @@ export function AdversaryControls(props: AdversaryPanelProps) {
 
   return (
     <>
+      {running ? (
+        <PartBoundary label="Hit questions">
+          <KeywordAsks campaignId={campaignId} />
+        </PartBoundary>
+      ) : null}
       {running ? (
         <PartBoundary label="Reaction windows">
           <ReactionWindows campaignId={campaignId} encounterId={running._id} acts={acts} />
