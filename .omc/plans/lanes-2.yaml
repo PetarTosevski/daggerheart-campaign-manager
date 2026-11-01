@@ -690,3 +690,393 @@ waves:
           - "dcm-ztb8, dcm-gfk3 done; dcm-55k / dcm-bc67 caller halves done"
           - "Witherwild's cycles unchanged (existing campaign-time tests pass)"
           - "lint, typecheck, tests, the CT e2e spec pass"
+  # ------------------------------------------------------------------ wave 10: finish wave 9's halves, user-answer prompts, data switches
+  # Written 2026-10-31 from the TASK-LN3-*.md docs (wave 9), `bd list --status=open` and the 2026-10-31 user answers
+  # (.omc/plans/overnight-questions.md, the sections after the crash). Briefs: .omc/plans/lanes-2-wave10-briefs.md.
+  # Branches lane4-v4, lane4-e1a, lane4-e1b, lane4-e2, lane4-e4, lane4-e6, lane4-e7, lane4-e8, lane4-s1 ... lane4-s4, lane4-ct2
+  # (first step: git switch -C <branch> rebuild). Task docs docs/tasks/TASK-LN4-<V4|E1A|E1B|E2|E4|E6|E7|E8|S1..S4|CT2>.md.
+  # Two batches (user 2026-10-31: 8-9 tracers at once). No file is owned by two wave-10 tracers, across both batches.
+  #   Batch A (8): V4 first (foundation, size S), together with E4.4 (needs nothing from V4); once V4 is merged, launch
+  #     E1.4a, E1.4b, E2.4, E6.4, E7.4, E8.4 (each depends_on V4).
+  #   Batch B (5): S1.4, S2.4, S3.4, S4.4 (data; each depends on the batch-A engine tracers whose paths it switches) and CT2.
+  # Owns changes from wave 9 (so no two wave-10 tracers share a file):
+  #   - V4 is a foundation tracer, widen only: the three effect types.ts files, src/lib/srd/types.ts (types only, the one
+  #     srd file not owned by an S tracer: the standard-attack damage keyword, dcm-dztv), convex/lib/validators/combatRequests.ts
+  #     (from E2: every new request payload / answer this wave) and src/lib/validation/characters.ts (from E5: sheet effect
+  #     casterId, dcm-lztq; creature tokens on PC sheets, dcm-wiwi). Fallback lines it needs in files it doesn't own: report
+  #     them, the orchestrator adds them at the V4 merge (as for V3's matchesTrigger stub).
+  #   - No E3 / E5 tracer: their beads are closable or folded (dcm-svnq -> E1.4a, dcm-7l0g / dcm-40rt -> E8.4, dcm-u9pv -> E8.4).
+  #   - E1.4a gains convex/lib/cardRunner.ts (from E4), hand/dialog.tsx (from E3), hand/model.ts (from E5), the combat
+  #     requests panel (src/components/combat-map/requests/**) and new modules convex/cloakPrompts.ts + convex/lib/cloakPrompts.ts
+  #     (Cloaked GM prompt, dcm-vx5n); authz prompts.entries.ts.
+  #   - E1.4b gains convex/combatActions.ts and convex/combatRequests.ts (orchestrator-edited in wave 9) and authz combat.entries.ts.
+  #   - E2.4 loses validators/combatRequests.ts (V4) and gains src/components/combat-map/actions/adversary/** (the GM's Fireproof ask).
+  #   - E4.4 drops cardRunner.ts and takes the map-visuals beads (dcm-bxp.84, dcm-klr8, vision half of dcm-bxp.99.19.64):
+  #     combatVision (lib + public), combatMaps (+ validator, table), sprites/objects.ts, spriteSources.ts, the editor panel.
+  #   - E6.4 gains convex/migrations/sheetEffectCaster.ts and authz characters.entries.ts.
+  #   - E7.4 gains convex/lib/forcedAttacks.ts (forced PC attack request opener, dcm-uxsd) and the GM tracker's feature ask
+  #     UI (src/components/adversaries/tracker/actions/**, dcm-mvgc).
+  #   - E8.4 gains src/lib/domain/characters/derived.ts and slots.ts, src/lib/domain/card-effects/run.ts (from E3) and the
+  #     level-up draft UI.
+  #   - S3.4 gains src/lib/srd/adversaries.ts (standard-attack fire keywords, every tier: one file, one owner).
+  #   - CT2 owns convex/campaignTime.ts, convex/lib/actionLog.ts and convex/lib/validators/actionLog.ts (undo of End day).
+  #   - Authz entry files: E1.4a prompts, E1.4b combat, E6.4 features + characters, E7.4 adversary-actions, E8.4 play,
+  #     CT2 core; E4.4 and the rest report entries to the orchestrator.
+  # Not placed (see the briefs): dcm-9z28 GM-owned areas (combatAreas.characterId optional breaks readers in ~12 files
+  # owned by batch-A tracers: wave 11, first or solo), dcm-22q (cross-lane Stress-marking paths: wave 11), combat-ui
+  # redesign beads (dcm-bxp.99.32 and its children), lane:own-plan, lane:user-run, lane:needs-user-answer, P4 narrative
+  # (dcm-by2d, dcm-lezi), dcm-bxp.28 (needs versionSheets run), dcm-bxp.17 (Horizon hex crawl, own scope).
+  - wave: 10
+    tracers:
+      - id: V4
+        batch: A
+        label: w3-vocabulary
+        title: "Foundation widen 4 (widen only): standard-attack and markHp damage keywords, RollEnd situation, every wave-10 request payload, sheet effect casterId, PC creature tokens"
+        goal: "Every term and stored shape wave 10 needs exists (types and validators only, no behaviour change), so the batch-A engine tracers can start from one merged base"
+        size: S
+        depends_on: []
+        owns:
+          - src/lib/domain/card-effects/types.ts
+          - src/lib/domain/adversary-effects/types.ts
+          - src/lib/domain/feature-effects/types.ts
+          - src/lib/srd/types.ts
+          - convex/lib/validators/combatRequests.ts
+          - src/lib/validation/characters.ts
+          - tests/unit/card-effects/types-widen-4.test.ts
+          - tests/unit/lane4-v4-*.test.ts
+          - tests/convex/lane4-v4-*.test.ts
+          - docs/tasks/TASK-LN4-V4.md
+        reads: [docs/tasks/TASK-LN3-E1A.md, docs/tasks/TASK-LN3-E1B.md, docs/tasks/TASK-LN3-E2.md, docs/tasks/TASK-LN3-E6.md, docs/tasks/TASK-LN3-E7.md, docs/tasks/TASK-LN3-S3.md, docs/tasks/TASK-LN3-S4.md, convex/lib/validators/encounters.ts, convex/combatRequests.ts, convex/lib/combatRequests.ts, convex/tables/combatRequests.ts]
+        acceptance:
+          - "dcm-dztv (standard-attack keyword type), dcm-n7kt (markHp keyword), dcm-hqk1 (RollEnd / dualityDie mod situation), dcm-lztq + dcm-wiwi (validator widens), and the request shapes for dcm-vx5n, dcm-uxsd, dcm-sk4r, dcm-mcgj, dcm-1sk4 added; widen only, optional fields, no any, no version bump unless rule 7 needs it"
+          - "TASK-LN4-V4.md lists every new term / field / payload with the tracer that uses it; fallback lines needed outside owns are reported, not edited"
+          - "Every existing test passes unchanged; lint, typecheck (after the reported fallbacks), tests pass"
+      - id: E1.4a
+        batch: A
+        label: w1-e1-triggers-rolls
+        title: "Card and feature use paths round 4: plan handoffs (stances, gifts, forced attacks, form changes, instance conditions), Cloaked GM prompt, feature sanction riders, pcRolls on card rolls, Hand point picking"
+        goal: "A card use applies every plan handoff (stance, gifts, forcedAttack, changeForm, instance conditions with their caster), a non-attack card / feature use on an enemy by a Cloaked PC asks the GM, and the Hand picks area points"
+        size: XL
+        depends_on: [V4]
+        owns:
+          - convex/combatCards.ts
+          - convex/lib/cardHand.ts
+          - convex/lib/cardRunner.ts
+          - convex/combatFeatures.ts
+          - convex/cloakPrompts.ts
+          - convex/lib/cloakPrompts.ts
+          - src/components/combat-map/actions/hand/**
+          - src/components/combat-map/requests/**
+          - tests/convex/authz/prompts.entries.ts
+          - tests/convex/lane4-e1a-*.test.ts
+          - tests/unit/lane4-e1a-*.test.ts
+          - tests/e2e/lane4-cloak-prompt.spec.ts
+          - docs/tasks/TASK-LN4-E1A.md
+        reads: [docs/tasks/TASK-LN3-E1A.md, docs/tasks/TASK-LN3-E4.md, docs/tasks/TASK-LN3-E7.md, docs/tasks/TASK-LN3-E6.md, docs/tasks/TASK-LN4-V4.md, convex/lib/adversaryActions.ts, convex/lib/cardRows.ts, convex/lib/featureRunner.ts, src/components/combat-map/map-view/area-pick.tsx, src/lib/domain/card-effects/types.ts, src/lib/domain/feature-effects/types.ts, src/lib/domain/adversary-effects/types.ts]
+        acceptance:
+          - "In priority order: dcm-tn8u + dcm-svnq + dcm-9l9g (card plan handoffs), dcm-vx5n (card / feature half: GM prompt 'Does <name>'s Cloaked end?'), dcm-mcgj (feature sanction stores and replays riders), dcm-m7tm card / feature half, dcm-wli0 card half, dcm-j5aw writer half (caster on the card's instance effect), dcm-lztq card writer, Hand point picking for point / points cards (AO follow-up), dcm-8e4c / dcm-u4pq (vault to the dialog), dcm-79v1 card half (endGrantedBenefit), then dcm-dgu (3) if time; a tail with notes is fine"
+          - "No edits to types.ts, validators/combatRequests.ts or src/lib/srd/**"
+          - "lint, typecheck, tests, tests/e2e/lane4-cloak-prompt.spec.ts pass"
+      - id: E1.4b
+        batch: A
+        label: w1-e1-triggers-rolls
+        title: "Attack and roll paths round 4: per-target edges, forced-attack roll request, Reliable Backup tick, pcRolls dispatch, bearer riders, Lead by Example benefit, caller facts"
+        goal: "A multi-target attack compares per target with its own edge, a forced PC attack opens the player's Attack bar with the target locked, a Presence roll offers 'In conversation', and PC rolls run adversary pcRolls uses and the bearer's own riders"
+        size: XL
+        depends_on: [V4]
+        owns:
+          - convex/lib/combatActions.ts
+          - convex/combatActions.ts
+          - convex/combatRequests.ts
+          - convex/lib/rolls.ts
+          - convex/rolls.ts
+          - src/components/combat-map/actions/attack/**
+          - src/components/party/dice/**
+          - tests/convex/combat-riders.test.ts
+          - tests/convex/authz/combat.entries.ts
+          - tests/convex/lane4-e1b-*.test.ts
+          - tests/unit/lane4-e1b-*.test.ts
+          - tests/e2e/lane4-forced-attack.spec.ts
+          - docs/tasks/TASK-LN4-E1B.md
+        reads: [docs/tasks/TASK-LN3-E1B.md, docs/tasks/TASK-LN3-E7.md, docs/tasks/TASK-LN3-E8.md, docs/tasks/TASK-LN3-E6.md, docs/tasks/TASK-LN3-E5.md, docs/tasks/TASK-LN4-V4.md, convex/lib/adversaryActions.ts, convex/lib/adversaryFeatures.ts, convex/lib/featureRunner.ts, convex/lib/cardRows.ts, convex/combatAreas.ts, src/lib/domain/characters/derived.ts, src/lib/domain/card-effects/types.ts, src/lib/domain/feature-effects/types.ts, src/lib/domain/adversary-effects/types.ts]
+        acceptance:
+          - "In priority order: dcm-svux, dcm-uxsd (player half: request -> Attack bar, target locked, request resolved), dcm-hqk1, dcm-m7tm roll / attack half, dcm-l1er (automatic, user answer), dcm-kso9 + dcm-j5aw reader half, dcm-wli0 attack / roll half, dcm-b41o + dcm-7udv + dcm-iia9 (combatActions facts, payer flags), dcm-1sk4 consumer, dcm-lbai (reach picked at setup), dcm-iddp, dcm-bxp.99.19.64 (dice box / Attack bar traits), dcm-84b2, dcm-cj8, then dcm-gtmp / dcm-raa and dcm-g6t / 1o3 / 0gi / 3ft / iu4; a tail with notes is fine"
+          - "No edits to types.ts, validators/combatRequests.ts or src/lib/srd/**"
+          - "lint, typecheck, tests, tests/e2e/lane4-forced-attack.spec.ts pass"
+      - id: E2.4
+        batch: A
+        label: w1-e2-damage-window
+        title: "Incoming hits round 4: adversary-applied sheet mods, keywords per damage step and on standard attacks, Fireproof GM ask and Fire Beam, window actor stats, reaction rolls end Cloaked"
+        goal: "Hits read the mods adversaries put on PCs (Unstuck, Leechpoles, Ravenous), carry the keyword of the step that dealt them (standard attacks too), let Fireproof stop fire HP marks and ask the GM about untyped hits"
+        size: L
+        depends_on: [V4]
+        owns:
+          - convex/lib/incomingHits.ts
+          - convex/lib/adversaryHits.ts
+          - convex/lib/unshakable.ts
+          - src/lib/domain/adversary-actions/window.ts
+          - src/lib/domain/adversary-actions/severity.ts
+          - src/lib/domain/combat-actions/damage.ts
+          - src/components/combat-map/actions/reactions/**
+          - src/components/combat-map/actions/adversary/**
+          - tests/convex/lane4-e2-*.test.ts
+          - tests/unit/lane4-e2-*.test.ts
+          - tests/e2e/lane4-fire-ask.spec.ts
+          - docs/tasks/TASK-LN4-E2.md
+        reads: [docs/tasks/TASK-LN3-E2.md, docs/tasks/TASK-LN3-S2.md, docs/tasks/TASK-LN3-S3.md, docs/tasks/TASK-LN3-S4.md, docs/tasks/TASK-LN3-E6.md, docs/tasks/TASK-LN4-V4.md, convex/lib/cardRunner.ts, convex/lib/stanceDrop.ts, src/lib/domain/characters/expiry.ts, src/lib/srd/adversaries.ts, src/lib/domain/card-effects/types.ts, src/lib/domain/feature-effects/types.ts, src/lib/domain/adversary-effects/types.ts]
+        acceptance:
+          - "In priority order: dcm-12kx, dcm-5gng + dcm-7vei (per-step keyword on the hit), dcm-dztv (reader), dcm-n7kt (engine), dcm-sk4r (GM decides an untyped hit; minimal GM UI), dcm-i9c1, dcm-8fc2, dcm-hs6u (verify; fix in owned files, else a follow-up for E6)"
+          - "No edits to types.ts, validators/combatRequests.ts or src/lib/srd/**"
+          - "lint, typecheck, tests, tests/e2e/lane4-fire-ask.spec.ts pass"
+      - id: E4.4
+        batch: A
+        label: w1-e4-targeting-areas
+        title: "Areas and map visuals round 4: area ends on tokens / caster leaving, wall and count areas from feature uses, per-object light override, vision reads derived traits"
+        goal: "An area ends when its tokens run out or its caster leaves, the feature drawer sends several points for wall / count areas, and the GM can set a placed sprite's light (none / faint glow / torch / campfire) that vision reads"
+        size: M
+        depends_on: []
+        owns:
+          - convex/combatAreas.ts
+          - convex/combatAreaEdits.ts
+          - convex/combatTokens.ts
+          - convex/lib/combatMovement.ts
+          - src/lib/domain/feature-effects/areas.ts
+          - src/components/combat-map/map-view/area-overlay.tsx
+          - src/components/combat-map/map-view/area-pick.tsx
+          - src/components/combat-map/drawer/use/**
+          - convex/lib/combatVision.ts
+          - convex/combatVision.ts
+          - convex/combatMaps.ts
+          - convex/tables/combatMaps.ts
+          - convex/lib/validators/combatMaps.ts
+          - convex/lib/spriteSources.ts
+          - src/lib/combat-map/sprites/objects.ts
+          - src/components/combat-map/editor/edit-tools-panel.tsx
+          - src/components/combat-map/editor/use-edit-mutations.ts
+          - tests/convex/lane4-e4-*.test.ts
+          - tests/unit/lane4-e4-*.test.ts
+          - docs/tasks/TASK-LN4-E4.md
+        reads: [docs/tasks/TASK-LN3-E4.md, docs/tasks/TASK-LN3-AO.md, docs/tasks/TASK-SP-P10.md, convex/lib/cardRows.ts, convex/combatFeatures.ts, src/lib/domain/characters/derived.ts, src/lib/domain/card-effects/types.ts, src/lib/domain/feature-effects/types.ts]
+        acceptance:
+          - "dcm-ii4 (area end on its tokens reaching 0 and on the caster leaving), AO follow-up (drawer sends useFeature points for walls / count areas), dcm-bxp.84 + dcm-klr8 (per-object light override, widen only), dcm-bxp.99.19.64 vision half; dcm-lvgm / dcm-z5a6 carry offer only if it fits in owned files"
+          - "No edits to types.ts or src/lib/srd/**; new public functions reported for authz entries"
+          - "lint, typecheck, tests pass"
+      - id: E6.4
+        batch: A
+        label: w1-e6-endings-durations
+        title: "Endings round 4: sheet effects record their caster (migration), Marked for Death names its assassin, ending the D5 effect lifts the tag"
+        goal: "Caster-tied ends use the effect's stored caster (two Skykin, two assassins), old effects get a derivable caster by a batched migration, and only the placing assassin's Marked for Death ends on that target's defeat"
+        size: M
+        depends_on: [V4]
+        owns:
+          - src/lib/domain/characters/expiry.ts
+          - convex/lib/cardRows.ts
+          - convex/lib/stanceDrop.ts
+          - convex/classFeatures.ts
+          - convex/combatEffects.ts
+          - convex/migrations/sheetEffectCaster.ts
+          - src/components/combat-map/tokens/token-panel.tsx
+          - src/components/combat-map/tokens/use-tokens.ts
+          - tests/convex/authz/features.entries.ts
+          - tests/convex/authz/characters.entries.ts
+          - tests/convex/lane4-e6-*.test.ts
+          - tests/unit/lane4-e6-*.test.ts
+          - docs/tasks/TASK-LN4-E6.md
+        reads: [docs/tasks/TASK-LN3-E6.md, docs/tasks/TASK-LN3-E1A.md, docs/tasks/TASK-LN3-E1B.md, docs/tasks/TASK-LN4-V4.md, convex/combatCards.ts, convex/lib/combatActions.ts, convex/lib/featureRunner.ts, convex/migrations/vanishingActMarker.ts, src/lib/validation/characters.ts, src/lib/domain/card-effects/types.ts, src/lib/domain/feature-effects/types.ts]
+        acceptance:
+          - "dcm-lztq (reader side + batched migration, written and tested, never run), dcm-qxb6, dcm-mvoo engine note (D5 effect end lifts the instance tag); every E6-labelled bead listed closable / what is left"
+          - "No edits to types.ts or src/lib/srd/**; callers in other lanes' files get follow-up beads"
+          - "lint, typecheck, tests pass"
+      - id: E7.4
+        batch: A
+        label: w1-e7-adversary-engine
+        title: "Adversary engine round 4: condition markers on PCs, instance condition ends + pcEscapes, forced PC attack request, Hope before forced HP without a hit, hope splits, creature tokens on PCs, the tail"
+        goal: "Adversary conditions on PCs carry their markers, instance conditions end at their stored events, pcEscapes matches, a forced PC attack becomes a roll request, and forced HP with reduceWith hope always offers the Hope"
+        size: XL
+        depends_on: [V4]
+        owns:
+          - src/lib/domain/adversary-effects/run.ts
+          - src/lib/domain/adversary-actions/features.ts
+          - src/lib/domain/adversary-actions/attack.ts
+          - convex/lib/adversaryActions.ts
+          - convex/adversaryActions.ts
+          - convex/lib/adversaryFeatures.ts
+          - convex/lib/countdownTicks.ts
+          - convex/lib/validators/encounters.ts
+          - convex/lib/forcedAttacks.ts
+          - src/components/adversaries/tracker/actions/**
+          - tests/convex/authz/adversary-actions.entries.ts
+          - tests/unit/adversary-effects/lane4-e7-*.test.ts
+          - tests/convex/lane4-e7-*.test.ts
+          - docs/tasks/TASK-LN4-E7.md
+        reads: [docs/tasks/TASK-LN3-E7.md, docs/tasks/TASK-LN3-E6.md, docs/tasks/TASK-LN3-E3.md, docs/tasks/TASK-LN3-V3.md, docs/tasks/TASK-LN3-S3.md, docs/tasks/TASK-LN3-S4.md, docs/tasks/TASK-LN4-V4.md, convex/lib/cardRows.ts, convex/lib/incomingHits.ts, src/lib/domain/card-effects/run.ts, src/lib/domain/card-effects/types.ts, src/lib/domain/feature-effects/types.ts, src/lib/domain/adversary-effects/types.ts]
+        acceptance:
+          - "In priority order: dcm-1alq, dcm-thwj + dcm-0hlq (+ dcm-j63t closable), dcm-eg6h, dcm-uxsd (opener), dcm-spj0, dcm-mvgc, dcm-wiwi writer, dcm-ehgy (+ nsqo, k4x5, sos), adversary-side bearer steps (dcm-mm0f, 0wj1, bxp.99.19.3, f0m, kti, wqgs), dcm-zi3k rest, dcm-b77 recurring roll, dcm-8rh, i55, 63j, 4yg4, va0f, then the tail (702, icd, 51s, 1jg, 145, 1ch, 346, 4dc, e75, xobk, 5jyp, cdz, 2gn, yea, pgfr); a tail with notes is fine"
+          - "No edits to types.ts, validators/combatRequests.ts or src/lib/srd/**"
+          - "lint, typecheck, tests pass"
+      - id: E8.4
+        batch: A
+        label: w1-e8-session-features-rests
+        title: "Feature runner round 4: Otherworldly Ire pays everything at the roll, plan gifts, Weapon Specialist reroll on Slayer, Vitality thresholds and level-up picks, feature effects record their caster"
+        goal: "Otherworldly Ire pays all its costs at the roll, Contacts Everywhere's supply gift comes from the plan, Weapon Specialist rerolls Slayer 1s once per long rest, and Vitality's picks are asked at level-up and count in thresholds"
+        size: L
+        depends_on: [V4]
+        owns:
+          - src/lib/domain/feature-effects/delegate.ts
+          - src/lib/domain/feature-effects/run.ts
+          - src/lib/domain/card-effects/run.ts
+          - convex/lib/featureRunner.ts
+          - convex/featurePrompts.ts
+          - convex/lib/featurePrompts.ts
+          - convex/sessionFeatures.ts
+          - src/lib/domain/session-features/**
+          - convex/levelUp.ts
+          - src/lib/domain/level-up/**
+          - src/lib/domain/characters/derived.ts
+          - src/lib/domain/characters/slots.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/level-up-draft.tsx
+          - tests/convex/authz/play.entries.ts
+          - tests/convex/lane4-e8-*.test.ts
+          - tests/unit/lane4-e8-*.test.ts
+          - tests/e2e/lane4-vitality-level-up.spec.ts
+          - docs/tasks/TASK-LN4-E8.md
+        reads: [docs/tasks/TASK-LN3-E8.md, docs/tasks/TASK-LN3-E3.md, docs/tasks/TASK-LN3-S2.md, docs/tasks/TASK-LN4-V4.md, convex/lib/rolls.ts, convex/lib/cardRows.ts, src/lib/domain/card-effects/types.ts, src/lib/domain/feature-effects/types.ts, src/lib/domain/adversary-effects/types.ts]
+        acceptance:
+          - "dcm-szfg, dcm-h1y9, dcm-40rt + dcm-7l0g (+ dcm-sa2, dcm-inou closable), dcm-u9pv + dcm-txlu (+ dcm-o03c, dcm-31hq closable), dcm-lztq feature writer (Eye of the Storm), At Ease FEATURE_SLOTS from its data (dcm-o3j rest) if it fits; dcm-lvgm / dcm-z5a6 carry offer if time"
+          - "No edits to types.ts or src/lib/srd/**"
+          - "lint, typecheck, tests, tests/e2e/lane4-vitality-level-up.spec.ts pass"
+      - id: S1.4
+        batch: B
+        label: w2-srd-data
+        title: "SRD data: domain card effects round 2 - drop reminders whose engine landed in waves 9-10, Vitality, Hold the Line, Lead by Example, Words of Discord, point cards"
+        goal: "Every card switch whose engine is live after batch A is data and its reminder is gone; the rest keep their reminder and are listed for wave 11"
+        size: M
+        depends_on: [E1.4a, E1.4b, E8.4]
+        owns:
+          - src/lib/srd/card-effects/arcana.ts
+          - src/lib/srd/card-effects/blade.ts
+          - src/lib/srd/card-effects/bone.ts
+          - src/lib/srd/card-effects/codex.ts
+          - src/lib/srd/card-effects/dread.ts
+          - src/lib/srd/card-effects/grace.ts
+          - src/lib/srd/card-effects/midnight.ts
+          - src/lib/srd/card-effects/sage.ts
+          - src/lib/srd/card-effects/splendor.ts
+          - src/lib/srd/card-effects/valor.ts
+          - src/lib/srd/card-effects/classification.ts
+          - tests/unit/card-effects/arcana.test.ts
+          - tests/unit/card-effects/blade.test.ts
+          - tests/unit/card-effects/bone.test.ts
+          - tests/unit/card-effects/codex.test.ts
+          - tests/unit/card-effects/dread.test.ts
+          - tests/unit/card-effects/grace.test.ts
+          - tests/unit/card-effects/midnight.test.ts
+          - tests/unit/card-effects/sage.test.ts
+          - tests/unit/card-effects/splendor.test.ts
+          - tests/unit/card-effects/valor.test.ts
+          - tests/convex/lane4-s1-*.test.ts
+          - docs/tasks/TASK-LN4-S1.md
+        reads: [docs/tasks/TASK-LN3-S1.md, docs/tasks/TASK-LN3-E1A.md, docs/tasks/TASK-LN3-E1B.md, docs/tasks/TASK-LN3-E4.md, docs/tasks/TASK-LN3-E8.md, docs/tasks/TASK-LN4-E1A.md, docs/tasks/TASK-LN4-E1B.md, docs/tasks/TASK-LN4-E8.md, src/lib/domain/card-effects/types.ts, convex/lib/cardRunner.ts]
+        acceptance:
+          - "Live switches proven through the real path (tests/convex/lane4-s1-*.test.ts); dcm-trib, dcm-40mj data, dcm-o44e, dcm-vbzy (2)(3) if the Hand asks, dcm-903q / dcm-kso9 data, dcm-c8h3 data done or listed"
+          - "Only src/lib/srd/card-effects/** data and its tests change"
+          - "lint, typecheck, tests pass"
+      - id: S2.4
+        batch: B
+        label: w2-srd-data
+        title: "SRD data: feature effects round 2 - Spirit Weapon, Reliable Backup, Contacts Everywhere gifts, Armored Shell, Weapon Specialist, Otherworldly Ire, Defensive stance, Prayer Dice, Bird's-Eye View"
+        goal: "Every feature switch whose engine is live after batch A is data and its reminder is gone; the rest keep their reminder and are listed for wave 11"
+        size: M
+        depends_on: [E1.4b, E2.4, E6.4, E8.4]
+        owns:
+          - src/lib/srd/feature-effects/ancestry-core.ts
+          - src/lib/srd/feature-effects/assassin-brawler.ts
+          - src/lib/srd/feature-effects/bard-wizard.ts
+          - src/lib/srd/feature-effects/beastforms.ts
+          - src/lib/srd/feature-effects/druid-sorcerer.ts
+          - src/lib/srd/feature-effects/guardian-warrior.ts
+          - src/lib/srd/feature-effects/heritage-hf.ts
+          - src/lib/srd/feature-effects/ranger-rogue.ts
+          - src/lib/srd/feature-effects/seraph-witch.ts
+          - src/lib/srd/feature-effects/stances.ts
+          - src/lib/srd/feature-effects/transformations.ts
+          - src/lib/srd/feature-effects/warlock.ts
+          - src/lib/srd/feature-effects/classification.ts
+          - tests/unit/feature-effects/*.test.ts
+          - tests/convex/lane4-s2-*.test.ts
+          - docs/tasks/TASK-LN4-S2.md
+        reads: [docs/tasks/TASK-LN3-S2.md, docs/tasks/TASK-LN3-E1B.md, docs/tasks/TASK-LN3-E7.md, docs/tasks/TASK-LN3-E8.md, docs/tasks/TASK-LN4-E1B.md, docs/tasks/TASK-LN4-E2.md, docs/tasks/TASK-LN4-E6.md, docs/tasks/TASK-LN4-E8.md, src/lib/domain/feature-effects/types.ts, convex/lib/featureRunner.ts]
+        acceptance:
+          - "Live switches proven through the real path; dcm-xbtw data, dcm-hqk1 data, dcm-rao5 data, dcm-eut data, dcm-qxb6 data if needed done or listed"
+          - "Only src/lib/srd/feature-effects/** data and its tests change"
+          - "lint, typecheck, tests pass"
+      - id: S3.4
+        batch: B
+        label: w2-srd-data
+        title: "SRD data: tier 1-2 adversary effects round 2 + standard-attack fire keywords (every tier, adversaries.ts)"
+        goal: "Tier 1-2 adversary switches whose engine is live after batch A are data (Stone of Omens split, Drain and Multiply, Tentacle Rays, Eye of the Sage, Hive Mind, Creeping Fire), and fire standard attacks carry the fire keyword"
+        size: M
+        depends_on: [V4, E1.4b, E2.4, E7.4]
+        owns:
+          - src/lib/srd/adversary-effects/t1-core.ts
+          - src/lib/srd/adversary-effects/t1-hf.ts
+          - src/lib/srd/adversary-effects/t2-core.ts
+          - src/lib/srd/adversary-effects/t2-hf.ts
+          - src/lib/srd/adversaries.ts
+          - tests/unit/adversary-effects/t1-core.test.ts
+          - tests/unit/adversary-effects/t1-hf.test.ts
+          - tests/unit/adversary-effects/t2-core.test.ts
+          - tests/unit/adversary-effects/t2-hf.test.ts
+          - tests/unit/lane4-s3-*.test.ts
+          - tests/convex/lane4-s3-*.test.ts
+          - docs/tasks/TASK-LN4-S3.md
+        reads: [docs/tasks/TASK-LN3-S3.md, docs/tasks/TASK-LN3-E7.md, docs/tasks/TASK-LN4-V4.md, docs/tasks/TASK-LN4-E1B.md, docs/tasks/TASK-LN4-E2.md, docs/tasks/TASK-LN4-E7.md, src/lib/domain/adversary-effects/types.ts, src/lib/srd/types.ts, convex/lib/adversaryHits.ts]
+        acceptance:
+          - "dcm-dztv data (Elemental Blast, Burning Candlestick, Spirit Flame; Catrin per the user's answer), dcm-nh44 / dcm-mvgc data, Drain and Multiply (dcm-0hlq), Covered in Spiders, Eye of the Sage, Tentacle Rays, Fire Jets per-step keyword done or listed"
+          - "Only the four tier 1-2 adversary data files, adversaries.ts attack keywords and their tests change"
+          - "lint, typecheck, tests pass"
+      - id: S4.4
+        batch: B
+        label: w2-srd-data
+        title: "SRD data: tier 3-4 adversary effects round 2 - Fire Beam fire, Unstuck / Leechpoles / Ravenous reminders, Weight of Opulence, Money Talks, Ill Omen, Seven-Headed, Transform, Immovable Object"
+        goal: "Tier 3-4 adversary switches whose engine is live after batch A are data and their reminders are gone; the rest keep their reminder and are listed for wave 11"
+        size: M
+        depends_on: [V4, E1.4b, E2.4, E7.4]
+        owns:
+          - src/lib/srd/adversary-effects/t3-core.ts
+          - src/lib/srd/adversary-effects/t3-hf.ts
+          - src/lib/srd/adversary-effects/t4-core.ts
+          - src/lib/srd/adversary-effects/t4-hf.ts
+          - tests/unit/adversary-effects/t3-core.test.ts
+          - tests/unit/adversary-effects/t3-hf.test.ts
+          - tests/unit/adversary-effects/t4-core.test.ts
+          - tests/unit/adversary-effects/t4-hf.test.ts
+          - tests/convex/lane4-s4-*.test.ts
+          - docs/tasks/TASK-LN4-S4.md
+        reads: [docs/tasks/TASK-LN3-S4.md, docs/tasks/TASK-LN3-E2.md, docs/tasks/TASK-LN3-E7.md, docs/tasks/TASK-LN4-V4.md, docs/tasks/TASK-LN4-E1B.md, docs/tasks/TASK-LN4-E2.md, docs/tasks/TASK-LN4-E7.md, src/lib/domain/adversary-effects/types.ts, convex/lib/adversaryHits.ts, convex/lib/adversaryActions.ts]
+        acceptance:
+          - "dcm-n7kt data (Fire Beam fire), dcm-12kx reminder drops, dcm-trz9 data, Money Talks (dcm-5cn5 data), Ill Omen (dcm-of7v data), Seven-Headed, Forlorne Transform, Immovable Object done or listed"
+          - "Only the four tier 3-4 adversary data files and their tests change"
+          - "lint, typecheck, tests pass"
+      - id: CT2
+        batch: B
+        label: w2-campaign-time
+        title: "Campaign time follow-up: undo of End day (and a Witherwild day jump) rolls back the day and time of day (dcm-jq4b)"
+        goal: "Undoing End day or a forward day-icon jump restores the week, day, cycle and time of day in the same undo group as the uses it gave back"
+        size: S
+        depends_on: []
+        owns:
+          - convex/campaignTime.ts
+          - convex/lib/actionLog.ts
+          - convex/lib/validators/actionLog.ts
+          - src/app/(gm)/campaigns/[campaignId]/time-arc.tsx
+          - tests/convex/authz/core.entries.ts
+          - tests/convex/lane4-ct2-*.test.ts
+          - tests/unit/lane4-ct2-*.test.ts
+          - tests/e2e/lane4-end-day-undo.spec.ts
+          - docs/tasks/TASK-LN4-CT2.md
+        reads: [docs/tasks/TASK-LN3-CT.md, convex/actionLog.ts, convex/tables/actionLog.ts, convex/tables/countdowns.ts, src/lib/domain/campaign-time/index.ts]
+        acceptance:
+          - "dcm-jq4b done (actionLog widen only, undoEntry restores the time snapshot; the user's answer on undoing an older End day built)"
+          - "Witherwild cycles and the wave-9 CT tests unchanged"
+          - "lint, typecheck, tests, tests/e2e/lane4-end-day-undo.spec.ts pass"
