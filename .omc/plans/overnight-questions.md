@@ -121,3 +121,6 @@ The user went to bed and asked: take a default on every open question; ask on re
 - S4.4 Immovable Object (CB p.230): only moves caused by an attack are shortened; Hold the Line and other non-attack moves keep their full range (change -> bead).
 - S2.4 Otherworldly Ire: a sheet action right after taking damage, enemies only (kept).
 - S1.4 Eclipse stays on the square where it was cast (kept). Through Your Eyes / Sensory Projection end on another spell card only (kept).
+- S1.4 Veil of Night: placed as built, and the GM can redraw / thicken the veil by hand after it's placed (change -> bead).
+- S2.4 Bird's-Eye View: the druid picks which allies get the advantage (change -> dcm-q9wc / dcm-rao5). How long it waits was not answered: ask with the next batch.
+- S2.4 Contacts Everywhere supply item: the player names the item, it lands in inventory, the GM can edit it (change -> bead).
