@@ -105,3 +105,13 @@ The user went to bed and asked: take a default on every open question; ask on re
 - S2 Q2 Manipulate Magic reach: picked at setup, widens the attack's targets (kept, dcm-lbai).
 - AO Hand-drawn areas may be GM-owned (no PC caster): widen combatAreas.characterId to optional (change -> bead).
 - E4.3 An area never runs its steps on its owner's own token (kept).
+
+## Answers 2026-11-01 (wave 10 tracer questions)
+- E6.4 Two assassins on one adversary: a GM Fear spend clears only the mark paid for; the tag stays while another mark names the instance (kept).
+- E4.4 Circle of Power ends when the witch is outside by any means (forced move, GM removal); undo of the last token's spend restores it (kept).
+- E7.4 Bramble escape: the PLAYER rolls Encumber's Finesse Roll in the app; success removes the tokens and fires Drain and Multiply (change -> dcm-d3nj).
+- E7.4 Severity of HP marked on an adversary instance follows HP marked (1 Minor, 2 Major, 3+ Severe), as for PCs (kept).
+- E1.4a The GM Cloaked prompt is labelled with the card / feature name (kept).
+- E2.4 Fireproof GM ask only when the data can't settle the keyword (kept). Fireproof blocks damage only; riders still land; redirected hit asks on the first target (kept).
+- E1.4b Forced attack's GM-chosen target skips the range sanction; an attack without a Lead by Example pick uses it up, first option preselected (kept).
+- E1.4b Bearer riders follow each condition's wording (before / after the roll), not all before (change -> bead).
