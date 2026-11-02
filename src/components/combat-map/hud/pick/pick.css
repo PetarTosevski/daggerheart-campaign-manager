@@ -399,33 +399,115 @@
   gap: 6px;
   color: var(--hud-fear-text);
 }
+/*
+ * Phone (plan combat-hud H7.3; PlayerPhone 'Picking a target', HANDOFF "Phone"): every picker (a card, an attack, a
+ * feature, the GM's purple one) is a bottom sheet: full width on the bottom edge, a handle, 44 px rows, and a footer of
+ * Cancel + the primary at 48 px (the board's `.bs` / `.bs-f`). Fixed to the viewport, so a collapsed pop region (an
+ * open side panel takes the phone's whole width) cannot squeeze it. Stacking at 760 px and below (in `.hud-over`):
+ * result 91 < picker 92 < hit window 93, all over the side panel (90) and the phone shell's tab sheet (below 90), under
+ * the tools drawer (95): a picker opened from the full-screen sheet stays usable.
+ */
+.hud-pk .hud-pk-cancel {
+  display: none;
+}
 @media (max-width: 760px) {
   .hud-pk {
+    position: fixed;
     top: auto;
     right: 0;
     bottom: 0;
     left: 0;
+    z-index: 92;
     width: auto;
-    max-height: 70%;
-    border-radius: 16px 16px 0 0;
+    max-height: min(70dvh, calc(100dvh - 112px));
+    display: flex;
+    flex-direction: column;
+    padding-top: 18px;
+    border-width: 0;
+    border-radius: 22px 22px 0 0;
+    box-shadow:
+      0 -1px 0 #3a4d54,
+      0 -16px 40px rgba(0, 0, 0, 0.5);
+  }
+  .hud-pk.hud-pk-gm {
+    box-shadow:
+      0 -1px 0 #5b4a8f,
+      0 -16px 40px rgba(0, 0, 0, 0.5);
+  }
+  /* The handle (`.bs-handle`). */
+  .hud-pk::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: calc(50% - 20px);
+    width: 40px;
+    height: 4px;
+    border-radius: 2px;
+    background: #3a4d54;
+  }
+  .hud-pk > * {
+    flex: none;
   }
   .hud-pk:not(.hud-pk-placed) {
     visibility: visible;
   }
-  .hud-pk-r,
-  .hud-pk .hud-pk-go {
+  /* The header's ✕ gives way to the footer's Cancel (the board's phone sheet has none). */
+  .hud-pk-x {
+    display: none;
+  }
+  .hud-pk-r {
     min-height: 44px;
   }
-  /* Keeps the primary clear of the app's floating "Ask the Lorekeeper" button (H7.x owns the phone layout). */
-  .hud-pk-f {
-    padding-bottom: 76px;
+  /* Picker rows inside the sheet (weapon tiles, roll chips, spell / feature chips, steppers, number fields). */
+  .hud-pk-extra button,
+  .hud-pk-extra input,
+  .hud-pk-extra select {
+    min-height: 44px;
   }
-  .hud-pk-x {
-    width: 44px;
-    height: 44px;
+  .hud-pk-extra .hud-step button {
+    min-width: 44px;
+  }
+  /* The footer (`.bs-f`): the cost line over Cancel + the primary, each half the width, 48 px. */
+  /*
+   * The footer stays on the sheet's bottom edge while a long picker scrolls (sticky, last in flex order, so the
+   * reason and refusal lines read above it).
+   */
+  .hud-pk-f {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    order: 1;
+    margin-top: auto;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 8px;
+    /* Clear of the app's floating "Ask the Lorekeeper" pill (bottom right, about 64 px high with its margin). */
+    padding: 10px 14px 76px;
+  }
+  .hud-pk-pay {
+    flex: 1 1 100%;
+  }
+  .hud-pk .hud-pk-cancel,
+  .hud-pk .hud-pk-go {
+    display: inline-flex;
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 48px;
+    font-size: 14px;
+  }
+  /*
+   * The map's own layers stack over the HUD overlay (`.hud-over`, z 30): on a phone the target rings and the action
+   * ring would draw on top of the sheet. The rings drop under the overlay (still over the tokens) and the action ring
+   * hides while the sheet is up (the board's phone frame shows neither over the sheet).
+   */
+  .hud-tg-layer {
+    z-index: 29;
+  }
+  .hud-root:has(.hud-pk) .hud-ar {
+    visibility: hidden;
   }
   .hud-pk-wait {
-    top: 80px;
+    top: 112px;
     right: 8px;
     left: 8px;
     width: auto;

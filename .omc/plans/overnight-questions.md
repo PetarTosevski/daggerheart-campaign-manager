@@ -233,3 +233,6 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - H7.1 The GM's Resolutions (with Undo) are hidden at tablet width, as GMTablet draws it.
 - H7.1 The map's zoom toolbar (not on the boards) moves out of mid-map at tablet: a column bottom-left for players, a row beside the queue for the GM. Alternative: put zoom in the HUD toolbar.
 - H7.1 The tablet Areas panel hangs under the Fear banner, 360 px wide (board 320 overflows).
+- H7.3 On a phone the picker / result / hit sheets stand over the full-screen sheet and the GM's stat block (pickers open from them), rather than closing the side panel.
+- H7.3 The hit window's footer shows Mark Armor above Take n HP (CSS order; keyboard order still reaches Take n HP first).
+- H7.3 The "Ask the Lorekeeper" pill covers the bottom 68 px on a phone; the sheets keep 76 px of room. Hide the pill on the combat page at phone width?

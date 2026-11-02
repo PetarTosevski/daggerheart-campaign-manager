@@ -222,7 +222,12 @@
   color: #ffb4a8;
 }
 
-/* Phone: a bottom sheet over the hand (HANDOFF "Phone": pickers and the hit window are bottom sheets). */
+/*
+ * Phone (plan combat-hud H7.3; PlayerPhone "You're hit", `.bs.bs-hit`): a bottom sheet over the hand, full width with
+ * a handle, its footer stacked (`.bs-f.col`: the primary, Mark Armor, on top; Take n HP / Pass under it) at 48 px.
+ * z-index 93: over the picker (92), the result (91), the side panel (90) and the phone shell's tab sheet; under the
+ * tools drawer (95).
+ */
 @media (max-width: 760px) {
   .hud-hit-spot {
     position: fixed;
@@ -230,18 +235,62 @@
     right: 0;
     top: auto;
     bottom: 0;
+    z-index: 93;
     width: auto;
   }
-  .hud-hit.hud-pc {
+  .hud-hit.hud-pc,
+  .hud-hit-spot > .hud-pc {
+    position: relative;
     width: 100%;
-    max-height: 70vh;
-    border-radius: var(--hud-r-panel) var(--hud-r-panel) 0 0;
+    max-height: min(70dvh, calc(100dvh - 112px));
+    padding-top: 18px;
+    /* Clear of the app's floating "Ask the Lorekeeper" pill (bottom right). */
+    padding-bottom: 76px;
+    border-radius: 22px 22px 0 0;
+    box-shadow:
+      0 -1px 0 #6b2a22,
+      0 -16px 40px rgba(0, 0, 0, 0.5);
   }
+  .hud-hit-spot > .hud-pc-wait {
+    box-shadow:
+      0 -1px 0 #3a4d54,
+      0 -16px 40px rgba(0, 0, 0, 0.5);
+  }
+  /* The handle (`.bs-handle`). */
+  .hud-hit-spot > .hud-pc::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: calc(50% - 20px);
+    width: 40px;
+    height: 4px;
+    border-radius: 2px;
+    background: #3a4d54;
+  }
+  /* The footer sticks to the sheet's bottom edge, clear of the Lorekeeper pill, while a long window scrolls. */
+  .hud-hit.hud-pc:has(> .hud-pc-f) {
+    padding-bottom: 0;
+  }
+  .hud-hit .hud-pc-f {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    flex-direction: column-reverse;
+    align-items: stretch;
+    padding: 10px 14px 76px;
+    background: var(--hud-card);
+  }
+  .hud-hit .hud-pc-f > .hud-btn {
+    min-height: 48px;
+    font-size: 14px;
+    white-space: normal;
+  }
+  /* The action ring is a map layer over the HUD overlay: it hides while the sheet is up (pick.css). */
+  .hud-root:has(.hud-hit-spot) .hud-ar {
+    visibility: hidden;
+  }
+  .hud-hit .hud-btn,
   .hud-hit-else-t {
     min-height: 44px;
-  }
-  /* Keeps the footer clear of the app's floating "Ask the Lorekeeper" button (as pick.css; H7.x owns the phone layout). */
-  .hud-hit .hud-pc-f {
-    padding-bottom: 76px;
   }
 }

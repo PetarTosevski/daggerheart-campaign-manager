@@ -367,27 +367,79 @@
   }
 }
 
-/* Phone: a bottom sheet (HANDOFF "Phone": prompts are bottom sheets with 44–48 px buttons). */
+/*
+ * Phone (plan combat-hud H7.3; HANDOFF "Phone": prompts are bottom sheets with 44–48 px buttons; the board's `.bs`):
+ * full width on the bottom edge with a handle, fixed to the viewport (an open side panel can collapse the pop region),
+ * 44 px controls, and a footer (Pass / Use, Cancel / Confirm) of half-width 48 px buttons. z-index 91: under the
+ * picker (92, pick.css) and the hit window (93, hit.css), over the side panel (90) and the phone shell's tab sheet.
+ */
 @media (max-width: 760px) {
   .hud-res-spot {
+    position: fixed;
     left: 0;
     right: 0;
     bottom: 0;
+    z-index: 91;
     width: auto;
     max-width: none;
-    max-height: 70%;
-    border-radius: 16px 16px 0 0;
+    max-height: min(70dvh, calc(100dvh - 112px));
+    border-radius: 22px 22px 0 0;
+    box-shadow:
+      0 -1px 0 #3a4d54,
+      0 -16px 40px rgba(0, 0, 0, 0.5);
   }
-  .hud-res,
+  .hud-res-spot > .hud-res,
   .hud-res-spot .hud-pc {
-    border-radius: 16px 16px 0 0;
-  }
-  /* Keeps the last row and the buttons clear of the app's floating "Ask the Lorekeeper" button (as pick.css). */
-  .hud-res {
+    position: relative;
+    width: 100%;
+    padding-top: 18px;
+    /* Clear of the app's floating "Ask the Lorekeeper" pill (bottom right). */
     padding-bottom: 76px;
+    border-radius: 22px 22px 0 0;
+    background: var(--hud-card);
+    box-shadow: none;
+  }
+  /* The action ring is a map layer over the HUD overlay: it hides while the sheet is up (pick.css). */
+  .hud-root:has(.hud-res-spot) .hud-ar {
+    visibility: hidden;
+  }
+  /* The handle (`.bs-handle`). */
+  .hud-res-spot > .hud-res::before,
+  .hud-res-spot .hud-pc::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: calc(50% - 20px);
+    width: 40px;
+    height: 4px;
+    border-radius: 2px;
+    background: #3a4d54;
+  }
+  /*
+   * A popup with a footer (Your roll waits, the follow-up asks): the footer sticks to the sheet's bottom edge, clear of
+   * the Lorekeeper pill, while the body scrolls; the card itself must not clip (overflow would stop the sticking).
+   */
+  .hud-res-spot .hud-pc:has(> .hud-pc-f) {
+    overflow: visible;
+    padding-bottom: 0;
   }
   .hud-res-spot .hud-pc-f {
-    padding-bottom: 76px;
+    position: sticky;
+    bottom: 0;
+    padding: 10px 14px 76px;
+    background: var(--hud-card);
+  }
+  .hud-res-spot .hud-pc-f > .hud-btn,
+  .hud-res-ask-f > .hud-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 48px;
+    font-size: 14px;
+    white-space: normal;
+  }
+  .hud-res-ask-f {
+    width: 100%;
+    margin-left: 0;
   }
   .hud-res-x,
   .hud-res-chip,
