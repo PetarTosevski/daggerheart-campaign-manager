@@ -9,9 +9,16 @@ import { SessionBlock } from "./header";
 import { PartyBlock } from "./party";
 import { RollFeed } from "./roll-feed";
 import { TomeAndFigures } from "./tome";
+import { CampaignFramePanels } from "../trackers";
 
 export function LiveDashboard({ campaign }: { campaign: LoadedCampaign }) {
   const isGm = campaign.role === "gm";
+  const trackerCampaign = {
+    _id: campaign._id,
+    frameId: campaign.frameId,
+    role: campaign.role,
+    options: campaign.options,
+  };
   return (
     <ScrollView contentContainerStyle={styles.content}>
       <SessionBlock campaign={campaign} />
@@ -19,6 +26,7 @@ export function LiveDashboard({ campaign }: { campaign: LoadedCampaign }) {
       <PartyBlock campaignId={campaign._id} isGm={isGm} />
       <RollFeed campaignId={campaign._id} isGm={isGm} />
       <Countdowns campaignId={campaign._id} isGm={isGm} />
+      <CampaignFramePanels campaign={trackerCampaign} />
       <EndScene campaignId={campaign._id} isGm={isGm} />
       <TomeAndFigures campaign={campaign} />
       <FrameRules campaign={campaign} />
