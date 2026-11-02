@@ -29,7 +29,14 @@ test("HUD-H3.0 the picking panel, target rings and Waiting for the GM", { tag: "
       await player.setViewportSize({ width: w, height: h });
       await player.goto(s.url);
       await expect(player.getByTestId("combat-hud")).toBeVisible();
-      await player.getByTestId("hud-pick-attack").click();
+      // The action ring's Attack (H3.4): a click on Moss opens the ring.
+      await player
+        .getByRole("region", { name: "Battle map" })
+        .getByRole("button", { name: /^Open Moss’s sheet \(your character\)/ })
+        .click();
+      const attack = player.getByRole("toolbar", { name: "Your actions (Moss)" }).getByRole("button", { name: "Attack" });
+      await expect(attack).toBeEnabled({ timeout: 30_000 });
+      await attack.click();
       const panel = player.getByTestId("hud-pick");
       await expect(panel).toBeVisible();
       await panel.locator(`[data-testid="hud-pick-row"][data-token="${enemies.lieutenant.tokenId}"]`).click();

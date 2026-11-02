@@ -24,6 +24,7 @@ import {
   mostTargets,
   payLine,
   reportOf,
+  useAttackPicker,
   type AttackData,
   type AttackInput,
 } from "@/components/combat-map/hud/pick-attack";
@@ -144,10 +145,22 @@ function seed() {
   queries["combatRequests:mine"] = [];
 }
 
+/** Opens the picker the way the action ring's Attack does (H3.4): `useAttackPicker(state).open()`. */
+function Opener() {
+  const picker = useAttackPicker(state);
+  return (
+    <button type="button" disabled={!picker.ready} onClick={() => picker.open()}>
+      Open the attack picker
+    </button>
+  );
+}
+const openPicker = () => fireEvent.click(screen.getByRole("button", { name: "Open the attack picker" }));
+
 function renderHud() {
   return render(
     <HudProvider>
       <PickProvider>
+        <Opener />
         <div className="hud-map">
           <HudPickLayer {...layer} />
         </div>
@@ -260,7 +273,7 @@ describe("the attack picker in the HUD", () => {
     seed();
     results["combatActions:attack"] = { status: "resolved", damage: { total: 9 }, targets: [{ tokenId: BANDIT, hit: true, defeated: false }] };
     renderHud();
-    fireEvent.click(screen.getByTestId("hud-attack-open"));
+    openPicker();
     const panel = screen.getByRole("dialog", { name: "Shortstaff" });
     const tiles = within(panel).getAllByTestId("hud-attack-weapon");
     expect(tiles.map((t) => t.textContent)).toEqual(["ShortstaffInstinct · Close · 1d8+1 mag", "Round ShieldStrength · Melee · 1d4 phy"]);
@@ -287,7 +300,7 @@ describe("the attack picker in the HUD", () => {
   it("switching to the off-hand weapon changes the header, the rule's slot and the riders", () => {
     seed();
     renderHud();
-    fireEvent.click(screen.getByTestId("hud-attack-open"));
+    openPicker();
     fireEvent.click(screen.getAllByTestId("hud-attack-weapon")[1]!);
     const panel = screen.getByRole("dialog", { name: "Round Shield" });
     expect(within(panel).getAllByTestId("hud-attack-weapon")[1]).toHaveAttribute("aria-pressed", "true");
@@ -299,7 +312,7 @@ describe("the attack picker in the HUD", () => {
     seed();
     results["combatActions:attack"] = { status: "pending", requestId: "req1", outOfRange: [{ tokenId: SNIPER, band: "veryFar" }] };
     renderHud();
-    fireEvent.click(screen.getByTestId("hud-attack-open"));
+    openPicker();
     const panel = screen.getByRole("dialog", { name: "Shortstaff" });
     fireEvent.click(within(panel).getAllByTestId("hud-pick-row").find((r) => r.dataset.token === SNIPER)!);
     expect(within(panel).getByTestId("hud-pick-pay")).toHaveTextContent("the GM approves first");
@@ -338,7 +351,7 @@ describe("the attack picker in the HUD", () => {
     ];
     results["combatActions:attack"] = { status: "awaiting" };
     renderHud();
-    fireEvent.click(screen.getByTestId("hud-attack-open"));
+    openPicker();
     const panel = screen.getByRole("dialog", { name: "Shortstaff" });
     expect(within(panel).queryByTestId("hud-attack-benefit")).toBeNull();
     fireEvent.click(within(panel).getAllByTestId("hud-pick-row").find((r) => r.dataset.token === BANDIT)!);
@@ -382,15 +395,17 @@ describe("the attack picker in the HUD", () => {
     expect(calls.find((c) => c.name === "combatActions:pickMinions")!.args).toMatchObject({ instanceIds: [] });
   });
 
-  it("the GM gets no attack button or prompts", () => {
+  it("the GM gets no attack prompts", () => {
     seed();
-    render(
+    queries["combatRequests:forcedAttacks"] = [{ requestId: "f1", characterId: CHARACTER, characterName: "Moss", createdAt: 1, instanceLabel: "Gobstalker", feature: "Beguile", targets: [{ tokenId: ORIEL, name: "Oriel" }] }];
+    const { container } = render(
       <HudProvider>
         <PickProvider>
           <HudAttack state={{ ...state, role: "gm" } as CombatPageState} />
         </PickProvider>
       </HudProvider>,
     );
-    expect(screen.queryByTestId("hud-attack-open")).toBeNull();
+    expect(screen.queryByTestId("hud-attack-forced")).toBeNull();
+    expect(container).toBeEmptyDOMElement();
   });
 });

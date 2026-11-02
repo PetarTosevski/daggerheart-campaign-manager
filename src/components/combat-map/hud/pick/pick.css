@@ -1,6 +1,6 @@
 /*
  * The picking core (plan combat-hud H3.0): the picking panel (CmpPicking `.pk`), the target rings (CmpTokens `.tg-*`),
- * "Waiting for the GM" (CmpPromptsPlayer `.pc.wait`) and the interim Attack button. Board values, colours from the
+ * and "Waiting for the GM" (CmpPromptsPlayer `.pc.wait`). Board values, colours from the
  * --hud-* tokens (hud.css). The panel stands in the pop region at the spot panel.tsx measures (--pk-x / --pk-y);
  * at 760 px and below it is a bottom sheet (HANDOFF "Phone": pickers are bottom sheets with 44–48 px buttons).
  */
@@ -380,7 +380,7 @@
   display: none;
 }
 
-/* ---------------------------------------------------------------- Waiting for the GM; the interim Attack button */
+/* ---------------------------------------------------------------- Waiting for the GM */
 .hud-pk-wait {
   position: absolute;
   top: 330px;
@@ -399,26 +399,6 @@
   gap: 6px;
   color: var(--hud-fear-text);
 }
-.hud-pk-launch {
-  position: absolute;
-  right: var(--hud-edge);
-  bottom: 96px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.hud-pk-launch .hud-btn:not(.hud-btn-primary) {
-  background: var(--hud-glass);
-}
-.hud-pk-launch-res {
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: var(--hud-glass);
-  box-shadow: 0 0 0 1px var(--hud-line);
-  color: var(--hud-gold-text);
-  font-size: 12px;
-}
-
 @media (max-width: 760px) {
   .hud-pk {
     top: auto;
@@ -449,10 +429,6 @@
     right: 8px;
     left: 8px;
     width: auto;
-  }
-  .hud-pk-launch {
-    right: 8px;
-    bottom: 200px;
   }
 }
 

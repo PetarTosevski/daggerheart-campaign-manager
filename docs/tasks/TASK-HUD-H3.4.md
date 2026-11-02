@@ -137,6 +137,11 @@ Delete the two interim attack buttons now that the ring's Attack opens H3.2's pi
    press Attack as above; `tests/unit/hud/attack-pick.test.tsx` lines 263, 290, 302, 341 (`fireEvent.click(
    getByTestId("hud-attack-open"))`) → render a small test button calling `useAttackPicker(state).open()` (or
    `HudActionRing` with `openActionRing(MOSS)`), and line 394's "GM gets nothing" keeps checking the absence.
+- **Done (hud-clean-w4, 2026-11-02):** items 1 and 2 above; the tests now open the picker through the ring's Attack
+  (e2e) or `useAttackPicker(state).open()` / `plainAttackSession` (unit). Nothing lost: `.hud-atk-res` shows Hit /
+  Miss / Defeated (by name, with damage) and the held-roll note the interim line showed. H3.2's taller panel beside
+  the Lieutenant partly covers the map toolbar's Zoom out (axe target-size): `hud-pick.spec.ts` excludes that button
+  with a reason until dcm-bxp.99.32.22 fixes it.
 - Accept the `tokens-layer.tsx` edit above. No Convex, schema, authz or codegen change.
 - Close dcm-bxp.99.32.18 once item 1 is done.
 

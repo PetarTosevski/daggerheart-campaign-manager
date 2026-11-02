@@ -3,7 +3,6 @@
 import "./pick.css";
 
 import type { HudLayerProps, HudPartProps } from "../state";
-import { PickLauncher } from "./attack";
 import { PickRings } from "./layer";
 import { PickPanel } from "./panel";
 import { PickWaiting } from "./waiting";
@@ -20,13 +19,12 @@ import { PickWaiting } from "./waiting";
  * See types.ts for every field and docs/tasks/TASK-HUD-H3.0.md for a worked example.
  */
 
-/** The picking panel beside the primary target, "Waiting for the GM" with Withdraw, and the interim Attack button. */
+/** The picking panel beside the primary target, and "Waiting for the GM" with Withdraw. */
 export function HudPick({ state }: HudPartProps) {
   return (
     <>
       <PickPanel state={state} />
       <PickWaiting state={state} />
-      <PickLauncher state={state} />
     </>
   );
 }

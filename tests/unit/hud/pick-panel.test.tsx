@@ -10,7 +10,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { ConvexError } from "convex/values";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { dropWithdrawn, HudPick, HudPickLayer, PickProvider, usePick, type PickSessionSpec } from "@/components/combat-map/hud/pick";
+import { dropWithdrawn, HudPick, HudPickLayer, PickProvider, plainAttackSession, usePick, type PickSessionSpec } from "@/components/combat-map/hud/pick";
 import { HudProvider, useHud } from "@/components/combat-map/hud/state";
 import type { CombatPageState, MapLayerProps } from "@/components/combat-map/slots";
 import { errorMessage } from "@/lib/convex-errors";
@@ -340,17 +340,29 @@ describe("Waiting for the GM", () => {
       </HudProvider>,
     );
     expect(screen.queryByTestId("hud-pick-wait")).toBeNull();
-    expect(screen.queryByTestId("hud-pick-attack")).toBeNull();
   });
 });
 
-describe("the interim Attack button", () => {
-  it("opens the plain attack session on the weapon's range; out of range sends and ends in pending", async () => {
+describe("the plain attack session", () => {
+  it("picks on the weapon's range; out of range sends and ends in pending", async () => {
     seed();
-    queries["characters:get"] = { sheet: { primaryWeaponId: "shortstaff", secondaryWeaponId: null } };
-    mutationResult = async () => ({ status: "pending", requestId: "r9", outOfRange: [{ tokenId: LT, band: "far" }] });
-    renderHud();
-    fireEvent.click(screen.getByTestId("hud-pick-attack"));
+    const sent: unknown[] = [];
+    renderHud(
+      plainAttackSession({
+        campaignId: CAMPAIGN,
+        mapId: MAP,
+        characterId: CHARACTER,
+        slot: "primary",
+        weaponName: "Shortstaff",
+        picked: [],
+        attack: async (args) => {
+          sent.push(args);
+          return { status: "pending", requestId: "r9" as Id<"combatRequests"> };
+        },
+        onResult: () => {},
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
     const p = screen.getByTestId("hud-pick");
     expect(within(p).getByTestId("hud-pick-rule")).toHaveTextContent("Pick 1 target in your weapon’s range");
     const lt = within(p).getAllByTestId("hud-pick-row").find((r) => r.dataset.token === "lt")!;
@@ -358,7 +370,7 @@ describe("the interim Attack button", () => {
     fireEvent.click(lt);
     expect(within(p).getByTestId("hud-pick-go")).toHaveTextContent("Attack Lieutenant");
     await act(async () => fireEvent.click(within(p).getByTestId("hud-pick-go")));
-    expect(calls.at(-1)).toMatchObject({ name: "combatActions:attack", args: { characterId: CHARACTER, mapId: MAP, targetTokenIds: ["lt"], slot: "primary" } });
+    expect(sent).toEqual([{ targetTokenIds: ["lt"], slot: "primary" }]);
     expect(screen.queryByTestId("hud-pick")).toBeNull();
   });
 });

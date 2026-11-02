@@ -62,7 +62,12 @@ test("a weapon attack through the panel: tiles, chips, one primary; a Minion hit
     await player.goto(s.url);
     await expect(player.getByTestId("combat-hud")).toBeVisible();
 
-    const open = player.getByTestId("hud-attack-open");
+    // The action ring's Attack (H3.4): a click on Moss opens the ring.
+    await player
+      .getByRole("region", { name: "Battle map" })
+      .getByRole("button", { name: /^Open Moss’s sheet \(your character\)/ })
+      .click();
+    const open = player.getByRole("toolbar", { name: "Your actions (Moss)" }).getByRole("button", { name: "Attack" });
     await expect(open).toBeEnabled({ timeout: 30_000 });
     await open.click();
     const panel = panelOf(player);

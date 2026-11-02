@@ -22,8 +22,7 @@ import { useAttackPicker } from "./use-attack";
  * - 'Your hit can defeat 2 more Minions' (CB p.201): "Pick Minions" opens the panel with the candidates as rows (and
  *   rings), "Skip" defeats none;
  * - the last attack's line (Hit / Miss / Defeated, the player's own damage total; HANDOFF hard rule 2) until H4.1's
- *   result panel;
- * - the interim "Weapon attack" button until H3.4's action ring calls `useAttackPicker().open()`.
+ *   result panel (the action ring's Attack opens the picker through `useAttackPicker().open()`).
  * Players only; the forced attacks and Minion offers come from the server's open requests, so a reload keeps them.
  */
 
@@ -78,17 +77,6 @@ function PlayerAttack({ state }: { state: CombatPageState }) {
               [report.verdicts.map((v) => `${v.name}: ${v.verdict}`).join(" · "), report.damage !== null ? `your damage ${report.damage}` : null].filter(Boolean).join(" · ")}
           </span>
         ) : null}
-        <button
-          type="button"
-          className={hudButtonClass(picker.isOpen ? "primary" : "secondary")}
-          aria-pressed={picker.isOpen}
-          disabled={!picker.ready}
-          title={picker.reason ?? undefined}
-          data-testid="hud-attack-open"
-          onClick={() => picker.open()}
-        >
-          Weapon attack
-        </button>
       </div>
     </>
   );
