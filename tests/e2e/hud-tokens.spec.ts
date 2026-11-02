@@ -89,7 +89,7 @@ test("the GM: PC and adversary tokens with arcs, Hope chips, badges and side col
     await expect(board.locator(`[data-tone="enemy"] .tk-cd-restrained`)).toHaveCount(1);
 
     await lt.click();
-    await expect(hud).toHaveClass(new RegExp(`sh-open sh-${s.enemies.lieutenant.tokenId}`));
+    await expect(hud).toHaveClass(new RegExp(`hud-sh-open hud-sh-${s.enemies.lieutenant.tokenId}`));
     await expect(lt).toHaveAttribute("aria-pressed", "true");
     await lt.click();
     await expect(hud).not.toHaveClass(/sh-open/);

@@ -1,7 +1,7 @@
 /*
  * Combat HUD shell (plan combat-hud H0; HANDOFF "Layout"): a full-bleed map, the HUD regions over it, and the left
- * tools drawer. Region positions are the desktop board's (1440 × 900); H2.2 adds the make-room transform under
- * .sh-open, H7.x the tablet and phone layouts. The overlay never takes pointer events itself, only its parts do, so
+ * tools drawer. Region positions are the desktop board's (1440 × 900); the make-room rules (H2.2) are at the end,
+ * H7.x adds the tablet and phone layouts. The overlay never takes pointer events itself, only its parts do, so
  * the map under the empty parts of a region stays usable.
  */
 .hud-root {
@@ -136,5 +136,116 @@
   .hud-r-left {
     width: auto;
     right: 16px;
+  }
+}
+
+/* ---------------------------------------------------------------- make room (plan combat-hud H2.2)
+ *
+ * While a sheet is open (.hud-sh-open on the root, hud/state.tsx) the right sheet panel (--hud-sheet-w) covers the
+ * map's right edge, so the HUD makes room as the boards do (Main / GMDesktop `.sh-open` rules; HANDOFF "Layout";
+ * CmpTokensDesign "Motion"):
+ *   - the map's viewport transitions translateX(-125px) scale(.94) from its top-left corner over 350 ms (tablet:
+ *     -60px, .92; the --hud-map-* tokens in hud.css). Pointer maths stays exact: map-board.tsx `toSquares` and the
+ *     token drag divide by the measured on-screen scale, so a click or a drag lands on the square under the pointer;
+ *   - the Fear banner (with its rod) moves left by the panel's width to right 424 (tablet 356) and the day / time disc
+ *     hides;
+ *   - the hand's region starts at left 330 (tablet 150) and ends left of the panel;
+ *   - pop-ups shift left: the pop region ends at the panel, and the anchored ones read the --hud-pop-* lefts below;
+ *   - the GM's title and tools hide (GMDesktop `.gtitle` / `.gtools`); on a tablet the whole title row hides.
+ * Every move is a transition on the --hud-t-* tokens, which hud.css zeroes under prefers-reduced-motion.
+ *
+ * The boards' class is `sh-open`; the app's is `hud-sh-open` because the party sheet's sheet-ui.css styles a global
+ * `.sh-open` (dcm-bxp.99.32.11). These rules take over the make-room parts H1.1 / H1.2 / H1.S keyed on `.sh-open`.
+ */
+.hud-root {
+  /* Lefts of the anchored pop-ups (Main `.res`, `.blk`, `.gmh`): the result, the blocked card, the reactions note. */
+  --hud-pop-res-left: 820px;
+  --hud-pop-blk-left: 880px;
+  --hud-pop-note-left: 820px;
+}
+.hud-root.hud-sh-open {
+  --hud-pop-res-left: 592px;
+  --hud-pop-blk-left: 690px;
+  --hud-pop-note-left: 560px;
+}
+
+.hud-map .cm-vp {
+  transform-origin: 0 0;
+  transition: transform var(--hud-t-map) var(--hud-ease-out);
+}
+.hud-sh-open .hud-map .cm-vp {
+  transform: translateX(var(--hud-map-shift)) scale(var(--hud-map-scale));
+}
+.hud-sh-open .hud-map .cm-toolbar {
+  max-width: calc(100% - 690px - var(--hud-sheet-w) - var(--hud-edge));
+}
+
+.hud-r-hand,
+.hud-r-pop {
+  transition:
+    left var(--hud-t-map) var(--hud-ease-out),
+    right var(--hud-t-map) var(--hud-ease-out);
+}
+.hud-sh-open .hud-r-hand {
+  left: 330px;
+  right: calc(var(--hud-sheet-w) + var(--hud-edge));
+}
+.hud-sh-open .hud-r-pop {
+  right: var(--hud-sheet-w);
+}
+
+/* The Fear banner and the disc (fear/fear.css: .hud-fear already transitions its transform on --hud-t-map). */
+.hud-root.hud-sh-open .hud-fear {
+  transform: translateX(calc(-1 * var(--hud-sheet-w)));
+}
+.hud-root.hud-sh-open .hud-sun {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* The spotlight's reactions note above the hand (spotlight/spotlight.css; Main `.gmh` left 820 → 560). */
+.hud-root .hud-spot-note {
+  left: var(--hud-pop-note-left);
+  transition: left var(--hud-t-map) var(--hud-ease-out);
+}
+/* The players' "The GM has the spotlight" card stays at 690 but narrows to 330 (Main `.gms`). */
+.hud-root.hud-sh-open .hud-spot-card {
+  max-width: 330px;
+}
+
+/* GMDesktop: the title and the GM tools hide (hidden, not only transparent, so the keyboard cannot reach them). */
+.hud-root.hud-sh-open .hud-scene-gm .hud-title,
+.hud-root.hud-sh-open .hud-scene-gm .hud-tr {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+/* The parts that hide fade out first and only then turn hidden; they turn visible at once and fade in. */
+.hud-root .hud-sun,
+.hud-root .hud-scene-gm .hud-title,
+.hud-root .hud-scene-gm .hud-tr {
+  transition:
+    opacity var(--hud-t-fast),
+    visibility 0s linear 0s;
+}
+.hud-root.hud-sh-open .hud-sun,
+.hud-root.hud-sh-open .hud-scene-gm .hud-title,
+.hud-root.hud-sh-open .hud-scene-gm .hud-tr {
+  transition:
+    opacity var(--hud-t-fast),
+    visibility 0s linear var(--hud-t-fast);
+}
+
+@media (max-width: 1180px) {
+  .hud-sh-open .hud-r-hand {
+    left: 150px;
+  }
+  /* Tablet: the title and the toolbar hide for players too (Main `.tab.sh-open .title, .tr`). */
+  .hud-root.hud-sh-open .hud-scene,
+  .hud-root.hud-sh-open .hud-scene > * {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
   }
 }

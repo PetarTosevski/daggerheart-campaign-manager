@@ -47,6 +47,18 @@ function useLoadedImage(url: string | null): HTMLImageElement | null {
   return loaded !== null && loaded.url === url ? loaded.img : null;
 }
 
+/**
+ * The stage position (in squares, fog padding taken off) under a client point. Client pixels per square are `step`
+ * times any CSS scale on an ancestor of the stage (the Combat HUD's make-room transform, plan combat-hud H2.2), which
+ * is measured as the stage's on-screen width over its layout width, so a click lands on the square under the pointer
+ * while the map is shifted and scaled.
+ */
+export function stageToSquares(stage: HTMLElement, step: number, pad: number, clientX: number, clientY: number) {
+  const r = stage.getBoundingClientRect();
+  const px = stage.offsetWidth > 0 && r.width > 0 ? (step * r.width) / stage.offsetWidth : step;
+  return { x: (clientX - r.left) / px - pad, y: (clientY - r.top) / px - pad };
+}
+
 /** Main area (slot `MapBoard`): toolbar, the pan/zoom viewport with the map and the layers, or the empty states. */
 export function MapBoard(props: MapBoardProps) {
   const { role, map, campaignId } = props;
@@ -144,9 +156,7 @@ function LoadedBoard(props: MapBoardProps & { map: CombatMapSummary; layout: Com
 
   const step = MAP_CELL * zoom;
   function toSquares(clientX: number, clientY: number) {
-    const r = stage?.getBoundingClientRect();
-    if (!r) return { x: -1, y: -1 };
-    return { x: (clientX - r.left) / step - pad, y: (clientY - r.top) / step - pad };
+    return stage ? stageToSquares(stage, step, pad, clientX, clientY) : { x: -1, y: -1 };
   }
   const viewport: CombatMapViewport = { cell: MAP_CELL, zoom, w, h, pad, toSquares, showNames };
 

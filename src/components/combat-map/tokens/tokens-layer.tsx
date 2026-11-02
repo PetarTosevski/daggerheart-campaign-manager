@@ -47,8 +47,19 @@ const SIDE_BACKGROUND: Record<TokenView["side"], string> = {
 const NOTICE_MS = 4000;
 
 type Drag =
-  | { kind: "move"; id: TokenView["_id"]; pointerId: number; sx: number; sy: number; moved: boolean; canMove: boolean }
+  | { kind: "move"; id: TokenView["_id"]; pointerId: number; sx: number; sy: number; moved: boolean; canMove: boolean; scale: number }
   | { kind: "turn"; id: TokenView["_id"]; pointerId: number; cx: number; cy: number };
+
+/**
+ * Client pixels per stage pixel under `el`'s tokens layer: the layer's `scale(zoom)` times any CSS scale on an ancestor
+ * (the HUD's make-room transform, plan combat-hud H2.2), measured as its on-screen width over its layout width; `zoom`
+ * when it cannot be measured.
+ */
+export function screenScale(el: Element, zoom: number): number {
+  const layer = el.closest<HTMLElement>("[data-testid='combat-tokens']");
+  const width = layer?.getBoundingClientRect().width ?? 0;
+  return layer && layer.offsetWidth > 0 && width > 0 ? width / layer.offsetWidth : zoom;
+}
 
 /** The token's portrait as a CSS background (uploaded image or design art), or the side's gradient. */
 function background(token: TokenView): CSSProperties {
@@ -147,7 +158,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
     // The map board pans on a pointer down it sees undisturbed (map-view/context.ts).
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
-    drag.current = { kind: "move", id: token._id, pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, moved: false, canMove: token.canMove };
+    drag.current = { kind: "move", id: token._id, pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, moved: false, canMove: token.canMove, scale: screenScale(e.currentTarget, zoom) };
   }
   function onTokenMove(e: ReactPointerEvent<HTMLButtonElement>) {
     const d = drag.current;
@@ -155,7 +166,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
     const dx = e.clientX - d.sx;
     const dy = e.clientY - d.sy;
     if (!d.moved && Math.hypot(dx, dy) > 3) d.moved = true;
-    if (d.moved && d.canMove) setPreview({ id: d.id, dx: dx / zoom, dy: dy / zoom });
+    if (d.moved && d.canMove) setPreview({ id: d.id, dx: dx / d.scale, dy: dy / d.scale });
   }
   function onTokenUp(e: ReactPointerEvent<HTMLButtonElement>, token: TokenView) {
     const d = drag.current;
@@ -165,8 +176,8 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
     onSelectToken(token._id);
     if (!d.moved) openSheet(token);
     if (!d.moved || !d.canMove) return;
-    const x = Math.round(token.x + (e.clientX - d.sx) / zoom / cell);
-    const y = Math.round(token.y + (e.clientY - d.sy) / zoom / cell);
+    const x = Math.round(token.x + (e.clientX - d.sx) / d.scale / cell);
+    const y = Math.round(token.y + (e.clientY - d.sy) / d.scale / cell);
     if (x !== token.x || y !== token.y) void actions.move(token._id, x, y);
   }
   /** HUD only: a click (not a drag) on a PC opens its sheet, on an adversary the GM's stat block (H2.1 / H5.2 draw them). */

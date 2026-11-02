@@ -114,14 +114,14 @@ describe("HudProvider", () => {
     const classes = screen.getByTestId("classes");
     expect(classes).toHaveTextContent(/^$/);
     fireEvent.click(screen.getByRole("button", { name: "Moss" }));
-    expect(classes).toHaveTextContent("sh-open sh-moss");
+    expect(classes).toHaveTextContent("hud-sh-open hud-sh-moss");
     fireEvent.click(screen.getByRole("button", { name: "Brannoc" }));
-    expect(classes).toHaveTextContent("sh-open sh-brannoc");
+    expect(classes).toHaveTextContent("hud-sh-open hud-sh-brannoc");
     // The same banner again closes it (HANDOFF "Sheet panel").
     fireEvent.click(screen.getByRole("button", { name: "Brannoc" }));
     expect(classes).toHaveTextContent(/^$/);
     fireEvent.click(screen.getByRole("button", { name: "Bandit" }));
-    expect(classes).toHaveTextContent("sh-open sh-bandit");
+    expect(classes).toHaveTextContent("hud-sh-open hud-sh-bandit");
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(classes).toHaveTextContent(/^$/);
   });

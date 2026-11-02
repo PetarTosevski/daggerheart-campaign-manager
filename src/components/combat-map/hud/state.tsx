@@ -13,8 +13,9 @@ export type HudLayerProps = MapLayerProps;
 
 /**
  * Client state the HUD parts share (plan combat-hud H0): which sheet is open, the active pick session slot, the
- * drawer, and the root classes the boards key their layout on (HANDOFF "Interactive boards: state model":
- * `sh-open sh-<id>`). Nothing here comes from the server; engine state reaches the parts through their own queries.
+ * drawer, and the root classes the HUD keys its layout on (the boards' `sh-open sh-<id>`, HANDOFF "Interactive boards:
+ * state model", under a `hud-` prefix: see `hudRootClasses`). Nothing here comes from the server; engine state reaches
+ * the parts through their own queries.
  */
 
 /** The sheet panel's subject: a PC's sheet (banners, PC tokens) or an adversary's stat block (GM, enemy tokens). */
@@ -56,20 +57,23 @@ export function sameSheet(a: HudSheetTarget | null, b: HudSheetTarget | null): b
   return false;
 }
 
-/** The id a sheet target gets in the root class `sh-<id>`: the character or token id. */
+/** The id a sheet target gets in the root class `hud-sh-<id>`: the character or token id. */
 export function sheetKey(target: HudSheetTarget): string {
   return target.kind === "pc" ? target.characterId : target.tokenId;
 }
 
 /**
- * The HUD root's state classes: `sh-open sh-<id>` while a sheet is open (the map makes room, the Fear banner and hand
- * shift; HANDOFF "Layout"), `pk-open` during a pick session, `tl-open` while the tools drawer is open.
+ * The HUD root's state classes: `hud-sh-open hud-sh-<id>` while a sheet is open (the map makes room, the
+ * Fear banner, hand and pop-ups shift; HANDOFF "Layout"; shell.css), `hud-pk-open` during a pick session,
+ * `hud-tl-open` while the tools drawer is open. The boards call the first two `sh-open sh-<Name>`, but the party
+ * sheet's sheet-ui.css styles a global `.sh-open` as a pill button, so the HUD's classes all carry the `hud-` prefix
+ * (plan combat-hud H2.2, dcm-bxp.99.32.11).
  */
 export function hudRootClasses(state: Pick<HudState, "sheet" | "pick" | "toolsOpen">): string {
   const classes: string[] = [];
-  if (state.sheet) classes.push("sh-open", `sh-${sheetKey(state.sheet)}`);
-  if (state.pick) classes.push("pk-open");
-  if (state.toolsOpen) classes.push("tl-open");
+  if (state.sheet) classes.push("hud-sh-open", `hud-sh-${sheetKey(state.sheet)}`);
+  if (state.pick) classes.push("hud-pk-open");
+  if (state.toolsOpen) classes.push("hud-tl-open");
   return classes.join(" ");
 }
 
