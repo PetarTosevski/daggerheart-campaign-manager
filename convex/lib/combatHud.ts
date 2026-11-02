@@ -4,6 +4,7 @@ import { derivedDefense } from "../../src/lib/domain/characters/derived";
 import { hopeMax } from "../../src/lib/domain/characters/index";
 import { canMakeDeathMove } from "../../src/lib/domain/death/index";
 import { CLASSES } from "../../src/lib/srd/classes";
+import type { Effect } from "../../src/lib/validation/characters";
 import { installedAugments } from "../characterExtras";
 import { pcPortrait } from "../combatTokens";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -19,6 +20,11 @@ import { featureScope } from "./featureScope";
  */
 
 const CLASS_NAMES = new Map<string, string>(CLASSES.map((c) => [c.id, c.name]));
+
+/** The class's name ("Warrior"), or its id when the class is unknown. */
+export function className(classId: string): string {
+  return CLASS_NAMES.get(classId) ?? classId;
+}
 
 /** A condition as a badge shows it: its id and display name ("vulnerable" → "Vulnerable"). */
 export const hudConditionValidator = v.object({ id: v.string(), label: v.string() });
@@ -98,7 +104,7 @@ export async function partyMemberOf(
     characterId: character._id,
     tokenId,
     name: sheet.name,
-    className: CLASS_NAMES.get(sheet.classId) ?? sheet.classId,
+    className: className(sheet.classId),
     level: sheet.level,
     portrait: await pcPortrait(ctx, character._id, sheet),
     mine: !gm && character.ownerId === user._id,
@@ -113,4 +119,44 @@ export async function partyMemberOf(
       character.deathMoveSpent !== true &&
       canMakeDeathMove({ status: character.status, hp: sheet.hp, hpMax: sheet.hpMax, conditions: sheet.conditions }),
   };
+}
+
+// ---------------------------------------------------------------- the sheet panel (tracer HD2)
+
+/** When a sheet effect ends, as the sheet panel says it (`Effect.until`; a manual one reads its "ends when" text first). */
+const EFFECT_UNTIL_LABEL: Record<Effect["until"], string> = {
+  rest: "until the next rest",
+  longRest: "until the next long rest",
+  session: "until the end of the session",
+  hit: "until you are hit",
+  scene: "until the end of the scene",
+  manual: "until it is ended",
+};
+
+/** The `ends when ...` part `cardRunner.addEffect` writes into an effect's text, as "until ...", or null. */
+function endsWhenOf(text: string): string | null {
+  const part = text.split("; ").find((p) => p.startsWith("ends when "));
+  const rest = part?.slice("ends when ".length).trim() ?? "";
+  if (rest === "") return null;
+  return rest.startsWith("until ") ? rest : `until ${rest}`;
+}
+
+/** How long a sheet effect lasts, in words ("until the next rest"; a card's own "until they break free ..."). */
+export function effectUntilLabel(effect: Pick<Effect, "until" | "text">): string {
+  return endsWhenOf(effect.text) ?? EFFECT_UNTIL_LABEL[effect.until];
+}
+
+/**
+ * How long a bare condition (the sheet records no source for it) lasts, where the core rules say it for every case:
+ * Hidden (CB p.102: "After an adversary moves to where they would see you, you move into their line of sight, or you
+ * make an attack, you are no longer Hidden"). Restrained, Vulnerable and the rest last until whatever imposed them says
+ * (CB p.102, "Clearing Conditions"), which a bare condition does not record: no entry, the panel shows none.
+ */
+const BARE_CONDITION_UNTIL: Readonly<Record<string, string>> = {
+  hidden: "until an adversary would see you, you move into their sight, or you attack",
+};
+
+/** A bare condition's "until" text, or null. */
+export function bareConditionUntil(id: string): string | null {
+  return BARE_CONDITION_UNTIL[id] ?? null;
 }

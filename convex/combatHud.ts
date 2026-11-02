@@ -1,13 +1,29 @@
-import { v } from "convex/values";
+import { v, type Infer } from "convex/values";
 
+import { derivedDefense, derivedThresholds } from "../src/lib/domain/characters/derived";
+import { withEffects } from "../src/lib/domain/characters/effects";
+import { hopeMax } from "../src/lib/domain/characters/index";
 import { frameHasMechanic } from "../src/lib/frames/index";
 import type { Doc } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { hudPartyMemberValidator, partyMemberOf, type HudPartyMember } from "./lib/combatHud";
+import { installedAugments } from "./characterExtras";
+import { conditionMarkerOf } from "./lib/cardRunner";
+import { loadCharacter, readSheet } from "./lib/characterSheet";
+import {
+  bareConditionUntil,
+  className,
+  conditionLabel,
+  effectUntilLabel,
+  hudPartyMemberValidator,
+  partyMemberOf,
+  type HudPartyMember,
+} from "./lib/combatHud";
 import { liveCombatMap, tokensOnMap } from "./lib/combatMaps";
 import { campaignLight, lightLevelValidator } from "./lib/combatVision";
+import { drawerOf, drawerUseValidator, type Drawer } from "./lib/featureDrawer";
+import { featureScope } from "./lib/featureScope";
 import { campaignFearState } from "./lib/fear";
-import { campaignQuery } from "./lib/functions";
+import { campaignQuery, userQuery } from "./lib/functions";
 import { atLeast } from "./lib/permissions";
 
 /**
@@ -21,6 +37,9 @@ import { atLeast } from "./lib/permissions";
  * - `scene` (every member): Fear, the campaign's light and time phase, the campaign day (frames with campaign time
  *   only), and what the caller may change: the light (`canSetLight`, edit access without campaign time, as
  *   `campaigns.timeOfDay`) and the time arc (`canOpenTimeArc`, the GM in a frame with campaign time).
+ * - `sheet` (every member, tracer HD2, user answer 4a): one PC's sheet panel. Any party member reads any PC's numbers,
+ *   features (a view-safe list), thresholds, Experiences, conditions and lasting effects; only the cards in hand follow
+ *   hand sharing, so this query never returns a card (the hand stays `combatCards.hand`).
  */
 
 /** The map a caller's banners follow: `mapId` when given (players: only the live one), else the live map. */
@@ -95,6 +114,163 @@ export const scene = campaignQuery({
       day,
       canSetLight: atLeast(ctx.permission, "edit") && !timed,
       canOpenTimeArc: atLeast(ctx.permission, "owner") && timed,
+    };
+  },
+});
+
+// ---------------------------------------------------------------- the sheet panel (tracer HD2)
+
+const sheetTrack = v.object({ marked: v.number(), max: v.number() });
+
+const featureKind = v.union(
+  v.literal("action"),
+  v.literal("reaction"),
+  v.literal("rider"),
+  v.literal("auto"),
+  v.literal("passive"),
+  v.literal("outOfCombat"),
+  v.literal("narrative"),
+);
+
+/** One feature on the sheet panel (Main 'Features'): the same for every mode, plus `uses` for own / gm. */
+export const hudSheetFeatureValidator = v.object({
+  featureId: v.string(),
+  name: v.string(),
+  text: v.string(),
+  /** Where it comes from: hope, class, subclass, ancestry, community, beastform, transformation, stance. */
+  source: v.string(),
+  /**
+   * The badge: `action` / `reaction` / `rider` / `auto` (its first non-passive use's activation), `passive` (no such use),
+   * or `outOfCombat` / `narrative` (the drawer's usage, Q3 / Q15).
+   */
+  kind: featureKind,
+  /** The cost badge of its first use that costs something ("3 Hope", "1 Stress + 1 Hope"), or null. */
+  cost: v.union(v.null(), v.string()),
+  /** The limit badge of its first limited use ("Once per long rest"), or null. */
+  limit: v.union(v.null(), v.string()),
+  /** Used up (every action use exhausted) or active (its effect still holds, Rogue's Dodge); `resetLabel` says when back. */
+  used: v.boolean(),
+  resetLabel: v.union(v.null(), v.string()),
+  /** Uses left before the limit, when it allows more than one ("2 left"), else null. */
+  usesLeft: v.union(v.null(), v.number()),
+  /** Tokens on it (Prayer Dice, Favor, ...). */
+  tokens: v.number(),
+  /** Its Use runs on the map (an effect entry exists). */
+  automated: v.boolean(),
+  /** Use data (`combatFeatures.drawer`'s shape, for `FeatureUse`): own and gm only; null in view mode. */
+  uses: v.union(v.null(), v.array(drawerUseValidator)),
+});
+
+/**
+ * `combatHud.sheet`: one PC's sheet panel (Main 'D · Sheet at hand', GMDesktop). `mode`: `gm` (campaign owner), `own`
+ * (edit permission: the character's player, or a campaign edit grant), `view` (any other member). Never a domain card.
+ */
+export const hudSheetValidator = v.object({
+  characterId: v.id("characters"),
+  mode: v.union(v.literal("own"), v.literal("gm"), v.literal("view")),
+  name: v.string(),
+  /** The class's name ("Druid"), or its id when the class is unknown. */
+  className: v.string(),
+  level: v.number(),
+  /** Evasion with gear, passive features, augments and active effects (Rogue's Dodge +2). */
+  evasion: v.number(),
+  /** The Armor Score (equipment, augments, passives): the Armor tracker's max. */
+  armorScore: v.number(),
+  /** Damage thresholds (Minor below `major`; Major from `major`; Severe from `severe`). */
+  thresholds: v.object({ major: v.number(), severe: v.number() }),
+  experiences: v.array(v.object({ id: v.string(), name: v.string(), value: v.number() })),
+  /** HP / Stress / Armor `{ marked, max }`, Hope `{ value, max }` (as `combatHud.party`). */
+  trackers: v.object({ hp: sheetTrack, stress: sheetTrack, hope: v.object({ value: v.number(), max: v.number() }), armor: sheetTrack }),
+  features: v.array(hudSheetFeatureValidator),
+  /**
+   * Conditions, in their stored order. `source`: the card or feature that gave it when the sheet records one (its marker
+   * effect), else null. `until`: in words, from that source, else the core rule where there is one (Hidden), else null.
+   */
+  conditions: v.array(v.object({ id: v.string(), label: v.string(), source: v.union(v.null(), v.string()), until: v.union(v.null(), v.string()) })),
+  /**
+   * Lasting effects (the sheet's `effects`, without the condition markers shown on `conditions`): `id` (for the GM's or
+   * owner's End), `source` ("Rogue's Dodge"), `text`, `until` in words, `ends` the stored kind (rest / longRest / session /
+   * hit / scene / manual).
+   */
+  effects: v.array(
+    v.object({
+      id: v.string(),
+      source: v.string(),
+      text: v.string(),
+      until: v.string(),
+      ends: v.union(v.literal("rest"), v.literal("longRest"), v.literal("session"), v.literal("hit"), v.literal("scene"), v.literal("manual")),
+    }),
+  ),
+});
+export type HudSheet = Infer<typeof hudSheetValidator>;
+export type HudSheetFeature = Infer<typeof hudSheetFeatureValidator>;
+
+/** The drawer's feature as the sheet panel lists it; `withUses`: own / gm (the Use data), else null. */
+function sheetFeature(f: Drawer["features"][number], withUses: boolean): HudSheetFeature {
+  const active = f.uses.filter((u) => u.activation !== "passive");
+  const kind: HudSheetFeature["kind"] = f.usage === "outOfCombat" || f.usage === "narrative" ? f.usage : (active[0]?.activation ?? "passive");
+  const costly = active.find((u) => u.costs.length > 0) ?? f.uses.find((u) => u.costs.length > 0);
+  return {
+    featureId: f.featureId,
+    name: f.name,
+    text: f.text,
+    source: f.source,
+    kind,
+    cost: costly ? costly.costs.join(" + ") : null,
+    limit: f.uses.find((u) => u.limit !== null)?.limit ?? null,
+    used: f.state === "exhausted" || f.state === "active",
+    resetLabel: f.resetLabel,
+    usesLeft: active.find((u) => u.usesLeft !== null)?.usesLeft ?? null,
+    tokens: f.tokens,
+    automated: f.automated,
+    uses: withUses ? f.uses : null,
+  };
+}
+
+export const sheet = userQuery({
+  args: { characterId: v.id("characters") },
+  returns: hudSheetValidator,
+  handler: async (ctx, { characterId }): Promise<HudSheet> => {
+    // Answer 4a: every member views (an outsider NOT_FOUND); the permission is exact up to owner for the mode.
+    const { campaign, character, permission } = await loadCharacter(ctx, ctx.user, characterId, "view", "owner");
+    const mode: HudSheet["mode"] = atLeast(permission, "owner") ? "gm" : atLeast(permission, "edit") ? "own" : "view";
+    const s = readSheet(character.sheet);
+    const scope = featureScope(campaign);
+    const augments = await installedAugments(ctx, campaign, character._id);
+    const defense = derivedDefense(withEffects(s), augments, scope);
+    const drawer = drawerOf(character._id, s, campaign, augments);
+    const markers = new Map<string, { source: string; until: string }>();
+    const markerIds = new Set<string>();
+    for (const e of s.effects) {
+      const m = conditionMarkerOf(e);
+      if (m === null) continue;
+      markerIds.add(e.id);
+      if (!markers.has(m.condition)) markers.set(m.condition, { source: e.source, until: effectUntilLabel(e) });
+    }
+    return {
+      characterId: character._id,
+      mode,
+      name: s.name,
+      className: className(s.classId),
+      level: s.level,
+      evasion: defense.evasion,
+      armorScore: defense.armorScore,
+      thresholds: derivedThresholds(s, scope),
+      experiences: s.experiences.map((e) => ({ id: e.id, name: e.name, value: e.value })),
+      trackers: {
+        hp: { marked: s.hp, max: s.hpMax },
+        stress: { marked: s.stress, max: s.stressMax },
+        hope: { value: s.hope, max: hopeMax(s.scars, s.hopeSlotBonus ?? 0) },
+        armor: { marked: s.armorMarked, max: defense.armorScore },
+      },
+      features: drawer.features.map((f) => sheetFeature(f, mode !== "view")),
+      conditions: s.conditions.map((id) => {
+        const marker = markers.get(id);
+        return { id, label: conditionLabel(id), source: marker?.source ?? null, until: marker?.until ?? bareConditionUntil(id) };
+      }),
+      effects: s.effects
+        .filter((e) => !markerIds.has(e.id))
+        .map((e) => ({ id: e.id, source: e.source, text: e.text, until: effectUntilLabel(e), ends: e.until })),
     };
   },
 });
