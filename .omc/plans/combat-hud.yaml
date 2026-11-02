@@ -652,6 +652,7 @@ waves:
           - convex/combatEffects.ts
           - convex/combatSpotlight.ts
         acceptance:
+          - "Re-enable the GM's adversary click: tokens/tokens-layer.tsx openSheet skips adversary targets until the stat block exists (orchestrator 2026-11-02); restore hud.toggleSheet for them and the hud-tokens.spec lines that expect hud-sh-open on the Lieutenant (orchestrator edits these at merge if outside owns)"
           - "GMDesktop 'Adversary acting' (sh-E0) at 1440x900; GM rings purple (.g-ring.g-pick / g-out / g-hid); footer 'Spotlight: 1 Fear - Momentum on a hit'"
           - "Every Fear spend (spotlight, Fear features, Experiences, End - 1 Fear) goes through H5.3's FearConfirm (answer 6a); spotlighting an adversary also takes the scene spotlight (combatSpotlight.gmTake)"
           - "GM-only reads; existing adversaryActions / encounterTracking mutations; axe passes; lint, typecheck, tests pass"

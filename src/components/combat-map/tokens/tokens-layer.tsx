@@ -188,7 +188,8 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
     // H3.4: a player's own token opens the action ring (its Sheet button opens the sheet).
     if (role === "player" && token.mine) return toggleActionRing(token._id, keyboard);
     const target = pcTokenFace(token, role, null).sheet;
-    if (target) hud.toggleSheet(target);
+    // Until H5.2 draws the stat block, an adversary click only selects (it opened an empty panel and shifted the map).
+    if (target && target.kind !== "adversary") hud.toggleSheet(target);
   }
   function onTokenKey(e: KeyboardEvent<HTMLButtonElement>, token: TokenView) {
     const step = KEY_STEPS[e.key];

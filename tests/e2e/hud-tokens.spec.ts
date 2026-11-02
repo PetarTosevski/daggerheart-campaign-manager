@@ -88,9 +88,7 @@ test("the GM: PC and adversary tokens with arcs, Hope chips, badges and side col
     await expect(board.locator("svg.tk-arc")).toHaveCount(8);
     await expect(board.locator(`[data-tone="enemy"] .tk-cd-restrained`)).toHaveCount(1);
 
-    await lt.click();
-    await expect(hud).toHaveClass(new RegExp(`hud-sh-open hud-sh-${s.enemies.lieutenant.tokenId}`));
-    await expect(lt).toHaveAttribute("aria-pressed", "true");
+    // Until H5.2 draws the stat block, a click on an adversary only selects it: no empty panel, the map stays put.
     await lt.click();
     await expect(hud).not.toHaveClass(/sh-open/);
     await moss.click();
