@@ -2,13 +2,15 @@ import { v, type Infer } from "convex/values";
 
 import { derivedDefense, derivedThresholds } from "../src/lib/domain/characters/derived";
 import { withEffects } from "../src/lib/domain/characters/effects";
+import { expire, SCENE_TOKEN_KEYS } from "../src/lib/domain/characters/expiry";
 import { hopeMax } from "../src/lib/domain/characters/index";
 import { frameHasMechanic } from "../src/lib/frames/index";
+import { stanceById } from "../src/lib/srd/stances";
 import type { Doc } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { installedAugments } from "./characterExtras";
 import { conditionMarkerOf } from "./lib/cardRunner";
-import { loadCharacter, readSheet } from "./lib/characterSheet";
+import { loadCharacter, MAX_CHARACTERS_PER_CAMPAIGN, readSheet } from "./lib/characterSheet";
 import {
   bareConditionUntil,
   className,
@@ -16,15 +18,19 @@ import {
   effectUntilLabel,
   hudPartyMemberValidator,
   partyMemberOf,
+  sceneEndOf,
+  sceneEndPreviewValidator,
   type HudPartyMember,
+  type SceneEndPreview,
 } from "./lib/combatHud";
 import { liveCombatMap, tokensOnMap } from "./lib/combatMaps";
 import { campaignLight, lightLevelValidator } from "./lib/combatVision";
 import { drawerOf, drawerUseValidator, type Drawer } from "./lib/featureDrawer";
 import { featureScope } from "./lib/featureScope";
 import { campaignFearState } from "./lib/fear";
-import { campaignQuery, userQuery } from "./lib/functions";
+import { campaignQuery, gmQuery, userQuery } from "./lib/functions";
 import { atLeast } from "./lib/permissions";
+import { withoutStance } from "./lib/stanceDrop";
 
 /**
  * Combat HUD reads (plan `.omc/plans/combat-hud.yaml`, tracer HD1; Main, CmpTokens, GMDesktop boards). Each is one
@@ -40,6 +46,7 @@ import { atLeast } from "./lib/permissions";
  * - `sheet` (every member, tracer HD2, user answer 4a): one PC's sheet panel. Any party member reads any PC's numbers,
  *   features (a view-safe list), thresholds, Experiences, conditions and lasting effects; only the cards in hand follow
  *   hand sharing, so this query never returns a card (the hand stays `combatCards.hand`).
+ * - `sceneEndPreview` (the GM, tracer H5.3): what End scene would end now, by name (GMDesktop 'End scene').
  */
 
 /** The map a caller's banners follow: `mapId` when given (players: only the live one), else the live map. */
@@ -271,6 +278,53 @@ export const sheet = userQuery({
       effects: s.effects
         .filter((e) => !markerIds.has(e.id))
         .map((e) => ({ id: e.id, source: e.source, text: e.text, until: effectUntilLabel(e), ends: e.until })),
+    };
+  },
+});
+
+// ---------------------------------------------------------------- End scene preview (tracer H5.3)
+
+/** Areas the preview reads, as `combatScenes.endSceneAreas` closes them in one transaction. */
+const PREVIEW_AREAS_MAX = 200;
+
+/**
+ * What the GM's End scene (`combatScenes.end` → `endScene`) would end right now, by name, for its "End the scene?"
+ * confirm (GMDesktop 'End scene'). The same reads and steps as `endScene`, without writing: every active PC's sheet after
+ * the stance drop (`withoutStance`, DA10) and `expire(…, "scene")`, and the campaign's live areas that last until the
+ * scene (`endSceneAreas`). A corrupt sheet is skipped, as `endScene` leaves it alone. GM only.
+ */
+export const sceneEndPreview = gmQuery({
+  args: {},
+  returns: sceneEndPreviewValidator,
+  handler: async (ctx): Promise<SceneEndPreview> => {
+    const campaignId = ctx.campaign._id;
+    const characters = await ctx.db
+      .query("characters")
+      .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
+      .take(MAX_CHARACTERS_PER_CAMPAIGN);
+    const effects: string[] = [];
+    let limits = 0;
+    const walkKey = SCENE_TOKEN_KEYS[0] ?? "";
+    for (const character of characters) {
+      if (character.status !== "active") continue;
+      try {
+        const sheet = readSheet(character.sheet);
+        const next = expire(withoutStance(sheet).sheet, "scene");
+        const ended = sceneEndOf(sheet, next, (id) => stanceById(id)?.name ?? id, walkKey);
+        effects.push(...ended.effects);
+        limits += ended.limits;
+      } catch {
+        // a corrupt sheet is left alone by endScene too
+      }
+    }
+    const areas = await ctx.db
+      .query("combatAreas")
+      .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
+      .take(PREVIEW_AREAS_MAX);
+    return {
+      effects: [...new Set(effects)],
+      limits,
+      areas: [...new Set(areas.filter((a) => a.status === "active" && a.expires === "scene").map((a) => a.label))],
     };
   },
 });

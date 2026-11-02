@@ -252,12 +252,14 @@ describe("title and toolbar", () => {
 
   it("Areas, Fog and Dice open the existing tools in one pop-over at a time", () => {
     renderHud(createElement(HudScene, { state: state("gm"), toolbar }));
+    // H5.3: Areas toggles the GM's "Areas on the map" panel (hud/areas, mounted by the shell; tests/unit/hud/fear-confirm.test.tsx).
     const areas = screen.getByRole("button", { name: "Areas" });
     fireEvent.click(areas);
     expect(areas).toHaveAttribute("aria-expanded", "true");
-    expect(within(screen.getByRole("dialog", { name: "Areas" })).getByTestId("area-tools-stub")).toBeInTheDocument();
+    expect(areas).toHaveAttribute("aria-controls", "hud-areas");
+    fireEvent.click(areas);
+    expect(areas).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(screen.getByRole("button", { name: "Fog" }));
-    expect(screen.queryByRole("dialog", { name: "Areas" })).toBeNull();
     expect(within(screen.getByRole("dialog", { name: "Vision and fog" })).getByTestId("vision-stub")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Dice" }));
     expect(screen.getByRole("dialog", { name: "Dice" })).toHaveTextContent("Select a PC token on the map to roll for them.");

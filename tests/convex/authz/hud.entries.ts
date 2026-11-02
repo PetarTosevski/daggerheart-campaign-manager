@@ -13,6 +13,7 @@ import { freshKey } from "./synth";
  * `combatWithdraw.withdraw` (HD3, answer 8a; `need: "view"` + `loadCharacter(..., "edit")` on the request's character):
  * characterA's player, the edit grantee and the GM withdraw characterA's open sanction; another player is FORBIDDEN.
  * Its content checks are in tests/convex/hud-withdraw.test.ts.
+ * `combatHud.sceneEndPreview` (H5.3, `gmQuery`): the GM only; what it lists is checked in tests/convex/hud-scene-end.test.ts.
  */
 async function setup(w: World) {
   const campaignId = w.campaignId;
@@ -77,6 +78,8 @@ const area: Area = {
       args: (w) => ({ requestId: w.ids.requestId }),
       expect: { otherPlayer: "FORBIDDEN", grantee: "ok" },
     },
+    // H5.3: what End scene would end, for its confirm (gmQuery: the GM only; the edit grantee and players FORBIDDEN).
+    { fn: api.combatHud.sceneEndPreview, access: "gm", expect: { otherPlayer: "FORBIDDEN", grantee: "FORBIDDEN" } },
   ],
 };
 

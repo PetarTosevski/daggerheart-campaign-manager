@@ -9,13 +9,13 @@ import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
-import { EndSceneButton } from "../../actions/scene";
-import { AreaTools } from "../../map-view/area-overlay";
 import type { CombatMapSummary, CombatPageState } from "../../slots";
 import { PreviewPicker, VisionPanel } from "../../vision";
+import { AREAS_PANEL_ID, setAreasOpen, useAreasOpen } from "../areas/open";
 import { sameSheet, useHud, type HudPartProps, type HudSheetTarget } from "../state";
 import { PartBoundary, hudButtonClass } from "../ui";
 import { HudDice } from "./dice";
+import { HudEndScene } from "./end";
 import { LightSeg } from "./light";
 import { ScenePop } from "./pop";
 
@@ -26,12 +26,13 @@ export type HudSceneProps = HudPartProps & { toolbar: ReactNode };
  * The title and toolbar at x = 690 (plan combat-hud H1.2; Main `.title` / `.tr`, GMDesktop `.gtitle` / `.gtools`):
  * the map's name, the "Live" line (GM: "Live · GM view · Session n"), then for a player Dice and Sheet, for the GM
  * Day / Dim / Night (only where it can be set), Areas, Fog, Dice, Player view and End scene; both end with the shell's
- * toolbar (Map tools, answer 12a, and the classic switch). Dice, Areas and Fog open the app's existing dice box, area
- * tools and fog brush in a non-modal pop-over under the toolbar; Sheet opens the HUD sheet panel (H2.1).
+ * toolbar (Map tools, answer 12a, and the classic switch). Dice and Fog open the app's existing dice box and fog brush
+ * in a non-modal pop-over under the toolbar; Areas opens the GM's "Areas on the map" panel (H5.3, hud/areas); End scene
+ * asks "End the scene?" naming what ends (H5.3, ./end); Sheet opens the HUD sheet panel (H2.1).
  */
 
-type PopName = "dice" | "areas" | "fog";
-const POP_TITLE: Readonly<Record<PopName, string>> = { dice: "Dice", areas: "Areas", fog: "Vision and fog" };
+type PopName = "dice" | "fog";
+const POP_TITLE: Readonly<Record<PopName, string>> = { dice: "Dice", fog: "Vision and fog" };
 const popId = (name: PopName) => `hud-pop-${name}`;
 
 /** The title's second line: "Live" / "Not live", and for the GM "· GM view" and the live session's number. */
@@ -63,6 +64,7 @@ const glassButton = cn(hudButtonClass(), "hud-glass-btn");
 export function HudScene({ state, toolbar }: HudSceneProps): ReactNode {
   const gm = state.role === "gm";
   const [pop, setPop] = useState<PopName | null>(null);
+  const areasOpen = useAreasOpen();
   const party = useQuery(api.combatHud.party, state.map ? { campaignId: state.campaignId, mapId: state.map._id } : "skip");
   // The character Dice rolls for and Sheet opens: a player's own PC on the map; for the GM the selected PC token.
   const characterId = gm
@@ -97,13 +99,23 @@ export function HudScene({ state, toolbar }: HudSceneProps): ReactNode {
             <PartBoundary label="Time of day">
               <GmLight campaignId={state.campaignId} />
             </PartBoundary>
-            {state.map ? popButton("areas", "Areas") : null}
+            {state.map ? (
+              <button
+                type="button"
+                className={glassButton}
+                aria-expanded={areasOpen}
+                aria-controls={AREAS_PANEL_ID}
+                onClick={() => setAreasOpen(!areasOpen)}
+              >
+                Areas
+              </button>
+            ) : null}
             {state.map ? popButton("fog", "Fog") : null}
             {dice}
             <PartBoundary label="Player view">
               <PreviewPicker {...state} />
             </PartBoundary>
-            <EndSceneButton campaignId={state.campaignId} className={cn(glassButton, "hud-end")} />
+            <HudEndScene campaignId={state.campaignId} sceneName={state.map?.name ?? "Combat Map"} />
           </>
         ) : party === undefined && state.map ? null : characterId ? (
           <>
@@ -128,7 +140,6 @@ function PopBody({ name, state, characterId }: { name: PopName; state: CombatPag
   const { map } = state;
   if (name === "dice") return <HudDice campaignId={state.campaignId} characterId={characterId} gm={state.role === "gm"} />;
   if (map === null) return null;
-  if (name === "areas") return <AreaTools campaignId={state.campaignId} mapId={map._id} />;
   return <VisionPanel {...state} map={map} />;
 }
 

@@ -10,6 +10,8 @@ import { SceneDisc } from "../scene/disc";
 import type { HudPartProps } from "../state";
 import { FearBanner } from "./banner";
 
+export { FearConfirm, fearAfterSpend, fearReasonsText, type FearConfirmProps } from "./confirm";
+
 /**
  * The top-right of the HUD (plan combat-hud H1.2; Main / GMDesktop, CmpTokens 'GM Fear · players' / 'GM Fear · GM'):
  * the purple rod, the Fear banner (− / + on the GM view only, no confirm: answer 6a) and the day / time disc hanging

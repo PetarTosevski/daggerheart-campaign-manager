@@ -207,3 +207,51 @@
     pointer-events: none;
   }
 }
+
+/* ---------------------------------------------------------------- "End the scene?" (H5.3; GMDesktop .dm.em) */
+.hud-em {
+  width: 460px;
+  max-width: calc(100vw - 32px);
+  margin: auto;
+  padding: 26px 26px 20px;
+  border: 0;
+  border-radius: 20px;
+  background: #141120;
+  box-shadow:
+    0 0 0 1px #5b4a8f,
+    0 30px 80px rgba(0, 0, 0, 0.7);
+  color: var(--hud-ink);
+}
+.hud-em::backdrop {
+  background: rgba(5, 8, 10, 0.62);
+}
+.hud-em-k {
+  font: 600 11px/1 var(--hud-font-ui);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--hud-fear-text);
+}
+.hud-em h2 {
+  margin: 8px 0 16px;
+  font: 900 28px/1.1 var(--hud-font-display);
+  color: #efeaff;
+}
+.hud-em-p {
+  margin: 0 0 16px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #c8d3d0;
+}
+.hud-em-f {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.hud-em .hud-btn {
+  height: 38px;
+}
+.hud-em .hud-em-yes {
+  background: var(--hud-fear-text);
+  color: var(--hud-fear-ink);
+}

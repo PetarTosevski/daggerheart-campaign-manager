@@ -264,3 +264,96 @@
     font-size: 10.5px;
   }
 }
+
+/* ---------------------------------------------------------------- "Spend n Fear?" (H5.3; GMDesktop .sp)
+ * Portalled into the fear region (right var(--hud-edge), top 0): the board's right 186 / top 150 on the page. It moves
+ * left with the banner while a sheet is open.
+ */
+.hud-fc {
+  position: absolute;
+  right: calc(186px - var(--hud-edge));
+  top: 150px;
+  width: 330px;
+  max-width: calc(100vw - 32px);
+  z-index: 60;
+  padding: 16px;
+  border-radius: var(--hud-r-panel);
+  background: var(--hud-fear-soft);
+  box-shadow:
+    0 0 0 1px var(--hud-fear),
+    0 0 30px rgba(143, 123, 209, 0.35),
+    0 16px 40px rgba(0, 0, 0, 0.55);
+  color: var(--hud-ink);
+  outline: none;
+  transition: transform var(--hud-t-map) var(--hud-ease-out);
+}
+.hud-root.hud-sh-open .hud-fc {
+  transform: translateX(calc(-1 * var(--hud-sheet-w)));
+}
+.hud-fc:focus-visible {
+  box-shadow:
+    0 0 0 2px var(--hud-fear-text),
+    0 16px 40px rgba(0, 0, 0, 0.55);
+}
+.hud-fc-t {
+  margin: 0;
+  font: var(--hud-type-title);
+  color: #efeaff;
+}
+.hud-fc-why,
+.hud-fc-short,
+.hud-fc-err {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--hud-fear-text);
+}
+.hud-fc-short {
+  color: var(--hud-out);
+}
+.hud-fc-err {
+  color: var(--hud-danger);
+}
+.hud-fc-f {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.hud-fc-left {
+  margin-right: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 700;
+  color: var(--hud-fear-text);
+}
+.hud-fc-ic {
+  width: 14px;
+  height: 14px;
+}
+.hud-fc .hud-fc-yes {
+  background: var(--hud-fear-text);
+  color: var(--hud-fear-ink);
+}
+.hud-fc .hud-btn {
+  height: 38px;
+}
+@media (max-width: 1180px) {
+  .hud-fc {
+    right: calc(150px - var(--hud-edge));
+    top: 120px;
+  }
+}
+@media (max-width: 700px) {
+  .hud-fc {
+    right: 0;
+    top: 96px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hud-fc {
+    transition: none;
+  }
+}

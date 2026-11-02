@@ -90,7 +90,10 @@ test("the GM: a stat block makes room, swaps and closes; drag and area picking s
       .poll(() => client.query(api.combatAreas.list, { campaignId, mapId: s.mapId }))
       .toMatchObject([{ centre: { kind: "square", x: target.x, y: target.y } }]);
 
-    // Another token swaps the sheet; the same one closes it and the map comes back.
+    // Close the Areas panel (H5.3 docks it bottom right, over the Sniper), then another token swaps the sheet; the same
+    // one closes it and the map comes back.
+    await areas.getByRole("button", { name: "Close Areas" }).click();
+    await expect(areas).toBeHidden();
     await sniper.click();
     await expect(hud).toHaveClass(new RegExp(`hud-sh-${s.enemies.sniper.tokenId}`));
     await expect(hud).not.toHaveClass(new RegExp(`hud-sh-${s.enemies.lieutenant.tokenId}`));

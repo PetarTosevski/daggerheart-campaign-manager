@@ -160,3 +160,48 @@ const BARE_CONDITION_UNTIL: Readonly<Record<string, string>> = {
 export function bareConditionUntil(id: string): string | null {
   return BARE_CONDITION_UNTIL[id] ?? null;
 }
+
+// ---------------------------------------------------------------- End scene preview (tracer H5.3)
+
+/**
+ * `combatHud.sceneEndPreview`: what the GM's End scene would end right now (GMDesktop 'End scene', CmpPromptsGM 'End the
+ * scene?'), mirroring `combatScenes.endScene`. `effects`: the names of what ends on the party's sheets (each effect's
+ * source, "Wall Walk"; the Unstoppable Die, the active stance and Walk Between Worlds by name), each once, in party
+ * order. `limits`: how many feature uses refresh (once-per-scene and GM-turn limits). `areas`: the labels of the
+ * campaign's live map areas that last until the scene, each once.
+ */
+export const sceneEndPreviewValidator = v.object({
+  effects: v.array(v.string()),
+  limits: v.number(),
+  areas: v.array(v.string()),
+});
+export type SceneEndPreview = Infer<typeof sceneEndPreviewValidator>;
+
+/** The parts of a sheet a scene end touches. */
+type SceneSheet = {
+  effects: readonly Pick<Effect, "id" | "source">[];
+  featureUses?: readonly unknown[];
+  classState: { unstoppable?: unknown; martial?: { active?: string } };
+  cardTokens?: readonly { cardId: string }[];
+};
+
+/**
+ * What a scene end takes off one sheet, as names (`before`: the stored sheet; `after`: the sheet after the stance drop and
+ * `expire(…, "scene")`, as `endScene` computes it); `limits` counts the feature uses that refresh. `stanceName` turns an
+ * active stance id into its name; `walkKey` is Walk Between Worlds' token key.
+ */
+export function sceneEndOf(
+  before: SceneSheet,
+  after: SceneSheet,
+  stanceName: (id: string) => string,
+  walkKey: string,
+): { effects: string[]; limits: number } {
+  const kept = new Set(after.effects.map((e) => e.id));
+  const effects = before.effects.filter((e) => !kept.has(e.id)).map((e) => e.source);
+  if (before.classState.unstoppable !== undefined && after.classState.unstoppable === undefined) effects.push("Unstoppable");
+  const stance = before.classState.martial?.active;
+  if (stance !== undefined && after.classState.martial?.active === undefined) effects.push(stanceName(stance));
+  const walked = (sheet: SceneSheet) => (sheet.cardTokens ?? []).some((t) => t.cardId === walkKey);
+  if (walked(before) && !walked(after)) effects.push("Walk Between Worlds");
+  return { effects, limits: (before.featureUses?.length ?? 0) - (after.featureUses?.length ?? 0) };
+}
