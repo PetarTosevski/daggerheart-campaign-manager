@@ -384,3 +384,17 @@ Fear"; the app has "Session logs / Collections / Future log" and "+ Hope · ^ Fe
 - (a) **default** Keep today's groups, names and keys.
 - (b) Rename only: Collections → Campaign, Session logs → Session pages, Future log → GM only.
 - (c) Rename as (b), and "GM only" holds the GM's private pages (Future log folds into Campaign); Quick keys as designed.
+
+## User answers 2026-11-03 (bind every tracer; override the defaults above where they differ)
+
+| # | Question | Answer |
+|---|---|---|
+| Q1 | Open threads | Notes lines marked as threads, per viewer (default) |
+| Q2 | Threads raised | Open threads on the Notes pages linked to the session (default) |
+| Q3 | Hours at the table | Automatic from live time (default) |
+| Q4 | Recap | **Everyone can write; always visible to the table** (no share gate; drop recapSharedAt / "Share with players" gating - JD5 / JR adjust) |
+| Q5 | Player view of Sessions | **List, heading, recap AND the session log** (GM-hidden lines excluded); not the plan / prep / battle points |
+| Q6 | Encounters | One per Combat scene; the old session encounter moves to the first Combat scene (default) |
+| Q7 | Scene progress | **Automatic from the Combat Map**: starting a scene's encounter marks it Playing now (previous -> Done, next -> Next, "Scene N began" logged); the GM marks non-combat scenes |
+| Q8 | Hope spent / HP marked | Counted as they happen during the live session (default) |
+| Q12 | Writing as | Add Writing-as chips (default; reverses A2) |
