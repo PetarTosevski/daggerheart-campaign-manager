@@ -35,6 +35,8 @@ export function PickRings(props: HudLayerProps) {
   const below = new Map((spec.options ?? []).filter((o) => o.tokenId && live.options[o.id]).map((o) => [o.tokenId as string, o.ringLabel ?? o.label]));
   const actor = scene.actorTokenId ? scene.tokens.get(scene.actorTokenId) : undefined;
   const primary = picked[0] ? scene.tokens.get(picked[0]) : undefined;
+  // H5.2: the GM acting for an adversary: purple rings, no "GM" badge on out of range (HANDOFF "GM attack picking").
+  const gm = spec.source.kind === "adversary";
   const dim = scene.rows.filter((r) => r.reach === "los" && !picked.includes(r.tokenId)).map((r) => r.tokenId);
 
   return (
@@ -61,7 +63,7 @@ export function PickRings(props: HudLayerProps) {
         return (
           <div
             key={row.tokenId}
-            className={cn("hud-tg", `hud-tg-${ring}`, st === "picked" && "hud-tg-on", st === "picked" && row.side !== "enemy" && "hud-tg-ally")}
+            className={cn("hud-tg", gm && "hud-tg-gm", `hud-tg-${ring}`, st === "picked" && "hud-tg-on", st === "picked" && row.side !== "enemy" && "hud-tg-ally")}
             style={{ left: c.x, top: c.y, "--s": `${size}px` } as CSSProperties}
             data-testid="hud-pick-ring"
             data-token={row.tokenId}
@@ -74,7 +76,7 @@ export function PickRings(props: HudLayerProps) {
                 {label}
               </span>
             ) : null}
-            {ring === "out" ? (
+            {ring === "out" && gm ? null : ring === "out" ? (
               <span className="hud-tg-b" aria-hidden="true">
                 <b>GM</b>
               </span>

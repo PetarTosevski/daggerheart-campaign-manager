@@ -201,3 +201,9 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - H4.1 "+1 Hope" shows from the roll outcome alone (CB p.95), even if the sheet is already at max Hope.
 - H4.1 A multi-target roll that hits some and misses others is tagged "With Hope / With Fear", not Success / Failure.
 - H4.1 Damage-split rows leave out the board's Major / Minor tags (they would reveal adversary thresholds); "n left" waits on the split total (dcm-bxp.99.32.23).
+
+### Wave 6
+- H5.2 Stat block HP / Stress pips fill what's MARKED (as the board's stat block), while the PC sheet fills what's left; text "n of N marked" on both.
+- H5.2 Adversary attacks: out-of-range PCs show amber "Out of range" but stay pickable (the server doesn't refuse range for adversaries; CB p.101 "Move within Close range and make a standard attack").
+- H5.2 A Hidden PC in sight stays pickable for the GM with the condition shown (board: unpickable; CB p.348 Hidden gives disadvantage, not immunity).
+- H5.2 Any resolved adversary action also takes the scene spotlight (combatSpotlight.gmTake), not only the "Spotlight · 1 Fear" button.

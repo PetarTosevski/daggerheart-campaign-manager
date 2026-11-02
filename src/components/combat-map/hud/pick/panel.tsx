@@ -128,7 +128,9 @@ function Panel({ state, live }: { state: CombatPageState; live: PickLive }) {
   }, []);
 
   const art = artOf(spec.source);
-  const pay = selection.outOfRange ? GM_APPROVES_LINE : (spec.primary.pay?.(selection) ?? null);
+  // H5.2: the GM acting for an adversary (purple, HANDOFF "GM attack picking"): out of range needs no approval.
+  const gm = spec.source.kind === "adversary";
+  const pay = selection.outOfRange && !gm ? GM_APPROVES_LINE : (spec.primary.pay?.(selection) ?? null);
   const problem = primaryProblem(selection, spec.rule, spec.primary.blocked?.(selection) ?? null);
   const label = spec.primary.label(selection);
   const style = spot ? ({ "--pk-x": `${spot.x}px`, "--pk-y": `${spot.y}px` } as CSSProperties) : undefined;
@@ -144,7 +146,7 @@ function Panel({ state, live }: { state: CombatPageState; live: PickLive }) {
       role="dialog"
       aria-modal="false"
       aria-labelledby={titleId}
-      className={cn("hud-pk", spot ? "hud-pk-placed" : null, spot?.flipped && "hud-pk-flipped")}
+      className={cn("hud-pk", gm && "hud-pk-gm", spot ? "hud-pk-placed" : null, spot?.flipped && "hud-pk-flipped")}
       style={style}
       data-testid="hud-pick"
       data-session={spec.id}
@@ -186,7 +188,7 @@ function Panel({ state, live }: { state: CombatPageState; live: PickLive }) {
                   className={cn("hud-pk-r", `hud-pk-${st}`, row.reach === "out" && "hud-pk-away", row.side !== "enemy" && "hud-pk-ally")}
                   aria-pressed={st === "picked"}
                   aria-disabled={can ? undefined : true}
-                  aria-label={rowLabel(row, st)}
+                  aria-label={gm ? rowLabel(row, st).replace("out of range: the GM approves", "out of range") : rowLabel(row, st)}
                   data-testid="hud-pick-row"
                   data-state={st}
                   data-reach={row.reach}
@@ -212,11 +214,11 @@ function Panel({ state, live }: { state: CombatPageState; live: PickLive }) {
                       <svg viewBox="0 0 16 16" width="12" height="12">
                         <path d="M3 8.5l3 3 7-7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
-                      {row.reach === "out" ? " GM approves" : null}
+                      {row.reach === "out" ? (gm ? " Out of range" : " GM approves") : null}
                     </span>
                   ) : st !== "in" ? (
                     <span className="hud-pk-st" aria-hidden="true">
-                      {STATE_WORD[st]}
+                      {gm && st === "out" ? "Out of range" : STATE_WORD[st]}
                     </span>
                   ) : null}
                 </button>
