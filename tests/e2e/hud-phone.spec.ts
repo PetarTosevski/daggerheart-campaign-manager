@@ -125,7 +125,8 @@ test("the player at 390: strip with Fear, bottom sheet with resources and tabs, 
     await expect(chip).toHaveText(new RegExp(`^${enemies.sniper.name} · Very Far · GM [→←↑↓]$`));
     await test.info().attach("player-edge-chips-390", { body: await player.screenshot(), contentType: "image/png" });
     await expectNoSeriousA11yViolations(player);
-    await player.getByRole("button", { name: "Cancel Vicious Entangle" }).click();
+    // At 760 px and below the picker is a bottom sheet whose footer Cancel replaces the header's ✕ (H7.3).
+    await player.getByTestId("hud-pick").getByTestId("hud-pick-cancel").click();
     await expect(chip).toHaveCount(0);
     await expect(bs).toBeVisible();
   } finally {

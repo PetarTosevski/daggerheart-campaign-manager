@@ -29,7 +29,7 @@ test("the GM keeps the Sacred Pyres and spends a Blessed Branch", async ({ page 
 
   await page.getByRole("button", { name: "Rename Brightmoor" }).click();
   await page.getByLabel("Settlement name").fill("Brightmoor Keep");
-  await page.getByRole("button", { name: "Save" }).click();
+  await pyres.getByRole("listitem", { name: "Brightmoor" }).getByRole("button", { name: "Save" }).click();
   await expect(pyres.getByRole("button", { name: "Brightmoor Keep: extinguished" })).toBeVisible();
 
   await expect(page.getByRole("button", { name: "Ignite a Blessed Branch" })).toBeDisabled();

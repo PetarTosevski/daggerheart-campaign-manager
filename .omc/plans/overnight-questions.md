@@ -236,3 +236,17 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - H7.3 On a phone the picker / result / hit sheets stand over the full-screen sheet and the GM's stat block (pickers open from them), rather than closing the side panel.
 - H7.3 The hit window's footer shows Mark Armor above Take n HP (CSS order; keyboard order still reaches Take n HP first).
 - H7.3 The "Ask the Lorekeeper" pill covers the bottom 68 px on a phone; the sheets keep 76 px of room. Hide the pill on the combat page at phone width?
+
+## User answers 2026-11-02 (HUD defaulted questions)
+- Pips: mixed as built (PCs left, adversaries marked); players never see adversary stats (already true: stat block GM only). KEEP.
+- Wording: "needs" everywhere ("Wall Walk needs 1 Hope. You have 0."). CHANGE.
+- Lorekeeper button: hidden on the combat map at phone width. CHANGE.
+- Cast / Use: as built. KEEP.
+- Death confirm: the less-lethal outcome is settled after the dice, as built. KEEP.
+- Death undo: "If the roll has happened players can't undo rolls" - after the GM confirms (dice rolled) only the GM can undo. KEEP (as built).
+- Adversary attacks out of range: amber warning, still pickable. KEEP.
+- Hidden PCs: pickable for the GM, the attack rolls at disadvantage (CB p.103). KEEP; CHECK the engine applies the disadvantage.
+- Ally picks (Rousing Strike, CB p.343): each ally answers on their own screen. CHANGE (engine dcm-bxp.99.32.24 first; actor picks until then).
+- Withdraw: a Charge waiting for the GM's Difficulty can be withdrawn too. CHANGE.
+- Conditions: players can toggle conditions on their own sheet, as built. KEEP.
+- Player undo of normal rolls: unanswered (asked again).
