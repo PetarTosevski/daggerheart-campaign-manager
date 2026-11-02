@@ -1,3 +1,4 @@
+import type { FunctionArgs } from "convex/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../convex/_generated/api";
@@ -73,7 +74,22 @@ async function setup(frameId: "witherwild" | "castle-high" = "witherwild") {
   await edit(a, lastHp);
   await edit(b, lastHp);
   const row = (id: Id<"actionLog">) => t.run((ctx) => ctx.db.get("actionLog", id));
+  confirmer = gm;
   return { t, ids, gm, p1, p2, out, campaignId, a, b, sheetOf, characterOf, edit, row };
+}
+
+type Client = ReturnType<ReturnType<typeof makeTest>["withIdentity"]>;
+/** The current test's GM, who confirms a player's death move in `played`. */
+let confirmer: Client;
+
+/**
+ * HD4 (combat-hud answer 15b): a player's death move waits for the GM. `played` makes the move and, when it waits,
+ * has the GM confirm it at once, so these tests keep checking the move itself (tests/convex/hud-death-confirm.test.ts
+ * covers the wait).
+ */
+async function played(who: Client, args: FunctionArgs<typeof api.deathMoves.choose>) {
+  const r = await who.mutation(api.deathMoves.choose, args);
+  return r.awaitingGm ? confirmer.mutation(api.deathMoves.confirm, { characterId: args.characterId, idempotencyKey: key() }) : r;
 }
 
 async function codeOf(p: Promise<unknown>): Promise<unknown> {
@@ -94,20 +110,20 @@ describe("deathMoves", () => {
   it("allows a death move only at the last Hit Point of an active, conscious character", async () => {
     const { p1, a, edit } = await setup();
     await edit(a, (s) => ({ ...s, hp: s.hpMax - 1 }));
-    expect(await codeOf(p1.mutation(api.deathMoves.choose, { characterId: a, move: "avoidDeath", idempotencyKey: key() }))).toBe("DEATH_MOVE_RULE");
+    expect(await codeOf(played(p1, { characterId: a, move: "avoidDeath", idempotencyKey: key() }))).toBe("DEATH_MOVE_RULE");
     await edit(a, (s) => ({ ...s, hp: s.hpMax, conditions: ["unconscious"] }));
-    expect(await codeOf(p1.mutation(api.deathMoves.choose, { characterId: a, move: "avoidDeath", idempotencyKey: key() }))).toBe("DEATH_MOVE_RULE");
+    expect(await codeOf(played(p1, { characterId: a, move: "avoidDeath", idempotencyKey: key() }))).toBe("DEATH_MOVE_RULE");
   });
 
   it("Avoid Death: unconscious, and a Hope Die at or under the level adds a scar", async () => {
     const { p1, p2, a, b, sheetOf } = await setup();
     forceDice(1, 12);
-    const scarred = await p1.mutation(api.deathMoves.choose, { characterId: a, move: "avoidDeath", idempotencyKey: key() });
+    const scarred = await played(p1, { characterId: a, move: "avoidDeath", idempotencyKey: key() });
     expect(scarred).toMatchObject({ hopeDie: 1, scarred: true, journeyEnds: false, pending: null, status: "active" });
     expect((await sheetOf(a)).conditions).toContain("unconscious");
     expect((await sheetOf(a)).scars).toBe(1);
 
-    const clean = await p2.mutation(api.deathMoves.choose, { characterId: b, move: "avoidDeath", idempotencyKey: key() });
+    const clean = await played(p2, { characterId: b, move: "avoidDeath", idempotencyKey: key() });
     expect(clean).toMatchObject({ hopeDie: 12, scarred: false });
     expect((await sheetOf(b)).scars).toBe(0);
   });
@@ -116,7 +132,7 @@ describe("deathMoves", () => {
     const { p1, a, edit, sheetOf } = await setup();
     await edit(a, (s) => ({ ...s, scars: 5, hope: 1 }));
     forceDice(1);
-    const result = await p1.mutation(api.deathMoves.choose, { characterId: a, move: "avoidDeath", idempotencyKey: key() });
+    const result = await played(p1, { characterId: a, move: "avoidDeath", idempotencyKey: key() });
     expect(result.journeyEnds).toBe(true);
     expect((await sheetOf(a)).journeyEnds).toBe(true);
 
@@ -127,13 +143,13 @@ describe("deathMoves", () => {
   it("Blaze of Glory: a narrated critical success, then death taken by the Witherwild with Wither tokens", async () => {
     const { p1, a, edit, row, characterOf, gm } = await setup();
     await edit(a, (s) => ({ ...s, wither: 2 }));
-    const first = await p1.mutation(api.deathMoves.choose, { characterId: a, move: "blazeOfGlory", action: "brings the tower down", idempotencyKey: key() });
+    const first = await played(p1, { characterId: a, move: "blazeOfGlory", action: "brings the tower down", idempotencyKey: key() });
     expect(first.pending).toEqual({ move: "blazeOfGlory" });
     expect((await row(first.entryId))?.roll?.outcome).toBe("critical");
     expect((await row(first.entryId))?.summary).toContain("brings the tower down");
     expect(await gm.query(api.deathMoves.state, { characterId: a })).toMatchObject({ pending: { move: "blazeOfGlory" }, awaitingMove: false });
     // A second move waits until this one is finished.
-    expect(await codeOf(p1.mutation(api.deathMoves.choose, { characterId: a, move: "avoidDeath", idempotencyKey: key() }))).toBe("DEATH_MOVE_RULE");
+    expect(await codeOf(played(p1, { characterId: a, move: "avoidDeath", idempotencyKey: key() }))).toBe("DEATH_MOVE_RULE");
 
     const done = await p1.mutation(api.deathMoves.finishBlaze, { characterId: a, idempotencyKey: key() });
     expect(done.status).toBe("dead");
@@ -145,7 +161,7 @@ describe("deathMoves", () => {
   it("Risk It All: Hope higher waits for the player's split; Fear higher kills; matching dice clear everything", async () => {
     const { t, p1, gm, p2, a, b, sheetOf, characterOf, ids, campaignId } = await setup();
     forceDice(5, 2);
-    const hope = await p1.mutation(api.deathMoves.choose, { characterId: a, move: "riskItAll", idempotencyKey: key() });
+    const hope = await played(p1, { characterId: a, move: "riskItAll", idempotencyKey: key() });
     expect(hope).toMatchObject({ hopeDie: 5, fearDie: 2, pending: { move: "riskItAll", value: 5 } });
     expect(await codeOf(p1.mutation(api.deathMoves.resolveRiskItAll, { characterId: a, hp: 1, stress: 1, idempotencyKey: key() }))).toBe("DEATH_MOVE_RULE");
     const split = await p1.mutation(api.deathMoves.resolveRiskItAll, { characterId: a, hp: 3, stress: 2, idempotencyKey: key() });
@@ -153,14 +169,14 @@ describe("deathMoves", () => {
     expect([split.hp, split.stress, sa.hp, sa.stress]).toEqual([sa.hpMax - 3, 1, sa.hpMax - 3, 1]);
 
     forceDice(3, 9);
-    const fear = await p2.mutation(api.deathMoves.choose, { characterId: b, move: "riskItAll", idempotencyKey: key() });
+    const fear = await played(p2, { characterId: b, move: "riskItAll", idempotencyKey: key() });
     expect(fear.status).toBe("dead");
     expect((await characterOf(b)).status).toBe("dead");
 
     // Reset Bryn by hand (manual revive stays) and roll matching dice.
     await gm.mutation(api.characters.setStatus, { characterId: b, status: "active" });
     forceDice(6, 6);
-    const crit = await p2.mutation(api.deathMoves.choose, { characterId: b, move: "riskItAll", idempotencyKey: key() });
+    const crit = await played(p2, { characterId: b, move: "riskItAll", idempotencyKey: key() });
     expect(crit.pending).toBeNull();
     expect(await sheetOf(b)).toMatchObject({ hp: 0, stress: 0 });
     // No Fear is gained by a death move.
@@ -172,12 +188,12 @@ describe("deathMoves", () => {
   it("Castle High less-lethal: death sends the character away until the GM returns them", async () => {
     const { p1, gm, a, characterOf, row } = await setup("castle-high");
     forceDice(2, 8);
-    const result = await p1.mutation(api.deathMoves.choose, { characterId: a, move: "riskItAll", awayReason: "sentHome", idempotencyKey: key() });
+    const result = await played(p1, { characterId: a, move: "riskItAll", awayReason: "sentHome", idempotencyKey: key() });
     expect(result.status).toBe("away");
     expect(await characterOf(a)).toMatchObject({ status: "away", away: { reason: "sentHome" } });
     expect((await row(result.entryId))?.summary).toContain("sent home");
     // Away characters can't act.
-    expect(await codeOf(p1.mutation(api.deathMoves.choose, { characterId: a, move: "avoidDeath", idempotencyKey: key() }))).toBe("DEATH_MOVE_RULE");
+    expect(await codeOf(played(p1, { characterId: a, move: "avoidDeath", idempotencyKey: key() }))).toBe("DEATH_MOVE_RULE");
 
     expect(await codeOf(p1.mutation(api.deathMoves.returnFromAway, { characterId: a, idempotencyKey: key() }))).toBe("FORBIDDEN");
     await gm.mutation(api.deathMoves.returnFromAway, { characterId: a, idempotencyKey: key() });
@@ -189,7 +205,7 @@ describe("deathMoves", () => {
 
   it("Castle High less-lethal: Blaze of Glory ends in the infirmary by default", async () => {
     const { p1, a, characterOf } = await setup("castle-high");
-    await p1.mutation(api.deathMoves.choose, { characterId: a, move: "blazeOfGlory", idempotencyKey: key() });
+    await played(p1, { characterId: a, move: "blazeOfGlory", idempotencyKey: key() });
     const done = await p1.mutation(api.deathMoves.finishBlaze, { characterId: a, idempotencyKey: key() });
     expect(done.status).toBe("away");
     expect((await characterOf(a)).away).toEqual({ reason: "infirmary", requested: true });
@@ -198,7 +214,7 @@ describe("deathMoves", () => {
   it("LL1: a player's less-lethal pick is a request; the GM confirms it", async () => {
     const { p1, gm, a, characterOf, row } = await setup("castle-high");
     forceDice(2, 8);
-    const result = await p1.mutation(api.deathMoves.choose, { characterId: a, move: "riskItAll", awayReason: "sentHome", idempotencyKey: key() });
+    const result = await played(p1, { characterId: a, move: "riskItAll", awayReason: "sentHome", idempotencyKey: key() });
     expect((await characterOf(a)).away).toEqual({ reason: "sentHome", requested: true });
     expect((await row(result.entryId))?.summary).toContain("the GM decides");
     expect((await p1.query(api.deathMoves.state, { characterId: a })).awayRequested).toBe(true);
@@ -215,7 +231,7 @@ describe("deathMoves", () => {
 
   it("LL1 decision 5: back in play at full Hit Points, no death move until a Hit Point is cleared and marked again", async () => {
     const { p1, gm, a, characterOf, sheetOf } = await setup("castle-high");
-    await p1.mutation(api.deathMoves.choose, { characterId: a, move: "blazeOfGlory", idempotencyKey: key() });
+    await played(p1, { characterId: a, move: "blazeOfGlory", idempotencyKey: key() });
     await p1.mutation(api.deathMoves.finishBlaze, { characterId: a, idempotencyKey: key() });
     await gm.mutation(api.deathMoves.returnFromAway, { characterId: a, idempotencyKey: key() });
     // HP and Stress stay as they were; the prompt is not shown and the move is refused.
@@ -224,7 +240,7 @@ describe("deathMoves", () => {
     expect(sheet.stress).toBe(3);
     expect((await characterOf(a)).deathMoveSpent).toBe(true);
     expect((await p1.query(api.deathMoves.state, { characterId: a })).awaitingMove).toBe(false);
-    expect(await codeOf(p1.mutation(api.deathMoves.choose, { characterId: a, move: "avoidDeath", idempotencyKey: key() }))).toBe("DEATH_MOVE_RULE");
+    expect(await codeOf(played(p1, { characterId: a, move: "avoidDeath", idempotencyKey: key() }))).toBe("DEATH_MOVE_RULE");
 
     // Clearing a Hit Point (saveSheet) clears the flag; marking the last one again asks for a death move.
     await p1.mutation(api.characters.adjustResource, { characterId: a, resource: "hp", delta: -1 });
@@ -249,7 +265,7 @@ describe("deathMoves", () => {
 
   it("LL1 decision 5: back in play below full Hit Points sets no flag", async () => {
     const { p1, gm, a, edit, characterOf } = await setup("castle-high");
-    await p1.mutation(api.deathMoves.choose, { characterId: a, move: "blazeOfGlory", idempotencyKey: key() });
+    await played(p1, { characterId: a, move: "blazeOfGlory", idempotencyKey: key() });
     await p1.mutation(api.deathMoves.finishBlaze, { characterId: a, idempotencyKey: key() });
     await edit(a, (s) => ({ ...s, hp: s.hpMax - 2 }));
     await gm.mutation(api.deathMoves.returnFromAway, { characterId: a, idempotencyKey: key() });
@@ -258,12 +274,12 @@ describe("deathMoves", () => {
 
   it("LL1: the GM changes a player's request, and the GM's own death move is final at once", async () => {
     const { p1, gm, a, b, characterOf } = await setup("castle-high");
-    await p1.mutation(api.deathMoves.choose, { characterId: a, move: "blazeOfGlory", idempotencyKey: key() });
+    await played(p1, { characterId: a, move: "blazeOfGlory", idempotencyKey: key() });
     await p1.mutation(api.deathMoves.finishBlaze, { characterId: a, awayReason: "infirmary", idempotencyKey: key() });
     await gm.mutation(api.deathMoves.settleAway, { characterId: a, reason: "sentHome", idempotencyKey: key() });
     expect((await characterOf(a)).away).toEqual({ reason: "sentHome" });
 
-    await gm.mutation(api.deathMoves.choose, { characterId: b, move: "blazeOfGlory", idempotencyKey: key() });
+    await played(gm, { characterId: b, move: "blazeOfGlory", idempotencyKey: key() });
     await gm.mutation(api.deathMoves.finishBlaze, { characterId: b, awayReason: "sentHome", idempotencyKey: key() });
     expect((await characterOf(b)).away).toEqual({ reason: "sentHome" });
     expect((await gm.query(api.deathMoves.state, { characterId: b })).awayRequested).toBe(false);
@@ -276,13 +292,16 @@ describe("deathMoves", () => {
   it("undo restores the sheet and the status, and reopens the move's earlier step", async () => {
     const { p1, gm, a, b, p2, sheetOf, characterOf } = await setup();
     forceDice(1);
-    const avoid = await p1.mutation(api.deathMoves.choose, { characterId: a, move: "avoidDeath", idempotencyKey: key() });
-    const undone = await p1.mutation(api.deathMoves.undo, { entryId: avoid.entryId, idempotencyKey: key() });
-    expect(undone).toMatchObject({ undone: [avoid.entryId], status: "active" });
+    const avoid = await played(p1, { characterId: a, move: "avoidDeath", idempotencyKey: key() });
+    // HD4: the confirmed move is the GM's row; the GM's undo also takes back the player's request row (one group).
+    expect(await codeOf(p1.mutation(api.deathMoves.undo, { entryId: avoid.entryId, idempotencyKey: key() }))).toBe("FORBIDDEN");
+    const undone = await gm.mutation(api.deathMoves.undo, { entryId: avoid.entryId, idempotencyKey: key() });
+    expect(undone.status).toBe("active");
+    expect(undone.undone).toContain(avoid.entryId);
     expect(await sheetOf(a)).toMatchObject({ conditions: [], scars: 0 });
     expect((await gm.query(api.deathMoves.state, { characterId: a })).awaitingMove).toBe(true);
 
-    await p2.mutation(api.deathMoves.choose, { characterId: b, move: "blazeOfGlory", idempotencyKey: key() });
+    await played(p2, { characterId: b, move: "blazeOfGlory", idempotencyKey: key() });
     const dead = await p2.mutation(api.deathMoves.finishBlaze, { characterId: b, idempotencyKey: key() });
     // Another player can't undo it; the GM can.
     expect(await codeOf(p1.mutation(api.deathMoves.undo, { entryId: dead.entryId, idempotencyKey: key() }))).toBe("FORBIDDEN");
@@ -296,7 +315,7 @@ describe("deathMoves", () => {
 
   it("X6: a death-move away character comes back (return or undo) only into a free slot; the owner can't bring them back", async () => {
     const { p1, gm, a, campaignId, characterOf } = await setup("castle-high");
-    await p1.mutation(api.deathMoves.choose, { characterId: a, move: "blazeOfGlory", idempotencyKey: key() });
+    await played(p1, { characterId: a, move: "blazeOfGlory", idempotencyKey: key() });
     const gone = await p1.mutation(api.deathMoves.finishBlaze, { characterId: a, idempotencyKey: key() });
     expect(gone.status).toBe("away");
     // The owner can't bring back a death-move away character; "away" again changes nothing (no bench).
@@ -318,7 +337,7 @@ describe("deathMoves", () => {
   it("anonymous, outsider, player and GM", async () => {
     const { t, p1, p2, gm, out, a, b } = await setup("castle-high");
     const choose = (who: typeof gm, characterId: Id<"characters">) =>
-      codeOf(who.mutation(api.deathMoves.choose, { characterId, move: "blazeOfGlory", idempotencyKey: key() }));
+      codeOf(played(who, { characterId, move: "blazeOfGlory", idempotencyKey: key() }));
     expect(await choose(t as typeof gm, a)).toBe("UNAUTHENTICATED");
     expect(await choose(out, a)).toBe("NOT_FOUND");
     expect(await choose(p2, a)).toBe("FORBIDDEN");

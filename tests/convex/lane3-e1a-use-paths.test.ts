@@ -383,11 +383,13 @@ describe("E1.3a: Cloaked and conditions on the sheet (dcm-bxp.99.19.68, dcm-bxp.
     const a = await arena();
     const s = await a.sheet();
     await a.edit({ hp: s.hpMax, conditions: ["cloaked"] });
-    const r = await a.player.mutation(api.deathMoves.choose, { characterId: a.w.characterA, move: "avoidDeath", idempotencyKey: key() });
+    // HD4 (answer 15b): the player's move waits for the GM; the GM's confirm makes it (and the GM undoes it).
+    await a.player.mutation(api.deathMoves.choose, { characterId: a.w.characterA, move: "avoidDeath", idempotencyKey: key() });
+    const r = await a.gm.mutation(api.deathMoves.confirm, { characterId: a.w.characterA, idempotencyKey: key() });
     const down = await a.sheet();
     expect(down.conditions).toContain("unconscious");
     expect(down.conditions).not.toContain("cloaked");
-    await a.player.mutation(api.deathMoves.undo, { entryId: r.entryId, idempotencyKey: key() });
+    await a.gm.mutation(api.deathMoves.undo, { entryId: r.entryId, idempotencyKey: key() });
     expect((await a.sheet()).conditions).toEqual(["cloaked"]);
   });
 });

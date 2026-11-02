@@ -13,6 +13,8 @@ import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import type { SlotProps } from "../slots";
 
+import { deathResultText, DeathMoveWait } from "./waiting";
+
 // Short reminders of CB 106; the book has the full text.
 const MOVE_HINTS: Record<DeathMove, string> = {
   blazeOfGlory: "Take one last action, which critically succeeds, then cross through the veil.",
@@ -54,9 +56,12 @@ function DeathMoveControls({
 
   const due = state.awaitingMove || state.pending !== null;
   const open = due && dismissedAt !== updatedAt;
+  // HD4: while a player's move waits for the GM, the strip shows the wait (player) or the confirm card (GM).
+  const waiting = state.request;
 
   return (
     <>
+      {waiting ? <DeathMoveWait characterId={characterId} name={name} level={sheet.level} request={waiting} isGm={isGm} onDone={setResult} /> : null}
       {due && !open ? (
         <div className="db-row">
           <Pill variant="solid" onClick={() => setDismissedAt(null)}>
@@ -64,14 +69,14 @@ function DeathMoveControls({
           </Pill>
         </div>
       ) : null}
-      {result || state.undoEntryId ? (
+      {result || (state.undoEntryId && !waiting) ? (
         <div className="db-row sh-small">
           {result ? (
             <p role="status" className="m-0">
               {result}
             </p>
           ) : null}
-          {state.undoEntryId ? (
+          {state.undoEntryId && !waiting ? (
             <Pill
               disabled={undo.pending}
               onClick={() =>
@@ -169,12 +174,9 @@ function ChooseMove({
   async function pick(move: DeathMove) {
     const r = await choose.fire({ characterId, move, ...(move === "blazeOfGlory" && action.trim() ? { action: action.trim() } : {}), ...(lessLethal ? { awayReason } : {}) });
     if (!r) return;
-    if (move === "avoidDeath") {
-      onDone(`Hope Die ${r.hopeDie} against level ${level}: ${r.scarred ? "a scar" : "no scar"}.${r.journeyEnds ? " The last Hope slot is gone: the journey ends." : ""}`);
-    } else if (move === "riskItAll") {
-      const lead = `Hope ${r.hopeDie}, Fear ${r.fearDie}: `;
-      onDone(lead + (r.status !== "active" ? (r.status === "away" ? `away instead of dead${request ? " (requested; the GM decides)" : ""}.` : "death.") : r.pending ? "clear Hit Points and Stress." : "matching dice, everything cleared."));
-    } else onDone("Blaze of Glory: the action critically succeeds.");
+    // HD4: a player's move waits for the GM; the strip shows the wait, so there is no result yet.
+    if (r.awaitingGm) onDone("");
+    else onDone(deathResultText(move, r, level, request));
   }
 
   return (

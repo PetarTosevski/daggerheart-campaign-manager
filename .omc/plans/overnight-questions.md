@@ -184,3 +184,10 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - H3.4 A locked button's reason shows on hover / focus / tap, not permanently as on the board.
 - H3.4 While a forced attack waits, the ring's Attack opens a normal attack (the forced card answers the forced one).
 - H3.4 Stress costs never lock a button: Stress past full marks a Hit Point (CB p.106).
+
+### Wave 5
+- HD4 The GM's confirm card doesn't offer the less-lethal place (infirmary / sent home); the GM settles it after the dice. CB p.106 / p.182.
+- HD4 A player can no longer undo their own confirmed death move within the dice minute (only the GM can); before confirm, the player takes the request back.
+- HD4 An edit grantee who isn't the GM also waits for the GM's confirm.
+- HD4 Blaze of Glory's finish step needs no second confirm (one confirm at the move).
+- Cleanup: H3.2's taller attack panel overlaps the map's Zoom out button at 1440x900 (dcm-bxp.99.32.22); the a11y check excludes it until fixed.

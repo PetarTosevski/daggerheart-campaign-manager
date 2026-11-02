@@ -77,6 +77,8 @@ const area: Area = {
     { fn: api.deathMoves.returnFromAway, access: "own", expect: { player: "FORBIDDEN" }, okCodes: ["DEATH_MOVE_RULE"] },
     { fn: api.deathMoves.settleAway, access: "own", expect: { player: "FORBIDDEN" }, okCodes: ["DEATH_MOVE_RULE"] },
     { fn: api.deathMoves.state, access: "own" },
+    { fn: api.deathMoves.confirm, access: "own", expect: { player: "FORBIDDEN" }, okCodes: ["DEATH_MOVE_NOT_WAITING"] },
+    { fn: api.deathMoves.decline, access: "own", expect: { player: "FORBIDDEN" }, okCodes: ["DEATH_MOVE_NOT_WAITING"] },
     {
       // A real death move by playerA (every Hit Point marked, then Avoid Death): its actor or the GM undoes it.
       fn: api.deathMoves.undo,
