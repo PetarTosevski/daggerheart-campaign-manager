@@ -1,3 +1,8 @@
+import {
+  characterSheetSchema,
+  type CharacterSheet,
+} from "../../../../../src/lib/validation/characters";
+
 import type { Id } from "../../convex";
 
 export type TraitScores = {
@@ -53,7 +58,22 @@ export type SheetData = {
   notes: string;
   levelUpPending?: boolean;
   multiclass?: { classId: string; domainId: string; subclassId: string; spellcastTrait?: string };
-};
+} & Partial<
+  Pick<
+    CharacterSheet,
+    | "conditions"
+    | "effects"
+    | "heldDice"
+    | "featureUses"
+    | "classState"
+    | "sessionFeatures"
+    | "advancements"
+    | "wither"
+    | "journeyEnds"
+    | "slotBonuses"
+    | "cardTokens"
+  >
+>;
 
 /** The fields the roster and the sheet read from `characters.listByCampaign` and `characters.get`. */
 export type SheetCharacter = {
@@ -171,6 +191,41 @@ function rank(value: unknown): SheetData["subclassRank"] {
   return undefined;
 }
 
+/** Dice, lunar, and class-feature panels parse through `characterSheetSchema`; keep those fields from the stored sheet. */
+function withPlayFields(core: SheetData, raw: Record<string, unknown>): SheetData {
+  const parsed = characterSheetSchema.safeParse({
+    ...core,
+    secondaryWeaponId: core.secondaryWeaponId ?? "",
+    conditions: raw.conditions,
+    effects: raw.effects,
+    heldDice: raw.heldDice,
+    featureUses: raw.featureUses,
+    classState: raw.classState,
+    sessionFeatures: raw.sessionFeatures,
+    advancements: raw.advancements,
+    wither: raw.wither,
+    journeyEnds: raw.journeyEnds,
+    slotBonuses: raw.slotBonuses,
+    cardTokens: raw.cardTokens,
+  });
+  if (!parsed.success) return core;
+  const sheet = parsed.data;
+  return {
+    ...core,
+    conditions: sheet.conditions,
+    effects: sheet.effects,
+    heldDice: sheet.heldDice,
+    featureUses: sheet.featureUses,
+    classState: sheet.classState,
+    advancements: sheet.advancements,
+    wither: sheet.wither,
+    journeyEnds: sheet.journeyEnds,
+    ...(sheet.sessionFeatures !== undefined ? { sessionFeatures: sheet.sessionFeatures } : {}),
+    ...(sheet.slotBonuses !== undefined ? { slotBonuses: sheet.slotBonuses } : {}),
+    ...(sheet.cardTokens !== undefined ? { cardTokens: sheet.cardTokens } : {}),
+  };
+}
+
 /** A character row, or null when the value is not one. */
 export function readCharacter(value: unknown): SheetCharacter | null {
   const row = record(value);
@@ -195,63 +250,66 @@ export function readCharacter(value: unknown): SheetCharacter | null {
     canEdit: row.canEdit === true,
     portraitUrl: typeof row.portraitUrl === "string" ? row.portraitUrl : null,
     ...(row.corrupt === true ? { corrupt: true } : {}),
-    sheet: {
-      name: sheet.name,
-      pronouns: text(sheet.pronouns),
-      ...(sheet.pronounsLabel === "pronouns" || sheet.pronounsLabel === "gender"
-        ? { pronounsLabel: sheet.pronounsLabel }
-        : {}),
-      description: text(sheet.description),
-      level: whole(sheet.level, 1),
-      classId: text(sheet.classId),
-      subclassId: text(sheet.subclassId),
-      ...(rank(sheet.subclassRank) ? { subclassRank: rank(sheet.subclassRank) } : {}),
-      ancestry: choice,
-      communityId: text(sheet.communityId),
-      traits: traitScores(sheet.traits),
-      traitMarks: numbers(sheet.traitMarks),
-      evasion: whole(sheet.evasion),
-      hp: whole(sheet.hp),
-      hpMax: Math.max(1, whole(sheet.hpMax, 1)),
-      stress: whole(sheet.stress),
-      stressMax: Math.max(1, whole(sheet.stressMax, 1)),
-      hope: whole(sheet.hope),
-      scars: whole(sheet.scars),
-      hopeSlotBonus: whole(sheet.hopeSlotBonus),
-      armorMarked: whole(sheet.armorMarked),
-      proficiency: Math.max(1, whole(sheet.proficiency, 1)),
-      primaryWeaponId: text(sheet.primaryWeaponId),
-      ...(typeof sheet.secondaryWeaponId === "string" ? { secondaryWeaponId: sheet.secondaryWeaponId } : {}),
-      ...(typeof sheet.armorId === "string" ? { armorId: sheet.armorId } : {}),
-      inventory: inventory(sheet.inventory),
-      gold: {
-        handfuls: whole(gold?.handfuls),
-        bags: whole(gold?.bags),
-        chest: gold?.chest === true,
+    sheet: withPlayFields(
+      {
+        name: sheet.name,
+        pronouns: text(sheet.pronouns),
+        ...(sheet.pronounsLabel === "pronouns" || sheet.pronounsLabel === "gender"
+          ? { pronounsLabel: sheet.pronounsLabel }
+          : {}),
+        description: text(sheet.description),
+        level: whole(sheet.level, 1),
+        classId: text(sheet.classId),
+        subclassId: text(sheet.subclassId),
+        ...(rank(sheet.subclassRank) ? { subclassRank: rank(sheet.subclassRank) } : {}),
+        ancestry: choice,
+        communityId: text(sheet.communityId),
+        traits: traitScores(sheet.traits),
+        traitMarks: numbers(sheet.traitMarks),
+        evasion: whole(sheet.evasion),
+        hp: whole(sheet.hp),
+        hpMax: Math.max(1, whole(sheet.hpMax, 1)),
+        stress: whole(sheet.stress),
+        stressMax: Math.max(1, whole(sheet.stressMax, 1)),
+        hope: whole(sheet.hope),
+        scars: whole(sheet.scars),
+        hopeSlotBonus: whole(sheet.hopeSlotBonus),
+        armorMarked: whole(sheet.armorMarked),
+        proficiency: Math.max(1, whole(sheet.proficiency, 1)),
+        primaryWeaponId: text(sheet.primaryWeaponId),
+        ...(typeof sheet.secondaryWeaponId === "string" ? { secondaryWeaponId: sheet.secondaryWeaponId } : {}),
+        ...(typeof sheet.armorId === "string" ? { armorId: sheet.armorId } : {}),
+        inventory: inventory(sheet.inventory),
+        gold: {
+          handfuls: whole(gold?.handfuls),
+          bags: whole(gold?.bags),
+          chest: gold?.chest === true,
+        },
+        experiences: experiences(sheet.experiences),
+        domainCards: {
+          owned: strings(cards?.owned),
+          loadout: strings(cards?.loadout),
+        },
+        background: strings(sheet.background),
+        connections: strings(sheet.connections),
+        notes: text(sheet.notes),
+        ...(sheet.levelUpPending === true ? { levelUpPending: true } : {}),
+        ...(multiclass &&
+        typeof multiclass.classId === "string" &&
+        typeof multiclass.domainId === "string" &&
+        typeof multiclass.subclassId === "string"
+          ? {
+              multiclass: {
+                classId: multiclass.classId,
+                domainId: multiclass.domainId,
+                subclassId: multiclass.subclassId,
+                ...(typeof multiclass.spellcastTrait === "string" ? { spellcastTrait: multiclass.spellcastTrait } : {}),
+              },
+            }
+          : {}),
       },
-      experiences: experiences(sheet.experiences),
-      domainCards: {
-        owned: strings(cards?.owned),
-        loadout: strings(cards?.loadout),
-      },
-      background: strings(sheet.background),
-      connections: strings(sheet.connections),
-      notes: text(sheet.notes),
-      ...(sheet.levelUpPending === true ? { levelUpPending: true } : {}),
-      ...(multiclass &&
-      typeof multiclass.classId === "string" &&
-      typeof multiclass.domainId === "string" &&
-      typeof multiclass.subclassId === "string"
-        ? {
-            multiclass: {
-              classId: multiclass.classId,
-              domainId: multiclass.domainId,
-              subclassId: multiclass.subclassId,
-              ...(typeof multiclass.spellcastTrait === "string" ? { spellcastTrait: multiclass.spellcastTrait } : {}),
-            },
-          }
-        : {}),
-    },
+      sheet,
+    ),
   };
 }
 
