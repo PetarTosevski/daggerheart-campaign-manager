@@ -190,7 +190,7 @@ function NotesBody({ campaign, isGm }: { campaign: CampaignSummary; isGm: boolea
                 <strong className="bj-k-hope">+</strong> Hope · <strong className="bj-k-fear">^</strong> Fear
               </span>
               <span>
-                Type <strong>@name</strong> to link someone or somewhere from Characters &amp; Locations.
+                Type <strong>@name</strong> to link someone or somewhere from Codex.
               </span>
             </div>
           </div>

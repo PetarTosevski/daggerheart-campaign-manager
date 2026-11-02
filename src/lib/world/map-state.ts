@@ -1,4 +1,4 @@
-// World map state shared by the World board (D6) and Characters & Locations
+// World map state shared by the World board (D6) and Codex
 // pins (D7). Ported from reference/designs/project/World.dc.html. Pure module:
 // bundled into Convex.
 

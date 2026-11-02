@@ -75,8 +75,8 @@ async function gmCreatesCampaign(page: Page) {
 
 const SECTIONS = [
   { slug: "party", fn: "characters:listByCampaign", heading: "The Party", what: "The party failed to load.", ok: (page: Page) => page.getByRole("link", { name: "+ Create character" }) },
-  { slug: "codex", fn: "codex:list", heading: "Characters & Locations", what: "The codex failed to load.", ok: (page: Page) => page.getByRole("complementary", { name: "Entries" }) },
-  { slug: "world", fn: "maps:get", heading: "World", what: "The world map failed to load.", ok: (page: Page) => page.getByRole("application", { name: /^Map of/ }) },
+  { slug: "codex", fn: "codex:list", heading: "Codex", what: "The codex failed to load.", ok: (page: Page) => page.getByRole("complementary", { name: "Entries" }) },
+  { slug: "world", fn: "maps:get", heading: "World Map", what: "The world map failed to load.", ok: (page: Page) => page.getByRole("application", { name: /^Map of/ }) },
 ] as const;
 
 test("a failing query on Party, Codex and World shows the section boundary under the campaign nav; Try again re-renders", async ({ page }) => {

@@ -86,7 +86,7 @@ test("a joined player has no Adversaries nav item and sees the GM-only panel at 
   const { player, close } = await playerJoins(page, browser, name);
 
   const nav = player.getByRole("navigation", { name: "Campaign sections" });
-  await expect(nav.getByRole("link", { name: "Characters & Locations" })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "Codex" })).toBeVisible();
   await expect(nav.getByRole("link", { name: "Adversaries" })).toHaveCount(0);
 
   // Every Convex function the player's page asks for, from a fresh load of the URL.

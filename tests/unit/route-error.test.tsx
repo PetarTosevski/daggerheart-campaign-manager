@@ -85,7 +85,7 @@ describe("RouteError", () => {
   });
 
   it("the campaign variant links back to the campaign dashboard", () => {
-    render(<CampaignRouteError error={new Error("boom")} retry={() => undefined} title="Characters & Locations" what="The codex failed to load." />);
+    render(<CampaignRouteError error={new Error("boom")} retry={() => undefined} title="Codex" what="The codex failed to load." />);
     expect(screen.getByRole("link", { name: "Back to the dashboard" }).getAttribute("href")).toBe("/campaigns/camp1");
   });
 });

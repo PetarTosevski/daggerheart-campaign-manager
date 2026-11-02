@@ -38,5 +38,5 @@ export function parseQuickKey(text: string, selectedKind: EntryKind): { kind: En
 export const QUICK_KEYS_COPY = {
   title: "Quick keys",
   keys: "Start a line with * task · o event · - note · ! idea · + Hope · ^ Fear",
-  mentions: "Type @name to link someone or somewhere from Characters & Locations.",
+  mentions: "Type @name to link someone or somewhere from Codex.",
 } as const;
