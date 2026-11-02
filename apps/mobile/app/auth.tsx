@@ -1,5 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 
+export { RouteErrorBoundary as ErrorBoundary } from "../src/shell/route-error";
+
 const styles = StyleSheet.create({
   screen: { alignItems: "center", flex: 1, justifyContent: "center", padding: 24 },
   text: { fontSize: 16 },
