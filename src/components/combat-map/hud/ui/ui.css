@@ -499,7 +499,8 @@
   bottom: 0;
   right: 0;
   width: var(--hud-sheet-w);
-  max-width: 100%;
+  /* 100vw, not 100%: the HUD root has no width, so 100% collapsed the panel to 0 px. */
+  max-width: 100vw;
   display: flex;
   flex-direction: column;
   overflow: auto;

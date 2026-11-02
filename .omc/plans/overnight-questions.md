@@ -149,3 +149,8 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - H2.3 The hand follows the open PC sheet: a player opening another PC's sheet sees that hand view only; the GM sees the open PC's hand, locked until "Play for".
 - H2.3 Hide cards is remembered per browser (localStorage) and shares the classic hand's key.
 - H2.3 Help is the app's dice count, not per-ally chips (the engine has no per-ally Help); "Can't afford" is worked out for up-front Hope costs only; drag-to-play is not in the HUD (Use plays).
+- H2.1 HP and Armor pips on the sheet show what's LEFT (like the banners); the board's sheet lights HP pips for HP marked. Alternative: show marked on the sheet.
+- H2.1 Players can switch conditions on their own sheet; answer 5a only named the GM. Alternative: GM only.
+- H2.1 Your own sheet shows no spotlight badge when you don't hold the spotlight.
+- H2.1 Lasting effects on the sheet have no End button (the GM ends them from the classic list for now).
+- Bug found: age-of-umbra.spec.ts:32 finds two "Save" buttons (strict mode), dcm-3cog; not caused by the HUD.
