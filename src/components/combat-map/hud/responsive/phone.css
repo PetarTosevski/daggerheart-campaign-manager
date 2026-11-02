@@ -1,0 +1,699 @@
+/*
+ * The Combat HUD at phone width (plan combat-hud H7.2; board PlayerPhone, 390 × 844; HANDOFF "Phone (390)").
+ * Imported by hud/phone/index.tsx. The shell mounts the phone shell for a player at 760 px and below and puts
+ * `.hud-ph-on` on the HUD root; the GM keeps the tablet layout (H7.1's responsive/tablet.css) with the request queue as
+ * a bottom sheet (`.hud-ph-q`, answer 13a). Board values on the --hud-* tokens (hud.css); the bottom sheets of the
+ * picking panel, result and hit window are H7.3's (their own folders).
+ *
+ *   strip   .hud-ph-strip   top 0, 104 px: four mini banners and Fear (PlayerPhone `.mparty`, `.mb`)
+ *   tools   .hud-ph-tools   under the strip, right: Map tools and the classic switch (not on the board)
+ *   sheet   .hud-ph-bs      the bottom sheet: handle, resource line + Sheet, tabs, the open tab (`.bs`, `.mres`, `.tabs`)
+ *   edges   .hud-ph-edges   chips on the side edges for off-screen targets (`.edge`, `.e-out`)
+ *   panel   the PC sheet panel goes full screen (`.phone .sheet`, 44 px close)
+ */
+
+/* ---------------------------------------------------------------- layout tokens: the sheet is full screen, no make-room */
+.hud-root.hud-ph-on {
+  --hud-sheet-w: 100vw;
+  --hud-map-shift: 0px;
+  --hud-map-scale: 1;
+  --hud-edge: 8px;
+  --hud-ph-strip-h: 104px;
+}
+
+/* The phone region covers the screen; only its parts take the pointer, the map between them stays usable. */
+.hud-r-phone {
+  inset: 0;
+}
+.hud-r-phone > .hud-ph {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.hud-ph > * {
+  pointer-events: auto;
+}
+.hud-ph-muted {
+  margin: 0;
+  color: var(--hud-muted);
+  font: var(--hud-type-ui);
+}
+
+/*
+ * The map's own toolbar (Names, zoom, Fit) floats under the strip, left, on one row; the map's name is the strip's
+ * business on the board (no title on the phone), so it hides.
+ */
+.hud-root.hud-ph-on .hud-map .cm-toolbar {
+  top: calc(var(--hud-ph-strip-h) + 8px);
+  left: 8px;
+  right: auto;
+  flex-wrap: nowrap;
+  gap: 6px;
+  max-width: calc(100% - 16px);
+  transform: none;
+  padding: 4px 6px;
+}
+.hud-root.hud-ph-on .hud-map .cm-toolbar :is(.cm-map-title, .cm-spacer) {
+  display: none;
+}
+.hud-root.hud-ph-on .hud-map .cm-toolbar .cm-btn {
+  min-height: 32px;
+  padding: 0 10px;
+}
+
+/* ---------------------------------------------------------------- the mini banner strip (`.mparty`) */
+.hud-ph-strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  height: var(--hud-ph-strip-h);
+  display: flex;
+  gap: 4px;
+  padding: 0 6px;
+  background: linear-gradient(rgba(8, 12, 14, 0.92), rgba(8, 12, 14, 0.6));
+}
+.hud-ph-loading {
+  margin: 12px 8px;
+  color: var(--hud-muted);
+}
+.hud-ph-party {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hud-ph-party > li {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.hud-ph-mb {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 96px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.hud-ph-mb::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #c9a35a;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 14px), 50% 100%, 0 calc(100% - 14px));
+}
+.hud-ph-in {
+  position: absolute;
+  inset: 0 2px 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding-top: 8px;
+  background: #14262a;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 14px), 50% calc(100% - 1px), 0 calc(100% - 14px));
+}
+.hud-ph-you .hud-ph-in {
+  background: #2a2214;
+}
+.hud-ph-mb b {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0 3px;
+  font: 700 10.5px/1 var(--hud-font-display);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hud-ph-you b {
+  color: var(--hud-gold-text);
+}
+/* The open sheet's banner lights its trim, as the desktop banner does. */
+.hud-ph-open::before {
+  background: var(--hud-gold-text);
+}
+.hud-ph-down .hud-ph-in {
+  filter: grayscale(0.6) brightness(0.8);
+}
+.hud-ph-mb:focus-visible {
+  outline: 2px solid var(--hud-gold);
+  outline-offset: -2px;
+}
+.hud-ph .hbn-face.hud-ph-face {
+  width: 30px;
+  height: 30px;
+  border-width: 1.5px;
+}
+.hud-ph .hud-ph-face .hbn-initial {
+  font-size: 14px;
+}
+.hud-ph-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 44px;
+}
+.hud-ph-bars i {
+  position: relative;
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: #0b1214;
+}
+.hud-ph-bars i::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: calc(var(--v) * 100%);
+}
+.hud-ph-r::after {
+  background: var(--hud-hp);
+}
+.hud-ph-s::after {
+  background: var(--hud-stress);
+}
+.hud-ph-seal {
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  background: var(--hud-hope);
+  color: var(--hud-gold-ink);
+  font: 900 12px/24px var(--hud-font-display);
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--hud-page);
+}
+.hud-ph-seal-empty {
+  background: var(--hud-inset);
+  color: var(--hud-muted);
+  box-shadow: 0 0 0 2px var(--hud-page), inset 0 0 0 1px var(--hud-line-2);
+}
+/* Fear (`.mb-fear`): a purple banner, read only. */
+.hud-ph-fear {
+  flex: 0 0 72px;
+  width: auto;
+  cursor: default;
+}
+.hud-ph-fear::before {
+  background: var(--hud-fear);
+}
+.hud-ph-fear .hud-ph-in {
+  justify-content: center;
+  padding-top: 0;
+  background: var(--hud-fear-soft);
+  color: var(--hud-fear-text);
+}
+.hud-ph-flame {
+  width: 16px;
+  height: 16px;
+  color: var(--hud-fear);
+}
+.hud-ph-fear em {
+  font: 900 24px/1 var(--hud-font-display);
+  font-style: normal;
+  color: #efeaff;
+}
+
+/* ---------------------------------------------------------------- the toolbar under the strip */
+.hud-ph-tools {
+  position: absolute;
+  top: calc(var(--hud-ph-strip-h) + 52px);
+  right: 8px;
+  z-index: 15;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: calc(100% - 16px);
+}
+.hud-ph-tools .hud-btn {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+/* ---------------------------------------------------------------- the bottom sheet (`.bs`) */
+.hud-ph-bs {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  max-height: min(66dvh, 560px);
+  /* Clear of the app's floating "Ask the Lorekeeper" button (as the picking panel's footer, pick.css). */
+  padding: 0 0 calc(72px + env(safe-area-inset-bottom, 0px));
+  border-radius: 22px 22px 0 0;
+  background: var(--hud-card);
+  box-shadow:
+    0 -1px 0 #3a4d54,
+    0 -16px 40px rgba(0, 0, 0, 0.5);
+  color: var(--hud-ink);
+}
+.hud-ph-handle {
+  flex: none;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 24px;
+  padding: 10px 0 6px;
+  border: 0;
+  border-radius: 22px 22px 0 0;
+  background: none;
+  color: var(--hud-muted);
+  font: var(--hud-type-label);
+  cursor: pointer;
+}
+.hud-ph-handle > span {
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: #3a4d54;
+}
+.hud-ph-handle:focus-visible {
+  outline: 2px solid var(--hud-gold);
+  outline-offset: -2px;
+}
+/* The resource line (`.mres`) with Sheet at its end. */
+.hud-ph-res {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px 10px;
+}
+.hud-ph-mres {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font: 700 13px/1 var(--hud-font-ui);
+}
+.hud-ph-mres li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.hud-ph-mres svg {
+  width: 13px;
+  height: 13px;
+}
+.hud-ph-m-hp {
+  color: #e8705f;
+}
+.hud-ph-m-stress {
+  color: #8aa7c8;
+}
+.hud-ph-m-hope {
+  color: var(--hud-gold-text);
+}
+.hud-ph-m-armor {
+  color: var(--hud-armor);
+}
+.hud-ph-sheet-btn {
+  margin-left: auto;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.hud-ph-sheet-btn svg {
+  width: 14px;
+  height: 14px;
+}
+/* The tabs (`.tabs`). */
+.hud-ph-tabs {
+  flex: none;
+  display: flex;
+  gap: 4px;
+  margin: 0 14px 10px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--hud-inset);
+}
+.hud-ph-tabs button {
+  flex: 1;
+  height: 40px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #c8d3d0;
+  font: 600 13px/1 var(--hud-font-ui);
+  cursor: pointer;
+}
+.hud-ph-tabs button[aria-selected="true"] {
+  background: var(--hud-gold-soft);
+  color: var(--hud-gold-text);
+  box-shadow: inset 0 0 0 1px var(--hud-gold);
+}
+.hud-ph-bs[data-open="false"] .hud-ph-tabs button[aria-selected="true"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--hud-line-2);
+}
+.hud-ph-tabs button:focus-visible {
+  outline: 2px solid var(--hud-gold);
+  outline-offset: 1px;
+}
+.hud-ph-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 14px;
+}
+.hud-ph-attack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 4px 0 8px;
+}
+.hud-ph-attack .hud-btn {
+  min-height: 44px;
+  justify-content: center;
+}
+.hud-ph-forced {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hud-ph-forced .hud-btn {
+  width: 100%;
+}
+/* Dice and Feed: their parts fill the tab instead of floating. */
+.hud-ph-body .hud-dice {
+  width: 100%;
+}
+.hud-ph-body .hud-feed {
+  display: block;
+  position: static;
+  width: auto;
+  max-width: none;
+  margin: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: 0 0 8px;
+}
+
+/* The Hand tab (`.hscroll`): H2.3's hand laid out as one scrolling row of 140 px cards, nothing sunk or fanned. */
+.hud-ph-body-hand {
+  padding: 0;
+}
+.hud-ph-body .hud-hand {
+  --hud-hand-w: 140px;
+  --hud-hand-sink: 0px;
+  --hud-hand-room: auto;
+  align-items: stretch;
+  pointer-events: auto;
+}
+.hud-ph-body .hud-hand-over {
+  position: static;
+  transform: none;
+  width: auto;
+  margin: 0 14px;
+}
+.hud-ph-body .hud-hand-over:empty {
+  display: none;
+}
+.hud-ph-body .hud-hand-row {
+  height: auto;
+  flex-direction: column;
+  align-items: stretch;
+  overflow: visible;
+}
+.hud-ph-body .hud-fan {
+  justify-content: flex-start;
+  align-items: stretch;
+  gap: 10px;
+  padding: 4px 14px 6px;
+  overflow-x: auto;
+  transform: none;
+  scroll-snap-type: x proximity;
+}
+.hud-ph-body .hud-hc,
+.hud-ph-body .hud-hc:hover,
+.hud-ph-body .hud-hc:focus,
+.hud-ph-body .hud-hc:focus-within,
+.hud-ph-body .hud-hc.is-play {
+  margin: 0;
+  transform: none;
+  scroll-snap-align: start;
+}
+.hud-ph-body .hud-hc:focus-within > .cmh-face {
+  box-shadow:
+    0 0 0 2px var(--hud-gold),
+    0 8px 18px rgba(0, 0, 0, 0.45);
+}
+.hud-ph-body .hud-hc-tag {
+  position: static;
+  transform: none;
+  align-self: flex-start;
+  margin-bottom: 4px;
+}
+/* Beside the fan on desktop; on the phone a row under it (`.bs-f`: Roll options, Vault). */
+.hud-ph-body .hud-fanside {
+  align-self: stretch;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 10px 14px 0;
+}
+.hud-ph-body .hud-deck {
+  display: none;
+}
+.hud-ph-body .hud-fs-b {
+  flex: 1 1 0;
+  min-height: 44px;
+  justify-content: center;
+  font-size: 13px;
+}
+.hud-ph-body .hud-hand-pop {
+  position: static;
+  width: auto;
+  max-width: none;
+  max-height: none;
+  margin: 10px 14px 0;
+}
+.hud-ph-body .hud-folded,
+.hud-ph-body .hud-hidden,
+.hud-ph-body .hud-hand-empty,
+.hud-ph-body .hud-hand-loading {
+  margin: 4px 14px 8px;
+}
+
+/* The sheet steps aside while something else holds the bottom: a pick session, the hit window, a result, the death move. */
+.hud-root.hud-ph-on.hud-pk-open .hud-ph-bs,
+.hud-root.hud-ph-on:has(.hud-r-pop :is(.hud-hit, .hud-res, .hud-death-sheet)) .hud-ph-bs {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- edge chips (`.edge`) */
+.hud-ph-edges {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  pointer-events: none;
+}
+.hud-ph-edge {
+  position: absolute;
+  z-index: 15;
+  display: block;
+  max-width: 48%;
+  overflow: hidden;
+  padding: 5px 8px 5px 10px;
+  background: rgba(8, 12, 14, 0.92);
+  color: var(--hud-gold-text);
+  font: 600 11px/1.2 var(--hud-font-ui);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.hud-ph-edge-right {
+  right: 0;
+  border-radius: 999px 0 0 999px;
+}
+.hud-ph-edge-left {
+  left: 0;
+  padding: 5px 10px 5px 8px;
+  border-radius: 0 999px 999px 0;
+}
+.hud-ph-edge-out {
+  color: var(--hud-out);
+}
+.hud-ph-edge-los {
+  color: var(--hud-no-sight);
+}
+.hud-ph-edge-picked {
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+/* ---------------------------------------------------------------- notices above the sheet */
+.hud-ph-notices {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 240px;
+  z-index: 40;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- the sheet, full screen (`.phone .sheet`) */
+.hud-root.hud-ph-on .hud-r-panel {
+  left: 0;
+}
+.hud-root.hud-ph-on .hud-panel.hsh {
+  left: 0;
+  width: 100vw;
+  box-shadow: none;
+}
+.hud-root.hud-ph-on .hud-panel .hud-panel-x {
+  width: 44px;
+  height: 44px;
+}
+/* Under the full-screen sheet the strip, tools, chips and bottom sheet hide (hidden: the keyboard cannot reach them). */
+.hud-root.hud-ph-on.hud-sh-open .hud-ph > * {
+  visibility: hidden;
+}
+
+/* ---------------------------------------------------------------- the GM at phone width (answer 13a)
+ *
+ * The tablet layout fitted to 390: the banners hang at 55 % (still real buttons, well over 24 px), the Fear banner on
+ * the right with its disc under it, the GM's tools wrap under the banners (the title hides, as on a tablet with a sheet
+ * open), the map's toolbar sits above the bottom sheet, and the left column (request queue, Resolutions, spotlight) is
+ * the bottom sheet (`.hud-ph-q`).
+ */
+.hud-ph-q {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  max-height: 72dvh;
+  /* Clear of the app's floating "Ask the Lorekeeper" button. */
+  padding: 0 0 calc(72px + env(safe-area-inset-bottom, 0px));
+  border-radius: 22px 22px 0 0;
+  background: var(--hud-card);
+  box-shadow:
+    0 -1px 0 #3a4d54,
+    0 -16px 40px rgba(0, 0, 0, 0.5);
+}
+.hud-ph-q > .hud-ph-handle {
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0 4px;
+}
+.hud-ph-q > .hud-ph-handle b {
+  font: var(--hud-type-label);
+  letter-spacing: var(--hud-label-tracking);
+  text-transform: uppercase;
+}
+.hud-ph-q-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 10px;
+}
+.hud-ph-q .hud-q-col {
+  width: 100%;
+  max-height: none;
+  flex: none;
+}
+.hud-ph-q .hud-q,
+.hud-ph-q .hud-res,
+.hud-ph-q .hud-spot-gm {
+  box-shadow: none;
+}
+.hud-ph-q .hud-q-scroll {
+  overflow: visible;
+}
+/* Folded: only the heading with its count ("Waiting on you 3"). */
+.hud-ph-q[data-open="false"] :is(.hud-q-scroll, .hud-q-result, .hud-res, .hud-spot-gm) {
+  display: none;
+}
+.hud-ph-q[data-open="false"] .hud-q {
+  padding-bottom: 6px;
+}
+.hud-ph-q[data-open="false"] .hud-q-h {
+  margin-bottom: 0;
+}
+
+@media (max-width: 760px) {
+  .hud-root[data-role="gm"] {
+    /* The GM's sheet and stat block are full screen too, over the queue sheet. */
+    --hud-sheet-w: 100vw;
+    --hud-map-shift: 0px;
+    --hud-map-scale: 1;
+    --hud-edge: 8px;
+  }
+  .hud-root[data-role="gm"].hud-sh-open .hud-ph-q {
+    visibility: hidden;
+  }
+  .hud-root[data-role="gm"] .hud-r-banners {
+    left: 4px;
+    transform: scale(0.55);
+    transform-origin: 0 0;
+  }
+  .hud-root[data-role="gm"] .hud-r-fear {
+    right: 8px;
+  }
+  .hud-root[data-role="gm"] .hud-sun {
+    top: 214px;
+    right: 50%;
+    transform: translateX(50%);
+  }
+  .hud-root[data-role="gm"] .hud-r-scene {
+    top: 150px;
+    left: 8px;
+    right: 136px;
+    transform: none;
+  }
+  .hud-root[data-role="gm"] .hud-scene-gm .hud-title {
+    display: none;
+  }
+  .hud-root[data-role="gm"] .hud-scene-gm .hud-tr {
+    max-width: none;
+    gap: 6px;
+  }
+  .hud-root[data-role="gm"] .hud-map .cm-toolbar {
+    top: auto;
+    bottom: 168px;
+    left: 8px;
+    right: auto;
+    flex-wrap: nowrap;
+    gap: 6px;
+    max-width: calc(100% - 16px);
+    transform: none;
+    padding: 4px 6px;
+  }
+  .hud-root[data-role="gm"] .hud-map .cm-toolbar :is(.cm-map-title, .cm-spacer, .cm-live) {
+    display: none;
+  }
+}
+

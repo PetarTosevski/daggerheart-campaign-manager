@@ -17,6 +17,7 @@ import { HudFear } from "./fear";
 import { HudFeed } from "./feed";
 import { HudHand } from "./hand";
 import { HudHit } from "./hit";
+import { HudPhone, PhoneQueueSheet, usePhoneHud } from "./phone";
 import { HudPick, HudPickLayer, PickProvider } from "./pick";
 import { HudAttack } from "./pick-attack";
 import { HudAreaPick, HudAreaPickLayer } from "./pick-area";
@@ -75,8 +76,16 @@ function Region({ name, children, className }: { name: string; children: ReactNo
 function HudFrame({ state, loading, renderLayers, tools }: HudShellProps) {
   const hud = useHud();
   const { role } = state;
+  // H7.2: a player at phone width gets the phone shell (strip, bottom sheet) in place of the desktop regions.
+  const phone = usePhoneHud() && role !== "gm";
+  const toolbar = (
+    <>
+      <MapToolsButton role={role} />
+      <HudSwitchButton />
+    </>
+  );
   return (
-    <div className={cn("hud-root", hudRootClasses(hud))} data-role={role} data-testid="combat-hud">
+    <div className={cn("hud-root", hudRootClasses(hud), phone && "hud-ph-on")} data-role={role} data-testid="combat-hud">
       <h1 className="sr-only">Combat Map</h1>
       <div className="hud-map">
         {loading ? (
@@ -111,52 +120,61 @@ function HudFrame({ state, loading, renderLayers, tools }: HudShellProps) {
       </div>
 
       <div className="hud-over">
-        <Region name="banners">
-          <PartBoundary label="The party banners">
-            <HudBanners state={state} />
-          </PartBoundary>
-        </Region>
-        <Region name="scene">
-          <PartBoundary label="The scene">
-            <HudScene
-              state={state}
-              toolbar={
-                <>
-                  <MapToolsButton role={role} />
-                  <HudSwitchButton />
-                </>
-              }
-            />
-          </PartBoundary>
-        </Region>
-        <Region name="fear">
-          <PartBoundary label="Fear">
-            <HudFear state={state} />
-          </PartBoundary>
-        </Region>
+        {phone ? (
+          <Region name="phone">
+            <PartBoundary label="The phone HUD">
+              <HudPhone state={state} toolbar={toolbar} />
+            </PartBoundary>
+          </Region>
+        ) : (
+          <>
+            <Region name="banners">
+              <PartBoundary label="The party banners">
+                <HudBanners state={state} />
+              </PartBoundary>
+            </Region>
+            <Region name="scene">
+              <PartBoundary label="The scene">
+                <HudScene state={state} toolbar={toolbar} />
+              </PartBoundary>
+            </Region>
+            <Region name="fear">
+              <PartBoundary label="Fear">
+                <HudFear state={state} />
+              </PartBoundary>
+            </Region>
+          </>
+        )}
         <Region name="left">
-          {role === "gm" ? (
-            <PartBoundary label="The request queue">
-              <HudQueue state={state} />
-            </PartBoundary>
-          ) : null}
-          <PartBoundary label="The feed">
-            <HudFeed state={state} />
-          </PartBoundary>
-          {role === "gm" ? (
-            <PartBoundary label="The spotlight">
-              <HudSpotlight state={state} />
-            </PartBoundary>
-          ) : null}
+          {/* H7.2: the GM at phone width gets this column as a bottom sheet (answer 13a); otherwise it renders as is. */}
+          <PhoneQueueSheet role={role}>
+            {role === "gm" ? (
+              <PartBoundary label="The request queue">
+                <HudQueue state={state} />
+              </PartBoundary>
+            ) : null}
+            {phone ? null : (
+              <PartBoundary label="The feed">
+                <HudFeed state={state} />
+              </PartBoundary>
+            )}
+            {role === "gm" ? (
+              <PartBoundary label="The spotlight">
+                <HudSpotlight state={state} />
+              </PartBoundary>
+            ) : null}
+          </PhoneQueueSheet>
         </Region>
-        <Region name="hand">
-          <PartBoundary label="The hand">
-            <HudHand state={state} />
-          </PartBoundary>
-          <PartBoundary label="Notices">
-            <HudToasts state={state} />
-          </PartBoundary>
-        </Region>
+        {phone ? null : (
+          <Region name="hand">
+            <PartBoundary label="The hand">
+              <HudHand state={state} />
+            </PartBoundary>
+            <PartBoundary label="Notices">
+              <HudToasts state={state} />
+            </PartBoundary>
+          </Region>
+        )}
         <Region name="pop">
           {role === "gm" ? null : (
             <PartBoundary label="The spotlight">

@@ -223,3 +223,9 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - H6.2 Vault Recall stays enabled while the GM holds the spotlight (CB p.26: mark Stress equal to the Recall Cost to swap immediately).
 - H6.2 A token move blocked by the GM's spotlight shows as a toast near the hand, not in the move notice above the token.
 - H6.2 Uses already under way (chain links, after-roll questions, Minion offer, forced attacks) stay usable while the GM holds the spotlight.
+
+### Wave 8
+- H7.2 The phone bottom sheet starts folded (the open hand covers your token at default zoom), not on the Hand tab.
+- H7.2 Edge chips for off-screen targets only point; a tap doesn't pan or pick.
+- H7.2 GM at 390 px: banners scaled to 55%, title hidden, tools wrap, spotlight panel inside the queue sheet, full-screen GM sheet.
+- H7.2 The player's phone strip has no day/time disc and no spotlight tag (the board shows neither).
