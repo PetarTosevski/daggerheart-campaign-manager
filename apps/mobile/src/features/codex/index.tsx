@@ -1,6 +1,19 @@
-import { NotBuiltYet } from "../../shell/not-built-yet";
-import { sectionLabel } from "../../shell/sections";
+import { QueryBoundary } from "../sheet/query-boundary";
+import { CodexEntryScreen } from "./entry-screen";
+import { CodexListScreen } from "./list-screen";
 
 export function CodexScreen() {
-  return <NotBuiltYet title={sectionLabel("codex")} />;
+  return (
+    <QueryBoundary>
+      <CodexListScreen />
+    </QueryBoundary>
+  );
+}
+
+export function CodexEntryRoute() {
+  return (
+    <QueryBoundary>
+      <CodexEntryScreen />
+    </QueryBoundary>
+  );
 }
