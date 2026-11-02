@@ -159,3 +159,8 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - HD3 A withdrawn request is stored as "declined" with resolvedBy = the withdrawer until the status vocabulary gets "withdrawn" (dcm-bxp.99.32.17).
 - HD3 Only out-of-range uses waiting on GM approval (sanctions) can be withdrawn; a Charge waiting for the GM's Difficulty (CB p.59 / p.104) can't. Alternative: allow it too (one-line change).
 - HD3 The GM's queue item just disappears on withdraw; the only notice is a public feed line "<Name> withdrew <use> waiting for the GM". Alternative: a short "withdrawn" notice in the GM's queue.
+- H3.0 "Waiting for the GM" sits on the right under the Fear banner on Main (the boards show it only on CmpPromptsPlayer).
+- H3.0 An interim "Attack" button (bottom right) opens a plain weapon attack until H3.4's action ring replaces it (dcm-bxp.99.32.18).
+- H3.0 During a pick, tapping an ally's ring picks them instead of opening their sheet; with no pick open it still opens the sheet.
+- H3.0 Allies and neutrals are never shown "Can't see" (the server's sight hints cover enemies only); if a card needs sight to an ally the server refuses and the message shows under the primary.
+- H3.0 A picked out-of-range target shows "✓ GM approves" and keeps the amber ring with the GM badge (boards never show both together).

@@ -1,0 +1,465 @@
+/*
+ * The picking core (plan combat-hud H3.0): the picking panel (CmpPicking `.pk`), the target rings (CmpTokens `.tg-*`),
+ * "Waiting for the GM" (CmpPromptsPlayer `.pc.wait`) and the interim Attack button. Board values, colours from the
+ * --hud-* tokens (hud.css). The panel stands in the pop region at the spot panel.tsx measures (--pk-x / --pk-y);
+ * at 760 px and below it is a bottom sheet (HANDOFF "Phone": pickers are bottom sheets with 44–48 px buttons).
+ */
+
+/* ---------------------------------------------------------------- the panel */
+.hud-pk {
+  position: absolute;
+  left: var(--pk-x, calc(50% - 146px));
+  top: var(--pk-y, 30%);
+  z-index: 40;
+  width: 292px;
+  max-height: calc(100% - 16px);
+  overflow: auto;
+  border: 1px solid #3a4d54;
+  border-radius: var(--hud-r-popup);
+  background: var(--hud-card);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.6);
+  color: var(--hud-ink);
+  font: var(--hud-type-ui);
+}
+.hud-pk:not(.hud-pk-placed) {
+  visibility: hidden;
+}
+.hud-pk-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: var(--hud-inset);
+}
+.hud-pk-art {
+  position: relative;
+  flex: none;
+  width: 58px;
+  height: 36px;
+  overflow: hidden;
+  border-radius: 7px;
+  box-shadow: 0 0 0 1px #c9a35a;
+}
+.hud-pk-art img {
+  object-fit: cover;
+  object-position: center 35%;
+}
+.hud-pk-ht {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+}
+.hud-pk-ht h2 {
+  margin: 0;
+  color: var(--hud-gold-text);
+  font: 700 14px/1.15 var(--hud-font-display);
+  outline: none;
+}
+.hud-pk-ht h2:focus-visible {
+  outline: 2px solid var(--hud-gold);
+  outline-offset: 2px;
+}
+.hud-pk-ht span {
+  color: var(--hud-muted);
+  font-size: 12px;
+}
+.hud-pk-x {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--hud-line-2);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--hud-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.hud-pk-x:hover {
+  color: var(--hud-ink);
+}
+.hud-pk-x:focus-visible,
+.hud-pk-r:focus-visible,
+.hud-pk-go:focus-visible {
+  outline: 2px solid var(--hud-gold);
+  outline-offset: 2px;
+}
+.hud-pk-note {
+  margin: 0;
+  padding: 12px;
+  color: var(--hud-muted);
+  font-size: 12.5px;
+}
+
+/* The rows (`.pk-r`): ring mark, name with condition names, band, state. */
+.hud-pk-list {
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+}
+.hud-pk-r {
+  display: flex;
+  width: 100%;
+  min-height: 36px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.hud-pk-r:hover {
+  background: rgba(227, 180, 90, 0.08);
+}
+.hud-pk-ring {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: 2px dashed var(--hud-gold);
+  border-radius: 50%;
+}
+.hud-pk-n {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.hud-pk-cd {
+  display: inline-flex;
+  align-items: center;
+  color: #f3a58f;
+  font-size: 10.5px;
+  font-weight: 500;
+}
+.hud-pk-b {
+  color: var(--hud-muted);
+  font-size: 11.5px;
+}
+.hud-pk-st {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+}
+.hud-pk-picked {
+  background: var(--hud-gold-soft);
+}
+.hud-pk-picked .hud-pk-ring {
+  border: 0;
+  background: var(--hud-gold);
+  box-shadow: 0 0 8px rgba(227, 180, 90, 0.8);
+}
+.hud-pk-picked.hud-pk-ally .hud-pk-ring {
+  background: var(--hud-ally-picked);
+  box-shadow: 0 0 8px rgba(159, 216, 176, 0.8);
+}
+.hud-pk-picked .hud-pk-st {
+  color: var(--hud-gold-text);
+}
+.hud-pk-out .hud-pk-ring,
+.hud-pk-away .hud-pk-ring {
+  border-color: var(--hud-out);
+}
+.hud-pk-picked.hud-pk-away .hud-pk-ring {
+  border: 0;
+  background: var(--hud-out);
+}
+.hud-pk-out .hud-pk-st,
+.hud-pk-picked.hud-pk-away .hud-pk-st {
+  padding: 1px 7px;
+  border: 1px solid rgba(240, 160, 60, 0.5);
+  border-radius: 999px;
+  color: var(--hud-out);
+}
+.hud-pk-los {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.hud-pk-los .hud-pk-ring {
+  border: 2px dotted var(--hud-no-sight);
+}
+.hud-pk-los .hud-pk-st {
+  color: var(--hud-no-sight);
+}
+
+/* Riders and options (`.pk-rider`): H0's Toggle rows. */
+.hud-pk-opts > .hud-tog,
+.hud-pk-extra {
+  margin: 0 6px;
+  border-top: 1px solid var(--hud-line);
+}
+.hud-pk-extra {
+  padding: 8px 2px;
+}
+
+/* The footer (`.pk-f`): what you'll pay, one primary. */
+.hud-pk-f {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 12px;
+  background: var(--hud-inset);
+}
+.hud-pk-pay {
+  flex: 1 1 120px;
+  color: var(--hud-gold-text);
+  font-size: 11.5px;
+}
+.hud-pk-pay-gm {
+  color: var(--hud-out);
+}
+.hud-pk .hud-pk-go {
+  height: auto;
+  min-height: 38px;
+  max-width: 100%;
+  padding: 8px 16px;
+  font: 700 13px/1.15 var(--hud-font-display);
+  white-space: normal;
+}
+.hud-pk-pay:empty {
+  display: none;
+}
+.hud-pk-why,
+.hud-pk-err {
+  margin: 0;
+  padding: 0 12px 10px;
+  background: var(--hud-inset);
+  color: var(--hud-muted);
+  font-size: 11.5px;
+}
+.hud-pk-err {
+  color: var(--hud-danger);
+}
+
+/* ---------------------------------------------------------------- the target rings (CmpTokens `.tg-*`) */
+.hud-tg-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 35;
+  pointer-events: none;
+}
+.hud-tg-aim {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+}
+.hud-tg-aim line {
+  stroke: var(--hud-gold);
+  stroke-width: 2;
+  stroke-dasharray: 6 6;
+  opacity: 0.75;
+}
+.hud-tg {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+.hud-tg-ring {
+  position: absolute;
+  left: calc(var(--s) * -0.62);
+  top: calc(var(--s) * -0.62);
+  width: calc(var(--s) * 1.24);
+  height: calc(var(--s) * 1.24);
+  border: 2px dashed var(--hud-gold);
+  border-radius: 50%;
+}
+.hud-tg-picked .hud-tg-ring {
+  border: 3px solid var(--hud-gold);
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.35),
+    0 0 20px rgba(227, 180, 90, 0.85);
+}
+.hud-tg-ally .hud-tg-ring {
+  border: 3px solid var(--hud-ally-picked);
+  box-shadow: 0 0 16px rgba(159, 216, 176, 0.8);
+}
+.hud-tg-out .hud-tg-ring {
+  border-color: var(--hud-out);
+}
+.hud-tg-out.hud-tg-on .hud-tg-ring {
+  border-width: 3px;
+  box-shadow: 0 0 14px rgba(240, 160, 60, 0.7);
+}
+.hud-tg-los .hud-tg-ring {
+  border: 2px dotted var(--hud-no-sight);
+}
+.hud-tg-l {
+  position: absolute;
+  left: 0;
+  top: calc(var(--s) * -1.02);
+  z-index: 5;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(8, 12, 14, 0.9);
+  color: var(--hud-gold-text);
+  font: 600 10.5px/1 var(--hud-font-ui);
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+.hud-tg-picked .hud-tg-l {
+  background: var(--hud-gold);
+  color: var(--hud-gold-ink);
+}
+.hud-tg-ally .hud-tg-l {
+  background: var(--hud-ally-picked);
+}
+.hud-tg-out .hud-tg-l {
+  color: var(--hud-out);
+}
+.hud-tg-los .hud-tg-l {
+  color: var(--hud-no-sight);
+}
+.hud-tg-b {
+  position: absolute;
+  left: calc(var(--s) * 0.3);
+  top: calc(var(--s) * -0.58);
+  z-index: 5;
+  display: flex;
+  min-width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--hud-gold);
+  box-shadow: 0 0 0 2px var(--hud-page);
+  color: var(--hud-gold-ink);
+  font: 700 9px/1 var(--hud-font-ui);
+}
+.hud-tg-b svg {
+  width: 11px;
+  height: 11px;
+}
+.hud-tg-out .hud-tg-b {
+  background: var(--hud-out);
+}
+.hud-tg-los .hud-tg-b {
+  background: var(--hud-no-sight);
+}
+.hud-tg-rl {
+  position: absolute;
+  left: 0;
+  top: calc(var(--s) * 1);
+  z-index: 5;
+  padding: 3px 7px;
+  border: 1px dashed var(--hud-gold);
+  border-radius: 999px;
+  background: rgba(8, 12, 14, 0.9);
+  color: var(--hud-gold-text);
+  font: 600 10px/1 var(--hud-font-ui);
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+/* The tap target over the token while a session is open (the token's own click would select and target it). */
+.hud-tg-hit {
+  position: absolute;
+  left: calc(var(--s) * -0.62);
+  top: calc(var(--s) * -0.62);
+  width: calc(var(--s) * 1.24);
+  height: calc(var(--s) * 1.24);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+/* The classic CA5 rings would double the HUD's while a session draws its own. */
+.hud-pk-open .cma-rings {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- Waiting for the GM; the interim Attack button */
+.hud-pk-wait {
+  position: absolute;
+  top: 330px;
+  right: var(--hud-edge);
+  display: flex;
+  width: 300px;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hud-pk-asking {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--hud-fear-text);
+}
+.hud-pk-launch {
+  position: absolute;
+  right: var(--hud-edge);
+  bottom: 96px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hud-pk-launch .hud-btn:not(.hud-btn-primary) {
+  background: var(--hud-glass);
+}
+.hud-pk-launch-res {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--hud-glass);
+  box-shadow: 0 0 0 1px var(--hud-line);
+  color: var(--hud-gold-text);
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .hud-pk {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: auto;
+    max-height: 70%;
+    border-radius: 16px 16px 0 0;
+  }
+  .hud-pk:not(.hud-pk-placed) {
+    visibility: visible;
+  }
+  .hud-pk-r,
+  .hud-pk .hud-pk-go {
+    min-height: 44px;
+  }
+  /* Keeps the primary clear of the app's floating "Ask the Lorekeeper" button (H7.x owns the phone layout). */
+  .hud-pk-f {
+    padding-bottom: 76px;
+  }
+  .hud-pk-x {
+    width: 44px;
+    height: 44px;
+  }
+  .hud-pk-wait {
+    top: 80px;
+    right: 8px;
+    left: 8px;
+    width: auto;
+  }
+  .hud-pk-launch {
+    right: 8px;
+    bottom: 200px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-pk,
+  .hud-tg-ring {
+    transition: none;
+    animation: none;
+  }
+}

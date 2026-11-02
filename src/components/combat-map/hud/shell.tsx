@@ -17,7 +17,7 @@ import { HudFear } from "./fear";
 import { HudFeed } from "./feed";
 import { HudHand } from "./hand";
 import { HudHit } from "./hit";
-import { HudPick, HudPickLayer } from "./pick";
+import { HudPick, HudPickLayer, PickProvider } from "./pick";
 import { HudQueue } from "./queue";
 import { HudResult } from "./result";
 import { HudScene } from "./scene";
@@ -55,7 +55,9 @@ export type HudShellProps = {
 export function HudShell(props: HudShellProps) {
   return (
     <HudProvider>
-      <HudFrame {...props} />
+      <PickProvider>
+        <HudFrame {...props} />
+      </PickProvider>
     </HudProvider>
   );
 }

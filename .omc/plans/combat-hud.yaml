@@ -492,6 +492,7 @@ waves:
           - src/components/combat-map/hud/**
           - convex/combatFeatures.ts
         acceptance:
+          - "The ring's Attack opens H3.2's attack picker; the orchestrator removes H3.0's interim Attack button (hud/pick/attack.tsx) at merge (dcm-bxp.99.32.18)"
           - "Main 'Picking a target' / 'Can't afford' ring: Attack -> H3.2, Cast -> raises the hand (H3.1), Sheet -> your sheet, each feature with a Use -> H3.3; many features wrap into a second ring or a 'More' button (say which in the doc)"
           - "Buttons with names; Esc closes; never covers your token's arcs"
           - "lint, typecheck, tests pass"
