@@ -164,3 +164,7 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - H3.0 During a pick, tapping an ally's ring picks them instead of opening their sheet; with no pick open it still opens the sheet.
 - H3.0 Allies and neutrals are never shown "Can't see" (the server's sight hints cover enemies only); if a card needs sight to an ally the server refuses and the message shows under the primary.
 - H3.0 A picked out-of-range target shows "✓ GM approves" and keeps the amber ring with the GM badge (boards never show both together).
+- H3.2 The GM's "Play for" weapon attack does not use the HUD picker yet (player only); the GM keeps Map tools.
+- H3.2 The footer's Hope check counts riders' Hope costs too, so the primary greys out earlier (the server refuses a short payment anyway).
+- H3.2 Advantage and Help are steppers (counts), not the board's named-helper chips: the engine takes a Help die count only.
+- H3.2 The after-roll hold and Death Strike prompts stay in Map tools for now.

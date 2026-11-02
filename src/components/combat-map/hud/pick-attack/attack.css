@@ -1,0 +1,207 @@
+/*
+ * The weapon attack picker (plan combat-hud H3.2): its rows inside the picking panel (CmpPicking 'Weapon attack'
+ * `.wpn`, `.chips`, `.chip`; CmpPromptsPlayer 'With this attack', 'Lead by Example', 'Forced attack' `.lockc`), the
+ * prompt cards and the interim "Weapon attack" button. Board values on the --hud-* tokens (hud.css).
+ */
+
+.hud-atk {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.hud-atk-l {
+  display: block;
+  width: 100%;
+  margin-bottom: 2px;
+  color: var(--hud-muted);
+  font: var(--hud-type-label);
+  letter-spacing: var(--hud-label-tracking);
+  text-transform: uppercase;
+}
+
+/* Weapon tiles (.wpn) */
+.hud-atk-wpn {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.hud-atk-wpn button {
+  flex: 1 1 120px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--hud-line-2);
+  border-radius: 10px;
+  background: var(--hud-card);
+  color: var(--hud-ink);
+  font: 400 12px/1.35 var(--hud-font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.hud-atk-wpn button[aria-pressed="true"] {
+  border-color: var(--hud-gold);
+  background: var(--hud-gold-soft);
+}
+.hud-atk-wpn b {
+  display: block;
+  font: 700 13px/1.3 var(--hud-font-display);
+}
+
+/* The trait pick */
+.hud-atk-trait select {
+  width: 100%;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--hud-line-2);
+  border-radius: 10px;
+  background: var(--hud-inset);
+  color: var(--hud-ink);
+  font: var(--hud-type-ui);
+}
+
+/* Roll chips (.chips / .chip) */
+.hud-atk-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.hud-atk-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--hud-line-2);
+  border-radius: var(--hud-r-chip);
+  background: var(--hud-inset);
+  color: var(--hud-ink);
+  font: 400 12.5px/1 var(--hud-font-ui);
+  cursor: pointer;
+}
+.hud-atk-chip[aria-pressed="true"] {
+  border-color: var(--hud-gold);
+  background: var(--hud-gold-soft);
+  color: var(--hud-gold-text);
+}
+.hud-atk-chip:disabled {
+  cursor: not-allowed;
+  color: var(--hud-muted);
+}
+.hud-atk-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.hud-atk-step small,
+.hud-atk-chips > small {
+  color: var(--hud-muted);
+  font-size: 11.5px;
+}
+
+/* Sections: Lead by Example, "With this attack" */
+.hud-atk-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.hud-atk-rider {
+  border-radius: 10px;
+}
+.hud-atk-rider-on {
+  background: rgba(227, 180, 90, 0.06);
+}
+.hud-atk-pills {
+  display: inline-flex;
+  flex: none;
+  gap: 4px;
+  align-items: center;
+}
+.hud-atk-pills small {
+  color: var(--hud-gold-text);
+  font-size: 11px;
+}
+.hud-atk-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 8px 8px 44px;
+}
+
+.hud-atk-wpn button:focus-visible,
+.hud-atk-chip:focus-visible,
+.hud-atk-trait select:focus-visible {
+  outline: 2px solid var(--hud-gold);
+  outline-offset: 2px;
+}
+
+/* The prompt cards (Forced attack, Minions): right side, above the attack buttons. */
+.hud-atk-prompts {
+  position: absolute;
+  right: var(--hud-edge);
+  bottom: 150px;
+  display: flex;
+  width: 340px;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hud-atk-prompts:empty {
+  display: none;
+}
+.hud-atk-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--hud-r-chip);
+  background: var(--hud-gold-soft);
+  box-shadow: inset 0 0 0 1px var(--hud-gold);
+  color: var(--hud-gold-text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+/* The interim "Weapon attack" button (until H3.4's action ring), above H3.0's interim Attack button. */
+.hud-atk-launch {
+  position: absolute;
+  right: var(--hud-edge);
+  bottom: 140px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hud-atk-prompts:not(:empty) ~ .hud-atk-launch {
+  bottom: 104px;
+  right: calc(var(--hud-edge) + 110px);
+}
+.hud-atk-launch .hud-btn:not(.hud-btn-primary) {
+  background: var(--hud-glass);
+}
+.hud-atk-res {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--hud-glass);
+  box-shadow: 0 0 0 1px var(--hud-line);
+  color: var(--hud-gold-text);
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .hud-atk-prompts {
+    right: 8px;
+    bottom: 250px;
+    left: 8px;
+    width: auto;
+  }
+  .hud-atk-launch {
+    right: 8px;
+    bottom: 244px;
+  }
+  .hud-atk-chip,
+  .hud-atk-wpn button {
+    min-height: 44px;
+  }
+}

@@ -18,6 +18,7 @@ import { HudFeed } from "./feed";
 import { HudHand } from "./hand";
 import { HudHit } from "./hit";
 import { HudPick, HudPickLayer, PickProvider } from "./pick";
+import { HudAttack } from "./pick-attack";
 import { HudQueue } from "./queue";
 import { HudResult } from "./result";
 import { HudScene } from "./scene";
@@ -153,6 +154,9 @@ function HudFrame({ state, loading, renderLayers, tools }: HudShellProps) {
           </PartBoundary>
           <PartBoundary label="The picking panel">
             <HudPick state={state} />
+          </PartBoundary>
+          <PartBoundary label="The attack prompts">
+            <HudAttack state={state} />
           </PartBoundary>
           <PartBoundary label="The result">
             <HudResult state={state} />
