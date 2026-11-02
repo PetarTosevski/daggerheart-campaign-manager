@@ -2,14 +2,14 @@
  * The party banners (plan combat-hud H1.1; docs/tasks/TASK-HUD-H1.1.md; CmpTokens 'Banners', Main): one button per
  * `combatHud.party` row, yours first with the gold trim, HP pips showing HP left while every text says HP marked
  * (answer 2), conditions, the Last Hit Point state, the Hope seal, the empty spotlight slot until H1.S, and the sheet
- * opening through HudProvider into the classic drawer (mocked here). Convex is mocked.
+ * opening through HudProvider (H2.1's panel reads it: tests/unit/hud/sheet-panel.test.tsx). Convex is mocked.
  */
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { HudBanners } from "@/components/combat-map/hud/banners";
 import { bannerSummary, type HudPartyMember } from "@/components/combat-map/hud/banners/banner";
-import { HudProvider } from "@/components/combat-map/hud/state";
+import { HudProvider, useHud } from "@/components/combat-map/hud/state";
 import type { CombatPageState } from "@/components/combat-map/slots";
 
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -25,17 +25,6 @@ vi.mock("convex/react", () => ({
     return queries[functionName(ref)];
   },
   useMutation: () => Object.assign(async () => null, { withOptimisticUpdate: () => async () => null }),
-}));
-
-// The classic drawer is a modal <dialog> with its own queries; here it only reports what it was asked to show.
-vi.mock("@/components/combat-map/drawer", () => ({
-  SheetDrawer: ({ characterId, open, onClose }: { characterId: string; open: boolean; onClose: () => void }) => (
-    <div data-testid="classic-drawer" data-character={characterId} data-open={String(open)}>
-      <button type="button" onClick={onClose}>
-        Close character sheet
-      </button>
-    </div>
-  ),
 }));
 
 afterEach(() => {
@@ -88,10 +77,24 @@ const PARTY: HudPartyMember[] = [
   member("Oriel", { className: "Seraph", hp: { marked: 7, max: 7 }, stress: { marked: 0, max: 6 }, hope: { value: 4, max: 6 }, down: true, deathMoveDue: true }),
 ];
 
-function renderBanners(state = pageState()) {
+/** What HudProvider has open, and a close button (the sheet panel's ✕ stands in). */
+function OpenSheet() {
+  const hud = useHud();
+  return (
+    <>
+      <span data-testid="open-sheet">{hud.sheet?.kind === "pc" ? hud.sheet.characterId : "none"}</span>
+      <button type="button" onClick={hud.closeSheet}>
+        Close the sheet
+      </button>
+    </>
+  );
+}
+
+function renderBanners(state = pageState(), probe = false) {
   return render(
     <HudProvider>
       <HudBanners state={state} />
+      {probe ? <OpenSheet /> : null}
     </HudProvider>,
   );
 }
@@ -173,32 +176,31 @@ describe("HudBanners", () => {
     expect(moss.querySelector(".hbn-c")?.textContent).toBe("Druid");
   });
 
-  it("opens the character's sheet through HudProvider (the classic drawer until H2.1): swap, same again closes, ✕ closes", () => {
+  it("opens the character's sheet through HudProvider (no classic drawer): swap, same again closes", () => {
     queries["combatHud:party"] = PARTY;
-    renderBanners();
-    expect(screen.queryByTestId("classic-drawer")).toBeNull();
+    renderBanners(pageState(), true);
+    expect(screen.getByTestId("open-sheet")).toHaveTextContent("none");
 
     fireEvent.click(banner("Brannoc"));
-    const drawer = screen.getByTestId("classic-drawer");
-    expect(drawer).toHaveAttribute("data-character", "ch-Brannoc");
-    expect(drawer).toHaveAttribute("data-open", "true");
+    expect(screen.getByTestId("open-sheet")).toHaveTextContent("ch-Brannoc");
     expect(banner("Brannoc")).toHaveClass("hbn-open");
     expect(banner("Moss")).not.toHaveClass("hbn-open");
+    // A banner opens only the HUD panel: nothing modal, no classic drawer.
+    expect(document.querySelector("dialog")).toBeNull();
+    expect(screen.queryByTestId("sheet-drawer")).toBeNull();
 
     fireEvent.click(banner("Moss"));
-    expect(screen.getByTestId("classic-drawer")).toHaveAttribute("data-character", "ch-Moss");
+    expect(screen.getByTestId("open-sheet")).toHaveTextContent("ch-Moss");
     expect(banner("Moss")).toHaveClass("hbn-open");
     expect(banner("Brannoc")).not.toHaveClass("hbn-open");
 
     fireEvent.click(banner("Moss"));
-    // Closed but kept mounted (the dialog keeps its subject), as the page's own drawer.
-    expect(screen.getByTestId("classic-drawer")).toHaveAttribute("data-open", "false");
-    expect(screen.getByTestId("classic-drawer")).toHaveAttribute("data-character", "ch-Moss");
+    expect(screen.getByTestId("open-sheet")).toHaveTextContent("none");
     expect(banner("Moss")).not.toHaveClass("hbn-open");
 
     fireEvent.click(banner("Vex"));
-    act(() => screen.getByRole("button", { name: "Close character sheet" }).click());
-    expect(screen.getByTestId("classic-drawer")).toHaveAttribute("data-open", "false");
+    act(() => screen.getByRole("button", { name: "Close the sheet" }).click());
+    expect(screen.getByTestId("open-sheet")).toHaveTextContent("none");
     expect(banner("Vex")).not.toHaveClass("hbn-open");
   });
 

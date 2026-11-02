@@ -6,7 +6,7 @@ import { hudScene } from "./hud/helpers";
 
 // Plan combat-hud H1.1 (docs/tasks/TASK-HUD-H1.1.md): with the HUD on, the party hangs as banners from the gold rod
 // top-left (Main: x = 24, 182, 340, 498; yours 270 px, allies 238 px), each a button "Open <name>'s sheet" that opens
-// the classic sheet drawer (until H2.1). HP pips show HP left; every text says HP marked (answer 2). Live: a change on
+// the sheet panel (H2.1). HP pips show HP left; every text says HP marked (answer 2). Live: a change on
 // one screen shows on the other.
 
 const banners = (page: Page) => page.getByRole("list", { name: "The party" });
@@ -53,9 +53,9 @@ test("the party banners: Main's row, marked HP text, the sheet opens, changes sh
     await expectNoSeriousA11yViolations(player);
     await expectNoSeriousA11yViolations(gm);
 
-    // The banner opens Moss's sheet (the classic drawer until H2.1); the open banner drops 8 px.
+    // The banner opens Moss’s sheet panel (H2.1, not modal); the open banner drops 8 px.
     await banner(player, "Moss").click();
-    const drawer = player.getByTestId("sheet-drawer");
+    const drawer = player.getByRole("complementary", { name: "Moss’s sheet" });
     await expect(drawer).toBeVisible();
     await expect(banner(player, "Moss")).toHaveAttribute("data-open", "true");
     await expect(banner(player, "Moss")).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 8)");
@@ -64,7 +64,7 @@ test("the party banners: Main's row, marked HP text, the sheet opens, changes sh
     await expect(player.getByTestId("combat-hud")).toHaveCSS("display", "block");
     await expectNoSeriousA11yViolations(player);
 
-    // Live, player → GM: the player marks two HP in the drawer; the GM's banner of Moss says 2 marked and lights 2 fewer pips.
+    // Live, player → GM: the player marks two HP in the sheet panel; the GM's banner of Moss says 2 marked and lights 2 fewer pips.
     const hp = drawer.getByRole("group", { name: "Hit Points" });
     await hp.getByRole("button", { name: /^Mark 1 / }).click();
     await hp.getByRole("button", { name: /^Mark 1 / }).click();
@@ -74,7 +74,7 @@ test("the party banners: Main's row, marked HP text, the sheet opens, changes sh
     await expect(gmHp.locator("i.on")).toHaveCount(max - 2);
     await expect(banner(player, "Moss")).toHaveAccessibleDescription(/^Moss, 2 of \d+ Hit Points marked/);
 
-    // Esc closes the drawer: the banner comes back up and keeps the focus.
+    // Esc closes the panel: the banner comes back up and keeps the focus.
     await player.keyboard.press("Escape");
     await expect(drawer).toBeHidden();
     await expect(banner(player, "Moss")).not.toHaveAttribute("data-open", "true");

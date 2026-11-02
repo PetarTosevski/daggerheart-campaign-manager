@@ -11,12 +11,11 @@ import type { HudPartProps } from "../state";
 import { useHud } from "../state";
 import { SpotlightBannerTag } from "../spotlight";
 import { Banner, type HudPartyMember } from "./banner";
-import { ClassicSheetBridge } from "./classic-sheet";
 
 /**
  * The party banners hanging from the gold rod, top-left (plan combat-hud H1.1; HANDOFF "Banners"; CmpTokens 'Banners',
  * Main, GMDesktop). One `combatHud.party` row per PC token on the map on screen (HD1), the caller's own first; each
- * banner is a button that opens that character's sheet through HudProvider (the classic drawer until H2.1). The shell
+ * banner is a button that opens that character's sheet panel through HudProvider (`hud/sheet`, H2.1). The shell
  * mounts this in its own PartBoundary (CL1).
  */
 export const HudBanners: (props: HudPartProps) => ReactNode = ({ state }) => {
@@ -30,12 +29,7 @@ export const HudBanners: (props: HudPartProps) => ReactNode = ({ state }) => {
       </p>
     );
   }
-  return (
-    <>
-      <BannerRow campaignId={state.campaignId} party={party} />
-      <ClassicSheetBridge state={state} />
-    </>
-  );
+  return <BannerRow campaignId={state.campaignId} party={party} />;
 };
 
 /** The caller's own banner first (Main: "You" at x = 24), the rest in map order. */

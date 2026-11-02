@@ -53,18 +53,21 @@ export function bannerLabel(member: Pick<HudPartyMember, "name">): string {
   return `Open ${member.name}'s sheet`;
 }
 
-/** The portrait in its ring (`.face`): the uploaded image or design art through next/image (CL10), else the initial. */
-function Portrait({ member }: { member: HudPartyMember }) {
+/**
+ * The portrait in its ring (`.face`): the uploaded image or design art through next/image (CL10), else the initial.
+ * The sheet panel (H2.1) shows it too, at 60 px (`className` sizes it there, `sizes` tells next/image).
+ */
+export function Portrait({ member, className, sizes = "58px" }: { member: Pick<HudPartyMember, "portrait" | "mine" | "name">; className?: string; sizes?: string }) {
   const p = member.portrait;
   const src = p?.kind === "url" ? p.url : p?.kind === "asset" ? designAsset(p.asset) : undefined;
   return (
-    <span className={cn("hbn-face", member.mine && "hbn-face-you")} aria-hidden="true">
+    <span className={cn("hbn-face", member.mine && "hbn-face-you", className)} aria-hidden="true">
       {src ? (
         <Image
           src={src}
           alt=""
           fill
-          sizes="58px"
+          sizes={sizes}
           // Uploads are served by Convex storage (another host); design art is local and optimised.
           unoptimized={p?.kind === "url"}
           style={{ objectFit: "cover", objectPosition: p?.kind === "asset" ? p.position : "center 25%" }}

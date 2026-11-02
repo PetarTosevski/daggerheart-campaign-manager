@@ -195,12 +195,6 @@
   font-size: 12.5px;
 }
 
-/* The interim classic sheet drawer (classic-sheet.tsx) sits in this region; its dialog takes pointer events. */
-.hbn-sheet {
-  display: contents;
-  pointer-events: auto;
-}
-
 /* Tablet (HANDOFF: banners are 108 px wide); H7.x owns the tablet and phone layouts and refines this. */
 @media (max-width: 1180px) {
   .hud-r-banners > .hbn-row {
@@ -210,26 +204,4 @@
   .hbn-rows .hud-pp i {
     width: 8px;
   }
-}
-
-/*
- * Guard (bead filed, see TASK-HUD-H1.1.md): HudProvider puts `sh-open` on .hud-root while a sheet is open (the boards'
- * state class), but the party sheet's sheet-ui.css, loaded with the classic sheet drawer, styles a global `.sh-open` as a
- * green pill button (border-radius 999px, inline-flex, padding, green background), which turned the whole HUD into a
- * circle the first time a banner opened a sheet. Undo those properties on the HUD root until the class clash is fixed
- * where it starts (hud/state.tsx or sheet-ui.css).
- */
-.hud-root.sh-open,
-.hud-root.sh-open:hover {
-  display: block;
-  gap: 0;
-  min-height: 520px;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: var(--hud-page);
-  box-shadow: none;
-  color: var(--hud-ink);
-  font: var(--hud-type-ui);
-  cursor: auto;
 }

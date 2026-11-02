@@ -128,9 +128,9 @@ test("a player: their sheet makes room without the party sheet's .sh-open style;
     const viewport = player.getByTestId("combat-viewport");
     await expect(viewport).toHaveCSS("transition-duration", "0s");
 
-    // The banner opens Moss's sheet (the classic drawer until H2.1, which loads sheet-ui.css and its global .sh-open).
+    // The banner opens Moss’s sheet panel (H2.1); the root never takes the party sheet’s global .sh-open style.
     await player.getByRole("list", { name: "The party" }).getByRole("button", { name: "Open Moss's sheet" }).click();
-    await expect(player.getByTestId("sheet-drawer")).toBeVisible();
+    await expect(player.getByTestId("hud-sheet-trackers")).toBeVisible();
     await expect(hud).toHaveClass(/(^|\s)hud-sh-open(\s|$)/);
     await expect(hud).not.toHaveClass(/(^|\s)sh-open(\s|$)/);
     // The root keeps its frame: no pill button style (dcm-bxp.99.32.11).
@@ -147,7 +147,7 @@ test("a player: their sheet makes room without the party sheet's .sh-open style;
     await test.info().attach("player-sheet-open", { body: await player.screenshot(), contentType: "image/png" });
 
     await player.keyboard.press("Escape");
-    await expect(player.getByTestId("sheet-drawer")).toBeHidden();
+    await expect(player.getByTestId("hud-sheet")).toBeHidden();
     await expect(hud).not.toHaveClass(/hud-sh-open/);
     await expect(viewport).toHaveCSS("transform", "none");
     await expectNoSeriousA11yViolations(player);

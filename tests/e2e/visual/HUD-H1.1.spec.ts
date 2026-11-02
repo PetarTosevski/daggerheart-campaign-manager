@@ -51,10 +51,10 @@ test("HUD-H1.1 party banners at 1440 and 1024", { tag: "@visual" }, async ({ bro
     await player.screenshot({ path: `${OUT}/player-main-1440.png`, animations: "disabled" });
     await shootRow(player, `${OUT}/player-banners-1440.png`);
 
-    // Moss's banner open: it drops 8 px (the classic drawer covers the right until H2.1).
+    // Moss’s banner open: it drops 8 px and the sheet panel (H2.1) opens on the right.
     await player.getByRole("list", { name: "The party" }).getByRole("button", { name: "Open Moss's sheet" }).click();
-    await expect(player.getByTestId("sheet-drawer-trackers")).toBeVisible();
-    await player.waitForTimeout(600); // the drawer's slide-in
+    await expect(player.getByTestId("hud-sheet-trackers")).toBeVisible();
+    await player.waitForTimeout(600); // the panel’s slide-in
     await player.screenshot({ path: `${OUT}/player-open-moss-1440.png`, animations: "disabled" });
     await player.keyboard.press("Escape");
 
