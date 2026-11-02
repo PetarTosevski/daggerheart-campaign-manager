@@ -1,13 +1,15 @@
 /**
  * Plan combat-hud H4.3: the HUD's death move (Main 'Last Hit Point') and the player's "Just now" feed. A player at their
  * last Hit Point gets 'Choose a death move' (core wording, the footer), then 'Waiting for the GM to confirm' with Take
- * it back; the GM gets the confirm popup (Confirm the death move / Send it back); both see the outcome. The feed shows
+ * it back; the GM gets the confirm popup (Confirm the death move / Send it back; H5.1 mounts it in the request queue,
+ * so these tests render it directly); both see the outcome. The feed shows
  * `feed.list`'s rows on the player view only. Convex is mocked.
  */
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { HudDeath } from "@/components/combat-map/hud/death";
+import { GmDeathConfirm } from "@/components/combat-map/hud/death/confirm";
 import { DEATH_MOVE_RULES, deathPhase, requestFate } from "@/components/combat-map/hud/death/model";
 import { DEATH_FOOTER } from "@/components/combat-map/hud/death/own";
 import { HudFeed } from "@/components/combat-map/hud/feed";
@@ -172,14 +174,15 @@ describe("the GM's confirm popup", () => {
     queries[CHARACTERS] = [character(false)];
     queries[STATE] = { ...base, request: { move: "avoidDeath", entryId: "req", at: 1 } };
     results["deathMoves:confirm"] = { entryId: "m", status: "active", pending: null, hopeDie: 1, fearDie: null, scarred: true, journeyEnds: false, awaitingGm: false };
-    const view = render(<HudDeath state={page("gm")} />);
+    const gmView = () => <GmDeathConfirm character={character(false) as unknown as Parameters<typeof GmDeathConfirm>[0]["character"]} />;
+    const view = render(gmView());
     expect(screen.queryByRole("dialog", { name: "Choose a death move" })).toBeNull();
     const popup = screen.getByRole("dialog", { name: "Death move to confirm" });
     expect(popup).toHaveTextContent("Moss chose Avoid Death");
     await act(async () => fireEvent.click(within(popup).getByRole("button", { name: "Confirm the death move" })));
     expect(calls).toEqual([{ name: "deathMoves:confirm", args: expect.objectContaining({ characterId: "c-moss" }) }]);
     queries[STATE] = { ...base };
-    view.rerender(<HudDeath state={page("gm")} />);
+    view.rerender(gmView());
     expect(within(screen.getByTestId("hud-death-outcome")).getByRole("status")).toHaveTextContent("Hope Die 1 against level 1: a scar.");
   });
 
@@ -187,7 +190,7 @@ describe("the GM's confirm popup", () => {
     queries[CHARACTERS] = [character(false)];
     queries[STATE] = { ...base, request: { move: "riskItAll", entryId: "req", at: 1 } };
     results["deathMoves:decline"] = null;
-    render(<HudDeath state={page("gm")} />);
+    render(<GmDeathConfirm character={character(false) as unknown as Parameters<typeof GmDeathConfirm>[0]["character"]} />);
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Send it back" })));
     expect(calls).toEqual([{ name: "deathMoves:decline", args: expect.objectContaining({ characterId: "c-moss" }) }]);
   });

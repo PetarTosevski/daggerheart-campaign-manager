@@ -207,3 +207,7 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - H5.2 Adversary attacks: out-of-range PCs show amber "Out of range" but stay pickable (the server doesn't refuse range for adversaries; CB p.101 "Move within Close range and make a standard attack").
 - H5.2 A Hidden PC in sight stays pickable for the GM with the condition shown (board: unpickable; CB p.348 Hidden gives disadvantage, not immunity).
 - H5.2 Any resolved adversary action also takes the scene spotlight (combatSpotlight.gmTake), not only the "Spotlight · 1 Fear" button.
+- H5.1 The GM's "Set the Difficulty" stepper starts at 12 (range 1-30); the board's 13 is sample data (CB p.104 "The GM sets this Difficulty").
+- H5.1 Resolutions lists the GM's attack and adversary rows only (as the classic column); the board also shows plain rolls with Fear ("Vex rolled with Fear · +1 Fear") with Undo.
+- H5.1 Not in the queue yet: "End this countdown?" (waits on dcm-pgfr's server) and adversary feature choices like More Where That Came From (the server doesn't store them; dcm-bxp.99.32.27).
+- H5.1 The queue stays bottom-left (queue, Resolutions, then the spotlight panel), not top-left as the board shows (the party banners are there).

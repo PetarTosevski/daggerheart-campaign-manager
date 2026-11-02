@@ -9,13 +9,12 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { HudPartProps } from "../state";
 import { PartBoundary } from "../ui";
-import { GmDeathConfirm } from "./confirm";
 import { OwnDeath } from "./own";
 
 /**
  * The death move at your last Hit Point (plan combat-hud H4.3; Main 'Last Hit Point'), waiting for the GM's confirm
- * (HD4, answer 15b). Every character the viewer plays gets `OwnDeath` (the modal, the wait, the outcome); on the GM view
- * every PC also gets `GmDeathConfirm` (the confirm popup, until H5.1's queue takes it). The greyed banner and token
+ * (HD4, answer 15b). Every character the viewer plays gets `OwnDeath` (the modal, the wait, the outcome); the GM's
+ * confirm (`GmDeathConfirm`) lives in H5.1's request queue (hud/queue). The greyed banner and token
  * are H1.1's and H1.3's own `down` state (every Hit Point marked). Each character sits in its own boundary.
  */
 export const HudDeath = ({ state }: HudPartProps): ReactNode => <DeathParts campaignId={state.campaignId} gm={state.role === "gm"} />;
@@ -32,13 +31,6 @@ function DeathParts({ campaignId, gm }: { campaignId: Id<"campaigns">; gm: boole
           <OwnDeath campaignId={campaignId} character={c} gm={gm} />
         </PartBoundary>
       ))}
-      {gm
-        ? live.map((c) => (
-            <PartBoundary key={`gm-${c._id}`} label={`${c.sheet.name}'s death move`}>
-              <GmDeathConfirm character={c} />
-            </PartBoundary>
-          ))
-        : null}
     </div>
   );
 }

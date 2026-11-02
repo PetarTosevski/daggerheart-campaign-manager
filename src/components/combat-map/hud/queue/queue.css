@@ -1,0 +1,202 @@
+/*
+ * The GM's request queue and Resolutions (plan combat-hud H5.1; boards GMDesktop `.gq` / `.gr` and CmpPromptsGM `.pc.gm`).
+ * Placement: the shell's "left" region, bottom-left, above the GM's spotlight panel (the board hangs `.gq` at top 300, but
+ * the party banners hang there and the spotlight panel sits at the very bottom, user 2026-11-02). The column grows
+ * upward from the spotlight and never past the banners: it is capped at the viewport less the banners' 300 px and the
+ * spotlight panel's height, and the queue's cards scroll inside it.
+ */
+
+.hud-q-col {
+  --hud-q-top: 300px;
+  --hud-q-below: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 330px;
+  max-width: 100%;
+  max-height: calc(100dvh - var(--hud-q-top) - var(--hud-q-below));
+  min-height: 0;
+}
+
+.hud-q,
+.hud-res {
+  padding: 12px 14px;
+  border-radius: var(--hud-r-panel);
+  background: rgba(13, 20, 23, 0.95);
+  box-shadow:
+    0 0 0 1px var(--hud-line),
+    0 12px 30px rgba(0, 0, 0, 0.45);
+  color: var(--hud-ink);
+}
+.hud-q {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 0 1 auto;
+}
+.hud-q-h,
+.hud-res-h {
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 700 15px/1 var(--hud-font-display);
+  color: var(--hud-fear-text);
+}
+.hud-res-h {
+  color: var(--hud-gold-text);
+}
+.hud-q-n {
+  font: 700 11px/1 var(--hud-font-ui);
+  background: var(--hud-fear);
+  color: var(--hud-fear-ink);
+  border-radius: 999px;
+  padding: 3px 7px;
+}
+.hud-q-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overscroll-behavior: contain;
+}
+.hud-q-list,
+.hud-q-gone,
+.hud-res-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* The CmpPromptsGM card, compact in the 330 px column (GMDesktop `.q`). */
+.hud-q-scroll .hud-pc {
+  width: 100%;
+  border-radius: 12px;
+  flex: none;
+}
+.hud-q-scroll .hud-pc-h {
+  padding: 8px 10px;
+  gap: 8px;
+}
+.hud-q-scroll .hud-pc-i {
+  width: 26px;
+  height: 26px;
+}
+.hud-q-scroll .hud-pc-t {
+  font-size: 13.5px;
+}
+.hud-q-scroll .hud-pc-b {
+  padding: 8px 10px;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--hud-muted);
+}
+.hud-q-scroll .hud-pc-f {
+  padding: 6px 10px 10px;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.hud-q-scroll .hud-step {
+  align-self: flex-start;
+}
+.hud-q-dots {
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.hud-q-gone li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--hud-inset);
+  box-shadow: inset 0 0 0 1px var(--hud-line);
+  font-size: 12.5px;
+  color: var(--hud-muted);
+}
+.hud-q-gone span {
+  flex: 1;
+}
+.hud-q-x,
+.hud-res-undo {
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--hud-line-2);
+  background: transparent;
+  color: var(--hud-muted);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.hud-q-x:focus-visible,
+.hud-res-undo:focus-visible {
+  outline: 2px solid var(--hud-gold);
+  outline-offset: 2px;
+}
+.hud-res-undo:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.hud-q-note {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--hud-muted);
+}
+.hud-q-result:empty {
+  display: none;
+}
+.hud-q-result {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--hud-ink);
+}
+.hud-q-err {
+  margin: 0;
+  font-size: 12px;
+  color: var(--hud-danger);
+}
+
+/* Resolutions (GMDesktop `.gr .feed`). */
+.hud-res {
+  flex: none;
+}
+.hud-res-list li {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+.hud-res-i {
+  display: flex;
+  flex: none;
+  color: var(--hud-gold);
+}
+.hud-res-i svg {
+  width: 14px;
+  height: 14px;
+}
+.hud-res-t {
+  flex: 1;
+  min-width: 0;
+}
+.hud-res-t b {
+  font-weight: 600;
+}
+.hud-res-t span {
+  color: var(--hud-muted);
+}
+.hud-res-undo {
+  margin-left: auto;
+}
+.hud-res-undone b {
+  text-decoration: line-through;
+  color: var(--hud-muted);
+}
