@@ -1,12 +1,18 @@
-import { CampaignScreen } from "../../../../src/shell/campaign-provider";
-import { NotBuiltYet } from "../../../../src/shell/not-built-yet";
+import { useLocalSearchParams } from "expo-router";
+
+import { CharacterWizard } from "../../../../src/features/party/create/wizard";
+import { CampaignProvider, CampaignScreen, firstParam } from "../../../../src/shell/campaign-provider";
 
 export { RouteErrorBoundary as ErrorBoundary } from "../../../../src/shell/route-error";
 
 export default function NewCharacterRoute() {
+  const params = useLocalSearchParams<{ campaignId?: string | string[] }>();
+  const campaignId = firstParam(params.campaignId);
   return (
-    <CampaignScreen>
-      <NotBuiltYet title="New character" />
-    </CampaignScreen>
+    <CampaignProvider campaignId={campaignId}>
+      <CampaignScreen>
+        <CharacterWizard />
+      </CampaignScreen>
+    </CampaignProvider>
   );
 }

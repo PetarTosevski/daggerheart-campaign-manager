@@ -30,7 +30,8 @@ test("a player sees the roster and no GM controls", async () => {
   expect(screen.getByRole("button", { name: "Open character sheet" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Kill Mira" })).toBeTruthy();
   expect(screen.getByRole("header", { name: "Create character" })).toBeTruthy();
-  expect(screen.getByText(/Not built yet/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "+ Create character" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Import from photo" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Party levels up" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Delete Mira" })).toBeNull();
   expect(screen.queryByText("Unassigned (GM)")).toBeNull();
