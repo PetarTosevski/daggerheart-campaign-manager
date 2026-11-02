@@ -211,3 +211,9 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - H5.1 Resolutions lists the GM's attack and adversary rows only (as the classic column); the board also shows plain rolls with Fear ("Vex rolled with Fear · +1 Fear") with Undo.
 - H5.1 Not in the queue yet: "End this countdown?" (waits on dcm-pgfr's server) and adversary feature choices like More Where That Came From (the server doesn't store them; dcm-bxp.99.32.27).
 - H5.1 The queue stays bottom-left (queue, Resolutions, then the spotlight panel), not top-left as the board shows (the party banners are there).
+
+### Wave 7
+- H6.1 Stress cost with full Stress: the helper locks on Stress only when a surface asks (CB character sheet: "If you ever need to mark Stress and can't, mark a Hit Point"); the board shows "Your Stress is full", the engine refuses.
+- H6.1 Difficult terrain / movement roll (CB p.104 Agility Roll beyond Close): kept as an unused client-only entry. Core or frame-exclusive, and should moving onto it open the dice box?
+- H6.1 Wording: refusals say "costs" ("Wall Walk costs 1 Hope. You have 0."), the action ring says "needs". Pick one?
+- H6.1 SPOTLIGHT_WITH_GM reads "The GM has the spotlight. You can use reactions until it comes back." (the brief's sentence, not the server's default).
