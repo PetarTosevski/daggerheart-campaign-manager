@@ -36,6 +36,7 @@ import type * as combatScenes from "../combatScenes.js";
 import type * as combatSpotlight from "../combatSpotlight.js";
 import type * as combatTokens from "../combatTokens.js";
 import type * as combatVision from "../combatVision.js";
+import type * as combatWithdraw from "../combatWithdraw.js";
 import type * as countdownRolls from "../countdownRolls.js";
 import type * as countdownTracks from "../countdownTracks.js";
 import type * as countdowns from "../countdowns.js";
@@ -236,6 +237,7 @@ declare const fullApi: ApiFromModules<{
   combatSpotlight: typeof combatSpotlight;
   combatTokens: typeof combatTokens;
   combatVision: typeof combatVision;
+  combatWithdraw: typeof combatWithdraw;
   countdownRolls: typeof countdownRolls;
   countdownTracks: typeof countdownTracks;
   countdowns: typeof countdowns;

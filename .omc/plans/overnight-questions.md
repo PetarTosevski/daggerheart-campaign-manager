@@ -154,3 +154,8 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - H2.1 Your own sheet shows no spotlight badge when you don't hold the spotlight.
 - H2.1 Lasting effects on the sheet have no End button (the GM ends them from the classic list for now).
 - Bug found: age-of-umbra.spec.ts:32 finds two "Save" buttons (strict mode), dcm-3cog; not caused by the HUD.
+
+### Wave 4
+- HD3 A withdrawn request is stored as "declined" with resolvedBy = the withdrawer until the status vocabulary gets "withdrawn" (dcm-bxp.99.32.17).
+- HD3 Only out-of-range uses waiting on GM approval (sanctions) can be withdrawn; a Charge waiting for the GM's Difficulty (CB p.59 / p.104) can't. Alternative: allow it too (one-line change).
+- HD3 The GM's queue item just disappears on withdraw; the only notice is a public feed line "<Name> withdrew <use> waiting for the GM". Alternative: a short "withdrawn" notice in the GM's queue.

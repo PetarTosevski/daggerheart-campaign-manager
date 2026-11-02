@@ -10,6 +10,9 @@ import { freshKey } from "./synth";
  * flags, enemy condition names) is checked in tests/convex/hud-party.test.ts and hud-enemy-conditions.test.ts.
  * `combatHud.sheet` (HD2, `userQuery` + `loadCharacter(..., "view")`: class `own`) is every member's too; its modes and
  * what view mode leaves out are checked in tests/convex/hud-sheet.test.ts.
+ * `combatWithdraw.withdraw` (HD3, answer 8a; `need: "view"` + `loadCharacter(..., "edit")` on the request's character):
+ * characterA's player, the edit grantee and the GM withdraw characterA's open sanction; another player is FORBIDDEN.
+ * Its content checks are in tests/convex/hud-withdraw.test.ts.
  */
 async function setup(w: World) {
   const campaignId = w.campaignId;
@@ -31,6 +34,28 @@ async function setup(w: World) {
   w.set("mapId", mapId);
 }
 
+/** An open card sanction of characterA, asked by its player (`requestId`). */
+async function sanctioned(w: World) {
+  const requestId = await w.t.run((ctx) =>
+    ctx.db.insert("combatRequests", {
+      campaignId: w.campaignId,
+      kind: "sanction",
+      status: "open",
+      createdBy: w.users.player,
+      createdAt: Date.now(),
+      responses: [],
+      payload: {
+        schemaVersion: 1,
+        kind: "sanction",
+        characterId: w.characterA,
+        action: { kind: "card", cardId: "cinder-grasp", useId: "main", targetTokenIds: [], choices: [] },
+        outOfRange: [],
+      },
+    }),
+  );
+  w.set("requestId", requestId);
+}
+
 const area: Area = {
   area: "hud",
   setup,
@@ -43,6 +68,14 @@ const area: Area = {
       access: "own",
       args: (w) => ({ characterId: w.characterA }),
       expect: { otherPlayer: "ok", grantee: "ok" },
+    },
+    // HD3 (answer 8a): edit on the request's character withdraws it (another player: `loadCharacter` FORBIDDEN).
+    {
+      fn: api.combatWithdraw.withdraw,
+      access: "view",
+      setup: sanctioned,
+      args: (w) => ({ requestId: w.ids.requestId }),
+      expect: { otherPlayer: "FORBIDDEN", grantee: "ok" },
     },
   ],
 };
