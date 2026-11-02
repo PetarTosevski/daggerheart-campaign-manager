@@ -229,3 +229,7 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - H7.2 Edge chips for off-screen targets only point; a tap doesn't pan or pick.
 - H7.2 GM at 390 px: banners scaled to 55%, title hidden, tools wrap, spotlight panel inside the queue sheet, full-screen GM sheet.
 - H7.2 The player's phone strip has no day/time disc and no spotlight tag (the board shows neither).
+- H7.1 Tablet map squares come from Fit zoom (71% GM / 59% player on the seed map), not a fixed 39 px per square.
+- H7.1 The GM's Resolutions (with Undo) are hidden at tablet width, as GMTablet draws it.
+- H7.1 The map's zoom toolbar (not on the boards) moves out of mid-map at tablet: a column bottom-left for players, a row beside the queue for the GM. Alternative: put zoom in the HUD toolbar.
+- H7.1 The tablet Areas panel hangs under the Fear banner, 360 px wide (board 320 overflows).

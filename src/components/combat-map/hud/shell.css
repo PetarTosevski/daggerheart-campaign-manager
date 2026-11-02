@@ -1,9 +1,12 @@
 /*
  * Combat HUD shell (plan combat-hud H0; HANDOFF "Layout"): a full-bleed map, the HUD regions over it, and the left
- * tools drawer. Region positions are the desktop board's (1440 × 900); the make-room rules (H2.2) are at the end,
- * H7.x adds the tablet and phone layouts. The overlay never takes pointer events itself, only its parts do, so
- * the map under the empty parts of a region stays usable.
+ * tools drawer. Region positions are the desktop board's (1440 × 900); the make-room rules (H2.2) are at the end.
+ * The tablet's positions (761-1180 px, H7.1) are in responsive/tablet.css, imported here; the phone's (H7.2) in
+ * responsive/phone.css. The overlay never takes pointer events itself, only its parts do, so the map under the
+ * empty parts of a region stays usable.
  */
+@import "./responsive/tablet.css";
+
 .hud-root {
   position: relative;
   width: 100%;
@@ -107,6 +110,25 @@
   top: 0;
   right: 0;
   bottom: 0;
+}
+
+/*
+ * The toasts (hud/toasts, H6.1) sit in the hand region's column; the hand's box is as tall as a raised card
+ * (--hud-hand-room), so in the flow they landed near the top of the map. From tablet width up they hang beside the
+ * fan as Main draws the toast (`.blk`: left 880, bottom 262, 330 wide; left 690 while a sheet is open, the
+ * --hud-pop-blk-left below) and grow upward; the hand region starts at x = 330 (dcm-bxp.99.32.29). tablet.css moves
+ * them to the board's right 24 / bottom 220.
+ */
+@media (min-width: 761px) {
+  .hud-r-hand > .hud-toasts {
+    position: absolute;
+    left: calc(var(--hud-pop-blk-left) - 330px);
+    bottom: 262px;
+    width: 330px;
+    transition:
+      left var(--hud-t-map) var(--hud-ease-out),
+      right var(--hud-t-map) var(--hud-ease-out);
+  }
 }
 
 /* The toolbar the scene region shows until H1.2 builds the title and the GM toolbar. */
