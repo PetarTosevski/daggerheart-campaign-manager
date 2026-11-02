@@ -1,0 +1,266 @@
+/*
+ * The Fear banner and the day / time disc (plan combat-hud H1.2; Main / GMDesktop `.rod2` `.fb` `.sun`, CmpTokens
+ * 'GM Fear' and 'Light'). The fear region sits at right var(--hud-edge), top 0 (shell.css); this box is the banner's
+ * own 150 x 262 px at top 8, and the rod and disc hang from it by the board's offsets (rod right 12 / top 6, disc
+ * right 206 / top 0 on the page). While a sheet is open (.sh-open) the box moves left of the panel and the disc hides.
+ */
+.hud-fear {
+  position: relative;
+  width: 150px;
+  height: 262px;
+  margin-top: 8px;
+  transition: transform var(--hud-t-map) var(--hud-ease-out);
+}
+.hud-root.sh-open .hud-fear {
+  transform: translateX(calc(-1 * var(--hud-sheet-w)));
+}
+.hud-fear-loading {
+  margin: 12px 0 0;
+  padding: 6px 12px;
+  border-radius: var(--hud-r-chip);
+  background: var(--hud-glass);
+  color: var(--hud-muted);
+}
+
+/* ---------------------------------------------------------------- the rod and the banner */
+.hud-fear-rod {
+  position: absolute;
+  top: -2px;
+  right: -12px;
+  width: 174px;
+  height: 6px;
+  border-radius: 3px;
+  background: #5b4a8f;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+.hud-fb {
+  position: absolute;
+  inset: 0;
+  filter: drop-shadow(0 10px 16px rgba(0, 0, 0, 0.55));
+}
+.hud-fb::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--hud-fear);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 30px), 50% 100%, 0 calc(100% - 30px));
+}
+.hud-fb-in {
+  position: absolute;
+  inset: 0 3px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding-top: 16px;
+  background: var(--hud-fear-soft);
+  color: var(--hud-fear-text);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 30px), 50% calc(100% - 2px), 0 calc(100% - 30px));
+}
+.hud-fb-ic {
+  width: 22px;
+  height: 22px;
+  color: var(--hud-fear);
+}
+.hud-fb-t {
+  font: 700 13px/1 var(--hud-font-display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.hud-fb-n {
+  font: 900 54px/1 var(--hud-font-display);
+  color: #efeaff;
+  text-shadow: 0 0 18px rgba(143, 123, 209, 0.7);
+}
+/* The 12 diamond pips (Pips kind "fear", in the board's banner size and colours). */
+.hud-fb .hud-fb-p {
+  display: grid;
+  grid-template-columns: repeat(6, 10px);
+  gap: 5px;
+  margin-top: 4px;
+}
+.hud-fb .hud-fb-p i {
+  width: 10px;
+  height: 10px;
+  transform: rotate(45deg);
+  border-radius: 0;
+  background: #0f0c1c;
+  box-shadow: inset 0 0 0 1px #5b4a8f;
+}
+.hud-fb .hud-fb-p i.on {
+  background: var(--hud-fear);
+  box-shadow: 0 0 6px var(--hud-fear);
+}
+.hud-fb-ctl {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.hud-fb-ctl button {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--hud-fear);
+  background: #0f0c1c;
+  color: #efeaff;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.hud-fb-ctl button:hover:not(:disabled) {
+  background: #241c40;
+}
+.hud-fb-ctl button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.hud-fb-ctl button:focus-visible {
+  outline: 2px solid var(--hud-fear-text);
+  outline-offset: 2px;
+}
+/* An adjust refusal: under the banner's tip, readable over the map. */
+.hud-fb-err:empty {
+  display: none;
+}
+.hud-fb-err {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 220px;
+  padding: 6px 10px;
+  border-radius: var(--hud-r-card);
+  background: var(--hud-danger-bg);
+  color: var(--hud-danger);
+  font-size: 12.5px;
+}
+
+/* ---------------------------------------------------------------- the day / time disc */
+.hud-sun {
+  position: absolute;
+  top: -8px;
+  right: 182px;
+  transition: opacity var(--hud-t-fast);
+}
+.hud-root.sh-open .hud-sun {
+  opacity: 0;
+  pointer-events: none;
+}
+.hud-sun,
+.hud-sun-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.hud-sun-btn {
+  padding: 0 4px 4px;
+  border: 0;
+  border-radius: var(--hud-r-card);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.hud-sun-btn:hover .hud-sun-disc {
+  box-shadow:
+    0 0 0 2px var(--hud-gold-text),
+    0 0 14px rgba(227, 180, 90, 0.55),
+    0 8px 18px rgba(0, 0, 0, 0.5);
+}
+.hud-sun-btn:focus-visible {
+  outline: 2px solid var(--hud-gold);
+  outline-offset: 2px;
+}
+.hud-sun-cord {
+  width: 2px;
+  height: 24px;
+  background: #8a6a2e;
+}
+.hud-sun-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 2px #c9a35a,
+    0 8px 18px rgba(0, 0, 0, 0.5);
+}
+.hud-sun-day {
+  background: var(--hud-card);
+  color: var(--hud-gold-text);
+}
+.hud-sun-dim {
+  background: #2a1f2a;
+  color: #f0a86a;
+}
+.hud-sun-night {
+  background: #0c1020;
+  color: #c9d6ff;
+}
+.hud-sun-ic {
+  width: 28px;
+  height: 28px;
+}
+.hud-sun-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 8px;
+  font: 700 12px/1.3 var(--hud-font-display);
+  color: var(--hud-ink);
+  text-align: center;
+  text-shadow: 0 1px 4px #000;
+  white-space: nowrap;
+}
+/* The GM's time arc / End day pop-over, under the disc. */
+.hud-sun .hud-pop-time {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: -120px;
+  width: min(620px, calc(100vw - 48px));
+}
+
+/* ---------------------------------------------------------------- tablet (the boards' .tab sizes) */
+@media (max-width: 1180px) {
+  .hud-fear {
+    width: 118px;
+    height: 206px;
+    margin-top: 8px;
+  }
+  .hud-fear-rod {
+    right: -10px;
+    width: 140px;
+  }
+  .hud-fb-in .hud-fb-t {
+    font-size: 11px;
+  }
+  .hud-fb-n {
+    font-size: 40px;
+  }
+  .hud-fb .hud-fb-p {
+    grid-template-columns: repeat(6, 8px);
+    gap: 4px;
+  }
+  .hud-fb .hud-fb-p i {
+    width: 8px;
+    height: 8px;
+  }
+  .hud-fb-ctl button {
+    width: 26px;
+    height: 26px;
+  }
+  .hud-sun {
+    right: 134px;
+  }
+  .hud-sun-disc {
+    width: 44px;
+    height: 44px;
+  }
+  .hud-sun-ic {
+    width: 22px;
+    height: 22px;
+  }
+  .hud-sun-text {
+    font-size: 10.5px;
+  }
+}

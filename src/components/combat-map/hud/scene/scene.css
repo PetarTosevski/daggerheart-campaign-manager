@@ -1,0 +1,209 @@
+/*
+ * The title and toolbar at x = 690 (plan combat-hud H1.2; Main `.title` / `.tr`, GMDesktop `.gtitle` / `.gtools`).
+ * The scene region sits at left 690, top 18 (shell.css): the title starts at y = 20 and the toolbar at y = 84 as on
+ * the boards. Pop-overs (dice, areas, fog) open under the toolbar.
+ */
+.hud-scene {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  pointer-events: none;
+}
+.hud-scene > * {
+  pointer-events: auto;
+}
+.hud-title {
+  min-height: 58px;
+  margin-top: 2px;
+  pointer-events: none;
+  transition: opacity var(--hud-t-fast);
+}
+.hud-title h2 {
+  margin: 0;
+  font: 900 28px/1 var(--hud-font-display);
+  color: var(--hud-ink);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
+}
+.hud-title span {
+  display: block;
+  margin-top: 6px;
+  color: #c8d3d0;
+  text-shadow: 0 1px 4px #000;
+}
+/* GMDesktop: the title hides while a sheet is open. */
+.hud-root.sh-open .hud-scene-gm .hud-title {
+  opacity: 0;
+}
+
+/* ---------------------------------------------------------------- the toolbar */
+.hud-tr {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  max-width: min(520px, calc(100vw - 690px - 280px));
+}
+.hud-tr .hud-ic {
+  width: 16px;
+  height: 16px;
+}
+.hud-tr .hud-btn {
+  height: 36px;
+}
+/* End scene keeps EndSceneButton's own 44 px min height; the board's red tone. */
+.hud-tr .hud-end {
+  min-height: 36px !important;
+  color: #f3a58f;
+  border-color: #6b3f3a;
+}
+/* EndSceneButton's status line: only when it says something. */
+.hud-tr [data-testid="end-scene-status"]:empty {
+  display: none;
+}
+.hud-tr [data-testid="end-scene-status"] {
+  padding: 4px 10px;
+  border-radius: var(--hud-r-chip);
+  background: var(--hud-glass);
+}
+/* PreviewPicker: the classic menu button in the HUD's glass pill. */
+.hud-tr .cm-pv-btn {
+  height: 36px;
+  border-radius: var(--hud-r-button);
+  background: var(--hud-glass);
+}
+.hud-seg {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: var(--hud-r-chip);
+  background: var(--hud-glass);
+  box-shadow: inset 0 0 0 1px var(--hud-line-2);
+}
+.hud-seg button {
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--hud-r-chip);
+  background: transparent;
+  color: #c8d3d0;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.hud-seg button[aria-pressed="true"] {
+  background: var(--hud-gold-soft);
+  color: var(--hud-gold-text);
+}
+.hud-seg button:focus-visible,
+.hud-pop-x:focus-visible {
+  outline: 2px solid var(--hud-gold);
+  outline-offset: 2px;
+}
+.hud-scene-err {
+  padding: 4px 10px;
+  border-radius: var(--hud-r-chip);
+  background: var(--hud-danger-bg);
+  color: var(--hud-danger);
+}
+.hud-muted {
+  margin: 0;
+  color: var(--hud-muted);
+}
+
+/*
+ * The map's own toolbar (name, LIVE, Areas, Names, zoom) floats under this toolbar (H0 put it at y = 128, where the
+ * toolbar's second and third rows now sit).
+ */
+.hud-root .hud-map .cm-toolbar {
+  top: 236px;
+}
+
+/* ---------------------------------------------------------------- pop-overs (dice, areas, fog, time arc) */
+.hud-pop {
+  display: flex;
+  flex-direction: column;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 260px);
+  min-height: 0;
+  border-radius: var(--hud-r-popup);
+  background: var(--hud-card);
+  box-shadow:
+    0 0 0 1px var(--hud-line-2),
+    0 18px 40px rgba(0, 0, 0, 0.55);
+  color: var(--hud-ink);
+  outline: none;
+  z-index: 40;
+}
+.hud-pop-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 6px 16px;
+}
+.hud-pop-t {
+  flex: 1;
+  margin: 0;
+  font: var(--hud-type-title);
+}
+.hud-pop-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--hud-line-2);
+  border-radius: 50%;
+  background: var(--hud-inset);
+  color: var(--hud-ink);
+  cursor: pointer;
+}
+.hud-pop-x svg {
+  width: 16px;
+  height: 16px;
+}
+.hud-pop-b {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 4px 16px 16px;
+  overflow: auto;
+}
+/* The fog card and the area tools are classic cards: drop their own frame inside the pop-over. */
+.hud-pop-b > .cm-card,
+.hud-pop-b > .cm-area-tools {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.hud-pop-dice {
+  width: 420px;
+}
+
+@media (max-width: 1180px) {
+  .hud-title {
+    min-height: 44px;
+  }
+  .hud-title h2 {
+    font-size: 22px;
+  }
+  .hud-title span {
+    font-size: 12px;
+  }
+  .hud-tr {
+    max-width: min(520px, calc(100vw - 32px));
+    justify-content: center;
+  }
+  .hud-tr .hud-btn {
+    height: 32px;
+    padding: 0 11px;
+    font-size: 12px;
+  }
+  .hud-root.sh-open .hud-scene,
+  .hud-root.sh-open .hud-scene > * {
+    opacity: 0;
+    pointer-events: none;
+  }
+}
