@@ -250,3 +250,26 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - Withdraw: a Charge waiting for the GM's Difficulty can be withdrawn too. CHANGE.
 - Conditions: players can toggle conditions on their own sheet, as built. KEEP.
 - Player undo of normal rolls: unanswered (asked again).
+- Player undo: once dice are rolled only the GM can undo; players can still take back things that roll nothing (moves, requests, waiting uses). CHANGE (engine).
+- Quick cast: a one-enemy card with an enemy already picked opens the panel pre-picked, as built. KEEP.
+- Action ring: add reactions and out-of-combat uses too (fold into "More" as needed). CHANGE.
+- Resolutions: add player rolls with Fear ("Vex rolled with Fear · +1 Fear") with Undo. CHANGE.
+- Death modal: closable with a reopen button, as built. KEEP.
+- Death outcome popup: everyone at the table sees it. CHANGE.
+- Difficult terrain: no automatic roll; the GM calls for rolls. KEEP (drop the unused client entry later).
+- Phone bottom sheet starts folded, as built. KEEP.
+- GM Dice: a plain GM roller, plus a "for <PC>" option when a PC token is selected. CHANGE.
+- Core campaigns: add the calendar (Week / Day and End day) like the frames. CHANGE (campaign-time lane).
+- End scene leaves the spotlight where it is. KEEP.
+- The spotlight moves to the GM on Fear / failure only during an encounter. KEEP.
+- Areas panel (GM, desktop bottom-right): collapses to its header when not in use; tap to expand. CHANGE.
+- Queue: stays bottom-left (queue, Resolutions). KEEP. Spotlight panel moves to the top middle under the map title / GM toolbar. CHANGE.
+- Action ring stays open until Esc / your token / the empty map. KEEP.
+- Phone edge chips: a tap pans the map to the target. CHANGE.
+- GM "Play for" weapon attack goes through the HUD attack picker (before wave 9). CHANGE.
+- Lasting effects on a PC's sheet: End button for the GM and the effect's caster (before wave 9). CHANGE.
+- Shadow Stepper (CB p.43): pick the destination square within Far range and move the token there, then Cloaked. CHANGE.
+- Vault Recall is locked like other actions while the GM holds the spotlight. CHANGE.
+- Token badges for Cloaked / Unconscious / Distracted: simple icons in the same style. CHANGE.
+- Withdraw: the GM also gets a short toast "Vex withdrew Bolt Beacon". CHANGE.
+- Help: named ally chips (each helper by name, each pays their own Hope). CHANGE (engine + UI).
