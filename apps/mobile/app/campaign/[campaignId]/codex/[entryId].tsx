@@ -1,13 +1,12 @@
 import { CampaignScreen } from "../../../../src/shell/campaign-provider";
-import { NotBuiltYet } from "../../../../src/shell/not-built-yet";
-import { sectionLabel } from "../../../../src/shell/sections";
+import { CodexEntryRoute } from "../../../../src/features/codex";
 
 export { RouteErrorBoundary as ErrorBoundary } from "../../../../src/shell/route-error";
 
-export default function CodexEntryRoute() {
+export default function CodexEntryPage() {
   return (
     <CampaignScreen>
-      <NotBuiltYet title={sectionLabel("codex")} />
+      <CodexEntryRoute />
     </CampaignScreen>
   );
 }
