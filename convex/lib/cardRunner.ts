@@ -517,7 +517,7 @@ export function instanceModsOn(instance: Pick<Doc<"encounterAdversaries">, "effe
 const flagsOf = (mods: readonly Mod[]) => mods.flatMap((m) => (m.kind === "flag" ? [m.flag as string] : []));
 
 /** Gold as `goldOf` counts it: handfuls, a bag being 10 (CB p.104). */
-const handfulsOf = (sheet: Pick<CharacterSheet, "gold">) => sheet.gold.handfuls + sheet.gold.bags * 10;
+export const handfulsOf = (sheet: Pick<CharacterSheet, "gold">) => sheet.gold.handfuls + sheet.gold.bags * 10;
 
 /** A PC's numbers beyond its tracks (dcm-4zti): slot maximums, derived stats, gold. */
 function pcNumbers(sheet: CharacterSheet, c: Combatant & { armorMax?: number }): Partial<MarkedTracks> {
@@ -1222,8 +1222,9 @@ export function tokenKeyOf(id: string): string {
 }
 
 /**
- * The prefix of a use's sheet effect ids: `card:<cardId>`, or `feat:<hash>` for a feature (sheet effect ids hold at most
- * 40 characters and a feature id up to 53; `featureIdOfEffect` reads the hash back).
+ * The prefix of a use's sheet effect ids: `card:<cardId>`, or `feat:<hash>` for a feature (sheet effect ids once held at
+ * most 40 characters and a feature id up to 53; `featureIdOfEffect` reads the hash back). An adversary feature keeps the
+ * plain `card:<adversaryId>/<feature>` (ADVERSARY_SHEET_EFFECT reads it): the cap is EFFECT_ID_MAX now (dcm-s7hd).
  */
 export function effectKeyOf(id: string): string {
   return isFeatureUseId(id) ? `feat:${shortHash(id)}` : `card:${id}`;

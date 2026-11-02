@@ -36,6 +36,9 @@ export function budgetEntries(view: EncounterView): BudgetEntry[] {
 export function BudgetPanel({ campaignId, view, partyTier }: { campaignId: Id<"campaigns">; view: EncounterView; partyTier: number }) {
   const { encounter } = view;
   const [error, setError] = useState<string | null>(null);
+  // Budget writes not yet confirmed by the server. The optimistic update shows the new budget at once, so the panel says
+  // it is still saving (aria-busy) until every write lands; leaving the page before then can lose the last one (dcm-o0tx).
+  const [saving, setSaving] = useState(0);
   const setBudget = useMutation(api.encounters.setBudget).withOptimisticUpdate((store, { encounterId, change }) => {
     const current = store.getQuery(api.encounters.get, { campaignId, encounterId });
     if (!current) return;
@@ -46,11 +49,14 @@ export function BudgetPanel({ campaignId, view, partyTier }: { campaignId: Id<"c
 
   function change(next: BudgetChange) {
     setError(null);
-    setBudget({ campaignId, encounterId: encounter._id, change: next }).catch((e: unknown) => setError(errorMessage(e)));
+    setSaving((n) => n + 1);
+    setBudget({ campaignId, encounterId: encounter._id, change: next })
+      .catch((e: unknown) => setError(errorMessage(e)))
+      .finally(() => setSaving((n) => n - 1));
   }
 
   return (
-    <section className="enc-card" aria-labelledby="enc-bp-h">
+    <section className="enc-card" aria-labelledby="enc-bp-h" aria-busy={saving > 0} data-testid="bp-panel">
       <div className="enc-head">
         <h2 id="enc-bp-h" className="enc-h">
           Encounter builder

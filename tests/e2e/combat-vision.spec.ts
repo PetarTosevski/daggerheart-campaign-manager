@@ -162,13 +162,18 @@ test("fog of war: dim-band reveal, a wall, daytime, lights, explored areas, the 
     await tools.getByRole("group", { name: "See the map as" }).getByRole("button", { name: "GM (everything)" }).click();
     await expect(page.getByTestId("combat-fog")).toBeHidden();
 
-    // ---- The GM takes the reveal back, then day comes (NIGHT 7, Nautical Dawn = day, R8): the Bandit shows again,
-    // unmarked; the Wolf stays behind the wall.
+    // ---- The GM takes the reveal back, then dawn comes (NIGHT 7, Nautical Dawn = dim, R8 as changed by dcm-p40: full
+    // vision, ranged attacks at disadvantage), then day (DAY 2, Sunrise): the Bandit shows again, unmarked; the Wolf
+    // stays behind the wall.
     await board.getByRole("button", { name: /^Bandit, Enemy/ }).click();
     await reveal.getByRole("button", { name: "👁 Ash" }).click();
     await expect(playerBoard.getByRole("button", { name: /^Bandit/ })).toHaveCount(0);
     await advance(client, campaignId, 5);
     await expect(player.getByTestId("combat-light-pill")).toContainText("Nautical Dawn");
+    await expect(yourView.getByTestId("combat-light-rule")).toHaveText(/^Dim light/);
+    await expect(playerBoard.getByRole("button", { name: "Bandit, Enemy" })).toBeVisible();
+    await advance(client, campaignId, 2);
+    await expect(player.getByTestId("combat-light-pill")).toContainText("Sunrise");
     await expect(yourView.getByTestId("combat-light-rule")).toHaveText(/^Daylight/);
     await expect(playerBoard.getByRole("button", { name: "Bandit, Enemy" })).toBeVisible();
     await expect(playerBoard.getByRole("button", { name: /^Wolf/ })).toHaveCount(0);

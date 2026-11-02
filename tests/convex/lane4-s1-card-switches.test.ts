@@ -413,17 +413,6 @@ describe("S1.4: kept reminders (the engine path is not live on every route; wave
     expect(reminders(r).join(" ")).toContain("last Flight token");
   });
 
-  it("Breaking Blow: the attack that marks the target also runs the card's own `extra` use, which clears the new tag", async () => {
-    const a = await arena();
-    const bear = await a.enemy("Bear", 7, 11);
-    await a.holding(["breaking-blow"]);
-    serverDice(9, 3, 4);
-    const r = resolved(await a.attack([bear.tokenId], { riders: [{ source: "card", id: "breaking-blow", useId: "main", choices: [] }] }));
-    expect(r.riders).toContain("Breaking Blow");
-    expect(reminders(r).join(" ")).toContain("extra 2d12");
-    expect((await a.instance(bear.instanceId)).tags).not.toContain("Breaking Blow");
-  });
-
   it("Avatar of Terror: at 0 Hope an attack's upkeep doesn't end the form, so the reminder stays", async () => {
     const a = await arena();
     const bear = await a.enemy("Bear", 7, 10);
@@ -434,5 +423,54 @@ describe("S1.4: kept reminders (the engine path is not live on every route; wave
     const r = resolved(await a.attack([bear.tokenId]));
     expect(sources(await a.sheet())).toContain("Avatar of Terror");
     expect(reminders(r).join(" ")).toContain("revert to your normal form");
+  });
+});
+
+describe("dcm-npgb: Breaking Blow's own `extra` doesn't clear the tag the same attack placed (CB p.331)", () => {
+  const breakingBlow = { riders: [{ source: "card", id: "breaking-blow", useId: "main", choices: [] }] };
+
+  it("the attack that marks the target keeps the tag; the reminder only asks to clear it", async () => {
+    const a = await arena();
+    const bear = await a.enemy("Bear", 7, 11);
+    await a.holding(["breaking-blow"]);
+    serverDice(9, 3, 4);
+    const r = resolved(await a.attack([bear.tokenId], breakingBlow));
+    expect(r.riders).toContain("Breaking Blow");
+    expect(reminders(r).join(" ")).toContain("adds the extra 2d12 damage by itself; then clear Breaking Blow");
+    expect((await a.instance(bear.instanceId)).tags).toContain("Breaking Blow");
+    expect((await a.sheet()).stress).toBe(1);
+  });
+
+  it("another PC's next successful attack on the marked target adds the 2d12", async () => {
+    const a = await arena();
+    const bear = await a.enemy("Bear", 7, 11);
+    await a.holding(["breaking-blow"]);
+    await a.editOf(a.w.characterB, {});
+    serverDice(9, 3, 4);
+    resolved(await a.attack([bear.tokenId], breakingBlow));
+    expect(await summaries(a)).not.toMatch(/Breaking Blow \+\d+/);
+    serverDice(9, 3, 4);
+    const r = resolved(await a.attackAs("b", [bear.tokenId]));
+    expect(r.riders).toContain("Breaking Blow");
+    expect(await summaries(a)).toMatch(/Breaking Blow \+\d+/);
+  });
+
+  it("your own attack on a target you marked before uses the old mark up and, with a Stress, places a new one", async () => {
+    const a = await arena();
+    const bear = await a.enemy("Bear", 7, 11);
+    await a.holding(["breaking-blow"]);
+    serverDice(9, 3, 4);
+    resolved(await a.attack([bear.tokenId], breakingBlow));
+    // The next attack without the rider: `extra` adds the 2d12 and clears the mark.
+    serverDice(9, 3, 4);
+    resolved(await a.attack([bear.tokenId]));
+    expect((await a.instance(bear.instanceId)).tags).not.toContain("Breaking Blow");
+    // Marked again, then the next attack both uses the mark up and places a new one.
+    serverDice(9, 3, 4);
+    resolved(await a.attack([bear.tokenId], breakingBlow));
+    serverDice(9, 3, 4);
+    resolved(await a.attack([bear.tokenId], breakingBlow));
+    expect((await a.instance(bear.instanceId)).tags.filter((t) => t === "Breaking Blow")).toHaveLength(1);
+    expect((await a.sheet()).stress).toBe(3);
   });
 });

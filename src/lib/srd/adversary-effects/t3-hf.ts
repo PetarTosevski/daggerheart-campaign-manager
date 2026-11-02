@@ -413,7 +413,7 @@ export const T3_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // Hope or has no Hope to lose, they mark Stress instead."
   // User answer 2026-10-31 (dcm-trz9): each bag costs a Hope; each bag the PC can't pay with Hope (none left, or none at
   // all) is a Stress instead (3 bags, 1 Hope: lose 1 Hope, mark 2 Stress). Manual: the adversary run has each PC's gold
-  // now (goldOf, dcm-n3mp) but counts handfuls only (Lanes-2 (dcm-sgn7)), and `hope.ifUnable` is all or nothing, so the
+  // now (goldOf, dcm-n3mp; bags counted since dcm-sgn7), but `hope.ifUnable` is all or nothing, so the
   // split (the Hope held, then a Stress per unpaid bag) can't be written (Lanes-2 (dcm-xcdy)).
   entry(
     "catrin",

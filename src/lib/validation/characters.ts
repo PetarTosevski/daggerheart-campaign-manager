@@ -135,8 +135,15 @@ export const advancementSchema = z.object({
 
 const modifier = z.number().int().min(-10).max(10);
 
+/**
+ * A sheet effect's id. Widened from 40 to 120 (dcm-s7hd; widen only, stored sheets still parse): an adversary feature's
+ * effect on a PC is `card:<adversaryId>/<feature>:<n>` (cardRunner, read back by ADVERSARY_SHEET_EFFECT), and the SRD's
+ * longest is 77 characters (`card:fallen-warlord-realm-breaker/I Have Never Known Defeat (Phase Change):99`).
+ */
+export const EFFECT_ID_MAX = 120;
+
 export const effectSchema = z.object({
-  id: listId,
+  id: z.string().min(1).max(EFFECT_ID_MAX),
   /** What made it, e.g. "Rogue's Dodge". */
   source: shortText,
   text: z.string().max(300),

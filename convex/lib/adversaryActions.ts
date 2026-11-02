@@ -74,7 +74,7 @@ import {
   type Prompt,
 } from "./adversaryFeatures";
 import { answeringFeatures, featureActor, featureChoices, featureReplayActor, seededRng, SPENT_DICE } from "./adversaryHits";
-import { actorSheetAfter, pcCombatant, writeSheetChanges } from "./cardRunner";
+import { actorSheetAfter, handfulsOf, pcCombatant, writeSheetChanges } from "./cardRunner";
 import { endAdversaryConditions, withAdversaryConditionMarkers } from "./cardRows";
 import { openForcedAttacks } from "./forcedAttacks";
 import type { EndOccurrence, EndRoll } from "../../src/lib/domain/characters/expiry";
@@ -588,6 +588,14 @@ export function sheetCreatureTokensOf(party: readonly { character: { _id: string
   return out;
 }
 
+/**
+ * Lane E7 round 3 (dcm-n3mp): the run context's `goldOf`, each PC's gold in handfuls, a bag being 10 (CB p.104), as the
+ * card runner counts it (`handfulsOf`; dcm-sgn7: bags were left out, so a `gold` number in bags read 0).
+ */
+export function partyGoldOf(party: readonly { character: { _id: string }; sheet: { gold: CharacterSheet["gold"] } }[]): Record<string, number> {
+  return Object.fromEntries(party.map((m) => [m.character._id, handfulsOf(m.sheet)]));
+}
+
 /** Lane E7 round 3 (dcm-n3mp): named tokens as the instance stores them (empty names dropped, capped). */
 function storedCreatureTokens(held: ReadonlyMap<string, number>): { name: string; count: number }[] {
   return [...held].filter(([, count]) => count > 0).map(([name, count]) => ({ name: name.slice(0, 40), count })).slice(0, MAX_CREATURE_TOKEN_KINDS);
@@ -1082,10 +1090,10 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
     ...(raisers.length ? { saveRaisers: raisers.map((p) => p.combatant) } : {}),
     ...(chain.length ? { chain } : {}),
     ...(Object.keys(attackedRiders).length > 0 ? { attackedRiders } : {}),
-    // Lane E7 round 3 (dcm-n3mp, dcm-0n1u): named tokens on the encounter's instances, and each PC's handfuls of gold.
+    // Lane E7 round 3 (dcm-n3mp, dcm-0n1u): named tokens on the encounter's instances, and each PC's gold in handfuls (a bag is 10, dcm-sgn7).
     // Plan lanes-2 E7.4 (dcm-wiwi): and on each PC sheet (`creatureTokens`).
     creatureTokens: { ...creatureTokensOf([instance, ...others]), ...sheetCreatureTokensOf(scene.party) },
-    goldOf: Object.fromEntries(scene.party.map((m) => [m.character._id, m.sheet.gold.handfuls])),
+    goldOf: partyGoldOf(scene.party),
     // dcm-qw4f: the options its features lost for good (Seven-Headed).
     removedOptions: (instance.effects ?? []).flatMap((e) => e.optionsRemoved ?? []),
     rng: rollDie,

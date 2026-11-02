@@ -105,15 +105,16 @@ async function arena() {
 describe("dcm-12kx: a hit reads what adversaries put on the PC", () => {
   it("Unstuck doubles the marks, Leechpoles add their tokens", async () => {
     const a = await arena();
-    // In memory: these two ids exceed the sheet's 40-character effect id limit, so they can't be saved (follow-up for lane E7, TASK-LN4-E2.md).
-    const s: CharacterSheet = {
-      ...(await a.sheet(a.w.characterA)),
+    // dcm-s7hd: these ids are longer than the old 40-character effect id cap; the sheet saves them now.
+    await a.edit(a.w.characterA, () => ({
       effects: [
         { id: "card:outer-realms-abomination/Reality Quake:1", source: "Reality Quake", text: "Unstuck", until: "manual" },
         { id: "card:cephilith-abomination/Burrowing Leechpoles:1", source: "Burrowing Leechpoles", text: "Leechpoles", until: "manual" },
       ],
       creatureTokens: [{ name: "leechpole", count: 3 }],
-    };
+    }));
+    const s = await a.sheet(a.w.characterA);
+    expect(s.effects.map((e) => e.id)).toEqual(["card:outer-realms-abomination/Reality Quake:1", "card:cephilith-abomination/Burrowing Leechpoles:1"]);
     expect(pcDamageMods(s, true)).toEqual({ damageTakenBonus: 3, marksMultiplier: { factor: 2, of: expect.arrayContaining(["hope", "armor", "hp", "stress"]) } });
     expect(pcDamageMods({ ...s, creatureTokens: [] }, true)).not.toHaveProperty("damageTakenBonus");
   });

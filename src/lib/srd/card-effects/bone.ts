@@ -390,13 +390,14 @@ export const BONE_EFFECTS: readonly CardEffect[] = [
             endsWhen: "The next successful attack against this target deals an extra 2d12 damage",
             mods: [{ kind: "attackedRider", rider: { by: "others", onSuccess: true, damage: { kind: "add", amount: dice(2, 12) } } }],
           },
-          // Lanes-2 S1 (dcm-ky8b, dcm-s9md): the table's reminder. Lanes-2 S1.4: another PC's attack reads the tag now
-          // (dcm-yd5h), but the attack that places it also runs `extra` below, whose clearCondition sees the new tag and
-          // removes it at once (follow-up for lane E1, TASK-LN4-S1.md); keep the reminder until that is fixed.
+          // Lanes-2 S1 (dcm-ky8b, dcm-s9md): the table's reminder. Another PC's attack reads the tag and adds the 2d12
+          // itself (dcm-yd5h), and the tag now survives the attack that places it (dcm-npgb: `extra` below runs its post
+          // part first, so it only clears a mark from before this attack). That attack doesn't use the tag up, though
+          // (only `attackerSteps` riders are consumed), so the reminder keeps the clearing.
           {
             kind: "manual",
             to: "targets",
-            text: "If another PC makes the next successful attack against this target, they deal an extra 2d12 damage (add it by hand), then clear Breaking Blow.",
+            text: "If another PC makes the next successful attack against this target, their attack adds the extra 2d12 damage by itself; then clear Breaking Blow.",
           },
         ],
       },

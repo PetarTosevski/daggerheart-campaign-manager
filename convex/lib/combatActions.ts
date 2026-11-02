@@ -809,6 +809,32 @@ export function pickRiders(sheet: CharacterSheet, campaign: Doc<"campaigns">, ho
 }
 
 /**
+ * The order the riders' `post` parts run in (dcm-npgb): a card's or feature's automatic uses before the uses of the same
+ * card the player picked, everything else as it was. Each post part writes the creatures before the next one reads them,
+ * so an automatic use that consumes a mark (Breaking Blow's `extra`, CB p.331: "the next successful attack against that
+ * same target deal an extra 2d12 damage", then clear the tag) must see the target as it was before this attack's own
+ * rider placed a new one; otherwise it clears the tag the same attack just placed.
+ */
+export function postOrder<R extends Pick<PickedRider, "source" | "id" | "auto">>(used: readonly R[]): R[] {
+  const out: R[] = [];
+  const done = new Set<R>();
+  for (const r of used) {
+    if (done.has(r)) continue;
+    if (!r.auto) {
+      for (const a of used) {
+        if (a.auto && !done.has(a) && a.source === r.source && a.id === r.id) {
+          out.push(a);
+          done.add(a);
+        }
+      }
+    }
+    out.push(r);
+    done.add(r);
+  }
+  return out;
+}
+
+/**
  * The automatic uses that ride on this attack: First Strike, Face Your Fear, Pummeljoy, Marked for Death's damage...
  * Plan lanes, E1: a loadout card's automatic use too (Eclipse's "succeeds with Hope", CB p.337; Fane of the Wilds' token
  * on a critical Spellcast Roll for a Sage spell, CB p.339, dcm-z1a); it is skipped quietly when it can't run.
@@ -2479,7 +2505,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     riderFear += run.plan.gmFearDelta;
     riderPrompts.push(...promptsOf(run.plan, run.built));
   }
-  for (const r of used) {
+  for (const r of postOrder(used)) {
     const on = results.filter((x) => standing(x) && (r.phase === "before" || x.hit)).map((x) => x.target.token._id);
     const run = await runRiderPart(env, r, sheet, "post", hostRoll, on, main, subjects.get(r));
     if (run === null || run === "empty") continue;
