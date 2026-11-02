@@ -82,13 +82,10 @@
   padding: 4px 10px;
 }
 
-/* The GM's spotlight menu: under the Fear banner until H1.2 hosts it there. */
+/* The GM's spotlight menu: bottom of the left stack (under the queue and feed), clear of the Fear banner (user 2026-11-02). */
 .hud-spot-gm {
-  position: absolute;
-  right: var(--hud-edge);
-  top: 196px;
+  position: relative;
   z-index: 55;
-  width: 260px;
   padding: 10px 12px 12px;
   border-radius: var(--hud-r-card);
   background: var(--hud-glass);

@@ -143,6 +143,11 @@ function HudFrame({ state, loading, renderLayers, tools }: HudShellProps) {
           <PartBoundary label="The feed">
             <HudFeed state={state} />
           </PartBoundary>
+          {role === "gm" ? (
+            <PartBoundary label="The spotlight">
+              <HudSpotlight state={state} />
+            </PartBoundary>
+          ) : null}
         </Region>
         <Region name="hand">
           <PartBoundary label="The hand">
@@ -153,9 +158,11 @@ function HudFrame({ state, loading, renderLayers, tools }: HudShellProps) {
           </PartBoundary>
         </Region>
         <Region name="pop">
-          <PartBoundary label="The spotlight">
-            <HudSpotlight state={state} />
-          </PartBoundary>
+          {role === "gm" ? null : (
+            <PartBoundary label="The spotlight">
+              <HudSpotlight state={state} />
+            </PartBoundary>
+          )}
           <PartBoundary label="The picking panel">
             <HudPick state={state} />
           </PartBoundary>
