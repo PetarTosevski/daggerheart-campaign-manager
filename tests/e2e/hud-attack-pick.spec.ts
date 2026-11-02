@@ -93,8 +93,9 @@ test("a weapon attack through the panel: tiles, chips, one primary; a Minion hit
     await expectNoSeriousA11yViolations(player);
     await panel.getByTestId("hud-pick-go").click();
     await expect(panel).toHaveCount(0);
-    const result = player.getByTestId("hud-attack-result");
-    await expect(result).toContainText(`${rat1!.name}: Defeated`);
+    // H4.1: the result panel replaced the interim line.
+    const result = player.getByTestId("hud-result");
+    await expect(result.getByTestId("hud-result-row").filter({ hasText: rat1!.name })).toContainText("Defeated");
     await expect(result).not.toContainText("Difficulty");
 
     // The Minion offer: a prompt, then the panel with the second Rat as a row.
@@ -152,7 +153,7 @@ test("a forced attack: the red prompt opens the panel with the target locked, an
     await panel.getByTestId("hud-pick-go").click();
 
     await expect(panel).toHaveCount(0);
-    await expect(player.getByTestId("hud-attack-result")).toContainText(new RegExp(`${enemies.lieutenant.name}: (Hit|Miss|Defeated)`));
+    await expect(player.getByTestId("hud-result-row").filter({ hasText: enemies.lieutenant.name })).toContainText(/Hit|Miss|Defeated/);
     await expect(card).toHaveCount(0);
     expect(await client.query(api.combatRequests.forcedAttacks, { campaignId })).toEqual([]);
   } finally {

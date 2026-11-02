@@ -13,7 +13,8 @@ import { extraTargets, offersSpiritWeapon, picksTrait, sheetMods } from "../../a
 import { seenTargets, useActor, useCombatTargets, useTargetHints, type WeaponSlot } from "../../actions/targets";
 import type { CombatPageState } from "../../slots";
 import { usePick } from "../pick";
-import { attackSession, attackSessionId, bandsFrom, forcedRows, initialData, type AttackInput, type ForcedAttack } from "./model";
+import { hudResults, showAttackOutcome } from "../result";
+import { attackSession, attackSessionId, bandsFrom, forcedRows, initialData, weaponOf, type AttackInput, type ForcedAttack } from "./model";
 import { attackReports } from "./report";
 import { AttackRows } from "./rows";
 
@@ -77,6 +78,7 @@ export function useAttackPicker(state: CombatPageState): AttackPicker {
   function open(options: AttackPickerOptions = {}) {
     if (!ready || !character || !actor || characterId === null || mapId === null) return;
     const sheet = character.sheet;
+    const names = new Map<string, string>([...actor.view.pcs, ...actor.view.others].map((t) => [t._id, t.name]));
     const mods = sheetMods(sheet);
     const traitPick: AttackInput["traitPick"] = {};
     const traitDefault: AttackInput["traitDefault"] = {};
@@ -102,12 +104,17 @@ export function useAttackPicker(state: CombatPageState): AttackPicker {
       forced: f,
       forcedRows: f ? forcedRows(f, bandsFrom(actor.view)) : null,
       picked: seenTargets(targetTokenIds, actor.enemies),
-      attack: (args) =>
-        attack({ campaignId, characterId, mapId, ...args, modifier: 0, options: [], idempotencyKey: crypto.randomUUID() }),
+      attack: async (args) => {
+        const out = await attack({ campaignId, characterId, mapId, ...args, modifier: 0, options: [], idempotencyKey: crypto.randomUUID() });
+        // H4.1: the result panel shows a resolved attack; a held one is named for "Your roll waits".
+        showAttackOutcome({ characterId, actorName: sheet.name, weapon: weaponOf({ weapons }, args.slot)?.weapon ?? null, names, out });
+        return out;
+      },
       onReport: attackReports.set,
       render: (ctx, input) => <AttackRows ctx={ctx} input={input} state={state} />,
     };
     attackReports.set(null);
+    hudResults.clear();
     pick.open(attackSession(input, initialData(input, options.slot)));
   }
 

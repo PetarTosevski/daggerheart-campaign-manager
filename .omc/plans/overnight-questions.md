@@ -197,3 +197,7 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - H4.3 Only the choosing player and the GM get the death outcome popup; other players read it in "Just now".
 - H4.3 The player may close the death modal and reopen it from a button (CB p.106 "you must make a death move"; p.182 "make space for them to talk through their decision").
 - H4.3 The "Just now" feed shows on the player view only (5 newest), hidden at 1100 px and below; the GM keeps queue + spotlight bottom-left.
+- H4.1 Ally picks (e.g. Rousing Strike, CB p.343) are answered by the actor for each ally (chips on the actor's screen); the board has each ally answer on their own screen (dcm-bxp.99.32.24).
+- H4.1 "+1 Hope" shows from the roll outcome alone (CB p.95), even if the sheet is already at max Hope.
+- H4.1 A multi-target roll that hits some and misses others is tagged "With Hope / With Fear", not Success / Failure.
+- H4.1 Damage-split rows leave out the board's Major / Minor tags (they would reveal adversary thresholds); "n left" waits on the split total (dcm-bxp.99.32.23).

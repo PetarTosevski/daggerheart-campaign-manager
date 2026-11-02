@@ -12,7 +12,6 @@ import type { CombatPageState } from "../../slots";
 import { usePick, type PickContext } from "../pick";
 import { Popup, Stepper, hudButtonClass } from "../ui";
 import { bandsFrom, minionPatch, minionSession, minionTitle, targetPhrase, type MinionData, type MinionOffer } from "./model";
-import { useAttackReport } from "./report";
 import { useAttackPicker } from "./use-attack";
 
 /**
@@ -21,8 +20,8 @@ import { useAttackPicker } from "./use-attack";
  *   picker with the target locked;
  * - 'Your hit can defeat 2 more Minions' (CB p.201): "Pick Minions" opens the panel with the candidates as rows (and
  *   rings), "Skip" defeats none;
- * - the last attack's line (Hit / Miss / Defeated, the player's own damage total; HANDOFF hard rule 2) until H4.1's
- *   result panel (the action ring's Attack opens the picker through `useAttackPicker().open()`).
+ * The attack's result and a held roll ("Your roll waits") are H4.1's result panel (`hud/result`); the action ring's
+ * Attack opens the picker through `useAttackPicker().open()`.
  * Players only; the forced attacks and Minion offers come from the server's open requests, so a reload keeps them.
  */
 
@@ -44,7 +43,6 @@ export function HudAttack({ state }: { state: CombatPageState }) {
 
 function PlayerAttack({ state }: { state: CombatPageState }) {
   const picker = useAttackPicker(state);
-  const report = useAttackReport(picker.characterId);
   if (picker.characterId === null) return null;
   return (
     <>
@@ -70,14 +68,6 @@ function PlayerAttack({ state }: { state: CombatPageState }) {
         ))}
         <MinionOffers state={state} characterId={picker.characterId} />
       </ul>
-      <div className="hud-atk-launch">
-        {report ? (
-          <span className="hud-atk-res" role="status" data-testid="hud-attack-result">
-            {report.note ??
-              [report.verdicts.map((v) => `${v.name}: ${v.verdict}`).join(" · "), report.damage !== null ? `your damage ${report.damage}` : null].filter(Boolean).join(" · ")}
-          </span>
-        ) : null}
-      </div>
     </>
   );
 }

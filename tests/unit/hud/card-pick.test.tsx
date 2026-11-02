@@ -23,6 +23,7 @@ import { blockedOf, cardAreaAsk, cardAreaLine, payLine, primaryLabel, requestOf,
 import { confirmAreaPick, placeSquare, resetAreaPickForTests, useAreaPickState } from "@/components/combat-map/hud/pick-area/store";
 import { areaPickOf } from "@/components/combat-map/actions/hand/model";
 import { HudProvider } from "@/components/combat-map/hud/state";
+import { hudResults } from "@/components/combat-map/hud/result";
 import type { CombatPageState } from "@/components/combat-map/slots";
 
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -50,6 +51,7 @@ afterEach(() => {
   cardResult = async () => ({ status: "pending", requestId: "r1", outOfRange: [] });
   window.localStorage.clear();
   resetAreaPickForTests();
+  hudResults.reset();
 });
 
 const tok = (s: string) => s as Id<"combatTokens">;
@@ -465,6 +467,7 @@ describe("a chain link after the roll is a pick session of its own (H3.3 'Chain 
     expect(calls[1]!.args).toMatchObject({ cardId: "chain-lightning", spell: "main", targetTokenIds: calls[0]!.args.targetTokenIds });
     expect(calls[1]!.args.choices).toContainEqual({ id: "chain:1", value: [BANDIT] });
     expect(screen.queryByRole("dialog", { name: "Chain Lightning" })).toBeNull();
-    expect(screen.getByTestId("hud-hand-result")).toBeTruthy();
+    // H4.1: the result goes to the result panel (hud/result).
+    expect(hudResults.get()).toMatchObject({ kind: "result", view: { title: "Chain Lightning" } });
   });
 });

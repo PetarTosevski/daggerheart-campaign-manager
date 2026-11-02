@@ -65,7 +65,7 @@ test("a player casts a card through the picking panel: rule, rows, rider with it
     // Cast: in range, the card resolves; the panel goes, the card lowers, its result shows above the fan.
     await panel.getByTestId("hud-pick-go").click();
     await expect(panel).toHaveCount(0);
-    await expect(hand(player).getByTestId("hud-hand-result")).toBeVisible({ timeout: 30_000 });
+    await expect(player.getByTestId("hud-result")).toBeVisible({ timeout: 30_000 }); // H4.1's result panel
     await expect(fanCard(player, "Vicious Entangle")).not.toContainText("Casting");
 
     // Esc cancels another Use: the panel goes and the card lowers.

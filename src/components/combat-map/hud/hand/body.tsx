@@ -10,7 +10,7 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { useViewerFlag } from "../../map-view/use-viewer-flag";
 import { useAreaPick } from "../../map-view/area-pick";
-import { AfterRollDialog, type DialogRequest } from "../../actions/hand/dialog";
+import type { DialogRequest } from "../../actions/hand/dialog";
 import { VaultDeck } from "../../actions/hand/dock";
 import { HandCardFace } from "../../actions/hand/face";
 import { handHiddenKey } from "../../actions/hand";
@@ -20,6 +20,7 @@ import { useRecall } from "../../actions/hand/use-card";
 import { NO_ROLL_OPTIONS, rollProblem, rollSummary, type Roller, type RollValues } from "../../actions/roll-controls";
 import { usePick, type PickOutcome } from "../pick";
 import { useAreaPickState } from "../pick-area";
+import { askAfterRoll, hudResults, showCardResult, withAnswers } from "../result";
 import {
   cardAreaAsk,
   cardAreaLine,
@@ -28,7 +29,6 @@ import {
   cardPatch,
   cardSession,
   cardSessionId,
-  chainAskOf,
   hudPointPicker,
   useCardPlay,
   type CardPickData,
@@ -49,8 +49,8 @@ import { cardLook, loadoutFullText, recallText, type HandMode, type LookContext 
  * Lieutenant"). A card that asks nothing at all (no target, no choice) fires at once; an area asks the map for its
  * square next (`pointPicker`: H3.3's HUD square picking, the open pick session ended first). Out of range goes to the GM
  * ("Waiting for the GM", H3.0); a chain link after the roll (Chain Lightning) is a pick session of its own (H3.3's
- * chain links); any other choice after the roll opens the classic after-roll dialog; the result shows above the fan
- * until H4.1.
+ * chain links); any other choice after the roll and the result go to H4.1's result panel (`hud/result`); the GM's
+ * out-of-range line stays above the fan.
  * Drag-to-play stays the classic dock's.
  *
  * Hide cards (answer 16a) folds the viewer's own fan on their screen only: this browser's flag, never a server call.
@@ -160,10 +160,27 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
    */
   function settle(card: HandCard, request: DialogRequest, out: UseOutcome | null | undefined, links: Id<"combatTokens">[][] = [[...request.targetTokenIds]]): PickOutcome {
     if (out?.status === "needsChoice" && openChain(card, request, out.asks, links)) return { kind: "stay" };
-    if (!out || out.status === "needsChoice") return { kind: "done" }; // the after-the-roll dialog asks next
+    if (out?.status === "needsChoice") {
+      // H4.1: the result panel asks the after-the-roll answers (a split, each ally's pick, a choice), then sends them.
+      askAfterRoll({
+        characterId,
+        title: card.name,
+        cardId: card.cardId,
+        asks: out.asks,
+        names,
+        answer: async (choices) => {
+          const sent = withAnswers(request, choices);
+          settle(card, sent, await actions.send(sent), links);
+        },
+        cancel: () => actions.cancelWaiting(),
+      });
+      return { kind: "done" };
+    }
+    if (!out) return { kind: "done" };
     if (usedRollOptions(request)) setRollOptions(NO_ROLL_OPTIONS);
     if (out.status === "resolved") {
-      setLast({ kind: "resolved", cardName: card.name, result: out, names, done: [] });
+      // H4.1: the result panel (Main 'Card result') shows it.
+      showCardResult({ characterId, actorName: name, cardName: card.name, result: out, names });
       return { kind: "done" };
     }
     // Out of range: the player's "Waiting for the GM" card shows it (H3.0); the GM has no such card, so the line stays.
@@ -253,6 +270,7 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
   function play(card: HandCard) {
     actions.clearError();
     setLast(null);
+    hudResults.clear();
     const uses = playableUses(card);
     const first = uses.find((u) => u.ready);
     const effectUse = first ? cardEffect(card.cardId)?.uses.find((u) => u.id === first.useId) : undefined;
@@ -468,19 +486,6 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
           onClose={() => {
             setFull(null);
             moreFrom.current?.focus();
-          }}
-        />
-      ) : null}
-      {actions.waiting && waitingCard && !chainAskOf(actions.waiting.asks) ? (
-        <AfterRollDialog
-          cardName={waitingCard.name}
-          asks={actions.waiting.asks}
-          names={names}
-          pending={actions.pending}
-          error={actions.error}
-          onCancel={() => actions.cancelWaiting()}
-          onAnswer={(choices) => {
-            void actions.answer(choices).then((sent) => sent && settle(waitingCard, sent.request, sent.out));
           }}
         />
       ) : null}

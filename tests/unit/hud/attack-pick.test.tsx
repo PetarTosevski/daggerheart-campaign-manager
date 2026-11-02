@@ -29,6 +29,7 @@ import {
   type AttackInput,
 } from "@/components/combat-map/hud/pick-attack";
 import { HudProvider } from "@/components/combat-map/hud/state";
+import { HudResult, hudResults } from "@/components/combat-map/hud/result";
 import type { CombatPageState, MapLayerProps } from "@/components/combat-map/slots";
 import type { RiderOption } from "@/components/combat-map/actions/attack/riders";
 import { WEAPONS } from "@/lib/srd/equipment";
@@ -64,6 +65,7 @@ afterEach(() => {
   for (const k of Object.keys(results)) delete results[k];
   calls.length = 0;
   attackReports.set(null);
+  hudResults.reset();
 });
 
 const CAMPAIGN = "c1" as Id<"campaigns">;
@@ -166,12 +168,17 @@ function renderHud() {
         </div>
         <HudPick state={state} />
         <HudAttack state={state} />
+        <HudResult state={state} />
       </PickProvider>
     </HudProvider>,
   );
 }
 
 const weapon = (id: string) => WEAPONS.find((w) => w.id === id)!;
+
+/** A duality roll (Hope 9, Fear 4, +2) and a Shortstaff damage roll (1d8+1 → 9) for the resolved answers. */
+const ROLL = { kind: "action", dice: [{ sides: 12, value: 9, role: "hope" }, { sides: 12, value: 4, role: "fear" }], modifier: 2, total: 15, outcome: "successHope", manual: false };
+const DAMAGE = { kind: "damage", dice: [{ sides: 8, value: 8, role: "damage" }], modifier: 1, total: 9, outcome: "none", manual: false };
 
 function input(over: Partial<AttackInput> = {}): AttackInput {
   return {
@@ -271,7 +278,7 @@ describe("the attack picker's model", () => {
 describe("the attack picker in the HUD", () => {
   it("weapon tiles, roll chips, riders with cost pills, one primary; the send and the result line", async () => {
     seed();
-    results["combatActions:attack"] = { status: "resolved", damage: { total: 9 }, targets: [{ tokenId: BANDIT, hit: true, defeated: false }] };
+    results["combatActions:attack"] = { status: "resolved", entryId: "e1", roll: ROLL, damage: DAMAGE, fearGained: 0, minionOffer: null, prompts: [], targets: [{ tokenId: BANDIT, hit: true, defeated: false }] };
     renderHud();
     openPicker();
     const panel = screen.getByRole("dialog", { name: "Shortstaff" });
@@ -293,8 +300,9 @@ describe("the attack picker in the HUD", () => {
     expect(sent).toMatchObject({ campaignId: CAMPAIGN, characterId: CHARACTER, mapId: MAP, slot: "primary", targetTokenIds: [BANDIT], experienceIds: ["x1"], advantage: 1, disadvantage: 0, modifier: 0, options: [] });
     expect(sent.riders).toEqual([{ source: "card", id: "marked-for-death", useId: "u1", choices: [] }]);
     expect(screen.queryByTestId("hud-pick")).toBeNull();
-    expect(screen.getByTestId("hud-attack-result")).toHaveTextContent("Bandit: Hit · your damage 9");
-    expect(screen.getByTestId("hud-attack-result").textContent).not.toMatch(/HP|Difficulty/);
+    // H4.1: the result panel (Hit and the player's own damage; never an adversary number).
+    expect(screen.getByTestId("hud-result-row")).toHaveTextContent("BanditHit1d8+1 → 9 magic");
+    expect(screen.getByTestId("hud-result").textContent).not.toMatch(/HP|Difficulty/);
   });
 
   it("switching to the off-hand weapon changes the header, the rule's slot and the riders", () => {
@@ -318,13 +326,13 @@ describe("the attack picker in the HUD", () => {
     expect(within(panel).getByTestId("hud-pick-pay")).toHaveTextContent("the GM approves first");
     await act(async () => fireEvent.click(within(panel).getByTestId("hud-pick-go")));
     expect(screen.queryByTestId("hud-pick")).toBeNull();
-    expect(screen.queryByTestId("hud-attack-result")).toBeNull();
+    expect(screen.queryByTestId("hud-result")).toBeNull();
   });
 
   it("a forced attack: the card names the target, the panel locks it, the send answers the request", async () => {
     seed();
     queries["combatRequests:forcedAttacks"] = [{ requestId: "f1", characterId: CHARACTER, characterName: "Moss", createdAt: 1, instanceLabel: "Gobstalker", feature: "Beguile", targets: [{ tokenId: ORIEL, name: "Oriel" }] }];
-    results["combatActions:attack"] = { status: "resolved", damage: null, targets: [{ tokenId: ORIEL, hit: false, defeated: false }] };
+    results["combatActions:attack"] = { status: "resolved", entryId: "e2", roll: ROLL, damage: null, fearGained: 0, minionOffer: null, prompts: [], targets: [{ tokenId: ORIEL, hit: false, defeated: false }] };
     renderHud();
     const card = screen.getByTestId("hud-attack-forced");
     expect(card).toHaveTextContent("Forced attack");
@@ -341,7 +349,7 @@ describe("the attack picker in the HUD", () => {
     expect(within(panel).getByTestId("hud-pick-go")).toHaveTextContent("Attack Oriel with Shortstaff");
     await act(async () => fireEvent.click(within(panel).getByTestId("hud-pick-go")));
     expect(calls.find((c) => c.name === "combatActions:attack")!.args).toMatchObject({ forcedRequestId: "f1", targetTokenIds: [ORIEL] });
-    expect(screen.getByTestId("hud-attack-result")).toHaveTextContent("Oriel: Miss");
+    expect(screen.getByTestId("hud-result-row")).toHaveTextContent("OrielMiss");
   });
 
   it("Lead by Example: the picked target's benefit is a radio row before the roll", async () => {
@@ -349,7 +357,7 @@ describe("the attack picker in the HUD", () => {
     queries["combatActions:targets"] = [
       { tokenId: BANDIT, band: "melee", inRange: true, lineOfSight: true, cover: false, benefits: [{ label: "Lead by Example", options: [{ id: "stress", label: "Clear a Stress" }, { id: "hope", label: "Gain a Hope" }] }] },
     ];
-    results["combatActions:attack"] = { status: "awaiting" };
+    results["combatActions:attack"] = { status: "awaiting", requestId: "held1" };
     renderHud();
     openPicker();
     const panel = screen.getByRole("dialog", { name: "Shortstaff" });
@@ -360,7 +368,8 @@ describe("the attack picker in the HUD", () => {
     fireEvent.click(within(lbe).getByRole("radio", { name: "Gain a Hope" }));
     await act(async () => fireEvent.click(within(panel).getByTestId("hud-pick-go")));
     expect(calls.find((c) => c.name === "combatActions:attack")!.args).toMatchObject({ benefit: "hope" });
-    expect(screen.getByTestId("hud-attack-result")).toHaveTextContent("Your roll waits");
+    // H4.1: a held roll shows no result; "Your roll waits" comes from the server's open request (hud/result).
+    expect(screen.queryByTestId("hud-result")).toBeNull();
   });
 
   it("the Minion offer: Pick Minions opens the rows, 'Defeat 2' sends them; Skip sends none", async () => {
