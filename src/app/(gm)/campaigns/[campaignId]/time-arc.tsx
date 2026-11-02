@@ -236,14 +236,14 @@ export function TimeArc({ campaignId, readOnly = false }: { campaignId: Id<"camp
 const endDayButton =
   "min-h-11 cursor-pointer rounded-full border border-white/25 bg-black/45 px-5 font-display text-[14px] font-bold tracking-[0.06em] text-[#e6ecea] hover:bg-black/60 disabled:cursor-default disabled:opacity-60";
 
-type EndDayResult = { week: number; day: number; newWeek: boolean; ended: number };
+export type EndDayResult = { week: number; day: number; newWeek: boolean; ended: number };
 
 /**
  * Undo of the End day just pressed (plan lanes-2 CT2, dcm-jq4b): `actionLog.undo` on its campaign row gives the uses
  * back and, while it is the latest day's end, moves the day (and the time of day it reset) back. The feed's Undo does
  * the same for any End day row; an older one gives back its uses only (user answer 2026-11-01).
  */
-function UndoEndDay({ entryId, onUndone }: { entryId: Id<"actionLog">; onUndone: () => void }) {
+export function UndoEndDay({ entryId, onUndone }: { entryId: Id<"actionLog">; onUndone: () => void }) {
   const undo = useIntent(api.actionLog.undo);
   return (
     <>
@@ -268,7 +268,7 @@ function UndoEndDay({ entryId, onUndone }: { entryId: Id<"actionLog">; onUndone:
 }
 
 /** The line after an End day: what passed and how many limits came back. */
-function endDayNotice(r: EndDayResult): string {
+export function endDayNotice(r: EndDayResult): string {
   const passed = r.newWeek ? `Week ${r.week} begins` : `Day ${r.day} begins`;
   return r.ended === 0 ? `${passed}.` : `${passed}; ${r.ended} limit${r.ended === 1 ? "" : "s"} refreshed.`;
 }

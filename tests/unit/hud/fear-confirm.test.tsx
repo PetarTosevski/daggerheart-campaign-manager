@@ -71,7 +71,7 @@ beforeEach(() => {
   calls = [];
   optimistic = {};
   mutationResult = null;
-  results = { "combatHud:scene": { fear: 5, light: "day", phase: null, day: null, canSetLight: true, canOpenTimeArc: false } };
+  results = { "combatHud:scene": { fear: 5, light: "day", phase: null, day: { week: 1, day: 1, cycle: "DAY" }, canSetLight: true, canOpenTimeArc: false, canEndDay: true } };
 });
 
 afterEach(() => {

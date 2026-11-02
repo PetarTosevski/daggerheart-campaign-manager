@@ -1,65 +1,155 @@
 "use client";
 
-import { DIM_PHASE_BADGE, LIGHT_LEVELS, LIGHT_LEVEL_LABEL, type LightLevel } from "@/lib/domain/combat-map/light";
+import { useMutation, useQuery } from "convex/react";
+import { useState } from "react";
+
 import { useCampaignLight, useSetTimeOfDay } from "@/components/combat-map/vision/use-campaign-light";
+import { formatCalendarDay } from "@/lib/domain/campaign-time";
+import { DIM_PHASE_BADGE, LIGHT_LEVELS, LIGHT_LEVEL_LABEL, type LightLevel } from "@/lib/domain/combat-map/light";
+import { errorMessage } from "@/lib/convex-errors";
 import { cn } from "@/lib/utils";
 
+import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
+import { endDayNotice, UndoEndDay } from "./time-arc";
 
 const ICON: Readonly<Record<LightLevel, string>> = { day: "☀", dim: "◐", night: "☾" };
 
-const NOTE: Readonly<Record<LightLevel, string>> = {
+/** The light's one-line rule under its name. */
+export const LIGHT_RULE: Readonly<Record<LightLevel, string>> = {
   day: "Full light on every map.",
   dim: DIM_PHASE_BADGE,
   night: "Night: light sources matter.",
 };
 
+/** The GM's click on the cycle: Day → Dim → Night → Day. Wrapping to Day never changes the date (End day does that). */
+export function nextTimeOfDay(light: LightLevel): LightLevel {
+  return LIGHT_LEVELS[(LIGHT_LEVELS.indexOf(light) + 1) % LIGHT_LEVELS.length]!;
+}
+
+/** The day after Week `week` · Day `day` outside the Witherwild: day 7 ends the week. */
+export function nextCalendarDay(week: number, day: number): { week: number; day: number } {
+  return day >= 7 ? { week: week + 1, day: 1 } : { week, day: day + 1 };
+}
+
 /**
- * The campaign's time of day (dcm-bxp.54, user 2026-10-30) in the dashboard header, where the time arc sits in the
- * Witherwild: a Day / Dim / Night segmented control for the GM (edit access), read-only for players. Every map of the
- * campaign follows it; the Combat Map header's dropdown sets the same value (`campaigns.setTimeOfDay`). Only rendered
- * for frames without campaign time.
+ * End day (`campaignTime.endDay`, one intent with a fresh key), shown at once: the calendar moves to the next day and
+ * the light goes back to Day, as the server does outside the Witherwild (TASK-LN3-CT answer Q2).
  */
-export function TimeOfDay({ campaignId }: { campaignId: Id<"campaigns"> }) {
+function useEndDay(campaignId: Id<"campaigns">) {
+  const mutate = useMutation(api.campaignTime.endDay).withOptimisticUpdate((store, args) => {
+    const calendar = store.getQuery(api.campaignTime.calendar, { campaignId: args.campaignId });
+    if (calendar !== undefined && !calendar.cycles) {
+      store.setQuery(api.campaignTime.calendar, { campaignId: args.campaignId }, { ...calendar, ...nextCalendarDay(calendar.week, calendar.day) });
+    }
+    const light = store.getQuery(api.campaigns.timeOfDay, { campaignId: args.campaignId });
+    if (light !== undefined && light.phase === null) store.setQuery(api.campaigns.timeOfDay, { campaignId: args.campaignId }, { ...light, light: "day" });
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  async function fire() {
+    setError(null);
+    setPending(true);
+    try {
+      return await mutate({ campaignId, idempotencyKey: crypto.randomUUID() });
+    } catch (e) {
+      setError(errorMessage(e));
+      return undefined;
+    } finally {
+      setPending(false);
+    }
+  }
+  return { fire, error, pending };
+}
+
+/**
+ * The dashboard's campaign day card for every campaign without the Witherwild arc, core included (TASK-CORE-CALENDAR;
+ * user 2026-11-02): one label "Week X · Day X", under it the time of day (icon, name and its rule; the GM's click
+ * advances Day → Dim → Night → Day without changing the date, `campaigns.setTimeOfDay`), and the GM's End day, which
+ * moves to the next day at once (no confirm) and resets the light to Day. Its Undo (and the feed's) rolls it back (CT2).
+ * Players read it only.
+ */
+export function DayCard({ campaignId, readOnly = false }: { campaignId: Id<"campaigns">; readOnly?: boolean }) {
+  const calendar = useQuery(api.campaignTime.calendar, { campaignId });
   const light = useCampaignLight(campaignId);
   const setter = useSetTimeOfDay(campaignId);
-  if (light === undefined) return <div className="h-[86px]" aria-busy="true" />;
-  if (light === null) return null;
+  const endDay = useEndDay(campaignId);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [lastEnd, setLastEnd] = useState<Id<"actionLog"> | null>(null);
+  if (calendar === undefined || light === undefined) return <div className="h-[168px] w-full sm:w-[300px]" aria-busy="true" />;
+
+  const level = light?.light ?? "day";
+  const face = (
+    <>
+      <span className="flex items-center gap-2 text-[15px] font-semibold text-[#f3cf86]">
+        <span aria-hidden="true">{ICON[level]}</span>
+        {LIGHT_LEVEL_LABEL[level]}
+      </span>
+      <span className="text-[13px] text-[#c9d2cf]">{LIGHT_RULE[level]}</span>
+    </>
+  );
+  // The server decides who sets the light (edit access, as the old Day / Dim / Night control); End day is the GM's.
+  const canCycle = light?.canSet === true;
+
   return (
-    <section aria-label="Time of day" className="flex flex-col items-center gap-2 self-center" data-testid="time-of-day">
-      <span className="text-[11px] tracking-[0.24em] text-[#e6ecea] uppercase opacity-80">Time of day</span>
-      {light.canSet ? (
-        <div role="group" aria-label="Set the time of day" className="flex rounded-full border border-white/20 bg-black/45 p-1">
-          {LIGHT_LEVELS.map((level) => {
-            const on = level === light.light;
-            return (
-              <button
-                key={level}
-                type="button"
-                aria-pressed={on}
-                onClick={() => {
-                  if (!on) void setter.set(level);
-                }}
-                className={cn(
-                  "inline-flex min-h-11 min-w-[88px] cursor-pointer items-center justify-center gap-1.5 rounded-full px-4 text-[14px] font-semibold",
-                  on ? "bg-[#e3b45a]/25 text-[#f3cf86] shadow-[inset_0_0_0_1px_#8a6d2a]" : "text-[#c9d2cf] hover:bg-white/5",
-                )}
-              >
-                <span aria-hidden="true">{ICON[level]}</span>
-                {LIGHT_LEVEL_LABEL[level]}
-              </button>
-            );
-          })}
-        </div>
+    <section
+      aria-label="Campaign day"
+      className="flex w-full flex-col gap-3 rounded-[14px] border border-[#2a3a40] bg-[#141e22] p-4 sm:w-[300px]"
+      data-testid="campaign-day"
+    >
+      <p className="m-0 font-display text-[20px] leading-tight font-bold text-parchment" data-testid="campaign-day-label">
+        {formatCalendarDay(calendar.week, calendar.day)}
+      </p>
+      {canCycle ? (
+        <button
+          type="button"
+          aria-label={`Advance the time of day: now ${LIGHT_LEVEL_LABEL[level]}`}
+          data-testid="time-of-day-cycle"
+          onClick={() => void setter.set(nextTimeOfDay(level))}
+          className="flex min-h-11 cursor-pointer flex-col items-start gap-0.5 rounded-[10px] border border-[#2a3a40] bg-black/30 px-3 py-2 text-left hover:border-[#e3b45a] focus-visible:outline-2 focus-visible:outline-[#e3b45a]"
+        >
+          {face}
+        </button>
       ) : (
-        <span className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-white/20 bg-black/45 px-4 text-[15px] font-semibold text-[#f3cf86]" data-testid="time-of-day-value">
-          <span aria-hidden="true">{ICON[light.light]}</span>
-          {LIGHT_LEVEL_LABEL[light.light]}
-        </span>
+        <div className="flex flex-col items-start gap-0.5 px-1" data-testid="time-of-day-value">
+          {face}
+        </div>
       )}
-      <span className="text-[13px] text-[#c9d2cf]">{NOTE[light.light]}</span>
+      {readOnly ? null : (
+        <button
+          type="button"
+          aria-label="End the day"
+          disabled={endDay.pending}
+          data-testid="end-day"
+          onClick={() =>
+            void endDay.fire().then((r) => {
+              if (!r) return;
+              setNotice(endDayNotice(r));
+              setLastEnd(r.entryId);
+            })
+          }
+          className={cn(
+            "min-h-11 cursor-pointer rounded-full border border-[#e3b45a]/60 bg-[#e3b45a]/15 px-5 font-display text-[14px] font-bold tracking-[0.06em] text-[#f3cf86]",
+            "hover:bg-[#e3b45a]/25 disabled:cursor-default disabled:opacity-60",
+          )}
+        >
+          End day
+        </button>
+      )}
+      <p role="status" aria-live="polite" className="m-0 min-h-0 text-[13px] text-[#c9d2cf] empty:hidden" data-testid="end-day-notice">
+        {notice}
+      </p>
+      {lastEnd !== null && !readOnly ? (
+        <UndoEndDay
+          entryId={lastEnd}
+          onUndone={() => {
+            setLastEnd(null);
+            setNotice("End day undone.");
+          }}
+        />
+      ) : null}
       <p role="status" aria-live="polite" className="m-0 min-h-0 text-[13px] text-danger empty:hidden">
-        {setter.error}
+        {endDay.error ?? setter.error}
       </p>
     </section>
   );

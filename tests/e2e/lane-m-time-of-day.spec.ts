@@ -1,5 +1,6 @@
-// Lane M (plan lanes, wave 5; dcm-bxp.54): the campaign's time of day outside the Witherwild. The GM sets Day / Dim /
-// Night on the dashboard and on the Combat Map header (one shared value); the player sees it read-only, live.
+// Lane M (plan lanes, wave 5; dcm-bxp.54): the campaign's time of day outside the Witherwild. The GM advances Day → Dim
+// → Night on the dashboard's day card (TASK-CORE-CALENDAR) and sets it on the Combat Map header (one shared value);
+// the player sees it read-only, live.
 
 import { expect, test } from "@playwright/test";
 
@@ -10,14 +11,16 @@ test.describe.configure({ timeout: 90_000 });
 test("the GM's time of day reaches the player's dashboard and map header, read-only", async ({ browser }) => {
   const { gm, player, campaignId, close } = await gmAndPlayer(browser, { frame: "beast-feast" });
   try {
-    const gmControl = gm.getByRole("group", { name: "Set the time of day" });
+    const gmCycle = gm.getByTestId("time-of-day-cycle");
     const playerValue = player.getByTestId("time-of-day-value");
-    await expect(gmControl.getByRole("button", { name: "Day" })).toHaveAttribute("aria-pressed", "true");
+    await expect(gmCycle).toHaveAccessibleName("Advance the time of day: now Day");
     await expect(playerValue).toContainText("Day");
-    await expect(player.getByRole("group", { name: "Set the time of day" })).toHaveCount(0);
+    await expect(player.getByTestId("time-of-day-cycle")).toHaveCount(0);
 
-    await gmControl.getByRole("button", { name: "Night" }).click();
-    await expect(gmControl.getByRole("button", { name: "Night" })).toHaveAttribute("aria-pressed", "true");
+    await gmCycle.click();
+    await expect(gmCycle).toHaveAccessibleName("Advance the time of day: now Dim");
+    await gmCycle.click();
+    await expect(gmCycle).toHaveAccessibleName("Advance the time of day: now Night");
     await expect(playerValue).toContainText("Night");
 
     // The Combat Map header: a dropdown for the GM, the same value; read-only for the player.

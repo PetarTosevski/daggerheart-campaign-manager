@@ -40,9 +40,10 @@ import { withoutStance } from "./lib/stanceDrop";
  *   Stress, Armor, Hope, conditions, class, level, portrait, death move due). Players read the live map only (any
  *   other map reads as empty, as `combatTokens.party`); the GM any map. Never an adversary, ally, neutral or custom
  *   token: their numbers stay the GM's (R4, HANDOFF hard rule 2).
- * - `scene` (every member): Fear, the campaign's light and time phase, the campaign day (frames with campaign time
- *   only), and what the caller may change: the light (`canSetLight`, edit access without campaign time, as
- *   `campaigns.timeOfDay`) and the time arc (`canOpenTimeArc`, the GM in a frame with campaign time).
+ * - `scene` (every member): Fear, the campaign's light and time phase, the campaign day (every campaign, core
+ *   included: user decision 2026-11-02, TASK-CORE-CALENDAR), and what the caller may change: the light (`canSetLight`,
+ *   edit access without campaign time, as `campaigns.timeOfDay`), the time arc (`canOpenTimeArc`, the GM in a frame
+ *   with campaign time) and End day (`canEndDay`, the GM in every campaign, as `campaignTime.endDay`).
  * - `sheet` (every member, tracer HD2, user answer 4a): one PC's sheet panel. Any party member reads any PC's numbers,
  *   features (a view-safe list), thresholds, Experiences, conditions and lasting effects; only the cards in hand follow
  *   hand sharing, so this query never returns a card (the hand stays `combatCards.hand`).
@@ -84,15 +85,17 @@ const sceneValidator = v.object({
   light: lightLevelValidator,
   /** The campaign time phase ("Nightfall"), or null in a frame without campaign time. */
   phase: v.union(v.string(), v.null()),
-  /** The campaign day (week, day of the week, Day / Night cycle); null in a frame without campaign time. */
-  day: v.union(
-    v.null(),
-    v.object({ week: v.number(), day: v.number(), cycle: v.union(v.literal("DAY"), v.literal("NIGHT")) }),
-  ),
+  /**
+   * The campaign day (week, day of the week, Day / Night cycle), as `campaignTime.calendar`: every campaign counts days
+   * (core included, TASK-CORE-CALENDAR); outside the Witherwild the cycle is always "DAY".
+   */
+  day: v.object({ week: v.number(), day: v.number(), cycle: v.union(v.literal("DAY"), v.literal("NIGHT")) }),
   /** The caller may set Day / Dim / Night (edit access, no campaign time: `campaigns.setTimeOfDay`). */
   canSetLight: v.boolean(),
   /** The GM's disc opens the time arc / End day (the GM, in a frame with campaign time). */
   canOpenTimeArc: v.boolean(),
+  /** The GM's disc ends the day (`campaignTime.endDay`, the GM in every campaign). */
+  canEndDay: v.boolean(),
 });
 
 export const scene = campaignQuery({
@@ -105,15 +108,13 @@ export const scene = campaignQuery({
     const timed = frameHasMechanic(campaign.frameId, "campaignTime");
     const { phase, light } = await campaignLight(ctx, campaign);
     const fear = (await campaignFearState(ctx, campaign._id)).fear;
-    let day: { week: number; day: number; cycle: "DAY" | "NIGHT" } | null = null;
-    if (timed) {
-      const row = await ctx.db
-        .query("campaignTime")
-        .withIndex("by_campaign", (q) => q.eq("campaignId", campaign._id))
-        .unique();
-      // A campaign whose first day has not ended is at the initial time (week 1, Day, day 1).
-      day = row === null ? { week: 1, day: 1, cycle: "DAY" } : { week: row.week, day: row.cycleDay, cycle: row.cycle };
-    }
+    const row = await ctx.db
+      .query("campaignTime")
+      .withIndex("by_campaign", (q) => q.eq("campaignId", campaign._id))
+      .unique();
+    // A campaign whose first day has not ended is at the initial time (week 1, Day, day 1): the row is created lazily
+    // by its first End day, so existing campaigns need no migration.
+    const day = row === null ? { week: 1, day: 1, cycle: "DAY" as const } : { week: row.week, day: row.cycleDay, cycle: row.cycle };
     return {
       fear,
       light,
@@ -121,6 +122,7 @@ export const scene = campaignQuery({
       day,
       canSetLight: atLeast(ctx.permission, "edit") && !timed,
       canOpenTimeArc: atLeast(ctx.permission, "owner") && timed,
+      canEndDay: atLeast(ctx.permission, "owner"),
     };
   },
 });

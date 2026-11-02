@@ -14,7 +14,7 @@ test("the GM undoes End day and the day goes back for everyone", async ({ browse
     const gmLabel = gm.getByTestId("campaign-day-label");
     const playerLabel = player.getByTestId("campaign-day-label");
     const day = gm.getByTestId("campaign-day");
-    await day.getByRole("button", { name: "End day" }).click();
+    await day.getByRole("button", { name: "End the day" }).click();
     await expect(gmLabel).toHaveText("Week 1 · Day 2");
     await expect(playerLabel).toHaveText("Week 1 · Day 2");
     await expect(player.getByTestId("undo-end-day")).toHaveCount(0);

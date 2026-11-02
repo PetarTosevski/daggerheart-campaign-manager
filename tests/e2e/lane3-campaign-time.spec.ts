@@ -17,7 +17,7 @@ test("the GM ends days and a week passes; the player sees the day, read-only", a
     await expect(playerLabel).toHaveText("Week 1 · Day 1");
     await expect(player.getByTestId("end-day")).toHaveCount(0);
 
-    const endDay = gm.getByTestId("campaign-day").getByRole("button", { name: "End day" });
+    const endDay = gm.getByTestId("campaign-day").getByRole("button", { name: "End the day" });
     await endDay.click();
     await expect(gmLabel).toHaveText("Week 1 · Day 2");
     await expect(gm.getByTestId("end-day-notice")).toHaveText("Day 2 begins.");

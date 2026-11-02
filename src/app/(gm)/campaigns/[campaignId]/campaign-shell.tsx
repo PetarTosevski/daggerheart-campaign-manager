@@ -26,8 +26,8 @@ import type { TomeChapterId } from "@/lib/frames/tomes";
 
 import { CampaignTome } from "./campaign-tome";
 import { PlayersDialog } from "./players-dialog";
-import { CampaignDay, TimeArc } from "./time-arc";
-import { TimeOfDay } from "./time-of-day";
+import { TimeArc } from "./time-arc";
+import { DayCard } from "./time-of-day";
 
 /*
  * The shell's context is split by how often each part changes (PF7). `CampaignContext` holds the campaign summary,
@@ -227,13 +227,11 @@ const DashboardHero = memo(function DashboardHero({ campaign, onOpenTome }: { ca
       {frameHasMechanic(campaign.frameId, "campaignTime") ? (
         <TimeArc campaignId={campaign._id} readOnly={campaign.role !== "gm"} />
       ) : (
-        <div className="flex flex-wrap items-start justify-center gap-x-10 gap-y-4 self-center">
+        // Every campaign without the arc, core included (TASK-CORE-CALENDAR): the day card, top-right above the title
+        // on desktop, under the title block on narrow screens.
+        <div className="order-last flex sm:order-none sm:justify-end">
           <SlotBoundary fallback={null}>
-            <TimeOfDay campaignId={campaign._id} />
-          </SlotBoundary>
-          {/* Plan lanes-2 CT (dcm-ztb8): every campaign counts days and weeks; the GM ends the day here. */}
-          <SlotBoundary fallback={null}>
-            <CampaignDay campaignId={campaign._id} readOnly={campaign.role !== "gm"} />
+            <DayCard campaignId={campaign._id} readOnly={campaign.role !== "gm"} />
           </SlotBoundary>
         </div>
       )}

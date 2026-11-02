@@ -146,25 +146,30 @@ describe("combatHud.scene", () => {
       await c.db.patch("campaignState", state!._id, { fear: 4 });
     });
     const gmScene = await f.gm.query(api.combatHud.scene, { campaignId: f.campaignId });
-    expect(gmScene).toMatchObject({ fear: 4, day: { week: 2, day: 3, cycle: "NIGHT" }, canSetLight: false, canOpenTimeArc: true });
+    expect(gmScene).toMatchObject({ fear: 4, day: { week: 2, day: 3, cycle: "NIGHT" }, canSetLight: false, canOpenTimeArc: true, canEndDay: true });
     expect(gmScene.phase).not.toBeNull();
     const timeOfDay = await f.gm.query(api.campaigns.timeOfDay, { campaignId: f.campaignId });
     expect([gmScene.phase, gmScene.light]).toEqual([timeOfDay.phase, timeOfDay.light]);
     const playerScene = await f.player.query(api.combatHud.scene, { campaignId: f.campaignId });
-    expect(playerScene).toEqual({ ...gmScene, canOpenTimeArc: false });
+    expect(playerScene).toEqual({ ...gmScene, canOpenTimeArc: false, canEndDay: false });
   });
 
-  it("in a frame without campaign time: the GM's Day / Dim / Night, no day, no time arc", async () => {
+  it("in a frame without campaign time: the GM's Day / Dim / Night and End day, week 1 day 1, no time arc", async () => {
     const f = await withParty("beast-feast");
     await f.gm.mutation(api.campaigns.setTimeOfDay, { campaignId: f.campaignId, timeOfDay: "dim" });
     expect(await f.gm.query(api.combatHud.scene, { campaignId: f.campaignId })).toEqual({
       fear: 0,
       light: "dim",
       phase: null,
-      day: null,
+      day: { week: 1, day: 1, cycle: "DAY" },
       canSetLight: true,
       canOpenTimeArc: false,
+      canEndDay: true,
     });
-    expect(await f.player.query(api.combatHud.scene, { campaignId: f.campaignId })).toMatchObject({ canSetLight: false, canOpenTimeArc: false });
+    expect(await f.player.query(api.combatHud.scene, { campaignId: f.campaignId })).toMatchObject({
+      canSetLight: false,
+      canOpenTimeArc: false,
+      canEndDay: false,
+    });
   });
 });

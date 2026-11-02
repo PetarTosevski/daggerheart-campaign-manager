@@ -34,6 +34,7 @@ vi.mock("convex/react", () => ({
 }));
 vi.mock("@/app/(gm)/campaigns/[campaignId]/time-arc", () => ({
   TimeArc: () => createElement("button", { type: "button", "data-testid": "time-arc-stub" }, "End day"),
+  CampaignDay: () => createElement("button", { type: "button", "data-testid": "campaign-day-stub" }, "End day"),
 }));
 vi.mock("@/app/(gm)/campaigns/[campaignId]/campaign-shell", () => ({ useCampaign: () => ({ options: { hopeAndFear: true } }) }));
 vi.mock("@/components/combat-map/map-view/area-overlay", () => ({ AreaTools: () => createElement("p", { "data-testid": "area-tools-stub" }, "area tools") }));
@@ -54,8 +55,17 @@ const MAP = { _id: "m1" as Id<"combatMaps">, name: "Forest Camp", live: true, so
 const MOSS = "ch-moss" as Id<"characters">;
 const BRANNOC = "ch-brannoc" as Id<"characters">;
 
-const WITHERWILD = { fear: 5, light: "day", phase: "Afternoon", day: { week: 1, day: 3, cycle: "DAY" }, canSetLight: false, canOpenTimeArc: true };
-const CORE = { fear: 5, light: "dim", phase: null, day: null, canSetLight: true, canOpenTimeArc: false };
+const WITHERWILD = {
+  fear: 5,
+  light: "day",
+  phase: "Afternoon",
+  day: { week: 1, day: 3, cycle: "DAY" },
+  canSetLight: false,
+  canOpenTimeArc: true,
+  canEndDay: true,
+};
+// TASK-CORE-CALENDAR: a core campaign counts weeks and days too; the GM's disc opens End day.
+const CORE = { fear: 5, light: "dim", phase: null, day: { week: 2, day: 4, cycle: "DAY" }, canSetLight: true, canOpenTimeArc: false, canEndDay: true };
 
 function member(characterId: Id<"characters">, tokenId: string, mine: boolean) {
   return { characterId, tokenId, mine, name: characterId };
@@ -109,8 +119,8 @@ describe("helpers", () => {
   it("reads the disc: day and phase with campaign time, the light alone without", () => {
     expect(discLines(WITHERWILD as never)).toEqual(["Day 3", "Afternoon"]);
     expect(discLabel(WITHERWILD as never)).toBe("Week 1, Day 3, Afternoon, Day light");
-    expect(discLines(CORE as never)).toEqual(["Dim"]);
-    expect(discLabel(CORE as never)).toBe("Dim light");
+    expect(discLines(CORE as never)).toEqual(["Week 2 · Day 4", "Dim"]);
+    expect(discLabel(CORE as never)).toBe("Week 2, Day 4, Dim light");
   });
 
   it("writes the title's line for the GM and for players", () => {
@@ -184,7 +194,7 @@ describe("Fear banner", () => {
 
 describe("day / time disc", () => {
   it("players read it only: day, phase and the week in its name", () => {
-    results["combatHud:scene"] = { ...WITHERWILD, canOpenTimeArc: false };
+    results["combatHud:scene"] = { ...WITHERWILD, canOpenTimeArc: false, canEndDay: false };
     renderHud(createElement(HudFear, { state: state("player") }));
     const disc = screen.getByTestId("hud-disc");
     expect(within(disc).queryByRole("button")).toBeNull();
@@ -206,13 +216,29 @@ describe("day / time disc", () => {
     expect(button).toHaveFocus();
   });
 
-  it("without campaign time the disc shows the light only and stays read only, also for the GM", () => {
+  it("in a core campaign the GM's disc shows 'Week n · Day n' and the light, and opens End day", () => {
     results["combatHud:scene"] = CORE;
     renderHud(createElement(HudFear, { state: state("gm") }));
     const disc = screen.getByTestId("hud-disc");
-    expect(within(disc).queryByRole("button")).toBeNull();
-    expect(screen.getByRole("img", { name: "Dim light" })).toBeInTheDocument();
+    expect(disc).toHaveTextContent("Week 2 · Day 4Dim");
     expect(disc.querySelector(".hud-sun-dim")).not.toBeNull();
+    const button = within(disc).getByRole("button", { name: "Week 2, Day 4, Dim light: open End day" });
+    fireEvent.click(button);
+    const pop = screen.getByRole("dialog", { name: "Campaign day" });
+    expect(within(pop).getByTestId("campaign-day-stub")).toHaveTextContent("End day");
+    expect(within(pop).queryByTestId("time-arc-stub")).toBeNull();
+    fireEvent.keyDown(pop, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(button).toHaveFocus();
+  });
+
+  it("in a core campaign players read the day and the light only", () => {
+    results["combatHud:scene"] = { ...CORE, canSetLight: false, canEndDay: false };
+    renderHud(createElement(HudFear, { state: state("player") }));
+    const disc = screen.getByTestId("hud-disc");
+    expect(within(disc).queryByRole("button")).toBeNull();
+    expect(screen.getByRole("img", { name: "Week 2, Day 4, Dim light" })).toBeInTheDocument();
+    expect(disc).toHaveTextContent("Week 2 · Day 4Dim");
   });
 });
 
