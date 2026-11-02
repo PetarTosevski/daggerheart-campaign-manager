@@ -2,8 +2,12 @@ import { useConvexAuth } from "@convex-dev/auth/react";
 import { Redirect, Slot, useSegments } from "expo-router";
 
 import { AppAuthProvider } from "../src/auth/provider";
+import { useBrandFonts } from "../src/theme/fonts";
+
+export { RouteErrorBoundary as ErrorBoundary } from "../src/shell/route-error";
 
 export default function RootLayout() {
+  useBrandFonts();
   return (
     <AppAuthProvider>
       <SessionGate />
@@ -20,12 +24,14 @@ function routeName(segments: readonly string[]): string {
 
 function SessionGate() {
   const { isAuthenticated, isLoading } = useConvexAuth();
-  const route = routeName(useSegments());
+  const segments = useSegments();
+  const route = routeName(segments);
+  const inCampaign = segments[0] === "campaign";
   const href = isLoading
     ? null
     : !isAuthenticated && route !== "sign-in"
       ? "/sign-in"
-      : isAuthenticated && route !== "campaign"
+      : isAuthenticated && route !== "campaign" && !inCampaign
         ? "/campaign"
         : null;
   return (
