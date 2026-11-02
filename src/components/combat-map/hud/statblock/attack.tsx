@@ -1,9 +1,12 @@
 "use client";
 
+import { refusalFor } from "@/lib/errors/refusals";
 import { cn } from "@/lib/utils";
 
 import type { Id } from "../../../../../convex/_generated/dataModel";
-import type { PickPrimary, PickRowInput, PickSessionSpec } from "../pick";
+import { hudToasts } from "../blocked";
+import { fearShortText } from "../fear/blocked";
+import type { PickOutcome, PickPrimary, PickRowInput, PickSessionSpec } from "../pick";
 import type { GmActs } from "./acts";
 import {
   attackFooter,
@@ -41,8 +44,23 @@ export type GmAttackInput = {
   characterOf: ReadonlyMap<string, Id<"characters">>;
   /** The Fear this action's own spotlight costs (0 when the adversary already holds it this GM turn). */
   spotlightFear: number;
+  /** The GM's Fear when the panel opens (an Experience the GM can't pay opens disabled with the reason); undefined while loading. */
+  fear?: number;
   acts: GmActs;
 };
+
+/**
+ * A refusal at the primary in the refusal table's words (H6.3; CmpBlocked layer 2, "Spotlight the Lieutenant first."):
+ * kept under the primary, or (a toast-placed one) sent to the toast host. The session stays open either way.
+ */
+function refused(error: unknown, adversary: string): PickOutcome {
+  const refusal = refusalFor(error, { adversary, viewer: "gm" });
+  if (refusal.place === "toast") {
+    hudToasts.refusal(refusal);
+    return { kind: "stay" };
+  }
+  return { kind: "stay", message: refusal.text };
+}
 
 type Data = { edge: Edge };
 
@@ -53,7 +71,8 @@ function primaryFor(input: GmAttackInput, edge: Edge): PickPrimary {
     pay: (s) => attackFooter({ spotlightFear: input.spotlightFear, experienceFear: pickedExperience(s.options) ? 1 : 0, momentum }),
     blocked: (s) => {
       // Fear is not checked here: the session keeps the numbers it opened with, so the server's answer (FearConfirm,
-      // then NOT_ENOUGH_FEAR under the primary) is the live check.
+      // then NOT_ENOUGH_FEAR under the primary, in the table's words) is the live check. Only the Experience options
+      // open disabled when the GM's Fear at opening can't pay them.
       return pickedExperience(s.options) === "many" ? "Pick one Experience" : null;
     },
     send: async (s) => {
@@ -61,10 +80,15 @@ function primaryFor(input: GmAttackInput, edge: Edge): PickPrimary {
       const experience = xp === "many" ? null : xp;
       const reactions = pickedReactions(s.options);
       const targets = s.targetIds.map((id) => input.characterOf.get(id)).filter((c): c is Id<"characters"> => c !== undefined);
-      const done = await input.acts.attack(
-        { instanceId: input.instanceId, targets, ...edgeArgs(edge), ...(experience ? { experience } : {}), ...(reactions.length ? { reactions } : {}) },
-        { label: `${input.label} attacks`, actor: theName(input.label), experience },
-      );
+      let done;
+      try {
+        done = await input.acts.attack(
+          { instanceId: input.instanceId, targets, ...edgeArgs(edge), ...(experience ? { experience } : {}), ...(reactions.length ? { reactions } : {}) },
+          { label: `${input.label} attacks`, actor: theName(input.label), experience },
+        );
+      } catch (error) {
+        return refused(error, theName(input.label));
+      }
       if (done === null) return { kind: "stay", message: "No Fear spent. Nothing was rolled." };
       return { kind: "done" };
     },
@@ -93,7 +117,11 @@ export function gmAttackSession(input: GmAttackInput): PickSessionSpec<Data> {
     rows: input.rows,
     data: { edge: "none" },
     options: [
-      ...block.experiences.map((x) => ({ id: `xp:${x.name}`, label: `Use ${x.name} ${signed(x.value)}`, note: "Costs 1 Fear", cost: { amount: 1, resource: "fear" as const } })),
+      // An Experience costs 1 Fear on top of this action's own spotlight (the server asks for both at once).
+      ...block.experiences.map((x) => {
+        const short = fearShortText(input.spotlightFear + 1, input.fear);
+        return { id: `xp:${x.name}`, label: `Use ${x.name} ${signed(x.value)}`, note: short ?? "Costs 1 Fear", cost: { amount: 1, resource: "fear" as const }, ...(short ? { disabled: true } : {}) };
+      }),
       ...attackReactions(block).map((name) => ({ id: `rx:${name}`, label: `Use ${name} on this attack` })),
     ],
     extra: ({ data, update }) => <EdgeSeg value={data.edge} onPick={(edge) => update({ data: { edge }, primary: primaryFor(input, edge) })} />,
@@ -124,10 +152,15 @@ export function gmFeatureSession(input: {
       label: (s) => (s.targets.length ? `Use on ${s.targets.map((t) => t.name).join(" and ")}` : `Use ${input.feature}`),
       send: async (s) => {
         const targets = s.targetIds.map((id) => input.characterOf.get(id)).filter((c): c is Id<"characters"> => c !== undefined);
-        const done = await input.acts.feature(
-          { instanceId: input.instanceId, feature: input.feature, useId: input.useId, targets },
-          { label: `${input.label} uses ${input.feature}`, actor: theName(input.label), feature: input.feature },
-        );
+        let done;
+        try {
+          done = await input.acts.feature(
+            { instanceId: input.instanceId, feature: input.feature, useId: input.useId, targets },
+            { label: `${input.label} uses ${input.feature}`, actor: theName(input.label), feature: input.feature },
+          );
+        } catch (error) {
+          return refused(error, theName(input.label));
+        }
         if (done === null) return { kind: "stay", message: "No Fear spent. Nothing happened." };
         return { kind: "done" };
       },

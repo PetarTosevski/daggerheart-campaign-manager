@@ -339,6 +339,27 @@
   opacity: 0.5;
   cursor: default;
 }
+/* Blocked states (plan combat-hud H6.3; CmpBlocked layers 1 and 2 on the parchment). A blocked Fear control stays
+   focusable (`aria-disabled`) with its reason beside it; the reason takes the block's dark red, not the HUD's amber. */
+.hsb-spot[aria-disabled="true"],
+.hsb-atk[aria-disabled="true"],
+.hsb-cd button[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.hsb .hud-why {
+  color: #8e1f16;
+}
+.hsb .hud-why small {
+  color: #6e5430;
+}
+.hsb-af-why {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+}
+.hsb-inl {
+  margin: 8px 20px 0;
+}
 .hsb button:focus-visible,
 .hsb select:focus-visible {
   outline: 2px solid #5b4a8f;

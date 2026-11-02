@@ -4,11 +4,11 @@ import type { OptimisticLocalStore } from "convex/browser";
 import { useMutation, useQuery } from "convex/react";
 import { useState, type ReactNode } from "react";
 
-import { errorMessage } from "@/lib/convex-errors";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
+import { RefusalMessage, useRefusal } from "../blocked";
 import { feedDetail } from "../feed/model";
 import { RESOLUTION_SCAN, resolutionRows } from "./model";
 
@@ -16,7 +16,8 @@ import { RESOLUTION_SCAN, resolutionRows } from "./model";
  * Resolutions with Undo under the queue (plan combat-hud H5.1; GMDesktop `.gr`): the GM's latest combat rows from
  * `feed.list` — a PC's attack or card, an adversary's attack or feature with its Fear (Momentum, answer 7a) — each with
  * Undo (`actionLog.undo`, which undoes the whole action). Optimistic: the row reads "undone" at once; a refusal such
- * as UNDO_STALE ("something newer happened since") rolls it back and shows under the list.
+ * as UNDO_STALE ("something newer happened since") rolls it back and shows under the list (H6.3: `useRefusal`, the
+ * table's words; a toast-placed refusal goes to the toast host).
  */
 
 /** Marks a feed row undone in every loaded page (CL4: never mutate store objects). */
@@ -36,16 +37,13 @@ const HIT_ICON = (
 export function HudResolutions({ campaignId }: { campaignId: Id<"campaigns"> }): ReactNode {
   const page = useQuery(api.feed.list, { campaignId, paginationOpts: { numItems: RESOLUTION_SCAN, cursor: null } });
   const undo = useMutation(api.actionLog.undo).withOptimisticUpdate((store, { entryId }) => markUndone(store, entryId));
-  const [error, setError] = useState<string | null>(null);
+  const refusal = useRefusal({ viewer: "gm" });
   const [pending, setPending] = useState<Id<"actionLog"> | null>(null);
 
   async function run(entryId: Id<"actionLog">) {
-    setError(null);
     setPending(entryId);
     try {
-      await undo({ entryId, idempotencyKey: crypto.randomUUID() });
-    } catch (e) {
-      setError(errorMessage(e));
+      await refusal.run(() => undo({ entryId, idempotencyKey: crypto.randomUUID() }));
     } finally {
       setPending(null);
     }
@@ -83,10 +81,10 @@ export function HudResolutions({ campaignId }: { campaignId: Id<"campaigns"> }):
           })}
         </ul>
       )}
-      {error ? (
-        <p role="alert" className="hud-q-err" data-testid="hud-resolutions-error">
-          {error}
-        </p>
+      {refusal.refusal ? (
+        <div data-testid="hud-resolutions-error">
+          <RefusalMessage refusal={refusal.refusal} id={refusal.messageId} className="hud-q-inl" />
+        </div>
       ) : null}
     </div>
   );

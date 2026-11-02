@@ -5,11 +5,11 @@ import { useParams } from "next/navigation";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
-import { errorMessage } from "@/lib/convex-errors";
-
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
+import { RefusalMessage, useRefusal } from "../blocked";
 import { hudButtonClass, PartBoundary } from "../ui";
+import { fearShortText } from "./blocked";
 
 /**
  * "Spend n Fear?" (plan combat-hud H5.3; GMDesktop 'Spend Fear' `.sp`, CmpPromptsGM 'Spend 2 Fear?'): the GM's one
@@ -20,8 +20,9 @@ import { hudButtonClass, PartBoundary } from "../ui";
  *
  * The caller owns the spend: it mounts `FearConfirm` when an action needs Fear, runs the action in `onConfirm` (the
  * server spends the Fear and refuses NOT_ENOUGH_FEAR), and unmounts it when `onConfirm` resolves or on `onCancel`. While
- * `onConfirm` runs both buttons are disabled; if it throws, the error shows in the card and the GM may try again or
- * cancel. With less Fear than `amount`, Spend is disabled and the card says so.
+ * `onConfirm` runs both buttons are disabled; if it throws, the refusal shows in the card (H6.1's table, `useRefusal`)
+ * and the GM may try again or cancel. With less Fear than `amount`, Spend is disabled and the card says so in the
+ * table's words ("This needs 3 Fear. You have 1.", H6.3: the same helper as every GM Fear control, `fearShortText`).
  *
  * Contract (stable; H5.2's stat block codes against it):
  *
@@ -98,10 +99,13 @@ function FearConfirmCard({
   fear,
 }: Omit<FearConfirmProps, "fear" | "campaignId"> & { fear: number | null | undefined }) {
   const titleId = useId();
+  const shortId = useId();
   const ref = useRef<HTMLElement>(null);
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const short = typeof fear === "number" && fear < amount;
+  // The card is where the GM pressed: every refusal shows here, toast-placed ones too.
+  const refusal = useRefusal({ viewer: "gm", place: "inline" });
+  const shortText = fearShortText(amount, fear);
+  const short = shortText !== null;
   const why = fearReasonsText(reasons);
 
   // Focus moves into the card on open and back where it was on close (DOM focus only; no state is set here).
@@ -116,11 +120,8 @@ function FearConfirmCard({
 
   async function confirm() {
     setPending(true);
-    setError(null);
     try {
-      await onConfirm();
-    } catch (e) {
-      setError(errorMessage(e));
+      await refusal.run(async () => onConfirm());
     } finally {
       setPending(false);
     }
@@ -147,15 +148,11 @@ function FearConfirmCard({
       </h2>
       {why ? <p className="hud-fc-why">{why}</p> : null}
       {short ? (
-        <p className="hud-fc-short" role="status">
-          Needs {amount} Fear · you have {fear}
+        <p className="hud-fc-short" role="status" id={shortId}>
+          {shortText}
         </p>
       ) : null}
-      {error ? (
-        <p className="hud-fc-err" role="alert">
-          {error}
-        </p>
-      ) : null}
+      <RefusalMessage refusal={refusal.refusal} id={refusal.messageId} className="hud-fc-err" />
       <div className="hud-fc-f">
         {fear === undefined ? (
           <span className="hud-fc-left" role="status">
@@ -179,7 +176,9 @@ function FearConfirmCard({
             Cancel
           </button>
         ) : null}
-        <button type="button" className={`${hudButtonClass("primary")} hud-fc-yes`} disabled={pending || short} onClick={() => void confirm()}>
+        <button type="button" className={`${hudButtonClass("primary")} hud-fc-yes`} disabled={pending || short}
+          aria-describedby={short ? shortId : refusal.refusal ? refusal.messageId : undefined}
+          onClick={() => void confirm()}>
           Spend {amount} Fear
         </button>
       </div>

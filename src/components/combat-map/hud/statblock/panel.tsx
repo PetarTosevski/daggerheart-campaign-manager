@@ -7,7 +7,6 @@ import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { errorMessage } from "@/lib/convex-errors";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../convex/_generated/api";
@@ -22,6 +21,8 @@ import { useLiveSight } from "../../actions/adversary/sight";
 import type { CombatPageState } from "../../slots";
 import { conditionName } from "../pick/model";
 import { usePick } from "../pick";
+import { BlockedReason, RefusalMessage, useBlocked, useRefusal, type Blocked } from "../blocked";
+import { adversaryActBlocked, fearBlocked, spotlightFirst } from "../fear/blocked";
 import { CostPill, PartBoundary, Pips, SidePanel, StatTile } from "../ui";
 import type { FearAsk, GmActs } from "./acts";
 import { gmAttackSession, gmFeatureSession } from "./attack";
@@ -61,6 +62,11 @@ export type StatBlockPanelProps = {
  * blocks), `campaigns.fear`, the Fear ends on this instance (`combatEffects.fearEnds`) and line of sight on the map.
  * Writes the tracker's intents (`encounterTracking.markHp` / `markStress` / `toggleCondition` / `spotlight`, optimistic),
  * `combatEffects.endByFear`, and the adversary actions through `acts` (FearConfirm first for every Fear spend).
+ *
+ * Blocked states (H6.3, H6.1's layers): a Fear cost the GM can't pay leaves its control focusable but `aria-disabled`
+ * with "This needs 2 Fear. You have 1." beside it (Spotlight · 1 Fear, End · n Fear, a Fear feature); an action whose
+ * own spotlight the GM can't pay says "Spotlight the Lieutenant first." (Attack, an action feature). A refusal at the
+ * click shows under the controls in the refusal table's words (`useRefusal`).
  */
 export function StatBlockPanel({ state, tokenId, acts, ask, onClose }: StatBlockPanelProps) {
   const { campaignId, map } = state;
@@ -186,10 +192,10 @@ function StatBlockBody({
     if (now !== undefined && now >= args.fear) store.setQuery(api.campaigns.fear, { campaignId }, now - args.fear);
   });
   const sight = useLiveSight(campaignId, map?._id ?? null);
-  const [error, setError] = useState<string | null>(null);
+  const who = theName(instance.label);
+  const refusal = useRefusal({ viewer: "gm", adversary: who });
   const [choosing, setChoosing] = useState<FeatureAsk | null>(null);
   const label = instance.label;
-  const who = theName(label);
   const self = tokens.find((t) => t._id === tokenId);
   const pcs: PcToken[] = tokens.flatMap((t) =>
     t.kind === "pc" && t.characterId ? [{ tokenId: t._id, characterId: t.characterId, name: t.name, x: t.x, y: t.y, size: t.size, conditions: (t.stats?.conditions ?? []).map(conditionName) }] : [],
@@ -201,14 +207,8 @@ function StatBlockBody({
   const busy = acts.pending || instance.defeated;
   const shown = acts.result && acts.result.instanceId === instance._id ? acts.result : null;
 
-  async function guarded(run: () => Promise<unknown>) {
-    setError(null);
-    try {
-      await run();
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-  }
+  // A refusal shows under the controls in the table's words; a toast-placed one (FALLBACK…) goes to the toast host.
+  const guarded = (run: () => Promise<unknown>) => refusal.run(run);
 
   function openAttack() {
     if (!self) return;
@@ -221,12 +221,14 @@ function StatBlockBody({
         rows: gmAttackRows(self, pcs, sight, block.attack.range),
         characterOf,
         spotlightFear: actionSpot,
+        fear,
         acts,
       }),
     );
   }
 
   async function spotlightNow() {
+    if (spot.blocked) return;
     if (spotCost > 0 && !(await ask(spotCost, [`${spotCost} to spotlight ${who}`]))) return;
     const done = await tracker.spotlight(instance._id);
     // Spotlighting an adversary also gives the GM the scene spotlight (H1.S).
@@ -234,6 +236,7 @@ function StatBlockBody({
   }
 
   async function endEffect(end: { effectId: string; label: string; fear: number }) {
+    if (fearBlocked(end.fear, fear)) return;
     if (end.fear > 0 && !(await ask(end.fear, [`${end.fear} to end ${end.label} on ${who}`]))) return;
     await guarded(() => endByFear({ campaignId, target: { kind: "instance", instanceId: instance._id }, effectId: end.effectId, fear: end.fear, idempotencyKey: crypto.randomUUID() }));
   }
@@ -267,8 +270,9 @@ function StatBlockBody({
   const absent = CONDITIONS.filter((c) => !instance.conditions.includes(c));
   const hpMax = instance.stats.hpMax;
   const stressMax = instance.stats.stressMax;
-  const blockedFear = (cost: number) => (fear !== undefined && cost > fear ? `Needs ${cost} Fear · you have ${fear}` : null);
-  const spotBlocked = blockedFear(spotCost);
+  const spot = useBlocked(fearBlocked(spotCost, fear));
+  const attackWhy = spotlightFirst(who, actionSpot, fear);
+  const atk = useBlocked(attackWhy);
 
   return (
     <div className="hsb-body" data-testid="hud-statblock-body">
@@ -315,9 +319,7 @@ function StatBlockBody({
             <li key={c.key} className="hsb-cd">
               {c.label}
               {c.end ? (
-                <button type="button" aria-label={`End ${c.label} · ${c.end.fear} Fear`} disabled={blockedFear(c.end.fear) !== null} onClick={() => void endEffect(c.end!)}>
-                  End · {c.end.fear} Fear
-                </button>
+                <EndByFear label={c.label} cost={c.end.fear} why={fearBlocked(c.end.fear, fear)} onEnd={() => void endEffect(c.end!)} />
               ) : c.condition ? (
                 <button type="button" className="hsb-cd-x" aria-label={`Remove ${c.label}`} onClick={() => void tracker.toggleCondition(instance._id, c.condition as Condition)}>
                   ✕
@@ -352,7 +354,10 @@ function StatBlockBody({
           Features
         </h3>
         <ul className="hsb-fts">
-          {block.features.map((f, i) => (
+          {block.features.map((f, i) => {
+            // A Fear feature (CB p.154) or an action needing a spotlight the GM can't pay: disabled with the reason.
+            const featureWhy = featureUsable(f) ? adversaryActBlocked(who, f.fearCost ?? 0, f.kind === "action" ? actionSpot : 0, fear) : null;
+            return (
             <li key={`${i}-${f.name}`} className="hsb-af">
               <div className="hsb-af-h">
                 <b>{f.name}</b>
@@ -366,7 +371,7 @@ function StatBlockBody({
                         instanceId={instance._id}
                         feature={f.name}
                         fearCost={f.fearCost}
-                        disabled={busy}
+                        disabled={busy || featureWhy !== null}
                         live={!instance.defeated}
                         onUse={(featureAsk) => startFeature(f.name, featureAsk)}
                       />
@@ -374,9 +379,11 @@ function StatBlockBody({
                   </span>
                 ) : null}
               </div>
+              {featureWhy ? <FeatureWhy why={featureWhy} /> : null}
               <p>{f.text}</p>
             </li>
-          ))}
+            );
+          })}
         </ul>
       </section>
 
@@ -403,10 +410,15 @@ function StatBlockBody({
         />
       ) : null}
 
-      {tracker.error || error ? (
+      {tracker.error && !refusal.refusal ? (
         <p role="alert" className="hsb-err" data-testid="hud-statblock-error">
-          {error ?? tracker.error}
+          {tracker.error}
         </p>
+      ) : null}
+      {refusal.refusal ? (
+        <div data-testid="hud-statblock-error">
+          <RefusalMessage refusal={refusal.refusal} id={refusal.messageId} className="hsb-inl" />
+        </div>
       ) : null}
 
       {shown ? (
@@ -419,20 +431,77 @@ function StatBlockBody({
         <button
           type="button"
           className="hsb-spot"
-          disabled={busy || spotBlocked !== null}
-          title={spotBlocked ?? undefined}
+          disabled={busy}
+          {...spot.control}
+          title={spot.text ?? undefined}
           data-testid="hud-statblock-spotlight"
           onClick={() => void spotlightNow()}
         >
           {spotlightButtonText(spotCost)}
         </button>
-        <button type="button" className="hsb-atk" disabled={busy || !self} aria-haspopup="dialog" data-testid="hud-statblock-attack" onClick={openAttack}>
+        <button
+          type="button"
+          className="hsb-atk"
+          disabled={busy || !self}
+          {...atk.control}
+          aria-haspopup="dialog"
+          data-testid="hud-statblock-attack"
+          onClick={() => {
+            if (!atk.blocked) openAttack();
+          }}
+        >
           Attack
         </button>
       </div>
-      {spotBlocked ? <p className="hsb-why">{spotBlocked}</p> : null}
+      {spot.text ? (
+        <p className="hsb-why" data-testid="hud-statblock-spot-why">
+          <BlockedReason id={spot.reasonId}>{spot.text}</BlockedReason>
+        </p>
+      ) : null}
+      {attackWhy ? (
+        <p className="hsb-why" data-testid="hud-statblock-attack-why">
+          <BlockedReason id={atk.reasonId}>
+            {attackWhy.text}
+            {attackWhy.refusal.hint ? <small> {attackWhy.refusal.hint}</small> : null}
+          </BlockedReason>
+        </p>
+      ) : null}
       <p className="sr-only">{attackLine(block)}</p>
     </div>
+  );
+}
+
+/** "End · 1 Fear" on a condition chip: `aria-disabled` with the Fear reason (tip and description) when it can't be paid. */
+function EndByFear({ label, cost, why, onEnd }: { label: string; cost: number; why: Blocked | null; onEnd: () => void }) {
+  const b = useBlocked(why);
+  return (
+    <>
+      <button
+        type="button"
+        aria-label={`End ${label} · ${cost} Fear`}
+        {...b.control}
+        title={b.text ?? undefined}
+        onClick={() => {
+          if (!b.blocked) onEnd();
+        }}
+      >
+        End · {cost} Fear
+      </button>
+      {b.text ? (
+        <span id={b.reasonId} className="sr-only">
+          {b.text}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+/** The reason under a feature's disabled Use ("This needs 1 Fear. You have 0." / "Spotlight the Lieutenant first."). */
+function FeatureWhy({ why }: { why: Blocked }) {
+  return (
+    <p className="hsb-af-why" data-testid="hud-statblock-feature-why">
+      <BlockedReason>{why.text}</BlockedReason>
+    </p>
   );
 }
 

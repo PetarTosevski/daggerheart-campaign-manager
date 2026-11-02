@@ -3,10 +3,11 @@
 import { useMutation } from "convex/react";
 import { useState, type ReactNode } from "react";
 
-import { errorMessage } from "@/lib/convex-errors";
+import { refusalFor, refusalForCode, type Refusal } from "@/lib/errors/refusals";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
+import { RefusalMessage, hudToasts } from "../blocked";
 import { Popup, Stepper, WaitingDots, hudButtonClass } from "../ui";
 import {
   DIFFICULTY_MAX,
@@ -29,12 +30,20 @@ import {
 /**
  * One CmpPromptsGM card per queue item (plan combat-hud H5.1; `.pc.gm`): the HUD's `Popup` on the GM tone, the board's
  * titles and button words, and the existing keyed mutation behind each answer (with an optimistic update that drops the
- * card). `useQueueAnswers` keeps what the queue shows around the cards: which card is busy, a card's own refusal, the
- * "Already answered" notices and the last answer's result line.
+ * card). `useQueueAnswers` keeps what the queue shows around the cards: which card is busy, a card's own refusal and the
+ * last answer's result line.
+ *
+ * Refusals (H6.3, H6.1's table): a request someone else answered first (REQUEST_NOT_OPEN, or DEATH_MOVE_NOT_WAITING)
+ * is CmpBlocked's STALE_REQUEST: the neutral toast "Already answered · Someone already answered this." near the hand,
+ * and the card drops out (its optimistic update, then the live reads refresh). Any other refusal shows under its card
+ * in the table's words (`RefusalMessage`), or as a toast when the table places it there.
  */
 
 type CampaignId = Id<"campaigns">;
 type RequestId = Id<"combatRequests">;
+
+/** A card's own message: the queue's note (a string) or a refusal from the table. */
+export type CardNote = string | Refusal;
 
 /** What an answer reports: a result line for the queue, or a note that keeps the card (a card that needs a choice). */
 type AnswerOutcome = { line?: string; keep?: string } | null;
@@ -45,8 +54,7 @@ const NEEDS_CHOICE = "This use needs a choice the player makes: decline it and a
 
 export function useQueueAnswers(campaignId: CampaignId) {
   const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set());
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
-  const [gone, setGone] = useState<readonly { key: string; label: string }[]>([]);
+  const [errors, setErrors] = useState<Readonly<Record<string, CardNote>>>({});
   const [result, setResult] = useState<string | null>(null);
 
   const drop = <T extends { requestId: string }>(rows: readonly T[], id: string) => rows.filter((r) => r.requestId !== id);
@@ -95,8 +103,10 @@ export function useQueueAnswers(campaignId: CampaignId) {
       if (out?.keep) setErrors((e) => ({ ...e, [key]: out.keep! }));
       else if (out?.line) setResult(out.line);
     } catch (error) {
-      if (isAlreadyAnswered(error)) setGone((g) => [...g.filter((x) => x.key !== key), { key, label: itemLabel(item) }]);
-      else setErrors((e) => ({ ...e, [key]: errorMessage(error) }));
+      // Both "already answered" codes read as the table's STALE_REQUEST row (the death move's has no row of its own).
+      const refusal = isAlreadyAnswered(error) ? refusalForCode("REQUEST_NOT_OPEN", { viewer: "gm" }) : refusalFor(error, { viewer: "gm" });
+      if (refusal.place === "toast") hudToasts.refusal(refusal);
+      else setErrors((e) => ({ ...e, [key]: refusal }));
     } finally {
       setBusy((b) => {
         const next = new Set(b);
@@ -109,9 +119,7 @@ export function useQueueAnswers(campaignId: CampaignId) {
   return {
     busy,
     errors,
-    gone,
     result,
-    dismiss: (key: string) => setGone((g) => g.filter((x) => x.key !== key)),
     /** Allow / Decline an out-of-range use (an attack, a card or a feature). */
     sanction: (item: Extract<QueueItem, { kind: "attack" | "card" | "feature" }>, approve: boolean) =>
       run(item, async (k) => {
@@ -209,12 +217,14 @@ function no(label: string, onClick: () => void, disabled: boolean, ariaLabel?: s
   );
 }
 
-function CardError({ text }: { text: string | undefined }) {
-  return text ? (
+function CardError({ text }: { text: CardNote | undefined }) {
+  if (text === undefined) return null;
+  if (typeof text !== "string") return <RefusalMessage refusal={text} className="hud-q-inl" />;
+  return (
     <p role="alert" className="hud-q-err">
       {text}
     </p>
-  ) : null;
+  );
 }
 
 export function QueueCard({ item, answers }: { item: QueueItem; answers: QueueAnswers }) {
@@ -318,7 +328,7 @@ export function QueueCard({ item, answers }: { item: QueueItem; answers: QueueAn
 }
 
 /** "Set the Difficulty": the stepper's value is this card's own until Set and roll sends it. */
-function DifficultyCard({ item, answers, busy, error }: { item: Extract<QueueItem, { kind: "difficulty" }>; answers: QueueAnswers; busy: boolean; error: string | undefined }) {
+function DifficultyCard({ item, answers, busy, error }: { item: Extract<QueueItem, { kind: "difficulty" }>; answers: QueueAnswers; busy: boolean; error: CardNote | undefined }) {
   const [value, setValue] = useState(DIFFICULTY_START);
   const label = itemLabel(item);
   return (

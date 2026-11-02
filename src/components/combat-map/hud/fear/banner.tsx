@@ -3,8 +3,8 @@
 import { useMutation } from "convex/react";
 import { useState } from "react";
 
-import { errorMessage } from "@/lib/convex-errors";
 import { MAX_FEAR } from "@/lib/domain/fear";
+import { refusalFor } from "@/lib/errors/refusals";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
@@ -25,7 +25,7 @@ export function fearAfterStep(fear: number, direction: "increase" | "decrease"):
 /**
  * `fear.adjust` as an intent (one step, a fresh idempotency key per click) with an optimistic update of both Fear
  * reads on this page (`combatHud.scene`, the banner's; `campaigns.fear`, the drawer's classic pill), so a click shows
- * at once. Errors are kept as a message for the banner's live region.
+ * at once. A refusal is kept as the refusal table's sentence (H6.3, refusals.ts) for the banner's live region.
  */
 export function useAdjustFear(campaignId: Id<"campaigns">) {
   const mutate = useMutation(api.fear.adjust).withOptimisticUpdate((store, { campaignId: id, direction }) => {
@@ -40,7 +40,7 @@ export function useAdjustFear(campaignId: Id<"campaigns">) {
     try {
       await mutate({ campaignId, direction, idempotencyKey: crypto.randomUUID() });
     } catch (e) {
-      setError(errorMessage(e));
+      setError(refusalFor(e, { viewer: "gm" }).text);
     }
   }
   return { step, error };

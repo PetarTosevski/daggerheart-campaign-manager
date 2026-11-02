@@ -8,6 +8,7 @@ import { ConvexError } from "convex/values";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { HudQueue } from "@/components/combat-map/hud/queue";
+import { hudToasts } from "@/components/combat-map/hud/toasts/store";
 import type { CombatPageState } from "@/components/combat-map/slots";
 
 const calls: { name: string; args: Record<string, unknown> }[] = [];
@@ -134,15 +135,16 @@ describe("Waiting on you", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("needs a choice the player makes");
   });
 
-  it("REQUEST_NOT_OPEN: 'Already answered', dismissable", async () => {
+  it("REQUEST_NOT_OPEN: 'Already answered' as the table's neutral toast, nothing on the card", async () => {
+    // H6.3: the in-queue "Already answered: <label>" row became CmpBlocked's STALE_REQUEST toast (toast host, dismissable there).
+    hudToasts.reset();
     full();
     failures["combatRequests:sanction"] = new ConvexError({ code: "REQUEST_NOT_OPEN" });
     render(<HudQueue state={page("gm")} />);
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Allow: Moss · Attack" })));
-    expect(screen.getByTestId("hud-queue-gone")).toHaveTextContent("Already answered: Moss · Attack");
-    queries["combatRequests:mine"] = [];
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss: already answered, Moss · Attack" }));
-    expect(screen.queryByTestId("hud-queue-gone")).toBeNull();
+    expect(hudToasts.get()).toEqual([expect.objectContaining({ title: "Already answered", message: "Someone already answered this.", tone: "neutral" })]);
+    expect(within(screen.getAllByTestId("hud-queue-range")[0]!).queryByRole("alert")).toBeNull();
+    hudToasts.reset();
   });
 
   it("another refusal stays on the card as an alert", async () => {

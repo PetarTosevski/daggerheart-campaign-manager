@@ -29,7 +29,8 @@ import { HudResolutions } from "./resolutions";
  * - the death move confirm: `deathMoves.state` per PC — H4.3's `GmDeathConfirm` (Confirm the death move / Send it back).
  *
  * Every answer is the existing keyed mutation with an optimistic update that drops the card at once. A request someone
- * else answered first (REQUEST_NOT_OPEN, DEATH_MOVE_NOT_WAITING) shows "Already answered" and drops out; one the player
+ * else answered first (REQUEST_NOT_OPEN, DEATH_MOVE_NOT_WAITING) toasts "Already answered" (H6.3: the refusal table's
+ * STALE_REQUEST row, in the HUD's toast host) and drops out as the reads refresh; one the player
  * withdraws (HD3) leaves the reads, so its card disappears live. No Momentum prompt (answer 7a: automatic; its line
  * and Undo are in Resolutions) and no Hope split (answer 14a). "End this countdown?" waits on dcm-pgfr's server.
  * The GM's classic lists stay in the Map tools drawer.
@@ -116,23 +117,11 @@ function Requests({ campaignId }: { campaignId: Id<"campaigns"> }) {
             ))}
           </ul>
         ) : null}
-        {answers.gone.length > 0 ? (
-          <ul className="hud-q-gone" aria-label="Already answered">
-            {answers.gone.map((g) => (
-              <li key={g.key} data-testid="hud-queue-gone">
-                <span role="status">Already answered: {g.label}</span>
-                <button type="button" className="hud-q-x" aria-label={`Dismiss: already answered, ${g.label}`} onClick={() => answers.dismiss(g.key)}>
-                  OK
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
         {loading ? (
           <p role="status" className="hud-q-note">
             Loading the requests…
           </p>
-        ) : count === 0 && answers.gone.length === 0 ? (
+        ) : count === 0 ? (
           <p className="hud-q-note">Nothing is waiting on you.</p>
         ) : null}
       </div>

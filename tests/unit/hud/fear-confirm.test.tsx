@@ -141,7 +141,8 @@ describe("FearConfirm (Spend n Fear?)", () => {
   it("with less Fear than it costs, Spend is disabled and the card says so", () => {
     render(createElement(FearConfirm, { amount: 3, reasons: [], onConfirm: () => {}, onCancel: () => {}, fear: 1 }));
     expect(screen.getByRole("button", { name: "Spend 3 Fear" })).toBeDisabled();
-    expect(screen.getByText("Needs 3 Fear · you have 1")).toBeInTheDocument();
+    // H6.3: the refusal table's NOT_ENOUGH_FEAR sentence, the same words as every GM Fear control.
+    expect(screen.getByText("This needs 3 Fear. You have 1.")).toBeInTheDocument();
   });
 
   it("hangs in the HUD's fear region when there is one", () => {

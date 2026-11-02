@@ -251,9 +251,10 @@ describe("the stat block", () => {
   it("disables a Fear spend the GM can't pay", () => {
     seed({ spotlitOther: true, fear: 0 });
     renderBlock();
-    expect((screen.getByTestId("hud-statblock-spotlight") as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText("Needs 1 Fear · you have 0")).toBeTruthy();
-    expect((screen.getByRole("button", { name: "End Vulnerable · 1 Fear" }) as HTMLButtonElement).disabled).toBe(true);
+    // H6.3: blocked controls stay focusable (aria-disabled, H6.1's layer 1) and say the table's NOT_ENOUGH_FEAR sentence.
+    expect(screen.getByTestId("hud-statblock-spotlight").getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByTestId("hud-statblock-spot-why").textContent).toBe("This needs 1 Fear. You have 0.");
+    expect(screen.getByRole("button", { name: "End Vulnerable · 1 Fear" }).getAttribute("aria-disabled")).toBe("true");
   });
 
   it("End · 1 Fear asks FearConfirm and ends the effect with the cost it showed", async () => {

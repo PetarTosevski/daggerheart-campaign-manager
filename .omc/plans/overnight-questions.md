@@ -217,3 +217,6 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - H6.1 Difficult terrain / movement roll (CB p.104 Agility Roll beyond Close): kept as an unused client-only entry. Core or frame-exclusive, and should moving onto it open the dice box?
 - H6.1 Wording: refusals say "costs" ("Wall Walk costs 1 Hope. You have 0."), the action ring says "needs". Pick one?
 - H6.1 SPOTLIGHT_WITH_GM reads "The GM has the spotlight. You can use reactions until it comes back." (the brief's sentence, not the server's default).
+- H6.3 GM Fear controls use the sentence "This needs 2 Fear. You have 1." (brief / board), not H6.1's short "Needs 2 Fear · you have 1".
+- H6.3 An Experience in the GM's attack picker that's too expensive stays disabled until the picker reopens, even if Fear rises meanwhile (the server still checks live).
+- H6.3 Answering an already-answered request shows the neutral toast "Already answered · Someone already answered this." and the card drops out (no in-queue row).

@@ -62,7 +62,6 @@
   overscroll-behavior: contain;
 }
 .hud-q-list,
-.hud-q-gone,
 .hud-res-list {
   list-style: none;
   margin: 0;
@@ -108,21 +107,6 @@
   vertical-align: middle;
 }
 
-.hud-q-gone li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 12px;
-  background: var(--hud-inset);
-  box-shadow: inset 0 0 0 1px var(--hud-line);
-  font-size: 12.5px;
-  color: var(--hud-muted);
-}
-.hud-q-gone span {
-  flex: 1;
-}
-.hud-q-x,
 .hud-res-undo {
   flex: none;
   height: 26px;
@@ -134,7 +118,6 @@
   font-size: 11.5px;
   cursor: pointer;
 }
-.hud-q-x:focus-visible,
 .hud-res-undo:focus-visible {
   outline: 2px solid var(--hud-gold);
   outline-offset: 2px;
@@ -161,6 +144,13 @@
   margin: 0;
   font-size: 12px;
   color: var(--hud-danger);
+}
+/* A refusal in the table's words under a card or Resolutions (H6.3; CmpBlocked `.inl`). */
+.hud-q-scroll .hud-q-inl {
+  margin-top: 0;
+}
+.hud-res .hud-q-inl {
+  margin-top: 8px;
 }
 
 /* Resolutions (GMDesktop `.gr .feed`). */
