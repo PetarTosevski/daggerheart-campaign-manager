@@ -1,12 +1,32 @@
-import { Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 
 import type { SheetSlotProps } from "../contract";
+import { space } from "../../../theme/spacing";
 
-/** Stub. The level-up tracer replaces this folder. */
-export function LevelUpSlot({ character }: SheetSlotProps) {
+import { LevelUpDraftProvider } from "./draft";
+import { LevelUpControls } from "./controls";
+import { AdvancementHistory, CorrectLevel } from "./history";
+import { LevelUpRibbon } from "./ribbon";
+import { fullSheet } from "./shared";
+
+export function LevelUpSlot(props: SheetSlotProps) {
+  const sheet = fullSheet(props.character);
   return (
-    <View accessibilityLabel={`Level-up slot for ${character.sheet.name}`}>
-      <Text>Level up</Text>
-    </View>
+    <LevelUpDraftProvider slot={props}>
+      <View accessibilityLabel={`Level-up slot for ${props.character.sheet.name}`} style={styles.stack}>
+        <LevelUpControls slot={props} />
+        <LevelUpRibbon />
+        {sheet ? (
+          <>
+            <AdvancementHistory hopeAndFear={props.hopeAndFear} sheet={sheet} />
+            <CorrectLevel characterId={props.character._id} isGm={props.isGm} level={sheet.level} />
+          </>
+        ) : null}
+      </View>
+    </LevelUpDraftProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  stack: { gap: space[4], marginBottom: space[4] },
+});
