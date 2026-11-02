@@ -194,3 +194,6 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - H4.2 Inactive threshold tiles show 1 / 2 / 3 HP (CB p.91); the lit tile shows the engine's own count (differs only when a feature changes it).
 - H4.2 Several open hits on one character: one window, oldest first, "n more after this".
 - H4.2 The hit line says "n damage" (the pending hit carries no damage type) and names the attacker only, no weapon; reaction cards are compact rows, not full card faces.
+- H4.3 Only the choosing player and the GM get the death outcome popup; other players read it in "Just now".
+- H4.3 The player may close the death modal and reopen it from a button (CB p.106 "you must make a death move"; p.182 "make space for them to talk through their decision").
+- H4.3 The "Just now" feed shows on the player view only (5 newest), hidden at 1100 px and below; the GM keeps queue + spotlight bottom-left.
