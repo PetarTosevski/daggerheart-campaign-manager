@@ -14,12 +14,27 @@ import { AfterRollDialog, type DialogRequest } from "../../actions/hand/dialog";
 import { VaultDeck } from "../../actions/hand/dock";
 import { HandCardFace } from "../../actions/hand/face";
 import { handHiddenKey } from "../../actions/hand";
-import { areaPickOf, formFor, LOADOUT_MAX, needsDialog, playableUses, rollOf, usedRollOptions, type AreaPick, type Creature, type HandCard, type UseOutcome } from "../../actions/hand/model";
+import { areaPickOf, formFor, LOADOUT_MAX, needsDialog, playableUses, rollOf, usedRollOptions, type AreaPick, type CardChoice, type ChoiceAsk, type Creature, type HandCard, type UseOutcome } from "../../actions/hand/model";
 import { CardResult, type LastCard } from "../../actions/hand/result";
 import { useRecall } from "../../actions/hand/use-card";
 import { NO_ROLL_OPTIONS, rollProblem, rollSummary, type Roller, type RollValues } from "../../actions/roll-controls";
 import { usePick, type PickOutcome } from "../pick";
-import { cardPatch, cardSession, cardSessionId, classicPointPicker, useCardPlay, type CardPickData, type CardPickEnv, type PointPicker } from "../pick-card";
+import { useAreaPickState } from "../pick-area";
+import {
+  cardAreaAsk,
+  cardAreaLine,
+  cardChainSession,
+  cardChainSessionId,
+  cardPatch,
+  cardSession,
+  cardSessionId,
+  chainAskOf,
+  hudPointPicker,
+  useCardPlay,
+  type CardPickData,
+  type CardPickEnv,
+  type PointPicker,
+} from "../pick-card";
 import { CardBacks, catchMore, FanCard, FullCard, RollOptionsBody, SidePop } from "./parts";
 import { cardLook, loadoutFullText, recallText, type HandMode, type LookContext } from "./states";
 
@@ -32,8 +47,10 @@ import { cardLook, loadoutFullText, recallText, type HandMode, type LookContext 
  * picking panel (H3.0's session, `hud/pick-card`): the card's rule, the targets (the enemy picked on the map first),
  * every choice the classic Use dialog asks, the add-ons as rider switches with cost pills, and one primary ("Cast on
  * Lieutenant"). A card that asks nothing at all (no target, no choice) fires at once; an area asks the map for its
- * square next (`pointPicker`: the classic banner until H3.3's picker). Out of range goes to the GM ("Waiting for the
- * GM", H3.0); a choice after the roll opens the classic after-roll dialog; the result shows above the fan until H4.1.
+ * square next (`pointPicker`: H3.3's HUD square picking, the open pick session ended first). Out of range goes to the GM
+ * ("Waiting for the GM", H3.0); a chain link after the roll (Chain Lightning) is a pick session of its own (H3.3's
+ * chain links); any other choice after the roll opens the classic after-roll dialog; the result shows above the fan
+ * until H4.1.
  * Drag-to-play stays the classic dock's.
  *
  * Hide cards (answer 16a) folds the viewer's own fan on their screen only: this browser's flag, never a server call.
@@ -51,7 +68,7 @@ export type HudHandBodyProps = {
   creatures: readonly Creature[];
   /** Enemies picked on the map (the player's targets): a card's panel starts with the last one picked. */
   pickedEnemies: readonly Id<"combatTokens">[];
-  /** H3.1: where an area card asks the map for its square (the classic banner until H3.3's HUD picker). */
+  /** Where an area card asks the map for its square: H3.3's HUD picker (`classicPointPicker` only outside the HUD shell). */
   pointPicker?: PointPicker;
 };
 
@@ -73,7 +90,7 @@ function useFolded(key: string): [boolean, (on: boolean) => void] {
 
 type Open = "vault" | "rolls" | null;
 
-export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPlay, creatures, pickedEnemies, pointPicker = classicPointPicker }: HudHandBodyProps) {
+export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPlay, creatures, pickedEnemies, pointPicker = hudPointPicker }: HudHandBodyProps) {
   const gm = mode === "gm";
   const own = mode !== "view";
   const hand = useQuery(api.combatCards.hand, { campaignId, characterId });
@@ -82,6 +99,7 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
   const actions = useCardPlay({ campaignId, mapId, characterId });
   const recall = useRecall({ campaignId, characterId });
   const areaPick = useAreaPick();
+  const hudArea = useAreaPickState().live;
   const pick = usePick();
 
   const [casting, setCasting] = useState<string | null>(null);
@@ -109,6 +127,7 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
   const fullCard = [...loadout, ...vault].find((c) => c.cardId === full);
   const vaultPicks = vault.filter((c) => c.level <= (character?.sheet.level ?? 0)).map((c) => ({ cardId: c.cardId, name: c.name, level: c.level }));
   const selfToken = creatures.find((c) => c.side === "self")?.tokenId;
+  const selfAt = creatures.find((c) => c.side === "self")?.at ?? null;
   const waitingCard = actions.waiting ? loadout.find((c) => c.cardId === actions.waiting?.request.cardId) : undefined;
   const loadoutFull = loadoutFullText(loadout.length, LOADOUT_MAX);
   const recallRiders = restOpen ? [] : (hand?.recallRiders ?? []).filter((r) => r.ready);
@@ -116,7 +135,9 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
 
   /** The card being played: its picking panel, its square on the map, its use on the way, its after-the-roll choice. */
   const sessionCard = loadout.find((c) => pick.session?.spec.id === cardSessionId(characterId, c.cardId));
-  const playingId = sessionCard?.cardId ?? (areaFor !== null && areaPick.request !== null ? areaFor : null) ?? waitingCard?.cardId ?? (actions.pending ? casting : null);
+  const chainCard = loadout.find((c) => pick.session?.spec.id === cardChainSessionId(characterId, c.cardId));
+  const areaCard = areaFor !== null && (hudArea?.spec.id === areaPickId(areaFor) || areaPick.request !== null) ? areaFor : null;
+  const playingId = sessionCard?.cardId ?? chainCard?.cardId ?? areaCard ?? waitingCard?.cardId ?? (actions.pending ? casting : null);
   const ctx = (card: HandCard): LookContext => ({
     mode,
     canPlay,
@@ -128,8 +149,17 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
 
   // ------------------------------------------------------------ playing a card (H3.1)
 
-  /** What a use came back with: the result above the fan, the roll options cleared once used, how the panel ends. */
-  function settle(card: HandCard, request: DialogRequest, out: UseOutcome | null | undefined): PickOutcome {
+  function areaPickId(cardId: string) {
+    return `${cardSessionId(characterId, cardId)}:area`;
+  }
+
+  /**
+   * What a use came back with: the result above the fan, the roll options cleared once used, how the panel ends. A chain
+   * link opens its own pick session (`links`: the links so far, the use's first targets first); any other choice after
+   * the roll opens the after-the-roll dialog.
+   */
+  function settle(card: HandCard, request: DialogRequest, out: UseOutcome | null | undefined, links: Id<"combatTokens">[][] = [[...request.targetTokenIds]]): PickOutcome {
+    if (out?.status === "needsChoice" && openChain(card, request, out.asks, links)) return { kind: "stay" };
     if (!out || out.status === "needsChoice") return { kind: "done" }; // the after-the-roll dialog asks next
     if (usedRollOptions(request)) setRollOptions(NO_ROLL_OPTIONS);
     if (out.status === "resolved") {
@@ -141,21 +171,49 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
     return { kind: "pending", requestId: out.requestId };
   }
 
-  /** An area use: the map asks for its square (two for a wall), then the use goes with them (lanes-2 E1.4a). */
+  /** The next chain link as a pick session (true), or false when the asks have no chain. */
+  function openChain(card: HandCard, request: DialogRequest, asks: readonly ChoiceAsk[], links: Id<"combatTokens">[][]): boolean {
+    const spec = cardChainSession({
+      characterId,
+      card,
+      asks,
+      links,
+      creatures,
+      names,
+      ...(gm && selfToken ? { actor: { tokenId: selfToken, characterId } } : {}),
+      answer: async (choices: CardChoice[], next) => {
+        const ids = new Set(choices.map((c) => c.id));
+        const sent: DialogRequest = { ...request, choices: [...request.choices.filter((c) => !ids.has(c.id)), ...choices] };
+        return settle(card, sent, await actions.send(sent), next);
+      },
+      onCancel: () => actions.cancelWaiting(),
+    });
+    if (!spec) return false;
+    pick.open(spec);
+    return true;
+  }
+
+  /**
+   * An area use: the map asks for its square (two for a wall), then the use goes with them (lanes-2 E1.4a). H3.3: square
+   * picking and a pick session are different map modes, so the open session ends first.
+   */
   function placeArea(card: HandCard, request: DialogRequest, area: AreaPick) {
+    if (pick.session) pick.finish();
     setAreaFor(card.cardId);
+    const use = cardEffect(card.cardId)?.uses.find((u) => u.id === request.spell);
+    // A grimoire's spell names the pick ("Mysterious Mist", not "Book of Tyfar").
+    const title = use?.name ?? card.name;
     pointPicker({
+      id: areaPickId(card.cardId),
       mapId,
       cardName: card.name,
       area,
+      ask: cardAreaAsk(title, area, use, selfAt),
       send: async ([point, ...rest]) => {
         const sent: DialogRequest = { ...request, point: point!, ...(rest.length > 0 ? { points: rest } : {}) };
         const out = await actions.send(sent);
         settle(card, sent, out);
-        if (out?.status === "resolved") return `${card.name}: ${area.label} placed.`;
-        if (out?.status === "pending") return `${card.name} waits for the GM.`;
-        if (out?.status === "needsChoice") return `${card.name} needs a choice.`;
-        return null;
+        return cardAreaLine(title, area.label, out);
       },
     });
   }
@@ -413,7 +471,7 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
           }}
         />
       ) : null}
-      {actions.waiting && waitingCard ? (
+      {actions.waiting && waitingCard && !chainAskOf(actions.waiting.asks) ? (
         <AfterRollDialog
           cardName={waitingCard.name}
           asks={actions.waiting.asks}

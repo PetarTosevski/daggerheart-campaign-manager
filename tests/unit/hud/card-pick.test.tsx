@@ -4,7 +4,9 @@
  * line, the primary naming the action, blocked reasons, the `combatCards.useCard` request with the classic dialog's
  * choices, vault swap dcm-p1r and the trigger's damage type) and the HUD hand with Convex mocked: Use raises the card and
  * opens the panel, the rider's own pick, Cast sends once, pending / refusal / Esc, a grimoire's spell rows, the vault
- * swap row, a card that asks nothing fires at once.
+ * swap row, a card that asks nothing fires at once. Wiring after H3.3: an area card's square goes through the HUD's
+ * square picking (`hud/pick-area`, the open pick session ended first), and a chain link (Chain Lightning) is a pick
+ * session of its own with H3.3's chain rows.
  */
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { ConvexError } from "convex/values";
@@ -17,7 +19,9 @@ import { NO_ROLL_OPTIONS } from "@/components/combat-map/actions/roll-controls";
 import { HudHandBody, type HudHandBodyProps } from "@/components/combat-map/hud/hand/body";
 import { PickProvider } from "@/components/combat-map/hud/pick";
 import { PickPanel } from "@/components/combat-map/hud/pick/panel";
-import { blockedOf, payLine, primaryLabel, requestOf, riderOptions, ridersOf, ruleOf, selfRows, startData } from "@/components/combat-map/hud/pick-card";
+import { blockedOf, cardAreaAsk, cardAreaLine, payLine, primaryLabel, requestOf, riderOptions, ridersOf, ruleOf, selfRows, startData } from "@/components/combat-map/hud/pick-card";
+import { confirmAreaPick, placeSquare, resetAreaPickForTests, useAreaPickState } from "@/components/combat-map/hud/pick-area/store";
+import { areaPickOf } from "@/components/combat-map/actions/hand/model";
 import { HudProvider } from "@/components/combat-map/hud/state";
 import type { CombatPageState } from "@/components/combat-map/slots";
 
@@ -45,6 +49,7 @@ afterEach(() => {
   calls.length = 0;
   cardResult = async () => ({ status: "pending", requestId: "r1", outOfRange: [] });
   window.localStorage.clear();
+  resetAreaPickForTests();
 });
 
 const tok = (s: string) => s as Id<"combatTokens">;
@@ -347,5 +352,119 @@ describe("Use opens the picking panel (CmpPicking 'One target · a card')", () =
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(calls.map((c) => c.name)).toEqual(["combatCards:useCard"]);
     expect(calls[0]!.args).toMatchObject({ cardId: "floating-eye", spell: "main", targetTokenIds: [], choices: [] });
+  });
+});
+
+// ---------------------------------------------------------------- wiring after H3.3: squares and chain links
+
+/** The HUD square picking's store as JSON in the DOM (its spec's data; the functions drop). */
+function AreaProbe() {
+  const { live, line } = useAreaPickState();
+  return <output data-testid="area-probe">{JSON.stringify({ live, line })}</output>;
+}
+const areaState = () => JSON.parse(screen.getByTestId("area-probe").textContent ?? "{}");
+
+describe("an area card asks for its square through the HUD picker (H3.3)", () => {
+  it("the ask: the use's own area (radius, within, blocks sight), a wall's two ends; the bar's line", () => {
+    const mist = effectUse("book-of-tyfar", "mysterious-mist");
+    expect(cardAreaAsk("Book of Tyfar", areaPickOf(mist)!, mist, { x: 5, y: 10, size: 1 })).toEqual({
+      name: "Book of Tyfar",
+      label: "Mysterious Mist",
+      shape: "circle",
+      count: 1,
+      radius: "veryClose",
+      within: "veryClose",
+      blocksSight: true,
+      origin: { x: 5, y: 10, size: 1 },
+    });
+    const veil = effectUse("veil-of-night", "main");
+    const wall = cardAreaAsk("Veil of Night", areaPickOf(veil)!, veil, null);
+    expect(wall).toMatchObject({ shape: "wall", count: 2, within: "far", blocksSight: true });
+    expect(wall.radius).toBeUndefined();
+    // No use to read: the hand model's pick alone.
+    expect(cardAreaAsk("Veil of Night", areaPickOf(veil)!, undefined, null)).toMatchObject({ shape: "wall", count: 2, within: "far" });
+    expect(cardAreaLine("Veil of Night", "Veil of Night", { status: "resolved", roll: { total: 15 }, success: true } as never)).toBe("Rolled 15: Veil of Night is on the map.");
+    expect(cardAreaLine("Veil of Night", "Veil of Night", { status: "resolved", roll: { total: 9 }, success: false } as never)).toBe("Rolled 9: Veil of Night failed.");
+    expect(cardAreaLine("Veil of Night", "Veil of Night", { status: "needsChoice", asks: [] } as never)).toBeNull();
+  });
+
+  it("a wall card that asks nothing: two points on the map, then one use with point and points; the card stays raised meanwhile", async () => {
+    seed([card("veil-of-night", "Veil of Night", { domain: "midnight", uses: [handUse("main", "Veil of Night", { targets: null })] })]);
+    cardResult = async () => ({ status: "resolved", entryId: "e1", cardId: "veil-of-night", useId: "main", roll: null, damage: [], success: true, targets: [], fearDelta: 0, prompts: [], minionOffer: null });
+    renderHand();
+    render(<AreaProbe />);
+    fireEvent.click(useButton("Veil of Night"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(areaState().live.spec).toMatchObject({ id: `card:${CHARACTER}:veil-of-night:area`, mapId: MAP, name: "Veil of Night", shape: "wall", count: 2, within: "far", origin: { x: 5, y: 10, size: 1 } });
+    expect(within(fanCard("Veil of Night")).getByText("Casting · pick a target")).toBeTruthy();
+    expect(calls).toEqual([]);
+
+    act(() => {
+      placeSquare({ x: 7, y: 8 });
+      placeSquare({ x: 7, y: 12 });
+    });
+    await act(async () => {
+      await confirmAreaPick();
+    });
+    expect(calls.map((c) => c.name)).toEqual(["combatCards:useCard"]);
+    expect(calls[0]!.args).toMatchObject({ cardId: "veil-of-night", spell: "main", point: { x: 7, y: 8 }, points: [{ x: 7, y: 12 }] });
+    expect(areaState().live).toBeNull();
+    expect(areaState().line?.text).toBe("Veil of Night is on the map.");
+    expect(within(fanCard("Veil of Night")).queryByText("Casting · pick a target")).toBeNull();
+  });
+
+  it("from the panel: the grimoire's point spell ends the pick session first, then picks its centre", async () => {
+    seed([card("book-of-tyfar", "Book of Tyfar", { domain: "codex", type: "grimoire", uses: [handUse("wild-flame", "Wild Flame"), handUse("mysterious-mist", "Mysterious Mist", { targets: null })] })]);
+    renderHand();
+    fireEvent.click(useButton("Book of Tyfar"));
+    const pk = panel("Book of Tyfar");
+    fireEvent.click(within(within(pk).getByTestId("hud-card-spell")).getByRole("radio", { name: "Mysterious Mist" }));
+    await act(async () => {
+      fireEvent.click(go());
+    });
+    expect(screen.queryByRole("dialog", { name: "Book of Tyfar" })).toBeNull();
+    expect(calls).toEqual([]);
+    render(<AreaProbe />);
+    expect(areaState().live.spec).toMatchObject({ id: `card:${CHARACTER}:book-of-tyfar:area`, name: "Mysterious Mist", shape: "circle", count: 1, radius: "veryClose", within: "veryClose", blocksSight: true });
+    act(() => placeSquare({ x: 6, y: 10 }));
+    await act(async () => {
+      await confirmAreaPick();
+    });
+    expect(calls[0]!.args).toMatchObject({ cardId: "book-of-tyfar", spell: "mysterious-mist", point: { x: 6, y: 10 } });
+    expect(calls[0]!.args.points).toBeUndefined();
+  });
+});
+
+describe("a chain link after the roll is a pick session of its own (H3.3 'Chain links')", () => {
+  it("Chain Lightning: the next link's creatures as rows, 'Stop here' / 'Next link', the answer as chain:<link>", async () => {
+    seed([card("chain-lightning", "Chain Lightning", { domain: "arcana", level: 5, uses: [handUse("main", "Chain Lightning", { targets: { side: "enemy", range: "close", count: "all" } })] })]);
+    let n = 0;
+    cardResult = async () => {
+      n += 1;
+      if (n === 1) return { status: "needsChoice", asks: [{ kind: "followUp", label: "Next link", link: 1, tokenIds: [BANDIT] }] };
+      return { status: "resolved", entryId: "e1", cardId: "chain-lightning", useId: "main", roll: null, damage: [], success: true, targets: [], fearDelta: 0, prompts: [], minionOffer: null };
+    };
+    renderHand();
+    fireEvent.click(useButton("Chain Lightning"));
+    await act(async () => {
+      fireEvent.click(go());
+    });
+    expect(calls).toHaveLength(1);
+    // The chain session: the Bandit as the next link's row, no classic after-the-roll dialog.
+    const pk = panel("Chain Lightning");
+    expect(within(pk).getByTestId("hud-pick-rule").textContent).toContain("Link 2");
+    expect(within(pk).queryByRole("button", { name: /^Lieutenant/ })).toBeNull();
+    expect(go().textContent).toBe("Stop here");
+    fireEvent.click(within(pk).getByRole("button", { name: /^Bandit/ }));
+    expect(go().textContent).toBe("Next link");
+    expect(within(fanCard("Chain Lightning")).getByText("Casting · pick a target")).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(go());
+    });
+    expect(calls).toHaveLength(2);
+    expect(calls[1]!.args).toMatchObject({ cardId: "chain-lightning", spell: "main", targetTokenIds: calls[0]!.args.targetTokenIds });
+    expect(calls[1]!.args.choices).toContainEqual({ id: "chain:1", value: [BANDIT] });
+    expect(screen.queryByRole("dialog", { name: "Chain Lightning" })).toBeNull();
+    expect(screen.getByTestId("hud-hand-result")).toBeTruthy();
   });
 });

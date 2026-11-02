@@ -32,6 +32,11 @@ test("a player: own sheet (steppers, hide my hand), an ally's view-only sheet fr
     await expect(player.getByRole("dialog")).toHaveCount(0);
     await expect(own.getByRole("heading", { level: 2 })).toBeFocused();
     await expect(own.getByRole("heading", { level: 2 })).toContainText("Moss");
+    // Measure at rest: the panel slides in from 40 px right over --hud-t-sheet (280 ms, hud.css `hud-panel-in`), and
+    // its box counts that transform, so a read in the animation's tail gave 1441-1444 on a loaded machine.
+    await own.evaluate(async (el) => {
+      await Promise.all(el.getAnimations().map((a) => a.finished));
+    });
     const box = await own.boundingBox();
     expect(Math.round(box!.width)).toBe(400);
     expect(Math.round(box!.x + box!.width)).toBe(1440);

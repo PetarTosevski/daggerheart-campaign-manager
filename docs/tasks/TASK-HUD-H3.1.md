@@ -121,3 +121,29 @@ None filed. dcm-p1r's UI half (vault swap row) is built here; close it with this
    the wording for abilities.
 4. **GM's Difficulty stepper** starts at 10 and must be touched once (blocked "Set the Difficulty" until then), as the
    classic dialog's empty field did.
+
+## Wiring after H3.3 (orchestrator)
+
+Done on branch `hud-wire-w4` (not a plan tracer).
+
+- **Squares:** `HudHandBody`'s `pointPicker` defaults to `hudPointPicker` (`hud/pick-card/points.ts`), which runs H3.3's
+  `startAreaPick` with the ask from `cardAreaAsk` (H3.3's `areaAskOf` over the use's own `AreaSpec`: radius, within,
+  blocks sight, a wall's two ends; origin = your token). The pick is named by the use ("Mysterious Mist", not "Book of
+  Tyfar") and its id is `card:<character>:<card>:area`, so the card stays raised while it runs. `placeArea` ends the
+  open pick session first (H3.3's rule). The bar's line is `cardAreaLine` (the drawer's `areaUseLine` wording).
+- **Chains:** a `needsChoice` with a `followUp` ask (Chain Lightning) opens `cardChainSession` (`pick-card/chain.tsx`):
+  the next link's creatures as rows (`chainRows`), `data.chain.links` for the map (link 0 = the first targets), other
+  asks as H3.3's `AskRows`, one primary "Next link" / "Stop here", answer `chainAnswer`. Asks without a chain keep the
+  classic after-the-roll dialog.
+- **Classic fallback:** `classicPointPicker` stays exported for a host that renders `HudHandBody` without the HUD
+  shell's `HudAreaPickLayer` / `HudAreaPick`. Nothing passes it today: every HUD hand (player, view, GM) is inside the
+  shell.
+- **Tests:** `tests/unit/hud/card-pick.test.tsx` +4 (the ask and line; a wall card that asks nothing → two points →
+  one use with `point` / `points`; a grimoire's point spell from the panel ends the session, then picks; Chain
+  Lightning's link session). `tests/e2e/hud-card-pick.spec.ts` +1 (a wizard Moss casts Mysterious Mist: the panel ends,
+  banner and crosshair, arrows + Enter place and confirm). `hudScene` takes `moss: { classId, domainCards }` for it.
+- **hud-sheet right edge (1442-1443 instead of 1440):** not a layout bug. At rest the panel spans 1040-1440 (its region
+  is 0 px wide at the right edge, the root 1440); the 100vw caps are fine. The panel slides in from 40 px right over
+  280 ms (`hud-panel-in`), and Playwright's box counts that transform; on a loaded machine the read landed in the
+  ease-out tail (measured: 1444.5 at 194 ms, 1441.5 at 230 ms, 1440 from ~310 ms). The spec now waits for the panel's
+  animations to finish before measuring; the CSS is unchanged.

@@ -177,3 +177,4 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - H3.3 Circle of Power picks its square and sends a point; Shadow Stepper's point is a teleport handled as a prompt (no square picked). Confirm both readings.
 - H3.3 A rider with options or numbers on a feature roll takes its first option / minimum; switching it on confirms its situations; a rider's extra targets aren't offered on a feature roll.
 - H3.3 Keyboard: Enter places the next point; with all points down, Enter on a placed point confirms, Enter on another square moves the nearest point there.
+- Wiring (after H3.3) Chain links reuse one pick id, so the next link replaces the session without a cancel. Cards still can't ask for n squares (only one square or a wall's two ends).

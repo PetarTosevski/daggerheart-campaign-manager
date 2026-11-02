@@ -97,10 +97,11 @@ async function seedEncounter(client: ConvexHttpClient, campaignId: Id<"campaigns
 /**
  * The GM and the player in two browsers (`gmAndPlayer`), both on the dashboard with the HUD switch on, and the boards'
  * scene seeded through the API on a live map. Call `close()` at the end of the test. Pass `hud: false` to seed the
- * same scene for a classic comparison.
+ * same scene for a classic comparison. Pass `moss` to make Moss another class with other starting cards (a wizard with
+ * Book of Tyfar's Mysterious Mist for a card that asks for a square).
  */
-export async function hudScene(browser: Browser, { hud = true }: { hud?: boolean } = {}): Promise<HudScene> {
-  const druid = characterDraft("Moss", "druid");
+export async function hudScene(browser: Browser, { hud = true, moss }: { hud?: boolean; moss?: { classId: string; domainCards: string[] } } = {}): Promise<HudScene> {
+  const druid = characterDraft("Moss", moss?.classId ?? "druid");
   const table = await gmAndPlayer(browser, {
     draft: {
       name: druid.name,
@@ -108,7 +109,7 @@ export async function hudScene(browser: Browser, { hud = true }: { hud?: boolean
       subclassId: druid.subclassId,
       primaryWeaponId: druid.primaryWeaponId,
       armorId: druid.armorId,
-      domainCards: ["vicious-entangle", "unleash-chaos"],
+      domainCards: moss?.domainCards ?? ["vicious-entangle", "unleash-chaos"],
     },
   });
   const { client, campaignId } = table;
