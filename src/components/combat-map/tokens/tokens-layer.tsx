@@ -5,6 +5,7 @@ import { useEffect, useEffectEvent, useRef, useState, type CSSProperties, type K
 import { designAsset } from "@/lib/design-assets";
 import { RANGE_BANDS } from "@/lib/domain/combat-map/ranges";
 
+import { toggleActionRing, useActionRing } from "../hud/action-ring/store";
 import { TokenFace, pcTokenFace, useHudTokens, useTokenHope } from "../hud/token";
 import { useMapView } from "../map-view/context";
 import { MovementOverlay, useLayoutMovementGrid, type SeenMasks } from "../map-view/movement-overlay";
@@ -99,6 +100,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
   // The Encounter tab's pane (`noDelete`) is never inside the shell.
   const hud = useHudTokens(mode);
   const hope = useTokenHope(campaignId, map._id, hud !== null);
+  const ring = useActionRing();
 
   // Movement (map-movement M1): the hatch over difficult squares the viewer can see (the GM's own view: all of them; a
   // player or the GM's preview: the squares that character sees or has explored, from the vision slot's queries, which
@@ -181,8 +183,10 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
     if (x !== token.x || y !== token.y) void actions.move(token._id, x, y);
   }
   /** HUD only: a click (not a drag) on a PC opens its sheet, on an adversary the GM's stat block (H2.1 / H5.2 draw them). */
-  function openSheet(token: TokenView) {
+  function openSheet(token: TokenView, keyboard = false) {
     if (!hud) return;
+    // H3.4: a player's own token opens the action ring (its Sheet button opens the sheet).
+    if (role === "player" && token.mine) return toggleActionRing(token._id, keyboard);
     const target = pcTokenFace(token, role, null).sheet;
     if (target) hud.toggleSheet(target);
   }
@@ -286,6 +290,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
               data-square={`${t.x},${t.y}`}
               aria-label={face ? face.label : ariaLabel(t)}
               aria-pressed={on}
+              aria-expanded={face && role === "player" && t.mine ? ring?.tokenId === t._id : undefined}
               tabIndex={editing ? -1 : 0}
               style={{
                 left: t.x * cell + 3 + (moving?.dx ?? 0),
@@ -313,7 +318,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
                 // Keyboard activation (Enter / Space); pointer clicks select in onTokenUp.
                 if (e.detail !== 0) return;
                 onSelectToken(t._id);
-                openSheet(t);
+                openSheet(t, true);
               }}
               onKeyDown={(e) => onTokenKey(e, t)}
             >

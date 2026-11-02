@@ -178,3 +178,9 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - H3.3 A rider with options or numbers on a feature roll takes its first option / minimum; switching it on confirms its situations; a rider's extra targets aren't offered on a feature roll.
 - H3.3 Keyboard: Enter places the next point; with all points down, Enter on a placed point confirms, Enter on another square moves the nearest point there.
 - Wiring (after H3.3) Chain links reuse one pick id, so the next link replaces the session without a cancel. Cards still can't ask for n squares (only one square or a wall's two ends).
+- H3.4 The ring holds 6 buttons; more features fold into a "More actions (n)" list beside the ring (not a second ring).
+- H3.4 The ring shows action uses only: reactions ("React" on the sheet) and out-of-combat Uses (e.g. Commune) are not on it.
+- H3.4 The ring stays open until Esc, a click on your token or on the bare map (the board shows it only while picking).
+- H3.4 A locked button's reason shows on hover / focus / tap, not permanently as on the board.
+- H3.4 While a forced attack waits, the ring's Attack opens a normal attack (the forced card answers the forced one).
+- H3.4 Stress costs never lock a button: Stress past full marks a Hit Point (CB p.106).
