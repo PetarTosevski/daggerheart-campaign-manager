@@ -22,18 +22,26 @@ function routeName(segments: readonly string[]): string {
   return leaf;
 }
 
+function signedOutAllowed(segments: readonly string[]): boolean {
+  const root = segments[0];
+  if (root === undefined) return true;
+  if (root === "sign-in" || root === "(auth)" || root === "auth") return true;
+  return false;
+}
+
 function SessionGate() {
   const { isAuthenticated, isLoading } = useConvexAuth();
   const segments = useSegments();
   const route = routeName(segments);
-  const inCampaign = segments[0] === "campaign";
   const href = isLoading
     ? null
-    : !isAuthenticated && route !== "sign-in"
+    : !isAuthenticated && !signedOutAllowed(segments)
       ? "/sign-in"
-      : isAuthenticated && route !== "campaign" && !inCampaign
-        ? "/campaign"
-        : null;
+      : isAuthenticated && route === "sign-in"
+        ? "/home"
+        : isAuthenticated && route === "index"
+          ? "/home"
+          : null;
   return (
     <>
       <Slot />
