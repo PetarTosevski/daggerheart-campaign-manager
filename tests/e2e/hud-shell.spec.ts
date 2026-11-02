@@ -45,7 +45,8 @@ test("the GM switches the HUD on and off; Map tools holds today's column; Edit k
     await expectHud(gm, 7);
     await gm.screenshot({ path: "test-results/visual/HUD-H0/gm-hud-1440.png", animations: "disabled" });
     const board = gm.getByRole("region", { name: "Battle map" });
-    await expect(board.getByRole("button", { name: new RegExp(`^${escape(s.enemies.lieutenant.name)},`) })).toBeVisible();
+    // H1.3: with the HUD on, the GM's adversary tokens read "Open the <name>’s stat block, …".
+    await expect(board.getByRole("button", { name: new RegExp(`^Open the ${escape(s.enemies.lieutenant.name)}’s stat block`) })).toBeVisible();
 
     // The Map tools drawer: Maps, the Play / Edit switch, Combatants and the header tools (Fear) inside it.
     const toolsButton = gm.getByRole("button", { name: "Map tools" });

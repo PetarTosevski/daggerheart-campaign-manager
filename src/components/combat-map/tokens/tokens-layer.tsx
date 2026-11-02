@@ -5,6 +5,7 @@ import { useEffect, useEffectEvent, useRef, useState, type CSSProperties, type K
 import { designAsset } from "@/lib/design-assets";
 import { RANGE_BANDS } from "@/lib/domain/combat-map/ranges";
 
+import { TokenFace, pcTokenFace, useHudTokens, useTokenHope } from "../hud/token";
 import { useMapView } from "../map-view/context";
 import { MovementOverlay, useLayoutMovementGrid, type SeenMasks } from "../map-view/movement-overlay";
 import type { MapLayerProps } from "../slots";
@@ -82,6 +83,11 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
   const editing = gm && mode === "edit";
   const { cell, zoom, pad } = viewport;
   const selected = tokens?.find((t) => t._id === selectedTokenId) ?? null;
+  // Combat HUD (plan combat-hud H1.3): inside the HUD shell (switch on, Play) every token wears the HUD face (arcs,
+  // Hope chip, condition badges, side colour) and a click opens its sheet; otherwise the classic face, unchanged.
+  // The Encounter tab's pane (`noDelete`) is never inside the shell.
+  const hud = useHudTokens(mode);
+  const hope = useTokenHope(campaignId, map._id, hud !== null);
 
   // Movement (map-movement M1): the hatch over difficult squares the viewer can see (the GM's own view: all of them; a
   // player or the GM's preview: the squares that character sees or has explored, from the vision slot's queries, which
@@ -157,10 +163,17 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
     drag.current = null;
     setPreview(null);
     onSelectToken(token._id);
+    if (!d.moved) openSheet(token);
     if (!d.moved || !d.canMove) return;
     const x = Math.round(token.x + (e.clientX - d.sx) / zoom / cell);
     const y = Math.round(token.y + (e.clientY - d.sy) / zoom / cell);
     if (x !== token.x || y !== token.y) void actions.move(token._id, x, y);
+  }
+  /** HUD only: a click (not a drag) on a PC opens its sheet, on an adversary the GM's stat block (H2.1 / H5.2 draw them). */
+  function openSheet(token: TokenView) {
+    if (!hud) return;
+    const target = pcTokenFace(token, role, null).sheet;
+    if (target) hud.toggleSheet(target);
   }
   function onTokenKey(e: KeyboardEvent<HTMLButtonElement>, token: TokenView) {
     const step = KEY_STEPS[e.key];
@@ -250,16 +263,17 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
               ? "0 3px 8px rgba(0,0,0,.6), 0 0 0 3px var(--cm-acc), 0 0 22px var(--cm-acc)"
               : "0 3px 8px rgba(0,0,0,.6)";
           const hasPortrait = t.portrait !== null && background(t).backgroundImage !== undefined;
+          const face = hud ? pcTokenFace(t, role, hope.get(t._id) ?? null) : null;
           return (
             <button
               key={t._id}
               type="button"
-              className={classes}
+              className={face ? `${classes} hud-tk` : classes}
               data-token={t._id}
               data-testid="combat-token"
               data-face={Math.round((t.face * 180) / Math.PI)}
               data-square={`${t.x},${t.y}`}
-              aria-label={ariaLabel(t)}
+              aria-label={face ? face.label : ariaLabel(t)}
               aria-pressed={on}
               tabIndex={editing ? -1 : 0}
               style={{
@@ -267,10 +281,14 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
                 top: t.y * cell + 3 + (moving?.dy ?? 0),
                 width: t.size * cell - 6,
                 height: t.size * cell - 6,
-                ...background(t),
-                border: `3px solid ${side.colour}`,
-                boxShadow: shadow,
-                filter: s?.down ? "grayscale(1) brightness(.6)" : undefined,
+                ...(face
+                  ? {}
+                  : {
+                      ...background(t),
+                      border: `3px solid ${side.colour}`,
+                      boxShadow: shadow,
+                      filter: s?.down ? "grayscale(1) brightness(.6)" : undefined,
+                    }),
                 zIndex: moving || turning ? 50 : on ? 30 : t.mine ? 25 : 10,
               }}
               onPointerDown={(e) => onTokenDown(e, t)}
@@ -282,27 +300,32 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
               }}
               onClick={(e) => {
                 // Keyboard activation (Enter / Space); pointer clicks select in onTokenUp.
-                if (e.detail === 0) onSelectToken(t._id);
+                if (e.detail !== 0) return;
+                onSelectToken(t._id);
+                openSheet(t);
               }}
               onKeyDown={(e) => onTokenKey(e, t)}
             >
               <span className="cm-face" aria-hidden="true" style={{ transform: `rotate(${deg}deg)`, ["--tc" as string]: side.colour }} />
-              {hasPortrait ? null : (
+              {face ? <TokenFace face={face} name={t.name} initials={initialsOf(t.name, t.size)} size={t.size * cell} /> : null}
+              {face || hasPortrait ? null : (
                 <span className="cm-ini" aria-hidden="true" style={{ fontSize: Math.round(t.size * cell * 0.34) }}>
                   {initialsOf(t.name, t.size)}
                 </span>
               )}
-              <span className="cm-tag" aria-hidden="true" style={{ top: t.size * cell - 4 }}>
-                {t.name}
-              </span>
-              {s && s.hpMax > 0 ? (
+              {face ? null : (
+                <span className="cm-tag" aria-hidden="true" style={{ top: t.size * cell - 4 }}>
+                  {t.name}
+                </span>
+              )}
+              {!face && s && s.hpMax > 0 ? (
                 <span className="cm-tok-bar" aria-hidden="true">
                   <span
                     style={{ width: `${Math.round(100 * hpLeft)}%`, background: hpRatio > 0.66 ? "#e0715f" : hpRatio > 0.33 ? "#e3b45a" : "#7cc49a" }}
                   />
                 </span>
               ) : null}
-              {s && s.conditions.length > 0 ? (
+              {!face && s && s.conditions.length > 0 ? (
                 <span className="cm-tok-cond" aria-hidden="true">
                   {s.conditions.map((c) => c.charAt(0).toUpperCase()).join("")}
                 </span>
