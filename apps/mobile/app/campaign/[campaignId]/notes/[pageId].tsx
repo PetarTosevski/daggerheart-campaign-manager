@@ -1,13 +1,16 @@
-import { CampaignScreen } from "../../../../src/shell/campaign-provider";
-import { NotBuiltYet } from "../../../../src/shell/not-built-yet";
-import { sectionLabel } from "../../../../src/shell/sections";
+import { useLocalSearchParams } from "expo-router";
+
+import { NotesScreen } from "../../../../src/features/notes";
+import { CampaignScreen, firstParam } from "../../../../src/shell/campaign-provider";
 
 export { RouteErrorBoundary as ErrorBoundary } from "../../../../src/shell/route-error";
 
 export default function NotePageRoute() {
+  const params = useLocalSearchParams<{ pageId: string }>();
+  const pageId = firstParam(params.pageId);
   return (
     <CampaignScreen>
-      <NotBuiltYet title={sectionLabel("notes")} />
+      <NotesScreen initialPageId={pageId.length > 0 ? pageId : null} />
     </CampaignScreen>
   );
 }
