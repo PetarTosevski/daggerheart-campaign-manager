@@ -1,0 +1,505 @@
+/*
+ * The HUD hand (plan combat-hud H2.3; boards CmpCards and Main `.bot .handrow`, `.fanside`). The card face is the
+ * app's own `HandCardFace` (actions/hand/face.tsx with its hand.css), unchanged: every rule here sits around it (the
+ * card's slot, the tag above it, the lift and glow, the grey wash) or styles the HUD's own parts. The shell's `hand`
+ * region places the whole hand (left 330 / right 24 today; H2.2 moves it while a sheet is open); the fan centres in it.
+ */
+.hud-r-hand > .hud-hand {
+  /* Only the cards, the side buttons and the panels catch the pointer: the map between them stays usable. */
+  pointer-events: none;
+}
+.hud-hand {
+  /* How far the fan hangs below the screen's edge (Main: the cards' lower part is off-screen until raised). */
+  --hud-hand-sink: 128px;
+  --hud-hand-w: 160px;
+  /* The box the hand may use above the screen's edge: a raised card and the popovers stay inside it. */
+  --hud-hand-room: 640px;
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+/* Status lines and the card result sit just above the visible tops of the cards. */
+.hud-hand-over {
+  position: absolute;
+  left: 50%;
+  bottom: 210px;
+  z-index: 35;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: min(520px, 100%);
+}
+.hud-hand-note {
+  pointer-events: auto;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--hud-r-popup);
+  background: var(--hud-glass);
+  box-shadow: 0 0 0 1px var(--hud-line), 0 8px 18px rgba(0, 0, 0, 0.45);
+  color: var(--hud-muted);
+  font: var(--hud-type-ui);
+}
+.hud-hand-err {
+  color: var(--hud-danger);
+}
+.hud-hand-result {
+  position: relative;
+  width: 100%;
+  max-height: 40vh;
+  overflow-y: auto;
+  padding-right: 40px;
+  color: var(--hud-ink);
+}
+.hud-hand-loading,
+.hud-hand-empty {
+  margin-bottom: 16px;
+}
+
+/* ---------------------------------------------------------------- the fan row */
+.hud-hand-row {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  width: 100%;
+  height: var(--hud-hand-room);
+  /*
+   * The fan hangs below the screen's edge; `clip` (not hidden) cuts it at this box's bottom without making a scroll
+   * container, so the HUD root never scrolls when a sunk Use or More takes focus.
+   */
+  overflow: clip;
+}
+.hud-fan {
+  transform: translateY(var(--hud-hand-sink));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+}
+/* One card's slot: cards/fan.ts sets --rot, --ty and the stacking order (left under right). */
+.hud-hc {
+  --rot: 0deg;
+  --ty: 0px;
+  position: relative;
+  flex: none;
+  width: var(--hud-hand-w);
+  margin: 0 -20px;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  transform-origin: 50% 120%;
+  transform: translateY(var(--ty)) rotate(var(--rot));
+  transition: transform var(--hud-t-card) ease;
+  outline: none;
+}
+.hud-hc > .cmh-face {
+  flex: 1 1 auto;
+}
+.hud-hc img {
+  pointer-events: none;
+}
+/* Raised: under the pointer, after a tap (the slot takes focus) or while the keyboard is on its More or Use. */
+.hud-hc:hover,
+.hud-hc:focus,
+.hud-hc:focus-within {
+  transform: translateY(calc(var(--hud-hand-sink) * -1 - 14px)) rotate(0deg) scale(1.08);
+  z-index: 30 !important;
+}
+/* The tag above the card (board `.hs`). */
+.hud-hc-tag {
+  position: absolute;
+  left: 50%;
+  top: -30px;
+  z-index: 5;
+  transform: translateX(-50%);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+}
+.hud-hs-lock {
+  color: var(--hud-muted);
+}
+.hud-hc-ic {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+/* Playing: lifted and glowing while the player picks (board `.is-play`). */
+.hud-hc.is-play {
+  transform: translateY(calc(var(--ty) - 34px)) rotate(0deg) scale(1.06);
+  z-index: 25 !important;
+}
+.hud-hc.is-play > .cmh-face {
+  box-shadow: 0 0 0 2px #c9a35a, 0 0 0 5px rgba(227, 180, 90, 0.45), 0 0 34px rgba(227, 180, 90, 0.55), 0 14px 26px rgba(0, 0, 0, 0.55);
+}
+/* Can't afford: the grey wash (board `.st-blocked .hc-face`). The GM's locked hand and a used card grey themselves. */
+.hud-hc.is-afford > .cmh-face {
+  filter: saturate(0.35) brightness(0.7);
+}
+
+/* ---------------------------------------------------------------- a folded or hidden hand */
+.hud-folded {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.hud-hidden {
+  margin-bottom: 16px;
+}
+.hud-backs {
+  display: flex;
+  padding-right: 40px;
+}
+.hud-back {
+  position: relative;
+  width: 84px;
+  aspect-ratio: 5 / 7;
+  margin-right: -40px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #1d1550;
+  box-shadow: 0 0 0 2px #c9a35a, 0 8px 18px rgba(0, 0, 0, 0.5);
+}
+.hud-back-img {
+  object-fit: cover;
+}
+
+/* ---------------------------------------------------------------- beside the fan: vault, Roll options, Hide cards */
+.hud-fanside {
+  position: relative;
+  flex: none;
+  align-self: flex-end;
+  margin: 0 0 14px 46px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  pointer-events: auto;
+}
+.hud-deck {
+  display: block;
+  margin-bottom: 4px;
+}
+.hud-fs-b {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--hud-r-chip);
+  border: 1px solid var(--hud-line-2);
+  background: var(--hud-glass);
+  color: var(--hud-ink);
+  font: 500 11.5px/1 var(--hud-font-ui);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.hud-fs-b[aria-expanded="true"][aria-controls],
+.hud-fs-b[data-set="true"] {
+  border-color: var(--hud-gold);
+  color: var(--hud-gold-text);
+}
+.hud-fs-b:focus-visible,
+.hud-hand-pop-x:focus-visible,
+.hud-rec-btn:focus-visible,
+.hud-ro-chip:focus-visible,
+.hud-ro-step button:focus-visible {
+  outline: 2px solid var(--hud-gold);
+  outline-offset: 2px;
+}
+
+/* The popovers open above the side buttons, right-aligned to them. */
+.hud-hand-pop {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  z-index: 40;
+  width: max-content;
+  max-width: min(640px, calc(100vw - 48px));
+  max-height: calc(var(--hud-hand-room) - 200px);
+  overflow: auto;
+  padding: 14px 16px 16px;
+  border-radius: var(--hud-r-panel);
+  background: var(--hud-card);
+  box-shadow: inset 0 0 0 1px var(--hud-line), 0 18px 40px rgba(0, 0, 0, 0.55);
+  color: var(--hud-ink);
+  text-align: left;
+}
+.hud-hand-pop-h {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.hud-hand-pop-h h2 {
+  margin: 0;
+  font: var(--hud-type-title);
+  color: var(--hud-gold-text);
+}
+.hud-hand-pop-h span {
+  font-size: 12px;
+  color: var(--hud-muted);
+}
+.hud-hand-pop-x {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--hud-line-2);
+  background: var(--hud-inset);
+  color: var(--hud-ink);
+  cursor: pointer;
+}
+.hud-hand-result > .hud-hand-pop-x {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+.hud-hand-pop-empty {
+  margin: 0;
+  color: var(--hud-muted);
+}
+
+/* The vault spread (board `.rec`): each card with its recall button and a note. */
+.hud-vault {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  gap: 14px;
+}
+.hud-rec {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 150px;
+}
+.hud-rec-card {
+  display: flex;
+  width: 150px;
+}
+.hud-rec-card.is-locked > .cmh-face {
+  filter: saturate(0.4) brightness(0.62);
+}
+.hud-rec-btn {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: var(--hud-r-button);
+  border: 0;
+  background: var(--hud-gold);
+  color: var(--hud-gold-ink);
+  font: 700 12px/1 var(--hud-font-display);
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.hud-rec-btn:disabled,
+.hud-rec-btn[data-off="true"] {
+  background: #26333a;
+  color: #7d8f96;
+  cursor: not-allowed;
+}
+.hud-rec small {
+  font-size: 11.5px;
+  color: var(--hud-muted);
+  text-align: center;
+}
+.hud-vault-riders {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--hud-line);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+}
+.hud-vault-riders legend {
+  padding: 0 4px;
+  color: var(--hud-muted);
+}
+
+/* Roll options (board `.ro-grid`). */
+.hud-ro {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 10px 14px;
+  align-items: center;
+  width: 420px;
+  max-width: 100%;
+}
+.hud-ro-l {
+  font-size: 12px;
+  color: var(--hud-muted);
+}
+.hud-ro-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.hud-ro-chip {
+  height: 32px;
+  padding: 0 8px 0 12px;
+  border-radius: var(--hud-r-chip);
+  border: 1px solid var(--hud-line-2);
+  background: var(--hud-inset);
+  color: var(--hud-ink);
+  font: 400 12.5px/1 var(--hud-font-ui);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.hud-ro-chip[aria-pressed="true"] {
+  background: var(--hud-gold-soft);
+  color: var(--hud-gold-text);
+  border-color: var(--hud-gold);
+}
+.hud-ro-chip:disabled {
+  cursor: not-allowed;
+  color: var(--hud-muted);
+}
+.hud-ro-chip small {
+  font-size: 11px;
+  color: #ffbf8a;
+}
+.hud-ro-none {
+  font-size: 12px;
+  color: var(--hud-muted);
+}
+.hud-ro-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.hud-ro-step button {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--hud-line-2);
+  background: var(--hud-inset);
+  color: var(--hud-ink);
+  cursor: pointer;
+}
+.hud-ro-step button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.hud-ro-step output {
+  min-width: 28px;
+  text-align: center;
+  font: 900 17px/1 var(--hud-font-display);
+}
+.hud-ro-step small {
+  font-size: 12px;
+  color: var(--hud-muted);
+}
+.hud-ro-note,
+.hud-ro-err {
+  grid-column: 1 / 3;
+  margin: 0;
+  font-size: 12px;
+  color: var(--hud-muted);
+}
+.hud-ro-err {
+  color: var(--hud-danger);
+}
+
+/* ---------------------------------------------------------------- the full card view (board "Full card view") */
+.hud-full {
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 24px;
+  border: 0;
+  border-radius: var(--hud-r-panel);
+  background: var(--hud-card, #141e22);
+  box-shadow: inset 0 0 0 1px var(--hud-line, #253338), 0 24px 70px rgba(0, 0, 0, 0.6);
+  color: var(--hud-ink, #e6ecea);
+}
+.hud-full[open] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  align-items: flex-start;
+}
+.hud-full::backdrop {
+  background: rgba(5, 8, 10, 0.6);
+}
+.hud-full-card {
+  display: flex;
+  width: 300px;
+  max-width: 100%;
+}
+/* The face's own More would open the same card again: hidden here, Use and Close stay. */
+.hud-full-card .cmh-more {
+  display: none;
+}
+.hud-full-close {
+  margin-left: auto;
+}
+.hud-full-text {
+  width: 360px;
+  max-width: 100%;
+}
+.hud-full-text h2 {
+  margin: 0 0 10px;
+  font: 700 18px/1.2 var(--font-cinzel), "Cinzel", serif;
+  color: #f3cf86;
+}
+.hud-full-text p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: #c8d3d0;
+  white-space: pre-line;
+}
+
+/* ---------------------------------------------------------------- smaller screens (H7.x refines tablet and phone) */
+@media (max-width: 1180px) {
+  .hud-hand {
+    --hud-hand-w: 128px;
+    --hud-hand-sink: 110px;
+    --hud-hand-room: 560px;
+  }
+  .hud-hc {
+    margin: 0 -16px;
+  }
+  .hud-fanside {
+    margin-left: 30px;
+  }
+}
+@media (max-width: 760px) {
+  .hud-hand {
+    --hud-hand-w: 104px;
+    --hud-hand-sink: 96px;
+    --hud-hand-room: 480px;
+  }
+  .hud-ro {
+    width: auto;
+    grid-template-columns: 1fr;
+  }
+  .hud-ro-note,
+  .hud-ro-err {
+    grid-column: 1;
+  }
+  .hud-vault {
+    flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-hc {
+    transition: none;
+  }
+}

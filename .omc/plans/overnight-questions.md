@@ -140,3 +140,12 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - H1.S moveToGm (bead dcm-bxp.99.32.4) fires only during a running encounter, not on every action roll. CB p.149.
 - H1.S The GM playing for a PC ("Play for this character") is never refused by the spotlight rule.
 - Bug found: combat-vision.spec.ts fails on rebuild at Nautical Dawn ("Dim light" vs "Daylight"), dcm-aid9; not caused by the HUD.
+
+### Wave 3
+- HD2 A bare Restrained or Vulnerable on the sheet shows no duration (null), not "until cleared". CB p.102 "Clearing Conditions".
+- HD2 / H2.1 Features that apply by themselves (kind "auto", e.g. Combat Training) are labelled "Passive", as the board does.
+- H2.2 The hand region stays H0's left 330 / right 24 (centre ~873) instead of the board's left 700 / width 700 (centre 1050); only the open-sheet shift follows the board. Change = one rule in hud/shell.css.
+- H2.2 The GM's title row and toolbar hide while a sheet is open, as the board shows.
+- H2.3 The hand follows the open PC sheet: a player opening another PC's sheet sees that hand view only; the GM sees the open PC's hand, locked until "Play for".
+- H2.3 Hide cards is remembered per browser (localStorage) and shares the classic hand's key.
+- H2.3 Help is the app's dice count, not per-ally chips (the engine has no per-ally Help); "Can't afford" is worked out for up-front Hope costs only; drag-to-play is not in the HUD (Use plays).
