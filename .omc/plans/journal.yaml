@@ -1,0 +1,666 @@
+# Journal plan (2026-11-03): build the user's Journal design (reference/designs/journal/journal_views.jpg, three panels:
+# Sessions / Plan, Sessions / Log & recap, Notes) as one Journal tab that replaces Sessions and Notes. Epic: bead dcm-z9rz.
+# Briefs, design-to-code map, removal list, risks and the open questions: .omc/plans/journal-briefs.md.
+# Format: docs/workflow.md. Extra keys (plan-check ignores them): title, size, batch, boards, mode.
+#
+# Waves: 1 foundation (data widen + new tables, page shell with slot stubs, spotlight auto-count), 2 server tracers and
+# the UI that needs no new data (header, Notes sub-tab), 3 the view tracers, 4 cut-over (nav, redirects, delete the old
+# Sessions UI, every spec moved to the Journal).
+#
+# Rules for every tracer (details in the briefs):
+#   - mode add until wave 4: the Journal lives at /campaigns/<id>/journal next to the old /sessions and /notes pages,
+#     which keep working and keep their specs green. The nav switches to Journal only in the cut-over (JX1).
+#   - Built on the briefs' recommended defaults for the open questions; a tracer whose acceptance depends on one names it
+#     (Qn). If the user picks another option, the orchestrator rewrites that tracer's acceptance before launching it.
+#   - Server tracers: user wrappers (gmQuery / keyedGmMutation / campaignQuery from convex/lib/functions.ts), access only
+#     via the wrappers' permissionFor (`need:`), args + returns validators, indexed bounded reads, typed fields only
+#     (widen with optional fields; no v.any), own authz area file tests/convex/authz/journal-<area>.entries.ts, tests
+#     assert ConvexError.data.code. Every new table is bounded per session and deleted with its session
+#     (deleteSessionRows) and its campaign (cleanup.ts purge); no table only grows, so no new cron (rule 8; see briefs).
+#   - Reuse, don't duplicate: Battle Points and adversaries come from src/components/adversaries/builder/* and
+#     encounters.get; the Notes sub-tab is the existing src/components/notes/** UI; End / Start reuse the Live card's
+#     helpers (endReportLines, useWitherChoice, WitherChoiceField, endDialogText).
+plan: journal
+waves:
+  # ------------------------------------------------------------------ wave 1: foundation
+  - wave: 1
+    tracers:
+      - id: J0
+        title: "Journal data foundation: widen the session shapes, two new per-session tables, live windows, error codes, pure helpers"
+        goal: "The data the Journal needs exists and is cleaned up: scenes carry a title, a state and their own encounter; sessions accumulate their played time and a recap-shared stamp; log lines carry an event tag; per-session log overrides and per-PC tally counters have tables; a session's live windows can be read; nothing in the UI changes"
+        size: M
+        mode: add
+        boards: [Plan, Log]
+        depends_on: []
+        owns:
+          - convex/lib/validators/sessions.ts
+          - convex/tables/sessions.ts
+          - convex/sessions.ts
+          - convex/lib/sessions.ts
+          - convex/cleanup.ts
+          - src/lib/errors/sessions.ts
+          - src/lib/domain/journal/**
+          - tests/unit/journal-domain.test.ts
+          - tests/convex/journal-foundation.test.ts
+          - tests/convex/cleanup.test.ts
+          - docs/tasks/TASK-JOURNAL-J0.md
+        reads:
+          - reference/designs/journal/journal_views.jpg
+          - convex/sessionPlay.ts
+          - convex/sessionPrep.ts
+          - convex/sessionWrap.ts
+          - convex/feed.ts
+          - convex/lib/actionLog.ts
+          - convex/lib/validators/actionLog.ts
+          - convex/tables/history.ts
+          - src/lib/domain/sessions/**
+          - docs/best-practices.md
+        acceptance:
+          - "Widen only (optional fields, rule 7 / docs/best-practices.md section 1): sessionSceneValidator gains title?, state? ('planned' | 'playing' | 'done'), encounterId? (Q6, Q7); sessionFields gain playedMs? and recapSharedAt? (Q3, Q4); sessionLogFields gain event? ('start' | 'end' | 'scene') and editedAt?"
+          - "New tables in convex/tables/sessions.ts (already composed by convex/schema.ts): sessionLogOverrides { campaignId, sessionId, source: 'feed' | 'fear' | 'encounter' | 'auto', sourceId: string, hidden: boolean, text?, updatedAt } with by_session_source and by_campaign; sessionCharacterStats { campaignId, sessionId, characterId, hopeSpent, hpMarked } with by_session_character and by_campaign; caps MAX_LOG_OVERRIDES (500) per session, character cap per session"
+          - "convex/sessions.ts: the Start / End log lines are written with event 'start' / 'end'; End adds the window (endedAt - startedAt) to playedMs"
+          - "convex/lib/sessions.ts: liveWindows(ctx, session) returns the session's [from, to] windows from its start / end lines (legacy lines without event matched by their 'Session started' / 'Session ended' text), else [startedAt, endedAt ?? now]; deleteSessionRows also deletes the two new tables' rows (bounded take); cleanup.ts purges them by campaign"
+          - "src/lib/errors/sessions.ts gains the new codes (SESSION_LOG_SOURCE_NOT_FOUND, SESSION_LOG_OVERRIDE_LIMIT, SESSION_SCENE_STATE) with messages; tests assert codes"
+          - "src/lib/domain/journal: pure helpers with unit tests: mergeLog (sorts lines from several sources by time, stable), nextSceneId (first non-done scene after the playing one), leastSpotlightLine ('Oriel has had the least spotlight this session.'), hoursAtTable(sessions), sceneEncounterId(scene, index, prep) (legacy session encounter on the first Combat scene, Q6)"
+          - "lint, typecheck, vitest pass; every existing session spec still passes"
+      - id: J1
+        title: "Journal page shell: route, header frame, Sessions / Notes sub-tabs, Plan / Log & recap toggle, slot stubs, URL state"
+        goal: "/campaigns/<id>/journal renders the design's frame for GM and players (campaign line, H1 Journal, sub line, header action slots, Sessions N / Notes N pages sub-tabs, the Sessions three-column layout with the Plan / Log & recap toggle and the gold 'Play on the Combat Map' link) with every feature slot a stub; the old pages are untouched"
+        size: M
+        mode: add
+        boards: [Plan, Log, Notes]
+        depends_on: []
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/journal/**
+          - src/components/journal/slots.ts
+          - src/components/journal/journal.css
+          - src/components/journal/ui/**
+          - src/components/journal/header/index.tsx
+          - src/components/journal/session-list/index.tsx
+          - src/components/journal/session-head/index.tsx
+          - src/components/journal/plan/index.tsx
+          - src/components/journal/plan/encounter.tsx
+          - src/components/journal/plan/battle-points.tsx
+          - src/components/journal/log/index.tsx
+          - src/components/journal/recap/index.tsx
+          - src/components/journal/tally/index.tsx
+          - src/components/journal/threads/index.tsx
+          - src/components/journal/notes-tab/index.tsx
+          - tests/unit/journal/j1-*.test.tsx
+          - tests/unit/error-boundaries-redirect.test.tsx
+          - tests/e2e/journal/helpers.ts
+          - tests/e2e/journal-shell.spec.ts
+          - docs/tasks/TASK-JOURNAL-J1.md
+        reads:
+          - reference/designs/journal/journal_views.jpg
+          - src/app/(gm)/campaigns/[campaignId]/sessions/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/notes/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
+          - src/components/sessions/slots.ts
+          - src/components/notes/slots.ts
+          - src/components/brand/**
+          - tests/e2e/visual/helpers.ts
+          - tests/e2e/a11y.ts
+        acceptance:
+          - "URL state kept by the page: ?tab=sessions|notes (default sessions), &s=<session id>, &sv=plan|log (default plan for the GM, log for players); the Notes sub-tab keeps the notes params view / page / journal unchanged; a bad value falls back; ids are untrusted (loadSession on the server)"
+          - "slots.ts documents every slot (folder, owning tracer, exported names and props) as src/components/sessions/slots.ts does; each stub renders nothing or a 'Loading' line and keeps its exported name and props"
+          - "Header: campaign line (frame name), H1 'Journal', sub 'Every session and every note, in one place.', the header-actions slot (header/), sub-tabs as ARIA tabs with counts 'Sessions N' (sessionRecords.list length) and 'Notes N pages' (the caller's journal pageCount)"
+          - "Sessions sub-tab: left column (session-list slot), centre (session-head slot, Plan / Log & recap toggle for the GM only, 'Play on the Combat Map' link to /combat-map, plan or log slot), right column (plan: battle-points slot; log: tally, threads, recap 'after' parts); players get no toggle (Q5)"
+          - "Every slot sits in its own error boundary (CL1); error.tsx for the segment; the error-boundaries test lists the journal segment"
+          - "tests/e2e/journal/helpers.ts seeds the design's scene (a campaign with 4 PCs, sessions 2-7 with 6 live and 7 planned, a Combat scene with an encounter); journal-shell.spec.ts: GM and player load both sub-tabs, axe passes, 1440x900 and 390x844; lint, typecheck, tests pass"
+      - id: JD1
+        title: "Spotlight per PC per live session: count every move to a PC"
+        goal: "While a session is live, every time the spotlight moves to a PC (handTo today, any later PC move through setHolder) that PC's spotlight count for the live session goes up by one in the same mutation; the GM's existing reset still zeroes it"
+        size: S
+        mode: add
+        boards: [Log]
+        depends_on: []
+        owns:
+          - convex/lib/spotlight.ts
+          - tests/convex/journal-spotlight.test.ts
+          - docs/tasks/TASK-JOURNAL-JD1.md
+        reads:
+          - convex/combatSpotlight.ts
+          - convex/tables/combatSpotlight.ts
+          - convex/sessionPlay.ts
+          - convex/lib/sessions.ts
+          - convex/lib/validators/sessions.ts
+          - src/lib/domain/sessions/spotlight.ts
+        acceptance:
+          - "setHolder: when the new holder is a PC and the holder changed and the campaign has a live session (liveSession, one indexed read), upsert sessionSpotlights (by_session_character) count + 1; no live session, an unchanged holder or a move to the GM writes nothing"
+          - "sessionPlay.spotlight returns the counts (every active PC, due flags); sessionPlay.resetSpotlight zeroes them; the old manual bumpSpotlight still adds (until the cut-over decision, Q9)"
+          - "tests: GM handTo during a live session counts; twice to the same PC without a move in between counts once; after End nothing counts; reset; retry with the same idempotency key counts once; lint, typecheck, tests pass"
+  # ------------------------------------------------------------------ wave 2: server tracers, header, Notes sub-tab
+  - wave: 2
+    tracers:
+      - id: JD2
+        batch: A
+        title: "Session log server: the feed, Fear, encounters and GM lines of the session, with hide and edit"
+        goal: "The GM reads one session log per session, assembled from the action feed, the Fear history and the encounters started or ended inside the session's live windows plus the session's own lines (start / end / scene / GM), and can hide or re-word any line without ever deleting a feed row"
+        size: M
+        mode: add
+        boards: [Log]
+        depends_on: [J0]
+        owns:
+          - convex/journalLog.ts
+          - tests/convex/journal-log.test.ts
+          - tests/convex/authz/journal-log.entries.ts
+          - tests/convex/authz/journal-log.test.ts
+          - docs/tasks/TASK-JOURNAL-JD2.md
+        reads:
+          - convex/feed.ts
+          - convex/sessionPlay.ts
+          - convex/lib/sessions.ts
+          - convex/lib/validators/sessions.ts
+          - convex/lib/validators/actionLog.ts
+          - convex/tables/actionLog.ts
+          - convex/tables/history.ts
+          - convex/lib/validators/encounters.ts
+          - convex/lib/functions.ts
+          - src/lib/domain/journal/**
+        acceptance:
+          - "journalLog.list({ sessionId }) (gmQuery, Q5): lines { key, source ('feed' | 'fear' | 'encounter' | 'auto' | 'gm'), sourceId, at, title, sub?, icon, hidden, edited, removable } oldest first; feed rows of the windows via actionLog by_campaign_at (undone rows left out, GM-only rows included), Fear rows via history by_campaign_at (kind fear: 'The GM spent 1 Fear' / 'Fear 3 -> 5'), encounters whose startedAt / endedAt fall in a window ('Combat began: <encounter name>'), the session's sessionLog lines; overrides applied (hidden flag, text); each source read with a bounded take, truncated flag in the result; returns validator"
+          - "journalLog.hide / unhide({ sessionId, source, sourceId }) and setText({ sessionId, source, sourceId, text }) (gmMutation): write sessionLogOverrides only; a GM line's setText patches its sessionLog row (editedAt); a source id outside the session's windows is SESSION_LOG_SOURCE_NOT_FOUND; past MAX_LOG_OVERRIDES SESSION_LOG_OVERRIDE_LIMIT; feed rows are never patched or deleted (test reads the actionLog row after hide)"
+          - "Adding and deleting GM lines reuse sessionPlay.addLog / removeLog (no copy)"
+          - "authz entries (area journal-log): anonymous UNAUTHENTICATED, outsider NOT_FOUND, player and grantee FORBIDDEN, GM ok; lint, typecheck, tests pass"
+      - id: JD3a
+        batch: A
+        title: "Session tally server: Fear gained / spent, Hope spent, HP marked, adversaries defeated, critical successes"
+        goal: "The GM reads the design's six tally numbers for any session: Fear from the history (as today), criticals from the roll rows and defeats from the encounters run inside the session's windows, Hope and HP from the per-PC counters (zero until JD3b lands)"
+        size: S
+        mode: add
+        boards: [Log]
+        depends_on: [J0]
+        owns:
+          - convex/journalTally.ts
+          - tests/convex/journal-tally.test.ts
+          - tests/convex/authz/journal-tally.entries.ts
+          - tests/convex/authz/journal-tally.test.ts
+          - docs/tasks/TASK-JOURNAL-JD3a.md
+        reads:
+          - convex/sessionPlay.ts
+          - convex/lib/sessions.ts
+          - convex/lib/validators/sessions.ts
+          - convex/tables/actionLog.ts
+          - convex/tables/encounters.ts
+          - src/lib/domain/sessions/**
+          - src/lib/domain/journal/**
+        acceptance:
+          - "journalTally.tally({ sessionId }) (gmQuery): { fearGained, fearSpent, hopeSpent, hpMarked, adversariesDefeated, criticals, live, truncated } or null tiles before the session was ever live; Fear via tallyRows per window (the stored tally for finished windows stays the source, as sessionPlay.tally); criticals = roll rows with outcome 'critical' in the windows, not undone; adversariesDefeated = defeated instances (minion groups count their minions) of encounters started in the windows; hopeSpent / hpMarked = sum of sessionCharacterStats rows; returns validator; bounded reads"
+          - "Rests are no longer shown (design) but stay in the stored tally (data kept)"
+          - "authz entries (area journal-tally), GM only (Q5); lint, typecheck, tests pass"
+      - id: JD3b
+        batch: A
+        title: "Hope spent and HP marked counters (engine hook in saveSheet)"
+        goal: "While a session is live, every sheet save that lowers a PC's Hope or marks Hit Points adds the difference to that PC's sessionCharacterStats row for the live session, in the same mutation"
+        size: S
+        mode: add
+        boards: [Log]
+        depends_on: [J0]
+        owns:
+          - convex/lib/characterSheet.ts
+          - tests/convex/journal-tally-counters.test.ts
+          - docs/tasks/TASK-JOURNAL-JD3b.md
+        reads:
+          - convex/lib/sessions.ts
+          - convex/lib/validators/sessions.ts
+          - convex/lib/actionLog.ts
+          - convex/characters.ts
+        acceptance:
+          - "saveSheet reads the stored sheet before the patch (one get; callers that already hold it may pass it), and when a session is live adds max(0, Hope before - Hope after) to hopeSpent and the newly marked HP to hpMarked of (live session, character); no live session or no drop writes nothing (Q8)"
+          - "Undo, rests and level-ups that raise Hope or clear HP never subtract; the brief's caveats (GM manual Hope -1 counts as spent) are in the task doc"
+          - "Coordination: no engine lane owns convex/lib/characterSheet.ts while this tracer runs (orchestrator); the full convex suite passes (every sheet-writing test)"
+          - "lint, typecheck, tests pass"
+      - id: JD4
+        batch: A
+        title: "Plan server: scene title and state, per-scene encounters, 'Scene N began' log line, the current scene's encounter"
+        goal: "The GM gives each planned scene a title, marks one Playing now (the previous one Done; 'Next' derived), links or creates an encounter per Combat scene, and the Combat Map's session encounter follows the scene being played"
+        size: M
+        mode: add
+        boards: [Plan]
+        depends_on: [J0]
+        owns:
+          - convex/sessionPrep.ts
+          - convex/lib/sessions.ts
+          - tests/convex/journal-plan.test.ts
+          - tests/convex/session-prep.test.ts
+          - tests/convex/authz/journal-plan.entries.ts
+          - tests/convex/authz/journal-plan.test.ts
+          - docs/tasks/TASK-JOURNAL-JD4.md
+        reads:
+          - convex/encounters.ts
+          - convex/combatTokens.ts
+          - convex/lib/validators/sessions.ts
+          - convex/lib/validators/encounters.ts
+          - src/lib/domain/journal/**
+          - src/lib/domain/encounters/budget.ts
+        acceptance:
+          - "sessionPrep.setScene accepts title? (widened args, SESSION_TEXT_MAX.title); sessionPrep.get returns each scene's title, state and its encounter summary (id, name, status, instances with label, type, count, BP cost, onMap) using sceneEncounterId (legacy session encounter shown on the first Combat scene, Q6)"
+          - "sessionPrep.setSceneState({ sessionId, sceneId, state }) (gmMutation): 'playing' makes the previous playing scene 'done'; while the session is live it writes one sessionLog line event 'scene' 'Scene N began · <title>' (Q7); a non-Combat scene cannot link an encounter (SESSION_SCENE_STATE)"
+          - "sessionPrep.linkSceneEncounter / createSceneEncounter / unlinkSceneEncounter({ sessionId, sceneId, ... }) on D8's own encounter rows (encounters are never copied); onMap = the encounter has tokens on the live map (indexed read)"
+          - "currentSessionEncounter: the live (else newest planned) session's playing Combat scene's encounter, else its next Combat scene's, else the legacy session encounter; combatTokens.sessionEncounter / placeSessionEncounter and sessionPrep.current keep their shapes (their tests pass unchanged)"
+          - "authz entries (area journal-plan), GM only; lint, typecheck, tests pass"
+      - id: JD5
+        batch: A
+        title: "Recap sharing, hours at the table, 'After the session' and 'Campaign so far' server"
+        goal: "The GM shares a recap with players (players read only shared recaps, existing recaps migrate as shared), the campaign summary returns sessions played, hours at the table and party level, and each session returns its level-ups and loot"
+        size: M
+        mode: add
+        boards: [Log, Plan]
+        depends_on: [J0]
+        owns:
+          - convex/sessionWrap.ts
+          - convex/sessionRecords.ts
+          - convex/migrations/journalRecap.ts
+          - convex/migrations/run.ts
+          - tests/convex/journal-recap.test.ts
+          - tests/convex/session-wrap.test.ts
+          - tests/convex/session-records.test.ts
+          - tests/convex/authz/sessions.test.ts
+          - tests/convex/authz/journal-recap.entries.ts
+          - tests/convex/authz/journal-recap.test.ts
+          - docs/tasks/TASK-JOURNAL-JD5.md
+        reads:
+          - convex/lib/sessions.ts
+          - convex/lib/validators/sessions.ts
+          - convex/migrations/sessions.ts
+          - convex/tables/actionLog.ts
+          - convex/campaigns.ts
+          - src/lib/domain/journal/**
+        acceptance:
+          - "sessionWrap.shareRecap({ sessionId, shared }) (gmMutation) sets / clears recapSharedAt; sessionRecords.list and sessionWrap.dashboard give players a recap only when shared (Q4), the GM always; a batched @convex-dev/migrations migration sets recapSharedAt on every session that has a recap (rule 7 order: widen in J0, migrate here, no narrow needed)"
+          - "sessionRecords.summary() (campaignQuery need view): sessionsPlayed, hoursAtTable (sum of playedMs, legacy sessions endedAt - startedAt, J0 hoursAtTable), partyLevel; returns validator"
+          - "sessionWrap.after({ sessionId }) (gmQuery): levelUps (characters with a levelUp feed row in the windows, plus 'Milestone' when milestoneAt is set) and loot (sessionPrep.loot); setLoot unchanged"
+          - "authz entries (area journal-recap); players' view tests updated for unshared recaps; lint, typecheck, tests pass"
+      - id: JD6
+        batch: A
+        title: "Threads raised server: open threads on the Notes pages linked to a session"
+        goal: "Any member reads the open threads (open tasks and unresolved Fears) on their own journal's pages linked to a session, each with its page, so the Log view can list them with an 'In Notes' link"
+        size: S
+        mode: add
+        boards: [Log]
+        depends_on: [J0]
+        owns:
+          - convex/journalThreads.ts
+          - tests/convex/journal-threads.test.ts
+          - tests/convex/authz/journal-threads.entries.ts
+          - tests/convex/authz/journal-threads.test.ts
+          - docs/tasks/TASK-JOURNAL-JD6.md
+        reads:
+          - convex/notesThreads.ts
+          - convex/lib/notes.ts
+          - convex/tables/notes.ts
+          - convex/lib/validators/notes.ts
+          - convex/lib/sessions.ts
+        acceptance:
+          - "journalThreads.raised({ sessionId }) (campaignQuery need view, Q2): the caller's journal pages (not torn out) whose sessionId is the session, their open entries (by_page_order, open) as { entryId, pageId, pageTitle, kind, text }; empty without a journal; bounded (MAX_PAGES pages, MAX_THREADS entries); returns validator; a bad session id is SESSION_NOT_FOUND"
+          - "authz entries (area journal-threads): every member ok on their own journal; lint, typecheck, tests pass"
+      - id: JH
+        batch: B
+        title: "Header actions: live-session chip with End / Start, tome button, Open threads"
+        goal: "The Journal header shows 'Session N · live' with End session (the same End dialog, Wither choice and report as the Live card) or, with nothing live, Start session for the next planned one; the tome button opens the campaign Tome; 'Open threads N' opens the Notes sub-tab on its threads view"
+        size: M
+        mode: add
+        boards: [Plan, Log, Notes]
+        depends_on: [J1]
+        owns:
+          - src/components/journal/header/**
+          - tests/unit/journal/header.test.tsx
+          - tests/e2e/journal-header.spec.ts
+          - tests/e2e/visual/JOURNAL-JH.spec.ts
+          - docs/tasks/TASK-JOURNAL-JH.md
+        reads:
+          - src/components/sessions/live/index.tsx
+          - src/components/notes/threads/index.tsx
+          - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
+          - src/components/journal/slots.ts
+          - src/components/journal/ui/**
+          - convex/sessions.ts
+          - convex/sessionWrap.ts
+          - convex/notesThreads.ts
+        acceptance:
+          - "GM, live: green-dot chip 'Session N · live' + 'End session' -> the End dialog (endDialogText, WitherChoiceField) -> sessions.end; the report lines (endReportLines, Doom Track link) in a polite status; the chip menu holds 'Allow extra characters this session' (sessions.allowExtraCharacters, Q10)"
+          - "GM, nothing live: 'Start session N' (the selected planned session, else the newest planned; sessions.start creates one when none) with the Start dialog and report; opens that session's Log & recap view"
+          - "Players: the chip read-only while live, no Start / End; tome button for everyone (useOpenTome); 'Open threads N' = notesThreads.threads length for the caller (Q1), switching to ?tab=notes&view=threads"
+          - "Reuses the helpers exported by src/components/sessions/live (imported, not copied; JX2 moves them); unit tests for each state; e2e start -> end with the Wither choice; axe; visual shot at 1440x900 and 390x844; lint, typecheck, tests pass"
+      - id: JN
+        batch: B
+        title: "Notes sub-tab: the existing Notes UI inside the Journal"
+        goal: "The Journal's Notes sub-tab shows the existing Notes UI (search, page groups, shared pages, journals, torn-out pages, the parchment page with bullets and @mentions, Quick keys) without its own hero; the old /notes page renders the same body and keeps working"
+        size: M
+        mode: add
+        boards: [Notes]
+        depends_on: [J1]
+        owns:
+          - src/components/journal/notes-tab/**
+          - src/components/notes/notes-body.tsx
+          - src/components/notes/notes.css
+          - src/app/(gm)/campaigns/[campaignId]/notes/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/notes/notes.css
+          - tests/e2e/journal-notes.spec.ts
+          - tests/e2e/visual/JOURNAL-JN.spec.ts
+          - docs/tasks/TASK-JOURNAL-JN.md
+        reads:
+          - src/components/notes/**
+          - src/components/journal/slots.ts
+          - src/components/journal/ui/**
+          - tests/e2e/notes-shell.spec.ts
+        acceptance:
+          - "NotesBody (moved out of notes/page.tsx with notes.css next to it, behaviour unchanged) takes chrome 'page' | 'journal': 'page' renders today's hero (old route, every notes spec passes unchanged); 'journal' drops the hero (the Journal header holds Open threads) and puts 'Download journal' in the index column"
+          - "Notes sub-tab: the notes URL params (view, page, journal) work under /journal?tab=notes; the Caveat font variable is applied; Quick keys card unchanged (Q13)"
+          - "e2e: add a task, cycle a bullet, @mention a Codex entry, open threads view from the Journal header's button, link a page to a session; axe; visual shot; lint, typecheck, tests pass"
+  # ------------------------------------------------------------------ wave 3: the views
+  - wave: 3
+    tracers:
+      - id: JS
+        batch: A
+        title: "All sessions list, '+ Plan session N', Campaign so far, and the session heading"
+        goal: "The left column lists every session the caller may see (number, title, date, Planned / Live chip, the selected one ringed), the GM plans the next one, 'Campaign so far' shows sessions played, hours at the table, party level and open threads, and the centre heading shows 'Session N · date · time', the title and the Live chip with inline title / date edit and a menu with Mark as played and Delete for the GM"
+        size: M
+        mode: add
+        boards: [Plan, Log]
+        depends_on: [J1, JD5]
+        owns:
+          - src/components/journal/session-list/**
+          - src/components/journal/session-head/**
+          - tests/unit/journal/session-list.test.tsx
+          - tests/e2e/journal-sessions.spec.ts
+          - tests/e2e/visual/JOURNAL-JS.spec.ts
+          - docs/tasks/TASK-JOURNAL-JS.md
+        reads:
+          - src/components/sessions/list/index.tsx
+          - src/components/sessions/detail/index.tsx
+          - src/components/journal/slots.ts
+          - src/components/journal/ui/**
+          - convex/sessionRecords.ts
+          - convex/notesThreads.ts
+          - src/lib/domain/sessions/**
+          - src/lib/domain/journal/**
+        acceptance:
+          - "List from sessionRecords.list (useSessionList defined here; the old list/ is not imported, it goes in JX2): players see live and played only (Q5); '+ Plan session N' (GM, sessionRecords.create, opens it on Plan); empty states"
+          - "Campaign so far: sessionRecords.summary (played, hours, party level) + notesThreads.threads length (Q1)"
+          - "Session heading (Q11): title and date edit inline (setTitle / setDate with the optimistic updates the old header card has), Live chip, a menu with Mark as played / not played and Delete (asks twice), disabled while live; players read-only"
+          - "unit tests, e2e plan -> rename -> date -> delete, axe, visual shot; lint, typecheck, tests pass"
+      - id: JP1
+        batch: A
+        title: "Plan view: planned scenes and the GM prep note"
+        goal: "The Plan view lists the planned scenes (number, type chip Exploration / Social / Combat / Downtime, title, text, Done / Playing now / Next), '+ Add scene', and the 'GM prep' parchment note, and frames the Battle Points panel of the selected Combat scene on the right"
+        size: M
+        mode: add
+        boards: [Plan]
+        depends_on: [J1, JD4]
+        owns:
+          - src/components/journal/plan/index.tsx
+          - src/components/journal/plan/scenes.tsx
+          - src/components/journal/plan/gm-prep.tsx
+          - src/components/journal/plan/plan.css
+          - tests/unit/journal/plan-scenes.test.tsx
+          - tests/e2e/journal-plan.spec.ts
+          - tests/e2e/visual/JOURNAL-JP1.spec.ts
+          - docs/tasks/TASK-JOURNAL-JP1.md
+        reads:
+          - src/components/sessions/prep/**
+          - src/components/journal/plan/encounter.tsx
+          - src/components/journal/plan/battle-points.tsx
+          - src/components/journal/slots.ts
+          - src/components/journal/ui/**
+          - convex/sessionPrep.ts
+          - src/lib/domain/journal/**
+        acceptance:
+          - "Scenes from sessionPrep.get: type chip with icon and colour, title and text edited in place (setScene, optimistic), state control (Q7: 'Play this scene' -> Playing now; Done; Next derived by nextSceneId), remove, '+ Add scene' (MAX_SCENES); a Combat scene mounts SceneEncounter from ./encounter (JP2) inside its card"
+          - "GM prep: the session's hooks text (sessionPrep.setHooks, saved on blur) on a parchment card, lines starting '- ' shown as bullets"
+          - "Right column: BattlePointsPanel from ./battle-points (JP2) for the playing Combat scene, else the first Combat scene, with 'Scene N' in its title; nothing without a Combat scene"
+          - "unit tests, e2e add / edit / play / done, axe, visual shot; lint, typecheck, tests pass"
+      - id: JP2
+        batch: A
+        title: "Plan view: a Combat scene's encounter card and the Battle Points panel (the encounter builder's own pieces)"
+        goal: "A Combat scene shows its encounter (name, adversary chips with type and BP cost, 'On the Combat Map', 'Open map', 'Edit in Adversaries', or create / link one), and the right panel shows that encounter's Battle Points (spent of budget, left, bar, party formula, adjustments with +/-, costs) from the builder's BudgetPanel"
+        size: M
+        mode: add
+        boards: [Plan]
+        depends_on: [J1, JD4]
+        owns:
+          - src/components/journal/plan/encounter.tsx
+          - src/components/journal/plan/battle-points.tsx
+          - src/components/adversaries/builder/budget-panel.tsx
+          - tests/unit/journal/plan-encounter.test.tsx
+          - tests/unit/budget-panel.test.tsx
+          - tests/e2e/journal-encounter.spec.ts
+          - tests/e2e/visual/JOURNAL-JP2.spec.ts
+          - docs/tasks/TASK-JOURNAL-JP2.md
+        reads:
+          - src/components/adversaries/builder/**
+          - src/components/sessions/prep/encounter.tsx
+          - src/components/sessions/session-chip.tsx
+          - src/components/journal/slots.ts
+          - src/components/journal/ui/**
+          - convex/encounters.ts
+          - convex/sessionPrep.ts
+          - src/lib/domain/encounters/budget.ts
+        acceptance:
+          - "BudgetPanel gains an optional variant 'journal' (title 'Battle points · Scene N', 'X of Y spent', 'Z left', party formula line 'Party of 4: 3 x 4 + 2', the cost table chips) on the same encounters.setBudget intent; the Adversaries tab's default rendering is unchanged (its specs pass)"
+          - "Encounter card: chips from encounters.get instances (label, xN, type, BP), 'On the Combat Map' when onMap, 'Open map' -> /combat-map, 'Edit in Adversaries' -> encounterTrackerHref; without an encounter: 'Create encounter' / link one (JD4 functions); no add-adversary dialog here (reuse, Q6)"
+          - "unit tests, e2e create -> adjust budget -> open in Adversaries shows the same encounter, axe, visual shot; lint, typecheck, tests pass"
+      - id: JL
+        batch: A
+        title: "Log & recap view: the session log"
+        goal: "The GM sees the session log (time, icon, title, sub line, remove), written by the Combat Map as they play, can hide or re-word any line and add one ('Add a log entry...' + Add)"
+        size: M
+        mode: add
+        boards: [Log]
+        depends_on: [J1, JD2]
+        owns:
+          - src/components/journal/log/**
+          - tests/unit/journal/log.test.tsx
+          - tests/e2e/journal-log.spec.ts
+          - tests/e2e/visual/JOURNAL-JL.spec.ts
+          - docs/tasks/TASK-JOURNAL-JL.md
+        reads:
+          - src/components/sessions/play/index.tsx
+          - src/components/journal/slots.ts
+          - src/components/journal/ui/**
+          - convex/journalLog.ts
+          - convex/sessionPlay.ts
+        acceptance:
+          - "journalLog.list rendered oldest first with HH:MM, an icon per source / kind, title and sub; caption 'Written by the Combat Map as you play · edit anything'; x on a feed / Fear / encounter / auto line hides it (journalLog.hide), on a GM line deletes it (sessionPlay.removeLog); 'Show N hidden' brings hidden lines back (unhide); click a title to re-word it (setText)"
+          - "'Add a log entry...' + Add (sessionPlay.addLog, keyed, optimistic as today); GM only (Q5)"
+          - "Live: a roll on the Combat Map appears in the open log without a reload (two-browser e2e); unit tests, axe, visual shot; lint, typecheck, tests pass"
+      - id: JR
+        batch: A
+        title: "Log & recap view: Recap with Share with players, and After the session"
+        goal: "The GM writes the recap on a parchment card (Edit recap), shares it with players (Share with players / shared state), and sees 'After the session' (level-ups, loot); players read the shared recap of a live or played session"
+        size: S
+        mode: add
+        boards: [Log]
+        depends_on: [J1, JD5]
+        owns:
+          - src/components/journal/recap/**
+          - tests/unit/journal/recap.test.tsx
+          - tests/e2e/journal-recap.spec.ts
+          - tests/e2e/visual/JOURNAL-JR.spec.ts
+          - docs/tasks/TASK-JOURNAL-JR.md
+        reads:
+          - src/components/sessions/wrap/index.tsx
+          - src/components/journal/slots.ts
+          - src/components/journal/ui/**
+          - convex/sessionWrap.ts
+          - convex/sessionRecords.ts
+        acceptance:
+          - "Recap: parchment text, 'Edit recap' -> textarea saved on blur / Save (sessionWrap.setRecap, optimistic), 'Share with players' toggles sessionWrap.shareRecap (shared state shown) (Q4)"
+          - "After the session: 'Level-ups' (names or 'None') and 'Loot' (inline edit, sessionWrap.setLoot) from sessionWrap.after"
+          - "Player: the shared recap only, live in a second browser after Share (two-browser e2e); unit tests, axe, visual shot; lint, typecheck, tests pass"
+      - id: JT
+        batch: B
+        title: "Log & recap view: Session tally and Spotlight"
+        goal: "The GM sees the six tally tiles (Fear gained, Fear spent, Hope spent, HP marked, Adversaries defeated, Critical successes) and a spotlight bar per PC with Reset and 'X has had the least spotlight this session.'"
+        size: S
+        mode: add
+        boards: [Log]
+        depends_on: [J1, JD1, JD3a]
+        owns:
+          - src/components/journal/tally/**
+          - tests/unit/journal/tally.test.tsx
+          - tests/e2e/journal-tally.spec.ts
+          - tests/e2e/visual/JOURNAL-JT.spec.ts
+          - docs/tasks/TASK-JOURNAL-JT.md
+        reads:
+          - src/components/sessions/play/index.tsx
+          - src/components/journal/slots.ts
+          - src/components/journal/ui/**
+          - convex/journalTally.ts
+          - convex/sessionPlay.ts
+          - src/lib/domain/journal/**
+        acceptance:
+          - "Tally tiles from journalTally.tally ('-' before the session was live, a 'floor' note when truncated)"
+          - "Spotlight: sessionPlay.spotlight bars scaled to the highest count, portraits, counts, Reset (sessionPlay.resetSpotlight, optimistic), leastSpotlightLine; no tap to add (Q9)"
+          - "e2e: hand the spotlight to a PC on the Combat Map during a live session, the bar grows live; unit tests, axe, visual shot; lint, typecheck, tests pass"
+      - id: JTh
+        batch: B
+        title: "Log & recap view: Threads raised with 'In Notes'"
+        goal: "The Log view lists the open threads raised on this session's Notes pages, each with an 'In Notes' link that opens the page in the Notes sub-tab"
+        size: S
+        mode: add
+        boards: [Log, Notes]
+        depends_on: [J1, JD6, JN]
+        owns:
+          - src/components/journal/threads/**
+          - tests/unit/journal/threads.test.tsx
+          - tests/e2e/journal-threads.spec.ts
+          - docs/tasks/TASK-JOURNAL-JTh.md
+        reads:
+          - src/components/notes/threads/index.tsx
+          - src/components/journal/slots.ts
+          - src/components/journal/ui/**
+          - convex/journalThreads.ts
+        acceptance:
+          - "journalThreads.raised rows with the bullet glyph and text (EntryText for mentions); 'In Notes' -> ?tab=notes&page=<pageId>; empty state 'No threads raised on this session's pages.' (Q2)"
+          - "e2e: a task on a page linked to the session shows here and opens its page; unit tests, axe; lint, typecheck, tests pass"
+      - id: JN2
+        batch: B
+        title: "Notes sub-tab: 'Writing as' chips and the page groups (only per the user's answers Q12 / Q13)"
+        goal: "The GM switches between their own journal and each PC's journal with 'Writing as' chips (players see only their own chip), reading and adding entries as the existing journal view allows; the page groups carry the labels the user picks"
+        size: M
+        mode: replace
+        boards: [Notes]
+        depends_on: [JN]
+        owns:
+          - src/components/notes/journals/**
+          - src/components/notes/index-column/**
+          - src/components/notes/header/**
+          - src/lib/domain/notes/defaults.ts
+          - tests/unit/notes-journal-view.test.tsx
+          - tests/e2e/journal-writing-as.spec.ts
+          - docs/tasks/TASK-JOURNAL-JN2.md
+        reads:
+          - convex/notesJournals.ts
+          - convex/notesEntries.ts
+          - src/components/journal/notes-tab/**
+          - src/components/notes/slots.ts
+        acceptance:
+          - "Q12 default: 'Writing as' chips (portraits) = the GM's journal plus notesJournals.playerJournals; picking one opens the existing journal view (view 'journal'), the GM's added entries labelled as today (Q3 of D11); players: one chip, their own"
+          - "Q13 default: group labels and Quick keys unchanged; another answer is applied here (labels in defaults.ts only, no data change)"
+          - "Existing notes specs still pass (or the edit is named in the task doc); e2e, axe; lint, typecheck, tests pass"
+  # ------------------------------------------------------------------ wave 4: cut-over
+  - wave: 4
+    tracers:
+      - id: JX1
+        batch: A
+        title: "Cut-over 1: the nav shows Journal, /sessions and /notes redirect, every link points at the Journal, notes specs move"
+        goal: "The campaign nav reads Dashboard, Party, Codex, World Map, Combat Map, Adversaries, Journal, Lorekeeper; /sessions?s=&stage= and /notes?view=&page=&journal= redirect to the matching Journal sub-tab and view; the session chips, the dashboard's Start Session / 'Session N in progress' and the Last Session card link into the Journal; every notes spec drives the Journal"
+        size: M
+        mode: replace
+        boards: [Plan, Log, Notes]
+        depends_on: [JS, JP1, JP2, JL, JR, JT, JTh, JN2, JH]
+        owns:
+          - src/lib/campaign-sections.ts
+          - src/app/(gm)/campaigns/[campaignId]/sessions/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/sessions/error.tsx
+          - src/app/(gm)/campaigns/[campaignId]/sessions/sessions.css
+          - src/app/(gm)/campaigns/[campaignId]/notes/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/notes/error.tsx
+          - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
+          - src/app/(gm)/campaigns/[campaignId]/last-session.tsx
+          - src/components/sessions/session-chip.tsx
+          - tests/unit/error-boundaries-redirect.test.tsx
+          - tests/e2e/journal-redirects.spec.ts
+          - tests/e2e/notes-a11y.spec.ts
+          - tests/e2e/notes-bin.spec.ts
+          - tests/e2e/notes-entries.spec.ts
+          - tests/e2e/notes-flow.spec.ts
+          - tests/e2e/notes-journals.spec.ts
+          - tests/e2e/notes-mentions.spec.ts
+          - tests/e2e/notes-pages.spec.ts
+          - tests/e2e/notes-sharing.spec.ts
+          - tests/e2e/notes-shell.spec.ts
+          - tests/e2e/notes-threads.spec.ts
+          - tests/e2e/live-notes.spec.ts
+          - tests/e2e/visual/D11-*.spec.ts
+          - tests/e2e/dashboard.spec.ts
+          - tests/e2e/horizon.spec.ts
+          - tests/e2e/unauthenticated.spec.ts
+          - tests/e2e/a11y-play.spec.ts
+          - tests/e2e/visual/D10-S7.spec.ts
+          - docs/tasks/TASK-JOURNAL-JX1.md
+        reads:
+          - src/app/(gm)/campaigns/[campaignId]/journal/**
+          - src/components/journal/**
+          - src/components/notes/notes-body.tsx
+          - src/components/adversaries/tracker/**
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/page.tsx
+        acceptance:
+          - "campaign-sections.ts: { slug: 'journal', label: 'Journal' } where Sessions was; Sessions and Notes gone from the nav (user 2026-11-03)"
+          - "/sessions -> /journal?tab=sessions (s kept; stage prep -> sv=plan, play / wrap -> sv=log); /notes -> /journal?tab=notes (view, page, journal kept); server redirects, each segment still has error.tsx or is dropped from the error-boundaries test with the reason"
+          - "sessionPlayHref -> the Journal log view of the session (TrackerSessionChip, LiveSessionChip keep working on the Adversaries tracker and the Combat Map); dashboard: HeroSessionAction links and Start Session land on the Journal log view; Last Session card's 'All sessions' -> 'Open the Journal' (the card and the hero line stay: they are on the CampaignHub board)"
+          - "Every listed spec drives /journal (headings, URLs, link names); journal-redirects.spec covers each old URL shape; the full e2e suite passes"
+          - "lint, typecheck, tests, pnpm build pass"
+      - id: JX2
+        batch: B
+        title: "Cut-over 2: delete the old Sessions UI, move the End helpers, move every sessions spec to the Journal"
+        goal: "src/components/sessions keeps only session-chip.tsx; the Live card's End / Wither helpers live under src/components/journal/end-session and the dashboard's Wither panel imports them from there; every sessions spec drives the Journal or is deleted with its coverage named in a Journal spec; no data is removed"
+        size: L
+        mode: replace
+        boards: [Plan, Log]
+        depends_on: [JX1]
+        owns:
+          - src/components/sessions/list/**
+          - src/components/sessions/detail/**
+          - src/components/sessions/live/**
+          - src/components/sessions/prep/**
+          - src/components/sessions/play/**
+          - src/components/sessions/wrap/**
+          - src/components/sessions/slots.ts
+          - src/components/journal/end-session/**
+          - src/components/journal/header/**
+          - src/app/(gm)/campaigns/[campaignId]/wither-panel.tsx
+          - tests/e2e/session-encounter.spec.ts
+          - tests/e2e/session-play.spec.ts
+          - tests/e2e/session-prep.spec.ts
+          - tests/e2e/session-records.spec.ts
+          - tests/e2e/session-wrap.spec.ts
+          - tests/e2e/sessions-flow.spec.ts
+          - tests/e2e/sessions-hub.spec.ts
+          - tests/e2e/sessions-live.spec.ts
+          - tests/e2e/sessions-shell.spec.ts
+          - tests/e2e/live-sessions.spec.ts
+          - tests/e2e/session-features-flow.spec.ts
+          - tests/e2e/class-features.spec.ts
+          - tests/e2e/wither.spec.ts
+          - tests/e2e/players.spec.ts
+          - tests/e2e/visual/D10-S2.spec.ts
+          - tests/e2e/visual/D10-S3.spec.ts
+          - tests/e2e/visual/D10-S4.spec.ts
+          - tests/e2e/visual/D10-S5.spec.ts
+          - tests/e2e/visual/D10-S6.spec.ts
+          - tests/e2e/visual/helpers.ts
+          - tests/e2e/live-journal.spec.ts
+          - docs/tasks/TASK-JOURNAL-JX2.md
+        reads:
+          - src/components/journal/**
+          - src/app/(gm)/campaigns/[campaignId]/journal/**
+          - .omc/plans/journal-briefs.md
+        acceptance:
+          - "Every piece in the briefs' removal list is deleted or replaced as listed (per file in the task doc); grep finds no import of the deleted folders; session-chip.tsx stays"
+          - "endReportLines, useWitherChoice, WitherChoiceField and endDialogText move to src/components/journal/end-session; JH's header and wither-panel.tsx import them from there; the dashboard's End Session still works (wither.spec)"
+          - "Every listed spec drives the Journal (start / end from the header, plan, log, recap) or is deleted with its coverage named; live-journal.spec covers the two-browser cases live-sessions covered; the full e2e suite passes"
+          - "No table, field or row is removed; server functions left without a UI are listed in the task doc for the follow-up bead (not deleted here)"
+          - "lint, typecheck, tests, pnpm build pass; close dcm-z9rz after this merge (orchestrator)"
