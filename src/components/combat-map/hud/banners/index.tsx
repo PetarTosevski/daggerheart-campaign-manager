@@ -9,6 +9,7 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { HudPartProps } from "../state";
 import { useHud } from "../state";
+import { SpotlightBannerTag } from "../spotlight";
 import { Banner, type HudPartyMember } from "./banner";
 import { ClassicSheetBridge } from "./classic-sheet";
 
@@ -42,16 +43,6 @@ export function orderParty(party: readonly HudPartyMember[]): HudPartyMember[] {
   return [...party.filter((m) => m.mine), ...party.filter((m) => !m.mine)];
 }
 
-/**
- * The spotlight tag after the class ("Druid · Spotlight"): H1.S's slot, with the props of H1.S's banner tag
- * (`SpotlightBannerTag` in `hud/spotlight`, in progress). Renders nothing until H1.S lands; at merge this stub is
- * replaced by that import (docs/tasks/TASK-HUD-H1.1.md, merge-time actions).
- */
-function SpotlightSlot(props: { campaignId: Id<"campaigns">; characterId: Id<"characters"> }): ReactNode {
-  void props;
-  return null;
-}
-
 export function BannerRow({ campaignId, party }: { campaignId: Id<"campaigns">; party: readonly HudPartyMember[] }) {
   const hud = useHud();
   if (party.length === 0) return null;
@@ -68,7 +59,7 @@ export function BannerRow({ campaignId, party }: { campaignId: Id<"campaigns">; 
               index={index}
               open={openId === member.characterId}
               onOpen={() => hud.toggleSheet({ kind: "pc", characterId: member.characterId })}
-              spotlight={<SpotlightSlot campaignId={campaignId} characterId={member.characterId} />}
+              spotlight={<SpotlightBannerTag campaignId={campaignId} characterId={member.characterId} />}
             />
           </li>
         ))}

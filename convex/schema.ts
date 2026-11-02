@@ -6,6 +6,7 @@ import { campaignTables } from "./tables/campaigns";
 import { characterTables } from "./tables/characters";
 import { codexTables } from "./tables/codex";
 import { combatAreaTables } from "./tables/combatAreas";
+import { combatSpotlightTables } from "./tables/combatSpotlight";
 import { combatMapTables } from "./tables/combatMaps";
 import { combatRequestTables } from "./tables/combatRequests";
 import { e2eTables } from "./tables/e2e";
@@ -43,6 +44,7 @@ export default defineSchema({
   ...combatMapTables,
   ...combatRequestTables,
   ...combatAreaTables,
+  ...combatSpotlightTables,
   ...playForTables,
   ...sessionTables,
   ...spritePackTables,
