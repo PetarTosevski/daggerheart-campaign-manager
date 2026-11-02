@@ -8,11 +8,27 @@ import { api } from "../../../src/convex";
 import type { Id } from "../../../src/convex";
 import { CharacterSheet } from "../../../src/features/sheet";
 import { QueryBoundary } from "../../../src/features/sheet/query-boundary";
+import { readCharacter } from "../../../src/features/sheet/types";
 import { renderAsGm, renderAsPlayer } from "../../harness";
 import { campaignRecord, characterRecord, inCampaign } from "../party/fixture";
 
 beforeEach(() => {
   resetMotionTest();
+});
+
+test("readCharacter keeps session and play fields for dice and lunar panels", () => {
+  const character = readCharacter({
+    ...characterRecord({ canEdit: true }),
+    sheet: {
+      ...characterRecord({ canEdit: true }).sheet,
+      sessionFeatures: { moonDie: 3, slayerDice: 1 },
+      featureUses: [{ key: "lunar:bump", until: "rest" }],
+      conditions: ["unconscious"],
+    },
+  });
+  expect(character?.sheet.sessionFeatures).toEqual({ moonDie: 3, slayerDice: 1 });
+  expect(character?.sheet.featureUses).toEqual([{ key: "lunar:bump", until: "rest" }]);
+  expect(character?.sheet.conditions).toEqual(["unconscious"]);
 });
 
 function sheetQueries(role: "gm" | "player", character: unknown) {

@@ -214,7 +214,7 @@ function LoadedSheet({
           />
           <FeaturesSlot {...slot} />
           <DowntimeSection picked={openRest} />
-          <RestSlot {...slot} />
+          <RestSlot {...slot} restState={rest} />
           <StatusSection
             canEdit={canEdit}
             name={sheet.name}
