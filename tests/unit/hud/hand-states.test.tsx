@@ -207,7 +207,9 @@ describe("the HUD hand", () => {
     expect(within(fanCard("Unleash Chaos")).getByText("3 tokens")).toBeTruthy();
     expect(within(fanCard("Wall Walk")).getByText("Needs 1 Hope")).toBeTruthy();
     expect(fanCard("Wall Walk").dataset.wash).toBe("afford");
-    expect((within(fanCard("Wall Walk")).getByRole("button", { name: "Use Wall Walk" }) as HTMLButtonElement).disabled).toBe(true);
+    // H6.2: a known limit leaves Use focusable (aria-disabled) with its reason as the description.
+    expect(within(fanCard("Wall Walk")).getByRole("button", { name: "Use Wall Walk" })).toHaveAttribute("aria-disabled", "true");
+    expect(within(fanCard("Wall Walk")).getByRole("button", { name: "Use Wall Walk" })).toHaveAccessibleDescription("Needs 1 Hope · you have 0");
     expect(within(fanCard("Rune Ward")).getByText("Used · back after a rest")).toBeTruthy();
     expect(within(fanCard("Rune Ward")).queryByRole("button", { name: /^Use / })).toBeNull();
     expect(screen.getByRole("button", { name: "Open vault, 0 cards" })).toBeTruthy();

@@ -144,6 +144,35 @@ export function primaryProblem(selection: PickSelection, rule: Pick<PickRule, "m
   return blocked;
 }
 
+/**
+ * Whether the GM's spotlight holds this session back (H6.2, answer 1c): a player's new action waits while the GM holds
+ * it (`combatSpotlight.state.reactionsOnly`); a reaction, a step of a use under way (`followUp`) and the GM's own
+ * adversary sessions never do.
+ */
+export function spotlightBlocks(reactionsOnly: boolean, spec: { source: { kind: string }; followUp?: boolean }): boolean {
+  return reactionsOnly && spec.followUp !== true && spec.source.kind !== "reaction" && spec.source.kind !== "adversary";
+}
+
+/** The picker counter (CmpBlocked "picker counter"): "1 of 2" while several may be picked; null for one or any number. */
+export function pickCount(picked: number, rule: Pick<PickRule, "max" | "locked">): { text: string; full: boolean } | null {
+  if (rule.locked || rule.max === null || rule.max <= 1) return null;
+  return { text: `${picked} of ${rule.max}`, full: picked >= rule.max };
+}
+
+/**
+ * How a refusal marks the ring of the target it names (CmpBlocked "Shown before the click as"): BAD_TARGET dims it,
+ * no line of sight makes it dotted, out of reach puts the hint below it. Null when the refusal names no target or
+ * has no ring form.
+ */
+export function refusedRing(
+  refused: { refusal: { before: readonly string[]; lead: string }; tokenId: Id<"combatTokens"> | null } | null,
+): { tokenId: Id<"combatTokens">; form: "dimmed" | "dotted" | "hint"; text: string } | null {
+  if (!refused || refused.tokenId === null) return null;
+  const { before, lead } = refused.refusal;
+  const form = before.includes("ring-dotted") ? "dotted" : before.includes("ring-hint") ? "hint" : before.includes("ring-dimmed") ? "dimmed" : null;
+  return form ? { tokenId: refused.tokenId, form, text: lead } : null;
+}
+
 /** The footer line when a pick is out of range (HANDOFF hard rule 3). */
 export const GM_APPROVES_LINE = "Out of range: the GM approves first. Nothing is rolled or paid until then.";
 

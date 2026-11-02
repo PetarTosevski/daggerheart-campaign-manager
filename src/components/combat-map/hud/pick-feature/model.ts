@@ -3,6 +3,7 @@ import type { FunctionReturnType } from "convex/server";
 import { pickUse, rollMatches } from "@/lib/domain/card-effects/run";
 import type { AreaSpec, CardUse, Cost, Range, RollFilter, RollSpec, Step, TargetSpec, Trigger } from "@/lib/domain/card-effects/types";
 import type { Footprint } from "@/lib/domain/combat-actions/distance";
+import { shortfallLabel, shortfallOf } from "@/lib/domain/combat-actions/shortfall";
 import { asCardEffect } from "@/lib/domain/feature-effects/run";
 import { cardEffect } from "@/lib/srd/card-effects";
 import { featureEffect } from "@/lib/srd/feature-effects";
@@ -106,11 +107,14 @@ export function payLine(costs: readonly Cost[] | undefined, hope?: number | null
     .join(" · ");
 }
 
-/** CmpBlocked layer 1: "Needs 3 Hope · you have 1" for a fixed Hope cost the sheet can't pay; null otherwise. */
+/**
+ * CmpBlocked layer 1: "Needs 3 Hope · you have 1" for a fixed Hope cost the sheet can't pay; null otherwise (H6.1's
+ * `shortfallOf` / `shortfallLabel`). Hope only: Stress past full marks a Hit Point (CB p.106), so Stress never locks.
+ */
 export function hopeShortfall(costs: readonly Cost[] | undefined, hope: number | null | undefined): string | null {
   if (hope == null) return null;
-  const need = (costs ?? []).reduce((n, c) => n + (c.kind === "hope" && c.amount.kind === "fixed" ? c.amount.value : 0), 0);
-  return need > hope ? `Needs ${need} Hope · you have ${hope}` : null;
+  const short = shortfallOf(costs, { hope })[0];
+  return short ? shortfallLabel(short) : null;
 }
 
 // ---------------------------------------------------------------- the target rule

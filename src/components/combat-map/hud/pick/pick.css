@@ -432,6 +432,34 @@
   }
 }
 
+/* ---------------------------------------------------------------- blocked states (H6.2; CmpBlocked) */
+/* The picker counter: "1 of 2"; full, the limit beside it. */
+.hud-pk-ht .hud-pk-count {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  color: var(--hud-gold-text);
+  font-size: 11.5px;
+}
+.hud-pk-ht .hud-pk-count .hud-why {
+  color: #f3c7a0;
+}
+/* The refusal under the primary (layer 2), inside the panel's footer band. */
+.hud-pk-inl {
+  margin: 0 12px 10px;
+}
+/* A refused target's ring: dimmed (can't be targeted), dotted (no line of sight: `.hud-tg-los`), or the hint below. */
+.hud-tg-refused-dimmed .hud-tg-ring {
+  border-color: var(--hud-muted);
+  opacity: 0.55;
+}
+.hud-tg-hint {
+  border-color: #a0552a;
+  outline-color: #a0552a;
+  color: #f3c7a0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hud-pk,
   .hud-tg-ring {

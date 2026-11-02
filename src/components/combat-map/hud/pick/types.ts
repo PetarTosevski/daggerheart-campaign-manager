@@ -104,8 +104,8 @@ export type PickSelection = {
  * - `pending`: the server asked the GM (out of range; the session closes, "Waiting for the GM" shows from the server's
  *   open requests, so a reload keeps it);
  * - `stay`: keep the panel open (a picker's follow-up), with an optional message under the primary.
- * A thrown error (a `ConvexError` refusal) keeps the panel open and shows `errorMessage(error)` under the primary
- * (CmpBlocked layer 2).
+ * A thrown error (a `ConvexError` refusal) keeps the panel open and shows the refusal table's message under the primary
+ * (`refusalFor`, CmpBlocked layer 2; H6.2), or a toast where the table places it there.
  */
 export type PickOutcome = { kind: "done" } | { kind: "pending"; requestId: Id<"combatRequests"> } | { kind: "stay"; message?: string };
 
@@ -155,6 +155,12 @@ export type PickSessionSpec<D = unknown> = {
   data?: D;
   /** Called once when the session ends without a send (✕, Esc, another session opening). */
   onCancel?: () => void;
+  /**
+   * A step of a use already under way (a chain link, an after-the-roll ask, a post-roll offer) or an answer to the GM
+   * (a forced attack): the GM's spotlight never blocks it (H6.2). Every other player session is a new action and waits
+   * while the GM holds the spotlight (answer 1c).
+   */
+  followUp?: boolean;
 };
 
 export type PickPatch<D = unknown> = Partial<Omit<PickSessionSpec<D>, "id">>;

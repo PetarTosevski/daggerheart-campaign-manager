@@ -239,6 +239,8 @@ export function useFeatureUse({ campaignId, role, map, characterId, canUse = tru
       latest.current.open<AskData>({
         id: `${baseId}:ask:${step}`,
         source: { kind: "feature", name: title },
+        // The server's asks for a use already under way: the GM's spotlight never holds them back.
+        followUp: true,
         rule: chainAsk ? { side: "any", max: null, range: "unlimited", min: 0, text: askText(asks) } : { side: "any", max: null, range: "unlimited", min: 0, locked: true, text: askText(asks) },
         rows: askRows,
         ...(chainAsk ? {} : { picked: askRows.map((r) => r.tokenId) }),

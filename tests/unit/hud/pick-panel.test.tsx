@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { dropWithdrawn, HudPick, HudPickLayer, PickProvider, plainAttackSession, usePick, type PickSessionSpec } from "@/components/combat-map/hud/pick";
 import { HudProvider, useHud } from "@/components/combat-map/hud/state";
 import type { CombatPageState, MapLayerProps } from "@/components/combat-map/slots";
-import { errorMessage } from "@/lib/convex-errors";
+import { hudToasts } from "@/components/combat-map/hud/toasts/store";
 
 import type { Id } from "../../../convex/_generated/dataModel";
 
@@ -240,7 +240,10 @@ describe("the picking panel", () => {
     expect(rider).toHaveAttribute("aria-checked", "false");
     expect(within(ring("bandit")).queryByText("Restrain")).toBeNull();
     await act(async () => fireEvent.click(within(panel()).getByTestId("hud-pick-go")));
-    expect(within(panel()).getByRole("alert")).toHaveTextContent(errorMessage(refusal));
+    // H6.2: the refusal table's words (CARD_COST_UNPAID, Hope from "Short of"), with the card's name.
+    expect(within(panel()).getByRole("alert")).toHaveAttribute("data-code", "CARD_COST_UNPAID");
+    expect(within(panel()).getByRole("alert")).toHaveTextContent("Not enough Hope for Vicious Entangle.");
+    expect(within(panel()).getByRole("alert")).toHaveTextContent("Roll with Hope, or rest, to gain Hope.");
     expect(send.mock.calls.at(-1)![0].options).toEqual({ restrain: false });
 
     fireEvent.keyDown(within(panel()).getByRole("heading"), { key: "Escape" });
@@ -304,15 +307,28 @@ describe("Waiting for the GM", () => {
     expect(calls).toEqual([{ name: "combatWithdraw:withdraw", args: expect.objectContaining({ campaignId: CAMPAIGN, requestId: "rc", idempotencyKey: expect.any(String) }) }]);
   });
 
-  it("a refusal (already answered) shows on the card", async () => {
+  it("a refusal (already answered) shows as a toast near the hand (H6.2: the table places REQUEST_NOT_OPEN there)", async () => {
     waiting();
+    hudToasts.reset();
     const refusal = new ConvexError({ code: "REQUEST_NOT_OPEN" });
     mutationResult = async () => {
       throw refusal;
     };
     renderHud();
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Withdraw Attack" })));
-    expect(screen.getByRole("alert")).toHaveTextContent(errorMessage(refusal));
+    expect(hudToasts.get().map((t) => [t.title, t.message])).toEqual([["Already answered", "Someone already answered this."]]);
+    expect(screen.queryByRole("alert")).toBeNull();
+    hudToasts.reset();
+  });
+
+  it("another refusal of Withdraw shows on the card (layer 2), coded", async () => {
+    waiting();
+    mutationResult = async () => {
+      throw new ConvexError({ code: "FORBIDDEN" });
+    };
+    renderHud();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Withdraw Attack" })));
+    expect(screen.getByRole("alert")).toHaveAttribute("data-code", "FORBIDDEN");
   });
 
   it("the optimistic update drops the request from the three reads", () => {

@@ -220,3 +220,6 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - H6.3 GM Fear controls use the sentence "This needs 2 Fear. You have 1." (brief / board), not H6.1's short "Needs 2 Fear · you have 1".
 - H6.3 An Experience in the GM's attack picker that's too expensive stays disabled until the picker reopens, even if Fear rises meanwhile (the server still checks live).
 - H6.3 Answering an already-answered request shows the neutral toast "Already answered · Someone already answered this." and the card drops out (no in-queue row).
+- H6.2 Vault Recall stays enabled while the GM holds the spotlight (CB p.26: mark Stress equal to the Recall Cost to swap immediately).
+- H6.2 A token move blocked by the GM's spotlight shows as a toast near the hand, not in the move notice above the token.
+- H6.2 Uses already under way (chain links, after-roll questions, Minion offer, forced attacks) stay usable while the GM holds the spotlight.

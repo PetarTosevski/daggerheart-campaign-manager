@@ -5,8 +5,10 @@ import { useMemo } from "react";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
+import { blockedReason, type Blocked } from "../blocked/reason";
 import { useHudEnabled } from "../flag";
 import { useHud, type HudState } from "../state";
+import { hudToasts } from "../toasts/store";
 import { hopeByToken } from "./model";
 
 /**
@@ -28,7 +30,22 @@ export function useTokenHope(campaignId: Id<"campaigns">, mapId: Id<"combatMaps"
 }
 
 /**
- * The HUD state when the layer sits inside the HUD shell's `HudProvider`, else null (the classic page, the Encounter
+ * Why a player's token can't move now (H6.2; user answer 2026-11-01: while the GM holds the spotlight token moves are
+ * refused like actions), or null. Read only inside the HUD for a player (`combatSpotlight.state`, the subscription the
+ * spotlight parts share). The token layer then starts no drag or key move and `refuseMove` says why.
+ */
+export function useHudMoveLock(campaignId: Id<"campaigns">, role: "gm" | "player", on: boolean): Blocked | null {
+  const state = useQuery(api.combatSpotlight.state, on && role === "player" ? { campaignId } : "skip");
+  return blockedReason({ spotlightWithGm: state?.reactionsOnly === true });
+}
+
+/** A move tried while it is locked: the refusal as a toast near the hand (a token has no control to show it under). */
+export function refuseMove(lock: Blocked): void {
+  hudToasts.refusal(lock.refusal);
+}
+
+/**
+ * The HUD shell's `HudProvider` state when the layer sits inside it, else null (the classic page, the Encounter
  * tab). `useHud` reads the context unconditionally before it throws, so the hook order is the same either way.
  */
 export function useOptionalHud(): HudState | null {

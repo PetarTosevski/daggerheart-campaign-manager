@@ -4,14 +4,17 @@ import Image from "next/image";
 import { useEffect, useEffectEvent, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 
 import { designAsset } from "@/lib/design-assets";
+import { beforeText } from "@/lib/errors/refusals";
 import { DOMAIN_CARD_ART } from "@/lib/srd/art";
 import { DOMAIN_CARDS } from "@/lib/srd/domain-cards";
 import { cn } from "@/lib/utils";
 
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { CombatPageState } from "../../slots";
+import { BlockedReason, RefusalMessage } from "../blocked";
+import { useSpotlight } from "../spotlight";
 import { CostPill, Toggle, hudButtonClass } from "../ui";
-import { bandLabel, GM_APPROVES_LINE, keepPicks, primaryProblem, rowLabel, ruleText, selectionOf, STATE_WORD, stateOf, togglePick, canToggle } from "./model";
+import { bandLabel, GM_APPROVES_LINE, keepPicks, pickCount, primaryProblem, rowLabel, ruleText, selectionOf, spotlightBlocks, STATE_WORD, stateOf, togglePick, canToggle } from "./model";
 import { usePickScene } from "./scene";
 import { usePick, type PickLive } from "./session";
 import type { PickRow, PickSource } from "./types";
@@ -95,6 +98,7 @@ function Panel({ state, live }: { state: CombatPageState; live: PickLive }) {
   const pick = usePick();
   const { spec } = live;
   const scene = usePickScene(state, spec, live.picked);
+  const spotlight = useSpotlight(state.campaignId);
   const picked = scene.loading ? [...live.picked] : keepPicks(live.picked, scene.rows);
   const selection = selectionOf(scene.rows, picked, live.options);
   const panelRef = useRef<HTMLElement | null>(null);
@@ -131,7 +135,11 @@ function Panel({ state, live }: { state: CombatPageState; live: PickLive }) {
   // H5.2: the GM acting for an adversary (purple, HANDOFF "GM attack picking"): out of range needs no approval.
   const gm = spec.source.kind === "adversary";
   const pay = selection.outOfRange && !gm ? GM_APPROVES_LINE : (spec.primary.pay?.(selection) ?? null);
-  const problem = primaryProblem(selection, spec.rule, spec.primary.blocked?.(selection) ?? null);
+  // H6.2: while the GM holds the spotlight a new action waits (answer 1c); a step of one under way does not.
+  const spotlightWithGm = spotlightBlocks(spotlight?.reactionsOnly === true, spec);
+  const problem = spotlightWithGm ? beforeText("SPOTLIGHT_WITH_GM") : primaryProblem(selection, spec.rule, spec.primary.blocked?.(selection) ?? null);
+  // CmpBlocked "picker counter": "1 of 2" while several may be picked; once full, the limit beside it.
+  const count = pickCount(picked.length, spec.rule);
   const label = spec.primary.label(selection);
   const style = spot ? ({ "--pk-x": `${spot.x}px`, "--pk-y": `${spot.y}px` } as CSSProperties) : undefined;
   const ringLabels = new Map((spec.options ?? []).filter((o) => o.tokenId && live.options[o.id]).map((o) => [o.tokenId as string, o.ringLabel ?? o.label]));
@@ -162,6 +170,12 @@ function Panel({ state, live }: { state: CombatPageState; live: PickLive }) {
             {spec.source.name}
           </h2>
           <span data-testid="hud-pick-rule">{ruleText(spec.rule)}</span>
+          {count ? (
+            <span className={cn("hud-pk-count", count.full && "is-full")} data-testid="hud-pick-count">
+              <span>{count.text}</span>
+              {count.full ? <BlockedReason>{beforeText("COMBAT_TARGET_INVALID", { max: spec.rule.max })}</BlockedReason> : null}
+            </span>
+          ) : null}
         </div>
         <button type="button" className="hud-pk-x" aria-label={`Cancel ${spec.source.name}`} onClick={() => pick.cancel()}>
           ✕
@@ -180,7 +194,8 @@ function Panel({ state, live }: { state: CombatPageState; live: PickLive }) {
         <ul className="hud-pk-list" aria-label="Targets">
           {scene.rows.map((row) => {
             const st = stateOf(row, picked);
-            const can = canToggle(row, spec.rule);
+            // A row past the picker's maximum can't be added (the counter says why).
+            const can = canToggle(row, spec.rule) && !(count?.full === true && st !== "picked");
             return (
               <li key={row.tokenId}>
                 <button
@@ -271,7 +286,11 @@ function Panel({ state, live }: { state: CombatPageState; live: PickLive }) {
           {problem}
         </p>
       ) : null}
-      {live.message ? (
+      {live.refusal ? (
+        <div data-testid="hud-pick-error">
+          <RefusalMessage refusal={live.refusal.refusal} className="hud-pk-inl" />
+        </div>
+      ) : live.message ? (
         <p role="alert" className="hud-pk-err" data-testid="hud-pick-error">
           {live.message}
         </p>

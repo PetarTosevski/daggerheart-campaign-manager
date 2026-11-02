@@ -5,12 +5,14 @@ import { useEffect, useId, useRef, type CSSProperties, type MouseEvent, type Rea
 
 import { deckBacks, fan } from "@/components/cards/fan";
 import { designAsset } from "@/lib/design-assets";
+import { shortfallTag } from "@/lib/domain/combat-actions/shortfall";
 import { experienceValue } from "@/lib/domain/dice";
 import { cn } from "@/lib/utils";
 
 import { cardDisplay, HandCardFace } from "../../actions/hand/face";
 import type { HandCard } from "../../actions/hand/model";
 import type { Roller, RollValues } from "../../actions/roll-controls";
+import { BlockedReason } from "../blocked";
 import { CostPill, Tag } from "../ui";
 import { EDGE_MAX, EDGE_MIN, experienceShort, HELP_MAX, signedEdge, type CardLook } from "./states";
 
@@ -43,6 +45,7 @@ export function FanCard({
   locked,
   pending,
   onUse,
+  onBlocked,
   onMore,
 }: {
   card: HandCard;
@@ -54,9 +57,13 @@ export function FanCard({
   /** A use is on its way: every Use waits. */
   pending: boolean;
   onUse: () => void;
+  /** A press on a blocked Use (H6.2): the hand shows the refusal (a toast near the hand, board Main 'Can't afford'). */
+  onBlocked: () => void;
   onMore: (from: HTMLElement) => void;
 }) {
   const style = fan(index, count, card.state === "exhausted") as CSSProperties;
+  const reasonId = useId();
+  const blocked = look.blocked !== undefined;
   return (
     <li
       className={cn("hud-hc", look.wash !== "none" && `is-${look.wash}`)}
@@ -76,16 +83,24 @@ export function FanCard({
       ) : null}
       <HandCardFace card={card} locked={locked}>
         {look.showUse ? (
+          // A known limit (H6.2): Use stays focusable (aria-disabled) and says why; a press shows the refusal.
           <button
             type="button"
             className="cmh-use"
-            disabled={!look.canUse || pending}
+            disabled={!blocked && (!look.canUse || pending)}
+            aria-disabled={blocked ? true : undefined}
+            aria-describedby={blocked ? reasonId : undefined}
             title={look.reason}
             aria-label={`Use ${card.name}`}
-            onClick={onUse}
+            onClick={blocked ? onBlocked : onUse}
           >
             Use
           </button>
+        ) : null}
+        {blocked ? (
+          <span id={reasonId} className="sr-only">
+            {look.reason}
+          </span>
         ) : null}
       </HandCardFace>
     </li>
@@ -180,7 +195,7 @@ export function RollOptionsBody({ roller, values, problem, onChange }: { roller:
                 onClick={() => onChange({ experienceIds: on ? experienceIds.filter((id) => id !== e.id) : [...experienceIds, e.id] })}
               >
                 {e.name} {signedEdge(experienceValue(e))}
-                {short ? <small>Needs 1 Hope</small> : <CostPill amount={1} resource="hope" className="hud-ro-cost" />}
+                {short ? <small>{shortfallTag({ resource: "hope", need: 1, have: Math.max(0, (hope ?? 0) - experienceIds.length) })}</small> : <CostPill amount={1} resource="hope" className="hud-ro-cost" />}
               </button>
             );
           })
@@ -224,9 +239,27 @@ function RoStepper({ label, value, min, max, text, hint, onChange }: { label: st
  * and Close at its foot and the whole text beside it. A native modal `<dialog>`: Escape closes it, focus goes back to
  * the More that opened it. The face's own More is hidden here (it would open the same card again).
  */
-export function FullCard({ card, useLabel, canUse, reason, onUse, onClose }: { card: HandCard; useLabel: string | null; canUse: boolean; reason?: string; onUse: () => void; onClose: () => void }) {
+export function FullCard({
+  card,
+  useLabel,
+  canUse,
+  reason,
+  blocked = false,
+  onUse,
+  onClose,
+}: {
+  card: HandCard;
+  useLabel: string | null;
+  canUse: boolean;
+  reason?: string;
+  /** A known limit blocks Use (H6.2): it stays focusable with the reason; a press still calls `onUse` (the hand shows why). */
+  blocked?: boolean;
+  onUse: () => void;
+  onClose: () => void;
+}) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
+  const reasonId = useId();
   const text = cardDisplay(card).text;
   // showModal() is the DOM's own call for a mounted dialog (as the app's CardDialog and Modal do).
   useEffect(() => {
@@ -250,7 +283,9 @@ export function FullCard({ card, useLabel, canUse, reason, onUse, onClose }: { c
             <button
               type="button"
               className="cmh-use"
-              disabled={!canUse}
+              disabled={!blocked && !canUse}
+              aria-disabled={blocked ? true : undefined}
+              aria-describedby={blocked ? reasonId : undefined}
               title={reason}
               onClick={() => {
                 onUse();
@@ -268,6 +303,7 @@ export function FullCard({ card, useLabel, canUse, reason, onUse, onClose }: { c
       <div className="hud-full-text">
         <h2 id={titleId}>{card.name}</h2>
         <p>{text}</p>
+        {blocked && reason ? <BlockedReason id={reasonId}>{reason}</BlockedReason> : null}
       </div>
     </dialog>
   );

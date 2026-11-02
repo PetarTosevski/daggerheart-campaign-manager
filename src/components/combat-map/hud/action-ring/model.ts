@@ -1,4 +1,6 @@
 import type { Cost } from "@/lib/domain/card-effects/types";
+import { shortfallSentence } from "@/lib/domain/combat-actions/shortfall";
+import { beforeText, refusalForCode } from "@/lib/errors/refusals";
 
 import type { HudSheetFeature } from "../sheet/model";
 import { mapUses } from "../sheet/model";
@@ -57,14 +59,29 @@ export function hopeNeeded(costs: readonly Cost[] | undefined): number {
 }
 
 /**
- * Why a feature's button is locked (board 'Can't afford': "Evolution needs 3 Hope. You have 1."), or null. Used up
- * first ("Evolution is used. Back after a long rest."), then a fixed Hope cost above what you hold. Stress, Armor and
- * other costs are left to the server (it refuses with its own reason): the ring only greys what the sheet shows.
+ * Why a feature's button is locked (board 'Can't afford': "Evolution needs 3 Hope. You have 1."), or null, in the
+ * refusal table's words (H6.1 / H6.2): used up first ("Evolution is used up for now. Back after a long rest."), then a
+ * fixed Hope cost above what you hold (`shortfallSentence`, verb "needs" as the board's ring). Stress, Armor and other
+ * costs are left to the server (it refuses with its own reason): Stress past full marks a Hit Point (CB p.106).
  */
 export function featureLock(use: Pick<RingUse, "label" | "ready" | "resetLabel">, hopeNeed: number, hope: number | null): string | null {
-  if (!use.ready) return use.resetLabel ? `${use.label} is used. ${use.resetLabel}.` : `${use.label} is used.`;
-  if (hope !== null && hopeNeed > hope) return `${use.label} needs ${hopeNeed} Hope. You have ${hope}.`;
+  if (!use.ready) {
+    const used = refusalForCode("FEATURE_EXHAUSTED", { subject: use.label }).lead;
+    return use.resetLabel ? `${used} ${use.resetLabel}.` : used;
+  }
+  if (hope !== null && hopeNeed > hope) {
+    const s = shortfallSentence({ resource: "hope", need: hopeNeed, have: hope }, { subject: use.label, verb: "needs" });
+    return s.rest ? `${s.lead} ${s.rest}` : s.lead;
+  }
   return null;
+}
+
+/**
+ * The lock of every action button while the GM holds the spotlight (H6.2, answer 1c): "The GM has the spotlight ·
+ * reactions only". Null otherwise. Sheet and More never lock (they start nothing).
+ */
+export function spotlightLock(reactionsOnly: boolean): string | null {
+  return reactionsOnly ? beforeText("SPOTLIGHT_WITH_GM") : null;
 }
 
 /** Cast's lock: a hand with no card in the loadout; null while it loads (the hand says so itself). */

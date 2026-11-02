@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 
 import { rangeCheck } from "@/lib/domain/combat-actions/distance";
 import type { Range } from "@/lib/domain/card-effects/types";
+import { shortfallLabel } from "@/lib/domain/combat-actions/shortfall";
+import { beforeText } from "@/lib/errors/refusals";
 import type { TraitId, Weapon } from "@/lib/srd/types";
 
 import type { Id } from "../../../../../convex/_generated/dataModel";
@@ -218,7 +220,7 @@ export function payLine(riders: readonly RiderOption[], data: Pick<AttackData, "
 export function attackBlocked(input: Pick<AttackInput, "weapons" | "roller">, riders: readonly RiderOption[], data: AttackData): string | null {
   if (input.weapons.length === 0) return "No weapon equipped";
   const hope = attackCosts(riders, data).totals.hope ?? 0;
-  if (hope > input.roller.hope) return `Needs ${hope} Hope · you have ${input.roller.hope}`;
+  if (hope > input.roller.hope) return shortfallLabel({ resource: "hope", need: hope, have: input.roller.hope });
   return riderProblem(riders, data.riders);
 }
 
@@ -334,6 +336,8 @@ export function attackSession(input: AttackInput, data: AttackData): PickSession
     data,
     picked: input.forced ? input.forced.targets.map((t) => t.tokenId) : input.picked.slice(-most),
     ...(input.forcedRows ? { rows: input.forcedRows } : {}),
+    // A forced attack answers the GM's move (it comes while the GM holds the spotlight): never held back by it.
+    ...(input.forced ? { followUp: true } : {}),
     extra: (ctx) => input.render(ctx, input),
   };
 }
@@ -404,6 +408,8 @@ export function minionSession({
   return {
     id: `minions:${offer.requestId}`,
     source: { kind: "attack", name: minionTitle(offer.extra) },
+    // The offer after an attack that hit: part of it, never held back by the GM's spotlight.
+    followUp: true,
     rule: { side: "enemy", max: offer.extra, range: "weapon", text: "Only Minions within your weapon’s range can be picked" },
     rows: offer.candidates.map((c) => ({ tokenId: c.tokenId, name: c.name, side: "enemy", band: bands.get(c.tokenId)?.band ?? null, reach: "in" })),
     data,
@@ -421,7 +427,7 @@ export function minionPatch(offer: MinionOffer, data: MinionData, pick: (instanc
         const n = minionPicks(offer, s.targetIds, data).length;
         return n > 0 ? `Defeat ${n}` : "Defeat";
       },
-      blocked: (s) => (minionPicks(offer, s.targetIds, data).length > offer.extra ? `Up to ${offer.extra}` : null),
+      blocked: (s) => (minionPicks(offer, s.targetIds, data).length > offer.extra ? beforeText("COMBAT_TARGET_INVALID", { max: offer.extra }) : null),
       send: async (s) => {
         await pick(minionPicks(offer, s.targetIds, data));
         return { kind: "done" };

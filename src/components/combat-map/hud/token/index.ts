@@ -5,6 +5,6 @@
  */
 export { TokenFace } from "./face";
 export type { TokenFaceProps } from "./face";
-export { useHudTokens, useOptionalHud, useTokenHope } from "./hooks";
-export { arcsOf, artOf, conditionName, hopeByToken, markedPhrase, otherFace, pcTokenFace, showsNumbers, toneOf } from "./model";
+export { refuseMove, useHudMoveLock, useHudTokens, useOptionalHud, useTokenHope } from "./hooks";
+export { arcsOf, artOf, conditionName, hopeByToken, markedPhrase, moveNoticeText, otherFace, pcTokenFace, showsNumbers, toneOf } from "./model";
 export type { HudTokenFace, TokenArcs, TokenArt, TokenCondition, TokenTone } from "./model";

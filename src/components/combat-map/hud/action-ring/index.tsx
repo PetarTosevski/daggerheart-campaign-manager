@@ -15,6 +15,7 @@ import { usePick } from "../pick";
 import { useAttackPicker } from "../pick-attack";
 import { useAreaPickState } from "../pick-area";
 import { featurePlan, useFeatureUse } from "../pick-feature";
+import { useSpotlight } from "../spotlight";
 import { useHud, type HudLayerProps } from "../state";
 import { raiseHand } from "./hand";
 import {
@@ -29,6 +30,7 @@ import {
   ringSlots,
   ringUses,
   splitRing,
+  spotlightLock,
   stepFocus,
   type RingItem,
 } from "./model";
@@ -87,6 +89,9 @@ function ActionRing({ layer, open, characterId, name, centre, size }: { layer: H
   const featureUse = useFeatureUse({ campaignId, role, map, characterId });
   const sheet = useQuery(api.combatHud.sheet, { characterId });
   const hand = useQuery(api.combatCards.hand, { campaignId, characterId });
+  // H6.2: while the GM holds the spotlight every action here waits (answer 1c); its reason is the button's lock.
+  const spotlight = useSpotlight(campaignId);
+  const spot = spotlightLock(spotlight?.reactionsOnly === true);
   const [tip, setTip] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [classic, setClassic] = useState<Classic | null>(null);
@@ -102,11 +107,11 @@ function ActionRing({ layer, open, characterId, name, centre, size }: { layer: H
     const need = plan.kind === "classic" ? 0 : hopeNeeded(plan.use.costs);
     const sessionBase = `feature:${characterId}:${u.featureId}:`;
     const on = (sessionId?.startsWith(sessionBase) ?? false) || (classic?.featureId === u.featureId && classic.useId === u.useId);
-    return { ...u, locked: featureLock(u, need, hope), on };
+    return { ...u, locked: spot ?? featureLock(u, need, hope), on };
   });
   const items = ringItems({
-    attack: { locked: attackLock(attack.ready, attack.reason), on: attack.isOpen },
-    cast: { locked: castLock(hand ? hand.loadout.length : null), on: sessionId?.startsWith(`card:${characterId}:`) ?? false },
+    attack: { locked: spot ?? attackLock(attack.ready, attack.reason), on: attack.isOpen },
+    cast: { locked: spot ?? castLock(hand ? hand.loadout.length : null), on: sessionId?.startsWith(`card:${characterId}:`) ?? false },
     sheet: { on: hud.sheet?.kind === "pc" && hud.sheet.characterId === characterId },
     features,
   });

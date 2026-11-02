@@ -233,7 +233,7 @@ describe("model", () => {
     expect(featureLock({ label: "Evolution", ready: true, resetLabel: null }, 3, 1)).toBe("Evolution needs 3 Hope. You have 1.");
     expect(featureLock({ label: "Evolution", ready: true, resetLabel: null }, 3, 3)).toBeNull();
     expect(featureLock({ label: "Evolution", ready: true, resetLabel: null }, 3, null)).toBeNull();
-    expect(featureLock({ label: "Rally", ready: false, resetLabel: "Back after a long rest" }, 0, 5)).toBe("Rally is used. Back after a long rest.");
+    expect(featureLock({ label: "Rally", ready: false, resetLabel: "Back after a long rest" }, 0, 5)).toBe("Rally is used up for now. Back after a long rest.");
     expect(hopeNeeded([{ kind: "hope", amount: { kind: "fixed", value: 2 } }, { kind: "stress", amount: { kind: "fixed", value: 1 } }] as never)).toBe(2);
     expect(attackLock(false, "No weapon equipped")).toBe("No weapon equipped");
     expect(attackLock(true, null)).toBeNull();
@@ -340,7 +340,7 @@ describe("the ring", () => {
     renderRing();
     act(() => openActionRing(MOSS_TOKEN));
     expect(ringButton("Use Evolution")).not.toHaveAttribute("aria-disabled");
-    expect(ringButton("Use Beastform")).toHaveAccessibleDescription("Beastform is used. Back after a rest.");
+    expect(ringButton("Use Beastform")).toHaveAccessibleDescription("Beastform is used up for now. Back after a rest.");
   });
 
   it("Cast raises the hand: unfolds it and focuses the first playable card's Use", () => {

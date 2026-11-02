@@ -5,7 +5,7 @@ import "./sheet.css";
 import { useMutation, useQuery } from "convex/react";
 import { useEffect, useRef, useState } from "react";
 
-import { errorMessage } from "@/lib/convex-errors";
+import { refusalFor, type Refusal } from "@/lib/errors/refusals";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../convex/_generated/api";
@@ -17,7 +17,10 @@ import { FeatureUse } from "../../drawer/use";
 import { usePlayFor } from "../../play-for";
 import type { CombatMapSummary, CombatRole } from "../../slots";
 import { Portrait } from "../banners/banner";
+import { BlockedReason, RefusalMessage, blockedReason, hudToasts, useBlocked } from "../blocked";
 import { useFeatureUse } from "../pick-feature";
+import { featurePlan } from "../pick-feature/model";
+import { usedText } from "../hand/states";
 import { pcHolds } from "../spotlight/model";
 import { useSpotlight } from "../spotlight";
 import { PartBoundary, Pips, SidePanel, StatTile, Toggle } from "../ui";
@@ -42,6 +45,7 @@ import {
   TRACKERS,
   type HudSheetData,
   type HudSheetFeature,
+  type HudSheetUse,
   type SheetCondition,
   type TrackerResource,
 } from "./model";
@@ -131,13 +135,28 @@ export function SheetPanel({ campaignId, role, map, characterId, onClose }: Shee
           Loading the sheet…
         </p>
       ) : (
-        <SheetBody campaignId={campaignId} role={role} map={map} sheet={sheet} playingFor={playFor.on} />
+        <SheetBody campaignId={campaignId} role={role} map={map} sheet={sheet} playingFor={playFor.on} spotlightWithGm={spotlight?.reactionsOnly === true} />
       )}
     </SidePanel>
   );
 }
 
-function SheetBody({ campaignId, role, map, sheet, playingFor }: { campaignId: Id<"campaigns">; role: CombatRole; map: CombatMapSummary | null; sheet: HudSheetData; playingFor: boolean }) {
+function SheetBody({
+  campaignId,
+  role,
+  map,
+  sheet,
+  playingFor,
+  spotlightWithGm,
+}: {
+  campaignId: Id<"campaigns">;
+  role: CombatRole;
+  map: CombatMapSummary | null;
+  sheet: HudSheetData;
+  playingFor: boolean;
+  /** The GM holds the spotlight (H6.2): action Uses wait, React stays (answer 1c). */
+  spotlightWithGm: boolean;
+}) {
   const rights = sheetRights(sheet.mode, playingFor);
   const note = roNote(sheet.mode, sheet.name, playingFor);
   const [using, setUsing] = useState<{ featureId: string; useId: string } | null>(null);
@@ -173,7 +192,7 @@ function SheetBody({ campaignId, role, map, sheet, playingFor }: { campaignId: I
         {sheet.features.length === 0 ? <p className="hsh-muted">No features yet.</p> : null}
         <ul className="hsh-fts">
           {sheet.features.map((f) => (
-            <FeatureRow key={f.featureId} feature={f} sheet={sheet} canUse={rights.use} onUse={(useId) => (featureUse.open({ featureId: f.featureId, useId }) === "classic" ? setUsing({ featureId: f.featureId, useId }) : setUsing(null))} />
+            <FeatureRow key={f.featureId} feature={f} sheet={sheet} canUse={rights.use} spotlightWithGm={spotlightWithGm} onUse={(useId) => (featureUse.open({ featureId: f.featureId, useId }) === "classic" ? setUsing({ featureId: f.featureId, useId }) : setUsing(null))} />
           ))}
         </ul>
         {using && rights.use ? (
@@ -242,7 +261,7 @@ function LockIcon() {
 
 /** HP / Stress / Hope / Armor: pips, "n of 6 marked", and − / + for own and GM (one `characters.adjustResource` intent a click). */
 function SheetTrackers({ sheet, edit }: { sheet: HudSheetData; edit: boolean }) {
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Refusal | null>(null);
   const adjust = useMutation(api.characters.adjustResource).withOptimisticUpdate((store, args) => {
     if (args.resource === "scars") return;
     const resource = args.resource;
@@ -255,7 +274,7 @@ function SheetTrackers({ sheet, edit }: { sheet: HudSheetData; edit: boolean }) 
   });
   function step(resource: TrackerResource, delta: -1 | 1) {
     setError(null);
-    adjust({ characterId: sheet.characterId, resource, delta }).catch((e: unknown) => setError(errorMessage(e)));
+    adjust({ characterId: sheet.characterId, resource, delta }).catch((e: unknown) => setError(refusalFor(e)));
   }
   return (
     <div className="hsh-trks" data-testid="hud-sheet-trackers">
@@ -288,46 +307,92 @@ function SheetTrackers({ sheet, edit }: { sheet: HudSheetData; edit: boolean }) 
           </div>
         );
       })}
-      {error ? (
-        <p role="alert" className="hsh-error">
-          {error}
-        </p>
-      ) : null}
+      <RefusalMessage refusal={error} className="hsh-error" />
     </div>
   );
 }
 
+/**
+ * Why one Use of a feature can't start (H6.2, CmpBlocked layer 1 in H6.1's words), or null: the GM's spotlight for an
+ * action (a reaction stays, answer 1c), then a fixed Hope cost above the sheet's Hope. Stress never locks: Stress past
+ * full marks a Hit Point (CB p.106). A spent use shows the sheet badge instead (`usedText`).
+ */
+function blockedUseOf(feature: HudSheetFeature, u: HudSheetUse, hope: number, spotlightWithGm: boolean) {
+  const plan = featurePlan(feature.featureId, u.useId);
+  const name = feature.uses && feature.uses.length > 1 ? u.name : feature.name;
+  return blockedReason({
+    kind: "feature",
+    subject: name,
+    spotlightWithGm,
+    reaction: u.activation === "reaction",
+    ...(plan.kind === "classic" ? {} : { costs: plan.use.costs, room: { hope } }),
+  });
+}
+
 /** One feature: name, text, cost / limit notes, and on the right its Use (own; GM with Play for), a locked cost (view) or its kind. */
-function FeatureRow({ feature, sheet, canUse, onUse }: { feature: HudSheetFeature; sheet: HudSheetData; canUse: boolean; onUse: (useId: string) => void }) {
+function FeatureRow({ feature, sheet, canUse, spotlightWithGm, onUse }: { feature: HudSheetFeature; sheet: HudSheetData; canUse: boolean; spotlightWithGm: boolean; onUse: (useId: string) => void }) {
   const uses = mapUses(feature);
   const d5 = d5Key(feature);
   const notes = featureNotes(feature);
   const gm = sheet.mode === "gm";
   const usable = sheet.mode !== "view" && (uses.length > 0 || d5 !== null);
   const forWhom = gm ? ` for ${sheet.name}` : "";
+  // H6.2: the refusal of a press on a blocked Use, under the row (CmpBlocked "feature disabled").
+  const [refusal, setRefusal] = useState<Refusal | null>(null);
+  const reasons = canUse ? uses.map((u) => (u.ready ? blockedUseOf(feature, u, sheet.trackers.hope.value, spotlightWithGm) : null)) : [];
+  const first = reasons.find((r) => r !== null) ?? null;
+  const why = useBlocked(first);
   return (
     <li className={cn("hsh-ft", sheet.mode === "view" && "hsh-ft-ro", feature.used && "hsh-ft-used")} data-feature={feature.featureId}>
       <div className="hsh-ft-main">
         <b>{feature.name}</b>
         <small>{feature.text}</small>
         {notes.length > 0 ? <span className="hsh-ft-notes">{notes.join(" · ")}</span> : null}
+        {why.blocked ? <BlockedReason id={why.reasonId}>{why.text}</BlockedReason> : null}
+        <RefusalMessage refusal={refusal} />
       </div>
       <div className="hsh-ft-act">
         {usable && uses.length > 0
-          ? uses.map((u) => (
-              <button
-                key={u.useId}
-                type="button"
-                className="hsh-use"
-                disabled={!canUse || !u.ready}
-                aria-label={`${u.activation === "reaction" ? "React with" : "Use"} ${uses.length > 1 ? u.name : feature.name}${forWhom}`}
-                onClick={() => onUse(u.useId)}
-              >
-                {u.activation === "reaction" ? "React" : "Use"}
-                {uses.length > 1 ? ` · ${u.name}` : ""}
-                {gm ? forWhom : ""}
-              </button>
-            ))
+          ? uses.map((u, i) => {
+              const label = `${u.activation === "reaction" ? "React with" : "Use"} ${uses.length > 1 ? u.name : feature.name}${forWhom}`;
+              if (canUse && !u.ready) {
+                // CmpBlocked "sheet badge": a spent use says when it comes back instead of a dead button.
+                return (
+                  <span key={u.useId} className="hsh-use hsh-use-ro hsh-badge" role="img" aria-label={`${label}: ${usedText(u.resetLabel ?? feature.resetLabel)}`} data-testid="hud-sheet-used">
+                    <LockIcon />
+                    {usedText(u.resetLabel ?? feature.resetLabel)}
+                  </span>
+                );
+              }
+              const blocked = reasons[i] ?? null;
+              return (
+                <button
+                  key={u.useId}
+                  type="button"
+                  className="hsh-use"
+                  disabled={!canUse}
+                  aria-disabled={blocked ? true : undefined}
+                  aria-describedby={blocked ? why.reasonId : undefined}
+                  aria-label={label}
+                  data-blocked={blocked?.code}
+                  onClick={() => {
+                    if (!blocked) {
+                      setRefusal(null);
+                      onUse(u.useId);
+                      return;
+                    }
+                    // The refusal the table words for it: under the row, or a toast where the table places it.
+                    if (blocked.refusal.place === "toast") hudToasts.refusal(blocked.refusal);
+                    else setRefusal(blocked.refusal);
+                  }}
+                >
+                  {blocked ? <LockIcon /> : null}
+                  {u.activation === "reaction" ? "React" : "Use"}
+                  {uses.length > 1 ? ` · ${u.name}` : ""}
+                  {gm ? forWhom : ""}
+                </button>
+              );
+            })
           : null}
         {usable && uses.length === 0 && d5 !== null ? <D5Use characterId={sheet.characterId} canAct={canUse} featureKey={d5} name={feature.name} /> : null}
         {!usable && sheet.mode === "view" && feature.cost && (feature.kind === "action" || feature.kind === "reaction") ? (
@@ -362,7 +427,7 @@ function SheetPrompts({ campaignId, role, map, characterId, canAct }: { campaign
 /** Answer 16a: "Hide my hand from other players" on your own sheet (`combatCards.setHandHidden`, optimistic). */
 function HideHand({ campaignId, characterId }: { campaignId: Id<"campaigns">; characterId: Id<"characters"> }) {
   const sharing = useHandSharing(campaignId);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Refusal | null>(null);
   const setHidden = useMutation(api.combatCards.setHandHidden).withOptimisticUpdate((store, { characterId: id, hidden }) => {
     const current = store.getQuery(api.combatCards.handSharing, { campaignId });
     if (current === undefined) return;
@@ -384,23 +449,19 @@ function HideHand({ campaignId, characterId }: { campaignId: Id<"campaigns">; ch
         disabled={!sharing.playersSeeHands}
         onChange={(on) => {
           setError(null);
-          setHidden({ campaignId, characterId, hidden: on }).catch((e: unknown) => setError(errorMessage(e)));
+          setHidden({ campaignId, characterId, hidden: on }).catch((e: unknown) => setError(refusalFor(e)));
         }}
         label="Hide my hand from other players"
         note={sharing.playersSeeHands ? "The GM always sees it." : "The GM keeps every hand hidden from the other players."}
       />
-      {error ? (
-        <p role="alert" className="hsh-error">
-          {error}
-        </p>
-      ) : null}
+      <RefusalMessage refusal={error} className="hsh-error" />
     </div>
   );
 }
 
 /** Conditions (with their source and how long) and lasting effects; own and GM switch conditions (`characters.toggleCondition`). */
 function SheetConditions({ sheet, edit }: { sheet: HudSheetData; edit: boolean }) {
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Refusal | null>(null);
   const toggle = useMutation(api.characters.toggleCondition).withOptimisticUpdate((store, args) => {
     const current = store.getQuery(api.combatHud.sheet, { characterId: args.characterId });
     if (current !== undefined) store.setQuery(api.combatHud.sheet, { characterId: args.characterId }, toggleConditionIn(current, args.condition));
@@ -448,7 +509,7 @@ function SheetConditions({ sheet, edit }: { sheet: HudSheetData; edit: boolean }
               aria-pressed={on.has(id)}
               onClick={() => {
                 setError(null);
-                toggle({ characterId: sheet.characterId, condition: id }).catch((e: unknown) => setError(errorMessage(e)));
+                toggle({ characterId: sheet.characterId, condition: id }).catch((e: unknown) => setError(refusalFor(e)));
               }}
             >
               {conditionName(id)}
@@ -456,11 +517,7 @@ function SheetConditions({ sheet, edit }: { sheet: HudSheetData; edit: boolean }
           ))}
         </div>
       ) : null}
-      {error ? (
-        <p role="alert" className="hsh-error">
-          {error}
-        </p>
-      ) : null}
+      <RefusalMessage refusal={error} className="hsh-error" />
     </section>
   );
 }

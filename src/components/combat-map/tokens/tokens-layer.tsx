@@ -6,7 +6,7 @@ import { designAsset } from "@/lib/design-assets";
 import { RANGE_BANDS } from "@/lib/domain/combat-map/ranges";
 
 import { toggleActionRing, useActionRing } from "../hud/action-ring/store";
-import { TokenFace, pcTokenFace, useHudTokens, useTokenHope } from "../hud/token";
+import { TokenFace, moveNoticeText, pcTokenFace, refuseMove, useHudMoveLock, useHudTokens, useTokenHope } from "../hud/token";
 import { useMapView } from "../map-view/context";
 import { MovementOverlay, useLayoutMovementGrid, type SeenMasks } from "../map-view/movement-overlay";
 import type { MapLayerProps } from "../slots";
@@ -101,6 +101,8 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
   const hud = useHudTokens(mode);
   const hope = useTokenHope(campaignId, map._id, hud !== null);
   const ring = useActionRing();
+  // H6.2 (HUD only): while the GM holds the spotlight a player's token moves are refused like actions.
+  const moveLock = useHudMoveLock(campaignId, role, hud !== null);
 
   // Movement (map-movement M1): the hatch over difficult squares the viewer can see (the GM's own view: all of them; a
   // player or the GM's preview: the squares that character sees or has explored, from the vision slot's queries, which
@@ -130,6 +132,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
     const step = KEY_STEPS[e.key];
     if (mover && step) {
       e.preventDefault();
+      if (moveLock) return refuseMove(moveLock);
       if (!selected) onSelectToken(mover._id);
       void actions.move(mover._id, mover.x + step[0], mover.y + step[1]);
       return;
@@ -160,7 +163,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
     // The map board pans on a pointer down it sees undisturbed (map-view/context.ts).
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
-    drag.current = { kind: "move", id: token._id, pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, moved: false, canMove: token.canMove, scale: screenScale(e.currentTarget, zoom) };
+    drag.current = { kind: "move", id: token._id, pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, moved: false, canMove: token.canMove && moveLock === null, scale: screenScale(e.currentTarget, zoom) };
   }
   function onTokenMove(e: ReactPointerEvent<HTMLButtonElement>) {
     const d = drag.current;
@@ -177,6 +180,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
     setPreview(null);
     onSelectToken(token._id);
     if (!d.moved) openSheet(token);
+    if (d.moved && token.canMove && moveLock) refuseMove(moveLock);
     if (!d.moved || !d.canMove) return;
     const x = Math.round(token.x + (e.clientX - d.sx) / d.scale / cell);
     const y = Math.round(token.y + (e.clientY - d.sy) / d.scale / cell);
@@ -194,6 +198,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
     const step = KEY_STEPS[e.key];
     if (!step || !token.canMove || editing) return;
     e.preventDefault();
+    if (moveLock) return refuseMove(moveLock);
     onSelectToken(token._id);
     void actions.move(token._id, token.x + step[0], token.y + step[1]);
   }
@@ -380,7 +385,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
       data-seq={notice?.seq ?? 0}
       style={noticeAt}
     >
-      {notice?.text ?? ""}
+      {notice ? (hud ? moveNoticeText(notice) : notice.text) : ""}
     </p>
     {actions.error ? (
       <p role="alert" className="cm-alert cm-tokens-error">

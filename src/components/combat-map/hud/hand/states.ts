@@ -1,6 +1,7 @@
 import { cardEffect } from "@/lib/srd/card-effects";
 
 import { limitLabel, playableUses, type HandCard } from "../../actions/hand/model";
+import { blockedReason, type Blocked } from "../blocked/reason";
 import type { TagKind } from "../ui";
 
 /**
@@ -30,6 +31,12 @@ export type CardLook = {
   showUse: boolean;
   /** Why Use is disabled, for its title. */
   reason?: string;
+  /**
+   * A known limit blocks Use (H6.2, CmpBlocked layer 1: a cost the caster can't pay, the GM's spotlight): Use stays
+   * focusable (`aria-disabled`) with the reason, and a press shows the refusal as a toast near the hand (board Main
+   * 'Can't afford').
+   */
+  blocked?: Blocked;
 };
 
 export type LookContext = {
@@ -44,6 +51,8 @@ export type LookContext = {
   playing: boolean;
   /** The roll options can't be paid ("Not enough Hope for those Experiences."): a card that rolls waits. */
   rollBlock: string | null;
+  /** The GM holds the spotlight (`combatSpotlight.state.reactionsOnly`): no card starts until it comes back (answer 1c). */
+  spotlightWithGm?: boolean;
 };
 
 const lower = (s: string) => (s.length > 0 ? s[0]!.toLowerCase() + s.slice(1) : s);
@@ -113,10 +122,16 @@ export function cardLook(card: HandCard, ctx: LookContext): CardLook {
     const reset = playable.find((u) => u.resetLabel !== null)?.resetLabel ?? null;
     return { tag: { kind: "used", text: usedText(reset) }, wash: "none", canUse: false, showUse: true, reason: "Every use of this card is spent." };
   }
+  // H6.2 (CmpBlocked layer 1, H6.1's words): the GM's spotlight first, then the Hope the caster can't pay up front.
   const need = hopeNeed(card);
-  if (ctx.hope !== null && need > ctx.hope) {
-    const text = `Needs ${need} Hope`;
-    return { tag: { kind: "no", text, lock: true }, wash: "afford", canUse: false, showUse: true, reason: `${text} · you have ${ctx.hope}` };
+  const why = blockedReason({
+    kind: "card",
+    subject: card.name,
+    spotlightWithGm: ctx.spotlightWithGm === true,
+    shortfall: ctx.hope !== null && need > ctx.hope ? [{ resource: "hope", need, have: ctx.hope }] : [],
+  });
+  if (why) {
+    return { tag: { kind: "no", text: why.tag, lock: true }, wash: "afford", canUse: false, showUse: true, reason: why.text, blocked: why };
   }
   if (ctx.rollBlock && first.rolls) return { tag: readyTag(card), wash: "none", canUse: false, showUse: true, reason: ctx.rollBlock };
   return { tag: readyTag(card), wash: "none", canUse: true, showUse: true };

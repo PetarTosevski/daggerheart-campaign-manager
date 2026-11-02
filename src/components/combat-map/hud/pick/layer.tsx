@@ -5,7 +5,7 @@ import type { CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 
 import type { HudLayerProps } from "../state";
-import { keepPicks, ringLabel, stateOf, togglePick, canToggle } from "./model";
+import { keepPicks, refusedRing, ringLabel, stateOf, togglePick, canToggle } from "./model";
 import { usePickScene } from "./scene";
 import { usePick } from "./session";
 
@@ -37,7 +37,9 @@ export function PickRings(props: HudLayerProps) {
   const primary = picked[0] ? scene.tokens.get(picked[0]) : undefined;
   // H5.2: the GM acting for an adversary: purple rings, no "GM" badge on out of range (HANDOFF "GM attack picking").
   const gm = spec.source.kind === "adversary";
-  const dim = scene.rows.filter((r) => r.reach === "los" && !picked.includes(r.tokenId)).map((r) => r.tokenId);
+  // H6.2: the target a refusal names shows the table's form on its ring (dimmed, dotted, or with the hint below).
+  const refused = refusedRing(live.refusal);
+  const dim = scene.rows.filter((r) => (r.reach === "los" && !picked.includes(r.tokenId)) || (refused?.tokenId === r.tokenId && refused.form === "dimmed")).map((r) => r.tokenId);
 
   return (
     <div className="hud-tg-layer" data-testid="hud-pick-rings">
@@ -55,7 +57,8 @@ export function PickRings(props: HudLayerProps) {
         // Your own token carries a ring only once you pick yourself (its own gold ring already marks it).
         if (!t || (row.side === "self" && st !== "picked")) return null;
         // An out-of-range pick keeps its amber ring and GM badge (hard rule 3); picked shows as the check otherwise.
-        const ring = st === "picked" && row.reach === "out" ? "out" : st;
+        const mark = refused?.tokenId === row.tokenId ? refused : null;
+        const ring = mark?.form === "dotted" ? "los" : st === "picked" && row.reach === "out" ? "out" : st;
         const c = centre(t);
         const size = t.size * step - 6 * viewport.zoom;
         const can = canToggle(row, spec.rule);
@@ -63,12 +66,13 @@ export function PickRings(props: HudLayerProps) {
         return (
           <div
             key={row.tokenId}
-            className={cn("hud-tg", gm && "hud-tg-gm", `hud-tg-${ring}`, st === "picked" && "hud-tg-on", st === "picked" && row.side !== "enemy" && "hud-tg-ally")}
+            className={cn("hud-tg", gm && "hud-tg-gm", `hud-tg-${ring}`, st === "picked" && ring !== "los" && "hud-tg-on", st === "picked" && row.side !== "enemy" && "hud-tg-ally", mark && `hud-tg-refused hud-tg-refused-${mark.form}`)}
             style={{ left: c.x, top: c.y, "--s": `${size}px` } as CSSProperties}
             data-testid="hud-pick-ring"
             data-token={row.tokenId}
             data-state={st}
             data-reach={row.reach}
+            data-refused={mark?.form}
           >
             <span className="hud-tg-ring" aria-hidden="true" />
             {label ? (
@@ -94,7 +98,11 @@ export function PickRings(props: HudLayerProps) {
                 </svg>
               </span>
             ) : null}
-            {below.has(row.tokenId) ? (
+            {mark?.form === "hint" ? (
+              <span className="hud-tg-rl hud-tg-hint" aria-hidden="true">
+                {mark.text}
+              </span>
+            ) : below.has(row.tokenId) ? (
               <span className="hud-tg-rl" aria-hidden="true">
                 {below.get(row.tokenId)}
               </span>

@@ -59,6 +59,8 @@ export function cardChainSession(env: CardChainEnv): PickSessionSpec<CardChainDa
   return {
     id: cardChainSessionId(env.characterId, env.card.cardId),
     source: { kind: "card", name: env.card.name, cardId: env.card.cardId },
+    // A link of a cast already under way: the GM's spotlight (taken by its roll, perhaps) never holds it back.
+    followUp: true,
     rule: { side: "any", max: null, range: "unlimited", min: 0, text: askText(env.asks) },
     rows: chainRows(ask.tokenIds, env.creatures, lastLink),
     ...(env.actor ? { actor: env.actor } : {}),

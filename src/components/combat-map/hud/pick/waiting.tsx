@@ -4,12 +4,13 @@ import type { OptimisticLocalStore } from "convex/browser";
 import { useMutation, useQuery } from "convex/react";
 import { useState } from "react";
 
-import { errorMessage } from "@/lib/convex-errors";
+import { refusalFor, type Refusal } from "@/lib/errors/refusals";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { useActor } from "../../actions/targets";
 import type { CombatPageState } from "../../slots";
+import { RefusalMessage, hudToasts } from "../blocked";
 import { Popup, WaitingDots } from "../ui";
 import { waitingReason, waitingUses } from "./model";
 
@@ -51,20 +52,23 @@ function PlayerWaiting({ state }: { state: CombatPageState }) {
   const cards = useQuery(api.combatCards.pending, { campaignId });
   const features = useQuery(api.combatFeatures.pending, { campaignId });
   const withdraw = useMutation(api.combatWithdraw.withdraw).withOptimisticUpdate((store, args) => dropWithdrawn(store, args.campaignId, args.requestId));
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const [errors, setErrors] = useState<Readonly<Record<string, Refusal>>>({});
   const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set());
 
   const sanctions = attacks?.flatMap((a) => (a.kind === "sanction" ? [a] : []));
   const rows = waitingUses({ attacks: sanctions, cards, features, characterId: actor?.characterId ?? null });
   if (rows.length === 0) return null;
 
-  async function onWithdraw(requestId: Id<"combatRequests">) {
+  async function onWithdraw(requestId: Id<"combatRequests">, use: string) {
     setBusy((b) => new Set(b).add(requestId));
     setErrors((e) => Object.fromEntries(Object.entries(e).filter(([id]) => id !== requestId)));
     try {
       await withdraw({ campaignId, requestId, idempotencyKey: crypto.randomUUID() });
     } catch (error) {
-      setErrors((e) => ({ ...e, [requestId]: errorMessage(error) }));
+      // H6.2: the table's words; an answered request ("Already answered") is a toast, the card goes with the refresh.
+      const refusal = refusalFor(error, { subject: use });
+      if (refusal.place === "toast") hudToasts.refusal(refusal);
+      else setErrors((e) => ({ ...e, [requestId]: refusal }));
     } finally {
       setBusy((b) => {
         const next = new Set(b);
@@ -88,7 +92,7 @@ function PlayerWaiting({ state }: { state: CombatPageState }) {
               label: "Withdraw",
               ariaLabel: `Withdraw ${w.use}`,
               disabled: busy.has(w.requestId),
-              onClick: () => void onWithdraw(w.requestId),
+              onClick: () => void onWithdraw(w.requestId, w.use),
             }}
           >
             <p>{waitingReason(w)} Nothing is rolled or paid until the GM decides.</p>
@@ -96,11 +100,7 @@ function PlayerWaiting({ state }: { state: CombatPageState }) {
               <WaitingDots />
               Asking the GM…
             </p>
-            {errors[w.requestId] ? (
-              <p role="alert" className="hud-pk-err">
-                {errors[w.requestId]}
-              </p>
-            ) : null}
+            <RefusalMessage refusal={errors[w.requestId] ?? null} />
           </Popup>
         </li>
       ))}

@@ -18,9 +18,11 @@ import { areaPickOf, formFor, LOADOUT_MAX, needsDialog, playableUses, rollOf, us
 import { CardResult, type LastCard } from "../../actions/hand/result";
 import { useRecall } from "../../actions/hand/use-card";
 import { NO_ROLL_OPTIONS, rollProblem, rollSummary, type Roller, type RollValues } from "../../actions/roll-controls";
+import { RefusalMessage, hudToasts } from "../blocked";
 import { usePick, type PickOutcome } from "../pick";
 import { useAreaPickState } from "../pick-area";
 import { askAfterRoll, hudResults, showCardResult, withAnswers } from "../result";
+import { useSpotlight } from "../spotlight";
 import {
   cardAreaAsk,
   cardAreaLine,
@@ -96,6 +98,8 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
   const hand = useQuery(api.combatCards.hand, { campaignId, characterId });
   const rests = useQuery(api.rests.current, own ? { campaignId } : "skip");
   const character = useQuery(api.characters.get, canPlay ? { characterId } : "skip");
+  // H6.2: while the GM holds the spotlight no card starts (answer 1c; reactions come up in the hit window instead).
+  const spotlight = useSpotlight(campaignId);
   const actions = useCardPlay({ campaignId, mapId, characterId });
   const recall = useRecall({ campaignId, characterId });
   const areaPick = useAreaPick();
@@ -145,7 +149,16 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
     hope: roller?.hope ?? null,
     playing: playingId === card.cardId,
     rollBlock,
+    spotlightWithGm: spotlight?.reactionsOnly === true,
   });
+
+  /** A press on a blocked Use (H6.2, board Main 'Can't afford'): the refusal as a toast near the hand. */
+  function refuse(card: HandCard): boolean {
+    const blocked = cardLook(card, ctx(card)).blocked;
+    if (!blocked) return false;
+    hudToasts.refusal(blocked.refusal);
+    return true;
+  }
 
   // ------------------------------------------------------------ playing a card (H3.1)
 
@@ -268,6 +281,7 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
    * (user answer 2026-10-23: no dialog when nothing is asked); an area of that kind asks the map for its square.
    */
   function play(card: HandCard) {
+    if (refuse(card)) return;
     actions.clearError();
     setLast(null);
     hudResults.clear();
@@ -289,7 +303,7 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
       return;
     }
     setCasting(card.cardId);
-    void actions.trySend(request).then((out) => {
+    void actions.trySend(request, { subject: card.name }).then((out) => {
       setCasting(null);
       settle(card, request, out);
     });
@@ -329,7 +343,7 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
             The card is in play…
           </p>
         ) : null}
-        {!actions.waiting && actions.error ? <p className="hud-hand-note hud-hand-err">{actions.error}</p> : null}
+        {!actions.waiting ? <RefusalMessage refusal={actions.refusal} className="hud-hand-inl" /> : null}
         {last && !actions.pending ? (
           <div className="hud-hand-note hud-hand-result" data-testid="hud-hand-result">
             <button type="button" className="hud-hand-pop-x" aria-label="Close the card result" onClick={() => setLast(null)}>
@@ -361,6 +375,7 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
                   locked={mode === "gm" && !canPlay}
                   pending={actions.pending}
                   onUse={() => play(card)}
+                  onBlocked={() => void refuse(card)}
                   onMore={(from) => openMore(card.cardId, from)}
                 />
               );
@@ -482,6 +497,7 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
           useLabel={fullCard.place === "loadout" && cardLook(fullCard, ctx(fullCard)).showUse ? "Use" : null}
           canUse={cardLook(fullCard, ctx(fullCard)).canUse && !actions.pending}
           reason={cardLook(fullCard, ctx(fullCard)).reason}
+          blocked={cardLook(fullCard, ctx(fullCard)).blocked !== undefined}
           onUse={() => play(fullCard)}
           onClose={() => {
             setFull(null);

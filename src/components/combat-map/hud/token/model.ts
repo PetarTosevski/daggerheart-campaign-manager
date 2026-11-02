@@ -1,4 +1,5 @@
 import { designAsset } from "@/lib/design-assets";
+import { refusalForCode } from "@/lib/errors/refusals";
 
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { TokenView } from "../../../../../convex/combatTokens";
@@ -55,6 +56,14 @@ export function showsNumbers(role: "gm" | "player", kind: TokenView["kind"]): bo
 /** "2 of 6 Hit Points marked" (answer 2: text says what is marked, the ring shows what is left). */
 export function markedPhrase(marked: number, max: number, noun: "Hit Points" | "Stress"): string {
   return `${marked} of ${max} ${noun} marked`;
+}
+
+/**
+ * The words of a move announcement inside the HUD (H6.2, CmpBlocked MOVE_BLOCKED: "Something blocks the way.", the
+ * token snaps back): a refused move reads the refusal table; the GM's warning keeps its own words.
+ */
+export function moveNoticeText(notice: { kind: "blocked" | "warning"; text: string }): string {
+  return notice.kind === "blocked" ? refusalForCode("MOVE_BLOCKED").lead : notice.text;
 }
 
 /** A condition id as its badge and label read it ("vulnerable" -> "Vulnerable"). */

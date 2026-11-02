@@ -2,10 +2,11 @@
 
 import { createContext, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { errorMessage } from "@/lib/convex-errors";
+import { refusalFor, type Refusal, type RefusalContext } from "@/lib/errors/refusals";
 
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { useHud } from "../state";
+import { hudToasts } from "../toasts/store";
 import { initialOptions } from "./model";
 import type { PickPatch, PickSelection, PickSessionSpec } from "./types";
 
@@ -25,8 +26,13 @@ export type PickLive = {
   picked: readonly Id<"combatTokens">[];
   options: Readonly<Record<string, boolean>>;
   sending: boolean;
-  /** The last refusal or `stay` message, under the primary. */
+  /** The last `stay` message, under the primary. */
   message: string | null;
+  /**
+   * The last refusal (H6.2, CmpBlocked layer 2: the table's words under the primary), with the target it names: its
+   * ring shows the table's before-the-click form (dimmed, dotted, or with the hint).
+   */
+  refusal: { refusal: Refusal; tokenId: Id<"combatTokens"> | null } | null;
 };
 
 export type PickApi = {
@@ -80,19 +86,19 @@ export function PickProvider({ children }: { children: ReactNode }) {
         if (active && active.spec.id !== next.id) active.spec.onCancel?.();
         if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) opener.current = document.activeElement;
         const picked = [...(next.picked ?? [])];
-        setLive({ spec: next, picked, options: initialOptions(next.options), sending: false, message: null });
+        setLive({ spec: next, picked, options: initialOptions(next.options), sending: false, message: null, refusal: null });
         setPick({ id: next.id, anchorTokenId: anchorOf(next, picked) });
       },
       cancel: () => end(true),
       finish: () => end(false),
       setPicked: (picked) => {
         if (!active) return;
-        setLive({ ...active, picked: [...picked], message: null });
+        setLive({ ...active, picked: [...picked], message: null, refusal: null });
         setPick({ id: active.spec.id, anchorTokenId: anchorOf(active.spec, picked) });
       },
       setOption: (id, on) => {
         if (!active) return;
-        setLive({ ...active, options: { ...active.options, [id]: on }, message: null });
+        setLive({ ...active, options: { ...active.options, [id]: on }, message: null, refusal: null });
       },
       update: (patch) => {
         if (!active) return;
@@ -104,7 +110,7 @@ export function PickProvider({ children }: { children: ReactNode }) {
       send: async (selection) => {
         if (!active || active.sending) return;
         const id = active.spec.id;
-        setLive({ ...active, sending: true, message: null });
+        setLive({ ...active, sending: true, message: null, refusal: null });
         try {
           const out = await active.spec.primary.send(selection);
           if (out.kind === "stay") {
@@ -116,13 +122,34 @@ export function PickProvider({ children }: { children: ReactNode }) {
           setPick(null);
           opener.current = null;
         } catch (error) {
-          setLive((now) => (now && now.spec.id === id ? { ...now, sending: false, message: errorMessage(error) } : now));
+          // H6.2: the refusal table's words, under the primary or as a toast where the table places it.
+          const ctx = refusalContext(active.spec, selection);
+          const refusal = refusalFor(error, ctx);
+          const inline = refusal.place === "inline";
+          if (!inline) hudToasts.refusal(refusal);
+          // The target the refusal names (its ring shows it); none when it is about the count.
+          const shown = inline ? { refusal, tokenId: ctx.max === undefined ? (selection.targetIds[0] ?? null) : null } : null;
+          setLive((now) => (now && now.spec.id === id ? { ...now, sending: false, refusal: shown } : now));
         }
       },
     };
   }, [active, setPick]);
 
   return <PickContext.Provider value={api}>{children}</PickContext.Provider>;
+}
+
+/**
+ * The names a refusal of this session may use: the card, feature or weapon; the first pick ("the Bandit"); the
+ * picker's maximum when the picks went past it (COMBAT_TARGET_INVALID then reads "Pick up to 2 targets.").
+ */
+export function refusalContext(spec: Pick<PickSessionSpec<unknown>, "source" | "rule">, selection: Pick<PickSelection, "targets">): RefusalContext {
+  const first = selection.targets[0];
+  const max = spec.rule.max;
+  return {
+    subject: spec.source.name,
+    ...(first && first.side !== "self" ? { target: first.name } : {}),
+    ...(max !== null && max !== undefined && selection.targets.length > max ? { max } : {}),
+  };
 }
 
 function pickKnown(options: Readonly<Record<string, boolean>>, ids: readonly string[]): Record<string, boolean> {

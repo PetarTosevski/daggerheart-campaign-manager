@@ -3,12 +3,13 @@
 import { useMutation, useQuery } from "convex/react";
 import { useState } from "react";
 
-import { errorMessage } from "@/lib/convex-errors";
+import { refusalFor, type Refusal } from "@/lib/errors/refusals";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { useActor } from "../../actions/targets";
 import type { CombatPageState } from "../../slots";
+import { RefusalMessage, hudToasts } from "../blocked";
 import { usePick, type PickContext } from "../pick";
 import { Popup, Stepper, hudButtonClass } from "../ui";
 import { bandsFrom, minionPatch, minionSession, minionTitle, targetPhrase, type MinionData, type MinionOffer } from "./model";
@@ -82,7 +83,7 @@ function MinionOffers({ state, characterId }: { state: CombatPageState; characte
     const mine = store.getQuery(api.combatRequests.mine, { campaignId });
     if (mine !== undefined) store.setQuery(api.combatRequests.mine, { campaignId }, mine.filter((r) => !(r.kind === "minionOffer" && r.entryId === args.entryId)));
   });
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const [errors, setErrors] = useState<Readonly<Record<string, Refusal | null>>>({});
   const offers = (rows ?? []).flatMap((r) => (r.kind === "minionOffer" && r.characterId === characterId ? [r] : []));
   if (offers.length === 0) return null;
 
@@ -91,11 +92,14 @@ function MinionOffers({ state, characterId }: { state: CombatPageState; characte
   };
 
   async function skip(offer: MinionOffer) {
-    setErrors((e) => ({ ...e, [offer.requestId]: "" }));
+    setErrors((e) => ({ ...e, [offer.requestId]: null }));
     try {
       await send(offer)([]);
     } catch (error) {
-      setErrors((e) => ({ ...e, [offer.requestId]: errorMessage(error) }));
+      // H6.2: the table's words under Skip, or a toast where the table places it (an offer already answered).
+      const refusal = refusalFor(error, { subject: minionTitle(offer.extra) });
+      if (refusal.place === "toast") hudToasts.refusal(refusal);
+      else setErrors((e) => ({ ...e, [offer.requestId]: refusal }));
     }
   }
 
@@ -120,11 +124,7 @@ function MinionOffers({ state, characterId }: { state: CombatPageState; characte
         }
       >
         <p>Only Minions within your weapon’s range can be picked: {offer.candidates.map((c) => c.name).join(", ")}.</p>
-        {errors[offer.requestId] ? (
-          <p role="alert" className="hud-pk-err">
-            {errors[offer.requestId]}
-          </p>
-        ) : null}
+        <RefusalMessage refusal={errors[offer.requestId] ?? null} />
       </Popup>
     </li>
   ));

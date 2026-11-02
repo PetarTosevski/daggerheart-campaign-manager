@@ -47,6 +47,20 @@
 .hud-hand-err {
   color: var(--hud-danger);
 }
+/* H6.2: a card's refusal above the fan (CmpBlocked layer 2), the board's `.inl`. */
+.hud-hand-inl {
+  pointer-events: auto;
+  margin: 0;
+}
+/* A blocked Use (H6.2): still focusable (aria-disabled) so its reason is read; greyed like a disabled one. */
+.hud-hc .cmh-use[aria-disabled="true"],
+.hud-full .cmh-use[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.hud-full-text .hud-why {
+  margin-top: 8px;
+}
 .hud-hand-result {
   position: relative;
   width: 100%;

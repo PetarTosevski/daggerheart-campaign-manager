@@ -1,4 +1,5 @@
 import type { CardUse, Cost, Gate, Step } from "@/lib/domain/card-effects/types";
+import { shortfallLabel } from "@/lib/domain/combat-actions/shortfall";
 
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { asksTriggerDamageType, swapsWithVault, withListedNumbers, type DialogRequest, type VaultPick } from "../../actions/hand/dialog";
@@ -270,7 +271,7 @@ export function blockedOf(use: CardUse, form: UseForm, data: CardPickData, selec
   if (swapsWithVault(use) && data.swapWith === "") return ctx.vault.length > 0 ? "Pick a vault card" : "No vault card to swap in";
   const need = upfront(use).get("hope") ?? 0;
   const hope = ctx.roller?.hope ?? null;
-  if (hope !== null && need > hope) return `Needs ${need} Hope · you have ${hope}`;
+  if (hope !== null && need > hope) return shortfallLabel({ resource: "hope", need, have: hope });
   return form.rolls ? rollProblem(ctx.roller, ctx.rollOptions) : null;
 }
 

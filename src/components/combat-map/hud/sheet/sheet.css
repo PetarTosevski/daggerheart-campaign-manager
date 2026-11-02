@@ -316,6 +316,23 @@
   color: #9fb2b6;
   cursor: not-allowed;
 }
+/* H6.2: a blocked Use stays focusable (aria-disabled) with its reason (board Main `.ft-x .use`, CmpBlocked `.dis`). */
+.hsh-use[aria-disabled="true"] {
+  background: #1a2327;
+  color: #7d8f96;
+  box-shadow: inset 0 0 0 1px #2c3a40;
+  cursor: not-allowed;
+}
+.hsh-use .hsh-ic {
+  width: 12px;
+  height: 12px;
+}
+.hsh-ft-main .hud-why {
+  margin-top: 4px;
+}
+.hsh-ft-main .hud-inl {
+  margin-top: 6px;
+}
 .hsh-use-ro {
   background: #1a2327;
   color: #7d8f96;
