@@ -22,6 +22,7 @@ import { operationMessages } from "./errors/operations";
 import { photoImportMessages } from "./errors/photoImport";
 import { restMessages } from "./errors/rests";
 import { sessionMessages } from "./errors/sessions";
+import { spotlightMessages } from "./errors/spotlight";
 import { spritePackMessages } from "./errors/spritePacks";
 import { trackerMessages } from "./errors/trackers";
 import { witherMessages } from "./errors/wither";
@@ -62,6 +63,7 @@ const MESSAGES = mergeMessages(
   adversaryActionMessages,
   sessionMessages,
   spritePackMessages,
+  spotlightMessages,
   noteMessages,
   lorekeeperMessages,
 );

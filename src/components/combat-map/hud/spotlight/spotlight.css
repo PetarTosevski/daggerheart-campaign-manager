@@ -1,0 +1,129 @@
+/*
+ * The spotlight (plan combat-hud H1.S). Board classes (reference/designs/combat-hud/boards/Main.dc.html `.gms`,
+ * `.gms-i`, `.gmh`, `.fb-spot`, `.bn-c`) with a `hud-spot-` prefix; colours from hud.css (--hud-fear*). Positions are
+ * the desktop board's (1440 × 900); H2.2 / H7.x move them under make-room, tablet and phone.
+ */
+
+/* The players' "The GM has the spotlight" card (Main `.gms`, left 690, top 230). */
+.hud-spot-card {
+  position: absolute;
+  left: 690px;
+  top: 230px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 420px;
+  padding: 12px 18px 12px 12px;
+  border-radius: var(--hud-r-popup);
+  background: var(--hud-fear-soft);
+  box-shadow:
+    0 0 0 1px var(--hud-fear),
+    0 0 30px rgba(143, 123, 209, 0.35),
+    0 16px 40px rgba(0, 0, 0, 0.5);
+}
+.hud-spot-card-i {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--hud-fear);
+  color: var(--hud-fear-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.hud-spot-ic {
+  width: 16px;
+  height: 16px;
+}
+.hud-spot-card b {
+  display: block;
+  font: 700 15px/1.1 var(--hud-font-display);
+  color: #efeaff;
+}
+.hud-spot-card span {
+  font: var(--hud-type-ui);
+  font-size: 12.5px;
+  color: var(--hud-fear-text);
+}
+
+/* "Reactions only until the spotlight comes back to you" (Main `.gmh`, above the hand). */
+.hud-spot-note {
+  position: absolute;
+  left: 820px;
+  bottom: 218px;
+  z-index: 60;
+  margin: 0;
+  font: 600 12.5px/1.2 var(--hud-font-ui);
+  color: var(--hud-fear-text);
+  background: rgba(19, 16, 32, 0.94);
+  box-shadow: 0 0 0 1px #5b4a8f;
+  border-radius: var(--hud-r-chip);
+  padding: 7px 14px;
+}
+.sh-open .hud-spot-note {
+  left: 560px;
+}
+
+/* The banner's " · Spotlight" (CmpTokens `.bn-c`) and the Fear banner's SPOTLIGHT (`.fb-spot`). */
+.hud-spot-bn {
+  color: #d9c9a3;
+}
+.hud-spot-fb {
+  display: inline-block;
+  margin-top: 8px;
+  font: 700 11px/1 var(--hud-font-ui);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--hud-gold-ink);
+  background: var(--hud-fear-text);
+  border-radius: var(--hud-r-chip);
+  padding: 4px 10px;
+}
+
+/* The GM's spotlight menu: under the Fear banner until H1.2 hosts it there. */
+.hud-spot-gm {
+  position: absolute;
+  right: var(--hud-edge);
+  top: 196px;
+  z-index: 55;
+  width: 260px;
+  padding: 10px 12px 12px;
+  border-radius: var(--hud-r-card);
+  background: var(--hud-glass);
+  box-shadow: 0 0 0 1px #5b4a8f;
+  color: var(--hud-ink);
+}
+.hud-spot-h {
+  margin: 0 0 6px;
+  font: var(--hud-type-label);
+  letter-spacing: var(--hud-label-tracking);
+  text-transform: uppercase;
+  color: var(--hud-fear-text);
+}
+.hud-spot-menu {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.hud-spot-line {
+  margin: 0;
+  font: var(--hud-type-ui);
+  color: var(--hud-muted);
+}
+.hud-spot-line b {
+  color: var(--hud-ink);
+  font-weight: 600;
+}
+.hud-spot-pcs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.hud-spot-err {
+  margin: 0;
+  font: var(--hud-type-ui);
+  color: var(--hud-danger);
+}
