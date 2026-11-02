@@ -1,0 +1,235 @@
+/*
+ * Party banners (plan combat-hud H1.1; HANDOFF "Banners"; Main / CmpTokens `.rod`, `.bn`, `.bn-in`, `.bn-seal`). The
+ * region (.hud-r-banners) sits at x = 24, y = 0; banners hang every 158 px from the rod (x = 24, 182, 340, 498), 146 px
+ * wide, 238 px tall (yours 270 px with the gold trim). The open character's banner drops 8 px. Only the banners take
+ * pointer events, so the map between and under them stays usable.
+ */
+.hud-r-banners > .hbn-row {
+  --hbn-step: 158px;
+  --hbn-w: 146px;
+  position: relative;
+  pointer-events: none;
+}
+.hbn-rod {
+  position: absolute;
+  left: -12px;
+  top: 6px;
+  width: calc((var(--hbn-n) - 1) * var(--hbn-step) + var(--hbn-w) + 30px);
+  height: 6px;
+  border-radius: 3px;
+  background: #8a6a2e;
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 var(--hud-gold);
+}
+.hbn-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ---------------------------------------------------------------- the banner (button.bn) */
+.hbn {
+  position: absolute;
+  top: 8px;
+  left: calc(var(--hbn-i) * var(--hbn-step));
+  display: block;
+  width: var(--hbn-w);
+  height: 238px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--hud-ink);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  pointer-events: auto;
+  filter: drop-shadow(0 10px 16px rgba(0, 0, 0, 0.55));
+  transition: transform var(--hud-t-banner) ease;
+}
+.hbn.hbn-you {
+  height: 270px;
+}
+/* The trim: the banner's outline, cut to a swallowtail point. */
+.hbn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #c9a35a;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 30px), 50% 100%, 0 calc(100% - 30px));
+}
+.hbn:hover {
+  transform: translateY(4px);
+}
+.hbn:focus-visible {
+  outline: none;
+}
+.hbn:focus-visible::before,
+.hbn.hbn-open::before {
+  background: var(--hud-gold-text);
+}
+.hbn.hbn-open {
+  transform: translateY(8px);
+}
+
+.hbn-in {
+  position: absolute;
+  inset: 0 3px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding-top: 16px;
+  background: #14262a;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 30px), 50% calc(100% - 2px), 0 calc(100% - 30px));
+}
+.hbn-you .hbn-in {
+  background: #2a2214;
+}
+
+/* The portrait (.face): teal ring for an ally, gold with a glow for you. */
+.hbn-face {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 58px;
+  overflow: hidden;
+  border: 2px solid var(--hud-ally-pc);
+  border-radius: 50%;
+  background-color: #1d2a2f;
+}
+.hbn-face-you {
+  border-color: var(--hud-gold);
+  box-shadow:
+    0 0 0 3px rgba(227, 180, 90, 0.3),
+    0 0 16px rgba(227, 180, 90, 0.45);
+}
+.hbn-initial {
+  font: 700 24px/1 var(--hud-font-display);
+  color: #c8d3d0;
+}
+
+.hbn-name {
+  font: 700 16px/1.15 var(--hud-font-display);
+  max-width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hbn-you .hbn-name {
+  color: var(--hud-gold-text);
+}
+.hbn-c {
+  margin-top: -3px;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--hud-muted);
+}
+.hbn-you .hbn-c {
+  color: #d9c9a3;
+}
+
+.hbn-rows {
+  display: grid;
+  grid-template-columns: 14px auto;
+  gap: 4px 6px;
+  align-items: center;
+  justify-items: start;
+  margin-top: 4px;
+}
+.hbn-ic {
+  width: 12px;
+  height: 12px;
+  color: var(--hud-muted);
+}
+.hbn-rows .hud-pp i {
+  width: 11px;
+  height: 7px;
+}
+.hbn-rows .hud-pp-armor i {
+  width: 9px;
+  height: 10px;
+}
+
+/* Conditions under the pips (CmpTokens 'With a condition'). */
+.hbn-cds {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px 8px;
+  max-width: 132px;
+}
+.hbn-cd {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  color: #f3a58f;
+}
+.hbn-cd .hbn-ic {
+  color: currentColor;
+}
+
+/* The Hope seal at the tip. */
+.hbn-seal {
+  position: absolute;
+  left: 50%;
+  bottom: -16px;
+  transform: translateX(-50%);
+}
+
+/* Last Hit Point (CmpTokens 'Last Hit Point'): the portrait greys; the HP pips are all marked, so none show. */
+.hbn-down .hbn-face {
+  filter: grayscale(1) brightness(0.6);
+}
+
+.hbn-loading {
+  margin: 16px 0 0;
+  padding: 6px 12px;
+  border-radius: var(--hud-r-chip);
+  background: var(--hud-glass);
+  color: var(--hud-muted);
+  font-size: 12.5px;
+}
+
+/* The interim classic sheet drawer (classic-sheet.tsx) sits in this region; its dialog takes pointer events. */
+.hbn-sheet {
+  display: contents;
+  pointer-events: auto;
+}
+
+/* Tablet (HANDOFF: banners are 108 px wide); H7.x owns the tablet and phone layouts and refines this. */
+@media (max-width: 1180px) {
+  .hud-r-banners > .hbn-row {
+    --hbn-step: 116px;
+    --hbn-w: 108px;
+  }
+  .hbn-rows .hud-pp i {
+    width: 8px;
+  }
+}
+
+/*
+ * Guard (bead filed, see TASK-HUD-H1.1.md): HudProvider puts `sh-open` on .hud-root while a sheet is open (the boards'
+ * state class), but the party sheet's sheet-ui.css, loaded with the classic sheet drawer, styles a global `.sh-open` as a
+ * green pill button (border-radius 999px, inline-flex, padding, green background), which turned the whole HUD into a
+ * circle the first time a banner opened a sheet. Undo those properties on the HUD root until the class clash is fixed
+ * where it starts (hud/state.tsx or sheet-ui.css).
+ */
+.hud-root.sh-open,
+.hud-root.sh-open:hover {
+  display: block;
+  gap: 0;
+  min-height: 520px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--hud-page);
+  box-shadow: none;
+  color: var(--hud-ink);
+  font: var(--hud-type-ui);
+  cursor: auto;
+}
