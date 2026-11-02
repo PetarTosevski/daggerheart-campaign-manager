@@ -191,3 +191,6 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - HD4 An edit grantee who isn't the GM also waits for the GM's confirm.
 - HD4 Blaze of Glory's finish step needs no second confirm (one confirm at the move).
 - Cleanup: H3.2's taller attack panel overlaps the map's Zoom out button at 1440x900 (dcm-bxp.99.32.22); the a11y check excludes it until fixed.
+- H4.2 Inactive threshold tiles show 1 / 2 / 3 HP (CB p.91); the lit tile shows the engine's own count (differs only when a feature changes it).
+- H4.2 Several open hits on one character: one window, oldest first, "n more after this".
+- H4.2 The hit line says "n damage" (the pending hit carries no damage type) and names the attacker only, no weapon; reaction cards are compact rows, not full card faces.
