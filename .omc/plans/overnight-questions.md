@@ -124,3 +124,19 @@ The user went to bed and asked: take a default on every open question; ask on re
 - S1.4 Veil of Night: placed as built, and the GM can redraw / thicken the veil by hand after it's placed (change -> bead).
 - S2.4 Bird's-Eye View: the druid picks which allies get the advantage (change -> dcm-q9wc / dcm-rao5). Unused advantage ends with the scene.
 - S2.4 Contacts Everywhere supply item: the player names the item, it lands in inventory, the GM can edit it (change -> bead).
+
+## Combat HUD 2026-11-02 (overnight run, waves 2-9)
+
+Defaults taken while the user was asleep; each is reversible. Confirm or change on return.
+
+### Wave 2
+- H1.1 Armor pips on banners show slots LEFT (as the boards draw them); text says "n of m marked". Alternative: show marked, like Stress.
+- H1.1 / H1.S The GM's banner stays one button (opens the sheet); the GM hands the spotlight back from the spotlight panel under the Fear banner, not a banner menu.
+- H1.2 GM "Dice" rolls for the selected PC token, otherwise shows a hint. Alternative: a plain GM roller, or no GM Dice.
+- H1.2 Core campaigns (no campaign time): the disc shows the light only, no "Week n · Day n" and no End day. (Same as HD1's open question 1.)
+- H1.3 Cloaked, Unconscious and Distracted have no board icon: their token badge shows the first letter for now.
+- H1.3 Clicking your own token opens your sheet until H3.4; from H3.4 it opens the action ring (the plan's answer 3b).
+- H1.S End scene does NOT clear the spotlight (it stays until the GM moves it). CB p.100 / p.107.
+- H1.S moveToGm (bead dcm-bxp.99.32.4) fires only during a running encounter, not on every action roll. CB p.149.
+- H1.S The GM playing for a PC ("Play for this character") is never refused by the spotlight rule.
+- Bug found: combat-vision.spec.ts fails on rebuild at Nautical Dawn ("Dim light" vs "Daylight"), dcm-aid9; not caused by the HUD.

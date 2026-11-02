@@ -274,6 +274,8 @@ waves:
         depends_on: [HD2]
         owns:
           - src/components/combat-map/hud/sheet/**
+          - src/components/combat-map/hud/banners/**
+          - tests/unit/hud/banners.test.tsx
           - tests/unit/hud/sheet-*.test.tsx
           - tests/e2e/hud-sheet.spec.ts
           - tests/e2e/visual/HUD-H2.1.spec.ts
@@ -294,6 +296,7 @@ waves:
           - "Own sheet holds 'Hide my hand from other players' (combatCards.setHandHidden; answer 16a)"
           - "Feature Use opens the classic FeatureUse flow until H3.3; the drawer prompts render inside the panel"
           - "SidePanel: non-modal aside '<name>'s sheet', Esc closes, focus to the heading and back to the opener"
+          - "Orchestrator 2026-11-02 (H1.1 merge note): delete hud/banners/classic-sheet.tsx and its mount in banners/index.tsx so a banner opens only the HUD panel; once H2.2 has fixed dcm-bxp.99.32.11 drop the .hud-root.sh-open reset from banners.css"
           - "axe passes with the panel open; lint, typecheck, tests pass"
       - id: H2.2
         batch: A
@@ -316,6 +319,7 @@ waves:
         acceptance:
           - "CmpTokensDesign 'Motion' (sheet 40 px + fade 280 ms ease-out, map 94 % and -125 px over 350 ms, banner hover 4 px, open banner 8 px), none under prefers-reduced-motion"
           - "viewport.toSquares, token drag and area picking stay exact while the map is shifted (unit test + e2e drag with the sheet open)"
+          - "Orchestrator 2026-11-02: fix dcm-bxp.99.32.11 - the HUD root's open-sheet class clashes with the global .sh-open button style in party/sheet-ui/sheet-ui.css; rename the HUD root classes in state.tsx / shell.css (e.g. hud-sheet-open) so the HUD never picks up .sh-open"
           - "lint, typecheck, tests pass"
       - id: H2.3
         batch: A
@@ -660,6 +664,7 @@ waves:
         owns:
           - src/components/combat-map/hud/fear/**
           - src/components/combat-map/hud/areas/**
+          - src/components/combat-map/hud/scene/**
           - convex/combatHud.ts
           - convex/lib/combatHud.ts
           - tests/convex/hud-scene-end.test.ts
