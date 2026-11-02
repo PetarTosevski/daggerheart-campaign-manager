@@ -62,6 +62,8 @@ vi.mock("@/components/combat-map/drawer/use", () => ({
     </section>
   ),
 }));
+// H3.3: Use goes through the HUD feature picker first (tests/unit/hud/area-pick.test.tsx); here it hands back to the classic flow.
+vi.mock("@/components/combat-map/hud/pick-feature", () => ({ useFeatureUse: () => ({ open: () => "classic" }) }));
 vi.mock("@/components/combat-map/drawer/prompts", () => ({
   DrawerPrompts: ({ canAct }: { canAct: boolean }) => <div data-testid="classic-prompts" data-can-act={String(canAct)} />,
 }));

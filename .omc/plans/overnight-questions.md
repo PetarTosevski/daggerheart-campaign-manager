@@ -173,3 +173,7 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - H3.1 The primary says "Cast" for spells / grimoires and "Use" for abilities.
 - H3.1 The GM's Difficulty stepper starts at 10 and must be changed once before casting, like the classic empty field.
 - H3.1 Creatures a rider names aren't greyed when out of the rider's own range (classic didn't either); the server sends such a cast to the GM.
+- H3.3 The HUD runs every automated action / reaction feature use the sheet offers (the classic drawer showed nothing for most); a reaction used without its trigger is left to the server to refuse.
+- H3.3 Circle of Power picks its square and sends a point; Shadow Stepper's point is a teleport handled as a prompt (no square picked). Confirm both readings.
+- H3.3 A rider with options or numbers on a feature roll takes its first option / minimum; switching it on confirms its situations; a rider's extra targets aren't offered on a feature roll.
+- H3.3 Keyboard: Enter places the next point; with all points down, Enter on a placed point confirms, Enter on another square moves the nearest point there.

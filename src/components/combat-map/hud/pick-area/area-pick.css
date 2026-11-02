@@ -1,0 +1,240 @@
+/*
+ * Square picking (plan combat-hud H3.3; CmpPicking 'Area · pick a square', 'Wall · two points', 'Chain links'): the
+ * board's `.xh` / `.xhc` / `.sqhi` crosshair and radius, `.wall` / `.hnd` wall and handles, `.chainl` / `.node` chain
+ * links, `.pickban` banner and `.bar` summary, on the --hud-* tokens. The map layer's SVG is in squares (viewBox), the
+ * chain's in stage pixels.
+ */
+
+/* ---------------------------------------------------------------- the map layer */
+.hud-ap-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 36;
+  cursor: crosshair;
+  touch-action: none;
+}
+.hud-ap-svg,
+.hud-ap-chain {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.hud-ap-chain {
+  z-index: 34;
+}
+.hud-ap-xh {
+  fill: rgba(143, 123, 209, 0.28);
+  stroke: #c9bdf2;
+  stroke-width: 0.06;
+  stroke-dasharray: 0.16 0.12;
+}
+.hud-ap-xh-pre {
+  fill: rgba(143, 123, 209, 0.16);
+}
+.hud-ap-xhc {
+  stroke: #efeaff;
+  stroke-width: 0.06;
+}
+.hud-ap-sq {
+  fill: rgba(227, 180, 90, 0.35);
+  stroke: var(--hud-gold);
+  stroke-width: 0.06;
+}
+.hud-ap-out .hud-ap-sq,
+.hud-ap-out .hud-ap-xh {
+  fill: rgba(232, 167, 90, 0.18);
+  stroke: var(--hud-out);
+}
+.hud-ap-wall {
+  stroke: #c9bdf2;
+  stroke-width: 0.3;
+  stroke-linecap: round;
+  opacity: 0.75;
+}
+.hud-ap-wall-pre {
+  opacity: 0.4;
+  stroke-dasharray: 0.3 0.3;
+}
+.hud-ap-hnd {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border: 3px solid #5b4a8f;
+  border-radius: 50%;
+  background: #efeaff;
+  cursor: grab;
+  touch-action: none;
+}
+.hud-ap-hnd.hud-ap-out {
+  border-color: var(--hud-out);
+}
+.hud-ap-hnd:active {
+  cursor: grabbing;
+}
+.hud-ap-chainl {
+  stroke: #8fd0ff;
+  stroke-width: 3;
+  stroke-dasharray: 2 6;
+  stroke-linecap: round;
+}
+.hud-ap-node {
+  fill: #8fd0ff;
+  stroke: #0d1417;
+  stroke-width: 2;
+}
+.hud-ap-nodet {
+  fill: #0d1417;
+  font: 700 0.36px var(--hud-font-ui);
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+.hud-ap-nodet-px {
+  font-size: 11px;
+}
+
+/* ---------------------------------------------------------------- the banner and the bar */
+.hud-ap-bar {
+  position: absolute;
+  left: 50%;
+  top: 84px;
+  z-index: 41;
+  display: flex;
+  width: min(560px, calc(100% - 32px));
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(13, 20, 23, 0.95);
+  box-shadow: 0 0 0 1px var(--hud-gold), 0 14px 34px rgba(0, 0, 0, 0.45);
+  color: var(--hud-ink);
+  font: var(--hud-type-ui);
+  transform: translateX(-50%);
+}
+.hud-ap-ban {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+.hud-ap-ban:focus-visible {
+  outline: 2px solid var(--hud-gold);
+  outline-offset: 3px;
+}
+.hud-ap-ic {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--hud-gold);
+}
+.hud-ap-prompt b {
+  color: var(--hud-gold-text);
+}
+.hud-ap-prog {
+  margin-left: auto;
+  color: var(--hud-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.hud-ap-sum {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--hud-muted);
+  font-size: 12px;
+}
+.hud-ap-sum b {
+  color: var(--hud-gold-text);
+}
+.hud-ap-f {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hud-ap-pay {
+  margin-right: auto;
+  color: var(--hud-muted);
+  font-size: 12px;
+}
+.hud-ap-why,
+.hud-ap-err {
+  margin: 0;
+  color: var(--hud-muted);
+  font-size: 12px;
+}
+.hud-ap-err {
+  color: var(--hud-danger);
+}
+.hud-ap-line {
+  flex-direction: row;
+  align-items: center;
+  font-size: 12.5px;
+}
+.hud-ap-line span {
+  flex: 1;
+}
+.hud-ap-line-err {
+  box-shadow: 0 0 0 1px var(--hud-danger);
+}
+.hud-ap-x {
+  border: 0;
+  background: none;
+  color: var(--hud-muted);
+  cursor: pointer;
+}
+.hud-sh-open .hud-ap-bar {
+  left: calc(50% - var(--hud-sheet-w) / 2);
+}
+
+/* ---------------------------------------------------------------- the feature picker's extra rows */
+.hud-pf-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.hud-pf-group > legend,
+.hud-pf-lbl {
+  padding: 0;
+  color: var(--hud-muted);
+  font-size: 11.5px;
+}
+.hud-pf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.hud-pf-chip {
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid #33444a;
+  border-radius: 999px;
+  background: #141e22;
+  color: var(--hud-ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+.hud-pf-chip[aria-pressed="true"] {
+  border-color: var(--hud-gold);
+  background: #2d2614;
+  color: var(--hud-gold-text);
+}
+.hud-pf-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+@media (max-width: 760px) {
+  .hud-ap-bar {
+    top: 64px;
+  }
+}

@@ -19,6 +19,7 @@ import { HudHand } from "./hand";
 import { HudHit } from "./hit";
 import { HudPick, HudPickLayer, PickProvider } from "./pick";
 import { HudAttack } from "./pick-attack";
+import { HudAreaPick, HudAreaPickLayer } from "./pick-area";
 import { HudQueue } from "./queue";
 import { HudResult } from "./result";
 import { HudScene } from "./scene";
@@ -94,6 +95,9 @@ function HudFrame({ state, loading, renderLayers, tools }: HudShellProps) {
                       <PartBoundary label="Target rings">
                         <HudPickLayer {...layer} />
                       </PartBoundary>
+                      <PartBoundary label="Square picking">
+                        <HudAreaPickLayer {...layer} />
+                      </PartBoundary>
                       <PartBoundary label="The action ring">
                         <HudActionRing {...layer} />
                       </PartBoundary>
@@ -157,6 +161,9 @@ function HudFrame({ state, loading, renderLayers, tools }: HudShellProps) {
           </PartBoundary>
           <PartBoundary label="The attack prompts">
             <HudAttack state={state} />
+          </PartBoundary>
+          <PartBoundary label="Square picking">
+            <HudAreaPick state={state} />
           </PartBoundary>
           <PartBoundary label="The result">
             <HudResult state={state} />

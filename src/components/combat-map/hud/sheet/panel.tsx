@@ -17,6 +17,7 @@ import { FeatureUse } from "../../drawer/use";
 import { usePlayFor } from "../../play-for";
 import type { CombatMapSummary, CombatRole } from "../../slots";
 import { Portrait } from "../banners/banner";
+import { useFeatureUse } from "../pick-feature";
 import { pcHolds } from "../spotlight/model";
 import { useSpotlight } from "../spotlight";
 import { PartBoundary, Pips, SidePanel, StatTile, Toggle } from "../ui";
@@ -140,6 +141,8 @@ function SheetBody({ campaignId, role, map, sheet, playingFor }: { campaignId: I
   const rights = sheetRights(sheet.mode, playingFor);
   const note = roNote(sheet.mode, sheet.name, playingFor);
   const [using, setUsing] = useState<{ featureId: string; useId: string } | null>(null);
+  // H3.3: Use opens the HUD's picking panel; the classic flow keeps what the HUD does not run (count, Charge).
+  const featureUse = useFeatureUse({ campaignId, role, map, characterId: sheet.characterId, canUse: rights.use });
   return (
     <div className={cn("hsh-body", !rights.edit && "hsh-ro")} data-mode={sheet.mode}>
       <div className="hsh-stats">
@@ -170,7 +173,7 @@ function SheetBody({ campaignId, role, map, sheet, playingFor }: { campaignId: I
         {sheet.features.length === 0 ? <p className="hsh-muted">No features yet.</p> : null}
         <ul className="hsh-fts">
           {sheet.features.map((f) => (
-            <FeatureRow key={f.featureId} feature={f} sheet={sheet} canUse={rights.use} onUse={(useId) => setUsing({ featureId: f.featureId, useId })} />
+            <FeatureRow key={f.featureId} feature={f} sheet={sheet} canUse={rights.use} onUse={(useId) => (featureUse.open({ featureId: f.featureId, useId }) === "classic" ? setUsing({ featureId: f.featureId, useId }) : setUsing(null))} />
           ))}
         </ul>
         {using && rights.use ? (
