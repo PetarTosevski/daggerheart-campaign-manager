@@ -1,6 +1,10 @@
-import { NotBuiltYet } from "../../shell/not-built-yet";
-import { sectionLabel } from "../../shell/sections";
+import { QueryBoundary } from "../sheet/query-boundary";
+import { PlayersBody } from "./screen";
 
 export function PlayersScreen() {
-  return <NotBuiltYet title={sectionLabel("players")} />;
+  return (
+    <QueryBoundary>
+      <PlayersBody />
+    </QueryBoundary>
+  );
 }
