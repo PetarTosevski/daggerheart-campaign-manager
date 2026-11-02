@@ -176,6 +176,8 @@ describe("the result panel's model", () => {
     expect(damageFormula({ ...DAMAGE, dice: [...DAMAGE.dice, { sides: 8, value: 2, role: "damage" }, { sides: 6, value: 3, role: "damage", dropped: true }], total: 9 })).toBe("2d8+1");
     // A critical starts from the dice's maximum (CB p.98): named after the formula.
     expect(damageFormula({ ...DAMAGE, dice: [{ sides: 8, value: 3, role: "damage" }], total: 12 }, true)).toBe("1d8+1 +8 critical");
+    // The server's shape: rollDamage folds the critical's dice maximum into the modifier (1 + 8 = 9).
+    expect(damageFormula({ ...DAMAGE, dice: [{ sides: 8, value: 3, role: "damage" }], modifier: 9, total: 12 }, true)).toBe("1d8+1 +8 critical");
     expect(gainsOf(ROLL, 0)).toEqual([{ text: "+1 Hope", tone: "hope" }]);
     expect(gainsOf({ ...ROLL, outcome: "successFear" }, 1)).toEqual([{ text: "GM +1 Fear", tone: "fear" }]);
     expect(gainsOf({ ...ROLL, outcome: "critical" }, 0).map((g) => g.text)).toEqual(["+1 Hope", "Clear a Stress"]);

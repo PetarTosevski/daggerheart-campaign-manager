@@ -105,8 +105,13 @@ export function damageFormula(roll: RollRecord, critical = false): string {
   for (const d of roll.dice) if (!d.dropped) counts.set(d.sides, (counts.get(d.sides) ?? 0) + 1);
   const dice = [...counts.entries()].map(([sides, n]) => `${n}d${sides}`).join("+");
   if (dice === "") return String(roll.total);
-  const extra = roll.total - roll.modifier - roll.dice.reduce((n, d) => n + (d.dropped ? 0 : d.value), 0);
-  const base = `${dice}${signedPart(roll.modifier).replace("−", "-")}`;
+  // The server folds a critical's dice maximum into `modifier` (rollDamage, CB p.98): split it back out so a critical
+  // reads "1d8+1 +8 critical", not "1d8+9".
+  const critMax = critical ? roll.dice.reduce((n, d) => n + (d.dropped ? 0 : d.sides), 0) : 0;
+  const folded = critMax > 0 && roll.modifier >= critMax ? critMax : 0;
+  const modifier = roll.modifier - folded;
+  const extra = roll.total - modifier - roll.dice.reduce((n, d) => n + (d.dropped ? 0 : d.value), 0);
+  const base = `${dice}${signedPart(modifier).replace("−", "-")}`;
   if (extra === 0) return base;
   return `${base} ${signedPart(extra)}${critical && extra > 0 ? " critical" : ""}`;
 }
