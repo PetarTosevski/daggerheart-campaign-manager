@@ -1,6 +1,22 @@
-import { NotBuiltYet } from "../../shell/not-built-yet";
-import { sectionLabel } from "../../shell/sections";
+import { ScrollView } from "react-native";
+
+import { useCampaign } from "../../shell/campaign-provider";
+import { QueryBoundary } from "../sheet/query-boundary";
+import { TomeBook } from "./book";
 
 export function TomeScreen() {
-  return <NotBuiltYet title={sectionLabel("tome")} />;
+  return (
+    <QueryBoundary>
+      <TomeBody />
+    </QueryBoundary>
+  );
+}
+
+function TomeBody() {
+  const campaign = useCampaign();
+  return (
+    <ScrollView keyboardShouldPersistTaps="handled">
+      <TomeBook campaign={campaign} />
+    </ScrollView>
+  );
 }
