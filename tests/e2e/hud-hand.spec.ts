@@ -7,7 +7,7 @@ import { hudScene } from "./hud/helpers";
 // Plan combat-hud H2.3 (docs/tasks/TASK-HUD-H2.3.md): with the HUD on, the hand hangs at the bottom of the map as the
 // domains tab's fan with the app's own card face and every CmpCards state around it; beside it the vault (recall),
 // Roll options and Hide cards (answer 16a: folds the viewer's own fan, local only). More opens the full card over the
-// map; Use runs the classic use flow until H3.1. The GM sees the hand of the PC whose sheet is open, locked until
+// map; Use opens the picking panel (H3.1, tests/e2e/hud-card-pick.spec.ts). The GM sees the hand of the PC whose sheet is open, locked until
 // Play-for; a player sees another PC's hand view only while its sheet is open, or why it is hidden.
 
 const hand = (page: Page) => page.getByTestId("hud-hand");
@@ -74,11 +74,11 @@ test("the HUD hand: fan states, Hide cards, Roll options, full card, Use, vault 
     await expect(full).toBeHidden();
     await expect(more).toBeFocused();
 
-    // Use with no enemy picked: the classic Use dialog asks for the target; the card is tagged as being cast meanwhile.
+    // Use with no enemy picked: the picking panel (H3.1) asks for the target; the card is tagged as being cast meanwhile.
     // The card hangs below the edge: hovering raises it whole, then its Use is in reach.
     await fanCard(player, "Vicious Entangle").hover();
     await fanCard(player, "Vicious Entangle").getByRole("button", { name: "Use Vicious Entangle" }).click();
-    const dialog = player.getByRole("dialog", { name: "Vicious Entangle" });
+    const dialog = player.getByTestId("hud-pick");
     await expect(dialog).toBeVisible();
     await expect(fanCard(player, "Vicious Entangle")).toContainText("Casting · pick a target");
     await expect(fanCard(player, "Vicious Entangle")).toHaveAttribute("data-wash", "play");

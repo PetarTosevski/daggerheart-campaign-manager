@@ -2,7 +2,7 @@
  * The HUD hand (plan combat-hud H2.3; docs/tasks/TASK-HUD-H2.3.md; board CmpCards): the states around the app's own
  * card face (tags, lift and glow, grey wash) as pure functions, and the hand itself with Convex mocked: the fan with the
  * classic face, Hide cards (local, no server call, answer 16a), Roll options, the full card view (More, Use / Close,
- * Escape), Use through the classic flow, the vault with its recall labels, the GM's locked hand, another player's hand
+ * Escape), Use opening the picking panel's session (H3.1; the panel itself: tests/unit/hud/card-pick.test.tsx), the vault with its recall labels, the GM's locked hand, another player's hand
  * view only, and a hidden hand.
  */
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
@@ -10,6 +10,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { HandCard } from "@/components/combat-map/actions/hand/model";
 import { HiddenHand, HudHandBody, type HudHandBodyProps } from "@/components/combat-map/hud/hand/body";
+import { PickProvider, usePick } from "@/components/combat-map/hud/pick";
+import { HudProvider } from "@/components/combat-map/hud/state";
 import { cardLook, experienceShort, hopeNeed, loadoutFullText, recallText, signedEdge, usedText, type LookContext } from "@/components/combat-map/hud/hand/states";
 
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -173,7 +175,21 @@ function renderHand(over: Partial<HudHandBodyProps> = {}) {
     pickedEnemies: [],
     ...over,
   };
-  return render(<HudHandBody {...props} />);
+  // H3.1: the hand opens its card's pick session, so it renders inside the shell's providers.
+  return render(
+    <HudProvider>
+      <PickProvider>
+        <HudHandBody {...props} />
+        <SessionId />
+      </PickProvider>
+    </HudProvider>,
+  );
+}
+
+/** The open pick session's id (H3.1: Use opens one). */
+function SessionId() {
+  const pick = usePick();
+  return <span data-testid="session">{pick.session?.spec.id ?? "none"}</span>;
 }
 
 const fanCards = () => screen.getAllByTestId("hud-hand-card");
@@ -252,29 +268,20 @@ describe("the HUD hand", () => {
     expect(document.activeElement).toBe(more);
   });
 
-  it("Use runs the classic flow: with an enemy picked a one-enemy card fires at once with the roll options; without one the Use dialog opens", async () => {
+  it("Use opens the card's pick session (H3.1) with the enemy picked on the map; the card is tagged as being cast", () => {
     const BOLT = card("bolt-beacon", "Bolt Beacon", { domain: "splendor" });
-    setHand([BOLT]);
+    setHand([BOLT, ENTANGLE]);
     setCharacter(2);
-    results["combatCards:useCard"] = [{ status: "pending", outOfRange: [] }];
-    const { unmount } = renderHand({ pickedEnemies: [BANDIT] });
-    fireEvent.click(screen.getByRole("button", { name: "Roll options" }));
-    fireEvent.click(within(screen.getByTestId("hud-hand-rolls")).getByRole("button", { name: "More advantage" }));
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Use Bolt Beacon" }));
-    });
-    expect(calls.map((c) => c.name)).toEqual(["combatCards:useCard"]);
-    expect(calls[0]!.args).toMatchObject({ cardId: "bolt-beacon", spell: "main", targetTokenIds: [BANDIT], choices: [], roll: { advantage: 1 } });
-    unmount();
-
-    calls.length = 0;
-    setHand([ENTANGLE]);
-    renderHand();
-    fireEvent.click(screen.getByRole("button", { name: "Use Vicious Entangle" }));
+    renderHand({ pickedEnemies: [BANDIT] });
+    fireEvent.click(screen.getByRole("button", { name: "Use Bolt Beacon" }));
     expect(calls).toEqual([]);
-    expect(screen.getByRole("dialog", { name: "Vicious Entangle" })).toBeTruthy();
-    expect(within(fanCard("Vicious Entangle")).getByText("Casting · pick a target")).toBeTruthy();
-    expect(fanCard("Vicious Entangle").dataset.wash).toBe("play");
+    expect(screen.getByTestId("session").textContent).toBe(`card:${MOSS}:bolt-beacon`);
+    expect(within(fanCard("Bolt Beacon")).getByText("Casting · pick a target")).toBeTruthy();
+    expect(fanCard("Bolt Beacon").dataset.wash).toBe("play");
+    // Another card's Use replaces the session; the first card lowers.
+    fireEvent.click(screen.getByRole("button", { name: "Use Vicious Entangle" }));
+    expect(screen.getByTestId("session").textContent).toBe(`card:${MOSS}:vicious-entangle`);
+    expect(within(fanCard("Bolt Beacon")).queryByText("Casting · pick a target")).toBeNull();
   });
 
   it("the vault: Recall · 1 Stress in combat (moveCard), Loadout full · 5 of 5 disabled", async () => {

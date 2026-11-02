@@ -168,3 +168,8 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - H3.2 The footer's Hope check counts riders' Hope costs too, so the primary greys out earlier (the server refuses a short payment anyway).
 - H3.2 Advantage and Help are steppers (counts), not the board's named-helper chips: the engine takes a Help die count only.
 - H3.2 The after-roll hold and Death Strike prompts stay in Map tools for now.
+- H3.1 With an enemy already picked on the map, a one-enemy card opens the panel with the enemy pre-picked (Main board) instead of firing at once (the classic answer of 2026-10-23). One extra click.
+- H3.1 The footer adds "if it hits" for hit-gated costs; Hope a rider spends after the roll isn't blocked in advance (CB p.90: the roll's own Hope can pay it).
+- H3.1 The primary says "Cast" for spells / grimoires and "Use" for abilities.
+- H3.1 The GM's Difficulty stepper starts at 10 and must be changed once before casting, like the classic empty field.
+- H3.1 Creatures a rider names aren't greyed when out of the rider's own range (classic didn't either); the server sends such a cast to the GM.

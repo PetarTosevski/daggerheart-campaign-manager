@@ -165,13 +165,13 @@ function Check({ label, checked, onChange }: { label: string; checked: boolean; 
 }
 
 /** E3 (dcm-uyc): the values a `NumberChoice` lists, or null. */
-function listedValues(use: CardUse, id: string): readonly number[] | null {
+export function listedValues(use: CardUse, id: string): readonly number[] | null {
   const values = use.choices?.find((c) => c.id === id)?.values;
   return values && values.length > 0 ? values : null;
 }
 
 /** E3 (dcm-uyc): a listed number starts at its first listed value at or above its minimum (the runner's default). */
-function withListedNumbers(use: CardUse, values: FormValues): FormValues {
+export function withListedNumbers(use: CardUse, values: FormValues): FormValues {
   const numbers = { ...values.numbers };
   for (const c of use.choices ?? []) {
     const listed = listedValues(use, c.id);
@@ -181,7 +181,7 @@ function withListedNumbers(use: CardUse, values: FormValues): FormValues {
 }
 
 /** E3 (dcm-40m): the choose step (by id) whose pick this one must not repeat, at any depth of the use's steps. */
-function distinctFromOf(use: CardUse, stepId: string): string | undefined {
+export function distinctFromOf(use: CardUse, stepId: string): string | undefined {
   const find = (steps: readonly Step[]): string | undefined => {
     for (const step of steps) {
       if (step.kind === "choose") {
