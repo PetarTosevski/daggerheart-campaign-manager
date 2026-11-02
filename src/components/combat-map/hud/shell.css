@@ -1,0 +1,140 @@
+/*
+ * Combat HUD shell (plan combat-hud H0; HANDOFF "Layout"): a full-bleed map, the HUD regions over it, and the left
+ * tools drawer. Region positions are the desktop board's (1440 × 900); H2.2 adds the make-room transform under
+ * .sh-open, H7.x the tablet and phone layouts. The overlay never takes pointer events itself, only its parts do, so
+ * the map under the empty parts of a region stays usable.
+ */
+.hud-root {
+  position: relative;
+  width: 100%;
+  height: 100dvh;
+  min-height: 520px;
+  overflow: hidden;
+  background: var(--hud-page);
+}
+
+/* ---------------------------------------------------------------- the map, full bleed */
+.hud-map {
+  position: absolute;
+  inset: 0;
+}
+.hud-map > .cm-board,
+.hud-map .cm-board {
+  position: relative;
+  height: 100%;
+  gap: 0;
+}
+.hud-map .cm-vp {
+  flex: 1;
+  height: 100%;
+  max-height: none;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+}
+/*
+ * The map's own toolbar (name, LIVE, Names, circles, zoom) floats under the title until H1.2's toolbar takes its
+ * buttons over.
+ */
+.hud-map .cm-toolbar {
+  position: absolute;
+  z-index: 20;
+  top: 128px;
+  left: 690px;
+  max-width: calc(100% - 690px - 300px);
+  padding: 6px 10px;
+  border-radius: var(--hud-r-panel);
+  background: var(--hud-glass);
+  box-shadow: 0 0 0 1px var(--hud-line);
+}
+.hud-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  color: var(--hud-muted);
+}
+
+/* ---------------------------------------------------------------- the overlay and its regions */
+.hud-over {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+}
+.hud-region {
+  position: absolute;
+  pointer-events: none;
+}
+.hud-region > * {
+  pointer-events: auto;
+}
+.hud-r-banners {
+  left: var(--hud-edge);
+  top: 0;
+}
+.hud-r-scene {
+  left: 690px;
+  top: 18px;
+}
+.hud-r-fear {
+  right: var(--hud-edge);
+  top: 0;
+}
+.hud-r-left {
+  left: 16px;
+  bottom: 16px;
+  width: 330px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.hud-r-hand {
+  left: 330px;
+  right: var(--hud-edge);
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.hud-r-pop {
+  inset: 0;
+}
+.hud-r-panel {
+  top: 0;
+  right: 0;
+  bottom: 0;
+}
+
+/* The toolbar the scene region shows until H1.2 builds the title and the GM toolbar. */
+.hud-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+@media (max-width: 1180px) {
+  .hud-r-scene {
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  .hud-map .cm-toolbar {
+    top: 76px;
+    left: 50%;
+    max-width: calc(100% - 32px);
+    transform: translateX(-50%);
+  }
+}
+@media (max-width: 760px) {
+  .hud-r-scene {
+    top: 8px;
+  }
+  .hud-r-left {
+    width: auto;
+    right: 16px;
+  }
+}
