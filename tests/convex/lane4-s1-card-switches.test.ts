@@ -273,6 +273,7 @@ describe("S1.4: payers and the trigger's damage type reach the card run (cardRun
     const ward = () => a.use("rune-ward", { spell: "ally", targetTokenIds: [a.bryn], choices: [{ id: "triggerSubject", value: a.bryn }] });
     await expect(ward().catch(errorCode)).resolves.toBe("CARD_COST_UNPAID");
     await a.editOf(a.w.characterB, { hope: 2 });
+    serverDice(3); // the Ward Die: an 8 would end the ward's power (CB p.328) and add its reminders
     const r = resolved(await ward());
     expect(reminders(r)).toEqual([]);
     expect((await a.sheetOf(a.w.characterB)).hope).toBe(1);

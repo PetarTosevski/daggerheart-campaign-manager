@@ -389,9 +389,11 @@ describe("rate limits (per email, anonymous callers)", () => {
   });
 
   it("the global sign-up bucket stops a flood across many addresses", async () => {
+    // The bucket refills one slot every 12 s (300/hour); a frozen clock keeps a slow loop (a loaded host) from refilling it.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-26T12:00:00Z"));
     const t = makeTest();
     let limited = 0;
-    // The bucket refills one slot every 12 s (300/hour); this loop can take that long, so allow a refill or two.
     for (let i = 0; i < 70 && limited === 0; i += 1) {
       const error = await caught(signUp(t, `flood${i}@example.com`));
       if (error !== undefined) {
@@ -399,8 +401,7 @@ describe("rate limits (per email, anonymous callers)", () => {
         limited = i + 1;
       }
     }
-    expect(limited).toBeGreaterThanOrEqual(61);
-    expect(limited).toBeLessThanOrEqual(63);
+    expect(limited).toBe(61);
   }, 120_000);
 });
 

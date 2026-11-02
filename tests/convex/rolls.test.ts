@@ -151,15 +151,29 @@ describe("rolls: rules", () => {
 
   it("a server roll applies its own outcome", async () => {
     const { p1, a, sheetOf, fear } = await setup();
-    const hope = (await sheetOf(a)).hope;
-    const { roll, fearGained } = await p1.mutation(api.rolls.actionRoll, { characterId: a, ...agility, difficulty: 10, idempotencyKey: key() });
-    expect(roll.manual).toBe(false);
-    const [h, f] = roll.dice;
-    expect(roll.total).toBe(h!.value + f!.value + 2);
-    const withFear = h!.value < f!.value;
-    expect(fearGained).toBe(withFear ? 1 : 0);
-    expect(await fear()).toBe(withFear ? 1 : 0);
-    expect((await sheetOf(a)).hope).toBe(withFear ? hope : hope + 1);
+    // Fixed, unequal Duality Dice (Hope then Fear): matching dice are a critical, which this check does not cover.
+    for (const faces of [[3, 8], [8, 3]]) {
+      const queue = [...faces];
+      const real = globalThis.crypto.getRandomValues.bind(globalThis.crypto);
+      vi.spyOn(globalThis.crypto, "getRandomValues").mockImplementation(<T extends ArrayBufferView | null>(buf: T): T => {
+        const next = queue.shift();
+        if (next === undefined) return real(buf as never) as T;
+        (buf as unknown as Uint32Array)[0] = next - 1;
+        return buf;
+      });
+      const hope = (await sheetOf(a)).hope;
+      const fearBefore = await fear();
+      const { roll, fearGained } = await p1.mutation(api.rolls.actionRoll, { characterId: a, ...agility, difficulty: 10, idempotencyKey: key() });
+      vi.restoreAllMocks();
+      expect(roll.manual).toBe(false);
+      const [h, f] = roll.dice;
+      expect([h!.value, f!.value]).toEqual(faces);
+      expect(roll.total).toBe(h!.value + f!.value + 2);
+      const withFear = h!.value < f!.value;
+      expect(fearGained).toBe(withFear ? 1 : 0);
+      expect(await fear()).toBe(fearBefore + (withFear ? 1 : 0));
+      expect((await sheetOf(a)).hope).toBe(withFear ? hope : hope + 1);
+    }
   });
 
   it("a reaction roll gives no Fear or Hope, and allows no help", async () => {
