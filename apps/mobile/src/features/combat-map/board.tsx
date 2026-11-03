@@ -81,7 +81,7 @@ export function CombatBoard({
       <Text accessibilityRole="header" style={styles.title}>
         {layout.name}
       </Text>
-      <Text style={styles.hint}>{player ? "Pinch to zoom and drag to pan." : "Pinch to zoom and drag to pan. GM tools arrive in a later release."}</Text>
+      <Text style={styles.hint}>Pinch to zoom and drag to pan.</Text>
       <View style={styles.toolbar}>
         <Button onPress={() => panZoom.zoomAt(panZoom.view.z / 1.25)} variant="outline">
           Zoom out
