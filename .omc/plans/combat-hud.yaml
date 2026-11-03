@@ -836,7 +836,7 @@ waves:
           - src/app/(gm)/campaigns/[campaignId]/combat-map/combat-map.css
           - src/components/combat-map/slots.ts
           - src/components/combat-map/hud/flag.ts
-          - src/components/combat-map/hud/index.ts
+          - src/components/combat-map/hud/index.tsx
           - src/components/combat-map/hud/token/hooks.ts
           - src/components/combat-map/hud/shell.tsx
           - src/components/combat-map/hud/tools/**
@@ -902,6 +902,20 @@ waves:
           - tests/e2e/hud/helpers.ts
           - tests/unit/hud/h0-state.test.tsx
           - tests/e2e/hud-shell.spec.ts
+          - tests/e2e/a11y-play.spec.ts
+          - tests/e2e/combat-light-uploaded.spec.ts
+          - tests/e2e/combat-map-edit.spec.ts
+          - tests/e2e/combat-map-generate.spec.ts
+          - tests/e2e/combat-maps.spec.ts
+          - tests/e2e/combat-movement.spec.ts
+          - tests/e2e/encounter-actions.spec.ts
+          - tests/e2e/hud-card-pick.spec.ts
+          - tests/e2e/hud-pick.spec.ts
+          - tests/e2e/session-encounter.spec.ts
+          - tests/e2e/sessions-flow.spec.ts
+          - tests/e2e/sprite-edit.spec.ts
+          - tests/e2e/sprite-packs-flow.spec.ts
+          - tests/e2e/sprite-style.spec.ts
           - docs/tasks/TASK-HUD-H8.1.md
         reads:
           - src/components/combat-map/hud/**
