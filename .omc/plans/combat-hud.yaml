@@ -1116,6 +1116,7 @@ waves:
         questions: [Q7, Q8, Q11]
         depends_on: [H9.0, H9.S]
         owns:
+          - tests/unit/hud/spotlight.test.tsx
           - src/components/combat-map/hud/spotlight/**
           - src/components/combat-map/hud/fear/**
           - src/components/combat-map/hud/banners/**
