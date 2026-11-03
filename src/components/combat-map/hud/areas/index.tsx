@@ -234,7 +234,7 @@ function AreasBody({ campaignId, mapId }: { campaignId: Id<"campaigns">; mapId: 
               </button>
               <button
                 type="button"
-                className={hudButtonClass()}
+                className={hudButtonClass("danger")}
                 aria-label={`Remove ${a.label}`}
                 onClick={() => {
                   setError(null);

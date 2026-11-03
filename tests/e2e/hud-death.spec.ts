@@ -63,6 +63,8 @@ test("last Hit Point: the player chooses, the GM confirms, both see the outcome;
     await player.screenshot({ path: `${OUT}/waiting-1440.png`, animations: "disabled" });
 
     // The GM's popup; the dice roll only now.
+    // Wave 10 (H9.2): the confirm is a card in the GM's queue, behind "Waiting on you" (closed by default).
+    await gm.getByRole("button", { name: /^Waiting on you/ }).click();
     const confirm = gm.getByRole("dialog", { name: "Death move to confirm" });
     await expect(confirm).toBeVisible({ timeout: 30_000 });
     await expect(confirm).toContainText("Moss chose Avoid Death");
@@ -105,6 +107,8 @@ test("Send it back: the player chooses again; Take it back withdraws a pick befo
     await expect(waiting).toBeVisible();
 
     // Take it back: the choice is open again and the GM's popup goes.
+    // Wave 10 (H9.2): the confirm is a card in the GM's queue, behind "Waiting on you" (closed by default).
+    await gm.getByRole("button", { name: /^Waiting on you/ }).click();
     const confirm = gm.getByRole("dialog", { name: "Death move to confirm" });
     await expect(confirm).toBeVisible({ timeout: 30_000 });
     await waiting.getByRole("button", { name: "Take it back" }).click();

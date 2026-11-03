@@ -51,7 +51,7 @@ export function MapToolsButton({ role, variant = "glass" }: { role: CombatRole; 
   return (
     <button
       type="button"
-      className={cn(hudButtonClass(), "hud-glass-btn")}
+      className={cn(hudButtonClass("tool"), "hud-glass-btn")}
       aria-expanded={toolsOpen}
       aria-controls="hud-tools"
       onClick={() => setToolsOpen(!toolsOpen)}

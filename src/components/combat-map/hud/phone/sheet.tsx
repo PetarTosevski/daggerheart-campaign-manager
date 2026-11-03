@@ -125,7 +125,7 @@ function Resources({ member }: { member: HudPartyMember }) {
           </li>
         ))}
       </ul>
-      <button type="button" className={cn(hudButtonClass(), "hud-ph-sheet-btn")} aria-pressed={sameSheet(sheet, target)} data-testid="hud-phone-sheet-button" onClick={() => toggleSheet(target)}>
+      <button type="button" className={cn(hudButtonClass("tool"), "hud-ph-sheet-btn")} aria-pressed={sameSheet(sheet, target)} data-testid="hud-phone-sheet-button" onClick={() => toggleSheet(target)}>
         <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
           <rect x="3" y="1.5" width="10" height="13" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
           <path d="M5.5 5h5M5.5 8h5M5.5 11h3" stroke="currentColor" strokeWidth="1.3" />

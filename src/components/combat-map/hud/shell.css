@@ -185,6 +185,17 @@
   left: 330px;
   right: calc(var(--hud-sheet-w) + var(--hud-edge));
 }
+/*
+ * The GM's dock (z 70) lies over the bottom of the hand a PC's sheet brings up: the card the pointer or the focus is on
+ * comes above it, so its raised face and Use stay reachable (H9.6).
+ */
+.hud-r-hand:has(.hud-hc:hover, .hud-hc:focus-within) {
+  z-index: 71;
+}
+/* GMDesktop `.fanside` (margin-bottom 98): the GM's Roll options and Hide cards beside that hand sit above the dock. */
+.hud-root[data-role="gm"] .hud-fanside {
+  margin-bottom: 98px;
+}
 .hud-sh-open .hud-r-pop {
   right: var(--hud-sheet-w);
 }
@@ -209,24 +220,21 @@
   max-width: 330px;
 }
 
-/* GMDesktop: the title and the GM tools hide (hidden, not only transparent, so the keyboard cannot reach them). */
-.hud-root.hud-sh-open .hud-scene-gm .hud-title,
-.hud-root.hud-sh-open .hud-scene-gm .hud-tr {
+/* GMDesktop: the title hides (hidden, not only transparent, so the keyboard cannot reach it). */
+.hud-root.hud-sh-open .hud-scene-gm .hud-title {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
 }
 /* The parts that hide fade out first and only then turn hidden; they turn visible at once and fade in. */
 .hud-root .hud-sun,
-.hud-root .hud-scene-gm .hud-title,
-.hud-root .hud-scene-gm .hud-tr {
+.hud-root .hud-scene-gm .hud-title {
   transition:
     opacity var(--hud-t-fast),
     visibility 0s linear 0s;
 }
 .hud-root.hud-sh-open .hud-sun,
-.hud-root.hud-sh-open .hud-scene-gm .hud-title,
-.hud-root.hud-sh-open .hud-scene-gm .hud-tr {
+.hud-root.hud-sh-open .hud-scene-gm .hud-title {
   transition:
     opacity var(--hud-t-fast),
     visibility 0s linear var(--hud-t-fast);

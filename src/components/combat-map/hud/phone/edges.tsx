@@ -64,16 +64,34 @@ export function panTo(tokenId: string): void {
   vp.scrollBy({ left: r.left + r.width / 2 - (view.left + view.right) / 2, top: r.top + r.height / 2 - (view.top + view.bottom) / 2 });
 }
 
+/**
+ * The highest a chip may sit on each edge (client coordinates): under the spotlight disc and its pill on the right
+ * (PlayerPhone moved the chip from top 150 to 226 to clear `.mspot`) and under "Your character" and the map controls
+ * on the left.
+ */
+function edgeTops(root: HTMLElement, view: Rect): Record<EdgeSide, number> {
+  const below = (selector: string) => {
+    const el = root.querySelector(selector);
+    const r = el?.getBoundingClientRect();
+    return r && r.height > 0 ? Math.max(view.top, r.bottom + 6) : view.top;
+  };
+  return { right: below('[data-testid="hud-phone-spotlight"]'), left: below(".hud-ph-tools") };
+}
+
 function measure(root: HTMLElement | null): string {
   if (!root) return "";
   const view = visibleMap(root);
   if (!view) return "";
   const top = root.getBoundingClientRect().top;
+  const tops = edgeTops(root, view);
   const chips: Chip[] = [];
   for (const ring of root.querySelectorAll<HTMLElement>('.hud-map [data-testid="hud-pick-ring"][data-token]')) {
     const r = ring.getBoundingClientRect();
     const place = edgePlace({ x: r.left + r.width / 2, y: r.top + r.height / 2 }, view, CHIP_H);
-    if (place) chips.push({ id: ring.dataset.token!, side: place.side, arrow: place.arrow, y: place.y - top });
+    if (place) {
+      const y = Math.min(Math.max(place.y, tops[place.side]), Math.max(tops[place.side], view.bottom - CHIP_H - 4));
+      chips.push({ id: ring.dataset.token!, side: place.side, arrow: place.arrow, y: Math.round(y - top) });
+    }
   }
   return JSON.stringify(stackChips(chips, CHIP_H));
 }

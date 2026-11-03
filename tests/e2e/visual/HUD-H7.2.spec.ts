@@ -56,7 +56,8 @@ test("HUD-H7.2 the phone shell at 390 × 844", { tag: "@visual" }, async ({ brow
     await expect(player.getByTestId("hud-phone-edge").first()).toBeVisible();
     await player.waitForTimeout(400);
     await shot(player, "player-picking-edge-chips");
-    await player.getByRole("button", { name: "Cancel Vicious Entangle" }).click();
+    // At 760 px and below the picker's footer Cancel replaces the header's ✕ (H7.3).
+    await player.getByTestId("hud-pick").getByTestId("hud-pick-cancel").click();
 
     await open(gm, s.url);
     await expect(gm.getByTestId("hud-phone-queue")).toBeVisible();

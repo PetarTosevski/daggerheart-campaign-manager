@@ -201,7 +201,7 @@ test("Measure: the GM and a player each see the range band on their own screen",
   }
 });
 
-test("tablet and sheet open: icons only, dock at left 342 / 640; axe at 1024 x 768", async ({ browser }) => {
+test("tablet and sheet open: icons only, dock at left 402 / 640; axe at 1024 x 768", async ({ browser }) => {
   test.setTimeout(300_000);
   const s = await hudScene(browser);
   const { gm, player } = s;
@@ -230,7 +230,9 @@ test("tablet and sheet open: icons only, dock at left 342 / 640; axe at 1024 x 7
     await gm.getByRole("dialog", { name: "Dice" }).press("Escape");
     await gm.getByRole("list", { name: "The party" }).getByRole("button", { name: /^Open Moss/ }).click();
     await expect(hud).toHaveClass(/hud-sh-open/);
-    await expect.poll(async () => Math.round((await boxIn(hud, dock)).centre)).toBe(342);
+    // H9.6: the dock is wider than the 684 px the panel leaves, so it wraps between "Waiting on you" (x = 12-112) and
+    // the panel, centred on x = 402 (was 342, where it ran off the left edge and under the panel).
+    await expect.poll(async () => Math.round((await boxIn(hud, dock)).centre)).toBe(402);
 
     // A player has no dock: their map controls (Measure, Names, zoom) sit in their title row.
     await openHud(player, s.url, TABLET);

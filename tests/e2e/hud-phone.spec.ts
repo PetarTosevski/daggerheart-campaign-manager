@@ -1,12 +1,15 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { expectNoSeriousA11yViolations } from "./a11y";
+import { expectFitsViewport, expectNoSeriousA11yViolations, expectTouchTargets } from "./a11y";
 import { hudScene } from "./hud/helpers";
 
 // Plan combat-hud H7.2 (docs/tasks/TASK-HUD-H7.2.md): at 390 px (board PlayerPhone; HANDOFF "Phone (390)") the player
 // gets the mini banner strip with Fear across the top, the bottom sheet with the resource line, Sheet and the tabs
 // Hand / Attack / Dice / Feed (each the HUD's own part), edge chips for off-screen targets during a pick and a
-// full-screen sheet; the GM keeps the tablet layout with the request queue as a bottom sheet (answer 13a).
+// full-screen sheet; the GM keeps the tablet layout with the request queue as a bottom sheet (answer 13a). Wave 10
+// (H9.6): the spotlight disc hangs under the strip on the right, so "Your character" and the map controls sit on the
+// left and the edge chips stay below the disc; the GM's phone has the scene's name under the banners, both discs under
+// the Fear banner, and the dock (two rows of icons) above the folded queue sheet. Every control is 44 px.
 
 const PHONE = { width: 390, height: 844 };
 
@@ -41,6 +44,16 @@ test("the player at 390: strip with Fear, bottom sheet with resources and tabs, 
     const stripBox = (await strip.boundingBox())!;
     expect(Math.round(stripBox.width)).toBe(390);
     expect(Math.round(stripBox.height)).toBe(104);
+    // The spotlight disc under the strip on the right (PlayerPhone `.mspot`); the tools under the strip on the left,
+    // clear of it.
+    const spot = (await player.getByTestId("hud-phone-spotlight").boundingBox())!;
+    expect(Math.round(390 - (spot.x + spot.width))).toBeLessThanOrEqual(12);
+    const tools = player.getByRole("group", { name: "Your tools" });
+    const toolsBox = (await tools.boundingBox())!;
+    expect(Math.round(toolsBox.x)).toBe(8);
+    expect(toolsBox.y).toBeGreaterThanOrEqual(stripBox.y + stripBox.height);
+    expect(toolsBox.x + toolsBox.width).toBeLessThan(spot.x);
+    await expectTouchTargets(tools.getByRole("button"));
 
     // The bottom sheet starts folded: resources (read as marked), Sheet and the tabs; the map above stays reachable.
     const bs = sheet(player);
@@ -53,6 +66,9 @@ test("the player at 390: strip with Fear, bottom sheet with resources and tabs, 
     const tabs = bs.getByRole("tablist", { name: "Combat actions" });
     await expect(tabs.getByRole("tab")).toHaveText(["Hand", "Attack", "Dice", "Feed"]);
     expect((await bs.boundingBox())!.height).toBeLessThan(260);
+    await expectTouchTargets(bs.getByRole("button"));
+    await expectTouchTargets(tabs.getByRole("tab"));
+    await expectFitsViewport(player);
     await expectNoSeriousA11yViolations(player);
 
     // Hand opens the 'Hand tab' (PlayerPhone): the hand's cards in a row.
@@ -123,6 +139,12 @@ test("the player at 390: strip with Fear, bottom sheet with resources and tabs, 
     const chip = player.locator(`[data-testid="hud-phone-edge"][data-token="${enemies.sniper.tokenId}"]`);
     await expect(chip).toBeVisible();
     await expect(chip).toHaveText(new RegExp(`^${enemies.sniper.name} · Very Far · GM [→←↑↓]$`));
+    // Chips stay below the spotlight disc on the right and below the tools on the left (PlayerPhone: top 150 → 226).
+    for (const one of await player.getByTestId("hud-phone-edge").all()) {
+      const box = (await one.boundingBox())!;
+      const right = box.x + box.width > 195;
+      expect(box.y).toBeGreaterThanOrEqual(right ? spot.y + spot.height : toolsBox.y + toolsBox.height);
+    }
     await test.info().attach("player-edge-chips-390", { body: await player.screenshot(), contentType: "image/png" });
     await expectNoSeriousA11yViolations(player);
     // A tap on the chip pans the map so the Sniper comes into view (user answer 2026-11-02): its chip goes, its ring shows.
@@ -139,7 +161,7 @@ test("the player at 390: strip with Fear, bottom sheet with resources and tabs, 
   }
 });
 
-test("the GM at 390: the tablet layout with the request queue as a bottom sheet", async ({ browser }) => {
+test("the GM at 390: the tablet layout with the request queue as a bottom sheet and the dock above it", async ({ browser }) => {
   test.setTimeout(300_000);
   const s = await hudScene(browser);
   const { gm } = s;
@@ -161,6 +183,39 @@ test("the GM at 390: the tablet layout with the request queue as a bottom sheet"
     await expect(q.getByTestId("hud-queue-count")).toBeVisible();
     const handle = q.getByRole("button", { name: "Show the requests" });
     await expect(handle).toHaveAttribute("aria-expanded", "false");
+
+    // The top: banners left, Fear right, the scene's name and Live chip under the banners, both discs under the Fear
+    // banner (nothing over the banners).
+    const banners = (await gm.locator('[data-hud-region="banners"]').boundingBox())!;
+    const fear = (await gm.locator(".hud-fear").boundingBox())!;
+    const title = (await gm.getByTestId("hud-title").boundingBox())!;
+    await expect(gm.getByTestId("hud-live")).toBeVisible();
+    expect(title.y).toBeGreaterThanOrEqual(banners.y + banners.height);
+    expect(title.x + title.width).toBeLessThanOrEqual(fear.x);
+    const spotDisc = gm.getByRole("button", { name: /^Spotlight: .*Change who has it$/ });
+    for (const disc of [(await spotDisc.boundingBox())!, (await gm.getByTestId("hud-disc").boundingBox())!]) {
+      expect(disc.y).toBeGreaterThanOrEqual(fear.y + fear.height - 8);
+      expect(disc.y).toBeGreaterThanOrEqual(banners.y + banners.height);
+    }
+    // The bottom: the dock above the folded sheet, inside the screen; every control 44 px.
+    const dock = gm.getByRole("toolbar", { name: "Map controls" });
+    const dockBox = (await dock.boundingBox())!;
+    expect(dockBox.y + dockBox.height).toBeLessThanOrEqual(qb.y);
+    expect(dockBox.x).toBeGreaterThanOrEqual(0);
+    expect(dockBox.x + dockBox.width).toBeLessThanOrEqual(390);
+    await expectTouchTargets(dock.getByRole("button"));
+    await expectTouchTargets(gm.locator(".hud-fb-ctl button"));
+    await expectTouchTargets(spotDisc);
+    await expectTouchTargets(handle);
+    await expectFitsViewport(gm);
+
+    // The spotlight popover fits the phone.
+    await spotDisc.click();
+    const spp = gm.getByRole("dialog", { name: "Spotlight" });
+    await expect(spp).toBeInViewport({ ratio: 1 });
+    await expectTouchTargets(spp.getByRole("button"));
+    await gm.keyboard.press("Escape");
+    await expect(spp).toHaveCount(0);
     await test.info().attach("gm-queue-folded-390", { body: await gm.screenshot(), contentType: "image/png" });
     await expectNoSeriousA11yViolations(gm);
     await handle.click();

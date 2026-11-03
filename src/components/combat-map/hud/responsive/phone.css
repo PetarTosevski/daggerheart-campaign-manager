@@ -5,8 +5,10 @@
  * a bottom sheet (`.hud-ph-q`, answer 13a). Board values on the --hud-* tokens (hud.css); the bottom sheets of the
  * picking panel, result and hit window are H7.3's (their own folders).
  *
- *   strip   .hud-ph-strip   top 0, 104 px: four mini banners and Fear (PlayerPhone `.mparty`, `.mb`)
- *   tools   .hud-ph-tools   under the strip, right: Map tools and the classic switch (not on the board)
+ *   strip   .hud-ph-strip   top 0, 104 px: four mini banners and Fear (PlayerPhone `.mparty`, `.mb`); the 44 px
+ *                           spotlight disc hangs under it at the right (spotlight.css `.hud-mspot`, H9.1)
+ *   tools   .hud-ph-tools   under the strip, left: "Your character" and the map controls (not on the board), clear of
+ *                           the spotlight disc
  *   sheet   .hud-ph-bs      the bottom sheet: handle, resource line + Sheet, tabs, the open tab (`.bs`, `.mres`, `.tabs`)
  *   edges   .hud-ph-edges   chips on the side edges for off-screen targets (`.edge`, `.e-out`)
  *   panel   the PC sheet panel goes full screen (`.phone .sheet`, 44 px close)
@@ -37,28 +39,6 @@
   margin: 0;
   color: var(--hud-muted);
   font: var(--hud-type-ui);
-}
-
-/*
- * The map's own toolbar (Names, zoom, Fit) floats under the strip, left, on one row; the map's name is the strip's
- * business on the board (no title on the phone), so it hides.
- */
-.hud-root.hud-ph-on .hud-map .cm-toolbar {
-  top: calc(var(--hud-ph-strip-h) + 8px);
-  left: 8px;
-  right: auto;
-  flex-wrap: nowrap;
-  gap: 6px;
-  max-width: calc(100% - 16px);
-  transform: none;
-  padding: 4px 6px;
-}
-.hud-root.hud-ph-on .hud-map .cm-toolbar :is(.cm-map-title, .cm-spacer) {
-  display: none;
-}
-.hud-root.hud-ph-on .hud-map .cm-toolbar .cm-btn {
-  min-height: 32px;
-  padding: 0 10px;
 }
 
 /* ---------------------------------------------------------------- the mini banner strip (`.mparty`) */
@@ -225,22 +205,23 @@
   color: #efeaff;
 }
 
-/* ---------------------------------------------------------------- the toolbar under the strip */
+/* ---------------------------------------------------------------- the toolbar under the strip
+ * Left, so the spotlight disc and its "Spotlight · Moss" pill keep the right (PlayerPhone `.mspot`: right 10, top 100);
+ * "Your character" on the first row, the map controls (Measure, Names, zoom) on the second, 44 px each.
+ */
 .hud-ph-tools {
   position: absolute;
-  top: calc(var(--hud-ph-strip-h) + 52px);
-  right: 8px;
+  top: calc(var(--hud-ph-strip-h) + 10px);
+  left: 8px;
   z-index: 15;
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 6px;
-  max-width: calc(100% - 16px);
+  max-width: calc(100% - 16px - 140px);
 }
-.hud-ph-tools .hud-btn {
-  height: 32px;
-  padding: 0 12px;
-  font-size: 12px;
+.hud-ph-tools .hud-tr-br {
+  display: none;
 }
 
 /* ---------------------------------------------------------------- the bottom sheet (`.bs`) */
@@ -269,8 +250,9 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 24px;
-  padding: 10px 0 6px;
+  /* A 44 px touch target (the board's handle is a 4 px bar with 10 px around it). */
+  min-height: 44px;
+  padding: 8px 0 6px;
   border: 0;
   border-radius: 22px 22px 0 0;
   background: none;
@@ -328,7 +310,6 @@
 }
 .hud-ph-sheet-btn {
   margin-left: auto;
-  height: 34px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -349,7 +330,7 @@
 }
 .hud-ph-tabs button {
   flex: 1;
-  height: 40px;
+  height: 44px;
   border: 0;
   border-radius: 9px;
   background: transparent;
@@ -599,12 +580,15 @@
   visibility: hidden;
 }
 
-/* ---------------------------------------------------------------- the GM at phone width (answer 13a)
+/* ---------------------------------------------------------------- the GM at phone width (answer 13a, v2 H9.6)
  *
- * The tablet layout fitted to 390: the banners hang at 55 % (still real buttons, well over 24 px), the Fear banner on
- * the right with its disc under it, the GM's tools wrap under the banners (the title hides, as on a tablet with a sheet
- * open), the map's toolbar sits above the bottom sheet, and the left column (request queue, Resolutions, spotlight) is
- * the bottom sheet (`.hud-ph-q`).
+ * The tablet layout fitted to 390 (no board draws it):
+ *   top       the banners hang at 55 % (still real buttons, well over 24 px) on the left; the Fear banner at its tablet
+ *             size on the right, with the spotlight disc and the day disc side by side under it; the scene's name and
+ *             Live chip under the banners (GMTablet `.scn`, smaller)
+ *   bottom    the request queue as a bottom sheet (`.hud-ph-q`; folded: its heading and count) and the dock above it,
+ *             icons only on two rows; Log, Areas and the dock's pop-overs open above the dock, full width
+ *   popovers  the spotlight popover and the day disc's pop-over at the phone's width
  */
 .hud-ph-q {
   position: fixed;
@@ -649,15 +633,14 @@
   flex: none;
 }
 .hud-ph-q .hud-q,
-.hud-ph-q .hud-res,
-.hud-ph-q .hud-spot-gm {
+.hud-ph-q .hud-res {
   box-shadow: none;
 }
 .hud-ph-q .hud-q-scroll {
   overflow: visible;
 }
 /* Folded: only the heading with its count ("Waiting on you 3"). */
-.hud-ph-q[data-open="false"] :is(.hud-q-scroll, .hud-q-result, .hud-res, .hud-spot-gm) {
+.hud-ph-q[data-open="false"] :is(.hud-q-scroll, .hud-q-result, .hud-res) {
   display: none;
 }
 .hud-ph-q[data-open="false"] .hud-q {
@@ -667,6 +650,11 @@
   margin-bottom: 0;
 }
 
+/* Open, the sheet covers the dock (dock.css: z 70) too. */
+.hud-ph-q[data-open="true"] {
+  z-index: 80;
+}
+
 @media (max-width: 760px) {
   .hud-root[data-role="gm"] {
     /* The GM's sheet and stat block are full screen too, over the queue sheet. */
@@ -674,6 +662,9 @@
     --hud-map-shift: 0px;
     --hud-map-scale: 1;
     --hud-edge: 8px;
+    /* The folded queue sheet (handle 44 + heading + padding) and the dock's two rows above it. */
+    --hud-ph-q-fold: 100px;
+    --hud-ph-dock-h: 112px;
   }
   .hud-root[data-role="gm"].hud-sh-open .hud-ph-q {
     visibility: hidden;
@@ -686,37 +677,73 @@
   .hud-root[data-role="gm"] .hud-r-fear {
     right: 8px;
   }
+  /* The day disc and the spotlight disc hang side by side under the Fear banner (its box is 118 x 206 at top 8). */
   .hud-root[data-role="gm"] .hud-sun {
-    top: 214px;
-    right: 50%;
-    transform: translateX(50%);
+    top: 204px;
+    right: -4px;
   }
+  .hud-root[data-role="gm"] .hud-spd {
+    top: 204px;
+    right: 58px;
+  }
+  .hud-root[data-role="gm"] .hud-spd-beam {
+    display: none;
+  }
+  /* The spotlight popover: the phone's width, from under the banners (over the discs) to the queue sheet. */
+  .hud-root[data-role="gm"] .hud-spp {
+    top: 120px;
+    right: 0;
+    width: calc(100vw - 16px);
+    max-width: none;
+    max-height: calc(100dvh - 128px - var(--hud-ph-q-fold));
+  }
+  .hud-root[data-role="gm"] .hud-sun :is(.hud-pop-time, .hud-pop-day) {
+    right: -4px;
+    width: calc(100vw - 16px);
+  }
+  /* The scene's name and Live chip under the banners, left of the Fear banner. */
   .hud-root[data-role="gm"] .hud-r-scene {
     top: 150px;
     left: 8px;
     right: 136px;
     transform: none;
   }
-  .hud-root[data-role="gm"] .hud-scene-gm .hud-title {
-    display: none;
+  .hud-root[data-role="gm"] .hud-scn {
+    flex-wrap: wrap;
+    gap: 6px 10px;
   }
-  .hud-root[data-role="gm"] .hud-scene-gm .hud-tr {
-    max-width: none;
-    gap: 6px;
+  .hud-root[data-role="gm"] .hud-scn h2 {
+    font-size: 17px;
   }
-  .hud-root[data-role="gm"] .hud-map .cm-toolbar {
-    top: auto;
-    bottom: 168px;
+  /* The dock above the folded queue sheet, its icons on two rows. */
+  .hud-root[data-role="gm"] .hud-r-dock {
+    bottom: calc(var(--hud-ph-q-fold) + 6px);
+  }
+  .hud-root[data-role="gm"] .hud-dock {
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 4px;
+    overflow: visible;
+  }
+  /* The dock spans the phone (left 8, right 8): Fog's pop-over starts at its left end. */
+  .hud-root[data-role="gm"] .hud-dock-pop.hud-pop-fog {
+    left: 0;
+  }
+  /* Log, Areas and the dock's pop-overs (Dice, Fog, Player view) open above the dock at the phone's width. */
+  .hud-root[data-role="gm"] .hud-r-log {
     left: 8px;
-    right: auto;
-    flex-wrap: nowrap;
-    gap: 6px;
-    max-width: calc(100% - 16px);
-    transform: none;
-    padding: 4px 6px;
+    right: 8px;
+    bottom: calc(var(--hud-ph-q-fold) + var(--hud-ph-dock-h) + 12px);
+    width: auto;
   }
-  .hud-root[data-role="gm"] .hud-map .cm-toolbar :is(.cm-map-title, .cm-spacer, .cm-live) {
-    display: none;
+  .hud-root[data-role="gm"] .hud-log .hud-res {
+    max-height: calc(100dvh - var(--hud-ph-q-fold) - var(--hud-ph-dock-h) - 140px);
+  }
+  .hud-root[data-role="gm"] .hud-areas {
+    left: 8px;
+    right: 8px;
+    bottom: calc(var(--hud-ph-q-fold) + var(--hud-ph-dock-h) + 12px);
+    width: auto;
+    max-height: calc(100% - var(--hud-ph-q-fold) - var(--hud-ph-dock-h) - 140px);
   }
 }
-

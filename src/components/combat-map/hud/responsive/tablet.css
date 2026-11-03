@@ -1,27 +1,26 @@
 /*
- * Combat HUD at tablet width (plan combat-hud H7.1; boards PlayerTablet / GMTablet 1024 × 768, their `.tab` rules;
- * HANDOFF "Layout · Tablet"). shell.css imports this file first, and the parts' own CSS loads after it, so every rule
- * here starts at `.hud-root` to win by specificity, not by order.
+ * Combat HUD at tablet width (plan combat-hud H7.1, v2 placement H9.6; boards PlayerTablet / GMTablet 1024 × 768, their
+ * `.tab` rules; HANDOFF "Layout · Tablet"). shell.css imports this file first, and the parts' own CSS loads after it, so
+ * every rule here starts at `.hud-root` to win by specificity, not by order.
  *
  * Range: 761-1180 px. The parts' own `max-width: 1180px` blocks (sizes that phones keep too) stay where they are; the
- * rules here are the tablet's positions only, so the phone layout (H7.2, ≤ 760 px) starts from the same base as
- * before. The size tokens (sheet 340 px, map -60 px / .92, edge 16) are hud.css's tablet values.
+ * rules here are the tablet's positions only, so the phone layout (H7.2, ≤ 760 px) starts from the same base. The size
+ * tokens (sheet 340 px, map -60 px / .92, edge 16) are hud.css's tablet values. The touch-target block applies at phone
+ * width too (a GM on a phone keeps the tablet layout, answer 13a).
  *
- * What the boards draw and where it lands:
+ * Wave 10 parts place themselves in their own CSS: the dock bottom 12, icons only (dock.css); "Waiting on you" at
+ * 12 / 12 with its queue above it (queue.css); Log right 12 / bottom 74 (dock.css); Areas right 12 / bottom 74
+ * (areas.css); the spotlight disc right 208 (spotlight.css); the 52 px app bar (app-bar). What is left lands here:
  *   banners    108 px wide every 114 px from x = 12, 186 px tall (yours 206), 42 px portrait, 36 px seal
- *   title      x = 484, y = 14; the toolbar under it (wraps to a second row; 44 px touch targets)
- *   map tools  the map's own toolbar (Names, zoom, Fit; the boards have none) as a column bottom-left for players (the
- *              feed is hidden there), a row right of the GM's column for the GM; the map's name hides (the title
- *              already shows it)
- *   feed       hidden (players' "Just now" and the GM's Resolutions)
- *   hand       x = 300 to clear of the app's floating Lorekeeper button; 150 while a sheet is open
+ *   title      x = 484, y = 14; a player's row under it (Dice, Sheet, Your character's icon; the map controls under
+ *              them), kept left of the spotlight disc
+ *   feed       hidden (players' "Just now")
+ *   hand       x = 300 to x = 760; 150 while a sheet is open
  *   pop-ups    result right 16 / bottom 228, 392 wide; toasts right 24 / bottom 220; the GM's-turn card at x = 484;
  *              the reactions note x = 330 / bottom 196; all move left of the 340 px sheet while it is open
- *   GM column  280 px wide from x = 12, under the banners; hidden while the GM picks targets (GMTablet st-adversary)
- *   Areas      under the Fear banner (top 232, right 16), not bottom right under the Lorekeeper button
- *   panels     the death move 470 px. The picking panel (292 px) and the hit window (320 px) keep their desktop
- *              widths: pick/panel.tsx and hit/spot.ts place them with those widths (PANEL_W, HIT_W), so a narrower
- *              CSS box would sit off its anchor (the boards' 262 / 290 are a 30 px difference)
+ *   panels     the death move 470 px; Areas 360 px. The picking panel (292 px) and the hit window (320 px) keep their
+ *              desktop widths: pick/panel.tsx and hit/spot.ts place them with those widths (PANEL_W, HIT_W), so a
+ *              narrower CSS box would sit off its anchor (the boards' 262 / 290 are a 30 px difference)
  */
 @media (min-width: 761px) and (max-width: 1180px) {
   /* ---------------------------------------------------------------- banners (.tab .bn) */
@@ -83,97 +82,25 @@
     transform: none;
   }
   .hud-root .hud-tr {
-    /* From x = 484 to the day / time disc (right 134 + 44 px + a gap). */
-    max-width: calc(100vw - 484px - 190px);
+    /* From x = 484 to the spotlight disc's label (disc right 208, its label about 48 px either side of it). */
+    max-width: calc(100vw - 484px - 256px);
     justify-content: flex-start;
   }
 
-  /* ---------------------------------------------------------------- the map's own toolbar */
-  /* `.cm-board` too: scene.css's desktop `.hud-root .hud-map .cm-toolbar` (top 236) loads after this file. */
-  /*
-   * Players: a narrow column at the left edge, so the hand (from x = 150 while a sheet is open) never covers it.
-   */
-  .hud-root .hud-map .cm-board .cm-toolbar,
-  .hud-root.hud-sh-open .hud-map .cm-board .cm-toolbar {
-    top: auto;
-    bottom: 16px;
-    left: 12px;
-    max-width: 100px;
-    flex-direction: column;
-    flex-wrap: nowrap;
-    align-items: stretch;
-    transform: none;
-  }
-  .hud-root .hud-map .cm-board .cm-toolbar .cm-zoom {
-    text-align: center;
-  }
-  /* The GM: a row right of the 280 px column (GMTablet has no hand). */
-  .hud-root[data-role="gm"] .hud-map .cm-board .cm-toolbar,
-  .hud-root[data-role="gm"].hud-sh-open .hud-map .cm-board .cm-toolbar {
-    left: 308px;
-    max-width: calc(100% - 308px - 16px);
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-  /*
-   * While a sheet is open the GM's toolbar hides with the title row (Main `.tab.sh-open .title, .tr`): a PC's sheet
-   * brings that PC's hand up from x = 300, over the toolbar's place.
-   */
-  .hud-root[data-role="gm"].hud-sh-open .hud-map .cm-board .cm-toolbar {
-    visibility: hidden;
-  }
-  .hud-root .hud-map .cm-toolbar .cm-map-title,
-  .hud-root .hud-map .cm-toolbar .cm-live,
-  .hud-root .hud-map .cm-toolbar .cm-spacer {
+  /* ---------------------------------------------------------------- the feed (.tab .me) */
+  .hud-root .hud-feed {
     display: none;
-  }
-  .hud-root .hud-map .cm-toolbar .cm-btn {
-    min-width: 44px;
-    min-height: 44px;
-  }
-
-  /* ---------------------------------------------------------------- the feed and the GM's column (.tab .me, .gq, .gr) */
-  .hud-root .hud-feed,
-  .hud-root .hud-q-col > [data-testid="hud-resolutions"] {
-    display: none;
-  }
-  /*
-   * The column fills x = 12 from under the banners' seals (206 px + 12 px + a gap) to the bottom and keeps its parts at
-   * the bottom; the queue shrinks to what the spotlight panel leaves and its cards scroll (queue.css).
-   */
-  .hud-root .hud-r-left {
-    left: 12px;
-    top: 236px;
-    width: 280px;
-    justify-content: flex-end;
-  }
-  .hud-root .hud-q-col {
-    flex: 0 1 auto;
-    max-height: none;
-  }
-  .hud-root .hud-q-col,
-  .hud-root .hud-q-col > * {
-    width: 100%;
-  }
-  /* GMTablet 'Adversary acting': the column steps aside while the GM picks targets. */
-  .hud-root[data-role="gm"].hud-pk-open .hud-r-left {
-    visibility: hidden;
   }
 
   /* ---------------------------------------------------------------- the hand (.tab .bot) */
   .hud-root .hud-r-hand {
     left: 300px;
-    /* Clear of the app's floating "Ask the Lorekeeper" button, bottom right. */
+    /* PlayerTablet's hand ends at x = 760 (Roll options and the deck right of it). */
     right: 264px;
   }
   .hud-root.hud-sh-open .hud-r-hand {
     left: 150px;
     right: calc(var(--hud-sheet-w) + var(--hud-edge));
-  }
-  /* The GM's column stays at x = 12-292: the hand of the PC whose sheet is open starts right of it. */
-  .hud-root[data-role="gm"].hud-sh-open .hud-r-hand {
-    left: 300px;
   }
 
   /* ---------------------------------------------------------------- pop-ups (.tab .res, .blk, .gms, .gmh) */
@@ -210,26 +137,43 @@
     width: 470px;
   }
   /*
-   * "Areas on the map" (GMTablet `.ar`): under the Fear banner instead of the board's bottom
-   * right, where the app's floating Lorekeeper button covers its last rows and Pick on map (dcm-bxp.99.32.28).
+   * The GM's dock beside a sheet (GMTablet `.tab.sh-open .dock`: centred at x = 342): with Map tools and 44 px buttons
+   * it is wider than the 684 px the panel leaves, so it wraps to two rows between "Waiting on you" (x = 12-112) and the
+   * panel. (`html`: dock.css's own `.hud-sh-open` rule loads after this file.)
    */
-  .hud-root .hud-areas {
-    /* The desktop 360: at the board's 320 the form's rows (Circle / Wall, Belongs to, Pick on map) spill out. */
-    width: 360px;
-    top: 232px;
-    bottom: auto;
-    max-height: calc(100% - 232px - 96px);
+  html .hud-root.hud-sh-open .hud-r-dock {
+    left: calc((100vw - var(--hud-sheet-w) + 120px) / 2);
+    max-width: calc(100vw - var(--hud-sheet-w) - 132px);
   }
+  .hud-root.hud-sh-open .hud-dock {
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 4px;
+  }
+  /* Fog's pop-over at the screen's left edge (dock.css), x = 12 here, also beside a sheet. */
+  .hud-root .hud-dock-pop.hud-pop-fog {
+    left: calc(12px - 50vw + 50%);
+  }
+  html .hud-root.hud-sh-open .hud-dock-pop.hud-pop-fog {
+    left: calc(12px - (100vw - var(--hud-sheet-w) + 120px) / 2 + 50%);
+  }
+  /* The hand's Roll options and Hide cards stay above the two-row dock (shell.css: 98 px above one row). */
+  .hud-root[data-role="gm"].hud-sh-open .hud-fanside {
+    margin-bottom: 128px;
+  }
+  /* Areas (areas.css places it bottom right above the dock): the desktop 360, as at the board's 320 the form's rows
+     (Circle / Wall, Belongs to, Pick on map) spill out. */
+  .hud-root .hud-areas {
+    width: 360px;
+  }
+}
 
-  /* ---------------------------------------------------------------- touch targets (≥ 44 px, as ui.css under 1100) */
+/* ---------------------------------------------------------------- touch targets (≥ 44 px at tablet and phone width) */
+@media (max-width: 1180px) {
   .hud-root .hud-btn,
   .hud-root .hud-opt,
   .hud-root .hud-tog {
     min-height: 44px;
-  }
-  /* scene.css holds End scene at 36 px with !important on the desktop toolbar. */
-  .hud-root .hud-tr .hud-end {
-    min-height: 44px !important;
   }
   .hud-root .hud-areas-seg button,
   .hud-root .hud-areas-fold,
@@ -263,8 +207,31 @@
   .hud-root .hud-step button,
   .hud-root .hud-panel-x,
   .hud-root .hud-areas-x,
+  .hud-root .hud-pop-x,
   .hud-root .hud-fb-ctl button {
     width: 44px;
     height: 44px;
+  }
+  /* The day disc's pop-over: Day / Dim / Night (scene.css draws them 30 px on the desktop). */
+  .hud-root .hud-sun .hud-seg button {
+    height: 44px;
+  }
+}
+
+/* ---------------------------------------------------------------- a player's title row beside the spotlight disc
+ * Desktop below 1600 px: Dice, Sheet and "Your character" (the drawer; the boards have no such button) would run from
+ * x = 690 into the spotlight disc's label (disc right 300). "Your character" shows its icon there, as at tablet width
+ * (its text stays its accessible name), and the row stops left of the disc.
+ */
+@media (min-width: 1181px) and (max-width: 1599.98px) {
+  .hud-root .hud-scene-pl .hud-tr {
+    max-width: calc(100vw - 690px - 400px);
+  }
+  .hud-root .hud-scene-pl .hud-tr > [aria-controls="hud-tools"] {
+    gap: 0;
+    min-width: 44px;
+    padding-inline: 0;
+    justify-content: center;
+    font-size: 0;
   }
 }

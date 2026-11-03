@@ -3,15 +3,18 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { expectFitsViewport, expectNoSeriousA11yViolations, expectTouchTargets } from "./a11y";
-import { hudScene, type HudScene } from "./hud/helpers";
+import { combatMapUrl, hudScene, type HudScene } from "./hud/helpers";
+import { gmAndPlayer } from "./live";
 
-// Plan combat-hud H7.1 (docs/tasks/TASK-HUD-H7.1.md): the HUD at tablet width matches PlayerTablet and GMTablet
-// (1024 × 768; the boards' `.tab` rules, HANDOFF "Layout · Tablet"): banners 108 px wide every 114 px from x = 12, the
-// title at x = 484, the feed (and the GM's Resolutions) hidden, the map's own toolbar bottom-left (players) or right of
-// the GM's 280 px column; with a sheet open the panel is 340 px, the map shifts -60 px and scales to .92, the Fear
-// banner moves to right 356 and the title row hides. HUD controls are at least 44 px, the page never scrolls sideways
-// and axe passes. The toasts hang beside the fan (dcm-bxp.99.32.29): at 1024 right 24 / bottom 220 (right 356 with a
-// sheet), at 1440 left 880 / bottom 262 as Main draws them.
+// Plan combat-hud H7.1, v2 placement H9.6 (docs/tasks/TASK-HUD-H7.1.md, TASK-HUD-H9.6.md): the HUD at tablet width
+// matches PlayerTablet and GMTablet (1024 × 768; the boards' `.tab` rules, HANDOFF "Layout · Tablet"): banners 108 px
+// wide every 114 px from x = 12, the title at x = 484, a player's map controls under the title row and both left of the
+// spotlight disc (right 208), the feed hidden; the GM's icon-only dock at bottom 12, "Waiting on you" at 12 / 12, Areas
+// and Log above the dock on the right. With a sheet open the panel is 340 px, the map shifts -60 px and scales to .92,
+// the Fear banner moves to right 356, the title row and the spotlight disc hide, and the GM's dock wraps between
+// "Waiting on you" and the panel. HUD controls are at least 44 px (the day disc's Day / Dim / Night too), the page never
+// scrolls sideways and axe passes. The toasts hang beside the fan (dcm-bxp.99.32.29): at 1024 right 24 / bottom 220
+// (right 356 with a sheet), at 1440 left 880 / bottom 262 as Main draws them.
 
 test.use({ actionTimeout: 30_000 });
 
@@ -58,7 +61,7 @@ async function pressWallWalk(page: Page) {
   await expect(toast(page)).toContainText("Not enough Hope");
 }
 
-test("PlayerTablet at 1024 × 768: banners, title, map tools, no feed; the sheet makes room; toasts beside the fan", async ({ browser }) => {
+test("PlayerTablet at 1024 × 768: banners, title, map controls left of the disc, no feed; the sheet makes room; toasts beside the fan", async ({ browser }) => {
   test.setTimeout(300_000);
   const s = await hudScene(browser, { moss: MOSS });
   const { player } = s;
@@ -76,17 +79,24 @@ test("PlayerTablet at 1024 × 768: banners, title, map tools, no feed; the sheet
     expect(first.height).toBe(206);
     expect(second.height).toBe(186);
 
-    // The title at x = 484; the feed is hidden; the map's own toolbar bottom-left, clear of the banners.
+    // The title at x = 484; the feed is hidden; the map controls (Measure, Names, zoom) on the row under Dice / Sheet /
+    // Your character, and both rows end left of the spotlight disc and its label (right 208).
     expect((await boxIn(hud, player.getByTestId("hud-title"))).left).toBe(484);
     await expect(player.getByTestId("hud-feed")).toBeHidden();
-    const mapTools = player.locator(".hud-map .cm-toolbar");
+    const row = player.getByRole("group", { name: "Your tools" });
+    const mapTools = player.getByRole("toolbar", { name: "Map controls" });
     const tools = await boxIn(hud, mapTools);
-    expect(tools.left).toBe(12);
-    expect(tools.bottom).toBe(16);
+    expect(tools.left).toBe(484);
+    expect(tools.top).toBeGreaterThan((await boxIn(hud, player.getByTestId("hud-sheet-button"))).top);
+    const disc = await boxIn(hud, player.getByRole("img", { name: /^Spotlight: / }));
+    for (const part of [row.getByRole("button", { name: "Your character" }), mapTools]) {
+      const b = await boxIn(hud, part);
+      expect(b.right).toBeGreaterThan(disc.right + disc.width);
+    }
 
-    // Touch targets: the banners, the toolbar, the map's toolbar, the Fear banner's disc.
+    // Touch targets: the banners, the title row, the map controls.
     await expectTouchTargets(player.getByRole("list", { name: "The party" }).getByRole("button"));
-    await expectTouchTargets(player.getByRole("group", { name: "Your tools" }).getByRole("button"));
+    await expectTouchTargets(row.getByRole("button"));
     await expectTouchTargets(mapTools.getByRole("button"));
     await expectFitsViewport(player);
     await expectNoSeriousA11yViolations(player);
@@ -133,11 +143,11 @@ test("PlayerTablet at 1024 × 768: banners, title, map tools, no feed; the sheet
     await expect(player.locator(".hud-fear")).toHaveCSS("transform", "matrix(1, 0, 0, 1, -340, 0)");
     await expect(player.getByTestId("hud-title")).toBeHidden();
     await expect(player.getByRole("group", { name: "Your tools" })).toBeHidden();
+    await expect(player.getByRole("img", { name: /^Spotlight: / })).toBeHidden();
     await expect(player.locator('[data-hud-region="hand"]')).toHaveCSS("left", "150px");
     const panel = await boxIn(hud, sheet);
     expect(panel.width).toBe(340);
     expect(panel.right).toBe(0);
-    expect((await boxIn(hud, mapTools)).left).toBe(12);
     await expectTouchTargets(sheet.getByRole("button"));
     await expectFitsViewport(player);
     await expectNoSeriousA11yViolations(player);
@@ -150,7 +160,7 @@ test("PlayerTablet at 1024 × 768: banners, title, map tools, no feed; the sheet
   }
 });
 
-test("GMTablet at 1024 × 768: the 280 px column without Resolutions, the map tools beside it; the stat block makes room", async ({ browser }) => {
+test("GMTablet at 1024 × 768: the icon-only dock, Waiting on you, Areas and Log above the dock; the stat block makes room", async ({ browser }) => {
   test.setTimeout(300_000);
   const s = await hudScene(browser);
   const { gm, playerClient, campaignId, mapId, enemies } = s;
@@ -172,60 +182,100 @@ test("GMTablet at 1024 × 768: the 280 px column without Resolutions, the map to
       idempotencyKey: crypto.randomUUID(),
     });
     const hud = await openHud(gm, s.url);
-    await expect(gm.getByTestId("hud-queue-count")).toHaveText("1", { timeout: 30_000 });
+    await expect(gm.getByTestId("hud-wait-count")).toHaveText("1", { timeout: 30_000 });
 
-    const column = await boxIn(hud, gm.getByTestId("hud-queue-column"));
-    expect(column.left).toBe(12);
-    expect(column.width).toBe(280);
-    expect(column.top).toBeGreaterThanOrEqual(236);
-    await expect(gm.getByTestId("hud-resolutions")).toBeHidden();
+    // GMTablet: the title at x = 484; "Waiting on you" at 12 / 12; the dock centred at bottom 12, icons only.
     expect((await boxIn(hud, gm.getByTestId("hud-title"))).left).toBe(484);
-    const mapTools = gm.locator(".hud-map .cm-toolbar");
-    const tools = await boxIn(hud, mapTools);
-    expect(tools.left).toBe(308);
-    expect(tools.bottom).toBe(16);
+    const wait = gm.getByRole("button", { name: /^Waiting on you/ });
+    expect(await boxIn(hud, wait)).toMatchObject({ left: 12, bottom: 12 });
+    const dock = gm.getByRole("toolbar", { name: "Map controls" });
+    const d = await boxIn(hud, dock);
+    expect(d.bottom).toBe(12);
+    expect(Math.abs(d.left - d.right)).toBeLessThanOrEqual(1);
+    expect(d.left).toBeGreaterThan((await boxIn(hud, wait)).left + (await boxIn(hud, wait)).width);
+    await expect(dock.getByRole("button", { name: "Areas", exact: true }).locator(".hud-dk-l")).toHaveCSS("position", "absolute");
+    await expect(gm.locator(".hud-map .cm-toolbar")).toHaveCount(0);
 
-    await expectTouchTargets(gm.getByRole("group", { name: "GM tools" }).getByRole("button"));
-    await expectTouchTargets(mapTools.getByRole("button"));
-    await expectTouchTargets(gm.getByTestId("hud-queue").getByRole("button"));
+    await expectTouchTargets(dock.getByRole("button"));
+    await expectTouchTargets(wait);
     await expectTouchTargets(gm.locator(".hud-fb-ctl button"));
+    await expectTouchTargets(gm.getByRole("button", { name: /^Spotlight: .*Change who has it$/ }));
     await expectFitsViewport(gm);
     await expectNoSeriousA11yViolations(gm);
 
-    // Areas hangs under the Fear banner, clear of the Lorekeeper button bottom right (dcm-bxp.99.32.28).
-    await gm.getByRole("group", { name: "GM tools" }).getByRole("button", { name: "Areas", exact: true }).click();
+    // The queue opens above "Waiting on you"; its buttons are touch size.
+    await wait.click();
+    await expect(gm.getByTestId("hud-queue")).toBeVisible();
+    await expectTouchTargets(gm.getByTestId("hud-queue").getByRole("button"));
+    await gm.keyboard.press("Escape");
+    await expect(gm.getByTestId("hud-queue")).toBeHidden();
+
+    // Areas bottom right above the dock (GMTablet `.tab .ar`: right 12, bottom 74).
+    await dock.getByRole("button", { name: "Areas", exact: true }).click();
     const areas = gm.getByRole("dialog", { name: "Areas" });
     await expect(areas.getByTestId("area-tools")).toBeVisible();
     const a = await boxIn(hud, areas);
-    expect(a).toMatchObject({ top: 232, right: 16, width: 360 });
-    expect(a.bottom).toBeGreaterThanOrEqual(96);
+    expect(a).toMatchObject({ right: 12, bottom: 74, width: 360 });
     await expectTouchTargets(areas.getByRole("button"));
     await expectNoSeriousA11yViolations(gm);
     await areas.getByRole("button", { name: "Close Areas" }).click();
     await expect(areas).toBeHidden();
 
-    // The Lieutenant's stat block: 340 px, the map shifted; the GM picks for it and the column steps aside.
+    // The Lieutenant's stat block: 340 px, the map shifted; the dock wraps between "Waiting on you" and the panel.
     const name = enemies.lieutenant.name;
     await gm.getByRole("region", { name: "Battle map" }).getByRole("button", { name: new RegExp(`^Open the ${name}’s stat block`) }).click();
     const block = gm.getByRole("complementary", { name: `${name}’s stat block` });
     await expect(block.getByTestId("hud-statblock-body")).toBeVisible();
     await expect(gm.getByTestId("combat-viewport")).toHaveCSS("transform", SHIFTED);
     await expect(gm.getByTestId("hud-title")).toBeHidden();
-    await expect(mapTools).toBeHidden();
     expect((await boxIn(hud, block)).width).toBe(340);
+    await expect
+      .poll(async () => {
+        const docked = await boxIn(hud, dock);
+        const w = await boxIn(hud, wait);
+        return docked.left >= w.left + w.width && docked.right >= 340;
+      })
+      .toBe(true);
+    await expectTouchTargets(dock.getByRole("button"));
     await expectTouchTargets(block.getByRole("button"));
     await expectFitsViewport(gm);
     await expectNoSeriousA11yViolations(gm);
 
     await block.getByTestId("hud-statblock-attack").click();
     await expect(gm.getByTestId("hud-pick")).toBeVisible();
-    await expect(gm.getByTestId("hud-queue-column")).toBeHidden();
     await expectTouchTargets(gm.getByTestId("hud-pick").getByRole("button"));
     await gm.keyboard.press("Escape");
     await expect(gm.getByTestId("hud-pick")).toHaveCount(0);
-    await expect(gm.getByTestId("hud-queue-column")).toBeVisible();
   } finally {
     await s.close();
+  }
+});
+
+test("the day disc's Day / Dim / Night are touch size at tablet and phone width (H9.6)", async ({ browser }) => {
+  test.setTimeout(240_000);
+  // A core campaign: the GM's disc opens "Campaign day" with the light switch above the calendar (user answer Q6a).
+  const { gm, client, campaignId, close } = await gmAndPlayer(browser, { frame: "custom" });
+  try {
+    const { mapId } = await client.mutation(api.combatMaps.create, { campaignId, size: "medium", name: "Crossroads", idempotencyKey: crypto.randomUUID() });
+    await client.mutation(api.combatMaps.setLive, { campaignId, mapId });
+    for (const size of [TABLET, { width: 390, height: 844 }]) {
+      await gm.setViewportSize(size);
+      await gm.goto(combatMapUrl(campaignId));
+      await expect(gm.getByTestId("combat-hud")).toBeVisible();
+      await gm.getByTestId("combat-hud").evaluate((el) => el.scrollIntoView({ block: "end" }));
+      await gm.getByTestId("hud-disc").getByRole("button").click();
+      const pop = gm.getByRole("dialog", { name: "Campaign day" });
+      const light = pop.getByRole("group", { name: "Time of day" });
+      await expect(light.getByRole("button")).toHaveCount(3);
+      await expectTouchTargets(light.getByRole("button"));
+      await expectTouchTargets(pop.getByRole("button"));
+      await expect(pop).toBeInViewport({ ratio: 1 });
+      await expectNoSeriousA11yViolations(gm);
+      await pop.press("Escape");
+      await expect(pop).toHaveCount(0);
+    }
+  } finally {
+    await close();
   }
 });
 

@@ -163,8 +163,10 @@
   font: 600 13px var(--hud-font-ui);
   white-space: nowrap;
 }
-.hud-dock .hud-dk-end::before {
+/* The flag: ::after, as the arcane glass button draws its hover fill with ::before (glass-button.css). */
+.hud-dock .hud-dk-end::after {
   content: "";
+  order: -1;
   width: 18px;
   height: 18px;
   flex: none;
@@ -232,6 +234,18 @@
   transform: translateX(-50%);
   max-height: calc(100dvh - var(--app-bar-h, 0px) - 120px);
   pointer-events: auto;
+}
+/*
+ * Fog (H9.6): its brush paints the map, so the pop-over sits at the screen's left edge above "Waiting on you" instead
+ * of over the middle of the map. The dock region is centred (left 50%, its own width), so x = 16 on the screen is
+ * 16 - 50vw + 50% inside it; with a sheet open the region is centred on x = 640 (tablet: tablet.css).
+ */
+.hud-dock-pop.hud-pop-fog {
+  left: calc(16px - 50vw + 50%);
+  transform: none;
+}
+.hud-root.hud-sh-open .hud-dock-pop.hud-pop-fog {
+  left: calc(16px - 640px + 50%);
 }
 
 /* ---------------------------------------------------------------- Log (Resolutions above the dock, right) */

@@ -160,8 +160,10 @@ test("HUD-H7.1 GMTablet: every Preview state and the sheet at 1024 × 768", { ta
 
     await open(gm, s.url);
     await expect(gm.getByTestId("hud-queue-count")).toHaveText("2", { timeout: 30_000 });
+    await gm.getByRole("button", { name: /^Waiting on you/ }).click();
     await settle(gm);
     await shot(gm, "gm-requests");
+    await gm.keyboard.press("Escape");
 
     // A PC's sheet open (GM edit).
     await gm.getByRole("list", { name: "The party" }).getByRole("button", { name: "Open Vex's sheet" }).click();
@@ -194,7 +196,8 @@ test("HUD-H7.1 GMTablet: every Preview state and the sheet at 1024 × 768", { ta
     await settle(gm);
 
     // Areas.
-    const tools = gm.getByRole("group", { name: "GM tools" });
+    // Wave 10: the GM's tools are in the bottom dock.
+    const tools = gm.getByRole("toolbar", { name: "Map controls" });
     await tools.getByRole("button", { name: "Areas", exact: true }).click();
     await expect(gm.getByRole("dialog", { name: "Areas" })).toBeVisible();
     await settle(gm);

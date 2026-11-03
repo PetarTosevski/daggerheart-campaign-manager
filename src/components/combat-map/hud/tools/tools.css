@@ -14,9 +14,8 @@
   align-items: center;
   gap: 8px;
 }
-/* Glass buttons over the map (the boards' `.tr .btn`). */
+/* Glass buttons over the map (the boards' `.tr .btn`): the arcane glass role draws them; this only takes the pointer. */
 .hud-glass-btn {
-  background: var(--hud-glass);
   pointer-events: auto;
 }
 @media (max-width: 760px) {
