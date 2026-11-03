@@ -2,9 +2,10 @@
 
 import "./action-ring.css";
 
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { useEffect, useEffectEvent, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 
+import { refusalFor } from "@/lib/errors/refusals";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../convex/_generated/api";
@@ -17,6 +18,7 @@ import { useAreaPickState } from "../pick-area";
 import { featurePlan, useFeatureUse } from "../pick-feature";
 import { useSpotlight } from "../spotlight";
 import { useHud, type HudLayerProps } from "../state";
+import { hudToasts } from "../toasts";
 import { raiseHand } from "./hand";
 import {
   attackLock,
@@ -24,9 +26,12 @@ import {
   featureLock,
   hopeNeeded,
   moreItem,
+  reactionLock,
   ringItems,
+  ringOutside,
   ringPoint,
   ringRadius,
+  ringReactions,
   ringSlots,
   ringUses,
   splitRing,
@@ -50,6 +55,10 @@ export * from "./model";
  *   Sheet    your sheet panel (H2.1; on while it shows)
  *   <each feature with a Use button>   H3.3's `useFeatureUse().open()`; "classic" shows the classic FeatureUse beside the
  *            ring (Warden's Protection, Charge), as the sheet panel does
+ *   <each reaction (the sheet's React)>   locked "… waits for its trigger" until the server offers it for an open hit
+ *            (`adversaryActions.pending`'s features); then it takes you to that answer's Use in the hit window
+ *   <each out-of-combat Use (the sheet's D5 Use: Commune)>   `classFeatures.use`, its summary as a toast
+ *   (user answer 2026-11-02: reactions and out-of-combat Uses join the ring)
  *
  * A locked button stays focusable (`aria-disabled`) and shows its reason beside it on hover, focus or a tap ("Evolution
  * needs 3 Hope. You have 1."); the reason is also its accessible description. More buttons than the arc holds: the last
@@ -89,6 +98,10 @@ function ActionRing({ layer, open, characterId, name, centre, size }: { layer: H
   const featureUse = useFeatureUse({ campaignId, role, map, characterId });
   const sheet = useQuery(api.combatHud.sheet, { characterId });
   const hand = useQuery(api.combatCards.hand, { campaignId, characterId });
+  // The reactions the server offers right now: the answers of this character's open hits (the hit window's query).
+  const pending = useQuery(api.adversaryActions.pending, { campaignId, characterId });
+  const outsideUse = useMutation(api.classFeatures.use);
+  const [outsideBusy, setOutsideBusy] = useState<string | null>(null);
   // H6.2: while the GM holds the spotlight every action here waits (answer 1c); its reason is the button's lock.
   const spotlight = useSpotlight(campaignId);
   const spot = spotlightLock(spotlight?.reactionsOnly === true);
@@ -109,11 +122,17 @@ function ActionRing({ layer, open, characterId, name, centre, size }: { layer: H
     const on = (sessionId?.startsWith(sessionBase) ?? false) || (classic?.featureId === u.featureId && classic.useId === u.useId);
     return { ...u, locked: spot ?? featureLock(u, need, hope), on };
   });
+  const offered = new Set((pending ?? []).flatMap((h) => (h.features ?? []).map((f) => `${f.featureId}:${f.useId}`)));
+  // Reactions never wait on the GM's spotlight (answer 1c).
+  const reactions = (sheet ? ringReactions(sheet.features) : []).map((u) => ({ ...u, locked: reactionLock(u, offered.has(`${u.featureId}:${u.useId}`)), on: false }));
+  const outside = (sheet ? ringOutside(sheet.features) : []).map((u) => ({ ...u, locked: spot ?? featureLock(u, 0, null), on: outsideBusy === u.featureId }));
   const items = ringItems({
     attack: { locked: spot ?? attackLock(attack.ready, attack.reason), on: attack.isOpen },
     cast: { locked: spot ?? castLock(hand ? hand.loadout.length : null), on: sessionId?.startsWith(`card:${characterId}:`) ?? false },
     sheet: { on: hud.sheet?.kind === "pc" && hud.sheet.characterId === characterId },
     features,
+    reactions,
+    outside,
   });
   const radius = ringRadius(size);
   const { ring, more } = splitRing(items, ringSlots(radius));
@@ -151,6 +170,31 @@ function ActionRing({ layer, open, characterId, name, centre, size }: { layer: H
         if (how !== "classic") setMoreOpen(false);
         return;
       }
+      case "reaction": {
+        // The hit window answers the hit (its Use sends the answer with its picks): go to that Use.
+        setMoreOpen(false);
+        const use = document.querySelector<HTMLButtonElement>(
+          `[data-testid="hud-hit-window"] [data-testid="hud-hit-feature"][data-feature="${CSS.escape(item.featureId ?? "")}"][data-use="${CSS.escape(item.useId ?? "")}"] button[aria-label^="Use "]`,
+        );
+        use?.focus();
+        return;
+      }
+      case "outside":
+        void runOutside(item);
+        return;
+    }
+  }
+
+  async function runOutside(item: RingItem) {
+    if (!item.featureId || !item.featureKey || outsideBusy !== null) return;
+    setOutsideBusy(item.featureId);
+    try {
+      const out = await outsideUse({ idempotencyKey: crypto.randomUUID(), characterId, featureKey: item.featureKey, params: {} });
+      hudToasts.push({ title: item.label, message: out.summary, tone: "neutral" });
+    } catch (e) {
+      hudToasts.refusal(refusalFor(e, { subject: item.label }));
+    } finally {
+      setOutsideBusy(null);
     }
   }
 
@@ -297,6 +341,7 @@ function MoreList({ items, at, onRun, ids }: { items: readonly RingItem[]; at: {
             ref={i === 0 ? first : undefined}
             type="button"
             className={cn("hud-ar-mi", item.on && "on", item.locked !== null && "off")}
+            aria-label={item.name}
             aria-disabled={item.locked !== null ? true : undefined}
             aria-describedby={item.locked !== null ? reasonId : undefined}
             aria-pressed={item.on}
@@ -325,6 +370,13 @@ const ICONS: Record<RingItem["kind"], ReactNode> = {
     </>
   ),
   feature: <path d="M8 1l1.8 4.6L14.5 6l-3.6 3 1.1 4.7L8 11.3 4 13.7l1.1-4.7L1.5 6l4.7-.4z" />,
+  reaction: <path d="M8 1.5l5.5 2v4c0 3.4-2.4 6-5.5 7-3.1-1-5.5-3.6-5.5-7v-4z" />,
+  outside: (
+    <>
+      <circle cx="8" cy="8" r="5.8" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M8 4.2v3.8l2.6 1.6" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </>
+  ),
   more: (
     <>
       <circle cx="3.5" cy="8" r="1.5" />

@@ -119,3 +119,10 @@ None done or filed. No data gaps: `combatHud.scene` / `party` (HD1) carry everyt
   scene confirm reached from the GM toolbar in `hud/scene/index.tsx` (not in H5.3's owns: add `hud/scene/**` to its
   owns or a HUD state flag). H7.x places the banner, disc and toolbar on the phone. `scene.css` moves the map's
   `.cm-toolbar` to y = 236; drop that rule when the map toolbar's buttons move into the HUD (wave 9).
+
+## User answers 2026-11-02 (applied)
+
+- **GM Dice: both** (QUESTIONS 1). The GM toolbar's Dice opens a plain GM roller (the dashboard's secret GM roll,
+  `GmRollForm` from `party/dice/roll-feed.tsx`, now exported, with `showResult` for the last roll's dice and total).
+  With a PC token selected, a "Roll as" switch offers "GM roll" (default) and "For <PC>" (that PC's dice box, the old
+  behaviour). Tests: `fear-scene.test.tsx`, `hud-answers.spec.ts`.

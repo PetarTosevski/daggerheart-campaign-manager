@@ -79,6 +79,15 @@ test("the GM: a stat block makes room, swaps and closes; drag and area picking s
     // A drag is not a click: the stat block stays open.
     await expect(hud).toHaveClass(new RegExp(`hud-sh-${s.enemies.lieutenant.tokenId}`));
 
+    // The Areas panel folded to its header bar once focus left it for the map (user answer 2026-11-02,
+    // dcm-bxp.99.32.28), so it no longer covers the tokens under it; its header unfolds it.
+    const fold = areas.getByRole("button", { name: "Areas on the map" });
+    await expect(fold).toHaveAttribute("aria-expanded", "false");
+    await expect(areas.getByTestId("area-tools")).toBeHidden();
+    expect((await areas.boundingBox())!.height).toBeLessThan(80);
+    await fold.click();
+    await expect(areas.getByTestId("area-tools")).toBeVisible();
+
     // An area pick lands on the square under the pointer (viewport.toSquares under the transform).
     await areas.getByRole("button", { name: "Pick on the map" }).click();
     await expect(gm.getByTestId("area-pick-banner")).toContainText("click a square on the map");

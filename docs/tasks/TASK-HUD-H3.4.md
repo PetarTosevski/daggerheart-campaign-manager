@@ -172,3 +172,20 @@ Delete the two interim attack buttons now that the ring's Attack opens H3.2's pi
    With several locked features always-on tips would overlap; say if one should always show.
 5. **Forced attack.** The ring's Attack opens a normal attack; a forced attack keeps its red prompt card (H3.2). Should
    Attack answer the oldest forced attack instead while one waits?
+
+## User answers 2026-11-02 (applied)
+
+- **Reactions and out-of-combat Uses join the ring** (QUESTIONS 1 and 2), after Attack, Cast, Sheet and the action
+  features, folding into "More actions (n)" as before. The entries are the sheet panel's own: its React buttons
+  (`ringReactions`, `mapUses` reaction uses) and its D5 Use buttons (`ringOutside`, `d5Key`: Commune, Get In & Get Out).
+  - A reaction is greyed with "<name> is a reaction: it waits for its trigger." (`reactionLock`; a used one says when
+    it comes back) until the server offers it: it is among the answers of an open hit of this character
+    (`adversaryActions.pending`'s `features`). Then it unlocks and takes focus to that answer's Use in the hit window
+    (which sends the answer with its picks); the hit rows carry `data-feature` / `data-use` for it. Reactions never
+    lock on the GM's spotlight (answer 1c).
+  - An out-of-combat Use runs `classFeatures.use` (as the sheet's D5 Use) and shows its summary as a toast; a refusal
+    shows as the table's toast.
+  - Data gap: the server has no "trigger applies" flag outside open hits, so other reactions (Prayer Dice, Rousing
+    Strike's helpers…) stay greyed on the ring and keep their React on the sheet.
+  - A "More actions" row is named by its name alone ("React with Iron Will"); its lock reason is its description.
+  - Tests: `tests/unit/hud/action-ring.test.tsx` (model + ring), `tests/e2e/hud-answers.spec.ts` (Iron Will greyed).

@@ -61,6 +61,44 @@
   width: 16px;
   height: 16px;
 }
+/*
+ * The header's fold button (user answer 2026-11-02, dcm-bxp.99.32.28): the whole title unfolds / folds the panel.
+ * Folded, only the header bar shows, so the tokens under the panel take clicks again.
+ */
+.hud-areas-fold {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.hud-areas-fold::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-135deg) translate(-2px, -2px);
+}
+.hud-areas-fold[aria-expanded="false"]::after {
+  transform: rotate(45deg) translate(-2px, -2px);
+}
+.hud-areas-fold:focus-visible {
+  outline: 2px solid var(--hud-fear-text);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.hud-areas-folded {
+  padding: 8px 12px 8px 16px;
+}
 .hud-areas-b {
   display: flex;
   flex-direction: column;

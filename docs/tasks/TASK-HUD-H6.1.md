@@ -186,3 +186,12 @@ None filed. dcm-bxp.99.32.2 (structured shortfall, lane:w3-vocabulary) already c
 4. **SPOTLIGHT_WITH_GM wording.** The server's default text is "Only reactions until it comes back to you."; the table
    uses the brief's "You can use reactions until it comes back." (the HUD never shows the server's default text for this
    code). The short before-the-click form is "The GM has the spotlight · reactions only".
+
+## User answers 2026-11-02 (applied)
+
+- **"needs" everywhere** (QUESTIONS 3): refusals and before-the-click reasons say "Wall Walk needs 1 Hope. You have
+  0."; `shortfallSentence` lost its `verb` option (shortfall.ts), the refusal table's comments and the tests follow.
+  The ring and the GM's Fear controls already said "needs".
+- **Difficult terrain** (QUESTIONS 2): no automatic roll. The unused client-only `DIFFICULT_TERRAIN` entry and its test
+  are gone from refusals.ts, and with it the `then: "dice-box"` value (nothing else used it). A test now checks the
+  code is unmapped.

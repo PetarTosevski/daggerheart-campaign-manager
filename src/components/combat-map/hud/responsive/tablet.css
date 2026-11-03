@@ -232,6 +232,7 @@
     min-height: 44px !important;
   }
   .hud-root .hud-areas-seg button,
+  .hud-root .hud-areas-fold,
   .hud-root .hsb-spot,
   .hud-root .hsb-atk,
   .hud-root .hsb-seg button,

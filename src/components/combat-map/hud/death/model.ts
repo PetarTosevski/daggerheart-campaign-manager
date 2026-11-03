@@ -46,7 +46,27 @@ export function deathPhase(state: DeathStateView): DeathPhase {
 }
 
 /** A feed row as `feed.list` gives it (the fields read here). */
-export type FeedRowView = { _id: string; kind: string; summary: string; characterId?: string; undone: boolean };
+export type FeedRowView = { _id: string; at?: number; kind: string; summary: string; characterId?: string; undone: boolean; roll?: unknown };
+
+/**
+ * The death-move outcomes the rest of the table sees (user answer 2026-11-02: every player gets the outcome popup, not
+ * only the chooser and the GM), newest first: live `death` rows that carry the move's dice (a confirmed or made move;
+ * the request, a send-back and "back in play" carry none) of a character not in `exclude` (the viewer's own, whose
+ * `OwnDeath` already shows it).
+ */
+export function tableOutcomes<R extends FeedRowView>(rows: readonly R[], exclude: ReadonlySet<string>): R[] {
+  return rows.filter((r) => r.kind === "death" && r.roll !== undefined && !r.undone && r.characterId !== undefined && !exclude.has(r.characterId));
+}
+
+/**
+ * The oldest outcome above `seen` (the newest one already shown, or on the page when the view loaded), or null.
+ * `seen` null: every outcome on the page is new; `seen` gone from the page: so is every outcome on it.
+ */
+export function nextOutcome<R extends FeedRowView>(outcomes: readonly R[], seen: string | null): R | null {
+  const at = seen === null ? -1 : outcomes.findIndex((r) => r._id === seen);
+  const fresh = at < 0 ? outcomes : outcomes.slice(0, at);
+  return fresh.length > 0 ? fresh[fresh.length - 1]! : null;
+}
 
 /**
  * What became of a request the player watched, read from the feed (`feed.list`, newest first):

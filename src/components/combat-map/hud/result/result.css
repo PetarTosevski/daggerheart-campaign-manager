@@ -393,8 +393,8 @@
     position: relative;
     width: 100%;
     padding-top: 18px;
-    /* Clear of the app's floating "Ask the Lorekeeper" pill (bottom right). */
-    padding-bottom: 76px;
+    /* The board's 16 px: the Lorekeeper pill hides on the combat map at phone width (user answer 2026-11-02). */
+    padding-bottom: 16px;
     border-radius: 22px 22px 0 0;
     background: var(--hud-card);
     box-shadow: none;
@@ -416,8 +416,8 @@
     background: #3a4d54;
   }
   /*
-   * A popup with a footer (Your roll waits, the follow-up asks): the footer sticks to the sheet's bottom edge, clear of
-   * the Lorekeeper pill, while the body scrolls; the card itself must not clip (overflow would stop the sticking).
+   * A popup with a footer (Your roll waits, the follow-up asks): the footer sticks to the sheet's bottom edge
+   * while the body scrolls; the card itself must not clip (overflow would stop the sticking).
    */
   .hud-res-spot .hud-pc:has(> .hud-pc-f) {
     overflow: visible;
@@ -426,7 +426,7 @@
   .hud-res-spot .hud-pc-f {
     position: sticky;
     bottom: 0;
-    padding: 10px 14px 76px;
+    padding: 10px 14px 16px;
     background: var(--hud-card);
   }
   .hud-res-spot .hud-pc-f > .hud-btn,

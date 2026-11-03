@@ -12,7 +12,7 @@ import { hudToasts } from "../toasts/store";
  * under the control that was pressed"). `useRefusal()` sends through `run`, resolves whatever the mutation threw with
  * the refusal table, and holds it for `RefusalMessage` under the control. A refusal the table places in a toast
  * (`REQUEST_NOT_OPEN`, `FEATURE_NEEDS_MAP`, FALLBACK…) goes to the toast host instead (layer 3), and its `then`
- * ("refresh", "snap-back", "dice-box") reaches `onThen`.
+ * ("refresh", "snap-back") reaches `onThen`.
  */
 
 export type UseRefusalOptions = RefusalContext & {

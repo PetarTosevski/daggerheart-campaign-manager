@@ -125,6 +125,11 @@ test("the player at 390: strip with Fear, bottom sheet with resources and tabs, 
     await expect(chip).toHaveText(new RegExp(`^${enemies.sniper.name} · Very Far · GM [→←↑↓]$`));
     await test.info().attach("player-edge-chips-390", { body: await player.screenshot(), contentType: "image/png" });
     await expectNoSeriousA11yViolations(player);
+    // A tap on the chip pans the map so the Sniper comes into view (user answer 2026-11-02): its chip goes, its ring shows.
+    await chip.getByRole("button").click();
+    await expect(chip).toHaveCount(0);
+    const sniperRing = player.locator(`.hud-map [data-testid="hud-pick-ring"][data-token="${enemies.sniper.tokenId}"]`);
+    await expect(sniperRing).toBeInViewport();
     // At 760 px and below the picker is a bottom sheet whose footer Cancel replaces the header's ✕ (H7.3).
     await player.getByTestId("hud-pick").getByTestId("hud-pick-cancel").click();
     await expect(chip).toHaveCount(0);

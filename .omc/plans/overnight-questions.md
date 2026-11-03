@@ -275,3 +275,5 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - Help: named ally chips (each helper by name, each pays their own Hope). CHANGE (engine + UI).
 - Death moves (user 2026-11-03): players can't undo death moves - only the GM undoes a confirmed move, Blaze of Glory's finish and Risk It All's split. "Take it back" stays while the move waits for the GM's confirm. CHANGE.
 - Spotlit adversary for players (user 2026-11-03): players learn which adversary holds the spotlight only if that adversary has been revealed to them during the current scene. Never seen this scene -> they don't know (server sends nothing). Seen earlier this scene but now invisible / out of vision / hidden -> they're told it's that adversary's spotlight (by name) even though no token is drawn. CHANGE.
+- GM Play-for attack out of range: keep the 'Out of range: your call' request for the GM too (as built). KEEP.
+- End lasting effects: GM, caster and wearer's player (as built). KEEP.

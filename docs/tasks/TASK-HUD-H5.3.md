@@ -147,3 +147,13 @@ None filed; none closed (parent dcm-bxp.99.32 stays open).
 
 None. No new mechanic: the preview reads the engine's existing End scene (CB p.107, "End of the Scene"; SD8 / DA10),
 and answer 6a fixed which Fear spends ask.
+
+## User answers 2026-11-02 (applied)
+
+- **Areas folds when not in use** (dcm-bxp.99.32.28). Desktop placement stays bottom right. The panel opens
+  unfolded; after a press outside it or focus leaving it (the map, a token, another panel) it folds to its header bar, so the tokens under it
+  take clicks again. The header ("Areas on the map", a button with `aria-expanded`) unfolds it; a running square pick
+  keeps it shown until the pick ends. Folded, the body stays mounted (hidden), so the draw form keeps its values.
+  Testids, the dialog name "Areas", "Close Areas" and "Pick on the map" are unchanged. Tablet placement (under the Fear
+  banner) stays. Tests: `fear-confirm.test.tsx`, `hud-fear-confirm.spec.ts`, `hud-make-room.spec.ts` (unfolds before
+  its second pick).

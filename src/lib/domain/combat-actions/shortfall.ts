@@ -196,13 +196,13 @@ export function shortfallTag(input: Shortfall, viewer: ShortfallViewer = "player
 
 /**
  * The refusal sentence (CmpBlocked's message column), split into its bold lead and the rest:
- * hope  "Wall Walk costs 1 Hope." / "You have 0."; stress "Beastform needs a Stress." / "Your Stress is full.";
+ * hope  "Wall Walk needs 1 Hope." / "You have 0."; stress "Beastform needs a Stress." / "Your Stress is full.";
  * armor "No Armor Slot left to mark."; fear "This needs 2 Fear." / "You have 1.". `subject` is the card or feature
- * ("That card" when unknown); `verb` "needs" gives the action ring's "Evolution needs 3 Hope. You have 1." (board Main).
+ * ("That card" when unknown). Always "needs", in refusals and before-the-click reasons alike (user answer 2026-11-02).
  */
 export function shortfallSentence(
   input: Shortfall,
-  options: { subject?: string | null; verb?: "costs" | "needs"; viewer?: ShortfallViewer } = {},
+  options: { subject?: string | null; viewer?: ShortfallViewer } = {},
 ): { lead: string; rest: string | null } {
   const s = visibleShortfall(input, options.viewer ?? "player");
   const given = options.subject?.trim() || null;
@@ -210,8 +210,7 @@ export function shortfallSentence(
   if (s.resource === "armor" && (s.need === null || (s.have ?? 0) === 0)) return { lead: "No Armor Slot left to mark.", rest: null };
   if (s.need === null) return { lead: `Not enough ${resourceName(s.resource)} for ${given ?? "that"}.`, rest: null };
   const track = TRACKS.has(s.resource);
-  const verb = s.resource === "hope" ? (options.verb ?? "costs") : "needs";
-  const lead = `${subject} ${verb} ${amountText(s.resource, s.need, track)}.`;
+  const lead = `${subject} needs ${amountText(s.resource, s.need, track)}.`;
   if (s.have === null) return { lead, rest: null };
   if (s.resource === "stress") return { lead, rest: s.have === 0 ? "Your Stress is full." : `You can mark ${s.have} more.` };
   if (track) return { lead, rest: s.have === 0 ? `Your ${resourceName(s.resource)} are all marked.` : `You can mark ${s.have} more.` };

@@ -67,21 +67,27 @@ function time(at: number): string {
   return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-/** The GM's free roll: any dice plus a modifier, hidden from players until revealed. */
-function GmRollForm({ campaignId }: { campaignId: Id<"campaigns"> }) {
+/**
+ * The GM's free roll: any dice plus a modifier, hidden from players until revealed. Also the Combat HUD's GM Dice (user
+ * answer 2026-11-02), which has no feed beside it: `showResult` adds the last roll's dice and total under the form.
+ */
+export function GmRollForm({ campaignId, showResult = false }: { campaignId: Id<"campaigns">; showResult?: boolean }) {
   const [count, setCount] = useState("1");
   const [sides, setSides] = useState<number>(20);
   const [modifier, setModifier] = useState("0");
   const [label, setLabel] = useState("");
   const roll = useIntent(api.rolls.gmRoll);
+  const [last, setLast] = useState<{ dice: Parameters<typeof DiceFaces>[0]["dice"]; text: string } | null>(null);
   const n = Number.parseInt(count, 10);
   const stage = useRef<HTMLDivElement>(null);
   const [settings] = useDiceSettings();
 
   // The same 3D dice and sound as the character dice box, per this device's settings.
   async function submit() {
-    const result = await roll.fire({ campaignId, dice: [{ count: n, sides }], modifier: Number.parseInt(modifier, 10) || 0, ...(label.trim() ? { label: label.trim() } : {}) });
+    const mod = Number.parseInt(modifier, 10) || 0;
+    const result = await roll.fire({ campaignId, dice: [{ count: n, sides }], modifier: mod, ...(label.trim() ? { label: label.trim() } : {}) });
     if (!result) return;
+    if (showResult) setLast({ dice: result.roll.dice, text: `${n}d${sides}${mod > 0 ? `+${mod}` : mod < 0 ? String(mod) : ""} = ${result.roll.total}` });
     const shown = canAnimate3d(settings) && stage.current !== null && (await play3d(stage.current, { dice: result.roll.dice, sound: settings.sound }));
     if (!shown && settings.sound) playRollSound();
   }
@@ -124,6 +130,16 @@ function GmRollForm({ campaignId }: { campaignId: Id<"campaigns"> }) {
       <p aria-live="polite" className="m-0 w-full text-[13px] text-danger empty:hidden">
         {roll.error}
       </p>
+      {showResult ? (
+        <div role="status" className="flex w-full items-center gap-2 text-[14px] text-[#e6ecea] empty:hidden" data-testid="gm-roll-result">
+          {last ? (
+            <>
+              <DiceFaces dice={last.dice} />
+              <b>{last.text}</b>
+            </>
+          ) : null}
+        </div>
+      ) : null}
       <div ref={stage} className="w-full empty:hidden" />
     </form>
   );

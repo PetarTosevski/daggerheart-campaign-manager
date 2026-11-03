@@ -221,13 +221,40 @@ export const RESOLUTION_SCAN = 40;
 export const RESOLUTIONS_SHOWN = 6;
 
 /** A feed row as Resolutions reads it (`feed.list`, the GM's shape). */
-export type ResolutionFeedRow = { _id: string; kind: string; visibility: string; undone: boolean; canUndo: boolean };
+export type ResolutionFeedRow = {
+  _id: string;
+  kind: string;
+  visibility: string;
+  undone: boolean;
+  canUndo: boolean;
+  summary?: string;
+  roll?: { outcome: string };
+  fearDelta?: number;
+};
+
+/** A player's duality roll that came up with Fear (a `roll` row, CB p.95: the GM gains a Fear). */
+export function isFearRoll(row: Pick<ResolutionFeedRow, "kind" | "roll">): boolean {
+  return row.kind === "roll" && (row.roll?.outcome === "successFear" || row.roll?.outcome === "failFear");
+}
 
 /**
  * The GM's latest combat resolutions, newest first: a PC's attack or card on the map (`combat`) and an adversary's
  * attack or feature (`adversary`; Momentum's Fear rides on it, answer 7a), the GM's own rows (they carry damage,
- * severity and marks). The classic column's two lists (Resolutions and Adversary actions) in one.
+ * severity and marks), and every roll with Fear (user answer 2026-11-02, GMDesktop "Vex rolled with Fear · +1 Fear").
+ * The classic column's two lists (Resolutions and Adversary actions) in one.
  */
 export function resolutionRows<R extends ResolutionFeedRow>(rows: readonly R[], shown = RESOLUTIONS_SHOWN): R[] {
-  return rows.filter((r) => (r.kind === "combat" || r.kind === "adversary") && r.visibility === "gm").slice(0, shown);
+  return rows.filter((r) => ((r.kind === "combat" || r.kind === "adversary") && r.visibility === "gm") || isFearRoll(r)).slice(0, shown);
+}
+
+/**
+ * A roll with Fear as GMDesktop's Resolutions line: "Vex rolled with Fear" and "+1 Fear" (the Fear it gave; none at 12
+ * Fear). The roller's name is the summary's lead ("Vex: Agility action roll 14, …", `dualitySummary`).
+ */
+export function fearRollLine(row: Pick<ResolutionFeedRow, "summary" | "fearDelta">): { lead: string; fear: string | null } {
+  const summary = row.summary ?? "";
+  const colon = summary.indexOf(": ");
+  const name = colon > 0 ? summary.slice(0, colon) : "A player";
+  const fear = row.fearDelta !== undefined && row.fearDelta > 0 ? `+${row.fearDelta} Fear` : null;
+  return { lead: `${name} rolled with Fear`, fear };
 }

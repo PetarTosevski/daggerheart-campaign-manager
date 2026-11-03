@@ -29,7 +29,7 @@ describe("before the click", () => {
   it("pre-computes the Hope shortfall: 'Needs 3 Hope · you have 1' and the tag 'Needs 3 Hope'", () => {
     const why = blockedReason({ kind: "feature", subject: "Evolution", costs: [hope(3)], room: { hope: 1 } });
     expect(why).toMatchObject({ code: "FEATURE_COST_UNPAID", text: "Needs 3 Hope · you have 1", tag: "Needs 3 Hope" });
-    expect(why?.refusal.text).toBe("Evolution costs 3 Hope. You have 1.");
+    expect(why?.refusal.text).toBe("Evolution needs 3 Hope. You have 1.");
     expect(blockedReason({ costs: [hope(1)], room: { hope: 1 } })).toBeNull();
   });
 
@@ -159,7 +159,7 @@ describe("toast host", () => {
   it("shows the board's toast: title, message, hint; dismisses on ✕", () => {
     render(<HudToasts state={STATE} />);
     act(() => {
-      hudToasts.push({ title: "Not enough Hope", message: "Wall Walk costs 1 Hope. You have 0.", hint: "Roll with Hope, or rest, to gain Hope." });
+      hudToasts.push({ title: "Not enough Hope", message: "Wall Walk needs 1 Hope. You have 0.", hint: "Roll with Hope, or rest, to gain Hope." });
     });
     const status = screen.getByRole("status");
     expect(within(status).getByText("Not enough Hope")).toBeInTheDocument();

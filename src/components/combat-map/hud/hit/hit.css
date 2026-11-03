@@ -244,8 +244,8 @@
     width: 100%;
     max-height: min(70dvh, calc(100dvh - 112px));
     padding-top: 18px;
-    /* Clear of the app's floating "Ask the Lorekeeper" pill (bottom right). */
-    padding-bottom: 76px;
+    /* The board's 16 px: the Lorekeeper pill hides on the combat map at phone width (user answer 2026-11-02). */
+    padding-bottom: 16px;
     border-radius: 22px 22px 0 0;
     box-shadow:
       0 -1px 0 #6b2a22,
@@ -267,7 +267,7 @@
     border-radius: 2px;
     background: #3a4d54;
   }
-  /* The footer sticks to the sheet's bottom edge, clear of the Lorekeeper pill, while a long window scrolls. */
+  /* The footer sticks to the sheet's bottom edge while a long window scrolls. */
   .hud-hit.hud-pc:has(> .hud-pc-f) {
     padding-bottom: 0;
   }
@@ -277,7 +277,7 @@
     z-index: 1;
     flex-direction: column-reverse;
     align-items: stretch;
-    padding: 10px 14px 76px;
+    padding: 10px 14px 16px;
     background: var(--hud-card);
   }
   .hud-hit .hud-pc-f > .hud-btn {

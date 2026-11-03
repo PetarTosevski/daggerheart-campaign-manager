@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { RADIUS_LABEL, useMapAreas, type AreaView } from "../../map-view/area-overlay";
-import { startAreaPick, type Square } from "../../map-view/area-pick";
+import { startAreaPick, useAreaPick, type Square } from "../../map-view/area-pick";
 import { useTokens } from "../../tokens/use-tokens";
 import type { HudPartProps } from "../state";
 import { hudButtonClass } from "../ui";
@@ -68,8 +68,19 @@ export function HudAreas({ state }: HudPartProps): ReactNode {
   return <AreasPanel campaignId={state.campaignId} mapId={state.map._id} />;
 }
 
+/**
+ * Folding (user answer 2026-11-02, dcm-bxp.99.32.28): the panel opens unfolded; once the GM is done with it (a press
+ * outside it, or focus leaving it, with no square pick running) it folds to its header bar, so it no longer covers the
+ * tokens under it. The
+ * header's button unfolds it again; a running square pick keeps it unfolded. Folded, the body stays mounted (hidden),
+ * so a half-filled draw form keeps its values.
+ */
 function AreasPanel({ campaignId, mapId }: { campaignId: Id<"campaigns">; mapId: Id<"combatMaps"> }) {
   const ref = useRef<HTMLElement>(null);
+  const bodyId = useId();
+  const [unfolded, setUnfolded] = useState(true);
+  const picking = useAreaPick().request !== null;
+  const shown = unfolded || picking;
 
   // Focus moves in on open and back to the Areas button on close, unless it already moved elsewhere (DOM focus only).
   useEffect(() => {
@@ -83,6 +94,18 @@ function AreasPanel({ campaignId, mapId }: { campaignId: Id<"campaigns">; mapId:
     };
   }, []);
 
+  // A press anywhere outside the panel (the map, a token: the map's layers may keep focus where it was) folds it; a
+  // running square pick keeps it shown until the pick ends (`shown`). UI state only, no mutation.
+  useEffect(() => {
+    const down = (e: PointerEvent) => {
+      const target = e.target instanceof Node ? e.target : null;
+      if (target !== null && ref.current?.contains(target)) return;
+      setUnfolded(false);
+    };
+    document.addEventListener("pointerdown", down, true);
+    return () => document.removeEventListener("pointerdown", down, true);
+  }, []);
+
   return (
     <section
       ref={ref}
@@ -91,21 +114,35 @@ function AreasPanel({ campaignId, mapId }: { campaignId: Id<"campaigns">; mapId:
       role="dialog"
       aria-modal="false"
       aria-label="Areas"
-      className="hud-areas"
+      className={cn("hud-areas", !shown && "hud-areas-folded")}
+      data-folded={!shown}
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.stopPropagation();
           setAreasOpen(false);
         }
       }}
+      onBlur={(event) => {
+        // Done with it: focus went outside the panel (the map, a token, another panel). A running square pick keeps it
+        // shown (`shown`) until the pick ends.
+        const next = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+        if (next !== null && event.currentTarget.contains(next)) return;
+        setUnfolded(false);
+      }}
     >
       <div className="hud-areas-h">
-        <h2>Areas on the map</h2>
+        <h2>
+          <button type="button" className="hud-areas-fold" aria-expanded={shown} aria-controls={bodyId} onClick={() => setUnfolded(!shown)}>
+            Areas on the map
+          </button>
+        </h2>
         <button type="button" className="hud-areas-x" aria-label="Close Areas" onClick={() => setAreasOpen(false)}>
           <X aria-hidden="true" />
         </button>
       </div>
-      <AreasBody campaignId={campaignId} mapId={mapId} />
+      <div id={bodyId} hidden={!shown} className="hud-areas-bw">
+        <AreasBody campaignId={campaignId} mapId={mapId} />
+      </div>
     </section>
   );
 }

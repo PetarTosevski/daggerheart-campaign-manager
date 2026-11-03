@@ -21,8 +21,11 @@ import {
   moreItem,
   openActionRing,
   raiseHand,
+  reactionLock,
   resetActionRingForTests,
   ringItems,
+  ringOutside,
+  ringReactions,
   ringPoint,
   ringRadius,
   ringSlots,
@@ -36,6 +39,7 @@ import {
 import { PickProvider } from "@/components/combat-map/hud/pick";
 import type { HudSheetData, HudSheetFeature } from "@/components/combat-map/hud/sheet/model";
 import { HudProvider, useHud } from "@/components/combat-map/hud/state";
+import { hudToasts } from "@/components/combat-map/hud/toasts";
 import type { CombatPageState, MapLayerProps } from "@/components/combat-map/slots";
 
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -43,9 +47,10 @@ import type { Id } from "../../../convex/_generated/dataModel";
 const queries: Record<string, unknown> = {};
 const functionName = (ref: unknown) => String((ref as Record<symbol, unknown>)[Symbol.for("functionName")] ?? ref);
 
+const mutate = vi.fn<(args: unknown) => Promise<unknown>>(async () => null);
 vi.mock("convex/react", () => ({
   useQuery: (ref: unknown, args: unknown) => (args === "skip" ? undefined : queries[functionName(ref)]),
-  useMutation: () => Object.assign(async () => null, { withOptimisticUpdate: () => async () => null }),
+  useMutation: () => Object.assign((args: unknown) => mutate(args), { withOptimisticUpdate: () => async () => null }),
 }));
 
 const MOSS_TOKEN = "tk-moss" as Id<"combatTokens">;
@@ -157,6 +162,9 @@ afterEach(() => {
   attack.open.mockReset();
   featureOpen.mockReset();
   featureOpen.mockImplementation(() => "picker");
+  mutate.mockReset();
+  mutate.mockImplementation(async () => null);
+  hudToasts.reset();
   document.body.innerHTML = "";
 });
 
@@ -227,6 +235,35 @@ describe("model", () => {
       feature("Manual", { automated: false }),
     ]);
     expect(uses.map((u) => u.label)).toEqual(["Evolution", "Beastform", "Strike", "Guard"]);
+  });
+
+  it("reactions and out-of-combat Uses (user answer 2026-11-02): the sheet's React and D5 Use buttons", () => {
+    const features = [
+      ...DRUID,
+      feature("Parry", { kind: "reaction", uses: [makeUse({ activation: "reaction" })] }),
+      feature("Commune", { featureId: "class:witch:commune", kind: "outOfCombat", uses: null, resetLabel: "Back after a long rest" }),
+      feature("Manual", { kind: "outOfCombat", uses: null }),
+    ];
+    expect(ringReactions(features).map((u) => u.label)).toEqual(["Parry"]);
+    expect(ringOutside(features)).toEqual([{ featureId: "class:witch:commune", featureKey: "commune", label: "Commune", ready: true, resetLabel: "Back after a long rest" }]);
+    expect(reactionLock({ label: "Parry", ready: true, resetLabel: null }, false)).toBe("Parry is a reaction: it waits for its trigger.");
+    expect(reactionLock({ label: "Parry", ready: true, resetLabel: null }, true)).toBeNull();
+    expect(reactionLock({ label: "Parry", ready: false, resetLabel: "Back after a rest" }, true)).toBe("Parry is used up for now. Back after a rest.");
+    const items = ringItems({
+      attack: { locked: null, on: false },
+      cast: { locked: null, on: false },
+      sheet: { on: false },
+      features: [],
+      reactions: [{ featureId: "f:Parry", useId: "u1", label: "Parry", ready: true, resetLabel: null, locked: null, on: false }],
+      outside: [{ featureId: "class:witch:commune", featureKey: "commune", label: "Commune", ready: true, resetLabel: null, locked: null, on: false }],
+    });
+    expect(items.map((i) => [i.kind, i.name])).toEqual([
+      ["attack", "Attack"],
+      ["cast", "Cast"],
+      ["sheet", "Sheet"],
+      ["reaction", "React with Parry"],
+      ["outside", "Use Commune"],
+    ]);
   });
 
   it("lock reasons: used first, then a fixed Hope cost; Attack and Cast", () => {
@@ -426,6 +463,55 @@ describe("the ring", () => {
     expect(screen.queryByRole("group", { name: "More actions" })).toBeNull();
     expect(more).toHaveFocus();
     expect(screen.getByTestId("hud-action-ring")).toBeInTheDocument();
+  });
+
+  it("a reaction is greyed with its reason until the server offers it for an open hit; then it goes to that answer's Use", () => {
+    queries["combatHud:sheet"] = sheet([...DRUID, feature("Parry", { kind: "reaction", uses: [makeUse({ activation: "reaction" })] })]);
+    const view = renderRing();
+    act(() => openActionRing(MOSS_TOKEN));
+    const parry = ringButton("React with Parry");
+    expect(parry).toHaveAttribute("aria-disabled", "true");
+    expect(parry).toHaveAccessibleDescription("Parry is a reaction: it waits for its trigger.");
+    fireEvent.click(parry);
+    expect(featureOpen).not.toHaveBeenCalled();
+    // The server offers it for an open hit: it unlocks and takes focus to the hit window's Use.
+    queries["adversaryActions:pending"] = [{ features: [{ featureId: "f:Parry", useId: "u1" }] }];
+    const hit = document.createElement("div");
+    hit.dataset.testid = "hud-hit-window";
+    hit.innerHTML = '<ul><li data-testid="hud-hit-feature" data-feature="f:Parry" data-use="u1"><button type="button" aria-label="Use Parry">Use</button></li></ul>';
+    document.body.append(hit);
+    view.rerender(
+      <HudProvider>
+        <PickProvider>
+          <div className="hud-map">
+            <Token />
+            <HudActionRing {...layer()} />
+          </div>
+        </PickProvider>
+      </HudProvider>,
+    );
+    act(() => openActionRing(MOSS_TOKEN));
+    const offered = ringButton("React with Parry");
+    expect(offered).not.toHaveAttribute("aria-disabled");
+    fireEvent.click(offered);
+    expect(hit.querySelector("button")).toHaveFocus();
+  });
+
+  it("an out-of-combat Use (Commune) runs classFeatures.use; its summary shows as a toast; a refusal as one too", async () => {
+    queries["combatHud:sheet"] = sheet([...DRUID, feature("Commune", { featureId: "class:witch:commune", kind: "outOfCombat", uses: null })]);
+    mutate.mockImplementation(async () => ({ summary: "Commune: rolled 4, 2, 6.", roll: null }));
+    renderRing();
+    act(() => openActionRing(MOSS_TOKEN));
+    await act(async () => {
+      fireEvent.click(ringButton("Use Commune"));
+    });
+    expect(mutate).toHaveBeenCalledWith(expect.objectContaining({ characterId: MOSS, featureKey: "commune", params: {} }));
+    expect(hudToasts.get().map((t) => [t.title, t.message])).toEqual([["Commune", "Commune: rolled 4, 2, 6."]]);
+    // A used-up one is greyed with when it comes back.
+    queries["combatHud:sheet"] = sheet([...DRUID, feature("Commune", { featureId: "class:witch:commune", kind: "outOfCombat", uses: null, used: true, resetLabel: "Back after a long rest" })]);
+    act(() => closeActionRing());
+    act(() => openActionRing(MOSS_TOKEN));
+    expect(ringButton("Use Commune")).toHaveAccessibleDescription("Commune is used up for now. Back after a long rest.");
   });
 
   it("players only, on your own token; nothing for the GM or another token", () => {

@@ -19,7 +19,7 @@ export type HudToast = {
   tone: ToastTone;
   /** Bold title ("Not enough Hope"). */
   title: string;
-  /** The message ("Wall Walk costs 1 Hope. You have 0."). */
+  /** The message ("Wall Walk needs 1 Hope. You have 0."). */
   message: string;
   /** How to fix it, or null. */
   hint: string | null;

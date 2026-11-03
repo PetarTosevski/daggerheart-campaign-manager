@@ -121,3 +121,11 @@ None: no Convex change, no codegen, no authz entry.
 2. **May the player close the modal?** CB p.106: "when you mark your last Hit Point, you must make a death move". GM
    chapter p.182: "make space for them to work and talk through their decision". The default lets the player close
    it and reopen it from a button, because nothing else is blocked meanwhile. Reversible: drop `onClose`.
+
+## User answers 2026-11-02 (applied)
+
+- **Death outcome for everyone** (QUESTIONS: only the chooser and the GM): every other player now gets the outcome
+  popup (`hud/death/table.tsx` `TableDeath`, `data-testid="hud-death-table"`), read from the move's own public feed
+  row (a `death` row carrying the dice; the request, a send-back and "back in play" carry none). Outcomes already on
+  the page when the view loads are history and not shown; Got it moves to the next; an undone move drops out. The
+  chooser keeps their own popup, the GM theirs from the confirm. Tests: `death-feed.test.tsx`, `hud-answers.spec.ts`.

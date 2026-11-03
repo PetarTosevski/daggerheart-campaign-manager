@@ -116,3 +116,13 @@ None.
    the DOM order is `hud/ui/popup.tsx` (not owned).
 3. **The Lorekeeper pill** on the combat page at phone width covers the sheets' bottom-right; 76 px of room is kept.
    Hide it on the phone combat page (H7.2 / the layout)?
+
+## User answers 2026-11-02 (applied)
+
+- **The Lorekeeper pill** (QUESTIONS 3): hidden on the combat map at phone width (≤ 760 px; the drawer's own pill in
+  `src/components/lorekeeper/drawer/index.tsx`, by pathname, so other pages keep it). The Lorekeeper stays in the nav.
+  The sheets' 76 px of bottom room is the board's 16 px again (`pick.css`, `result.css`, `hit.css`; `phone.css`'s
+  72 px → 16 px plus the safe area). `hud-phone-sheets.spec.ts` checks the pill is hidden and the 16 px room.
+- Seen while checking: at tablet width (1024) the pill still covers the GM stat block's Attack, so
+  `hud-tablet.spec.ts:153` fails its Attack click on this host (the pill intercepts the click). Not changed here: the
+  answer covers phone width only.

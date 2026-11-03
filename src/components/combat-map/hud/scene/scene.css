@@ -181,6 +181,15 @@
 .hud-pop-dice {
   width: 420px;
 }
+/* The GM's Dice (user answer 2026-11-02): "GM roll" / "For <PC>" over the GM roller or the PC's dice box. */
+.hud-gm-dice {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.hud-gm-dice-as {
+  align-self: flex-start;
+}
 
 @media (max-width: 1180px) {
   .hud-title {

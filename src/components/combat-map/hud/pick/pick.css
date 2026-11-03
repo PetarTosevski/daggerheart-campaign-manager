@@ -481,8 +481,8 @@
     flex-wrap: wrap;
     align-items: stretch;
     gap: 8px;
-    /* Clear of the app's floating "Ask the Lorekeeper" pill (bottom right, about 64 px high with its margin). */
-    padding: 10px 14px 76px;
+    /* The board's 16 px: the Lorekeeper pill hides on the combat map at phone width (user answer 2026-11-02). */
+    padding: 10px 14px 16px;
   }
   .hud-pk-pay {
     flex: 1 1 100%;

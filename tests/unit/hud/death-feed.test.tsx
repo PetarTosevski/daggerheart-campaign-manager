@@ -169,6 +169,60 @@ describe("the player's death move", () => {
   });
 });
 
+describe("the rest of the table (user answer 2026-11-02)", () => {
+  const ROLL = { kind: "free", dice: [], modifier: 0, total: 3, outcome: "none", manual: false };
+  const vex = { ...character(true), _id: "c-vex", sheet: { ...character(true).sheet, name: "Vex" } };
+
+  it("every other player sees the outcome popup; history and the request row don't show; Got it closes it", () => {
+    queries[CHARACTERS] = [vex, character(false)];
+    queries[STATE] = { ...base };
+    queries[FEED] = { page: [row("Moss avoided death last session.", { roll: ROLL }), row("older")], isDone: true, continueCursor: "" };
+    const view = render(<HudDeath state={page("player")} />);
+    expect(screen.queryByTestId("hud-death-table")).toBeNull();
+    // Moss asks: the request row carries no dice, so nothing shows yet.
+    queries[FEED] = { page: [row("Moss chooses Avoid Death. Waiting for the GM to confirm."), row("Moss avoided death last session.", { roll: ROLL })], isDone: true, continueCursor: "" };
+    view.rerender(<HudDeath state={page("player")} />);
+    expect(screen.queryByTestId("hud-death-table")).toBeNull();
+    // The GM confirms: the move's row (with its Hope Die) shows for Vex's player too.
+    queries[FEED] = {
+      page: [row("Moss avoids death and drops unconscious. Hope Die 3 against level 1: no scar.", { roll: ROLL }), row("req"), row("Moss avoided death last session.", { roll: ROLL })],
+      isDone: true,
+      continueCursor: "",
+    };
+    view.rerender(<HudDeath state={page("player")} />);
+    const popup = screen.getByTestId("hud-death-table");
+    expect(popup).toHaveTextContent("Moss’s death move");
+    expect(within(popup).getByRole("status")).toHaveTextContent("Hope Die 3 against level 1: no scar.");
+    fireEvent.click(within(popup).getByRole("button", { name: "Got it" }));
+    expect(screen.queryByTestId("hud-death-table")).toBeNull();
+  });
+
+  it("an outcome that landed while the view was loading (under 30 s old) still shows", () => {
+    queries[CHARACTERS] = [vex, character(false)];
+    queries[STATE] = { ...base };
+    queries[FEED] = { page: [row("Moss goes out in a Blaze of Glory.", { roll: ROLL, at: Date.now() - 2_000 })], isDone: true, continueCursor: "" };
+    render(<HudDeath state={page("player")} />);
+    expect(screen.getByTestId("hud-death-table")).toHaveTextContent("Moss goes out in a Blaze of Glory.");
+  });
+
+  it("not for the chooser (their own popup shows it) nor on the GM view (the confirm shows it)", () => {
+    queries[STATE] = { ...base };
+    queries[FEED] = { page: [], isDone: true, continueCursor: "" };
+    queries[CHARACTERS] = [character(true)];
+    const view = render(<HudDeath state={page("player")} />);
+    queries[FEED] = { page: [row("Moss goes out in a Blaze of Glory.", { roll: ROLL })], isDone: true, continueCursor: "" };
+    view.rerender(<HudDeath state={page("player")} />);
+    expect(screen.queryByTestId("hud-death-table")).toBeNull();
+    view.unmount();
+    queries[CHARACTERS] = [character(false)];
+    queries[FEED] = { page: [], isDone: true, continueCursor: "" };
+    const gm = render(<HudDeath state={page("gm")} />);
+    queries[FEED] = { page: [row("Moss goes out in a Blaze of Glory.", { roll: ROLL })], isDone: true, continueCursor: "" };
+    gm.rerender(<HudDeath state={page("gm")} />);
+    expect(screen.queryByTestId("hud-death-table")).toBeNull();
+  });
+});
+
 describe("the GM's confirm popup", () => {
   it("shows the request; Confirm the death move confirms and shows the outcome", async () => {
     queries[CHARACTERS] = [character(false)];

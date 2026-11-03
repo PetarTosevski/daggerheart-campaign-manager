@@ -53,7 +53,7 @@ test("Main 'Can't afford' at 1440x900: card tag, toast on a press, ring lock", a
     await use.focus();
     await use.press("Enter");
     const toast = notices(player).getByRole("listitem").filter({ hasText: "Not enough Hope" });
-    await expect(toast).toContainText("Wall Walk costs 1 Hope. You have 0.");
+    await expect(toast).toContainText("Wall Walk needs 1 Hope. You have 0.");
     await expect(toast).toContainText("Roll with Hope, or rest, to gain Hope.");
     await expect(player.getByTestId("hud-pick")).toHaveCount(0);
 

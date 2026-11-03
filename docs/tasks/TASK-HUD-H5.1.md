@@ -133,3 +133,10 @@ from the e2e seed's real data.
 
 - No codegen: no Convex file changed.
 - Accept the two out-of-owns edits above (`hud/death/index.tsx`, `tests/unit/hud/death-feed.test.tsx`).
+
+## User answers 2026-11-02 (applied)
+
+- **Rolls with Fear in Resolutions**: besides the GM's attack and adversary rows, every player roll with Fear
+  (`feed.list` `roll` rows with outcome successFear / failFear) reads "Vex rolled with Fear · +1 Fear" (no "+n Fear" at
+  12 Fear), with Undo through `actionLog.undo` (same optimistic "undone"). `isFearRoll`, `fearRollLine` in
+  queue/model.ts; the roller's name is the summary's lead. Tests: `queue-model.test.tsx`, `hud-answers.spec.ts`.

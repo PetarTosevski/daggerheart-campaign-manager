@@ -229,6 +229,32 @@ describe("Areas on the map", () => {
     expect(screen.queryByRole("dialog", { name: "Areas" })).toBeNull();
   });
 
+  it("folds to its header bar once focus leaves it; the header unfolds it (user answer 2026-11-02)", () => {
+    act(() => setAreasOpen(true));
+    render(createElement(HudAreas, { state: state("gm") }));
+    const panel = screen.getByRole("dialog", { name: "Areas" });
+    const fold = within(panel).getByRole("button", { name: "Areas on the map" });
+    expect(fold).toHaveAttribute("aria-expanded", "true");
+    expect(within(panel).getByTestId("area-tools")).toBeVisible();
+    // Focus moves inside: still unfolded.
+    fireEvent.focusOut(panel, { relatedTarget: fold });
+    expect(fold).toHaveAttribute("aria-expanded", "true");
+    // Focus leaves for the map: folded; the body stays mounted but hidden.
+    fireEvent.focusOut(panel, { relatedTarget: null });
+    expect(fold).toHaveAttribute("aria-expanded", "false");
+    expect(panel).toHaveAttribute("data-folded", "true");
+    expect(within(panel).getByTestId("area-tools")).not.toBeVisible();
+    expect(within(panel).getByRole("button", { name: "Close Areas" })).toBeVisible();
+    fireEvent.click(fold);
+    expect(fold).toHaveAttribute("aria-expanded", "true");
+    expect(within(panel).getByTestId("area-tools")).toBeVisible();
+    // A press inside keeps it; a press on the map (outside) folds it, even when focus stays where it was.
+    fireEvent.pointerDown(within(panel).getByRole("button", { name: "Pick on the map" }));
+    expect(fold).toHaveAttribute("aria-expanded", "true");
+    fireEvent.pointerDown(document.body);
+    expect(fold).toHaveAttribute("aria-expanded", "false");
+  });
+
   it("lists the map's live areas with Move / Remove and the draw form", async () => {
     act(() => setAreasOpen(true));
     render(createElement(HudAreas, { state: state("gm") }));

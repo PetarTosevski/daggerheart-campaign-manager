@@ -149,7 +149,7 @@ describe("the hand (CmpCards, Main 'Can't afford')", () => {
     expect(l.tag).toEqual({ kind: "no", text: "Needs 1 Hope", lock: true });
     expect(l).toMatchObject({ wash: "afford", canUse: false, showUse: true, reason: "Needs 1 Hope · you have 0" });
     expect(l.blocked?.code).toBe("CARD_COST_UNPAID");
-    expect(l.blocked?.refusal).toMatchObject({ title: "Not enough Hope", text: "Wall Walk costs 1 Hope. You have 0.", hint: "Roll with Hope, or rest, to gain Hope." });
+    expect(l.blocked?.refusal).toMatchObject({ title: "Not enough Hope", text: "Wall Walk needs 1 Hope. You have 0.", hint: "Roll with Hope, or rest, to gain Hope." });
   });
 
   it("the GM's spotlight: every card that starts something waits with SPOTLIGHT_WITH_GM; reaction cards keep their tag", () => {
@@ -190,7 +190,7 @@ describe("the hand (CmpCards, Main 'Can't afford')", () => {
     expect(use).toHaveAttribute("aria-disabled", "true");
     expect(use).toBeEnabled();
     fireEvent.click(use);
-    expect(hudToasts.get().map((t) => [t.title, t.message, t.hint])).toEqual([["Not enough Hope", "Wall Walk costs 1 Hope. You have 0.", "Roll with Hope, or rest, to gain Hope."]]);
+    expect(hudToasts.get().map((t) => [t.title, t.message, t.hint])).toEqual([["Not enough Hope", "Wall Walk needs 1 Hope. You have 0.", "Roll with Hope, or rest, to gain Hope."]]);
     expect(calls).toEqual([]);
   });
 
@@ -422,7 +422,7 @@ describe("the sheet's features (CmpBlocked 'feature disabled', 'sheet badge'; Ma
     fireEvent.click(evolution);
     const row = evolution.closest("li")!;
     expect(within(row).getByRole("alert")).toHaveAttribute("data-code", "FEATURE_COST_UNPAID");
-    expect(within(row).getByRole("alert")).toHaveTextContent("Evolution costs 3 Hope. You have 0.");
+    expect(within(row).getByRole("alert")).toHaveTextContent("Evolution needs 3 Hope. You have 0.");
     // Stress past full marks a Hit Point (CB p.106): Beastform is never locked on Stress.
     expect(screen.getByRole("button", { name: "Use Beastform" })).not.toHaveAttribute("aria-disabled");
     // A spent use: the sheet badge says when it comes back.

@@ -130,3 +130,10 @@ e2e seed's real data. The picker as a bottom sheet ('Picking a target') and 'You
   **dcm-bxp.99.32.33**. The same file's 390 px attack-result test passes with the phone shell.
 - `node scripts/tracer-guard.mjs .omc/plans/combat-hud.yaml H7.2 rebuild HEAD`: flags `shell.tsx` and
   `tests/unit/hud/phone.test.ts` (listed above).
+
+## User answers 2026-11-02 (applied)
+
+- **Edge chips pan** (QUESTIONS: chips only point). A tap on a chip pans the map so the target sits in the middle
+  of the visible map (above the bottom sheet, under the strip) by scrolling the map viewport, the same scroll pan the
+  map's drag uses (`panTo` in phone/edges.tsx); the player then taps its ring to pick. The chip is a button whose name
+  is its text. `hud-phone.spec.ts` taps the Sniper's chip and checks its ring comes into view.

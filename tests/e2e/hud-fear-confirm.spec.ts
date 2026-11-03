@@ -58,6 +58,15 @@ test("the GM's Areas panel draws and lists areas; End scene names what ends and 
     await expect(row).toHaveCount(1);
     await expect(row).toContainText("Smoke");
     await expect(row).toContainText(/Circle · radius Close · blocks sight · \S+/);
+    // Done with it (a press on the map): the panel folds to its header bar, clear of the tokens under it (user answer
+    // 2026-11-02, dcm-bxp.99.32.28); the header unfolds it.
+    const fold = panel.getByRole("button", { name: "Areas on the map" });
+    await expect(fold).toHaveAttribute("aria-expanded", "false");
+    await expect(row).toBeHidden();
+    const folded = (await panel.boundingBox())!;
+    expect(folded.height).toBeLessThan(80);
+    await fold.click();
+    await expect(row).toBeVisible();
     await expectNoSeriousA11yViolations(gm);
 
     // End scene asks first and names what ends (the drawn area lasts until the scene).

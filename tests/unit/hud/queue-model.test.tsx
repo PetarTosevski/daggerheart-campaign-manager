@@ -12,6 +12,8 @@ import {
   namesText,
   outOfRangeReason,
   queueItems,
+  fearRollLine,
+  isFearRoll,
   resolutionRows,
   targetsText,
   windowHit,
@@ -83,5 +85,25 @@ describe("resolutionRows", () => {
     const rows = [row("1", "combat"), row("2", "combat", "public"), row("3", "adversary"), row("4", "roll"), row("5", "adversary", "public")];
     expect(resolutionRows(rows).map((r) => r._id)).toEqual(["1", "3"]);
     expect(resolutionRows(Array.from({ length: 10 }, (_, i) => row(String(i), "combat")))).toHaveLength(6);
+  });
+
+  it("plus every roll with Fear (user answer 2026-11-02): 'Vex rolled with Fear · +1 Fear'", () => {
+    const roll = (id: string, outcome: string, fearDelta?: number) => ({
+      _id: id,
+      kind: "roll",
+      visibility: "public",
+      undone: false,
+      canUndo: true,
+      summary: "Vex: Agility action roll 14, Success with Fear",
+      roll: { outcome },
+      ...(fearDelta !== undefined ? { fearDelta } : {}),
+    });
+    const rows = [roll("1", "successFear", 1), roll("2", "successHope"), roll("3", "failFear"), { _id: "4", kind: "combat", visibility: "gm", undone: false, canUndo: true }];
+    expect(resolutionRows(rows).map((r) => r._id)).toEqual(["1", "3", "4"]);
+    expect(isFearRoll(rows[0]!)).toBe(true);
+    expect(isFearRoll(rows[1]!)).toBe(false);
+    expect(fearRollLine(roll("1", "successFear", 1))).toEqual({ lead: "Vex rolled with Fear", fear: "+1 Fear" });
+    // At 12 Fear the roll gives none: no "+n Fear".
+    expect(fearRollLine(roll("3", "failFear"))).toEqual({ lead: "Vex rolled with Fear", fear: null });
   });
 });

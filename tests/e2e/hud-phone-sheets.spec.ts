@@ -73,6 +73,10 @@ test("phone: the player's picker is a bottom sheet with Cancel + the primary; it
     await player.setViewportSize(PHONE);
     await player.goto(s.url);
     await expect(player.getByTestId("combat-hud")).toBeVisible();
+    // The app's floating Lorekeeper pill hides on the combat map at phone width (user answer 2026-11-02); the nav keeps
+    // the Lorekeeper (hud-tablet.spec shows it still covers the bottom right at 1024).
+    const pill = player.getByRole("button", { name: "Ask the Lorekeeper" });
+    await expect(pill).toBeHidden();
 
     await openRingAttack(player);
     const panel = pickPanel(player);
@@ -125,9 +129,9 @@ test("phone: the player's picker is a bottom sheet with Cancel + the primary; it
     const result = player.getByTestId("hud-result");
     await expect(result).toBeVisible({ timeout: 30_000 });
     await expectBottomSheet(player.locator(".hud-res-spot"));
-    // The last row stays clear of the app's floating Lorekeeper pill (the bottom 68 px at this width).
+    // With the pill hidden the sheet keeps only the board's 16 px of bottom room.
     const lastRow = (await result.getByTestId("hud-result-row").last().boundingBox())!;
-    expect(lastRow.y + lastRow.height).toBeLessThanOrEqual(PHONE.height - 68);
+    expect(lastRow.y + lastRow.height).toBeLessThanOrEqual(PHONE.height - 16);
     await expectTall(result);
     await expectNoSeriousA11yViolations(player, { include: "[data-testid=hud-result]" });
     await player.screenshot({ path: `${OUT}/player-result-390.png`, animations: "disabled" });
@@ -150,8 +154,8 @@ test("phone: the GM's purple picker is a bottom sheet over the stat block, with 
     // At 390 the Lieutenant stands off the visible map (the map pans); the token button still answers a click.
     await enemyToken(gm, ltName).dispatchEvent("click");
     const block = gm.getByRole("complementary", { name: `${ltName}’s stat block` });
-    // The block's Attack sits at its bottom, under the app's floating Lorekeeper pill at this width (the stat block is
-    // not this tracer's); the button still answers a click.
+    // The block's Attack sits at its bottom (the Lorekeeper pill is hidden at this width); a dispatched click keeps the
+    // step independent of the map's pan.
     await block.getByTestId("hud-statblock-attack").dispatchEvent("click");
 
     const panel = pickPanel(gm);

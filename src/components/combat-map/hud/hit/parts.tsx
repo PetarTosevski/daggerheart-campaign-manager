@@ -88,7 +88,7 @@ function FeatureRow({ feature, disabled, onUse }: { feature: FeatureView; disabl
   const [picks, setPicks] = useState<FeaturePicks>(() => defaultPicks(feature));
   const ready = situationsConfirmed(feature, picks);
   return (
-    <li className="hud-hit-rc hud-hit-feat" data-testid="hud-hit-feature">
+    <li className="hud-hit-rc hud-hit-feat" data-testid="hud-hit-feature" data-feature={feature.featureId} data-use={feature.useId}>
       <div className="hud-hit-rc-h">
         <h3>{feature.name}</h3>
         <span>Feature</span>

@@ -104,7 +104,7 @@ beforeEach(() => {
     "combatHud:scene": WITHERWILD,
     "combatHud:party": [member(MOSS, "t-moss", true), member(BRANNOC, "t-brannoc", false)],
     "sessionWrap:dashboard": { live: { sessionId: "s6", n: 6 } },
-    "characters:get": { _id: MOSS, canEdit: true, corrupt: false },
+    "characters:get": { _id: MOSS, canEdit: true, corrupt: false, sheet: { name: "Brannoc" } },
   };
 });
 
@@ -288,15 +288,28 @@ describe("title and toolbar", () => {
     fireEvent.click(screen.getByRole("button", { name: "Fog" }));
     expect(within(screen.getByRole("dialog", { name: "Vision and fog" })).getByTestId("vision-stub")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Dice" }));
-    expect(screen.getByRole("dialog", { name: "Dice" })).toHaveTextContent("Select a PC token on the map to roll for them.");
+    // User answer 2026-11-02: a plain GM roller (the classic secret GM roll), with a hint for rolling for a PC.
+    const dice = screen.getByRole("dialog", { name: "Dice" });
+    expect(within(dice).getByTestId("hud-gm-roller")).toBeInTheDocument();
+    expect(dice).toHaveTextContent("Select a PC token on the map to roll for them instead.");
+    expect(within(dice).queryByRole("group", { name: "Roll as" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Close Dice" }));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("the GM's Dice rolls for the selected PC token", () => {
+  it("the GM's Dice: the GM roller first; with a PC token selected, 'For <PC>' opens that PC's dice box", () => {
     renderHud(createElement(HudScene, { state: state("gm", { selectedTokenId: "t-brannoc" as Id<"combatTokens"> }), toolbar }));
     fireEvent.click(screen.getByRole("button", { name: "Dice" }));
-    expect(within(screen.getByRole("dialog", { name: "Dice" })).getByTestId("dice-box-stub")).toBeInTheDocument();
+    const dice = screen.getByRole("dialog", { name: "Dice" });
+    const as = within(dice).getByRole("group", { name: "Roll as" });
+    expect(within(as).getByRole("button", { name: "GM roll" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(dice).getByTestId("hud-gm-roller")).toBeInTheDocument();
+    fireEvent.click(within(as).getByRole("button", { name: "For Brannoc" }));
+    expect(within(as).getByRole("button", { name: "For Brannoc" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(dice).getByTestId("hud-dice-box")).toBeInTheDocument();
+    expect(within(dice).queryByTestId("hud-gm-roller")).toBeNull();
+    fireEvent.click(within(as).getByRole("button", { name: "GM roll" }));
+    expect(within(dice).getByTestId("hud-gm-roller")).toBeInTheDocument();
   });
 
   it("a player sees 'Live', Dice (their dice box) and Sheet (their own sheet in the HUD panel)", () => {

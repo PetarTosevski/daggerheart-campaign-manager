@@ -66,9 +66,9 @@ describe("refusal table inventory", () => {
 // ---------------------------------------------------------------- board rows
 
 describe("CmpBlocked rows", () => {
-  it("CARD_COST_UNPAID, Hope: 'Wall Walk costs 1 Hope. You have 0.' from the structured shortfall", () => {
+  it("CARD_COST_UNPAID, Hope: 'Wall Walk needs 1 Hope. You have 0.' from the structured shortfall", () => {
     const r = refusalFor(refuse("CARD_COST_UNPAID", { message: "Short of: hope.", shortfall: { resource: "hope", need: 1, have: 0 } }), { subject: "Wall Walk" });
-    expect(r).toMatchObject({ code: "CARD_COST_UNPAID", title: "Not enough Hope", lead: "Wall Walk costs 1 Hope.", rest: "You have 0.", hint: "Roll with Hope, or rest, to gain Hope.", place: "inline" });
+    expect(r).toMatchObject({ code: "CARD_COST_UNPAID", title: "Not enough Hope", lead: "Wall Walk needs 1 Hope.", rest: "You have 0.", hint: "Roll with Hope, or rest, to gain Hope.", place: "inline" });
     expect(r.before).toEqual(["card-tag", "use-disabled"]);
   });
 
@@ -153,9 +153,9 @@ describe("CmpBlocked rows", () => {
     expect(refusalFor(refuse("MOVE_BLOCKED", { message: "Something blocks the way." }))).toMatchObject({ lead: "Something blocks the way.", then: "snap-back" });
   });
 
-  it("DIFFICULT_TERRAIN* (no server code) opens the dice box", () => {
-    expect(isMappedRefusal("DIFFICULT_TERRAIN")).toBe(true);
-    expect(refusalForCode("DIFFICULT_TERRAIN")).toMatchObject({ text: "Difficult terrain: a movement roll is needed.", then: "dice-box" });
+  it("difficult terrain has no refusal: moving onto it rolls nothing (user answer 2026-11-02)", () => {
+    expect(isMappedRefusal("DIFFICULT_TERRAIN")).toBe(false);
+    expect(refusalForCode("DIFFICULT_TERRAIN").code).toBe("FALLBACK");
   });
 
   it("SPOTLIGHT_WITH_GM: the board's words, not the server's default", () => {
@@ -199,8 +199,8 @@ describe("shortfall helper", () => {
     expect(beforeText("CARD_COST_UNPAID", { shortfall: [{ resource: "hope", need: 3, have: 1 }] })).toBe("Needs 3 Hope · you have 1");
   });
 
-  it("the action ring's wording stays available ('Evolution needs 3 Hope. You have 1.')", () => {
-    const s = shortfallSentence({ resource: "hope", need: 3, have: 1 }, { subject: "Evolution", verb: "needs" });
+  it("'needs' everywhere, the action ring included ('Evolution needs 3 Hope. You have 1.')", () => {
+    const s = shortfallSentence({ resource: "hope", need: 3, have: 1 }, { subject: "Evolution" });
     expect(`${s.lead} ${s.rest}`).toBe("Evolution needs 3 Hope. You have 1.");
   });
 

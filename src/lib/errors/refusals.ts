@@ -69,10 +69,10 @@ export type BeforeForm =
 /** Where the click-time refusal shows: under the pressed control (layer 2) or as a toast near the hand (layer 3). */
 export type RefusalPlace = "inline" | "toast";
 
-/** What the surface does after showing it: refresh its data (an answered request), snap the token back, open the dice box. */
-export type RefusalThen = "refresh" | "snap-back" | "dice-box";
+/** What the surface does after showing it: refresh its data (an answered request) or snap the token back. */
+export type RefusalThen = "refresh" | "snap-back";
 
-/** Names and numbers the caller knows, filled into the board's sentences ("Wall Walk costs 1 Hope."). */
+/** Names and numbers the caller knows, filled into the board's sentences ("Wall Walk needs 1 Hope."). */
 export type RefusalContext = {
   /** The card or feature used ("Wall Walk", "Rune Ward"). */
   subject?: string | null;
@@ -94,7 +94,7 @@ export type Refusal = {
   code: string;
   /** CmpBlocked's "Situation" ("Not enough Hope"): the toast's bold title. */
   title: string;
-  /** The message's bold lead ("Wall Walk costs 1 Hope."). */
+  /** The message's bold lead ("Wall Walk needs 1 Hope."). */
   lead: string;
   /** The rest of the message ("You have 0."), or null. */
   rest: string | null;
@@ -318,19 +318,10 @@ export const REFUSALS: Record<RefusalCode, Entry> = {
 
 /**
  * Board rows with no server code: client-only refusals a surface raises itself (never sent by the server, never a
- * key the server may use). DIFFICULT_TERRAIN has no engine yet (no movement roll on the map: see QUESTIONS);
- * NO_ARMOR_SLOT is the hit window's hidden option (CmpBlocked code "—").
+ * key the server may use). NO_ARMOR_SLOT is the hit window's hidden option (CmpBlocked code "—"). Difficult terrain
+ * has no entry: moving onto it rolls nothing (user answer 2026-11-02).
  */
 export const CLIENT_REFUSALS = {
-  DIFFICULT_TERRAIN: {
-    row: "DIFFICULT_TERRAIN*",
-    title: "Difficult terrain",
-    line: () => ({ lead: "Difficult terrain:", rest: "a movement roll is needed." }),
-    hint: null,
-    before: ["none"],
-    then: "dice-box",
-    tone: "neutral",
-  },
   NO_ARMOR_SLOT: {
     row: "— (No Armor Slot)",
     title: "No Armor Slot",

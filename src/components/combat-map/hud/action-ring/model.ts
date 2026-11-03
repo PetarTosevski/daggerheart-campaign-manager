@@ -3,12 +3,13 @@ import { shortfallSentence } from "@/lib/domain/combat-actions/shortfall";
 import { beforeText, refusalForCode } from "@/lib/errors/refusals";
 
 import type { HudSheetFeature } from "../sheet/model";
-import { mapUses } from "../sheet/model";
+import { d5Key, mapUses } from "../sheet/model";
 
 /**
  * The action ring's pure parts (plan combat-hud H3.4; board Main 'Picking a target' / 'Can't afford', `.rad`): which
- * buttons it shows (answer 3b: Attack, Cast, Sheet and every feature with a Use button), why one is locked ("Evolution
- * needs 3 Hope. You have 1."), and where each sits around your token without covering its arcs.
+ * buttons it shows (answer 3b: Attack, Cast, Sheet and every feature with a Use button; user answer 2026-11-02: also
+ * the reactions and the out-of-combat Uses such as Commune), why one is locked ("Evolution needs 3 Hope. You have 1.",
+ * "Rune Ward is a reaction: it waits for its trigger."), and where each sits around your token without covering its arcs.
  *
  * Geometry (board: Moss's token 48 px at (360, 456), buttons 44 px at radius 96, 38° apart, from the left over the top):
  * all in stage pixels around the token's centre; angles in degrees, 0 = right, 90 = up (screen y grows down).
@@ -16,10 +17,10 @@ import { mapUses } from "../sheet/model";
 
 // ---------------------------------------------------------------- items
 
-export type RingKind = "attack" | "cast" | "sheet" | "feature" | "more";
+export type RingKind = "attack" | "cast" | "sheet" | "feature" | "reaction" | "outside" | "more";
 
 export type RingItem = {
-  /** Stable key: "attack", "cast", "sheet", "feature:<featureId>:<useId>", "more". */
+  /** Stable key: "attack", "cast", "sheet", "feature:<featureId>:<useId>", "reaction:<featureId>:<useId>", "outside:<featureId>", "more". */
   id: string;
   kind: RingKind;
   /** The visible label under the button ("Attack", "Evolution"). */
@@ -32,6 +33,8 @@ export type RingItem = {
   on: boolean;
   featureId?: string;
   useId?: string;
+  /** An out-of-combat Use's D5 key (`classFeatures.use`'s `featureKey`: "commune"). */
+  featureKey?: string;
 };
 
 /** One action use of a feature the ring offers: a Use button on the sheet panel (not a reaction's React). */
@@ -43,14 +46,51 @@ export type RingUse = { featureId: string; useId: string; label: string; ready: 
  * several uses gets one button per use, named by the use.
  */
 export function ringUses(features: readonly HudSheetFeature[]): RingUse[] {
+  return usesOf(features, "action");
+}
+
+/**
+ * The reactions the ring shows (user answer 2026-11-02): exactly the sheet panel's React buttons. A reaction answers
+ * something, so it stays locked with its reason (`reactionLock`) until the server offers it for a trigger that applies.
+ */
+export function ringReactions(features: readonly HudSheetFeature[]): RingUse[] {
+  return usesOf(features, "reaction");
+}
+
+function usesOf(features: readonly HudSheetFeature[], activation: "action" | "reaction"): RingUse[] {
   const out: RingUse[] = [];
   for (const f of features) {
-    const uses = mapUses(f).filter((u) => u.activation === "action");
+    const uses = mapUses(f).filter((u) => u.activation === activation);
     for (const u of uses) {
       out.push({ featureId: f.featureId, useId: u.useId, label: uses.length > 1 ? u.name : f.name, ready: u.ready, resetLabel: u.resetLabel ?? f.resetLabel });
     }
   }
   return out;
+}
+
+/** One out-of-combat Use (the sheet's D5 Use: Commune, Get In & Get Out). */
+export type RingOutside = { featureId: string; featureKey: string; label: string; ready: boolean; resetLabel: string | null };
+
+/** The out-of-combat Uses the ring shows (user answer 2026-11-02): exactly the sheet panel's D5 Use buttons. */
+export function ringOutside(features: readonly HudSheetFeature[]): RingOutside[] {
+  const out: RingOutside[] = [];
+  for (const f of features) {
+    const featureKey = d5Key(f);
+    if (featureKey === null || mapUses(f).length > 0) continue;
+    out.push({ featureId: f.featureId, featureKey, label: f.name, ready: !f.used, resetLabel: f.resetLabel });
+  }
+  return out;
+}
+
+/**
+ * Why a reaction's button is locked, or null: used up first (as `featureLock`), then "waits for its trigger" until the
+ * server offers it for a trigger that applies (`triggered`: it answers an open hit, `adversaryActions.pending`'s
+ * features).
+ */
+export function reactionLock(use: Pick<RingUse, "label" | "ready" | "resetLabel">, triggered: boolean): string | null {
+  const used = featureLock(use, 0, null);
+  if (used !== null) return used;
+  return triggered ? null : `${use.label} is a reaction: it waits for its trigger.`;
 }
 
 /** The fixed Hope a use's costs need (a choice of costs or a chosen amount is the server's to check). */
@@ -61,7 +101,7 @@ export function hopeNeeded(costs: readonly Cost[] | undefined): number {
 /**
  * Why a feature's button is locked (board 'Can't afford': "Evolution needs 3 Hope. You have 1."), or null, in the
  * refusal table's words (H6.1 / H6.2): used up first ("Evolution is used up for now. Back after a long rest."), then a
- * fixed Hope cost above what you hold (`shortfallSentence`, verb "needs" as the board's ring). Stress, Armor and other
+ * fixed Hope cost above what you hold (`shortfallSentence`). Stress, Armor and other
  * costs are left to the server (it refuses with its own reason): Stress past full marks a Hit Point (CB p.106).
  */
 export function featureLock(use: Pick<RingUse, "label" | "ready" | "resetLabel">, hopeNeed: number, hope: number | null): string | null {
@@ -70,7 +110,7 @@ export function featureLock(use: Pick<RingUse, "label" | "ready" | "resetLabel">
     return use.resetLabel ? `${used} ${use.resetLabel}.` : used;
   }
   if (hope !== null && hopeNeed > hope) {
-    const s = shortfallSentence({ resource: "hope", need: hopeNeed, have: hope }, { subject: use.label, verb: "needs" });
+    const s = shortfallSentence({ resource: "hope", need: hopeNeed, have: hope }, { subject: use.label });
     return s.rest ? `${s.lead} ${s.rest}` : s.lead;
   }
   return null;
@@ -99,10 +139,15 @@ export type RingInput = {
   cast: { locked: string | null; on: boolean };
   sheet: { on: boolean };
   features: readonly (RingUse & { locked: string | null; on: boolean })[];
+  reactions?: readonly (RingUse & { locked: string | null; on: boolean })[];
+  outside?: readonly (RingOutside & { locked: string | null; on: boolean })[];
 };
 
-/** Every button in ring order: Attack, Cast, Sheet (the board's), then the features as the sheet lists them. */
-export function ringItems({ attack, cast, sheet, features }: RingInput): RingItem[] {
+/**
+ * Every button in ring order: Attack, Cast, Sheet (the board's), then the action features as the sheet lists them, the
+ * reactions, and the out-of-combat Uses. What the arc can't hold folds into "More actions (n)" (`splitRing`).
+ */
+export function ringItems({ attack, cast, sheet, features, reactions = [], outside = [] }: RingInput): RingItem[] {
   return [
     { id: "attack", kind: "attack", label: "Attack", name: "Attack", locked: attack.locked, on: attack.on },
     { id: "cast", kind: "cast", label: "Cast", name: "Cast", locked: cast.locked, on: cast.on },
@@ -116,6 +161,26 @@ export function ringItems({ attack, cast, sheet, features }: RingInput): RingIte
       on: f.on,
       featureId: f.featureId,
       useId: f.useId,
+    })),
+    ...reactions.map<RingItem>((f) => ({
+      id: `reaction:${f.featureId}:${f.useId}`,
+      kind: "reaction",
+      label: f.label,
+      name: `React with ${f.label}`,
+      locked: f.locked,
+      on: f.on,
+      featureId: f.featureId,
+      useId: f.useId,
+    })),
+    ...outside.map<RingItem>((f) => ({
+      id: `outside:${f.featureId}`,
+      kind: "outside",
+      label: f.label,
+      name: `Use ${f.label}`,
+      locked: f.locked,
+      on: f.on,
+      featureId: f.featureId,
+      featureKey: f.featureKey,
     })),
   ];
 }

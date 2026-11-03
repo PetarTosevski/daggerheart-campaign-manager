@@ -169,6 +169,10 @@
   flex: none;
   color: var(--hud-gold);
 }
+/* A roll with Fear (user answer 2026-11-02): the Fear colour, as the Fear banner. */
+.hud-res-fear .hud-res-i {
+  color: var(--hud-fear-text);
+}
 .hud-res-i svg {
   width: 14px;
   height: 14px;
