@@ -1,7 +1,8 @@
 /**
  * Combat Map actions helpers (plan combat-actions CA5): the target hints (Q1 / Q2), single-select picking (user answer
- * 2026-10-22, CB p.96), the verdict and outcome words of an attack (U1, Q5), the weapon damage label and the GM's
- * resolution filter. Plan combat-hud H8.1 deleted the classic target list and attack result card: the HUD's picker rows
+ * 2026-10-22, CB p.96), the verdict and outcome words of an attack (U1, Q5), the weapon damage label. The GM's
+ * resolution filter left with the classic Resolutions card (plan combat-hud H8.2): tests/unit/hud/queue-model.test.tsx
+ * "resolutionRows" covers it. Plan combat-hud H8.1 deleted the classic target list and attack result card: the HUD's picker rows
  * (tests/unit/hud/pick-model.test.tsx "lists every creature of the rule's side with band and reach…", "row names and
  * ring labels carry names and bands only (U1)…") and result (tests/unit/hud/result-panel.test.tsx, tests/unit/hud/
  * attack-pick.test.tsx "resolved: Hit / Miss / Defeated only (hard rule 2)") cover what their tests checked.
@@ -10,7 +11,6 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { damageLabel, outcomeLine, targetVerdict } from "@/components/combat-map/actions/attack";
-import { resolutionsOf } from "@/components/combat-map/actions/gm";
 import { hintOf } from "@/components/combat-map/actions/targets";
 import { ActionsProvider, useCombatTargets } from "@/components/combat-map/actions/targets/state";
 import type { RollRecord } from "@/lib/domain/duality";
@@ -92,17 +92,5 @@ describe("weapon damage at Proficiency", () => {
   it("multiplies the dice by Proficiency and keeps the modifier and type", () => {
     expect(damageLabel({ damage: "d8+3 phy" }, 2)).toBe("2d8+3 phy");
     expect(damageLabel({ damage: "d6 mag" }, 1)).toBe("1d6 mag");
-  });
-});
-
-describe("GM resolutions", () => {
-  it("keeps the GM's combat rows only, newest first", () => {
-    const base = { at: 1, actorId: "u" as Id<"users">, undone: false, canUndo: true, revealable: false };
-    const rows = [
-      { ...base, _id: "a" as Id<"actionLog">, kind: "combat" as const, visibility: "gm" as const, summary: "Ash attacks → Bandit: 6 phy → Minor → 1 HP (1/5)" },
-      { ...base, _id: "b" as Id<"actionLog">, kind: "combat" as const, visibility: "public" as const, summary: "Ash attacks with Rapier → Bandit: Hit" },
-      { ...base, _id: "c" as Id<"actionLog">, kind: "roll" as const, visibility: "public" as const, summary: "Ash rolls" },
-    ];
-    expect(resolutionsOf(rows).map((r) => r._id)).toEqual(["a"]);
   });
 });

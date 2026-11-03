@@ -10,8 +10,9 @@ import { bardDraft, convexAs, openCombatMap } from "./visual/helpers";
 // Plan combat-actions AA6 (bead dcm-bxp.99.9): adversary actions end to end, in three browsers (the GM and two players).
 // 1. From the Encounter tab (Q12, Q16) the GM's Bandit attacks Mira; in the reaction window (Q13) Tabby's player answers
 //    with I Am Your Shield (CB p.341), marks an Armor Slot, and the hit resolves on Tabby.
-// 2. From the Combat Map (Q12 "he can also use combat map if he wants") the Bandit attacks Mira again; Mira's player marks
-//    an Armor Slot (CB p.114), Tabby's player passes; the GM undoes it from Resolutions (U4) and Mira's sheet comes back.
+// 2. From the Combat Map (Q12 "he can also use combat map if he wants"; the HUD stat block since plan combat-hud H8.2)
+//    the Bandit attacks Mira again; Mira's player marks an Armor Slot (CB p.114) in the HUD's hit window, Tabby's player
+//    passes; the GM undoes it from the HUD's Resolutions (U4) and Mira's sheet comes back.
 // 3. A multi-target Fear feature: the Minor Fire Elemental's Explosion (CB p.214, "Spend a Fear … Make an attack against
 //    all targets within Close range") asks "Spend N Fear?" first (Q19), then makes ONE roll against Mira and Tabby (AR7,
 //    CB p.161); its Momentum (CB p.195) gains a Fear on a hit with no prompt (Q19); the GM undoes it.
@@ -217,43 +218,54 @@ test("adversary actions from both pages: I Am Your Shield, armor, undo, a multi-
     const windows = tracker.getByRole("region", { name: "Reaction windows" });
     await expect(windows.getByTestId("tracker-window")).toContainText("Mira (armor choice)");
 
-    const tabbySees = b.page.getByRole("region", { name: "Incoming hit: Bandit hit Mira" });
-    await expect(tabbySees).toBeVisible({ timeout: 30_000 });
+    // The players answer in the HUD's hit window (plan combat-hud H4.2; H8.1 removed the classic "Incoming hit" card).
+    const tabbySees = b.page.getByRole("dialog", { name: "Tabby can react" });
+    await expect(tabbySees).toContainText("Bandit hit Mira", { timeout: 30_000 });
     await expect(tabbySees).not.toContainText(/\d+ damage/);
     await tabbySees.getByRole("button", { name: "Use I Am Your Shield" }).click();
-    const shield = b.page.getByRole("region", { name: "Incoming hit: Bandit hit Tabby" });
-    await expect(shield).toBeVisible({ timeout: 30_000 });
-    await expect(a.page.getByTestId("incoming-hit")).toHaveCount(0);
-    await shield.getByRole("button", { name: /^Mark 1/ }).click();
-    await expect(b.page.getByTestId("incoming-hit")).toHaveCount(0);
+    const shield = b.page.getByRole("dialog", { name: "You were hit" });
+    await expect(shield).toContainText("Bandit hit Tabby (instead of Mira)", { timeout: 30_000 });
+    await expect(a.page.getByTestId("hud-hit-window")).toHaveCount(0, { timeout: 30_000 });
+    await shield.getByRole("button", { name: /^Mark Armor · take / }).click();
+    await expect(b.page.getByTestId("hud-hit-window")).toHaveCount(0, { timeout: 30_000 });
     await expect.poll(async () => (await sheet(tabby)).armorMarked).toBe(1);
     expect((await sheet(tabby)).stress).toBe(1);
     expect((await sheet(tabby)).hp).toBeGreaterThan(0);
     expect((await sheet(mira)).hp).toBe(0);
     await expect(windows).toHaveCount(0);
-    await expect(a.page.getByTestId("combat-mini-feed")).toContainText("Bandit hit Mira");
+    await expect(a.page.getByTestId("hud-feed")).toContainText("Bandit hit Mira", { timeout: 30_000 });
 
-    // ---- 2. Combat Map: the Bandit attacks Mira; Mira marks an Armor Slot, Tabby passes; the GM undoes it (U4).
+    // ---- 2. Combat Map (the HUD stat block, plan combat-hud H8.2): the Bandit attacks Mira; Mira marks an Armor Slot,
+    // Tabby passes; the GM undoes it from the HUD's Resolutions (U4).
     const map = await page.context().newPage();
+    await map.setViewportSize({ width: 1440, height: 900 });
     await map.goto(url);
-    const board = map.getByRole("region", { name: "Battle map" });
-    await board.getByRole("button", { name: /^Bandit, / }).click({ timeout: 30_000 });
-    const card = map.getByRole("region", { name: "Adversaries" });
-    const mapPanel = card.getByTestId("adversary-selected").getByRole("region", { name: "Adversary actions" });
-    await mapPanel.getByRole("group", { name: "Targets" }).getByRole("button", { name: "Mira" }).click();
+    await map
+      .getByRole("region", { name: "Battle map" })
+      .getByRole("button", { name: /^Open the Bandit’s stat block/ })
+      .click({ timeout: 30_000 });
+    const block = map.getByRole("complementary", { name: "Bandit’s stat block" });
+    await block.getByTestId("hud-statblock-attack").click();
+    const pick = map.getByTestId("hud-pick");
+    await pick.getByTestId("hud-pick-row").filter({ hasText: "Mira" }).click();
     const before = await sheet(mira);
-    await mapPanel.getByRole("button", { name: "⚔ Attack Mira with Club" }).click();
-    await expect(mapPanel.getByRole("region", { name: "Action result" }).getByRole("list", { name: "Targets" })).toContainText(/Mira\s*Hit/);
-    const miraPrompt = a.page.getByRole("region", { name: "Incoming hit: Bandit hit Mira" });
-    await expect(miraPrompt).toBeVisible({ timeout: 30_000 });
-    await expect(miraPrompt.locator(".ih-dmg")).toHaveText(/^\d+ damage: (Minor|Major|Severe) \(\d HP\)\.$/);
-    await expect(miraPrompt).not.toContainText(/\b(roll|Evasion|Difficulty|threshold|ATK)\b/i);
-    await miraPrompt.getByRole("button", { name: "Mark", exact: true }).click();
-    await b.page.getByRole("region", { name: "Incoming hit: Bandit hit Mira" }).getByRole("button", { name: "Pass" }).click({ timeout: 30_000 });
+    await pick.getByTestId("hud-pick-go").click();
+    const confirm = map.getByTestId("hud-fear-confirm");
+    // The GM turn's second spotlight may cost a Fear (the Encounter tab's attack took the first): pay it.
+    const mapResult = block.getByTestId("tracker-action-result");
+    await expect(mapResult.or(confirm).first()).toBeVisible({ timeout: 30_000 });
+    if (await confirm.isVisible()) await confirm.getByRole("button", { name: /^Spend \d Fear$/ }).click();
+    await expect(mapResult).toContainText(/Mira\s*Hit/, { timeout: 30_000 });
+    const miraWin = a.page.getByRole("dialog", { name: "You were hit" });
+    await expect(miraWin).toContainText("Bandit hit Mira", { timeout: 30_000 });
+    await expect(miraWin.getByTestId("hud-hit-damage")).toHaveText(/^\d+$/);
+    await expect(miraWin).not.toContainText(/\b(roll|Evasion|Difficulty|ATK)\b/i);
+    await miraWin.getByRole("button", { name: /^Mark Armor · take / }).click();
+    await b.page.getByRole("dialog", { name: "Tabby can react" }).getByRole("button", { name: "Pass" }).click({ timeout: 30_000 });
     await expect.poll(async () => (await sheet(mira)).armorMarked).toBe(before.armorMarked + 1);
     expect((await sheet(mira)).hp).toBeGreaterThan(before.hp);
-    const rows = map.getByRole("region", { name: "Adversary resolutions" }).getByTestId("combat-resolution");
-    await rows.filter({ hasText: /Club/ }).first().getByRole("button", { name: /^Undo/ }).click();
+    const resolution = map.getByTestId("hud-resolution").filter({ hasText: /Club/ }).first();
+    await resolution.getByRole("button", { name: /^Undo: / }).click({ timeout: 30_000 });
     await expect.poll(async () => (await sheet(mira)).armorMarked).toBe(before.armorMarked);
     expect((await sheet(mira)).hp).toBe(before.hp);
     await map.close();
@@ -326,13 +338,15 @@ test("adversary actions from both pages: I Am Your Shield, armor, undo, a multi-
         const [hit] = await gm.query(api.adversaryActions.pending, { campaignId, characterId: mira });
         expect(hit?.damage).toBe(9);
         // Mira's player is asked about armor against the combined damage, without the roll (Q13, Q14).
-        const prompt = a.page.getByRole("region", { name: /^Incoming hit: Sellsword.* hit Mira$/ });
-        await expect(prompt.locator(".ih-dmg")).toHaveText(/^9 damage: (Minor|Major|Severe) \(\d HP\)\.$/, { timeout: 30_000 });
+        const win = a.page.getByRole("dialog", { name: "You were hit" });
+        await expect(win).toContainText(/Sellsword.* hit Mira/, { timeout: 30_000 });
+        await expect(win.getByTestId("hud-hit-damage")).toHaveText("9");
+        await expect(win).not.toContainText(/\b(roll|Evasion|Difficulty|ATK)\b/i);
       }
       await undo(r);
     }
     expect(grouped, "the Sellswords hit Mira at least once in eight Group Attacks").toBe(true);
-    await expect(a.page.getByTestId("incoming-hit")).toHaveCount(0);
+    await expect(a.page.getByTestId("hud-hit-window")).toHaveCount(0, { timeout: 30_000 });
 
     // ---- 6. Q14 / U1 over the network: nothing either player received carries an adversary's roll or numbers.
     for (const [who, player] of [

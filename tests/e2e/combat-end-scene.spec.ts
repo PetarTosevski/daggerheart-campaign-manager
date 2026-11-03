@@ -3,12 +3,12 @@ import { ConvexError } from "convex/values";
 
 import { api } from "../../convex/_generated/api";
 import { cardsForDomains, getClass } from "../../src/lib/srd";
-import { expectTouchTargets } from "./a11y";
 import { signInAsTestGm } from "./fixtures";
 import { convexAs, openCombatMap } from "./visual/helpers";
 
-// Plan drawer-answers DA4 (SD8 follow-up): the GM column of the Combat Map holds the End scene button
-// (`combatScenes.end`). CB p.107, End of the Scene: "Sometimes certain effects, bonuses, or conditions state that they
+// Plan drawer-answers DA4 (SD8 follow-up): the Combat Map's End scene (`combatScenes.end`), since plan combat-hud
+// H8.2 the HUD toolbar's (H5.3): the classic GM column's End scene card is gone. CB p.107, End of the Scene:
+// "Sometimes certain effects, bonuses, or conditions state that they
 // last until the end of the scene." A gnome's Flicker Step (HF p.25: "Once per scene, you can teleport to another point
 // you can see within Far range") is spent, refused a second time, and comes back once the GM ends the scene on the map.
 
@@ -76,18 +76,19 @@ test("the GM ends the scene from the Combat Map and a once-per-scene limit comes
     expect(await sceneLimits()).toEqual(["feat:ancestry:gnome:flicker-step"]);
     expect(await flicker().then(() => "ok", errorCode)).toBe("FEATURE_EXHAUSTED");
 
-    // ---- The GM ends the scene from the map's GM column, after a confirmation.
+    // ---- The GM ends the scene from the HUD's toolbar, after a confirmation that names what ends.
     await page.goto(url);
-    await expect(page.getByRole("region", { name: "Resolutions" })).toBeVisible({ timeout: 30_000 });
-    const scene = page.getByRole("region", { name: "Scene", exact: true });
-    const endScene = scene.getByRole("button", { name: "End scene" });
-    await expect(endScene).toBeVisible();
-    await expectTouchTargets(endScene);
+    await expect(page.getByTestId("combat-hud")).toBeVisible({ timeout: 30_000 });
+    const endScene = page.getByRole("group", { name: "GM tools" }).getByRole("button", { name: "End scene", exact: true });
+    // The HUD's desktop toolbar buttons are 36 px high (GMDesktop); the classic card's 44 px touch check went with it
+    // (the HUD's tablet / phone sizes: tests/e2e/hud-tablet.spec.ts, hud-phone.spec.ts).
+    await expect(endScene).toBeVisible({ timeout: 30_000 });
     await endScene.click();
     const confirm = page.getByRole("dialog", { name: "End the scene?" });
-    await confirm.getByRole("button", { name: "End scene" }).click();
+    await expect(confirm.getByTestId("hud-end-scene-text")).toContainText("1 feature limit refreshes.");
+    await confirm.getByRole("button", { name: "End the scene" }).click();
     await expect(confirm).toHaveCount(0);
-    await expect(scene.getByTestId("end-scene-status")).toHaveText("Scene ended: 1 scene effect and limit ended.");
+    await expect(page.getByTestId("end-scene-status")).toHaveText("Scene ended: 1 scene effect and limit ended.");
 
     // ---- The limit is back: Flicker Step works again.
     await expect.poll(sceneLimits).toEqual([]);

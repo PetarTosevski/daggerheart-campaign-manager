@@ -9,16 +9,18 @@ import { errorMessage } from "@/lib/convex-errors";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { DrawerBoundary } from "../drawer/boundary";
-import { CloakPrompts } from "./cloak";
 import "./requests.css";
 
 /**
- * Rolls waiting for the GM's Difficulty (plan lanes B2; CB p.104: "The GM sets this Difficulty"):
- * - a player's Charge (CB p.59; dcm-bxp.99.19.61): the player picked the target and the square in the drawer;
- * - a Cloaked rogue who ended a move seen only dimly by enemies none of which has a Difficulty (a custom token, an
- *   enemy-side PC or companion; CB p.42; dcm-bxp.99.19.62 (1)).
- * The GM types a Difficulty and presses Roll (`featurePrompts.answerDifficulty`: the server rolls), or Decline. Rows come
- * from `combatRequests.difficulties`; an optimistic update drops the answered row at once.
+ * Rolls waiting for the GM's Difficulty (plan lanes B2; CB p.104: "The GM sets this Difficulty"), for one character:
+ * the HUD sheet's Charge use (`drawer/use`) shows the GM a character's waiting Charge (CB p.59; dcm-bxp.99.19.61) with a
+ * Difficulty box, Roll and Decline (`featurePrompts.answerDifficulty`: the server rolls), and the player that their
+ * Charge waits (`useWaitingDifficulty`). Rows come from `combatRequests.difficulties`; an optimistic update drops the
+ * answered row at once.
+ *
+ * Plan combat-hud H8.2 (cut-over, GM side): the GM column's campaign-wide list (every waiting Charge and Cloaked roll)
+ * and the "Does <name>'s Cloaked end?" prompts (`cloak.tsx`) are gone; the HUD's "Waiting on you" queue
+ * (`hud/queue`) asks them.
  */
 
 export type DifficultyRow = FunctionReturnType<typeof api.combatRequests.difficulties>[number];
@@ -44,28 +46,16 @@ export function answerLine(out: FunctionReturnType<typeof api.featurePrompts.ans
   }
 }
 
-/**
- * The GM's list. `characterId` / `ask` narrow it (the drawer shows a character's waiting Charge); unset, every waiting
- * roll of the campaign (the GM column). Renders nothing while loading or when nothing waits.
- */
-export function DifficultyRequests({ campaignId, characterId, ask }: { campaignId: Id<"campaigns">; characterId?: Id<"characters">; ask?: DifficultyRow["ask"] }) {
-  // Plan lanes-2 E1.4a (dcm-vx5n): the GM column (no filter) also lists the "Does <name>'s Cloaked end?" prompts.
-  const column = characterId === undefined && ask === undefined;
+/** The GM's waiting rolls of one kind for one character; nothing while loading or when nothing waits. */
+export function DifficultyRequests(props: { campaignId: Id<"campaigns">; characterId: Id<"characters">; ask: DifficultyRow["ask"] }) {
   return (
-    <>
-      <DrawerBoundary label="Difficulty requests">
-        <DifficultyList campaignId={campaignId} {...(characterId === undefined ? {} : { characterId })} {...(ask === undefined ? {} : { ask })} />
-      </DrawerBoundary>
-      {column ? (
-        <DrawerBoundary label="Cloaked prompts">
-          <CloakPrompts campaignId={campaignId} />
-        </DrawerBoundary>
-      ) : null}
-    </>
+    <DrawerBoundary label="Difficulty requests">
+      <DifficultyList {...props} />
+    </DrawerBoundary>
   );
 }
 
-function DifficultyList({ campaignId, characterId, ask }: { campaignId: Id<"campaigns">; characterId?: Id<"characters">; ask?: DifficultyRow["ask"] }) {
+function DifficultyList({ campaignId, characterId, ask }: { campaignId: Id<"campaigns">; characterId: Id<"characters">; ask: DifficultyRow["ask"] }) {
   const rows = useQuery(api.combatRequests.difficulties, { campaignId });
   const answer = useMutation(api.featurePrompts.answerDifficulty).withOptimisticUpdate((store, { requestId }) => {
     const current = store.getQuery(api.combatRequests.difficulties, { campaignId });
@@ -75,7 +65,7 @@ function DifficultyList({ campaignId, characterId, ask }: { campaignId: Id<"camp
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
-  const waiting = (rows ?? []).filter((r) => (characterId === undefined || r.characterId === characterId) && (ask === undefined || r.ask === ask));
+  const waiting = (rows ?? []).filter((r) => r.characterId === characterId && r.ask === ask);
   if (waiting.length === 0 && !error && !result) return null;
 
   async function send(requestId: Id<"combatRequests">, difficulty: number | null) {

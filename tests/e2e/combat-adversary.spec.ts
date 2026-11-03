@@ -3,16 +3,18 @@ import type { ConvexHttpClient } from "convex/browser";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { expectNoSeriousA11yViolations, expectTouchTargets } from "./a11y";
+import { expectNoSeriousA11yViolations } from "./a11y";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, expectNoHorizontalScroll, openCombatMap } from "./visual/helpers";
 
-// Plan combat-actions AA5: the GM's adversary controls on the Combat Map (Q12 "he can also use combat map if he wants",
-// Q16) and the hit flashes. The GM selects the Bandit's token, sees each PC's range band and line of sight, and attacks
-// Mira with the Encounter tab's own controls; the open reaction window shows on the Encounter tab; Mira's player sees
-// the flash on Mira's token, "Bandit hit Mira" in the mini feed and the prompt, and marks an Armor Slot; the GM's
-// Resolutions list the adversary action with Undo (U4). A PC the GM owns gets the incoming-hit prompt in the GM column
-// (user answer 2026-10-22); a hit made from the Encounter tab flashes on the map too; a Fear feature asks first (Q19).
+// Plan combat-actions AA5: the GM's adversary actions on the Combat Map (Q12 "he can also use combat map if he wants",
+// Q16) and the hit flashes, since plan combat-hud H8.2 through the HUD (the classic GM column's Adversaries card is
+// gone). The GM opens the Bandit's stat block, Attack shows each PC's band in the purple picker, and attacks Mira; the
+// open reaction window shows on the Encounter tab and in the GM's queue; Mira's player sees the flash on Mira's token,
+// "Bandit hit Mira" in the HUD feed and the hit window, and marks an Armor Slot; the GM's HUD Resolutions list the
+// adversary action with Undo (U4). A PC the GM owns gets the hit window on the GM's HUD (user answer 2026-10-22); a hit
+// made from the Encounter tab flashes on the map too; a Fear feature asks first (Q19). The classic card's 390 px checks
+// went with it: the GM at 390 is covered by tests/e2e/hud-phone.spec.ts and combat-actions-a11y.spec.ts.
 
 const PLAYER = "e2e-player@example.test";
 
@@ -104,45 +106,54 @@ async function sheetOf(client: ConvexHttpClient, characterId: Id<"characters">) 
   return (await client.query(api.characters.get, { characterId }))!.sheet;
 }
 
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** The GM's HUD token of an adversary ("Open the Bandit’s stat block, …"). */
+const statBlockToken = (page: Page, name: string) =>
+  page.getByRole("region", { name: "Battle map" }).getByRole("button", { name: new RegExp(`^Open the ${escape(name)}’s stat block`) });
+
 async function openMapAsGm(page: Page, url: string) {
   await page.goto(url);
-  const board = page.getByRole("region", { name: "Battle map" });
-  await expect(board.getByRole("button", { name: /^Bandit, / })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("combat-hud")).toBeVisible({ timeout: 30_000 });
+  await expect(statBlockToken(page, "Bandit")).toBeVisible({ timeout: 30_000 });
+  // The feed has loaded (the HUD's Resolutions read the same page as the flash layer): rows from now on flash.
+  await expect(page.getByTestId("hud-resolutions")).toBeVisible({ timeout: 30_000 });
   await recordFlashes(page);
-  return board;
 }
 
-test("the GM attacks Mira from the map: the window shows on the Encounter tab, Mira's player sees the flash and answers, Undo restores", async ({ page, browser }) => {
+test("the GM attacks Mira from the HUD stat block: the window shows on the Encounter tab, Mira's player sees the flash and answers, Undo restores", async ({ page, browser }) => {
   test.setTimeout(300_000);
   const s = await scene(page, browser, true);
   try {
     const player = s.player!;
+    await player.setViewportSize({ width: 1440, height: 900 });
     await player.goto(s.mapUrl);
-    await expect(player.getByRole("region", { name: "Battle map" }).getByRole("button", { name: /^Mira, / })).toBeVisible({ timeout: 30_000 });
+    await expect(player.getByRole("region", { name: "Battle map" }).getByRole("button", { name: /^Open Mira’s sheet/ })).toBeVisible({ timeout: 30_000 });
     await recordFlashes(player);
 
-    const board = await openMapAsGm(page, s.mapUrl);
-    const card = page.getByRole("region", { name: "Adversaries" });
-    await expect(card.getByTestId("adversary-hint")).toBeVisible();
-    await board.getByRole("button", { name: /^Bandit, / }).click();
-    const selected = card.getByTestId("adversary-selected");
-    await expect(selected.getByRole("heading", { name: "Bandit" })).toBeVisible();
-    // Range bands and line of sight from the Bandit (CB p.103-104, Q2).
-    const ranges = selected.getByRole("list", { name: "Range and sight" });
-    await expect(ranges.getByRole("listitem").filter({ hasText: "Mira" })).toContainText(/Melee\s*In sight/);
-    await expect(ranges.getByRole("listitem").filter({ hasText: "Rook" })).toContainText(/Close\s*In sight\s*beyond Club \(Melee\)/);
-    await expectNoSeriousA11yViolations(page, { include: '[data-testid="adversary-panel"]' });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openMapAsGm(page, s.mapUrl);
+    await statBlockToken(page, "Bandit").click();
+    const block = page.getByRole("complementary", { name: "Bandit’s stat block" });
+    await expect(block.getByTestId("hud-statblock-body")).toBeVisible();
+    await expectNoSeriousA11yViolations(page, { include: "[data-testid=hud-statblock-body]" });
 
-    // Selecting Mira's token keeps acting for the Bandit.
-    await board.getByRole("button", { name: /^Mira, / }).click();
-    const panel = selected.getByRole("region", { name: "Adversary actions" });
-    await panel.getByRole("group", { name: "Targets" }).getByRole("button", { name: "Mira" }).click();
+    // Attack opens the purple picker with each PC's band from the Bandit (CB p.103-104, Q2).
+    await block.getByTestId("hud-statblock-attack").click();
+    const pick = page.getByTestId("hud-pick");
+    await expect(pick.getByRole("heading", { level: 2 })).toHaveText("Acting for the Bandit");
+    const rows = pick.getByTestId("hud-pick-row");
+    await expect(rows.filter({ hasText: "Mira" })).toHaveAttribute("data-reach", "in");
+    await expect(rows.filter({ hasText: "Rook" })).toHaveAttribute("data-reach", "out");
+    await rows.filter({ hasText: "Mira" }).click();
     const before = await sheetOf(s.client, s.miraId);
-    await panel.getByRole("button", { name: "⚔ Attack Mira with Club" }).click();
-    const result = panel.getByRole("region", { name: "Action result" });
-    await expect(result.getByTestId("tracker-action-roll")).toHaveText(/^Roll \d+ \(d20 \d+, \+15\)/);
-    await expect(result.getByRole("list", { name: "Targets" })).toContainText(/Mira\s*Hit\s*\d+ damage\s*waiting for answers/);
-    await expect(card.getByTestId("tracker-window")).toContainText("Waiting for Mira (armor choice)");
+    await pick.getByTestId("hud-pick-go").click();
+    // The GM turn's first spotlight is free and nothing else costs: no Fear question.
+    await expect(page.getByTestId("hud-fear-confirm")).toHaveCount(0);
+    await expect(pick).toHaveCount(0, { timeout: 30_000 });
+    await expect(block.getByTestId("tracker-action-result")).toContainText("Bandit attacks", { timeout: 30_000 });
+    const reactions = page.getByTestId("hud-queue").getByTestId("hud-queue-reactions");
+    await expect(reactions).toContainText("Waiting on Mira", { timeout: 30_000 });
     await expect.poll(() => flashes(page)).toContain("hit:Hit");
 
     // The Encounter tab shows the same open window (Q12, Q16).
@@ -152,22 +163,21 @@ test("the GM attacks Mira from the map: the window shows on the Encounter tab, M
     const tracker = tab.getByRole("tabpanel", { name: "Encounters" }).getByRole("region", { name: "Encounter tracker" });
     await expect(tracker.getByRole("region", { name: "Reaction windows" }).getByTestId("tracker-window")).toContainText(/Bandit\s*hit\s*Mira/, { timeout: 30_000 });
 
-    // Mira's player: the flash, the mini feed's "Bandit hit Mira" (no numbers, Q14) and the prompt.
+    // Mira's player: the flash, the HUD feed's "Bandit hit Mira" (no numbers, Q14) and the hit window.
     await expect.poll(() => flashes(player), { timeout: 30_000 }).toContain("hit:Hit");
-    await expect(player.getByTestId("combat-mini-feed")).toContainText("Bandit hit Mira");
-    const prompt = player.getByTestId("incoming-hit");
-    await expect(prompt).toContainText("You were hit");
-    await prompt.getByRole("button", { name: "Mark", exact: true }).click();
+    await expect(player.getByTestId("hud-feed")).toContainText("Bandit hit Mira", { timeout: 30_000 });
+    const win = player.getByRole("dialog", { name: "You were hit" });
+    await expect(win).toContainText("Bandit hit Mira", { timeout: 30_000 });
+    await win.getByRole("button", { name: /^Mark Armor · take / }).click();
     await expect.poll(async () => (await sheetOf(s.client, s.miraId)).armorMarked).toBe(before.armorMarked + 1);
     await expect(tracker.getByRole("region", { name: "Reaction windows" })).toHaveCount(0);
-    await expect(card.getByTestId("tracker-window")).toHaveCount(0);
+    await expect(reactions).toHaveCount(0);
     await tab.close();
 
-    // The GM's Resolutions list the adversary action; Undo restores Mira's sheet (U4).
-    const resolutions = page.getByRole("region", { name: "Adversary resolutions" });
-    const rows = resolutions.getByTestId("combat-resolution");
-    await expect(rows.first()).toBeVisible();
-    await rows.filter({ hasText: /Club/ }).getByRole("button", { name: /^Undo/ }).first().click();
+    // The GM's HUD Resolutions list the adversary action; Undo restores Mira's sheet (U4).
+    const resolution = page.getByTestId("hud-resolution").filter({ hasText: /Club/ }).first();
+    await expect(resolution).toBeVisible({ timeout: 30_000 });
+    await resolution.getByRole("button", { name: /^Undo: / }).click();
     await expect.poll(async () => (await sheetOf(s.client, s.miraId)).armorMarked).toBe(before.armorMarked);
     expect((await sheetOf(s.client, s.miraId)).hp).toBe(before.hp);
   } finally {
@@ -175,43 +185,44 @@ test("the GM attacks Mira from the map: the window shows on the Encounter tab, M
   }
 });
 
-test("Rook, the GM's own PC, gets the prompt in the GM column; a hit from the Encounter tab flashes on the map; Roar asks for Fear (390 px)", async ({ page, browser }) => {
+test("Rook, the GM's own PC, gets the hit window on the GM's HUD; a hit from the Encounter tab flashes on the map; Roar asks for Fear", async ({ page, browser }) => {
   test.setTimeout(300_000);
   const s = await scene(page, browser, false);
   try {
-    await page.setViewportSize({ width: 390, height: 844 });
-    const board = await openMapAsGm(page, s.mapUrl);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openMapAsGm(page, s.mapUrl);
 
     // An attack made off the map (the Encounter tab's server call) flashes Rook's token here.
     const attack = await s.client.mutation(api.adversaryActions.attack, { campaignId: s.campaignId, instanceId: s.instanceId, targets: [s.rookId], idempotencyKey: crypto.randomUUID() });
     expect(attack.status).toBe("resolved");
     await expect.poll(() => flashes(page), { timeout: 30_000 }).toContain("hit:Hit");
 
-    // Rook is the GM's: the GM answers the prompt in the GM column (user answer 2026-10-22).
-    const prompt = page.getByTestId("incoming-hit");
-    await expect(prompt).toContainText(/You were hit\s*Bandit hit Rook/);
-    await expectTouchTargets(prompt.getByRole("button"));
-    await expectNoSeriousA11yViolations(page, { include: '[data-testid="incoming-hit"]' });
+    // Rook is the GM's: the GM answers in the HUD's hit window (user answer 2026-10-22).
+    const win = page.getByRole("dialog", { name: "Rook was hit" });
+    await expect(win).toContainText("Bandit hit Rook", { timeout: 30_000 });
+    await expectNoSeriousA11yViolations(page, { include: "[data-testid=hud-hit-window]" });
     const before = await sheetOf(s.client, s.rookId);
-    await prompt.getByRole("button", { name: "Don't" }).click();
-    await expect(prompt).toHaveCount(0);
+    await win.getByRole("button", { name: /^Take \d HP$/ }).click();
+    await expect(win).toHaveCount(0, { timeout: 30_000 });
     await expect.poll(async () => (await sheetOf(s.client, s.rookId)).hp).toBeGreaterThan(0);
     expect((await sheetOf(s.client, s.rookId)).armorMarked).toBe(before.armorMarked);
 
     // Roar costs 1 Fear: asked first, spent on the tap (Q19).
-    await board.getByRole("button", { name: /^Bandit, / }).click();
-    const card = page.getByRole("region", { name: "Adversaries" });
-    const panel = card.getByRole("region", { name: "Adversary actions" });
-    await panel.getByRole("list", { name: "Features" }).getByRole("button", { name: "Use Roar (1 Fear)" }).click();
-    const question = panel.getByRole("group", { name: "Spend Fear?" });
-    await expect(question).toContainText("Spend 1 Fear? 1 for the feature.");
-    await expect(page.getByTestId("combat-fear")).toHaveText("3");
-    await question.getByRole("button", { name: "Spend 1 Fear" }).click();
-    await expect(page.getByTestId("combat-fear")).toHaveText("2");
-    await expect(panel.getByRole("region", { name: "Action result" })).toContainText("Bandit uses Roar");
-
-    await expectTouchTargets(card.getByRole("button"));
-    await expectNoSeriousA11yViolations(page, { include: '[data-testid="adversary-panel"]' });
+    await statBlockToken(page, "Bandit").click();
+    const block = page.getByRole("complementary", { name: "Bandit’s stat block" });
+    await block.getByRole("button", { name: "Use Roar (1 Fear)" }).click();
+    // Roar names its PCs: the purple picker "Roar" asks for them first (plan combat-hud H5.2).
+    const roar = page.getByRole("dialog", { name: "Roar" });
+    await roar.getByRole("button", { name: /^Rook, / }).click();
+    await roar.getByRole("button", { name: /^Use on / }).click();
+    const confirm = page.getByTestId("hud-fear-confirm");
+    await expect(confirm).toContainText(/Spend \d Fear\?/);
+    await expect(confirm).toContainText("Roar");
+    expect(await s.client.query(api.campaigns.fear, { campaignId: s.campaignId })).toBe(3);
+    await confirm.getByRole("button", { name: "Spend 1 Fear" }).click();
+    await expect.poll(() => s.client.query(api.campaigns.fear, { campaignId: s.campaignId })).toBe(2);
+    await expect(block.getByTestId("tracker-action-result")).toContainText("Bandit uses Roar", { timeout: 30_000 });
+    await expectNoSeriousA11yViolations(page, { include: "[data-testid=hud-statblock-body]" });
     await expectNoHorizontalScroll(page);
   } finally {
     await s.close();

@@ -4,8 +4,8 @@ import "./combat-map.css";
 
 import { Component, useState, type ReactNode } from "react";
 
-import { ActionsProvider, Resolutions, TargetsLayer } from "@/components/combat-map/actions";
-import { AdversaryPanel, HitFlashLayer } from "@/components/combat-map/actions/adversary";
+import { ActionsProvider, TargetsLayer } from "@/components/combat-map/actions";
+import { HitFlashLayer } from "@/components/combat-map/actions/adversary";
 import { SheetExtras } from "@/components/combat-map/drawer";
 import { HudShell, ToolsHead } from "@/components/combat-map/hud";
 import { EditorLayer, EditorProvider, EditToolsPanel } from "@/components/combat-map/editor";
@@ -147,8 +147,9 @@ function Layers(layer: MapLayerProps) {
 }
 
 /**
- * GM left column: maps, the mode switch, then Scene + Edit tools (Edit) or Combatants, the token card, the adversary
- * controls, Reveal, Vision and the Resolutions list (Play).
+ * GM left column: maps, the mode switch, then Scene + Edit tools (Edit) or Combatants, the token card, Reveal and Vision
+ * (Play). Plan combat-hud H8.2: the adversary card and the Resolutions / End scene cards are gone (the HUD's stat block,
+ * "Waiting on you" queue and scene tools do that).
  */
 function GmColumn({ state, selectedMapId, onSelectMap, onMode }: {
   state: CombatPageState;
@@ -196,17 +197,11 @@ function GmColumn({ state, selectedMapId, onSelectMap, onMode }: {
           <SlotBoundary label="Class controls">
             <SheetExtras {...state} />
           </SlotBoundary>
-          <SlotBoundary label="Adversary actions">
-            <AdversaryPanel {...state} map={map} />
-          </SlotBoundary>
           <SlotBoundary label="Reveal">
             <RevealPanel {...state} map={map} />
           </SlotBoundary>
           <SlotBoundary label="Vision and fog">
             <VisionPanel {...state} map={map} />
-          </SlotBoundary>
-          <SlotBoundary label="Resolutions">
-            <Resolutions {...state} map={map} />
           </SlotBoundary>
         </>
       ) : null}

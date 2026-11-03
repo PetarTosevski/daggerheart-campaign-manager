@@ -1,4 +1,4 @@
-/* B2: rolls waiting for the GM's Difficulty (a player's Charge, a Cloaked rogue seen dimly). */
+/* B2: a character's rolls waiting for the GM's Difficulty (the HUD sheet's Charge use). */
 .dfr {
   display: grid;
   gap: 0.4rem;

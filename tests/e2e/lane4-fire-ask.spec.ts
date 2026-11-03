@@ -8,7 +8,8 @@ import { bardDraft, openCombatMap } from "./visual/helpers";
 
 // Plan lanes-2, tracer E2.4 (dcm-sk4r; user answer 2026-10-31: "Fireproof on an untyped hit: the GM decides whether the
 // hit is fire"). A custom Bandit (no data on its damage) hits Ember, an Emberkin (Fireproof, HF p.22: "You are immune to
-// damage from magical or mundane flame"). The GM's Combat Map shows "Hit questions": "Was this hit fire? (Fireproof)".
+// damage from magical or mundane flame"). The GM's HUD queue ("Waiting on you"; plan combat-hud H8.2 removed the classic
+// "Hit questions" card) asks "Was this hit fire?" (Ember is Fireproof).
 // Yes: the hit marks nothing once Ember answered; No: it marks HP as usual.
 
 /** A Bandit that always hits (ATK +20) for 11-14 physical damage; a custom block, so its damage carries no known keyword. */
@@ -63,18 +64,21 @@ for (const carries of [true, false]) {
     await expect(page.getByRole("region", { name: "Battle map" })).toBeVisible({ timeout: 30_000 });
     const requestId = await attack(s.gm, s.campaignId, s.bandit, s.ember);
 
-    const asks = page.getByRole("region", { name: "Hit questions" });
-    await expect(asks).toBeVisible({ timeout: 30_000 });
-    await expect(asks.getByTestId("keyword-ask")).toContainText(/Bandit → Ember, \d+ damage: Was this hit fire\? \(Fireproof\)/);
-    await expectNoSeriousA11yViolations(page, { include: "[data-testid=keyword-asks]" });
+    const ask = page.getByTestId("hud-queue").getByTestId("hud-queue-keyword");
+    await expect(ask).toBeVisible({ timeout: 30_000 });
+    await expect(ask.getByRole("heading")).toHaveText(/Was this hit fire\?/);
+    await expect(ask).toContainText(/Ember is Fireproof/);
+    await expect(ask).toContainText(/Bandit hit Ember for \d+\./);
+    await expectNoSeriousA11yViolations(page, { include: "[data-testid=hud-queue]" });
 
     // Ember (the GM's own PC here) answers the armor question; the ask still holds the hit.
     const answered = await s.gm.mutation(api.adversaryActions.respond, { campaignId: s.campaignId, requestId, characterId: s.ember, choice: { kind: "noArmor" }, idempotencyKey: crypto.randomUUID() });
     expect(answered.status).toBe("open");
     expect((await sheetOf(s.gm, s.ember)).hp).toBe(0);
 
-    await asks.getByRole("button", { name: carries ? "Yes, fire" : "No" }).click();
-    await expect(page.getByRole("region", { name: "Hit questions" })).toHaveCount(0);
+    await ask.getByRole("button", { name: carries ? /^Yes, fire: / : /^Not fire: / }).click();
+    await expect(page.getByTestId("hud-queue-result")).toHaveText(carries ? "Ember’s Fireproof applies." : "Not fire: the hit stands as it is.", { timeout: 30_000 });
+    await expect(page.getByTestId("hud-queue-keyword")).toHaveCount(0);
     if (carries) {
       await expect.poll(async () => (await s.gm.query(api.adversaryActions.windows, { campaignId: s.campaignId })).length).toBe(0);
       expect((await sheetOf(s.gm, s.ember)).hp).toBe(0);

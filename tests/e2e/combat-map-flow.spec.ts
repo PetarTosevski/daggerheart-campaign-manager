@@ -6,6 +6,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { blocksSight } from "../../src/lib/domain/combat-map/sight";
 import { decodeExplored, exploredLength, SAMPLES_PER_SQUARE } from "../../src/lib/domain/combat-map/vision";
 import { signInAsTestGm } from "./fixtures";
+import { openMapTools } from "./hud/helpers";
 import { bardDraft, convexAs, openCombatMap } from "./visual/helpers";
 
 // D9 C9: the whole combat map flow in two browsers (.omc/plans/d9-combat-map.yaml), at desktop (1440x900) and
@@ -105,7 +106,10 @@ for (const viewport of [
         await playerClient.mutation(api.characters.create, { campaignId, draft: bardDraft("Ash"), idempotencyKey: crypto.randomUUID() });
 
         // ---- GM: a new blank Medium map, filled by Generate from a description (keyword fallback, C4).
+        // The prepared map is live, so the GM lands in Play, the HUD (plan combat-hud H8.1): the column is in its
+        // "Map tools" drawer.
         await page.goto(url);
+        await openMapTools(page);
         const tools = page.getByRole("complementary", { name: "Map tools" });
         const maps = tools.getByRole("list", { name: "Campaign maps" });
         const mode = tools.getByRole("group", { name: "Map mode" });
@@ -155,6 +159,7 @@ for (const viewport of [
 
         // ---- Combatants (C6): the party and the encounter's adversaries from the Adversaries tab queue.
         await mode.getByRole("button", { name: /Play/ }).click();
+        await openMapTools(page);
         const combatants = tools.getByRole("region", { name: "Combatants" });
         await combatants.getByRole("button", { name: "＋ Party (2)" }).click();
         await expect(combatants.getByRole("button", { name: "＋ Party (0)" })).toBeDisabled();
@@ -179,23 +184,28 @@ for (const viewport of [
 
         // ---- The player: the live map; they pick a torch for Ash and drag Ash one square east (facing east, R5).
         await player.goto(url);
-        await expect(player.getByTestId("combat-light-pill")).toContainText("Moonrise");
-        await expect(player.locator(".cm-headline")).toHaveText(mapName);
-        const yourView = player.getByRole("region", { name: "Your view" });
+        await expect(player.getByTestId("hud-title").getByRole("heading")).toHaveText(mapName);
+        // The light pill and "Your view" are in the HUD's "Your character" drawer (plan combat-hud H8.1).
+        await player.getByRole("button", { name: "Your character", exact: true }).click();
+        const drawer = player.getByRole("complementary", { name: "Your character" });
+        await expect(drawer.getByTestId("combat-light-pill")).toContainText("Moonrise");
+        const yourView = drawer.getByRole("region", { name: "Your view" });
         const torch = yourView.getByRole("group", { name: "Light you carry" }).getByRole("button", { name: "Torch", exact: true });
         await torch.click();
         await expect(torch).toHaveAttribute("aria-pressed", "true");
         await expect(yourView.getByTestId("combat-light-rule")).toHaveText(/your torch lights clearly to Close and dimly to Far/);
+        await drawer.press("Escape");
+        await expect(drawer).toHaveCount(0);
         const playerBoard = player.getByRole("region", { name: "Battle map" });
-        const ash = playerBoard.getByRole("button", { name: /^Ash, Party.*your character/ });
+        const ash = playerBoard.getByRole("button", { name: /^Open Ash’s sheet \(your character\)/ });
         await expect(ash).toHaveAttribute("data-square", "3,10");
         await dragBy(player, ash, await squarePx(player), 0);
         await expect(ash).toHaveAttribute("data-square", "4,10");
         await expect(ash).toHaveAttribute("data-face", "0");
-        await expect(board.getByRole("button", { name: /^Ash, Party/ })).toHaveAttribute("data-square", "4,10");
+        await expect(board.getByRole("button", { name: /^Open Ash’s sheet/ })).toHaveAttribute("data-square", "4,10");
 
         // Another PC is always shown (Q4); the Bear in the dim band and the Wolf in the dark are not (R10).
-        await expect(playerBoard.getByRole("button", { name: /^Liriel, Party/ })).toBeVisible();
+        await expect(playerBoard.getByRole("button", { name: /^Open Liriel’s sheet/ })).toBeVisible();
         await expect(playerBoard.getByRole("button", { name: /^Bear/ })).toHaveCount(0);
         await expect(playerBoard.getByRole("button", { name: /^Dire Wolf/ })).toHaveCount(0);
         // The server never sent them (tokens are filtered on the server, Q1).
@@ -216,7 +226,16 @@ for (const viewport of [
 
         // ---- The GM sees everything (R12) and reveals the Bear to Ash after a roll (R10): it appears, live.
         await expect(board.getByTestId("combat-token")).toHaveCount(4);
-        await board.getByRole("button", { name: /^Bear, Enemy/ }).click();
+        // The GM's HUD names an encounter adversary's token after its stat block (plan combat-hud H5.2); Reveal is in
+        // the Map tools drawer, and the selection survives opening it. The click also opens the Bear's stat block, which
+        // hides the Map tools button on a tablet: Esc closes it first (the token stays selected).
+        await tools.press("Escape");
+        await board.getByRole("button", { name: /^Open the Bear’s stat block/ }).click();
+        const bearBlock = page.getByRole("complementary", { name: /^Bear.*stat block$/ });
+        await expect(bearBlock).toBeVisible();
+        await bearBlock.getByRole("heading", { level: 2 }).press("Escape");
+        await expect(bearBlock).toHaveCount(0);
+        await openMapTools(page);
         const reveal = tools.getByRole("region", { name: "Light and reveal" }).getByRole("group", { name: "Reveal to" });
         await reveal.getByRole("button", { name: "Ash" }).click();
         await expect(reveal.getByRole("button", { name: "👁 Ash" })).toHaveAttribute("aria-pressed", "true");

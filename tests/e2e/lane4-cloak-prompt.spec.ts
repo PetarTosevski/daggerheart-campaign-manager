@@ -6,8 +6,9 @@ import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, openCombatMap } from "./visual/helpers";
 
 // Plan lanes-2 wave 10, E1.4a (dcm-vx5n; user 2026-10-31; CB p.42 Cloaked, CB p.99), in two browsers: a Cloaked rogue
-// casts Enrapture (a Spellcast Roll that debuffs, not an attack) on a Bandit; the GM's Resolutions column asks "Does
-// Ash's Cloaked end?"; the GM answers Yes and the rogue is no longer Cloaked (the row goes, the feed says it).
+// casts Enrapture (a Spellcast Roll that debuffs, not an attack) on a Bandit; the GM's HUD queue ("Waiting on you";
+// plan combat-hud H8.2 removed the classic Resolutions card) asks "Does Ash's Cloaked end?"; the GM answers Yes and the
+// rogue is no longer Cloaked (the card goes, the feed says it).
 
 const PLAYER = "e2e-player@example.test";
 
@@ -66,15 +67,17 @@ test("a Cloaked rogue's Enrapture asks the GM; Yes ends Cloaked", async ({ page,
     const sheet = async () => (await playerClient.query(api.characters.get, { characterId }))!.sheet!;
     expect((await sheet()).conditions).toContain("cloaked");
 
-    // The GM's column asks; Yes ends Cloaked.
+    // The GM's HUD queue ("Waiting on you") asks; Yes ends Cloaked.
     await page.goto(url);
-    const resolutions = page.getByRole("region", { name: "Resolutions" });
-    const row = resolutions.getByTestId("cloak-prompt");
-    await expect(row).toContainText("Does Ash's Cloaked end? (Enrapture on Bandit)", { timeout: 30_000 });
-    await expectNoSeriousA11yViolations(page, { include: ".cm-aside" });
-    await row.getByRole("button", { name: /^Yes, Cloaked ends/ }).click();
-    await expect(resolutions.getByTestId("cloak-prompts").getByRole("status")).toHaveText("Ash is no longer Cloaked.");
-    await expect(row).toHaveCount(0);
+    const queue = page.getByTestId("hud-queue");
+    const card = queue.getByTestId("hud-queue-cloak");
+    await expect(card).toBeVisible({ timeout: 30_000 });
+    await expect(card.getByRole("heading", { name: "Does Ash’s Cloaked end?" })).toBeVisible();
+    await expect(card).toContainText("Enrapture on Bandit");
+    await expectNoSeriousA11yViolations(page, { include: "[data-testid=hud-queue]" });
+    await card.getByRole("button", { name: /^Yes, Cloaked ends/ }).click();
+    await expect(page.getByTestId("hud-queue-result")).toHaveText("Ash is no longer Cloaked.", { timeout: 30_000 });
+    await expect(card).toHaveCount(0);
     await expect.poll(async () => ((await sheet())?.conditions ?? []).includes("cloaked")).toBe(false);
     const feed = await playerClient.query(api.feed.list, { campaignId, paginationOpts: { numItems: 20, cursor: null } });
     expect(feed.page.some((r) => r.summary === "Ash is no longer Cloaked (Enrapture)")).toBe(true);

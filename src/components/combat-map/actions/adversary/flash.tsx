@@ -1,12 +1,14 @@
 "use client";
 
+import "./adversary.css";
+
 import { useQuery } from "convex/react";
 import { useState } from "react";
 
 import { api } from "../../../../../convex/_generated/api";
+import { RESOLUTION_SCAN } from "../../hud/queue/model";
 import type { ActionsLayerProps } from "../../slots";
 import { MINI_FEED_ROWS } from "../dice";
-import { RESOLUTION_SCAN } from "../gm";
 import { newActionFlashes } from "./model";
 
 /**
@@ -19,7 +21,7 @@ import { newActionFlashes } from "./model";
  */
 export function HitFlashLayer(props: ActionsLayerProps) {
   const { campaignId, map, viewport, role } = props;
-  // The same page as the GM's Resolutions or the player's mini feed, so no extra subscription.
+  // The GM reads the same page as the HUD's Resolutions (`hud/queue/resolutions.tsx`), so no extra subscription.
   const page = useQuery(api.feed.list, { campaignId, paginationOpts: { numItems: role === "gm" ? RESOLUTION_SCAN : MINI_FEED_ROWS, cursor: null } });
   // The GM reads every token (adversary tokens flash for the GM only, H3); a player only the PC tokens.
   const gm = role === "gm";
