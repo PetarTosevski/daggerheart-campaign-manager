@@ -63,7 +63,7 @@ export function WorldBoard({ campaignName, data }: { campaignName: string; data:
   const gesture = Gesture.Simultaneous(pan, pinch);
 
   const hint = isGm
-    ? "Scroll or pinch to zoom, drag to pan. GM editing tools arrive in a later release."
+    ? "Scroll or pinch to zoom, drag to pan."
     : "Pinch to zoom and drag to pan.";
 
   return (
@@ -120,7 +120,7 @@ export function WorldBoard({ campaignName, data }: { campaignName: string; data:
           )}
         </View>
       </GestureDetector>
-      <WorldEditSlot enabled={isGm} />
+      <WorldEditSlot enabled={isGm} data={data} />
     </ScrollView>
   );
 }
