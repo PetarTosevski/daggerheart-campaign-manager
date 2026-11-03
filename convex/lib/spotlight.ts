@@ -14,6 +14,10 @@
  *   reason `adversary`); the row names its token (`adversaryTokenId`) so the map can light it (bead dcm-bxp.99.32.35).
  *   A move to the GM from a PC and a hand-back to a PC clear it.
  * - `giveTo(ctx, campaign, characterId)`: the GM hands it to a PC (`combatSpotlight.handTo`).
+ * - Spotlight per PC per live session (plan journal JD1, user answer 2026-11-03): every real move to a specific PC
+ *   (`setHolder` writes a new PC holder) while a session is live adds 1 to that PC's `sessionSpotlights` row. Moves to
+ *   the GM, to an adversary and to the whole party (`giveToParty`, no holder) do not count; neither does a move with no
+ *   live session or to the PC who already holds it. It runs inside the caller's keyed `once`, so a retry counts once.
  * - `giveToParty(ctx, campaign)`: the GM hands it to the whole party, nobody chosen (`combatSpotlight.handToParty`, plan
  *   combat-hud H9.S, user answer Q8 a): the row goes, which is the "players hold it, nobody in particular" state.
  * - `takeWithFear(ctx, campaign, user, tokenId?)`: the GM spends 1 Fear to interrupt (`combatSpotlight.gmTake({ pay:
@@ -40,6 +44,7 @@ import { logAction, newGroupId } from "./actionLog";
 import { loadCombatToken } from "./combatMaps";
 import { campaignFearState, spendFear } from "./fear";
 import { atLeast, permissionFor } from "./permissions";
+import { liveSession } from "./sessions";
 
 /** What a player is about to do: an `action` (a roll, a card, a feature, an attack), a token `move`, or a `reaction`. */
 export type ActKind = "action" | "move" | "reaction";
@@ -88,7 +93,24 @@ async function setHolder(
   const next = { holder, since: Date.now(), reason, rollBy, adversaryTokenId };
   if (row === null) await ctx.db.insert("combatSpotlight", { campaignId, ...next });
   else await ctx.db.replace("combatSpotlight", row._id, { campaignId, ...next });
+  if (holder.kind === "pc") await countLiveSpotlight(ctx, campaignId, holder.characterId);
   return true;
+}
+
+/**
+ * Adds one to the PC's spotlight count for the campaign's live session (plan journal JD1, user answer 2026-11-03:
+ * spotlight per PC per live session). No live session: nothing is written. One indexed read for the session, one for
+ * the (session, character) row.
+ */
+async function countLiveSpotlight(ctx: MutationCtx, campaignId: Id<"campaigns">, characterId: Id<"characters">): Promise<void> {
+  const session = await liveSession(ctx, campaignId);
+  if (session === null) return;
+  const row = await ctx.db
+    .query("sessionSpotlights")
+    .withIndex("by_session_character", (q) => q.eq("sessionId", session._id).eq("characterId", characterId))
+    .unique();
+  if (row !== null) await ctx.db.patch("sessionSpotlights", row._id, { count: row.count + 1 });
+  else await ctx.db.insert("sessionSpotlights", { campaignId, sessionId: session._id, characterId, count: 1 });
 }
 
 /**
