@@ -108,6 +108,7 @@ import type * as lib_restHooks from "../lib/restHooks.js";
 import type * as lib_rolls from "../lib/rolls.js";
 import type * as lib_sessions from "../lib/sessions.js";
 import type * as lib_spotlight from "../lib/spotlight.js";
+import type * as lib_spotlightSeen from "../lib/spotlightSeen.js";
 import type * as lib_spriteSources from "../lib/spriteSources.js";
 import type * as lib_stanceDrop from "../lib/stanceDrop.js";
 import type * as lib_trackers from "../lib/trackers.js";
@@ -309,6 +310,7 @@ declare const fullApi: ApiFromModules<{
   "lib/rolls": typeof lib_rolls;
   "lib/sessions": typeof lib_sessions;
   "lib/spotlight": typeof lib_spotlight;
+  "lib/spotlightSeen": typeof lib_spotlightSeen;
   "lib/spriteSources": typeof lib_spriteSources;
   "lib/stanceDrop": typeof lib_stanceDrop;
   "lib/trackers": typeof lib_trackers;

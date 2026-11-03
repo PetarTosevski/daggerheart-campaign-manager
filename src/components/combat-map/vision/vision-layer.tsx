@@ -33,6 +33,7 @@ import {
   useDoors,
   useExploredSync,
   useFogMasks,
+  useSeenSync,
   useStoredExplored,
   useViewing,
   useVisionActions,
@@ -155,6 +156,7 @@ export function VisionLayer(props: MapLayerProps) {
   const stored = useStoredExplored(campaignId, viewing);
   const masks = useFogMasks(view, stored.mask);
   useExploredSync(campaignId, viewing, masks, stored.mask, stored.loaded);
+  useSeenSync(campaignId, viewing);
   const light = useCampaignLight(campaignId);
   const actions = useVisionActions(campaignId);
   const { fogTool, brush } = useVisionState();

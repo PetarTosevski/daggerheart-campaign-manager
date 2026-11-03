@@ -52,4 +52,23 @@ export const combatSpotlightTables = {
      */
     adversaryTokenId: v.optional(v.id("combatTokens")),
   }).index("by_campaign", ["campaignId"]),
+
+  /**
+   * The adversary tokens the party has seen during the current scene (user 2026-11-03, docs/tasks/TASK-SPOTLIGHT-SEEN.md):
+   * a player learns which adversary holds the spotlight (`combatSpotlight.state`'s `adversaryTokenId` and its name) only
+   * when one of the party's characters has seen that token since the scene began. One row per (campaign, token), written
+   * only through convex/lib/spotlightSeen.ts by `combatVision.markSeen` (a player's client reports the adversaries its
+   * server view shows; the server keeps only those the character sees now). Deleted at End scene (`endScene`, the
+   * session end) and with the campaign (purge). Rule 6: its own table, never an array on the spotlight row. Bounded: one
+   * row per adversary token seen since the last scene end (`MAX_COMBAT_TOKENS` per map).
+   *
+   * - `by_campaign_token`: whether a token was seen (the spotlight's read, the upsert); the campaign prefix: the scene
+   *   end, the purge and a view's "not yet recorded" list.
+   */
+  combatSeen: defineTable({
+    campaignId: v.id("campaigns"),
+    tokenId: v.id("combatTokens"),
+    /** When a player's character first saw it this scene (ms). */
+    seenAt: v.number(),
+  }).index("by_campaign_token", ["campaignId", "tokenId"]),
 };

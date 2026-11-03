@@ -9,6 +9,7 @@
  * - for every active PC `expire(sheet, "scene")`: effects and feature uses that last until the scene, the Unstoppable
  *   Die, the active stance and Walk Between Worlds' tokens (src/lib/domain/characters/expiry.ts);
  * - ends the campaign's live map areas that last until the scene (`combatAreas.expires` `scene`);
+ * - forgets which adversaries the party has seen this scene (`combatSeen`, user 2026-11-03, convex/lib/spotlightSeen.ts);
  * - DA10: ends what ends with the stance (Grappling's Restrain on its instance, convex/lib/stanceDrop.ts); the campaign
  *   row carries the instances' `adversaryBefore`, so undo restores them.
  * The dashboard's End scene (`scenes.end`, RF1) runs the same `endScene`; the session end (`sessions.end`) closes the
@@ -28,6 +29,7 @@ import type { MutationCtx } from "./_generated/server";
 import { logAction, newGroupId } from "./lib/actionLog";
 import { MAX_CHARACTERS_PER_CAMPAIGN, readSheet, saveSheet } from "./lib/characterSheet";
 import { keyedGmMutation } from "./lib/functions";
+import { forgetSeen } from "./lib/spotlightSeen";
 import { endStanceConditions, withoutStance } from "./lib/stanceDrop";
 import type { AreaExpires } from "./lib/validators/combatMaps";
 
@@ -104,6 +106,9 @@ export async function endScene(ctx: MutationCtx, campaign: Doc<"campaigns">, act
     });
   if (changes.length > PARTY_MAX) throw appError("INVALID", `A scene can update at most ${PARTY_MAX} characters; remove some from the campaign.`);
   const areas = await endSceneAreas(ctx, campaignId, Date.now());
+  // The next scene starts unseen: players learn a spotlighted adversary only once the party sees it again (user
+  // 2026-11-03, convex/lib/spotlightSeen.ts). Outside the undo group, like the areas.
+  await forgetSeen(ctx, campaignId);
   if (changes.length === 0) return { ended: 0, areas, entryId: null };
 
   const groupId = newGroupId();

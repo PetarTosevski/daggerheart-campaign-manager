@@ -26,6 +26,7 @@ import {
   FOG_HIDE,
   FOG_REVEAL,
   MAX_COMBAT_REVEALS,
+  MAX_COMBAT_TOKENS,
   MAX_MAP_H,
   MAX_MAP_W,
   liveCombatMap,
@@ -33,7 +34,9 @@ import {
   loadCombatObject,
   loadCombatToken,
 } from "./lib/combatMaps";
+import { recordSeen } from "./lib/spotlightSeen";
 import {
+  adversariesSeenNow,
   buildView,
   exploredRow,
   lightLevelValidator,
@@ -74,6 +77,8 @@ import { carriedLightValidator, objectLightValidator } from "./lib/validators/co
  *   has explored (an unseen door answers COMBAT_OBJECT_NOT_FOUND, as if it were not there), and only from Melee
  *   by such a character (COMBAT_OUT_OF_REACH, B4, dcm-bxp.130).
  * - `explored` / `markExplored`: a character's explored samples (R11), merged, written only when they grow.
+ * - `markSeen`: the adversaries a player's character sees now, recorded as seen by the party this scene (the spotlight's
+ *   "which adversary" rule, user 2026-11-03; convex/lib/spotlightSeen.ts).
  * - `forgetExplored` (GM): deletes a map's explored rows, every character's or one character's (the board's "Forget
  *   explored", dcm-bxp.52).
  * - `paintFog` (GM): reveal / hide / erase marks on the fog layer (R12); they decide token visibility too (user
@@ -104,6 +109,11 @@ const viewOkValidator = v.object({
   pcs: v.array(tokenViewValidator),
   /** Other tokens the character sees now (R10, R11), without stats (R4); condition names only (HD1). */
   others: v.array(otherTokenValidator),
+  /**
+   * The adversary tokens in `others` the party is not yet recorded as having seen this scene (spotlight-seen, user
+   * 2026-11-03): the player's client sends them to `markSeen`. Empty once recorded; filled again after End scene.
+   */
+  unseenAdversaries: v.array(v.id("combatTokens")),
 });
 
 /** No live map (players) or no map at all; the character has no token on the map; or their view. */
@@ -281,6 +291,30 @@ export const markExplored = campaignMutation({
     const seen = seenMask(visibleSquares(viewer.view));
     for (let i = 0; i < delta.length; i++) if (!seen[i]) delta[i] = 0;
     return { grew: await addExplored(ctx, map, character._id, delta) };
+  },
+});
+
+/** Tokens one `markSeen` call may name: every token of the largest map. */
+const MARK_SEEN_MAX = MAX_COMBAT_TOKENS;
+
+/**
+ * The caller's own character (edit permission, else COMBAT_NOT_YOUR_TOKEN) reports the adversary tokens its view shows
+ * (`playerView`'s `unseenAdversaries`) as seen by the party this scene (spotlight-seen, user 2026-11-03; convex/lib/
+ * spotlightSeen.ts). The server recomputes the character's view on the live map and records only the adversaries it
+ * sees now, so a client cannot claim one it never saw (and learn which adversary holds the spotlight). Nothing on a
+ * map that is not live or without the character's token; returns how many tokens were newly recorded.
+ */
+export const markSeen = campaignMutation({
+  need: "view",
+  args: { characterId: v.string(), tokenIds: v.array(v.string()) },
+  returns: v.object({ added: v.number() }),
+  handler: async (ctx, { characterId, tokenIds }) => {
+    if (tokenIds.length > MARK_SEEN_MAX) throw appError("INVALID", "Too many tokens.");
+    const character = await ownCharacter(ctx, characterId);
+    const map = await liveCombatMap(ctx, ctx.campaign._id);
+    if (map === null || tokenIds.length === 0) return { added: 0 };
+    const scene = await loadScene(ctx, ctx.campaign, map);
+    return { added: await recordSeen(ctx, ctx.campaign._id, adversariesSeenNow(scene, character, tokenIds)) };
   },
 });
 

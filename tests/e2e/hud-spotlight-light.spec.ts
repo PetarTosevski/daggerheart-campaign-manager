@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { expectNoSeriousA11yViolations } from "./a11y";
-import { hudScene, type HudScene } from "./hud/helpers";
+import { HUD_MAP_W, hudScene, type HudScene } from "./hud/helpers";
 
 // Bead dcm-bxp.99.32.35 (docs/tasks/TASK-HUD-SPOTLIGHT-LIGHT.md; user 2026-11-02: "When the spotlight is on a token have
 // that token illuminated as if a spotlight was shining on it (both players & adversaries)"). The PC who holds the
@@ -126,6 +126,9 @@ test("the PC holder and the spotlighted adversary are lit for the GM and the pla
     await expect(poolOf(player, lieutenant.tokenId)).toHaveCount(0);
     await expectNothingLit(player);
     await expect(player.locator(`[data-token='${hiddenBandit.tokenId}']`)).toHaveCount(0);
+    // User 2026-11-03: never seen this scene, so the player is not even told which adversary it is.
+    expect((await s.playerClient.query(api.combatSpotlight.state, { campaignId: s.campaignId })).adversaryTokenId).toBeNull();
+    await expect(player.getByTestId("hud-gm-turn-title")).toHaveText("The GM has the spotlight");
     await settle(player);
     await shot(player, "player-hidden-adversary-not-revealed-1440");
 
@@ -189,6 +192,57 @@ test("the light follows its token at tablet and phone sizes and with a sheet ope
     await player.emulateMedia({ reducedMotion: "reduce" });
     expect(await pool.evaluate((el) => getComputedStyle(el).animationName)).toBe("none");
     expect(await poolOf(player, lieutenant.tokenId).evaluate((el) => getComputedStyle(el).animationName)).toBe("none");
+  } finally {
+    await s.close();
+  }
+});
+
+test("spotlight-seen: a never-seen adversary stays anonymous; one seen this scene, then hidden, is named without a token", async ({ browser }) => {
+  // User 2026-11-03 (docs/tasks/TASK-SPOTLIGHT-SEEN.md): players learn which adversary holds the spotlight only when the
+  // party saw it this scene; seen then out of sight, the GM's-turn card names it and nothing is drawn or lit.
+  test.setTimeout(300_000);
+  const s = await hudScene(browser);
+  const { gm, player } = s;
+  const { lieutenant, hiddenBandit } = s.enemies;
+  const playerState = () => s.playerClient.query(api.combatSpotlight.state, { campaignId: s.campaignId });
+  const title = player.getByTestId("hud-gm-turn-title");
+  const lieutenantSquare = 10 * HUD_MAP_W + 14;
+  try {
+    await open(gm, s.url, { width: 1440, height: 900 });
+    await open(player, s.url, { width: 1440, height: 900 });
+    await expect(tokenOf(player, lieutenant.tokenId)).toBeVisible();
+    // The player's map records the Lieutenant as seen (its client's markSeen); the Bandit behind the wall never is.
+    await expect
+      .poll(async () => {
+        const view = await s.playerClient.query(api.combatVision.playerView, { campaignId: s.campaignId });
+        return view.state === "ok" && view.others.some((o) => o._id === lieutenant.tokenId) && !view.unseenAdversaries.includes(lieutenant.tokenId);
+      })
+      .toBe(true);
+
+    // Never seen: nothing for the player, not even the id; the card keeps the GM's title.
+    await s.client.mutation(api.combatSpotlight.gmTake, { campaignId: s.campaignId, tokenId: hiddenBandit.tokenId, idempotencyKey: key() });
+    await expectLit(gm, hiddenBandit.tokenId);
+    await expect(title).toHaveText("The GM has the spotlight");
+    expect(await playerState()).toMatchObject({ adversaryTokenId: null, adversaryName: null });
+    await expectNothingLit(player);
+
+    // Seen, then hidden (the GM's fog over its square): the player learns whose spotlight it is, with no token drawn.
+    await s.client.mutation(api.combatVision.paintFog, { campaignId: s.campaignId, mapId: s.mapId, squares: [lieutenantSquare], mark: "hide" });
+    await expect(tokenOf(player, lieutenant.tokenId)).toHaveCount(0);
+    await s.client.mutation(api.combatSpotlight.gmTake, { campaignId: s.campaignId, tokenId: lieutenant.tokenId, idempotencyKey: key() });
+    await expectLit(gm, lieutenant.tokenId);
+    await expect(title).toHaveText(`${lieutenant.name} has the spotlight`);
+    expect(await playerState()).toMatchObject({ adversaryTokenId: lieutenant.tokenId, adversaryName: lieutenant.name });
+    await expectNothingLit(player);
+    await expect(player.locator(`[data-token='${lieutenant.tokenId}']`)).toHaveCount(0);
+    await settle(player);
+    await expectNoSeriousA11yViolations(player);
+    await shot(player, "player-seen-hidden-adversary-named-1440");
+
+    // Back in sight: the light shows it, and the card goes back to the GM's title.
+    await s.client.mutation(api.combatVision.paintFog, { campaignId: s.campaignId, mapId: s.mapId, squares: [lieutenantSquare], mark: "erase" });
+    await expectLit(player, lieutenant.tokenId);
+    await expect(title).toHaveText("The GM has the spotlight");
   } finally {
     await s.close();
   }

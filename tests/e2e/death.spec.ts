@@ -146,6 +146,8 @@ test("Castle High: a player's less-lethal pick is a request; the GM changes it a
   await expect(player.getByTestId("death-away-requested")).toHaveText("Requested");
   // Only the GM settles it.
   await expect(player.getByRole("button", { name: "Confirm" })).toHaveCount(0);
+  // User 2026-11-03: players can't undo death moves, even their own Blaze of Glory finish (no dice); the GM can.
+  await expect(player.getByRole("button", { name: "Undo death move" })).toHaveCount(0);
 
   // The GM sees the request on the dashboard's party card, then changes it on the sheet.
   await page.goto(`/campaigns/${campaignId}`);

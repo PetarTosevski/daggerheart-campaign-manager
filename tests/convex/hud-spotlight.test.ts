@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { assertMayAct, gmHoldsSpotlight, moveToGm, type ActKind } from "../../convex/lib/spotlight";
+import { recordSeen } from "../../convex/lib/spotlightSeen";
 import { allowWorldEmails, buildWorld, type Role, type World } from "./authz/world";
 import { characterDraft } from "../fixtures/characters";
 import { errorCode, key } from "./helpers";
@@ -53,7 +54,7 @@ const rows = (w: World) => w.t.run((ctx) => ctx.db.query("combatSpotlight").coll
 describe("combatSpotlight.state", () => {
   it("starts with nobody in particular: no holder, no reactions-only, only the GM may move it", async () => {
     const w = await buildWorld();
-    const none = { holder: null, since: null, reason: null, rollBy: null, reactionsOnly: false, adversaryTokenId: null };
+    const none = { holder: null, since: null, reason: null, rollBy: null, reactionsOnly: false, adversaryTokenId: null, adversaryName: null };
     expect(await state(w, "gm")).toEqual({ ...none, canMove: true });
     expect(await state(w, "player")).toEqual({ ...none, canMove: false });
     expect(await state(w, "grantee")).toEqual({ ...none, canMove: false });
@@ -185,6 +186,9 @@ async function tokens(w: World, campaignId: Id<"campaigns"> = w.campaignId) {
   });
 }
 
+/** Records a token as seen by the party this scene (what `combatVision.markSeen` writes; spotlight-seen.test.ts covers it). */
+const seen = (w: World, tokenId: Id<"combatTokens">) => w.t.run((ctx) => recordSeen(ctx, w.campaignId, [tokenId]));
+
 const spotlight = (w: World, tokenId: string, idempotencyKey = key()) =>
   w.as("gm").mutation(api.combatSpotlight.gmTake, { campaignId: w.campaignId, tokenId, idempotencyKey });
 
@@ -194,8 +198,14 @@ describe("gmTake({ tokenId }): the GM spotlights an adversary, whose token the m
     const { knife, bandit } = await tokens(w);
     await handTo(w, w.characterA);
     expect(await spotlight(w, knife)).toEqual({ moved: true });
-    for (const role of ["gm", "player", "otherPlayer", "grantee"] as const) {
-      expect(await state(w, role)).toMatchObject({ holder: { kind: "gm" }, reason: "adversary", rollBy: null, adversaryTokenId: knife });
+    // User 2026-11-03: the GM always learns which adversary; players only once the party saw it this scene.
+    expect(await state(w, "gm")).toMatchObject({ holder: { kind: "gm" }, reason: "adversary", rollBy: null, adversaryTokenId: knife, adversaryName: "Knife" });
+    for (const role of ["player", "otherPlayer", "grantee"] as const) {
+      expect(await state(w, role)).toMatchObject({ holder: { kind: "gm" }, reason: "adversary", rollBy: null, adversaryTokenId: null, adversaryName: null });
+    }
+    await seen(w, knife);
+    for (const role of ["player", "otherPlayer", "grantee"] as const) {
+      expect(await state(w, role)).toMatchObject({ holder: { kind: "gm" }, reason: "adversary", rollBy: null, adversaryTokenId: knife, adversaryName: "Knife" });
     }
     const [first] = await rows(w);
     expect(await spotlight(w, knife)).toEqual({ moved: false });
@@ -209,6 +219,7 @@ describe("gmTake({ tokenId }): the GM spotlights an adversary, whose token the m
   it("a general take keeps the lit adversary; a hand-back to a PC and a roll's move from a PC clear it", async () => {
     const w = await buildWorld();
     const { knife } = await tokens(w);
+    await seen(w, knife);
     await spotlight(w, knife);
     expect(await take(w)).toEqual({ moved: false });
     expect(await state(w, "player")).toMatchObject({ adversaryTokenId: knife });

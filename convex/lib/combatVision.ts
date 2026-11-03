@@ -39,6 +39,7 @@ import { adversaryArtSrc } from "./encounters";
 import { CELL_TILE_ROWS, MAX_MAP_H, objectsOnMap, tokensOnMap } from "./combatMaps";
 import { atLeast, permissionFor } from "./permissions";
 import { mapSpriteRefs, objectTraits, resolveRefs, resolveSetting, type UploadedSprites } from "./spriteSources";
+import { seenTokenIds } from "./spotlightSeen";
 import { CELL_LAYERS, tokenSideValidator } from "./validators/combatMaps";
 import { timeOfDayValidator } from "../tables/campaigns";
 
@@ -463,6 +464,8 @@ export type ViewResult = {
   vision: Infer<typeof visionMaskValidator>;
   pcs: TokenView[];
   others: OtherToken[];
+  /** Adversary tokens in `others` the party has not been recorded as seeing this scene (`combatVision.markSeen`). */
+  unseenAdversaries: Id<"combatTokens">[];
 };
 
 /**
@@ -485,6 +488,8 @@ export async function buildView(
   const clear = grid.levels.map((l) => (l === 2 ? 1 : 0));
   const pcs: TokenView[] = [];
   const others: OtherToken[] = [];
+  const unseenAdversaries: Id<"combatTokens">[] = [];
+  const seenBefore = await seenTokenIds(ctx, campaign._id);
   for (let i = 0; i < scene.tokens.length; i++) {
     const token = scene.tokens[i]!;
     const own = i === viewer.index;
@@ -495,6 +500,7 @@ export async function buildView(
     }
     const seenAs = tokenVisibility(viewer.view, scene.visionTokens[i]!);
     if (seenAs === "hidden") continue;
+    if (token.ref.kind === "adversary" && !seenBefore.has(token._id)) unseenAdversaries.push(token._id);
     others.push({
       _id: token._id,
       ...(await otherIdentity(ctx, campaign, token)),
@@ -518,5 +524,23 @@ export async function buildView(
     vision: { sw: grid.sw, sh: grid.sh, scale: grid.scale, seen: encodeExplored(seen), clear: encodeExplored(clear) },
     pcs,
     others,
+    unseenAdversaries,
   };
+}
+
+/**
+ * The adversary tokens among `tokenIds` that `character` sees now on the scene's map (spotlight-seen, user
+ * 2026-11-03): what `combatVision.markSeen` may record. Empty when the character has no token on the map.
+ */
+export function adversariesSeenNow(scene: Scene, character: Doc<"characters">, tokenIds: readonly string[]): Id<"combatTokens">[] {
+  const viewer = viewOf(scene, character);
+  if (viewer === null) return [];
+  const wanted = new Set(tokenIds);
+  const out: Id<"combatTokens">[] = [];
+  for (let i = 0; i < scene.tokens.length; i++) {
+    const token = scene.tokens[i]!;
+    if (token.ref.kind !== "adversary" || !wanted.has(token._id)) continue;
+    if (tokenVisibility(viewer.view, scene.visionTokens[i]!) !== "hidden") out.push(token._id);
+  }
+  return out;
 }

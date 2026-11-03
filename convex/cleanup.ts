@@ -413,6 +413,11 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
     const rows = await ctx.db.query("combatSpotlight").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "combatSpotlight", rows);
   },
+  // Adversary tokens the party saw this scene (spotlight-seen, user 2026-11-03): referenced by id only.
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("combatSeen").withIndex("by_campaign_token", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "combatSeen", rows);
+  },
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("operations").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "operations", rows);

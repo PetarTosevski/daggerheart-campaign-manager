@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { v, type Infer } from "convex/values";
 
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
@@ -6,6 +6,7 @@ import { readSheet } from "./lib/characterSheet";
 import { campaignQuery, keyedGmMutation } from "./lib/functions";
 import { atLeast } from "./lib/permissions";
 import { giveTo, moveToGm, spotlightAdversary, spotlightOf } from "./lib/spotlight";
+import { seenThisScene } from "./lib/spotlightSeen";
 import { spotlightReasonValidator } from "./tables/combatSpotlight";
 
 /**
@@ -41,9 +42,37 @@ export const spotlightStateValidator = v.object({
    * The adversary token the GM spotlighted (reason `adversary`), which the map lights (bead dcm-bxp.99.32.35); null
    * otherwise. An opaque id without a position: a player's map lights it only when that token is already among the
    * ones it draws (`combatVision.playerView` leaves fogged and hidden tokens out), so it never reveals one.
+   * Players (user 2026-11-03): only when the party has seen that token this scene (`combatSeen`); never seen, null.
+   * The GM always.
    */
   adversaryTokenId: v.union(v.id("combatTokens"), v.null()),
+  /**
+   * That adversary's display name (its encounter instance's label, the name a player's view gives the token), so a
+   * player whose map does not draw the token can read whose spotlight it is ("Jagged Knife Lieutenant has the
+   * spotlight"). Null whenever `adversaryTokenId` is null, or the token is no longer an adversary of this campaign.
+   */
+  adversaryName: v.union(v.string(), v.null()),
 });
+export type SpotlightStateView = Infer<typeof spotlightStateValidator>;
+
+/** The spotlighted adversary for the caller (user 2026-11-03): the GM always; a player only one the party saw this scene. */
+async function spotlitAdversary(
+  ctx: QueryCtx,
+  campaign: Doc<"campaigns">,
+  tokenId: Id<"combatTokens"> | undefined,
+  gm: boolean,
+): Promise<{ adversaryTokenId: Id<"combatTokens"> | null; adversaryName: string | null }> {
+  const none = { adversaryTokenId: null, adversaryName: null };
+  if (tokenId === undefined) return none;
+  if (!gm && !(await seenThisScene(ctx, campaign._id, tokenId))) return none;
+  const token = await ctx.db.get("combatTokens", tokenId);
+  let adversaryName: string | null = null;
+  if (token !== null && token.ref.kind === "adversary") {
+    const instance = await ctx.db.get("encounterAdversaries", token.ref.adversaryId);
+    if (instance !== null && instance.campaignId === campaign._id) adversaryName = instance.label;
+  }
+  return { adversaryTokenId: tokenId, adversaryName };
+}
 
 /** A campaign's character with its sheet name, or null when it is gone or belongs elsewhere. */
 async function namedCharacter(ctx: QueryCtx, campaign: Doc<"campaigns">, characterId: Id<"characters">) {
@@ -63,20 +92,21 @@ export const state = campaignQuery({
   enough: "owner",
   args: {},
   returns: spotlightStateValidator,
-  handler: async (ctx) => {
+  handler: async (ctx): Promise<SpotlightStateView> => {
     const { campaign } = ctx;
     const canMove = atLeast(ctx.permission, "owner");
     const row = await spotlightOf(ctx, campaign._id);
-    const none = { holder: null, since: null, reason: null, rollBy: null, reactionsOnly: false, canMove, adversaryTokenId: null };
+    const noAdversary = { adversaryTokenId: null, adversaryName: null };
+    const none = { holder: null, since: null, reason: null, rollBy: null, reactionsOnly: false, canMove, ...noAdversary };
     if (row === null) return none;
     const rollBy = row.rollBy === undefined ? null : await namedCharacter(ctx, campaign, row.rollBy);
     if (row.holder.kind === "gm") {
-      const adversaryTokenId = row.adversaryTokenId ?? null;
-      return { holder: { kind: "gm" as const }, since: row.since, reason: row.reason, rollBy, reactionsOnly: !canMove, canMove, adversaryTokenId };
+      const adversary = await spotlitAdversary(ctx, campaign, row.adversaryTokenId, canMove);
+      return { holder: { kind: "gm" as const }, since: row.since, reason: row.reason, rollBy, reactionsOnly: !canMove, canMove, ...adversary };
     }
     const pc = await namedCharacter(ctx, campaign, row.holder.characterId);
     if (pc === null) return none;
-    return { holder: { kind: "pc" as const, ...pc }, since: row.since, reason: row.reason, rollBy: null, reactionsOnly: false, canMove, adversaryTokenId: null };
+    return { holder: { kind: "pc" as const, ...pc }, since: row.since, reason: row.reason, rollBy: null, reactionsOnly: false, canMove, ...noAdversary };
   },
 });
 

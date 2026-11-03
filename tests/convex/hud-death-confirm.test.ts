@@ -155,7 +155,7 @@ describe("HD4: a player's death move waits for the GM's confirm", () => {
     await p1.mutation(api.deathMoves.choose, { characterId: a, move: "blazeOfGlory", idempotencyKey: key() });
     const blaze = await gm.mutation(api.deathMoves.confirm, { characterId: a, idempotencyKey: key() });
     expect(blaze.pending).toEqual({ move: "blazeOfGlory" });
-    await p1.mutation(api.deathMoves.finishBlaze, { characterId: a, idempotencyKey: key() });
+    const finished = await p1.mutation(api.deathMoves.finishBlaze, { characterId: a, idempotencyKey: key() });
     expect((await characterOf(a)).status).toBe("dead");
 
     await p2.mutation(api.deathMoves.choose, { characterId: b, move: "riskItAll", idempotencyKey: key() });
@@ -163,8 +163,24 @@ describe("HD4: a player's death move waits for the GM's confirm", () => {
     const risk = await gm.mutation(api.deathMoves.confirm, { characterId: b, idempotencyKey: key() });
     expect(risk).toMatchObject({ hopeDie: 5, fearDie: 2, pending: { move: "riskItAll", value: 5 } });
     expect((await state(b)).pending).toEqual({ move: "riskItAll", value: 5 });
-    await p2.mutation(api.deathMoves.resolveRiskItAll, { characterId: b, hp: 3, stress: 2, idempotencyKey: key() });
+    const split = await p2.mutation(api.deathMoves.resolveRiskItAll, { characterId: b, hp: 3, stress: 2, idempotencyKey: key() });
     expect(await sheetOf(b)).toMatchObject({ stress: 1 });
+
+    // User 2026-11-03: players can't undo death moves, rolled or not. Blaze's finish and Risk It All's split rolled
+    // nothing and are the player's own rows, yet only the GM undoes them; no Undo is offered to the player.
+    expect((await p1.query(api.deathMoves.state, { characterId: a })).undoEntryId).toBeNull();
+    expect((await p2.query(api.deathMoves.state, { characterId: b })).undoEntryId).toBeNull();
+    expect((await state(a)).undoEntryId).toBe(finished.entryId);
+    expect((await state(b)).undoEntryId).toBe(split.entryId);
+    expect(await codeOf(p1.mutation(api.deathMoves.undo, { entryId: finished.entryId, idempotencyKey: key() }))).toBe("UNDO_EXPIRED");
+    expect(await codeOf(p2.mutation(api.actionLog.undo, { entryId: split.entryId, idempotencyKey: key() }))).toBe("UNDO_EXPIRED");
+    const campaignId = (await characterOf(a)).campaignId;
+    const playerFeed = await p2.query(api.feed.list, { campaignId, paginationOpts: { numItems: 50, cursor: null } });
+    expect(playerFeed.page.find((r) => r._id === split.entryId)?.canUndo).toBe(false);
+    const gmFeed = await gm.query(api.feed.list, { campaignId, paginationOpts: { numItems: 50, cursor: null } });
+    expect(gmFeed.page.find((r) => r._id === split.entryId)?.canUndo).toBe(true);
+    expect((await gm.mutation(api.deathMoves.undo, { entryId: split.entryId, idempotencyKey: key() })).undone).toEqual([split.entryId]);
+    expect((await gm.mutation(api.deathMoves.undo, { entryId: finished.entryId, idempotencyKey: key() })).status).toBe("active");
   });
 
   it("Castle High: the player's away pick stays a request unless the GM's confirm sets the place", async () => {

@@ -317,4 +317,31 @@ describe("actionLog.undo: nothing newer is lost (review H1, H2, M2)", () => {
     });
     expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId: plain, idempotencyKey: key() }))).toBe("UNDO_EXPIRED");
   });
+
+  it("death moves (user 2026-11-03): a player's death row without dice is the GM's alone; a waiting request stays theirs", async () => {
+    const { t, ids, gm, p1, campaignId, a, row } = await setup();
+    const sheet = await t.run(async (ctx) => readSheet((await ctx.db.get("characters", a))!.sheet));
+    // Risk It All's split (no dice, the player's own row, a `before`).
+    const split = await t.run((ctx) =>
+      logAction(ctx, { campaignId, characterId: a, actorId: ids.p1, kind: "death", visibility: "public", summary: "split", before: sheet, undoable: true }),
+    );
+    expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId: split, idempotencyKey: key() }))).toBe("UNDO_EXPIRED");
+    expect(await codeOf(gm.mutation(api.actionLog.undo, { entryId: split, idempotencyKey: key() }))).toBe("ok");
+
+    // HD4's request row (no dice, no `before`, a death-request group): "Take it back" stays the player's.
+    const request = await t.run((ctx) =>
+      logAction(ctx, {
+        campaignId,
+        characterId: a,
+        actorId: ids.p1,
+        kind: "death",
+        visibility: "public",
+        summary: "chooses",
+        groupId: `death-request:${a}:1`,
+        undoable: true,
+      }),
+    );
+    expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId: request, idempotencyKey: key() }))).toBe("ok");
+    expect((await row(request))?.undoneAt).toBeDefined();
+  });
 });

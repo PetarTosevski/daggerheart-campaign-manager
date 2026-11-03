@@ -57,14 +57,37 @@ const LATEST_SCAN = 100;
  *   use that rolled, a GM-confirmed death move, a move whose Cloaked roll joined it). Only the GM undoes it; a player
  *   gets UNDO_EXPIRED ("Only the GM can undo a roll").
  * - Rolled nothing: a feature use without dice, a tracker edit, a death-move request still waiting for the GM (HD4's
- *   "Take it back"), Risk It All's split, an import. Its actor (or the GM) may undo it.
- * Token moves, requests and waiting uses are taken back through their own paths (`combatTokens.move`,
+ *   "Take it back"), an import. Its actor (or the GM) may undo it.
+ * - Death moves (user 2026-11-03, "Players can't undo death moves"): a group holding any death-move row other than a
+ *   waiting request (`isDeathRequestRow`) is GM-only too, rolled or not: a confirmed move, Blaze of Glory's finish step,
+ *   Risk It All's split. A player gets UNDO_EXPIRED ("Only the GM can undo a death move.").
+ * `groupGmOnly` is the whole rule. Token moves, requests and waiting uses are taken back through their own paths (`combatTokens.move`,
  * `combatWithdraw.withdraw`), never by undoing a roll.
  * `undoEntry` enforces it; `feed.list`'s `canUndo` and `deathMoves.state`'s `undoEntryId` apply it (`viewerCanUndo`), so
  * a player never sees an Undo they cannot use.
  */
 export function groupRolled(group: readonly Pick<Doc<"actionLog">, "roll">[]): boolean {
   return group.some((r) => r.roll !== undefined);
+}
+
+/** The groupId prefix of a player's death-move request row (HD4, `deathMoves.choose`). */
+export const DEATH_REQUEST_GROUP_PREFIX = "death-request:";
+
+type UndoRuleRow = Pick<Doc<"actionLog">, "kind" | "roll" | "before" | "groupId">;
+
+/** A player's death-move request row waiting for the GM (HD4): kind death, no roll, no `before`, a `death-request:` group. */
+export function isDeathRequestRow(row: UndoRuleRow): boolean {
+  return row.kind === "death" && row.roll === undefined && row.before === undefined && (row.groupId?.startsWith(DEATH_REQUEST_GROUP_PREFIX) ?? false);
+}
+
+/** The death-move exception (user 2026-11-03): the group holds a death-move row that is not a waiting request. */
+export function groupDeathMove(group: readonly UndoRuleRow[]): boolean {
+  return group.some((r) => r.kind === "death" && !isDeathRequestRow(r));
+}
+
+/** THE player-undo rule: whether only the GM may undo this group (it rolled, or it is a death move). */
+export function groupGmOnly(group: readonly UndoRuleRow[]): boolean {
+  return groupRolled(group) || groupDeathMove(group);
 }
 
 export type LogEntry = {
@@ -126,14 +149,14 @@ async function groupOf(ctx: QueryCtx, row: Doc<"actionLog">): Promise<Doc<"actio
 
 /**
  * Whether the viewer may press Undo on a live undoable row, before the checks only the mutation makes (UNDO_STALE):
- * the GM always; a player only on their own public row of an action that rolled nothing (`groupRolled`). One group
+ * the GM always; a player only on their own public row of an action that rolled nothing and is no death move (`groupGmOnly`). One group
  * read for a player's own grouped row.
  */
 export async function viewerCanUndo(ctx: QueryCtx, row: Doc<"actionLog">, viewerId: Id<"users">, isGm: boolean): Promise<boolean> {
   if (!row.undoable || row.undoneAt !== undefined) return false;
   if (isGm) return true;
   if (row.actorId !== viewerId || row.visibility !== "public") return false;
-  return !groupRolled(await groupOf(ctx, row));
+  return !groupGmOnly(await groupOf(ctx, row));
 }
 
 export type UndoResult = { undone: Id<"actionLog">[]; fearReverted: number };
@@ -280,6 +303,7 @@ export async function undoEntry(
 
   // The player-undo rule (`groupRolled`): once the dice rolled, only the GM undoes the action.
   if (!isGm && groupRolled(group)) throw appError("UNDO_EXPIRED");
+  if (!isGm && groupDeathMove(group)) throw appError("UNDO_EXPIRED", "Only the GM can undo a death move.");
   const now = Date.now();
 
   const inGroup = new Set<string>(group.map((r) => r._id));

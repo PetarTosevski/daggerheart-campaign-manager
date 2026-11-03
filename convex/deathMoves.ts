@@ -22,7 +22,7 @@ import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { assertOneActive } from "./characters";
-import { logAction, undoEntry, viewerCanUndo } from "./lib/actionLog";
+import { DEATH_REQUEST_GROUP_PREFIX, logAction, undoEntry, viewerCanUndo } from "./lib/actionLog";
 import { editable, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { withoutCondition } from "./lib/cardRunner";
 import { rollDie } from "./lib/dice";
@@ -309,7 +309,7 @@ export const choose = keyedUserMutation({
         kind: "death",
         visibility: "public",
         summary: `${sheet.name} chooses ${DEATH_MOVE_LABELS[args.move]}${action ? `: ${action}` : ""}. Waiting for the GM to confirm.`,
-        groupId: `death-request:${character._id}:${at}`,
+        groupId: `${DEATH_REQUEST_GROUP_PREFIX}${character._id}:${at}`,
         undoable: true,
       });
       await ctx.db.patch("characters", character._id, {
@@ -491,8 +491,10 @@ export const settleAway = keyedUserMutation({
 
 /**
  * Undoes a death-move row through `undoEntry` (its actor or the GM, while it
- * is the character's latest live row; a rolled move, such as one the GM
- * confirmed, is the GM's alone: the player-undo rule, `groupRolled`) and puts the character back to active
+ * is the character's latest live row; every death move, rolled or not (a
+ * confirmed move, Blaze of Glory's finish, Risk It All's split), is the GM's
+ * alone, while a player may still take back their own waiting request: the
+ * player-undo rule, `groupGmOnly`) and puts the character back to active
  * when that row took them out of play. DEATH_MOVE_RULE for another kind of row.
  */
 export const undo = keyedUserMutation({
@@ -529,7 +531,7 @@ export const undo = keyedUserMutation({
  * move waiting for the GM's confirm (then `awaitingMove` is false and
  * `undoEntryId` is the request row, whose undo takes it back). `undoEntryId`
  * is null for a viewer who may not undo the row (`viewerCanUndo`: a player
- * never undoes a rolled move). Everyone who can see the character.
+ * never undoes a death move, only their waiting request). Everyone who can see the character.
  */
 export const state = userQuery({
   args: { characterId: v.id("characters") },

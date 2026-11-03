@@ -54,7 +54,17 @@ export function afterTake(state: SpotlightState, now: number, tokenId?: Id<"comb
   if (state.holder?.kind === "gm") {
     if (tokenId === undefined || state.adversaryTokenId === tokenId) return state;
     const since = state.since ?? now;
-    return { holder: { kind: "gm" }, since, reason: "adversary", rollBy: null, reactionsOnly: state.reactionsOnly, canMove: state.canMove, adversaryTokenId: tokenId };
+    return {
+      holder: { kind: "gm" },
+      since,
+      reason: "adversary",
+      rollBy: null,
+      reactionsOnly: state.reactionsOnly,
+      canMove: state.canMove,
+      adversaryTokenId: tokenId,
+      // The server names it; until then the card keeps its generic line.
+      adversaryName: null,
+    };
   }
   return {
     ...state,
@@ -64,13 +74,26 @@ export function afterTake(state: SpotlightState, now: number, tokenId?: Id<"comb
     rollBy: null,
     reactionsOnly: !state.canMove,
     adversaryTokenId: tokenId ?? null,
+    adversaryName: null,
   };
 }
 
 /** The state right after `combatSpotlight.handTo` (the GM's optimistic update). */
 export function afterHandTo(state: SpotlightState, pc: { characterId: Id<"characters">; name: string }, now: number): SpotlightState {
   if (state.holder?.kind === "pc" && state.holder.characterId === pc.characterId) return state;
-  return { ...state, holder: { kind: "pc", ...pc }, since: now, reason: "handedBack", rollBy: null, reactionsOnly: false, adversaryTokenId: null };
+  return { ...state, holder: { kind: "pc", ...pc }, since: now, reason: "handedBack", rollBy: null, reactionsOnly: false, adversaryTokenId: null, adversaryName: null };
+}
+
+/**
+ * The players' GM's-turn card title (user 2026-11-03): "<adversary> has the spotlight" when the GM spotlighted an
+ * adversary the party saw this scene but the player's map does not draw now (hidden, fogged, out of sight), so no light
+ * shows whose turn it is; otherwise "The GM has the spotlight" (a drawn token stands in its light instead). The server
+ * sends a player the name only for an adversary the party saw this scene (`combatSpotlight.state`).
+ */
+export function gmTurnTitle(state: Pick<SpotlightState, "adversaryTokenId" | "adversaryName">, drawn: ReadonlySet<string> | null): string {
+  const { adversaryTokenId: tokenId, adversaryName: name } = state;
+  if (tokenId === null || name === null || drawn === null || drawn.has(tokenId)) return "The GM has the spotlight";
+  return `${name} has the spotlight`;
 }
 
 /**

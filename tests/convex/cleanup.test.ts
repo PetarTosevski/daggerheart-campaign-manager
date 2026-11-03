@@ -181,6 +181,8 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     await ins("playFor", { campaignId: c, userId, characterId });
     // The spotlight, handed to the PC (combat-hud H1.S).
     await ins("combatSpotlight", { campaignId: c, holder: { kind: "pc", characterId }, since: now, reason: "handedBack" });
+    // A token the party saw this scene (spotlight-seen, user 2026-11-03).
+    await ins("combatSeen", { campaignId: c, tokenId: pcTokenId, seenAt: now });
     // A session with its prep (linking the encounter), a log line and a spotlight count (D10).
     const sessionId = await ins("sessions", { campaignId: c, n: 1, title: "The Bridge at Dawn", status: "live", startedAt: now, createdAt: now, updatedAt: now });
     await ins("sessionPrep", { campaignId: c, sessionId, scenes: [{ id: "s1", type: "combat", text: "Ambush" }], hooks: "", encounterId, updatedAt: now });

@@ -41,6 +41,7 @@ import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { endSceneAreas } from "./combatScenes";
+import { forgetSeen } from "./lib/spotlightSeen";
 import { logAction, newGroupId } from "./lib/actionLog";
 import { readSheet, saveSheet } from "./lib/characterSheet";
 import { rollDie } from "./lib/dice";
@@ -206,6 +207,8 @@ async function runEnd(ctx: GmCtx, convertWither?: boolean): Promise<EndResult> {
   // The session end ends the scene too (Q7, CB p.107): the scene's and the session's live map areas close. Areas keep
   // their own history (convex/combatScenes.ts), so this is outside the undo group and a second End closes nothing.
   await endSceneAreas(ctx, campaignId, Date.now(), ["scene", "session"]);
+  // …and forgets which adversaries the party saw (the spotlight's "which adversary", user 2026-11-03).
+  await forgetSeen(ctx, campaignId);
 
   const started = state.sessionStartedAt !== undefined || live !== null;
   if (!started && changes.every(({ sheet, next }) => same(sheet, next))) {

@@ -11,7 +11,7 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { HudPartProps } from "../state";
 import { hudButtonClass } from "../ui";
-import { afterHandTo, afterTake, gmHolds, holderLine, pcHolds, spotlightReasonLine, type SpotlightState } from "./model";
+import { afterHandTo, afterTake, gmHolds, gmTurnTitle, holderLine, pcHolds, spotlightReasonLine, type SpotlightState } from "./model";
 
 /**
  * The spotlight in the HUD (plan combat-hud H1.S, user answer 1c; boards Main 'GM's turn', CmpTokens, GMDesktop). One
@@ -168,10 +168,26 @@ export function SpotlightMenu({ campaignId, mapId }: { campaignId: Id<"campaigns
   );
 }
 
-/** The players' GM's-turn card (board Main 'GM's turn' `.gms`) and the reactions note (`.gmh`). */
-export function GmTurnNotice({ state }: { state: SpotlightState }): ReactNode {
+/**
+ * The tokens the player's map draws besides PCs (`combatVision.playerView`'s `others`, the subscription the vision layer
+ * already holds): an empty set without a map or a token of theirs on it, null while loading or when skipped.
+ */
+function useDrawnOthers(campaignId: Id<"campaigns">, on: boolean): ReadonlySet<string> | null {
+  const view = useQuery(api.combatVision.playerView, on ? { campaignId } : "skip");
+  if (view === undefined) return null;
+  return new Set(view.state === "ok" ? view.others.map((t) => t._id) : []);
+}
+
+/**
+ * The players' GM's-turn card (board Main 'GM's turn' `.gms`) and the reactions note (`.gmh`). User 2026-11-03: when
+ * the GM spotlighted an adversary the party saw this scene and the map does not draw it now, the card names it
+ * ("Jagged Knife Lieutenant has the spotlight", `gmTurnTitle`); a drawn one is lit on the map instead.
+ */
+export function GmTurnNotice({ campaignId, state }: { campaignId: Id<"campaigns">; state: SpotlightState }): ReactNode {
+  const drawn = useDrawnOthers(campaignId, state.reactionsOnly && state.adversaryTokenId !== null);
   if (!state.reactionsOnly) return null;
   const reason = spotlightReasonLine(state);
+  const title = gmTurnTitle(state, drawn);
   return (
     <>
       <div className="hud-spot-card" role="status" data-testid="hud-gm-turn">
@@ -179,7 +195,7 @@ export function GmTurnNotice({ state }: { state: SpotlightState }): ReactNode {
           <SpotlightIcon />
         </span>
         <div>
-          <b>The GM has the spotlight</b>
+          <b data-testid="hud-gm-turn-title">{title}</b>
           {reason ? <span>{reason}</span> : null}
         </div>
       </div>
@@ -208,5 +224,5 @@ function SpotlightPart({ campaignId, mapId }: { campaignId: Id<"campaigns">; map
       </section>
     );
   }
-  return <GmTurnNotice state={state} />;
+  return <GmTurnNotice campaignId={campaignId} state={state} />;
 }

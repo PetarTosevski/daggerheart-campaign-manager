@@ -137,6 +137,7 @@ const CAMPAIGN_SCOPED = [
   "combatAreas",
   "playFor",
   "combatSpotlight",
+  "combatSeen",
 ];
 /**
  * Campaign-scoped tables that also have a retention job of their own (listed once above, so this is a second note,

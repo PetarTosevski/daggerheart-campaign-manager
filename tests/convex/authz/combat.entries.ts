@@ -252,6 +252,8 @@ const vision: Entry[] = [
   { fn: api.combatVision.previewAs, access: "gm" },
   { fn: api.combatVision.explored, access: "view" },
   { fn: api.combatVision.markExplored, access: "view", args: () => ({ bits: "" }) },
+  // Spotlight-seen (user 2026-11-03): the setup's custom enemy is no adversary, so nothing is recorded; access only.
+  { fn: api.combatVision.markSeen, access: "view", args: (w) => ({ tokenIds: [w.ids.customTokenId] }) },
   { fn: api.combatVision.forgetExplored, access: "gm" },
   { fn: api.combatVision.revealTo, access: "gm", args: (w) => ({ tokenId: w.ids.customTokenId }) },
   { fn: api.combatVision.unrevealTo, access: "gm", args: (w) => ({ tokenId: w.ids.customTokenId }) },
