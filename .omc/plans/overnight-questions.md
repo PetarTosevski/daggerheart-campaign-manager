@@ -277,3 +277,8 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - Spotlit adversary for players (user 2026-11-03): players learn which adversary holds the spotlight only if that adversary has been revealed to them during the current scene. Never seen this scene -> they don't know (server sends nothing). Seen earlier this scene but now invisible / out of vision / hidden -> they're told it's that adversary's spotlight (by name) even though no token is drawn. CHANGE.
 - GM Play-for attack out of range: keep the 'Out of range: your call' request for the GM too (as built). KEEP.
 - End lasting effects: GM, caster and wearer's player (as built). KEEP.
+
+## Overnight 2026-11-04 (user asleep; defaults taken, ask in the morning)
+- Spotlight card wording when the adversary isn't drawn: "Jagged Knife Lieutenant has the spotlight" (label, no article) vs "The Lieutenant has the spotlight".
+- A player whose character has no token on the map never records "seen" adversaries; they learn them only from another player's open map.
+- Config plan open questions Q1-Q32 are in .omc/plans/config-briefs.md ("Open questions") - ask all of them in the morning (Q4 clock-per-scene and Q16 owner identity block tracers R4 / AD0).
