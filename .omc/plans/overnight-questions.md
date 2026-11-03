@@ -299,3 +299,12 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - J1: players also see "Play on the Combat Map". Default: yes.
 - JD3a tally: criticals count every critical roll in the session incl. combat and death-move rolls, also ones the GM hid from the feed (undone ones don't). Default: keep.
 - JD3a tally: "adversaries defeated" counts only encounters started during the session; summoned adversaries count when defeated. Default: keep.
+- JD3b: undo does not roll back the Hope spent / HP marked counters (an undone Hope spend still counts). Default: keep; rollback is a follow-up (needs action-log deltas).
+- JD3b: spending and gaining Hope in the same action nets out (e.g. Experience on a roll with Hope shows 0 spent). Default: keep; exact counting is a follow-up.
+- JD3b: Hope lost when a scar closes a Hope slot counts as "spent". Default: keep.
+- JD2: players see GM-typed log lines and encounter names in the session log (not hidden lines / GM-only rolls). Default: yes.
+- JD2: the feed's "Session started / ended" rows show beside the auto stamps (the feed row carries the Wither -> Fear conversion). Default: keep both, GM can hide either.
+- JD5: level-ups count only inside the live session (one taken after End won't show). Default: keep.
+- JD5: party level = highest level among active characters. Default: keep (alternative: most common level).
+- JD4: the same encounter can be linked to several scenes; switching a scene to non-Combat drops its encounter. Default: keep.
+- JH: after End session the page stays on the session that just ended. Default: keep.
