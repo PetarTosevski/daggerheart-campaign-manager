@@ -134,7 +134,7 @@ test("combat map, GM: Play and Edit, Classic and Sprites, vision and doors, toke
   await vision.getByRole("group", { name: "Fog brush" }).getByRole("button", { name: "Off" }).click();
 
   // The player-view menu open, then the GM previewing the PC's view (fog canvas on).
-  await gm.getByRole("group", { name: "GM tools" }).getByRole("button", { name: /Player view/ }).click();
+  await gm.getByRole("toolbar", { name: "Map controls" }).getByRole("button", { name: /Player view/ }).click(); // The dock (H9.0).
   const menu = gm.getByRole("menu", { name: "Open the player view as" });
   await expect(menu).toBeVisible();
   await scan(gm, "combat player-view menu open (GM)");
@@ -321,7 +321,6 @@ for (const viewport of TABLET_VIEWPORTS) {
       await expect(nav(gm)).toBeVisible();
       await openDrawer(gm, "Map tools");
       const tools = gm.getByRole("complementary", { name: "Map tools" });
-      const board = gm.getByRole("region", { name: "Battle map" });
       const mode = tools.getByRole("group", { name: "Map mode" });
       await expectInView(gm, mode);
       await expectTouchTargets(mode.getByRole("button"));
@@ -330,9 +329,10 @@ for (const viewport of TABLET_VIEWPORTS) {
       await expectTouchTargets(tools.getByRole("region", { name: "Vision and fog" }).getByRole("button"));
       await expectTouchTargets(tools.getByRole("group", { name: "Map style" }).getByRole("button"));
       await expectTouchTargets(tools.getByRole("group", { name: "GM Fear" }).getByRole("button"));
-      await expectTouchTargets(gm.getByRole("group", { name: "GM tools" }).getByRole("button", { name: /Player view/ }));
-      await expectInView(gm, board.getByRole("button", { name: "Zoom in" }));
-      await expectTouchTargets(board.getByRole("button", { name: /^(Zoom in|Zoom out|Fit)$/ }));
+      // The GM's dock (plan combat-hud H9.0): every button, Player view and the zoom included, is a 44 px target.
+      const dock = gm.getByRole("toolbar", { name: "Map controls" });
+      await expectInView(gm, dock.getByRole("button", { name: "Zoom in" }));
+      await expectTouchTargets(dock.getByRole("button"));
       await shot(gm, "combat-gm-play");
       await mode.getByRole("button", { name: /Edit map/ }).click();
       const card = tools.getByRole("region", { name: "Edit by hand" });
@@ -350,9 +350,10 @@ for (const viewport of TABLET_VIEWPORTS) {
       const yourView = player.getByRole("region", { name: "Your view" });
       await expectInView(player, yourView);
       await expectTouchTargets(yourView.getByRole("button"));
-      const playerBoard = player.getByRole("region", { name: "Battle map" });
-      await expectInView(player, playerBoard.getByRole("button", { name: "Zoom in" }));
-      await expectTouchTargets(playerBoard.getByRole("button", { name: /^(Zoom in|Zoom out|Fit)$/ }));
+      // The player's map controls in their title row (plan combat-hud H9.0: Measure, Names, zoom).
+      const controls = player.getByRole("toolbar", { name: "Map controls" });
+      await expectInView(player, controls.getByRole("button", { name: "Zoom in" }));
+      await expectTouchTargets(controls.getByRole("button"));
       await shot(player, "combat-player");
 
       // ---- Sprite packs (GM).

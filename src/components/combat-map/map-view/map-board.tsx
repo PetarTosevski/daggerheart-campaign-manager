@@ -3,7 +3,7 @@
 import "./map-view.css";
 
 import { useMutation, useQuery } from "convex/react";
-import { useEffect, useEffectEvent, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
 import { FOG_PAD_SQUARES } from "@/lib/domain/combat-map/vision";
 import { errorMessage } from "@/lib/convex-errors";
@@ -16,14 +16,21 @@ import { AreaOverlay, AreaTools } from "./area-overlay";
 import { AreaPickBanner, AreaPickLayer, cancelAreaPick } from "./area-pick";
 import { decodeCells } from "./cells";
 import { MapViewContext, type MapViewState } from "./context";
+import { publishBoard, releaseBoard, useMapControls, zoomLabel } from "./controls";
 import { imageMapSize, type ImageGrid } from "./grid";
 import { GridControls } from "./grid-controls";
 import { MAP_CELL, MapCanvas } from "./map-canvas";
+import { MeasureLayer } from "./measure";
 import { useMapZoom, ZOOM_STEP } from "./use-map-zoom";
-import { useViewerFlag } from "./use-viewer-flag";
 
-/** localStorage key of the board's "Names" switch (per viewer). */
-const NAMES_KEY = "dh.combat.names";
+/**
+ * The board's own chrome: `full` (default) draws its toolbar (name, LIVE / Make live, Areas, Names, zoom, Fit) and the
+ * hint under the map; `none` draws only the map, for the Combat HUD, whose bottom dock (GM) or map controls (players)
+ * drive the same zoom, Names and tools through `./controls` (plan combat-hud H9.0). Edit mode and every other use of
+ * the board keep `full`.
+ */
+export type MapBoardChrome = "full" | "none";
+export type MapBoardChromeProps = MapBoardProps & { chrome?: MapBoardChrome };
 
 /** The board's hint under the map, per view. */
 const HINT = {
@@ -60,23 +67,25 @@ export function stageToSquares(stage: HTMLElement, step: number, pad: number, cl
 }
 
 /** Main area (slot `MapBoard`): toolbar, the pan/zoom viewport with the map and the layers, or the empty states. */
-export function MapBoard(props: MapBoardProps) {
+export function MapBoard(props: MapBoardChromeProps) {
   const { role, map, campaignId } = props;
   const gm = role === "gm";
   const gmLayout = useQuery(api.combatMaps.get, gm && map ? { campaignId, mapId: map._id } : "skip");
   const liveLayout = useQuery(api.combatMaps.live, !gm && map ? { campaignId } : "skip");
   const layout = gm ? gmLayout : liveLayout;
 
-  if (!map || layout === null) return <EmptyBoard player={!gm} />;
+  if (!map || layout === null) return <EmptyBoard player={!gm} chrome={props.chrome ?? "full"} />;
   return <LoadedBoard {...props} map={map} layout={layout} />;
 }
 
-function EmptyBoard({ player }: { player: boolean }) {
+function EmptyBoard({ player, chrome }: { player: boolean; chrome: MapBoardChrome }) {
   return (
     <section className="cm-board" aria-label="Battle map">
-      <div className="cm-toolbar">
-        <strong className="cm-map-title">Battle map</strong>
-      </div>
+      {chrome === "full" ? (
+        <div className="cm-toolbar">
+          <strong className="cm-map-title">Battle map</strong>
+        </div>
+      ) : null}
       <div className="cm-vp" data-testid="combat-viewport">
         <div className="cm-empty">
           <div className="cm-empty-inner">
@@ -95,8 +104,8 @@ function EmptyBoard({ player }: { player: boolean }) {
 
 type Drag = { kind: "pan" | "grid"; pointerId: number; sx: number; sy: number; left: number; top: number; moved: boolean; button: number };
 
-function LoadedBoard(props: MapBoardProps & { map: CombatMapSummary; layout: CombatMapLayout | undefined }) {
-  const { role, mode, map, layout, campaignId, renderLayers, onSelectToken } = props;
+function LoadedBoard(props: MapBoardChromeProps & { map: CombatMapSummary; layout: CombatMapLayout | undefined }) {
+  const { role, mode, map, layout, campaignId, renderLayers, onSelectToken, chrome = "full" } = props;
   const gm = role === "gm";
   const pad = gm ? 0 : FOG_PAD_SQUARES;
   const w = layout?.w ?? map.w;
@@ -117,12 +126,29 @@ function LoadedBoard(props: MapBoardProps & { map: CombatMapSummary; layout: Com
     `${map._id}:${w}x${h}:${fitArea ? "explored" : "all"}`,
     fitArea,
   );
-  const [showNames, setShowNames] = useViewerFlag(NAMES_KEY);
+  // Names, the pointer tool and the area tools (AO, dcm-lqnt: the GM's classic area tools in Play) live in the controls
+  // store the HUD's dock shares (plan combat-hud H9.0).
+  const { showNames, setShowNames, areaTools, setAreaTools, tool } = useMapControls();
   const [error, setError] = useState<string | null>(null);
   const drag = useRef<Drag | null>(null);
   const [panning, setPanning] = useState(false);
-  // AO (dcm-lqnt): the GM's area tools (draw, move, resize, remove live areas), shown in Play.
-  const [areaTools, setAreaTools] = useState(false);
+
+  // Publish this board to the controls store (an external store, so an effect): its zoom whenever it changes, and the
+  // actions through a ref that always holds this render's `setZoom` / `fit`. Released on unmount.
+  const [owner] = useState(() => ({}));
+  const actions = useRef({ setZoom, fit, zoom });
+  useLayoutEffect(() => {
+    actions.current = { setZoom, fit, zoom };
+  });
+  useLayoutEffect(() => {
+    publishBoard(owner, {
+      zoom,
+      zoomIn: () => actions.current.setZoom(actions.current.zoom * ZOOM_STEP),
+      zoomOut: () => actions.current.setZoom(actions.current.zoom / ZOOM_STEP),
+      fit: () => actions.current.fit(),
+    });
+  }, [owner, zoom]);
+  useEffect(() => () => releaseBoard(owner), [owner]);
 
   const image = useLoadedImage(layout?.image?.url ?? null);
   const imageSize = image ? { width: image.naturalWidth, height: image.naturalHeight } : null;
@@ -225,43 +251,45 @@ function LoadedBoard(props: MapBoardProps & { map: CombatMapSummary; layout: Com
 
   return (
     <section className="cm-board" aria-label="Battle map">
-      <div className="cm-toolbar">
-        <strong className="cm-map-title">{map.name}</strong>
-        {map.live && gm ? <span className="cm-live">LIVE</span> : null}
-        {gm && !map.live ? (
-          <button
-            type="button"
-            className="cm-btn cm-sm"
-            onClick={() => {
-              setError(null);
-              setLive({ campaignId, mapId: map._id }).catch((e: unknown) => setError(errorMessage(e)));
-            }}
-          >
-            Make live
+      {chrome === "full" ? (
+        <div className="cm-toolbar">
+          <strong className="cm-map-title">{map.name}</strong>
+          {map.live && gm ? <span className="cm-live">LIVE</span> : null}
+          {gm && !map.live ? (
+            <button
+              type="button"
+              className="cm-btn cm-sm"
+              onClick={() => {
+                setError(null);
+                setLive({ campaignId, mapId: map._id }).catch((e: unknown) => setError(errorMessage(e)));
+              }}
+            >
+              Make live
+            </button>
+          ) : null}
+          <span className="cm-spacer" />
+          {gm && mode !== "edit" ? (
+            <button type="button" className="cm-btn cm-sm" aria-pressed={areaTools} onClick={() => setAreaTools(!areaTools)} title="Draw, move, resize or remove effect areas">
+              Areas
+            </button>
+          ) : null}
+          <button type="button" className="cm-btn cm-sm" aria-pressed={showNames} onClick={() => setShowNames(!showNames)} title="Always show token names (N)">
+            Aa Names
           </button>
-        ) : null}
-        <span className="cm-spacer" />
-        {gm && mode !== "edit" ? (
-          <button type="button" className="cm-btn cm-sm" aria-pressed={areaTools} onClick={() => setAreaTools(!areaTools)} title="Draw, move, resize or remove effect areas">
-            Areas
+          <button type="button" className="cm-btn cm-sm" aria-label="Zoom out" onClick={() => setZoom(zoom / ZOOM_STEP)}>
+            −
           </button>
-        ) : null}
-        <button type="button" className="cm-btn cm-sm" aria-pressed={showNames} onClick={() => setShowNames(!showNames)} title="Always show token names (N)">
-          Aa Names
-        </button>
-        <button type="button" className="cm-btn cm-sm" aria-label="Zoom out" onClick={() => setZoom(zoom / ZOOM_STEP)}>
-          −
-        </button>
-        <span className="cm-muted cm-zoom" aria-live="polite" data-testid="combat-zoom">
-          {Math.round(zoom * 100)}%
-        </span>
-        <button type="button" className="cm-btn cm-sm" aria-label="Zoom in" onClick={() => setZoom(zoom * ZOOM_STEP)}>
-          +
-        </button>
-        <button type="button" className="cm-btn cm-sm" onClick={fit}>
-          Fit
-        </button>
-      </div>
+          <span className="cm-muted cm-zoom" aria-live="polite" data-testid="combat-zoom">
+            {zoomLabel(zoom)}
+          </span>
+          <button type="button" className="cm-btn cm-sm" aria-label="Zoom in" onClick={() => setZoom(zoom * ZOOM_STEP)}>
+            +
+          </button>
+          <button type="button" className="cm-btn cm-sm" onClick={fit}>
+            Fit
+          </button>
+        </div>
+      ) : null}
       {editingGrid && grid ? (
         <GridControls grid={shownGrid ?? grid} onGrid={commitGrid} shifting={shifting} onShifting={setShifting} disabled={imageSize === null} />
       ) : null}
@@ -270,7 +298,7 @@ function LoadedBoard(props: MapBoardProps & { map: CombatMapSummary; layout: Com
           {error}
         </p>
       ) : null}
-      {gm && mode !== "edit" && areaTools ? <AreaTools campaignId={campaignId} mapId={map._id} /> : null}
+      {chrome === "full" && gm && mode !== "edit" && areaTools ? <AreaTools campaignId={campaignId} mapId={map._id} /> : null}
       <AreaPickBanner mapId={map._id} />
       <div
         ref={viewportRef}
@@ -290,6 +318,7 @@ function LoadedBoard(props: MapBoardProps & { map: CombatMapSummary; layout: Com
                 <AreaOverlay campaignId={campaignId} role={role} mapId={map._id} w={w} h={h} pad={pad} step={step} />
                 {renderLayers({ ...props, map, viewport })}
                 <AreaPickLayer mapId={map._id} viewport={viewport} />
+                {chrome === "none" && tool === "measure" ? <MeasureLayer viewport={viewport} /> : null}
               </MapViewContext.Provider>
             ) : (
               <p role="status" className="cm-muted cm-vp-loading">
@@ -299,7 +328,8 @@ function LoadedBoard(props: MapBoardProps & { map: CombatMapSummary; layout: Com
           </div>
         </div>
       </div>
-      <span className="cm-muted cm-hint">{gm ? (mode === "edit" ? HINT.edit : HINT.play) : HINT.player}</span>
+      {/* Without chrome the hint is for screen readers only (the HUD has no room under the map). */}
+      <span className={chrome === "full" ? "cm-muted cm-hint" : "sr-only"}>{gm ? (mode === "edit" ? HINT.edit : HINT.play) : HINT.player}</span>
     </section>
   );
 }

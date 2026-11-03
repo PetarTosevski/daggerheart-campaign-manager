@@ -117,8 +117,8 @@ test("fog of war: dim-band reveal, a wall, daytime, lights, explored areas, the 
     // Fit frames the explored squares, not the padded area: closer than fitting the whole padded stage.
     const vp = await playerBoard.getByTestId("combat-viewport").boundingBox();
     const paddedFit = Math.min((vp!.width - 8) / ((MAP_W + 2 * PAD) * 48), (vp!.height - 8) / ((20 + 2 * PAD) * 48));
-    await playerBoard.getByRole("button", { name: "Fit" }).click();
-    await expect.poll(async () => Number.parseInt((await playerBoard.getByTestId("combat-zoom").textContent()) ?? "0", 10)).toBeGreaterThan(Math.round(paddedFit * 100) + 5);
+    await player.getByRole("toolbar", { name: "Map controls" }).getByRole("button", { name: "Fit the map to the screen" }).click();
+    await expect.poll(async () => Number.parseInt((await player.getByTestId("combat-zoom").textContent()) ?? "0", 10)).toBeGreaterThan(Math.round(paddedFit * 100) + 5);
 
     // Explored areas reach the server (throttled markExplored), merged with what Ash sees.
     await expect

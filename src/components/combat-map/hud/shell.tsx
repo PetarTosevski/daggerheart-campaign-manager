@@ -12,16 +12,19 @@ import type { CombatPageState, MapLayerProps } from "../slots";
 import { HudActionRing } from "./action-ring";
 import { HudAreas } from "./areas";
 import { HudBanners } from "./banners";
+import { HudDock, PlayerMapControls } from "./dock";
 import { HudDeath } from "./death";
 import { HudFear } from "./fear";
 import { HudFeed } from "./feed";
 import { HudHand } from "./hand";
 import { HudHit } from "./hit";
-import { HudPhone, PhoneQueueSheet, usePhoneHud, useSpotlightInColumn } from "./phone";
+import { usePanel } from "./panels";
+import { HudPhone, PhoneQueueSheet, usePhoneHud } from "./phone";
 import { HudPick, HudPickLayer, PickProvider } from "./pick";
 import { HudAttack } from "./pick-attack";
 import { HudAreaPick, HudAreaPickLayer } from "./pick-area";
 import { HudQueue } from "./queue";
+import { HudResolutions } from "./queue/resolutions";
 import { HudResult } from "./result";
 import { HudScene } from "./scene";
 import { HudSheet } from "./sheet";
@@ -34,16 +37,19 @@ import { PartBoundary } from "./ui";
 
 /**
  * The Combat HUD shell (plan combat-hud H0; HANDOFF "Layout"): a full-bleed map with the HUD over it. The map is the
- * classic `MapBoard` with the same layers plus the HUD's map layers (target rings, action ring); over it every HUD
- * region mounts its part from `hud/<area>/index.tsx`, each in its own boundary. The page shows the shell whenever the
- * map is in Play (plan combat-hud H8.1: there is no switch) and hands it the classic layers and the classic column for
- * the "Map tools" drawer.
+ * classic `MapBoard` without its own toolbar (`chrome="none"`, plan combat-hud H9.0) with the same layers plus the
+ * HUD's map layers (target rings, action ring); over it every HUD region mounts its part from `hud/<area>/index.tsx`,
+ * each in its own boundary. The page shows the shell whenever the map is in Play (plan combat-hud H8.1: there is no
+ * switch) and hands it the classic layers and the classic column for the "Map tools" drawer.
  *
  * Regions (desktop 1440 × 900; tablet and phone tracers move them):
- *   banners   top-left, x = 24          scene   title + toolbar, x = 690       fear   top-right, right 24
- *   left      GM queue + Resolutions / player feed, left column          hand   bottom, with the toasts
+ *   banners   top-left, x = 24          scene   title (+ a player's tools), x = 690      fear   top-right, right 24
+ *   waiting   GM, bottom-left: the request queue ("Waiting on you", H9.2)
+ *   left      player, bottom-left: the feed                               hand   bottom, with the toasts
+ *   dock      GM, bottom centre: the only map toolbar (H9.0)              log    GM, bottom-right: Resolutions (Log)
  *   pop       anchored pop-ups (picking panel, result, hit window, death move, spotlight card, Areas)
  *   panel     the right sheet panel (PC sheet or adversary stat block)    tools  the left drawer
+ * The GM's spotlight panel no longer mounts here: H9.1's spotlight disc hangs in the fear region.
  */
 
 export type HudShellProps = {
@@ -79,11 +85,19 @@ function HudFrame({ state, loading, renderLayers, tools }: HudShellProps) {
   const { role } = state;
   // H7.2: a player at phone width gets the phone shell (strip, bottom sheet) in place of the desktop regions.
   const phoneWidth = usePhoneHud();
-  // The GM's spotlight panel: top middle, under the toolbar row, at 1440 px and wider; below 1440 px in the left column
-  // (the queue sheet on a phone). Bead dcm-bxp.99.32.42, user decision 2026-11-04.
-  const spotInColumn = useSpotlightInColumn();
   const phone = phoneWidth && role !== "gm";
-  const toolbar = <MapToolsButton role={role} />;
+  const gm = role === "gm";
+  const panel = usePanel();
+  // The title row's tools: a player's "Your character" drawer button and map controls (Measure, Names, zoom; Q9b). The
+  // GM's are in the bottom dock (Map tools at its left end, Q4a).
+  const toolbar = gm ? null : (
+    <>
+      <MapToolsButton role={role} />
+      <PartBoundary label="Map controls">
+        <PlayerMapControls />
+      </PartBoundary>
+    </>
+  );
   return (
     <div className={cn("hud-root", hudRootClasses(hud), phone && "hud-ph-on")} data-role={role} data-testid="combat-hud">
       <h1 className="sr-only">Combat Map</h1>
@@ -96,6 +110,7 @@ function HudFrame({ state, loading, renderLayers, tools }: HudShellProps) {
           <PartBoundary label="The map">
             <MapBoard
               {...state}
+              chrome="none"
               renderLayers={(layer) => (
                 <>
                   {renderLayers(layer)}
@@ -137,12 +152,6 @@ function HudFrame({ state, loading, renderLayers, tools }: HudShellProps) {
               <PartBoundary label="The scene">
                 <HudScene state={state} toolbar={toolbar} />
               </PartBoundary>
-              {/* The GM's spotlight panel: top middle below the toolbar row, at 1440 px and wider (user 2026-11-04). */}
-              {role === "gm" && !spotInColumn ? (
-                <PartBoundary label="The spotlight">
-                  <HudSpotlight state={state} />
-                </PartBoundary>
-              ) : null}
             </Region>
             <Region name="fear">
               <PartBoundary label="Fear">
@@ -151,26 +160,44 @@ function HudFrame({ state, loading, renderLayers, tools }: HudShellProps) {
             </Region>
           </>
         )}
-        <Region name="left">
-          {/* H7.2: the GM at phone width gets this column as a bottom sheet (answer 13a); otherwise it renders as is. */}
-          <PhoneQueueSheet role={role}>
-            {role === "gm" ? (
-              <PartBoundary label="The request queue">
-                <HudQueue state={state} />
+        {gm ? (
+          <>
+            {/* The GM's queue, bottom-left ("Waiting on you", H9.2). `hud-r-left` keeps the left column's tablet and
+                phone placement (responsive/*.css) until H9.2 / H9.6 place the new button. H7.2: at phone width the
+                queue is a bottom sheet (answer 13a). */}
+            <Region name="waiting" className="hud-r-left">
+              <PhoneQueueSheet role={role}>
+                <PartBoundary label="The request queue">
+                  <HudQueue state={state} />
+                </PartBoundary>
+              </PhoneQueueSheet>
+            </Region>
+            {/* The GM's dock, bottom centre: the only map toolbar (GMDesktop `.dock`). */}
+            <Region name="dock">
+              <PartBoundary label="The dock">
+                <HudDock state={state} />
               </PartBoundary>
-            ) : null}
+            </Region>
+            {/* Log: Resolutions with Undo above the dock on the right while the dock's Log is pressed (H9.2 styles it). */}
+            <Region name="log">
+              {panel === "log" ? (
+                <PartBoundary label="Resolutions">
+                  <div className="hud-log" id="hud-log" data-testid="hud-log">
+                    <HudResolutions campaignId={state.campaignId} />
+                  </div>
+                </PartBoundary>
+              ) : null}
+            </Region>
+          </>
+        ) : (
+          <Region name="left">
             {phone ? null : (
               <PartBoundary label="The feed">
                 <HudFeed state={state} />
               </PartBoundary>
             )}
-            {role === "gm" && spotInColumn ? (
-              <PartBoundary label="The spotlight">
-                <HudSpotlight state={state} />
-              </PartBoundary>
-            ) : null}
-          </PhoneQueueSheet>
-        </Region>
+          </Region>
+        )}
         {phone ? null : (
           <Region name="hand">
             <PartBoundary label="The hand">

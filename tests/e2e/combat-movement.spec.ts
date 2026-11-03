@@ -28,7 +28,8 @@ function rect(x0: number, y0: number, x1: number, y1: number): number[] {
 
 /** Screen pixels per map square at the current zoom. */
 async function squarePx(page: Page): Promise<number> {
-  const text = (await page.getByRole("region", { name: "Battle map" }).getByTestId("combat-zoom").textContent()) ?? "100%";
+  // The zoom is in the HUD's dock / map controls since plan combat-hud H9.0 (the map has no toolbar of its own there).
+  const text = (await page.getByTestId("combat-zoom").textContent()) ?? "100%";
   return 48 * (Number.parseInt(text, 10) / 100);
 }
 

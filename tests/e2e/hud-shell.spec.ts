@@ -8,7 +8,7 @@ import { hudScene } from "./hud/helpers";
 // the GM and a player. Play is a full-bleed map with the HUD regions over it and the classic column in a left drawer
 // ("Map tools" for the GM, "Your character" for the player); the GM's Edit mode keeps the classic two-column layout
 // (answer 12a). There is no switch: no button, no `?hud=` override, no stored choice. The GM's drawer holds the hand
-// sharing switch. axe passes.
+// sharing switch; its "Map tools" button is the first of the GM's bottom dock (H9.0). axe passes.
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -24,6 +24,9 @@ async function expectHud(page: Page, regions: number) {
   expect(box && hudBox ? Math.round(box.width) : 0).toBe(Math.round(hudBox?.width ?? -1));
   // The opt-in switch is gone (H8.1).
   await expect(page.getByTestId("hud-switch")).toHaveCount(0);
+  // The map's own toolbar is gone from the HUD (H9.0): the GM's dock or a player's map controls drive the map.
+  await expect(hud.locator(".cm-toolbar")).toHaveCount(0);
+  await expect(page.getByRole("toolbar", { name: "Map controls" })).toBeVisible();
 }
 
 test("the GM always gets the HUD in Play; Map tools holds today's column; Edit keeps the classic layout", async ({ browser }) => {
@@ -33,16 +36,17 @@ test("the GM always gets the HUD in Play; Map tools holds today's column; Edit k
   try {
     await gm.setViewportSize({ width: 1440, height: 900 });
     await gm.goto(s.url);
-    // The full-bleed HUD with every region mounted (GM: banners, scene, fear, left, hand, pop, panel).
-    await expectHud(gm, 7);
+    // The full-bleed HUD with every region mounted (GM: banners, scene, fear, waiting, dock, log, hand, pop, panel; H9.0).
+    await expectHud(gm, 9);
     await expectNoSeriousA11yViolations(gm);
     await gm.screenshot({ path: "test-results/visual/HUD-H0/gm-hud-1440.png", animations: "disabled" });
     const board = gm.getByRole("region", { name: "Battle map" });
     // H1.3: the GM's adversary tokens read "Open the <name>’s stat block, …".
     await expect(board.getByRole("button", { name: new RegExp(`^Open the ${escape(s.enemies.lieutenant.name)}’s stat block`) })).toBeVisible();
 
-    // The Map tools drawer: Maps, the Play / Edit switch, Combatants and the header tools (Fear) inside it.
-    const toolsButton = gm.getByRole("button", { name: "Map tools" });
+    // The Map tools drawer: Maps, the Play / Edit switch, Combatants and the header tools (Fear) inside it. Its button
+    // is the first of the GM's dock (H9.0, user answer Q4a).
+    const toolsButton = gm.getByRole("toolbar", { name: "Map controls" }).getByRole("button", { name: "Map tools" });
     await expect(toolsButton).toHaveAttribute("aria-expanded", "false");
     await toolsButton.click();
     const drawer = gm.getByRole("complementary", { name: "Map tools" });
@@ -75,13 +79,13 @@ test("the GM always gets the HUD in Play; Map tools holds today's column; Edit k
     await expect(column.getByRole("heading", { name: "Scene" })).toBeVisible();
     await expect(gm.getByTestId("hud-switch")).toHaveCount(0);
     await column.getByRole("group", { name: "Map mode" }).getByRole("button", { name: /Play/ }).click();
-    await expectHud(gm, 7);
+    await expectHud(gm, 9);
 
     // A reload, and the old `?hud=0` link, still open the HUD.
     await gm.reload();
-    await expectHud(gm, 7);
+    await expectHud(gm, 9);
     await gm.goto(`${s.url}?hud=0`);
-    await expectHud(gm, 7);
+    await expectHud(gm, 9);
   } finally {
     await s.close();
   }

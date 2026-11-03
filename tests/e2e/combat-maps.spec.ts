@@ -132,7 +132,8 @@ test("the GM keeps two maps, uploads an image to one and sets it live; a player 
     await player.goto(url);
     await expect(player.getByRole("heading", { level: 1, name: "Combat Map" })).toBeVisible();
     const playerBoard = player.getByRole("region", { name: "Battle map" });
-    await expect(playerBoard.getByText("Old bridge")).toBeVisible();
+    // The map's name is the HUD title (plan combat-hud H9.0: the map has no toolbar of its own in the HUD).
+    await expect(player.getByTestId("hud-title").getByRole("heading", { name: "Old bridge" })).toBeVisible();
     await expect(playerBoard.getByTestId("combat-map-canvas")).toBeVisible();
     await expect(player.getByRole("heading", { name: "Scene" })).toHaveCount(0);
     await expect(player.getByRole("heading", { name: "Maps" })).toHaveCount(0);
@@ -145,7 +146,7 @@ test("the GM keeps two maps, uploads an image to one and sets it live; a player 
     await page.goto(url);
     await page.getByRole("button", { name: "Map tools" }).click(); // Play is the HUD (plan combat-hud H8.1): the column is in its drawer.
     await first.getByRole("button", { name: "Set live" }).click();
-    await expect(playerBoard.getByText("Map 1")).toBeVisible();
+    await expect(player.getByTestId("hud-title").getByRole("heading", { name: "Map 1" })).toBeVisible();
   } finally {
     await close();
   }

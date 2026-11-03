@@ -111,7 +111,7 @@ test("the GM draws, resizes, moves and removes areas; a Nightwalker picks the sq
     // spec clicks is on screen.
     // The HUD's "Areas on the map" panel (plan combat-hud H5.3), from the GM's toolbar. It folds to its header bar after
     // a press on the map; `unfold` brings the body back.
-    await page.getByRole("group", { name: "GM tools" }).getByRole("button", { name: "Areas", exact: true }).click();
+    await page.getByRole("toolbar", { name: "Map controls" }).getByRole("button", { name: "Areas", exact: true }).click(); // The dock (plan combat-hud H9.0).
     const panel = page.getByRole("dialog", { name: "Areas" });
     const tools = panel.getByTestId("area-tools");
     const unfold = async () => {
