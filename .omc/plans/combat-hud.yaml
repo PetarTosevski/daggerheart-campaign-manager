@@ -1090,6 +1090,7 @@ waves:
         questions: [Q5]
         depends_on: []
         owns:
+          - tests/unit/sheet-drawer.test.tsx
           - src/components/combat-map/hud/sheet/**
           - src/app/(gm)/campaigns/[campaignId]/combat-map/page.tsx
           - src/components/combat-map/drawer/index.tsx
