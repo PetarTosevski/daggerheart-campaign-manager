@@ -35,7 +35,8 @@ import { applyDamageTo, applyHpTo, applyStressTo, lineOfSight, rangeCheck, token
 import { applySpotlight } from "../../src/lib/domain/encounters/spotlight";
 import type { RollRecord } from "../../src/lib/domain/duality";
 import { appError } from "../../src/lib/errors/app-error";
-import { CARD_TOKENS_MAX, MAX_SHEET_CREATURE_TOKEN_KINDS, type CharacterSheet, type FeatureUse } from "../../src/lib/validation/characters";
+import type { CharacterSheet, FeatureUse } from "../../src/lib/validation/characters";
+import { CARD_TOKENS_MAX, MAX_SHEET_CREATURE_TOKEN_KINDS } from "../../src/lib/validation/character-constants";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction, newGroupId } from "./actionLog";

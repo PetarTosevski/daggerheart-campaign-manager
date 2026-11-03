@@ -133,7 +133,7 @@ test("End on lasting effects: the GM ends any, the caster's player ends theirs, 
     await expect(bSheet.getByText("Rune Ward")).toHaveCount(0);
 
     await expect
-      .poll(async () => (await client.query(api.characters.get, { characterId: brannoc.characterId }))!.sheet.effects?.map((e) => e.id))
+      .poll(async () => (await client.query(api.charactersReads.get, { characterId: brannoc.characterId }))!.sheet.effects?.map((e) => e.id))
       .toEqual(["e2e-gm"]);
   } finally {
     await context.close();

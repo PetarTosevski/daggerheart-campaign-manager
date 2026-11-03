@@ -24,7 +24,7 @@ async function combatWorld() {
   await setup(w);
   const campaignId = w.campaignId;
   const mapId = w.ids.mapId as Id<"combatMaps">;
-  const tokens = await w.as("gm").query(api.combatTokens.list, { campaignId, mapId });
+  const tokens = await w.as("gm").query(api.combatTokensReads.list, { campaignId, mapId });
   const tokenA = tokens.find((t) => t.characterId === w.characterA)!._id;
   const goblin = w.ids.customTokenId as Id<"combatTokens">;
   const door = (await w.t.run((ctx) => ctx.db.query("combatMapObjects").collect())).find((o) => o.kind === "door")!._id;
@@ -58,14 +58,14 @@ describe("authz matrix: combat, players' view", () => {
     expect(await code(player.mutation(api.combatVision.markExplored, { campaignId, characterId: w.characterA, mapId: other, bits: "" }))).toBe(
       "COMBAT_MAP_NOT_FOUND",
     );
-    expect(await player.query(api.combatTokens.party, { campaignId, mapId: other })).toEqual([]);
+    expect(await player.query(api.combatTokensReads.party, { campaignId, mapId: other })).toEqual([]);
 
     // The GM shows the other map: the player's token stays on the old one, which they can no longer touch.
     await gm.mutation(api.combatMaps.setLive, { campaignId, mapId: other });
     expect(await player.query(api.combatVision.playerView, { campaignId })).toEqual({ state: "noCharacter", mapId: other });
     expect(await code(player.query(api.combatMapStyle.spriteSources, { campaignId, mapId }))).toBe("COMBAT_MAP_NOT_FOUND");
     expect(await code(player.mutation(api.combatTokens.move, { campaignId, tokenId: tokenA, x: 6, y: 10 }))).toBe("COMBAT_MAP_NOT_FOUND");
-    expect(await player.query(api.combatTokens.party, { campaignId, mapId })).toEqual([]);
+    expect(await player.query(api.combatTokensReads.party, { campaignId, mapId })).toEqual([]);
   });
 
   it("players see only what their token sees, never an adversary's stats, and act only for their own character", async () => {
@@ -90,9 +90,9 @@ describe("authz matrix: combat, players' view", () => {
     for (const o of seen) for (const k of ["stats", "hp", "hpMax", "conditions", "revealedTo"]) expect(o).not.toHaveProperty(k);
 
     // party: PC tokens only; the GM's list has the Goblin with its numbers.
-    const party = await player.query(api.combatTokens.party, { campaignId, mapId });
+    const party = await player.query(api.combatTokensReads.party, { campaignId, mapId });
     expect(party.map((t) => t.kind)).toEqual(["pc", "pc"]);
-    const goblinRow = (await gm.query(api.combatTokens.list, { campaignId, mapId })).find((t) => t._id === goblin);
+    const goblinRow = (await gm.query(api.combatTokensReads.list, { campaignId, mapId })).find((t) => t._id === goblin);
     expect(goblinRow?.stats?.hpMax).toBe(3);
 
     // The other player acts only for their own character.

@@ -347,18 +347,18 @@ describe("GM sanction for out-of-range targets (Q1)", () => {
     expect(await a.fear()).toBe(fearBefore);
     expect((await a.instance(far.instanceId)).hp).toBe(0);
 
-    const mine = await a.player.query(api.combatRequests.mine, { campaignId: a.campaignId });
+    const mine = await a.player.query(api.combatRequestsReads.mine, { campaignId: a.campaignId });
     expect(mine).toEqual([expect.objectContaining({ kind: "sanction", requestId: pending.requestId, characterName: "Ash", targets: [{ tokenId: far.tokenId, name: "Archer" }] })]);
     expectNoStats(mine);
-    expect(await a.w.as("otherPlayer").query(api.combatRequests.mine, { campaignId: a.campaignId })).toEqual([]);
-    expect((await a.gm.query(api.combatRequests.mine, { campaignId: a.campaignId })).map((m) => m.requestId)).toEqual([pending.requestId]);
+    expect(await a.w.as("otherPlayer").query(api.combatRequestsReads.mine, { campaignId: a.campaignId })).toEqual([]);
+    expect((await a.gm.query(api.combatRequestsReads.mine, { campaignId: a.campaignId })).map((m) => m.requestId)).toEqual([pending.requestId]);
 
     const approved = await a.gm.mutation(api.combatRequests.sanction, { campaignId: a.campaignId, requestId: pending.requestId, approve: true, idempotencyKey: key() });
     expect(approved.status).toBe("resolved");
     const pub = (await a.rows()).find((row) => row.visibility === "public" && row.kind === "combat")!;
     expect(pub.actorId).toBe(a.w.users.player);
     expect((await a.requests())[0]).toMatchObject({ status: "resolved", resolvedBy: a.w.users.gm });
-    expect(await a.player.query(api.combatRequests.mine, { campaignId: a.campaignId })).toEqual([]);
+    expect(await a.player.query(api.combatRequestsReads.mine, { campaignId: a.campaignId })).toEqual([]);
     expect(await code(a.gm.mutation(api.combatRequests.sanction, { campaignId: a.campaignId, requestId: pending.requestId, approve: true, idempotencyKey: key() }))).toBe("REQUEST_NOT_OPEN");
   });
 
@@ -370,7 +370,7 @@ describe("GM sanction for out-of-range targets (Q1)", () => {
     if (first.status !== "pending" || second.status !== "pending") throw new Error("expected pending");
     expect(await a.gm.mutation(api.combatRequests.sanction, { campaignId: a.campaignId, requestId: first.requestId, approve: false, idempotencyKey: key() })).toEqual({ status: "declined" });
     await a.t.run((ctx) => ctx.db.patch("encounters", a.encounterId, { status: "ended" }));
-    expect(await a.player.query(api.combatRequests.mine, { campaignId: a.campaignId })).toEqual([]);
+    expect(await a.player.query(api.combatRequestsReads.mine, { campaignId: a.campaignId })).toEqual([]);
     expect(await a.gm.mutation(api.combatRequests.sanction, { campaignId: a.campaignId, requestId: second.requestId, approve: true, idempotencyKey: key() })).toEqual({ status: "declined" });
     expect(await a.rows()).toEqual([]);
     expect((await a.requests()).map((r) => r.status)).toEqual(["declined", "declined"]);
@@ -433,7 +433,7 @@ describe("Minion picks (Q6, CB p.201)", () => {
       ]),
     );
     expectNoStats(r);
-    const mine = await a.player.query(api.combatRequests.mine, { campaignId: a.campaignId });
+    const mine = await a.player.query(api.combatRequestsReads.mine, { campaignId: a.campaignId });
     expect(mine).toEqual([expect.objectContaining({ kind: "minionOffer", entryId: r.entryId, extra })]);
 
     // Too many picks, and a pick outside the offer, are refused.

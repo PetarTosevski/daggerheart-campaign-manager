@@ -22,8 +22,8 @@ const cardName = (id: string) => DOMAIN_CARDS.find((c) => c.id === id)?.name ?? 
 
 /** The sheet's downtime-move picker while a party rest is open (CB 105). */
 export function Picker({ campaignId, character, canEdit }: SlotProps) {
-  const state = useQuery(api.rests.current, { campaignId });
-  const party = useQuery(api.characters.listByCampaign, { campaignId });
+  const state = useQuery(api.restsReads.current, { campaignId });
+  const party = useQuery(api.charactersReads.listByCampaign, { campaignId });
   if (state === undefined || party === undefined) {
     return (
       <Small as="p" role="status">
@@ -82,8 +82,8 @@ export function Picker({ campaignId, character, canEdit }: SlotProps) {
  * disabled while a call runs.
  */
 export function OasisDice({ campaignId, character, canEdit }: SlotProps) {
-  const state = useQuery(api.rests.current, { campaignId });
-  const party = useQuery(api.characters.listByCampaign, { campaignId });
+  const state = useQuery(api.restsReads.current, { campaignId });
+  const party = useQuery(api.charactersReads.listByCampaign, { campaignId });
   const reroll = useIntent(api.rests.oasisReroll);
   const close = useIntent(api.rests.closeOasis);
   const uid = useId();
@@ -192,7 +192,7 @@ function MoveForm({
   const [efficientOn, setEfficientOn] = useState(() => initial.some((p) => efficient.includes(p.move)));
   const shown = efficientOn ? [...moves, ...efficient] : moves;
   // Work on a Project is a long rest move, or Efficient's on a short rest.
-  const projects = useQuery(api.rests.projects, shown.includes("workOnProject") ? { characterId: character._id } : "skip");
+  const projects = useQuery(api.restsReads.projects, shown.includes("workOnProject") ? { characterId: character._id } : "skip");
   // The two moves, then the granted extra moves (shown from the start), then the trance's optional one.
   const base = MOVES_PER_REST + extraMoves;
   const hasTrance = trance ?? slots > base;

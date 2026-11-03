@@ -254,7 +254,7 @@ export type FeatureUseProps = {
   onClose: () => void;
 };
 
-/** A PC token as `combatTokens.party` lists it (the map's PC tokens). */
+/** A PC token as `combatTokensReads.party` lists it (the map's PC tokens). */
 export type SheetTokenRef = { _id: Id<"combatTokens">; kind: string; characterId?: Id<"characters">; mine: boolean };
 
 /**

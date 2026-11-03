@@ -180,7 +180,7 @@ describe("HitFlashLayer", () => {
   const MIRA_HIT: FeedTarget[] = [{ tokenId: "t-mira", side: "pc", tone: "hit" }];
 
   it("doesn't replay old rows, flashes a new hit on the PC token, and drops it after its animation", () => {
-    queries["combatTokens:party"] = [{ _id: "t-mira", name: "Mira", x: 2, y: 3, size: 1 }];
+    queries["combatTokensReads:party"] = [{ _id: "t-mira", name: "Mira", x: 2, y: 3, size: 1 }];
     queries["feed:list"] = feed([{ _id: "old", kind: "adversary", visibility: "public", summary: "Bandit hit Mira", targets: MIRA_HIT }]);
     const { rerender } = render(<HitFlashLayer {...layer("player")} />);
     rerender(<HitFlashLayer {...layer("player")} />);
@@ -203,7 +203,7 @@ describe("HitFlashLayer", () => {
   });
 
   it("the GM reads every token and sees an adversary token a feature touched flash", () => {
-    queries["combatTokens:list"] = [
+    queries["combatTokensReads:list"] = [
       { _id: "t-mira", name: "Mira", x: 2, y: 3, size: 1 },
       { _id: "t-wolf", name: "Wolf", x: 6, y: 1, size: 1 },
     ];
@@ -239,7 +239,7 @@ describe("GmOwnHits (user answer 2026-10-22)", () => {
   };
 
   it("gives a PC the GM owns the same prompt in the GM column, and nothing for the players' PCs", () => {
-    queries["characters:listByCampaign"] = [
+    queries["charactersReads:listByCampaign"] = [
       { _id: "gm-pc", mine: true, canEdit: true, status: "active", updatedAt: 1, sheet: { name: "Rook" } },
       { _id: "mira", mine: false, canEdit: true, status: "active", updatedAt: 1, sheet: { name: "Mira" } },
     ];
@@ -254,7 +254,7 @@ describe("GmOwnHits (user answer 2026-10-22)", () => {
   });
 
   it("renders nothing for a player (their prompt is in the player column)", () => {
-    queries["characters:listByCampaign"] = [{ _id: "gm-pc", mine: true, canEdit: true, status: "active", updatedAt: 1, sheet: { name: "Rook" } }];
+    queries["charactersReads:listByCampaign"] = [{ _id: "gm-pc", mine: true, canEdit: true, status: "active", updatedAt: 1, sheet: { name: "Rook" } }];
     queries["adversaryActions:pending"] = [hit];
     const { container } = render(<GmOwnHits campaignId={CAMPAIGN} role="player" />);
     expect(container.innerHTML).toBe("");

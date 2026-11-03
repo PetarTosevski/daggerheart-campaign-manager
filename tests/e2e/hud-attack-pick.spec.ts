@@ -42,7 +42,7 @@ async function seedRats(s: HudScene) {
     (await client.mutation(api.encounters.addAdversary, { campaignId, encounterId: s.encounterId, source: { kind: "custom", customId }, count: 1, summoned: true, idempotencyKey: crypto.randomUUID() })).instanceIds[0]!;
   const rats: Id<"encounterAdversaries">[] = [await add(), await add()];
   await client.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId: s.mapId, instanceIds: rats, idempotencyKey: crypto.randomUUID() });
-  const tokens = await client.query(api.combatTokens.list, { campaignId, mapId: s.mapId });
+  const tokens = await client.query(api.combatTokensReads.list, { campaignId, mapId: s.mapId });
   const out = [];
   for (const [i, instanceId] of rats.entries()) {
     const t = tokens.find((x) => x.instanceId === instanceId)!;
@@ -155,7 +155,7 @@ test("a forced attack: the red prompt opens the panel with the target locked, an
     await expect(panel).toHaveCount(0);
     await expect(player.getByTestId("hud-result-row").filter({ hasText: enemies.lieutenant.name })).toContainText(/Hit|Miss|Defeated/);
     await expect(card).toHaveCount(0);
-    expect(await client.query(api.combatRequests.forcedAttacks, { campaignId })).toEqual([]);
+    expect(await client.query(api.combatRequestsReads.forcedAttacks, { campaignId })).toEqual([]);
   } finally {
     await s.close();
   }

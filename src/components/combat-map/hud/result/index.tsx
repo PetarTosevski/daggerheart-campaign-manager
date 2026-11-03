@@ -24,7 +24,7 @@ import { hudResults, useHudResultEntry, type AsksEntry } from "./store";
  * left 820, 250 px above the bottom; it moves left with the sheet panel through `--hud-pop-res-left`), a bottom sheet
  * on a phone:
  *
- * 1. "Your roll waits" (players): an attack held for an after-roll feature (`combatRequests.mine` `afterRoll`): the
+ * 1. "Your roll waits" (players): an attack held for an after-roll feature (`combatRequestsReads.mine` `afterRoll`): the
  *    dice, Hit / Miss per target, the features as radio rows with their costs, Pass / "Use and roll damage";
  * 2. "After the roll": a card use's after-the-roll asks the HUD hand handed over (`hudResults.ask`): damage split
  *    steppers with "n left", each ally's pick with "n of m chose", plain choices;
@@ -43,7 +43,7 @@ export function HudResult({ state }: HudPartProps): ReactNode {
   const actor = useActor(state);
   const { campaignId } = state;
   const player = state.role === "player" && state.map !== null && actor !== null;
-  const mine = useQuery(api.combatRequests.mine, player ? { campaignId } : "skip");
+  const mine = useQuery(api.combatRequestsReads.mine, player ? { campaignId } : "skip");
   if (pick.session) return null;
 
   const own = (mine ?? []).filter((r) => r.characterId === actor?.characterId);

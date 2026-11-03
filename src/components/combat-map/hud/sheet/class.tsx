@@ -30,7 +30,7 @@ import type { HudSheetData } from "./model";
 export type ClassHere = { campaignId: Id<"campaigns">; characterId: Id<"characters">; canAct: boolean };
 
 function useDrawer({ campaignId, characterId }: ClassHere): Drawer | undefined {
-  return useQuery(api.combatFeatures.drawer, { campaignId, characterId });
+  return useQuery(api.combatFeaturesReads.drawer, { campaignId, characterId });
 }
 
 /** What the sheet shows of the drawer (pure): counters and held dice as chip texts, Flying, the form, the stances. */

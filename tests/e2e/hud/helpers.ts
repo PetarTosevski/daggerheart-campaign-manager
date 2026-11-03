@@ -122,7 +122,7 @@ export async function hudScene(browser: Browser, { moss }: { moss?: { classId: s
   await client.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId, instanceIds: Object.values(instances), idempotencyKey: crypto.randomUUID() });
   await client.mutation(api.combatMapEdit.paintCells, { campaignId, mapId, squares: WALL, paint: "block" });
 
-  const tokens = await client.query(api.combatTokens.list, { campaignId, mapId });
+  const tokens = await client.query(api.combatTokensReads.list, { campaignId, mapId });
   const place = async (tokenId: TokenId, spot: { x: number; y: number }) => {
     await client.mutation(api.combatTokens.move, { campaignId, tokenId, x: spot.x, y: spot.y });
     await client.mutation(api.combatTokens.turn, { campaignId, tokenId, angle: 0 });

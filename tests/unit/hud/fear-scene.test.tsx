@@ -104,7 +104,7 @@ beforeEach(() => {
     "combatHud:scene": WITHERWILD,
     "combatHud:party": [member(MOSS, "t-moss", true), member(BRANNOC, "t-brannoc", false)],
     "sessionWrap:dashboard": { live: { sessionId: "s6", n: 6 } },
-    "characters:get": { _id: MOSS, canEdit: true, corrupt: false, sheet: { name: "Brannoc" } },
+    "charactersReads:get": { _id: MOSS, canEdit: true, corrupt: false, sheet: { name: "Brannoc" } },
   };
 });
 

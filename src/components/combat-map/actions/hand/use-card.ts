@@ -66,11 +66,11 @@ export type CardActions = ReturnType<typeof useCardActions>;
 /** Moves a vault card into the loadout (rule 12: the Hand shows it there at once; a refusal puts it back). */
 export function useRecall({ campaignId, characterId }: { campaignId: Id<"campaigns">; characterId: Id<"characters"> }) {
   const move = useMutation(api.characters.moveCard).withOptimisticUpdate((store, { cardId, to }) => {
-    const hand: HandView | undefined = store.getQuery(api.combatCards.hand, { campaignId, characterId });
+    const hand: HandView | undefined = store.getQuery(api.combatCardsReads.hand, { campaignId, characterId });
     if (hand === undefined || to !== "loadout") return;
     const card = hand.vault.find((c) => c.cardId === cardId);
     if (!card) return;
-    store.setQuery(api.combatCards.hand, { campaignId, characterId }, {
+    store.setQuery(api.combatCardsReads.hand, { campaignId, characterId }, {
       ...hand,
       loadout: [...hand.loadout, { ...card, place: "loadout" }],
       vault: hand.vault.filter((c) => c.cardId !== cardId),

@@ -71,8 +71,8 @@ const area: Area = {
   nameHints: { entryId: (w) => w.ids.entryId },
   entries: [
     // ---------------------------------------------------------------- characters: party and creation
-    { fn: api.characters.listByCampaign, access: "view" },
-    { fn: api.characters.partySummary, access: "view", note: "PF9: the dashboard party cards; every member sees every card, like listByCampaign" },
+    { fn: api.charactersReads.listByCampaign, access: "view" },
+    { fn: api.charactersReads.partySummary, access: "view", note: "PF9: the dashboard party cards; every member sees every card, like listByCampaign" },
     {
       fn: api.characters.create,
       access: "view",
@@ -138,7 +138,7 @@ const area: Area = {
     // ---------------------------------------------------------------- characters: portraits
     { fn: api.characters.portraitUploadUrl, access: "own" },
     { fn: api.characters.attachPortrait, access: "own", setup: uploadedImage },
-    { fn: api.characters.portraitUrl, access: "own" },
+    { fn: api.charactersReads.portraitUrl, access: "own" },
 
     // ---------------------------------------------------------------- characterExtras: reads
     { fn: api.characterExtras.get, access: "own" },

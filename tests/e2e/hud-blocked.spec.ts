@@ -98,7 +98,7 @@ async function bruteHitsMoss(s: HudScene, mossId: Id<"characters">) {
   const { instanceIds } = await client.mutation(api.encounters.addAdversary, { campaignId, encounterId: s.encounterId, source: { kind: "custom", customId }, count: 1, summoned: false, idempotencyKey: crypto.randomUUID() });
   const instanceId = instanceIds[0]!;
   await client.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId: s.mapId, instanceIds: [instanceId], idempotencyKey: crypto.randomUUID() });
-  const token = (await client.query(api.combatTokens.list, { campaignId, mapId: s.mapId })).find((t) => t.instanceId === instanceId)!;
+  const token = (await client.query(api.combatTokensReads.list, { campaignId, mapId: s.mapId })).find((t) => t.instanceId === instanceId)!;
   await client.mutation(api.combatTokens.move, { campaignId, tokenId: token._id, x: 6, y: 10 });
   let res = await client.mutation(api.adversaryActions.attack, { campaignId, instanceId, targets: [mossId], idempotencyKey: crypto.randomUUID() });
   if (res.status === "confirmFear") res = await client.mutation(api.adversaryActions.attack, { campaignId, instanceId, targets: [mossId], spendFear: res.fear, idempotencyKey: crypto.randomUUID() });
@@ -147,11 +147,11 @@ test("while the GM holds the spotlight: cards, the ring and token moves wait wit
     await player.keyboard.press("Escape");
 
     // A token move waits too (user answer 2026-11-01): the key move is refused before it is sent.
-    const before = (await client.query(api.combatTokens.list, { campaignId, mapId: s.mapId })).find((t) => t._id === moss.tokenId)!;
+    const before = (await client.query(api.combatTokensReads.list, { campaignId, mapId: s.mapId })).find((t) => t._id === moss.tokenId)!;
     await mossToken(player).focus();
     await player.keyboard.press("ArrowUp");
     await expect(notices(player).getByRole("listitem").filter({ hasText: "The GM has the spotlight" })).toBeVisible();
-    const after = (await client.query(api.combatTokens.list, { campaignId, mapId: s.mapId })).find((t) => t._id === moss.tokenId)!;
+    const after = (await client.query(api.combatTokensReads.list, { campaignId, mapId: s.mapId })).find((t) => t._id === moss.tokenId)!;
     expect({ x: after.x, y: after.y }).toEqual({ x: before.x, y: before.y });
 
     // Reactions stay: the hit window opens and its answers are enabled.
@@ -183,7 +183,7 @@ test("at the click: a token move through a wall is refused in the table's words 
     const notice = player.getByTestId("combat-move-notice");
     await expect(notice).toHaveText("Something blocks the way.");
     await expect(notice).toHaveAttribute("data-kind", "blocked");
-    const now = (await client.query(api.combatTokens.list, { campaignId, mapId: s.mapId })).find((t) => t._id === moss.tokenId)!;
+    const now = (await client.query(api.combatTokensReads.list, { campaignId, mapId: s.mapId })).find((t) => t._id === moss.tokenId)!;
     expect({ x: now.x, y: now.y }).toEqual({ x: 17, y: 5 });
     await expectNoSeriousA11yViolations(player);
   } finally {

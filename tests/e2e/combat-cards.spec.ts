@@ -35,7 +35,7 @@ async function usesInFeed(s: HudScene, text: string) {
 }
 
 async function sheetOf(s: HudScene) {
-  return (await s.client.query(api.characters.get, { characterId: s.characterId }))!.sheet;
+  return (await s.client.query(api.charactersReads.get, { characterId: s.characterId }))!.sheet;
 }
 
 test("the GM plays Vicious Entangle for Moss through the HUD: Play for, Use, pick, Cast on, the feed; off locks it again", async ({ browser }) => {

@@ -399,7 +399,7 @@ describe("adversaryActions: the live map (Q2, Q18)", () => {
 
   it("targets PC tokens; a character without a token is refused; the hit row names the token", async () => {
     const a = await arena({ map: true });
-    const tokens = await a.gm.query(api.combatTokens.list, { campaignId: a.campaignId, mapId: a.mapId! });
+    const tokens = await a.gm.query(api.combatTokensReads.list, { campaignId: a.campaignId, mapId: a.mapId! });
     const ash = tokens.find((t) => t.characterId === a.w.characterA)!._id;
     const r = resolved(await a.attack(a.bear, [ash]));
     expect(r.targets[0]).toMatchObject({ characterId: a.w.characterA, hit: true });
@@ -443,7 +443,7 @@ describe("the public row's target token ids (followups-7 H3)", () => {
 
   it("names the hit PC's token by id; feed.list passes it to players, with no numbers (Q14)", async () => {
     const a = await arena({ map: true });
-    const tokens = await a.gm.query(api.combatTokens.list, { campaignId: a.campaignId, mapId: a.mapId! });
+    const tokens = await a.gm.query(api.combatTokensReads.list, { campaignId: a.campaignId, mapId: a.mapId! });
     const ash = tokens.find((t) => t.characterId === a.w.characterA)!._id;
     resolved(await a.attack(a.bear, [a.w.characterA]));
     expect((await publicRow(a)).targets).toEqual([{ tokenId: ash, side: "pc", tone: "hit" }]);
@@ -456,7 +456,7 @@ describe("the public row's target token ids (followups-7 H3)", () => {
 
   it("a feature without a roll names its targets with the tone 'effect'", async () => {
     const a = await arena({ map: true });
-    const tokens = await a.gm.query(api.combatTokens.list, { campaignId: a.campaignId, mapId: a.mapId! });
+    const tokens = await a.gm.query(api.combatTokensReads.list, { campaignId: a.campaignId, mapId: a.mapId! });
     const ash = tokens.find((t) => t.characterId === a.w.characterA)!._id;
     await a.setFear(5);
     resolved(await a.feature(a.dummy, "Taunt", [a.w.characterA], { spendFear: 1 }));
@@ -465,7 +465,7 @@ describe("the public row's target token ids (followups-7 H3)", () => {
 
   it("a PC whose sheet the feature changed without being named gets an 'effect' entry; players get no numbers (followups-8 I2)", async () => {
     const a = await arena({ map: true });
-    const tokens = await a.gm.query(api.combatTokens.list, { campaignId: a.campaignId, mapId: a.mapId! });
+    const tokens = await a.gm.query(api.combatTokensReads.list, { campaignId: a.campaignId, mapId: a.mapId! });
     const ash = tokens.find((t) => t.characterId === a.w.characterA)!._id;
     await a.edit(() => ({ hope: 2 }));
     // Fired by hand: no named targets, Ash is the trigger's subject and loses a Hope.
@@ -482,7 +482,7 @@ describe("the public row's target token ids (followups-7 H3)", () => {
 
   it("a named PC the feature also changed is listed once", async () => {
     const a = await arena({ map: true });
-    const tokens = await a.gm.query(api.combatTokens.list, { campaignId: a.campaignId, mapId: a.mapId! });
+    const tokens = await a.gm.query(api.combatTokensReads.list, { campaignId: a.campaignId, mapId: a.mapId! });
     const ash = tokens.find((t) => t.characterId === a.w.characterA)!._id;
     await a.edit(() => ({ hope: 2 }));
     resolved(await a.feature(await demonOf(a), "All Must Fall", [a.w.characterA], { trigger: { subjectId: a.w.characterA } }));

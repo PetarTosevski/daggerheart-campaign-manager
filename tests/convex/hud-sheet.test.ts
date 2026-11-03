@@ -81,7 +81,7 @@ describe("combatHud.sheet", () => {
     // The classic drawer follows hand sharing; the sheet panel does not (answer 4a).
     const refused = await w
       .as("otherPlayer")
-      .query(api.combatFeatures.drawer, { campaignId: w.campaignId, characterId: w.characterA })
+      .query(api.combatFeaturesReads.drawer, { campaignId: w.campaignId, characterId: w.characterA })
       .catch((e: unknown) => e);
     expect(errorCode(refused)).toBe("FORBIDDEN");
     const view = await w.as("otherPlayer").query(api.combatHud.sheet, { characterId: w.characterA });

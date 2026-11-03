@@ -76,7 +76,7 @@ async function scene(page: Page, browser: Browser, withPlayer: boolean): Promise
   const { mapId } = await client.mutation(api.combatMaps.create, { campaignId, size: "medium", name: "Old road", idempotencyKey: crypto.randomUUID() });
   await client.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
   await client.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId, instanceIds, idempotencyKey: crypto.randomUUID() });
-  const tokens = await client.query(api.combatTokens.list, { campaignId, mapId });
+  const tokens = await client.query(api.combatTokensReads.list, { campaignId, mapId });
   await client.mutation(api.combatTokens.move, { campaignId, tokenId: tokens.find((t) => t.characterId === miraId)!._id, x: 5, y: 10 });
   await client.mutation(api.combatTokens.move, { campaignId, tokenId: tokens.find((t) => t.characterId === rookId)!._id, x: 6, y: 15 });
   await client.mutation(api.combatTokens.move, { campaignId, tokenId: tokens.find((t) => t.instanceId === instanceIds[0])!._id, x: 6, y: 10 });
@@ -103,7 +103,7 @@ async function recordFlashes(page: Page) {
 const flashes = (page: Page) => page.evaluate(() => (window as unknown as { __flashes: string[] }).__flashes);
 
 async function sheetOf(client: ConvexHttpClient, characterId: Id<"characters">) {
-  return (await client.query(api.characters.get, { characterId }))!.sheet;
+  return (await client.query(api.charactersReads.get, { characterId }))!.sheet;
 }
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

@@ -56,7 +56,7 @@ describe("characters", () => {
   it("a player creates their own character with the class's starting values", async () => {
     const { p1, ids, campaignId } = await setup();
     const { characterId } = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
-    const c = await p1.query(api.characters.get, { characterId });
+    const c = await p1.query(api.charactersReads.get, { characterId });
     const cls = getClass("warrior")!;
     expect(c).toMatchObject({ ownerId: ids.p1, canEdit: true, mine: true, status: "active" });
     expect(c!.sheet).toMatchObject({
@@ -110,7 +110,7 @@ describe("characters", () => {
   it("everyone reads every sheet; only the owner and the GM edit", async () => {
     const { gm, p1, p2, campaignId } = await setup();
     const { characterId } = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
-    const seen = await p2.query(api.characters.listByCampaign, { campaignId });
+    const seen = await p2.query(api.charactersReads.listByCampaign, { campaignId });
     expect(seen).toHaveLength(1);
     expect(seen[0]).toMatchObject({ canEdit: false, mine: false });
     expect(seen[0].sheet.traits.agility).toBe(2);
@@ -119,16 +119,16 @@ describe("characters", () => {
     );
     await gm.mutation(api.characters.updateSheet, { characterId, patch: { notes: "GM note" } });
     await p1.mutation(api.characters.updateSheet, { characterId, patch: { pronouns: "she/her" } });
-    const c = await p1.query(api.characters.get, { characterId });
+    const c = await p1.query(api.charactersReads.get, { characterId });
     expect(c!.sheet).toMatchObject({ notes: "GM note", pronouns: "she/her" });
   });
 
   it("the GM creates a character for a player and can hand it over", async () => {
     const { gm, p1, ids, campaignId } = await setup();
     const { characterId } = await gm.mutation(api.characters.create, { campaignId, draft: draft(), ownerId: ids.p1, idempotencyKey: key() });
-    expect((await p1.query(api.characters.get, { characterId }))!.mine).toBe(true);
+    expect((await p1.query(api.charactersReads.get, { characterId }))!.mine).toBe(true);
     await gm.mutation(api.characters.assignOwner, { characterId, ownerId: ids.gm });
-    expect((await p1.query(api.characters.get, { characterId }))!.canEdit).toBe(false);
+    expect((await p1.query(api.charactersReads.get, { characterId }))!.canEdit).toBe(false);
     expect(
       errorCode(await p1.mutation(api.characters.create, { campaignId, draft: draft(), ownerId: ids.gm, idempotencyKey: key() }).catch((e) => e)),
     ).toBe("FORBIDDEN");
@@ -148,10 +148,10 @@ describe("characters", () => {
   it("vaulted cards cost their Recall Cost in Stress to bring back, except during a rest", async () => {
     const { p1, campaignId } = await setup();
     const { characterId } = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
-    const card = (await p1.query(api.characters.get, { characterId }))!.sheet.domainCards.loadout[0];
+    const card = (await p1.query(api.charactersReads.get, { characterId }))!.sheet.domainCards.loadout[0];
     await p1.mutation(api.characters.moveCard, { characterId, cardId: card, to: "vault" });
     await p1.mutation(api.characters.moveCard, { characterId, cardId: card, to: "loadout", duringRest: true });
-    const c = await p1.query(api.characters.get, { characterId });
+    const c = await p1.query(api.charactersReads.get, { characterId });
     expect(c!.sheet.domainCards.loadout).toContain(card);
     expect(c!.sheet.stress).toBe(0);
   });
@@ -179,13 +179,13 @@ describe("characters", () => {
 
     // The GM recalls it: the Recall Cost is paid and the row names the GM as actor and the character.
     await gm.mutation(api.characters.moveCard, move("loadout"));
-    const after = (await p1.query(api.characters.get, { characterId }))!.sheet;
+    const after = (await p1.query(api.charactersReads.get, { characterId }))!.sheet;
     expect(after.domainCards.loadout).toContain(card.id);
     expect(after.stress).toBe(card.recallCost);
     const [recall] = await rows();
     expect(recall).toMatchObject({ actorId: ids.gm, characterId, kind: "feature", visibility: "public", undoable: true, summary: `GM for ${after.name} recalls ${card.name} (${card.recallCost} Stress)` });
     await gm.mutation(api.actionLog.undo, { entryId: recall!._id, idempotencyKey: key() });
-    expect((await p1.query(api.characters.get, { characterId }))!.sheet).toMatchObject({ stress: 0 });
+    expect((await p1.query(api.charactersReads.get, { characterId }))!.sheet).toMatchObject({ stress: 0 });
 
     // The player recalls their own: the Stress is logged with them as actor; vaulting their own card writes no row.
     await p1.mutation(api.characters.moveCard, move("loadout"));
@@ -204,10 +204,10 @@ describe("characters", () => {
     const { characterId } = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
     const strangerId = await t.run((ctx) => ctx.db.insert("users", { email: "x@example.com" }));
     const stranger = t.withIdentity({ subject: `${strangerId}|s` });
-    expect(await stranger.query(api.characters.get, { characterId })).toBeNull();
+    expect(await stranger.query(api.charactersReads.get, { characterId })).toBeNull();
     expect(errorCode(await p1.mutation(api.characters.remove, { characterId }).catch((e) => e))).toBe("FORBIDDEN");
     await gm.mutation(api.characters.remove, { characterId });
-    expect(await gm.query(api.characters.listByCampaign, { campaignId })).toEqual([]);
+    expect(await gm.query(api.charactersReads.listByCampaign, { campaignId })).toEqual([]);
   });
 
   it("portraits: only images, a file can't be reused by another character, and only own uploads are deleted", async () => {
@@ -227,13 +227,13 @@ describe("characters", () => {
       await ctx.db.insert("files", { storageId: image, campaignId: c.campaignId, uploadedBy: c.ownerId, kind: "portrait", refId: a, createdAt: 0 });
       await ctx.db.patch(a, { sheet: { ...c.sheet, portrait: { kind: "upload", storageId: image } } });
     });
-    expect((await p1.query(api.characters.get, { characterId: a }))!.portraitUrl).toEqual(expect.any(String));
+    expect((await p1.query(api.charactersReads.get, { characterId: a }))!.portraitUrl).toEqual(expect.any(String));
     // Other players get the URL but never the storage id (the owner and the GM get the id to edit).
-    const seen = (await p2.query(api.characters.get, { characterId: a }))!;
+    const seen = (await p2.query(api.charactersReads.get, { characterId: a }))!;
     expect(seen.portraitUrl).toEqual(expect.any(String));
     expect(seen.sheet.portrait).toEqual({ kind: "upload", storageId: "hidden" });
-    expect(JSON.stringify(await p2.query(api.characters.listByCampaign, { campaignId }))).not.toContain(image);
-    expect((await p1.query(api.characters.get, { characterId: a }))!.sheet.portrait).toEqual({ kind: "upload", storageId: image });
+    expect(JSON.stringify(await p2.query(api.charactersReads.listByCampaign, { campaignId }))).not.toContain(image);
+    expect((await p1.query(api.charactersReads.get, { characterId: a }))!.sheet.portrait).toEqual({ kind: "upload", storageId: image });
 
     // Another player can't claim or point at that file.
     expect(errorCode(await p2.mutation(api.characters.attachPortrait, { characterId: b, storageId: image }).catch((e) => e))).toBe("NOT_FOUND");
@@ -270,20 +270,20 @@ describe("characters", () => {
       const c = (await ctx.db.get(bad))!;
       await ctx.db.patch(bad, { sheet: { ...c.sheet, hp: "lots" } });
     });
-    const list = await gm.query(api.characters.listByCampaign, { campaignId });
+    const list = await gm.query(api.charactersReads.listByCampaign, { campaignId });
     expect(list).toHaveLength(2);
     expect(list.find((c) => c._id === good)).toMatchObject({ canEdit: true, sheet: { name: "Ash" } });
     expect(list.find((c) => c._id === good)!.corrupt).toBeUndefined();
     expect(list.find((c) => c._id === bad)).toMatchObject({ corrupt: true, canEdit: false, sheet: { name: "Bryn" } });
     // Reading or editing the corrupt one alone still says so.
-    expect(errorCode(await gm.query(api.characters.get, { characterId: bad }).catch((e) => e))).toBe("CHARACTER_CORRUPT");
+    expect(errorCode(await gm.query(api.charactersReads.get, { characterId: bad }).catch((e) => e))).toBe("CHARACTER_CORRUPT");
     expect(errorCode(await gm.mutation(api.characters.addInventory, { characterId: bad, name: "Rope" }).catch((e) => e))).toBe("CHARACTER_CORRUPT");
     // A sheet from an unknown future version is corrupt too.
     await t.run(async (ctx) => {
       const c = (await ctx.db.get(good))!;
       await ctx.db.patch(good, { sheet: { ...c.sheet, schemaVersion: 99 } });
     });
-    expect((await gm.query(api.characters.listByCampaign, { campaignId })).every((c) => c.corrupt)).toBe(true);
+    expect((await gm.query(api.charactersReads.listByCampaign, { campaignId })).every((c) => c.corrupt)).toBe(true);
   });
 
   it("portraitUploadUrl is rate-limited per user", async () => {
@@ -306,7 +306,7 @@ describe("characters", () => {
       await ctx.db.insert("files", { storageId: image, campaignId: c.campaignId, uploadedBy: c.ownerId, kind: "portrait", refId: characterId, createdAt: 0 });
       await ctx.db.patch(characterId, { sheet: { ...c.sheet, portrait: { kind: "upload", storageId: image } } });
     });
-    for (const seen of [await p2.query(api.characters.get, { characterId }), ...(await p2.query(api.characters.listByCampaign, { campaignId }))]) {
+    for (const seen of [await p2.query(api.charactersReads.get, { characterId }), ...(await p2.query(api.charactersReads.listByCampaign, { campaignId }))]) {
       expect(seen!.sheet.portrait).toEqual({ kind: "upload", storageId: "hidden" });
       expect(seen!.portraitUrl).toEqual(expect.any(String));
     }
@@ -319,7 +319,7 @@ describe("characters", () => {
     expect(errorCode(await p1.mutation(api.characters.setStatus, { characterId, status: "active" }).catch((e) => e))).toBe("FORBIDDEN");
     expect(errorCode(await p1.mutation(api.characters.setStatus, { characterId, status: "retired" }).catch((e) => e))).toBe("FORBIDDEN");
     await gm.mutation(api.characters.setStatus, { characterId, status: "active" });
-    expect((await p1.query(api.characters.get, { characterId }))!.status).toBe("active");
+    expect((await p1.query(api.charactersReads.get, { characterId }))!.status).toBe("active");
 
     await t.run((ctx) => ctx.db.patch(characterId, { status: "away", away: { reason: "infirmary" } }));
     expect(errorCode(await p1.mutation(api.characters.setStatus, { characterId, status: "active" }).catch((e) => e))).toBe("FORBIDDEN");
@@ -341,7 +341,7 @@ describe("characters", () => {
         await ctx.db.insert("characters", { campaignId: c.campaignId, ownerId: c.ownerId, createdBy: c.createdBy, status: "dead", sheet: c.sheet, createdAt: 0, updatedAt: 0 });
       }
     });
-    expect((await gm.query(api.characters.listByCampaign, { campaignId })).length).toBe(50);
+    expect((await gm.query(api.charactersReads.listByCampaign, { campaignId })).length).toBe(50);
     expect(errorCode(await gm.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() }).catch((e) => e))).toBe("INVALID");
     expect(errorCode(await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() }).catch((e) => e))).toBe("INVALID");
   });
@@ -379,7 +379,7 @@ describe("characters", () => {
     const benched = await t.run((ctx) => ctx.db.get(a));
     expect(benched).toMatchObject({ status: "away", away: { reason: "benched" } });
     // Views show a bench as `benched`, not as a death-move reason.
-    const view = await p1.query(api.characters.get, { characterId: a });
+    const view = await p1.query(api.charactersReads.get, { characterId: a });
     expect(view).toMatchObject({ status: "away", benched: true });
     expect(view!.away).toBeUndefined();
 
@@ -440,7 +440,7 @@ describe("characters", () => {
     const first = await p1.mutation(api.characters.applyDamage, { characterId, damage: 999, useArmorSlot: false, idempotencyKey: k });
     const again = await p1.mutation(api.characters.applyDamage, { characterId, damage: 999, useArmorSlot: false, idempotencyKey: k });
     expect(again).toEqual(first);
-    expect((await p1.query(api.characters.get, { characterId }))!.sheet.hp).toBe(3);
+    expect((await p1.query(api.charactersReads.get, { characterId }))!.sheet.hp).toBe(3);
     expect(
       errorCode(await p1.mutation(api.characters.applyDamage, { characterId, damage: 1, useArmorSlot: false, idempotencyKey: k }).catch((e) => e)),
     ).toBe("IDEMPOTENCY_MISMATCH");
@@ -477,7 +477,7 @@ describe("migrations/characters:versionSheets", () => {
       const { campaignId: cid, ownerId, createdBy } = c;
       return ctx.db.insert("characters", { campaignId: cid, ownerId, createdBy, status: "active", sheet: { name: "Broken" }, createdAt: 0, updatedAt: 0 });
     });
-    const before = (await gm.query(api.characters.get, { characterId }))!.sheet;
+    const before = (await gm.query(api.charactersReads.get, { characterId }))!.sheet;
     expect(before.inventory).toEqual([
       { id: "inv-0", name: "Torch" },
       { id: "inv-1", name: "Rope" },
@@ -491,7 +491,7 @@ describe("migrations/characters:versionSheets", () => {
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     const stored = await t.run(async (ctx) => (await ctx.db.get(characterId))!.sheet);
     expect(stored).toMatchObject({ schemaVersion: 2, inventory: before.inventory, experiences: before.experiences });
-    expect((await gm.query(api.characters.get, { characterId }))!.sheet).toEqual(before);
+    expect((await gm.query(api.charactersReads.get, { characterId }))!.sheet).toEqual(before);
     expect(await t.run(async (ctx) => (await ctx.db.get(corruptId))!.sheet)).toEqual({ name: "Broken" });
 
     await t.mutation(internal.migrations.characters.versionSheets, { reset: true });

@@ -14,7 +14,7 @@ import {
 } from "../../src/components/combat-map/editor/edit-model";
 import { searchPalette, spritePalette } from "../../src/components/combat-map/editor/sprite-palette";
 import { codeOfTerrain, decodeCells } from "../../src/components/combat-map/map-view/cells";
-import { CATALOG_ENTRIES } from "../../src/lib/sprite-packs/catalog/index";
+import { catalogEntries } from "../../src/lib/sprite-packs/catalog/index";
 import { errorCode, imageBlob, key, OTHER_EMAIL, setupWithCampaign, useAllowlist } from "./helpers";
 
 // Sprite packs P9 (plan .omc/plans/sprite-packs.yaml): hand editing in the Sprites style. `addObject` places a
@@ -234,7 +234,7 @@ describe("Sprites editing: painting textures", () => {
 
   it("gives SPRITE_PALETTE_FULL past MAX_TEXTURE_PALETTE textures in use, and reuses a slot no square uses any more", async () => {
     const f = await withMap();
-    const textures = CATALOG_ENTRIES.filter((e) => e.category === "texture").slice(0, MAX_TEXTURE_PALETTE + 1);
+    const textures = catalogEntries().filter((e) => e.category === "texture").slice(0, MAX_TEXTURE_PALETTE + 1);
     expect(textures).toHaveLength(MAX_TEXTURE_PALETTE + 1);
     for (const [i, entry] of textures.slice(0, MAX_TEXTURE_PALETTE).entries()) await f.texture([i], { builtin: entry.key });
     expect((await f.get()).texturePalette).toHaveLength(MAX_TEXTURE_PALETTE);
@@ -279,7 +279,7 @@ describe("Sprites editing: pickers", () => {
     const groups = palette.objects.map((o) => o.group);
     expect(groups.indexOf("common")).toBeGreaterThan(groups.lastIndexOf("setting"));
     expect(groups.at(-1)).toBe("uploaded");
-    const forest = CATALOG_ENTRIES.filter((e) => e.key.startsWith("forest/") && e.category === "object");
+    const forest = catalogEntries().filter((e) => e.key.startsWith("forest/") && e.category === "object");
     expect(palette.objects.filter((o) => o.group === "setting").map((o) => o.key)).toEqual(forest.map((e) => e.key));
     expect(palette.objects.find((o) => o.key === "forest/oak-tree")).toMatchObject({ name: "Oak tree", placement: builtinPlacement("forest/oak-tree") });
     expect(palette.textures.map((t) => t.key)).toContain("forest/moss");

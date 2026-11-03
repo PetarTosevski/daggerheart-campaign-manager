@@ -70,7 +70,7 @@ export function CampaignSettingsButton({ onPlayers }: { onPlayers: () => void })
 
 /** The player's own character (the first one they can edit), for the avatar. */
 function useOwnCharacter(campaignId: Id<"campaigns">) {
-  const party = useQuery(api.characters.partySummary, { campaignId });
+  const party = useQuery(api.charactersReads.partySummary, { campaignId });
   return party?.find((member) => member.canEdit && member.corrupt !== true) ?? null;
 }
 

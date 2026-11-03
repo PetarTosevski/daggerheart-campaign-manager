@@ -206,7 +206,7 @@ for (const viewport of [
         await endDialog.getByRole("button", { name: "End session" }).click();
         await expect(page).toHaveURL(/stage=wrap/);
         await expect(liveCard.getByRole("status")).toContainText("stay on the sheets.");
-        await expect.poll(async () => (await client.query(api.characters.get, { characterId: ash }))?.sheet.wither ?? 0).toBe(tokens);
+        await expect.poll(async () => (await client.query(api.charactersReads.get, { characterId: ash }))?.sheet.wither ?? 0).toBe(tokens);
         await page.getByRole("tab", { name: "Play" }).click();
         await expect(tally.getByRole("definition")).toHaveText(["2", "0", "0", "0"]);
         await expectFear(page, campaignId, 2);

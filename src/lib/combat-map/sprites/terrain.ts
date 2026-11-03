@@ -17,7 +17,7 @@ import { terrainGlows } from "../../domain/combat-map/light";
 import type { PreparedMap } from "../painter";
 import { WALLISH, areaHits, isTerrain, paintKey, rasterize, type PaintArea, type PaintSpec, type PaintedTerrain, type TerrainId } from "../raster";
 import { BUILTIN_LOOKUP, builtinSpriteUrl } from "../../sprite-packs/builtin/index";
-import { CATALOG_ENTRIES, TEXTURE_SQUARES } from "../../sprite-packs/catalog/index";
+import { catalogEntries, TEXTURE_SQUARES } from "../../sprite-packs/catalog/index";
 import { textureCandidates } from "../../sprite-packs/mapping";
 import { COMMON_FOLDER } from "../../sprite-packs/settings";
 import type { SpriteRef } from "../../sprite-packs/traits";
@@ -108,7 +108,7 @@ let builtinGlowUrls: ReadonlySet<string> | undefined;
  */
 function glowUrls(): ReadonlySet<string> {
   builtinGlowUrls ??= new Set(
-    CATALOG_ENTRIES.flatMap((e) => {
+    catalogEntries().flatMap((e) => {
       if (e.category !== "texture" || e.light === "none") return [];
       const art = BUILTIN_LOOKUP.get(e.key)?.art;
       return art ? [builtinSpriteUrl(art)] : [];

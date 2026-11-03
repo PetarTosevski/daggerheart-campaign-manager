@@ -40,7 +40,7 @@ async function setUp(page: Page) {
   const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", name: "Old road", idempotencyKey: crypto.randomUUID() });
   await gm.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
   await gm.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId, instanceIds, idempotencyKey: crypto.randomUUID() });
-  const tokens = await gm.query(api.combatTokens.list, { campaignId, mapId });
+  const tokens = await gm.query(api.combatTokensReads.list, { campaignId, mapId });
   await gm.mutation(api.combatTokens.move, { campaignId, tokenId: tokens.find((t) => t.characterId === characterId)!._id, x: 6, y: 10 });
   await gm.mutation(api.combatTokens.move, { campaignId, tokenId: tokens.find((t) => t.instanceId === instanceIds[0])!._id, x: 7, y: 10 });
   return { gm, campaignId, url, ember: characterId, bandit: instanceIds[0]! };
@@ -54,7 +54,7 @@ async function attack(gm: ConvexHttpClient, campaignId: Id<"campaigns">, instanc
   return res.targets[0]!.requestId!;
 }
 
-const sheetOf = async (gm: ConvexHttpClient, id: Id<"characters">) => (await gm.query(api.characters.get, { characterId: id }))!.sheet;
+const sheetOf = async (gm: ConvexHttpClient, id: Id<"characters">) => (await gm.query(api.charactersReads.get, { characterId: id }))!.sheet;
 
 for (const carries of [true, false]) {
   test(`the GM answers "Was this hit fire?" with ${carries ? "Yes" : "No"}`, async ({ page }) => {

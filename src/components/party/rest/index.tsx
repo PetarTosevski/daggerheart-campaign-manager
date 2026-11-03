@@ -26,7 +26,7 @@ const Picker = dynamic(() => import("./picker").then((m) => m.Picker), { loading
 const OasisDice = dynamic(() => import("./picker").then((m) => m.OasisDice), { loading: RestLoading });
 
 function OpenRestPicker(props: SlotProps) {
-  const state = useQuery(api.rests.current, { campaignId: props.campaignId });
+  const state = useQuery(api.restsReads.current, { campaignId: props.campaignId });
   if (state === undefined) return <RestLoading />;
   if (state.open !== null) return <Picker {...props} />;
   // Oasis (HF 27): while the latest rest's Oasis window is open, a holder's sheet shows the party's pool until that holder closes their panel (DA15).

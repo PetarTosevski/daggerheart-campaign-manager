@@ -35,7 +35,7 @@ const layer = { ...state, viewport: { cell: 40, zoom: 1, w: 30, h: 20, pad: 0, t
 
 function seed() {
   const t = (_id: string, name: string, x: number, side: string) => ({ _id, name, x, y: 10, size: 1, side, kind: side === "enemy" ? "adversary" : "pc", stats: null });
-  queries["combatTokens:list"] = [t(LT, "Lieutenant", 14, "enemy"), t(BRANNOC, "Brannoc", 11, "party"), t(MOSS, "Moss", 4, "party"), t(VEX, "Vex", 8, "party")];
+  queries["combatTokensReads:list"] = [t(LT, "Lieutenant", 14, "enemy"), t(BRANNOC, "Brannoc", 11, "party"), t(MOSS, "Moss", 4, "party"), t(VEX, "Vex", 8, "party")];
 }
 
 const gmSpec = (send = vi.fn(async () => ({ kind: "done" as const }))): PickSessionSpec => ({

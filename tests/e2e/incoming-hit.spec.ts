@@ -85,7 +85,7 @@ async function banditAttacks(gm: ConvexHttpClient, campaignId: Id<"campaigns">, 
 }
 
 async function sheetOf(gm: ConvexHttpClient, characterId: Id<"characters">) {
-  return (await gm.query(api.characters.get, { characterId }))!.sheet;
+  return (await gm.query(api.charactersReads.get, { characterId }))!.sheet;
 }
 
 const PROMPT_LINE = /^\d+ damage: (Minor|Major|Severe) \(\d HP\)\.$/;
@@ -112,7 +112,7 @@ test("the Bandit hits Mira; Tabby answers with I Am Your Shield, marks two Armor
     const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", name: "Old road", idempotencyKey: crypto.randomUUID() });
     await gm.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
     await gm.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId, instanceIds: [instanceId], idempotencyKey: crypto.randomUUID() });
-    const tokens = await gm.query(api.combatTokens.list, { campaignId, mapId });
+    const tokens = await gm.query(api.combatTokensReads.list, { campaignId, mapId });
     await gm.mutation(api.combatTokens.move, { campaignId, tokenId: tokens.find((t) => t.characterId === mira)!._id, x: 6, y: 10 });
     await gm.mutation(api.combatTokens.move, { campaignId, tokenId: tokens.find((t) => t.characterId === tabby)!._id, x: 6, y: 11 });
     await gm.mutation(api.combatTokens.move, { campaignId, tokenId: tokens.find((t) => t.instanceId === instanceId)!._id, x: 7, y: 10 });

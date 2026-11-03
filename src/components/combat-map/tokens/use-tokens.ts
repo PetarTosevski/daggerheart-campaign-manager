@@ -28,18 +28,18 @@ export type { TokenView };
 export type TrackerCondition = "hidden" | "restrained" | "vulnerable" | "distracted";
 
 /**
- * The tokens on screen: the GM's `combatTokens.list` (every token with stats) or, for a player, the PC tokens of
+ * The tokens on screen: the GM's `combatTokensReads.list` (every token with stats) or, for a player, the PC tokens of
  * C7's `combatVision.playerView` (`pcs`, with public sheet numbers, Q4): the same subscription the vision layer
  * reads, so a player holds one query for the map's tokens (dcm-bxp.53). Only while that view has none (the player
  * has no character on the map, `noCharacter`, or the view is of another map) does a player read
- * `combatTokens.party`. `undefined` while loading.
+ * `combatTokensReads.party`. `undefined` while loading.
  */
 export function useTokens(campaignId: Id<"campaigns">, role: CombatRole, mapId: Id<"combatMaps">): TokenView[] | undefined {
   const player = role === "player";
-  const gm = useQuery(api.combatTokens.list, player ? "skip" : { campaignId, mapId });
+  const gm = useQuery(api.combatTokensReads.list, player ? "skip" : { campaignId, mapId });
   const view = useQuery(api.combatVision.playerView, player ? { campaignId } : "skip");
   const fromView = view?.state === "ok" && view.mapId === mapId ? view.pcs : null;
-  const party = useQuery(api.combatTokens.party, player && view !== undefined && fromView === null ? { campaignId, mapId } : "skip");
+  const party = useQuery(api.combatTokensReads.party, player && view !== undefined && fromView === null ? { campaignId, mapId } : "skip");
   if (!player) return gm;
   if (view === undefined) return undefined;
   return fromView ?? party;
@@ -50,7 +50,7 @@ export function useTokens(campaignId: Id<"campaigns">, role: CombatRole, mapId: 
  * the PC tokens of the character views (`playerView`, the GM's `previewAs`).
  */
 export function patchTokens(store: OptimisticLocalStore, match: (t: TokenView) => boolean, change: (t: TokenView) => TokenView) {
-  for (const query of [api.combatTokens.list, api.combatTokens.party]) {
+  for (const query of [api.combatTokensReads.list, api.combatTokensReads.party]) {
     for (const { args, value } of store.getAllQueries(query)) {
       if (value === undefined || !value.some(match)) continue;
       store.setQuery(query, args, value.map((t) => (match(t) ? change(t) : t)));
@@ -141,8 +141,8 @@ export function useTokenActions(campaignId: Id<"campaigns">, map: CombatMapSumma
     ),
   );
   const remove = useMutation(api.combatTokens.remove).withOptimisticUpdate((store, { tokenId }) => {
-    for (const { args, value } of store.getAllQueries(api.combatTokens.list)) {
-      if (value?.some((t) => t._id === tokenId)) store.setQuery(api.combatTokens.list, args, value.filter((t) => t._id !== tokenId));
+    for (const { args, value } of store.getAllQueries(api.combatTokensReads.list)) {
+      if (value?.some((t) => t._id === tokenId)) store.setQuery(api.combatTokensReads.list, args, value.filter((t) => t._id !== tokenId));
     }
   });
   const rename = useMutation(api.combatTokens.rename);

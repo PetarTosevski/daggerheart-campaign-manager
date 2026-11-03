@@ -59,7 +59,7 @@ async function withScene() {
   const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
   await gm.mutation(api.combatMapStyle.setStyle, { campaignId, mapId, style: "sprites" });
   await gm.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: key() });
-  const ashToken = (await gm.query(api.combatTokens.list, { campaignId, mapId })).find((tk) => tk.name === "Ash")!._id;
+  const ashToken = (await gm.query(api.combatTokensReads.list, { campaignId, mapId })).find((tk) => tk.name === "Ash")!._id;
   await t.run((c) => c.db.patch("combatTokens", ashToken, { x: 5, y: 10, face: 0 }));
   const gmId = await t.run(async (c) => (await c.db.query("users").first())!._id);
   const setTime = (time: { cycle: "DAY" | "NIGHT"; cycleDay: number }) =>
@@ -261,7 +261,7 @@ describe("adversary tokens show their rulebook art to players (R4: portrait only
     const instanceIds = [...(await add(withArt.id)).instanceIds, ...(await add(withoutArt.id)).instanceIds];
     await f.gm.mutation(api.encounters.start, { campaignId, encounterId });
     await f.gm.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId, instanceIds, idempotencyKey: key() });
-    const tokens = await f.gm.query(api.combatTokens.list, { campaignId, mapId });
+    const tokens = await f.gm.query(api.combatTokensReads.list, { campaignId, mapId });
     const labelOf = async (id: Id<"encounterAdversaries">) => (await f.t.run((c) => c.db.get("encounterAdversaries", id)))!.label;
     const artLabel = await labelOf(instanceIds[0]!);
     const plainLabel = await labelOf(instanceIds[1]!);

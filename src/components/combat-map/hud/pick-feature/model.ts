@@ -26,13 +26,13 @@ import type { CostResource } from "../ui";
  * takes them (`combatFeatures.useFeature({ riders })`, plan lanes-2 E1.3a) but lists rider options only for a weapon
  * attack (`combatActions.riders`). `featureRiderOptions` mirrors the server's `riderOptions` / `riderPhase` for a feature
  * host (convex/lib/combatActions.ts; host = `rollHost` with `fromUse` the feature) from what the client holds: the held
- * features' uses and readiness (`combatFeatures.drawer`) and the loadout's (`combatCards.hand`). Before-roll and
+ * features' uses and readiness (`combatFeaturesReads.drawer`) and the loadout's (`combatCardsReads.hand`). Before-roll and
  * after-roll riders only (a damage-phase rider is a prompt after the damage, DA2); default-on riders (Rise to the
  * Challenge) ride on the server's side. The server checks every rider again (`pickRiders`: INVALID for one that does not
  * ride). Follow-up bead: a `combatFeatures.riders` query to replace this mirror.
  */
 
-export type DrawerFeature = FunctionReturnType<typeof api.combatFeatures.drawer>["features"][number];
+export type DrawerFeature = FunctionReturnType<typeof api.combatFeaturesReads.drawer>["features"][number];
 export type FeatureUseOutcome = FunctionReturnType<typeof api.combatFeatures.useFeature>;
 
 /** How a feature's Use runs in the HUD. */
@@ -240,8 +240,8 @@ function optionOf(source: "card" | "feature", id: string, name: string, use: Car
 }
 
 /**
- * dcm-aiwg: the rider options of a feature use's action roll: every `rider` use of a held feature (`combatFeatures.drawer`)
- * and of a loadout card (`combatCards.hand`) whose trigger rides on it, ready or not (a used-up one shows disabled).
+ * dcm-aiwg: the rider options of a feature use's action roll: every `rider` use of a held feature (`combatFeaturesReads.drawer`)
+ * and of a loadout card (`combatCardsReads.hand`) whose trigger rides on it, ready or not (a used-up one shows disabled).
  */
 export function featureRiderOptions(input: {
   featureId: string;

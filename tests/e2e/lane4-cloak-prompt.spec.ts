@@ -51,7 +51,7 @@ test("a Cloaked rogue's Enrapture asks the GM; Yes ends Cloaked", async ({ page,
     const { mapId } = await client.mutation(api.combatMaps.create, { campaignId, size: "medium", name: "Old road", idempotencyKey: crypto.randomUUID() });
     await client.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
     await client.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId, instanceIds, idempotencyKey: crypto.randomUUID() });
-    const tokens = await client.query(api.combatTokens.list, { campaignId, mapId });
+    const tokens = await client.query(api.combatTokensReads.list, { campaignId, mapId });
     const mine = tokens.find((t) => t.characterId === characterId)!;
     const bandit = tokens.find((t) => t.instanceId === instanceIds[0])!;
     await client.mutation(api.combatTokens.move, { campaignId, tokenId: mine._id, x: 5, y: 10 });
@@ -64,7 +64,7 @@ test("a Cloaked rogue's Enrapture asks the GM; Yes ends Cloaked", async ({ page,
     await expect(player.getByRole("region", { name: "Your hand" }).getByRole("article", { name: "Enrapture" })).toBeVisible({ timeout: 30_000 });
     const out = await playerClient.mutation(api.combatCards.useCard, { campaignId, characterId, mapId, cardId: "enrapture", spell: "main", targetTokenIds: [bandit._id], choices: [], idempotencyKey: crypto.randomUUID() });
     expect(out.status).toBe("resolved");
-    const sheet = async () => (await playerClient.query(api.characters.get, { characterId }))!.sheet!;
+    const sheet = async () => (await playerClient.query(api.charactersReads.get, { characterId }))!.sheet!;
     expect((await sheet()).conditions).toContain("cloaked");
 
     // The GM's HUD queue ("Waiting on you") asks; Yes ends Cloaked.

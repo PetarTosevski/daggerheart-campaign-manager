@@ -238,7 +238,7 @@ describe("what a use asks first", () => {
 
 describe("F7-H4: the GM's sharing switch", () => {
   it("the GM's switch 'Players can see each other's cards' is on by default and calls setPlayersSeeHands", async () => {
-    queries["combatCards:handSharing"] = { playersSeeHands: true, hidden: [] };
+    queries["combatCardsReads:handSharing"] = { playersSeeHands: true, hidden: [] };
     render(<HandSharingSwitch campaignId={"c1" as Id<"campaigns">} />);
     const sw = screen.getByRole("switch", { name: "Players can see each other's cards" });
     expect(sw).toBeChecked();

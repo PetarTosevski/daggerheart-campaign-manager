@@ -20,7 +20,7 @@ import type { PickActor, PickContext, PickOutcome, PickPatch, PickRow, PickRowIn
  * (`equippedWeapons`), the riders of `combatActions.riders` (`ridersToSend`, `riderProblem`, `riseToSend`), the roll
  * options (Experiences, advantage, Help: `RollValues`), the sheet's trait pick / extra targets / Spirit Weapon
  * (`actions/attack/mods.ts`), a target's rider benefit (Lead by Example: `combatActions.targets` `benefits`) and the
- * forced attacks of `combatRequests.forcedAttacks`. `combatActions.attack` decides; nothing here is a rule of its own.
+ * forced attacks of `combatRequestsReads.forcedAttacks`. `combatActions.attack` decides; nothing here is a rule of its own.
  * No React here (the extra rows come in as a render function), so the unit tests read it directly.
  */
 
@@ -39,7 +39,7 @@ export type AttackData = {
 
 export type AttackWeapon = { slot: WeaponSlot; weapon: Weapon };
 
-/** A forced attack waiting on the character (`combatRequests.forcedAttacks`, Beguiled HF p.75): its targets are locked. */
+/** A forced attack waiting on the character (`combatRequestsReads.forcedAttacks`, Beguiled HF p.75): its targets are locked. */
 export type ForcedAttack = {
   requestId: Id<"combatRequests">;
   instanceLabel: string;
@@ -373,7 +373,7 @@ export function forcedRows(forced: ForcedAttack, bands: ReadonlyMap<string, { ba
   });
 }
 
-/** A Minion offer (`combatRequests.mine` kind `minionOffer`, CB p.201). */
+/** A Minion offer (`combatRequestsReads.mine` kind `minionOffer`, CB p.201). */
 export type MinionOffer = {
   requestId: Id<"combatRequests">;
   entryId: Id<"actionLog">;

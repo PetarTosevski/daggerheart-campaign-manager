@@ -88,7 +88,7 @@ export async function ensureBench(token) {
   }
   existing = await find();
   const bench = existing.find((x) => x.name === BENCH_CAMPAIGN);
-  const characters = await c.query(anyApi.characters.listByCampaign, { campaignId: bench._id });
+  const characters = await c.query(anyApi.charactersReads.listByCampaign, { campaignId: bench._id });
   const have = new Set();
   for (const x of characters) {
     const name = x.sheet?.name;

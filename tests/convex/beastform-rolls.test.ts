@@ -42,7 +42,7 @@ async function setup(change: Partial<CharacterSheet>) {
   const campaign = () => t.run(async (ctx) => (await ctx.db.get("campaigns", campaignId))!);
   await t.run(async (ctx) => saveSheet(ctx, id, { ...readSheet((await ctx.db.get("characters", id))!.sheet), ...change }));
   const transform = (choice: string) => gm.mutation(api.classFeatures.use, { characterId: id, featureKey: "beastform", params: { choice }, idempotencyKey: key() });
-  const drawer = () => gm.query(api.combatFeatures.drawer, { campaignId, characterId: id });
+  const drawer = () => gm.query(api.combatFeaturesReads.drawer, { campaignId, characterId: id });
   const agilityRoll = async () =>
     (
       await gm.mutation(api.rolls.actionRoll, {

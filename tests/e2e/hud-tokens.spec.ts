@@ -34,7 +34,7 @@ async function markScene(s: HudScene) {
   await client.mutation(api.characters.adjustResource, { characterId: moss.characterId, resource: "hp", delta: 2 });
   await client.mutation(api.characters.adjustResource, { characterId: moss.characterId, resource: "stress", delta: 3 });
   await client.mutation(api.characters.toggleCondition, { characterId: moss.characterId, condition: "vulnerable" });
-  const tokens = await client.query(api.combatTokens.list, { campaignId, mapId: s.mapId });
+  const tokens = await client.query(api.combatTokensReads.list, { campaignId, mapId: s.mapId });
   const instance = (tokenId: string) => tokens.find((t) => t._id === tokenId)!.instanceId!;
   const lt = instance(s.enemies.lieutenant.tokenId);
   const key = () => crypto.randomUUID();

@@ -183,8 +183,8 @@ describe("the hand (CmpCards, Main 'Can't afford')", () => {
   const fanCard = (name: string) => screen.getAllByTestId("hud-hand-card").find((el) => within(el).queryByRole("heading", { name }))!;
 
   it("a press on a blocked Use shows the refusal as a toast near the hand and sends nothing (Main 'Can't afford')", () => {
-    queries["combatCards:hand"] = { characterId: MOSS, loadout: [WALL], vault: [] };
-    queries["characters:get"] = { _id: MOSS, sheet: { hope: 0, experiences: [], level: 1 } };
+    queries["combatCardsReads:hand"] = { characterId: MOSS, loadout: [WALL], vault: [] };
+    queries["charactersReads:get"] = { _id: MOSS, sheet: { hope: 0, experiences: [], level: 1 } };
     renderHand();
     const use = within(fanCard("Wall Walk")).getByRole("button", { name: "Use Wall Walk" });
     expect(use).toHaveAttribute("aria-disabled", "true");
@@ -196,8 +196,8 @@ describe("the hand (CmpCards, Main 'Can't afford')", () => {
 
   it("while the GM holds the spotlight Use waits with its reason; a press says why", () => {
     gmHoldsSpotlight();
-    queries["combatCards:hand"] = { characterId: MOSS, loadout: [WALL, RUNE], vault: [] };
-    queries["characters:get"] = { _id: MOSS, sheet: { hope: 3, experiences: [], level: 1 } };
+    queries["combatCardsReads:hand"] = { characterId: MOSS, loadout: [WALL, RUNE], vault: [] };
+    queries["charactersReads:get"] = { _id: MOSS, sheet: { hope: 3, experiences: [], level: 1 } };
     renderHand();
     const use = within(fanCard("Wall Walk")).getByRole("button", { name: "Use Wall Walk" });
     expect(use).toHaveAttribute("aria-disabled", "true");
@@ -208,8 +208,8 @@ describe("the hand (CmpCards, Main 'Can't afford')", () => {
   });
 
   it("a card that asks nothing, refused at the click: the table's words above the fan (layer 2)", async () => {
-    queries["combatCards:hand"] = { characterId: MOSS, loadout: [card("rune-ward", "Rune Ward", { uses: [handUse("Rune Ward", { targets: null })] })], vault: [] };
-    queries["characters:get"] = { _id: MOSS, sheet: { hope: 3, experiences: [], level: 1 } };
+    queries["combatCardsReads:hand"] = { characterId: MOSS, loadout: [card("rune-ward", "Rune Ward", { uses: [handUse("Rune Ward", { targets: null })] })], vault: [] };
+    queries["charactersReads:get"] = { _id: MOSS, sheet: { hope: 3, experiences: [], level: 1 } };
     mutationResult = async () => {
       throw new ConvexError({ code: "CARD_EXHAUSTED" });
     };

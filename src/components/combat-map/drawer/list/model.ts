@@ -2,8 +2,8 @@ import type { FunctionReturnType } from "convex/server";
 
 import type { api } from "../../../../../convex/_generated/api";
 
-/** What `combatFeatures.drawer` returns (the character's own sheet only, U1). */
-export type Drawer = FunctionReturnType<typeof api.combatFeatures.drawer>;
+/** What `combatFeaturesReads.drawer` returns (the character's own sheet only, U1). */
+export type Drawer = FunctionReturnType<typeof api.combatFeaturesReads.drawer>;
 export type DrawerFeature = Drawer["features"][number];
 export type DrawerUse = DrawerFeature["uses"][number];
 

@@ -82,7 +82,7 @@ test("a druid is thrown: the GM asks Bryn from Moss's sheet, the player rolls fr
     const { mapId } = await client.mutation(api.combatMaps.create, { campaignId, size: "medium", name: "Old road", idempotencyKey: crypto.randomUUID() });
     await client.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
     await client.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId, instanceIds, idempotencyKey: crypto.randomUUID() });
-    const tokens = await client.query(api.combatTokens.list, { campaignId, mapId });
+    const tokens = await client.query(api.combatTokensReads.list, { campaignId, mapId });
     const at = async (name: string, x: number) => {
       const token = tokens.find((t) => (name === "Bandit" ? t.instanceId === instanceIds[0] : t.name === name))!;
       await client.mutation(api.combatTokens.move, { campaignId, tokenId: token._id, x, y: 10 });
@@ -92,7 +92,7 @@ test("a druid is thrown: the GM asks Bryn from Moss's sheet, the player rolls fr
     await at("Bryn", 5);
     await at("Bandit", 8);
     const banditHp = async () => (await client.query(api.encounters.get, { campaignId, encounterId }))!.instances[0]!.hp;
-    const stressOf = async () => (await client.query(api.characters.get, { characterId: moss }))!.sheet.stress;
+    const stressOf = async () => (await client.query(api.charactersReads.get, { characterId: moss }))!.sheet.stress;
     const stressBefore = await stressOf();
 
     // The GM plays for Moss and asks Bryn to throw her: the Stress is marked, the sheet waits for Bryn.

@@ -73,7 +73,7 @@ function AllyPicker({
   onChange: (v: Id<"characters"> | "") => void;
   label?: string;
 }) {
-  const party = useQuery(api.characters.listByCampaign, { campaignId });
+  const party = useQuery(api.charactersReads.listByCampaign, { campaignId });
   const allies = (party ?? []).filter((c) => c._id !== self && c.status === "active");
   return (
     <label className="ft-field">

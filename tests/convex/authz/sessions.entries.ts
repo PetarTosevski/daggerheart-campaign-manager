@@ -13,7 +13,7 @@ import { freshKey } from "./synth";
  * on the planned session alone, so both players get an empty list (players read only live and played sessions);
  * sessions.test.ts checks the players' view of live and played sessions.
  *
- * `combatTokens.sessionEncounter` and `combatTokens.placeSessionEncounter` (also bead .57) are in combat.entries.ts (H11).
+ * `combatTokensReads.sessionEncounter` and `combatTokens.placeSessionEncounter` (also bead .57) are in combat.entries.ts (H11).
  */
 
 /** GM-only, with the edit-grant member refused too. */

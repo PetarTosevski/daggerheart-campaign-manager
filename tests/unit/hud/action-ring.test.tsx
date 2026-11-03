@@ -151,7 +151,7 @@ beforeEach(() => {
   resetActionRingForTests();
   actor = { characterId: MOSS, view: { tokenId: MOSS_TOKEN, pcs: [{ _id: MOSS_TOKEN, characterId: MOSS, name: "Moss", x: 5, y: 10, size: 1 }], others: [] }, enemies: [] };
   queries["combatHud:sheet"] = sheet(DRUID);
-  queries["combatCards:hand"] = { loadout: [{ cardId: "vicious-entangle" }], vault: [] };
+  queries["combatCardsReads:hand"] = { loadout: [{ cardId: "vicious-entangle" }], vault: [] };
   attack.ready = true;
   attack.reason = null;
   attack.isOpen = false;
@@ -406,7 +406,7 @@ describe("the ring", () => {
   });
 
   it("Cast is locked without cards", () => {
-    queries["combatCards:hand"] = { loadout: [], vault: [] };
+    queries["combatCardsReads:hand"] = { loadout: [], vault: [] };
     renderRing();
     act(() => openActionRing(MOSS_TOKEN));
     expect(ringButton("Cast")).toHaveAccessibleDescription("No cards in your loadout.");

@@ -1,6 +1,6 @@
 /**
  * The Combat Map sheet drawer's read model (plan sheet-drawer, tracer SD3; docs/tasks/TASK-SD-SD3.md):
- * `combatFeatures.drawer` returns the trackers (HP, Stress, Hope, Armor with their maxima), every feature the sheet holds
+ * `combatFeaturesReads.drawer` returns the trackers (HP, Stress, Hope, Armor with their maxima), every feature the sheet holds
  * (owned(): Hope, class, subclass, ancestry, community, transformation, Beastform, stances) with its source, card, state
  * (ready / exhausted with the reset label / passive / outOfCombat / narrative, Q3, Q7, Q15), cost and limit badges, tokens,
  * upgrades, and each use with its activation; the D5 counters and held dice; the Flying toggle (Q16) and the Martial
@@ -11,7 +11,7 @@
 import { v, type Infer } from "convex/values";
 
 import { RESET_LABEL, type Availability } from "../../src/lib/domain/card-effects/availability";
-import type { CardUse, Cost, Limit, NumberSource, TargetSpec } from "../../src/lib/domain/card-effects/types";
+import type { CardUse, TargetSpec } from "../../src/lib/domain/card-effects/types";
 import { derivedDefense } from "../../src/lib/domain/characters/derived";
 import { withEffects } from "../../src/lib/domain/characters/effects";
 import { hopeMax } from "../../src/lib/domain/characters/index";
@@ -26,9 +26,13 @@ import { featureEffect } from "../../src/lib/srd/feature-effects/index";
 import { FEATURE_CLASSIFICATION } from "../../src/lib/srd/feature-effects/classification";
 import { RANGER_ROGUE_IDS } from "../../src/lib/srd/feature-effects/ranger-rogue";
 import { HEX_DROP_CHOICE } from "../../src/lib/srd/feature-effects/seraph-witch";
-import { FOCUS_HOLD_MAX, type CharacterSheet, type ClassState } from "../../src/lib/validation/characters";
+import type { CharacterSheet, ClassState } from "../../src/lib/validation/characters";
+import { FOCUS_HOLD_MAX } from "../../src/lib/validation/character-constants";
 import type { Doc, Id } from "../_generated/dataModel";
 import { FLYING_EFFECT_ID, ownedHere } from "./featureOwned";
+import { costText, limitText } from "./badges";
+
+export { costText, limitText };
 
 const activation = v.union(v.literal("action"), v.literal("reaction"), v.literal("rider"), v.literal("auto"), v.literal("passive"));
 
@@ -117,59 +121,6 @@ export const FLYING_FEATURES: ReadonlySet<string> = new Set(Object.entries(FEATU
 export const REFOCUS_KEY = "feat:stance:martial-artist:refocus";
 
 // ---------------------------------------------------------------- badges
-
-function amountText(n: NumberSource): string {
-  switch (n.kind) {
-    case "fixed":
-      return String(n.value);
-    case "chosen":
-      return "any";
-    case "spellcast":
-      return "Spellcast";
-    case "proficiency":
-      return "Proficiency";
-    case "level":
-      return "level";
-    case "trait":
-      return n.trait;
-    default:
-      return "X";
-  }
-}
-
-const POOL_WORD: Record<string, string> = { card: "token", favor: "Favor", focus: "Focus", rally: "Rally Die", prayer: "Prayer Die", patron: "Patron Die", slayer: "Slayer Die", combo: "Combo die" };
-
-/** One cost as a badge. */
-export function costText(c: Cost): string {
-  switch (c.kind) {
-    case "hope":
-      return `${amountText(c.amount)} Hope`;
-    case "stress":
-      return `${amountText(c.amount)} Stress`;
-    case "hp":
-      return `${amountText(c.amount)} HP`;
-    case "armor":
-      return `${amountText(c.amount)} Armor Slot`;
-    case "tokens":
-      return `${amountText(c.amount)} ${POOL_WORD[c.pool ?? "card"] ?? "token"}`;
-    case "fear":
-      return `${amountText(c.amount)} Fear`;
-    case "gold":
-      return `${c.handfuls} handfuls of gold`;
-    case "either":
-      return c.options.map((o) => o.map(costText).join(" + ")).join(" or ");
-  }
-}
-
-const PER_WORD: Record<Limit["per"], string> = { rest: "rest", longRest: "long rest", session: "session", scene: "scene" };
-
-/** A limit as a badge. */
-export function limitText(l: Limit): string {
-  const times = l.times ?? 1;
-  const count = times === 1 ? "Once" : times === 2 ? "Twice" : `${times} times`;
-  const on = l.consumedOn === "success" ? " on a success" : l.consumedOn === "failure" ? " on a failure" : "";
-  return `${count} per ${PER_WORD[l.per]}${on}${l.perTarget ? " per target" : ""}`;
-}
 
 function counterText(key: keyof ClassState, value: unknown): string {
   if (key === "unstoppable" && value && typeof value === "object") {

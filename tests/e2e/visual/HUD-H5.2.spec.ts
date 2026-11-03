@@ -15,7 +15,7 @@ test("HUD-H5.2 the adversary stat block and the GM attack picker", { tag: "@visu
   const s = await hudScene(browser);
   const { gm, client, campaignId } = s;
   try {
-    const tokens = await client.query(api.combatTokens.list, { campaignId, mapId: s.mapId });
+    const tokens = await client.query(api.combatTokensReads.list, { campaignId, mapId: s.mapId });
     const lt = tokens.find((t) => t._id === s.enemies.lieutenant.tokenId)!.instanceId!;
     const key = () => crypto.randomUUID();
     await client.mutation(api.encounterTracking.markHp, { campaignId, instanceId: lt, delta: 2, idempotencyKey: key() });

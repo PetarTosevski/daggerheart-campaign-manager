@@ -36,7 +36,7 @@ beforeEach(() => {
   results["lorekeeper:available"] = true;
   results["combatMaps:list"] = [];
   results["combatMaps:live"] = null;
-  results["characters:partySummary"] = [];
+  results["charactersReads:partySummary"] = [];
   act(() => closeLorekeeperDrawer(null));
 });
 
@@ -131,7 +131,7 @@ describe("gear and avatar placeholders", () => {
   });
 
   it("a player's avatar shows their character's initial without art", () => {
-    results["characters:partySummary"] = [
+    results["charactersReads:partySummary"] = [
       { _id: "x", canEdit: false, sheet: { name: "Zed", ancestry: { kind: "single", id: "none" }, subclassId: "none", classId: "none" } },
       { _id: "y", canEdit: true, sheet: { name: "moss", ancestry: { kind: "single", id: "none" }, subclassId: "none", classId: "none" } },
     ];

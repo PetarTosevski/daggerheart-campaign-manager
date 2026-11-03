@@ -25,7 +25,7 @@ const TO_SPECIALIZATION = [
 
 async function levelRogue(gm: ConvexHttpClient, characterId: Id<"characters">) {
   const cards = cardsForDomains(getClass("rogue")!.domains, TO_SPECIALIZATION.length + 1);
-  const owned = new Set((await gm.query(api.characters.get, { characterId }))!.sheet.domainCards.owned);
+  const owned = new Set((await gm.query(api.charactersReads.get, { characterId }))!.sheet.domainCards.owned);
   for (const [i, level] of TO_SPECIALIZATION.entries()) {
     const card = cards.find((c) => c.level <= i + 2 && !owned.has(c.id))!;
     owned.add(card.id);
@@ -52,8 +52,8 @@ test("the GM plays for Vex: Dark Cloud by keyboard and by pointer on a shifted m
   const vex = s.pcs.find((p) => p.name === "Vex")!;
   try {
     await levelRogue(client, vex.characterId);
-    expect((await client.query(api.characters.get, { characterId: vex.characterId }))!.sheet).toMatchObject({ level: 5, subclassRank: "specialization" });
-    const vexToken = (await client.query(api.combatTokens.list, { campaignId, mapId })).find((t) => t._id === vex.tokenId)!;
+    expect((await client.query(api.charactersReads.get, { characterId: vex.characterId }))!.sheet).toMatchObject({ level: 5, subclassRank: "specialization" });
+    const vexToken = (await client.query(api.combatTokensReads.list, { campaignId, mapId })).find((t) => t._id === vex.tokenId)!;
     const areas = async () => (await client.query(api.combatAreas.list, { campaignId, mapId })).filter((a) => a.label === "Dark Cloud");
 
     await gm.setViewportSize({ width: 1440, height: 900 });
@@ -107,7 +107,7 @@ test("the GM plays for Vex: Dark Cloud by keyboard and by pointer on a shifted m
     }
 
     // ---- Shadow Stepper: the picking panel; the primary waits for the situation; then Vex marks a Stress.
-    const stressBefore = (await client.query(api.characters.get, { characterId: vex.characterId }))!.sheet.stress;
+    const stressBefore = (await client.query(api.charactersReads.get, { characterId: vex.characterId }))!.sheet.stress;
     await sheet.getByRole("button", { name: /^Use Shadow Stepper/ }).click();
     const panel = gm.getByRole("dialog", { name: "Shadow Stepper" });
     await expect(panel).toBeVisible();
@@ -122,7 +122,7 @@ test("the GM plays for Vex: Dark Cloud by keyboard and by pointer on a shifted m
     await go.click();
     await expect(panel).toHaveCount(0);
     await expect(gm.getByTestId("hud-area-line")).toContainText("Shadow Stepper");
-    await expect.poll(async () => (await client.query(api.characters.get, { characterId: vex.characterId }))!.sheet.stress).toBe(stressBefore + 1);
+    await expect.poll(async () => (await client.query(api.charactersReads.get, { characterId: vex.characterId }))!.sheet.stress).toBe(stressBefore + 1);
   } finally {
     await s.close();
   }

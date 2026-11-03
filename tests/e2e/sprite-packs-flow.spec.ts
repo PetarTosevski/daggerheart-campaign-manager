@@ -232,7 +232,7 @@ for (const viewport of [
 
         // Ash at (3, 10), the Bear 10 squares east of (4, 10) (the torch's dim band), the Dire Wolf 16 squares east
         // (dark), Liriel in a corner of the hall.
-        const tokens = await client.query(api.combatTokens.list, { campaignId, mapId });
+        const tokens = await client.query(api.combatTokensReads.list, { campaignId, mapId });
         const id = (name: RegExp) => tokens.find((t) => name.test(t.name))!._id;
         await client.mutation(api.combatTokens.move, { campaignId, tokenId: id(/^Ash$/), x: 3, y: 10 });
         await client.mutation(api.combatTokens.move, { campaignId, tokenId: id(/^Bear/), x: 14, y: 10 });

@@ -137,8 +137,8 @@ const functionName = (ref: unknown) => String((ref as Record<symbol, unknown>)[S
 vi.mock("convex/react", () => ({
   useQuery: (ref: unknown) => {
     const name = functionName(ref);
-    if (name === "rests:current") return { open: null, shortRestsSinceLong: 0, last: null };
-    if (name === "characters:listByCampaign") return current ? [current] : [];
+    if (name === "restsReads:current") return { open: null, shortRestsSinceLong: 0, last: null };
+    if (name === "charactersReads:listByCampaign") return current ? [current] : [];
     return current;
   },
   useMutation: (ref: unknown) => {

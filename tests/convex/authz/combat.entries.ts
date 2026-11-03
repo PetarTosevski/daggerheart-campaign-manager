@@ -188,11 +188,11 @@ const style: Entry[] = [
 ];
 
 const tokens: Entry[] = [
-  { fn: api.combatTokens.list, access: "gm" },
+  { fn: api.combatTokensReads.list, access: "gm" },
   // Players get the PC tokens only (never an adversary's stats); combat.test.ts checks the content.
-  { fn: api.combatTokens.party, access: "view", expect: { otherPlayer: "ok" } },
-  { fn: api.combatTokens.combatants, access: "gm" },
-  { fn: api.combatTokens.sessionEncounter, access: "gm" },
+  { fn: api.combatTokensReads.party, access: "view", expect: { otherPlayer: "ok" } },
+  { fn: api.combatTokensReads.combatants, access: "gm" },
+  { fn: api.combatTokensReads.sessionEncounter, access: "gm" },
   { fn: api.combatTokens.addParty, access: "gm" },
   // No running encounter in the world: the GM gets ENCOUNTER_NOT_RUNNING past the access check.
   { fn: api.combatTokens.placeAdversaries, access: "gm", args: () => ({ instanceIds: ["x"] }), okCodes: ["ENCOUNTER_NOT_RUNNING"] },
@@ -393,9 +393,9 @@ const attacks: Entry[] = [
   { fn: api.combatActions.targets, access: "view", setup: arena, args: (w) => ({ characterId: w.characterA, mapId: w.ids.mapId }), expect: NOT_THEIRS },
   { fn: api.combatActions.pickMinions, access: "view", setup: attacked, args: (w) => ({ entryId: w.ids.entryId, instanceIds: [w.ids.packId] }), expect: NOT_THEIRS },
   { fn: api.combatRequests.sanction, access: "gm", setup: sanctioned, args: (w) => ({ requestId: w.ids.requestId, approve: false }) },
-  { fn: api.combatRequests.mine, access: "view", setup: sanctioned, expect: { otherPlayer: "ok" } },
+  { fn: api.combatRequestsReads.mine, access: "view", setup: sanctioned, expect: { otherPlayer: "ok" } },
   // E1.4b (dcm-uxsd): the forced attacks on the caller's characters (another player's are left out: an empty list).
-  { fn: api.combatRequests.forcedAttacks, access: "view", setup: arena, expect: { otherPlayer: "ok" } },
+  { fn: api.combatRequestsReads.forcedAttacks, access: "view", setup: arena, expect: { otherPlayer: "ok" } },
 ];
 
 /**
@@ -428,11 +428,11 @@ const cards: Entry[] = [
   // CA4b changed no access: kept dice and range origins act after the access check (combat-cards.test.ts).
   { fn: api.combatCards.useCard, access: "view", setup: holdingCards, args: (w) => cardArgs(w, w.ids.packToken!), expect: NOT_THEIRS },
   // F7-H4: another player reads the hand while hands are shared (the default); switch off / hidden: combat-cards-authz.test.ts.
-  { fn: api.combatCards.hand, access: "view", setup: holdingCards, args: (w) => ({ characterId: w.characterA }), expect: { otherPlayer: "ok" } },
-  { fn: api.combatCards.handSharing, access: "view", expect: { otherPlayer: "ok" } },
+  { fn: api.combatCardsReads.hand, access: "view", setup: holdingCards, args: (w) => ({ characterId: w.characterA }), expect: { otherPlayer: "ok" } },
+  { fn: api.combatCardsReads.handSharing, access: "view", expect: { otherPlayer: "ok" } },
   { fn: api.combatCards.setHandHidden, access: "view", args: (w) => ({ characterId: w.characterA, hidden: true }), expect: NOT_THEIRS },
   { fn: api.combatCards.sanction, access: "gm", setup: cardSanctioned, args: (w) => ({ requestId: w.ids.requestId, approve: false }) },
-  { fn: api.combatCards.pending, access: "view", setup: cardSanctioned, expect: { otherPlayer: "ok" } },
+  { fn: api.combatCardsReads.pending, access: "view", setup: cardSanctioned, expect: { otherPlayer: "ok" } },
 ];
 
 const area: Area = {

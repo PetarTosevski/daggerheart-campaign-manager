@@ -16,7 +16,7 @@ import { featureScope } from "./featureScope";
  * Combat HUD data (plan `.omc/plans/combat-hud.yaml`, tracer HD1; bead dcm-bxp.99.32.8). The small projections the
  * HUD's party banners, token chips and scene line read: one row per PC token (a copy of the PC branch of
  * `combatTokens.viewsOf`, plus Hope, Armor, class, level and whether a death move is due) and a condition's display
- * name. Never an adversary's, ally's or neutral token's numbers: those stay with the GM's `combatTokens.list`.
+ * name. Never an adversary's, ally's or neutral token's numbers: those stay with the GM's `combatTokensReads.list`.
  */
 
 const CLASS_NAMES = new Map<string, string>(CLASSES.map((c) => [c.id, c.name]));
@@ -62,7 +62,7 @@ export const hudPartyMemberValidator = v.object({
   className: v.string(),
   level: v.number(),
   portrait: portraitValidator,
-  /** The caller's own character (players; always false for the GM, as on `combatTokens.party`). */
+  /** The caller's own character (players; always false for the GM, as on `combatTokensReads.party`). */
   mine: v.boolean(),
   /** Hit Points: `marked` of `max` (the HUD's rings show HP left, its text "n of 6 marked", answer 2). */
   hp: trackValidator,

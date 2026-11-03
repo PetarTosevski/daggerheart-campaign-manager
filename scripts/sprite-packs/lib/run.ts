@@ -18,8 +18,8 @@ import { writeReport } from "./report";
 
 async function currentManifest(): Promise<BuiltinManifest> {
   if (!existsSync(MANIFEST_FILE)) return { schemaVersion: MANIFEST_SCHEMA_VERSION, folders: {} };
-  const mod = (await import(pathToFileURL(MANIFEST_FILE).href)) as { BUILTIN_MANIFEST: BuiltinManifest };
-  return builtinManifestSchema.parse(mod.BUILTIN_MANIFEST);
+  const mod = (await import(pathToFileURL(MANIFEST_FILE).href)) as { builtinManifest: () => BuiltinManifest };
+  return builtinManifestSchema.parse(mod.builtinManifest());
 }
 
 export async function run(opts: Options, mode: "cut" | "build"): Promise<void> {

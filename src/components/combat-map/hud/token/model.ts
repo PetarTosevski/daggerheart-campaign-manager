@@ -105,8 +105,8 @@ export function tokenLabel(head: string, details: readonly string[]): string {
 }
 
 /**
- * A token from `tokens-layer.tsx` (the GM's `combatTokens.list`, or a player's PC tokens from `playerView.pcs` /
- * `combatTokens.party`), with the PC's Hope from `combatHud.party` when it has loaded.
+ * A token from `tokens-layer.tsx` (the GM's `combatTokensReads.list`, or a player's PC tokens from `playerView.pcs` /
+ * `combatTokensReads.party`), with the PC's Hope from `combatHud.party` when it has loaded.
  */
 export function pcTokenFace(token: TokenView, role: "gm" | "player", hope: number | null): HudTokenFace {
   const numbers = showsNumbers(role, token.kind);

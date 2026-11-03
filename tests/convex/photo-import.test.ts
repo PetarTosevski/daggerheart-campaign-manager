@@ -243,7 +243,7 @@ describe("photo import", () => {
     expect(log).toEqual([expect.objectContaining({ kind: "import", visibility: "public", undoable: false })]);
 
     // The player sees it like any other character.
-    const view = await s.player.query(api.characters.get, { characterId });
+    const view = await s.player.query(api.charactersReads.get, { characterId });
     expect(view?.sheet.level).toBe(5);
   });
 

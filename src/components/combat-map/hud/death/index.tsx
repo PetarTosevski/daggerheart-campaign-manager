@@ -22,7 +22,7 @@ import { TableDeath } from "./table";
 export const HudDeath = ({ state }: HudPartProps): ReactNode => <DeathParts campaignId={state.campaignId} gm={state.role === "gm"} />;
 
 function DeathParts({ campaignId, gm }: { campaignId: Id<"campaigns">; gm: boolean }) {
-  const characters = useQuery(api.characters.listByCampaign, { campaignId });
+  const characters = useQuery(api.charactersReads.listByCampaign, { campaignId });
   if (characters === undefined) return null;
   const live = characters.filter((c) => !c.corrupt);
   const mine = live.filter((c) => c.mine && c.canEdit);

@@ -387,8 +387,8 @@ function UseButton({ featureId, onOpened, canUse }: { featureId: string; onOpene
 
 function seedFeatures() {
   seedView();
-  queries["combatFeatures:drawer"] = { characterId: CHARACTER, trackers: { hope: { value: 2, max: 6 } }, features: [FEED] };
-  queries["combatCards:hand"] = { characterId: CHARACTER, loadout: [], vault: [] };
+  queries["combatFeaturesReads:drawer"] = { characterId: CHARACTER, trackers: { hope: { value: 2, max: 6 } }, features: [FEED] };
+  queries["combatCardsReads:hand"] = { characterId: CHARACTER, loadout: [], vault: [] };
 }
 
 describe("feature uses: the picker (useFeatureUse)", () => {
@@ -454,7 +454,7 @@ describe("feature uses: the picker (useFeatureUse)", () => {
 
   it("Dark Cloud: nothing to ask, so no panel: straight to the square; the send has `point`", async () => {
     seedFeatures();
-    queries["combatFeatures:drawer"] = { characterId: CHARACTER, trackers: { hope: { value: 2, max: 6 } }, features: [] };
+    queries["combatFeaturesReads:drawer"] = { characterId: CHARACTER, trackers: { hope: { value: 2, max: 6 } }, features: [] };
     const opened = vi.fn();
     render(
       <Hud>
@@ -525,8 +525,8 @@ describe("feature uses: the picker (useFeatureUse)", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Use transformation:vampire:fangs" }));
     expect(opened).toHaveBeenCalledWith("classic");
-    expect(read).not.toContain("combatFeatures:drawer");
-    expect(read).not.toContain("combatCards:hand");
+    expect(read).not.toContain("combatFeaturesReads:drawer");
+    expect(read).not.toContain("combatCardsReads:hand");
   });
 
   it("Warden's Protection stays classic", () => {

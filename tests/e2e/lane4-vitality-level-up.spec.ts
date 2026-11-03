@@ -115,7 +115,7 @@ test("the level-up asks for Vitality's two benefits and the sheet counts them", 
   await page.getByRole("tab", { name: "Character Sheet", exact: true }).click();
   await expect(page.getByTestId("threshold-major")).toHaveText(`Major ${major + 3}`);
   await expect(page.getByTestId("threshold-severe")).toHaveText(`Severe ${severe + 3}`);
-  const view = await client.query(api.characters.get, { characterId });
+  const view = await client.query(api.charactersReads.get, { characterId });
   const sheet = view!.sheet as { slotBonuses?: string[]; domainCards: { owned: string[]; loadout: string[] } };
   expect(sheet.slotBonuses).toEqual(expect.arrayContaining(["card:vitality:hp+1", "card:vitality:major+2", "card:vitality:severe+2"]));
   expect(sheet.domainCards.owned).toContain("vitality");

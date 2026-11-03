@@ -14,7 +14,7 @@ import type { SanctionAction } from "./lib/validators/combatRequests";
  * Combat HUD HD3 (plan `.omc/plans/combat-hud.yaml`, user answer 8a 2026-11-01; board CmpPromptsPlayer): a player
  * withdraws their own attack, card or feature use that waits for the GM's approval (a `sanction` request, combat-actions
  * Q1). Nothing was rolled or paid for it (the use runs only when the GM approves), so withdrawing only closes the
- * request: the GM's queue item disappears (`combatRequests.mine`, `combatCards.pending` and `combatFeatures.pending`
+ * request: the GM's queue item disappears (`combatRequestsReads.mine`, `combatCardsReads.pending` and `combatFeaturesReads.pending`
  * read open rows only) and a later approve or decline answers REQUEST_NOT_OPEN.
  *
  * A player's Charge waiting for the GM's Difficulty (a `difficulty` request with `ask.kind: "charge"`, CB p.59 / p.104)

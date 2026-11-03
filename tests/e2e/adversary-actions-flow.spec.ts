@@ -188,14 +188,14 @@ test("adversary actions from both pages: I Am Your Shield, armor, undo, a multi-
     const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", name: "Old road", idempotencyKey: crypto.randomUUID() });
     await gm.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
     await gm.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId, instanceIds: [bandit!], idempotencyKey: crypto.randomUUID() });
-    const tokens = await gm.query(api.combatTokens.list, { campaignId, mapId });
+    const tokens = await gm.query(api.combatTokensReads.list, { campaignId, mapId });
     await gm.mutation(api.combatTokens.move, { campaignId, tokenId: tokens.find((t) => t.characterId === mira)!._id, x: 5, y: 10 });
     await gm.mutation(api.combatTokens.move, { campaignId, tokenId: tokens.find((t) => t.characterId === tabby)!._id, x: 5, y: 11 });
     await gm.mutation(api.combatTokens.move, { campaignId, tokenId: tokens.find((t) => t.instanceId === bandit)!._id, x: 6, y: 10 });
     await gm.mutation(api.fear.set, { campaignId, value: 6, idempotencyKey: crypto.randomUUID() });
     const enemyIds = new Set<string>([bandit!, elemental!, ...sellswords, ...tokens.filter((t) => t.instanceId !== undefined && t.instanceId !== null).map((t) => t._id as string)]);
 
-    const sheet = async (id: Id<"characters">) => (await gm.query(api.characters.get, { characterId: id }))!.sheet;
+    const sheet = async (id: Id<"characters">) => (await gm.query(api.charactersReads.get, { characterId: id }))!.sheet;
     const fear = () => gm.query(api.campaigns.fear, { campaignId });
     const undo = (r: { entryId: Id<"actionLog"> }) => gm.mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: crypto.randomUUID() });
 

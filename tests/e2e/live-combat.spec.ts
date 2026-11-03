@@ -45,7 +45,7 @@ test("live combat map: map switch, tokens both ways, explored areas, fog, doors 
     const { mapId } = await seed(() => client.mutation(api.combatMaps.create, { campaignId, size: "medium", name: "Old road", idempotencyKey: crypto.randomUUID() }));
     await seed(() => client.mutation(api.combatMaps.create, { campaignId, size: "small", name: "Cellar", idempotencyKey: crypto.randomUUID() }));
     await seed(() => client.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() }));
-    const liriel = (await seed(() => client.query(api.combatTokens.list, { campaignId, mapId }))).find((t) => t.name === characterName)!;
+    const liriel = (await seed(() => client.query(api.combatTokensReads.list, { campaignId, mapId }))).find((t) => t.name === characterName)!;
     const { tokenId: banditId } = await seed(() => client.mutation(api.combatTokens.addCustom, { campaignId, mapId, name: "Bandit", hp: 3, side: "enemy", idempotencyKey: crypto.randomUUID() }));
     const { tokenId: ghoulId } = await seed(() => client.mutation(api.combatTokens.addCustom, { campaignId, mapId, name: "Ghoul", hp: 3, side: "enemy", idempotencyKey: crypto.randomUUID() }));
     await seed(() => client.mutation(api.combatTokens.move, { campaignId, tokenId: liriel._id, x: 15, y: 10 }));
@@ -163,7 +163,7 @@ test("live combat map: map switch, tokens both ways, explored areas, fog, doors 
     await expect(gmLiriel).toHaveAttribute("data-square", "15,10");
     await expect
       .poll(async () => {
-        const t = (await client.query(api.combatTokens.list, { campaignId, mapId })).find((x) => x._id === liriel._id)!;
+        const t = (await client.query(api.combatTokensReads.list, { campaignId, mapId })).find((x) => x._id === liriel._id)!;
         return `${t.x},${t.y}`;
       })
       .toBe("15,10");
@@ -217,7 +217,7 @@ test("live combat map: map switch, tokens both ways, explored areas, fog, doors 
     await expect(gmLiriel).toHaveAttribute("data-square", "15,10");
     await expect
       .poll(async () => {
-        const t = (await client.query(api.combatTokens.list, { campaignId, mapId })).find((x) => x._id === liriel._id)!;
+        const t = (await client.query(api.combatTokensReads.list, { campaignId, mapId })).find((x) => x._id === liriel._id)!;
         return `${t.x},${t.y}`;
       })
       .toBe("15,10");

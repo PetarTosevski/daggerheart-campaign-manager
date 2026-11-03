@@ -224,14 +224,14 @@ export type WaitingUse = {
 
 type Sanctioned = { requestId: Id<"combatRequests">; characterId: Id<"characters">; createdAt: number; targets: readonly { tokenId: Id<"combatTokens">; name: string }[]; outOfRange: readonly { tokenId: Id<"combatTokens">; band: Range }[] };
 
-/** The caller's uses waiting for the GM: attacks (`combatRequests.mine` sanctions), cards and features, oldest first. */
+/** The caller's uses waiting for the GM: attacks (`combatRequestsReads.mine` sanctions), cards and features, oldest first. */
 export function waitingUses({
   attacks,
   cards,
   features,
   characterId,
 }: {
-  /** The attack sanctions of `combatRequests.mine` (its other kinds filtered out by the caller). */
+  /** The attack sanctions of `combatRequestsReads.mine` (its other kinds filtered out by the caller). */
   attacks: readonly Sanctioned[] | undefined;
   cards: readonly (Sanctioned & { cardName: string })[] | undefined;
   features: readonly (Sanctioned & { featureName: string })[] | undefined;

@@ -67,7 +67,7 @@ export type SheetPanelProps = {
  * One PC's sheet in the HUD's right panel (H0's `SidePanel`: a non-modal `<aside>` named "<name>'s sheet", Esc and ✕
  * close it, focus goes to its heading on open and back to the opener on close). Data: `combatHud.sheet` (HD2) for the
  * numbers, features, thresholds, Experiences, conditions and effects in every mode; the banners' `combatHud.party` row
- * for the portrait; `combatSpotlight.state` for the Spotlight badge; `playFor.list` (GM) and `combatCards.handSharing`
+ * for the portrait; `combatSpotlight.state` for the Spotlight badge; `playFor.list` (GM) and `combatCardsReads.handSharing`
  * (own) for the two switches. Every change is an intent with an optimistic update (rule 12).
  */
 export function SheetPanel({ campaignId, role, map, characterId, onClose }: SheetPanelProps) {
@@ -510,9 +510,9 @@ function FeatureRowBody({ feature, sheet, canUse, spotlightWithGm, onUse, held }
   );
 }
 
-/** The ally-roll prompts the classic drawer showed (Cannonball, DA13), from `combatFeatures.drawer` (own / GM only). */
+/** The ally-roll prompts the classic drawer showed (Cannonball, DA13), from `combatFeaturesReads.drawer` (own / GM only). */
 function SheetPrompts({ campaignId, role, map, characterId, canAct }: { campaignId: Id<"campaigns">; role: CombatRole; map: CombatMapSummary | null; characterId: Id<"characters">; canAct: boolean }) {
-  const drawer = useQuery(api.combatFeatures.drawer, { campaignId, characterId });
+  const drawer = useQuery(api.combatFeaturesReads.drawer, { campaignId, characterId });
   if (drawer === undefined) {
     return (
       <p role="status" className="sr-only">
@@ -532,10 +532,10 @@ function HideHand({ campaignId, characterId }: { campaignId: Id<"campaigns">; ch
   const sharing = useHandSharing(campaignId);
   const [error, setError] = useState<Refusal | null>(null);
   const setHidden = useMutation(api.combatCards.setHandHidden).withOptimisticUpdate((store, { characterId: id, hidden }) => {
-    const current = store.getQuery(api.combatCards.handSharing, { campaignId });
+    const current = store.getQuery(api.combatCardsReads.handSharing, { campaignId });
     if (current === undefined) return;
     const rest = current.hidden.filter((c) => c !== id);
-    store.setQuery(api.combatCards.handSharing, { campaignId }, { ...current, hidden: hidden ? [...rest, id] : rest });
+    store.setQuery(api.combatCardsReads.handSharing, { campaignId }, { ...current, hidden: hidden ? [...rest, id] : rest });
   });
   if (sharing === undefined) {
     return (

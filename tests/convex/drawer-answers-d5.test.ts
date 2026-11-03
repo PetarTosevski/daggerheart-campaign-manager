@@ -44,7 +44,7 @@ async function setup(change: Partial<CharacterSheet>) {
   await patch(change);
   const use = (featureKey: string, params: { choice?: string; amount?: number; dieIndexes?: number[] } = {}) =>
     gm.mutation(api.classFeatures.use, { characterId: id, featureKey, params, idempotencyKey: key() });
-  const drawer = () => gm.query(api.combatFeatures.drawer, { campaignId, characterId: id });
+  const drawer = () => gm.query(api.combatFeaturesReads.drawer, { campaignId, characterId: id });
   const rows = () =>
     t.run((ctx) =>
       ctx.db

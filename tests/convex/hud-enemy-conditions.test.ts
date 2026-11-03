@@ -50,7 +50,7 @@ async function withEnemies() {
   const { instanceIds } = await gm.mutation(api.encounters.addAdversary, { campaignId, encounterId, source: BEAR, count: 1, summoned: false, idempotencyKey: key() });
   await gm.mutation(api.encounters.start, { campaignId, encounterId });
   await gm.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId, instanceIds, idempotencyKey: key() });
-  const list = () => gm.query(api.combatTokens.list, { campaignId, mapId });
+  const list = () => gm.query(api.combatTokensReads.list, { campaignId, mapId });
   const tokenOf = async (name: string) => (await list()).find((tk) => tk.name === name)!._id;
   const place = (tokenId: Id<"combatTokens">, x: number, y: number, face = 0) => t.run((c) => c.db.patch("combatTokens", tokenId, { x, y, face }));
   const custom = async (name: string, x: number, y: number) => {

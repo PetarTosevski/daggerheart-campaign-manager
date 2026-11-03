@@ -220,7 +220,7 @@ describe("HudSheet: own sheet (Main, Moss)", () => {
     queries["combatHud:sheet"] = sheet();
     queries["combatHud:party"] = PARTY;
     queries["combatSpotlight:state"] = { holder: { kind: "pc", characterId: MOSS, name: "Moss" }, since: 1, reason: null, rollBy: null, reactionsOnly: false, canMove: false };
-    queries["combatCards:handSharing"] = { playersSeeHands: true, hidden: [] };
+    queries["combatCardsReads:handSharing"] = { playersSeeHands: true, hidden: [] };
     renderSheet(MOSS);
     const panel = screen.getByRole("complementary", { name: "Moss’s sheet" });
     expect(panel.tagName).toBe("ASIDE");
@@ -244,7 +244,7 @@ describe("HudSheet: own sheet (Main, Moss)", () => {
 
   it("steppers send one adjustResource intent each, with an optimistic update of the sheet and the banners", () => {
     queries["combatHud:sheet"] = sheet();
-    queries["combatCards:handSharing"] = { playersSeeHands: true, hidden: [] };
+    queries["combatCardsReads:handSharing"] = { playersSeeHands: true, hidden: [] };
     renderSheet(MOSS);
     fireEvent.click(screen.getByRole("button", { name: "Mark 1 Hit Point" }));
     fireEvent.click(screen.getByRole("button", { name: "Spend 1 Hope" }));
@@ -270,8 +270,8 @@ describe("HudSheet: own sheet (Main, Moss)", () => {
 
   it("holds 'Hide my hand from other players' (setHandHidden) and opens the classic Use flow inside the panel", () => {
     queries["combatHud:sheet"] = sheet();
-    queries["combatCards:handSharing"] = { playersSeeHands: true, hidden: [] };
-    queries["combatFeatures:drawer"] = { features: [] };
+    queries["combatCardsReads:handSharing"] = { playersSeeHands: true, hidden: [] };
+    queries["combatFeaturesReads:drawer"] = { features: [] };
     renderSheet(MOSS);
     const hide = screen.getByRole("switch", { name: /Hide my hand from other players/ });
     expect(hide).toHaveAttribute("aria-checked", "false");
@@ -294,7 +294,7 @@ describe("HudSheet: own sheet (Main, Moss)", () => {
 
   it("disables the hand switch while the GM keeps every hand hidden", () => {
     queries["combatHud:sheet"] = sheet();
-    queries["combatCards:handSharing"] = { playersSeeHands: false, hidden: [] };
+    queries["combatCardsReads:handSharing"] = { playersSeeHands: false, hidden: [] };
     renderSheet(MOSS);
     expect(screen.getByRole("switch", { name: /Hide my hand from other players/ })).toBeDisabled();
   });
@@ -321,8 +321,8 @@ describe("HudSheet: view only (Main, Brannoc for Moss's player, answer 4a)", () 
     expect(within(panel).getByText("Reaction")).toBeInTheDocument();
     expect(within(panel).getByText("Passive")).toBeInTheDocument();
     // Never the drawer (refused for a hidden hand) nor the hand sharing.
-    expect(asked).not.toContain("combatFeatures:drawer");
-    expect(asked).not.toContain("combatCards:handSharing");
+    expect(asked).not.toContain("combatFeaturesReads:drawer");
+    expect(asked).not.toContain("combatCardsReads:handSharing");
     expect(within(panel).getByRole("group", { name: "Stress" }).querySelector("output")).toHaveTextContent("1 of 6 marked");
   });
 
@@ -340,7 +340,7 @@ describe("HudSheet: GM edit (GMDesktop, Vex, answer 5a)", () => {
   it("trackers and conditions always; feature Use only with 'Play for this character' in the header", () => {
     queries["combatHud:sheet"] = VEX_GM;
     queries["playFor:list"] = [];
-    queries["combatFeatures:drawer"] = { features: [] };
+    queries["combatFeaturesReads:drawer"] = { features: [] };
     const view = renderSheet(VEX, pageState({ role: "gm" }));
     const panel = screen.getByRole("complementary", { name: "Vex’s sheet" });
     expect(screen.getByTestId("hud-sheet-badge")).toHaveTextContent("GM edit");

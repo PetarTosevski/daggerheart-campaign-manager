@@ -73,15 +73,15 @@ function PlayerAttack({ state }: { state: CombatPageState }) {
   );
 }
 
-/** The character's open Minion offers (`combatRequests.mine`), each a prompt card that opens the Minion pick. */
+/** The character's open Minion offers (`combatRequestsReads.mine`), each a prompt card that opens the Minion pick. */
 function MinionOffers({ state, characterId }: { state: CombatPageState; characterId: Id<"characters"> }) {
   const { campaignId } = state;
   const pick = usePick();
   const actor = useActor(state);
-  const rows = useQuery(api.combatRequests.mine, { campaignId });
+  const rows = useQuery(api.combatRequestsReads.mine, { campaignId });
   const pickMinions = useMutation(api.combatActions.pickMinions).withOptimisticUpdate((store, args) => {
-    const mine = store.getQuery(api.combatRequests.mine, { campaignId });
-    if (mine !== undefined) store.setQuery(api.combatRequests.mine, { campaignId }, mine.filter((r) => !(r.kind === "minionOffer" && r.entryId === args.entryId)));
+    const mine = store.getQuery(api.combatRequestsReads.mine, { campaignId });
+    if (mine !== undefined) store.setQuery(api.combatRequestsReads.mine, { campaignId }, mine.filter((r) => !(r.kind === "minionOffer" && r.entryId === args.entryId)));
   });
   const [errors, setErrors] = useState<Readonly<Record<string, Refusal | null>>>({});
   const offers = (rows ?? []).flatMap((r) => (r.kind === "minionOffer" && r.characterId === characterId ? [r] : []));

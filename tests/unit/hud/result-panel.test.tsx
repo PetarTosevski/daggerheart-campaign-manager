@@ -109,7 +109,7 @@ function seedView() {
       { _id: BANDIT, name: "Bandit", side: "enemy", x: 6, y: 10, size: 1, face: 0, revealed: false },
     ],
   };
-  queries["combatRequests:mine"] = [];
+  queries["combatRequestsReads:mine"] = [];
 }
 
 const cardResolved = (over: Record<string, unknown> = {}) => ({
@@ -271,7 +271,7 @@ describe("the result panel in the HUD", () => {
 
   it("'Your roll waits': the held roll from the server; Use and roll damage sends the feature, then the result shows", async () => {
     seedView();
-    queries["combatRequests:mine"] = [
+    queries["combatRequestsReads:mine"] = [
       {
         kind: "afterRoll",
         requestId: "held1",
@@ -304,7 +304,7 @@ describe("the result panel in the HUD", () => {
 
   it("Pass on a held roll; the GM sees no held roll here (the queue answers it)", async () => {
     seedView();
-    queries["combatRequests:mine"] = [{ kind: "afterRoll", requestId: "held1", characterId: CHARACTER, characterName: "Moss", createdAt: 1, roll: ROLL, targets: [{ tokenId: LT, name: "Lieutenant", hit: false }], options: [] }];
+    queries["combatRequestsReads:mine"] = [{ kind: "afterRoll", requestId: "held1", characterId: CHARACTER, characterName: "Moss", createdAt: 1, roll: ROLL, targets: [{ tokenId: LT, name: "Lieutenant", hit: false }], options: [] }];
     results["combatActions:afterRoll"] = { status: "declined" };
     const view = renderHud();
     const dialog = screen.getByRole("dialog", { name: "Your roll waits" });
@@ -317,7 +317,7 @@ describe("the result panel in the HUD", () => {
 
   it("a damage-phase rider: under the result as 'Not now' / the rider; on its own as 'After your hit'", async () => {
     seedView();
-    queries["combatRequests:mine"] = [
+    queries["combatRequestsReads:mine"] = [
       { kind: "riderPick", requestId: "rp1", characterId: CHARACTER, characterName: "Moss", createdAt: 1, name: "Death Strike", costs: ["1 Stress"], candidates: [{ tokenId: LT, name: "Lieutenant" }, { tokenId: BANDIT, name: "Bandit" }] },
     ];
     results["combatActions:riderPick"] = { status: "resolved" };

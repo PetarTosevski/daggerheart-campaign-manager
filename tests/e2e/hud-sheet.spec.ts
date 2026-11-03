@@ -58,7 +58,7 @@ test("a player: own sheet (steppers, hide my hand), an ally's view-only sheet fr
     await expect(hide).toHaveAttribute("aria-checked", "false");
     await hide.click();
     await expect(hide).toHaveAttribute("aria-checked", "true");
-    await expect.poll(async () => (await client.query(api.combatCards.handSharing, { campaignId })).hidden).toContain(moss.characterId);
+    await expect.poll(async () => (await client.query(api.combatCardsReads.handSharing, { campaignId })).hidden).toContain(moss.characterId);
     await hide.click();
     await expect(hide).toHaveAttribute("aria-checked", "false");
     await expectNoSeriousA11yViolations(player);
@@ -151,7 +151,7 @@ test("class controls on the sheet: the player's Flying and Drop out; the GM's gr
   try {
     await client.mutation(api.levelUp.correctLevel, { characterId: moss, level: 3, idempotencyKey: crypto.randomUUID() });
     await client.mutation(api.classFeatures.use, { characterId: moss, featureKey: "beastform", params: { choice: "winged-beast" }, idempotencyKey: crypto.randomUUID() });
-    const mossDrawer = () => client.query(api.combatFeatures.drawer, { campaignId, characterId: moss });
+    const mossDrawer = () => client.query(api.combatFeaturesReads.drawer, { campaignId, characterId: moss });
     for (const page of [gm, player]) {
       await page.setViewportSize({ width: 1440, height: 900 });
       await page.goto(s.url);

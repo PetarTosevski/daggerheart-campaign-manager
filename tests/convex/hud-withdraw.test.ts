@@ -61,15 +61,15 @@ describe("combatWithdraw.withdraw", () => {
     const w = await buildWorld();
     const requestId = await sanction(w, CARD);
     const sheetBefore = await w.t.run(async (ctx) => (await ctx.db.get("characters", w.characterA))!.sheet);
-    expect(await w.as("gm").query(api.combatCards.pending, { campaignId: w.campaignId })).toHaveLength(1);
+    expect(await w.as("gm").query(api.combatCardsReads.pending, { campaignId: w.campaignId })).toHaveLength(1);
 
     expect(await withdraw(w, requestId)).toEqual({ status: "withdrawn", requestId });
 
     const row = await rowOf(w, requestId);
     expect(row).toMatchObject({ status: "declined", resolvedBy: w.users.player });
     expect(row!.resolvedAt).toBeTypeOf("number");
-    expect(await w.as("gm").query(api.combatCards.pending, { campaignId: w.campaignId })).toEqual([]);
-    expect(await w.as("player").query(api.combatCards.pending, { campaignId: w.campaignId })).toEqual([]);
+    expect(await w.as("gm").query(api.combatCardsReads.pending, { campaignId: w.campaignId })).toEqual([]);
+    expect(await w.as("player").query(api.combatCardsReads.pending, { campaignId: w.campaignId })).toEqual([]);
     const sheetAfter = await w.t.run(async (ctx) => (await ctx.db.get("characters", w.characterA))!.sheet);
     expect(sheetAfter).toEqual(sheetBefore);
 
@@ -86,14 +86,14 @@ describe("combatWithdraw.withdraw", () => {
     const w = await buildWorld();
     const attack = await sanction(w, ATTACK);
     const feature = await sanction(w, FEATURE);
-    expect(await w.as("gm").query(api.combatRequests.mine, { campaignId: w.campaignId })).toHaveLength(1);
-    expect(await w.as("gm").query(api.combatFeatures.pending, { campaignId: w.campaignId })).toHaveLength(1);
+    expect(await w.as("gm").query(api.combatRequestsReads.mine, { campaignId: w.campaignId })).toHaveLength(1);
+    expect(await w.as("gm").query(api.combatFeaturesReads.pending, { campaignId: w.campaignId })).toHaveLength(1);
 
     await withdraw(w, attack);
     await withdraw(w, feature);
 
-    expect(await w.as("gm").query(api.combatRequests.mine, { campaignId: w.campaignId })).toEqual([]);
-    expect(await w.as("gm").query(api.combatFeatures.pending, { campaignId: w.campaignId })).toEqual([]);
+    expect(await w.as("gm").query(api.combatRequestsReads.mine, { campaignId: w.campaignId })).toEqual([]);
+    expect(await w.as("gm").query(api.combatFeaturesReads.pending, { campaignId: w.campaignId })).toEqual([]);
     const summaries = (await feed(w)).map((r) => r.summary);
     expect(summaries).toContain("Ash withdrew an attack waiting for the GM");
     expect(summaries).toContain("Ash withdrew No Mercy waiting for the GM");

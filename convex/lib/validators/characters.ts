@@ -1,16 +1,7 @@
 import { v, type Infer } from "convex/values";
 
 import { TRAIT_IDS, type TraitId } from "../../../src/lib/srd/types";
-import {
-  ADVANCEMENT_OPTIONS,
-  CONDITIONS,
-  EFFECT_UNTIL,
-  FEATURE_USE_UNTIL,
-  HELD_DIE_KINDS,
-  HELD_DIE_UNTIL,
-  PRONOUNS_LABELS,
-  SUBCLASS_RANKS,
-} from "../../../src/lib/validation/characters";
+import { ADVANCEMENT_OPTIONS, CONDITIONS, EFFECT_UNTIL, FEATURE_USE_UNTIL, HELD_DIE_KINDS, HELD_DIE_UNTIL, PRONOUNS_LABELS, SUBCLASS_RANKS } from "../../../src/lib/validation/character-constants";
 
 /**
  * Convex validators for characters (CD19). They describe shapes only; the zod

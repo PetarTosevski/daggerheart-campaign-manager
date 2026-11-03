@@ -1,8 +1,8 @@
 // Built-in catalog: swamp (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, long, obj, tex } from "./types";
+import { defineFolder, long, obj, tex, type FolderCatalog } from "./types";
 
-export const SWAMP = defineFolder("swamp", {
+export const SWAMP = (): FolderCatalog => defineFolder("swamp", {
   props: [
     obj("reeds", "cover", "low", "bush"),
     obj("lily pads", "none", "flat", "bush", { standIn: false }),

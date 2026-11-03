@@ -100,7 +100,7 @@ async function attacks(gm: ConvexHttpClient, campaignId: Id<"campaigns">, instan
 }
 
 async function sheetOf(gm: ConvexHttpClient, characterId: Id<"characters">) {
-  return (await gm.query(api.characters.get, { characterId }))!.sheet;
+  return (await gm.query(api.charactersReads.get, { characterId }))!.sheet;
 }
 
 const ENEMY_WORDS = /\b(roll|Evasion|Difficulty|threshold|ATK)\b/i;

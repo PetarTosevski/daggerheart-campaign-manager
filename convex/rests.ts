@@ -49,24 +49,7 @@ import {
   type RestKind as DomainRestKind,
   type RestMove as DomainRestMove,
 } from "../src/lib/domain/rest/index";
-import {
-  applyDieDelta,
-  applyHardy,
-  applyMovesWithDice,
-  DIE_UNIT,
-  efficientMoves,
-  extraMoveGrants,
-  NO_REST_FEATURES,
-  oasisPool,
-  oasisReroll as rerollDie,
-  restFeaturesOf,
-  restMoveSlots,
-  validateFeatureChoice,
-  type DiceMove as DomainDiceMove,
-  type DowntimeDie,
-  type RestFeatures,
-} from "../src/lib/domain/rest/feature-moves";
-import { holdsMartialPreparation } from "../src/lib/domain/session-features/holders";
+import { applyDieDelta, applyHardy, applyMovesWithDice, DIE_UNIT, efficientMoves, extraMoveGrants, oasisReroll as rerollDie, validateFeatureChoice, type DiceMove as DomainDiceMove, type DowntimeDie, type RestFeatures } from "../src/lib/domain/rest/feature-moves";
 import { appError } from "../src/lib/errors/app-error";
 import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -74,23 +57,14 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { logAction, newGroupId, undoEntry } from "./lib/actionLog";
 import { tickLongTermOnRest } from "./countdownTracks";
 import { runRestTiming } from "./lib/cardHand";
-import { assertCanAct, loadCharacter, MAX_CHARACTERS_PER_CAMPAIGN, readSheet, saveSheet } from "./lib/characterSheet";
+import { assertCanAct, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { rollDie } from "./lib/dice";
 import { gainFear } from "./lib/fear";
-import { featureScope } from "./lib/featureScope";
-import { campaignQuery, keyedGmMutation, keyedUserMutation, userQuery } from "./lib/functions";
+import { keyedGmMutation, keyedUserMutation } from "./lib/functions";
 import { restMovesFor, runRestHooks } from "./lib/restHooks";
-import {
-  downtimeDieValidator,
-  restChoiceMoveValidator,
-  restKindValidator,
-  restMoveValidator,
-  restStatusValidator,
-  type DiceMove,
-  type RestKind,
-  type RestMove,
-} from "./lib/validators/rests";
+import { downtimeDieValidator, restChoiceMoveValidator, restKindValidator, type DiceMove, type RestKind, type RestMove } from "./lib/validators/rests";
 import { recordHistory } from "./tables/history";
+import { choicesOf, featuresOf, isProject, oasisPoolOf, partyHasMartialPreparation, recentRests, resting, sheetOrNull } from "./lib/restView";
 import { assertSanctuaryLongRest } from "./trackers/horizon";
 
 // The domain mirrors the stored validators; these fail typecheck if they drift.
@@ -104,8 +78,6 @@ void diceMoveMatches;
 
 type StoredDie = Infer<typeof downtimeDieValidator>;
 
-/** Rests read back to count short rests; a long rest is never this far back in practice. */
-const REST_SCAN = 50;
 /** The most resting PCs a rest takes: its undo group holds 50 rows, one of them the campaign's (review M5). */
 const REST_PARTY_MAX = 49;
 
@@ -131,231 +103,6 @@ async function openRest(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<Doc
     .withIndex("by_campaign_status_started", (q) => q.eq("campaignId", campaignId).eq("status", "open"))
     .first();
 }
-
-async function recentRests(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<Doc<"rests">[]> {
-  return ctx.db
-    .query("rests")
-    .withIndex("by_campaign_started", (q) => q.eq("campaignId", campaignId))
-    .order("desc")
-    .take(REST_SCAN);
-}
-
-async function choicesOf(ctx: QueryCtx, restId: Id<"rests">): Promise<Doc<"restChoices">[]> {
-  // One row per resting PC (at most REST_PARTY_MAX), so the campaign's character cap bounds it.
-  return ctx.db
-    .query("restChoices")
-    .withIndex("by_rest_character", (q) => q.eq("restId", restId))
-    .take(MAX_CHARACTERS_PER_CAMPAIGN);
-}
-
-/** A resting PC: active (not dead, retired or away, HF 127). Unconscious PCs rest but pick no moves (decision 9). */
-const resting = (c: Doc<"characters">) => c.status === "active";
-
-/**
- * Each resting PC's pickable moves for this rest. A sheet that fails to read gets the core moves. Read only while a
- * rest is open (`current`), bounded by the campaign's character cap.
- */
-async function pickableMoves(
-  ctx: QueryCtx,
-  campaign: Doc<"campaigns">,
-  kind: RestKind,
-): Promise<{ characterId: Id<"characters">; moves: RestMove[]; efficient: RestMove[]; slots: number; trance: boolean; extraMoves: number; oasis: boolean }[]> {
-  const party = await ctx.db
-    .query("characters")
-    .withIndex("by_campaign", (q) => q.eq("campaignId", campaign._id))
-    .take(MAX_CHARACTERS_PER_CAMPAIGN);
-  const pcs = party.filter(resting).map((c) => ({ c, sheet: sheetOrNull(c) }));
-  const martialPreparation = pcs.some(({ sheet }) => sheet !== null && holdsMartialPreparation(sheet));
-  return pcs.map(({ c, sheet }) => {
-    const rules = restMovesFor(campaign, sheet ?? { classId: "" }, { martialPreparation });
-    const features = featuresOf(campaign, sheet);
-    const base = allowedMoves(kind, rules.extra, rules.forbidden);
-    // dcm-bxp.99.19.2: extra moves granted for this rest (Eloquent, CB 29).
-    const extraMoves = sheet === null ? 0 : extraMoveGrants(sheet);
-    return {
-      characterId: c._id,
-      moves: base,
-      efficient: efficientMoves(kind, features, base, rules.forbidden),
-      slots: restMoveSlots(features, extraMoves).max,
-      trance: features.trance,
-      extraMoves,
-      oasis: kind === "short" && features.oasis,
-    };
-  });
-}
-
-/** The rest-time heritage features the sheet holds (Hardy, Efficient, Celestial Trance, Oasis; SD-R), none for an unreadable sheet. */
-function featuresOf(campaign: Doc<"campaigns">, sheet: CharacterSheet | null): RestFeatures {
-  return sheet === null ? NO_REST_FEATURES : restFeaturesOf(sheet, { hopeAndFear: featureScope(campaign).hopeAndFear });
-}
-
-/** The character's sheet, or null when it fails to read. */
-function sheetOrNull(c: Doc<"characters">): CharacterSheet | null {
-  try {
-    return readSheet(c.sheet);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Martial Preparation (Call of the Slayer mastery, CB 48): "Your party gains access to the Martial Preparation
- * downtime move" while a resting PC holds the mastery card (user 2026-10-22). Bounded by the campaign's character cap.
- */
-async function partyHasMartialPreparation(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<boolean> {
-  const party = await ctx.db
-    .query("characters")
-    .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
-    .take(MAX_CHARACTERS_PER_CAMPAIGN);
-  return party.some((c) => {
-    if (!resting(c)) return false;
-    const sheet = sheetOrNull(c);
-    return sheet !== null && holdsMartialPreparation(sheet);
-  });
-}
-
-// ---------------------------------------------------------------- reads
-
-/**
- * Whether the rest's actionLog group can still be undone: its first row is undoable and not undone. The daily
- * snapshot strip (`cleanup.stripActionLogSnapshots`) marks rows older than 30 days not undoable (dcm-c26), so an old
- * rest offers no Undo that `undo` would refuse with UNDO_STALE (dcm-bxp.63).
- */
-async function groupUndoable(ctx: QueryCtx, campaignId: Id<"campaigns">, groupId: string | undefined): Promise<boolean> {
-  if (groupId === undefined) return false;
-  const [row] = await ctx.db
-    .query("actionLog")
-    .withIndex("by_campaign_group", (q) => q.eq("campaignId", campaignId).eq("groupId", groupId))
-    .take(1);
-  return row !== undefined && row.undoable && row.undoneAt === undefined;
-}
-
-const choiceView = v.object({ characterId: v.id("characters"), moves: v.array(restChoiceMoveValidator) });
-const movesView = v.object({
-  characterId: v.id("characters"),
-  moves: v.array(restMoveValidator),
-  /** Efficient (CB 53): the long rest moves the PC can take one of on this short rest, with `choose`'s `efficient`. */
-  efficient: v.array(restMoveValidator),
-  /** Most moves the PC can pick: 2, +1 with Celestial Trance (CB 56), +1 per extra move granted (Eloquent, CB 29). */
-  slots: v.number(),
-  /** The PC holds Celestial Trance (CB 56): one of the extra slots is the trance's. */
-  trance: v.boolean(),
-  /** Extra downtime moves granted for this rest (Eloquent, CB 29: "an additional downtime move during their next rest"). */
-  extraMoves: v.number(),
-  /** The PC holds Oasis and this is a short rest: after the dice are shown, they add one reroll to the party's pool (HF 27). */
-  oasis: v.boolean(),
-});
-
-/** A countdown Work on a Project can tick: the character's own project (not an Endurance or Lycanthropy countdown). */
-const isProject = (c: Doc<"countdowns">, characterId: Id<"characters">) => c.ownerKey === characterId && c.kind === "project" && c.status !== "cancelled";
-
-/**
- * The open rest with its choices and each resting PC's pickable moves (core,
- * frame and class moves, `restMovesFor`), the short-rest count (CB 105), and
- * the latest ended rest for undo. Everyone in the campaign.
- */
-export const current = campaignQuery({
-  need: "view",
-  args: {},
-  returns: v.object({
-    open: v.union(
-      v.object({
-        _id: v.id("rests"),
-        kind: restKindValidator,
-        startedAt: v.number(),
-        gmOverride: v.boolean(),
-        choices: v.array(choiceView),
-        moves: v.array(movesView),
-      }),
-      v.null(),
-    ),
-    shortRestsSinceLong: v.number(),
-    last: v.union(
-      v.object({
-        _id: v.id("rests"),
-        kind: restKindValidator,
-        status: restStatusValidator,
-        finishedAt: v.union(v.number(), v.null()),
-        fearRoll: v.union(v.number(), v.null()),
-        fearGained: v.union(v.number(), v.null()),
-        undoable: v.boolean(),
-        /** The downtime dice it rolled, in roll order (`oasisReroll`'s `die` is the index); empty for older rows. */
-        dice: v.array(downtimeDieValidator),
-        /** The resting PCs who held Oasis when it ended; each adds one reroll to the party's pool (HF 27; DA15). */
-        oasisHolders: v.array(v.id("characters")),
-        /** The holders who closed their own Oasis panel (DA15); their unused reroll left the pool. */
-        oasisClosed: v.array(v.id("characters")),
-        /** The rerolls left in the party's Oasis pool (DA15): holders with an open panel whose reroll nobody spent. */
-        oasisLeft: v.number(),
-        /** The Oasis window is open (DA15): dice rolled and at least one holder has not closed their panel. */
-        resultsOpen: v.boolean(),
-      }),
-      v.null(),
-    ),
-  }),
-  handler: async (ctx) => {
-    const rests = await recentRests(ctx, ctx.campaign._id);
-    const open = rests.find((r) => r.status === "open") ?? null;
-    const newest = rests[0];
-    const last = newest !== undefined && newest.status !== "open" ? newest : null;
-    return {
-      open:
-        open === null
-          ? null
-          : {
-              _id: open._id,
-              kind: open.kind,
-              startedAt: open.startedAt,
-              gmOverride: open.gmOverride ?? false,
-              choices: (await choicesOf(ctx, open._id)).map((c) => ({ characterId: c.characterId, moves: c.moves })),
-              moves: await pickableMoves(ctx, ctx.campaign, open.kind),
-            },
-      shortRestsSinceLong: shortRestsSinceLong(rests),
-      last:
-        last === null
-          ? null
-          : {
-              _id: last._id,
-              kind: last.kind,
-              status: last.status,
-              finishedAt: last.finishedAt ?? null,
-              fearRoll: last.fearRoll ?? null,
-              fearGained: last.fearGained ?? null,
-              undoable: await groupUndoable(ctx, ctx.campaign._id, last.groupId),
-              dice: last.dice ?? [],
-              oasisHolders: last.oasisHolders ?? [],
-              oasisClosed: last.oasisClosed ?? [],
-              oasisLeft: oasisWindowOpen(last) ? oasisPool(last.dice ?? [], oasisPoolOf(last)).left : 0,
-              resultsOpen: oasisWindowOpen(last),
-            },
-    };
-  },
-});
-
-const projectView = v.object({
-  _id: v.id("countdowns"),
-  name: v.string(),
-  startingValue: v.number(),
-  currentValue: v.number(),
-  status: v.union(v.literal("active"), v.literal("paused"), v.literal("completed"), v.literal("cancelled")),
-});
-
-/** A character's project countdowns (Work on a Project, CB 105; `kind` "project"), not cancelled. Everyone who can see the character. */
-export const projects = userQuery({
-  args: { characterId: v.id("characters") },
-  returns: v.array(projectView),
-  handler: async (ctx, { characterId }) => {
-    const { campaign, character } = await loadCharacter(ctx, ctx.user, characterId, "view");
-    // A character has a handful of projects.
-    const rows = await ctx.db
-      .query("countdowns")
-      .withIndex("by_campaign_owner", (q) => q.eq("campaignId", campaign._id).eq("ownerKey", character._id))
-      .collect();
-    return rows
-      .filter((c) => isProject(c, character._id))
-      .map((c) => ({ _id: c._id, name: c.name, startingValue: c.startingValue, currentValue: c.currentValue, status: c.status }));
-  },
-});
 
 // ---------------------------------------------------------------- the GM's rest
 
@@ -636,18 +383,6 @@ export const undo = keyedGmMutation({
       return { fearReverted };
     }),
 });
-
-/** The rest's Oasis holders and who closed their panel (DA15), for `oasisPool` and `oasisReroll`. */
-const oasisPoolOf = (rest: Doc<"rests">) => ({ holders: rest.oasisHolders ?? [], closed: rest.oasisClosed ?? [] });
-
-/**
- * The ended rest's Oasis window is open (DA15, user 2026-10-30): it rolled dice, the GM did not close it for everyone
- * under DA5 (`resultsClosedAt`, no longer written) and at least one holder has not closed their own panel. Starting
- * the next rest ends it too (only the latest rest counts; the callers check that).
- */
-function oasisWindowOpen(rest: Doc<"rests">): boolean {
-  return (rest.dice ?? []).length > 0 && rest.resultsClosedAt === undefined && oasisPool(rest.dice ?? [], oasisPoolOf(rest)).open.length > 0;
-}
 
 /**
  * The latest ended rest of the campaign that ran as a short rest (a short rest, or an interrupted long one, CB 105),

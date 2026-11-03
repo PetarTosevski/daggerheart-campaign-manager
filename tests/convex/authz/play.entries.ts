@@ -104,8 +104,8 @@ const area: Area = {
     },
 
     // ---------------------------------------------------------------- rests
-    { fn: api.rests.current, access: "view" },
-    { fn: api.rests.projects, access: "own" },
+    { fn: api.restsReads.current, access: "view" },
+    { fn: api.restsReads.projects, access: "own" },
     { fn: api.rests.start, access: "gm", okCodes: ["REST_RULE"] },
     { fn: api.rests.finish, access: "gm", setup: openRest },
     { fn: api.rests.interrupt, access: "gm", setup: openRest },

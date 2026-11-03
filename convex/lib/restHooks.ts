@@ -31,20 +31,8 @@
  * ```
  */
 import type { Rng } from "../../src/lib/domain/class-features/types";
-import {
-  CORRUPTION_TRACK_SIZE,
-  CORRUPTION_TRACKER_KEY,
-  corruptionStateSchema,
-  FEAST_MOVE,
-  FRAME_IDS,
-  frameRestMoves,
-  INITIAL_CORRUPTION,
-  LOCATE_ECHOES_MOVE,
-  rollCorruption,
-  rollsCorruption,
-} from "../../src/lib/domain/rest/frame-hooks/index";
-import { classFeaturesAvailable } from "../../src/lib/domain/class-features/index";
-import type { RestKind, RestMove } from "../../src/lib/domain/rest/index";
+import { CORRUPTION_TRACK_SIZE, CORRUPTION_TRACKER_KEY, corruptionStateSchema, FEAST_MOVE, FRAME_IDS, INITIAL_CORRUPTION, LOCATE_ECHOES_MOVE, rollCorruption, rollsCorruption } from "../../src/lib/domain/rest/frame-hooks/index";
+import type { RestKind } from "../../src/lib/domain/rest/index";
 import { BEASTBOUND_SUBCLASS_ID } from "../../src/lib/frames/extras/common";
 import { resolveOptions } from "../../src/lib/frames/options";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
@@ -188,22 +176,4 @@ export async function runRestHooks(ctx: MutationCtx, input: RestHookInput): Prom
   return lines;
 }
 
-/**
- * One PC's frame and class downtime moves (on either rest) and the core moves
- * the frame forbids (`frameRestMoves`): Make a Feast and the Beast Feast
- * restriction (CB 278), Keep Watch (CB 289), halting lycanthropy (HF 153,
- * transformations on), Tribute for a Warlock while its features are offered
- * (HF 14), and Martial Preparation for everyone while `party.martialPreparation`
- * (a resting PC holds the Call of the Slayer mastery card, CB 48; the caller
- * reads the party). `rests.choose` checks picks against it and `rests.current`
- * lists it.
- */
-export function restMovesFor(
-  campaign: Doc<"campaigns">,
-  sheet: Pick<CharacterSheet, "classId" | "multiclass">,
-  party: { martialPreparation: boolean } = { martialPreparation: false },
-): { extra: RestMove[]; forbidden: readonly RestMove[] } {
-  const options = resolveOptions(campaign.frameId, campaign.options);
-  const warlock = [sheet.classId, sheet.multiclass?.classId].includes("warlock") && classFeaturesAvailable("warlock", options.hopeAndFear);
-  return frameRestMoves({ frameId: campaign.frameId, transformations: options.transformations, warlock, martialPreparation: party.martialPreparation });
-}
+export { restMovesFor } from "./restMoves";

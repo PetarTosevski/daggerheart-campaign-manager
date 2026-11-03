@@ -110,7 +110,7 @@ test("a short party rest: the player clears Stress twice, the GM finishes, GM Fe
   await expect(rest.getByText(/Last: Short rest/)).toBeVisible();
 
   // Stress drops by 2 × (1d4 + tier 1), at least 4; the GM gains 1d4 Fear.
-  await expect.poll(async () => (await playerApi.query(api.characters.get, { characterId }))?.sheet.stress).toBeLessThanOrEqual(2);
+  await expect.poll(async () => (await playerApi.query(api.charactersReads.get, { characterId }))?.sheet.stress).toBeLessThanOrEqual(2);
   await expect(page.getByRole("button", { name: "Fear 1 of 12" })).toHaveAttribute("aria-pressed", "true");
   await expect(picker).toHaveCount(0);
   await close();
@@ -152,7 +152,7 @@ test("Martial Preparation (CB 48): with a mastery Slayer in the party, an ally t
   await picker.getByRole("button", { name: "Save moves" }).click();
   await expect(picker.getByText(/^Saved\./)).toBeVisible();
 
-  await gmApi.mutation(api.rests.finish, { campaignId, restId: (await gmApi.query(api.rests.current, { campaignId })).open!._id, idempotencyKey: crypto.randomUUID() });
+  await gmApi.mutation(api.rests.finish, { campaignId, restId: (await gmApi.query(api.restsReads.current, { campaignId })).open!._id, idempotencyKey: crypto.randomUUID() });
   await expect(picker).toHaveCount(0);
   // The ally holds the die: the sheet shows the pool chip like a Slayer's.
   await expect(page.getByRole("article", { name: ally }).getByRole("list", { name: "Session features" })).toContainText("Slayer Dice 1/1");

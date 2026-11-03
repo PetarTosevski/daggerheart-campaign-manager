@@ -69,7 +69,7 @@ test("the GM ends the scene from the Combat Map and a once-per-scene limit comes
         choices: [],
         idempotencyKey: crypto.randomUUID(),
       });
-    const sceneLimits = async () => (await gm.query(api.characters.get, { characterId }))!.sheet.featureUses?.map((u) => u.key) ?? [];
+    const sceneLimits = async () => (await gm.query(api.charactersReads.get, { characterId }))!.sheet.featureUses?.map((u) => u.key) ?? [];
 
     // ---- Flicker Step once; a second use in the same scene is refused.
     await flicker();

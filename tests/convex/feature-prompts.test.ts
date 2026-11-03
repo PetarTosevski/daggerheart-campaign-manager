@@ -404,9 +404,9 @@ describe("Charge rolls first and the server moves the token on a success (dcm-bx
     expect((await a.sheetOf(a.w.characterA)).stress).toBe(0);
     expect((await a.t.run((ctx) => ctx.db.query("actionLog").collect())).length).toBe(0);
     const view = { ask: "charge", characterId: a.w.characterA, characterName: (await a.sheetOf(a.w.characterA)).name, target: { tokenId: a.bear.tokenId, name: "Bear" }, seers: [] };
-    expect(await a.gm.query(api.combatRequests.difficulties, { campaignId: a.campaignId })).toMatchObject([view]);
-    expect(await a.player.query(api.combatRequests.difficulties, { campaignId: a.campaignId })).toMatchObject([view]);
-    expect(await a.w.as("otherPlayer").query(api.combatRequests.difficulties, { campaignId: a.campaignId })).toEqual([]);
+    expect(await a.gm.query(api.combatRequestsReads.difficulties, { campaignId: a.campaignId })).toMatchObject([view]);
+    expect(await a.player.query(api.combatRequestsReads.difficulties, { campaignId: a.campaignId })).toMatchObject([view]);
+    expect(await a.w.as("otherPlayer").query(api.combatRequestsReads.difficulties, { campaignId: a.campaignId })).toEqual([]);
   });
 
   it("the player withdraws the Charge waiting for its Difficulty (HD3, user 2026-11-02): nothing rolled, paid or moved", async () => {
@@ -417,7 +417,7 @@ describe("Charge rolls first and the server moves the token on a success (dcm-bx
       a.w.as(role).mutation(api.combatWithdraw.withdraw, { campaignId: a.campaignId, requestId: asked.requestId, idempotencyKey: key() });
     expect(await codeOf(withdraw("otherPlayer"))).toBe("FORBIDDEN");
     expect(await withdraw("player")).toEqual({ status: "withdrawn", requestId: asked.requestId });
-    expect(await a.gm.query(api.combatRequests.difficulties, { campaignId: a.campaignId })).toEqual([]);
+    expect(await a.gm.query(api.combatRequestsReads.difficulties, { campaignId: a.campaignId })).toEqual([]);
     expect(await codeOf(a.answer(asked.requestId, 12))).toBe("REQUEST_NOT_OPEN");
     expect(await codeOf(withdraw("player"))).toBe("REQUEST_NOT_OPEN");
     expect(await a.token(a.ash)).toMatchObject({ x: 2, y: 10 });
@@ -441,7 +441,7 @@ describe("Charge rolls first and the server moves the token on a success (dcm-bx
     const entry = await a.t.run(async (ctx) => (await ctx.db.get("actionLog", out.use.entryId))!);
     expect(entry.actorId).toBe(a.w.users.player);
     expect(await codeOf(a.answer(asked.requestId, 12))).toBe("REQUEST_NOT_OPEN");
-    expect(await a.gm.query(api.combatRequests.difficulties, { campaignId: a.campaignId })).toEqual([]);
+    expect(await a.gm.query(api.combatRequestsReads.difficulties, { campaignId: a.campaignId })).toEqual([]);
   });
 
   it("a Difficulty above the total fails: the token stays", async () => {
@@ -471,7 +471,7 @@ describe("Charge rolls first and the server moves the token on a success (dcm-bx
     const asked = await a.ask();
     if (asked.status !== "requested") throw new Error("not requested");
     await a.t.run((ctx) => ctx.db.patch("encounters", a.encounterId, { status: "ended" as never }));
-    expect(await a.gm.query(api.combatRequests.difficulties, { campaignId: a.campaignId })).toEqual([]);
+    expect(await a.gm.query(api.combatRequestsReads.difficulties, { campaignId: a.campaignId })).toEqual([]);
     expect(await a.answer(asked.requestId, 12)).toEqual({ status: "declined" });
   });
 
@@ -535,7 +535,7 @@ describe("Cloaked seen dimly only by enemies without a Difficulty asks the GM fo
     expect((await a.rows()).some((r) => r.kind === "roll")).toBe(false);
     const [row] = await a.open();
     expect(row).toBeDefined();
-    expect(await a.gm.query(api.combatRequests.difficulties, { campaignId: a.campaignId })).toMatchObject([{ ask: "cloak", target: null, seers: [{ tokenId: shade, name: "Shade" }] }]);
+    expect(await a.gm.query(api.combatRequestsReads.difficulties, { campaignId: a.campaignId })).toMatchObject([{ ask: "cloak", target: null, seers: [{ tokenId: shade, name: "Shade" }] }]);
     // 3 + 8 + 1 = 12 vs the GM's 14: failure with Fear, Cloaked ends.
     serverDice(3, 8);
     expect(await a.answer(row!._id, 14)).toEqual({ status: "rolled", cloaked: false });

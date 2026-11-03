@@ -218,7 +218,7 @@ describe("dcm-bxp.99.19.2: a granted extra move in the rest flow", () => {
     await grant(a);
 
     const { restId } = await gm.mutation(api.rests.start, { campaignId, kind: "short", idempotencyKey: key() });
-    const mine = (await gm.query(api.rests.current, { campaignId })).open!.moves.find((m) => m.characterId === a)!;
+    const mine = (await gm.query(api.restsReads.current, { campaignId })).open!.moves.find((m) => m.characterId === a)!;
     expect(mine).toMatchObject({ slots: 3, extraMoves: 1, trance: false });
     const three = [{ move: "prepare" as const }, { move: "prepare" as const }, { move: "prepare" as const }];
     await p1.mutation(api.rests.choose, { restId, characterId: a, moves: three, idempotencyKey: key() });

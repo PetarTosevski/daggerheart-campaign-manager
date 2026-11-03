@@ -106,7 +106,7 @@ async function riderScene(page: Page, browser: Browser, classId: string, subclas
   await client.mutation(api.combatMaps.setLive, { campaignId, mapId });
   await client.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
   await client.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId, instanceIds: instances.map((i) => i.instanceId), idempotencyKey: crypto.randomUUID() });
-  const list = await client.query(api.combatTokens.list, { campaignId, mapId });
+  const list = await client.query(api.combatTokensReads.list, { campaignId, mapId });
   const ash = list.find((t) => t.name === "Ash")!;
   await client.mutation(api.combatTokens.move, { campaignId, tokenId: ash._id, x: 5, y: 10 });
   await client.mutation(api.combatTokens.turn, { campaignId, tokenId: ash._id, angle: 0 });
@@ -127,7 +127,7 @@ async function hpOf(s: Scene, name: string): Promise<number> {
 }
 
 async function sheetOf(s: Scene) {
-  return (await s.client.query(api.characters.get, { characterId: s.characterId }))!.sheet;
+  return (await s.client.query(api.charactersReads.get, { characterId: s.characterId }))!.sheet;
 }
 
 /** How many public feed rows are Ash's attacks with `rider` ("Ash attacks with Rapier: … (Patron’s Boon) → …"). */

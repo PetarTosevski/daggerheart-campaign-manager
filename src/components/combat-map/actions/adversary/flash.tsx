@@ -25,8 +25,8 @@ export function HitFlashLayer(props: ActionsLayerProps) {
   const page = useQuery(api.feed.list, { campaignId, paginationOpts: { numItems: role === "gm" ? RESOLUTION_SCAN : MINI_FEED_ROWS, cursor: null } });
   // The GM reads every token (adversary tokens flash for the GM only, H3); a player only the PC tokens.
   const gm = role === "gm";
-  const allTokens = useQuery(api.combatTokens.list, gm ? { campaignId, mapId: map._id } : "skip");
-  const partyTokens = useQuery(api.combatTokens.party, gm ? "skip" : { campaignId, mapId: map._id });
+  const allTokens = useQuery(api.combatTokensReads.list, gm ? { campaignId, mapId: map._id } : "skip");
+  const partyTokens = useQuery(api.combatTokensReads.party, gm ? "skip" : { campaignId, mapId: map._id });
   const tokens = gm ? allTokens : partyTokens;
   const [seen, setSeen] = useState<ReadonlySet<string> | null>(null);
   const [done, setDone] = useState<ReadonlySet<string>>(() => new Set());

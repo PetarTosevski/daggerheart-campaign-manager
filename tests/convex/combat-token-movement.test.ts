@@ -51,7 +51,7 @@ async function withMap() {
   await gm.mutation(api.characters.create, { campaignId, draft: draft("Bryn"), idempotencyKey: key() });
   const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
   await gm.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: key() });
-  const tokens = await gm.query(api.combatTokens.list, { campaignId, mapId });
+  const tokens = await gm.query(api.combatTokensReads.list, { campaignId, mapId });
   const ash = tokens.find((tk) => tk.name === "Ash")!._id;
   const bryn = tokens.find((tk) => tk.name === "Bryn")!._id;
   const place = (tokenId: Id<"combatTokens">, x: number, y: number, size = 1) =>

@@ -53,7 +53,7 @@ async function setup(frameId: "motherboard" | "witherwild") {
   const { campaignId } = await gm.mutation(api.campaigns.create, { frameId, name: "Party", idempotencyKey: key() });
   const code = await gm.mutation(api.members.rotateJoinCode, { campaignId });
   await p1.mutation(api.members.joinByCode, { code });
-  const sheetOf = async (id: Id<"characters">) => (await p1.query(api.characters.get, { characterId: id }))!.sheet;
+  const sheetOf = async (id: Id<"characters">) => (await p1.query(api.charactersReads.get, { characterId: id }))!.sheet;
   const edit = (id: Id<"characters">, change: (s: CharacterSheet) => CharacterSheet) =>
     t.run(async (ctx) => saveSheet(ctx, id, change(readSheet((await ctx.db.get("characters", id))!.sheet))));
   return { t, gm, p1, campaignId, sheetOf, edit };

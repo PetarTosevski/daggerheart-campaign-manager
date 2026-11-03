@@ -92,7 +92,7 @@ test.beforeAll(async ({ browser }) => {
   const { mapId } = await seed(() => client.mutation(api.combatMaps.create, { campaignId, size: "medium", name: "Old road", idempotencyKey: uuid() }));
   await seed(() => client.mutation(api.combatMaps.create, { campaignId, size: "small", name: "Cellar", idempotencyKey: uuid() }));
   await seed(() => client.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: uuid() }));
-  const liriel = (await seed(() => client.query(api.combatTokens.list, { campaignId, mapId }))).find((t) => t.name === characterName)!;
+  const liriel = (await seed(() => client.query(api.combatTokensReads.list, { campaignId, mapId }))).find((t) => t.name === characterName)!;
   const { tokenId: banditId } = await seed(() => client.mutation(api.combatTokens.addCustom, { campaignId, mapId, name: "Bandit", hp: 3, side: "enemy", idempotencyKey: uuid() }));
   await seed(() => client.mutation(api.combatTokens.move, { campaignId, tokenId: liriel._id, x: 15, y: 10 }));
   await seed(() => client.mutation(api.combatTokens.turn, { campaignId, tokenId: liriel._id, angle: 0 }));

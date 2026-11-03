@@ -50,7 +50,7 @@ export function HudHit({ state }: HudPartProps): ReactNode {
 }
 
 function OwnHits({ campaignId, mapId, gm }: { campaignId: Id<"campaigns">; mapId: string; gm: boolean }) {
-  const characters = useQuery(api.characters.listByCampaign, { campaignId });
+  const characters = useQuery(api.charactersReads.listByCampaign, { campaignId });
   const party = useQuery(api.combatHud.party, { campaignId, mapId });
   if (characters === undefined) return null;
   const mine = characters.filter((c) => c.mine && !c.corrupt);

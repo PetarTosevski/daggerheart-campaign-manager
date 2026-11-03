@@ -81,7 +81,7 @@ export function LightPill({ campaignId }: LightPillProps) {
 export function PreviewPicker({ campaignId, role, mode, map, previewCharacterId, onPreview }: PreviewPickerProps) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
-  const tokens = useQuery(api.combatTokens.list, role === "gm" && map ? { campaignId, mapId: map._id } : "skip");
+  const tokens = useQuery(api.combatTokensReads.list, role === "gm" && map ? { campaignId, mapId: map._id } : "skip");
   const pcs = role === "gm" && map ? pcTokens(tokens) : [];
   const previewed = pcs.find((p) => p.characterId === previewCharacterId);
 

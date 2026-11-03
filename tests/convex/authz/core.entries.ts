@@ -5,7 +5,7 @@ import { freshKey } from "./synth";
 /**
  * Authz matrix: core (campaigns, members, settings, users, fear, wither, feed, history, actionLog, campaignTime) and the
  * EXEMPT list. Tracer H5 (.omc/plans/d12-hardening.yaml), docs/tasks/TASK-D12-H5.md. The world is the default
- * witherwild campaign, which has campaign time and Wither tokens. `characters:get` stays here (a worked H0 entry).
+ * witherwild campaign, which has campaign time and Wither tokens. `charactersReads:get` stays here (a worked H0 entry).
  */
 
 /** One undoable, public actionLog row on characterA, written by the GM (a Wither token correction). */
@@ -159,7 +159,7 @@ const area: Area = {
 
     // ---- characters (worked H0 entry)
     // A character read: strangers get null instead of NOT_FOUND (no existence leak); party members may view.
-    { fn: api.characters.get, access: "own", expect: { outsider: "null" } },
+    { fn: api.charactersReads.get, access: "own", expect: { outsider: "null" } },
   ],
   exempt: {
     "auth:signIn": "Convex Auth's sign-in action: public by design; covered by tests/e2e/auth.spec.ts, tests/e2e/signup.spec.ts and create-or-update-user.test.ts",

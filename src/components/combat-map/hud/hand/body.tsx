@@ -95,9 +95,9 @@ type Open = "vault" | "rolls" | null;
 export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPlay, creatures, pickedEnemies, pointPicker = hudPointPicker }: HudHandBodyProps) {
   const gm = mode === "gm";
   const own = mode !== "view";
-  const hand = useQuery(api.combatCards.hand, { campaignId, characterId });
-  const rests = useQuery(api.rests.current, own ? { campaignId } : "skip");
-  const character = useQuery(api.characters.get, canPlay ? { characterId } : "skip");
+  const hand = useQuery(api.combatCardsReads.hand, { campaignId, characterId });
+  const rests = useQuery(api.restsReads.current, own ? { campaignId } : "skip");
+  const character = useQuery(api.charactersReads.get, canPlay ? { characterId } : "skip");
   // H6.2: while the GM holds the spotlight no card starts (answer 1c; reactions come up in the hit window instead).
   const spotlight = useSpotlight(campaignId);
   const actions = useCardPlay({ campaignId, mapId, characterId });

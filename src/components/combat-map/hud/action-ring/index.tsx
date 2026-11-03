@@ -97,7 +97,7 @@ function ActionRing({ layer, open, characterId, name, centre, size }: { layer: H
   const attack = useAttackPicker(layer);
   const featureUse = useFeatureUse({ campaignId, role, map, characterId });
   const sheet = useQuery(api.combatHud.sheet, { characterId });
-  const hand = useQuery(api.combatCards.hand, { campaignId, characterId });
+  const hand = useQuery(api.combatCardsReads.hand, { campaignId, characterId });
   // The reactions the server offers right now: the answers of this character's open hits (the hit window's query).
   const pending = useQuery(api.adversaryActions.pending, { campaignId, characterId });
   const outsideUse = useMutation(api.classFeatures.use);

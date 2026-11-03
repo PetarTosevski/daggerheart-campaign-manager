@@ -23,11 +23,11 @@ export const BAND_TEXT: Record<Band, string> = { melee: "Melee", veryClose: "Ver
 type Named = { tokenId: string; name: string };
 type OutOfRange = { tokenId: string; band: Band };
 
-/** `combatRequests.mine` (kind `sanction`), `combatCards.pending`, `combatFeatures.pending`: names and bands only. */
+/** `combatRequestsReads.mine` (kind `sanction`), `combatCardsReads.pending`, `combatFeaturesReads.pending`: names and bands only. */
 export type AttackSanction = { requestId: string; characterName: string; createdAt: number; targets: Named[]; outOfRange: OutOfRange[] };
 export type CardSanction = AttackSanction & { cardName: string };
 export type FeatureSanction = AttackSanction & { featureName: string };
-/** `combatRequests.difficulties`. */
+/** `combatRequestsReads.difficulties`. */
 export type DifficultyAsk = { requestId: string; characterName: string; createdAt: number; ask: "charge" | "cloak"; target: Named | null; seers: Named[] };
 /** `adversaryActions.windows`. */
 export type ReactionWindow = {

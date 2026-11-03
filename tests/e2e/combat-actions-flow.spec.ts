@@ -201,7 +201,7 @@ test("two players and the GM: attacks, cards, a Minion pick, a recall, a rest an
     await gm.mutation(api.combatMaps.setLive, { campaignId, mapId });
     await gm.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
     await gm.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId, instanceIds: [bandit, raider, rat1, rat2], idempotencyKey: crypto.randomUUID() });
-    const tokens = await gm.query(api.combatTokens.list, { campaignId, mapId });
+    const tokens = await gm.query(api.combatTokensReads.list, { campaignId, mapId });
     const tokenOf = (pick: (t: (typeof tokens)[number]) => boolean) => tokens.find(pick)!;
     const place = async (tokenId: Id<"combatTokens">, x: number, y: number) => gm.mutation(api.combatTokens.move, { campaignId, tokenId, x, y });
     // Ash at (5, 10) with the Bandit and the Raider in Melee; Bryn at (12, 10) with both Rats in Melee. Both face east.
@@ -222,7 +222,7 @@ test("two players and the GM: attacks, cards, a Minion pick, a recall, a rest an
       const got = await gm.query(api.encounters.get, { campaignId, encounterId });
       return got!.instances.find((i) => i._id === id)!;
     };
-    const sheetOf = async (characterId: Id<"characters">) => (await gm.query(api.characters.get, { characterId }))!.sheet;
+    const sheetOf = async (characterId: Id<"characters">) => (await gm.query(api.charactersReads.get, { characterId }))!.sheet;
 
     for (const p of [a.page, b.page, page]) {
       await p.setViewportSize({ width: 1440, height: 900 });

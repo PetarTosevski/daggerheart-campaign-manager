@@ -60,10 +60,10 @@ test("the GM always gets the HUD in Play; Map tools holds today's column; Edit k
     await expect(sharing).toBeChecked();
     await sharing.click();
     await expect(sharing).not.toBeChecked();
-    await expect.poll(async () => (await s.client.query(api.combatCards.handSharing, { campaignId: s.campaignId })).playersSeeHands).toBe(false);
+    await expect.poll(async () => (await s.client.query(api.combatCardsReads.handSharing, { campaignId: s.campaignId })).playersSeeHands).toBe(false);
     await sharing.click();
     await expect(sharing).toBeChecked();
-    await expect.poll(async () => (await s.client.query(api.combatCards.handSharing, { campaignId: s.campaignId })).playersSeeHands).toBe(true);
+    await expect.poll(async () => (await s.client.query(api.combatCardsReads.handSharing, { campaignId: s.campaignId })).playersSeeHands).toBe(true);
     await gm.screenshot({ path: "test-results/visual/HUD-H0/gm-tools-1440.png", animations: "disabled" });
     await expectNoSeriousA11yViolations(gm);
     await drawer.press("Escape");

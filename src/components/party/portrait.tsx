@@ -45,7 +45,7 @@ export function CharacterPortrait({
   // The list query already resolves uploaded portraits; fall back to a lookup for other callers.
   const preloaded = character.portraitUrl;
   const fetched = useQuery(
-    api.characters.portraitUrl,
+    api.charactersReads.portraitUrl,
     source.kind === "upload" && preloaded === undefined ? { characterId: character._id } : "skip",
   );
   const uploaded = preloaded ?? fetched;

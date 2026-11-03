@@ -22,7 +22,7 @@ test("NOT_ENOUGH_FEAR and ADVERSARY_NOT_SPOTLIT: the stat block's Fear costs and
   const { gm, client, campaignId, enemies } = s;
   try {
     // The Bandit takes the GM turn's first (free) spotlight; every other spotlight now costs 1 Fear, and the GM has none.
-    const tokens = await client.query(api.combatTokens.list, { campaignId, mapId: s.mapId });
+    const tokens = await client.query(api.combatTokensReads.list, { campaignId, mapId: s.mapId });
     const banditInstance = tokens.find((t) => t._id === enemies.bandit.tokenId)!.instanceId!;
     await client.mutation(api.encounterTracking.spotlight, { campaignId, instanceId: banditInstance, idempotencyKey: crypto.randomUUID() });
     await client.mutation(api.fear.set, { campaignId, value: 0, idempotencyKey: crypto.randomUUID() });

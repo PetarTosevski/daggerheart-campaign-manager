@@ -165,7 +165,7 @@ test("the GM places the party and an encounter, moves, turns and marks an advers
     const vulnerable = player.getByRole("complementary", { name: "Ash’s sheet" }).getByRole("group", { name: "Switch conditions" }).getByRole("button", { name: "Vulnerable" });
     await vulnerable.click();
     await expect(vulnerable).toHaveAttribute("aria-pressed", "true");
-    await expect.poll(async () => (await playerClient.query(api.characters.get, { characterId: ashId }))?.sheet.conditions).toEqual(["vulnerable"]);
+    await expect.poll(async () => (await playerClient.query(api.charactersReads.get, { characterId: ashId }))?.sheet.conditions).toEqual(["vulnerable"]);
   } finally {
     await context.close();
   }

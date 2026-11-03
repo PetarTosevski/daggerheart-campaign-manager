@@ -36,7 +36,7 @@ export function GmOwnHits(props: Pick<IncomingHitProps, "campaignId" | "role">) 
 
 /** The open hits (and a due death move) of every character the viewer owns. */
 function OwnHits({ campaignId }: Pick<IncomingHitProps, "campaignId">) {
-  const characters = useQuery(api.characters.listByCampaign, { campaignId });
+  const characters = useQuery(api.charactersReads.listByCampaign, { campaignId });
   if (characters === undefined) return null;
   const mine = characters.filter((c) => c.mine && !c.corrupt);
   if (mine.length === 0) return null;

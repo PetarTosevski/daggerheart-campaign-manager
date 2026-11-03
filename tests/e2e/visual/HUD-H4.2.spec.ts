@@ -35,7 +35,7 @@ test("HUD-H4.2 the hit window at desktop, tablet and phone", { tag: "@visual" },
     const { instanceIds } = await client.mutation(api.encounters.addAdversary, { campaignId, encounterId: s.encounterId, source: { kind: "custom", customId }, count: 1, summoned: false, idempotencyKey: crypto.randomUUID() });
     const instanceId = instanceIds[0]!;
     await client.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId: s.mapId, instanceIds: [instanceId], idempotencyKey: crypto.randomUUID() });
-    const token = (await client.query(api.combatTokens.list, { campaignId, mapId: s.mapId })).find((t) => t.instanceId === instanceId)!;
+    const token = (await client.query(api.combatTokensReads.list, { campaignId, mapId: s.mapId })).find((t) => t.instanceId === instanceId)!;
     await client.mutation(api.combatTokens.move, { campaignId, tokenId: token._id, x: 6, y: 10 });
     await client.mutation(api.characters.adjustResource, { characterId: moss.characterId, resource: "hp", delta: 2 });
 

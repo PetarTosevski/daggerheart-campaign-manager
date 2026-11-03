@@ -212,7 +212,7 @@ describe("Areas on the map", () => {
 
   beforeEach(() => {
     results["combatAreas:list"] = [DARK, WALL];
-    results["combatTokens:list"] = [{ _id: "t-vex", kind: "pc", characterId: "ch-vex", name: "Vex" }];
+    results["combatTokensReads:list"] = [{ _id: "t-vex", kind: "pc", characterId: "ch-vex", name: "Vex" }];
   });
 
   it("writes an area's line", () => {
@@ -295,7 +295,7 @@ describe("Areas on the map", () => {
 
   it("says when the map has no area or no PC token", () => {
     results["combatAreas:list"] = [];
-    results["combatTokens:list"] = [];
+    results["combatTokensReads:list"] = [];
     act(() => setAreasOpen(true));
     render(createElement(HudAreas, { state: state("gm") }));
     expect(screen.getByText("No live area on this map.")).toBeInTheDocument();

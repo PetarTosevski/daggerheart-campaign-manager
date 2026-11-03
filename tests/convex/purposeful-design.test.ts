@@ -31,7 +31,7 @@ async function setup() {
   await p2.mutation(api.members.joinByCode, { code });
   const create = async (who: typeof gm, draft: Partial<ReturnType<typeof characterDraft>>) =>
     (await who.mutation(api.characters.create, { campaignId, draft: { ...characterDraft("Cog"), ...draft }, idempotencyKey: key() })).characterId;
-  const sheet = async (characterId: Id<"characters">) => (await gm.query(api.characters.get, { characterId }))!.sheet;
+  const sheet = async (characterId: Id<"characters">) => (await gm.query(api.charactersReads.get, { characterId }))!.sheet;
   const roll = (characterId: Id<"characters">, experienceIds: string[]) =>
     gm.mutation(api.rolls.manualRoll, { characterId, values: [8, 3], roll: { ...AGILITY, experienceIds }, idempotencyKey: key() });
   return { t, gm, p1, p2, create, sheet, roll };

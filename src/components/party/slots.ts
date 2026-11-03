@@ -33,7 +33,7 @@ export type CampaignSlotProps = {
   hopeAndFear: boolean;
 };
 
-/** What every character slot knows: the campaign's, plus the character as `characters.get` / `listByCampaign` return it. */
+/** What every character slot knows: the campaign's, plus the character as `charactersReads.get` / `listByCampaign` return it. */
 export type SlotProps = CampaignSlotProps & {
   character: CharacterView;
   /** The viewer is the character's owner or the GM. */
@@ -44,7 +44,7 @@ export type CharacterSlot = (props: SlotProps) => ReactNode;
 export type CampaignSlot = (props: CampaignSlotProps) => ReactNode;
 
 /**
- * What a party card knows of a character: a `characters.partySummary` row (PF9: name, class line, portrait, tiles,
+ * What a party card knows of a character: a `charactersReads.partySummary` row (PF9: name, class line, portrait, tiles,
  * status and the badges' fields). A full `CharacterView` is one too, so card slots also mount on the roster and sheet.
  */
 export type CardCharacter = PartyMember;

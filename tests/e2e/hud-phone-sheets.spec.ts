@@ -207,7 +207,7 @@ async function addBrute(s: HudScene) {
   });
   const instanceId = instanceIds[0]!;
   await client.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId: s.mapId, instanceIds: [instanceId], idempotencyKey: crypto.randomUUID() });
-  const token = (await client.query(api.combatTokens.list, { campaignId, mapId: s.mapId })).find((t) => t.instanceId === instanceId)!;
+  const token = (await client.query(api.combatTokensReads.list, { campaignId, mapId: s.mapId })).find((t) => t.instanceId === instanceId)!;
   await client.mutation(api.combatTokens.move, { campaignId, tokenId: token._id, x: 6, y: 10 });
   return instanceId;
 }

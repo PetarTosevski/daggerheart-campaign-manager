@@ -32,14 +32,17 @@ export type SpriteLookup = {
   readonly unknownKeys: readonly string[];
 };
 
-/** Joins a parsed manifest with the catalog; the join is built on the first read (dcm-uh6r). */
-export function createSpriteLookup(manifest: BuiltinManifest): SpriteLookup {
+/**
+ * Joins a parsed manifest with the catalog; the join is built on the first read (dcm-uh6r). `manifest` may be a function,
+ * called on that first read, so a lazily built manifest (the built-in one) is not built before a sprite is looked up.
+ */
+export function createSpriteLookup(manifest: BuiltinManifest | (() => BuiltinManifest)): SpriteLookup {
   let joined: { art: Map<string, ManifestSprite>; unknownKeys: string[] } | undefined;
   const join = () => {
     if (joined) return joined;
     const art = new Map<string, ManifestSprite>();
     const unknownKeys: string[] = [];
-    for (const sprites of Object.values(manifest.folders)) {
+    for (const sprites of Object.values((typeof manifest === "function" ? manifest() : manifest).folders)) {
       for (const sprite of sprites) {
         if (catalogEntry(sprite.key)) art.set(sprite.key, sprite);
         else unknownKeys.push(sprite.key);

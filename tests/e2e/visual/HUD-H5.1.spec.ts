@@ -40,7 +40,7 @@ test("HUD-H5.1 the GM's request queue and Resolutions at desktop", { tag: "@visu
     const { instanceIds } = await client.mutation(api.encounters.addAdversary, { campaignId, encounterId: s.encounterId, source: { kind: "custom", customId }, count: 1, summoned: false, idempotencyKey: crypto.randomUUID() });
     const instanceId = instanceIds[0]!;
     await client.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId, instanceIds: [instanceId], idempotencyKey: crypto.randomUUID() });
-    const token = (await client.query(api.combatTokens.list, { campaignId, mapId })).find((t) => t.instanceId === instanceId)!;
+    const token = (await client.query(api.combatTokensReads.list, { campaignId, mapId })).find((t) => t.instanceId === instanceId)!;
     await client.mutation(api.combatTokens.move, { campaignId, tokenId: token._id, x: 9, y: 9 });
     let res = await client.mutation(api.adversaryActions.attack, { campaignId, instanceId, targets: [brannoc.characterId], idempotencyKey: crypto.randomUUID() });
     if (res.status === "confirmFear") {

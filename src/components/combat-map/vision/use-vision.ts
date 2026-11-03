@@ -227,7 +227,7 @@ function patchDoor(store: OptimisticLocalStore, objectId: string, open: boolean)
 
 /** Sets a token's carried light in every cached token list and character view. */
 function patchLight(store: OptimisticLocalStore, tokenId: string, light: CarriedLight) {
-  for (const query of [api.combatTokens.list, api.combatTokens.party] as const) {
+  for (const query of [api.combatTokensReads.list, api.combatTokensReads.party] as const) {
     for (const { args, value } of store.getAllQueries(query)) {
       if (!value || !value.some((t) => t._id === tokenId)) continue;
       store.setQuery(query, args, value.map((t) => (t._id === tokenId ? { ...t, light } : t)));
@@ -243,10 +243,10 @@ function patchLight(store: OptimisticLocalStore, tokenId: string, light: Carried
 
 /** Adds or removes a character in a token's `revealedTo` (the GM's list). */
 function patchReveal(store: OptimisticLocalStore, tokenId: string, characterId: Id<"characters">, on: boolean) {
-  for (const { args, value } of store.getAllQueries(api.combatTokens.list)) {
+  for (const { args, value } of store.getAllQueries(api.combatTokensReads.list)) {
     if (!value || !value.some((t) => t._id === tokenId)) continue;
     store.setQuery(
-      api.combatTokens.list,
+      api.combatTokensReads.list,
       args,
       value.map((t) => {
         if (t._id !== tokenId) return t;

@@ -17,7 +17,7 @@ test("HUD-H3.0 the picking panel, target rings and Waiting for the GM", { tag: "
   const { player, client, campaignId, enemies } = s;
   try {
     await client.mutation(api.combatTokens.move, { campaignId, tokenId: enemies.bandit.tokenId, x: 6, y: 10 });
-    const tokens = await client.query(api.combatTokens.list, { campaignId, mapId: s.mapId });
+    const tokens = await client.query(api.combatTokensReads.list, { campaignId, mapId: s.mapId });
     const lt = tokens.find((t) => t._id === enemies.lieutenant.tokenId)!.instanceId!;
     await client.mutation(api.encounterTracking.toggleCondition, { campaignId, instanceId: lt, condition: "vulnerable", idempotencyKey: crypto.randomUUID() });
 

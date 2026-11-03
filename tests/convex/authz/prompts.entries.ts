@@ -12,7 +12,7 @@ import { freshKey } from "./synth";
  * The worlds' characters are warriors without Warden's Protection or Charge, so an allowed row stops at a domain check:
  * `rollCount` FEATURE_NOT_OWNED, `targetCount` null, `charge` INVALID for the GM (no Difficulty) or FEATURE_NOT_OWNED for
  * the player (a player's Charge goes to the GM, B2). B2: `answerDifficulty` (GM) answers an open `difficulty` request;
- * `combatRequests.difficulties` lists them (the GM all, a player their own). Content:
+ * `combatRequestsReads.difficulties` lists them (the GM all, a player their own). Content:
  * tests/convex/feature-prompts.test.ts.
  */
 
@@ -138,7 +138,7 @@ const entries: Entry[] = [
     okCodes: ["INVALID", "FEATURE_NOT_OWNED"],
   },
   // B2: the rolls waiting for the GM's Difficulty, and the GM's answer (a decline: nothing is rolled).
-  { fn: api.combatRequests.difficulties, access: "view", args: () => ({}) },
+  { fn: api.combatRequestsReads.difficulties, access: "view", args: () => ({}) },
   { fn: api.featurePrompts.answerDifficulty, access: "gm", setup: difficultyRow, args: (w) => ({ requestId: w.ids.requestId as Id<"combatRequests">, difficulty: null }) },
 ];
 

@@ -53,14 +53,14 @@ const sniper = { tokenId: "t-sniper", name: "Sniper" };
 
 /** Every read loaded and empty, Moss in the party. */
 function empty() {
-  queries["combatRequests:mine"] = [];
-  queries["combatCards:pending"] = [];
-  queries["combatFeatures:pending"] = [];
-  queries["combatRequests:difficulties"] = [];
+  queries["combatRequestsReads:mine"] = [];
+  queries["combatCardsReads:pending"] = [];
+  queries["combatFeaturesReads:pending"] = [];
+  queries["combatRequestsReads:difficulties"] = [];
   queries["adversaryActions:windows"] = [];
   queries["cloakPrompts:pending"] = [];
   queries["hitKeywords:asks"] = [];
-  queries["characters:listByCampaign"] = [moss];
+  queries["charactersReads:listByCampaign"] = [moss];
   queries["featurePrompts:allyRolls"] = { asks: [], waiting: [], allies: [], pending: [] };
   queries["deathMoves:state"] = { "c-moss": deathBase };
   queries["feed:list"] = { page: [], isDone: true, continueCursor: "" };
@@ -68,9 +68,9 @@ function empty() {
 
 function full() {
   empty();
-  queries["combatRequests:mine"] = [{ kind: "sanction", requestId: "r-att", characterId: "c-moss", characterName: "Moss", createdAt: 1, slot: "primary", targets: [sniper], outOfRange: [{ tokenId: "t-sniper", band: "veryFar" }] }];
-  queries["combatCards:pending"] = [{ requestId: "r-card", characterId: "c-moss", characterName: "Moss", cardId: "vicious-entangle", cardName: "Vicious Entangle", useId: "main", createdAt: 2, targets: [sniper], outOfRange: [{ tokenId: "t-sniper", band: "veryFar" }] }];
-  queries["combatRequests:difficulties"] = [{ requestId: "r-dif", characterId: "c-b", characterName: "Brannoc", createdAt: 3, ask: "charge", target: { tokenId: "t-b", name: "Bandit" }, seers: [] }];
+  queries["combatRequestsReads:mine"] = [{ kind: "sanction", requestId: "r-att", characterId: "c-moss", characterName: "Moss", createdAt: 1, slot: "primary", targets: [sniper], outOfRange: [{ tokenId: "t-sniper", band: "veryFar" }] }];
+  queries["combatCardsReads:pending"] = [{ requestId: "r-card", characterId: "c-moss", characterName: "Moss", cardId: "vicious-entangle", cardName: "Vicious Entangle", useId: "main", createdAt: 2, targets: [sniper], outOfRange: [{ tokenId: "t-sniper", band: "veryFar" }] }];
+  queries["combatRequestsReads:difficulties"] = [{ requestId: "r-dif", characterId: "c-b", characterName: "Brannoc", createdAt: 3, ask: "charge", target: { tokenId: "t-b", name: "Bandit" }, seers: [] }];
   queries["adversaryActions:windows"] = [
     { requestId: "r-win", attackerLabel: "Bandit", originalTargetId: "c-moss", targetCharacterId: "c-moss", targetName: "Moss", damage: 9, damageType: "physical", direct: false, critical: false, awaiting: [{ characterId: "c-o", name: "Oriel", role: "ally" }], answers: 0, createdAt: 4 },
   ];
@@ -109,7 +109,7 @@ describe("Waiting on you", () => {
     const view = render(<HudQueue state={page("gm")} />);
     expect(screen.getByText("Nothing is waiting on you.")).toBeInTheDocument();
     expect(screen.getByTestId("hud-queue-count")).toHaveTextContent("0");
-    delete queries["combatRequests:mine"];
+    delete queries["combatRequestsReads:mine"];
     view.rerender(<HudQueue state={page("gm")} />);
     expect(screen.getByText("Loading the requests…")).toHaveAttribute("role", "status");
   });

@@ -16,8 +16,8 @@ import { waitingReason, waitingUses } from "./model";
 
 /**
  * "Waiting for the GM" (plan combat-hud H3.0; CmpPromptsPlayer `.pc.wait`; answer 8a): one card per use of the player's
- * that went out of range and waits on the GM's approval (an attack, a card or a feature: `combatRequests.mine`
- * sanctions, `combatCards.pending`, `combatFeatures.pending`). Nothing was rolled or paid. Withdraw sends
+ * that went out of range and waits on the GM's approval (an attack, a card or a feature: `combatRequestsReads.mine`
+ * sanctions, `combatCardsReads.pending`, `combatFeaturesReads.pending`). Nothing was rolled or paid. Withdraw sends
  * `combatWithdraw.withdraw` (HD3) and drops the card at once (optimistic update on the three reads); the GM's queue
  * item disappears with it. The cards come from the server's open requests, so a reload keeps them and the GM's
  * answer (Allow / Decline) removes them live.
@@ -32,12 +32,12 @@ const HOURGLASS = (
 
 /** Drops a withdrawn request from the three open-request reads (HD3: they drop it on the server too). */
 export function dropWithdrawn(store: OptimisticLocalStore, campaignId: Id<"campaigns">, requestId: Id<"combatRequests">): void {
-  const mine = store.getQuery(api.combatRequests.mine, { campaignId });
-  if (mine !== undefined) store.setQuery(api.combatRequests.mine, { campaignId }, mine.filter((r) => r.requestId !== requestId));
-  const cards = store.getQuery(api.combatCards.pending, { campaignId });
-  if (cards !== undefined) store.setQuery(api.combatCards.pending, { campaignId }, cards.filter((r) => r.requestId !== requestId));
-  const features = store.getQuery(api.combatFeatures.pending, { campaignId });
-  if (features !== undefined) store.setQuery(api.combatFeatures.pending, { campaignId }, features.filter((r) => r.requestId !== requestId));
+  const mine = store.getQuery(api.combatRequestsReads.mine, { campaignId });
+  if (mine !== undefined) store.setQuery(api.combatRequestsReads.mine, { campaignId }, mine.filter((r) => r.requestId !== requestId));
+  const cards = store.getQuery(api.combatCardsReads.pending, { campaignId });
+  if (cards !== undefined) store.setQuery(api.combatCardsReads.pending, { campaignId }, cards.filter((r) => r.requestId !== requestId));
+  const features = store.getQuery(api.combatFeaturesReads.pending, { campaignId });
+  if (features !== undefined) store.setQuery(api.combatFeaturesReads.pending, { campaignId }, features.filter((r) => r.requestId !== requestId));
 }
 
 export function PickWaiting({ state }: { state: CombatPageState }) {
@@ -48,9 +48,9 @@ export function PickWaiting({ state }: { state: CombatPageState }) {
 function PlayerWaiting({ state }: { state: CombatPageState }) {
   const { campaignId } = state;
   const actor = useActor(state);
-  const attacks = useQuery(api.combatRequests.mine, { campaignId });
-  const cards = useQuery(api.combatCards.pending, { campaignId });
-  const features = useQuery(api.combatFeatures.pending, { campaignId });
+  const attacks = useQuery(api.combatRequestsReads.mine, { campaignId });
+  const cards = useQuery(api.combatCardsReads.pending, { campaignId });
+  const features = useQuery(api.combatFeaturesReads.pending, { campaignId });
   const withdraw = useMutation(api.combatWithdraw.withdraw).withOptimisticUpdate((store, args) => dropWithdrawn(store, args.campaignId, args.requestId));
   const [errors, setErrors] = useState<Readonly<Record<string, Refusal>>>({});
   const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set());

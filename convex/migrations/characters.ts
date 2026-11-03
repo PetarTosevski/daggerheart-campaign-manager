@@ -1,7 +1,7 @@
 import { validate } from "convex-helpers/validators";
 import { ConvexError } from "convex/values";
 
-import { SHEET_VERSION } from "../../src/lib/validation/characters";
+import { SHEET_VERSION } from "../../src/lib/validation/character-constants";
 import { readSheet, storedSheet } from "../characters";
 import { migrations } from "../lib/migrations";
 import { storedSheetValidator } from "../lib/validators/characters";

@@ -58,7 +58,7 @@ export type StatBlockPanelProps = {
 /**
  * The GM's adversary stat block in the HUD's right panel (plan combat-hud H5.2; GMDesktop 'Adversary acting' `.sheet.adv`,
  * the parchment tracker look). H0's `SidePanel` (non-modal `<aside>`, Esc / ✕ close, focus back to the token). Reads
- * (GM only): the map's tokens (`combatTokens.list`), the running encounter (`encounters.list` / `encounters.get`, custom
+ * (GM only): the map's tokens (`combatTokensReads.list`), the running encounter (`encounters.list` / `encounters.get`, custom
  * blocks), `campaigns.fear`, the Fear ends on this instance (`combatEffects.fearEnds`) and line of sight on the map.
  * Writes the tracker's intents (`encounterTracking.markHp` / `markStress` / `toggleCondition` / `spotlight`, optimistic),
  * `combatEffects.endByFear`, and the adversary actions through `acts` (FearConfirm first for every Fear spend).
@@ -70,7 +70,7 @@ export type StatBlockPanelProps = {
  */
 export function StatBlockPanel({ state, tokenId, acts, ask, onClose }: StatBlockPanelProps) {
   const { campaignId, map } = state;
-  const tokens = useQuery(api.combatTokens.list, map ? { campaignId, mapId: map._id } : "skip");
+  const tokens = useQuery(api.combatTokensReads.list, map ? { campaignId, mapId: map._id } : "skip");
   const list = useQuery(api.encounters.list, { campaignId });
   const token = tokens?.find((t) => t._id === tokenId);
   const running = list?.active.find((e) => e.status === "running") ?? null;
@@ -157,7 +157,7 @@ export function StatBlockPanel({ state, tokenId, acts, ask, onClose }: StatBlock
   );
 }
 
-type Tokens = FunctionReturnType<typeof api.combatTokens.list>;
+type Tokens = FunctionReturnType<typeof api.combatTokensReads.list>;
 
 function StatBlockBody({
   state,

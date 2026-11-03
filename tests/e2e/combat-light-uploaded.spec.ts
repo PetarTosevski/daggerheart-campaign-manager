@@ -116,7 +116,7 @@ test("an uploaded faint-glow sprite gets the Play light switch, named after the 
     await playerClient.mutation(api.members.joinByCode, { code });
     await playerClient.mutation(api.characters.create, { campaignId, draft: bardDraft("Ash"), idempotencyKey: crypto.randomUUID() });
     await client.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
-    const tokens = await client.query(api.combatTokens.list, { campaignId, mapId });
+    const tokens = await client.query(api.combatTokensReads.list, { campaignId, mapId });
     const ash = tokens.find((t) => t.name === "Ash")!;
     await client.mutation(api.combatTokens.move, { campaignId, tokenId: ash._id, x: 7, y: 7 });
     await client.mutation(api.combatTokens.turn, { campaignId, tokenId: ash._id, angle: 0 });

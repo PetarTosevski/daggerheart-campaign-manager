@@ -66,7 +66,7 @@ test("fog of war: dim-band reveal, a wall, daytime, lights, explored areas, the 
     await client.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
     const { tokenId: banditId } = await client.mutation(api.combatTokens.addCustom, { campaignId, mapId, name: "Bandit", hp: 3, side: "enemy", idempotencyKey: crypto.randomUUID() });
     const { tokenId: wolfId } = await client.mutation(api.combatTokens.addCustom, { campaignId, mapId, name: "Wolf", hp: 4, side: "enemy", idempotencyKey: crypto.randomUUID() });
-    const ash = (await client.query(api.combatTokens.list, { campaignId, mapId })).find((t) => t.name === "Ash")!;
+    const ash = (await client.query(api.combatTokensReads.list, { campaignId, mapId })).find((t) => t.name === "Ash")!;
     await client.mutation(api.combatTokens.move, { campaignId, tokenId: ash._id, x: 4, y: 10 });
     await client.mutation(api.combatTokens.turn, { campaignId, tokenId: ash._id, angle: 0 });
     await client.mutation(api.combatVision.setCarriedLight, { campaignId, tokenId: ash._id, light: "torch" });

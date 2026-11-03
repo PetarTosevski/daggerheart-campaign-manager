@@ -226,18 +226,18 @@ export function PartyCard({
   const adjust = useMutation(api.characters.adjustResource).withOptimisticUpdate((store, { characterId, resource, delta }) => {
     if (resource === "armor") return;
     // The dashboard reads the party summary (PF9); the roster reads the full list.
-    const summary = store.getQuery(api.characters.partySummary, { campaignId });
+    const summary = store.getQuery(api.charactersReads.partySummary, { campaignId });
     if (summary) {
       store.setQuery(
-        api.characters.partySummary,
+        api.charactersReads.partySummary,
         { campaignId },
         summary.map((c) => (c._id === characterId ? { ...c, sheet: applyResourceDelta(c.sheet, resource, delta) } : c)),
       );
     }
-    const list = store.getQuery(api.characters.listByCampaign, { campaignId });
+    const list = store.getQuery(api.charactersReads.listByCampaign, { campaignId });
     if (!list) return;
     store.setQuery(
-      api.characters.listByCampaign,
+      api.charactersReads.listByCampaign,
       { campaignId },
       list.map((c) => (c._id === characterId ? { ...c, sheet: applyResourceDelta(c.sheet, resource, delta) } : c)),
     );

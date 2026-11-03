@@ -6,10 +6,6 @@ import { checkMove } from "../src/lib/domain/combat-map/movement";
 import { rangeCheck } from "../src/lib/domain/combat-actions/distance";
 import { appError } from "../src/lib/errors/app-error";
 import { applyCondition } from "../src/lib/domain/encounters/damage";
-import { sessionEncounterTitle } from "../src/lib/domain/sessions/encounter-title";
-import { ADVERSARIES } from "../src/lib/srd/adversaries";
-import { CLASSES } from "../src/lib/srd/classes";
-import type { AdversaryType } from "../src/lib/srd/types";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { areasAfterMove, carryAlong, endAreasOnCasterEvent, endAreasOwnerLeft, moveRules, rangeTriggersAfterMove } from "./combatAreas";
@@ -24,14 +20,15 @@ import {
   tokensOnMap,
 } from "./lib/combatMaps";
 import { movementGrid, uncloakAfterMove } from "./lib/combatMovement";
-import { adversaryArtSrc, MAX_INSTANCES, startEncounter } from "./lib/encounters";
+import { MAX_INSTANCES, startEncounter } from "./lib/encounters";
 import { pcPortrait } from "./lib/pcPortrait";
 import { tokenViewValidator, type TokenView } from "./lib/validators/combatTokens";
-import { campaignMutation, campaignQuery, gmMutation, gmQuery, keyedGmMutation } from "./lib/functions";
-import { atLeast, permissionFor, type Permission } from "./lib/permissions";
+import { campaignMutation, gmMutation, keyedGmMutation } from "./lib/functions";
+import { atLeast, permissionFor } from "./lib/permissions";
 import { currentSessionEncounter } from "./lib/sessions";
 import { tokenSideValidator } from "./lib/validators/combatMaps";
-import { encounterConditionValidator, encounterStatusValidator } from "./lib/validators/encounters";
+import { encounterConditionValidator } from "./lib/validators/encounters";
+import { adversaryType, instancesOf, placedInstances, runningEncounter, type CampaignCtx } from "./lib/combatTokenViews";
 
 /**
  * Tokens on a combat map (D9 C6, plan `.omc/plans/d9-combat-map.yaml`; R3, R4, R5, Q6). The GM places the party,
@@ -45,12 +42,10 @@ import { encounterConditionValidator, encounterStatusValidator } from "./lib/val
  * D10 S8 (plan `.omc/plans/d10-sessions.yaml`, B11, Q2): `sessionEncounter` and `placeSessionEncounter` put the live
  * (else the newest planned) session's linked encounter on the map with one click ("＋ Session encounter").
  *
- * Reads: the GM's `list` returns every token with its stats. Players get `party`: the PC tokens only (their own
- * and the other PCs', Q4), never an adversary, ally or neutral token, until C7's filtered `playerView`.
+ * Reads (`combatTokensReads.ts` since dcm-uh6r, so they load without the movement and area engines): the GM's `list`
+ * returns every token with its stats. Players get `party`: the PC tokens only (their own and the other PCs', Q4), never
+ * an adversary, ally or neutral token, until C7's filtered `playerView`.
  */
-
-const SRD_TYPES = new Map<string, string>(ADVERSARIES.map((a) => [a.id, a.type]));
-const CLASS_NAMES = new Map<string, string>(CLASSES.map((c) => [c.id, c.name]));
 
 /** The highest Hit Points or Stress a custom token can have. */
 const MAX_CUSTOM_TRACK = 99;
@@ -62,35 +57,6 @@ const MAX_PLACE = MAX_INSTANCES;
 export { pcPortrait };
 
 export { tokenViewValidator, type TokenView };
-
-const combatantsValidator = v.object({
-  /** Active characters not yet on this map ("＋ Party (n)"). */
-  partyLeft: v.number(),
-  /** The running encounter, or null. */
-  encounter: v.union(v.null(), v.object({ _id: v.id("encounters"), name: v.string() })),
-  /** The board's "From the Adversaries tab" queue: the running encounter's instances not yet on this map, in order. */
-  queue: v.array(v.object({ instanceId: v.id("encounterAdversaries"), name: v.string(), solo: v.boolean() })),
-});
-
-/** The "＋ Session encounter" button (B11): its title, and the session and encounter it places (null: none). */
-const sessionEncounterValidator = v.object({
-  /** 'Session N: 2× Bruiser, 1× Leader' (S1's sessionEncounterTitle over every instance), or 'No planned session with an encounter'. */
-  title: v.string(),
-  session: v.union(
-    v.null(),
-    v.object({
-      sessionId: v.id("sessions"),
-      n: v.number(),
-      encounterId: v.id("encounters"),
-      encounterName: v.string(),
-      status: encounterStatusValidator,
-      /** Instances in the encounter. */
-      adversaries: v.number(),
-      /** Its undefeated instances not on this map yet (0 for an unknown map). */
-      unplaced: v.number(),
-    }),
-  ),
-});
 
 /** Sides the GM picks for a custom token (the party side belongs to PCs). */
 const customSideValidator = v.union(v.literal("enemy"), v.literal("ally"), v.literal("neutral"));
@@ -110,34 +76,6 @@ function tokenName(raw: string): string {
   if (name === "") invalid("Give the token a name.");
   if (name.length > MAX_TOKEN_NAME) invalid(`A token name can be at most ${MAX_TOKEN_NAME} characters.`);
   return name;
-}
-
-/** A campaign's map by id, or null (other campaigns' and malformed ids read as missing). */
-async function findMap(ctx: QueryCtx, campaignId: Id<"campaigns">, mapId: string): Promise<Doc<"combatMaps"> | null> {
-  const id = ctx.db.normalizeId("combatMaps", mapId);
-  const map = id === null ? null : await ctx.db.get("combatMaps", id);
-  return map !== null && map.campaignId === campaignId ? map : null;
-}
-
-/** The campaign's running encounter (at most one), or null. */
-function runningEncounter(ctx: QueryCtx, campaignId: Id<"campaigns">) {
-  return ctx.db
-    .query("encounters")
-    .withIndex("by_campaign_status_updated", (q) => q.eq("campaignId", campaignId).eq("status", "running"))
-    .first();
-}
-
-/** An instance's adversary type (SRD entry or the campaign's custom block), or null. */
-async function adversaryType(ctx: QueryCtx, campaignId: Id<"campaigns">, instance: Doc<"encounterAdversaries">): Promise<string | null> {
-  if (instance.source.kind === "srd") return SRD_TYPES.get(instance.source.adversaryId) ?? null;
-  const block = await ctx.db.get("customAdversaries", instance.source.customId);
-  return block !== null && block.campaignId === campaignId ? block.type : null;
-}
-
-/** An adversary token's portrait: its rulebook art as an image URL, or null (initials). */
-async function adversaryPortrait(ctx: QueryCtx, campaignId: Id<"campaigns">, instance: Doc<"encounterAdversaries">): Promise<TokenView["portrait"]> {
-  const src = await adversaryArtSrc(ctx, campaignId, instance);
-  return src === null ? null : { kind: "url", url: src };
 }
 
 /** Squares new tokens may stand on: not wall, void, deep water or lava (the board's `walkable`); any square on an image. */
@@ -180,121 +118,6 @@ async function insertTokens(ctx: MutationCtx, map: Doc<"combatMaps">, existing: 
   return ids;
 }
 
-/** The encounter's instances in order (at most MAX_INSTANCES). */
-function instancesOf(ctx: QueryCtx, encounterId: Id<"encounters">) {
-  return ctx.db
-    .query("encounterAdversaries")
-    .withIndex("by_encounter_order", (q) => q.eq("encounterId", encounterId))
-    .take(MAX_INSTANCES);
-}
-
-/** The ids of the adversary instances already on a map. */
-function placedInstances(tokens: Doc<"combatTokens">[]): Set<Id<"encounterAdversaries">> {
-  return new Set(tokens.flatMap((t) => (t.ref.kind === "adversary" ? [t.ref.adversaryId] : [])));
-}
-
-/**
- * Builds the views of `tokens` for the caller. `gm`: every token may move and `revealedTo` is included; otherwise a
- * PC token may move when the caller can edit its character (permissionFor, R4). Reads each source row once.
- */
-type CampaignCtx<C> = C & { user: Doc<"users">; campaign: Doc<"campaigns">; permission: Permission };
-
-async function viewsOf(ctx: CampaignCtx<QueryCtx>, tokens: Doc<"combatTokens">[], gm: boolean): Promise<TokenView[]> {
-  const encounters = new Map<Id<"encounters">, Doc<"encounters"> | null>();
-  const views: TokenView[] = [];
-  for (const token of tokens) {
-    const base = {
-      _id: token._id,
-      side: token.side,
-      x: token.x,
-      y: token.y,
-      size: token.size,
-      face: token.face,
-      light: token.light,
-      ...(gm ? { revealedTo: token.revealedTo } : {}),
-    };
-    const { ref } = token;
-    // A companion token (token refs widened by sheet-drawer SD0, Q4): its view is SD-C's; nothing places one before it.
-    if (ref.kind === "companion") continue;
-    if (ref.kind === "custom") {
-      views.push({
-        ...base,
-        kind: "custom",
-        name: ref.name,
-        sub: "",
-        portrait: null,
-        canMove: gm,
-        mine: false,
-        stats: { hp: ref.hp, hpMax: ref.hpMax, stress: ref.stress, stressMax: ref.stressMax, conditions: ref.conditions, down: ref.hpMax > 0 && ref.hp >= ref.hpMax },
-      });
-    } else if (ref.kind === "pc") {
-      const character = await ctx.db.get("characters", ref.characterId);
-      if (character === null || character.campaignId !== ctx.campaign._id) {
-        views.push({ ...base, kind: "pc", characterId: ref.characterId, name: "Missing character", sub: "", portrait: null, canMove: gm, mine: false, stats: null });
-        continue;
-      }
-      const mine = !gm && character.ownerId === ctx.user._id;
-      const canMove = gm || atLeast(await permissionFor(ctx, ctx.user, { type: "character", campaign: ctx.campaign, character }, "edit"), "edit");
-      let sheet: ReturnType<typeof readSheet>;
-      try {
-        sheet = readSheet(character.sheet);
-      } catch {
-        views.push({ ...base, kind: "pc", characterId: character._id, name: "Unreadable character", sub: "", portrait: null, canMove, mine, stats: null });
-        continue;
-      }
-      views.push({
-        ...base,
-        kind: "pc",
-        characterId: character._id,
-        name: sheet.name,
-        sub: `${CLASS_NAMES.get(sheet.classId) ?? sheet.classId} · level ${sheet.level}`,
-        portrait: await pcPortrait(ctx, character._id, sheet),
-        canMove,
-        mine,
-        stats: {
-          hp: sheet.hp,
-          hpMax: sheet.hpMax,
-          stress: sheet.stress,
-          stressMax: sheet.stressMax,
-          conditions: sheet.conditions,
-          down: character.status === "dead" || (sheet.hpMax > 0 && sheet.hp >= sheet.hpMax),
-        },
-      });
-    } else {
-      const instance = await ctx.db.get("encounterAdversaries", ref.adversaryId);
-      if (instance === null || instance.campaignId !== ctx.campaign._id) {
-        views.push({ ...base, kind: "adversary", instanceId: ref.adversaryId, name: "Removed adversary", sub: "", portrait: null, canMove: gm, mine: false, stats: null, tracked: false });
-        continue;
-      }
-      if (!encounters.has(instance.encounterId)) encounters.set(instance.encounterId, await ctx.db.get("encounters", instance.encounterId));
-      const encounter = encounters.get(instance.encounterId) ?? null;
-      const type = await adversaryType(ctx, ctx.campaign._id, instance);
-      views.push({
-        ...base,
-        kind: "adversary",
-        instanceId: instance._id,
-        name: instance.label,
-        sub: [type, encounter?.name].filter(Boolean).join(" · "),
-        // The rulebook art when the adversary has it (user 2026-10-21), else the side's colour and initials.
-        portrait: await adversaryPortrait(ctx, ctx.campaign._id, instance),
-        canMove: gm,
-        mine: false,
-        stats: {
-          hp: instance.hp,
-          hpMax: instance.stats.hpMax,
-          stress: instance.stress,
-          stressMax: instance.stats.stressMax,
-          conditions: instance.conditions,
-          difficulty: instance.stats.difficulty,
-          down: instance.defeated,
-        },
-        tracked: encounter?.status === "running",
-      });
-    }
-  }
-  return views;
-}
-
 /** A custom token or INVALID. */
 function customRef(token: Doc<"combatTokens">) {
   if (token.ref.kind !== "custom") invalid("Only a custom token keeps its own numbers; change this one on its sheet or in the tracker.");
@@ -332,99 +155,6 @@ async function movableToken(ctx: CampaignCtx<MutationCtx>, tokenId: string) {
   if (!atLeast(permission, "edit")) throw appError("COMBAT_NOT_YOUR_TOKEN");
   return { token, map };
 }
-
-// ---------------------------------------------------------------- reads
-
-/** GM: every token on the map with its stats (R4). An unknown or other campaign's map reads as empty. */
-export const list = gmQuery({
-  args: { mapId: v.string() },
-  returns: v.array(tokenViewValidator),
-  handler: async (ctx, { mapId }) => {
-    const map = await findMap(ctx, ctx.campaign._id, mapId);
-    if (map === null) return [];
-    return viewsOf(ctx, await tokensOnMap(ctx, map._id), true);
-  },
-});
-
-/**
- * Everyone in the campaign: the map's PC tokens only (the caller's own and the other PCs', Q4); never an adversary,
- * ally, neutral or custom token, so no adversary stats reach a player (R4). Players read only the live map (any
- * other map reads as empty); the GM reads any. C7's `playerView` replaces this for players.
- */
-export const party = campaignQuery({
-  need: "view",
-  enough: "owner",
-  args: { mapId: v.string() },
-  returns: v.array(tokenViewValidator),
-  handler: async (ctx, { mapId }) => {
-    const gm = atLeast(ctx.permission, "owner");
-    const map = await findMap(ctx, ctx.campaign._id, mapId);
-    if (map === null || (!gm && !map.live)) return [];
-    const pcs = (await tokensOnMap(ctx, map._id)).filter((t) => t.ref.kind === "pc");
-    return viewsOf(ctx, pcs, gm);
-  },
-});
-
-/** GM, the Combatants card: party members not yet placed and the running encounter's queue (unplaced, not defeated). */
-export const combatants = gmQuery({
-  args: { mapId: v.string() },
-  returns: combatantsValidator,
-  handler: async (ctx, { mapId }) => {
-    const map = await findMap(ctx, ctx.campaign._id, mapId);
-    if (map === null) return { partyLeft: 0, encounter: null, queue: [] };
-    const tokens = await tokensOnMap(ctx, map._id);
-    const placedPcs = new Set(tokens.flatMap((t) => (t.ref.kind === "pc" ? [t.ref.characterId] : [])));
-    const placedAdversaries = new Set(tokens.flatMap((t) => (t.ref.kind === "adversary" ? [t.ref.adversaryId] : [])));
-    const party = await partyOf(ctx, ctx.campaign._id);
-    const partyLeft = party.filter((c) => c.status === "active" && !placedPcs.has(c._id)).length;
-    const encounter = await runningEncounter(ctx, ctx.campaign._id);
-    if (encounter === null) return { partyLeft, encounter: null, queue: [] };
-    const instances = await ctx.db
-      .query("encounterAdversaries")
-      .withIndex("by_encounter_order", (q) => q.eq("encounterId", encounter._id))
-      .take(MAX_INSTANCES);
-    const queue = [];
-    for (const instance of instances) {
-      if (instance.defeated || placedAdversaries.has(instance._id)) continue;
-      queue.push({ instanceId: instance._id, name: instance.label, solo: (await adversaryType(ctx, ctx.campaign._id, instance)) === "Solo" });
-    }
-    return { partyLeft, encounter: { _id: encounter._id, name: encounter.name }, queue };
-  },
-});
-
-/**
- * GM, the "＋ Session encounter" button (B11): the live session, else the newest planned one, with its linked
- * encounter, the title 'Session N: 2× Bruiser, 1× Leader' over every instance, and how many of its undefeated
- * instances are not on this map yet; `session: null` with 'No planned session with an encounter' otherwise.
- */
-export const sessionEncounter = gmQuery({
-  args: { mapId: v.string() },
-  returns: sessionEncounterValidator,
-  handler: async (ctx, { mapId }) => {
-    const campaignId = ctx.campaign._id;
-    const found = await currentSessionEncounter(ctx, campaignId);
-    if (found === null) return { title: sessionEncounterTitle(null), session: null };
-    const { session, encounter } = found;
-    const instances = await instancesOf(ctx, encounter._id);
-    const types: { type: AdversaryType | null }[] = [];
-    for (const instance of instances) types.push({ type: (await adversaryType(ctx, campaignId, instance)) as AdversaryType | null });
-    const map = await findMap(ctx, campaignId, mapId);
-    const placed = map === null ? null : placedInstances(await tokensOnMap(ctx, map._id));
-    const unplaced = placed === null ? 0 : instances.filter((i) => !i.defeated && !placed.has(i._id)).length;
-    return {
-      title: sessionEncounterTitle({ n: session.n, instances: types }),
-      session: {
-        sessionId: session._id,
-        n: session.n,
-        encounterId: encounter._id,
-        encounterName: encounter.name,
-        status: encounter.status,
-        adversaries: instances.length,
-        unplaced,
-      },
-    };
-  },
-});
 
 // ---------------------------------------------------------------- GM: placing tokens
 

@@ -19,9 +19,9 @@ import { HudResolutions } from "./resolutions";
  * count and one CmpPromptsGM card per thing that waits on the GM, oldest first, then Resolutions with Undo. A client
  * merge of the reads the classic column uses (no server change):
  *
- * - out of range, your call: `combatRequests.mine` (attack sanctions), `combatCards.pending`, `combatFeatures.pending`
+ * - out of range, your call: `combatRequestsReads.mine` (attack sanctions), `combatCardsReads.pending`, `combatFeaturesReads.pending`
  *   — Allow / Decline (`combatRequests.sanction`, `combatCards.sanction`, `combatFeatures.sanction`);
- * - Set the Difficulty: `combatRequests.difficulties` — Set and roll / Decline (`featurePrompts.answerDifficulty`);
+ * - Set the Difficulty: `combatRequestsReads.difficulties` — Set and roll / Decline (`featurePrompts.answerDifficulty`);
  * - Reactions: `adversaryActions.windows` — Resolve now (`adversaryActions.resolve`);
  * - Does <name>'s Cloaked end?: `cloakPrompts.pending` — Yes, it ends / No, it stays (`cloakPrompts.answer`);
  * - Was this hit fire?: `hitKeywords.asks` — Yes / No (`hitKeywords.answer`);
@@ -55,14 +55,14 @@ function GmQueue({ campaignId }: { campaignId: Id<"campaigns"> }) {
 
 function Requests({ campaignId }: { campaignId: Id<"campaigns"> }) {
   const titleId = useId();
-  const mine = useQuery(api.combatRequests.mine, { campaignId });
-  const cards = useQuery(api.combatCards.pending, { campaignId });
-  const features = useQuery(api.combatFeatures.pending, { campaignId });
-  const difficulties = useQuery(api.combatRequests.difficulties, { campaignId });
+  const mine = useQuery(api.combatRequestsReads.mine, { campaignId });
+  const cards = useQuery(api.combatCardsReads.pending, { campaignId });
+  const features = useQuery(api.combatFeaturesReads.pending, { campaignId });
+  const difficulties = useQuery(api.combatRequestsReads.difficulties, { campaignId });
   const windows = useQuery(api.adversaryActions.windows, { campaignId });
   const cloaks = useQuery(api.cloakPrompts.pending, { campaignId });
   const keywords = useQuery(api.hitKeywords.asks, { campaignId });
-  const characters = useQuery(api.characters.listByCampaign, { campaignId });
+  const characters = useQuery(api.charactersReads.listByCampaign, { campaignId });
   const live = useMemo(() => (characters ?? []).filter((c) => !c.corrupt), [characters]);
   // `allyRolls` reads for a character the caller edits; the GM's `pending` lists every open throw of the campaign.
   const anyPc = live[0]?._id;

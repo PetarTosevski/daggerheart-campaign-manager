@@ -59,20 +59,20 @@ export function useQueueAnswers(campaignId: CampaignId) {
 
   const drop = <T extends { requestId: string }>(rows: readonly T[], id: string) => rows.filter((r) => r.requestId !== id);
   const attack = useMutation(api.combatRequests.sanction).withOptimisticUpdate((store, { requestId }) => {
-    const rows = store.getQuery(api.combatRequests.mine, { campaignId });
-    if (rows !== undefined) store.setQuery(api.combatRequests.mine, { campaignId }, drop(rows, requestId));
+    const rows = store.getQuery(api.combatRequestsReads.mine, { campaignId });
+    if (rows !== undefined) store.setQuery(api.combatRequestsReads.mine, { campaignId }, drop(rows, requestId));
   });
   const card = useMutation(api.combatCards.sanction).withOptimisticUpdate((store, { requestId }) => {
-    const rows = store.getQuery(api.combatCards.pending, { campaignId });
-    if (rows !== undefined) store.setQuery(api.combatCards.pending, { campaignId }, drop(rows, requestId));
+    const rows = store.getQuery(api.combatCardsReads.pending, { campaignId });
+    if (rows !== undefined) store.setQuery(api.combatCardsReads.pending, { campaignId }, drop(rows, requestId));
   });
   const feature = useMutation(api.combatFeatures.sanction).withOptimisticUpdate((store, { requestId }) => {
-    const rows = store.getQuery(api.combatFeatures.pending, { campaignId });
-    if (rows !== undefined) store.setQuery(api.combatFeatures.pending, { campaignId }, drop(rows, requestId));
+    const rows = store.getQuery(api.combatFeaturesReads.pending, { campaignId });
+    if (rows !== undefined) store.setQuery(api.combatFeaturesReads.pending, { campaignId }, drop(rows, requestId));
   });
   const difficulty = useMutation(api.featurePrompts.answerDifficulty).withOptimisticUpdate((store, { requestId }) => {
-    const rows = store.getQuery(api.combatRequests.difficulties, { campaignId });
-    if (rows !== undefined) store.setQuery(api.combatRequests.difficulties, { campaignId }, drop(rows, requestId));
+    const rows = store.getQuery(api.combatRequestsReads.difficulties, { campaignId });
+    if (rows !== undefined) store.setQuery(api.combatRequestsReads.difficulties, { campaignId }, drop(rows, requestId));
   });
   const resolve = useMutation(api.adversaryActions.resolve).withOptimisticUpdate((store, { requestId }) => {
     const rows = store.getQuery(api.adversaryActions.windows, { campaignId });

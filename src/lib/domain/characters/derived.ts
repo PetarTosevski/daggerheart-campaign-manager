@@ -1,5 +1,5 @@
 import { getArmor, getWeapon } from "../../srd/index";
-import { augmentDefense } from "../../frames/extras/motherboard";
+import { augmentDefense } from "../../frames/extras/motherboard-defense";
 import { overrideEvasion } from "../class-features/hooks";
 import type { FeatureScope } from "../class-features/types";
 import { lunarBonuses } from "../session-features/lunar";

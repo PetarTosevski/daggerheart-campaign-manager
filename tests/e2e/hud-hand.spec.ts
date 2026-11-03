@@ -95,11 +95,11 @@ test("the HUD hand: fan states, Hide cards, Roll options, full card, Use, vault 
     await expect(vault.getByRole("heading", { name: "Vault (1)" })).toBeVisible();
     await expect(vault.getByRole("button", { name: "Recall · 1 Stress, Unleash Chaos" })).toBeVisible();
     await expectNoSeriousA11yViolations(player);
-    const before = await client.query(api.characters.get, { characterId });
+    const before = await client.query(api.charactersReads.get, { characterId });
     await vault.getByRole("button", { name: "Recall · 1 Stress, Unleash Chaos" }).click();
     await expect(hand(player).getByTestId("hud-hand-card")).toHaveCount(2);
     await expect(vault.getByText("The vault is empty.")).toBeVisible();
-    await expect.poll(async () => (await client.query(api.characters.get, { characterId }))!.sheet.stress).toBe(before!.sheet.stress + 1);
+    await expect.poll(async () => (await client.query(api.charactersReads.get, { characterId }))!.sheet.stress).toBe(before!.sheet.stress + 1);
     await vault.getByRole("button", { name: "Close vault (0)" }).click();
     await expect(vault).toBeHidden();
 

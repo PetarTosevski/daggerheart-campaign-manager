@@ -36,7 +36,7 @@ import { AttackRows } from "./rows";
 export type AttackPickerOptions = {
   /** The weapon the panel starts on (default: the primary). */
   slot?: WeaponSlot;
-  /** Answer this forced attack (`combatRequests.forcedAttacks`): its targets are picked and locked. */
+  /** Answer this forced attack (`combatRequestsReads.forcedAttacks`): its targets are picked and locked. */
   forcedRequestId?: Id<"combatRequests">;
 };
 
@@ -62,7 +62,7 @@ const isTrait = (t: string): t is TraitId => (TRAIT_IDS as readonly string[]).in
 /**
  * `playFor` (hud-pre-w9, dcm-bxp.99.32.36): the GM's picker for the PC whose sheet is open, while "Play for this
  * character" is on (the caller checks the switch). The session names that PC's token as its `actor`; the creatures,
- * names and bands come from the map's tokens (`combatTokens.list`, the GM's read), and `combatActions.attack` is sent
+ * names and bands come from the map's tokens (`combatTokensReads.list`, the GM's read), and `combatActions.attack` is sent
  * with that `characterId` (the server lets the GM act for any PC: `loadCharacter(..., "edit")`). Ignored for a player.
  */
 export function useAttackPicker(state: AttackState, playFor: Id<"characters"> | null = null): AttackPicker {
@@ -74,15 +74,15 @@ export function useAttackPicker(state: AttackState, playFor: Id<"characters"> | 
   // The attack needs the live map (`attackScene`); the GM may be looking at another one.
   const mapId = state.map !== null && (!gm || state.map.live) ? state.map._id : null;
   const on = characterId !== null && mapId !== null;
-  const gmTokens = useQuery(api.combatTokens.list, gm && on ? { campaignId, mapId } : "skip");
+  const gmTokens = useQuery(api.combatTokensReads.list, gm && on ? { campaignId, mapId } : "skip");
   const self = gm ? (gmTokens?.find((t) => t.characterId === characterId) ?? null) : null;
-  const character = useQuery(api.characters.get, on ? { characterId } : "skip");
+  const character = useQuery(api.charactersReads.get, on ? { characterId } : "skip");
   const weapons = character ? equippedWeapons(character.sheet) : [];
   const hasSecondary = weapons.some((w) => w.slot === "secondary");
   const ridersPrimary = useQuery(api.combatActions.riders, on ? { campaignId, characterId, slot: "primary" } : "skip");
   const ridersSecondary = useQuery(api.combatActions.riders, on && hasSecondary ? { campaignId, characterId, slot: "secondary" } : "skip");
   const hints = useTargetHints(campaignId, on ? characterId : null, mapId ?? ("" as Id<"combatMaps">), "primary");
-  const forcedAll = useQuery(api.combatRequests.forcedAttacks, on ? { campaignId } : "skip");
+  const forcedAll = useQuery(api.combatRequestsReads.forcedAttacks, on ? { campaignId } : "skip");
   const attack = useMutation(api.combatActions.attack);
   const { targetTokenIds } = useCombatTargets();
 

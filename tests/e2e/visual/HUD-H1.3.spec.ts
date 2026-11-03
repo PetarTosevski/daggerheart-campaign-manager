@@ -24,7 +24,7 @@ test("HUD H1.3 token rings, Hope chips, badges and side colours at 1440, 1024 an
     await client.mutation(api.characters.adjustResource, { characterId: moss.characterId, resource: "stress", delta: 3 });
     await client.mutation(api.characters.adjustResource, { characterId: brannoc.characterId, resource: "stress", delta: 1 });
     await client.mutation(api.characters.toggleCondition, { characterId: brannoc.characterId, condition: "hidden" });
-    const tokens = await client.query(api.combatTokens.list, { campaignId, mapId: s.mapId });
+    const tokens = await client.query(api.combatTokensReads.list, { campaignId, mapId: s.mapId });
     const lt = tokens.find((t) => t._id === s.enemies.lieutenant.tokenId)!.instanceId!;
     const key = () => crypto.randomUUID();
     await client.mutation(api.encounterTracking.markHp, { campaignId, instanceId: lt, delta: 2, idempotencyKey: key() });

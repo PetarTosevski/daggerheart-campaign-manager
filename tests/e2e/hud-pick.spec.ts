@@ -17,7 +17,7 @@ const ring = (page: Page, tokenId: string) => page.locator(`[data-testid="hud-pi
 /** The Bandit steps next to Moss (Melee), so the weapon reaches it; the Lieutenant (Far) and the Sniper (Very Far) don't. */
 async function banditToMelee(s: HudScene) {
   await s.client.mutation(api.combatTokens.move, { campaignId: s.campaignId, tokenId: s.enemies.bandit.tokenId, x: 6, y: 10 });
-  const tokens = await s.client.query(api.combatTokens.list, { campaignId: s.campaignId, mapId: s.mapId });
+  const tokens = await s.client.query(api.combatTokensReads.list, { campaignId: s.campaignId, mapId: s.mapId });
   const lt = tokens.find((t) => t._id === s.enemies.lieutenant.tokenId)!.instanceId!;
   await s.client.mutation(api.encounterTracking.toggleCondition, { campaignId: s.campaignId, instanceId: lt, condition: "vulnerable", idempotencyKey: crypto.randomUUID() });
 }
@@ -143,7 +143,7 @@ test("live: an out-of-range pick waits for the GM (the GM's queue), Withdraw rem
     await expect(sanctions).toHaveCount(0);
     const hopeAfter = (await client.query(api.combatHud.party, { campaignId, mapId: s.mapId })).find((m) => m.characterId === moss.characterId)!.hope.value;
     expect(hopeAfter).toBe(hopeBefore);
-    await expect.poll(async () => (await client.query(api.combatRequests.mine, { campaignId })).length).toBe(0);
+    await expect.poll(async () => (await client.query(api.combatRequestsReads.mine, { campaignId })).length).toBe(0);
   } finally {
     await s.close();
   }

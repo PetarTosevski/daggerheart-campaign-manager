@@ -16,7 +16,7 @@ import type { RollValues } from "../roll-controls";
  * No React here, so the unit tests read it directly.
  */
 
-export type HandView = FunctionReturnType<typeof api.combatCards.hand>;
+export type HandView = FunctionReturnType<typeof api.combatCardsReads.hand>;
 export type HandCard = HandView["loadout"][number];
 export type HandUse = HandCard["uses"][number];
 export type UseOutcome = FunctionReturnType<typeof api.combatCards.useCard>;

@@ -69,7 +69,7 @@ export function RosterCard({
   const extras = useQuery(api.characterExtras.get, motherboard ? { characterId: character._id } : "skip");
   const augments = motherboard ? (extras?.motherboard?.installed ?? []) : [];
   // XC1: extras made active while the GM allowed them stay active; warn until the player sends some away. Same args as the page's query, so no extra fetch.
-  const party = useQuery(api.characters.listByCampaign, { campaignId });
+  const party = useQuery(api.charactersReads.listByCampaign, { campaignId });
   const activeOfOwner =
     character.status === "active" && owner !== "Unassigned" ? (party ?? []).filter((c) => c.ownerId === character.ownerId && c.status === "active").length : 0;
 

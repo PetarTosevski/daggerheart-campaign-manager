@@ -24,7 +24,7 @@ async function scene() {
   const { characterId: bryn } = await gm.mutation(api.characters.create, { campaignId, draft: characterDraft("Bryn"), idempotencyKey: key() });
   const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
   await gm.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: key() });
-  const tokens = await gm.query(api.combatTokens.list, { campaignId, mapId });
+  const tokens = await gm.query(api.combatTokensReads.list, { campaignId, mapId });
   const ashToken = tokens.find((tk) => tk.name === "Ash")!._id;
   const brynToken = tokens.find((tk) => tk.name === "Bryn")!._id;
   const now = Date.now();

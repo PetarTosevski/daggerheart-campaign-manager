@@ -17,7 +17,7 @@ import type { PickActor, PickRow, PickSessionSpec } from "./types";
  * - A player: their character's view (`combatVision.playerView`): their own token ("self"), the other PCs, every other
  *   token they see, with condition names (HD1, answer 10a; never a number). Line of sight and a weapon's reach: the
  *   server's `combatActions.targets` hints for the rule's weapon slot.
- * - The GM: every token of the map (`combatTokens.list`) with `spec.actor` as "self"; hints only for a PC actor.
+ * - The GM: every token of the map (`combatTokensReads.list`) with `spec.actor` as "self"; hints only for a PC actor.
  */
 
 type Positioned = { _id: Id<"combatTokens">; x: number; y: number; size: number };
@@ -40,7 +40,7 @@ export function usePickScene(state: CombatPageState, spec: PickSessionSpec<unkno
   const player = state.role === "player";
   const actor = useActor(state);
   // The GM's tokens, only while a session is open (a player reads their view, which the map already subscribes to).
-  const gmTokens = useQuery(api.combatTokens.list, !player && spec !== null && state.map !== null ? { campaignId: state.campaignId, mapId: state.map._id } : "skip");
+  const gmTokens = useQuery(api.combatTokensReads.list, !player && spec !== null && state.map !== null ? { campaignId: state.campaignId, mapId: state.map._id } : "skip");
   const characterId: Id<"characters"> | null = spec === null ? null : player ? (actor?.characterId ?? null) : (spec.actor?.characterId ?? null);
   const hints = useTargetHints(state.campaignId, spec !== null && state.map !== null ? characterId : null, state.map?._id ?? ("" as Id<"combatMaps">), spec?.rule.slot ?? "primary");
   if (spec === null || state.map === null) return EMPTY;

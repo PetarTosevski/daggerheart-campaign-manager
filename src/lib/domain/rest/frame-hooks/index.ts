@@ -61,7 +61,7 @@ export const ENDURANCE_START = 6;
 /** HF 153: "activate a long-term Lycanthropy Countdown (6)". */
 export const LYCANTHROPY_START = 6;
 
-/** Frame-owned countdowns keyed per character, off the dashboard list and off the project picker (`rests.projects` reads ownerKey = the id). */
+/** Frame-owned countdowns keyed per character, off the dashboard list and off the project picker (`restsReads.projects` reads ownerKey = the id). */
 export const enduranceOwnerKey = (characterId: string) => `endurance:${characterId}`;
 export const lycanthropyOwnerKey = (characterId: string) => `lycanthropy:${characterId}`;
 

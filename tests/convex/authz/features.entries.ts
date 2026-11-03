@@ -45,7 +45,7 @@ async function sanctioned(w: World) {
 
 const entries: Entry[] = [
   // Hands shared (the default): another player reads the drawer; switch off / hidden is combat-features.test.ts.
-  { fn: api.combatFeatures.drawer, access: "view", args: (w) => ({ characterId: w.characterA }), expect: { otherPlayer: "ok" } },
+  { fn: api.combatFeaturesReads.drawer, access: "view", args: (w) => ({ characterId: w.characterA }), expect: { otherPlayer: "ok" } },
   {
     fn: api.combatFeatures.useFeature,
     access: "view",
@@ -53,7 +53,7 @@ const entries: Entry[] = [
     expect: NOT_THEIRS,
     okCodes: USE_CODES,
   },
-  { fn: api.combatFeatures.pending, access: "view", setup: sanctioned, expect: { otherPlayer: "ok" } },
+  { fn: api.combatFeaturesReads.pending, access: "view", setup: sanctioned, expect: { otherPlayer: "ok" } },
   { fn: api.combatFeatures.sanction, access: "gm", setup: sanctioned, args: (w) => ({ requestId: w.ids.requestId, approve: false }) },
   { fn: api.combatFeatures.setFlying, access: "view", args: (w) => ({ characterId: w.characterA, flying: true }), expect: NOT_THEIRS, okCodes: ["FEATURE_NOT_OWNED"] },
   { fn: api.combatFeatures.shiftStance, access: "view", args: (w) => ({ characterId: w.characterA, stance: "quick" }), expect: NOT_THEIRS, okCodes: ["FEATURE_STATE_MISSING"] },

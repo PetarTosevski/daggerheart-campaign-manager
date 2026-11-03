@@ -14,7 +14,7 @@ const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const enemyToken = (page: Page, name: string) => page.getByRole("region", { name: "Battle map" }).getByRole("button", { name: new RegExp(`^Open the ${escape(name)}’s stat block`) });
 
 async function instanceOf(s: HudScene, tokenId: string) {
-  const tokens = await s.client.query(api.combatTokens.list, { campaignId: s.campaignId, mapId: s.mapId });
+  const tokens = await s.client.query(api.combatTokensReads.list, { campaignId: s.campaignId, mapId: s.mapId });
   const instanceId = tokens.find((t) => t._id === tokenId)!.instanceId!;
   const view = await s.client.query(api.encounters.get, { campaignId: s.campaignId, encounterId: s.encounterId });
   return view!.instances.find((i) => i._id === instanceId)!;

@@ -5,14 +5,14 @@ import { withPassiveTraits } from "../src/lib/domain/characters/derived";
 import { hopeMax } from "../src/lib/domain/characters/index";
 import { appError } from "../src/lib/errors/app-error";
 import { featureEffect } from "../src/lib/srd/feature-effects/index";
-import { FOCUS_HOLD_MAX, type CharacterSheet } from "../src/lib/validation/characters";
+import type { CharacterSheet } from "../src/lib/validation/characters";
+import { FOCUS_HOLD_MAX } from "../src/lib/validation/character-constants";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { logAction, newGroupId } from "./lib/actionLog";
 import { setStance } from "./lib/stanceDrop";
 import { markStressOn, unshakableText, type UnshakableRoll } from "./lib/unshakable";
 import { cardChoicesValidator, cardRollValidator, keepDice, keptDice, parseChoices, type CardChoice, type CardRoll } from "./lib/cardChoices";
-import { handSharedWithPlayers } from "./lib/cardHand";
 import { effectEndsOf, needsChoiceValidator, pendingCardValidator, type ChoiceAsks } from "./lib/cardRows";
 import { actorSheetAfter, buildRun, replaying, runCard, type BuiltRun, type RunOutcome } from "./lib/cardRunner";
 import type { RunPlan } from "../src/lib/domain/card-effects/run";
@@ -22,10 +22,9 @@ import { afterUse, foldPcRolls, foldSteps, rerunWith, runWithRiders, autoUsesOn,
 import { companionFor, companionNumbers } from "./lib/companion";
 import { assertCanAct, loadCharacter, readSheet, saveSheet, storedSheet } from "./lib/characterSheet";
 import { attackScene, defaultOnRiders, type Host, type RiderRun } from "./lib/combatActions";
-import { closeRequest, encounterRunning, loadOpenRequest, openRequests } from "./lib/combatRequests";
-import { installedAugments } from "./lib/motherboardState";
+import { closeRequest, encounterRunning, loadOpenRequest } from "./lib/combatRequests";
 import { rollDie } from "./lib/dice";
-import { drawerOf, drawerValidator, FLYING_FEATURES, REFOCUS_KEY } from "./lib/featureDrawer";
+import { FLYING_FEATURES, REFOCUS_KEY } from "./lib/featureDrawer";
 import {
   FLYING_EFFECT_ID,
   featureSlot,
@@ -40,10 +39,9 @@ import {
   type ResolvedFeature,
 } from "./lib/featureRunner";
 import { campaignFearState } from "./lib/fear";
-import { campaignQuery, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
+import { keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
 import { featureScope } from "./lib/featureScope";
-import { atLeast } from "./lib/permissions";
-import { rangeBandValidator, riderValidator, type Rider } from "./lib/validators/combatRequests";
+import { riderValidator, type Rider } from "./lib/validators/combatRequests";
 import { changed } from "./lib/rolls";
 
 /**
@@ -52,12 +50,15 @@ import { changed } from "./lib/rolls";
  * then `loadCharacter(..., "edit")`, so another player's character is FORBIDDEN and an outsider NOT_FOUND (CF2).
  *
  * - `drawer`: trackers, every owned feature with its state, badges, tokens and uses, the D5 counters (featureDrawer.ts).
- *   The character's player and the GM always; another player only while hands are shared (as `combatCards.hand`).
+ *   The character's player and the GM always; another player only while hands are shared (as `combatCardsReads.hand`).
  * - `useFeature`: uses an owned feature from the map (or, for self and party uses, without one): ownership, limits and
  *   costs, the roll, enemy instances, self and allies through the card path; one undoable actionLog group (U1, U4). A
  *   target outside the use's range waits for the GM (combat-actions Q1).
  * - `pending` / `sanction` (GM): the feature sanctions (`combatRequests` kind `sanction`, action kind `feature`).
  * - `setFlying` (Q16), `shiftStance` and `refocus` (Q5, HF p.12): keyed intents on the sheet, undoable.
+ *
+ * The reads (`drawer`, `pending`) live in `combatFeaturesReads.ts` (dcm-uh6r), so the HUD's subscriptions do not load
+ * the feature and card runners this module needs.
  *
  * What a player receives never holds an enemy's HP, Stress, thresholds or Difficulty (U1).
  */
@@ -79,18 +80,6 @@ async function lastRollWithHope(ctx: QueryCtx, characterId: Id<"characters">): P
   const last = rows.find((r) => r.undoneAt === undefined && r.roll?.kind === "action");
   return last?.roll?.outcome === "successHope" || last?.roll?.outcome === "critical";
 }
-
-export const drawer = campaignQuery({
-  need: "view",
-  args: { characterId: v.id("characters") },
-  returns: drawerValidator,
-  handler: async (ctx, { characterId }) => {
-    const { campaign, character, permission } = await loadCharacter(ctx, ctx.user, characterId, "view", "owner");
-    if (campaign._id !== ctx.campaign._id) throw appError("NOT_FOUND");
-    if (!atLeast(permission, "edit") && !handSharedWithPlayers(campaign, character)) throw appError("FORBIDDEN");
-    return drawerOf(characterId, readSheet(character.sheet), campaign, await installedAugments(ctx, campaign, characterId));
-  },
-});
 
 // ---------------------------------------------------------------- using a feature
 
@@ -464,68 +453,6 @@ export const sanction = keyedGmMutation({
       await closeRequest(ctx, row._id, "resolved", ctx.user._id);
       return result;
     }),
-});
-
-const namedToken = v.object({ tokenId: v.id("combatTokens"), name: v.string() });
-
-/** A feature sanction as `pending` shows it: names and bands only (U1, CF6). */
-const pendingView = v.object({
-  requestId: v.id("combatRequests"),
-  characterId: v.id("characters"),
-  characterName: v.string(),
-  featureId: v.string(),
-  featureName: v.string(),
-  useId: v.string(),
-  createdAt: v.number(),
-  targets: v.array(namedToken),
-  outOfRange: v.array(v.object({ tokenId: v.id("combatTokens"), band: rangeBandValidator })),
-});
-
-async function nameOf(ctx: QueryCtx, row: Doc<"combatRequests">, tokenId: Id<"combatTokens">): Promise<string> {
-  const token = await ctx.db.get("combatTokens", tokenId);
-  if (token === null || token.campaignId !== row.campaignId) return "Unknown";
-  if (token.ref.kind === "custom") return token.ref.name;
-  if (token.ref.kind === "companion") return "Companion";
-  if (token.ref.kind === "pc") {
-    const character = await ctx.db.get("characters", token.ref.characterId);
-    return character === null || character.campaignId !== row.campaignId ? "Unknown" : readSheet(character.sheet).name;
-  }
-  const instance = await ctx.db.get("encounterAdversaries", token.ref.adversaryId);
-  return instance !== null && instance.campaignId === row.campaignId ? instance.label : "Unknown";
-}
-
-/** The open feature sanctions: a player's own, every one for the GM. Those of an ended encounter are left out. */
-export const pending = campaignQuery({
-  need: "view",
-  enough: "owner",
-  args: {},
-  returns: v.array(pendingView),
-  handler: async (ctx) => {
-    const gm = ctx.permission === "owner";
-    const views = [];
-    for (const row of await openRequests(ctx, ctx.campaign._id)) {
-      if (!gm && row.createdBy !== ctx.user._id) continue;
-      const p = row.payload;
-      if (p.kind !== "sanction" || p.action.kind !== "feature" || !(await encounterRunning(ctx, row))) continue;
-      const targets = [];
-      for (const tokenId of p.action.targetTokenIds) targets.push({ tokenId, name: await nameOf(ctx, row, tokenId) });
-      const character = await ctx.db.get("characters", p.characterId);
-      const sheet = character !== null && character.campaignId === row.campaignId ? readSheet(character.sheet) : null;
-      const featureId = p.action.featureId;
-      views.push({
-        requestId: row._id,
-        characterId: p.characterId,
-        characterName: sheet?.name ?? "Unknown",
-        featureId,
-        featureName: (sheet ? ownedHere(sheet, ctx.campaign).find((f) => f.featureId === featureId)?.name : undefined) ?? featureId,
-        useId: p.action.useId,
-        createdAt: row.createdAt,
-        targets,
-        outOfRange: p.outOfRange,
-      });
-    }
-    return views;
-  },
 });
 
 // ---------------------------------------------------------------- Flying (Q16) and stances (Q5)

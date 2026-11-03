@@ -10,7 +10,8 @@ import { featureKey, parseFeatureId } from "../../src/lib/domain/feature-effects
 import { cardEffect } from "../../src/lib/srd/card-effects/index";
 import { FEATURE_CLASSIFICATION } from "../../src/lib/srd/feature-effects/classification";
 import { featureEffect } from "../../src/lib/srd/feature-effects/index";
-import { CONDITIONS, type CharacterSheet, type Condition, type Effect } from "../../src/lib/validation/characters";
+import type { CharacterSheet, Condition, Effect } from "../../src/lib/validation/characters";
+import { CONDITIONS } from "../../src/lib/validation/character-constants";
 
 /** Sheet effect ids written by cards: `card:<cardId>:<n>` (the sheet's list ids are at most 40 characters). */
 const CARD_EFFECT = /^card:([a-z0-9-]+):\d+$/;

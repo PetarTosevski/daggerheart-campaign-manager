@@ -130,7 +130,7 @@ function instance(over: Record<string, unknown> = {}) {
 
 /** The scene: the Lieutenant at (14, 10); Brannoc Very Close (11, 10), Moss Far (4, 10). */
 function seed({ spotlitOther = false, fear = 5 } = {}) {
-  queries["combatTokens:list"] = [
+  queries["combatTokensReads:list"] = [
     token(LT, "adversary", "Jagged Knife Lieutenant", 14, 10, { instanceId: LT_INSTANCE }),
     token("tk-br", "pc", "Brannoc", 11, 10, { characterId: "ch-br" }),
     token("tk-moss", "pc", "Moss", 4, 10, { characterId: "ch-moss", stats: { conditions: ["vulnerable"] } }),

@@ -224,14 +224,14 @@ const character = (id: string, name: string, mine: boolean) => ({ _id: id, mine,
 
 describe("GmOwnHits in the GM column", () => {
   it("a player gets nothing here (they answer in the HUD's hit window)", () => {
-    queries["characters:listByCampaign"] = [character(MIRA, "Mira", true)];
+    queries["charactersReads:listByCampaign"] = [character(MIRA, "Mira", true)];
     queries["adversaryActions:pending"] = [miraHit];
     const { container } = render(<GmOwnHits {...mapProps("player")} />);
     expect(container.innerHTML).toBe("");
   });
 
   it("the GM sees the prompts of the characters they own only", () => {
-    queries["characters:listByCampaign"] = [character(MIRA, "Mira", true), character(TABBY, "Tabby", false)];
+    queries["charactersReads:listByCampaign"] = [character(MIRA, "Mira", true), character(TABBY, "Tabby", false)];
     queries["adversaryActions:pending"] = [miraHit];
     queries["deathMoves:state"] = { awaitingMove: false, pending: null, undoEntryId: null, lessLethal: false, awayRequested: false };
     render(<GmOwnHits {...mapProps("gm")} />);
@@ -240,7 +240,7 @@ describe("GmOwnHits in the GM column", () => {
   });
 
   it("a hit to the last Hit Point brings up the death move", () => {
-    queries["characters:listByCampaign"] = [character(MIRA, "Mira", true)];
+    queries["charactersReads:listByCampaign"] = [character(MIRA, "Mira", true)];
     queries["adversaryActions:pending"] = [];
     queries["deathMoves:state"] = { awaitingMove: true, pending: null, undoEntryId: null, lessLethal: false, awayRequested: false };
     render(<GmOwnHits {...mapProps("gm")} />);

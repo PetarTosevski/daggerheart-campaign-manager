@@ -111,7 +111,7 @@ test("live: a card cast out of range waits for the GM; the GM's queue shows it; 
     await wait.getByRole("button", { name: "Withdraw Vicious Entangle" }).click();
     await expect(wait).toHaveCount(0);
     await expect(sanctions).toHaveCount(0);
-    await expect.poll(async () => (await client.query(api.combatCards.pending, { campaignId })).length).toBe(0);
+    await expect.poll(async () => (await client.query(api.combatCardsReads.pending, { campaignId })).length).toBe(0);
   } finally {
     await s.close();
   }
@@ -128,7 +128,7 @@ test("a card that needs a square places it through the HUD picker: the panel end
     await player.goto(s.url);
     await expect(player.getByTestId("combat-hud")).toBeVisible();
     await expect(hand(player)).toHaveAttribute("data-mode", "own", { timeout: 30_000 });
-    const mossToken = (await client.query(api.combatTokens.list, { campaignId, mapId })).find((t) => t._id === moss.tokenId)!;
+    const mossToken = (await client.query(api.combatTokensReads.list, { campaignId, mapId })).find((t) => t._id === moss.tokenId)!;
 
     await useCard(player, "Book of Tyfar");
     const panel = pickPanel(player);

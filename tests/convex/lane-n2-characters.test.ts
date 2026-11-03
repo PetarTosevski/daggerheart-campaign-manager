@@ -84,7 +84,7 @@ describe("dcm-bxp.38: creation cap and read bound", () => {
     });
     expect(await codeOf(gm.mutation(api.characters.create, { campaignId, draft: draft("One too many"), idempotencyKey: key() }))).toBe("INVALID");
     // The roster still reads every character.
-    expect(await gm.query(api.characters.listByCampaign, { campaignId })).toHaveLength(MAX_CHARACTERS_CREATED_PER_CAMPAIGN);
+    expect(await gm.query(api.charactersReads.listByCampaign, { campaignId })).toHaveLength(MAX_CHARACTERS_CREATED_PER_CAMPAIGN);
   });
 });
 

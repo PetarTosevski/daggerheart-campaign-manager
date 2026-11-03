@@ -83,7 +83,7 @@ describe("combatHud.party", () => {
     expect(ash.armor.max).toBeGreaterThan(0);
     const json = JSON.stringify(rows);
     expect(json).not.toMatch(/Bear|Goblin|difficulty|threshold/i);
-    // The GM reads the same rows; their own PC is not "mine" on the GM's screen (as combatTokens.party).
+    // The GM reads the same rows; their own PC is not "mine" on the GM's screen (as combatTokensReads.party).
     const gmRows = await f.gm.query(api.combatHud.party, { campaignId: f.campaignId, mapId: f.mapId });
     expect(gmRows.map((r) => [r.name, r.mine]).sort()).toEqual([["Ash", false], ["Bryn", false]]);
   });

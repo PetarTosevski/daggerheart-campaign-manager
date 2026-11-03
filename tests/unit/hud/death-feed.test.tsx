@@ -49,7 +49,7 @@ afterEach(() => {
 });
 
 const STATE = "deathMoves:state";
-const CHARACTERS = "characters:listByCampaign";
+const CHARACTERS = "charactersReads:listByCampaign";
 const FEED = "feed:list";
 const base = { awaitingMove: false, pending: null, request: null, undoEntryId: null, lessLethal: false, awayRequested: false };
 

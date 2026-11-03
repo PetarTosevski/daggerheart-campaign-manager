@@ -39,8 +39,8 @@ export function FlyingToggle({ campaignId, characterId, canAct, flying }: Props 
   const { error, run } = useAction();
   const setFlying = useMutation(api.combatFeatures.setFlying).withOptimisticUpdate((store, args) => {
     const query = { campaignId, characterId: args.characterId };
-    const drawer = store.getQuery(api.combatFeatures.drawer, query);
-    if (drawer) store.setQuery(api.combatFeatures.drawer, query, { ...drawer, flying: args.flying });
+    const drawer = store.getQuery(api.combatFeaturesReads.drawer, query);
+    if (drawer) store.setQuery(api.combatFeaturesReads.drawer, query, { ...drawer, flying: args.flying });
   });
   return (
     <div className="sd-flying">
@@ -179,8 +179,8 @@ export function BeastformControl({ campaignId, characterId, canAct, form }: Prop
   const { error, run } = useAction();
   const end = useMutation(api.classFeatures.endEffect).withOptimisticUpdate((store, args) => {
     const query = { campaignId, characterId: args.characterId };
-    const drawer = store.getQuery(api.combatFeatures.drawer, query);
-    if (drawer) store.setQuery(api.combatFeatures.drawer, query, { ...drawer, features: drawer.features.filter((f) => f.source !== "beastform") });
+    const drawer = store.getQuery(api.combatFeaturesReads.drawer, query);
+    if (drawer) store.setQuery(api.combatFeaturesReads.drawer, query, { ...drawer, features: drawer.features.filter((f) => f.source !== "beastform") });
   });
   const name = formName(form);
   return (

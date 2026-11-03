@@ -148,7 +148,7 @@ describe("combatCards.useCard: resolving", () => {
     expect(inst.hp).toBe(1);
     expect(inst.conditions).toContain("vulnerable");
     // Bolt Beacon has no limit: still ready.
-    const hand = await a.player.query(api.combatCards.hand, { campaignId: a.campaignId, characterId: a.w.characterA });
+    const hand = await a.player.query(api.combatCardsReads.hand, { campaignId: a.campaignId, characterId: a.w.characterA });
     expect(hand.loadout.find((c) => c.cardId === "bolt-beacon")!.state).toBe("ready");
 
     const combat = (await a.rows()).filter((row) => row.kind === "combat");
@@ -171,7 +171,7 @@ describe("combatCards.useCard: resolving", () => {
     expect(r.success).toBe(true);
     expect((await a.sheet()).featureUses).toContainEqual({ key: "card:hypnotic-shimmer", until: "rest" });
     expect((await a.instance(bandit.instanceId)).stress).toBe(1);
-    const hand = await a.player.query(api.combatCards.hand, { campaignId: a.campaignId, characterId: a.w.characterA });
+    const hand = await a.player.query(api.combatCardsReads.hand, { campaignId: a.campaignId, characterId: a.w.characterA });
     expect(hand.loadout[0]).toMatchObject({ cardId: "hypnotic-shimmer", state: "exhausted", resetLabel: "Back after a rest" });
     expect(await code(a.use(a.player, "hypnotic-shimmer", [bandit.tokenId]))).toBe("CARD_EXHAUSTED");
 
@@ -228,7 +228,7 @@ describe("combatCards.useCard: resolving", () => {
     if (r.status !== "pending") throw new Error("expected pending");
     expect(r.outOfRange).toEqual([{ tokenId: far.tokenId, band: "close" }]);
     expect((await a.rows()).filter((row) => row.kind === "combat")).toHaveLength(0);
-    const mine = await a.player.query(api.combatCards.pending, { campaignId: a.campaignId });
+    const mine = await a.player.query(api.combatCardsReads.pending, { campaignId: a.campaignId });
     expect(mine).toHaveLength(1);
     expectNoStats(mine);
     expect(await code(a.player.mutation(api.combatCards.sanction, { campaignId: a.campaignId, requestId: r.requestId, approve: true, idempotencyKey: key() }))).toBe("FORBIDDEN");
@@ -304,7 +304,7 @@ describe("combatCards.useCard: resolving", () => {
     await a.holding(["book-of-tyfar"]);
     const r = resolved(await a.use(a.player, "book-of-tyfar", [bandit.tokenId], { spell: "wild-flame" }));
     expectNoStats(r);
-    expectNoStats(await a.player.query(api.combatCards.hand, { campaignId: a.campaignId, characterId: a.w.characterA }));
+    expectNoStats(await a.player.query(api.combatCardsReads.hand, { campaignId: a.campaignId, characterId: a.w.characterA }));
     const page = await a.feed(a.player);
     expect(page.page.every((row) => row.visibility === "public")).toBe(true);
     for (const row of page.page) {
@@ -517,16 +517,16 @@ describe("F7-H4 (dcm-bxp.99.24): who reads a hand, roll options on cards", () =>
     await a.holding(["bolt-beacon", "book-of-illiat"]);
     const other = a.w.as("otherPlayer");
     const args = { campaignId: a.campaignId, characterId: a.w.characterA };
-    const own = await a.player.query(api.combatCards.hand, args);
-    expect(await other.query(api.combatCards.hand, args)).toEqual(own);
-    expect(await other.query(api.combatCards.handSharing, { campaignId: a.campaignId })).toEqual({ playersSeeHands: true, hidden: [] });
+    const own = await a.player.query(api.combatCardsReads.hand, args);
+    expect(await other.query(api.combatCardsReads.hand, args)).toEqual(own);
+    expect(await other.query(api.combatCardsReads.handSharing, { campaignId: a.campaignId })).toEqual({ playersSeeHands: true, hidden: [] });
 
     // The GM's switch off: no other player reads it; Ash's player and the GM still do.
     await a.gm.mutation(api.campaigns.setPlayersSeeHands, { campaignId: a.campaignId, enabled: false });
-    expect(await code(other.query(api.combatCards.hand, args))).toBe("FORBIDDEN");
-    expect(await code(a.player.query(api.combatCards.hand, args))).toBe("ok");
-    expect(await code(a.gm.query(api.combatCards.hand, args))).toBe("ok");
-    expect((await other.query(api.combatCards.handSharing, { campaignId: a.campaignId })).playersSeeHands).toBe(false);
+    expect(await code(other.query(api.combatCardsReads.hand, args))).toBe("FORBIDDEN");
+    expect(await code(a.player.query(api.combatCardsReads.hand, args))).toBe("ok");
+    expect(await code(a.gm.query(api.combatCardsReads.hand, args))).toBe("ok");
+    expect((await other.query(api.combatCardsReads.handSharing, { campaignId: a.campaignId })).playersSeeHands).toBe(false);
     // F8-I1: the switch is the campaign's typed field, never an `options` key (and so never one of the optional rules).
     const campaign = await a.t.run((ctx) => ctx.db.get("campaigns", a.campaignId));
     expect(campaign!.playersSeeHands).toBe(false);
@@ -537,17 +537,17 @@ describe("F7-H4 (dcm-bxp.99.24): who reads a hand, roll options on cards", () =>
     await a.gm.mutation(api.campaigns.setPlayersSeeHands, { campaignId: a.campaignId, enabled: true });
     await a.player.mutation(api.combatCards.setHandHidden, { ...args, hidden: true });
     await a.player.mutation(api.combatCards.setHandHidden, { ...args, hidden: true });
-    expect(await other.query(api.combatCards.handSharing, { campaignId: a.campaignId })).toEqual({ playersSeeHands: true, hidden: [a.w.characterA] });
-    expect(await code(other.query(api.combatCards.hand, args))).toBe("FORBIDDEN");
-    expect(await code(a.gm.query(api.combatCards.hand, args))).toBe("ok");
-    expect(await code(a.player.query(api.combatCards.hand, args))).toBe("ok");
+    expect(await other.query(api.combatCardsReads.handSharing, { campaignId: a.campaignId })).toEqual({ playersSeeHands: true, hidden: [a.w.characterA] });
+    expect(await code(other.query(api.combatCardsReads.hand, args))).toBe("FORBIDDEN");
+    expect(await code(a.gm.query(api.combatCardsReads.hand, args))).toBe("ok");
+    expect(await code(a.player.query(api.combatCardsReads.hand, args))).toBe("ok");
     // F8-I1: stored on the character, no tracker row.
     expect((await a.t.run((ctx) => ctx.db.get("characters", a.w.characterA)))!.handHidden).toBe(true);
     expect(await a.t.run((ctx) => ctx.db.query("frameTrackers").withIndex("by_campaign_key", (q) => q.eq("campaignId", a.campaignId).eq("key", "handPrivacy")).collect())).toEqual([]);
 
     // Shown again: readable, and the field is unset again.
     await a.player.mutation(api.combatCards.setHandHidden, { ...args, hidden: false });
-    expect(await other.query(api.combatCards.hand, args)).toEqual(own);
+    expect(await other.query(api.combatCardsReads.hand, args)).toEqual(own);
     expect((await a.t.run((ctx) => ctx.db.get("characters", a.w.characterA)))!.handHidden).toBeUndefined();
   });
 
@@ -558,7 +558,7 @@ describe("F7-H4 (dcm-bxp.99.24): who reads a hand, roll options on cards", () =>
     await a.gm.mutation(api.combatCards.setHandHidden, { ...args, hidden: true });
     await a.w.as("otherPlayer").mutation(api.combatCards.setHandHidden, { campaignId: a.campaignId, characterId: a.w.characterB, hidden: true });
     await a.gm.mutation(api.characters.remove, { characterId: a.w.characterA });
-    expect((await a.gm.query(api.combatCards.handSharing, { campaignId: a.campaignId })).hidden).toEqual([a.w.characterB]);
+    expect((await a.gm.query(api.combatCardsReads.handSharing, { campaignId: a.campaignId })).hidden).toEqual([a.w.characterB]);
   });
 
   it("F8-I1: the old storage (an options key, a handPrivacy tracker) is no longer read; only the typed fields count", async () => {
@@ -568,8 +568,8 @@ describe("F7-H4 (dcm-bxp.99.24): who reads a hand, roll options on cards", () =>
       await ctx.db.insert("frameTrackers", { campaignId: a.campaignId, key: "handPrivacy", data: { schemaVersion: 1, hidden: [a.w.characterA] }, updatedAt: 0 });
     });
     const args = { campaignId: a.campaignId, characterId: a.w.characterA };
-    expect(await code(a.w.as("otherPlayer").query(api.combatCards.hand, args))).toBe("ok");
-    expect(await a.player.query(api.combatCards.handSharing, { campaignId: a.campaignId })).toEqual({ playersSeeHands: true, hidden: [] });
+    expect(await code(a.w.as("otherPlayer").query(api.combatCardsReads.hand, args))).toBe("ok");
+    expect(await a.player.query(api.combatCardsReads.handSharing, { campaignId: a.campaignId })).toEqual({ playersSeeHands: true, hidden: [] });
   });
 
   it("roll options on a card: an Experience costs a Hope and adds its value; advantage and Help add their dice", async () => {

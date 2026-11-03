@@ -15,7 +15,7 @@ import "./requests.css";
  * Rolls waiting for the GM's Difficulty (plan lanes B2; CB p.104: "The GM sets this Difficulty"), for one character:
  * the HUD sheet's Charge use (`drawer/use`) shows the GM a character's waiting Charge (CB p.59; dcm-bxp.99.19.61) with a
  * Difficulty box, Roll and Decline (`featurePrompts.answerDifficulty`: the server rolls), and the player that their
- * Charge waits (`useWaitingDifficulty`). Rows come from `combatRequests.difficulties`; an optimistic update drops the
+ * Charge waits (`useWaitingDifficulty`). Rows come from `combatRequestsReads.difficulties`; an optimistic update drops the
  * answered row at once.
  *
  * Plan combat-hud H8.2 (cut-over, GM side): the GM column's campaign-wide list (every waiting Charge and Cloaked roll)
@@ -23,7 +23,7 @@ import "./requests.css";
  * (`hud/queue`) asks them.
  */
 
-export type DifficultyRow = FunctionReturnType<typeof api.combatRequests.difficulties>[number];
+export type DifficultyRow = FunctionReturnType<typeof api.combatRequestsReads.difficulties>[number];
 
 /** What a row asks for, in a line ("Ash charges at Bear", "Ash is Cloaked in dim light, seen by Shade"). */
 export function difficultyText(row: Pick<DifficultyRow, "ask" | "characterName" | "target" | "seers">): string {
@@ -56,10 +56,10 @@ export function DifficultyRequests(props: { campaignId: Id<"campaigns">; charact
 }
 
 function DifficultyList({ campaignId, characterId, ask }: { campaignId: Id<"campaigns">; characterId: Id<"characters">; ask: DifficultyRow["ask"] }) {
-  const rows = useQuery(api.combatRequests.difficulties, { campaignId });
+  const rows = useQuery(api.combatRequestsReads.difficulties, { campaignId });
   const answer = useMutation(api.featurePrompts.answerDifficulty).withOptimisticUpdate((store, { requestId }) => {
-    const current = store.getQuery(api.combatRequests.difficulties, { campaignId });
-    if (current !== undefined) store.setQuery(api.combatRequests.difficulties, { campaignId }, current.filter((r) => r.requestId !== requestId));
+    const current = store.getQuery(api.combatRequestsReads.difficulties, { campaignId });
+    if (current !== undefined) store.setQuery(api.combatRequestsReads.difficulties, { campaignId }, current.filter((r) => r.requestId !== requestId));
   });
   const [values, setValues] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
@@ -129,6 +129,6 @@ function DifficultyList({ campaignId, characterId, ask }: { campaignId: Id<"camp
 
 /** A player's own waiting roll for one character (the drawer's "waiting for the GM"), or null. */
 export function useWaitingDifficulty(campaignId: Id<"campaigns">, characterId: Id<"characters">, ask: DifficultyRow["ask"]): DifficultyRow | null {
-  const rows = useQuery(api.combatRequests.difficulties, { campaignId });
+  const rows = useQuery(api.combatRequestsReads.difficulties, { campaignId });
   return (rows ?? []).find((r) => r.characterId === characterId && r.ask === ask) ?? null;
 }

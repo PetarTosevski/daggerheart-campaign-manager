@@ -67,7 +67,7 @@ for (const viewport of VIEWPORTS) {
       // on 13..15 x 14..16. A wall at x = 9, rows 13..19, with a Classic door in its gap at (9, 16), and a Ghoul
       // behind it at (12, 16).
       await client.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
-      const ash = (await client.query(api.combatTokens.list, { campaignId, mapId })).find((t) => t.name === "Ash")!;
+      const ash = (await client.query(api.combatTokensReads.list, { campaignId, mapId })).find((t) => t.name === "Ash")!;
       const { tokenId: ghoulId } = await client.mutation(api.combatTokens.addCustom, { campaignId, mapId, name: "Ghoul", hp: 3, side: "enemy", idempotencyKey: crypto.randomUUID() });
       await client.mutation(api.combatTokens.move, { campaignId, tokenId: ghoulId, x: 12, y: 16 });
       await client.mutation(api.combatMapEdit.paintCells, { campaignId, mapId, squares: rect(6, 8, 6, 12), paint: "wall" });
@@ -90,7 +90,7 @@ for (const viewport of VIEWPORTS) {
         await client.mutation(api.combatTokens.turn, { campaignId, tokenId: ash._id, angle: 0 });
       };
       const serverSquare = async (who: ConvexHttpClient) => {
-        const t = (await who.query(api.combatTokens.party, { campaignId, mapId })).find((p) => p._id === ash._id)!;
+        const t = (await who.query(api.combatTokensReads.party, { campaignId, mapId })).find((p) => p._id === ash._id)!;
         return `${t.x},${t.y}`;
       };
       const doorOpen = async () => (await client.query(api.combatMaps.get, { campaignId, mapId }))?.objects.find((o) => o._id === doorId)?.open === true;

@@ -200,7 +200,7 @@ describe("classControlsOf (what the sheet shows of the drawer)", () => {
 
 describe("HudSheet class controls (own PC: they act)", () => {
   it("renders none of them for a character without counters, Flying, Beastform or stances", () => {
-    queries["combatFeatures:drawer"] = drawer();
+    queries["combatFeaturesReads:drawer"] = drawer();
     const panel = open();
     expect(within(panel).queryByTestId("hud-sheet-counters")).toBeNull();
     expect(within(panel).queryByTestId("hud-sheet-form")).toBeNull();
@@ -208,7 +208,7 @@ describe("HudSheet class controls (own PC: they act)", () => {
   });
 
   it("lists the class counters and held dice under the trackers", () => {
-    queries["combatFeatures:drawer"] = drawer({ counters: [{ key: "rally", label: "Rally die", value: "d6" }], heldDice: [{ id: "h1", sides: 6, kind: "Prayer", value: 4 }] });
+    queries["combatFeaturesReads:drawer"] = drawer({ counters: [{ key: "rally", label: "Rally die", value: "d6" }], heldDice: [{ id: "h1", sides: 6, kind: "Prayer", value: 4 }] });
     const panel = open();
     const chips = within(panel).getByRole("list", { name: "Class counters" });
     expect(chips).toHaveTextContent("Rally die: d6");
@@ -218,7 +218,7 @@ describe("HudSheet class controls (own PC: they act)", () => {
   });
 
   it("toggles Flying (Q16) from the conditions section, with its optimistic update", async () => {
-    queries["combatFeatures:drawer"] = drawer({ canFly: true });
+    queries["combatFeaturesReads:drawer"] = drawer({ canFly: true });
     const panel = open();
     const section = within(panel).getByRole("region", { name: "Conditions & lasting effects" });
     const flying = within(section).getByRole("button", { name: "Flying" });
@@ -233,7 +233,7 @@ describe("HudSheet class controls (own PC: they act)", () => {
   });
 
   it("drops out of the Beastform (Q10) above the features", async () => {
-    queries["combatFeatures:drawer"] = drawer({ features: [drawerFeature({ featureId: "beastform:agile-scout:agile", source: "beastform", name: "Agile" })] });
+    queries["combatFeaturesReads:drawer"] = drawer({ features: [drawerFeature({ featureId: "beastform:agile-scout:agile", source: "beastform", name: "Agile" })] });
     const panel = open();
     const section = within(panel).getByRole("region", { name: "Beastform and stance" });
     expect(section.nextElementSibling).toBe(within(panel).getByRole("region", { name: "Features" }));
@@ -250,7 +250,7 @@ describe("HudSheet class controls (own PC: they act)", () => {
       drawerFeature({ featureId: "stance:martial-artist:mountain", source: "stance", name: "Mountain Stance" }),
       drawerFeature({ featureId: "stance:martial-artist:reed", source: "stance", name: "Reed Stance" }),
     ];
-    queries["combatFeatures:drawer"] = drawer({ features: stances, martial: { known: ["mountain", "reed"], active: "mountain", focus: 2, max: 6, refocusReady: true } });
+    queries["combatFeaturesReads:drawer"] = drawer({ features: stances, martial: { known: ["mountain", "reed"], active: "mountain", focus: 2, max: 6, refocusReady: true } });
     const panel = open();
     const group = within(panel).getByRole("group", { name: "Stances" });
     expect(group).toHaveTextContent("Focus 2 / 6");
@@ -271,7 +271,7 @@ describe("HudSheet class controls (own PC: they act)", () => {
   });
 
   it("shows a refused intent as an alert", async () => {
-    queries["combatFeatures:drawer"] = drawer({ canFly: true });
+    queries["combatFeaturesReads:drawer"] = drawer({ canFly: true });
     results["combatFeatures:setFlying"] = [new Error("Nope")];
     const panel = open();
     await act(async () => {
@@ -283,7 +283,7 @@ describe("HudSheet class controls (own PC: they act)", () => {
 
 describe("HudSheet class controls (GM: greyed until Play for this character, DA6)", () => {
   it("greys the GM's controls until Play-for is on, then they act", () => {
-    queries["combatFeatures:drawer"] = drawer({ canFly: true, counters: [{ key: "rally", label: "Rally die", value: "d6" }] });
+    queries["combatFeaturesReads:drawer"] = drawer({ canFly: true, counters: [{ key: "rally", label: "Rally die", value: "d6" }] });
     queries["playFor:list"] = [];
     const panel = open("gm");
     expect(within(panel).getByTestId("hud-sheet-flying")).toHaveAttribute("data-greyed", "true");
@@ -292,7 +292,7 @@ describe("HudSheet class controls (GM: greyed until Play for this character, DA6
   });
 
   it("with Play-for on, Flying works for the GM", () => {
-    queries["combatFeatures:drawer"] = drawer({ canFly: true });
+    queries["combatFeaturesReads:drawer"] = drawer({ canFly: true });
     queries["playFor:list"] = [ASH];
     const panel = open("gm");
     expect(within(panel).getByTestId("hud-sheet-flying")).toHaveAttribute("data-greyed", "false");
@@ -305,7 +305,7 @@ describe("HudSheet: DA7 'Active' on a feature whose effect holds", () => {
   const DODGE_SHEET = sheetFeature("Rogue’s Dodge", { featureId: "hope:rogue", kind: "action", cost: "3 Hope", used: true, resetLabel: BACK, automated: true, uses: [aUse({ name: "Rogue’s Dodge", ready: false, resetLabel: BACK, costs: ["3 Hope"] })] });
 
   it("own: an Active banner with when it comes back, no Use, no 'Used'", () => {
-    queries["combatFeatures:drawer"] = drawer({ features: [drawerFeature({ featureId: "hope:rogue", source: "hope", name: "Rogue’s Dodge", how: "action", state: "active", resetLabel: BACK })] });
+    queries["combatFeaturesReads:drawer"] = drawer({ features: [drawerFeature({ featureId: "hope:rogue", source: "hope", name: "Rogue’s Dodge", how: "action", state: "active", resetLabel: BACK })] });
     const panel = open("own", { features: [DODGE_SHEET] });
     const row = panel.querySelector<HTMLElement>('[data-feature="hope:rogue"]')!;
     expect(row.dataset.state).toBe("active");
@@ -316,7 +316,7 @@ describe("HudSheet: DA7 'Active' on a feature whose effect holds", () => {
   });
 
   it("an exhausted feature keeps 'Used · back …'", () => {
-    queries["combatFeatures:drawer"] = drawer({ features: [drawerFeature({ featureId: "hope:rogue", source: "hope", name: "Rogue’s Dodge", how: "action", state: "exhausted", resetLabel: BACK })] });
+    queries["combatFeaturesReads:drawer"] = drawer({ features: [drawerFeature({ featureId: "hope:rogue", source: "hope", name: "Rogue’s Dodge", how: "action", state: "exhausted", resetLabel: BACK })] });
     const panel = open("own", { features: [DODGE_SHEET] });
     expect(within(panel).queryByTestId("hud-sheet-active")).toBeNull();
     expect(within(panel).getByTestId("hud-sheet-used")).toBeInTheDocument();
@@ -334,7 +334,7 @@ describe("HudSheet class controls: view only (another player's PC)", () => {
     expect(state).toHaveTextContent("Flying");
     expect(within(panel).queryByRole("button", { name: "Flying" })).toBeNull();
     expect(within(panel).queryByRole("button", { name: /Drop out/ })).toBeNull();
-    expect(asked).not.toContain("combatFeatures:drawer");
+    expect(asked).not.toContain("combatFeaturesReads:drawer");
   });
 
   it("shows nothing extra for a PC in no form and on the ground", () => {

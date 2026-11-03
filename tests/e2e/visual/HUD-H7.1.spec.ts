@@ -119,7 +119,7 @@ test("HUD-H7.1 PlayerTablet: every Preview state and the sheet at 1024 × 768", 
     const { instanceIds } = await client.mutation(api.encounters.addAdversary, { campaignId, encounterId: s.encounterId, source: { kind: "custom", customId }, count: 1, summoned: false, idempotencyKey: key() });
     const instanceId = instanceIds[0]!;
     await client.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId: s.mapId, instanceIds: [instanceId], idempotencyKey: key() });
-    const token = (await client.query(api.combatTokens.list, { campaignId, mapId: s.mapId })).find((t) => t.instanceId === instanceId)!;
+    const token = (await client.query(api.combatTokensReads.list, { campaignId, mapId: s.mapId })).find((t) => t.instanceId === instanceId)!;
     await client.mutation(api.combatTokens.move, { campaignId, tokenId: token._id, x: 6, y: 10 });
     let res = await client.mutation(api.adversaryActions.attack, { campaignId, instanceId, targets: [moss.characterId], idempotencyKey: key() });
     if (res.status === "confirmFear") res = await client.mutation(api.adversaryActions.attack, { campaignId, instanceId, targets: [moss.characterId], spendFear: res.fear, idempotencyKey: key() });
@@ -151,7 +151,7 @@ test("HUD-H7.1 GMTablet: every Preview state and the sheet at 1024 × 768", { ta
     const base = { campaignId, characterId: moss.characterId, mapId, targetTokenIds: [enemies.sniper.tokenId] };
     await playerClient.mutation(api.combatActions.attack, { ...base, slot: "primary", modifier: 0, experienceIds: [], advantage: 0, disadvantage: 0, help: 0, options: [], idempotencyKey: key() });
     await playerClient.mutation(api.combatCards.useCard, { ...base, cardId: s.farCardId, spell: "main", choices: [], idempotencyKey: key() });
-    const tokens = await client.query(api.combatTokens.list, { campaignId, mapId });
+    const tokens = await client.query(api.combatTokensReads.list, { campaignId, mapId });
     const lt = tokens.find((t) => t._id === enemies.lieutenant.tokenId)!.instanceId!;
     await client.mutation(api.encounterTracking.markHp, { campaignId, instanceId: lt, delta: 2, idempotencyKey: key() });
     await client.mutation(api.encounterTracking.markStress, { campaignId, instanceId: lt, delta: 1, idempotencyKey: key() });

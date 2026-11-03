@@ -157,10 +157,10 @@ const MOSS = "ch-moss" as Id<"characters">;
 const BANDIT = "t-bandit" as Id<"combatTokens">;
 
 function setHand(loadout: HandCard[], vault: HandCard[] = []) {
-  queries["combatCards:hand"] = { characterId: MOSS, loadout, vault };
+  queries["combatCardsReads:hand"] = { characterId: MOSS, loadout, vault };
 }
 function setCharacter(hope: number, experiences = [{ id: "e1", name: "Forest Guide", value: 2 }, { id: "e2", name: "Herbalist", value: 2 }]) {
-  queries["characters:get"] = { _id: MOSS, sheet: { hope, experiences, level: 1 } };
+  queries["charactersReads:get"] = { _id: MOSS, sheet: { hope, experiences, level: 1 } };
 }
 
 function renderHand(over: Partial<HudHandBodyProps> = {}) {
@@ -289,7 +289,7 @@ describe("the HUD hand", () => {
   it("the vault: Recall · 1 Stress in combat (moveCard), Loadout full · 5 of 5 disabled", async () => {
     setHand([ENTANGLE], [CHAOS]);
     setCharacter(2);
-    queries["rests:current"] = { open: false };
+    queries["restsReads:current"] = { open: false };
     const { unmount } = renderHand();
     fireEvent.click(screen.getByRole("button", { name: "Open vault, 1 card" }));
     const vault = screen.getByTestId("hud-hand-vault");
@@ -299,7 +299,7 @@ describe("the HUD hand", () => {
     expect(calls).toEqual([{ name: "characters:moveCard", args: { characterId: MOSS, cardId: "unleash-chaos", to: "loadout", duringRest: false } }]);
     unmount();
 
-    queries["rests:current"] = { open: true };
+    queries["restsReads:current"] = { open: true };
     setHand([ENTANGLE], [CHAOS]);
     const second = renderHand();
     fireEvent.click(screen.getByRole("button", { name: "Open vault, 1 card" }));

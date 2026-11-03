@@ -54,7 +54,7 @@ function rogueDraft(name: string) {
 
 async function levelRogue(gm: ConvexHttpClient, characterId: Id<"characters">) {
   const cards = cardsForDomains(getClass("rogue")!.domains, TO_SPECIALIZATION.length + 1);
-  const owned = new Set((await gm.query(api.characters.get, { characterId }))!.sheet.domainCards.owned);
+  const owned = new Set((await gm.query(api.charactersReads.get, { characterId }))!.sheet.domainCards.owned);
   for (const [i, level] of TO_SPECIALIZATION.entries()) {
     const card = cards.find((c) => c.level <= i + 2 && !owned.has(c.id))!;
     owned.add(card.id);
@@ -94,12 +94,12 @@ test("the GM draws, resizes, moves and removes areas; a Nightwalker picks the sq
     await playerClient.mutation(api.members.joinByCode, { code });
     const { characterId } = await playerClient.mutation(api.characters.create, { campaignId, draft: rogueDraft("Ash"), idempotencyKey: crypto.randomUUID() });
     await levelRogue(gm, characterId);
-    expect((await gm.query(api.characters.get, { characterId }))!.sheet).toMatchObject({ level: 5, subclassRank: "specialization" });
+    expect((await gm.query(api.charactersReads.get, { characterId }))!.sheet).toMatchObject({ level: 5, subclassRank: "specialization" });
 
     // The first map is live.
     const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", name: "Old road", idempotencyKey: crypto.randomUUID() });
     await gm.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
-    const ash = (await gm.query(api.combatTokens.list, { campaignId, mapId })).find((t) => t.name === "Ash")!;
+    const ash = (await gm.query(api.combatTokensReads.list, { campaignId, mapId })).find((t) => t.name === "Ash")!;
     await gm.mutation(api.combatTokens.move, { campaignId, tokenId: ash._id, x: ASH.x, y: ASH.y });
     const areas = () => gm.query(api.combatAreas.list, { campaignId, mapId });
 

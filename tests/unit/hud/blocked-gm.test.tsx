@@ -142,7 +142,7 @@ function instance(over: Record<string, unknown> = {}) {
 
 /** The Lieutenant with Brannoc Very Close; another adversary already spotlit this GM turn (a spotlight costs 1 Fear). */
 function seed(fear: number) {
-  queries["combatTokens:list"] = [token(LT, "adversary", "Jagged Knife Lieutenant", 14, 10, { instanceId: LT_INSTANCE }), token("tk-br", "pc", "Brannoc", 11, 10, { characterId: "ch-br" })];
+  queries["combatTokensReads:list"] = [token(LT, "adversary", "Jagged Knife Lieutenant", 14, 10, { instanceId: LT_INSTANCE }), token("tk-br", "pc", "Brannoc", 11, 10, { characterId: "ch-br" })];
   queries["encounters:list"] = { active: [{ _id: ENC, status: "running", name: "Camp" }], ended: [], moreEnded: false };
   queries["encounters:get"] = { encounter: { _id: ENC, gmTurn: 1 }, instances: [instance(), instance({ _id: "in-b", label: "Bandit", spotlights: 1, conditions: [] })] };
   queries["campaigns:fear"] = fear;
@@ -314,16 +314,16 @@ function gm(): CombatPageState {
 }
 
 function queue() {
-  queries["combatRequests:mine"] = [
+  queries["combatRequestsReads:mine"] = [
     { kind: "sanction", requestId: "r-att", characterId: "c-moss", characterName: "Moss", createdAt: 1, slot: "primary", targets: [{ tokenId: "t-s", name: "Sniper" }], outOfRange: [{ tokenId: "t-s", band: "veryFar" }] },
   ];
-  queries["combatCards:pending"] = [];
-  queries["combatFeatures:pending"] = [];
-  queries["combatRequests:difficulties"] = [];
+  queries["combatCardsReads:pending"] = [];
+  queries["combatFeaturesReads:pending"] = [];
+  queries["combatRequestsReads:difficulties"] = [];
   queries["adversaryActions:windows"] = [];
   queries["cloakPrompts:pending"] = [];
   queries["hitKeywords:asks"] = [];
-  queries["characters:listByCampaign"] = [];
+  queries["charactersReads:listByCampaign"] = [];
   queries["feed:list"] = {
     page: [{ _id: "e1", kind: "combat", visibility: "gm", undone: false, canUndo: true, summary: "Moss hit the Bandit", at: 1, actorName: "Moss" }],
     isDone: true,

@@ -239,7 +239,7 @@ describe("E1 r2 on the server: recall riders through the Hand (dcm-cfpv, dcm-bxp
   it("the Hand offers Perfect Recall; moveCard takes it once per rest", async () => {
     const a = await arena();
     await a.edit({ ...brave, stress: 0, domainCards: { owned: ["bolt-beacon", "book-of-ava", "book-of-illiat"], loadout: ["bolt-beacon"] } } as Partial<CharacterSheet>);
-    const hand = await a.player.query(api.combatCards.hand, { campaignId: a.campaignId, characterId: a.w.characterA });
+    const hand = await a.player.query(api.combatCardsReads.hand, { campaignId: a.campaignId, characterId: a.w.characterA });
     expect(hand.recallRiders).toEqual([{ id: `${PERFECT_RECALL.featureId}:main`, name: "Perfect Recall", ready: true, amount: 1 }]);
     const riders = [`${PERFECT_RECALL.featureId}:main`];
     // Book of Ava's Recall Cost is 2; Perfect Recall takes 1 off.

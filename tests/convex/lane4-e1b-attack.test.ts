@@ -104,10 +104,10 @@ describe("dcm-uxsd: a forced PC attack opens the player's attack with the target
     const victim = await a.enemy("Ogre");
     const other = await a.enemy("Imp", { x: 4 });
     const requestId = await a.forcedRow([victim.tokenId]);
-    const seen = await a.player.query(api.combatRequests.forcedAttacks, { campaignId: a.w.campaignId });
+    const seen = await a.player.query(api.combatRequestsReads.forcedAttacks, { campaignId: a.w.campaignId });
     expect(seen).toMatchObject([{ requestId, characterId: a.w.characterA, instanceLabel: "Gobstalker", feature: "Beguile", targets: [{ tokenId: victim.tokenId, name: "Ogre" }] }]);
     // Another player's character's request isn't theirs to see.
-    expect(await a.w.as("otherPlayer").query(api.combatRequests.forcedAttacks, { campaignId: a.w.campaignId })).toEqual([]);
+    expect(await a.w.as("otherPlayer").query(api.combatRequestsReads.forcedAttacks, { campaignId: a.w.campaignId })).toEqual([]);
 
     // A changed target is refused.
     await expect(a.attack(a.player, [other.tokenId], { forcedRequestId: requestId })).rejects.toSatisfy((e) => errorCode(e) === "INVALID");

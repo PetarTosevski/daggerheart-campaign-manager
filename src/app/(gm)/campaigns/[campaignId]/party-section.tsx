@@ -12,7 +12,7 @@ import { useCampaign } from "./campaign-shell";
 
 /** The dashboard's party: a card per character with live HP/Stress/Hope tiles, from the small party summary (PF9). */
 export function PartySection({ campaignId }: { campaignId: Id<"campaigns"> }) {
-  const characters = useQuery(api.characters.partySummary, { campaignId });
+  const characters = useQuery(api.charactersReads.partySummary, { campaignId });
   const campaign = useCampaign();
   const base = `/campaigns/${campaignId}/party`;
 

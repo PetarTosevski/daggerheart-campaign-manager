@@ -185,8 +185,8 @@ const CODEX = card("codex-touched", "Codex-Touched", { domain: "codex", type: "a
 const EYE = card("floating-eye", "Floating Eye", { uses: [handUse("main", "Floating Eye", { rolls: false, targets: null })] });
 
 function seed(loadout: HandCard[], { hope = 1, vault = [] as HandCard[] } = {}) {
-  queries["combatCards:hand"] = { characterId: CHARACTER, loadout, vault };
-  queries["characters:get"] = { _id: CHARACTER, sheet: { hope, experiences: [], level: 1 } };
+  queries["combatCardsReads:hand"] = { characterId: CHARACTER, loadout, vault };
+  queries["charactersReads:get"] = { _id: CHARACTER, sheet: { hope, experiences: [], level: 1 } };
   queries["combatVision:playerView"] = {
     state: "ok",
     mapId: MAP,

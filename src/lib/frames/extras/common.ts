@@ -40,10 +40,10 @@ export function extrasFor(frameId: string, character: { classId: string; subclas
   };
 }
 
-export const traitIdSchema = z.enum(["agility", "strength", "finesse", "instinct", "presence", "knowledge"]) satisfies z.ZodType<TraitId>;
+export const traitIdSchema = /* @__PURE__ */ z.enum(["agility", "strength", "finesse", "instinct", "presence", "knowledge"]) satisfies z.ZodType<TraitId>;
 
 export const RANGES: readonly Range[] = ["Melee", "Very Close", "Close", "Far", "Very Far"];
-export const rangeSchema = z.enum(["Melee", "Very Close", "Close", "Far", "Very Far"]) satisfies z.ZodType<Range>;
+export const rangeSchema = /* @__PURE__ */ z.enum(["Melee", "Very Close", "Close", "Far", "Very Far"]) satisfies z.ZodType<Range>;
 
 export const TRAIT_LABEL: Record<TraitId, string> = {
   agility: "Agility",

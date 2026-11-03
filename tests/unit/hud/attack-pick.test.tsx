@@ -141,10 +141,10 @@ function seed() {
     { tokenId: BANDIT, band: "melee", inRange: true, lineOfSight: true, cover: false },
     { tokenId: SNIPER, band: "veryFar", inRange: false, lineOfSight: true, cover: false },
   ];
-  queries["characters:get"] = { sheet: SHEET };
+  queries["charactersReads:get"] = { sheet: SHEET };
   queries["combatActions:riders"] = { primary: [RIDER], secondary: [] };
-  queries["combatRequests:forcedAttacks"] = [];
-  queries["combatRequests:mine"] = [];
+  queries["combatRequestsReads:forcedAttacks"] = [];
+  queries["combatRequestsReads:mine"] = [];
 }
 
 /** Opens the picker the way the action ring's Attack does (H3.4): `useAttackPicker(state).open()`. */
@@ -331,7 +331,7 @@ describe("the attack picker in the HUD", () => {
 
   it("a forced attack: the card names the target, the panel locks it, the send answers the request", async () => {
     seed();
-    queries["combatRequests:forcedAttacks"] = [{ requestId: "f1", characterId: CHARACTER, characterName: "Moss", createdAt: 1, instanceLabel: "Gobstalker", feature: "Beguile", targets: [{ tokenId: ORIEL, name: "Oriel" }] }];
+    queries["combatRequestsReads:forcedAttacks"] = [{ requestId: "f1", characterId: CHARACTER, characterName: "Moss", createdAt: 1, instanceLabel: "Gobstalker", feature: "Beguile", targets: [{ tokenId: ORIEL, name: "Oriel" }] }];
     results["combatActions:attack"] = { status: "resolved", entryId: "e2", roll: ROLL, damage: null, fearGained: 0, minionOffer: null, prompts: [], targets: [{ tokenId: ORIEL, hit: false, defeated: false }] };
     renderHud();
     const card = screen.getByTestId("hud-attack-forced");
@@ -387,7 +387,7 @@ describe("the attack picker in the HUD", () => {
         { instanceId: "i2", tokenId: SNIPER, name: "Lackey B", available: 1 },
       ],
     };
-    queries["combatRequests:mine"] = [offer];
+    queries["combatRequestsReads:mine"] = [offer];
     renderHud();
     const card = screen.getByTestId("hud-attack-minions");
     expect(card).toHaveTextContent("Your hit can defeat 2 more Minions");
@@ -408,7 +408,7 @@ describe("the attack picker in the HUD", () => {
     seed();
     delete queries["combatVision:playerView"];
     const at = (id: Id<"combatTokens">, name: string, side: string, x: number, y: number, characterId?: Id<"characters">) => ({ _id: id, name, side, x, y, size: 1, stats: { conditions: [] }, ...(characterId ? { characterId } : {}) });
-    queries["combatTokens:list"] = [at(MOSS, "Moss", "pc", 5, 10, CHARACTER), at(ORIEL, "Oriel", "pc", 6, 13), at(BANDIT, "Bandit", "enemy", 6, 10), at(LT, "Lieutenant", "enemy", 14, 10)];
+    queries["combatTokensReads:list"] = [at(MOSS, "Moss", "pc", 5, 10, CHARACTER), at(ORIEL, "Oriel", "pc", 6, 13), at(BANDIT, "Bandit", "enemy", 6, 10), at(LT, "Lieutenant", "enemy", 14, 10)];
     // The GM holds the spotlight: the GM is never held back (assertMayAct), also while playing for a PC.
     queries["combatSpotlight:state"] = { holder: { kind: "gm" }, since: 1, reason: "gmTook", rollBy: null, reactionsOnly: true, canMove: false };
     results["combatActions:attack"] = { status: "resolved", entryId: "e1", roll: ROLL, damage: DAMAGE, fearGained: 0, minionOffer: null, prompts: [], targets: [{ tokenId: BANDIT, hit: true, defeated: false }] };
@@ -447,7 +447,7 @@ describe("the attack picker in the HUD", () => {
 
   it("hud-pre-w9: the GM's picker waits for a token on the live map", () => {
     seed();
-    queries["combatTokens:list"] = [];
+    queries["combatTokensReads:list"] = [];
     function GmReason({ live }: { live: boolean }) {
       const picker = useAttackPicker({ ...state, role: "gm", map: { _id: MAP, name: "Forest Camp", live } } as CombatPageState, CHARACTER);
       return <p>{`${picker.ready}:${picker.reason}`}</p>;
@@ -466,7 +466,7 @@ describe("the attack picker in the HUD", () => {
 
   it("the GM gets no attack prompts", () => {
     seed();
-    queries["combatRequests:forcedAttacks"] = [{ requestId: "f1", characterId: CHARACTER, characterName: "Moss", createdAt: 1, instanceLabel: "Gobstalker", feature: "Beguile", targets: [{ tokenId: ORIEL, name: "Oriel" }] }];
+    queries["combatRequestsReads:forcedAttacks"] = [{ requestId: "f1", characterId: CHARACTER, characterName: "Moss", createdAt: 1, instanceLabel: "Gobstalker", feature: "Beguile", targets: [{ tokenId: ORIEL, name: "Oriel" }] }];
     const { container } = render(
       <HudProvider>
         <PickProvider>

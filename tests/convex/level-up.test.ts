@@ -144,7 +144,7 @@ describe("levelUp", () => {
     const knowledge = { ...rogueChoice, multiclass: { ...wizard, spellcastTrait: "knowledge" as const } };
     expect(await gm.mutation(api.levelUp.apply, { characterId: a, choice: knowledge, idempotencyKey: key() })).toEqual({ level: 5 });
     expect((await sheetOf(a)).multiclass).toEqual({ ...wizard, spellcastTrait: "knowledge" });
-    expect((await gm.query(api.characters.get, { characterId: a }))?.sheet.multiclass?.spellcastTrait).toBe("knowledge");
+    expect((await gm.query(api.charactersReads.get, { characterId: a }))?.sheet.multiclass?.spellcastTrait).toBe("knowledge");
     await gm.mutation(api.levelUp.undoLast, { characterId: a, idempotencyKey: key() });
     expect((await sheetOf(a)).multiclass).toBeUndefined();
 

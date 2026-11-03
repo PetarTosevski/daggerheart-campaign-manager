@@ -420,7 +420,7 @@ describe("automatic riders", () => {
         },
       });
     });
-    const mine = await a.player.query(api.combatRequests.mine, { campaignId: a.campaignId });
+    const mine = await a.player.query(api.combatRequestsReads.mine, { campaignId: a.campaignId });
     const view = mine.find((m) => m.requestId === requestId);
     expect(view).toMatchObject({ kind: "riderPick", name: "Death Strike", costs: ["1 Stress"], candidates: [{ tokenId: one.tokenId, name: "One" }, { tokenId: two.tokenId, name: "Two" }] });
     expect(await code(a.player.mutation(api.combatActions.riderPick, { campaignId: a.campaignId, requestId, choice: { kind: "use", tokenId: other.tokenId }, idempotencyKey: key() }))).toBe("INVALID");
@@ -472,7 +472,7 @@ describe("the after-roll step (Q1)", () => {
     expect(open).toHaveLength(1);
     // Earlier attacks may have hit with a critical; the held one wrote nothing.
     const before = (await a.rows()).length;
-    const mine = await a.player.query(api.combatRequests.mine, { campaignId: a.campaignId });
+    const mine = await a.player.query(api.combatRequestsReads.mine, { campaignId: a.campaignId });
     expect(mine.some((r) => r.kind === "afterRoll" && r.requestId === held.requestId)).toBe(true);
     expect((await a.rows()).length).toBe(before);
   });

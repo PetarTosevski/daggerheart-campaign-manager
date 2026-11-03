@@ -38,7 +38,7 @@ import { withoutStance } from "./lib/stanceDrop";
  *
  * - `party` (every member): one row per PC token on the map, what the banners and the tokens' Hope chips show (HP,
  *   Stress, Armor, Hope, conditions, class, level, portrait, death move due). Players read the live map only (any
- *   other map reads as empty, as `combatTokens.party`); the GM any map. Never an adversary, ally, neutral or custom
+ *   other map reads as empty, as `combatTokensReads.party`); the GM any map. Never an adversary, ally, neutral or custom
  *   token: their numbers stay the GM's (R4, HANDOFF hard rule 2).
  * - `scene` (every member): Fear, the campaign's light and time phase, the campaign day (every campaign, core
  *   included: user decision 2026-11-02, TASK-CORE-CALENDAR), and what the caller may change: the light (`canSetLight`,
@@ -46,7 +46,7 @@ import { withoutStance } from "./lib/stanceDrop";
  *   with campaign time) and End day (`canEndDay`, the GM in every campaign, as `campaignTime.endDay`).
  * - `sheet` (every member, tracer HD2, user answer 4a): one PC's sheet panel. Any party member reads any PC's numbers,
  *   features (a view-safe list), thresholds, Experiences, conditions and lasting effects; only the cards in hand follow
- *   hand sharing, so this query never returns a card (the hand stays `combatCards.hand`).
+ *   hand sharing, so this query never returns a card (the hand stays `combatCardsReads.hand`).
  * - `sceneEndPreview` (the GM, tracer H5.3): what End scene would end now, by name (GMDesktop 'End scene').
  */
 
@@ -166,7 +166,7 @@ export const hudSheetFeatureValidator = v.object({
   tokens: v.number(),
   /** Its Use runs on the map (an effect entry exists). */
   automated: v.boolean(),
-  /** Use data (`combatFeatures.drawer`'s shape, for `FeatureUse`): own and gm only; null in view mode. */
+  /** Use data (`combatFeaturesReads.drawer`'s shape, for `FeatureUse`): own and gm only; null in view mode. */
   uses: v.union(v.null(), v.array(drawerUseValidator)),
 });
 

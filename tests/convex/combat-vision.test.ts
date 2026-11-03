@@ -62,7 +62,7 @@ async function withScene(frameId: Frame = "witherwild") {
   const { characterId: bryn } = await gm.mutation(api.characters.create, { campaignId, draft: draft("Bryn"), idempotencyKey: key() });
   const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
   await gm.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: key() });
-  const list = () => gm.query(api.combatTokens.list, { campaignId, mapId });
+  const list = () => gm.query(api.combatTokensReads.list, { campaignId, mapId });
   const tokenOf = async (name: string) => (await list()).find((tk) => tk.name === name)!;
   const ashToken = (await tokenOf("Ash"))._id;
   const brynToken = (await tokenOf("Bryn"))._id;
@@ -161,7 +161,7 @@ describe("combat vision: access", () => {
     // A map that is not live: players get nothing from it.
     const { mapId: hidden } = await f.gm.mutation(api.combatMaps.create, { campaignId, size: "small", idempotencyKey: key() });
     await f.gm.mutation(api.combatTokens.addParty, { campaignId, mapId: hidden, idempotencyKey: key() });
-    const hiddenAsh = (await f.gm.query(api.combatTokens.list, { campaignId, mapId: hidden })).find((tk) => tk.name === "Ash")!;
+    const hiddenAsh = (await f.gm.query(api.combatTokensReads.list, { campaignId, mapId: hidden })).find((tk) => tk.name === "Ash")!;
     expect(await code(f.player.mutation(api.combatVision.markExplored, { campaignId, mapId: hidden, characterId: f.ash, bits: "_" }))).toBe("COMBAT_MAP_NOT_FOUND");
     expect(await code(f.player.query(api.combatVision.explored, { campaignId, characterId: f.ash, mapId: hidden }))).toBe("COMBAT_MAP_NOT_FOUND");
     expect(await code(f.player.mutation(api.combatVision.setCarriedLight, { campaignId, tokenId: hiddenAsh._id, light: "torch" }))).toBe("COMBAT_MAP_NOT_FOUND");

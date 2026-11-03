@@ -184,7 +184,7 @@ test("on a Sprites forest map the GM paints moss, adds an oak and an uploaded sp
     const { tokenId: wolfId } = await client.mutation(api.combatTokens.addCustom, { campaignId, mapId, name: "Wolf", hp: 4, side: "enemy", idempotencyKey: crypto.randomUUID() });
     const { tokenId: banditId } = await client.mutation(api.combatTokens.addCustom, { campaignId, mapId, name: "Bandit", hp: 3, side: "enemy", idempotencyKey: crypto.randomUUID() });
     // Token x / y are the top-left corner of their square (the oak's centre is 10.5, 10.5).
-    const ash = (await client.query(api.combatTokens.list, { campaignId, mapId })).find((t) => t.name === "Ash")!;
+    const ash = (await client.query(api.combatTokensReads.list, { campaignId, mapId })).find((t) => t.name === "Ash")!;
     await client.mutation(api.combatTokens.move, { campaignId, tokenId: ash._id, x: 10, y: 7 });
     await client.mutation(api.combatTokens.turn, { campaignId, tokenId: ash._id, angle: Math.PI / 2 });
     await client.mutation(api.combatTokens.move, { campaignId, tokenId: wolfId, x: 10, y: 13 });

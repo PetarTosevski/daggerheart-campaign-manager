@@ -17,7 +17,7 @@ export type FlashTone = "hit" | "miss" | "effect";
 export type FlashTarget = { tokenId: string; side: "pc" | "adversary"; tone: FlashTone };
 /** A feed row as the flashes read it (`feed.list`, either role's shape). */
 export type FlashFeedRow = { _id: string; kind: string; visibility: string; summary: string; undone: boolean; targets?: readonly FlashTarget[] };
-/** A token as the flashes read it (`combatTokens.list` for the GM, `combatTokens.party` for a player). */
+/** A token as the flashes read it (`combatTokensReads.list` for the GM, `combatTokensReads.party` for a player). */
 export type FlashToken = { _id: string; x: number; y: number; size: number };
 
 export type Flash = { key: string; rowId: string; tokenId: string; tone: FlashTone; x: number; y: number; size: number; label: string };

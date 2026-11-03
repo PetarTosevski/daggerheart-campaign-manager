@@ -166,10 +166,10 @@ export function useFeatureUse({ campaignId, role, map, characterId, canUse = tru
   const gm = role === "gm";
   const live = map?.live === true ? map : null;
   const sendUse = useMutation(api.combatFeatures.useFeature);
-  const drawer = useQuery(api.combatFeatures.drawer, canUse ? { campaignId, characterId } : "skip");
-  const hand = useQuery(api.combatCards.hand, canUse ? { campaignId, characterId } : "skip");
+  const drawer = useQuery(api.combatFeaturesReads.drawer, canUse ? { campaignId, characterId } : "skip");
+  const hand = useQuery(api.combatCardsReads.hand, canUse ? { campaignId, characterId } : "skip");
   const actor = useActor({ campaignId, role, mode: "play", map: live, previewCharacterId: null });
-  const gmTokens = useQuery(api.combatTokens.list, gm && live && canUse ? { campaignId, mapId: live._id } : "skip");
+  const gmTokens = useQuery(api.combatTokensReads.list, gm && live && canUse ? { campaignId, mapId: live._id } : "skip");
 
   // Who is on the map, for names, chain rows and the actor's square.
   let creatures: Creature[] = [];

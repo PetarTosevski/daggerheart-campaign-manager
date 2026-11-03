@@ -200,7 +200,7 @@ async function lightScene() {
   const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
   await gm.mutation(api.combatMapStyle.setStyle, { campaignId, mapId, style: "sprites" });
   await gm.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: key() });
-  const ashToken = (await gm.query(api.combatTokens.list, { campaignId, mapId })).find((tk) => tk.name === "Ash")!._id;
+  const ashToken = (await gm.query(api.combatTokensReads.list, { campaignId, mapId })).find((tk) => tk.name === "Ash")!._id;
   await t.run((c) => c.db.patch("combatTokens", ashToken, { x: 5, y: 10, face: 0 }));
   await t.run(async (c) => {
     const row = await c.db

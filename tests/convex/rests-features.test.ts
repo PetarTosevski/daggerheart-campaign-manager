@@ -92,7 +92,7 @@ async function setup() {
         .take(20);
       return rows.find((r) => r.kind === "rest" && r.characterId === characterId && r.undoneAt === undefined)?.summary ?? "";
     });
-  const current = () => gm.query(api.rests.current, { campaignId });
+  const current = () => gm.query(api.restsReads.current, { campaignId });
   return { t, gm, p1, p2, campaignId, a, b, sheetOf, edit, start, finish, interrupt, undo, choose, rowOf, current };
 }
 

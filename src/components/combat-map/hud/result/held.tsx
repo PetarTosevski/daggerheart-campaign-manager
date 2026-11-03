@@ -17,11 +17,11 @@ import { hudResults } from "./store";
  * The after-roll hold (plan combat-hud H4.1; CmpPromptsPlayer 'Your roll waits'; CB p.107 "Using Features After a
  * Roll": "you use it after the GM declares if the roll succeeds or fails, but before the narrative consequences unfold
  * (such as damage being rolled)") and the damage-phase rider pick (HF p.8 Death Strike). Both come from the server's
- * open requests (`combatRequests.mine`), so a reload keeps them; both answer with one intent and drop the request
+ * open requests (`combatRequestsReads.mine`), so a reload keeps them; both answer with one intent and drop the request
  * optimistically.
  */
 
-type MineRow = FunctionReturnType<typeof api.combatRequests.mine>[number];
+type MineRow = FunctionReturnType<typeof api.combatRequestsReads.mine>[number];
 export type HeldRow = Extract<MineRow, { kind: "afterRoll" }>;
 export type RiderRow = Extract<MineRow, { kind: "riderPick" }>;
 
@@ -31,11 +31,11 @@ const HOURGLASS = (
   </svg>
 );
 
-/** Drops one request from `combatRequests.mine` in the local store (the click's optimistic update). */
+/** Drops one request from `combatRequestsReads.mine` in the local store (the click's optimistic update). */
 function useAnswer<M extends typeof api.combatActions.afterRoll | typeof api.combatActions.riderPick>(mutation: M, campaignId: Id<"campaigns">, requestId: Id<"combatRequests">) {
   return useMutation(mutation).withOptimisticUpdate((store) => {
-    const mine = store.getQuery(api.combatRequests.mine, { campaignId });
-    if (mine !== undefined) store.setQuery(api.combatRequests.mine, { campaignId }, mine.filter((r) => r.requestId !== requestId));
+    const mine = store.getQuery(api.combatRequestsReads.mine, { campaignId });
+    if (mine !== undefined) store.setQuery(api.combatRequestsReads.mine, { campaignId }, mine.filter((r) => r.requestId !== requestId));
   });
 }
 

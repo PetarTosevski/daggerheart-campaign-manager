@@ -9,7 +9,7 @@ import { DOMAIN_CARDS } from "../../src/lib/srd/domain-cards";
 const calls: { name: string; args: unknown }[] = [];
 let current: CharacterView | null = null;
 type OpenRest = { _id: string; kind: "short" | "long"; startedAt: number; gmOverride: boolean; choices: never[]; moves: never[] };
-/** What `rests.current` returns: no open rest unless a test opens one (then with the validator's full shape). */
+/** What `restsReads.current` returns: no open rest unless a test opens one (then with the validator's full shape). */
 let restsCurrent: { open: OpenRest | null; shortRestsSinceLong: number; last: null } = { open: null, shortRestsSinceLong: 0, last: null };
 const openShortRest = (): OpenRest => ({ _id: "r1", kind: "short", startedAt: 0, gmOverride: false, choices: [], moves: [] });
 
@@ -18,8 +18,8 @@ const functionName = (ref: unknown) => String((ref as Record<symbol, unknown>)[S
 vi.mock("convex/react", () => ({
   useQuery: (ref: unknown) => {
     const name = functionName(ref);
-    if (name === "rests:current") return restsCurrent;
-    if (name === "characters:listByCampaign") return current ? [current] : [];
+    if (name === "restsReads:current") return restsCurrent;
+    if (name === "charactersReads:listByCampaign") return current ? [current] : [];
     return current;
   },
   useMutation: (ref: unknown) => {

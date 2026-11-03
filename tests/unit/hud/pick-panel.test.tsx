@@ -288,9 +288,9 @@ describe("Waiting for the GM", () => {
     seed();
     const targets = [{ tokenId: SNIPER, name: "Sniper" }];
     const outOfRange = [{ tokenId: SNIPER, band: "veryFar" }];
-    queries["combatRequests:mine"] = [{ kind: "sanction", requestId: "ra", characterId: CHARACTER, characterName: "Moss", createdAt: 2, slot: "primary", targets, outOfRange }];
-    queries["combatCards:pending"] = [{ requestId: "rc", characterId: CHARACTER, characterName: "Moss", cardId: "vicious-entangle", cardName: "Vicious Entangle", useId: "u", createdAt: 1, targets, outOfRange }];
-    queries["combatFeatures:pending"] = [];
+    queries["combatRequestsReads:mine"] = [{ kind: "sanction", requestId: "ra", characterId: CHARACTER, characterName: "Moss", createdAt: 2, slot: "primary", targets, outOfRange }];
+    queries["combatCardsReads:pending"] = [{ requestId: "rc", characterId: CHARACTER, characterName: "Moss", cardId: "vicious-entangle", cardName: "Vicious Entangle", useId: "u", createdAt: 1, targets, outOfRange }];
+    queries["combatFeaturesReads:pending"] = [];
   };
 
   it("one card per waiting use, Withdraw sends the request id with an idempotency key", async () => {
@@ -333,17 +333,17 @@ describe("Waiting for the GM", () => {
 
   it("the optimistic update drops the request from the three reads", () => {
     const store = new Map<string, unknown>([
-      ["combatRequests:mine", [{ requestId: "ra" }, { requestId: "rb" }]],
-      ["combatCards:pending", [{ requestId: "ra" }]],
+      ["combatRequestsReads:mine", [{ requestId: "ra" }, { requestId: "rb" }]],
+      ["combatCardsReads:pending", [{ requestId: "ra" }]],
     ]);
     const fake = {
       getQuery: (ref: unknown) => store.get(functionName(ref)),
       setQuery: (ref: unknown, _args: unknown, value: unknown) => store.set(functionName(ref), value),
     };
     dropWithdrawn(fake as never, CAMPAIGN, "ra" as Id<"combatRequests">);
-    expect(store.get("combatRequests:mine")).toEqual([{ requestId: "rb" }]);
-    expect(store.get("combatCards:pending")).toEqual([]);
-    expect(store.has("combatFeatures:pending")).toBe(false);
+    expect(store.get("combatRequestsReads:mine")).toEqual([{ requestId: "rb" }]);
+    expect(store.get("combatCardsReads:pending")).toEqual([]);
+    expect(store.has("combatFeaturesReads:pending")).toBe(false);
   });
 
   it("the GM gets no waiting cards (the queue is theirs)", () => {

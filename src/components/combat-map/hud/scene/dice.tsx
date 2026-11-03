@@ -39,7 +39,7 @@ export function HudDice({ campaignId, characterId, gm }: { campaignId: Id<"campa
 function GmDice({ campaignId, characterId }: { campaignId: Id<"campaigns">; characterId: Id<"characters"> | null }) {
   // The PC the GM chose to roll for; another selection (or none) falls back to the GM's own roller.
   const [forPc, setForPc] = useState<Id<"characters"> | null>(null);
-  const pc = useQuery(api.characters.get, characterId ? { characterId } : "skip");
+  const pc = useQuery(api.charactersReads.get, characterId ? { characterId } : "skip");
   const rollingFor = characterId !== null && forPc === characterId ? characterId : null;
   const pcName = pc?.sheet.name ?? "the selected PC";
   return (
@@ -69,7 +69,7 @@ function GmDice({ campaignId, characterId }: { campaignId: Id<"campaigns">; char
 
 function CharacterDice({ campaignId, characterId }: { campaignId: Id<"campaigns">; characterId: Id<"characters"> }) {
   const campaign = useCampaign();
-  const character = useQuery(api.characters.get, { characterId });
+  const character = useQuery(api.charactersReads.get, { characterId });
   if (character === undefined) return <DiceLoading />;
   if (character === null || !character.canEdit || character.corrupt) return <p className="hud-muted">This character’s dice box isn’t available.</p>;
   return (

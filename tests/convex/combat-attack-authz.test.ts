@@ -145,8 +145,8 @@ describe("combat attack: access by role", () => {
     ).toEqual({ anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", otherPlayer: "FORBIDDEN", player: "FORBIDDEN", gm: "ok" });
   });
 
-  it("combatRequests.mine: every member (each sees only their own, the GM all)", async () => {
-    expect(await rows((w, _s, role) => w.as(role).query(api.combatRequests.mine, { campaignId: w.campaignId }))).toEqual({
+  it("combatRequestsReads.mine: every member (each sees only their own, the GM all)", async () => {
+    expect(await rows((w, _s, role) => w.as(role).query(api.combatRequestsReads.mine, { campaignId: w.campaignId }))).toEqual({
       anon: "UNAUTHENTICATED",
       outsider: "NOT_FOUND",
       otherPlayer: "ok",
