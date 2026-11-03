@@ -282,3 +282,5 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - Spotlight card wording when the adversary isn't drawn: "Jagged Knife Lieutenant has the spotlight" (label, no article) vs "The Lieutenant has the spotlight".
 - A player whose character has no token on the map never records "seen" adversaries; they learn them only from another player's open map.
 - Config plan open questions Q1-Q32 are in .omc/plans/config-briefs.md ("Open questions") - ask all of them in the morning (Q4 clock-per-scene and Q16 owner identity block tracers R4 / AD0).
+- Stray process: a `next-server` (pid 1135271, from old agent worktree agent-af623c86b82eac05c, not port 3000) has run at ~100% CPU for 5+ hours. I was not allowed to stop it. Default: leave it; ask whether to kill it (you can run `! kill 1135271`).
+- Convex per-call load cost (dcm-uh6r): every uncached call loads a ~3.7 MB bundle (~300 ms); a HUD burst crosses the 1 s limit. Default taken: fix it before cutting over (agent splitting heavy SRD / sprite-pack / zod imports out of light functions, no behaviour change). Ask: is this also seen on the deployed Convex cloud?
