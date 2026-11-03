@@ -288,3 +288,8 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - ANSWERS 2026-11-04 (H8.1 questions): spotlight panel under the toolbar row, left column below 1440 px; the first map keeps the GM in Edit; HUD parts retry by themselves (2 s / 5 s / 10 s) before 'Try again'; class controls (Flying, Beastform, stances, counters) move into the HUD sheet.
 
 ## Afk 2026-11-04 (user away; defaults taken, ask later as multiple choice)
+- Journal Q9 (journal-briefs.md): spotlight counts automatic only (GM can Reset, no tap +1)? Default (a) automatic only. Note: the old manual bumpSpotlight still exists server-side until JX2.
+- Journal Q10: where does "Allow extra characters this session" go once the Live card is gone? Default (a) a small menu on the live-session chip in the Journal header.
+- Journal Q11: where does the GM rename / re-date / mark as played / delete a session? Default per brief (see journal-briefs.md Q11).
+- Journal Q13: Notes page groups and Quick keys from the design. Default per brief (see journal-briefs.md Q13).
+- JD1: a session started again counts spotlight into the same per-session rows (per session, not per live window). Default: keep.
