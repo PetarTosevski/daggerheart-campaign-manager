@@ -600,3 +600,37 @@ or read the last backup time.
 - (b) No exemptions, not even for you, except turning read-only off.
 
 **Q32 (decided, tell us if not).** The 80% email goes to your verified email, once per month.
+
+## User answers 2026-11-04 (binding; override the defaults above)
+- Q1 (a) Active PCs (not retired / dead), capped at 12, undoable with Start, logged.
+- Q2 (a) Refuse players only; GM / co-GM acting for a PC is not refused.
+- Q3 CHANGED: everything is hidden. Every place that shows the Fear pool as a number shows "?" instead; the Fear art stays. ("Rolled with Fear" on a roll is the die, not the pool: stays.)
+- Q4 (d) Keep Manual only: drop "Advance per scene" (R4 removes the option instead of building it).
+- Q5 (a) Players see the bars and the "least spotlight" line.
+- Q6 (a) Co-GM sees Notes like the GM.
+- Q7 (a) Only the creator promotes / demotes co-GMs and archives.
+- Q8 (b) Existing members AND invite by email directly as co-GM.
+- Q9 (a) Archive = read-only for all, not while live, listed under Archived, no cap count, creator restores.
+- Q10 OPEN: the user wants screenshots of the exact duplicate screens before deciding.
+- Q11 (b) Use @convex-dev/presence (new dependency).
+- Q12 (a) CSS zoom: Small 0.9, Medium 1, Large 1.15.
+- Q13 (a) On = calmer; Off follows the device.
+- Q14 (a) Chime + toast.
+- Q15 (b) Move ALL browser-saved values to the account (token names, range circles, sort orders, drafts too).
+- Q16 (a) One-time `npx convex run adminSetup:setOwner`.
+- Q17 CHANGED: non-owner gets FORBIDDEN and the page says "Not allowed" (not "Not found").
+- Q18 (a) Invite link only = pending email invite or a join-link sign-up; Google only for invited emails. Open sign-up stays the default.
+- Q19 (a) 10 / 100 / 5 / 8.
+- Q20 (a) Shorter answers: cheaper model, no internet, half length; pause at 120%.
+- Q21 CHANGED: GMs send a request to the superadmin to change their campaign's Lorekeeper limits; the owner approves / sets them in the admin page (no GM self-service).
+- Q22 (a) Count only.
+- Q23 (b) Upload a PDF from the admin; parse on the server (new dependency).
+- Q24 (b) GMs can upload books per campaign: PDF, size-capped (e.g. 20 MB / 300 pages), counted against that campaign's Lorekeeper limits, searched only by that campaign's Lorekeeper.
+- Q25 (b) Keep every board row as switches, including Journal and Share links.
+- Q26 (a) Admin changes + campaigns created / deleted, 1 year.
+- Q27 (b) Owner gets a read-only view of any campaign.
+- Q28 (b) Account menu also suspends / deletes accounts (needs its own design + safeguards).
+- Q29 (a) Link to the Convex dashboard.
+- Q30 (a) In-app JSON download, deleted after 1 hour.
+- Q31 (a) Owner + background jobs exempt.
+- Q32 (a) 80% email once a month.
