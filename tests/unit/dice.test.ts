@@ -14,6 +14,10 @@ import {
   rollDamage,
   rollDuality,
   rollFree,
+  formatFreeRoll,
+  mergeFreePool,
+  parseFreeRoll,
+  FREE_ROLL_LIMITS,
   spendHope,
   typedLabel,
   TYPED_MODIFIER_MAX,
@@ -257,5 +261,52 @@ describe("typed modifier (review M1)", () => {
     expect(typedLabel(0)).toBe("");
     expect(typedLabel(3)).toBe(" +3 typed");
     expect(typedLabel(-2)).toBe(" -2 typed");
+  });
+});
+
+describe("free rolls of mixed dice (user 2026-11-04)", () => {
+  it("parses a typed roll: sizes, counts, a bare d, spaces, case, flat numbers summed", () => {
+    expect(parseFreeRoll("3d6+1d8+2")).toEqual({ dice: [{ count: 3, sides: 6 }, { count: 1, sides: 8 }], modifier: 2 });
+    expect(parseFreeRoll(" D20 - 1 ")).toEqual({ dice: [{ count: 1, sides: 20 }], modifier: -1 });
+    expect(parseFreeRoll("2d6 + d6 + 1 + 1")).toEqual({ dice: [{ count: 3, sides: 6 }], modifier: 2 });
+    expect(parseFreeRoll("1d4+1d10+1d12")).toEqual({ dice: [{ count: 1, sides: 4 }, { count: 1, sides: 10 }, { count: 1, sides: 12 }], modifier: 0 });
+  });
+
+  it("refuses what it can't read or the app doesn't roll", () => {
+    for (const bad of ["", "3d", "d", "3d6 2", "3d6++2", "abc", "3d6+x", "-1d6", "2d6-1d4", "1d7", "1d100", "21d6", "15d6+6d8", "1d6+61", "1d6-61", "5"]) {
+      expect(() => parseFreeRoll(bad), bad).toThrow(DiceRuleError);
+    }
+    expect(() => parseFreeRoll("1+".repeat(40))).toThrow(DiceRuleError);
+  });
+
+  it("formats the feed line and the preview", () => {
+    expect(formatFreeRoll([{ count: 3, sides: 6 }, { count: 1, sides: 8 }], 2)).toBe("3d6 + 1d8 + 2");
+    expect(formatFreeRoll([{ count: 1, sides: 20 }], -1)).toBe("1d20 - 1");
+    expect(formatFreeRoll([{ count: 2, sides: 6 }], 0)).toBe("2d6");
+  });
+
+  it("merges sizes in first-seen order and drops empty groups", () => {
+    expect(mergeFreePool([{ count: 1, sides: 6 }, { count: 1, sides: 8 }, { count: 2, sides: 6 }, { count: 0, sides: 4 }])).toEqual([
+      { count: 3, sides: 6 },
+      { count: 1, sides: 8 },
+    ]);
+  });
+
+  it("rollFree keeps every die with its size and adds the modifier; the limits hold", () => {
+    const roll = rollFree([{ count: 3, sides: 6 }, { count: 1, sides: 8 }], 2, seq(4, 2, 6, 7));
+    expect(roll.dice.map((d) => [d.sides, d.value])).toEqual([
+      [6, 4],
+      [6, 2],
+      [6, 6],
+      [8, 7],
+    ]);
+    expect(roll).toMatchObject({ kind: "free", modifier: 2, total: 21, outcome: "none", manual: false });
+    const most = FREE_ROLL_LIMITS.dice;
+    expect(rollFree([{ count: most, sides: 4 }], 0, () => 1).dice).toHaveLength(most);
+    expect(() => rollFree([{ count: most, sides: 4 }, { count: 1, sides: 6 }], 0, () => 1)).toThrow(DiceRuleError);
+    expect(() => rollFree([{ count: 1, sides: 6 }], FREE_ROLL_LIMITS.modifier + 1, () => 1)).toThrow(DiceRuleError);
+    expect(() => rollFree([{ count: 1.5, sides: 6 }], 0, () => 1)).toThrow(DiceRuleError);
+    expect(() => rollFree([{ count: -1, sides: 6 }, { count: 2, sides: 8 }], 0, () => 1)).toThrow(DiceRuleError);
+    expect(() => rollFree([{ count: 0, sides: 6 }], 0, () => 1)).toThrow(DiceRuleError);
   });
 });

@@ -8,7 +8,8 @@
  *   (`loadCharacter` edit); dead, away and unconscious characters can't roll.
  * - `tagTeam` then `tagTeamApply`: both PCs roll, then the initiator picks the
  *   roll that applies to both (CB 97); the four rows share one group.
- * - `gmRoll` / `reveal`: GM free rolls, hidden from players until revealed.
+ * - `gmRoll` / `reveal`: GM free rolls, hidden from players until revealed (`revealedAt` marks a revealed one).
+ * - `freeRoll`: any member's public free roll of mixed dice (3d6 + 1d8 + 2), no character.
  *
  * Session features (plan session-features F2, rules in src/lib/domain/session-features):
  * - `slayerDice` (attack and damage rolls): spends Slayer Dice, rolled with the server rng (also for a
@@ -34,7 +35,18 @@ import { v } from "convex/values";
 
 import { withEffects } from "../src/lib/domain/characters/effects";
 import { withPassiveTraits } from "../src/lib/domain/characters/derived";
-import { applyDualityEffects, assertTypedModifier, dualityEffects, OUTCOME_LABEL, rollDuality, rollFree, spendHope, typedLabel } from "../src/lib/domain/dice/index";
+import {
+  applyDualityEffects,
+  assertTypedModifier,
+  dualityEffects,
+  formatFreeRoll,
+  mergeFreePool,
+  OUTCOME_LABEL,
+  rollDuality,
+  rollFree,
+  spendHope,
+  typedLabel,
+} from "../src/lib/domain/dice/index";
 import { countsAsActionRoll } from "../src/lib/domain/countdowns/advanced";
 import {
   featuresOf,
@@ -55,7 +67,7 @@ import { latestLiveRow, logAction, newGroupId } from "./lib/actionLog";
 import { assertCanAct, findCharacter, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { rollDie } from "./lib/dice";
 import { gainFear } from "./lib/fear";
-import { gmMutation, keyedGmMutation, keyedUserMutation, userQuery } from "./lib/functions";
+import { gmMutation, keyedCampaignMutation, keyedGmMutation, keyedUserMutation, userQuery } from "./lib/functions";
 import { atLeast } from "./lib/permissions";
 import {
   changed,
@@ -71,7 +83,6 @@ import {
   poolValidator,
   promptValidator,
   rules,
-  signed,
   versus,
 } from "./lib/rolls";
 import { featureScope } from "./lib/featureScope";
@@ -381,11 +392,25 @@ export const tagTeamApply = keyedUserMutation({
     }),
 });
 
-// ---------------------------------------------------------------- GM free rolls
+// ---------------------------------------------------------------- free rolls (mixed dice)
 
 const LABEL_MAX = 80;
 
-/** A GM free roll (any dice plus a modifier): only the GM sees it until revealed (decision 2). */
+/** A free roll's feed line: "3d6 + 1d8 + 2 = 21", with the optional label ("Ambush, 1d20 = 12"). */
+function freeLine(dice: Parameters<typeof formatFreeRoll>[0], modifier: number, total: number, label: string | undefined): string {
+  const name = label?.trim().slice(0, LABEL_MAX);
+  return `${name ? `${name}, ` : ""}${formatFreeRoll(dice, modifier)} = ${total}`;
+}
+
+/** The name a member's free roll shows: the account's name, else the email's local part (as `members.list`). */
+function rollerName(user: Doc<"users">): string {
+  return user.name?.trim() || user.email?.split("@")[0] || "Player";
+}
+
+/**
+ * A GM free roll (any mix of dice plus a modifier, user 2026-11-04): only the GM sees it until revealed (decision 2).
+ * Limits (`assertFreeRoll`): d4–d20, 1–20 dice in all, modifier within ±60; else DICE_RULE.
+ */
 export const gmRoll = keyedGmMutation({
   rateLimit: "roll",
   args: { dice: poolValidator, modifier: v.number(), label: v.optional(v.string()) },
@@ -393,14 +418,12 @@ export const gmRoll = keyedGmMutation({
   handler: async (ctx, { dice, modifier, label }) =>
     ctx.once("roll_gm", { dice, modifier, label }, async () => {
       const roll = rules(() => rollFree(dice, modifier, rollDie));
-      const formula = dice.map((d) => `${d.count}d${d.sides}`).join("+") + (modifier ? signed(modifier) : "");
-      const name = label?.trim().slice(0, LABEL_MAX);
       const entryId = await logAction(ctx, {
         campaignId: ctx.campaign._id,
         actorId: ctx.user._id,
         kind: "gmRoll",
         visibility: "gm",
-        summary: `GM: ${name ? `${name}, ` : ""}${formula} = ${roll.total}`,
+        summary: `GM: ${freeLine(mergeFreePool(dice), modifier, roll.total, label)}`,
         roll,
         undoable: true,
       });
@@ -408,7 +431,37 @@ export const gmRoll = keyedGmMutation({
     }),
 });
 
-/** Shows a GM free roll to every member. Revealing twice changes nothing. */
+/**
+ * A member's free roll (user 2026-11-04: "combine different dice, for example 3d6 + 1d8"): any campaign member, the GM
+ * included, rolls a mix of dice plus a modifier on the server; the row is public and belongs to no character, so it
+ * changes no Hope, Fear or countdown. Same limits as `gmRoll`. Undo: the GM only (a rolled row is GM-only undo, `groupGmOnly`).
+ */
+export const freeRoll = keyedCampaignMutation({
+  need: "view",
+  rateLimit: "roll",
+  args: { dice: poolValidator, modifier: v.number(), label: v.optional(v.string()) },
+  returns: damageResult,
+  handler: async (ctx, { dice, modifier, label }) =>
+    ctx.once("roll_free", { dice, modifier, label }, async () => {
+      const roll = rules(() => rollFree(dice, modifier, rollDie));
+      const who = ctx.permission === "owner" ? "GM" : rollerName(ctx.user);
+      const entryId = await logAction(ctx, {
+        campaignId: ctx.campaign._id,
+        actorId: ctx.user._id,
+        kind: "roll",
+        visibility: "public",
+        summary: `${who}: ${freeLine(mergeFreePool(dice), modifier, roll.total, label)}`,
+        roll,
+        undoable: true,
+      });
+      return { entryId, roll };
+    }),
+});
+
+/**
+ * Shows a GM free roll to every member and stamps `revealedAt` (user 2026-11-04: the feed tags it "Revealed"; rows
+ * revealed before the field have none and show no tag). Revealing twice changes nothing.
+ */
 export const reveal = gmMutation({
   args: { entryId: v.id("actionLog") },
   returns: v.null(),
@@ -416,7 +469,7 @@ export const reveal = gmMutation({
     const row = await ctx.db.get("actionLog", entryId);
     if (row === null || row.campaignId !== ctx.campaign._id) throw appError("NOT_FOUND");
     if (row.kind !== "gmRoll") throw appError("DICE_RULE", "Only GM rolls are revealed.");
-    if (row.visibility !== "public") await ctx.db.patch("actionLog", entryId, { visibility: "public" });
+    if (row.visibility !== "public") await ctx.db.patch("actionLog", entryId, { visibility: "public", revealedAt: Date.now() });
     return null;
   },
 });

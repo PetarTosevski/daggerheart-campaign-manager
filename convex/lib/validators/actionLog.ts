@@ -140,6 +140,11 @@ export const actionLogFields = {
   undoneBy: v.optional(v.id("users")),
   /** Set when the GM deletes the row from the feed (`feed.remove`). Display only: undo and "latest roll" checks still see it. */
   removedAt: v.optional(v.number()),
+  /**
+   * When the GM revealed this hidden GM free roll (`rolls.reveal`; user 2026-11-04, widened). The feed tags such a row
+   * "Revealed". Rows revealed before the field have none: unknown, no tag. Never set on a row that was never hidden.
+   */
+  revealedAt: v.optional(v.number()),
   at: v.number(),
 };
 

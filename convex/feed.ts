@@ -21,6 +21,8 @@ const common = {
   /** An adversary action's public row (H3): the tokens it named, by id; the map flashes them. Players get only PC tokens. */
   targets: v.optional(v.array(actionTargetValidator)),
   undone: v.boolean(),
+  /** A GM free roll that was hidden and then revealed (`revealedAt`, user 2026-11-04); absent otherwise and on older reveals. */
+  revealed: v.optional(v.literal(true)),
   /**
    * The viewer may press Undo (`viewerCanUndo`): the GM on any undoable live row; a player on their own row of an action
    * that rolled nothing (the player-undo rule, convex/lib/actionLog.ts `groupRolled`). Undo may still say UNDO_STALE.
@@ -74,6 +76,7 @@ export const list = campaignQuery({
         // Adversary tokens flash for the GM only (H3 user answer).
         ...(row.targets !== undefined ? { targets: isGm ? row.targets : row.targets.filter((t) => t.side === "pc") } : {}),
         undone: row.undoneAt !== undefined,
+        ...(row.revealedAt !== undefined ? { revealed: true as const } : {}),
         canUndo: row.kind !== "rest" && !(row.groupId !== undefined && restGroups.has(row.groupId)) && (await viewerCanUndo(ctx, row, ctx.user._id, isGm)),
       };
       if (isGm) return { ...shown, visibility: row.visibility, revealable: row.kind === "gmRoll" && row.visibility === "gm" };

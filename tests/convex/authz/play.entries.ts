@@ -153,6 +153,8 @@ const area: Area = {
       },
     },
     { fn: api.rolls.gmRoll, access: "gm", args: () => ({ dice: [{ count: 1, sides: 6 }] }) },
+    // Any member rolls a public free roll of mixed dice (user 2026-11-04); not character-scoped, so the other player too.
+    { fn: api.rolls.freeRoll, access: "view", args: () => ({ dice: [{ count: 3, sides: 6 }, { count: 1, sides: 8 }], modifier: 2 }) },
     {
       fn: api.rolls.reveal,
       access: "gm",

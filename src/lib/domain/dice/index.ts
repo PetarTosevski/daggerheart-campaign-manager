@@ -360,11 +360,95 @@ export function rollDamage(input: DamageInput, rng: Rng): RollRecord {
   return { kind: "damage", dice, modifier, total: Math.max(0, sum(dice) + modifier), outcome: "none", manual: false };
 }
 
-/** A GM free roll: any dice plus a modifier, no Duality outcome. */
+// ---------------------------------------------------------------- free rolls (mixed dice)
+
+/** The die sizes a free roll offers: the sizes the app rolls. */
+export const FREE_DIE_SIDES = DIE_SIDES;
+/** A free roll's limits (user 2026-11-04): at most 20 dice in all, a flat modifier within ±60. */
+export const FREE_ROLL_LIMITS = { dice: 20, modifier: LIMITS.modifier * 2, formula: 60 } as const;
+
+export type FreePool = { count: number; sides: number }[];
+
+/** The pool with groups of one size merged (first appearance order) and empty groups dropped: 1d6 + 1d8 + 2d6 → 3d6 + 1d8. */
+export function mergeFreePool(pool: DicePool): FreePool {
+  const out: FreePool = [];
+  for (const { count, sides } of pool) {
+    if (count === 0) continue;
+    const same = out.find((g) => g.sides === sides);
+    if (same) same.count += count;
+    else out.push({ count, sides });
+  }
+  return out;
+}
+
+/** The dice a pool rolls. */
+export function freeDiceCount(pool: DicePool): number {
+  return pool.reduce((s, g) => s + g.count, 0);
+}
+
+/**
+ * Refuses a free roll the app doesn't roll (DiceRuleError → DICE_RULE): a die size outside d4–d20, a count that is not a
+ * whole number, no dice, more than 20 dice in all, or a modifier beyond ±60.
+ */
+export function assertFreeRoll(pool: DicePool, modifier: number): void {
+  const { dice: most, modifier: bound } = FREE_ROLL_LIMITS;
+  assertInt(modifier, -bound, bound, "The modifier");
+  for (const { count, sides } of pool) {
+    assertSides(sides);
+    assertInt(count, 0, most, "The dice count");
+  }
+  const total = freeDiceCount(pool);
+  if (total === 0) throw new DiceRuleError("Roll at least one die.");
+  if (total > most) throw new DiceRuleError(`At most ${most} dice per roll.`);
+}
+
+/** A free roll's formula for the feed and the roller's preview: "3d6 + 1d8 + 2", "1d20 - 1", "2d6". */
+export function formatFreeRoll(pool: DicePool, modifier: number): string {
+  const dice = pool.filter((g) => g.count > 0).map((g) => `${g.count}d${g.sides}`);
+  const parts = dice.length > 0 ? dice.join(" + ") : "0 dice";
+  if (modifier === 0) return parts;
+  return `${parts} ${modifier > 0 ? "+" : "-"} ${Math.abs(modifier)}`;
+}
+
+/**
+ * Reads a typed free roll: "3d6+1d8+2", "d20 - 1", "2d6 + d6 + 1 + 1" (spaces and case don't matter; "d6" is one d6;
+ * flat numbers add up into the modifier). Dice can't be subtracted. The result is merged and passes `assertFreeRoll`.
+ */
+export function parseFreeRoll(text: string): { dice: FreePool; modifier: number } {
+  const src = text.replace(/\s+/g, "").toLowerCase();
+  if (src === "") throw new DiceRuleError("Type a roll such as 3d6+1d8+2.");
+  if (src.length > FREE_ROLL_LIMITS.formula) throw new DiceRuleError("That roll is too long.");
+  const term = /([+-]?)(?:(\d*)d(\d+)|(\d+))/y;
+  const dice: FreePool = [];
+  let modifier = 0;
+  let at = 0;
+  while (at < src.length) {
+    term.lastIndex = at;
+    const m = term.exec(src);
+    // Every term after the first needs its sign.
+    if (m === null || (at > 0 && m[1] === "")) throw new DiceRuleError(`Can't read "${text.trim()}". Try 3d6+1d8+2.`);
+    const sign = m[1] === "-" ? -1 : 1;
+    if (m[3] !== undefined) {
+      if (sign < 0) throw new DiceRuleError("Dice can't be subtracted.");
+      const count = m[2] ? Number(m[2]) : 1;
+      if (count > FREE_ROLL_LIMITS.dice) throw new DiceRuleError(`At most ${FREE_ROLL_LIMITS.dice} dice per roll.`);
+      dice.push({ count, sides: Number(m[3]) });
+    } else {
+      modifier += sign * Number(m[4]);
+      // Keeps a long run of numbers from growing past what a number holds before the bound check.
+      if (Math.abs(modifier) > 10 * FREE_ROLL_LIMITS.modifier) throw new DiceRuleError(`The modifier must be a whole number from ${-FREE_ROLL_LIMITS.modifier} to ${FREE_ROLL_LIMITS.modifier}.`);
+    }
+    at = term.lastIndex;
+  }
+  const merged = mergeFreePool(dice);
+  assertFreeRoll(merged, modifier);
+  return { dice: merged, modifier };
+}
+
+/** A free roll (the GM's secret roll, a member's free roll): mixed dice plus a flat modifier, no Duality outcome. */
 export function rollFree(pool: DicePool, modifier: number, rng: Rng): RollRecord {
-  assertInt(modifier, -LIMITS.modifier * 2, LIMITS.modifier * 2, "The modifier");
-  const dice = rollPool(pool, "extra", rng);
-  if (dice.length === 0) throw new DiceRuleError("Roll at least one die.");
+  assertFreeRoll(pool, modifier);
+  const dice = rollPool(mergeFreePool(pool), "extra", rng);
   return { kind: "free", dice, modifier, total: sum(dice) + modifier, outcome: "none", manual: false };
 }
 
