@@ -97,25 +97,86 @@ export function gmTurnTitle(state: Pick<SpotlightState, "adversaryTokenId" | "ad
 }
 
 /**
- * Which token the spotlight lights on the map (bead dcm-bxp.99.32.35): the PC holder's token(s), or the adversary token
- * the GM spotlighted. Null when nobody in particular holds it, or the GM holds it generally (nothing is lit).
+ * What the spotlight lights on the map (bead dcm-bxp.99.32.35; H9.1, CmpTokens 'Spotlight' map light): the PC holder's
+ * token(s) (gold), the adversary token the GM spotlighted (purple), or every PC token while the whole party holds it
+ * (nobody chosen, user answer Q8 a: a smaller, dimmer gold pool on each). Null while loading, or when the GM holds it
+ * generally (nothing is lit).
  */
-export type SpotlightLit = { characterId: Id<"characters"> } | { tokenId: Id<"combatTokens"> };
+export type SpotlightLit = { characterId: Id<"characters"> } | { tokenId: Id<"combatTokens"> } | { party: true };
 
 export function litOf(state: SpotlightState | undefined): SpotlightLit | null {
-  const holder = state?.holder;
-  if (!holder) return null;
+  if (state === undefined) return null;
+  const holder = state.holder;
+  if (holder === null) return { party: true };
   if (holder.kind === "pc") return { characterId: holder.characterId };
   return state.adversaryTokenId ? { tokenId: state.adversaryTokenId } : null;
 }
 
+/** The pool under a token: gold for a PC holder, purple for an adversary, a dim gold for each PC of the whole party. */
+export type PoolKind = "pc" | "gm" | "party";
+
 /**
- * Whether `token` is the lit one. A token the viewer draws is matched by id (the adversary) or by its PC's character
+ * The pool under `token`, or null. A token the viewer draws is matched by id (the adversary) or by its PC's character
  * (`kind`/`characterId`, on the GM's tokens and a player's PCs). A player only ever matches a token their layers
  * already draw, so the light never reveals a fogged or hidden token.
  */
+export function poolOf(lit: SpotlightLit | null, token: { _id: string; kind?: string; characterId?: string }): PoolKind | null {
+  if (lit === null) return null;
+  if ("party" in lit) return token.kind === "pc" ? "party" : null;
+  if ("tokenId" in lit) return token._id === lit.tokenId ? "gm" : null;
+  return token.kind === "pc" && token.characterId === lit.characterId ? "pc" : null;
+}
+
+/** Whether `token` is the one holder (its face glows); the whole party lights pools only, no face glow. */
 export function isLit(lit: SpotlightLit | null, token: { _id: string; kind?: string; characterId?: string }): boolean {
-  if (lit === null) return false;
-  if ("tokenId" in lit) return token._id === lit.tokenId;
-  return token.kind === "pc" && token.characterId === lit.characterId;
+  const pool = poolOf(lit, token);
+  return pool === "pc" || pool === "gm";
+}
+
+/** The state right after `combatSpotlight.handToParty` (the GM's optimistic update, H9.S): nobody chosen. */
+export function afterHandToParty(state: SpotlightState): SpotlightState {
+  if (state.holder === null) return state;
+  return { ...state, holder: null, since: null, reason: null, rollBy: null, reactionsOnly: false, adversaryTokenId: null, adversaryName: null };
+}
+
+/**
+ * Who the spotlight disc shows (H9.1, CmpTokens 'Spotlight'): the whole party, one PC, an adversary (its initial on red,
+ * purple light), or the GM generally (the GM's own move, or an adversary a player may not learn: the server sends a
+ * player its id and name only when the party saw it this scene). `names` (the GM's token names) stands in while the
+ * server has not named a just-taken adversary yet.
+ */
+export type DiscHolder =
+  | { kind: "party"; name: string }
+  | { kind: "pc"; characterId: Id<"characters">; name: string }
+  | { kind: "adversary"; tokenId: Id<"combatTokens">; name: string }
+  | { kind: "gm"; name: string };
+
+export function discHolder(state: SpotlightState, names?: ReadonlyMap<string, string>): DiscHolder {
+  const { holder } = state;
+  if (holder === null) return { kind: "party", name: "The party" };
+  if (holder.kind === "pc") return { kind: "pc", characterId: holder.characterId, name: holder.name };
+  const tokenId = state.adversaryTokenId;
+  if (tokenId !== null) {
+    const name = state.adversaryName ?? names?.get(tokenId) ?? null;
+    if (name !== null) return { kind: "adversary", tokenId, name };
+  }
+  return { kind: "gm", name: "The GM" };
+}
+
+/** The disc's accessible name: the GM's button "Spotlight: Moss. Change who has it", a player's image "Spotlight: Moss". */
+export function discLabel(holder: Pick<DiscHolder, "name">, gm: boolean): string {
+  return gm ? `Spotlight: ${holder.name}. Change who has it` : `Spotlight: ${holder.name}`;
+}
+
+/**
+ * What a take for an adversary costs (user answer Q7 a; the board's script): "1 Fear" only when the spotlight moves from
+ * the party or a PC to an adversary; while the GM already holds it, moving it between adversaries is free.
+ */
+export function takePay(state: Pick<SpotlightState, "holder">, chosen: "free" | "fear"): "free" | "fear" {
+  return state.holder?.kind === "gm" ? "free" : chosen;
+}
+
+/** The letter on an adversary's face (Cinzel on red). */
+export function initialOf(name: string): string {
+  return name.trim().charAt(0).toUpperCase() || "?";
 }

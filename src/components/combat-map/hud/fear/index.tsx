@@ -7,7 +7,9 @@ import type { ReactNode } from "react";
 
 import { api } from "../../../../../convex/_generated/api";
 import { SceneDisc } from "../scene/disc";
+import { SpotlightDisc } from "../spotlight/disc";
 import type { HudPartProps } from "../state";
+import { PartBoundary } from "../ui";
 import { FearBanner } from "./banner";
 
 export { FearConfirm, fearAfterSpend, fearReasonsText, type FearConfirmProps } from "./confirm";
@@ -32,6 +34,10 @@ export function HudFear({ state }: HudPartProps): ReactNode {
       <span className="hud-fear-rod" aria-hidden="true" />
       <FearBanner campaignId={state.campaignId} fear={scene.fear} gm={state.role === "gm"} />
       <SceneDisc campaignId={state.campaignId} scene={scene} />
+      {/* H9.1: the spotlight disc hangs left of the day disc (its own boundary: the fear banner survives its errors). */}
+      <PartBoundary label="The spotlight">
+        <SpotlightDisc campaignId={state.campaignId} mapId={state.map?._id} gm={state.role === "gm"} fear={scene.fear} />
+      </PartBoundary>
     </div>
   );
 }

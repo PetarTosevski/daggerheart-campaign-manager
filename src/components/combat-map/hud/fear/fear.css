@@ -340,13 +340,6 @@
   width: 14px;
   height: 14px;
 }
-.hud-fc .hud-fc-yes {
-  background: var(--hud-fear-text);
-  color: var(--hud-fear-ink);
-}
-.hud-fc .hud-btn {
-  height: 38px;
-}
 @media (max-width: 1180px) {
   .hud-fc {
     right: calc(150px - var(--hud-edge));

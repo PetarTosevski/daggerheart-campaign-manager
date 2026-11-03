@@ -210,6 +210,14 @@ describe("HudBanners", () => {
     expect(within(screen.getByRole("list", { name: "The party" })).getAllByRole("button")[0]).toHaveAttribute("aria-label", "Open Brannoc's sheet");
     expect(document.querySelectorAll(".hbn-you")).toHaveLength(0);
   });
+
+  it("H9.1: the GM view never gets the 'you' trim, even for a row the server marks as theirs", () => {
+    queries["combatHud:party"] = PARTY;
+    renderBanners(pageState({ role: "gm" }));
+    expect(document.querySelectorAll(".hbn-you, .hbn-face-you")).toHaveLength(0);
+    // The map order stands: no "yours first".
+    expect(within(screen.getByRole("list", { name: "The party" })).getAllByRole("button")[0]).toHaveAttribute("aria-label", "Open Brannoc's sheet");
+  });
 });
 
 describe("bannerSummary", () => {

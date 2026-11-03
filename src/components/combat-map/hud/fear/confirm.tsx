@@ -172,7 +172,7 @@ function FearConfirmCard({
           </span>
         )}
         {onCancel ? (
-          <button type="button" className={hudButtonClass()} disabled={pending} onClick={onCancel}>
+          <button type="button" className={hudButtonClass("cancel")} disabled={pending} onClick={onCancel}>
             Cancel
           </button>
         ) : null}

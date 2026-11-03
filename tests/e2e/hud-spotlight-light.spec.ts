@@ -10,7 +10,8 @@ import { HUD_MAP_W, hudScene, type HudScene } from "./hud/helpers";
 // spotlight stands in a stage light for the GM and the player; the GM's Spotlight on the Lieutenant's stat block lights
 // the Lieutenant instead; handing it back moves the light; the Bandit behind the wall is lit for the GM only (the player
 // gets no light, no token, no id); the light follows the token at tablet and phone sizes and with a sheet open (H2.2's
-// make-room move); reduced motion stops the breathing. axe on each lit state.
+// make-room move); reduced motion stops the breathing. H9.1: nobody chosen (the whole party) lights every PC in a dim
+// gold pool; an adversary's pool is purple. axe on each lit state.
 
 test.use({ actionTimeout: 30_000 });
 
@@ -34,6 +35,13 @@ async function expectLit(page: Page, tokenId: Id<"combatTokens">) {
 
 async function expectNothingLit(page: Page) {
   await expect(pools(page)).toHaveCount(0);
+  await expect(litFaces(page)).toHaveCount(0);
+}
+
+/** H9.1 (user answer Q8 a, CmpTokens map light): the whole party holds it: a dim gold pool under every PC, no face glow. */
+async function expectPartyLit(page: Page, tokenIds: readonly Id<"combatTokens">[]) {
+  await expect(pools(page)).toHaveCount(tokenIds.length);
+  for (const id of tokenIds) await expect(poolOf(page, id)).toHaveAttribute("data-pool", "party");
   await expect(litFaces(page)).toHaveCount(0);
 }
 
@@ -82,9 +90,13 @@ test("the PC holder and the spotlighted adversary are lit for the GM and the pla
     await open(gm, s.url, { width: 1440, height: 900 });
     await open(player, s.url, { width: 1440, height: 900 });
 
-    // Nobody in particular: nothing lit.
-    await expectNothingLit(gm);
-    await expectNothingLit(player);
+    // Nobody chosen (the whole party has it): every PC stands in a dim gold pool.
+    const pcTokens = s.pcs.map((p) => p.tokenId);
+    await expectPartyLit(gm, pcTokens);
+    await expectPartyLit(player, pcTokens);
+    await expectPoolOnToken(gm, moss.tokenId);
+    await settle(gm);
+    await shot(gm, "gm-party-lit-1440");
 
     // A PC holds it: Moss is lit for both.
     await handTo(s, moss.characterId);
@@ -100,7 +112,7 @@ test("the PC holder and the spotlighted adversary are lit for the GM and the pla
     await shot(player, "player-pc-lit-1440");
 
     // The GM spotlights the Lieutenant from its stat block: the Lieutenant is lit, Moss is not.
-    // From the keyboard: at 1440 the GM's spotlight panel hangs top middle over the Lieutenant (user 2026-11-04).
+    // From the keyboard (the token is the stat block's opener).
     await tokenOf(gm, lieutenant.tokenId).focus();
     await gm.keyboard.press("Enter");
     const block = gm.getByRole("complementary", { name: `${lieutenant.name}’s stat block` });
@@ -110,6 +122,9 @@ test("the PC holder and the spotlighted adversary are lit for the GM and the pla
     await expect.poll(async () => (await s.client.query(api.combatSpotlight.state, { campaignId: s.campaignId })).adversaryTokenId).toBe(lieutenant.tokenId);
     await expectLit(gm, lieutenant.tokenId);
     await expectLit(player, lieutenant.tokenId);
+    // H9.1: an adversary stands in the GM's purple light, for both.
+    await expect(poolOf(gm, lieutenant.tokenId)).toHaveAttribute("data-pool", "gm");
+    await expect(poolOf(player, lieutenant.tokenId)).toHaveAttribute("data-pool", "gm");
     await expect(poolOf(gm, moss.tokenId)).toHaveCount(0);
     await expect(poolOf(player, moss.tokenId)).toHaveCount(0);
     await expectPoolOnToken(gm, lieutenant.tokenId);

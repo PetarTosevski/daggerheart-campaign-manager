@@ -29,7 +29,8 @@ export const HudBanners: (props: HudPartProps) => ReactNode = ({ state }) => {
       </p>
     );
   }
-  return <BannerRow campaignId={state.campaignId} party={party} />;
+  // GMDesktop: no PC is "you" on the GM view (no gold trim, every banner ally size), whatever the server says.
+  return <BannerRow campaignId={state.campaignId} party={state.role === "gm" ? party.map((m) => (m.mine ? { ...m, mine: false } : m)) : party} />;
 };
 
 /** The caller's own banner first (Main: "You" at x = 24), the rest in map order. */

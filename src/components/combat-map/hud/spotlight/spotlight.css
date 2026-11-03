@@ -1,7 +1,8 @@
 /*
- * The spotlight (plan combat-hud H1.S). Board classes (reference/designs/combat-hud/boards/Main.dc.html `.gms`,
- * `.gms-i`, `.gmh`, `.fb-spot`, `.bn-c`) with a `hud-spot-` prefix; colours from hud.css (--hud-fear*). Positions are
- * the desktop board's (1440 × 900); H2.2 / H7.x move them under make-room, tablet and phone.
+ * The spotlight (plan combat-hud H1.S, H9.1). Board classes (reference/designs/combat-hud/boards: Main `.gms`, `.gmh`,
+ * `.bn-c`; CmpTokens / GMDesktop / GMTablet `.spd`, `.spp`, `.spr`, `.sp-how`; PlayerPhone `.mspot`, `.mb.lit`) with a
+ * `hud-` prefix; colours from hud.css (--hud-gold*, --hud-fear*). Positions are the desktop board's (1440 × 900); the
+ * tablet's (761-1180 px) follow at the end.
  */
 
 /* The players' "The GM has the spotlight" card (Main `.gms`, left 690, top 230). */
@@ -66,89 +67,557 @@
   left: 560px;
 }
 
-/* The banner's " · Spotlight" (CmpTokens `.bn-c`) and the Fear banner's SPOTLIGHT (`.fb-spot`). */
+/* The banner's " · Spotlight" (CmpTokens `.bn-c`; kept, user answer Q11 b). */
 .hud-spot-bn {
   color: #d9c9a3;
-}
-.hud-spot-fb {
-  display: inline-block;
-  margin-top: 8px;
-  font: 700 11px/1 var(--hud-font-ui);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--hud-gold-ink);
-  background: var(--hud-fear-text);
-  border-radius: var(--hud-r-chip);
-  padding: 4px 10px;
-}
-
-/*
- * The GM's spotlight menu. At 1440 px and wider it hangs top middle (the shell's scene region, x = 690) below the toolbar
- * row: under the GM tools and under the map's own toolbar (Zoom, Fit, Names, Areas; scene.css, top 236 of the map,
- * two rows at 1440), so it covers neither (bead dcm-bxp.99.32.42, user decision 2026-11-04). Below 1440 px it sits in
- * the left column with the queue (shell.tsx `useSpotlightInColumn`); on a phone in the queue sheet.
- */
-.hud-root {
-  /*
-   * From the top of the map: the map toolbar's top (scene.css) + its height at its widest wrap (two rows, 78 px: at
-   * 1440, and with a sheet open up to 1600) + a gap.
-   */
-  --hud-spot-gm-top: calc(236px + 78px + 14px);
-}
-.hud-r-scene > .hud-spot-gm {
-  position: absolute;
-  /* The scene region itself starts 18 px down (shell.css). */
-  top: calc(var(--hud-spot-gm-top) - 18px);
-  left: 0;
-  width: max-content;
-  max-width: min(420px, calc(100vw - 690px - var(--hud-edge)));
-  margin-top: 0;
-  /* Under the GM tools' menus and pop-overs (Player view, Dice, Fog: z-index 40), which open over it. */
-  z-index: 30;
-}
-.hud-root.hud-sh-open .hud-r-scene > .hud-spot-gm {
-  max-width: min(420px, calc(100vw - 690px - var(--hud-sheet-w) - var(--hud-edge)));
-}
-.hud-spot-gm {
-  position: relative;
-  z-index: 55;
-  margin-top: 10px;
-  max-width: 420px;
-  padding: 10px 12px 12px;
-  border-radius: var(--hud-r-card);
-  background: var(--hud-glass);
-  box-shadow: 0 0 0 1px #5b4a8f;
-  color: var(--hud-ink);
-}
-.hud-spot-h {
-  margin: 0 0 6px;
-  font: var(--hud-type-label);
-  letter-spacing: var(--hud-label-tracking);
-  text-transform: uppercase;
-  color: var(--hud-fear-text);
-}
-.hud-spot-menu {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-}
-.hud-spot-line {
-  margin: 0;
-  font: var(--hud-type-ui);
-  color: var(--hud-muted);
-}
-.hud-spot-line b {
-  color: var(--hud-ink);
-  font-weight: 600;
-}
-.hud-spot-pcs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
 }
 .hud-spot-err {
   margin: 0;
   font: var(--hud-type-ui);
   color: var(--hud-danger);
+}
+
+/* ---------------------------------------------------------------- the disc (`.spd`)
+ * In the fear box (fear/fear.css `.hud-fear`, 150 px wide at right var(--hud-edge), its top 8 px down): the board's
+ * right 300 / top 0 on the page, left of the day disc (right 206). It moves left with the Fear banner while a sheet is
+ * open (the box's transform); on a tablet it hides then.
+ */
+.hud-spd {
+  --spd-ring: var(--hud-gold);
+  --spd-cord: #8a6a2e;
+  --spd-name: var(--hud-gold-text);
+  --spd-glow: rgba(255, 226, 160, 0.55);
+  --spd-halo: rgba(227, 180, 90, 0.18);
+  --spd-beam: rgba(255, 236, 190, 0.45);
+  --spd-shine: rgba(255, 246, 220, 0.6);
+  --spd-size: 72px;
+  position: absolute;
+  right: calc(300px - var(--hud-edge));
+  top: -8px;
+  z-index: 46;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 0 4px;
+  border: 0;
+  border-radius: var(--hud-r-card);
+  background: transparent;
+  color: var(--hud-ink);
+  cursor: pointer;
+  font: inherit;
+}
+.hud-spd-gm {
+  --spd-ring: var(--hud-fear);
+  --spd-cord: #5b4a8f;
+  --spd-name: var(--hud-fear-text);
+  --spd-glow: rgba(143, 123, 209, 0.7);
+  --spd-halo: rgba(143, 123, 209, 0.2);
+  --spd-beam: rgba(201, 189, 242, 0.3);
+  --spd-shine: rgba(230, 222, 255, 0.55);
+}
+.hud-spd-ro {
+  cursor: default;
+}
+.hud-spd:focus-visible {
+  outline: 2px solid var(--hud-gold-text);
+  outline-offset: 2px;
+}
+.hud-spd-cord {
+  width: 2px;
+  height: 24px;
+  background: var(--spd-cord);
+}
+.hud-spd-beam {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  width: 120px;
+  height: 110px;
+  transform: translateX(-50%);
+  background: linear-gradient(transparent, var(--spd-beam) 60%, transparent);
+  clip-path: polygon(44% 0, 56% 0, 100% 100%, 0 100%);
+  filter: blur(2px);
+  pointer-events: none;
+}
+.hud-spd-disc,
+.hud-ms-disc {
+  position: relative;
+  width: var(--spd-size);
+  height: var(--spd-size);
+  flex: none;
+  overflow: hidden;
+  border-radius: 50%;
+  background: #141e22;
+  box-shadow:
+    0 0 0 2px var(--spd-ring),
+    0 0 0 6px var(--spd-halo),
+    0 0 28px var(--spd-glow),
+    0 8px 18px rgba(0, 0, 0, 0.5);
+  transition: box-shadow var(--hud-t-fast);
+}
+.hud-spd[aria-expanded="true"] .hud-spd-disc {
+  box-shadow:
+    0 0 0 3px var(--hud-gold-text),
+    0 0 0 8px rgba(227, 180, 90, 0.3),
+    0 0 30px rgba(255, 226, 160, 0.6);
+}
+/* The faces, stacked: only the holder's shows; a change cross-fades over 200 ms (CmpTokensDesign "Motion"). */
+.hud-spf {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 200ms var(--hud-ease-out, ease-out);
+}
+.hud-spf[data-on="true"] {
+  opacity: 1;
+}
+.hud-spf .hud-spd-face,
+.hud-spf .hud-spd-mini {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.hud-spd-grp {
+  display: flex;
+  flex-wrap: wrap;
+  width: 100%;
+  height: 100%;
+}
+.hud-spd-grp > .hud-spd-mini {
+  width: 50%;
+  height: 50%;
+}
+.hud-spd-grp .hbn-initial {
+  font-size: 14px;
+}
+.hud-spf-en {
+  background: #4a1814;
+  color: #f6ead2;
+  font: 700 26px/1 var(--hud-font-display);
+}
+.hud-spf-pc {
+  background: #141e22;
+  color: #c8d3d0;
+  font: 700 24px/1 var(--hud-font-display);
+}
+.hud-spf-flame {
+  width: 45%;
+  height: 45%;
+}
+.hud-spd-shine {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 8%, var(--spd-shine), rgba(255, 240, 200, 0.12) 45%, rgba(0, 0, 0, 0.35) 100%);
+  pointer-events: none;
+}
+.hud-spd-l {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font: 700 10.5px/1.2 var(--hud-font-display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #c8d3d0;
+  text-shadow: 0 1px 4px #000;
+  white-space: nowrap;
+}
+.hud-spd-l b {
+  margin-top: 2px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--spd-name);
+}
+/* A refusal from the last move: under the disc. */
+.hud-spd-err {
+  position: absolute;
+  right: calc(230px - var(--hud-edge));
+  top: 150px;
+  width: 240px;
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: var(--hud-r-card);
+  background: var(--hud-danger-bg);
+  color: var(--hud-danger);
+  font-size: 12.5px;
+  z-index: 47;
+}
+
+/* ---------------------------------------------------------------- the GM's popover (`.spp`, right 200 / top 150) */
+.hud-spp {
+  position: absolute;
+  right: calc(200px - var(--hud-edge));
+  top: 142px;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - var(--app-bar-h, 0px) - 170px);
+  overflow-y: auto;
+  padding: 14px;
+  border-radius: 18px;
+  background: #121b1f;
+  box-shadow:
+    0 0 0 1px #3a4d54,
+    0 24px 60px rgba(0, 0, 0, 0.6);
+  color: var(--hud-ink);
+  font: var(--hud-type-ui);
+}
+.hud-spp-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.hud-spp-h b {
+  font: 700 18px/1 var(--hud-font-display);
+  color: var(--hud-gold-text);
+}
+.hud-spp .hud-spp-x {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+.hud-spp-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 8px;
+  border-radius: 12px;
+  background: #0b1214;
+}
+/* The tabs are hudButtonClass("tool") (arcane glass); the board's size and the selected tab's gold / lilac fill. */
+.hud-spp-tabs button.hud-btn {
+  flex: 1;
+  height: 36px;
+  border-radius: 9px;
+  font-size: 13px;
+}
+.hud-spp-tabs button[aria-selected="true"] {
+  background: var(--hud-gold-soft);
+  color: var(--hud-gold-text);
+  box-shadow: inset 0 0 0 1px var(--hud-gold);
+}
+.hud-spp-adv .hud-spp-tabs button[aria-selected="true"] {
+  background: #1f1a33;
+  color: var(--hud-fear-text);
+  box-shadow: inset 0 0 0 1px var(--hud-fear);
+}
+.hud-spp button:focus-visible {
+  outline: 2px solid var(--hud-gold-text);
+  outline-offset: 2px;
+}
+.hud-spp-pane {
+  display: flex;
+  flex-direction: column;
+}
+.hud-spp-muted {
+  margin: 4px 2px 6px;
+  font-size: 12px;
+  color: var(--hud-muted);
+}
+.hud-spp-n {
+  margin: 10px 2px 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--hud-muted);
+}
+
+/* A row (`.spr`): 56 px, a 40 px face, the name and its line, "Give" / "Take", or "Has it" on the holder. */
+/* Rows are hudButtonClass buttons (neutral to give, confirm to take); the glass sets colour, rim and hover fill. */
+.hud-spp-pane .hud-spr.hud-btn {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: auto;
+  min-height: 56px;
+  margin-bottom: 4px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  text-align: left;
+  white-space: normal;
+  font: inherit;
+}
+.hud-spr-f {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  overflow: hidden;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #33444a;
+}
+.hud-spr-f .hud-spr-portrait,
+.hud-spr-f .hud-spd-mini {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.hud-spr-f .hud-spd-grp > .hud-spd-mini {
+  width: 50%;
+  height: 50%;
+}
+.hud-spr-f .hbn-initial {
+  font-size: 15px;
+}
+.hud-spr-f .hud-spd-grp .hbn-initial {
+  font-size: 9px;
+}
+.hud-spr-en {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #4a1814;
+  color: #f6ead2;
+  font: 700 16px/1 var(--hud-font-display);
+}
+.hud-spr-t {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.hud-spr-t b {
+  font-size: 14px;
+  font-weight: 600;
+}
+.hud-spr-t span {
+  font-size: 12px;
+  color: var(--hud-muted);
+}
+.hud-spr-has {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--hud-gold-ink);
+  background: var(--hud-gold);
+  border-radius: var(--hud-r-chip);
+  padding: 3px 10px;
+}
+.hud-spr-go {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #c8d3d0;
+  border: 1px solid #33444a;
+  border-radius: var(--hud-r-chip);
+  padding: 4px 12px;
+}
+.hud-spr[aria-pressed="true"] {
+  background: var(--hud-gold-soft);
+  box-shadow: inset 0 0 0 1px rgba(227, 180, 90, 0.6);
+}
+.hud-spr[aria-pressed="true"] .hud-spr-f {
+  box-shadow:
+    0 0 0 2px var(--hud-gold),
+    0 0 14px rgba(255, 226, 160, 0.7);
+}
+.hud-spr-gm[aria-pressed="true"] {
+  background: #1f1a33;
+  box-shadow: inset 0 0 0 1px var(--hud-fear);
+}
+.hud-spr-gm[aria-pressed="true"] .hud-spr-f {
+  box-shadow:
+    0 0 0 2px var(--hud-fear),
+    0 0 14px rgba(143, 123, 209, 0.8);
+}
+.hud-spr-gm .hud-spr-has {
+  background: var(--hud-fear-text);
+  color: var(--hud-fear-ink);
+}
+
+/* "How you take it" (`.sp-how`): Free / 1 Fear. */
+.hud-sp-how {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+/* Free (neutral) and 1 Fear (confirm) are hudButtonClass buttons; two lines each. */
+.hud-sp-how button.hud-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 2px;
+  height: auto;
+  min-height: 44px;
+  padding: 9px 11px;
+  border-radius: 12px;
+  text-align: left;
+  white-space: normal;
+  font: inherit;
+}
+.hud-sp-how b {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+}
+.hud-sp-how span {
+  font-size: 11.5px;
+  color: var(--hud-muted);
+}
+.hud-sp-how-ic {
+  width: 13px;
+  height: 13px;
+  color: var(--hud-fear);
+}
+.hud-sp-how button[aria-pressed="true"] {
+  box-shadow: inset 0 0 0 1px var(--hud-fear), 0 0 12px rgba(143, 123, 209, 0.35);
+  background: #1f1a33;
+}
+.hud-sp-how button[aria-pressed="true"] b {
+  color: var(--hud-fear-text);
+}
+.hud-sp-how button[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* ---------------------------------------------------------------- tablet (GMTablet / PlayerTablet `.tab`) */
+@media (max-width: 1180px) {
+  .hud-spd {
+    --spd-size: 54px;
+    right: calc(208px - var(--hud-edge));
+  }
+  .hud-spd-cord {
+    height: 16px;
+  }
+  .hud-spd-beam {
+    width: 90px;
+    height: 84px;
+  }
+  .hud-spd-l {
+    margin-top: 6px;
+    font-size: 9.5px;
+  }
+  .hud-spd-l b {
+    font-size: 11.5px;
+  }
+  .hud-spf-en {
+    font-size: 20px;
+  }
+  .hud-root.hud-sh-open .hud-spd {
+    display: none;
+  }
+  .hud-spp {
+    right: calc(120px - var(--hud-edge));
+    top: 112px;
+    width: 330px;
+  }
+  .hud-spd-err {
+    right: calc(150px - var(--hud-edge));
+    top: 130px;
+  }
+  /* 44 px touch targets (the board's 36 px tabs and 34 px Close grow). */
+  .hud-spp-tabs button.hud-btn {
+    height: 44px;
+  }
+  .hud-spp .hud-spp-x {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+}
+
+/* ---------------------------------------------------------------- phone (PlayerPhone `.mspot`, `.mb.lit`) */
+.hud-mspot {
+  --spd-size: 44px;
+  --spd-ring: var(--hud-gold);
+  --spd-cord: #8a6a2e;
+  --spd-name: var(--hud-gold-text);
+  --spd-glow: rgba(255, 226, 160, 0.6);
+  --spd-halo: transparent;
+  --spd-shine: rgba(255, 246, 220, 0.6);
+  position: absolute;
+  right: 10px;
+  top: calc(100% - 4px);
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+.hud-mspot-gm {
+  --spd-ring: var(--hud-fear);
+  --spd-cord: #5b4a8f;
+  --spd-name: var(--hud-fear-text);
+  --spd-glow: rgba(143, 123, 209, 0.75);
+  --spd-shine: rgba(230, 222, 255, 0.55);
+}
+.hud-ms-cord {
+  width: 2px;
+  height: 10px;
+  background: var(--spd-cord);
+}
+.hud-ms-disc {
+  box-shadow:
+    0 0 0 2px var(--spd-ring),
+    0 0 18px var(--spd-glow);
+}
+.hud-ms-disc .hud-spf-en {
+  font-size: 18px;
+}
+.hud-ms-disc .hud-spd-grp .hbn-initial {
+  font-size: 10px;
+}
+.hud-ms-l {
+  margin-top: 4px;
+  padding: 2px 7px;
+  border-radius: var(--hud-r-chip);
+  background: rgba(8, 12, 14, 0.88);
+  font-size: 10px;
+  color: #c8d3d0;
+  white-space: nowrap;
+}
+.hud-ms-l b {
+  color: var(--spd-name);
+}
+/* The holder's mini banner, lit: a gold inset and a cone of light from above. */
+.hud-root .hud-ph-mb.hud-ph-lit .hud-ph-in {
+  box-shadow: inset 0 0 0 2px var(--hud-gold);
+}
+.hud-root .hud-ph-mb.hud-ph-lit::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  z-index: 2;
+  width: 64px;
+  height: 60px;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse at 50% 0, rgba(255, 240, 200, 0.55), rgba(255, 240, 200, 0) 70%);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-spf,
+  .hud-spd-disc {
+    transition: none;
+  }
 }

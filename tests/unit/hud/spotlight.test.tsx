@@ -4,10 +4,10 @@
  * button, the copy / optimistic-update helpers, and the stage light on the spotlit token (bead dcm-bxp.99.32.35).
  * Convex is mocked.
  */
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { FearSpotlightTag, HudSpotlight, SpotlightBannerTag, SpotlightHandBack } from "@/components/combat-map/hud/spotlight";
+import { HudSpotlight, SpotlightBannerTag, SpotlightHandBack } from "@/components/combat-map/hud/spotlight";
 import { SpotlightPools, useSpotlightLit } from "@/components/combat-map/hud/spotlight/light";
 import { afterHandTo, afterTake, gmTurnTitle, holderLine, isLit, litOf, spotlightReasonLine, type SpotlightState } from "@/components/combat-map/hud/spotlight/model";
 import type { CombatPageState } from "@/components/combat-map/slots";
@@ -59,10 +59,6 @@ const mossHolds = (canMove: boolean): SpotlightState => ({
 });
 
 const page = (role: "gm" | "player") => ({ campaignId: CAMPAIGN, role, map: null }) as unknown as CombatPageState;
-const party = [
-  { characterId: MOSS, name: "Moss" },
-  { characterId: BRANNOC, name: "Brannoc" },
-];
 
 describe("the players' view", () => {
   it("shows the GM's-turn card with why and the reactions note while the GM holds it", () => {
@@ -117,8 +113,8 @@ describe("the players' view", () => {
   });
 });
 
-describe("the banner and Fear banner tags", () => {
-  it("tags the PC who holds it, and the Fear banner while the GM does", () => {
+describe("the banner tag (kept, user answer Q11 b)", () => {
+  it("tags the PC who holds it, nobody else, and nothing while the GM does", () => {
     queries["combatSpotlight:state"] = mossHolds(false);
     const { rerender } = render(
       <>
@@ -130,53 +126,26 @@ describe("the banner and Fear banner tags", () => {
           Warrior
           <SpotlightBannerTag campaignId={CAMPAIGN} characterId={BRANNOC} />
         </span>
-        <span data-testid="fear">
-          <FearSpotlightTag campaignId={CAMPAIGN} />
-        </span>
       </>,
     );
     expect(screen.getByTestId("moss")).toHaveTextContent("Druid · Spotlight");
     expect(screen.getByTestId("brannoc")).toHaveTextContent(/^Warrior$/);
-    expect(screen.getByTestId("fear")).toBeEmptyDOMElement();
 
     queries["combatSpotlight:state"] = gmTurn(false);
     rerender(
-      <span data-testid="fear2">
+      <span data-testid="gm">
         <SpotlightBannerTag campaignId={CAMPAIGN} characterId={MOSS} />
-        <FearSpotlightTag campaignId={CAMPAIGN} />
       </span>,
     );
-    expect(screen.getByTestId("fear2")).toHaveTextContent(/^Spotlight$/);
+    expect(screen.getByTestId("gm")).toBeEmptyDOMElement();
   });
 });
 
-describe("the GM's menu", () => {
-  it("while the GM holds it: says why and hands it back to a PC on the map", () => {
+describe("the GM", () => {
+  it("gets no spotlight panel in the pop region (H9.1: the disc moves it)", () => {
     queries["combatSpotlight:state"] = gmTurn(true);
-    queries["combatHud:party"] = party;
-    render(<HudSpotlight state={page("gm")} />);
-    const menu = screen.getByRole("region", { name: "Spotlight" });
-    expect(menu).toHaveTextContent("You have the spotlight. Moss rolled with Fear.");
-    expect(within(menu).queryByRole("button", { name: "Take the spotlight" })).toBeNull();
-    expect(screen.queryByTestId("hud-gm-turn")).toBeNull();
-    fireEvent.click(within(menu).getByRole("button", { name: "Hand the spotlight to Brannoc" }));
-    expect(calls).toHaveLength(1);
-    expect(calls[0]!.name).toBe("combatSpotlight:handTo");
-    expect(calls[0]!.args).toMatchObject({ campaignId: CAMPAIGN, characterId: BRANNOC });
-    expect(typeof calls[0]!.args.idempotencyKey).toBe("string");
-  });
-
-  it("while a PC holds it: Take the spotlight, and the other PCs only", () => {
-    queries["combatSpotlight:state"] = mossHolds(true);
-    queries["combatHud:party"] = party;
-    render(<HudSpotlight state={page("gm")} />);
-    const menu = screen.getByRole("region", { name: "Spotlight" });
-    expect(menu).toHaveTextContent("Moss has the spotlight.");
-    expect(within(menu).queryByRole("button", { name: "Hand the spotlight to Moss" })).toBeNull();
-    expect(within(menu).getByRole("button", { name: "Hand the spotlight to Brannoc" })).toBeInTheDocument();
-    fireEvent.click(within(menu).getByRole("button", { name: "Take the spotlight" }));
-    expect(calls.map((c) => c.name)).toEqual(["combatSpotlight:gmTake"]);
-    expect(calls[0]!.args).toMatchObject({ campaignId: CAMPAIGN });
+    const { container } = render(<HudSpotlight state={page("gm")} />);
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("the banner menu's hand-back is the GM's, and not offered to the PC who holds it", () => {
@@ -239,9 +208,9 @@ describe("the stage light (light.tsx, model.ts litOf / isLit)", () => {
   // A player's `others` row: no kind, no character.
   const otherKnife = { _id: KNIFE, x: 6, y: 1, size: 2 };
 
-  it("lights the PC holder's token, or the spotlighted adversary; nothing for nobody or the GM generally", () => {
+  it("lights the PC holder's token, or the spotlighted adversary, every PC for the whole party; nothing for the GM generally", () => {
     expect(litOf(undefined)).toBeNull();
-    expect(litOf(base)).toBeNull();
+    expect(litOf(base)).toEqual({ party: true });
     expect(litOf(gmTurn(true))).toBeNull();
     expect(litOf(mossHolds(false))).toEqual({ characterId: MOSS });
     expect(litOf(afterTake(gmTurn(false), 2, KNIFE))).toEqual({ tokenId: KNIFE });

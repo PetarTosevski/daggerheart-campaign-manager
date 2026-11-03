@@ -9,7 +9,6 @@ import { refusalFor } from "@/lib/errors/refusals";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { Pips } from "../ui";
-import { FearSpotlightSlot } from "./spotlight-slot";
 
 /**
  * The GM's Fear as a purple banner (plan combat-hud H1.2; CmpTokens 'GM Fear · players' / 'GM Fear · GM', the top-right
@@ -72,7 +71,6 @@ export function FearBanner({ campaignId, fear, gm }: FearBannerProps) {
         </b>
         <Pips kind="fear" on={fear} max={MAX_FEAR} label={`${fear} of ${MAX_FEAR} Fear`} className="hud-fb-p" />
         {gm ? <FearSteps campaignId={campaignId} fear={fear} /> : null}
-        <FearSpotlightSlot campaignId={campaignId} gm={gm} />
       </div>
     </div>
   );

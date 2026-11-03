@@ -9,6 +9,8 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { orderParty } from "../banners";
 import { Portrait, bannerLabel, bannerSummary, type HudPartyMember } from "../banners/banner";
+import { PhoneSpotlight } from "../spotlight/disc";
+import { pcHolds } from "../spotlight/model";
 import { useHud } from "../state";
 import { miniBars } from "./model";
 
@@ -21,6 +23,8 @@ import { miniBars } from "./model";
 export function PhoneStrip({ campaignId, mapId }: { campaignId: Id<"campaigns">; mapId: Id<"combatMaps"> }) {
   const party = useQuery(api.combatHud.party, { campaignId, mapId });
   const scene = useQuery(api.combatHud.scene, { campaignId });
+  // H9.1 (PlayerPhone `.mspot`, `.mb.lit`): the 44 px spotlight disc under the strip and the holder's mini banner lit.
+  const spotlight = useQuery(api.combatSpotlight.state, { campaignId });
   const hud = useHud();
   const openId = hud.sheet?.kind === "pc" ? hud.sheet.characterId : null;
   return (
@@ -33,11 +37,17 @@ export function PhoneStrip({ campaignId, mapId }: { campaignId: Id<"campaigns">;
         <ul className="hud-ph-party" aria-label="The party">
           {orderParty(party).map((member) => (
             <li key={member.characterId}>
-              <MiniBanner member={member} open={openId === member.characterId} onOpen={() => hud.toggleSheet({ kind: "pc", characterId: member.characterId })} />
+              <MiniBanner
+                member={member}
+                open={openId === member.characterId}
+                lit={pcHolds(spotlight, member.characterId)}
+                onOpen={() => hud.toggleSheet({ kind: "pc", characterId: member.characterId })}
+              />
             </li>
           ))}
         </ul>
       )}
+      {spotlight === undefined || party === undefined ? null : <PhoneSpotlight state={spotlight} party={party} />}
       {scene === undefined ? null : (
         <div className="hud-ph-mb hud-ph-fear" role="img" aria-label={`GM Fear ${scene.fear}`} data-testid="hud-phone-fear">
           <span className="hud-ph-in">
@@ -53,13 +63,14 @@ export function PhoneStrip({ campaignId, mapId }: { campaignId: Id<"campaigns">;
   );
 }
 
-function MiniBanner({ member, open, onOpen }: { member: HudPartyMember; open: boolean; onOpen: () => void }) {
+function MiniBanner({ member, open, lit, onOpen }: { member: HudPartyMember; open: boolean; lit: boolean; onOpen: () => void }) {
   const describedBy = useId();
   const bars = miniBars(member);
   return (
     <button
       type="button"
-      className={cn("hud-ph-mb", member.mine && "hud-ph-you", open && "hud-ph-open", member.down && "hud-ph-down")}
+      className={cn("hud-ph-mb", member.mine && "hud-ph-you", open && "hud-ph-open", member.down && "hud-ph-down", lit && "hud-ph-lit")}
+      data-lit={lit ? "true" : undefined}
       aria-label={bannerLabel(member)}
       aria-describedby={describedBy}
       data-open={open ? "true" : undefined}
