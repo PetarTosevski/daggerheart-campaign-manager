@@ -31,10 +31,11 @@ jest.mock("react-native-reanimated", () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { Text, View } = require("react-native") as typeof import("react-native");
   const state = globalThis as MotionGlobal;
+  const createAnimatedComponent = <T,>(Component: T) => Component;
   return {
     __esModule: true,
-    default: { View, Text },
-    createAnimatedComponent: <T,>(Component: T) => Component,
+    default: { View, Text, createAnimatedComponent },
+    createAnimatedComponent,
     useSharedValue: <T,>(initial: T) => {
       const [box] = React.useState(() => ({ value: initial }));
       return box;
