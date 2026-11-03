@@ -404,6 +404,66 @@ describe("the attack picker in the HUD", () => {
     expect(calls.find((c) => c.name === "combatActions:pickMinions")!.args).toMatchObject({ instanceIds: [] });
   });
 
+  it("hud-pre-w9: the GM playing for Moss opens the same picker with Moss as the actor and sends Moss's attack", async () => {
+    seed();
+    delete queries["combatVision:playerView"];
+    const at = (id: Id<"combatTokens">, name: string, side: string, x: number, y: number, characterId?: Id<"characters">) => ({ _id: id, name, side, x, y, size: 1, stats: { conditions: [] }, ...(characterId ? { characterId } : {}) });
+    queries["combatTokens:list"] = [at(MOSS, "Moss", "pc", 5, 10, CHARACTER), at(ORIEL, "Oriel", "pc", 6, 13), at(BANDIT, "Bandit", "enemy", 6, 10), at(LT, "Lieutenant", "enemy", 14, 10)];
+    // The GM holds the spotlight: the GM is never held back (assertMayAct), also while playing for a PC.
+    queries["combatSpotlight:state"] = { holder: { kind: "gm" }, since: 1, reason: "gmTook", rollBy: null, reactionsOnly: true, canMove: false };
+    results["combatActions:attack"] = { status: "resolved", entryId: "e1", roll: ROLL, damage: DAMAGE, fearGained: 0, minionOffer: null, prompts: [], targets: [{ tokenId: BANDIT, hit: true, defeated: false }] };
+    const gm = { ...state, role: "gm" } as CombatPageState;
+    function GmOpener() {
+      const picker = useAttackPicker(gm, CHARACTER);
+      return (
+        <button type="button" disabled={!picker.ready} onClick={() => picker.open({ slot: "primary" })}>
+          Attack for Moss ({picker.weapons.map((w) => w.name).join(", ")})
+        </button>
+      );
+    }
+    render(
+      <HudProvider>
+        <PickProvider>
+          <GmOpener />
+          <HudPick state={gm} />
+        </PickProvider>
+      </HudProvider>,
+    );
+    const opener = screen.getByRole("button", { name: "Attack for Moss (Shortstaff, Round Shield)" });
+    expect(opener).toBeEnabled();
+    fireEvent.click(opener);
+    const panel = screen.getByRole("dialog", { name: "Shortstaff" });
+    // The player's picker (weapon tiles), not the GM's purple adversary one; Moss is the actor, not a row.
+    expect(panel).not.toHaveClass("hud-pk-gm");
+    expect(within(panel).getAllByTestId("hud-attack-weapon")).toHaveLength(2);
+    const rows = within(panel).getAllByTestId("hud-pick-row");
+    expect(rows.map((r) => r.dataset.token)).not.toContain(MOSS);
+    fireEvent.click(rows.find((r) => r.dataset.token === BANDIT)!);
+    expect(within(panel).getByTestId("hud-pick-go")).toHaveTextContent("Attack the Bandit with Shortstaff");
+    expect(within(panel).getByTestId("hud-pick-go")).toBeEnabled();
+    await act(async () => fireEvent.click(within(panel).getByTestId("hud-pick-go")));
+    expect(calls.find((c) => c.name === "combatActions:attack")!.args).toMatchObject({ campaignId: CAMPAIGN, characterId: CHARACTER, mapId: MAP, slot: "primary", targetTokenIds: [BANDIT] });
+  });
+
+  it("hud-pre-w9: the GM's picker waits for a token on the live map", () => {
+    seed();
+    queries["combatTokens:list"] = [];
+    function GmReason({ live }: { live: boolean }) {
+      const picker = useAttackPicker({ ...state, role: "gm", map: { _id: MAP, name: "Forest Camp", live } } as CombatPageState, CHARACTER);
+      return <p>{`${picker.ready}:${picker.reason}`}</p>;
+    }
+    render(
+      <HudProvider>
+        <PickProvider>
+          <GmReason live />
+          <GmReason live={false} />
+        </PickProvider>
+      </HudProvider>,
+    );
+    expect(screen.getByText("false:Not on the map")).toBeInTheDocument();
+    expect(screen.getByText("false:Not on the live map")).toBeInTheDocument();
+  });
+
   it("the GM gets no attack prompts", () => {
     seed();
     queries["combatRequests:forcedAttacks"] = [{ requestId: "f1", characterId: CHARACTER, characterName: "Moss", createdAt: 1, instanceLabel: "Gobstalker", feature: "Beguile", targets: [{ tokenId: ORIEL, name: "Oriel" }] }];

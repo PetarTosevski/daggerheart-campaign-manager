@@ -55,7 +55,17 @@ const area: Area = {
   entries: [
     // ---------------------------------------------------------------- classFeatures
     { fn: api.classFeatures.use, access: "own", args: () => ({ featureKey: "none", params: {} }), okCodes: ["CLASS_FEATURE_RULE"] },
-    { fn: api.classFeatures.endEffect, access: "own", okCodes: ["CLASS_FEATURE_RULE"] },
+    // hud-pre-w9 (dcm-bxp.99.32.37): playerB's character cast the effect on characterA, so playerB may End it too (the
+    // caster rule); the other refusals (an effect that isn't the caller's caster's) are in tests/convex/hud-end-effect.test.ts.
+    {
+      fn: api.classFeatures.endEffect,
+      access: "own",
+      setup: (w) => patchSheet(w, w.characterA, () => ({ effects: [{ id: "authz-ward", source: "Rune Ward", text: "Reduce damage", until: "rest", casterId: w.characterB }] })),
+      args: (w) => ({ characterId: w.characterA, effectId: "authz-ward" }),
+      expect: { otherPlayer: "ok" },
+      okCodes: ["CLASS_FEATURE_RULE"],
+      note: "The effect's caster's player may end it (editsCaster).",
+    },
     { fn: api.classFeatures.gotHit, access: "own", okCodes: ["CLASS_FEATURE_RULE"] },
     // Character rolls are public: every member reads the latest one.
     { fn: api.classFeatures.lastRoll, access: "own" },

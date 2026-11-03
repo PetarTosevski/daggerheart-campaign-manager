@@ -10,7 +10,7 @@ import type { Doc } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { installedAugments } from "./characterExtras";
 import { conditionMarkerOf } from "./lib/cardRunner";
-import { loadCharacter, MAX_CHARACTERS_PER_CAMPAIGN, readSheet } from "./lib/characterSheet";
+import { editsCaster, loadCharacter, MAX_CHARACTERS_PER_CAMPAIGN, readSheet } from "./lib/characterSheet";
 import {
   bareConditionUntil,
   className,
@@ -199,7 +199,8 @@ export const hudSheetValidator = v.object({
   /**
    * Lasting effects (the sheet's `effects`, without the condition markers shown on `conditions`): `id` (for the GM's or
    * owner's End), `source` ("Rogue's Dodge"), `text`, `until` in words, `ends` the stored kind (rest / longRest / session /
-   * hit / scene / manual).
+   * hit / scene / manual). `canEnd` (plan hud-pre-w9, dcm-bxp.99.32.37): the caller may End it, as `classFeatures.endEffect`
+   * decides: they edit the bearer (gm / own) or the character that cast it (`casterId`, `editsCaster`).
    */
   effects: v.array(
     v.object({
@@ -208,6 +209,7 @@ export const hudSheetValidator = v.object({
       text: v.string(),
       until: v.string(),
       ends: v.union(v.literal("rest"), v.literal("longRest"), v.literal("session"), v.literal("hit"), v.literal("scene"), v.literal("manual")),
+      canEnd: v.boolean(),
     }),
   ),
 });
@@ -256,6 +258,20 @@ export const sheet = userQuery({
       markerIds.add(e.id);
       if (!markers.has(m.condition)) markers.set(m.condition, { source: e.source, until: effectUntilLabel(e) });
     }
+    // Who may End each lasting effect: the bearer's editors, else the caster's (one permission read per caster).
+    const casters = new Map<string, Promise<boolean>>();
+    const endable = (e: (typeof s.effects)[number]): Promise<boolean> => {
+      if (mode !== "view") return Promise.resolve(true);
+      const key = e.casterId ?? "";
+      let known = casters.get(key);
+      if (known === undefined) {
+        known = editsCaster(ctx, ctx.user, campaign._id, e);
+        casters.set(key, known);
+      }
+      return known;
+    };
+    const lasting = s.effects.filter((e) => !markerIds.has(e.id));
+    const canEnd = await Promise.all(lasting.map(endable));
     return {
       characterId: character._id,
       mode,
@@ -277,9 +293,7 @@ export const sheet = userQuery({
         const marker = markers.get(id);
         return { id, label: conditionLabel(id), source: marker?.source ?? null, until: marker?.until ?? bareConditionUntil(id) };
       }),
-      effects: s.effects
-        .filter((e) => !markerIds.has(e.id))
-        .map((e) => ({ id: e.id, source: e.source, text: e.text, until: effectUntilLabel(e), ends: e.until })),
+      effects: lasting.map((e, i) => ({ id: e.id, source: e.source, text: e.text, until: effectUntilLabel(e), ends: e.until, canEnd: canEnd[i]! })),
     };
   },
 });

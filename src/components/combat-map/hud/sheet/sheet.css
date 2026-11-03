@@ -440,6 +440,39 @@
   color: var(--hud-gold-text);
   font-weight: 600;
 }
+/* The GM's Attack for the PC played for (dcm-bxp.99.32.36): one gold button per weapon. */
+.hsh-atks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 20px 0;
+}
+.hsh-atk:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* End on a lasting effect (dcm-bxp.99.32.37): a quiet chip after its duration. */
+.hsh-end {
+  flex: none;
+  align-self: center;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--hud-r-chip);
+  background: var(--hud-inset);
+  box-shadow: inset 0 0 0 1px var(--hud-line-2);
+  color: var(--hud-ink);
+  font: 600 12px/1 var(--hud-font-ui);
+  cursor: pointer;
+}
+.hsh-end:hover {
+  box-shadow: inset 0 0 0 1px var(--hud-gold);
+}
+.hsh-end:focus-visible {
+  outline: 2px solid var(--hud-gold);
+  outline-offset: 2px;
+}
 .hsh-cond-tgs {
   display: flex;
   flex-wrap: wrap;
@@ -476,6 +509,8 @@
     height: 44px;
   }
   .hsh-use,
+  .hsh-end,
+  .hsh-atk,
   .hsh-cond-tgs button {
     min-height: 44px;
   }

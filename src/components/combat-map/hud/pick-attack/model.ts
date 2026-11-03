@@ -11,7 +11,7 @@ import { pickOf, riderProblem, ridersToSend, riseToSend, type RiderOption, type 
 import { NO_ROLL_OPTIONS, type Roller, type RollValues } from "../../actions/roll-controls";
 import type { TargetHint, WeaponSlot } from "../../actions/targets";
 import type { CostResource } from "../ui";
-import type { PickContext, PickOutcome, PickPatch, PickRow, PickRowInput, PickSelection, PickSessionSpec } from "../pick";
+import type { PickActor, PickContext, PickOutcome, PickPatch, PickRow, PickRowInput, PickSelection, PickSessionSpec } from "../pick";
 
 /**
  * The HUD's weapon attack picker, pure (plan combat-hud H3.2; boards CmpPicking 'Weapon attack', CmpPromptsPlayer 'With
@@ -109,6 +109,10 @@ export type AttackInput = {
   forcedRows: readonly PickRowInput[] | null;
   /** Enemies picked on the map before (the latest win). */
   picked: readonly Id<"combatTokens">[];
+  /** The GM playing for the PC (hud-pre-w9, dcm-bxp.99.32.36): the PC's token and character; a player's own needs none. */
+  actor?: PickActor;
+  /** With `actor`: the map's enemies and the other PCs, for a rider's extra targets (a player reads their own view). */
+  others?: { enemies: readonly { _id: Id<"combatTokens">; name: string }[]; allies: readonly { _id: Id<"combatTokens">; name: string }[] };
   attack: (args: AttackArgs) => Promise<AttackAnswer>;
   onReport: (report: AttackReport) => void;
   /** The panel's extra rows (weapon tiles, trait, Lead by Example, roll chips, riders). */
@@ -335,6 +339,7 @@ export function attackSession(input: AttackInput, data: AttackData): PickSession
     primary: patch.primary!,
     data,
     picked: input.forced ? input.forced.targets.map((t) => t.tokenId) : input.picked.slice(-most),
+    ...(input.actor ? { actor: input.actor } : {}),
     ...(input.forcedRows ? { rows: input.forcedRows } : {}),
     // A forced attack answers the GM's move (it comes while the GM holds the spotlight): never held back by it.
     ...(input.forced ? { followUp: true } : {}),

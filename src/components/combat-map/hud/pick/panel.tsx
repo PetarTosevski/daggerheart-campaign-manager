@@ -136,7 +136,8 @@ function Panel({ state, live }: { state: CombatPageState; live: PickLive }) {
   const gm = spec.source.kind === "adversary";
   const pay = selection.outOfRange && !gm ? GM_APPROVES_LINE : (spec.primary.pay?.(selection) ?? null);
   // H6.2: while the GM holds the spotlight a new action waits (answer 1c); a step of one under way does not.
-  const spotlightWithGm = spotlightBlocks(spotlight?.reactionsOnly === true, spec);
+  // The GM is never held back, also while playing for a PC (convex/lib/spotlight.ts `assertMayAct`; hud-pre-w9).
+  const spotlightWithGm = state.role === "player" && spotlightBlocks(spotlight?.reactionsOnly === true, spec);
   const problem = spotlightWithGm ? beforeText("SPOTLIGHT_WITH_GM") : primaryProblem(selection, spec.rule, spec.primary.blocked?.(selection) ?? null);
   // CmpBlocked "picker counter": "1 of 2" while several may be picked; once full, the limit beside it.
   const count = pickCount(picked.length, spec.rule);

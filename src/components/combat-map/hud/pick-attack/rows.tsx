@@ -11,7 +11,7 @@ import { damageLabel } from "../../actions/attack";
 import { extraCandidates, extraMax, pickOf, riderKey, type RiderOption, type RiderPick } from "../../actions/attack/riders";
 import { edgeLabel, ROLL_DICE_LIMIT, signed } from "../../actions/roll-controls";
 import { useActor } from "../../actions/targets";
-import type { CombatPageState } from "../../slots";
+import type { AttackState } from "./use-attack";
 import type { PickContext } from "../pick";
 import { ChoiceRow, CostPill, Stepper, Toggle } from "../ui";
 import { attackPatch, benefitOptions, chosenBenefit, costOf, ridersOf, switchWeapon, weaponLine, weaponOf, type AttackData, type AttackInput } from "./model";
@@ -27,7 +27,7 @@ import { attackPatch, benefitOptions, chosenBenefit, costOf, ridersOf, switchWea
  * Every change goes through `update(attackPatch(input, next))`, so the primary, footer and rule follow the data.
  */
 
-export function AttackRows({ ctx, input, state }: { ctx: PickContext<AttackData>; input: AttackInput; state: CombatPageState }) {
+export function AttackRows({ ctx, input, state }: { ctx: PickContext<AttackData>; input: AttackInput; state: AttackState }) {
   const { data, selection, update } = ctx;
   const actor = useActor(state);
   const weaponGroup = useId();
@@ -41,8 +41,9 @@ export function AttackRows({ ctx, input, state }: { ctx: PickContext<AttackData>
   const benefits = benefitOptions(input.hints, selection.targetIds);
   const benefit = chosenBenefit(benefits, data.benefit);
   const { experienceIds, edge, help } = data.roll;
-  const enemies = (actor?.enemies ?? []).filter((e) => !selection.targetIds.includes(e._id));
-  const allies = (actor?.view.others ?? []).filter((t) => t.side === "pc");
+  // The GM playing for a PC has no player view: the hook passes the map's creatures (`input.others`).
+  const enemies = (input.others?.enemies ?? actor?.enemies ?? []).filter((e) => !selection.targetIds.includes(e._id));
+  const allies = input.others?.allies ?? (actor?.view.others ?? []).filter((t) => t.side === "pc");
 
   return (
     <div className="hud-atk" data-testid="hud-attack-rows">

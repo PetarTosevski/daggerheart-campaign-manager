@@ -117,15 +117,16 @@ describe("combatHud.sheet", () => {
       { id: "vulnerable", label: "Vulnerable", source: null, until: null },
     ]);
     expect(sheet.effects).toEqual([
-      { id: "fx-1", source: "Rogue's Dodge", text: "+2 Evasion", until: "until you are hit", ends: "hit" },
+      { id: "fx-1", source: "Rogue's Dodge", text: "+2 Evasion", until: "until you are hit", ends: "hit", canEnd: false },
       {
         id: "fx-2",
         source: "Vicious Entangle",
         text: "Entangled; ends when they break free with a successful Instinct Roll",
         until: "until they break free with a successful Instinct Roll",
         ends: "manual",
+        canEnd: false,
       },
-      { id: "fx-3", source: "No Mercy", text: "+1 to attack rolls", until: "until the next rest", ends: "rest" },
+      { id: "fx-3", source: "No Mercy", text: "+1 to attack rolls", until: "until the next rest", ends: "rest", canEnd: false },
     ]);
     // Active effects count in Evasion (Ash and Bryn are the same warrior otherwise).
     expect(sheet.evasion).toBe(base + 2);

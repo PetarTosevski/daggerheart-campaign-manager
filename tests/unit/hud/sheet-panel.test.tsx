@@ -64,6 +64,19 @@ vi.mock("@/components/combat-map/drawer/use", () => ({
 }));
 // H3.3: Use goes through the HUD feature picker first (tests/unit/hud/area-pick.test.tsx); here it hands back to the classic flow.
 vi.mock("@/components/combat-map/hud/pick-feature", () => ({ useFeatureUse: () => ({ open: () => "classic" }) }));
+// hud-pre-w9: the GM's Attack for the PC played for opens H3.2's picker (tests/unit/hud/attack-pick.test.tsx); here a stub.
+const attackOpens: unknown[] = [];
+vi.mock("@/components/combat-map/hud/pick-attack", () => ({
+  useAttackPicker: (_state: unknown, characterId: unknown) => ({
+    ready: true,
+    reason: null,
+    open: (options: unknown) => attackOpens.push({ characterId, options }),
+    isOpen: false,
+    forced: [],
+    characterId,
+    weapons: [{ slot: "primary", name: "Dagger" }],
+  }),
+}));
 vi.mock("@/components/combat-map/drawer/prompts", () => ({
   DrawerPrompts: ({ canAct }: { canAct: boolean }) => <div data-testid="classic-prompts" data-can-act={String(canAct)} />,
 }));
@@ -80,6 +93,7 @@ afterEach(() => {
   for (const k of Object.keys(updaters)) delete updaters[k];
   asked.length = 0;
   calls.length = 0;
+  attackOpens.length = 0;
 });
 
 const CAMPAIGN = "c1" as Id<"campaigns">;
@@ -337,6 +351,7 @@ describe("HudSheet: GM edit (GMDesktop, Vex, answer 5a)", () => {
     expect(within(panel).getByRole("button", { name: "Use Marked for Death for Vex" })).toBeDisabled();
     expect(within(panel).getByRole("button", { name: "D5 Get In & Get Out" })).toBeDisabled();
     expect(within(panel).getByTestId("classic-prompts")).toHaveAttribute("data-can-act", "false");
+    expect(within(panel).queryByTestId("hud-sheet-attack")).toBeNull();
 
     // Trackers: editable without the switch.
     fireEvent.click(within(panel).getByRole("button", { name: "Mark 1 Stress" }));
@@ -361,8 +376,30 @@ describe("HudSheet: GM edit (GMDesktop, Vex, answer 5a)", () => {
     const use = screen.getByRole("button", { name: "Use Marked for Death for Vex" });
     expect(use).toBeEnabled();
     expect(use).toHaveTextContent("Use for Vex");
+    // hud-pre-w9 (dcm-bxp.99.32.36): Attack for Vex, one button per weapon, through the attack picker.
+    fireEvent.click(screen.getByRole("button", { name: "Attack with Dagger for Vex" }));
+    expect(attackOpens).toEqual([{ characterId: VEX, options: { slot: "primary" } }]);
     expect(screen.getByTestId("hud-sheet-note")).toHaveTextContent("You’re the GM: you can change any value on this sheet.");
     expect(screen.queryByRole("switch", { name: /Hide my hand/ })).toBeNull();
+  });
+
+  it("hud-pre-w9 (dcm-bxp.99.32.37): End on the lasting effects the caller may end (canEnd), one endEffect intent, optimistic", () => {
+    const effect = (id: string, source: string, canEnd: boolean) => ({ id, source, text: `${source} text`, until: "until the next rest", ends: "rest" as const, canEnd });
+    queries["combatHud:sheet"] = { ...BRANNOC_VIEW, effects: [effect("fx-1", "Rune Ward", true), effect("fx-2", "Inspiration", false)] };
+    renderSheet(BRANNOC);
+    const panel = screen.getByRole("complementary", { name: "Brannoc’s sheet" });
+    const ends = within(panel).getAllByTestId("hud-sheet-end-effect");
+    expect(ends).toHaveLength(1);
+    expect(ends[0]).toHaveAccessibleName("End Rune Ward on Brannoc");
+    expect(within(panel).queryByRole("button", { name: /End Inspiration/ })).toBeNull();
+    fireEvent.click(ends[0]!);
+    const sent = calls.find((c) => c.name === "classFeatures:endEffect")!.args;
+    expect(sent).toMatchObject({ characterId: BRANNOC, effectId: "fx-1" });
+    expect(typeof sent.idempotencyKey).toBe("string");
+    // The optimistic update drops the row at once.
+    let stored: unknown = queries["combatHud:sheet"];
+    updaters["classFeatures:endEffect"]!({ getQuery: () => stored, setQuery: (_q: unknown, _a: unknown, v: unknown) => (stored = v) }, sent);
+    expect((stored as HudSheetData).effects.map((e) => e.id)).toEqual(["fx-2"]);
   });
 });
 

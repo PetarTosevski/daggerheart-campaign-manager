@@ -26,15 +26,17 @@ import { appError } from "../src/lib/errors/app-error";
 import { resolveOptions } from "../src/lib/frames/options";
 import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { env, internalMutation, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { isE2EDeployment } from "./lib/allowlist";
 import { logAction, newGroupId } from "./lib/actionLog";
 import { partyMembers } from "./lib/adversaryHits";
 import { afterUnstoppable, liftTargetTags } from "./lib/cardRows";
-import { assertCanAct, editable, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
+import { assertCanAct, editable, editsCaster, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { payCost } from "./lib/classFeatureCost";
 import { rollDie } from "./lib/dice";
 import { gainFear, revertFear } from "./lib/fear";
 import { keyedUserMutation, userQuery } from "./lib/functions";
+import { atLeast } from "./lib/permissions";
 import { rollValidator, type StoredRoll } from "./lib/validators/actionLog";
 
 /** How far back the latest live roll is looked for. */
@@ -193,16 +195,20 @@ export const use = keyedUserMutation({
 const ENDS_WITH: Readonly<Record<string, readonly string[]>> = { beastform: ["evolution"] };
 
 /**
- * Ends one active effect by its End button (owner or GM), and the effects that end with it (`ENDS_WITH`), in one
- * write and one undoable actionLog row.
+ * Ends one active effect by its End button, and the effects that end with it (`ENDS_WITH`), in one write and one
+ * undoable actionLog row. Who may: whoever edits the bearer (its player, the GM) and, since plan hud-pre-w9
+ * (dcm-bxp.99.32.37, user 2026-11-02), whoever edits the effect's caster (`casterId`, `editsCaster`): the player whose
+ * character cast it on an ally. Any other member is FORBIDDEN (also for an effect that is gone), an outsider NOT_FOUND.
  */
 export const endEffect = keyedUserMutation({
   args: { characterId: v.id("characters"), effectId: v.string() },
   returns: v.null(),
   handler: async (ctx, { characterId, effectId }) =>
     ctx.once("class_feature_end_effect", { characterId, effectId }, async () => {
-      const { campaign, character, sheet } = await editable(ctx, ctx.user, characterId);
+      const { campaign, character, permission } = await loadCharacter(ctx, ctx.user, characterId, "view", "edit");
+      const sheet = readSheet(character.sheet);
       const effect = sheet.effects.find((e) => e.id === effectId);
+      if (!atLeast(permission, "edit") && (effect === undefined || !(await editsCaster(ctx, ctx.user, campaign._id, effect)))) throw appError("FORBIDDEN");
       if (effect === undefined) throw appError("CLASS_FEATURE_RULE", "That effect has already ended.");
       const ending = new Set([effectId, ...(ENDS_WITH[effectId] ?? [])]);
       const ended = sheet.effects.filter((e) => ending.has(e.id));
@@ -228,6 +234,25 @@ export const endEffect = keyedUserMutation({
       });
       return null;
     }),
+});
+
+/**
+ * E2E seeding (tests/e2e/hud-gm-playfor.spec.ts, hud-pre-w9): puts one lasting effect (until the next rest) on a
+ * character's sheet, cast by `casterId` when given, as a card or feature would record it. Internal (admin key only,
+ * `convex run`), and refused on anything but the local e2e backend.
+ */
+export const seedEffectForE2e = internalMutation({
+  args: { characterId: v.id("characters"), effectId: v.string(), source: v.string(), text: v.string(), casterId: v.optional(v.id("characters")) },
+  returns: v.null(),
+  handler: async (ctx, { characterId, effectId, source, text, casterId }) => {
+    if (!isE2EDeployment(env)) throw new Error("seedEffectForE2e runs only on the local e2e backend.");
+    const character = await ctx.db.get("characters", characterId);
+    if (character === null) throw new Error("No such character.");
+    const sheet = readSheet(character.sheet);
+    const effect = { id: effectId, source, text, until: "rest" as const, ...(casterId !== undefined ? { casterId } : {}) };
+    await saveSheet(ctx, characterId, { ...sheet, effects: [...sheet.effects.filter((e) => e.id !== effectId), effect] });
+    return null;
+  },
 });
 
 /** An attack succeeded against the character (decision 8: a manual button until D8 reports hits): ends every "until hit" effect. */

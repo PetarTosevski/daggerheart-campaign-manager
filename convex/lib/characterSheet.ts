@@ -123,6 +123,20 @@ export async function editable(ctx: QueryCtx, user: Doc<"users">, characterId: I
 }
 
 /**
+ * Whether the user edits the character that cast a lasting effect (plan hud-pre-w9, dcm-bxp.99.32.37, user 2026-11-02:
+ * the effect's caster may End it on another PC's sheet). The effect's stored `casterId` (E6.4) names a character of the
+ * same campaign; the check is `permissionFor` on that character (`findCharacter`, edit). An effect without a caster,
+ * or whose caster is not a character of this campaign, is nobody's by this rule.
+ */
+export async function editsCaster(ctx: QueryCtx, user: Doc<"users">, campaignId: Id<"campaigns">, effect: { casterId?: string }): Promise<boolean> {
+  if (effect.casterId === undefined) return false;
+  const casterId = ctx.db.normalizeId("characters", effect.casterId);
+  if (casterId === null) return false;
+  const caster = await findCharacter(ctx, user, casterId, "edit");
+  return caster !== null && caster.campaign._id === campaignId && atLeast(caster.permission, "edit");
+}
+
+/**
  * Refuses a character who can't roll or use features: dead, away (Castle High)
  * or unconscious (decision 9; CB 106). Throws `CHARACTER_UNAVAILABLE`.
  */

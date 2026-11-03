@@ -3,7 +3,7 @@
 import "./sheet.css";
 
 import { useMutation, useQuery } from "convex/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { refusalFor, type Refusal } from "@/lib/errors/refusals";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,7 @@ import { usePlayFor } from "../../play-for";
 import type { CombatMapSummary, CombatRole } from "../../slots";
 import { Portrait } from "../banners/banner";
 import { BlockedReason, RefusalMessage, blockedReason, hudToasts, useBlocked } from "../blocked";
+import { useAttackPicker } from "../pick-attack";
 import { useFeatureUse } from "../pick-feature";
 import { featurePlan } from "../pick-feature/model";
 import { usedText } from "../hand/states";
@@ -185,6 +186,12 @@ function SheetBody({
         </PartBoundary>
       ) : null}
 
+      {sheet.mode === "gm" && playingFor ? (
+        <PartBoundary label="The attack">
+          <SheetAttack campaignId={campaignId} role={role} map={map} characterId={sheet.characterId} name={sheet.name} />
+        </PartBoundary>
+      ) : null}
+
       <section aria-labelledby="hsh-sec-features">
         <h3 id="hsh-sec-features" className="hsh-sec">
           Features
@@ -247,6 +254,41 @@ function SheetBody({
 
       <SheetConditions sheet={sheet} edit={rights.edit} />
     </div>
+  );
+}
+
+/**
+ * dcm-bxp.99.32.36 (user 2026-11-02): the GM playing for this PC attacks through the player's weapon attack picker
+ * (H3.2's `useAttackPicker`, with the PC as the session's actor), one button per equipped weapon. The action ring opens
+ * on a player's own token only (H3.4), so the sheet is the GM's entry.
+ */
+function SheetAttack({ campaignId, role, map, characterId, name }: { campaignId: Id<"campaigns">; role: CombatRole; map: CombatMapSummary | null; characterId: Id<"characters">; name: string }) {
+  const attack = useAttackPicker({ campaignId, role, mode: "play", map, previewCharacterId: null }, characterId);
+  const headingId = useId();
+  const weapons = attack.weapons.length > 0 ? attack.weapons : [null];
+  return (
+    <section aria-labelledby={headingId} data-testid="hud-sheet-attack">
+      <h3 id={headingId} className="hsh-sec">
+        Attack
+      </h3>
+      <div className="hsh-atks">
+        {weapons.map((w) => (
+          <button
+            key={w?.slot ?? "none"}
+            type="button"
+            className="hsh-use hsh-atk"
+            disabled={!attack.ready}
+            aria-label={w ? `Attack with ${w.name} for ${name}` : `Attack for ${name}`}
+            title={attack.reason ?? undefined}
+            data-testid="hud-sheet-attack-weapon"
+            onClick={() => attack.open(w ? { slot: w.slot } : {})}
+          >
+            {w ? `Attack · ${w.name}` : "Attack"}
+          </button>
+        ))}
+      </div>
+      {attack.reason && !attack.ready && attack.reason !== "Loading your weapons…" ? <p className="hsh-muted">{attack.reason}</p> : null}
+    </section>
   );
 }
 
@@ -470,6 +512,12 @@ function SheetConditions({ sheet, edit }: { sheet: HudSheetData; edit: boolean }
       store.setQuery(api.combatHud.party, q, value.map((m) => (m.characterId === args.characterId ? toggleConditionInParty(m, args.condition) : m)));
     }
   });
+  // dcm-bxp.99.32.37: End on a lasting effect (the GM, the bearer's player, the caster's player: `canEnd`), the classic
+  // list's `classFeatures.endEffect` intent; the row leaves at once (optimistic), the server ends what ends with it.
+  const end = useMutation(api.classFeatures.endEffect).withOptimisticUpdate((store, args) => {
+    const current = store.getQuery(api.combatHud.sheet, { characterId: args.characterId });
+    if (current !== undefined) store.setQuery(api.combatHud.sheet, { characterId: args.characterId }, { ...current, effects: current.effects.filter((x) => x.id !== args.effectId) });
+  });
   const none = sheet.conditions.length === 0 && sheet.effects.length === 0;
   const on = new Set(sheet.conditions.map((c) => c.id));
   return (
@@ -496,6 +544,20 @@ function SheetConditions({ sheet, edit }: { sheet: HudSheetData; edit: boolean }
                 <b>{e.source}</b> {e.text}
               </span>
               <em>{e.until}</em>
+              {e.canEnd ? (
+                <button
+                  type="button"
+                  className="hsh-end"
+                  aria-label={`End ${e.source} on ${sheet.name}`}
+                  data-testid="hud-sheet-end-effect"
+                  onClick={() => {
+                    setError(null);
+                    end({ characterId: sheet.characterId, effectId: e.id, idempotencyKey: crypto.randomUUID() }).catch((err: unknown) => setError(refusalFor(err)));
+                  }}
+                >
+                  End
+                </button>
+              ) : null}
             </li>
           ))}
         </ul>

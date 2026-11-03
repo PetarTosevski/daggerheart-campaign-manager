@@ -11,7 +11,7 @@ import "./attack.css";
  */
 
 export { HudAttack } from "./prompts";
-export { useAttackPicker, type AttackPicker, type AttackPickerOptions } from "./use-attack";
+export { useAttackPicker, type AttackPicker, type AttackPickerOptions, type AttackState } from "./use-attack";
 export { attackReports, useAttackReport } from "./report";
 export {
   attackArgs,
