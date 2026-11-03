@@ -1,120 +1,62 @@
 "use client";
 
+import "./drawer.css";
+
 import { useQuery } from "convex/react";
-import Link from "next/link";
-import { useEffect, useId, useRef } from "react";
 
 import { api } from "../../../../convex/_generated/api";
+import type { Id } from "../../../../convex/_generated/dataModel";
 import { usePlayFor } from "../play-for";
-import { sheetHref, type SheetDrawerProps } from "../slots";
-import { DrawerBoundary } from "./boundary";
-import "./drawer.css";
-import { FeatureList } from "./list";
-import { DrawerPrompts } from "./prompts";
-import { Trackers } from "./trackers";
-
-export { FeatureUse } from "./use";
+import { sheetCharacterId, type CombatPageState } from "../slots";
+import { BeastformControl, FlyingToggle, StanceControls } from "./list/controls";
+import { activeForm } from "./list/model";
 
 /**
- * The Combat Map sheet drawer (plan sheet-drawer, SD6): a native modal <dialog> (focus trap, Esc, focus back to the Sheet
- * button) docked to the right edge over the live map, full screen at 760 px and below. The page keeps it mounted after the
- * first open, so the map behind it is never remounted; the body (and its queries) exists only while it is open.
- * Contents: the trackers, then every owned feature by source with its Use button, and the "Full sheet" link.
+ * The sheet drawer's controls the HUD's sheet does not show yet (plan sheet-drawer SD6; kept by plan combat-hud H8.1,
+ * which deleted the drawer itself: the HUD's sheet panel, `hud/sheet`, shows the trackers, conditions and features).
+ * In the HUD's tools drawer, for a player's own PC on the map or the PC token the GM selected: the class counters and
+ * held dice, the Flying toggle (Q16), the Beastform's "Drop out" (Q10) and the Martial Artist's stances (Q5). The GM's
+ * controls are greyed until "Play for this character" is on. Renders nothing when the character has none of them.
  */
-export function SheetDrawer({ campaignId, role, map, characterId, open, onClose }: SheetDrawerProps) {
-  const ref = useRef<HTMLDialogElement>(null);
-  const titleId = useId();
-
-  useEffect(() => {
-    const dialog = ref.current;
-    if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
-  }, [open]);
-
-  return (
-    <dialog
-      ref={ref}
-      className="sd-drawer"
-      aria-labelledby={titleId}
-      data-testid="sheet-drawer"
-      onClose={() => {
-        if (open) onClose();
-      }}
-      onClick={(event) => {
-        if (event.target === ref.current) onClose();
-      }}
-      // The map's shortcuts listen on window (Escape drops the selected token, WASD moves it): keys pressed in the drawer
-      // stay in it, so Esc only closes the drawer and the map keeps its selection.
-      onKeyDown={(event) => event.stopPropagation()}
-    >
-      {open ? (
-        <div className="sd-shell">
-          <header className="sd-header">
-            <h2 id={titleId} className="sd-title">
-              Character sheet
-            </h2>
-            <button type="button" className="cm-btn cm-sm sd-close" aria-label="Close character sheet" onClick={onClose}>
-              ✕
-            </button>
-          </header>
-          <div className="sd-scroll">
-            <DrawerBoundary label="The character sheet">
-              <DrawerBody campaignId={campaignId} role={role} map={map} characterId={characterId} />
-            </DrawerBoundary>
-          </div>
-          <footer className="sd-footer">
-            <Link href={sheetHref(campaignId, characterId)} className="cm-btn" data-testid="sheet-drawer-full-sheet">
-              Full sheet
-            </Link>
-          </footer>
-        </div>
-      ) : null}
-    </dialog>
-  );
+export function SheetExtras({ campaignId, role, map, selectedTokenId }: Pick<CombatPageState, "campaignId" | "role" | "map" | "selectedTokenId">) {
+  const tokens = useQuery(api.combatTokens.party, map ? { campaignId, mapId: map._id } : "skip");
+  const characterId = tokens ? sheetCharacterId(role, tokens, selectedTokenId) : null;
+  if (characterId === null) return null;
+  return <Extras campaignId={campaignId} role={role} characterId={characterId} />;
 }
 
-function DrawerBody({ campaignId, role, map, characterId }: Omit<SheetDrawerProps, "open" | "onClose">) {
+function Extras({ campaignId, role, characterId }: { campaignId: Id<"campaigns">; role: CombatPageState["role"]; characterId: Id<"characters"> }) {
   const drawer = useQuery(api.combatFeatures.drawer, { campaignId, characterId });
-  // The GM plays for a character only after turning the switch on: the one switch per PC the map Hand shows too, kept
-  // on until the GM turns it off, on every device (DA6, user answers 2026-10-30; stored by convex/playFor.ts).
+  // The one Play-for switch per PC (DA6; convex/playFor.ts): the HUD's hand and sheet show it.
   const playFor = usePlayFor(campaignId, characterId, role === "gm");
-  const switchId = useId();
-  if (drawer === undefined) {
-    return (
-      <p role="status" className="cm-muted">
-        Loading the sheet…
-      </p>
-    );
-  }
-  const canAct = role === "player" || playFor.on;
+  if (drawer === undefined) return null;
+  const form = activeForm(drawer.features);
+  const chips = drawer.counters.length > 0 || drawer.heldDice.length > 0;
+  if (!chips && !drawer.canFly && !form && !drawer.martial) return null;
+  const here = { campaignId, characterId, canAct: role === "player" || playFor.on };
   return (
-    <div className="sd-body">
-      <p className="sd-name" data-testid="sheet-drawer-name">
-        {drawer.name}
-      </p>
-      {role === "gm" ? (
-        <>
-          <label className="sd-switch" htmlFor={switchId}>
-            <input id={switchId} type="checkbox" role="switch" checked={playFor.on} onChange={(e) => playFor.set(e.target.checked)} />
-            <span className="sd-switch-track" aria-hidden="true" />
-            <span>Play for this character</span>
-          </label>
-          {playFor.error ? (
-            <p role="alert" className="cma-error">
-              {playFor.error}
-            </p>
-          ) : null}
-        </>
-      ) : null}
-      <div className="sd-grey" data-greyed={canAct ? "false" : "true"}>
-        <Trackers campaignId={campaignId} characterId={characterId} trackers={drawer.trackers} counters={drawer.counters} heldDice={drawer.heldDice} canAct={canAct} />
-        {/* DA13: uses another PC rolls (Cannonball): the ally's prompt, the druid's ask, the GM's pending list. */}
-        <DrawerBoundary label="The prompts">
-          <DrawerPrompts campaignId={campaignId} role={role} map={map} characterId={characterId} drawer={drawer} canAct={canAct} />
-        </DrawerBoundary>
-        <FeatureList campaignId={campaignId} role={role} map={map} characterId={characterId} drawer={drawer} canAct={canAct} />
+    <section className="cm-card sd-extras" aria-label={`${drawer.name}: class controls`} data-testid="sheet-extras">
+      <h2 className="cm-h">{drawer.name}</h2>
+      <div className="sd-grey" data-greyed={here.canAct ? "false" : "true"}>
+        {chips ? (
+          <ul className="sd-chips" aria-label="Class counters">
+            {drawer.counters.map((c) => (
+              <li key={c.key} className="sd-chip">
+                {c.label}: {c.value}
+              </li>
+            ))}
+            {drawer.heldDice.map((d) => (
+              <li key={d.id} className="sd-chip">
+                d{d.sides} {d.kind}
+                {d.value !== null ? `: ${d.value}` : ""}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {drawer.canFly ? <FlyingToggle {...here} flying={drawer.flying} /> : null}
+        {form ? <BeastformControl {...here} form={form} /> : null}
+        {drawer.martial ? <StanceControls {...here} martial={drawer.martial} features={drawer.features} /> : null}
       </div>
-    </div>
+    </section>
   );
 }

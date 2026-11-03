@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { api } from "../../convex/_generated/api";
 import { expectNoSeriousA11yViolations } from "./a11y";
-import { enableHud, hudScene } from "./hud/helpers";
+import { hudScene } from "./hud/helpers";
 
 // Plan combat-hud H3.1 (docs/tasks/TASK-HUD-H3.1.md): with the HUD on, Use on a card raises it ("Casting · pick a
 // target") and opens the picking panel (CmpPicking 'One target · a card', Main 'Picking a target'): the card's art and
@@ -78,19 +78,19 @@ test("a player casts a card through the picking panel: rule, rows, rider with it
   }
 });
 
-test("live: a card cast out of range waits for the GM; the GM's classic list shows it; Withdraw removes it", async ({ browser }) => {
+test("live: a card cast out of range waits for the GM; the GM's queue shows it; Withdraw removes it", async ({ browser }) => {
   test.setTimeout(300_000);
   const s = await hudScene(browser);
   const { gm, player, enemies, client, campaignId } = s;
   try {
-    await enableHud(gm, false);
     for (const page of [gm, player]) {
       await page.setViewportSize({ width: 1440, height: 900 });
       await page.goto(s.url);
     }
     await expect(player.getByTestId("combat-hud")).toBeVisible();
     await expect(hand(player)).toHaveAttribute("data-mode", "own", { timeout: 30_000 });
-    const sanctions = gm.getByTestId("combat-card-sanction");
+    // The GM's HUD queue ("Waiting on you", plan combat-hud H5.1) lists the out-of-range cast.
+    const sanctions = gm.getByTestId("hud-queue").getByTestId("hud-queue-range");
     await expect(sanctions).toHaveCount(0);
 
     await useCard(player, "Vicious Entangle");

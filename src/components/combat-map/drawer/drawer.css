@@ -1,78 +1,9 @@
 /*
- * The Combat Map sheet drawer (plan sheet-drawer, SD6): a native modal <dialog> docked to the right edge, over the live
- * map; full screen at 760 px and below. Colours are the page's tokens (--cm-*, combat-map.css); the dialog sits in the
- * top layer but keeps inheriting them from the page root.
+ * The sheet drawer's kept parts (plan sheet-drawer, SD6; combat-hud H8.1 deleted the drawer dialog): the class
+ * controls in the HUD's tools drawer (`SheetExtras`: counters, Flying, Beastform, stances) and the D5 Use and feature
+ * Use flow the HUD's sheet shows. Colours are the page's tokens (--cm-*, combat-map.css).
  */
 
-.sd-drawer {
-  margin: 0 0 0 auto;
-  padding: 0;
-  inset: 0 0 0 auto;
-  width: min(440px, 100%);
-  max-width: 100%;
-  height: 100dvh;
-  max-height: 100dvh;
-  border: 0;
-  border-left: 1px solid var(--cm-border, #33444a);
-  background: var(--cm-page, #0d1417);
-  color: var(--cm-text, #e6ecea);
-  box-shadow: -18px 0 50px rgba(0, 0, 0, 0.5);
-}
-.sd-drawer:not([open]) {
-  display: none;
-}
-.sd-drawer::backdrop {
-  background: rgba(5, 9, 11, 0.4);
-}
-.sd-shell {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-.sd-header {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--cm-card-border, #253338);
-}
-.sd-title {
-  margin: 0;
-  font-family: var(--cm-display, serif);
-  font-size: 20px;
-  letter-spacing: 0.06em;
-}
-.sd-close {
-  min-width: 44px;
-  min-height: 44px;
-}
-.sd-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 14px 16px;
-}
-.sd-footer {
-  flex: none;
-  display: flex;
-  justify-content: flex-end;
-  padding: 12px 16px;
-  border-top: 1px solid var(--cm-card-border, #253338);
-}
-.sd-body {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.sd-name {
-  margin: 0;
-  font-family: var(--cm-display, serif);
-  font-size: 18px;
-  color: var(--cm-acc-soft, #f3cf86);
-}
 .sd-grey {
   display: flex;
   flex-direction: column;
@@ -84,7 +15,6 @@
 
 /* ---------------------------------------------------------------- switch (the look of CA6's "Play for this character") */
 
-.sd-switch,
 .sd-check {
   display: inline-flex;
   align-items: center;
@@ -92,52 +22,6 @@
   min-height: 44px;
   font-size: 14px;
   cursor: pointer;
-}
-.sd-switch {
-  position: relative;
-  align-self: flex-start;
-}
-.sd-switch input {
-  position: absolute;
-  width: 44px;
-  height: 24px;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-  z-index: 1;
-}
-.sd-switch-track {
-  position: relative;
-  flex: none;
-  width: 44px;
-  height: 24px;
-  border-radius: 999px;
-  background: var(--cm-field);
-  border: 1px solid var(--cm-border);
-  transition: background 0.15s ease;
-}
-.sd-switch-track::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--cm-muted);
-  transition: transform 0.15s ease;
-}
-.sd-switch input:checked + .sd-switch-track {
-  background: var(--cm-acc-bg);
-  border-color: var(--cm-acc);
-}
-.sd-switch input:checked + .sd-switch-track::after {
-  transform: translateX(20px);
-  background: var(--cm-acc);
-}
-.sd-switch input:focus-visible + .sd-switch-track {
-  outline: 2px solid var(--cm-acc);
-  outline-offset: 2px;
 }
 .sd-check input {
   width: 20px;
@@ -147,63 +31,6 @@
 
 /* ---------------------------------------------------------------- trackers */
 
-.sd-trackers {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-.sd-tracker {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px;
-  background: var(--cm-card, #141e22);
-  border: 1px solid var(--cm-card-border, #253338);
-  border-radius: 10px;
-}
-.sd-pips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  min-height: 14px;
-}
-.sd-pip {
-  width: 14px;
-  height: 14px;
-  border-radius: 4px;
-  border: 1.5px solid var(--cm-muted, #9fb2b6);
-}
-.sd-pip-on {
-  background: var(--cm-acc, #e3b45a);
-  border-color: var(--cm-acc, #e3b45a);
-}
-.sd-pip-on[data-resource="hp"] {
-  background: #d9674f;
-  border-color: #d9674f;
-}
-.sd-pip-on[data-resource="stress"] {
-  background: #9a7be0;
-  border-color: #9a7be0;
-}
-.sd-pip-on[data-resource="armor"] {
-  background: #7fa5b5;
-  border-color: #7fa5b5;
-}
-.sd-tracker-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-}
-.sd-tracker-row .cm-btn {
-  min-width: 44px;
-  min-height: 44px;
-}
-.sd-tracker-value {
-  font-family: var(--cm-display, serif);
-  font-size: 13px;
-  text-align: center;
-}
 .sd-chips {
   grid-column: 1 / -1;
   margin: 0;
@@ -237,27 +64,12 @@
 
 /* ---------------------------------------------------------------- features */
 
-.sd-list {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
 .sd-flying {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
 }
-.sd-section-title {
-  margin: 0 0 8px;
-  font-family: var(--cm-display, serif);
-  font-size: 14px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--cm-muted, #9fb2b6);
-}
-.sd-features,
-.sd-uses,
 .sd-shift-list {
   margin: 0;
   padding: 0;
@@ -265,40 +77,6 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-.sd-feature {
-  padding: 10px 12px;
-  background: var(--cm-card, #141e22);
-  border: 1px solid var(--cm-card-border, #253338);
-  border-radius: 10px;
-}
-.sd-feature[data-state="exhausted"],
-.sd-locked {
-  opacity: 0.6;
-}
-.sd-feature-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px 10px;
-}
-.sd-feature-name {
-  margin: 0;
-  font-family: var(--cm-display, serif);
-  font-size: 15px;
-}
-.sd-feature-text {
-  margin: 6px 0 0;
-  font-family: var(--cm-serif, serif);
-  font-size: 15px;
-  line-height: 1.35;
-  color: var(--cm-text, #e6ecea);
-}
-.sd-badges {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 4px;
 }
 .sd-badge {
   padding: 2px 8px;
@@ -308,37 +86,11 @@
   color: var(--cm-muted, #9fb2b6);
   white-space: nowrap;
 }
-.sd-badge-kind {
-  color: var(--cm-acc-soft, #f3cf86);
-  border-color: var(--cm-acc, #e3b45a);
-}
 .sd-badge-on {
   margin-left: 8px;
   color: var(--cm-live-text, #9fe7bb);
   border-color: var(--cm-live-dot, #5fd38d);
 }
-.sd-badge-off {
-  color: var(--cm-danger, #ffb4a8);
-  border-color: var(--cm-danger-border, #5a3330);
-}
-.sd-badge-info {
-  color: var(--cm-fear-text, #c6b6f2);
-  border-color: var(--cm-fear-border, #5b4a8f);
-}
-.sd-uses {
-  margin-top: 8px;
-}
-.sd-use {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px 10px;
-}
-.sd-use[data-ready="false"] .sd-use-name {
-  opacity: 0.6;
-}
-.sd-use .cm-btn,
 .sd-shift .cm-btn,
 .sd-refocus .cm-btn {
   min-height: 44px;
@@ -384,16 +136,3 @@
 }
 
 /* ---------------------------------------------------------------- phones */
-
-@media (max-width: 760px) {
-  .sd-drawer {
-    width: 100%;
-    inset: 0;
-    border-left: 0;
-  }
-}
-@media (max-width: 359px) {
-  .sd-trackers {
-    grid-template-columns: 1fr;
-  }
-}

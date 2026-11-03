@@ -1,14 +1,17 @@
 /**
- * The Combat Map sheet drawer (plan sheet-drawer, SD6): the trackers' optimistic step (the sheet's limits), the feature
- * sections in plan order, the kind / cost / limit / state badges, rank locks, the D5 Uses under "Other features" (Q15),
- * the Beastform and Flying controls (Q10, Q16); and the drawer itself with Convex mocked: a labelled modal dialog,
- * loading and error states, intents sent by the trackers and controls, the GM's greyed view until "Play for this
- * character", and the "Full sheet" link.
+ * The Combat Map sheet drawer's models and kept controls (plan sheet-drawer, SD6): the trackers' optimistic step (the
+ * sheet's limits), the feature sections in plan order, the kind / cost / limit / state badges, rank locks, the D5 Uses
+ * under "Other features" (Q15); and, with Convex mocked, the class controls the HUD's tools drawer keeps
+ * (`SheetExtras`: counters, Flying Q16, Beastform Q10, stances Q5, greyed for the GM until "Play for this character")
+ * and the D5 Use the HUD's sheet shows. Plan combat-hud H8.1 deleted the drawer dialog: the HUD's sheet panel covers its
+ * trackers, features, Use flow, Play-for and loading / error states (tests/unit/hud/sheet-panel.test.tsx).
  */
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { SheetDrawer } from "@/components/combat-map/drawer";
+import { SheetExtras } from "@/components/combat-map/drawer";
+import { D5Use } from "@/components/combat-map/drawer/list/controls";
+import type { CombatMapSummary } from "@/components/combat-map/slots";
 import {
   activeForm,
   D5_USES,
@@ -64,17 +67,6 @@ vi.mock("convex/react", () => ({
 vi.mock("@/components/combat-map/drawer/use", () => ({
   FeatureUse: ({ featureId, useId }: { featureId: string; useId?: string }) => <div data-testid="feature-use">{`${featureId} ${useId ?? ""}`}</div>,
 }));
-
-beforeAll(() => {
-  HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
-    this.setAttribute("open", "");
-  };
-  HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
-    if (!this.hasAttribute("open")) return;
-    this.removeAttribute("open");
-    this.dispatchEvent(new Event("close"));
-  };
-});
 
 afterEach(() => {
   calls.length = 0;
@@ -243,175 +235,62 @@ describe("feature list model", () => {
   });
 });
 
-// ---------------------------------------------------------------- the drawer
+// ---------------------------------------------------------------- the class controls (SheetExtras) and D5 Use
 
-function open(role: "gm" | "player" = "player", onClose = vi.fn()) {
-  render(<SheetDrawer campaignId={CAMPAIGN} role={role} map={null} characterId={ASH} open onClose={onClose} />);
-  return { dialog: screen.getByRole("dialog", { name: "Character sheet" }), onClose };
+const MAP = { _id: "m1" as Id<"combatMaps">, name: "Road", live: true, source: "generated", w: 20, h: 20 } as unknown as CombatMapSummary;
+const ASH_TOKEN = "t-ash" as Id<"combatTokens">;
+
+/** SheetExtras for the player's own PC (Ash's token is theirs), or for the GM with Ash's token selected. */
+function open(role: "gm" | "player" = "player") {
+  queries["combatTokens:party"] = [{ _id: ASH_TOKEN, kind: "pc", characterId: ASH, mine: role === "player" }];
+  render(<SheetExtras campaignId={CAMPAIGN} role={role} map={MAP} selectedTokenId={role === "gm" ? ASH_TOKEN : null} />);
 }
 
-describe("SheetDrawer", () => {
-  it("is an open, labelled modal dialog with a loading line, the Full sheet link and a close button", () => {
-    const { dialog, onClose } = open();
-    expect(dialog.hasAttribute("open")).toBe(true);
-    expect(within(dialog).getByRole("status")).toHaveTextContent("Loading the sheet");
-    expect(within(dialog).getByRole("link", { name: "Full sheet" })).toHaveAttribute("href", `/campaigns/${CAMPAIGN}/party/${ASH}`);
-    fireEvent.click(within(dialog).getByRole("button", { name: "Close character sheet" }));
-    expect(onClose).toHaveBeenCalledTimes(1);
-  });
+const extras = () => screen.getByRole("region", { name: "Ash: class controls" });
 
-  it("shows every section, badge and state", () => {
+describe("SheetExtras (the drawer's class controls, kept in the HUD's tools drawer by H8.1)", () => {
+  it("renders nothing for a character without counters, Flying, Beastform or stances, and nothing without a PC", () => {
     queries["combatFeatures:drawer"] = drawer();
-    const { dialog } = open();
-    const titles = within(dialog)
-      .getAllByRole("heading", { level: 3 })
-      .map((h) => h.textContent);
-    expect(titles).toEqual(["Hope feature", "Class features", "Subclass", "Ancestry", "Other features"]);
-
-    const gifted = dialog.querySelector('[data-feature="subclass:troubadour:gifted-performer"]') as HTMLElement;
-    expect(gifted.dataset.state).toBe("exhausted");
-    expect(within(gifted).getByText("Used · Back after a long rest")).toBeTruthy();
-    expect(within(gifted).getByRole("button", { name: "Use Gifted Performer" })).toBeDisabled();
-
-    const scene = dialog.querySelector('[data-feature="hope:bard"]') as HTMLElement;
-    expect(within(scene).getByText("3 Hope")).toBeTruthy();
-    expect(within(scene).getByRole("button", { name: "Use Make a Scene" })).toBeEnabled();
-
-    const quick = dialog.querySelector('[data-feature="ancestry:elf:quick-reactions"]') as HTMLElement;
-    expect(within(quick).getByText("With an attack")).toBeTruthy();
-    expect(within(quick).queryByRole("button")).toBeNull();
-
-    const trance = dialog.querySelector('[data-feature="ancestry:elf:celestial-trance"]') as HTMLElement;
-    expect(trance.closest("[data-section]")?.getAttribute("data-section")).toBe("other");
-    expect(within(trance).getByText("Applied at rest")).toBeTruthy();
-    expect(within(trance).queryByRole("button")).toBeNull();
-
-    const subclass = dialog.querySelector('[data-section="subclass"]') as HTMLElement;
-    expect(within(subclass).getByText("Troubadour · Specialization card")).toBeTruthy();
-    expect(within(subclass).getByText("Troubadour · Mastery card")).toBeTruthy();
-  });
-
-  it("opens the feature's Use flow", () => {
-    queries["combatFeatures:drawer"] = drawer();
-    const { dialog } = open();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Use Make a Scene" }));
-    expect(screen.getByTestId("feature-use")).toHaveTextContent("hope:bard main");
-  });
-
-  it("sends tracker intents with an optimistic update on the drawer", async () => {
-    queries["combatFeatures:drawer"] = drawer();
-    const { dialog } = open();
-    const trackers = within(dialog).getByRole("region", { name: "Trackers" });
-    await act(async () => {
-      fireEvent.click(within(trackers).getByRole("button", { name: "Mark 1 Stress" }));
-    });
-    expect(calls).toEqual([{ name: "characters:adjustResource", args: { characterId: ASH, resource: "stress", delta: 1 } }]);
-
-    let written: Drawer | null = null;
-    const store: FakeStore = { getQuery: () => drawer(), setQuery: (_ref, _args, value) => (written = value as Drawer) };
-    optimistic["characters:adjustResource"]!(store, { characterId: ASH, resource: "hope", delta: 1 });
-    expect(written!.trackers.hope.value).toBe(3);
-
-    // An empty track's − is off (the sheet's limit).
-    expect(within(within(trackers).getByRole("group", { name: "Armor" })).getByRole("button", { name: "Clear 1 Armor Slot" })).toBeDisabled();
-  });
-
-  it("shows a refused intent as an alert", async () => {
-    queries["combatFeatures:drawer"] = drawer();
-    results["characters:adjustResource"] = [new Error("Nope")];
-    const { dialog } = open();
-    await act(async () => {
-      fireEvent.click(within(dialog).getByRole("button", { name: "Gain 1 Hope" }));
-    });
-    expect(within(dialog).getByRole("alert")).toBeTruthy();
-  });
-
-  it("greys the GM's view until Play for this character is on", async () => {
-    queries["combatFeatures:drawer"] = drawer();
-    const { dialog } = open("gm");
-    const grey = dialog.querySelector(".sd-grey") as HTMLElement;
-    expect(grey.dataset.greyed).toBe("true");
-    expect(within(dialog).getByRole("button", { name: "Mark 1 Stress" })).toBeDisabled();
-    expect(within(dialog).getByRole("button", { name: "Use Make a Scene" })).toBeDisabled();
-    // DA6: the switch is the GM's server-side one (playFor.set, an intent with an optimistic update).
-    await act(async () => {
-      fireEvent.click(within(dialog).getByRole("switch", { name: "Play for this character" }));
-    });
-    expect(calls).toEqual([{ name: "playFor:set", args: { campaignId: CAMPAIGN, characterId: ASH, on: true } }]);
-    let written: unknown = null;
-    optimistic["playFor:set"]!({ getQuery: () => [], setQuery: (_ref, _args, value) => (written = value) }, { campaignId: CAMPAIGN, characterId: ASH, on: true });
-    expect(written).toEqual([ASH]);
-  });
-
-  it("reads Play for this character from the server: on whenever the drawer opens, until the GM turns it off (DA6)", async () => {
-    queries["combatFeatures:drawer"] = drawer();
-    queries["playFor:list"] = [ASH];
-    const { dialog } = open("gm");
-    expect(within(dialog).getByRole("switch", { name: "Play for this character" })).toBeChecked();
-    expect((dialog.querySelector(".sd-grey") as HTMLElement).dataset.greyed).toBe("false");
-    expect(within(dialog).getByRole("button", { name: "Mark 1 Stress" })).toBeEnabled();
-    await act(async () => {
-      fireEvent.click(within(dialog).getByRole("switch", { name: "Play for this character" }));
-    });
-    expect(calls).toEqual([{ name: "playFor:set", args: { campaignId: CAMPAIGN, characterId: ASH, on: false } }]);
-    let written: unknown = null;
-    optimistic["playFor:set"]!({ getQuery: () => [ASH], setQuery: (_ref, _args, value) => (written = value) }, { campaignId: CAMPAIGN, characterId: ASH, on: false });
-    expect(written).toEqual([]);
-    // Another character's switch is its own.
+    open();
+    expect(screen.queryByTestId("sheet-extras")).toBeNull();
     cleanup();
-    queries["playFor:list"] = ["ch-other"];
-    const other = open("gm");
-    expect(within(other.dialog).getByRole("switch", { name: "Play for this character" })).not.toBeChecked();
+    queries["combatFeatures:drawer"] = drawer({ canFly: true });
+    queries["combatTokens:party"] = [];
+    render(<SheetExtras campaignId={CAMPAIGN} role="player" map={MAP} selectedTokenId={null} />);
+    expect(screen.queryByTestId("sheet-extras")).toBeNull();
   });
 
-  it("shows a refused switch as an alert", async () => {
-    queries["combatFeatures:drawer"] = drawer();
-    results["playFor:set"] = [new Error("Nope")];
-    const { dialog } = open("gm");
-    await act(async () => {
-      fireEvent.click(within(dialog).getByRole("switch", { name: "Play for this character" }));
-    });
-    expect(within(dialog).getByRole("alert")).toBeTruthy();
-  });
-
-  it("has no switch for a player", () => {
-    queries["combatFeatures:drawer"] = drawer();
-    const { dialog } = open("player");
-    expect(within(dialog).queryByRole("switch")).toBeNull();
+  it("lists the class counters and held dice", () => {
+    queries["combatFeatures:drawer"] = drawer({ counters: [{ key: "rally", label: "Rally die", value: "d6" }], heldDice: [{ id: "h1", sides: 6, kind: "Prayer", value: 4 }] } as unknown as Partial<Drawer>);
+    open();
+    const chips = within(extras()).getByRole("list", { name: "Class counters" });
+    expect(chips).toHaveTextContent("Rally die: d6");
+    expect(chips).toHaveTextContent("d6 Prayer: 4");
   });
 
   it("toggles Flying for a character with a flying feature (Q16)", async () => {
     queries["combatFeatures:drawer"] = drawer({ canFly: true });
-    const { dialog } = open();
-    const flying = within(dialog).getByRole("button", { name: "Flying" });
+    open();
+    const flying = within(extras()).getByRole("button", { name: "Flying" });
     expect(flying).toHaveAttribute("aria-pressed", "false");
     await act(async () => {
       fireEvent.click(flying);
     });
     expect(calls[0]).toMatchObject({ name: "combatFeatures:setFlying", args: { campaignId: CAMPAIGN, characterId: ASH, flying: true } });
+    let written: Drawer | null = null;
+    optimistic["combatFeatures:setFlying"]!({ getQuery: () => drawer({ canFly: true }), setQuery: (_ref, _args, value) => (written = value as Drawer) }, { characterId: ASH, flying: true });
+    expect(written!.flying).toBe(true);
   });
 
   it("drops out of the Beastform (Q10)", async () => {
     queries["combatFeatures:drawer"] = drawer({ features: [feature({ featureId: "beastform:agile-scout:agile", source: "beastform", name: "Agile", how: "passive", uses: [] })] });
-    const { dialog } = open();
-    const form = within(dialog).getByRole("group", { name: "Beastform" });
+    open();
+    const form = within(extras()).getByRole("group", { name: "Beastform" });
     expect(form).toHaveTextContent("Agile Scout");
     await act(async () => {
       fireEvent.click(within(form).getByRole("button", { name: "Drop out of Agile Scout" }));
     });
     expect(calls[0]).toMatchObject({ name: "classFeatures:endEffect", args: { characterId: ASH, effectId: "beastform" } });
-  });
-
-  it("keeps the D5 Use of an out-of-combat feature (Q15 a)", async () => {
-    const commune = feature({ featureId: "class:witch:commune", source: "class", name: "Commune", usage: "outOfCombat", state: "outOfCombat" });
-    queries["combatFeatures:drawer"] = drawer({ features: [commune] });
-    results["classFeatures:use"] = [{ summary: "used Commune: d6 4; best 4", roll: null }];
-    const { dialog } = open();
-    await act(async () => {
-      fireEvent.click(within(dialog).getByRole("button", { name: "Use Commune" }));
-    });
-    expect(calls[0]).toMatchObject({ name: "classFeatures:use", args: { characterId: ASH, featureKey: "commune", params: {} } });
-    expect(within(dialog).getByText("used Commune: d6 4; best 4")).toBeTruthy();
   });
 
   it("shows the Martial Artist's stances and shifts with a Focus (Q5)", async () => {
@@ -420,8 +299,8 @@ describe("SheetDrawer", () => {
       feature({ featureId: "stance:martial-artist:reed", source: "stance", name: "Reed Stance", how: "passive", uses: [] }),
     ];
     queries["combatFeatures:drawer"] = drawer({ features: stances, martial: { known: ["mountain", "reed"], active: "mountain", focus: 2, max: 6, refocusReady: true } });
-    const { dialog } = open();
-    const group = within(dialog).getByRole("group", { name: "Stances" });
+    open();
+    const group = within(extras()).getByRole("group", { name: "Stances" });
     expect(within(group).queryByRole("button", { name: /Shift into Mountain Stance/ })).toBeNull();
     await act(async () => {
       fireEvent.click(within(group).getByRole("button", { name: "Shift into Reed Stance, spending 1 Focus" }));
@@ -430,35 +309,37 @@ describe("SheetDrawer", () => {
     expect(within(group).getByRole("button", { name: "Refocus" })).toBeDisabled();
   });
 
-  it("keeps a failing read inside the drawer (rule 11)", () => {
-    throwOnQuery = new Error("FORBIDDEN");
-    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const { dialog } = open();
-    expect(within(dialog).getByRole("alert")).toHaveTextContent("The character sheet failed to load");
-    expect(within(dialog).getByRole("link", { name: "Full sheet" })).toBeTruthy();
-    spy.mockRestore();
+  it("greys the GM's controls for the selected PC until Play for this character is on (DA6)", () => {
+    queries["combatFeatures:drawer"] = drawer({ canFly: true });
+    open("gm");
+    expect((extras().querySelector(".sd-grey") as HTMLElement).dataset.greyed).toBe("true");
+    expect(within(extras()).getByRole("button", { name: "Flying" })).toBeDisabled();
+    cleanup();
+    queries["playFor:list"] = [ASH];
+    open("gm");
+    expect((extras().querySelector(".sd-grey") as HTMLElement).dataset.greyed).toBe("false");
+    expect(within(extras()).getByRole("button", { name: "Flying" })).toBeEnabled();
   });
 
-  it("keeps keys pressed in the drawer from the map's window shortcuts (Esc must not drop the selected token)", () => {
-    queries["combatFeatures:drawer"] = drawer();
-    const heard = vi.fn();
-    window.addEventListener("keydown", heard);
-    const { dialog } = open();
-    fireEvent.keyDown(within(dialog).getByRole("button", { name: "Close character sheet" }), { key: "Escape" });
-    window.removeEventListener("keydown", heard);
-    expect(heard).not.toHaveBeenCalled();
+  it("shows a refused intent as an alert", async () => {
+    queries["combatFeatures:drawer"] = drawer({ canFly: true });
+    results["combatFeatures:setFlying"] = [new Error("Nope")];
+    open();
+    await act(async () => {
+      fireEvent.click(within(extras()).getByRole("button", { name: "Flying" }));
+    });
+    expect(within(extras()).getByRole("alert")).toBeTruthy();
   });
+});
 
-  it("calls onClose when the dialog closes (Esc) and renders no body while closed", () => {
-    queries["combatFeatures:drawer"] = drawer();
-    const onClose = vi.fn();
-    const { rerender } = render(<SheetDrawer campaignId={CAMPAIGN} role="player" map={null} characterId={ASH} open onClose={onClose} />);
-    const dialog = screen.getByRole("dialog", { name: "Character sheet" });
-    act(() => (dialog as HTMLDialogElement).close());
-    expect(onClose).toHaveBeenCalledTimes(1);
-    rerender(<SheetDrawer campaignId={CAMPAIGN} role="player" map={null} characterId={ASH} open={false} onClose={onClose} />);
-    expect(dialog.hasAttribute("open")).toBe(false);
-    expect(dialog.querySelector(".sd-shell")).toBeNull();
-    expect(onClose).toHaveBeenCalledTimes(1);
+describe("D5Use (the HUD's sheet shows it)", () => {
+  it("keeps the D5 Use of an out-of-combat feature (Q15 a)", async () => {
+    results["classFeatures:use"] = [{ summary: "used Commune: d6 4; best 4", roll: null }];
+    render(<D5Use characterId={ASH} canAct featureKey="commune" name="Commune" />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Use Commune" }));
+    });
+    expect(calls[0]).toMatchObject({ name: "classFeatures:use", args: { characterId: ASH, featureKey: "commune", params: {} } });
+    expect(screen.getByText("used Commune: d6 4; best 4")).toBeTruthy();
   });
 });

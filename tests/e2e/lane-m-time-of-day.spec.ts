@@ -1,6 +1,7 @@
 // Lane M (plan lanes, wave 5; dcm-bxp.54): the campaign's time of day outside the Witherwild. The GM advances Day → Dim
 // → Night on the dashboard's day card (TASK-CORE-CALENDAR) and sets it on the Combat Map header (one shared value);
-// the player sees it read-only, live.
+// the player sees it read-only, live: on the HUD's day disc and, with the dim-light rule, on the light pill in their
+// "Your character" drawer (plan combat-hud H8.1: players always get the HUD).
 
 import { expect, test } from "@playwright/test";
 
@@ -28,11 +29,15 @@ test("the GM's time of day reaches the player's dashboard and map header, read-o
     await player.goto(`/campaigns/${campaignId}/combat-map`);
     const select = gm.getByRole("combobox", { name: "Time of day" });
     await expect(select).toHaveValue("night");
-    const playerPill = player.getByTestId("combat-light-pill");
+    // The HUD's day disc: a read-only image for a player, named after the light.
+    await expect(player.getByTestId("hud-disc")).toHaveAttribute("aria-label", /Night light$/);
+    await player.getByRole("button", { name: "Your character", exact: true }).click();
+    const playerPill = player.getByRole("complementary", { name: "Your character" }).getByTestId("combat-light-pill");
     await expect(playerPill).toContainText("Night");
     await expect(player.getByRole("combobox", { name: "Time of day" })).toHaveCount(0);
 
     await select.selectOption("dim");
+    await expect(player.getByTestId("hud-disc")).toHaveAttribute("aria-label", /Dim light$/);
     await expect(playerPill).toContainText("Dim");
     await expect(playerPill).toContainText("ranged attacks at disadvantage");
   } finally {

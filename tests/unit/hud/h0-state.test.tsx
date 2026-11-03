@@ -1,81 +1,18 @@
 /**
- * The Combat HUD switch, state and tools drawer (plan combat-hud H0; docs/tasks/TASK-HUD-H0.md): the opt-in switch
- * (localStorage, ?hud= override, off by default and on the server), HudProvider's sheet / pick / drawer state and root
- * classes, and the drawer with its toggle buttons.
+ * The Combat HUD state and tools drawer (plan combat-hud H0; docs/tasks/TASK-HUD-H0.md): HudProvider's sheet / pick /
+ * drawer state and root classes, and the drawer with its toggle button. The opt-in switch and its tests went with the
+ * cut-over (plan combat-hud H8.1).
  */
-import { act, fireEvent, render, screen } from "@testing-library/react";
-import { renderToString } from "react-dom/server";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
-import { HUD_STORAGE_KEY, hudOverride, readHudEnabled, setHudEnabled, useHudEnabled } from "@/components/combat-map/hud/flag";
 import { HudProvider, hudRootClasses, sameSheet, useHud, type HudSheetTarget } from "@/components/combat-map/hud/state";
-import { HudSwitchButton, HudTools, MapToolsButton, toolsLabel } from "@/components/combat-map/hud/tools";
+import { HudTools, MapToolsButton, toolsLabel } from "@/components/combat-map/hud/tools";
 
 import type { Id } from "../../../convex/_generated/dataModel";
 
 const pc = (id: string): HudSheetTarget => ({ kind: "pc", characterId: id as Id<"characters"> });
 const enemy = (id: string): HudSheetTarget => ({ kind: "adversary", tokenId: id as Id<"combatTokens"> });
-
-function Flag() {
-  return <span data-testid="flag">{useHudEnabled() ? "on" : "off"}</span>;
-}
-
-beforeEach(() => {
-  window.localStorage.clear();
-  window.history.replaceState(null, "", "/campaigns/c1/combat-map");
-});
-afterEach(() => {
-  window.localStorage.clear();
-});
-
-describe("the HUD switch (flag.ts)", () => {
-  it("is off by default and on the server", () => {
-    expect(readHudEnabled()).toBe(false);
-    render(<Flag />);
-    expect(screen.getByTestId("flag")).toHaveTextContent("off");
-    window.localStorage.setItem(HUD_STORAGE_KEY, "1");
-    expect(renderToString(<Flag />)).toContain("off");
-  });
-
-  it("reads the stored choice and follows setHudEnabled without a reload", () => {
-    window.localStorage.setItem(HUD_STORAGE_KEY, "1");
-    render(<Flag />);
-    expect(screen.getByTestId("flag")).toHaveTextContent("on");
-    act(() => setHudEnabled(false));
-    expect(screen.getByTestId("flag")).toHaveTextContent("off");
-    expect(window.localStorage.getItem(HUD_STORAGE_KEY)).toBe("0");
-    act(() => setHudEnabled(true));
-    expect(screen.getByTestId("flag")).toHaveTextContent("on");
-  });
-
-  it("lets ?hud=1 / ?hud=0 override the stored value, and the toggle drops the override", () => {
-    expect(hudOverride("?hud=1")).toBe(true);
-    expect(hudOverride("?x=2&hud=0")).toBe(false);
-    expect(hudOverride("?hud=yes")).toBeNull();
-    expect(hudOverride("")).toBeNull();
-
-    window.history.replaceState(null, "", "/campaigns/c1/combat-map?hud=1&x=2");
-    expect(readHudEnabled()).toBe(true);
-    window.localStorage.setItem(HUD_STORAGE_KEY, "1");
-    window.history.replaceState(null, "", "/campaigns/c1/combat-map?hud=0");
-    expect(readHudEnabled()).toBe(false);
-
-    window.history.replaceState(null, "", "/campaigns/c1/combat-map?hud=1&x=2");
-    window.localStorage.setItem(HUD_STORAGE_KEY, "0");
-    act(() => setHudEnabled(false));
-    expect(window.location.search).toBe("?x=2");
-    expect(readHudEnabled()).toBe(false);
-  });
-
-  it("follows another tab's change (storage event)", () => {
-    render(<Flag />);
-    window.localStorage.setItem(HUD_STORAGE_KEY, "1");
-    act(() => {
-      window.dispatchEvent(new StorageEvent("storage", { key: HUD_STORAGE_KEY }));
-    });
-    expect(screen.getByTestId("flag")).toHaveTextContent("on");
-  });
-});
 
 describe("HudProvider", () => {
   function Probe() {
@@ -179,14 +116,5 @@ describe("the tools drawer", () => {
   it("names the player's drawer after their classic column", () => {
     expect(toolsLabel("gm")).toBe("Map tools");
     expect(toolsLabel("player")).toBe("Your character");
-  });
-
-  it("the switch button flips the view and says which way it goes", () => {
-    render(<HudSwitchButton />);
-    fireEvent.click(screen.getByRole("button", { name: "Try the new combat HUD" }));
-    expect(window.localStorage.getItem(HUD_STORAGE_KEY)).toBe("1");
-    fireEvent.click(screen.getByRole("button", { name: "Back to the classic view" }));
-    expect(window.localStorage.getItem(HUD_STORAGE_KEY)).toBe("0");
-    expect(screen.getByRole("button", { name: "Try the new combat HUD" })).toBeInTheDocument();
   });
 });

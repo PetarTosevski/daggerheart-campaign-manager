@@ -7,12 +7,19 @@ import { cardsForDomains, getClass } from "../../src/lib/srd";
 import { signInAsTestGm } from "./fixtures";
 import { convexAs, openCombatMap } from "./visual/helpers";
 
-// Plan sheet-drawer SD5 (docs/tasks/TASK-SD-SD5.md), in two browsers: riders on the Attack bar and the after-roll step.
-// - A rogue's Sneak Attack comes from positions (Q9, CB p.42): an ally token next to the Bandit adds it, no toggle.
+// Plan sheet-drawer SD5 (docs/tasks/TASK-SD-SD5.md), ported to the Combat HUD by plan combat-hud H8.1 (the classic
+// Attack bar is gone): riders in the HUD's attack picker (`hud-pick`, "With this attack") and the after-roll hold.
 // - A ranger's Hold Them Off (CB p.38): 3 Hope, the same roll against two more Bandits, Hit on all three.
 // - A warlock's Patron's Boon after a miss (HF p.14, Q1): the roll waits with Miss only; Use rerolls with advantage.
-// - Rage Up (CB p.330), the Blade card that rides on an attack, finally usable: a Stress, +twice Strength to the damage.
+// Dropped in the port (covered elsewhere):
+// - A rogue's Sneak Attack from an ally's position: tests/convex/combat-riders.test.ts "Sneak Attack (Q9): added when
+//   an ally's token is within Melee of the target, not otherwise; ...".
+// - Rage Up riding on an attack: tests/convex/combat-riders.test.ts "Rage Up (CB p.330): a Stress per Rage Up, +twice
+//   Strength to the damage each time; ..." and tests/unit/hud/attack-pick.test.tsx "weapon tiles, roll chips, riders
+//   with cost pills, one primary; the send and the result line" / "builds combatActions.attack's arguments: ...".
 // The Bandits are custom blocks any roll hits (Difficulty 1); the Ogre one only a critical hits (Difficulty 40, beyond any roll of these characters).
+
+test.use({ actionTimeout: 30_000 });
 
 const PLAYER = "e2e-player@example.test";
 
@@ -96,6 +103,7 @@ async function riderScene(page: Page, browser: Browser, classId: string, subclas
   }
   await client.mutation(api.encounters.start, { campaignId, encounterId });
   const { mapId } = await client.mutation(api.combatMaps.create, { campaignId, size: "medium", name: "Old road", idempotencyKey: crypto.randomUUID() });
+  await client.mutation(api.combatMaps.setLive, { campaignId, mapId });
   await client.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
   await client.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId, instanceIds: instances.map((i) => i.instanceId), idempotencyKey: crypto.randomUUID() });
   const list = await client.query(api.combatTokens.list, { campaignId, mapId });
@@ -122,33 +130,36 @@ async function sheetOf(s: Scene) {
   return (await s.client.query(api.characters.get, { characterId: s.characterId }))!.sheet;
 }
 
-/** Opens the player's Combat Map and picks `target` on the board; returns the Attack card. */
-async function aim(s: Scene, target: string) {
-  await s.player.goto(s.url);
-  const attackCard = s.player.getByRole("region", { name: "Attack", exact: true });
-  await expect(attackCard.getByTestId("combat-attack-bar")).toBeVisible({ timeout: 30_000 });
-  await s.player.getByRole("region", { name: "Battle map" }).getByRole("button", { name: new RegExp(`^${target}, Enemy`) }).click();
-  await expect(attackCard.getByRole("list", { name: "Enemies in sight" }).getByRole("button", { name: new RegExp(`^${target},`) })).toHaveAttribute("aria-pressed", "true");
-  return attackCard;
+/** How many public feed rows are Ash's attacks with `rider` ("Ash attacks with Rapier: … (Patron’s Boon) → …"). */
+async function attacksWith(s: Scene, rider: string) {
+  const feed = await s.client.query(api.feed.list, { campaignId: s.campaignId, paginationOpts: { numItems: 20, cursor: null } });
+  return feed.page.filter((r) => r.summary.startsWith("Ash attacks") && r.summary.includes(`(${rider})`)).length;
 }
 
-test("a rogue's Sneak Attack comes from an ally's position next to the target, without a toggle", async ({ page, browser }) => {
-  test.setTimeout(240_000);
-  const s = await riderScene(page, browser, "rogue", "nightwalker", [{ name: "Bandit", difficulty: 1, x: 6, y: 10 }]);
-  try {
-    // An ally token right next to the Bandit (CB p.42: "while an ally is within Melee range of your target").
-    const { tokenId } = await s.client.mutation(api.combatTokens.addCustom, { campaignId: s.campaignId, mapId: s.mapId, name: "Hound", hp: 3, side: "ally", idempotencyKey: crypto.randomUUID() });
-    await s.client.mutation(api.combatTokens.move, { campaignId: s.campaignId, tokenId, x: 7, y: 10 });
-    const attackCard = await aim(s, "Bandit");
-    await attackCard.getByRole("button", { name: "⚔ Attack Bandit with Rapier" }).click();
-    const result = attackCard.getByRole("region", { name: "Attack result" });
-    await expect(result.getByTestId("combat-verdict")).toHaveText(/Bandit\s*(Hit|Defeated)/);
-    await expect(result.getByTestId("combat-attack-riders")).toContainText("Sneak Attack");
-    await expect(result).not.toContainText(/\b(HP|Difficulty|threshold|Minor|Major|Severe)\b/);
-  } finally {
-    await s.closePlayer();
-  }
-});
+const panelOf = (page: Page) => page.getByTestId("hud-pick");
+const rowOf = (page: Page, tokenId: string) => panelOf(page).locator(`[data-testid="hud-pick-row"][data-token="${tokenId}"]`);
+
+/** Opens the player's attack picker from Ash's action ring (H3.4) and picks `tokenId`'s row; returns the panel. */
+async function aim(s: Scene, tokenId: string) {
+  const { player } = s;
+  await player
+    .getByRole("region", { name: "Battle map" })
+    .getByRole("button", { name: /^Open Ash’s sheet \(your character\)/ })
+    .click();
+  const open = player.getByRole("toolbar", { name: "Your actions (Ash)" }).getByRole("button", { name: "Attack" });
+  await expect(open).toBeEnabled({ timeout: 30_000 });
+  await open.click();
+  const panel = panelOf(player);
+  await expect(panel).toBeVisible();
+  await rowOf(player, tokenId).click();
+  await expect(rowOf(player, tokenId)).toHaveAttribute("aria-pressed", "true");
+  return panel;
+}
+
+async function openMap(s: Scene) {
+  await s.player.goto(s.url);
+  await expect(s.player.getByTestId("combat-hud")).toBeVisible({ timeout: 30_000 });
+}
 
 test("a ranger's Hold Them Off: 3 Hope, the same roll against two more Bandits", async ({ page, browser }) => {
   test.setTimeout(240_000);
@@ -159,17 +170,28 @@ test("a ranger's Hold Them Off: 3 Hope, the same roll against two more Bandits",
   ]);
   try {
     await s.playerClient.mutation(api.characters.adjustResource, { characterId: s.characterId, resource: "hope", delta: 4 });
-    const attackCard = await aim(s, "Bandit");
-    const riders = attackCard.getByRole("group", { name: "With this attack" });
-    await riders.getByRole("checkbox", { name: /Hold Them Off/ }).check();
+    await openMap(s);
+    const [bandit] = s.tokens;
+    const panel = await aim(s, bandit!.tokenId);
+    const riders = panel.getByTestId("hud-attack-riders");
+    const hold = riders.getByRole("switch", { name: /^Hold Them Off/ });
+    await hold.click();
+    await expect(hold).toHaveAttribute("aria-checked", "true");
     const more = riders.getByRole("group", { name: "Hold Them Off: more targets" });
     await more.getByRole("button", { name: "Wolf" }).click();
     await more.getByRole("button", { name: "Boar" }).click();
-    await attackCard.getByRole("button", { name: "⚔ Attack Bandit with Rapier" }).click();
-    const result = attackCard.getByRole("region", { name: "Attack result" });
-    await expect(result.getByTestId("combat-verdict")).toHaveCount(3);
-    await expect(result.getByTestId("combat-attack-riders")).toContainText("Hold Them Off");
-    for (const name of ["Bandit", "Wolf", "Boar"]) expect(await hpOf(s, name)).toBeGreaterThan(0);
+    await expect(more.getByRole("button", { name: "Wolf" })).toHaveAttribute("aria-pressed", "true");
+    await expect(more.getByRole("button", { name: "Boar" })).toHaveAttribute("aria-pressed", "true");
+    await expect(panel.getByTestId("hud-pick-pay")).toContainText("3 Hope");
+    await panel.getByTestId("hud-pick-go").click();
+    await expect(panel).toHaveCount(0);
+
+    const result = s.player.getByTestId("hud-result");
+    await expect(result.getByTestId("hud-result-row")).toHaveCount(3, { timeout: 30_000 });
+    for (const name of ["Bandit", "Wolf", "Boar"]) await expect(result.getByTestId("hud-result-row").filter({ hasText: name })).toContainText(/Hit|Defeated/);
+    await expect(result).toContainText("With Hold Them Off");
+    await expect(result).not.toContainText(/\b(HP|Difficulty|threshold|Minor|Major|Severe)\b/);
+    for (const name of ["Bandit", "Wolf", "Boar"]) await expect.poll(() => hpOf(s, name)).toBeGreaterThan(0);
   } finally {
     await s.closePlayer();
   }
@@ -178,44 +200,33 @@ test("a ranger's Hold Them Off: 3 Hope, the same roll against two more Bandits",
 test("a warlock's Patron's Boon after a miss: the roll waits with Miss only, Use rerolls with advantage", async ({ page, browser }) => {
   test.setTimeout(300_000);
   const s = await riderScene(page, browser, "warlock", "pact-of-the-endless", [{ name: "Ogre", difficulty: 40, x: 6, y: 10 }], true);
+  const { player } = s;
   try {
-    const attackCard = await aim(s, "Ogre");
-    const held = attackCard.getByRole("region", { name: "After the roll" });
+    await openMap(s);
+    const [ogre] = s.tokens;
+    const held = player.getByTestId("hud-result-held");
+    const result = player.getByTestId("hud-result");
     // A critical hits whatever the Difficulty (CB p.90) and holds nothing: attack again (a few tries at most).
     for (let i = 0; i < 6; i++) {
       const sheet = await sheetOf(s);
       if (sheet.hope < 6) await s.playerClient.mutation(api.characters.adjustResource, { characterId: s.characterId, resource: "hope", delta: 6 - sheet.hope });
-      await attackCard.getByRole("button", { name: "⚔ Attack Ogre with Rapier" }).click();
-      await expect(held.or(attackCard.getByRole("region", { name: "Attack result" }))).toBeVisible();
+      if (await result.isVisible()) await result.getByRole("button", { name: /^Close the result of/ }).click();
+      const panel = await aim(s, ogre!.tokenId);
+      await panel.getByTestId("hud-pick-go").click();
+      await expect(panel).toHaveCount(0);
+      await expect(held.or(result)).toBeVisible({ timeout: 30_000 });
       if (await held.isVisible()) break;
     }
-    await expect(held.getByTestId("combat-verdict")).toHaveText(/Ogre\s*Miss/);
+    await expect(held).toContainText("Your roll waits");
+    await expect(held.getByTestId("hud-result-row")).toHaveText(/Ogre\s*Miss/);
     await expect(held).not.toContainText(/\b(HP|Difficulty|40)\b/);
-    await held.getByRole("button", { name: /^Use Patron’s Boon/ }).click();
-    const result = attackCard.getByRole("region", { name: "Attack result" });
-    await expect(result.getByTestId("combat-attack-riders")).toContainText("Patron’s Boon");
+    await held.getByRole("radiogroup", { name: "Feature to use" }).getByRole("radio", { name: /Patron’s Boon/ }).click();
+    await held.getByRole("button", { name: "Use", exact: true }).click();
+    // The server rerolled with the Boon: the public feed row names it.
+    await expect.poll(() => attacksWith(s, "Patron’s Boon"), { timeout: 30_000 }).toBe(1);
+    await expect(result).toContainText("With Patron’s Boon", { timeout: 30_000 });
+    await expect(result.getByTestId("hud-result-row").filter({ hasText: "Ogre" })).toContainText(/Hit|Miss|Defeated/);
     await expect(held).toHaveCount(0);
-  } finally {
-    await s.closePlayer();
-  }
-});
-
-test("Rage Up rides on the attack: a Stress, +twice Strength to the damage", async ({ page, browser }) => {
-  test.setTimeout(240_000);
-  const s = await riderScene(page, browser, "warrior", "call-of-the-brave", [{ name: "Bandit", difficulty: 1, x: 6, y: 10 }]);
-  try {
-    await s.client.mutation(api.levelUp.correctLevel, { characterId: s.characterId, level: 6, idempotencyKey: crypto.randomUUID() });
-    await s.client.mutation(api.characters.takeCard, { characterId: s.characterId, cardId: "rage-up" });
-    const attackCard = await aim(s, "Bandit");
-    const riders = attackCard.getByRole("group", { name: "With this attack" });
-    await riders.getByRole("checkbox", { name: /Rage Up/ }).check();
-    await attackCard.getByRole("button", { name: "⚔ Attack Bandit with Rapier" }).click();
-    const result = attackCard.getByRole("region", { name: "Attack result" });
-    await expect(result.getByTestId("combat-attack-riders")).toContainText("Rage Up");
-    // Strength 2: the damage total is at least 1 + 4.
-    const total = Number(await result.getByTestId("combat-attack-damage").locator(".cma-total").textContent());
-    expect(total).toBeGreaterThanOrEqual(5);
-    await expect.poll(async () => (await sheetOf(s)).stress).toBeGreaterThanOrEqual(0);
   } finally {
     await s.closePlayer();
   }

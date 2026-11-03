@@ -6,6 +6,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { cardsForDomains, getClass } from "../../src/lib/srd/index";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, openSessions } from "./visual/helpers";
+import { openMapTools } from "./hud/helpers";
 
 // D10 S9: one GM-and-player session from prep to the dashboard's Last Session card, at 1440x900 and 1024x768
 // (.omc/plans/d10-sessions.yaml S9). The GM preps Session 1 (two scenes, hooks, the session encounter), starts it
@@ -182,6 +183,7 @@ for (const viewport of [
 
         // ---- Combat Map (B11, Q2): '＋ Session encounter' starts the encounter and places both Bandits.
         await page.goto(`/campaigns/${campaignId}/combat-map`);
+        await openMapTools(page);
         const combatants = page.getByRole("complementary", { name: "Map tools" }).getByRole("region", { name: "Combatants" });
         const place = combatants.getByRole("button", { name: "＋ Session encounter" });
         await expect(place).toBeEnabled();

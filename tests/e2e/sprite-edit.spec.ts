@@ -6,6 +6,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, expectNoHorizontalScroll, openCombatMap } from "./visual/helpers";
+import { openMapTools } from "./hud/helpers";
 
 // Sprite packs P9 (.omc/plans/sprite-packs.yaml): hand editing in the Sprites style. On a Sprites forest map the GM
 // paints moss (a partial repaint), adds an oak tree and an uploaded sprite, sets a bush sprite to block sight; after
@@ -73,6 +74,7 @@ async function recordTerrainWrites(page: Page) {
 const terrainWrites = (page: Page) => page.evaluate(() => (window as unknown as { __terrainWrites: { w: number; h: number }[] }).__terrainWrites.slice());
 
 async function openEditor(page: Page) {
+  await openMapTools(page);
   const tools = page.getByRole("complementary", { name: "Map tools" });
   await tools.getByRole("group", { name: "Map mode" }).getByRole("button", { name: /Edit map/ }).click();
   const card = tools.getByRole("region", { name: "Edit by hand" });
@@ -190,7 +192,7 @@ test("on a Sprites forest map the GM paints moss, adds an oak and an uploaded sp
 
     await player.goto(url);
     const board = player.getByRole("region", { name: "Battle map" });
-    await expect(board.getByRole("button", { name: /^Ash, Party/ })).toBeVisible();
+    await expect(board.getByRole("button", { name: /^Open Ash’s sheet/ })).toBeVisible();
     await expect(board.getByRole("button", { name: /^Bandit, Enemy/ })).toBeVisible();
     await expect(board.getByRole("button", { name: /^Wolf/ })).toHaveCount(0);
     await expect(player.getByTestId("combat-map-canvas")).toHaveAttribute("data-style", "sprites");

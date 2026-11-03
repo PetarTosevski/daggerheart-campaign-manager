@@ -64,6 +64,8 @@ test("an uploaded faint-glow sprite gets the Play light switch, named after the 
 
   // ---- The GM places the Glow stone at (8, 7) and an iron brazier (Common) at (1, 18) with the Objects tool (P9).
   await page.goto(url);
+  // Play is the HUD (plan combat-hud H8.1): the Play / Edit switch is in its "Map tools" drawer.
+  await page.getByRole("button", { name: "Map tools" }).click();
   const mode = tools.getByRole("group", { name: "Map mode" });
   await mode.getByRole("button", { name: /Edit map/ }).click();
   const card = tools.getByRole("region", { name: "Edit by hand" });
@@ -97,7 +99,8 @@ test("an uploaded faint-glow sprite gets the Play light switch, named after the 
   await expect(board.getByRole("button", { name: "Light the glow stone" })).toHaveAttribute("aria-pressed", "false");
   await board.getByRole("button", { name: "Light the glow stone" }).click();
   await expect.poll(async () => (await get()).objects.find((o) => o._id === stone._id)!.lit).toBe(true);
-  await board.getByRole("button", { name: "Put out the iron brazier (lit)" }).click();
+  // By keyboard: at (1, 18) the brazier sits under the HUD's left column.
+  await board.getByRole("button", { name: "Put out the iron brazier (lit)" }).press("Enter");
   await expect.poll(async () => (await get()).objects.find((o) => o._id === brazier._id)!.lit).toBe(false);
   await expect(board.getByRole("button", { name: "Light the iron brazier (lit)" })).toBeVisible();
 
@@ -120,7 +123,7 @@ test("an uploaded faint-glow sprite gets the Play light switch, named after the 
 
     await player.goto(url);
     const playerBoard = player.getByRole("region", { name: "Battle map" });
-    await expect(playerBoard.getByRole("button", { name: /^Ash, Party/ })).toHaveAttribute("data-square", "7,7");
+    await expect(playerBoard.getByRole("button", { name: /^Open Ash’s sheet/ })).toHaveAttribute("data-square", "7,7");
     // D10: no names for players, so the switch reads the Classic look; only the light the character has seen.
     const playerSwitch = playerBoard.getByRole("button", { name: "Put out the crystal" });
     await expect(playerSwitch).toBeVisible();

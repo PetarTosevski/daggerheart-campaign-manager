@@ -2,21 +2,19 @@
 
 import "./combat-map.css";
 
-import { useQuery } from "convex/react";
 import { Component, useState, type ReactNode } from "react";
 
-import { ActionsPanel, ActionsProvider, Resolutions, TargetsLayer } from "@/components/combat-map/actions";
+import { ActionsProvider, Resolutions, TargetsLayer } from "@/components/combat-map/actions";
 import { AdversaryPanel, HitFlashLayer } from "@/components/combat-map/actions/adversary";
-import { IncomingHit } from "@/components/combat-map/actions/reactions";
-import { SheetDrawer } from "@/components/combat-map/drawer";
-import { HudShell, HudSwitchButton, ToolsHead, useHudEnabled } from "@/components/combat-map/hud";
+import { SheetExtras } from "@/components/combat-map/drawer";
+import { HudShell, ToolsHead } from "@/components/combat-map/hud";
 import { EditorLayer, EditorProvider, EditToolsPanel } from "@/components/combat-map/editor";
 import { ScenePanel } from "@/components/combat-map/generate";
 import { MapBoard, MapHeaderLine, MapsPanel, useCurrentMap } from "@/components/combat-map/maps";
 import { PacksLink } from "@/components/combat-map/packs";
 import { StyleSwitch } from "@/components/combat-map/style";
 import { LiveSessionChip } from "@/components/sessions/session-chip";
-import { sheetCharacterId, type CombatMode, type CombatPageState, type CombatRole, type MapLayerProps } from "@/components/combat-map/slots";
+import type { CombatMode, CombatPageState, CombatRole, MapLayerProps } from "@/components/combat-map/slots";
 import { CombatantsPanel, TokenPanel, TokensLayer, TokensProvider } from "@/components/combat-map/tokens";
 import { LightPill, PreviewPicker, RevealPanel, VisionLayer, VisionPanel, VisionProvider } from "@/components/combat-map/vision";
 import { MAX_FEAR } from "@/lib/domain/fear";
@@ -28,9 +26,13 @@ import type { Id } from "../../../../../../convex/_generated/dataModel";
 import { useCampaign, WithFear } from "../campaign-shell";
 
 /**
- * Combat Map (D9): the page shell. C0 owns the layout, header, GM Fear, the Play / Edit switch and the shared page
- * state; every feature lives in a slot under src/components/combat-map/ (contract: slots.ts). Players are not
- * refused (the tab is not gmOnly): they get the player layout and the server decides what they read.
+ * Combat Map (D9): the page shell. C0 owns the layout, GM Fear, the Play / Edit switch and the shared page state; every
+ * feature lives in a slot under src/components/combat-map/ (contract: slots.ts). Players are not refused (the tab is
+ * not gmOnly): the server decides what they read.
+ *
+ * Plan combat-hud H8.1 (cut-over, user 2026-11-03 "Cut over now"): Play is always the Combat HUD (`HudShell`), for
+ * the GM and every player; there is no switch. The GM's Edit mode (and the GM with no map yet) keeps the two-column
+ * layout with its header (answer 12a): the HUD has no Edit mode.
  */
 
 /** Keeps a failing slot (a `useQuery` that throws) from blanking the page (CL1); "Try again" remounts it. */
@@ -191,6 +193,9 @@ function GmColumn({ state, selectedMapId, onSelectMap, onMode }: {
           <SlotBoundary label="The selected token">
             <TokenPanel {...state} map={map} />
           </SlotBoundary>
+          <SlotBoundary label="Class controls">
+            <SheetExtras {...state} />
+          </SlotBoundary>
           <SlotBoundary label="Adversary actions">
             <AdversaryPanel {...state} map={map} />
           </SlotBoundary>
@@ -210,73 +215,40 @@ function GmColumn({ state, selectedMapId, onSelectMap, onMode }: {
 }
 
 /**
- * Player left column: an incoming hit to answer, the combat actions (Hand, Attack, dice; plan combat-actions), their
- * own view card, then the selected token (their own PC, R4).
+ * A player's "Your character" drawer in the HUD (plan combat-hud H0): their view card, the selected token (their own
+ * PC, R4) and their PC's class controls (Flying, Beastform, stances, counters: `SheetExtras`). The HUD itself holds
+ * the Hand, the pickers, the hit window, the dice and the feed (H8.1 deleted the classic column's incoming hit and
+ * combat actions).
  */
 function PlayerColumn({ state }: { state: CombatPageState }) {
   const { map } = state;
   if (!map) return null;
   return (
     <>
-      <SlotBoundary label="Incoming hit">
-        <IncomingHit {...state} map={map} />
-      </SlotBoundary>
-      <SlotBoundary label="Combat actions">
-        <ActionsPanel {...state} map={map} />
-      </SlotBoundary>
       <SlotBoundary label="Your view">
         <VisionPanel {...state} map={map} />
       </SlotBoundary>
       <SlotBoundary label="The selected token">
         <TokenPanel {...state} map={map} />
       </SlotBoundary>
+      <SlotBoundary label="Class controls">
+        <SheetExtras {...state} />
+      </SlotBoundary>
     </>
   );
 }
 
-/** Opens the sheet drawer for `characterId` (plan sheet-drawer, SD0). */
-type OpenSheet = (characterId: Id<"characters">) => void;
-
-/**
- * The Sheet button (plan sheet-drawer, SD0): in Play, for a player whose PC has a token on the map and for the GM while
- * a PC token is selected (`sheetCharacterId`). `placement` picks the top bar (hidden at 760 px and below), the bar
- * under the map (shown only there) or the HUD's tools drawer (always shown; plan combat-hud H0).
- */
-function SheetButton({ state, placement, onOpen }: { state: CombatPageState; placement: "top" | "bottom" | "drawer"; onOpen: OpenSheet }) {
-  const tokens = useQuery(api.combatTokens.party, state.map && state.mode === "play" ? { campaignId: state.campaignId, mapId: state.map._id } : "skip");
-  const characterId = tokens ? sheetCharacterId(state.role, tokens, state.selectedTokenId) : null;
-  if (characterId === null) return null;
-  const button = (
-    <button
-      type="button"
-      className="cm-btn cm-sm"
-      aria-haspopup="dialog"
-      data-testid={`sheet-button-${placement}`}
-      onClick={() => onOpen(characterId)}
-    >
-      Sheet
-    </button>
-  );
-  if (placement === "drawer") return button;
-  return placement === "top" ? (
-    <div className="max-[760px]:hidden">{button}</div>
-  ) : (
-    <div className="hidden justify-center py-2 max-[760px]:flex">{button}</div>
-  );
-}
-
-/** Everything below the header that depends on the map on screen. */
+/** Everything that depends on the map on screen: the HUD in Play, the GM's two-column layout in Edit. */
 function CombatBody({ campaign, role }: { campaign: CampaignSummary; role: CombatRole }) {
   const campaignId = campaign._id;
   const [selectedMapId, setSelectedMapId] = useState<Id<"combatMaps"> | null>(null);
   const [mode, setMode] = useState<CombatMode>("play");
   const [selectedTokenId, setSelectedTokenId] = useState<Id<"combatTokens"> | null>(null);
   const [previewCharacterId, setPreviewCharacterId] = useState<Id<"characters"> | null>(null);
-  // The sheet drawer (SD0): mounted from its first open on and kept mounted, so closing returns focus to the button.
-  const [sheet, setSheet] = useState<{ characterId: Id<"characters">; open: boolean } | null>(null);
-  const openSheet: OpenSheet = (characterId) => setSheet({ characterId, open: true });
   const current = useCurrentMap({ campaignId, role, selectedMapId });
-  const hud = useHudEnabled();
+  // The GM with no map yet is in Edit, and stays there once the first map exists (made from the column or generated):
+  // only the Play / Edit switch moves the GM into the HUD. Adjusted during render (no effect, CL7).
+  if (role === "gm" && current === null && mode !== "edit") setMode("edit");
 
   function selectMap(mapId: Id<"combatMaps"> | null) {
     setSelectedMapId(mapId);
@@ -296,60 +268,40 @@ function CombatBody({ campaign, role }: { campaign: CampaignSummary; role: Comba
     onPreview: setPreviewCharacterId,
   };
 
-  const sheetDrawer = sheet ? (
-    <SlotBoundary label="The sheet drawer">
-      <SheetDrawer
-        campaignId={campaignId}
-        role={role}
-        map={state.map}
-        characterId={sheet.characterId}
-        open={sheet.open}
-        onClose={() => setSheet({ ...sheet, open: false })}
-      />
-    </SlotBoundary>
-  ) : null;
-
-  // Plan combat-hud H0: with the HUD switch on, Play is the full-bleed HUD with today's column in its tools drawer;
-  // Edit keeps today's two-column layout (answer 12a). Same component either way, so the page state and its queries
-  // stay mounted across the switch.
-  if (hud && state.mode === "play") {
+  // Play is the full-bleed HUD with the classic column in its tools drawer (plan combat-hud H0, H8.1). Same component
+  // in both modes, so the page state and its queries stay mounted when the GM switches between Play and Edit. While the
+  // map loads the GM gets the column (as before the cut-over), so its links (sprite packs) mount at once.
+  if (state.mode === "play" && !(role === "gm" && current === undefined)) {
     return (
-      <>
-        <HudShell
-          state={state}
-          loading={current === undefined}
-          renderLayers={(layer) => <Layers {...layer} />}
-          tools={
-            <>
-              <ToolsHead>
-                <HeaderTools campaign={campaign} state={state} placement="drawer" onOpenSheet={openSheet} />
-              </ToolsHead>
-              {role === "gm" ? (
-                <GmColumn state={state} selectedMapId={selectedMapId} onSelectMap={selectMap} onMode={setMode} />
-              ) : (
-                <PlayerColumn state={state} />
-              )}
-            </>
-          }
-        />
-        {sheetDrawer}
-      </>
+      <HudShell
+        state={state}
+        loading={current === undefined}
+        renderLayers={(layer) => <Layers {...layer} />}
+        tools={
+          <>
+            <ToolsHead>
+              <HeaderTools campaign={campaign} state={state} />
+            </ToolsHead>
+            {role === "gm" ? (
+              <GmColumn state={state} selectedMapId={selectedMapId} onSelectMap={selectMap} onMode={setMode} />
+            ) : (
+              <PlayerColumn state={state} />
+            )}
+          </>
+        }
+      />
     );
   }
 
+  // The GM in Edit, with no map yet, or while the map loads: the header and the two-column layout (answer 12a; the HUD
+  // has no Edit mode).
   return (
     <>
-      <CombatHeader campaign={campaign} state={state} loading={current === undefined} onOpenSheet={openSheet} />
-      <main className={role === "player" && !state.map ? "cm-main cm-solo" : "cm-main"}>
-        {role === "gm" ? (
-          <aside className="cm-aside" aria-label="Map tools">
-            <GmColumn state={state} selectedMapId={selectedMapId} onSelectMap={selectMap} onMode={setMode} />
-          </aside>
-        ) : state.map ? (
-          <aside className="cm-aside" aria-label="Your character">
-            <PlayerColumn state={state} />
-          </aside>
-        ) : null}
+      <EditHeader campaign={campaign} state={state} loading={current === undefined} />
+      <main className="cm-main">
+        <aside className="cm-aside" aria-label="Map tools">
+          <GmColumn state={state} selectedMapId={selectedMapId} onSelectMap={selectMap} onMode={setMode} />
+        </aside>
         <div className="cm-area">
           {current === undefined ? (
             <p role="status" className="cm-muted">
@@ -360,32 +312,19 @@ function CombatBody({ campaign, role }: { campaign: CampaignSummary; role: Comba
               <MapBoard {...state} renderLayers={(layer) => <Layers {...layer} />} />
             </SlotBoundary>
           )}
-          <SlotBoundary label="The Sheet button">
-            <SheetButton state={state} placement="bottom" onOpen={openSheet} />
-          </SlotBoundary>
         </div>
       </main>
-      {sheetDrawer}
     </>
   );
 }
 
 /**
- * The header's tools: Sheet, light, and for the GM the session chip, Fear, map style and player view. The classic
- * header shows them beside the HUD switch; the HUD shows them in its tools drawer (plan combat-hud H0) until its own
- * Fear banner, disc and toolbar replace them.
+ * The scene tools: light, and for the GM the session chip, Fear, map style and player view. The GM's Edit header shows
+ * them; in Play the HUD shows them in its tools drawer (plan combat-hud H0) beside its own Fear banner, disc and toolbar.
  */
-function HeaderTools({ campaign, state, placement, onOpenSheet }: {
-  campaign: CampaignSummary;
-  state: CombatPageState;
-  placement: "top" | "drawer";
-  onOpenSheet: OpenSheet;
-}) {
+function HeaderTools({ campaign, state }: { campaign: CampaignSummary; state: CombatPageState }) {
   return (
     <>
-      <SlotBoundary label="The Sheet button">
-        <SheetButton state={state} placement={placement} onOpen={onOpenSheet} />
-      </SlotBoundary>
       <SlotBoundary label="Light">
         <LightPill campaignId={campaign._id} />
       </SlotBoundary>
@@ -410,8 +349,12 @@ function HeaderTools({ campaign, state, placement, onOpenSheet }: {
   );
 }
 
-/** The board's page header: campaign name, title, header line, the header tools and the HUD switch (plan combat-hud H0). */
-function CombatHeader({ campaign, state, loading, onOpenSheet }: { campaign: CampaignSummary; state: CombatPageState; loading: boolean; onOpenSheet: OpenSheet }) {
+/**
+ * The GM's header in Edit: campaign name, title, the map's header line and the scene tools. Plan combat-hud H8.1: the
+ * classic header now shows only here (players and the GM in Play get the HUD's title); its HUD switch and Sheet button
+ * are gone.
+ */
+function EditHeader({ campaign, state, loading }: { campaign: CampaignSummary; state: CombatPageState; loading: boolean }) {
   return (
     <header className="cm-head">
       <div className="cm-head-text">
@@ -428,8 +371,7 @@ function CombatHeader({ campaign, state, loading, onOpenSheet }: { campaign: Cam
         </div>
       </div>
       <div className="cm-head-tools">
-        <HeaderTools campaign={campaign} state={state} placement="top" onOpenSheet={onOpenSheet} />
-        <HudSwitchButton className="cm-btn cm-sm" />
+        <HeaderTools campaign={campaign} state={state} />
       </div>
     </header>
   );

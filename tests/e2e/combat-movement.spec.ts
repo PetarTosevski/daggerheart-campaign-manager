@@ -98,7 +98,8 @@ for (const viewport of VIEWPORTS) {
       await place(5, 10);
       await player.goto(url);
       const board = player.getByRole("region", { name: "Battle map" });
-      const mine = board.getByRole("button", { name: /^Ash, Party.*your character/ });
+      // Plan combat-hud H8.1: Play is the HUD; the player's own token reads "Open Ash’s sheet (your character), …".
+      const mine = board.getByRole("button", { name: /^Open Ash’s sheet \(your character\)/ });
       const notice = board.getByTestId("combat-move-notice");
       await expect(mine).toHaveAttribute("data-square", "5,10");
       await expect(notice).toHaveAttribute("role", "status");
@@ -106,12 +107,12 @@ for (const viewport of VIEWPORTS) {
       const press = async (key: string) => {
         await player.keyboard.press(key);
       };
-      /** Runs `move` and expects a fresh "Blocked" announcement, with Ash back on `square` on screen and on the server. */
+      /** Runs `move` and expects a fresh blocked announcement, with Ash back on `square` on screen and on the server. */
       const expectBlocked = async (move: () => Promise<void>, square: string) => {
         const before = Number(await notice.getAttribute("data-seq"));
         await move();
         await expect.poll(async () => Number(await notice.getAttribute("data-seq"))).toBeGreaterThan(before);
-        await expect(notice).toHaveText("Blocked");
+        await expect(notice).toHaveText("Something blocks the way.");
         await expect(notice).toHaveAttribute("data-kind", "blocked");
         await expect(mine).toHaveAttribute("data-square", square);
         await expect.poll(() => serverSquare(playerClient)).toBe(square);
@@ -151,7 +152,12 @@ for (const viewport of VIEWPORTS) {
       await press("d");
       await expect(mine).toHaveAttribute("data-square", "13,15");
       await expect.poll(() => serverSquare(playerClient)).toBe("13,15");
-      await expect(player.getByRole("region", { name: "Selected token" }).getByTestId("combat-difficult-note")).toHaveText(DIFFICULT);
+      // The token card (in the HUD's "Your character" drawer) says a movement roll is needed.
+      await player.getByRole("button", { name: "Your character", exact: true }).click();
+      const drawer = player.getByRole("complementary", { name: "Your character" });
+      await expect(drawer.getByRole("region", { name: "Selected token" }).getByTestId("combat-difficult-note")).toHaveText(DIFFICULT);
+      await drawer.press("Escape");
+      await player.locator("body").click({ position: { x: 2, y: 2 } });
       const hatch = board.getByTestId("combat-difficult-hatch");
       await expect(hatch).toHaveCount(1);
       await expect.poll(async () => Number(await hatch.getAttribute("data-squares"))).toBeGreaterThan(0);
@@ -191,7 +197,7 @@ for (const viewport of VIEWPORTS) {
       await place(5, 10);
       await page.goto(url);
       const gmBoard = page.getByRole("region", { name: "Battle map" });
-      const gmAsh = gmBoard.getByRole("button", { name: /^Ash, Party/ });
+      const gmAsh = gmBoard.getByRole("button", { name: /^Open Ash’s sheet/ });
       await expect(gmAsh).toHaveAttribute("data-square", "5,10");
       // The GM sees every difficult square hatched (the garden plot's 9 at least).
       await expect.poll(async () => Number(await gmBoard.getByTestId("combat-difficult-hatch").getAttribute("data-squares"))).toBeGreaterThanOrEqual(9);

@@ -1,319 +1,140 @@
-import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
-import type { ConvexHttpClient } from "convex/browser";
+import { expect, test, type Page } from "@playwright/test";
 
 import { api } from "../../convex/_generated/api";
-import type { Id } from "../../convex/_generated/dataModel";
 import { expectNoSeriousA11yViolations } from "./a11y";
-import { signInAsTestGm } from "./fixtures";
-import { bardDraft, convexAs, openCombatMap } from "./visual/helpers";
+import { hudScene, type HudScene } from "./hud/helpers";
 
-// Plan combat-actions CA6, in two browsers: the Hand on the Combat Map. A player uses Bolt Beacon on a Bandit (Hope
-// spent, Hit, the card stays ready; never the Bandit's numbers, U1); a once-per-rest card (Deft Maneuvers) greys out
-// and comes back after the GM's rest, and a vault card is recalled for free while the rest is open (CB p.101, p.105);
-// the GM selecting a PC token sees the Hand greyed until "Play for this character" is on, then plays Bolt Beacon for Ash
-// (desktop and 390 px). Axe on each view.
-// F8-I1 (dcm-bxp.99.28): the roll options sit in the Hand's bar; Bolt Beacon with the Bandit picked fires at once.
-// F7-H4 (dcm-bxp.99.24): a player selecting another PC's token sees that Hand read only (no Use / Recall), and nothing
-// once the GM turns "Players can see each other's cards" off; the player's "Hide my hand" switch; a creature the GM
-// picks in a card dialog gets a target ring on the map.
-// HF1 (plan hand-fan, dcm-bxp.99.30): the Hand is a fan along the bottom of the map. Dragging Bolt Beacon onto the
-// table with no enemy picked waits for a tap on the Bandit, then fires; Use on the raised card (focus + Enter) is the
-// non-drag way; "Hide cards" leaves "Show cards (N)" and is remembered after a reload; a used card can't be dragged;
-// the GM's dragged card opens the dialog.
+// Plan combat-actions CA6 / hand-fan HF1, ported to the Combat HUD by plan combat-hud H8.1 (the classic Hand card, its
+// docked fan, drag-to-table and the card dialog are gone): what no HUD spec covers yet.
+// 1. The GM plays a card for a PC: "Play for this character" on Moss's HUD sheet unlocks Moss's hand; Use opens the
+//    picking panel, the picked creature gets its ring on the map, "Cast on …" resolves and the public feed names Moss's
+//    card; the switch off locks the hand again.
+// 2. A once-per-rest card (Deft Maneuvers, CB p.101) shows used ("Used · back after a rest") and comes back after the
+//    GM's rest; a vault card's recall is free while the rest is open (CB p.105).
+// Dropped in the port:
+// - Drag onto the table, the classic card dialog and "a used card can't be dragged": gone by design (H8.1).
+// - "Hide cards" remembered across a reload: dropped by design (HUD answer 16a, local only); Hide / Show cards is in
+//   tests/e2e/hud-hand.spec.ts.
+// - Roll options, another PC's hand view only / hidden, vault recall in combat, the GM's lock: tests/e2e/hud-hand.spec.ts
+//   "the HUD hand: fan states, Hide cards, Roll options, full card, Use, vault recall, GM lock and view only".
+// - The player's own cast through the panel, rider and result: tests/e2e/hud-card-pick.spec.ts and hud-result.spec.ts;
+//   "Hide my hand": tests/e2e/hud-sheet.spec.ts; the card states: tests/unit/hud/hand-states.test.tsx, card-pick.test.tsx.
+// - The GM's 390 px view of the classic hand: the phone HUD is tests/e2e/hud-phone.spec.ts / hud-phone-sheets.spec.ts.
 
-const PLAYER = "e2e-player@example.test";
+test.use({ actionTimeout: 30_000 });
 
-/** A Bandit any roll hits (Difficulty 1). */
-const SURE_BANDIT = {
-  name: "Bandit",
-  tier: 1,
-  type: "Standard" as const,
-  description: "A road thug.",
-  motives: "Rob",
-  difficulty: 1,
-  thresholds: { major: 1, severe: 100 },
-  hp: 5,
-  stress: 3,
-  attack: { modifier: 0, name: "Club", range: "Melee", damage: "1d6 phy" },
-  experiences: [],
-  features: [],
-};
+const hand = (page: Page) => page.getByTestId("hud-hand");
+const fanCard = (page: Page, name: string) => hand(page).getByTestId("hud-hand-card").filter({ has: page.getByRole("heading", { name, exact: true }) });
+const pickPanel = (page: Page) => page.getByTestId("hud-pick");
+const pickRow = (page: Page, tokenId: string) => pickPanel(page).locator(`[data-testid="hud-pick-row"][data-token="${tokenId}"]`);
 
-/** A level-1 Wizard holding Bolt Beacon (Splendor) and Book of Illiat (Codex). */
-const wizardDraft = (name: string) => ({ ...bardDraft(name), classId: "wizard", subclassId: "school-of-war", domainCards: ["bolt-beacon", "book-of-illiat"] });
-/** A level-1 Warrior holding Deft Maneuvers (Bone, once per rest) and Whirlwind (Blade). */
-const warriorDraft = (name: string) => ({ ...bardDraft(name), classId: "warrior", subclassId: "call-of-the-brave", ancestry: { kind: "single" as const, id: "halfling" }, domainCards: ["deft-maneuvers", "whirlwind"] });
-
-type Scene = {
-  client: ConvexHttpClient;
-  playerClient: ConvexHttpClient;
-  campaignId: Id<"campaigns">;
-  url: string;
-  characterId: Id<"characters">;
-  player: Page;
-  closePlayer: () => Promise<void>;
-};
-
-/**
- * The GM's campaign with a live map: the player's character (`draft`) at (5, 10) facing east, the GM's Mira (a Bard
- * with Book of Ava) at (5, 13), and a running encounter with the Bandit three squares east of the player's character.
- */
-async function cardScene(page: Page, browser: Browser, draft: ReturnType<typeof bardDraft>, viewport = { width: 1440, height: 900 }): Promise<Scene> {
-  const { client, campaignId, url } = await openCombatMap(page);
-  const context = await browser.newContext({ viewport });
-  const player = await context.newPage();
-  const code = await client.mutation(api.members.rotateJoinCode, { campaignId });
-  await signInAsTestGm(player, PLAYER);
-  await expect(player).toHaveURL("/");
-  const playerClient = await convexAs(player);
-  await playerClient.mutation(api.members.joinByCode, { code });
-  const { characterId } = await playerClient.mutation(api.characters.create, { campaignId, draft, idempotencyKey: crypto.randomUUID() });
-  await client.mutation(api.characters.create, { campaignId, draft: bardDraft("Mira"), idempotencyKey: crypto.randomUUID() });
-
-  const { customId } = await client.mutation(api.customAdversaries.create, { campaignId, adversary: SURE_BANDIT, idempotencyKey: crypto.randomUUID() });
-  const { encounterId } = await client.mutation(api.encounters.create, { campaignId, name: "Road ambush", idempotencyKey: crypto.randomUUID() });
-  const { instanceIds } = await client.mutation(api.encounters.addAdversary, { campaignId, encounterId, source: { kind: "custom", customId }, count: 1, summoned: false, idempotencyKey: crypto.randomUUID() });
-  await client.mutation(api.encounters.start, { campaignId, encounterId });
-
-  const { mapId } = await client.mutation(api.combatMaps.create, { campaignId, size: "medium", name: "Old road", idempotencyKey: crypto.randomUUID() });
-  await client.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
-  await client.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId, instanceIds, idempotencyKey: crypto.randomUUID() });
-  const tokens = await client.query(api.combatTokens.list, { campaignId, mapId });
-  const mine = tokens.find((t) => t.characterId === characterId)!;
-  const mira = tokens.find((t) => t.name === "Mira")!;
-  await client.mutation(api.combatTokens.move, { campaignId, tokenId: mine._id, x: 5, y: 10 });
-  await client.mutation(api.combatTokens.turn, { campaignId, tokenId: mine._id, angle: 0 });
-  await client.mutation(api.combatTokens.move, { campaignId, tokenId: mira._id, x: 5, y: 13 });
-  await client.mutation(api.combatTokens.move, { campaignId, tokenId: tokens.find((t) => t.instanceId === instanceIds[0])!._id, x: 8, y: 10 });
-  return { client, playerClient, campaignId, url, characterId, player, closePlayer: () => context.close() };
-}
-
-async function sheetOf(s: Scene) {
-  const view = await s.client.query(api.characters.get, { characterId: s.characterId });
-  return view!.sheet;
-}
-
-/** The Hope a roll with Bolt Beacon leaves: +1 with Hope or a critical, then the 1 Hope it costs on a success. */
-function hopeAfter(before: number, outcome: string): number {
-  return Math.min(6, before + (outcome === "With Fear" ? 0 : 1)) - 1;
-}
-
-/** The non-drag way to play a card (WCAG 2.5.7): focus raises it out of the fan, Enter presses its Use. */
-async function useByKeyboard(card: Locator, name: string) {
-  const use = card.getByRole("button", { name: `Use ${name}` });
-  await use.focus();
-  await use.press("Enter");
-}
-
-/**
- * Drags a card by its visible top onto the open table near the top of the map (HF1). `force`: the card follows the
- * pointer, so it is under it at the drop.
- */
-async function dragOntoTable(page: Page, card: Locator) {
-  await card.dragTo(page.getByTestId("combat-viewport"), { sourcePosition: { x: 50, y: 16 }, targetPosition: { x: 40, y: 40 }, force: true });
-}
-
-/** How many public feed rows say "<name> uses <card>". */
-async function usesInFeed(s: Scene, text: string) {
+/** How many public feed rows start with `text` ("Moss uses Vicious Entangle"). */
+async function usesInFeed(s: HudScene, text: string) {
   const feed = await s.client.query(api.feed.list, { campaignId: s.campaignId, paginationOpts: { numItems: 20, cursor: null } });
   return feed.page.filter((r) => r.summary.startsWith(text)).length;
 }
 
-test("a player drags Bolt Beacon onto the table and taps the Bandit, then plays it again with Use; another PC's Hand read only", async ({ page, browser }) => {
-  test.setTimeout(240_000);
-  const s = await cardScene(page, browser, wizardDraft("Ash"));
-  const { player } = s;
-  try {
-    await player.goto(s.url);
-    const hand = player.getByRole("region", { name: "Your hand" });
-    const bolt = hand.getByRole("article", { name: "Bolt Beacon" });
-    await expect(bolt).toBeVisible({ timeout: 30_000 });
-    // The fan lies over the map's bottom edge, under the map board (HF1).
-    await expect(player.getByRole("region", { name: "Battle map" }).getByRole("region", { name: "Your hand" })).toBeVisible();
-    await expect(bolt.getByRole("list", { name: "Cost and limit" })).toHaveText("On a success: 1 Hope");
-    await expect(hand.getByRole("article", { name: "Book of Illiat" }).getByRole("list", { name: "Cost and limit" })).toHaveText("3 spells");
-    await expectNoSeriousA11yViolations(player, { include: ".cmh-hand" });
-
-    // F8-I1: advantage in the bar's roll options (a popover over the map).
-    const options = hand.getByTestId("combat-hand-roll-options");
-    await options.getByText("Roll options").click();
-    await options.getByRole("button", { name: "More advantage" }).click();
-    await expect(options.getByRole("group", { name: "Advantage" })).toContainText("Advantage ×1");
-    await expectNoSeriousA11yViolations(player, { include: ".cmh-hand" });
-    await options.getByText("Roll options").click();
-
-    // HF1: Bolt Beacon dragged onto the table with no enemy picked waits for its target on the map.
-    const hopeBefore = (await sheetOf(s)).hope;
-    await dragOntoTable(player, bolt);
-    const aim = hand.getByTestId("combat-hand-aim");
-    await expect(aim).toContainText("Bolt Beacon: tap an enemy on the map to target it.");
-    await expect(player.getByRole("dialog")).toHaveCount(0);
-    expect(await usesInFeed(s, "Ash uses Bolt Beacon")).toBe(0);
-    await player.getByRole("region", { name: "Battle map" }).getByRole("button", { name: /^Bandit, Enemy/ }).click();
-    await expect(aim).toHaveCount(0);
-    const result = hand.getByRole("region", { name: "Card result" });
-    await expect(result.getByTestId("combat-card-verdict")).toHaveText(/Bandit\s*Hit/);
-    await expect(result.getByTestId("combat-card-damage")).toBeVisible();
-    await expect(result).not.toContainText(/\b(HP|Stress|Difficulty|threshold|Minor|Major|Severe)\b/);
-    const outcome = (await result.locator(".cma-outcome").first().textContent())!.trim();
-    await expect.poll(async () => (await sheetOf(s)).hope).toBe(hopeAfter(hopeBefore, outcome));
-    // The roll options applied to that card and cleared (the closed popover's summary names nothing set).
-    await expect(options.locator("summary")).toHaveText("Roll options");
-    // Bolt Beacon has no usage limit: it stays ready.
-    await expect(bolt).not.toHaveAttribute("data-exhausted", "true");
-
-    // Use on the raised card (keyboard): the Bandit is still picked, so it fires at once with no dialog.
-    await useByKeyboard(bolt, "Bolt Beacon");
-    await expect(player.getByRole("dialog")).toHaveCount(0);
-    await expect.poll(() => usesInFeed(s, "Ash uses Bolt Beacon")).toBe(2);
-    await expect(player.getByRole("region", { name: "Roll feed" }).getByTestId("combat-mini-feed")).toContainText("Ash uses Bolt Beacon");
-    await hand.getByRole("button", { name: "Close the card result" }).click();
-    await expect(result).toHaveCount(0);
-
-    // "Hide cards" leaves the peek tab, and the choice survives a reload (this browser).
-    await hand.getByRole("button", { name: "Hide cards" }).click();
-    const show = hand.getByRole("button", { name: "Show cards (2)" });
-    await expect(show).toBeVisible();
-    await expect(hand.getByRole("button", { name: "Use Bolt Beacon" })).toHaveCount(0);
-    await player.reload();
-    await expect(show).toBeVisible({ timeout: 30_000 });
-    await show.click();
-    await expect(bolt.getByRole("button", { name: "Use Bolt Beacon" })).toBeEnabled();
-
-    // A player selecting another PC's token sees that Hand read only (F7-H4): no Use, no Recall, no drag.
-    await player.getByRole("region", { name: "Battle map" }).getByRole("button", { name: /^Mira, / }).click();
-    const miraHand = player.getByRole("region", { name: "Hand of Mira" });
-    await expect(miraHand.getByRole("article", { name: "Book of Ava" })).toBeVisible();
-    await expect(miraHand.getByRole("article", { name: "Deft Deceiver" })).toHaveAttribute("data-locked", "true");
-    await expect(miraHand.locator("[data-draggable=true]")).toHaveCount(0);
-    await miraHand.getByRole("button", { name: /vault/ }).click();
-    await expect(miraHand.getByRole("button", { name: /^(Use|Recall)/ })).toHaveCount(0);
-    await expectNoSeriousA11yViolations(player, { include: "[data-testid=combat-other-hand]" });
-    // The GM turns "Players can see each other's cards" off: no cards, and why.
-    await s.client.mutation(api.campaigns.setPlayersSeeHands, { campaignId: s.campaignId, enabled: false });
-    await expect(miraHand.getByTestId("combat-hand-hidden")).toHaveText("The GM keeps every player’s cards private.");
-    await expect(miraHand.getByRole("article")).toHaveCount(0);
-    await s.client.mutation(api.campaigns.setPlayersSeeHands, { campaignId: s.campaignId, enabled: true });
-    await expect(miraHand.getByRole("article", { name: "Book of Ava" })).toBeVisible();
-    await miraHand.getByRole("button", { name: "Your hand" }).click();
-    await expect(hand.getByRole("article", { name: "Bolt Beacon" })).toBeVisible();
-    // The player hides their own hand (the column's switch); the GM still reads it.
-    await player.getByRole("region", { name: "Hand", exact: true }).getByRole("switch", { name: "Hide my hand from the other players" }).check();
-    await expect.poll(async () => (await s.client.query(api.combatCards.handSharing, { campaignId: s.campaignId })).hidden).toEqual([s.characterId]);
-    expect((await s.client.query(api.combatCards.hand, { campaignId: s.campaignId, characterId: s.characterId })).loadout.length).toBe(2);
-
-    // The vault deck: Book of Illiat (moved there on the sheet) costs 2 Stress to recall (R7, CB p.101).
-    await s.playerClient.mutation(api.characters.moveCard, { characterId: s.characterId, cardId: "book-of-illiat", to: "vault" });
-    const stressBefore = (await sheetOf(s)).stress;
-    await hand.getByRole("button", { name: "Open vault, 1 card" }).click();
-    const vault = hand.getByRole("list", { name: "Vault" });
-    await vault.getByRole("button", { name: "Recall: 2 Stress, Book of Illiat" }).click();
-    await expect(hand.getByRole("list", { name: "Loadout" }).getByRole("article", { name: "Book of Illiat" })).toBeVisible();
-    await expect.poll(async () => (await sheetOf(s)).stress).toBe(stressBefore + 2);
-  } finally {
-    await s.closePlayer();
-  }
-});
-
-test("a once-per-rest card greys out, can't be dragged, and comes back after the GM's rest; Recall is free while the rest is open", async ({ page, browser }) => {
-  test.setTimeout(240_000);
-  const s = await cardScene(page, browser, warriorDraft("Bryn"));
-  const { player } = s;
-  try {
-    // Whirlwind goes to the vault first (on the sheet), so the Hand shows it there.
-    await s.playerClient.mutation(api.characters.moveCard, { characterId: s.characterId, cardId: "whirlwind", to: "vault" });
-    await player.goto(s.url);
-    const hand = player.getByRole("region", { name: "Your hand" });
-    const deft = hand.getByRole("article", { name: "Deft Maneuvers" });
-    await expect(deft).toBeVisible({ timeout: 30_000 });
-    await expect(deft.getByRole("list", { name: "Cost and limit" })).toHaveText(/1 Stress\s*Once per rest/);
-    await expect(deft.locator("..")).toHaveAttribute("data-draggable", "true");
-    await hand.getByRole("button", { name: "Open vault, 1 card" }).click();
-    const vault = hand.getByRole("list", { name: "Vault" });
-    await expect(vault.getByRole("article", { name: "Whirlwind" })).toBeVisible();
-    // A level-1 card's recall cost is 0: free.
-    await expect(vault.getByRole("button", { name: "Recall: free, Whirlwind" })).toBeVisible();
-    await hand.getByRole("button", { name: "Close vault, 1 card" }).click();
-
-    // Deft Maneuvers asks nothing: dragged onto the table it fires at once.
-    await dragOntoTable(player, deft);
-    await expect(hand.getByRole("region", { name: "Card result" }).getByTestId("combat-card-prompt").first()).toContainText("Sprint anywhere within Far range");
-    const used = hand.getByRole("article", { name: "Deft Maneuvers, used: Back after a rest" });
-    await expect(used).toHaveAttribute("data-exhausted", "true");
-    await expect(used).toContainText("Used · Back after a rest");
-    await expect(used.getByRole("button", { name: /^Use/ })).toHaveCount(0);
-    // A used card can't be dragged: another drag plays nothing.
-    await expect(used.locator("..")).not.toHaveAttribute("data-draggable", "true");
-    await dragOntoTable(player, used);
-    expect((await sheetOf(s)).stress).toBe(1);
-
-    // The GM rests the party; Whirlwind is recalled while the rest is open (a paid recall being free then: unit test).
-    const { restId } = await s.client.mutation(api.rests.start, { campaignId: s.campaignId, kind: "short", idempotencyKey: crypto.randomUUID() });
-    await hand.getByRole("button", { name: "Open vault, 1 card" }).click();
-    const recall = vault.getByRole("button", { name: "Recall: free, Whirlwind" });
-    await expect(recall).toBeVisible();
-    await recall.click();
-    await expect(hand.getByRole("list", { name: "Loadout" }).getByRole("article", { name: "Whirlwind" })).toBeVisible();
-    await expect.poll(async () => (await sheetOf(s)).domainCards.loadout).toContain("whirlwind");
-    expect((await sheetOf(s)).stress).toBe(1);
-
-    await s.client.mutation(api.rests.finish, { campaignId: s.campaignId, restId, idempotencyKey: crypto.randomUUID() });
-    await expect(hand.getByRole("article", { name: "Deft Maneuvers" })).toBeVisible();
-    await expect(hand.getByRole("article", { name: "Deft Maneuvers" }).getByRole("button", { name: "Use Deft Maneuvers" })).toBeEnabled();
-  } finally {
-    await s.closePlayer();
-  }
-});
-
-for (const viewport of [
-  { width: 1440, height: 900 },
-  { width: 390, height: 844 },
-]) {
-  test(`the GM selects Ash's token: the Hand is greyed until 'Play for this character', then Bolt Beacon works (${viewport.width}px)`, async ({ page, browser }) => {
-    test.setTimeout(240_000);
-    const s = await cardScene(page, browser, wizardDraft("Ash"));
-    try {
-      await page.setViewportSize(viewport);
-      await page.goto(s.url);
-      await page.getByRole("region", { name: "Battle map" }).getByRole("button", { name: /^Ash, / }).click();
-      const hand = page.getByRole("region", { name: "Hand of Ash" });
-      const bolt = hand.getByRole("article", { name: "Bolt Beacon" });
-      await expect(bolt).toBeVisible({ timeout: 30_000 });
-      await expect(bolt).toHaveAttribute("data-locked", "true");
-      await expect(hand.getByRole("button", { name: /^Use/ })).toHaveCount(0);
-      // The locked view: read only, nothing to drag.
-      await expect(hand.locator("[data-draggable=true]")).toHaveCount(0);
-      await expectNoSeriousA11yViolations(page, { include: "[data-testid=combat-gm-hand]" });
-      if (viewport.width <= 760) expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-
-      const play = hand.getByRole("switch", { name: "Play for this character" });
-      await play.check();
-      await expect(bolt).not.toHaveAttribute("data-locked", "true");
-      const hopeBefore = (await sheetOf(s)).hope;
-      // The GM has picked no enemy on the map: the card opens the dialog to ask for the target, whether it is dragged
-      // onto the table (desktop) or played with Use (phone).
-      if (viewport.width > 760) await dragOntoTable(page, bolt);
-      else await useByKeyboard(bolt, "Bolt Beacon");
-      // The pick rings the Bandit on the map (F7-H4).
-      const dialog = page.getByRole("dialog", { name: "Bolt Beacon" });
-      await expect(page.getByTestId("combat-target-ring")).toHaveCount(0);
-      await dialog.getByRole("button", { name: "Bandit" }).click();
-      await expect(page.getByTestId("combat-target-ring")).toHaveCount(1);
-      await expectNoSeriousA11yViolations(page, { include: "dialog[open]" });
-      await dialog.getByRole("button", { name: "Use Bolt Beacon" }).click();
-      await expect(dialog).toHaveCount(0);
-      const result = hand.getByRole("region", { name: "Card result" });
-      await expect(result.getByTestId("combat-card-verdict")).toHaveText(/Bandit\s*Hit/);
-      const outcome = (await result.locator(".cma-outcome").first().textContent())!.trim();
-      await expect.poll(async () => (await sheetOf(s)).hope).toBe(hopeAfter(hopeBefore, outcome));
-      // Logged with the GM acting for Ash: the public row names Ash's card.
-      expect(await usesInFeed(s, "Ash uses Bolt Beacon")).toBe(1);
-
-      // Turning the switch off greys the Hand again.
-      await play.uncheck();
-      await expect(hand.getByRole("button", { name: /^Use/ })).toHaveCount(0);
-    } finally {
-      await s.closePlayer();
-    }
-  });
+async function sheetOf(s: HudScene) {
+  return (await s.client.query(api.characters.get, { characterId: s.characterId }))!.sheet;
 }
+
+test("the GM plays Vicious Entangle for Moss through the HUD: Play for, Use, pick, Cast on, the feed; off locks it again", async ({ browser }) => {
+  test.setTimeout(300_000);
+  const s = await hudScene(browser);
+  const { gm, enemies } = s;
+  try {
+    await gm.setViewportSize({ width: 1440, height: 900 });
+    await gm.goto(s.url);
+    await expect(gm.getByTestId("combat-hud")).toBeVisible();
+
+    await gm.getByRole("list", { name: "The party" }).getByRole("button", { name: "Open Moss's sheet" }).click();
+    const sheet = gm.getByRole("complementary", { name: "Moss’s sheet" });
+    await expect(sheet).toBeVisible();
+    await expect(hand(gm)).toHaveAttribute("data-mode", "gm");
+    await expect(hand(gm).getByRole("button", { name: /^Use / })).toHaveCount(0);
+
+    const playFor = sheet.getByRole("switch", { name: "Play for this character" });
+    await playFor.click();
+    await expect(playFor).toHaveAttribute("aria-checked", "true");
+    const card = fanCard(gm, "Vicious Entangle");
+    const use = card.getByRole("button", { name: "Use Vicious Entangle" });
+    await expect(use).toBeEnabled({ timeout: 30_000 });
+    await card.hover();
+    await use.click();
+
+    const panel = pickPanel(gm);
+    await expect(panel).toBeVisible();
+    await expect(panel.getByRole("heading", { name: "Vicious Entangle", level: 2 })).toBeVisible();
+    const ring = gm.locator(`[data-testid="hud-pick-ring"][data-token="${enemies.lieutenant.tokenId}"]`);
+    await pickRow(gm, enemies.lieutenant.tokenId).click();
+    await expect(ring).toHaveAttribute("data-state", "picked");
+    await expect(ring).toHaveClass(/hud-tg-picked/);
+    await expect(panel.getByTestId("hud-pick-go")).toHaveText(`Cast on ${enemies.lieutenant.name}`);
+    await expectNoSeriousA11yViolations(gm);
+    await panel.getByTestId("hud-pick-go").click();
+    await expect(panel).toHaveCount(0);
+
+    const result = gm.getByTestId("hud-result");
+    await expect(result.getByTestId("hud-result-row").filter({ hasText: enemies.lieutenant.name })).toContainText(/Hit|Miss|Defeated/, { timeout: 30_000 });
+    // Logged with the GM acting for Moss: the public row names Moss's card.
+    await expect.poll(() => usesInFeed(s, "Moss uses Vicious Entangle")).toBe(1);
+
+    // Play for off: the hand is locked again, no Use.
+    await playFor.click();
+    await expect(playFor).toHaveAttribute("aria-checked", "false");
+    await expect(hand(gm).getByRole("button", { name: /^Use / })).toHaveCount(0);
+    await expect(hand(gm).getByTestId("hud-hand-card").first()).toContainText("Turn on “Play for Moss”");
+  } finally {
+    await s.close();
+  }
+});
+
+test("a once-per-rest card goes used and comes back after the GM's rest; Recall is free while the rest is open", async ({ browser }) => {
+  test.setTimeout(300_000);
+  // Moss as a warrior: Deft Maneuvers (Bone, once per rest) and Untouchable (Bone, recall cost 1).
+  const s = await hudScene(browser, { moss: { classId: "warrior", domainCards: ["deft-maneuvers", "untouchable"] } });
+  const { player, client, playerClient, campaignId, characterId } = s;
+  try {
+    await playerClient.mutation(api.characters.moveCard, { characterId, cardId: "untouchable", to: "vault" });
+    await player.setViewportSize({ width: 1440, height: 900 });
+    await player.goto(s.url);
+    await expect(player.getByTestId("combat-hud")).toBeVisible();
+    await expect(hand(player)).toHaveAttribute("data-mode", "own", { timeout: 30_000 });
+
+    // In combat the recall costs its Stress.
+    await hand(player).getByRole("button", { name: "Open vault, 1 card" }).click();
+    const vault = player.getByTestId("hud-hand-vault");
+    await expect(vault.getByRole("button", { name: "Recall · 1 Stress, Untouchable" })).toBeVisible();
+    await vault.getByRole("button", { name: "Close vault (1)" }).click();
+    await expect(vault).toBeHidden();
+
+    // Deft Maneuvers asks nothing: Use fires it at once; it goes used until a rest.
+    const stressBefore = (await sheetOf(s)).stress;
+    const deft = fanCard(player, "Deft Maneuvers");
+    await deft.hover();
+    await deft.getByRole("button", { name: "Use Deft Maneuvers" }).click();
+    await expect(deft).toContainText("Used · back after a rest");
+    await expect(deft.getByRole("button", { name: /^Use/ })).toHaveCount(0);
+    await expect.poll(async () => (await sheetOf(s)).stress).toBe(stressBefore + 1);
+    await expect.poll(() => usesInFeed(s, "Moss uses Deft Maneuvers")).toBe(1);
+
+    // The GM rests the party: while the rest is open, Untouchable's recall is free.
+    const { restId } = await client.mutation(api.rests.start, { campaignId, kind: "short", idempotencyKey: crypto.randomUUID() });
+    await hand(player).getByRole("button", { name: "Open vault, 1 card" }).click();
+    await expect(vault).toContainText("Resting: recall is free");
+    const recall = vault.getByRole("button", { name: "Recall · free, Untouchable" });
+    await expect(recall).toBeVisible();
+    await expectNoSeriousA11yViolations(player);
+    await recall.click();
+    await expect(fanCard(player, "Untouchable")).toBeVisible();
+    await expect.poll(async () => (await sheetOf(s)).domainCards.loadout).toContain("untouchable");
+    expect((await sheetOf(s)).stress).toBe(stressBefore + 1);
+
+    // The rest ends: Deft Maneuvers is back.
+    await client.mutation(api.rests.finish, { campaignId, restId, idempotencyKey: crypto.randomUUID() });
+    await expect(deft.getByRole("button", { name: "Use Deft Maneuvers" })).toBeEnabled({ timeout: 30_000 });
+    await expect(deft).not.toContainText("Used ·");
+  } finally {
+    await s.close();
+  }
+});

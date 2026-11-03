@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { api } from "../../convex/_generated/api";
 import { expectNoSeriousA11yViolations } from "./a11y";
-import { enableHud, hudScene, type HudScene } from "./hud/helpers";
+import { hudScene, type HudScene } from "./hud/helpers";
 
 // Plan combat-hud H3.0 (docs/tasks/TASK-HUD-H3.0.md): with the HUD on, picking targets is one panel beside the primary
 // target (CmpPicking 'One target', Main 'Picking a target'): a row per creature (picked / in / out 'GM approves'),
@@ -101,13 +101,11 @@ test("a player picks: the panel beside the target, rows and rings in step, out o
   }
 });
 
-test("live: an out-of-range pick waits for the GM (classic list), Withdraw removes it on both screens", async ({ browser }) => {
+test("live: an out-of-range pick waits for the GM (the GM's queue), Withdraw removes it on both screens", async ({ browser }) => {
   test.setTimeout(300_000);
   const s = await hudScene(browser);
   const { gm, player, enemies, client, campaignId } = s;
   try {
-    // The GM stays on the classic page (switch off): their list is today's Resolutions column.
-    await enableHud(gm, false);
     const moss = s.pcs.find((p) => p.name === "Moss")!;
     const hopeBefore = (await client.query(api.combatHud.party, { campaignId, mapId: s.mapId })).find((m) => m.characterId === moss.characterId)!.hope.value;
     for (const page of [gm, player]) {
@@ -115,7 +113,8 @@ test("live: an out-of-range pick waits for the GM (classic list), Withdraw remov
       await page.goto(s.url);
     }
     await expect(player.getByTestId("combat-hud")).toBeVisible();
-    const sanctions = gm.getByRole("region", { name: "Resolutions" }).getByTestId("combat-sanction");
+    // The GM's HUD queue ("Waiting on you", plan combat-hud H5.1) lists the out-of-range use.
+    const sanctions = gm.getByTestId("hud-queue").getByTestId("hud-queue-range");
     await expect(sanctions).toHaveCount(0);
 
     const panel = await openAttack(player);
@@ -134,7 +133,7 @@ test("live: an out-of-range pick waits for the GM (classic list), Withdraw remov
     await expect(wait).toContainText(`${enemies.sniper.name} is Very Far. Nothing is rolled or paid until the GM decides.`);
     await expectNoSeriousA11yViolations(player);
 
-    // The GM's classic list shows it, live.
+    // The GM's queue shows it, live.
     await expect(sanctions).toHaveCount(1);
     await expect(sanctions).toContainText(enemies.sniper.name);
 

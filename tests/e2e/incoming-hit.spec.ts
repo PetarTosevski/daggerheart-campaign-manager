@@ -3,15 +3,16 @@ import type { ConvexHttpClient } from "convex/browser";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { expectNoSeriousA11yViolations, expectTouchTargets } from "./a11y";
+import { expectFitsViewport, expectNoSeriousA11yViolations, expectTouchTargets } from "./a11y";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, openCombatMap } from "./visual/helpers";
 
-// Plan combat-actions AA4, in three browsers: the player side of an adversary hit. The GM's Bandit hits Mira; Mira's
-// player sees "N damage: <severity> (H HP). Mark an Armor Slot …?" on the Combat Map (never the roll, Q13, Q14);
-// Tabby's player (390 px: a bottom sheet with 44 px buttons, Q11) sees "Bandit hit Mira" with I Am Your Shield,
-// uses it, marks two Armor Slots, and the hit resolves on Tabby (CB p.341). On the sheet, Mira's player answers a
-// hit with Mark (CB p.114). Axe on each prompt; shots in test-results/visual/CA-AA4/.
+// Plan combat-actions AA4, in three browsers: the player side of an adversary hit. On the Combat Map (the HUD since the
+// cut-over, plan combat-hud H8.1) the GM's Bandit hits Mira: Mira's player gets "You were hit" beside her token (never
+// the roll, Q13, Q14); Tabby's player (390 px: the hit window is a bottom sheet, H7.3) gets "Tabby can react" with I Am
+// Your Shield and no damage number, uses it, marks two Armor Slots, and the hit resolves on Tabby (CB p.341); Mira's
+// player never sees the window again. On the sheet, Mira's player answers a hit with Mark (CB p.114). Axe on each
+// prompt; shots in test-results/visual/CA-AA4/.
 
 const PLAYER_A = "e2e-player@example.test";
 const PLAYER_B = "e2e-player2@example.test";
@@ -90,6 +91,14 @@ async function sheetOf(gm: ConvexHttpClient, characterId: Id<"characters">) {
 const PROMPT_LINE = /^\d+ damage: (Minor|Major|Severe) \(\d HP\)\.$/;
 const ENEMY_WORDS = /\b(roll|Evasion|Difficulty|threshold|ATK)\b/i;
 
+/** A bottom sheet on a 390 × 844 phone: the full width, its bottom on the screen's bottom edge (H7.3). */
+async function expectPhoneBottomSheet(page: Page) {
+  const box = (await page.getByTestId("hud-hit").boundingBox())!;
+  expect(Math.round(box.x)).toBe(0);
+  expect(Math.round(box.width)).toBe(390);
+  expect(Math.abs(box.y + box.height - 844)).toBeLessThanOrEqual(1);
+}
+
 test("the Bandit hits Mira; Tabby answers with I Am Your Shield, marks two Armor Slots, and the hit resolves on Tabby", async ({ page, browser }) => {
   test.setTimeout(300_000);
   const { client: gm, campaignId, url } = await openCombatMap(page);
@@ -99,6 +108,7 @@ test("the Bandit hits Mira; Tabby answers with I Am Your Shield, marks two Armor
     const { characterId: mira } = await a.client.mutation(api.characters.create, { campaignId, draft: bardDraft("Mira"), idempotencyKey: crypto.randomUUID() });
     const { characterId: tabby } = await b.client.mutation(api.characters.create, { campaignId, draft: guardianDraft("Tabby"), idempotencyKey: crypto.randomUUID() });
     const instanceId = await banditEncounter(gm, campaignId);
+    // The campaign's first map is live at once.
     const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", name: "Old road", idempotencyKey: crypto.randomUUID() });
     await gm.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
     await gm.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId, instanceIds: [instanceId], idempotencyKey: crypto.randomUUID() });
@@ -109,59 +119,76 @@ test("the Bandit hits Mira; Tabby answers with I Am Your Shield, marks two Armor
 
     await a.page.goto(url);
     await b.page.goto(url);
-    await expect(a.page.getByRole("region", { name: "Battle map" })).toBeVisible({ timeout: 30_000 });
-    await expect(b.page.getByRole("region", { name: "Battle map" })).toBeVisible({ timeout: 30_000 });
+    await expect(a.page.getByTestId("combat-hud")).toBeVisible({ timeout: 30_000 });
+    await expect(b.page.getByTestId("hud-phone-sheet")).toBeVisible({ timeout: 30_000 });
+    const tabbyBefore = await sheetOf(gm, tabby);
+    const miraBefore = await sheetOf(gm, mira);
 
     await banditAttacks(gm, campaignId, instanceId, mira);
 
-    // Mira's player: her own damage and severity, Mark / Don't, never the roll (Q13, Q14).
-    const miraPrompt = a.page.getByRole("region", { name: "Incoming hit: Bandit hit Mira" });
-    await expect(miraPrompt).toBeVisible({ timeout: 30_000 });
-    await expect(miraPrompt.locator(".ih-dmg")).toHaveText(PROMPT_LINE);
-    await expect(miraPrompt.locator(".ih-q")).toHaveText(/^Mark an Armor Slot to (make it (Minor|Major)|take no damage)\?$/);
-    await expect(miraPrompt.getByRole("button", { name: "Mark" })).toBeVisible();
-    await expect(miraPrompt.getByRole("button", { name: "Don't" })).toBeVisible();
-    await expect(miraPrompt).not.toContainText(ENEMY_WORDS);
-    await expectNoSeriousA11yViolations(a.page, { include: "[data-testid=incoming-hit]" });
+    // Mira's player: "You were hit" with her own damage, the armor offer and Take n HP; never the roll (Q13, Q14).
+    const miraWin = a.page.getByRole("dialog", { name: "You were hit" });
+    await expect(miraWin).toBeVisible({ timeout: 30_000 });
+    await expect(miraWin).toContainText("Bandit hit Mira");
+    await expect(miraWin.getByTestId("hud-hit-damage")).toHaveText(/^\d+$/);
+    await expect(miraWin.getByTestId("hud-hit-question")).toHaveText(/^Mark an Armor Slot to (drop it to (Minor|Major)|take no damage)\?$/);
+    await expect(miraWin.getByRole("button", { name: /^Mark Armor · take / })).toBeVisible();
+    await expect(miraWin.getByRole("button", { name: /^Take \d HP$/ })).toBeVisible();
+    await expect(miraWin).not.toContainText(ENEMY_WORDS);
+    await expectNoSeriousA11yViolations(a.page, { include: "[data-testid=hud-hit-window]" });
     await a.page.screenshot({ path: `${OUT}/map-target-1440.png`, animations: "disabled" });
-    await miraPrompt.screenshot({ path: `${OUT}/prompt-target-1440.png`, animations: "disabled" });
 
-    // Tabby's player at 390 px: a bottom sheet with "Bandit hit Mira" and I Am Your Shield; no damage number.
-    const tabbyPrompt = b.page.getByRole("region", { name: "Incoming hit: Bandit hit Mira" });
-    await expect(tabbyPrompt).toBeVisible({ timeout: 30_000 });
-    await expect(tabbyPrompt).toContainText("Tabby can react");
-    await expect(tabbyPrompt).not.toContainText(/\d+ damage/);
-    await expect(tabbyPrompt.getByRole("heading", { name: "I Am Your Shield" })).toBeVisible();
-    const dock = b.page.getByTestId("incoming-hit-dock");
-    expect(await dock.evaluate((el) => getComputedStyle(el).position)).toBe("fixed");
-    await expectTouchTargets(tabbyPrompt.getByRole("button"));
-    await expectNoSeriousA11yViolations(b.page, { include: "[data-testid=incoming-hit]" });
-    expect(await b.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    // Tabby's player at 390 px: "Tabby can react" as a bottom sheet, I Am Your Shield and Pass; no damage number.
+    const allyWin = b.page.getByRole("dialog", { name: "Tabby can react" });
+    await expect(allyWin).toBeVisible({ timeout: 30_000 });
+    await expect(allyWin).toContainText("Bandit hit Mira");
+    await expect(allyWin.getByTestId("hud-hit-damage")).toHaveCount(0);
+    await expect(allyWin).not.toContainText(/\d+ damage/);
+    await expect(allyWin).not.toContainText(ENEMY_WORDS);
+    await expect(allyWin.getByRole("heading", { name: "I Am Your Shield" })).toBeVisible();
+    await expect(allyWin.getByRole("button", { name: "Pass" })).toBeVisible();
+    await expectPhoneBottomSheet(b.page);
+    await expectTouchTargets(allyWin.getByRole("button"));
+    await expectNoSeriousA11yViolations(b.page, { include: "[data-testid=hud-hit-window]" });
+    await expectFitsViewport(b.page);
     await b.page.screenshot({ path: `${OUT}/map-ally-390.png`, animations: "disabled" });
 
-    await tabbyPrompt.getByRole("button", { name: "Use I Am Your Shield" }).click();
+    await allyWin.getByRole("button", { name: "Use I Am Your Shield" }).click();
 
-    // Tabby is the target now: any number of Armor Slots (CB p.341). Mira's player owes nothing.
-    const shield = b.page.getByRole("region", { name: "Incoming hit: Bandit hit Tabby" });
+    // Tabby is the target now (CB p.341): any number of Armor Slots; I Am Your Shield is spent (1 Stress).
+    const shield = b.page.getByRole("dialog", { name: "You were hit" });
     await expect(shield).toBeVisible({ timeout: 30_000 });
-    await expect(shield.locator(".ih-q")).toHaveText("Mark any number of Armor Slots to reduce it.");
+    await expect(shield).toContainText("Bandit hit Tabby (instead of Mira)");
     await expect(shield.getByRole("button", { name: "Use I Am Your Shield" })).toHaveCount(0);
-    await expect(shield.locator(".ih-dmg")).toHaveText(PROMPT_LINE);
+    await expect(shield.getByTestId("hud-hit-damage")).toHaveText(/^\d+$/);
+    await expect(shield).not.toContainText(ENEMY_WORDS);
+    // Mira's player owes nothing: the window is gone.
+    await expect(a.page.getByTestId("hud-hit-window")).toHaveCount(0, { timeout: 30_000 });
+    await expect.poll(async () => (await sheetOf(gm, tabby)).stress).toBe(tabbyBefore.stress + 1);
+
+    await shield.getByRole("button", { name: "More Armor Slots to mark" }).click();
+    await expect(shield.getByTestId("hud-hit-question")).toHaveText(/^Mark 2 Armor Slots to (drop it to (Minor|Major)|take no damage)\?$/);
+    await expect(shield.getByTestId("hud-hit-armor")).toHaveText(new RegExp(`^${tabbyBefore.armorMarked} → ${tabbyBefore.armorMarked + 2} of \\d+ marked$`));
+    await expectPhoneBottomSheet(b.page);
     await expectTouchTargets(shield.getByRole("button"));
-    await expectNoSeriousA11yViolations(b.page, { include: "[data-testid=incoming-hit]" });
+    await expectNoSeriousA11yViolations(b.page, { include: "[data-testid=hud-hit-window]" });
     await b.page.screenshot({ path: `${OUT}/map-shield-390.png`, animations: "disabled" });
-    await expect(a.page.getByTestId("incoming-hit")).toHaveCount(0);
-    await expect.poll(async () => (await sheetOf(gm, tabby)).stress).toBe(1);
 
-    await shield.getByRole("button", { name: /^Mark 2/ }).click();
-    await expect(b.page.getByTestId("incoming-hit")).toHaveCount(0);
-    await expect(b.page.getByTestId("incoming-hit-line")).toHaveCount(0);
-    await expect.poll(async () => (await sheetOf(gm, tabby)).armorMarked).toBe(2);
-    expect((await sheetOf(gm, mira)).hp).toBe(0);
+    await shield.getByRole("button", { name: /^Mark 2 Armor · / }).click();
+    await expect(b.page.getByTestId("hud-hit-window")).toHaveCount(0, { timeout: 30_000 });
+    await expect.poll(async () => (await sheetOf(gm, tabby)).armorMarked).toBe(tabbyBefore.armorMarked + 2);
+    expect((await sheetOf(gm, tabby)).stress).toBe(tabbyBefore.stress + 1);
+    expect((await sheetOf(gm, mira)).hp).toBe(miraBefore.hp);
     expect(await gm.query(api.adversaryActions.pending, { campaignId, characterId: tabby })).toEqual([]);
+    expect(await gm.query(api.adversaryActions.pending, { campaignId, characterId: mira })).toEqual([]);
+    // The original target never shows the window again.
+    await expect(a.page.getByTestId("hud-hit-window")).toHaveCount(0);
+    await expect(a.page.getByTestId("hud-hit-waiting")).toHaveCount(0);
 
-    // The feed: "Bandit hit Mira" only, no numbers (Q14).
-    await expect(a.page.getByRole("region", { name: "Roll feed" }).getByTestId("combat-mini-feed")).toContainText("Bandit hit Mira");
+    // Mira's feed: "Bandit hit Mira", never the Bandit's numbers (Q14).
+    const row = a.page.getByTestId("hud-feed").getByRole("listitem").filter({ hasText: "Bandit hit Mira" }).first();
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    await expect(row).not.toContainText(ENEMY_WORDS);
   } finally {
     await a.close();
     await b.close();

@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Page } from "@playwright/test";
 import type { ConvexHttpClient } from "convex/browser";
 
 import { api } from "../../convex/_generated/api";
@@ -15,7 +15,9 @@ import { bardDraft, convexAs, openCombatMap } from "./visual/helpers";
 // GM's rest brings it back (Q3, CB p.101, p.105). The GM sees each resolution with its numbers and undoes Wild Flame
 // (U4, Q10). Throughout, every message the players' browsers receive is checked: nothing about an enemy carries its HP,
 // Stress, thresholds or Difficulty (U1).
-// Locators are roles and labels only, so the sheet-drawer wave's layout changes leave them working.
+// Since the cut-over (plan combat-hud H8.1) play is always the Combat HUD: attacks go through the action ring and the
+// picking panel (`hud-pick`), cards through the HUD hand's fan, results show in the result panel (`hud-result`), and the
+// GM's Resolutions with Undo are the HUD's left column (`hud-resolution`), not the Map tools drawer.
 
 test.use({ actionTimeout: 30_000 });
 
@@ -145,22 +147,31 @@ function enemyLeaks(frames: readonly string[], enemyIds: ReadonlySet<string>): {
   return { seen, leaks };
 }
 
-/** The non-drag way to play a card (WCAG 2.5.7): focus raises it out of the fan, Enter presses its Use. */
-async function useByKeyboard(card: Locator, name: string) {
-  const use = card.getByRole("button", { name: `Use ${name}` });
-  await use.focus();
-  await use.press("Enter");
+const handOf = (page: Page) => page.getByTestId("hud-hand");
+const fanCard = (page: Page, name: string) => handOf(page).getByTestId("hud-hand-card").filter({ has: page.getByRole("heading", { name, exact: true }) });
+const pickPanel = (page: Page) => page.getByTestId("hud-pick");
+const pickRow = (page: Page, tokenId: string) => pickPanel(page).locator(`[data-testid="hud-pick-row"][data-token="${tokenId}"]`);
+
+/** Use on a card of the HUD fan: hovering raises it whole, then its Use is in reach (tests/e2e/hud-card-pick.spec.ts). */
+async function useCard(page: Page, name: string) {
+  await fanCard(page, name).hover();
+  await fanCard(page, name).getByRole("button", { name: `Use ${name}` }).click();
 }
 
-/** Presses the dialog's creature chips so exactly `names` are picked. */
-async function pickExactly(dialog: Locator, all: readonly string[], names: readonly string[]) {
-  for (const name of all) {
-    const chip = dialog.getByRole("button", { name, exact: true });
-    const on = (await chip.getAttribute("aria-pressed")) === "true";
-    if (on !== names.includes(name)) await chip.click();
-    await expect(chip).toHaveAttribute("aria-pressed", String(names.includes(name)));
-  }
+/** The action ring's Attack (H3.4): a click on the player's own token opens the ring; Attack opens the picking panel. */
+async function openAttack(page: Page, name: string) {
+  await page
+    .getByRole("region", { name: "Battle map" })
+    .getByRole("button", { name: new RegExp(`^Open ${name}’s sheet \\(your character\\)`) })
+    .click();
+  const attack = page.getByRole("toolbar", { name: `Your actions (${name})` }).getByRole("button", { name: "Attack" });
+  await expect(attack).toBeEnabled({ timeout: 30_000 });
+  await attack.click();
+  await expect(pickPanel(page)).toBeVisible();
 }
+
+/** Words that would give an enemy's numbers away on a player's result (U1). */
+const NUMBERS = /\b(HP|Stress|Difficulty|threshold|Minor|Major|Severe)\b/;
 
 test("two players and the GM: attacks, cards, a Minion pick, a recall, a rest and GM undo; players never see enemy numbers", async ({ page, browser }) => {
   test.setTimeout(600_000);
@@ -187,6 +198,7 @@ test("two players and the GM: attacks, cards, a Minion pick, a recall, a rest an
     await gm.mutation(api.encounters.start, { campaignId, encounterId });
 
     const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", name: "Old road", idempotencyKey: crypto.randomUUID() });
+    await gm.mutation(api.combatMaps.setLive, { campaignId, mapId });
     await gm.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
     await gm.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId, instanceIds: [bandit, raider, rat1, rat2], idempotencyKey: crypto.randomUUID() });
     const tokens = await gm.query(api.combatTokens.list, { campaignId, mapId });
@@ -212,104 +224,125 @@ test("two players and the GM: attacks, cards, a Minion pick, a recall, a rest an
     };
     const sheetOf = async (characterId: Id<"characters">) => (await gm.query(api.characters.get, { characterId }))!.sheet;
 
-    await a.page.goto(url);
-    await b.page.goto(url);
-    await page.goto(url);
-    const ashHand = a.page.getByRole("region", { name: "Your hand" });
-    const brynHand = b.page.getByRole("region", { name: "Your hand" });
-    await expect(ashHand.getByRole("article", { name: "Book of Tyfar" })).toBeVisible({ timeout: 30_000 });
-    await expect(brynHand.getByRole("article", { name: "Deft Maneuvers" })).toBeVisible({ timeout: 30_000 });
-    const resolutions = page.getByRole("region", { name: "Resolutions" });
-    await expect(resolutions).toBeVisible({ timeout: 30_000 });
+    for (const p of [a.page, b.page, page]) {
+      await p.setViewportSize({ width: 1440, height: 900 });
+      await p.goto(url);
+      await expect(p.getByTestId("combat-hud")).toBeVisible({ timeout: 30_000 });
+    }
+    await expect(handOf(a.page)).toHaveAttribute("data-mode", "own", { timeout: 30_000 });
+    await expect(handOf(b.page)).toHaveAttribute("data-mode", "own", { timeout: 30_000 });
+    await expect(handOf(a.page).getByRole("article", { name: "Book of Tyfar" })).toBeVisible({ timeout: 30_000 });
+    await expect(handOf(b.page).getByRole("article", { name: "Deft Maneuvers" })).toBeVisible({ timeout: 30_000 });
+    // The GM's Resolutions with Undo, in the HUD's left column (H5.1).
+    await expect(page.getByTestId("hud-resolutions")).toBeVisible({ timeout: 30_000 });
+    const resolution = (text: string) => page.getByTestId("hud-resolution").filter({ hasText: text });
+    const banditToken = tokenOf((t) => t.instanceId === bandit)._id;
+    const raiderToken = tokenOf((t) => t.instanceId === raider)._id;
 
-    // ---- 1. Ash attacks the Bandit with the Rapier: Hit, 2 HP on the GM's side only (R1, R3, U1).
-    const ashBoard = a.page.getByRole("region", { name: "Battle map" });
-    const ashAttack = a.page.getByRole("region", { name: "Attack", exact: true });
-    await ashBoard.getByRole("button", { name: /^Bandit, Enemy/ }).click();
-    await ashAttack.getByRole("button", { name: "⚔ Attack Bandit with Rapier" }).click();
-    const attackResult = ashAttack.getByRole("region", { name: "Attack result" });
-    await expect(attackResult.getByTestId("combat-verdict")).toHaveText(/Bandit\s*Hit/);
-    await expect(attackResult).not.toContainText(/\b(HP|Stress|Difficulty|threshold|Minor|Major|Severe)\b/);
+    // ---- 1. Ash attacks the Bandit through the action ring: Hit, 2 HP on the GM's side only (R1, R3, U1).
+    await openAttack(a.page, "Ash");
+    await pickRow(a.page, banditToken).click();
+    await pickPanel(a.page).getByTestId("hud-pick-go").click();
+    await expect(pickPanel(a.page)).toHaveCount(0);
+    const result = a.page.getByTestId("hud-result");
+    await expect(result.getByTestId("hud-result-row").filter({ hasText: "Bandit" })).toContainText("Hit", { timeout: 30_000 });
+    await expect(result).not.toContainText(NUMBERS);
     await expect.poll(async () => (await instance(bandit)).hp).toBe(2);
-    await expect(resolutions.getByTestId("combat-resolution").filter({ hasText: "Ash → Bandit" }).first()).toContainText("Major → 2 HP (2/5)");
+    await expect(resolution("Bandit").first()).toContainText("Ash", { timeout: 30_000 });
 
     // ---- 2. Wild Flame (Book of Tyfar) on the Bandit and the Raider: one roll, both hit, 2d6 magic and a Stress each.
-    await useByKeyboard(ashHand.getByRole("article", { name: "Book of Tyfar" }), "Book of Tyfar");
-    const tyfar = a.page.getByRole("dialog", { name: "Book of Tyfar" });
-    await expect(tyfar.getByRole("button", { name: "Wild Flame", exact: true })).toHaveAttribute("aria-pressed", "true");
-    await pickExactly(tyfar, ["Bandit", "Raider"], ["Bandit", "Raider"]);
-    await tyfar.getByRole("button", { name: "Use Wild Flame" }).click();
+    await useCard(a.page, "Book of Tyfar");
+    const tyfar = pickPanel(a.page);
+    await expect(tyfar).toBeVisible();
+    const flame = tyfar.getByTestId("hud-card-spell").getByRole("radio", { name: "Wild Flame" });
+    await flame.click();
+    await expect(flame).toBeChecked();
+    for (const token of [banditToken, raiderToken]) {
+      const row = pickRow(a.page, token);
+      if ((await row.getAttribute("aria-pressed")) !== "true") await row.click();
+      await expect(row).toHaveAttribute("aria-pressed", "true");
+    }
+    await tyfar.getByTestId("hud-pick-go").click();
     await expect(tyfar).toHaveCount(0);
-    const cardResult = ashHand.getByRole("region", { name: "Card result" });
-    await expect(cardResult.getByTestId("combat-card-verdict")).toHaveText([/Bandit\s*Hit/, /Raider\s*Hit/]);
-    await expect(cardResult).not.toContainText(/\b(HP|Stress|Difficulty|threshold|Minor|Major|Severe)\b/);
+    await expect(result.getByRole("heading", { name: "Book of Tyfar", level: 2 })).toBeVisible({ timeout: 30_000 });
+    await expect(result.getByTestId("hud-result-row")).toHaveText([/Bandit[\s\S]*Hit/, /Raider[\s\S]*Hit/]);
+    await expect(result).not.toContainText(NUMBERS);
     await expect.poll(async () => [(await instance(bandit)).stress, (await instance(raider)).stress]).toEqual([1, 1]);
     expect((await instance(bandit)).hp).toBe(4);
     expect((await instance(raider)).hp).toBe(2);
-    const flameRow = resolutions.getByTestId("combat-resolution").filter({ hasText: "Ash · Book of Tyfar" });
-    await expect(flameRow).toContainText("Raider");
+    const flameRow = resolution("Book of Tyfar").first();
+    await expect(flameRow).toBeVisible({ timeout: 30_000 });
 
-    // ---- 3. The GM undoes Wild Flame: both enemies go back to their state before it (U4).
-    await flameRow.getByRole("button", { name: /^Undo/ }).click();
-    await expect(flameRow).toContainText("Undone");
+    // ---- 3. The GM undoes Wild Flame: both enemies go back to their state before it (U4); the players' feed says so.
+    await flameRow.getByRole("button", { name: /^Undo: / }).click();
+    await expect(flameRow).toHaveClass(/hud-res-undone/, { timeout: 30_000 });
+    await expect(flameRow).toContainText("undone");
     await expect.poll(async () => [(await instance(bandit)).hp, (await instance(bandit)).stress, (await instance(raider)).hp, (await instance(raider)).stress]).toEqual([2, 0, 0, 0]);
-    await expect(a.page.getByRole("region", { name: "Roll feed" }).getByTestId("combat-mini-feed")).toContainText("(undone)");
+    await expect(a.page.getByTestId("hud-feed").locator("li.hud-feed-undone").filter({ hasText: "Book of Tyfar" }).first()).toContainText("undone");
 
     // ---- 4. Recant (Book of Korvax): the Raider makes a Reaction Roll (15), rolled by the server (Q7); a Hope is spent.
     const hopeBefore = (await sheetOf(ash)).hope;
-    await useByKeyboard(ashHand.getByRole("article", { name: "Book of Korvax" }), "Book of Korvax");
-    const korvax = a.page.getByRole("dialog", { name: "Book of Korvax" });
-    await korvax.getByRole("button", { name: "Recant", exact: true }).click();
-    await expect(korvax.getByRole("button", { name: "Recant", exact: true })).toHaveAttribute("aria-pressed", "true");
-    // A new dialog starts with no picks of the last one (DA6, CA8 bug 3): the Raider, picked in the Wild Flame dialog, is
-    // not; the Bandit, picked on the map in step 1, is the card's first pick as before. Recant has one target.
-    const raiderChip = korvax.getByRole("button", { name: "Raider", exact: true });
-    await expect(raiderChip).toHaveAttribute("aria-pressed", "false");
-    await expect(korvax.getByRole("button", { name: "Bandit", exact: true })).toHaveAttribute("aria-pressed", "true");
-    // Creatures beyond Recant's Melee range stay listed, greyed for the GM's approval (DA6, CA8 follow-up 2): Bryn.
-    await expect(korvax.getByRole("button", { name: "Bryn", exact: true })).toContainText("Out of range - GM approves");
-    await expect(korvax.getByRole("button", { name: "Bryn", exact: true })).toHaveAttribute("data-away", "true");
-    await raiderChip.click();
-    await expect(raiderChip).toHaveAttribute("aria-pressed", "true");
-    await expect(korvax.getByRole("button", { name: "Bandit", exact: true })).toHaveAttribute("aria-pressed", "false");
-    await korvax.getByRole("button", { name: "Use Recant" }).click();
+    await useCard(a.page, "Book of Korvax");
+    const korvax = pickPanel(a.page);
+    await expect(korvax).toBeVisible();
+    const recant = korvax.getByTestId("hud-card-spell").getByRole("radio", { name: "Recant" });
+    await recant.click();
+    await expect(recant).toBeChecked();
+    // A new session starts with no picks of the last one (DA6): the Raider, picked for Wild Flame, is not.
+    await expect(pickRow(a.page, raiderToken)).toHaveAttribute("aria-pressed", "false");
+    // Creatures beyond Recant's Melee range stay listed for the GM's approval (DA6): Bryn.
+    await expect(pickRow(a.page, brynToken._id)).toContainText("GM approves");
+    await pickRow(a.page, raiderToken).click();
+    await expect(pickRow(a.page, raiderToken)).toHaveAttribute("aria-pressed", "true");
+    await expect(pickRow(a.page, banditToken)).not.toHaveAttribute("aria-pressed", "true");
+    await korvax.getByTestId("hud-pick-go").click();
     await expect(korvax).toHaveCount(0);
-    await expect(cardResult).toContainText("Book of Korvax");
-    await expect(cardResult).not.toContainText(/\b(HP|Stress|Difficulty|threshold|Minor|Major|Severe)\b/);
+    await expect(result.getByRole("heading", { name: "Book of Korvax", level: 2 })).toBeVisible({ timeout: 30_000 });
+    await expect(result).not.toContainText(NUMBERS);
     await expect.poll(async () => (await sheetOf(ash)).hope).toBe(hopeBefore - 1);
-    await expect(resolutions.getByTestId("combat-resolution").filter({ hasText: "Ash · Book of Korvax" })).toContainText(/Raider: reaction \d+ vs 15 → (succeeds|fails)/);
+    await expect(resolution("Book of Korvax").first()).toContainText("Raider", { timeout: 30_000 });
 
     // ---- 5. Recall: Book of Illiat comes back from the vault for its Recall Cost in Stress (R7, CB p.101).
     const stressBefore = (await sheetOf(ash)).stress;
-    await ashHand.getByRole("button", { name: "Open vault, 1 card" }).click();
-    await ashHand.getByRole("list", { name: "Vault" }).getByRole("button", { name: "Recall: 2 Stress, Book of Illiat" }).click();
-    await expect(ashHand.getByRole("list", { name: "Loadout" }).getByRole("article", { name: "Book of Illiat" })).toBeVisible();
+    await handOf(a.page).getByRole("button", { name: "Open vault, 1 card" }).click();
+    const vault = a.page.getByTestId("hud-hand-vault");
+    await vault.getByRole("button", { name: "Recall · 2 Stress, Book of Illiat" }).click();
+    await expect(fanCard(a.page, "Book of Illiat")).toBeVisible();
     await expect.poll(async () => (await sheetOf(ash)).stress).toBe(stressBefore + 2);
 
-    // ---- 6. Bryn hits a Rat and picks the second Rat his damage defeats (Q6, CB p.201).
-    const brynBoard = b.page.getByRole("region", { name: "Battle map" });
-    const brynAttack = b.page.getByRole("region", { name: "Attack", exact: true });
-    const rat1Name = nameOf(rat1);
-    const rat2Name = nameOf(rat2);
-    await brynBoard.getByRole("button", { name: new RegExp(`^${rat1Name}, Enemy`) }).click();
-    await brynAttack.getByRole("button", { name: `⚔ Attack ${rat1Name} with Rapier` }).click();
-    await expect(brynAttack.getByRole("region", { name: "Attack result" }).getByTestId("combat-verdict")).toHaveText(new RegExp(`${rat1Name}\\s*Defeated`));
-    // The offer opens the pick dialog by itself.
-    const minions = b.page.getByRole("dialog", { name: "Pick Minions" });
-    await expect(minions).toBeVisible();
-    await minions.getByRole("group", { name: rat2Name }).getByRole("button", { name: /^More / }).click();
-    await minions.getByRole("button", { name: "Defeat 1" }).click();
-    await expect(minions).toHaveCount(0);
+    // ---- 6. Bryn hits a Rat and picks the second Rat his damage defeats (Q6, CB p.201): the HUD's Minion offer.
+    const rat1Token = tokenOf((t) => t.instanceId === rat1)._id;
+    const rat2Token = tokenOf((t) => t.instanceId === rat2)._id;
+    await openAttack(b.page, "Bryn");
+    await pickRow(b.page, rat1Token).click();
+    await pickPanel(b.page).getByTestId("hud-pick-go").click();
+    await expect(pickPanel(b.page)).toHaveCount(0);
+    const brynResult = b.page.getByTestId("hud-result");
+    // A roll with Fear may wait for Bryn's after-the-roll feature (Q1, "Your roll waits"): pass, so the damage rolls.
+    const held = b.page.getByRole("dialog", { name: "Your roll waits" });
+    await expect(brynResult.or(held).first()).toBeVisible({ timeout: 30_000 });
+    if (await held.isVisible()) await held.getByRole("button", { name: "Pass" }).click();
+    await expect(brynResult.getByTestId("hud-result-row").filter({ hasText: nameOf(rat1) })).toContainText("Defeated", { timeout: 30_000 });
+    await expect(brynResult).not.toContainText(NUMBERS);
+    const offer = b.page.getByTestId("hud-attack-minions");
+    await expect(offer).toContainText(/Your hit can defeat \d+ more Minions?/);
+    await offer.getByRole("button", { name: "Pick Minions" }).click();
+    await pickRow(b.page, rat2Token).click();
+    await expect(pickPanel(b.page).getByTestId("hud-pick-go")).toHaveText("Defeat 1");
+    await pickPanel(b.page).getByTestId("hud-pick-go").click();
+    await expect(pickPanel(b.page)).toHaveCount(0);
+    await expect(offer).toHaveCount(0);
     await expect.poll(async () => [(await instance(rat1)).defeated, (await instance(rat2)).defeated]).toEqual([true, true]);
 
-    // ---- 7. Deft Maneuvers (once per rest) greys out; the GM's rest brings it back (Q3, CB p.101, p.105).
-    await useByKeyboard(brynHand.getByRole("article", { name: "Deft Maneuvers" }), "Deft Maneuvers");
-    const used = brynHand.getByRole("article", { name: "Deft Maneuvers, used: Back after a rest" });
-    await expect(used).toHaveAttribute("data-exhausted", "true");
-    await expect(used.getByRole("button", { name: /^Use/ })).toHaveCount(0);
+    // ---- 7. Deft Maneuvers (once per rest) is used and shows so; the GM's rest brings it back (Q3, CB p.101, p.105).
+    await useCard(b.page, "Deft Maneuvers");
+    const used = handOf(b.page).getByRole("article", { name: "Deft Maneuvers, used: Back after a rest" });
+    await expect(used).toHaveAttribute("data-exhausted", "true", { timeout: 30_000 });
+    await expect(fanCard(b.page, "Deft Maneuvers")).toContainText("Used · back after a rest");
+    await expect(fanCard(b.page, "Deft Maneuvers").getByRole("button", { name: /^Use/ })).toHaveCount(0);
     const { restId } = await gm.mutation(api.rests.start, { campaignId, kind: "short", idempotencyKey: crypto.randomUUID() });
     await gm.mutation(api.rests.finish, { campaignId, restId, idempotencyKey: crypto.randomUUID() });
-    await expect(brynHand.getByRole("article", { name: "Deft Maneuvers" }).getByRole("button", { name: "Use Deft Maneuvers" })).toBeEnabled();
+    await expect(fanCard(b.page, "Deft Maneuvers").getByRole("button", { name: "Use Deft Maneuvers" })).toBeEnabled({ timeout: 30_000 });
 
     // ---- U1: nothing either player received names an enemy alongside its HP, Stress, thresholds or Difficulty.
     for (const [who, player] of [

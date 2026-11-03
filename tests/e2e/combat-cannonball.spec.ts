@@ -12,8 +12,9 @@ import { convexAs, openCombatMap } from "./visual/helpers";
 // thrower's Proficiency." User 2026-10-30: the druid marks the Stress and is thrown; the throwing ally gets the prompt in
 // their drawer and rolls.
 // The GM (desktop) plays for Moss, a druid in Armored Sentry, and asks Bryn to throw her; the player (390 px) sees the
-// prompt in Bryn's drawer, rolls Strength at the Bandit and sees Hit only (U1); the Bandit takes 2 HP (a custom block any
-// roll hits and any damage marks 2 HP on).
+// prompt on Bryn's sheet, rolls Strength at the Bandit and sees Hit only (U1); the Bandit takes 2 HP (a custom block any
+// roll hits and any damage marks 2 HP on). Plan combat-hud H8.1: both use the HUD's sheet panel (the GM's from Moss's
+// token, the player's full-screen sheet on a phone), which shows the same ally-roll prompts.
 
 const PLAYER = "e2e-player@example.test";
 
@@ -57,7 +58,7 @@ function draft(name: string, classId: string, subclassId: string, primaryWeaponI
   };
 }
 
-test("a druid is thrown: the GM asks Bryn from Moss's drawer, the player rolls from Bryn's drawer at 390 px, the Bandit takes damage", async ({ page, browser }) => {
+test("a druid is thrown: the GM asks Bryn from Moss's sheet, the player rolls from Bryn's sheet at 390 px, the Bandit takes damage", async ({ page, browser }) => {
   test.setTimeout(240_000);
   await page.setViewportSize({ width: 1280, height: 800 });
   const { client, campaignId, url } = await openCombatMap(page);
@@ -94,12 +95,10 @@ test("a druid is thrown: the GM asks Bryn from Moss's drawer, the player rolls f
     const stressOf = async () => (await client.query(api.characters.get, { characterId: moss }))!.sheet.stress;
     const stressBefore = await stressOf();
 
-    // The GM plays for Moss and asks Bryn to throw her: the Stress is marked, the drawer waits for Bryn.
+    // The GM plays for Moss and asks Bryn to throw her: the Stress is marked, the sheet waits for Bryn.
     await page.goto(url);
-    await page.getByRole("region", { name: "Battle map" }).getByRole("button", { name: /^Moss, / }).click();
-    await page.getByTestId("sheet-button-top").click();
-    const drawer = page.getByRole("dialog", { name: "Character sheet" });
-    await expect(drawer.getByTestId("sheet-drawer-name")).toHaveText("Moss");
+    await page.getByRole("region", { name: "Battle map" }).getByRole("button", { name: /^Open Moss’s sheet/ }).click();
+    const drawer = page.getByRole("complementary", { name: "Moss’s sheet" });
     await drawer.getByRole("switch", { name: "Play for this character" }).check();
     const start = drawer.getByTestId("ally-roll-start");
     await start.getByLabel("Ally who throws you").selectOption({ label: "Bryn" });
@@ -110,11 +109,11 @@ test("a druid is thrown: the GM asks Bryn from Moss's drawer, the player rolls f
     await expect(drawer.getByTestId("ally-roll-pending")).toContainText("Moss's Cannonball: Bryn rolls");
     await expectNoSeriousA11yViolations(page);
 
-    // The player opens Bryn's drawer at 390 px: the prompt with Agility / Strength and the targets in Close range.
+    // The player opens Bryn's sheet at 390 px (full screen): the prompt with Agility / Strength and the targets in Close
+    // range.
     await player.goto(url);
-    await player.getByTestId("sheet-button-bottom").click();
-    const brynDrawer = player.getByRole("dialog", { name: "Character sheet" });
-    await expect(brynDrawer.getByTestId("sheet-drawer-name")).toHaveText("Bryn");
+    await player.getByTestId("hud-phone-sheet-button").click();
+    const brynDrawer = player.getByRole("complementary", { name: "Bryn’s sheet" });
     const ask = brynDrawer.getByTestId("ally-roll-ask");
     await expect(ask).toContainText("Moss's Cannonball: throw them at an adversary");
     expect(await player.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -130,7 +129,7 @@ test("a druid is thrown: the GM asks Bryn from Moss's drawer, the player rolls f
     await expect.poll(banditHp).toBe(2);
     await expectNoSeriousA11yViolations(player);
 
-    // The GM's drawer no longer waits.
+    // The GM's sheet no longer waits.
     await expect(drawer.getByTestId("ally-roll-waiting")).toHaveCount(0);
     await expect(drawer.getByTestId("ally-roll-pending")).toHaveCount(0);
   } finally {

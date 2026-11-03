@@ -60,16 +60,22 @@ test("live combat map: map switch, tokens both ways, explored areas, fog, doors 
 
     // ---- Both open the combat map once; from here on nobody reloads.
     const url = `/campaigns/${campaignId}/combat-map`;
+    // The board's desktop size for the GM: at 1280 x 720 the spotlight panel (top middle) covers the Bandit's square.
+    await gm.setViewportSize({ width: 1440, height: 900 });
     await Promise.all([gm.goto(url), player.goto(url)]);
+    // Plan combat-hud H8.1: Play is always the HUD. The GM's maps, Doors card and vision panel live in its "Map tools"
+    // drawer, open for the whole scene (it covers only the map's left edge; the scene happens east of it).
+    await gm.getByRole("button", { name: "Map tools" }).click();
     const tools = gm.getByRole("complementary", { name: "Map tools" });
+    const gmTools = gm.getByRole("group", { name: "GM tools" });
     const maps = tools.getByRole("list", { name: "Campaign maps" });
     const gmBoard = gm.getByRole("region", { name: "Battle map" });
     const board = player.getByRole("region", { name: "Battle map" });
-    const headline = player.locator(".cm-headline");
+    const headline = player.getByTestId("hud-title").getByRole("heading");
     await expect(headline).toHaveText("Old road");
-    const mine = board.getByRole("button", { name: new RegExp(`^${characterName}, Party.*your character`) });
+    const mine = board.getByRole("button", { name: new RegExp(`^Open ${characterName}’s sheet \\(your character\\)`) });
     await expect(mine).toHaveAttribute("data-square", "15,10");
-    const gmLiriel = gmBoard.getByRole("button", { name: new RegExp(`^${characterName}, Party`) });
+    const gmLiriel = gmBoard.getByRole("button", { name: new RegExp(`^Open ${characterName}’s sheet`) });
     await expect(gmLiriel).toHaveAttribute("data-square", "15,10");
 
     // ---- Map switch: the GM shows 'Cellar', then 'Old road' again; the player's board follows each time.
@@ -80,19 +86,20 @@ test("live combat map: map switch, tokens both ways, explored areas, fog, doors 
     await expect(headline).toHaveText("Old road");
     await expect(mine).toHaveAttribute("data-square", "15,10");
 
-    // ---- GM -> player: the GM selects the Bandit and steps it south with the keyboard.
+    // ---- GM -> player: the GM focuses the Bandit and steps it south with the keyboard.
     const playerBandit = board.getByRole("button", { name: /^Bandit, Enemy/ });
     await expect(playerBandit).toHaveAttribute("data-square", "20,8");
     const gmBandit = gmBoard.getByRole("button", { name: /^Bandit, Enemy/ });
-    await gmBandit.click();
+    await gmBandit.focus();
     await gm.keyboard.press("ArrowDown");
     await expect(gmBandit).toHaveAttribute("data-square", "20,9");
     await expect(playerBandit).toHaveAttribute("data-square", "20,9");
 
     // ---- The GM previews Liriel's view: (8, 10), behind her, is unseen fog.
-    await gm.getByRole("button", { name: /Player view/ }).click();
-    await gm.getByRole("menu", { name: "Open the player view as" }).getByRole("menuitemradio", { name: characterName }).click();
-    await expect(gm.getByRole("button", { name: new RegExp(`Viewing as ${characterName}`) })).toBeVisible();
+    await gmTools.getByRole("button", { name: /Player view/ }).click();
+    // By keyboard: the GM's spotlight panel covers the menu on screen (dcm-bxp.99.32.42).
+    await gm.getByRole("menu", { name: "Open the player view as" }).getByRole("menuitemradio", { name: characterName }).press("Enter");
+    await expect(gmTools.getByRole("button", { name: new RegExp(`Viewing as ${characterName}`) })).toBeVisible();
     await expect(gm.getByTestId("combat-fog")).toBeVisible();
     await expect.poll(() => fogAlpha(gm, 8.5, 10.5)).toBeGreaterThan(250);
 
@@ -164,10 +171,21 @@ test("live combat map: map switch, tokens both ways, explored areas, fog, doors 
     await expect(gmLiriel).toHaveAttribute("data-face", "0");
     await expect(mine).toHaveAttribute("data-face", "0");
 
-    // ---- Fog: the GM's Hide brush over the Bandit hides it from the player; Erase brings it back.
-    const vision = tools.getByRole("region", { name: "Vision and fog" });
-    await vision.getByRole("group", { name: "Fog brush" }).getByRole("button", { name: "Hide" }).click();
-    await vision.getByRole("group", { name: "Brush size" }).getByRole("button", { name: "Brush 3" }).click();
+    // ---- Fog: the GM's Hide brush over the Bandit hides it from the player; Erase brings it back. The brush is set in
+    // the HUD's Fog pop-up, which is closed again before painting (it covers the middle of the map; the brush stays on).
+    await tools.press("Escape");
+    await expect(tools).toHaveCount(0);
+    const fogButton = gmTools.getByRole("button", { name: "Fog", exact: true });
+    const vision = gm.getByRole("dialog", { name: "Vision and fog" });
+    const brush = async (mode: "Hide" | "Erase" | "Off", size = false) => {
+      await fogButton.click();
+      await vision.getByRole("group", { name: "Fog brush" }).getByRole("button", { name: mode }).click();
+      if (size) await vision.getByRole("group", { name: "Brush size" }).getByRole("button", { name: "Brush 3" }).click();
+      await expect(vision.getByRole("group", { name: "Fog brush" }).getByRole("button", { name: mode })).toHaveAttribute("aria-pressed", "true");
+      await fogButton.click();
+      await expect(vision).toHaveCount(0);
+    };
+    await brush("Hide", true);
     const stage = gmBoard.getByTestId("combat-stage");
     const squareCentre = async () => {
       await stage.evaluate((el) => el.scrollIntoView({ block: "start" }));
@@ -179,23 +197,22 @@ test("live combat map: map switch, tokens both ways, explored areas, fog, doors 
     await gm.mouse.click(at.x, at.y);
     await expect(gmBoard.getByTestId("combat-fog-marks-hide")).toBeVisible();
     await expect(playerBandit).toHaveCount(0);
-    await vision.getByRole("group", { name: "Fog brush" }).getByRole("button", { name: "Erase" }).click();
+    await brush("Erase");
     at = await squareCentre();
     await gm.mouse.click(at.x, at.y);
     await expect(gmBoard.getByTestId("combat-fog-marks-hide")).toHaveCount(0);
     await expect(playerBandit).toBeVisible();
     // Put the brush away (back to selecting tokens).
-    await vision.getByRole("group", { name: "Fog brush" }).getByRole("button", { name: "Off" }).click();
-    await expect(vision.getByRole("group", { name: "Fog brush" }).getByRole("button", { name: "Off" })).toHaveAttribute("aria-pressed", "true");
+    await brush("Off");
 
-    // ---- A blocked move: south of Liriel is the short wall. The step snaps back with "Blocked"; the GM's board never
-    // shows her inside the wall.
+    // ---- A blocked move: south of Liriel is the short wall. The step snaps back with the HUD's "Something blocks the
+    // way."; the GM's board never shows her inside the wall.
     const notice = board.getByTestId("combat-move-notice");
     const before = Number(await notice.getAttribute("data-seq"));
     await player.locator("body").click({ position: { x: 2, y: 2 } });
     await player.keyboard.press("ArrowDown");
     await expect.poll(async () => Number(await notice.getAttribute("data-seq"))).toBeGreaterThan(before);
-    await expect(notice).toHaveText("Blocked");
+    await expect(notice).toHaveText("Something blocks the way.");
     await expect(mine).toHaveAttribute("data-square", "15,10");
     await expect(gmLiriel).toHaveAttribute("data-square", "15,10");
     await expect
@@ -206,7 +223,7 @@ test("live combat map: map switch, tokens both ways, explored areas, fog, doors 
       .toBe("15,10");
 
     // ---- GM -> player on the player's own token: the GM steps Liriel north; the player's token follows.
-    await gmLiriel.click();
+    await gmLiriel.focus();
     await gm.keyboard.press("ArrowUp");
     await expect(gmLiriel).toHaveAttribute("data-square", "15,9");
     await expect(mine).toHaveAttribute("data-square", "15,9");

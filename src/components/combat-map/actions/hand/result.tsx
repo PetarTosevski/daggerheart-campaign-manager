@@ -1,5 +1,8 @@
 "use client";
 
+import "@/components/party/dice/dice.css";
+import "./hand.css";
+
 import { DiceTiles } from "@/components/party/dice/parts";
 
 import { outcomeLine, targetVerdict } from "../attack";

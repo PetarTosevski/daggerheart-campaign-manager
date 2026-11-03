@@ -68,11 +68,18 @@ async function seed<T>(call: () => Promise<T>): Promise<T> {
 const route = (path = "") => `/campaigns/${table.campaignId}${path}`;
 const uuid = () => crypto.randomUUID();
 
+/** Opens the Combat Map in Play: the Combat HUD (plan combat-hud H8.1), titled with the live map's name. */
 async function openCombat(page: Page) {
   await page.goto(route("/combat-map"));
-  await expect(page.getByRole("heading", { level: 1, name: "Combat Map" })).toBeVisible();
-  await expect(page.locator(".cm-headline")).toContainText("Old road");
+  await expect(page.getByTestId("combat-hud")).toBeVisible();
+  await expect(page.getByTestId("hud-title").getByRole("heading")).toHaveText("Old road");
   await expect(page.getByRole("region", { name: "Battle map" }).getByTestId("combat-map-canvas")).toBeVisible();
+}
+
+/** Opens the HUD's left drawer: "Map tools" (the GM's classic column) or "Your character" (the player's view card). */
+async function openDrawer(page: Page, name: "Map tools" | "Your character") {
+  await page.getByRole("button", { name, exact: true }).click();
+  await expect(page.getByRole("complementary", { name })).toBeVisible();
 }
 
 test.beforeAll(async ({ browser }) => {
@@ -106,6 +113,7 @@ test("combat map, GM: Play and Edit, Classic and Sprites, vision and doors, toke
   const { gm, characterName } = table;
   const { scan, flush } = scanner();
   await openCombat(gm);
+  await openDrawer(gm, "Map tools");
   const tools = gm.getByRole("complementary", { name: "Map tools" });
   const board = gm.getByRole("region", { name: "Battle map" });
   await expect(tools.getByRole("region", { name: "Vision and fog" })).toBeVisible();
@@ -113,7 +121,9 @@ test("combat map, GM: Play and Edit, Classic and Sprites, vision and doors, toke
   await scan(gm, "combat Play, Classic, vision and doors (GM)");
 
   // The selected token's card and the Reveal card.
-  await board.getByRole("button", { name: /^Bandit, Enemy/ }).click();
+  // By keyboard: the HUD's panels (the open drawer, the spotlight panel) may cover the token on screen.
+  await board.getByRole("button", { name: /^Bandit, Enemy/ }).focus();
+  await gm.keyboard.press("Enter");
   await expect(tools.getByRole("region", { name: "Light and reveal" })).toBeVisible();
   await scan(gm, "combat Play, token selected (GM)");
 
@@ -124,17 +134,18 @@ test("combat map, GM: Play and Edit, Classic and Sprites, vision and doors, toke
   await vision.getByRole("group", { name: "Fog brush" }).getByRole("button", { name: "Off" }).click();
 
   // The player-view menu open, then the GM previewing the PC's view (fog canvas on).
-  await gm.getByRole("button", { name: /Player view/ }).click();
+  await gm.getByRole("group", { name: "GM tools" }).getByRole("button", { name: /Player view/ }).click();
   const menu = gm.getByRole("menu", { name: "Open the player view as" });
   await expect(menu).toBeVisible();
   await scan(gm, "combat player-view menu open (GM)");
-  await menu.getByRole("menuitemradio", { name: characterName }).click();
+  // By keyboard: the GM's spotlight panel covers the menu on screen (dcm-bxp.99.32.42).
+  await menu.getByRole("menuitemradio", { name: characterName }).press("Enter");
   await expect(gm.getByTestId("combat-fog")).toBeVisible();
   await scan(gm, "combat previewing the PC's view (GM)");
   await tools.getByRole("group", { name: "See the map as" }).getByRole("button", { name: "GM (everything)" }).click();
 
   // Sprites.
-  const style = gm.getByRole("group", { name: "Map style" });
+  const style = gm.getByRole("group", { name: "Map style" }).first();
   await style.getByRole("button", { name: "Sprites" }).click();
   await expect(board.getByTestId("combat-map-canvas")).toHaveAttribute("data-style", "sprites");
   await scan(gm, "combat Play, Sprites (GM)");
@@ -160,13 +171,14 @@ test("combat map, player: the board, Your view with carried light, doors and lig
   const { player, characterName } = table;
   const { scan, flush } = scanner();
   await openCombat(player);
+  await openDrawer(player, "Your character");
   const yourView = player.getByRole("region", { name: "Your view" });
   await expect(yourView.getByRole("group", { name: "Light you carry" })).toBeVisible();
   const board = player.getByRole("region", { name: "Battle map" });
   await expect(board.getByRole("button", { name: "Open door 1" })).toBeVisible();
   await scan(player, "combat board and Your view (player)");
   await yourView.getByRole("group", { name: "Light you carry" }).getByRole("button", { name: "Torch", exact: true }).click();
-  await board.getByRole("button", { name: new RegExp(`^${characterName}, Party.*your character`) }).click();
+  await board.getByRole("button", { name: new RegExp(`^Open ${characterName}’s sheet \\(your character\\)`) }).click();
   await scan(player, "combat torch on, own token selected (player)");
   flush();
 });
@@ -307,6 +319,7 @@ for (const viewport of TABLET_VIEWPORTS) {
       await openCombat(gm);
       await expectFitsViewport(gm);
       await expect(nav(gm)).toBeVisible();
+      await openDrawer(gm, "Map tools");
       const tools = gm.getByRole("complementary", { name: "Map tools" });
       const board = gm.getByRole("region", { name: "Battle map" });
       const mode = tools.getByRole("group", { name: "Map mode" });
@@ -315,9 +328,9 @@ for (const viewport of TABLET_VIEWPORTS) {
       await expectTouchTargets(tools.getByRole("list", { name: "Campaign maps" }).getByRole("button"));
       await expectTouchTargets(tools.getByRole("region", { name: "Combatants" }).getByRole("button"));
       await expectTouchTargets(tools.getByRole("region", { name: "Vision and fog" }).getByRole("button"));
-      await expectTouchTargets(gm.getByRole("group", { name: "Map style" }).getByRole("button"));
-      await expectTouchTargets(gm.getByRole("group", { name: "GM Fear" }).getByRole("button"));
-      await expectTouchTargets(gm.getByRole("button", { name: /Player view/ }));
+      await expectTouchTargets(tools.getByRole("group", { name: "Map style" }).getByRole("button"));
+      await expectTouchTargets(tools.getByRole("group", { name: "GM Fear" }).getByRole("button"));
+      await expectTouchTargets(gm.getByRole("group", { name: "GM tools" }).getByRole("button", { name: /Player view/ }));
       await expectInView(gm, board.getByRole("button", { name: "Zoom in" }));
       await expectTouchTargets(board.getByRole("button", { name: /^(Zoom in|Zoom out|Fit)$/ }));
       await shot(gm, "combat-gm-play");
@@ -333,6 +346,7 @@ for (const viewport of TABLET_VIEWPORTS) {
       await openCombat(player);
       await expectFitsViewport(player);
       await expect(nav(player)).toBeVisible();
+      await openDrawer(player, "Your character");
       const yourView = player.getByRole("region", { name: "Your view" });
       await expectInView(player, yourView);
       await expectTouchTargets(yourView.getByRole("button"));

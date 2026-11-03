@@ -2,13 +2,15 @@
  * The incoming-hit prompt (plan combat-actions AA4): the pure model (what the hit PC is asked, CB p.114, p.99, p.341;
  * the optimistic `pending` after an answer) and the prompt with Convex mocked: the hit PC's Mark / Don't, OK only for
  * direct damage, a count of slots under I Am Your Shield, an ally's reaction card with Use / Pass, the one line
- * "Bandit hit Mira" when nothing is owed (Q14), one `respond` per tap, nothing for the GM on the map, a death move
- * brought up on the map, and the sheet's prompt only for a viewer who edits the character.
+ * "Bandit hit Mira" when nothing is owed (Q14), one `respond` per tap, the GM column's prompt for the PCs the GM owns
+ * (`GmOwnHits`) with a death move brought up there, and the sheet's prompt only for a viewer who edits the character.
+ * Plan combat-hud H8.1 deleted the player column's card (`IncomingHit`): a player answers in the HUD's hit window
+ * (tests/unit/hud/hit-window.test.tsx, tests/e2e/hud-hit.spec.ts).
  */
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { HitBoundary, IncomingHit, PendingHits } from "@/components/combat-map/actions/reactions";
+import { GmOwnHits, HitBoundary, PendingHits } from "@/components/combat-map/actions/reactions";
 import { HIT_RETRY_DELAYS_MS } from "@/components/combat-map/actions/reactions/prompt";
 import {
   afterAnswer,
@@ -216,33 +218,23 @@ describe("the prompt", () => {
   });
 });
 
-const mapProps = (role: "gm" | "player") =>
-  ({
-    campaignId: CAMPAIGN,
-    role,
-    mode: "play",
-    map: { _id: "m", name: "Road", live: true, source: "generated", w: 20, h: 20 },
-    selectedTokenId: null,
-    onSelectToken: () => {},
-    previewCharacterId: null,
-    onPreview: () => {},
-  }) as unknown as Parameters<typeof IncomingHit>[0];
+const mapProps = (role: "gm" | "player") => ({ campaignId: CAMPAIGN, role }) as Parameters<typeof GmOwnHits>[0];
 
 const character = (id: string, name: string, mine: boolean) => ({ _id: id, mine, canEdit: mine, status: "active", updatedAt: 1, sheet: { name } });
 
-describe("IncomingHit on the map", () => {
-  it("the GM column shows nothing", () => {
+describe("GmOwnHits in the GM column", () => {
+  it("a player gets nothing here (they answer in the HUD's hit window)", () => {
     queries["characters:listByCampaign"] = [character(MIRA, "Mira", true)];
     queries["adversaryActions:pending"] = [miraHit];
-    const { container } = render(<IncomingHit {...mapProps("gm")} />);
+    const { container } = render(<GmOwnHits {...mapProps("player")} />);
     expect(container.innerHTML).toBe("");
   });
 
-  it("a player sees the prompts of their own characters only", () => {
+  it("the GM sees the prompts of the characters they own only", () => {
     queries["characters:listByCampaign"] = [character(MIRA, "Mira", true), character(TABBY, "Tabby", false)];
     queries["adversaryActions:pending"] = [miraHit];
     queries["deathMoves:state"] = { awaitingMove: false, pending: null, undoEntryId: null, lessLethal: false, awayRequested: false };
-    render(<IncomingHit {...mapProps("player")} />);
+    render(<GmOwnHits {...mapProps("gm")} />);
     expect(screen.getAllByTestId("incoming-hit")).toHaveLength(1);
     expect(screen.queryByTestId("incoming-hit-death")).toBeNull();
   });
@@ -251,7 +243,7 @@ describe("IncomingHit on the map", () => {
     queries["characters:listByCampaign"] = [character(MIRA, "Mira", true)];
     queries["adversaryActions:pending"] = [];
     queries["deathMoves:state"] = { awaitingMove: true, pending: null, undoEntryId: null, lessLethal: false, awayRequested: false };
-    render(<IncomingHit {...mapProps("player")} />);
+    render(<GmOwnHits {...mapProps("gm")} />);
     expect(screen.getByTestId("incoming-hit-death")).toBeTruthy();
   });
 });

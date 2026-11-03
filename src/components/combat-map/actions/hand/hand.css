@@ -6,23 +6,6 @@
  * at the end of this file); the vault opens from the bar's deck as a horizontal strip of cards above it.
  */
 
-.cmh-strip {
-  margin: 0;
-  padding: 4px 2px 8px;
-  list-style: none;
-  display: flex;
-  gap: 12px;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scroll-snap-type: x mandatory;
-}
-.cmh-slot {
-  flex: none;
-  display: flex;
-  width: 160px;
-  scroll-snap-align: start;
-}
-
 /* ---------------------------------------------------------------- the card face */
 
 .cmh-face {
@@ -212,10 +195,6 @@
   letter-spacing: 0.04em;
   cursor: pointer;
 }
-.cmh-recall {
-  padding: 0 10px;
-  font-size: 11px;
-}
 .cmh-use:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -224,14 +203,6 @@
 .cmh-use:focus-visible {
   outline: 2px solid #5b2b2b;
   outline-offset: 2px;
-}
-.cmh-status {
-  font-family: var(--cm-display);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #4a3a26;
 }
 
 /* ---------------------------------------------------------------- GM switch, dialog, prompts */
@@ -288,83 +259,6 @@
   outline-offset: 2px;
 }
 
-.cmh-form {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.cmh-field {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.cmh-field > legend {
-  margin-bottom: 6px;
-}
-.cmh-picks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.cmh-pick {
-  min-height: 44px;
-}
-.cmh-pick[aria-pressed="true"] {
-  border-color: var(--cm-acc, #e3b45a);
-  background: var(--cm-acc-bg, #2d2614);
-  color: var(--cm-acc-soft, #f3cf86);
-}
-.cmh-pick:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-/* DA6: out of the card's range, still pickable (the GM approves, Q1): greyed with a second line. */
-.cmh-pick[data-away="true"] {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  border-style: dashed;
-  color: var(--cm-muted, #9fb2b6);
-}
-.cmh-pick[data-away="true"][aria-pressed="true"] {
-  color: var(--cm-acc-soft, #f3cf86);
-}
-.cmh-pick-away {
-  font-size: 11px;
-  line-height: 1.2;
-  opacity: 0.85;
-}
-.cmh-check,
-.cmh-split {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  font-size: 15px;
-}
-.cmh-check input {
-  width: 20px;
-  height: 20px;
-  flex: none;
-}
-.cmh-split {
-  justify-content: space-between;
-}
-.cmh-num {
-  width: 96px;
-  min-height: 44px;
-}
-.cmh-note {
-  margin: 0;
-  font-size: 14px;
-  font-style: italic;
-  color: var(--cm-muted, #9fb2b6);
-}
-
 .cmh-prompts {
   margin: 0;
   padding: 0;
@@ -399,16 +293,7 @@
 
 /* ---------------------------------------------------------------- phone: a horizontal strip in the bottom sheet (Q11) */
 
-.cma-sheet-body .cmh-card {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
 @media (max-width: 760px) {
-  .cmh-slot {
-    width: min(56vw, 180px);
-  }
   .cmh-name {
     font-size: 14px;
   }
@@ -429,191 +314,12 @@
   }
 }
 
-/* F8-I1: the roll-options strip above the loadout (applies to the next card that rolls). */
-.cmh-rolls {
-  border-top: 0;
-  padding-top: 0;
-}
 .cma-opts-set {
   text-transform: none;
   letter-spacing: normal;
 }
 
-/* ---------------------------------------------------------------- HF1: the hand docked over the map's bottom edge */
-
-/*
- * The dock is portalled into the map board (.cm-board, a flex column: toolbar, viewport, hint). It sits between the
- * viewport and the hint with no height of its own, so the hand grows upward over the viewport's bottom edge. Only the
- * bar, the panels and the cards catch the pointer: the map between and above them still pans and takes clicks.
- */
-.cm-board > .cm-hint {
-  order: 2;
-}
-.cmh-dock {
-  order: 1;
-  position: relative;
-  z-index: 6;
-  height: 0;
-  margin-top: -10px;
-  pointer-events: none;
-}
-.cmh-hand {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  overflow-x: clip;
-  pointer-events: none;
-}
-/* Outside the map page (no board to dock into) the hand renders in place. */
-.cmh-dock[data-inline="true"] {
-  height: auto;
-  margin: 0;
-}
-.cmh-dock[data-inline="true"] .cmh-hand {
-  position: static;
-}
-.cmh-dock dialog {
-  pointer-events: auto;
-}
-
-/* Panels above the bar: the card waiting for its target, the result, waiting uses, the vault. */
-.cmh-over {
-  /* Above a raised card: the panels hold the buttons that answer what the card asked. */
-  position: relative;
-  z-index: 4;
-  width: min(560px, calc(100% - 24px));
-  max-height: 46vh;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.cmh-over:empty {
-  display: none;
-}
-.cmh-panel {
-  pointer-events: auto;
-  margin: 0;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid var(--cm-card-border);
-  background: color-mix(in srgb, var(--cm-card) 94%, transparent);
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
-}
-.cmh-result {
-  position: relative;
-  padding-right: 52px;
-}
-.cmh-close {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-}
-.cmh-aim {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  border-color: var(--cm-acc);
-}
-.cmh-aim-text {
-  margin: 0;
-  font-family: var(--cm-display);
-  font-size: 14px;
-  color: var(--cm-acc-soft);
-}
-.cmh-vault {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.cmh-vault > h3 {
-  margin: 0;
-}
-/* Plan lanes-2 E1.3a (dcm-ego9): the recall riders' check boxes (Perfect Recall). */
-.cmh-recall-riders {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  margin: 0;
-  padding: 4px 8px;
-  border: 1px solid var(--cm-card-border);
-  border-radius: 6px;
-}
-
-/* The tray: the slim bar and the fan under it. */
-.cmh-tray {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-.cmh-bar {
-  position: relative;
-  z-index: 2;
-  pointer-events: auto;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 4px 10px;
-  max-width: calc(100% - 16px);
-  box-sizing: border-box;
-  padding: 4px 8px 4px 14px;
-  border-radius: 12px 12px 0 0;
-  border: 1px solid var(--cm-card-border);
-  border-bottom: 0;
-  background: color-mix(in srgb, var(--cm-page) 90%, transparent);
-  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.4);
-}
-.cmh-title {
-  margin: 0;
-  font-family: var(--cm-display);
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--cm-acc-soft);
-  white-space: nowrap;
-}
-.cmh-bar-gap {
-  flex: 1 1 0;
-  min-width: 0;
-}
-.cmh-bar-error {
-  flex-basis: 100%;
-  text-align: center;
-}
-/* The roll options open as a popover above the bar, over the map. */
-.cmh-bar .cmh-rolls {
-  border-top: 0;
-  padding-top: 0;
-}
-.cmh-bar .cmh-rolls > summary {
-  min-height: 36px;
-  white-space: nowrap;
-}
-.cmh-bar .cmh-rolls > .cma-opts-body {
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 8px);
-  transform: translateX(-50%);
-  width: min(340px, calc(100vw - 32px));
-  box-sizing: border-box;
-  padding: 12px;
-  border-radius: 12px;
-  border: 1px solid var(--cm-card-border);
-  background: var(--cm-card);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55);
-}
-.cmh-bar .cmh-switch {
-  font-size: 13px;
-}
+/* ---------------------------------------------------------------- HF1: the vault deck */
 
 /* The vault deck at the right end of the bar: three backs and the count (the domains tab's deck, small). */
 .cmh-deck {
@@ -686,181 +392,11 @@
   box-shadow: 0 0 0 1.5px #c9a35a;
 }
 
-/*
- * The fan: the domains tab's 7° hand (src/components/cards/fan.ts sets --rot, --ty and the order). The cards hang below
- * the map's edge with only their tops in view (--peek); the clip opens upward and sideways, so a raised or dragged card
- * leaves the fan whole while the rest stay cut at the edge. Hover, focus (a tap focuses the card) and the card waiting
- * for its target raise it out of the fan at full size.
- */
-.cmh-fan {
-  --w: 168px;
-  --peek: 118px;
-  --raise: 1.1;
-  position: relative;
-  /* Above the bar, so a raised card comes up over it. */
-  z-index: 3;
-  width: 100%;
-  height: var(--peek);
-  margin: 0;
-  padding: 10px 0 0;
-  box-sizing: border-box;
-  list-style: none;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  clip-path: inset(-100vmax -100vmax 0 -100vmax);
-  pointer-events: none;
-}
-.cmh-fan-card {
-  --rot: 0deg;
-  --ty: 0px;
-  --dx: 0px;
-  --dy: 0px;
-  position: relative;
-  flex: none;
-  width: var(--w);
-  margin: 0 calc(var(--w) * -0.16);
-  display: flex;
-  transform-origin: 50% 100%;
-  transform: translateY(var(--ty)) rotate(var(--rot));
-  transition: transform 0.22s ease;
-  pointer-events: auto;
-  user-select: none;
-  -webkit-user-select: none;
-  outline: none;
-}
-.cmh-fan-card[data-draggable="true"] {
-  cursor: grab;
-  touch-action: none;
-}
-.cmh-fan-card .cmh-face {
-  flex: 1 1 auto;
-}
-.cmh-fan-card img {
-  pointer-events: none;
-  -webkit-user-drag: none;
-}
-/* In the fan the card itself turns (fan.ts); the face's own small turn is for the vault strip. */
-.cmh-fan .cmh-face[data-exhausted="true"] {
-  transform: none;
-}
-/*
- * Raised: under the mouse, after a tap (the card itself takes focus), or while the keyboard is on its More or Use. A
- * mouse click on Use leaves no sticky raise (no :focus-visible), so the card drops back once the pointer leaves it.
- */
-.cmh-fan-card:hover,
-.cmh-fan-card:focus,
-.cmh-fan-card:has(:focus-visible) {
-  transform: translateY(calc(-100% + var(--peek) - 18px)) rotate(0deg) scale(var(--raise));
-  z-index: 30 !important;
-}
-/* The card waiting for its target only lifts and glows, so the map and the "tap an enemy" panel stay clear. */
-.cmh-fan-card[data-aiming="true"]:not(:hover, :focus, :has(:focus-visible)) {
-  transform: translateY(-14px) rotate(0deg);
-  z-index: 30 !important;
-}
-.cmh-fan-card[data-aiming="true"] .cmh-face {
-  box-shadow: 0 0 0 2px #f3cf86, 0 0 26px rgba(243, 207, 134, 0.75);
-}
-.cmh-fan-card[data-dragging="true"] {
-  transform: translate(var(--dx), var(--dy)) translateY(calc(-100% + var(--peek) - 18px)) scale(0.92);
-  transition: none;
-  z-index: 40 !important;
-  cursor: grabbing;
-}
-/* While a card is dragged, the table it can land on is outlined. */
-.cm-board:has(.cmh-fan-card[data-dragging="true"]) .cm-vp {
-  outline: 3px dashed var(--cm-acc);
-  outline-offset: -3px;
-}
-.cmh-instead {
-  pointer-events: auto;
-  margin: 0;
-  padding: 10px 16px 14px;
-  border-radius: 0 0 12px 12px;
-  background: color-mix(in srgb, var(--cm-page) 90%, transparent);
-}
-
-/* Hidden: only the card tops peek at the edge, under the 'Show cards (N)' tab. */
-.cmh-fan[data-peek="true"] {
-  --peek: 28px;
-}
-.cmh-fan[data-peek="true"] .cmh-fan-card {
-  transform: translateY(var(--ty)) rotate(var(--rot));
-  pointer-events: none;
-}
-.cmh-peek-tab {
-  position: relative;
-  z-index: 2;
-  pointer-events: auto;
-  min-height: 44px;
-  padding: 0 18px;
-  border-radius: 12px 12px 0 0;
-  border: 1px solid var(--cm-acc);
-  border-bottom: 0;
-  background: var(--cm-acc-bg);
-  color: var(--cm-acc-soft);
-  font-family: var(--cm-display);
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-}
-.cmh-peek-tab:focus-visible,
-.cmh-hide:focus-visible {
-  outline: 2px solid var(--cm-acc);
-  outline-offset: 2px;
-}
-
-@media (max-width: 1180px) {
-  .cmh-fan {
-    --w: 150px;
-    --peek: 106px;
-  }
-}
 /* A 768 px tablet keeps the 300 px column: five cards still fit the map's width. */
-@media (max-width: 1000px) {
-  .cmh-fan {
-    --w: 124px;
-    --peek: 96px;
-    --raise: 1.25;
-  }
-  .cmh-fan-card {
-    margin: 0 calc(var(--w) * -0.2);
-  }
-}
-@media (max-width: 760px) {
-  .cmh-fan {
-    --w: 104px;
-    --peek: 84px;
-    --raise: 1.45;
-  }
-  .cmh-fan-card {
-    margin: 0 calc(var(--w) * -0.22);
-  }
-  .cmh-fan .cmh-name {
-    font-size: 11px;
-  }
-  .cmh-fan .cmh-text {
-    font-size: 11px;
-  }
-  .cmh-fan .cmh-use,
-  .cmh-fan .cmh-more {
-    min-height: 32px;
-  }
-  .cmh-title {
-    font-size: 13px;
-  }
-}
+
 /* Touch targets of at least 44 px on tablets and phones (D12 H22), in the bar and on the raised card. */
-@media (max-width: 1100px), (pointer: coarse) {
-  .cmh-bar .cmh-rolls > summary {
-    min-height: 44px;
-  }
-}
 
 @media (prefers-reduced-motion: reduce) {
-  .cmh-fan-card,
   .cmh-deck-card {
     transition: none;
   }

@@ -1,9 +1,6 @@
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
-import { useId, useState } from "react";
-
-import { errorMessage } from "@/lib/convex-errors";
+import { useQuery } from "convex/react";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
@@ -25,41 +22,4 @@ export function handShared(sharing: HandSharing, characterId: Id<"characters">):
 /** The campaign's hand sharing (undefined while loading). */
 export function useHandSharing(campaignId: Id<"campaigns">): HandSharing | undefined {
   return useQuery(api.combatCards.handSharing, { campaignId });
-}
-
-/** The player's switch under their own Hand: "Hide my hand from the other players" (only while the GM allows sharing). */
-export function HideHandSwitch({ campaignId, characterId }: { campaignId: Id<"campaigns">; characterId: Id<"characters"> }) {
-  const sharing = useHandSharing(campaignId);
-  const setHidden = useMutation(api.combatCards.setHandHidden).withOptimisticUpdate((store, { characterId: id, hidden }) => {
-    const current = store.getQuery(api.combatCards.handSharing, { campaignId });
-    if (current === undefined) return;
-    const rest = current.hidden.filter((c) => c !== id);
-    store.setQuery(api.combatCards.handSharing, { campaignId }, { ...current, hidden: hidden ? [...rest, id] : rest });
-  });
-  const [error, setError] = useState<string | null>(null);
-  const id = useId();
-  if (sharing === undefined || !sharing.playersSeeHands) return null;
-  const hidden = sharing.hidden.includes(characterId);
-
-  async function flip(on: boolean) {
-    setError(null);
-    try {
-      await setHidden({ campaignId, characterId, hidden: on });
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-  }
-
-  return (
-    <div className="cmh-share">
-      <label className="cmh-switch" htmlFor={id}>
-        <input id={id} type="checkbox" role="switch" checked={hidden} onChange={(e) => void flip(e.target.checked)} />
-        <span className="cmh-switch-track" aria-hidden="true" />
-        <span>Hide my hand from the other players</span>
-      </label>
-      <p aria-live="polite" className="cma-error">
-        {error}
-      </p>
-    </div>
-  );
 }

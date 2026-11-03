@@ -8,11 +8,11 @@ import { signInAsTestGm } from "./fixtures";
 import { convexAs, openCombatMap } from "./visual/helpers";
 
 // Plan lanes-2 wave 9, tracer AO (docs/tasks/TASK-LN3-AO.md; dcm-lqnt, dcm-u2wx client), in two browsers:
-// - The GM's Areas tools draw a Dark Cloud by hand (Close by default; user answer 2026-10-31, dcm-bxp.99.19.39), the
-//   overlay draws it with the `darkness` fill, the GM resizes and moves it, draws a Wall of Flame (the `fire-wall`
+// - The GM's Areas panel (the HUD's) draws a Dark Cloud by hand (Close by default; user answer 2026-10-31,
+//   dcm-bxp.99.19.39), the overlay draws it with the `darkness` fill, the GM resizes and moves it, draws a Wall of Flame (the `fire-wall`
 //   strip) and removes both. The player sees the live map's areas.
 // - A Nightwalker's Dark Cloud (CB p.42: "a temporary dark cloud that covers any area within Close range") is used from
-//   the sheet drawer: the player picks the square on the map and the use goes out with `point`.
+//   the HUD sheet (plan combat-hud H8.1): the player picks the square on the map and the use goes out with `point`.
 
 const PLAYER = "e2e-player@example.test";
 const ASH = { x: 5, y: 10 };
@@ -70,7 +70,7 @@ async function squarePx(page: Page): Promise<number> {
 
 /** Clicks the square `dx`, `dy` squares from Ash's (Ash's token is one square, so its centre is its square's). */
 async function clickFromAsh(page: Page, board: Locator, dx: number, dy: number) {
-  const token = board.getByRole("button", { name: /^Ash, / });
+  const token = board.getByRole("button", { name: /^Open Ash’s sheet/ });
   // Centred in the window, so squares a few rows away are on screen too.
   await token.evaluate((el) => el.scrollIntoView({ block: "center", inline: "center" }));
   const box = (await token.boundingBox())!;
@@ -106,14 +106,23 @@ test("the GM draws, resizes, moves and removes areas; a Nightwalker picks the sq
     // ---- The GM draws a Dark Cloud by hand: Close by default, picked on the map.
     await page.goto(url);
     const board = page.getByRole("region", { name: "Battle map" });
-    await expect(board.getByRole("button", { name: /^Ash, / })).toBeVisible({ timeout: 30_000 });
-    await board.getByRole("button", { name: "Areas" }).click();
-    // The whole map in view, so every square the spec clicks is on screen.
-    await board.getByRole("button", { name: "Fit" }).click();
-    const tools = page.getByTestId("area-tools");
+    await expect(board.getByRole("button", { name: /^Open Ash’s sheet/ })).toBeVisible({ timeout: 30_000 });
+    // The HUD opens with the whole map in view (its own Fit sits under the GM's spotlight panel), so every square the
+    // spec clicks is on screen.
+    // The HUD's "Areas on the map" panel (plan combat-hud H5.3), from the GM's toolbar. It folds to its header bar after
+    // a press on the map; `unfold` brings the body back.
+    await page.getByRole("group", { name: "GM tools" }).getByRole("button", { name: "Areas", exact: true }).click();
+    const panel = page.getByRole("dialog", { name: "Areas" });
+    const tools = panel.getByTestId("area-tools");
+    const unfold = async () => {
+      const fold = panel.getByRole("button", { name: "Areas on the map" });
+      if ((await fold.getAttribute("aria-expanded")) === "false") await fold.click();
+      await expect(tools).toBeVisible();
+    };
     await expect(tools).toContainText("No live area on this map.");
     await expect(tools.getByLabel("Name")).toHaveValue("Dark Cloud");
-    await expect(tools.getByLabel("Radius", { exact: true })).toHaveValue("close");
+    await expect(tools.getByLabel(/^Radius/)).toHaveValue("close");
+    await expect(tools.getByRole("group", { name: "Shape" }).getByRole("button", { name: "Circle" })).toHaveAttribute("aria-pressed", "true");
     await tools.getByRole("button", { name: "Pick on the map" }).click();
     await expect(page.getByTestId("area-pick-banner")).toContainText("Pick the centre of Dark Cloud: click a square on the map.");
     await clickFromAsh(page, board, 3, 0);
@@ -125,11 +134,12 @@ test("the GM draws, resizes, moves and removes areas; a Nightwalker picks the sq
     // The player sees it on the live map.
     await player.goto(url);
     const playerBoard = player.getByRole("region", { name: "Battle map" });
-    await expect(playerBoard.getByRole("button", { name: /^Ash, / })).toBeVisible({ timeout: 30_000 });
+    await expect(playerBoard.getByRole("button", { name: /^Open Ash’s sheet/ })).toBeVisible({ timeout: 30_000 });
     await expect(playerBoard.locator('[data-testid="map-area"][data-label="Dark Cloud"]')).toHaveAttribute("data-kind", "darkness");
     await expect(player.getByRole("button", { name: "Areas" })).toHaveCount(0);
 
     // ---- Resize and move it.
+    await unfold();
     const row = tools.getByTestId("area-row").filter({ hasText: "Dark Cloud" });
     await row.getByLabel("Radius of Dark Cloud").selectOption("far");
     await expect.poll(async () => (await areas())[0]?.radius).toBe("far");
@@ -140,8 +150,9 @@ test("the GM draws, resizes, moves and removes areas; a Nightwalker picks the sq
     await expect.poll(async () => (await areas())[0]?.centre).toEqual({ kind: "square", x: ASH.x + 4, y: ASH.y + 2 });
 
     // ---- A Wall of Flame between two squares: the fire-wall strip along the line.
+    await unfold();
     await tools.getByLabel("Name").fill("Wall of Flame");
-    await tools.getByLabel("Shape").selectOption("wall");
+    await tools.getByRole("group", { name: "Shape" }).getByRole("button", { name: "Wall" }).click();
     await tools.getByRole("button", { name: "Pick on the map" }).click();
     await expect(page.getByTestId("area-pick-banner")).toContainText("Pick the first end of Wall of Flame");
     await clickFromAsh(page, board, 2, -3);
@@ -153,31 +164,36 @@ test("the GM draws, resizes, moves and removes areas; a Nightwalker picks the sq
     await expect(playerBoard.getByTestId("map-area")).toHaveCount(2);
 
     // ---- Remove both.
+    await unfold();
     await tools.getByRole("button", { name: "Remove Wall of Flame" }).click();
     await tools.getByRole("button", { name: "Remove Dark Cloud" }).click();
     await expect(tools).toContainText("No live area on this map.");
     await expect.poll(async () => (await areas()).length).toBe(0);
     await expect(playerBoard.getByTestId("map-area")).toHaveCount(0);
 
-    // ---- The player's Dark Cloud: Use from the drawer, pick a square within Close, the use goes out with the point.
-    // The Spellcast Roll (15) can fail; a failure places nothing, so try again (Dark Cloud has no use limit).
+    // ---- The player's Dark Cloud: Use from their HUD sheet, pick a square within Close (the HUD's square picking:
+    // banner, crosshair, "Place Dark Cloud here"), the use goes out with the point. The Spellcast Roll (15) can fail; a
+    // failure places nothing, so try again (Dark Cloud has no use limit).
+    await player.getByTestId("hud-sheet-button").click();
+    const sheet = player.getByRole("complementary", { name: "Ash’s sheet" });
+    await expect(sheet).toBeVisible();
     let placed = false;
     for (let attempt = 0; attempt < 8 && !placed; attempt++) {
-      await player.getByTestId("sheet-button-top").click();
-      const drawer = player.getByRole("dialog", { name: "Character sheet" });
-      await expect(drawer.getByTestId("sheet-drawer-name")).toHaveText("Ash");
-      await drawer.getByRole("button", { name: "Use Dark Cloud" }).click();
-      // The radius is the SRD entry's (Very Close until S2 switches it to Close, user answer 2026-10-31).
-      await expect(drawer).toContainText(/Dark Cloud covers (Very Close|Close) range around a square you pick within Close range\./);
-      await drawer.getByRole("button", { name: "Pick the square on the map" }).click();
-      await expect(drawer).toBeHidden();
-      await expect(player.getByTestId("area-pick-banner")).toContainText("Pick the centre of Dark Cloud within Close range");
-      await expect(player.getByTestId("area-pick-layer")).toBeVisible();
+      await sheet.getByRole("button", { name: /^Use Dark Cloud/ }).click();
+      const usePanel = player.getByRole("dialog", { name: "Dark Cloud" });
+      const bar = player.getByTestId("hud-area-bar");
+      await expect(usePanel.or(bar)).toBeVisible();
+      if (await usePanel.isVisible()) await usePanel.getByRole("button", { name: "Pick the square" }).click();
+      await expect(bar.getByTestId("hud-area-banner")).toContainText("Pick the centre of Dark Cloud within Close");
+      await expect(player.getByTestId("hud-area-layer")).toBeVisible();
       await clickFromAsh(player, playerBoard, 2, 0);
-      const result = player.getByTestId("area-pick-result");
-      await expect(result).toHaveText(/Rolled \d+: (Dark Cloud is on the map\.|Dark Cloud failed\.)/, { timeout: 30_000 });
+      await expect(player.getByTestId("hud-area-point")).toHaveAttribute("data-x", String(ASH.x + 2));
+      await bar.getByRole("button", { name: "Place Dark Cloud here" }).click();
+      const result = player.getByTestId("hud-area-line");
+      await expect(result).toHaveText(/Dark Cloud (is on the map|failed)/, { timeout: 30_000 });
       placed = /is on the map/.test((await result.textContent()) ?? "");
-      await result.getByRole("button", { name: "Dismiss" }).click();
+      const dismiss = result.getByRole("button", { name: "Dismiss" });
+      if (await dismiss.isVisible()) await dismiss.click();
     }
     expect(placed).toBe(true);
     await expect.poll(areas).toMatchObject([{ label: "Dark Cloud", shape: "circle", blocksSight: true, centre: { kind: "square", x: ASH.x + 2, y: ASH.y }, characterId }]);

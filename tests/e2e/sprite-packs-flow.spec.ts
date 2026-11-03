@@ -7,6 +7,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, openCombatMap } from "./visual/helpers";
+import { openMapTools } from "./hud/helpers";
 
 // Sprite packs P10 (.omc/plans/sprite-packs.yaml): the whole sprite-packs flow in two browsers, at desktop (1440x900)
 // and tablet (1024x768). The GM uploads a pack added to Dungeon (cut and labelled in the browser, P8), switches a new
@@ -115,6 +116,7 @@ for (const viewport of [
 
       // ---- P8: a pack added to Dungeon; the 4 × 4 sheet is cut in the browser, cut 1 labelled "Rune stone".
       await page.goto(url);
+      await openMapTools(page);
       await tools.getByRole("link", { name: "Sprite packs" }).click();
       await expect(page.getByRole("heading", { level: 1, name: "Sprite packs" })).toBeVisible();
       const form = page.getByRole("region", { name: "New pack" });
@@ -142,6 +144,7 @@ for (const viewport of [
       // ---- P6 + P7: a new blank Medium map, switched to Sprites in the header, generated with "Let Claude choose".
       await page.getByRole("link", { name: "← Combat Map" }).click();
       await expect(page.getByRole("heading", { level: 1, name: "Combat Map" })).toBeVisible();
+      await openMapTools(page);
       const maps = tools.getByRole("list", { name: "Campaign maps" });
       const mode = tools.getByRole("group", { name: "Map mode" });
       await expect(maps.getByRole("listitem")).toHaveCount(1);
@@ -215,6 +218,8 @@ for (const viewport of [
         await playerClient.mutation(api.characters.create, { campaignId, draft: bardDraft("Ash"), idempotencyKey: crypto.randomUUID() });
 
         await mode.getByRole("button", { name: /Play/ }).click();
+        // Play is the HUD (plan combat-hud H8.1): the GM's column is in its "Map tools" drawer.
+        await openMapTools(page);
         const combatants = tools.getByRole("region", { name: "Combatants" });
         await combatants.getByRole("button", { name: "＋ Party (2)" }).click();
         await expect(combatants.getByRole("button", { name: "＋ Party (0)" })).toBeDisabled();
@@ -239,7 +244,10 @@ for (const viewport of [
 
         // ---- The player: the live Sprites map; a torch for Ash, dragged one square east (facing east, R5).
         await player.goto(url);
-        await expect(player.getByTestId("combat-light-pill")).toContainText("Moonrise");
+        // The light pill and "Your view" are in the player's "Your character" drawer.
+        await player.getByRole("button", { name: "Your character", exact: true }).click();
+        const drawer = player.getByRole("complementary", { name: "Your character" });
+        await expect(drawer.getByTestId("combat-light-pill")).toContainText("Moonrise");
         const playerCanvas = player.getByRole("region", { name: "Battle map" }).getByTestId("combat-map-canvas");
         await expect(playerCanvas).toHaveAttribute("data-style", "sprites");
         await expect(player.getByRole("group", { name: "Map style" })).toHaveCount(0);
@@ -248,20 +256,21 @@ for (const viewport of [
         expect(sources.view).toBe("player");
         expect(sources.sprites.map((s) => ({ id: s._id, named: "name" in s, url: typeof s.url }))).toEqual([{ id: runeId, named: false, url: "string" }]);
 
-        const yourView = player.getByRole("region", { name: "Your view" });
+        const yourView = drawer.getByRole("region", { name: "Your view" });
         const torch = yourView.getByRole("group", { name: "Light you carry" }).getByRole("button", { name: "Torch", exact: true });
         await torch.click();
         await expect(torch).toHaveAttribute("aria-pressed", "true");
+        await drawer.press("Escape");
         const playerBoard = player.getByRole("region", { name: "Battle map" });
-        const ash = playerBoard.getByRole("button", { name: /^Ash, Party.*your character/ });
+        const ash = playerBoard.getByRole("button", { name: /^Open Ash’s sheet \(your character\)/ });
         await expect(ash).toHaveAttribute("data-square", "3,10");
         await dragBy(player, ash, await squarePx(player), 0);
         await expect(ash).toHaveAttribute("data-square", "4,10");
         await expect(ash).toHaveAttribute("data-face", "0");
-        await expect(board.getByRole("button", { name: /^Ash, Party/ })).toHaveAttribute("data-square", "4,10");
+        await expect(board.getByRole("button", { name: /^Open Ash’s sheet/ })).toHaveAttribute("data-square", "4,10");
 
         // The Bear in the dim band and the Wolf in the dark are hidden (R10); the fog is clear in front of Ash.
-        await expect(playerBoard.getByRole("button", { name: /^Liriel, Party/ })).toBeVisible();
+        await expect(playerBoard.getByRole("button", { name: /^Open Liriel’s sheet/ })).toBeVisible();
         await expect(playerBoard.getByRole("button", { name: /^Bear/ })).toHaveCount(0);
         await expect(playerBoard.getByRole("button", { name: /^Dire Wolf/ })).toHaveCount(0);
         await expect.poll(async () => (await fogPixel(player, PAD + 6.5, PAD + 10.5))[3]).toBeLessThan(10);
@@ -272,6 +281,7 @@ for (const viewport of [
 
         // ---- The GM places an iron brazier sprite beside the Wolf (lit, a torch's reach, Q1 / D2): the player sees
         // the lit area and the Wolf in it.
+        await openMapTools(page);
         await mode.getByRole("button", { name: /Edit map/ }).click();
         await card.getByRole("group", { name: "Edit tool" }).getByRole("button", { name: /Objects/ }).click();
         await card.getByLabel("Search sprites").fill("brazier");
@@ -285,12 +295,13 @@ for (const viewport of [
 
         // ---- In Play the GM puts the brazier out (the Wolf goes) and lights it again (the Wolf is back).
         await mode.getByRole("button", { name: /Play/ }).click();
-        await board.getByRole("button", { name: "Put out the iron brazier (lit)" }).click();
+        await board.getByRole("button", { name: "Put out the iron brazier (lit)" }).press("Enter");
         await expect(playerBoard.getByRole("button", { name: /^Dire Wolf/ })).toHaveCount(0);
-        await board.getByRole("button", { name: "Light the iron brazier (lit)" }).click();
+        await board.getByRole("button", { name: "Light the iron brazier (lit)" }).press("Enter");
         await expect(playerBoard.getByRole("button", { name: "Dire Wolf, Enemy" })).toBeVisible();
 
         // ---- A thick stone pillar sprite (2 × 2, blocks sight by its manifest, D3) between Ash and the Wolf hides it.
+        await openMapTools(page);
         await mode.getByRole("button", { name: /Edit map/ }).click();
         await card.getByRole("group", { name: "Edit tool" }).getByRole("button", { name: /Objects/ }).click();
         await card.getByLabel("Search sprites").fill("pillar");
@@ -301,8 +312,10 @@ for (const viewport of [
         await expect(pillar).toBeVisible();
         await expect(pillar.getByRole("button", { name: "Blocks sight" })).toHaveAttribute("aria-pressed", "true");
         await expect(playerBoard.getByRole("button", { name: /^Dire Wolf/ })).toHaveCount(0);
-        await expect(playerBoard.getByRole("button", { name: /^Liriel, Party/ })).toBeVisible();
+        await expect(playerBoard.getByRole("button", { name: /^Open Liriel’s sheet/ })).toBeVisible();
         await mode.getByRole("button", { name: /Play/ }).click();
+        // The style switch is in the head of the "Map tools" drawer in Play.
+        await openMapTools(page);
 
         // ---- Classic and back (D1, P3): the player's view is the same in both styles; only the drawing changes.
         const view = async () => {

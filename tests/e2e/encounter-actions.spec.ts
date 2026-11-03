@@ -135,10 +135,10 @@ test("the GM attacks Mira from the Encounter tab, Mira's player marks an Armor S
     const hp = (await sheetOf(s)).hp;
     expect(hp).toBeGreaterThan(before.hp);
 
-    // The Combat Map shows it on Mira's token.
+    // The Combat Map (the HUD since plan combat-hud H8.1) shows it on Mira's token.
     const map = await page.context().newPage();
     await map.goto(s.mapUrl);
-    await expect(map.getByRole("region", { name: "Battle map" }).getByRole("button", { name: new RegExp(`^Mira, .*${hp} of \\d+ HP marked`) })).toBeVisible({ timeout: 30_000 });
+    await expect(map.getByRole("region", { name: "Battle map" }).getByRole("button", { name: new RegExp(`^Open Mira’s sheet, .*${hp} of \\d+ Hit Points marked`) })).toBeVisible({ timeout: 30_000 });
     await map.close();
   } finally {
     await s.closePlayer();

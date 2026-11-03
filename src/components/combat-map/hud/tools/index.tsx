@@ -7,16 +7,17 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
+import type { Id } from "../../../../../convex/_generated/dataModel";
+import { HandSharingSwitch } from "../../settings/hand-sharing";
 import type { CombatRole } from "../../slots";
-import { setHudEnabled, useHudEnabled } from "../flag";
 import { useHud } from "../state";
 import { SidePanel, hudButtonClass } from "../ui";
 
 /**
  * The HUD's left drawer (plan combat-hud H0, user answer 12a): today's left column behind a "Map tools" button. For
  * the GM it holds Maps, Play / Edit, Combatants, the token card, adversary controls, Reveal, Vision, Resolutions, the
- * map style, sprite packs and the session chip; for a player it holds their classic column (incoming hit, combat
- * actions, their view, the token card) until wave 9 moves those parts into the HUD. The page builds the content (it
+ * map style, sprite packs and the session chip; for a player it holds their view card and the token card (plan
+ * combat-hud H8.1 moved the rest of the classic player column into the HUD). The page builds the content (it
  * owns the classic column); this file only frames it.
  */
 
@@ -42,42 +43,29 @@ export function MapToolsButton({ role }: { role: CombatRole }) {
   );
 }
 
-/** The left drawer itself: non-modal, Esc or ✕ closes it and focus goes back to the button. */
-export function HudTools({ role, children }: { role: CombatRole; children: ReactNode }) {
+/**
+ * The left drawer itself: non-modal, Esc or ✕ closes it and focus goes back to the button. For the GM it ends with the
+ * campaign switch "Players can see each other's cards" (F7-H4; the classic GM hand card held it until plan combat-hud
+ * H8.1), given the campaign.
+ */
+export function HudTools({ role, campaignId, children }: { role: CombatRole; campaignId?: Id<"campaigns">; children: ReactNode }) {
   const { toolsOpen, setToolsOpen } = useHud();
   const label = toolsLabel(role);
   return (
     <div id="hud-tools" className="hud-tools">
       <SidePanel open={toolsOpen} onClose={() => setToolsOpen(false)} title={label} label={label} side="left" testId="hud-tools">
         {children}
+        {role === "gm" && campaignId ? <HandSharingSwitch campaignId={campaignId} /> : null}
       </SidePanel>
     </div>
   );
 }
 
-/** The drawer's first row: the classic header's tools (Fear, light, session chip, map style, player view, Sheet). */
+/** The drawer's first row: the scene tools (light; for the GM Fear, session chip, map style, player view). */
 export function ToolsHead({ children }: { children: ReactNode }) {
   return (
     <div className="hud-tools-head" role="group" aria-label="Scene tools">
       {children}
     </div>
-  );
-}
-
-/**
- * The opt-in switch's toggle (answer 11b), on both views: "Try the new combat HUD" on the classic page, "Back to the
- * classic view" with the HUD on. Wave 9 (H8.1) deletes it with the switch.
- */
-export function HudSwitchButton({ className }: { className?: string }) {
-  const enabled = useHudEnabled();
-  return (
-    <button
-      type="button"
-      className={className ?? cn(hudButtonClass(), "hud-glass-btn")}
-      data-testid="hud-switch"
-      onClick={() => setHudEnabled(!enabled)}
-    >
-      {enabled ? "Back to the classic view" : "Try the new combat HUD"}
-    </button>
   );
 }

@@ -1,15 +1,14 @@
-// Combat HUD e2e helpers (plan combat-hud H0; docs/tasks/TASK-HUD-H0.md). Every HUD spec and visual shot turns the
-// opt-in switch on through `enableHud` and seeds the boards' scene through `hudScene`: a live map, four PCs (the
-// player's Moss, a Druid with Vicious Entangle (Far) in hand, and three GM-made allies), a running encounter with the
-// Jagged Knife Lieutenant (Leader), two Bandits and the Sniper (Ranged), and one Bandit out of Moss's sight behind a
-// wall. Classic specs never call these: with the switch off the page is unchanged.
+// Combat HUD e2e helpers (plan combat-hud H0; docs/tasks/TASK-HUD-H0.md). HUD specs and visual shots seed the boards'
+// scene through `hudScene`: a live map, four PCs (the player's Moss, a Druid with Vicious Entangle (Far) in hand, and
+// three GM-made allies), a running encounter with the Jagged Knife Lieutenant (Leader), two Bandits and the Sniper
+// (Ranged), and one Bandit out of Moss's sight behind a wall. Since the cut-over (plan combat-hud H8.1) the Combat Map
+// in Play is always the HUD; `enableHud` is a no-op kept so the HUD specs did not change in that tracer.
 
 import type { ConvexHttpClient } from "convex/browser";
 import { expect, type Browser, type Page } from "@playwright/test";
 
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
-import { HUD_STORAGE_KEY } from "../../../src/components/combat-map/hud/flag";
 import { characterDraft } from "../../fixtures/characters";
 import { gmAndPlayer, type LiveTable } from "../live";
 
@@ -17,10 +16,12 @@ import { gmAndPlayer, type LiveTable } from "../live";
 export const HUD_MAP_W = 30;
 export const HUD_MAP_H = 20;
 
-/** Turns the HUD switch on (or off) for this page's browser context; the next load of the Combat Map shows it. */
-export async function enableHud(page: Page, enabled = true): Promise<void> {
-  await page.evaluate(([key, value]) => window.localStorage.setItem(key, value), [HUD_STORAGE_KEY, enabled ? "1" : "0"] as const);
-}
+/**
+ * No-op since the cut-over (plan combat-hud H8.1): the HUD switch is gone and the Combat Map in Play is always the HUD.
+ * Kept so the HUD specs that called it did not change in that tracer; new specs don't call it.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function enableHud(_page: Page, _enabled = true): Promise<void> {}
 
 /** The Combat Map URL of a campaign. */
 export function combatMapUrl(campaignId: Id<"campaigns">): string {
@@ -95,12 +96,11 @@ async function seedEncounter(client: ConvexHttpClient, campaignId: Id<"campaigns
 }
 
 /**
- * The GM and the player in two browsers (`gmAndPlayer`), both on the dashboard with the HUD switch on, and the boards'
- * scene seeded through the API on a live map. Call `close()` at the end of the test. Pass `hud: false` to seed the
- * same scene for a classic comparison. Pass `moss` to make Moss another class with other starting cards (a wizard with
- * Book of Tyfar's Mysterious Mist for a card that asks for a square).
+ * The GM and the player in two browsers (`gmAndPlayer`), both on the dashboard, and the boards' scene seeded through
+ * the API on a live map. Call `close()` at the end of the test. Pass `moss` to make Moss another class with other
+ * starting cards (a wizard with Book of Tyfar's Mysterious Mist for a card that asks for a square).
  */
-export async function hudScene(browser: Browser, { hud = true, moss }: { hud?: boolean; moss?: { classId: string; domainCards: string[] } } = {}): Promise<HudScene> {
+export async function hudScene(browser: Browser, { moss }: { moss?: { classId: string; domainCards: string[] } } = {}): Promise<HudScene> {
   const druid = characterDraft("Moss", moss?.classId ?? "druid");
   const table = await gmAndPlayer(browser, {
     draft: {
@@ -148,9 +148,19 @@ export async function hudScene(browser: Browser, { hud = true, moss }: { hud?: b
     sniper: await enemy("sniper"),
   };
 
-  if (hud) {
-    await enableHud(table.gm);
-    await enableHud(table.player);
-  }
   return { ...table, url: combatMapUrl(campaignId), mapId, encounterId, pcs, enemies, farCardId: "vicious-entangle" };
+}
+
+/**
+ * Opens the GM's classic column on the Combat Map: in Play it lives in the HUD's "Map tools" drawer (plan combat-hud
+ * H8.1); in Edit (and with no map yet) it is the page's aside, already open. Waits for the page to settle on one.
+ */
+export async function openMapTools(page: Page): Promise<void> {
+  const button = page.getByRole("button", { name: "Map tools" });
+  const tools = page.getByRole("complementary", { name: "Map tools" });
+  // While the map loads the GM sees the column, then the HUD once a map is on screen: wait for the load first.
+  await expect(button.or(tools).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("Loading the map…")).toHaveCount(0, { timeout: 30_000 });
+  if ((await page.getByTestId("combat-hud").count()) > 0 && (await tools.count()) === 0) await button.click();
+  await expect(tools).toBeVisible();
 }

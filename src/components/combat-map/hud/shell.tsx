@@ -29,14 +29,15 @@ import { HudSpotlight } from "./spotlight";
 import { HudStatBlock } from "./statblock";
 import { HudToasts } from "./toasts";
 import { HudProvider, hudRootClasses, useHud } from "./state";
-import { HudSwitchButton, HudTools, MapToolsButton } from "./tools";
+import { HudTools, MapToolsButton } from "./tools";
 import { PartBoundary } from "./ui";
 
 /**
  * The Combat HUD shell (plan combat-hud H0; HANDOFF "Layout"): a full-bleed map with the HUD over it. The map is the
  * classic `MapBoard` with the same layers plus the HUD's map layers (target rings, action ring); over it every HUD
- * region mounts its part from `hud/<area>/index.tsx`, each in its own boundary. The page decides when the shell shows
- * (switch on, Play mode) and hands it the classic layers and the classic column for the "Map tools" drawer.
+ * region mounts its part from `hud/<area>/index.tsx`, each in its own boundary. The page shows the shell whenever the
+ * map is in Play (plan combat-hud H8.1: there is no switch) and hands it the classic layers and the classic column for
+ * the "Map tools" drawer.
  *
  * Regions (desktop 1440 × 900; tablet and phone tracers move them):
  *   banners   top-left, x = 24          scene   title + toolbar, x = 690       fear   top-right, right 24
@@ -81,12 +82,7 @@ function HudFrame({ state, loading, renderLayers, tools }: HudShellProps) {
   // The GM's spotlight panel: top middle on desktop; in the left column (queue sheet on a phone) at tablet width and below.
   const spotInColumn = useNarrowHud();
   const phone = phoneWidth && role !== "gm";
-  const toolbar = (
-    <>
-      <MapToolsButton role={role} />
-      <HudSwitchButton />
-    </>
-  );
+  const toolbar = <MapToolsButton role={role} />;
   return (
     <div className={cn("hud-root", hudRootClasses(hud), phone && "hud-ph-on")} data-role={role} data-testid="combat-hud">
       <h1 className="sr-only">Combat Map</h1>
@@ -226,7 +222,9 @@ function HudFrame({ state, loading, renderLayers, tools }: HudShellProps) {
         </Region>
       </div>
 
-      <HudTools role={role}>{tools}</HudTools>
+      <HudTools role={role} campaignId={state.campaignId}>
+        {tools}
+      </HudTools>
     </div>
   );
 }
