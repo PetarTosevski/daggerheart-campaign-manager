@@ -33,6 +33,7 @@ waves:
         boards: [Plan, Log]
         depends_on: []
         owns:
+          - tests/convex/schema-guard.test.ts
           - convex/lib/validators/sessions.ts
           - convex/tables/sessions.ts
           - convex/sessions.ts
