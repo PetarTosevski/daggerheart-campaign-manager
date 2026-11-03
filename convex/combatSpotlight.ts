@@ -5,7 +5,7 @@ import type { QueryCtx } from "./_generated/server";
 import { readSheet } from "./lib/characterSheet";
 import { campaignQuery, keyedGmMutation } from "./lib/functions";
 import { atLeast } from "./lib/permissions";
-import { giveTo, moveToGm, spotlightAdversary, spotlightOf } from "./lib/spotlight";
+import { giveTo, giveToParty, moveToGm, spotlightAdversary, spotlightOf, takeWithFear } from "./lib/spotlight";
 import { seenThisScene } from "./lib/spotlightSeen";
 import { spotlightReasonValidator } from "./tables/combatSpotlight";
 
@@ -15,9 +15,14 @@ import { spotlightReasonValidator } from "./tables/combatSpotlight";
  *
  * - `state` (every member): the holder (the GM, a PC with its name, or nobody in particular), since when and why, and
  *   what it means for the caller: `reactionsOnly` (a player while the GM holds it) and `canMove` (the GM).
- * - `gmTake({ tokenId? })` / `handTo({ characterId })` (the GM, keyed): the GM takes the spotlight (an interrupt, an
- *   adversary's turn; with `tokenId` the adversary it spotlights, which the map lights) or hands it back to a PC. Not logged in the action log: its undo restores sheets, adversaries, Fear and
- *   time only, so the GM's undo is the opposite move (docs/tasks/TASK-HUD-H1.S.md).
+ * - `gmTake({ tokenId?, pay? })` / `handTo({ characterId })` / `handToParty()` (the GM, keyed): the GM takes the
+ *   spotlight (an interrupt, an adversary's turn; with `tokenId` the adversary it spotlights, which the map lights),
+ *   hands it back to a PC, or hands it to the whole party with nobody chosen (H9.S, user answer Q8 a). `pay: "fear"`
+ *   spends 1 Fear for the interrupt and counts as that adversary's spotlight this GM turn (H9.S, user answer Q7 a;
+ *   `takeWithFear`); `"free"` (the default) costs nothing, and handing it to a PC or the party never costs Fear. Moves
+ *   without Fear are not logged in the action log: its undo restores sheets, adversaries, Fear and time only, so the
+ *   GM's undo is the opposite move (docs/tasks/TASK-HUD-H1.S.md). A paid take is logged, and its undo gives the Fear back
+ *   (docs/tasks/TASK-HUD-H9.S.md).
  */
 
 const holderViewValidator = v.union(
@@ -112,18 +117,26 @@ export const state = campaignQuery({
 
 const movedValidator = v.object({ moved: v.boolean() });
 
+/** How the GM pays for taking the spotlight (H9.S, user answer Q7 a): `free` (the default) or `fear` (1 Fear, CB p.155). */
+const payValidator = v.union(v.literal("free"), v.literal("fear"));
+
 /**
  * The GM takes the spotlight (an interrupt for a Fear, an adversary's turn: CB p.100). With `tokenId` the GM spotlights
  * that adversary's token (reason `adversary`; COMBAT_TOKEN_NOT_FOUND, or INVALID for a token that is not an
- * adversary's) and the map lights it; without it the GM takes it generally (`gmTook`).
+ * adversary's) and the map lights it; without it the GM takes it generally (`gmTook`). `pay` (widened, H9.S): `free`
+ * (default, as before) or `fear`: 1 Fear spent in the same mutation (NOT_ENOUGH_FEAR when the GM has none; nothing spent
+ * when the spotlight does not move), which counts as that adversary's spotlight this GM turn (`takeWithFear`).
  */
 export const gmTake = keyedGmMutation({
-  args: { tokenId: v.optional(v.string()) },
+  args: { tokenId: v.optional(v.string()), pay: v.optional(payValidator) },
   returns: movedValidator,
-  handler: async (ctx, { tokenId }) =>
-    ctx.once("spotlight_gm_take", tokenId === undefined ? {} : { tokenId }, async () => ({
-      moved: tokenId === undefined ? await moveToGm(ctx, ctx.campaign, "gmTook") : await spotlightAdversary(ctx, ctx.campaign, tokenId),
-    })),
+  handler: async (ctx, { tokenId, pay }) =>
+    ctx.once("spotlight_gm_take", { ...(tokenId === undefined ? {} : { tokenId }), ...(pay === "fear" ? { pay } : {}) }, async () => {
+      if (pay === "fear") return { moved: (await takeWithFear(ctx, ctx.campaign, ctx.user._id, tokenId)).moved };
+      return {
+        moved: tokenId === undefined ? await moveToGm(ctx, ctx.campaign, "gmTook") : await spotlightAdversary(ctx, ctx.campaign, tokenId),
+      };
+    }),
 });
 
 /** The GM hands the spotlight to a PC ("Once the GM has finished, play passes back to the PCs", CB p.100). */
@@ -132,4 +145,15 @@ export const handTo = keyedGmMutation({
   returns: movedValidator,
   handler: async (ctx, { characterId }) =>
     ctx.once("spotlight_hand_to", { characterId }, async () => ({ moved: await giveTo(ctx, ctx.campaign, characterId) })),
+});
+
+/**
+ * The GM hands the spotlight to the whole party, nobody chosen (H9.S, user answer Q8 a: "The whole party (players
+ * decide who acts)"): `state` reads holder null and every player's controls unlock. Idempotent: `moved` false when
+ * nobody held it already. Never costs Fear.
+ */
+export const handToParty = keyedGmMutation({
+  args: {},
+  returns: movedValidator,
+  handler: async (ctx) => ctx.once("spotlight_hand_to_party", {}, async () => ({ moved: await giveToParty(ctx, ctx.campaign) })),
 });
