@@ -100,7 +100,9 @@ test("the PC holder and the spotlighted adversary are lit for the GM and the pla
     await shot(player, "player-pc-lit-1440");
 
     // The GM spotlights the Lieutenant from its stat block: the Lieutenant is lit, Moss is not.
-    await tokenOf(gm, lieutenant.tokenId).click();
+    // From the keyboard: at 1440 the GM's spotlight panel hangs top middle over the Lieutenant (user 2026-11-04).
+    await tokenOf(gm, lieutenant.tokenId).focus();
+    await gm.keyboard.press("Enter");
     const block = gm.getByRole("complementary", { name: `${lieutenant.name}’s stat block` });
     await block.getByTestId("hud-statblock-spotlight").click();
     const confirm = gm.getByTestId("hud-fear-confirm");

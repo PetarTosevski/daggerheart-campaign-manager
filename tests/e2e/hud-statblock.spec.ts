@@ -31,7 +31,9 @@ test("the GM: an enemy token opens its stat block; marks, conditions, Spotlight;
     await expect(hud).toBeVisible();
     const ltName = s.enemies.lieutenant.name;
     const lt = enemyToken(gm, ltName);
-    await lt.click();
+    // From the keyboard: at 1440 the GM's spotlight panel hangs top middle over the Lieutenant (user 2026-11-04).
+    await lt.focus();
+    await gm.keyboard.press("Enter");
     await expect(hud).toHaveClass(new RegExp(`hud-sh-open hud-sh-${s.enemies.lieutenant.tokenId}`));
     const block = gm.getByRole("complementary", { name: `${ltName}’s stat block` });
     await expect(block.getByTestId("hud-statblock-body")).toBeVisible();
@@ -118,7 +120,9 @@ test("the GM: Attack opens the purple picker 'Acting for the …'; an Experience
     await gm.goto(s.url);
     await expect(gm.getByTestId("combat-hud")).toBeVisible();
     const ltName = s.enemies.lieutenant.name;
-    await enemyToken(gm, ltName).click();
+    // From the keyboard: at 1440 the GM's spotlight panel hangs top middle over the Lieutenant (user 2026-11-04).
+    await enemyToken(gm, ltName).focus();
+    await gm.keyboard.press("Enter");
     const block = gm.getByRole("complementary", { name: `${ltName}’s stat block` });
     await block.getByTestId("hud-statblock-attack").click();
 

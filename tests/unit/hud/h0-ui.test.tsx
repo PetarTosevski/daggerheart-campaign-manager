@@ -2,14 +2,16 @@
  * The Combat HUD primitives (plan combat-hud H0; docs/tasks/TASK-HUD-H0.md): every export of hud/ui and its states.
  * Each control reports an intent and leaves the value to its caller.
  */
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   BandLabel,
   ChoiceRow,
   CostPill,
+  PART_RETRY_DELAYS_MS,
+  PART_RETRY_STABLE_MS,
   PartBoundary,
   Pips,
   Popup,
@@ -262,19 +264,126 @@ describe("SidePanel", () => {
 });
 
 describe("PartBoundary", () => {
-  function Boom(): never {
-    throw new Error("query failed");
+  // Bead dcm-rzq2: a failed part retries by itself after 2, 5 and 10 s ("Loading…" meanwhile); only when the third
+  // retry fails does it show the alert with "Try again".
+  let failing = true;
+  let renders = 0;
+  function Flaky() {
+    renders += 1;
+    if (failing) throw new Error("query failed");
+    return <p>Banners</p>;
   }
 
-  it("shows the part's name and a retry instead of blanking the HUD", () => {
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    render(
+  function mount() {
+    return render(
       <PartBoundary label="The party banners">
-        <Boom />
+        <Flaky />
       </PartBoundary>,
     );
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    failing = true;
+    renders = 0;
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("retries quietly 3 times (2, 5, 10 s), then shows the part's name and Try again", () => {
+    mount();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading…");
+    const attempts = () => renders;
+    const first = attempts();
+
+    act(() => vi.advanceTimersByTime(PART_RETRY_DELAYS_MS[0] - 1));
+    expect(attempts()).toBe(first);
+    act(() => vi.advanceTimersByTime(1));
+    const second = attempts();
+    expect(second).toBeGreaterThan(first);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading…");
+
+    act(() => vi.advanceTimersByTime(PART_RETRY_DELAYS_MS[1]));
+    const third = attempts();
+    expect(third).toBeGreaterThan(second);
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    act(() => vi.advanceTimersByTime(PART_RETRY_DELAYS_MS[2]));
+    expect(attempts()).toBeGreaterThan(third);
     expect(screen.getByRole("alert")).toHaveTextContent("The party banners failed to load: query failed");
     expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
-    spy.mockRestore();
+    expect(screen.queryByRole("status")).toBeNull();
+
+    // No more retries by itself.
+    const settled = attempts();
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(attempts()).toBe(settled);
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+  });
+
+  it("recovers on a retry that succeeds", () => {
+    mount();
+    failing = false;
+    act(() => vi.advanceTimersByTime(PART_RETRY_DELAYS_MS[0]));
+    expect(screen.getByText("Banners")).toBeInTheDocument();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("Try again remounts the part and, if it fails again, retries afresh", () => {
+    mount();
+    for (const delay of PART_RETRY_DELAYS_MS) act(() => vi.advanceTimersByTime(delay));
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+
+    // Still failing: Try again starts a fresh round of quiet retries.
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading…");
+
+    // Then the query recovers: the part shows.
+    failing = false;
+    act(() => vi.advanceTimersByTime(PART_RETRY_DELAYS_MS[0]));
+    expect(screen.getByText("Banners")).toBeInTheDocument();
+  });
+
+  it("Try again shows the part at once when it loads", () => {
+    mount();
+    for (const delay of PART_RETRY_DELAYS_MS) act(() => vi.advanceTimersByTime(delay));
+    failing = false;
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(screen.getByText("Banners")).toBeInTheDocument();
+  });
+
+  it("resets the retry count once a retried part has stayed up", () => {
+    const tree = (
+      <PartBoundary label="The party banners">
+        <Flaky />
+      </PartBoundary>
+    );
+    const { rerender } = render(tree);
+    // Two failed retries, then the third succeeds and the part stays up past the stable window.
+    act(() => vi.advanceTimersByTime(PART_RETRY_DELAYS_MS[0]));
+    act(() => vi.advanceTimersByTime(PART_RETRY_DELAYS_MS[1]));
+    failing = false;
+    act(() => vi.advanceTimersByTime(PART_RETRY_DELAYS_MS[2]));
+    expect(screen.getByText("Banners")).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(PART_RETRY_STABLE_MS));
+
+    // A new failure gets the quiet retries again, not the alert.
+    failing = true;
+    rerender(
+      <PartBoundary label="The party banners">
+        <Flaky />
+      </PartBoundary>,
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading…");
+    failing = false;
+    act(() => vi.advanceTimersByTime(PART_RETRY_DELAYS_MS[0]));
+    expect(screen.getByText("Banners")).toBeInTheDocument();
   });
 });

@@ -31,7 +31,9 @@ test("NOT_ENOUGH_FEAR and ADVERSARY_NOT_SPOTLIT: the stat block's Fear costs and
     await gm.goto(s.url);
     await expect(gm.getByTestId("combat-hud")).toBeVisible();
     const ltName = enemies.lieutenant.name;
-    await enemyToken(gm, ltName).click();
+    // From the keyboard: at 1440 the GM's spotlight panel hangs top middle over the Lieutenant (user 2026-11-04).
+    await enemyToken(gm, ltName).focus();
+    await gm.keyboard.press("Enter");
     const block = gm.getByRole("complementary", { name: `${ltName}’s stat block` });
     await expect(block.getByTestId("hud-statblock-body")).toBeVisible();
 

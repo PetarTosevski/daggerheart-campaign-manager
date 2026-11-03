@@ -23,19 +23,24 @@ export function usePhoneHud(): boolean {
   );
 }
 
-const NARROW_QUERY = "(max-width: 1180px)";
+/**
+ * Below 1440 px the GM's spotlight panel leaves the top middle for the left column (the queue sheet on a phone): at
+ * 1440 it fits under the toolbar row, narrower it would cover the map's toolbar and mid-map tokens (bead
+ * dcm-bxp.99.32.42, user decision 2026-11-04). Fractional, so a 1439.5 px zoomed window is "below 1440" too.
+ */
+const SPOT_COLUMN_QUERY = "(max-width: 1439.98px)";
 
-function subscribeNarrow(onChange: () => void) {
-  const list = window.matchMedia(NARROW_QUERY);
+function subscribeSpotColumn(onChange: () => void) {
+  const list = window.matchMedia(SPOT_COLUMN_QUERY);
   list.addEventListener("change", onChange);
   return () => list.removeEventListener("change", onChange);
 }
 
-/** Whether the HUD is at tablet or phone width (1180 px and below, H7.1's tablet range); false on the server. */
-export function useNarrowHud(): boolean {
+/** Whether the GM's spotlight panel sits in the left column (below 1440 px wide); false on the server. */
+export function useSpotlightInColumn(): boolean {
   return useSyncExternalStore(
-    subscribeNarrow,
-    () => window.matchMedia(NARROW_QUERY).matches,
+    subscribeSpotColumn,
+    () => window.matchMedia(SPOT_COLUMN_QUERY).matches,
     () => false,
   );
 }

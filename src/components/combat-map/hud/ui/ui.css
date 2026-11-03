@@ -561,6 +561,14 @@
 }
 
 /* ---------------------------------------------------------------- PartBoundary */
+/* PartBoundary's quiet placeholder while a failed part retries by itself (bead dcm-rzq2). */
+.hud-part-retry {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--hud-muted);
+  pointer-events: none;
+}
 .hud-alert {
   display: inline-flex;
   align-items: center;

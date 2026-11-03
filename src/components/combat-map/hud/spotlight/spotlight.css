@@ -82,7 +82,33 @@
   padding: 4px 10px;
 }
 
-/* The GM's spotlight menu: top middle under the map title and GM tools (user 2026-11-03); in the queue sheet on a phone. */
+/*
+ * The GM's spotlight menu. At 1440 px and wider it hangs top middle (the shell's scene region, x = 690) below the toolbar
+ * row: under the GM tools and under the map's own toolbar (Zoom, Fit, Names, Areas; scene.css, top 236 of the map,
+ * two rows at 1440), so it covers neither (bead dcm-bxp.99.32.42, user decision 2026-11-04). Below 1440 px it sits in
+ * the left column with the queue (shell.tsx `useSpotlightInColumn`); on a phone in the queue sheet.
+ */
+.hud-root {
+  /*
+   * From the top of the map: the map toolbar's top (scene.css) + its height at its widest wrap (two rows, 78 px: at
+   * 1440, and with a sheet open up to 1600) + a gap.
+   */
+  --hud-spot-gm-top: calc(236px + 78px + 14px);
+}
+.hud-r-scene > .hud-spot-gm {
+  position: absolute;
+  /* The scene region itself starts 18 px down (shell.css). */
+  top: calc(var(--hud-spot-gm-top) - 18px);
+  left: 0;
+  width: max-content;
+  max-width: min(420px, calc(100vw - 690px - var(--hud-edge)));
+  margin-top: 0;
+  /* Under the GM tools' menus and pop-overs (Player view, Dice, Fog: z-index 40), which open over it. */
+  z-index: 30;
+}
+.hud-root.hud-sh-open .hud-r-scene > .hud-spot-gm {
+  max-width: min(420px, calc(100vw - 690px - var(--hud-sheet-w) - var(--hud-edge)));
+}
 .hud-spot-gm {
   position: relative;
   z-index: 55;

@@ -10,6 +10,6 @@ export { BandLabel, CostPill, Pips, Seal, StatTile, Tag, WaitingDots, costLabel 
 export type { BandState, CostResource, PipKind, TagKind } from "./marks";
 export { Popup, hudButtonClass } from "./popup";
 export type { PopupAction, PopupProps, PopupTone } from "./popup";
-export { PartBoundary } from "./boundary";
+export { PART_RETRY_DELAYS_MS, PART_RETRY_STABLE_MS, PartBoundary } from "./boundary";
 export { SidePanel } from "./side-panel";
 export type { SidePanelProps } from "./side-panel";

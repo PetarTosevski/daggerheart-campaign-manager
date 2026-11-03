@@ -17,7 +17,7 @@ import { HudFear } from "./fear";
 import { HudFeed } from "./feed";
 import { HudHand } from "./hand";
 import { HudHit } from "./hit";
-import { HudPhone, PhoneQueueSheet, useNarrowHud, usePhoneHud } from "./phone";
+import { HudPhone, PhoneQueueSheet, usePhoneHud, useSpotlightInColumn } from "./phone";
 import { HudPick, HudPickLayer, PickProvider } from "./pick";
 import { HudAttack } from "./pick-attack";
 import { HudAreaPick, HudAreaPickLayer } from "./pick-area";
@@ -79,8 +79,9 @@ function HudFrame({ state, loading, renderLayers, tools }: HudShellProps) {
   const { role } = state;
   // H7.2: a player at phone width gets the phone shell (strip, bottom sheet) in place of the desktop regions.
   const phoneWidth = usePhoneHud();
-  // The GM's spotlight panel: top middle on desktop; in the left column (queue sheet on a phone) at tablet width and below.
-  const spotInColumn = useNarrowHud();
+  // The GM's spotlight panel: top middle, under the toolbar row, at 1440 px and wider; below 1440 px in the left column
+  // (the queue sheet on a phone). Bead dcm-bxp.99.32.42, user decision 2026-11-04.
+  const spotInColumn = useSpotlightInColumn();
   const phone = phoneWidth && role !== "gm";
   const toolbar = <MapToolsButton role={role} />;
   return (
@@ -136,7 +137,7 @@ function HudFrame({ state, loading, renderLayers, tools }: HudShellProps) {
               <PartBoundary label="The scene">
                 <HudScene state={state} toolbar={toolbar} />
               </PartBoundary>
-              {/* User 2026-11-03: the GM's spotlight panel sits top middle, under the title and GM tools (desktop only). */}
+              {/* The GM's spotlight panel: top middle below the toolbar row, at 1440 px and wider (user 2026-11-04). */}
               {role === "gm" && !spotInColumn ? (
                 <PartBoundary label="The spotlight">
                   <HudSpotlight state={state} />
