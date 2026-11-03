@@ -250,6 +250,7 @@ waves:
         boards: [Log, Plan]
         depends_on: [J0]
         owns:
+          - tests/convex/authz/sessions.entries.ts
           - convex/sessionWrap.ts
           - convex/sessionRecords.ts
           - convex/migrations/journalRecap.ts
