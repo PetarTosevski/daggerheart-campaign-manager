@@ -836,6 +836,7 @@ waves:
           - src/app/(gm)/campaigns/[campaignId]/combat-map/combat-map.css
           - src/components/combat-map/slots.ts
           - src/components/combat-map/hud/flag.ts
+          - src/components/combat-map/hud/index.ts
           - src/components/combat-map/hud/shell.tsx
           - src/components/combat-map/hud/tools/**
           - src/components/combat-map/tokens/tokens-layer.tsx
