@@ -244,8 +244,23 @@ describe("session wrap-up", () => {
       expect((await env.gm.query(api.sessionWrap.dashboard, args)).dashboardNumber).toBe("No sessions yet");
     });
 
+    it("setRecap (Journal Q4): anonymous UNAUTHENTICATED, outsider NOT_FOUND, a player writes a live or played recap, GM may", async () => {
+      const env = await setup();
+      const sessionId = await env.create();
+      const args = (recap: string) => ({ campaignId: env.campaignId, sessionId, recap });
+      expect(await failure(env.t.mutation(api.sessionWrap.setRecap, args("Recap")))).toBe("UNAUTHENTICATED");
+      expect(await failure(env.out.mutation(api.sessionWrap.setRecap, args("Recap")))).toBe("NOT_FOUND");
+      // A planned session is hidden from players (sessionRecords.list): its recap is not theirs to write.
+      expect(await failure(env.p1.mutation(api.sessionWrap.setRecap, args("Recap")))).toBe("SESSION_NOT_FOUND");
+      expect(await env.gm.mutation(api.sessionWrap.setRecap, args("GM recap"))).toBeNull();
+      await env.gm.mutation(api.sessionRecords.setPlayed, { campaignId: env.campaignId, sessionId, played: true });
+      expect(await env.p1.mutation(api.sessionWrap.setRecap, args("  Player recap  "))).toBeNull();
+      expect((await wrap(env, sessionId))?.recap).toBe("Player recap");
+      const list = await env.p1.query(api.sessionRecords.list, { campaignId: env.campaignId });
+      expect(list.find((s) => s._id === sessionId)?.recap).toBe("Player recap");
+    });
+
     const writes = [
-      ["setRecap", (sessionId: string) => ({ sessionId, recap: "Recap" })],
       ["setLoot", (sessionId: string) => ({ sessionId, loot: "Loot" })],
       ["setThreads", (sessionId: string) => ({ sessionId, threads: "Threads" })],
     ] as const;
@@ -254,7 +269,7 @@ describe("session wrap-up", () => {
       it(`${name}: anonymous UNAUTHENTICATED, outsider NOT_FOUND, player FORBIDDEN, GM may`, async () => {
         const env = await setup();
         const sessionId = await env.create();
-        const fn = api.sessionWrap[name] as typeof api.sessionWrap.setRecap;
+        const fn = api.sessionWrap[name] as typeof api.sessionWrap.setLoot;
         const args = { campaignId: env.campaignId, ...extra(sessionId) } as never;
         expect(await failure(env.t.mutation(fn, args))).toBe("UNAUTHENTICATED");
         expect(await failure(env.out.mutation(fn, args))).toBe("NOT_FOUND");
