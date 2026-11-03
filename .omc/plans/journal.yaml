@@ -221,6 +221,7 @@ waves:
         boards: [Plan]
         depends_on: [J0]
         owns:
+          - convex/combatTokens.ts
           - convex/sessionPrep.ts
           - convex/lib/sessions.ts
           - tests/convex/journal-plan.test.ts
