@@ -515,3 +515,34 @@
     min-height: 44px;
   }
 }
+
+/* H9.5: the class controls (counters, Beastform and stance, Flying) and DA7's "Active" (classic `sd-*` controls inside). */
+.hsh-class {
+  margin: 8px 20px 0;
+  gap: 10px;
+}
+.hsh-chips {
+  margin: 8px 20px 0;
+}
+.hsh-class .hsh-chips {
+  margin: 0;
+}
+.hsh-active {
+  font-size: 11.5px;
+  color: var(--hud-ally-picked);
+}
+.hsh-active-tag {
+  margin-right: 4px;
+  padding: 1px 8px;
+  border-radius: var(--hud-r-chip);
+  box-shadow: inset 0 0 0 1px var(--hud-ally-picked);
+  font-weight: 600;
+}
+/* The GM's greyed controls: no fading (axe contrast on the labels); their buttons are disabled, which says it. */
+.hsh-class.sd-grey[data-greyed="true"] {
+  opacity: 1;
+}
+.hsh-class .cm-lbl,
+.hsh-class .cm-muted {
+  color: var(--hud-muted);
+}

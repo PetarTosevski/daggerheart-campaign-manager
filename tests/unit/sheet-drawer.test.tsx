@@ -1,17 +1,15 @@
 /**
  * The Combat Map sheet drawer's models and kept controls (plan sheet-drawer, SD6): the trackers' optimistic step (the
  * sheet's limits), the feature sections in plan order, the kind / cost / limit / state badges, rank locks, the D5 Uses
- * under "Other features" (Q15); and, with Convex mocked, the class controls the HUD's tools drawer keeps
- * (`SheetExtras`: counters, Flying Q16, Beastform Q10, stances Q5, greyed for the GM until "Play for this character")
- * and the D5 Use the HUD's sheet shows. Plan combat-hud H8.1 deleted the drawer dialog: the HUD's sheet panel covers its
+ * under "Other features" (Q15); and, with Convex mocked, the D5 Use the HUD's sheet shows. The class controls
+ * (counters, Flying Q16, Beastform Q10, stances Q5) moved from the tools drawer's `SheetExtras` into the HUD sheet
+ * (plan combat-hud H9.5): tests/unit/hud/sheet-class-controls.test.tsx. Plan combat-hud H8.1 deleted the drawer dialog: the HUD's sheet panel covers its
  * trackers, features, Use flow, Play-for and loading / error states (tests/unit/hud/sheet-panel.test.tsx).
  */
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { SheetExtras } from "@/components/combat-map/drawer";
 import { D5Use } from "@/components/combat-map/drawer/list/controls";
-import type { CombatMapSummary } from "@/components/combat-map/slots";
 import {
   activeForm,
   D5_USES,
@@ -76,7 +74,6 @@ afterEach(() => {
   for (const k of Object.keys(optimistic)) delete optimistic[k];
 });
 
-const CAMPAIGN = "c1" as Id<"campaigns">;
 const ASH = "ch-ash" as Id<"characters">;
 
 const aUse = (over: Partial<DrawerUse> = {}): DrawerUse => ({
@@ -235,102 +232,7 @@ describe("feature list model", () => {
   });
 });
 
-// ---------------------------------------------------------------- the class controls (SheetExtras) and D5 Use
-
-const MAP = { _id: "m1" as Id<"combatMaps">, name: "Road", live: true, source: "generated", w: 20, h: 20 } as unknown as CombatMapSummary;
-const ASH_TOKEN = "t-ash" as Id<"combatTokens">;
-
-/** SheetExtras for the player's own PC (Ash's token is theirs), or for the GM with Ash's token selected. */
-function open(role: "gm" | "player" = "player") {
-  queries["combatTokens:party"] = [{ _id: ASH_TOKEN, kind: "pc", characterId: ASH, mine: role === "player" }];
-  render(<SheetExtras campaignId={CAMPAIGN} role={role} map={MAP} selectedTokenId={role === "gm" ? ASH_TOKEN : null} />);
-}
-
-const extras = () => screen.getByRole("region", { name: "Ash: class controls" });
-
-describe("SheetExtras (the drawer's class controls, kept in the HUD's tools drawer by H8.1)", () => {
-  it("renders nothing for a character without counters, Flying, Beastform or stances, and nothing without a PC", () => {
-    queries["combatFeatures:drawer"] = drawer();
-    open();
-    expect(screen.queryByTestId("sheet-extras")).toBeNull();
-    cleanup();
-    queries["combatFeatures:drawer"] = drawer({ canFly: true });
-    queries["combatTokens:party"] = [];
-    render(<SheetExtras campaignId={CAMPAIGN} role="player" map={MAP} selectedTokenId={null} />);
-    expect(screen.queryByTestId("sheet-extras")).toBeNull();
-  });
-
-  it("lists the class counters and held dice", () => {
-    queries["combatFeatures:drawer"] = drawer({ counters: [{ key: "rally", label: "Rally die", value: "d6" }], heldDice: [{ id: "h1", sides: 6, kind: "Prayer", value: 4 }] } as unknown as Partial<Drawer>);
-    open();
-    const chips = within(extras()).getByRole("list", { name: "Class counters" });
-    expect(chips).toHaveTextContent("Rally die: d6");
-    expect(chips).toHaveTextContent("d6 Prayer: 4");
-  });
-
-  it("toggles Flying for a character with a flying feature (Q16)", async () => {
-    queries["combatFeatures:drawer"] = drawer({ canFly: true });
-    open();
-    const flying = within(extras()).getByRole("button", { name: "Flying" });
-    expect(flying).toHaveAttribute("aria-pressed", "false");
-    await act(async () => {
-      fireEvent.click(flying);
-    });
-    expect(calls[0]).toMatchObject({ name: "combatFeatures:setFlying", args: { campaignId: CAMPAIGN, characterId: ASH, flying: true } });
-    let written: Drawer | null = null;
-    optimistic["combatFeatures:setFlying"]!({ getQuery: () => drawer({ canFly: true }), setQuery: (_ref, _args, value) => (written = value as Drawer) }, { characterId: ASH, flying: true });
-    expect(written!.flying).toBe(true);
-  });
-
-  it("drops out of the Beastform (Q10)", async () => {
-    queries["combatFeatures:drawer"] = drawer({ features: [feature({ featureId: "beastform:agile-scout:agile", source: "beastform", name: "Agile", how: "passive", uses: [] })] });
-    open();
-    const form = within(extras()).getByRole("group", { name: "Beastform" });
-    expect(form).toHaveTextContent("Agile Scout");
-    await act(async () => {
-      fireEvent.click(within(form).getByRole("button", { name: "Drop out of Agile Scout" }));
-    });
-    expect(calls[0]).toMatchObject({ name: "classFeatures:endEffect", args: { characterId: ASH, effectId: "beastform" } });
-  });
-
-  it("shows the Martial Artist's stances and shifts with a Focus (Q5)", async () => {
-    const stances = [
-      feature({ featureId: "stance:martial-artist:mountain", source: "stance", name: "Mountain Stance", how: "passive", uses: [] }),
-      feature({ featureId: "stance:martial-artist:reed", source: "stance", name: "Reed Stance", how: "passive", uses: [] }),
-    ];
-    queries["combatFeatures:drawer"] = drawer({ features: stances, martial: { known: ["mountain", "reed"], active: "mountain", focus: 2, max: 6, refocusReady: true } });
-    open();
-    const group = within(extras()).getByRole("group", { name: "Stances" });
-    expect(within(group).queryByRole("button", { name: /Shift into Mountain Stance/ })).toBeNull();
-    await act(async () => {
-      fireEvent.click(within(group).getByRole("button", { name: "Shift into Reed Stance, spending 1 Focus" }));
-    });
-    expect(calls[0]).toMatchObject({ name: "combatFeatures:shiftStance", args: { characterId: ASH, stance: "reed", payWith: "focus" } });
-    expect(within(group).getByRole("button", { name: "Refocus" })).toBeDisabled();
-  });
-
-  it("greys the GM's controls for the selected PC until Play for this character is on (DA6)", () => {
-    queries["combatFeatures:drawer"] = drawer({ canFly: true });
-    open("gm");
-    expect((extras().querySelector(".sd-grey") as HTMLElement).dataset.greyed).toBe("true");
-    expect(within(extras()).getByRole("button", { name: "Flying" })).toBeDisabled();
-    cleanup();
-    queries["playFor:list"] = [ASH];
-    open("gm");
-    expect((extras().querySelector(".sd-grey") as HTMLElement).dataset.greyed).toBe("false");
-    expect(within(extras()).getByRole("button", { name: "Flying" })).toBeEnabled();
-  });
-
-  it("shows a refused intent as an alert", async () => {
-    queries["combatFeatures:drawer"] = drawer({ canFly: true });
-    results["combatFeatures:setFlying"] = [new Error("Nope")];
-    open();
-    await act(async () => {
-      fireEvent.click(within(extras()).getByRole("button", { name: "Flying" }));
-    });
-    expect(within(extras()).getByRole("alert")).toBeTruthy();
-  });
-});
+// ---------------------------------------------------------------- D5 Use (the class controls moved to tests/unit/hud/sheet-class-controls.test.tsx, H9.5)
 
 describe("D5Use (the HUD's sheet shows it)", () => {
   it("keeps the D5 Use of an out-of-combat feature (Q15 a)", async () => {

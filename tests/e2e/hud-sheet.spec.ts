@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { api } from "../../convex/_generated/api";
 import { expectNoSeriousA11yViolations } from "./a11y";
-import { hudScene } from "./hud/helpers";
+import { hudScene, openMapTools } from "./hud/helpers";
 
 // Plan combat-hud H2.1 (docs/tasks/TASK-HUD-H2.1.md): with the HUD on, a banner or a PC token opens that character's
 // sheet as a 400 px panel on the right (Main 'D · Sheet at hand', GMDesktop). Own sheet: steppers (one
@@ -134,6 +134,73 @@ test("the GM: GM edit, trackers and conditions always, Use only with Play for th
     await expect(panel(gm, "Moss").getByTestId("hud-sheet-badge")).toHaveText("GM edit");
     await panel(gm, "Moss").getByRole("button", { name: "Close Moss’s sheet" }).click();
     await expect(panel(gm, "Moss")).toHaveCount(0);
+  } finally {
+    await s.close();
+  }
+});
+
+// Plan combat-hud H9.5 (user answer Q5 a, bead dcm-bxp.99.32.43): the class controls moved from the Map tools drawer's
+// `SheetExtras` into the sheet. Moss (Druid, level 3) in the Winged Beast form: "Beastform and stance" above the
+// features with "Drop out", and Flying (the form's Bird's-Eye View) with the conditions. Own sheet: they act; the GM's
+// are greyed until "Play for this character"; the Map tools drawer no longer shows them.
+test("class controls on the sheet: the player's Flying and Drop out; the GM's greyed until Play for this character", async ({ browser }) => {
+  test.setTimeout(300_000);
+  const s = await hudScene(browser);
+  const { gm, player, client, campaignId } = s;
+  const moss = s.pcs.find((p) => p.name === "Moss")!.characterId;
+  try {
+    await client.mutation(api.levelUp.correctLevel, { characterId: moss, level: 3, idempotencyKey: crypto.randomUUID() });
+    await client.mutation(api.classFeatures.use, { characterId: moss, featureKey: "beastform", params: { choice: "winged-beast" }, idempotencyKey: crypto.randomUUID() });
+    const mossDrawer = () => client.query(api.combatFeatures.drawer, { campaignId, characterId: moss });
+    for (const page of [gm, player]) {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(s.url);
+      await expect(page.getByTestId("combat-hud")).toBeVisible();
+    }
+
+    // The GM first: Moss's sheet shows the form and Flying, greyed and disabled until Play for this character.
+    await gm.getByRole("region", { name: "Battle map" }).getByRole("button", { name: /^Open Moss’s sheet/ }).click();
+    const gmSheet = panel(gm, "Moss");
+    const gmForm = gmSheet.getByRole("region", { name: "Beastform and stance" });
+    await expect(gmForm.getByRole("group", { name: "Beastform" })).toContainText("Winged Beast");
+    await expect(gmForm.getByRole("button", { name: "Drop out of Winged Beast" })).toBeDisabled();
+    await expect(gmSheet.getByTestId("hud-sheet-flying")).toHaveAttribute("data-greyed", "true");
+    await expect(gmSheet.getByRole("button", { name: "Flying", exact: true })).toBeDisabled();
+    const playFor = gmSheet.getByRole("switch", { name: "Play for this character" });
+    await playFor.click();
+    await expect(playFor).toHaveAttribute("aria-checked", "true");
+    await expect(gmSheet.getByRole("button", { name: "Flying", exact: true })).toBeEnabled();
+    await expect(gmForm.getByRole("button", { name: "Drop out of Winged Beast" })).toBeEnabled();
+    await playFor.click();
+    await expect(playFor).toHaveAttribute("aria-checked", "false");
+    await expectNoSeriousA11yViolations(gm);
+
+    // The player: their own sheet; Flying is a server intent, and the GM's sheet follows live.
+    await partyBanner(player, "Moss").click();
+    const own = panel(player, "Moss");
+    const flying = own.getByRole("region", { name: "Conditions & lasting effects" }).getByRole("button", { name: "Flying", exact: true });
+    await expect(flying).toHaveAttribute("aria-pressed", "false");
+    await flying.click();
+    await expect(flying).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(async () => (await mossDrawer()).flying).toBe(true);
+    await expect(gmSheet.getByRole("button", { name: "Flying", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await flying.click();
+    await expect(flying).toHaveAttribute("aria-pressed", "false");
+    await expect.poll(async () => (await mossDrawer()).flying).toBe(false);
+    await expectNoSeriousA11yViolations(player);
+
+    // Drop out (Q10): the form section and the form's Flying leave the sheet.
+    await own.getByRole("button", { name: "Drop out of Winged Beast" }).click();
+    await expect(own.getByRole("region", { name: "Beastform and stance" })).toHaveCount(0);
+    await expect(own.getByRole("button", { name: "Flying", exact: true })).toHaveCount(0);
+    await expect.poll(async () => (await mossDrawer()).features.some((f) => f.source === "beastform")).toBe(false);
+
+    // The Map tools drawer holds map tools only (SheetExtras is gone).
+    await gmSheet.getByRole("button", { name: "Close Moss’s sheet" }).click();
+    await expect(gmSheet).toHaveCount(0);
+    await openMapTools(gm);
+    await expect(gm.getByRole("complementary", { name: "Map tools" })).toBeVisible();
+    await expect(gm.getByTestId("sheet-extras")).toHaveCount(0);
   } finally {
     await s.close();
   }

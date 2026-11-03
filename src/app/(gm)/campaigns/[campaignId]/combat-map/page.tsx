@@ -6,7 +6,6 @@ import { Component, useState, type ReactNode } from "react";
 
 import { ActionsProvider, TargetsLayer } from "@/components/combat-map/actions";
 import { HitFlashLayer } from "@/components/combat-map/actions/adversary";
-import { SheetExtras } from "@/components/combat-map/drawer";
 import { HudShell, ToolsHead } from "@/components/combat-map/hud";
 import { EditorLayer, EditorProvider, EditToolsPanel } from "@/components/combat-map/editor";
 import { ScenePanel } from "@/components/combat-map/generate";
@@ -194,9 +193,6 @@ function GmColumn({ state, selectedMapId, onSelectMap, onMode }: {
           <SlotBoundary label="The selected token">
             <TokenPanel {...state} map={map} />
           </SlotBoundary>
-          <SlotBoundary label="Class controls">
-            <SheetExtras {...state} />
-          </SlotBoundary>
           <SlotBoundary label="Reveal">
             <RevealPanel {...state} map={map} />
           </SlotBoundary>
@@ -211,9 +207,9 @@ function GmColumn({ state, selectedMapId, onSelectMap, onMode }: {
 
 /**
  * A player's "Your character" drawer in the HUD (plan combat-hud H0): their view card, the selected token (their own
- * PC, R4) and their PC's class controls (Flying, Beastform, stances, counters: `SheetExtras`). The HUD itself holds
- * the Hand, the pickers, the hit window, the dice and the feed (H8.1 deleted the classic column's incoming hit and
- * combat actions).
+ * PC, R4). The HUD itself holds the Hand, the pickers, the hit window, the dice, the feed (H8.1 deleted the classic
+ * column's incoming hit and combat actions) and, on the sheet, the class controls (H9.5: Flying, Beastform, stances,
+ * counters).
  */
 function PlayerColumn({ state }: { state: CombatPageState }) {
   const { map } = state;
@@ -225,9 +221,6 @@ function PlayerColumn({ state }: { state: CombatPageState }) {
       </SlotBoundary>
       <SlotBoundary label="The selected token">
         <TokenPanel {...state} map={map} />
-      </SlotBoundary>
-      <SlotBoundary label="Class controls">
-        <SheetExtras {...state} />
       </SlotBoundary>
     </>
   );

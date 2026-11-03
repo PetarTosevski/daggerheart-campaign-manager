@@ -1,9 +1,12 @@
 "use client";
 
+// The classic drawer's control styles (D5 Use, prompts, class controls: `sd-*`), loaded here since H9.5 removed
+// `SheetExtras`, which loaded them for the page.
+import "../../drawer/drawer.css";
 import "./sheet.css";
 
 import { useMutation, useQuery } from "convex/react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { refusalFor, type Refusal } from "@/lib/errors/refusals";
 import { cn } from "@/lib/utils";
@@ -25,6 +28,7 @@ import { usedText } from "../hand/states";
 import { pcHolds } from "../spotlight/model";
 import { useSpotlight } from "../spotlight";
 import { PartBoundary, Pips, SidePanel, StatTile, Toggle } from "../ui";
+import { FeatureHeld, SheetClassView, SheetCounters, SheetFlying, SheetForm, type ClassHere } from "./class";
 import {
   applyStep,
   applyStepToParty,
@@ -163,6 +167,8 @@ function SheetBody({
   const [using, setUsing] = useState<{ featureId: string; useId: string } | null>(null);
   // H3.3: Use opens the HUD's picking panel; the classic flow keeps what the HUD does not run (count, Charge).
   const featureUse = useFeatureUse({ campaignId, role, map, characterId: sheet.characterId, canUse: rights.use });
+  // H9.5: the class controls (own and gm only: they read `combatFeatures.drawer`); the GM's act with Play-for on.
+  const here: ClassHere | null = sheet.mode === "view" ? null : { campaignId, characterId: sheet.characterId, canAct: rights.use };
   return (
     <div className={cn("hsh-body", !rights.edit && "hsh-ro")} data-mode={sheet.mode}>
       <div className="hsh-stats">
@@ -172,6 +178,14 @@ function SheetBody({
       </div>
 
       <SheetTrackers sheet={sheet} edit={rights.edit} />
+
+      {here ? (
+        <PartBoundary label="Class counters">
+          <SheetCounters {...here} />
+        </PartBoundary>
+      ) : (
+        <SheetClassView sheet={sheet} />
+      )}
 
       {note ? (
         <p className={cn("hsh-note", sheet.mode === "gm" && "hsh-note-gm")} data-testid="hud-sheet-note">
@@ -192,6 +206,12 @@ function SheetBody({
         </PartBoundary>
       ) : null}
 
+      {here ? (
+        <PartBoundary label="Beastform and stance">
+          <SheetForm {...here} />
+        </PartBoundary>
+      ) : null}
+
       <section aria-labelledby="hsh-sec-features">
         <h3 id="hsh-sec-features" className="hsh-sec">
           Features
@@ -199,7 +219,7 @@ function SheetBody({
         {sheet.features.length === 0 ? <p className="hsh-muted">No features yet.</p> : null}
         <ul className="hsh-fts">
           {sheet.features.map((f) => (
-            <FeatureRow key={f.featureId} feature={f} sheet={sheet} canUse={rights.use} spotlightWithGm={spotlightWithGm} onUse={(useId) => (featureUse.open({ featureId: f.featureId, useId }) === "classic" ? setUsing({ featureId: f.featureId, useId }) : setUsing(null))} />
+            <FeatureRow key={f.featureId} here={here} feature={f} sheet={sheet} canUse={rights.use} spotlightWithGm={spotlightWithGm} onUse={(useId) => (featureUse.open({ featureId: f.featureId, useId }) === "classic" ? setUsing({ featureId: f.featureId, useId }) : setUsing(null))} />
           ))}
         </ul>
         {using && rights.use ? (
@@ -252,7 +272,13 @@ function SheetBody({
         )}
       </section>
 
-      <SheetConditions sheet={sheet} edit={rights.edit} />
+      <SheetConditions sheet={sheet} edit={rights.edit}>
+        {here ? (
+          <PartBoundary label="Flying">
+            <SheetFlying {...here} />
+          </PartBoundary>
+        ) : null}
+      </SheetConditions>
     </div>
   );
 }
@@ -371,11 +397,31 @@ function blockedUseOf(feature: HudSheetFeature, u: HudSheetUse, hope: number, sp
   });
 }
 
-/** One feature: name, text, cost / limit notes, and on the right its Use (own; GM with Play for), a locked cost (view) or its kind. */
-function FeatureRow({ feature, sheet, canUse, spotlightWithGm, onUse }: { feature: HudSheetFeature; sheet: HudSheetData; canUse: boolean; spotlightWithGm: boolean; onUse: (useId: string) => void }) {
+type FeatureRowProps = { feature: HudSheetFeature; sheet: HudSheetData; canUse: boolean; spotlightWithGm: boolean; onUse: (useId: string) => void };
+
+/**
+ * One feature. A spent-looking one on an own / gm sheet asks the drawer whether its effect still holds (DA7 "Active",
+ * H9.5: `FeatureHeld`, in its own boundary); everything else renders at once.
+ */
+function FeatureRow({ here, ...props }: FeatureRowProps & { here: ClassHere | null }) {
+  if (here === null || !props.feature.used) return <FeatureRowBody {...props} held={null} />;
+  return (
+    <PartBoundary label={props.feature.name}>
+      <FeatureHeld here={here} featureId={props.feature.featureId}>
+        {(held) => <FeatureRowBody {...props} held={held} />}
+      </FeatureHeld>
+    </PartBoundary>
+  );
+}
+
+/**
+ * Name, text, cost / limit notes, and on the right its Use (own; GM with Play for), a locked cost (view) or its kind.
+ * `held` (DA7): the feature's effect still holds: an "Active" banner with when it comes back instead of "Used".
+ */
+function FeatureRowBody({ feature, sheet, canUse, spotlightWithGm, onUse, held }: FeatureRowProps & { held: { resetLabel: string | null } | null }) {
   const uses = mapUses(feature);
   const d5 = d5Key(feature);
-  const notes = featureNotes(feature);
+  const notes = held ? [] : featureNotes(feature);
   const gm = sheet.mode === "gm";
   const usable = sheet.mode !== "view" && (uses.length > 0 || d5 !== null);
   const forWhom = gm ? ` for ${sheet.name}` : "";
@@ -385,9 +431,15 @@ function FeatureRow({ feature, sheet, canUse, spotlightWithGm, onUse }: { featur
   const first = reasons.find((r) => r !== null) ?? null;
   const why = useBlocked(first);
   return (
-    <li className={cn("hsh-ft", sheet.mode === "view" && "hsh-ft-ro", feature.used && "hsh-ft-used")} data-feature={feature.featureId}>
+    <li className={cn("hsh-ft", sheet.mode === "view" && "hsh-ft-ro", feature.used && !held && "hsh-ft-used")} data-feature={feature.featureId} data-state={held ? "active" : undefined}>
       <div className="hsh-ft-main">
         <b>{feature.name}</b>
+        {held ? (
+          <span className="hsh-active" data-testid="hud-sheet-active">
+            <span className="hsh-active-tag">Active</span>
+            {held.resetLabel ? ` ${held.resetLabel}.` : null}
+          </span>
+        ) : null}
         <small>{feature.text}</small>
         {notes.length > 0 ? <span className="hsh-ft-notes">{notes.join(" · ")}</span> : null}
         {why.blocked ? <BlockedReason id={why.reasonId}>{why.text}</BlockedReason> : null}
@@ -397,6 +449,15 @@ function FeatureRow({ feature, sheet, canUse, spotlightWithGm, onUse }: { featur
         {usable && uses.length > 0
           ? uses.map((u, i) => {
               const label = `${u.activation === "reaction" ? "React with" : "Use"} ${uses.length > 1 ? u.name : feature.name}${forWhom}`;
+              if (canUse && !u.ready && held) {
+                // DA7: the effect holds; the Use comes back when it ends (the banner says when).
+                return (
+                  <span key={u.useId} className="hsh-use hsh-use-ro hsh-badge" role="img" aria-label={`${label}: active`} data-testid="hud-sheet-held">
+                    <LockIcon />
+                    Active
+                  </span>
+                );
+              }
               if (canUse && !u.ready) {
                 // CmpBlocked "sheet badge": a spent use says when it comes back instead of a dead button.
                 return (
@@ -502,7 +563,7 @@ function HideHand({ campaignId, characterId }: { campaignId: Id<"campaigns">; ch
 }
 
 /** Conditions (with their source and how long) and lasting effects; own and GM switch conditions (`characters.toggleCondition`). */
-function SheetConditions({ sheet, edit }: { sheet: HudSheetData; edit: boolean }) {
+function SheetConditions({ sheet, edit, children }: { sheet: HudSheetData; edit: boolean; children?: ReactNode }) {
   const [error, setError] = useState<Refusal | null>(null);
   const toggle = useMutation(api.characters.toggleCondition).withOptimisticUpdate((store, args) => {
     const current = store.getQuery(api.combatHud.sheet, { characterId: args.characterId });
@@ -525,6 +586,7 @@ function SheetConditions({ sheet, edit }: { sheet: HudSheetData; edit: boolean }
       <h3 id="hsh-sec-cond" className="hsh-sec">
         Conditions & lasting effects
       </h3>
+      {children}
       {none ? <p className="hsh-muted">None right now.</p> : null}
       {!none ? (
         <ul className="hsh-cds">

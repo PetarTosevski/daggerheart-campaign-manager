@@ -1,7 +1,7 @@
 /*
  * The sheet drawer's kept parts (plan sheet-drawer, SD6; combat-hud H8.1 deleted the drawer dialog): the class
- * controls in the HUD's tools drawer (`SheetExtras`: counters, Flying, Beastform, stances) and the D5 Use and feature
- * Use flow the HUD's sheet shows. Colours are the page's tokens (--cm-*, combat-map.css).
+ * controls (counters, Flying, Beastform, stances; in the HUD sheet since H9.5), the D5 Use and the feature Use flow the
+ * HUD's sheet shows. Loaded by `hud/sheet/panel.tsx`. Colours are the page's tokens (--cm-*, combat-map.css).
  */
 
 .sd-grey {
