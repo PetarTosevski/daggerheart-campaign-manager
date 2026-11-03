@@ -297,3 +297,5 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - J1: players' Log & recap also shows Threads raised and After the session (not tally / spotlight). Default: yes.
 - J1: the Journal header shows the frame name (design) not the campaign name. Default: frame name (Custom frame shows its own name).
 - J1: players also see "Play on the Combat Map". Default: yes.
+- JD3a tally: criticals count every critical roll in the session incl. combat and death-move rolls, also ones the GM hid from the feed (undone ones don't). Default: keep.
+- JD3a tally: "adversaries defeated" counts only encounters started during the session; summoned adversaries count when defeated. Default: keep.

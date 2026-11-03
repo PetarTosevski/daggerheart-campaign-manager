@@ -76,10 +76,72 @@ export function storedSheet(sheet: CharacterSheetInput) {
   return { schemaVersion: SHEET_VERSION, ...characterSheetSchema.parse(sheet) };
 }
 
-/** Saves a sheet. A cleared Hit Point also clears `deathMoveSpent` (LL1), so marking the last one again asks for a death move. */
-export async function saveSheet(ctx: MutationCtx, characterId: Id<"characters">, sheet: CharacterSheetInput): Promise<void> {
+/**
+ * Saves a sheet. A cleared Hit Point also clears `deathMoveSpent` (LL1), so marking the last one again asks for a death move.
+ *
+ * Journal JD3b (user Q8): while the character's campaign has a live session, the save also adds the Hope it lowers
+ * (`hopeSpent`) and the Hit Points it marks (`hpMarked`; the sheet's `hp` is the marked count) to the PC's
+ * `sessionCharacterStats` row for that session, in the same mutation. Every engine path that changes a sheet (cards,
+ * attacks, hits, death moves, rests, the manual steppers) saves through here, so every path counts. A save that
+ * raises Hope or clears HP (rests, level-ups, healing) never subtracts. Undo restores sheets directly (`undoGroup` in
+ * convex/lib/actionLog.ts), not through here, so it neither adds nor subtracts. `current` is the stored character,
+ * for a caller that already read it in this mutation; otherwise this reads it (one get).
+ */
+export async function saveSheet(
+  ctx: MutationCtx,
+  characterId: Id<"characters">,
+  sheet: CharacterSheetInput,
+  current?: Pick<Doc<"characters">, "campaignId" | "sheet">,
+): Promise<void> {
   const stored = storedSheet(sheet);
+  const previous = current ?? (await ctx.db.get("characters", characterId));
   await ctx.db.patch("characters", characterId, { sheet: stored, updatedAt: Date.now(), ...(stored.hp < stored.hpMax ? { deathMoveSpent: undefined } : {}) });
+  const before = previous === null ? null : trackedCounts(previous.sheet);
+  if (previous === null || before === null) return;
+  const hopeSpent = Math.max(0, before.hope - stored.hope);
+  const hpMarked = Math.max(0, stored.hp - before.hp);
+  if (hopeSpent > 0 || hpMarked > 0) await countLiveSessionStats(ctx, previous.campaignId, characterId, hopeSpent, hpMarked);
+}
+
+/** Hope and marked HP of a stored sheet blob (every sheet version stores both as numbers), or null for a blob without them. */
+function trackedCounts(raw: unknown): { hope: number; hp: number } | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const { hope, hp } = raw as { hope?: unknown; hp?: unknown };
+  return typeof hope === "number" && typeof hp === "number" ? { hope, hp } : null;
+}
+
+/**
+ * Adds to the PC's `sessionCharacterStats` row of the campaign's live session (JD3b), creating it on the first drop.
+ * No live session: nothing. A session already holding `CHARACTER_READ_BOUND` rows (= `MAX_SESSION_CHARACTER_STATS`)
+ * gets no new row, so a save never fails over a counter. The live session is read here (index `by_campaign_status_n`,
+ * as `liveSession` in convex/lib/sessions.ts does) because that module imports this one.
+ */
+async function countLiveSessionStats(
+  ctx: MutationCtx,
+  campaignId: Id<"campaigns">,
+  characterId: Id<"characters">,
+  hopeSpent: number,
+  hpMarked: number,
+): Promise<void> {
+  const session = await ctx.db
+    .query("sessions")
+    .withIndex("by_campaign_status_n", (q) => q.eq("campaignId", campaignId).eq("status", "live"))
+    .first();
+  if (session === null) return;
+  const row = await ctx.db
+    .query("sessionCharacterStats")
+    .withIndex("by_session_character", (q) => q.eq("sessionId", session._id).eq("characterId", characterId))
+    .unique();
+  if (row !== null) {
+    await ctx.db.patch("sessionCharacterStats", row._id, { hopeSpent: row.hopeSpent + hopeSpent, hpMarked: row.hpMarked + hpMarked });
+    return;
+  }
+  const rows = await ctx.db
+    .query("sessionCharacterStats")
+    .withIndex("by_session_character", (q) => q.eq("sessionId", session._id))
+    .take(CHARACTER_READ_BOUND);
+  if (rows.length >= CHARACTER_READ_BOUND) return;
+  await ctx.db.insert("sessionCharacterStats", { campaignId, sessionId: session._id, characterId, hopeSpent, hpMarked });
 }
 
 // ---------------------------------------------------------------- access
