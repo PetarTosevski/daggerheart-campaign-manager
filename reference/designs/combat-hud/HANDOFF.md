@@ -15,10 +15,10 @@ Build it into the existing combat map (`Combat.dc.html` in the campaign manager 
 | `Main.dc.html` | 1440×900 | **Player, desktop.** Interactive. Preview states: Picking a target, Card result, You're hit, Last Hit Point, Can't afford, GM's turn. Banners and tokens open sheets. |
 | `PlayerTablet.dc.html` | 1024×768 | Same, tablet. Feed is hidden; banners are compact. |
 | `PlayerPhone.dc.html` | 1800×940 | Four 390×844 phone frames: picking (picker as a bottom sheet), Hand tab, incoming hit, full-screen sheet. |
-| `GMDesktop.dc.html` | 1440×900 | **GM, desktop.** Interactive. States: Requests (queue), Adversary acting, Spend Fear, Areas, End scene. Fear − / + work. Enemy tokens open stat blocks. |
-| `GMTablet.dc.html` | 1024×768 | Same, tablet. |
+| `GMDesktop.dc.html` | 1440×900 | **GM, desktop.** Interactive. States: Calm, Requests, Adversary acting, Spend Fear, Areas, Log, End scene. The spotlight disc, Fear − / + and the dock work. Enemy tokens open stat blocks. |
+| `GMTablet.dc.html` | 1024×768 | Same, tablet: icon-only dock, compact app bar. |
 | `CmpCards.dc.html` | 1440 wide | Hand states: ready, playing, can't afford, used, locked (GM), another player's card, hidden hand, reaction; vault and recall; roll options; full card view. |
-| `CmpTokens.dc.html` | | Banners (you, ally, condition, last HP), Fear banner (player / GM), token anatomy, token kinds, target rings, icons, lasting effects, light. |
+| `CmpTokens.dc.html` | | Banners (you, ally, condition, last HP), Fear banner (player / GM), token anatomy, token kinds, target rings, icons, lasting effects, light, **spotlight** (disc states, player/phone versions, map light, GM popover tabs). |
 | `CmpPicking.dc.html` | | The one picking pattern: one target, weapon attack, area (square), wall (two points), chain links, damage split and per-ally picks. |
 | `CmpPromptsPlayer.dc.html` | | Every player prompt (after-roll hold, riders, minions, waiting for GM, forced attack, Lead by Example, ally prompt, pay something else, Reliable Backup, two-tap). |
 | `CmpPromptsGM.dc.html` | | Every GM prompt (Fear spend, feature choices, out of range, Difficulty, reactions, Momentum offer, Cloaked, fire, countdown, Hope split, end scene). |
@@ -26,6 +26,28 @@ Build it into the existing combat map (`Combat.dc.html` in the campaign manager 
 | `CmpTokensDesign.dc.html` | | Colours, type, radii, motion. |
 
 The **Preview** box on interactive boards is a review aid only. Do not ship it.
+
+## App bar and spotlight (every board)
+
+- **App bar** (56 px desktop, 52 px tablet) above the map: back, wordmark (hidden on tablet), nav (Dashboard · Combat Map · Party | World · Characters & Locations · Adversaries · Journal), then Lorekeeper (icon only on tablet) and, for the GM, the settings gear and avatar; a player sees their character's portrait as the avatar. The HUD fills the rest (844 px / 716 px tall).
+- **Spotlight disc** (`.spd`): hangs from a cord left of the day disc, the same family of object. It shows whoever has the spotlight, lit from above:
+  - the whole party (no one chosen, players decide): four mini portraits, gold light;
+  - one PC: that portrait, gold light;
+  - an adversary: its initial on red, purple light (`spot-gm`).
+  - The same light falls as a pool (`.pool`) under that creature's token on the map, so a table watching one TV sees who acts.
+- **GM**: the disc is a button. It opens a popover with two tabs, **Party** (the whole party + each PC with Hope and HP) and **Adversaries** (every adversary in the scene with kind and HP). The holder is marked "Has it"; tapping another row moves the spotlight there and closes it. The Adversaries tab asks how you take it: **Free** (a player failed or rolled with Fear) or **1 Fear** (interrupt); taking it from the party with 1 Fear selected spends the Fear. The GM can always hand it to a specific PC, which is how a GM running the only screen hands turns around at a real table.
+- **Players**: the same disc, view only (`.spd.ro`). On phone it is a 44 px disc under the party strip, and the holder's mini banner is lit.
+- Root classes: `spot-<party|PC name|E0…>` plus `spot-gm` for an adversary; `sp-open` and `stab-party|adv` for the GM popover.
+- With a sheet open the disc moves left with the Fear banner (desktop); on tablet it hides while a sheet is open.
+
+## GM view (`GMDesktop`, `GMTablet`)
+
+- **Top centre**: scene title + Live chip only.
+- **Bottom dock** (the only toolbar): Select, Measure, Areas, Fog, Names | zoom − % + (the % fits the map) | Dice, Player view, Log | End scene. Icons only on tablet and while a sheet is open.
+- **Bottom left**: "Waiting on you" with a count; it opens the request queue above it. Nothing else lives in that corner.
+- **Log** opens Resolutions (with Undo) above the dock on the right. **Areas** opens its panel bottom-right.
+- Gone from the old GM layout: the title-row buttons, the zoom/Names panel, the floating spotlight panel, the always-open queue and Resolutions, the Day/Dim/Night switch (light is set from the day disc), the floating Lorekeeper button.
+- No PC is "you" on the GM view: all banners are the ally size, no gold trim.
 
 ## Hard rules
 
@@ -48,7 +70,8 @@ The **Preview** box on interactive boards is a review aid only. Do not ship it.
 - **Day/time disc**: hangs left of the Fear banner.
 - **Fear banner**: right 24, 12 diamond pips. On the GM view only it has − / +.
 - **Hand**: bottom, centred around x = 1050, with the vault, Roll options and Hide cards beside the fan.
-- **Feed** ("Just now"): bottom-left on the player view. On the GM view, the left column has the request queue on top and Resolutions with Undo below it.
+- **Feed** ("Just now"): bottom-left on the player view. On the GM view see "GM view" above.
+- **Spotlight disc**: right 300 on desktop (left of the day disc at right 206); right 208 on tablet.
 - **Sheet panel**: full height, right 0, 400 px wide. While it is open:
   - the map transitions `translateX(-125px) scale(.94)` over 350 ms;
   - the Fear banner moves to right 424, the hand to left 330, and pop-ups shift left;
@@ -132,7 +155,7 @@ On phone, the panel becomes a bottom sheet.
 
 - **Party**: name, class, level, portrait, HP marked/max, Stress marked/max, Hope (max 6), Armor Slots, Evasion, thresholds, Experiences, features with cost/limit/state, conditions and lasting effects with source and duration.
 - **Adversary** (GM): the stat block from the app's adversary data (Difficulty, thresholds, HP, Stress, attack, weapon, range, damage, Experience, motives, features with kind and Fear cost) plus live HP/Stress marks and conditions.
-- **Scene**: GM Fear (0–12), spotlight owner, day number and phase (Day / Dim / Night), live map, areas.
+- **Scene**: GM Fear (0–12), spotlight holder (the party, one PC or one adversary), day number and phase (Day / Dim / Night), live map, areas.
 
 ## Assets
 

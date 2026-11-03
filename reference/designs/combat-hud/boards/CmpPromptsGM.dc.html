@@ -648,9 +648,145 @@ table.codes td b{color:#e6ecea}
 .rad-row{display:flex;gap:18px;align-items:flex-end}
 .rad-row div{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:12px;color:#9fb2b6}
 .rad-row i{display:block;width:72px;height:56px;background:#141e22;box-shadow:inset 0 0 0 1px #3a4d54}
+
+.appf{width:1440px;height:900px;overflow:hidden;background:#0d1417;font:13px/1.4 'IBM Plex Sans',sans-serif;color:#e6ecea}
+.appf .root{height:844px}
+.abar{height:56px;box-sizing:border-box;display:flex;align-items:center;gap:14px;padding:0 16px;background:#0b1214;border-bottom:1px solid #1f2b30;position:relative;z-index:200}
+.ab-back{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:#ece6d6;box-shadow:inset 0 0 0 1px #33444a}
+.ab-wm{font:900 19px/1 'Cinzel',serif;letter-spacing:.1em;color:#ece6d6;margin-right:8px}
+.ab-nav{display:flex;align-items:center;gap:2px}
+.ab-nv{height:36px;padding:0 12px;border-radius:8px;display:inline-flex;align-items:center;gap:7px;color:#c8d3d0;text-decoration:none;font-size:13.5px}
+.ab-nv:hover{background:#18232a}
+.ab-nv[aria-current="page"]{background:#e3b45a;color:#1a1408;font-weight:600}
+.ab-live{width:7px;height:7px;border-radius:50%;background:#2f9b5a;box-shadow:0 0 0 3px rgba(47,155,90,.25)}
+.ab-sep{width:1px;height:20px;background:#33444a;margin:0 6px}
+.ab-r{margin-left:auto;display:flex;align-items:center;gap:8px}
+.ab-lk{height:36px;padding:0 14px 0 10px;border-radius:999px;border:0;display:inline-flex;align-items:center;gap:7px;background:#2d2614;color:#f3cf86;box-shadow:inset 0 0 0 1px #e3b45a;font:600 13px 'IBM Plex Sans',sans-serif}
+.ab-ic,.ab-ava{width:36px;height:36px;border-radius:50%;border:0;display:inline-flex;align-items:center;justify-content:center;background:#121b1f;color:#e6ecea;box-shadow:inset 0 0 0 1px #33444a}
+.ab-ava{background:#4b3a7a;color:#efeaff;font:700 11px 'Cinzel',serif}
+.ab-ava.pt-Moss{background:url(/_blob/d9e1ee70a58da42b83e8d870715c4ea0) center 30%/cover;box-shadow:0 0 0 2px #e3b45a}
+/* hide the old title, tool row and always-on panels */
+.gtitle,.gtools{display:none}
+.gq,.gr{display:none}
+.st-queue .gq{display:block;top:auto;bottom:72px}
+.st-log .gr{display:block;left:auto;right:16px;bottom:80px;width:360px}
+.gmc .ar{bottom:80px;right:182px}
+/* scene pill: title + spotlight, top centre */
+.scn{position:absolute;left:690px;top:16px;z-index:45;display:flex;flex-direction:column;gap:8px}
+.sc-t{display:flex;align-items:center;gap:12px}
+.sc-t h1{margin:0;font:900 26px/1 'Cinzel',serif;text-shadow:0 2px 10px rgba(0,0,0,.85)}
+.sc-live{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px;border-radius:999px;background:rgba(8,12,14,.85);color:#9ff0bd;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+.sc-ld{width:6px;height:6px;border-radius:50%;background:#5fd38a}
+.sc-row{display:flex;align-items:center;gap:6px;padding:4px 4px 4px 14px;border-radius:999px;background:rgba(13,20,23,.94);box-shadow:0 0 0 1px #33444a,0 8px 20px rgba(0,0,0,.4);align-self:flex-start}
+.sc-sp{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#e6ecea;margin-right:4px}
+.sc-sp.gm{color:#c9bdf2}
+.sc-dot{width:8px;height:8px;border-radius:50%;background:#e3b45a;box-shadow:0 0 8px #e3b45a}.sc-dot.gm{background:#8f7bd1;box-shadow:0 0 8px #8f7bd1}
+.sc-take,.sc-give{height:32px;padding:0 14px;border-radius:999px;border:0;display:inline-flex;align-items:center;gap:6px;font:600 12.5px 'IBM Plex Sans',sans-serif}
+.sc-take{background:#c9bdf2;color:#120c20}.sc-take .ic{width:13px;height:13px}
+.sc-give{background:transparent;color:#e6ecea;box-shadow:inset 0 0 0 1px #33444a}
+.st-adversary .sc-row,.st-spend .sc-row{box-shadow:0 0 0 1px #8f7bd1,0 0 22px rgba(143,123,209,.45)}
+/* bottom dock */
+.dock{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:70;display:flex;align-items:center;gap:6px;padding:6px;border-radius:18px;background:rgba(11,18,20,.96);box-shadow:0 0 0 1px #33444a,0 14px 34px rgba(0,0,0,.55)}
+.dk-g{display:flex;align-items:center;gap:2px;padding-right:6px;margin-right:0;border-right:1px solid #253338}
+.dk-b{white-space:nowrap;height:44px;min-width:52px;padding:0 8px;border:0;border-radius:12px;background:transparent;color:#c8d3d0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font:500 10.5px 'IBM Plex Sans',sans-serif}
+.dk-b:hover{background:#18232a;color:#fff}
+.dk-b[aria-pressed="true"]{background:#2d2614;color:#f3cf86;box-shadow:inset 0 0 0 1px rgba(227,180,90,.6)}
+.dk-z{gap:0}
+.dk-s{width:34px;height:44px;border:0;border-radius:10px;background:transparent;color:#c8d3d0;display:flex;align-items:center;justify-content:center}
+.dk-s:hover,.dk-pct:hover{background:#18232a}
+.dk-pct{height:44px;min-width:50px;border:0;border-radius:10px;background:transparent;color:#e6ecea;font:600 12.5px 'IBM Plex Sans',sans-serif}
+.dk-end{white-space:nowrap;height:44px;padding:0 14px;margin-left:2px;border-radius:12px;border:1px solid #6b3f3a;background:transparent;color:#f3a58f;display:inline-flex;align-items:center;gap:7px;font:600 13px 'IBM Plex Sans',sans-serif}
+/* waiting chip */
+.wchip{position:absolute;left:16px;bottom:16px;z-index:70;height:56px;padding:0 14px;border:0;border-radius:16px;display:inline-flex;align-items:center;gap:10px;background:rgba(11,18,20,.96);color:#c8d3d0;box-shadow:0 0 0 1px #33444a,0 14px 34px rgba(0,0,0,.5);font:600 13.5px 'IBM Plex Sans',sans-serif}
+.wn,.wn0{min-width:22px;height:22px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;padding:0 6px;box-sizing:border-box}
+.wn{background:#8f7bd1;color:#120c20}.wn0{background:#1f2b30;color:#9fb2b6}
+.wchip[aria-pressed="true"]{color:#c9bdf2;box-shadow:0 0 0 1px #8f7bd1,0 14px 34px rgba(0,0,0,.5)}
+.wchip[aria-pressed="true"] svg:last-child{transform:rotate(180deg)}
+/* preview box out of the way: right edge under the Fear banner */
+.gmc .gpv{left:auto;right:16px;bottom:auto;top:300px;width:150px;flex-direction:column;align-items:stretch}
+.gmc .gpv button{text-align:left}
+/* spotlight disc: hangs like the day disc, left of it */
+.spd{position:absolute;right:300px;top:0;z-index:46;display:flex;flex-direction:column;align-items:center;padding:0;border:0;background:transparent;color:#e6ecea;cursor:pointer}
+.spd .cord{width:2px;height:24px;background:#8a6a2e}
+.spot-gm .spd .cord{background:#5b4a8f}
+.spd-beam{position:absolute;top:10px;left:50%;width:120px;height:110px;transform:translateX(-50%);background:linear-gradient(rgba(255,240,200,.0),rgba(255,236,190,.45) 60%,rgba(255,236,190,0));clip-path:polygon(44% 0,56% 0,100% 100%,0 100%);pointer-events:none;filter:blur(2px)}
+.spot-gm .spd-beam{background:linear-gradient(rgba(201,189,242,0),rgba(201,189,242,.3) 60%,rgba(201,189,242,0))}
+.spd-disc{position:relative;width:72px;height:72px;border-radius:50%;overflow:hidden;background:#141e22;box-shadow:0 0 0 2px #e3b45a,0 0 0 6px rgba(227,180,90,.18),0 0 28px rgba(255,226,160,.55),0 8px 18px rgba(0,0,0,.5)}
+.spot-gm .spd-disc{box-shadow:0 0 0 2px #8f7bd1,0 0 0 6px rgba(143,123,209,.2),0 0 28px rgba(143,123,209,.7),0 8px 18px rgba(0,0,0,.5)}
+.spd[aria-expanded="true"] .spd-disc{box-shadow:0 0 0 3px #f3cf86,0 0 0 8px rgba(227,180,90,.3),0 0 30px rgba(255,226,160,.6)}
+.spf{position:absolute;inset:0;display:none;border-radius:50%}
+.spot-party .spf.k-party,.spot-Moss .spf.k-Moss,.spot-Brannoc .spf.k-Brannoc,.spot-Vex .spf.k-Vex,.spot-Oriel .spf.k-Oriel,.spot-E0 .spf.k-E0,.spot-E1 .spf.k-E1,.spot-E2 .spf.k-E2,.spot-E3 .spf.k-E3{display:flex}
+.sp-en{align-items:center;justify-content:center;background:#4a1814;color:#f6ead2;font:700 26px/1 'Cinzel',serif}
+.sp-grp{flex-wrap:wrap;background:#141e22}.sp-grp span{width:50%;height:50%;background-size:cover;background-position:center 30%}
+.spd-shine{position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle at 50% 8%,rgba(255,246,220,.6),rgba(255,240,200,.12) 45%,rgba(0,0,0,.35) 100%);pointer-events:none}
+.spot-gm .spd-shine{background:radial-gradient(circle at 50% 8%,rgba(230,222,255,.55),rgba(201,189,242,.12) 45%,rgba(0,0,0,.35) 100%)}
+.spd-l{margin-top:8px;display:flex;flex-direction:column;align-items:center;font:700 10.5px/1.2 'Cinzel',serif;letter-spacing:.12em;text-transform:uppercase;color:#c8d3d0;text-shadow:0 1px 4px #000}
+.spd-l b{font-size:13px;letter-spacing:.04em;text-transform:none;color:#f3cf86;margin-top:2px}
+.spot-gm .spd-l b{color:#c9bdf2}
+.sh-open .spd{right:640px}
+.sh-open .spp{right:540px}
+/* light pool on the map under whoever has it */
+.pool{position:absolute;width:190px;height:190px;margin:-95px 0 0 -95px;border-radius:50%;display:none;pointer-events:none;background:radial-gradient(circle,rgba(255,244,210,.8),rgba(255,236,190,.38) 40%,rgba(255,236,190,0) 70%);mix-blend-mode:screen}
+.pool.gm{background:radial-gradient(circle,rgba(214,204,255,.8),rgba(160,140,230,.4) 40%,rgba(160,140,230,0) 70%)}
+.spot-Moss .pool.k-Moss,.spot-Brannoc .pool.k-Brannoc,.spot-Vex .pool.k-Vex,.spot-Oriel .pool.k-Oriel,.spot-E0 .pool.k-E0,.spot-E1 .pool.k-E1,.spot-E2 .pool.k-E2,.spot-E3 .pool.k-E3{display:block}
+.spot-party .pool.gm{display:none}.spot-party .pool:not(.gm){display:block;width:110px;height:110px;margin:-55px 0 0 -55px;opacity:.75}
+/* spotlight popover */
+.spp{position:absolute;right:200px;top:150px;width:360px;z-index:90;display:none;flex-direction:column;padding:14px;border-radius:18px;background:#121b1f;box-shadow:0 0 0 1px #3a4d54,0 24px 60px rgba(0,0,0,.6)}
+.sp-open .spp{display:flex}
+.spp-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.spp-h b{font:700 18px/1 'Cinzel',serif;color:#f3cf86}
+.spp-x{width:34px;height:34px;border-radius:50%;border:1px solid #33444a;background:transparent;color:#c8d3d0;display:flex;align-items:center;justify-content:center}
+.spp-tabs{display:flex;gap:4px;padding:4px;border-radius:12px;background:#0b1214;margin-bottom:8px}
+.spp-tabs button{flex:1;height:36px;border:0;border-radius:9px;background:transparent;color:#c8d3d0;font:600 13px 'IBM Plex Sans',sans-serif}
+.spp-tabs button[aria-selected="true"]{background:#2d2614;color:#f3cf86;box-shadow:inset 0 0 0 1px #e3b45a}
+.stab-adv .spp-tabs button[aria-selected="true"]{background:#1f1a33;color:#c9bdf2;box-shadow:inset 0 0 0 1px #8f7bd1}
+.pane{display:none;flex-direction:column;gap:4px}
+.stab-party .pane-party,.stab-adv .pane-adv{display:flex}
+.spr{display:flex;align-items:center;gap:12px;min-height:56px;padding:6px 10px;border:0;border-radius:12px;background:transparent;color:#e6ecea;text-align:left;font:inherit;cursor:pointer}
+.spr:hover{background:#18232a}
+.spr-f{position:relative;flex:none;width:40px;height:40px;border-radius:50%;overflow:hidden;display:flex;background-size:cover;background-position:center 30%;box-shadow:0 0 0 2px #33444a}
+.spr-f.sp-en{font-size:16px}
+.spr-t{flex:1;min-width:0;display:flex;flex-direction:column}.spr-t b{font-size:14px;font-weight:600}.spr-t span{font-size:12px;color:#9fb2b6}
+.spr-has{display:none;font-size:12px;font-weight:700;color:#1a1408;background:#e3b45a;border-radius:999px;padding:3px 10px}
+.spr-go{font-size:12.5px;font-weight:600;color:#c8d3d0;border:1px solid #33444a;border-radius:999px;padding:4px 12px}
+.spr[aria-pressed="true"]{background:#2d2614;box-shadow:inset 0 0 0 1px rgba(227,180,90,.6)}
+.spr[aria-pressed="true"] .spr-f{box-shadow:0 0 0 2px #e3b45a,0 0 14px rgba(255,226,160,.7)}
+.spr[aria-pressed="true"] .spr-has{display:inline}.spr[aria-pressed="true"] .spr-go{display:none}
+.spr.gmr[aria-pressed="true"]{background:#1f1a33;box-shadow:inset 0 0 0 1px #8f7bd1}
+.spr.gmr[aria-pressed="true"] .spr-f{box-shadow:0 0 0 2px #8f7bd1,0 0 14px rgba(143,123,209,.8)}
+.spr.gmr[aria-pressed="true"] .spr-has{background:#c9bdf2;color:#120c20}
+.sp-how{display:flex;gap:6px;margin-bottom:6px}
+.sp-how button{flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:9px 11px;border-radius:12px;border:1px solid #33444a;background:#0f171a;color:#e6ecea;text-align:left;font:inherit}
+.sp-how b{display:inline-flex;align-items:center;gap:5px;font-size:13px}.sp-how span{font-size:11.5px;color:#9fb2b6}
+.sp-how button[aria-pressed="true"]{border-color:#8f7bd1;background:#1f1a33}.sp-how button[aria-pressed="true"] b{color:#c9bdf2}
+.spp-n{margin:10px 2px 0;font-size:12px;color:#9fb2b6;line-height:1.45}
+
+.sh-open .scn{opacity:0;pointer-events:none}
+.sh-open .dock{left:640px}.sh-open .dk-b{min-width:40px}.sh-open .dk-b span{display:none}
+.sh-open .gmc .gpv,.gmc.sh-open .gpv{right:416px}
+.sp-open .gpv{display:none}
+
+.mspot{position:absolute;right:10px;top:100px;z-index:25;display:flex;flex-direction:column;align-items:center}
+.ms-cord{width:2px;height:10px;background:#8a6a2e}.mspot.gm .ms-cord{background:#5b4a8f}
+.ms-disc{position:relative;width:44px;height:44px;border-radius:50%;overflow:hidden;background:#141e22;box-shadow:0 0 0 2px #e3b45a,0 0 18px rgba(255,226,160,.6)}
+.mspot.gm .ms-disc{box-shadow:0 0 0 2px #8f7bd1,0 0 18px rgba(143,123,209,.75)}
+.mspot .spf.on{display:flex;position:absolute;inset:0;border-radius:50%}
+.ms-l{margin-top:4px;padding:2px 7px;border-radius:999px;background:rgba(8,12,14,.88);font-size:10px;color:#c8d3d0;white-space:nowrap}
+.ms-l b{color:#f3cf86}.mspot.gm .ms-l b{color:#c9bdf2}
+.mspot .sp-en{align-items:center;justify-content:center;background:#4a1814;color:#f6ead2;font:700 18px/1 'Cinzel',serif}
+.spd-shine{position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle at 50% 8%,rgba(255,246,220,.6),rgba(255,240,200,.12) 45%,rgba(0,0,0,.35) 100%);pointer-events:none}
+.mb.lit .mb-in{box-shadow:inset 0 0 0 2px #e3b45a}
+.mb.lit::before{content:"";position:absolute;left:50%;top:0;width:64px;height:60px;transform:translateX(-50%);background:radial-gradient(ellipse at 50% 0,rgba(255,240,200,.55),rgba(255,240,200,0) 70%);z-index:2;pointer-events:none}
+
+.cmp .spbox{position:relative;width:150px;height:170px;display:flex;justify-content:center}
+.cmp .spd{position:relative;right:auto;top:auto}
+.cmp .mspot{position:relative;right:auto;top:auto;margin-top:30px}
+.cmp .poolbox{position:relative;overflow:hidden;isolation:isolate}
+.cmp .poolbox .pool{mix-blend-mode:normal;z-index:1}.cmp .poolbox .tk{z-index:2}
+.cmp .pops{display:flex;gap:40px;margin-top:28px;align-items:flex-start}
+.cmp .popbox .spp{position:relative;right:auto;top:auto;display:flex}
 </style>
 </helmet>
-<div class="root vx vf ve vd st-pick cmp" style="min-height: 1140px; height: auto"><h1>Prompts · GM</h1><p class="lede">Everything that waits on the GM lands in the request queue on the left of the GM view; each item is one of these.</p><div class="pgrid"><div class="pc gm"><div class="pc-h"><span class="pc-i"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 1c1.5 3 4.5 4.5 4.5 8.2A4.5 4.5 0 0 1 3.5 9.2C3.5 7 5 6 5.5 4.5 6.5 6 7 6.2 7.3 6 7.6 4 8 2.5 8 1z"/></svg></span><div><b>Spend 2 Fear?</b><span>1 for the spotlight, 1 for Coup de Grace</span></div></div><div class="pc-b"><p>The Lieutenant attacks Moss (Vulnerable).</p><div class="sumrow"><span>Fear</span><b>5 → 3</b></div></div><div class="pc-f"><button type="button" class="hc-no">Cancel</button><button type="button" class="hc-yes">Spend 2 Fear</button></div></div><div class="pc gm"><div class="pc-h"><span class="pc-i"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M2 12h12l-1-7-3 3-2-5-2 5-3-3z"/></svg></span><div><b>More Where That Came From</b><span>Choose for the feature</span></div></div><div class="pc-b"><div class="opt on"><span class="radio"></span><span>Summon 3 Jagged Knife Lackeys at Far range</span></div><div class="opt"><span class="box"></span><span>Place them now</span><small>pick squares</small></div></div><div class="pc-f"><button type="button" class="hc-no">Cancel</button><button type="button" class="hc-yes">Summon</button></div></div><div class="pc gm"><div class="pc-h"><span class="pc-i"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M5 1h6l-1 4.5 3.5 9.5h-11L6 5.5z" opacity=".35"/><circle cx="8" cy="3" r="2"/></svg></span><div><b>Out of range: your call</b><span>Moss · Vicious Entangle on the Sniper</span></div></div><div class="pc-b"><p>Very Far; the card reaches Far.</p></div><div class="pc-f"><button type="button" class="hc-no">Decline</button><button type="button" class="hc-yes">Allow</button></div></div><div class="pc gm"><div class="pc-h"><span class="pc-i"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><rect x="2" y="2" width="12" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="5.5" cy="5.5" r="1.1"/><circle cx="10.5" cy="10.5" r="1.1"/><circle cx="8" cy="8" r="1.1"/></svg></span><div><b>Set the Difficulty</b><span>Brannoc · Strength roll</span></div></div><div class="pc-b"><p>“I shoulder the tent pole and bring the canvas down on them.”</p><span class="step"><button type="button" aria-label="Lower">−</button><b>13</b><button type="button" aria-label="Raise">+</button></span></div><div class="pc-f"><button type="button" class="hc-no">Decline</button><button type="button" class="hc-yes">Set and roll</button></div></div><div class="pc gm"><div class="pc-h"><span class="pc-i"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M5 1h6l-1 4.5 3.5 9.5h-11L6 5.5z" opacity=".35"/><circle cx="8" cy="3" r="2"/></svg></span><div><b>Reactions</b><span>After the Bandit’s attack</span></div></div><div class="pc-b"><p>Waiting on Oriel and Vex. Their screens show what they can use.</p></div><div class="pc-f"><button type="button" class="hc-yes">Resolve now</button></div></div><div class="pc gm"><div class="pc-h"><span class="pc-i"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 1c1.5 3 4.5 4.5 4.5 8.2A4.5 4.5 0 0 1 3.5 9.2C3.5 7 5 6 5.5 4.5 6.5 6 7 6.2 7.3 6 7.6 4 8 2.5 8 1z"/></svg></span><div><b>Momentum</b><span>The Lieutenant hit Brannoc</span></div></div><div class="pc-b"><p>Gain a Fear?</p></div><div class="pc-f"><button type="button" class="hc-no">No</button><button type="button" class="hc-yes">Gain a Fear</button></div></div><div class="pc gm"><div class="pc-h"><span class="pc-i"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2"/><path d="M2.5 13.5l11-11" stroke="currentColor" stroke-width="1.6"/></svg></span><div><b>Does Mira’s Cloaked end?</b><span>She made a roll against an enemy</span></div></div><div class="pc-b"><p>Cloaked ends when she attacks or is seen; this roll wasn’t an attack.</p></div><div class="pc-f"><button type="button" class="hc-no">No, it stays</button><button type="button" class="hc-yes">Yes, it ends</button></div></div><div class="pc gm"><div class="pc-h"><span class="pc-i"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 1c1.5 3 4.5 4.5 4.5 8.2A4.5 4.5 0 0 1 3.5 9.2C3.5 7 5 6 5.5 4.5 6.5 6 7 6.2 7.3 6 7.6 4 8 2.5 8 1z"/></svg></span><div><b>Was this hit fire?</b><span>Ash is Fireproof · untyped damage</span></div></div><div class="pc-b"><p>Fire damage is ignored by Fireproof.</p></div><div class="pc-f"><button type="button" class="hc-no">No</button><button type="button" class="hc-yes">Yes, it was fire</button></div></div><div class="pc gm"><div class="pc-h"><span class="pc-i"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M5 1h6l-1 4.5 3.5 9.5h-11L6 5.5z" opacity=".35"/><circle cx="8" cy="3" r="2"/></svg></span><div><b>End this countdown?</b><span>The bridge collapses · 0 left</span></div></div><div class="pc-b"><p>The countdown reached zero. Ending it removes it from the map.</p></div><div class="pc-f"><button type="button" class="hc-no">Keep it</button><button type="button" class="hc-yes">End countdown</button></div></div><div class="pc gm"><div class="pc-h"><span class="pc-i"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 1l1.8 4.6L14.5 6l-3.6 3 1.1 4.7L8 11.3 4 13.7l1.1-4.7L1.5 6l4.7-.4z"/></svg></span><div><b>Hope split</b><span>A feature asks the players to pay</span></div></div><div class="pc-b"><div class="split"><span>Moss</span><span class="step"><button type="button" aria-label="Less">−</button><b>1</b><button type="button" aria-label="More">+</button></span><span class="tag p">has 1</span><span>Brannoc</span><span class="step"><button type="button" aria-label="Less">−</button><b>1</b><button type="button" aria-label="More">+</button></span><span class="tag p">has 3</span></div><div class="sumrow"><span>Needed</span><b>2 of 2</b></div></div><div class="pc-f"><button type="button" class="hc-no">Cancel</button><button type="button" class="hc-yes">Confirm split</button></div></div><div class="pc gm"><div class="pc-h"><span class="pc-i"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M5 1h6l-1 4.5 3.5 9.5h-11L6 5.5z" opacity=".35"/><circle cx="8" cy="3" r="2"/></svg></span><div><b>End the scene?</b><span>Forest Camp</span></div></div><div class="pc-b"><p>“Until the end of the scene” effects end. Fear, Hope, HP and Stress stay.</p></div><div class="pc-f"><button type="button" class="hc-no">Keep playing</button><button type="button" class="hc-yes">End the scene</button></div></div></div></div>
+<div class="root vx vf ve vd st-pick cmp" style="min-height: 1140px; height: auto"><h1>Prompts · GM</h1><p class="lede">Everything that waits on the GM goes behind “Waiting on you” at the bottom left of the GM view; each item is one of these. Moving the spotlight is not a prompt: the GM does it from the spotlight disc.</p><div class="pgrid"><div class="pc gm"><div class="pc-h"><span class="pc-i"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 1c1.5 3 4.5 4.5 4.5 8.2A4.5 4.5 0 0 1 3.5 9.2C3.5 7 5 6 5.5 4.5 6.5 6 7 6.2 7.3 6 7.6 4 8 2.5 8 1z"/></svg></span><div><b>Spend 2 Fear?</b><span>1 for the spotlight, 1 for Coup de Grace</span></div></div><div class="pc-b"><p>The Lieutenant attacks Moss (Vulnerable).</p><div class="sumrow"><span>Fear</span><b>5 → 3</b></div></div><div class="pc-f"><button type="button" class="hc-no">Cancel</button><button type="button" class="hc-yes">Spend 2 Fear</button></div></div><div class="pc gm"><div class="pc-h"><span class="pc-i"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M2 12h12l-1-7-3 3-2-5-2 5-3-3z"/></svg></span><div><b>More Where That Came From</b><span>Choose for the feature</span></div></div><div class="pc-b"><div class="opt on"><span class="radio"></span><span>Summon 3 Jagged Knife Lackeys at Far range</span></div><div class="opt"><span class="box"></span><span>Place them now</span><small>pick squares</small></div></div><div class="pc-f"><button type="button" class="hc-no">Cancel</button><button type="button" class="hc-yes">Summon</button></div></div><div class="pc gm"><div class="pc-h"><span class="pc-i"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M5 1h6l-1 4.5 3.5 9.5h-11L6 5.5z" opacity=".35"/><circle cx="8" cy="3" r="2"/></svg></span><div><b>Out of range: your call</b><span>Moss · Vicious Entangle on the Sniper</span></div></div><div class="pc-b"><p>Very Far; the card reaches Far.</p></div><div class="pc-f"><button type="button" class="hc-no">Decline</button><button type="button" class="hc-yes">Allow</button></div></div><div class="pc gm"><div class="pc-h"><span class="pc-i"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><rect x="2" y="2" width="12" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="5.5" cy="5.5" r="1.1"/><circle cx="10.5" cy="10.5" r="1.1"/><circle cx="8" cy="8" r="1.1"/></svg></span><div><b>Set the Difficulty</b><span>Brannoc · Strength roll</span></div></div><div class="pc-b"><p>“I shoulder the tent pole and bring the canvas down on them.”</p><span class="step"><button type="button" aria-label="Lower">−</button><b>13</b><button type="button" aria-label="Raise">+</button></span></div><div class="pc-f"><button type="button" class="hc-no">Decline</button><button type="button" class="hc-yes">Set and roll</button></div></div><div class="pc gm"><div class="pc-h"><span class="pc-i"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M5 1h6l-1 4.5 3.5 9.5h-11L6 5.5z" opacity=".35"/><circle cx="8" cy="3" r="2"/></svg></span><div><b>Reactions</b><span>After the Bandit’s attack</span></div></div><div class="pc-b"><p>Waiting on Oriel and Vex. Their screens show what they can use.</p></div><div class="pc-f"><button type="button" class="hc-yes">Resolve now</button></div></div><div class="pc gm"><div class="pc-h"><span class="pc-i"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 1c1.5 3 4.5 4.5 4.5 8.2A4.5 4.5 0 0 1 3.5 9.2C3.5 7 5 6 5.5 4.5 6.5 6 7 6.2 7.3 6 7.6 4 8 2.5 8 1z"/></svg></span><div><b>Momentum</b><span>The Lieutenant hit Brannoc</span></div></div><div class="pc-b"><p>Gain a Fear?</p></div><div class="pc-f"><button type="button" class="hc-no">No</button><button type="button" class="hc-yes">Gain a Fear</button></div></div><div class="pc gm"><div class="pc-h"><span class="pc-i"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2"/><path d="M2.5 13.5l11-11" stroke="currentColor" stroke-width="1.6"/></svg></span><div><b>Does Mira’s Cloaked end?</b><span>She made a roll against an enemy</span></div></div><div class="pc-b"><p>Cloaked ends when she attacks or is seen; this roll wasn’t an attack.</p></div><div class="pc-f"><button type="button" class="hc-no">No, it stays</button><button type="button" class="hc-yes">Yes, it ends</button></div></div><div class="pc gm"><div class="pc-h"><span class="pc-i"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 1c1.5 3 4.5 4.5 4.5 8.2A4.5 4.5 0 0 1 3.5 9.2C3.5 7 5 6 5.5 4.5 6.5 6 7 6.2 7.3 6 7.6 4 8 2.5 8 1z"/></svg></span><div><b>Was this hit fire?</b><span>Ash is Fireproof · untyped damage</span></div></div><div class="pc-b"><p>Fire damage is ignored by Fireproof.</p></div><div class="pc-f"><button type="button" class="hc-no">No</button><button type="button" class="hc-yes">Yes, it was fire</button></div></div><div class="pc gm"><div class="pc-h"><span class="pc-i"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M5 1h6l-1 4.5 3.5 9.5h-11L6 5.5z" opacity=".35"/><circle cx="8" cy="3" r="2"/></svg></span><div><b>End this countdown?</b><span>The bridge collapses · 0 left</span></div></div><div class="pc-b"><p>The countdown reached zero. Ending it removes it from the map.</p></div><div class="pc-f"><button type="button" class="hc-no">Keep it</button><button type="button" class="hc-yes">End countdown</button></div></div><div class="pc gm"><div class="pc-h"><span class="pc-i"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 1l1.8 4.6L14.5 6l-3.6 3 1.1 4.7L8 11.3 4 13.7l1.1-4.7L1.5 6l4.7-.4z"/></svg></span><div><b>Hope split</b><span>A feature asks the players to pay</span></div></div><div class="pc-b"><div class="split"><span>Moss</span><span class="step"><button type="button" aria-label="Less">−</button><b>1</b><button type="button" aria-label="More">+</button></span><span class="tag p">has 1</span><span>Brannoc</span><span class="step"><button type="button" aria-label="Less">−</button><b>1</b><button type="button" aria-label="More">+</button></span><span class="tag p">has 3</span></div><div class="sumrow"><span>Needed</span><b>2 of 2</b></div></div><div class="pc-f"><button type="button" class="hc-no">Cancel</button><button type="button" class="hc-yes">Confirm split</button></div></div><div class="pc gm"><div class="pc-h"><span class="pc-i"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M5 1h6l-1 4.5 3.5 9.5h-11L6 5.5z" opacity=".35"/><circle cx="8" cy="3" r="2"/></svg></span><div><b>End the scene?</b><span>Forest Camp</span></div></div><div class="pc-b"><p>“Until the end of the scene” effects end. Fear, Hope, HP and Stress stay.</p></div><div class="pc-f"><button type="button" class="hc-no">Keep playing</button><button type="button" class="hc-yes">End the scene</button></div></div></div></div>
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1140}}'>
 class Component extends DCLogic {

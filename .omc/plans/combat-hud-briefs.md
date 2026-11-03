@@ -1,13 +1,13 @@
 # Combat HUD: tracer briefs (2026-11-01, revised after the user's answers)
 
-Plan: `.omc/plans/combat-hud.yaml` (9 waves numbered 1-9, 31 tracers; `node scripts/plan-check.mjs .omc/plans/combat-hud.yaml` OK,
+Plan: `.omc/plans/combat-hud.yaml` (10 waves numbered 1-10, 39 tracers; wave 10 = design v2, see "Wave 10" below; `node scripts/plan-check.mjs .omc/plans/combat-hud.yaml` OK,
 no file owned twice in a wave). Design: `reference/designs/combat-hud/` (start with `HANDOFF.md`; render the boards in
 `preview/` with Playwright, file:// URLs, and click every Preview button and banner / token to see each state). Bead:
 dcm-bxp.99.32 (the overhaul) with children dcm-bxp.99.32.1 - .9 (server and data pieces, see "Beads"). Every question is
 answered: see "User answers 2026-11-01" at the end; they bind every tracer and override anything older in this file.
 HUD waves are numbered 1-9. Tracer IDs keep their original digit, one lower than the wave: H0 / HD1 run in wave 1,
 H1.x in wave 2, H2.x / HD2 in wave 3, H3.x / HD3 in wave 4, H4.x / HD4 in wave 5, H5.x in wave 6, H6.x in wave 7,
-H7.x in wave 8, H8.x in wave 9. (Lanes-2 waves 10 and 11 are the engine plan's, not these.)
+H7.x in wave 8, H8.x in wave 9, H9.x in wave 10 (design v2). (Lanes-2 waves 10 and 11 are the engine plan's, not these.)
 
 ## What the design is
 
@@ -36,6 +36,9 @@ an adversary stat block on parchment, and a three-layer blocked-state system.
 | 7 | A / B | H6.1, then H6.2 and H6.3 | after wave 6 |
 | 8 | - | H7.1, H7.2, H7.3 | after wave 7 |
 | 9 | A / B | H8.1, then H8.2 (cut-over) | after wave 8, the full e2e suite green with the switch on, and the user's go-ahead |
+| 10 | A | H9.0, H9.S, H9.A, H9.5 | each once the user has answered its questions (H9.0: Q4, Q9; H9.S: Q7, Q8; H9.A: Q1-Q3; H9.5: Q5); no config S1 or Journal JX1 open while H9.A runs (all own `campaign-shell.tsx`) |
+| 10 | B | H9.1, H9.2, H9.3 | when H9.0 is merged (H9.1 also after H9.S); questions H9.1: Q7, Q8, Q11; H9.2: Q10; H9.3: Q6 |
+| 10 | C | H9.6 | when every other wave 10 tracer is merged |
 
 At most 5 tracers run at once. Only the orchestrator merges, in dependency order, one squashed commit each; codegen after
 every merge that adds or changes a Convex file (HD1, H1.S, HD2, HD3, HD4, H5.3); schema composition for H1.S's table at
@@ -262,6 +265,48 @@ layout with the queue as a bottom sheet, answer 13a). **H7.3 — phone bottom sh
 **H8.1** removes the switch and the classic page / player-side UI and moves or deletes every classic spec (each deleted
 spec names the HUD spec that covers it). **H8.2** removes the classic GM cards (keeps `EndSceneButton` for the Encounter
 tab). Both run the full e2e suite and `pnpm build`. The orchestrator closes dcm-bxp.99.32 after H8.2.
+
+### Wave 10 (design v2, 2026-11-03)
+
+The user updated the design (artifact `Jis5dC5ZwBodq8nFKo8byK`, saved over `reference/designs/combat-hud/`; `git diff`
+shows the change). Read `.omc/plans/combat-hud-v2-delta.md` first: it lists every change per board, what exists in the
+code, and the questions Q1-Q11. A tracer whose `questions:` are unanswered does not start; if an answer differs from the
+recommended option, the orchestrator rewrites that tracer's acceptance first. The user's issue this wave fixes: the GM's
+top middle had two stacked cards repeating each other (the HUD title + toolbar and, under it, `MapBoard`'s own
+`.cm-toolbar`) plus the spotlight panel over mid-map tokens. Mode replace (no switch since wave 9): delete what the
+design removes, and fix or delete every spec that used it (name the covering spec).
+
+**H9.0 — shell and dock (foundation of batch B).** Add `chrome: "full" | "none"` to `MapBoard` (Edit mode and the World
+map keep the full toolbar) and lift zoom / fit / Names / area tools into `map-view/controls.ts` so the dock drives them.
+`hud/panels.ts`: one GM panel at a time (queue, log, areas, spotlight, dice, fog, player view, end scene). The dock
+reuses the existing Dice, Fog (VisionPanel), Player view (PreviewPicker) and End scene parts: import them, don't fork.
+Measure (Q9) is new; if the user leaves it out, ship Select alone in that slot. Keep the accessible names "Zoom in",
+"Zoom out", "Map tools" so the ~30 specs that use them stay green.
+
+**H9.S — spotlight server.** `handToParty` and `gmTake`'s `pay` widen (Q7, Q8). Reuse `spendCampaignFear`
+(`convex/lib/fear.ts`) and the per-GM-turn spotlight count `encounterTracking.spotlight` uses; quote CB in the doc for
+the rule you implement.
+
+**H9.A — app bar.** A compact bar for the Combat Map only (Q2a) built in `src/components/app-bar/**` and chosen by
+`campaign-shell.tsx` on the combat route; nav from `CAMPAIGN_SECTIONS` (Q1a: no hard-coded list), Lorekeeper pill opening
+the existing drawer (export an opener from `lorekeeper/drawer/index.tsx`; hide its floating pill on the combat map),
+gear / avatar slot for config S1 (Q3a). Sets `--app-bar-h` for H9.0's HUD height.
+
+**H9.5 — class controls (dcm-bxp.99.32.43).** Independent of the design; runs in batch A so the drawer holds only map
+tools when the dock lands.
+
+**H9.1 — spotlight disc.** Replaces `SpotlightMenu`, `SpotlightBannerTag`, `FearSpotlightTag` and the
+`useSpotlightInColumn` placement (commit fee75325) with the disc + popover; extends `SpotlightPools` to PC holders and
+the whole party (tokens-layer / vision-layer pass the PC tokens). Banners on the GM view never get the "you" trim.
+
+**H9.2 — queue, Log, Areas.** The queue's content is unchanged; only its placement and open state change.
+
+**H9.3 — top centre and light.** The GM title row loses its buttons (H9.0's dock has them) and the "GM view · Session n"
+line; Day / Dim / Night moves into the disc pop-over (Q6). Merge soon after H9.0 so the GM never sees both.
+
+**H9.6 — tablet, phone, full e2e, build.** Owns `responsive/**` and the phone shell files not owned by H9.1 / H9.2.
+Other wave 10 tracers style their own parts at tablet and phone width in their own CSS; H9.6 fixes what's left,
+shoots every v2 board state, runs the full suite and `pnpm build`.
 
 ## Risks
 
