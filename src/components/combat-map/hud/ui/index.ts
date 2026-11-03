@@ -8,7 +8,7 @@ export { ChoiceRow, Stepper, Toggle, TwoTapButton } from "./controls";
 export type { ChoiceRowProps, StepperProps, ToggleProps, TwoTapButtonProps } from "./controls";
 export { BandLabel, CostPill, Pips, Seal, StatTile, Tag, WaitingDots, costLabel } from "./marks";
 export type { BandState, CostResource, PipKind, TagKind } from "./marks";
-export { Popup, hudButtonClass } from "./popup";
+export { Popup, hudButtonClass, type HudButtonRole } from "./popup";
 export type { PopupAction, PopupProps, PopupTone } from "./popup";
 export { PART_RETRY_DELAYS_MS, PART_RETRY_STABLE_MS, PartBoundary } from "./boundary";
 export { SidePanel } from "./side-panel";

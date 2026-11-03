@@ -108,8 +108,7 @@
   color: var(--hud-ink);
 }
 .hud-res-x:focus-visible,
-.hud-res-chip:focus-visible,
-.hud-res-done:focus-visible {
+.hud-res-chip:focus-visible {
   outline: 2px solid var(--hud-gold);
   outline-offset: 2px;
 }
@@ -245,9 +244,6 @@
   font: var(--hud-type-label);
   letter-spacing: var(--hud-label-tracking);
   text-transform: uppercase;
-}
-.hud-res-done {
-  height: 30px;
 }
 .hud-res-notes {
   margin: 0;

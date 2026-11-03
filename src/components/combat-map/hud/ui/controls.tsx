@@ -111,7 +111,7 @@ export function TwoTapButton({ label, confirmLabel, onConfirm, disabled = false 
   return (
     <button
       type="button"
-      className={cn(hudButtonClass(), "hud-twotap")}
+      className={cn(hudButtonClass("danger"), "hud-twotap")}
       data-armed={armed}
       disabled={disabled}
       onClick={() => {

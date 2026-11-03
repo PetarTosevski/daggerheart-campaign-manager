@@ -91,6 +91,7 @@ function PlayerWaiting({ state }: { state: CombatPageState }) {
             primary={{
               label: "Withdraw",
               ariaLabel: `Withdraw ${w.use}`,
+              role: "cancel",
               disabled: busy.has(w.requestId),
               onClick: () => void onWithdraw(w.requestId, w.use),
             }}

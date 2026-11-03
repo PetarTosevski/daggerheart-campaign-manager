@@ -1,0 +1,291 @@
+/*
+ * Arcane glass buttons (reference/designs/buttons/arcane-glass.html, its "shipped block"). Dark glass at rest; on hover
+ * or keyboard focus the button's own colour fills up from the bottom and the text takes the other colour.
+ *
+ * The design's `.btn[data-role=…]` becomes `.gb.gb-<role>` (glassButtonClass in glass-button.ts), so a button needs no
+ * data attribute. The viewer still comes from an ancestor: `data-viewer="player" | "gm"`. Without one the player's
+ * colours apply (confirm Hope, cancel Fear); under `data-viewer="gm"` confirm is Fear and cancel is Hope. Allow / deny
+ * (the GM's answer to a player's request) are Hope / Fear for every viewer.
+ *
+ * Colours are --gb-* tokens: the design's values, with the app's own token where it has the same colour (--brand is
+ * the Hope gold). A surface with its own palette maps them (the Combat HUD does, in hud/ui/ui.css).
+ */
+:root {
+  --gb-hope: var(--brand, #e3b45a);
+  --gb-hope-soft: #f3cf86;
+  --gb-hope-rgb: 227, 180, 90;
+  --gb-hope-fill: linear-gradient(#f0c873, #c8953f);
+  --gb-hope-ink: #2f2357;
+  --gb-fear: #8f7bd1;
+  --gb-fear-soft: #d9cffc;
+  --gb-fear-rgb: 143, 123, 209;
+  --gb-fear-fill: linear-gradient(#5b48a3, #3b2d6b);
+  --gb-fear-ink: #f3cf86;
+  --gb-ember: #a8473a;
+  --gb-ember-soft: #f3a58f;
+  --gb-ember-rgb: 224, 80, 63;
+  /*
+   * The design's ember fill starts at #c8503c; gold text on it is 3.2:1, under WCAG AA's 4.5:1 for 14 px text. The
+   * top stop is darkened to #9c3a2c (4.9:1) so a hovered danger button passes axe; the bottom stop is the design's.
+   */
+  --gb-ember-fill: linear-gradient(#9c3a2c, #8a2a1e);
+  --gb-ember-ink: #f3cf86;
+  --gb-ink: #e6ecea;
+  --gb-line: #253338;
+  --gb-line-2: #33444a;
+  --gb-neutral: #c8d3d0;
+  --gb-neutral-fill: linear-gradient(#2c3c42, #1f2b30);
+  --gb-hover-rim: #8a6a2e;
+  --gb-disabled: #5f7178;
+  --gb-font: var(--font-plex), "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.gb {
+  --text: var(--gb-ink);
+  --rim: var(--gb-line-2);
+  --rgb: 13, 20, 23;
+  --glass: 0;
+  --fill: var(--gb-neutral-fill);
+  --fill-ink: var(--gb-hope-soft);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 12px;
+  font: 600 14px/1 var(--gb-font);
+  letter-spacing: 0;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--text);
+  background: radial-gradient(120% 140% at 50% 120%, rgba(var(--rgb), var(--glass)), rgba(13, 20, 23, 0.86) 70%);
+  box-shadow:
+    inset 0 0 0 1px var(--rim),
+    inset 0 0 14px rgba(var(--rgb), 0.2);
+  transition:
+    color 0.22s ease,
+    box-shadow 0.22s ease,
+    transform 0.15s ease;
+}
+.gb::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: var(--fill);
+  transform: scaleY(0);
+  transform-origin: 50% 100%;
+  transition: transform 0.26s cubic-bezier(0.3, 0.7, 0.3, 1);
+}
+.gb:hover::before,
+.gb:focus-visible::before {
+  transform: scaleY(1);
+}
+.gb:hover,
+.gb:focus-visible {
+  color: var(--fill-ink);
+  box-shadow: inset 0 0 0 1px var(--text);
+}
+.gb:focus-visible {
+  outline: 2px solid var(--gb-hope-soft);
+  outline-offset: 3px;
+}
+.gb:active {
+  transform: scale(0.96);
+}
+.gb svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+/* colour sets (the design's is-hope / is-fear) */
+.gb.gb-hope {
+  --text: var(--gb-hope-soft);
+  --rim: var(--gb-hope);
+  --rgb: var(--gb-hope-rgb);
+  --fill: var(--gb-hope-fill);
+  --fill-ink: var(--gb-hope-ink);
+}
+.gb.gb-fear {
+  --text: var(--gb-fear-soft);
+  --rim: var(--gb-fear);
+  --rgb: var(--gb-fear-rgb);
+  --fill: var(--gb-fear-fill);
+  --fill-ink: var(--gb-fear-ink);
+}
+
+/* roles: colour depends on who is looking; no viewer = the player's colours */
+.gb-confirm,
+[data-viewer="gm"] .gb-cancel {
+  --text: var(--gb-hope-soft);
+  --rim: var(--gb-hope);
+  --rgb: var(--gb-hope-rgb);
+  --fill: var(--gb-hope-fill);
+  --fill-ink: var(--gb-hope-ink);
+}
+.gb-cancel,
+[data-viewer="gm"] .gb-confirm {
+  --text: var(--gb-fear-soft);
+  --rim: var(--gb-fear);
+  --rgb: var(--gb-fear-rgb);
+  --fill: var(--gb-fear-fill);
+  --fill-ink: var(--gb-fear-ink);
+}
+.gb.gb-confirm {
+  --glass: 0.38;
+}
+.gb.gb-cancel {
+  --glass: 0.22;
+}
+.gb-neutral {
+  --text: var(--gb-neutral);
+}
+.gb-neutral:hover,
+.gb-neutral:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--gb-hover-rim);
+}
+.gb-danger {
+  --text: var(--gb-ember-soft);
+  --rim: var(--gb-ember);
+  --rgb: var(--gb-ember-rgb);
+  --glass: 0.38;
+  --fill: var(--gb-ember-fill);
+  --fill-ink: var(--gb-ember-ink);
+}
+/* toolbar tools: invisible until hovered or switched on */
+.gb.gb-tool {
+  --text: var(--gb-neutral);
+  background: transparent;
+  box-shadow: none;
+}
+.gb.gb-tool:hover,
+.gb.gb-tool:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--gb-hover-rim);
+}
+/* switched on (toggles, active tools) */
+.gb[aria-pressed="true"] {
+  --text: var(--gb-hope-soft);
+  --rim: var(--gb-hope);
+  --rgb: var(--gb-hope-rgb);
+  --glass: 0.3;
+  --fill: var(--gb-hope-fill);
+  --fill-ink: var(--gb-hope-ink);
+  background: radial-gradient(120% 140% at 50% 120%, rgba(var(--rgb), var(--glass)), rgba(13, 20, 23, 0.86) 70%);
+  box-shadow: inset 0 0 0 1px var(--rim);
+}
+/* the GM's ruling on a player's request: allowing gives the table hope, refusing feeds fear (same for every viewer) */
+.gb.gb-allow {
+  --text: var(--gb-hope-soft);
+  --rim: var(--gb-hope);
+  --rgb: var(--gb-hope-rgb);
+  --glass: 0.38;
+  --fill: var(--gb-hope-fill);
+  --fill-ink: var(--gb-hope-ink);
+}
+.gb.gb-deny {
+  --text: var(--gb-fear-soft);
+  --rim: var(--gb-fear);
+  --rgb: var(--gb-fear-rgb);
+  --glass: 0.3;
+  --fill: var(--gb-fear-fill);
+  --fill-ink: var(--gb-fear-ink);
+}
+/* roll toggle: Normal is neutral; Advantage / Disadvantage take Hope / Fear, flipped for the GM */
+.gb-advantage,
+[data-viewer="gm"] .gb-disadvantage {
+  --text: var(--gb-hope-soft);
+  --rgb: var(--gb-hope-rgb);
+  --fill: var(--gb-hope-fill);
+  --fill-ink: var(--gb-hope-ink);
+}
+.gb-disadvantage,
+[data-viewer="gm"] .gb-advantage {
+  --text: var(--gb-fear-soft);
+  --rgb: var(--gb-fear-rgb);
+  --fill: var(--gb-fear-fill);
+  --fill-ink: var(--gb-fear-ink);
+}
+.gb.gb-advantage,
+.gb.gb-disadvantage {
+  --rim: var(--gb-line-2);
+  --glass: 0;
+}
+.gb.gb-advantage[aria-pressed="true"],
+[data-viewer="gm"] .gb.gb-disadvantage[aria-pressed="true"] {
+  --text: var(--gb-hope-soft);
+  --rim: var(--gb-hope);
+  --rgb: var(--gb-hope-rgb);
+  --glass: 0.34;
+  --fill: var(--gb-hope-fill);
+  --fill-ink: var(--gb-hope-ink);
+}
+.gb.gb-disadvantage[aria-pressed="true"],
+[data-viewer="gm"] .gb.gb-advantage[aria-pressed="true"] {
+  --text: var(--gb-fear-soft);
+  --rim: var(--gb-fear);
+  --rgb: var(--gb-fear-rgb);
+  --glass: 0.4;
+  --fill: var(--gb-fear-fill);
+  --fill-ink: var(--gb-fear-ink);
+}
+.gb.gb-normal {
+  --text: var(--gb-neutral);
+}
+.gb.gb-normal[aria-pressed="true"] {
+  --text: var(--gb-ink);
+  --rim: var(--gb-neutral);
+  --rgb: 200, 211, 208;
+  --glass: 0.16;
+  --fill: var(--gb-neutral-fill);
+  --fill-ink: var(--gb-hope-soft);
+}
+
+/* sizes */
+.gb.gb-sm {
+  height: 34px;
+  padding: 0 13px;
+  font-size: 12.5px;
+  border-radius: 10px;
+}
+.gb.gb-lg {
+  height: 54px;
+  padding: 0 26px;
+  font-size: 17px;
+}
+.gb.gb-icon {
+  width: 44px;
+  padding: 0;
+}
+.gb.gb-round {
+  border-radius: 50%;
+}
+
+/* disabled (or aria-disabled: blocked but still focusable): no fill, no motion; the reason sits beside it */
+.gb:disabled,
+.gb[aria-disabled="true"] {
+  --text: var(--gb-disabled);
+  color: var(--text);
+  background: rgba(13, 20, 23, 0.6);
+  box-shadow: inset 0 0 0 1px var(--gb-line);
+  cursor: not-allowed;
+  transform: none;
+}
+.gb:disabled::before,
+.gb[aria-disabled="true"]::before {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gb,
+  .gb::before {
+    transition: none;
+  }
+}

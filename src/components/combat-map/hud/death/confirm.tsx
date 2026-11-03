@@ -42,6 +42,7 @@ export function GmDeathConfirm({ character }: { character: CharacterView }) {
         className="hud-death-confirm"
         primary={{
           label: "Confirm the death move",
+          role: "allow",
           disabled: busy,
           onClick: () =>
             void confirm.fire({ characterId }).then((r) => {
@@ -49,7 +50,7 @@ export function GmDeathConfirm({ character }: { character: CharacterView }) {
             }),
         }}
         secondary={
-          <button type="button" className={hudButtonClass()} disabled={busy} onClick={() => void decline.fire({ characterId })}>
+          <button type="button" className={hudButtonClass("deny")} disabled={busy} onClick={() => void decline.fire({ characterId })}>
             Send it back
           </button>
         }

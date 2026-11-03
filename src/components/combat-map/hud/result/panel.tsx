@@ -4,6 +4,7 @@ import { useId, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { hudButtonClass } from "../ui";
 import { damageText, outcomeTag, rowDamage, type ResultView } from "./model";
 import { CardArt, DiceLine, VerdictPill } from "./parts";
 
@@ -123,7 +124,7 @@ export function ResultPanel({
               <span className="hud-res-k">{PROMPT_WORD[p.kind]}</span>
               <span className="hud-res-todo-t">{p.text}</span>
               {p.kind === "manual" ? (
-                <button type="button" className="hud-btn hud-res-done" aria-label={`Done: ${p.text}`} onClick={() => onDone(p.i)}>
+                <button type="button" className={cn(hudButtonClass("secondary", "sm"), "hud-res-done")} aria-label={`Done: ${p.text}`} onClick={() => onDone(p.i)}>
                   Done
                 </button>
               ) : null}

@@ -73,7 +73,7 @@ function CardRow({ cardId, disabled, onUse }: { cardId: string; disabled: boolea
         </span>
       </div>
       {card.text ? <p>{card.text}</p> : null}
-      <button type="button" className={hudButtonClass("primary")} disabled={disabled} onClick={onUse} aria-label={`Use ${card.name}`}>
+      <button type="button" className={hudButtonClass("primary", "sm")} disabled={disabled} onClick={onUse} aria-label={`Use ${card.name}`}>
         Use
       </button>
     </li>
@@ -145,7 +145,7 @@ function FeatureRow({ feature, disabled, onUse }: { feature: FeatureView; disabl
           onSelect={() => setPicks((p) => ({ ...p, situations: { ...p.situations, [text]: !(p.situations[text] === true) } }))}
         />
       ))}
-      <button type="button" className={hudButtonClass("primary")} disabled={disabled || !ready} onClick={() => onUse(picks)} aria-label={`Use ${feature.name}`}>
+      <button type="button" className={hudButtonClass("primary", "sm")} disabled={disabled || !ready} onClick={() => onUse(picks)} aria-label={`Use ${feature.name}`}>
         Use
       </button>
     </li>
@@ -219,7 +219,7 @@ export function PayElse({ grants, comingHp, disabled, onSpend }: { grants: reado
               onStep={(d) => setAmounts((a) => ({ ...a, [grant.id]: grantAmount(grant, amount + d) }))}
             />
           </div>
-          <button type="button" className={hudButtonClass("primary")} disabled={disabled} onClick={() => onSpend(grant, amount)}>
+          <button type="button" className={hudButtonClass("primary", "sm")} disabled={disabled} onClick={() => onSpend(grant, amount)}>
             {grantUnit(grant).spend(amount)}
           </button>
         </div>

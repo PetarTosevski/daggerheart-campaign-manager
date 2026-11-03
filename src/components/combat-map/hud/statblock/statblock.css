@@ -390,10 +390,6 @@
 .hud-pk-gm .hud-pk-pay {
   color: var(--hud-fear-text);
 }
-.hud-pk.hud-pk-gm .hud-pk-go {
-  background: var(--hud-fear-text);
-  color: var(--hud-fear-ink);
-}
 .hud-pk-gm .hud-cost {
   background: var(--hud-fear);
   color: var(--hud-fear-ink);

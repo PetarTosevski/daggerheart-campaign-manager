@@ -78,7 +78,7 @@ export function AsksPanel({ entry }: { entry: AsksEntry }) {
         secondary={
           <button
             type="button"
-            className={hudButtonClass()}
+            className={hudButtonClass("cancel")}
             disabled={pending}
             onClick={() => {
               entry.cancel();

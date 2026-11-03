@@ -263,14 +263,14 @@ function primaryOf(view: HitView, mode: HitWindowMode, slots: number, busy: bool
 function secondaryOf(view: HitView, mode: HitWindowMode, busy: boolean, onAnswer: (c: HitChoice) => void): ReactNode {
   if (offersArmor(mode)) {
     return (
-      <button type="button" className={hudButtonClass()} disabled={busy} onClick={() => onAnswer({ kind: "noArmor" })}>
+      <button type="button" className={hudButtonClass("cancel")} disabled={busy} onClick={() => onAnswer({ kind: "noArmor" })}>
         {takeLabel(view)}
       </button>
     );
   }
   if (mode === "ally" || mode === "preRoll") {
     return (
-      <button type="button" className={hudButtonClass()} disabled={busy} onClick={() => onAnswer({ kind: "pass" })}>
+      <button type="button" className={hudButtonClass("cancel")} disabled={busy} onClick={() => onAnswer({ kind: "pass" })}>
         Pass
       </button>
     );

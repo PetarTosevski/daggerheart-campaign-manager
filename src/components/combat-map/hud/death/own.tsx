@@ -193,7 +193,7 @@ function WaitView({ name, request, onTakenBack }: { name: string; request: { mov
       <div className="hud-dm-f">
         <button
           type="button"
-          className={hudButtonClass()}
+          className={hudButtonClass("cancel")}
           disabled={undo.pending}
           onClick={() =>
             void undo.fire({ entryId: request.entryId }).then((r) => {

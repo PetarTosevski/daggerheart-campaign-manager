@@ -5,34 +5,20 @@
  * page's classes. Colours, type, radii and motion come from hud.css (--hud-*).
  */
 
-/* ---------------------------------------------------------------- buttons (.hc-yes / .hc-no) */
-.hud-btn {
-  height: 36px;
-  padding: 0 14px;
-  border-radius: var(--hud-r-button);
-  border: 1px solid var(--hud-line-2);
-  background: transparent;
-  color: var(--hud-ink);
-  font: 400 12.5px/1 var(--hud-font-ui);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  cursor: pointer;
-  white-space: nowrap;
+/*
+ * ---------------------------------------------------------------- buttons
+ * Every HUD button is an arcane glass button (src/components/brand/glass-button.css, via hudButtonClass): its look,
+ * sizes and states live there. The HUD maps the glass tokens onto its own where the colour is the same.
+ */
+.hud-root {
+  --gb-hope: var(--hud-hope);
+  --gb-hope-soft: var(--hud-gold-text);
+  --gb-fear: var(--hud-fear);
+  --gb-ink: var(--hud-ink);
+  --gb-line: var(--hud-line);
+  --gb-line-2: var(--hud-line-2);
+  --gb-font: var(--hud-font-ui);
 }
-.hud-btn-primary {
-  padding: 0 16px;
-  border: 0;
-  background: var(--hud-gold);
-  color: var(--hud-gold-ink);
-  font: 700 12.5px/1 var(--hud-font-display);
-}
-.hud-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-.hud-btn:focus-visible,
 .hud-opt:focus-visible,
 .hud-tog:focus-visible,
 .hud-step button:focus-visible,
@@ -98,6 +84,7 @@
 }
 .hud-pc-f {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
   align-items: center;
@@ -119,10 +106,6 @@
 }
 .hud-pc-gm .hud-pc-t {
   color: var(--hud-fear-text);
-}
-.hud-pc-gm .hud-btn-primary {
-  background: var(--hud-fear-text);
-  color: var(--hud-fear-ink);
 }
 .hud-pc-red .hud-pc-i {
   background: var(--hud-hp);
@@ -424,14 +407,13 @@
 }
 
 /* ---------------------------------------------------------------- TwoTapButton (.twotap) */
-.hud-twotap {
-  border-color: var(--hud-line-2);
-}
+/* A danger glass button; armed, it holds its hover fill until the second tap (or blur / Escape). */
 .hud-twotap[data-armed="true"] {
-  border-color: var(--hud-hp);
-  background: var(--hud-danger-bg);
-  color: var(--hud-danger);
-  font-weight: 600;
+  color: var(--fill-ink);
+  box-shadow: inset 0 0 0 1px var(--text);
+}
+.hud-twotap[data-armed="true"]::before {
+  transform: scaleY(1);
 }
 
 /* ---------------------------------------------------------------- BandLabel (.tg-l) */

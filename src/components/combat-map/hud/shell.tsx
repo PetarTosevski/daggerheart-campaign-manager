@@ -99,7 +99,7 @@ function HudFrame({ state, loading, renderLayers, tools }: HudShellProps) {
     </>
   );
   return (
-    <div className={cn("hud-root", hudRootClasses(hud), phone && "hud-ph-on")} data-role={role} data-testid="combat-hud">
+    <div className={cn("hud-root", hudRootClasses(hud), phone && "hud-ph-on")} data-role={role} data-viewer={role === "gm" ? "gm" : "player"} data-testid="combat-hud">
       <h1 className="sr-only">Combat Map</h1>
       <div className="hud-map">
         {loading ? (

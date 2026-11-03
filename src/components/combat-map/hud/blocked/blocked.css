@@ -43,10 +43,4 @@
 .hud-inl .hud-ic {
   margin-top: 2px;
 }
-/* A blocked control (aria-disabled, still focusable): the board's `.dis` look on any HUD button. */
-.hud-root [aria-disabled="true"].hud-btn {
-  background: #1a2327;
-  color: #7d8f96;
-  box-shadow: inset 0 0 0 1px #2c3a40;
-  cursor: not-allowed;
-}
+/* A blocked HUD button (aria-disabled, still focusable) takes the glass button's disabled look (glass-button.css). */

@@ -2,6 +2,7 @@
 
 import { useId, type ReactNode } from "react";
 
+import { glassButtonClass, type GlassRole, type GlassSize } from "@/components/brand/glass-button";
 import { cn } from "@/lib/utils";
 
 /**
@@ -19,6 +20,8 @@ export type PopupAction = {
   disabled?: boolean;
   /** Extra accessible name when the visible label is not enough. */
   ariaLabel?: string;
+  /** The button's role (default confirm). The GM's answer to a player's request is `"allow"`. */
+  role?: HudButtonRole;
 };
 
 export type PopupProps = {
@@ -27,7 +30,7 @@ export type PopupProps = {
   sub?: ReactNode;
   tone?: PopupTone;
   children?: ReactNode;
-  /** The one primary button (gold; lilac on the GM tone). Omit for a prompt that only informs. */
+  /** The one primary button (confirm unless `role` says otherwise). Omit for a prompt that only informs. */
   primary?: PopupAction;
   /** Secondary footer controls (Decline, Pass, a TwoTapButton), left of the primary. */
   secondary?: ReactNode;
@@ -35,8 +38,20 @@ export type PopupProps = {
   testId?: string;
 };
 
-export function hudButtonClass(kind: "primary" | "secondary" = "secondary"): string {
-  return kind === "primary" ? "hud-btn hud-btn-primary" : "hud-btn";
+/**
+ * A HUD button's role: `primary` is confirm, `secondary` neutral; the rest are the arcane glass design's
+ * (src/components/brand/glass-button.ts): cancel, danger, tool, allow / deny (the GM's answer to a player's request), …
+ */
+export type HudButtonRole = "primary" | "secondary" | GlassRole;
+
+/**
+ * The arcane glass button plus `hud-btn`, which the HUD's layout rules select (and `hud-btn-primary` on confirm, the
+ * prompt's one primary). Confirm and cancel take their colours from the HUD root's `data-viewer` ("player" | "gm");
+ * without it, the player's.
+ */
+export function hudButtonClass(kind: HudButtonRole = "secondary", size?: GlassSize): string {
+  const role: GlassRole = kind === "primary" ? "confirm" : kind === "secondary" ? "neutral" : kind;
+  return cn("hud-btn", role === "confirm" && "hud-btn-primary", glassButtonClass({ role, size }));
 }
 
 export function Popup({ icon, title, sub, tone = "player", children, primary, secondary, className, testId }: PopupProps) {
@@ -67,7 +82,7 @@ export function Popup({ icon, title, sub, tone = "player", children, primary, se
           {primary ? (
             <button
               type="button"
-              className={hudButtonClass("primary")}
+              className={hudButtonClass(primary.role ?? "primary")}
               disabled={primary.disabled}
               aria-label={primary.ariaLabel}
               onClick={primary.onClick}

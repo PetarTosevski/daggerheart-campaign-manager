@@ -111,7 +111,7 @@ function Bar({ live, w, h }: { live: AreaPickLive; w: number; h: number }) {
       </div>
       <div className="hud-ap-f">
         <span className="hud-ap-pay">{spec.pay ?? null}</span>
-        <button type="button" className={hudButtonClass()} onClick={cancelAreaPick} disabled={live.sending}>
+        <button type="button" className={hudButtonClass("cancel")} onClick={cancelAreaPick} disabled={live.sending}>
           Cancel
         </button>
         <button

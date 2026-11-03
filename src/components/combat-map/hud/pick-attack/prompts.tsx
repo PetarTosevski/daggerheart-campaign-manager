@@ -118,7 +118,7 @@ function MinionOffers({ state, characterId }: { state: CombatPageState; characte
         testId="hud-attack-minions"
         primary={{ label: "Pick Minions", onClick: () => open(offer) }}
         secondary={
-          <button type="button" className={hudButtonClass()} onClick={() => void skip(offer)}>
+          <button type="button" className={hudButtonClass("cancel")} onClick={() => void skip(offer)}>
             Skip
           </button>
         }

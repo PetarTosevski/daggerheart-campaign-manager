@@ -273,7 +273,7 @@ function Panel({ state, live }: { state: CombatPageState; live: PickLive }) {
         </span>
         {/* H7.3, PlayerPhone 'Picking a target': on a phone the sheet's footer is Cancel + the primary (pick.css shows
             this button at 760 px and below only, where the header's ✕ hides). */}
-        <button type="button" className={cn(hudButtonClass(), "hud-pk-cancel")} data-testid="hud-pick-cancel" onClick={() => pick.cancel()}>
+        <button type="button" className={cn(hudButtonClass("cancel"), "hud-pk-cancel")} data-testid="hud-pick-cancel" onClick={() => pick.cancel()}>
           Cancel
         </button>
         <button

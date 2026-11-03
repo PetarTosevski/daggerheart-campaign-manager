@@ -2,6 +2,8 @@
 
 import { Component, type ReactNode } from "react";
 
+import { hudButtonClass } from "./popup";
+
 /** Waits before each quiet retry of a failed HUD part (bead dcm-rzq2): 3 retries, then "Try again". */
 export const PART_RETRY_DELAYS_MS = [2_000, 5_000, 10_000] as const;
 /** A retried part that stays up this long has recovered: the next failure starts the retries afresh. */
@@ -69,7 +71,7 @@ export class PartBoundary extends Component<{ children: ReactNode; label: string
         <span>
           {this.props.label} failed to load{this.state.message ? `: ${this.state.message}` : "."}
         </span>
-        <button type="button" className="hud-btn" onClick={this.tryAgain}>
+        <button type="button" className={hudButtonClass()} onClick={this.tryAgain}>
           Try again
         </button>
       </div>

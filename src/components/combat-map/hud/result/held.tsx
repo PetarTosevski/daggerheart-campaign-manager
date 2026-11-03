@@ -97,7 +97,7 @@ export function HeldRoll({ campaignId, row }: { campaignId: Id<"campaigns">; row
             : undefined
         }
         secondary={
-          <button type="button" className={hudButtonClass(row.options.length === 0 ? "primary" : "secondary")} disabled={pending} onClick={() => void send({ kind: "pass" })}>
+          <button type="button" className={hudButtonClass("cancel")} disabled={pending} onClick={() => void send({ kind: "pass" })}>
             Pass
           </button>
         }
@@ -171,7 +171,7 @@ export function RiderAsk({ campaignId, row }: { campaignId: Id<"campaigns">; row
         </div>
       ) : null}
       <div className="hud-res-ask-f">
-        <button type="button" className={hudButtonClass()} disabled={pending} onClick={() => void send({ kind: "pass" })}>
+        <button type="button" className={hudButtonClass("cancel")} disabled={pending} onClick={() => void send({ kind: "pass" })}>
           Not now
         </button>
         <button

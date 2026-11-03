@@ -79,8 +79,7 @@
   color: var(--hud-ink);
 }
 .hud-pk-x:focus-visible,
-.hud-pk-r:focus-visible,
-.hud-pk-go:focus-visible {
+.hud-pk-r:focus-visible {
   outline: 2px solid var(--hud-gold);
   outline-offset: 2px;
 }
@@ -217,12 +216,13 @@
 .hud-pk-pay-gm {
   color: var(--hud-out);
 }
+/* A long label ("Cast Vicious Entangle on Lieutenant") wraps inside the glass button instead of overflowing. */
 .hud-pk .hud-pk-go {
   height: auto;
-  min-height: 38px;
+  min-height: 44px;
   max-width: 100%;
-  padding: 8px 16px;
-  font: 700 13px/1.15 var(--hud-font-display);
+  padding: 8px 18px;
+  line-height: 1.2;
   white-space: normal;
 }
 .hud-pk-pay:empty {
