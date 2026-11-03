@@ -4,7 +4,7 @@ import { appError } from "../src/lib/errors/app-error";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { logAction } from "./lib/actionLog";
-import { withoutCondition } from "./lib/cardRunner";
+import { withoutCondition } from "./lib/conditionMarkers";
 import { readSheet, saveSheet } from "./lib/characterSheet";
 import { groupUndone } from "./lib/cloakPrompts";
 import { closeRequest, encounterRunning, loadOpenRequest, openRequests } from "./lib/combatRequests";

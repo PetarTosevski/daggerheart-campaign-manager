@@ -29,7 +29,7 @@ import { v, type Infer } from "convex/values";
 import { pickUse, type ActorState, type RunContext, type RunPlan, type RunRefusal } from "../../src/lib/domain/card-effects/run";
 import type { CardUse, Step, TargetSpec } from "../../src/lib/domain/card-effects/types";
 import { delegatedKeys } from "../../src/lib/domain/feature-effects/delegate";
-import { owned, activeBeastformId, holdingsFor, type OwnedFeature } from "../../src/lib/domain/feature-effects/owned";
+import { activeBeastformId, holdingsFor, type OwnedFeature } from "../../src/lib/domain/feature-effects/owned";
 import { actorExtras, asCardEffect, bindSheetNumbers, runFeature, sheetNumbers, type SheetNumbers } from "../../src/lib/domain/feature-effects/run";
 import type { FeatureScope } from "../../src/lib/domain/class-features/types";
 import { addGold } from "../../src/lib/domain/characters/index";
@@ -44,6 +44,7 @@ import { grantExtraMove } from "../../src/lib/domain/rest/feature-moves";
 import { countsAsActionRoll } from "../../src/lib/domain/countdowns/advanced";
 import { appError } from "../../src/lib/errors/app-error";
 import { resolveOptions } from "../../src/lib/frames/options";
+import { FLYING_EFFECT_ID, ownedHere } from "./featureOwned";
 import { featureEffect } from "../../src/lib/srd/feature-effects/index";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { tickArmedCountdowns } from "../countdownRolls";
@@ -86,10 +87,7 @@ export type ResolvedFeature = Infer<typeof resolvedFeatureValidator>;
 
 // ---------------------------------------------------------------- ownership and the pick
 
-/** The features the sheet holds in this campaign (the Hope & Fear option decides H&F content). */
-export function ownedHere(sheet: CharacterSheet, campaign: Pick<Doc<"campaigns">, "frameId" | "options">): OwnedFeature[] {
-  return owned(sheet, { hopeAndFear: resolveOptions(campaign.frameId, campaign.options).hopeAndFear });
-}
+export { FLYING_EFFECT_ID, ownedHere };
 
 /** The runner's refusals as the drawer's codes (SD0's FEATURE_* codes). */
 export function featureRefusal(r: RunRefusal) {
@@ -221,8 +219,6 @@ export function factsOf(sheet: CharacterSheet, rollUsedExperience: boolean): Non
   };
 }
 
-/** The sheet effect the Flying toggle writes (Q16): "a sheet effect until turned off". */
-export const FLYING_EFFECT_ID = "flying";
 
 /** One other party member a delegated D5 feature may read, keyed by its map token when it has one (the runner's id). */
 export type PartyMember = { key: string; character: Doc<"characters">; sheet: CharacterSheet };

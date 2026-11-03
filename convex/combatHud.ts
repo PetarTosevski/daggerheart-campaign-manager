@@ -8,8 +8,8 @@ import { frameHasMechanic } from "../src/lib/frames/index";
 import { stanceById } from "../src/lib/srd/stances";
 import type { Doc } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { installedAugments } from "./characterExtras";
-import { conditionMarkerOf } from "./lib/cardRunner";
+import { installedAugments } from "./lib/motherboardState";
+import { conditionMarkerOf } from "./lib/conditionMarkers";
 import { editsCaster, loadCharacter, MAX_CHARACTERS_PER_CAMPAIGN, readSheet } from "./lib/characterSheet";
 import {
   bareConditionUntil,
@@ -24,7 +24,7 @@ import {
   type SceneEndPreview,
 } from "./lib/combatHud";
 import { liveCombatMap, tokensOnMap } from "./lib/combatMaps";
-import { campaignLight, lightLevelValidator } from "./lib/combatVision";
+import { campaignLight, lightLevelValidator } from "./lib/campaignLight";
 import { drawerOf, drawerUseValidator, type Drawer } from "./lib/featureDrawer";
 import { featureScope } from "./lib/featureScope";
 import { campaignFearState } from "./lib/fear";

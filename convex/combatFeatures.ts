@@ -23,7 +23,7 @@ import { companionFor, companionNumbers } from "./lib/companion";
 import { assertCanAct, loadCharacter, readSheet, saveSheet, storedSheet } from "./lib/characterSheet";
 import { attackScene, defaultOnRiders, type Host, type RiderRun } from "./lib/combatActions";
 import { closeRequest, encounterRunning, loadOpenRequest, openRequests } from "./lib/combatRequests";
-import { installedAugments } from "./characterExtras";
+import { installedAugments } from "./lib/motherboardState";
 import { rollDie } from "./lib/dice";
 import { drawerOf, drawerValidator, FLYING_FEATURES, REFOCUS_KEY } from "./lib/featureDrawer";
 import {

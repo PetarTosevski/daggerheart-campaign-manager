@@ -61,11 +61,12 @@ export function folderEntries(folder: FolderCatalog): readonly CatalogEntry[] {
 /** Every built-in entry in catalog order. */
 export const CATALOG_ENTRIES: readonly CatalogEntry[] = Object.values(CATALOG).flatMap(folderEntries);
 
-const BY_KEY: ReadonlyMap<string, CatalogEntry> = new Map(CATALOG_ENTRIES.map((e) => [e.key, e]));
+let byKey: ReadonlyMap<string, CatalogEntry> | undefined;
 
 /** The catalog entry for a built-in key (D8), or null for an unknown key. */
 export function catalogEntry(key: string): CatalogEntry | null {
-  return BY_KEY.get(key) ?? null;
+  byKey ??= new Map(CATALOG_ENTRIES.map((e) => [e.key, e]));
+  return byKey.get(key) ?? null;
 }
 
 /** The folder part of a built-in key (`forest/oak-tree` -> `forest`). */

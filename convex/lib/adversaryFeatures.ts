@@ -24,9 +24,9 @@ import type { MapCreature } from "../../src/lib/domain/combat-actions/numbers";
 import { turnSpotlights } from "../../src/lib/domain/encounters/spotlight";
 import { appError } from "../../src/lib/errors/app-error";
 import { ADVERSARIES } from "../../src/lib/srd/adversaries";
-import { ADVERSARY_EFFECTS, adversaryEffects } from "../../src/lib/srd/adversary-effects/index";
-import { CARD_EFFECTS } from "../../src/lib/srd/card-effects/index";
-import { FEATURE_EFFECTS } from "../../src/lib/srd/feature-effects/index";
+import { adversaryEffects, allAdversaryEffects } from "../../src/lib/srd/adversary-effects/index";
+import { allCardEffects } from "../../src/lib/srd/card-effects/index";
+import { allFeatureEffects } from "../../src/lib/srd/feature-effects/index";
 import { alwaysOnResistance } from "../../src/lib/srd/adversary-resistance";
 import type { AdversaryDef } from "../../src/lib/srd/types";
 import type { CharacterSheet, FeatureUse } from "../../src/lib/validation/characters";
@@ -978,9 +978,9 @@ function tagEntry(tag: string): { source: string; mods: readonly Mod[] } | undef
         if (step.condition.kind === "tag" && step.mods && step.mods.length > 0 && !map.has(name)) map.set(name, { source, mods: step.mods });
       }
     };
-    for (const e of CARD_EFFECTS.values()) add(e.cardId, e.uses);
-    for (const e of FEATURE_EFFECTS.values()) add(e.featureId, e.uses);
-    for (const list of ADVERSARY_EFFECTS.values()) for (const e of list) add(e.feature, e.uses);
+    for (const e of allCardEffects().values()) add(e.cardId, e.uses);
+    for (const e of allFeatureEffects().values()) add(e.featureId, e.uses);
+    for (const list of allAdversaryEffects().values()) for (const e of list) add(e.feature, e.uses);
     TAG_ENTRIES = map;
   }
   return TAG_ENTRIES.get(tag);

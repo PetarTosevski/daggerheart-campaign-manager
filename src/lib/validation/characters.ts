@@ -1,10 +1,10 @@
 import { z } from "zod";
 
-import { isValidTraitSpread, MAX_LEVEL } from "../domain/characters/index";
+import { MAX_LEVEL } from "../domain/characters/index";
 import { TRAIT_IDS, type TraitId } from "../srd/types";
 
-const TEXT = 2000;
-const NAME = 80;
+export const TEXT = 2000;
+export const NAME = 80;
 
 const trait = z.number().int().min(-5).max(10);
 export const traitsSchema = z.object(
@@ -19,10 +19,10 @@ export const ancestryChoiceSchema = z.discriminatedUnion("kind", [
 ]);
 
 /** An Experience as version 1 sheets stored it (no id). */
-const experienceV1Schema = z.object({ name: z.string().trim().min(1).max(NAME), value: z.number().int().min(-5).max(10) });
+export const experienceV1Schema = z.object({ name: z.string().trim().min(1).max(NAME), value: z.number().int().min(-5).max(10) });
 
 /** A stable list id (CD8: list edits address items by id, never by index). */
-const listId = z.string().min(1).max(40);
+export const listId = z.string().min(1).max(40);
 
 /**
  * An Experience on the current sheet. `purposefulDesign` (DA11, optional, widened, no version bump): the Experience a
@@ -34,7 +34,7 @@ export const experienceSchema = experienceV1Schema.extend({ id: listId, purposef
 
 export const inventoryItemSchema = z.object({ id: listId, name: z.string().trim().min(1).max(200) });
 
-const portraitSchema = z.union([
+export const portraitSchema = z.union([
   z.object({ kind: z.literal("asset"), asset: z.string().regex(/^[0-9a-f]{32}$/) }),
   z.object({ kind: z.literal("upload"), storageId: z.string().min(1) }),
 ]);
@@ -377,74 +377,4 @@ export type CharacterSheetInput = z.input<typeof characterSheetSchema>;
 export type InventoryItem = z.infer<typeof inventoryItemSchema>;
 export type Experience = z.infer<typeof experienceSchema>;
 
-/** What the creation wizard submits; the server derives the rest from the class. */
-export const characterDraftSchema = z
-  .object({
-    classId: z.string().min(1, "Choose a class."),
-    subclassId: z.string().min(1, "Choose a subclass."),
-    ancestry: ancestryChoiceSchema,
-    communityId: z.string().min(1, "Choose a community."),
-    traits: traitsSchema,
-    name: z.string().trim().min(1, "Give your character a name.").max(NAME),
-    pronouns: z.string().trim().max(NAME),
-    pronounsLabel: z.enum(PRONOUNS_LABELS).optional(),
-    description: z.string().max(TEXT),
-    /** Empty in a Motherboard campaign, where an Ikonis replaces weapons (CB 301); the server requires it elsewhere. */
-    primaryWeaponId: z.string().max(100),
-    secondaryWeaponId: z.string().optional(),
-    armorId: z.string().min(1, "Choose armor."),
-    potion: z.string().trim().min(1, "Choose a potion.").max(100),
-    classItem: z.string().trim().max(100),
-    background: z.array(z.string().max(TEXT)).max(12),
-    experiences: z.tuple([z.string().trim().min(1, "Write a first Experience.").max(NAME), z.string().trim().min(1, "Write a second Experience.").max(NAME)]),
-    /**
-     * Purposeful Design (CB p.53, DA11): which of the two Experiences gets the permanent +1. Optional: only a sheet that
-     * holds the feature may send it, and a Clank created without it picks it once on the sheet.
-     */
-    purposefulExperience: z.union([z.literal(0), z.literal(1)]).optional(),
-    domainCards: z.array(z.string().min(1)).length(2, "Choose two domain cards."),
-    connections: z.array(z.string().max(TEXT)).max(12),
-    portrait: portraitSchema.optional(),
-  })
-  .refine((d) => isValidTraitSpread(d.traits), {
-    message: "Assign each trait modifier from +2, +1, +1, 0, 0, −1 exactly once.",
-    path: ["traits"],
-  });
-
-export type CharacterDraft = z.infer<typeof characterDraftSchema>;
-
-/** Fields a sheet edit may change directly (resources use their own mutation). */
-export const sheetPatchSchema = characterSheetSchema
-  .pick({
-    name: true,
-    pronouns: true,
-    pronounsLabel: true,
-    description: true,
-    traits: true,
-    evasion: true,
-    primaryWeaponId: true,
-    secondaryWeaponId: true,
-    armorId: true,
-    inventory: true,
-    gold: true,
-    experiences: true,
-    background: true,
-    connections: true,
-    notes: true,
-    portrait: true,
-    hpMax: true,
-    stressMax: true,
-  })
-  .partial()
-  .extend({
-    // null unequips (an undefined value would be dropped in transit).
-    secondaryWeaponId: z.string().nullable().optional(),
-    armorId: z.string().nullable().optional(),
-    // Whole-list writes stay accepted until the sheet UI sends intents (H19); entries without an id get a new one.
-    inventory: z.array(z.union([z.string().trim().min(1).max(200), inventoryItemSchema])).max(60).optional(),
-    // `purposefulDesign` is accepted so a list read from the sheet can be sent back; the server keeps the stored choice (DA11).
-    experiences: z.array(experienceV1Schema.extend({ id: listId.optional(), purposefulDesign: z.literal(true).optional() })).max(12).optional(),
-  })
-  .strict();
-
-export type SheetPatch = z.infer<typeof sheetPatchSchema>;
+export type { CharacterDraft, SheetPatch } from "./character-input";

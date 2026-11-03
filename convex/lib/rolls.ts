@@ -55,7 +55,7 @@ import { adversaryEffects } from "../../src/lib/srd/adversary-effects/index";
 import type { TraitId } from "../../src/lib/srd/types";
 import { FRAME_OF, TRAIT_LABEL } from "../../src/lib/frames/extras/common";
 import type { CharacterSheet, Effect } from "../../src/lib/validation/characters";
-import { motherboardState } from "../characterExtras";
+import { motherboardState } from "./motherboardState";
 import { tickArmedCountdowns } from "../countdownRolls";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";

@@ -28,7 +28,7 @@ import { RANGER_ROGUE_IDS } from "../../src/lib/srd/feature-effects/ranger-rogue
 import { HEX_DROP_CHOICE } from "../../src/lib/srd/feature-effects/seraph-witch";
 import { FOCUS_HOLD_MAX, type CharacterSheet, type ClassState } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
-import { FLYING_EFFECT_ID, ownedHere } from "./featureRunner";
+import { FLYING_EFFECT_ID, ownedHere } from "./featureOwned";
 
 const activation = v.union(v.literal("action"), v.literal("reaction"), v.literal("rider"), v.literal("auto"), v.literal("passive"));
 

@@ -54,6 +54,7 @@ import { resolveOptions } from "../src/lib/frames/options";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
+import { EXTRA_SCHEMA_VERSION, installedAugments, motherboardState } from "./lib/motherboardState";
 import { parseOrCorrupt, readVersioned } from "./lib/blobs";
 import { rollDie } from "./lib/dice";
 import { keyedCampaignMutation, userMutation, userQuery } from "./lib/functions";
@@ -74,8 +75,6 @@ import {
   type ExtrasView,
 } from "./lib/validators/characterExtras";
 
-/** The version every `characterExtras` row is written with (CD3); bumping it needs an upgrade step in `readRow`. */
-const EXTRA_SCHEMA_VERSION = 1;
 
 /** The sheet fields the extras depend on (the full sheet is read by convex/characters.ts). */
 const sheetBasics = z.object({
@@ -136,25 +135,7 @@ async function readState<E extends Extra>(ctx: QueryCtx, loaded: Loaded, extra: 
   return (legacy ?? SCHEMAS[extra].initial) as StateOf[E];
 }
 
-/**
- * A character's Motherboard module (Ikonis, augments, scrap): its row, else
- * its old `frameTrackers` row (until the migration has run), else null; null
- * outside Motherboard.
- */
-export async function motherboardState(ctx: QueryCtx, campaign: Doc<"campaigns">, characterId: Id<"characters">): Promise<MotherboardState | null> {
-  if (campaign.frameId !== FRAME_OF.motherboard) return null;
-  const row = await extraRow(ctx, characterId, "motherboard");
-  if (row !== null) return readRow("motherboard", row);
-  return readTracker(ctx, campaign._id, extraKey(characterId, "motherboard"), motherboardStateSchema);
-}
-
-/**
- * The Ikonis augments a character has installed (Motherboard only, CB 301);
- * `[]` in other frames. `derivedDefense` adds Guard, Deny and Block.
- */
-export async function installedAugments(ctx: QueryCtx, campaign: Doc<"campaigns">, characterId: Id<"characters">): Promise<string[]> {
-  return (await motherboardState(ctx, campaign, characterId))?.installed ?? [];
-}
+export { installedAugments, motherboardState };
 
 /** Writes a new character's Motherboard module (`characters.create`). */
 export async function seedMotherboard(ctx: MutationCtx, campaignId: Id<"campaigns">, characterId: Id<"characters">, state: MotherboardState): Promise<void> {

@@ -9,7 +9,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { normalizeEmail } from "./lib/allowlist";
-import { playersSeeHands } from "./lib/cardHand";
+import { playersSeeHands } from "./lib/handSharing";
 import { seedCodex } from "./lib/codex";
 import { campaignFearState } from "./lib/fear";
 import {
@@ -30,7 +30,7 @@ import {
 } from "./lib/validators/campaigns";
 import { settingsRow } from "./settings";
 import { timeOfDayValidator } from "./tables/campaigns";
-import { campaignLight } from "./lib/combatVision";
+import { campaignLight } from "./lib/campaignLight";
 
 /**
  * What `get` returns: the campaign summary without GM Fear (PF7). Fear changes on every click, and the whole campaign

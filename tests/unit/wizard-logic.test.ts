@@ -23,7 +23,7 @@ import {
   type WizardState,
 } from "@/app/(gm)/campaigns/[campaignId]/party/new/wizard-logic";
 import { getClass, PORTRAITS } from "@/lib/srd";
-import { characterDraftSchema } from "@/lib/validation/characters";
+import { characterDraftSchema } from "@/lib/validation/character-input";
 
 const CORE = { hopeAndFear: false };
 const ALL = { hopeAndFear: true };

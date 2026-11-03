@@ -18,7 +18,7 @@ import { isDoor } from "../src/lib/domain/combat-map/movement";
 import { anyInMelee } from "../src/lib/domain/combat-map/reach";
 import { spriteMove } from "../src/lib/sprite-packs/index";
 import { appError } from "../src/lib/errors/app-error";
-import { tokenViewValidator } from "./combatTokens";
+import { tokenViewValidator } from "./lib/validators/combatTokens";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {

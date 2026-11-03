@@ -8,6 +8,7 @@ import { fileKindValidator } from "../tables/files";
 import { readSheet, saveSheet } from "./characterSheet";
 import { saveSummary, storedEntry } from "./codex";
 import { saveScalars, writableMap } from "./maps";
+import { ownFile, ownFileUrl } from "./ownFiles";
 
 export type FileKind = Doc<"files">["kind"];
 
@@ -245,23 +246,7 @@ export async function claimFile(
   return fileId;
 }
 
-/** The file's record when it was recorded for this kind and owner, else null (bad id, someone else's file). */
-async function ownFile(ctx: QueryCtx, kind: FileKind, refId: string, storageId: string) {
-  const id = ctx.db.system.normalizeId("_storage", storageId);
-  if (id === null) return null;
-  const row = await ctx.db
-    .query("files")
-    .withIndex("by_storage", (q) => q.eq("storageId", id))
-    .first();
-  return row !== null && row.kind === kind && row.refId === refId ? row : null;
-}
-
-/** URL of a file recorded for this kind and owner, or null (bad id, someone else's file, or gone). */
-export async function ownFileUrl(ctx: QueryCtx, kind: FileKind, refId: string, storageId: string): Promise<string | null> {
-  const row = await ownFile(ctx, kind, refId, storageId);
-  if (row === null) return null;
-  return ctx.storage.getUrl(row.storageId).catch(() => null);
-}
+export { ownFileUrl };
 
 /** Deletes a file and its record, only when it was recorded for this kind and owner. */
 export async function deleteOwnFile(ctx: MutationCtx, kind: FileKind, refId: string, storageId: string): Promise<void> {

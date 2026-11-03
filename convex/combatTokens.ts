@@ -1,4 +1,4 @@
-import { v, type Infer } from "convex/values";
+import { v } from "convex/values";
 
 import { freeSquares, moveToken, snapTurn, startFace, startSide } from "../src/components/combat-map/tokens/geometry";
 import { rasterize, type TerrainId } from "../src/lib/combat-map/raster";
@@ -8,7 +8,6 @@ import { appError } from "../src/lib/errors/app-error";
 import { applyCondition } from "../src/lib/domain/encounters/damage";
 import { sessionEncounterTitle } from "../src/lib/domain/sessions/encounter-title";
 import { ADVERSARIES } from "../src/lib/srd/adversaries";
-import { PORTRAITS } from "../src/lib/srd/art";
 import { CLASSES } from "../src/lib/srd/classes";
 import type { AdversaryType } from "../src/lib/srd/types";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -26,11 +25,12 @@ import {
 } from "./lib/combatMaps";
 import { movementGrid, uncloakAfterMove } from "./lib/combatMovement";
 import { adversaryArtSrc, MAX_INSTANCES, startEncounter } from "./lib/encounters";
-import { ownFileUrl } from "./lib/files";
+import { pcPortrait } from "./lib/pcPortrait";
+import { tokenViewValidator, type TokenView } from "./lib/validators/combatTokens";
 import { campaignMutation, campaignQuery, gmMutation, gmQuery, keyedGmMutation } from "./lib/functions";
 import { atLeast, permissionFor, type Permission } from "./lib/permissions";
 import { currentSessionEncounter } from "./lib/sessions";
-import { carriedLightValidator, tokenSideValidator } from "./lib/validators/combatMaps";
+import { tokenSideValidator } from "./lib/validators/combatMaps";
 import { encounterConditionValidator, encounterStatusValidator } from "./lib/validators/encounters";
 
 /**
@@ -59,57 +59,9 @@ const MAX_PLACE = MAX_INSTANCES;
 
 // ---------------------------------------------------------------- validators
 
-const tokenKindValidator = v.union(v.literal("pc"), v.literal("adversary"), v.literal("custom"));
+export { pcPortrait };
 
-/** A token's portrait: an uploaded image or rulebook art (url), the chosen or default design art (an asset id), or none (initials). */
-const portraitValidator = v.union(
-  v.null(),
-  v.object({ kind: v.literal("url"), url: v.string() }),
-  v.object({ kind: v.literal("asset"), asset: v.string(), position: v.string() }),
-);
-
-const statsValidator = v.object({
-  hp: v.number(),
-  hpMax: v.number(),
-  stress: v.number(),
-  stressMax: v.number(),
-  /** The sheet's conditions (PC) or the tracker's (adversary, custom). */
-  conditions: v.array(v.string()),
-  /** An adversary's Difficulty. */
-  difficulty: v.optional(v.number()),
-  /** Every HP marked (a downed PC, a defeated adversary): the token is greyed. */
-  down: v.boolean(),
-});
-
-/**
- * A token as the map draws it. `stats` is null when the source row is gone (a deleted character or encounter
- * instance) or unreadable. `tracked` (adversaries): the tracker accepts changes because the encounter is running.
- */
-export const tokenViewValidator = v.object({
-  _id: v.id("combatTokens"),
-  kind: tokenKindValidator,
-  characterId: v.optional(v.id("characters")),
-  instanceId: v.optional(v.id("encounterAdversaries")),
-  side: tokenSideValidator,
-  x: v.number(),
-  y: v.number(),
-  size: v.number(),
-  face: v.number(),
-  light: carriedLightValidator,
-  /** GM only: who this token was revealed to (R10). */
-  revealedTo: v.optional(v.array(v.id("characters"))),
-  name: v.string(),
-  /** "Bard · level 1", "Bruiser", "" (custom). */
-  sub: v.string(),
-  portrait: portraitValidator,
-  /** The caller may move and turn it (GM: every token; a player: their own PC's). */
-  canMove: v.boolean(),
-  /** The caller's own character's token (players; false for the GM). */
-  mine: v.boolean(),
-  stats: v.union(v.null(), statsValidator),
-  tracked: v.optional(v.boolean()),
-});
-export type TokenView = Infer<typeof tokenViewValidator>;
+export { tokenViewValidator, type TokenView };
 
 const combatantsValidator = v.object({
   /** Active characters not yet on this map ("＋ Party (n)"). */
@@ -239,18 +191,6 @@ function instancesOf(ctx: QueryCtx, encounterId: Id<"encounters">) {
 /** The ids of the adversary instances already on a map. */
 function placedInstances(tokens: Doc<"combatTokens">[]): Set<Id<"encounterAdversaries">> {
   return new Set(tokens.flatMap((t) => (t.ref.kind === "adversary" ? [t.ref.adversaryId] : [])));
-}
-
-/** A PC's portrait (CharacterPortrait's order: upload, chosen art, default art by subclass then ancestry). */
-export async function pcPortrait(ctx: QueryCtx, characterId: Id<"characters">, sheet: ReturnType<typeof readSheet>): Promise<TokenView["portrait"]> {
-  if (sheet.portrait?.kind === "upload") {
-    const url = await ownFileUrl(ctx, "portrait", characterId, sheet.portrait.storageId);
-    return url === null ? null : { kind: "url", url };
-  }
-  if (sheet.portrait?.kind === "asset") return { kind: "asset", asset: sheet.portrait.asset, position: "center 30%" };
-  const ancestry = sheet.ancestry.kind === "single" ? sheet.ancestry.id : sheet.ancestry.kind === "mixed" ? sheet.ancestry.first : sheet.ancestry.form;
-  const art = PORTRAITS[`sub-${sheet.subclassId}`] ?? PORTRAITS[`anc-${ancestry}`];
-  return art ? { kind: "asset", asset: art.asset, position: art.position } : null;
 }
 
 /**

@@ -32,10 +32,8 @@ import { type Infer } from "convex/values";
 import { pickUse, run, type ActorState, type PlanStep, type ResolvedMod, type RunContext, type RunPlan, type RunRefusal, type WeaponInfo } from "../../src/lib/domain/card-effects/run";
 import type { OtherSheet } from "../../src/lib/domain/class-features/types";
 import type { RollRecord } from "../../src/lib/domain/duality";
-import { featureKey, parseFeatureId } from "../../src/lib/domain/feature-effects/ids";
-import { endsOnOccurrence, type EffectEnds, type EndRoll } from "../../src/lib/domain/characters/expiry";
+import { endsOnOccurrence, type EndRoll } from "../../src/lib/domain/characters/expiry";
 import { featureEffect } from "../../src/lib/srd/feature-effects/index";
-import { FEATURE_CLASSIFICATION } from "../../src/lib/srd/feature-effects/classification";
 import type { CardEffect, CardUse, Duration, Mod, Range, Step, TargetSpec } from "../../src/lib/domain/card-effects/types";
 import { featureUseKey, recordUsedOn, usedOnBefore, type CreatureFacts, type PayerState, type StateFacts } from "../../src/lib/domain/card-effects/availability";
 import type { MapCreature, MarkedTracks } from "../../src/lib/domain/combat-actions/numbers";
@@ -56,18 +54,48 @@ import { adversaryEffects } from "../../src/lib/srd/adversary-effects/index";
 import { cardEffect, cardUsage } from "../../src/lib/srd/card-effects/index";
 import { getDomainCard, getWeapon } from "../../src/lib/srd/index";
 import type { AdversaryDef, DomainId, TraitId, Weapon } from "../../src/lib/srd/types";
-import { CONDITIONS, FEATURE_USES_MAX, type CharacterSheet, type Condition, type Effect } from "../../src/lib/validation/characters";
+import { FEATURE_USES_MAX, type CharacterSheet, type Effect } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { activeAreasOnMap, areaFactsFor } from "../combatAreas";
 import type { AttackScene } from "./combatActions";
-import { preparedFor } from "./combatVision";
+import { preparedFor } from "./areaSight";
 import { DEFAULT_OPTIONALS, MAX_CARD_TARGETS, MAX_CHAIN_LINKS, type CardRoll, type ParsedChoices } from "./cardChoices";
 import type { ChoiceAsks } from "./cardRows";
 import { rangeBandValidator } from "./validators/combatRequests";
 import { readSheet } from "./characterSheet";
 import { rules } from "./rolls";
 import { stanceDropMarker } from "./stanceDrop";
+import {
+  cardIdOfEffect,
+  conditionMarkerOf,
+  conditionSources,
+  effectKeyOf,
+  featureIdOfEffect,
+  isFeatureUseId,
+  isMarker,
+  ownsEffect,
+  sourceEnds,
+  STANDARD,
+  tokenKeyOf,
+  withoutCondition,
+  type EndedCondition,
+} from "./conditionMarkers";
+
+export {
+  cardIdOfEffect,
+  conditionMarkerOf,
+  conditionSources,
+  effectKeyOf,
+  featureIdOfEffect,
+  isFeatureUseId,
+  ownsEffect,
+  sourceEnds,
+  tokenKeyOf,
+  withoutCondition,
+  type EndedCondition,
+};
+export { endedConditionLine } from "./conditionMarkers";
 import { unshakePlan, type UnshakableRoll } from "./unshakable";
 
 const SRD_BY_ID = new Map<string, AdversaryDef>(ADVERSARIES.map((a) => [a.id, a]));
@@ -127,15 +155,6 @@ function weaponInfo(weapon: Weapon | undefined, trait: TraitId | undefined): Wea
     range: rangeFromWeapon(weapon.range),
   };
 }
-
-/** Sheet effect ids written by cards: `card:<cardId>:<n>` (the sheet's list ids are at most 40 characters). */
-const CARD_EFFECT = /^card:([a-z0-9-]+):\d+$/;
-
-export function cardIdOfEffect(effect: Effect): string | null {
-  return CARD_EFFECT.exec(effect.id)?.[1] ?? null;
-}
-
-const STANDARD = new Set<string>(CONDITIONS);
 
 /** A PC as the engine reads it (an ally, or the actor before its card fields). Evasion and Armor after gear and effects. */
 export function pcCombatant(id: string, sheet: CharacterSheet): Combatant & { armor: number; armorMax: number } {
@@ -1201,49 +1220,6 @@ function sheetMods(mods: readonly ResolvedMod[]): { mods: NonNullable<Effect["mo
 
 // ---- SD3: which use an effect belongs to (cards `card:<cardId>:<n>`, features `feat:<hash>:<n>`)
 
-/** FNV-1a (32 bit) in base 36: a short, stable name for a feature id. */
-function shortHash(text: string): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i);
-    h = Math.imul(h, 0x01000193) >>> 0;
-  }
-  return h.toString(36);
-}
-
-/** Whether a runner id is a feature id (`<source>:<owner>[:<slug>]`); a card id has no colon. */
-export function isFeatureUseId(id: string): boolean {
-  return parseFeatureId(id) !== null;
-}
-
-/** The `cardTokens` id of a use's tokens: the card id, or `feat:<featureId>` for a feature. */
-export function tokenKeyOf(id: string): string {
-  return isFeatureUseId(id) ? featureKey(id) : id;
-}
-
-/**
- * The prefix of a use's sheet effect ids: `card:<cardId>`, or `feat:<hash>` for a feature (sheet effect ids once held at
- * most 40 characters and a feature id up to 53; `featureIdOfEffect` reads the hash back). An adversary feature keeps the
- * plain `card:<adversaryId>/<feature>` (ADVERSARY_SHEET_EFFECT reads it): the cap is EFFECT_ID_MAX now (dcm-s7hd).
- */
-export function effectKeyOf(id: string): string {
-  return isFeatureUseId(id) ? `feat:${shortHash(id)}` : `card:${id}`;
-}
-
-const FEATURE_BY_HASH = new Map(Object.keys(FEATURE_CLASSIFICATION).map((id) => [effectKeyOf(id), id]));
-
-/** Whether a sheet effect belongs to this card or feature (`<prefix>:<n>`). */
-export function ownsEffect(effect: Pick<Effect, "id">, id: string): boolean {
-  const prefix = `${effectKeyOf(id)}:`;
-  return effect.id.startsWith(prefix) && /^\d+$/.test(effect.id.slice(prefix.length));
-}
-
-/** The feature id of a sheet effect written by a feature use, or null (NV7 `featureEffect` facts read it). */
-export function featureIdOfEffect(effect: Pick<Effect, "id">): string | null {
-  const m = /^(feat:[a-z0-9]+):\d+$/.exec(effect.id);
-  return m ? (FEATURE_BY_HASH.get(m[1]!) ?? null) : null;
-}
-
 /** The text segment that names an effect step's option ("Channeling Fire", NV7); `effectOption` reads it back. */
 const OPTION_PREFIX = "option: ";
 
@@ -1416,85 +1392,6 @@ function sheetAfterPlan(paidSheet: CharacterSheet, plan: RunPlan, actorId: strin
 // - `lapsedConditions` drops a condition whose marker `expire` took (restHooks: "until your next rest");
 // - `withoutCondition` drops a condition with every marker for it (unconscious or dead, an ordinary Cloaked ending).
 // No stored shape changes: markers are ordinary `effects` entries (rule 7 needs no widening).
-
-/** The condition steps of an entry, by condition name (first one wins), with their ends. Cached per entry. */
-const SOURCE_STEPS = new Map<string, Map<string, EffectEnds>>();
-
-function conditionSteps(value: unknown, out: Map<string, EffectEnds>): Map<string, EffectEnds> {
-  if (Array.isArray(value)) {
-    for (const v of value) conditionSteps(v, out);
-  } else if (value !== null && typeof value === "object") {
-    const o = value as Record<string, unknown>;
-    if (o.kind === "condition" && "duration" in o) {
-      const step = o as unknown as Extract<Step, { kind: "condition" }>;
-      if (step.condition.kind === "standard" && !out.has(step.condition.condition)) {
-        out.set(step.condition.condition, {
-          duration: step.duration,
-          ...(step.endsOn ? { endsOn: step.endsOn } : {}),
-          ...(step.endsOnRoll ? { endsOnRoll: step.endsOnRoll } : {}),
-          ...(step.endsOnCaster ? { endsOnCaster: step.endsOnCaster } : {}),
-        });
-      }
-    }
-    for (const v of Object.values(o)) conditionSteps(v, out);
-  }
-  return out;
-}
-
-/**
- * The ends of a card's or feature's standard condition step when they hold an event of their own (an `endsOn` other than
- * the stance drop DA10 handles, an `endsOnRoll`); undefined otherwise (the condition stays a bare name).
- */
-export function sourceEnds(sourceId: string, condition: string): EffectEnds | undefined {
-  let steps = SOURCE_STEPS.get(sourceId);
-  if (steps === undefined) {
-    const uses = cardEffect(sourceId)?.uses ?? featureEffect(sourceId)?.uses ?? [];
-    steps = conditionSteps(uses, new Map());
-    SOURCE_STEPS.set(sourceId, steps);
-  }
-  const ends = steps.get(condition);
-  if (ends === undefined) return undefined;
-  const events = (ends.endsOn ?? []).some((e) => e !== "stanceDrops") || ends.endsOnRoll !== undefined;
-  return events ? ends : undefined;
-}
-
-/** A sheet effect that records a condition's source: the entry and the condition, or null. */
-export function conditionMarkerOf(effect: Effect): { sourceId: string; condition: Condition } | null {
-  const sourceId = cardIdOfEffect(effect) ?? featureIdOfEffect(effect);
-  if (sourceId === null) return null;
-  const label = effect.text.split("; ")[0] ?? "";
-  if (!STANDARD.has(label) || sourceEnds(sourceId, label) === undefined) return null;
-  return { sourceId, condition: label as Condition };
-}
-
-function isMarker(effect: Effect, sourceId: string, condition: Condition): boolean {
-  const m = conditionMarkerOf(effect);
-  return m !== null && m.sourceId === sourceId && m.condition === condition;
-}
-
-/** The entries a held condition comes from (their markers); empty when the condition is bare or not held. */
-export function conditionSources(sheet: Pick<CharacterSheet, "conditions" | "effects">, condition: Condition): string[] {
-  if (!sheet.conditions.includes(condition)) return [];
-  return sheet.effects.flatMap((e) => {
-    const m = conditionMarkerOf(e);
-    return m !== null && m.condition === condition ? [m.sourceId] : [];
-  });
-}
-
-/** The sheet without the condition and every marker for it; the same sheet when neither is there. */
-export function withoutCondition<T extends Pick<CharacterSheet, "conditions" | "effects">>(sheet: T, condition: Condition): T {
-  const markers = sheet.effects.some((e) => conditionMarkerOf(e)?.condition === condition);
-  if (!sheet.conditions.includes(condition) && !markers) return sheet;
-  return { ...sheet, conditions: sheet.conditions.filter((c) => c !== condition), effects: sheet.effects.filter((e) => conditionMarkerOf(e)?.condition !== condition) };
-}
-
-/** A sourced condition that ended, with its marker's `source` (the card or feature name, for the feed). */
-export type EndedCondition = { condition: Condition; source: string };
-
-/** The feed words of an ended sourced condition: "Ash: Cloaked ends (Vanishing Act)". */
-export function endedConditionLine(name: string, ended: EndedCondition): string {
-  return `${name}: ${ended.condition.charAt(0).toUpperCase()}${ended.condition.slice(1)} ends (${ended.source})`;
-}
 
 /**
  * `after` without the conditions whose markers were on `before` and are gone from `after` (an `expire` took them: a

@@ -39,396 +39,409 @@ export const MANTLE_INTIMIDATE = "The action roll is to intimidate a target";
 const ENDLESS = "pact-of-the-endless";
 const WRATHFUL = "pact-of-the-wrathful";
 
-export const WARLOCK_EFFECTS: readonly FeatureEffect[] = [
-  // ---------------------------------------------------------------- Hope feature and class features (HF p.14)
+function buildTable(): FeatureEffect[] {
+  return [
+    // ---------------------------------------------------------------- Hope feature and class features (HF p.14)
 
-  // Patron's Boon (Warlock's Hope Feature, HF p.14): "When you fail a roll, you can spend 3 Hope to reroll with advantage."
-  // Q1: an after-roll answer on the warlock's own failed roll; the reroll (all the roll's dice, with one more advantage)
-  // is a fold the after-roll step (SD5) applies, and the new result stands (CB p.107).
-  {
-    featureId: "hope:warlock",
-    source: "hope",
-    owner: "warlock",
-    uses: [
-      {
-        id: "main",
-        name: "Patron’s Boon",
-        activation: { kind: "reaction", trigger: { kind: "afterYouRoll", roll: "any", result: "failure" } },
-        costs: [{ kind: "hope", amount: n(3) }],
-        steps: [{ kind: "modifyRoll", to: "self", change: { kind: "reroll", dice: "all", advantage: true }, note: "Reroll with advantage." }],
-      },
-    ],
-  },
-
-  // Patron's Pact (class feature, HF p.14): "… work with your GM to determine their sphere of influence … Before making an
-  // action roll that relates to your patron's sphere of influence, you can spend a Favor to call upon their aid, rolling
-  // your Patron Die and adding its result to the total. Your Patron Die starts at a d6 and increases to a d8 at level 5."
-  // A rider before the action roll; the sphere is the player's check box (Q13). The die is rolled and added to this roll
-  // (a fold), so no held die is left over. The Party sheet's D5 class action (`patronsPact`) spends the same Favor.
-  {
-    featureId: "class:warlock:patrons-pact",
-    source: "class",
-    owner: "warlock",
-    uses: [
-      {
-        id: "main",
-        name: "Patron’s Pact",
-        activation: { kind: "rider", trigger: { kind: "beforeYouRoll", roll: "action" } },
-        requires: [situation("This action roll relates to your patron’s sphere of influence")],
-        costs: [aFavor],
-        steps: [{ kind: "modifyRoll", to: "self", change: { kind: "add", amount: { kind: "dice", dice: patronDice(n(1)) } }, note: "Add your Patron Die to the total." }],
-      },
-    ],
-  },
-
-  // Favor (class feature, HF p.14): "You start with 3 Favor. You can use a downtime move to show tribute to your patron.
-  // Describe how and gain Favor equal to your Spellcast trait. Additionally, when you succeed on an action roll with
-  // Hope, you can choose to gain a Favor instead of a Hope."
-  // The start (D5 session start) and the tribute (the rest move, convex/lib/restHooks.ts) stay out of combat. In combat:
-  // "you can choose" is a Use / Pass after the roll (Q1), so the entry is a reaction, not the classification's `auto`.
-  // Plan lanes SRD-F3 (dcm-a9n): the trigger's result `successWithHope` (a critical counts, CB p.90) decides "with
-  // Hope" itself, so there is no check box.
-  {
-    featureId: "class:warlock:favor",
-    source: "class",
-    owner: "warlock",
-    uses: [
-      {
-        id: "main",
-        name: "Favor instead of Hope",
-        activation: { kind: "reaction", trigger: { kind: "afterYouRoll", roll: "action", result: "successWithHope" } },
-        steps: [{ kind: "replaceHopeGain", to: "self", with: "favor", note: "Gain a Favor instead of a Hope." }],
-      },
-    ],
-  },
-
-  // ---------------------------------------------------------------- Pact of the Endless (HF p.14)
-
-  // Patron's Mantle (foundation, HF p.14): "Spend a Favor to cloak yourself in a terrifying aspect of your Patron that
-  // lasts until you take Severe damage or the scene ends. While this effect is active, you gain a bonus to your damage
-  // thresholds equal to your tier and have advantage on action rolls to intimidate a target."
-  // Thresholds are mods; the advantage is a situational `advantage` mod (plan lanes SRD-F3, dcm-733): the server adds
-  // the advantage die on an action roll the player marks as intimidating a target (E1 `dualityFields.situations`).
-  {
-    featureId: `subclass:${ENDLESS}:patrons-mantle`,
-    source: "subclass",
-    owner: ENDLESS,
-    card: "foundation",
-    uses: [
-      {
-        id: "main",
-        name: "Patron’s Mantle",
-        activation: { kind: "action" },
-        costs: [aFavor],
-        steps: [
-          {
-            kind: "effect",
-            to: "self",
-            label: "Patron’s Mantle: +tier to damage thresholds, advantage on action rolls to intimidate",
-            mods: [
-              { kind: "stat", stat: "majorThreshold", delta: tier },
-              { kind: "stat", stat: "severeThreshold", delta: tier },
-              { kind: "advantage", on: "action", situation: MANTLE_INTIMIDATE },
-            ],
-            duration: "scene",
-            endsOn: ["takeSevere"],
-          },
-        ],
-      },
-    ],
-  },
-
-  // Deathless Embrace (foundation, HF p.14): "Once per rest, spend any number of Favor to roll an equal number of Patron
-  // Dice. For each result of 4 or higher, clear a Hit Point."
-  {
-    featureId: `subclass:${ENDLESS}:deathless-embrace`,
-    source: "subclass",
-    owner: ENDLESS,
-    card: "foundation",
-    uses: [
-      {
-        id: "main",
-        name: "Deathless Embrace",
-        activation: { kind: "action" },
-        limit: { per: "rest" },
-        choices: [favorChoice],
-        costs: [anyFavor],
-        steps: [{ kind: "clear", to: "self", track: "hp", amount: fourOrHigher({ kind: "spent", resource: "favor" }) }],
-      },
-    ],
-  },
-
-  // Harrowing Invocation (specialization, HF p.14): "When an adversary targets you or an ally within Very Close range with
-  // an attack, you can spend a Favor to give them disadvantage on the roll. If the adversary fails the roll, they must
-  // also mark a Stress."
-  // Q2: a before-roll answer (`targeted`). The disadvantage is a one-roll effect on the attacker; the attacker also carries
-  // the feature's tag for that roll, and the `failed` use marks its Stress when that attack fails (no Favor: it is the
-  // same activation). SD4 must match `failed` triggers before the roll's `nextRoll` effects end.
-  {
-    featureId: `subclass:${ENDLESS}:harrowing-invocation`,
-    source: "subclass",
-    owner: ENDLESS,
-    card: "specialization",
-    uses: [
-      {
-        id: "main",
-        name: "Harrowing Invocation",
-        activation: {
-          kind: "reaction",
-          trigger: { kind: "whenCreatureAttacked", subject: "selfOrAlly", subjectWithin: "veryClose", stage: "targeted" },
+    // Patron's Boon (Warlock's Hope Feature, HF p.14): "When you fail a roll, you can spend 3 Hope to reroll with advantage."
+    // Q1: an after-roll answer on the warlock's own failed roll; the reroll (all the roll's dice, with one more advantage)
+    // is a fold the after-roll step (SD5) applies, and the new result stands (CB p.107).
+    {
+      featureId: "hope:warlock",
+      source: "hope",
+      owner: "warlock",
+      uses: [
+        {
+          id: "main",
+          name: "Patron’s Boon",
+          activation: { kind: "reaction", trigger: { kind: "afterYouRoll", roll: "any", result: "failure" } },
+          costs: [{ kind: "hope", amount: n(3) }],
+          steps: [{ kind: "modifyRoll", to: "self", change: { kind: "reroll", dice: "all", advantage: true }, note: "Reroll with advantage." }],
         },
-        costs: [aFavor],
-        targets: { side: "trigger", who: "source" },
-        steps: [
-          { kind: "effect", to: "targets", label: "Harrowing Invocation: disadvantage on this attack", mods: [{ kind: "flag", flag: "attackDisadvantage" }], duration: "nextRoll" },
-          { kind: "condition", to: "targets", condition: HARROWED, duration: "nextRoll" },
-        ],
-      },
-      {
-        id: "failed",
-        name: "Harrowing Invocation: the attack failed",
-        activation: {
-          kind: "auto",
-          trigger: { kind: "whenCreatureAttacked", subject: "selfOrAlly", subjectWithin: "veryClose", stage: "failed" },
+      ],
+    },
+
+    // Patron's Pact (class feature, HF p.14): "… work with your GM to determine their sphere of influence … Before making an
+    // action roll that relates to your patron's sphere of influence, you can spend a Favor to call upon their aid, rolling
+    // your Patron Die and adding its result to the total. Your Patron Die starts at a d6 and increases to a d8 at level 5."
+    // A rider before the action roll; the sphere is the player's check box (Q13). The die is rolled and added to this roll
+    // (a fold), so no held die is left over. The Party sheet's D5 class action (`patronsPact`) spends the same Favor.
+    {
+      featureId: "class:warlock:patrons-pact",
+      source: "class",
+      owner: "warlock",
+      uses: [
+        {
+          id: "main",
+          name: "Patron’s Pact",
+          activation: { kind: "rider", trigger: { kind: "beforeYouRoll", roll: "action" } },
+          requires: [situation("This action roll relates to your patron’s sphere of influence")],
+          costs: [aFavor],
+          steps: [{ kind: "modifyRoll", to: "self", change: { kind: "add", amount: { kind: "dice", dice: patronDice(n(1)) } }, note: "Add your Patron Die to the total." }],
         },
-        targets: { side: "trigger", who: "source" },
-        steps: [{ kind: "markStress", to: "targets", when: [{ kind: "targetHas", condition: HARROWED }], amount: n(1), note: "If the adversary fails the roll, they must also mark a Stress." }],
-      },
-    ],
-  },
+      ],
+    },
 
-  // Damage Sink (specialization, HF p.14): "Once per rest, you can spend a Favor to halve incoming damage."
-  // Incoming damage is the amount the PC is receiving now (CB p.107): the reaction window of the hit; halving rounds up (Q6).
-  {
-    featureId: `subclass:${ENDLESS}:damage-sink`,
-    source: "subclass",
-    owner: ENDLESS,
-    card: "specialization",
-    uses: [
-      {
-        id: "main",
-        name: "Damage Sink",
-        activation: { kind: "reaction", trigger: { kind: "whenYouWouldTakeDamage" } },
-        limit: { per: "rest" },
-        costs: [aFavor],
-        steps: [{ kind: "modifyDamage", to: "self", change: { kind: "halve" } }],
-      },
-    ],
-  },
-
-  // Dark Aegis (mastery, HF p.14): "Once per long rest when you would take damage, you can spend a Favor instead of
-  // marking Hit Points."
-  // User answer 2026-10-29 (dcm-bxp.99.19.13): the damage becomes zero: no Hit Points marked, and zero damage has no
-  // severity (no Minor, Major or Severe, so "until you take Severe damage" doesn't fire). The attack's on-hit effects
-  // (conditions) still apply, but any extra "mark HP" from them is ignored (`ignoreOnHitHp`, DA0; applied by DA8).
-  {
-    featureId: `subclass:${ENDLESS}:dark-aegis`,
-    source: "subclass",
-    owner: ENDLESS,
-    card: "mastery",
-    uses: [
-      {
-        id: "main",
-        name: "Dark Aegis",
-        activation: { kind: "reaction", trigger: { kind: "whenYouWouldTakeDamage" } },
-        limit: { per: "longRest" },
-        costs: [aFavor],
-        steps: [{ kind: "negate", to: "self", what: "damage", ignoreOnHitHp: true, note: "Spend a Favor instead of marking Hit Points: the damage is zero." }],
-      },
-    ],
-  },
-
-  // Draining Bane (mastery, HF p.14): "When an adversary targets you or an ally within Very Close range with an attack, you
-  // can spend a Favor to Drain them. When you do, they must mark a Stress, and you can clear a Stress. While Drained, the
-  // target uses a d12 instead of a d20 for attack rolls (including for advantage or disadvantage) until they fail a roll."
-  // Q2: a before-roll answer, so the d12 applies to this attack too. "You can clear a Stress" is an optional step, ticked
-  // by default (user answer 2026-10-29, dcm-bxp.99.19.15: `defaultOn`, DA0); unticking skips it.
-  {
-    featureId: `subclass:${ENDLESS}:draining-bane`,
-    source: "subclass",
-    owner: ENDLESS,
-    card: "mastery",
-    uses: [
-      {
-        id: "main",
-        name: "Draining Bane",
-        activation: {
-          kind: "reaction",
-          trigger: { kind: "whenCreatureAttacked", subject: "selfOrAlly", subjectWithin: "veryClose", stage: "targeted" },
+    // Favor (class feature, HF p.14): "You start with 3 Favor. You can use a downtime move to show tribute to your patron.
+    // Describe how and gain Favor equal to your Spellcast trait. Additionally, when you succeed on an action roll with
+    // Hope, you can choose to gain a Favor instead of a Hope."
+    // The start (D5 session start) and the tribute (the rest move, convex/lib/restHooks.ts) stay out of combat. In combat:
+    // "you can choose" is a Use / Pass after the roll (Q1), so the entry is a reaction, not the classification's `auto`.
+    // Plan lanes SRD-F3 (dcm-a9n): the trigger's result `successWithHope` (a critical counts, CB p.90) decides "with
+    // Hope" itself, so there is no check box.
+    {
+      featureId: "class:warlock:favor",
+      source: "class",
+      owner: "warlock",
+      uses: [
+        {
+          id: "main",
+          name: "Favor instead of Hope",
+          activation: { kind: "reaction", trigger: { kind: "afterYouRoll", roll: "action", result: "successWithHope" } },
+          steps: [{ kind: "replaceHopeGain", to: "self", with: "favor", note: "Gain a Favor instead of a Hope." }],
         },
-        costs: [aFavor],
-        targets: { side: "trigger", who: "source" },
-        steps: [
-          { kind: "markStress", to: "targets", amount: n(1) },
-          { kind: "optional", id: "clear-stress", label: "Clear a Stress", defaultOn: true, steps: [{ kind: "clear", to: "self", track: "stress", amount: n(1) }] },
-          {
-            kind: "effect",
-            to: "targets",
-            label: "Drained: d12 instead of d20 for attack rolls (also for advantage or disadvantage)",
-            mods: [{ kind: "set", stat: "attackDie", to: n(12) }],
-            duration: "manual",
-            endsWhen: "until they fail a roll",
-            endsOn: ["bearerFails"],
+      ],
+    },
+
+    // ---------------------------------------------------------------- Pact of the Endless (HF p.14)
+
+    // Patron's Mantle (foundation, HF p.14): "Spend a Favor to cloak yourself in a terrifying aspect of your Patron that
+    // lasts until you take Severe damage or the scene ends. While this effect is active, you gain a bonus to your damage
+    // thresholds equal to your tier and have advantage on action rolls to intimidate a target."
+    // Thresholds are mods; the advantage is a situational `advantage` mod (plan lanes SRD-F3, dcm-733): the server adds
+    // the advantage die on an action roll the player marks as intimidating a target (E1 `dualityFields.situations`).
+    {
+      featureId: `subclass:${ENDLESS}:patrons-mantle`,
+      source: "subclass",
+      owner: ENDLESS,
+      card: "foundation",
+      uses: [
+        {
+          id: "main",
+          name: "Patron’s Mantle",
+          activation: { kind: "action" },
+          costs: [aFavor],
+          steps: [
+            {
+              kind: "effect",
+              to: "self",
+              label: "Patron’s Mantle: +tier to damage thresholds, advantage on action rolls to intimidate",
+              mods: [
+                { kind: "stat", stat: "majorThreshold", delta: tier },
+                { kind: "stat", stat: "severeThreshold", delta: tier },
+                { kind: "advantage", on: "action", situation: MANTLE_INTIMIDATE },
+              ],
+              duration: "scene",
+              endsOn: ["takeSevere"],
+            },
+          ],
+        },
+      ],
+    },
+
+    // Deathless Embrace (foundation, HF p.14): "Once per rest, spend any number of Favor to roll an equal number of Patron
+    // Dice. For each result of 4 or higher, clear a Hit Point."
+    {
+      featureId: `subclass:${ENDLESS}:deathless-embrace`,
+      source: "subclass",
+      owner: ENDLESS,
+      card: "foundation",
+      uses: [
+        {
+          id: "main",
+          name: "Deathless Embrace",
+          activation: { kind: "action" },
+          limit: { per: "rest" },
+          choices: [favorChoice],
+          costs: [anyFavor],
+          steps: [{ kind: "clear", to: "self", track: "hp", amount: fourOrHigher({ kind: "spent", resource: "favor" }) }],
+        },
+      ],
+    },
+
+    // Harrowing Invocation (specialization, HF p.14): "When an adversary targets you or an ally within Very Close range with
+    // an attack, you can spend a Favor to give them disadvantage on the roll. If the adversary fails the roll, they must
+    // also mark a Stress."
+    // Q2: a before-roll answer (`targeted`). The disadvantage is a one-roll effect on the attacker; the attacker also carries
+    // the feature's tag for that roll, and the `failed` use marks its Stress when that attack fails (no Favor: it is the
+    // same activation). SD4 must match `failed` triggers before the roll's `nextRoll` effects end.
+    {
+      featureId: `subclass:${ENDLESS}:harrowing-invocation`,
+      source: "subclass",
+      owner: ENDLESS,
+      card: "specialization",
+      uses: [
+        {
+          id: "main",
+          name: "Harrowing Invocation",
+          activation: {
+            kind: "reaction",
+            trigger: { kind: "whenCreatureAttacked", subject: "selfOrAlly", subjectWithin: "veryClose", stage: "targeted" },
           },
-        ],
-      },
-    ],
-  },
-
-  // ---------------------------------------------------------------- Pact of the Wrathful (HF p.15)
-
-  // Patron's Fury (foundation, HF p.15): "Spend a Favor to imbue your attacks with your Patron's power until you deal Severe
-  // damage or the scene ends. When you roll damage while this effect is active, you also roll a number of Patron Dice
-  // equal to your tier and add their total to the damage dealt."
-  // `main` starts the effect; `damage` adds the dice by itself on each damage roll while it is active ("you also roll").
-  {
-    featureId: `subclass:${WRATHFUL}:patrons-fury`,
-    source: "subclass",
-    owner: WRATHFUL,
-    card: "foundation",
-    uses: [
-      {
-        id: "main",
-        name: "Patron’s Fury",
-        activation: { kind: "action" },
-        costs: [aFavor],
-        steps: [{ kind: "effect", to: "self", label: "Patron’s Fury: +tier Patron Dice to your damage rolls", mods: [], duration: "scene", endsOn: ["dealSevere"] }],
-      },
-      {
-        id: "damage",
-        name: "Patron’s Fury: Patron Dice",
-        activation: { kind: "auto", trigger: { kind: "beforeYouRoll", roll: "damage" } },
-        requires: [
-          {
-            kind: "situation",
-            text: "Patron’s Fury is active",
-            check: { kind: "featureEffect", featureId: `subclass:${WRATHFUL}:patrons-fury` },
+          costs: [aFavor],
+          targets: { side: "trigger", who: "source" },
+          steps: [
+            { kind: "effect", to: "targets", label: "Harrowing Invocation: disadvantage on this attack", mods: [{ kind: "flag", flag: "attackDisadvantage" }], duration: "nextRoll" },
+            { kind: "condition", to: "targets", condition: HARROWED, duration: "nextRoll" },
+          ],
+        },
+        {
+          id: "failed",
+          name: "Harrowing Invocation: the attack failed",
+          activation: {
+            kind: "auto",
+            trigger: { kind: "whenCreatureAttacked", subject: "selfOrAlly", subjectWithin: "veryClose", stage: "failed" },
           },
-        ],
-        steps: [{ kind: "modifyDamage", to: "targets", change: { kind: "add", amount: { kind: "dice", dice: patronDice(tier) } } }],
-      },
-    ],
-  },
+          targets: { side: "trigger", who: "source" },
+          steps: [{ kind: "markStress", to: "targets", when: [{ kind: "targetHas", condition: HARROWED }], amount: n(1), note: "If the adversary fails the roll, they must also mark a Stress." }],
+        },
+      ],
+    },
 
-  // Deadly Vengeance (foundation, HF p.15): "When you mark any number of Hit Points from an attack, you can spend a Favor to
-  // roll an equal number of Patron Dice. For each result of 4 or higher, the attacker marks a Hit Point."
-  // The trigger's amount is the Hit Points marked.
-  {
-    featureId: `subclass:${WRATHFUL}:deadly-vengeance`,
-    source: "subclass",
-    owner: WRATHFUL,
-    card: "foundation",
-    uses: [
-      {
-        id: "main",
-        name: "Deadly Vengeance",
-        activation: { kind: "reaction", trigger: { kind: "whenYouMarkHp", fromAttack: true } },
-        costs: [aFavor],
-        targets: { side: "trigger", who: "source" },
-        steps: [{ kind: "markHp", to: "targets", amount: fourOrHigher({ kind: "triggerAmount" }) }],
-      },
-    ],
-  },
+    // Damage Sink (specialization, HF p.14): "Once per rest, you can spend a Favor to halve incoming damage."
+    // Incoming damage is the amount the PC is receiving now (CB p.107): the reaction window of the hit; halving rounds up (Q6).
+    {
+      featureId: `subclass:${ENDLESS}:damage-sink`,
+      source: "subclass",
+      owner: ENDLESS,
+      card: "specialization",
+      uses: [
+        {
+          id: "main",
+          name: "Damage Sink",
+          activation: { kind: "reaction", trigger: { kind: "whenYouWouldTakeDamage" } },
+          limit: { per: "rest" },
+          costs: [aFavor],
+          steps: [{ kind: "modifyDamage", to: "self", change: { kind: "halve" } }],
+        },
+      ],
+    },
 
-  // Menacing Reach (specialization, HF p.15): "Spend a Favor to increase the range of your primary weapon by one step (such
-  // as Melee to Very Close or Very Close to Close) to a maximum of Very Far range. This effect ends when you make a
-  // successful attack with that weapon."
-  // No other end is printed (no scene end). The cap at Very Far is the range engine's (the last Defined Range, CB p.103).
-  // Plan lanes SRD-F3 (dcm-ffk): the end is a `RollEnd`, a successful weapon attack with the primary weapon (E6
-  // `rollEndHolds`), not `attackSucceeds` (which any successful attack, a spell too, sets off).
-  {
-    featureId: `subclass:${WRATHFUL}:menacing-reach`,
-    source: "subclass",
-    owner: WRATHFUL,
-    card: "specialization",
-    uses: [
-      {
-        id: "main",
-        name: "Menacing Reach",
-        activation: { kind: "action" },
-        costs: [aFavor],
-        steps: [
-          {
-            kind: "effect",
-            to: "self",
-            label: "Menacing Reach: primary weapon range +1 step (at most Very Far)",
-            mods: [{ kind: "stat", stat: "primaryRange", delta: n(1) }],
-            duration: "manual",
-            endsWhen: "when you make a successful attack with your primary weapon",
-            endsOnRoll: { roll: "weaponAttack", result: "success", weapon: "primary" },
+    // Dark Aegis (mastery, HF p.14): "Once per long rest when you would take damage, you can spend a Favor instead of
+    // marking Hit Points."
+    // User answer 2026-10-29 (dcm-bxp.99.19.13): the damage becomes zero: no Hit Points marked, and zero damage has no
+    // severity (no Minor, Major or Severe, so "until you take Severe damage" doesn't fire). The attack's on-hit effects
+    // (conditions) still apply, but any extra "mark HP" from them is ignored (`ignoreOnHitHp`, DA0; applied by DA8).
+    {
+      featureId: `subclass:${ENDLESS}:dark-aegis`,
+      source: "subclass",
+      owner: ENDLESS,
+      card: "mastery",
+      uses: [
+        {
+          id: "main",
+          name: "Dark Aegis",
+          activation: { kind: "reaction", trigger: { kind: "whenYouWouldTakeDamage" } },
+          limit: { per: "longRest" },
+          costs: [aFavor],
+          steps: [{ kind: "negate", to: "self", what: "damage", ignoreOnHitHp: true, note: "Spend a Favor instead of marking Hit Points: the damage is zero." }],
+        },
+      ],
+    },
+
+    // Draining Bane (mastery, HF p.14): "When an adversary targets you or an ally within Very Close range with an attack, you
+    // can spend a Favor to Drain them. When you do, they must mark a Stress, and you can clear a Stress. While Drained, the
+    // target uses a d12 instead of a d20 for attack rolls (including for advantage or disadvantage) until they fail a roll."
+    // Q2: a before-roll answer, so the d12 applies to this attack too. "You can clear a Stress" is an optional step, ticked
+    // by default (user answer 2026-10-29, dcm-bxp.99.19.15: `defaultOn`, DA0); unticking skips it.
+    {
+      featureId: `subclass:${ENDLESS}:draining-bane`,
+      source: "subclass",
+      owner: ENDLESS,
+      card: "mastery",
+      uses: [
+        {
+          id: "main",
+          name: "Draining Bane",
+          activation: {
+            kind: "reaction",
+            trigger: { kind: "whenCreatureAttacked", subject: "selfOrAlly", subjectWithin: "veryClose", stage: "targeted" },
           },
-        ],
-      },
-    ],
-  },
+          costs: [aFavor],
+          targets: { side: "trigger", who: "source" },
+          steps: [
+            { kind: "markStress", to: "targets", amount: n(1) },
+            { kind: "optional", id: "clear-stress", label: "Clear a Stress", defaultOn: true, steps: [{ kind: "clear", to: "self", track: "stress", amount: n(1) }] },
+            {
+              kind: "effect",
+              to: "targets",
+              label: "Drained: d12 instead of d20 for attack rolls (also for advantage or disadvantage)",
+              mods: [{ kind: "set", stat: "attackDie", to: n(12) }],
+              duration: "manual",
+              endsWhen: "until they fail a roll",
+              endsOn: ["bearerFails"],
+            },
+          ],
+        },
+      ],
+    },
 
-  // Diminish My Foes (specialization, HF p.15): "When you succeed with Hope on an action roll against a target, you can
-  // spend any number of Favor to force the target to mark an equal number of Stress."
-  // A rider after the warlock's own roll on the move's target. As with Favor, the trigger's `successWithHope` decides
-  // "with Hope" (plan lanes SRD-F3, dcm-a9n).
-  {
-    featureId: `subclass:${WRATHFUL}:diminish-my-foes`,
-    source: "subclass",
-    owner: WRATHFUL,
-    card: "specialization",
-    uses: [
-      {
-        id: "main",
-        name: "Diminish My Foes",
-        activation: { kind: "rider", trigger: { kind: "afterYouRoll", roll: "action", result: "successWithHope" } },
-        choices: [favorChoice],
-        costs: [anyFavor],
-        steps: [{ kind: "markStress", to: "targets", amount: { kind: "spent", resource: "favor" } }],
-      },
-    ],
-  },
+    // ---------------------------------------------------------------- Pact of the Wrathful (HF p.15)
 
-  // Fearsome Attack (mastery, HF p.15): "Spend a Favor to reroll any number of your damage dice. You can continue spending
-  // Favor to use this feature on the same damage roll."
-  // A rider after the damage roll; the player picks the dice (`damageDice.reroll`) and the new results stand (CB p.107).
-  // It has no limit, so each further Favor is another use on the same damage roll.
-  {
-    featureId: `subclass:${WRATHFUL}:fearsome-attack`,
-    source: "subclass",
-    owner: WRATHFUL,
-    card: "mastery",
-    uses: [
-      {
-        id: "main",
-        name: "Fearsome Attack",
-        activation: { kind: "rider", trigger: { kind: "afterYouRoll", roll: "damage" } },
-        costs: [aFavor],
-        steps: [{ kind: "modifyDamage", to: "targets", change: { kind: "rerollChosen" } }],
-      },
-    ],
-  },
+    // Patron's Fury (foundation, HF p.15): "Spend a Favor to imbue your attacks with your Patron's power until you deal Severe
+    // damage or the scene ends. When you roll damage while this effect is active, you also roll a number of Patron Dice
+    // equal to your tier and add their total to the damage dealt."
+    // `main` starts the effect; `damage` adds the dice by itself on each damage roll while it is active ("you also roll").
+    {
+      featureId: `subclass:${WRATHFUL}:patrons-fury`,
+      source: "subclass",
+      owner: WRATHFUL,
+      card: "foundation",
+      uses: [
+        {
+          id: "main",
+          name: "Patron’s Fury",
+          activation: { kind: "action" },
+          costs: [aFavor],
+          steps: [{ kind: "effect", to: "self", label: "Patron’s Fury: +tier Patron Dice to your damage rolls", mods: [], duration: "scene", endsOn: ["dealSevere"] }],
+        },
+        {
+          id: "damage",
+          name: "Patron’s Fury: Patron Dice",
+          activation: { kind: "auto", trigger: { kind: "beforeYouRoll", roll: "damage" } },
+          requires: [
+            {
+              kind: "situation",
+              text: "Patron’s Fury is active",
+              check: { kind: "featureEffect", featureId: `subclass:${WRATHFUL}:patrons-fury` },
+            },
+          ],
+          steps: [{ kind: "modifyDamage", to: "targets", change: { kind: "add", amount: { kind: "dice", dice: patronDice(tier) } } }],
+        },
+      ],
+    },
 
-  // Otherworldly Ire (mastery, HF p.15): "Once per rest when you take damage, you can spend any number of Favor to roll that
-  // many Patron Dice and target a number of creatures within Close range equal to the highest result. Each target must
-  // mark a Hit Point."
-  // Lanes-2 wave 10 (S2.4; dcm-q3t1, dcm-atiu, dcm-szfg): the targets are picked after the dice show how many. The count
-  // is rolled first (`upTo` `rolledFirst`: the drawer's roll, convex/featurePrompts.ts `rollCount`, rolls the chosen
-  // Favor's Patron Dice and keeps the highest), every cost is paid at that roll (user answer 2026-10-31), and the use then
-  // takes at most that many creatures within Close range, each marking a Hit Point. The roll comes from the drawer, so the
-  // use is a drawer action after you take damage (the player confirms "when you take damage"), not a hit-window
-  // reaction: the window has no count roll to offer first. "Creatures" (HF p.15): enemies here; an ally is never asked.
-  {
-    featureId: `subclass:${WRATHFUL}:otherworldly-ire`,
-    source: "subclass",
-    owner: WRATHFUL,
-    card: "mastery",
-    uses: [
-      {
-        id: "main",
-        name: "Otherworldly Ire",
-        activation: { kind: "action" },
-        requires: [situation("You just took damage")],
-        limit: { per: "rest" },
-        choices: [favorChoice],
-        costs: [anyFavor],
-        targets: { side: "enemy", range: "close", count: { kind: "upTo", rolledFirst: true, n: { kind: "dice", dice: patronDice({ kind: "chosen", choice: "favor" }), keep: "highest" } } },
-        steps: [{ kind: "markHp", to: "targets", amount: n(1), note: "Each target must mark a Hit Point." }],
-      },
-    ],
-  },
-];
+    // Deadly Vengeance (foundation, HF p.15): "When you mark any number of Hit Points from an attack, you can spend a Favor to
+    // roll an equal number of Patron Dice. For each result of 4 or higher, the attacker marks a Hit Point."
+    // The trigger's amount is the Hit Points marked.
+    {
+      featureId: `subclass:${WRATHFUL}:deadly-vengeance`,
+      source: "subclass",
+      owner: WRATHFUL,
+      card: "foundation",
+      uses: [
+        {
+          id: "main",
+          name: "Deadly Vengeance",
+          activation: { kind: "reaction", trigger: { kind: "whenYouMarkHp", fromAttack: true } },
+          costs: [aFavor],
+          targets: { side: "trigger", who: "source" },
+          steps: [{ kind: "markHp", to: "targets", amount: fourOrHigher({ kind: "triggerAmount" }) }],
+        },
+      ],
+    },
+
+    // Menacing Reach (specialization, HF p.15): "Spend a Favor to increase the range of your primary weapon by one step (such
+    // as Melee to Very Close or Very Close to Close) to a maximum of Very Far range. This effect ends when you make a
+    // successful attack with that weapon."
+    // No other end is printed (no scene end). The cap at Very Far is the range engine's (the last Defined Range, CB p.103).
+    // Plan lanes SRD-F3 (dcm-ffk): the end is a `RollEnd`, a successful weapon attack with the primary weapon (E6
+    // `rollEndHolds`), not `attackSucceeds` (which any successful attack, a spell too, sets off).
+    {
+      featureId: `subclass:${WRATHFUL}:menacing-reach`,
+      source: "subclass",
+      owner: WRATHFUL,
+      card: "specialization",
+      uses: [
+        {
+          id: "main",
+          name: "Menacing Reach",
+          activation: { kind: "action" },
+          costs: [aFavor],
+          steps: [
+            {
+              kind: "effect",
+              to: "self",
+              label: "Menacing Reach: primary weapon range +1 step (at most Very Far)",
+              mods: [{ kind: "stat", stat: "primaryRange", delta: n(1) }],
+              duration: "manual",
+              endsWhen: "when you make a successful attack with your primary weapon",
+              endsOnRoll: { roll: "weaponAttack", result: "success", weapon: "primary" },
+            },
+          ],
+        },
+      ],
+    },
+
+    // Diminish My Foes (specialization, HF p.15): "When you succeed with Hope on an action roll against a target, you can
+    // spend any number of Favor to force the target to mark an equal number of Stress."
+    // A rider after the warlock's own roll on the move's target. As with Favor, the trigger's `successWithHope` decides
+    // "with Hope" (plan lanes SRD-F3, dcm-a9n).
+    {
+      featureId: `subclass:${WRATHFUL}:diminish-my-foes`,
+      source: "subclass",
+      owner: WRATHFUL,
+      card: "specialization",
+      uses: [
+        {
+          id: "main",
+          name: "Diminish My Foes",
+          activation: { kind: "rider", trigger: { kind: "afterYouRoll", roll: "action", result: "successWithHope" } },
+          choices: [favorChoice],
+          costs: [anyFavor],
+          steps: [{ kind: "markStress", to: "targets", amount: { kind: "spent", resource: "favor" } }],
+        },
+      ],
+    },
+
+    // Fearsome Attack (mastery, HF p.15): "Spend a Favor to reroll any number of your damage dice. You can continue spending
+    // Favor to use this feature on the same damage roll."
+    // A rider after the damage roll; the player picks the dice (`damageDice.reroll`) and the new results stand (CB p.107).
+    // It has no limit, so each further Favor is another use on the same damage roll.
+    {
+      featureId: `subclass:${WRATHFUL}:fearsome-attack`,
+      source: "subclass",
+      owner: WRATHFUL,
+      card: "mastery",
+      uses: [
+        {
+          id: "main",
+          name: "Fearsome Attack",
+          activation: { kind: "rider", trigger: { kind: "afterYouRoll", roll: "damage" } },
+          costs: [aFavor],
+          steps: [{ kind: "modifyDamage", to: "targets", change: { kind: "rerollChosen" } }],
+        },
+      ],
+    },
+
+    // Otherworldly Ire (mastery, HF p.15): "Once per rest when you take damage, you can spend any number of Favor to roll that
+    // many Patron Dice and target a number of creatures within Close range equal to the highest result. Each target must
+    // mark a Hit Point."
+    // Lanes-2 wave 10 (S2.4; dcm-q3t1, dcm-atiu, dcm-szfg): the targets are picked after the dice show how many. The count
+    // is rolled first (`upTo` `rolledFirst`: the drawer's roll, convex/featurePrompts.ts `rollCount`, rolls the chosen
+    // Favor's Patron Dice and keeps the highest), every cost is paid at that roll (user answer 2026-10-31), and the use then
+    // takes at most that many creatures within Close range, each marking a Hit Point. The roll comes from the drawer, so the
+    // use is a drawer action after you take damage (the player confirms "when you take damage"), not a hit-window
+    // reaction: the window has no count roll to offer first. "Creatures" (HF p.15): enemies here; an ally is never asked.
+    {
+      featureId: `subclass:${WRATHFUL}:otherworldly-ire`,
+      source: "subclass",
+      owner: WRATHFUL,
+      card: "mastery",
+      uses: [
+        {
+          id: "main",
+          name: "Otherworldly Ire",
+          activation: { kind: "action" },
+          requires: [situation("You just took damage")],
+          limit: { per: "rest" },
+          choices: [favorChoice],
+          costs: [anyFavor],
+          targets: { side: "enemy", range: "close", count: { kind: "upTo", rolledFirst: true, n: { kind: "dice", dice: patronDice({ kind: "chosen", choice: "favor" }), keep: "highest" } } },
+          steps: [{ kind: "markHp", to: "targets", amount: n(1), note: "Each target must mark a Hit Point." }],
+        },
+      ],
+    },
+  ];
+}
+
+let table: readonly FeatureEffect[] | undefined;
+
+/** The table, built on its first read (dcm-uh6r): loading this module evaluates none of its entries. */
+export function warlockEffects(): readonly FeatureEffect[] {
+  table ??= buildTable();
+  return table;
+}
+
+/** The table itself (tests); bundles that only call `warlockEffects` drop it. */
+export const WARLOCK_EFFECTS: readonly FeatureEffect[] = /* @__PURE__ */ warlockEffects();

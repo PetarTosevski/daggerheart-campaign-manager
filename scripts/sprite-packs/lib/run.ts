@@ -8,7 +8,8 @@ import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { builtinManifestSchema, type BuiltinManifest, MANIFEST_SCHEMA_VERSION } from "../../../src/lib/sprite-packs/manifest";
+import { type BuiltinManifest, MANIFEST_SCHEMA_VERSION } from "../../../src/lib/sprite-packs/manifest";
+import { builtinManifestSchema } from "../../../src/lib/sprite-packs/manifest-schema";
 import { encodeItem, folderManifest, manifestSource, type Encoded } from "./encode";
 import { MANIFEST_FILE, OVERRIDES_FILE, PUBLIC_DIR, type Options } from "./options";
 import { loadOverrides } from "./overrides";

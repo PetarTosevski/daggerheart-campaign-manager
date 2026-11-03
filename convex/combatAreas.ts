@@ -21,7 +21,6 @@ import {
   placementHolds,
   rangeSquares,
   rangesCrossed,
-  seesThrough,
   sightDisc,
   wall,
   wallBetween,
@@ -52,6 +51,7 @@ import { campaignFearState } from "./lib/fear";
 import { loadCombatMap, tokensOnMap } from "./lib/combatMaps";
 import { campaignMutation, campaignQuery, gmMutation } from "./lib/functions";
 import { atLeast, permissionFor } from "./lib/permissions";
+import { viewerSeesThrough, type AreaSightBlock, type SightDisc } from "./lib/areaSight";
 import { AREA_RADII, areaCentreValidator, pointValidator, type AreaCentre } from "./lib/validators/combatMaps";
 
 /**
@@ -320,16 +320,12 @@ export function areaFactsFor(areas: readonly Doc<"combatAreas">[], tokens: reado
   return out;
 }
 
+export { viewerSeesThrough, type AreaSightBlock, type SightDisc };
+
 /** The vision engine's blocking discs of the live sight-blocking areas (Dark Cloud), as map objects that block sight. */
 export function sightBlockers(areas: readonly Doc<"combatAreas">[], tokens: readonly Doc<"combatTokens">[]): SightDisc[] {
   return areaSightBlocks(areas, tokens).flatMap((b) => b.discs);
 }
-
-/** A blocking disc as the vision engine reads a map object. */
-export type SightDisc = { kind: string; x: number; y: number; r: number; sight: "block" };
-
-/** One sight-blocking area's discs, with who sees through it (`AreaSpec.seeThrough`; dcm-o44e). */
-export type AreaSightBlock = { areaId: Id<"combatAreas">; characterId: Id<"characters">; seeThrough?: "owner" | "ownerAndAllies"; discs: SightDisc[] };
 
 // prepareMap blocks `r * blockRadiusFactor(kind)` (0.55 for an unknown kind): undo it so the disc is the area.
 const disc = (x: number, y: number, r: number): SightDisc => ({ kind: "area", x, y, r: r / 0.55, sight: "block" });
@@ -361,10 +357,6 @@ export function areaSightBlocks(areas: readonly Doc<"combatAreas">[], tokens: re
   return out;
 }
 
-/** Whether a PC viewer (a character's token) sees through the block (the owner; with `ownerAndAllies` every PC). */
-export function viewerSeesThrough(block: AreaSightBlock, viewer: Id<"characters">): boolean {
-  return seesThrough(block.seeThrough, { isOwner: block.characterId === viewer, isParty: true });
-}
 
 // ---------------------------------------------------------------- plan lanes-2 E4: caster events, conditions, leaving
 

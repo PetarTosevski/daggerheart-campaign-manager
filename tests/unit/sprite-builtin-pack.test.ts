@@ -12,7 +12,8 @@ import { describe, expect, it } from "vitest";
 
 import { BUILTIN_LOOKUP, BUILTIN_MANIFEST, builtinSpriteUrl } from "../../src/lib/sprite-packs/builtin";
 import { CATALOG, CATALOG_ENTRIES } from "../../src/lib/sprite-packs/catalog";
-import { builtinManifestSchema, type ManifestFile } from "../../src/lib/sprite-packs/manifest";
+import type { ManifestFile } from "../../src/lib/sprite-packs/manifest";
+import { builtinManifestSchema } from "../../src/lib/sprite-packs/manifest-schema";
 import { activeOverride, loadOverrides } from "../../scripts/sprite-packs/lib/overrides";
 import { stripMagentaFrame, untint } from "../../scripts/sprite-packs/lib/pipeline";
 

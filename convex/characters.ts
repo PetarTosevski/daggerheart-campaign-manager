@@ -35,20 +35,14 @@ import {
   getWeapon,
 } from "../src/lib/srd/index";
 import { TRAIT_IDS } from "../src/lib/srd/types";
-import {
-  characterDraftSchema,
-  characterSheetSchema,
-  sheetPatchSchema,
-  type CharacterDraft,
-  type CharacterSheet,
-  type CharacterSheetInput,
-} from "../src/lib/validation/characters";
+import { characterDraftSchema, sheetPatchSchema, type CharacterDraft } from "../src/lib/validation/character-input";
+import { characterSheetSchema, type CharacterSheet, type CharacterSheetInput } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { installedAugments, seedMotherboard } from "./characterExtras";
 import { logAction } from "./lib/actionLog";
 import { moveCardFor, writeHandHidden } from "./lib/cardHand";
-import { withoutCondition } from "./lib/cardRunner";
+import { withoutCondition } from "./lib/conditionMarkers";
 import { featureScope } from "./sessionFeatures";
 import { editable, findCharacter, loadCharacter, readSheet, saveSheet, storedSheet } from "./lib/characterSheet";
 import { claimFile, deleteFilesOf, deleteOwnFile, isAllowedImage, isClaimed, ownFileUrl } from "./lib/files";

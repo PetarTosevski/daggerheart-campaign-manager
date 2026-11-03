@@ -33,7 +33,7 @@ import type { AttackedRider, CardUse, CreatureKey, DamageKeyword, DamageType, Mo
 import { adversaryNumberEnv, passiveSummary, type PassiveSummary } from "../../src/lib/domain/adversary-actions/index";
 import { conditionName, conditionStepsOf, lastingModsOf } from "../../src/lib/domain/adversary-effects/run";
 import { resolveNumber } from "../../src/lib/domain/combat-actions/numbers";
-import { ADVERSARY_EFFECTS, adversaryEffects } from "../../src/lib/srd/adversary-effects/index";
+import { adversaryEffects, allAdversaryEffects } from "../../src/lib/srd/adversary-effects/index";
 import { lineOfSight, RANGE_ORDER, rangeCheck, rangeFromWeapon, resolveHits, applyDamageTo, tokenDistance, type Combatant, type DamageResult, type RangeCheck, type SightResult } from "../../src/lib/domain/combat-actions/index";
 import { tokenVisibility } from "../../src/lib/domain/combat-map/index";
 import { countsAsActionRoll } from "../../src/lib/domain/countdowns/advanced";
@@ -52,8 +52,8 @@ import { appError } from "../../src/lib/errors/app-error";
 import { TRAIT_LABEL } from "../../src/lib/frames/extras/common";
 import { ADVERSARIES } from "../../src/lib/srd/adversaries";
 import { alwaysOnResistance } from "../../src/lib/srd/adversary-resistance";
-import { CARD_EFFECTS, cardEffect, cardUsage } from "../../src/lib/srd/card-effects/index";
-import { FEATURE_EFFECTS, featureEffect } from "../../src/lib/srd/feature-effects/index";
+import { allCardEffects, cardEffect, cardUsage } from "../../src/lib/srd/card-effects/index";
+import { allFeatureEffects, featureEffect } from "../../src/lib/srd/feature-effects/index";
 import { getDomainCard, getWeapon } from "../../src/lib/srd/index";
 import type { AdversaryDef, DomainId, TraitId, Weapon } from "../../src/lib/srd/types";
 import type { CharacterSheet, Effect } from "../../src/lib/validation/characters";
@@ -1777,9 +1777,9 @@ function tagRiderEntry(tag: string): { source: TagRiderSource; mods: readonly Mo
         if (step.mods && step.mods.length > 0 && !map.has(name)) map.set(name, { source, mods: step.mods });
       }
     };
-    for (const e of CARD_EFFECTS.values()) add({ kind: "pc", sourceId: e.cardId }, e.uses);
-    for (const e of FEATURE_EFFECTS.values()) add({ kind: "pc", sourceId: e.featureId }, e.uses);
-    for (const list of ADVERSARY_EFFECTS.values()) for (const e of list) add({ kind: "adversary" }, e.uses);
+    for (const e of allCardEffects().values()) add({ kind: "pc", sourceId: e.cardId }, e.uses);
+    for (const e of allFeatureEffects().values()) add({ kind: "pc", sourceId: e.featureId }, e.uses);
+    for (const list of allAdversaryEffects().values()) for (const e of list) add({ kind: "adversary" }, e.uses);
     TAG_RIDERS = map;
   }
   return TAG_RIDERS.get(tag);

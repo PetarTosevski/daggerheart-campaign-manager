@@ -6,26 +6,37 @@ import type {
   AdversaryFeatureEffect,
 } from "../../domain/adversary-effects/types";
 import type { AdversaryDef } from "../types";
-import { T1_CORE_EFFECTS } from "./t1-core";
-import { T1_HF_EFFECTS } from "./t1-hf";
-import { T2_CORE_EFFECTS } from "./t2-core";
-import { T2_HF_EFFECTS } from "./t2-hf";
-import { T3_CORE_EFFECTS } from "./t3-core";
-import { T3_HF_EFFECTS } from "./t3-hf";
-import { T4_CORE_EFFECTS } from "./t4-core";
-import { T4_HF_EFFECTS } from "./t4-hf";
+import { t1CoreEffects } from "./t1-core";
+import { t1HfEffects } from "./t1-hf";
+import { t2CoreEffects } from "./t2-core";
+import { t2HfEffects } from "./t2-hf";
+import { t3CoreEffects } from "./t3-core";
+import { t3HfEffects } from "./t3-hf";
+import { t4CoreEffects } from "./t4-core";
+import { t4HfEffects } from "./t4-hf";
 
-/** Each group's table, in `ADVERSARY_EFFECT_GROUPS` order. */
-export const ADVERSARY_EFFECT_TABLES: Readonly<Record<AdversaryEffectGroup, readonly AdversaryFeatureEffect[]>> = {
-  "t1-core": T1_CORE_EFFECTS,
-  "t1-hf": T1_HF_EFFECTS,
-  "t2-core": T2_CORE_EFFECTS,
-  "t2-hf": T2_HF_EFFECTS,
-  "t3-core": T3_CORE_EFFECTS,
-  "t3-hf": T3_HF_EFFECTS,
-  "t4-core": T4_CORE_EFFECTS,
-  "t4-hf": T4_HF_EFFECTS,
-};
+let tables: Readonly<Record<AdversaryEffectGroup, readonly AdversaryFeatureEffect[]>> | undefined;
+
+/**
+ * Each group's table, in `ADVERSARY_EFFECT_GROUPS` order. Built on the first read (dcm-uh6r): a Convex function that
+ * loads this module but never reads an adversary's effects evaluates none of the tables.
+ */
+export function adversaryEffectTables(): Readonly<Record<AdversaryEffectGroup, readonly AdversaryFeatureEffect[]>> {
+  tables ??= {
+    "t1-core": t1CoreEffects(),
+    "t1-hf": t1HfEffects(),
+    "t2-core": t2CoreEffects(),
+    "t2-hf": t2HfEffects(),
+    "t3-core": t3CoreEffects(),
+    "t3-hf": t3HfEffects(),
+    "t4-core": t4CoreEffects(),
+    "t4-hf": t4HfEffects(),
+  };
+  return tables;
+}
+
+/** Each group's table (tests); bundles that only call the functions below drop it. */
+export const ADVERSARY_EFFECT_TABLES: Readonly<Record<AdversaryEffectGroup, readonly AdversaryFeatureEffect[]>> = /* @__PURE__ */ adversaryEffectTables();
 
 /**
  * The group whose table holds an SRD adversary's features: its tier and its book. Hope & Fear frame adversaries
@@ -56,14 +67,20 @@ export function mergeAdversaryEffectTables(
   return merged;
 }
 
-/** Every adversary's feature effects, by adversary id. */
-export const ADVERSARY_EFFECTS: ReadonlyMap<string, readonly AdversaryFeatureEffect[]> = mergeAdversaryEffectTables(
-  Object.values(ADVERSARY_EFFECT_TABLES),
-);
+let mergedEffects: ReadonlyMap<string, readonly AdversaryFeatureEffect[]> | undefined;
+
+/** Every adversary's feature effects, by adversary id; merged on the first read (dcm-uh6r). */
+export function allAdversaryEffects(): ReadonlyMap<string, readonly AdversaryFeatureEffect[]> {
+  mergedEffects ??= mergeAdversaryEffectTables(Object.values(adversaryEffectTables()));
+  return mergedEffects;
+}
+
+/** Every adversary's feature effects, by adversary id (tests); bundles that only call the functions drop it. */
+export const ADVERSARY_EFFECTS: ReadonlyMap<string, readonly AdversaryFeatureEffect[]> = /* @__PURE__ */ allAdversaryEffects();
 
 /** An adversary's feature effects; empty while its group's tracer has not written them (or for a custom adversary). */
 export function adversaryEffects(adversaryId: string): readonly AdversaryFeatureEffect[] {
-  return ADVERSARY_EFFECTS.get(adversaryId) ?? [];
+  return allAdversaryEffects().get(adversaryId) ?? [];
 }
 
 /** The effect entry of one feature (by its printed name), or undefined while it has none. */

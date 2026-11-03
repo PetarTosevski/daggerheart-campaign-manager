@@ -3,14 +3,13 @@ import { v, type Infer } from "convex/values";
 import { decodeCells } from "../../src/components/combat-map/map-view/cells";
 import { decodeTextureCells, paintSetting } from "../../src/components/combat-map/map-view/paint-spec";
 import { glowingSquares } from "../../src/lib/combat-map/sprites/terrain";
-import { getPhaseName, type CampaignPhaseName } from "../../src/lib/domain/campaign-time/index";
+import type { CampaignPhaseName } from "../../src/lib/domain/campaign-time/index";
 import {
   SAMPLES_PER_SQUARE,
   createView,
   decodeExplored,
   encodeExplored,
   exploredLength,
-  lightOf,
   prepareMap,
   tokenVisibility,
   visibleSquares,
@@ -23,15 +22,17 @@ import {
   type VisionToken,
 } from "../../src/lib/domain/combat-map/index";
 import { appError } from "../../src/lib/errors/app-error";
-import { frameHasMechanic } from "../../src/lib/frames/index";
 import { CLASSES } from "../../src/lib/srd/classes";
-import { pcPortrait, type TokenView } from "../combatTokens";
+import type { TokenView } from "./validators/combatTokens";
+import { pcPortrait } from "./pcPortrait";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
+import { campaignLight } from "./campaignLight";
 import { derivedTraits } from "../../src/lib/domain/characters/derived";
 import type { FeatureScope } from "../../src/lib/domain/class-features/types";
 import { withEffects } from "../../src/lib/domain/characters/effects";
-import { activeAreasOnMap, areaSightBlocks, viewerSeesThrough, type AreaSightBlock } from "../combatAreas";
+import { activeAreasOnMap, areaSightBlocks } from "../combatAreas";
+import { preparedFor, type AreaSightBlock } from "./areaSight";
 import { readSheet } from "./characterSheet";
 import { hudConditionValidator, hudConditions } from "./combatHud";
 import { featureScope } from "./featureScope";
@@ -41,7 +42,6 @@ import { atLeast, permissionFor } from "./permissions";
 import { mapSpriteRefs, objectTraits, resolveRefs, resolveSetting, type UploadedSprites } from "./spriteSources";
 import { seenTokenIds } from "./spotlightSeen";
 import { CELL_LAYERS, tokenSideValidator } from "./validators/combatMaps";
-import { timeOfDayValidator } from "../tables/campaigns";
 
 /**
  * Vision on the server (D9 C7, plan `.omc/plans/d9-combat-map.yaml`; R8–R12, Q1, Q3, Q4). A player's view is
@@ -59,8 +59,6 @@ const MAX_CELL_TILES = CELL_LAYERS.length * Math.ceil(MAX_MAP_H / CELL_TILE_ROWS
 
 // ---------------------------------------------------------------- validators
 
-/** The campaign's light (R8, dcm-bxp.54): day, dim (badge) or night (lights only). */
-export const lightLevelValidator = timeOfDayValidator;
 
 /**
  * A token a player sees that is not a PC (adversary, ally, neutral, custom): name, size, side and facing only
@@ -143,39 +141,7 @@ export type Scene = {
   readonly scope?: FeatureScope;
 };
 
-/**
- * The campaign's time phase (R8). Campaign time is a Witherwild mechanic: other frames have none and get null. A
- * Witherwild campaign without a time row is at the initial time (week 1, DAY day 1).
- */
-export async function campaignPhase(ctx: QueryCtx, campaign: Doc<"campaigns">): Promise<CampaignPhaseName | null> {
-  if (!frameHasMechanic(campaign.frameId, "campaignTime")) return null;
-  const row = await ctx.db
-    .query("campaignTime")
-    .withIndex("by_campaign", (q) => q.eq("campaignId", campaign._id))
-    .unique();
-  if (row === null) return getPhaseName("DAY", 1);
-  try {
-    return getPhaseName(row.cycle, row.cycleDay);
-  } catch {
-    return null;
-  }
-}
-
-/** A campaign's light (dcm-bxp.54): its time phase and that phase's light, or its time of day (no phase). */
-export type CampaignLight = { phase: CampaignPhaseName | null; light: LightLevel };
-
-/**
- * The light every map of the campaign follows (dcm-bxp.54, user 2026-10-30): in a frame with campaign time (the
- * Witherwild) the time phase decides (`lightOf`, dcm-p40); every other campaign has the GM's Day / Dim / Night
- * (`campaigns.timeOfDay`, unset = day).
- */
-export async function campaignLight(ctx: QueryCtx, campaign: Doc<"campaigns">): Promise<CampaignLight> {
-  if (frameHasMechanic(campaign.frameId, "campaignTime")) {
-    const phase = await campaignPhase(ctx, campaign);
-    return { phase, light: lightOf(phase ?? "") };
-  }
-  return { phase: null, light: campaign.timeOfDay ?? "day" };
-}
+export { campaignLight, campaignPhase, lightLevelValidator, type CampaignLight } from "./campaignLight";
 
 /** A token as the engine reads it. */
 function visionTokenOf(token: Doc<"combatTokens">): VisionToken {
@@ -319,14 +285,7 @@ function tokenIndexOf(scene: Scene, characterId: Id<"characters">): number {
   return scene.tokens.findIndex((t) => t.ref.kind === "pc" && t.ref.characterId === characterId);
 }
 
-/**
- * The blocking grid as this character sees it: without the sight-blocking areas they see through (Eclipse, CB p.337:
- * "complete darkness only you and your allies can see through"; Veil of Night, CB p.336; plan lanes-2 E4, dcm-o44e).
- */
-export function preparedFor(scene: Scene, characterId: Id<"characters">): PreparedMap {
-  const through = new Set<string>(scene.areaBlocks.filter((b) => viewerSeesThrough(b, characterId)).map((b) => b.areaId));
-  return through.size > 0 ? scene.preparedWithout(through) : scene.prepared;
-}
+export { preparedFor };
 
 export type Viewer = { readonly index: number; readonly instinct: number; readonly view: ViewerView };
 
