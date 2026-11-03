@@ -1,6 +1,28 @@
+import { useState } from "react";
 import { View } from "react-native";
 
-/** Map list, tokens, vision tools and Fear ship in C5-combat-gm. */
-export function CombatGmSlot(_props: import("../contract").CombatSlotProps) {
-  return <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" testID="combat-gm-slot" />;
+import { Button } from "../../../ui/button";
+
+import type { CombatSlotProps } from "../contract";
+import { CombatGmTools } from "./tools";
+
+/**
+ * GM tools load on demand so the combat map shell (C4) keeps subscribing only to
+ * `combatMaps.live` and `combatVision.playerView` until the GM opens this panel.
+ */
+export function CombatGmSlot(props: CombatSlotProps) {
+  const [open, setOpen] = useState(false);
+  if (!props.isGm) return null;
+
+  return (
+    <View testID="combat-gm-slot">
+      {open ? (
+        <CombatGmTools {...props} />
+      ) : (
+        <Button accessibilityLabel="Open GM combat tools" onPress={() => setOpen(true)} variant="outline">
+          GM combat tools
+        </Button>
+      )}
+    </View>
+  );
 }
