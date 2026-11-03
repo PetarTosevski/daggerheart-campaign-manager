@@ -3,14 +3,16 @@
 import { useId, useState, type ReactNode } from "react";
 
 import type { CombatRole } from "../../slots";
+import { QueueInSheet } from "../queue";
 import { usePhoneHud } from "./media";
 
 /**
  * The GM at phone width (plan combat-hud H7.2, answer 13a): the tablet layout, with the request queue as a bottom
- * sheet. Wraps the shell's left column (the GM's `HudQueue`: "Waiting on you" with its count, the cards, Resolutions;
- * then the spotlight panel); for a player, or wider than a phone, it renders the column unchanged. Folded (the default,
- * so the map stays usable) the sheet shows the queue's heading and count under a grab handle; the handle unfolds it to
- * the cards, Resolutions and the spotlight panel, scrolling inside.
+ * sheet. Wraps the shell's "waiting" region (the GM's `HudQueue`); for a player, or wider than a phone, it renders it
+ * unchanged (the "Waiting on you" button, H9.2). Inside the sheet (`QueueInSheet`) the queue shows inline: "Waiting on
+ * you" with its count, the cards, then Resolutions (the phone has no room for Log's panel). Folded (the default, so the
+ * map stays usable) the sheet shows the queue's heading and count under a grab handle; the handle unfolds it to the
+ * cards and Resolutions, scrolling inside.
  */
 export function PhoneQueueSheet({ role, children }: { role: CombatRole; children: ReactNode }) {
   const phone = usePhoneHud();
@@ -28,7 +30,7 @@ function QueueSheet({ children }: { children: ReactNode }) {
         <b>{open ? "Fold the requests down" : "Show the requests"}</b>
       </button>
       <div id={id} className="hud-ph-q-body">
-        {children}
+        <QueueInSheet.Provider value={true}>{children}</QueueInSheet.Provider>
       </div>
     </div>
   );

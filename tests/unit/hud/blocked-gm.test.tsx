@@ -17,6 +17,7 @@ import { useAdjustFear } from "@/components/combat-map/hud/fear/banner";
 import { adversaryActBlocked, fearBlocked, fearShortText, spotlightFirst } from "@/components/combat-map/hud/fear/blocked";
 import { PickProvider, usePick, type PickApi } from "@/components/combat-map/hud/pick";
 import { HudQueue } from "@/components/combat-map/hud/queue";
+import { HudResolutions } from "@/components/combat-map/hud/queue/resolutions";
 import { useFearAsk, useGmActs } from "@/components/combat-map/hud/statblock/acts";
 import { StatBlockPanel } from "@/components/combat-map/hud/statblock/panel";
 import { HudProvider } from "@/components/combat-map/hud/state";
@@ -359,7 +360,8 @@ describe("the GM's queue (REQUEST_NOT_OPEN)", () => {
   it("Resolutions: UNDO_STALE keeps its own words under the list", async () => {
     queue();
     failures["actionLog:undo"] = new ConvexError({ code: "UNDO_STALE", message: "Something newer happened since." });
-    render(<HudQueue state={gm()} />);
+    // H9.2: Resolutions live behind the dock's Log, not in the queue.
+    render(<HudResolutions campaignId={"camp" as Id<"campaigns">} />);
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Undo: Moss hit the Bandit" })));
     const alert = within(screen.getByTestId("hud-resolutions-error")).getByRole("alert");
     expect(alert).toHaveAttribute("data-code", "UNDO_STALE");

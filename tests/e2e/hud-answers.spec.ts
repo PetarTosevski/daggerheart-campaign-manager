@@ -56,6 +56,8 @@ test("the GM's Resolutions list a player's roll with Fear, with Undo", async ({ 
     const fear = (await s.client.query(api.combatHud.scene, { campaignId: s.campaignId })).fear;
     await playerClient.mutation(api.rolls.manualRoll, { characterId: moss.characterId, roll: agility, values: [3, 8], idempotencyKey: crypto.randomUUID() });
 
+    // Resolutions open from the dock's Log (plan combat-hud H9.2).
+    await gm.getByRole("toolbar", { name: "Map controls" }).getByRole("button", { name: "Log" }).click();
     const row = gm.locator('[data-testid="hud-resolution"][data-kind="fear-roll"]').first();
     await expect(row).toContainText("Moss rolled with Fear", { timeout: 30_000 });
     if (fear < 12) await expect(row).toContainText("+1 Fear");
@@ -107,7 +109,7 @@ test("the GM's Dice: a plain GM roller, and 'For <PC>' while a PC token is selec
     await gm.goto(s.url);
     const hud = gm.getByTestId("combat-hud");
     await expect(hud).toBeVisible();
-    const tools = gm.getByRole("group", { name: "GM tools" });
+    const tools = gm.getByRole("toolbar", { name: "Map controls" });
 
     // Nothing selected: the GM's own roller (any dice), its result shown.
     await tools.getByRole("button", { name: "Dice", exact: true }).click();

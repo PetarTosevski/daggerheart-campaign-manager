@@ -233,7 +233,8 @@ test("two players and the GM: attacks, cards, a Minion pick, a recall, a rest an
     await expect(handOf(b.page)).toHaveAttribute("data-mode", "own", { timeout: 30_000 });
     await expect(handOf(a.page).getByRole("article", { name: "Book of Tyfar" })).toBeVisible({ timeout: 30_000 });
     await expect(handOf(b.page).getByRole("article", { name: "Deft Maneuvers" })).toBeVisible({ timeout: 30_000 });
-    // The GM's Resolutions with Undo, in the HUD's left column (H5.1).
+    // The GM's Resolutions with Undo, behind the dock's Log (H5.1, H9.2).
+    await page.getByRole("toolbar", { name: "Map controls" }).getByRole("button", { name: "Log" }).click();
     await expect(page.getByTestId("hud-resolutions")).toBeVisible({ timeout: 30_000 });
     const resolution = (text: string) => page.getByTestId("hud-resolution").filter({ hasText: text });
     const banditToken = tokenOf((t) => t.instanceId === bandit)._id;

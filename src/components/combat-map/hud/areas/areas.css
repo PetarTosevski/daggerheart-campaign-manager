@@ -1,19 +1,21 @@
 /*
  * "Areas on the map" (plan combat-hud H5.3; GMDesktop 'Areas' `.ar`): the GM's area panel, bottom right of the pop
- * region (right 16, bottom 16, 360 wide; 320 on the tablet). The pop region moves left of the sheet panel while one is
- * open (shell.css), so the panel does too.
+ * region above the dock (plan combat-hud H9.2, GMDesktop `.gmc .ar`: right 182, bottom 80, clear of the dock and the
+ * Player view box; 360 wide; tablet right 12, bottom 74, 320 wide). The pop region moves left of the sheet panel while
+ * one is open (shell.css), so the panel does too.
  */
 .hud-areas {
   position: absolute;
-  right: 16px;
-  bottom: 16px;
+  right: 182px;
+  bottom: 80px;
   z-index: 60;
   display: flex;
   flex-direction: column;
   gap: 8px;
   width: 360px;
   max-width: calc(100vw - 32px);
-  max-height: calc(100dvh - 140px);
+  /* Clear of the Fear banner and the discs hanging at the top. */
+  max-height: calc(100% - 80px - 200px);
   overflow: auto;
   padding: 16px;
   border-radius: var(--hud-r-panel);
@@ -237,5 +239,12 @@
 @media (max-width: 1180px) {
   .hud-areas {
     width: 320px;
+  }
+  /* GMTablet `.tab .ar` (H9.2): bottom right above the dock; tablet.css's older "under the Fear banner" placement goes. */
+  .hud-root[data-role="gm"] .hud-areas {
+    top: auto;
+    right: 12px;
+    bottom: 74px;
+    max-height: calc(100% - 74px - 232px);
   }
 }

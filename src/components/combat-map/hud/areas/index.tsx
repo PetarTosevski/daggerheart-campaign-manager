@@ -14,15 +14,17 @@ import type { Id } from "../../../../../convex/_generated/dataModel";
 import { RADIUS_LABEL, useMapAreas, type AreaView } from "../../map-view/area-overlay";
 import { startAreaPick, useAreaPick, type Square } from "../../map-view/area-pick";
 import { useTokens } from "../../tokens/use-tokens";
+import { closePanel } from "../panels";
 import type { HudPartProps } from "../state";
 import { hudButtonClass } from "../ui";
-import { AREAS_PANEL_ID, setAreasOpen, useAreasOpen } from "./open";
+import { AREAS_PANEL_ID, useAreasOpen } from "./open";
 
 export { AREAS_PANEL_ID, setAreasOpen, useAreasOpen } from "./open";
 
 /**
  * "Areas on the map" (plan combat-hud H5.3; GMDesktop 'Areas' `.ar`): the GM's area panel at the bottom right, opened by
- * the toolbar's Areas button (hud/scene, through `./open`). Each live area of the map (`combatAreas.list`, as the
+ * the dock's Areas button (`hud/panels.ts` "areas", mirrored into `./open`; H9.2: its ✕ and Escape close it through the
+ * panels store, so the focus goes back to the button that opened it). Each live area of the map (`combatAreas.list`, as the
  * classic overlay reads it) with its shape, radius, whether it blocks sight and whose it is, a radius picker for circles,
  * Move and Remove; under them "Draw an area" (name, Circle / Wall, radius, whose, Blocks sight, Pick on the map). The
  * logic is the classic `AreaTools`' (map-view/area-overlay.tsx): the same mutations, optimistic resize / remove, and
@@ -119,7 +121,7 @@ function AreasPanel({ campaignId, mapId }: { campaignId: Id<"campaigns">; mapId:
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.stopPropagation();
-          setAreasOpen(false);
+          closePanel("areas", true);
         }
       }}
       onBlur={(event) => {
@@ -136,7 +138,7 @@ function AreasPanel({ campaignId, mapId }: { campaignId: Id<"campaigns">; mapId:
             Areas on the map
           </button>
         </h2>
-        <button type="button" className="hud-areas-x" aria-label="Close Areas" onClick={() => setAreasOpen(false)}>
+        <button type="button" className="hud-areas-x" aria-label="Close Areas" onClick={() => closePanel("areas", true)}>
           <X aria-hidden="true" />
         </button>
       </div>

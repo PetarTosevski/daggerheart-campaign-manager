@@ -114,6 +114,8 @@ test("live: an out-of-range pick waits for the GM (the GM's queue), Withdraw rem
     }
     await expect(player.getByTestId("combat-hud")).toBeVisible();
     // The GM's HUD queue ("Waiting on you", plan combat-hud H5.1) lists the out-of-range use.
+    // The queue opens from "Waiting on you" (closed by default, plan combat-hud H9.2).
+    await gm.getByRole("button", { name: /^Waiting on you/ }).click();
     const sanctions = gm.getByTestId("hud-queue").getByTestId("hud-queue-range");
     await expect(sanctions).toHaveCount(0);
 

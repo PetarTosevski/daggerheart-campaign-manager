@@ -264,6 +264,9 @@ test("adversary actions from both pages: I Am Your Shield, armor, undo, a multi-
     await b.page.getByRole("dialog", { name: "Tabby can react" }).getByRole("button", { name: "Pass" }).click({ timeout: 30_000 });
     await expect.poll(async () => (await sheet(mira)).armorMarked).toBe(before.armorMarked + 1);
     expect((await sheet(mira)).hp).toBeGreaterThan(before.hp);
+    // Resolutions open from the dock's Log (plan combat-hud H9.2).
+    const log = map.getByRole("toolbar", { name: "Map controls" }).getByRole("button", { name: "Log" });
+    if ((await log.getAttribute("aria-pressed")) !== "true") await log.click();
     const resolution = map.getByTestId("hud-resolution").filter({ hasText: /Club/ }).first();
     await resolution.getByRole("button", { name: /^Undo: / }).click({ timeout: 30_000 });
     await expect.poll(async () => (await sheet(mira)).armorMarked).toBe(before.armorMarked);

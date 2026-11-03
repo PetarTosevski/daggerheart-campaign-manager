@@ -47,8 +47,8 @@ test("the GM: a stat block makes room, swaps and closes; drag and area picking s
     await expect(viewport).toHaveCSS("transform", "none");
     await expect(viewport).toHaveCSS("transition-duration", "0.35s");
 
-    // Open the Areas pop-over first: the GM's tools hide while a sheet is open, the pop-over stays.
-    await gm.getByRole("group", { name: "GM tools" }).getByRole("button", { name: "Areas", exact: true }).click();
+    // Open the Areas pop-over first (the dock's Areas, H9.0): it stays while a sheet is open.
+    await gm.getByRole("toolbar", { name: "Map controls" }).getByRole("button", { name: "Areas", exact: true }).click();
     const areas = gm.getByRole("dialog", { name: "Areas" });
     await expect(areas.getByTestId("area-tools")).toBeVisible();
 
@@ -63,7 +63,8 @@ test("the GM: a stat block makes room, swaps and closes; drag and area picking s
     expect(Math.round(1440 - (fearBox.x + fearBox.width))).toBe(424);
     await expect(gm.getByTestId("hud-disc")).toBeHidden();
     await expect(gm.getByTestId("hud-title")).toBeHidden();
-    await expect(gm.getByRole("group", { name: "GM tools" })).toBeHidden();
+    // The dock (H9.0) stays, icons only, beside the sheet.
+    await expect(gm.getByRole("toolbar", { name: "Map controls" })).toBeVisible();
     await expect(gm.locator('[data-hud-region="hand"]')).toHaveCSS("left", "330px");
     await expect(gm.locator('[data-hud-region="pop"]')).toHaveCSS("right", "400px");
     await expect(areas).toBeVisible();
@@ -113,7 +114,7 @@ test("the GM: a stat block makes room, swaps and closes; drag and area picking s
     await expect(viewport).toHaveCSS("transform", "none");
     await expect(gm.locator(".hud-fear")).toHaveCSS("transform", "none");
     await expect(gm.getByTestId("hud-disc")).toBeVisible();
-    await expect(gm.getByRole("group", { name: "GM tools" })).toBeVisible();
+    await expect(gm.getByRole("toolbar", { name: "Map controls" })).toBeVisible();
     await expect(gm.locator('[data-hud-region="hand"]')).toHaveCSS("left", "330px");
     await expect(gm.locator('[data-hud-region="pop"]')).toHaveCSS("right", "0px");
 
@@ -154,8 +155,8 @@ test("a player: their sheet makes room without the party sheet's .sh-open style;
     await expect(player.locator(".hud-fear")).toHaveCSS("transform", "matrix(1, 0, 0, 1, -400, 0)");
     await expect(player.locator(".hud-fear")).toHaveCSS("transition-duration", "0s");
     await expect(player.getByTestId("hud-disc")).toBeHidden();
-    // Players keep their title and tools on a desktop (only the GM's hide).
-    await expect(player.getByTestId("hud-title")).toBeVisible();
+    // The player's title and row fade while a sheet is open, as the GM's do (H9.3, scene.css; Main `.sh-open .title`).
+    await expect(player.getByTestId("hud-title")).toBeHidden();
     await test.info().attach("player-sheet-open", { body: await player.screenshot(), contentType: "image/png" });
 
     await player.keyboard.press("Escape");

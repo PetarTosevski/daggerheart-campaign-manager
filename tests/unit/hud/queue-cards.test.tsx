@@ -8,6 +8,7 @@ import { ConvexError } from "convex/values";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { HudQueue } from "@/components/combat-map/hud/queue";
+import { HudResolutions } from "@/components/combat-map/hud/queue/resolutions";
 import { hudToasts } from "@/components/combat-map/hud/toasts/store";
 import type { CombatPageState } from "@/components/combat-map/slots";
 
@@ -202,7 +203,7 @@ describe("Resolutions", () => {
     empty();
     queries["feed:list"] = { page: [row("a"), row("b", { kind: "adversary", fearDelta: 1 }), row("c", { visibility: "public" }), row("d", { undone: true, canUndo: false })], isDone: true, continueCursor: "" };
     results["actionLog:undo"] = { undone: ["a"], fearReverted: 0 };
-    render(<HudQueue state={page("gm")} />);
+    render(<HudResolutions campaignId={page("gm").campaignId} />);
     const list = screen.getByRole("list", { name: "Latest resolutions" });
     expect(within(list).getAllByRole("listitem")).toHaveLength(3);
     expect(within(list).getAllByRole("listitem")[1]).toHaveTextContent("GM gains 1 Fear");
@@ -215,7 +216,7 @@ describe("Resolutions", () => {
     empty();
     queries["feed:list"] = { page: [row("a")], isDone: true, continueCursor: "" };
     failures["actionLog:undo"] = new ConvexError({ code: "UNDO_STALE" });
-    render(<HudQueue state={page("gm")} />);
+    render(<HudResolutions campaignId={page("gm").campaignId} />);
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Undo: row a" })));
     expect(screen.getByTestId("hud-resolutions-error")).toHaveTextContent("That can't be undone any more");
   });

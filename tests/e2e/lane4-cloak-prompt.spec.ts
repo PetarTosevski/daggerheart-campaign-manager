@@ -69,6 +69,9 @@ test("a Cloaked rogue's Enrapture asks the GM; Yes ends Cloaked", async ({ page,
 
     // The GM's HUD queue ("Waiting on you") asks; Yes ends Cloaked.
     await page.goto(url);
+    // The queue opens from "Waiting on you" (closed by default, plan combat-hud H9.2).
+    const waiting = page.getByRole("button", { name: /^Waiting on you/ });
+    if ((await waiting.getAttribute("aria-expanded")) !== "true") await waiting.click();
     const queue = page.getByTestId("hud-queue");
     const card = queue.getByTestId("hud-queue-cloak");
     await expect(card).toBeVisible({ timeout: 30_000 });

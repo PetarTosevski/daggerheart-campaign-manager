@@ -64,6 +64,9 @@ for (const carries of [true, false]) {
     await expect(page.getByRole("region", { name: "Battle map" })).toBeVisible({ timeout: 30_000 });
     const requestId = await attack(s.gm, s.campaignId, s.bandit, s.ember);
 
+    // The queue opens from "Waiting on you" (closed by default, plan combat-hud H9.2).
+    const waiting = page.getByRole("button", { name: /^Waiting on you/ });
+    if ((await waiting.getAttribute("aria-expanded")) !== "true") await waiting.click();
     const ask = page.getByTestId("hud-queue").getByTestId("hud-queue-keyword");
     await expect(ask).toBeVisible({ timeout: 30_000 });
     await expect(ask.getByRole("heading")).toHaveText(/Was this hit fire\?/);

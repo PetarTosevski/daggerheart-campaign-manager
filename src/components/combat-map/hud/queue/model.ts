@@ -195,6 +195,45 @@ export function itemLabel(item: QueueItem): string {
   }
 }
 
+// ---------------------------------------------------------------- "Waiting on you" arrivals (plan combat-hud H9.2, Q10a)
+
+/** One thing waiting on the GM, as the closed "Waiting on you" button tracks it: its key and the toast's title. */
+export type Arrival = { key: string; title: string };
+
+/** The toast's title for a new request: "Vex: out of range", "Brannoc: set the Difficulty" (Q10a, "· Waiting on you"). */
+export function arrivalTitle(item: QueueItem): string {
+  switch (item.kind) {
+    case "attack":
+    case "card":
+    case "feature":
+      return `${item.row.characterName}: out of range`;
+    case "difficulty":
+      return `${item.row.characterName}: set the Difficulty`;
+    case "reactions":
+      return `${item.row.attackerLabel} → ${item.row.targetName}: reactions`;
+    case "cloak":
+      return `${item.row.characterName}: does Cloaked end?`;
+    case "keyword":
+      return `${item.row.targetName}: ${item.row.question}`;
+    case "allyRoll":
+      return `${item.row.rollerName}: ally roll`;
+  }
+}
+
+/** A death move to confirm, as an arrival ("Moss: death move"); keyed on the request so a second one counts as new. */
+export function deathArrival(characterId: string, name: string, requestKey: string): Arrival {
+  return { key: `death:${characterId}:${requestKey}`, title: `${name}: death move` };
+}
+
+/**
+ * The arrivals in `now` that `seen` did not have, in `now`'s order. `seen` null (the first loaded read) has nothing new:
+ * the requests already open when the GM opens the map count, but do not toast.
+ */
+export function newArrivals(seen: ReadonlySet<string> | null, now: readonly Arrival[]): Arrival[] {
+  if (seen === null) return [];
+  return now.filter((a) => !seen.has(a.key));
+}
+
 /** The `code` of a `ConvexError<AppError>` (CF13), or undefined for anything else. */
 export function errorCode(error: unknown): string | undefined {
   if (!(error instanceof ConvexError)) return undefined;

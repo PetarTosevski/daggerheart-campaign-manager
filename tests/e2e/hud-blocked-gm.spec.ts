@@ -87,6 +87,8 @@ test("REQUEST_NOT_OPEN: answering a request someone already answered toasts 'Alr
       idempotencyKey: crypto.randomUUID(),
     });
     if (attack.status !== "pending") throw new Error(`expected a pending attack, got ${attack.status}`);
+    // The queue opens from "Waiting on you" (closed by default, plan combat-hud H9.2).
+    await gm.getByRole("button", { name: /^Waiting on you/ }).click();
     const queue = gm.getByTestId("hud-queue");
     const card = queue.getByTestId("hud-queue-range");
     await expect(card).toHaveCount(1);

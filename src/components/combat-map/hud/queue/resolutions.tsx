@@ -1,5 +1,7 @@
 "use client";
 
+import "./queue.css";
+
 import type { OptimisticLocalStore } from "convex/browser";
 import { useMutation, useQuery } from "convex/react";
 import { useState, type ReactNode } from "react";
@@ -13,8 +15,9 @@ import { feedDetail } from "../feed/model";
 import { RESOLUTION_SCAN, fearRollLine, isFearRoll, resolutionRows } from "./model";
 
 /**
- * Resolutions with Undo under the queue (plan combat-hud H5.1; GMDesktop `.gr`): the GM's latest combat rows from
- * `feed.list` — a PC's attack or card, an adversary's attack or feature with its Fear (Momentum, answer 7a), a player's
+ * Resolutions with Undo (plan combat-hud H5.1; GMDesktop `.gr`): since H9.2 behind the dock's Log (the shell's "log"
+ * region: right 16, bottom 80, 360 px; tablet right 12, bottom 74, 330 px) and in the GM's phone queue sheet. The GM's
+ * latest combat rows from `feed.list` — a PC's attack or card, an adversary's attack or feature with its Fear (Momentum, answer 7a), a player's
  * roll with Fear ("Vex rolled with Fear · +1 Fear", user answer 2026-11-02) — each with Undo (`actionLog.undo`, which undoes the whole action). Optimistic: the row reads "undone" at once; a refusal such
  * as UNDO_STALE ("something newer happened since") rolls it back and shows under the list (H6.3: `useRefusal`, the
  * table's words; a toast-placed refusal goes to the toast host).

@@ -5,7 +5,8 @@ import { hudScene } from "../hud/helpers";
 
 // Shots for docs/tasks/TASK-HUD-H5.1.md (E2E_VISUAL=1): GMDesktop 'Requests' on the seed's real party at 1440 × 900 —
 // "Waiting on you" with the player's out-of-range attack and card, a Brute's hit waiting on Brannoc ('Reactions'), and
-// Moss's death move to confirm; then Resolutions with Undo after Resolve now. Board render to compare:
+// Moss's death move to confirm (opened from "Waiting on you", H9.2); then Resolutions with Undo (the dock's Log) after
+// Resolve now. Board render to compare:
 // reference/designs/combat-hud/preview/GMDesktop.dc.html (state "Requests") and CmpPromptsGM.dc.html.
 
 const OUT = "test-results/visual/HUD-H5.1";
@@ -56,15 +57,20 @@ test("HUD-H5.1 the GM's request queue and Resolutions at desktop", { tag: "@visu
     await gm.setViewportSize({ width: 1440, height: 900 });
     await gm.goto(s.url);
     const queue = gm.getByTestId("hud-queue");
-    await expect(gm.getByTestId("hud-queue-count")).toHaveText("4", { timeout: 30_000 });
+    await expect(gm.getByTestId("hud-wait-count")).toHaveText("4", { timeout: 30_000 });
+    // The queue opens from "Waiting on you" (closed by default, plan combat-hud H9.2).
+    await gm.getByRole("button", { name: /^Waiting on you/ }).click();
+    await expect(queue).toBeVisible();
     await gm.waitForTimeout(500);
     await gm.screenshot({ path: `${OUT}/requests-full-1440.png`, animations: "disabled" });
     await gm.getByTestId("hud-queue-column").screenshot({ path: `${OUT}/queue-column.png`, animations: "disabled" });
 
     await queue.getByTestId("hud-queue-reactions").getByRole("button", { name: /^Resolve now/ }).click();
+    // Resolutions open from the dock's Log (H9.2).
+    await gm.getByRole("toolbar", { name: "Map controls" }).getByRole("button", { name: "Log" }).click();
     await expect(gm.getByTestId("hud-resolution").first()).toBeVisible({ timeout: 30_000 });
     await gm.waitForTimeout(300);
-    await gm.getByTestId("hud-queue-column").screenshot({ path: `${OUT}/queue-and-resolutions.png`, animations: "disabled" });
+    await gm.getByTestId("hud-log").screenshot({ path: `${OUT}/resolutions.png`, animations: "disabled" });
   } finally {
     await s.close();
   }

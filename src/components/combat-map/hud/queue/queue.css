@@ -1,21 +1,158 @@
 /*
  * The GM's request queue and Resolutions (plan combat-hud H5.1; boards GMDesktop `.gq` / `.gr` and CmpPromptsGM `.pc.gm`).
- * Placement: the shell's "left" region, bottom-left, above the GM's spotlight panel (the board hangs `.gq` at top 300, but
- * the party banners hang there and the spotlight panel sits at the very bottom, user 2026-11-02). The column grows
- * upward from the spotlight and never past the banners: it is capped at the viewport less the banners' 300 px and the
- * spotlight panel's height, and the queue's cards scroll inside it.
+ *
+ * Placement (plan combat-hud H9.2, GMDesktop / GMTablet `.wchip`): the shell's "waiting" region holds only the
+ * "Waiting on you" button, bottom-left (left 16, bottom 16, 56 px tall; tablet left 12, bottom 12, 52 px, label hidden).
+ * The queue opens above it (bottom 72, 330 px; tablet bottom 74, 300 px) and is capped below the party banners, its
+ * cards scrolling inside. Resolutions are behind the dock's Log (the shell's "log" region, dock.css) and in the GM's
+ * phone queue sheet (phone.css). The region also carries `hud-r-left` (responsive/tablet.css places that column under
+ * the banners); the rules below take the region back to the corner.
  */
 
+.hud-root .hud-r-waiting.hud-r-left {
+  top: auto;
+  right: auto;
+  left: 16px;
+  bottom: 16px;
+  width: auto;
+  display: block;
+}
+
+.hud-wait {
+  position: relative;
+}
+
+/* The button (GMDesktop `.wchip`). */
+.hud-wchip {
+  height: 56px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(11, 18, 20, 0.96);
+  color: #c8d3d0;
+  box-shadow:
+    0 0 0 1px #33444a,
+    0 14px 34px rgba(0, 0, 0, 0.5);
+  font: 600 13.5px var(--hud-font-ui);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.hud-wchip:hover {
+  color: #fff;
+}
+.hud-wchip:focus-visible {
+  outline: 2px solid var(--hud-gold);
+  outline-offset: 2px;
+}
+.hud-wchip > svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+.hud-wchip > .hud-wchip-chev {
+  width: 16px;
+  height: 16px;
+  transition: transform var(--hud-t-fast) var(--hud-ease-out);
+}
+.hud-wchip[aria-pressed="true"] {
+  color: var(--hud-fear-text);
+  box-shadow:
+    0 0 0 1px var(--hud-fear),
+    0 14px 34px rgba(0, 0, 0, 0.5);
+}
+.hud-wchip[aria-pressed="true"] > .hud-wchip-chev {
+  transform: rotate(180deg);
+}
+/* The count (GMDesktop `.wn` purple, `.wn0` grey "0"); hud/queue pulses it when a request arrives (Q10a). */
+.hud-wn {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: 700 12px/1 var(--hud-font-ui);
+  background: var(--hud-fear);
+  color: var(--hud-fear-ink);
+}
+.hud-wn.hud-wn0 {
+  background: #1f2b30;
+  color: #9fb2b6;
+}
+
+/* The queue above the button (GMDesktop `.st-queue .gq`): closed by default (hud/panels.ts "queue"). */
+.hud-root .hud-wait .hud-q-col {
+  position: absolute;
+  left: 0;
+  bottom: 56px;
+  width: 330px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - var(--app-bar-h, 0px) - 72px - 290px);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.hud-root .hud-wait[data-open="false"] .hud-q-col {
+  display: none;
+}
+
+/* The tablet (GMTablet `.tab .wchip`, `.tab .gq`). */
+@media (max-width: 1180px) {
+  .hud-root .hud-r-waiting.hud-r-left {
+    left: 12px;
+    bottom: 12px;
+  }
+  .hud-wchip {
+    height: 52px;
+    padding: 0 12px;
+  }
+  .hud-wchip > .hud-wchip-l {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .hud-root .hud-wait .hud-q-col {
+    bottom: 62px;
+    width: 300px;
+    max-height: calc(100dvh - var(--app-bar-h, 0px) - 74px - 236px);
+  }
+}
+
+/* The phone queue sheet, and anywhere the queue sits in a column (answer 13a). */
 .hud-q-col {
-  --hud-q-top: 300px;
-  --hud-q-below: 150px;
   display: flex;
   flex-direction: column;
   gap: 10px;
   width: 330px;
   max-width: 100%;
-  max-height: calc(100dvh - var(--hud-q-top) - var(--hud-q-below));
   min-height: 0;
+}
+
+/* Log: Resolutions above the dock on the right (the shell's "log" region; dock.css places it). */
+.hud-log .hud-res {
+  max-height: calc(100dvh - var(--app-bar-h, 0px) - 80px - 290px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* While a sheet or stat block is open, Log moves left of the panel (as the pop-ups do), so Undo stays reachable. */
+.hud-root.hud-sh-open .hud-r-log {
+  right: calc(var(--hud-sheet-w) + 16px);
+}
+@media (max-width: 1180px) {
+  .hud-root.hud-sh-open .hud-r-log {
+    right: calc(var(--hud-sheet-w) + 12px);
+  }
+  .hud-log .hud-res {
+    max-height: calc(100dvh - var(--app-bar-h, 0px) - 74px - 236px);
+  }
 }
 
 .hud-q,

@@ -5,7 +5,7 @@ import { expectNoSeriousA11yViolations } from "./a11y";
 import { HUD_MAP_W, hudScene } from "./hud/helpers";
 
 // Plan combat-hud H5.3 (docs/tasks/TASK-HUD-H5.3.md; GMDesktop 'Areas' and 'End scene', CmpPromptsGM 'End the
-// scene?'): with the HUD on, the GM's Areas opens "Areas on the map" at the bottom right (draw, list, remove); End
+// scene?'): with the HUD on, the GM's Areas (the dock, H9.0) opens "Areas on the map" at the bottom right above the dock (H9.2) (draw, list, remove); End
 // scene asks "End the scene?" naming what ends (combatHud.sceneEndPreview) and Keep playing ends nothing. The
 // "Spend n Fear?" card (FearConfirm) has no live host until H5.2's stat block; tests/unit/hud/fear-confirm.test.tsx
 // covers it.
@@ -32,18 +32,19 @@ test("the GM's Areas panel draws and lists areas; End scene names what ends and 
     await expect(playerTools.getByRole("button", { name: "Areas", exact: true })).toHaveCount(0);
     await expect(playerTools.getByRole("button", { name: "End scene" })).toHaveCount(0);
 
-    // Areas opens "Areas on the map" at the bottom right (GMDesktop .ar: right 16, bottom 16, 360 wide).
-    const tools = gm.getByRole("group", { name: "GM tools" });
+    // The dock's Areas opens "Areas on the map" bottom right above the dock (plan combat-hud H9.2, GMDesktop `.gmc .ar`:
+    // right 182, bottom 80, 360 wide).
+    const tools = gm.getByRole("toolbar", { name: "Map controls" });
     const areasButton = tools.getByRole("button", { name: "Areas", exact: true });
     await areasButton.click();
-    await expect(areasButton).toHaveAttribute("aria-expanded", "true");
+    await expect(areasButton).toHaveAttribute("aria-pressed", "true");
     const panel = gm.getByRole("dialog", { name: "Areas" });
     await expect(panel.getByRole("heading", { name: "Areas on the map" })).toBeVisible();
     await expect(panel).toContainText("No live area on this map.");
     const box = (await panel.boundingBox())!;
     const root = (await gm.getByTestId("combat-hud").boundingBox())!;
-    expect(Math.round(root.x + root.width - (box.x + box.width))).toBe(16);
-    expect(Math.round(root.y + root.height - (box.y + box.height))).toBe(16);
+    expect(Math.round(root.x + root.width - (box.x + box.width))).toBe(182);
+    expect(Math.round(root.y + root.height - (box.y + box.height))).toBe(80);
     expect(Math.round(box.width)).toBe(360);
     await test.info().attach("gm-areas-panel", { body: await gm.screenshot(), contentType: "image/png" });
 
@@ -81,16 +82,19 @@ test("the GM's Areas panel draws and lists areas; End scene names what ends and 
     // Keep playing ends nothing.
     await confirm.getByRole("button", { name: "Keep playing" }).click();
     await expect(confirm).toBeHidden();
+    if ((await areasButton.getAttribute("aria-pressed")) !== "true") await areasButton.click();
     await expect(row).toHaveCount(1);
     expect(await client.query(api.combatAreas.list, { campaignId, mapId: s.mapId })).toHaveLength(1);
 
-    // End the scene: the area closes and the toolbar reports it.
+    // End the scene: the area closes and the dock reports it. (The dock's End scene closes any other GM panel, one at a
+    // time, H9.0: Areas reopens from the dock.)
     await tools.getByRole("button", { name: "End scene" }).click();
     await confirm.getByRole("button", { name: "End the scene" }).click();
     await expect(confirm).toBeHidden();
-    await expect(gm.getByTestId("end-scene-status")).toContainText("1 map area closed");
-    await expect(panel).toContainText("No live area on this map.");
+    await expect(tools.getByTestId("end-scene-status")).toContainText("1 map area closed");
     await expect.poll(() => client.query(api.combatAreas.list, { campaignId, mapId: s.mapId })).toEqual([]);
+    if ((await areasButton.getAttribute("aria-pressed")) !== "true") await areasButton.click();
+    await expect(panel).toContainText("No live area on this map.");
 
     // With nothing left, the confirm says so.
     await tools.getByRole("button", { name: "End scene" }).click();
@@ -98,7 +102,9 @@ test("the GM's Areas panel draws and lists areas; End scene names what ends and 
     await confirm.press("Escape");
     await expect(confirm).toBeHidden();
 
-    // ✕ closes the panel and focus returns to Areas.
+    // ✕ closes the panel and focus returns to the dock's Areas (H9.2: through hud/panels.ts).
+    if ((await areasButton.getAttribute("aria-pressed")) !== "true") await areasButton.click();
+    await expect(panel).toBeVisible();
     await panel.getByRole("button", { name: "Close Areas" }).click();
     await expect(panel).toHaveCount(0);
     await expect(areasButton).toBeFocused();

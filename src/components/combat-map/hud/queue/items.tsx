@@ -8,7 +8,7 @@ import { refusalFor, refusalForCode, type Refusal } from "@/lib/errors/refusals"
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { RefusalMessage, hudToasts } from "../blocked";
-import { Popup, Stepper, WaitingDots, hudButtonClass } from "../ui";
+import { Popup, Stepper, WaitingDots, hudButtonClass, type HudButtonRole } from "../ui";
 import {
   DIFFICULTY_MAX,
   DIFFICULTY_MIN,
@@ -209,9 +209,14 @@ const ICON = {
 
 // ---------------------------------------------------------------- the cards
 
-function no(label: string, onClick: () => void, disabled: boolean, ariaLabel?: string): ReactNode {
+/**
+ * A card's secondary button, left of the primary (CmpPromptsGM `.pc-f`). `role` per the Arcane Glass rule (user design):
+ * the GM's answer to a player's request is Allow in Hope gold (primary `role: "allow"`) and Decline in Fear purple
+ * (`"deny"`), Decline on the left; "Cancel the roll" is `"cancel"`; the rest stay neutral.
+ */
+function no(label: string, onClick: () => void, disabled: boolean, ariaLabel?: string, role: HudButtonRole = "secondary"): ReactNode {
   return (
-    <button type="button" className={hudButtonClass()} disabled={disabled} aria-label={ariaLabel} onClick={onClick}>
+    <button type="button" className={hudButtonClass(role)} disabled={disabled} aria-label={ariaLabel} onClick={onClick}>
       {label}
     </button>
   );
@@ -243,8 +248,8 @@ export function QueueCard({ item, answers }: { item: QueueItem; answers: QueueAn
           title="Out of range: your call"
           sub={`${item.row.characterName} · ${use} on ${targetsText(item.row.targets, item.row.outOfRange)}`}
           testId="hud-queue-range"
-          primary={{ label: "Allow", ariaLabel: `Allow: ${label}`, disabled: busy, onClick: () => void answers.sanction(item, true) }}
-          secondary={no("Decline", () => void answers.sanction(item, false), busy, `Decline: ${label}`)}
+          primary={{ label: "Allow", ariaLabel: `Allow: ${label}`, role: "allow", disabled: busy, onClick: () => void answers.sanction(item, true) }}
+          secondary={no("Decline", () => void answers.sanction(item, false), busy, `Decline: ${label}`, "deny")}
         >
           <p>{outOfRangeReason(item.row.targets, item.row.outOfRange)} Nothing is rolled or paid until you decide.</p>
           <CardError text={error} />
@@ -315,7 +320,7 @@ export function QueueCard({ item, answers }: { item: QueueItem; answers: QueueAn
           title="Ally roll"
           sub={`${item.row.characterName} · ${item.row.featureName}`}
           testId="hud-queue-ally"
-          secondary={no("Cancel the roll", () => void answers.cancelAllyRoll(item), busy, `Cancel the roll: ${label}`)}
+          secondary={no("Cancel the roll", () => void answers.cancelAllyRoll(item), busy, `Cancel the roll: ${label}`, "cancel")}
         >
           <p>
             Waiting on {item.row.rollerName} to roll.
@@ -338,8 +343,8 @@ function DifficultyCard({ item, answers, busy, error }: { item: Extract<QueueIte
       title="Set the Difficulty"
       sub={`${item.row.characterName} · ${difficultyRoll(item.row)}`}
       testId="hud-queue-difficulty"
-      primary={{ label: "Set and roll", ariaLabel: `Set Difficulty ${value} and roll: ${label}`, disabled: busy, onClick: () => void answers.difficulty(item, value) }}
-      secondary={no("Decline", () => void answers.difficulty(item, null), busy, `Decline: ${label}`)}
+      primary={{ label: "Set and roll", ariaLabel: `Set Difficulty ${value} and roll: ${label}`, role: "allow", disabled: busy, onClick: () => void answers.difficulty(item, value) }}
+      secondary={no("Decline", () => void answers.difficulty(item, null), busy, `Decline: ${label}`, "deny")}
     >
       <p>{difficultyReason(item.row)}</p>
       <Stepper value={value} min={DIFFICULTY_MIN} max={DIFFICULTY_MAX} label="Difficulty" disabled={busy} onStep={(d) => setValue((v) => Math.min(DIFFICULTY_MAX, Math.max(DIFFICULTY_MIN, v + d)))} />

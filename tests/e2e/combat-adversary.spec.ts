@@ -112,11 +112,20 @@ const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const statBlockToken = (page: Page, name: string) =>
   page.getByRole("region", { name: "Battle map" }).getByRole("button", { name: new RegExp(`^Open the ${escape(name)}’s stat block`) });
 
+/** Opens Resolutions from the dock's Log, unless they are open (plan combat-hud H9.2). */
+async function openLog(page: Page) {
+  const log = page.getByRole("toolbar", { name: "Map controls" }).getByRole("button", { name: "Log" });
+  if ((await log.getAttribute("aria-pressed")) !== "true") await log.click();
+  await expect(log).toHaveAttribute("aria-pressed", "true");
+}
+
 async function openMapAsGm(page: Page, url: string) {
   await page.goto(url);
   await expect(page.getByTestId("combat-hud")).toBeVisible({ timeout: 30_000 });
   await expect(statBlockToken(page, "Bandit")).toBeVisible({ timeout: 30_000 });
   // The feed has loaded (the HUD's Resolutions read the same page as the flash layer): rows from now on flash.
+  // Resolutions open from the dock's Log (plan combat-hud H9.2).
+  await openLog(page);
   await expect(page.getByTestId("hud-resolutions")).toBeVisible({ timeout: 30_000 });
   await recordFlashes(page);
 }
@@ -174,7 +183,8 @@ test("the GM attacks Mira from the HUD stat block: the window shows on the Encou
     await expect(reactions).toHaveCount(0);
     await tab.close();
 
-    // The GM's HUD Resolutions list the adversary action; Undo restores Mira's sheet (U4).
+    // The GM's HUD Resolutions (Log) list the adversary action; Undo restores Mira's sheet (U4).
+    await openLog(page);
     const resolution = page.getByTestId("hud-resolution").filter({ hasText: /Club/ }).first();
     await expect(resolution).toBeVisible({ timeout: 30_000 });
     await resolution.getByRole("button", { name: /^Undo: / }).click();
