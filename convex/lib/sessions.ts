@@ -1,3 +1,4 @@
+import { sceneEncounterId } from "../../src/lib/domain/journal/scenes";
 import { logMark, windowsFromMarks, type LiveWindow } from "../../src/lib/domain/journal/windows";
 import { appError } from "../../src/lib/errors/app-error";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -65,20 +66,112 @@ export async function sessionPrepOf(ctx: QueryCtx, sessionId: Id<"sessions">): P
     .unique();
 }
 
+/** The encounter when the id names one of this campaign's encounters; a dangling or foreign id reads as null (S0). */
+export async function campaignEncounter(
+  ctx: QueryCtx,
+  campaignId: Id<"campaigns">,
+  id: Id<"encounters"> | undefined,
+): Promise<Doc<"encounters"> | null> {
+  if (id === undefined) return null;
+  const encounter = await ctx.db.get("encounters", id);
+  return encounter !== null && encounter.campaignId === campaignId ? encounter : null;
+}
+
 /**
- * The live session, else the newest planned one (B11), with its linked D8 encounter when that still exists in this
- * campaign; null without such a session or link (a dangling link reads as none). Used by the Combat Map's
- * '+ Session encounter' (S8) and the Sessions hub's tracker chip (`sessionPrep.current`).
+ * The encounter the session plays now (Journal JD4, Q6 / Q7) and the scene it belongs to: the playing Combat scene's
+ * encounter; else the first Combat scene after it (from the top without a playing scene) that is not done and has
+ * one; else the legacy session encounter (`sessionPrep.encounterId`, no `sceneId`). A scene's encounter is
+ * `sceneEncounterId` (its own, or the legacy one on the first Combat scene). Dangling links are skipped. Reads at
+ * most MAX_SCENES + 1 encounters.
+ */
+export async function sessionPlayEncounter(
+  ctx: QueryCtx,
+  session: Doc<"sessions">,
+  prep: Doc<"sessionPrep"> | null,
+): Promise<{ encounter: Doc<"encounters">; sceneId?: string } | null> {
+  if (prep === null) return null;
+  const playing = prep.scenes.findIndex((s) => s.state === "playing");
+  for (const [i, scene] of prep.scenes.entries()) {
+    if (scene.type !== "combat") continue;
+    if (i !== playing && (i < playing || scene.state === "done")) continue;
+    const encounter = await campaignEncounter(ctx, session.campaignId, sceneEncounterId(scene, i, prep));
+    if (encounter !== null) return { encounter, sceneId: scene.id };
+  }
+  const legacy = await campaignEncounter(ctx, session.campaignId, prep.encounterId);
+  return legacy === null ? null : { encounter: legacy };
+}
+
+/**
+ * The live session, else the newest planned one (B11), with the encounter it plays now (`sessionPlayEncounter`: the
+ * playing or next Combat scene's, else the legacy session encounter) and that scene's id; null without such a
+ * session or encounter. Used by the Combat Map's '+ Session encounter' (S8) and the Sessions hub's tracker chip
+ * (`sessionPrep.current`).
  */
 export async function currentSessionEncounter(
   ctx: QueryCtx,
   campaignId: Id<"campaigns">,
-): Promise<{ session: Doc<"sessions">; encounter: Doc<"encounters"> } | null> {
+): Promise<{ session: Doc<"sessions">; encounter: Doc<"encounters">; sceneId?: string } | null> {
   const session = (await liveSession(ctx, campaignId)) ?? (await newestPlannedSession(ctx, campaignId));
   if (session === null) return null;
-  const encounterId = (await sessionPrepOf(ctx, session._id))?.encounterId;
-  const encounter = encounterId === undefined ? null : await ctx.db.get("encounters", encounterId);
-  return encounter !== null && encounter.campaignId === campaignId ? { session, encounter } : null;
+  const found = await sessionPlayEncounter(ctx, session, await sessionPrepOf(ctx, session._id));
+  return found === null ? null : { session, ...found };
+}
+
+// ---------------------------------------------------------------- scene progress (Journal JD4, Q7)
+
+/** 'Scene N began · <title>' (N counts every scene from 1; without a title 'Scene N began'), cut to the log cap. */
+export function sceneBeganLine(n: number, title: string | undefined): string {
+  const text = title ? `Scene ${n} began · ${title}` : `Scene ${n} began`;
+  const max = SESSION_TEXT_MAX.log;
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+/**
+ * Marks the scene at `index` Playing now (Q7); the scene that was playing becomes Done. While the session is live it
+ * writes one auto log line, event 'scene', 'Scene N began · <title>' (a full log gets no line rather than failing the
+ * change; `liveWindows` ignores scene lines). A scene already playing is left alone and writes no second line, so a
+ * retry changes nothing. Returns whether the scene changed.
+ */
+export async function playScene(ctx: MutationCtx, session: Doc<"sessions">, prep: Doc<"sessionPrep">, index: number, by: Id<"users">): Promise<boolean> {
+  const scene = prep.scenes[index];
+  if (scene === undefined || scene.state === "playing") return false;
+  const now = Date.now();
+  const scenes = prep.scenes.map((s, i) => {
+    if (i === index) return { ...s, state: "playing" as const };
+    return s.state === "playing" ? { ...s, state: "done" as const } : s;
+  });
+  await ctx.db.patch("sessionPrep", prep._id, { scenes, updatedAt: now });
+  if (session.status !== "live") return true;
+  const rows = await ctx.db
+    .query("sessionLog")
+    .withIndex("by_session_at", (q) => q.eq("sessionId", session._id))
+    .take(MAX_LOG_ENTRIES);
+  if (rows.length >= MAX_LOG_ENTRIES) return true;
+  await ctx.db.insert("sessionLog", {
+    campaignId: session.campaignId,
+    sessionId: session._id,
+    at: now,
+    text: sceneBeganLine(index + 1, scene.title),
+    by,
+    auto: true,
+    event: "scene",
+  });
+  return true;
+}
+
+/**
+ * The Combat Map hook (user Q7: scene progress is automatic from the Combat Map). After '+ Session encounter'
+ * (`combatTokens.placeSessionEncounter`) starts or places `found`'s encounter, that encounter's scene becomes
+ * Playing now (`playScene`). Only while the session is live; a legacy encounter with no scene, or a scene already
+ * playing, changes nothing.
+ */
+export async function playCurrentScene(ctx: MutationCtx, found: { session: Doc<"sessions">; sceneId?: string }, by: Id<"users">): Promise<void> {
+  if (found.sceneId === undefined || found.session.status !== "live") return;
+  const prep = await sessionPrepOf(ctx, found.session._id);
+  if (prep === null) return;
+  const index = prep.scenes.findIndex((s) => s.id === found.sceneId);
+  if (index === -1) return;
+  await playScene(ctx, found.session, prep, index, by);
 }
 
 // ---------------------------------------------------------------- numbers and caps

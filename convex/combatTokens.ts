@@ -25,7 +25,7 @@ import { pcPortrait } from "./lib/pcPortrait";
 import { tokenViewValidator, type TokenView } from "./lib/validators/combatTokens";
 import { campaignMutation, gmMutation, keyedGmMutation } from "./lib/functions";
 import { atLeast, permissionFor } from "./lib/permissions";
-import { currentSessionEncounter } from "./lib/sessions";
+import { currentSessionEncounter, playCurrentScene } from "./lib/sessions";
 import { tokenSideValidator } from "./lib/validators/combatMaps";
 import { encounterConditionValidator } from "./lib/validators/encounters";
 import { adversaryType, instancesOf, placedInstances, runningEncounter, type CampaignCtx } from "./lib/combatTokenViews";
@@ -231,6 +231,8 @@ export const placeSessionEncounter = keyedGmMutation({
       if (found === null) throw appError("SESSION_NO_ENCOUNTER");
       const { session, encounter } = found;
       const started = await startEncounter(ctx, campaignId, encounter, "End the running encounter first.");
+      // Journal JD4 (Q7): the encounter's scene becomes Playing now, "Scene N began" logged while live.
+      await playCurrentScene(ctx, found, ctx.user._id);
       const existing = await tokensOnMap(ctx, map._id);
       const placed = placedInstances(existing);
       const adding: NewToken[] = [];
