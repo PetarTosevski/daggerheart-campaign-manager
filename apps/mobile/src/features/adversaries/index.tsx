@@ -1,16 +1,22 @@
-import { useQuery } from "convex/react";
+import { QueryBoundary } from "../sheet/query-boundary";
 
-import { api } from "../../convex";
-import { useCampaign } from "../../shell/campaign-provider";
-import { NotBuiltYet } from "../../shell/not-built-yet";
-import { sectionLabel } from "../../shell/sections";
+import { EncounterView } from "./encounter-screen";
+import { AdversariesView } from "./screen";
 
-/**
- * GM encounters list. The route renders this only after `campaigns.get` says
- * the caller is the GM, so a player never subscribes.
- */
+/** GM adversaries: catalogue, encounters and environments. The route renders it only for the GM. */
 export function AdversariesScreen() {
-  const campaign = useCampaign();
-  useQuery(api.encounters.list, { campaignId: campaign._id });
-  return <NotBuiltYet title={sectionLabel("adversaries")} />;
+  return (
+    <QueryBoundary>
+      <AdversariesView />
+    </QueryBoundary>
+  );
+}
+
+/** One encounter's tracker. The route renders it only for the GM. */
+export function EncounterScreen() {
+  return (
+    <QueryBoundary>
+      <EncounterView />
+    </QueryBoundary>
+  );
 }
