@@ -611,7 +611,7 @@ or read the last backup time.
 - Q7 (a) Only the creator promotes / demotes co-GMs and archives.
 - Q8 (b) Existing members AND invite by email directly as co-GM.
 - Q9 (a) Archive = read-only for all, not while live, listed under Archived, no cap count, creator restores.
-- Q10 OPEN: the user wants screenshots of the exact duplicate screens before deciding.
+- Q10 (b) Keep all three (dashboard Campaign Rules panel, top-bar Players dialog, Combat Map cards switch) as shortcuts to the same settings; SX removes none of them.
 - Q11 (b) Use @convex-dev/presence (new dependency).
 - Q12 (a) CSS zoom: Small 0.9, Medium 1, Large 1.15.
 - Q13 (a) On = calmer; Off follows the device.
