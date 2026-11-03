@@ -35,7 +35,7 @@ function DrawerMount() {
   const campaign = useCampaign();
   const pathname = usePathname();
   const onPage = pathname === `/campaigns/${campaign._id}/lorekeeper`;
-  // On the combat map at phone width (≤ 760 px) the pill would cover the HUD's bottom sheets: it hides there and the
+  // On the combat map at tablet and phone width (≤ 1180 px, user 2026-11-03) the pill would cover the HUD's bottom sheets: it hides there and the
   // Lorekeeper stays one tap away in the nav (user answer 2026-11-02, TASK-HUD-H7.3).
   const onMap = pathname === `/campaigns/${campaign._id}/combat-map`;
   const available = useQuery(api.lorekeeper.available, onPage ? "skip" : { campaignId: campaign._id });
@@ -64,7 +64,7 @@ function DrawerMount() {
           setWanted(true);
           setOpenAt(pathname);
         }}
-        className={`fixed right-4 bottom-4 z-40 flex min-h-[52px] cursor-pointer items-center gap-2 rounded-full border-[1.5px] border-[#c9a24a] bg-[#1a120a] py-2.5 pr-4 pl-2.5 font-display text-[15px] font-bold text-[#f3cf86] shadow-[0_8px_24px_rgba(0,0,0,0.5)] hover:brightness-125 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e3b45a] sm:right-6 sm:bottom-6${onMap ? " [@media(max-width:760px)]:hidden" : ""}`}
+        className={`fixed right-4 bottom-4 z-40 flex min-h-[52px] cursor-pointer items-center gap-2 rounded-full border-[1.5px] border-[#c9a24a] bg-[#1a120a] py-2.5 pr-4 pl-2.5 font-display text-[15px] font-bold text-[#f3cf86] shadow-[0_8px_24px_rgba(0,0,0,0.5)] hover:brightness-125 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e3b45a] sm:right-6 sm:bottom-6${onMap ? " [@media(max-width:1180px)]:hidden" : ""}`}
       >
         <span aria-hidden="true" className="flex size-[30px] items-center justify-center rounded-full border-[1.5px] border-[#c9a24a] bg-[#1a120a]">
           <SigilIcon size={20} />
