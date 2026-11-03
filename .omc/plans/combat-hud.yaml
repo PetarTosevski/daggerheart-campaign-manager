@@ -1186,6 +1186,10 @@ waves:
         questions: [Q6]
         depends_on: [H9.0]
         owns:
+          - tests/unit/hud/fear-scene.test.tsx
+          - tests/e2e/live-combat.spec.ts
+          - tests/e2e/combat-end-scene.spec.ts
+          - tests/e2e/visual/HUD-H1.2.spec.ts
           - src/components/combat-map/hud/scene/**
           - tests/unit/hud/scene.test.tsx
           - tests/e2e/hud-fear.spec.ts
