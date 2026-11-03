@@ -6,7 +6,8 @@
  *   `sessionId`, that session; without one, the newest planned session, created when there is none (B8). Pressing
  *   it for the live session does nothing (`alreadyStarted`, E1). Another live session is ended first with every end
  *   effect (B6); a played session starts again and its start effects run again (B7).
- * - `end`: ends the live session (status played, `endedAt`, its tally window added to `sessions.tally`, Q3) and, for
+ * - `end`: ends the live session (status played, `endedAt`, its tally window added to `sessions.tally`, Q3, and the
+ *   window's length to `sessions.playedMs`, Journal Q3) and, for
  *   every PC, clears session effects and ends the scene (`expire(sheet, "session")`; the campaign's live map areas
  *   with `expires` `scene` or `session` close, `endSceneAreas`, plan drawer-answers DA4), runs `onSessionEnd`, and turns Wither tokens into Fear (unless the GM keeps them: `convertWither`, house rule `witherPersists`);
  *   the tokens become GM Fear capped at 12, the rest reported as lost (CB 261; decision). Ending with nothing to
@@ -96,9 +97,10 @@ async function saveChanged(
 /**
  * Writes one auto line ('Session started.' / 'Session ended.' plus what the party sync did, B10) into the session's
  * log. A full log (MAX_LOG_ENTRIES) gets no stamp rather than failing the start or end; a line past the log cap is
- * shortened with an ellipsis.
+ * shortened with an ellipsis. `event` tags the line as the start or end of a live window (Journal J0), which
+ * `liveWindows` (convex/lib/sessions.ts) reads; `at` is the session's `startedAt` / `endedAt`.
  */
-async function stampLog(ctx: MutationCtx, session: Doc<"sessions">, by: Id<"users">, text: string): Promise<void> {
+async function stampLog(ctx: MutationCtx, session: Doc<"sessions">, by: Id<"users">, text: string, event: "start" | "end", at: number): Promise<void> {
   const rows = await ctx.db
     .query("sessionLog")
     .withIndex("by_session_at", (q) => q.eq("sessionId", session._id))
@@ -106,7 +108,7 @@ async function stampLog(ctx: MutationCtx, session: Doc<"sessions">, by: Id<"user
   if (rows.length >= MAX_LOG_ENTRIES) return;
   const max = SESSION_TEXT_MAX.log;
   const line = text.length > max ? `${text.slice(0, max - 1)}…` : text;
-  await ctx.db.insert("sessionLog", { campaignId: session.campaignId, sessionId: session._id, at: Date.now(), text: line, by, auto: true });
+  await ctx.db.insert("sessionLog", { campaignId: session.campaignId, sessionId: session._id, at, text: line, by, auto: true, event });
 }
 
 /** The board's log line: the stamp, then the notes joined by '; ' and closed with a full stop. */
@@ -252,13 +254,22 @@ async function runEnd(ctx: GmCtx, convertWither?: boolean): Promise<EndResult> {
   const from = live.startedAt ?? endedAt;
   const rows = await tallyRows(ctx, campaignId, from, endedAt);
   const tally = addTally(live.tally, windowTally(rows.fear, rows.rests, { from, to: endedAt }));
-  await ctx.db.patch("sessions", live._id, { status: "played", endedAt, tally, updatedAt: endedAt });
-  await stampLog(ctx, live, ctx.user._id, logLine("Session ended.", [
+  // Journal Q3: the window's length adds to the session's time at the table.
+  const playedMs = (live.playedMs ?? 0) + Math.max(0, endedAt - from);
+  await ctx.db.patch("sessions", live._id, { status: "played", endedAt, tally, playedMs, updatedAt: endedAt });
+  await stampLog(
+    ctx,
+    live,
+    ctx.user._id,
+    logLine("Session ended.", [
       ...lostDice,
       ...features,
       ...(tokens > 0 ? [witherNote(tokens, gained, lost)] : []),
       ...(kept > 0 ? [`${kept} Wither token${kept === 1 ? "" : "s"} kept on the sheets`] : []),
-    ]));
+    ]),
+    "end",
+    endedAt,
+  );
   return { ...report, sessionId: live._id, n: live.n };
 }
 
@@ -361,7 +372,7 @@ export const start = keyedGmMutation({
       await logAction(ctx, { campaignId, actorId: ctx.user._id, kind: "session", visibility: "public", summary: "Session started", groupId, undoable: true });
 
       const notes = prayerNotes(changes);
-      await stampLog(ctx, target, ctx.user._id, logLine("Session started.", [...notes, ...features]));
+      await stampLog(ctx, target, ctx.user._id, logLine("Session started.", [...notes, ...features]), "start", startedAt);
       return {
         startedAt,
         alreadyStarted: false,

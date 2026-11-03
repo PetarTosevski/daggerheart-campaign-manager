@@ -1,8 +1,9 @@
+import { logMark, windowsFromMarks, type LiveWindow } from "../../src/lib/domain/journal/windows";
 import { appError } from "../../src/lib/errors/app-error";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { MAX_CHARACTERS_PER_CAMPAIGN } from "./characterSheet";
-import { MAX_LOG_ENTRIES, MAX_SESSIONS, SESSION_TEXT_MAX, type SessionTextField } from "./validators/sessions";
+import { MAX_LOG_ENTRIES, MAX_LOG_OVERRIDES, MAX_SESSIONS, SESSION_TEXT_MAX, type SessionTextField } from "./validators/sessions";
 
 /**
  * Shared helpers of the D10 session functions (S2-S8, plan `.omc/plans/d10-sessions.yaml`): loaders that keep every
@@ -151,8 +152,8 @@ export function assertSessionDate(value: string): void {
 // ---------------------------------------------------------------- deleting
 
 /**
- * Deletes a session's prep, log and spotlight rows (bounded by MAX_LOG_ENTRIES and the campaign's character cap)
- * and returns how many it deleted. The session row is the caller's (S2 remove deletes it after this); a linked D8
+ * Deletes a session's prep, log, spotlight, log override and per-PC stats rows (bounded by MAX_LOG_ENTRIES,
+ * MAX_LOG_OVERRIDES and the campaign's character cap) and returns how many it deleted. The session row is the caller's (S2 remove deletes it after this); a linked D8
  * encounter stays (Q1: the link lives on the prep row only).
  */
 export async function deleteSessionRows(ctx: MutationCtx, sessionId: Id<"sessions">): Promise<number> {
@@ -174,7 +175,44 @@ export async function deleteSessionRows(ctx: MutationCtx, sessionId: Id<"session
     .withIndex("by_session_character", (q) => q.eq("sessionId", sessionId))
     .take(MAX_CHARACTERS_PER_CAMPAIGN);
   for (const row of spotlights) await ctx.db.delete("sessionSpotlights", row._id);
-  return deleted + spotlights.length;
+  deleted += spotlights.length;
+  // Journal J0: the GM's log overrides and the per-PC tally counters go with the session.
+  const overrides = await ctx.db
+    .query("sessionLogOverrides")
+    .withIndex("by_session_source", (q) => q.eq("sessionId", sessionId))
+    .take(MAX_LOG_OVERRIDES + 1);
+  for (const row of overrides) await ctx.db.delete("sessionLogOverrides", row._id);
+  deleted += overrides.length;
+  const stats = await ctx.db
+    .query("sessionCharacterStats")
+    .withIndex("by_session_character", (q) => q.eq("sessionId", sessionId))
+    .take(MAX_SESSION_CHARACTER_STATS);
+  for (const row of stats) await ctx.db.delete("sessionCharacterStats", row._id);
+  return deleted + stats.length;
+}
+
+// ---------------------------------------------------------------- live windows (Journal J0)
+
+/** `sessionCharacterStats` rows per session: one per PC, so the campaign's character cap. */
+export const MAX_SESSION_CHARACTER_STATS = MAX_CHARACTERS_PER_CAMPAIGN;
+
+/**
+ * The session's live windows, oldest first (D10 B7: a played session can start again). Read from the session's auto
+ * start / end log lines (`event`, or the 'Session started' / 'Session ended' text of lines written before Journal J0;
+ * GM-typed lines never count), else [startedAt, endedAt ?? now]; a live session's last window is open and ends at
+ * `now`. Every "during the session" read of the Journal uses this, never `startedAt` alone. Reads at most
+ * MAX_LOG_ENTRIES lines (the log's cap). See `windowsFromMarks` (src/lib/domain/journal/windows.ts).
+ */
+export async function liveWindows(ctx: QueryCtx, session: Doc<"sessions">, now: number = Date.now()): Promise<LiveWindow[]> {
+  const rows = await ctx.db
+    .query("sessionLog")
+    .withIndex("by_session_at", (q) => q.eq("sessionId", session._id))
+    .take(MAX_LOG_ENTRIES);
+  const marks = rows.flatMap((row) => {
+    const mark = logMark(row);
+    return mark === null ? [] : [mark];
+  });
+  return windowsFromMarks(marks, session, now);
 }
 
 // ---------------------------------------------------------------- tally (Q3)

@@ -23,4 +23,10 @@ export const sessionMessages = {
   SESSION_NO_ENCOUNTER: "No planned session with an encounter.",
   /** Creating or linking an encounter for a session that already has one (one encounter per session, Q1). */
   SESSION_HAS_ENCOUNTER: "This session already has an encounter. Unlink it first.",
+  /** Journal: hiding or editing a log line whose source row (feed, Fear, encounter, stamp) is not in this session's log. */
+  SESSION_LOG_SOURCE_NOT_FOUND: "That log line isn't in this session's log anymore.",
+  /** Journal: MAX_LOG_OVERRIDES hidden or edited lines per session. */
+  SESSION_LOG_OVERRIDE_LIMIT: "This session already has 500 hidden or edited log lines. Show one again first.",
+  /** Journal (Q7): a scene state change that is not allowed (e.g. 'Playing now' on a session that is not live or planned). */
+  SESSION_SCENE_STATE: "That scene can't change to that state now.",
 } as const satisfies Record<string, string>;

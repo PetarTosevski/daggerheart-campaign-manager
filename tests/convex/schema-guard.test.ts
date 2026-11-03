@@ -121,6 +121,8 @@ const CAMPAIGN_SCOPED = [
   "sessionPrep",
   "sessionLog",
   "sessionSpotlights",
+  "sessionLogOverrides",
+  "sessionCharacterStats",
   "spritePacks",
   "spritePackSprites",
   "journals",

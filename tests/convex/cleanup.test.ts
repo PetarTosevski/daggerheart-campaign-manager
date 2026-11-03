@@ -188,6 +188,9 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     await ins("sessionPrep", { campaignId: c, sessionId, scenes: [{ id: "s1", type: "combat", text: "Ambush" }], hooks: "", encounterId, updatedAt: now });
     await ins("sessionLog", { campaignId: c, sessionId, at: now, text: "Session started.", by: userId, auto: true });
     await ins("sessionSpotlights", { campaignId: c, sessionId, characterId, count: 2 });
+    // A hidden feed line and a PC's tally counters of that session (Journal J0).
+    await ins("sessionLogOverrides", { campaignId: c, sessionId, source: "feed", sourceId: "feed-row", hidden: true, updatedAt: now });
+    await ins("sessionCharacterStats", { campaignId: c, sessionId, characterId, hopeSpent: 2, hpMarked: 3 });
     await ins("files", { storageId: blobs.combatImage, campaignId: c, uploadedBy: userId, kind: "combatMap", refId: combatMapId, createdAt: now });
     // A GM sprite pack with one uploaded sprite and its image (sprite packs P0); the map uses it.
     const packId = await ins("spritePacks", { campaignId: c, name: "Standing stones", extends: "forest", createdBy: userId, createdAt: now, updatedAt: now });
@@ -453,7 +456,7 @@ describe("cleanup crons", () => {
     expect(await leftovers(t, due)).toEqual({ rows: {}, blobs: [] });
     expect(await leftovers(t, live)).toEqual(liveBefore);
     expect(liveBefore.rows).toMatchObject({ combatMaps: 1, combatTokens: 1, combatMapObjects: 2, combatMapCells: 1, combatExplored: 1 });
-    expect(liveBefore.rows).toMatchObject({ sessions: 1, sessionPrep: 1, sessionLog: 1, sessionSpotlights: 1 });
+    expect(liveBefore.rows).toMatchObject({ sessions: 1, sessionPrep: 1, sessionLog: 1, sessionSpotlights: 1, sessionLogOverrides: 1, sessionCharacterStats: 1 });
   });
 
   it("purges a campaign's journals, pages (torn-out ones too), recipients and entries in batches (D11)", async () => {
@@ -494,7 +497,7 @@ describe("cleanup crons", () => {
     expect(await leftovers(t, live)).toEqual(liveBefore);
   });
 
-  it("deletes one session's prep, log and spotlight rows and leaves the linked encounter and other sessions (D10)", async () => {
+  it("deletes one session's prep, log, spotlight, override and stats rows and leaves the linked encounter and other sessions (D10, Journal J0)", async () => {
     const t = makeTest();
     const userId = await user(t);
     const s = await seedCampaign(t, userId, undefined);
@@ -502,6 +505,8 @@ describe("cleanup crons", () => {
       const now = Date.now();
       const otherId = await ctx.db.insert("sessions", { campaignId: s.campaignId, n: 2, status: "planned", createdAt: now, updatedAt: now });
       await ctx.db.insert("sessionLog", { campaignId: s.campaignId, sessionId: otherId, at: now, text: "Keep me", by: userId, auto: false });
+      await ctx.db.insert("sessionLogOverrides", { campaignId: s.campaignId, sessionId: otherId, source: "fear", sourceId: "keep", hidden: true, updatedAt: now });
+      await ctx.db.insert("sessionCharacterStats", { campaignId: s.campaignId, sessionId: otherId, characterId: s.characterId, hopeSpent: 1, hpMarked: 0 });
       for (let i = 0; i < 30; i++) {
         await ctx.db.insert("sessionLog", { campaignId: s.campaignId, sessionId: s.sessionId, at: now + i, text: `Line ${i}`, by: userId, auto: false });
       }
@@ -510,10 +515,10 @@ describe("cleanup crons", () => {
 
     const deleted = await t.run((ctx) => deleteSessionRows(ctx, s.sessionId));
 
-    // One prep row, 31 log lines and one spotlight row.
-    expect(deleted).toBe(33);
+    // One prep row, 31 log lines, one spotlight row, one override and one stats row.
+    expect(deleted).toBe(35);
     const left = await leftovers(t, s);
-    expect(left.rows).toMatchObject({ sessions: 2, sessionLog: 1, encounters: 1 });
+    expect(left.rows).toMatchObject({ sessions: 2, sessionLog: 1, encounters: 1, sessionLogOverrides: 1, sessionCharacterStats: 1 });
     expect(left.rows.sessionPrep).toBeUndefined();
     expect(left.rows.sessionSpotlights).toBeUndefined();
     expect(await t.run((ctx) => ctx.db.get("encounters", s.encounterId))).not.toBeNull();

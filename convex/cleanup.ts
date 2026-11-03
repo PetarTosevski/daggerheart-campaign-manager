@@ -327,6 +327,15 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
     const rows = await ctx.db.query("sessionSpotlights").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "sessionSpotlights", rows);
   },
+  // Journal J0: the GM's log overrides and the per-PC tally counters.
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("sessionLogOverrides").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "sessionLogOverrides", rows);
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("sessionCharacterStats").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "sessionCharacterStats", rows);
+  },
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("sessionPrep").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "sessionPrep", rows);
