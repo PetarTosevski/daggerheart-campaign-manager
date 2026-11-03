@@ -837,6 +837,7 @@ waves:
           - src/components/combat-map/slots.ts
           - src/components/combat-map/hud/flag.ts
           - src/components/combat-map/hud/index.ts
+          - src/components/combat-map/hud/token/hooks.ts
           - src/components/combat-map/hud/shell.tsx
           - src/components/combat-map/hud/tools/**
           - src/components/combat-map/tokens/tokens-layer.tsx
@@ -899,6 +900,8 @@ waves:
           - tests/e2e/visual/CA-CA5.spec.ts
           - tests/e2e/visual/CA-CA6.spec.ts
           - tests/e2e/hud/helpers.ts
+          - tests/unit/hud/h0-state.test.tsx
+          - tests/e2e/hud-shell.spec.ts
           - docs/tasks/TASK-HUD-H8.1.md
         reads:
           - src/components/combat-map/hud/**
