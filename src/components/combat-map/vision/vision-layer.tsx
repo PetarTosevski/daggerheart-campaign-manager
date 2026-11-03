@@ -17,6 +17,8 @@ import { spriteName } from "../editor/sprite-palette";
 import { useMapView } from "../map-view/context";
 import { hasUploadedRefs } from "../map-view/paint-spec";
 import { useCombatTargets } from "../actions/targets/state";
+import { isLit, type SpotlightLit } from "../hud/spotlight/model";
+import { SpotlightPools, useSpotlightLit } from "../hud/spotlight/light";
 import { TokenFace, otherFace, useHudTokens } from "../hud/token";
 import type { MapLayerProps } from "../slots";
 import { initialsOf } from "../tokens/geometry";
@@ -165,6 +167,8 @@ export function VisionLayer(props: MapLayerProps) {
   // Combat HUD (plan combat-hud H1.3): inside the HUD shell the other tokens wear the HUD face (side colour, condition
   // names; never an arc or a number, hard rule 2); otherwise the classic face, unchanged.
   const hudFace = useHudTokens(mode) !== null;
+  // The spotlit adversary stands in a stage light, only when it is one of the tokens drawn here (bead dcm-bxp.99.32.35).
+  const lit = useSpotlightLit(campaignId, hudFace);
   const canvas = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -349,6 +353,7 @@ export function VisionLayer(props: MapLayerProps) {
           targeted={targets.targetTokenIds}
           onTarget={targets.toggleTarget}
           hudFace={hudFace}
+          lit={lit}
         />
       ) : null}
       {brushing ? (
@@ -505,6 +510,7 @@ function OtherTokens({
   targeted,
   onTarget,
   hudFace,
+  lit,
 }: {
   others: OtherToken[];
   w: number;
@@ -520,10 +526,13 @@ function OtherTokens({
   onTarget: (id: Id<"combatTokens">) => void;
   /** Combat HUD H1.3: draw the HUD face (no numbers: `others` carry none) instead of the classic one. */
   hudFace: boolean;
+  /** What the scene spotlight lights (HUD only), matched against these tokens: never one the viewer is not sent. */
+  lit: SpotlightLit | null;
 }) {
   return (
     <div className="cm-tokens cm-vis-others" data-testid="combat-other-tokens" style={{ width: (w + 2 * pad) * cell, height: (h + 2 * pad) * cell, transform: `scale(${zoom})` }}>
       <div className="cm-tokens-map" style={{ left: pad * cell, top: pad * cell }}>
+        <SpotlightPools lit={lit} tokens={others} cell={cell} />
         {others
           .filter((t) => ringsOn(t._id))
           .map((t) => {
@@ -589,7 +598,7 @@ function OtherTokens({
               }}
             >
               <span className="cm-face" aria-hidden="true" style={{ transform: `rotate(${deg}deg)`, ["--tc" as string]: side.colour }} />
-              {face ? <TokenFace face={face} name={t.name} initials={initialsOf(t.name, t.size)} size={t.size * cell} /> : null}
+              {face ? <TokenFace face={face} name={t.name} initials={initialsOf(t.name, t.size)} size={t.size * cell} lit={isLit(lit, t)} /> : null}
               {face || art ? null : (
                 <span className="cm-ini" aria-hidden="true" style={{ fontSize: Math.round(t.size * cell * 0.34) }}>
                   {initialsOf(t.name, t.size)}

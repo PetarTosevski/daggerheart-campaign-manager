@@ -10,6 +10,9 @@
  * - `moveToGm(ctx, campaign, reason, rollBy?)`: the engine's call when a PC's action roll comes up with Fear or fails
  *   (`rollWithFear` / `failedRoll`), or the GM spotlights an adversary (`adversary`). Wired by bead dcm-bxp.99.32.4;
  *   until then only the GM's `combatSpotlight.gmTake` moves it.
+ * - `spotlightAdversary(ctx, campaign, tokenId)`: the GM spotlights one adversary (`combatSpotlight.gmTake({ tokenId })`,
+ *   reason `adversary`); the row names its token (`adversaryTokenId`) so the map can light it (bead dcm-bxp.99.32.35).
+ *   A move to the GM from a PC and a hand-back to a PC clear it.
  * - `giveTo(ctx, campaign, characterId)`: the GM hands it to a PC (`combatSpotlight.handTo`).
  * - `assertMayAct(ctx, campaign, character, kind)`: refuses a player's `action` or token `move` with
  *   SPOTLIGHT_WITH_GM while the GM holds the spotlight; a `reaction` always passes, and so does the GM. Wired by bead
@@ -27,6 +30,7 @@ import { appError } from "../../src/lib/errors/app-error";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { SpotlightHolder, SpotlightReason } from "../tables/combatSpotlight";
+import { loadCombatToken } from "./combatMaps";
 import { atLeast, permissionFor } from "./permissions";
 
 /** What a player is about to do: an `action` (a roll, a card, a feature, an attack), a token `move`, or a `reaction`. */
@@ -53,18 +57,27 @@ function sameHolder(a: SpotlightHolder, b: SpotlightHolder): boolean {
   return a.characterId === b.characterId;
 }
 
-/** Writes the campaign's holder; returns false (and writes nothing) when it already holds it. */
+/**
+ * Writes the campaign's holder; returns false (and writes nothing) when it already holds it. `adversaryTokenId` (GM
+ * holder only) names the adversary spotlighted: a different one while the GM already holds it is written (the GM's
+ * turn goes on, `since` kept); without one, a GM who already holds it keeps the lit adversary.
+ */
 async function setHolder(
   ctx: MutationCtx,
   campaignId: Id<"campaigns">,
   holder: SpotlightHolder,
   reason: SpotlightReason,
   rollBy: Id<"characters"> | undefined,
+  adversaryTokenId?: Id<"combatTokens">,
 ): Promise<boolean> {
   const row = await spotlightOf(ctx, campaignId);
-  // Unchanged holder: no write, so a run of Fear rolls does not re-run every reader (CD10).
-  if (row !== null && sameHolder(row.holder, holder)) return false;
-  const next = { holder, since: Date.now(), reason, rollBy };
+  // Unchanged holder (and adversary): no write, so a run of Fear rolls does not re-run every reader (CD10).
+  if (row !== null && sameHolder(row.holder, holder)) {
+    if (adversaryTokenId === undefined || row.adversaryTokenId === adversaryTokenId) return false;
+    await ctx.db.patch("combatSpotlight", row._id, { reason, rollBy: undefined, adversaryTokenId });
+    return true;
+  }
+  const next = { holder, since: Date.now(), reason, rollBy, adversaryTokenId };
   if (row === null) await ctx.db.insert("combatSpotlight", { campaignId, ...next });
   else await ctx.db.replace("combatSpotlight", row._id, { campaignId, ...next });
   return true;
@@ -82,6 +95,18 @@ export async function moveToGm(
 ): Promise<boolean> {
   const fromRoll = reason === "rollWithFear" || reason === "failedRoll";
   return setHolder(ctx, campaign._id, { kind: "gm" }, reason, fromRoll ? rollBy : undefined);
+}
+
+/**
+ * The GM spotlights one adversary (CB p.100: "the GM can make a move to spotlight an adversary"): the spotlight goes to
+ * the GM with reason `adversary` and the row names the token, which the map lights (bead dcm-bxp.99.32.35).
+ * COMBAT_TOKEN_NOT_FOUND for a token of another campaign, INVALID for a token that is not an adversary's. Returns
+ * whether the row changed (false when this adversary is already lit).
+ */
+export async function spotlightAdversary(ctx: MutationCtx, campaign: Doc<"campaigns">, tokenId: string): Promise<boolean> {
+  const token = await loadCombatToken(ctx, campaign._id, tokenId);
+  if (token.ref.kind !== "adversary") throw appError("INVALID", "Only an adversary's token can be spotlighted.");
+  return setHolder(ctx, campaign._id, { kind: "gm" }, "adversary", undefined, token._id);
 }
 
 /**

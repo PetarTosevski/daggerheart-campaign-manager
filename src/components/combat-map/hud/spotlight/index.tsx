@@ -43,13 +43,14 @@ export function useSpotlightMoves(campaignId: Id<"campaigns">) {
   // The optimistic updaters are built at the click (they stamp `since` with the click's time).
   return {
     error,
-    take: () => {
+    /** The GM takes it; with `tokenId` the GM spotlights that adversary, whose token the map lights. */
+    take: (tokenId?: Id<"combatTokens">) => {
       setError(null);
       take
         .withOptimisticUpdate((store, args) => {
           const current = store.getQuery(api.combatSpotlight.state, { campaignId: args.campaignId });
-          if (current !== undefined) store.setQuery(api.combatSpotlight.state, { campaignId: args.campaignId }, afterTake(current, Date.now()));
-        })({ campaignId, idempotencyKey: crypto.randomUUID() })
+          if (current !== undefined) store.setQuery(api.combatSpotlight.state, { campaignId: args.campaignId }, afterTake(current, Date.now(), tokenId));
+        })({ campaignId, idempotencyKey: crypto.randomUUID(), ...(tokenId ? { tokenId } : {}) })
         .catch(fail);
     },
     handTo: (pc: { characterId: Id<"characters">; name: string }) => {
@@ -135,7 +136,7 @@ export function SpotlightMenu({ campaignId, mapId }: { campaignId: Id<"campaigns
         {reason ? ` ${reason}` : null}
       </p>
       {gm ? null : (
-        <button type="button" className={hudButtonClass("primary")} onClick={moves.take}>
+        <button type="button" className={hudButtonClass("primary")} onClick={() => moves.take()}>
           Take the spotlight
         </button>
       )}

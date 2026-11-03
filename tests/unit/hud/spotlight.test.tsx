@@ -1,13 +1,15 @@
 /**
  * The HUD spotlight (plan combat-hud H1.S; docs/tasks/TASK-HUD-H1.S.md): the players' "The GM has the spotlight" card
  * and reactions note, the banner tag, the Fear banner's SPOTLIGHT, the GM's menu (Take / hand back) and the hand-back
- * button, and the copy / optimistic-update helpers. Convex is mocked.
+ * button, the copy / optimistic-update helpers, and the stage light on the spotlit token (bead dcm-bxp.99.32.35).
+ * Convex is mocked.
  */
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FearSpotlightTag, HudSpotlight, SpotlightBannerTag, SpotlightHandBack } from "@/components/combat-map/hud/spotlight";
-import { afterHandTo, afterTake, holderLine, spotlightReasonLine, type SpotlightState } from "@/components/combat-map/hud/spotlight/model";
+import { SpotlightPools, useSpotlightLit } from "@/components/combat-map/hud/spotlight/light";
+import { afterHandTo, afterTake, holderLine, isLit, litOf, spotlightReasonLine, type SpotlightState } from "@/components/combat-map/hud/spotlight/model";
 import type { CombatPageState } from "@/components/combat-map/slots";
 
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -37,7 +39,7 @@ const CAMPAIGN = "c1" as Id<"campaigns">;
 const MOSS = "moss" as Id<"characters">;
 const BRANNOC = "brannoc" as Id<"characters">;
 
-const base: SpotlightState = { holder: null, since: null, reason: null, rollBy: null, reactionsOnly: false, canMove: false };
+const base: SpotlightState = { holder: null, since: null, reason: null, rollBy: null, reactionsOnly: false, canMove: false, adversaryTokenId: null };
 const gmTurn = (canMove: boolean): SpotlightState => ({
   holder: { kind: "gm" },
   since: 1,
@@ -45,6 +47,7 @@ const gmTurn = (canMove: boolean): SpotlightState => ({
   rollBy: { characterId: MOSS, name: "Moss" },
   reactionsOnly: !canMove,
   canMove,
+  adversaryTokenId: null,
 });
 const mossHolds = (canMove: boolean): SpotlightState => ({
   ...base,
@@ -178,10 +181,76 @@ describe("copy and optimistic updates (model.ts)", () => {
 
   it("take and hand-back give the server's next state; a repeat changes nothing", () => {
     const taken = afterTake(mossHolds(true), 5);
-    expect(taken).toEqual({ holder: { kind: "gm" }, since: 5, reason: "gmTook", rollBy: null, reactionsOnly: false, canMove: true });
+    expect(taken).toEqual({ holder: { kind: "gm" }, since: 5, reason: "gmTook", rollBy: null, reactionsOnly: false, canMove: true, adversaryTokenId: null });
     expect(afterTake(taken, 9)).toBe(taken);
     const back = afterHandTo(taken, { characterId: BRANNOC, name: "Brannoc" }, 7);
-    expect(back).toEqual({ holder: { kind: "pc", characterId: BRANNOC, name: "Brannoc" }, since: 7, reason: "handedBack", rollBy: null, reactionsOnly: false, canMove: true });
+    expect(back).toEqual({ holder: { kind: "pc", characterId: BRANNOC, name: "Brannoc" }, since: 7, reason: "handedBack", rollBy: null, reactionsOnly: false, canMove: true, adversaryTokenId: null });
     expect(afterHandTo(back, { characterId: BRANNOC, name: "Brannoc" }, 9)).toBe(back);
+  });
+
+  it("spotlighting an adversary names its token; another adversary keeps `since`; a hand-back clears it", () => {
+    const lit = afterTake(mossHolds(true), 5, KNIFE);
+    expect(lit).toEqual({ holder: { kind: "gm" }, since: 5, reason: "adversary", rollBy: null, reactionsOnly: false, canMove: true, adversaryTokenId: KNIFE });
+    expect(afterTake(lit, 9, KNIFE)).toBe(lit);
+    // A general take while the GM holds it keeps the lit adversary (as the server does).
+    expect(afterTake(lit, 9)).toBe(lit);
+    expect(afterTake(lit, 9, BANDIT)).toEqual({ ...lit, adversaryTokenId: BANDIT });
+    expect(afterTake(gmTurn(false), 9, BANDIT)).toMatchObject({ since: 1, reason: "adversary", rollBy: null, reactionsOnly: true, adversaryTokenId: BANDIT });
+    expect(afterHandTo(lit, { characterId: MOSS, name: "Moss" }, 11).adversaryTokenId).toBeNull();
+  });
+});
+
+const KNIFE = "knife" as Id<"combatTokens">;
+const BANDIT = "bandit" as Id<"combatTokens">;
+
+describe("the stage light (light.tsx, model.ts litOf / isLit)", () => {
+  const moss = { _id: "t-moss", kind: "pc", characterId: MOSS, x: 2, y: 3, size: 1 };
+  const brannoc = { _id: "t-brannoc", kind: "pc", characterId: BRANNOC, x: 4, y: 3, size: 1 };
+  const knife = { _id: KNIFE, kind: "adversary", x: 6, y: 1, size: 2 };
+  // A player's `others` row: no kind, no character.
+  const otherKnife = { _id: KNIFE, x: 6, y: 1, size: 2 };
+
+  it("lights the PC holder's token, or the spotlighted adversary; nothing for nobody or the GM generally", () => {
+    expect(litOf(undefined)).toBeNull();
+    expect(litOf(base)).toBeNull();
+    expect(litOf(gmTurn(true))).toBeNull();
+    expect(litOf(mossHolds(false))).toEqual({ characterId: MOSS });
+    expect(litOf(afterTake(gmTurn(false), 2, KNIFE))).toEqual({ tokenId: KNIFE });
+
+    const pc = litOf(mossHolds(false));
+    expect([moss, brannoc, knife].map((t) => isLit(pc, t))).toEqual([true, false, false]);
+    const adv = { tokenId: KNIFE };
+    expect([moss, brannoc, knife, otherKnife].map((t) => isLit(adv, t))).toEqual([false, false, true, true]);
+    expect(isLit(null, moss)).toBe(false);
+  });
+
+  it("draws one pool per lit token the layer has, centred on its footprint, never taking the pointer", () => {
+    const { container, rerender } = render(<SpotlightPools lit={{ tokenId: KNIFE }} tokens={[moss, knife]} cell={50} />);
+    const pools = container.querySelectorAll("[data-testid='hud-spotlight-light']");
+    expect(pools).toHaveLength(1);
+    const pool = pools[0] as HTMLElement;
+    expect(pool).toHaveAttribute("data-token", KNIFE);
+    expect(pool).toHaveAttribute("aria-hidden", "true");
+    expect(pool.style.left).toBe("350px");
+    expect(pool.style.top).toBe("100px");
+    expect(pool.style.getPropertyValue("--s")).toBe("100px");
+    // A layer without the lit token (a player who can't see it) draws nothing.
+    rerender(<SpotlightPools lit={{ tokenId: KNIFE }} tokens={[moss, brannoc]} cell={50} />);
+    expect(container.querySelector("[data-testid='hud-spotlight-light']")).toBeNull();
+    rerender(<SpotlightPools lit={null} tokens={[moss, knife]} cell={50} />);
+    expect(container.querySelector("[data-testid='hud-spotlight-light']")).toBeNull();
+  });
+
+  it("reads the spotlight only while the HUD face shows", () => {
+    queries["combatSpotlight:state"] = mossHolds(false);
+    let seen: unknown = "unset";
+    function Probe({ on }: { on: boolean }) {
+      seen = useSpotlightLit(CAMPAIGN, on);
+      return null;
+    }
+    const { rerender } = render(<Probe on />);
+    expect(seen).toEqual({ characterId: MOSS });
+    rerender(<Probe on={false} />);
+    expect(seen).toBeNull();
   });
 });

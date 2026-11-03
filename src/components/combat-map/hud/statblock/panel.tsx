@@ -231,8 +231,8 @@ function StatBlockBody({
     if (spot.blocked) return;
     if (spotCost > 0 && !(await ask(spotCost, [`${spotCost} to spotlight ${who}`]))) return;
     const done = await tracker.spotlight(instance._id);
-    // Spotlighting an adversary also gives the GM the scene spotlight (H1.S).
-    if (done !== undefined) acts.take();
+    // Spotlighting an adversary also gives the GM the scene spotlight (H1.S) and lights its token (dcm-bxp.99.32.35).
+    if (done !== undefined) acts.take(tokenId);
   }
 
   async function endEffect(end: { effectId: string; label: string; fear: number }) {

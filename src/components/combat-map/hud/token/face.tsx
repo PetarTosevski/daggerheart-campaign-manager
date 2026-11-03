@@ -84,6 +84,8 @@ export type TokenFaceProps = {
   initials: string;
   /** The token's footprint in stage pixels (the board's `--s`: one square, or more for a large token). */
   size: number;
+  /** The token holds the scene spotlight: a warm glow on it (bead dcm-bxp.99.32.35; the pool is hud/spotlight). */
+  lit?: boolean;
 };
 
 /**
@@ -93,14 +95,15 @@ export type TokenFaceProps = {
  * badges bottom right and the name tag below. Purely visual (aria-hidden): the button's accessible name says it all.
  * Arcs and Hope come in only when the viewer may see them (`model.ts` `showsNumbers`).
  */
-export function TokenFace({ face, name, initials, size }: TokenFaceProps) {
+export function TokenFace({ face, name, initials, size, lit = false }: TokenFaceProps) {
   return (
     <span
-      className={cn("hud-tk-c", `tk-${face.tone}`, face.down && "tk-down")}
+      className={cn("hud-tk-c", `tk-${face.tone}`, face.down && "tk-down", lit && "tk-lit")}
       style={{ "--s": `${size}px` } as CSSProperties}
       aria-hidden="true"
       data-testid="hud-token-face"
       data-tone={face.tone}
+      data-lit={lit ? "true" : undefined}
     >
       {face.arcs ? <Arcs arcs={face.arcs} /> : null}
       <span className="tk-face">

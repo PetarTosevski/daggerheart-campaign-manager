@@ -84,7 +84,7 @@ function primaryFor(input: GmAttackInput, edge: Edge): PickPrimary {
       try {
         done = await input.acts.attack(
           { instanceId: input.instanceId, targets, ...edgeArgs(edge), ...(experience ? { experience } : {}), ...(reactions.length ? { reactions } : {}) },
-          { label: `${input.label} attacks`, actor: theName(input.label), experience },
+          { label: `${input.label} attacks`, actor: theName(input.label), experience, tokenId: input.tokenId },
         );
       } catch (error) {
         return refused(error, theName(input.label));
@@ -156,7 +156,7 @@ export function gmFeatureSession(input: {
         try {
           done = await input.acts.feature(
             { instanceId: input.instanceId, feature: input.feature, useId: input.useId, targets },
-            { label: `${input.label} uses ${input.feature}`, actor: theName(input.label), feature: input.feature },
+            { label: `${input.label} uses ${input.feature}`, actor: theName(input.label), feature: input.feature, tokenId: input.tokenId },
           );
         } catch (error) {
           return refused(error, theName(input.label));

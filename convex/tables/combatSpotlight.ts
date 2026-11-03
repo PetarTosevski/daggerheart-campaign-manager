@@ -46,5 +46,10 @@ export const combatSpotlightTables = {
     reason: spotlightReasonValidator,
     /** The PC whose roll moved it (`rollWithFear` / `failedRoll`), for "Moss rolled with Fear". */
     rollBy: v.optional(v.id("characters")),
+    /**
+     * The adversary token the GM spotlighted (`reason` "adversary", bead dcm-bxp.99.32.35): the token the map lights.
+     * Widened (rule 7), absent on older rows and whenever the spotlight moved to the GM generally or to a PC.
+     */
+    adversaryTokenId: v.optional(v.id("combatTokens")),
   }).index("by_campaign", ["campaignId"]),
 };

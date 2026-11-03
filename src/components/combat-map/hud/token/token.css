@@ -75,6 +75,33 @@
   filter: grayscale(1) brightness(0.6);
 }
 
+/*
+ * The token in the spotlight (bead dcm-bxp.99.32.35; the pool under it is hud/spotlight/light.css): a warm halo behind
+ * the face (under the arcs, badges and face, painted first) and the face a touch brighter, as if lit from above.
+ */
+.hud-tk-c.tk-lit::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--s) * -0.66);
+  top: calc(var(--s) * -0.66);
+  width: calc(var(--s) * 1.32);
+  height: calc(var(--s) * 1.32);
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--hud-gold-text, #f3cf86) 85%, transparent) 55%,
+    color-mix(in srgb, var(--hud-gold, #e3b45a) 45%, transparent) 78%,
+    transparent 100%
+  );
+}
+.tk-lit .tk-face {
+  filter: brightness(1.14) saturate(1.06);
+}
+.tk-lit.tk-down .tk-face {
+  filter: grayscale(1) brightness(0.75);
+}
+
 /* Hover, focus and the selected token (the board's hover ring; selection keeps the classic white ring). */
 .cm-tok.hud-tk:hover .tk-face,
 .cm-tok.hud-tk:focus-visible .tk-face {

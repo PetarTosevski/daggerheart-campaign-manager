@@ -6,6 +6,8 @@ import { designAsset } from "@/lib/design-assets";
 import { RANGE_BANDS } from "@/lib/domain/combat-map/ranges";
 
 import { toggleActionRing, useActionRing } from "../hud/action-ring/store";
+import { isLit } from "../hud/spotlight/model";
+import { SpotlightPools, useSpotlightLit } from "../hud/spotlight/light";
 import { TokenFace, moveNoticeText, pcTokenFace, refuseMove, useHudMoveLock, useHudTokens, useTokenHope } from "../hud/token";
 import { useMapView } from "../map-view/context";
 import { MovementOverlay, useLayoutMovementGrid, type SeenMasks } from "../map-view/movement-overlay";
@@ -100,6 +102,8 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
   // The Encounter tab's pane (`noDelete`) is never inside the shell.
   const hud = useHudTokens(mode);
   const hope = useTokenHope(campaignId, map._id, hud !== null);
+  // The token in the scene spotlight stands in a stage light (HUD only; bead dcm-bxp.99.32.35).
+  const lit = useSpotlightLit(campaignId, hud !== null);
   const ring = useActionRing();
   // H6.2 (HUD only): while the GM holds the spotlight a player's token moves are refused like actions.
   const moveLock = useHudMoveLock(campaignId, role, hud !== null);
@@ -242,6 +246,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
       style={{ width: (map.w + 2 * pad) * cell, height: (map.h + 2 * pad) * cell, transform: `scale(${zoom})` }}
     >
       <div className="cm-tokens-map" style={{ left: pad * cell, top: pad * cell }}>
+        <SpotlightPools lit={lit} tokens={tokens} cell={cell} />
         {ringed.map((t) => {
           const cx = (t.x + t.size / 2) * cell;
           const cy = (t.y + t.size / 2) * cell;
@@ -328,7 +333,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
               onKeyDown={(e) => onTokenKey(e, t)}
             >
               <span className="cm-face" aria-hidden="true" style={{ transform: `rotate(${deg}deg)`, ["--tc" as string]: side.colour }} />
-              {face ? <TokenFace face={face} name={t.name} initials={initialsOf(t.name, t.size)} size={t.size * cell} /> : null}
+              {face ? <TokenFace face={face} name={t.name} initials={initialsOf(t.name, t.size)} size={t.size * cell} lit={isLit(lit, t)} /> : null}
               {face || hasPortrait ? null : (
                 <span className="cm-ini" aria-hidden="true" style={{ fontSize: Math.round(t.size * cell * 0.34) }}>
                   {initialsOf(t.name, t.size)}

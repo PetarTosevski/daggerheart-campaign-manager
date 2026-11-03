@@ -1,0 +1,84 @@
+/*
+ * The spotlight on the map (bead dcm-bxp.99.32.35): a stage light on the token that holds the scene spotlight. Warm
+ * gold from hud.css (--hud-gold / --hud-gold-text, the Hope colour; fallbacks for a layer outside .hud-root). Pure CSS
+ * radial gradients. `--s` is the token's footprint in stage pixels. Sits in the token layer under every token
+ * (z-index 1; tokens are 10 and up), never takes the pointer, and leaves the rest of the map as it is.
+ */
+.hud-spot-light {
+  --spot-core: color-mix(in srgb, #fff6dc 70%, var(--hud-gold-text, #f3cf86));
+  --spot-warm: var(--hud-gold-text, #f3cf86);
+  --spot-edge: var(--hud-gold, #e3b45a);
+  position: absolute;
+  width: 0;
+  height: 0;
+  z-index: 1;
+  pointer-events: none;
+  animation: hud-spot-on 420ms var(--hud-ease-out, cubic-bezier(0.2, 0.8, 0.3, 1)) both;
+}
+.hud-spot-light > span {
+  position: absolute;
+  pointer-events: none;
+}
+
+/* The pool on the floor: brightest under the token, fading out about 1.2 footprints beyond its edge. */
+.hud-spot-pool {
+  left: calc(var(--s) * -1.7);
+  top: calc(var(--s) * -1.7);
+  width: calc(var(--s) * 3.4);
+  height: calc(var(--s) * 3.4);
+  border-radius: 50%;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--spot-core) 88%, transparent) 0%,
+    color-mix(in srgb, var(--spot-core) 70%, transparent) 22%,
+    color-mix(in srgb, var(--spot-warm) 38%, transparent) 50%,
+    color-mix(in srgb, var(--spot-edge) 12%, transparent) 78%,
+    transparent 100%
+  );
+  animation: hud-spot-breathe 3.6s ease-in-out infinite alternate;
+}
+
+/* A faint beam from above: narrow at the top, as wide as the pool's bright core at the token, fading upwards. */
+.hud-spot-beam {
+  left: calc(var(--s) * -0.85);
+  top: calc(var(--s) * -3.2);
+  width: calc(var(--s) * 1.7);
+  height: calc(var(--s) * 3.2);
+  clip-path: polygon(38% 0, 62% 0, 100% 100%, 0 100%);
+  background: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in srgb, var(--spot-warm) 30%, transparent) 30%,
+    color-mix(in srgb, var(--spot-core) 40%, transparent) 50%,
+    color-mix(in srgb, var(--spot-warm) 30%, transparent) 70%,
+    transparent
+  );
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 75%, transparent 100%);
+  animation: hud-spot-breathe 3.6s ease-in-out infinite alternate;
+}
+
+@keyframes hud-spot-on {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes hud-spot-breathe {
+  from {
+    opacity: 0.86;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Reduced motion: a static light, no fade-in and no breathing. */
+@media (prefers-reduced-motion: reduce) {
+  .hud-spot-light,
+  .hud-spot-pool,
+  .hud-spot-beam {
+    animation: none;
+  }
+}

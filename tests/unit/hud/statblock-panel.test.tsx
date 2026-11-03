@@ -235,6 +235,8 @@ describe("the stat block", () => {
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Yes spend" })));
     await flush();
     expect(calls.map((c) => c.name)).toEqual(["encounterTracking:spotlight", "combatSpotlight:gmTake"]);
+    // The scene spotlight names the adversary's token, which the map lights (dcm-bxp.99.32.35).
+    expect(calls[1]!.args).toMatchObject({ tokenId: LT });
     expect(screen.queryByTestId("fear-confirm")).toBeNull();
   });
 
@@ -311,6 +313,7 @@ describe("the stat block", () => {
     expect(sent[1]!.args).toMatchObject({ spendFear: 2, targets: ["ch-br"] });
     expect(sent[0]!.args.idempotencyKey).not.toBe(sent[1]!.args.idempotencyKey);
     expect(calls.at(-1)!.name).toBe("combatSpotlight:gmTake");
+    expect(calls.at(-1)!.args).toMatchObject({ tokenId: LT });
     expect(updaters["adversaryActions:attack"]).toBeTypeOf("function");
     expect(screen.getByTestId("action-result").textContent).toBe("Jagged Knife Lieutenant attacks");
   });

@@ -57,7 +57,14 @@ export function useFearAsk(): { ask: FearAsk; node: ReactNode } {
 }
 
 /** What a send says about itself: the result line's label and the names FearConfirm's reasons use. */
-export type ActMeta = { label: string; actor: string; feature?: string; experience?: string | null };
+export type ActMeta = {
+  label: string;
+  actor: string;
+  feature?: string;
+  experience?: string | null;
+  /** The acting adversary's token: the scene spotlight lights it (dcm-bxp.99.32.35). */
+  tokenId?: Id<"combatTokens">;
+};
 
 export function useGmActs(campaignId: Id<"campaigns">, ask: FearAsk) {
   const [result, setResult] = useState<ActionResult | null>(null);
@@ -88,7 +95,7 @@ export function useGmActs(campaignId: Id<"campaigns">, ask: FearAsk) {
         if (answer.status === "confirmFear") return null;
       }
       setResult({ label: meta.label, actor: meta.actor, instanceId, result: answer });
-      take();
+      take(meta.tokenId);
       return answer;
     } finally {
       setPending(false);

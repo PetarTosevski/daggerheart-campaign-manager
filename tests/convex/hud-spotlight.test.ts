@@ -53,7 +53,7 @@ const rows = (w: World) => w.t.run((ctx) => ctx.db.query("combatSpotlight").coll
 describe("combatSpotlight.state", () => {
   it("starts with nobody in particular: no holder, no reactions-only, only the GM may move it", async () => {
     const w = await buildWorld();
-    const none = { holder: null, since: null, reason: null, rollBy: null, reactionsOnly: false };
+    const none = { holder: null, since: null, reason: null, rollBy: null, reactionsOnly: false, adversaryTokenId: null };
     expect(await state(w, "gm")).toEqual({ ...none, canMove: true });
     expect(await state(w, "player")).toEqual({ ...none, canMove: false });
     expect(await state(w, "grantee")).toEqual({ ...none, canMove: false });
@@ -149,6 +149,114 @@ describe("moveToGm (CB p.100, p.149)", () => {
     await w.t.run(async (ctx) => moveToGm(ctx, (await ctx.db.get("campaigns", w.campaignId))!, "adversary", w.characterA));
     expect(await state(w, "gm")).toMatchObject({ holder: { kind: "gm" }, reason: "adversary", rollBy: null });
     expect(await w.t.run((ctx) => gmHoldsSpotlight(ctx, w.campaignId))).toBe(true);
+  });
+});
+
+/** A map in `campaignId` with two adversary tokens (the Knife, the Bandit) and Ash's PC token. */
+async function tokens(w: World, campaignId: Id<"campaigns"> = w.campaignId) {
+  const { mapId } = await w.as("gm").mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
+  const now = Date.now();
+  return w.t.run(async (ctx) => {
+    const encounterId = await ctx.db.insert("encounters", { campaignId, name: "Ambush", status: "running", pcs: 2, adjustments: [], gmTurn: 1, createdAt: now, updatedAt: now, startedAt: now });
+    const adversary = async (label: string, x: number) => {
+      const adversaryId = await ctx.db.insert("encounterAdversaries", {
+        campaignId,
+        encounterId,
+        source: { kind: "srd", adversaryId: "bear" },
+        label,
+        order: x,
+        summoned: false,
+        stats: { difficulty: 10, major: 5, severe: 10, hpMax: 6, stressMax: 2 },
+        hp: 0,
+        stress: 0,
+        defeated: false,
+        conditions: [],
+        tags: [],
+        spotlights: 0,
+        spotlightTurn: 0,
+        updatedAt: now,
+      });
+      return ctx.db.insert("combatTokens", { campaignId, mapId, size: 1, light: "none", revealedTo: [], ref: { kind: "adversary", adversaryId }, side: "enemy", x, y: 2, face: 0 });
+    };
+    const knife = await adversary("Knife", 4);
+    const bandit = await adversary("Bandit", 6);
+    const ash = await ctx.db.insert("combatTokens", { campaignId, mapId, size: 1, light: "none", revealedTo: [], ref: { kind: "pc", characterId: w.characterA }, side: "pc", x: 1, y: 2, face: 0 });
+    return { knife, bandit, ash };
+  });
+}
+
+const spotlight = (w: World, tokenId: string, idempotencyKey = key()) =>
+  w.as("gm").mutation(api.combatSpotlight.gmTake, { campaignId: w.campaignId, tokenId, idempotencyKey });
+
+describe("gmTake({ tokenId }): the GM spotlights an adversary, whose token the map lights (dcm-bxp.99.32.35)", () => {
+  it("names the token for every member; the same adversary again writes nothing; another keeps `since`", async () => {
+    const w = await buildWorld();
+    const { knife, bandit } = await tokens(w);
+    await handTo(w, w.characterA);
+    expect(await spotlight(w, knife)).toEqual({ moved: true });
+    for (const role of ["gm", "player", "otherPlayer", "grantee"] as const) {
+      expect(await state(w, role)).toMatchObject({ holder: { kind: "gm" }, reason: "adversary", rollBy: null, adversaryTokenId: knife });
+    }
+    const [first] = await rows(w);
+    expect(await spotlight(w, knife)).toEqual({ moved: false });
+    expect(await rows(w)).toEqual([first]);
+
+    expect(await spotlight(w, bandit)).toEqual({ moved: true });
+    const next = await state(w, "gm");
+    expect(next).toMatchObject({ reason: "adversary", adversaryTokenId: bandit, since: first!.since });
+  });
+
+  it("a general take keeps the lit adversary; a hand-back to a PC and a roll's move from a PC clear it", async () => {
+    const w = await buildWorld();
+    const { knife } = await tokens(w);
+    await spotlight(w, knife);
+    expect(await take(w)).toEqual({ moved: false });
+    expect(await state(w, "player")).toMatchObject({ adversaryTokenId: knife });
+
+    await handTo(w, w.characterA);
+    expect(await state(w, "player")).toMatchObject({ holder: { kind: "pc" }, adversaryTokenId: null });
+    expect((await rows(w))[0]!.adversaryTokenId).toBeUndefined();
+
+    await spotlight(w, knife);
+    await handTo(w, w.characterB);
+    await w.t.run(async (ctx) => moveToGm(ctx, (await ctx.db.get("campaigns", w.campaignId))!, "rollWithFear", w.characterB));
+    expect(await state(w, "gm")).toMatchObject({ holder: { kind: "gm" }, reason: "rollWithFear", adversaryTokenId: null });
+  });
+
+  it("the GM taking it from the start with an adversary lights it; without one nothing is lit", async () => {
+    const w = await buildWorld();
+    const { knife } = await tokens(w);
+    await take(w);
+    expect(await state(w, "gm")).toMatchObject({ reason: "gmTook", adversaryTokenId: null });
+    expect(await spotlight(w, knife)).toEqual({ moved: true });
+    expect(await state(w, "gm")).toMatchObject({ reason: "adversary", adversaryTokenId: knife });
+  });
+
+  it("refuses a PC's token (INVALID), another campaign's or a made-up token (COMBAT_TOKEN_NOT_FOUND) and writes nothing", async () => {
+    const w = await buildWorld();
+    const { ash } = await tokens(w);
+    const other = await secondCampaign(w);
+    const elsewhere = await tokens(w, other.campaignId);
+    expect(await code(spotlight(w, ash))).toBe("INVALID");
+    expect(await code(spotlight(w, elsewhere.knife))).toBe("COMBAT_TOKEN_NOT_FOUND");
+    expect(await code(spotlight(w, "not-a-token"))).toBe("COMBAT_TOKEN_NOT_FOUND");
+    expect(await rows(w)).toEqual([]);
+  });
+
+  it("a keyed replay with another token is IDEMPOTENCY_MISMATCH", async () => {
+    const w = await buildWorld();
+    const { knife, bandit } = await tokens(w);
+    const k = key();
+    expect(await spotlight(w, knife, k)).toEqual({ moved: true });
+    expect(await spotlight(w, knife, k)).toEqual({ moved: true });
+    expect(await code(spotlight(w, bandit, k))).toBe("IDEMPOTENCY_MISMATCH");
+    expect(await state(w, "gm")).toMatchObject({ adversaryTokenId: knife });
+  });
+
+  it("an older row without the field reads as nothing lit", async () => {
+    const w = await buildWorld();
+    await w.t.run((ctx) => ctx.db.insert("combatSpotlight", { campaignId: w.campaignId, holder: { kind: "gm" }, since: 1, reason: "adversary" }));
+    expect(await state(w, "player")).toMatchObject({ holder: { kind: "gm" }, reason: "adversary", adversaryTokenId: null });
   });
 });
 
