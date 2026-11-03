@@ -187,6 +187,54 @@ describe("Sturdy on a multi-target attack (CB p.68; user 2026-10-30)", () => {
   });
 });
 
+describe("a Hidden PC (CB p.103: \"While Hidden, any rolls against you have disadvantage\"; dcm-f3l7)", () => {
+  const hide = (a: Arena, id: Id<"characters">, condition: "hidden" | "cloaked" = "hidden") => a.edit(id, () => ({ conditions: [condition] }));
+
+  it("attacked alone: the whole roll has disadvantage, 18 / 2 keeps the 2 (a miss)", async () => {
+    const a = await arena();
+    await hide(a, a.w.characterA);
+    serverDice(18, 2);
+    const r = resolved(await a.spit([a.w.characterA]));
+    vi.restoreAllMocks();
+    expect(r.targets.map((t) => t.hit)).toEqual([false]);
+    expect(d20s((await a.gmRoll()).roll!)).toEqual([
+      [20, 18, true, "extra"],
+      [20, 2, false, "disadvantage"],
+    ]);
+  });
+
+  it("per Hidden target: Bryn keeps the 18 (a hit), Hidden Ash keeps the 2 (a miss)", async () => {
+    const a = await arena();
+    await hide(a, a.w.characterA);
+    serverDice(18, 2);
+    const r = resolved(await a.spit([a.w.characterA, a.w.characterB]));
+    vi.restoreAllMocks();
+    expect(hitOf(r, a.w.characterB)).toBe(true);
+    expect(hitOf(r, a.w.characterA)).toBe(false);
+    expect((await a.gmRoll()).summary).toContain(`disadvantage against them: 2, total ${2 + ATK}`);
+  });
+
+  it("Cloaked is Hidden with more benefits (CB p.42): the same disadvantage", async () => {
+    const a = await arena();
+    await hide(a, a.w.characterA, "cloaked");
+    serverDice(18, 2);
+    const r = resolved(await a.spit([a.w.characterA]));
+    vi.restoreAllMocks();
+    expect(r.targets.map((t) => t.hit)).toEqual([false]);
+  });
+
+  it("Hidden and Sturdy on the same PC count once (DA17): one advantage source cancels them, 18 decides (a hit)", async () => {
+    const a = await arena();
+    await a.sturdy(a.w.characterA);
+    await hide(a, a.w.characterA);
+    serverDice(18, 2);
+    const r = resolved(await a.spit([a.w.characterA], { advantage: 1 }));
+    vi.restoreAllMocks();
+    expect(r.targets.map((t) => t.hit)).toEqual([true]);
+    expect(d20s((await a.gmRoll()).roll!)).toEqual([[20, 18, false, "extra"]]);
+  });
+});
+
 describe("Harrowing Invocation: a Stress when the roll fails against any protected PC (HF p.14; user 2026-10-30)", () => {
   it("the roll hits Bryn and misses Ash: the Burrower marks a Stress (SD4 had 'every')", async () => {
     const a = await arena();

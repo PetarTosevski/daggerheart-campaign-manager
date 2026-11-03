@@ -808,9 +808,22 @@ function attackRecord(record: RollRecord, drained: boolean, second: number | nul
   return dice === record.dice ? record : { ...record, dice };
 }
 
-/** Disadvantage sources a PC's passives put on an attack against them (CB p.68 Sturdy, at 1 HP left), by this attacker. */
+/**
+ * dcm-f3l7 (user answer 2026-11-02): CB p.103 Hidden, "While Hidden, any rolls against you have disadvantage"; Cloaked
+ * (CB p.42) is Hidden with more benefits. One own source per target (DA1/DA17: it counts against that target only and
+ * once with Sturdy or Harrowing). The same reading as a PC's attack (`conditionEdge`, convex/lib/combatActions.ts).
+ */
+function hiddenAgainst(conditions: readonly string[]): number {
+  return conditions.includes("hidden") || conditions.includes("cloaked") ? 1 : 0;
+}
+
+/**
+ * Disadvantage sources a PC target puts on an attack against them, by this attacker: a Hidden (or Cloaked) PC
+ * (dcm-f3l7, CB p.103), and a PC's passives (CB p.68 Sturdy, at 1 HP left).
+ */
 function targetDisadvantage(p: Pick, instance: Doc<"encounterAdversaries">, gated: { selfToken?: Doc<"combatTokens">; paidOff: readonly string[]; offers: BuyOffer[] }): number {
   if (p.kind !== "pc") return 0;
+  const hidden = hiddenAgainst(p.member.sheet.conditions);
   // Lane E7 round 3 (dcm-eut): the distance for a `from: "melee"` gate (no map: unknown, the gate doesn't count) and the
   // buy-offs the GM paid for this attack (Defensive stance, HF p.12: "unless the attacker marks a Stress").
   const distance = gated.selfToken && p.token ? tokenDistance(gated.selfToken, p.token) : undefined;
@@ -819,7 +832,7 @@ function targetDisadvantage(p: Pick, instance: Doc<"encounterAdversaries">, gate
   for (const b of pcTarget(p.member.character._id, p.member.sheet, 0, info).buyOff ?? []) {
     gated.offers.push({ characterId: p.member.character._id, featureId: b.featureId, costs: b.costs, paid: gated.paidOff.includes(b.featureId) });
   }
-  return pcTarget(p.member.character._id, p.member.sheet, 0, { ...info, paidOff: gated.paidOff }).disadvantage ?? 0;
+  return hidden + (pcTarget(p.member.character._id, p.member.sheet, 0, { ...info, paidOff: gated.paidOff }).disadvantage ?? 0);
 }
 
 /** Lane E7 round 3 (dcm-eut): a disadvantage on this attack the attacker may buy off (the GM passes `buyOffs` to pay). */

@@ -14,8 +14,8 @@
  */
 export const actionLogMessages = {
   UNDO_STALE: "That can't be undone any more: something newer happened since.",
-  /** A player's dice row past `PLAYER_DICE_UNDO_MS` (review M2); the GM can still undo it (dcm-bxp.31). */
-  UNDO_EXPIRED: "Only the GM can undo a roll after the first minute.",
+  /** A player undoing an action that rolled (`groupRolled` in convex/lib/actionLog.ts, user 2026-11-02); the GM can. */
+  UNDO_EXPIRED: "Only the GM can undo a roll.",
   /** A rest's rows undo from the rest panel, which also reopens the rest (review L4, dcm-bxp.31). */
   UNDO_USE_REST: "Undo a rest from the rest panel.",
   CHARACTER_UNAVAILABLE: "This character can't act right now (dead, away or unconscious).",

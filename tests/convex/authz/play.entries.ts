@@ -80,7 +80,9 @@ const area: Area = {
     { fn: api.deathMoves.confirm, access: "own", expect: { player: "FORBIDDEN" }, okCodes: ["DEATH_MOVE_NOT_WAITING"] },
     { fn: api.deathMoves.decline, access: "own", expect: { player: "FORBIDDEN" }, okCodes: ["DEATH_MOVE_NOT_WAITING"] },
     {
-      // A real death move by playerA (every Hit Point marked, then Avoid Death): its actor or the GM undoes it.
+      // playerA chooses a death move (every Hit Point marked, then Avoid Death): a request waiting for the GM, nothing rolled,
+      // so its actor or the GM undoes it ("Take it back"). A rolled move is the GM's alone (the player-undo rule,
+      // convex/lib/actionLog.ts `groupRolled`; tests/convex/hud-death-confirm.test.ts).
       fn: api.deathMoves.undo,
       access: "scoped",
       expect: { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", otherPlayer: "FORBIDDEN", player: "ok", gm: "ok" },

@@ -5,9 +5,9 @@ import { keyedUserMutation } from "./lib/functions";
 
 /**
  * Undoes an action log row and its group (D5): the row's actor or the GM,
- * only while nothing newer happened to its characters (else UNDO_STALE; a
- * player past the first minute of a dice row gets UNDO_EXPIRED; see
- * `undoEntry`). Restores the `before` sheets and takes back the Fear the
+ * only while nothing newer happened to its characters (else UNDO_STALE). Once
+ * the action rolled only the GM may undo it (a player gets UNDO_EXPIRED: the
+ * player-undo rule, `groupRolled` in convex/lib/actionLog.ts). Restores the `before` sheets and takes back the Fear the
  * action gained. Rest rows are refused (UNDO_USE_REST): `rests.undo` also
  * reopens the rest.
  * The feed that lists rows is `feed.list` (T1).

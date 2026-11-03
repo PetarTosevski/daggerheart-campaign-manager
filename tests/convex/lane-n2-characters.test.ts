@@ -3,11 +3,11 @@
  * Experience delta intents and the sheet-narrowing audit (dcm-bxp.28), and the
  * distinct undo codes (dcm-bxp.31).
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { logAction, PLAYER_DICE_UNDO_MS } from "../../convex/lib/actionLog";
+import { logAction } from "../../convex/lib/actionLog";
 import { CHARACTER_READ_BOUND, MAX_CHARACTERS_CREATED_PER_CAMPAIGN, MAX_CHARACTERS_PER_CAMPAIGN, readSheet, storedSheet } from "../../convex/lib/characterSheet";
 import { sheetNarrowingProblem } from "../../convex/migrations/characters";
 import { ANCESTRIES, ARMOR, COMMUNITIES, cardsForDomains, getClass, subclassesForClass, WEAPONS } from "../../src/lib/srd/index";
@@ -142,16 +142,8 @@ describe("dcm-bxp.28: the sheet-narrowing audit", () => {
 
 describe("dcm-bxp.31: the undo codes", () => {
   useAllowlist(EMAILS);
-  beforeEach(() => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(1_000_000);
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-  const later = (ms: number) => vi.setSystemTime(Date.now() + ms);
 
-  it("UNDO_EXPIRED for a player's dice row after the first minute; UNDO_USE_REST for a rest row", async () => {
+  it("UNDO_EXPIRED for a player's dice row (the GM undoes rolls, user 2026-11-02); UNDO_USE_REST for a rest row", async () => {
     const { t, ids, gm, p1, campaignId, a } = await setup();
     const roll = {
       kind: "action" as const,
@@ -165,7 +157,6 @@ describe("dcm-bxp.31: the undo codes", () => {
       manual: false,
     };
     const entryId = await t.run((ctx) => logAction(ctx, { campaignId, characterId: a, actorId: ids.p1, kind: "roll", visibility: "public", summary: "rolled", roll, undoable: true }));
-    later(PLAYER_DICE_UNDO_MS + 1);
     expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId, idempotencyKey: key() }))).toBe("UNDO_EXPIRED");
     expect(await codeOf(gm.mutation(api.actionLog.undo, { entryId, idempotencyKey: key() }))).toBe("ok");
 

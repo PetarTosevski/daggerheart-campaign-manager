@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { logAction, PLAYER_DICE_UNDO_MS } from "../../convex/lib/actionLog";
+import { logAction } from "../../convex/lib/actionLog";
 import { readSheet, saveSheet } from "../../convex/lib/characterSheet";
 import { campaignFearState, gainFear } from "../../convex/lib/fear";
 import { ANCESTRIES, ARMOR, COMMUNITIES, cardsForDomains, getClass, subclassesForClass, WEAPONS } from "../../src/lib/srd/index";
@@ -243,21 +243,21 @@ describe("actionLog.undo: nothing newer is lost (review H1, H2, M2)", () => {
     await gm.mutation(api.characters.applyDamage, { characterId: a, damage: 3, useArmorSlot: false, idempotencyKey: key() });
     const damaged = await sheetOf(a);
 
-    expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId: roll.entryId, idempotencyKey: key() }))).toBe("UNDO_STALE");
+    // A roll is the GM's to undo (the player-undo rule); the unlogged change makes it stale.
     expect(await codeOf(gm.mutation(api.actionLog.undo, { entryId: roll.entryId, idempotencyKey: key() }))).toBe("UNDO_STALE");
     expect(await sheetOf(a)).toEqual(damaged);
   });
 
   it("H1: undoing newer rows one by one still works (undo's own write is not a newer change)", async () => {
-    const { p1, a, sheetOf } = await setup();
+    const { gm, p1, a, sheetOf } = await setup();
     const hopeBefore = (await sheetOf(a)).hope;
     const first = await hopeRoll(p1, a);
     later(1000);
     const second = await hopeRoll(p1, a);
     later(1000);
-    await p1.mutation(api.actionLog.undo, { entryId: second.entryId, idempotencyKey: key() });
+    await gm.mutation(api.actionLog.undo, { entryId: second.entryId, idempotencyKey: key() });
     later(1000);
-    expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId: first.entryId, idempotencyKey: key() }))).toBe("ok");
+    expect(await codeOf(gm.mutation(api.actionLog.undo, { entryId: first.entryId, idempotencyKey: key() }))).toBe("ok");
     expect((await sheetOf(a)).hope).toBe(hopeBefore);
   });
 
@@ -289,29 +289,32 @@ describe("actionLog.undo: nothing newer is lost (review H1, H2, M2)", () => {
     expect((await sheetOf(b)).hope).toBe(hopeBefore);
   });
 
-  it(`M2: a player undoes their dice row only within ${PLAYER_DICE_UNDO_MS / 1000} seconds; the GM any time`, async () => {
+  it("the player-undo rule (user 2026-11-02): a player never undoes their roll, even at once; the GM any time", async () => {
     const { ids, gm, p1, a, act, hope } = await setup();
     const fresh = await hopeRoll(p1, a);
-    later(PLAYER_DICE_UNDO_MS);
-    expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId: fresh.entryId, idempotencyKey: key() }))).toBe("ok");
+    expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId: fresh.entryId, idempotencyKey: key() }))).toBe("UNDO_EXPIRED");
+    later(10 * 60_000);
+    expect(await codeOf(gm.mutation(api.actionLog.undo, { entryId: fresh.entryId, idempotencyKey: key() }))).toBe("ok");
 
-    const old = await hopeRoll(p1, a);
-    later(PLAYER_DICE_UNDO_MS + 1);
-    expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId: old.entryId, idempotencyKey: key() }))).toBe("UNDO_EXPIRED");
-    expect(await codeOf(gm.mutation(api.actionLog.undo, { entryId: old.entryId, idempotencyKey: key() }))).toBe("ok");
-
-    // A row without dice has no time limit.
+    // A row that rolled nothing stays the player's to undo, at any age.
     const [noDice] = await act(ids.p1, [{ characterId: a, change: hope }]);
-    later(10 * PLAYER_DICE_UNDO_MS);
+    later(10 * 60_000);
     expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId: noDice!, idempotencyKey: key() }))).toBe("ok");
   });
 
-  it("M2: the limit covers death-move rows that carry dice", async () => {
+  it("the rule covers death-move rows that carry dice, and a group where any row rolled", async () => {
     const { t, ids, p1, campaignId, a } = await setup();
     const entryId = await t.run((ctx) =>
       logAction(ctx, { campaignId, characterId: a, actorId: ids.p1, kind: "death", visibility: "public", summary: "Risk It All", roll: ROLL, undoable: true }),
     );
-    later(PLAYER_DICE_UNDO_MS + 1);
     expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId, idempotencyKey: key() }))).toBe("UNDO_EXPIRED");
+
+    // A feature row without dice whose action also rolled (one group): the GM's alone.
+    const groupId = crypto.randomUUID();
+    const plain = await t.run(async (ctx) => {
+      await logAction(ctx, { campaignId, actorId: ids.p1, kind: "roll", visibility: "public", summary: "rolled", roll: ROLL, groupId, undoable: true });
+      return logAction(ctx, { campaignId, actorId: ids.p1, kind: "feature", visibility: "public", summary: "used", groupId, undoable: true });
+    });
+    expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId: plain, idempotencyKey: key() }))).toBe("UNDO_EXPIRED");
   });
 });

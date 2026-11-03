@@ -8,8 +8,7 @@
  * - Pass `before` = the character's sheet BEFORE the change (the `sheet` you
  *   read) and save the sheet before logging; undo restores exactly it, and is
  *   refused (UNDO_STALE) once the character changed after the row, logged or
- *   not, and (UNDO_EXPIRED) for a player once their dice row is older than
- *   `PLAYER_DICE_UNDO_MS`.
+ *   not, and (UNDO_EXPIRED) for a player when the action rolled (`groupRolled`).
  * - Pass `fearDelta` = the Fear `gainFear` actually gained (`gained`), never
  *   the requested amount; undo takes it back through `revertFear`.
  * - One action touching several characters (rest, tag team, Life Support)
@@ -36,7 +35,7 @@ import { formatCalendarDay } from "../../src/lib/domain/campaign-time/index";
 import { appError } from "../../src/lib/errors/app-error";
 import type { CharacterSheetInput } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
-import type { MutationCtx } from "../_generated/server";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { assertOneActive, readSheet, storedSheet } from "./characterSheet";
 import { closeRequest, declineGroupOffers, openRequests } from "./combatRequests";
 import { revertTicks } from "./countdownTicks";
@@ -52,11 +51,21 @@ const GROUP_MAX = 50;
 /** How far back undo looks for a character's latest live row. */
 const LATEST_SCAN = 100;
 /**
- * How long after a dice row (a roll or a death move) its actor may still undo
- * it; the GM can undo it any time (review M2: no rerolling by undo). A
- * reversible default pending the user's review.
+ * THE player-undo rule (user answers 2026-11-02, Combat HUD: "If the roll has happened players can't undo rolls"; "Yes,
+ * GM-only undo of rolls"). Decided per action (the row's `groupId` group) from the stored roll data:
+ * - Rolled: any row of the group carries a `roll` (an action, reaction, damage or death-move roll, a PC's attack or card
+ *   use that rolled, a GM-confirmed death move, a move whose Cloaked roll joined it). Only the GM undoes it; a player
+ *   gets UNDO_EXPIRED ("Only the GM can undo a roll").
+ * - Rolled nothing: a feature use without dice, a tracker edit, a death-move request still waiting for the GM (HD4's
+ *   "Take it back"), Risk It All's split, an import. Its actor (or the GM) may undo it.
+ * Token moves, requests and waiting uses are taken back through their own paths (`combatTokens.move`,
+ * `combatWithdraw.withdraw`), never by undoing a roll.
+ * `undoEntry` enforces it; `feed.list`'s `canUndo` and `deathMoves.state`'s `undoEntryId` apply it (`viewerCanUndo`), so
+ * a player never sees an Undo they cannot use.
  */
-export const PLAYER_DICE_UNDO_MS = 60_000;
+export function groupRolled(group: readonly Pick<Doc<"actionLog">, "roll">[]): boolean {
+  return group.some((r) => r.roll !== undefined);
+}
 
 export type LogEntry = {
   campaignId: Id<"campaigns">;
@@ -104,6 +113,27 @@ export async function latestLiveRow(ctx: MutationCtx, characterId: Id<"character
     .order("desc")
     .take(LATEST_SCAN);
   return rows.find((row) => row.undoneAt === undefined) ?? null;
+}
+
+/** The rows of a row's action (its group, at most `GROUP_MAX + 1` read: more is refused by undo). */
+async function groupOf(ctx: QueryCtx, row: Doc<"actionLog">): Promise<Doc<"actionLog">[]> {
+  if (row.groupId === undefined) return [row];
+  return ctx.db
+    .query("actionLog")
+    .withIndex("by_campaign_group", (q) => q.eq("campaignId", row.campaignId).eq("groupId", row.groupId))
+    .take(GROUP_MAX + 1);
+}
+
+/**
+ * Whether the viewer may press Undo on a live undoable row, before the checks only the mutation makes (UNDO_STALE):
+ * the GM always; a player only on their own public row of an action that rolled nothing (`groupRolled`). One group
+ * read for a player's own grouped row.
+ */
+export async function viewerCanUndo(ctx: QueryCtx, row: Doc<"actionLog">, viewerId: Id<"users">, isGm: boolean): Promise<boolean> {
+  if (!row.undoable || row.undoneAt !== undefined) return false;
+  if (isGm) return true;
+  if (row.actorId !== viewerId || row.visibility !== "public") return false;
+  return !groupRolled(await groupOf(ctx, row));
 }
 
 export type UndoResult = { undone: Id<"actionLog">[]; fearReverted: number };
@@ -220,8 +250,8 @@ async function restoreTime(ctx: MutationCtx, user: Doc<"users">, row: Doc<"actio
  * campaign's GM (`permissionFor`); others with access get FORBIDDEN, outsiders
  * NOT_FOUND. Refused with UNDO_STALE when the row is not undoable, already
  * undone, or when anything newer happened to a character in the group
- * (`assertNothingNewer`); with UNDO_EXPIRED when a player undoes a dice row
- * (roll, death move, combat attack) older than `PLAYER_DICE_UNDO_MS`; with
+ * (`assertNothingNewer`); with UNDO_EXPIRED when a player undoes an action
+ * that rolled (`groupRolled`: the player-undo rule); with
  * UNDO_USE_REST for a group holding a `refuse` kind (dcm-bxp.31). Restores each `before` sheet, reverts the
  * group's Fear (floor 0), takes back the countdown ticks the group's rows caused
  * where the countdown has not changed since (`revertTicks`, countdowns-advanced
@@ -242,24 +272,15 @@ export async function undoEntry(
   if (!isGm && row.visibility === "gm") throw appError("NOT_FOUND");
   if (!isGm && row.actorId !== user._id) throw appError("FORBIDDEN");
 
-  const group =
-    row.groupId === undefined
-      ? [row]
-      : await ctx.db
-          .query("actionLog")
-          .withIndex("by_campaign_group", (q) => q.eq("campaignId", row.campaignId).eq("groupId", row.groupId))
-          .take(GROUP_MAX + 1);
+  const group = await groupOf(ctx, row);
   // A partial group would restore some sheets and miss others: refuse instead.
   if (group.length > GROUP_MAX) throw appError("UNDO_STALE", "This action touched too many characters to undo.");
   if (group.some((r) => refuse.kinds.includes(r.kind))) throw appError("UNDO_USE_REST", refuse.message || undefined);
   if (group.some((r) => !r.undoable || r.undoneAt !== undefined)) throw appError("UNDO_STALE");
 
+  // The player-undo rule (`groupRolled`): once the dice rolled, only the GM undoes the action.
+  if (!isGm && groupRolled(group)) throw appError("UNDO_EXPIRED");
   const now = Date.now();
-  // A combat attack (CA3) is a dice row too: its player has the same minute (no rerolling by undo).
-  const dice = group.filter((r) => r.roll !== undefined && (r.kind === "roll" || r.kind === "death" || r.kind === "combat"));
-  if (!isGm && dice.some((r) => now - r.at > PLAYER_DICE_UNDO_MS)) {
-    throw appError("UNDO_EXPIRED");
-  }
 
   const inGroup = new Set<string>(group.map((r) => r._id));
   const characterIds = [...new Set(group.flatMap((r) => (r.characterId ? [r.characterId] : [])))];

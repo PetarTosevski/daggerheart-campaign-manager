@@ -1,7 +1,8 @@
 /**
  * Combat HUD HD3 (plan .omc/plans/combat-hud.yaml; user answer 8a 2026-11-01): `combatWithdraw.withdraw`, a player
  * withdraws their own use waiting on the GM's approval. Nothing was rolled or paid; the GM's queue item disappears; a
- * public feed line says so. Access per role is in the authz matrix (tests/convex/authz/hud.entries.ts).
+ * public feed line says so. A Charge waiting for its Difficulty withdraws too (user 2026-11-02; tested with the Charge in
+ * feature-prompts.test.ts). Access per role is in the authz matrix (tests/convex/authz/hud.entries.ts).
  */
 import { describe, expect, it } from "vitest";
 
@@ -126,7 +127,7 @@ describe("combatWithdraw.withdraw", () => {
     expect(await withdraw(w, b, key(), "gm")).toEqual({ status: "withdrawn", requestId: b });
   });
 
-  it("is NOT_FOUND for another campaign's request and for a request that is not a sanction", async () => {
+  it("is NOT_FOUND for another campaign's request and for one that is neither a sanction nor a Charge's Difficulty", async () => {
     const w = await buildWorld();
     // A request of another campaign (the GM's second table) named under this one.
     const { campaignId: otherCampaign } = await w.as("gm").mutation(api.campaigns.create, { frameId: "witherwild", name: "Other", idempotencyKey: key() });
@@ -160,5 +161,22 @@ describe("combatWithdraw.withdraw", () => {
     });
     expect(await codeOf(withdraw(w, move))).toBe("NOT_FOUND");
     expect((await rowOf(w, move))!.status).toBe("open");
+
+    // The Cloaked Difficulty ask follows a move that already happened (not a use): only a Charge's ask is withdrawn
+    // (user 2026-11-02; the Charge's own test is in feature-prompts.test.ts).
+    const cloak = await w.t.run(async (ctx) => {
+      const tokenId = (await ctx.db.query("combatTokens").first())!._id;
+      return ctx.db.insert("combatRequests", {
+        campaignId: w.campaignId,
+        kind: "difficulty",
+        status: "open",
+        createdBy: w.users.player,
+        createdAt: Date.now(),
+        responses: [],
+        payload: { schemaVersion: 1, kind: "difficulty", characterId: w.characterA, ask: { kind: "cloak", tokenId, at: { x: 5, y: 10 }, seers: [], groupId: "g" } },
+      });
+    });
+    expect(await codeOf(withdraw(w, cloak))).toBe("NOT_FOUND");
+    expect((await rowOf(w, cloak))!.status).toBe("open");
   });
 });

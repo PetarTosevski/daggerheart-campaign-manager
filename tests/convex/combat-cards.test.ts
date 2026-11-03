@@ -175,7 +175,7 @@ describe("combatCards.useCard: resolving", () => {
     expect(hand.loadout[0]).toMatchObject({ cardId: "hypnotic-shimmer", state: "exhausted", resetLabel: "Back after a rest" });
     expect(await code(a.use(a.player, "hypnotic-shimmer", [bandit.tokenId]))).toBe("CARD_EXHAUSTED");
 
-    await a.player.mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: key() });
+    await a.gm.mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: key() });
     expect((await a.sheet()).featureUses.some((u) => u.key === "card:hypnotic-shimmer")).toBe(false);
     const inst = await a.instance(bandit.instanceId);
     expect(inst.stress).toBe(0);
@@ -205,7 +205,7 @@ describe("combatCards.useCard: resolving", () => {
     if (result.success) {
       expect(s.cardTokens?.find((t) => t.cardId === "flight")?.count).toBeGreaterThanOrEqual(1);
     }
-    await a.player.mutation(api.actionLog.undo, { entryId: result.entryId, idempotencyKey: key() });
+    await a.gm.mutation(api.actionLog.undo, { entryId: result.entryId, idempotencyKey: key() });
     expect((await a.sheet()).cardTokens?.find((t) => t.cardId === "flight")).toBeUndefined();
   });
 

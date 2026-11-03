@@ -409,6 +409,23 @@ describe("Charge rolls first and the server moves the token on a success (dcm-bx
     expect(await a.w.as("otherPlayer").query(api.combatRequests.difficulties, { campaignId: a.campaignId })).toEqual([]);
   });
 
+  it("the player withdraws the Charge waiting for its Difficulty (HD3, user 2026-11-02): nothing rolled, paid or moved", async () => {
+    const a = await firbolg();
+    const asked = await a.ask();
+    if (asked.status !== "requested") throw new Error("not requested");
+    const withdraw = (role: "player" | "otherPlayer") =>
+      a.w.as(role).mutation(api.combatWithdraw.withdraw, { campaignId: a.campaignId, requestId: asked.requestId, idempotencyKey: key() });
+    expect(await codeOf(withdraw("otherPlayer"))).toBe("FORBIDDEN");
+    expect(await withdraw("player")).toEqual({ status: "withdrawn", requestId: asked.requestId });
+    expect(await a.gm.query(api.combatRequests.difficulties, { campaignId: a.campaignId })).toEqual([]);
+    expect(await codeOf(a.answer(asked.requestId, 12))).toBe("REQUEST_NOT_OPEN");
+    expect(await codeOf(withdraw("player"))).toBe("REQUEST_NOT_OPEN");
+    expect(await a.token(a.ash)).toMatchObject({ x: 2, y: 10 });
+    expect((await a.sheetOf(a.w.characterA)).stress).toBe(0);
+    const rows = await a.t.run((ctx) => ctx.db.query("actionLog").collect());
+    expect(rows.map((r) => [r.summary, r.undoable, r.roll])).toEqual([[`${(await a.sheetOf(a.w.characterA)).name} withdrew a Charge waiting for the GM`, false, undefined]]);
+  });
+
   it("the GM's Difficulty rolls it: the token moves on a success, the rows are the player's, the request closes", async () => {
     const a = await firbolg();
     const asked = await a.ask({ stress: false });

@@ -106,10 +106,11 @@ describe("HD4: a player's death move waits for the GM's confirm", () => {
     expect(logged.roll).toBeUndefined();
     expect(logged.before).toBeUndefined();
     expect(logged.summary).toBe("Ash chooses Blaze of Glory: holds the gate. Waiting for the GM to confirm.");
-    // Everyone who sees the character reads the wait.
+    // Everyone who sees the character reads the wait; the Undo is for its player (nothing rolled) and the GM only.
     const seen = await p2.query(api.deathMoves.state, { characterId: a });
-    expect(seen).toMatchObject({ awaitingMove: false, pending: null, request: { move: "blazeOfGlory", action: "holds the gate", entryId: r.entryId }, undoEntryId: r.entryId });
-    expect(await state()).toEqual(seen);
+    expect(seen).toMatchObject({ awaitingMove: false, pending: null, request: { move: "blazeOfGlory", action: "holds the gate", entryId: r.entryId }, undoEntryId: null });
+    expect(await state()).toEqual({ ...seen, undoEntryId: r.entryId });
+    expect(await p1.query(api.deathMoves.state, { characterId: a })).toEqual({ ...seen, undoEntryId: r.entryId });
   });
 
   it("nothing else is chosen while a move waits, by the player or the GM", async () => {
@@ -139,7 +140,9 @@ describe("HD4: a player's death move waits for the GM's confirm", () => {
     expect(await state()).toMatchObject({ request: null, awaitingMove: false, undoEntryId: done.entryId });
     expect((await row(done.entryId))?.actorId).not.toBe((await row(asked.entryId))?.actorId);
 
-    // The player can't undo the GM's confirmed move; the GM can, which also takes the request back.
+    // The player can't undo the GM's confirmed move (the dice rolled: no Undo shown); the GM can, which also takes the
+    // request back.
+    expect((await p1.query(api.deathMoves.state, { characterId: a })).undoEntryId).toBeNull();
     expect(await codeOf(p1.mutation(api.deathMoves.undo, { entryId: done.entryId, idempotencyKey: key() }))).toBe("FORBIDDEN");
     const undone = await gm.mutation(api.deathMoves.undo, { entryId: done.entryId, idempotencyKey: key() });
     expect(new Set(undone.undone)).toEqual(new Set([done.entryId, asked.entryId]));

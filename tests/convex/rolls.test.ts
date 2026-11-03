@@ -207,7 +207,9 @@ describe("rolls: rules", () => {
     await edit(a, { hope: 2, stress: 3 });
     const crit = await p1.mutation(api.rolls.manualRoll, { characterId: a, roll: agility, values: [5, 5], idempotencyKey: key() });
     expect(await sheetOf(a)).toMatchObject({ hope: 3, stress: 2 });
-    await p1.mutation(api.actionLog.undo, { entryId: crit.entryId, idempotencyKey: key() });
+    // A roll is the GM's to undo (the player-undo rule, user 2026-11-02).
+    expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId: crit.entryId, idempotencyKey: key() }))).toBe("UNDO_EXPIRED");
+    await gm.mutation(api.actionLog.undo, { entryId: crit.entryId, idempotencyKey: key() });
     expect(await sheetOf(a)).toMatchObject({ hope: 2, stress: 3 });
 
     const exp = (await sheetOf(a)).experiences[0]!;
@@ -268,7 +270,7 @@ describe("rolls: rules", () => {
   });
 
   it("a tag team costs 3 Hope once per session and applies one result to both", async () => {
-    const { p1, a, b, sheetOf, edit, fear } = await setup();
+    const { gm, p1, a, b, sheetOf, edit, fear } = await setup();
     await edit(a, { hope: 4 });
     await edit(b, { hope: 1 });
     const side = { trait: "agility" as const, modifier: 1 };
@@ -290,8 +292,8 @@ describe("rolls: rules", () => {
     expect((await sheetOf(a)).hope).toBe(withFear ? 1 : 2);
     expect((await sheetOf(b)).hope).toBe(withFear ? 1 : 2);
 
-    // Undo takes back the whole tag team: the 3 Hope, both results and the Fear.
-    await p1.mutation(api.actionLog.undo, { entryId: picked.entryId, idempotencyKey: key() });
+    // Undo (the GM's: the dice rolled) takes back the whole tag team: the 3 Hope, both results and the Fear.
+    await gm.mutation(api.actionLog.undo, { entryId: picked.entryId, idempotencyKey: key() });
     expect((await sheetOf(a)).hope).toBe(4);
     expect((await sheetOf(a)).featureUses).toEqual([]);
     expect((await sheetOf(b)).hope).toBe(1);
@@ -460,7 +462,7 @@ describe("rolls: trust (review H2, M1)", () => {
   const summaryOf = (t: ReturnType<typeof makeTest>, id: Id<"actionLog">) => t.run(async (ctx) => (await ctx.db.get("actionLog", id))!.summary);
 
   it("tagTeamApply refuses when either character rolled after the tag team; the tag team still undoes", async () => {
-    const { p1, p2, a, b, edit, sheetOf } = await setup();
+    const { gm, p1, p2, a, b, edit, sheetOf } = await setup();
     await edit(a, { hope: 6 });
     const side = { trait: "agility" as const, modifier: 0 };
     const { rolls } = await p1.mutation(api.rolls.tagTeam, { characterId: a, partnerId: b, initiator: side, partner: side, idempotencyKey: key() });
@@ -469,9 +471,9 @@ describe("rolls: trust (review H2, M1)", () => {
     expect(await codeOf(p1.mutation(api.rolls.tagTeamApply, { entryId: rolls[0]!.entryId, pick: a, idempotencyKey: key() }))).toBe("DICE_RULE");
 
     // With the roll in between undone, the tag team applies again.
-    await p2.mutation(api.actionLog.undo, { entryId: between.entryId, idempotencyKey: key() });
+    await gm.mutation(api.actionLog.undo, { entryId: between.entryId, idempotencyKey: key() });
     expect(await codeOf(p1.mutation(api.rolls.tagTeamApply, { entryId: rolls[0]!.entryId, pick: a, idempotencyKey: key() }))).toBe("ok");
-    await p1.mutation(api.actionLog.undo, { entryId: rolls[0]!.entryId, idempotencyKey: key() });
+    await gm.mutation(api.actionLog.undo, { entryId: rolls[0]!.entryId, idempotencyKey: key() });
     expect((await sheetOf(a)).hope).toBe(6);
   });
 
@@ -576,7 +578,7 @@ describe("rolls: Weapon Specialist rerolls 1s on Slayer Dice once per long rest 
   });
 
   it("no 1 keeps the use; a foundation-rank Slayer never rerolls; undo gives the use back", async () => {
-    const { p1, a, sheetOf, edit } = await slayerAt("specialization");
+    const { gm, p1, a, sheetOf, edit } = await slayerAt("specialization");
     serverD6(4, 2);
     await p1.mutation(api.rolls.manualRoll, { characterId: a, roll: { ...d6, slayerDice: 2 }, values: [3], idempotencyKey: key() });
     expect((await sheetOf(a)).featureUses.some((u) => u.key === "weaponSpecialistReroll")).toBe(false);
@@ -585,7 +587,7 @@ describe("rolls: Weapon Specialist rerolls 1s on Slayer Dice once per long rest 
     const { entryId } = await p1.mutation(api.rolls.manualRoll, { characterId: a, roll: { ...d6, slayerDice: 1 }, values: [3], idempotencyKey: key() });
     expect((await sheetOf(a)).featureUses.some((u) => u.key === "weaponSpecialistReroll")).toBe(true);
     vi.restoreAllMocks();
-    await p1.mutation(api.actionLog.undo, { entryId, idempotencyKey: key() });
+    await gm.mutation(api.actionLog.undo, { entryId, idempotencyKey: key() });
     expect((await sheetOf(a)).featureUses.some((u) => u.key === "weaponSpecialistReroll")).toBe(false);
 
     await edit(a, { subclassRank: "foundation" });

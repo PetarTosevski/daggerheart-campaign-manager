@@ -138,7 +138,8 @@ const area: Area = {
     { fn: api.feed.remove, access: "gm", setup: gmLogRow, expect: { grantee: "FORBIDDEN" } },
     { fn: api.feed.clear, access: "gm", expect: { grantee: "FORBIDDEN" } },
     { fn: api.history.list, access: "gm", expect: { grantee: "FORBIDDEN" } },
-    // Undo is for the row's actor and the GM (`undoEntry`); the row here is the GM's, so every player is FORBIDDEN.
+    // Undo is for the GM, and for the row's actor when the action rolled nothing (`undoEntry`, the player-undo rule; a
+    // player's rolled row is UNDO_EXPIRED: tests/convex/action-log.test.ts). The row here is the GM's: players FORBIDDEN.
     {
       fn: api.actionLog.undo,
       access: "scoped",

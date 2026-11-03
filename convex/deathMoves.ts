@@ -22,7 +22,7 @@ import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { assertOneActive } from "./characters";
-import { logAction, undoEntry } from "./lib/actionLog";
+import { logAction, undoEntry, viewerCanUndo } from "./lib/actionLog";
 import { editable, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { withoutCondition } from "./lib/cardRunner";
 import { rollDie } from "./lib/dice";
@@ -491,7 +491,8 @@ export const settleAway = keyedUserMutation({
 
 /**
  * Undoes a death-move row through `undoEntry` (its actor or the GM, while it
- * is the character's latest live row) and puts the character back to active
+ * is the character's latest live row; a rolled move, such as one the GM
+ * confirmed, is the GM's alone: the player-undo rule, `groupRolled`) and puts the character back to active
  * when that row took them out of play. DEATH_MOVE_RULE for another kind of row.
  */
 export const undo = keyedUserMutation({
@@ -526,8 +527,9 @@ export const undo = keyedUserMutation({
  * campaign plays less lethal, and whether the away reason is a player's
  * request the GM has yet to settle (LL1). HD4: `request` is the player's
  * move waiting for the GM's confirm (then `awaitingMove` is false and
- * `undoEntryId` is the request row, whose undo takes it back). Everyone who
- * can see the character.
+ * `undoEntryId` is the request row, whose undo takes it back). `undoEntryId`
+ * is null for a viewer who may not undo the row (`viewerCanUndo`: a player
+ * never undoes a rolled move). Everyone who can see the character.
  */
 export const state = userQuery({
   args: { characterId: v.id("characters") },
@@ -544,6 +546,7 @@ export const state = userQuery({
     const sheet = readSheet(character.sheet);
     const { latest, pending, request } = await deathState(ctx, character);
     const due = dueNow(character, sheet);
+    const undoable = latest !== null && latest.kind === "death" && (await viewerCanUndo(ctx, latest, ctx.user._id, await isGmOf(ctx, campaign)));
     return {
       awaitingMove: due && pending === null && request === null,
       pending,
@@ -557,7 +560,7 @@ export const state = userQuery({
               entryId: request.entryId,
               at: request.at,
             },
-      undoEntryId: latest !== null && latest.kind === "death" && latest.undoable ? latest._id : null,
+      undoEntryId: undoable ? latest._id : null,
       lessLethal: lessLethal(campaign),
       awayRequested: character.status === "away" && character.away?.requested === true,
     };

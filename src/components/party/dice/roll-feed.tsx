@@ -155,7 +155,8 @@ function GmRollSection({ campaignId }: { campaignId: Id<"campaigns"> }) {
 /**
  * The roll feed on the dashboard: every member sees player rolls live; GM
  * free rolls only reach players once revealed (the server filters them).
- * Undo for the roller and the GM; Reveal for the GM. The GM can also delete a
+ * Undo where `canUndo` allows it (the GM; a player only on their own action that rolled nothing, convex/lib/actionLog.ts
+ * `groupRolled`); Reveal for the GM. The GM can also delete a
  * row or clear the feed for everyone (display only: nothing is undone), and
  * apply a counted action roll to countdowns ("Tick countdowns"). Anyone can
  * fold the feed away on their device.

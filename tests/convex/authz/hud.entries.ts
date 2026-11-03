@@ -11,7 +11,8 @@ import { freshKey } from "./synth";
  * `combatHud.sheet` (HD2, `userQuery` + `loadCharacter(..., "view")`: class `own`) is every member's too; its modes and
  * what view mode leaves out are checked in tests/convex/hud-sheet.test.ts.
  * `combatWithdraw.withdraw` (HD3, answer 8a; `need: "view"` + `loadCharacter(..., "edit")` on the request's character):
- * characterA's player, the edit grantee and the GM withdraw characterA's open sanction; another player is FORBIDDEN.
+ * characterA's player, the edit grantee and the GM withdraw characterA's open sanction (or Charge waiting for its
+ * Difficulty, user 2026-11-02); another player is FORBIDDEN.
  * Its content checks are in tests/convex/hud-withdraw.test.ts.
  * `combatHud.sceneEndPreview` (H5.3, `gmQuery`): the GM only; what it lists is checked in tests/convex/hud-scene-end.test.ts.
  */

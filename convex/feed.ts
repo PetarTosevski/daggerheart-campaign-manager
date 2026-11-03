@@ -3,6 +3,7 @@ import { v } from "convex/values";
 
 import { appError } from "../src/lib/errors/app-error";
 import type { Doc } from "./_generated/dataModel";
+import { viewerCanUndo } from "./lib/actionLog";
 import { campaignQuery, gmMutation } from "./lib/functions";
 import { actionKindValidator, actionTargetValidator, rollValidator, visibilityValidator } from "./lib/validators/actionLog";
 
@@ -20,7 +21,10 @@ const common = {
   /** An adversary action's public row (H3): the tokens it named, by id; the map flashes them. Players get only PC tokens. */
   targets: v.optional(v.array(actionTargetValidator)),
   undone: v.boolean(),
-  /** The viewer is the row's actor or the GM, and the row is undoable and not undone (undo may still say UNDO_STALE). */
+  /**
+   * The viewer may press Undo (`viewerCanUndo`): the GM on any undoable live row; a player on their own row of an action
+   * that rolled nothing (the player-undo rule, convex/lib/actionLog.ts `groupRolled`). Undo may still say UNDO_STALE.
+   */
   canUndo: v.boolean(),
 };
 
@@ -57,7 +61,7 @@ export const list = campaignQuery({
           .paginate(paginationOpts);
     // Rows in a rest's group (e.g. a long rest's countdown notice) are undone with the rest, from the rest panel.
     const restGroups = new Set(page.page.filter((r) => r.kind === "rest" && r.groupId !== undefined).map((r) => r.groupId));
-    const view = (row: Doc<"actionLog">) => {
+    const view = async (row: Doc<"actionLog">) => {
       const shown = {
         _id: row._id,
         at: row.at,
@@ -70,14 +74,14 @@ export const list = campaignQuery({
         // Adversary tokens flash for the GM only (H3 user answer).
         ...(row.targets !== undefined ? { targets: isGm ? row.targets : row.targets.filter((t) => t.side === "pc") } : {}),
         undone: row.undoneAt !== undefined,
-        canUndo: row.undoable && row.kind !== "rest" && !(row.groupId !== undefined && restGroups.has(row.groupId)) && row.undoneAt === undefined && (isGm || row.actorId === ctx.user._id),
+        canUndo: row.kind !== "rest" && !(row.groupId !== undefined && restGroups.has(row.groupId)) && (await viewerCanUndo(ctx, row, ctx.user._id, isGm)),
       };
       if (isGm) return { ...shown, visibility: row.visibility, revealable: row.kind === "gmRoll" && row.visibility === "gm" };
       // The index already holds only public rows; this keeps the player shape honest.
       return { ...shown, visibility: "public" as const };
     };
     // A removed row is skipped here, so a page can come back shorter than asked (removals are rare).
-    return { ...page, page: page.page.filter((row) => row.removedAt === undefined && (isGm || row.visibility === "public")).map(view) };
+    return { ...page, page: await Promise.all(page.page.filter((row) => row.removedAt === undefined && (isGm || row.visibility === "public")).map(view)) };
   },
 });
 

@@ -450,7 +450,7 @@ describe("Minion picks (Q6, CB p.201)", () => {
     expect(pickRows.every((row) => row.groupId === pickRows[0]!.groupId)).toBe(true);
     expect(pickRows.find((row) => row.visibility === "public")!.summary).not.toMatch(STAT_WORDS);
 
-    await a.player.mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: key() });
+    await a.gm.mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: key() });
     expect(await a.instance(pack.instanceId)).toMatchObject({ hp: 0, defeated: false });
     expect(await a.instance(more.instanceId)).toMatchObject({ hp: 0, defeated: false });
   });
@@ -470,19 +470,17 @@ describe("Minion picks (Q6, CB p.201)", () => {
 describe("undo (U4)", () => {
   allowWorldEmails();
 
-  it("the player or the GM undoes the group: instances, sheet and Fear come back", async () => {
-    for (const who of ["player", "gm"] as const) {
-      const a = await arena();
-      const bandit = await a.enemy("Bandit", 6, 10);
-      const sheetBefore = await a.sheet();
-      const fearBefore = await a.fear();
-      const r = resolved(await a.attack(a.player, [bandit.tokenId]));
-      const res = await a.w.as(who).mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: key() });
-      expect(res.undone).toHaveLength(2);
-      expect(await a.instance(bandit.instanceId)).toMatchObject({ hp: 0, stress: 0, defeated: false });
-      expect(await a.sheet()).toEqual(sheetBefore);
-      expect(await a.fear()).toBe(fearBefore);
-    }
+  it("the GM undoes the group: instances, sheet and Fear come back", async () => {
+    const a = await arena();
+    const bandit = await a.enemy("Bandit", 6, 10);
+    const sheetBefore = await a.sheet();
+    const fearBefore = await a.fear();
+    const r = resolved(await a.attack(a.player, [bandit.tokenId]));
+    const res = await a.gm.mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: key() });
+    expect(res.undone).toHaveLength(2);
+    expect(await a.instance(bandit.instanceId)).toMatchObject({ hp: 0, stress: 0, defeated: false });
+    expect(await a.sheet()).toEqual(sheetBefore);
+    expect(await a.fear()).toBe(fearBefore);
   });
 
   it("refuses with UNDO_STALE once the instance changed after the attack; another player can't undo it", async () => {
@@ -496,14 +494,12 @@ describe("undo (U4)", () => {
     expect(await code(a.gm.mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: key() }))).toBe("UNDO_STALE");
   });
 
-  it("a player gets the dice row's minute; the GM any time", async () => {
+  it("a player never undoes their rolled attack, even at once (user 2026-11-02); the GM does", async () => {
     const a = await arena();
     const bandit = await a.enemy("Bandit", 6, 10);
     const r = resolved(await a.attack(a.player, [bandit.tokenId]));
-    await a.t.run(async (ctx) => {
-      for (const row of await ctx.db.query("actionLog").collect()) await ctx.db.patch("actionLog", row._id, { at: row.at - 120_000 });
-    });
     expect(await code(a.player.mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: key() }))).toBe("UNDO_EXPIRED");
+    expect(await code(a.gm.mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: key() }))).toBe("ok");
   });
 });
 

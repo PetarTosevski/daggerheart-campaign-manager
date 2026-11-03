@@ -249,7 +249,7 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - Ally picks (Rousing Strike, CB p.343): each ally answers on their own screen. CHANGE (engine dcm-bxp.99.32.24 first; actor picks until then).
 - Withdraw: a Charge waiting for the GM's Difficulty can be withdrawn too. CHANGE.
 - Conditions: players can toggle conditions on their own sheet, as built. KEEP.
-- Player undo of normal rolls: unanswered (asked again).
+- Player undo of normal rolls: answered below (GM-only once dice are rolled).
 - Player undo: once dice are rolled only the GM can undo; players can still take back things that roll nothing (moves, requests, waiting uses). CHANGE (engine).
 - Quick cast: a one-enemy card with an enemy already picked opens the panel pre-picked, as built. KEEP.
 - Action ring: add reactions and out-of-combat uses too (fold into "More" as needed). CHANGE.
