@@ -29,6 +29,8 @@ vi.mock("next/link", () => ({
     </a>
   ),
 }));
+// The Notes sub-tab is a slot (JN renders the Notes UI there, with a next/font face jsdom cannot load): a stub here.
+vi.mock("@/components/journal/notes-tab", () => ({ NotesTab: () => null }));
 vi.mock("@/app/(gm)/campaigns/[campaignId]/campaign-shell", () => ({
   useCampaign: () => ({ _id: "c1", name: "Ashes", frameId: "witherwild", role: who.role }),
 }));
