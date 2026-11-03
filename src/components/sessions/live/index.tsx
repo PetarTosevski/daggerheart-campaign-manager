@@ -97,7 +97,7 @@ export function endDialogText(choice: WitherChoice): string {
 }
 
 /** What the Start told the GM: the session ended first (B6), the Prayer Dice rolled (B10), Luckbringer and the moon dice (U1, U6). */
-function startReportLines(r: StartResult): string[] {
+export function startReportLines(r: StartResult): string[] {
   const previous = r.ended?.n !== undefined ? `Session ${r.ended.n} ended first.` : "The running session ended first.";
   const ended = r.ended ? endReportLines(r.ended).map((line, i) => (i === 0 ? line.replace("Session ended.", previous) : line)) : [];
   const notes = r.notes ?? [];
