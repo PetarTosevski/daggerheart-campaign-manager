@@ -265,3 +265,16 @@ SPOTLIGHT pill and lights the holder's token instead (and the mini banner on a p
 - (a) Follow the design: drop both tags; the disc, the light pool and the "The GM has the spotlight" card show it. →
   Less noise; banner specs change.
 - (b) Keep the banner tag as well. → Redundant on desktop; helps when the holder's token is off screen.
+
+## User answers 2026-11-04 (binding)
+- Q1 (a) The user's nav order and names (Dashboard, Party, Codex, World Map, Combat Map, Adversaries GM-only, Journal, Lorekeeper); the design's look (gold current page, live dot on Combat Map, Lorekeeper gold pill on the right).
+- Q2 (c) The 56 px app bar on the Combat Map only, PLUS a full-screen button that hides the app bar during play (other pages keep the art header).
+- Q3 (c) Build the gear and avatar now as placeholder buttons in the combat app bar; config S1 fills them later (S1's acceptance gains "and the combat app bar's gear / avatar").
+- Q4 (a) A 'Map tools' button at the dock's left end opens today's drawer (icon only on tablet).
+- Q5 (a) Class controls move into the HUD sheet in wave 10 (H9.5).
+- Q6 (a) The GM's day-disc pop-over gains Day / Dim / Night above the calendar.
+- Q7 (a) '1 Fear' pays the interrupt and counts as that adversary's spotlight this GM turn (no second charge); 'Free' costs nothing; giving it to a PC or the party is free.
+- Q8 (a) Add 'The whole party' as a spotlight holder.
+- Q9 (b) Measure for the GM AND players (each on their own screen, nothing saved); Select = today's pointer.
+- Q10 (a) 'Waiting on you' stays closed; a new request pulses the count and shows a short toast.
+- Q11 (b) Keep the banner's ' · Spotlight' tag as well (drop only the Fear banner's SPOTLIGHT pill).
