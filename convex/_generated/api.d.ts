@@ -58,6 +58,7 @@ import type * as feed from "../feed.js";
 import type * as history from "../history.js";
 import type * as hitKeywords from "../hitKeywords.js";
 import type * as http from "../http.js";
+import type * as journalTally from "../journalTally.js";
 import type * as levelUp from "../levelUp.js";
 import type * as lib_actionLog from "../lib/actionLog.js";
 import type * as lib_adversaryActions from "../lib/adversaryActions.js";
@@ -280,6 +281,7 @@ declare const fullApi: ApiFromModules<{
   history: typeof history;
   hitKeywords: typeof hitKeywords;
   http: typeof http;
+  journalTally: typeof journalTally;
   levelUp: typeof levelUp;
   "lib/actionLog": typeof lib_actionLog;
   "lib/adversaryActions": typeof lib_adversaryActions;

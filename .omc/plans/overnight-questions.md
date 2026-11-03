@@ -294,3 +294,6 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - Journal Q13: Notes page groups and Quick keys from the design. Default per brief (see journal-briefs.md Q13).
 - JD1: a session started again counts spotlight into the same per-session rows (per session, not per live window). Default: keep.
 - J0: when every PC has the same spotlight count (incl. all zero), no "least spotlight" line shows. Default: keep (alternative: name everyone).
+- J1: players' Log & recap also shows Threads raised and After the session (not tally / spotlight). Default: yes.
+- J1: the Journal header shows the frame name (design) not the campaign name. Default: frame name (Custom frame shows its own name).
+- J1: players also see "Play on the Combat Map". Default: yes.
