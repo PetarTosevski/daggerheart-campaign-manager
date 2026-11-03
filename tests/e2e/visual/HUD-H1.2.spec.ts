@@ -61,7 +61,7 @@ test("H1.2 Fear banner, disc, title and toolbar on the seed", { tag: "@visual" }
     await expect(gm.getByRole("dialog", { name: "Time of the long cycle" })).toBeVisible();
     await shoot(gm, "gm-time-arc-1440");
     await gm.keyboard.press("Escape");
-    await gm.getByRole("group", { name: "GM tools" }).getByRole("button", { name: "Fog", exact: true }).click();
+    await gm.getByRole("toolbar", { name: "Map controls" }).getByRole("button", { name: "Fog", exact: true }).click();
     await shoot(gm, "gm-fog-1440");
     await player.getByRole("group", { name: "Your tools" }).getByRole("button", { name: "Dice" }).click();
     await expect(player.getByTestId("hud-dice-box")).toBeVisible({ timeout: 30_000 });

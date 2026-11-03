@@ -11,7 +11,7 @@ import type { Id } from "../../../../../convex/_generated/dataModel";
 
 /**
  * `campaigns.setTimeOfDay` as an intent (the one field) with an optimistic update of both reads that show the light on
- * this page: `combatHud.scene` (the disc, this toolbar) and `campaigns.timeOfDay` (the map's vision, the drawer's
+ * this page: `combatHud.scene` (the disc and its pop-over) and `campaigns.timeOfDay` (the map's vision, the drawer's
  * classic pill). Only offered where the server allows it (`scene.canSetLight`: edit access, no campaign time).
  */
 export function useSetLight(campaignId: Id<"campaigns">) {
@@ -33,7 +33,7 @@ export function useSetLight(campaignId: Id<"campaigns">) {
   return { set, error };
 }
 
-/** The GM toolbar's Day / Dim / Night (GMDesktop `.gtools .seg`). */
+/** Day / Dim / Night in the GM's day-disc pop-over (user answer Q6a; was the GM toolbar's `.gtools .seg`). */
 export function LightSeg({ campaignId, light }: { campaignId: Id<"campaigns">; light: LightLevel }) {
   const setter = useSetLight(campaignId);
   return (

@@ -45,6 +45,8 @@ test("a core campaign counts days: the HUD disc shows the day, the GM ends it an
     await discButton.click();
     const pop = gm.getByRole("dialog", { name: "Campaign day" });
     await expect(pop.getByTestId("campaign-day-label")).toHaveText("Week 1 · Day 1");
+    // H9.3 (user answer Q6a): Day / Dim / Night sits above the calendar in the pop-over.
+    await expect(pop.getByRole("group", { name: "Time of day" }).getByRole("button", { name: "Dim" })).toHaveAttribute("aria-pressed", "true");
     await expectNoSeriousA11yViolations(gm);
 
     await pop.getByRole("button", { name: "End day" }).click();

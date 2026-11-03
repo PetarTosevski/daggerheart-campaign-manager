@@ -76,11 +76,11 @@ test("the GM ends the scene from the Combat Map and a once-per-scene limit comes
     expect(await sceneLimits()).toEqual(["feat:ancestry:gnome:flicker-step"]);
     expect(await flicker().then(() => "ok", errorCode)).toBe("FEATURE_EXHAUSTED");
 
-    // ---- The GM ends the scene from the HUD's toolbar, after a confirmation that names what ends.
+    // ---- The GM ends the scene from the HUD's dock (H9.3: the title row has no tools), after a confirmation that names what ends.
     await page.goto(url);
     await expect(page.getByTestId("combat-hud")).toBeVisible({ timeout: 30_000 });
-    const endScene = page.getByRole("group", { name: "GM tools" }).getByRole("button", { name: "End scene", exact: true });
-    // The HUD's desktop toolbar buttons are 36 px high (GMDesktop); the classic card's 44 px touch check went with it
+    const endScene = page.getByRole("toolbar", { name: "Map controls" }).getByRole("button", { name: "End scene", exact: true });
+    // The classic card's 44 px touch check went with the classic card
     // (the HUD's tablet / phone sizes: tests/e2e/hud-tablet.spec.ts, hud-phone.spec.ts).
     await expect(endScene).toBeVisible({ timeout: 30_000 });
     await endScene.click();

@@ -10,37 +10,28 @@ import { cn } from "@/lib/utils";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { CombatMapSummary, CombatPageState } from "../../slots";
-import { PreviewPicker, VisionPanel } from "../../vision";
-import { AREAS_PANEL_ID, setAreasOpen, useAreasOpen } from "../areas/open";
 import { sameSheet, useHud, type HudPartProps, type HudSheetTarget } from "../state";
 import { PartBoundary, hudButtonClass } from "../ui";
 import { HudDice } from "./dice";
-import { HudEndScene } from "./end";
-import { LightSeg } from "./light";
 import { ScenePop } from "./pop";
 
-/** Props of the scene region: the page state plus the HUD toolbar the shell builds (Map tools, the classic switch). */
+/** Props of the scene region: the page state plus a player's title-row tools the shell builds (Your character, map controls). */
 export type HudSceneProps = HudPartProps & { toolbar: ReactNode };
 
 /**
- * The title and toolbar at x = 690 (plan combat-hud H1.2; Main `.title` / `.tr`, GMDesktop `.gtitle` / `.gtools`):
- * the map's name, the "Live" line (GM: "Live · GM view · Session n"), then for a player Dice and Sheet, for the GM
- * Day / Dim / Night (only where it can be set), Areas, Fog, Dice, Player view and End scene; both end with the shell's
- * toolbar (Map tools, answer 12a, and the classic switch). Dice and Fog open the app's existing dice box and fog brush
- * in a non-modal pop-over under the toolbar; Areas opens the GM's "Areas on the map" panel (H5.3, hud/areas); End scene
- * asks "End the scene?" naming what ends (H5.3, ./end); Sheet opens the HUD sheet panel (H2.1).
+ * The scene at x = 690 (plan combat-hud H1.2, H9.3; GMDesktop / GMTablet `.scn`, Main `.title` / `.tr`).
+ * - GM: the map's name and a "Live" chip only (HANDOFF "GM view": top centre is the scene title + Live chip). Every GM
+ *   tool lives in the bottom dock (H9.0); the light is set from the day disc's pop-over (user answer Q6a, ./disc).
+ * - Player: the map's name, the "Live" line and the title row: Dice, Sheet, then the shell's tools ("Your character")
+ *   and, on a row of their own, the map controls (Measure, Names, zoom; Q9b).
+ * Both fade while a sheet is open (the boards' `.sh-open .scn` / `.title, .tr`).
  */
 
-type PopName = "dice" | "fog";
-const POP_TITLE: Readonly<Record<PopName, string>> = { dice: "Dice", fog: "Vision and fog" };
-const popId = (name: PopName) => `hud-pop-${name}`;
+const DICE_POP = "hud-pop-dice";
 
-/** The title's second line: "Live" / "Not live", and for the GM "· GM view" and the live session's number. */
-export function sceneLine(map: Pick<CombatMapSummary, "live"> | null, gm: boolean, session: number | null): string {
-  const parts = [map === null ? "No live map yet" : map.live ? "Live" : "Not live"];
-  if (gm) parts.push("GM view");
-  if (gm && session !== null) parts.push(`Session ${session}`);
-  return parts.join(" · ");
+/** The scene's live state: "Live" / "Not live", or "No live map yet" before the GM shows one. */
+export function sceneLine(map: Pick<CombatMapSummary, "live"> | null): string {
+  return map === null ? "No live map yet" : map.live ? "Live" : "Not live";
 }
 
 const DiceIcon = () => (
@@ -59,108 +50,67 @@ const SheetIcon = () => (
   </svg>
 );
 
-const glassButton = cn(hudButtonClass(), "hud-glass-btn");
+const glassButton = cn(hudButtonClass("tool"), "hud-glass-btn");
 
 export function HudScene({ state, toolbar }: HudSceneProps): ReactNode {
-  const gm = state.role === "gm";
-  const [pop, setPop] = useState<PopName | null>(null);
-  const areasOpen = useAreasOpen();
-  const party = useQuery(api.combatHud.party, state.map ? { campaignId: state.campaignId, mapId: state.map._id } : "skip");
-  // The character Dice rolls for and Sheet opens: a player's own PC on the map; for the GM the selected PC token.
-  const characterId = gm
-    ? (party?.find((p) => p.tokenId === state.selectedTokenId)?.characterId ?? null)
-    : (party?.find((p) => p.mine)?.characterId ?? null);
+  if (state.role === "gm") {
+    return (
+      <div className="hud-scene hud-scene-gm">
+        <GmTitle state={state} />
+      </div>
+    );
+  }
+  return <PlayerScene state={state} toolbar={toolbar} />;
+}
 
-  const popButton = (name: PopName, label: ReactNode) => (
-    <button
-      type="button"
-      className={glassButton}
-      aria-expanded={pop === name}
-      aria-controls={popId(name)}
-      onClick={() => setPop(pop === name ? null : name)}
-    >
-      {label}
-    </button>
-  );
-  const dice = popButton(
-    "dice",
-    <>
-      <DiceIcon />
-      Dice
-    </>,
-  );
-
+/** The GM's scene pill (`.scn .sc-t`): the map's name and the Live chip. */
+function GmTitle({ state }: { state: CombatPageState }) {
+  const line = sceneLine(state.map);
   return (
-    <div className={cn("hud-scene", gm && "hud-scene-gm")}>
-      <SceneTitle state={state} />
-      <div className="hud-tr" role="group" aria-label={gm ? "GM tools" : "Your tools"}>
-        {gm ? (
+    <div className="hud-title hud-scn" data-testid="hud-title">
+      <h2>{state.map?.name ?? "Combat Map"}</h2>
+      <span className={cn("hud-live", state.map?.live && "hud-live-on")} data-testid="hud-live">
+        {state.map?.live ? <span className="hud-live-dot" aria-hidden="true" /> : null}
+        {line}
+      </span>
+    </div>
+  );
+}
+
+function PlayerScene({ state, toolbar }: HudSceneProps) {
+  const [dice, setDice] = useState(false);
+  const party = useQuery(api.combatHud.party, state.map ? { campaignId: state.campaignId, mapId: state.map._id } : "skip");
+  // The character Dice rolls for and Sheet opens: the player's own PC on the map.
+  const characterId = party?.find((p) => p.mine)?.characterId ?? null;
+  return (
+    <div className="hud-scene hud-scene-pl">
+      <div className="hud-title" data-testid="hud-title">
+        <h2>{state.map?.name ?? "Combat Map"}</h2>
+        <span>{sceneLine(state.map)}</span>
+      </div>
+      <div className="hud-tr" role="group" aria-label="Your tools">
+        {party === undefined && state.map ? null : characterId ? (
           <>
-            <PartBoundary label="Time of day">
-              <GmLight campaignId={state.campaignId} />
-            </PartBoundary>
-            {state.map ? (
-              <button
-                type="button"
-                className={glassButton}
-                aria-expanded={areasOpen}
-                aria-controls={AREAS_PANEL_ID}
-                onClick={() => setAreasOpen(!areasOpen)}
-              >
-                Areas
-              </button>
-            ) : null}
-            {state.map ? popButton("fog", "Fog") : null}
-            {dice}
-            <PartBoundary label="Player view">
-              <PreviewPicker {...state} />
-            </PartBoundary>
-            <HudEndScene campaignId={state.campaignId} sceneName={state.map?.name ?? "Combat Map"} />
-          </>
-        ) : party === undefined && state.map ? null : characterId ? (
-          <>
-            {dice}
+            <button type="button" className={glassButton} aria-expanded={dice} aria-controls={DICE_POP} onClick={() => setDice(!dice)}>
+              <DiceIcon />
+              Dice
+            </button>
             <SheetButton characterId={characterId} />
           </>
         ) : null}
+        {/* The map controls (`.hud-pmc`) take the second row: CSS orders them after this break. */}
+        <span className="hud-tr-br" aria-hidden="true" />
         {toolbar}
       </div>
-      {pop ? (
-        <ScenePop id={popId(pop)} title={POP_TITLE[pop]} onClose={() => setPop(null)} className={`hud-pop-${pop}`}>
-          <PartBoundary label={POP_TITLE[pop]}>
-            <PopBody name={pop} state={state} characterId={characterId} />
+      {dice ? (
+        <ScenePop id={DICE_POP} title="Dice" onClose={() => setDice(false)} className="hud-pop-dice">
+          <PartBoundary label="Dice">
+            <HudDice campaignId={state.campaignId} characterId={characterId} gm={false} />
           </PartBoundary>
         </ScenePop>
       ) : null}
     </div>
   );
-}
-
-function PopBody({ name, state, characterId }: { name: PopName; state: CombatPageState; characterId: Id<"characters"> | null }) {
-  const { map } = state;
-  if (name === "dice") return <HudDice campaignId={state.campaignId} characterId={characterId} gm={state.role === "gm"} />;
-  if (map === null) return null;
-  return <VisionPanel {...state} map={map} />;
-}
-
-/** The map's name and the "Live" line (the board's `.title` / `.gtitle`). */
-function SceneTitle({ state }: { state: CombatPageState }) {
-  const gm = state.role === "gm";
-  // The live session's number (Sessions hub), for the GM's line only.
-  const sessions = useQuery(api.sessionWrap.dashboard, gm ? { campaignId: state.campaignId } : "skip");
-  return (
-    <div className="hud-title" data-testid="hud-title">
-      <h2>{state.map?.name ?? "Combat Map"}</h2>
-      <span>{sceneLine(state.map, gm, sessions?.live?.n ?? null)}</span>
-    </div>
-  );
-}
-
-/** Day / Dim / Night for the GM, hidden where the light can't be set (campaign time decides it, answer 9b). */
-function GmLight({ campaignId }: { campaignId: Id<"campaigns"> }) {
-  const scene = useQuery(api.combatHud.scene, { campaignId });
-  if (scene === undefined || !scene.canSetLight) return null;
-  return <LightSeg campaignId={campaignId} light={scene.light} />;
 }
 
 /** "Sheet": your sheet in the HUD panel (H2.1 draws it from the HUD state); again closes it. */

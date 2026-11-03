@@ -50,7 +50,7 @@ export function HudEndScene({ campaignId, sceneName, className }: { campaignId: 
 
   return (
     <>
-      <button type="button" className={cn(hudButtonClass(), "hud-glass-btn hud-end", className)} disabled={end.pending} onClick={() => setOpen(true)}>
+      <button type="button" className={cn(hudButtonClass("danger"), "hud-glass-btn hud-end", className)} disabled={end.pending} onClick={() => setOpen(true)}>
         End scene
       </button>
       <span className="hud-end-status" role="status" aria-live="polite" data-testid="end-scene-status">
@@ -104,10 +104,10 @@ function EndSceneDialog({
             <EndPreview campaignId={campaignId} />
           </PartBoundary>
           <div className="hud-em-f">
-            <button type="button" className={hudButtonClass()} onClick={onClose}>
+            <button type="button" className={hudButtonClass("cancel")} onClick={onClose}>
               Keep playing
             </button>
-            <button type="button" className={cn(hudButtonClass("primary"), "hud-em-yes")} onClick={onEnd}>
+            <button type="button" className={cn(hudButtonClass("danger"), "hud-em-yes")} onClick={onEnd}>
               End the scene
             </button>
           </div>

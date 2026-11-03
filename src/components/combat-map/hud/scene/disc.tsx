@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import type { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { PartBoundary } from "../ui";
+import { LightSeg } from "./light";
 import { ScenePop } from "./pop";
 
 /** What `combatHud.scene` returns: Fear, light, phase, day and what the caller may change. */
@@ -26,6 +27,10 @@ export type HudSceneData = FunctionReturnType<typeof api.combatHud.scene>;
  * that opens the existing time arc with End day (answer 9b, `scene.canOpenTimeArc`). Every other campaign, core
  * included (user decision 2026-11-02, TASK-CORE-CALENDAR), reads "Week n · Day n" and the light ("Dim"); for the GM it
  * is a button that opens the dashboard's End day (`CampaignDay`, `scene.canEndDay`). Players read it only.
+ *
+ * The light is set here too (user answer Q6a, plan combat-hud H9.3; the GM toolbar's Day / Dim / Night switch is gone):
+ * where `scene.canSetLight` (edit access, no campaign time) the pop-over shows Day / Dim / Night above the calendar.
+ * With campaign time the light follows the clock, so the time arc's pop-over has no switch.
  */
 
 /** The disc's lines: "Day 3" + "Afternoon" with campaign time, else "Week 1 · Day 3" + the light ("Dim"). */
@@ -74,7 +79,7 @@ export function SceneDisc({ campaignId, scene }: { campaignId: Id<"campaigns">; 
   );
 
   const arc = scene.canOpenTimeArc;
-  if (!arc && !scene.canEndDay) {
+  if (!arc && !scene.canEndDay && !scene.canSetLight) {
     return (
       <div className="hud-sun" role="img" aria-label={discLabel(scene)} data-testid="hud-disc">
         {face}
@@ -86,7 +91,7 @@ export function SceneDisc({ campaignId, scene }: { campaignId: Id<"campaigns">; 
       <button
         type="button"
         className="hud-sun-btn"
-        aria-label={`${discLabel(scene)}: ${arc ? "open the time arc" : "open End day"}`}
+        aria-label={`${discLabel(scene)}: ${arc ? "open the time arc" : scene.canEndDay ? "open End day" : "set the light"}`}
         aria-expanded={open}
         aria-controls={arc ? TIME_ARC_POP : END_DAY_POP}
         onClick={() => setOpen(!open)}
@@ -95,6 +100,7 @@ export function SceneDisc({ campaignId, scene }: { campaignId: Id<"campaigns">; 
       </button>
       {open && arc ? (
         <ScenePop id={TIME_ARC_POP} title="Time of the long cycle" onClose={() => setOpen(false)} className="hud-pop-time">
+          {scene.canSetLight ? <LightSeg campaignId={campaignId} light={scene.light} /> : null}
           <PartBoundary label="The time arc">
             <TimeArc campaignId={campaignId} />
           </PartBoundary>
@@ -102,8 +108,9 @@ export function SceneDisc({ campaignId, scene }: { campaignId: Id<"campaigns">; 
       ) : null}
       {open && !arc ? (
         <ScenePop id={END_DAY_POP} title="Campaign day" onClose={() => setOpen(false)} className="hud-pop-day">
+          {scene.canSetLight ? <LightSeg campaignId={campaignId} light={scene.light} /> : null}
           <PartBoundary label="The campaign day">
-            <CampaignDay campaignId={campaignId} />
+            <CampaignDay campaignId={campaignId} readOnly={!scene.canEndDay} />
           </PartBoundary>
         </ScenePop>
       ) : null}

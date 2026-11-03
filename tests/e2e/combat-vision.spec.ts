@@ -165,10 +165,10 @@ test("fog of war: dim-band reveal, a wall, daytime, lights, explored areas, the 
     await expect(playerBoard.getByRole("button", { name: /^Wolf/ })).toHaveCount(0);
 
     // ---- The GM previews Ash's view (R12): the fog and cone on the GM's page; the Wolf is ghosted there.
-    await page.getByRole("group", { name: "GM tools" }).getByRole("button", { name: /Player view/ }).click();
+    await page.getByRole("toolbar", { name: "Map controls" }).getByRole("button", { name: /Player view/ }).click();
     // By keyboard: the GM's spotlight panel covers the menu on screen (dcm-bxp.99.32.42).
     await page.getByRole("menu", { name: "Open the player view as" }).getByRole("menuitemradio", { name: "Ash" }).press("Enter");
-    await expect(page.getByRole("group", { name: "GM tools" }).getByRole("button", { name: /Viewing as Ash/ })).toBeVisible();
+    await expect(page.getByRole("toolbar", { name: "Map controls" }).getByRole("button", { name: /Viewing as Ash/ })).toBeVisible();
     await expect(page.getByTestId("combat-fog")).toBeVisible();
     await expect(page.getByTestId("combat-cone")).toHaveCount(1);
     await expect(board.getByRole("button", { name: /^Wolf, Enemy/ })).toHaveCSS("opacity", "0.28");
@@ -201,7 +201,7 @@ test("fog of war: dim-band reveal, a wall, daytime, lights, explored areas, the 
     // ---- The GM's fog brush (R12), from the HUD's Fog pop-up: Hide over the Bandit hides it from the player; Erase
     // brings it back.
     await tools.press("Escape");
-    await page.getByRole("group", { name: "GM tools" }).getByRole("button", { name: "Fog", exact: true }).click();
+    await page.getByRole("toolbar", { name: "Map controls" }).getByRole("button", { name: "Fog", exact: true }).click();
     const vision = page.getByRole("dialog", { name: "Vision and fog" });
     await vision.getByRole("group", { name: "Fog brush" }).getByRole("button", { name: "Hide" }).click();
     await vision.getByRole("group", { name: "Brush size" }).getByRole("button", { name: "Brush 3" }).click();

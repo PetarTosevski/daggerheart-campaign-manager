@@ -1,6 +1,6 @@
 // Plan combat-hud H1.2 (docs/tasks/TASK-HUD-H1.2.md): the Fear banner (− / + on the GM view only, no confirm,
 // optimistic), the day / time disc (GM button to the time arc with campaign time, read only otherwise) and the title
-// with Dice / Sheet and the GM toolbar. convex/react is replaced by the query results held here; mutations are recorded
+// with Dice / Sheet (players) or the Live chip alone (GM, H9.3); the light is set from the GM's disc pop-over (Q6a). convex/react is replaced by the query results held here; mutations are recorded
 // and their optimistic updates captured. The reused heavy parts (time arc, area tools, vision card, dice box) are stubs.
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
@@ -34,7 +34,8 @@ vi.mock("convex/react", () => ({
 }));
 vi.mock("@/app/(gm)/campaigns/[campaignId]/time-arc", () => ({
   TimeArc: () => createElement("button", { type: "button", "data-testid": "time-arc-stub" }, "End day"),
-  CampaignDay: () => createElement("button", { type: "button", "data-testid": "campaign-day-stub" }, "End day"),
+  CampaignDay: ({ readOnly }: { readOnly?: boolean }) =>
+    createElement("p", { "data-testid": "campaign-day-stub" }, readOnly ? "Week 2 · Day 4" : "Week 2 · Day 4 End day"),
 }));
 vi.mock("@/app/(gm)/campaigns/[campaignId]/campaign-shell", () => ({ useCampaign: () => ({ options: { hopeAndFear: true } }) }));
 vi.mock("@/components/combat-map/map-view/area-overlay", () => ({ AreaTools: () => createElement("p", { "data-testid": "area-tools-stub" }, "area tools") }));
@@ -48,6 +49,7 @@ const { HudFear } = await import("../../../src/components/combat-map/hud/fear");
 const { fearAfterStep } = await import("../../../src/components/combat-map/hud/fear/banner");
 const { HudScene, sceneLine } = await import("../../../src/components/combat-map/hud/scene");
 const { discLabel, discLines } = await import("../../../src/components/combat-map/hud/scene/disc");
+const { HudDice } = await import("../../../src/components/combat-map/hud/scene/dice");
 const { HudProvider, useHud } = await import("../../../src/components/combat-map/hud/state");
 
 const CAMPAIGN = "c1" as Id<"campaigns">;
@@ -123,12 +125,10 @@ describe("helpers", () => {
     expect(discLabel(CORE as never)).toBe("Week 2, Day 4, Dim light");
   });
 
-  it("writes the title's line for the GM and for players", () => {
-    expect(sceneLine({ live: true }, true, 6)).toBe("Live · GM view · Session 6");
-    expect(sceneLine({ live: true }, true, null)).toBe("Live · GM view");
-    expect(sceneLine({ live: false }, true, null)).toBe("Not live · GM view");
-    expect(sceneLine({ live: true }, false, 6)).toBe("Live");
-    expect(sceneLine(null, false, null)).toBe("No live map yet");
+  it("writes the scene's live state", () => {
+    expect(sceneLine({ live: true })).toBe("Live");
+    expect(sceneLine({ live: false })).toBe("Not live");
+    expect(sceneLine(null)).toBe("No live map yet");
   });
 });
 
@@ -227,6 +227,10 @@ describe("day / time disc", () => {
     const pop = screen.getByRole("dialog", { name: "Campaign day" });
     expect(within(pop).getByTestId("campaign-day-stub")).toHaveTextContent("End day");
     expect(within(pop).queryByTestId("time-arc-stub")).toBeNull();
+    // Q6a: Day / Dim / Night sits above the calendar where the light can be set.
+    const seg = within(pop).getByRole("group", { name: "Time of day" });
+    expect(seg.compareDocumentPosition(within(pop).getByTestId("campaign-day-stub")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(seg).getByRole("button", { name: "Dim" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.keyDown(pop, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(button).toHaveFocus();
@@ -242,26 +246,12 @@ describe("day / time disc", () => {
   });
 });
 
-describe("title and toolbar", () => {
-  it("the GM sees the map name, 'Live · GM view · Session 6' and the GM toolbar ending with the shell's", () => {
-    renderHud(createElement(HudScene, { state: state("gm"), toolbar }));
-    expect(screen.getByRole("heading", { level: 2, name: "Forest Camp" })).toBeInTheDocument();
-    expect(screen.getByTestId("hud-title")).toHaveTextContent("Live · GM view · Session 6");
-    const tools = screen.getByRole("group", { name: "GM tools" });
-    const names = within(tools)
-      .getAllByRole("button")
-      .map((b) => b.textContent);
-    expect(names).toEqual(["Areas", "Fog", "Dice", "Player view", "End scene", "Map tools"]);
-    // Witherwild: campaign time sets the light, so no Day / Dim / Night.
-    expect(within(tools).queryByRole("group", { name: "Time of day" })).toBeNull();
-    expect(within(tools).queryByRole("button", { name: "Sheet" })).toBeNull();
-  });
-
-  it("Day / Dim / Night sets the time of day where it can be set, optimistically", async () => {
+describe("the light from the day disc (user answer Q6a)", () => {
+  it("Day / Dim / Night in the disc's pop-over sets the time of day, optimistically", async () => {
     results["combatHud:scene"] = CORE;
-    renderHud(createElement(HudScene, { state: state("gm"), toolbar }));
-    const seg = screen.getByRole("group", { name: "Time of day" });
-    expect(within(seg).getByRole("button", { name: "Dim" })).toHaveAttribute("aria-pressed", "true");
+    renderHud(createElement(HudFear, { state: state("gm") }));
+    fireEvent.click(screen.getByRole("button", { name: "Week 2, Day 4, Dim light: open End day" }));
+    const seg = within(screen.getByRole("dialog", { name: "Campaign day" })).getByRole("group", { name: "Time of day" });
     await act(async () => fireEvent.click(within(seg).getByRole("button", { name: "Night" })));
     expect(calls).toEqual([{ name: "campaigns:setTimeOfDay", args: { campaignId: CAMPAIGN, timeOfDay: "night" } }]);
     const store = new Map<string, unknown>([
@@ -276,40 +266,56 @@ describe("title and toolbar", () => {
     expect((store.get("campaigns:timeOfDay") as { light: string }).light).toBe("night");
   });
 
-  it("Areas, Fog and Dice open the existing tools in one pop-over at a time", () => {
-    renderHud(createElement(HudScene, { state: state("gm"), toolbar }));
-    // H5.3: Areas toggles the GM's "Areas on the map" panel (hud/areas, mounted by the shell; tests/unit/hud/fear-confirm.test.tsx).
-    const areas = screen.getByRole("button", { name: "Areas" });
-    fireEvent.click(areas);
-    expect(areas).toHaveAttribute("aria-expanded", "true");
-    expect(areas).toHaveAttribute("aria-controls", "hud-areas");
-    fireEvent.click(areas);
-    expect(areas).toHaveAttribute("aria-expanded", "false");
-    fireEvent.click(screen.getByRole("button", { name: "Fog" }));
-    expect(within(screen.getByRole("dialog", { name: "Vision and fog" })).getByTestId("vision-stub")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Dice" }));
-    // User answer 2026-11-02: a plain GM roller (the classic secret GM roll), with a hint for rolling for a PC.
-    const dice = screen.getByRole("dialog", { name: "Dice" });
-    expect(within(dice).getByTestId("hud-gm-roller")).toBeInTheDocument();
-    expect(dice).toHaveTextContent("Select a PC token on the map to roll for them instead.");
-    expect(within(dice).queryByRole("group", { name: "Roll as" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Close Dice" }));
-    expect(screen.queryByRole("dialog")).toBeNull();
+  it("with campaign time the time arc's pop-over has no switch (the light follows the clock)", () => {
+    renderHud(createElement(HudFear, { state: state("gm") }));
+    fireEvent.click(screen.getByRole("button", { name: /open the time arc$/ }));
+    const pop = screen.getByRole("dialog", { name: "Time of the long cycle" });
+    expect(within(pop).queryByRole("group", { name: "Time of day" })).toBeNull();
   });
 
-  it("the GM's Dice: the GM roller first; with a PC token selected, 'For <PC>' opens that PC's dice box", () => {
-    renderHud(createElement(HudScene, { state: state("gm", { selectedTokenId: "t-brannoc" as Id<"combatTokens"> }), toolbar }));
-    fireEvent.click(screen.getByRole("button", { name: "Dice" }));
-    const dice = screen.getByRole("dialog", { name: "Dice" });
-    const as = within(dice).getByRole("group", { name: "Roll as" });
+  it("an editor who can set the light but not end the day gets the switch and a read-only calendar", () => {
+    results["combatHud:scene"] = { ...CORE, canEndDay: false };
+    renderHud(createElement(HudFear, { state: state("gm") }));
+    fireEvent.click(screen.getByRole("button", { name: "Week 2, Day 4, Dim light: set the light" }));
+    const pop = screen.getByRole("dialog", { name: "Campaign day" });
+    expect(within(pop).getByRole("group", { name: "Time of day" })).toBeInTheDocument();
+    expect(within(pop).getByTestId("campaign-day-stub")).not.toHaveTextContent("End day");
+  });
+});
+
+describe("title", () => {
+  it("the GM sees the map name and the Live chip only: no tools, no 'GM view', no session", () => {
+    renderHud(createElement(HudScene, { state: state("gm"), toolbar }));
+    expect(screen.getByRole("heading", { level: 2, name: "Forest Camp" })).toBeInTheDocument();
+    expect(screen.getByTestId("hud-title")).toHaveTextContent(/^Forest CampLive$/);
+    expect(screen.getByTestId("hud-live").querySelector(".hud-live-dot")).not.toBeNull();
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.queryByRole("group")).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  it("the GM's chip says 'Not live' without the dot when the map is not live", () => {
+    renderHud(createElement(HudScene, { state: state("gm", { map: { ...MAP!, live: false } }), toolbar }));
+    expect(screen.getByTestId("hud-live")).toHaveTextContent("Not live");
+    expect(screen.getByTestId("hud-live").querySelector(".hud-live-dot")).toBeNull();
+  });
+
+  it("the GM's Dice (opened from the dock): the GM roller first; with a PC selected, 'For <PC>' opens that PC's dice box", () => {
+    renderHud(createElement(HudDice, { campaignId: CAMPAIGN, characterId: BRANNOC, gm: true }));
+    const as = screen.getByRole("group", { name: "Roll as" });
     expect(within(as).getByRole("button", { name: "GM roll" })).toHaveAttribute("aria-pressed", "true");
-    expect(within(dice).getByTestId("hud-gm-roller")).toBeInTheDocument();
+    expect(screen.getByTestId("hud-gm-roller")).toBeInTheDocument();
     fireEvent.click(within(as).getByRole("button", { name: "For Brannoc" }));
     expect(within(as).getByRole("button", { name: "For Brannoc" })).toHaveAttribute("aria-pressed", "true");
-    expect(within(dice).getByTestId("hud-dice-box")).toBeInTheDocument();
-    expect(within(dice).queryByTestId("hud-gm-roller")).toBeNull();
-    fireEvent.click(within(as).getByRole("button", { name: "GM roll" }));
-    expect(within(dice).getByTestId("hud-gm-roller")).toBeInTheDocument();
+    expect(screen.getByTestId("hud-dice-box")).toBeInTheDocument();
+    expect(screen.queryByTestId("hud-gm-roller")).toBeNull();
+  });
+
+  it("the GM's Dice without a PC selected: a plain GM roller with a hint", () => {
+    renderHud(createElement(HudDice, { campaignId: CAMPAIGN, characterId: null, gm: true }));
+    expect(screen.getByTestId("hud-gm-roller")).toBeInTheDocument();
+    expect(document.body).toHaveTextContent("Select a PC token on the map to roll for them instead.");
+    expect(screen.queryByRole("group", { name: "Roll as" })).toBeNull();
   });
 
   it("a player sees 'Live', Dice (their dice box) and Sheet (their own sheet in the HUD panel)", () => {
@@ -321,6 +327,8 @@ describe("title and toolbar", () => {
         .getAllByRole("button")
         .map((b) => b.textContent),
     ).toEqual(["Dice", "Sheet", "Map tools"]);
+    // The map controls (from the shell's toolbar) sit on their own row after the break.
+    expect(tools.querySelector(".hud-tr-br")).not.toBeNull();
     const sheet = within(tools).getByRole("button", { name: "Sheet" });
     expect(sheet).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(sheet);

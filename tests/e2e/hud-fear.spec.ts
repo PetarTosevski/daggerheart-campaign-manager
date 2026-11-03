@@ -67,30 +67,45 @@ test("the GM's Fear − / + reach the player's banner live, without a confirm; d
     await expect(arc).toHaveCount(0);
     await expect(discButton).toBeFocused();
 
-    // The title: map name and the Live line; the GM toolbar per GMDesktop (no Day / Dim / Night: campaign time sets
-    // the light) ending with Map tools.
-    await expect(gm.getByTestId("hud-title").getByRole("heading", { name: "Forest Camp" })).toBeVisible();
-    await expect(gm.getByTestId("hud-title")).toContainText("Live · GM view");
-    const gmTools = gm.getByRole("group", { name: "GM tools" });
-    for (const name of ["Areas", "Fog", "Dice", "End scene", "Map tools"]) await expect(gmTools.getByRole("button", { name, exact: true })).toBeVisible();
-    await expect(gmTools.getByRole("button", { name: /Player view/ })).toBeVisible();
-    await expect(gmTools.getByRole("group", { name: "Time of day" })).toHaveCount(0);
-    await gmTools.getByRole("button", { name: "Fog", exact: true }).click();
-    await expect(gm.getByRole("dialog", { name: "Vision and fog" }).getByRole("group", { name: "Fog brush" })).toBeVisible();
-    await gmTools.getByRole("button", { name: "Areas", exact: true }).click();
-    await expect(gm.getByRole("dialog", { name: "Areas" }).getByTestId("area-tools")).toBeVisible();
+    // H9.3: the GM's top centre is the scene title and the Live chip only (GMDesktop `.scn`, top 16); every GM tool is
+    // in the dock, so the title row has no buttons, and no Day / Dim / Night (the light is set from the day disc).
+    const gmTitle = gm.getByTestId("hud-title");
+    await expect(gmTitle.getByRole("heading", { name: "Forest Camp" })).toBeVisible();
+    await expect(gm.getByTestId("hud-live")).toHaveText("Live");
+    await expect(gmTitle).not.toContainText("GM view");
+    await expect(gm.locator(".hud-scene").getByRole("button")).toHaveCount(0);
+    await expect(gm.getByRole("group", { name: "GM tools" })).toHaveCount(0);
+    await expect(gm.getByRole("group", { name: "Time of day" })).toHaveCount(0);
+    const hud = await gm.getByTestId("combat-hud").boundingBox();
+    const pill = await gmTitle.boundingBox();
+    expect(hud && pill && Math.round(pill.y - hud.y)).toBe(16);
+    for (const name of ["Areas", "Fog", "Dice", "End scene"]) await expect(gm.getByRole("button", { name, exact: true })).toHaveCount(1);
     await expectNoSeriousA11yViolations(gm);
-    await gm.getByRole("button", { name: "Close Areas" }).click();
-    await expect(gm.getByRole("dialog", { name: "Areas" })).toHaveCount(0);
+    await gm.setViewportSize({ width: 1024, height: 768 });
+    const tabletHud = await gm.getByTestId("combat-hud").boundingBox();
+    const tabletPill = await gmTitle.boundingBox();
+    expect(tabletHud && tabletPill && Math.round(tabletPill.x - tabletHud.x)).toBe(484);
+    await expectNoSeriousA11yViolations(gm);
+    await gm.setViewportSize({ width: 1440, height: 900 });
 
-    // Player: Live, Dice (their dice box) and Sheet.
+    // Player: Live, Dice (their dice box), Sheet and the map controls on a row of their own.
     await expect(player.getByTestId("hud-title")).toContainText("Live");
     await expect(player.getByTestId("hud-title")).not.toContainText("GM view");
     const playerTools = player.getByRole("group", { name: "Your tools" });
-    await expect(playerTools.getByRole("button", { name: "Sheet" })).toHaveAttribute("aria-pressed", "false");
+    const sheetButton = playerTools.getByRole("button", { name: "Sheet" });
+    await expect(sheetButton).toHaveAttribute("aria-pressed", "false");
+    const controls = playerTools.getByRole("toolbar", { name: "Map controls" });
+    const sheetBox = await sheetButton.boundingBox();
+    const controlsBox = await controls.boundingBox();
+    expect(sheetBox && controlsBox && controlsBox.y >= sheetBox.y + sheetBox.height).toBe(true);
     await playerTools.getByRole("button", { name: "Dice" }).click();
     await expect(player.getByRole("dialog", { name: "Dice" }).getByTestId("hud-dice-box")).toBeVisible({ timeout: 30_000 });
     await expectNoSeriousA11yViolations(player, { exclude: "canvas", reason: "WebGL dice canvas: no DOM to check" });
+    await player.getByRole("button", { name: "Close Dice" }).click();
+    // With a sheet open the title and the row fade (Main `.sh-open .title, .tr`).
+    await sheetButton.click();
+    await expect(player.getByTestId("hud-title")).toBeHidden();
+    await expect(playerTools).toBeHidden();
   } finally {
     await s.close();
   }

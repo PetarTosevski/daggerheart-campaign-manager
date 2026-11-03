@@ -1,7 +1,7 @@
 /*
- * The title and toolbar at x = 690 (plan combat-hud H1.2; Main `.title` / `.tr`, GMDesktop `.gtitle` / `.gtools`).
- * The scene region sits at left 690, top 18 (shell.css): the title starts at y = 20 and the toolbar at y = 84 as on
- * the boards. Pop-overs (dice, areas, fog) open under the toolbar.
+ * The scene at x = 690 (plan combat-hud H1.2, H9.3). GM: the scene pill (GMDesktop / GMTablet `.scn .sc-t`): the map's
+ * name and the Live chip, top 16 (tablet 12). Player (Main `.title` / `.tr`): the title from y = 20, the title row under
+ * it (Dice, Sheet, Your character) and the map controls on a second row. Pop-overs (dice) open under the row.
  */
 .hud-scene {
   display: flex;
@@ -31,9 +31,65 @@
   color: #c8d3d0;
   text-shadow: 0 1px 4px #000;
 }
-/* GMDesktop: the title hides while a sheet is open. */
-.hud-root.sh-open .hud-scene-gm .hud-title {
+
+/* ---------------------------------------------------------------- the GM's scene pill (.scn .sc-t, .sc-live) */
+.hud-title.hud-scn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 0;
+  /* The region sits at top 18 (tablet 14); the board's pill at 16 (tablet 12). */
+  margin-top: -2px;
+}
+.hud-scn h2 {
+  font-size: 26px;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.85);
+}
+.hud-title .hud-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  margin: 0;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: rgba(8, 12, 14, 0.85);
+  color: #c8d3d0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-shadow: none;
+  white-space: nowrap;
+}
+.hud-title .hud-live-on {
+  color: #9ff0bd;
+}
+.hud-title .hud-live-dot {
+  display: block;
+  width: 6px;
+  height: 6px;
+  margin: 0;
+  border-radius: 50%;
+  background: #5fd38a;
+}
+
+/* Desktop: the player's title and row fade while a sheet is open as the GM's pill does (Main `.root:not(.tab).sh-open
+   .title, .tr`; shell.css hides the GM's and, at tablet width, every player part). */
+.hud-root .hud-scene-pl .hud-title,
+.hud-root .hud-scene-pl .hud-tr {
+  transition:
+    opacity var(--hud-t-fast),
+    visibility 0s linear 0s;
+}
+.hud-root.hud-sh-open .hud-scene-pl .hud-title,
+.hud-root.hud-sh-open .hud-scene-pl .hud-tr {
   opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--hud-t-fast),
+    visibility 0s linear var(--hud-t-fast);
 }
 
 /* ---------------------------------------------------------------- the toolbar */
@@ -44,33 +100,18 @@
   gap: 8px;
   max-width: min(520px, calc(100vw - 690px - 280px));
 }
+/* The map controls (Measure, Names, zoom; H9.0) take a row of their own under Dice / Sheet / Your character. */
+.hud-tr .hud-tr-br {
+  order: 1;
+  flex-basis: 100%;
+  height: 0;
+}
+.hud-tr .hud-pmc {
+  order: 2;
+}
 .hud-tr .hud-ic {
   width: 16px;
   height: 16px;
-}
-.hud-tr .hud-btn {
-  height: 36px;
-}
-/* End scene keeps EndSceneButton's own 44 px min height; the board's red tone. */
-.hud-tr .hud-end {
-  min-height: 36px !important;
-  color: #f3a58f;
-  border-color: #6b3f3a;
-}
-/* EndSceneButton's status line: only when it says something. */
-.hud-tr [data-testid="end-scene-status"]:empty {
-  display: none;
-}
-.hud-tr [data-testid="end-scene-status"] {
-  padding: 4px 10px;
-  border-radius: var(--hud-r-chip);
-  background: var(--hud-glass);
-}
-/* PreviewPicker: the classic menu button in the HUD's glass pill. */
-.hud-tr .cm-pv-btn {
-  height: 36px;
-  border-radius: var(--hud-r-button);
-  background: var(--hud-glass);
 }
 .hud-seg {
   display: inline-flex;
@@ -109,15 +150,7 @@
   color: var(--hud-muted);
 }
 
-/*
- * The map's own toolbar (name, LIVE, Areas, Names, zoom) floats under this toolbar (H0 put it at y = 128, where the
- * toolbar's second and third rows now sit).
- */
-.hud-root .hud-map .cm-toolbar {
-  top: 236px;
-}
-
-/* ---------------------------------------------------------------- pop-overs (dice, areas, fog, time arc) */
+/* ---------------------------------------------------------------- pop-overs (dice, time arc, campaign day) */
 .hud-pop {
   display: flex;
   flex-direction: column;
@@ -190,6 +223,11 @@
 .hud-gm-dice-as {
   align-self: flex-start;
 }
+/* The day disc's pop-over (user answer Q6a): Day / Dim / Night above the calendar, where the light can be set. */
+.hud-pop-day .hud-seg,
+.hud-pop-time .hud-seg {
+  align-self: center;
+}
 
 @media (max-width: 1180px) {
   .hud-title {
@@ -201,19 +239,25 @@
   .hud-title span {
     font-size: 12px;
   }
+  .hud-scn h2 {
+    font-size: 20px;
+  }
+  .hud-title .hud-live {
+    height: 20px;
+    font-size: 10px;
+  }
   .hud-tr {
     max-width: min(520px, calc(100vw - 32px));
     justify-content: center;
   }
-  .hud-tr .hud-btn {
-    height: 32px;
-    padding: 0 11px;
-    font-size: 12px;
-  }
-  .hud-root.sh-open .hud-scene,
-  .hud-root.sh-open .hud-scene > * {
-    opacity: 0;
-    pointer-events: none;
+  /* Tablet: "Your character" is its icon (the text stays its accessible name), so Dice, Sheet and it keep one row
+     left of the discs; the map controls sit on the row under them. */
+  .hud-scene-pl .hud-tr > [aria-controls="hud-tools"] {
+    gap: 0;
+    min-width: 44px;
+    padding-inline: 0;
+    justify-content: center;
+    font-size: 0;
   }
 }
 
@@ -256,11 +300,4 @@
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-}
-.hud-em .hud-btn {
-  height: 38px;
-}
-.hud-em .hud-em-yes {
-  background: var(--hud-fear-text);
-  color: var(--hud-fear-ink);
 }

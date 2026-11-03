@@ -67,7 +67,7 @@ test("live combat map: map switch, tokens both ways, explored areas, fog, doors 
     // drawer, open for the whole scene (it covers only the map's left edge; the scene happens east of it).
     await gm.getByRole("button", { name: "Map tools" }).click();
     const tools = gm.getByRole("complementary", { name: "Map tools" });
-    const gmTools = gm.getByRole("group", { name: "GM tools" });
+    const gmTools = gm.getByRole("toolbar", { name: "Map controls" });
     const maps = tools.getByRole("list", { name: "Campaign maps" });
     const gmBoard = gm.getByRole("region", { name: "Battle map" });
     const board = player.getByRole("region", { name: "Battle map" });
