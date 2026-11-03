@@ -108,6 +108,10 @@ function enemyLeaks(frames: readonly string[], enemyIds: ReadonlySet<string>): {
   const secretsIn = (value: unknown, path: string, out: string[]) => {
     if (Array.isArray(value)) value.forEach((v, i) => secretsIn(v, `${path}[${i}]`, out));
     else if (value !== null && typeof value === "object") {
+      // A PC token row (`kind: "pc"`, combatVision.playerView's `pcs`) carries the party's own HP and Stress, which every
+      // player sees on the banners anyway; it is no enemy's numbers. It sits in a view that names enemies since
+      // `unseenAdversaries` (spotlight-seen, user 2026-11-03) lists enemy token ids at the view's top level.
+      if ((value as Record<string, unknown>).kind === "pc") return;
       for (const [k, v] of Object.entries(value)) {
         if (SECRET_FIELDS.has(k)) out.push(`${path}.${k}`);
         secretsIn(v, `${path}.${k}`, out);
