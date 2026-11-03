@@ -40,16 +40,16 @@ test("a player who opens an encounter lands on the dashboard and does not subscr
   expect(screen.client.subscribed).toEqual(["campaigns:get"]);
 });
 
-test("a GM query role opens the packs stub without a GM subscription", async () => {
+test("a GM query role opens sprite packs", async () => {
   const screen = await renderAsGm(
     <CampaignProvider campaignId="campaign-1">
       <PacksRoute />
     </CampaignProvider>,
-    { queries: { "campaigns:get": { ...base, role: "gm" } } },
+    { queries: { "campaigns:get": { ...base, role: "gm" }, "spritePacks:packs": [] } },
   );
-  expect(screen.getByRole("header", { name: "Packs" })).toBeTruthy();
-  expect(screen.getByText("Not built yet.")).toBeTruthy();
-  expect(screen.client.subscribed).toEqual(["campaigns:get"]);
+  expect(screen.getByRole("header", { name: "Sprite packs" })).toBeTruthy();
+  expect(screen.queryByText("Not built yet.")).toBeNull();
+  expect(screen.client.subscribed).toEqual(["campaigns:get", "spritePacks:packs"]);
 });
 
 test("a GM query role opens the encounter tracker and subscribes to the encounter and Fear", async () => {
