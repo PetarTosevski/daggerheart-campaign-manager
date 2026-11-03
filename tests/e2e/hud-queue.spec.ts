@@ -89,14 +89,18 @@ test("live: out-of-range uses land in the queue; a withdrawn one disappears, an 
     await expect(cards.nth(0)).toContainText("Nothing is rolled or paid until you decide.");
     await expectNoSeriousA11yViolations(gm, { include: "[data-testid=hud-queue-column]" });
 
-    // Placement: bottom-left, clear of the banners above and the spotlight panel below.
+    // Placement: bottom-left, clear of the banners above; the GM's spotlight panel sits top middle (user 2026-11-03).
     const column = gm.getByTestId("hud-queue-column");
     const box = (await column.boundingBox())!;
     expect(box.x).toBeLessThan(40);
     const bannerBottoms = await gm.locator("[data-testid^=hud-banner-]").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().bottom));
     expect(box.y).toBeGreaterThanOrEqual(Math.max(...bannerBottoms));
     const spot = gm.getByTestId("hud-spotlight-menu");
-    if ((await spot.count()) > 0) expect(box.y + box.height).toBeLessThanOrEqual((await spot.boundingBox())!.y);
+    if ((await spot.count()) > 0) {
+      const sb = (await spot.boundingBox())!;
+      expect(sb.x).toBeGreaterThan(box.x + box.width);
+      expect(sb.y).toBeLessThan(450);
+    }
     await gm.screenshot({ path: `${OUT}/requests-1440.png`, animations: "disabled" });
 
     // The player withdraws the card: it disappears from the GM's queue, live.

@@ -22,3 +22,20 @@ export function usePhoneHud(): boolean {
     () => false,
   );
 }
+
+const NARROW_QUERY = "(max-width: 1180px)";
+
+function subscribeNarrow(onChange: () => void) {
+  const list = window.matchMedia(NARROW_QUERY);
+  list.addEventListener("change", onChange);
+  return () => list.removeEventListener("change", onChange);
+}
+
+/** Whether the HUD is at tablet or phone width (1180 px and below, H7.1's tablet range); false on the server. */
+export function useNarrowHud(): boolean {
+  return useSyncExternalStore(
+    subscribeNarrow,
+    () => window.matchMedia(NARROW_QUERY).matches,
+    () => false,
+  );
+}

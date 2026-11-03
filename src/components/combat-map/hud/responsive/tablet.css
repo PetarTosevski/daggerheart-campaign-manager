@@ -242,8 +242,9 @@
   }
   .hud-root .hud-toast-x {
     flex: none;
-    min-width: 44px;
-    min-height: 44px;
+    /* 46, not 44: a sub-pixel layout measured 43.9 and failed the 44 px touch-target check. */
+    min-width: 46px;
+    min-height: 46px;
     margin: -10px -10px -10px 0;
   }
   .hud-root .hud-pk-x {

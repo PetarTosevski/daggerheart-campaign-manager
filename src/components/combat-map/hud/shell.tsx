@@ -17,7 +17,7 @@ import { HudFear } from "./fear";
 import { HudFeed } from "./feed";
 import { HudHand } from "./hand";
 import { HudHit } from "./hit";
-import { HudPhone, PhoneQueueSheet, usePhoneHud } from "./phone";
+import { HudPhone, PhoneQueueSheet, useNarrowHud, usePhoneHud } from "./phone";
 import { HudPick, HudPickLayer, PickProvider } from "./pick";
 import { HudAttack } from "./pick-attack";
 import { HudAreaPick, HudAreaPickLayer } from "./pick-area";
@@ -77,7 +77,10 @@ function HudFrame({ state, loading, renderLayers, tools }: HudShellProps) {
   const hud = useHud();
   const { role } = state;
   // H7.2: a player at phone width gets the phone shell (strip, bottom sheet) in place of the desktop regions.
-  const phone = usePhoneHud() && role !== "gm";
+  const phoneWidth = usePhoneHud();
+  // The GM's spotlight panel: top middle on desktop; in the left column (queue sheet on a phone) at tablet width and below.
+  const spotInColumn = useNarrowHud();
+  const phone = phoneWidth && role !== "gm";
   const toolbar = (
     <>
       <MapToolsButton role={role} />
@@ -137,6 +140,12 @@ function HudFrame({ state, loading, renderLayers, tools }: HudShellProps) {
               <PartBoundary label="The scene">
                 <HudScene state={state} toolbar={toolbar} />
               </PartBoundary>
+              {/* User 2026-11-03: the GM's spotlight panel sits top middle, under the title and GM tools (desktop only). */}
+              {role === "gm" && !spotInColumn ? (
+                <PartBoundary label="The spotlight">
+                  <HudSpotlight state={state} />
+                </PartBoundary>
+              ) : null}
             </Region>
             <Region name="fear">
               <PartBoundary label="Fear">
@@ -158,7 +167,7 @@ function HudFrame({ state, loading, renderLayers, tools }: HudShellProps) {
                 <HudFeed state={state} />
               </PartBoundary>
             )}
-            {role === "gm" ? (
+            {role === "gm" && spotInColumn ? (
               <PartBoundary label="The spotlight">
                 <HudSpotlight state={state} />
               </PartBoundary>

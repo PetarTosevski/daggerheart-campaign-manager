@@ -56,5 +56,5 @@ export function HudPhone({ state, toolbar }: HudPartProps & { toolbar: ReactNode
 }
 
 export { PhoneQueueSheet } from "./queue";
-export { usePhoneHud } from "./media";
+export { useNarrowHud, usePhoneHud } from "./media";
 export { PHONE_QUERY, PHONE_TABS, edgePlace, edgeText, edgeTone, miniBars, resourceItems, type PhoneTab } from "./model";

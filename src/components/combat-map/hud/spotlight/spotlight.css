@@ -82,10 +82,12 @@
   padding: 4px 10px;
 }
 
-/* The GM's spotlight menu: bottom of the left stack (under the queue and feed), clear of the Fear banner (user 2026-11-02). */
+/* The GM's spotlight menu: top middle under the map title and GM tools (user 2026-11-03); in the queue sheet on a phone. */
 .hud-spot-gm {
   position: relative;
   z-index: 55;
+  margin-top: 10px;
+  max-width: 420px;
   padding: 10px 12px 12px;
   border-radius: var(--hud-r-card);
   background: var(--hud-glass);
