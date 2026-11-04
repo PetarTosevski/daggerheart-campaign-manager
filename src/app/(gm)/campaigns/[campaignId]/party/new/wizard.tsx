@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { api } from "../../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../../convex/_generated/dataModel";
 import { useCampaign } from "../../campaign-shell";
+import { isTypedWizardPatch, useAccountDraft, wizardFromDraft } from "./draft";
 import { ClassStep, HeritageStep, InfoStep, TraitsStep, type StepProps } from "./steps-1-4";
 import { BackgroundStep, ConnectionsStep, DomainCardsStep, EquipmentStep, ExperiencesStep } from "./steps-5-9";
 import {
@@ -23,7 +24,6 @@ import {
   missingByStep,
   normalizeWizard,
   portraitAsset,
-  restoreWizard,
   STEP_COUNT,
   STEP_TITLES,
   stillNeeded,
@@ -44,29 +44,24 @@ const STEPS: ComponentType<StepProps>[] = [
   ConnectionsStep,
 ];
 
-const storageKey = (campaignId: string) => `dh.characterWizard.${campaignId}`;
-
-/** The unsent draft is a per-device convenience: storage may be missing or blocked. */
-function loadDraft(campaignId: string): WizardState {
-  try {
-    const raw = window.localStorage.getItem(storageKey(campaignId));
-    return raw ? restoreWizard(JSON.parse(raw)) : emptyWizard();
-  } catch {
-    return emptyWizard();
-  }
-}
-
-function saveDraft(campaignId: string, state: WizardState | null) {
-  try {
-    if (state) window.localStorage.setItem(storageKey(campaignId), JSON.stringify(state));
-    else window.localStorage.removeItem(storageKey(campaignId));
-  } catch {
-    // Storage unavailable: the draft just isn't kept.
-  }
-}
-
-/** Party board: the 9-step character creation wizard (Core ch. 1). */
+/**
+ * Party board: the 9-step character creation wizard (Core ch. 1). Its unsent draft lives on the account
+ * (`useAccountDraft`, config U6f), so the wizard opens once the draft has loaded and starts from it.
+ */
 export function CharacterWizard() {
+  const campaign = useCampaign();
+  const draft = useAccountDraft({ kind: "characterWizard", campaignId: campaign._id });
+  if (draft.stored === undefined) {
+    return (
+      <main className="mx-auto w-full max-w-[1168px] px-0 py-6 sm:px-6 sm:py-8" aria-busy="true">
+        <div className="wz-paper min-h-[480px] rounded-none sm:rounded-[14px]" />
+      </main>
+    );
+  }
+  return <Wizard draft={draft} initial={wizardFromDraft(draft.stored)} />;
+}
+
+function Wizard({ draft, initial }: { draft: ReturnType<typeof useAccountDraft>; initial: WizardState }) {
   const campaign = useCampaign();
   const campaignId = campaign._id;
   const router = useRouter();
@@ -76,17 +71,21 @@ export function CharacterWizard() {
   const roster = useQuery(api.members.roster, isGm ? { campaignId } : "skip");
   const create = useIntent(api.characters.create);
 
-  // The campaign shell only renders once the campaign has loaded on the client, so storage is safe to read here.
-  const [raw, setRaw] = useState<WizardState>(() => loadDraft(campaignId));
+  const [raw, setRaw] = useState<WizardState>(initial);
   const state = useMemo(() => normalizeWizard(raw, opts), [raw, opts]);
   const missing = useMemo(() => missingByStep(state, opts), [state, opts]);
   const step = state.step;
 
-  useEffect(() => {
-    saveDraft(campaignId, raw);
-  }, [campaignId, raw]);
-
-  const update = (patch: Partial<WizardState>) => setRaw((prev) => ({ ...normalizeWizard(prev, opts), ...patch }));
+  // Saved from the change itself (rule 13): typing waits for a pause, a click saves at once.
+  const update = (patch: Partial<WizardState>) => {
+    const next = { ...normalizeWizard(raw, opts), ...patch };
+    setRaw(next);
+    draft.save(next, { typed: isTypedWizardPatch(patch) });
+  };
+  const startOver = () => {
+    setRaw(emptyWizard());
+    draft.clear();
+  };
 
   // Move focus to the new step's heading so keyboard and screen-reader users land at its start.
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -121,7 +120,7 @@ export function CharacterWizard() {
       ...(ikonis ? { ikonis: state.ikonis } : {}),
     });
     if (result) {
-      saveDraft(campaignId, null);
+      draft.clear();
       router.push(`/campaigns/${campaignId}/party/${result.characterId}`);
     }
   }
@@ -145,7 +144,7 @@ export function CharacterWizard() {
           </div>
           <div className="flex items-center gap-2">
             {hasDraft ? (
-              <BrandButton variant="danger" size="sm" onClick={() => setRaw(emptyWizard())}>
+              <BrandButton variant="danger" size="sm" onClick={startOver}>
                 Start over
               </BrandButton>
             ) : null}
@@ -153,6 +152,7 @@ export function CharacterWizard() {
               href={`/campaigns/${campaignId}/party`}
               className={brandButton({ variant: "cancel", icon: true, round: true, className: "flex-none" })}
               aria-label="Cancel character creation"
+              onClick={draft.flush}
             >
               <X aria-hidden="true" />
             </Link>
@@ -222,7 +222,7 @@ export function CharacterWizard() {
               ‹ Back
             </BrandButton>
           ) : (
-            <Link href={`/campaigns/${campaignId}/party`} className={brandButton({ variant: "cancel", size: "lg" })}>
+            <Link href={`/campaigns/${campaignId}/party`} className={brandButton({ variant: "cancel", size: "lg" })} onClick={draft.flush}>
               Cancel
             </Link>
           )}

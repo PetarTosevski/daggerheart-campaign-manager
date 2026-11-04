@@ -11,7 +11,7 @@ import { assetBackground } from "@/lib/design-assets";
 import { PUBLISHED_FRAMES, type PublishedFrame } from "@/lib/frames";
 import { cn } from "@/lib/utils";
 
-import { clearCustomDraft, CustomFrameForm, useCustomDraft, type CustomDraft } from "./custom-frame-form";
+import { CustomFrameForm, useCustomDraft, type CustomDraft } from "./custom-frame-form";
 import { NameCampaignDialog, useCreateCampaign } from "./create-campaign";
 
 export function ExpansionBadge({ small = false }: { small?: boolean }) {
@@ -165,8 +165,8 @@ export function FrameSelect() {
   const [selectedId, setSelectedId] = useState<string>(PUBLISHED_FRAMES[Math.max(0, initial)].id);
   const [search, setSearch] = useState("");
   const [naming, setNaming] = useState(false);
-  const [draft, setDraft] = useCustomDraft();
-  const custom = useCreateCampaign({ onCreated: clearCustomDraft });
+  const [draft, setDraft, clearDraft] = useCustomDraft();
+  const custom = useCreateCampaign({ onCreated: clearDraft });
 
   const frames = useMemo(() => {
     const q = search.trim().toLowerCase();

@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { z } from "zod";
+
+import { parseDraft, useAccountDraft } from "@/app/(gm)/campaigns/[campaignId]/party/new/draft";
 
 import { BrandButton } from "@/components/brand/buttons";
 import { assetBackground } from "@/lib/design-assets";
@@ -11,6 +14,7 @@ import {
   CUSTOM_TEXT_MAX,
   PARTY_SIZES,
   STARTING_TIERS,
+  customFrameSchema,
   type CustomFrameInput,
 } from "@/lib/validation/campaigns";
 
@@ -27,37 +31,36 @@ const EMPTY: CustomDraft = {
   background: "custom",
 };
 
-// The unsent draft is a per-device convenience, so browser storage is enough.
-const DRAFT_KEY = "dh.customDraft";
+/** The stored custom-frame draft (schemaVersion 1). Text is not trimmed: it is the user's text as they left it. */
+const customDraftSchema = z.object({
+  name: z.string().max(CAMPAIGN_NAME_MAX),
+  pitch: z.string().max(CUSTOM_TEXT_MAX),
+  tones: customFrameSchema.shape.tones,
+  themes: z.string().max(CUSTOM_TEXT_MAX),
+  touchstones: z.string().max(CUSTOM_TEXT_MAX),
+  partySize: customFrameSchema.shape.partySize,
+  startingTier: customFrameSchema.shape.startingTier,
+  background: customFrameSchema.shape.background,
+});
 
+/** The fields typed into; a change to any other field is a click and saves at once. */
+const TYPED: readonly (keyof CustomDraft)[] = ["name", "pitch", "themes", "touchstones"];
+
+/**
+ * The unsent custom frame, kept on the account (config U6f) so another device picks it up. Until the user changes
+ * something the form shows the stored draft (or the empty one); a change is saved from the handler, typing debounced.
+ * Returns `[draft, update, clear]`; `clear` (after the campaign is created) deletes the stored draft.
+ */
 export function useCustomDraft() {
-  const [draft, setDraft] = useState<CustomDraft>(EMPTY);
-  useEffect(() => {
-    try {
-      const saved = JSON.parse(window.localStorage.getItem(DRAFT_KEY) ?? "null") as Partial<CustomDraft> | null;
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate from storage after mount
-      if (saved) setDraft({ ...EMPTY, ...saved });
-    } catch {
-      // No stored draft.
-    }
-  }, []);
+  const account = useAccountDraft({ kind: "customFrame" });
+  const [edited, setEdited] = useState<CustomDraft | null>(null);
+  const draft = edited ?? parseDraft(account.stored, customDraftSchema) ?? EMPTY;
   const update = (next: CustomDraft) => {
-    setDraft(next);
-    try {
-      window.localStorage.setItem(DRAFT_KEY, JSON.stringify(next));
-    } catch {
-      // Storage unavailable; the draft lives for this visit only.
-    }
+    const typed = (Object.keys(next) as (keyof CustomDraft)[]).every((k) => TYPED.includes(k) || next[k] === draft[k]);
+    setEdited(next);
+    account.save(next, { typed });
   };
-  return [draft, update] as const;
-}
-
-export function clearCustomDraft() {
-  try {
-    window.localStorage.removeItem(DRAFT_KEY);
-  } catch {
-    // Nothing to clear.
-  }
+  return [draft, update, account.clear] as const;
 }
 
 const FIELD = "flex flex-col gap-2 text-[14px] text-label";
