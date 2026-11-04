@@ -125,18 +125,19 @@ describe("encounterTracking.reviveInstance (dcm-6c2o)", () => {
     await a.revive(a.bear.instanceId, 2, 1);
     const pub = await a.publicRows();
     expect(pub).toHaveLength(1);
-    expect(pub[0]).toMatchObject({ kind: "adversary", summary: "Bear is back on its feet", groupId: (await a.gmRows())[0]!.groupId });
-    expect(await a.playerFeed()).toEqual(["Bear is back on its feet"]);
+    expect(pub[0]).toMatchObject({ kind: "adversary", summary: "The Bear is back on its feet", groupId: (await a.gmRows())[0]!.groupId });
+    expect(await a.playerFeed()).toEqual(["The Bear is back on its feet"]);
   });
 
-  it("on the live map, a token the party has not seen this scene stays unnamed; a seen one is named (dcm-bn14)", async () => {
+  it("on the live map, a token the party has not seen this scene gets no public line; a seen group is named in the plural (dcm-bn14)", async () => {
     const a = await arena();
     await a.setLive(true);
     await a.revive(a.bear.instanceId);
-    expect(await a.playerFeed()).toEqual(["An adversary is back on its feet"]);
+    expect(await a.publicRows()).toHaveLength(0);
+    expect(await a.playerFeed()).toEqual([]);
     await a.markSeen(a.lackeys.tokenId);
     await a.revive(a.lackeys.instanceId);
-    expect((await a.playerFeed())[0]).toBe("Lackeys is back on its feet");
+    expect(await a.playerFeed()).toEqual(["The Lackeys are back on their feet"]);
   });
 
   it("refuses marks that leave it defeated or out of range (ENCOUNTER_RULE) and writes nothing", async () => {

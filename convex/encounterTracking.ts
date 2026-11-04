@@ -150,10 +150,10 @@ export const defeatMinions = keyedGmMutation({
  * Logged as one undoable GM-only row (kind `adversary`) carrying the instance before (`adversaryBefore`): the GM's undo
  * (`actionLog.undo`) puts it back to defeated with its previous marks.
  *
- * Players get a public feed line in the same group (dcm-bn14, user 2026-11-04): '<label> is back on its feet', the
- * label being the name its token and the spotlight show. While it is hidden from the players (`namedForPlayers`) the
- * line does not name it, as the interrupt's public line does not (convex/lib/spotlight.ts): 'An adversary is back on
- * its feet'. The GM's undo takes both lines back.
+ * Players get a public feed line in the same group (dcm-bn14, user 2026-11-04): 'The Bear is back on its feet', or
+ * 'The Lackeys are back on their feet' for a Minion group, the label being the name its token and the spotlight show.
+ * While the party hasn't seen it (`namedForPlayers`) there is no public line at all, as the spotlight shows nothing
+ * for an unseen adversary. The GM's undo takes the lines back.
  */
 export const reviveInstance = keyedGmMutation({
   args: { instanceId: v.string(), hp: v.number(), stress: v.number() },
@@ -177,11 +177,18 @@ export const reviveInstance = keyedGmMutation({
         summary: `${instance.label} revived: ${marks}${stressMax > 0 ? `, ${stress} of ${stressMax} Stress marked` : ""}`,
         adversaryBefore: [before],
       });
-      const who = (await namedForPlayers(ctx, instance)) ? instance.label : "An adversary";
-      await logAction(ctx, { ...base, visibility: "public", summary: `${who} is back on its feet` });
+      if (await namedForPlayers(ctx, instance)) {
+        await logAction(ctx, { ...base, visibility: "public", summary: backOnFeet(instance.label, minions) });
+      }
       return { hp, stress, defeated: false };
     }),
 });
+
+/** The players' revive line: 'The <label> is back on its feet', plural for a Minion group (user 2026-11-04). */
+export function backOnFeet(label: string, group: boolean): string {
+  const name = /^the\s/i.test(label) ? label : `The ${label}`;
+  return group ? `${name} are back on their feet` : `${name} is back on its feet`;
+}
 
 /**
  * Whether a public line may name the adversary (dcm-bn14): the rule the spotlight follows for players
