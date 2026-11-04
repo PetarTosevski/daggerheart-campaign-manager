@@ -103,7 +103,8 @@ test("spotlight: handing it to a PC on the Combat Map grows the bar live; Reset 
 
   await spotOf(gm).getByRole("button", { name: "Reset" }).click();
   await expect(bar(gm, "Brannoc")).toHaveAttribute("aria-label", "Brannoc: 0 spotlight moments");
-  await expect(gm.getByText(/least spotlight/)).toHaveCount(0);
+  // Everyone tied at zero: the line names every PC (dcm-nvq4).
+  await expect(gm.getByText(/^(?=.*Brannoc)(?=.*Moss)(?=.*Vex)(?=.*Oriel).* have had the least spotlight this session\.$/)).toBeVisible();
   await gm.reload();
   await expect(bar(gm, "Brannoc")).toHaveAttribute("aria-label", "Brannoc: 0 spotlight moments");
 });

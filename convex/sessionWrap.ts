@@ -4,7 +4,7 @@ import type { LiveWindow } from "../src/lib/domain/journal";
 import { dashboardNumber, lastSessionText, nextPlannedSession, nextSessionLine } from "../src/lib/domain/sessions";
 import { appError } from "../src/lib/errors/app-error";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { campaignMutation, campaignQuery, gmMutation, gmQuery, keyedGmMutation } from "./lib/functions";
 import { partyLevelUp } from "./lib/partyLevelUp";
 import { campaignRole } from "./lib/permissions";
@@ -133,6 +133,26 @@ function upTo<Q extends { lte: (field: "at", value: number) => unknown }>(q: Q, 
   return w.open ? q : (q.lte("at", w.to) as Q);
 }
 
+/**
+ * The windows `after` reads (JD5 as changed 2026-11-04, dcm-m6l4): the live windows with the last closed one stretched
+ * to the next session's start, so a level-up taken after End still counts for the session just ended. The next start
+ * is the first `startedAt` after that end (index `by_campaign_started`, one row); with none the window stays open (no
+ * upper bound, so the query re-runs on later level-ups and when a session starts). A live session (open last window)
+ * and a planned one (no windows) are unchanged. A later session restarted since keeps only its latest `startedAt`, so
+ * the stretch may run to that restart rather than its first start.
+ */
+async function withAfterGrace(ctx: QueryCtx & { campaign: Doc<"campaigns"> }, windows: LiveWindow[]): Promise<LiveWindow[]> {
+  const last = windows.at(-1);
+  if (last === undefined || last.open) return windows;
+  const next = await ctx.db
+    .query("sessions")
+    .withIndex("by_campaign_started", (q) => q.eq("campaignId", ctx.campaign._id).gt("startedAt", last.to))
+    .first();
+  const stretched: LiveWindow =
+    next?.startedAt === undefined ? { from: last.from, to: last.to, open: true } : { from: last.from, to: Math.max(last.to, next.startedAt - 1), open: false };
+  return [...windows.slice(0, -1), stretched];
+}
+
 /** One character's level-up during the session: the latest `levelUp` feed row of that character in the live windows. */
 export const afterLevelUpValidator = v.object({
   characterId: v.id("characters"),
@@ -157,7 +177,8 @@ export type SessionAfter = Infer<typeof afterValidator>;
 
 /**
  * 'After the session' (Journal JD5, GM only, Q5): the characters with a `levelUp` feed row (not undone) during the
- * session's live windows (`liveWindows`, so a restarted session counts every window), the milestone stamp and the loot.
+ * session's live windows (`liveWindows`, so a restarted session counts every window) or after its End until the next
+ * session starts (`withAfterGrace`, dcm-m6l4), the milestone stamp and the loot.
  * Each window reads at most MAX_TALLY_ROWS feed rows by `by_campaign_at`. null for an id that is not one of this
  * campaign's sessions (a stale `?s=`), as `get` does. A planned session that never started has no windows: no level-ups.
  */
@@ -168,7 +189,8 @@ export const after = gmQuery({
     const id = ctx.db.normalizeId("sessions", sessionId);
     const session = id === null ? null : await ctx.db.get("sessions", id);
     if (session === null || session.campaignId !== ctx.campaign._id) return null;
-    const [windows, prep] = await Promise.all([liveWindows(ctx, session), sessionPrepOf(ctx, session._id)]);
+    const [live, prep] = await Promise.all([liveWindows(ctx, session), sessionPrepOf(ctx, session._id)]);
+    const windows = await withAfterGrace(ctx, live);
     const latest = new Map<Id<"characters">, SessionAfter["levelUps"][number]>();
     let truncated = false;
     for (const w of windows) {

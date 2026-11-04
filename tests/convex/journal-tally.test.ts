@@ -236,7 +236,7 @@ describe("journalTally.tally", () => {
     expect(await env.tally()).toMatchObject({ fearGained: 0, criticals: 0, live: false });
   });
 
-  it("sessionWrap.after includes a level-up written after the query's own time while live, not after End", async () => {
+  it("sessionWrap.after includes a level-up written after the query's own time while live, and after End (dcm-m6l4)", async () => {
     const env = await setup();
     const vex = await env.character("Vex");
     const levelUp = (at: number, summary: string) =>
@@ -252,8 +252,9 @@ describe("journalTally.tally", () => {
 
     vi.setSystemTime(NOW + 20 * MIN);
     await env.end();
+    // After End and before any next session: still this session's (its latest level-up wins).
     await levelUp(NOW + 21 * MIN, "Vex reached level 3.");
-    expect((await after())?.levelUps.map((l) => l.summary)).toEqual(["Vex reached level 2."]);
+    expect((await after())?.levelUps.map((l) => l.summary)).toEqual(["Vex reached level 3."]);
   });
 
   it("refuses a session of another campaign with SESSION_NOT_FOUND", async () => {

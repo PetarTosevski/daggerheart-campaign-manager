@@ -19,8 +19,9 @@ import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import type { EncounterView } from "./types";
 
-const MIN_PCS = 1;
-const MAX_PCS = 12;
+/** The party size the encounter builder allows (same clamp as convex/encounters.ts setBudget). */
+export const MIN_PCS = 1;
+export const MAX_PCS = 12;
 
 export type BudgetChange = { kind: "pcs"; delta: number } | { kind: "adjustment"; adjustment: BpAdjustmentId; on: boolean };
 
@@ -182,7 +183,7 @@ const STATE_FILL = { under: "bg-(--jr-acc)", exact: "bg-(--jr-acc)", over: "bg-(
 /**
  * The Journal Plan board's card (design reference/designs/journal/journal_views.jpg, right column): 'X of Y spent',
  * 'Z left', the bar, the party formula with the starting budget, the adjustments with their deltas, the cost table.
- * The party size is set in the builder (Adversaries tab); this card shows it.
+ * The party size is set in the builder (Adversaries tab) or on the Journal's encounter card (JP2); this card shows it.
  */
 function JournalBudget({
   title,

@@ -150,7 +150,7 @@ describe("Journal JD5: recap, after the session, campaign so far", () => {
   });
 
   describe("sessionWrap.after", () => {
-    it("lists each character's latest level-up in the live windows (not undone, not outside), the milestone and the loot", async () => {
+    it("lists each character's latest level-up in the live windows and after End (not undone, not before), the milestone and the loot", async () => {
       const env = await setup();
       const vex = await env.character("Vex");
       const brannoc = await env.character("Brannoc");
@@ -178,7 +178,11 @@ describe("Journal JD5: recap, after the session, campaign so far", () => {
       const after = await env.gm.query(api.sessionWrap.after, { campaignId: env.campaignId, sessionId });
       expect(after).toEqual({
         sessionId,
-        levelUps: [{ characterId: vex, summary: "Vex reached level 2.", at: to }],
+        // Moss levelled up after End: no next session yet, so it still counts (dcm-m6l4).
+        levelUps: [
+          { characterId: vex, summary: "Vex reached level 2.", at: to },
+          { characterId: moss, summary: "Moss reached level 2.", at: to + 60_000 },
+        ],
         milestoneAt: null,
         loot: "A silver key.",
         truncated: false,
@@ -186,6 +190,34 @@ describe("Journal JD5: recap, after the session, campaign so far", () => {
 
       const { milestoneAt } = await env.gm.mutation(api.sessionWrap.callMilestone, { campaignId: env.campaignId, sessionId, idempotencyKey: key() });
       expect((await env.gm.query(api.sessionWrap.after, { campaignId: env.campaignId, sessionId }))?.milestoneAt).toBe(milestoneAt);
+    });
+
+    it("a level-up after End counts until the next session starts, then later ones go to that session (dcm-m6l4)", async () => {
+      const env = await setup();
+      const vex = await env.character("Vex");
+      const moss = await env.character("Moss");
+      const first = await env.create();
+      await env.gm.mutation(api.sessions.start, { campaignId: env.campaignId, sessionId: first, idempotencyKey: key() });
+      await env.gm.mutation(api.sessions.end, { campaignId: env.campaignId, idempotencyKey: key() });
+      const ended = (await env.t.run((ctx) => ctx.db.get("sessions", first)))!.endedAt!;
+      const row = (characterId: Id<"characters">, summary: string, at: number) =>
+        env.t.run((ctx) =>
+          ctx.db.insert("actionLog", { campaignId: env.campaignId, characterId, actorId: env.ids.gm, kind: "levelUp", visibility: "public", summary, undoable: false, at }),
+        );
+      const names = async (sessionId: Id<"sessions">) =>
+        (await env.gm.query(api.sessionWrap.after, { campaignId: env.campaignId, sessionId }))!.levelUps.map((l) => l.summary);
+
+      // Between sessions, an hour after End: the ended session takes it.
+      await row(vex, "Vex reached level 2.", ended + HOUR);
+      expect(await names(first)).toEqual(["Vex reached level 2."]);
+
+      // The next session starts (its start stamp moved two hours past End); a level-up after that start is not the
+      // ended session's.
+      const second = await env.create();
+      await env.gm.mutation(api.sessions.start, { campaignId: env.campaignId, sessionId: second, idempotencyKey: key() });
+      await env.t.run((ctx) => ctx.db.patch("sessions", second, { startedAt: ended + 2 * HOUR }));
+      await row(moss, "Moss reached level 2.", ended + 2 * HOUR + 1);
+      expect(await names(first)).toEqual(["Vex reached level 2."]);
     });
 
     it("a planned session has no level-ups; a stale id is null; players are refused", async () => {

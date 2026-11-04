@@ -111,10 +111,10 @@ describe("Spotlight", () => {
     expect(screen.getByRole("alert").textContent).toContain("try again");
   });
 
-  it("no least line when everyone ties; Reset disabled at zero", () => {
+  it("names every PC when everyone ties (dcm-nvq4); Reset disabled at zero", () => {
     state.results["journalTally:spotlight"] = SPOT.map((e) => ({ ...e, count: 0, due: true }));
     const { container } = render(<Spotlight campaignId={CAMPAIGN} sessionId={SESSION} isGm />);
-    expect(screen.queryByText(/least spotlight/)).toBeNull();
+    expect(screen.getByText("Moss, Brannoc, Vex and Oriel have had the least spotlight this session.")).toBeTruthy();
     expect((screen.getByRole("button", { name: "Reset" }) as HTMLButtonElement).disabled).toBe(true);
     expect([...container.querySelectorAll<HTMLElement>(".jt-fill")].every((f) => f.style.width === "0%")).toBe(true);
   });
