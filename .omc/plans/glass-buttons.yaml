@@ -1,0 +1,475 @@
+# Glass buttons plan (2026-11-04): roll the user's "Arcane Glass Buttons" design (reference/designs/buttons/arcane-glass.html)
+# out to every page outside the Combat HUD, which already uses it (commit 6d1d2929, src/components/brand/glass-button.*,
+# hudButtonClass in src/components/combat-map/hud/ui/popup.tsx). Bead dcm-q861 ("Button overhaul part 2").
+# Briefs, inventory, role map, risks and the open questions: .omc/plans/glass-buttons-briefs.md.
+# Format: docs/workflow.md. Extra keys (plan-check ignores them): title, size, batch, mode, conditional.
+#
+# START: wave 1 starts only after the journal plan's JX2 is merged into rebuild. JX1 / JX2 own campaign-shell.tsx,
+# campaign-sections.ts, wither-panel.tsx, the /sessions and /notes routes and many specs, and JX2 deletes
+# src/components/sessions/** (except session-chip.tsx). Nothing here touches src/components/sessions/** but session-chip.tsx.
+#
+# Waves: 1 the foundation (brandButton becomes glass, the viewer is set once in the campaign shell); 2 every page area in
+# parallel (owns never overlap; launch in batches of at most 5, see the briefs); 3 the clean-up and the full checks.
+#
+# Rules for every tracer (details in the briefs):
+#   - Built on the briefs' recommended answers (Qn). A tracer whose acceptance names a question is rewritten by the
+#     orchestrator first if the user picks another option. G14 and G15 (character sheets) run only if the user answers
+#     Q3 (b); with the default (a) they are skipped.
+#   - Roles come from the briefs' role map: the main action = confirm, back out = cancel, removes or ends something =
+#     danger, the GM's answer to a player's request = allow / deny, settings and everything without a side = neutral,
+#     toolbar icons = tool, the roll toggle = normal / advantage / disadvantage.
+#   - Use brandButton / BrandButton (src/components/brand/buttons.tsx) for every action button; glassButtonClass only
+#     where a class string is needed outside React props. No new hand-styled button classes. Delete the CSS classes your
+#     area no longer uses (in your own .css files).
+#   - Do not restyle: the HUD (src/components/combat-map/hud/**), the card face (hero-card, card-dialog, .hc-face),
+#     tokens, banners and map art, HP / Stress / Hope pips, page tabs (role=tab), list rows that open something, and
+#     plain text links. These keep their look (design: "out of scope").
+#   - 44 px targets at 1024x768, 768x1024 and 390x844; axe clean in both viewers and in the hovered state; motion off
+#     under prefers-reduced-motion.
+#   - Every UI tracer writes tests/e2e/visual/GLASS-<ID>.spec.ts (runs with E2E_VISUAL=1): GM and player shots at
+#     1440x900, 1024x768 and 390x844, plus one hovered confirm and one keyboard-focused button; copies them to
+#     /mnt/c/Users/Petar/Downloads/dcm-screens/glass-<id>/ (id in lower case, e.g. glass-g3).
+plan: glass-buttons
+waves:
+  # ------------------------------------------------------------------ wave 1: foundation
+  - wave: 1
+    tracers:
+      - id: G0
+        title: "Foundation: brandButton draws the glass button, the viewer is set once per campaign, 44 px on touch"
+        goal: "Every BrandButton / brandButton in the app renders as an arcane glass button with no call-site edit (variant mapped to a role), new explicit roles exist for the area tracers, and every page inside a campaign knows its viewer (data-viewer gm / player on the campaign shell), so confirm and cancel take the right colours; the HUD looks exactly as before"
+        size: M
+        mode: replace
+        depends_on: []
+        owns:
+          - src/components/brand/buttons.tsx
+          - src/components/brand/glass-button.ts
+          - src/components/brand/glass-button.css
+          - src/components/brand/viewer.tsx
+          - src/components/brand/modal.tsx
+          - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
+          - tests/unit/brand/**
+          - tests/unit/hud/glass-button.test.ts
+          - tests/e2e/glass-foundation.spec.ts
+          - tests/e2e/visual/GLASS-G0.spec.ts
+          - docs/tasks/TASK-GLASS-G0.md
+        reads:
+          - reference/designs/buttons/arcane-glass.html
+          - src/components/combat-map/hud/ui/popup.tsx
+          - src/components/combat-map/hud/ui/ui.css
+          - src/components/combat-map/hud/shell.tsx
+          - src/app/globals.css
+          - tests/e2e/a11y.ts
+          - tests/e2e/visual/helpers.ts
+          - .omc/plans/glass-buttons-briefs.md
+        acceptance:
+          - "brandButton keeps its signature (variant, size, className) and returns glass classes: primary -> confirm (lg), solid -> confirm, outline -> neutral, pill -> neutral (shape per Q8), danger and dangerSolid -> danger; sizes sm -> gb-sm, md -> 44 px, lg and xl -> gb-lg; a unit test covers the whole table; typecheck passes with no call-site edit"
+          - "New variants for the area tracers: confirm, cancel, neutral, tool, danger, allow, deny, normal, advantage, disadvantage, plus an icon (44 x 44) and a round option; the old names stay as aliases until GZ"
+          - "Viewer: the campaign shell's root element carries data-viewer='gm' for the GM and 'player' for everyone else (Q1); outside a campaign there is no attribute and the player's colours apply (Q2); src/components/brand/viewer.tsx gives portalled content (createPortal to body) the same attribute from useCampaign(); Modal (native dialog, stays inside the shell) inherits it; Modal's close X becomes a round cancel icon button"
+          - "Touch: a small glass button is 44 px tall at max-width 1100 px or pointer coarse; labels that can wrap are not clipped (min-height, wrapping allowed) where brandButton is used; a call site's layout classes (w-full, self-start, ml-auto, flex-1) still apply (the cascade choice is written in the task doc)"
+          - "HUD unchanged: hud-shell, hud-tablet, hud-phone, hud-result, hud-answers, hud-dock specs pass and tests/unit/hud/glass-button.test.ts passes; HUD shots before / after in the task doc"
+          - "tests/e2e/glass-foundation.spec.ts: on the dashboard the same confirm button has a Hope rim for a player and a Fear rim for the GM; a hovered confirm and a focused button pass axe; reduced motion has no transition; a11y-smoke, a11y-entry, a11y-signin pass"
+          - "GLASS-G0 visual shots (sign-in, main menu, dashboard as GM and as player, at 1440x900, 1024x768, 390x844) copied to /mnt/c/Users/Petar/Downloads/dcm-screens/glass-g0/"
+          - "pnpm lint, pnpm typecheck, vitest pass"
+  # ------------------------------------------------------------------ wave 2: every page area (parallel)
+  - wave: 2
+    tracers:
+      - id: G1
+        batch: A
+        title: "Outside a campaign: sign-in, main menu, new campaign, frames, join, settings, app bar, error pages"
+        goal: "Every action button outside a campaign and in the app bar is a glass button with the right role (Create / Resume = confirm, Cancel / Back / Not now / Keep it = cancel, Delete permanently = danger, app-bar icons = tool), in the player's colours (Q2)"
+        size: M
+        mode: replace
+        depends_on: [G0]
+        owns:
+          - src/app/signin/**
+          - src/app/global-error.tsx
+          - src/app/(gm)/error.tsx
+          - src/app/(gm)/page.tsx
+          - src/app/(gm)/title-menu.tsx
+          - src/app/(gm)/settings-dialog.tsx
+          - src/app/(gm)/join-dialog.tsx
+          - src/app/(gm)/join/**
+          - src/app/(gm)/new/**
+          - src/app/(gm)/frames/**
+          - src/app/(gm)/campaigns/chronicle.tsx
+          - src/app/(gm)/campaigns/page.tsx
+          - src/app/(gm)/campaigns/error.tsx
+          - src/components/app-bar/**
+          - src/components/brand/brand.tsx
+          - src/components/route-error.tsx
+          - src/components/uploads/upload-notice.tsx
+          - tests/e2e/visual/GLASS-G1.spec.ts
+          - docs/tasks/TASK-GLASS-G1.md
+        reads:
+          - src/components/brand/**
+          - .omc/plans/glass-buttons-briefs.md
+        acceptance:
+          - "Every button in the owned files mapped per the briefs' role map (list per file in the task doc); chronicle's delete dialogs: Delete / Delete permanently = danger, Keep it = cancel (Q9); frame picker Back and join's Not now = cancel; Choose this Frame / Create a campaign / Resume Campaign = confirm (Q4)"
+          - "Hand-styled classes in owned files replaced (title-menu ITEM rows stay rows; settings DATA_BUTTON -> neutral); unused CSS removed"
+          - "auth, signup, a11y-signin, a11y-entry, campaigns, campaign-delete-permanently, settings-backup, app-bar, error-boundary, unauthenticated specs pass"
+          - "GLASS-G1 shots copied to /mnt/c/Users/Petar/Downloads/dcm-screens/glass-g1/; 44 px at 1024x768 and 390x844; axe clean hovered"
+          - "pnpm lint, pnpm typecheck, vitest pass"
+      - id: G2
+        batch: A
+        title: "Dashboard and campaign shell: hero actions, Fear, time, Wither, End scene, Players dialog, the Tome"
+        goal: "The dashboard and the shell's own buttons are glass buttons with viewer colours: Start Session / Load a campaign = confirm, End scene = danger with its Cancel = cancel, Players dialog Invite / New code = neutral and Revoke = danger, time and Fear controls neutral"
+        size: M
+        mode: replace
+        depends_on: [G0]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
+          - src/app/(gm)/campaigns/[campaignId]/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/error.tsx
+          - src/app/(gm)/campaigns/[campaignId]/[section]/**
+          - src/app/(gm)/campaigns/[campaignId]/dashboard.css
+          - src/app/(gm)/campaigns/[campaignId]/end-scene.tsx
+          - src/app/(gm)/campaigns/[campaignId]/fear-panel.tsx
+          - src/app/(gm)/campaigns/[campaignId]/frame-rules-panel.tsx
+          - src/app/(gm)/campaigns/[campaignId]/last-session.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party-section.tsx
+          - src/app/(gm)/campaigns/[campaignId]/players-dialog.tsx
+          - src/app/(gm)/campaigns/[campaignId]/sidebar-panels.tsx
+          - src/app/(gm)/campaigns/[campaignId]/time-arc.tsx
+          - src/app/(gm)/campaigns/[campaignId]/time-of-day.tsx
+          - src/app/(gm)/campaigns/[campaignId]/wither-panel.tsx
+          - src/app/(gm)/campaigns/[campaignId]/campaign-tome.tsx
+          - src/app/(gm)/campaigns/[campaignId]/campaign-tome-book.tsx
+          - src/components/tome/**
+          - src/components/sessions/session-chip.tsx
+          - tests/e2e/visual/GLASS-G2.spec.ts
+          - docs/tasks/TASK-GLASS-G2.md
+        reads:
+          - src/components/brand/**
+          - src/components/journal/end-session/**
+          - .omc/plans/glass-buttons-briefs.md
+        acceptance:
+          - "Every button in the owned files mapped per the role map (per file in the task doc); end-scene.tsx's End scene = danger (it is 'primary' today) and Cancel = cancel; the time arc's End day is neutral, its Undo = cancel"
+          - "Link-buttons (last-session 'Open the Journal', party-section, session chip) = neutral glass on the Link; the Tome's page buttons follow Q5"
+          - "dashboard, live-dashboard, wither, players, tome, lane3-campaign-time, lane-m-time-of-day, lane4-end-day-undo, fear-render, campaign-preload specs pass"
+          - "GLASS-G2 shots (GM and player dashboards) copied to /mnt/c/Users/Petar/Downloads/dcm-screens/glass-g2/; 44 px at 1024x768 and 390x844; axe clean hovered"
+          - "pnpm lint, pnpm typecheck, vitest pass"
+      - id: G3
+        batch: B
+        title: "Countdowns: cards, chase, long-term track, new-countdown and visibility dialogs"
+        goal: "Every countdown button is a glass button: New chase / Start chase / Save = confirm, Cancel = cancel, tick and step controls = neutral (Q7), delete = danger, the shared BTN constant gone"
+        size: M
+        mode: replace
+        depends_on: [G0]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/**
+          - tests/e2e/visual/GLASS-G3.spec.ts
+          - docs/tasks/TASK-GLASS-G3.md
+        reads:
+          - src/components/brand/**
+          - .omc/plans/glass-buttons-briefs.md
+        acceptance:
+          - "countdowns/shared.ts BTN and every hand-styled button in the folder replaced per the role map (per file in the task doc)"
+          - "countdowns-flow, countdowns-chase, countdowns-long-term, countdowns-modes, countdown-rolls specs and the CD-K2, CD-K3, CD-K4, CV1 visual specs pass"
+          - "GLASS-G3 shots copied to /mnt/c/Users/Petar/Downloads/dcm-screens/glass-g3/; 44 px at 1024x768 and 390x844; axe clean hovered"
+          - "pnpm lint, pnpm typecheck, vitest pass"
+      - id: G4
+        batch: B
+        title: "Frame trackers: Five Banners, Age of Umbra, Andaluria, Colossus, Horizon, Weredragon"
+        goal: "Every frame tracker button is a glass button: Advance week / Ignite / Roll d12 / Save = confirm, Done and Cancel = cancel, step controls neutral (Q7), resets and removals = danger; TRACKER_BTN gone"
+        size: M
+        mode: replace
+        depends_on: [G0]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/trackers/**
+          - tests/e2e/visual/GLASS-G4.spec.ts
+          - docs/tasks/TASK-GLASS-G4.md
+        reads:
+          - src/components/brand/**
+          - .omc/plans/glass-buttons-briefs.md
+        acceptance:
+          - "tracker-card.tsx TRACKER_BTN and every hand-styled button in the folder replaced per the role map (per file in the task doc)"
+          - "five-banners, age-of-umbra, andaluria, colossus, horizon, weredragon, core-calendar specs pass"
+          - "GLASS-G4 shots (one dashboard per frame tracker, GM and player) copied to /mnt/c/Users/Petar/Downloads/dcm-screens/glass-g4/; 44 px; axe clean hovered"
+          - "pnpm lint, pnpm typecheck, vitest pass"
+      - id: G5
+        batch: A
+        title: "Party page: roster, party cards, new-character wizard, photo import, rest launcher, level-up button"
+        goal: "The Party page, the new-character wizard and the shared rest / level-up / import launchers use glass buttons: Create character / Read photos / Finish rest = confirm, Cancel / Back = cancel, Interrupt / Undo rest / Remove / Retire = danger, bench and step controls neutral"
+        size: M
+        mode: replace
+        depends_on: [G0]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/party/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/roster.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/error.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/new/**
+          - src/components/party/party-card.tsx
+          - src/components/party/portrait.tsx
+          - src/components/party/import/**
+          - src/components/party/rest/**
+          - src/components/party/level-up/**
+          - tests/e2e/visual/GLASS-G5.spec.ts
+          - docs/tasks/TASK-GLASS-G5.md
+        reads:
+          - src/components/brand/**
+          - src/components/party/hero-card.tsx
+          - .omc/plans/glass-buttons-briefs.md
+        acceptance:
+          - "Every button in the owned files mapped per the role map (per file in the task doc); wizard wz-ghost / wz-primary and roster SMALL_BTN / STEP_BTN replaced; the hero card face and portraits keep their look"
+          - "rest/launcher Interrupt and Undo rest = danger (they are 'danger' today), Finish rest = confirm; the rest and level-up launchers also show on the sheet and the dashboard: shots there too"
+          - "party-roster, character-wizard, photo-import, rest, rest-frame-hooks, live-party, a11y-party, level-up, lane4-vitality-level-up specs pass"
+          - "GLASS-G5 shots copied to /mnt/c/Users/Petar/Downloads/dcm-screens/glass-g5/; 44 px; axe clean hovered"
+          - "pnpm lint, pnpm typecheck, vitest pass"
+      - id: G6
+        batch: B
+        title: "Codex and World Map: entries, gallery, pins, hex and token panels, palette, travel, zoom"
+        goal: "Codex and World Map buttons are glass buttons: Save / Add = confirm, Cancel = cancel, delete = danger, zoom and map tools = tool (lit when switched on), panel controls neutral; the view switches follow Q6"
+        size: M
+        mode: replace
+        depends_on: [G0]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/codex/**
+          - src/app/(gm)/campaigns/[campaignId]/world/**
+          - tests/e2e/visual/GLASS-G6.spec.ts
+          - docs/tasks/TASK-GLASS-G6.md
+        reads:
+          - src/components/brand/**
+          - .omc/plans/glass-buttons-briefs.md
+        acceptance:
+          - "cx-ghost, zbtn and every hand-styled button in both folders replaced per the role map (per file in the task doc); map tokens, hexes and pins keep their look"
+          - "codex, world, live-world specs and the PD1 visual spec pass"
+          - "GLASS-G6 shots copied to /mnt/c/Users/Petar/Downloads/dcm-screens/glass-g6/; 44 px; axe clean hovered"
+          - "pnpm lint, pnpm typecheck, vitest pass"
+      - id: G7
+        batch: B
+        title: "Lorekeeper: composer, chat, answer cards, pin dialog, conversations menu, rulings and library"
+        goal: "Lorekeeper buttons are glass buttons: Send / Pin = confirm, Cancel = cancel, delete a conversation or ruling = danger, answer-card actions neutral, fold toggles tool"
+        size: M
+        mode: replace
+        depends_on: [G0]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/lorekeeper/**
+          - src/components/lorekeeper/**
+          - tests/e2e/visual/GLASS-G7.spec.ts
+          - docs/tasks/TASK-GLASS-G7.md
+        reads:
+          - src/components/brand/**
+          - .omc/plans/glass-buttons-briefs.md
+        acceptance:
+          - "lk-act, lk-send and every hand-styled button in the owned files replaced per the role map (per file in the task doc)"
+          - "lorekeeper-chat, lorekeeper-flow, lorekeeper-privacy, lorekeeper-shell, lorekeeper-side specs and the D13-L6, D13-L7, D13-L9 visual specs pass"
+          - "GLASS-G7 shots copied to /mnt/c/Users/Petar/Downloads/dcm-screens/glass-g7/; 44 px; axe clean hovered"
+          - "pnpm lint, pnpm typecheck, vitest pass"
+      - id: G8
+        batch: B
+        title: "Adversaries library: catalogue, encounter builder, custom adversaries, environments"
+        goal: "The Adversaries tab (everything but the live tracker) uses glass buttons: Add / Save / Create encounter = confirm, Cancel = cancel, delete = danger, filter chips per Q6, feature actions neutral"
+        size: M
+        mode: replace
+        depends_on: [G0]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/adversaries/**
+          - src/components/adversaries/builder/**
+          - src/components/adversaries/catalogue/**
+          - src/components/adversaries/custom/**
+          - src/components/adversaries/environments/**
+          - tests/e2e/visual/GLASS-G8.spec.ts
+          - docs/tasks/TASK-GLASS-G8.md
+        reads:
+          - src/components/brand/**
+          - .omc/plans/glass-buttons-briefs.md
+        acceptance:
+          - "enc-ghost / enc-danger / enc-pill-primary, adx-btn / adx-primary / adx-danger, env-act and every hand-styled button replaced per the role map (per file in the task doc); stat blocks and art keep their look"
+          - "adversaries, adversary-catalogue, encounter-builder, custom-adversaries, environments specs and the A0, A2, A3, A5, AA1, EA1, EV1 visual specs pass"
+          - "GLASS-G8 shots copied to /mnt/c/Users/Petar/Downloads/dcm-screens/glass-g8/; 44 px; axe clean hovered"
+          - "pnpm lint, pnpm typecheck, vitest pass"
+      - id: G9
+        batch: C
+        title: "Adversary tracker: top bar, instance cards, actions panel, choices and result windows"
+        goal: "The live encounter tracker uses glass buttons: End scene = danger, Attack / Use = confirm in the GM's colours, Cancel / Back = cancel, steps neutral (Q7), HP / Stress pips untouched"
+        size: M
+        mode: replace
+        depends_on: [G0]
+        owns:
+          - src/components/adversaries/tracker/**
+          - tests/e2e/visual/GLASS-G9.spec.ts
+          - docs/tasks/TASK-GLASS-G9.md
+        reads:
+          - src/components/brand/**
+          - src/components/combat-map/actions/scene/index.tsx
+          - .omc/plans/glass-buttons-briefs.md
+        acceptance:
+          - "trk-btn (and -fear, -attack, -crit, -danger, -parch, -sm), trk-act, trk-spot-btn and every hand-styled button replaced per the role map (per file in the task doc); sh-pip pips keep their classes (encounter-tracker asserts them)"
+          - "top-bar passes a glass danger class to EndSceneButton (G11 owns its default)"
+          - "encounter-tracker, encounter-actions, adversary-actions-flow, adversary-actions-a11y specs and the A4, CA-AA3 visual specs pass"
+          - "GLASS-G9 shots copied to /mnt/c/Users/Petar/Downloads/dcm-screens/glass-g9/; 44 px; axe clean hovered"
+          - "pnpm lint, pnpm typecheck, vitest pass"
+      - id: G10
+        batch: C
+        title: "Combat Map outside the HUD, edit side: the GM's Edit mode, maps, scene generator, tools, vision, tokens, sprite packs"
+        goal: "Every cm-btn / cm-go button in the Combat Map route and its edit-side panels (they also show in the HUD's tools drawer) is a glass button: Generate / Save = confirm, Cancel = cancel, delete map / pack / object = danger, tool palettes and grid / zoom controls = tool with the switched-on look"
+        size: L
+        mode: replace
+        depends_on: [G0]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/**
+          - src/components/combat-map/editor/**
+          - src/components/combat-map/generate/**
+          - src/components/combat-map/maps/**
+          - src/components/combat-map/packs/**
+          - src/components/combat-map/style/**
+          - src/components/combat-map/vision/**
+          - src/components/combat-map/map-view/**
+          - src/components/combat-map/tokens/**
+          - src/components/combat-map/settings/**
+          - tests/e2e/visual/GLASS-G10.spec.ts
+          - docs/tasks/TASK-GLASS-G10.md
+        reads:
+          - src/components/brand/**
+          - src/components/combat-map/hud/**
+          - .omc/plans/glass-buttons-briefs.md
+        acceptance:
+          - "Every cm-btn / cm-go / cm-linkbtn / cm-pv-btn button in the owned files replaced per the role map (per file in the task doc); cm-sm -> small; the .cm-btn rules stay in combat-map.css while G11 and G9 files still use the class (GZ removes them)"
+          - "Tokens, area overlays, the map board and sprite art keep their look"
+          - "combat-map-edit, combat-map-flow, combat-map-generate, combat-map-shell, combat-maps, combat-tokens, combat-vision, combat-light-uploaded, combat-movement, area-overlay, sprite-edit, sprite-generate, sprite-packs-flow, sprite-packs-shell, sprite-packs-upload, sprite-style, hud-shell, hud-tablet specs and the C3, C4, C5, C6, C8, MV-M1, SP-P6, SP-P7, SP-P8, SP-P9, SP-P10 visual specs pass"
+          - "GLASS-G10 shots (Edit mode, and the HUD's tools drawer in Play) copied to /mnt/c/Users/Petar/Downloads/dcm-screens/glass-g10/; 44 px; axe clean hovered"
+          - "pnpm lint, pnpm typecheck, vitest pass"
+      - id: G11
+        batch: C
+        title: "Combat Map outside the HUD, play side: actions, reactions prompt, roll controls, drawer, Difficulty requests, End scene"
+        goal: "The Combat Map's play-side panels outside the HUD use glass buttons: the GM's Difficulty answer Roll = allow and Decline = deny, the roll toggle = normal / advantage / disadvantage, reaction prompts confirm / cancel by viewer, EndSceneButton = danger"
+        size: M
+        mode: replace
+        depends_on: [G0]
+        owns:
+          - src/components/combat-map/actions/**
+          - src/components/combat-map/drawer/**
+          - src/components/combat-map/requests/**
+          - src/components/combat-map/play-for.ts
+          - src/components/combat-map/slots.ts
+          - tests/e2e/visual/GLASS-G11.spec.ts
+          - docs/tasks/TASK-GLASS-G11.md
+        reads:
+          - src/components/brand/**
+          - src/components/combat-map/hud/**
+          - .omc/plans/glass-buttons-briefs.md
+        acceptance:
+          - "requests/index.tsx Roll = allow, Decline = deny (same colours for every viewer); roll-controls use normal / advantage / disadvantage with aria-pressed; ih-btn and every cm-btn here replaced per the role map (per file in the task doc)"
+          - "EndSceneButton's default class = danger glass; the tracker's top bar (G9) passes its own"
+          - "combat-actions-flow, combat-actions-a11y, combat-cards, combat-end-scene, combat-feature-reactions, combat-riders, combat-cannonball, combat-adversary, incoming-hit, live-combat, a11y-combat-hand, hud-shell, hud-sheet specs pass"
+          - "GLASS-G11 shots (GM and player, a Difficulty request, a reaction prompt) copied to /mnt/c/Users/Petar/Downloads/dcm-screens/glass-g11/; 44 px; axe clean hovered"
+          - "pnpm lint, pnpm typecheck, vitest pass"
+      - id: G12
+        batch: A
+        title: "Journal: header actions, session list and heading, Plan, Log, recap, tally, threads"
+        goal: "Every Journal button is a glass button: Start / Plan session / Create encounter / Play on the Combat Map = confirm, Cancel = cancel, End session and delete scene / session = danger, Reset / Add / Link = neutral; the recap paper follows Q5"
+        size: M
+        mode: replace
+        depends_on: [G0]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/journal/**
+          - src/components/journal/**
+          - tests/e2e/visual/GLASS-G12.spec.ts
+          - docs/tasks/TASK-GLASS-G12.md
+        reads:
+          - src/components/brand/**
+          - .omc/plans/glass-buttons-briefs.md
+        acceptance:
+          - "jr-ghost, jh-menu-btn, js-menu-btn, jp-menu-btn, jp-danger, js-danger, jl-add-btn, jrr-btn and every brandButton call in the owned files mapped per the role map (per file in the task doc); the header's End confirm = danger"
+          - "journal-shell, journal-sessions, journal-header, journal-plan, journal-encounter, journal-log, journal-recap, journal-tally, journal-threads, journal-notes, journal-writing-as, live-journal specs and the JOURNAL-* visual specs pass"
+          - "GLASS-G12 shots (GM Plan and Log, player view) copied to /mnt/c/Users/Petar/Downloads/dcm-screens/glass-g12/; 44 px; axe clean hovered"
+          - "pnpm lint, pnpm typecheck, vitest pass"
+      - id: G13
+        batch: A
+        title: "Notes (the Journal's Notes sub-tab): header, index column, entries, bin, journals, sharing, threads, export"
+        goal: "Notes buttons on the dark frame are glass buttons (New page / Share = confirm, Cancel = cancel, Bin / Delete = danger, Undo = cancel, tools neutral); buttons on the paper page follow Q5"
+        size: M
+        mode: replace
+        depends_on: [G0]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/notes/**
+          - src/components/notes/**
+          - tests/e2e/visual/GLASS-G13.spec.ts
+          - docs/tasks/TASK-GLASS-G13.md
+        reads:
+          - src/components/brand/**
+          - src/components/brand/viewer.tsx
+          - src/components/journal/notes-tab/**
+          - .omc/plans/glass-buttons-briefs.md
+        acceptance:
+          - "bj-ghost, bj-act, bj-danger, bj-page-btn, bj-jl-btn, bj-shared-btn, bj-tear-btn and every hand-styled button replaced per the role map (per file in the task doc); bj-paper-btn per Q5; the bin's portalled toast (Undo = cancel) gets data-viewer from viewer.tsx"
+          - "notes-a11y, notes-bin, notes-entries, notes-flow, notes-journals, notes-mentions, notes-pages, notes-sharing, notes-shell, notes-threads, live-notes, journal-notes specs and the D11-N2 to D11-N9 visual specs pass (as JX1 left them)"
+          - "GLASS-G13 shots copied to /mnt/c/Users/Petar/Downloads/dcm-screens/glass-g13/; 44 px; axe clean hovered (paper included)"
+          - "pnpm lint, pnpm typecheck, vitest pass"
+      - id: G14
+        batch: C
+        conditional: "only if the user answers Q3 (b)"
+        title: "Character sheet pages and sections (only if Q3 = b)"
+        goal: "The character sheet's own buttons (identity, traits, Hope, HP / Stress box actions, equipment, domains, story, downtime, level-up ribbon) are glass buttons; pips, the card face and the dice faces keep their look"
+        size: L
+        mode: replace
+        depends_on: [G0]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/**
+          - src/components/party/sheet-ui/**
+          - tests/e2e/visual/GLASS-G14.spec.ts
+          - docs/tasks/TASK-GLASS-G14.md
+        reads:
+          - src/components/brand/**
+          - src/components/party/hero-card.tsx
+          - .omc/plans/glass-buttons-briefs.md
+        acceptance:
+          - "Q3 (b) confirmed by the user before launch; every action button in the owned files mapped per the role map (per file in the task doc); dk-btn / dkc-btn, steppers per Q7, pips untouched"
+          - "character-sheet, sheet-cards, equipment-tiers, domain-deck, class-features, class-features-hf, hope-features specs and the S0, S1, S2, S3, S4, S6, S8, S11, S12, S13, SC1, DD1, GL0, GL1, GL2, GL3, GL5 visual specs pass"
+          - "GLASS-G14 shots copied to /mnt/c/Users/Petar/Downloads/dcm-screens/glass-g14/; 44 px; axe clean hovered"
+          - "pnpm lint, pnpm typecheck, vitest pass"
+      - id: G15
+        batch: C
+        conditional: "only if the user answers Q3 (b) or (c)"
+        title: "Sheet panels: dice box and roll feed, frame extras, class features, Lunar, Wither, death move (only if Q3 = b or c)"
+        goal: "The sheet's panels use glass buttons: Roll = confirm, Tag Team / Tick countdowns neutral, the roll toggle normal / advantage / disadvantage, Return to play / death-move choices by role; with Q3 (c) only the dice box and its feed"
+        size: L
+        mode: replace
+        depends_on: [G0]
+        owns:
+          - src/components/party/dice/**
+          - src/components/party/extras/**
+          - src/components/party/features/**
+          - src/components/party/lunar/**
+          - src/components/party/wither/**
+          - src/components/party/death/**
+          - src/components/party/session/**
+          - tests/e2e/visual/GLASS-G15.spec.ts
+          - docs/tasks/TASK-GLASS-G15.md
+        reads:
+          - src/components/brand/**
+          - .omc/plans/glass-buttons-briefs.md
+        acceptance:
+          - "Q3 confirmed by the user before launch; the free-roll / roll-feed / tick-countdowns BTN and STEP constants and xs-btn / hf-ghost replaced per the role map (per file in the task doc); 3D dice untouched"
+          - "dice, dice-3d, dice-followups, live-dice-mixed, death, session-features-dice, session-features-sheet, session-features-boundary, motherboard-ikonis, lane4-cloak-prompt, lane4-fire-ask specs and the S5, S7, S9, S10, SF-F1, SF-F2, SF-F3, CD-K1 visual specs pass"
+          - "GLASS-G15 shots copied to /mnt/c/Users/Petar/Downloads/dcm-screens/glass-g15/; 44 px; axe clean hovered"
+          - "pnpm lint, pnpm typecheck, vitest pass"
+  # ------------------------------------------------------------------ wave 3: clean-up and the full checks
+  - wave: 3
+    tracers:
+      - id: GZ
+        title: "Clean-up: drop the old variant names and dead button CSS, guard against new hand-styled buttons, full e2e and build"
+        goal: "brandButton offers only the glass roles, no dead button classes are left (.cm-btn and the per-area ghost / primary classes), a vitest guard fails on a new hand-styled action button outside the allowed places, and the full e2e suite and pnpm build pass on rebuild"
+        size: M
+        mode: replace
+        depends_on: [G0, G1, G2, G3, G4, G5, G6, G7, G8, G9, G10, G11, G12, G13]
+        owns:
+          - src/components/brand/buttons.tsx
+          - src/components/brand/glass-button.ts
+          - src/components/brand/glass-button.css
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/combat-map.css
+          - src/components/ui/button.tsx
+          - src/app/signin/e2e-sign-in-form.tsx
+          - tests/unit/brand/**
+          - tests/e2e/visual/GLASS-GZ.spec.ts
+          - docs/tasks/TASK-GLASS-GZ.md
+        reads:
+          - src/**
+          - .omc/plans/glass-buttons-briefs.md
+        acceptance:
+          - "Old variant names (primary, solid, outline, pill, dangerSolid) removed from brandButton; grep finds no caller; typecheck passes"
+          - ".cm-btn / .cm-go rules removed from combat-map.css if nothing uses them; every per-area button class listed in the briefs' inventory is gone or named in the task doc with the reason"
+          - "tests/unit/brand/button-guard.test.ts scans src/**/*.tsx and fails on a <button> or button-styled link with the old hand-styled pattern (border + transparent background + hover:bg-white/5, or a *-ghost / *-btn class) outside the allowed list (HUD, sheet if Q3 = a, card face, pips, tabs, rows)"
+          - "src/components/ui/button.tsx (shadcn, used only by the e2e sign-in form) removed or moved to brandButton"
+          - "Full e2e suite passes (E2E_VISUAL=1 included), then pnpm build passes; GLASS-GZ shots of one page per area (GM and player) copied to /mnt/c/Users/Petar/Downloads/dcm-screens/glass-gz/"
+          - "pnpm lint, pnpm typecheck, vitest pass; orchestrator closes dcm-q861 after this merge"
