@@ -36,7 +36,7 @@ export function HudFear({ state }: HudPartProps): ReactNode {
       <SceneDisc campaignId={state.campaignId} scene={scene} />
       {/* H9.1: the spotlight disc hangs left of the day disc (its own boundary: the fear banner survives its errors). */}
       <PartBoundary label="The spotlight">
-        <SpotlightDisc campaignId={state.campaignId} mapId={state.map?._id} gm={state.role === "gm"} fear={scene.fear} />
+        <SpotlightDisc campaignId={state.campaignId} mapId={state.map?._id} gm={state.role === "gm"} fear={scene.fear ?? 0} />
       </PartBoundary>
     </div>
   );

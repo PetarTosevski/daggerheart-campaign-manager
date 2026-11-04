@@ -196,7 +196,7 @@ test("adversary actions from both pages: I Am Your Shield, armor, undo, a multi-
     const enemyIds = new Set<string>([bandit!, elemental!, ...sellswords, ...tokens.filter((t) => t.instanceId !== undefined && t.instanceId !== null).map((t) => t._id as string)]);
 
     const sheet = async (id: Id<"characters">) => (await gm.query(api.charactersReads.get, { characterId: id }))!.sheet;
-    const fear = () => gm.query(api.campaigns.fear, { campaignId });
+    const fear = async () => (await gm.query(api.campaigns.fear, { campaignId }))!; // the GM always gets a number (R1)
     const undo = (r: { entryId: Id<"actionLog"> }) => gm.mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: crypto.randomUUID() });
 
     for (const p of [a.page, b.page]) {

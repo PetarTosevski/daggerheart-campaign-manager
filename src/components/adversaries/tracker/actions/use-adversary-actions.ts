@@ -36,7 +36,7 @@ export function useAdversaryActions(campaignId: Id<"campaigns">) {
   function lowerFear(store: OptimisticLocalStore, spendFear: number | undefined) {
     if (!spendFear) return;
     const fear = store.getQuery(api.campaigns.fear, { campaignId });
-    if (fear === undefined || fear < spendFear) return;
+    if (fear === undefined || fear === null || fear < spendFear) return;
     store.setQuery(api.campaigns.fear, { campaignId }, fear - spendFear);
   }
   const attack = useMutation(api.adversaryActions.attack).withOptimisticUpdate((store, args) => lowerFear(store, args.spendFear));

@@ -86,9 +86,9 @@ function useDiscMoves(campaignId: Id<"campaigns">) {
           if (current !== undefined) store.setQuery(api.combatSpotlight.state, { campaignId: id }, afterTake(current, Date.now(), tokenId));
           if (args.pay !== "fear") return;
           const scene = store.getQuery(api.combatHud.scene, { campaignId: id });
-          if (scene !== undefined) store.setQuery(api.combatHud.scene, { campaignId: id }, { ...scene, fear: Math.max(0, scene.fear - 1) });
+          if (scene !== undefined && scene.fear !== null) store.setQuery(api.combatHud.scene, { campaignId: id }, { ...scene, fear: Math.max(0, scene.fear - 1) });
           const fear = store.getQuery(api.campaigns.fear, { campaignId: id });
-          if (fear !== undefined) store.setQuery(api.campaigns.fear, { campaignId: id }, Math.max(0, fear - 1));
+          if (fear !== undefined && fear !== null) store.setQuery(api.campaigns.fear, { campaignId: id }, Math.max(0, fear - 1));
         })({ campaignId, tokenId, pay, idempotencyKey: key() })
         .catch(fail);
     },

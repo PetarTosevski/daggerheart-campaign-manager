@@ -31,6 +31,7 @@ import { campaignFearState } from "./lib/fear";
 import { campaignQuery, gmQuery, userQuery } from "./lib/functions";
 import { atLeast } from "./lib/permissions";
 import { withoutStance } from "./lib/stanceDrop";
+import { fearValueValidator, seesFear } from "./campaigns";
 
 /**
  * Combat HUD reads (plan `.omc/plans/combat-hud.yaml`, tracer HD1; Main, CmpTokens, GMDesktop boards). Each is one
@@ -79,8 +80,8 @@ export const party = campaignQuery({
 });
 
 const sceneValidator = v.object({
-  /** GM Fear, 0-12. */
-  fear: v.number(),
+  /** GM Fear, 0-12; null for a player while "Players see the GM's Fear" is off (config R1: the banner shows "?"). */
+  fear: fearValueValidator,
   /** The light every map follows (dcm-bxp.54). */
   light: lightLevelValidator,
   /** The campaign time phase ("Nightfall"), or null in a frame without campaign time. */
@@ -107,7 +108,7 @@ export const scene = campaignQuery({
     const { campaign } = ctx;
     const timed = frameHasMechanic(campaign.frameId, "campaignTime");
     const { phase, light } = await campaignLight(ctx, campaign);
-    const fear = (await campaignFearState(ctx, campaign._id)).fear;
+    const fear = seesFear(campaign, ctx.permission) ? (await campaignFearState(ctx, campaign._id)).fear : null;
     const row = await ctx.db
       .query("campaignTime")
       .withIndex("by_campaign", (q) => q.eq("campaignId", campaign._id))

@@ -32,6 +32,7 @@ import { situationalDice } from "./situations";
 import { SlayerOffer } from "./slayer";
 import { playRollSound } from "./sound";
 import { TagTeam } from "./tag-team";
+import { FEAR_HIDDEN_LABEL, fearShown } from "@/components/combat-map/hud/fear/hidden";
 
 type Mode = "action" | "reaction" | "damage";
 type AttackWeapon = "primary" | "secondary" | "none";
@@ -90,12 +91,14 @@ function partsText(roll: RollRecord): string {
 }
 
 /** The italic consequence line: what the server applied for Hope, Stress and Fear (CB 95, `dualityEffects`). */
-function consequence(roll: RollRecord, fearGained: number | undefined): string {
+function consequence(roll: RollRecord, fearGained: number | undefined, poolHidden = false): string {
   if (roll.kind === "reaction") return "Reaction rolls don’t generate Hope or Fear.";
   if (roll.kind !== "action") return "";
   const fx = dualityEffects("action", roll.outcome);
   if (fx.clearStress) return "Critical success: you gain a Hope and clear a Stress.";
   if (fx.hope) return "Rolled with Hope: you gain a Hope.";
+  // R1: "already full" would tell a player the hidden pool is 12; the die stays ("Rolled with Fear").
+  if (fx.fear && poolHidden) return "Rolled with Fear.";
   if (fx.fear) return fearGained === 0 ? "Rolled with Fear: the GM’s Fear is already full." : "Rolled with Fear: the GM gains a Fear.";
   return "";
 }
@@ -459,8 +462,8 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
         <div className="dc-end">
           <BoardDiceToggles />
           {fear !== undefined ? (
-            <span className="sh-small dc-fear">
-              GM Fear <strong>{fear}</strong>
+            <span className="sh-small dc-fear" {...(fear === null ? { "aria-label": `GM Fear: ${FEAR_HIDDEN_LABEL}` } : {})}>
+              GM Fear <strong data-testid="dice-fear-value">{fearShown(fear)}</strong>
             </span>
           ) : null}
         </div>
@@ -584,7 +587,7 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
                     {result.label}
                     {partsText(result.roll) ? ` (${partsText(result.roll)})` : ""}
                   </span>
-                  {consequence(result.roll, result.fearGained) ? <span className="sh-small italic">{consequence(result.roll, result.fearGained)}</span> : null}
+                  {consequence(result.roll, result.fearGained, fear === null) ? <span className="sh-small italic">{consequence(result.roll, result.fearGained, fear === null)}</span> : null}
                 </span>
               </div>
             </div>

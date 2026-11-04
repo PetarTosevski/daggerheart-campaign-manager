@@ -110,7 +110,7 @@ describe("dcm-0hlq: a PC escapes the tokens; pcEscapes fires", () => {
     });
     await add("tangle-bramble-swarm", "Swarm", 0);
     await edit(w.characterA, () => ({ creatureTokens: [{ name: "bramble", count: 2 }] }));
-    const fearBefore = await gm.query(api.campaigns.fear, { campaignId });
+    const fearBefore = (await gm.query(api.campaigns.fear, { campaignId }))!; // the GM always gets a number (R1)
     const res = await gm.mutation(api.adversaryActions.pcEscape, { campaignId, characterId: w.characterA, name: "bramble", idempotencyKey: key() });
     expect(res.tokens).toBe(2);
     expect(res.lines.some((l) => l.includes("Test Escape Fear (automatic)"))).toBe(true);

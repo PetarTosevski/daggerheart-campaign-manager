@@ -10,6 +10,8 @@ import { campaignQuery, gmMutation } from "./lib/functions";
 import { cleanText, liveWindows, loadSession } from "./lib/sessions";
 import { actionKindValidator, type ActionKind, type StoredRoll } from "./lib/validators/actionLog";
 import { MAX_LOG_ENTRIES, MAX_LOG_OVERRIDES, sessionLogSourceValidator, type SessionLogSource } from "./lib/validators/sessions";
+import { seesFear } from "./campaigns";
+import { hideFearNumbers } from "./feed";
 
 /**
  * The Journal's session log (plan `.omc/plans/journal.yaml`, JD2; user answer 'Session log = automatic from the action
@@ -123,6 +125,9 @@ export function fearText(row: { action: string; before: number; after: number })
   if (row.action === "gain" && delta > 0) return { title: `The GM gained ${delta} Fear`, sub: change };
   return { title: change };
 }
+
+/** A Fear history line as a player reads it while "Players see the GM's Fear" is off (config R1): no numbers. */
+export const HIDDEN_FEAR_TITLE = "Fear changed";
 
 /** 'Combat began: Ambush at the Forest Camp'. */
 export function encounterTitle(event: EncounterEvent, name: string): string {
@@ -310,14 +315,26 @@ export const list = campaignQuery({
       sessionOverrides(ctx, session._id),
     ]);
     const byKey = new Map(overrides.map((o) => [`${o.source}:${o.sourceId}`, o]));
-    const lines = mergeLog([own, feed.lines, fear.lines, encounters.lines]).flatMap((line): JournalLogLine[] => {
+    // R1: with "Players see the GM's Fear" off, a player's Fear lines read 'Fear changed' and the feed and automatic
+    // lines lose their Fear numbers. The GM's own words (typed lines, re-wordings) are theirs to share.
+    const fearShown = seesFear(ctx.campaign, ctx.permission);
+    const playerView = (line: Line): Line => {
+      if (fearShown) return line;
+      if (line.source === "fear") return { ...line, title: HIDDEN_FEAR_TITLE, sub: undefined };
+      if (line.source === "feed" || line.source === "auto") return { ...line, title: hideFearNumbers(line.title) };
+      return line;
+    };
+    const lines = mergeLog([own, feed.lines, fear.lines, encounters.lines]).flatMap((merged): JournalLogLine[] => {
+      const line = playerView(merged);
       const key = `${line.source}:${line.sourceId}`;
       const override = line.source === "gm" ? undefined : byKey.get(key);
       const hidden = override?.hidden ?? false;
       if (hidden && !isGm) return [];
+      const { sub, ...rest } = line;
       return [
         {
-          ...line,
+          ...rest,
+          ...(sub !== undefined ? { sub } : {}),
           key,
           title: override?.text ?? line.title,
           hidden,

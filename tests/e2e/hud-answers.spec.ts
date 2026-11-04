@@ -53,7 +53,7 @@ test("the GM's Resolutions list a player's roll with Fear, with Undo", async ({ 
     await gm.setViewportSize({ width: 1440, height: 900 });
     await gm.goto(s.url);
     await expect(gm.getByTestId("combat-hud")).toBeVisible();
-    const fear = (await s.client.query(api.combatHud.scene, { campaignId: s.campaignId })).fear;
+    const fear = (await s.client.query(api.combatHud.scene, { campaignId: s.campaignId })).fear!; // the GM always gets a number (R1)
     await playerClient.mutation(api.rolls.manualRoll, { characterId: moss.characterId, roll: agility, values: [3, 8], idempotencyKey: crypto.randomUUID() });
 
     // Resolutions open from the dock's Log (plan combat-hud H9.2).

@@ -5,6 +5,7 @@ import { memo, useState, type CSSProperties } from "react";
 
 import { SlotBoundary } from "@/components/party/session/boundary";
 import { errorMessage } from "@/lib/convex-errors";
+import { FEAR_HIDDEN_LABEL, FEAR_HIDDEN_MARK } from "@/components/combat-map/hud/fear/hidden";
 import { MAX_FEAR } from "@/lib/domain/fear";
 
 import { api } from "../../../../../convex/_generated/api";
@@ -41,9 +42,12 @@ export const FearPanel = memo(function FearPanel(props: { campaignId: Id<"campai
   );
 });
 
-function FearTokens({ campaignId, readOnly = false }: { campaignId: Id<"campaigns">; readOnly?: boolean }) {
+function FearTokens({ campaignId, readOnly: readOnlyProp = false }: { campaignId: Id<"campaigns">; readOnly?: boolean }) {
   const loaded = useQuery(api.campaigns.fear, { campaignId });
+  // null: the GM hides the pool from players (config R1): the spiral and core stay dark and the core reads "?".
+  const hidden = loaded === null;
   const fear = loaded ?? 0;
+  const readOnly = readOnlyProp || hidden;
   // A token click shows the new Fear at once (CL3: the value is the intent; the server checks the range).
   const run = useMutation(api.fear.set).withOptimisticUpdate((store, args) => {
     store.setQuery(api.campaigns.fear, { campaignId: args.campaignId }, args.value);
@@ -140,10 +144,10 @@ function FearTokens({ campaignId, readOnly = false }: { campaignId: Id<"campaign
           </span>
           <span
             className="font-display text-[22px] leading-none font-black tracking-[0.04em] text-[#efe8ff]"
-            aria-label={`${fear} of ${MAX_FEAR} Fear`}
+            aria-label={hidden ? FEAR_HIDDEN_LABEL : `${fear} of ${MAX_FEAR} Fear`}
             data-testid="fear-value"
           >
-            {fear === 0 ? "—" : ROMAN[fear - 1]}
+            {hidden ? FEAR_HIDDEN_MARK : fear === 0 ? "—" : ROMAN[fear - 1]}
           </span>
         </div>
       </div>

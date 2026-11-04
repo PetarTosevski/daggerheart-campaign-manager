@@ -187,7 +187,7 @@ function StatBlockBody({
   const ends = useQuery(api.combatEffects.fearEnds, { campaignId, target: { kind: "instance", instanceId: instance._id } });
   const endByFear = useMutation(api.combatEffects.endByFear).withOptimisticUpdate((store, args) => {
     const now = store.getQuery(api.campaigns.fear, { campaignId });
-    if (now !== undefined && now >= args.fear) store.setQuery(api.campaigns.fear, { campaignId }, now - args.fear);
+    if (now !== undefined && now !== null && now >= args.fear) store.setQuery(api.campaigns.fear, { campaignId }, now - args.fear);
   });
   const sight = useLiveSight(campaignId, map?._id ?? null);
   const who = theName(instance.label);
@@ -219,7 +219,7 @@ function StatBlockBody({
         rows: gmAttackRows(self, pcs, sight, block.attack.range),
         characterOf,
         spotlightFear: actionSpot,
-        fear,
+        fear: fear ?? undefined,
         acts,
       }),
     );

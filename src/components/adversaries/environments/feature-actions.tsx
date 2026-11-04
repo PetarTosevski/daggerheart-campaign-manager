@@ -29,7 +29,7 @@ export function useEnvironmentActions(campaignId: Id<"campaigns">) {
     const fear = store.getQuery(api.campaigns.fear, { campaignId });
     // The same bundled stat block the server reads the cost from.
     const cost = ENVIRONMENTS.find((e) => e.id === environmentId)?.features.find((f) => f.name === featureName)?.fearCost;
-    if (fear === undefined || cost === undefined || fear < cost) return;
+    if (fear === undefined || fear === null || cost === undefined || fear < cost) return;
     store.setQuery(api.campaigns.fear, { campaignId }, fear - cost);
   });
   const start = useMutation(api.environmentActions.startCountdown);

@@ -54,18 +54,22 @@ export function useOpenTome(): (chapter: TomeChapterId) => void {
   return openTome;
 }
 
-/** The campaign's live GM Fear (`campaigns.fear`; undefined while loading). Wrap the reader in an error boundary (CL1). */
-export function useCampaignFear(): number | undefined {
+/**
+ * The campaign's live GM Fear (`campaigns.fear`; undefined while loading; null for a player while the GM hides it,
+ * config R1: show "?"). Wrap the reader in an error boundary (CL1).
+ */
+export function useCampaignFear(): number | null | undefined {
   return useQuery(api.campaigns.fear, { campaignId: useCampaign()._id });
 }
 
 /**
- * Renders `children` with the live GM Fear once it has loaded (nothing before). Only this subtree re-renders on a Fear
- * change; put it inside the reader's error boundary.
+ * Renders `children` with the live GM Fear once it has loaded (nothing before, and nothing while it is hidden: every
+ * reader is a GM screen, and the GM always gets the number). Only this subtree re-renders on a Fear change; put it
+ * inside the reader's error boundary.
  */
 export function WithFear({ children }: { children: (fear: number) => ReactNode }) {
   const fear = useCampaignFear();
-  return fear === undefined ? null : children(fear);
+  return fear === undefined || fear === null ? null : children(fear);
 }
 
 function TierLevel({ campaign }: { campaign: CampaignSummary }) {

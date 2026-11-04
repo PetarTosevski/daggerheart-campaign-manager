@@ -23,7 +23,7 @@ import {
   userMutation,
   userQuery,
 } from "./lib/functions";
-import { atLeast, campaignAccess, inviteEmail, permissionFor } from "./lib/permissions";
+import { atLeast, campaignAccess, inviteEmail, permissionFor, type CampaignPermission } from "./lib/permissions";
 import {
   campaignSummaryValidator,
   customFrameValidator,
@@ -51,7 +51,19 @@ export type CampaignSummary = Infer<typeof summaryValidator>;
 /** The summary's `role`: "gm" for the creator and co-GMs (permission owner or better), "player" otherwise. */
 type SummaryRole = CampaignSummary["role"];
 
-const listItemValidator = campaignSummaryValidator.extend({ isCreator: v.boolean() });
+/**
+ * GM Fear as a member may receive it (config R1, user Q3 changed 2026-11-04): the number, or null when the campaign's
+ * "Players see the GM's Fear" is off and the caller is below the GM (the creator and co-GMs always see it). Every read
+ * that sends the pool, or a Fear change, to a member asks `seesFear`; the client shows "?" for null.
+ */
+export const fearValueValidator = v.union(v.number(), v.null());
+
+/** The caller sees GM Fear numbers: the GM or a co-GM (owner or better), or any member while `playersSeeFear` is on. */
+export function seesFear(campaign: Pick<Doc<"campaigns">, "tableSettings">, permission: CampaignPermission | null): boolean {
+  return atLeast(permission, "owner") || resolveTableSettings(campaign.tableSettings).playersSeeFear;
+}
+
+const listItemValidator = campaignSummaryValidator.omit("fear").extend({ isCreator: v.boolean(), fear: fearValueValidator });
 
 /**
  * What `list` returns per campaign: the summary plus its Fear, which Load Campaign shows on every card. Only the title
@@ -59,7 +71,15 @@ const listItemValidator = campaignSummaryValidator.extend({ isCreator: v.boolean
  */
 export type CampaignListItem = Infer<typeof listItemValidator>;
 
-async function withFear(ctx: QueryCtx, summary: CampaignSummary): Promise<CampaignListItem> {
+/**
+ * The card's Fear: the number, or null for a caller who may not see it (R1). The creator always sees it; a joined or
+ * invited caller's permission is read only when the setting is off (rare), so a co-GM's card keeps the number.
+ */
+async function withFear(ctx: QueryCtx, user: Doc<"users">, summary: CampaignSummary, campaign: Doc<"campaigns">, isCreator: boolean): Promise<CampaignListItem> {
+  if (!isCreator && !seesFear(campaign, null)) {
+    const access = await campaignAccess(ctx, user, campaign._id, "owner");
+    if (!seesFear(campaign, access?.permission ?? null)) return { ...summary, fear: null };
+  }
   const state = await ctx.db
     .query("campaignState")
     .withIndex("by_campaign", (q) => q.eq("campaignId", summary._id))
@@ -162,7 +182,9 @@ export const list = userQuery({
     );
     opened.sort((a, b) => b.lastOpenedAt - a.lastOpenedAt);
     return Promise.all(
-      opened.slice(0, LIST_MAX).map(async (r) => withFear(ctx, await summarise(ctx, r.campaign, r.role, r.isCreator, r.lastOpenedAt))),
+      opened
+        .slice(0, LIST_MAX)
+        .map(async (r) => withFear(ctx, user, await summarise(ctx, r.campaign, r.role, r.isCreator, r.lastOpenedAt), r.campaign, r.isCreator)),
     );
   },
 });
@@ -218,13 +240,15 @@ export const get = maybeUserQuery({
 
 /**
  * The campaign's GM Fear (0–12), every member. Its own small query so a Fear change re-sends only this, not the campaign
- * summary that the whole campaign page reads (PF7).
+ * summary that the whole campaign page reads (PF7). null for a player while "Players see the GM's Fear" is off (R1);
+ * the GM and co-GMs always get the number.
  */
 export const fear = campaignQuery({
   need: "view",
+  enough: "owner",
   args: {},
-  returns: v.number(),
-  handler: async (ctx) => (await campaignFearState(ctx, ctx.campaign._id)).fear,
+  returns: fearValueValidator,
+  handler: async (ctx) => (seesFear(ctx.campaign, ctx.permission) ? (await campaignFearState(ctx, ctx.campaign._id)).fear : null),
 });
 
 // No 0/O/1/I/L so codes read clearly aloud and on paper.

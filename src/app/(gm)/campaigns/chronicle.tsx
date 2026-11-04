@@ -86,7 +86,7 @@ function Band({
           </span>
           <span className="flex min-w-[76px] flex-col items-center gap-0.5 rounded-[10px] bg-fear-bg px-3.5 py-2.5 text-fear">
             <span className="text-[12px] tracking-[0.12em] uppercase">Fear</span>
-            <strong className="text-[24px]">{campaign.fear}</strong>
+            <strong className="text-[24px]" {...(campaign.fear === null ? { "aria-label": "Fear hidden by the GM" } : {})}>{campaign.fear ?? "?"}</strong>
           </span>
         </span>
       </button>
