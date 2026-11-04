@@ -22,6 +22,7 @@ import { afterUse, foldPcRolls, foldSteps, rerunWith, runWithRiders, autoUsesOn,
 import { companionFor, companionNumbers } from "./lib/companion";
 import { assertCanAct, loadCharacter, readSheet, saveSheet, storedSheet } from "./lib/characterSheet";
 import { attackScene, defaultOnRiders, type Host, type RiderRun } from "./lib/combatActions";
+import { outOfRangeRefusal, refusesOutOfRange } from "./combatActions";
 import { closeRequest, encounterRunning, loadOpenRequest } from "./lib/combatRequests";
 import { rollDie } from "./lib/dice";
 import { FLYING_FEATURES, REFOCUS_KEY } from "./lib/featureDrawer";
@@ -64,9 +65,10 @@ import { changed } from "./lib/rolls";
  */
 
 async function editableHere(ctx: QueryCtx & { user: Doc<"users">; campaign: Doc<"campaigns"> }, characterId: Id<"characters">) {
-  const { campaign, character } = await loadCharacter(ctx, ctx.user, characterId, "edit", "owner");
+  const { campaign, character, permission } = await loadCharacter(ctx, ctx.user, characterId, "edit", "owner");
   if (campaign._id !== ctx.campaign._id) throw appError("NOT_FOUND");
-  return { campaign, character, sheet: readSheet(character.sheet) };
+  // Config R2: `gm` (the GM or a co-GM acting for a PC) is never refused for range.
+  return { campaign, character, sheet: readSheet(character.sheet), gm: permission === "owner" };
 }
 
 const LAST_ROLL_SCAN = 20;
@@ -384,7 +386,9 @@ export const useFeature = keyedCampaignMutation({
   returns: v.union(resolvedFeatureValidator, pendingCardValidator, needsChoiceValidator),
   handler: async (ctx, args) =>
     ctx.once("combat_feature", args, async () => {
-      const { campaign, character, sheet } = await editableHere(ctx, args.characterId);
+      const { campaign, character, sheet, gm } = await editableHere(ctx, args.characterId);
+      // Config R2 (Q2 a): a player's use with a target out of its range is refused when the GM refuses them.
+      const refuse = refusesOutOfRange(campaign, gm);
       if ((args.points?.length ?? 0) > MAX_AREA_COUNT) throw appError("INVALID", `At most ${MAX_AREA_COUNT} squares.`);
       const squares: Squares = { ...(args.point ? { point: args.point } : {}), ...(args.points ? { points: args.points } : {}) };
       const riders = args.riders ?? [];
@@ -395,9 +399,11 @@ export const useFeature = keyedCampaignMutation({
         const withRiders = await featureWithRiders(ctx, req, host, args.mapId, args, riders, ctx.user._id, riseOff);
         if (withRiders.status === "needsChoice") return { status: "needsChoice" as const, asks: withRiders.asks };
         if (withRiders.built.outOfRange.length === 0) return resolveWithRiders(ctx, withRiders, ctx.user._id, squares);
+        if (refuse) throw outOfRangeRefusal(withRiders.built.outOfRange);
         // Q1: wait for the GM; the approval runs the feature and its riders (the sent ones are stored) again.
         return openSanction(ctx, { campaign, character, built: withRiders.built, args, useId: req.pick.use.id, riseOff, riders });
       }
+      if (refuse && built.outOfRange.length > 0) throw outOfRangeRefusal(built.outOfRange);
       const outcome = await runKept(ctx, req, built, ctx.user._id);
       if (outcome.kind === "needsChoice") return { status: "needsChoice" as const, asks: outcome.asks };
       if (built.outOfRange.length === 0) {

@@ -1,5 +1,8 @@
 import { v } from "convex/values";
 
+import { resolveTableSettings } from "../src/lib/config/campaign-settings";
+import type { Range } from "../src/lib/domain/card-effects/types";
+import { RANGE_ORDER } from "../src/lib/domain/combat-actions/distance";
 import { appError } from "../src/lib/errors/app-error";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -28,6 +31,7 @@ import {
   targetHintValidator,
   weaponIn,
   weaponSlotValidator,
+  withoutTargets,
   type AttackRoll,
 } from "./lib/combatActions";
 import { loadCombatMap } from "./lib/combatMaps";
@@ -53,6 +57,24 @@ import type { AdversaryBefore } from "./lib/validators/actionLog";
  * What a player receives never holds an enemy's HP, Stress, thresholds or Difficulty (U1): the returns validators
  * below have no such field, and the public row's summary names only Hit / Miss / Defeated.
  */
+
+const BAND_LABEL: Record<Range, string> = { melee: "Melee", veryClose: "Very Close", close: "Close", far: "Far", veryFar: "Very Far" };
+
+/**
+ * Config R2 (Q2 a; CB p.103 "Anything beyond a character's Very Far range is Out of Range and usually can't be
+ * targeted"): whether an out-of-range target refuses this action instead of opening a GM sanction. Only with the table
+ * setting `outOfRange: "refuse"` and only for a player: the GM or a co-GM acting for a PC (`gm`, the caller's
+ * character permission is "owner") keeps today's sanction ("ask").
+ */
+export function refusesOutOfRange(campaign: Doc<"campaigns">, gm: boolean): boolean {
+  return !gm && resolveTableSettings(campaign.tableSettings).outOfRange === "refuse";
+}
+
+/** COMBAT_TARGET_OUT_OF_RANGE naming the farthest band a target is at (thrown before anything is paid or logged). */
+export function outOfRangeRefusal(targets: readonly { band: Range }[]) {
+  const farthest = targets.reduce<Range>((far, t) => (RANGE_ORDER.indexOf(t.band) > RANGE_ORDER.indexOf(far) ? t.band : far), targets[0]?.band ?? "veryFar");
+  return appError("COMBAT_TARGET_OUT_OF_RANGE", `Out of range: the target is at ${BAND_LABEL[farthest]} range, beyond this action's reach. The GM refuses out-of-range actions.`);
+}
 
 /** The character the caller edits, in this campaign, with its sheet (NOT_FOUND / FORBIDDEN otherwise). */
 async function attacker(ctx: QueryCtx & { user: Doc<"users">; campaign: Doc<"campaigns"> }, characterId: Id<"characters">): Promise<Loaded> {
@@ -132,14 +154,26 @@ export const attack = keyedCampaignMutation({
   returns: v.union(resolvedAttackValidator, pendingAttackValidator, awaitingAttackValidator),
   handler: async (ctx, args) =>
     ctx.once("combat_attack", args, async () => {
-      const { characterId, mapId, targetTokenIds, slot, riders = [], forcedRequestId, benefit, ...options } = args;
+      const { characterId, mapId, targetTokenIds, slot, forcedRequestId, benefit, ...options } = args;
+      let riders = args.riders ?? [];
       if (riders.length > MAX_RIDERS_PER_ATTACK) throw appError("INVALID", `At most ${MAX_RIDERS_PER_ATTACK} riders.`);
       const loaded = await attacker(ctx, characterId);
       const forced = forcedRequestId === undefined ? null : await forcedRequest(ctx, forcedRequestId, characterId, targetTokenIds);
       const scene = await attackScene(ctx, ctx.campaign, loaded.character, mapId);
       const weapon = equippedWeapon(loaded.sheet, slot);
       const roll = rollOf(options);
-      const picked = pickRiders(loaded.sheet, ctx.campaign, hostOf(weapon, slot, roll.trait), riders);
+      const host = hostOf(weapon, slot, roll.trait);
+      let picked = pickRiders(loaded.sheet, ctx.campaign, host, riders);
+      // Config R2 (Q2 a): when the GM refuses out-of-range actions, a rider's extra targets out of its range are dropped
+      // (a rider left with none is dropped, nothing paid) and the attack goes on without them.
+      const refuse = forced === null && refusesOutOfRange(ctx.campaign, loaded.gm);
+      if (refuse) {
+        const dropped = new Set<string>(addedOutOfRange(scene, weapon, picked).map((a) => a.tokenId));
+        if (dropped.size > 0) {
+          riders = withoutTargets(riders, dropped);
+          picked = pickRiders(loaded.sheet, ctx.campaign, host, riders);
+        }
+      }
       // E1.4b (dcm-lbai): a reach picked with the attack widens its own range check.
       const targets = await checkTargets(ctx, ctx.campaign, scene, weapon, targetTokenIds, roll, setupReach(picked));
       if (forced !== null) {
@@ -148,6 +182,8 @@ export const attack = keyedCampaignMutation({
         return result;
       }
       const outOfRange = targets.filter((t) => !t.check.inRange);
+      // Config R2: the attack's own target out of range is refused (nothing rolled, paid or logged).
+      if (refuse && outOfRange.length > 0) throw outOfRangeRefusal(outOfRange.map((t) => t.check));
       // DA2 (combat-actions Q1, user 2026-10-30): a rider's extra target out of its range waits for the GM too.
       const added = addedOutOfRange(scene, weapon, picked);
       if (outOfRange.length === 0 && added.length === 0) return resolveAttack(ctx, { loaded, actorId: ctx.user._id, scene, weapon, slot, targets, roll, riders, ...(benefit !== undefined ? { benefit } : {}) });

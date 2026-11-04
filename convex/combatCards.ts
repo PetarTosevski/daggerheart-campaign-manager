@@ -69,6 +69,7 @@ import {
   type RiderEnv,
   type RiderRun,
 } from "./lib/combatActions";
+import { outOfRangeRefusal, refusesOutOfRange } from "./combatActions";
 import { uncloakAfterAttack } from "./lib/combatMovement";
 import { partyMembers } from "./lib/adversaryHits";
 import { forcedStandardAttack, pcRollAdversaryUses } from "./lib/adversaryActions";
@@ -122,9 +123,10 @@ import { rangeFromWeapon } from "../src/lib/domain/combat-actions/index";
 
 /** The character the caller edits, in this campaign, with its sheet (NOT_FOUND / FORBIDDEN otherwise). */
 async function editableHere(ctx: QueryCtx & { user: Doc<"users">; campaign: Doc<"campaigns"> }, characterId: Id<"characters">) {
-  const { campaign, character } = await loadCharacter(ctx, ctx.user, characterId, "edit", "owner");
+  const { campaign, character, permission } = await loadCharacter(ctx, ctx.user, characterId, "edit", "owner");
   if (campaign._id !== ctx.campaign._id) throw appError("NOT_FOUND");
-  return { campaign, character, sheet: readSheet(character.sheet) };
+  // Config R2: `gm` (the GM or a co-GM acting for a PC) is never refused for range.
+  return { campaign, character, sheet: readSheet(character.sheet), gm: permission === "owner" };
 }
 
 /** How far back the latest action roll is looked for (Second Wind's "The attack succeeded with Hope"). */
@@ -1398,7 +1400,9 @@ export const useCard = keyedCampaignMutation({
   returns: v.union(resolvedCardValidator, pendingCardValidator, needsChoiceValidator),
   handler: async (ctx, args) =>
     ctx.once("combat_card", args, async () => {
-      const { campaign, character, sheet } = await editableHere(ctx, args.characterId);
+      const { campaign, character, sheet, gm } = await editableHere(ctx, args.characterId);
+      // Config R2 (Q2 a): a player's card use with a target out of its range is refused when the GM refuses them.
+      const refuse = refusesOutOfRange(campaign, gm);
       assertCanAct(character, sheet);
       const scene = await attackScene(ctx, campaign, character, args.mapId);
       const pick = pickCard(sheet, args.cardId, args.spell);
@@ -1417,6 +1421,7 @@ export const useCard = keyedCampaignMutation({
           const postRuns = await withRiders.post(result.entryId);
           return afterCardUse(ctx, { result, req: withRiders.req, built: withRiders.built, plan: withRiders.plan, actorId: ctx.user._id, before: sheet, writes, riderRuns: [...withRiders.runs, ...postRuns], gmNotes: withRiders.pcLines, ...squares });
         }
+        if (refuse) throw outOfRangeRefusal(withRiders.built.outOfRange);
         // Q1: wait for the GM; the approval runs the card and its riders again (nothing is kept).
         const encounter = withRiders.built.targets.find((t) => t.kind === "enemy");
         const requestId = await ctx.db.insert("combatRequests", {
@@ -1449,6 +1454,7 @@ export const useCard = keyedCampaignMutation({
         return { status: "pending" as const, requestId, outOfRange: withRiders.built.outOfRange };
       }
       const built = await build(ctx, req);
+      if (refuse && built.outOfRange.length > 0) throw outOfRangeRefusal(built.outOfRange);
       // Refusals (exhausted, cost, condition) and missing choices come first, whether or not the GM must approve.
       const outcome = await runKept(ctx, req, built, ctx.user._id);
       if (outcome.kind === "needsChoice") return { status: "needsChoice" as const, asks: outcome.asks };
