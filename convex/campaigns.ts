@@ -338,6 +338,8 @@ export const markOpened = campaignMutation({
   enough: "owner",
   // Opening an archived campaign still records the open (and accepts an invite): it changes nothing in the campaign.
   archived: "allow",
+  // Read-only mode (AD10, Q31 a): opening a campaign still records.
+  readOnly: "allow",
   args: {},
   returns: v.null(),
   handler: async (ctx) => {

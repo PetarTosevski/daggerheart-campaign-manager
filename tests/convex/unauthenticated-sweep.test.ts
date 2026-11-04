@@ -206,7 +206,7 @@ describe("unauthenticated sweep", () => {
     expect(names.length).toBeGreaterThan(300);
     expect(Object.keys(EXEMPT).filter((n) => !names.includes(n))).toEqual([]);
     expect(Object.keys(STRANGER_OWN).filter((n) => !names.includes(n))).toEqual([]);
-    expect([...MAYBE].sort()).toEqual(["appAdmin:me", "campaigns:get", "users:viewer"]);
+    expect([...MAYBE].sort()).toEqual(["appAdmin:me", "appStatus:get", "campaigns:get", "users:viewer"]);
   });
 
   describe("signed out: refused", () => {

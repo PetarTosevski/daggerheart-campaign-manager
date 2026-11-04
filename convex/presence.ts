@@ -65,6 +65,8 @@ function parseHandle(handle: string): { campaignId: string; sessionId: string } 
  * `sessionToken` handle for `disconnect`. No access → NOT_FOUND.
  */
 export const heartbeat = userMutation({
+  // Read-only mode (AD10, Q31 a): presence still records, or every page load would fail.
+  readOnly: "allow",
   args: { roomId: v.string(), userId: v.string(), sessionId: v.string(), interval: v.number() },
   returns: v.object({ roomToken: v.string(), sessionToken: v.string() }),
   handler: async (ctx, { roomId, sessionId, interval }) => {
@@ -85,6 +87,8 @@ export const heartbeat = userMutation({
  * The hook's unload beacon carries no sign-in and is refused; the component's timeout covers that tab.
  */
 export const disconnect = userMutation({
+  // Read-only mode (AD10, Q31 a): presence still records, or every page load would fail.
+  readOnly: "allow",
   args: { sessionToken: v.string() },
   returns: v.null(),
   handler: async (ctx, { sessionToken }) => {

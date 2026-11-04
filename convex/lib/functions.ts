@@ -15,14 +15,14 @@
  * |-------------------------|-----------------------------|--------------------------------------------|-----------------------------|
  * | `userQuery`             | -                           | `user`                                     | -                           |
  * | `maybeUserQuery`        | -                           | `user` (null when signed out)              | -                           |
- * | `userMutation`          | -                           | `user`                                     | `rateLimit?`                |
- * | `keyedUserMutation`     | `idempotencyKey`            | `user`, `once` (scope: the user)           | `rateLimit?`                |
+ * | `userMutation`          | -                           | `user`                                     | `rateLimit?`, `readOnly?`   |
+ * | `keyedUserMutation`     | `idempotencyKey`            | `user`, `once` (scope: the user)           | `rateLimit?`, `readOnly?`   |
  * | `userAction`            | -                           | `user`                                     | `rateLimit?`                |
  * | `campaignQuery`         | `campaignId`                | `user`, `campaign`, `permission`           | `need`, `enough?`           |
- * | `campaignMutation`      | `campaignId`                | `user`, `campaign`, `permission`           | `need`, `enough?`, `rateLimit?`, `archived?` |
- * | `keyedCampaignMutation` | `campaignId`, `idempotencyKey` | the above + `once` (scope: the campaign) | `need`, `enough?`, `rateLimit?`, `archived?` |
- * | `gmQuery` / `gmMutation` / `keyedGmMutation` | as the campaign ones | as the campaign ones       | `need` is fixed to `"owner"`; mutations `rateLimit?`, `archived?` |
- * | `creatorQuery` / `creatorMutation` / `keyedCreatorMutation` | as the campaign ones | as the campaign ones | `need` is fixed to `"creator"`; mutations `rateLimit?`, `archived?` |
+ * | `campaignMutation`      | `campaignId`                | `user`, `campaign`, `permission`           | `need`, `enough?`, `rateLimit?`, `archived?`, `readOnly?` |
+ * | `keyedCampaignMutation` | `campaignId`, `idempotencyKey` | the above + `once` (scope: the campaign) | `need`, `enough?`, `rateLimit?`, `archived?`, `readOnly?` |
+ * | `gmQuery` / `gmMutation` / `keyedGmMutation` | as the campaign ones | as the campaign ones       | `need` is fixed to `"owner"`; mutations `rateLimit?`, `archived?`, `readOnly?` |
+ * | `creatorQuery` / `creatorMutation` / `keyedCreatorMutation` | as the campaign ones | as the campaign ones | `need` is fixed to `"creator"`; mutations `rateLimit?`, `archived?`, `readOnly?` |
  * | `appOwnerQuery` / `appOwnerMutation` / `appOwnerAction` | -     | `user` (the app owner)                     | mutations and actions `rateLimit?` |
  *
  * Consumed args stay part of the public signature (the client still sends
@@ -44,6 +44,12 @@
  *   mutation wrapper throws `CAMPAIGN_ARCHIVED` after the access check when
  *   `campaign.archivedAt` is set, unless the option `archived: "allow"` is
  *   given (opening, leaving, deleting). Queries read archived campaigns.
+ * - Read-only mode (config AD10, Q31 a): every mutation builder and `userAction` read the tiny `appStatus` row once
+ *   and throw `READ_ONLY_MODE` while it is on, after the sign-in, access and archived checks (so a stranger still gets
+ *   `NOT_FOUND`) and before the rate limit. The app owner (`isAppOwner`) is exempt, and so are the `appOwner*`
+ *   builders, which only the owner passes. `readOnly: "allow"` lets a mutation run anyway: only `campaigns.markOpened`
+ *   and `presence.heartbeat` / `disconnect` use it (Q31 a), and `tests/convex/read-only-mode.test.ts` pins that list.
+ *   Queries always run; `internal*` functions (crons, a Lorekeeper answer already started) keep running.
  * - App owner (superadmin, config AD0): the `appOwner*` builders let only the
  *   app owner through, decided by `isAppOwner` (`lib/appOwner.ts`, the only
  *   owner check: one stored user id, named with the deployment admin key).
@@ -206,6 +212,30 @@ async function enforceRateLimit(ctx: MutationCtx | ActionCtx, user: Doc<"users">
   if (!ok) throw appError("RATE_LIMITED");
 }
 
+// ---------------------------------------------------------------- read-only mode
+
+/** The `appStatus` singleton (config AD10): read-only mode and its banner text. Off when no row exists. */
+export async function readAppStatus(ctx: QueryCtx): Promise<{ readOnly: boolean; message: string | null }> {
+  const row = await ctx.db
+    .query("appStatus")
+    .withIndex("by_key", (q) => q.eq("key", "app"))
+    .unique();
+  return { readOnly: row?.readOnly === true, message: row?.message ?? null };
+}
+
+/** Whether read-only mode refuses `user`'s write: on, not allowed by the function, and the user is not the app owner. */
+async function readOnlyRefuses(ctx: QueryCtx, user: Doc<"users">, readOnly: "allow" | undefined): Promise<boolean> {
+  if (readOnly === "allow") return false;
+  if (!(await readAppStatus(ctx)).readOnly) return false;
+  // Q31 a: the owner is exempt; checked only while read-only is on, so a normal write reads one tiny row.
+  return !(await isAppOwner(ctx, user));
+}
+
+/** Throws READ_ONLY_MODE when read-only mode refuses this write (see "Read-only mode" above). */
+async function refuseReadOnly(ctx: QueryCtx, user: Doc<"users">, readOnly: "allow" | undefined): Promise<void> {
+  if (await readOnlyRefuses(ctx, user, readOnly)) throw appError("READ_ONLY_MODE");
+}
+
 // ---------------------------------------------------------------- shared steps
 
 async function signedIn(ctx: QueryCtx): Promise<Doc<"users">> {
@@ -216,8 +246,11 @@ async function signedIn(ctx: QueryCtx): Promise<Doc<"users">> {
 
 type CampaignOptions = { need: CampaignPermission; enough?: Permission };
 
-/** Mutation-only options: a named rate limit, and `archived: "allow"` to run on an archived campaign. */
-type MutationOptions = { rateLimit?: RateLimitName; archived?: "allow" };
+/** The user mutation builders' options: a named rate limit, and `readOnly: "allow"` to run in read-only mode (AD10). */
+type UserMutationOptions = { rateLimit?: RateLimitName; readOnly?: "allow" };
+
+/** Campaign mutation options: the user ones, and `archived: "allow"` to run on an archived campaign. */
+type MutationOptions = UserMutationOptions & { archived?: "allow" };
 
 async function authorizedCampaign(
   ctx: QueryCtx,
@@ -234,12 +267,13 @@ async function authorizedCampaign(
   return { campaign: access.campaign, permission: access.permission === "creator" ? "owner" : access.permission };
 }
 
-/** The shared input of every campaign mutation wrapper: access, then the archived guard, then the rate limit. */
+/** The shared input of every campaign mutation wrapper: access, the archived guard, read-only mode, the rate limit. */
 async function campaignMutationInput(ctx: MutationCtx, campaignId: Id<"campaigns">, options: CampaignOptions & MutationOptions) {
   const user = await signedIn(ctx);
   const { campaign, permission } = await authorizedCampaign(ctx, user, campaignId, options);
   // Q9 a (convex/lib/archived.ts): after the access check, so a stranger still gets NOT_FOUND.
   refuseArchived(campaign, options.archived);
+  await refuseReadOnly(ctx, user, options.readOnly);
   await enforceRateLimit(ctx, user, options.rateLimit);
   return { user, campaign, permission };
 }
@@ -274,11 +308,12 @@ export const maybeUserQuery = customQuery(baseQuery, {
   input: async (ctx) => ({ ctx: { user: await getUser(ctx) }, args: {} }),
 });
 
-/** A signed-in user's mutation: `ctx.user`; option `rateLimit`. */
+/** A signed-in user's mutation: `ctx.user`; options `rateLimit`, `readOnly`. */
 export const userMutation = customMutation(baseMutation, {
   args: {},
-  input: async (ctx, _args, { rateLimit }: { rateLimit?: RateLimitName }) => {
+  input: async (ctx, _args, { rateLimit, readOnly }: UserMutationOptions) => {
     const user = await signedIn(ctx);
+    await refuseReadOnly(ctx, user, readOnly);
     await enforceRateLimit(ctx, user, rateLimit);
     return { ctx: { user }, args: {} };
   },
@@ -287,31 +322,42 @@ export const userMutation = customMutation(baseMutation, {
 /** `userMutation` that consumes `idempotencyKey` and adds `ctx.once`, scoped to the user. */
 export const keyedUserMutation = customMutation(baseMutation, {
   args: keyArgs,
-  input: async (ctx, { idempotencyKey }, { rateLimit }: { rateLimit?: RateLimitName }) => {
+  input: async (ctx, { idempotencyKey }, { rateLimit, readOnly }: UserMutationOptions) => {
     const user = await signedIn(ctx);
+    await refuseReadOnly(ctx, user, readOnly);
     await enforceRateLimit(ctx, user, rateLimit);
     return { ctx: { user, once: onceFor(ctx, idempotencyKey, ownerScope(user._id), user) }, args: {} };
   },
 });
 
-/** For `userAction`: the signed-in user, read in a query because actions have no `ctx.db`. */
+type ActionUser = { user: Doc<"users">; readOnlyRefused: boolean } | null;
+
+/**
+ * For `userAction`: the signed-in user and whether read-only mode refuses them (AD10), read in one query because
+ * actions have no `ctx.db`.
+ */
 export const actionUser = internalQuery({
   args: {},
-  handler: async (ctx): Promise<Doc<"users"> | null> => getUser(ctx),
+  handler: async (ctx): Promise<ActionUser> => {
+    const user = await getUser(ctx);
+    return user === null ? null : { user, readOnlyRefused: await readOnlyRefuses(ctx, user, undefined) };
+  },
 });
 
 // `internal.lib.functions.actionUser`, referenced by name: going through
 // `_generated/api` would make this module's types depend on themselves.
-const actionUserRef = makeFunctionReference<"query", Record<string, never>, Doc<"users"> | null>("lib/functions:actionUser");
+const actionUserRef = makeFunctionReference<"query", Record<string, never>, ActionUser>("lib/functions:actionUser");
 
-/** A signed-in user's action: `ctx.user`; option `rateLimit`. */
+/** A signed-in user's action: `ctx.user`; option `rateLimit`. Refused in read-only mode (AD10) unless the owner. */
 export const userAction = customAction(baseAction, {
   args: {},
   input: async (ctx, _args, { rateLimit }: { rateLimit?: RateLimitName }) => {
-    // Cheap session check first, then the allowlist check in one query.
+    // Cheap session check first, then the user and read-only mode in one query.
     if ((await getAuthUserId(ctx)) === null) throw appError("UNAUTHENTICATED");
-    const user = await ctx.runQuery(actionUserRef, {});
-    if (user === null) throw appError("UNAUTHENTICATED");
+    const found = await ctx.runQuery(actionUserRef, {});
+    if (found === null) throw appError("UNAUTHENTICATED");
+    if (found.readOnlyRefused) throw appError("READ_ONLY_MODE");
+    const { user } = found;
     await enforceRateLimit(ctx, user, rateLimit);
     return { ctx: { user }, args: {} };
   },
