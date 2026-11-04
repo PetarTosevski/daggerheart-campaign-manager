@@ -2,7 +2,8 @@
  * Combat actions on the Combat Map (plan combat-actions CA5): target rings, the GM's Resolutions and the shared parts
  * the HUD and the GM column still show (results, roll options, errors). Plan combat-hud H8.1 deleted the classic
  * target list, Attack bar, mini feed and phone bottom sheet with their rules. Colours and shared classes come
- * from the page's combat-map.css (--cm-* variables, cm-card, cm-btn, cm-chip, cm-go, cm-lbl).
+ * from the page's combat-map.css (--cm-* variables, cm-card, cm-chip, cm-lbl); buttons are glass (plan glass-buttons
+ * G11).
  */
 
 .cma-card {

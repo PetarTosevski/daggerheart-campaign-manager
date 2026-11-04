@@ -34,9 +34,12 @@
 }
 
 .sdu-row select,
-.sdu-panel .cm-btn {
-  min-height: 44px;
+.sdu-panel .gb {
   max-width: 100%;
+}
+
+.sdu-row select {
+  min-height: 44px;
 }
 
 .sdu-num {

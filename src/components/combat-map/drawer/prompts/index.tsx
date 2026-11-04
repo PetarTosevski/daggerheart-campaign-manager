@@ -3,6 +3,7 @@
 import { useMutation, useQuery } from "convex/react";
 import { useId, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 
 import { api } from "../../../../../convex/_generated/api";
@@ -139,9 +140,9 @@ function ThrowStart({
               </option>
             ))}
           </select>
-          <button type="button" className="cm-btn cm-sm" disabled={!canAct || !ready || picked === "" || busy} onClick={() => void ask()}>
+          <BrandButton variant="confirm" size="sm" disabled={!canAct || !ready || picked === "" || busy} onClick={() => void ask()}>
             Ask to throw · 1 Stress
-          </button>
+          </BrandButton>
         </div>
       )}
       {error ? (
@@ -238,9 +239,9 @@ function AskCard({ campaignId, ask, canAct, onResult }: { campaignId: Id<"campai
           ) : null}
         </div>
       ) : null}
-      <button type="button" className="cm-btn" disabled={!canAct || first === null || busy || (useSecond && secondPick === null)} onClick={() => void go()}>
+      <BrandButton variant="confirm" disabled={!canAct || first === null || busy || (useSecond && secondPick === null)} onClick={() => void go()}>
         Roll the throw
-      </button>
+      </BrandButton>
       {error ? (
         <p role="alert" className="sd-error">
           {error}
@@ -268,9 +269,9 @@ function GmPending({ campaignId, pending }: { campaignId: Id<"campaigns">; pendi
             <span>
               {p.characterName}&apos;s {p.featureName}: {p.rollerName} rolls
             </span>
-            <button
-              type="button"
-              className="cm-btn cm-sm"
+            <BrandButton
+              variant="cancel"
+              size="sm"
               aria-label={`Cancel ${p.characterName}'s ${p.featureName}`}
               onClick={() => {
                 setError(null);
@@ -278,7 +279,7 @@ function GmPending({ campaignId, pending }: { campaignId: Id<"campaigns">; pendi
               }}
             >
               Cancel
-            </button>
+            </BrandButton>
           </li>
         ))}
       </ul>

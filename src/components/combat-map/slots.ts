@@ -24,8 +24,9 @@ import type { Doc, Id } from "../../../convex/_generated/dataModel";
  *   first in the order of the table above. A provider renders its children and nothing else.
  * - Cross-feature state lives in the page and arrives as props (`CombatPageState`); a slot changes it only
  *   through the callbacks here.
- * - Styles: shared tokens and classes (`cm-card`, `cm-btn`, `cm-lbl`, …) come from the page's `combat-map.css`
- *   (the board's classes, `--cm-*` variables); a feature adds CSS only in a colocated `.css` in its folder.
+ * - Styles: shared tokens and classes (`cm-card`, `cm-lbl`, …) come from the page's `combat-map.css`
+ *   (the board's classes, `--cm-*` variables); a feature adds CSS only in a colocated `.css` in its folder. Buttons
+ *   are glass (`BrandButton`, plan glass-buttons).
  */
 
 /** Who is looking: the campaign's GM or a player (from `useCampaign().role`; the server still decides what each reads). */

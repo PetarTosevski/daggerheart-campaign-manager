@@ -3,6 +3,7 @@
 import { useMutation, useQuery } from "convex/react";
 import { useId, useRef, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import type { AreaSpec } from "@/lib/domain/card-effects/types";
 
@@ -54,9 +55,9 @@ export function FeatureUse({ campaignId, role, map, characterId, featureId, useI
     <section className="sdu-panel" aria-label={server.name} data-testid="sheet-drawer-use">
       <div className="sdu-head">
         <h3 className="sdu-title">{server.name}</h3>
-        <button type="button" className="cm-btn cm-sm" aria-label={`Close ${server.name}`} onClick={onClose}>
+        <BrandButton variant="cancel" icon round aria-label={`Close ${server.name}`} onClick={onClose}>
           ✕
-        </button>
+        </BrandButton>
       </div>
       <DrawerBoundary label={server.name}>
         {mapId === undefined ? (
@@ -117,9 +118,9 @@ function AreaUse({ campaignId, characterId, mapId, featureId, useId: featureUseI
           <input id={countId} className="cm-in" type="number" min={1} max={MAX_PICKED_SQUARES} value={n} onChange={(e) => setN(Math.max(1, Math.min(MAX_PICKED_SQUARES, Number(e.target.value) || 1)))} />
         </label>
       ) : null}
-      <button type="button" className="cm-btn" onClick={pick}>
+      <BrandButton variant="confirm" onClick={pick}>
         {total === 1 ? "Pick the square on the map" : `Pick ${total} squares on the map`}
-      </button>
+      </BrandButton>
     </div>
   );
 }
@@ -189,9 +190,8 @@ function CountUse({ campaignId, characterId, mapId, featureId, useId, name, rang
         </p>
       ) : null}
       {roll === null ? (
-        <button
-          type="button"
-          className="cm-btn"
+        <BrandButton
+          variant="confirm"
           disabled={busy}
           onClick={() =>
             void run(async () => {
@@ -202,7 +202,7 @@ function CountUse({ campaignId, characterId, mapId, featureId, useId, name, rang
           }
         >
           Roll the number of allies
-        </button>
+        </BrandButton>
       ) : (
         <>
           <p className="sdu-note" data-testid="server-use-count">
@@ -227,9 +227,8 @@ function CountUse({ campaignId, characterId, mapId, featureId, useId, name, rang
               );
             })}
           </fieldset>
-          <button
-            type="button"
-            className="cm-btn"
+          <BrandButton
+            variant="confirm"
             disabled={busy || chosen.length === 0}
             onClick={() =>
               void run(async () => {
@@ -244,7 +243,7 @@ function CountUse({ campaignId, characterId, mapId, featureId, useId, name, rang
             }
           >
             Use {name}
-          </button>
+          </BrandButton>
         </>
       )}
       {error ? (
@@ -373,9 +372,9 @@ function ChargeUse({ campaignId, characterId, mapId, gm }: Here & { gm: boolean 
           ) : (
             <p className="sdu-note">The GM sets the Difficulty of the Agility Roll: your Charge goes to the GM, who rolls it.</p>
           )}
-          <button type="button" className="cm-btn" disabled={busy || !ready} onClick={() => void go()}>
+          <BrandButton variant="confirm" disabled={busy || !ready} onClick={() => void go()}>
             Roll Agility and charge
-          </button>
+          </BrandButton>
           {gm ? <DifficultyRequests campaignId={campaignId} characterId={characterId} ask="charge" /> : null}
         </>
       )}

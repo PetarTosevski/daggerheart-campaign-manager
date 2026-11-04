@@ -91,10 +91,6 @@
   color: var(--cm-live-text, #9fe7bb);
   border-color: var(--cm-live-dot, #5fd38d);
 }
-.sd-shift .cm-btn,
-.sd-refocus .cm-btn {
-  min-height: 44px;
-}
 .sd-stances {
   display: flex;
   flex-direction: column;
@@ -123,11 +119,6 @@
 }
 .sd-form {
   margin: 0 0 8px;
-}
-.sd-d5 .cm-btn,
-.sd-form .cm-btn,
-.sd-flying .cm-btn {
-  min-height: 44px;
 }
 .sd-shift-buttons {
   display: inline-flex;

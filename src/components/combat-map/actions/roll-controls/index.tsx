@@ -7,6 +7,7 @@
  * disadvantage, and Help dice; the server applies them. `Stepper` is also the Minion pick dialog's counter.
  */
 
+import { BrandButton } from "@/components/brand/buttons";
 import { experienceValue } from "@/lib/domain/dice";
 
 /** The most advantage, disadvantage or Help dice the controls offer (the dice box's limit). */
@@ -52,15 +53,15 @@ export function Stepper({ label, value, min, max, text, onChange }: { label: str
     <div className="cma-stepper" role="group" aria-label={label}>
       <span className="cm-lbl">{label}</span>
       <span className="cma-stepper-row">
-        <button type="button" className="cm-btn cm-sm" aria-label={`Less ${label.toLowerCase()}`} disabled={value <= min} onClick={() => onChange(value - 1)}>
+        <BrandButton variant="neutral" size="sm" icon aria-label={`Less ${label.toLowerCase()}`} disabled={value <= min} onClick={() => onChange(value - 1)}>
           −
-        </button>
+        </BrandButton>
         <output className="cma-stepper-val" aria-live="polite">
           {text}
         </output>
-        <button type="button" className="cm-btn cm-sm" aria-label={`More ${label.toLowerCase()}`} disabled={value >= max} onClick={() => onChange(value + 1)}>
+        <BrandButton variant="neutral" size="sm" icon aria-label={`More ${label.toLowerCase()}`} disabled={value >= max} onClick={() => onChange(value + 1)}>
           +
-        </button>
+        </BrandButton>
       </span>
     </div>
   );
@@ -98,15 +99,15 @@ export function RollOptions({
             {roller.experiences.map((e) => {
               const on = experienceIds.includes(e.id);
               return (
-                <button
+                <BrandButton
                   key={e.id}
-                  type="button"
-                  className="cm-chip"
+                  variant="neutral"
+                  size="sm"
                   aria-pressed={on}
                   onClick={() => onChange({ experienceIds: on ? experienceIds.filter((id) => id !== e.id) : [...experienceIds, e.id] })}
                 >
                   {e.name} ({signed(experienceValue(e))})
-                </button>
+                </BrandButton>
               );
             })}
           </div>

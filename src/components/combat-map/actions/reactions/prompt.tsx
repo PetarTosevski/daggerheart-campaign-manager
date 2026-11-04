@@ -5,6 +5,7 @@ import "./reactions.css";
 import { useMutation, useQuery } from "convex/react";
 import { Component, useState, type CSSProperties, type ReactNode } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import { DOMAINS } from "@/lib/srd/domains";
 
@@ -101,9 +102,9 @@ export class HitBoundary extends Component<{ children: ReactNode }, { failed: bo
     return (
       <div role="alert" className="ih-alert">
         <span>The incoming hit failed to load.</span>
-        <button type="button" className="ih-btn" onClick={() => this.setState({ failed: false, attempts: 0 })}>
+        <BrandButton variant="neutral" size="sm" onClick={() => this.setState({ failed: false, attempts: 0 })}>
           Try again
-        </button>
+        </BrandButton>
       </div>
     );
   }
@@ -236,29 +237,29 @@ function HitCard({
       <div className="ih-actions">
         {mode === "armorOne" ? (
           <>
-            <button type="button" className="ih-btn ih-go" disabled={busy} onClick={() => onAnswer({ kind: "armor", slots: 1 })}>
+            <BrandButton variant="confirm" disabled={busy} onClick={() => onAnswer({ kind: "armor", slots: 1 })}>
               Mark
-            </button>
-            <button type="button" className="ih-btn" disabled={busy} onClick={() => onAnswer({ kind: "noArmor" })}>
+            </BrandButton>
+            <BrandButton variant="cancel" disabled={busy} onClick={() => onAnswer({ kind: "noArmor" })}>
               Don&apos;t
-            </button>
+            </BrandButton>
           </>
         ) : null}
         {mode === "armorMany" ? <ArmorCounts view={view} busy={busy} onAnswer={onAnswer} /> : null}
         {mode === "ok" ? (
-          <button type="button" className="ih-btn ih-go" disabled={busy} onClick={() => onAnswer({ kind: "noArmor" })}>
+          <BrandButton variant="confirm" disabled={busy} onClick={() => onAnswer({ kind: "noArmor" })}>
             OK
-          </button>
+          </BrandButton>
         ) : null}
         {mode === "ally" || mode === "preRoll" ? (
-          <button type="button" className="ih-btn" disabled={busy} onClick={() => onAnswer({ kind: "pass" })}>
+          <BrandButton variant="cancel" disabled={busy} onClick={() => onAnswer({ kind: "pass" })}>
             Pass
-          </button>
+          </BrandButton>
         ) : null}
         {mode === "afterArmor" ? (
-          <button type="button" className="ih-btn ih-go" disabled={busy} onClick={() => onAnswer({ kind: "pass" })}>
+          <BrandButton variant="confirm" disabled={busy} onClick={() => onAnswer({ kind: "pass" })}>
             Done
-          </button>
+          </BrandButton>
         ) : null}
       </div>
       {error ? (
@@ -280,7 +281,7 @@ function ArmorCounts({ view, busy, onAnswer }: { view: HitView; busy: boolean; o
       {counts.map((n) => {
         const step = stepFor(view, n);
         return (
-          <button key={n} type="button" className="ih-btn ih-go"
+          <BrandButton key={n} variant="confirm"
             disabled={busy}
             aria-label={step ? `Mark ${n}: ${stepText(step)}` : `Mark ${n}`}
             onClick={() => onAnswer({ kind: "armor", slots: n })}
@@ -289,12 +290,11 @@ function ArmorCounts({ view, busy, onAnswer }: { view: HitView; busy: boolean; o
               Mark {n}
               {step ? <span className="ih-step"> · {stepText(step)}</span> : null}
             </span>
-          </button>
+          </BrandButton>
         );
       })}
-      <button
-        type="button"
-        className="ih-btn"
+      <BrandButton
+        variant="cancel"
         disabled={busy}
         aria-label={none ? `Don't: ${stepText(none)}` : "Don't"}
         onClick={() => onAnswer({ kind: "noArmor" })}
@@ -303,7 +303,7 @@ function ArmorCounts({ view, busy, onAnswer }: { view: HitView; busy: boolean; o
           Don&apos;t
           {none ? <span className="ih-step"> · {stepText(none)}</span> : null}
         </span>
-      </button>
+      </BrandButton>
     </>
   );
 }
@@ -322,9 +322,9 @@ function GrantItem({ grant, disabled, onUse }: { grant: GrantView; disabled: boo
         <span>How many</span>
         <input type="number" min={1} max={grantMax(grant)} value={amount} onChange={(e) => setAmount(grantAmount(grant, Number(e.target.value)))} />
       </label>
-      <button type="button" className="ih-btn ih-go" disabled={disabled} onClick={() => onUse(grantAmount(grant, amount))} aria-label={`Spend ${amount}: ${grant.label}`}>
+      <BrandButton variant="confirm" disabled={disabled} onClick={() => onUse(grantAmount(grant, amount))} aria-label={`Spend ${amount}: ${grant.label}`}>
         Spend
-      </button>
+      </BrandButton>
     </li>
   );
 }
@@ -341,9 +341,9 @@ function ReactionCardItem({ cardId, disabled, onUse }: { cardId: string; disable
         </span>
       </div>
       {card.text ? <p className="ih-rc-text">{card.text}</p> : null}
-      <button type="button" className="ih-btn ih-go" disabled={disabled} onClick={onUse} aria-label={`Use ${card.name}`}>
+      <BrandButton variant="confirm" disabled={disabled} onClick={onUse} aria-label={`Use ${card.name}`}>
         Use
-      </button>
+      </BrandButton>
     </li>
   );
 }
@@ -396,9 +396,9 @@ function FeatureItem({ feature, disabled, onUse }: { feature: FeatureView; disab
           {text}
         </label>
       ))}
-      <button type="button" className="ih-btn ih-go" disabled={disabled || !ready} onClick={() => onUse(picks)} aria-label={`Use ${feature.name}`}>
+      <BrandButton variant="confirm" disabled={disabled || !ready} onClick={() => onUse(picks)} aria-label={`Use ${feature.name}`}>
         Use
-      </button>
+      </BrandButton>
     </li>
   );
 }
