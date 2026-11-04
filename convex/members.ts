@@ -6,6 +6,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { deleteInvites, freshJoinCode, pendingInvite } from "./campaigns";
 import { normalizeEmail } from "./lib/allowlist";
+import { readAppConfig } from "./lib/appConfig";
 import { refuseArchived } from "./lib/archived";
 import { scheduleInviteEmail } from "./lib/inviteEmail";
 import { campaignMutation, campaignQuery, creatorMutation, gmMutation, gmQuery, userMutation } from "./lib/functions";
@@ -14,6 +15,22 @@ import { atLeast, campaignAccess, permissionFor, removalNeed } from "./lib/permi
 /** Whether the caller is the campaign's creator (`permissionFor`'s `creator` rank; config G1, Q7 a). */
 async function isCreator(ctx: QueryCtx, user: Doc<"users">, campaign: Doc<"campaigns">): Promise<boolean> {
   return atLeast(await permissionFor(ctx, user, { type: "campaign", campaign }, "creator"), "creator");
+}
+
+/**
+ * The players cap (config AD5b, Q19 a): refuses a new member with CAP_PLAYERS once the campaign has
+ * `caps.playersPerCampaign` member rows. Co-GMs are member rows, so they count; the creator has none, so they don't;
+ * pending invites don't count until accepted. Call it before every new member row (`joinByCode`, `campaigns.markOpened`'s
+ * invite acceptance) and before a new invite (`invite`). Existing members are never removed by a lowered cap. One
+ * bounded read on `by_campaign_user` (`take(cap + 1)`).
+ */
+export async function refuseAtPlayersCap(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<void> {
+  const cap = (await readAppConfig(ctx)).caps.playersPerCampaign;
+  const rows = await ctx.db
+    .query("campaignMembers")
+    .withIndex("by_campaign_user", (q) => q.eq("campaignId", campaignId))
+    .take(cap + 1);
+  if (rows.length >= cap) throw appError("CAP_PLAYERS");
 }
 
 export function normalizeJoinCode(code: string): string {
@@ -148,6 +165,8 @@ export const invite = gmMutation({
       await ctx.db.patch("campaignInvites", pending._id, { role });
       return pending._id;
     }
+    // AD5b: a new invite past the players cap is refused (an invite already pending is returned or re-roled above).
+    await refuseAtPlayersCap(ctx, campaignId);
     const inviteId = await ctx.db.insert("campaignInvites", {
       campaignId,
       email,
@@ -293,6 +312,8 @@ export const joinByCode = userMutation({
       .withIndex("by_campaign_user", (q) => q.eq("campaignId", campaign._id).eq("userId", user._id))
       .unique();
     if (!existing) {
+      // AD5b: a valid code past the players cap throws (its rate-limit token is undone with it; the code was right).
+      await refuseAtPlayersCap(ctx, campaign._id);
       const now = Date.now();
       // A pending co-GM invite to their verified email is accepted here too (as in `campaigns.markOpened`, Q8 b).
       const role = (await pendingInvite(ctx, campaign._id, user))?.role;

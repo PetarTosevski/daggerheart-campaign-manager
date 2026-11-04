@@ -30,6 +30,7 @@ import {
   frameIdValidator,
   tomeChapterValidator,
 } from "./lib/validators/campaigns";
+import { refuseAtPlayersCap } from "./members";
 import { settingsRow } from "./settings";
 import { timeOfDayValidator } from "./tables/campaigns";
 import { campaignLight } from "./lib/campaignLight";
@@ -352,6 +353,7 @@ export const markOpened = campaignMutation({
         .unique();
       const invite = member === null ? await pendingInvite(ctx, campaign._id, user) : null;
       if (invite !== null) {
+        await refuseAtPlayersCap(ctx, campaign._id); // AD5b: CAP_PLAYERS past the players cap.
         // Q8 b: an invite the creator sent as co-GM makes them a co-GM now, on acceptance, not before.
         await ctx.db.insert("campaignMembers", {
           campaignId: campaign._id,

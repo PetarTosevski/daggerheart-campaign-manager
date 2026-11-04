@@ -43,6 +43,7 @@ import {
 } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { readAppConfig } from "./appConfig";
 import { refuseArchivedWrite } from "./archived";
 import { readVersioned } from "./blobs";
 import { atLeast, campaignRoleOf, permissionFor, rolePermission, type Permission } from "./permissions";
@@ -313,6 +314,24 @@ export const MAX_CHARACTERS_CREATED_PER_CAMPAIGN = 50;
  * holds more characters than a lowered cap (made before it dropped) is still read whole.
  */
 export const CHARACTER_READ_BOUND = 50;
+
+/**
+ * The per-player character cap (config AD5b, Q19 a): `characters.create` refuses `owner`'s next character in the
+ * campaign once they hold `caps.charactersPerPlayer` there (retired, dead and away included) with
+ * CAP_CHARACTERS_PER_PLAYER. The GM's and every co-GM's characters are exempt (NPC-owned and secret frame characters),
+ * by the same `permissionFor` role rank as `assertOneActive`. XC1's "Allow extra characters this session" lifts only
+ * the one-active rule, never this cap. The count is one bounded read on `by_owner_campaign` (`take(cap + 1)`); the
+ * campaign-wide `MAX_CHARACTERS_CREATED_PER_CAMPAIGN` stays the abuse bound.
+ */
+export async function assertCharacterCap(ctx: QueryCtx, campaign: Doc<"campaigns">, owner: Id<"users">): Promise<void> {
+  if (atLeast(rolePermission(await campaignRoleOf(ctx, owner, campaign), { type: "campaign", campaign }, owner), "owner")) return;
+  const cap = (await readAppConfig(ctx)).caps.charactersPerPlayer;
+  const held = await ctx.db
+    .query("characters")
+    .withIndex("by_owner_campaign", (q) => q.eq("ownerId", owner).eq("campaignId", campaign._id))
+    .take(cap + 1);
+  if (held.length >= cap) throw appError("CAP_CHARACTERS_PER_PLAYER");
+}
 
 /** The read bound under its old name (dcm-bxp.38): the party reads outside convex/characters.ts import it. */
 export const MAX_CHARACTERS_PER_CAMPAIGN = CHARACTER_READ_BOUND;

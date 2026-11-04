@@ -52,7 +52,7 @@ import { characterDraftValidator, characterStatusValidator, conditionValidator, 
 import { ikonisValidator } from "./lib/validators/characterExtras";
 import { gainWitherToken } from "./wither";
 import { witherGainValidator } from "./lib/validators/wither";
-import { assertOneActive, MAX_CHARACTERS_CREATED_PER_CAMPAIGN, MAX_CHARACTERS_PER_CAMPAIGN, partyOf } from "./lib/characterSheet";
+import { assertCharacterCap, assertOneActive, MAX_CHARACTERS_CREATED_PER_CAMPAIGN, MAX_CHARACTERS_PER_CAMPAIGN, partyOf } from "./lib/characterSheet";
 export { assertOneActive, MAX_CHARACTERS_PER_CAMPAIGN };
 
 export type { CharacterView };
@@ -188,10 +188,14 @@ export function sheetFromDraft(draft: CharacterDraft, allowExpansion: boolean, i
 /** "Your choice of a Minor Health Potion … or a Minor Stamina Potion" (Core ch. 1, step 5). */
 const STARTING_POTIONS = ["Minor Health Potion", "Minor Stamina Potion"];
 
-/** Refuses a new character past the campaign's cap, or a second active one for `owner`. */
+/**
+ * Refuses a new character past the campaign's cap, past `owner`'s per-player cap (AD5b, CAP_CHARACTERS_PER_PLAYER),
+ * or a second active one for `owner`.
+ */
 async function assertRoom(ctx: QueryCtx, campaign: Doc<"campaigns">, owner: Id<"users">) {
   // The creation cap, not the read bound (dcm-bxp.38): a campaign above a lowered cap still reads every character.
   if ((await partyOf(ctx, campaign._id)).length >= MAX_CHARACTERS_CREATED_PER_CAMPAIGN) invalid(`A campaign holds at most ${MAX_CHARACTERS_CREATED_PER_CAMPAIGN} characters.`);
+  await assertCharacterCap(ctx, campaign, owner);
   await assertOneActive(ctx, campaign, owner);
 }
 
