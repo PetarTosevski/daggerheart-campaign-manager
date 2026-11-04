@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { LegacyImport } from "@/components/config/legacy-import";
+
 import { AccentSync } from "./accent-sync";
 import { PrefsSync } from "./prefs-sync";
 
@@ -27,6 +29,7 @@ export default function GmLayout({ children }: { children: ReactNode }) {
       <span hidden dangerouslySetInnerHTML={{ __html: PREFS_SCRIPT_HTML }} />
       <AccentSync />
       <PrefsSync />
+      <LegacyImport />
       {children}
     </>
   );
