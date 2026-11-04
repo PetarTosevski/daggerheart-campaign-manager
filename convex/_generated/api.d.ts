@@ -10,6 +10,7 @@
 
 import type * as accounts from "../accounts.js";
 import type * as actionLog from "../actionLog.js";
+import type * as adminAccounts from "../adminAccounts.js";
 import type * as adminRetention from "../adminRetention.js";
 import type * as adminSetup from "../adminSetup.js";
 import type * as adversaryActions from "../adversaryActions.js";
@@ -252,6 +253,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   accounts: typeof accounts;
   actionLog: typeof actionLog;
+  adminAccounts: typeof adminAccounts;
   adminRetention: typeof adminRetention;
   adminSetup: typeof adminSetup;
   adversaryActions: typeof adversaryActions;
