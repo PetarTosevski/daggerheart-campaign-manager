@@ -2,6 +2,7 @@ import { ConvexHttpClient } from "convex/browser";
 import { expect, test, type Page } from "@playwright/test";
 
 import { api } from "../../convex/_generated/api";
+import { readEmailedCode } from "./fixtures";
 
 // B5 (plan d12-bugs; user answer 2026-10-22): a session that ends mid-use (its refresh token revoked server-side)
 // lands on /signin?next=<path + search>, never on the error screen; signing in returns there, and nothing loops.
@@ -12,11 +13,11 @@ import { api } from "../../convex/_generated/api";
 // Convex schedules shortly before the token expires (about an hour); the init script below holds such long timers
 // and the test fires them once the session is revoked.
 //
-// Signing back in uses the email + password form, because the test-only form always goes to "/". The account is this
-// spec's own password-only one (docs/testing.md: one email per sign-in method; never signed in through the test form).
+// Signing back in uses the email + password form, because the test-only form always goes to "/". Each test signs up its
+// own fresh password account with the emailed code (docs/testing.md), so no run depends on another's password.
 
-const PASSWORD_ONLY_EMAIL = "e2e-session-ended@example.test";
 const PASSWORD = "session-ended-horse-battery";
+const freshEmail = () => `e2e-session-ended-${crypto.randomUUID().slice(0, 8)}@example.test`;
 const unique = (label: string) => `${label} ${crypto.randomUUID().slice(0, 8)}`;
 const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -66,29 +67,32 @@ async function watchForStatus(page: Page) {
   });
 }
 
-/** Fills and submits the email + password sign-in form; on a fresh backend, creates the account first. */
-async function signInWithPassword(page: Page) {
-  const signIn = page.getByRole("form", { name: "Sign in with email" });
-  await signIn.getByLabel("Email").fill(PASSWORD_ONLY_EMAIL);
-  await signIn.getByLabel("Password").fill(PASSWORD);
-  await signIn.getByRole("button", { name: "Sign in" }).click();
-  const outcome = await Promise.race([
-    page.waitForURL((url) => url.pathname !== "/signin").then(() => "in" as const),
-    signIn.getByRole("alert").waitFor().then(() => "no account" as const),
-  ]);
-  if (outcome === "in") return;
+/** Creates the password account: details, then the code the e2e backend recorded, then signed in. */
+async function signUpWithCode(page: Page, email: string) {
   await page.getByRole("button", { name: "New here? Create an account" }).click();
   const signUp = page.getByRole("form", { name: "Create account" });
   await signUp.getByLabel("Name").fill("Pass Word");
-  await signUp.getByLabel("Email").fill(PASSWORD_ONLY_EMAIL);
+  await signUp.getByLabel("Email").fill(email);
   await signUp.getByLabel("Password").fill(PASSWORD);
   await signUp.getByRole("button", { name: "Create account" }).click();
+  const codeForm = page.getByRole("form", { name: "Enter the code" });
+  await expect(codeForm).toBeVisible();
+  await codeForm.getByLabel("6-digit code").fill(await readEmailedCode(email));
+  await codeForm.getByRole("button", { name: "Verify email" }).click();
+}
+
+/** Fills and submits the email + password sign-in form. */
+async function signInWithPassword(page: Page, email: string) {
+  const signIn = page.getByRole("form", { name: "Sign in with email" });
+  await signIn.getByLabel("Email").fill(email);
+  await signIn.getByLabel("Password").fill(PASSWORD);
+  await signIn.getByRole("button", { name: "Sign in" }).click();
 }
 
 /** Signs in, creates a campaign and opens its dashboard with a search string; returns the name and path + search. */
-async function openCampaign(page: Page): Promise<{ name: string; back: string }> {
+async function openCampaign(page: Page, email: string): Promise<{ name: string; back: string }> {
   await page.goto("/signin");
-  await signInWithPassword(page);
+  await signUpWithCode(page, email);
   await expect(page).toHaveURL("/");
   await page.goto("/frames/beast-feast");
   await page.getByRole("button", { name: "Choose this Frame" }).click();
@@ -150,8 +154,8 @@ async function expectSignInWithNext(page: Page, back: string, visits: string[]) 
 }
 
 /** Signs in again and is back on the page it left, working. */
-async function expectSignInReturns(page: Page, name: string, back: string) {
-  await signInWithPassword(page);
+async function expectSignInReturns(page: Page, email: string, name: string, back: string) {
+  await signInWithPassword(page, email);
   await expect(page).toHaveURL(back);
   await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
   await expect(page.getByTestId("fear-value")).toBeVisible();
@@ -166,15 +170,16 @@ for (const viewport of [
 
     test("a session revoked mid-use goes to sign-in and back to the page, with no loop", async ({ page }) => {
       // Convex Auth's refresh fails, it erases the tokens and the sign-in page renders (src/lib/auth/sign-in-url.tsx).
+      const email = freshEmail();
       await holdLongTimers(page);
-      const { name, back } = await openCampaign(page);
+      const { name, back } = await openCampaign(page, email);
       const visits = countSignInVisits(page);
 
       await revokeSession(page);
       await fireRefresh(page);
 
       await expectSignInWithNext(page, back, visits);
-      await expectSignInReturns(page, name, back);
+      await expectSignInReturns(page, email, name, back);
     });
 
     test("when Convex gives up on the token, the error boundary signs out and goes to sign-in and back", async ({ page }) => {
@@ -182,9 +187,10 @@ for (const viewport of [
       // its auth while Convex Auth still holds a token, so the page's queries throw UNAUTHENTICATED into the route
       // error boundary (src/components/route-error.tsx). Here the session is revoked and every refresh answers with
       // a token the server rejects.
+      const email = freshEmail();
       await holdLongTimers(page);
       await watchForStatus(page);
-      const { name, back } = await openCampaign(page);
+      const { name, back } = await openCampaign(page, email);
       const visits = countSignInVisits(page);
 
       const held = await accessToken(page);
@@ -204,7 +210,7 @@ for (const viewport of [
       expect(refreshes).toBeGreaterThanOrEqual(1);
       expect(await page.evaluate(() => window.__b5SawStatus === true), "the boundary's status was shown").toBe(true);
       await page.unroute("**/api/auth");
-      await expectSignInReturns(page, name, back);
+      await expectSignInReturns(page, email, name, back);
     });
   });
 }

@@ -194,8 +194,7 @@ export function GmDetail({
                 type="button"
                 className="cx-ghost"
                 onClick={onPickPin}
-                disabled={!hasPins}
-                title={hasPins ? undefined : "Place pins on the World map first"}
+                title={hasPins ? undefined : "No pins yet: drop one on the map from the picker"}
               >
                 {entry.tokenId !== null ? "📍 Change pin" : "📍 Link to map pin"}
               </button>

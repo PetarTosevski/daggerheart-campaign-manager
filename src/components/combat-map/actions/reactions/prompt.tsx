@@ -12,14 +12,23 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import {
   afterAnswer,
+  armorCounts,
   armorQuestion,
   damageLine,
+  defaultPicks,
+  featureChoice,
+  grantAmount,
+  grantMax,
   hitLine,
   playableCards,
   promptMode,
   reactionCard,
+  situationsConfirmed,
   stepFor,
   stepText,
+  type FeaturePicks,
+  type FeatureView,
+  type GrantView,
   type HitChoice,
   type HitView,
 } from "./model";
@@ -32,6 +41,12 @@ import {
  *   reaction cards (Shrug It Off, Unyielding Armor) with Use before the armor answer;
  * - an ally with an eligible reaction card: "Bandit hit Mira", the card with Use, and Pass;
  * - nothing owed: the one line "Bandit hit Mira" (Q14).
+ * Plan sheet-drawer SD4: the features that may answer now (Iron Will, Increased Fortitude, Partners-in-Arms, Not This
+ * Time, …) are listed with the cards, each with what its Use asks (a count, a pick, an optional step); after the armor
+ * answer every card or feature that still fits (DA8, user 2026-10-30, CB p.107: Thick Skin on a hit the slot made
+ * Minor, Increased Fortitude, Dark Aegis) waits with Use / Done; Stable and Celestial Wings stand for the Armor Slot;
+ * before an adversary's roll (Q2) a PC with a before-roll defence gets "Bandit attacks Mira" with Use / Pass (Draining
+ * Bane's "Clear a Stress" ticked by default).
  * Each tap calls `adversaryActions.respond` once, with an optimistic update on `pending` (CL4).
  */
 
@@ -182,17 +197,34 @@ function HitCard({
 }) {
   const mode = promptMode(view);
   const target = view.role === "target";
-  const cards = playableCards(view);
-  const title = target ? `${view.attackerLabel} hit ${characterName}` : hitLine(view);
+  // DA8: after the armor answer the cards that still fit stay too (the server lists only those, CB p.107).
+  const cards = mode === "preRoll" ? [] : playableCards(view);
+  const features = view.features ?? [];
+  const title = mode === "preRoll" ? `${view.attackerLabel} attacks ${view.targetName}` : target ? `${view.attackerLabel} hit ${characterName}` : hitLine(view);
+  const label = mode === "preRoll" ? "Before the roll" : target ? "You were hit" : `${characterName} can react`;
   return (
-    <section className="ih-card" aria-label={`Incoming hit: ${title}`} data-testid="incoming-hit" data-role={view.role}>
-      <p className="ih-lbl">{target ? "You were hit" : `${characterName} can react`}</p>
+    <section className="ih-card" aria-label={`${mode === "preRoll" ? "Before the roll" : "Incoming hit"}: ${title}`} data-testid="incoming-hit" data-role={view.role} data-mode={mode}>
+      <p className="ih-lbl">{label}</p>
       <h2 className="ih-h">{title}</h2>
-      {target ? (
+      {target && mode !== "preRoll" ? (
         <>
           <p className="ih-dmg">{damageLine(view)}</p>
-          <p className="ih-q">{armorQuestion(view)}</p>
+          <p className="ih-q">{mode === "afterArmor" ? "Armor answered. Use another reaction that fits now, in any order, or Done." : armorQuestion(view)}</p>
         </>
+      ) : null}
+      {(view.grants ?? []).length > 0 ? (
+        <ul className="ih-cards" aria-label="Grants">
+          {(view.grants ?? []).map((g) => (
+            <GrantItem key={g.id} grant={g} disabled={busy} onUse={(amount) => onAnswer({ kind: "grant", id: g.id, amount })} />
+          ))}
+        </ul>
+      ) : null}
+      {features.length > 0 ? (
+        <ul className="ih-cards" aria-label="Reaction features">
+          {features.map((f) => (
+            <FeatureItem key={f.featureId} feature={f} disabled={busy} onUse={(picks) => onAnswer(featureChoice(f, picks))} />
+          ))}
+        </ul>
       ) : null}
       {cards.length > 0 ? (
         <ul className="ih-cards" aria-label="Reaction cards">
@@ -218,9 +250,14 @@ function HitCard({
             OK
           </button>
         ) : null}
-        {mode === "ally" ? (
+        {mode === "ally" || mode === "preRoll" ? (
           <button type="button" className="ih-btn" disabled={busy} onClick={() => onAnswer({ kind: "pass" })}>
             Pass
+          </button>
+        ) : null}
+        {mode === "afterArmor" ? (
+          <button type="button" className="ih-btn ih-go" disabled={busy} onClick={() => onAnswer({ kind: "pass" })}>
+            Done
           </button>
         ) : null}
       </div>
@@ -235,8 +272,8 @@ function HitCard({
 
 /** Under I Am Your Shield: one button per count, each with what it leaves ("Mark 2 · Minor (1 HP)"). */
 function ArmorCounts({ view, busy, onAnswer }: { view: HitView; busy: boolean; onAnswer: (choice: HitChoice) => void }) {
-  const max = view.maxSlots ?? 0;
-  const counts = Array.from({ length: max }, (_, i) => i + 1);
+  // E2 (dcm-s77): only the counts that buy a step (the server's preview).
+  const counts = armorCounts(view);
   const none = stepFor(view, 0);
   return (
     <>
@@ -271,6 +308,27 @@ function ArmorCounts({ view, busy, onAnswer }: { view: HitView; busy: boolean; o
   );
 }
 
+/**
+ * Plan lanes-2, E2.3: one grant the attacker gives the hit PC (Doom / Tentacle Rays, HF p.75: Hope for fewer forced HP;
+ * Money Talks, CB p.228: gold instead of HP), with how much to pay (1..its amount) and Spend. Answer it before the armor
+ * question: the hit resolves once that and every reaction are answered.
+ */
+function GrantItem({ grant, disabled, onUse }: { grant: GrantView; disabled: boolean; onUse: (amount: number) => void }) {
+  const [amount, setAmount] = useState(() => grantMax(grant));
+  return (
+    <li className="ih-rc ih-feat" data-testid="incoming-hit-grant">
+      <p className="ih-rc-text">{grant.label}</p>
+      <label className="ih-pick">
+        <span>How many</span>
+        <input type="number" min={1} max={grantMax(grant)} value={amount} onChange={(e) => setAmount(grantAmount(grant, Number(e.target.value)))} />
+      </label>
+      <button type="button" className="ih-btn ih-go" disabled={disabled} onClick={() => onUse(grantAmount(grant, amount))} aria-label={`Spend ${amount}: ${grant.label}`}>
+        Spend
+      </button>
+    </li>
+  );
+}
+
 function ReactionCardItem({ cardId, disabled, onUse }: { cardId: string; disabled: boolean; onUse: () => void }) {
   const card = reactionCard(cardId);
   const domain = DOMAINS.find((d) => d.id === card.domain);
@@ -284,6 +342,61 @@ function ReactionCardItem({ cardId, disabled, onUse }: { cardId: string; disable
       </div>
       {card.text ? <p className="ih-rc-text">{card.text}</p> : null}
       <button type="button" className="ih-btn ih-go" disabled={disabled} onClick={onUse} aria-label={`Use ${card.name}`}>
+        Use
+      </button>
+    </li>
+  );
+}
+
+/**
+ * SD4: one feature answer: its name and text, and what its Use asks (a count such as Prayer Dice to spend, a pick such as
+ * Not This Time's attack or damage, an optional step, a situation to confirm, Q13). Use sends it with those picks.
+ */
+function FeatureItem({ feature, disabled, onUse }: { feature: FeatureView; disabled: boolean; onUse: (picks: FeaturePicks) => void }) {
+  const [picks, setPicks] = useState<FeaturePicks>(() => defaultPicks(feature));
+  const ready = situationsConfirmed(feature, picks);
+  return (
+    <li className="ih-rc ih-feat" data-testid="incoming-hit-feature">
+      <div className="ih-rc-head">
+        <h3 className="ih-rc-name">{feature.name}</h3>
+        <span className="ih-rc-meta">Feature</span>
+      </div>
+      {feature.text ? <p className="ih-rc-text">{feature.text}</p> : null}
+      {feature.numbers.map((n) => (
+        <label key={n.id} className="ih-pick">
+          <span>{n.label}</span>
+          <input
+            type="number"
+            min={Math.max(1, n.min)}
+            value={picks.numbers[n.id] ?? Math.max(1, n.min)}
+            onChange={(e) => setPicks((p) => ({ ...p, numbers: { ...p.numbers, [n.id]: Math.max(Math.max(1, n.min), Math.trunc(Number(e.target.value) || 0)) } }))}
+          />
+        </label>
+      ))}
+      {feature.options.map((o) => (
+        <fieldset key={o.id} className="ih-pick">
+          <legend>{o.label}</legend>
+          {o.options.map((opt) => (
+            <label key={opt.id}>
+              <input type="radio" name={`${feature.featureId}:${o.id}`} checked={picks.options[o.id] === opt.id} onChange={() => setPicks((p) => ({ ...p, options: { ...p.options, [o.id]: opt.id } }))} />
+              {opt.label}
+            </label>
+          ))}
+        </fieldset>
+      ))}
+      {feature.optionals.map((o) => (
+        <label key={o.id} className="ih-pick">
+          <input type="checkbox" checked={picks.optionals[o.id] === true} onChange={(e) => setPicks((p) => ({ ...p, optionals: { ...p.optionals, [o.id]: e.target.checked } }))} />
+          {o.label}
+        </label>
+      ))}
+      {feature.situations.map((text) => (
+        <label key={text} className="ih-pick">
+          <input type="checkbox" checked={picks.situations[text] === true} onChange={(e) => setPicks((p) => ({ ...p, situations: { ...p.situations, [text]: e.target.checked } }))} />
+          {text}
+        </label>
+      ))}
+      <button type="button" className="ih-btn ih-go" disabled={disabled || !ready} onClick={() => onUse(picks)} aria-label={`Use ${feature.name}`}>
         Use
       </button>
     </li>

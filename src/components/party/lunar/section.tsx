@@ -54,10 +54,10 @@ export function LunarPhasesSection({ character, canEdit, hopeAndFear }: SlotProp
   const scope = scopeOf(hopeAndFear);
   const characterId = character._id;
   const bump = useMutation(api.sessionFeatures.bumpMoonDie).withOptimisticUpdate((store, args) => {
-    const view = store.getQuery(api.characters.get, { characterId: args.characterId });
+    const view = store.getQuery(api.charactersReads.get, { characterId: args.characterId });
     if (!view) return;
     const next = bumped(view.sheet, scope);
-    if (next) store.setQuery(api.characters.get, { characterId: args.characterId }, { ...view, sheet: next });
+    if (next) store.setQuery(api.charactersReads.get, { characterId: args.characterId }, { ...view, sheet: next });
   });
   const key = useRef<string | null>(null);
   const [busy, setBusy] = useState(false);

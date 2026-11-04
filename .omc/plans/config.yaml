@@ -1,0 +1,1143 @@
+# Config plan (2026-11-03): campaign settings (gear), Preferences (avatar), co-GM, and the owner-only App admin.
+# Epic: bead dcm-jh6d (children dcm-bxp.134 rule switches - NOT in this plan, dcm-cd8 creation cap, dcm-jh6d.1 co-GM).
+# Designs: reference/designs/config/Settings.dc.html (Settings + Preferences), reference/designs/config/Admin.dc.html.
+# Briefs, design-to-code map, risks, beads and the open questions: .omc/plans/config-briefs.md.
+# Format: docs/workflow.md. Extra keys (plan-check ignores them): title, part, size, mode, requires_plan, blocked_on.
+#
+# Build order the user approved: HUD wave 9 -> Journal -> this plan's Part A -> Part B -> rule switches / homebrew later.
+#   Part A (waves 1-4): Campaign settings + Preferences + co-GM.
+#   Part B (waves 5-8): App admin (superadmin, the app owner only).
+# Tracers marked `requires_plan: journal` need the Journal plan (.omc/plans/journal.yaml) merged first:
+# JO1 (a new session opens on Journal / Combat Map), JO2 (session log from the Combat Map), JO3 (spotlight balance to players).
+# Tracers marked `blocked_on: Qn` change a rule or need a user answer first; they are built on the briefs' recommended
+# default, and the orchestrator rewrites their acceptance if the user picks another option.
+#
+# Rules for every tracer (details in the briefs, section "Common rules"):
+#   - Server first. Every public function is a user* / campaign / gm / creator / appOwner wrapper from
+#     convex/lib/functions.ts; access only through permissionFor (`need:`) or isAppOwner (one helper); args + returns
+#     validators, no v.any; indexed bounded reads; new fields are optional (widen, rule 7); growing tables have a
+#     back-reference index and a cleanup path (campaign purge or a batched self-rescheduling cron).
+#   - Each server tracer has its own authz area file tests/convex/authz/config-<area>.entries.ts (+ .test.ts); tests
+#     assert ConvexError.data.code. Only G1 (co-GM role, class `creator`) and AD0 (role appOwner, class `appOwner`)
+#     change the shared harness.
+#   - Mutations send single-field intents ({ key, value }), never a whole settings object; optimistic updates on every
+#     switch (rule 12). Settings save on change; no Save button.
+#   - No rule switches (Book / Variant / Manual): CAMPAIGN_OPTIONS in src/lib/frames/options.ts stay as they are.
+plan: config
+waves:
+  # ================================================================== PART A
+  # ------------------------------------------------------------------ wave 1: foundation
+  - wave: 1
+    tracers:
+      - id: S0
+        title: "Part A data foundation: campaign table settings, archive stamp, co-GM role field, preferences / hand-fold / presence tables, error codes, pure defaults"
+        part: A
+        size: M
+        mode: add
+        goal: "The data Part A needs exists with defaults and is cleaned up with its campaign: a campaign carries typed table settings and an archive stamp, a member row can be a co-GM, a user has one preferences row, per-character hand folds and per-campaign presence have tables; campaigns.get returns the resolved settings; nothing in the UI changes"
+        depends_on: []
+        owns:
+          - convex/tables/campaigns.ts
+          - convex/lib/validators/campaigns.ts
+          - convex/lib/validators/preferences.ts
+          - convex/campaigns.ts
+          - convex/cleanup.ts
+          - src/lib/config/**
+          - src/lib/errors/config.ts
+          - src/lib/errors/app-error.ts
+          - src/lib/convex-errors.ts
+          - tests/unit/config-defaults.test.ts
+          - tests/unit/config-legacy-prefs.test.ts
+          - tests/convex/config-foundation.test.ts
+          - tests/convex/cleanup.test.ts
+          - docs/data-model.md
+          - docs/tasks/TASK-CONFIG-S0.md
+        reads:
+          - reference/designs/config/Settings.dc.html
+          - src/lib/frames/options.ts
+          - convex/lib/cardHand.ts
+          - convex/lib/permissions.ts
+          - src/components/party/dice/settings.ts
+          - src/components/combat-map/actions/hand/index.tsx
+          - docs/best-practices.md
+        acceptance:
+          - "Widen only (rule 7, CD4): campaigns gains tableSettings? = v.object of optional fields playersSeeFear (bool), outOfRange ('ask' | 'refuse'), spotlightToPlayers (bool), lorekeeperWeb (bool), lorekeeperAsk ('everyone' | 'gm'), fearAtStart ('carry' | 'pcs'), clock ('scene' | 'manual'), sessionOpensOn ('journal' | 'combatMap'), autoSessionLog (bool); and archivedAt? (number). campaignMembers gains role? = v.literal('coGm'). Typed validators in convex/lib/validators/campaigns.ts, no JSON blob"
+          - "New tables in convex/tables/campaigns.ts (already composed by convex/schema.ts, so schema.ts is untouched): userPreferences { userId, dice3d?, diceSound?, diceVolume? (0-100), reduceMotion? (bool), textSize? ('small' | 'medium' | 'large'), spotlightPing? (bool), legacyImportedAt?, updatedAt } with by_user; handFolds { userId, campaignId, characterId, updatedAt } (row = folded) with by_user_character and by_campaign; campaignPresence { campaignId, userId, lastSeenAt } with by_campaign_user (no prefix-duplicate index, CD15)"
+          - "src/lib/config/campaign-settings.ts: TABLE_SETTING_DEFAULTS (playersSeeFear true, outOfRange 'ask' = today's behaviour, spotlightToPlayers false, lorekeeperWeb true, lorekeeperAsk 'everyone', fearAtStart 'carry' (CB p.154), clock 'manual', sessionOpensOn 'journal', autoSessionLog true) and resolveTableSettings(stored); src/lib/config/preferences.ts: PREFERENCE_DEFAULTS and resolvePreferences; src/lib/config/legacy-prefs.ts: readLegacyPrefs(storage) parses dcm.dice.settings and every dh.combat.handHidden:<campaignId>:<characterId> key (bad JSON / blocked storage = nothing), unit-tested"
+          - "campaigns.get's summary gains settings (the resolved table settings) and archived (bool); returns validator updated; every existing campaigns test passes"
+          - "cleanup.ts purges handFolds and campaignPresence by campaign (bounded take, as the other per-campaign tables); cleanup.test.ts covers both"
+          - "src/lib/errors/config.ts holds the Part A codes with messages (CAMPAIGN_ARCHIVED, CO_GM_NOT_MEMBER, CO_GM_CREATOR_ONLY, SETTING_INVALID, LOREKEEPER_GM_ONLY, COMBAT_TARGET_OUT_OF_RANGE) and joins the AppErrorCode union in app-error.ts; tests assert codes"
+          - "docs/data-model.md documents every new field and table; lint, typecheck, vitest pass"
+      - id: S1
+        title: "Settings panel and Preferences popover shell: gear + avatar in the campaign top bar, five-section slide-over, slot stubs, URL state"
+        part: A
+        size: M
+        mode: add
+        goal: "Every campaign page's top bar ends with a gear (GM and co-GM) and an avatar (everyone); the gear opens the 'Campaign settings' slide-over with the design's five-section nav and footer, the avatar opens the Preferences popover; every section and row is a stub slot; the existing Players button keeps working"
+        depends_on: []
+        owns:
+          - src/components/config/shell/**
+          - src/components/config/slots.ts
+          - src/components/config/config.css
+          - src/components/config/sections/table/index.tsx
+          - src/components/config/sections/rules/index.tsx
+          - src/components/config/sections/players/index.tsx
+          - src/components/config/sections/lorekeeper/index.tsx
+          - src/components/config/sections/sessions/index.tsx
+          - src/components/config/prefs/index.tsx
+          - src/components/config/presence-beat.tsx
+          - src/components/config/spotlight-ping.tsx
+          - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
+          - tests/unit/config/s1-*.test.tsx
+          - tests/e2e/config/helpers.ts
+          - tests/e2e/config-shell.spec.ts
+          - docs/tasks/TASK-CONFIG-S1.md
+        reads:
+          - reference/designs/config/Settings.dc.html
+          - src/components/brand/**
+          - src/app/(gm)/campaigns/[campaignId]/players-dialog.tsx
+          - src/components/journal/slots.ts
+          - tests/e2e/a11y.ts
+        acceptance:
+          - "Top bar (campaign-shell.tsx): after the nav, a 40px round gear button (aria-label 'Campaign settings', aria-expanded) shown when campaign.role is 'gm' (creator and co-GM), and a 40px avatar button (aria-label 'Preferences') for everyone; the board's 'Settings and Preferences live here' callout is not built"
+          - "Gear opens a right slide-over dialog (640px, focus trapped, Esc closes, reduced motion = no slide): kicker '<campaign name> · GM only', H2 'Campaign settings', side nav Table / House rules / Players / Lorekeeper / Sessions (aria-current), the section slot, and the footer 'Changes save as you make them and reach every player at once.'; URL state ?settings=table|rules|players|lorekeeper|sessions (bad value -> table), closing removes it"
+          - "Avatar opens the Preferences popover: avatar + name + 'Game Master' / 'Player' · campaign, the label 'Saved to your account · follows you to every device' (never 'Only on this device'), the prefs slot, an App admin link slot (renders nothing), 'Campaign settings' link (GM), Sign out (the existing sign-out action)"
+          - "slots.ts documents every slot (file, owning tracer, exported name, props) like src/components/journal/slots.ts; each stub keeps its name and props; presence-beat.tsx and spotlight-ping.tsx are mounted once in the shell and render nothing yet"
+          - "Each slot sits in its own error boundary (CL1); config-shell.spec.ts: GM and player open what they may (player sees no gear), keyboard only, axe passes, 1440x900 and 390x844; lint, typecheck, tests pass"
+  # ------------------------------------------------------------------ wave 2: server
+  - wave: 2
+    tracers:
+      - id: G1
+        title: "Co-GM permission core: role coGm, the creator rank, creator wrappers, setCoGm, archived-campaign write guard, authz role + class"
+        part: A
+        size: L
+        mode: add
+        goal: "The campaign creator can make a member a co-GM and back; a co-GM passes every GM wrapper (permission 'owner') but not the new creator-only rank, so they can't delete, restore, purge or archive the campaign, manage co-GMs or remove the creator; campaign mutation wrappers refuse writes on an archived campaign; the authz matrix runs every entry for a co-GM too"
+        depends_on: [S0]
+        owns:
+          - convex/lib/permissions.ts
+          - convex/lib/functions.ts
+          - convex/campaigns.ts
+          - convex/members.ts
+          - tests/convex/authz/harness.ts
+          - tests/convex/authz/world.ts
+          - tests/convex/authz/synth.ts
+          - tests/convex/authz-matrix.test.ts
+          - tests/convex/authz/core.entries.ts
+          - tests/convex/authz/config-cogm.entries.ts
+          - tests/convex/authz/config-cogm.test.ts
+          - tests/convex/co-gm.test.ts
+          - tests/convex/archived-guard.test.ts
+          - tests/convex/functions.test.ts
+          - docs/tasks/TASK-CONFIG-G1.md
+        reads:
+          - convex/tables/campaigns.ts
+          - src/lib/config/**
+          - src/lib/errors/config.ts
+          - tests/convex/authz/**
+          - docs/best-practices.md
+        acceptance:
+          - "permissions.ts: Role = 'gm' | 'coGm' | 'player'; campaignRole returns 'coGm' for a member row with role 'coGm'; rolePermission('coGm') = 'owner'; a campaign-only rank 'creator' above 'owner' (CampaignPermission = Permission | 'creator', never stored in grants) that only the campaign's ownerId gets; atLeast handles it; no other file compares roles (rule 2)"
+          - "functions.ts: need accepts 'creator'; creatorQuery / creatorMutation / keyedCreatorMutation (need fixed to 'creator'); campaign mutation wrappers throw CAMPAIGN_ARCHIVED when campaign.archivedAt is set unless the option archived: 'allow' is given; queries still read archived campaigns; the wrapper table in the file header lists the new options"
+          - "campaigns.ts: get maps owner-or-better to role 'gm' and adds isCreator (bool) to the summary, so every GM screen works for a co-GM unchanged; remove, restore and purge need 'creator' (restore / purge via permissionFor(..., 'creator')); markOpened passes archived: 'allow'"
+          - "members.ts: setCoGm creatorMutation { userId, coGm: bool } (CO_GM_NOT_MEMBER for a non-member; idempotent); roster rows gain coGm (bool); removePlayer may remove a player (owner) but a co-GM only with 'creator' (CO_GM_CREATOR_ONLY); removing or leaving also deletes the member's campaignPresence and handFolds rows; leave works for a co-GM"
+          - "Authz harness: world role coGm (a member with role coGm); class defaults: gm -> coGm 'ok'; new class 'creator' (anon UNAUTHENTICATED, outsider NOT_FOUND, player FORBIDDEN, coGm FORBIDDEN, gm ok) with allowedClasses for the creator wrappers; core.entries.ts moves campaigns.remove / restore / purge to 'creator'; config-cogm area covers setCoGm"
+          - "co-gm.test.ts: a co-GM runs a GM mutation (Fear, session start), can't delete / archive / setCoGm / remove the creator; demoting returns them to player; archived-guard.test.ts: a write on an archived campaign is CAMPAIGN_ARCHIVED, markOpened and queries still work; lint, typecheck, full vitest (matrix included) pass"
+      - id: S2
+        title: "Campaign settings server: one single-field setter for the table settings"
+        part: A
+        size: S
+        mode: add
+        goal: "A GM or co-GM changes one table setting at a time and every member's campaigns.get updates at once"
+        depends_on: [S0]
+        owns:
+          - convex/campaignSettings.ts
+          - tests/convex/campaign-settings.test.ts
+          - tests/convex/authz/config-settings.entries.ts
+          - tests/convex/authz/config-settings.test.ts
+          - docs/tasks/TASK-CONFIG-S2.md
+        reads:
+          - convex/campaigns.ts
+          - convex/lib/validators/campaigns.ts
+          - src/lib/config/**
+        acceptance:
+          - "campaignSettings.set gmMutation { change } where change is a v.union of one object per field ({ key: 'playersSeeFear', value: v.boolean() }, { key: 'outOfRange', value: 'ask' | 'refuse' }, ...), patching only that field of tableSettings; a no-op change writes nothing; returns null"
+          - "Unknown or wrong-typed change fails the args validator; archived campaign -> CAMPAIGN_ARCHIVED (G1's guard, once merged; until then a test marked todo)"
+          - "Authz entries (class gm); tests assert codes; lint, typecheck, vitest pass"
+      - id: P1
+        title: "Preferences server: the account's preferences, single-field setter, one-time legacy import, hand folds"
+        part: A
+        size: S
+        mode: add
+        goal: "A signed-in user reads and changes their preferences on the account, imports the old browser values once, and folds or unfolds a character's hand on the server"
+        depends_on: [S0]
+        owns:
+          - convex/preferences.ts
+          - tests/convex/preferences.test.ts
+          - tests/convex/authz/config-prefs.entries.ts
+          - tests/convex/authz/config-prefs.test.ts
+          - docs/tasks/TASK-CONFIG-P1.md
+        reads:
+          - convex/tables/campaigns.ts
+          - convex/lib/validators/preferences.ts
+          - src/lib/config/**
+        acceptance:
+          - "preferences.get userQuery returns the resolved preferences (defaults when no row) plus legacyImported (bool); preferences.set userMutation { change } single-field union (dice3d, diceSound, diceVolume 0-100 integer, reduceMotion, textSize, spotlightPing), creating the row on first write"
+          - "preferences.importLegacy userMutation { dice3d?, diceSound?, folds: array (max 50) of { campaignId, characterId } }: runs once per account (legacyImportedAt), sets only fields still unset, ignores folds for campaigns or characters the caller can't see (permissionFor view on the character's campaign) and never fails for them"
+          - "preferences.folds campaignQuery view returns the caller's folded character ids in the campaign (bounded); preferences.setFold campaignMutation view, archived 'allow' { characterId, folded } only for a character of that campaign (NOT_FOUND otherwise); never another user's rows"
+          - "Authz entries (user / view classes); lint, typecheck, vitest pass"
+      - id: PR1
+        title: "Presence server: heartbeat and the GM's online / away list"
+        part: A
+        size: S
+        mode: add
+        goal: "An open campaign tab tells the server it is there at most once a minute, and the GM reads each member's last-seen time to show Online or Away"
+        depends_on: [S0]
+        owns:
+          - convex/presence.ts
+          - tests/convex/presence.test.ts
+          - tests/convex/authz/config-presence.entries.ts
+          - tests/convex/authz/config-presence.test.ts
+          - docs/tasks/TASK-CONFIG-PR1.md
+        reads:
+          - convex/campaigns.ts
+          - convex/members.ts
+        acceptance:
+          - "presence.beat campaignMutation view (archived 'allow'): upserts the caller's campaignPresence row; writes only when lastSeenAt is older than 60 s (PRESENCE_WRITE_MS), so a burst of beats is one write"
+          - "presence.list gmQuery returns [{ userId, lastSeenAt }] for the campaign (bounded by the members cap); no Date.now() in the query (CF10): the client decides Online (< 2 min) / Away; its own query so beats never re-send the roster (CD10)"
+          - "Authz entries; lint, typecheck, vitest pass"
+  # ------------------------------------------------------------------ wave 3: settings take effect, UI sections, preferences applied
+  - wave: 3
+    tracers:
+      - id: G2
+        title: "Co-GM sweep: every 'is this the GM' check outside permissions.ts goes through the permission-derived role"
+        part: A
+        size: M
+        mode: add
+        blocked_on: Q6
+        goal: "A co-GM is treated as a GM wherever the code asked 'is the caller the campaign's GM' by comparing with campaign.ownerId (notes, journals, character sheets, photo import, Lorekeeper context, combat requests), while places that need the creator's identity (whose journal is the GM journal, createdBy) keep it"
+        depends_on: [G1]
+        owns:
+          - convex/notesEntries.ts
+          - convex/notesThreads.ts
+          - convex/notesSharing.ts
+          - convex/notesJournals.ts
+          - convex/lib/journalState.ts
+          - convex/lib/notes.ts
+          - convex/lib/characterSheet.ts
+          - convex/characters.ts
+          - convex/photoImport.ts
+          - convex/lib/lorekeeper/context.ts
+          - convex/combatRequests.ts
+          - src/lib/domain/notes/visibility.ts
+          - tests/convex/co-gm-sweep.test.ts
+          - docs/tasks/TASK-CONFIG-G2.md
+        reads:
+          - convex/lib/permissions.ts
+          - convex/lib/functions.ts
+          - docs/best-practices.md
+        acceptance:
+          - "Each campaign.ownerId comparison in the owned files is classified in the task doc as 'role' (replaced by the role from campaignRole / ctx.permission) or 'identity' (kept, with a one-line comment); grep shows no role-style ownerId comparison left in convex/ outside lib/permissions.ts"
+          - "Notes (Q6 default): a co-GM reads what the GM reads (GM-only pages, every shared page) through canReadPage's viewer role; pages a co-GM writes are their own journal's pages"
+          - "co-gm-sweep.test.ts: a co-GM edits any character sheet, approves a combat request, reads a GM-only page; a player still can't; every existing notes / characters test passes"
+      - id: R1
+        title: "Players see the GM's Fear: hide the Fear pool from players when the GM turns it off"
+        part: A
+        size: S
+        mode: add
+        blocked_on: Q3
+        goal: "With 'Players see the GM's Fear' off, a player never receives the GM's Fear number (the Fear query and the Fear numbers in feed lines), while the GM and co-GM still do; on (the book's default) nothing changes"
+        depends_on: [S0, G1]
+        owns:
+          - convex/campaigns.ts
+          - convex/feed.ts
+          - tests/convex/fear-visibility.test.ts
+          - docs/tasks/TASK-CONFIG-R1.md
+        reads:
+          - convex/lib/fear.ts
+          - src/lib/config/**
+          - .reference-private/text/core.txt
+        acceptance:
+          - "campaigns.fear returns { fear: number | null } (returns validator a union): null for a caller below 'owner' when tableSettings.playersSeeFear is false; the client shows the Fear banner / panel only when fear is not null"
+          - "feed rows for a player drop fearDelta and the 'Fear a -> b' text part when the switch is off (Q3 default); 'with Fear' on a roll result stays (that is the dice, not the pool)"
+          - "fear-visibility.test.ts covers GM, co-GM, player with the switch on and off; lint, typecheck, vitest pass"
+      - id: R2
+        title: "Out-of-range actions: Refuse"
+        part: A
+        size: M
+        mode: add
+        blocked_on: Q2
+        goal: "With out-of-range set to Refuse, a player's attack, card or feature that targets something beyond its range is refused by the server with a clear message instead of becoming a request for the GM; 'Ask me' keeps today's request flow"
+        depends_on: [S0]
+        owns:
+          - convex/combatActions.ts
+          - convex/combatFeatures.ts
+          - convex/featurePrompts.ts
+          - tests/convex/out-of-range-refuse.test.ts
+          - docs/tasks/TASK-CONFIG-R2.md
+        reads:
+          - convex/combatRequests.ts
+          - convex/lib/combatActions.ts
+          - src/lib/config/**
+          - .reference-private/text/core.txt
+        acceptance:
+          - "Where today an out-of-range target creates a pending combat request (combatActions attack, combatFeatures resolve, featurePrompts), 'refuse' throws COMBAT_TARGET_OUT_OF_RANGE with the band in the message and nothing is paid or logged; rider-added targets beyond range are dropped and the action goes on (Q2 default)"
+          - "A caller with 'owner' (GM / co-GM acting for a PC) is not refused (Q2 default); 'ask' behaves exactly as today (existing combat-actions and riders tests pass unchanged)"
+          - "out-of-range-refuse.test.ts covers attack, card, feature and rider; lint, typecheck, vitest pass"
+      - id: R3
+        title: "Fear at the start of a session: carry over or reset to the number of PCs"
+        part: A
+        size: S
+        mode: add
+        blocked_on: Q1
+        goal: "With 'Reset to number of PCs', starting a session sets the GM's Fear to the number of active PCs in the same undoable step; 'Carry over' (the book, CB p.154) keeps today's behaviour"
+        depends_on: [S0]
+        owns:
+          - convex/sessions.ts
+          - tests/convex/fear-at-start.test.ts
+          - docs/tasks/TASK-CONFIG-R3.md
+        reads:
+          - convex/lib/fear.ts
+          - convex/lib/sessions.ts
+          - src/lib/config/**
+          - .reference-private/text/core.txt
+        acceptance:
+          - "sessions.start with fearAtStart 'pcs': Fear = min(12, active PCs of the campaign: not retired, not dead) (Q1 default), written through the Fear history like any Fear change, in the start's actionLog group so undo of the start restores it; the start line says 'Fear reset to N'"
+          - "'carry' changes nothing; the Journal's session tests and the existing sessions tests pass"
+          - "fear-at-start.test.ts covers both modes, the 12 cap and undo; lint, typecheck, vitest pass"
+      - id: R4
+        title: "Day and night clock: advance per scene"
+        part: A
+        size: S
+        mode: add
+        blocked_on: Q4
+        goal: "With the clock set to 'Advance per scene', ending a scene advances the campaign's time the way the user's answer to Q4 says; 'Manual' keeps today's behaviour. Not started before the user answers Q4"
+        depends_on: [S0]
+        owns:
+          - convex/scenes.ts
+          - convex/combatScenes.ts
+          - convex/campaignTime.ts
+          - tests/convex/clock-per-scene.test.ts
+          - docs/tasks/TASK-CONFIG-R4.md
+        reads:
+          - convex/lib/sessions.ts
+          - src/lib/config/**
+          - .reference-private/text/core.txt
+        acceptance:
+          - "Built only after the user's Q4 answer; the acceptance is rewritten then. Placeholder (Q4 option a): a scene end with clock 'scene' moves time of day one step Day -> Dim -> Night -> Day in the scene end's actionLog group (undoable); Witherwild (campaignTime frame) excluded"
+          - "'manual' changes nothing; existing scene and calendar tests pass; lint, typecheck, vitest pass"
+      - id: L1
+        title: "Lorekeeper campaign settings: who can ask, and internet search when the books don't say"
+        part: A
+        size: S
+        mode: add
+        goal: "A GM can let only GMs ask the Lorekeeper, and can switch internet search off for the campaign; the server enforces both and the composer knows"
+        depends_on: [S0]
+        owns:
+          - convex/lorekeeper.ts
+          - tests/convex/lorekeeper-campaign-settings.test.ts
+          - docs/tasks/TASK-CONFIG-L1.md
+        reads:
+          - convex/lorekeeperRun.ts
+          - convex/lib/lorekeeper/**
+          - src/lib/config/**
+        acceptance:
+          - "lorekeeper.ask and editQuestion: lorekeeperAsk 'gm' and ctx.permission below 'owner' -> LOREKEEPER_GM_ONLY (decided by the wrapper's permission, not a role compare); lorekeeperWeb false forces the conversation's webSearch to false (stored false, no web pass)"
+          - "lorekeeper.available returns canAsk (bool) and webAllowed (bool) besides today's fields (returns validator widened); the composer hides the internet toggle when webAllowed is false and shows 'Only the GM can ask the Lorekeeper in this campaign.' when canAsk is false (client change limited to reading the new fields in src/components/lorekeeper only if needed by tests; else in U4)"
+          - "Tests cover player / co-GM / GM for both switches; lint, typecheck, vitest pass"
+      - id: U1
+        title: "Settings: At the table section"
+        part: A
+        size: S
+        mode: add
+        goal: "The At the table section shows the design's rows and every switch saves at once: hand sharing, players see Fear, out-of-range Ask me / Refuse, spotlight balance to players, and the locked 'adversary stats' row"
+        depends_on: [S1, S2]
+        owns:
+          - src/components/config/sections/table/**
+          - tests/unit/config/table.test.tsx
+          - tests/e2e/config-table.spec.ts
+          - docs/tasks/TASK-CONFIG-U1.md
+        reads:
+          - reference/designs/config/Settings.dc.html
+          - src/components/combat-map/settings/hand-sharing.tsx
+          - convex/campaigns.ts
+          - convex/campaignSettings.ts
+        acceptance:
+          - "Rows with the board's text: 'Players can see each other's hands' (campaigns.setPlayersSeeHands, reused), 'Players see the GM's Fear', 'Out-of-range actions' (segmented Ask me / Refuse), 'Show spotlight balance to players' (hint 'The bars in the session recap.'), 'Show adversary HP, Stress and Difficulty to players' as a disabled switch with the 'Always off' lock (no setting)"
+          - "Switches are role=switch with aria-checked, optimistic (rule 12), errors shown inline; values from campaigns.get settings"
+          - "The locked row is backed by a test that a player's combat queries return no adversary HP, Stress or Difficulty; if one does, a bead is filed (not fixed here)"
+          - "config-table.spec.ts: GM toggles hand sharing and Fear and a second browser (player) sees the change without reload; lint, typecheck, tests pass"
+      - id: U2
+        title: "Settings: House rules section (table rulings + today's campaign options)"
+        part: A
+        size: S
+        mode: add
+        goal: "The House rules section lists the campaign's pinned table rulings (with 'Pinned from the Lorekeeper · Session N' or 'Added here'), lets the GM add, edit and unpin one, and shows today's campaign options for this frame as switches"
+        depends_on: [S1]
+        owns:
+          - src/components/config/sections/rules/**
+          - tests/unit/config/rules.test.tsx
+          - tests/e2e/config-rules.spec.ts
+          - docs/tasks/TASK-CONFIG-U2.md
+        reads:
+          - reference/designs/config/Settings.dc.html
+          - convex/lorekeeperRulings.ts
+          - src/lib/frames/options.ts
+          - src/app/(gm)/campaigns/[campaignId]/frame-rules-panel.tsx
+        acceptance:
+          - "Hint 'The Lorekeeper quotes these as table rulings before it searches anywhere else.'; rulings from lorekeeperRulings.list, add via pin (no fromMessageId), edit via update, remove via unpin; title <= 80, text <= 600 as the server enforces; the 50-ruling limit shows LOREKEEPER_RULING_LIMIT's message"
+          - "optionsFor(frameId) rows as switches with label, description and 'Campaign option' tag, writing campaigns.setOption (unchanged); no new rule switch (dcm-bxp.134 stays a later plan)"
+          - "e2e: GM adds a house rule, it appears in the Lorekeeper's rulings list; lint, typecheck, tests pass"
+      - id: U3
+        title: "Settings: Players section (roster, online / away, invite link, co-GM) and the presence heartbeat"
+        part: A
+        size: M
+        mode: add
+        goal: "The Players section lists the creator ('Owner'), co-GMs and players with what they play and Online / Away, the invite link with Copy, email invites, and a per-row menu to make or unmake a co-GM and remove; every open campaign tab beats presence"
+        depends_on: [S1, G1, PR1]
+        owns:
+          - src/components/config/sections/players/**
+          - src/components/config/presence-beat.tsx
+          - tests/unit/config/players.test.tsx
+          - tests/e2e/config-players.spec.ts
+          - docs/tasks/TASK-CONFIG-U3.md
+        reads:
+          - reference/designs/config/Settings.dc.html
+          - src/app/(gm)/campaigns/[campaignId]/players-dialog.tsx
+          - convex/members.ts
+          - convex/presence.ts
+        acceptance:
+          - "Rows: avatar, name, '<name> plays <character> · <class>' (members.roster + party), badge Owner / Co-GM, Online / Away from presence.list (Online if seen < 2 min, recomputed each minute on the client), '···' menu: Make co-GM / Remove co-GM (creator only, isCreator), Remove from campaign (with confirm)"
+          - "'Invite a player' card: 'Anyone with the link can join this campaign as a player.', the join link from members.access, Copy link (clipboard + 'Copied' status), rotate link, email invite form (members.invite / revokeInvite reused from the Players dialog's logic, moved not copied)"
+          - "presence-beat.tsx: beats on mount and every 60 s while document.visibilityState is visible, none when hidden; it follows the shell's markOpened precedent (a timer subscription, not state sync) and the task doc records it as the rule-13 exception the briefs list under Risks (Q11)"
+          - "config-players.spec.ts: creator makes a player co-GM, the co-GM sees the gear and can't see 'Remove co-GM'; lint, typecheck, tests pass"
+      - id: U4
+        title: "Settings: Lorekeeper section (sources, internet search, who can ask)"
+        part: A
+        size: S
+        mode: add
+        goal: "The Lorekeeper section switches books on and off for the campaign, shows the locked rows (table rulings always searched, GM-only notes never), and sets internet search and who can ask"
+        depends_on: [S1, S2, L1]
+        owns:
+          - src/components/config/sections/lorekeeper/**
+          - tests/unit/config/lorekeeper.test.tsx
+          - tests/e2e/config-lorekeeper.spec.ts
+          - docs/tasks/TASK-CONFIG-U4.md
+        reads:
+          - reference/designs/config/Settings.dc.html
+          - convex/lorekeeperLibrary.ts
+          - src/components/lorekeeper/**
+        acceptance:
+          - "'Sources it may search': every book of lorekeeperLibrary.list with its switch (setEnabled) and 'Indexed' pill; the House rules (notes) book shows as 'Your <campaign> notes' (Q24 default); 'Table rulings & house rules · This page' locked on; 'GM-only notes · Never shown to players' locked off"
+          - "'Search the internet when the books don't say' switch (hint 'Results are marked From the internet · unofficial.') writes lorekeeperWeb; 'Who can ask' segmented Everyone / GM only writes lorekeeperAsk"
+          - "e2e: GM sets GM only, a player's composer shows the GM-only line; lint, typecheck, tests pass"
+      - id: U5
+        title: "Settings: Sessions section (Fear at start, clock, opening page, session log, Archive button slot)"
+        part: A
+        size: S
+        mode: add
+        goal: "The Sessions section sets Fear at the start of a session, the day and night clock, which page a new session opens on and whether the Combat Map writes the session log; Archive is a slot filled by S3"
+        depends_on: [S1, S2]
+        owns:
+          - src/components/config/sections/sessions/index.tsx
+          - src/components/config/sections/sessions/rows.tsx
+          - src/components/config/sections/sessions/archive.tsx
+          - tests/unit/config/sessions.test.tsx
+          - docs/tasks/TASK-CONFIG-U5.md
+        reads:
+          - reference/designs/config/Settings.dc.html
+          - convex/campaignSettings.ts
+        acceptance:
+          - "Rows with the board's text: 'GM Fear at the start of a session' (Carry over / Reset to number of PCs; hint 'Fear carries over between sessions by default.'), 'Day and night clock' (Advance per scene / Manual; Advance per scene disabled with 'Coming soon' until R4 lands), 'A new session opens on' (Journal / Combat Map), 'Write the session log from the Combat Map' (hint 'Rolls, hits, Fear spent and defeats, with times.')"
+          - "archive.tsx is a stub ('Archive this campaign' row, button disabled) that S3 fills; unit tests cover each row's write; lint, typecheck, tests pass"
+      - id: U6a
+        title: "Preferences rows, the one-time import of browser values, and dice settings from the account"
+        part: A
+        size: M
+        mode: add
+        goal: "The Preferences popover shows 3D dice, dice sound and volume, reduce motion, text size and 'Ping me when I get the spotlight', saved to the account; on first load the old browser values are imported once and the old keys removed; dice read their settings from the account"
+        depends_on: [S1, P1]
+        owns:
+          - src/components/config/prefs/**
+          - src/components/party/dice/settings.ts
+          - src/components/party/dice/sound.ts
+          - tests/unit/config/prefs.test.tsx
+          - tests/unit/dice-settings.test.ts
+          - tests/e2e/config-prefs.spec.ts
+          - docs/tasks/TASK-CONFIG-U6a.md
+        reads:
+          - reference/designs/config/Settings.dc.html
+          - src/lib/config/**
+          - convex/preferences.ts
+        acceptance:
+          - "Rows: '3D dice' ('Rolls tumble across the screen.'), 'Dice sound' switch + 'Volume' slider (0-100, saved on release, not on every move), 'Reduce motion' ('Calmer sheet and card animations.'), 'Text size' Small / Medium / Large, 'Ping me when I get the spotlight'; optimistic updates"
+          - "First load with legacyImported false: readLegacyPrefs(localStorage) -> preferences.importLegacy once (a guarded one-shot like markOpened, the rule-13 exception listed in the briefs' Risks), then the migrated keys (dcm.dice.settings, dh.combat.handHidden:*) and the dead HUD key dcm:combat-hud are removed; a failure leaves the keys for the next load"
+          - "useDiceSettings reads preferences.get (signed out or loading: today's defaults, 3D off when the device asks for reduced motion); playRollSound uses the volume; no localStorage write remains in dice settings"
+          - "config-prefs.spec.ts: set dice sound in browser A, open browser B with the same account, the switch is on; legacy import covered with a seeded localStorage; lint, typecheck, tests pass"
+      - id: U6b
+        title: "Preferences applied app-wide: reduce motion and text size"
+        part: A
+        size: M
+        mode: add
+        blocked_on: Q12
+        goal: "Reduce motion on calms every animation even when the device doesn't ask; text size scales the app's text; both follow the account to every device"
+        depends_on: [P1]
+        owns:
+          - src/app/(gm)/prefs-sync.tsx
+          - src/app/(gm)/layout.tsx
+          - src/app/globals.css
+          - src/lib/use-reduced-motion.ts
+          - tests/unit/prefs-sync.test.tsx
+          - tests/e2e/prefs-applied.spec.ts
+          - docs/tasks/TASK-CONFIG-U6b.md
+        reads:
+          - src/app/(gm)/accent-sync.tsx
+          - src/components/party/dice/dice3d/index.ts
+          - src/components/combat-map/hud/shell.tsx
+        acceptance:
+          - "prefs-sync.tsx (like accent-sync.tsx) sets data-reduce-motion and data-text-size on <html> from preferences.get without an effect writing state (useSyncExternalStore or a ref write in a layout effect, documented)"
+          - "globals.css: [data-reduce-motion] applies the same rules as @media (prefers-reduced-motion: reduce); useReducedMotion() returns device OR account preference and replaces direct matchMedia reads in the files the task doc lists (Q13 default: on = calmer, off = follow the device)"
+          - "Text size per Q12 default (CSS zoom 0.9 / 1 / 1.15 on the app root); the combat map's pointer math stays correct (e2e drags a token at Large)"
+          - "lint, typecheck, tests pass"
+      - id: U6c
+        title: "Hide cards from the account (hand folds on the server)"
+        part: A
+        size: S
+        mode: add
+        goal: "A player's 'Hide cards' choice per character is stored on the account and follows them to every device"
+        depends_on: [P1]
+        owns:
+          - src/components/combat-map/hud/hand/body.tsx
+          - src/components/combat-map/hud/hand/use-fold.ts
+          - tests/unit/hand-fold.test.tsx
+          - docs/tasks/TASK-CONFIG-U6c.md
+        reads:
+          - src/components/combat-map/actions/hand/index.tsx
+          - convex/preferences.ts
+        acceptance:
+          - "The HUD hand's fold reads preferences.folds and writes preferences.setFold with an optimistic update; no localStorage read or write for the fold remains (handHiddenKey stays exported only for the legacy import, or moves to src/lib/config/legacy-prefs.ts)"
+          - "If the classic actions/hand still exists after HUD wave 9, the task doc names it and a follow-up bead is filed; lint, typecheck, tests pass"
+      - id: U6d
+        title: "Ping me when I get the spotlight"
+        part: A
+        size: S
+        mode: add
+        blocked_on: Q14
+        goal: "When the spotlight moves to a PC the viewer owns and the preference is on, the viewer hears a soft chime at the dice volume and sees a toast, on any campaign page"
+        depends_on: [P1]
+        owns:
+          - src/components/config/spotlight-ping.tsx
+          - public/sounds/spotlight-ping.*
+          - tests/unit/spotlight-ping.test.tsx
+          - docs/tasks/TASK-CONFIG-U6d.md
+        reads:
+          - convex/combatSpotlight.ts
+          - src/components/party/dice/sound.ts
+          - src/components/combat-map/hud/spotlight/**
+        acceptance:
+          - "Subscribes to the existing spotlight holder query; plays only on a change to a holder the viewer owns (not on first load, not for the GM's own takes); toast 'You have the spotlight' (role=status); respects reduce motion for the toast animation"
+          - "Unit test with a mocked holder sequence; lint, typecheck, tests pass"
+  # ------------------------------------------------------------------ wave 4: archive, Journal-linked settings, cut-over
+  - wave: 4
+    tracers:
+      - id: S3
+        title: "Archive a campaign: creator-only archive and restore, Archived in Load Campaign, archived banner"
+        part: A
+        size: M
+        mode: add
+        blocked_on: Q9
+        goal: "The creator archives a campaign from Settings: everything becomes read-only for everyone, it moves to an Archived group in Load Campaign, and the creator can restore it"
+        depends_on: [G1, S2, U5, R1]
+        owns:
+          - convex/campaignSettings.ts
+          - convex/campaigns.ts
+          - src/components/config/sections/sessions/archive.tsx
+          - src/app/(gm)/campaigns/chronicle.tsx
+          - src/components/config/archived-banner.tsx
+          - tests/convex/campaign-archive.test.ts
+          - tests/convex/authz/config-archive.entries.ts
+          - tests/convex/authz/config-archive.test.ts
+          - tests/e2e/campaign-archive.spec.ts
+          - docs/tasks/TASK-CONFIG-S3.md
+        reads:
+          - convex/lib/functions.ts
+          - src/app/(gm)/campaigns/page.tsx
+        acceptance:
+          - "campaignSettings.archive / unarchive creatorMutation (archived 'allow'); archive with a live session -> INVALID 'End the session first.'; archive and unarchive are idempotent"
+          - "campaigns.list returns archived campaigns with archived true (still bounded by the same indexes); Load Campaign shows them in an 'Archived' group with Restore for the creator"
+          - "'Archive this campaign' row (hint 'Keeps everything read-only. You can restore it later.') opens a confirm; while archived every campaign page shows a banner 'This campaign is archived · read-only' and the creator gets Restore"
+          - "Authz class creator; e2e: archive, a player's write fails with the archived message, restore; lint, typecheck, tests pass"
+      - id: JO1
+        title: "A new session opens on the Journal or the Combat Map"
+        part: A
+        size: S
+        mode: add
+        requires_plan: journal
+        goal: "Starting a session (Journal header or Combat Map) takes the GM to the page the setting names"
+        depends_on: [S2]
+        owns:
+          - src/components/journal/header/**
+          - src/components/combat-map/hud/pick/session.tsx
+          - tests/e2e/session-opens-on.spec.ts
+          - docs/tasks/TASK-CONFIG-JO1.md
+        reads:
+          - convex/sessions.ts
+          - src/lib/config/**
+        acceptance:
+          - "After a successful sessions.start, the client navigates to /campaigns/<id>/journal?tab=sessions&s=<session> or /campaigns/<id>/combat-map per settings.sessionOpensOn, unless it is already there; players are not moved"
+          - "e2e covers both values; lint, typecheck, tests pass"
+      - id: JO2
+        title: "Write the session log from the Combat Map (switch)"
+        part: A
+        size: S
+        mode: add
+        requires_plan: journal
+        goal: "With the switch off, the Journal's session log shows only the session's own lines (start / end / scene / GM lines), not the automatic feed, Fear and encounter lines; on (default) nothing changes"
+        depends_on: [S2]
+        owns:
+          - convex/journalLog.ts
+          - tests/convex/journal-log-switch.test.ts
+          - docs/tasks/TASK-CONFIG-JO2.md
+        reads:
+          - convex/lib/sessions.ts
+          - src/lib/config/**
+        acceptance:
+          - "The log assembler skips the feed / fear / encounter sources when tableSettings.autoSessionLog is false; nothing is deleted, turning it on again shows them; the journal-log tests pass"
+          - "lint, typecheck, vitest pass"
+      - id: JO3
+        title: "Show spotlight balance to players"
+        part: A
+        size: S
+        mode: add
+        requires_plan: journal
+        blocked_on: Q5
+        goal: "With the switch on, players see the Journal's spotlight bars and the least-spotlight line in Log & recap; off (default) they stay GM-only"
+        depends_on: [S2]
+        owns:
+          - convex/journalTally.ts
+          - src/components/journal/tally/**
+          - tests/convex/journal-spotlight-players.test.ts
+          - docs/tasks/TASK-CONFIG-JO3.md
+        reads:
+          - convex/lib/spotlight.ts
+          - src/lib/config/**
+        acceptance:
+          - "The spotlight read used by the Journal (journalTally or the query JT reads; the task doc names it) is campaignQuery view and returns the bars to a player only when spotlightToPlayers is true (else null), always to GM / co-GM; returns validator a union"
+          - "The tally tiles stay GM-only (Journal Q5); lint, typecheck, tests pass"
+      - id: SX
+        title: "Part A cut-over: one home for settings, duplicates removed, live and a11y specs"
+        part: A
+        size: M
+        mode: replace
+        blocked_on: Q10
+        goal: "Campaign settings live only in the gear: the top bar's Players button and dialog and the dashboard's Campaign Rules panel are gone, their specs moved to the settings sections; a two-browser spec proves changes reach every player at once"
+        depends_on: [U1, U2, U3, U4, U5, U6a, U6b, U6c, U6d, S3]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
+          - src/app/(gm)/campaigns/[campaignId]/players-dialog.tsx
+          - src/app/(gm)/campaigns/[campaignId]/frame-rules-panel.tsx
+          - src/app/(gm)/campaigns/[campaignId]/page.tsx
+          - tests/e2e/players.spec.ts
+          - tests/e2e/live-config.spec.ts
+          - tests/e2e/a11y-config.spec.ts
+          - docs/tasks/TASK-CONFIG-SX.md
+        reads:
+          - src/components/config/**
+          - src/components/combat-map/settings/hand-sharing.tsx
+        acceptance:
+          - "Players button + PlayersDialog and FrameRulesPanel deleted with every import (grep clean); the Combat Map's hand-sharing toggle stays as a shortcut writing the same field (Q10 default)"
+          - "live-config.spec.ts: GM and player in two browsers; the GM turns off Players see the GM's Fear and hand sharing, the player's view changes without reload; a11y-config.spec.ts: axe on the settings panel (each section) and Preferences, GM and player, 1440x900 and 820x1180"
+          - "Full e2e suite green; lint, typecheck, tests pass"
+  # ================================================================== PART B (App admin, the app owner only)
+  # ------------------------------------------------------------------ wave 5: foundation
+  - wave: 5
+    tracers:
+      - id: AD0
+        title: "Admin foundation: owner identity in one place, appOwner wrappers, app config / status / switches / testers / audit / export tables, audit cleanup cron, authz class"
+        part: B
+        size: L
+        mode: add
+        blocked_on: Q16
+        goal: "The app knows who its owner is from one stored value set only with deployment admin rights; appOwnerQuery / appOwnerMutation / appOwnerAction refuse everyone else server-side; the admin tables exist with defaults; every admin change writes an audit row that a cron expires; the authz matrix has an appOwner role and class"
+        depends_on: []
+        owns:
+          - convex/tables/admin.ts
+          - convex/schema.ts
+          - convex/lib/validators/admin.ts
+          - convex/lib/appOwner.ts
+          - convex/lib/appConfig.ts
+          - convex/lib/adminAudit.ts
+          - convex/adminSetup.ts
+          - convex/adminRetention.ts
+          - convex/appAdmin.ts
+          - convex/lib/functions.ts
+          - convex/crons.ts
+          - src/lib/admin/**
+          - src/lib/errors/admin.ts
+          - src/lib/errors/app-error.ts
+          - src/lib/convex-errors.ts
+          - tests/convex/authz/harness.ts
+          - tests/convex/authz/world.ts
+          - tests/convex/authz-matrix.test.ts
+          - tests/convex/authz/admin-core.entries.ts
+          - tests/convex/authz/admin-core.test.ts
+          - tests/convex/admin-foundation.test.ts
+          - tests/convex/schema-guard.test.ts
+          - docs/data-model.md
+          - docs/tasks/TASK-CONFIG-AD0.md
+        reads:
+          - reference/designs/config/Admin.dc.html
+          - convex/convex.config.ts
+          - convex/lib/lorekeeper/caps.ts
+          - convex/lorekeeperRetention.ts
+          - docs/best-practices.md
+        acceptance:
+          - "convex/tables/admin.ts (composed in schema.ts): appConfig singleton { key: 'app', ownerId?: v.id('users'), signUpMode?, caps?: object of optional numbers, lorekeeper?: object of optional fields, spendAlertMonth?, updatedAt } with by_key; appStatus singleton { key, readOnly: bool, message?, updatedAt } (tiny, read by every mutation once AD10 lands); featureSwitches { key, mode: 'off' | 'owner' | 'testers' | 'everyone', changedAt, changedBy } by_key; appTesters { userId, addedAt, addedBy } by_user; adminAudit { at, actorId, action (literal union), field?, from?, to? (string | number | boolean) } by_at; adminExports { requestedBy, status, fileId?: v.id('_storage'), createdAt } by_createdAt"
+          - "Owner (Q16 default): internal mutation adminSetup.setOwner { email } (run with npx convex run; only deployment admins can) finds the user whose email is verified (emailVerificationTime set) and stores ownerId; convex/lib/appOwner.ts isAppOwner(ctx, user) is the only check anywhere; appAdmin.me maybeUserQuery returns { isOwner } for the caller only"
+          - "functions.ts: appOwnerQuery / appOwnerMutation / appOwnerAction built on the user wrappers; non-owner -> FORBIDDEN, signed out -> UNAUTHENTICATED; never a client flag"
+          - "convex/lib/appConfig.ts: readAppConfig(ctx) with defaults (signUpMode 'open'; caps per Q19 default; lorekeeper limits from today's env vars LOREKEEPER_* then the code defaults), so no behaviour changes until the owner saves something; convex/lib/adminAudit.ts recordAdminChange(ctx, ...) used by every admin mutation"
+          - "Retention (rule 8): adminRetention.expireAudit deletes audit rows older than 365 days (Q26) in batches of 200 and reschedules itself while a full batch was deleted; expireExports deletes exports and their storage file after 1 hour; both in crons.ts at odd minutes; schema-guard's retention list includes adminAudit and adminExports"
+          - "Authz: role appOwner in the world; class 'appOwner' (anon UNAUTHENTICATED, outsider / player / gm FORBIDDEN, appOwner ok); errors module admin.ts (ADMIN_ONLY not used: FORBIDDEN; READ_ONLY_MODE, SIGN_UP_CLOSED, SIGN_UP_INVITE_ONLY, CAP_CAMPAIGNS_PER_GM, CAP_CAMPAIGNS_APP, CAP_PLAYERS, CAP_CHARACTERS_PER_PLAYER, LOREKEEPER_PAUSED, LOREKEEPER_WEB_CAP, FEATURE_OFF); lint, typecheck, vitest pass"
+      - id: AD1
+        title: "Admin page shell: /admin route, owner gate, five tabs, slot stubs"
+        part: B
+        size: S
+        mode: add
+        goal: "/admin renders the design's frame for the owner (kicker 'Owner only', H1 'App admin', sub line, 'Saved · changes apply right away', tabs Overview / Accounts / Lorekeeper / Feature switches / Maintenance) with stub slots; anyone else sees a plain Not found page and no admin data ever loads"
+        depends_on: []
+        owns:
+          - src/app/(gm)/admin/**
+          - src/components/admin/shell/**
+          - src/components/admin/slots.ts
+          - src/components/admin/admin.css
+          - src/components/admin/overview/index.tsx
+          - src/components/admin/accounts/index.tsx
+          - src/components/admin/lorekeeper/index.tsx
+          - src/components/admin/features/index.tsx
+          - src/components/admin/maintenance/index.tsx
+          - tests/unit/admin/shell.test.tsx
+          - tests/e2e/admin-shell.spec.ts
+          - docs/tasks/TASK-CONFIG-AD1.md
+        reads:
+          - reference/designs/config/Admin.dc.html
+          - src/components/config/slots.ts
+        acceptance:
+          - "The page reads appAdmin.me (stubbed until AD0 merges) and renders tabs only when isOwner; a non-owner gets the 'Not found' view; no admin query is called (skip) for a non-owner; the server is still the gate (CF22)"
+          - "error.tsx for the segment; tabs are ARIA tabs with ?tab= URL state; each slot in an error boundary; axe passes; lint, typecheck, tests pass"
+  # ------------------------------------------------------------------ wave 6: admin server
+  - wave: 6
+    tracers:
+      - id: AD2
+        title: "Overview server: stats, alerts, campaigns, recent changes"
+        part: B
+        size: M
+        mode: add
+        goal: "The owner reads the Overview numbers (accounts with roles, campaigns of N allowed, Lorekeeper questions and spend this month), the alerts, the campaigns list and the paginated audit log"
+        depends_on: [AD0]
+        owns:
+          - convex/adminOverview.ts
+          - tests/convex/admin-overview.test.ts
+          - tests/convex/authz/admin-overview.entries.ts
+          - tests/convex/authz/admin-overview.test.ts
+          - docs/tasks/TASK-CONFIG-AD2.md
+        reads:
+          - convex/lib/lorekeeper/caps.ts
+          - convex/tables/lorekeeper.ts
+          - convex/tables/campaigns.ts
+          - convex/lib/appConfig.ts
+        acceptance:
+          - "adminOverview.stats appOwnerQuery { month } (client passes UTC month, CF10): accounts count and role split (owner / GM = owns a live campaign / player) by bounded reads (ADMIN_READ_BOUND 1000, '1000+' beyond), live non-archived campaigns vs caps.campaignsApp, the deployment lorekeeperUsage row's questions and cost for the month"
+          - "adminOverview.alerts { day, month }: users at >= 90% of the daily question cap today (lorekeeperUsage by_kind_period with kind 'user' and today's period, bounded take), spend >= 80%, read-only on, a missing key; each alert has a code and parameters, the text is built on the client"
+          - "adminOverview.campaigns paginated: name, GM name, player count, live now / last played (no Open link to campaigns the owner isn't in, Q27); adminOverview.audit paginated newest first"
+          - "Authz class appOwner; lint, typecheck, vitest pass"
+      - id: AD3
+        title: "Accounts server: sign-up mode and caps setters, account table, testers"
+        part: B
+        size: M
+        mode: add
+        goal: "The owner sets the sign-up mode and the four caps, reads the paginated account table with roles, campaigns and last seen, and adds or removes testers; every change is audited"
+        depends_on: [AD0]
+        owns:
+          - convex/adminAccounts.ts
+          - tests/convex/admin-accounts.test.ts
+          - tests/convex/authz/admin-accounts.entries.ts
+          - tests/convex/authz/admin-accounts.test.ts
+          - docs/tasks/TASK-CONFIG-AD3.md
+        reads:
+          - convex/lib/appConfig.ts
+          - convex/lib/adminAudit.ts
+          - convex/tables/campaigns.ts
+        acceptance:
+          - "setSignUpMode { mode: 'invite' | 'open' | 'closed' }; setCap { cap: 'campaignsPerGm' | 'campaignsApp' | 'charactersPerPlayer' | 'playersPerCampaign', value: integer 1-1000 } (single-field intents); each writes one adminAudit row"
+          - "accounts paginated: name, email, role (Owner / GM / Player), up to 5 campaign names, last seen (newest campaignOpens by_user_lastOpened), tester flag; addTester / removeTester { userId }"
+          - "No 'Who can create a campaign', no GM approval, no 'Make GM' (user decision); Authz class appOwner; lint, typecheck, vitest pass"
+      - id: AD4
+        title: "Sign-up mode and read-only enforced at account creation"
+        part: B
+        size: S
+        mode: add
+        blocked_on: Q18
+        goal: "New accounts follow the owner's sign-up mode: open as today, invite only (Q18 default: an email with a pending campaign invite, or a sign-up carrying a valid join code), or closed; read-only mode blocks new accounts; existing accounts always sign in"
+        depends_on: [AD0]
+        owns:
+          - convex/lib/users.ts
+          - convex/auth.ts
+          - src/app/signin/password-form.tsx
+          - tests/convex/signup-mode.test.ts
+          - tests/convex/create-or-update-user.test.ts
+          - docs/tasks/TASK-CONFIG-AD4.md
+        reads:
+          - convex/lib/appConfig.ts
+          - convex/lib/authRateLimit.ts
+          - convex/lib/permissions.ts
+        acceptance:
+          - "createOrUpdateUser refuses to create a new user with SIGN_UP_CLOSED (closed or read-only) or SIGN_UP_INVITE_ONLY (invite mode, no pending invite for the email and no valid join code in the sign-up params); linking an existing user and signing in are never refused; the owner's account is never refused"
+          - "The password form passes the join code from a /join/<code> link as a sign-up param; Google sign-up in invite mode works only for an invited email (Q18 default)"
+          - "auth-signup / create-or-update-user tests pass with the new cases; lint, typecheck, vitest pass"
+      - id: AD5a
+        title: "Campaign caps enforced: campaigns per GM and in the whole app (archived and deleted don't count)"
+        part: B
+        size: S
+        mode: add
+        goal: "Creating a campaign past the per-GM or app-wide cap is refused with a clear code; archived and deleted campaigns don't count; the caps apply to the app owner too (Q19 default)"
+        depends_on: [AD0]
+        owns:
+          - convex/campaigns.ts
+          - convex/tables/campaigns.ts
+          - tests/convex/campaign-caps.test.ts
+          - docs/tasks/TASK-CONFIG-AD5a.md
+        reads:
+          - convex/lib/appConfig.ts
+        acceptance:
+          - "campaigns.create counts the GM's live non-archived campaigns (by_owner_deletedAt_lastOpened, take(cap + 1), archived filtered in TypeScript) and the app's (a new index by_deletedAt_archivedAt replaces by_deletedAt, whose users switch to it; take(cap + 1)); over -> CAP_CAMPAIGNS_PER_GM / CAP_CAMPAIGNS_APP; unarchive / restore check the same caps"
+          - "Index change follows CD4 / CD15 (add new, move readers, drop old in the same deploy only if no reader is left); lint, typecheck, vitest pass"
+      - id: AD5b
+        title: "Player and character caps enforced (players per campaign, characters per player per campaign) and dcm-cd8"
+        part: B
+        size: S
+        mode: add
+        goal: "Joining or inviting past the players-per-campaign cap and creating a character past the per-player cap (retired included) are refused with clear codes; dcm-cd8 is resolved per Q19"
+        depends_on: [AD0]
+        owns:
+          - convex/members.ts
+          - convex/characters.ts
+          - convex/lib/characterSheet.ts
+          - tests/convex/player-caps.test.ts
+          - docs/tasks/TASK-CONFIG-AD5b.md
+        reads:
+          - convex/lib/appConfig.ts
+        acceptance:
+          - "joinByCode, invite and markOpened's invite acceptance refuse with CAP_PLAYERS when the campaign already has playersPerCampaign members (co-GMs count, the creator doesn't); existing members are never removed"
+          - "Character create counts the player's characters in the campaign (index on campaign + owner, bounded) -> CAP_CHARACTERS_PER_PLAYER; the GM creating NPC-owned / secret frame characters is not counted; MAX_CHARACTERS_CREATED_PER_CAMPAIGN stays the abuse bound (Q19 default)"
+          - "lint, typecheck, vitest pass"
+      - id: AD6
+        title: "Lorekeeper budget server: limits from the admin, what happens at the limit, daily internet searches, use by campaign"
+        part: B
+        size: L
+        mode: add
+        blocked_on: Q20
+        goal: "The Lorekeeper's monthly spend limit and per-person daily questions come from the admin (env and code defaults as fallback); at the limit it pauses, answers GMs only, or gives shorter answers; internet searches have a per-person daily cap; the owner has no limit; the owner reads use by campaign"
+        depends_on: [AD0]
+        owns:
+          - convex/lib/lorekeeper/caps.ts
+          - convex/lib/validators/lorekeeper.ts
+          - convex/tables/lorekeeper.ts
+          - convex/lorekeeperRun.ts
+          - convex/lorekeeperUsage.ts
+          - convex/adminLorekeeper.ts
+          - src/lib/lorekeeper/pricing.ts
+          - tests/convex/lorekeeper-budget.test.ts
+          - tests/convex/lorekeeper-caps.test.ts
+          - tests/convex/authz/admin-lorekeeper.entries.ts
+          - tests/convex/authz/admin-lorekeeper.test.ts
+          - docs/tasks/TASK-CONFIG-AD6.md
+        reads:
+          - convex/lib/appConfig.ts
+          - convex/lib/appOwner.ts
+          - docs/lorekeeper.md
+        acceptance:
+          - "Reuses the existing metering (lorekeeperUsage, reserve / reservePass / settle, costMicros): capLimits(ctx) reads appConfig.lorekeeper (monthlyUsd, dailyQuestions, dailyWebSearches, atLimit) over today's env vars and defaults; no second meter"
+          - "atLimit 'pause' = today's LOREKEEPER_CAP_DEPLOYMENT; 'gmOnly' lets callers with 'owner' on the campaign keep asking up to a hard ceiling of 120% of the limit; 'short' per Q20 default (Sonnet only, no Opus retry, no web pass, max_tokens halved, same 120% ceiling); the owner is never capped (isAppOwner)"
+          - "Widen lorekeeperUsage with webSearches? (number) on user-day rows; the web pass books one search and is skipped (answer kept) past dailyWebSearches"
+          - "adminLorekeeper: setLimit single-field intents (audited), useByCampaign { month } (campaign rows by_kind_period, bounded, joined to names); Authz class appOwner; existing lorekeeper tests pass; lint, typecheck, vitest pass"
+      - id: AD8
+        title: "Shared book library: upload and replace a book from the admin"
+        part: B
+        size: M
+        mode: add
+        blocked_on: Q23
+        goal: "The owner uploads a new book or replaces one as a page-tagged text file; it is chunked by the existing chunker and the uploaded file is deleted after ingest; GMs keep switching books per campaign"
+        depends_on: [AD0]
+        owns:
+          - convex/adminLibrary.ts
+          - convex/adminLibraryIngest.ts
+          - tests/convex/admin-library.test.ts
+          - tests/convex/authz/admin-library.entries.ts
+          - tests/convex/authz/admin-library.test.ts
+          - docs/tasks/TASK-CONFIG-AD8.md
+        reads:
+          - convex/lorekeeperLibrary.ts
+          - src/lib/lorekeeper/chunk.ts
+          - scripts/lorekeeper-ingest.mjs
+          - convex/lib/files.ts
+          - docs/lorekeeper.md
+        acceptance:
+          - "adminLibrary.list (books with pages, chunks, ingested date); uploadUrl appOwnerMutation (rate-limited, rule 10); ingest appOwnerMutation { storageId, bookKey } checks the recorded type is text/plain and size <= 20 MB, deletes and returns { ok: false, code } otherwise, then schedules the internal ingest action"
+          - "The internal action reads the file, chunks it with src/lib/lorekeeper/chunk.ts, writes through the existing internal ingestBook / clearChunks / ingestChunks, then deletes the file (book text never stays in storage); no public function returns chunk text"
+          - "Q23 default allows text/plain only on this owner-only path (rule 10's image allowlist is unchanged elsewhere); Authz class appOwner; lint, typecheck, vitest pass"
+      - id: AD9
+        title: "Feature switches server: modes, testers, the caller's features, one helper"
+        part: B
+        size: S
+        mode: add
+        blocked_on: Q25
+        goal: "The owner sets each feature to Off / Only me / Testers / Everyone; every client reads which features are on for them; server code asks one helper"
+        depends_on: [AD0]
+        owns:
+          - convex/features.ts
+          - convex/lib/features.ts
+          - src/lib/admin/features.ts
+          - tests/convex/features.test.ts
+          - tests/convex/authz/admin-features.entries.ts
+          - tests/convex/authz/admin-features.test.ts
+          - docs/tasks/TASK-CONFIG-AD9.md
+        reads:
+          - convex/lib/appOwner.ts
+          - convex/lib/adminAudit.ts
+        acceptance:
+          - "FEATURES (Q25 default): dice3d, phoneLayout, lorekeeperWeb, spriteTokens; no combat HUD, no Journal, Share links added only when built; a missing row = 'everyone' (what ships today stays on)"
+          - "features.mine maybeUserQuery returns the on/off record for the caller (anonymous = everyone-mode features only); features.list / setMode appOwner (audited, changedAt shown); featureOn(ctx, user, key) in convex/lib/features.ts is the only server check"
+          - "Authz entries; lint, typecheck, vitest pass"
+      - id: AD10
+        title: "Maintenance server: read-only mode enforced on every write, banner status, key and connection status, backups info"
+        part: B
+        size: M
+        mode: add
+        blocked_on: Q31
+        goal: "With read-only on, every public mutation and action refuses with READ_ONLY_MODE except the owner's and the allowed bookkeeping; everyone reads the banner; the owner reads which keys are set (never their values) and where backups live"
+        depends_on: [AD0]
+        owns:
+          - convex/lib/functions.ts
+          - convex/appStatus.ts
+          - convex/adminMaintenance.ts
+          - tests/convex/read-only-mode.test.ts
+          - tests/convex/authz/admin-maintenance.entries.ts
+          - tests/convex/authz/admin-maintenance.test.ts
+          - docs/tasks/TASK-CONFIG-AD10.md
+        reads:
+          - convex/lib/appOwner.ts
+          - convex/convex.config.ts
+          - convex/auth.config.ts
+        acceptance:
+          - "Every mutation wrapper (user, keyed user, campaign, gm, creator) and userAction reads appStatus once and throws READ_ONLY_MODE when on, unless the caller is the owner or the wrapper option readOnly: 'allow' is set (only markOpened and presence.beat, Q31 default); a test walks the inventory of public mutations and checks each refuses (sample per wrapper) so a new wrapper can't skip it"
+          - "appStatus.get maybeUserQuery { readOnly, message } for everyone, signed out included; adminMaintenance.setReadOnly { on, message <= 200 } audited"
+          - "adminMaintenance.keys returns booleans only: anthropicKey, resendKey + mailFrom, siteUrl, google (AUTH_GOOGLE_ID / SECRET present); 'database' = true when the query runs; a test asserts no returned string equals any env value"
+          - "Backups (Q29 default): Convex has no function-callable backup API; adminMaintenance.backups returns the Convex dashboard link for this deployment (from CONVEX_CLOUD_URL) and says 'Backups are managed in the Convex dashboard'; no fake 'last backup' time"
+          - "lint, typecheck, vitest pass"
+      - id: AD11
+        title: "Export everything as JSON (owner only, temporary authenticated download)"
+        part: B
+        size: M
+        mode: add
+        blocked_on: Q30
+        goal: "The owner exports every campaign, character and note as one JSON file, downloaded through an authenticated route and deleted after an hour; secrets and book text are never in it"
+        depends_on: [AD0]
+        owns:
+          - convex/adminExport.ts
+          - convex/http.ts
+          - tests/convex/admin-export.test.ts
+          - tests/convex/authz/admin-export.entries.ts
+          - tests/convex/authz/admin-export.test.ts
+          - docs/tasks/TASK-CONFIG-AD11.md
+        reads:
+          - convex/schema.ts
+          - convex/tables/**
+          - convex/lib/appOwner.ts
+        acceptance:
+          - "adminExport.start appOwnerMutation creates an adminExports row and schedules an internal action that pages every exported table with internal queries (batches, no .collect of a growing table), writes one JSON file to storage and records fileId; adminExport.status appOwnerQuery"
+          - "Excluded tables are listed in code and tested: every auth* table, lorekeeperChunks, operations results, rate limiter state; storage files are referenced by id only"
+          - "Download through an httpAction in http.ts that checks the bearer identity is the owner (never a getUrl link, CF18); the row and file expire after 1 hour (AD0's cron)"
+          - "lint, typecheck, vitest pass"
+  # ------------------------------------------------------------------ wave 7: admin UI and wiring
+  - wave: 7
+    tracers:
+      - id: AD7
+        title: "Email the owner at 80% of the monthly Lorekeeper limit"
+        part: B
+        size: S
+        mode: add
+        goal: "When the month's spend first reaches 80% of the limit and 'Email me at 80%' is on, the owner gets one email that month"
+        depends_on: [AD6]
+        owns:
+          - convex/lib/lorekeeper/caps.ts
+          - convex/spendAlert.ts
+          - tests/convex/spend-alert.test.ts
+          - docs/tasks/TASK-CONFIG-AD7.md
+        reads:
+          - convex/lib/inviteEmail.ts
+          - convex/lib/authEmail.ts
+          - convex/lib/appConfig.ts
+        acceptance:
+          - "settle / reserve detect the crossing in the same mutation, set appConfig.spendAlertMonth and schedule internal.spendAlert.send (Resend, the owner's verified email, no key in logs); a second crossing in the month sends nothing; fake mode on e2e sends nothing"
+          - "lint, typecheck, vitest pass"
+      - id: AU1
+        title: "Admin UI: Overview tab"
+        part: B
+        size: S
+        mode: add
+        goal: "The Overview tab shows the four stat tiles, alerts, the campaigns card and Recent changes as the design draws them"
+        depends_on: [AD1, AD2]
+        owns:
+          - src/components/admin/overview/**
+          - tests/unit/admin/overview.test.tsx
+          - docs/tasks/TASK-CONFIG-AU1.md
+        reads:
+          - reference/designs/config/Admin.dc.html
+          - convex/adminOverview.ts
+        acceptance:
+          - "Tiles 'Accounts N · 1 owner · n GM · n players', 'Campaigns N of M allowed', 'Lorekeeper questions N this month', 'Lorekeeper spend $x of $y this month'; alerts with their text (e.g. '<name> is at 27 of 30 Lorekeeper questions today'); campaigns rows; 'Recent changes · Every change on this page is logged with who made it.' paginated"
+          - "Error boundary per card; lint, typecheck, tests pass"
+      - id: AU2
+        title: "Admin UI: Accounts tab"
+        part: B
+        size: S
+        mode: add
+        goal: "The Accounts tab sets who can join and the four caps with steppers, and lists accounts with roles, campaigns, last seen and the row menu"
+        depends_on: [AD1, AD3]
+        owns:
+          - src/components/admin/accounts/**
+          - tests/unit/admin/accounts.test.tsx
+          - docs/tasks/TASK-CONFIG-AU2.md
+        reads:
+          - reference/designs/config/Admin.dc.html
+          - convex/adminAccounts.ts
+        acceptance:
+          - "'Who can join' section: New accounts (Invite link only / Open sign-up / Closed), steppers Campaigns per GM ('Archived campaigns don't count.'), Campaigns in the whole app ('New campaigns are refused past this.'), Characters per player in a campaign ('Includes retired characters.'), Players per campaign; no 'Who can create a campaign', no 'Waiting for you'"
+          - "Account table (Account / Role / Campaigns / Last seen / Actions) paginated; '···' = Add to testers / Remove from testers (Q28 default); lint, typecheck, tests pass"
+      - id: AU3
+        title: "Admin UI: Lorekeeper tab, and the GM's raise-limits row in campaign settings"
+        part: B
+        size: M
+        mode: add
+        blocked_on: Q21
+        goal: "The Lorekeeper tab shows the budget, the at-limit choice, the 80% email switch, per-person limits, 'Let GMs raise limits for their own table', use by campaign and the book library with Upload / Replace"
+        depends_on: [AD1, AD6, AD8]
+        owns:
+          - src/components/admin/lorekeeper/**
+          - src/components/config/sections/lorekeeper/limits.tsx
+          - tests/unit/admin/lorekeeper.test.tsx
+          - docs/tasks/TASK-CONFIG-AU3.md
+        reads:
+          - reference/designs/config/Admin.dc.html
+          - convex/adminLorekeeper.ts
+          - convex/adminLibrary.ts
+        acceptance:
+          - "Budget card (spend and questions this month, monthly limit stepper 'Resets on the 1st.', When the limit is reached: Pause the Lorekeeper / GMs only / Shorter answers, Email me at 80%); Limits per person (Questions per day 'For each player and GM. You have no limit.', Internet searches per day); GMs-raise switch per Q21; Use by campaign; Book library rows with Replace and 'Upload a book'"
+          - "limits.tsx is the GM-side row the Q21 answer needs (rendered only when the switch is on); lint, typecheck, tests pass"
+      - id: AU4
+        title: "Admin UI: Feature switches tab and the tester list"
+        part: B
+        size: S
+        mode: add
+        goal: "The Feature switches tab shows each feature with its description, 'Changed <date>' and the four-way choice, and the Testers card with Edit"
+        depends_on: [AD1, AD9, AD3]
+        owns:
+          - src/components/admin/features/**
+          - tests/unit/admin/features.test.tsx
+          - docs/tasks/TASK-CONFIG-AU4.md
+        reads:
+          - reference/designs/config/Admin.dc.html
+          - convex/features.ts
+          - convex/adminAccounts.ts
+        acceptance:
+          - "Intro 'Turn new parts of the app on for yourself first, then testers, then everyone. Nothing is lost when a feature is off.'; one row per FEATURES entry (no combat HUD row); Testers card lists testers, Edit opens a picker over the account table"
+          - "lint, typecheck, tests pass"
+      - id: AU5
+        title: "Admin UI: Maintenance tab and the read-only banner everywhere"
+        part: B
+        size: S
+        mode: add
+        goal: "The Maintenance tab sets read-only mode and its banner message, shows backups, Export and key status; while read-only every page (sign-in included) shows the banner and write buttons explain why they fail"
+        depends_on: [AD1, AD10, AD11]
+        owns:
+          - src/components/admin/maintenance/**
+          - src/components/read-only-banner.tsx
+          - src/app/(gm)/layout.tsx
+          - src/app/signin/page.tsx
+          - src/lib/convex-errors.ts
+          - tests/unit/admin/maintenance.test.tsx
+          - tests/e2e/read-only-mode.spec.ts
+          - docs/tasks/TASK-CONFIG-AU5.md
+        reads:
+          - reference/designs/config/Admin.dc.html
+          - convex/appStatus.ts
+          - convex/adminMaintenance.ts
+          - convex/adminExport.ts
+        acceptance:
+          - "Maintenance mode card ('Read-only for everyone', banner message field), Backups card per AD10 (dashboard link, no fake time), Export card (Export -> status -> Download), Keys and connections (Set / Missing / Connected only) with 'Keys are never shown or changed here. Change them in the deployment settings.'"
+          - "read-only-banner.tsx reads appStatus.get; READ_ONLY_MODE maps to the banner message in convex-errors; e2e: owner turns read-only on, a player's write shows the message, the owner can still write and turn it off"
+          - "lint, typecheck, tests pass"
+      - id: AU6
+        title: "App admin link in Preferences (owner only)"
+        part: B
+        size: S
+        mode: add
+        goal: "The owner's Preferences popover shows 'App admin · Limits, costs and feature switches · only you' linking to /admin; nobody else sees it"
+        depends_on: [AD0]
+        owns:
+          - src/components/config/prefs/admin-link.tsx
+          - tests/unit/config/admin-link.test.tsx
+          - docs/tasks/TASK-CONFIG-AU6.md
+        reads:
+          - convex/appAdmin.ts
+          - src/components/config/slots.ts
+        acceptance:
+          - "Reads appAdmin.me; renders in S1's App admin slot only when isOwner; lint, typecheck, tests pass"
+      - id: AF1
+        title: "Feature switches take effect: 3D dice, phone layout, Lorekeeper internet search, sprite tokens"
+        part: B
+        size: M
+        mode: add
+        blocked_on: Q25
+        goal: "A feature switched off for a user is off for them on the server where there is server code and in the client everywhere: no 3D dice, the tablet layout instead of the phone layout, no internet search, portraits instead of sprites"
+        depends_on: [AD9]
+        owns:
+          - src/lib/use-feature.ts
+          - src/components/party/dice/settings.ts
+          - src/components/combat-map/hud/phone/**
+          - src/components/lorekeeper/composer/**
+          - convex/lorekeeperRun.ts
+          - tests/unit/use-feature.test.tsx
+          - tests/convex/feature-gating.test.ts
+          - docs/tasks/TASK-CONFIG-AF1.md
+        reads:
+          - convex/features.ts
+          - convex/lib/features.ts
+          - convex/spritePacks.ts
+          - src/components/combat-map/tokens/**
+        acceptance:
+          - "useFeature(key) reads features.mine (loading = on, so nothing flickers off for everyone); dice3d off forces 3D off whatever Preferences say; phoneLayout off renders the tablet layout under 600 px; lorekeeperWeb off hides the toggle and lorekeeperRun skips the web pass (featureOn); spriteTokens off draws portraits (the token renderer file is named in the task doc and owned by amending this tracer if needed)"
+          - "lint, typecheck, tests pass"
+  # ------------------------------------------------------------------ wave 8: Part B close
+  - wave: 8
+    tracers:
+      - id: AX
+        title: "Part B close: superadmin e2e, docs from env to admin, dcm-cd8 closed"
+        part: B
+        size: S
+        mode: add
+        goal: "A browser spec proves no one but the owner reaches the admin page or any admin function, the docs say where each limit now lives, and the creation-cap bead is closed"
+        depends_on: [AU1, AU2, AU3, AU4, AU5, AU6, AF1, AD4, AD5a, AD5b, AD7]
+        owns:
+          - tests/e2e/admin-superadmin.spec.ts
+          - tests/e2e/a11y-admin.spec.ts
+          - docs/lorekeeper.md
+          - docs/deploy.md
+          - docs/tasks/TASK-CONFIG-AX.md
+        reads:
+          - convex/appAdmin.ts
+          - convex/adminSetup.ts
+        acceptance:
+          - "admin-superadmin.spec.ts: a GM and a player get 'Not found' at /admin and FORBIDDEN from a direct call of each admin function; the owner sees every tab; axe on every tab"
+          - "docs/lorekeeper.md and docs/deploy.md: limits and caps move from env to App admin (env stays the fallback), how to set the owner (npx convex run adminSetup:setOwner), what the export contains and excludes"
+          - "Full e2e suite green; lint, typecheck, tests pass"

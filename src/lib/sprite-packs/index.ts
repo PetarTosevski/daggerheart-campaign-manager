@@ -10,4 +10,5 @@ export * from "./catalog";
 export * from "./mapping";
 export * from "./pick-setting";
 export * from "./manifest";
+export * from "./manifest-schema";
 export * from "./traits";

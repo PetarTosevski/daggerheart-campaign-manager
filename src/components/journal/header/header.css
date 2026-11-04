@@ -1,0 +1,258 @@
+/* Journal header actions (JH): live chip, Start, tome, Open threads, the Start / End report. Tokens: ../journal.css. */
+.jh {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: 100%;
+}
+.jh-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.jh-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 3px 4px 3px 16px;
+  border: 1px solid #2c4a3a;
+  border-radius: 999px;
+  background: #0b1214;
+  color: var(--jr-text);
+  font-size: 14px;
+}
+.jh-chip-text strong {
+  font-weight: 700;
+}
+.jh-chip-text span {
+  color: var(--jr-muted);
+}
+.jh-dot {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--jr-live);
+  box-shadow: 0 0 8px var(--jr-live);
+}
+.jh-dot-off {
+  background: #6b7f84;
+  box-shadow: none;
+}
+.jh-end,
+.jh-menu-btn {
+  min-height: 44px;
+  border: 1px solid var(--jr-border);
+  border-radius: 999px;
+  background: #121b1f;
+  color: var(--jr-text);
+  font-size: 14px;
+  cursor: pointer;
+}
+.jh-end {
+  padding: 0 16px;
+}
+.jh-end:hover,
+.jh-menu-btn:hover {
+  border-color: var(--jr-acc);
+  background: var(--jr-hover);
+}
+.jh-end:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.jh-end:focus-visible,
+.jh-menu-btn:focus-visible,
+.jh-tome:focus-visible,
+.jh-threads:focus-visible,
+.jh-dismiss:focus-visible {
+  outline: 2px solid var(--jr-acc);
+  outline-offset: 2px;
+}
+.jh-menu {
+  position: relative;
+}
+.jh-menu-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  padding: 0;
+}
+.jh-menu-btn svg {
+  width: 18px;
+  height: 18px;
+}
+.jh-menu-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  width: min(320px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border: 1px solid var(--jr-border);
+  border-radius: 12px;
+  background: var(--jr-card);
+  box-shadow: 0 16px 32px -12px rgba(0, 0, 0, 0.7);
+}
+.jh-menu-panel[hidden] {
+  display: none;
+}
+.jh-switch {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  min-height: 44px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.jh-switch input,
+.jh-dialog .ss-live-wither input {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  margin-top: 2px;
+  accent-color: var(--jr-acc);
+}
+.jh-hint {
+  display: block;
+  margin-top: 4px;
+  color: var(--jr-muted);
+  font-size: 13px;
+}
+.jh-start {
+  min-height: 48px;
+}
+.jh-tome {
+  display: inline-grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 1.5px solid var(--jr-acc);
+  border-radius: 999px;
+  background: #0b1214;
+  color: var(--jr-text);
+  cursor: pointer;
+}
+.jh-tome:hover {
+  background: var(--jr-acc-bg);
+}
+.jh-tome svg {
+  width: 18px;
+  height: 18px;
+}
+.jh-threads {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 8px 0 18px;
+  border: 1px solid #4a3d73;
+  border-radius: 999px;
+  background: #1c1530;
+  color: #e4dcff;
+  font-size: 15px;
+  cursor: pointer;
+}
+.jh-threads:hover {
+  background: #261d42;
+}
+.jh-threads svg {
+  width: 17px;
+  height: 17px;
+  color: #c8b8ff;
+}
+.jh-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #c9b5ff;
+  color: #1c1530;
+  font-size: 13px;
+  font-weight: 700;
+}
+.jh-report-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 560px;
+}
+.jh-report[data-shown="true"] {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  border: 1px solid #2c4a3a;
+  border-radius: 12px;
+  background: var(--jr-live-bg);
+  color: var(--jr-live-text);
+  font-size: 14px;
+}
+.jh-link {
+  color: var(--jr-acc);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.jh-dismiss {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--jr-muted);
+  cursor: pointer;
+}
+.jh-dismiss:hover {
+  background: var(--jr-hover);
+}
+.jh-dismiss svg {
+  width: 16px;
+  height: 16px;
+}
+.jh-error {
+  margin: 0;
+  color: var(--jr-danger);
+  font-size: 14px;
+}
+.jh-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-size: 16px;
+  color: #c9d2cf;
+}
+.jh-dialog .ss-live-wither {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  min-height: 44px;
+  cursor: pointer;
+}
+.jh-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* Phone: the actions sit under the title, left aligned. */
+@media (max-width: 720px) {
+  .jh {
+    align-items: flex-start;
+  }
+  .jh-row {
+    justify-content: flex-start;
+  }
+  .jh-menu-panel {
+    right: auto;
+    left: 0;
+  }
+}

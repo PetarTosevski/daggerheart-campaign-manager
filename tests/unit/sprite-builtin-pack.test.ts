@@ -10,12 +10,14 @@ import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { BUILTIN_LOOKUP, BUILTIN_MANIFEST, builtinSpriteUrl } from "../../src/lib/sprite-packs/builtin";
-import { CATALOG, CATALOG_ENTRIES } from "../../src/lib/sprite-packs/catalog";
-import { builtinManifestSchema, type ManifestFile } from "../../src/lib/sprite-packs/manifest";
+import { BUILTIN_LOOKUP, builtinManifest, builtinSpriteUrl } from "../../src/lib/sprite-packs/builtin";
+import { CATALOG, catalogEntries } from "../../src/lib/sprite-packs/catalog";
+import type { ManifestFile } from "../../src/lib/sprite-packs/manifest";
+import { builtinManifestSchema } from "../../src/lib/sprite-packs/manifest-schema";
 import { activeOverride, loadOverrides } from "../../scripts/sprite-packs/lib/overrides";
 import { stripMagentaFrame, untint } from "../../scripts/sprite-packs/lib/pipeline";
 
+const BUILTIN_MANIFEST = builtinManifest();
 const ROOT = resolve(__dirname, "../..");
 const PUBLIC = join(ROOT, "public/sprite-packs");
 const KB = 1024;
@@ -60,13 +62,13 @@ describe("built-in sprite manifest", () => {
 
   it("has a file for every catalog item (or lists it as known missing)", () => {
     const have = new Set(sprites.map((s) => s.key));
-    const missing = CATALOG_ENTRIES.filter((e) => !have.has(e.key)).map((e) => e.key);
+    const missing = catalogEntries().filter((e) => !have.has(e.key)).map((e) => e.key);
     expect(missing).toEqual(KNOWN_MISSING);
-    for (const e of CATALOG_ENTRIES) if (have.has(e.key)) expect(BUILTIN_LOOKUP.get(e.key)?.art).not.toBeNull();
+    for (const e of catalogEntries()) if (have.has(e.key)) expect(BUILTIN_LOOKUP.get(e.key)?.art).not.toBeNull();
   });
 
   it("keeps catalog order within each folder", () => {
-    const order = new Map(CATALOG_ENTRIES.map((e, i) => [e.key, i]));
+    const order = new Map(catalogEntries().map((e, i) => [e.key, i]));
     for (const list of Object.values(BUILTIN_MANIFEST.folders)) {
       const idx = list.map((s) => order.get(s.key) ?? -1);
       expect(idx).toEqual([...idx].sort((a, b) => a - b));
@@ -132,7 +134,7 @@ describe("public/sprite-packs", () => {
 
 describe("the village extra sheet (tracer P4V)", () => {
   it("holds nine sprites from town-street-and-market/large-2", () => {
-    const village = CATALOG_ENTRIES.filter((e) => e.extraSheet === "large-2" && e.key.startsWith("town-street-and-market/")).map((e) => e.key);
+    const village = catalogEntries().filter((e) => e.extraSheet === "large-2" && e.key.startsWith("town-street-and-market/")).map((e) => e.key);
     expect(village).toHaveLength(9);
     for (const key of village) expect(BUILTIN_LOOKUP.get(key)?.art, key).not.toBeNull();
   });
@@ -154,7 +156,7 @@ describe("the village extra sheet (tracer P4V)", () => {
 describe("batch 2 (tracer P11Z)", () => {
   it("holds 1169 sprites: 580 primary, the village's 9 and batch 2's 580 (props-2, large-2 / large-3, terrain-2)", () => {
     expect(sprites).toHaveLength(1169);
-    const batch2 = CATALOG_ENTRIES.filter(
+    const batch2 = catalogEntries().filter(
       (e) => e.extraSheet !== undefined && !(e.extraSheet === "large-2" && e.key.startsWith("town-street-and-market/")),
     );
     expect(batch2).toHaveLength(580);

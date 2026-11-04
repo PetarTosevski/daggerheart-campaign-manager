@@ -4,6 +4,7 @@
 
 import { z } from "zod";
 
+import { distanceKm, type MapScale } from "../../domain/travel/index";
 import { RuleError } from "../../errors/app-error";
 
 export const SETTLEMENT_MAX = 60;
@@ -16,10 +17,17 @@ export const BRANCH_HOPE_REMINDER = "All Enduring present gain 3 Hope.";
 
 export const MAX_PYRES = 200;
 
+/** Vicinity of a Sacred Pyre for the automatic "at a pyre" (dcm-bxp.18, user 2026-10-30): default 1 km, GM-set per campaign. */
+export const DEFAULT_VICINITY_KM = 1;
+export const MIN_VICINITY_KM = 0.1;
+export const MAX_VICINITY_KM = 1000;
+
 const pyreSchema = z.object({
   id: z.string(),
   settlement: z.string(),
   lit: z.boolean(),
+  /** Optional link to a World map marker (`MapToken.id`), dcm-bxp.18. Widened: older pyres have none. */
+  tokenId: z.number().int().min(1).optional(),
 });
 export type Pyre = z.infer<typeof pyreSchema>;
 
@@ -42,7 +50,17 @@ export const umbraStateSchema = z.object({
   pyres: z.array(pyreSchema).max(MAX_PYRES),
   nextPyreId: z.number().int().min(1),
   blessedBranches: z.number().int().min(0),
+  /** The GM's checkbox; it decides "at a pyre" while `atPyreMode` is "gm". */
   atPyre: z.boolean(),
+  /**
+   * dcm-bxp.18: "auto" derives "at a pyre" from the map (the party marker
+   * within `vicinityKm` of a lit linked pyre's marker); "gm" uses the
+   * checkbox. Widened: unset reads as "gm" when the box is ticked, else "auto"
+   * (`atPyreMode`).
+   */
+  atPyreMode: z.enum(["auto", "gm"]).optional(),
+  /** Widened: unset is DEFAULT_VICINITY_KM. */
+  vicinityKm: z.number().min(MIN_VICINITY_KM).max(MAX_VICINITY_KM).optional(),
   log: z.array(lurkingRollSchema),
 });
 export type UmbraState = z.infer<typeof umbraStateSchema>;
@@ -77,6 +95,52 @@ export function addPyre(state: UmbraState, settlement: string, lit: boolean): { 
     state: { ...state, pyres: [...state.pyres, { id: pyreId, settlement, lit }], nextPyreId: state.nextPyreId + 1 },
     pyreId,
   };
+}
+
+/** Whether the checkbox or the map decides "at a pyre" (an older state with the box ticked is the GM's choice). */
+export function atPyreMode(state: Pick<UmbraState, "atPyre" | "atPyreMode">): "auto" | "gm" {
+  return state.atPyreMode ?? (state.atPyre ? "gm" : "auto");
+}
+
+export const vicinityKm = (state: Pick<UmbraState, "vicinityKm">) => state.vicinityKm ?? DEFAULT_VICINITY_KM;
+
+/** The GM ticks or clears the checkbox (`atPyre` a boolean), or hands the decision back to the map (null). */
+export function setAtPyreChoice(state: UmbraState, atPyre: boolean | null): UmbraState {
+  return atPyre === null ? { ...state, atPyre: false, atPyreMode: "auto" } : { ...state, atPyre, atPyreMode: "gm" };
+}
+
+export function setVicinity(state: UmbraState, km: number): UmbraState {
+  if (!Number.isFinite(km) || km < MIN_VICINITY_KM || km > MAX_VICINITY_KM) {
+    throw new RuleError("TRACKER_RULE", `The vicinity is ${MIN_VICINITY_KM} to ${MAX_VICINITY_KM} km.`);
+  }
+  return { ...state, vicinityKm: Math.round(km * 10) / 10 };
+}
+
+/** Links a pyre to a World map marker, or unlinks it (null). The caller checks the marker exists. */
+export function linkPyre(state: UmbraState, id: string, tokenId: number | null): UmbraState {
+  const { id: pyreId, settlement, lit } = findPyre(state, id);
+  const next: Pyre = tokenId === null ? { id: pyreId, settlement, lit } : { id: pyreId, settlement, lit, tokenId };
+  return { ...state, pyres: state.pyres.map((p) => (p.id === id ? next : p)) };
+}
+
+type Point = { x: number; y: number };
+
+/**
+ * "In the vicinity of a Sacred Pyre" on the map (user 2026-10-30): the party
+ * marker within `km` of the marker of a lit pyre linked to one. Markers no
+ * longer on the map are ignored.
+ */
+export function partyNearLitPyre(pyres: readonly Pyre[], markers: ReadonlyMap<number, Point>, party: Point, scale: MapScale, km: number): boolean {
+  return pyres.some((p) => {
+    if (!p.lit || p.tokenId === undefined) return false;
+    const at = markers.get(p.tokenId);
+    return at !== undefined && distanceKm(party, at, scale) <= km;
+  });
+}
+
+/** Whether the party is at a Sacred Pyre: the GM's checkbox, or the map (`near`) in automatic mode. */
+export function effectiveAtPyre(state: Pick<UmbraState, "atPyre" | "atPyreMode">, near: boolean): boolean {
+  return atPyreMode(state) === "gm" ? state.atPyre : near;
 }
 
 export const renamePyre = (state: UmbraState, id: string, settlement: string) => withPyre(state, id, { settlement });
@@ -147,9 +211,9 @@ export function resolveLurking(
   return { gmRoll, watchRoll, result, outcome: lurkingOutcome(result) };
 }
 
-/** "When the party finishes a short or long rest while not in the vicinity of a Sacred Pyre" (p.289). */
-export function assertCanRollLurking(state: UmbraState): void {
-  if (state.atPyre) throw new RuleError("TRACKER_RULE", "The party rests at a Sacred Pyre: the Lurking Darkness can't reach them.");
+/** "When the party finishes a short or long rest while not in the vicinity of a Sacred Pyre" (p.289). `near`: the map's answer (`partyNearLitPyre`). */
+export function assertCanRollLurking(state: UmbraState, near = false): void {
+  if (effectiveAtPyre(state, near)) throw new RuleError("TRACKER_RULE", "The party rests at a Sacred Pyre: the Lurking Darkness can't reach them.");
 }
 
 export function logLurking(state: UmbraState, entry: LurkingRoll): UmbraState {

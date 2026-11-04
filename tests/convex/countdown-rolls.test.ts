@@ -290,13 +290,13 @@ describe("countdown rolls: automatic ticks (Q1, D2-D4, D6)", () => {
   });
 
   it("undoing a roll takes back the ticks it caused, a trigger included (D11, Q5)", async () => {
-    const { p1, create, roll, row, undo, notices } = await setup();
+    const { gm, create, roll, row, undo, notices } = await setup();
     const id = await create({ startingValue: 1, repeat: "loop", armed: true });
     const other = await create({ startingValue: 5, armed: true });
     const { entryId } = await roll("successHope");
     expect(await row(id)).toMatchObject({ currentValue: 1, triggerCount: 1 });
     expect((await row(other)).currentValue).toBe(4);
-    await undo(p1, entryId);
+    await undo(gm, entryId);
     expect(await row(id)).toMatchObject({ currentValue: 1, status: "active" });
     expect((await row(id)).triggerCount).toBeUndefined();
     expect((await row(other)).currentValue).toBe(5);
@@ -359,7 +359,7 @@ describe("countdown rolls: the feed button (Q1 (c), D5)", () => {
     expect(await codeOf(apply(gm, reaction.entryId, [id]))).toBe("INVALID");
 
     const undone = await roll("successHope");
-    await undo(p1, undone.entryId);
+    await undo(gm, undone.entryId);
     expect(await codeOf(preview(gm, undone.entryId))).toBe("INVALID");
     expect(await codeOf(apply(gm, undone.entryId, [id]))).toBe("INVALID");
 
@@ -404,17 +404,17 @@ describe("countdown rolls: the feed button (Q1 (c), D5)", () => {
   });
 
   it("undoing a roll takes back its feed ticks", async () => {
-    const { gm, p1, create, roll, value, apply, undo } = await setup();
+    const { gm, create, roll, value, apply, undo } = await setup();
     const id = await create({ startingValue: 4 });
     const { entryId } = await roll("successHope");
     await apply(gm, entryId, [id]);
     expect(await value(id)).toBe(3);
-    await undo(p1, entryId);
+    await undo(gm, entryId);
     expect(await value(id)).toBe(4);
   });
 
   it("a chase pair is one preview row, and applying either side ticks both by chaseTicks with one undo (K6, dcm-bxp.77)", async () => {
-    const { t, gm, p1, create, roll, value, apply, preview, undo, chase } = await setup();
+    const { t, gm, create, roll, value, apply, preview, undo, chase } = await setup();
     const solo = await create({ startingValue: 4 });
     const { p, r } = await chase(6, 3);
     await t.run(async (ctx) => {
@@ -441,7 +441,7 @@ describe("countdown rolls: the feed button (Q1 (c), D5)", () => {
     expect(new Set(ticks.map((k) => `${k.countdownId}:${k.source}`))).toEqual(new Set([`${r}:feed`, `${p}:feed`]));
     expect((await preview(gm, entryId)).countdowns[1]).toMatchObject({ ticked: true, partner: { ticked: true } });
     expect(await codeOf(apply(gm, entryId, [p]))).toBe("COUNTDOWN_RULE");
-    await undo(p1, entryId);
+    await undo(gm, entryId);
     expect([await value(p), await value(r)]).toEqual([6, 3]);
   });
 

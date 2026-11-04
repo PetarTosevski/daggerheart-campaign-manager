@@ -26,7 +26,7 @@ export type PendingTagTeam = { entryId: Id<"actionLog">; rolls: { characterId: I
  */
 export function TagTeam({ campaignId, character, disabled, pending }: { campaignId: Id<"campaigns">; character: CharacterView; disabled: boolean; pending: PendingTagTeam | null }) {
   const [open, setOpen] = useState(false);
-  const party = useQuery(api.characters.listByCampaign, open ? { campaignId } : "skip");
+  const party = useQuery(api.charactersReads.listByCampaign, open ? { campaignId } : "skip");
   const [partnerId, setPartnerId] = useState("");
   const [mine, setMine] = useState<TraitId>("agility");
   const [theirs, setTheirs] = useState<TraitId>("agility");

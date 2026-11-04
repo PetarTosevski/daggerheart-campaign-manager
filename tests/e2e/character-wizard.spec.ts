@@ -40,8 +40,8 @@ async function playerJoins(page: Page, browser: Browser, campaignName: string) {
 
 const next = (page: Page) => page.getByRole("button", { name: /^Next:/ }).click();
 
-/** Walks all nine steps with a Guardian and creates the character. */
-async function completeWizard(page: Page, characterName: string) {
+/** Walks all nine steps with a Guardian and creates the character; a Clank picks Bodyguard for Purposeful Design (DA11). */
+async function completeWizard(page: Page, characterName: string, ancestry: "Dwarf" | "Clank" = "Dwarf") {
   await expect(page.getByRole("heading", { level: 2, name: "Class & Subclass" })).toBeVisible();
   await expect(page.getByText("Still needed: a class")).toBeVisible();
   await page.getByRole("radio", { name: /^Guardian/ }).check();
@@ -49,7 +49,7 @@ async function completeWizard(page: Page, characterName: string) {
   await next(page);
 
   await expect(page.getByRole("heading", { level: 2, name: "Heritage" })).toBeFocused();
-  await page.getByRole("radio", { name: "Dwarf", exact: true }).check();
+  await page.getByRole("radio", { name: ancestry, exact: true }).check();
   await page.getByRole("radio", { name: "Ridgeborne", exact: true }).check();
   await next(page);
 
@@ -72,6 +72,14 @@ async function completeWizard(page: Page, characterName: string) {
   await page.getByLabel("First Experience").fill("Bodyguard");
   await page.getByRole("button", { name: "Soldier" }).click();
   await expect(page.getByLabel("Second Experience")).toHaveValue("Soldier");
+  if (ancestry === "Clank") {
+    // CB p.53: "choose one of your Experiences that best aligns with this purpose and gain a permanent +1 bonus to it."
+    await expect(page.getByText("Still needed: an Experience for Purposeful Design")).toBeVisible();
+    await page.getByRole("radio", { name: "Purposeful Design: Bodyguard" }).check();
+    await expect(page.getByLabel("Modifier +3")).toHaveCount(1);
+  } else {
+    await expect(page.getByRole("radio", { name: /^Purposeful Design/ })).toHaveCount(0);
+  }
   await next(page);
 
   const cards = page.getByRole("checkbox", { name: /^Choose / });
@@ -113,6 +121,17 @@ test("the GM creates a character for a player", async ({ page, browser }) => {
   await completeWizard(page, "Mira for the player");
   await expect(page).toHaveURL(new RegExp(`/campaigns/${campaignId}/party/(?!new$)[a-z0-9]+$`));
   await close();
+});
+
+test("a Clank picks its Purposeful Design Experience and the sheet shows the +1", async ({ page }) => {
+  const { campaignId } = await gmCreatesCampaign(page, "witherwild");
+  await page.goto(`/campaigns/${campaignId}/party/new`);
+  await completeWizard(page, "Cog the Clank", "Clank");
+  await expect(page).toHaveURL(new RegExp(`/campaigns/${campaignId}/party/(?!new$)[a-z0-9]+$`));
+  // Stored +2, shown +3 (DA11: the value is never bumped; the sheet adds the +1).
+  await expect(page.getByTestId("purposeful-design")).toContainText("Purposeful Design: +1 to Bodyguard");
+  await expect(page.getByLabel("Experience 1 modifier")).toHaveValue("+3");
+  await expect(page.getByLabel("Experience 2 modifier")).toHaveValue("+2");
 });
 
 test("Hope & Fear classes are hidden when the option is off", async ({ page }) => {

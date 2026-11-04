@@ -4,7 +4,7 @@ import { isSettingId, SETTING_LABEL, SETTINGS } from "../src/lib/sprite-packs/in
 import { appError } from "../src/lib/errors/app-error";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { liveCombatMap, loadCombatMap, objectsOnMap } from "./lib/combatMaps";
+import { CELL_TILE_ROWS, MAX_MAP_H, liveCombatMap, loadCombatMap, objectsOnMap } from "./lib/combatMaps";
 import { campaignQuery, gmMutation, gmQuery } from "./lib/functions";
 import { atLeast } from "./lib/permissions";
 import {
@@ -18,7 +18,7 @@ import {
   resolveSetting,
   type GmSprite,
 } from "./lib/spriteSources";
-import { mapStyleValidator, settingRefValidator, type SettingRef } from "./lib/validators/combatMaps";
+import { mapStyleValidator, settingRefValidator, spriteRefValidator, type SettingRef } from "./lib/validators/combatMaps";
 import { MAX_PACK_SPRITES, MAX_SPRITE_PACKS } from "./lib/validators/spritePacks";
 
 /**
@@ -61,6 +61,8 @@ const gmSourcesValidator = v.object({
   setting: settingRefValidator,
   /** Whether the GM picked it (false: Claude or the keyword picker chose, or nothing is stored yet). */
   settingPicked: v.boolean(),
+  /** dcm-bxp.86: a pack setting's built-in setting (`extends`), which unreferenced objects and terrains draw from; else null. */
+  extends: v.union(v.string(), v.null()),
   /** The setting's uploaded sprites (its own pack, or the packs extending the built-in setting) and every uploaded ref on the map. */
   sprites: v.array(gmSpriteValidator),
 });
@@ -70,6 +72,8 @@ const playerSourcesValidator = v.object({
   mapId: v.id("combatMaps"),
   style: mapStyleValidator,
   setting: settingRefValidator,
+  /** dcm-bxp.86: as the GM's. */
+  extends: v.union(v.string(), v.null()),
   /** Only the uploaded sprites the live map references (D10). */
   sprites: v.array(playerSpriteValidator),
 });
@@ -173,11 +177,11 @@ export const spriteSources = campaignQuery({
     }
     const objects = await objectsOnMap(ctx, map._id);
     const referenced = await resolveRefs(ctx, ctx.campaign._id, mapSpriteRefs(map, objects));
-    const { setting, pack, stored } = await resolveSetting(ctx, map);
+    const { setting, pack, stored, extends: extendsSetting } = await resolveSetting(ctx, map);
     if (!gm) {
       const sprites = [];
       for (const row of referenced.values()) sprites.push(await playerSpriteOf(ctx, row));
-      return { view: "player" as const, mapId: map._id, style: styleOf(map), setting, sprites };
+      return { view: "player" as const, mapId: map._id, style: styleOf(map), setting, extends: extendsSetting, sprites };
     }
     // The setting's packs: a pack setting is its own pack; a built-in setting gathers the packs that extend it (Q3).
     const packs = pack !== null ? [pack] : (await packsOf(ctx, ctx.campaign._id)).filter((p) => "builtin" in setting && p.extends === setting.builtin);
@@ -191,7 +195,48 @@ export const spriteSources = campaignQuery({
       style: styleOf(map),
       setting,
       settingPicked: stored && map.settingPicked === true,
+      extends: extendsSetting,
       sprites,
     };
+  },
+});
+
+/** Painted-cell tiles one layer of a map can hold (the tallest map). */
+const MAX_LAYER_TILES = Math.ceil(MAX_MAP_H / CELL_TILE_ROWS);
+
+/** A thumbnail's hand-painted cells (dcm-bxp.97): the painted terrain and texture tiles, with what decodes them. */
+const thumbnailValidator = v.object({
+  mapId: v.id("combatMaps"),
+  tiles: v.array(v.object({ layer: v.union(v.literal("terrain"), v.literal("texture")), tile: v.number(), cells: v.string() })),
+  texturePalette: v.array(spriteRefValidator),
+  /** As `spriteSources`: a pack setting's built-in setting, else null. */
+  extends: v.union(v.string(), v.null()),
+});
+
+/**
+ * GM: what a Maps card thumbnail draws on top of `combatMaps.list`'s layout (dcm-bxp.97): the map's hand-painted
+ * terrain and texture cells (`decodeCells` / `decodeTextureCells` on the client), the texture palette and, for a pack
+ * setting, the built-in setting it extends. One subscription per card, so painting one map re-sends only its
+ * thumbnail. Null when the map is not (or no longer) one of this campaign's maps. Uploaded textures are not resolved
+ * here: the thumbnail draws them as their Classic terrain (as before).
+ */
+export const thumbnail = gmQuery({
+  args: { mapId: v.string() },
+  returns: v.union(thumbnailValidator, v.null()),
+  handler: async (ctx, { mapId }) => {
+    const id = ctx.db.normalizeId("combatMaps", mapId);
+    const map = id === null ? null : await ctx.db.get("combatMaps", id);
+    if (map === null || map.campaignId !== ctx.campaign._id || map.source === "image") return null;
+    const layer = async (name: "terrain" | "texture") => {
+      const rows = await ctx.db
+        .query("combatMapCells")
+        .withIndex("by_map_layer_tile", (q) => q.eq("mapId", map._id).eq("layer", name))
+        .take(MAX_LAYER_TILES);
+      return rows.map((t) => ({ layer: name, tile: t.tile, cells: t.cells }));
+    };
+    const sprites = map.style === "sprites";
+    const tiles = [...(await layer("terrain")), ...(sprites ? await layer("texture") : [])];
+    const extendsSetting = sprites && map.setting !== undefined && "pack" in map.setting ? (await resolveSetting(ctx, map)).extends : null;
+    return { mapId: map._id, tiles, texturePalette: sprites ? (map.texturePalette ?? []) : [], extends: extendsSetting };
   },
 });

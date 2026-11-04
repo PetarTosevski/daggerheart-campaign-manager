@@ -4,6 +4,7 @@ import { readSheet, saveSheet } from "../../../convex/lib/characterSheet";
 import { PLACEABLE_KINDS } from "../../../src/components/combat-map/editor/edit-model";
 import type { Area, Entry, Outcome, Role, World } from "./harness";
 import { freshKey } from "./synth";
+import { imageBlob } from "../helpers";
 
 /**
  * Authz matrix: combat (combatMaps, combatMapEdit, combatMapGenerate, combatMapStyle, combatTokens, combatVision,
@@ -69,7 +70,7 @@ async function inReach(w: World) {
 
 /** A file stored directly (no upload URL), unclaimed: the `_storage` row synthesis uses. */
 async function storedFile(w: World) {
-  const storageId = await w.t.run((ctx) => ctx.storage.store(new Blob(["img"], { type: "image/png" })));
+  const storageId = await w.t.run((ctx) => ctx.storage.store(imageBlob("image/png")));
   // `use` is typed for user tables; synthesis looks the chosen id up before touching the table.
   w.use("_storage" as TableNames, storageId);
 }
@@ -80,7 +81,7 @@ async function imageMap(w: World) {
   const campaignId = w.campaignId;
   const gm = w.users.gm;
   await w.t.run(async (ctx) => {
-    const storageId = await ctx.storage.store(new Blob(["img"], { type: "image/png" }));
+    const storageId = await ctx.storage.store(imageBlob("image/png"));
     const fileId = await ctx.db.insert("files", { storageId, campaignId, uploadedBy: gm, kind: "combatMap", refId: mapId, createdAt: 0 });
     await ctx.db.patch(mapId, { source: "image", image: { fileId, grid: { cell: 40, offsetX: 0, offsetY: 0 } } });
   });
@@ -103,7 +104,7 @@ export async function sprites(w: World) {
   const first = await w.t.run(async (ctx) => {
     const ids = [];
     for (const [order, name] of ["Standing stone", "Cairn"].entries()) {
-      const storageId = await ctx.storage.store(new Blob(["img"], { type: "image/webp" }));
+      const storageId = await ctx.storage.store(imageBlob("image/webp"));
       const fileId = await ctx.db.insert("files", { storageId, campaignId, uploadedBy: gm, kind: "sprite", refId: "pending", createdAt: 0 });
       const spriteId = await ctx.db.insert("spritePackSprites", {
         campaignId,
@@ -187,11 +188,11 @@ const style: Entry[] = [
 ];
 
 const tokens: Entry[] = [
-  { fn: api.combatTokens.list, access: "gm" },
+  { fn: api.combatTokensReads.list, access: "gm" },
   // Players get the PC tokens only (never an adversary's stats); combat.test.ts checks the content.
-  { fn: api.combatTokens.party, access: "view", expect: { otherPlayer: "ok" } },
-  { fn: api.combatTokens.combatants, access: "gm" },
-  { fn: api.combatTokens.sessionEncounter, access: "gm" },
+  { fn: api.combatTokensReads.party, access: "view", expect: { otherPlayer: "ok" } },
+  { fn: api.combatTokensReads.combatants, access: "gm" },
+  { fn: api.combatTokensReads.sessionEncounter, access: "gm" },
   { fn: api.combatTokens.addParty, access: "gm" },
   // No running encounter in the world: the GM gets ENCOUNTER_NOT_RUNNING past the access check.
   { fn: api.combatTokens.placeAdversaries, access: "gm", args: () => ({ instanceIds: ["x"] }), okCodes: ["ENCOUNTER_NOT_RUNNING"] },
@@ -208,7 +209,42 @@ const tokens: Entry[] = [
   // The player moves and turns their own PC's token on the live map (another's: COMBAT_NOT_YOUR_TOKEN, combat.test.ts).
   { fn: api.combatTokens.move, access: "view", args: () => ({ x: 6, y: 10 }) },
   { fn: api.combatTokens.turn, access: "view", args: () => ({ angle: 1 }) },
+  // Lanes-2 E4: live map areas. Every member lists them; the caster's player (characterA) or the GM ends one; the GM damages one.
+  { fn: api.combatAreas.list, access: "view", args: (w) => ({ mapId: w.ids.mapId }) },
+  { fn: api.combatAreas.remove, access: "view", setup: liveArea, args: (w) => ({ areaId: w.ids.areaId }) },
+  { fn: api.combatAreas.damage, access: "gm", setup: liveArea, args: (w) => ({ areaId: w.ids.areaId, amount: 1 }) },
+  // Lanes-2 wave 9 AO: the GM draws an area by hand, moves and resizes one (Dark Cloud: the GM adjusts it, dcm-bxp.99.19.39).
+  {
+    fn: api.combatAreaEdits.draw,
+    access: "gm",
+    args: (w) => ({ mapId: w.ids.mapId, characterId: w.characterA, label: "Dark Cloud", shape: "circle", at: { x: 6, y: 10 }, blocksSight: true }),
+  },
+  { fn: api.combatAreaEdits.move, access: "gm", setup: liveArea, args: (w) => ({ areaId: w.ids.areaId, at: { x: 7, y: 10 } }) },
+  { fn: api.combatAreaEdits.resize, access: "gm", setup: liveArea, args: (w) => ({ areaId: w.ids.areaId, radius: "close" }) },
 ];
+
+/** Lanes-2 E4: a live area on the setup's map, drawn by characterA (a damageable circle, so the GM can damage it). */
+async function liveArea(w: World) {
+  const mapId = w.ids.mapId as Id<"combatMaps">;
+  const areaId = await w.t.run((ctx) =>
+    ctx.db.insert("combatAreas", {
+      campaignId: w.campaignId,
+      mapId,
+      featureId: "class:test:wild-fortress",
+      characterId: w.characterA,
+      label: "Wild Fortress",
+      shape: "circle",
+      centre: { kind: "square", x: 6, y: 10 },
+      damage: { major: 15, severe: 30, hpMax: 3, hp: 0 },
+      radius: "veryClose",
+      blocksSight: false,
+      expires: "scene",
+      status: "active",
+      createdAt: Date.now(),
+    }),
+  );
+  w.set("areaId", areaId);
+}
 
 const vision: Entry[] = [
   // The player's own character's view of the live map; the other player's of theirs; the GM has no token (noCharacter).
@@ -216,11 +252,14 @@ const vision: Entry[] = [
   { fn: api.combatVision.previewAs, access: "gm" },
   { fn: api.combatVision.explored, access: "view" },
   { fn: api.combatVision.markExplored, access: "view", args: () => ({ bits: "" }) },
+  // Spotlight-seen (user 2026-11-03): the setup's custom enemy is no adversary, so nothing is recorded; access only.
+  { fn: api.combatVision.markSeen, access: "view", args: (w) => ({ tokenIds: [w.ids.customTokenId] }) },
   { fn: api.combatVision.forgetExplored, access: "gm" },
   { fn: api.combatVision.revealTo, access: "gm", args: (w) => ({ tokenId: w.ids.customTokenId }) },
   { fn: api.combatVision.unrevealTo, access: "gm", args: (w) => ({ tokenId: w.ids.customTokenId }) },
   { fn: api.combatVision.setCarriedLight, access: "view", args: () => ({ light: "torch" }) },
   { fn: api.combatVision.toggleLight, access: "view", setup: inReach, args: (w) => ({ objectId: w.ids.campfireId, lit: false }) },
+  { fn: api.combatVision.setObjectLight, access: "gm", args: (w) => ({ objectId: w.ids.campfireId, light: "default" }) },
   // The player lists and switches only doors their character has seen (the setup's door is in view), from Melee (B4).
   { fn: api.combatVision.doors, access: "view", expect: { otherPlayer: "ok" } },
   { fn: api.combatVision.toggleDoor, access: "view", setup: inReach, args: () => ({ open: true }) },
@@ -354,7 +393,9 @@ const attacks: Entry[] = [
   { fn: api.combatActions.targets, access: "view", setup: arena, args: (w) => ({ characterId: w.characterA, mapId: w.ids.mapId }), expect: NOT_THEIRS },
   { fn: api.combatActions.pickMinions, access: "view", setup: attacked, args: (w) => ({ entryId: w.ids.entryId, instanceIds: [w.ids.packId] }), expect: NOT_THEIRS },
   { fn: api.combatRequests.sanction, access: "gm", setup: sanctioned, args: (w) => ({ requestId: w.ids.requestId, approve: false }) },
-  { fn: api.combatRequests.mine, access: "view", setup: sanctioned, expect: { otherPlayer: "ok" } },
+  { fn: api.combatRequestsReads.mine, access: "view", setup: sanctioned, expect: { otherPlayer: "ok" } },
+  // E1.4b (dcm-uxsd): the forced attacks on the caller's characters (another player's are left out: an empty list).
+  { fn: api.combatRequestsReads.forcedAttacks, access: "view", setup: arena, expect: { otherPlayer: "ok" } },
 ];
 
 /**
@@ -387,11 +428,11 @@ const cards: Entry[] = [
   // CA4b changed no access: kept dice and range origins act after the access check (combat-cards.test.ts).
   { fn: api.combatCards.useCard, access: "view", setup: holdingCards, args: (w) => cardArgs(w, w.ids.packToken!), expect: NOT_THEIRS },
   // F7-H4: another player reads the hand while hands are shared (the default); switch off / hidden: combat-cards-authz.test.ts.
-  { fn: api.combatCards.hand, access: "view", setup: holdingCards, args: (w) => ({ characterId: w.characterA }), expect: { otherPlayer: "ok" } },
-  { fn: api.combatCards.handSharing, access: "view", expect: { otherPlayer: "ok" } },
+  { fn: api.combatCardsReads.hand, access: "view", setup: holdingCards, args: (w) => ({ characterId: w.characterA }), expect: { otherPlayer: "ok" } },
+  { fn: api.combatCardsReads.handSharing, access: "view", expect: { otherPlayer: "ok" } },
   { fn: api.combatCards.setHandHidden, access: "view", args: (w) => ({ characterId: w.characterA, hidden: true }), expect: NOT_THEIRS },
   { fn: api.combatCards.sanction, access: "gm", setup: cardSanctioned, args: (w) => ({ requestId: w.ids.requestId, approve: false }) },
-  { fn: api.combatCards.pending, access: "view", setup: cardSanctioned, expect: { otherPlayer: "ok" } },
+  { fn: api.combatCardsReads.pending, access: "view", setup: cardSanctioned, expect: { otherPlayer: "ok" } },
 ];
 
 const area: Area = {

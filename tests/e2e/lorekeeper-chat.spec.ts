@@ -132,10 +132,31 @@ test("a player asks, stops an answer, keeps the history; the GM pins the unclear
     // The actions show once the retry has finished.
     await expect(hex.getByRole("button", { name: "Copy" })).toBeVisible({ timeout: 40_000 });
 
-    // 3. Stop (Q11): 'Ask' becomes 'Stop' while the answer streams; Stop ends it.
+    // LK2: scrolled up, 'Jump to latest' sits at the bottom-right of the log on a solid background, 44 px tall.
+    await log.evaluate((el) => (el.scrollTop = 0));
+    const jump = player.getByRole("button", { name: "Jump to latest" });
+    await expect(jump).toBeVisible();
+    const placed = await jump.evaluate((button) => {
+      const own = button.getBoundingClientRect();
+      const area = document.querySelector<HTMLElement>(".lk-stream")!.getBoundingClientRect();
+      const style = getComputedStyle(button);
+      return {
+        right: area.right - own.right < 40,
+        bottom: area.bottom - own.bottom < 40,
+        notCentred: own.left > area.left + area.width / 2,
+        tall: own.height >= 44,
+        solid: !/rgba\(.*,\s*0\)$|transparent/.test(style.backgroundColor),
+      };
+    });
+    expect(placed).toEqual({ right: true, bottom: true, notCentred: true, tall: true, solid: true });
+
+    // 3. Stop (Q11): 'Ask' becomes 'Stop' while the answer streams; Stop ends it. LK2: asking while scrolled up brings
+    // the log to the latest message.
     const box = composer.getByRole("textbox", { name: "Your question" });
     await box.fill("What happens when the twin dice match?");
     await box.press("Enter");
+    await expect(log.locator(".lk-q").filter({ hasText: "What happens when the twin dice match?" })).toBeInViewport();
+    await expect(jump).toBeHidden();
     await composer.getByRole("button", { name: "Stop" }).click();
     await expect(log.getByText("Stopped.")).toBeVisible();
     await expect(composer.getByRole("button", { name: "Ask" })).toBeVisible();
@@ -221,6 +242,62 @@ test("the composer at 390 px: one column, no sideways scroll, a new conversation
     await expect(confirm).toBeHidden();
     await column.getByRole("button", { name: "Conversations" }).click();
     await expect(mine.getByText("No conversations yet.")).toBeVisible();
+  } finally {
+    await table.close();
+  }
+});
+
+// LK3 (dcm-bxp.82.13, user 2026-10-29): the asker edits a sent question in place; nothing is answered while editing;
+// Save removes that question's answer and every later message and answers the edited text. Others see no Edit.
+test("a player edits an earlier question; the edit replaces from there and is answered anew", async ({ browser }) => {
+  const table = await gmAndPlayer(browser);
+  try {
+    const { player, gm, campaignId } = table;
+    await player.goto(`/campaigns/${campaignId}/lorekeeper`);
+    const { log, composer, answers } = chat(player);
+    await composer.getByRole("group", { name: "Internet search" }).getByRole("button", { name: "Books only" }).click();
+    await composer.getByRole("button", { name: "Critical hits" }).click();
+    await expect(answers.filter({ hasText: "From the rules" }).getByRole("button", { name: "Copy" })).toBeVisible();
+    const box = composer.getByRole("textbox", { name: "Your question" });
+    await box.fill("What happens when the twin dice match?");
+    await box.press("Enter");
+    await expect(answers).toHaveCount(2);
+    await expect(answers.nth(1).getByRole("button", { name: "Copy" })).toBeVisible();
+
+    // Edit mode: the text in place with Save / Cancel; no answer is asked for while editing.
+    const first = log.locator(".lk-q").first();
+    await first.getByRole("button", { name: "Edit question" }).click();
+    const edit = log.getByRole("textbox", { name: "Edit your question" });
+    await expect(edit).toHaveValue(/If my Hope and Fear dice match on an attack/);
+    await edit.fill("Two of us are Witches. Do our Hexes stack?");
+    await player.waitForTimeout(1500);
+    await expect(log.locator(".lk-thinking")).toHaveCount(0);
+    await expect(answers).toHaveCount(2);
+    await expect(log.locator(".lk-q")).toHaveCount(2);
+
+    // Save: the old answer and the later question and answer go; the edited question gets a new answer.
+    await log.getByRole("button", { name: "Save" }).click();
+    await expect(edit).toBeHidden();
+    await expect(log.locator(".lk-q")).toHaveCount(1);
+    await expect(log.locator(".lk-q").getByText("Two of us are Witches. Do our Hexes stack?")).toBeVisible();
+    await expect(log.getByText("What happens when the twin dice match?")).toHaveCount(0);
+    const hex = answers.filter({ hasText: "Rules unclear" });
+    await expect(hex.getByRole("button", { name: "Copy" })).toBeVisible({ timeout: 40_000 });
+    await expect(answers).toHaveCount(1);
+    await expect(answers.filter({ hasText: "From the rules" })).toHaveCount(0);
+
+    // A reload shows the same, edited conversation.
+    await player.reload();
+    await expect(chat(player).log.locator(".lk-q")).toHaveCount(1);
+    await expect(chat(player).answers.filter({ hasText: "Rules unclear" })).toBeVisible();
+
+    // The GM reads the shared conversation but cannot edit the player's question.
+    await gm.goto(`/campaigns/${campaignId}/lorekeeper`);
+    const gmChat = chat(gm);
+    await gmChat.column.getByRole("button", { name: "Conversations" }).click();
+    await gmChat.column.getByRole("region", { name: "Shared in the campaign" }).getByRole("button", { name: /Two of us are Witches/ }).click();
+    await expect(gmChat.answers.filter({ hasText: "Rules unclear" })).toBeVisible();
+    await expect(gmChat.log.getByRole("button", { name: "Edit question" })).toHaveCount(0);
   } finally {
     await table.close();
   }

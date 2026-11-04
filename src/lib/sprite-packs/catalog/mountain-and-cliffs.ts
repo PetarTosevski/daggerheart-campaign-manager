@@ -1,8 +1,8 @@
 // Built-in catalog: mountain and cliffs (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, long, obj, tex } from "./types";
+import { defineFolder, long, obj, tex, type FolderCatalog } from "./types";
 
-export const MOUNTAIN_AND_CLIFFS = defineFolder("mountain-and-cliffs", {
+export const MOUNTAIN_AND_CLIFFS = (): FolderCatalog => defineFolder("mountain-and-cliffs", {
   props: [
     obj("loose rocks", "cover", "low", "rubble", { move: "difficult" }),
     obj("mountain goat", "none", "low", "rock", { standIn: false }),

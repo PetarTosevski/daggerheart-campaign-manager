@@ -71,8 +71,8 @@ const area: Area = {
   nameHints: { entryId: (w) => w.ids.entryId },
   entries: [
     // ---------------------------------------------------------------- characters: party and creation
-    { fn: api.characters.listByCampaign, access: "view" },
-    { fn: api.characters.partySummary, access: "view", note: "PF9: the dashboard party cards; every member sees every card, like listByCampaign" },
+    { fn: api.charactersReads.listByCampaign, access: "view" },
+    { fn: api.charactersReads.partySummary, access: "view", note: "PF9: the dashboard party cards; every member sees every card, like listByCampaign" },
     {
       fn: api.characters.create,
       access: "view",
@@ -103,6 +103,14 @@ const area: Area = {
     { fn: api.characters.addExperience, access: "own", args: () => ({ name: "Matrix" }) },
     { fn: api.characters.setExperience, access: "own", args: async (w) => ({ experienceId: (await sheetA(w)).experiences[0]!.id, value: 3 }) },
     { fn: api.characters.removeExperience, access: "own" },
+    {
+      fn: api.characters.choosePurposefulDesign,
+      access: "own",
+      args: async (w) => ({ experienceId: (await sheetA(w)).experiences[0]!.id }),
+      okCodes: ["FEATURE_NOT_OWNED"],
+      note:
+        "DA11: characterA is the fixture's first core ancestry (a Clank); FEATURE_NOT_OWNED would still mean access was granted. DA16: need edit, exact up to owner; only the GM (owner) may move an existing choice (purposeful-design.test.ts)",
+    },
     { fn: api.characters.adjustResource, access: "own", args: () => ({ resource: "stress", delta: 1 }), note: "delta 0 is INVALID before the access check" },
     { fn: api.characters.toggleCondition, access: "own", note: "bead dcm-bxp.51: owner or GM, used by the Combat Map token card" },
     {
@@ -130,7 +138,7 @@ const area: Area = {
     // ---------------------------------------------------------------- characters: portraits
     { fn: api.characters.portraitUploadUrl, access: "own" },
     { fn: api.characters.attachPortrait, access: "own", setup: uploadedImage },
-    { fn: api.characters.portraitUrl, access: "own" },
+    { fn: api.charactersReads.portraitUrl, access: "own" },
 
     // ---------------------------------------------------------------- characterExtras: reads
     { fn: api.characterExtras.get, access: "own" },

@@ -43,7 +43,7 @@ describe("grants", () => {
     const { outsider, campaignId } = await setup();
     expect(errorCode(await outsider.query(api.maps.get, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
     expect(errorCode(await outsider.query(api.codex.list, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
-    expect(errorCode(await outsider.query(api.characters.listByCampaign, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
+    expect(errorCode(await outsider.query(api.charactersReads.listByCampaign, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
   });
 
   it("a view grant to another campaign's user gives the player-filtered map, read-only", async () => {

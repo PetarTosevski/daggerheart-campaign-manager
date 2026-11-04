@@ -72,7 +72,7 @@ export const CARD_CLASSIFICATION: Readonly<Record<DomainId, Readonly<Record<stri
     reckless: c("rider", "mark a Stress for advantage on an attack"),
     scramble: c("reaction", "once per rest, avoid a Melee attack and move out of Melee"),
     "versatile-fighter": c("rider", "another trait for a weapon; a Stress to max one damage die"),
-    vitality: p("passive", "permanent HP / Stress slot / threshold picks, then vaulted"),
+    vitality: p("auto", "permanent HP / Stress slot / threshold picks when chosen, then vaulted"),
     whirlwind: c("rider", "on a Very Close hit, a Hope: same attack on all others, half damage"),
   },
   bone: {

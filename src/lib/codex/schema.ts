@@ -1,4 +1,4 @@
-// Characters & Locations (the Codex board, D7): stored entry data and the
+// Codex (the Codex board, D7): stored entry data and the
 // limits every write is checked against. Ported from
 // reference/designs/project/Codex.dc.html. Pure module: bundled into Convex.
 

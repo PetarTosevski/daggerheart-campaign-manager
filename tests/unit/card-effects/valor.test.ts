@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { openWindow, resolveWindow, respond, runReactionCard, type RespondResult, type WindowHit, type WindowPc, type WindowState } from "@/lib/domain/adversary-actions";
+import { cardAnswers, openWindow, resolveWindow, respond, runReactionCard, type RespondResult, type WindowHit, type WindowPc, type WindowState } from "@/lib/domain/adversary-actions";
 import { run, type ActorState, type PlanStep, type RunContext, type RunPlan } from "@/lib/domain/card-effects/run";
 import type { CardEffect, CardUse, Mod, Requirement } from "@/lib/domain/card-effects/types";
 import type { Combatant } from "@/lib/domain/combat-actions";
@@ -261,15 +261,31 @@ describe("Valor cards in the adversary-hit reaction window (AA1)", () => {
     expect(resolveWindow(w, party).result).toMatchObject({ severity: "major", hpMarked: 2 });
   });
 
-  it("Unyielding Armor: a 6 drops the severity and the PC answers without marking a slot", () => {
+  // SRD-C2 (dcm-98d): "When you would mark an Armor Slot … reduce the severity by one threshold without marking an Armor
+  // Slot" (CB p.342). The 6 is the hit's armor reduction: no slot is marked and the armor answer is in.
+  it("Unyielding Armor: a 6 is the hit's armor reduction without a slot; the armor answer is in", () => {
     const party = [windowPc("mira", { cards: [entry("unyielding-armor")] })];
     let w = openWindow({ hit: hit(), targetId: "mira", party });
     expect(w.responders).toEqual([{ characterId: "mira", role: "target", cardIds: ["unyielding-armor"] }]);
     const { folds: f } = runReactionCard(entry("unyielding-armor"), asActor("mira"), w, { target: ally("mira") }, queueRng([2, 6]));
-    expect(f).toEqual([{ kind: "reduceSeverity", steps: 1, targetIds: ["mira"] }]);
+    expect(f).toEqual([{ kind: "reduceSeverity", steps: 1, targetIds: ["mira"], insteadOfArmorSlot: true }]);
     w = answered(respond(w, { characterId: "mira", choice: { kind: "card", cardId: "unyielding-armor" }, folds: f }));
-    w = answered(respond(w, { characterId: "mira", choice: { kind: "noArmor" } }));
+    // 18 is Severe against 8/16; the 6 steps it to Major (2 HP) with no Armor Slot, and no slot can be added on top.
+    expect(respond(w, { characterId: "mira", choice: { kind: "armor" } }).ok).toBe(false);
     expect(resolveWindow(w, party).result).toMatchObject({ severity: "major", armorSlots: 0, hpMarked: 2 });
+  });
+
+  it("Unyielding Armor: offered only while the PC would still mark a slot; no 6 leaves the slot to answer", () => {
+    const party = [windowPc("mira", { cards: [entry("unyielding-armor")] })];
+    const open = openWindow({ hit: hit(), targetId: "mira", party });
+    const marked = answered(respond(open, { characterId: "mira", choice: { kind: "armor" } }));
+    expect(cardAnswers(open, "mira")).toEqual(["unyielding-armor"]);
+    expect(cardAnswers(marked, "mira")).toEqual([]);
+    const { folds: f } = runReactionCard(entry("unyielding-armor"), asActor("mira"), open, { target: ally("mira") }, queueRng([3, 5]));
+    expect(f).toEqual([]);
+    let w = answered(respond(open, { characterId: "mira", choice: { kind: "card", cardId: "unyielding-armor" }, folds: f }));
+    w = answered(respond(w, { characterId: "mira", choice: { kind: "armor" } }));
+    expect(resolveWindow(w, party).result).toMatchObject({ severity: "major", armorSlots: 1, hpMarked: 2 });
   });
 });
 
@@ -329,9 +345,20 @@ describe("Goad Them On (CB p.341)", () => {
     const plan = ok("goad-them-on", ctx([9, 4], { targets: [adv("a")] }));
     expect(plan.roll?.record.total).toBe(14);
     expect(ofKind(plan, "mark")).toEqual([{ kind: "mark", targetId: "a", track: "stress", amount: 1, hpMarked: 0, overflow: false }]);
-    expect(ofKind(plan, "condition")[0]).toMatchObject({ targetId: "a", condition: { kind: "tag", tag: "Goaded" }, duration: "manual" });
-    expect(ofKind(plan, "prompt")[0]).toMatchObject({ prompt: "manual", targetIds: ["a"] });
+    // SRD-C2 (dcm-e75): Goaded ends with the forced attack; no manual step.
+    expect(ofKind(plan, "condition")[0]).toMatchObject({ targetId: "a", condition: { kind: "tag", tag: "Goaded" }, duration: "manual", endsOn: ["bearerAttacks"] });
+    expect(ofKind(plan, "prompt")).toEqual([]);
     expect(plan.creatures[0]!.after).toMatchObject({ stress: 1, tags: ["Goaded"] });
+  });
+  it("Goaded must target you with its next attack, which it makes with disadvantage", () => {
+    const goaded = cardUse("goad-them-on").steps.find((s) => s.kind === "condition");
+    expect(goaded).toMatchObject({
+      mods: [
+        { kind: "mustAttack", target: "caster" },
+        { kind: "disadvantage", on: "attack" },
+      ],
+      endsOn: ["bearerAttacks"],
+    });
   });
   it("a failure does nothing to the target", () => {
     const plan = ok("goad-them-on", ctx([2, 3], { targets: [adv("a")] }));
@@ -479,16 +506,30 @@ describe("Hold the Line (CB p.342)", () => {
   it("a Hope for the stance (until you move or fail a roll with Fear)", () => {
     const plan = ok("hold-the-line", ctx([]));
     expect(plan.actor.after.hope).toBe(1);
-    expect(ofKind(plan, "effect")[0]).toMatchObject({ targetId: "pc", label: "Hold the Line", duration: "manual", endsWhen: "Until you move or fail a roll with Fear" });
-    expect(ofKind(plan, "prompt")[0]).toMatchObject({ prompt: "manual" });
+    expect(ofKind(plan, "effect")[0]).toMatchObject({
+      targetId: "pc",
+      label: "Hold the Line",
+      duration: "manual",
+      endsWhen: "Until you move or fail a roll with Fear",
+      endsOn: ["moves", "failWithFear"],
+    });
+    // Lanes-2 S1.4 (dcm-trib): the pull runs by itself, so the stance has no reminder.
+    expect(ofKind(plan, "prompt")).toEqual([]);
   });
-  it("while it holds, an adversary that moves within Very Close is pulled into Melee and Restrained", () => {
+  it("the Restrained condition ends on the caster's move or failure with Fear, or a GM Fear spend (dcm-bpr)", () => {
+    const restrained = cardUse("hold-the-line", "pull").steps.find((s) => s.kind === "condition");
+    expect(restrained).toMatchObject({ endsOn: ["gmSpendsFear"], endsOnCaster: ["moves", "failWithFear"] });
+    const plan = ok("hold-the-line", ctx([], { useId: "pull", actor: actor({ activeCardEffects: ["hold-the-line"] }), trigger: { source: adv("a") } }));
+    expect(ofKind(plan, "condition")[0]).toMatchObject({ endsOn: ["gmSpendsFear"] });
+  });
+  it("while it holds, an adversary that moves within Very Close is pulled into Melee and Restrained (auto, dcm-trib)", () => {
+    expect(cardUse("hold-the-line", "pull").activation).toEqual({ kind: "auto", trigger: { kind: "whenEnemyEntersRange", range: "veryClose" } });
     const holding = actor({ activeCardEffects: ["hold-the-line"] });
-    const plan = ok("hold-the-line", ctx([], { useId: "pull", actor: holding, targets: [adv("a")], situations: situations("hold-the-line", "pull") }));
-    expect(ofKind(plan, "prompt")[0]).toMatchObject({ prompt: "move", targetIds: ["a"], text: "Pull the adversary into Melee range" });
+    const plan = ok("hold-the-line", ctx([], { useId: "pull", actor: holding, trigger: { source: adv("a") } }));
+    expect(ofKind(plan, "prompt")[0]).toMatchObject({ prompt: "move", targetIds: ["a"], step: { mode: "intoMelee" } });
     expect(ofKind(plan, "condition")[0]).toMatchObject({ targetId: "a", condition: { kind: "standard", condition: "restrained" }, duration: "manual" });
     expect(plan.actor.after.hope).toBe(2);
-    expect(run(entry("hold-the-line"), ctx([], { useId: "pull", targets: [adv("a")], situations: situations("hold-the-line", "pull") }))).toMatchObject({
+    expect(run(entry("hold-the-line"), ctx([], { useId: "pull", trigger: { source: adv("a") } }))).toMatchObject({
       ok: false,
       reason: "requirement",
       detail: "effectActive",
@@ -501,7 +542,32 @@ describe("Lead by Example (CB p.342)", () => {
     const plan = ok("lead-by-example", ctx([], { trigger: { subject: adv("a") } }));
     expect(plan.actor.after.stress).toBe(2);
     expect(ofKind(plan, "condition")[0]).toMatchObject({ targetId: "a", condition: { kind: "tag", tag: "Lead by Example" } });
-    expect(ofKind(plan, "prompt")[0]).toMatchObject({ prompt: "manual", targetIds: ["a"] });
+    // Lanes-2 S1.4 (dcm-kso9): the attack path reads the benefit, so no reminder.
+    expect(ofKind(plan, "prompt")).toEqual([]);
+  });
+
+  it("user answer (dcm-903q): other PCs only, through the tag's attackedRider; the benefit is the attacker's pick", () => {
+    const condition = cardUse("lead-by-example").steps.find((s) => s.kind === "condition");
+    expect(condition).toMatchObject({
+      mods: [
+        {
+          kind: "attackedRider",
+          rider: {
+            by: "others",
+            attackerSteps: [
+              {
+                kind: "choose",
+                id: "benefit",
+                options: [
+                  { id: "stress", steps: [{ kind: "clear", to: "self", track: "stress" }] },
+                  { id: "hope", steps: [{ kind: "hope", to: "self", change: "gain" }] },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    });
   });
 });
 
@@ -518,10 +584,13 @@ describe("Unbreakable (CB p.342)", () => {
 
 describe("Unyielding Armor (CB p.342)", () => {
   it("Proficiency d6s: any 6 reduces the severity without marking an Armor Slot", () => {
+    expect(cardUse("unyielding-armor").activation).toEqual({ kind: "reaction", trigger: { kind: "whenArmorSlotMarked", who: "self", stage: "would" } });
     const plan = ok("unyielding-armor", ctx([6, 1]));
     expect(ofKind(plan, "check")[0]).toEqual({ kind: "check", total: 7, dice: [6, 1], passed: true });
     expect(folds(plan)).toEqual([["reduceSeverity", ["pc"], 1]]);
-    expect(ofKind(plan, "prompt")[0]).toMatchObject({ prompt: "manual" });
+    expect(ofKind(plan, "fold")[0]!.step).toMatchObject({ kind: "reduceSeverity", insteadOfArmorSlot: true });
+    // SRD-C2 (dcm-98d): no manual "don't mark a slot" step any more.
+    expect(ofKind(plan, "prompt")).toEqual([]);
   });
   it("no 6: nothing changes, the slot is marked as usual", () => {
     const plan = ok("unyielding-armor", ctx([5, 4]));

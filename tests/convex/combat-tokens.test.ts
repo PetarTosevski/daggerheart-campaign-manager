@@ -59,7 +59,7 @@ async function withTokens() {
   const { instanceIds: bears } = await add(BEAR, 2);
   const { instanceIds: [burrower] } = await add(BURROWER, 1);
   await gm.mutation(api.encounters.start, { campaignId, encounterId });
-  const list = () => gm.query(api.combatTokens.list, { campaignId, mapId });
+  const list = () => gm.query(api.combatTokensReads.list, { campaignId, mapId });
   const tokenOf = async (name: string) => (await list()).find((tk) => tk.name === name)!;
   return { t, gm, player, other: ctx.other, campaignId, mapId, ash, bryn, encounterId, bears, burrower: burrower!, list, tokenOf };
 }
@@ -79,8 +79,8 @@ describe("combat tokens: access", () => {
     await f.gm.mutation(api.combatTokens.addCustom, { campaignId, mapId, name: "Bandit", hp: 4, side: "enemy", idempotencyKey: key() });
     const tokenId = (await f.tokenOf("Bandit"))._id;
     const all = {
-      list: (c: Client) => c.query(api.combatTokens.list, { campaignId, mapId }),
-      combatants: (c: Client) => c.query(api.combatTokens.combatants, { campaignId, mapId }),
+      list: (c: Client) => c.query(api.combatTokensReads.list, { campaignId, mapId }),
+      combatants: (c: Client) => c.query(api.combatTokensReads.combatants, { campaignId, mapId }),
       addParty: (c: Client) => c.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: key() }),
       placeAdversaries: (c: Client) => c.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId, instanceIds: [f.bears[0]!], idempotencyKey: key() }),
       addCustom: (c: Client) => c.mutation(api.combatTokens.addCustom, { campaignId, mapId, name: "Wolf", hp: 3, side: "enemy", idempotencyKey: key() }),
@@ -128,7 +128,7 @@ describe("combat tokens: access", () => {
     // Another map that is not live: players don't see it, so they can't move on it.
     const { mapId: hidden } = await f.gm.mutation(api.combatMaps.create, { campaignId, size: "small", idempotencyKey: key() });
     await f.gm.mutation(api.combatTokens.addParty, { campaignId, mapId: hidden, idempotencyKey: key() });
-    const hiddenAsh = (await f.gm.query(api.combatTokens.list, { campaignId, mapId: hidden })).find((tk) => tk.name === "Ash")!;
+    const hiddenAsh = (await f.gm.query(api.combatTokensReads.list, { campaignId, mapId: hidden })).find((tk) => tk.name === "Ash")!;
     expect(await code(move(f.player, hiddenAsh._id))).toBe("COMBAT_MAP_NOT_FOUND");
     expect(await code(move(f.gm, hiddenAsh._id))).toBe("ok");
   });
@@ -140,7 +140,7 @@ describe("combat tokens: access", () => {
     await f.gm.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId, instanceIds: f.bears, idempotencyKey: key() });
     await f.gm.mutation(api.combatTokens.addCustom, { campaignId, mapId, name: "Bandit", hp: 4, side: "enemy", idempotencyKey: key() });
     const out = await outsider(f.t);
-    const party = (c: Client, id: string = mapId) => c.query(api.combatTokens.party, { campaignId, mapId: id });
+    const party = (c: Client, id: string = mapId) => c.query(api.combatTokensReads.party, { campaignId, mapId: id });
 
     expect(await code(party(f.t as unknown as Client))).toBe("UNAUTHENTICATED");
     expect(await code(party(out))).toBe("NOT_FOUND");
@@ -161,7 +161,7 @@ describe("combat tokens: access", () => {
     expect(await party(f.player, hidden)).toEqual([]);
     expect(await party(f.gm, hidden)).toHaveLength(2);
     expect(await party(f.player, "not-an-id")).toEqual([]);
-    expect(await f.gm.query(api.combatTokens.list, { campaignId, mapId: "not-an-id" })).toEqual([]);
+    expect(await f.gm.query(api.combatTokensReads.list, { campaignId, mapId: "not-an-id" })).toEqual([]);
   });
 
   it("refuses another campaign's token and map ids", async () => {
@@ -174,7 +174,7 @@ describe("combat tokens: access", () => {
     expect(await code(f.gm.mutation(api.combatTokens.remove, { campaignId: f.campaignId, tokenId: "nope" }))).toBe("COMBAT_TOKEN_NOT_FOUND");
     expect(await code(f.gm.mutation(api.combatTokens.addParty, { campaignId: mine, mapId: f.mapId, idempotencyKey: key() }))).toBe("COMBAT_MAP_NOT_FOUND");
     expect(await code(f.gm.mutation(api.combatTokens.clear, { campaignId: mine, mapId: f.mapId }))).toBe("COMBAT_MAP_NOT_FOUND");
-    expect(await f.gm.query(api.combatTokens.list, { campaignId: mine, mapId: f.mapId })).toEqual([]);
+    expect(await f.gm.query(api.combatTokensReads.list, { campaignId: mine, mapId: f.mapId })).toEqual([]);
   });
 });
 
@@ -184,7 +184,7 @@ describe("combat tokens: placing", () => {
   it("places the active party once, on free squares on the left (the board)", async () => {
     const f = await withTokens();
     const { campaignId, mapId } = f;
-    expect((await f.gm.query(api.combatTokens.combatants, { campaignId, mapId })).partyLeft).toBe(2);
+    expect((await f.gm.query(api.combatTokensReads.combatants, { campaignId, mapId })).partyLeft).toBe(2);
     const idempotencyKey = key();
     expect(await f.gm.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey })).toEqual({ added: 2 });
     // A retried click applies once; a new click finds nobody left.
@@ -197,7 +197,7 @@ describe("combat tokens: placing", () => {
       expect(tk).toMatchObject({ kind: "pc", side: "pc", size: 1, face: 0, light: "none" });
       expect(tk.x).toBeLessThan(15);
     }
-    expect((await f.gm.query(api.combatTokens.combatants, { campaignId, mapId })).partyLeft).toBe(0);
+    expect((await f.gm.query(api.combatTokensReads.combatants, { campaignId, mapId })).partyLeft).toBe(0);
 
     // A character who is not active (benched) is not placed.
     await f.player.mutation(api.characters.setStatus, { characterId: f.ash, status: "away" });
@@ -208,7 +208,7 @@ describe("combat tokens: placing", () => {
   it("places the running encounter's adversaries from the queue: one, then all; a Solo takes 2 × 2", async () => {
     const f = await withTokens();
     const { campaignId, mapId } = f;
-    const queue = async () => (await f.gm.query(api.combatTokens.combatants, { campaignId, mapId })).queue;
+    const queue = async () => (await f.gm.query(api.combatTokensReads.combatants, { campaignId, mapId })).queue;
     expect((await queue()).map((q) => [q.name, q.solo])).toEqual([
       ["Bear", false],
       ["Bear 2", false],
@@ -251,7 +251,7 @@ describe("combat tokens: placing", () => {
     expect(await code(place([]))).toBe("INVALID");
     await f.gm.mutation(api.encounters.end, { campaignId, encounterId: f.encounterId });
     expect(await code(place([f.bears[0]!]))).toBe("ENCOUNTER_NOT_RUNNING");
-    expect((await f.gm.query(api.combatTokens.combatants, { campaignId, mapId })).encounter).toBeNull();
+    expect((await f.gm.query(api.combatTokensReads.combatants, { campaignId, mapId })).encounter).toBeNull();
   });
 
   it("adds custom tokens with their own numbers and refuses past MAX_COMBAT_TOKENS", async () => {
@@ -316,7 +316,7 @@ describe("combat tokens: moving, turning, editing", () => {
     await f.gm.mutation(api.encounterTracking.toggleCondition, { campaignId, instanceId: f.bears[0]!, condition: "vulnerable", idempotencyKey: key() });
     expect((await f.tokenOf("Ash")).stats).toMatchObject({ hp: 2 });
     expect((await f.tokenOf("Bear")).stats).toMatchObject({ hp: 2, conditions: ["vulnerable"] });
-    expect((await f.player.query(api.combatTokens.party, { campaignId, mapId })).find((tk) => tk.mine)!.stats).toMatchObject({ hp: 2 });
+    expect((await f.player.query(api.combatTokensReads.party, { campaignId, mapId })).find((tk) => tk.mine)!.stats).toMatchObject({ hp: 2 });
 
     const rows = await f.t.run((c) => c.db.query("combatTokens").withIndex("by_map", (q) => q.eq("mapId", mapId)).collect());
     for (const row of rows) expect(Object.keys(row.ref).sort()).toEqual(row.ref.kind === "pc" ? ["characterId", "kind"] : ["adversaryId", "kind"]);

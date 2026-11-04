@@ -18,7 +18,7 @@ import { isDoor } from "../src/lib/domain/combat-map/movement";
 import { anyInMelee } from "../src/lib/domain/combat-map/reach";
 import { spriteMove } from "../src/lib/sprite-packs/index";
 import { appError } from "../src/lib/errors/app-error";
-import { tokenViewValidator } from "./combatTokens";
+import { tokenViewValidator } from "./lib/validators/combatTokens";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {
@@ -26,6 +26,7 @@ import {
   FOG_HIDE,
   FOG_REVEAL,
   MAX_COMBAT_REVEALS,
+  MAX_COMBAT_TOKENS,
   MAX_MAP_H,
   MAX_MAP_W,
   liveCombatMap,
@@ -33,7 +34,9 @@ import {
   loadCombatObject,
   loadCombatToken,
 } from "./lib/combatMaps";
+import { recordSeen } from "./lib/spotlightSeen";
 import {
+  adversariesSeenNow,
   buildView,
   exploredRow,
   lightLevelValidator,
@@ -51,7 +54,7 @@ import {
 import { campaignMutation, campaignQuery, gmMutation, gmQuery } from "./lib/functions";
 import { loadObjectTraits, resolveRefs, type UploadedSprites } from "./lib/spriteSources";
 import { atLeast, permissionFor, type Permission } from "./lib/permissions";
-import { carriedLightValidator } from "./lib/validators/combatMaps";
+import { carriedLightValidator, objectLightValidator } from "./lib/validators/combatMaps";
 
 /**
  * Vision on the server (D9 C7, plan `.omc/plans/d9-combat-map.yaml`; R8–R12, Q1, Q3, Q4).
@@ -59,7 +62,8 @@ import { carriedLightValidator } from "./lib/validators/combatMaps";
  * - `playerView` (every member, for their own character on the live map) and `previewAs` (GM, any character):
  *   the tokens that character can see now under the campaign's time and the map's lights, filtered here with
  *   C1's engine so a hidden token never reaches the player (R10, R11); adversary, ally, neutral and custom
- *   tokens carry name, size, side and facing only (R4); every PC token is shown with its public sheet numbers
+ *   tokens carry name, size, side and facing only (R4), plus their condition names (Combat HUD HD1, answer 10a: names,
+ *   never numbers); every PC token is shown with its public sheet numbers
  *   (Q4); plus the character's vision masks for the fog (the client never learns where hidden torch-bearers
  *   stand, Q3). The layout itself stays C3's `combatMaps.live` (Q1).
  * - `revealTo` / `unrevealTo` (GM): a dim-light token shown to one character (R10).
@@ -73,6 +77,8 @@ import { carriedLightValidator } from "./lib/validators/combatMaps";
  *   has explored (an unseen door answers COMBAT_OBJECT_NOT_FOUND, as if it were not there), and only from Melee
  *   by such a character (COMBAT_OUT_OF_REACH, B4, dcm-bxp.130).
  * - `explored` / `markExplored`: a character's explored samples (R11), merged, written only when they grow.
+ * - `markSeen`: the adversaries a player's character sees now, recorded as seen by the party this scene (the spotlight's
+ *   "which adversary" rule, user 2026-11-03; convex/lib/spotlightSeen.ts).
  * - `forgetExplored` (GM): deletes a map's explored rows, every character's or one character's (the board's "Forget
  *   explored", dcm-bxp.52).
  * - `paintFog` (GM): reveal / hide / erase marks on the fog layer (R12); they decide token visibility too (user
@@ -92,7 +98,7 @@ const viewOkValidator = v.object({
   characterId: v.id("characters"),
   /** The viewer's own token. */
   tokenId: v.id("combatTokens"),
-  /** Campaign time phase (R8); null for a frame without campaign time (vision as by day). */
+  /** Campaign time phase (R8); null for a frame without campaign time, whose `light` is the GM's time of day (dcm-bxp.54). */
   phase: v.union(v.string(), v.null()),
   light: lightLevelValidator,
   instinct: v.number(),
@@ -101,8 +107,13 @@ const viewOkValidator = v.object({
   vision: visionMaskValidator,
   /** Every PC token on the map, the viewer's own included (`mine`), with public sheet numbers (Q4). */
   pcs: v.array(tokenViewValidator),
-  /** Other tokens the character sees now (R10, R11), without stats (R4). */
+  /** Other tokens the character sees now (R10, R11), without stats (R4); condition names only (HD1). */
   others: v.array(otherTokenValidator),
+  /**
+   * The adversary tokens in `others` the party is not yet recorded as having seen this scene (spotlight-seen, user
+   * 2026-11-03): the player's client sends them to `markSeen`. Empty once recorded; filled again after End scene.
+   */
+  unseenAdversaries: v.array(v.id("combatTokens")),
 });
 
 /** No live map (players) or no map at all; the character has no token on the map; or their view. */
@@ -283,6 +294,30 @@ export const markExplored = campaignMutation({
   },
 });
 
+/** Tokens one `markSeen` call may name: every token of the largest map. */
+const MARK_SEEN_MAX = MAX_COMBAT_TOKENS;
+
+/**
+ * The caller's own character (edit permission, else COMBAT_NOT_YOUR_TOKEN) reports the adversary tokens its view shows
+ * (`playerView`'s `unseenAdversaries`) as seen by the party this scene (spotlight-seen, user 2026-11-03; convex/lib/
+ * spotlightSeen.ts). The server recomputes the character's view on the live map and records only the adversaries it
+ * sees now, so a client cannot claim one it never saw (and learn which adversary holds the spotlight). Nothing on a
+ * map that is not live or without the character's token; returns how many tokens were newly recorded.
+ */
+export const markSeen = campaignMutation({
+  need: "view",
+  args: { characterId: v.string(), tokenIds: v.array(v.string()) },
+  returns: v.object({ added: v.number() }),
+  handler: async (ctx, { characterId, tokenIds }) => {
+    if (tokenIds.length > MARK_SEEN_MAX) throw appError("INVALID", "Too many tokens.");
+    const character = await ownCharacter(ctx, characterId);
+    const map = await liveCombatMap(ctx, ctx.campaign._id);
+    if (map === null || tokenIds.length === 0) return { added: 0 };
+    const scene = await loadScene(ctx, ctx.campaign, map);
+    return { added: await recordSeen(ctx, ctx.campaign._id, adversariesSeenNow(scene, character, tokenIds)) };
+  },
+});
+
 /** Merges `delta` into the (map, character) explored row; writes only when it grows. True when it grew. */
 async function addExplored(ctx: MutationCtx, map: Doc<"combatMaps">, characterId: Id<"characters">, delta: Uint8Array): Promise<boolean> {
   const row = await exploredRow(ctx, map._id, characterId);
@@ -390,6 +425,28 @@ export const toggleLight = campaignMutation({
     }
     if ((object.lit !== false) !== lit) await ctx.db.patch("combatMapObjects", object._id, { lit });
     return { lit };
+  },
+});
+
+/**
+ * GM: a sprite object's light (plan lanes-2 E4.4, dcm-bxp.84 + dcm-klr8; sprite packs Q1: "none / faint glow / torch /
+ * campfire" for any sprite). `light` is the wanted override, `default` drops it (the sprite's own light trait again).
+ * An intent: one field on one row. Vision, the light switches and the sprite painter's glow read it (`objectTraits`).
+ * A light other than `default` on an object without a sprite (a Classic kind keeps its own light) is INVALID;
+ * `default` always succeeds (nothing to clear is a no-op).
+ */
+export const setObjectLight = gmMutation({
+  args: { objectId: v.string(), light: v.union(objectLightValidator, v.literal("default")) },
+  returns: v.null(),
+  handler: async (ctx, { objectId, light }) => {
+    const { object } = await loadCombatObject(ctx, ctx.campaign._id, objectId);
+    if (light === "default") {
+      if (object.light !== undefined) await ctx.db.patch("combatMapObjects", object._id, { light: undefined });
+      return null;
+    }
+    if (object.sprite === undefined) throw appError("INVALID", "Only sprite objects take a light setting.");
+    if (object.light !== light) await ctx.db.patch("combatMapObjects", object._id, { light });
+    return null;
   },
 });
 

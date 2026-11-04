@@ -7,8 +7,8 @@ import { ANCESTRIES, ARMOR, cardsForDomains, COMMUNITIES, getClass, subclassesFo
 import { readEmailedCode, signInAsTestGm } from "./fixtures";
 
 const PLAYER = "e2e-player@example.test";
-/** Allowlisted in scripts/e2e-setup.mjs; signs in only with email + password, never through the test sign-in. */
-const PASSWORD_ONLY_EMAIL = "e2e-password-only@example.test";
+/** Password sign-ups use a fresh, unique email each run (docs/testing.md); signup.spec.ts covers the sign-in page itself. */
+const PASSWORD = "correct-horse-battery";
 const unique = (label: string) => `${label} ${Date.now().toString(36)}`;
 
 async function gmCreatesCampaign(page: Page, frameId = "witherwild") {
@@ -75,9 +75,6 @@ test("an email invite shows the campaign in the player's Load Campaign", async (
   const name = await gmCreatesCampaign(page, "beast-feast");
   await page.getByRole("button", { name: "Players" }).click();
   const dialog = page.getByRole("dialog", { name: "Players" });
-  await expect(
-    dialog.getByText("Email invites work for accounts that sign in with Google. Players who use a password should join with the code above."),
-  ).toBeVisible();
   await dialog.getByLabel("Player email").fill(PLAYER);
   await dialog.getByRole("button", { name: "Invite" }).click();
   await expect(dialog.getByText(`${PLAYER} · invited`)).toBeVisible();
@@ -93,49 +90,75 @@ test("an email invite shows the campaign in the player's Load Campaign", async (
   await player.close();
 });
 
-test("email + password: create an account (or sign in if it exists)", async ({ page }) => {
-  // Password-only: no spec may sign this email in through the test sign-in (docs/testing.md).
-  const email = PASSWORD_ONLY_EMAIL;
-  const password = "correct-horse-battery";
+/** Signs up a fresh password account in its own browser context and stops at the code step (no session yet). */
+async function passwordSignUp(browser: Browser, label: string) {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const email = `${label}-${crypto.randomUUID().slice(0, 8)}@example.test`;
   await page.goto("/signin");
   await page.getByRole("button", { name: "New here? Create an account" }).click();
   const signUp = page.getByRole("form", { name: "Create account" });
-  await signUp.getByLabel("Name").fill("Pass Word");
+  await signUp.getByLabel("Name").fill("New Player");
   await signUp.getByLabel("Email").fill(email);
-  await signUp.getByLabel("Password").fill(password);
+  await signUp.getByLabel("Password").fill(PASSWORD);
   await signUp.getByRole("button", { name: "Create account" }).click();
-
-  // Sign-up stops at the code step (the e2e backend sends no email: the code is read from /e2e/code). If the account already exists,
-  // sign up fails with an alert; sign in instead.
-  const codeForm = page.getByRole("form", { name: "Enter the code" });
-  const outcome = await Promise.race([
-    codeForm.waitFor().then(() => "code"),
-    signUp.getByRole("alert").waitFor().then(() => "exists"),
-  ]);
-  if (outcome === "code") {
+  await expect(page.getByRole("form", { name: "Enter the code" })).toBeVisible();
+  /** Enters the code the e2e backend recorded for this email; the account is then signed in. */
+  const verify = async () => {
+    const codeForm = page.getByRole("form", { name: "Enter the code" });
     await codeForm.getByLabel("6-digit code").fill(await readEmailedCode(email));
     await codeForm.getByRole("button", { name: "Verify email" }).click();
-  } else {
-    await page.getByRole("button", { name: "Have an account? Sign in" }).click();
-    const signIn = page.getByRole("form", { name: "Sign in with email" });
-    await signIn.getByLabel("Email").fill(email);
-    await signIn.getByLabel("Password").fill(password);
-    await signIn.getByRole("button", { name: "Sign in" }).click();
-  }
-  await expect(page).toHaveURL("/");
-  await expect(page.getByRole("navigation", { name: "Main menu" })).toBeVisible();
+    await expect(page).toHaveURL("/");
+    await expect(page.getByRole("navigation", { name: "Main menu" })).toBeVisible();
+  };
+  return { page, email, verify, close: () => context.close() };
+}
+
+test("an email invite reaches a brand-new password account only after its code", async ({ page, browser }) => {
+  const name = await gmCreatesCampaign(page, "beast-feast");
+  const player = await passwordSignUp(browser, "invitee");
+  await page.getByRole("button", { name: "Players" }).click();
+  const dialog = page.getByRole("dialog", { name: "Players" });
+  await dialog.getByLabel("Player email").fill(player.email);
+  await dialog.getByRole("button", { name: "Invite" }).click();
+  await expect(dialog.getByText(`${player.email} · invited`)).toBeVisible();
+
+  // Before the code there is no session: the campaign list sends this browser to sign-in, and a password sign-in
+  // stops at the code step again.
+  const probe = await player.page.context().newPage();
+  await probe.goto("/campaigns");
+  await expect(probe).toHaveURL("/signin?next=%2Fcampaigns");
+  const signIn = probe.getByRole("form", { name: "Sign in with email" });
+  await signIn.getByLabel("Email").fill(player.email);
+  await signIn.getByLabel("Password").fill(PASSWORD);
+  await signIn.getByRole("button", { name: "Sign in" }).click();
+  await expect(probe.getByRole("form", { name: "Enter the code" })).toBeVisible();
+  await expect(probe).toHaveURL(/\/signin/);
+  await probe.close();
+
+  // The emailed code verifies the address; the invite is then theirs.
+  await player.verify();
+  await player.page.goto("/campaigns");
+  const band = player.page.locator("button[aria-expanded]", { hasText: name });
+  await expect(band).toContainText("Player");
+  await player.close();
 });
 
-test("a wrong password is refused", async ({ page }) => {
-  await page.goto("/signin");
-  const signIn = page.getByRole("form", { name: "Sign in with email" });
-  await signIn.getByLabel("Email").fill(PASSWORD_ONLY_EMAIL);
-  await signIn.getByLabel("Password").fill("not-the-password");
-  await signIn.getByRole("button", { name: "Sign in" }).click();
-  await expect(signIn.getByRole("alert")).toBeVisible();
+test("a brand-new password account joins with the GM's code", async ({ page, browser }) => {
+  const name = await gmCreatesCampaign(page);
+  await page.getByRole("button", { name: "Players" }).click();
+  const dialog = page.getByRole("dialog", { name: "Players" });
+  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+  const code = (await dialog.getByTestId("join-code").textContent())!;
 
-  await page.goto("/");
-  await expect(page).toHaveURL("/signin");
+  const player = await passwordSignUp(browser, "joiner");
+  await player.verify();
+  await player.page.goto(`/join/${code}`);
+  await player.page.getByRole("button", { name: "Join campaign" }).click();
+  await expect(player.page.getByRole("heading", { level: 1, name })).toBeVisible();
+  await expect(player.page.getByText("Player", { exact: true })).toBeVisible();
+  await expect(dialog.getByRole("list", { name: "Players in this campaign" })).toContainText(player.email);
+  await player.close();
 });
 
 /** Creates a level-1 Warrior through the API as the signed-in user of `page` (the wizard has its own spec). */

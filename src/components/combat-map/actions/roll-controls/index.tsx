@@ -7,14 +7,19 @@
  * disadvantage, and Help dice; the server applies them. `Stepper` is also the Minion pick dialog's counter.
  */
 
+import { experienceValue } from "@/lib/domain/dice";
+
 /** The most advantage, disadvantage or Help dice the controls offer (the dice box's limit). */
 export const ROLL_DICE_LIMIT = 6;
 
 /** "+2", "−1". */
 export const signed = (n: number) => (n >= 0 ? `+${n}` : `−${-n}`);
 
-/** The acting character's Experiences and Hope (null while unknown: no Experience chips, no Hope check). */
-export type Roller = { experiences: readonly { id: string; name: string; value: number }[]; hope: number };
+/**
+ * The acting character's Experiences and Hope (null while unknown: no Experience chips, no Hope check).
+ * `purposefulDesign`: the Experience a Clank chose for Purposeful Design, shown with its +1 (CB p.53, DA11).
+ */
+export type Roller = { experiences: readonly { id: string; name: string; value: number; purposefulDesign?: true }[]; hope: number };
 
 /** The controls' values: Experiences used, advantage (negative: disadvantage), Help dice. */
 export type RollValues = { experienceIds: readonly string[]; edge: number; help: number };
@@ -100,7 +105,7 @@ export function RollOptions({
                   aria-pressed={on}
                   onClick={() => onChange({ experienceIds: on ? experienceIds.filter((id) => id !== e.id) : [...experienceIds, e.id] })}
                 >
-                  {e.name} ({signed(e.value)})
+                  {e.name} ({signed(experienceValue(e))})
                 </button>
               );
             })}

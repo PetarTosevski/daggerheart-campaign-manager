@@ -4,7 +4,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { BLOCK_CODE, CELL_TILE_ROWS, CELL_UNPAINTED, codeOfTerrain, indexInTile, tileOf } from "../../src/components/combat-map/map-view/cells";
 import { ANCESTRIES, ARMOR, COMMUNITIES, cardsForDomains, getClass, subclassesForClass, WEAPONS } from "../../src/lib/srd/index";
-import { errorCode, errorData, key, setupWithCampaign, useAllowlist } from "./helpers";
+import { errorCode, errorData, imageBlob, key, setupWithCampaign, useAllowlist } from "./helpers";
 
 // Map movement M0 (plan .omc/plans/map-movement.yaml; D1-D4, D6): combatTokens.move refuses a player's move whose
 // path crosses or ends on a blocking square (MOVE_BLOCKED, no position); the GM's move goes through and returns
@@ -51,7 +51,7 @@ async function withMap() {
   await gm.mutation(api.characters.create, { campaignId, draft: draft("Bryn"), idempotencyKey: key() });
   const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
   await gm.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: key() });
-  const tokens = await gm.query(api.combatTokens.list, { campaignId, mapId });
+  const tokens = await gm.query(api.combatTokensReads.list, { campaignId, mapId });
   const ash = tokens.find((tk) => tk.name === "Ash")!._id;
   const bryn = tokens.find((tk) => tk.name === "Bryn")!._id;
   const place = (tokenId: Id<"combatTokens">, x: number, y: number, size = 1) =>
@@ -99,7 +99,7 @@ async function withMap() {
   const uploaded = (sight: "block" | "cover" | "none", height: "flat" | "low" | "tall") =>
     t.run(async (c) => {
       const packId = await c.db.insert("spritePacks", { campaignId, name: "Mine", createdBy: gmId, createdAt: 1, updatedAt: 1 });
-      const storageId = await c.storage.store(new Blob([new Uint8Array(8)], { type: "image/webp" }));
+      const storageId = await c.storage.store(imageBlob("image/webp"));
       const fileId = await c.db.insert("files", { storageId, campaignId, uploadedBy: gmId, kind: "sprite", refId: "pending", createdAt: 1 });
       const id = await c.db.insert("spritePackSprites", {
         campaignId,

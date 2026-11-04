@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { SETTINGS } from "../../src/lib/sprite-packs/index";
-import { errorCode, key, setupWithCampaign, useAllowlist } from "./helpers";
+import { errorCode, imageBlob, key, setupWithCampaign, useAllowlist } from "./helpers";
 
 // Sprite packs P5 (plan .omc/plans/sprite-packs.yaml): setStyle / setSetting / settings are the GM's (player
 // FORBIDDEN, outsider NOT_FOUND, anonymous UNAUTHENTICATED); spriteSources is every member's, a player only for
@@ -40,7 +40,7 @@ async function withMaps() {
     );
   const sprite = (packId: Id<"spritePacks">, row: SpriteRow, order = 0, campaign: Id<"campaigns"> = campaignId) =>
     t.run(async (c) => {
-      const storageId = await c.storage.store(new Blob([new Uint8Array(8)], { type: "image/webp" }));
+      const storageId = await c.storage.store(imageBlob("image/webp"));
       const fileId = await c.db.insert("files", { storageId, campaignId: campaign, uploadedBy: gmId, kind: "sprite", refId: "pending", createdAt: 1 });
       const id = await c.db.insert("spritePackSprites", {
         campaignId: campaign,

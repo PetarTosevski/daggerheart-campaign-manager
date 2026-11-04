@@ -15,6 +15,8 @@
 /* Take damage (thr-take): dashed wine row. */
 .hp-take{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:rgba(91,43,43,.06);border:1px dashed rgba(91,43,43,.3)}
 .hp-take-in{width:90px;min-height:38px;padding:4px 10px;text-align:center}
+/* Phone touch target: 44 px below 640 px (S13 390 px pass; moved here from sheet.css, dcm-bxp.40 item 9). */
+@media (max-width:640px){.sh-in.hp-take-in{min-height:44px}}
 .hp-take-out{flex:1 1 220px;min-width:0;margin:0}
 .hp-toggle{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 12px;border-radius:999px;border:1px solid #b9a27a;background:linear-gradient(180deg,#fffcf3,#f8efdc);font-family:var(--font-garamond),serif;font-size:15px;color:var(--sheet-ink-soft);cursor:pointer}
 .hp-toggle input{appearance:none;flex:none;width:16px;height:16px;margin:0;border:1.5px solid #8a6d4a;border-radius:4px;background:#fffcf3;cursor:inherit}

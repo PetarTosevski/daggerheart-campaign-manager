@@ -44,7 +44,7 @@ async function setup() {
   await p1.mutation(api.members.joinByCode, { code });
   await p2.mutation(api.members.joinByCode, { code });
   const { characterId } = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
-  const sheet = async () => (await gm.query(api.characters.get, { characterId }))!.sheet;
+  const sheet = async () => (await gm.query(api.charactersReads.get, { characterId }))!.sheet;
   return { t, gm, p1, p2, characterId, sheet };
 }
 

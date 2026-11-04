@@ -107,7 +107,7 @@ export function CharacterWizard() {
   const owners = roster ? [{ userId: roster.gm.userId, name: `${roster.gm.name} (you)` }, ...roster.players.map((p) => ({ userId: p.userId, name: p.name }))] : [];
   const ownerId = isGm && owners.some((o) => o.userId === state.ownerId) ? (state.ownerId as Id<"users">) : undefined;
   // X6: one active character per player (the GM's own are exempt); the server refuses the same.
-  const party = useQuery(api.characters.listByCampaign, { campaignId });
+  const party = useQuery(api.charactersReads.listByCampaign, { campaignId });
   const playerId = isGm ? (ownerId !== roster?.gm.userId ? ownerId : undefined) : undefined;
   const blocker = party?.find((c) => c.status === "active" && (isGm ? playerId !== undefined && c.ownerId === playerId : c.mine));
 

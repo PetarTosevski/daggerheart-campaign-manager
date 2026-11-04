@@ -1,8 +1,10 @@
 import { v, type Infer } from "convex/values";
 
 import { appError } from "../src/lib/errors/app-error";
+import { hoursAtTable } from "../src/lib/domain/journal";
 import { newestFirst } from "../src/lib/domain/sessions";
 import type { Doc } from "./_generated/dataModel";
+import { partyOf, readSheet } from "./lib/characterSheet";
 import { campaignQuery, gmMutation, keyedGmMutation } from "./lib/functions";
 import { assertSessionDate, cleanText, deleteSessionRows, insertSession, loadSession, sessionsNewestFirst } from "./lib/sessions";
 import { MAX_SESSIONS, sessionStatusValidator } from "./lib/validators/sessions";
@@ -52,6 +54,55 @@ export const list = campaignQuery({
         .take(MAX_SESSIONS);
     const [live, played] = await Promise.all([byStatus("live"), byStatus("played")]);
     return newestFirst([...live, ...played]).map(playerItem);
+  },
+});
+
+/** The Journal's 'Campaign so far' numbers (Journal JD5). */
+export const campaignSummaryValidator = v.object({
+  /** Sessions marked played (the live one is not counted until it ends). */
+  sessionsPlayed: v.number(),
+  /**
+   * Hours at the table (Q3: automatic from live time, J0's `hoursAtTable`), unrounded: every session's `playedMs`, a
+   * session ended before Journal J0 its last start → end, and the live session's running window up to `asOf`.
+   */
+  hoursAtTable: v.number(),
+  /** When `hoursAtTable` was counted; while `live` is true the UI may add `Date.now() - asOf` to keep it ticking. */
+  asOf: v.number(),
+  /** Whether a session is live (its window is still growing). */
+  live: v.boolean(),
+  /** The highest level among the active characters, else the campaign's starting level (no active party yet). */
+  partyLevel: v.number(),
+});
+export type CampaignSessionSummary = Infer<typeof campaignSummaryValidator>;
+
+/**
+ * 'Campaign so far' (Journal JD5): sessions played, hours at the table and the party level, for every member (the
+ * Journal shows the panel to players too, Q5). Reads the campaign's sessions (at most MAX_SESSIONS) and its characters
+ * (`partyOf`, bounded); an unreadable sheet is skipped.
+ */
+export const summary = campaignQuery({
+  need: "view",
+  args: {},
+  returns: campaignSummaryValidator,
+  handler: async (ctx) => {
+    const [sessions, party] = await Promise.all([sessionsNewestFirst(ctx, ctx.campaign._id), partyOf(ctx, ctx.campaign._id)]);
+    const asOf = Date.now();
+    let partyLevel = 0;
+    for (const character of party) {
+      if (character.status !== "active") continue;
+      try {
+        partyLevel = Math.max(partyLevel, readSheet(character.sheet).level);
+      } catch {
+        // An unreadable sheet has no level to count; the roster shows it as corrupt.
+      }
+    }
+    return {
+      sessionsPlayed: sessions.filter((s) => s.status === "played").length,
+      hoursAtTable: hoursAtTable(sessions, asOf),
+      asOf,
+      live: sessions.some((s) => s.status === "live"),
+      partyLevel: partyLevel > 0 ? partyLevel : ctx.campaign.level,
+    };
   },
 });
 

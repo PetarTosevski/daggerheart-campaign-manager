@@ -20,8 +20,8 @@ export function useLiveMap(campaignId: Id<"campaigns">): CombatMapSummary | null
  */
 export function useTargetData(campaignId: Id<"campaigns">) {
   const map = useLiveMap(campaignId);
-  const party = useQuery(api.characters.listByCampaign, { campaignId });
-  const tokens = useQuery(api.combatTokens.list, map ? { campaignId, mapId: map._id } : "skip");
+  const party = useQuery(api.charactersReads.listByCampaign, { campaignId });
+  const tokens = useQuery(api.combatTokensReads.list, map ? { campaignId, mapId: map._id } : "skip");
   if (map === undefined || party === undefined || (map !== null && tokens === undefined)) return undefined;
   return { party, tokens: map === null ? null : (tokens ?? []) };
 }

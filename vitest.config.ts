@@ -9,10 +9,22 @@ const alias = { "@": fileURLToPath(new URL("./src", import.meta.url)) };
 // projects; on a loaded machine a jsdom render with its queries, or a convex-test case with many calls, can pass
 // vitest's 5 s default although it needs a fraction of that alone. Make a slow test cheaper first (narrower queries,
 // render only what is tested; docs/tasks/TASK-D12-H3.md); this limit is the headroom, not the fix.
-const testTimeout = 15_000;
+// Coverage instrumentation slows the CPU-heavy cases (password hashing in auth-signup) about 3x; `test:coverage` sets
+// VITEST_COVERAGE=1 for that headroom only.
+const testTimeout = process.env.VITEST_COVERAGE === "1" ? 60_000 : 15_000;
 
 export default defineConfig({
   test: {
+    // `pnpm test:coverage`: line / branch coverage of the app code over both projects (unit + convex). The HTML report
+    // lands in coverage/ (git-ignored); coverage/coverage-summary.json has the totals per file.
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.{ts,tsx}", "convex/**/*.ts"],
+      exclude: ["convex/_generated/**", "**/*.d.ts", "src/**/*.css"],
+      reporter: ["text-summary", "html", "json-summary"],
+      reportsDirectory: "coverage",
+      reportOnFailure: true,
+    },
     projects: [
       {
         plugins: [react()],

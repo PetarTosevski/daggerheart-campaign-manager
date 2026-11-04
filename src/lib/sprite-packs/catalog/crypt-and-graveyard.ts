@@ -1,8 +1,8 @@
 // Built-in catalog: crypt and graveyard (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, long, obj, tex } from "./types";
+import { defineFolder, long, obj, tex, type FolderCatalog } from "./types";
 
-export const CRYPT_AND_GRAVEYARD = defineFolder("crypt-and-graveyard", {
+export const CRYPT_AND_GRAVEYARD = (): FolderCatalog => defineFolder("crypt-and-graveyard", {
   props: [
     obj("gravestone", "cover", "low", "rock", { standIn: false }),
     obj("cracked gravestone", "cover", "low", "rock", { standIn: false }),

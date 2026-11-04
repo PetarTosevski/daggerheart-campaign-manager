@@ -3,6 +3,7 @@
 import { useMutation } from "convex/react";
 import { useId, useRef, useState } from "react";
 
+import { UploadNotice } from "@/components/uploads/upload-notice";
 import { errorMessage } from "@/lib/convex-errors";
 import type { RgbaImage } from "@/lib/sprite-packs/cut";
 
@@ -236,6 +237,7 @@ export function Uploader({ campaignId, pack }: { campaignId: Id<"campaigns">; pa
           {error}
         </p>
       ) : null}
+      <UploadNotice kind="sprite" scope={pack._id} />
 
       {rows.length > 0 ? (
         <>

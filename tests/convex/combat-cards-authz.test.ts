@@ -90,7 +90,7 @@ describe("combat cards: access by role", () => {
   });
 
   it("hand: every member while hands are shared (F7-H4: the GM's switch on by default, nothing hidden)", async () => {
-    expect(await rows((w, _s, role) => w.as(role).query(api.combatCards.hand, { campaignId: w.campaignId, characterId: w.characterA }))).toEqual({
+    expect(await rows((w, _s, role) => w.as(role).query(api.combatCardsReads.hand, { campaignId: w.campaignId, characterId: w.characterA }))).toEqual({
       anon: "UNAUTHENTICATED",
       outsider: "NOT_FOUND",
       otherPlayer: "ok",
@@ -101,7 +101,7 @@ describe("combat cards: access by role", () => {
 
   it("hand with the GM's switch off: the character's player and the GM; another player FORBIDDEN", async () => {
     const off = async (w: World) => w.as("gm").mutation(api.campaigns.setPlayersSeeHands, { campaignId: w.campaignId, enabled: false });
-    expect(await rows(async (w, _s, role) => (await off(w), w.as(role).query(api.combatCards.hand, { campaignId: w.campaignId, characterId: w.characterA })))).toEqual({
+    expect(await rows(async (w, _s, role) => (await off(w), w.as(role).query(api.combatCardsReads.hand, { campaignId: w.campaignId, characterId: w.characterA })))).toEqual({
       anon: "UNAUTHENTICATED",
       outsider: "NOT_FOUND",
       otherPlayer: "FORBIDDEN",
@@ -112,7 +112,7 @@ describe("combat cards: access by role", () => {
 
   it("hand hidden by its player: the character's player and the GM; another player FORBIDDEN", async () => {
     const hide = async (w: World) => w.as("player").mutation(api.combatCards.setHandHidden, { campaignId: w.campaignId, characterId: w.characterA, hidden: true });
-    expect(await rows(async (w, _s, role) => (await hide(w), w.as(role).query(api.combatCards.hand, { campaignId: w.campaignId, characterId: w.characterA })))).toEqual({
+    expect(await rows(async (w, _s, role) => (await hide(w), w.as(role).query(api.combatCardsReads.hand, { campaignId: w.campaignId, characterId: w.characterA })))).toEqual({
       anon: "UNAUTHENTICATED",
       outsider: "NOT_FOUND",
       otherPlayer: "FORBIDDEN",
@@ -122,7 +122,7 @@ describe("combat cards: access by role", () => {
   });
 
   it("handSharing: every member", async () => {
-    expect(await rows((w, _s, role) => w.as(role).query(api.combatCards.handSharing, { campaignId: w.campaignId }))).toEqual({
+    expect(await rows((w, _s, role) => w.as(role).query(api.combatCardsReads.handSharing, { campaignId: w.campaignId }))).toEqual({
       anon: "UNAUTHENTICATED",
       outsider: "NOT_FOUND",
       otherPlayer: "ok",
@@ -162,7 +162,7 @@ describe("combat cards: access by role", () => {
   });
 
   it("pending: every member (each their own, the GM all)", async () => {
-    expect(await rows((w, _s, role) => w.as(role).query(api.combatCards.pending, { campaignId: w.campaignId }))).toEqual({
+    expect(await rows((w, _s, role) => w.as(role).query(api.combatCardsReads.pending, { campaignId: w.campaignId }))).toEqual({
       anon: "UNAUTHENTICATED",
       outsider: "NOT_FOUND",
       otherPlayer: "ok",
@@ -199,8 +199,8 @@ describe("combat cards: access by role", () => {
     const s = await scene(w);
     const r = await w.as("player").mutation(api.combatCards.useCard, useArgs(w, s, s.archerToken));
     if (r.status !== "pending") throw new Error("expected a pending card use");
-    expect(await w.as("otherPlayer").query(api.combatCards.pending, { campaignId: w.campaignId })).toEqual([]);
-    expect(await w.as("gm").query(api.combatCards.pending, { campaignId: w.campaignId })).toHaveLength(1);
+    expect(await w.as("otherPlayer").query(api.combatCardsReads.pending, { campaignId: w.campaignId })).toEqual([]);
+    expect(await w.as("gm").query(api.combatCardsReads.pending, { campaignId: w.campaignId })).toHaveLength(1);
     // The weapon-attack sanction refuses a card request (CA3 leaves it to CA4).
     expect(await code(w.as("gm").mutation(api.combatRequests.sanction, { campaignId: w.campaignId, requestId: r.requestId, approve: true, idempotencyKey: key() }))).toBe("INVALID");
   });

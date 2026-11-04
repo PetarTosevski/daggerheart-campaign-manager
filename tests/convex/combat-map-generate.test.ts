@@ -5,7 +5,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { scenePrompt, toLayout } from "../../convex/combatMapGenerate";
 import { DEFAULT_MODEL } from "../../convex/photoImport";
 import { mapSpecSchema } from "../../src/lib/domain/combat-map/spec";
-import { errorCode, key, OTHER_EMAIL, setupWithCampaign, useAllowlist } from "./helpers";
+import { errorCode, imageBlob, key, OTHER_EMAIL, setupWithCampaign, useAllowlist } from "./helpers";
 
 // D9 C4: Claude lays out a map from the GM's description. `generate` (userAction, GM via an internal access check,
 // rate limit combatMapGenerate) and `stop` (gmMutation). fetch is stubbed: no test reaches the Messages API.
@@ -240,7 +240,7 @@ describe("combat map generation", () => {
   it("replaces an uploaded image and deletes its file", async () => {
     const f = await withMap();
     const storageId = await f.t.run(async (ctx) => {
-      const id = await ctx.storage.store(new Blob([new Uint8Array(64)], { type: "image/png" }));
+      const id = await ctx.storage.store(imageBlob("image/png"));
       await (ctx.db as unknown as { patch: (id: Id<"_storage">, value: { contentType: string }) => Promise<void> }).patch(id, { contentType: "image/png" });
       return id;
     });

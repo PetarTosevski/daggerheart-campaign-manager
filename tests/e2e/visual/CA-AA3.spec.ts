@@ -42,7 +42,7 @@ async function scene(page: Page) {
   const { mapId } = await client.mutation(api.combatMaps.create, { campaignId, size: "medium", name: "Old road", idempotencyKey: crypto.randomUUID() });
   await client.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
   await client.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId, instanceIds, idempotencyKey: crypto.randomUUID() });
-  const tokens = await client.query(api.combatTokens.list, { campaignId, mapId });
+  const tokens = await client.query(api.combatTokensReads.list, { campaignId, mapId });
   await client.mutation(api.combatTokens.move, { campaignId, tokenId: tokens.find((t) => t.name === "Mira")!._id, x: 5, y: 10 });
   await client.mutation(api.combatTokens.move, { campaignId, tokenId: tokens.find((t) => t.name === "Tabby")!._id, x: 5, y: 12 });
   await client.mutation(api.combatTokens.move, { campaignId, tokenId: tokens.find((t) => t.instanceId === instanceIds[0])!._id, x: 6, y: 10 });

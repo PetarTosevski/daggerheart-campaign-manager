@@ -1,0 +1,254 @@
+/*
+ * Combat HUD shell (plan combat-hud H0; HANDOFF "Layout"): a full-bleed map, the HUD regions over it, and the left
+ * tools drawer. Region positions are the desktop board's (1440 × 900); the make-room rules (H2.2) are at the end. The
+ * GM's dock and Log regions (H9.0) are placed in dock/dock.css.
+ * The tablet's positions (761-1180 px, H7.1) are in responsive/tablet.css, imported here; the phone's (H7.2) in
+ * responsive/phone.css. The overlay never takes pointer events itself, only its parts do, so the map under the
+ * empty parts of a region stays usable.
+ */
+@import "./responsive/tablet.css";
+
+.hud-root {
+  position: relative;
+  width: 100%;
+  /* The combat app bar (H9.A) sets --app-bar-h above the HUD; without it the HUD fills the screen. */
+  height: calc(100dvh - var(--app-bar-h, 0px));
+  min-height: 520px;
+  overflow: hidden;
+  background: var(--hud-page);
+}
+
+/* ---------------------------------------------------------------- the map, full bleed */
+.hud-map {
+  position: absolute;
+  inset: 0;
+}
+.hud-map > .cm-board,
+.hud-map .cm-board {
+  position: relative;
+  height: 100%;
+  gap: 0;
+}
+.hud-map .cm-vp {
+  flex: 1;
+  height: 100%;
+  max-height: none;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+}
+/* The map has no toolbar of its own here (MapBoard chrome="none", H9.0): the GM's dock and a player's map controls. */
+.hud-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  color: var(--hud-muted);
+}
+
+/* ---------------------------------------------------------------- the overlay and its regions */
+.hud-over {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+}
+.hud-region {
+  position: absolute;
+  pointer-events: none;
+}
+.hud-region > * {
+  pointer-events: auto;
+}
+.hud-r-banners {
+  left: var(--hud-edge);
+  top: 0;
+}
+.hud-r-scene {
+  left: 690px;
+  top: 18px;
+}
+.hud-r-fear {
+  right: var(--hud-edge);
+  top: 0;
+}
+/* The player's feed; the GM's queue region ("waiting") also carries this class for the tablet / phone placement. */
+.hud-r-left,
+.hud-r-waiting {
+  left: 16px;
+  bottom: 16px;
+  width: 330px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.hud-r-hand {
+  left: 330px;
+  right: var(--hud-edge);
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.hud-r-pop {
+  inset: 0;
+}
+.hud-r-panel {
+  top: 0;
+  right: 0;
+  bottom: 0;
+}
+
+/*
+ * The toasts (hud/toasts, H6.1) sit in the hand region's column; the hand's box is as tall as a raised card
+ * (--hud-hand-room), so in the flow they landed near the top of the map. From tablet width up they hang beside the
+ * fan as Main draws the toast (`.blk`: left 880, bottom 262, 330 wide; left 690 while a sheet is open, the
+ * --hud-pop-blk-left below) and grow upward; the hand region starts at x = 330 (dcm-bxp.99.32.29). tablet.css moves
+ * them to the board's right 24 / bottom 220.
+ */
+@media (min-width: 761px) {
+  .hud-r-hand > .hud-toasts {
+    position: absolute;
+    left: calc(var(--hud-pop-blk-left) - 330px);
+    bottom: 262px;
+    width: 330px;
+    transition:
+      left var(--hud-t-map) var(--hud-ease-out),
+      right var(--hud-t-map) var(--hud-ease-out);
+  }
+}
+
+@media (max-width: 1180px) {
+  .hud-r-scene {
+    left: 50%;
+    transform: translateX(-50%);
+  }
+}
+@media (max-width: 760px) {
+  .hud-r-scene {
+    top: 8px;
+  }
+  .hud-r-left {
+    width: auto;
+    right: 16px;
+  }
+}
+
+/* ---------------------------------------------------------------- make room (plan combat-hud H2.2)
+ *
+ * While a sheet is open (.hud-sh-open on the root, hud/state.tsx) the right sheet panel (--hud-sheet-w) covers the
+ * map's right edge, so the HUD makes room as the boards do (Main / GMDesktop `.sh-open` rules; HANDOFF "Layout";
+ * CmpTokensDesign "Motion"):
+ *   - the map's viewport transitions translateX(-125px) scale(.94) from its top-left corner over 350 ms (tablet:
+ *     -60px, .92; the --hud-map-* tokens in hud.css). Pointer maths stays exact: map-board.tsx `toSquares` and the
+ *     token drag divide by the measured on-screen scale, so a click or a drag lands on the square under the pointer;
+ *   - the Fear banner (with its rod) moves left by the panel's width to right 424 (tablet 356) and the day / time disc
+ *     hides;
+ *   - the hand's region starts at left 330 (tablet 150) and ends left of the panel;
+ *   - pop-ups shift left: the pop region ends at the panel, and the anchored ones read the --hud-pop-* lefts below;
+ *   - the GM's title and tools hide (GMDesktop `.gtitle` / `.gtools`); on a tablet the whole title row hides.
+ * Every move is a transition on the --hud-t-* tokens, which hud.css zeroes under prefers-reduced-motion.
+ *
+ * The boards' class is `sh-open`; the app's is `hud-sh-open` because the party sheet's sheet-ui.css styles a global
+ * `.sh-open` (dcm-bxp.99.32.11). These rules take over the make-room parts H1.1 / H1.2 / H1.S keyed on `.sh-open`.
+ */
+.hud-root {
+  /* Lefts of the anchored pop-ups (Main `.res`, `.blk`, `.gmh`): the result, the blocked card, the reactions note. */
+  --hud-pop-res-left: 820px;
+  --hud-pop-blk-left: 880px;
+  --hud-pop-note-left: 820px;
+}
+.hud-root.hud-sh-open {
+  --hud-pop-res-left: 592px;
+  --hud-pop-blk-left: 690px;
+  --hud-pop-note-left: 560px;
+}
+
+.hud-map .cm-vp {
+  transform-origin: 0 0;
+  transition: transform var(--hud-t-map) var(--hud-ease-out);
+}
+.hud-sh-open .hud-map .cm-vp {
+  transform: translateX(var(--hud-map-shift)) scale(var(--hud-map-scale));
+}
+
+.hud-r-hand,
+.hud-r-pop {
+  transition:
+    left var(--hud-t-map) var(--hud-ease-out),
+    right var(--hud-t-map) var(--hud-ease-out);
+}
+.hud-sh-open .hud-r-hand {
+  left: 330px;
+  right: calc(var(--hud-sheet-w) + var(--hud-edge));
+}
+/*
+ * The GM's dock (z 70) lies over the bottom of the hand a PC's sheet brings up: the card the pointer or the focus is on
+ * comes above it, so its raised face and Use stay reachable (H9.6).
+ */
+.hud-r-hand:has(.hud-hc:hover, .hud-hc:focus-within) {
+  z-index: 71;
+}
+/* GMDesktop `.fanside` (margin-bottom 98): the GM's Roll options and Hide cards beside that hand sit above the dock. */
+.hud-root[data-role="gm"] .hud-fanside {
+  margin-bottom: 98px;
+}
+.hud-sh-open .hud-r-pop {
+  right: var(--hud-sheet-w);
+}
+
+/* The Fear banner and the disc (fear/fear.css: .hud-fear already transitions its transform on --hud-t-map). */
+.hud-root.hud-sh-open .hud-fear {
+  transform: translateX(calc(-1 * var(--hud-sheet-w)));
+}
+.hud-root.hud-sh-open .hud-sun {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* The spotlight's reactions note above the hand (spotlight/spotlight.css; Main `.gmh` left 820 → 560). */
+.hud-root .hud-spot-note {
+  left: var(--hud-pop-note-left);
+  transition: left var(--hud-t-map) var(--hud-ease-out);
+}
+/* The players' "The GM has the spotlight" card stays at 690 but narrows to 330 (Main `.gms`). */
+.hud-root.hud-sh-open .hud-spot-card {
+  max-width: 330px;
+}
+
+/* GMDesktop: the title hides (hidden, not only transparent, so the keyboard cannot reach it). */
+.hud-root.hud-sh-open .hud-scene-gm .hud-title {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+/* The parts that hide fade out first and only then turn hidden; they turn visible at once and fade in. */
+.hud-root .hud-sun,
+.hud-root .hud-scene-gm .hud-title {
+  transition:
+    opacity var(--hud-t-fast),
+    visibility 0s linear 0s;
+}
+.hud-root.hud-sh-open .hud-sun,
+.hud-root.hud-sh-open .hud-scene-gm .hud-title {
+  transition:
+    opacity var(--hud-t-fast),
+    visibility 0s linear var(--hud-t-fast);
+}
+
+@media (max-width: 1180px) {
+  .hud-sh-open .hud-r-hand {
+    left: 150px;
+  }
+  /* Tablet: the title and the toolbar hide for players too (Main `.tab.sh-open .title, .tr`). */
+  .hud-root.hud-sh-open .hud-scene,
+  .hud-root.hud-sh-open .hud-scene > * {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+}

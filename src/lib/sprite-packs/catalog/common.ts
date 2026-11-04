@@ -1,8 +1,8 @@
 // Built-in catalog: common (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, long, obj, tex } from "./types";
+import { defineFolder, long, obj, tex, type FolderCatalog } from "./types";
 
-export const COMMON = defineFolder("common", {
+export const COMMON = (): FolderCatalog => defineFolder("common", {
   props: [
     obj("wooden crate", "cover", "low", "crate"),
     obj("barrel", "cover", "low", "barrel"),

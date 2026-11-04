@@ -29,8 +29,8 @@ import { VOLCANIC } from "./volcanic";
 
 export * from "./types";
 
-/** Every built-in folder, common first, then the settings in the prompts doc's order. */
-export const CATALOG: Readonly<Record<FolderId, FolderCatalog>> = {
+/** Each folder's builder, common first, then the settings in the prompts doc's order. */
+const FOLDERS: Readonly<Record<FolderId, () => FolderCatalog>> = {
   common: COMMON,
   forest: FOREST,
   "grassland-and-road": GRASSLAND_AND_ROAD,
@@ -53,19 +53,37 @@ export const CATALOG: Readonly<Record<FolderId, FolderCatalog>> = {
   volcanic: VOLCANIC,
 };
 
+const built: Partial<Record<FolderId, FolderCatalog>> = {};
+
+/**
+ * Every built-in folder, common first, then the settings in the prompts doc's order. Each folder is built on its first
+ * read (dcm-uh6r: modules that only reach the sprite code, such as the Convex vision queries, never build the catalog).
+ */
+export const CATALOG: Readonly<Record<FolderId, FolderCatalog>> = Object.defineProperties(
+  {} as Record<FolderId, FolderCatalog>,
+  Object.fromEntries(
+    (Object.entries(FOLDERS) as [FolderId, () => FolderCatalog][]).map(([id, build]) => [id, { enumerable: true, get: () => (built[id] ??= build()) }]),
+  ),
+);
+
 /** A folder's entries: props, then large, then terrain, each in grid order. */
 export function folderEntries(folder: FolderCatalog): readonly CatalogEntry[] {
   return [...folder.props, ...folder.large, ...folder.terrain];
 }
 
-/** Every built-in entry in catalog order. */
-export const CATALOG_ENTRIES: readonly CatalogEntry[] = Object.values(CATALOG).flatMap(folderEntries);
+let entries: readonly CatalogEntry[] | undefined;
 
-const BY_KEY: ReadonlyMap<string, CatalogEntry> = new Map(CATALOG_ENTRIES.map((e) => [e.key, e]));
+/** Every built-in entry in catalog order (built on the first call, dcm-uh6r). */
+export function catalogEntries(): readonly CatalogEntry[] {
+  return (entries ??= Object.values(CATALOG).flatMap(folderEntries));
+}
+
+let byKey: ReadonlyMap<string, CatalogEntry> | undefined;
 
 /** The catalog entry for a built-in key (D8), or null for an unknown key. */
 export function catalogEntry(key: string): CatalogEntry | null {
-  return BY_KEY.get(key) ?? null;
+  byKey ??= new Map(catalogEntries().map((e) => [e.key, e]));
+  return byKey.get(key) ?? null;
 }
 
 /** The folder part of a built-in key (`forest/oak-tree` -> `forest`). */

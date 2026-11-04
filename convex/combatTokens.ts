@@ -1,17 +1,14 @@
-import { v, type Infer } from "convex/values";
+import { v } from "convex/values";
 
 import { freeSquares, moveToken, snapTurn, startFace, startSide } from "../src/components/combat-map/tokens/geometry";
 import { rasterize, type TerrainId } from "../src/lib/combat-map/raster";
 import { checkMove } from "../src/lib/domain/combat-map/movement";
+import { rangeCheck } from "../src/lib/domain/combat-actions/distance";
 import { appError } from "../src/lib/errors/app-error";
 import { applyCondition } from "../src/lib/domain/encounters/damage";
-import { sessionEncounterTitle } from "../src/lib/domain/sessions/encounter-title";
-import { ADVERSARIES } from "../src/lib/srd/adversaries";
-import { PORTRAITS } from "../src/lib/srd/art";
-import { CLASSES } from "../src/lib/srd/classes";
-import type { AdversaryType } from "../src/lib/srd/types";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { areasAfterMove, carryAlong, endAreasOnCasterEvent, endAreasOwnerLeft, moveRules, rangeTriggersAfterMove } from "./combatAreas";
 import { partyOf, readSheet } from "./lib/characterSheet";
 import {
   MAX_TOKEN_NAME,
@@ -22,14 +19,16 @@ import {
   loadCombatToken,
   tokensOnMap,
 } from "./lib/combatMaps";
-import { movementGrid } from "./lib/combatMovement";
-import { adversaryArtSrc, MAX_INSTANCES, startEncounter } from "./lib/encounters";
-import { ownFileUrl } from "./lib/files";
-import { campaignMutation, campaignQuery, gmMutation, gmQuery, keyedGmMutation } from "./lib/functions";
-import { atLeast, permissionFor, type Permission } from "./lib/permissions";
-import { currentSessionEncounter } from "./lib/sessions";
-import { carriedLightValidator, tokenSideValidator } from "./lib/validators/combatMaps";
-import { encounterConditionValidator, encounterStatusValidator } from "./lib/validators/encounters";
+import { movementGrid, uncloakAfterMove } from "./lib/combatMovement";
+import { MAX_INSTANCES, startEncounter } from "./lib/encounters";
+import { pcPortrait } from "./lib/pcPortrait";
+import { tokenViewValidator, type TokenView } from "./lib/validators/combatTokens";
+import { campaignMutation, gmMutation, keyedGmMutation } from "./lib/functions";
+import { atLeast, permissionFor } from "./lib/permissions";
+import { currentSessionEncounter, playCurrentScene } from "./lib/sessions";
+import { tokenSideValidator } from "./lib/validators/combatMaps";
+import { encounterConditionValidator } from "./lib/validators/encounters";
+import { adversaryType, instancesOf, placedInstances, runningEncounter, type CampaignCtx } from "./lib/combatTokenViews";
 
 /**
  * Tokens on a combat map (D9 C6, plan `.omc/plans/d9-combat-map.yaml`; R3, R4, R5, Q6). The GM places the party,
@@ -43,12 +42,10 @@ import { encounterConditionValidator, encounterStatusValidator } from "./lib/val
  * D10 S8 (plan `.omc/plans/d10-sessions.yaml`, B11, Q2): `sessionEncounter` and `placeSessionEncounter` put the live
  * (else the newest planned) session's linked encounter on the map with one click ("＋ Session encounter").
  *
- * Reads: the GM's `list` returns every token with its stats. Players get `party`: the PC tokens only (their own
- * and the other PCs', Q4), never an adversary, ally or neutral token, until C7's filtered `playerView`.
+ * Reads (`combatTokensReads.ts` since dcm-uh6r, so they load without the movement and area engines): the GM's `list`
+ * returns every token with its stats. Players get `party`: the PC tokens only (their own and the other PCs', Q4), never
+ * an adversary, ally or neutral token, until C7's filtered `playerView`.
  */
-
-const SRD_TYPES = new Map<string, string>(ADVERSARIES.map((a) => [a.id, a.type]));
-const CLASS_NAMES = new Map<string, string>(CLASSES.map((c) => [c.id, c.name]));
 
 /** The highest Hit Points or Stress a custom token can have. */
 const MAX_CUSTOM_TRACK = 99;
@@ -57,86 +54,9 @@ const MAX_PLACE = MAX_INSTANCES;
 
 // ---------------------------------------------------------------- validators
 
-const tokenKindValidator = v.union(v.literal("pc"), v.literal("adversary"), v.literal("custom"));
+export { pcPortrait };
 
-/** A token's portrait: an uploaded image or rulebook art (url), the chosen or default design art (an asset id), or none (initials). */
-const portraitValidator = v.union(
-  v.null(),
-  v.object({ kind: v.literal("url"), url: v.string() }),
-  v.object({ kind: v.literal("asset"), asset: v.string(), position: v.string() }),
-);
-
-const statsValidator = v.object({
-  hp: v.number(),
-  hpMax: v.number(),
-  stress: v.number(),
-  stressMax: v.number(),
-  /** The sheet's conditions (PC) or the tracker's (adversary, custom). */
-  conditions: v.array(v.string()),
-  /** An adversary's Difficulty. */
-  difficulty: v.optional(v.number()),
-  /** Every HP marked (a downed PC, a defeated adversary): the token is greyed. */
-  down: v.boolean(),
-});
-
-/**
- * A token as the map draws it. `stats` is null when the source row is gone (a deleted character or encounter
- * instance) or unreadable. `tracked` (adversaries): the tracker accepts changes because the encounter is running.
- */
-export const tokenViewValidator = v.object({
-  _id: v.id("combatTokens"),
-  kind: tokenKindValidator,
-  characterId: v.optional(v.id("characters")),
-  instanceId: v.optional(v.id("encounterAdversaries")),
-  side: tokenSideValidator,
-  x: v.number(),
-  y: v.number(),
-  size: v.number(),
-  face: v.number(),
-  light: carriedLightValidator,
-  /** GM only: who this token was revealed to (R10). */
-  revealedTo: v.optional(v.array(v.id("characters"))),
-  name: v.string(),
-  /** "Bard · level 1", "Bruiser", "" (custom). */
-  sub: v.string(),
-  portrait: portraitValidator,
-  /** The caller may move and turn it (GM: every token; a player: their own PC's). */
-  canMove: v.boolean(),
-  /** The caller's own character's token (players; false for the GM). */
-  mine: v.boolean(),
-  stats: v.union(v.null(), statsValidator),
-  tracked: v.optional(v.boolean()),
-});
-export type TokenView = Infer<typeof tokenViewValidator>;
-
-const combatantsValidator = v.object({
-  /** Active characters not yet on this map ("＋ Party (n)"). */
-  partyLeft: v.number(),
-  /** The running encounter, or null. */
-  encounter: v.union(v.null(), v.object({ _id: v.id("encounters"), name: v.string() })),
-  /** The board's "From the Adversaries tab" queue: the running encounter's instances not yet on this map, in order. */
-  queue: v.array(v.object({ instanceId: v.id("encounterAdversaries"), name: v.string(), solo: v.boolean() })),
-});
-
-/** The "＋ Session encounter" button (B11): its title, and the session and encounter it places (null: none). */
-const sessionEncounterValidator = v.object({
-  /** 'Session N: 2× Bruiser, 1× Leader' (S1's sessionEncounterTitle over every instance), or 'No planned session with an encounter'. */
-  title: v.string(),
-  session: v.union(
-    v.null(),
-    v.object({
-      sessionId: v.id("sessions"),
-      n: v.number(),
-      encounterId: v.id("encounters"),
-      encounterName: v.string(),
-      status: encounterStatusValidator,
-      /** Instances in the encounter. */
-      adversaries: v.number(),
-      /** Its undefeated instances not on this map yet (0 for an unknown map). */
-      unplaced: v.number(),
-    }),
-  ),
-});
+export { tokenViewValidator, type TokenView };
 
 /** Sides the GM picks for a custom token (the party side belongs to PCs). */
 const customSideValidator = v.union(v.literal("enemy"), v.literal("ally"), v.literal("neutral"));
@@ -156,34 +76,6 @@ function tokenName(raw: string): string {
   if (name === "") invalid("Give the token a name.");
   if (name.length > MAX_TOKEN_NAME) invalid(`A token name can be at most ${MAX_TOKEN_NAME} characters.`);
   return name;
-}
-
-/** A campaign's map by id, or null (other campaigns' and malformed ids read as missing). */
-async function findMap(ctx: QueryCtx, campaignId: Id<"campaigns">, mapId: string): Promise<Doc<"combatMaps"> | null> {
-  const id = ctx.db.normalizeId("combatMaps", mapId);
-  const map = id === null ? null : await ctx.db.get("combatMaps", id);
-  return map !== null && map.campaignId === campaignId ? map : null;
-}
-
-/** The campaign's running encounter (at most one), or null. */
-function runningEncounter(ctx: QueryCtx, campaignId: Id<"campaigns">) {
-  return ctx.db
-    .query("encounters")
-    .withIndex("by_campaign_status_updated", (q) => q.eq("campaignId", campaignId).eq("status", "running"))
-    .first();
-}
-
-/** An instance's adversary type (SRD entry or the campaign's custom block), or null. */
-async function adversaryType(ctx: QueryCtx, campaignId: Id<"campaigns">, instance: Doc<"encounterAdversaries">): Promise<string | null> {
-  if (instance.source.kind === "srd") return SRD_TYPES.get(instance.source.adversaryId) ?? null;
-  const block = await ctx.db.get("customAdversaries", instance.source.customId);
-  return block !== null && block.campaignId === campaignId ? block.type : null;
-}
-
-/** An adversary token's portrait: its rulebook art as an image URL, or null (initials). */
-async function adversaryPortrait(ctx: QueryCtx, campaignId: Id<"campaigns">, instance: Doc<"encounterAdversaries">): Promise<TokenView["portrait"]> {
-  const src = await adversaryArtSrc(ctx, campaignId, instance);
-  return src === null ? null : { kind: "url", url: src };
 }
 
 /** Squares new tokens may stand on: not wall, void, deep water or lava (the board's `walkable`); any square on an image. */
@@ -226,137 +118,24 @@ async function insertTokens(ctx: MutationCtx, map: Doc<"combatMaps">, existing: 
   return ids;
 }
 
-/** The encounter's instances in order (at most MAX_INSTANCES). */
-function instancesOf(ctx: QueryCtx, encounterId: Id<"encounters">) {
-  return ctx.db
-    .query("encounterAdversaries")
-    .withIndex("by_encounter_order", (q) => q.eq("encounterId", encounterId))
-    .take(MAX_INSTANCES);
-}
-
-/** The ids of the adversary instances already on a map. */
-function placedInstances(tokens: Doc<"combatTokens">[]): Set<Id<"encounterAdversaries">> {
-  return new Set(tokens.flatMap((t) => (t.ref.kind === "adversary" ? [t.ref.adversaryId] : [])));
-}
-
-/** A PC's portrait (CharacterPortrait's order: upload, chosen art, default art by subclass then ancestry). */
-export async function pcPortrait(ctx: QueryCtx, characterId: Id<"characters">, sheet: ReturnType<typeof readSheet>): Promise<TokenView["portrait"]> {
-  if (sheet.portrait?.kind === "upload") {
-    const url = await ownFileUrl(ctx, "portrait", characterId, sheet.portrait.storageId);
-    return url === null ? null : { kind: "url", url };
-  }
-  if (sheet.portrait?.kind === "asset") return { kind: "asset", asset: sheet.portrait.asset, position: "center 30%" };
-  const ancestry = sheet.ancestry.kind === "single" ? sheet.ancestry.id : sheet.ancestry.kind === "mixed" ? sheet.ancestry.first : sheet.ancestry.form;
-  const art = PORTRAITS[`sub-${sheet.subclassId}`] ?? PORTRAITS[`anc-${ancestry}`];
-  return art ? { kind: "asset", asset: art.asset, position: art.position } : null;
-}
-
-/**
- * Builds the views of `tokens` for the caller. `gm`: every token may move and `revealedTo` is included; otherwise a
- * PC token may move when the caller can edit its character (permissionFor, R4). Reads each source row once.
- */
-type CampaignCtx<C> = C & { user: Doc<"users">; campaign: Doc<"campaigns">; permission: Permission };
-
-async function viewsOf(ctx: CampaignCtx<QueryCtx>, tokens: Doc<"combatTokens">[], gm: boolean): Promise<TokenView[]> {
-  const encounters = new Map<Id<"encounters">, Doc<"encounters"> | null>();
-  const views: TokenView[] = [];
-  for (const token of tokens) {
-    const base = {
-      _id: token._id,
-      side: token.side,
-      x: token.x,
-      y: token.y,
-      size: token.size,
-      face: token.face,
-      light: token.light,
-      ...(gm ? { revealedTo: token.revealedTo } : {}),
-    };
-    const { ref } = token;
-    // A companion token (token refs widened by sheet-drawer SD0, Q4): its view is SD-C's; nothing places one before it.
-    if (ref.kind === "companion") continue;
-    if (ref.kind === "custom") {
-      views.push({
-        ...base,
-        kind: "custom",
-        name: ref.name,
-        sub: "",
-        portrait: null,
-        canMove: gm,
-        mine: false,
-        stats: { hp: ref.hp, hpMax: ref.hpMax, stress: ref.stress, stressMax: ref.stressMax, conditions: ref.conditions, down: ref.hpMax > 0 && ref.hp >= ref.hpMax },
-      });
-    } else if (ref.kind === "pc") {
-      const character = await ctx.db.get("characters", ref.characterId);
-      if (character === null || character.campaignId !== ctx.campaign._id) {
-        views.push({ ...base, kind: "pc", characterId: ref.characterId, name: "Missing character", sub: "", portrait: null, canMove: gm, mine: false, stats: null });
-        continue;
-      }
-      const mine = !gm && character.ownerId === ctx.user._id;
-      const canMove = gm || atLeast(await permissionFor(ctx, ctx.user, { type: "character", campaign: ctx.campaign, character }, "edit"), "edit");
-      let sheet: ReturnType<typeof readSheet>;
-      try {
-        sheet = readSheet(character.sheet);
-      } catch {
-        views.push({ ...base, kind: "pc", characterId: character._id, name: "Unreadable character", sub: "", portrait: null, canMove, mine, stats: null });
-        continue;
-      }
-      views.push({
-        ...base,
-        kind: "pc",
-        characterId: character._id,
-        name: sheet.name,
-        sub: `${CLASS_NAMES.get(sheet.classId) ?? sheet.classId} · level ${sheet.level}`,
-        portrait: await pcPortrait(ctx, character._id, sheet),
-        canMove,
-        mine,
-        stats: {
-          hp: sheet.hp,
-          hpMax: sheet.hpMax,
-          stress: sheet.stress,
-          stressMax: sheet.stressMax,
-          conditions: sheet.conditions,
-          down: character.status === "dead" || (sheet.hpMax > 0 && sheet.hp >= sheet.hpMax),
-        },
-      });
-    } else {
-      const instance = await ctx.db.get("encounterAdversaries", ref.adversaryId);
-      if (instance === null || instance.campaignId !== ctx.campaign._id) {
-        views.push({ ...base, kind: "adversary", instanceId: ref.adversaryId, name: "Removed adversary", sub: "", portrait: null, canMove: gm, mine: false, stats: null, tracked: false });
-        continue;
-      }
-      if (!encounters.has(instance.encounterId)) encounters.set(instance.encounterId, await ctx.db.get("encounters", instance.encounterId));
-      const encounter = encounters.get(instance.encounterId) ?? null;
-      const type = await adversaryType(ctx, ctx.campaign._id, instance);
-      views.push({
-        ...base,
-        kind: "adversary",
-        instanceId: instance._id,
-        name: instance.label,
-        sub: [type, encounter?.name].filter(Boolean).join(" · "),
-        // The rulebook art when the adversary has it (user 2026-10-21), else the side's colour and initials.
-        portrait: await adversaryPortrait(ctx, ctx.campaign._id, instance),
-        canMove: gm,
-        mine: false,
-        stats: {
-          hp: instance.hp,
-          hpMax: instance.stats.hpMax,
-          stress: instance.stress,
-          stressMax: instance.stats.stressMax,
-          conditions: instance.conditions,
-          difficulty: instance.stats.difficulty,
-          down: instance.defeated,
-        },
-        tracked: encounter?.status === "running",
-      });
-    }
-  }
-  return views;
-}
-
 /** A custom token or INVALID. */
 function customRef(token: Doc<"combatTokens">) {
   if (token.ref.kind !== "custom") invalid("Only a custom token keeps its own numbers; change this one on its sheet or in the tracker.");
   return token.ref;
+}
+
+/** A moved token's name for the feed (an area it entered, plan lanes E4). */
+async function moverName(ctx: QueryCtx, token: Doc<"combatTokens">): Promise<string> {
+  const { ref } = token;
+  if (ref.kind === "custom") return ref.name;
+  if (ref.kind === "adversary") return (await ctx.db.get("encounterAdversaries", ref.adversaryId))?.label ?? "An adversary";
+  if (ref.kind === "companion") return "A companion";
+  const character = await ctx.db.get("characters", ref.characterId);
+  try {
+    return character ? readSheet(character.sheet).name : "A character";
+  } catch {
+    return "A character";
+  }
 }
 
 /**
@@ -376,99 +155,6 @@ async function movableToken(ctx: CampaignCtx<MutationCtx>, tokenId: string) {
   if (!atLeast(permission, "edit")) throw appError("COMBAT_NOT_YOUR_TOKEN");
   return { token, map };
 }
-
-// ---------------------------------------------------------------- reads
-
-/** GM: every token on the map with its stats (R4). An unknown or other campaign's map reads as empty. */
-export const list = gmQuery({
-  args: { mapId: v.string() },
-  returns: v.array(tokenViewValidator),
-  handler: async (ctx, { mapId }) => {
-    const map = await findMap(ctx, ctx.campaign._id, mapId);
-    if (map === null) return [];
-    return viewsOf(ctx, await tokensOnMap(ctx, map._id), true);
-  },
-});
-
-/**
- * Everyone in the campaign: the map's PC tokens only (the caller's own and the other PCs', Q4); never an adversary,
- * ally, neutral or custom token, so no adversary stats reach a player (R4). Players read only the live map (any
- * other map reads as empty); the GM reads any. C7's `playerView` replaces this for players.
- */
-export const party = campaignQuery({
-  need: "view",
-  enough: "owner",
-  args: { mapId: v.string() },
-  returns: v.array(tokenViewValidator),
-  handler: async (ctx, { mapId }) => {
-    const gm = atLeast(ctx.permission, "owner");
-    const map = await findMap(ctx, ctx.campaign._id, mapId);
-    if (map === null || (!gm && !map.live)) return [];
-    const pcs = (await tokensOnMap(ctx, map._id)).filter((t) => t.ref.kind === "pc");
-    return viewsOf(ctx, pcs, gm);
-  },
-});
-
-/** GM, the Combatants card: party members not yet placed and the running encounter's queue (unplaced, not defeated). */
-export const combatants = gmQuery({
-  args: { mapId: v.string() },
-  returns: combatantsValidator,
-  handler: async (ctx, { mapId }) => {
-    const map = await findMap(ctx, ctx.campaign._id, mapId);
-    if (map === null) return { partyLeft: 0, encounter: null, queue: [] };
-    const tokens = await tokensOnMap(ctx, map._id);
-    const placedPcs = new Set(tokens.flatMap((t) => (t.ref.kind === "pc" ? [t.ref.characterId] : [])));
-    const placedAdversaries = new Set(tokens.flatMap((t) => (t.ref.kind === "adversary" ? [t.ref.adversaryId] : [])));
-    const party = await partyOf(ctx, ctx.campaign._id);
-    const partyLeft = party.filter((c) => c.status === "active" && !placedPcs.has(c._id)).length;
-    const encounter = await runningEncounter(ctx, ctx.campaign._id);
-    if (encounter === null) return { partyLeft, encounter: null, queue: [] };
-    const instances = await ctx.db
-      .query("encounterAdversaries")
-      .withIndex("by_encounter_order", (q) => q.eq("encounterId", encounter._id))
-      .take(MAX_INSTANCES);
-    const queue = [];
-    for (const instance of instances) {
-      if (instance.defeated || placedAdversaries.has(instance._id)) continue;
-      queue.push({ instanceId: instance._id, name: instance.label, solo: (await adversaryType(ctx, ctx.campaign._id, instance)) === "Solo" });
-    }
-    return { partyLeft, encounter: { _id: encounter._id, name: encounter.name }, queue };
-  },
-});
-
-/**
- * GM, the "＋ Session encounter" button (B11): the live session, else the newest planned one, with its linked
- * encounter, the title 'Session N: 2× Bruiser, 1× Leader' over every instance, and how many of its undefeated
- * instances are not on this map yet; `session: null` with 'No planned session with an encounter' otherwise.
- */
-export const sessionEncounter = gmQuery({
-  args: { mapId: v.string() },
-  returns: sessionEncounterValidator,
-  handler: async (ctx, { mapId }) => {
-    const campaignId = ctx.campaign._id;
-    const found = await currentSessionEncounter(ctx, campaignId);
-    if (found === null) return { title: sessionEncounterTitle(null), session: null };
-    const { session, encounter } = found;
-    const instances = await instancesOf(ctx, encounter._id);
-    const types: { type: AdversaryType | null }[] = [];
-    for (const instance of instances) types.push({ type: (await adversaryType(ctx, campaignId, instance)) as AdversaryType | null });
-    const map = await findMap(ctx, campaignId, mapId);
-    const placed = map === null ? null : placedInstances(await tokensOnMap(ctx, map._id));
-    const unplaced = placed === null ? 0 : instances.filter((i) => !i.defeated && !placed.has(i._id)).length;
-    return {
-      title: sessionEncounterTitle({ n: session.n, instances: types }),
-      session: {
-        sessionId: session._id,
-        n: session.n,
-        encounterId: encounter._id,
-        encounterName: encounter.name,
-        status: encounter.status,
-        adversaries: instances.length,
-        unplaced,
-      },
-    };
-  },
-});
 
 // ---------------------------------------------------------------- GM: placing tokens
 
@@ -545,6 +231,8 @@ export const placeSessionEncounter = keyedGmMutation({
       if (found === null) throw appError("SESSION_NO_ENCOUNTER");
       const { session, encounter } = found;
       const started = await startEncounter(ctx, campaignId, encounter, "End the running encounter first.");
+      // Journal JD4 (Q7): the encounter's scene becomes Playing now, "Scene N began" logged while live.
+      await playCurrentScene(ctx, found, ctx.user._id);
       const existing = await tokensOnMap(ctx, map._id);
       const placed = placedInstances(existing);
       const adding: NewToken[] = [];
@@ -649,16 +337,58 @@ export const toggleCustomCondition = keyedGmMutation({
     }),
 });
 
-/** Takes one token off the map (its character or tracker row stays). */
+/** Takes one token off the map (its character or tracker row stays), with its duplicates (plan lanes-2 E4.3, dcm-v27). */
 export const remove = gmMutation({
   args: { tokenId: v.string() },
   returns: v.null(),
   handler: async (ctx, { tokenId }) => {
     const token = await loadCombatToken(ctx, ctx.campaign._id, tokenId);
     await ctx.db.delete("combatTokens", token._id);
+    await removeDuplicates(ctx, token);
+    // Plan lanes-2 E4.4 (dcm-ii4): a caster taken off the map has left their Circle of Power.
+    if (token.ref.kind === "pc") await endAreasOwnerLeft(ctx, { campaignId: ctx.campaign._id, mapId: token.mapId, actorId: ctx.user._id });
     return null;
   },
 });
+
+// ---------------------------------------------------------------- plan lanes-2 E4.3: second positions (dcm-v27)
+
+/** The duplicates of a token on its map (`duplicateOf`; at most MAX_COMBAT_TOKENS tokens read). */
+export async function duplicatesOf(ctx: QueryCtx, token: Doc<"combatTokens">): Promise<Doc<"combatTokens">[]> {
+  return (await tokensOnMap(ctx, token.mapId)).filter((t) => t.duplicateOf === token._id);
+}
+
+/** Deletes a token's duplicates (the creature's other positions go with it). */
+export async function removeDuplicates(ctx: MutationCtx, token: Doc<"combatTokens">): Promise<number> {
+  const list = await duplicatesOf(ctx, token);
+  for (const d of list) await ctx.db.delete("combatTokens", d._id);
+  return list.length;
+}
+
+/**
+ * Writes a second position of a creature (Blink Beast, HF p.71: "a duplicate of itself appears ... within Close range";
+ * E7's `summon.duplicate` calls it): a token with the original's `ref`, side and size on square (x, y), `duplicateOf` the
+ * original. The square must be on the map and within `within` (default Close) of the original (COMBAT_TARGET_INVALID); a
+ * duplicate of a duplicate names the original. The original's earlier duplicates go first (one second position at a time,
+ * unless `keepOld`). COMBAT_TOKEN_LIMIT past the map's tokens.
+ */
+export async function placeDuplicate(
+  ctx: MutationCtx,
+  input: { original: Doc<"combatTokens">; x: number; y: number; within?: "melee" | "veryClose" | "close" | "far" | "veryFar"; keepOld?: boolean },
+): Promise<Id<"combatTokens">> {
+  const original = input.original.duplicateOf !== undefined ? ((await ctx.db.get("combatTokens", input.original.duplicateOf)) ?? input.original) : input.original;
+  const map = await ctx.db.get("combatMaps", original.mapId);
+  if (map === null) throw appError("COMBAT_MAP_NOT_FOUND");
+  const at = { x: Math.trunc(input.x), y: Math.trunc(input.y), size: original.size };
+  if (!Number.isFinite(input.x) || !Number.isFinite(input.y) || at.x < 0 || at.y < 0 || at.x + at.size > map.w || at.y + at.size > map.h) throw appError("COMBAT_TARGET_INVALID", "That square is off the map.");
+  if (!rangeCheck(original, at, input.within ?? "close").inRange) throw appError("COMBAT_TARGET_INVALID", `The duplicate must appear within ${input.within ?? "close"} range.`);
+  if (input.keepOld !== true) await removeDuplicates(ctx, original);
+  await assertCanAddTokens(ctx, map._id);
+  const { _id: _ignored, _creationTime: _created, ...fields } = original;
+  void _ignored;
+  void _created;
+  return ctx.db.insert("combatTokens", { ...fields, x: at.x, y: at.y, revealedTo: [], duplicateOf: original._id });
+}
 
 /** Takes every token off the map (the board's "Clear tokens", confirmed with a second click). */
 export const clear = gmMutation({
@@ -668,6 +398,8 @@ export const clear = gmMutation({
     const map = await loadCombatMap(ctx, ctx.campaign._id, mapId);
     const tokens = await tokensOnMap(ctx, map._id);
     for (const token of tokens) await ctx.db.delete("combatTokens", token._id);
+    // Plan lanes-2 E4.4 (dcm-ii4): with every token gone, no caster stands in their circle.
+    await endAreasOwnerLeft(ctx, { campaignId: ctx.campaign._id, mapId: map._id, actorId: ctx.user._id });
     return { removed: tokens.length };
   },
 });
@@ -683,22 +415,68 @@ export const clear = gmMutation({
  * MOVE_BLOCKED, which carries no position; the GM's move always goes through and returns `blocked: true` so the map can
  * warn. `difficult`: the move crossed or ended on difficult terrain (a movement roll is needed to pass this turn, D5).
  * Players already receive the whole layout (`combatMaps.live`, Q1), so neither answer tells them anything new.
+ *
+ * Cloaked (DA3, DA18): a PC token that ends a move on the live map where a revealed enemy token sees it in clear light
+ * loses Cloaked; in dim light only, the rogue makes one Finesse action roll against the highest Difficulty among those
+ * enemies, and a failure ends it (`uncloakAfterMove`, public undoable feed rows); Vanishing Act's Cloaked stays. A dim
+ * time phase counts as dim light. The GM's drag of a conscious rogue (not the GM's own character) is not the rogue's move:
+ * no roll, Cloaked stays. An unconscious or dead rogue's token that moves drops Cloaked (dcm-bxp.99.19.62).
  */
 export const move = campaignMutation({
   need: "view",
   enough: "owner",
-  args: { tokenId: v.string(), x: v.number(), y: v.number() },
-  returns: v.object({ x: v.number(), y: v.number(), face: v.number(), blocked: v.boolean(), difficult: v.boolean() }),
-  handler: async (ctx, { tokenId, x, y }) => {
+  /** Plan lanes-2 E4 (dcm-lvgm, dcm-z5a6): tokens carried along (Wings of Light, Pin), each within Melee range of the mover. */
+  args: { tokenId: v.string(), x: v.number(), y: v.number(), carry: v.optional(v.array(v.string())) },
+  returns: v.object({
+    x: v.number(),
+    y: v.number(),
+    face: v.number(),
+    blocked: v.boolean(),
+    difficult: v.boolean(),
+    /** Plan lanes E4: the live areas the move entered, passed through, crossed or left that react to it (convex/combatAreas.ts). */
+    areas: v.optional(v.array(v.object({ label: v.string(), event: v.union(v.literal("enter"), v.literal("through"), v.literal("leave"), v.literal("cross")), ended: v.boolean() }))),
+    /** Plan lanes-2 E4: what the GM's drag broke (an area's hold, a movement limit); a player's move is refused instead. */
+    warnings: v.optional(v.array(v.string())),
+    /** Plan lanes-2 E4 (dcm-xobk): adversary `pcMoves` features the move set off (E7 runs them). */
+    triggers: v.optional(v.array(v.object({ instanceId: v.id("encounterAdversaries"), feature: v.string(), useId: v.string(), stage: v.union(v.literal("would"), v.literal("did")) }))),
+    /** Plan lanes-2 E4: where the carried tokens went. */
+    carried: v.optional(v.array(v.object({ tokenId: v.id("combatTokens"), x: v.number(), y: v.number() }))),
+  }),
+  handler: async (ctx, { tokenId, x, y, carry }) => {
     const { token, map } = await movableToken(ctx, tokenId);
+    const byGm = atLeast(ctx.permission, "owner");
     const next = moveToken(token, x, y, map);
     const stays = next.x === token.x && next.y === token.y;
     const { blocked, difficult } = stays
       ? { blocked: false, difficult: false }
       : checkMove(await movementGrid(ctx, ctx.campaign._id, map), token, next, token.size);
-    if (blocked && !atLeast(ctx.permission, "owner")) throw appError("MOVE_BLOCKED");
+    if (blocked && !byGm) throw appError("MOVE_BLOCKED");
+    let name: string | null = null;
+    const nameOf = async () => (name ??= await moverName(ctx, token));
+    // Plan lanes-2 E4: an area's hold (Bramble Patch), movement limits (Creeping Fire) and the adversaries' pcMoves features.
+    const rules = stays ? { warnings: [], triggers: [] } : await moveRules(ctx, { campaignId: ctx.campaign._id, map, before: token, after: next, byGm, actorId: ctx.user._id, nameOf });
     await ctx.db.patch("combatTokens", token._id, next);
-    return { ...next, blocked, difficult };
+    const carried = carry === undefined || carry.length === 0 || stays ? [] : await carryAlong(ctx, { map, carrierBefore: token, carrierAfter: next, carry, byGm });
+    // dcm-rx1k / dcm-bpr: the caster's areas that end when the caster moves.
+    if (!stays && token.ref.kind === "pc") await endAreasOnCasterEvent(ctx, ctx.campaign._id, token.ref.characterId, "moves");
+    // CB p.42 (Rogue, Cloaked): "end a move within line of sight of an adversary" ends it (Q9, plan drawer-answers DA3).
+    // A GM's drag is not the rogue's move (dcm-bxp.99.19.62 (2)): `byGm`.
+    if (!stays) await uncloakAfterMove(ctx, ctx.campaign, map, { ...token, ...next }, ctx.user._id, { byGm });
+    // Plan lanes E4 (dcm-cma, dcm-wuu, dcm-ii4): live areas that react to entering, passing through, crossing or leaving.
+    const areas = stays ? [] : await areasAfterMove(ctx, ctx.campaign._id, map._id, token, { ...token, ...next }, ctx.user._id, nameOf);
+    // Plan lanes-2 E4.4 (dcm-ii4): a caster carried out of their own circle has exited it too.
+    if (carried.length > 0) await endAreasOwnerLeft(ctx, { campaignId: ctx.campaign._id, mapId: map._id, actorId: ctx.user._id });
+    // dcm-bpr: an enemy coming within a PC's Hold the Line range is named in the feed.
+    if (!stays && map.live) await rangeTriggersAfterMove(ctx, ctx.campaign._id, map._id, token, { ...token, ...next }, ctx.user._id, nameOf);
+    return {
+      ...next,
+      blocked,
+      difficult,
+      ...(areas.length > 0 ? { areas } : {}),
+      ...(rules.warnings.length > 0 ? { warnings: rules.warnings } : {}),
+      ...(rules.triggers.length > 0 ? { triggers: rules.triggers } : {}),
+      ...(carried.length > 0 ? { carried } : {}),
+    };
   },
 });
 

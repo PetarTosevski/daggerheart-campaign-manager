@@ -104,13 +104,13 @@ describe("rests", () => {
     expect(await codeOf(start("short"))).toBe("REST_RULE");
     // The deprecated `override` arg is ignored: no GM override any more (RF2).
     expect(await codeOf(start("short", true))).toBe("REST_RULE");
-    expect((await gm.query(api.rests.current, { campaignId })).open).toBeNull();
+    expect((await gm.query(api.restsReads.current, { campaignId })).open).toBeNull();
     const rows = await t.run((ctx) => ctx.db.query("rests").withIndex("by_campaign_started", (q) => q.eq("campaignId", campaignId)).collect());
     expect(rows).toHaveLength(3);
     expect(rows.some((r) => r.gmOverride !== undefined)).toBe(false);
     // A long rest resets the count.
     await finish((await start("long")).restId);
-    expect((await gm.query(api.rests.current, { campaignId })).shortRestsSinceLong).toBe(0);
+    expect((await gm.query(api.restsReads.current, { campaignId })).shortRestsSinceLong).toBe(0);
     expect(await codeOf(start("short"))).toBe("ok");
   });
 
@@ -197,12 +197,12 @@ describe("rests", () => {
     ).toBe("REST_RULE");
     await p1.mutation(api.rests.choose, { restId, characterId: a, moves: [{ move: "workOnProject", countdownId }, { move: "workOnProject" }], idempotencyKey: key() });
     await finish(restId);
-    const projects = await p1.query(api.rests.projects, { characterId: a });
+    const projects = await p1.query(api.restsReads.projects, { characterId: a });
     expect(projects.map((p) => p.currentValue)).toEqual([2]);
     // Projects stay off the dashboard list.
     expect((await gm.query(api.countdowns.listByCampaign, { campaignId })).map((c) => c._id)).not.toContain(countdownId);
     await gm.mutation(api.rests.undo, { campaignId, restId, idempotencyKey: key() });
-    expect((await p1.query(api.rests.projects, { characterId: a })).map((p) => p.currentValue)).toEqual([2]);
+    expect((await p1.query(api.restsReads.projects, { characterId: a })).map((p) => p.currentValue)).toEqual([2]);
   });
 
   it("undo restores every sheet and the Fear, and reopens the rest", async () => {
@@ -240,7 +240,8 @@ describe("rests", () => {
 
   it("interrupt: a short rest gives nothing; a long rest gives short-rest benefits (CB 105)", async () => {
     const { p1, a, gm, campaignId, sheetOf, edit, fear, start, rest } = await setup();
-    await edit(a, (s) => ({ ...s, stress: 6 }));
+    // Not a Clank: Efficient keeps one long rest pick on an interrupted long rest (dcm-bxp.99.19.58).
+    await edit(a, (s) => ({ ...s, stress: 6, ancestry: { kind: "single", id: "elf" } }));
     const short = await start("short");
     await p1.mutation(api.rests.choose, { restId: short.restId, characterId: a, moves: [{ move: "clearStress" }, { move: "clearStress" }], idempotencyKey: key() });
     expect(await gm.mutation(api.rests.interrupt, { campaignId, restId: short.restId, idempotencyKey: key() })).toEqual({ fearRoll: null, fearGained: 0 });
@@ -273,14 +274,14 @@ describe("rests", () => {
   describe("access: anonymous, outsider, player and GM", () => {
     it("current and projects", async () => {
       const { t, gm, p1, out, campaignId, a } = await setup();
-      expect(await codeOf(t.query(api.rests.current, { campaignId }))).toBe("UNAUTHENTICATED");
-      expect(await codeOf(out.query(api.rests.current, { campaignId }))).toBe("NOT_FOUND");
-      expect(await codeOf(p1.query(api.rests.current, { campaignId }))).toBe("ok");
-      expect(await codeOf(gm.query(api.rests.current, { campaignId }))).toBe("ok");
-      expect(await codeOf(t.query(api.rests.projects, { characterId: a }))).toBe("UNAUTHENTICATED");
-      expect(await codeOf(out.query(api.rests.projects, { characterId: a }))).toBe("NOT_FOUND");
-      expect(await codeOf(p1.query(api.rests.projects, { characterId: a }))).toBe("ok");
-      expect(await codeOf(gm.query(api.rests.projects, { characterId: a }))).toBe("ok");
+      expect(await codeOf(t.query(api.restsReads.current, { campaignId }))).toBe("UNAUTHENTICATED");
+      expect(await codeOf(out.query(api.restsReads.current, { campaignId }))).toBe("NOT_FOUND");
+      expect(await codeOf(p1.query(api.restsReads.current, { campaignId }))).toBe("ok");
+      expect(await codeOf(gm.query(api.restsReads.current, { campaignId }))).toBe("ok");
+      expect(await codeOf(t.query(api.restsReads.projects, { characterId: a }))).toBe("UNAUTHENTICATED");
+      expect(await codeOf(out.query(api.restsReads.projects, { characterId: a }))).toBe("NOT_FOUND");
+      expect(await codeOf(p1.query(api.restsReads.projects, { characterId: a }))).toBe("ok");
+      expect(await codeOf(gm.query(api.restsReads.projects, { characterId: a }))).toBe("ok");
     });
 
     it("start, finish, interrupt and undo are the GM's", async () => {
@@ -386,7 +387,7 @@ describe("rests: Martial Preparation (CB 48, dcm-bxp.63)", () => {
   type Fixture = Awaited<ReturnType<typeof setup>>;
   /** Per resting PC (in party order): whether Martial Preparation is among its pickable moves. */
   const offered = async ({ gm, campaignId }: Fixture) =>
-    ((await gm.query(api.rests.current, { campaignId })).open?.moves ?? []).map((m) => m.moves.includes("martialPreparation"));
+    ((await gm.query(api.restsReads.current, { campaignId })).open?.moves ?? []).map((m) => m.moves.includes("martialPreparation"));
   const martial = [{ move: "martialPreparation" as const }, { move: "prepare" as const }];
 
   it("is offered to everyone on short and long rests only while a resting PC is a mastery Slayer", async () => {
@@ -488,7 +489,7 @@ describe("rests: Undo only while the rest's rows are undoable (dcm-c26, dcm-bxp.
     const { gm, campaignId, start, finish, t } = await setup();
     const { restId } = await start("short");
     await finish(restId);
-    expect((await gm.query(api.rests.current, { campaignId })).last?.undoable).toBe(true);
+    expect((await gm.query(api.restsReads.current, { campaignId })).last?.undoable).toBe(true);
     await t.run(async (ctx) => {
       const rows = await ctx.db
         .query("actionLog")
@@ -496,7 +497,7 @@ describe("rests: Undo only while the rest's rows are undoable (dcm-c26, dcm-bxp.
         .collect();
       for (const r of rows) await ctx.db.patch("actionLog", r._id, { undoable: false, before: undefined });
     });
-    expect((await gm.query(api.rests.current, { campaignId })).last?.undoable).toBe(false);
+    expect((await gm.query(api.restsReads.current, { campaignId })).last?.undoable).toBe(false);
     expect(await codeOf(gm.mutation(api.rests.undo, { campaignId, restId, idempotencyKey: key() }))).toBe("UNDO_STALE");
   });
 });

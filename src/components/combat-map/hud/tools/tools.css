@@ -1,0 +1,25 @@
+/* The HUD's left tools drawer (plan combat-hud H0): the classic column inside a SidePanel, at the classic width. */
+.hud-tools .hud-panel {
+  width: 380px;
+  z-index: 95;
+  pointer-events: auto;
+}
+.hud-tools .hud-panel-body {
+  gap: 14px;
+}
+/* The classic header tools (Fear, light, session chip, style, player view, Sheet) in one wrapping row. */
+.hud-tools-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+/* Glass buttons over the map (the boards' `.tr .btn`): the arcane glass role draws them; this only takes the pointer. */
+.hud-glass-btn {
+  pointer-events: auto;
+}
+@media (max-width: 760px) {
+  .hud-tools .hud-panel {
+    width: 100%;
+  }
+}

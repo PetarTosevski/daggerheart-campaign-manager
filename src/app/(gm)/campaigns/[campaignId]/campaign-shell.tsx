@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { BookOpen, Users } from "lucide-react";
 import { createContext, memo, useCallback, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 
+import { CampaignNav, CombatAppBarFrame } from "@/components/app-bar";
 import { BackLink, Wordmark } from "@/components/brand/brand";
 import { Modal } from "@/components/brand/modal";
 import { SlotBoundary } from "@/components/party/session/boundary";
@@ -16,7 +17,6 @@ import { brandButton } from "@/components/brand/buttons";
 import { campaignArt } from "@/lib/campaign-art";
 import { formatSessionDate } from "@/lib/domain/sessions";
 import { useIntent } from "@/lib/use-intent";
-import { CAMPAIGN_SECTIONS, visibleToPlayers } from "@/lib/campaign-sections";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../convex/_generated/api";
@@ -27,6 +27,7 @@ import type { TomeChapterId } from "@/lib/frames/tomes";
 import { CampaignTome } from "./campaign-tome";
 import { PlayersDialog } from "./players-dialog";
 import { TimeArc } from "./time-arc";
+import { DayCard } from "./time-of-day";
 
 /*
  * The shell's context is split by how often each part changes (PF7). `CampaignContext` holds the campaign summary,
@@ -63,52 +64,6 @@ export function WithFear({ children }: { children: (fear: number) => ReactNode }
   const fear = useCampaignFear();
   return fear === undefined ? null : children(fear);
 }
-
-/** False until the browser first goes idle after mount (at most about 2 s), so background work waits for the page. */
-function useAfterIdle(): boolean {
-  const [idle, setIdle] = useState(false);
-  useEffect(() => {
-    if (typeof window.requestIdleCallback === "function") {
-      const id = window.requestIdleCallback(() => setIdle(true), { timeout: 2000 });
-      return () => window.cancelIdleCallback(id);
-    }
-    const id = window.setTimeout(() => setIdle(true), 1000);
-    return () => window.clearTimeout(id);
-  }, []);
-  return idle;
-}
-
-const CampaignNav = memo(function CampaignNav({ campaignId, isGm }: { campaignId: string; isGm: boolean }) {
-  const pathname = usePathname();
-  // Full prefetch of every tab (PF1, user answer Q3) starts once the page is idle, so the tabs' payloads and code do
-  // not compete with the open page's own; until then the default prefetch fetches the shell down to the loading boundary.
-  const fullPrefetch = useAfterIdle();
-  const base = `/campaigns/${campaignId}`;
-  return (
-    <nav aria-label="Campaign sections" className="flex flex-wrap gap-1 rounded-xl bg-black/35 p-1">
-      {CAMPAIGN_SECTIONS.filter((section) => isGm || visibleToPlayers(section)).map((section) => {
-        const href = section.slug ? `${base}/${section.slug}` : base;
-        const current = pathname === href;
-        return (
-          <Link
-            key={section.label}
-            href={href}
-            // Fully prefetched, a first click renders at once (the tab's RSC payload and code are here) and the router
-            // cache serves revisits.
-            prefetch={fullPrefetch ? true : null}
-            aria-current={current ? "page" : undefined}
-            className={cn(
-              "inline-flex min-h-11 items-center rounded-lg px-3.5 text-[14px]",
-              current ? "bg-brand text-brand-ink" : "text-[#e6ecea] hover:bg-white/10",
-            )}
-          >
-            {section.label}
-          </Link>
-        );
-      })}
-    </nav>
-  );
-});
 
 function TierLevel({ campaign }: { campaign: CampaignSummary }) {
   return (
@@ -225,7 +180,15 @@ const DashboardHero = memo(function DashboardHero({ campaign, onOpenTome }: { ca
     <div className="relative mx-auto flex max-w-[1344px] flex-col gap-9 px-4 pt-2 pb-8 sm:px-12">
       {frameHasMechanic(campaign.frameId, "campaignTime") ? (
         <TimeArc campaignId={campaign._id} readOnly={campaign.role !== "gm"} />
-      ) : null}
+      ) : (
+        // Every campaign without the arc, core included (TASK-CORE-CALENDAR): the day card, top-right above the title
+        // on desktop, under the title block on narrow screens.
+        <div className="order-last flex sm:order-none sm:justify-end">
+          <SlotBoundary fallback={null}>
+            <DayCard campaignId={campaign._id} readOnly={campaign.role !== "gm"} />
+          </SlotBoundary>
+        </div>
+      )}
       <div className="flex flex-wrap items-end justify-between gap-6">
       <div className="flex min-w-0 flex-col gap-2">
         <span className="text-[13px] tracking-[0.3em] text-[#c9d2cf] uppercase">
@@ -372,6 +335,7 @@ function CampaignShellView({ campaign, children }: { campaign: CampaignSummary |
   const [tomeChapter, setTomeChapter] = useState<TomeChapterId | null>(null);
   const openOverview = useCallback(() => setTomeChapter("overview"), []);
   const closeTome = useCallback(() => setTomeChapter(null), []);
+  const openPlayers = useCallback(() => setPlayersOpen(true), []);
   const closePlayers = useCallback(() => setPlayersOpen(false), []);
   const hydrated = useHydrated();
 
@@ -394,60 +358,73 @@ function CampaignShellView({ campaign, children }: { campaign: CampaignSummary |
   }
 
   const art = campaignArt(campaign.frameId, campaign.custom?.background);
+  const isGm = campaign.role === "gm";
+  // Plan combat-hud H9.A (user answer Q2 c): the Combat Map gets the compact app bar instead of the tall art header
+  // (a phone keeps the header); every other page keeps the header.
+  const combatMap = pathname === `/campaigns/${campaign._id}/combat-map`;
+
+  const header = (
+    <section aria-label="Campaign header" className="relative overflow-hidden">
+      {art.src ? (
+        // The header art is the page's LCP element (CL10): resized and re-encoded by next/image, and preloaded
+        // (`preload` is Next 16's name for the deprecated `priority`). On the Combat Map only a phone shows it.
+        <Image
+          src={art.src}
+          alt=""
+          fill
+          preload={!combatMap}
+          sizes="100vw"
+          className="object-cover"
+          style={{ objectPosition: art.position }}
+        />
+      ) : null}
+      <div aria-hidden="true" className="absolute inset-0 bg-[rgb(6_12_14/0.62)]" />
+      <div className="relative mx-auto flex max-w-[1344px] flex-wrap items-center justify-between gap-4 px-4 pt-[22px] pb-6 sm:px-12">
+        <div className="flex flex-wrap items-center gap-[18px]">
+          <BackLink href="/" label="Back to main menu" className="border-white/25 bg-black/30" />
+          <Wordmark className="text-[26px] sm:text-[32px]" />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <CampaignNav campaignId={campaign._id} isGm={isGm} variant="header" />
+          {isGm ? (
+            <button
+              type="button"
+              onClick={openPlayers}
+              aria-haspopup="dialog"
+              className="inline-flex min-h-12 cursor-pointer items-center gap-2 rounded-xl bg-black/35 px-3.5 text-[14px] text-[#e6ecea] hover:bg-black/50"
+            >
+              <Users className="size-4" aria-hidden="true" />
+              Players
+            </button>
+          ) : (
+            <span className="inline-flex min-h-12 items-center rounded-xl bg-black/35 px-3.5 text-[13px] tracking-[0.16em] text-fear uppercase">
+              Player
+            </span>
+          )}
+        </div>
+      </div>
+      {pathname === `/campaigns/${campaign._id}` ? <DashboardHero campaign={campaign} onOpenTome={openOverview} /> : null}
+    </section>
+  );
+  // The page renders from hydration on, not into the server HTML (see useHydrated).
+  const page = hydrated ? children : <CampaignSectionLoading />;
 
   return (
     <CampaignContext.Provider value={campaign}>
       <OpenTomeContext.Provider value={setTomeChapter}>
       <div className="relative min-h-screen overflow-hidden bg-[#0d1417] font-sans text-[#e6ecea]">
-        <section aria-label="Campaign header" className="relative overflow-hidden">
-          {art.src ? (
-            // The header art is the page's LCP element (CL10): resized and re-encoded by next/image, and preloaded
-            // (`preload` is Next 16's name for the deprecated `priority`).
-            <Image
-              src={art.src}
-              alt=""
-              fill
-              preload
-              sizes="100vw"
-              className="object-cover"
-              style={{ objectPosition: art.position }}
-            />
-          ) : null}
-          <div aria-hidden="true" className="absolute inset-0 bg-[rgb(6_12_14/0.62)]" />
-          <div className="relative mx-auto flex max-w-[1344px] flex-wrap items-center justify-between gap-4 px-4 pt-[22px] pb-6 sm:px-12">
-            <div className="flex flex-wrap items-center gap-[18px]">
-              <BackLink href="/" label="Back to main menu" className="border-white/25 bg-black/30" />
-              <Wordmark className="text-[26px] sm:text-[32px]" />
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <CampaignNav campaignId={campaign._id} isGm={campaign.role === "gm"} />
-              {campaign.role === "gm" ? (
-                <button
-                  type="button"
-                  onClick={() => setPlayersOpen(true)}
-                  aria-haspopup="dialog"
-                  className="inline-flex min-h-12 cursor-pointer items-center gap-2 rounded-xl bg-black/35 px-3.5 text-[14px] text-[#e6ecea] hover:bg-black/50"
-                >
-                  <Users className="size-4" aria-hidden="true" />
-                  Players
-                </button>
-              ) : (
-                <span className="inline-flex min-h-12 items-center rounded-xl bg-black/35 px-3.5 text-[13px] tracking-[0.16em] text-fear uppercase">
-                  Player
-                </span>
-              )}
-            </div>
-          </div>
-          {pathname === `/campaigns/${campaign._id}` ? (
-            <DashboardHero campaign={campaign} onOpenTome={openOverview} />
-          ) : null}
-        </section>
-        {/* The page renders from hydration on, not into the server HTML (see useHydrated). */}
-        {hydrated ? children : <CampaignSectionLoading />}
+        {combatMap ? (
+          <CombatAppBarFrame campaignId={campaign._id} isGm={isGm} header={header} onPlayers={openPlayers}>
+            {page}
+          </CombatAppBarFrame>
+        ) : (
+          <>
+            {header}
+            {page}
+          </>
+        )}
         <MemoTome campaign={campaign} chapter={tomeChapter} onChapter={setTomeChapter} onClose={closeTome} />
-        {campaign.role === "gm" ? (
-          <MemoPlayersDialog campaignId={campaign._id} open={playersOpen} onClose={closePlayers} />
-        ) : null}
+        {isGm ? <MemoPlayersDialog campaignId={campaign._id} open={playersOpen} onClose={closePlayers} /> : null}
       </div>
       </OpenTomeContext.Provider>
     </CampaignContext.Provider>

@@ -157,6 +157,21 @@
   opacity: 0.85;
   font-weight: 500;
 }
+/* dcm-bxp.54: the Witherwild phase links to the time arc; the GM's Day / Dim / Night dropdown elsewhere. */
+.cm-light-link {
+  color: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.cm-light-select {
+  min-height: 44px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid currentColor;
+  background: rgba(0, 0, 0, 0.35);
+  color: inherit;
+  font: inherit;
+}
 .cm-pv {
   position: relative;
 }

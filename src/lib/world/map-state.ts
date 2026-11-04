@@ -1,4 +1,4 @@
-// World map state shared by the World board (D6) and Characters & Locations
+// World map state shared by the World board (D6) and Codex
 // pins (D7). Ported from reference/designs/project/World.dc.html. Pure module:
 // bundled into Convex.
 
@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { DEFAULT_TRAVEL_RULES, OPTIONAL_SPEED_TERRAINS, LEGACY_TRAIL_MODES, SPEED_TERRAINS, TRAVEL_METHODS, TRAVEL_PACES, trailMethod, type SpeedTerrain } from "../domain/travel/index";
 import type { PublishedFrameId } from "../frames/index";
-import { MAX_HEX_SIZE, MIN_HEX_SIZE, pixelToHex, visibleHexKeys, hexKey, type Hex, type HexGrid } from "./hex";
+import { MAX_HEX_SIZE, MIN_HEX_SIZE, hexToPixel, pixelToHex, visibleHexKeys, hexKey, type Hex, type HexGrid } from "./hex";
 import { BLANK_TERRAIN, TERRAIN_COLUMNS, TERRAIN_ROWS, WITHERWILD_TERRAIN } from "./terrain";
 
 export { TERRAIN_CODES, TERRAIN_COLUMNS, TERRAIN_ROWS } from "./terrain";
@@ -291,6 +291,13 @@ export function joinMapState(scalars: MapScalars, tokens: readonly MapToken[], h
 /** The hex a marker sits in: its x, y are percentages of the map image (Horizon markers snap to hex centres). */
 export function tokenHex(token: Pick<MapToken, "x" | "y">, image: { width: number; height: number }, grid: HexGrid): Hex {
   return pixelToHex((token.x / 100) * image.width, (token.y / 100) * image.height, grid);
+}
+
+/** A map point (percent of the image) moved to the centre of its hex, as the World board snaps Horizon markers. */
+export function snapToHexCentre(point: { x: number; y: number }, image: { width: number; height: number }, grid: HexGrid): { x: number; y: number } {
+  const c = hexToPixel(tokenHex(point, image, grid), grid);
+  const clamp = (n: number) => Math.max(0, Math.min(100, n));
+  return { x: clamp((c.x / image.width) * 100), y: clamp((c.y / image.height) * 100) };
 }
 
 /**

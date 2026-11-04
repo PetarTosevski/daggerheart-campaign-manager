@@ -225,9 +225,7 @@ for (const viewport of TABLET_VIEWPORTS) {
           const primary =
             role === "gm" ? page.getByRole("button", { name: "Start Session" }) : page.getByRole("button", { name: "Open the Tome" });
           await check(page, `dashboard-${role}`, primary);
-          // The board's Fear spiral shrinks its tokens to 30-42 px here: WCAG 2.2 AA's 24 px holds; 44 px needs a
-          // design change (bead dcm-hlj).
-          await expectTouchTargets(page.getByRole("button", { name: /^Fear \d+ of \d+$/ }), 24);
+          await expectTouchTargets(page.getByRole("button", { name: /^Fear \d+ of \d+$/ }));
         }
       } finally {
         await table.close();

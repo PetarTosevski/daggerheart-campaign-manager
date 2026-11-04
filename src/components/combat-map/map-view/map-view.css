@@ -97,3 +97,120 @@
     min-height: 44px;
   }
 }
+
+/* Live effect areas (lanes-2 AO, dcm-lqnt): over the map canvas, under the fog and the tokens (earlier in the stage). */
+.cm-area-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+.cm-area-edge {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.45);
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+}
+.cm-area-edge-dashed {
+  stroke-dasharray: 6 4;
+}
+.cm-area-tint {
+  fill: rgba(150, 170, 200, 0.3);
+}
+.cm-area-wall-plain {
+  stroke: rgba(220, 220, 255, 0.8);
+  stroke-width: 6px;
+  stroke-dasharray: 10 6;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Picking a square (AO, dcm-u2wx): the click layer over the map and the banner above it. */
+.cm-area-pick {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 50;
+  cursor: crosshair;
+}
+.cm-area-pick-svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+.cm-area-pick-square {
+  fill: rgba(255, 226, 150, 0.35);
+  stroke: rgba(255, 226, 150, 0.9);
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
+}
+.cm-area-pick-reach {
+  fill: rgba(255, 226, 150, 0.08);
+  stroke: rgba(255, 226, 150, 0.7);
+  stroke-width: 1.5px;
+  stroke-dasharray: 6 4;
+  vector-effect: non-scaling-stroke;
+}
+.cm-area-pick-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--cm-card);
+  border: 1px solid var(--cm-card-border);
+  font-size: 14px;
+}
+.cm-area-pick-bar[data-error="true"] {
+  border-color: rgba(230, 110, 110, 0.7);
+}
+
+/* The GM's area tools (minimal until the combat UI redesign, dcm-bxp.99.32). */
+.cm-area-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--cm-card);
+  border: 1px solid var(--cm-card-border);
+}
+.cm-area-tools-title {
+  margin: 0;
+  font-size: 15px;
+}
+.cm-area-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cm-area-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cm-area-name {
+  margin-right: auto;
+}
+.cm-area-draw {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+@media (max-width: 1100px), (pointer: coarse) {
+  .cm-area-tools select,
+  .cm-area-tools .cm-btn,
+  .cm-area-pick-bar .cm-btn {
+    min-height: 44px;
+  }
+}

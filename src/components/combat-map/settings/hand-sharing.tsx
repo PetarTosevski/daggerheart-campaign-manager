@@ -17,8 +17,8 @@ import { useHandSharing } from "../actions/hand/sharing";
 export function HandSharingSwitch({ campaignId }: { campaignId: Id<"campaigns"> }) {
   const sharing = useHandSharing(campaignId);
   const set = useMutation(api.campaigns.setPlayersSeeHands).withOptimisticUpdate((store, { enabled }) => {
-    const current = store.getQuery(api.combatCards.handSharing, { campaignId });
-    if (current !== undefined) store.setQuery(api.combatCards.handSharing, { campaignId }, { ...current, playersSeeHands: enabled });
+    const current = store.getQuery(api.combatCardsReads.handSharing, { campaignId });
+    if (current !== undefined) store.setQuery(api.combatCardsReads.handSharing, { campaignId }, { ...current, playersSeeHands: enabled });
   });
   const [error, setError] = useState<string | null>(null);
   const id = useId();

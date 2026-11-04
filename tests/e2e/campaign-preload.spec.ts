@@ -96,13 +96,13 @@ const PAGES = [
   {
     label: "dashboard",
     suffix: "",
-    queries: ["campaigns:get", "sessionWrap:dashboard", "characters:listByCampaign", "campaigns:fear", "feed:list"],
+    queries: ["campaigns:get", "sessionWrap:dashboard", "charactersReads:partySummary", "campaigns:fear", "feed:list"],
     ready: (page: Page) => page.getByRole("region", { name: "GM Fear" }),
   },
   {
     label: "party",
     suffix: "/party",
-    queries: ["campaigns:get", "characters:listByCampaign", "members:roster"],
+    queries: ["campaigns:get", "charactersReads:listByCampaign", "members:roster"],
     ready: (page: Page) => page.getByRole("heading", { level: 1, name: "The Party" }),
   },
 ];

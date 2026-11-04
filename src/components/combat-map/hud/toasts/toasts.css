@@ -1,0 +1,114 @@
+/*
+ * The toasts near the hand (plan combat-hud H6.1; board CmpBlocked `.toast`, `.toast.neutral`, `.blk-i`). The host sits
+ * first in the hand region's column (order -1), so toasts stack just above the cards and grow upward; the hand itself
+ * doesn't move (the region is anchored to the bottom).
+ */
+.hud-toasts {
+  order: -1;
+  pointer-events: none;
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+.hud-toasts-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.hud-toast {
+  pointer-events: auto;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  max-width: 360px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #22160e;
+  color: var(--hud-ink, #e6ecea);
+  box-shadow:
+    0 0 0 1px #a0552a,
+    0 16px 40px rgba(0, 0, 0, 0.5);
+  animation: hud-toast-in var(--hud-t-banner, 180ms) var(--hud-ease-out, ease-out);
+}
+.hud-toast-neutral {
+  background: #141e22;
+  box-shadow:
+    0 0 0 1px #3a4d54,
+    0 16px 40px rgba(0, 0, 0, 0.5);
+}
+.hud-toast-i {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #f0a03c;
+  color: #1a1408;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.hud-toast-neutral .hud-toast-i {
+  background: #33444a;
+  color: #e6ecea;
+}
+.hud-toast-body {
+  flex: 1;
+  min-width: 0;
+}
+.hud-toast-body b {
+  font: 700 14px/1.1 "Cinzel", serif;
+  color: #ffd6a8;
+}
+.hud-toast-neutral .hud-toast-body b {
+  color: #e6ecea;
+}
+.hud-toast-body p {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+}
+.hud-toast-body small {
+  display: block;
+  margin-top: 3px;
+  color: #c9a98a;
+}
+.hud-toast-x {
+  flex: none;
+  min-width: 24px;
+  min-height: 24px;
+  margin: -4px -6px 0 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #c9a98a;
+  cursor: pointer;
+}
+.hud-toast-x:hover,
+.hud-toast-x:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.hud-toast .hud-ic {
+  width: 1em;
+  height: 1em;
+}
+
+@keyframes hud-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-toast {
+    animation: none;
+  }
+}

@@ -59,7 +59,7 @@ async function setup() {
       const s = readSheet(c.sheet);
       await ctx.db.patch("characters", characterId, { sheet: storedSheet({ ...s, ...change(s) }), updatedAt: 0 });
     });
-  const cards = async (id: Id<"characters"> = characterId) => (await gm.query(api.characters.get, { characterId: id }))!.sheet.domainCards;
+  const cards = async (id: Id<"characters"> = characterId) => (await gm.query(api.charactersReads.get, { characterId: id }))!.sheet.domainCards;
   return { t, gm, p1, p2, out, campaignId, characterId, patch, cards };
 }
 

@@ -162,6 +162,15 @@ export const SIGHT_MODES = ["block", "cover", "none"] as const;
 export type SightMode = (typeof SIGHT_MODES)[number];
 export const sightModeValidator = literals(SIGHT_MODES);
 
+/**
+ * Per-object light override of a sprite object (dcm-bxp.84, dcm-klr8; sprite packs Q1: none / faint glow / torch /
+ * campfire, as `SPRITE_LIGHTS` in validators/spritePacks.ts, which imports this module, so the literals live here).
+ * Absent = the sprite's own light trait.
+ */
+export const OBJECT_LIGHTS = ["none", "faintglow", "torch", "campfire"] as const;
+export type ObjectLight = (typeof OBJECT_LIGHTS)[number];
+export const objectLightValidator = literals(OBJECT_LIGHTS);
+
 /** A map object's stored fields (`combatMapObjects`), one row each so one edit or light switch writes one row. */
 export const combatObjectFields = {
   mapId: v.id("combatMaps"),
@@ -195,6 +204,11 @@ export const combatObjectFields = {
    * sprite's kind is a light kind of the same reach) and `sight` stays the GM's override (D3).
    */
   sprite: v.optional(spriteRefValidator),
+  /**
+   * Plan lanes-2 E4.4 (dcm-bxp.84, widen only): sprite objects only, the GM's light override (`combatVision.setObjectLight`).
+   * Absent = the sprite's light trait. Read by `objectTraits` (vision, light switches) and the sprite painter's glow.
+   */
+  light: v.optional(objectLightValidator),
 };
 
 /**
@@ -274,6 +288,12 @@ export const combatTokenFields = {
   light: carriedLightValidator,
   /** Characters this token was revealed to while in dim light (R10), at most MAX_COMBAT_REVEALS. */
   revealedTo: v.array(v.id("characters")),
+  /**
+   * Plan lanes-2 E4 (dcm-3p7s (4), dcm-v27; widened, absent = none): this token is a second position of the same creature
+   * as the named token (Blink Beast, HF p.71: "a duplicate of itself appears ... within Close range"). Its `ref` is the
+   * original's; it is removed with it. Nothing writes it until E7's `summon.duplicate`.
+   */
+  duplicateOf: v.optional(v.id("combatTokens")),
 };
 
 /** One row per (map, character): the half-squares the character has seen (R11). Own table: it changes on every move. */
@@ -322,8 +342,16 @@ export const combatAreaFields = {
   characterId: v.id("characters"),
   /** The map's label for it ("Circle of Power"). */
   label: v.string(),
-  shape: v.literal("circle"),
+  /** Plan lanes-2 E4 (dcm-3p7s (1), widened): `wall` is a line between `wall.a` and `wall.b`; `centre` is then `a`. */
+  shape: v.union(v.literal("circle"), v.literal("wall")),
   centre: areaCentreValidator,
+  /** A wall's end squares (`shape: "wall"`; Wall of Flame, CB p.332; Wall of Hunger, HF p.181). `[x, y]` each. */
+  wall: v.optional(v.object({ a: pointValidator, b: pointValidator })),
+  /**
+   * Plan lanes-2 E4 (dcm-3p7s (2), dcm-cj8; widened): an area that can be attacked (`AreaSpec.damageable`, Wild Fortress,
+   * CB p.339: "has damage thresholds 15/30 and lasts until it marks 3 Hit Points"). `hp` = HP marked so far.
+   */
+  damage: v.optional(v.object({ major: v.number(), severe: v.number(), hpMax: v.number(), hp: v.number() })),
   radius: literals(AREA_RADII),
   /** Dark Cloud (CB p.42): "Anyone in this cloud can't see outside of it, and anyone outside of it can't see in." */
   blocksSight: v.boolean(),

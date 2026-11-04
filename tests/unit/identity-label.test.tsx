@@ -5,7 +5,8 @@ import { PronounsField } from "@/app/(gm)/campaigns/[campaignId]/party/[characte
 import { InfoStep } from "@/app/(gm)/campaigns/[campaignId]/party/new/steps-1-4";
 import { emptyWizard, restoreWizard, toCharacterDraft, type WizardState } from "@/app/(gm)/campaigns/[campaignId]/party/new/wizard-logic";
 import { ReviewForm } from "@/components/party/import/review";
-import { characterSheetSchema, pronounsFieldLabel, sheetPatchSchema, type PronounsLabel } from "@/lib/validation/characters";
+import { sheetPatchSchema } from "@/lib/validation/character-input";
+import { characterSheetSchema, pronounsFieldLabel, type PronounsLabel } from "@/lib/validation/characters";
 
 import type { Id } from "../../convex/_generated/dataModel";
 import { validDraft } from "../fixtures/photo-import";

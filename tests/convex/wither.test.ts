@@ -111,7 +111,7 @@ describe("Wither tokens", () => {
   });
 
   it("a Fear Die at or below the tokens gives a scar and clears them; undo takes back only the Wither", async () => {
-    const { p1, a, sheetOf, setTokens } = await setup();
+    const { gm, p1, a, sheetOf, setTokens } = await setup();
     await setTokens(a, 2);
     const hpBefore = (await sheetOf(a)).hp;
     fearDie(3);
@@ -121,7 +121,7 @@ describe("Wither tokens", () => {
     expect(after).toMatchObject({ wither: 0, scars: 1 });
     expect(after.hp).toBe(hpBefore + 3);
 
-    await p1.mutation(api.actionLog.undo, { entryId: result.wither!.entryId, idempotencyKey: key() });
+    await gm.mutation(api.actionLog.undo, { entryId: result.wither!.entryId, idempotencyKey: key() });
     expect(await sheetOf(a)).toMatchObject({ wither: 2, scars: 0, hp: hpBefore + 3 });
   });
 

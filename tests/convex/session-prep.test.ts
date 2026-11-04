@@ -71,8 +71,8 @@ describe("session prep", () => {
     await env.gm.mutation(api.sessionPrep.setScene, { campaignId: env.campaignId, sessionId, sceneId: a, text: "  Ambush at the ford  " });
     await env.gm.mutation(api.sessionPrep.setScene, { campaignId: env.campaignId, sessionId, sceneId: b, type: "exploration" });
     expect((await env.get(sessionId)).scenes).toEqual([
-      { id: a, type: "combat", text: "Ambush at the ford" },
-      { id: b, type: "exploration", text: "" },
+      { id: a, type: "combat", text: "Ambush at the ford", encounter: null },
+      { id: b, type: "exploration", text: "", encounter: null },
     ]);
     // Exactly one field per intent; text over 300 characters is INVALID.
     const set = (extra: object) => env.gm.mutation(api.sessionPrep.setScene, { campaignId: env.campaignId, sessionId, sceneId: a, ...extra });

@@ -50,7 +50,7 @@ async function setup() {
   const start = () => gm.mutation(api.sessions.start, { campaignId, idempotencyKey: key() });
   const end = () => gm.mutation(api.sessions.end, { campaignId, idempotencyKey: key() });
   const active = async (owner: typeof ids.p1) =>
-    (await gm.query(api.characters.listByCampaign, { campaignId })).filter((c) => c.ownerId === owner && c.status === "active").map((c) => c.sheet.name);
+    (await gm.query(api.charactersReads.listByCampaign, { campaignId })).filter((c) => c.ownerId === owner && c.status === "active").map((c) => c.sheet.name);
   return { gm, p1, p2, ids, campaignId, ash, create, allow, start, end, active };
 }
 

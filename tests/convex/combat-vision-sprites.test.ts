@@ -7,7 +7,7 @@ import { catalogEntry, spriteTraits } from "../../src/lib/sprite-packs/index";
 import { ADVERSARIES } from "../../src/lib/srd/adversaries";
 import { adversaryArt } from "../../src/lib/srd/adversary-art";
 import { ANCESTRIES, ARMOR, COMMUNITIES, cardsForDomains, getClass, subclassesForClass, WEAPONS } from "../../src/lib/srd/index";
-import { key, setupWithCampaign, useAllowlist } from "./helpers";
+import { imageBlob, key, setupWithCampaign, useAllowlist } from "./helpers";
 
 // Sprite packs P5 (plan .omc/plans/sprite-packs.yaml): the server's vision (playerView, previewAs, toggleLight's
 // "has seen") resolves sprite traits (P1 catalog or uploaded row) and passes them with `rot` into prepareMap (P3),
@@ -59,7 +59,7 @@ async function withScene() {
   const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
   await gm.mutation(api.combatMapStyle.setStyle, { campaignId, mapId, style: "sprites" });
   await gm.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: key() });
-  const ashToken = (await gm.query(api.combatTokens.list, { campaignId, mapId })).find((tk) => tk.name === "Ash")!._id;
+  const ashToken = (await gm.query(api.combatTokensReads.list, { campaignId, mapId })).find((tk) => tk.name === "Ash")!._id;
   await t.run((c) => c.db.patch("combatTokens", ashToken, { x: 5, y: 10, face: 0 }));
   const gmId = await t.run(async (c) => (await c.db.query("users").first())!._id);
   const setTime = (time: { cycle: "DAY" | "NIGHT"; cycleDay: number }) =>
@@ -92,7 +92,7 @@ async function withScene() {
   const packId = await t.run((c) => c.db.insert("spritePacks", { campaignId, name: "Mine", createdBy: gmId, createdAt: 1, updatedAt: 1 }));
   const uploaded = (row: { sight: Sight; light?: Light; footprint?: "circle" | "rect"; w?: number; h?: number }, order = 0) =>
     t.run(async (c) => {
-      const storageId = await c.storage.store(new Blob([new Uint8Array(8)], { type: "image/webp" }));
+      const storageId = await c.storage.store(imageBlob("image/webp"));
       const fileId = await c.db.insert("files", { storageId, campaignId, uploadedBy: gmId, kind: "sprite", refId: "pending", createdAt: 1 });
       const id = await c.db.insert("spritePackSprites", {
         campaignId,
@@ -261,7 +261,7 @@ describe("adversary tokens show their rulebook art to players (R4: portrait only
     const instanceIds = [...(await add(withArt.id)).instanceIds, ...(await add(withoutArt.id)).instanceIds];
     await f.gm.mutation(api.encounters.start, { campaignId, encounterId });
     await f.gm.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId, instanceIds, idempotencyKey: key() });
-    const tokens = await f.gm.query(api.combatTokens.list, { campaignId, mapId });
+    const tokens = await f.gm.query(api.combatTokensReads.list, { campaignId, mapId });
     const labelOf = async (id: Id<"encounterAdversaries">) => (await f.t.run((c) => c.db.get("encounterAdversaries", id)))!.label;
     const artLabel = await labelOf(instanceIds[0]!);
     const plainLabel = await labelOf(instanceIds[1]!);

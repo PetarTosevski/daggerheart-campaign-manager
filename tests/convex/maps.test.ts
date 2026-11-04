@@ -8,7 +8,7 @@ import { enduranceOwnerKey } from "../../src/lib/domain/rest/frame-hooks/index";
 import { hexToPixel } from "../../src/lib/world/hex";
 import { initialMapState } from "../../src/lib/world/map-state";
 import { WITHERWILD_TERRAIN, paintTerrain } from "../../src/lib/world/terrain";
-import { errorCode, key, useAllowlist } from "./helpers";
+import { errorCode, imageBlob, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
 const GM = "gm@example.com";
@@ -200,7 +200,7 @@ describe("World map", () => {
         if (row) await ctx.db.patch(row._id, { data });
         else await ctx.db.insert("maps", { campaignId: campaign, data, updatedAt: 0 });
       });
-    const image = await t.run((ctx) => ctx.storage.store(new Blob(["png"], { type: "image/png" })));
+    const image = await t.run((ctx) => ctx.storage.store(imageBlob("image/png")));
     await attach(image, campaignId);
     expect((await gm.query(api.maps.get, { campaignId })).mapUrl).toEqual(expect.any(String));
 
@@ -209,7 +209,7 @@ describe("World map", () => {
     expect(errorCode(await gm.mutation(api.maps.attachMapImage, { campaignId, storageId: image, width: 8, height: 6 }).catch((e) => e))).toBe("NOT_FOUND");
 
     // A map pointing at a file recorded for another campaign resolves to no URL and isn't deleted.
-    const foreign = await t.run((ctx) => ctx.storage.store(new Blob(["png"], { type: "image/png" })));
+    const foreign = await t.run((ctx) => ctx.storage.store(imageBlob("image/png")));
     await attach(foreign, other.campaignId);
     await t.run(async (ctx) => {
       const row = (await ctx.db
@@ -225,7 +225,7 @@ describe("World map", () => {
 
     // Removing its own upload deletes the file.
     await attach(image, other.campaignId).catch(() => undefined);
-    const own = await t.run((ctx) => ctx.storage.store(new Blob(["png"], { type: "image/png" })));
+    const own = await t.run((ctx) => ctx.storage.store(imageBlob("image/png")));
     await attach(own, campaignId);
     await gm.mutation(api.maps.removeMapImage, { campaignId });
     expect(await t.run((ctx) => ctx.storage.getUrl(own))).toBeNull();

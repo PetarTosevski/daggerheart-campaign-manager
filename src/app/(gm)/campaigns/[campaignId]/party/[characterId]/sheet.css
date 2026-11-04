@@ -24,8 +24,6 @@
 .cs-empty h1{margin:0;font-family:var(--font-cinzel),serif;font-size:26px;font-weight:700}
 .cs-back{min-height:44px;padding:0 18px;border-radius:999px;background:var(--sheet-wine);color:#f6ead2;font-family:var(--font-cinzel),serif;font-size:14px;font-weight:700;display:inline-flex;align-items:center;text-decoration:none}
 .cs-back:focus-visible{outline:2px solid var(--sheet-wine);outline-offset:2px}
-/* Phone touch targets the 390 px pass found under 44 px (sections/hp-stress.css could own this). */
-@media (max-width:640px){.sh-in.hp-take-in{min-height:44px}}
 /* Domains sub-tabs (board dk-tabs). */
 .dk-tabs{display:inline-flex;flex-wrap:wrap;align-self:flex-start;gap:4px;padding:4px;border-radius:12px;background:#e3d2ad;max-width:100%}
 .dk-tab{min-height:44px;padding:0 16px;border:none;border-radius:9px;background:transparent;font-family:var(--font-cinzel),serif;font-size:14px;font-weight:700;color:#4a3826;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
@@ -65,11 +63,3 @@ select.cs-in{font-size:17px}
 .cs-ta{width:100%;box-sizing:border-box;min-height:110px;padding:4px 14px 10px;border:1px solid #d9c59c;border-left:3px solid #b08a3e;border-radius:4px 8px 8px 4px;background-color:#fffbf1;background-image:repeating-linear-gradient(180deg,transparent 0,transparent 27px,rgba(168,134,90,.28) 27px,rgba(168,134,90,.28) 28px);background-attachment:local;font-family:var(--font-garamond),serif;font-size:17px;line-height:28px;color:#2a1f14;resize:vertical;white-space:pre-wrap}
 .cs-step{width:44px;height:44px;flex:none;border-radius:8px;border:1px solid #b9a27a;background:transparent;color:#2a1f14;cursor:pointer;font-size:18px}
 .cs-step:disabled{opacity:.4;cursor:not-allowed}
-.cs-slot-row{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
-.cs-pip{position:relative;display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;padding:0;border:none;background:none;cursor:pointer}
-.cs-pip:disabled{cursor:default}
-.cs-pip::before{content:"";display:block;transition:transform .15s}
-.cs-pip:not(:disabled):hover::before{transform:scale(1.1)}
-.cs-pip:focus-visible{outline:2px solid #5b2b2b;outline-offset:-2px;border-radius:8px}
-.cs-scar::before{width:40px;height:40px;background:var(--coin) center/cover no-repeat;filter:grayscale(1) brightness(.6);opacity:.5}
-.cs-scar::after{content:"";position:absolute;left:50%;top:6px;bottom:6px;width:2px;background:#8e2b2b;transform:rotate(12deg)}

@@ -25,16 +25,16 @@ const idempotencyKey = () => crypto.randomUUID();
  */
 export function CombatantsPanel({ campaignId, map }: CombatantsPanelProps) {
   const mapId = map._id;
-  const info = useQuery(api.combatTokens.combatants, { campaignId, mapId });
-  const tokens = useQuery(api.combatTokens.list, { campaignId, mapId });
+  const info = useQuery(api.combatTokensReads.combatants, { campaignId, mapId });
+  const tokens = useQuery(api.combatTokensReads.list, { campaignId, mapId });
   const addParty = useMutation(api.combatTokens.addParty);
-  const session = useQuery(api.combatTokens.sessionEncounter, { campaignId, mapId });
+  const session = useQuery(api.combatTokensReads.sessionEncounter, { campaignId, mapId });
   const place = useMutation(api.combatTokens.placeAdversaries);
   const placeSessionEncounter = useMutation(api.combatTokens.placeSessionEncounter);
   const addCustom = useMutation(api.combatTokens.addCustom);
   const clear = useMutation(api.combatTokens.clear).withOptimisticUpdate((store, args) => {
-    if (store.getQuery(api.combatTokens.list, { campaignId: args.campaignId, mapId }) !== undefined) {
-      store.setQuery(api.combatTokens.list, { campaignId: args.campaignId, mapId }, []);
+    if (store.getQuery(api.combatTokensReads.list, { campaignId: args.campaignId, mapId }) !== undefined) {
+      store.setQuery(api.combatTokensReads.list, { campaignId: args.campaignId, mapId }, []);
     }
   });
   const [error, setError] = useState<string | null>(null);

@@ -365,7 +365,7 @@
   gap: 14px;
   min-width: 0;
 }
-/* A player before any map is live: no left column, the empty map area takes the width. */
+/* One column, no aside: the error and sprite packs pages. */
 .cm-main.cm-solo {
   grid-template-columns: minmax(0, 1fr);
 }

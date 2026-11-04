@@ -13,7 +13,7 @@ test("S11 Story & Advancement boxes at 1440 and 390", { tag: "@visual" }, async 
   await openTab(page, "Story & Advancement");
 
   const wealth = sheet.getByRole("region", { name: "Wealth" });
-  const gold = async () => (await client.query(api.characters.get, { characterId }))?.sheet.gold;
+  const gold = async () => (await client.query(api.charactersReads.get, { characterId }))?.sheet.gold;
 
   // A pip sets the count through the gold update; tapping the last marked pip clears it.
   await wealth.getByRole("button", { name: "Handfuls 3 of 9" }).click();
@@ -48,7 +48,7 @@ test("S11 Story & Advancement boxes at 1440 and 390", { tag: "@visual" }, async 
   await expect(description).toContainText("Clothes that are");
   await description.getByRole("textbox", { name: "Description" }).fill("Tall, with ink-stained fingers.");
   await description.getByRole("textbox", { name: "Description" }).blur();
-  await expect.poll(async () => (await client.query(api.characters.get, { characterId }))?.sheet.description).toBe("Tall, with ink-stained fingers.");
+  await expect.poll(async () => (await client.query(api.charactersReads.get, { characterId }))?.sheet.description).toBe("Tall, with ink-stained fingers.");
   await shoot(description, "description");
 
   const background = sheet.getByRole("region", { name: "Background Questions" });

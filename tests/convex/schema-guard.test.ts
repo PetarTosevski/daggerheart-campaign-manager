@@ -121,6 +121,8 @@ const CAMPAIGN_SCOPED = [
   "sessionPrep",
   "sessionLog",
   "sessionSpotlights",
+  "sessionLogOverrides",
+  "sessionCharacterStats",
   "spritePacks",
   "spritePackSprites",
   "journals",
@@ -135,6 +137,9 @@ const CAMPAIGN_SCOPED = [
   "lorekeeperUsage",
   "combatRequests",
   "combatAreas",
+  "playFor",
+  "combatSpotlight",
+  "combatSeen",
 ];
 /**
  * Campaign-scoped tables that also have a retention job of their own (listed once above, so this is a second note,
@@ -154,7 +159,7 @@ const ALSO_RETENTION: Record<string, string> = {
  */
 const MAP_SCOPED = ["combatMapObjects", "combatMapCells", "combatExplored"];
 /** Lorekeeper books and their chunks (D13): one set per deployment (about 20 books), replaced on re-ingest. */
-const BOUNDED = ["settings", "grants", "lorekeeperBooks", "lorekeeperChunks", "e2eCodes", ...Object.keys(authTables)];
+const BOUNDED = ["settings", "grants", "lorekeeperBooks", "lorekeeperChunks", "e2eCodes", "uploadNotices", ...Object.keys(authTables)];
 
 describe("stored fields", () => {
   test("no v.any() outside the allowlist", () => {

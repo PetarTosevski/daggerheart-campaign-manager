@@ -186,7 +186,7 @@ async function visibleHexRows(ctx: QueryCtx, campaignId: Id<"campaigns">, party:
 }
 
 /** The map's markers with the scalars that describe them (the dashboard's Locations panel). */
-export async function readMapTokens(ctx: QueryCtx, campaign: Doc<"campaigns">): Promise<{ state: Pick<MapState, "party" | "customTypes" | "typeLabels">; tokens: MapToken[] }> {
+export async function readMapTokens(ctx: QueryCtx, campaign: Doc<"campaigns">): Promise<{ state: Pick<MapState, "party" | "customTypes" | "typeLabels" | "scaleKm" | "customMap">; tokens: MapToken[] }> {
   const { stored } = await storedFor(ctx, campaign);
   if (stored.version === 1) return { state: stored.state, tokens: stored.state.tokens };
   return { state: stored.scalars, tokens: (await tokenRows(ctx, campaign._id)).map(toToken) };

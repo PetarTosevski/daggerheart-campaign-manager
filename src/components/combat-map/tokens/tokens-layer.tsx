@@ -5,6 +5,10 @@ import { useEffect, useEffectEvent, useRef, useState, type CSSProperties, type K
 import { designAsset } from "@/lib/design-assets";
 import { RANGE_BANDS } from "@/lib/domain/combat-map/ranges";
 
+import { toggleActionRing, useActionRing } from "../hud/action-ring/store";
+import { isLit } from "../hud/spotlight/model";
+import { SpotlightPools, useSpotlightLit } from "../hud/spotlight/light";
+import { TokenFace, moveNoticeText, pcTokenFace, refuseMove, useHudMoveLock, useHudTokens, useTokenHope } from "../hud/token";
 import { useMapView } from "../map-view/context";
 import { MovementOverlay, useLayoutMovementGrid, type SeenMasks } from "../map-view/movement-overlay";
 import type { MapLayerProps } from "../slots";
@@ -46,8 +50,19 @@ const SIDE_BACKGROUND: Record<TokenView["side"], string> = {
 const NOTICE_MS = 4000;
 
 type Drag =
-  | { kind: "move"; id: TokenView["_id"]; pointerId: number; sx: number; sy: number; moved: boolean; canMove: boolean }
+  | { kind: "move"; id: TokenView["_id"]; pointerId: number; sx: number; sy: number; moved: boolean; canMove: boolean; scale: number }
   | { kind: "turn"; id: TokenView["_id"]; pointerId: number; cx: number; cy: number };
+
+/**
+ * Client pixels per stage pixel under `el`'s tokens layer: the layer's `scale(zoom)` times any CSS scale on an ancestor
+ * (the HUD's make-room transform, plan combat-hud H2.2), measured as its on-screen width over its layout width; `zoom`
+ * when it cannot be measured.
+ */
+export function screenScale(el: Element, zoom: number): number {
+  const layer = el.closest<HTMLElement>("[data-testid='combat-tokens']");
+  const width = layer?.getBoundingClientRect().width ?? 0;
+  return layer && layer.offsetWidth > 0 && width > 0 ? width / layer.offsetWidth : zoom;
+}
 
 /** The token's portrait as a CSS background (uploaded image or design art), or the side's gradient. */
 function background(token: TokenView): CSSProperties {
@@ -82,6 +97,16 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
   const editing = gm && mode === "edit";
   const { cell, zoom, pad } = viewport;
   const selected = tokens?.find((t) => t._id === selectedTokenId) ?? null;
+  // Combat HUD (plan combat-hud H1.3): inside the HUD shell (switch on, Play) every token wears the HUD face (arcs,
+  // Hope chip, condition badges, side colour) and a click opens its sheet; otherwise the classic face, unchanged.
+  // The Encounter tab's pane (`noDelete`) is never inside the shell.
+  const hud = useHudTokens(mode);
+  const hope = useTokenHope(campaignId, map._id, hud !== null);
+  // The token in the scene spotlight stands in a stage light (HUD only; bead dcm-bxp.99.32.35).
+  const lit = useSpotlightLit(campaignId, hud !== null);
+  const ring = useActionRing();
+  // H6.2 (HUD only): while the GM holds the spotlight a player's token moves are refused like actions.
+  const moveLock = useHudMoveLock(campaignId, role, hud !== null);
 
   // Movement (map-movement M1): the hatch over difficult squares the viewer can see (the GM's own view: all of them; a
   // player or the GM's preview: the squares that character sees or has explored, from the vision slot's queries, which
@@ -111,6 +136,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
     const step = KEY_STEPS[e.key];
     if (mover && step) {
       e.preventDefault();
+      if (moveLock) return refuseMove(moveLock);
       if (!selected) onSelectToken(mover._id);
       void actions.move(mover._id, mover.x + step[0], mover.y + step[1]);
       return;
@@ -141,7 +167,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
     // The map board pans on a pointer down it sees undisturbed (map-view/context.ts).
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
-    drag.current = { kind: "move", id: token._id, pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, moved: false, canMove: token.canMove };
+    drag.current = { kind: "move", id: token._id, pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, moved: false, canMove: token.canMove && moveLock === null, scale: screenScale(e.currentTarget, zoom) };
   }
   function onTokenMove(e: ReactPointerEvent<HTMLButtonElement>) {
     const d = drag.current;
@@ -149,7 +175,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
     const dx = e.clientX - d.sx;
     const dy = e.clientY - d.sy;
     if (!d.moved && Math.hypot(dx, dy) > 3) d.moved = true;
-    if (d.moved && d.canMove) setPreview({ id: d.id, dx: dx / zoom, dy: dy / zoom });
+    if (d.moved && d.canMove) setPreview({ id: d.id, dx: dx / d.scale, dy: dy / d.scale });
   }
   function onTokenUp(e: ReactPointerEvent<HTMLButtonElement>, token: TokenView) {
     const d = drag.current;
@@ -157,15 +183,26 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
     drag.current = null;
     setPreview(null);
     onSelectToken(token._id);
+    if (!d.moved) openSheet(token);
+    if (d.moved && token.canMove && moveLock) refuseMove(moveLock);
     if (!d.moved || !d.canMove) return;
-    const x = Math.round(token.x + (e.clientX - d.sx) / zoom / cell);
-    const y = Math.round(token.y + (e.clientY - d.sy) / zoom / cell);
+    const x = Math.round(token.x + (e.clientX - d.sx) / d.scale / cell);
+    const y = Math.round(token.y + (e.clientY - d.sy) / d.scale / cell);
     if (x !== token.x || y !== token.y) void actions.move(token._id, x, y);
+  }
+  /** HUD only: a click (not a drag) on a PC opens its sheet, on an adversary the GM's stat block (H2.1 / H5.2 draw them). */
+  function openSheet(token: TokenView, keyboard = false) {
+    if (!hud) return;
+    // H3.4: a player's own token opens the action ring (its Sheet button opens the sheet).
+    if (role === "player" && token.mine) return toggleActionRing(token._id, keyboard);
+    const target = pcTokenFace(token, role, null).sheet;
+    if (target) hud.toggleSheet(target);
   }
   function onTokenKey(e: KeyboardEvent<HTMLButtonElement>, token: TokenView) {
     const step = KEY_STEPS[e.key];
     if (!step || !token.canMove || editing) return;
     e.preventDefault();
+    if (moveLock) return refuseMove(moveLock);
     onSelectToken(token._id);
     void actions.move(token._id, token.x + step[0], token.y + step[1]);
   }
@@ -209,6 +246,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
       style={{ width: (map.w + 2 * pad) * cell, height: (map.h + 2 * pad) * cell, transform: `scale(${zoom})` }}
     >
       <div className="cm-tokens-map" style={{ left: pad * cell, top: pad * cell }}>
+        <SpotlightPools lit={lit} tokens={tokens} cell={cell} />
         {ringed.map((t) => {
           const cx = (t.x + t.size / 2) * cell;
           const cy = (t.y + t.size / 2) * cell;
@@ -250,27 +288,33 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
               ? "0 3px 8px rgba(0,0,0,.6), 0 0 0 3px var(--cm-acc), 0 0 22px var(--cm-acc)"
               : "0 3px 8px rgba(0,0,0,.6)";
           const hasPortrait = t.portrait !== null && background(t).backgroundImage !== undefined;
+          const face = hud ? pcTokenFace(t, role, hope.get(t._id) ?? null) : null;
           return (
             <button
               key={t._id}
               type="button"
-              className={classes}
+              className={face ? `${classes} hud-tk` : classes}
               data-token={t._id}
               data-testid="combat-token"
               data-face={Math.round((t.face * 180) / Math.PI)}
               data-square={`${t.x},${t.y}`}
-              aria-label={ariaLabel(t)}
+              aria-label={face ? face.label : ariaLabel(t)}
               aria-pressed={on}
+              aria-expanded={face && role === "player" && t.mine ? ring?.tokenId === t._id : undefined}
               tabIndex={editing ? -1 : 0}
               style={{
                 left: t.x * cell + 3 + (moving?.dx ?? 0),
                 top: t.y * cell + 3 + (moving?.dy ?? 0),
                 width: t.size * cell - 6,
                 height: t.size * cell - 6,
-                ...background(t),
-                border: `3px solid ${side.colour}`,
-                boxShadow: shadow,
-                filter: s?.down ? "grayscale(1) brightness(.6)" : undefined,
+                ...(face
+                  ? {}
+                  : {
+                      ...background(t),
+                      border: `3px solid ${side.colour}`,
+                      boxShadow: shadow,
+                      filter: s?.down ? "grayscale(1) brightness(.6)" : undefined,
+                    }),
                 zIndex: moving || turning ? 50 : on ? 30 : t.mine ? 25 : 10,
               }}
               onPointerDown={(e) => onTokenDown(e, t)}
@@ -282,27 +326,32 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
               }}
               onClick={(e) => {
                 // Keyboard activation (Enter / Space); pointer clicks select in onTokenUp.
-                if (e.detail === 0) onSelectToken(t._id);
+                if (e.detail !== 0) return;
+                onSelectToken(t._id);
+                openSheet(t, true);
               }}
               onKeyDown={(e) => onTokenKey(e, t)}
             >
               <span className="cm-face" aria-hidden="true" style={{ transform: `rotate(${deg}deg)`, ["--tc" as string]: side.colour }} />
-              {hasPortrait ? null : (
+              {face ? <TokenFace face={face} name={t.name} initials={initialsOf(t.name, t.size)} size={t.size * cell} lit={isLit(lit, t)} /> : null}
+              {face || hasPortrait ? null : (
                 <span className="cm-ini" aria-hidden="true" style={{ fontSize: Math.round(t.size * cell * 0.34) }}>
                   {initialsOf(t.name, t.size)}
                 </span>
               )}
-              <span className="cm-tag" aria-hidden="true" style={{ top: t.size * cell - 4 }}>
-                {t.name}
-              </span>
-              {s && s.hpMax > 0 ? (
+              {face ? null : (
+                <span className="cm-tag" aria-hidden="true" style={{ top: t.size * cell - 4 }}>
+                  {t.name}
+                </span>
+              )}
+              {!face && s && s.hpMax > 0 ? (
                 <span className="cm-tok-bar" aria-hidden="true">
                   <span
                     style={{ width: `${Math.round(100 * hpLeft)}%`, background: hpRatio > 0.66 ? "#e0715f" : hpRatio > 0.33 ? "#e3b45a" : "#7cc49a" }}
                   />
                 </span>
               ) : null}
-              {s && s.conditions.length > 0 ? (
+              {!face && s && s.conditions.length > 0 ? (
                 <span className="cm-tok-cond" aria-hidden="true">
                   {s.conditions.map((c) => c.charAt(0).toUpperCase()).join("")}
                 </span>
@@ -341,7 +390,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
       data-seq={notice?.seq ?? 0}
       style={noticeAt}
     >
-      {notice?.text ?? ""}
+      {notice ? (hud ? moveNoticeText(notice) : notice.text) : ""}
     </p>
     {actions.error ? (
       <p role="alert" className="cm-alert cm-tokens-error">

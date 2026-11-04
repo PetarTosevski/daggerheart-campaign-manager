@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { run, type ActorState, type PlanStep, type RunPlan } from "@/lib/domain/card-effects/run";
+import { rollMatches, run, type ActorState, type PlanStep, type RunPlan } from "@/lib/domain/card-effects/run";
 import type { CardEffect, Mod } from "@/lib/domain/card-effects/types";
 import type { Combatant } from "@/lib/domain/combat-actions";
 import { queueRng } from "@/lib/domain/dice";
@@ -10,6 +10,7 @@ import type { FeatureEffect } from "@/lib/domain/feature-effects/types";
 import { FEATURE_CLASSIFICATION, featureEffect } from "@/lib/srd/feature-effects";
 import { ANCESTRY_CORE_EFFECTS } from "@/lib/srd/feature-effects/ancestry-core";
 import { ANCESTRIES } from "@/lib/srd/heritage";
+import { isWeaponRoll } from "../../../convex/lib/combatActions";
 import { actorOf, sheetOf } from "./engine/fixtures";
 
 // Plan sheet-drawer, tracer FE-ancestry-core: every core ancestry feature classified combat or passive runs through
@@ -236,14 +237,19 @@ describe("Firbolg (CB p.59)", () => {
     expect(miss.actor.after.stress).toBe(1);
   });
 
-  it("Unshakable: when you would mark a Stress, a d6; only a 6 says don't mark it", () => {
+  it("Unshakable (DA0, user 2026-10-30): when you would mark a Stress, a logged d6; a 6 cancels that Stress, no manual line", () => {
     expect(entry("ancestry:firbolg:unshakable").uses[0]!.activation).toEqual({ kind: "auto", trigger: { kind: "wouldMarkStress" } });
     const six = ok("ancestry:firbolg:unshakable", ctx([6]));
     expect(ofKind(six, "check")).toEqual([{ kind: "check", total: 6, dice: [6], passed: true }]);
-    expect(ofKind(six, "prompt")).toMatchObject([{ prompt: "manual", text: "Unshakable rolled a 6: don't mark that Stress" }]);
+    expect(ofKind(six, "fold")).toMatchObject([{ kind: "fold", step: { kind: "negate", what: "stress" }, targetIds: ["pc"] }]);
+    expect(ofKind(six, "prompt")).toEqual([]);
+    expect(six.actor.after.stress).toBe(six.actor.before.stress);
     const five = ok("ancestry:firbolg:unshakable", ctx([5]));
     expect(ofKind(five, "check")[0]!.passed).toBe(false);
+    expect(ofKind(five, "fold")).toEqual([]);
     expect(ofKind(five, "prompt")).toEqual([]);
+    const steps = JSON.stringify(entry("ancestry:firbolg:unshakable").uses[0]!.steps);
+    expect(steps).not.toContain('"manual"');
   });
 });
 
@@ -384,6 +390,33 @@ describe("Ribbet (CB p.69)", () => {
   });
 });
 
+describe("SRD-F1: the wave-4 vocabulary in the core ancestries", () => {
+  const melee = { kind: "situation", text: "The target is within Melee range", check: { kind: "within", range: "melee", who: "target" } };
+
+  it("Kick and Tusks (dcm-9l4): the target's distance decides Melee; without it the words stay for the map or the player", () => {
+    for (const id of ["ancestry:faun:kick", "ancestry:orc:tusks"]) {
+      expect(entry(id).uses[0]!.requires, id).toEqual([melee]);
+      const near = actor({ facts: { target: { conditions: [], hp: 0, hpMax: 5, distance: 1 } } });
+      const far = actor({ facts: { target: { conditions: [], hp: 0, hpMax: 5, distance: 6 } } });
+      const knock = id.endsWith("kick") ? { options: { knock: ["target"] } } : {};
+      expect(runFeature(entry(id), "main", ctx([4, 5, 5], { actor: near, targets: [adv("bandit")], ...knock })).ok, id).toBe(true);
+      // Known to be out of Melee: refused even when the player ticks the box.
+      expect(runFeature(entry(id), "main", ctx([4, 5, 5], { actor: far, situations: [melee.text], targets: [adv("bandit")], ...knock })), id).toMatchObject({ ok: false, reason: "requirement" });
+      // No distance fact: the confirmation decides, as before.
+      expect(runFeature(entry(id), "main", ctx([4, 5, 5], { targets: [adv("bandit")], ...knock })), id).toMatchObject({ ok: false, reason: "requirement" });
+    }
+  });
+
+  it("Elemental Breath and Long Tongue (dcm-gvr): the feature is its own weapon, so the roll is a weapon attack", () => {
+    for (const id of ["ancestry:drakona:elemental-breath", "ancestry:ribbet:long-tongue"]) {
+      const roll = entry(id).uses[0]!.roll!;
+      expect(roll, id).toMatchObject({ kind: "trait", attack: true, asWeapon: true });
+      expect(rollMatches("attack", roll), id).toBe(true);
+      expect(isWeaponRoll(roll), id).toBe(true);
+    }
+  });
+});
+
 describe("Simiah (CB p.70)", () => {
   it("Nimble: +1 Evasion", () => {
     expect(resolvedMods(entry("ancestry:simiah:nimble").uses[0]!.mods!)).toEqual([{ kind: "stat", stat: "evasion", delta: 1 }]);
@@ -391,9 +424,9 @@ describe("Simiah (CB p.70)", () => {
 });
 
 describe("Clank (CB p.53)", () => {
-  it("Purposeful Design is a manual note (no Experience modifier in the vocabulary)", () => {
+  it("Purposeful Design is no reminder: the sheet records the Experience and adds the +1 (DA11)", () => {
     const use = entry("ancestry:clank:purposeful-design").uses[0]!;
     expect(use.activation).toEqual({ kind: "passive" });
-    expect(use.steps).toMatchObject([{ kind: "manual" }]);
+    expect(use.steps).toEqual([]);
   });
 });

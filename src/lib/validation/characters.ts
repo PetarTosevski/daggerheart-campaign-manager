@@ -1,10 +1,52 @@
 import { z } from "zod";
 
-import { isValidTraitSpread, MAX_LEVEL } from "../domain/characters/index";
+import { MAX_LEVEL } from "../domain/characters/index";
 import { TRAIT_IDS, type TraitId } from "../srd/types";
+import {
+  TEXT,
+  NAME,
+  CONDITIONS,
+  SUBCLASS_RANKS,
+  EFFECT_UNTIL,
+  HELD_DIE_UNTIL,
+  FEATURE_USE_UNTIL,
+  PRONOUNS_LABELS,
+  pronounsFieldLabel,
+  HELD_DIE_KINDS,
+  ADVANCEMENT_OPTIONS,
+  EFFECT_ID_MAX,
+  FEATURE_USES_MAX,
+  CARD_TOKENS_MAX,
+  FOCUS_HOLD_MAX,
+  MARTIAL_STANCES_MAX,
+  MAX_SHEET_CREATURE_TOKEN_KINDS,
+  SESSION_POOL_MAX,
+  SHEET_VERSION,
+} from "./character-constants";
 
-const TEXT = 2000;
-const NAME = 80;
+/** The zod-free constants (dcm-uh6r: Convex validators and light modules import them without building the schemas). */
+export {
+  TEXT,
+  NAME,
+  CONDITIONS,
+  SUBCLASS_RANKS,
+  EFFECT_UNTIL,
+  HELD_DIE_UNTIL,
+  FEATURE_USE_UNTIL,
+  PRONOUNS_LABELS,
+  pronounsFieldLabel,
+  HELD_DIE_KINDS,
+  ADVANCEMENT_OPTIONS,
+  EFFECT_ID_MAX,
+  FEATURE_USES_MAX,
+  CARD_TOKENS_MAX,
+  FOCUS_HOLD_MAX,
+  MARTIAL_STANCES_MAX,
+  MAX_SHEET_CREATURE_TOKEN_KINDS,
+  SESSION_POOL_MAX,
+  SHEET_VERSION,
+};
+export type { Condition, SubclassRank, PronounsLabel, AdvancementOption } from "./character-constants";
 
 const trait = z.number().int().min(-5).max(10);
 export const traitsSchema = z.object(
@@ -19,16 +61,22 @@ export const ancestryChoiceSchema = z.discriminatedUnion("kind", [
 ]);
 
 /** An Experience as version 1 sheets stored it (no id). */
-const experienceV1Schema = z.object({ name: z.string().trim().min(1).max(NAME), value: z.number().int().min(-5).max(10) });
+export const experienceV1Schema = z.object({ name: z.string().trim().min(1).max(NAME), value: z.number().int().min(-5).max(10) });
 
 /** A stable list id (CD8: list edits address items by id, never by index). */
-const listId = z.string().min(1).max(40);
+export const listId = z.string().min(1).max(40);
 
-export const experienceSchema = experienceV1Schema.extend({ id: listId });
+/**
+ * An Experience on the current sheet. `purposefulDesign` (DA11, optional, widened, no version bump): the Experience a
+ * Clank chose for Purposeful Design (CB p.53: "choose one of your Experiences that best aligns with this purpose and
+ * gain a permanent +1 bonus to it"). The stored `value` is never bumped; rolls and displays add the +1
+ * (`experienceValue`, src/lib/domain/dice). At most one Experience carries it.
+ */
+export const experienceSchema = experienceV1Schema.extend({ id: listId, purposefulDesign: z.literal(true).optional() });
 
 export const inventoryItemSchema = z.object({ id: listId, name: z.string().trim().min(1).max(200) });
 
-const portraitSchema = z.union([
+export const portraitSchema = z.union([
   z.object({ kind: z.literal("asset"), asset: z.string().regex(/^[0-9a-f]{32}$/) }),
   z.object({ kind: z.literal("upload"), storageId: z.string().min(1) }),
 ]);
@@ -71,39 +119,6 @@ export const characterSheetV1Schema = z.object({
 
 // ---------------------------------------------------------------- D5 sheet parts
 
-/** Conditions a character can have (CB 102-103, plus Unconscious from Avoid Death, CB 106). */
-export const CONDITIONS = ["vulnerable", "restrained", "hidden", "cloaked", "unconscious", "distracted"] as const;
-export type Condition = (typeof CONDITIONS)[number];
-
-export const SUBCLASS_RANKS = ["foundation", "specialization", "mastery"] as const;
-export type SubclassRank = (typeof SUBCLASS_RANKS)[number];
-
-/**
- * When an effect ends: `expire(sheet, event)` (src/lib/domain/characters/expiry.ts) removes it.
- * `scene` ends at session end; `manual` only through its End button.
- */
-export const EFFECT_UNTIL = ["rest", "longRest", "session", "hit", "scene", "manual"] as const;
-export const HELD_DIE_UNTIL = ["session", "longRest", "manual"] as const;
-/**
- * When a used "once per X" feature comes back. `scene` (plan sheet-drawer SD0, Q7, dcm-bxp.117; widened, no version
- * bump): "once per scene" limits, cleared when the scene ends (the GM ends the encounter or presses End scene, or the
- * session ends).
- */
-export const FEATURE_USE_UNTIL = ["rest", "longRest", "session", "scene"] as const;
-/** Labels for the `pronouns` field (dcm-bxp.35): "gender" is the default. */
-export const PRONOUNS_LABELS = ["gender", "pronouns"] as const;
-export type PronounsLabel = (typeof PRONOUNS_LABELS)[number];
-
-/** The `pronouns` field's label: "Gender" unless the character chose "Pronouns" (dcm-bxp.35). */
-export function pronounsFieldLabel(flag: PronounsLabel | undefined): "Gender" | "Pronouns" {
-  return flag === "pronouns" ? "Pronouns" : "Gender";
-}
-export const HELD_DIE_KINDS = ["rally", "prayer", "patron", "combo"] as const;
-
-/** The level-up options (CB 110; `comboDie`: Brawler only, HF 10). Proficiency and multiclass take both picks of a level. */
-export const ADVANCEMENT_OPTIONS = ["traits", "hp", "stress", "experiences", "domainCard", "evasion", "subclass", "proficiency", "multiclass", "comboDie"] as const;
-export type AdvancementOption = (typeof ADVANCEMENT_OPTIONS)[number];
-
 const shortText = z.string().trim().min(1).max(80);
 
 /** One level-up pick: the option, the tier it was taken from, its slot in that tier, and what it chose (traits, Experience ids, a card id). */
@@ -129,7 +144,7 @@ export const advancementSchema = z.object({
 const modifier = z.number().int().min(-10).max(10);
 
 export const effectSchema = z.object({
-  id: listId,
+  id: z.string().min(1).max(EFFECT_ID_MAX),
   /** What made it, e.g. "Rogue's Dodge". */
   source: shortText,
   text: z.string().max(300),
@@ -142,6 +157,18 @@ export const effectSchema = z.object({
       trait: z.object({ id: z.enum(TRAIT_IDS), delta: modifier }).optional(),
     })
     .optional(),
+  /**
+   * Plan lanes-2, V4 (widened, no version bump; dcm-lztq): the character who made this effect, as a plain id string, so a
+   * caster-tied end ("until you take Severe damage", Eye of the Storm, HF p.23) ends only that caster's effects. Absent:
+   * the old single-holder guess (effects stored before it).
+   */
+  casterId: z.string().min(1).max(40).optional(),
+  /**
+   * Plan lanes-2, V4 (widened, no version bump; dcm-qxb6): the adversary instance this effect is about, as a plain id string
+   * (Marked for Death, HF p.8: "until the current adversary Marked for Death is defeated"), so its defeat ends only this
+   * effect. Absent: the instance's tag is the link (as before).
+   */
+  targetInstanceId: z.string().min(1).max(40).optional(),
 });
 
 export const heldDieSchema = z.object({
@@ -163,26 +190,11 @@ export const heldDieSchema = z.object({
 export const featureUseSchema = z.object({ key: z.string().min(1).max(80), until: z.enum(FEATURE_USE_UNTIL) });
 
 /**
- * The most `featureUses` entries a sheet holds (widened from 40 by the sheet drawer, SD0): every once-per feature of a
- * class, subclass, multiclass, heritage, transformation and Beastform, the per-use and per-target entries of five loadout
- * cards, and D5's keys.
- */
-export const FEATURE_USES_MAX = 60;
-
-/** Most tokens or dice one card holds (Dark Army places 8; Sigil of Retribution holds up to your level in d8s). */
-export const CARD_TOKENS_MAX = 99;
-
-/**
  * Tokens (or dice) kept on one domain card (CB p.101: "If you still have tokens on your card at the end of a session
  * and aren't told to clear them, ensure you track the number you have left"). Plan combat-actions, CA0. A card with
  * no entry holds no tokens; for a card holding a die (Zone of Protection) `count` is the die's value.
  */
 export const cardTokensSchema = z.object({ cardId: z.string().min(1).max(60), count: z.number().int().min(0).max(CARD_TOKENS_MAX) });
-
-/** The most Focus a Martial Artist holds (HF p.12: "You can hold a maximum of 6 Focus"). */
-export const FOCUS_HOLD_MAX = 6;
-/** The martial stances of HF p.12 (four per tier). */
-export const MARTIAL_STANCES_MAX = 16;
 
 const stanceSlug = z.string().regex(/^[a-z][a-z-]*$/).max(20);
 
@@ -219,8 +231,12 @@ export const classStateSchema = z.object({
   martial: martialStateSchema.optional(),
 });
 
-/** The most Slayer Dice or Know the Tide tokens a sheet can hold: Proficiency and level both stop at 10. */
-export const SESSION_POOL_MAX = 10;
+/**
+ * Named tokens a feature put on a PC (plan lanes-2, V4, dcm-wiwi): "place a number of leechpole tokens on the target"
+ * (Burrowing Leechpoles, HF p.90), counted by name as an adversary instance's `creatureTokens`. An entry with no tokens
+ * left is dropped.
+ */
+export const sheetCreatureTokensSchema = z.object({ name: z.string().min(1).max(40), count: z.number().int().min(0).max(CARD_TOKENS_MAX) });
 
 /**
  * Session-bound feature state (plan session-features, F0; widened, no version bump). Every member is optional and
@@ -243,6 +259,7 @@ export type Effect = z.infer<typeof effectSchema>;
 export type HeldDie = z.infer<typeof heldDieSchema>;
 export type FeatureUse = z.infer<typeof featureUseSchema>;
 export type CardTokens = z.infer<typeof cardTokensSchema>;
+export type SheetCreatureTokens = z.infer<typeof sheetCreatureTokensSchema>;
 export type ClassState = z.infer<typeof classStateSchema>;
 export type SessionFeatures = z.infer<typeof sessionFeaturesSchema>;
 
@@ -318,14 +335,16 @@ export const characterSheetSchema = characterSheetV1Schema.extend({
   /** Tokens on domain cards, one entry per card holding any (plan combat-actions, CA0; optional, widened, no version bump). */
   cardTokens: z.array(cardTokensSchema).max(20).optional(),
   /**
+   * Named tokens an adversary or a feature put on this character (plan lanes-2, V4, dcm-wiwi; optional, widened, no version
+   * bump). At most `MAX_SHEET_CREATURE_TOKEN_KINDS` names.
+   */
+  creatureTokens: z.array(sheetCreatureTokensSchema).max(MAX_SHEET_CREATURE_TOKEN_KINDS).optional(),
+  /**
    * How the `pronouns` field is labelled for this character (dcm-bxp.35, F9): "Gender" when missing or "gender",
    * "Pronouns" when "pronouns". Label only; the text stays in `pronouns`. Optional (widened, no version bump).
    */
   pronounsLabel: z.enum(PRONOUNS_LABELS).optional(),
 });
-
-/** The stored sheet's current `schemaVersion`. */
-export const SHEET_VERSION = 2;
 
 export type CharacterSheetV1 = z.infer<typeof characterSheetV1Schema>;
 /** A parsed sheet: every D5 field is present (defaults filled in by `readSheet`). */
@@ -335,68 +354,4 @@ export type CharacterSheetInput = z.input<typeof characterSheetSchema>;
 export type InventoryItem = z.infer<typeof inventoryItemSchema>;
 export type Experience = z.infer<typeof experienceSchema>;
 
-/** What the creation wizard submits; the server derives the rest from the class. */
-export const characterDraftSchema = z
-  .object({
-    classId: z.string().min(1, "Choose a class."),
-    subclassId: z.string().min(1, "Choose a subclass."),
-    ancestry: ancestryChoiceSchema,
-    communityId: z.string().min(1, "Choose a community."),
-    traits: traitsSchema,
-    name: z.string().trim().min(1, "Give your character a name.").max(NAME),
-    pronouns: z.string().trim().max(NAME),
-    pronounsLabel: z.enum(PRONOUNS_LABELS).optional(),
-    description: z.string().max(TEXT),
-    /** Empty in a Motherboard campaign, where an Ikonis replaces weapons (CB 301); the server requires it elsewhere. */
-    primaryWeaponId: z.string().max(100),
-    secondaryWeaponId: z.string().optional(),
-    armorId: z.string().min(1, "Choose armor."),
-    potion: z.string().trim().min(1, "Choose a potion.").max(100),
-    classItem: z.string().trim().max(100),
-    background: z.array(z.string().max(TEXT)).max(12),
-    experiences: z.tuple([z.string().trim().min(1, "Write a first Experience.").max(NAME), z.string().trim().min(1, "Write a second Experience.").max(NAME)]),
-    domainCards: z.array(z.string().min(1)).length(2, "Choose two domain cards."),
-    connections: z.array(z.string().max(TEXT)).max(12),
-    portrait: portraitSchema.optional(),
-  })
-  .refine((d) => isValidTraitSpread(d.traits), {
-    message: "Assign each trait modifier from +2, +1, +1, 0, 0, −1 exactly once.",
-    path: ["traits"],
-  });
-
-export type CharacterDraft = z.infer<typeof characterDraftSchema>;
-
-/** Fields a sheet edit may change directly (resources use their own mutation). */
-export const sheetPatchSchema = characterSheetSchema
-  .pick({
-    name: true,
-    pronouns: true,
-    pronounsLabel: true,
-    description: true,
-    traits: true,
-    evasion: true,
-    primaryWeaponId: true,
-    secondaryWeaponId: true,
-    armorId: true,
-    inventory: true,
-    gold: true,
-    experiences: true,
-    background: true,
-    connections: true,
-    notes: true,
-    portrait: true,
-    hpMax: true,
-    stressMax: true,
-  })
-  .partial()
-  .extend({
-    // null unequips (an undefined value would be dropped in transit).
-    secondaryWeaponId: z.string().nullable().optional(),
-    armorId: z.string().nullable().optional(),
-    // Whole-list writes stay accepted until the sheet UI sends intents (H19); entries without an id get a new one.
-    inventory: z.array(z.union([z.string().trim().min(1).max(200), inventoryItemSchema])).max(60).optional(),
-    experiences: z.array(experienceV1Schema.extend({ id: listId.optional() })).max(12).optional(),
-  })
-  .strict();
-
-export type SheetPatch = z.infer<typeof sheetPatchSchema>;
+export type { CharacterDraft, SheetPatch } from "./character-input";

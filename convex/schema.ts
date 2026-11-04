@@ -6,6 +6,7 @@ import { campaignTables } from "./tables/campaigns";
 import { characterTables } from "./tables/characters";
 import { codexTables } from "./tables/codex";
 import { combatAreaTables } from "./tables/combatAreas";
+import { combatSpotlightTables } from "./tables/combatSpotlight";
 import { combatMapTables } from "./tables/combatMaps";
 import { combatRequestTables } from "./tables/combatRequests";
 import { e2eTables } from "./tables/e2e";
@@ -17,6 +18,7 @@ import { lorekeeperTables } from "./tables/lorekeeper";
 import { mapTables } from "./tables/maps";
 import { notesTables } from "./tables/notes";
 import { operationTables } from "./tables/operations";
+import { playForTables } from "./tables/playFor";
 import { restTables } from "./tables/rests";
 import { sessionTables } from "./tables/sessions";
 import { spritePackTables } from "./tables/spritePacks";
@@ -42,6 +44,8 @@ export default defineSchema({
   ...combatMapTables,
   ...combatRequestTables,
   ...combatAreaTables,
+  ...combatSpotlightTables,
+  ...playForTables,
   ...sessionTables,
   ...spritePackTables,
   ...notesTables,

@@ -2,25 +2,21 @@
 
 import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { ChevronDown, X } from "lucide-react";
-import { useRef, useState, useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 
 import { errorMessage } from "@/lib/convex-errors";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
-import { play3d } from "./dice3d";
+import { FreeRollForm } from "./free-roll";
 import { DiceFaces, DiceSettingsToggles } from "./parts";
-import { canAnimate3d, useDiceSettings } from "./settings";
-import { playRollSound } from "./sound";
 import { TickCountdownsButton } from "./tick-countdowns";
 
 const PAGE = 15;
 /** Most rows one countedRows call asks about (the server's cap). */
 const COUNTED_MAX = 100;
-const SIDES = [4, 6, 8, 10, 12, 20] as const;
 const BTN = "min-h-10 cursor-pointer rounded-[9px] border border-[#33444a] bg-transparent px-3 text-[14px] text-[#e6ecea] hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40";
-const INPUT = "min-h-10 rounded-[9px] border border-[#33444a] bg-[#10181b] px-3 text-[14px] text-[#e6ecea]";
 
 /**
  * A per-device on/off choice in browser storage (conveniences only): read and written with try/catch, with an
@@ -61,72 +57,21 @@ function deviceFlag(key: string) {
 const feedCollapsed = deviceFlag("dcm:roll-feed-collapsed");
 /** Whether the GM's secret roll form is folded away, remembered per device (dcm-bxp.34; default open). */
 const gmFormCollapsed = deviceFlag("dcm:gm-roll-form-collapsed");
+/** Whether a player's free roll form is open, remembered per device (user 2026-11-04; default folded). */
+const freeFormOpen = deviceFlag("dcm:free-roll-form-open");
 const serverFalse = () => false;
 
 function time(at: number): string {
   return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-/** The GM's free roll: any dice plus a modifier, hidden from players until revealed. */
-function GmRollForm({ campaignId }: { campaignId: Id<"campaigns"> }) {
-  const [count, setCount] = useState("1");
-  const [sides, setSides] = useState<number>(20);
-  const [modifier, setModifier] = useState("0");
-  const [label, setLabel] = useState("");
-  const roll = useIntent(api.rolls.gmRoll);
-  const n = Number.parseInt(count, 10);
-  const stage = useRef<HTMLDivElement>(null);
-  const [settings] = useDiceSettings();
-
-  // The same 3D dice and sound as the character dice box, per this device's settings.
-  async function submit() {
-    const result = await roll.fire({ campaignId, dice: [{ count: n, sides }], modifier: Number.parseInt(modifier, 10) || 0, ...(label.trim() ? { label: label.trim() } : {}) });
-    if (!result) return;
-    const shown = canAnimate3d(settings) && stage.current !== null && (await play3d(stage.current, { dice: result.roll.dice, sound: settings.sound }));
-    if (!shown && settings.sound) playRollSound();
-  }
-
-  return (
-    <form
-      id="gm-roll-form"
-      aria-label="GM roll"
-      className="flex flex-wrap items-end gap-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        void submit();
-      }}
-    >
-      <label className="flex flex-col gap-1 text-[12px] text-[#8fa3a8] uppercase">
-        Dice
-        <input className={`${INPUT} w-16 text-center`} inputMode="numeric" value={count} onChange={(e) => setCount(e.target.value.replace(/[^0-9]/g, "").slice(0, 2))} />
-      </label>
-      <label className="flex flex-col gap-1 text-[12px] text-[#8fa3a8] uppercase">
-        Die
-        <select className={INPUT} value={sides} onChange={(e) => setSides(Number(e.target.value))}>
-          {SIDES.map((s) => (
-            <option key={s} value={s}>
-              d{s}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="flex flex-col gap-1 text-[12px] text-[#8fa3a8] uppercase">
-        Modifier
-        <input className={`${INPUT} w-16 text-center`} inputMode="numeric" value={modifier} onChange={(e) => setModifier(e.target.value.replace(/[^0-9-]/g, "").slice(0, 3))} />
-      </label>
-      <label className="flex min-w-32 flex-1 flex-col gap-1 text-[12px] text-[#8fa3a8] uppercase">
-        For
-        <input className={INPUT} placeholder="Optional label" maxLength={80} value={label} onChange={(e) => setLabel(e.target.value)} />
-      </label>
-      <button type="submit" className={BTN} disabled={roll.pending || !(n > 0)}>
-        Roll in secret
-      </button>
-      <p aria-live="polite" className="m-0 w-full text-[13px] text-danger empty:hidden">
-        {roll.error}
-      </p>
-      <div ref={stage} className="w-full empty:hidden" />
-    </form>
-  );
+/**
+ * The GM's free roll: any mix of dice plus a modifier (user 2026-11-04), hidden from players until revealed. Also the
+ * Combat HUD's GM Dice (user answer 2026-11-02), which has no feed beside it: `showResult` adds the last roll's dice and
+ * total under the form. The form itself is `FreeRollForm` (./free-roll); this name stays for the HUD's import.
+ */
+export function GmRollForm({ campaignId, showResult = false }: { campaignId: Id<"campaigns">; showResult?: boolean }) {
+  return <FreeRollForm campaignId={campaignId} mode="gm" showResult={showResult} />;
 }
 
 /**
@@ -153,9 +98,33 @@ function GmRollSection({ campaignId }: { campaignId: Id<"campaigns"> }) {
 }
 
 /**
+ * A player's free roll of mixed dice (user 2026-11-04), public, behind a disclosure button: folded by default, the
+ * choice remembered on this device.
+ */
+function FreeRollSection({ campaignId }: { campaignId: Id<"campaigns"> }) {
+  const open = useSyncExternalStore(freeFormOpen.subscribe, freeFormOpen.read, serverFalse);
+  return (
+    <div className="flex flex-col gap-2">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls="free-roll-form"
+        className="flex min-h-11 cursor-pointer items-center gap-2 self-start border-0 bg-transparent p-0 text-[13px] font-semibold tracking-[0.08em] text-[#c9d2cf] uppercase hover:text-[#e6ecea]"
+        onClick={() => freeFormOpen.write(!open)}
+      >
+        <ChevronDown aria-hidden="true" className={`size-4 text-[#8fa3a8] transition-transform ${open ? "" : "-rotate-90"}`} />
+        Roll dice
+      </button>
+      {open ? <FreeRollForm campaignId={campaignId} mode="public" /> : null}
+    </div>
+  );
+}
+
+/**
  * The roll feed on the dashboard: every member sees player rolls live; GM
  * free rolls only reach players once revealed (the server filters them).
- * Undo for the roller and the GM; Reveal for the GM. The GM can also delete a
+ * Undo where `canUndo` allows it (the GM; a player only on their own action that rolled nothing, convex/lib/actionLog.ts
+ * `groupRolled`); Reveal for the GM. The GM can also delete a
  * row or clear the feed for everyone (display only: nothing is undone), and
  * apply a counted action roll to countdowns ("Tick countdowns"). Anyone can
  * fold the feed away on their device.
@@ -226,7 +195,7 @@ export function RollFeedPanel({ campaignId, isGm }: { campaignId: Id<"campaigns"
       </div>
       {collapsed ? null : (
       <div id="feed-body" className="flex flex-col gap-3">
-      {isGm ? <GmRollSection campaignId={campaignId} /> : null}
+      {isGm ? <GmRollSection campaignId={campaignId} /> : <FreeRollSection campaignId={campaignId} />}
       <p aria-live="polite" className="m-0 text-[13px] text-danger empty:hidden">
         {undo.error ?? feedError}
       </p>
@@ -247,7 +216,9 @@ export function RollFeedPanel({ campaignId, isGm }: { campaignId: Id<"campaigns"
               <div className="flex flex-wrap items-center gap-2 text-[15px] text-[#e6ecea]">
                 <span className={row.undone ? "line-through" : ""}>{row.summary}</span>
                 {row.roll?.manual ? <span className="rounded border border-[#5b4a2a] px-1.5 text-[11px] tracking-[0.1em] text-[#f4e3bd] uppercase">manual</span> : null}
-                {row.visibility === "gm" ? <span className="rounded border border-[#3b2f5c] px-1.5 text-[11px] tracking-[0.1em] text-[#c9b3ff] uppercase">hidden</span> : null}
+                {/* Fear colours while hidden; Hope colours once revealed (user 2026-11-04). A roll never hidden gets no tag. */}
+                {row.visibility === "gm" ? <span className="rounded border border-fear/50 bg-fear-bg px-1.5 text-[11px] tracking-[0.1em] text-fear uppercase">hidden</span> : null}
+                {row.visibility === "public" && row.revealed ? <span className="rounded border border-hope/50 bg-hope-bg px-1.5 text-[11px] tracking-[0.1em] text-hope uppercase">revealed</span> : null}
                 {row.undone ? <span className="text-[12px] text-[#9fb2b6]">undone</span> : null}
                 <span className="ml-auto text-[12px] text-[#8fa3a8]">{time(row.at)}</span>
                 {isGm ? (

@@ -209,10 +209,16 @@ describe("Conjure Swarm (L2, CB p.338)", () => {
     const plain = ok("conjure-swarm", ctx([], base));
     expect(plain.activation).toBe("reaction");
     expect(folds(plain)).toEqual([{ kind: "reduceSeverity", targetIds: ["pc"], amount: 1 }]);
-    expect(prompts(plain, "manual").map((p) => p.text)).toEqual([expect.stringMatching(/beetles disperse/)]);
-    const kept = ok("conjure-swarm", ctx([], { ...base, optionals: ["keep"] }));
+    // SRD-C2 (dcm-8x8): keep or disperse is a choice; dispersing ends the card's own effect (no manual steps).
+    expect(prompts(plain, "choose")).toHaveLength(1);
+    expect(prompts(plain, "manual")).toEqual([]);
+    const gone = ok("conjure-swarm", ctx([], { ...base, options: { beetles: ["disperse"] } }));
+    expect(ofKind(gone, "endEffect")).toEqual([{ kind: "endEffect", targetId: "pc", of: "conjure-swarm", own: true }]);
+    expect(gone.actor.after.hope).toBe(2);
+    const kept = ok("conjure-swarm", ctx([], { ...base, options: { beetles: ["keep"] } }));
     expect(kept.actor.after.hope).toBe(1);
-    expect(prompts(kept, "manual")[0]!.text).toMatch(/stay conjured/);
+    expect(ofKind(kept, "endEffect")).toEqual([]);
+    expect(prompts(kept, "manual")).toEqual([]);
   });
   it("needs the beetles to be conjured", () => {
     expect(run(effectOf("conjure-swarm"), ctx([], { useId: "beetles-damage" }))).toMatchObject({ ok: false, reason: "requirement" });
@@ -408,8 +414,10 @@ describe("Wild Fortress (L5, CB p.339)", () => {
     expect(dome(0, 1).actor.after.cardTokens).toBe(1);
     const falls = dome(32, 1);
     expect(falls.actor.after.cardTokens).toBe(0);
-    expect(prompts(falls, "manual")[0]!.text).toMatch(/falls/);
-    expect(prompts(dome(15, 0), "manual")).toEqual([]);
+    // SRD-C2 (dcm-8x8): the dome falls, so Wild Fortress ends for you (and the ally inside, passed as `allies`).
+    expect(ofKind(falls, "endEffect")).toEqual([{ kind: "endEffect", targetId: "pc", of: "wild-fortress", own: true }]);
+    expect(prompts(falls, "manual")).toEqual([]);
+    expect(ofKind(dome(15, 0), "endEffect")).toEqual([]);
   });
 });
 
@@ -462,11 +470,16 @@ describe("Wild Surge (L7, CB p.339)", () => {
     const plan = ok("wild-surge", ctx([], surging(6)));
     expect(folds(plan)).toEqual([{ kind: "modifyRoll", targetIds: ["pc"], amount: 6 }]);
     expect(plan.actor.after).toMatchObject({ cardTokens: 0, stress: 2 });
-    expect(prompts(plan, "manual")[0]!.text).toMatch(/form drops/);
+    // SRD-C2 (dcm-8x8): the form drops: the card's own effect ends.
+    expect(ofKind(plan, "endEffect")).toEqual([{ kind: "endEffect", targetId: "pc", of: "wild-surge", own: true }]);
+    expect(prompts(plan, "manual")).toEqual([]);
+    expect(ofKind(ok("wild-surge", ctx([], surging(3))), "endEffect")).toEqual([]);
   });
   it("a rest drops the form with a Stress", () => {
     const plan = ok("wild-surge", ctx([], { useId: "rest", actor: actor({ cardTokens: 4, activeCardEffects: ["wild-surge"] }) }));
     expect(plan.actor.after).toMatchObject({ cardTokens: 0, stress: 2 });
+    expect(ofKind(plan, "endEffect")).toEqual([{ kind: "endEffect", targetId: "pc", of: "wild-surge", own: true }]);
+    expect(prompts(plan, "manual")).toEqual([]);
   });
 });
 
@@ -482,6 +495,11 @@ describe("Forest Sprites (L8, CB p.339)", () => {
     const plan = ok("forest-sprites", ctx([], { ...sprites, useId: "attack", situations: ["The ally's attack roll is against an adversary within Melee range of a sprite"] }));
     expect(folds(plan)).toEqual([{ kind: "modifyRoll", targetIds: ["mira"], amount: 3 }]);
     expect(plan.actor.after.cardTokens).toBe(1);
+    // SRD-C2 (dcm-g6t): only an ally's attack roll against an adversary sets it off.
+    expect(effectOf("forest-sprites").uses.find((u) => u.id === "attack")!.activation).toEqual({
+      kind: "reaction",
+      trigger: { kind: "afterAllyRolls", range: "veryFar", result: "any", roll: "attack", against: { enemy: true } },
+    });
   });
   it("an ally near a sprite marks an additional Armor Slot, and the sprite vanishes", () => {
     const plan = ok("forest-sprites", ctx([], { ...sprites, useId: "armor", situations: ["The ally is within Melee range of a sprite"] }));
@@ -501,15 +519,28 @@ describe("Rejuvenation Barrier (L8, CB p.339)", () => {
       { kind: "clear", targetId: "pc", track: "hp", amount: 3 },
       { kind: "clear", targetId: "mira", track: "hp", amount: 2 },
     ]);
+    // SRD-C2 (dcm-nt4): resistance to physical damage from outside the barrier only.
+    const outside = { kind: "resistance", type: "physical", level: "resistant", from: "outsideArea" };
     expect(ofKind(plan, "effect").map((e) => ({ id: e.targetId, mods: e.mods }))).toEqual([
-      { id: "pc", mods: [{ kind: "resistance", type: "physical", level: "resistant" }] },
-      { id: "mira", mods: [{ kind: "resistance", type: "physical", level: "resistant" }] },
+      { id: "pc", mods: [outside] },
+      { id: "mira", mods: [outside] },
     ]);
+    // SRD-C2 (dcm-cma): the barrier is an area around you that follows you; no manual step.
+    expect(ofKind(plan, "area")).toEqual([
+      {
+        kind: "area",
+        area: { label: "Rejuvenation Barrier", centre: "self", radius: "veryClose", side: "selfAndAllies", mods: [outside], duration: "temporary", follows: true },
+        centreId: "pc",
+        targetIds: ["pc"],
+      },
+    ]);
+    expect(prompts(plan, "manual")).toEqual([]);
     expect(plan.limit).toEqual({ key: "card:rejuvenation-barrier", until: "rest", consumed: true });
   });
   it("a failure clears nothing and does not use the card up (Q4)", () => {
     const plan = ok("rejuvenation-barrier", ctx([3, 4], { allies: [ally("mira", { hp: 2 })] }));
     expect(ofKind(plan, "clear")).toEqual([]);
+    expect(ofKind(plan, "area")).toEqual([]);
     expect(plan.limit?.consumed).toBe(false);
   });
 });
@@ -525,10 +556,13 @@ describe("Fane of the Wilds (L9, CB p.339)", () => {
     const plan = ok("fane-of-the-wilds", ctx([], { useId: "long-rest", actor: actor({ cardTokens: 2, loadoutDomains: ["sage", "sage", "sage", "codex"], vaultDomains: ["sage", "bone"] }) }));
     expect(plan.actor.after.cardTokens).toBe(4);
   });
-  it("a critical on a Sage domain spell gains a token", () => {
-    const plan = ok("fane-of-the-wilds", ctx([], { useId: "critical", actor: actor({ cardTokens: 1 }), situations: ["The Spellcast Roll was for a Sage domain spell"] }));
+  // SRD-C2 (dcm-z1a): "for a Sage domain spell" is the trigger's cardDomain (the server matches the cast card's domain).
+  it("a critical on a Sage domain spell gains a token, with no confirmation", () => {
+    const use = effectOf("fane-of-the-wilds").uses.find((u) => u.id === "critical")!;
+    expect(use.activation).toEqual({ kind: "auto", trigger: { kind: "afterYouRoll", roll: "spellcast", result: "critical", cardDomain: "sage" } });
+    expect(use.requires).toBeUndefined();
+    const plan = ok("fane-of-the-wilds", ctx([], { useId: "critical", actor: actor({ cardTokens: 1 }) }));
     expect(plan.actor.after.cardTokens).toBe(2);
-    expect(run(effectOf("fane-of-the-wilds"), ctx([], { useId: "critical" }))).toMatchObject({ ok: false, reason: "requirement" });
   });
 });
 
@@ -565,9 +599,12 @@ describe("Force of Nature (L10, CB p.339)", () => {
     const paid = ok("force-of-nature", ctx([], { useId: "upkeep", actor: spirit }));
     expect(paid.actor.after.hope).toBe(1);
     expect(prompts(paid, "manual")).toEqual([]);
+    expect(ofKind(paid, "endEffect")).toEqual([]);
+    // SRD-C2 (dcm-8x8): with no Hope you revert: the card's own effect ends; nothing is paid.
     const broke = ok("force-of-nature", ctx([], { useId: "upkeep", actor: actor({ hope: 0, activeCardEffects: ["force-of-nature"] }) }));
-    expect(ofKind(broke, "pay")[0]).toMatchObject({ paid: false });
-    expect(prompts(broke, "manual")[0]!.text).toMatch(/revert to your normal form/);
+    expect(ofKind(broke, "pay")).toEqual([]);
+    expect(ofKind(broke, "endEffect")).toEqual([{ kind: "endEffect", targetId: "pc", of: "force-of-nature", own: true }]);
+    expect(prompts(broke, "manual")).toEqual([]);
   });
 });
 
@@ -585,19 +622,32 @@ describe("Tempest (L10, CB p.339)", () => {
       ["b", { kind: "standard", condition: "vulnerable" }, "temporary"],
     ]);
   });
-  it("Hurricane: 3d10+10 magic and the wind direction (manual)", () => {
+  /** The condition step of a tempest option, as written. */
+  const tempestCondition = (option: string) => {
+    const choose = effectOf("tempest").uses[0]!.steps[0] as Extract<Step, { kind: "choose" }>;
+    return choose.options.find((o) => o.id === option)!.steps.find((s) => s.kind === "condition");
+  };
+  // SRD-C2 (dcm-3oe): the wind's direction is a choice, and the Hurricane tag carries the limit against it.
+  it("Hurricane: 3d10+10 magic; the wind's direction is picked and the targets can't move against it", () => {
     // 9 + 2 + 3 = 14 hits a only; 3d10+10 = 4 + 5 + 6 + 10 = 25.
-    const plan = ok("tempest", ctx([9, 2, 4, 5, 6], { targets: two, options: { tempest: ["hurricane"] } }));
+    const plan = ok("tempest", ctx([9, 2, 4, 5, 6], { targets: two, options: { tempest: ["hurricane"], wind: ["north-east"] } }));
     expect(damageOf(plan)).toEqual([{ id: "a", incoming: 25, hpMarked: 3 }]);
-    expect(ofKind(plan, "condition")[0]).toMatchObject({ targetId: "a", condition: { kind: "tag", tag: "Hurricane" }, duration: "manual" });
-    expect(prompts(plan, "manual")[0]!.text).toMatch(/direction the wind/);
+    expect(ofKind(plan, "condition")[0]).toMatchObject({ targetId: "a", condition: { kind: "tag", tag: "Hurricane" }, duration: "manual", endsOn: ["gmSpendsFear"] });
+    expect(prompts(plan, "manual")).toEqual([]);
+    expect(prompts(plan, "choose")).toEqual([]);
+    expect(tempestCondition("hurricane")).toMatchObject({ mods: [{ kind: "moveLimit", direction: { choice: "wind" } }] });
+    // Without a direction the dialog asks for one.
+    const ask = ok("tempest", ctx([9, 2, 4, 5, 6], { targets: two, options: { tempest: ["hurricane"] } }));
+    expect(prompts(ask, "choose")).toHaveLength(1);
   });
-  it("Sandstorm: 5d6+9 magic and the beyond-Melee disadvantage (manual)", () => {
+  // SRD-C2 (dcm-4dc): the Sandstorm tag gives its bearers disadvantage on attacks from beyond Melee range.
+  it("Sandstorm: 5d6+9 magic; the targets' attacks from beyond Melee range have disadvantage", () => {
     // 1 + 2 + 3 + 4 + 5 + 9 = 24.
     const plan = ok("tempest", ctx([9, 2, 1, 2, 3, 4, 5], { targets: [adv("a")], options: { tempest: ["sandstorm"] } }));
     expect(damageOf(plan)).toEqual([{ id: "a", incoming: 24, hpMarked: 3 }]);
-    expect(ofKind(plan, "condition")[0]).toMatchObject({ condition: { kind: "tag", tag: "Sandstorm" } });
-    expect(prompts(plan, "manual")[0]!.text).toMatch(/beyond Melee range/);
+    expect(ofKind(plan, "condition")[0]).toMatchObject({ condition: { kind: "tag", tag: "Sandstorm" }, endsOn: ["gmSpendsFear"] });
+    expect(prompts(plan, "manual")).toEqual([]);
+    expect(tempestCondition("sandstorm")).toMatchObject({ mods: [{ kind: "disadvantage", on: "attack", beyond: "melee" }] });
   });
   it("asks for the tempest when none was picked", () => {
     expect(prompts(ok("tempest", ctx([9, 2], { targets: [adv("a")] })), "choose")).toHaveLength(1);

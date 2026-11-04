@@ -1,0 +1,1242 @@
+# Combat HUD plan (2026-11-01, revised after the user's answers the same day): build the user's approved Combat HUD
+# design (reference/designs/combat-hud/, HANDOFF.md) into the Combat Map. Implements bead dcm-bxp.99.32 and folds in the
+# combat-ui beads (see the briefs). Briefs, user answers, board-to-code map and data gaps: .omc/plans/combat-hud-briefs.md.
+# Format: docs/workflow.md. Extra keys (plan-check ignores them): title, size, batch, boards, mode.
+#
+# Waves follow HANDOFF "Suggested build order": 1 foundation (tokens, primitives, switch, shell, data), 2 banners / Fear /
+# rings / spotlight, 3 sheet panel + make-room + hand, 4 one picking pattern + action ring, 5 result / hit window / death
+# move, 6 GM queue / stat block / Fear confirm, 7 blocked-state system, 8 tablet and phone, 9 cut-over.
+# Wave 10 (added 2026-11-03): the user's updated design v2 (app bar, spotlight disc, GM dock); delta and questions in
+# .omc/plans/combat-hud-v2-delta.md.
+#
+# Rules for every tracer (details in the briefs):
+#   - Rollout (user answer 11b): the HUD sits behind an opt-in switch (hud/flag.ts: per viewer, localStorage, plus
+#     ?hud=1 / ?hud=0) until wave 8 is done. mode: add. HUD tracers ADD new components under
+#     src/components/combat-map/hud/** and leave the classic UI and its specs working (switch off = today's page, every
+#     existing spec passes unchanged). Wave 9 (cut-over) removes the classic UI, its specs and the switch.
+#   - HUD tracers own VIEW files. Pure model files (hand/model.ts, reactions/model.ts, drawer/*/model.ts, attack/mods.ts,
+#     adversary/model.ts, adversary/sight.ts), convex/** engine files and src/lib/domain/** stay with the engine lanes:
+#     HUD tracers read them (a needed change -> bead for the lane). Server tracers here (HD1, HD2, HD3, HD4, H1.S, H5.3)
+#     own only the files listed.
+#   - Concurrency with lanes-2 wave 11: while a HUD wave runs, no engine tracer may own a file that wave owns (table in
+#     the briefs). Few classic files are touched before wave 9 (page.tsx, tokens-layer.tsx, vision-layer.tsx, a few
+#     server files), so engine lanes stay mostly free until the cut-over.
+#   - Hard rules (HANDOFF): the hand's card face is the app's own (domains-tab dk-* face, actions/hand/face.tsx), states
+#     only around it; players never see adversary numbers; out of range routes to the GM; banners and tokens are buttons.
+plan: combat-hud
+waves:
+  # ------------------------------------------------------------------ wave 1: foundation
+  - wave: 1
+    tracers:
+      - id: H0
+        title: "HUD foundation: opt-in switch, design tokens, shared primitives, HUD state, full-bleed shell with stub regions, Map tools drawer"
+        goal: "With the HUD switch on, the Combat Map is a full-bleed map with empty HUD regions (banners, title, Fear, hand, feed, sheet, pop-ups, queue) and a left drawer holding today's column (GM 'Map tools', answer 12a; players get the same drawer until their parts move); with it off, the page is unchanged"
+        size: L
+        mode: add
+        boards: [CmpTokensDesign, Main, GMDesktop]
+        depends_on: []
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/page.tsx
+          - src/components/combat-map/hud/index.tsx
+          - src/components/combat-map/hud/flag.ts
+          - src/components/combat-map/hud/hud.css
+          - src/components/combat-map/hud/state.tsx
+          - src/components/combat-map/hud/shell.tsx
+          - src/components/combat-map/hud/shell.css
+          - src/components/combat-map/hud/ui/**
+          - src/components/combat-map/hud/tools/**
+          - src/components/combat-map/hud/banners/index.tsx
+          - src/components/combat-map/hud/fear/index.tsx
+          - src/components/combat-map/hud/scene/index.tsx
+          - src/components/combat-map/hud/spotlight/index.tsx
+          - src/components/combat-map/hud/sheet/index.tsx
+          - src/components/combat-map/hud/hand/index.tsx
+          - src/components/combat-map/hud/pick/index.tsx
+          - src/components/combat-map/hud/action-ring/index.tsx
+          - src/components/combat-map/hud/result/index.tsx
+          - src/components/combat-map/hud/hit/index.tsx
+          - src/components/combat-map/hud/death/index.tsx
+          - src/components/combat-map/hud/feed/index.tsx
+          - src/components/combat-map/hud/queue/index.tsx
+          - src/components/combat-map/hud/statblock/index.tsx
+          - src/components/combat-map/hud/areas/index.tsx
+          - src/components/combat-map/hud/toasts/index.tsx
+          - tests/unit/hud/h0-*.test.tsx
+          - tests/e2e/hud/helpers.ts
+          - tests/e2e/hud-shell.spec.ts
+          - docs/tasks/TASK-HUD-H0.md
+        reads:
+          - reference/designs/combat-hud/**
+          - reference/designs/project/Combat.dc.html
+          - reference/designs/project/Party.dc.html
+          - src/app/layout.tsx
+          - src/components/brand/modal.tsx
+          - src/components/combat-map/slots.ts
+          - src/components/combat-map/actions/index.tsx
+          - src/components/combat-map/tokens/rings.ts
+          - tests/e2e/visual/helpers.ts
+          - tests/e2e/a11y.ts
+        acceptance:
+          - "hud/flag.ts: useHudEnabled() per viewer (localStorage key, ?hud=1 / ?hud=0 override, off on the server and by default); a 'Try the new combat HUD' / 'Back to the classic view' toggle on both views; switching never remounts the map's queries twice in a render (no effect writes, CL6 / CL7)"
+          - "Switch off: the page renders exactly as before (every existing combat spec passes unchanged)"
+          - "Switch on: full-bleed MapBoard with the same layers, every region slot mounted from hud/<area>/index.tsx (stubs that render nothing), and the left drawer (hud/tools) holding today's GM column (Maps, Play / Edit, Combatants, token card, Reveal, Vision, style, packs, session chip) behind a 'Map tools' button; Edit mode keeps today's two-column layout (answer 12a); players get their current column in the same drawer as an interim"
+          - "hud.css: CmpTokensDesign colours, type roles (on the app's next/font variables), radii and motion, all motion off under prefers-reduced-motion"
+          - "hud/ui exports with unit tests: Popup (icon, title, sub, body, footer with one primary), Tag (.hs-play / -no / -used / -limit / -cost), CostPill, Pips, Seal, Stepper, Toggle, ChoiceRow, TwoTapButton, BandLabel, StatTile, WaitingDots, SidePanel (non-modal aside, Esc, focus in / back)"
+          - "HudProvider: open sheet ({ kind: pc, characterId } | { kind: adversary, tokenId } | null), the active pick session slot, root classes (sh-open, sh-<id>)"
+          - "tests/e2e/hud/helpers.ts: turns the switch on and seeds the board scene (live map, 4 PCs, a running encounter with a Leader, two Bandits and a ranged adversary, a Far card in hand, one adversary out of sight)"
+          - "tests/e2e/hud-shell.spec.ts: switch on and off for GM and player, axe passes both ways; lint, typecheck, tests pass"
+      - id: HD1
+        title: "HUD data 1: party banner query, scene query, adversary condition names for players"
+        goal: "Every member reads in one query each what banners and token chips show for the PCs on the live map (no adversary data) and the scene line (Fear, light, phase, campaign day); players' view of a visible adversary also carries its condition names, never numbers (answer 10a)"
+        size: M
+        mode: add
+        boards: [Main, CmpTokens, GMDesktop]
+        depends_on: []
+        owns:
+          - convex/combatHud.ts
+          - convex/lib/combatHud.ts
+          - convex/combatVision.ts
+          - convex/lib/combatVision.ts
+          - tests/convex/hud-party.test.ts
+          - tests/convex/hud-enemy-conditions.test.ts
+          - tests/convex/authz/hud.entries.ts
+          - tests/convex/authz/hud.test.ts
+          - docs/tasks/TASK-HUD-HD1.md
+        reads:
+          - convex/combatTokens.ts
+          - convex/combatFeatures.ts
+          - convex/campaigns.ts
+          - convex/campaignTime.ts
+          - convex/deathMoves.ts
+          - convex/lib/functions.ts
+          - convex/lib/permissions.ts
+          - src/lib/validation/characters.ts
+        acceptance:
+          - "combatHud.party({ mapId? }): need view; players read the live map only, the GM any map; per PC token characterId, tokenId, name, className, level, portrait, mine, hp / stress / armor { marked, max }, hope { value, max }, conditions [{ id, label }], down, deathMoveDue; returns validator; no adversary / ally / neutral data"
+          - "combatHud.scene(): fear, light, phase, day (null without campaign time), canSetLight, canOpenTimeArc (GM); returns validator"
+          - "playerView / previewAs: each visible adversary or other token gains conditions (names only, widen of otherTokenValidator, optional field); hidden tokens still never reach the player; a test checks no HP / Stress / Difficulty / thresholds appear"
+          - "Indexed reads, bounded by the token cap; authz entries (area hud); tests assert ConvexError.data.code; lint, typecheck, tests pass"
+  # ------------------------------------------------------------------ wave 2: banners, Fear banner, token rings, spotlight
+  - wave: 2
+    tracers:
+      - id: H1.1
+        title: "Party banners with the Hope seal (read only; open the sheet)"
+        goal: "With the HUD on, the party hangs as banners from a gold rod top-left (you, ally, condition and last-HP variants, Hope seal at the tip, open banner dropped 8 px, 'Spotlight' on the holder), each a button that opens that character's sheet"
+        size: M
+        mode: add
+        boards: [Main, CmpTokens, GMDesktop]
+        depends_on: [H0, HD1]
+        owns:
+          - src/components/combat-map/hud/banners/**
+          - tests/unit/hud/banners.test.tsx
+          - tests/e2e/hud-banners.spec.ts
+          - tests/e2e/visual/HUD-H1.1.spec.ts
+          - docs/tasks/TASK-HUD-H1.1.md
+        reads:
+          - src/components/combat-map/hud/ui/**
+          - src/components/combat-map/hud/state.tsx
+          - src/components/combat-map/hud/spotlight/index.tsx
+          - convex/combatHud.ts
+          - src/lib/srd/art.ts
+        acceptance:
+          - "Matches CmpTokens 'Banners' (You / Ally / With a condition / Last Hit Point) and Main's row at 1440x900: x = 24, 182, 340, 498; yours 270 px gold trim, allies 238 px; portrait, name, class, HP / Stress / Armor pips (HP pips show HP left, answer 2), conditions, Hope seal"
+          - "Accessible names and text say HP as marked ('Moss, 2 of 6 Hit Points marked', answer 2); 'Spotlight' after the class reads H1.S's slot (renders nothing until H1.S is merged)"
+          - "Each banner is a <button> 'Open <name>'s sheet'; until H2.1 it opens the classic sheet drawer through HudProvider"
+          - "Live two-browser spec (HP / Hope change shows on the other screen); axe passes; lint, typecheck, tests pass"
+      - id: H1.2
+        title: "Fear banner, day / time disc, title with Dice and Sheet buttons, GM toolbar"
+        goal: "With the HUD on, the Fear hangs as a purple banner top-right (12 diamond pips; - / + on the GM view only), the day / time disc hangs left of it (GM: a button that opens the time arc / End day, players: read only, answer 9b), and the title with Dice / Sheet (GM: Day / Dim / Night, Areas, Fog, Dice, Player view, End scene, Map tools) sits at x = 690"
+        size: M
+        mode: add
+        boards: [Main, GMDesktop, CmpTokens]
+        depends_on: [H0, HD1]
+        owns:
+          - src/components/combat-map/hud/fear/**
+          - src/components/combat-map/hud/scene/**
+          - tests/unit/hud/fear-scene.test.tsx
+          - tests/e2e/hud-fear.spec.ts
+          - tests/e2e/visual/HUD-H1.2.spec.ts
+          - docs/tasks/TASK-HUD-H1.2.md
+        reads:
+          - src/components/combat-map/hud/ui/**
+          - src/components/combat-map/hud/state.tsx
+          - src/components/combat-map/hud/tools/**
+          - src/components/combat-map/hud/spotlight/index.tsx
+          - convex/combatHud.ts
+          - convex/fear.ts
+          - src/app/(gm)/campaigns/[campaignId]/time-arc.tsx
+          - src/app/(gm)/campaigns/[campaignId]/time-of-day.tsx
+          - src/components/combat-map/vision/header.tsx
+          - src/components/combat-map/vision/panels.tsx
+          - src/components/combat-map/actions/scene/index.tsx
+          - src/components/combat-map/actions/dice/index.tsx
+          - src/components/sessions/session-chip.tsx
+        acceptance:
+          - "Matches CmpTokens 'GM Fear - players' / 'GM Fear - GM' and the top-right of Main / GMDesktop; GM - / + ('Spend a Fear' / 'Gain a Fear') call fear.adjust with an optimistic update and never ask (answer 6a)"
+          - "Disc per CmpTokens 'Light' with day and phase where the frame has campaign time; GM: a button opening the existing time arc / End day UI (frames without campaign time: Day / Dim / Night only, disc still read-only light); players: read only (answer 9b)"
+          - "Title: map name, 'Live' line (GM: '- GM view - Session N'), Dice (existing dice box) and Sheet (your sheet); GM toolbar per GMDesktop: Day / Dim / Night (setTimeOfDay, hidden when it can't be set), Areas, Fog, Dice, Player view (PreviewPicker), End scene (EndSceneButton until H5.3), Map tools (H0's drawer)"
+          - "A Fear banner slot shows H1.S's SPOTLIGHT tag once merged"
+          - "Live two-browser spec (GM Fear - / + seen by a player); axe passes; lint, typecheck, tests pass"
+      - id: H1.3
+        title: "Token rings: HP-left / Stress arcs, Hope chip, condition badges, side colours (read only)"
+        goal: "With the HUD on, every token shows the HUD anatomy (svg.tk-arc left half HP left red, right half Stress marked blue, gold Hope chip on PCs, condition badges incl. visible adversaries' condition names, side colour ring); player-view adversaries show no arcs; GM adversaries get arcs"
+        size: M
+        mode: add
+        boards: [CmpTokens, Main, GMDesktop]
+        depends_on: [H0, HD1]
+        owns:
+          - src/components/combat-map/hud/token/**
+          - src/components/combat-map/tokens/tokens-layer.tsx
+          - src/components/combat-map/vision/vision-layer.tsx
+          - tests/unit/hud/token-face.test.tsx
+          - tests/e2e/hud-tokens.spec.ts
+          - tests/e2e/visual/HUD-H1.3.spec.ts
+          - docs/tasks/TASK-HUD-H1.3.md
+        reads:
+          - src/components/combat-map/hud/ui/**
+          - src/components/combat-map/hud/flag.ts
+          - src/components/combat-map/tokens/**
+          - convex/combatHud.ts
+          - convex/combatTokens.ts
+          - convex/combatVision.ts
+        acceptance:
+          - "tokens-layer.tsx and vision-layer.tsx render the classic face with the switch off (unchanged) and hud/token's TokenFace with it on; the classic specs pass unchanged"
+          - "Matches CmpTokens 'Token anatomy' and 'Token kinds' (you gold + glow, ally PC teal #9fd8c4, ally NPC mint #9fd8b0, neutral grey, adversary red #c0392b; GM adversary with arcs, player adversary without numbers); arcs with pathLength=100 and stroke-dasharray; accessible names give HP as marked (answer 2)"
+          - "Tokens stay buttons ('Open <name>'s sheet'; GM 'Open the <name>'s stat block'); dragging and keyboard moves keep working"
+          - "A player's DOM never holds an adversary arc or number (unit + e2e); axe passes; lint, typecheck, tests pass"
+      - id: H1.S
+        title: "Spotlight state: who holds it, the GM's hand-back, the players-only-react rule's server helper, display"
+        goal: "The scene stores who holds the spotlight (a PC or the GM); the GM takes it or hands it back to a PC; helpers let the engine move it to the GM on a PC roll with Fear or a failure and refuse a player's non-reaction action while the GM holds it (answer 1c); the HUD shows it (banner 'Spotlight', Fear banner SPOTLIGHT, 'The GM has the spotlight', 'Reactions only until the spotlight comes back to you')"
+        size: L
+        mode: add
+        boards: [Main, CmpTokens, GMDesktop, CmpBlocked]
+        depends_on: [H0]
+        owns:
+          - convex/combatSpotlight.ts
+          - convex/lib/spotlight.ts
+          - convex/tables/combatSpotlight.ts
+          - src/lib/errors/spotlight.ts
+          - src/lib/errors/app-error.ts
+          - src/lib/convex-errors.ts
+          - src/components/combat-map/hud/spotlight/**
+          - tests/convex/hud-spotlight.test.ts
+          - tests/convex/authz/spotlight.entries.ts
+          - tests/convex/authz/spotlight.test.ts
+          - tests/unit/hud/spotlight.test.tsx
+          - tests/e2e/hud-spotlight.spec.ts
+          - docs/tasks/TASK-HUD-H1.S.md
+        reads:
+          - convex/encounterTracking.ts
+          - convex/rolls.ts
+          - convex/combatCards.ts
+          - convex/combatFeatures.ts
+          - convex/combatActions.ts
+          - src/lib/domain/encounters/spotlight.ts
+          - src/lib/domain/sessions/spotlight.ts
+          - src/lib/domain/duality.ts
+        acceptance:
+          - "Table combatSpotlight (one row per campaign scene, its own table, rule 6): holder pc <characterId> | gm, since, reason; schema composition by the orchestrator at merge"
+          - "combatSpotlight.state (player-facing, returns validator), gmTake, handTo({ characterId }) (GM only, keyed, undoable via actionLog if the existing log fits; else say so)"
+          - "convex/lib/spotlight.ts: moveToGm(ctx, campaign, reason) for a PC roll with Fear or a failed action roll (CB p.148-149), and assertMayAct(ctx, campaign, character, kind) refusing a non-reaction player action while the GM holds it with the new code SPOTLIGHT_WITH_GM (src/lib/errors/spotlight.ts, combined in app-error.ts / convex-errors.ts); unit-tested; the engine call sites are bead work (see briefs) and are NOT edited here"
+          - "hud/spotlight exports the banner 'Spotlight' tag, the Fear banner SPOTLIGHT tag, the 'The GM has the spotlight' card and the reactions note (Main 'GM's turn'); the GM hands back from a banner's menu or the Fear banner"
+          - "authz entries; live two-browser spec (GM takes it, the player's HUD shows the GM's turn); lint, typecheck, tests pass"
+  # ------------------------------------------------------------------ wave 3: sheet panel, make room, hand
+  - wave: 3
+    tracers:
+      - id: HD2
+        batch: A
+        title: "HUD data 2: the sheet query (own / view / GM) for any party member"
+        goal: "Any party member reads any PC's sheet panel data (answer 4a: numbers, features as a view-safe list, thresholds, Experiences, conditions and lasting effects); only the cards in hand keep following the hand-sharing switch"
+        size: S
+        mode: add
+        boards: [Main, GMDesktop, CmpTokens]
+        depends_on: []
+        owns:
+          - convex/combatHud.ts
+          - convex/lib/combatHud.ts
+          - tests/convex/hud-sheet.test.ts
+          - tests/convex/authz/hud.entries.ts
+          - tests/convex/authz/hud.test.ts
+          - docs/tasks/TASK-HUD-HD2.md
+        reads:
+          - convex/combatFeatures.ts
+          - convex/combatCards.ts
+          - src/lib/domain/characters/**
+          - src/lib/validation/characters.ts
+        acceptance:
+          - "combatHud.sheet({ characterId }): need view in the campaign; mode own (edit permission), gm, or view (any other member); evasion, armorScore, level, thresholds, experiences, trackers, features [{ name, kind, cost, limit, used }] (Use data only for own / gm), conditions [{ id, label, until }], lasting effects [{ source, text, until }]; returns validator; cards never included"
+          - "authz entries; lint, typecheck, tests pass"
+      - id: H2.1
+        batch: B
+        title: "The sheet panel (own / view only / GM edit)"
+        goal: "With the HUD on, a banner or PC token opens that character's sheet as a 400 px right panel: badge (Spotlight / View only / GM edit), Evasion / Armor / Level tiles, HP / Stress / Hope / Armor steppers, features with cost and Use, thresholds, Experiences, conditions and lasting effects, and on your own sheet 'Hide my hand from other players'"
+        size: L
+        mode: add
+        boards: [Main, GMDesktop, CmpTokens]
+        depends_on: [HD2]
+        owns:
+          - src/components/combat-map/hud/sheet/**
+          - src/components/combat-map/hud/banners/**
+          - tests/unit/hud/banners.test.tsx
+          - tests/unit/hud/sheet-*.test.tsx
+          - tests/e2e/hud-sheet.spec.ts
+          - tests/e2e/visual/HUD-H2.1.spec.ts
+          - docs/tasks/TASK-HUD-H2.1.md
+        reads:
+          - src/components/combat-map/hud/ui/**
+          - src/components/combat-map/hud/state.tsx
+          - src/components/combat-map/hud/spotlight/index.tsx
+          - src/components/combat-map/drawer/**
+          - src/components/combat-map/actions/hand/sharing.tsx
+          - src/components/combat-map/play-for.ts
+          - convex/combatHud.ts
+          - convex/combatFeatures.ts
+          - convex/characters.ts
+          - convex/combatCards.ts
+        acceptance:
+          - "Main with Moss's sheet (own: steppers via characters.adjustResource intents + optimistic update, numbers read 'n of 6 marked' for HP / Stress / Armor, answer 2), Main with Brannoc's (View only, any player, answer 4a: no steppers, 'Only Brannoc's player and the GM can use or change this sheet.'), GMDesktop with Vex's (GM edit, answer 5a: steppers and conditions always editable; feature Use and cards only with 'Play for this character' on, the switch in the header)"
+          - "Own sheet holds 'Hide my hand from other players' (combatCards.setHandHidden; answer 16a)"
+          - "Feature Use opens the classic FeatureUse flow until H3.3; the drawer prompts render inside the panel"
+          - "SidePanel: non-modal aside '<name>'s sheet', Esc closes, focus to the heading and back to the opener"
+          - "Orchestrator 2026-11-02 (H1.1 merge note): delete hud/banners/classic-sheet.tsx and its mount in banners/index.tsx so a banner opens only the HUD panel; once H2.2 has fixed dcm-bxp.99.32.11 drop the .hud-root.sh-open reset from banners.css"
+          - "axe passes with the panel open; lint, typecheck, tests pass"
+      - id: H2.2
+        batch: A
+        title: "Make room: the map shifts and scales for the sheet, overlays move, switching between sheets"
+        goal: "While a sheet is open the map transitions translateX(-125px) scale(.94) over 350 ms, the Fear banner moves to right 424, the hand to left 330, pop-ups shift left and the disc hides; another banner or token swaps the sheet, the same one or the close button closes it"
+        size: S
+        mode: add
+        boards: [Main, GMDesktop, CmpTokensDesign]
+        depends_on: []
+        owns:
+          - src/components/combat-map/hud/shell.tsx
+          - src/components/combat-map/hud/shell.css
+          - src/components/combat-map/hud/state.tsx
+          - tests/unit/hud/make-room.test.tsx
+          - tests/e2e/hud-make-room.spec.ts
+          - docs/tasks/TASK-HUD-H2.2.md
+        reads:
+          - src/components/combat-map/map-view/**
+          - src/components/combat-map/hud/hand/index.tsx
+        acceptance:
+          - "CmpTokensDesign 'Motion' (sheet 40 px + fade 280 ms ease-out, map 94 % and -125 px over 350 ms, banner hover 4 px, open banner 8 px), none under prefers-reduced-motion"
+          - "viewport.toSquares, token drag and area picking stay exact while the map is shifted (unit test + e2e drag with the sheet open)"
+          - "Orchestrator 2026-11-02: fix dcm-bxp.99.32.11 - the HUD root's open-sheet class clashes with the global .sh-open button style in party/sheet-ui/sheet-ui.css; rename the HUD root classes in state.tsx / shell.css (e.g. hud-sheet-open) so the HUD never picks up .sh-open"
+          - "lint, typecheck, tests pass"
+      - id: H2.3
+        batch: A
+        title: "HUD hand: card states around the unchanged face; vault, recall, roll options, full card view, Hide cards"
+        goal: "With the HUD on, the hand sits bottom centre around x = 1050 with every CmpCards state around the app's own face (tags, lift and glow, grey wash), the vault with recall costs, Roll options and Hide cards (folds your fan on your screen only, answer 16a) beside the fan"
+        size: M
+        mode: add
+        boards: [CmpCards, Main]
+        depends_on: []
+        owns:
+          - src/components/combat-map/hud/hand/**
+          - tests/unit/hud/hand-states.test.tsx
+          - tests/e2e/hud-hand.spec.ts
+          - tests/e2e/visual/HUD-H2.3.spec.ts
+          - docs/tasks/TASK-HUD-H2.3.md
+        reads:
+          - src/components/combat-map/actions/hand/**
+          - src/components/combat-map/actions/roll-controls/**
+          - src/components/cards/**
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/domains.css
+          - reference/designs/project/Party.dc.html
+          - convex/combatCards.ts
+        acceptance:
+          - "The face is the classic HandCardFace / domains-tab face, unchanged (no edit to actions/hand/face.tsx or domains.css); tags per CmpCards ('3 tokens', 'Casting - pick a target', 'Needs 1 Hope', 'Used - back after a rest', 'Turn on \"Play for Moss\"', 'Brannoc's hand - view only', 'Reaction - shows in the hit window')"
+          - "Vault with count; 'Recall - 1 Stress' in combat, 'Recall - free' resting, 'Loadout full - 5 of 5' (existing moveCard)"
+          - "Roll options popover (Experiences with Hope cost, advantage -3..+3, Help dice); Hide cards is local to the viewer (no server call)"
+          - "Full card view (More) over the map, Use / Close at the bottom, Esc closes"
+          - "axe passes; lint, typecheck, tests pass"
+  # ------------------------------------------------------------------ wave 4: one way to pick, action ring, withdraw
+  - wave: 4
+    tracers:
+      - id: HD3
+        batch: A
+        title: "Withdraw a use waiting on GM approval (server)"
+        goal: "A player withdraws their own card, feature or attack use that waits for the GM's approval; nothing was rolled or paid, the GM's queue item disappears (answer 8a)"
+        size: S
+        mode: add
+        boards: [CmpPromptsPlayer]
+        depends_on: []
+        owns:
+          - convex/combatWithdraw.ts
+          - tests/convex/hud-withdraw.test.ts
+          - tests/convex/authz/hud.entries.ts
+          - tests/convex/authz/hud.test.ts
+          - docs/tasks/TASK-HUD-HD3.md
+        reads:
+          - convex/combatRequests.ts
+          - convex/combatCards.ts
+          - convex/combatFeatures.ts
+          - convex/tables/combatRequests.ts
+          - convex/lib/validators/combatRequests.ts
+        acceptance:
+          - "combatWithdraw.withdraw({ requestId }) keyed campaign mutation: the request's character owner (edit permission) only; an answered request -> REQUEST_NOT_OPEN; marks it withdrawn through the request table's existing status (a needed status widen is reported to the vocabulary lane, not edited) and writes a feed line"
+          - "authz entries; lint, typecheck, tests pass"
+      - id: H3.0
+        batch: A
+        title: "The picking panel and target rings; GM approval routing; Waiting for the GM with Withdraw"
+        goal: "With the HUD on, everything that picks targets uses one panel 42 px right of the primary target (header, target list in sync with map rings, riders and options, footer cost line + one primary), rings show picked / in / out / los with band labels, an out-of-range pick tags 'GM approves', asks the GM and shows 'Waiting for the GM' with Withdraw"
+        size: L
+        mode: add
+        boards: [CmpPicking, Main, CmpTokens, CmpPromptsPlayer]
+        depends_on: [HD3]
+        owns:
+          - src/components/combat-map/hud/pick/**
+          - tests/unit/hud/pick-*.test.tsx
+          - tests/e2e/hud-pick.spec.ts
+          - tests/e2e/visual/HUD-H3.0.spec.ts
+          - docs/tasks/TASK-HUD-H3.0.md
+        reads:
+          - src/components/combat-map/hud/ui/**
+          - src/components/combat-map/hud/state.tsx
+          - src/components/combat-map/actions/targets/**
+          - src/components/combat-map/actions/hand/model.ts
+          - convex/combatActions.ts
+          - convex/lib/combatActions.ts
+          - convex/combatRequests.ts
+          - convex/combatCards.ts
+          - convex/combatWithdraw.ts
+        acceptance:
+          - "CmpPicking 'One target - a card' and Main 'Picking a target': a row per creature (picked / in / out 'GM approves' / los 'Can't see', adversary condition names per answer 10a), tapping a row or a ring selects, both in step; footer cost line + one primary naming the action"
+          - "CmpTokens 'Target rings' as a HUD map layer (.tg-picked / -in / -out + 'GM' badge / -los, ally picked mint, .tg-l band label above, .tg-rl secondary label below)"
+          - "Out of range never errors: the primary sends, the pending result shows 'Waiting for the GM' with Withdraw (HD3); nothing rolled or paid until the GM allows"
+          - "Exports a pick-session API (open with a source, rule, rows, options, primary) that H3.1 / H3.2 / H3.3 / H3.4 and H5.2 use; Esc / close cancels; focus to the panel"
+          - "Live two-browser spec (player's out-of-range pick shows in the GM's classic list; Withdraw removes it); axe passes; lint, typecheck, tests pass"
+      - id: H3.1
+        batch: B
+        title: "Playing a card through the picking panel"
+        goal: "With the HUD on, Use on a card raises it ('Casting - pick a target'), opens the picking panel with the card's rule, every choice the classic Use dialog asks and its on-hit riders with cost pills, and 'Cast on <target>' plays it"
+        size: L
+        mode: add
+        boards: [CmpPicking, Main, CmpCards]
+        depends_on: [H3.0]
+        owns:
+          - src/components/combat-map/hud/hand/**
+          - src/components/combat-map/hud/pick-card/**
+          - tests/unit/hud/card-pick.test.tsx
+          - tests/e2e/hud-card-pick.spec.ts
+          - docs/tasks/TASK-HUD-H3.1.md
+        reads:
+          - src/components/combat-map/hud/pick/**
+          - src/components/combat-map/actions/hand/**
+          - src/components/combat-map/map-view/area-pick.tsx
+          - convex/combatCards.ts
+        acceptance:
+          - "Every choice the classic dialog asks (grimoire spell, number of Hope, vault swap dcm-p1r, trigger damage type, point / points via H3.3's picker) is a panel row; the card art thumbnail through next/image"
+          - "Riders that only apply on a hit say so; the primary names the action"
+          - "lint, typecheck, tests pass"
+      - id: H3.2
+        batch: B
+        title: "Weapon attacks through the picking panel; riders, forced attack, Lead by Example, minions"
+        goal: "With the HUD on, Attack opens the panel's weapon variant (weapon tiles, Experience / advantage / Help chips, riders as toggles with cost pills, one primary 'Attack the Bandit with Shortstaff'); a forced attack locks the target; Lead by Example and the minion pick are panel rows"
+        size: L
+        mode: add
+        boards: [CmpPicking, CmpPromptsPlayer]
+        depends_on: [H3.0]
+        owns:
+          - src/components/combat-map/hud/pick-attack/**
+          - tests/unit/hud/attack-pick.test.tsx
+          - tests/e2e/hud-attack-pick.spec.ts
+          - docs/tasks/TASK-HUD-H3.2.md
+        reads:
+          - src/components/combat-map/hud/pick/**
+          - src/components/combat-map/actions/attack/**
+          - src/components/combat-map/actions/roll-controls/**
+          - convex/combatActions.ts
+          - convex/combatRequests.ts
+        acceptance:
+          - "CmpPicking 'Weapon attack'; CmpPromptsPlayer 'With this attack', 'Forced attack' (target locked), 'Lead by Example', 'Your hit can defeat 2 more Minions'"
+          - "Fold-ins: dcm-y3e row when the server offers it; dcm-5dg only if the server offers a trait pick"
+          - "lint, typecheck, tests pass"
+      - id: H3.3
+        batch: B
+        title: "Feature uses, areas, walls and chains through the picking panel"
+        goal: "With the HUD on, feature Use opens the picking panel (riders on a feature's action roll included, dcm-aiwg); areas pick a centre with crosshair, radius preview and banner, walls two draggable points, chains numbered links"
+        size: L
+        mode: add
+        boards: [CmpPicking]
+        depends_on: [H3.0]
+        owns:
+          - src/components/combat-map/hud/pick-area/**
+          - src/components/combat-map/hud/pick-feature/**
+          - tests/unit/hud/area-pick.test.tsx
+          - tests/e2e/hud-area-pick.spec.ts
+          - docs/tasks/TASK-HUD-H3.3.md
+        reads:
+          - src/components/combat-map/hud/pick/**
+          - src/components/combat-map/drawer/use/**
+          - src/components/combat-map/map-view/area-pick.tsx
+          - src/components/combat-map/map-view/area-overlay.tsx
+          - convex/combatFeatures.ts
+          - convex/combatAreaEdits.ts
+        acceptance:
+          - "CmpPicking 'Area - pick a square', 'Wall - two points', 'Chain links'; Esc cancels every mode; keyboard placement (arrows + Enter)"
+          - "dcm-aiwg: a feature's action roll offers its rider options"
+          - "lint, typecheck, tests pass"
+      - id: H3.4
+        batch: C
+        title: "The action ring around your own token"
+        goal: "With the HUD on, selecting your own token opens the action ring: Attack, Cast (raises the hand), Sheet and every feature with a Use button (answer 3b); a locked one shows its reason ('Evolution needs 3 Hope. You have 1.')"
+        size: M
+        mode: add
+        boards: [Main]
+        depends_on: [H3.0, H3.1, H3.2, H3.3]
+        owns:
+          - src/components/combat-map/hud/action-ring/**
+          - tests/unit/hud/action-ring.test.tsx
+          - tests/e2e/hud-action-ring.spec.ts
+          - docs/tasks/TASK-HUD-H3.4.md
+        reads:
+          - src/components/combat-map/hud/**
+          - convex/combatFeatures.ts
+        acceptance:
+          - "The ring's Attack opens H3.2's attack picker; the orchestrator removes H3.0's interim Attack button (hud/pick/attack.tsx) at merge (dcm-bxp.99.32.18)"
+          - "Main 'Picking a target' / 'Can't afford' ring: Attack -> H3.2, Cast -> raises the hand (H3.1), Sheet -> your sheet, each feature with a Use -> H3.3; many features wrap into a second ring or a 'More' button (say which in the doc)"
+          - "Buttons with names; Esc closes; never covers your token's arcs"
+          - "lint, typecheck, tests pass"
+  # ------------------------------------------------------------------ wave 5: result, hit window, death move (+ GM confirm)
+  - wave: 5
+    tracers:
+      - id: HD4
+        batch: A
+        title: "Death move GM confirm (server + both surfaces)"
+        goal: "A player's chosen death move waits for the GM's confirm before its outcome applies (answer 15b): the move is pending, the GM confirms (or sends it back), then the dice / outcome apply as today; the party sheet and the HUD both show the wait"
+        size: M
+        mode: add
+        boards: [Main, CmpPromptsGM]
+        depends_on: []
+        owns:
+          - convex/deathMoves.ts
+          - src/lib/domain/death/**
+          - src/lib/errors/death.ts
+          - src/components/party/death/**
+          - tests/convex/hud-death-confirm.test.ts
+          - tests/unit/hud/death-confirm.test.tsx
+          - tests/e2e/death.spec.ts
+          - docs/tasks/TASK-HUD-HD4.md
+        reads:
+          - convex/tables/characters.ts
+          - src/lib/validation/characters.ts
+          - tests/convex/authz/play.entries.ts
+        acceptance:
+          - "choose stores the move as awaiting the GM (stored shape widened with an optional field, rule 7; no version bump unless needed); new confirm / decline mutations (GM only, keyed); the roll and outcome happen only at confirm; undo still works"
+          - "Party sheet's death flow shows 'Waiting for the GM to confirm' and the GM's confirm card; tests/e2e/death.spec.ts updated"
+          - "New public functions listed for the orchestrator to add to tests/convex/authz/play.entries.ts at merge (that file is shared); lint, typecheck, tests pass"
+      - id: H4.1
+        batch: A
+        title: "Result panel, after-roll hold, damage split and ally picks"
+        goal: "With the HUD on, a card or attack result opens beside the target (art, name, 'Success with Hope', Hope / Fear dice, modifier, total, '+1 Hope', per target 'Hit 1d8+1 -> 7 physical' and the condition, a follow-up rider), and the after-roll steps (hold, split, ally picks) use the same panel"
+        size: L
+        mode: add
+        boards: [Main, CmpPicking, CmpPromptsPlayer]
+        depends_on: []
+        owns:
+          - src/components/combat-map/hud/result/**
+          - tests/unit/hud/result-*.test.tsx
+          - tests/e2e/hud-result.spec.ts
+          - tests/e2e/visual/HUD-H4.1.spec.ts
+          - docs/tasks/TASK-HUD-H4.1.md
+        reads:
+          - src/components/combat-map/hud/pick/**
+          - src/components/combat-map/actions/hand/result.tsx
+          - src/components/combat-map/actions/attack/**
+          - convex/combatActions.ts
+          - convex/combatCards.ts
+          - convex/featurePrompts.ts
+        acceptance:
+          - "Main 'Card result' at 1440x900; the player's own damage only, enemies Hit / Miss / Defeated (U1)"
+          - "CmpPromptsPlayer 'Your roll waits'; CmpPicking 'After the roll' (split steppers with 'n left', Deal the damage; ally chips '2 of 3 chose', allies answer on their screens)"
+          - "lint, typecheck, tests pass"
+      - id: H4.2
+        batch: A
+        title: "The hit window (You were hit)"
+        goal: "With the HUD on, an incoming hit opens 'You were hit' by your token: damage, threshold tiles with the active one, the armor offer, HP / Armor before -> after as 'n of 6 marked', Take n HP / Mark Armor, the reaction cards and features that answer, and 'Pay something else?' with the engine's options"
+        size: L
+        mode: add
+        boards: [Main, CmpPromptsPlayer, CmpCards]
+        depends_on: []
+        owns:
+          - src/components/combat-map/hud/hit/**
+          - tests/unit/hud/hit-*.test.tsx
+          - tests/e2e/hud-hit.spec.ts
+          - tests/e2e/visual/HUD-H4.2.spec.ts
+          - docs/tasks/TASK-HUD-H4.2.md
+        reads:
+          - src/components/combat-map/actions/reactions/**
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/incoming-hit.tsx
+          - convex/adversaryActions.ts
+        acceptance:
+          - "Main 'You're hit' (pips HP left, text 'n of 6 marked', answer 2); 'Pay something else?' rates from the engine (the board's '1 Hope = 1 HP' is sample text); no Armor Slot left hides the armor option"
+          - "GM-owned PCs get the same window on the GM view; reactions stay usable while the GM holds the spotlight (answer 1c)"
+          - "axe passes; lint, typecheck, tests pass"
+      - id: H4.3
+        batch: B
+        title: "Death move modal and the 'Just now' feed"
+        goal: "With the HUD on, marking your last Hit Point opens 'Choose a death move' over the dimmed map (Blaze of Glory / Avoid Death / Risk It All) and then 'Waiting for the GM to confirm'; the GM gets the confirm in the HUD; the player's feed hangs bottom-left as 'Just now'"
+        size: M
+        mode: add
+        boards: [Main, CmpTokens]
+        depends_on: [HD4]
+        owns:
+          - src/components/combat-map/hud/death/**
+          - src/components/combat-map/hud/feed/**
+          - tests/unit/hud/death-feed.test.tsx
+          - tests/e2e/hud-death.spec.ts
+          - docs/tasks/TASK-HUD-H4.3.md
+        reads:
+          - src/components/party/death/**
+          - convex/deathMoves.ts
+          - convex/feed.ts
+        acceptance:
+          - "Main 'Last Hit Point' (core wording; footer 'Your table can see this choice. The GM confirms the outcome.'); banner and portrait grey; the GM's confirm reaches H5.1's queue later (until then it shows as a HUD popup on the GM view)"
+          - "Feed 'Just now' bottom-left, live from feed.list"
+          - "Live two-browser spec (player chooses, GM confirms, both see the outcome); axe passes; lint, typecheck, tests pass"
+  # ------------------------------------------------------------------ wave 6: GM queue, stat block, Fear confirm
+  - wave: 6
+    tracers:
+      - id: H5.1
+        title: "GM request queue ('Waiting on you') and Resolutions with Undo"
+        goal: "With the HUD on, everything that waits on the GM lands in one queue top-left (out of range Allow / Decline, Difficulty Set and roll, reactions Resolve now, Cloaked, fire, countdown end, feature choices, ally rolls, death move confirm) with Resolutions and Undo below; the GM's classic column lives only in Map tools"
+        size: L
+        mode: add
+        boards: [GMDesktop, CmpPromptsGM]
+        depends_on: []
+        owns:
+          - src/components/combat-map/hud/queue/**
+          - tests/unit/hud/queue-*.test.tsx
+          - tests/e2e/hud-queue.spec.ts
+          - tests/e2e/visual/HUD-H5.1.spec.ts
+          - docs/tasks/TASK-HUD-H5.1.md
+        reads:
+          - src/components/combat-map/requests/**
+          - src/components/combat-map/actions/gm/**
+          - src/components/combat-map/actions/adversary/**
+          - src/components/combat-map/hud/death/**
+          - convex/combatRequests.ts
+          - convex/combatCards.ts
+          - convex/featurePrompts.ts
+          - convex/adversaryActions.ts
+          - convex/cloakPrompts.ts
+          - convex/hitKeywords.ts
+          - convex/deathMoves.ts
+          - convex/actionLog.ts
+        acceptance:
+          - "GMDesktop 'Requests' at 1440x900: 'Waiting on you' + count, one CmpPromptsGM card per item (Out of range: your call; Set the Difficulty; Reactions; Does Mira's Cloaked end?; Was this hit fire?; End this countdown? once dcm-pgfr's server lands; More Where That Came From; death move confirm); no Momentum prompt (answer 7a: automatic, its feed line and Undo show in Resolutions); no Hope split (answer 14a)"
+          - "Each answer is an existing keyed mutation; an answered item shows 'Already answered' and drops out; a withdrawn one disappears"
+          - "Resolutions with Undo (optimistic, UNDO_STALE shown)"
+          - "Live two-browser spec; axe passes; lint, typecheck, tests pass"
+      - id: H5.2
+        title: "Adversary stat panel and the GM attack picker"
+        goal: "With the HUD on, an enemy token on the GM view opens its stat block as the right panel (motives, Difficulty / Thresholds / Attack, HP / Stress the GM marks, weapon and Experience, conditions with 'End - 1 Fear', features with kind, Fear cost and Use, Spotlight - 1 Fear and Attack); Attack opens the purple picking panel 'Acting for the Lieutenant'"
+        size: L
+        mode: add
+        boards: [GMDesktop, CmpPicking, CmpTokens]
+        depends_on: []
+        owns:
+          - src/components/combat-map/hud/statblock/**
+          - tests/unit/hud/statblock-*.test.tsx
+          - tests/e2e/hud-statblock.spec.ts
+          - tests/e2e/visual/HUD-H5.2.spec.ts
+          - docs/tasks/TASK-HUD-H5.2.md
+        reads:
+          - src/components/combat-map/hud/pick/**
+          - src/components/combat-map/hud/fear/**
+          - src/components/combat-map/hud/spotlight/**
+          - src/components/combat-map/actions/adversary/**
+          - src/components/adversaries/tracker/actions/**
+          - convex/adversaryActions.ts
+          - convex/encounters.ts
+          - convex/encounterTracking.ts
+          - convex/combatEffects.ts
+          - convex/combatSpotlight.ts
+        acceptance:
+          - "Re-enable the GM's adversary click: tokens/tokens-layer.tsx openSheet skips adversary targets until the stat block exists (orchestrator 2026-11-02); restore hud.toggleSheet for them and the hud-tokens.spec lines that expect hud-sh-open on the Lieutenant (orchestrator edits these at merge if outside owns)"
+          - "GMDesktop 'Adversary acting' (sh-E0) at 1440x900; GM rings purple (.g-ring.g-pick / g-out / g-hid); footer 'Spotlight: 1 Fear - Momentum on a hit'"
+          - "Every Fear spend (spotlight, Fear features, Experiences, End - 1 Fear) goes through H5.3's FearConfirm (answer 6a); spotlighting an adversary also takes the scene spotlight (combatSpotlight.gmTake)"
+          - "GM-only reads; existing adversaryActions / encounterTracking mutations; axe passes; lint, typecheck, tests pass"
+      - id: H5.3
+        title: "Fear spend confirm, End scene confirm with what ends, Areas panel"
+        goal: "With the HUD on, any action that spends Fear asks 'Spend n Fear?' under the Fear banner with reasons and 'a -> b' (the banner's - spends without asking, answer 6a); End scene asks 'End the scene?' naming what ends; Areas opens 'Areas on the map'"
+        size: M
+        mode: add
+        boards: [GMDesktop, CmpPromptsGM]
+        depends_on: []
+        owns:
+          - src/components/combat-map/hud/fear/**
+          - src/components/combat-map/hud/areas/**
+          - src/components/combat-map/hud/scene/**
+          - convex/combatHud.ts
+          - convex/lib/combatHud.ts
+          - tests/convex/hud-scene-end.test.ts
+          - tests/convex/authz/hud.entries.ts
+          - tests/convex/authz/hud.test.ts
+          - tests/unit/hud/fear-confirm.test.tsx
+          - tests/e2e/hud-fear-confirm.spec.ts
+          - docs/tasks/TASK-HUD-H5.3.md
+        reads:
+          - convex/combatScenes.ts
+          - convex/combatAreas.ts
+          - convex/combatAreaEdits.ts
+          - src/components/combat-map/actions/scene/index.tsx
+          - src/components/combat-map/map-view/area-overlay.tsx
+        acceptance:
+          - "GMDesktop 'Spend Fear', 'Areas', 'End scene'; CmpPromptsGM 'Spend 2 Fear?' and 'End the scene?'"
+          - "FearConfirm exported from hud/fear with props { amount, reasons, onConfirm }; H5.2 codes against it and stubs it in tests (same wave)"
+          - "combatHud.sceneEndPreview() (GM): effects and areas End scene would end (names), returns validator, authz entries"
+          - "lint, typecheck, tests pass"
+  # ------------------------------------------------------------------ wave 7: blocked-state system
+  - wave: 7
+    tracers:
+      - id: H6.1
+        batch: A
+        title: "Refusal table, client shortfall helper, the three blocked layers and the toast host"
+        goal: "One module maps every refusal code to CmpBlocked's message, hint and before-the-click form (SPOTLIGHT_WITH_GM included); a client helper pre-computes 'Needs 3 Hope - you have 1'; the click-time message shows under the pressed control and later results toast near the hand"
+        size: M
+        mode: add
+        boards: [CmpBlocked]
+        depends_on: []
+        owns:
+          - src/lib/errors/refusals.ts
+          - src/lib/domain/combat-actions/shortfall.ts
+          - src/components/combat-map/hud/blocked/**
+          - src/components/combat-map/hud/toasts/**
+          - tests/unit/hud/refusals.test.ts
+          - tests/unit/hud/toasts.test.tsx
+          - docs/tasks/TASK-HUD-H6.1.md
+        reads:
+          - src/lib/errors/**
+          - src/lib/convex-errors.ts
+          - src/components/combat-map/actions/hand/model.ts
+        acceptance:
+          - "Every CmpBlocked row mapped to a real code (FEATURE_USED -> FEATURE_EXHAUSTED, CONDITION_NOT_MET -> INVALID / FEATURE_STATE_MISSING, TOO_MANY_TARGETS and BAD_TARGET -> COMBAT_TARGET_INVALID, OUT_OF_REACH -> COMBAT_OUT_OF_REACH, NOT_IN_COMBAT -> CARD_NOT_COMBAT / FEATURE_NOT_COMBAT, NO_MAP -> FEATURE_NEEDS_MAP, SPOTLIGHT_FIRST -> ADVERSARY_NOT_SPOTLIT, STALE_REQUEST -> REQUEST_NOT_OPEN, MOVE_BLOCKED; DIFFICULT_TERRAIN opens the dice box), plus SPOTLIGHT_WITH_GM ('The GM has the spotlight. You can use reactions until it comes back.'); unknown -> FALLBACK; a test fails on an unmapped combat code"
+          - "Reads the structured shortfall when the server sends it (bead), else the client helper; never an enemy's numbers"
+          - "useRefusal() under the control; toast host (role=status) near the hand; lint, typecheck, tests pass"
+      - id: H6.2
+        batch: B
+        title: "Blocked states on the player surfaces"
+        goal: "Every HUD player control with a known cost, limit or spotlight rule shows the before-the-click reason (non-reaction controls disabled while the GM holds the spotlight), every refusal shows at the click, and Main 'Can't afford' matches"
+        size: M
+        mode: add
+        boards: [CmpBlocked, Main, CmpCards]
+        depends_on: [H6.1]
+        owns:
+          - src/components/combat-map/hud/hand/**
+          - src/components/combat-map/hud/sheet/**
+          - src/components/combat-map/hud/pick/**
+          - src/components/combat-map/hud/pick-card/**
+          - src/components/combat-map/hud/pick-attack/**
+          - src/components/combat-map/hud/pick-feature/**
+          - src/components/combat-map/hud/action-ring/**
+          - src/components/combat-map/hud/token/**
+          - tests/unit/hud/blocked-player.test.tsx
+          - tests/e2e/hud-blocked.spec.ts
+          - docs/tasks/TASK-HUD-H6.2.md
+        reads:
+          - src/components/combat-map/hud/blocked/**
+          - src/components/combat-map/hud/spotlight/**
+          - src/lib/errors/refusals.ts
+        acceptance:
+          - "Main 'Can't afford' at 1440x900 (card tag, toast, ring lock); CmpBlocked player rows (card tag + Use disabled, feature disabled, sheet badge, picker counter, ring dimmed, dotted ring, ring + hint, token snaps back on MOVE_BLOCKED)"
+          - "While the GM holds the spotlight: non-reaction controls disabled with the SPOTLIGHT_WITH_GM reason; reactions and the hit window stay enabled"
+          - "lint, typecheck, tests pass"
+      - id: H6.3
+        batch: B
+        title: "Blocked states on the GM surfaces"
+        goal: "GM controls with a Fear cost disable with 'This needs 2 Fear. You have 1.', an adversary action without the spotlight says 'Spotlight the Lieutenant first.', an answered request toasts and refreshes"
+        size: S
+        mode: add
+        boards: [CmpBlocked, GMDesktop]
+        depends_on: [H6.1]
+        owns:
+          - src/components/combat-map/hud/statblock/**
+          - src/components/combat-map/hud/queue/**
+          - src/components/combat-map/hud/fear/**
+          - tests/unit/hud/blocked-gm.test.tsx
+          - tests/e2e/hud-blocked-gm.spec.ts
+          - docs/tasks/TASK-HUD-H6.3.md
+        reads:
+          - src/components/combat-map/hud/blocked/**
+          - src/lib/errors/refusals.ts
+        acceptance:
+          - "CmpBlocked GM rows: NOT_ENOUGH_FEAR, ADVERSARY_NOT_SPOTLIT, REQUEST_NOT_OPEN"
+          - "lint, typecheck, tests pass"
+  # ------------------------------------------------------------------ wave 8: tablet and phone
+  - wave: 8
+    tracers:
+      - id: H7.1
+        title: "Tablet layouts (player and GM, 1024)"
+        goal: "At tablet width the HUD matches PlayerTablet and GMTablet: banners 108 px, map 39 px per square, feed hidden, sheet 340 px with the map at -60 px / .92 and the title hidden"
+        size: M
+        mode: add
+        boards: [PlayerTablet, GMTablet]
+        depends_on: []
+        owns:
+          - src/components/combat-map/hud/responsive/tablet.css
+          - src/components/combat-map/hud/shell.css
+          - tests/e2e/hud-tablet.spec.ts
+          - tests/e2e/visual/HUD-H7.1.spec.ts
+          - docs/tasks/TASK-HUD-H7.1.md
+        reads:
+          - src/components/combat-map/hud/**
+        acceptance:
+          - "Every PlayerTablet / GMTablet Preview and sheet-open state at 1024x768; touch targets >= 44 px; tablet spec and axe pass"
+          - "lint, typecheck, tests pass"
+      - id: H7.2
+        title: "Phone shell (player and GM)"
+        goal: "At 390 px the player gets the mini banner strip with Fear, the Hand / Attack / Dice / Feed bottom sheet with the resource line and Sheet, edge chips for off-screen targets and a full-screen sheet; the GM gets the tablet layout with the queue as a bottom sheet (answer 13a)"
+        size: M
+        mode: add
+        boards: [PlayerPhone, GMTablet]
+        depends_on: []
+        owns:
+          - src/components/combat-map/hud/phone/**
+          - src/components/combat-map/hud/responsive/phone.css
+          - tests/e2e/hud-phone.spec.ts
+          - tests/e2e/visual/HUD-H7.2.spec.ts
+          - docs/tasks/TASK-HUD-H7.2.md
+        reads:
+          - src/components/combat-map/hud/**
+          - src/components/combat-map/actions/index.tsx
+        acceptance:
+          - "PlayerPhone 'Hand tab' and 'Sheet, full screen' at 390x844; GM at 390 px: tablet layout, queue in a bottom sheet"
+          - "lint, typecheck, tests pass"
+      - id: H7.3
+        title: "Phone pickers, result and hit window as bottom sheets"
+        goal: "At 390 px the picking panel, result panel and hit window become bottom sheets with 44-48 px buttons (Cancel + primary)"
+        size: S
+        mode: add
+        boards: [PlayerPhone]
+        depends_on: []
+        owns:
+          - src/components/combat-map/hud/pick/**
+          - src/components/combat-map/hud/result/**
+          - src/components/combat-map/hud/hit/**
+          - tests/e2e/hud-phone-sheets.spec.ts
+          - docs/tasks/TASK-HUD-H7.3.md
+        reads:
+          - src/components/combat-map/hud/phone/**
+          - src/components/combat-map/hud/responsive/phone.css
+        acceptance:
+          - "PlayerPhone 'Picking a target' and 'You're hit' at 390x844; axe passes at 390 px; lint, typecheck, tests pass"
+  # ------------------------------------------------------------------ wave 9: cut-over
+  - wave: 9
+    tracers:
+      - id: H8.1
+        batch: A
+        title: "Cut-over, page and player side: the HUD becomes the Combat Map; the switch and the classic player UI go"
+        goal: "The HUD is the only Combat Map (no switch); the classic page header, player column, target list, Attack bar, Use dialog, incoming-hit card, mini feed and sheet drawer are deleted, and every spec that used them runs against the HUD"
+        size: L
+        mode: replace
+        boards: [Main, PlayerTablet, PlayerPhone]
+        depends_on: []
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/combat-map.css
+          - src/components/combat-map/slots.ts
+          - src/components/combat-map/hud/flag.ts
+          - src/components/combat-map/hud/index.tsx
+          - src/components/combat-map/hud/token/hooks.ts
+          - src/components/combat-map/hud/shell.tsx
+          - src/components/combat-map/hud/tools/**
+          - src/components/combat-map/tokens/tokens-layer.tsx
+          - src/components/combat-map/vision/vision-layer.tsx
+          - src/components/combat-map/actions/index.tsx
+          - src/components/combat-map/actions/actions.css
+          - src/components/combat-map/actions/targets/**
+          - src/components/combat-map/actions/attack/index.tsx
+          - src/components/combat-map/actions/attack/riders.tsx
+          - src/components/combat-map/actions/attack/riders.css
+          - src/components/combat-map/actions/attack/memory.tsx
+          - src/components/combat-map/actions/hand/index.tsx
+          - src/components/combat-map/actions/hand/dialog.tsx
+          - src/components/combat-map/actions/hand/dock.tsx
+          - src/components/combat-map/actions/hand/hand.css
+          - src/components/combat-map/actions/hand/result.tsx
+          - src/components/combat-map/actions/hand/sharing.tsx
+          - src/components/combat-map/actions/hand/use-card.ts
+          - src/components/combat-map/actions/reactions/index.tsx
+          - src/components/combat-map/actions/reactions/prompt.tsx
+          - src/components/combat-map/actions/reactions/reactions.css
+          - src/components/combat-map/actions/dice/**
+          - src/components/combat-map/drawer/index.tsx
+          - src/components/combat-map/drawer/drawer.css
+          - src/components/combat-map/drawer/boundary.tsx
+          - src/components/combat-map/drawer/trackers/index.tsx
+          - src/components/combat-map/drawer/list/index.tsx
+          - src/components/combat-map/drawer/list/controls.tsx
+          - src/components/combat-map/drawer/prompts/index.tsx
+          - src/components/combat-map/drawer/prompts/prompts.css
+          - src/components/combat-map/drawer/use/index.tsx
+          - src/components/combat-map/drawer/use/use.css
+          - tests/unit/combat-actions-ui.test.tsx
+          - tests/unit/combat-hand.test.tsx
+          - tests/unit/combat-riders.test.tsx
+          - tests/unit/incoming-hit.test.tsx
+          - tests/unit/sheet-drawer.test.tsx
+          - tests/unit/drawer-list-states.test.tsx
+          - tests/unit/drawer-prompts.test.tsx
+          - tests/unit/drawer-use.test.tsx
+          - tests/e2e/combat-map-shell.spec.ts
+          - tests/e2e/fear-render.spec.ts
+          - tests/e2e/lane-m-time-of-day.spec.ts
+          - tests/e2e/combat-tokens.spec.ts
+          - tests/e2e/combat-vision.spec.ts
+          - tests/e2e/sheet-drawer.spec.ts
+          - tests/e2e/a11y-combat-hand.spec.ts
+          - tests/e2e/combat-cards.spec.ts
+          - tests/e2e/combat-attack.spec.ts
+          - tests/e2e/combat-riders.spec.ts
+          - tests/e2e/lane4-forced-attack.spec.ts
+          - tests/e2e/area-overlay.spec.ts
+          - tests/e2e/combat-feature-reactions.spec.ts
+          - tests/e2e/incoming-hit.spec.ts
+          - tests/e2e/live-combat.spec.ts
+          - tests/e2e/combat-actions-flow.spec.ts
+          - tests/e2e/combat-actions-a11y.spec.ts
+          - tests/e2e/combat-cannonball.spec.ts
+          - tests/e2e/visual/SD-SD6.spec.ts
+          - tests/e2e/visual/CA-CA5.spec.ts
+          - tests/e2e/visual/CA-CA6.spec.ts
+          - tests/e2e/hud/helpers.ts
+          - tests/unit/hud/h0-state.test.tsx
+          - tests/e2e/hud-shell.spec.ts
+          - tests/e2e/a11y-play.spec.ts
+          - tests/e2e/combat-light-uploaded.spec.ts
+          - tests/e2e/combat-map-edit.spec.ts
+          - tests/e2e/combat-map-generate.spec.ts
+          - tests/e2e/combat-maps.spec.ts
+          - tests/e2e/combat-movement.spec.ts
+          - tests/e2e/encounter-actions.spec.ts
+          - tests/e2e/hud-card-pick.spec.ts
+          - tests/e2e/hud-pick.spec.ts
+          - tests/e2e/session-encounter.spec.ts
+          - tests/e2e/sessions-flow.spec.ts
+          - tests/e2e/sprite-edit.spec.ts
+          - tests/e2e/sprite-packs-flow.spec.ts
+          - tests/e2e/sprite-style.spec.ts
+          - docs/tasks/TASK-HUD-H8.1.md
+        reads:
+          - src/components/combat-map/hud/**
+          - src/components/combat-map/actions/hand/face.tsx
+          - src/components/combat-map/actions/hand/model.ts
+        acceptance:
+          - "No switch: the HUD always renders; files the HUD still imports (hand/face.tsx, every model.ts, roll-controls, area-pick, party/death) are kept; every other classic player-side view file in owns is deleted or reduced, said per file in the doc"
+          - "Every listed classic spec either drives the HUD now or is deleted with its coverage named in a HUD spec; the full e2e suite passes"
+          - "lint, typecheck, tests, pnpm build pass"
+      - id: H8.2
+        batch: B
+        title: "Cut-over, GM side: the classic GM cards go"
+        goal: "The classic GM cards (out-of-range list, Difficulty rows, Cloaked prompt card, adversary card, Resolutions card, End scene card) are deleted; Map tools keeps only Maps, Play / Edit, Combatants, the token card, Reveal, Vision, style, packs and the session chip"
+        size: M
+        mode: replace
+        boards: [GMDesktop, GMTablet]
+        depends_on: [H8.1]
+        owns:
+          - src/components/combat-map/requests/**
+          - src/components/combat-map/actions/gm/**
+          - src/components/combat-map/actions/adversary/index.tsx
+          - src/components/combat-map/actions/adversary/controls.tsx
+          - src/components/combat-map/actions/adversary/adversary.css
+          - src/components/combat-map/actions/adversary/flash.tsx
+          - src/components/combat-map/actions/adversary/part-boundary.tsx
+          - src/components/combat-map/actions/adversary/resolutions.tsx
+          - src/components/combat-map/actions/adversary/keyword-asks.tsx
+          - tests/unit/adversary-panel.test.tsx
+          - tests/e2e/lane4-cloak-prompt.spec.ts
+          - tests/e2e/lane4-fire-ask.spec.ts
+          - tests/e2e/combat-map-flow.spec.ts
+          - tests/e2e/combat-adversary.spec.ts
+          - tests/e2e/adversary-actions-flow.spec.ts
+          - tests/e2e/adversary-actions-a11y.spec.ts
+          - tests/e2e/combat-end-scene.spec.ts
+          - tests/e2e/visual/CA-AA3.spec.ts
+          - tests/e2e/visual/CA-AA5.spec.ts
+          - docs/tasks/TASK-HUD-H8.2.md
+        reads:
+          - src/components/combat-map/hud/**
+          - src/components/combat-map/actions/adversary/model.ts
+          - src/components/combat-map/actions/adversary/sight.ts
+          - src/components/combat-map/actions/scene/index.tsx
+        acceptance:
+          - "Classic GM view files deleted or reduced (EndSceneButton stays: the Encounter tab uses it; hit flashes move to the HUD layer if still needed); every listed spec drives the HUD or is deleted with its coverage named; the full e2e suite passes"
+          - "Close dcm-bxp.99.32 after this merge (orchestrator)"
+          - "lint, typecheck, tests, pnpm build pass"
+  # ------------------------------------------------------------------ wave 10: design v2 (app bar, spotlight disc, GM dock)
+  # The user's updated design (2026-11-03; reference/designs/combat-hud/, delta in .omc/plans/combat-hud-v2-delta.md):
+  # a 56 px app bar above the HUD, the spotlight as a hanging disc with a GM popover and a light pool, the GM's top
+  # centre reduced to the scene title + Live, one bottom dock as the only GM toolbar, "Waiting on you" bottom-left, Log ->
+  # Resolutions and Areas bottom-right. mode: replace (no switch; the HUD is the only Combat Map since wave 9).
+  # `questions:` names the delta doc's questions a tracer waits on: do not launch it before the user answered them;
+  # if an answer differs from the recommended option, rewrite the tracer's acceptance first.
+  # Batches: A (H9.0, H9.S, H9.A, H9.5) at once; B (H9.1, H9.2, H9.3) when H9.0 is merged (H9.1 also after H9.S);
+  # C (H9.6) last. Merge order inside B: H9.3 before H9.2 is not needed, but merge H9.0 and H9.3 close together (until
+  # H9.3 lands, the GM sees the old title-row buttons beside the new dock).
+  - wave: 10
+    tracers:
+      - id: H9.0
+        batch: A
+        title: "Shell and GM bottom dock: one toolbar, the map's own toolbar gone from the HUD, panel state"
+        goal: "The GM's only map toolbar is the bottom dock (Select, Measure, Areas, Fog, Names | zoom - % + | Dice, Player view, Log | End scene, plus Map tools per Q4); the classic map toolbar (name, LIVE, Areas, Names, zoom, Fit) no longer renders in the HUD; the HUD's GM panels open one at a time from one store"
+        size: L
+        mode: replace
+        boards: [GMDesktop, GMTablet, CmpTokensDesign]
+        questions: [Q4, Q9]
+        depends_on: []
+        owns:
+          - src/components/combat-map/hud/shell.tsx
+          - src/components/combat-map/hud/shell.css
+          - src/components/combat-map/hud/panels.ts
+          - src/components/combat-map/hud/dock/**
+          - src/components/combat-map/hud/tools/**
+          - src/components/combat-map/map-view/map-board.tsx
+          - src/components/combat-map/map-view/controls.ts
+          - src/components/combat-map/map-view/measure.tsx
+          - tests/unit/hud/dock.test.tsx
+          - tests/unit/hud/panels.test.ts
+          - tests/e2e/hud-dock.spec.ts
+          - tests/e2e/hud-shell.spec.ts
+          - tests/e2e/combat-maps.spec.ts
+          - tests/e2e/combat-movement.spec.ts
+          - tests/e2e/combat-tokens.spec.ts
+          - tests/e2e/combat-map-flow.spec.ts
+          - tests/e2e/area-overlay.spec.ts
+          - tests/e2e/a11y-play.spec.ts
+          - tests/e2e/visual/HUD-H9.0.spec.ts
+          - docs/tasks/TASK-HUD-H9.0.md
+        reads:
+          - reference/designs/combat-hud/**
+          - .omc/plans/combat-hud-v2-delta.md
+          - src/components/combat-map/hud/**
+          - src/components/combat-map/vision/**
+          - src/lib/domain/combat-map/**
+          - tests/e2e/hud/helpers.ts
+        acceptance:
+          - "GMDesktop dock at 1440x900 (centred, bottom 16, groups and labels as the board, pressed = gold); icons only at tablet width and while a sheet is open (dock at left 640 / tablet 342); every button a real <button> with aria-pressed where it toggles; role toolbar 'Map tools' only if Q4 doesn't put a 'Map tools' button in the dock (then name the toolbar 'Map controls' so the drawer button keeps the name 'Map tools')"
+          - "map-board.tsx gains chrome: 'full' | 'none' (default full: Edit mode and every non-HUD use unchanged); map-view/controls.ts is a small external store (zoom, fit, showNames, areaTools) that MapBoard and the dock share; the % button fits the map (aria 'Fit the map to the screen'); Zoom in / Zoom out keep their names; Names keeps the per-viewer localStorage key"
+          - "hud/panels.ts: one GM panel open at a time (queue | log | areas | spotlight | dice | fog | playerView | endScene), Esc closes, focus returns to the opener; H9.1 / H9.2 / H9.3 read it"
+          - "Dice, Fog, Player view and End scene open the existing parts (hud/scene/dice.tsx, VisionPanel, PreviewPicker, hud/scene/end.tsx) from the dock (read them; H9.3 removes their old title-row buttons); Areas and Log toggle the panels.ts entries H9.2 renders"
+          - "Select = today's pointer (pressed by default); Measure per Q9 (recommended: drag between squares shows the range band from the app's range model, GM only, nothing saved)"
+          - "shell.tsx: the spotlight panel mounts are gone (H9.1's disc mounts in the fear region); new regions dock (bottom centre), waiting (bottom-left), log (bottom-right); the HUD root height is calc(100dvh - var(--app-bar-h, 0px)) so H9.A's bar fits; the '.hud-map .cm-toolbar' float rule is gone"
+          - "Q4 (recommended a): a 'Map tools' button at the dock's left end opens the existing drawer, which keeps 'Players can see each other's cards'; hud/helpers.ts needs no change"
+          - "Owned specs that clicked the classic map toolbar drive the dock; hud-dock.spec.ts covers every dock button for the GM, keyboard only, axe at 1440x900 and 1024x768; lint, typecheck, tests pass"
+      - id: H9.S
+        batch: A
+        title: "Spotlight server: hand it to the whole party, take it for an adversary with 1 Fear"
+        goal: "The GM can give the spotlight to the whole party (nobody chosen) and take it for an adversary either free or by spending 1 Fear, in one mutation each, with the Fear rule the user picks in Q7"
+        size: S
+        mode: add
+        boards: [CmpTokens, GMDesktop]
+        questions: [Q7, Q8]
+        depends_on: []
+        owns:
+          - convex/combatSpotlight.ts
+          - convex/lib/spotlight.ts
+          - tests/convex/spotlight-v2.test.ts
+          - tests/convex/authz/spotlight.entries.ts
+          - docs/tasks/TASK-HUD-H9.S.md
+        reads:
+          - convex/encounterTracking.ts
+          - convex/lib/functions.ts
+          - convex/lib/permissions.ts
+          - convex/lib/fear.ts
+          - tests/convex/hud-spotlight.test.ts
+        acceptance:
+          - "combatSpotlight.handToParty() (keyedGmMutation, need gm): holder back to null (the players, nobody chosen); idempotent; Q8 (recommended a)"
+          - "gmTake gains pay: v.optional(v.union(v.literal('free'), v.literal('fear'))) (widen; default free = today); 'fear' spends 1 Fear in the same mutation (NOT_ENOUGH_FEAR / FEAR_EMPTY as the existing Fear spends) and, per Q7 (recommended a), counts as that adversary's spotlight for the GM turn so encounterTracking.spotlight doesn't charge it again; giving to a PC or the party never costs Fear"
+          - "state's returns validator unchanged or widened only; authz entries for handToParty; tests assert ConvexError.data.code; lint, typecheck, tests pass. Orchestrator: codegen after merge"
+      - id: H9.A
+        batch: A
+        title: "App bar above the Combat Map: back, wordmark, nav, Lorekeeper, gear and avatar slots"
+        goal: "The Combat Map shows the design's 56 px app bar (52 px on tablet) in place of the tall campaign header: back, wordmark (hidden on tablet), the campaign nav with Combat Map current and a live dot, the Lorekeeper pill (icon only on tablet) and, at the right, the gear and avatar places config S1 fills; the floating Lorekeeper pill is gone from the Combat Map"
+        size: M
+        mode: replace
+        boards: [Main, PlayerTablet, GMDesktop, GMTablet]
+        questions: [Q1, Q2, Q3]
+        depends_on: []
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
+          - src/components/app-bar/**
+          - src/components/lorekeeper/drawer/index.tsx
+          - tests/unit/app-bar.test.tsx
+          - tests/e2e/app-bar.spec.ts
+          - tests/e2e/combat-map-shell.spec.ts
+          - tests/e2e/lorekeeper-shell.spec.ts
+          - tests/e2e/visual/HUD-H9.A.spec.ts
+          - docs/tasks/TASK-HUD-H9.A.md
+        reads:
+          - reference/designs/combat-hud/**
+          - .omc/plans/combat-hud-v2-delta.md
+          - .omc/plans/config.yaml
+          - .omc/plans/journal.yaml
+          - src/lib/campaign-sections.ts
+          - src/components/brand/**
+          - src/components/lorekeeper/**
+        acceptance:
+          - "Q2 (recommended a): on /campaigns/<id>/combat-map the shell renders the app bar instead of the art header (other pages unchanged); the bar sets --app-bar-h (56 px, 52 px at tablet width) on the page so H9.0's HUD height fits; phone keeps today's header behaviour unless Q2 says otherwise"
+          - "Q1 (recommended a): nav items from CAMPAIGN_SECTIONS in the user's order (no hard-coded list, so Journal plan JX1's change flows through), gmOnly respected, Combat Map aria-current with the live dot when a map is live, Lorekeeper as the gold pill on the right (aria 'Ask the Lorekeeper') opening the existing drawer; the drawer's floating pill is not rendered on the Combat Map"
+          - "Q3 (recommended a): the right end renders config S1's gear / avatar when they exist (an exported slot from src/components/app-bar/), else today's Players button (GM) or the player's portrait; the orchestrator does not run config S1 or Journal JX1 while H9.A is open (all three own campaign-shell.tsx)"
+          - "Back link, wordmark and nav keep their current accessible names ('Campaign sections'); keyboard only, axe at 1440x900, 1024x768 and 390x844; lint, typecheck, tests pass"
+      - id: H9.5
+        batch: A
+        title: "Class controls move into the HUD sheet (Flying, Beastform Drop out, stances, counters)"
+        goal: "A PC's class controls (Flying, Beastform Drop out, Martial Artist stances / Focus / Refocus, class counters and held dice) and the 'Active' banner on a held feature are in the HUD sheet panel; SheetExtras leaves the Map tools drawer (bead dcm-bxp.99.32.43)"
+        size: M
+        mode: replace
+        boards: [Main, GMDesktop]
+        questions: [Q5]
+        depends_on: []
+        owns:
+          - tests/unit/sheet-drawer.test.tsx
+          - src/components/combat-map/hud/sheet/**
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/page.tsx
+          - src/components/combat-map/drawer/index.tsx
+          - src/components/combat-map/drawer/drawer.css
+          - tests/unit/hud/sheet-class-controls.test.tsx
+          - tests/e2e/hud-sheet.spec.ts
+          - tests/e2e/combat-vision.spec.ts
+          - docs/tasks/TASK-HUD-H9.5.md
+        reads:
+          - src/components/combat-map/drawer/**
+          - src/components/combat-map/hud/**
+          - src/components/party/**
+        acceptance:
+          - "Every control SheetExtras shows today renders in the HUD sheet for the same viewers (own PC; GM with 'Play for this character' where the classic drawer required it); SheetExtras and its page mounts are gone; the drawer holds map tools only"
+          - "Specs that opened 'Your character' / Map tools for these controls open the sheet instead; close dcm-bxp.99.32.43 after merge (orchestrator); lint, typecheck, tests pass"
+      - id: H9.1
+        batch: B
+        title: "Spotlight disc, GM popover and light pools"
+        goal: "Every screen shows the spotlight as the hanging disc left of the day disc (party / PC / adversary faces, gold or purple light) with a light pool under the holder's token; the GM's disc opens the Party / Adversaries popover (Give / Take, Has it, Free / 1 Fear); players' disc is view only; on a phone a 44 px disc under the strip and the holder's mini banner lit; the old spotlight panel, banner tag and Fear-banner pill are gone"
+        size: L
+        mode: replace
+        boards: [CmpTokens, GMDesktop, GMTablet, Main, PlayerTablet, PlayerPhone, CmpTokensDesign]
+        questions: [Q7, Q8, Q11]
+        depends_on: [H9.0, H9.S]
+        owns:
+          - tests/unit/hud/spotlight.test.tsx
+          - src/components/combat-map/hud/spotlight/**
+          - src/components/combat-map/hud/fear/**
+          - src/components/combat-map/hud/banners/**
+          - src/components/combat-map/hud/phone/strip.tsx
+          - src/components/combat-map/tokens/tokens-layer.tsx
+          - src/components/combat-map/vision/vision-layer.tsx
+          - tests/unit/hud/spotlight-disc.test.tsx
+          - tests/unit/hud/banners.test.tsx
+          - tests/e2e/hud-spotlight.spec.ts
+          - tests/e2e/hud-spotlight-light.spec.ts
+          - tests/e2e/hud-banners.spec.ts
+          - tests/e2e/hud-blocked-gm.spec.ts
+          - tests/e2e/visual/HUD-H9.1.spec.ts
+          - docs/tasks/TASK-HUD-H9.1.md
+        reads:
+          - reference/designs/combat-hud/**
+          - .omc/plans/combat-hud-v2-delta.md
+          - src/components/combat-map/hud/**
+          - convex/combatSpotlight.ts
+          - convex/combatHud.ts
+        acceptance:
+          - "Disc per CmpTokens 'Spotlight' at right 300 / top 0 (tablet right 208, smaller sizes), faces for the party (2x2), a PC (portrait via next/image) and an adversary (initial on red); label 'Spotlight' + holder name; with a sheet open it moves with the Fear banner (desktop) and hides (tablet); 200 ms face cross-fade, 300 ms pool fade, none under prefers-reduced-motion"
+          - "GM: button 'Spotlight: <name>. Change who has it' (aria-expanded) opens the popover (role dialog, Esc / Close, focus in and back) on the holder's tab; Party rows (the whole party per Q8, each PC with class, Hope, HP n of m marked), Adversaries rows (label, kind, HP) from existing queries; 'Has it' on the holder; a row moves the spotlight (handTo / handToParty / gmTake with pay per Q7) optimistically and closes; footer copy as the board; panels.ts entry 'spotlight'"
+          - "Players: div role img 'Spotlight: <name>' (view only; an adversary named only when the party saw it this scene, as today); phone: 44 px disc under the strip and the holder's mini banner lit"
+          - "Pools: gold under a PC holder's token, purple under an adversary's, every PC at 110 px / .75 for the whole party, on GM and player maps (players only for tokens their map draws)"
+          - "Removed: SpotlightMenu panel, useSpotlightInColumn use, the banner ' · Spotlight' tag and the Fear banner SPOTLIGHT pill (Q11 recommended a); the player's 'The GM has the spotlight' card stays; GM view banners never get the 'you' trim (no PC is yours on the GM view)"
+          - "Owned specs updated; axe at 1440x900, 1024x768, 390x844; lint, typecheck, tests pass"
+      - id: H9.2
+        batch: B
+        title: "'Waiting on you' button, Resolutions behind Log, Areas bottom-right"
+        goal: "The GM's queue is closed behind a bottom-left 'Waiting on you' button with a count that opens it above; Resolutions (with Undo) opens above the dock on the right from Log; the Areas panel opens bottom-right; nothing else lives in the bottom-left corner"
+        size: M
+        mode: replace
+        boards: [GMDesktop, GMTablet, CmpPromptsGM]
+        questions: [Q10]
+        depends_on: [H9.0]
+        owns:
+          - src/components/combat-map/hud/queue/**
+          - src/components/combat-map/hud/areas/**
+          - src/components/combat-map/hud/phone/queue.tsx
+          - tests/unit/hud/queue.test.tsx
+          - tests/e2e/hud-queue.spec.ts
+          - tests/e2e/hud-answers.spec.ts
+          - tests/e2e/hud-fear-confirm.spec.ts
+          - tests/e2e/hud-make-room.spec.ts
+          - tests/e2e/lane4-cloak-prompt.spec.ts
+          - tests/e2e/lane4-fire-ask.spec.ts
+          - tests/e2e/combat-adversary.spec.ts
+          - tests/e2e/combat-actions-a11y.spec.ts
+          - tests/e2e/visual/HUD-H5.1.spec.ts
+          - tests/e2e/visual/HUD-H9.2.spec.ts
+          - docs/tasks/TASK-HUD-H9.2.md
+        reads:
+          - reference/designs/combat-hud/**
+          - .omc/plans/combat-hud-v2-delta.md
+          - src/components/combat-map/hud/**
+        acceptance:
+          - "'Waiting on you' button at left 16 / bottom 16, 56 px (tablet 52 px, label hidden), count badge (grey 0, purple otherwise), chevron, aria-pressed / aria-expanded; opens the unchanged queue above it (bottom 72); panels.ts entry 'queue'; Q10 (recommended a): closed by default, a new request pulses the count and shows a short toast"
+          - "Log (dock) opens Resolutions with Undo at right 16 / bottom 80, 360 px (tablet right 12 / bottom 74 / 330 px, now shown at tablet); Areas opens bottom-right (right 182 / bottom 80; tablet right 12 / bottom 74), keeping its collapse (user 2026-11-02)"
+          - "The GM phone queue sheet (answer 13a) holds the queue and Resolutions; specs that expected the always-open queue click 'Waiting on you' first; axe at 1440x900 and 1024x768; lint, typecheck, tests pass"
+      - id: H9.3
+        batch: B
+        title: "GM top centre: scene title + Live only; the light is set from the day disc"
+        goal: "The GM's top centre shows only the scene title and a Live chip (no buttons, no 'GM view · Session n'); the Day / Dim / Night choice moves into the GM's day-disc pop-over (Q6); the player's title row and Dice / Sheet fade while a sheet is open"
+        size: M
+        mode: replace
+        boards: [GMDesktop, GMTablet, Main]
+        questions: [Q6]
+        depends_on: [H9.0]
+        owns:
+          - tests/unit/hud/fear-scene.test.tsx
+          - tests/e2e/live-combat.spec.ts
+          - tests/e2e/combat-end-scene.spec.ts
+          - tests/e2e/visual/HUD-H1.2.spec.ts
+          - src/components/combat-map/hud/scene/**
+          - tests/unit/hud/scene.test.tsx
+          - tests/e2e/hud-fear.spec.ts
+          - tests/e2e/lane-m-time-of-day.spec.ts
+          - tests/e2e/core-calendar.spec.ts
+          - tests/e2e/combat-light-uploaded.spec.ts
+          - tests/e2e/visual/HUD-H9.3.spec.ts
+          - docs/tasks/TASK-HUD-H9.3.md
+        reads:
+          - reference/designs/combat-hud/**
+          - .omc/plans/combat-hud-v2-delta.md
+          - src/components/combat-map/hud/**
+          - src/app/(gm)/campaigns/[campaignId]/time-arc.tsx
+          - convex/combatHud.ts
+        acceptance:
+          - "Scene pill .scn at left 690 / top 16 (tablet 484 / 12): h1 map name (Cinzel 26 px, tablet 20 px) + 'Live' chip with the green dot (or 'Not live'); no GM buttons in it; fades while a sheet is open; the player's title + Dice / Sheet unchanged except they also fade while a sheet is open (desktop)"
+          - "Q6 (recommended a): the GM's disc pop-over shows Day / Dim / Night above the time arc / Week-Day + End day where scene.canSetLight; LightSeg leaves the toolbar; the 'Week n · Day n', cycle and End day work the user asked for is unchanged"
+          - "hud/scene/dice.tsx, end.tsx and the Fog / Player view parts keep the exports H9.0's dock imports; owned specs updated; axe at 1440x900 and 1024x768; lint, typecheck, tests pass"
+      - id: H9.6
+        batch: C
+        title: "Design v2 at tablet and phone width, board shots, full e2e and build"
+        goal: "Every wave 10 element matches GMTablet / PlayerTablet at 1024x768 and PlayerPhone at 390x844 (icon-only dock, 52 px bar, hidden disc with a sheet open, edge chip clear of the phone disc); the visual shots of every v2 board state sit beside the boards; the full e2e suite and pnpm build pass"
+        size: M
+        mode: replace
+        boards: [GMTablet, PlayerTablet, PlayerPhone]
+        depends_on: [H9.0, H9.S, H9.A, H9.5, H9.1, H9.2, H9.3]
+        owns:
+          - src/components/combat-map/hud/responsive/**
+          - src/components/combat-map/hud/phone/index.tsx
+          - src/components/combat-map/hud/phone/media.ts
+          - src/components/combat-map/hud/phone/edges.tsx
+          - src/components/combat-map/hud/phone/sheet.tsx
+          - src/components/combat-map/hud/phone/model.ts
+          - tests/e2e/hud-tablet.spec.ts
+          - tests/e2e/hud-phone.spec.ts
+          - tests/e2e/hud-phone-sheets.spec.ts
+          - tests/e2e/visual/HUD-H7.1.spec.ts
+          - tests/e2e/visual/HUD-H7.2.spec.ts
+          - tests/e2e/visual/HUD-H9.6.spec.ts
+          - docs/tasks/TASK-HUD-H9.6.md
+        reads:
+          - reference/designs/combat-hud/**
+          - .omc/plans/combat-hud-v2-delta.md
+          - src/components/combat-map/hud/**
+          - src/components/app-bar/**
+        acceptance:
+          - "GMTablet states Calm, Requests, Adversary acting, Spend Fear, Areas, Log, End scene and sheet open; PlayerTablet and PlayerPhone states; touch targets >= 44 px; useSpotlightInColumn removed if H9.1 left it unused"
+          - "Visual shots of every v2 board state beside the board renders in the task doc"
+          - "lint, typecheck, tests, the full e2e suite and pnpm build pass"

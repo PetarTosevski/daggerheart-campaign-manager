@@ -41,6 +41,7 @@ test("the GM generates a map from a description, asks for another version, and k
 
   // A reload keeps the layout and the description.
   await page.goto(url);
+  await page.getByRole("button", { name: "Map tools" }).click(); // Play is the HUD (plan combat-hud H8.1): the column is in its drawer.
   await tools.getByRole("group", { name: "Map mode" }).getByRole("button", { name: /Edit map/ }).click();
   await expect(scene.getByLabel("Describe the battlefield")).toHaveValue("A bandit camp in a pine forest clearing with a campfire and tents");
   await expect(scene.getByRole("group", { name: "Map size" }).getByRole("button", { name: "Large" })).toHaveAttribute("aria-pressed", "true");

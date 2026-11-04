@@ -1,5 +1,7 @@
 import { v, type Infer } from "convex/values";
 
+import type { DamageKeyword } from "../../../src/lib/domain/card-effects/types";
+import { rollValidator } from "./actionLog";
 import { conditionValidator, effectValidator, traitIdValidator } from "./characters";
 
 /**
@@ -25,7 +27,57 @@ import { conditionValidator, effectValidator, traitIdValidator } from "./charact
  * holding a ready before-roll defence (Harrowing Invocation, Draining Bane, Keen Defenses, Vigilant). Resolved when every
  * responder answered (or the GM pressed Resolve now), then the attack rolls; declined when the attack is withdrawn.
  */
-export const combatRequestKindValidator = v.union(v.literal("sanction"), v.literal("incomingHit"), v.literal("minionOffer"), v.literal("preRoll"));
+/**
+ * `afterRoll` (plan sheet-drawer SD5, widened; Q1, CB p.107): a player's own map attack held after its roll because the
+ * attacker holds a ready, affordable after-roll feature (Patron's Boon, True Strike, …). Resolved by Use or Pass (the
+ * player, or the GM's Resolve now); declined when the encounter ends.
+ */
+/**
+ * `riderPick` (plan drawer-answers DA2, widened; HF p.8 Death Strike, user 2026-10-30): after a PC's attack dealt Severe
+ * damage, a damage-phase rider ("you can mark a Stress to force them to mark an additional Hit Point") waits for the
+ * attacker's Use (on the ONE creature they pick) or Pass. Never applied without this prompt. Resolved by the answer
+ * (`combatActions.riderPick`, the player or the GM); declined when the encounter ends.
+ */
+/**
+ * `targetCount` (plan drawer-answers DA12, widened; CB p.31 Warden's Protection, user 2026-10-29, dcm-d95): a target count
+ * the server rolled before the player picks (the 1d4 allies). It holds until it is used or the scene ends (user
+ * 2026-10-30, dcm-bxp.99.19.55 (1)): a scene mark on the roller's sheet ties it to the scene (convex/lib/featurePrompts.ts).
+ * Resolved by the use that takes it (`resolveFeatureUse`); declined by the next roll once its scene mark is gone.
+ */
+/**
+ * `serverMove` (plan drawer-answers DA12, widened; CB p.59 Charge, user 2026-10-30): the square a token left when the
+ * server moved it for a feature (Charge's run into Melee range). Open while the move can be undone: undoing the use's
+ * actionLog group puts the token back and declines it (`declineGroupOffers`); the character's next server move resolves
+ * the older one, and the encounter's end declines it.
+ */
+/**
+ * `difficulty` (plan lanes B2, widened; CB p.104 "The GM sets this Difficulty"; user 2026-10-30): a roll that waits for the
+ * GM's Difficulty. `ask.kind` `charge` (dcm-bxp.99.19.61): a player's Charge (CB p.59), with the target, square, Stress and
+ * roll options the player picked; `cloak` (dcm-bxp.99.19.62 (1)): a Cloaked rogue who ended a move seen only dimly by enemies
+ * none of which has a Difficulty (a custom token, an enemy-side PC or companion). The GM answers with a Difficulty
+ * (`featurePrompts.answerDifficulty`: the server rolls) or declines. Superseded by the character's next request of the same
+ * `ask.kind`, declined when the encounter ends or the move's actionLog group is undone.
+ */
+/**
+ * `allyRoll` (plan drawer-answers DA13, widened; CB p.33 Cannonball, user 2026-10-29 / 2026-10-30, dcm-bxp.99.19.21): a
+ * use whose roll another PC makes. The druid's use pays the Stress and opens it; the throwing ally answers it from their
+ * own drawer (`featurePrompts.allyRoll`), or the GM cancels it (`featurePrompts.cancelAllyRoll`). Closed once the druid's
+ * use is undone (`entryId`), superseded by the druid's next throw, and declined once it expires (`ALLY_ROLL_TTL_MS`).
+ */
+export const combatRequestKindValidator = v.union(
+  v.literal("sanction"),
+  v.literal("incomingHit"),
+  v.literal("minionOffer"),
+  v.literal("preRoll"),
+  v.literal("afterRoll"),
+  v.literal("riderPick"),
+  v.literal("targetCount"),
+  v.literal("serverMove"),
+  v.literal("allyRoll"),
+  v.literal("difficulty"),
+  v.literal("cloakPrompt"),
+  v.literal("forcedAttack"),
+);
 
 /** `open` until answered; `resolved` (approved / hit applied) or `declined` (the GM refused a sanction). */
 export const combatRequestStatusValidator = v.union(v.literal("open"), v.literal("resolved"), v.literal("declined"));
@@ -57,6 +109,16 @@ export const sanctionRollOptionsValidator = v.object({
   tideTokens: v.optional(v.number()),
   /** The damage roll's chosen `rollOptions` keys (a weapon attack, CA3; widened). Auto options apply anyway. */
   damageOptions: v.optional(v.array(v.string())),
+  /**
+   * DA2 (widened; CB p.48 Rise to the Challenge, user 2026-10-30): `false` turns off a d20 Hope Die that is on by default
+   * while it applies (the player fishing for a critical). Unset or `true`: on.
+   */
+  riseToTheChallenge: v.optional(v.boolean()),
+  /**
+   * Plan lanes-2, V4 (widened; dcm-1sk4, dcm-xbtw): the attack's ticked Spirit Weapon box (`attackRollFields.spiritWeapon`,
+   * convex/lib/combatActions.ts), so a held attack keeps it. Unset: not ticked.
+   */
+  spiritWeapon: v.optional(v.boolean()),
 });
 
 /** A player's pick for a card use (`NumberChoice` amounts, `choose` / `optional` option ids; card-effects/types.ts). */
@@ -64,6 +126,27 @@ export const cardChoiceValidator = v.object({
   id: v.string(),
   value: v.union(v.number(), v.string(), v.array(v.string()), v.boolean()),
 });
+
+/**
+ * A rider on an attack or a card use (plan sheet-drawer SD5): a loadout card's or an owned feature's use whose activation
+ * is `rider`, taken with the attack ("With an attack" on the Hand and the drawer). `choices` as a card use's
+ * (`n:<choice>`, `opt:<step>`, `situations`, `picked` for the extra targets of Hold Them Off or Surrounded).
+ */
+export const riderValidator = v.object({
+  source: v.union(v.literal("card"), v.literal("feature")),
+  /** The card id, or the feature id (`<source>:<owner>:<slug>`). */
+  id: v.string(),
+  /** The `CardUse.id`; default the entry's first rider use. */
+  useId: v.optional(v.string()),
+  choices: v.array(cardChoiceValidator),
+});
+export type Rider = Infer<typeof riderValidator>;
+
+/** The most riders one attack takes (a character holds few: CB p.107 lets each apply once per roll). */
+export const MAX_RIDERS_PER_ATTACK = 8;
+
+/** Plan lanes-2, E2.3 (dcm-6y00 (3)): a map square a held use places its point area on. */
+export const sanctionPointValidator = v.object({ x: v.number(), y: v.number() });
 
 /**
  * The action a sanction holds: a weapon attack (CA3), a domain card use (CA4) or, widened by the sheet drawer (SD0), a
@@ -75,6 +158,8 @@ export const sanctionActionValidator = v.union(
     slot: v.union(v.literal("primary"), v.literal("secondary")),
     targetTokenIds: v.array(v.id("combatTokens")),
     roll: sanctionRollOptionsValidator,
+    /** SD5 (widened): the riders taken with the attack, replayed on approval. */
+    riders: v.optional(v.array(riderValidator)),
   }),
   v.object({
     kind: v.literal("card"),
@@ -84,6 +169,10 @@ export const sanctionActionValidator = v.union(
     targetTokenIds: v.array(v.id("combatTokens")),
     choices: v.array(cardChoiceValidator),
     roll: v.optional(sanctionRollOptionsValidator),
+    /** SD5 (widened): the riders taken with the card's attack, replayed on approval. */
+    riders: v.optional(v.array(riderValidator)),
+    /** Plan lanes-2, E2.3 (widened; dcm-6y00 (3)): the square a point area is placed on, replayed on approval. */
+    point: v.optional(sanctionPointValidator),
   }),
   v.object({
     kind: v.literal("feature"),
@@ -94,6 +183,16 @@ export const sanctionActionValidator = v.union(
     targetTokenIds: v.array(v.id("combatTokens")),
     choices: v.array(cardChoiceValidator),
     roll: v.optional(sanctionRollOptionsValidator),
+    /**
+     * Plan lanes-2, V4 (widened; dcm-mcgj): the riders taken with the feature's roll (`useFeature`'s `riders`), replayed on
+     * approval as the card action's. At most `MAX_RIDERS_PER_ATTACK`. Absent: none sent (only automatic riders run).
+     */
+    riders: v.optional(v.array(riderValidator)),
+    /**
+     * Plan lanes-2, E2.3 (widened; dcm-6y00 (3)): the square a point area is placed on (`useFeature`'s `point`), so an
+     * approved out-of-range use can place it. Absent: none picked (as before).
+     */
+    point: v.optional(sanctionPointValidator),
   }),
 );
 
@@ -110,6 +209,12 @@ export const sanctionPayloadValidator = v.object({
   characterId: v.id("characters"),
   action: sanctionActionValidator,
   outOfRange: v.array(outOfRangeTargetValidator),
+  /**
+   * DA2 (widened; combat-actions Q1, user 2026-10-30): the tokens of `outOfRange` that a rider added (Hold Them Off, CB
+   * p.38; Surrounded, HF p.10). Approving waives their range; declining drops only them when the attack's own target is in
+   * range.
+   */
+  added: v.optional(v.array(v.id("combatTokens"))),
 });
 
 /** Who must or may answer a hit: the target (armor) or an ally holding an eligible reaction card (Q13). */
@@ -158,7 +263,12 @@ export const hitRiderValidator = v.union(
   v.object({ kind: v.literal("condition"), condition: conditionValidator }),
   v.object({ kind: v.literal("effect"), effect: effectValidator, fromCondition: v.optional(v.boolean()) }),
   v.object({ kind: v.literal("stress"), amount: v.number() }),
-  v.object({ kind: v.literal("hp"), amount: v.number() }),
+  /**
+   * Plan lanes-2, E2.3 (widened; dcm-nnbl): `reduceWithHope`: the PC may spend Hope to mark fewer of these HP, one for one
+   * (Doom / Tentacle Rays, HF p.75: "they can spend any number of Hope to reduce the number of HP marked this way by an
+   * equal amount"); the window offers it as the `hope` grant. Absent: the HP are forced.
+   */
+  v.object({ kind: v.literal("hp"), amount: v.number(), reduceWithHope: v.optional(v.boolean()) }),
   v.object({ kind: v.literal("hope"), delta: v.number() }),
 );
 
@@ -174,6 +284,33 @@ export const afterHitValidator = v.object({
   hpMarked: v.number(),
   deathMove: v.boolean(),
 });
+
+/**
+ * Plan lanes-2, V4: a damage keyword (`DamageKeyword`, src/lib/domain/card-effects/types.ts: "fire"). Keep in step with
+ * the type (checked below).
+ */
+export const damageKeywordValidator = v.literal("fire");
+const damageKeywordInStep: [Infer<typeof damageKeywordValidator>] extends [DamageKeyword] ? ([DamageKeyword] extends [Infer<typeof damageKeywordValidator>] ? true : false) : false = true;
+void damageKeywordInStep;
+
+/**
+ * Plan lanes-2, V4 (widened; dcm-sk4r, user 2026-10-31): a hit with no known type or keyword on a PC whose resistance names
+ * a keyword (Fireproof, HF p.22: "immune to damage from magical or mundane flame") waits for the GM: "Was this hit
+ * fire?". `characterId` holds the resistance, `feature` is its printed name; `answer` is the GM's (`keywordAnswerValidator`):
+ * unset until answered, `true` the hit carries the keyword, `false` it doesn't. Stored here, not in `responses` (a GM
+ * answer, not a responder's choice).
+ */
+export const keywordAskValidator = v.object({
+  keyword: damageKeywordValidator,
+  characterId: v.id("characters"),
+  feature: v.string(),
+  answer: v.optional(v.boolean()),
+  /** The user who answered (the GM). */
+  answeredBy: v.optional(v.id("users")),
+});
+
+/** Plan lanes-2, V4 (dcm-sk4r): the GM's answer to a hit's `keywordAsk`: `carries` true, the hit carries `keyword`. */
+export const keywordAnswerValidator = v.object({ keyword: damageKeywordValidator, carries: v.boolean() });
 
 export const incomingHitPayloadValidator = v.object({
   schemaVersion: v.literal(1),
@@ -196,6 +333,15 @@ export const incomingHitPayloadValidator = v.object({
   riders: v.optional(v.array(hitRiderValidator)),
   /** AA2b (widened): set when the hit resolved and its target still has an after-hit card to answer. */
   afterHit: v.optional(afterHitValidator),
+  /**
+   * DA8 (widened): this target's own attack total (DA1: a target with its own disadvantage keeps its own die), so a
+   * window rebuilt later compares Evasion answers with it. GM-only: never in a player's view (Q14).
+   */
+  attackTotal: v.optional(v.number()),
+  /** DA8 (widened): disadvantage this target puts on the roll beyond the whole roll's (DA1), for its forced rerolls. */
+  attackDisadvantage: v.optional(v.number()),
+  /** Plan lanes-2, V4 (widened; dcm-sk4r): the GM's keyword question on this hit (`keywordAskValidator`). */
+  keywordAsk: v.optional(keywordAskValidator),
 });
 
 /** The most riders one hit carries. */
@@ -274,18 +420,222 @@ export const preRollFeatureChoiceValidator = v.object({
 /** One answer to a `preRoll` prompt: a before-roll feature use or a pass. */
 export const preRollChoiceValidator = v.union(preRollFeatureChoiceValidator, v.object({ kind: v.literal("pass") }));
 
+/**
+ * What an after-roll feature does to the held roll (SD5, Q1): `reroll` the Duality Dice (`advantage`: with one more
+ * advantage die, Patron's Boon; `hopeAtMost`: only a Hope Die at or under it, Internal Compass), `withHope` (Fearless,
+ * Unbound), `outcome` (True Strike's success, Witch's Charm's success with Fear), `add` a number to the total (Prayer Dice).
+ */
+export const afterRollChangeValidator = v.union(
+  v.object({ kind: v.literal("reroll"), advantage: v.optional(v.boolean()), hopeAtMost: v.optional(v.number()) }),
+  v.object({ kind: v.literal("withHope") }),
+  v.object({ kind: v.literal("outcome"), outcome: v.union(v.literal("success"), v.literal("successWithFear"), v.literal("successWithHope")) }),
+  v.object({ kind: v.literal("add"), amount: v.number() }),
+);
+export type AfterRollChange = Infer<typeof afterRollChangeValidator>;
+
+/** An after-roll feature the attacker may use on the held roll (the feature id and use; their names are re-read). */
+export const afterRollOptionValidator = v.object({ featureId: v.string(), useId: v.string() });
+
+/**
+ * Q1 (plan sheet-drawer SD5, widened): a player's own weapon attack held after its Duality roll, before any damage is
+ * rolled, because the attacker holds a ready, affordable after-roll feature. Nothing is paid or written yet: `dice` are
+ * every die the attack drew so far, in order, so Use and Pass resolve the attack with the same dice (a reroll draws
+ * fresh ones from `dualityAt`). `roll` and `hits` are what the player already saw (their own dice, Hit / Miss, U1).
+ */
+export const afterRollPayloadValidator = v.object({
+  schemaVersion: v.literal(1),
+  kind: v.literal("afterRoll"),
+  characterId: v.id("characters"),
+  action: v.object({
+    kind: v.literal("attack"),
+    slot: v.union(v.literal("primary"), v.literal("secondary")),
+    targetTokenIds: v.array(v.id("combatTokens")),
+    roll: sanctionRollOptionsValidator,
+    riders: v.optional(v.array(riderValidator)),
+    /** DA2 (widened): rider-added targets whose range the GM waived (an approved sanction held after its roll). */
+    waived: v.optional(v.array(v.id("combatTokens"))),
+  }),
+  /** At most 60 dice (a Duality roll with its advantage, help and riders' dice). */
+  dice: v.array(v.number()),
+  /** Where the Duality Dice (Hope, Fear, then advantage dice) start in `dice`. */
+  dualityAt: v.number(),
+  roll: rollValidator,
+  hits: v.array(v.object({ tokenId: v.id("combatTokens"), hit: v.boolean() })),
+  options: v.array(afterRollOptionValidator),
+});
+
+/** One answer to an `afterRoll` row: use one of its features (with `useFeature`-style choices), or pass. */
+export const afterRollChoiceValidator = v.union(
+  v.object({ kind: v.literal("use"), featureId: v.string(), useId: v.optional(v.string()), choices: v.array(cardChoiceValidator) }),
+  v.object({ kind: v.literal("pass") }),
+);
+
+/** The roll a rider rides on, as its result filters read it (a critical counts as a success with Hope, CB p.90). */
+export const hostRollValidator = v.object({ success: v.boolean(), critical: v.boolean(), withHope: v.boolean(), withFear: v.boolean() });
+
+/**
+ * DA2 (widened; HF p.8 Death Strike, user 2026-10-30): a damage-phase rider waiting for the attacker after the damage is
+ * written: Use on ONE of `candidates` (the creatures that took the damage it needs, Severe for Death Strike), or Pass.
+ * The answer logs into the attack's actionLog group (`groupId`), so undoing the attack undoes it. At most 20 candidates.
+ */
+export const riderPickPayloadValidator = v.object({
+  schemaVersion: v.literal(1),
+  kind: v.literal("riderPick"),
+  characterId: v.id("characters"),
+  groupId: v.string(),
+  /** The attack's (or card's) public actionLog row; once it is undone the prompt is closed. */
+  entryId: v.id("actionLog"),
+  rider: v.object({ source: v.union(v.literal("card"), v.literal("feature")), id: v.string(), useId: v.string(), name: v.string() }),
+  candidates: v.array(v.id("combatTokens")),
+  hostRoll: hostRollValidator,
+});
+
+/** One answer to a `riderPick` row: use the rider on one candidate, or pass (nothing paid). */
+export const riderPickChoiceValidator = v.union(v.object({ kind: v.literal("use"), tokenId: v.id("combatTokens") }), v.object({ kind: v.literal("pass") }));
+
+/** DA12: a target count rolled on the server before the pick (Warden's Protection's 1d4). */
+export const targetCountPayloadValidator = v.object({
+  schemaVersion: v.literal(1),
+  kind: v.literal("targetCount"),
+  characterId: v.id("characters"),
+  /** The feature id (`<source>:<owner>:<slug>`) and the `CardUse.id` the count is for. */
+  featureId: v.string(),
+  useId: v.string(),
+  /** The rolled count: the most targets the use may take. */
+  count: v.number(),
+  /**
+   * Retired (dcm-bxp.99.19.60): the count lasts until it is used or the scene ends, so nothing writes or reads this.
+   * Widened to optional; a migration clears it from old rows, then the field is dropped (rule 7).
+   */
+  expiresAt: v.optional(v.number()),
+});
+
+/** A token's square and facing (combatTokens `x`, `y`, `face`). */
+export const tokenSquareValidator = v.object({ x: v.number(), y: v.number(), face: v.number() });
+
+/** DA12: a token the server moved for a feature use, with the square it left (undo puts it back). */
+export const serverMovePayloadValidator = v.object({
+  schemaVersion: v.literal(1),
+  kind: v.literal("serverMove"),
+  characterId: v.id("characters"),
+  /** The use's actionLog group: undoing it undoes the move. */
+  groupId: v.string(),
+  tokenId: v.id("combatTokens"),
+  from: tokenSquareValidator,
+  to: tokenSquareValidator,
+});
+
+/** DA13: a use rolled by an ally (Cannonball's throw), waiting for the ally's roll. */
+export const allyRollPayloadValidator = v.object({
+  schemaVersion: v.literal(1),
+  kind: v.literal("allyRoll"),
+  /** The character whose use it is (the druid who is thrown) and that use. */
+  characterId: v.id("characters"),
+  featureId: v.string(),
+  useId: v.string(),
+  /** The ally who makes the roll, and their token on the map. */
+  rollerCharacterId: v.id("characters"),
+  rollerTokenId: v.id("combatTokens"),
+  /** The use's actionLog group and public row; once that row is undone the prompt is closed. */
+  groupId: v.string(),
+  entryId: v.id("actionLog"),
+  expiresAt: v.number(),
+});
+
+/** B2: what a `difficulty` request rolls once the GM sets the Difficulty. */
+export const difficultyAskValidator = v.union(
+  v.object({
+    kind: v.literal("charge"),
+    /** The Charge target (an enemy token at Far or Very Far range) and the square in Melee range of it. */
+    targetTokenId: v.id("combatTokens"),
+    square: v.object({ x: v.number(), y: v.number() }),
+    /** Mark a Stress for the 1d12 (on a success). */
+    stress: v.boolean(),
+    /** The player's roll options (Experiences, advantage, modifier); never a Difficulty. */
+    roll: sanctionRollOptionsValidator,
+  }),
+  v.object({
+    kind: v.literal("cloak"),
+    /** The rogue's token and the square the move ended on: a token that moved on since makes the request stale. */
+    tokenId: v.id("combatTokens"),
+    at: v.object({ x: v.number(), y: v.number() }),
+    /** The enemies that saw it dimly (at most the map's tokens; names for the GM). */
+    seers: v.array(v.id("combatTokens")),
+    /** The move's actionLog group: the roll joins it, and undoing it declines the request. */
+    groupId: v.string(),
+  }),
+);
+
+export const difficultyPayloadValidator = v.object({
+  schemaVersion: v.literal(1),
+  kind: v.literal("difficulty"),
+  characterId: v.id("characters"),
+  ask: difficultyAskValidator,
+});
+
+/**
+ * `cloakPrompt` (plan lanes-2, V4; dcm-vx5n, user 2026-10-31; CB p.42 Cloaked, CB p.99): a Cloaked PC's action roll that
+ * targets an enemy but is not an attack, waiting for the GM's "Does <name>'s Cloaked end?". Yes ends Cloaked in the use's
+ * undo group (`groupId`), no declines. `label` is the use's name ("Words of Discord"); `targetTokenIds` the enemies the
+ * use targets (at most 20). Closed when the use is undone.
+ */
+export const cloakPromptPayloadValidator = v.object({
+  schemaVersion: v.literal(1),
+  kind: v.literal("cloakPrompt"),
+  characterId: v.id("characters"),
+  /** The Cloaked PC's token on the map. */
+  tokenId: v.id("combatTokens"),
+  label: v.string(),
+  groupId: v.string(),
+  targetTokenIds: v.array(v.id("combatTokens")),
+});
+
+/**
+ * `forcedAttack` (plan lanes-2, V4; dcm-uxsd, user 2026-10-31): an adversary feature forces a PC to attack (Beguiled,
+ * HF p.75; Tentacle Rays). The player's request opens their Attack bar with `targetTokenIds` locked; the attack resolves
+ * the request in the forcing use's actionLog group (`groupId`). `instanceId` / `instanceLabel` are the forcing adversary
+ * ("Gobstalker"), `feature` the printed feature name. At most 20 targets.
+ */
+export const forcedAttackPayloadValidator = v.object({
+  schemaVersion: v.literal(1),
+  kind: v.literal("forcedAttack"),
+  characterId: v.id("characters"),
+  instanceId: v.id("encounterAdversaries"),
+  instanceLabel: v.string(),
+  feature: v.string(),
+  targetTokenIds: v.array(v.id("combatTokens")),
+  groupId: v.string(),
+});
+
 /** The payload of a `combatRequests` row; `kind` matches the row's `kind`. */
-export const combatRequestPayloadValidator = v.union(sanctionPayloadValidator, incomingHitPayloadValidator, minionOfferPayloadValidator, preRollPayloadValidator);
+export const combatRequestPayloadValidator = v.union(
+  sanctionPayloadValidator,
+  incomingHitPayloadValidator,
+  minionOfferPayloadValidator,
+  preRollPayloadValidator,
+  afterRollPayloadValidator,
+  riderPickPayloadValidator,
+  targetCountPayloadValidator,
+  serverMovePayloadValidator,
+  allyRollPayloadValidator,
+  difficultyPayloadValidator,
+  cloakPromptPayloadValidator,
+  forcedAttackPayloadValidator,
+);
 
 /**
  * One answer in a reaction window (Q13): `armor` (mark Armor Slots; `slots` above 1 only where a card allows it,
- * I Am Your Shield, CB p.341), `noArmor`, a reaction `card`, or `pass`.
+ * I Am Your Shield, CB p.341), `noArmor`, a reaction `card`, or `pass`. Plan lanes-2, E2.3 (widened): `grant`, the hit
+ * PC takes what the attacker lets them pay instead of Hit Points (`pending`'s `grants`): `id` `hope` spends `amount` Hope
+ * on the forced HP of `reduceWithHope` riders (dcm-nnbl, HF p.75), `gold` pays up to `amount` handfuls of gold instead of
+ * the HP the standard attack marks (dcm-5cn5, Money Talks, CB p.228).
  */
 export const hitChoiceValidator = v.union(
   v.object({ kind: v.literal("armor"), slots: v.optional(v.number()) }),
   v.object({ kind: v.literal("noArmor") }),
   v.object({ kind: v.literal("card"), cardId: v.string(), useId: v.optional(v.string()) }),
   v.object({ kind: v.literal("pass") }),
+  v.object({ kind: v.literal("grant"), id: v.string(), amount: v.number() }),
 );
 
 export const combatResponseValidator = v.object({
@@ -337,3 +687,16 @@ export type MinionOfferPayload = Infer<typeof minionOfferPayloadValidator>;
 export type PreRollPayload = Infer<typeof preRollPayloadValidator>;
 export type HeldAttack = Infer<typeof heldAttackValidator>;
 export type PreRollChoice = Infer<typeof preRollChoiceValidator>;
+export type AfterRollPayload = Infer<typeof afterRollPayloadValidator>;
+export type AfterRollChoice = Infer<typeof afterRollChoiceValidator>;
+export type RiderPickPayload = Infer<typeof riderPickPayloadValidator>;
+export type RiderPickChoice = Infer<typeof riderPickChoiceValidator>;
+export type TargetCountPayload = Infer<typeof targetCountPayloadValidator>;
+export type ServerMovePayload = Infer<typeof serverMovePayloadValidator>;
+export type AllyRollPayload = Infer<typeof allyRollPayloadValidator>;
+export type DifficultyPayload = Infer<typeof difficultyPayloadValidator>;
+export type DifficultyAsk = Infer<typeof difficultyAskValidator>;
+export type KeywordAsk = Infer<typeof keywordAskValidator>;
+export type KeywordAnswer = Infer<typeof keywordAnswerValidator>;
+export type CloakPromptPayload = Infer<typeof cloakPromptPayloadValidator>;
+export type ForcedAttackPayload = Infer<typeof forcedAttackPayloadValidator>;

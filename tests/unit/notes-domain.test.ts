@@ -241,7 +241,7 @@ describe("quick keys (B4)", () => {
 
   it("has the Quick keys card copy", () => {
     expect(QUICK_KEYS_COPY.keys).toBe("Start a line with * task · o event · - note · ! idea · + Hope · ^ Fear");
-    expect(QUICK_KEYS_COPY.mentions).toBe("Type @name to link someone or somewhere from Characters & Locations.");
+    expect(QUICK_KEYS_COPY.mentions).toBe("Type @name to link someone or somewhere from Codex.");
   });
 });
 

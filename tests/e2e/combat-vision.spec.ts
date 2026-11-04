@@ -66,7 +66,7 @@ test("fog of war: dim-band reveal, a wall, daytime, lights, explored areas, the 
     await client.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
     const { tokenId: banditId } = await client.mutation(api.combatTokens.addCustom, { campaignId, mapId, name: "Bandit", hp: 3, side: "enemy", idempotencyKey: crypto.randomUUID() });
     const { tokenId: wolfId } = await client.mutation(api.combatTokens.addCustom, { campaignId, mapId, name: "Wolf", hp: 4, side: "enemy", idempotencyKey: crypto.randomUUID() });
-    const ash = (await client.query(api.combatTokens.list, { campaignId, mapId })).find((t) => t.name === "Ash")!;
+    const ash = (await client.query(api.combatTokensReads.list, { campaignId, mapId })).find((t) => t.name === "Ash")!;
     await client.mutation(api.combatTokens.move, { campaignId, tokenId: ash._id, x: 4, y: 10 });
     await client.mutation(api.combatTokens.turn, { campaignId, tokenId: ash._id, angle: 0 });
     await client.mutation(api.combatVision.setCarriedLight, { campaignId, tokenId: ash._id, light: "torch" });
@@ -77,20 +77,29 @@ test("fog of war: dim-band reveal, a wall, daytime, lights, explored areas, the 
     // Night: DAY 1 → NIGHT 2 (Moonrise).
     await advance(client, campaignId, 8);
 
-    // ---- The player at night.
+    // ---- The player at night. The light pill and "Your view" live in the HUD's "Your character" drawer (plan
+    // combat-hud H8.1: players always get the HUD).
     await player.goto(url);
-    await expect(player.getByTestId("combat-light-pill")).toContainText("Moonrise");
-    await expect(player.getByTestId("combat-light-pill")).toContainText("Night: light sources matter");
-    const yourView = player.getByRole("region", { name: "Your view" });
+    const openDrawer = () => player.getByRole("button", { name: "Your character", exact: true }).click();
+    const drawer = player.getByRole("complementary", { name: "Your character" });
+    await openDrawer();
+    const lightPill = drawer.getByTestId("combat-light-pill");
+    await expect(lightPill).toContainText("Moonrise");
+    await expect(lightPill).toContainText("Night: light sources matter");
+    const yourView = drawer.getByRole("region", { name: "Your view" });
     await expect(yourView.getByTestId("combat-cone-text")).toContainText("70° vision cone (Instinct +0)");
     await expect(yourView.getByTestId("combat-light-rule")).toHaveText(/your torch lights clearly to Close and dimly to Far/);
     await expect(yourView.getByRole("group", { name: "Light you carry" }).getByRole("button", { name: "Torch", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await drawer.press("Escape");
+    await expect(drawer).toHaveCount(0);
     const playerBoard = player.getByRole("region", { name: "Battle map" });
-    await expect(playerBoard.getByRole("button", { name: /^Ash, Party/ })).toBeVisible();
+    await expect(playerBoard.getByRole("button", { name: /^Open Ash’s sheet/ })).toBeVisible();
     await expect(playerBoard.getByRole("button", { name: /^Wolf, Enemy/ })).toBeVisible();
     await expect(playerBoard.getByRole("button", { name: /^Bandit/ })).toHaveCount(0);
-    // The player's header line never shows the map's size (Q1).
-    await expect(player.locator(".cm-headline")).toHaveText("Night road");
+    // The player's title never shows the map's size (Q1).
+    const title = player.getByTestId("hud-title");
+    await expect(title.getByRole("heading")).toHaveText("Night road");
+    await expect(title).not.toContainText("squares");
     await expect(player.getByTestId("combat-cone")).toHaveCount(1);
 
     // Hidden edges (Q1): the padding is exactly unexplored fog; so is an unexplored square of the map.
@@ -108,8 +117,8 @@ test("fog of war: dim-band reveal, a wall, daytime, lights, explored areas, the 
     // Fit frames the explored squares, not the padded area: closer than fitting the whole padded stage.
     const vp = await playerBoard.getByTestId("combat-viewport").boundingBox();
     const paddedFit = Math.min((vp!.width - 8) / ((MAP_W + 2 * PAD) * 48), (vp!.height - 8) / ((20 + 2 * PAD) * 48));
-    await playerBoard.getByRole("button", { name: "Fit" }).click();
-    await expect.poll(async () => Number.parseInt((await playerBoard.getByTestId("combat-zoom").textContent()) ?? "0", 10)).toBeGreaterThan(Math.round(paddedFit * 100) + 5);
+    await player.getByRole("toolbar", { name: "Map controls" }).getByRole("button", { name: "Fit the map to the screen" }).click();
+    await expect.poll(async () => Number.parseInt((await player.getByTestId("combat-zoom").textContent()) ?? "0", 10)).toBeGreaterThan(Math.round(paddedFit * 100) + 5);
 
     // Explored areas reach the server (throttled markExplored), merged with what Ash sees.
     await expect
@@ -120,7 +129,7 @@ test("fog of war: dim-band reveal, a wall, daytime, lights, explored areas, the 
     // is 3 squares away, out of reach (plan d12-bugs B4): the switch is disabled and says "Move next to it". Ash walks
     // up to (6, 11), the torch straight ahead, and switches it there.
     const torchSwitch = playerBoard.getByRole("button", { name: "Put out the wall torch" });
-    const ashToken = playerBoard.getByRole("button", { name: /^Ash, Party/ });
+    const ashToken = playerBoard.getByRole("button", { name: /^Open Ash’s sheet/ });
     await expect(torchSwitch).toHaveAttribute("aria-disabled", "true");
     await torchSwitch.hover();
     await expect(torchSwitch.getByText("Move next to it")).toBeVisible();
@@ -136,11 +145,14 @@ test("fog of war: dim-band reveal, a wall, daytime, lights, explored areas, the 
     await playerClient.mutation(api.combatTokens.turn, { campaignId, tokenId: ash._id, angle: 0 });
     await expect(ashToken).toHaveAttribute("data-square", "4,10");
 
-    // ---- The GM reveals the Bandit to Ash: it appears for the player, live, with the dashed outline.
+    // ---- The GM reveals the Bandit to Ash: it appears for the player, live, with the dashed outline. Reveal lives in
+    // the HUD's "Map tools" drawer; the selection survives opening it.
     await page.goto(url);
     const tools = page.getByRole("complementary", { name: "Map tools" });
+    const openTools = () => page.getByRole("button", { name: "Map tools" }).click();
     const board = page.getByRole("region", { name: "Battle map" });
     await board.getByRole("button", { name: /^Bandit, Enemy/ }).click();
+    await openTools();
     const reveal = tools.getByRole("region", { name: "Light and reveal" }).getByRole("group", { name: "Reveal to" });
     await reveal.getByRole("button", { name: "Ash" }).click();
     await expect(reveal.getByRole("button", { name: "👁 Ash" })).toHaveAttribute("aria-pressed", "true");
@@ -153,22 +165,31 @@ test("fog of war: dim-band reveal, a wall, daytime, lights, explored areas, the 
     await expect(playerBoard.getByRole("button", { name: /^Wolf/ })).toHaveCount(0);
 
     // ---- The GM previews Ash's view (R12): the fog and cone on the GM's page; the Wolf is ghosted there.
-    await page.getByRole("button", { name: /Player view/ }).click();
-    await page.getByRole("menu", { name: "Open the player view as" }).getByRole("menuitemradio", { name: "Ash" }).click();
-    await expect(page.getByRole("button", { name: /Viewing as Ash/ })).toBeVisible();
+    await page.getByRole("toolbar", { name: "Map controls" }).getByRole("button", { name: /Player view/ }).click();
+    // By keyboard: the GM's spotlight panel covers the menu on screen (dcm-bxp.99.32.42).
+    await page.getByRole("menu", { name: "Open the player view as" }).getByRole("menuitemradio", { name: "Ash" }).press("Enter");
+    await expect(page.getByRole("toolbar", { name: "Map controls" }).getByRole("button", { name: /Viewing as Ash/ })).toBeVisible();
     await expect(page.getByTestId("combat-fog")).toBeVisible();
     await expect(page.getByTestId("combat-cone")).toHaveCount(1);
     await expect(board.getByRole("button", { name: /^Wolf, Enemy/ })).toHaveCSS("opacity", "0.28");
     await tools.getByRole("group", { name: "See the map as" }).getByRole("button", { name: "GM (everything)" }).click();
     await expect(page.getByTestId("combat-fog")).toBeHidden();
 
-    // ---- The GM takes the reveal back, then day comes (NIGHT 7, Nautical Dawn = day, R8): the Bandit shows again,
-    // unmarked; the Wolf stays behind the wall.
+    // ---- The GM takes the reveal back, then dawn comes (NIGHT 7, Nautical Dawn = dim, R8 as changed by dcm-p40: full
+    // vision, ranged attacks at disadvantage), then day (DAY 2, Sunrise): the Bandit shows again, unmarked; the Wolf
+    // stays behind the wall.
+    await tools.press("Escape");
     await board.getByRole("button", { name: /^Bandit, Enemy/ }).click();
+    await openTools();
     await reveal.getByRole("button", { name: "👁 Ash" }).click();
     await expect(playerBoard.getByRole("button", { name: /^Bandit/ })).toHaveCount(0);
     await advance(client, campaignId, 5);
-    await expect(player.getByTestId("combat-light-pill")).toContainText("Nautical Dawn");
+    await openDrawer();
+    await expect(lightPill).toContainText("Nautical Dawn");
+    await expect(yourView.getByTestId("combat-light-rule")).toHaveText(/^Dim light/);
+    await expect(playerBoard.getByRole("button", { name: "Bandit, Enemy" })).toBeVisible();
+    await advance(client, campaignId, 2);
+    await expect(lightPill).toContainText("Sunrise");
     await expect(yourView.getByTestId("combat-light-rule")).toHaveText(/^Daylight/);
     await expect(playerBoard.getByRole("button", { name: "Bandit, Enemy" })).toBeVisible();
     await expect(playerBoard.getByRole("button", { name: /^Wolf/ })).toHaveCount(0);
@@ -177,8 +198,11 @@ test("fog of war: dim-band reveal, a wall, daytime, lights, explored areas, the 
     expect(await fogPixel(player, PAD + MAP_W + 0.2, PAD + 10.5)).toEqual(unseen);
     expect(await fogPixel(player, PAD + MAP_W + 3, PAD + 10.5)).toEqual(unseen);
 
-    // ---- The GM's fog brush (R12): Hide over the Bandit hides it from the player; Erase brings it back.
-    const vision = tools.getByRole("region", { name: "Vision and fog" });
+    // ---- The GM's fog brush (R12), from the HUD's Fog pop-up: Hide over the Bandit hides it from the player; Erase
+    // brings it back.
+    await tools.press("Escape");
+    await page.getByRole("toolbar", { name: "Map controls" }).getByRole("button", { name: "Fog", exact: true }).click();
+    const vision = page.getByRole("dialog", { name: "Vision and fog" });
     await vision.getByRole("group", { name: "Fog brush" }).getByRole("button", { name: "Hide" }).click();
     await vision.getByRole("group", { name: "Brush size" }).getByRole("button", { name: "Brush 3" }).click();
     const stage = board.getByTestId("combat-stage");

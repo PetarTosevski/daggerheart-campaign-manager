@@ -11,6 +11,7 @@ import { FEATURE_CLASSIFICATION } from "@/lib/srd/feature-effects/classification
 import { FEATURE_EFFECTS } from "@/lib/srd/feature-effects/index";
 import { TRANSFORMATION_EFFECTS } from "@/lib/srd/feature-effects/transformations";
 import { TRANSFORMATIONS } from "@/lib/srd/heritage";
+import { hostMatches, riderPhase, type Host } from "../../../convex/lib/combatActions";
 import { actorOf, adversary, sheetOf } from "./engine/fixtures";
 
 // Plan sheet-drawer, tracer FE-transformations (Q11 a): every transformation feature classified combat or passive runs
@@ -148,6 +149,7 @@ describe("Fangs (HF p.39)", () => {
       kind: "trait",
       trait: ["agility", "strength", "finesse", "instinct", "presence", "knowledge"],
       difficulty: { kind: "target" },
+      attack: true,
     });
     expect(use(FANGS).targets).toEqual({ side: "enemy", range: "melee", count: { kind: "one" } });
   });
@@ -173,10 +175,10 @@ describe("Fangs (HF p.39)", () => {
 
 describe("Feed (HF p.39)", () => {
   const bitten = { ...adversary("bandit"), hp: 2 };
-  const confirmed = ["A successful Fangs attack against a creature that can bleed"];
+  const confirmed = ["The target is a creature that can bleed"];
 
   it("a rider on the target marking Hit Points: mark a Stress, a token per Hit Point marked", () => {
-    expect(use(FEED).activation).toEqual({ kind: "rider", trigger: { kind: "whenTargetMarksHp" } });
+    expect(use(FEED).activation).toEqual({ kind: "rider", trigger: { kind: "whenTargetMarksHp", fromUse: FANGS } });
     const plan = ok(FEED, undefined, base({ actor: actorOf(sheet, { cardTokens: 1 }), trigger: { amount: 2, subject: bitten }, situations: confirmed }));
     expect(plan.actor.before.stress).toBe(1);
     expect(plan.actor.after).toMatchObject({ stress: 2, cardTokens: 3 });
@@ -188,8 +190,20 @@ describe("Feed (HF p.39)", () => {
     expect(plan.actor.after.cardTokens).toBe(6);
   });
 
-  it("only on a Fangs attack against a creature that can bleed (the player confirms, Q13)", () => {
+  it("only against a creature that can bleed (the player confirms, Q13)", () => {
     expect(runFeature(entry(FEED), undefined, base({ trigger: { amount: 2, subject: bitten } }))).toMatchObject({ ok: false, reason: "requirement" });
+  });
+
+  it("SRD-F1 (dcm-bn1): the rider rides only on a Fangs use, which is an attack roll", () => {
+    const feed = use(FEED);
+    if (feed.activation.kind !== "rider") throw new Error("rider");
+    const fangsRoll = use(FANGS).roll!;
+    const fangsHost: Host = { spec: fangsRoll, trait: "strength", weapon: false, weaponRange: "melee", damageType: "physical", fromUse: { id: FANGS, useId: "main" }, damage: true };
+    expect(riderPhase(feed.activation.trigger, fangsHost, feed)).toBe("damage");
+    expect(riderPhase(feed.activation.trigger, { ...fangsHost, fromUse: { id: "transformation:demigod:gifted", useId: "main" } }, feed)).toBeNull();
+    expect(riderPhase(feed.activation.trigger, { ...fangsHost, fromUse: undefined }, feed)).toBeNull();
+    // Wolf Form's +1d10 on the attack roll fits a bite (HF p.40: "attack and damage rolls").
+    expect(hostMatches("attack", fangsHost)).toBe(true);
   });
 
   it("spend a token before an action roll: the Fear Die is a d20", () => {
@@ -214,6 +228,15 @@ describe("Feed (HF p.39)", () => {
     ]);
     expect(ok(FEED, "hunger", base({ situations: ["There are no tokens on Feed"] })).steps).toEqual([]);
     expect(runFeature(entry(FEED), "hunger", base())).toMatchObject({ ok: false, reason: "requirement" });
+  });
+
+  it("SRD-F1 (dcm-2g9): the engine reads the feature's own tokens; no tokens holds without the player, any token refuses", () => {
+    expect(use(FEED, "hunger").requires).toEqual([{ kind: "situation", text: "There are no tokens on Feed", check: { kind: "tokens", atMost: 0 } }]);
+    expect(ok(FEED, "hunger", base({ actor: actorOf(sheet, { facts: { cardTokens: 0 } }) })).steps).toEqual([]);
+    expect(runFeature(entry(FEED), "hunger", base({ actor: actorOf(sheet, { facts: { cardTokens: 2 } }), situations: ["There are no tokens on Feed"] }))).toMatchObject({
+      ok: false,
+      reason: "requirement",
+    });
   });
 });
 
@@ -263,7 +286,9 @@ describe("Howling Rampage (HF p.40)", () => {
     expect(ofKind(plan, "damageRoll")[0]).toMatchObject({ type: "physical", record: { total: 24 } });
     expect(ofKind(plan, "damage")[0]?.result).toMatchObject({ targetId: "bandit", incoming: 24, taken: 24, hpMarked: 1 });
     expect(ofKind(plan, "pcDamage")).toEqual([{ kind: "pcDamage", targetId: "ally", amount: 24, type: "physical", direct: false }]);
-    expect(ofKind(plan, "prompt").map((p) => p.text)).toEqual(["Drop out of Wolf Form (end the Wolf Form effect)."]);
+    // SRD-F1 (dcm-5fc): no manual prompt; the runner's endEffect step ends the Wolf Form effect on the actor.
+    expect(ofKind(plan, "prompt")).toEqual([]);
+    expect(ofKind(plan, "endEffect")).toEqual([{ kind: "endEffect", targetId: "pc", of: WOLF, own: false }]);
   });
 
   it("one d20 at tier 1, four at tier 4", () => {

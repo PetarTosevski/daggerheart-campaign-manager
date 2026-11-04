@@ -1,0 +1,161 @@
+/* Journal JR: the recap parchment and 'After the session' (design reference/designs/journal/journal_views.jpg). */
+
+.jrr-shared {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--jr-muted);
+}
+.jrr-shared svg {
+  width: 15px;
+  height: 15px;
+}
+.jrr-parchment {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+}
+.jrr-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.jrr-empty {
+  color: var(--jr-paper-muted);
+  font-style: italic;
+}
+.jrr-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+.jrr-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 140px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #c9b48a;
+  background: #fbf5e6;
+  color: var(--jr-paper-ink);
+  font: inherit;
+  line-height: 1.45;
+  resize: vertical;
+}
+.jrr-textarea:focus-visible,
+.jrr-input:focus-visible {
+  outline: 2px solid var(--jr-acc);
+  outline-offset: 2px;
+}
+.jrr-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.jrr-error {
+  margin: 0;
+  font-family: var(--font-plex), ui-sans-serif, sans-serif;
+  font-size: 14px;
+  color: #a3271c;
+}
+.jrr-after .jrr-error {
+  color: var(--jr-danger);
+}
+.jrr-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* After the session */
+.jrr-dl {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.jrr-dl-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 14px;
+}
+.jrr-dl-row dt {
+  color: var(--jr-muted);
+  flex: none;
+}
+.jrr-dl-row dd {
+  margin: 0;
+  min-width: 0;
+  text-align: right;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.jrr-loot dd {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.jrr-inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 36px;
+  max-width: 100%;
+  padding: 2px 8px;
+  margin-right: -8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--jr-text);
+  font: inherit;
+  font-weight: 600;
+  text-align: right;
+  cursor: pointer;
+}
+.jrr-inline svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--jr-muted);
+}
+.jrr-inline:hover {
+  border-color: var(--jr-border);
+  background: var(--jr-hover);
+}
+.jrr-inline:focus-visible {
+  outline: 2px solid var(--jr-acc);
+  outline-offset: 2px;
+}
+.jrr-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--jr-border);
+  background: var(--jr-field);
+  color: var(--jr-text);
+  font: inherit;
+}
+.jrr-note {
+  font-size: 12px;
+}
+
+@media (max-width: 1100px), (pointer: coarse) {
+  .jrr-btn,
+  .jrr-inline,
+  .jrr-input {
+    min-height: 44px;
+  }
+}

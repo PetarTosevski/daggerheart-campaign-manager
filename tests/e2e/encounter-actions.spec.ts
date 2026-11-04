@@ -71,7 +71,7 @@ async function scene(page: Page, browser: Browser, srd: readonly string[] = []):
   const { mapId } = await client.mutation(api.combatMaps.create, { campaignId, size: "medium", name: "Old road", idempotencyKey: crypto.randomUUID() });
   await client.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
   await client.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId, instanceIds, idempotencyKey: crypto.randomUUID() });
-  const tokens = await client.query(api.combatTokens.list, { campaignId, mapId });
+  const tokens = await client.query(api.combatTokensReads.list, { campaignId, mapId });
   const mira = tokens.find((t) => t.characterId === miraId)!;
   await client.mutation(api.combatTokens.move, { campaignId, tokenId: mira._id, x: 5, y: 10 });
   await client.mutation(api.combatTokens.move, { campaignId, tokenId: tokens.find((t) => t.instanceId === instanceIds[0])!._id, x: 6, y: 10 });
@@ -88,7 +88,7 @@ async function openTracker(page: Page, campaignId: Id<"campaigns">) {
 }
 
 async function sheetOf(s: Scene) {
-  const view = await s.client.query(api.characters.get, { characterId: s.miraId });
+  const view = await s.client.query(api.charactersReads.get, { characterId: s.miraId });
   return view!.sheet;
 }
 
@@ -135,10 +135,10 @@ test("the GM attacks Mira from the Encounter tab, Mira's player marks an Armor S
     const hp = (await sheetOf(s)).hp;
     expect(hp).toBeGreaterThan(before.hp);
 
-    // The Combat Map shows it on Mira's token.
+    // The Combat Map (the HUD since plan combat-hud H8.1) shows it on Mira's token.
     const map = await page.context().newPage();
     await map.goto(s.mapUrl);
-    await expect(map.getByRole("region", { name: "Battle map" }).getByRole("button", { name: new RegExp(`^Mira, .*${hp} of \\d+ HP marked`) })).toBeVisible({ timeout: 30_000 });
+    await expect(map.getByRole("region", { name: "Battle map" }).getByRole("button", { name: new RegExp(`^Open Mira’s sheet, .*${hp} of \\d+ Hit Points marked`) })).toBeVisible({ timeout: 30_000 });
     await map.close();
   } finally {
     await s.closePlayer();
@@ -182,7 +182,7 @@ test("a Fear-cost feature asks first (Q19), Resolve now settles a window (Q17), 
     await expect
       .poll(async () => {
         const maps = await s.client.query(api.combatMaps.list, { campaignId: s.campaignId });
-        const tokens = await s.client.query(api.combatTokens.list, { campaignId: s.campaignId, mapId: maps[0]!._id });
+        const tokens = await s.client.query(api.combatTokensReads.list, { campaignId: s.campaignId, mapId: maps[0]!._id });
         return tokens.find((t) => t._id === s.miraToken)?.y;
       })
       .toBe(11);
@@ -192,7 +192,7 @@ test("a Fear-cost feature asks first (Q19), Resolve now settles a window (Q17), 
     await token.press("Backspace");
     await expect(pane.getByRole("button", { name: /^Mira, / })).toBeVisible();
     const maps = await s.client.query(api.combatMaps.list, { campaignId: s.campaignId });
-    const left = await s.client.query(api.combatTokens.list, { campaignId: s.campaignId, mapId: maps[0]!._id });
+    const left = await s.client.query(api.combatTokensReads.list, { campaignId: s.campaignId, mapId: maps[0]!._id });
     expect(left.some((t) => t._id === s.miraToken)).toBe(true);
   } finally {
     await s.closePlayer();

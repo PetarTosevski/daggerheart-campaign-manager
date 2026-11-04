@@ -161,20 +161,17 @@ export const STANCE_EFFECTS: readonly FeatureEffect[] = [
   ]),
 
   // Defensive (HF p.12): "Attack rolls targeting you from within Melee range have disadvantage unless the attacker marks a
-  // Stress to negate the disadvantage." The vocabulary has no disadvantage the attacker can buy off with a Stress (nor a
-  // passive disadvantage narrowed to Melee attackers): a manual step on each Melee attack (bead dcm-eut, see
-  // the task doc).
+  // Stress to negate the disadvantage." Lanes-2 wave 10 (S2.4; dcm-eut): a passive `disadvantageAgainst` gated `from:
+  // "melee"` with a `buyOff` of 1 Stress. The passive totals keep it out of the always-on list (E5 `guarded`); the
+  // adversary attack counts it only from an attacker within Melee of the stance holder's token (no live map: the
+  // distance is unknown and it does not count) and offers the buy-off in the GM feed; the GM pays it with `buyOffs` and
+  // the attacker marks the Stress (E7 round 3).
   stance("defensive", [
     {
       id: "main",
-      activation: { kind: "auto", trigger: { kind: "whenAttacked", stage: "targeted", from: "melee" } },
-      steps: [
-        {
-          kind: "manual",
-          to: "triggerSource",
-          text: "Defensive stance: this attack roll from within Melee range has disadvantage unless the attacker marks a Stress to negate the disadvantage.",
-        },
-      ],
+      activation: { kind: "passive" },
+      mods: [{ kind: "disadvantageAgainst", on: "attack", from: "melee", buyOff: [{ kind: "stress", amount: fixed(1) }] }],
+      steps: [],
     },
   ]),
 
@@ -205,7 +202,9 @@ export const STANCE_EFFECTS: readonly FeatureEffect[] = [
     {
       id: "main",
       activation: { kind: "rider", trigger: { kind: "whenYouAttack", result: "success" } },
-      requires: [{ kind: "situation", text: "The attack was within Melee range" }],
+      // "An attack within Melee range": the target's distance (`within`, plan lanes V; dcm-9l4); the player confirms when
+      // the fact is missing (Q13).
+      requires: [{ kind: "situation", text: "The attack was within Melee range", check: { kind: "within", range: "melee", who: "target" } }],
       costs: [focusOrStress],
       steps: [
         {
@@ -216,7 +215,9 @@ export const STANCE_EFFECTS: readonly FeatureEffect[] = [
             {
               id: "restrain",
               label: "Temporarily Restrain the target",
-              steps: [{ kind: "condition", to: "targets", condition: { kind: "standard", condition: "restrained" }, duration: "temporary" }],
+              // User 2026-10-29 (dcm-bxp.99.19.10): the Restrain ends when the stance drops (HF p.12: "When you drop out of
+              // a stance, you lose any ongoing benefits it provides."); convex/lib/stanceDrop.ts ends it (DA10).
+              steps: [{ kind: "condition", to: "targets", condition: { kind: "standard", condition: "restrained" }, duration: "temporary", endsOn: ["stanceDrops"] }],
             },
             {
               id: "throw",
@@ -239,13 +240,15 @@ export const STANCE_EFFECTS: readonly FeatureEffect[] = [
   ]),
 
   // Stable (HF p.12): "You can spend a Focus instead of an Armor Slot to reduce damage." An Armor Slot reduces the
-  // severity by one threshold (CB p.114), so the Focus does that.
+  // severity by one threshold (CB p.114), so the Focus does that. User answer 2026-10-29 (dcm-bxp.99.19.9): the Focus
+  // replaces the hit's one Armor Slot: no slot is marked, never more than one step with the slot, usable without armor
+  // while the PC has Focus (`insteadOfArmorSlot`, DA0; the reaction window applies it, DA8).
   stance("stable", [
     {
       id: "main",
       activation: { kind: "reaction", trigger: { kind: "whenYouWouldTakeDamage" } },
       costs: [focusCost(1)],
-      steps: [{ kind: "reduceSeverity", to: "self", steps: 1, note: "Spend a Focus instead of an Armor Slot to reduce the damage" }],
+      steps: [{ kind: "reduceSeverity", to: "self", steps: 1, insteadOfArmorSlot: true, note: "Spend a Focus instead of an Armor Slot to reduce the damage" }],
     },
   ]),
 
@@ -356,8 +359,9 @@ export function dropStance(martial: MartialState): MartialState {
 }
 
 /**
- * The vocabulary has no step that sets `classState.martial.active`: the shift intent (SD3) checks `shiftRefusal`, runs
- * the use for its price and then sets the active stance (the previous one drops). The use has no steps of its own.
+ * The shift intent (SD3, `combatFeatures.shiftStance`) checks `shiftRefusal`, runs the use for its price and then sets the
+ * active stance (E6 `setStance`: the previous one drops). The use has no steps of its own: a `setStance` step (plan lanes
+ * V) would be a second, manual prompt until the runner applies it (dcm-4xl), and the intent already does it.
  */
 const shiftSteps: readonly Step[] = [];
 

@@ -6,7 +6,7 @@ import { useQuery } from "convex/react";
 
 import { BrandButton } from "@/components/brand/buttons";
 import { Badge } from "@/components/party/sheet-ui";
-import { AWAY_REASON_LABELS, type AwayReason } from "@/lib/domain/death/index";
+import { AWAY_REASON_LABELS, DEATH_MOVE_LABELS, type AwayReason } from "@/lib/domain/death/index";
 import { useIntent } from "@/lib/use-intent";
 import { cn } from "@/lib/utils";
 
@@ -36,8 +36,11 @@ export function DeathBadges({ character, canEdit, isGm, showAway, tone }: CardSl
   const returnToPlay = away && isGm && !character.benched;
   // A Castle High away character: its reason may still be the player's request (LL1).
   const deathAway = away && character.away !== undefined;
-  if (!unconscious && !(away && (showAway || returnToPlay)) && !deathAway && !journeyEnds) return null;
+  // HD4: at the last Hit Point a player's death move may be waiting for the GM's confirm.
+  const lastHp = character.status === "active" && character.sheet.hpMax > 0 && character.sheet.hp >= character.sheet.hpMax;
+  if (!unconscious && !(away && (showAway || returnToPlay)) && !deathAway && !journeyEnds && !lastHp) return null;
   const request = deathAway ? <AwayRequest character={character} isGm={isGm} tone={tone} /> : null;
+  const waiting = lastHp ? <MoveWaiting character={character} tone={tone} /> : null;
 
   if (tone === "banner") {
     return (
@@ -49,6 +52,7 @@ export function DeathBadges({ character, canEdit, isGm, showAway, tone }: CardSl
           </Badge>
         ) : null}
         {request}
+        {waiting}
         {journeyEnds ? (
           <Badge tone="wine" data-testid="death-journey-ends">
             Journey ends
@@ -81,6 +85,7 @@ export function DeathBadges({ character, canEdit, isGm, showAway, tone }: CardSl
         </span>
       ) : null}
       {request}
+      {waiting}
       {journeyEnds ? (
         <span data-testid="death-journey-ends" className={cn(BADGE, "bg-[#3a1414] text-[#ffb0a8]")}>
           Journey ends
@@ -97,6 +102,22 @@ export function DeathBadges({ character, canEdit, isGm, showAway, tone }: CardSl
         </span>
       ) : null}
     </div>
+  );
+}
+
+/** HD4 (answer 15b): "<move>: waiting for the GM" while a player's chosen death move waits for the GM's confirm. */
+function MoveWaiting({ character, tone }: { character: CardSlotProps["character"]; tone: "banner" | "card" }) {
+  const state = useQuery(api.deathMoves.state, { characterId: character._id });
+  if (!state?.request) return null;
+  const text = `${DEATH_MOVE_LABELS[state.request.move]}: waiting for the GM`;
+  return tone === "banner" ? (
+    <Badge tone="paper" data-testid="death-request">
+      {text}
+    </Badge>
+  ) : (
+    <span data-testid="death-request" className={cn(BADGE, "bg-[#3a3014] text-[#f3dfa8]")}>
+      {text}
+    </span>
   );
 }
 

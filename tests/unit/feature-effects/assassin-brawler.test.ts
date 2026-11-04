@@ -175,8 +175,10 @@ describe("Marked for Death (HF p.8)", () => {
     expect(plan.exclusive).toBe(true);
     expect(plan.actor.after.stress).toBe(2);
     expect(ofKind(plan, "condition")).toEqual([
-      expect.objectContaining({ targetId: "bandit", condition: { kind: "tag", tag: MARKED_FOR_DEATH }, duration: "rest" }),
+      expect.objectContaining({ targetId: "bandit", condition: { kind: "tag", tag: MARKED_FOR_DEATH }, duration: "rest", endsOn: ["targetDefeated", "gmSpendsFear"] }),
     ]);
+    // Lanes-2 S2 (dcm-8bv, dcm-kmr): the GM's Fear end costs the assassin's tier.
+    expect(ofKind(ok(go("class:assassin:marked-for-death", "main", [], { actor: actorOf(sheet, { tier: 3 }), sheet, targets: [adv("bandit")], delegateRoll: actionRoll("successHope") })), "condition")[0]).toMatchObject({ endFear: 3 });
     expect(after(plan, "bandit")?.tags).toEqual([MARKED_FOR_DEATH]);
     expect(ofKind(plan, "delegate")).toEqual([expect.objectContaining({ feature: "markedForDeath", done: true })]);
     expect(result.ok && result.sheet?.effects.some((e) => e.id === "marked-for-death" && e.until === "rest")).toBe(true);
@@ -292,8 +294,8 @@ describe("Toxic Concoctions (HF p.9)", () => {
 
   it("the specialization and mastery poisons (HF p.9)", () => {
     const mastery = holding("mastery", "subclass:poisoners-guild:poison-compendium", "subclass:poisoners-guild:venomancer");
-    const use = (poison: string, dice: number[] = [], choices: Record<string, number> = {}) =>
-      ok(go(toxic, "poison", dice, { actor: actor(1), targets: [adv("a")], options: { poison: [poison] }, choices, holdings: mastery }));
+    const use = (poison: string, dice: number[] = [], extra: Partial<FeatureRunContext> = {}) =>
+      ok(go(toxic, "poison", dice, { actor: actor(1), targets: [adv("a")], options: { poison: [poison] }, holdings: mastery, ...extra }));
     expect(ofKind(use("midnight-vine"), "effect")[0]).toMatchObject({ label: "Midnight Vine", mods: [{ kind: "flag", flag: "attackDisadvantage" }], duration: "manual", endsOn: ["bearerMarksStress"] });
     expect(ofKind(use("gorgon-root"), "condition")[0]).toMatchObject({ condition: { kind: "standard", condition: "restrained" }, duration: "temporary" });
     expect(ofKind(use("blight-seed"), "effect")[0]).toMatchObject({
@@ -304,8 +306,11 @@ describe("Toxic Concoctions (HF p.9)", () => {
         { kind: "stat", stat: "severeThreshold", delta: -3 },
       ],
     });
-    // Fear Leaf: the Fear Die's result (4) as the dialog's number (dcm-d1b).
-    expect(fold(use("fear-leaf", [], { fearDie: 4 }))).toEqual([expect.objectContaining({ amount: 4 })]);
+    // Fear Leaf: the attack's Fear Die (4), read from the host roll (lanes-2 S2; dcm-d1b, dcm-n0dv). No dialog number.
+    expect(fold(use("fear-leaf", [], { hostRoll: { hope: 9, fear: 4 } }))).toEqual([expect.objectContaining({ amount: 4 })]);
+    expect(useOf(toxic, "poison").choices).toBeUndefined();
+    // Blight Seed can't stack (dcm-kkx): the server refuses a second copy on the same target.
+    expect(ofKind(use("blight-seed"), "effect")[0]).toMatchObject({ stacking: "refuse" });
     expect(ofKind(use("corpse-thorn"), "effect")[0]).toMatchObject({ label: "Corpse Thorn", mods: [{ kind: "flag", flag: "reactionDisadvantage" }], duration: "scene" });
   });
 
@@ -326,6 +331,12 @@ describe("Toxic Concoctions (HF p.9)", () => {
     // Without Twin Fang there is no second poison.
     const without = ok(go(toxic, "poison", [], { actor: actor(2), targets: [marked("a")], optionals: ["twin-fang"], options: { poison: ["ghost-petal"], "second-poison": ["grave-spore"] } }));
     expect(without.actor.after.cardTokens).toBe(1);
+  });
+
+  it("Twin Fang: the second poison must differ from the first (distinctFrom, dcm-40m)", () => {
+    const h = holding("specialization", "subclass:poisoners-guild:twin-fang", "subclass:poisoners-guild:poison-compendium");
+    const same = go(toxic, "poison", [], { actor: actor(2), targets: [marked("a")], holdings: h, optionals: ["twin-fang"], options: { poison: ["ghost-petal"], "second-poison": ["ghost-petal"] } });
+    expect(same).toMatchObject({ ok: false, reason: "choice" });
   });
 
   it("a long rest clears every unspent token", () => {
@@ -448,15 +459,23 @@ describe("Juggernaut (HF p.10)", () => {
 });
 
 describe("Martial Artist (HF p.11-12)", () => {
-  it("Stance Fighter: shifting costs a Focus (a Stress with Flow State); the stance itself is SD3's shiftStance", () => {
-    const plain = ok(go("subclass:martial-artist:stance-fighter", "shift", [], { actor: actorOf(martial, { focus: 3 }), holdings: none(), options: { cost: ["focus"] } }));
+  it("Stance Fighter: shifting costs a Focus (a Stress with Flow State) and sets the picked stance (lanes-2 S2)", () => {
+    const stance = "quick";
+    const plain = ok(go("subclass:martial-artist:stance-fighter", "shift", [], { actor: actorOf(martial, { focus: 3 }), holdings: none(), options: { cost: ["focus"], stance: [stance] } }));
     expect(plain.actor.after.focus).toBe(2);
-    expect(ofKind(plain, "prompt")).toEqual([expect.objectContaining({ prompt: "manual" })]);
+    // dcm-awh / dcm-4xl: the pick (`opt:stance`) becomes a plan `setStance` the feature runner applies; no manual prompt.
+    expect(ofKind(plain, "setStance")).toEqual([{ kind: "setStance", targetId: "pc", stance }]);
+    expect(ofKind(plain, "prompt")).toEqual([]);
+    // Without a pick the step stays a prompt, which the server refuses ("Pick the stance to shift into").
+    const unpicked = ok(go("subclass:martial-artist:stance-fighter", "shift", [], { actor: actorOf(martial, { focus: 3 }), holdings: none(), options: { cost: ["focus"] } }));
+    expect(ofKind(unpicked, "prompt")).toEqual([expect.objectContaining({ prompt: "manual", step: expect.objectContaining({ kind: "setStance", choice: "stance" }) })]);
     const flow = holdingsFor(martial, owned(martial), "martial-artist");
-    const stress = ok(go("subclass:martial-artist:stance-fighter", "shift", [], { actor: actorOf(martial, { focus: 0 }), holdings: flow, options: { cost: ["stress"] } }));
+    const stress = ok(go("subclass:martial-artist:stance-fighter", "shift", [], { actor: actorOf(martial, { focus: 0 }), holdings: flow, options: { cost: ["stress"], stance: [stance] } }));
     expect(stress.actor.after).toMatchObject({ focus: 0, stress: martial.stress + 1 });
+    expect(ofKind(stress, "setStance")).toEqual([{ kind: "setStance", targetId: "pc", stance }]);
     // No Focus and no Flow State: the payment fails and nothing shifts.
-    const broke = ok(go("subclass:martial-artist:stance-fighter", "shift", [], { actor: actorOf(martial, { focus: 0 }), holdings: none(), options: { cost: ["focus"] } }));
+    const broke = ok(go("subclass:martial-artist:stance-fighter", "shift", [], { actor: actorOf(martial, { focus: 0 }), holdings: none(), options: { cost: ["focus"], stance: [stance] } }));
+    expect(ofKind(broke, "setStance")).toEqual([]);
     expect(ofKind(broke, "prompt")).toEqual([]);
   });
 

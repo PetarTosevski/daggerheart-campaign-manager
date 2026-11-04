@@ -43,9 +43,9 @@ export const SEVERITY_LABEL: Record<DamageSeverity, string> = {
   defeat: "Defeated",
 };
 
-/** Damage after resistance: halved (rounded down) when `resistant`, never below 0. */
+/** Damage after resistance: halved and rounded up (CB p.107 "round up", Q6) when `resistant`, never below 0. */
 export function damageTaken(amount: number, resistant: boolean): number {
-  const taken = resistant ? Math.floor(amount / 2) : amount;
+  const taken = resistant ? Math.ceil(amount / 2) : amount;
   return Math.max(0, taken);
 }
 
