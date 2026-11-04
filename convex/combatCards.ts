@@ -83,6 +83,7 @@ import { closeRequest, encounterRunning, loadOpenRequest, openMinionOffer, openR
 import { rollDie } from "./lib/dice";
 import { campaignFearState, gainFear, spendFear } from "./lib/fear";
 import { campaignMutation, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
+import { fearFor } from "./lib/fearVisibility";
 import { changed } from "./lib/rolls";
 import { logUnshakable, unshakePlan, type UnshakableRoll } from "./lib/unshakable";
 import { MAX_RIDERS_PER_ATTACK, riderValidator, type Rider } from "./lib/validators/combatRequests";
@@ -1399,7 +1400,7 @@ export const useCard = keyedCampaignMutation({
   args: useArgs,
   returns: v.union(resolvedCardValidator, pendingCardValidator, needsChoiceValidator),
   handler: async (ctx, args) =>
-    ctx.once("combat_card", args, async () => {
+    fearFor(ctx, ctx.user, ctx.campaign, await ctx.once("combat_card", args, async () => {
       const { campaign, character, sheet, gm } = await editableHere(ctx, args.characterId);
       // Config R2 (Q2 a): a player's card use with a target out of its range is refused when the GM refuses them.
       const refuse = refusesOutOfRange(campaign, gm);
@@ -1486,7 +1487,7 @@ export const useCard = keyedCampaignMutation({
         },
       });
       return { status: "pending" as const, requestId, outOfRange: built.outOfRange };
-    }),
+    }), "fearDelta", ctx.permission),
 });
 
 const declined = v.object({ status: v.literal("declined") });

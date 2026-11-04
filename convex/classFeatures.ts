@@ -36,6 +36,7 @@ import { payCost } from "./lib/classFeatureCost";
 import { rollDie } from "./lib/dice";
 import { gainFear, revertFear } from "./lib/fear";
 import { keyedUserMutation, userQuery } from "./lib/functions";
+import { fearFor } from "./lib/fearVisibility";
 import { atLeast } from "./lib/permissions";
 import { rollValidator, type StoredRoll } from "./lib/validators/actionLog";
 
@@ -185,7 +186,8 @@ export const use = keyedUserMutation({
           undoable: true,
         });
       }
-      return { summary: result.summary, roll: result.roll ?? null };
+      // dcm-jh6d.62: a player's summary loses GM Fear numbers while the GM's Fear is hidden.
+      return fearFor(ctx, ctx.user, campaign, { summary: result.summary, roll: result.roll ?? null }, null);
     }),
 });
 

@@ -59,7 +59,7 @@ export function TagTeam({ campaignId, character, disabled, pending }: { campaign
   async function pick(entryId: Id<"actionLog">, characterId: Id<"characters">, name: string) {
     const out = await apply.fire({ entryId, pick: characterId });
     if (out) {
-      setApplied(`${name}’s roll counts for both${out.fearGained > 0 ? `; the GM gains ${out.fearGained} Fear` : ""}.`);
+      setApplied(`${name}’s roll counts for both${(out.fearGained ?? 0) > 0 ? `; the GM gains ${out.fearGained} Fear` : ""}.`);
     }
   }
 

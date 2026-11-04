@@ -40,6 +40,7 @@ import { closeRequest, encounterRunning, groupOffer, loadOpenRequest, openSancti
 import { afterRollChoiceValidator, MAX_RIDERS_PER_ATTACK, riderPickChoiceValidator, riderValidator, type ForcedAttackPayload } from "./lib/validators/combatRequests";
 import { featureScope } from "./lib/featureScope";
 import { campaignQuery, keyedCampaignMutation } from "./lib/functions";
+import { fearFor } from "./lib/fearVisibility";
 import { prepareDuality, rules, type Loaded } from "./lib/rolls";
 import type { AdversaryBefore } from "./lib/validators/actionLog";
 
@@ -152,8 +153,9 @@ export const attack = keyedCampaignMutation({
     benefit: v.optional(v.string()),
   },
   returns: v.union(resolvedAttackValidator, pendingAttackValidator, awaitingAttackValidator),
+  // dcm-jh6d.62: a player's result loses `fearGained` while the GM's Fear is hidden.
   handler: async (ctx, args) =>
-    ctx.once("combat_attack", args, async () => {
+    fearFor(ctx, ctx.user, ctx.campaign, await ctx.once("combat_attack", args, async () => {
       const { characterId, mapId, targetTokenIds, slot, forcedRequestId, benefit, ...options } = args;
       let riders = args.riders ?? [];
       if (riders.length > MAX_RIDERS_PER_ATTACK) throw appError("INVALID", `At most ${MAX_RIDERS_PER_ATTACK} riders.`);
@@ -208,7 +210,7 @@ export const attack = keyedCampaignMutation({
         },
       });
       return { status: "pending" as const, requestId, outOfRange: bands };
-    }),
+    }), "fearGained", ctx.permission),
 });
 
 /**
@@ -261,7 +263,7 @@ export const afterRoll = keyedCampaignMutation({
   args: { requestId: v.id("combatRequests"), choice: afterRollChoiceValidator },
   returns: v.union(resolvedAttackValidator, v.object({ status: v.literal("declined") })),
   handler: async (ctx, { requestId, choice }) =>
-    ctx.once("combat_after_roll", { requestId, choice }, async () => {
+    fearFor(ctx, ctx.user, ctx.campaign, await ctx.once("combat_after_roll", { requestId, choice }, async () => {
       const row = await loadOpenRequest(ctx, ctx.campaign._id, requestId);
       if (row.payload.kind !== "afterRoll") throw appError("NOT_FOUND");
       const p = row.payload;
@@ -290,7 +292,7 @@ export const afterRoll = keyedCampaignMutation({
       if (result.status !== "resolved") throw appError("INVALID");
       await closeRequest(ctx, row._id, "resolved", ctx.user._id);
       return result;
-    }),
+    }), "fearGained", ctx.permission),
 });
 
 /**

@@ -67,6 +67,7 @@ import { latestLiveRow, logAction, newGroupId } from "./lib/actionLog";
 import { assertCanAct, findCharacter, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { rollDie } from "./lib/dice";
 import { gainFear } from "./lib/fear";
+import { fearFor } from "./lib/fearVisibility";
 import { gmMutation, keyedCampaignMutation, keyedGmMutation, keyedUserMutation, userQuery } from "./lib/functions";
 import { atLeast } from "./lib/permissions";
 import {
@@ -97,7 +98,10 @@ export const actionRoll = keyedUserMutation({
   args: { characterId: v.id("characters"), kind: dualityKind, ...dualityFields },
   returns: dualityResult,
   handler: async (ctx, { characterId, ...args }) =>
-    ctx.once("roll_action", { characterId, ...args }, async () => duality(ctx, await editable(ctx, ctx.user, characterId), args, rollDie, false)),
+    ctx.once("roll_action", { characterId, ...args }, async () => {
+      const loaded = await editable(ctx, ctx.user, characterId);
+      return fearFor(ctx, ctx.user, loaded.campaign, await duality(ctx, loaded, args, rollDie, false), "fearGained");
+    }),
 });
 
 /** A damage roll: a weapon at Proficiency, a class override, or dice as given; `critical` adds the dice's maximum. */
@@ -134,7 +138,7 @@ export const manualRoll = keyedUserMutation({
       }
       const result = await duality(ctx, loaded, roll, rng, true);
       check();
-      return result;
+      return fearFor(ctx, ctx.user, loaded.campaign, result, "fearGained");
     }),
 });
 
@@ -332,7 +336,8 @@ export const storeSlayerDie = keyedUserMutation({
 export const tagTeamApply = keyedUserMutation({
   rateLimit: "roll",
   args: { entryId: v.id("actionLog"), pick: v.id("characters") },
-  returns: v.object({ outcome: rollValidator.fields.outcome, fearGained: v.number() }),
+  /** `fearGained` is absent for a player while the GM's Fear is hidden (dcm-jh6d.62). */
+  returns: v.object({ outcome: rollValidator.fields.outcome, fearGained: v.optional(v.number()) }),
   handler: async (ctx, { entryId, pick }) =>
     ctx.once("roll_tag_team_apply", { entryId, pick }, async () => {
       const row = await ctx.db.get("actionLog", entryId);
@@ -388,7 +393,7 @@ export const tagTeamApply = keyedUserMutation({
       if (firstResult !== null && countsAsActionRoll(chosen, { logKind: "roll", undone: false, tagTeam: "result" })) {
         await tickArmedCountdowns(ctx, { campaignId: lead.campaign._id, entryId: firstResult, outcome: chosen.outcome, actorId: ctx.user._id });
       }
-      return { outcome: chosen.outcome, fearGained: gained };
+      return fearFor(ctx, ctx.user, lead.campaign, { outcome: chosen.outcome, fearGained: gained }, "fearGained");
     }),
 });
 

@@ -70,8 +70,11 @@ export const resolvedCardValidator = v.object({
   damage: v.array(rollValidator),
   success: v.boolean(),
   targets: v.array(cardTargetValidator),
-  /** The GM's Fear change from this use (the roll with Fear, a card's Fear step). */
-  fearDelta: v.number(),
+  /**
+   * The GM's Fear change from this use (the roll with Fear, a card's Fear step). Absent for a player while "Players see
+   * the GM's Fear" is off (dcm-jh6d.62).
+   */
+  fearDelta: v.optional(v.number()),
   prompts: v.array(cardPromptValidator),
   minionOffer: v.union(v.null(), cardMinionOfferValidator),
 });

@@ -6,6 +6,7 @@ import { loadCharacter } from "./lib/characterSheet";
 import { campaignQuery, userQuery } from "./lib/functions";
 import { choicesOf, groupUndoable, isProject, oasisPoolOf, oasisWindowOpen, pickableMoves, recentRests } from "./lib/restView";
 import { downtimeDieValidator, restChoiceMoveValidator, restKindValidator, restMoveValidator, restStatusValidator } from "./lib/validators/rests";
+import { seesFear } from "./campaigns";
 
 /**
  * The rest reads (CB 104-105): the open rest with each resting PC's pickable moves, and a character's projects. Moved
@@ -32,10 +33,12 @@ const movesView = v.object({
 /**
  * The open rest with its choices and each resting PC's pickable moves (core,
  * frame and class moves, `restMovesFor`), the short-rest count (CB 105), and
- * the latest ended rest for undo. Everyone in the campaign.
+ * the latest ended rest for undo. Everyone in the campaign. With "Players see the GM's Fear" off, a player's `last` has
+ * no Fear roll or gain (null, as for an older row; dcm-jh6d.62): the gain is a change of the GM's Fear.
  */
 export const current = campaignQuery({
   need: "view",
+  enough: "owner",
   args: {},
   returns: v.object({
     open: v.union(
@@ -78,6 +81,7 @@ export const current = campaignQuery({
     const open = rests.find((r) => r.status === "open") ?? null;
     const newest = rests[0];
     const last = newest !== undefined && newest.status !== "open" ? newest : null;
+    const fearShown = seesFear(ctx.campaign, ctx.permission);
     return {
       open:
         open === null
@@ -99,8 +103,8 @@ export const current = campaignQuery({
               kind: last.kind,
               status: last.status,
               finishedAt: last.finishedAt ?? null,
-              fearRoll: last.fearRoll ?? null,
-              fearGained: last.fearGained ?? null,
+              fearRoll: fearShown ? (last.fearRoll ?? null) : null,
+              fearGained: fearShown ? (last.fearGained ?? null) : null,
               undoable: await groupUndoable(ctx, ctx.campaign._id, last.groupId),
               dice: last.dice ?? [],
               oasisHolders: last.oasisHolders ?? [],

@@ -161,7 +161,7 @@ describe("combatActions.attack: hit, damage and the two rows", () => {
     expect((await a.instance(bandit.instanceId)).hp).toBe(1);
     const withHope = r.roll.outcome === "critical" || r.roll.outcome === "successHope";
     expect((await a.sheet()).hope).toBe(hopeBefore + (withHope ? 1 : 0));
-    expect(await a.fear()).toBe(fearBefore + r.fearGained);
+    expect(await a.fear()).toBe(fearBefore + (r.fearGained ?? 0));
     expect(r.fearGained).toBe(withHope ? 0 : 1);
 
     const rows = (await a.rows()).filter((row) => row.kind === "combat");
@@ -547,5 +547,19 @@ describe("what a player receives (U1)", () => {
     expectNoStats(page.page);
     // The GM sees both rows.
     expect((await a.feed(a.gm)).page.filter((row) => row.kind === "combat")).toHaveLength(2);
+  });
+});
+
+describe("combatActions.attack: the GM's Fear hidden (dcm-jh6d.62)", () => {
+  allowWorldEmails();
+
+  it("off: a player's resolved attack has no fearGained; the GM's has it", async () => {
+    const a = await arena();
+    await a.gm.mutation(api.campaignSettings.set, { campaignId: a.campaignId, change: { key: "playersSeeFear", value: false } });
+    const bandit = await a.enemy("Bandit", 6, 10);
+    const mine = resolved(await a.attack(a.player, [bandit.tokenId]));
+    expect(mine).not.toHaveProperty("fearGained");
+    expect(JSON.stringify(mine)).not.toMatch(/\d+ Fear\b/);
+    expect(resolved(await a.attack(a.gm, [bandit.tokenId]))).toHaveProperty("fearGained");
   });
 });

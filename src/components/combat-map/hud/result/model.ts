@@ -168,7 +168,7 @@ export function cardResultView(input: {
   characterId: string;
   actorName: string;
   cardName: string;
-  result: { entryId: string; cardId: string; useId: string; roll: RollRecord | null; damage: readonly RollRecord[]; success: boolean; targets: readonly Target[]; fearDelta: number; prompts: readonly Prompt[]; minionOffer: unknown };
+  result: { entryId: string; cardId: string; useId: string; roll: RollRecord | null; damage: readonly RollRecord[]; success: boolean; targets: readonly Target[]; fearDelta?: number; prompts: readonly Prompt[]; minionOffer: unknown };
   names: Names;
   /** The use's own name when it differs from the card's (a grimoire's spell). */
   useName?: string;
@@ -187,7 +187,7 @@ export function cardResultView(input: {
     success: result.roll ? result.success : null,
     damage: result.damage.map((d) => lineOf(d, type, result.roll?.outcome === "critical")),
     targets: targetsOf(result.targets, input.names),
-    fear: Math.max(0, result.fearDelta),
+    fear: Math.max(0, result.fearDelta ?? 0),
     prompts: result.prompts.map((p) => ({ kind: p.kind, text: p.text })),
     notes: result.minionOffer ? ["Your damage can defeat more Minions: pick them in the prompt."] : [],
   };
@@ -204,7 +204,8 @@ export function attackResultView(input: {
     roll: RollRecord;
     damage: RollRecord | null;
     targets: readonly Target[];
-    fearGained: number;
+    /** Absent for a player while the GM's Fear is hidden (dcm-jh6d.62). */
+    fearGained?: number;
     minionOffer: unknown;
     riders?: readonly string[];
     skipped?: readonly string[];
@@ -230,7 +231,7 @@ export function attackResultView(input: {
     success,
     damage: result.damage ? [lineOf(result.damage, input.damageType, result.roll.outcome === "critical")] : [],
     targets: targetsOf(result.targets, input.names),
-    fear: Math.max(0, result.fearGained),
+    fear: Math.max(0, result.fearGained ?? 0),
     prompts: (result.riderPrompts ?? []).map((p) => ({ kind: p.kind, text: p.text })),
     notes,
   };

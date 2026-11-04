@@ -33,6 +33,7 @@ import {
 import { rollDie } from "./lib/dice";
 import { campaignFearState } from "./lib/fear";
 import { campaignQuery, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
+import { fearFor } from "./lib/fearVisibility";
 import { atLeast } from "./lib/permissions";
 
 /**
@@ -379,8 +380,8 @@ export const charge = keyedCampaignMutation({
     roll: cardRollValidator,
   },
   returns: v.union(chargedValidator, needsChoiceValidator, v.object({ status: v.literal("requested"), requestId: v.id("combatRequests") })),
-  handler: async (ctx, args) =>
-    ctx.once("feature_charge", args, async () => {
+  handler: async (ctx, args) => {
+    const out = await ctx.once("feature_charge", args, async () => {
       const { campaign, character, sheet } = await editableHere(ctx, args.characterId);
       assertCanAct(character, sheet);
       const gm = atLeast(ctx.permission, "owner");
@@ -404,7 +405,10 @@ export const charge = keyedCampaignMutation({
         payload: { schemaVersion: 1, kind: "difficulty", characterId: character._id, ask: { kind: "charge", targetTokenId: args.targetTokenId, square: args.square, stress: args.stress, roll: args.roll } },
       });
       return { status: "requested" as const, requestId };
-    }),
+    });
+    // dcm-jh6d.62: a player's charged use loses its `fearDelta` while the GM's Fear is hidden.
+    return out.status === "charged" ? { ...out, use: await fearFor(ctx, ctx.user, ctx.campaign, out.use, "fearDelta", ctx.permission) } : out;
+  },
 });
 
 /**
@@ -634,7 +638,7 @@ export const allyRoll = keyedCampaignMutation({
   },
   returns: v.union(resolvedFeatureValidator, v.object({ status: v.literal("closed") })),
   handler: async (ctx, args) =>
-    ctx.once("feature_ally_roll", args, async () => {
+    fearFor(ctx, ctx.user, ctx.campaign, await ctx.once("feature_ally_roll", args, async () => {
       const row = await loadAllyRoll(ctx, args.requestId);
       const p = row.payload;
       const { campaign, character: ally, sheet: allySheet } = await editableHere(ctx, p.rollerCharacterId);
@@ -692,7 +696,7 @@ export const allyRoll = keyedCampaignMutation({
       });
       await closeRequest(ctx, row._id, "resolved", ctx.user._id);
       return use_;
-    }),
+    }), "fearDelta", ctx.permission),
 });
 
 /** The second target's half damage reuses the first target's roll (the runner's cached roll): list that roll once. */

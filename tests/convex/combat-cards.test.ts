@@ -143,7 +143,7 @@ describe("combatCards.useCard: resolving", () => {
     const withHope = r.roll!.outcome === "critical" || r.roll!.outcome === "successHope";
     // R8: the roll's own Hope can pay the success cost.
     expect((await a.sheet()).hope).toBe(3 + (withHope ? 1 : 0) - 1);
-    expect(await a.fear()).toBe(fearBefore + r.fearDelta);
+    expect(await a.fear()).toBe(fearBefore + (r.fearDelta ?? 0));
     const inst = await a.instance(bandit.instanceId);
     expect(inst.hp).toBe(1);
     expect(inst.conditions).toContain("vulnerable");
@@ -585,5 +585,21 @@ describe("F7-H4 (dcm-bxp.99.24): who reads a hand, roll options on cards", () =>
     const withHope = r.roll!.outcome === "critical" || r.roll!.outcome === "successHope";
     // 1 Hope for the Experience, 1 on a success (Bolt Beacon, Difficulty 1 is always met), +1 when the roll is with Hope.
     expect((await a.sheet()).hope).toBe(hopeAfterPlain - 1 - 1 + (withHope ? 1 : 0));
+  });
+});
+
+describe("combatCards.useCard: the GM's Fear hidden (dcm-jh6d.62)", () => {
+  allowWorldEmails();
+
+  it("off: a player's resolved card use has no fearDelta; the GM's has it", async () => {
+    const a = await arena();
+    await a.gm.mutation(api.campaignSettings.set, { campaignId: a.campaignId, change: { key: "playersSeeFear", value: false } });
+    const bandit = await a.enemy("Bandit", 6, 10);
+    await a.holding(["cinder-grasp"]);
+    const mine = resolved(await a.use(a.player, "cinder-grasp", [bandit.tokenId]));
+    expect(mine).not.toHaveProperty("fearDelta");
+    expect(JSON.stringify(mine)).not.toMatch(/\d+ Fear\b/);
+    await a.holding(["cinder-grasp"]);
+    expect(resolved(await a.use(a.gm, "cinder-grasp", [bandit.tokenId]))).toHaveProperty("fearDelta");
   });
 });

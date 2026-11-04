@@ -41,6 +41,7 @@ import {
 } from "./lib/featureRunner";
 import { campaignFearState } from "./lib/fear";
 import { keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
+import { fearFor } from "./lib/fearVisibility";
 import { featureScope } from "./lib/featureScope";
 import { riderValidator, type Rider } from "./lib/validators/combatRequests";
 import { changed } from "./lib/rolls";
@@ -385,7 +386,7 @@ export const useFeature = keyedCampaignMutation({
   args: useArgs,
   returns: v.union(resolvedFeatureValidator, pendingCardValidator, needsChoiceValidator),
   handler: async (ctx, args) =>
-    ctx.once("combat_feature", args, async () => {
+    fearFor(ctx, ctx.user, ctx.campaign, await ctx.once("combat_feature", args, async () => {
       const { campaign, character, sheet, gm } = await editableHere(ctx, args.characterId);
       // Config R2 (Q2 a): a player's use with a target out of its range is refused when the GM refuses them.
       const refuse = refusesOutOfRange(campaign, gm);
@@ -413,7 +414,7 @@ export const useFeature = keyedCampaignMutation({
       }
       await keepDice(ctx, featureSlot(req), outcome.dice, ctx.user._id);
       return openSanction(ctx, { campaign, character, built, args, useId: req.pick.use.id, riseOff: false, riders: [] });
-    }),
+    }), "fearDelta", ctx.permission),
 });
 
 /**

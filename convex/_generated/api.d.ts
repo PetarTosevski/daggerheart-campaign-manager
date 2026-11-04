@@ -100,6 +100,7 @@ import type * as lib_countdownTicks from "../lib/countdownTicks.js";
 import type * as lib_dice from "../lib/dice.js";
 import type * as lib_encounters from "../lib/encounters.js";
 import type * as lib_fear from "../lib/fear.js";
+import type * as lib_fearVisibility from "../lib/fearVisibility.js";
 import type * as lib_featureDrawer from "../lib/featureDrawer.js";
 import type * as lib_featureOwned from "../lib/featureOwned.js";
 import type * as lib_featurePrompts from "../lib/featurePrompts.js";
@@ -331,6 +332,7 @@ declare const fullApi: ApiFromModules<{
   "lib/dice": typeof lib_dice;
   "lib/encounters": typeof lib_encounters;
   "lib/fear": typeof lib_fear;
+  "lib/fearVisibility": typeof lib_fearVisibility;
   "lib/featureDrawer": typeof lib_featureDrawer;
   "lib/featureOwned": typeof lib_featureOwned;
   "lib/featurePrompts": typeof lib_featurePrompts;

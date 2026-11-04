@@ -26,6 +26,7 @@ import { assertOneActive, editable, loadCharacter, readSheet, saveSheet } from "
 import { withoutCondition } from "./lib/conditionMarkers";
 import { rollDie } from "./lib/dice";
 import { keyedUserMutation, userQuery } from "./lib/functions";
+import { fearFor } from "./lib/fearVisibility";
 import { applyRule } from "./lib/mechanics";
 import { atLeast, campaignAccess, permissionFor } from "./lib/permissions";
 import { storedCharacterStatusValidator } from "./lib/validators/characters";
@@ -498,11 +499,13 @@ export const settleAway = keyedUserMutation({
  */
 export const undo = keyedUserMutation({
   args: { entryId: v.id("actionLog") },
-  returns: v.object({ undone: v.array(v.id("actionLog")), fearReverted: v.number(), status: storedCharacterStatusValidator }),
+  /** `fearReverted` is absent for a player while "Players see the GM's Fear" is off (dcm-jh6d.62). */
+  returns: v.object({ undone: v.array(v.id("actionLog")), fearReverted: v.optional(v.number()), status: storedCharacterStatusValidator }),
   handler: async (ctx, { entryId }) =>
     ctx.once("death_undo", { entryId }, async () => {
       const row = await ctx.db.get("actionLog", entryId);
-      if (row === null || (await campaignAccess(ctx, ctx.user, row.campaignId)) === null) throw appError("NOT_FOUND");
+      const access = row === null ? null : await campaignAccess(ctx, ctx.user, row.campaignId, "owner");
+      if (row === null || access === null) throw appError("NOT_FOUND");
       if (row.kind !== "death" || row.characterId === undefined) rule("Only a death move is undone here.");
       const character = await ctx.db.get("characters", row.characterId);
       if (character === null) throw appError("NOT_FOUND");
@@ -518,7 +521,7 @@ export const undo = keyedUserMutation({
         const campaign = await ctx.db.get("campaigns", character.campaignId);
         if (campaign !== null) await assertOneActive(ctx, campaign, character.ownerId, character._id);
       }
-      return { ...result, status: after?.status ?? character.status };
+      return fearFor(ctx, ctx.user, access.campaign, { ...result, status: after?.status ?? character.status }, "fearReverted", access.permission);
     }),
 });
 

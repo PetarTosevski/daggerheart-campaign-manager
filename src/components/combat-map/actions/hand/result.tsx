@@ -99,7 +99,7 @@ export function CardResult({ last, onDone }: { last: LastCard; onDone: (index: n
           ))}
         </ul>
       ) : null}
-      {result.fearDelta > 0 ? <p className="cm-muted cma-small cma-note">The GM gains {result.fearDelta} Fear.</p> : null}
+      {(result.fearDelta ?? 0) > 0 ? <p className="cm-muted cma-small cma-note">The GM gains {result.fearDelta} Fear.</p> : null}
       {result.minionOffer ? <p className="cm-muted cma-small cma-note">Your damage can defeat more Minions: pick them under Attack.</p> : null}
     </section>
   );

@@ -78,7 +78,8 @@ export const resolvedFeatureValidator = v.object({
   damage: v.array(rollValidator),
   success: v.boolean(),
   targets: v.array(v.object({ tokenId: v.id("combatTokens"), hit: v.boolean(), defeated: v.boolean() })),
-  fearDelta: v.number(),
+  /** The GM's Fear change; absent for a player while "Players see the GM's Fear" is off (dcm-jh6d.62). */
+  fearDelta: v.optional(v.number()),
   prompts: v.array(cardPromptValidator),
   /** What the use did besides its roll: the delegated D5 features' lines, Favor / Focus, Help dice, areas. */
   notes: v.array(v.string()),

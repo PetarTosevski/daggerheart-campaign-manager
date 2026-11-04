@@ -193,7 +193,8 @@ export const resolvedAttackValidator = v.object({
   /** The damage roll (null when every target was missed). */
   damage: v.union(v.null(), rollValidator),
   targets: v.array(targetOutcomeValidator),
-  fearGained: v.number(),
+  /** The GM's Fear gain; absent for a player while "Players see the GM's Fear" is off (dcm-jh6d.62). */
+  fearGained: v.optional(v.number()),
   minionOffer: v.union(v.null(), minionOfferValidator),
   prompts: v.array(promptValidator),
   /** SD5: the riders that applied (and Sneak Attack, an after-roll feature), by name. */

@@ -136,7 +136,11 @@ export const promptValidator = v.object({
   choices: v.array(v.object({ key: v.string(), label: v.string() })),
 });
 
-export const dualityResult = v.object({ entryId: v.id("actionLog"), roll: rollValidator, fearGained: v.number(), prompts: v.array(promptValidator) });
+/**
+ * `fearGained` is absent for a player while "Players see the GM's Fear" is off (dcm-jh6d.62): 0 would tell them the pool
+ * is full. Optional since then; the GM and co-GMs always get it.
+ */
+export const dualityResult = v.object({ entryId: v.id("actionLog"), roll: rollValidator, fearGained: v.optional(v.number()), prompts: v.array(promptValidator) });
 export const damageResult = v.object({ entryId: v.id("actionLog"), roll: rollValidator });
 
 export type DualityArgs = {
