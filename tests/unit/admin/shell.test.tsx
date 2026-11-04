@@ -170,7 +170,7 @@ describe("stubs", () => {
     const onTab = vi.fn();
     const stubs = [
       (await vi.importActual<typeof import("@/components/admin/overview")>("@/components/admin/overview")).OverviewTab,
-      (await vi.importActual<typeof import("@/components/admin/accounts")>("@/components/admin/accounts")).AccountsTab,
+      // AccountsTab is built (AU2): tests/unit/admin/accounts.test.tsx.
       (await vi.importActual<typeof import("@/components/admin/lorekeeper")>("@/components/admin/lorekeeper")).LorekeeperTab,
       (await vi.importActual<typeof import("@/components/admin/features")>("@/components/admin/features")).FeatureSwitchesTab,
       (await vi.importActual<typeof import("@/components/admin/maintenance")>("@/components/admin/maintenance")).MaintenanceTab,

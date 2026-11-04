@@ -1,0 +1,174 @@
+/*
+ * App admin, Accounts tab (config AU2; design reference/designs/config/Admin.dc.html `.seg2`, `.stp`, `.tb`, `.who2`,
+ * `.pf.ini`, `.rl`, `.r-own` / `.r-gm` / `.r-pl`). The buttons are arcane glass; these rules only lay them out.
+ */
+
+/* ---------------------------------------------------------------- Who can join */
+
+.adma-seg {
+  display: flex;
+  flex: none;
+  width: 460px;
+  max-width: 100%;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: #0f171a;
+  box-shadow: inset 0 0 0 1px #253338;
+}
+.adma-seg-b {
+  flex: 1;
+}
+.adma-stp {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 12px;
+  background: #0f171a;
+  box-shadow: inset 0 0 0 1px #253338;
+}
+.adma-stp svg {
+  width: 18px;
+  height: 18px;
+}
+.adma-stp b {
+  min-width: 54px;
+  text-align: center;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.adma-err {
+  margin: 0 0 12px;
+  color: #f0d4cf;
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------------- account table */
+
+.adma-tb {
+  width: 100%;
+  margin-bottom: 8px;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.adma-tb th {
+  padding: 8px 8px 8px 0;
+  border-bottom: 1px solid var(--adm-line);
+  color: var(--adm-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-align: left;
+  text-transform: uppercase;
+}
+.adma-tb td {
+  padding: 10px 8px 10px 0;
+  border-bottom: 1px solid var(--adm-line);
+}
+.adma-tb tr:last-child td {
+  border-bottom: 0;
+}
+.adma-dim {
+  color: var(--adm-muted);
+  white-space: nowrap;
+}
+.adma-ar {
+  text-align: right;
+}
+.adma-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.adma-who-t {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.adma-who-t b {
+  font-weight: 600;
+}
+.adma-ini {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #253338;
+  color: var(--adm-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+.adma-tag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  color: var(--adm-muted);
+  font-size: 11.5px;
+  box-shadow: inset 0 0 0 1px #33444a;
+}
+.adma-rl {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.adma-rl-owner {
+  background: #2d2614;
+  color: #f3cf86;
+}
+.adma-rl-gm {
+  background: #241b38;
+  color: #c9a8ff;
+}
+.adma-rl-player {
+  background: #13261c;
+  color: #9ff0bd;
+}
+.adma-menu-wrap {
+  position: relative;
+  display: inline-block;
+}
+.adma-menu-wrap svg {
+  width: 18px;
+  height: 18px;
+}
+.adma-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  min-width: 200px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 12px;
+  background: #141e22;
+  box-shadow:
+    inset 0 0 0 1px #253338,
+    0 12px 32px rgb(0 0 0 / 0.45);
+}
+.adma-more {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0 12px;
+}
+.adma-pad {
+  padding: 8px 0 14px;
+}
+
+@media (max-width: 860px) {
+  .adm-row.adma-row-seg {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .adma-seg {
+    width: auto;
+  }
+}
