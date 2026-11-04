@@ -314,3 +314,4 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - JR: "Share with players" is dropped (Q4); the milestone isn't shown in After the session. Defaults: keep.
 - JL: every roll uses a dice icon (the data can't tell a social roll); 'Show N hidden' lists hidden lines with Unhide each. Defaults: keep.
 - Machine: Modern Standby put the PC to sleep at 00:27 after the 3 h screen-off timeout on AC. Suggested `powercfg /change monitor-timeout-ac 0` (asked the user).
+- ANSWERED 2026-11-04: screen-off on AC set to Never (done); Journal Q9 automatic only; Q10 live chip menu; Q11 click + menu; Q12 chips; Q13 keep today's groups; undo removes tally counts (bead); count every Hope paid (bead); players see GM-typed log lines.
