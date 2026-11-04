@@ -23,9 +23,13 @@ import { pdfIngestResultValidator } from "../lib/pdf/config";
  * (`convex/lorekeeperRetention.ts`).
  */
 export const lorekeeperTables = {
-  /** A rulebook (or the frame / house-rules pseudo-book). At most about 20 rows. */
+  /**
+   * A rulebook (or the frame / house-rules pseudo-book): the shared ones are about 20 rows. Config LB1: a GM's
+   * campaign book carries `campaignId` (no `campaignId` = a shared book), is shown and searched only in that campaign,
+   * and goes with the campaign's purge (`convex/cleanup.ts`) or the GM's `campaignBooks.remove`.
+   */
   lorekeeperBooks: defineTable({
-    /** "core", "hopeFear", "frame:<frameId>" or "houseRules" (validators/lorekeeper.ts). */
+    /** "core", "hopeFear", "frame:<frameId>", "houseRules" or "campaign:<campaignId>:<n>" (validators/lorekeeper.ts). */
     key: v.string(),
     title: v.string(),
     subtitle: v.string(),
@@ -37,7 +41,15 @@ export const lorekeeperTables = {
     ingestedAt: v.number(),
     /** The chunking format (CHUNK_SCHEMA_VERSION), so a re-ingest can be detected. */
     schemaVersion: v.number(),
-  }).index("by_key", ["key"]),
+    /** Config LB1: the campaign that owns this book; absent on the shared books. */
+    campaignId: v.optional(v.id("campaigns")),
+    /** Config LB1: the GM or co-GM who uploaded a campaign book. */
+    uploadedBy: v.optional(v.id("users")),
+    /** Config LB1: the uploaded PDF's size in bytes (the file itself is deleted after the read). */
+    sizeBytes: v.optional(v.number()),
+  })
+    .index("by_key", ["key"])
+    .index("by_campaign", ["campaignId"]),
 
   /** A page-tagged piece of book text (at most 4,000 chars). Read only by internal functions. */
   lorekeeperChunks: defineTable({
@@ -156,7 +168,10 @@ export const lorekeeperTables = {
   /**
    * A book's PDF ingest status (config AD8, PDF0): one row per book key, rewritten by each upload, so the table holds
    * at most one row per book. `running` blocks a second ingest of the same book; `convex/adminLibrary.ts` writes it
-   * and PDF0's `onDone` (`adminLibrary.recordIngest`) finishes it. Holds no book text.
+   * and PDF0's `onDone` (`adminLibrary.recordIngest`) finishes it. Holds no book text. Config LB1: a campaign book's
+   * row carries `campaignId` and the upload's `storageId` (a storage id already being read is refused); the rows go
+   * with the book (`campaignBooks.remove`) or the campaign's purge, and a campaign's earlier failures are pruned on
+   * each upload.
    */
   lorekeeperIngests: defineTable({
     bookKey: v.string(),
@@ -172,7 +187,13 @@ export const lorekeeperTables = {
     newBook: v.boolean(),
     finishedAt: v.optional(v.number()),
     result: v.optional(pdfIngestResultValidator),
+    /** Config LB1: the campaign of a campaign book's upload; absent for the shared library. */
+    campaignId: v.optional(v.id("campaigns")),
+    /** Config LB1: the uploaded file being read (PDF0 deletes it when it is done). */
+    storageId: v.optional(v.id("_storage")),
   })
     .index("by_key", ["bookKey"])
-    .index("by_book", ["bookId"]),
+    .index("by_book", ["bookId"])
+    .index("by_campaign", ["campaignId"])
+    .index("by_storage", ["storageId"]),
 };

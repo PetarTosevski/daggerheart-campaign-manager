@@ -230,6 +230,11 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     // switch and the campaign's usage counter (D13). The book itself is per deployment and stays.
     const bookId = await ins("lorekeeperBooks", { key: `core-${now}-${Math.random()}`, title: "Mini Manual", subtitle: "Rules", cover: "core", pages: 12, chunkCount: 0, ingestedAt: now, schemaVersion: 1 });
     await ins("lorekeeperLibrary", { campaignId: c, bookId, enabled: false, updatedAt: now });
+    // Config LB1: the campaign's own book (with a chunk) and its upload's status row go with the campaign.
+    const ownKey = `campaign:${c}:1`;
+    const ownBookId = await ins("lorekeeperBooks", { key: ownKey, title: "Salt Roads", subtitle: "Uploaded by the GM", cover: "frame", pages: 1, chunkCount: 1, ingestedAt: now, schemaVersion: 1, campaignId: c, uploadedBy: userId, sizeBytes: 10 });
+    await ins("lorekeeperChunks", { bookId: ownBookId, page: 1, section: "Roads", text: "Invented road text.", ord: 0 });
+    await ins("lorekeeperIngests", { bookKey: ownKey, bookId: ownBookId, status: "done", startedAt: now, startedBy: userId, firstPrintedPage: 1, title: "Salt Roads", newBook: true, finishedAt: now, campaignId: c });
     const conversationId = await ins("lorekeeperConversations", { campaignId: c, userId, title: "Critical hits?", visibility: "campaign", webSearch: true, messageCount: 2, lastAt: now, createdAt: now });
     const message = { conversationId, campaignId: c, userId, createdAt: now, updatedAt: now };
     await ins("lorekeeperMessages", { ...message, role: "question", status: "done", text: "Critical hits?" });
@@ -583,10 +588,12 @@ describe("cleanup crons", () => {
     expect(await leftovers(t, due)).toEqual({ rows: {}, blobs: [] });
     expect(await leftovers(t, live)).toEqual(liveBefore);
     const kept = await t.run(async (ctx) => ({
-      books: (await ctx.db.query("lorekeeperBooks").collect()).length,
+      // The two shared books stay, and so does the live campaign's own book (config LB1); the due one's went.
+      books: (await ctx.db.query("lorekeeperBooks").collect()).map((book) => book.campaignId ?? null),
+      chunks: (await ctx.db.query("lorekeeperChunks").collect()).length,
       kinds: (await ctx.db.query("lorekeeperUsage").collect()).map((row) => row.kind).sort(),
     }));
-    expect(kept).toEqual({ books: 2, kinds: ["campaign", "deployment", "user"] });
+    expect(kept).toEqual({ books: [null, null, live.campaignId], chunks: 1, kinds: ["campaign", "deployment", "user"] });
   });
 
   it("expires resolved and declined combat requests a day after resolvedAt, in batches, and keeps open or recent ones (AA0)", async () => {

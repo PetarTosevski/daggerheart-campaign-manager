@@ -35,12 +35,34 @@ export const LOREKEEPER_LIMITS = {
   rulingsPerCampaign: 50,
 } as const;
 
-/** A book's key: "core", "hopeFear", "frame:<frameId>" or "houseRules" (the Notes pseudo-book, Q7). */
+/**
+ * A book's key: "core", "hopeFear", "frame:<frameId>" or "houseRules" (the Notes pseudo-book, Q7), or a GM's campaign
+ * book "campaign:<campaignId>:<n>" (config LB1, below).
+ */
 export const BOOK_KEY_CORE = "core";
 export const BOOK_KEY_HOPE_FEAR = "hopeFear";
 export const BOOK_KEY_HOUSE_RULES = "houseRules";
 export function frameBookKey(frameId: string): string {
   return `frame:${frameId}`;
+}
+
+/**
+ * A GM's campaign book (config LB1): key `campaign:<campaignId>:<n>`, `n` counting up per campaign. Its
+ * `lorekeeperBooks` row carries `campaignId`, and only that campaign shows and searches it.
+ */
+export const CAMPAIGN_BOOK_KEY_PREFIX = "campaign:";
+const CAMPAIGN_BOOK_KEY_RE = /^campaign:([^:]+):(\d{1,9})$/;
+export function campaignBookKey(campaignId: string, n: number): string {
+  return `${CAMPAIGN_BOOK_KEY_PREFIX}${campaignId}:${n}`;
+}
+/** Whether `key` is a campaign book's key. */
+export function isCampaignBookKey(key: string): boolean {
+  return CAMPAIGN_BOOK_KEY_RE.test(key);
+}
+/** The `n` of a campaign book's key, or 0 for any other key. */
+export function campaignBookNumber(key: string): number {
+  const match = CAMPAIGN_BOOK_KEY_RE.exec(key);
+  return match ? Number(match[2]) : 0;
 }
 
 /** The chunking format `lorekeeperBooks.schemaVersion` records (L1's chunker); a different one means re-ingest. */

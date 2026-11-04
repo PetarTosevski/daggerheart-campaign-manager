@@ -8,7 +8,7 @@ import { internalMutation, type MutationCtx, type QueryCtx } from "./_generated/
 import { recordAdminChange } from "./lib/adminAudit";
 import { appOwnerMutation, appOwnerQuery } from "./lib/functions";
 import { PDF_CONTENT_TYPE, PDF_MAX_BYTES, PDF_MAX_FIRST_PAGE, pdfIngestResultValidator, type PdfIngestResult } from "./lib/pdf/config";
-import { BOOK_KEY_CORE, BOOK_KEY_HOPE_FEAR, BOOK_KEY_HOUSE_RULES, CHUNK_SCHEMA_VERSION } from "./lib/validators/lorekeeper";
+import { BOOK_KEY_CORE, BOOK_KEY_HOPE_FEAR, BOOK_KEY_HOUSE_RULES, CHUNK_SCHEMA_VERSION, isCampaignBookKey } from "./lib/validators/lorekeeper";
 import { bookDefaults } from "./lorekeeperLibrary";
 import type { PdfIngestDone } from "./pdfIngest";
 
@@ -56,7 +56,8 @@ export function uploadableKeys(): string[] {
 }
 
 function isUploadable(key: string): boolean {
-  return key !== BOOK_KEY_HOUSE_RULES && bookDefaults(key) !== null;
+  // Config LB1: `bookDefaults` knows campaign book keys too; those are the GMs' (`campaignBooks.add`), never shared.
+  return key !== BOOK_KEY_HOUSE_RULES && !isCampaignBookKey(key) && bookDefaults(key) !== null;
 }
 
 // ---------------------------------------------------------------- status
@@ -133,9 +134,12 @@ export const list = appOwnerQuery({
   args: {},
   returns: adminLibraryValidator,
   handler: async (ctx): Promise<AdminLibrary> => {
-    const rows = await ctx.db.query("lorekeeperBooks").take(LIST_MAX_BOOKS);
-    // Shared books only: LB1's campaign books will carry a `campaignId`.
-    const shared = rows.filter((book) => book.key !== BOOK_KEY_HOUSE_RULES && (book as { campaignId?: unknown }).campaignId === undefined);
+    // Shared books only: LB1's campaign books carry a `campaignId` (and grow with the campaigns), so read by index.
+    const rows = await ctx.db
+      .query("lorekeeperBooks")
+      .withIndex("by_campaign", (q) => q.eq("campaignId", undefined))
+      .take(LIST_MAX_BOOKS);
+    const shared = rows.filter((book) => book.key !== BOOK_KEY_HOUSE_RULES);
     const order = uploadableKeys();
     const rank = (key: string) => (order.includes(key) ? order.indexOf(key) : order.length);
     shared.sort((a, b) => rank(a.key) - rank(b.key) || a.key.localeCompare(b.key));

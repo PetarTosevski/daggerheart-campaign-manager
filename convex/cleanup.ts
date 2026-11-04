@@ -371,7 +371,8 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
   },
   // Lorekeeper (D13): asks and rulings before the messages they reference, messages before their conversations,
   // then the GM's book switches and the campaign's usage counters (per-user and deployment counters have no
-  // campaign; they expire after 13 months, convex/lorekeeperRetention.ts). Books and chunks are per deployment.
+  // campaign; they expire after 13 months, convex/lorekeeperRetention.ts). Shared books and their chunks are per
+  // deployment; the campaign's own books (config LB1) go with it.
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("lorekeeperAsks").withIndex("by_campaign_open", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "lorekeeperAsks", rows);
@@ -393,6 +394,22 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
       .withIndex("by_campaign_user_last", (q) => q.eq("campaignId", c))
       .take(budget.left);
     await deleteRows(ctx, budget, "lorekeeperConversations", rows);
+  },
+  // Config LB1: the campaign's own books (they carry `campaignId`), each book's chunks before the book; then the
+  // books' upload status rows. The shared books have no `campaignId` and stay.
+  async (ctx, c, budget) => {
+    const books = await ctx.db.query("lorekeeperBooks").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    for (const book of books) {
+      const chunks = await ctx.db.query("lorekeeperChunks").withIndex("by_book_page", (q) => q.eq("bookId", book._id)).take(budget.left);
+      const all = chunks.length < budget.left;
+      await deleteRows(ctx, budget, "lorekeeperChunks", chunks);
+      if (!all || budget.left <= 0) return;
+      await deleteRows(ctx, budget, "lorekeeperBooks", [book]);
+    }
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("lorekeeperIngests").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "lorekeeperIngests", rows);
   },
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("lorekeeperLibrary").withIndex("by_campaign_book", (q) => q.eq("campaignId", c)).take(budget.left);

@@ -24,8 +24,13 @@ export type RetrievedChunk = {
 /** The chunks for `question` in `campaign`'s enabled books, best first. */
 export type Retrieve = (ctx: QueryCtx, campaign: Doc<"campaigns">, question: string) => Promise<RetrievedChunk[]>;
 
-/** Books per deployment are few (core, Hope & Fear, a frame book per frame, house rules): one bounded read. */
+/** Shared books per deployment are few (core, Hope & Fear, a frame book per frame, house rules): one bounded read. */
 export const MAX_BOOKS = 50;
+/**
+ * A campaign's own books read per library or search (config LB1). N6 b sets no book-count limit, so this is only the
+ * read's bound, far above any real campaign's shelf.
+ */
+export const MAX_CAMPAIGN_BOOKS = 200;
 /** Search hits kept overall (the analysis's "top 10"). */
 export const MAX_HITS = 10;
 /** Search hits read per book before merging. */
@@ -60,27 +65,46 @@ function bookRank(key: string): number {
   return 4;
 }
 
-/** Whether a campaign shows `key` at all: every book except other frames' frame books. */
-export function bookVisibleTo(campaign: Doc<"campaigns">, key: string): boolean {
-  return !key.startsWith("frame:") || key === frameBookKey(campaign.frameId);
+/**
+ * Whether a campaign shows `book` at all: a campaign book (config LB1, it carries `campaignId`) only in its own
+ * campaign, never in another; of the shared books every one except other frames' frame books.
+ */
+export function bookVisibleTo(campaign: Doc<"campaigns">, book: Doc<"lorekeeperBooks">): boolean {
+  if (book.campaignId !== undefined) return book.campaignId === campaign._id;
+  return !book.key.startsWith("frame:") || book.key === frameBookKey(campaign.frameId);
 }
 
-/** The switch without a lorekeeperLibrary row: on for core, Hope & Fear and the campaign's frame; off otherwise (Q7). */
-export function enabledByDefault(campaign: Doc<"campaigns">, key: string): boolean {
+/**
+ * The switch without a lorekeeperLibrary row: on for core, Hope & Fear, the campaign's frame and the campaign's own
+ * books (config LB1: the GM uploaded them to be searched); off otherwise (Q7).
+ */
+export function enabledByDefault(campaign: Doc<"campaigns">, book: Doc<"lorekeeperBooks">): boolean {
+  if (book.campaignId !== undefined) return book.campaignId === campaign._id;
+  const key = book.key;
   return key === BOOK_KEY_CORE || key === BOOK_KEY_HOPE_FEAR || key === frameBookKey(campaign.frameId);
 }
 
-/** Every book `campaign` shows, in the board's order, with this campaign's switch. */
+/**
+ * Every book `campaign` shows, in the board's order, with this campaign's switch: the shared books (no `campaignId`)
+ * and this campaign's own (config LB1), each read through `by_campaign`, so no other campaign's book is ever read.
+ */
 export async function campaignBooks(ctx: QueryCtx, campaign: Doc<"campaigns">): Promise<CampaignBook[]> {
-  const books = await ctx.db.query("lorekeeperBooks").take(MAX_BOOKS);
+  const shared = await ctx.db
+    .query("lorekeeperBooks")
+    .withIndex("by_campaign", (q) => q.eq("campaignId", undefined))
+    .take(MAX_BOOKS);
+  const own = await ctx.db
+    .query("lorekeeperBooks")
+    .withIndex("by_campaign", (q) => q.eq("campaignId", campaign._id))
+    .take(MAX_CAMPAIGN_BOOKS);
   const switches = await ctx.db
     .query("lorekeeperLibrary")
     .withIndex("by_campaign_book", (q) => q.eq("campaignId", campaign._id))
-    .take(MAX_BOOKS);
+    .take(MAX_BOOKS + MAX_CAMPAIGN_BOOKS);
   const enabledById = new Map(switches.map((row) => [row.bookId, row.enabled]));
-  return books
-    .filter((book) => bookVisibleTo(campaign, book.key))
-    .map((book) => ({ book, enabled: enabledById.get(book._id) ?? enabledByDefault(campaign, book.key) }))
+  return [...shared, ...own]
+    .filter((book) => bookVisibleTo(campaign, book))
+    .map((book) => ({ book, enabled: enabledById.get(book._id) ?? enabledByDefault(campaign, book) }))
     .sort((a, b) => bookRank(a.book.key) - bookRank(b.book.key) || a.book.title.localeCompare(b.book.title));
 }
 
@@ -91,12 +115,12 @@ export async function campaignBook(
   bookId: Id<"lorekeeperBooks">,
 ): Promise<CampaignBook | null> {
   const book = await ctx.db.get("lorekeeperBooks", bookId);
-  if (book === null || !bookVisibleTo(campaign, book.key)) return null;
+  if (book === null || !bookVisibleTo(campaign, book)) return null;
   const row = await ctx.db
     .query("lorekeeperLibrary")
     .withIndex("by_campaign_book", (q) => q.eq("campaignId", campaign._id).eq("bookId", bookId))
     .first();
-  return { book, enabled: row?.enabled ?? enabledByDefault(campaign, book.key) };
+  return { book, enabled: row?.enabled ?? enabledByDefault(campaign, book) };
 }
 
 /** Whether the book with `key` is on for `campaign` (L4: the house-rules switch). False when the book is absent. */

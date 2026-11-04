@@ -152,6 +152,11 @@ const CAMPAIGN_SCOPED = [
   // limits; both go with the campaign's purge. Decided requests also expire (ALSO_RETENTION).
   "lorekeeperCampaignLimits",
   "lorekeeperLimitRequests",
+  // Config LB1 (AD8's status rows): a campaign book and its upload status rows carry `campaignId` and go with the
+  // campaign's purge or `campaignBooks.remove` (chunks first). The shared books and their status rows (no
+  // `campaignId`) are one set per deployment, about 20 rows.
+  "lorekeeperBooks",
+  "lorekeeperIngests",
 ];
 /**
  * Campaign-scoped tables that also have a retention job of their own (listed once above, so this is a second note,
@@ -174,15 +179,14 @@ const ALSO_RETENTION: Record<string, string> = {
  */
 const MAP_SCOPED = ["combatMapObjects", "combatMapCells", "combatExplored"];
 /**
- * Lorekeeper books and their chunks (D13): one set per deployment (about 20 books), replaced on re-ingest. Config S0:
- * `userPreferences` is one row per user; `userUiState` one row per user and key (7 keys).
+ * Lorekeeper chunks (D13): replaced on re-ingest, and a campaign book's go with it (config LB1, before the book).
+ * Config S0: `userPreferences` is one row per user; `userUiState` one row per user and key (7 keys).
  */
 const BOUNDED = [
   "settings",
   "userPreferences",
   "userUiState",
   "grants",
-  "lorekeeperBooks",
   "lorekeeperChunks",
   "e2eCodes",
   "uploadNotices",

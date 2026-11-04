@@ -22,6 +22,7 @@ import type * as adversaryActions from "../adversaryActions.js";
 import type * as appAdmin from "../appAdmin.js";
 import type * as appStatus from "../appStatus.js";
 import type * as auth from "../auth.js";
+import type * as campaignBooks from "../campaignBooks.js";
 import type * as campaignSettings from "../campaignSettings.js";
 import type * as campaignTime from "../campaignTime.js";
 import type * as campaigns from "../campaigns.js";
@@ -280,6 +281,7 @@ declare const fullApi: ApiFromModules<{
   appAdmin: typeof appAdmin;
   appStatus: typeof appStatus;
   auth: typeof auth;
+  campaignBooks: typeof campaignBooks;
   campaignSettings: typeof campaignSettings;
   campaignTime: typeof campaignTime;
   campaigns: typeof campaigns;
