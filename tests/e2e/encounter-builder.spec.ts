@@ -5,6 +5,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { convexAs, expectNoHorizontalScroll } from "./visual/helpers";
+import { gmJoinCode } from "./config/helpers";
 
 // D8 A3: the GM builds an encounter on the Adversaries page's Encounters tab and reads its Battle Points budget
 // (CB p.197); players cannot reach encounters through the API.
@@ -24,11 +25,7 @@ async function gmCreatesCampaign(page: Page) {
 }
 
 async function playerJoins(page: Page, browser: Browser, campaignName: string) {
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
-  await dialog.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
 
   const context = await browser.newContext();
   const player = await context.newPage();

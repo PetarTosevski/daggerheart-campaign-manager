@@ -4,6 +4,7 @@ import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { signInAsTestGm } from "../fixtures";
 import { bardDraft, convexAs, visual } from "./helpers";
+import { gmJoinCode } from "../config/helpers";
 
 // D11 N3 visual spec (E2E_VISUAL=1): a page with every bullet kind, every task state, a star, a resolved line and an
 // entry added by the GM, at 1440x900 and 390x844, seen by its owner (a player, character 'Ash').
@@ -23,10 +24,7 @@ test("D11 N3 entries page at 1440 and 390", { tag: "@visual" }, async ({ page, b
   const campaignId = new URL(page.url()).pathname.split("/")[2] as Id<"campaigns">;
   const gm = await convexAs(page);
 
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
+  const code = await gmJoinCode(page, { keepOpen: true });
   const context = await browser.newContext();
   const player = await context.newPage();
   await signInAsTestGm(player, PLAYER);

@@ -9,6 +9,7 @@ import { cardsForDomains, getClass } from "../../src/lib/srd";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { signInAsTestGm } from "./fixtures";
 import { endFromJournal, journalReport, startFromJournal } from "./visual/helpers";
+import { gmJoinCode } from "./config/helpers";
 
 // Plan session-features F4: one browser flow through a whole session with all four features (K1-K4, U1-U9, Q1), at
 // 1440x900 and 1024x768. A Hope & Fear Witherwild campaign; the GM plays Pip (Halfling Warrior), Bryn (Call of the
@@ -89,11 +90,7 @@ async function campaignWithPlayer(page: Page, browser: Browser, viewport: { widt
   const gm = await convexAs(page);
   await gm.mutation(api.campaigns.setOption, { campaignId, option: "hopeAndFear", enabled: true });
 
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
-  await dialog.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
 
   const context = await browser.newContext({ viewport });
   const player = await context.newPage();

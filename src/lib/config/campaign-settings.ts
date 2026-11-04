@@ -66,3 +66,11 @@ export function resolveTableSettings(stored: StoredTableSettings | null | undefi
   }
   return resolved as TableSettings;
 }
+
+/**
+ * Where a freshly started session takes the GM (config JO1): `null` = stay on the Journal and open the session there
+ * (the page is already the Journal), else the Combat Map's path. Players never start a session, so they never move.
+ */
+export function sessionOpensOnHref(campaignId: string, opensOn: SessionOpensOn): string | null {
+  return opensOn === "combatMap" ? `/campaigns/${campaignId}/combat-map` : null;
+}

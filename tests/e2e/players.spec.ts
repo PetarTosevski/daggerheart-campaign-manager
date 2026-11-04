@@ -4,6 +4,7 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { ANCESTRIES, ARMOR, cardsForDomains, COMMUNITIES, getClass, subclassesForClass, WEAPONS } from "../../src/lib/srd";
+import { closeCampaignSettings, gmJoinCode, openPlayers } from "./config/helpers";
 import { readEmailedCode, signInAsTestGm } from "./fixtures";
 import { endFromJournal, journalLiveChip, startFromJournal } from "./visual/helpers";
 
@@ -34,10 +35,13 @@ async function playerPage(browser: Browser) {
 
 test("a player joins with the GM's code and sees a read-only dashboard", async ({ page, browser }) => {
   const name = await gmCreatesCampaign(page);
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
+  // Config SX (Q10 b): the header's Players button opens Campaign settings at Players, the one Players UI; a new
+  // campaign has no link until the GM makes one.
+  const dialog = await openPlayers(page);
+  await expect(dialog.getByRole("list", { name: "People in this campaign" })).toContainText("Owner");
+  await expect(dialog.getByText("No players yet. Share the link below.")).toBeVisible();
+  const code = await gmJoinCode(page, { keepOpen: true });
+  expect(code).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
 
   const player = await playerPage(browser);
   const badCode = "No campaign uses that code. Check it with your GM.";
@@ -63,10 +67,11 @@ test("a player joins with the GM's code and sees a read-only dashboard", async (
   await expect(player.page.getByRole("button", { name: "Day 2: Sunrise" })).toBeDisabled();
 
   // The GM sees the player at the table, live.
-  await expect(dialog.getByRole("list", { name: "Players in this campaign" })).toContainText("e2e-player");
+  await expect(dialog.getByTestId("settings-member-e2e-player")).toBeVisible();
 
   // GM changes show up for the player without reloading.
-  await dialog.getByRole("button", { name: "Close players" }).click();
+  await closeCampaignSettings(page);
+  await expect(page).not.toHaveURL(/settings=/);
   await page.getByRole("button", { name: "Fear 4 of 12" }).click();
   await expect(player.page.getByTestId("fear-value")).toHaveText("IV");
   await player.close();
@@ -74,10 +79,9 @@ test("a player joins with the GM's code and sees a read-only dashboard", async (
 
 test("an email invite shows the campaign in the player's Load Campaign", async ({ page, browser }) => {
   const name = await gmCreatesCampaign(page, "beast-feast");
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
+  const dialog = await openPlayers(page);
   await dialog.getByLabel("Player email").fill(PLAYER);
-  await dialog.getByRole("button", { name: "Invite" }).click();
+  await dialog.getByRole("button", { name: "Invite", exact: true }).click();
   await expect(dialog.getByText(`${PLAYER} · invited`)).toBeVisible();
 
   const player = await playerPage(browser);
@@ -118,10 +122,9 @@ async function passwordSignUp(browser: Browser, label: string) {
 test("an email invite reaches a brand-new password account only after its code", async ({ page, browser }) => {
   const name = await gmCreatesCampaign(page, "beast-feast");
   const player = await passwordSignUp(browser, "invitee");
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
+  const dialog = await openPlayers(page);
   await dialog.getByLabel("Player email").fill(player.email);
-  await dialog.getByRole("button", { name: "Invite" }).click();
+  await dialog.getByRole("button", { name: "Invite", exact: true }).click();
   await expect(dialog.getByText(`${player.email} · invited`)).toBeVisible();
 
   // Before the code there is no session: the campaign list sends this browser to sign-in, and a password sign-in
@@ -147,10 +150,8 @@ test("an email invite reaches a brand-new password account only after its code",
 
 test("a brand-new password account joins with the GM's code", async ({ page, browser }) => {
   const name = await gmCreatesCampaign(page);
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
+  const code = await gmJoinCode(page, { keepOpen: true });
+  const dialog = page.getByRole("dialog", { name: "Campaign settings" });
 
   const player = await passwordSignUp(browser, "joiner");
   await player.verify();
@@ -158,7 +159,8 @@ test("a brand-new password account joins with the GM's code", async ({ page, bro
   await player.page.getByRole("button", { name: "Join campaign" }).click();
   await expect(player.page.getByRole("heading", { level: 1, name })).toBeVisible();
   await expect(player.page.getByText("Player", { exact: true })).toBeVisible();
-  await expect(dialog.getByRole("list", { name: "Players in this campaign" })).toContainText(player.email);
+  // The roster shows the new account by its name, live.
+  await expect(dialog.getByTestId("settings-member-New Player")).toBeVisible();
   await player.close();
 });
 
@@ -199,11 +201,7 @@ async function createCharacter(page: Page, campaignId: string, name: string) {
 test("XC1: the GM allows extra characters for the session; they stay after it ends, with a roster warning", async ({ page, browser }) => {
   const name = await gmCreatesCampaign(page);
   const campaignId = new URL(page.url()).pathname.split("/")[2];
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
-  await dialog.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
   const player = await playerPage(browser);
   await player.page.goto(`/join/${code}`);
   await player.page.getByRole("button", { name: "Join campaign" }).click();

@@ -4,6 +4,7 @@ import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { signInAsTestGm } from "../fixtures";
 import { bardDraft, convexAs, visual, VIEWPORTS } from "./helpers";
+import { gmJoinCode } from "../config/helpers";
 
 // D11 N6 visual spec (E2E_VISUAL=1): the sharing dialog (GM and player), the Shared tabs and a shared page, at
 // 1440x900 and 390x844. Not on the board: judged against the board's tokens (docs/tasks/TASK-D11-N6.md).
@@ -47,11 +48,7 @@ test("D11 N6 sharing dialog, Shared tabs and a shared page at 1440 and 390", { t
   const campaignId = new URL(page.url()).pathname.split("/")[2] as Id<"campaigns">;
   const gm = await convexAs(page);
 
-  await page.getByRole("button", { name: "Players" }).click();
-  const players = page.getByRole("dialog", { name: "Players" });
-  await expect(players.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await players.getByTestId("join-code").textContent())!;
-  await players.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
 
   const contexts: BrowserContext[] = [];
   async function join(email: string, hero: string) {

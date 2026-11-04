@@ -12,7 +12,8 @@ import { BackLink, Wordmark } from "@/components/brand/brand";
 import { BrandButton, brandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import { ViewerProvider, viewerFor } from "@/components/brand/viewer";
-import { ConfigMounts } from "@/components/config/shell";
+import { ConfigMounts, openSettings } from "@/components/config/shell";
+import { sessionOpensOnHref } from "@/lib/config/campaign-settings";
 import { SlotBoundary } from "@/components/party/session/boundary";
 import { sessionPlayHref } from "@/components/sessions/session-chip";
 import { frameName } from "@/lib/campaign-display";
@@ -28,7 +29,6 @@ import type { CampaignSummary } from "../../../../../convex/campaigns";
 import type { TomeChapterId } from "@/lib/frames/tomes";
 
 import { CampaignTome } from "./campaign-tome";
-import { PlayersDialog } from "./players-dialog";
 import { TimeArc } from "./time-arc";
 import { DayCard } from "./time-of-day";
 
@@ -111,13 +111,15 @@ function HeroSessionLine({ campaign }: { campaign: CampaignSummary }) {
 const heroPill = brandButton({ variant: "confirm", size: "lg" });
 
 /**
- * GM: 'Start Session' (B8) starts the newest planned session, creating one when there is none, and opens its Log & recap
- * in the Journal (JX1); while a session is live the pill reads 'Session N in progress' and opens it there. Players see a
- * chip while one is live.
+ * GM: 'Start Session' (B8) starts the newest planned session, creating one when there is none, then goes where the
+ * campaign's 'A new session opens on' setting says (config SX, as JO1 does in the Journal header): the session's Log &
+ * recap in the Journal (JX1), or the Combat Map. While a session is live the pill reads 'Session N in progress' and opens
+ * it in the Journal. Players see a chip while one is live.
  */
 function HeroSessionAction({ campaignId, isGm }: { campaignId: Id<"campaigns">; isGm: boolean }) {
   const summary = useQuery(api.sessionWrap.dashboard, { campaignId });
   const start = useIntent(api.sessions.start);
+  const opensOn = useCampaign().settings.sessionOpensOn;
   const router = useRouter();
   // A confirm before starting (user 2026-10-20), as the Sessions tab's live card has.
   const [confirm, setConfirm] = useState(false);
@@ -143,8 +145,11 @@ function HeroSessionAction({ campaignId, isGm }: { campaignId: Id<"campaigns">; 
   async function startSession() {
     setConfirm(false);
     const result = await start.fire({ campaignId });
-    // Without a sessionId the server found one already live (alreadyStarted); the Journal opens on it.
-    if (result) router.push(result.sessionId ? play(result.sessionId) : journal);
+    if (!result) return;
+    // Without a sessionId the server found one already live (alreadyStarted): the Journal opens on it, and no one moves
+    // by the setting. Navigation happens here, after the mutation resolved (rule 13: never from an effect).
+    if (!result.sessionId) router.push(journal);
+    else router.push(sessionOpensOnHref(campaignId, opensOn) ?? play(result.sessionId));
   }
 
   return (
@@ -248,7 +253,6 @@ export function CampaignSectionLoading({ label = "Loading page" }: { label?: str
 }
 
 const MemoTome = memo(CampaignTome);
-const MemoPlayersDialog = memo(PlayersDialog);
 
 /** `campaigns.get` as the campaign layout preloads it on the server (PF4, CL5). */
 export type PreloadedCampaign = Preloaded<typeof api.campaigns.get>;
@@ -327,12 +331,11 @@ function LiveCampaignShell({ campaignId, children }: { campaignId: string; child
 function CampaignShellView({ campaign, children }: { campaign: CampaignSummary | null | undefined; children: ReactNode }) {
   const markOpened = useMutation(api.campaigns.markOpened);
   const pathname = usePathname();
-  const [playersOpen, setPlayersOpen] = useState(false);
   const [tomeChapter, setTomeChapter] = useState<TomeChapterId | null>(null);
   const openOverview = useCallback(() => setTomeChapter("overview"), []);
   const closeTome = useCallback(() => setTomeChapter(null), []);
-  const openPlayers = useCallback(() => setPlayersOpen(true), []);
-  const closePlayers = useCallback(() => setPlayersOpen(false), []);
+  // Config SX (Q10 b): the Players button is a shortcut to Campaign settings at Players, the one Players UI.
+  const openPlayers = useCallback(() => openSettings("players"), []);
   const hydrated = useHydrated();
 
   const foundId = campaign ? campaign._id : null;
@@ -423,7 +426,6 @@ function CampaignShellView({ campaign, children }: { campaign: CampaignSummary |
           </>
         )}
         <MemoTome campaign={campaign} chapter={tomeChapter} onChapter={setTomeChapter} onClose={closeTome} />
-        {isGm ? <MemoPlayersDialog campaignId={campaign._id} open={playersOpen} onClose={closePlayers} /> : null}
         {/* Campaign settings (GM), the presence heartbeat and the spotlight ping: once per campaign page. */}
         <ConfigMounts campaign={campaign} />
       </div>

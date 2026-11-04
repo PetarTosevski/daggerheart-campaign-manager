@@ -2,6 +2,7 @@ import { expect as baseExpect, test, type Browser, type Page } from "@playwright
 
 import { signInAsTestGm } from "./fixtures";
 import { expectNoHorizontalScroll } from "./visual/helpers";
+import { gmJoinCode } from "./config/helpers";
 
 // D13 L0: the Lorekeeper page shell (.omc/plans/d13-lorekeeper.yaml). The GM and a player each open Lorekeeper from
 // the nav and get the board's layout: the sidebar (its three cards) and the chat panel with the sigil, 'The Lorekeeper'
@@ -37,11 +38,7 @@ async function signedInContext(browser: Browser, email: string) {
 }
 
 async function playerJoins(page: Page, browser: Browser, campaignName: string) {
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
-  await dialog.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
   const { page: player, close } = await signedInContext(browser, PLAYER);
   await player.getByRole("button", { name: /Join Campaign/ }).click();
   await player.getByRole("dialog", { name: "Join a campaign" }).getByLabel("Join code").fill(code);

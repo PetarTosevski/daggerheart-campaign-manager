@@ -5,6 +5,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, expectNoHorizontalScroll } from "./visual/helpers";
+import { gmJoinCode } from "./config/helpers";
 
 // D11 N6: sharing (.omc/plans/d11-notes.yaml). Three browsers: the GM and players A ('Ash') and B ('Bram'). The GM
 // shares a page with A only (A sees it, B does not), then with everyone (B sees it). A writes a page: the GM finds it
@@ -31,11 +32,7 @@ async function gmCreatesCampaign(page: Page) {
 }
 
 async function joinCode(gm: Page) {
-  await gm.getByRole("button", { name: "Players" }).click();
-  const dialog = gm.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
-  await dialog.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(gm);
   return code;
 }
 

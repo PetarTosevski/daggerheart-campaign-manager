@@ -4,6 +4,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, expectNoHorizontalScroll } from "./visual/helpers";
+import { gmJoinCode } from "./config/helpers";
 
 // D11 N3: entries (.omc/plans/d11-notes.yaml). The GM writes on their own page: adds (quick keys), completes, stars,
 // edits, moves and deletes entries, and migrates an open task to a new page. A player and the GM both add to the
@@ -27,11 +28,7 @@ async function gmCreatesCampaign(page: Page) {
 }
 
 async function playerJoins(page: Page, browser: Browser, campaignName: string) {
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
-  await dialog.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
   const context = await browser.newContext();
   const player = await context.newPage();
   await signInAsTestGm(player, PLAYER);

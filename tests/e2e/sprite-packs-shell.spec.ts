@@ -2,6 +2,7 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 
 import { signInAsTestGm } from "./fixtures";
 import { expectNoHorizontalScroll } from "./visual/helpers";
+import { gmJoinCode } from "./config/helpers";
 
 // Sprite packs P0 (.omc/plans/sprite-packs.yaml): the GM opens /campaigns/<id>/combat-map/packs from the Combat
 // Map's "Sprite packs" link (PacksLink stub) and gets the route shell (title, back link, PacksScreen stub); a
@@ -22,11 +23,7 @@ async function gmCreatesCampaign(page: Page) {
 }
 
 async function playerJoins(page: Page, browser: Browser, campaignName: string) {
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
-  await dialog.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
 
   const context = await browser.newContext();
   const player = await context.newPage();

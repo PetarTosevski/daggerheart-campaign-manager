@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { expectNoSeriousA11yViolations } from "../a11y";
+import { openPlayers } from "../config/helpers";
 import { gmAndPlayer } from "../live";
 
 // Shots for docs/tasks/TASK-GLASS-G2.md (E2E_VISUAL=1): the dashboard and the campaign shell's own buttons as glass
@@ -126,11 +127,11 @@ test("GLASS-G2 Witherwild dashboard as the GM and as a player", { tag: "@visual"
       await shoot(gm, `end-session-dialog-gm-${viewport.width}`, false);
       await dialog.getByRole("button", { name: "Cancel" }).click();
 
-      await gm.getByRole("button", { name: "Players" }).click();
-      dialog = gm.getByRole("dialog", { name: "Players" });
+      // Config SX (Q10 b): the Players button opens Campaign settings at Players.
+      dialog = await openPlayers(gm);
       await expect(dialog.getByRole("button", { name: "Invite", exact: true })).toHaveClass(/\bgb-neutral\b/);
       await shoot(gm, `players-dialog-gm-${viewport.width}`, false);
-      await dialog.getByRole("button", { name: "Close players" }).click();
+      await dialog.getByRole("button", { name: "Close campaign settings" }).click();
     }
   } finally {
     await table.close();

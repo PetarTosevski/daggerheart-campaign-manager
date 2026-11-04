@@ -4,6 +4,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, expectNoHorizontalScroll } from "./visual/helpers";
+import { gmJoinCode } from "./config/helpers";
 
 // D11 N5: the @ picker and mention links (.omc/plans/d11-notes.yaml). The GM mentions an NPC the party has not met and
 // a rename shows on the link at once. The player's picker does not offer that NPC until the GM marks it known; the
@@ -28,11 +29,7 @@ async function gmCreatesCampaign(page: Page) {
 }
 
 async function playerJoins(page: Page, browser: Browser, campaignName: string) {
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
-  await dialog.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
   const context = await browser.newContext();
   const player = await context.newPage();
   await signInAsTestGm(player, PLAYER);

@@ -13,7 +13,7 @@ import { BrandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 // The live helpers stay in the old Sessions folder until JX2 moves them (plan journal.yaml, JH: imported, not copied).
 import { endDialogText, endReportLines, startReportLines, useWitherChoice, WitherChoiceField } from "@/components/journal/end-session";
-import type { SessionOpensOn } from "@/lib/config/campaign-settings";
+import { sessionOpensOnHref } from "@/lib/config/campaign-settings";
 import { errorMessage } from "@/lib/convex-errors";
 import { useIntent } from "@/lib/use-intent";
 
@@ -49,13 +49,7 @@ export function startNumber(sessions: readonly SessionListItem[], target: Sessio
   return target?.n ?? sessions.reduce((max, s) => Math.max(max, s.n), 0) + 1;
 }
 
-/**
- * Where a freshly started session takes the GM (config JO1): `null` = stay on the Journal and open the session there
- * (the page is already the Journal), else the Combat Map's path. Players never start a session, so they never move.
- */
-export function sessionOpensOnHref(campaignId: Id<"campaigns">, opensOn: SessionOpensOn): string | null {
-  return opensOn === "combatMap" ? `/campaigns/${campaignId}/combat-map` : null;
-}
+export { sessionOpensOnHref } from "@/lib/config/campaign-settings";
 
 /** GM menu on the live chip: the 'Allow extra characters this session' switch (XC1, moved here by Q10). */
 function LiveMenu({ campaignId, extraCharacters }: { campaignId: Id<"campaigns">; extraCharacters: boolean }) {

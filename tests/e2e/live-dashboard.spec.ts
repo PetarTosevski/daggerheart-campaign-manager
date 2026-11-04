@@ -5,7 +5,11 @@
 import { expect, test } from "@playwright/test";
 
 import { api } from "../../convex/_generated/api";
-import { E2E_PLAYER_EMAIL, gmAndPlayer } from "./live";
+import { openPlayers } from "./config/helpers";
+import { gmAndPlayer } from "./live";
+
+/** The e2e player account's display name (its roster row: `settings-member-<name>`). */
+const PLAYER_NAME = "e2e-player";
 
 // Two signed-in browsers plus a join make setup alone take 10-20 s on a loaded machine (analysis section 4: under 60 s).
 test.describe.configure({ timeout: 60_000 });
@@ -88,29 +92,29 @@ test("the Witherwild time arc moved by the GM moves on the player's dashboard", 
 test("the GM removes the player (the player loses the campaign) and sees them join again", async ({ browser }) => {
   const { gm, player, client, campaignId, campaignName, close } = await gmAndPlayer(browser);
   try {
-    await gm.getByRole("button", { name: "Players", exact: true }).click();
-    const dialog = gm.getByRole("dialog", { name: "Players" });
-    const atTable = dialog.getByRole("list", { name: "Players in this campaign" });
-    await expect(atTable).toContainText(E2E_PLAYER_EMAIL);
-    const remove = atTable.getByRole("button", { name: /^Remove / });
-    await expect(remove).toHaveCount(1);
+    // The Players button opens Campaign settings at Players (config SX, Q10 b).
+    const dialog = await openPlayers(gm);
+    const row = dialog.getByTestId(`settings-member-${PLAYER_NAME}`);
+    await expect(row).toBeVisible();
 
-    // Removal: the player's open dashboard turns into the not-found screen.
-    await remove.click();
-    await expect(atTable).not.toContainText(E2E_PLAYER_EMAIL);
-    await expect(atTable.getByText("No players yet.")).toBeVisible();
+    // Removal (row menu, then confirm): the player's open dashboard turns into the not-found screen.
+    await row.getByRole("button", { name: `Options for ${PLAYER_NAME}` }).click();
+    await dialog.getByRole("button", { name: "Remove from campaign" }).click();
+    await dialog.getByRole("group", { name: `Remove ${PLAYER_NAME}?` }).getByRole("button", { name: "Remove", exact: true }).click();
+    await expect(row).toHaveCount(0);
+    await expect(dialog.getByText("No players yet.")).toBeVisible();
     await expect(player.getByRole("heading", { level: 1, name: "Campaign not found" })).toBeVisible();
     await expect(player.getByRole("heading", { level: 1, name: campaignName })).toHaveCount(0);
 
-    // Joining: the GM's open Players dialog lists the player as soon as they join.
-    const code = await client.mutation(api.members.rotateJoinCode, { campaignId });
-    // The dialog shows the new code (as XXXX-XXXX) without reopening.
-    await expect(dialog.getByTestId("join-code")).toHaveText(`${code.slice(0, 4)}-${code.slice(4)}`);
+    // Joining: the GM's open Players section lists the player as soon as they join.
+    const code = await client.mutation(api.members.rotateJoinCode, { campaignId, replace: true });
+    // The section shows the new link without reopening.
+    await expect(dialog.getByTestId("settings-join-link")).toHaveText(new RegExp(`/join/${code}$`));
     await player.goto(`/join/${code}`);
     await player.getByRole("button", { name: "Join campaign" }).click();
     await expect(player.getByRole("heading", { level: 1, name: campaignName })).toBeVisible();
-    await expect(atTable).toContainText(E2E_PLAYER_EMAIL);
-    await expect(atTable.getByText("No players yet.")).toHaveCount(0);
+    await expect(row).toBeVisible();
+    await expect(dialog.getByText("No players yet.")).toHaveCount(0);
   } finally {
     await close();
   }

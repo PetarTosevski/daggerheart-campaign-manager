@@ -4,6 +4,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { convexAs } from "./visual/helpers";
+import { gmJoinCode } from "./config/helpers";
 
 const unique = (label: string) => `${label} ${Date.now().toString(36)}`;
 
@@ -73,11 +74,7 @@ test("countdowns follow the old rules through to completion", async ({ page }) =
 test("countdown visibility: private, public with hidden fields, public", async ({ page, browser }) => {
   await newCampaign(page, "beast-feast");
   const campaignUrl = page.url();
-  await page.getByRole("button", { name: "Players" }).click();
-  const players = page.getByRole("dialog", { name: "Players" });
-  await expect(players.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await players.getByTestId("join-code").textContent())!;
-  await players.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
 
   async function create(name: string, preset: "Private" | "Public, details hidden" | "Public", tick: string[] = []) {
     await page.getByRole("button", { name: "+ New countdown" }).click();
@@ -216,11 +213,7 @@ test("D10 S7: the hero session line, Start Session, the Last Session card and th
   await expect(hero.getByTestId("hero-next-session")).toHaveText(/^Next session \D*24\D*2026$|^Next session .*2026.*24/);
 
   // A player sees the line and the card, no buttons, and while a session runs a chip instead of the button.
-  await page.getByRole("button", { name: "Players" }).click();
-  const players = page.getByRole("dialog", { name: "Players" });
-  await expect(players.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await players.getByTestId("join-code").textContent())!;
-  await players.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
   const context = await browser.newContext();
   const player = await context.newPage();
   await signInAsTestGm(player, "e2e-player@example.test");

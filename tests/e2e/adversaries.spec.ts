@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
 import { signInAsTestGm } from "./fixtures";
+import { gmJoinCode } from "./config/helpers";
 
 // D8 A0: the GM-only Adversaries page shell (tabs Catalogue / Encounters / Environment (EV1) with their slots); players see no nav item
 // and a GM-only panel, and their page asks the server for no adversary or party data.
@@ -20,11 +21,7 @@ async function gmCreatesCampaign(page: Page) {
 }
 
 async function playerJoins(page: Page, browser: Browser, campaignName: string) {
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
-  await dialog.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
 
   const context = await browser.newContext();
   const player = await context.newPage();

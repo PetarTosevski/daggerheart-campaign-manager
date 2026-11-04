@@ -4,6 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { signInAsTestGm } from "../fixtures";
 import { hudScene } from "../hud/helpers";
+import { openPlayers } from "../config/helpers";
 import { gmAndPlayer } from "../live";
 
 // Shots for docs/tasks/TASK-GLASS-G0.md (E2E_VISUAL=1): sign-in, the main menu and the dashboard as the GM and as a
@@ -103,27 +104,26 @@ test("GLASS-G0 the dashboard as the GM and as a player", { tag: "@visual" }, asy
       await strip.screenshot({ path: `${OUT}/strip-${who}-focus-cancel.png` });
     }
 
-    // The Players dialog (a real Modal in the shell): Invite is neutral (G2: it has no side), the ✕ a round cancel in Hope.
+    // Settings › Players (the Players button): Invite is neutral (G2: it has no side), the ✕ a round cancel in Hope.
     const gm = table.gm;
     for (const viewport of VIEWPORTS) {
       await gm.setViewportSize(viewport);
       await gm.goto(`/campaigns/${table.campaignId}`);
-      await gm.getByRole("button", { name: "Players" }).click();
-      const dialog = gm.getByRole("dialog", { name: "Players" });
-      await expect(dialog).toBeVisible();
+      // Config SX (Q10 b): the Players button opens Campaign settings at Players.
+      const dialog = await openPlayers(gm);
       await shoot(gm, `players-dialog-gm-${viewport.width}`);
       if (viewport.width === 1440) {
         await dialog.getByRole("button", { name: "Invite", exact: true }).hover();
         await gm.waitForTimeout(400);
         await shoot(gm, "players-dialog-gm-hover-invite-neutral");
         await gm.mouse.move(0, 0);
-        await dialog.getByRole("button", { name: "Close players" }).focus();
+        await dialog.getByRole("button", { name: "Close campaign settings" }).focus();
         await gm.keyboard.press("Tab");
         await gm.keyboard.press("Shift+Tab");
         await gm.waitForTimeout(400);
         await shoot(gm, "players-dialog-gm-focus-close");
       }
-      await dialog.getByRole("button", { name: "Close players" }).click();
+      await dialog.getByRole("button", { name: "Close campaign settings" }).click();
     }
   } finally {
     await table.close();

@@ -4,6 +4,7 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
+import { gmJoinCode } from "./config/helpers";
 
 const PLAYER = "e2e-player@example.test";
 const unique = (label: string) => `${label} ${crypto.randomUUID().slice(0, 8)}`;
@@ -52,11 +53,7 @@ async function campaignWithPlayer(page: Page, browser: Browser) {
   await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
   const campaignId = new URL(page.url()).pathname.split("/")[2]!;
 
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
-  await dialog.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
 
   const context = await browser.newContext();
   const player = await context.newPage();

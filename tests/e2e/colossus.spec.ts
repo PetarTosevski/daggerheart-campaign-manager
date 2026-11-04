@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { closeCampaignSettings, openPlayers } from "./config/helpers";
 import { signInAsTestGm } from "./fixtures";
 
 const PLAYER = "e2e-player@example.test";
@@ -50,13 +51,12 @@ test("the GM marks the Siphoning Track, slays a colossus and sees Kudamat's Powe
 
 test("players see the phase and colossi slain, but not Kudamat", async ({ page, browser }) => {
   await newCampaign(page);
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await dialog.getByLabel("Player email").fill(PLAYER);
-  await dialog.getByRole("button", { name: "Invite" }).click();
-  await expect(dialog.getByText(`${PLAYER} · invited`)).toBeVisible();
   const campaignUrl = page.url();
-  await dialog.getByRole("button", { name: "Close players" }).click();
+  const dialog = await openPlayers(page);
+  await dialog.getByLabel("Player email").fill(PLAYER);
+  await dialog.getByRole("button", { name: "Invite", exact: true }).click();
+  await expect(dialog.getByText(`${PLAYER} · invited`)).toBeVisible();
+  await closeCampaignSettings(page);
   await page.getByRole("button", { name: "Colossus defeated" }).click();
   await expect(page.getByTestId("colossi-defeated")).toHaveText("1");
 

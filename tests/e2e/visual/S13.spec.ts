@@ -2,6 +2,7 @@ import { expect, test, type Browser, type Locator, type Page } from "@playwright
 
 import { signInAsTestGm } from "../fixtures";
 import { expectNoHorizontalScroll, openSheet, openTab, visual } from "./helpers";
+import { gmJoinCode } from "../config/helpers";
 
 // S13: whole-sheet polish. Every page and Domains sub-tab, for the GM and for a player who reads another
 // character's sheet, at 1440 and 390: no horizontal scroll and no control under 44 px at 390, and the player
@@ -71,11 +72,7 @@ async function shootPages(page: Page, sheet: Locator, tracer: string, prefix: st
 /** The player joins the GM's campaign with its join code in a second browser context. */
 async function playerJoins(page: Page, browser: Browser, campaignId: string) {
   await page.goto(`/campaigns/${campaignId}`);
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
-  await dialog.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
 
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const player = await context.newPage();

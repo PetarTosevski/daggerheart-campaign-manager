@@ -7,6 +7,7 @@ import { cardsForDomains, getClass } from "../../src/lib/srd/index";
 import { signInAsTestGm } from "./fixtures";
 import { openMapTools } from "./hud/helpers";
 import { bardDraft, endFromJournal, journalLiveChip, journalReport, openSessions } from "./visual/helpers";
+import { gmJoinCode } from "./config/helpers";
 
 // D10 S9 in the Journal (Journal JX2; the old Sessions page is gone): one GM-and-player session from the plan to the
 // dashboard's Last Session card, at 1440x900 and 1024x768. The GM plans Session 1 in the Journal (title, a Combat and
@@ -40,11 +41,7 @@ function seraphDraft(name: string) {
 
 async function playerJoins(page: Page, browser: Browser, campaignId: string, campaignName: string) {
   await page.goto(`/campaigns/${campaignId}`);
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
-  await dialog.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
   const context = await browser.newContext({ viewport: page.viewportSize() });
   const player = await context.newPage();
   await signInAsTestGm(player, PLAYER);

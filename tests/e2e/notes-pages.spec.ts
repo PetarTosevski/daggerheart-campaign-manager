@@ -4,6 +4,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, expectNoHorizontalScroll } from "./visual/helpers";
+import { gmJoinCode } from "./config/helpers";
 
 // D11 N2: own journal and pages (.omc/plans/d11-notes.yaml), since JX1 in the Journal's Notes sub-tab. The GM opens
 // Notes and sees the four default pages; with Session 2 live, adds a session log titled 'Session 2' that shows its date;
@@ -26,11 +27,7 @@ async function gmCreatesCampaign(page: Page) {
 }
 
 async function playerJoins(page: Page, browser: Browser, campaignName: string) {
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
-  await dialog.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
   const context = await browser.newContext();
   const player = await context.newPage();
   await signInAsTestGm(player, PLAYER);

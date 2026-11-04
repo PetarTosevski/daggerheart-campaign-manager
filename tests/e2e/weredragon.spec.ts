@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
 import { signInAsTestGm } from "./fixtures";
+import { gmJoinCode } from "./config/helpers";
 
 const PLAYER = "e2e-player@example.test";
 const unique = (label: string) => `${label} ${Date.now().toString(36)}`;
@@ -17,11 +18,7 @@ async function gmCreatesCampaign(page: Page) {
 }
 
 async function playerJoins(page: Page, browser: Browser) {
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
-  await dialog.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
   const context = await browser.newContext();
   const player = await context.newPage();
   await signInAsTestGm(player, PLAYER);

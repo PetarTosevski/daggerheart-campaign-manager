@@ -3,6 +3,7 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 import { signInAsTestGm } from "./fixtures";
 import { api } from "../../convex/_generated/api";
 import { openCombatMap } from "./visual/helpers";
+import { gmJoinCode } from "./config/helpers";
 
 // D9 C3: combat maps (.omc/plans/d9-combat-map.yaml). The GM keeps several maps, uploads an image to one, lines
 // its grid up and sets it live; a player then sees that map (and no GM tools: no Scene card, no maps list).
@@ -45,11 +46,7 @@ async function battleMapPng(page: Page): Promise<Buffer> {
 }
 
 async function playerJoins(page: Page, browser: Browser, campaignName: string) {
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
-  await dialog.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
 
   const context = await browser.newContext();
   const player = await context.newPage();

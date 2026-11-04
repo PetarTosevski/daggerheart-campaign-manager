@@ -17,6 +17,7 @@ import {
   TABLET_VIEWPORTS,
   type A11yOptions,
 } from "./a11y";
+import { closeCampaignSettings, openPlayers } from "./config/helpers";
 import { openSettings, signInAsTestGm } from "./fixtures";
 import { gmAndPlayer } from "./live";
 import { convexAs } from "./visual/helpers";
@@ -120,10 +121,10 @@ test.describe("campaign shell and dashboards", () => {
     await expect(page.getByRole("dialog", { name: /tome$/ })).toBeVisible();
     await scan(page, "tome");
     await page.getByRole("button", { name: "Close tome" }).click();
-    await page.getByRole("button", { name: "Players" }).click();
-    await expect(page.getByRole("dialog", { name: "Players" })).toBeVisible();
-    await scan(page, "Players dialog");
-    await page.getByRole("button", { name: "Close players" }).click();
+    // The Players button opens Campaign settings at Players (config SX, Q10 b).
+    await openPlayers(page);
+    await scan(page, "Settings › Players");
+    await closeCampaignSettings(page);
     await page.getByRole("button", { name: "+ New countdown" }).click();
     await expect(page.getByRole("dialog", { name: "New countdown" })).toBeVisible();
     await scan(page, "New countdown dialog");

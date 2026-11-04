@@ -327,3 +327,7 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - Config S1: until U3 (Players section) lands, a GM on the Combat Map can't open the Players dialog from the app bar (the gear now opens Campaign settings, whose Players section is still empty); other pages keep the header's Players button. Temporary; U3 is in tonight's wave 3.
 - Config G1: in an archived campaign, Leave and Delete still work (and opening it); everything else is read-only. A joined co-GM's campaign shows as "player" in Load Campaign. Defaults: keep.
 - Config R3: away PCs count toward the Fear reset (only retired and dead don't); the reset shows in the Journal's Fear tally like a manual Fear set. Defaults: keep.
+
+## Archived campaigns (dcm-jh6d.64, 2026-11-04)
+- AR1. Can someone join an archived campaign with its invite code? Default taken: yes (matches opening an invite while archived).
+- AR2. Can a player keep editing a character-creation draft for an archived campaign? Default taken: yes (it is their own draft; creating the character is refused).
