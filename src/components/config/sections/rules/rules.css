@@ -1,0 +1,65 @@
+/* Campaign settings, House rules (plan config U2; design `.s-rules`: `.rule`, `.addb`). Shared rows are in ../../config.css. */
+.cfg-rules-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cfg-hint + .cfg-rules-list > .cfg-row:first-child {
+  border-top: 0;
+}
+.cfg-rules-gap {
+  margin-top: 4px;
+}
+.cfg-rule {
+  align-items: flex-start;
+}
+.cfg-rule-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cfg-rule-acts {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.cfg-rule-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cfg-rule-field {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #33444a;
+  border-radius: 10px;
+  background: #0f171a;
+  color: #e6ecea;
+  font: inherit;
+  font-size: 14px;
+  resize: vertical;
+}
+.cfg-rule-field:focus-visible {
+  outline: 2px solid #e3b45a;
+  outline-offset: 1px;
+}
+.cfg-rule-count {
+  align-self: flex-end;
+  font-size: 11.5px;
+}
+/* The design's `.addb`: a dashed outline on the glass neutral button. */
+.cfg-rules-add {
+  margin-top: 12px;
+  gap: 6px;
+  border: 1px dashed #3a4d54;
+}
+.cfg-rules-err:empty {
+  display: none;
+}
+.cfg-rules-err {
+  margin-top: 8px;
+  color: #f0a8a0;
+}
