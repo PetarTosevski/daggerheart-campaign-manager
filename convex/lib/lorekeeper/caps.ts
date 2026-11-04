@@ -1,10 +1,12 @@
+import { makeFunctionReference } from "convex/server";
+
 import type { AtLimitMode } from "../../../src/lib/admin/config";
 import { appError } from "../../../src/lib/errors/app-error";
 import { PRIMARY_MODEL, reserveMicros, SHORT_MAX_TOKENS } from "../../../src/lib/lorekeeper/pricing";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
 import { readAppConfig } from "../appConfig";
-import { isAppOwner } from "../appOwner";
+import { appConfigRow, isAppOwner } from "../appOwner";
 import { modelFor } from "../claude";
 import { permissionFor, type Permission } from "../permissions";
 import type { Reservation, ReservationMode, UsageKind } from "../validators/lorekeeper";
@@ -33,6 +35,9 @@ import type { Reservation, ReservationMode, UsageKind } from "../validators/lore
  * 3. `settle` replaces a booked amount with the real cost (`costMicros(usage, model)`): once per pass, or once for
  *    the whole answer with the summed amounts; the caller lowers `reserved.micros` by what it settled, so the
  *    stale-run sweep never settles twice. On error or stop it settles the usage received so far (0 before any token).
+ *
+ * The month's first crossing of 80% of the deployment's limit emails the owner once (AD7, Q32 a): `reserve` and
+ * `reservePass` check the spend before their own worst case, `settle` the spend after it; see `spendAlert`.
  *
  * Every function reads and writes the counter rows in the caller's mutation. Convex mutations are serializable, so
  * two concurrent asks never both pass a cap: the second one's read conflicts with the first one's write and retries.
@@ -211,6 +216,26 @@ async function bump(
   });
 }
 
+/** The share of the deployment's monthly limit at which the owner is emailed, once a month (AD7, Q32 a). */
+export const SPEND_ALERT_SHARE = 0.8;
+
+// By name, so this module needs no regenerated `_generated/api` for the new action.
+const spendAlertRef = makeFunctionReference<"action", { month: string }, null>("spendAlert:send");
+
+/**
+ * Emails the owner (scheduled) when the deployment's `spentMicros` for the current `month` has reached 80% of a
+ * positive limit and this month's email has not gone yet; marks the month in `appConfig.spendAlertMonth` in the same
+ * mutation, so a second crossing (or a concurrent one: serializable) sends nothing. A past month (the stale-run sweep
+ * settling last month's answer) never sends. Nothing happens while no owner is set.
+ */
+async function spendAlert(ctx: MutationCtx, month: string, spentMicros: number, limitMicros: number, now: number): Promise<void> {
+  if (limitMicros <= 0 || spentMicros < limitMicros * SPEND_ALERT_SHARE || month !== usageMonth(now)) return;
+  const row = await appConfigRow(ctx);
+  if (row === null || row.ownerId === undefined || row.spendAlertMonth === month) return;
+  await ctx.db.patch("appConfig", row._id, { spendAlertMonth: month });
+  await ctx.scheduler.runAfter(0, spendAlertRef, { month });
+}
+
 /** The 120% ceiling in micros. */
 function ceilingMicros(limits: CapLimits): number {
   return Math.floor(limits.deploymentMonthlyMicros * AT_LIMIT_CEILING);
@@ -266,6 +291,7 @@ export const reserve: Reserve = async (ctx, user, campaign, model, now) => {
     micros = decision.micros;
     mode = decision.mode;
   }
+  await spendAlert(ctx, scopes.month, rows.deployment?.costMicros ?? 0, limits.deploymentMonthlyMicros, now);
   for (const kind of KINDS) await bump(ctx, kind, rows[kind], scopes, { questions: 1, micros }, now, true);
   return { micros, day: scopes.day, month: scopes.month, ...(mode === undefined ? {} : { mode }) };
 };
@@ -275,14 +301,14 @@ export const reservePass: ReservePass = async (ctx, scopes, model, now, opts = {
   if (opts.mode === "short") return null;
   const micros = reserveMicros(model, opts.maxTokens, { inputTokens: opts.inputTokens, webSearches: opts.webSearches });
   const web = (opts.webSearches ?? 0) > 0;
-  const rows = await counters(ctx, scopes);
+  const [rows, limits] = await Promise.all([counters(ctx, scopes), capLimits(ctx, scopes.campaignId)]);
   if (opts.mode !== "owner") {
-    const limits = await capLimits(ctx, scopes.campaignId);
     if (web && (rows.user?.webSearches ?? 0) >= limits.dailyWebSearches) return null;
     if ((rows.campaign?.costMicros ?? 0) + micros > limits.campaignMonthlyMicros) return null;
     const deploymentCap = opts.mode === "gmOnly" ? ceilingMicros(limits) : limits.deploymentMonthlyMicros;
     if ((rows.deployment?.costMicros ?? 0) + micros > deploymentCap) return null;
   }
+  await spendAlert(ctx, scopes.month, rows.deployment?.costMicros ?? 0, limits.deploymentMonthlyMicros, now);
   for (const kind of KINDS) await bump(ctx, kind, rows[kind], scopes, { questions: 0, micros, ...(web ? { webSearches: 1 } : {}) }, now, true);
   return micros;
 };
@@ -297,6 +323,11 @@ export const settle: Settle = async (ctx, scopes, reservedMicros, actualMicros) 
   const rows = await counters(ctx, scopes);
   const now = Date.now();
   for (const kind of KINDS) await bump(ctx, kind, rows[kind], scopes, { questions: 0, micros: delta }, now, false);
+  if (rows.deployment !== null) {
+    const { lorekeeper } = await readAppConfig(ctx);
+    const spent = Math.max(0, rows.deployment.costMicros + delta);
+    await spendAlert(ctx, scopes.month, spent, Math.round(lorekeeper.monthlyUsd * 1_000_000), now);
+  }
 };
 
 /**
