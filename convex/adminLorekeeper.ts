@@ -30,6 +30,8 @@ const changeValidator = v.union(
   v.object({ field: v.literal("atLimit"), value: atLimitValidator }),
   // The board's "Let GMs raise limits", re-labelled "Let GMs ask for higher limits · You approve each request" (N10).
   v.object({ field: v.literal("allowGmRequests"), value: v.boolean() }),
+  // "Email me at 80%" (AD7's email; default on, Q32 a).
+  v.object({ field: v.literal("emailAt80"), value: v.boolean() }),
 );
 
 /** A number setting checked and normalised: dollars to the cent, counts whole; INVALID outside the bounds. */
@@ -52,7 +54,10 @@ export const setLimit = appOwnerMutation({
   handler: async (ctx, { change }) => {
     const row = await appConfigRow(ctx);
     const before = settingsFrom(row).lorekeeper;
-    const value = change.field === "atLimit" || change.field === "allowGmRequests" ? change.value : checkedNumber(change.field, change.value);
+    const value =
+      change.field === "atLimit" || change.field === "allowGmRequests" || change.field === "emailAt80"
+        ? change.value
+        : checkedNumber(change.field, change.value);
     const lorekeeper = { ...row?.lorekeeper, [change.field]: value };
     const now = Date.now();
     if (row === null) await ctx.db.insert("appConfig", { key: "app", lorekeeper, updatedAt: now });

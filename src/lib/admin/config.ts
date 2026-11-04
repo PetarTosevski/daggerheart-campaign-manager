@@ -42,6 +42,8 @@ export type LorekeeperSettings = {
   atLimit: AtLimitMode;
   /** "Let GMs ask for higher limits · You approve each request" (Q21 changed, N10). */
   allowGmRequests: boolean;
+  /** "Email me at 80%" (AD7, Q32 a): the month's first crossing of 80% of the monthly limit emails the owner. */
+  emailAt80: boolean;
 };
 
 /** The code defaults, used when neither the owner's setting nor the env var is there. */
@@ -52,6 +54,7 @@ export const DEFAULT_LOREKEEPER: LorekeeperSettings = {
   dailyWebSearches: 20,
   atLimit: "pause",
   allowGmRequests: false,
+  emailAt80: true,
 };
 
 /** Who a feature switch turns a feature on for (Q25). A missing switch means `everyone` (what ships today). */

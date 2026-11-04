@@ -122,6 +122,25 @@ describe("detecting the 80% crossing", () => {
     expect(await w.alertJobs()).toHaveLength(1);
   });
 
+  it("sends nothing and marks nothing while 'Email me at 80%' is off; on again, it sends (AU3)", async () => {
+    const w = await setup();
+    await w.t.run(async (ctx) => {
+      const row = (await ctx.db.query("appConfig").first())!;
+      await ctx.db.patch("appConfig", row._id, { lorekeeper: { emailAt80: false } });
+    });
+    await w.spent(8_500_000);
+    await w.ask();
+    expect(await w.alertJobs()).toEqual([]);
+    expect(await w.alertMonth()).toBeNull();
+    await w.t.run(async (ctx) => {
+      const row = (await ctx.db.query("appConfig").first())!;
+      await ctx.db.patch("appConfig", row._id, { lorekeeper: { emailAt80: true } });
+    });
+    await w.ask();
+    expect(await w.alertMonth()).toBe(w.month);
+    expect(await w.alertJobs()).toHaveLength(1);
+  });
+
   it("does nothing while no owner is set, and with a limit of 0", async () => {
     const w = await setup({ owner: false });
     await w.spent(9_000_000);

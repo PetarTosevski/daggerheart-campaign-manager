@@ -329,6 +329,15 @@ describe("adminLorekeeper.setLimit (owner only)", () => {
     ]);
   });
 
+  it("'Email me at 80%' is on by default and saves off, audited (AU3)", async () => {
+    const w = await setup();
+    expect((await w.callers.owner.query(api.appAdmin.settings, {})).lorekeeper.emailAt80).toBe(true);
+    await w.set({ field: "emailAt80", value: false });
+    expect((await w.callers.owner.query(api.appAdmin.settings, {})).lorekeeper.emailAt80).toBe(false);
+    const audit = await w.t.run((ctx) => ctx.db.query("adminAudit").withIndex("by_at").order("asc").take(10));
+    expect(audit.filter((a) => a.action === "lorekeeper.set").map((a) => [a.field, a.from, a.to])).toEqual([["emailAt80", true, false]]);
+  });
+
   it("refuses bad values with INVALID and changes nothing", async () => {
     const w = await setup();
     for (const change of [

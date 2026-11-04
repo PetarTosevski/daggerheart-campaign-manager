@@ -34,6 +34,7 @@ export const lorekeeperSettingsValidator = v.object({
   dailyWebSearches: v.optional(v.number()),
   atLimit: v.optional(atLimitValidator),
   allowGmRequests: v.optional(v.boolean()),
+  emailAt80: v.optional(v.boolean()),
 });
 
 export const featureModeValidator = v.union(...FEATURE_MODES.map((m) => v.literal(m)));
@@ -71,6 +72,7 @@ export const appSettingsValidator = v.object({
     dailyWebSearches: v.number(),
     atLimit: atLimitValidator,
     allowGmRequests: v.boolean(),
+    emailAt80: v.boolean(),
   }),
   spendAlertMonth: v.union(v.string(), v.null()),
 });

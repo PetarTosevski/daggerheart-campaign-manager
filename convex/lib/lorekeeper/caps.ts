@@ -226,12 +226,15 @@ const spendAlertRef = makeFunctionReference<"action", { month: string }, null>("
  * Emails the owner (scheduled) when the deployment's `spentMicros` for the current `month` has reached 80% of a
  * positive limit and this month's email has not gone yet; marks the month in `appConfig.spendAlertMonth` in the same
  * mutation, so a second crossing (or a concurrent one: serializable) sends nothing. A past month (the stale-run sweep
- * settling last month's answer) never sends. Nothing happens while no owner is set.
+ * settling last month's answer) never sends. Nothing happens while no owner is set, or while the owner has turned
+ * "Email me at 80%" off (`lorekeeper.emailAt80`, default on): then the month is not marked either, so turning it back
+ * on can still send this month.
  */
 async function spendAlert(ctx: MutationCtx, month: string, spentMicros: number, limitMicros: number, now: number): Promise<void> {
   if (limitMicros <= 0 || spentMicros < limitMicros * SPEND_ALERT_SHARE || month !== usageMonth(now)) return;
   const row = await appConfigRow(ctx);
   if (row === null || row.ownerId === undefined || row.spendAlertMonth === month) return;
+  if (row.lorekeeper?.emailAt80 === false) return;
   await ctx.db.patch("appConfig", row._id, { spendAlertMonth: month });
   await ctx.scheduler.runAfter(0, spendAlertRef, { month });
 }

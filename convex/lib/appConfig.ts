@@ -54,6 +54,7 @@ export function settingsFrom(row: Doc<"appConfig"> | null): AppSettings {
       dailyWebSearches: Math.floor(saved(lk?.dailyWebSearches, DEFAULT_LOREKEEPER.dailyWebSearches)),
       atLimit: lk?.atLimit ?? DEFAULT_LOREKEEPER.atLimit,
       allowGmRequests: lk?.allowGmRequests ?? DEFAULT_LOREKEEPER.allowGmRequests,
+      emailAt80: lk?.emailAt80 ?? DEFAULT_LOREKEEPER.emailAt80,
     },
     spendAlertMonth: row?.spendAlertMonth ?? null,
   };
