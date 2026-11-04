@@ -1,5 +1,6 @@
 import { v, type Infer } from "convex/values";
 
+import { resolveTableSettings } from "../src/lib/config/campaign-settings";
 import { inWindows, logMark, mergeLog, type LiveWindow } from "../src/lib/domain/journal";
 import { appError } from "../src/lib/errors/app-error";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -27,6 +28,10 @@ import { hideFearNumbers } from "./feed";
  * The GM hides or re-words any line through `sessionLogOverrides` (`hide`, `unhide`, `setText`); a GM line's text is
  * edited in place. Adding and deleting GM lines stay `sessionPlay.addLog` / `removeLog`. Every "during the session"
  * read goes through `liveWindows` (a played session can be started again, D10 B7).
+ *
+ * The campaign setting 'Write the session log from the Combat Map' (`tableSettings.autoSessionLog`, config JO2,
+ * default on) gates the `feed`, `fear` and `encounter` sources: off, they are not read and the log is the session's own
+ * lines. Nothing is deleted, so turning it on again shows them (with their overrides) as before.
  *
  * Who reads it (user Q5): every member. Players get the log of live and played sessions without the GM-hidden lines
  * and without GM-only feed rows; a planned session is SESSION_NOT_FOUND for them, as it is missing from their list.
@@ -292,7 +297,7 @@ function sessionOverrides(ctx: QueryCtx, sessionId: Id<"sessions">) {
 }
 
 /**
- * The session log, oldest first (JD2, user Q5). The GM gets every line with its `hidden` flag; players get live and
+ * The session log, oldest first (JD2, user Q5); with `autoSessionLog` off, only the session's own lines (JO2). The GM gets every line with its `hidden` flag; players get live and
  * played sessions only (a planned one is SESSION_NOT_FOUND), without hidden lines and GM-only feed rows. Each source is
  * read with a bounded take; `truncated` says one hit its cap.
  */
@@ -307,10 +312,14 @@ export const list = campaignQuery({
     if (!isGm && session.status === "planned") throw appError("SESSION_NOT_FOUND");
     const campaignId = ctx.campaign._id;
     const windows = await liveWindows(ctx, session);
+    // JO2: with "Write the session log from the Combat Map" off, only the session's own lines (start / end / scene
+    // stamps, the GM's typed lines) are read. The setting comes from the campaign the wrapper already loaded.
+    const auto = resolveTableSettings(ctx.campaign.tableSettings).autoSessionLog;
+    const none = { lines: [] as Line[], truncated: false };
     const [feed, fear, encounters, own, overrides] = await Promise.all([
-      feedLines(ctx, campaignId, windows, isGm),
-      fearLines(ctx, campaignId, windows),
-      encounterLines(ctx, campaignId, windows),
+      auto ? feedLines(ctx, campaignId, windows, isGm) : none,
+      auto ? fearLines(ctx, campaignId, windows) : none,
+      auto ? encounterLines(ctx, campaignId, windows) : none,
       ownLines(ctx, session._id),
       sessionOverrides(ctx, session._id),
     ]);
