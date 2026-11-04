@@ -322,3 +322,4 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - JX2: the Journal header offers no way to start a second session while one is live (B6) or to restart a played session (B7); the server still supports both. Default: leave out. The milestone button was dropped from the UI.
 - Glass G0: large glass buttons use the design's Plex 17 px font, not the old Cinzel caps (headline buttons like "Choose this Frame", "+ Create character" look different). Default: follow the design.
 - Glass G12: the Journal's Plan / Log & recap switch stays a tab (not a glass switch); Unlink encounter is neutral; the log x is red only where it deletes. Defaults: keep.
+- Glass G7: the Lorekeeper answer card is parchment, but its buttons (Copy, Open in book, Pin, Ask the GM) became dark glass (the plan's G7 goal); Q5 kept ink buttons only for Notes, recap and the Tome. Default: glass. Alternative: ink buttons on answer cards too.
