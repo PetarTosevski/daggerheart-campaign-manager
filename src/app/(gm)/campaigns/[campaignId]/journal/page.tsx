@@ -180,15 +180,13 @@ function SessionColumns({ slot, view, onOpenPage }: { slot: JournalSessionProps;
       </div>
       <div className="jr-right">
         {slot.isGm ? (
-          <>
-            <SlotBoundary label="The session tally">
-              <SessionTally {...slot} />
-            </SlotBoundary>
-            <SlotBoundary label="The spotlight">
-              <Spotlight {...slot} />
-            </SlotBoundary>
-          </>
+          <SlotBoundary label="The session tally">
+            <SessionTally {...slot} />
+          </SlotBoundary>
         ) : null}
+        <SlotBoundary label="The spotlight">
+          <Spotlight {...slot} />
+        </SlotBoundary>
         <SlotBoundary label="Threads raised">
           <ThreadsRaised {...slot} onOpenPage={onOpenPage} />
         </SlotBoundary>

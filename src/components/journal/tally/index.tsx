@@ -12,6 +12,7 @@ import { leastSpotlightLine } from "@/lib/domain/journal";
 
 import { api } from "../../../../convex/_generated/api";
 import type { PartyMember } from "../../../../convex/charactersReads";
+import type { SpotlightEntry } from "../../../../convex/sessionPlay";
 import type { SessionTallyProps, SpotlightProps } from "../slots";
 import { Card } from "../ui";
 
@@ -19,7 +20,8 @@ import { barPercent, resetPending, TALLY_TILES } from "./model";
 
 /**
  * Session tally and Spotlight (JT, contract: ../slots.ts; design reference/designs/journal/journal_views.jpg, Log &
- * recap, right column). GM only (user Q5: players see neither); a player gets nothing.
+ * recap, right column). The tally tiles are GM only (journal Q5); the spotlight bars and least-spotlight line are the
+ * GM's and co-GMs', and the players' too when the table setting `spotlightToPlayers` is on (config JO3, Q5 a).
  */
 
 /** The six tally tiles from `journalTally.tally` ('-' before the session was live; a floor note when truncated). */
@@ -67,14 +69,21 @@ function TallyCard({ campaignId, sessionId }: Omit<SessionTallyProps, "isGm">) {
   );
 }
 
-/** A spotlight bar per PC (scaled to the highest count), Reset, the least-spotlight line. Automatic only (Q9). */
+/**
+ * A spotlight bar per PC (scaled to the highest count), Reset, the least-spotlight line. Automatic only (Q9). Reads
+ * `journalTally.spotlight` (config JO3, Q5 a): the GM and co-GMs always get the bars and Reset; a player gets the bars
+ * and the line (no Reset) only when the GM turned on "Show spotlight balance to players", else the query returns null
+ * and nothing renders.
+ */
 export function Spotlight({ campaignId, sessionId, isGm }: SpotlightProps) {
-  if (!isGm) return null;
-  return <SpotlightCard campaignId={campaignId} sessionId={sessionId} />;
+  const entries = useQuery(api.journalTally.spotlight, { campaignId, sessionId });
+  if (entries === null) return null;
+  // A player sees nothing until the read says the bars are theirs (no "Loading" flash with the setting off).
+  if (entries === undefined && !isGm) return null;
+  return <SpotlightCard campaignId={campaignId} sessionId={sessionId} isGm={isGm} entries={entries} />;
 }
 
-function SpotlightCard({ campaignId, sessionId }: Omit<SpotlightProps, "isGm">) {
-  const entries = useQuery(api.sessionPlay.spotlight, { campaignId, sessionId });
+function SpotlightCard({ campaignId, sessionId, isGm, entries }: SpotlightProps & { entries: SpotlightEntry[] | undefined }) {
   const party = useQuery(api.charactersReads.partySummary, { campaignId });
   const reset = useMutation(api.sessionPlay.resetSpotlight).withOptimisticUpdate(resetPending);
   const [error, setError] = useState<string | null>(null);
@@ -94,7 +103,7 @@ function SpotlightCard({ campaignId, sessionId }: Omit<SpotlightProps, "isGm">) 
       kind="label"
       className="jt-spot"
       actions={
-        entries !== undefined && entries.length > 0 ? (
+        isGm && entries !== undefined && entries.length > 0 ? (
           <BrandButton variant="neutral" size="sm" disabled={max === 0} onClick={onReset}>
             Reset
           </BrandButton>

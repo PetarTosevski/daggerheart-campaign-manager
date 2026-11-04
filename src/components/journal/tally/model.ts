@@ -25,15 +25,18 @@ export function barPercent(count: number, max: number): number {
   return Math.round((Math.max(0, count) / max) * 100);
 }
 
-/** Reset (`sessionPlay.resetSpotlight`), optimistic: every count of that session's cached spotlight to 0, all due. */
+/**
+ * Reset (`sessionPlay.resetSpotlight`), optimistic: every count of that session's cached Journal spotlight
+ * (`journalTally.spotlight`) to 0, all due.
+ */
 export function resetPending(store: OptimisticLocalStore, args: { campaignId: Id<"campaigns">; sessionId: string }) {
   const query = { campaignId: args.campaignId, sessionId: args.sessionId };
-  const current = store.getQuery(api.sessionPlay.spotlight, query);
-  if (current === undefined) return;
+  const current = store.getQuery(api.journalTally.spotlight, query);
+  if (current === undefined || current === null) return;
   const names = new Map(current.map((e) => [e.characterId, e.name]));
   const zeroed = spotlightEntries(
     current.map((e) => e.characterId),
     [],
   ).map((e) => ({ ...e, name: names.get(e.characterId) ?? "Unnamed character" }));
-  store.setQuery(api.sessionPlay.spotlight, query, zeroed);
+  store.setQuery(api.journalTally.spotlight, query, zeroed);
 }

@@ -1,6 +1,7 @@
 // Journal JT (plan .omc/plans/journal.yaml, docs/tasks/TASK-JOURNAL-JT.md): the six tally tiles ('-' before the session
 // was live, a floor note when truncated) and the Spotlight bars (scaled to the highest count, Reset optimistic, the
-// least-spotlight line, no tap to add: Q9). GM only (Q5): players get nothing.
+// least-spotlight line, no tap to add: Q9). The tiles are GM only (Q5); the bars reach players when
+// `journalTally.spotlight` returns them (config JO3).
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -45,7 +46,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 beforeEach(() => {
   state.calls = [];
   state.fail = {};
-  state.results = { "journalTally:tally": TALLY, "sessionPlay:spotlight": SPOT, "charactersReads:partySummary": [] };
+  state.results = { "journalTally:tally": TALLY, "journalTally:spotlight": SPOT, "charactersReads:partySummary": [] };
 });
 afterEach(cleanup);
 
@@ -111,24 +112,39 @@ describe("Spotlight", () => {
   });
 
   it("no least line when everyone ties; Reset disabled at zero", () => {
-    state.results["sessionPlay:spotlight"] = SPOT.map((e) => ({ ...e, count: 0, due: true }));
+    state.results["journalTally:spotlight"] = SPOT.map((e) => ({ ...e, count: 0, due: true }));
     const { container } = render(<Spotlight campaignId={CAMPAIGN} sessionId={SESSION} isGm />);
     expect(screen.queryByText(/least spotlight/)).toBeNull();
     expect((screen.getByRole("button", { name: "Reset" }) as HTMLButtonElement).disabled).toBe(true);
     expect([...container.querySelectorAll<HTMLElement>(".jt-fill")].every((f) => f.style.width === "0%")).toBe(true);
   });
 
-  it("loading, empty party, and nothing for players", () => {
-    state.results["sessionPlay:spotlight"] = undefined;
+  it("loading and empty party", () => {
+    state.results["journalTally:spotlight"] = undefined;
     const first = render(<Spotlight campaignId={CAMPAIGN} sessionId={SESSION} isGm />);
     expect(screen.getByRole("status").textContent).toBe("Loading the spotlight…");
     first.unmount();
-    state.results["sessionPlay:spotlight"] = [];
-    const second = render(<Spotlight campaignId={CAMPAIGN} sessionId={SESSION} isGm />);
+    state.results["journalTally:spotlight"] = [];
+    render(<Spotlight campaignId={CAMPAIGN} sessionId={SESSION} isGm />);
     expect(screen.getByText("No active characters in the party yet.")).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
-    second.unmount();
-    state.results["sessionPlay:spotlight"] = SPOT;
+  });
+
+  // Config JO3 (Q5 a): a player sees the bars and the least-spotlight line when the read returns them (setting on),
+  // never Reset; with the setting off the read returns null and nothing renders (nor while it loads).
+  it("a player with the setting on sees the bars and the line, without Reset", () => {
+    render(<Spotlight campaignId={CAMPAIGN} sessionId={SESSION} isGm={false} />);
+    expect(within(screen.getByRole("list", { name: "Spotlight per character" })).getAllByRole("listitem")).toHaveLength(4);
+    expect(screen.getByText("Oriel has had the least spotlight this session.")).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("a player with the setting off (null) or while loading sees nothing", () => {
+    state.results["journalTally:spotlight"] = null;
+    const first = render(<Spotlight campaignId={CAMPAIGN} sessionId={SESSION} isGm={false} />);
+    expect(first.container.textContent).toBe("");
+    first.unmount();
+    state.results["journalTally:spotlight"] = undefined;
     const { container } = render(<Spotlight campaignId={CAMPAIGN} sessionId={SESSION} isGm={false} />);
     expect(container.textContent).toBe("");
   });
@@ -142,13 +158,13 @@ describe("model", () => {
   });
 
   it("resetPending zeroes the cached counts and marks everyone due", () => {
-    const cache = new Map<string, unknown>([["sessionPlay:spotlight", SPOT]]);
+    const cache = new Map<string, unknown>([["journalTally:spotlight", SPOT]]);
     const store = {
       getQuery: (ref: unknown) => cache.get(getFunctionName(ref as never)),
       setQuery: (ref: unknown, _args: unknown, value: unknown) => cache.set(getFunctionName(ref as never), value),
     };
     model.resetPending(store as never, { campaignId: CAMPAIGN, sessionId: SESSION });
-    expect(cache.get("sessionPlay:spotlight")).toEqual(SPOT.map((e) => ({ ...e, count: 0, due: true })));
+    expect(cache.get("journalTally:spotlight")).toEqual(SPOT.map((e) => ({ ...e, count: 0, due: true })));
   });
 
   it("lists six tiles", () => {

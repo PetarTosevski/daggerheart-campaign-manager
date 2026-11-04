@@ -1,16 +1,21 @@
 import { v, type Infer } from "convex/values";
 
+import { resolveTableSettings } from "../src/lib/config/campaign-settings";
 import { inWindows, type LiveWindow } from "../src/lib/domain/journal/windows";
-import { addTally, EMPTY_TALLY, windowTally, type SessionTally } from "../src/lib/domain/sessions";
+import { addTally, EMPTY_TALLY, spotlight as spotlightEntries, windowTally, type SessionTally } from "../src/lib/domain/sessions";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
+import { MAX_CHARACTERS_PER_CAMPAIGN, partyOf, readSheet } from "./lib/characterSheet";
 import { MAX_ENCOUNTERS, MAX_INSTANCES } from "./lib/encounters";
-import { gmQuery } from "./lib/functions";
+import { campaignQuery, gmQuery } from "./lib/functions";
+import { atLeast, type CampaignPermission } from "./lib/permissions";
 import { liveWindows, loadSession, MAX_SESSION_CHARACTER_STATS, tallyRows } from "./lib/sessions";
+import { spotlightEntryValidator, type SpotlightEntry } from "./sessionPlay";
 
 /**
  * The Journal's session tally (plan `.omc/plans/journal.yaml`, tracer JD3a; board "Log & recap"): the six numbers the
  * design shows. GM only (user Q5: players see the list, heading, recap and log, not the tally). Read-only.
+ * `spotlight` below (config JO3) is the Journal's spotlight bars: GM and co-GMs always, players with the setting on.
  *
  * Every "during the session" read uses J0's `liveWindows` (a played session can start again, D10 B7):
  * - Fear gained / spent: the stored `sessions.tally` of the finished windows (S3 adds each at End, as
@@ -146,5 +151,53 @@ export const tally = gmQuery({
       live,
       truncated: fear.truncated || rolls.truncated,
     };
+  },
+});
+
+// ---------------------------------------------------------------- spotlight (config JO3, Q5 a)
+
+/** The Journal's spotlight bars: one entry per active PC, or null when the caller may not see them. */
+export const journalSpotlightValidator = v.union(v.array(spotlightEntryValidator), v.null());
+export type JournalSpotlight = Infer<typeof journalSpotlightValidator>;
+
+/**
+ * Whether the caller sees the spotlight balance (config Q5 a): the GM and every co-GM (`owner` permission) always, a
+ * player only with the table setting `spotlightToPlayers` on (default off). The tally tiles stay GM-only (`tally`).
+ */
+export function seesSpotlight(campaign: Pick<Doc<"campaigns">, "tableSettings">, permission: CampaignPermission | null): boolean {
+  return atLeast(permission, "owner") || resolveTableSettings(campaign.tableSettings).spotlightToPlayers;
+}
+
+/** The name a bar shows; an unreadable sheet still gets a bar (same rule as `sessionPlay.spotlight`). */
+function characterName(character: Doc<"characters">): string {
+  try {
+    return readSheet(character.sheet).name.trim() || "Unnamed character";
+  } catch {
+    return "Unnamed character";
+  }
+}
+
+/**
+ * The Journal's spotlight read (JT's bars and least-spotlight line, Log & recap): the session's active PCs with their
+ * counts and who is due, as `sessionPlay.spotlight`. Any member may call it; a player gets null unless the GM turned on
+ * "Show spotlight balance to players" (`seesSpotlight`).
+ */
+export const spotlight = campaignQuery({
+  need: "view",
+  args: { sessionId: v.string() },
+  returns: journalSpotlightValidator,
+  handler: async (ctx, { sessionId }): Promise<SpotlightEntry[] | null> => {
+    if (!seesSpotlight(ctx.campaign, ctx.permission)) return null;
+    const session = await loadSession(ctx, ctx.campaign._id, sessionId);
+    const active = (await partyOf(ctx, ctx.campaign._id)).filter((c) => c.status === "active");
+    const names = new Map(active.map((c) => [c._id, characterName(c)]));
+    const rows = await ctx.db
+      .query("sessionSpotlights")
+      .withIndex("by_session_character", (q) => q.eq("sessionId", session._id))
+      .take(MAX_CHARACTERS_PER_CAMPAIGN);
+    return spotlightEntries(
+      active.map((c) => c._id),
+      rows,
+    ).map((e) => ({ ...e, name: names.get(e.characterId) ?? "Unnamed character" }));
   },
 });

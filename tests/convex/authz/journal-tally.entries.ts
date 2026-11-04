@@ -15,7 +15,12 @@ const area: Area = {
     await w.as("gm").mutation(api.sessionRecords.create, { campaignId: w.campaignId, idempotencyKey: freshKey() });
     await w.as("gm").mutation(api.sessions.start, { campaignId: w.campaignId, idempotencyKey: freshKey() });
   },
-  entries: [{ fn: api.journalTally.tally, access: "gm", expect: { grantee: "FORBIDDEN" } }],
+  entries: [
+    { fn: api.journalTally.tally, access: "gm", expect: { grantee: "FORBIDDEN" } },
+    // Config JO3 (Q5 a): any member may read; a player gets null while `spotlightToPlayers` is off (the default here),
+    // the GM and co-GM the bars. Setting on / off per role: tests/convex/journal-spotlight-players.test.ts.
+    { fn: api.journalTally.spotlight, access: "view", expect: { player: "null", otherPlayer: "null", grantee: "null" } },
+  ],
 };
 
 export default area;
