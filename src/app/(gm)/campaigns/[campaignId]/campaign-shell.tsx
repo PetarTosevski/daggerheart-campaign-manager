@@ -12,6 +12,7 @@ import { BackLink, Wordmark } from "@/components/brand/brand";
 import { BrandButton, brandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import { ViewerProvider, viewerFor } from "@/components/brand/viewer";
+import { OwnerViewBanner } from "@/components/config/owner-view-banner";
 import { ConfigMounts, openSettings } from "@/components/config/shell";
 import { sessionOpensOnHref } from "@/lib/config/campaign-settings";
 import { SlotBoundary } from "@/components/party/session/boundary";
@@ -114,9 +115,10 @@ const heroPill = brandButton({ variant: "confirm", size: "lg" });
  * GM: 'Start Session' (B8) starts the newest planned session, creating one when there is none, then goes where the
  * campaign's 'A new session opens on' setting says (config SX, as JO1 does in the Journal header): the session's Log &
  * recap in the Journal (JX1), or the Combat Map. While a session is live the pill reads 'Session N in progress' and opens
- * it in the Journal. Players see a chip while one is live.
+ * it in the Journal. Players see a chip while one is live. The owner's read-only view (AU7) keeps the GM's link to a live
+ * session and never shows Start Session.
  */
-function HeroSessionAction({ campaignId, isGm }: { campaignId: Id<"campaigns">; isGm: boolean }) {
+function HeroSessionAction({ campaignId, isGm, canStart }: { campaignId: Id<"campaigns">; isGm: boolean; canStart: boolean }) {
   const summary = useQuery(api.sessionWrap.dashboard, { campaignId });
   const start = useIntent(api.sessions.start);
   const opensOn = useCampaign().settings.sessionOpensOn;
@@ -140,7 +142,7 @@ function HeroSessionAction({ campaignId, isGm }: { campaignId: Id<"campaigns">; 
       </span>
     );
   }
-  if (!isGm) return null;
+  if (!canStart) return null;
 
   async function startSession() {
     setConfirm(false);
@@ -181,16 +183,18 @@ function HeroSessionAction({ campaignId, isGm }: { campaignId: Id<"campaigns">; 
 
 /** Title block of the dashboard header ("ACTIVE CAMPAIGN · THE WITHERWILD"). Memoized: it re-renders only with the campaign. */
 const DashboardHero = memo(function DashboardHero({ campaign, onOpenTome }: { campaign: CampaignSummary; onOpenTome: () => void }) {
+  // Config AU7: the app owner's read-only view reads as the GM but changes nothing (no clock, no Start Session).
+  const canEdit = campaign.role === "gm" && !campaign.ownerView;
   return (
     <div className="relative mx-auto flex max-w-[1344px] flex-col gap-9 px-4 pt-2 pb-8 sm:px-12">
       {frameHasMechanic(campaign.frameId, "campaignTime") ? (
-        <TimeArc campaignId={campaign._id} readOnly={campaign.role !== "gm"} />
+        <TimeArc campaignId={campaign._id} readOnly={!canEdit} />
       ) : (
         // Every campaign without the arc, core included (TASK-CORE-CALENDAR): the day card, top-right above the title
         // on desktop, under the title block on narrow screens.
         <div className="order-last flex sm:order-none sm:justify-end">
           <SlotBoundary fallback={null}>
-            <DayCard campaignId={campaign._id} readOnly={campaign.role !== "gm"} />
+            <DayCard campaignId={campaign._id} readOnly={!canEdit} />
           </SlotBoundary>
         </div>
       )}
@@ -214,7 +218,7 @@ const DashboardHero = memo(function DashboardHero({ campaign, onOpenTome }: { ca
         Open the Tome
       </BrandButton>
       <SlotBoundary fallback={null}>
-        <HeroSessionAction campaignId={campaign._id} isGm={campaign.role === "gm"} />
+        <HeroSessionAction campaignId={campaign._id} isGm={campaign.role === "gm"} canStart={canEdit} />
       </SlotBoundary>
       </div>
       </div>
@@ -338,7 +342,8 @@ function CampaignShellView({ campaign, children }: { campaign: CampaignSummary |
   const openPlayers = useCallback(() => openSettings("players"), []);
   const hydrated = useHydrated();
 
-  const foundId = campaign ? campaign._id : null;
+  // Config AU7: the owner's read-only view never records the open (they are not a member; AU1 logged the visit).
+  const foundId = campaign && !campaign.ownerView ? campaign._id : null;
   useEffect(() => {
     if (foundId) void markOpened({ campaignId: foundId }).catch(() => undefined);
   }, [foundId, markOpened]);
@@ -358,6 +363,9 @@ function CampaignShellView({ campaign, children }: { campaign: CampaignSummary |
 
   const art = campaignArt(campaign.frameId, campaign.custom?.background);
   const isGm = campaign.role === "gm";
+  // Config AU7 (Q27 b, N1): the app owner's read-only view of a campaign they are not in. It reads as the GM
+  // (`role: "gm"`) but has no gear, no Players button, no markOpened and no presence, and shows the banner.
+  const ownerView = campaign.ownerView;
   const viewer = viewerFor(campaign.role);
   // Plan combat-hud H9.A (user answer Q2 c): the Combat Map gets the compact app bar instead of the tall art header
   // (a phone keeps the header); every other page keeps the header.
@@ -386,7 +394,7 @@ function CampaignShellView({ campaign, children }: { campaign: CampaignSummary |
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <CampaignNav campaignId={campaign._id} isGm={isGm} variant="header" />
-          {isGm ? (
+          {ownerView ? null : isGm ? (
             <BrandButton variant="neutral" onClick={openPlayers} aria-haspopup="dialog">
               <Users aria-hidden="true" />
               Players
@@ -398,7 +406,7 @@ function CampaignShellView({ campaign, children }: { campaign: CampaignSummary |
           )}
           {/* Config S1: the gear (GM and co-GM) opens Campaign settings, the avatar opens Preferences. */}
           <span className="cfg-acct">
-            {isGm ? <CampaignSettingsButton /> : null}
+            {isGm && !ownerView ? <CampaignSettingsButton /> : null}
             <PreferencesButton campaignId={campaign._id} isGm={isGm} />
           </span>
         </div>
@@ -416,7 +424,7 @@ function CampaignShellView({ campaign, children }: { campaign: CampaignSummary |
       {/* The viewer for the glass buttons' colours (GM: confirm in Fear, back out in Hope); dialogs inherit it. */}
       <div data-viewer={viewer} className="relative min-h-screen overflow-hidden bg-[#0d1417] font-sans text-[#e6ecea]">
         {combatMap ? (
-          <CombatAppBarFrame campaignId={campaign._id} isGm={isGm} header={header} onPlayers={openPlayers}>
+          <CombatAppBarFrame campaignId={campaign._id} isGm={isGm} header={header} onPlayers={openPlayers} settings={!ownerView}>
             {page}
           </CombatAppBarFrame>
         ) : (
@@ -426,8 +434,9 @@ function CampaignShellView({ campaign, children }: { campaign: CampaignSummary |
           </>
         )}
         <MemoTome campaign={campaign} chapter={tomeChapter} onChapter={setTomeChapter} onClose={closeTome} />
-        {/* Campaign settings (GM), the presence heartbeat and the spotlight ping: once per campaign page. */}
-        <ConfigMounts campaign={campaign} />
+        {/* Campaign settings (GM), the presence heartbeat and the spotlight ping: once per campaign page. The owner's
+            read-only view (AU7) mounts none of them, only its banner (which carries the archived line). */}
+        {ownerView ? <OwnerViewBanner archived={campaign.archived} /> : <ConfigMounts campaign={campaign} />}
       </div>
       </ViewerProvider>
       </OpenTomeContext.Provider>

@@ -43,6 +43,8 @@ type Props = {
   header: ReactNode;
   /** GM: opens today's Players dialog (from the gear's menu). */
   onPlayers: () => void;
+  /** False in the app owner's read-only view (config AU7): no gear. Default true (the gear shows for a GM). */
+  settings?: boolean;
   children: ReactNode;
 };
 
@@ -183,7 +185,7 @@ function useHiddenBar() {
 }
 
 /** The Combat Map's chrome: the app bar (tablet and desktop), the art header (phone) and the page under them. */
-export function CombatAppBarFrame({ campaignId, isGm, header, onPlayers, children }: Props) {
+export function CombatAppBarFrame({ campaignId, isGm, header, onPlayers, settings = true, children }: Props) {
   const { hidden, hide, show, fullScreenButton, showButton } = useHiddenBar();
   return (
     <div className="cab-frame" data-bar-hidden={hidden ? "" : undefined} data-testid="combat-app-frame">
@@ -203,7 +205,7 @@ export function CombatAppBarFrame({ campaignId, isGm, header, onPlayers, childre
             <BrandButton ref={fullScreenButton} variant="tool" icon aria-label={FULL_SCREEN_LABEL} onClick={hide}>
               <Maximize2 strokeWidth={2} aria-hidden="true" />
             </BrandButton>
-            {isGm ? <CampaignSettingsButton onPlayers={onPlayers} /> : null}
+            {isGm && settings ? <CampaignSettingsButton onPlayers={onPlayers} /> : null}
             <PreferencesButton campaignId={campaignId} isGm={isGm} />
           </span>
         </header>

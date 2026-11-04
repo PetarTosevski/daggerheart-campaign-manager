@@ -85,6 +85,19 @@ export function setReadOnlyBannerMessage(message: string | null): void {
   readOnlyBannerMessage = text === "" ? null : text;
 }
 
+/**
+ * True while the app owner's read-only view of a campaign is open (config AU7). Writes refuse the owner as an outsider
+ * (NOT_FOUND / FORBIDDEN, AD13), so while the view is open those codes read as `OWNER_VIEW_READ_ONLY`'s text.
+ * `OwnerViewBanner` (src/components/config/owner-view-banner.tsx) keeps it in step with `campaigns.get`.
+ */
+let ownerViewOpen = false;
+const OWNER_VIEW_CODES = new Set(["NOT_FOUND", "FORBIDDEN", "OWNER_VIEW_READ_ONLY"]);
+
+/** Marks the owner's read-only view open or closed (see `ownerViewOpen`). */
+export function setOwnerViewOpen(open: boolean): void {
+  ownerViewOpen = open;
+}
+
 /** The text for a code: `READ_ONLY_MODE` carries the owner's banner message when there is one. */
 function codeMessage(code: string): string {
   const text = MESSAGES[code] ?? "Something went wrong.";
@@ -101,6 +114,7 @@ export function errorMessage(error: unknown): string {
     const data: unknown = error.data;
     if (typeof data === "object" && data !== null) {
       const { message, code } = data as { message?: unknown; code?: unknown };
+      if (ownerViewOpen && typeof code === "string" && OWNER_VIEW_CODES.has(code)) return codeMessage("OWNER_VIEW_READ_ONLY");
       if (typeof message === "string" && message) return message;
       if (typeof code === "string") return codeMessage(code);
     }
