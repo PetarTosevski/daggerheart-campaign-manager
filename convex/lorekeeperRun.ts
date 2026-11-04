@@ -15,6 +15,7 @@ import { reservePass, settle, type UsageScopes } from "./lib/lorekeeper/caps";
 import { retrieve } from "./lib/lorekeeper/retrieve";
 import { webPass } from "./lib/lorekeeper/web";
 import { answerPhaseValidator, LOREKEEPER_LIMITS, verdictValidator, webResultValidator, type AnswerParts, type FailureCode, type Quote } from "./lib/validators/lorekeeper";
+import { resolveTableSettings } from "../src/lib/config/campaign-settings";
 
 /**
  * The answer run of the Lorekeeper (D13 L3; analysis 4, option A). `lorekeeper.ask` schedules `run` for a pending
@@ -162,7 +163,8 @@ export const prepare = internalQuery({
     const promptContext: PromptContext = { frame: context.frame, characters: context.characters, party: context.party };
     return {
       question: questionRow.text,
-      webSearch: conversation.webSearch,
+      // The campaign's switch is read again here, so an ask started just before the GM turned internet search off never searches (config L1).
+      webSearch: conversation.webSearch && resolveTableSettings(campaign.tableSettings).lorekeeperWeb,
       chunks,
       rulings,
       context: promptContext,
