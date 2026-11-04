@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 
+import { BrandButton, brandButton } from "@/components/brand/buttons";
 import { FRAME_OF } from "@/lib/frames/extras/common";
 import { useIntent } from "@/lib/use-intent";
 import { cn } from "@/lib/utils";
@@ -144,12 +145,16 @@ export function CharacterWizard() {
           </div>
           <div className="flex items-center gap-2">
             {hasDraft ? (
-              <button type="button" className="wz-ghost" onClick={() => setRaw(emptyWizard())}>
+              <BrandButton variant="danger" size="sm" onClick={() => setRaw(emptyWizard())}>
                 Start over
-              </button>
+              </BrandButton>
             ) : null}
-            <Link href={`/campaigns/${campaignId}/party`} className="wz-close" aria-label="Cancel character creation">
-              <X className="size-4" aria-hidden="true" />
+            <Link
+              href={`/campaigns/${campaignId}/party`}
+              className={brandButton({ variant: "cancel", icon: true, round: true, className: "flex-none" })}
+              aria-label="Cancel character creation"
+            >
+              <X aria-hidden="true" />
             </Link>
           </div>
         </div>
@@ -213,20 +218,20 @@ export function CharacterWizard() {
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#cdb88f] pt-4">
           {step > 1 ? (
-            <button type="button" className="wz-outline" onClick={() => goTo(step - 1)}>
+            <BrandButton variant="cancel" size="lg" onClick={() => goTo(step - 1)}>
               ‹ Back
-            </button>
+            </BrandButton>
           ) : (
-            <Link href={`/campaigns/${campaignId}/party`} className="wz-outline">
+            <Link href={`/campaigns/${campaignId}/party`} className={brandButton({ variant: "cancel", size: "lg" })}>
               Cancel
             </Link>
           )}
           <span className="flex-1" />
           <div className="flex flex-col items-end gap-1.5">
             {step < STEP_COUNT ? (
-              <button
-                type="button"
-                className="wz-primary"
+              <BrandButton
+                variant="confirm"
+                size="lg"
                 aria-disabled={!stepOk}
                 aria-describedby={nextTip ? "cc-next-missing" : undefined}
                 title={nextTip || undefined}
@@ -235,18 +240,18 @@ export function CharacterWizard() {
                 }}
               >
                 Next: {STEP_TITLES[step]} ›
-              </button>
+              </BrandButton>
             ) : (
-              <button
-                type="button"
-                className="wz-primary"
+              <BrandButton
+                variant="confirm"
+                size="lg"
                 aria-disabled={!allOk || Boolean(blocker) || create.pending}
                 aria-describedby={blocker ? "cc-blocked" : createTip ? "cc-missing" : undefined}
                 title={createTip || undefined}
                 onClick={() => void submit()}
               >
                 {create.pending ? "Creating…" : "Create character"}
-              </button>
+              </BrandButton>
             )}
             {step < STEP_COUNT && nextTip ? (
               <span id="cc-next-missing" className="wz-req" aria-live="polite">

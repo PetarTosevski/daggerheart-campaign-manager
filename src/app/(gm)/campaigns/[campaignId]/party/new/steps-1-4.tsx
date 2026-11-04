@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { assetBackground } from "@/lib/design-assets";
 import {
   getAncestry,
@@ -433,13 +434,13 @@ export function TraitsStep({ state, update }: StepProps) {
         </div>
         <span className="flex gap-2">
           {suggestion ? (
-            <button type="button" className="wz-ghost" onClick={() => update({ traits: suggestion })}>
+            <BrandButton variant="neutral" size="sm" onClick={() => update({ traits: suggestion })}>
               Use suggested
-            </button>
+            </BrandButton>
           ) : null}
-          <button type="button" className="wz-ghost" onClick={() => update({ traits: {} })}>
+          <BrandButton variant="neutral" size="sm" onClick={() => update({ traits: {} })}>
             Clear
-          </button>
+          </BrandButton>
         </span>
       </div>
       <div className="wz-traits">

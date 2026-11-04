@@ -29,7 +29,7 @@ function Gate({ campaignId, hopeAndFear }: CampaignSlotProps) {
   if (available !== true) return null;
   return (
     <>
-      <BrandButton variant="pill" size="xl" onClick={() => setOpen(true)}>
+      <BrandButton variant="neutral" size="lg" onClick={() => setOpen(true)}>
         Import from photo
       </BrandButton>
       <Modal open={open} onClose={() => setOpen(false)} title="Import from photo" className="max-w-[860px]">

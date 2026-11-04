@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "convex/react";
 import Link from "next/link";
 import { useState } from "react";
 
+import { BrandButton, brandButton } from "@/components/brand/buttons";
 import { LevelUpRosterBadge } from "@/components/party/level-up";
 import { BenchButton, cardLabel, CorruptNotice, FallenOverlay } from "@/components/party/party-card";
 import { domainBanner, DOMAIN_ICONS, heritageLine, ownerLabel, type Table } from "@/components/party/party-display";
@@ -21,9 +22,6 @@ import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
 import type { CharacterView } from "../../../../../../convex/characters";
 import { useCampaign } from "../campaign-shell";
-
-const SMALL_BTN =
-  "inline-flex min-h-10 cursor-pointer items-center rounded-[9px] border border-[#33444a] bg-transparent px-3 text-[14px] text-[#e6ecea] hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50";
 
 function Stat({ label, children, hope = false }: { label: string; children: React.ReactNode; hope?: boolean }) {
   return (
@@ -91,15 +89,18 @@ export function RosterCard({
       className={cn("group/card relative flex flex-col overflow-hidden rounded-[14px] border bg-[#141e22]", dead ? "border-[#3a2a2a]" : "border-[#253338]")}
     >
       {canEdit && !dead ? (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void run(() => setStatus({ characterId: character._id, status: "dead" }))}
-          aria-label={`Kill ${name}`}
-          className="absolute top-2.5 right-2.5 z-[5] min-h-7 cursor-pointer rounded-full border border-[#8e2b2b] bg-[rgb(10_2_2/0.85)] px-2.5 font-display text-[11px] font-bold tracking-[0.08em] text-[#ff9a92] opacity-0 transition-opacity group-hover/card:opacity-100 focus-visible:opacity-100"
-        >
-          Kill
-        </button>
+        // The glass button sets its own position, so the corner placement and the hover reveal live on a wrapper.
+        <span className="absolute top-2.5 right-2.5 z-[5] opacity-0 transition-opacity group-hover/card:opacity-100 focus-within:opacity-100">
+          <BrandButton
+            variant="danger"
+            size="sm"
+            disabled={busy}
+            onClick={() => void run(() => setStatus({ characterId: character._id, status: "dead" }))}
+            aria-label={`Kill ${name}`}
+          >
+            Kill
+          </BrandButton>
+        </span>
       ) : null}
       {dead ? (
         <FallenOverlay name={name} canEdit={isGm} busy={busy} onRevive={() => void run(() => setStatus({ characterId: character._id, status: "active" }))} />
@@ -176,10 +177,7 @@ export function RosterCard({
             ) : null}
           </Stat>
         </div>
-        <Link
-          href={`/campaigns/${campaignId}/party/${character._id}`}
-          className="flex min-h-[46px] items-center justify-center rounded-[10px] border border-ok-line bg-ok-bg text-[15px] font-semibold text-[#e9f2e4] hover:brightness-110"
-        >
+        <Link href={`/campaigns/${campaignId}/party/${character._id}`} className={brandButton({ variant: "confirm", className: "w-full" })}>
           Open character sheet
         </Link>
 
@@ -207,9 +205,9 @@ export function RosterCard({
               </label>
             ) : null}
             {isGm ? (
-              <button type="button" className={cn(SMALL_BTN, "border-[#6a2a2a] text-danger")} onClick={() => setConfirmDelete(true)} aria-label={`Delete ${name}`}>
+              <BrandButton variant="danger" size="sm" onClick={() => setConfirmDelete(true)} aria-label={`Delete ${name}`}>
                 Delete
-              </button>
+              </BrandButton>
             ) : null}
           </div>
         ) : null}
@@ -221,17 +219,12 @@ export function RosterCard({
             className="flex flex-wrap items-center gap-2 rounded-[10px] border border-danger-line bg-danger-bg px-3 py-2 text-[14px] text-[#ffd9d6]"
           >
             <span className="flex-1">Delete {name} for good? This can’t be undone.</span>
-            <button type="button" className={SMALL_BTN} onClick={() => setConfirmDelete(false)}>
+            <BrandButton variant="cancel" size="sm" onClick={() => setConfirmDelete(false)}>
               Keep
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              className="min-h-10 cursor-pointer rounded-[9px] bg-danger-solid px-3 text-[14px] font-semibold text-white disabled:opacity-50"
-              onClick={() => void run(() => remove({ characterId: character._id }))}
-            >
+            </BrandButton>
+            <BrandButton variant="danger" size="sm" disabled={busy} onClick={() => void run(() => remove({ characterId: character._id }))}>
               Delete character
-            </button>
+            </BrandButton>
           </div>
         ) : null}
 

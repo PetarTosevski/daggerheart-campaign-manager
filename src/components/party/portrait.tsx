@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "convex/react";
 import { Camera } from "lucide-react";
 import { useRef, useState, type CSSProperties } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { UploadNotice } from "@/components/uploads/upload-notice";
 import { errorMessage } from "@/lib/convex-errors";
 import { assetBackground } from "@/lib/design-assets";
@@ -159,16 +160,10 @@ export function PortraitUpload({
           if (file) void upload(file);
         }}
       />
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => input.current?.click()}
-        aria-label={`Upload a portrait for ${name}`}
-        className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-[9px] border border-[#33444a] bg-transparent px-3 text-[14px] text-[#e6ecea] hover:bg-white/5 disabled:cursor-wait disabled:opacity-50"
-      >
-        <Camera className="size-4" aria-hidden="true" />
+      <BrandButton variant="neutral" size="sm" disabled={busy} onClick={() => input.current?.click()} aria-label={`Upload a portrait for ${name}`}>
+        <Camera aria-hidden="true" />
         {busy ? "Uploading…" : character.sheet.portrait ? "Change portrait" : "Add portrait"}
-      </button>
+      </BrandButton>
       <span role="status" aria-live="polite" className="text-[13px] text-danger empty:hidden">
         {error}
       </span>

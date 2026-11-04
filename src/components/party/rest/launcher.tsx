@@ -48,7 +48,9 @@ export function Launcher({ campaignId, isGm }: CampaignSlotProps) {
       {open === null ? (
         <>
           <div className="flex flex-wrap gap-2">
+            {/* Two starts side by side: the short rest is the main one; once it is blocked the long rest takes over. */}
             <BrandButton
+              variant={blocked ? "neutral" : "confirm"}
               size="sm"
               disabled={start.pending || blocked}
               aria-describedby={blocked ? "short-rest-limit" : undefined}
@@ -56,7 +58,7 @@ export function Launcher({ campaignId, isGm }: CampaignSlotProps) {
             >
               Start short rest
             </BrandButton>
-            <BrandButton size="sm" disabled={start.pending} onClick={() => void start.fire({ campaignId, kind: "long" })}>
+            <BrandButton variant={blocked ? "confirm" : "neutral"} size="sm" disabled={start.pending} onClick={() => void start.fire({ campaignId, kind: "long" })}>
               Start long rest
             </BrandButton>
           </div>
@@ -129,7 +131,7 @@ export function Launcher({ campaignId, isGm }: CampaignSlotProps) {
           </ul>
           {isGm ? (
             <div className="flex flex-wrap gap-2">
-              <BrandButton size="sm" variant="solid" disabled={finish.pending} onClick={() => void finish.fire({ campaignId, restId: open._id })}>
+              <BrandButton size="sm" variant="confirm" disabled={finish.pending} onClick={() => void finish.fire({ campaignId, restId: open._id })}>
                 Finish rest
               </BrandButton>
               <BrandButton size="sm" variant="danger" disabled={interrupt.pending} onClick={() => void interrupt.fire({ campaignId, restId: open._id })}>

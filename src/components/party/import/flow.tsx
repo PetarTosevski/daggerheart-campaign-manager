@@ -99,7 +99,9 @@ export function ImportFlow({ campaignId, hopeAndFear, onClose }: { campaignId: I
           <Link href={`/campaigns/${campaignId}/party/${step.characterId}`} className="text-brand underline">
             Open {step.name}&apos;s sheet
           </Link>
-          <BrandButton onClick={onClose}>Close</BrandButton>
+          <BrandButton variant="cancel" onClick={onClose}>
+            Close
+          </BrandButton>
         </div>
       </div>
     );
@@ -159,10 +161,10 @@ export function ImportFlow({ campaignId, hopeAndFear, onClose }: { campaignId: I
       </p>
       <UploadNotice kind="photoImport" scope={campaignId} />
       <div className="flex gap-3">
-        <BrandButton variant="primary" size="lg" disabled={busy || files.length === 0} onClick={() => void readPhotos()}>
+        <BrandButton variant="confirm" size="lg" disabled={busy || files.length === 0} onClick={() => void readPhotos()}>
           Read photos
         </BrandButton>
-        <BrandButton size="lg" disabled={busy} onClick={onClose}>
+        <BrandButton variant="cancel" size="lg" disabled={busy} onClick={onClose}>
           Cancel
         </BrandButton>
       </div>

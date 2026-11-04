@@ -1,5 +1,6 @@
 "use client";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { designAsset } from "@/lib/design-assets";
 import { TRAIT_LABEL, traitIdSchema } from "@/lib/frames/extras/common";
 import { IKONIS_RANGES, IKONIS_TRAINING_CLASS_ID, type Ikonis } from "@/lib/frames/extras/motherboard";
@@ -150,9 +151,9 @@ export function EquipmentStep({ state, update, opts }: StepProps) {
           </p>
         )}
         {loadout ? (
-          <button
-            type="button"
-            className="wz-ghost"
+          <BrandButton
+            variant="neutral"
+            size="sm"
             onClick={() => {
               update(opts.ikonis ? { armorId: loadout.armorId } : { primaryWeaponId: loadout.primaryWeaponId, secondaryWeaponId: loadout.secondaryWeaponId, armorId: loadout.armorId });
               // The equipment is set: move on to what is left on this step, the potion (and Next under it).
@@ -165,7 +166,7 @@ export function EquipmentStep({ state, update, opts }: StepProps) {
             }}
           >
             Use suggested {opts.ikonis ? "armor" : "loadout"}
-          </button>
+          </BrandButton>
         ) : null}
       </div>
       {opts.ikonis ? <IkonisFields state={state} update={update} /> : null}

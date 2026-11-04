@@ -91,7 +91,7 @@ export function LongTermAfterRest({ campaignId }: { campaignId: Id<"campaigns"> 
               <span>
                 Tick <strong className="text-parchment">{r.name}</strong>? ({r.currentValue} left)
               </span>
-              <BrandButton size="sm" className="min-h-11" disabled={pending !== null} onClick={() => void fire(r.countdownId)} aria-label={`Tick ${r.name}`}>
+              <BrandButton variant="neutral" size="sm" disabled={pending !== null} onClick={() => void fire(r.countdownId)} aria-label={`Tick ${r.name}`}>
                 Tick −1
               </BrandButton>
             </li>
