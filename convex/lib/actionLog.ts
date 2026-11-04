@@ -43,6 +43,7 @@ import { closeRequest, declineGroupOffers, openRequests } from "./combatRequests
 import { revertTicks } from "./countdownTicks";
 import { revertFear } from "./fear";
 import { recordHistory } from "../tables/history";
+import { refuseArchived } from "./archived";
 import { campaignAccess } from "./permissions";
 import type { ActionKind, AdversaryBefore, CampaignTimeSnapshot, StoredRoll, TimeChange, Visibility } from "./validators/actionLog";
 
@@ -296,6 +297,7 @@ export async function undoEntry(
   if (row === null) throw appError("NOT_FOUND");
   const access = await campaignAccess(ctx, user, row.campaignId, "owner");
   if (access === null) throw appError("NOT_FOUND");
+  refuseArchived(access.campaign); // Q9 a (dcm-jh6d.64): undo writes the campaign.
   const isGm = access.permission === "owner";
   if (!isGm && row.visibility === "gm") throw appError("NOT_FOUND");
   if (!isGm && row.actorId !== user._id) throw appError("FORBIDDEN");

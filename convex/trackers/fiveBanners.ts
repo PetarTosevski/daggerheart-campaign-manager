@@ -36,6 +36,7 @@ import {
 } from "../../src/lib/frames/trackers/five-banners";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { refuseArchived } from "../lib/archived";
 import { campaignQuery, keyedGmMutation, keyedUserMutation } from "../lib/functions";
 import { applyRule } from "../lib/mechanics";
 import { atLeast, campaignAccess } from "../lib/permissions";
@@ -302,6 +303,7 @@ export const operateObjective = keyedUserMutation({
     const access = await campaignAccess(ctx, ctx.user, row.campaignId, "owner");
     if (access === null) throw appError("NOT_FOUND");
     if (!atLeast(access.permission, "owner")) throw appError("FORBIDDEN");
+    refuseArchived(access.campaign); // Q9 a (dcm-jh6d.64)
     assertTrackerFrame(access.campaign, FRAME);
     const objective = asObjective(row);
     if (objective === null) throw appError("NOT_FOUND");

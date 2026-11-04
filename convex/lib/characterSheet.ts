@@ -8,7 +8,8 @@
  * - `loadCharacter(ctx, user, id, need)`: the character, its live campaign and
  *   the user's permission through `permissionFor` (`view`: everyone in the
  *   campaign; `edit`: owner and GM; `owner`: GM). NOT_FOUND without access,
- *   FORBIDDEN with too little.
+ *   FORBIDDEN with too little; in a mutation, CAMPAIGN_ARCHIVED for an archived
+ *   campaign (queries still read it).
  * - `editable(ctx, user, id)`: `loadCharacter(..., "edit")` plus the read sheet.
  * - `assertCanAct(character, sheet)`: CHARACTER_UNAVAILABLE for a dead, away
  *   or unconscious character (decision 9); call it before any roll or feature.
@@ -42,6 +43,7 @@ import {
 } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { refuseArchivedWrite } from "./archived";
 import { readVersioned } from "./blobs";
 import { atLeast, campaignRoleOf, permissionFor, rolePermission, type Permission } from "./permissions";
 
@@ -232,7 +234,11 @@ async function countLiveSessionStats(
 
 export type LoadedCharacter = { campaign: Doc<"campaigns">; permission: Permission; character: Doc<"characters"> };
 
-/** The character, its live campaign and the user's permission on it (exact up to `enough`), or null without access. */
+/**
+ * The character, its live campaign and the user's permission on it (exact up to `enough`), or null without access.
+ * No archived guard here (its callers decide FORBIDDEN themselves): a mutation that writes after `findCharacter` calls
+ * `refuseArchived` after its own permission check, as `rolls.tagTeamApply` does.
+ */
 export async function findCharacter(ctx: QueryCtx, user: Doc<"users">, characterId: Id<"characters">, enough: Permission): Promise<LoadedCharacter | null> {
   const character = await ctx.db.get("characters", characterId);
   if (character === null) return null;
@@ -259,6 +265,9 @@ export async function loadCharacter(
   const found = await findCharacter(ctx, user, characterId, enough);
   if (found === null) throw appError("NOT_FOUND");
   if (!atLeast(found.permission, need)) throw appError("FORBIDDEN");
+  // Q9 a (dcm-jh6d.64): after the access check, a mutation never writes a character of an archived campaign; a query
+  // still reads it. Every character write on `userMutation` / `keyedUserMutation` loads through here.
+  refuseArchivedWrite(ctx, found.campaign);
   return found;
 }
 

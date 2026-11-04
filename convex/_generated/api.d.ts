@@ -70,6 +70,7 @@ import type * as lib_adversaryActions from "../lib/adversaryActions.js";
 import type * as lib_adversaryFeatures from "../lib/adversaryFeatures.js";
 import type * as lib_adversaryHits from "../lib/adversaryHits.js";
 import type * as lib_allowlist from "../lib/allowlist.js";
+import type * as lib_archived from "../lib/archived.js";
 import type * as lib_areaSight from "../lib/areaSight.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_authEmail from "../lib/authEmail.js";
@@ -302,6 +303,7 @@ declare const fullApi: ApiFromModules<{
   "lib/adversaryFeatures": typeof lib_adversaryFeatures;
   "lib/adversaryHits": typeof lib_adversaryHits;
   "lib/allowlist": typeof lib_allowlist;
+  "lib/archived": typeof lib_archived;
   "lib/areaSight": typeof lib_areaSight;
   "lib/auth": typeof lib_auth;
   "lib/authEmail": typeof lib_authEmail;

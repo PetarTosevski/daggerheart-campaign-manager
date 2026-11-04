@@ -35,6 +35,7 @@ import {
   objectsOnMap,
   tokensOnMap,
 } from "./lib/combatMaps";
+import { refuseArchived } from "./lib/archived";
 import { apiKey, ClaudeFailure, messagesCreate } from "./lib/claude";
 import { deleteOwnFile } from "./lib/files";
 import { gmMutation, userAction } from "./lib/functions";
@@ -243,6 +244,8 @@ async function assertGm(ctx: QueryCtx, userId: Id<"users">, campaignId: Id<"camp
   const access = user === null ? null : await campaignAccess(ctx, user, campaignId, "owner");
   if (access === null) throw appError("NOT_FOUND");
   if (access.permission !== "owner") throw appError("FORBIDDEN");
+  // Q9 a (dcm-jh6d.64): `generate` writes the map, so an archived campaign stops it before the API call.
+  refuseArchived(access.campaign);
 }
 
 const packRowValidator = v.object({ _id: v.id("spritePacks"), name: v.string(), extends: v.optional(v.string()) });

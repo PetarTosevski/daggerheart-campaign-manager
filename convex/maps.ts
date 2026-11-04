@@ -36,6 +36,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { logAction, newGroupId } from "./lib/actionLog";
 import { readSheet, saveSheet } from "./lib/characterSheet";
 import { rollDie } from "./lib/dice";
+import { refuseArchivedWrite } from "./lib/archived";
 import { claimFile, deleteOwnFile, isAllowedImage, isClaimed, ownFileUrl } from "./lib/files";
 import { userMutation, userQuery } from "./lib/functions";
 import {
@@ -100,6 +101,7 @@ function invalid(message: string): never {
 async function mapAccess(ctx: QueryCtx, user: Doc<"users">, campaignId: Id<"campaigns">, need: Permission) {
   const campaign = await liveCampaign(ctx, campaignId);
   const permission = await requirePermission(ctx, user, { type: "map", campaign }, need, "edit");
+  refuseArchivedWrite(ctx, campaign); // Q9 a (dcm-jh6d.64): map edits refuse an archived campaign; `get` still reads it.
   const role: Role = atLeast(permission, "edit") ? "gm" : "player";
   return { campaign, role };
 }

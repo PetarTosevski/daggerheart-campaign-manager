@@ -128,6 +128,7 @@ import {
   type QueryCtx,
 } from "../_generated/server";
 import { isE2EDeployment } from "./allowlist";
+import { refuseArchived } from "./archived";
 import { getUser } from "./auth";
 import { campaignScope, ownerScope, runOnce, type ScopeKey } from "./operations";
 import { atLeast, campaignAccess, type CampaignPermission, type Permission } from "./permissions";
@@ -226,15 +227,11 @@ async function authorizedCampaign(
   return { campaign: access.campaign, permission: access.permission === "creator" ? "owner" : access.permission };
 }
 
-/** Q9 a: an archived campaign is read-only; after the access check, so a stranger still gets NOT_FOUND. */
-function refuseArchived(campaign: Doc<"campaigns">, archived: "allow" | undefined) {
-  if (campaign.archivedAt !== undefined && archived !== "allow") throw appError("CAMPAIGN_ARCHIVED");
-}
-
 /** The shared input of every campaign mutation wrapper: access, then the archived guard, then the rate limit. */
 async function campaignMutationInput(ctx: MutationCtx, campaignId: Id<"campaigns">, options: CampaignOptions & MutationOptions) {
   const user = await signedIn(ctx);
   const { campaign, permission } = await authorizedCampaign(ctx, user, campaignId, options);
+  // Q9 a (convex/lib/archived.ts): after the access check, so a stranger still gets NOT_FOUND.
   refuseArchived(campaign, options.archived);
   await enforceRateLimit(ctx, user, options.rateLimit);
   return { user, campaign, permission };

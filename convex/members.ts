@@ -6,6 +6,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { deleteInvites, freshJoinCode, pendingInvite } from "./campaigns";
 import { normalizeEmail } from "./lib/allowlist";
+import { refuseArchived } from "./lib/archived";
 import { scheduleInviteEmail } from "./lib/inviteEmail";
 import { campaignMutation, campaignQuery, creatorMutation, gmMutation, gmQuery, userMutation } from "./lib/functions";
 import { atLeast, campaignAccess, permissionFor, removalNeed } from "./lib/permissions";
@@ -170,6 +171,7 @@ export const revokeInvite = userMutation({
     const access = await campaignAccess(ctx, ctx.user, invite.campaignId, "owner");
     if (access === null) throw appError("NOT_FOUND");
     if (access.permission !== "owner") throw appError("FORBIDDEN");
+    refuseArchived(access.campaign); // Q9 a (dcm-jh6d.64): as `invite`, which a campaign wrapper refuses.
     await ctx.db.delete("campaignInvites", inviteId);
     return null;
   },

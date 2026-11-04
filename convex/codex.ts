@@ -26,6 +26,7 @@ import {
   writeText,
   type EntrySummary,
 } from "./lib/codex";
+import { refuseArchivedWrite } from "./lib/archived";
 import { claimFile, deleteFilesOf, deleteOwnFile, isAllowedImage, isClaimed } from "./lib/files";
 import { lastTokenId, playerTokenFilter, tokenCount, tokenRow, toToken, writableMap, writeToken } from "./lib/maps";
 import { campaignScope, runOnce } from "./lib/operations";
@@ -120,6 +121,7 @@ async function loadEntryForGm(ctx: QueryCtx, user: Doc<"users">, entryId: Id<"co
   const found = await findEntry(ctx, user, entryId);
   if (found === null) throw appError("NOT_FOUND");
   if (!atLeast(found.permission, "edit")) throw appError("FORBIDDEN");
+  refuseArchivedWrite(ctx, found.campaign); // Q9 a (dcm-jh6d.64): every caller is a Codex edit.
   return { ...found, summary: storedEntry(found.entry.data).summary };
 }
 

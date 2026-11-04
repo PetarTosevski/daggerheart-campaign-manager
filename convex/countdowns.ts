@@ -29,6 +29,7 @@ import { appError } from "../src/lib/errors/app-error";
 import { countdownDetailsSchema, createCountdownSchema } from "../src/lib/validation/countdowns";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
+import { refuseArchived } from "./lib/archived";
 import { campaignQuery, keyedGmMutation, keyedUserMutation } from "./lib/functions";
 import { rollDice } from "./lib/dice";
 import { applyTick, clearChaseResult } from "./lib/countdownTicks";
@@ -425,6 +426,7 @@ export const operate = keyedUserMutation({
     const access = await campaignAccess(ctx, ctx.user, countdown.campaignId, "owner");
     if (access === null) throw appError("NOT_FOUND");
     if (!atLeast(access.permission, "owner")) throw appError("FORBIDDEN");
+    refuseArchived(access.campaign); // Q9 a (dcm-jh6d.64)
     if ((action === "correction") !== (amount !== undefined)) {
       throw appError("INVALID", "Only a correction takes an amount.");
     }

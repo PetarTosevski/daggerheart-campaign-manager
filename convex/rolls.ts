@@ -64,6 +64,7 @@ import { tickArmedCountdowns } from "./countdownRolls";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { latestLiveRow, logAction, newGroupId } from "./lib/actionLog";
+import { refuseArchived } from "./lib/archived";
 import { assertCanAct, findCharacter, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { rollDie } from "./lib/dice";
 import { gainFear } from "./lib/fear";
@@ -352,6 +353,7 @@ export const tagTeamApply = keyedUserMutation({
       const second = group.find((r) => r.characterId !== undefined && r.characterId !== first.characterId);
       const partner = atLeast(lead.permission, "edit") || second === undefined ? null : await findCharacter(ctx, ctx.user, second.characterId!, "edit");
       if (!atLeast(lead.permission, "edit") && !atLeast(partner?.permission ?? null, "edit")) throw appError("FORBIDDEN");
+      refuseArchived(lead.campaign); // Q9 a (dcm-jh6d.64): `findCharacter` leaves the archived guard to its caller.
       if (!isPendingTagTeam(group)) throw appError("DICE_RULE", "This Tag Team Roll is already settled.");
       const chosen = group.find((r) => r.characterId === pick)?.roll;
       if (chosen === undefined) throw appError("DICE_RULE", "Pick one of the two rolls.");
