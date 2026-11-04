@@ -17,6 +17,7 @@ import {
   WEB_TOGGLE_ON,
   questionsLeftLabel,
 } from "@/lib/lorekeeper/copy";
+import { useFeature } from "@/lib/use-feature";
 
 import type { ConversationVisibility } from "../../../../convex/lib/validators/lorekeeper";
 import { QUESTION_MAX, counterText, sendsOnKey } from "./model";
@@ -59,7 +60,10 @@ export type ComposerProps = {
  * screen. Any other notice (a failed ask, the questions left) stays under the toggles.
  */
 export function Composer(props: ComposerProps) {
-  const { disabled, questionsLeft, streaming, sending, onAsk, onStop, webSearch, onWebSearch, webAllowed = true, visibility, notice, onNewConversation } = props;
+  const { disabled, questionsLeft, streaming, sending, onAsk, onStop, webSearch, onWebSearch, webAllowed: campaignWeb = true, visibility, notice, onNewConversation } = props;
+  // Config AF1: the owner's Lorekeeper internet search switch, off for this user, hides the toggle too (the answer run
+  // skips the web pass on the server either way).
+  const webAllowed = useFeature("lorekeeperWeb") && campaignWeb;
   const [draft, setDraft] = useState("");
   const counterId = useId();
   const noticeId = useId();

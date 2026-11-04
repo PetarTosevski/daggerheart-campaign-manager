@@ -4,6 +4,7 @@ import { useCallback, useEffect } from "react";
 
 import { useSetPreference, usePreferences } from "@/components/config/prefs/use-preferences";
 import { PREFERENCE_DEFAULTS, clampVolume } from "@/lib/config/preferences";
+import { useFeature } from "@/lib/use-feature";
 import { prefersReducedMotion, useReducedMotion } from "@/lib/use-reduced-motion";
 
 /**
@@ -13,10 +14,19 @@ import { prefersReducedMotion, useReducedMotion } from "@/lib/use-reduced-motion
  *
  * While the account loads (and on the server render) the old per-device defaults apply: 3D on unless the device or the
  * account's Reduce motion asks for less motion, sound off, volume 60. Signed-out visitors never reach a dice box (the
- * proxy sends them to /signin). Nothing here reads or writes localStorage; the old `dcm.dice.settings` key is read only by
+ * proxy sends them to /signin). The owner's 3D dice switch (config AF1) turned off for this user forces 3D off whatever
+ * the account says (its saved preference is kept for when the switch is on again). Nothing here reads or writes localStorage; the old `dcm.dice.settings` key is read only by
  * `src/lib/config/legacy-prefs.ts` for the one-time import (IMP).
  */
 export type DiceSettings = { threeD: boolean; sound: boolean; /** 0-100. */ volume: number };
+
+/**
+ * Whether the owner's 3D dice switch (config AF1, feature `dice3d`) is on for this user. Off: `useDiceSettings` gives
+ * `threeD` false whatever Preferences say, and the dice boxes hide their 3D toggle.
+ */
+export function useDice3dAvailable(): boolean {
+  return useFeature("dice3d");
+}
 
 /** The volume the last mounted dice settings read, for `playRollSound` (sound.ts) and the 3D scene that calls it. */
 let currentVolume: number = PREFERENCE_DEFAULTS.diceVolume;
@@ -30,10 +40,11 @@ export function rollVolume(): number {
 export function useDiceSettings(): [DiceSettings, (change: Partial<DiceSettings>) => void] {
   const preferences = usePreferences();
   const reduced = useReducedMotion();
+  const available = useDice3dAvailable();
   const settings: DiceSettings =
     preferences === undefined
-      ? { threeD: !reduced, sound: PREFERENCE_DEFAULTS.diceSound, volume: PREFERENCE_DEFAULTS.diceVolume }
-      : { threeD: preferences.dice3d, sound: preferences.diceSound, volume: preferences.diceVolume };
+      ? { threeD: available && !reduced, sound: PREFERENCE_DEFAULTS.diceSound, volume: PREFERENCE_DEFAULTS.diceVolume }
+      : { threeD: available && preferences.dice3d, sound: preferences.diceSound, volume: preferences.diceVolume };
   const volume = settings.volume;
   // Syncs an outside value (the sound module's volume), not React state (rule 13 allows it).
   useEffect(() => {

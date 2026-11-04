@@ -10,6 +10,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, type ActionCtx, type MutationCtx } from "./_generated/server";
 import { ClaudeFailure, messagesStream, modelFor, OPUS, SONNET, type StreamResult } from "./lib/claude";
+import { featureOn } from "./lib/features";
 import { buildContext } from "./lib/lorekeeper/context";
 import { reservePass, settle, type UsageScopes } from "./lib/lorekeeper/caps";
 import { retrieve } from "./lib/lorekeeper/retrieve";
@@ -170,7 +171,12 @@ export const prepare = internalQuery({
       question: questionRow.text,
       // The campaign's switch is read again here, so an ask started just before the GM turned internet search off never searches (config L1).
       // A shorter answer (config AD6) never searches either.
-      webSearch: !short && conversation.webSearch && resolveTableSettings(campaign.tableSettings).lorekeeperWeb,
+      // Config AF1: the owner's Lorekeeper internet search switch, off for the asker, skips the web pass too.
+      webSearch:
+        !short &&
+        conversation.webSearch &&
+        resolveTableSettings(campaign.tableSettings).lorekeeperWeb &&
+        (await featureOn(ctx, user, "lorekeeperWeb")),
       short,
       chunks,
       rulings,

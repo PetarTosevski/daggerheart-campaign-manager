@@ -8,6 +8,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { lorekeeperAvailable, modelFor } from "./lib/claude";
+import { featureOn } from "./lib/features";
 import { campaignMutation, campaignQuery } from "./lib/functions";
 import { ownerViewing, type Permission } from "./lib/permissions";
 import { reserve } from "./lib/lorekeeper/caps";
@@ -419,7 +420,8 @@ export const setWebSearch = campaignMutation({
   args: { conversationId: v.id("lorekeeperConversations"), webSearch: v.boolean() },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const webSearch = args.webSearch && lorekeeperRules(ctx.campaign, ctx.permission).webAllowed;
+    // Config AF1: the owner's Lorekeeper internet search switch, off for the caller, keeps the toggle off.
+    const webSearch = args.webSearch && lorekeeperRules(ctx.campaign, ctx.permission).webAllowed && (await featureOn(ctx, ctx.user, "lorekeeperWeb"));
     const row = await ownConversation(ctx, args.conversationId);
     if (row.webSearch !== webSearch) await ctx.db.patch("lorekeeperConversations", row._id, { webSearch });
     return null;
