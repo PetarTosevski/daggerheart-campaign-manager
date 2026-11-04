@@ -10,6 +10,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { expireParty } from "./campaignTime";
 import { assertRunning, assertTextLength, assertWholeInRange, loadEncounter, loadInstance, MAX_INSTANCE_NOTE, MAX_INSTANCES, MAX_MINIONS, MAX_TAG, MAX_TAGS } from "./lib/encounters";
+import { logAction } from "./lib/actionLog";
 import { FEAR_SPEND_REASONS, spendFear as spendCampaignFear } from "./lib/fear";
 import { gmQuery, keyedGmMutation } from "./lib/functions";
 import { adversaryDefeated } from "./lib/spotlight";
@@ -131,6 +132,47 @@ export const defeatMinions = keyedGmMutation({
       assertWholeInRange(count, 1, MAX_MINIONS, "Minions to defeat");
       const next = await patchTracks(ctx, instance, Math.min(instance.stats.hpMax, instance.hp + count), instance.stress);
       return { remaining: instance.stats.hpMax - next.hp, defeated: next.defeated };
+    }),
+});
+
+/**
+ * Revives a defeated adversary (bead dcm-6c2o, user 2026-11-04: "Give the GM the option to revive a dead adversary"):
+ * one step sets its marked HP and Stress (the GM's box starts at full health, 0 and 0) and clears the defeat. Defeat
+ * today is the instance's `defeated` flag plus every HP marked (`adversaryDefeated`; a Minion group's HP are its fallen
+ * Minions, so 0 HP marked brings the whole group back, `minionCount` never changes); the token's grey (`stats.down`),
+ * the spotlight refusal (ADVERSARY_DEFEATED) and the attack / card target checks all read those two fields, so
+ * clearing them reverses the defeat everywhere. Conditions, tags and effects stay as they were (defeat sets none).
+ *
+ * `hp` must leave at least one HP (or Minion) unmarked, 0..hpMax-1, and `stress` 0..stressMax (ENCOUNTER_RULE); an
+ * adversary that is not defeated is refused (ENCOUNTER_RULE); the encounter must be running (ENCOUNTER_NOT_RUNNING).
+ * Logged as one undoable GM-only row (kind `adversary`) carrying the instance before (`adversaryBefore`): the GM's undo
+ * (`actionLog.undo`) puts it back to defeated with its previous marks.
+ */
+export const reviveInstance = keyedGmMutation({
+  args: { instanceId: v.string(), hp: v.number(), stress: v.number() },
+  returns: tracksResult,
+  handler: async (ctx, { instanceId, hp, stress }) =>
+    ctx.once("encounter_revive", { instanceId, hp, stress }, async () => {
+      const { instance } = await loadRunning(ctx, ctx.campaign._id, instanceId);
+      if (!adversaryDefeated(instance)) throw appError("ENCOUNTER_RULE", "Only a defeated adversary can be revived.");
+      const { hpMax, stressMax } = instance.stats;
+      const minions = instance.minionCount !== undefined;
+      assertWholeInRange(hp, 0, Math.max(0, hpMax - 1), minions ? "Fallen Minions" : "Marked HP");
+      assertWholeInRange(stress, 0, stressMax, "Marked Stress");
+      // Undo writes these back (`undoEntry`); revive changes nothing else on the row.
+      const before = { instanceId: instance._id, hp: instance.hp, stress: instance.stress, defeated: instance.defeated };
+      await ctx.db.patch("encounterAdversaries", instance._id, { hp, stress, defeated: false, updatedAt: Date.now() });
+      const marks = minions ? `${hpMax - hp} of ${hpMax} Minions standing` : `${hp} of ${hpMax} HP marked`;
+      await logAction(ctx, {
+        campaignId: ctx.campaign._id,
+        actorId: ctx.user._id,
+        kind: "adversary",
+        visibility: "gm",
+        summary: `${instance.label} revived: ${marks}${stressMax > 0 ? `, ${stress} of ${stressMax} Stress marked` : ""}`,
+        adversaryBefore: [before],
+        undoable: true,
+      });
+      return { hp, stress, defeated: false };
     }),
 });
 

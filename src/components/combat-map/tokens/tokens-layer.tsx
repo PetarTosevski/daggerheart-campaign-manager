@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useEffectEvent, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { Fragment, useEffect, useEffectEvent, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 
 import { designAsset } from "@/lib/design-assets";
 import { RANGE_BANDS } from "@/lib/domain/combat-map/ranges";
 
 import { toggleActionRing, useActionRing } from "../hud/action-ring/store";
+import { canRevive, ReviveBox, ReviveButton, type ReviveTarget } from "../hud/revive";
 import { isLit } from "../hud/spotlight/model";
 import { SpotlightPools, useSpotlightLit } from "../hud/spotlight/light";
 import { TokenFace, moveNoticeText, pcTokenFace, refuseMove, useHudMoveLock, useHudTokens, useTokenHope } from "../hud/token";
@@ -93,6 +94,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
   const rings = useRings();
   const drag = useRef<Drag | null>(null);
   const [preview, setPreview] = useState<{ id: string; dx: number; dy: number } | { id: string; angle: number } | null>(null);
+  const [reviving, setReviving] = useState<ReviveTarget | null>(null);
   const gm = role === "gm";
   const editing = gm && mode === "edit";
   const { cell, zoom, pad } = viewport;
@@ -290,8 +292,8 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
           const hasPortrait = t.portrait !== null && background(t).backgroundImage !== undefined;
           const face = hud ? pcTokenFace(t, role, hope.get(t._id) ?? null) : null;
           return (
+            <Fragment key={t._id}>
             <button
-              key={t._id}
               type="button"
               className={face ? `${classes} hud-tk` : classes}
               data-token={t._id}
@@ -377,6 +379,16 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
                 </span>
               ) : null}
             </button>
+            {/* bead dcm-6c2o: a defeated adversary's Revive pill (GM, HUD), a sibling the token's hover / focus shows (CL13). */}
+            {hud && gm && t.instanceId && canRevive(t) ? (
+              <ReviveButton
+                target={{ tokenId: t._id, instanceId: t.instanceId, name: t.name }}
+                onOpen={setReviving}
+                className="hud-rv-tok"
+                style={{ left: (t.x + t.size / 2) * cell, top: t.y * cell + 4 }}
+              />
+            ) : null}
+            </Fragment>
           );
         })}
       </div>
@@ -392,6 +404,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
     >
       {notice ? (hud ? moveNoticeText(notice) : notice.text) : ""}
     </p>
+    {reviving ? <ReviveBox campaignId={campaignId} mapId={map._id} target={reviving} onClose={() => setReviving(null)} /> : null}
     {actions.error ? (
       <p role="alert" className="cm-alert cm-tokens-error">
         {actions.error}

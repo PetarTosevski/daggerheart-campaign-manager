@@ -13,6 +13,7 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { Portrait, hpText, type HudPartyMember } from "../banners/banner";
 import { closePanel, togglePanel, usePanelOpen } from "../panels";
+import { canRevive, ReviveBox, ReviveButton, type ReviveTarget } from "../revive";
 import { artOf, type TokenArt } from "../token/model";
 import { hudButtonClass } from "../ui";
 import { afterHandTo, afterHandToParty, afterTake, discHolder, discLabel, holderArt, initialOf, isDefeatedRow, livingFirst, takePay, type DiscHolder, type SpotlightState } from "./model";
@@ -36,7 +37,17 @@ import { afterHandTo, afterHandToParty, afterTake, discHolder, discLabel, holder
  */
 
 type Pay = "free" | "fear";
-type AdversaryRow = { tokenId: Id<"combatTokens">; name: string; sub: string; hp: number; hpMax: number; art: TokenArt | null; defeated: boolean };
+type AdversaryRow = {
+  tokenId: Id<"combatTokens">;
+  name: string;
+  sub: string;
+  hp: number;
+  hpMax: number;
+  art: TokenArt | null;
+  defeated: boolean;
+  /** The GM may revive it (bead dcm-6c2o): defeated in the running encounter; else null. */
+  revive: ReviveTarget | null;
+};
 
 /** The GM's moves from the disc: intents with optimistic updates (CL3 / CL4); the last refusal in the refusal table's words. */
 function useDiscMoves(campaignId: Id<"campaigns">) {
@@ -171,6 +182,7 @@ function useAdversaries(campaignId: Id<"campaigns">, mapId: Id<"combatMaps"> | u
       hpMax: t.stats?.hpMax ?? 0,
       art: artOf(t.portrait),
       defeated: isDefeatedRow(t.stats),
+      revive: canRevive(t) && t.instanceId ? { tokenId: t._id, instanceId: t.instanceId, name: t.name } : null,
     }));
 }
 
@@ -202,6 +214,7 @@ export function SpotlightDisc({ campaignId, mapId, gm, fear }: SpotlightDiscProp
   const tokenArt = useTokenArt(campaignId, gm, adversaries);
   const open = usePanelOpen("spotlight");
   const moves = useDiscMoves(campaignId);
+  const [reviving, setReviving] = useState<ReviveTarget | null>(null);
   const popId = useId();
   if (state === undefined) {
     return (
@@ -262,8 +275,13 @@ export function SpotlightDisc({ campaignId, mapId, gm, fear }: SpotlightDiscProp
           fear={fear}
           moves={moves}
           onClose={() => closePanel("spotlight", true)}
+          onRevive={(target) => {
+            closePanel("spotlight", true);
+            setReviving(target);
+          }}
         />
       ) : null}
+      {reviving ? <ReviveBox campaignId={campaignId} mapId={mapId} target={reviving} onClose={() => setReviving(null)} /> : null}
     </>
   );
 }
@@ -277,6 +295,8 @@ type PopoverProps = {
   fear: number;
   moves: ReturnType<typeof useDiscMoves>;
   onClose: () => void;
+  /** Opens the revive box for a defeated adversary (bead dcm-6c2o); the popover closes. */
+  onRevive: (target: ReviveTarget) => void;
 };
 
 /** The PC row's line: "Druid · Hope 1 · HP 2 of 6 marked". */
@@ -294,7 +314,7 @@ export function adversaryRowLine(row: Pick<AdversaryRow, "sub" | "hp" | "hpMax">
  * The GM's popover (board `.spp`, role dialog "Spotlight"): Close, the Party / Adversaries tabs (opening on the
  * holder's), the rows and the footer. Focus goes to the selected tab on open; Escape and Close return it to the disc.
  */
-function SpotlightPopover({ id, state, holder, party, adversaries, fear, moves, onClose }: PopoverProps) {
+function SpotlightPopover({ id, state, holder, party, adversaries, fear, moves, onClose, onRevive }: PopoverProps) {
   const [tab, setTab] = useState<"party" | "adv">(holder.kind === "adversary" || holder.kind === "gm" ? "adv" : "party");
   const [pay, setPay] = useState<Pay>("free");
   const tabsId = useId();
@@ -448,21 +468,24 @@ function SpotlightPopover({ id, state, holder, party, adversaries, fear, moves, 
             livingFirst(adversaries).map((row) => {
               const has = holder.kind === "adversary" && holder.tokenId === row.tokenId;
               // A defeated adversary (user 2026-11-04): at the bottom, disabled, "Defeated" in place of Take (the
-              // server refuses it too, ADVERSARY_DEFEATED).
+              // server refuses it too, ADVERSARY_DEFEATED). While its encounter runs, hover or focus shows its Revive
+              // pill (bead dcm-6c2o), a sibling of the row button (CL13).
               if (row.defeated) {
                 return (
-                  <Row
-                    key={row.tokenId}
-                    gmRow
-                    has={has}
-                    off="Defeated"
-                    face={<AdversaryFace name={row.name} art={row.art} sizes="40px" initialClass="hud-spr-en" />}
-                    title={row.name}
-                    line={adversaryRowLine(row)}
-                    go="Take"
-                    label={`${row.name}, defeated: can't take the spotlight`}
-                    onClick={() => undefined}
-                  />
+                  <div key={row.tokenId} className="hud-spr-wrap" data-testid="hud-spotlight-defeated">
+                    <Row
+                      gmRow
+                      has={has}
+                      off="Defeated"
+                      face={<AdversaryFace name={row.name} art={row.art} sizes="40px" initialClass="hud-spr-en" />}
+                      title={row.name}
+                      line={adversaryRowLine(row)}
+                      go="Take"
+                      label={`${row.name}, defeated: can't take the spotlight`}
+                      onClick={() => undefined}
+                    />
+                    {row.revive ? <ReviveButton target={row.revive} onOpen={onRevive} className="hud-rv-row" /> : null}
+                  </div>
                 );
               }
               return (

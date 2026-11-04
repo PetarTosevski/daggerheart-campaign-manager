@@ -7,8 +7,6 @@ import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { cn } from "@/lib/utils";
-
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { capOf, needsChoices, pickable, type FeatureAsk } from "../../../adversaries/tracker/actions/ask";
@@ -23,8 +21,9 @@ import { conditionName } from "../pick/model";
 import { usePick } from "../pick";
 import { BlockedReason, RefusalMessage, useBlocked, useRefusal, type Blocked } from "../blocked";
 import { adversaryActBlocked, fearBlocked, spotlightFirst } from "../fear/blocked";
-import { CostPill, PartBoundary, Pips, SidePanel, StatTile } from "../ui";
+import { CostPill, PartBoundary, SidePanel, StatTile } from "../ui";
 import type { FearAsk, GmActs } from "./acts";
+import { Track } from "./track";
 import { gmAttackSession, gmFeatureSession } from "./attack";
 import {
   actionSpotlightCost,
@@ -33,7 +32,6 @@ import {
   faceLetter,
   gmAttackRows,
   kindLabel,
-  markedText,
   signed,
   spotlightButtonText,
   spotlightCost,
@@ -502,38 +500,5 @@ function FeatureWhy({ why }: { why: Blocked }) {
     <p className="hsb-af-why" data-testid="hud-statblock-feature-why">
       <BlockedReason>{why.text}</BlockedReason>
     </p>
-  );
-}
-
-function Track({
-  kind,
-  name,
-  noun,
-  marked,
-  max,
-  onStep,
-}: {
-  kind: "hp" | "stress";
-  name: string;
-  noun: [string, string];
-  marked: number;
-  max: number;
-  onStep: (delta: -1 | 1) => void;
-}) {
-  const text = markedText(marked, max);
-  return (
-    <div className={cn("hsb-tr", `hsb-tr-${kind}`)}>
-      <span className="hsb-l">{name}</span>
-      <Pips kind={kind} on={marked} max={max} label={`${marked} of ${max} ${noun[1]} marked`} />
-      <b className="hsb-n">{text}</b>
-      <span className="hsb-step">
-        <button type="button" aria-label={`Clear 1 ${noun[0]}`} disabled={marked <= 0} onClick={() => onStep(-1)}>
-          −
-        </button>
-        <button type="button" aria-label={`Mark 1 ${noun[0]}`} disabled={marked >= max} onClick={() => onStep(1)}>
-          +
-        </button>
-      </span>
-    </div>
   );
 }
