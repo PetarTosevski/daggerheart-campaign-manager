@@ -59,7 +59,7 @@ import {
   writeToken,
 } from "./lib/maps";
 import { campaignScope, runOnce } from "./lib/operations";
-import { atLeast, liveCampaign, requirePermission, type Permission, type Role } from "./lib/permissions";
+import { atLeast, liveCampaign, requirePermission, type Permission } from "./lib/permissions";
 import { recordHistory } from "./tables/history";
 import {
   attachResultValidator,
@@ -70,6 +70,9 @@ import {
   trailOptionValidator,
   travelRulesValidator,
 } from "./lib/validators/maps";
+
+/** The map viewer: "gm" with edit access (GM, co-GM, edit grantee), else "player" (config G1: not the campaign Role). */
+type Role = "gm" | "player";
 
 export type MapView = { role: Role; frameId: Doc<"campaigns">["frameId"]; state: MapState | PlayerMapState; mapUrl: string | null };
 export type MoveResult = { days: number; weatherRoll?: number; dice: number[]; encounter: boolean; day: number };

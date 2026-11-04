@@ -13,8 +13,18 @@ import { departed } from "./journalState";
 
 export type Permission = Doc<"grants">["permission"];
 
-/** A user's role in a campaign: its creator is the GM; members and invitees are players. */
-export type Role = "gm" | "player";
+/**
+ * A user's role in a campaign: its creator is the GM; a member row with `role: "coGm"` is a co-GM (config G1); other
+ * members and every invitee (a co-GM invite included, until it is accepted) are players.
+ */
+export type Role = "gm" | "coGm" | "player";
+
+/**
+ * A campaign rank: the stored permissions plus `creator`, above `owner`, which only the campaign's creator
+ * (`campaign.ownerId`) holds (config G1, Q7 a). Never stored in `grants`; only `permissionFor(..., "creator")` and
+ * `campaignAccess(..., "creator")` return it, and only for a campaign resource.
+ */
+export type CampaignPermission = Permission | "creator";
 
 /** Something a permission applies to, with the campaign it lives in. */
 export type Resource =
@@ -32,10 +42,10 @@ export type Resource =
 /** Resources that grants can name (journal pages cannot: their visibility is the rule, analysis 2). */
 type GrantableResource = Exclude<Resource, { type: "journalPage" }>;
 
-const RANK: Record<Permission, number> = { view: 1, edit: 2, owner: 3 };
+const RANK: Record<CampaignPermission, number> = { view: 1, edit: 2, owner: 3, creator: 4 };
 
-/** Whether `permission` includes `need` (owner ⊃ edit ⊃ view). */
-export function atLeast(permission: Permission | null, need: Permission): boolean {
+/** Whether `permission` includes `need` (creator ⊃ owner ⊃ edit ⊃ view). */
+export function atLeast(permission: CampaignPermission | null, need: CampaignPermission): boolean {
   return permission !== null && RANK[permission] >= RANK[need];
 }
 
@@ -54,6 +64,11 @@ export function inviteEmail(user: Doc<"users">): string | null {
   return user.email && user.emailVerificationTime !== undefined ? normalizeEmail(user.email) : null;
 }
 
+/** A member row's role: a co-GM when its `role` says so, else a player. */
+function memberRole(member: Doc<"campaignMembers">): Role {
+  return member.role === "coGm" ? "coGm" : "player";
+}
+
 /**
  * The role half of `permissionFor`: no read for the GM, then at most two point
  * reads (membership, then invite). Call `permissionFor`, which also counts
@@ -66,7 +81,8 @@ export async function campaignRole(ctx: QueryCtx, user: Doc<"users">, campaign: 
     .query("campaignMembers")
     .withIndex("by_campaign_user", (q) => q.eq("campaignId", campaign._id).eq("userId", user._id))
     .unique();
-  if (member !== null) return "player";
+  if (member !== null) return memberRole(member);
+  // An invite, a co-GM one included, is a player until it is accepted (Q8 b): no GM rights before they join.
   const email = inviteEmail(user);
   if (email !== null) {
     const invite = await ctx.db
@@ -88,7 +104,7 @@ export async function campaignRoleOf(ctx: QueryCtx, userId: Id<"users">, campaig
     .query("campaignMembers")
     .withIndex("by_campaign_user", (q) => q.eq("campaignId", campaign._id).eq("userId", userId))
     .unique();
-  if (member !== null) return "player";
+  if (member !== null) return memberRole(member);
   const user = await ctx.db.get("users", userId);
   const email = user === null ? null : inviteEmail(user);
   if (email === null) return null;
@@ -100,11 +116,12 @@ export async function campaignRoleOf(ctx: QueryCtx, userId: Id<"users">, campaig
 }
 
 /**
- * Today's rules: the campaign's GM owns everything in it; a player (member or
- * invitee) views it and edits their own character.
+ * Today's rules: the campaign's GM and its co-GMs own everything in it (a co-GM passes every GM check, config G1); a
+ * player (member or invitee) views it and edits their own character. The creator's extra rank is `creator`
+ * (`permissionFor` with `need: "creator"`).
  */
 export function rolePermission(role: Role | null, resource: GrantableResource, userId: Id<"users">): Permission | null {
-  if (role === "gm") return "owner";
+  if (role === "gm" || role === "coGm") return "owner";
   if (role === "player") return resource.type === "character" && resource.character.ownerId === userId ? "edit" : "view";
   return null;
 }
@@ -219,7 +236,29 @@ async function actsFor(ctx: QueryCtx, user: Doc<"users">, principalId: string): 
  * joined (read once per call, at most PRINCIPALS_TAKE of each), so a player's
  * check does not grow with the campaign's grants (PF10).
  */
-export async function permissionFor(ctx: QueryCtx, user: Doc<"users">, resource: Resource, need: Permission = "owner"): Promise<Permission | null> {
+export async function permissionFor(ctx: QueryCtx, user: Doc<"users">, resource: Resource, need?: Permission): Promise<Permission | null>;
+/**
+ * With `need: "creator"` (campaign resources only): `creator` for the campaign's creator, otherwise exactly what
+ * `need: "owner"` returns (a co-GM is `owner`, never `creator`).
+ */
+export async function permissionFor(
+  ctx: QueryCtx,
+  user: Doc<"users">,
+  resource: Resource,
+  need: CampaignPermission,
+): Promise<CampaignPermission | null>;
+export async function permissionFor(
+  ctx: QueryCtx,
+  user: Doc<"users">,
+  resource: Resource,
+  need: CampaignPermission = "owner",
+): Promise<CampaignPermission | null> {
+  if (need === "creator") {
+    if (resource.type !== "campaign") throw new Error("The creator rank applies to a campaign only.");
+    const permission = await permissionFor(ctx, user, resource, "owner");
+    // The one place that names the creator (Q7 a): `campaign.ownerId` only, never a grant or a member row.
+    return permission === "owner" && resource.campaign.ownerId === user._id ? "creator" : permission;
+  }
   if (resource.type === "journalPage") return journalPagePermission(ctx, user, resource);
   let best = rolePermission(await campaignRole(ctx, user, resource.campaign), resource, user._id);
   if (atLeast(best, need)) return best;
@@ -378,7 +417,9 @@ async function readsJournalPage(
   const ownerIsGm = journal.userId === campaign.ownerId;
   const isDeparted = !ownerIsGm && (await cachedDeparted(ctx, campaign, journal, cache));
   const isRecipient = !isDeparted && page.visibility === "chosen" && (await ticks(ctx, user, campaign, page, cache));
-  return canReadPage({ visibility: page.visibility, ownerIsGm, departed: isDeparted, viewer: role, isRecipient });
+  // Q6 a: a co-GM reads Notes as the GM does (GM-only pages and every shared page).
+  const viewer = role === "player" ? "player" : "gm";
+  return canReadPage({ visibility: page.visibility, ownerIsGm, departed: isDeparted, viewer, isRecipient });
 }
 
 /**
@@ -390,8 +431,21 @@ export async function campaignAccess(
   ctx: QueryCtx,
   user: Doc<"users">,
   campaignId: Id<"campaigns">,
-  enough: Permission = "view",
-): Promise<{ campaign: Doc<"campaigns">; permission: Permission } | null> {
+  enough?: Permission,
+): Promise<{ campaign: Doc<"campaigns">; permission: Permission } | null>;
+/** With `enough: "creator"`, the permission is `creator` for the campaign's creator (see `permissionFor`). */
+export async function campaignAccess(
+  ctx: QueryCtx,
+  user: Doc<"users">,
+  campaignId: Id<"campaigns">,
+  enough: CampaignPermission,
+): Promise<{ campaign: Doc<"campaigns">; permission: CampaignPermission } | null>;
+export async function campaignAccess(
+  ctx: QueryCtx,
+  user: Doc<"users">,
+  campaignId: Id<"campaigns">,
+  enough: CampaignPermission = "view",
+): Promise<{ campaign: Doc<"campaigns">; permission: CampaignPermission } | null> {
   const campaign = await ctx.db.get("campaigns", campaignId);
   if (campaign === null || campaign.deletedAt !== undefined) return null;
   const permission = await permissionFor(ctx, user, { type: "campaign", campaign }, enough);
@@ -408,6 +462,16 @@ export async function requirePermission(ctx: QueryCtx, user: Doc<"users">, resou
   if (permission === null) throw appError("NOT_FOUND");
   if (!atLeast(permission, need)) throw appError("FORBIDDEN");
   return permission;
+}
+
+/**
+ * What removing `userId` from the campaign needs (config G1, Q7 a): `creator` for a co-GM, `owner` for a player or an
+ * invitee, null for the creator (nobody removes the creator: they have no member row and delete the campaign instead).
+ */
+export async function removalNeed(ctx: QueryCtx, campaign: Doc<"campaigns">, userId: Id<"users">): Promise<CampaignPermission | null> {
+  const role = await campaignRoleOf(ctx, userId, campaign);
+  if (role === "gm") return null;
+  return role === "coGm" ? "creator" : "owner";
 }
 
 /** A live (not deleted) campaign, or NOT_FOUND. Access is checked separately (`requirePermission`). */

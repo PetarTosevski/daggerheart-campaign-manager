@@ -8,7 +8,7 @@
 import { getFunctionName, makeFunctionReference } from "convex/server";
 import { beforeAll, describe, expect, test } from "vitest";
 
-import { entryProblems, type Access, type Area } from "./authz/harness";
+import { COGM_KNOWN_GAPS, entryProblems, type Access, type Area } from "./authz/harness";
 import { publicFunctions, wrapperOf, type WrapperInfo } from "./authz/inventory";
 
 declare global {
@@ -61,10 +61,23 @@ export function allowedClasses(info: WrapperInfo | null): Access[] {
     case "gmMutation":
     case "keyedGmMutation":
       return ["gm"];
+    // Config G1: the creator-only rank (a co-GM is FORBIDDEN).
+    case "creatorQuery":
+    case "creatorMutation":
+    case "keyedCreatorMutation":
+      return ["creator"];
     case "campaignQuery":
     case "campaignMutation":
     case "keyedCampaignMutation":
-      return info.need === "view" ? ["view"] : info.need === "edit" ? ["edit"] : info.need === "owner" ? ["gm"] : [];
+      return info.need === "view"
+        ? ["view"]
+        : info.need === "edit"
+          ? ["edit"]
+          : info.need === "owner"
+            ? ["gm"]
+            : info.need === "creator"
+              ? ["creator"]
+              : [];
     case "userQuery":
     case "userMutation":
     case "keyedUserMutation":
@@ -112,6 +125,12 @@ describe("authz matrix guard", () => {
 
   test("every knownBug names a bead", () => {
     expect(knownBugProblems(AREAS)).toEqual([]);
+  });
+
+  test("every known co-GM gap names a bead and a listed function", () => {
+    const listed = listings(AREAS).map((l) => l.name);
+    const bad = Object.entries(COGM_KNOWN_GAPS).filter(([name, bead]) => !BEAD_ID.test(bead) || !listed.includes(name));
+    expect(bad).toEqual([]);
   });
 
   test("no name is listed twice across the areas", () => {
@@ -190,6 +209,33 @@ describe("the guard's checks catch what they should", () => {
       "m:gm: filed as view, but keyedGmMutation allows gm",
       "m:view: filed as gm, but campaignQuery need view allows view",
       "m:user: filed as maybe, but userMutation allows own/scoped/user",
+    ]);
+  });
+
+  test("a creator function filed as gm, a gm function filed as creator (config G1)", async () => {
+    const wrappers: Record<string, WrapperInfo> = {
+      "m:creator": { wrapper: "creatorMutation" },
+      "m:needCreator": { wrapper: "campaignMutation", need: "creator" },
+      "m:gm": { wrapper: "gmMutation" },
+      "m:ok": { wrapper: "keyedCreatorMutation" },
+    };
+    const problems = await classProblems(
+      [
+        area({
+          entries: [
+            { fn: fakeRef("m:creator"), access: "gm" },
+            { fn: fakeRef("m:needCreator"), access: "gm" },
+            { fn: fakeRef("m:gm"), access: "creator" },
+            { fn: fakeRef("m:ok"), access: "creator" },
+          ],
+        }),
+      ],
+      async (name) => wrappers[name] ?? null,
+    );
+    expect(problems).toEqual([
+      "m:creator: filed as gm, but creatorMutation allows creator",
+      "m:needCreator: filed as gm, but campaignMutation need creator allows creator",
+      "m:gm: filed as creator, but gmMutation allows gm",
     ]);
   });
 

@@ -19,21 +19,30 @@
  * | `keyedUserMutation`     | `idempotencyKey`            | `user`, `once` (scope: the user)           | `rateLimit?`                |
  * | `userAction`            | -                           | `user`                                     | `rateLimit?`                |
  * | `campaignQuery`         | `campaignId`                | `user`, `campaign`, `permission`           | `need`, `enough?`           |
- * | `campaignMutation`      | `campaignId`                | `user`, `campaign`, `permission`           | `need`, `enough?`, `rateLimit?` |
- * | `keyedCampaignMutation` | `campaignId`, `idempotencyKey` | the above + `once` (scope: the campaign) | `need`, `enough?`, `rateLimit?` |
- * | `gmQuery` / `gmMutation` / `keyedGmMutation` | as the campaign ones | as the campaign ones       | `need` is fixed to `"owner"` |
+ * | `campaignMutation`      | `campaignId`                | `user`, `campaign`, `permission`           | `need`, `enough?`, `rateLimit?`, `archived?` |
+ * | `keyedCampaignMutation` | `campaignId`, `idempotencyKey` | the above + `once` (scope: the campaign) | `need`, `enough?`, `rateLimit?`, `archived?` |
+ * | `gmQuery` / `gmMutation` / `keyedGmMutation` | as the campaign ones | as the campaign ones       | `need` is fixed to `"owner"`; mutations `rateLimit?`, `archived?` |
+ * | `creatorQuery` / `creatorMutation` / `keyedCreatorMutation` | as the campaign ones | as the campaign ones | `need` is fixed to `"creator"`; mutations `rateLimit?`, `archived?` |
  *
  * Consumed args stay part of the public signature (the client still sends
  * them) but are removed from the handler's `args`: use `ctx.campaign._id`.
  *
- * - `need: "view" | "edit" | "owner"` is the permission the caller must have
- *   on the campaign (`permissionFor`: the strongest of their campaign role and
- *   any grant). No access at all → `NOT_FOUND` (the campaign's existence is
- *   never revealed); some access but less than `need` → `FORBIDDEN`. A
- *   missing or soft-deleted campaign is `NOT_FOUND`.
+ * - `need: "view" | "edit" | "owner" | "creator"` is the permission the caller
+ *   must have on the campaign (`permissionFor`: the strongest of their campaign
+ *   role and any grant). No access at all → `NOT_FOUND` (the campaign's
+ *   existence is never revealed); some access but less than `need` →
+ *   `FORBIDDEN`. A missing or soft-deleted campaign is `NOT_FOUND`. `owner`
+ *   is the GM and every co-GM; `creator` (config G1, Q7 a) is the campaign's
+ *   creator only, for what a co-GM must not do (delete, archive, co-GMs).
  * - `ctx.permission` is exact only up to `enough` (default: `need`), because
  *   `permissionFor` stops reading grants once that is reached. Pass
- *   `enough: "owner"` when the handler branches on GM versus player.
+ *   `enough: "owner"` when the handler branches on GM versus player. It is at
+ *   most `"owner"`: under `need: "creator"` the caller is the creator and
+ *   `ctx.permission` is `"owner"`.
+ * - Archived campaigns (Q9 a: read-only for everyone): every campaign
+ *   mutation wrapper throws `CAMPAIGN_ARCHIVED` after the access check when
+ *   `campaign.archivedAt` is set, unless the option `archived: "allow"` is
+ *   given (opening, leaving, deleting). Queries read archived campaigns.
  * - `rateLimit: RateLimitName` consumes one token of that named limit (see
  *   `RATE_LIMITS`), keyed by the user, before the handler runs; past the limit
  *   the call fails with `RATE_LIMITED`. Mutations and actions only.
@@ -121,7 +130,7 @@ import {
 import { isE2EDeployment } from "./allowlist";
 import { getUser } from "./auth";
 import { campaignScope, ownerScope, runOnce, type ScopeKey } from "./operations";
-import { atLeast, campaignAccess, type Permission } from "./permissions";
+import { atLeast, campaignAccess, type CampaignPermission, type Permission } from "./permissions";
 
 // ---------------------------------------------------------------- errors
 
@@ -197,7 +206,10 @@ async function signedIn(ctx: QueryCtx): Promise<Doc<"users">> {
   return user;
 }
 
-type CampaignOptions = { need: Permission; enough?: Permission };
+type CampaignOptions = { need: CampaignPermission; enough?: Permission };
+
+/** Mutation-only options: a named rate limit, and `archived: "allow"` to run on an archived campaign. */
+type MutationOptions = { rateLimit?: RateLimitName; archived?: "allow" };
 
 async function authorizedCampaign(
   ctx: QueryCtx,
@@ -206,11 +218,26 @@ async function authorizedCampaign(
   { need, enough }: CampaignOptions,
 ): Promise<{ campaign: Doc<"campaigns">; permission: Permission }> {
   // The function form of a builder skips the options; fail loudly, never open.
-  if ((need as Permission | undefined) === undefined) throw new Error("Campaign wrappers require a `need` option.");
+  if ((need as CampaignPermission | undefined) === undefined) throw new Error("Campaign wrappers require a `need` option.");
   const access = await campaignAccess(ctx, user, campaignId, enough !== undefined && atLeast(enough, need) ? enough : need);
   if (access === null) throw appError("NOT_FOUND");
   if (!atLeast(access.permission, need)) throw appError("FORBIDDEN");
-  return access;
+  // `creator` is a check, never a ctx value: handlers see at most "owner".
+  return { campaign: access.campaign, permission: access.permission === "creator" ? "owner" : access.permission };
+}
+
+/** Q9 a: an archived campaign is read-only; after the access check, so a stranger still gets NOT_FOUND. */
+function refuseArchived(campaign: Doc<"campaigns">, archived: "allow" | undefined) {
+  if (campaign.archivedAt !== undefined && archived !== "allow") throw appError("CAMPAIGN_ARCHIVED");
+}
+
+/** The shared input of every campaign mutation wrapper: access, then the archived guard, then the rate limit. */
+async function campaignMutationInput(ctx: MutationCtx, campaignId: Id<"campaigns">, options: CampaignOptions & MutationOptions) {
+  const user = await signedIn(ctx);
+  const { campaign, permission } = await authorizedCampaign(ctx, user, campaignId, options);
+  refuseArchived(campaign, options.archived);
+  await enforceRateLimit(ctx, user, options.rateLimit);
+  return { user, campaign, permission };
 }
 
 /** Runs `run` once per idempotency key (see `ctx.once` above). */
@@ -298,32 +325,29 @@ export const campaignQuery = customQuery(baseQuery, {
   },
 });
 
-/** A campaign mutation: as `campaignQuery`, plus option `rateLimit`. */
+/** A campaign mutation: as `campaignQuery`, plus options `rateLimit` and `archived`. */
 export const campaignMutation = customMutation(baseMutation, {
   args: campaignArgs,
-  input: async (ctx, { campaignId }, { rateLimit, ...options }: CampaignOptions & { rateLimit?: RateLimitName }) => {
-    const user = await signedIn(ctx);
-    const { campaign, permission } = await authorizedCampaign(ctx, user, campaignId, options);
-    await enforceRateLimit(ctx, user, rateLimit);
-    return { ctx: { user, campaign, permission }, args: {} };
-  },
+  input: async (ctx, { campaignId }, options: CampaignOptions & MutationOptions) => ({
+    ctx: await campaignMutationInput(ctx, campaignId, options),
+    args: {},
+  }),
 });
 
 /** `campaignMutation` that consumes `idempotencyKey` and adds `ctx.once`, scoped to the campaign. */
 export const keyedCampaignMutation = customMutation(baseMutation, {
   args: keyedCampaignArgs,
-  input: async (ctx, { campaignId, idempotencyKey }, { rateLimit, ...options }: CampaignOptions & { rateLimit?: RateLimitName }) => {
-    const user = await signedIn(ctx);
-    const { campaign, permission } = await authorizedCampaign(ctx, user, campaignId, options);
-    await enforceRateLimit(ctx, user, rateLimit);
+  input: async (ctx, { campaignId, idempotencyKey }, options: CampaignOptions & MutationOptions) => {
+    const { user, campaign, permission } = await campaignMutationInput(ctx, campaignId, options);
     const once = onceFor(ctx, idempotencyKey, campaignScope(campaign._id), user, campaign._id);
     return { ctx: { user, campaign, permission, once }, args: {} };
   },
 });
 
 const OWNER: CampaignOptions = { need: "owner" };
+const CREATOR: CampaignOptions = { need: "creator" };
 
-/** The GM's query: `campaignQuery` with `need: "owner"`. */
+/** The GM's query (the GM and every co-GM): `campaignQuery` with `need: "owner"`. */
 export const gmQuery = customQuery(baseQuery, {
   args: campaignArgs,
   input: async (ctx, { campaignId }) => {
@@ -333,24 +357,49 @@ export const gmQuery = customQuery(baseQuery, {
   },
 });
 
-/** The GM's mutation: `campaignMutation` with `need: "owner"`. */
+/** The GM's mutation (the GM and every co-GM): `campaignMutation` with `need: "owner"`. */
 export const gmMutation = customMutation(baseMutation, {
   args: campaignArgs,
-  input: async (ctx, { campaignId }, { rateLimit }: { rateLimit?: RateLimitName }) => {
-    const user = await signedIn(ctx);
-    const { campaign, permission } = await authorizedCampaign(ctx, user, campaignId, OWNER);
-    await enforceRateLimit(ctx, user, rateLimit);
-    return { ctx: { user, campaign, permission }, args: {} };
-  },
+  input: async (ctx, { campaignId }, options: MutationOptions) => ({
+    ctx: await campaignMutationInput(ctx, campaignId, { ...options, ...OWNER }),
+    args: {},
+  }),
 });
 
 /** The GM's keyed mutation: `keyedCampaignMutation` with `need: "owner"`. */
 export const keyedGmMutation = customMutation(baseMutation, {
   args: keyedCampaignArgs,
-  input: async (ctx, { campaignId, idempotencyKey }, { rateLimit }: { rateLimit?: RateLimitName }) => {
+  input: async (ctx, { campaignId, idempotencyKey }, options: MutationOptions) => {
+    const { user, campaign, permission } = await campaignMutationInput(ctx, campaignId, { ...options, ...OWNER });
+    const once = onceFor(ctx, idempotencyKey, campaignScope(campaign._id), user, campaign._id);
+    return { ctx: { user, campaign, permission, once }, args: {} };
+  },
+});
+
+/** The creator's query (never a co-GM; config G1): `campaignQuery` with `need: "creator"`. */
+export const creatorQuery = customQuery(baseQuery, {
+  args: campaignArgs,
+  input: async (ctx, { campaignId }) => {
     const user = await signedIn(ctx);
-    const { campaign, permission } = await authorizedCampaign(ctx, user, campaignId, OWNER);
-    await enforceRateLimit(ctx, user, rateLimit);
+    const { campaign, permission } = await authorizedCampaign(ctx, user, campaignId, CREATOR);
+    return { ctx: { user, campaign, permission }, args: {} };
+  },
+});
+
+/** The creator's mutation (delete, archive, co-GMs): `campaignMutation` with `need: "creator"`. */
+export const creatorMutation = customMutation(baseMutation, {
+  args: campaignArgs,
+  input: async (ctx, { campaignId }, options: MutationOptions) => ({
+    ctx: await campaignMutationInput(ctx, campaignId, { ...options, ...CREATOR }),
+    args: {},
+  }),
+});
+
+/** The creator's keyed mutation: `keyedCampaignMutation` with `need: "creator"`. */
+export const keyedCreatorMutation = customMutation(baseMutation, {
+  args: keyedCampaignArgs,
+  input: async (ctx, { campaignId, idempotencyKey }, options: MutationOptions) => {
+    const { user, campaign, permission } = await campaignMutationInput(ctx, campaignId, { ...options, ...CREATOR });
     const once = onceFor(ctx, idempotencyKey, campaignScope(campaign._id), user, campaign._id);
     return { ctx: { user, campaign, permission, once }, args: {} };
   },

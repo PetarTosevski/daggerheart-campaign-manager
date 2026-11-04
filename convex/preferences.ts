@@ -196,6 +196,7 @@ export const folds = campaignQuery({
 /** Folds or unfolds the caller's view of a character's hand. The character must be in this campaign (`NOT_FOUND`). */
 export const setFold = campaignMutation({
   need: "view",
+  archived: "allow",
   args: { characterId: v.id("characters"), folded: v.boolean() },
   returns: v.null(),
   handler: async (ctx, { characterId, folded }) => {

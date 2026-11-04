@@ -16,13 +16,14 @@ import { campaignFearState } from "./lib/fear";
 import {
   campaignMutation,
   campaignQuery,
+  creatorMutation,
   gmMutation,
   keyedUserMutation,
   maybeUserQuery,
   userMutation,
   userQuery,
 } from "./lib/functions";
-import { atLeast, campaignAccess, inviteEmail, permissionFor, type Role } from "./lib/permissions";
+import { atLeast, campaignAccess, inviteEmail, permissionFor } from "./lib/permissions";
 import {
   campaignSummaryValidator,
   customFrameValidator,
@@ -37,15 +38,26 @@ import { campaignLight } from "./lib/campaignLight";
  * What `get` returns: the campaign summary without GM Fear (PF7). Fear changes on every click, and the whole campaign
  * page reads `get`; Fear has its own query (`fear` below), so a Fear click re-sends only that.
  */
-const summaryValidator = campaignSummaryValidator.omit("fear");
+const summaryValidator = campaignSummaryValidator.omit("fear").extend({
+  /**
+   * The caller created the campaign (config G1). `role` is "gm" for the creator and every co-GM, so every GM screen
+   * works for a co-GM unchanged; what only the creator may do (delete, archive, co-GMs) keys on this.
+   */
+  isCreator: v.boolean(),
+});
 
 export type CampaignSummary = Infer<typeof summaryValidator>;
+
+/** The summary's `role`: "gm" for the creator and co-GMs (permission owner or better), "player" otherwise. */
+type SummaryRole = CampaignSummary["role"];
+
+const listItemValidator = campaignSummaryValidator.extend({ isCreator: v.boolean() });
 
 /**
  * What `list` returns per campaign: the summary plus its Fear, which Load Campaign shows on every card. Only the title
  * menu subscribes to `list` (never a campaign page), so a Fear click inside a campaign does not re-send it.
  */
-export type CampaignListItem = Infer<typeof campaignSummaryValidator>;
+export type CampaignListItem = Infer<typeof listItemValidator>;
 
 async function withFear(ctx: QueryCtx, summary: CampaignSummary): Promise<CampaignListItem> {
   const state = await ctx.db
@@ -58,7 +70,7 @@ async function withFear(ctx: QueryCtx, summary: CampaignSummary): Promise<Campai
 /** `markOpened` skips the write when the stored open is younger than this. */
 export const OPEN_THROTTLE_MS = 5 * 60 * 1000;
 
-async function summarise(ctx: QueryCtx, campaign: Doc<"campaigns">, role: Role, lastOpenedAt: number): Promise<CampaignSummary> {
+async function summarise(ctx: QueryCtx, campaign: Doc<"campaigns">, role: SummaryRole, isCreator: boolean, lastOpenedAt: number): Promise<CampaignSummary> {
   // A table's players: a handful (bounded read).
   const members = await ctx.db
     .query("campaignMembers")
@@ -77,6 +89,7 @@ async function summarise(ctx: QueryCtx, campaign: Doc<"campaigns">, role: Role, 
     lastOpenedAt,
     players: members.length,
     role,
+    isCreator,
     settings: resolveTableSettings(campaign.tableSettings),
     archived: campaign.archivedAt !== undefined,
   };
@@ -100,7 +113,7 @@ const LIST_MAX = 100;
 /** Campaigns the user runs (GM) or plays in (member or invited), most recently opened first; at most `LIST_MAX`. */
 export const list = userQuery({
   args: {},
-  returns: v.array(campaignSummaryValidator),
+  returns: v.array(listItemValidator),
   handler: async (ctx) => {
     const user = ctx.user;
     const owned = await ctx.db
@@ -108,11 +121,14 @@ export const list = userQuery({
       .withIndex("by_owner_deletedAt_lastOpened", (q) => q.eq("ownerId", user._id).eq("deletedAt", undefined))
       .order("desc")
       .take(LIST_MAX);
-    const rows: { campaign: Doc<"campaigns">; role: Role; fallback: number }[] = owned.map((c) => ({
+    const rows: { campaign: Doc<"campaigns">; role: SummaryRole; isCreator: boolean; fallback: number }[] = owned.map((c) => ({
       campaign: c,
       role: "gm",
+      isCreator: true,
       fallback: c.lastOpenedAt,
     }));
+    // Joined campaigns list as "player" here, co-GM ones included (no role read per card); `get` is the GM screens'
+    // source and reports a co-GM as "gm". `isCreator` is false for every joined campaign either way.
     const seen = new Set(owned.map((c) => c._id));
     const memberships = await ctx.db
       .query("campaignMembers")
@@ -122,7 +138,7 @@ export const list = userQuery({
     for (const m of memberships) {
       const c = await ctx.db.get("campaigns", m.campaignId);
       if (c && c.deletedAt === undefined && !seen.has(c._id)) {
-        rows.push({ campaign: c, role: "player", fallback: m.lastOpenedAt });
+        rows.push({ campaign: c, role: "player", isCreator: false, fallback: m.lastOpenedAt });
         seen.add(c._id);
       }
     }
@@ -136,7 +152,7 @@ export const list = userQuery({
       for (const i of invites) {
         const c = await ctx.db.get("campaigns", i.campaignId);
         if (c && c.deletedAt === undefined && !seen.has(c._id)) {
-          rows.push({ campaign: c, role: "player", fallback: i.createdAt });
+          rows.push({ campaign: c, role: "player", isCreator: false, fallback: i.createdAt });
           seen.add(c._id);
         }
       }
@@ -146,10 +162,23 @@ export const list = userQuery({
     );
     opened.sort((a, b) => b.lastOpenedAt - a.lastOpenedAt);
     return Promise.all(
-      opened.slice(0, LIST_MAX).map(async (r) => withFear(ctx, await summarise(ctx, r.campaign, r.role, r.lastOpenedAt))),
+      opened.slice(0, LIST_MAX).map(async (r) => withFear(ctx, await summarise(ctx, r.campaign, r.role, r.isCreator, r.lastOpenedAt))),
     );
   },
 });
+
+/**
+ * The user's pending email invite to the campaign (by their verified email, `inviteEmail`), or null. A co-GM invite
+ * (`role: "coGm"`) makes the member row a co-GM when it is accepted (`markOpened`, `members.joinByCode`).
+ */
+export async function pendingInvite(ctx: QueryCtx, campaignId: Id<"campaigns">, user: Doc<"users">): Promise<Doc<"campaignInvites"> | null> {
+  const email = inviteEmail(user);
+  if (email === null) return null;
+  return ctx.db
+    .query("campaignInvites")
+    .withIndex("by_campaign_email", (q) => q.eq("campaignId", campaignId).eq("email", email))
+    .first();
+}
 
 /** Removes the user's email invites to a campaign once they are a member. */
 export async function deleteInvites(ctx: MutationCtx, campaignId: Id<"campaigns">, user: Doc<"users">) {
@@ -169,19 +198,21 @@ export const get = maybeUserQuery({
     const user = ctx.user;
     const campaignId = ctx.db.normalizeId("campaigns", args.campaignId);
     if (user === null || campaignId === null) return null;
-    const access = await campaignAccess(ctx, user, campaignId, "owner");
+    const access = await campaignAccess(ctx, user, campaignId, "creator");
     if (access === null) return null;
     const { campaign } = access;
-    const role: Role = access.permission === "owner" ? "gm" : "player";
+    // Owner or better (the creator and every co-GM) is the GM to every screen; only the creator is `isCreator`.
+    const role: SummaryRole = atLeast(access.permission, "owner") ? "gm" : "player";
+    const isCreator = access.permission === "creator";
     const lastOpenedAt = await openedAt(ctx, user._id, campaign._id, async () => {
-      if (role === "gm") return campaign.lastOpenedAt;
+      if (isCreator) return campaign.lastOpenedAt;
       const member = await ctx.db
         .query("campaignMembers")
         .withIndex("by_campaign_user", (q) => q.eq("campaignId", campaign._id).eq("userId", user._id))
         .unique();
       return member?.lastOpenedAt ?? campaign.createdAt;
     });
-    return summarise(ctx, campaign, role, lastOpenedAt);
+    return summarise(ctx, campaign, role, isCreator, lastOpenedAt);
   },
 });
 
@@ -286,6 +317,8 @@ export const create = keyedUserMutation({
 export const markOpened = campaignMutation({
   need: "view",
   enough: "owner",
+  // Opening an archived campaign still records the open (and accepts an invite): it changes nothing in the campaign.
+  archived: "allow",
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
@@ -296,16 +329,16 @@ export const markOpened = campaignMutation({
         .query("campaignMembers")
         .withIndex("by_campaign_user", (q) => q.eq("campaignId", campaign._id).eq("userId", user._id))
         .unique();
-      const email = member === null ? inviteEmail(user) : null;
-      const invite =
-        email === null
-          ? null
-          : await ctx.db
-              .query("campaignInvites")
-              .withIndex("by_campaign_email", (q) => q.eq("campaignId", campaign._id).eq("email", email))
-              .first();
+      const invite = member === null ? await pendingInvite(ctx, campaign._id, user) : null;
       if (invite !== null) {
-        await ctx.db.insert("campaignMembers", { campaignId: campaign._id, userId: user._id, joinedAt: now, lastOpenedAt: now });
+        // Q8 b: an invite the creator sent as co-GM makes them a co-GM now, on acceptance, not before.
+        await ctx.db.insert("campaignMembers", {
+          campaignId: campaign._id,
+          userId: user._id,
+          joinedAt: now,
+          lastOpenedAt: now,
+          ...(invite.role === undefined ? {} : { role: invite.role }),
+        });
         await deleteInvites(ctx, campaign._id, user);
       }
     }
@@ -322,8 +355,12 @@ export const markOpened = campaignMutation({
   },
 });
 
-/** Deletes a campaign (GM only). Recoverable with `restore` until the purge. */
-export const remove = gmMutation({
+/**
+ * Deletes a campaign (its creator only, config G1 Q7 a; a co-GM is FORBIDDEN). Recoverable with `restore` until the
+ * purge. Allowed on an archived campaign: deleting is not an edit of its content.
+ */
+export const remove = creatorMutation({
+  archived: "allow",
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
@@ -333,7 +370,7 @@ export const remove = gmMutation({
 });
 
 /**
- * Undoes `remove` (GM only). Not a campaign wrapper, because those treat a
+ * Undoes `remove` (its creator only). Not a campaign wrapper, because those treat a
  * deleted campaign as missing; a deleted campaign is `NOT_FOUND` to anyone
  * who does not own it.
  */
@@ -343,10 +380,11 @@ export const restore = userMutation({
   handler: async (ctx, { campaignId }) => {
     const campaign = await ctx.db.get("campaigns", campaignId);
     if (campaign === null) throw appError("NOT_FOUND");
-    const permission = await permissionFor(ctx, ctx.user, { type: "campaign", campaign }, "owner");
-    const owner = atLeast(permission, "owner");
-    if (permission === null || (campaign.deletedAt !== undefined && !owner)) throw appError("NOT_FOUND");
-    if (!owner) throw appError("FORBIDDEN");
+    const permission = await permissionFor(ctx, ctx.user, { type: "campaign", campaign }, "creator");
+    // Creator only (Q7 a): a deleted campaign is NOT_FOUND to everyone else, co-GMs included.
+    const creator = atLeast(permission, "creator");
+    if (permission === null || (campaign.deletedAt !== undefined && !creator)) throw appError("NOT_FOUND");
+    if (!creator) throw appError("FORBIDDEN");
     if (campaign.deletedAt === undefined) return null;
     // Being deleted permanently: part of its data may already be gone, so it can't come back.
     if (campaign.deletedAt === PURGE_REQUESTED_AT) throw appError("NOT_FOUND");
@@ -393,7 +431,7 @@ export const listDeleted = userQuery({
 });
 
 /**
- * Deletes a deleted campaign for good (its GM only; bead dcm-bxp.30): marks it `PURGE_REQUESTED_AT` and schedules the
+ * Deletes a deleted campaign for good (its creator only; bead dcm-bxp.30): marks it `PURGE_REQUESTED_AT` and schedules the
  * batched `internal.cleanup.purgeCampaign`. Like `restore`, not a campaign wrapper: a deleted campaign is `NOT_FOUND`
  * to anyone who does not own it. A live campaign is `INVALID` (delete it first); asking again while the purge runs is
  * a no-op.
@@ -404,10 +442,11 @@ export const purge = userMutation({
   handler: async (ctx, { campaignId }) => {
     const campaign = await ctx.db.get("campaigns", campaignId);
     if (campaign === null) throw appError("NOT_FOUND");
-    const permission = await permissionFor(ctx, ctx.user, { type: "campaign", campaign }, "owner");
-    const owner = atLeast(permission, "owner");
-    if (permission === null || (campaign.deletedAt !== undefined && !owner)) throw appError("NOT_FOUND");
-    if (!owner) throw appError("FORBIDDEN");
+    const permission = await permissionFor(ctx, ctx.user, { type: "campaign", campaign }, "creator");
+    // Creator only (Q7 a): a deleted campaign is NOT_FOUND to everyone else, co-GMs included.
+    const creator = atLeast(permission, "creator");
+    if (permission === null || (campaign.deletedAt !== undefined && !creator)) throw appError("NOT_FOUND");
+    if (!creator) throw appError("FORBIDDEN");
     if (campaign.deletedAt === undefined) throw appError("INVALID", "Delete the campaign before deleting it permanently.");
     if (campaign.deletedAt === PURGE_REQUESTED_AT) return null;
     await ctx.db.patch("campaigns", campaign._id, { deletedAt: PURGE_REQUESTED_AT });

@@ -1,7 +1,8 @@
 /**
  * The world every authz-matrix row runs in (analysis 2.4): one campaign with a GM, two players who each own a character,
- * a player with an edit grant on the campaign, and an outsider. Built through the public API wherever one exists
- * (campaign, join code, joins, characters); users and the grant have no public API and are inserted directly.
+ * a player with an edit grant on the campaign, a co-GM (a member the GM promoted, config G1; no character) and an
+ * outsider. Built through the public API wherever one exists (campaign, join code, joins, characters, the co-GM
+ * promotion); users and the grant have no public API and are inserted directly.
  *
  * Area files add their own state (a combat map, an encounter, a session...) in `setup`, register the ids they create
  * with `w.set(name, id)` and, when a table holds several rows, pick the one argument synthesis uses with
@@ -17,17 +18,21 @@ import { characterDraft } from "../../fixtures/characters";
 import { key } from "../helpers";
 import { makeTest } from "../setup";
 
-/** Who calls: signed out, a stranger, playerA (owns characterA), playerB (owns characterB), the edit-grant player, the GM. */
-export type Role = "anon" | "outsider" | "player" | "otherPlayer" | "grantee" | "gm";
+/**
+ * Who calls: signed out, a stranger, playerA (owns characterA), playerB (owns characterB), the edit-grant player, a
+ * co-GM (member row `role: "coGm"`, owns no character), the GM (the campaign's creator).
+ */
+export type Role = "anon" | "outsider" | "player" | "otherPlayer" | "grantee" | "coGm" | "gm";
 
 /** The order rows run in (a shared query world sees the refused calls first). */
-export const ROLES: readonly Role[] = ["anon", "outsider", "otherPlayer", "player", "grantee", "gm"];
+export const ROLES: readonly Role[] = ["anon", "outsider", "otherPlayer", "player", "grantee", "coGm", "gm"];
 
 export const WORLD_EMAILS = {
   gm: "gm@example.com",
   player: "player-a@example.com",
   otherPlayer: "player-b@example.com",
   grantee: "grantee@example.com",
+  coGm: "co-gm@example.com",
   outsider: "outsider@example.com",
 } as const;
 
@@ -82,6 +87,7 @@ export async function buildWorld(options: WorldOptions = {}): Promise<World> {
       player: await insert(WORLD_EMAILS.player),
       otherPlayer: await insert(WORLD_EMAILS.otherPlayer),
       grantee: await insert(WORLD_EMAILS.grantee),
+      coGm: await insert(WORLD_EMAILS.coGm),
       outsider: await insert(WORLD_EMAILS.outsider),
     };
   });
@@ -91,7 +97,8 @@ export async function buildWorld(options: WorldOptions = {}): Promise<World> {
 
   const { campaignId } = await as("gm").mutation(api.campaigns.create, { frameId, name: "Matrix", idempotencyKey: key() });
   const joinCode = await as("gm").mutation(api.members.rotateJoinCode, { campaignId });
-  for (const role of ["player", "otherPlayer", "grantee"] as const) await as(role).mutation(api.members.joinByCode, { code: joinCode });
+  for (const role of ["player", "otherPlayer", "grantee", "coGm"] as const) await as(role).mutation(api.members.joinByCode, { code: joinCode });
+  await as("gm").mutation(api.members.setCoGm, { campaignId, userId: users.coGm, coGm: true });
 
   const create = async (who: "player" | "otherPlayer", name: string) =>
     (

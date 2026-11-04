@@ -31,10 +31,10 @@ export type Outcome =
 
 /**
  * The access class, which must agree with the wrapper (the guard checks it):
- * gm* → `gm`; campaign* `need: "view"` → `view`; `need: "edit"` → `edit`; user* → `own`, `scoped` or `user`;
- * maybeUserQuery → `maybe`.
+ * gm* → `gm`; creator* (or `need: "creator"`) → `creator`; campaign* `need: "view"` → `view`; `need: "edit"` →
+ * `edit`; user* → `own`, `scoped` or `user`; maybeUserQuery → `maybe`.
  */
-export type Access = "gm" | "view" | "edit" | "own" | "scoped" | "user" | "maybe";
+export type Access = "gm" | "creator" | "view" | "edit" | "own" | "scoped" | "user" | "maybe";
 
 export const ACCESS_CODES = ["UNAUTHENTICATED", "NOT_FOUND", "FORBIDDEN"] as const;
 
@@ -72,15 +72,21 @@ export type Area = {
   exempt?: Record<string, string>;
 };
 
-/** Class defaults (analysis 2.3). `scoped` has none; `own` depends on the function kind. */
+/**
+ * Class defaults (analysis 2.3). `scoped` has none (its coGm row defaults to its gm row, `expectations`); `own` depends
+ * on the function kind. A co-GM (config G1) has the GM's `owner` permission, so every class but `creator` expects `ok`
+ * for `coGm`; `creator` (delete, archive, co-GMs: the campaign's creator only, Q7 a) expects FORBIDDEN.
+ */
 export function defaultExpectations(access: Access, kind: FunctionKind): Partial<Record<Role, Outcome>> {
   switch (access) {
     case "gm":
-      return { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", player: "FORBIDDEN", gm: "ok" };
+      return { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", player: "FORBIDDEN", coGm: "ok", gm: "ok" };
+    case "creator":
+      return { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", player: "FORBIDDEN", grantee: "FORBIDDEN", coGm: "FORBIDDEN", gm: "ok" };
     case "view":
-      return { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", player: "ok", gm: "ok" };
+      return { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", player: "ok", coGm: "ok", gm: "ok" };
     case "edit":
-      return { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", player: "FORBIDDEN", grantee: "ok", gm: "ok" };
+      return { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", player: "FORBIDDEN", grantee: "ok", coGm: "ok", gm: "ok" };
     case "own":
       // Party members view each other's characters (rolePermission): reads are ok for playerB, writes are not.
       return {
@@ -88,12 +94,13 @@ export function defaultExpectations(access: Access, kind: FunctionKind): Partial
         outsider: "NOT_FOUND",
         otherPlayer: kind === "query" ? "ok" : "FORBIDDEN",
         player: "ok",
+        coGm: "ok",
         gm: "ok",
       };
     case "user":
-      return { anon: "UNAUTHENTICATED", outsider: "ok", player: "ok", gm: "ok" };
+      return { anon: "UNAUTHENTICATED", outsider: "ok", player: "ok", coGm: "ok", gm: "ok" };
     case "maybe":
-      return { anon: "null", outsider: "ok", player: "ok", gm: "ok" };
+      return { anon: "null", outsider: "ok", player: "ok", coGm: "ok", gm: "ok" };
     case "scoped":
       return {};
   }
@@ -115,11 +122,29 @@ export function entryProblems(entry: Entry): string[] {
   return problems;
 }
 
-/** Role → expected outcome, in run order. */
+/**
+ * Role → expected outcome, in run order. An entry that states a `gm` row but no `coGm` row (and every `scoped` entry
+ * without a `coGm` row) expects for the co-GM what it expects for the GM: a co-GM holds the GM's `owner` permission
+ * (config G1), so a GM outcome that differs from the class default (a page the GM can't read, a domain code) is the
+ * co-GM's too. Not for `creator` entries, where the co-GM is FORBIDDEN whatever the GM gets. Entries keyed to the GM's
+ * identity (the GM's own rows) state their own `coGm` row.
+ */
 export function expectations(entry: Entry, kind: FunctionKind): [Role, Outcome][] {
   const merged = { ...defaultExpectations(entry.access, kind), ...entry.expect };
+  const followsGm = entry.access === "scoped" || entry.expect?.gm !== undefined;
+  if (entry.access !== "creator" && entry.expect?.coGm === undefined && followsGm && merged.gm !== undefined) merged.coGm = merged.gm;
   return ROLES.filter((role) => merged[role] !== undefined).map((role) => [role, merged[role]!]);
 }
+
+/**
+ * Co-GM rows that fail today because the function compares `campaign.ownerId` with the caller instead of asking
+ * `permissionFor` (config G2, bead dcm-jh6d.10, replaces those checks). Function name → bead id. The coGm row runs as
+ * it.fails, so it turns red once G2 fixes the function, and the name must then leave this list.
+ */
+export const COGM_KNOWN_GAPS: Record<string, string> = {
+  // lib/notes.ts `notesRole` treats a co-GM as a player: a present player journal is NOT_FOUND to them (Q6 a: GM view).
+  "notesJournals:journalView": "dcm-jh6d.10",
+};
 
 /** What a call did: resolved to a value, or threw a ConvexError with an object payload. */
 type Observed = { value: unknown } | { code: string };
@@ -256,8 +281,9 @@ export function runMatrix(area: Area) {
         // Test names are declared before the function's kind is known (the inventory loads asynchronously). The roles
         // are the same for every kind; only `own`'s otherPlayer outcome differs, and the test resolves it.
         for (const role of expectations(entry, "mutation").map(([r]) => r)) {
-          it(
-            role,
+          const gap = role === "coGm" ? COGM_KNOWN_GAPS[name] : undefined;
+          (gap === undefined ? it : it.fails)(
+            gap === undefined ? role : `${role} (known co-GM gap ${gap})`,
             async () => {
               const fn = await resolve();
               const expected = Object.fromEntries(expectations(entry, fn.kind))[role]!;

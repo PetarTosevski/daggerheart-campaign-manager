@@ -9,8 +9,12 @@ import type { Id } from "../../convex/_generated/dataModel";
 import {
   campaignMutation,
   campaignQuery,
+  creatorMutation,
+  creatorQuery,
+  gmMutation,
   gmQuery,
   keyedCampaignMutation,
+  keyedCreatorMutation,
   maybeUserQuery,
   userAction,
   userMutation,
@@ -49,6 +53,13 @@ const probe = {
   }),
   limited: userMutation({ rateLimit: "joinByCode", args: {}, handler: async () => "ok" }),
   whoamiAction: userAction({ args: {}, handler: async (ctx) => ctx.user._id }),
+  // Config G1: the creator rank and the archived guard.
+  creatorRead: creatorQuery({ args: {}, handler: async (ctx) => ctx.permission }),
+  creatorWrite: creatorMutation({ args: {}, handler: async (ctx) => ctx.permission }),
+  creatorKeyed: keyedCreatorMutation({ args: {}, handler: async (ctx) => ctx.once("probe_creator", {}, async () => ctx.permission) }),
+  needCreator: campaignMutation({ need: "creator", args: {}, handler: async (ctx) => ctx.permission }),
+  gmWrite: gmMutation({ args: {}, handler: async (ctx) => ctx.permission }),
+  gmWriteArchived: gmMutation({ archived: "allow", args: {}, handler: async (ctx) => ctx.permission }),
 };
 
 const ref = {
@@ -61,6 +72,12 @@ const ref = {
   fail: makeFunctionReference<"mutation">("probe:fail"),
   limited: makeFunctionReference<"mutation">("probe:limited"),
   whoamiAction: makeFunctionReference<"action">("probe:whoamiAction"),
+  creatorRead: makeFunctionReference<"query">("probe:creatorRead"),
+  creatorWrite: makeFunctionReference<"mutation">("probe:creatorWrite"),
+  creatorKeyed: makeFunctionReference<"mutation">("probe:creatorKeyed"),
+  needCreator: makeFunctionReference<"mutation">("probe:needCreator"),
+  gmWrite: makeFunctionReference<"mutation">("probe:gmWrite"),
+  gmWriteArchived: makeFunctionReference<"mutation">("probe:gmWriteArchived"),
 };
 
 // The rate limiter's test helper references vite/client types, which clash
@@ -159,6 +176,53 @@ describe("campaign wrappers", () => {
     const { t, gm, campaignId } = await setup();
     await t.run((ctx) => ctx.db.patch("campaigns", campaignId, { deletedAt: 1 }));
     expect(errorCode(await fail(gm.query(ref.gm, { campaignId })))).toBe("NOT_FOUND");
+  });
+});
+
+describe("creator wrappers and the archived guard (config G1)", () => {
+  useAllowlist(`${GM},${PLAYER},${OUTSIDER}`);
+
+  /** The setup plus a co-GM member (a promoted player) and an owner grant to the outsider. */
+  async function withCoGm() {
+    const s = await setup();
+    const coGmId = await s.t.run((ctx) => ctx.db.insert("users", { email: "cogm@example.com", emailVerificationTime: 1 }));
+    await s.t.run((ctx) => ctx.db.insert("campaignMembers", { campaignId: s.campaignId, userId: coGmId, joinedAt: 0, lastOpenedAt: 0 }));
+    await s.gm.mutation(api.members.setCoGm, { campaignId: s.campaignId, userId: coGmId, coGm: true });
+    await s.grant(s.ids.outsider, "owner");
+    return { ...s, coGm: s.as(coGmId) };
+  }
+
+  it("only the creator passes need creator; a co-GM and an owner grant are FORBIDDEN; ctx.permission stays owner", async () => {
+    const { gm, coGm, outsider, player, campaignId } = await withCoGm();
+    for (const fn of [ref.creatorWrite, ref.needCreator]) {
+      expect(await gm.mutation(fn, { campaignId })).toBe("owner");
+      expect(errorCode(await fail(coGm.mutation(fn, { campaignId })))).toBe("FORBIDDEN");
+      expect(errorCode(await fail(outsider.mutation(fn, { campaignId })))).toBe("FORBIDDEN");
+      expect(errorCode(await fail(player.mutation(fn, { campaignId })))).toBe("FORBIDDEN");
+    }
+    expect(await gm.query(ref.creatorRead, { campaignId })).toBe("owner");
+    expect(errorCode(await fail(coGm.query(ref.creatorRead, { campaignId })))).toBe("FORBIDDEN");
+    expect(await gm.mutation(ref.creatorKeyed, { campaignId, idempotencyKey: key() })).toBe("owner");
+    expect(errorCode(await fail(coGm.mutation(ref.creatorKeyed, { campaignId, idempotencyKey: key() })))).toBe("FORBIDDEN");
+    // The co-GM and the owner grant pass every GM wrapper.
+    expect(await coGm.query(ref.gm, { campaignId })).toBe("owner");
+    expect(await coGm.mutation(ref.gmWrite, { campaignId })).toBe("owner");
+    expect(await outsider.mutation(ref.gmWrite, { campaignId })).toBe("owner");
+  });
+
+  it("an archived campaign refuses mutations unless archived allow; queries read it", async () => {
+    const { t, gm, coGm, player, campaignId } = await withCoGm();
+    await t.run((ctx) => ctx.db.patch("campaigns", campaignId, { archivedAt: 1 }));
+    expect(errorCode(await fail(gm.mutation(ref.gmWrite, { campaignId })))).toBe("CAMPAIGN_ARCHIVED");
+    expect(errorCode(await fail(gm.mutation(ref.creatorWrite, { campaignId })))).toBe("CAMPAIGN_ARCHIVED");
+    expect(errorCode(await fail(gm.mutation(ref.edit, { campaignId })))).toBe("CAMPAIGN_ARCHIVED");
+    expect(errorCode(await fail(gm.mutation(ref.keyed, { campaignId, n: 1, idempotencyKey: key() })))).toBe("CAMPAIGN_ARCHIVED");
+    expect(await gm.mutation(ref.gmWriteArchived, { campaignId })).toBe("owner");
+    expect(await coGm.mutation(ref.gmWriteArchived, { campaignId })).toBe("owner");
+    // Access first: a player is FORBIDDEN, never CAMPAIGN_ARCHIVED.
+    expect(errorCode(await fail(player.mutation(ref.gmWrite, { campaignId })))).toBe("FORBIDDEN");
+    expect(await gm.query(ref.gm, { campaignId })).toBe("owner");
+    expect(await player.query(ref.view, { campaignId })).toBe("view");
   });
 });
 
