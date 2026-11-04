@@ -5,13 +5,15 @@ import "./header.css";
 import { useMutation, useQuery } from "convex/react";
 import { BookOpen, Ellipsis, Spool, X } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 
-import { useOpenTome } from "@/app/(gm)/campaigns/[campaignId]/campaign-shell";
+import { useCampaign, useOpenTome } from "@/app/(gm)/campaigns/[campaignId]/campaign-shell";
 import { BrandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 // The live helpers stay in the old Sessions folder until JX2 moves them (plan journal.yaml, JH: imported, not copied).
 import { endDialogText, endReportLines, startReportLines, useWitherChoice, WitherChoiceField } from "@/components/journal/end-session";
+import type { SessionOpensOn } from "@/lib/config/campaign-settings";
 import { errorMessage } from "@/lib/convex-errors";
 import { useIntent } from "@/lib/use-intent";
 
@@ -27,7 +29,8 @@ import { SlotBoundary } from "../ui";
  * - the live chip 'Session N · live' (green dot). GM: 'End session' (the End dialog with the Wither choice) and a '⋯'
  *   menu with 'Allow extra characters this session' (Q10 default). Players: the chip only, read only.
  * - nothing live: the GM's 'Start session N' (the selected planned session, else the newest planned; without one the
- *   server creates the next). After the Start the page opens that session's Log & recap.
+ *   server creates the next). After the Start the GM goes where the campaign's 'A new session opens on' setting says
+ *   (config JO1, `sessionOpensOn`): the Journal opens that session's Log & recap, or the page moves to the Combat Map.
  * - the round tome button (everyone): opens the campaign Tome.
  * - 'Open threads N' (everyone, Q1): the caller's open threads (`notesThreads.threads`); opens Notes on its threads view.
  * The Start / End report shows in a polite status under the actions.
@@ -44,6 +47,14 @@ export function startTarget(sessions: readonly SessionListItem[], selectedId: Id
 /** The number 'Start session N' names: the target's, else the one the server will create (highest + 1). */
 export function startNumber(sessions: readonly SessionListItem[], target: SessionListItem | null): number {
   return target?.n ?? sessions.reduce((max, s) => Math.max(max, s.n), 0) + 1;
+}
+
+/**
+ * Where a freshly started session takes the GM (config JO1): `null` = stay on the Journal and open the session there
+ * (the page is already the Journal), else the Combat Map's path. Players never start a session, so they never move.
+ */
+export function sessionOpensOnHref(campaignId: Id<"campaigns">, opensOn: SessionOpensOn): string | null {
+  return opensOn === "combatMap" ? `/campaigns/${campaignId}/combat-map` : null;
 }
 
 /** GM menu on the live chip: the 'Allow extra characters this session' switch (XC1, moved here by Q10). */
@@ -113,6 +124,8 @@ function SessionControl({
   const current = useQuery(api.sessions.current, { campaignId });
   const start = useIntent(api.sessions.start);
   const end = useIntent(api.sessions.end);
+  const opensOn = useCampaign().settings.sessionOpensOn;
+  const router = useRouter();
   const wither = useWitherChoice(campaignId);
   const [confirm, setConfirm] = useState<"start" | "end" | null>(null);
 
@@ -140,7 +153,11 @@ function SessionControl({
       const result = await start.fire(target ? { campaignId, sessionId: target._id } : { campaignId });
       if (!result) return;
       onReport({ lines: result.alreadyStarted ? ["The session is already running."] : startReportLines(result) });
-      if (result.sessionId) onOpenSession(result.sessionId, "log");
+      if (!result.sessionId) return;
+      // JO1: navigate here, after the mutation resolved (rule 13: never from an effect).
+      const away = sessionOpensOnHref(campaignId, opensOn);
+      if (away) router.push(away);
+      else onOpenSession(result.sessionId, "log");
     } else if (which === "end") {
       const result = await end.fire({ campaignId, ...wither.args });
       if (!result) return;
