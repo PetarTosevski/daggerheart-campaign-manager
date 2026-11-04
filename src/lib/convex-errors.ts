@@ -73,6 +73,25 @@ const MESSAGES = mergeMessages(
 );
 
 /**
+ * The owner's read-only banner message (config AU5), kept here so a write refused with `READ_ONLY_MODE` explains why
+ * in the words the banner shows. `ReadOnlyBanner` (src/components/read-only-banner.tsx) keeps it in step with
+ * `appStatus.get`; null while the mode is off or the owner wrote no message.
+ */
+let readOnlyBannerMessage: string | null = null;
+
+/** Sets the banner message that `errorMessage` adds to `READ_ONLY_MODE` (null or blank: none). */
+export function setReadOnlyBannerMessage(message: string | null): void {
+  const text = message?.trim() ?? "";
+  readOnlyBannerMessage = text === "" ? null : text;
+}
+
+/** The text for a code: `READ_ONLY_MODE` carries the owner's banner message when there is one. */
+function codeMessage(code: string): string {
+  const text = MESSAGES[code] ?? "Something went wrong.";
+  return code === "READ_ONLY_MODE" && readOnlyBannerMessage !== null ? `${text} ${readOnlyBannerMessage}` : text;
+}
+
+/**
  * A message for the GM from an error thrown by a Convex function. Every
  * server error is `ConvexError<AppError>` (`{ code, message? }`, CF13): the
  * message when present, else the code's text.
@@ -83,7 +102,7 @@ export function errorMessage(error: unknown): string {
     if (typeof data === "object" && data !== null) {
       const { message, code } = data as { message?: unknown; code?: unknown };
       if (typeof message === "string" && message) return message;
-      if (typeof code === "string") return MESSAGES[code] ?? "Something went wrong.";
+      if (typeof code === "string") return codeMessage(code);
     }
   }
   return "Something went wrong. Check your connection and try again.";

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { LegacyImport } from "@/components/config/legacy-import";
+import { ReadOnlyBanner } from "@/components/read-only-banner";
 
 import { AccentSync } from "./accent-sync";
 import { PrefsSync } from "./prefs-sync";
@@ -30,6 +31,7 @@ export default function GmLayout({ children }: { children: ReactNode }) {
       <AccentSync />
       <PrefsSync />
       <LegacyImport />
+      <ReadOnlyBanner />
       {children}
     </>
   );

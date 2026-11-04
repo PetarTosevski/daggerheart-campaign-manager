@@ -172,7 +172,6 @@ describe("stubs", () => {
       (await vi.importActual<typeof import("@/components/admin/overview")>("@/components/admin/overview")).OverviewTab,
       // AccountsTab is built (AU2): tests/unit/admin/accounts.test.tsx.
       (await vi.importActual<typeof import("@/components/admin/lorekeeper")>("@/components/admin/lorekeeper")).LorekeeperTab,
-      (await vi.importActual<typeof import("@/components/admin/maintenance")>("@/components/admin/maintenance")).MaintenanceTab,
     ];
     for (const Stub of stubs) {
       const { container, unmount } = render(<Stub onTab={onTab} />);
