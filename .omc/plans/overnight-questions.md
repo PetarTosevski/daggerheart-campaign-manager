@@ -308,3 +308,9 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - JD5: party level = highest level among active characters. Default: keep (alternative: most common level).
 - JD4: the same encounter can be linked to several scenes; switching a scene to non-Combat drops its encounter. Default: keep.
 - JH: after End session the page stays on the session that just ended. Default: keep.
+- JP1: Combat scenes can't be played from the Plan (only from the Combat Map, Q7); the playing scene gets a gold ring whatever its type; '+ Add scene' defaults to Combat; Remove scene asks no confirmation. Defaults: keep.
+- JP2: the Journal encounter card has no party-size stepper (change it in Adversaries); chips use full stat block names; an Unlink button was added (not in the design). Defaults: keep.
+- JS: dates follow the browser locale ("Sun, Nov 2"); deleting the newest session frees its number. Defaults: keep.
+- JR: "Share with players" is dropped (Q4); the milestone isn't shown in After the session. Defaults: keep.
+- JL: every roll uses a dice icon (the data can't tell a social roll); 'Show N hidden' lists hidden lines with Unhide each. Defaults: keep.
+- Machine: Modern Standby put the PC to sleep at 00:27 after the 3 h screen-off timeout on AC. Suggested `powercfg /change monitor-timeout-ac 0` (asked the user).
