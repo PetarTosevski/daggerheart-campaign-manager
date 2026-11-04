@@ -12,6 +12,8 @@ const area: Area = {
   entries: [
     { fn: api.appAdmin.me, access: "maybe", expect: { appOwner: "ok" } },
     { fn: api.appAdmin.settings, access: "appOwner" },
+    // AD13: logs the owner's read-only visit; the view itself is the campaign query wrappers' (every row's appOwner).
+    { fn: api.appAdmin.openCampaign, access: "appOwner" },
   ],
 };
 export default area;

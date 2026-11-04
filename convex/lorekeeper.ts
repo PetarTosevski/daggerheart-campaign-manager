@@ -9,7 +9,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { lorekeeperAvailable, modelFor } from "./lib/claude";
 import { campaignMutation, campaignQuery } from "./lib/functions";
-import type { Permission } from "./lib/permissions";
+import { ownerViewing, type Permission } from "./lib/permissions";
 import { reserve } from "./lib/lorekeeper/caps";
 import {
   answerPhaseValidator,
@@ -30,7 +30,8 @@ import { deleteConversationBatch, settleReservation, WATCHDOG_MS } from "./lorek
  * `editQuestion` (LK3) rewrites one of the asker's questions, drops everything after it and asks it again.
  *
  * Who reads what (Q3, Q10): a conversation is readable by every campaign member unless its asker made it private;
- * a private one exists only for its asker (anyone else gets LOREKEEPER_NOT_FOUND, the GM included). Only the asker
+ * a private one exists only for its asker (anyone else gets LOREKEEPER_NOT_FOUND, the GM included), and for the app
+ * owner's read-only view (config AD13, N1 changed: `ownerViewing`, queries only). Only the asker
  * asks in, stops, toggles, makes private or deletes their own conversation. No prompt ever holds GM-only data (Q4,
  * `buildContext`), so a public conversation leaks nothing secret.
  *
@@ -118,11 +119,15 @@ function toMessageView(row: Doc<"lorekeeperMessages">): MessageView {
 
 type CampaignCtx = (QueryCtx | MutationCtx) & { user: Doc<"users">; campaign: Doc<"campaigns"> };
 
-/** A conversation of this campaign the caller may read (public, or their own), else LOREKEEPER_NOT_FOUND. */
+/**
+ * A conversation of this campaign the caller may read (public, or their own; any, in the owner's read-only view,
+ * AD13), else LOREKEEPER_NOT_FOUND.
+ */
 async function readableConversation(ctx: CampaignCtx, id: Id<"lorekeeperConversations">) {
   const row = await ctx.db.get("lorekeeperConversations", id);
   if (row === null || row.campaignId !== ctx.campaign._id) throw appError("LOREKEEPER_NOT_FOUND");
-  if (row.userId !== ctx.user._id && row.visibility === "private") throw appError("LOREKEEPER_NOT_FOUND");
+  const hidden = row.userId !== ctx.user._id && row.visibility === "private";
+  if (hidden && !ownerViewing(ctx, ctx.user, ctx.campaign)) throw appError("LOREKEEPER_NOT_FOUND");
   return row;
 }
 
@@ -210,7 +215,18 @@ export const listConversations = campaignQuery({
       .withIndex("by_campaign_visibility_last", (q) => q.eq("campaignId", ctx.campaign._id).eq("visibility", "campaign"))
       .order("desc")
       .take(60);
-    const shared = publicRows.filter((row) => row.userId !== me).slice(0, 30);
+    // AD13 (N1 changed): the owner's read-only view lists the private ones too, newest first among the rest.
+    const privateRows = ownerViewing(ctx, ctx.user, ctx.campaign)
+      ? await ctx.db
+          .query("lorekeeperConversations")
+          .withIndex("by_campaign_visibility_last", (q) => q.eq("campaignId", ctx.campaign._id).eq("visibility", "private"))
+          .order("desc")
+          .take(30)
+      : [];
+    const shared = [...publicRows, ...privateRows]
+      .filter((row) => row.userId !== me)
+      .sort((a, b) => b.lastAt - a.lastAt)
+      .slice(0, 30);
     return { mine: mine.map((row) => toConversationView(row, me)), shared: shared.map((row) => toConversationView(row, me)) };
   },
 });

@@ -156,7 +156,55 @@ export function expectations(entry: Entry, kind: FunctionKind): [Role, Outcome][
   const merged = { ...defaultExpectations(entry.access, kind), ...entry.expect };
   const followsGm = entry.access === "scoped" || entry.expect?.gm !== undefined;
   if (entry.access !== "creator" && entry.expect?.coGm === undefined && followsGm && merged.gm !== undefined) merged.coGm = merged.gm;
+  if (entry.access !== "appOwner") {
+    const owner = appOwnerOutcome(entry, kind, merged);
+    if (owner === undefined) delete merged.appOwner;
+    else merged.appOwner = owner;
+  }
   return ROLES.filter((role) => merged[role] !== undefined).map((role) => [role, merged[role]!]);
+}
+
+/**
+ * Campaign classes whose queries the app owner reads through the owner's read-only view (config AD13): the
+ * `campaignQuery` / `gmQuery` wrappers pass `ownerView`, so the owner gets what the GM gets.
+ */
+export const OWNER_VIEW_QUERY_CLASSES: readonly Access[] = ["gm", "view", "edit"];
+
+/**
+ * The app owner's query rows that differ from what `appOwnerOutcome` derives (config AD13): N1 (changed 2026-11-04)
+ * lets the owner's view read what even the GM may not, players' private notes and private Lorekeeper conversations,
+ * and `campaigns.get` (a maybe query, outsider null) answers the owner's view. Queries only: the guard in
+ * tests/convex/authz-matrix.test.ts rejects a write or an unlisted name here.
+ */
+export const APP_OWNER_QUERY_ROWS: Record<string, Outcome> = {
+  // The campaign summary, marked ownerView (role gm, isCreator false).
+  "campaigns:get": "ok",
+  // playerA's private conversation (the GM: LOREKEEPER_NOT_FOUND).
+  "lorekeeper:getConversation": "ok",
+  "lorekeeper:listMessages": "ok",
+  // playerA's page the GM can't read (the GM: NOTE_PAGE_NOT_FOUND).
+  "notesEntries:entries": "ok",
+  // The owner reads the page now, but only its owner lists the recipients.
+  "notesSharing:recipients": "NOTE_FORBIDDEN_ACTION" as Outcome,
+};
+
+/** Campaign classes whose writes the app owner must be refused (NOT_FOUND / FORBIDDEN, AD13's guard). */
+export const CAMPAIGN_CLASSES: readonly Access[] = ["gm", "creator", "view", "edit", "own"];
+
+/**
+ * The app owner's row for a function that is not an owner function (config AD13). Writes (mutations and actions): the
+ * outsider's row, always, whatever the entry states: the owner is a member of no campaign, and no write honours the
+ * read-only view, so no write row can flip to ok (the guard in tests/convex/authz-matrix.test.ts pins it). Queries:
+ * the entry's own `appOwner` row if it states one; otherwise the GM's row for the classes the read-only view reaches
+ * (OWNER_VIEW_QUERY_CLASSES), and the outsider's for the rest (creator queries and the user wrappers' own checks do
+ * not take the view).
+ */
+export function appOwnerOutcome(entry: Entry, kind: FunctionKind, merged: Partial<Record<Role, Outcome>>): Outcome | undefined {
+  if (kind !== "query") return merged.outsider;
+  if (entry.expect?.appOwner !== undefined) return entry.expect.appOwner;
+  const listed = APP_OWNER_QUERY_ROWS[getFunctionName(entry.fn)];
+  if (listed !== undefined) return listed;
+  return OWNER_VIEW_QUERY_CLASSES.includes(entry.access) ? merged.gm : merged.outsider;
 }
 
 /**

@@ -47,6 +47,11 @@ const summaryValidator = campaignSummaryValidator.omit("fear").extend({
    * works for a co-GM unchanged; what only the creator may do (delete, archive, co-GMs) keys on this.
    */
   isCreator: v.boolean(),
+  /**
+   * The caller is the app owner reading the campaign without being in it (config AD13, Q27 b): `role` "gm" (they see
+   * what the GM sees, and more: N1 changed), `isCreator` false, and every write is refused.
+   */
+  ownerView: v.boolean(),
 });
 
 export type CampaignSummary = Infer<typeof summaryValidator>;
@@ -75,7 +80,7 @@ const listItemValidator = campaignSummaryValidator.omit("fear").extend({ isCreat
 export type CampaignListItem = Infer<typeof listItemValidator>;
 
 /** The card's Fear: the number, or null for a caller who may not see it (R1); a co-GM's card keeps the number. */
-async function withFear(ctx: QueryCtx, summary: CampaignSummary, campaign: Doc<"campaigns">, permission: CampaignPermission | null): Promise<CampaignListItem> {
+async function withFear(ctx: QueryCtx, summary: Omit<CampaignSummary, "ownerView">, campaign: Doc<"campaigns">, permission: CampaignPermission | null): Promise<CampaignListItem> {
   if (!seesFear(campaign, permission)) return { ...summary, fear: null };
   const state = await ctx.db
     .query("campaignState")
@@ -87,7 +92,7 @@ async function withFear(ctx: QueryCtx, summary: CampaignSummary, campaign: Doc<"
 /** `markOpened` skips the write when the stored open is younger than this. */
 export const OPEN_THROTTLE_MS = 5 * 60 * 1000;
 
-async function summarise(ctx: QueryCtx, campaign: Doc<"campaigns">, role: SummaryRole, isCreator: boolean, lastOpenedAt: number): Promise<CampaignSummary> {
+async function summarise(ctx: QueryCtx, campaign: Doc<"campaigns">, role: SummaryRole, isCreator: boolean, lastOpenedAt: number): Promise<Omit<CampaignSummary, "ownerView">> {
   // A table's players: a handful (bounded read).
   const members = await ctx.db
     .query("campaignMembers")
@@ -218,12 +223,15 @@ export const get = maybeUserQuery({
     const user = ctx.user;
     const campaignId = ctx.db.normalizeId("campaigns", args.campaignId);
     if (user === null || campaignId === null) return null;
-    const access = await campaignAccess(ctx, user, campaignId, "creator");
+    // AD13: the app owner in no role gets the read-only view (permission "owner", never "creator").
+    const access = await campaignAccess(ctx, user, campaignId, "creator", { ownerView: true });
     if (access === null) return null;
-    const { campaign } = access;
+    const { campaign, ownerView } = access;
     // Owner or better (the creator and every co-GM) is the GM to every screen; only the creator is `isCreator`.
     const role: SummaryRole = atLeast(access.permission, "owner") ? "gm" : "player";
     const isCreator = access.permission === "creator";
+    // The owner has no open of their own (markOpened refuses them), so their view shows the campaign's creation.
+    if (ownerView) return { ...(await summarise(ctx, campaign, role, false, campaign.createdAt)), ownerView };
     const lastOpenedAt = await openedAt(ctx, user._id, campaign._id, async () => {
       if (isCreator) return campaign.lastOpenedAt;
       const member = await ctx.db
@@ -232,7 +240,7 @@ export const get = maybeUserQuery({
         .unique();
       return member?.lastOpenedAt ?? campaign.createdAt;
     });
-    return summarise(ctx, campaign, role, isCreator, lastOpenedAt);
+    return { ...(await summarise(ctx, campaign, role, isCreator, lastOpenedAt)), ownerView: false };
   },
 });
 

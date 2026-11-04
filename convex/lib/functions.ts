@@ -18,7 +18,7 @@
  * | `userMutation`          | -                           | `user`                                     | `rateLimit?`, `readOnly?`   |
  * | `keyedUserMutation`     | `idempotencyKey`            | `user`, `once` (scope: the user)           | `rateLimit?`, `readOnly?`   |
  * | `userAction`            | -                           | `user`                                     | `rateLimit?`                |
- * | `campaignQuery`         | `campaignId`                | `user`, `campaign`, `permission`           | `need`, `enough?`           |
+ * | `campaignQuery`         | `campaignId`                | `user`, `campaign`, `permission`, `ownerView` | `need`, `enough?`        |
  * | `campaignMutation`      | `campaignId`                | `user`, `campaign`, `permission`           | `need`, `enough?`, `rateLimit?`, `archived?`, `readOnly?` |
  * | `keyedCampaignMutation` | `campaignId`, `idempotencyKey` | the above + `once` (scope: the campaign) | `need`, `enough?`, `rateLimit?`, `archived?`, `readOnly?` |
  * | `gmQuery` / `gmMutation` / `keyedGmMutation` | as the campaign ones | as the campaign ones       | `need` is fixed to `"owner"`; mutations `rateLimit?`, `archived?`, `readOnly?` |
@@ -55,6 +55,12 @@
  *   owner check: one stored user id, named with the deployment admin key).
  *   Signed out → `UNAUTHENTICATED`; anyone else → `FORBIDDEN`, before the
  *   handler runs. Never a client flag.
+ * - The app owner's read-only view (config AD13, Q27 b, N1 changed): `campaignQuery` and `gmQuery`, and only they,
+ *   ask `permissionFor` with `{ ownerView: true }`, so the app owner, in no role and with no grant, reads any
+ *   campaign as its GM would (`ctx.permission` "owner", `ctx.ownerView` true), players' private notes and private
+ *   Lorekeeper conversations included. `creatorQuery` and every mutation and action builder never pass it, so the
+ *   owner stays an outsider (NOT_FOUND) for every write; a mutation that met an owner view would throw
+ *   `OWNER_VIEW_READ_ONLY`. `appAdmin.openCampaign` logs each visit.
  * - `rateLimit: RateLimitName` consumes one token of that named limit (see
  *   `RATE_LIMITS`), keyed by the user, before the handler runs; past the limit
  *   the call fails with `RATE_LIMITED`. Mutations and actions only.
@@ -252,25 +258,43 @@ type UserMutationOptions = { rateLimit?: RateLimitName; readOnly?: "allow" };
 /** Campaign mutation options: the user ones, and `archived: "allow"` to run on an archived campaign. */
 type MutationOptions = UserMutationOptions & { archived?: "allow" };
 
+/**
+ * The access check of every campaign wrapper. `ownerView` (config AD13) is true only for the campaign query wrappers:
+ * then the app owner, in no role, reads the campaign as its GM would (`permissionFor`'s owner view) and the result says
+ * so. Mutation wrappers pass false, so the owner stays an outsider (NOT_FOUND) for every write.
+ */
 async function authorizedCampaign(
   ctx: QueryCtx,
   user: Doc<"users">,
   campaignId: Id<"campaigns">,
   { need, enough }: CampaignOptions,
-): Promise<{ campaign: Doc<"campaigns">; permission: Permission }> {
+  ownerView: boolean,
+): Promise<{ campaign: Doc<"campaigns">; permission: Permission; ownerView: boolean }> {
   // The function form of a builder skips the options; fail loudly, never open.
   if ((need as CampaignPermission | undefined) === undefined) throw new Error("Campaign wrappers require a `need` option.");
-  const access = await campaignAccess(ctx, user, campaignId, enough !== undefined && atLeast(enough, need) ? enough : need);
+  const access = await campaignAccess(ctx, user, campaignId, enough !== undefined && atLeast(enough, need) ? enough : need, { ownerView });
   if (access === null) throw appError("NOT_FOUND");
   if (!atLeast(access.permission, need)) throw appError("FORBIDDEN");
   // `creator` is a check, never a ctx value: handlers see at most "owner".
-  return { campaign: access.campaign, permission: access.permission === "creator" ? "owner" : access.permission };
+  return { campaign: access.campaign, permission: access.permission === "creator" ? "owner" : access.permission, ownerView: access.ownerView };
+}
+
+/**
+ * A campaign query's ctx additions. `ownerView` marks the app owner's read-only view (AD13): `lib/permissions.ts`
+ * (`ownerViewing`) lets the query's later checks read with it, for this user and campaign only.
+ */
+async function campaignQueryInput(ctx: QueryCtx, campaignId: Id<"campaigns">, options: CampaignOptions) {
+  const user = await signedIn(ctx);
+  const { campaign, permission, ownerView } = await authorizedCampaign(ctx, user, campaignId, options, true);
+  return { user, campaign, permission, ownerView };
 }
 
 /** The shared input of every campaign mutation wrapper: access, the archived guard, read-only mode, the rate limit. */
 async function campaignMutationInput(ctx: MutationCtx, campaignId: Id<"campaigns">, options: CampaignOptions & MutationOptions) {
   const user = await signedIn(ctx);
-  const { campaign, permission } = await authorizedCampaign(ctx, user, campaignId, options);
+  const { campaign, permission, ownerView } = await authorizedCampaign(ctx, user, campaignId, options, false);
+  // AD13, defence in depth: a write never runs as the owner's read-only view (unreachable: the option is off above).
+  if (ownerView) throw appError("OWNER_VIEW_READ_ONLY");
   // Q9 a (convex/lib/archived.ts): after the access check, so a stranger still gets NOT_FOUND.
   refuseArchived(campaign, options.archived);
   await refuseReadOnly(ctx, user, options.readOnly);
@@ -420,11 +444,7 @@ export const appOwnerAction = customAction(baseAction, {
 /** A campaign query: consumes `campaignId`; `ctx.user`, `ctx.campaign`, `ctx.permission`; options `need`, `enough`. */
 export const campaignQuery = customQuery(baseQuery, {
   args: campaignArgs,
-  input: async (ctx, { campaignId }, options: CampaignOptions) => {
-    const user = await signedIn(ctx);
-    const { campaign, permission } = await authorizedCampaign(ctx, user, campaignId, options);
-    return { ctx: { user, campaign, permission }, args: {} };
-  },
+  input: async (ctx, { campaignId }, options: CampaignOptions) => ({ ctx: await campaignQueryInput(ctx, campaignId, options), args: {} }),
 });
 
 /** A campaign mutation: as `campaignQuery`, plus options `rateLimit` and `archived`. */
@@ -449,14 +469,10 @@ export const keyedCampaignMutation = customMutation(baseMutation, {
 const OWNER: CampaignOptions = { need: "owner" };
 const CREATOR: CampaignOptions = { need: "creator" };
 
-/** The GM's query (the GM and every co-GM): `campaignQuery` with `need: "owner"`. */
+/** The GM's query (the GM, every co-GM and the app owner's read-only view): `campaignQuery` with `need: "owner"`. */
 export const gmQuery = customQuery(baseQuery, {
   args: campaignArgs,
-  input: async (ctx, { campaignId }) => {
-    const user = await signedIn(ctx);
-    const { campaign, permission } = await authorizedCampaign(ctx, user, campaignId, OWNER);
-    return { ctx: { user, campaign, permission }, args: {} };
-  },
+  input: async (ctx, { campaignId }) => ({ ctx: await campaignQueryInput(ctx, campaignId, OWNER), args: {} }),
 });
 
 /** The GM's mutation (the GM and every co-GM): `campaignMutation` with `need: "owner"`. */
@@ -478,12 +494,15 @@ export const keyedGmMutation = customMutation(baseMutation, {
   },
 });
 
-/** The creator's query (never a co-GM; config G1): `campaignQuery` with `need: "creator"`. */
+/**
+ * The creator's query (never a co-GM; config G1): `campaignQuery` with `need: "creator"`. Not the app owner's
+ * read-only view either (AD13 never answers `creator`): the owner gets NOT_FOUND, as an outsider.
+ */
 export const creatorQuery = customQuery(baseQuery, {
   args: campaignArgs,
   input: async (ctx, { campaignId }) => {
     const user = await signedIn(ctx);
-    const { campaign, permission } = await authorizedCampaign(ctx, user, campaignId, CREATOR);
+    const { campaign, permission } = await authorizedCampaign(ctx, user, campaignId, CREATOR, false);
     return { ctx: { user, campaign, permission }, args: {} };
   },
 });

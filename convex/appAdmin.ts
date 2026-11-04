@@ -1,8 +1,10 @@
 import { v } from "convex/values";
 
+import { recordAdminChange } from "./lib/adminAudit";
 import { readAppConfig } from "./lib/appConfig";
 import { isAppOwner } from "./lib/appOwner";
-import { appOwnerQuery, maybeUserQuery } from "./lib/functions";
+import { appOwnerMutation, appOwnerQuery, maybeUserQuery } from "./lib/functions";
+import { liveCampaign } from "./lib/permissions";
 import { appSettingsValidator } from "./lib/validators/admin";
 
 /**
@@ -28,4 +30,35 @@ export const settings = appOwnerQuery({
   args: {},
   returns: appSettingsValidator,
   handler: async (ctx) => readAppConfig(ctx),
+});
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Today's audit rows read to find an earlier open of the same campaign (Recent changes holds few rows a day). */
+export const OPEN_DEDUPE_SCAN = 500;
+
+/**
+ * Logs that the owner opened a campaign read-only (config AD13, Q27 b): one `campaign.view` audit row per campaign per
+ * UTC day, so reopening it does not flood Recent changes. A query can't write, so the Overview's Open calls this
+ * before it navigates; the view itself is the campaign query wrappers' (`permissionFor`'s owner view), which this does
+ * not grant. NOT_FOUND for a missing or deleted campaign. Returns whether a row was written.
+ */
+export const openCampaign = appOwnerMutation({
+  args: { campaignId: v.id("campaigns") },
+  returns: v.object({ logged: v.boolean() }),
+  handler: async (ctx, { campaignId }) => {
+    const campaign = await liveCampaign(ctx, campaignId);
+    const now = Date.now();
+    const dayStart = now - (now % DAY_MS);
+    const today = await ctx.db
+      .query("adminAudit")
+      .withIndex("by_at", (q) => q.gte("at", dayStart))
+      .order("desc")
+      .take(OPEN_DEDUPE_SCAN);
+    // More rows than the scan today: log again rather than miss a visit.
+    const seen = today.some((row) => row.action === "campaign.view" && row.actorId === ctx.user._id && row.target === campaign._id);
+    if (seen) return { logged: false };
+    await recordAdminChange(ctx, ctx.user._id, { action: "campaign.view", target: campaign._id });
+    return { logged: true };
+  },
 });

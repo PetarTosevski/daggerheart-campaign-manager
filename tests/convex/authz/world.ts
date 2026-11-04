@@ -22,7 +22,7 @@ import { makeTest } from "../setup";
 /**
  * Who calls: signed out, a stranger, playerA (owns characterA), playerB (owns characterB), the edit-grant player, a
  * co-GM (member row `role: "coGm"`, owns no character), the GM (the campaign's creator), the app owner (superadmin,
- * in no campaign; only the `appOwner` class and entries that state an `appOwner` row run it).
+ * in no campaign; every entry runs it: `appOwnerOutcome` in harness.ts, config AD13).
  */
 export type Role = "anon" | "outsider" | "player" | "otherPlayer" | "grantee" | "coGm" | "gm" | "appOwner";
 
