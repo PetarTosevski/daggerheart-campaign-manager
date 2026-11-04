@@ -326,3 +326,4 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - Glass G8: buttons on parchment stat blocks and the custom adversary editor are dark glass (with a wine focus ring), like the character wizard; Q5 kept ink only for Notes / recap / Tome. Default: glass.
 - Config S1: until U3 (Players section) lands, a GM on the Combat Map can't open the Players dialog from the app bar (the gear now opens Campaign settings, whose Players section is still empty); other pages keep the header's Players button. Temporary; U3 is in tonight's wave 3.
 - Config G1: in an archived campaign, Leave and Delete still work (and opening it); everything else is read-only. A joined co-GM's campaign shows as "player" in Load Campaign. Defaults: keep.
+- Config R3: away PCs count toward the Fear reset (only retired and dead don't); the reset shows in the Journal's Fear tally like a manual Fear set. Defaults: keep.
