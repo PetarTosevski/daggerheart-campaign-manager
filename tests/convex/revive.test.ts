@@ -2,7 +2,8 @@
  * Revive a defeated adversary (bead dcm-6c2o, user 2026-11-04: "Give the GM the option to revive a dead adversary"):
  * `encounterTracking.reviveInstance` sets the marked HP and Stress and clears the defeat in one keyed GM step, the
  * spotlight takes the adversary again, and one GM undo (`actionLog.undo`) puts it back to defeated with its previous
- * marks. Access: tests/convex/authz/adversaries.entries.ts. Every refusal is asserted on ConvexError.data.code.
+ * marks. Players see a public feed line, named only once the party saw the adversary (dcm-bn14). Access:
+ * tests/convex/authz/adversaries.entries.ts. Every refusal is asserted on ConvexError.data.code.
  */
 import { describe, expect, it } from "vitest";
 
@@ -59,9 +60,15 @@ async function arena() {
   const revive = (instanceId: string, hp = 0, stress = 0, as: Role = "gm") =>
     w.as(as).mutation(api.encounterTracking.reviveInstance, { campaignId, instanceId, hp, stress, idempotencyKey: key() });
   const log = () => t.run((ctx) => ctx.db.query("actionLog").collect());
+  const gmRows = async () => (await log()).filter((r) => r.visibility === "gm");
+  const publicRows = async () => (await log()).filter((r) => r.visibility === "public");
+  const setLive = (live: boolean) => t.run((ctx) => ctx.db.patch("combatMaps", mapId, { live }));
+  const markSeen = (tokenId: Id<"combatTokens">) => t.run((ctx) => ctx.db.insert("combatSeen", { campaignId, tokenId, seenAt: Date.now() }));
+  const playerFeed = async () =>
+    (await w.as("player").query(api.feed.list, { campaignId, paginationOpts: { numItems: 20, cursor: null } })).page.map((r) => r.summary);
   const tokens = () => gm.query(api.combatTokensReads.list, { campaignId, mapId });
   const take = (tokenId: string) => gm.mutation(api.combatSpotlight.gmTake, { campaignId, tokenId, idempotencyKey: key() });
-  return { w, t, campaignId, gm, ...ids, instance, revive, log, tokens, take };
+  return { w, t, campaignId, gm, ...ids, instance, revive, log, gmRows, publicRows, setLive, markSeen, playerFeed, tokens, take };
 }
 
 describe("encounterTracking.reviveInstance (dcm-6c2o)", () => {
@@ -94,20 +101,42 @@ describe("encounterTracking.reviveInstance (dcm-6c2o)", () => {
     const b = await arena();
     await b.revive(b.lackeys.instanceId, 1);
     expect(await b.instance(b.lackeys.instanceId)).toMatchObject({ hp: 1, defeated: false, minionCount: 4 });
-    expect((await b.log())[0]!.summary).toContain("3 of 4 Minions standing");
+    expect((await b.gmRows())[0]!.summary).toContain("3 of 4 Minions standing");
   });
 
   it("one GM undo puts it back to defeated with its previous marks", async () => {
     const a = await arena();
     await a.revive(a.bear.instanceId, 2, 1);
-    const rows = await a.log();
+    const rows = await a.gmRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ kind: "adversary", visibility: "gm", undoable: true });
     expect(rows[0]!.summary).toBe("Bear revived: 2 of 7 HP marked, 1 of 2 Stress marked");
     await a.gm.mutation(api.actionLog.undo, { entryId: rows[0]!._id, idempotencyKey: key() });
     expect(await a.instance(a.bear.instanceId)).toMatchObject({ hp: 7, stress: 2, defeated: true });
+    // dcm-bn14: the players' line is in the same group, so the undo takes it back too.
+    expect((await a.publicRows()).every((r) => r.undoneAt !== undefined)).toBe(true);
     expect((await a.tokens()).find((t) => t._id === a.bear.tokenId)!.stats).toMatchObject({ down: true });
     expect(await code(a.take(a.bear.tokenId))).toBe("ADVERSARY_DEFEATED");
+  });
+
+  it("players see a public line naming it as its token does (no live map: named) (dcm-bn14)", async () => {
+    const a = await arena();
+    await a.setLive(false);
+    await a.revive(a.bear.instanceId, 2, 1);
+    const pub = await a.publicRows();
+    expect(pub).toHaveLength(1);
+    expect(pub[0]).toMatchObject({ kind: "adversary", summary: "Bear is back on its feet", groupId: (await a.gmRows())[0]!.groupId });
+    expect(await a.playerFeed()).toEqual(["Bear is back on its feet"]);
+  });
+
+  it("on the live map, a token the party has not seen this scene stays unnamed; a seen one is named (dcm-bn14)", async () => {
+    const a = await arena();
+    await a.setLive(true);
+    await a.revive(a.bear.instanceId);
+    expect(await a.playerFeed()).toEqual(["An adversary is back on its feet"]);
+    await a.markSeen(a.lackeys.tokenId);
+    await a.revive(a.lackeys.instanceId);
+    expect((await a.playerFeed())[0]).toBe("Lackeys is back on its feet");
   });
 
   it("refuses marks that leave it defeated or out of range (ENCOUNTER_RULE) and writes nothing", async () => {

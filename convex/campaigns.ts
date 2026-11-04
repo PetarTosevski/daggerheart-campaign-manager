@@ -71,15 +71,9 @@ const listItemValidator = campaignSummaryValidator.omit("fear").extend({ isCreat
  */
 export type CampaignListItem = Infer<typeof listItemValidator>;
 
-/**
- * The card's Fear: the number, or null for a caller who may not see it (R1). The creator always sees it; a joined or
- * invited caller's permission is read only when the setting is off (rare), so a co-GM's card keeps the number.
- */
-async function withFear(ctx: QueryCtx, user: Doc<"users">, summary: CampaignSummary, campaign: Doc<"campaigns">, isCreator: boolean): Promise<CampaignListItem> {
-  if (!isCreator && !seesFear(campaign, null)) {
-    const access = await campaignAccess(ctx, user, campaign._id, "owner");
-    if (!seesFear(campaign, access?.permission ?? null)) return { ...summary, fear: null };
-  }
+/** The card's Fear: the number, or null for a caller who may not see it (R1); a co-GM's card keeps the number. */
+async function withFear(ctx: QueryCtx, summary: CampaignSummary, campaign: Doc<"campaigns">, permission: CampaignPermission | null): Promise<CampaignListItem> {
+  if (!seesFear(campaign, permission)) return { ...summary, fear: null };
   const state = await ctx.db
     .query("campaignState")
     .withIndex("by_campaign", (q) => q.eq("campaignId", summary._id))
@@ -141,14 +135,13 @@ export const list = userQuery({
       .withIndex("by_owner_deletedAt_lastOpened", (q) => q.eq("ownerId", user._id).eq("deletedAt", undefined))
       .order("desc")
       .take(LIST_MAX);
-    const rows: { campaign: Doc<"campaigns">; role: SummaryRole; isCreator: boolean; fallback: number }[] = owned.map((c) => ({
+    const rows: { campaign: Doc<"campaigns">; isCreator: boolean; fallback: number }[] = owned.map((c) => ({
       campaign: c,
-      role: "gm",
       isCreator: true,
       fallback: c.lastOpenedAt,
     }));
-    // Joined campaigns list as "player" here, co-GM ones included (no role read per card); `get` is the GM screens'
-    // source and reports a co-GM as "gm". `isCreator` is false for every joined campaign either way.
+    // A joined or invited campaign's role comes from `permissionFor`, as in `get`: a co-GM (owner) lists as "gm" with
+    // `isCreator` false, which Load Campaign badges "Co-GM" (dcm-6dtb, user 2026-11-04); everyone else as "player".
     const seen = new Set(owned.map((c) => c._id));
     const memberships = await ctx.db
       .query("campaignMembers")
@@ -158,7 +151,7 @@ export const list = userQuery({
     for (const m of memberships) {
       const c = await ctx.db.get("campaigns", m.campaignId);
       if (c && c.deletedAt === undefined && !seen.has(c._id)) {
-        rows.push({ campaign: c, role: "player", isCreator: false, fallback: m.lastOpenedAt });
+        rows.push({ campaign: c, isCreator: false, fallback: m.lastOpenedAt });
         seen.add(c._id);
       }
     }
@@ -172,7 +165,7 @@ export const list = userQuery({
       for (const i of invites) {
         const c = await ctx.db.get("campaigns", i.campaignId);
         if (c && c.deletedAt === undefined && !seen.has(c._id)) {
-          rows.push({ campaign: c, role: "player", isCreator: false, fallback: i.createdAt });
+          rows.push({ campaign: c, isCreator: false, fallback: i.createdAt });
           seen.add(c._id);
         }
       }
@@ -182,9 +175,11 @@ export const list = userQuery({
     );
     opened.sort((a, b) => b.lastOpenedAt - a.lastOpenedAt);
     return Promise.all(
-      opened
-        .slice(0, LIST_MAX)
-        .map(async (r) => withFear(ctx, user, await summarise(ctx, r.campaign, r.role, r.isCreator, r.lastOpenedAt), r.campaign, r.isCreator)),
+      opened.slice(0, LIST_MAX).map(async (r) => {
+        const permission = r.isCreator ? "creator" : await permissionFor(ctx, user, { type: "campaign", campaign: r.campaign }, "owner");
+        const role: SummaryRole = atLeast(permission, "owner") ? "gm" : "player";
+        return withFear(ctx, await summarise(ctx, r.campaign, role, r.isCreator, r.lastOpenedAt), r.campaign, permission);
+      }),
     );
   },
 });

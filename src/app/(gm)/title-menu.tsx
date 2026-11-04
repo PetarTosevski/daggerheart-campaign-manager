@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 
 import { LogoMark } from "@/components/brand/brand";
-import { frameName, plural } from "@/lib/campaign-display";
+import { campaignRoleLabel, frameName, plural } from "@/lib/campaign-display";
 
 import { api } from "../../../convex/_generated/api";
 
@@ -62,7 +62,7 @@ export function TitleMenu() {
             <MenuItem
               icon={<Play className="size-[18px]" strokeWidth={1.5} aria-hidden="true" />}
               label="Continue"
-              sub={`${latest.name} · ${frameName(latest.frameId)}${latest.role === "player" ? " · Player" : ""}`}
+              sub={`${latest.name} · ${frameName(latest.frameId)}${latest.isCreator ? "" : ` · ${campaignRoleLabel(latest)}`}`}
             />
           </Link>
         ) : null}

@@ -1,6 +1,6 @@
 /**
  * Config R3: GM Fear at the start of a session (table setting `fearAtStart`, Q1 a, CB p.154). "carry" leaves Fear as
- * it is; "pcs" sets it to the PCs that are not retired or dead, capped at 12, in the Start's undoable group.
+ * it is; "pcs" sets it to the active PCs (not away, retired or dead: dcm-owkv), capped at 12, in the Start's undoable group.
  */
 import { describe, expect, it } from "vitest";
 
@@ -124,8 +124,8 @@ describe("Fear at the start of a session (config R3)", () => {
     expect((await env.startLines(started.sessionId!))[0]).toContain("Fear reset to 4");
   });
 
-  it("counts away PCs but not retired or dead ones", async () => {
-    const env = await setup(["active", "away", "retired", "dead", "dead"]);
+  it("counts only active PCs: not away, retired or dead ones (dcm-owkv)", async () => {
+    const env = await setup(["active", "active", "away", "away", "retired", "dead", "dead"]);
     await env.setMode("pcs");
     await env.setFear(0);
     await env.start();

@@ -26,7 +26,7 @@
  * - `allowExtraCharacters` (XC1, user 2026-10-18): while a session runs, the GM lifts the one-active-character rule
  *   for it (INVALID with no session). `end` switches it off; characters made active meanwhile stay active.
  * - Fear at Start (config R3, Q1 a): with the campaign's table setting `fearAtStart` "pcs", `start` sets GM Fear to the
- *   number of PCs that are not retired or dead, capped at 12 (the campaign-start rule of CB p.154 at every session;
+ *   number of active PCs (not away, retired or dead: dcm-owkv, user 2026-11-04), capped at 12 (the campaign-start rule of CB p.154 at every session;
  *   "carry", the default and the book's rule, leaves Fear alone). The change is a Fear history row (action "reset")
  *   and the start's campaign row carries it as `fearDelta`, so undoing the Start restores the previous Fear; the
  *   start's log line says 'Fear reset to N'.
@@ -149,9 +149,6 @@ function witherNote(tokens: number, gained: number, lost: number): string {
 }
 
 // ---------------------------------------------------------------- Fear at Start (config R3)
-
-/** The PCs a reset counts (Q1 a): every character of the party that is not retired or dead. */
-const countsForFear = (character: Doc<"characters">) => character.status !== "retired" && character.status !== "dead";
 
 /**
  * With `fearAtStart` "pcs", sets GM Fear to min(12, `pcs`) and records a change in `history` (action "reset");
@@ -401,7 +398,8 @@ export const start = keyedGmMutation({
       const { sheets, notes: features } = sessionStartFeatures(hooked, rollDie, featureScope(ctx.campaign));
       const changes = active.map((c, i) => ({ ...c, next: sheets[i] }));
       await saveChanged(ctx, { campaignId, actorId: ctx.user._id, groupId, summary: "session start" }, changes);
-      const reset = await fearAtStart(ctx, members.filter(({ character }) => countsForFear(character)).length);
+      // R3 counts only active, present PCs: away, retired and dead ones do not (dcm-owkv, user 2026-11-04).
+      const reset = await fearAtStart(ctx, active.length);
       await logAction(ctx, {
         campaignId,
         actorId: ctx.user._id,

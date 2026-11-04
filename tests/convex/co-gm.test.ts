@@ -47,10 +47,16 @@ describe("co-GM (config G1)", () => {
     expect(await get("gm")).toMatchObject({ role: "gm", isCreator: true });
     expect(await get("coGm")).toMatchObject({ role: "gm", isCreator: false });
     expect(await get("player")).toMatchObject({ role: "player", isCreator: false });
-    const listed = await w.as("coGm").query(api.campaigns.list, {});
-    expect(listed.find((c) => c._id === w.campaignId)).toMatchObject({ isCreator: false });
     const own = await w.as("gm").query(api.campaigns.list, {});
     expect(own.find((c) => c._id === w.campaignId)).toMatchObject({ role: "gm", isCreator: true });
+  });
+
+  it("campaigns.list reports a co-GM as gm (badged Co-GM), a player as player (dcm-6dtb)", async () => {
+    const w = await buildWorld();
+    const listed = async (role: "coGm" | "player") =>
+      (await w.as(role).query(api.campaigns.list, {})).find((c) => c._id === w.campaignId);
+    expect(await listed("coGm")).toMatchObject({ role: "gm", isCreator: false });
+    expect(await listed("player")).toMatchObject({ role: "player", isCreator: false });
   });
 
   it("a co-GM can't delete, restore or purge the campaign", async () => {

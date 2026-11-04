@@ -10,10 +10,12 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { expireParty } from "./campaignTime";
 import { assertRunning, assertTextLength, assertWholeInRange, loadEncounter, loadInstance, MAX_INSTANCE_NOTE, MAX_INSTANCES, MAX_MINIONS, MAX_TAG, MAX_TAGS } from "./lib/encounters";
-import { logAction } from "./lib/actionLog";
+import { logAction, newGroupId } from "./lib/actionLog";
+import { liveCombatMap, tokensOnMap } from "./lib/combatMaps";
 import { FEAR_SPEND_REASONS, spendFear as spendCampaignFear } from "./lib/fear";
 import { gmQuery, keyedGmMutation } from "./lib/functions";
 import { adversaryDefeated } from "./lib/spotlight";
+import { seenThisScene } from "./lib/spotlightSeen";
 import { customAdversaryFields, encounterConditionValidator } from "./lib/validators/encounters";
 
 /**
@@ -147,6 +149,11 @@ export const defeatMinions = keyedGmMutation({
  * adversary that is not defeated is refused (ENCOUNTER_RULE); the encounter must be running (ENCOUNTER_NOT_RUNNING).
  * Logged as one undoable GM-only row (kind `adversary`) carrying the instance before (`adversaryBefore`): the GM's undo
  * (`actionLog.undo`) puts it back to defeated with its previous marks.
+ *
+ * Players get a public feed line in the same group (dcm-bn14, user 2026-11-04): '<label> is back on its feet', the
+ * label being the name its token and the spotlight show. While it is hidden from the players (`namedForPlayers`) the
+ * line does not name it, as the interrupt's public line does not (convex/lib/spotlight.ts): 'An adversary is back on
+ * its feet'. The GM's undo takes both lines back.
  */
 export const reviveInstance = keyedGmMutation({
   args: { instanceId: v.string(), hp: v.number(), stress: v.number() },
@@ -163,18 +170,33 @@ export const reviveInstance = keyedGmMutation({
       const before = { instanceId: instance._id, hp: instance.hp, stress: instance.stress, defeated: instance.defeated };
       await ctx.db.patch("encounterAdversaries", instance._id, { hp, stress, defeated: false, updatedAt: Date.now() });
       const marks = minions ? `${hpMax - hp} of ${hpMax} Minions standing` : `${hp} of ${hpMax} HP marked`;
+      const base = { campaignId: ctx.campaign._id, actorId: ctx.user._id, kind: "adversary" as const, groupId: newGroupId(), undoable: true };
       await logAction(ctx, {
-        campaignId: ctx.campaign._id,
-        actorId: ctx.user._id,
-        kind: "adversary",
+        ...base,
         visibility: "gm",
         summary: `${instance.label} revived: ${marks}${stressMax > 0 ? `, ${stress} of ${stressMax} Stress marked` : ""}`,
         adversaryBefore: [before],
-        undoable: true,
       });
+      const who = (await namedForPlayers(ctx, instance)) ? instance.label : "An adversary";
+      await logAction(ctx, { ...base, visibility: "public", summary: `${who} is back on its feet` });
       return { hp, stress, defeated: false };
     }),
 });
+
+/**
+ * Whether a public line may name the adversary (dcm-bn14): the rule the spotlight follows for players
+ * (`combatSpotlight.state`, user 2026-11-03). With a token on the live map, only once the party saw one of its tokens
+ * this scene (`combatSeen`); off the map (no live map, or no token on it) the players know it by name, as its action
+ * lines name it (convex/lib/adversaryActions.ts).
+ */
+async function namedForPlayers(ctx: MutationCtx, instance: Doc<"encounterAdversaries">): Promise<boolean> {
+  const live = await liveCombatMap(ctx, instance.campaignId);
+  if (live === null) return true;
+  const own = (await tokensOnMap(ctx, live._id)).filter((t) => t.ref.kind === "adversary" && t.ref.adversaryId === instance._id);
+  if (own.length === 0) return true;
+  for (const token of own) if (await seenThisScene(ctx, instance.campaignId, token._id)) return true;
+  return false;
+}
 
 /** Switches one condition on or off (CB p.102: the same condition can't stack). */
 export const toggleCondition = keyedGmMutation({

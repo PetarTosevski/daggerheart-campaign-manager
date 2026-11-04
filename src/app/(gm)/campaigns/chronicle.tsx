@@ -7,7 +7,7 @@ import { useMemo, useState } from "react";
 
 import { PageHeader } from "@/components/brand/brand";
 import { BrandButton, brandButton } from "@/components/brand/buttons";
-import { frameName, roman } from "@/lib/campaign-display";
+import { campaignRoleLabel, frameName, roman } from "@/lib/campaign-display";
 import { errorMessage } from "@/lib/convex-errors";
 import { cn } from "@/lib/utils";
 
@@ -32,7 +32,8 @@ function Band({
 }) {
   const remove = useMutation(api.campaigns.remove);
   const leave = useMutation(api.members.leave);
-  const isGm = campaign.role === "gm";
+  // Delete is the creator's alone; a co-GM (role "gm", not the creator) leaves like a player (dcm-6dtb).
+  const canDelete = campaign.isCreator;
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,10 +69,10 @@ function Band({
             <span
               className={cn(
                 "rounded-full border px-2.5 py-0.5 text-[11px] tracking-[0.16em]",
-                isGm ? "border-brand/60 text-brand" : "border-[#5b4a8f] text-fear",
+                campaign.role === "gm" ? "border-brand/60 text-brand" : "border-[#5b4a8f] text-fear",
               )}
             >
-              {isGm ? "Game Master" : "Player"}
+              {campaignRoleLabel(campaign)}
             </span>
           </span>
           <span className="font-display text-[28px] font-bold tracking-[0.03em] sm:text-[34px]">{campaign.name}</span>
@@ -100,11 +101,11 @@ function Band({
             <BrandButton
               variant="danger"
               size="lg"
-              aria-label={`${isGm ? "Delete" : "Leave"} ${campaign.name}`}
+              aria-label={`${canDelete ? "Delete" : "Leave"} ${campaign.name}`}
               onClick={() => setConfirming(true)}
             >
-              {isGm ? <Trash2 strokeWidth={1.8} aria-hidden="true" /> : null}
-              {isGm ? "Delete" : "Leave"}
+              {canDelete ? <Trash2 strokeWidth={1.8} aria-hidden="true" /> : null}
+              {canDelete ? "Delete" : "Leave"}
             </BrandButton>
           </div>
         </div>
@@ -113,12 +114,12 @@ function Band({
       {open && confirming ? (
         <div
           role="alertdialog"
-          aria-label={isGm ? "Confirm delete" : "Confirm leave"}
+          aria-label={canDelete ? "Confirm delete" : "Confirm leave"}
           className="mx-6 mb-7 flex flex-wrap items-center gap-3 rounded-[10px] border border-danger-line bg-danger-bg px-4 py-3.5 sm:mr-10 sm:ml-[216px]"
         >
           <span className="flex-[1_1_260px] text-[15px] text-[#ffd9d6]">
-            {isGm ? "Delete" : "Leave"} <strong>{campaign.name}</strong>?{" "}
-            {isGm
+            {canDelete ? "Delete" : "Leave"} <strong>{campaign.name}</strong>?{" "}
+            {canDelete
               ? "It will be removed from your saved campaigns."
               : "You'll need a new invite or join code to come back."}
           </span>
@@ -129,12 +130,12 @@ function Band({
             variant="danger"
             onClick={() => {
               setError(null);
-              (isGm ? remove({ campaignId: campaign._id }) : leave({ campaignId: campaign._id }))
-                .then(() => (isGm ? onDeleted(campaign) : undefined))
+              (canDelete ? remove({ campaignId: campaign._id }) : leave({ campaignId: campaign._id }))
+                .then(() => (canDelete ? onDeleted(campaign) : undefined))
                 .catch((e) => setError(errorMessage(e)));
             }}
           >
-            {isGm ? "Delete" : "Leave"}
+            {canDelete ? "Delete" : "Leave"}
           </BrandButton>
           {error ? (
             <p role="alert" className="m-0 w-full text-[14px] text-danger">
@@ -236,7 +237,7 @@ function ArchivedRow({ campaign, onRestored }: { campaign: CampaignListItem; onR
         <span className="flex min-w-0 flex-[1_1_220px] flex-col gap-0.5">
           <span className="font-display text-[20px] font-bold tracking-[0.03em] break-words">{campaign.name}</span>
           <span className="text-[14px] text-label">
-            {frameName(campaign.frameId)} · {campaign.role === "gm" ? "Game Master" : "Player"} · Last opened{" "}
+            {frameName(campaign.frameId)} · {campaignRoleLabel(campaign)} · Last opened{" "}
             {dateFormat.format(campaign.lastOpenedAt)}
           </span>
         </span>
