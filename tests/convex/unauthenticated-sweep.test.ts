@@ -28,11 +28,16 @@ declare global {
   }
 }
 
-/** Public functions no wrapper defines, so the sweep does not call them: Convex Auth's own entry points. */
+/**
+ * Public functions the sweep does not call: Convex Auth's own entry points (no wrapper defines them), and reads that
+ * answer a signed-out caller on purpose (covered by the authz matrix and their own tests instead).
+ */
 export const EXEMPT: Record<string, string> = {
   "auth:signIn": "Convex Auth: signing in is what a signed-out caller does",
   "auth:signOut": "Convex Auth: signs out the current session, if any",
   "auth:isAuthenticated": "Convex Auth: answers false to a signed-out caller by design",
+  "features:mine":
+    "the caller's own feature on / off; signed out = the Everyone features, never modes or testers (config AD9; tests/convex/features.test.ts)",
 };
 
 /**
