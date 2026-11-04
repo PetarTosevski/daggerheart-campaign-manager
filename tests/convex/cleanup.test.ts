@@ -246,6 +246,9 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     const rulingId = await ins("lorekeeperRulings", { campaignId: c, title: "Crits", text: "Max damage plus a roll.", sessionId, fromMessageId: answerId, pinnedBy: userId, pinnedAt: now, updatedAt: now });
     await ins("lorekeeperAsks", { campaignId: c, messageId: answerId, askedBy: userId, askedAt: now, resolvedAt: now, resolution: "pinned", rulingId });
     await ins("lorekeeperUsage", { kind: "campaign", campaignId: c, period: "2026-10", questions: 1, costMicros: 10, updatedAt: now });
+    // Config AD0: the owner's per-campaign Lorekeeper numbers and a GM's request.
+    await ins("lorekeeperCampaignLimits", { campaignId: c, dailyQuestions: 60, setBy: userId, updatedAt: now });
+    await ins("lorekeeperLimitRequests", { campaignId: c, requestedBy: userId, wants: { dailyQuestions: 60 }, reason: "Big table", status: "pending", createdAt: now });
     await ins("files", { storageId: blobs.file, campaignId: c, uploadedBy: userId, kind: "map", refId: c, createdAt: now });
     await ins("files", { storageId: blobs.codexImage, campaignId: c, uploadedBy: userId, kind: "codexImage", refId: entryId, createdAt: now });
     await ins("files", { storageId: blobs.portrait, campaignId: c, uploadedBy: userId, kind: "portrait", refId: characterId, createdAt: now });

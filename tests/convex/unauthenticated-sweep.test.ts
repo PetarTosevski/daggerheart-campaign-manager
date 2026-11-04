@@ -49,6 +49,7 @@ export const STRANGER_OWN: Record<string, string> = {
   "uiState:get": "the caller's own UI state (defaults for a stranger; config P2)",
   "preferences:get": "the caller's own preferences (config P1)",
   "preferences:importLegacy": "moves the caller's own old browser values to their account (config P1)",
+  "appAdmin:me": "whether the caller is the app owner ({ isOwner: false } for a stranger; config AD0)",
 };
 
 const AREAS = Object.values(import.meta.glob("./authz/*.entries.ts", { eager: true, import: "default" }) as Record<string, Area>);
@@ -200,7 +201,7 @@ describe("unauthenticated sweep", () => {
     expect(names.length).toBeGreaterThan(300);
     expect(Object.keys(EXEMPT).filter((n) => !names.includes(n))).toEqual([]);
     expect(Object.keys(STRANGER_OWN).filter((n) => !names.includes(n))).toEqual([]);
-    expect([...MAYBE].sort()).toEqual(["campaigns:get", "users:viewer"]);
+    expect([...MAYBE].sort()).toEqual(["appAdmin:me", "campaigns:get", "users:viewer"]);
   });
 
   describe("signed out: refused", () => {

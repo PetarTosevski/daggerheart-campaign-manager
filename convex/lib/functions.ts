@@ -23,6 +23,7 @@
  * | `keyedCampaignMutation` | `campaignId`, `idempotencyKey` | the above + `once` (scope: the campaign) | `need`, `enough?`, `rateLimit?`, `archived?` |
  * | `gmQuery` / `gmMutation` / `keyedGmMutation` | as the campaign ones | as the campaign ones       | `need` is fixed to `"owner"`; mutations `rateLimit?`, `archived?` |
  * | `creatorQuery` / `creatorMutation` / `keyedCreatorMutation` | as the campaign ones | as the campaign ones | `need` is fixed to `"creator"`; mutations `rateLimit?`, `archived?` |
+ * | `appOwnerQuery` / `appOwnerMutation` / `appOwnerAction` | -     | `user` (the app owner)                     | mutations and actions `rateLimit?` |
  *
  * Consumed args stay part of the public signature (the client still sends
  * them) but are removed from the handler's `args`: use `ctx.campaign._id`.
@@ -43,6 +44,11 @@
  *   mutation wrapper throws `CAMPAIGN_ARCHIVED` after the access check when
  *   `campaign.archivedAt` is set, unless the option `archived: "allow"` is
  *   given (opening, leaving, deleting). Queries read archived campaigns.
+ * - App owner (superadmin, config AD0): the `appOwner*` builders let only the
+ *   app owner through, decided by `isAppOwner` (`lib/appOwner.ts`, the only
+ *   owner check: one stored user id, named with the deployment admin key).
+ *   Signed out → `UNAUTHENTICATED`; anyone else → `FORBIDDEN`, before the
+ *   handler runs. Never a client flag.
  * - `rateLimit: RateLimitName` consumes one token of that named limit (see
  *   `RATE_LIMITS`), keyed by the user, before the handler runs; past the limit
  *   the call fails with `RATE_LIMITED`. Mutations and actions only.
@@ -128,6 +134,7 @@ import {
   type QueryCtx,
 } from "../_generated/server";
 import { isE2EDeployment } from "./allowlist";
+import { isAppOwner } from "./appOwner";
 import { refuseArchived } from "./archived";
 import { getUser } from "./auth";
 import { campaignScope, ownerScope, runOnce, type ScopeKey } from "./operations";
@@ -307,6 +314,58 @@ export const userAction = customAction(baseAction, {
     if (user === null) throw appError("UNAUTHENTICATED");
     await enforceRateLimit(ctx, user, rateLimit);
     return { ctx: { user }, args: {} };
+  },
+});
+
+// ---------------------------------------------------------------- app owner builders
+
+/** The signed-in app owner (`isAppOwner`, the only owner check). Signed out → UNAUTHENTICATED; anyone else → FORBIDDEN. */
+async function signedInAppOwner(ctx: QueryCtx): Promise<Doc<"users">> {
+  const user = await signedIn(ctx);
+  if (!(await isAppOwner(ctx, user))) throw appError("FORBIDDEN");
+  return user;
+}
+
+/** The app owner's query (App admin, config AD0): `ctx.user` is the owner. */
+export const appOwnerQuery = customQuery(baseQuery, {
+  args: {},
+  input: async (ctx) => ({ ctx: { user: await signedInAppOwner(ctx) }, args: {} }),
+});
+
+/** The app owner's mutation: `ctx.user` is the owner; option `rateLimit`. Every admin change writes an audit row. */
+export const appOwnerMutation = customMutation(baseMutation, {
+  args: {},
+  input: async (ctx, _args, { rateLimit }: { rateLimit?: RateLimitName }) => {
+    const user = await signedInAppOwner(ctx);
+    await enforceRateLimit(ctx, user, rateLimit);
+    return { ctx: { user }, args: {} };
+  },
+});
+
+type ActionAppOwner = { user: Doc<"users">; owner: boolean } | null;
+
+/** For `appOwnerAction`: the signed-in user and whether they are the app owner, in one query. */
+export const actionAppOwner = internalQuery({
+  args: {},
+  handler: async (ctx): Promise<ActionAppOwner> => {
+    const user = await getUser(ctx);
+    return user === null ? null : { user, owner: await isAppOwner(ctx, user) };
+  },
+});
+
+// `internal.lib.functions.actionAppOwner`, referenced by name for the same reason as `actionUserRef`.
+const actionAppOwnerRef = makeFunctionReference<"query", Record<string, never>, ActionAppOwner>("lib/functions:actionAppOwner");
+
+/** The app owner's action: `ctx.user` is the owner; option `rateLimit`. */
+export const appOwnerAction = customAction(baseAction, {
+  args: {},
+  input: async (ctx, _args, { rateLimit }: { rateLimit?: RateLimitName }) => {
+    if ((await getAuthUserId(ctx)) === null) throw appError("UNAUTHENTICATED");
+    const found = await ctx.runQuery(actionAppOwnerRef, {});
+    if (found === null) throw appError("UNAUTHENTICATED");
+    if (!found.owner) throw appError("FORBIDDEN");
+    await enforceRateLimit(ctx, found.user, rateLimit);
+    return { ctx: { user: found.user }, args: {} };
   },
 });
 

@@ -8,7 +8,7 @@
 import { getFunctionName, makeFunctionReference } from "convex/server";
 import { beforeAll, describe, expect, test } from "vitest";
 
-import { COGM_KNOWN_GAPS, entryProblems, type Access, type Area } from "./authz/harness";
+import { COGM_KNOWN_GAPS, entryProblems, expectations, NON_OWNER_ROLES, type Access, type Area } from "./authz/harness";
 import { publicFunctions, wrapperOf, type WrapperInfo } from "./authz/inventory";
 
 declare global {
@@ -85,6 +85,11 @@ export function allowedClasses(info: WrapperInfo | null): Access[] {
       return ["own", "scoped", "user"];
     case "maybeUserQuery":
       return ["maybe"];
+    // Config AD0: the app owner's builders, and only them, are the `appOwner` class (owner-only, never friendlier).
+    case "appOwnerQuery":
+    case "appOwnerMutation":
+    case "appOwnerAction":
+      return ["appOwner"];
   }
 }
 
@@ -237,6 +242,48 @@ describe("the guard's checks catch what they should", () => {
       "m:needCreator: filed as gm, but campaignMutation need creator allows creator",
       "m:gm: filed as creator, but gmMutation allows gm",
     ]);
+  });
+
+  test("an appOwner function filed as user, a user function filed as appOwner, a loosened appOwner row (config AD0)", async () => {
+    const wrappers: Record<string, WrapperInfo> = {
+      "m:ownerAsUser": { wrapper: "appOwnerMutation" },
+      "m:userAsOwner": { wrapper: "userQuery" },
+      "m:ok": { wrapper: "appOwnerQuery" },
+      "m:loosened": { wrapper: "appOwnerAction" },
+    };
+    const problems = await classProblems(
+      [
+        area({
+          entries: [
+            { fn: fakeRef("m:ownerAsUser"), access: "user" },
+            { fn: fakeRef("m:userAsOwner"), access: "appOwner" },
+            { fn: fakeRef("m:ok"), access: "appOwner" },
+            { fn: fakeRef("m:loosened"), access: "appOwner", expect: { gm: "ok", appOwner: "ok" } },
+          ],
+        }),
+      ],
+      async (name) => wrappers[name] ?? null,
+    );
+    expect(problems).toEqual([
+      "m:ownerAsUser: filed as user, but appOwnerMutation allows appOwner",
+      "m:userAsOwner: filed as appOwner, but userQuery allows own/scoped/user",
+      "m:loosened: appOwner entries keep every non-owner row (overrides gm)",
+    ]);
+  });
+
+  test("the appOwner class refuses every non-owner role (config AD0)", () => {
+    const rows = Object.fromEntries(expectations({ fn: fakeRef("m:owner"), access: "appOwner" }, "mutation"));
+    expect(rows).toEqual({
+      anon: "UNAUTHENTICATED",
+      outsider: "FORBIDDEN",
+      otherPlayer: "FORBIDDEN",
+      player: "FORBIDDEN",
+      grantee: "FORBIDDEN",
+      coGm: "FORBIDDEN",
+      gm: "FORBIDDEN",
+      appOwner: "ok",
+    });
+    expect(NON_OWNER_ROLES.every((role) => rows[role] !== "ok")).toBe(true);
   });
 
   test("a scoped entry missing roles, an access code in okCodes, an exempted wrapped function", async () => {

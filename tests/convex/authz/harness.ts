@@ -32,9 +32,15 @@ export type Outcome =
 /**
  * The access class, which must agree with the wrapper (the guard checks it):
  * gm* → `gm`; creator* (or `need: "creator"`) → `creator`; campaign* `need: "view"` → `view`; `need: "edit"` →
- * `edit`; user* → `own`, `scoped` or `user`; maybeUserQuery → `maybe`.
+ * `edit`; user* → `own`, `scoped` or `user`; maybeUserQuery → `maybe`; appOwner* → `appOwner` (config AD0).
  */
-export type Access = "gm" | "creator" | "view" | "edit" | "own" | "scoped" | "user" | "maybe";
+export type Access = "gm" | "creator" | "view" | "edit" | "own" | "scoped" | "user" | "maybe" | "appOwner";
+
+/**
+ * Every role but the app owner. An `appOwner` entry runs all of them and may not override any (`entryProblems`), so
+ * every non-owner row of every owner function stays pinned to its refusal.
+ */
+export const NON_OWNER_ROLES: readonly Role[] = ["anon", "outsider", "otherPlayer", "player", "grantee", "coGm", "gm"];
 
 export const ACCESS_CODES = ["UNAUTHENTICATED", "NOT_FOUND", "FORBIDDEN"] as const;
 
@@ -103,6 +109,19 @@ export function defaultExpectations(access: Access, kind: FunctionKind): Partial
       return { anon: "null", outsider: "ok", player: "ok", coGm: "ok", gm: "ok" };
     case "scoped":
       return {};
+    case "appOwner":
+      // Config AD0: the app owner only. Signed out → UNAUTHENTICATED; every other signed-in role, the campaign's GM
+      // included, → FORBIDDEN (the owner functions are not campaign functions, so nothing is hidden behind NOT_FOUND).
+      return {
+        anon: "UNAUTHENTICATED",
+        outsider: "FORBIDDEN",
+        otherPlayer: "FORBIDDEN",
+        player: "FORBIDDEN",
+        grantee: "FORBIDDEN",
+        coGm: "FORBIDDEN",
+        gm: "FORBIDDEN",
+        appOwner: "ok",
+      };
   }
 }
 
@@ -119,6 +138,10 @@ export function entryProblems(entry: Entry): string[] {
   }
   const access = (entry.okCodes ?? []).filter((code) => (ACCESS_CODES as readonly string[]).includes(code));
   if (access.length > 0) problems.push(`${name}: okCodes may not contain access codes (${access.join(", ")})`);
+  if (entry.access === "appOwner") {
+    const loosened = NON_OWNER_ROLES.filter((role) => entry.expect?.[role] !== undefined);
+    if (loosened.length > 0) problems.push(`${name}: appOwner entries keep every non-owner row (overrides ${loosened.join(", ")})`);
+  }
   return problems;
 }
 

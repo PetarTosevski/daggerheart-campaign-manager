@@ -1,6 +1,7 @@
 import { ConvexError } from "convex/values";
 
 import { actionLogMessages } from "./actionLog";
+import { adminMessages } from "./admin";
 import { adversaryActionMessages } from "./adversaryActions";
 import { authMessages } from "./auth";
 import { classFeatureMessages } from "./classFeatures";
@@ -50,6 +51,7 @@ export type AppErrorCode =
   | keyof typeof noteMessages
   | keyof typeof lorekeeperMessages
   | keyof typeof configMessages
+  | keyof typeof adminMessages
   | "IDEMPOTENCY_MISMATCH"
   | "NAME_TAKEN"
   | "OBJECTIVE_LIMIT"

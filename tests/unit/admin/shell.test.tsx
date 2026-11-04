@@ -181,11 +181,6 @@ describe("stubs", () => {
       unmount();
     }
   });
-
-  it("until AD0 merges, the owner stub says nobody is the owner", async () => {
-    const real = await vi.importActual<typeof import("@/components/admin/shell/owner")>("@/components/admin/shell/owner");
-    expect(real.useAppOwner()).toEqual({ isOwner: false });
-  });
 });
 
 describe("slots contract", () => {

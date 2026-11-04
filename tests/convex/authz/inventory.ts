@@ -83,6 +83,10 @@ export const WRAPPERS = [
   "creatorQuery",
   "creatorMutation",
   "keyedCreatorMutation",
+  // Config AD0: the app owner's (superadmin) builders.
+  "appOwnerQuery",
+  "appOwnerMutation",
+  "appOwnerAction",
 ] as const;
 export type Wrapper = (typeof WRAPPERS)[number];
 

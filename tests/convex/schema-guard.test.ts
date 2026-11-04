@@ -89,6 +89,9 @@ const RETENTION: Record<string, string> = {
   operations: "idempotency records expire after 7 days",
   campaigns: "soft-deleted campaigns are purged after 30 days",
   files: "unclaimed storage blobs are swept; a campaign's files go with its purge",
+  // Config AD0 (rule 8): convex/adminRetention.ts, scheduled in convex/crons.ts.
+  adminAudit: "admin changes and campaign events expire after 365 days (Q26 a; adminRetention.expireAudit, reads by_at)",
+  adminExports: "export files and their rows are deleted after 1 hour (Q30 a; adminRetention.expireExports, reads by_createdAt)",
 };
 const CAMPAIGN_SCOPED = [
   "campaignOpens",
@@ -145,6 +148,10 @@ const CAMPAIGN_SCOPED = [
   // Config S0: unsent drafts, bounded per user (one per kind and campaign); a character-wizard draft goes with its
   // campaign, a custom-frame draft has none. Also expires after 90 days (ALSO_RETENTION).
   "userDrafts",
+  // Config AD0: the owner's per-campaign Lorekeeper numbers (one row per campaign) and the GMs' requests for higher
+  // limits; both go with the campaign's purge. Decided requests also expire (ALSO_RETENTION).
+  "lorekeeperCampaignLimits",
+  "lorekeeperLimitRequests",
 ];
 /**
  * Campaign-scoped tables that also have a retention job of their own (listed once above, so this is a second note,
@@ -158,6 +165,8 @@ const ALSO_RETENTION: Record<string, string> = {
   combatAreas: "ended map areas (ended scenes and sessions) are swept a day after endedAt (sheet-drawer SD0 cron)",
   actionLog: "undo snapshots are stripped 30 days after `at`, the rows stay, no longer undoable (dcm-c26 cron, reads by_undoable_at)",
   userDrafts: "drafts not saved for 90 days expire, custom-frame drafts (no campaign) included (config P2 cron, reads by_updated)",
+  lorekeeperLimitRequests:
+    "approved and declined requests expire 365 days after createdAt (config AD0; adminRetention.expireLimitRequests, reads by_status_createdAt)",
 };
 /**
  * Child rows of a combat map (D9): reached through `mapId` and deleted before their map, by the campaign purge
@@ -168,7 +177,22 @@ const MAP_SCOPED = ["combatMapObjects", "combatMapCells", "combatExplored"];
  * Lorekeeper books and their chunks (D13): one set per deployment (about 20 books), replaced on re-ingest. Config S0:
  * `userPreferences` is one row per user; `userUiState` one row per user and key (7 keys).
  */
-const BOUNDED = ["settings", "userPreferences", "userUiState", "grants", "lorekeeperBooks","lorekeeperChunks", "e2eCodes", "uploadNotices", ...Object.keys(authTables)];
+const BOUNDED = [
+  "settings",
+  "userPreferences",
+  "userUiState",
+  "grants",
+  "lorekeeperBooks",
+  "lorekeeperChunks",
+  "e2eCodes",
+  "uploadNotices",
+  // Config AD0: one-row singletons (appConfig, appStatus), one row per feature key, one row per tester.
+  "appConfig",
+  "appStatus",
+  "featureSwitches",
+  "appTesters",
+  ...Object.keys(authTables),
+];
 
 describe("stored fields", () => {
   test("no v.any() outside the allowlist", () => {

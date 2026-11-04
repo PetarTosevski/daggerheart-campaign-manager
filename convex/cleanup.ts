@@ -402,6 +402,15 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
     const rows = await ctx.db.query("lorekeeperUsage").withIndex("by_campaign_period", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "lorekeeperUsage", rows);
   },
+  // Config AD0: the owner's Lorekeeper numbers for this campaign and its GMs' requests for higher limits.
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("lorekeeperCampaignLimits").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "lorekeeperCampaignLimits", rows);
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("lorekeeperLimitRequests").withIndex("by_campaign_status", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "lorekeeperLimitRequests", rows);
+  },
   // Combat requests (plan combat-actions AA0): GM sanctions and reaction windows; they reference characters,
   // encounters and maps only by id, so their order here does not matter.
   async (ctx, c, budget) => {

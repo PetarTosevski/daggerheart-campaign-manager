@@ -1,7 +1,8 @@
 /**
  * The world every authz-matrix row runs in (analysis 2.4): one campaign with a GM, two players who each own a character,
- * a player with an edit grant on the campaign, a co-GM (a member the GM promoted, config G1; no character) and an
- * outsider. Built through the public API wherever one exists (campaign, join code, joins, characters, the co-GM
+ * a player with an edit grant on the campaign, a co-GM (a member the GM promoted, config G1; no character), an
+ * outsider and the app owner (superadmin, config AD0: named with the internal `adminSetup.setOwner`, a member of no
+ * campaign). Built through the public API wherever one exists (campaign, join code, joins, characters, the co-GM
  * promotion); users and the grant have no public API and are inserted directly.
  *
  * Area files add their own state (a combat map, an encounter, a session...) in `setup`, register the ids they create
@@ -10,7 +11,7 @@
  */
 import type { TestConvex } from "convex-test";
 
-import { api } from "../../../convex/_generated/api";
+import { api, internal } from "../../../convex/_generated/api";
 import type { Id, TableNames } from "../../../convex/_generated/dataModel";
 import type schema from "../../../convex/schema";
 import type { FrameId } from "../../../src/lib/frames/index";
@@ -20,12 +21,13 @@ import { makeTest } from "../setup";
 
 /**
  * Who calls: signed out, a stranger, playerA (owns characterA), playerB (owns characterB), the edit-grant player, a
- * co-GM (member row `role: "coGm"`, owns no character), the GM (the campaign's creator).
+ * co-GM (member row `role: "coGm"`, owns no character), the GM (the campaign's creator), the app owner (superadmin,
+ * in no campaign; only the `appOwner` class and entries that state an `appOwner` row run it).
  */
-export type Role = "anon" | "outsider" | "player" | "otherPlayer" | "grantee" | "coGm" | "gm";
+export type Role = "anon" | "outsider" | "player" | "otherPlayer" | "grantee" | "coGm" | "gm" | "appOwner";
 
 /** The order rows run in (a shared query world sees the refused calls first). */
-export const ROLES: readonly Role[] = ["anon", "outsider", "otherPlayer", "player", "grantee", "coGm", "gm"];
+export const ROLES: readonly Role[] = ["anon", "outsider", "otherPlayer", "player", "grantee", "coGm", "gm", "appOwner"];
 
 export const WORLD_EMAILS = {
   gm: "gm@example.com",
@@ -34,6 +36,7 @@ export const WORLD_EMAILS = {
   grantee: "grantee@example.com",
   coGm: "co-gm@example.com",
   outsider: "outsider@example.com",
+  appOwner: "app-owner@example.com",
 } as const;
 
 /** Deprecated no-op kept for its callers: sign-up is open, so the world's accounts need no listing. */
@@ -89,8 +92,11 @@ export async function buildWorld(options: WorldOptions = {}): Promise<World> {
       grantee: await insert(WORLD_EMAILS.grantee),
       coGm: await insert(WORLD_EMAILS.coGm),
       outsider: await insert(WORLD_EMAILS.outsider),
+      appOwner: await insert(WORLD_EMAILS.appOwner),
     };
   });
+  // Config AD0: the owner is named the only way the app allows, the internal setOwner (deployment admin key).
+  await t.mutation(internal.adminSetup.setOwner, { email: WORLD_EMAILS.appOwner });
   const clients = new Map<Role, Client>([["anon", t]]);
   for (const [role, id] of Object.entries(users)) clients.set(role as Role, t.withIdentity({ subject: `${id}|session` }));
   const as = (role: Role) => clients.get(role)!;

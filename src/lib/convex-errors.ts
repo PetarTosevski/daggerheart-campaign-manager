@@ -1,6 +1,7 @@
 import { ConvexError } from "convex/values";
 
 import { actionLogMessages } from "./errors/actionLog";
+import { adminMessages } from "./errors/admin";
 import { adversaryActionMessages } from "./errors/adversaryActions";
 import { authMessages } from "./errors/auth";
 import { campaignMessages } from "./errors/campaigns";
@@ -68,6 +69,7 @@ const MESSAGES = mergeMessages(
   noteMessages,
   lorekeeperMessages,
   configMessages,
+  adminMessages,
 );
 
 /**
