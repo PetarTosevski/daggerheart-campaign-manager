@@ -32,5 +32,7 @@ crons.cron("expire lorekeeper usage", "47 4 * * *", internal.lorekeeperRetention
 crons.cron("end stuck lorekeeper answers", "29 * * * *", internal.lorekeeperRetention.expireStaleRuns, {});
 // Open sign-up (plan open-signup OS5): password accounts whose code was never entered, after 7 days; daily.
 crons.cron("expire unverified sign-ups", "13 4 * * *", internal.cleanup.expireUnverifiedSignups, {});
+// Account drafts (plan config P2, Q15 b): character-wizard and custom-frame drafts not saved for 90 days; daily.
+crons.cron("expire old drafts", "31 4 * * *", internal.draftsRetention.expire, {});
 
 export default crons;

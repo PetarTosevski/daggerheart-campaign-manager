@@ -177,7 +177,9 @@ export const campaignTables = {
     updatedAt: v.number(),
   })
     .index("by_user_kind_campaign", ["userId", "kind", "campaignId"])
-    .index("by_campaign", ["campaignId"]),
+    .index("by_campaign", ["campaignId"])
+    // The 90-day expiry (config P2, `draftsRetention.expire`).
+    .index("by_updated", ["updatedAt"]),
 
   /**
    * A folded hand on the Combat Map ("Hide cards", config S0): a row = folded, per user and character. Bounded per
