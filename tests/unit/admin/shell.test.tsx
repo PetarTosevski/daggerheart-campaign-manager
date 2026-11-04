@@ -169,7 +169,6 @@ describe("stubs", () => {
   it("every tab stub renders nothing until its tracer lands", async () => {
     const onTab = vi.fn();
     const stubs = [
-      (await vi.importActual<typeof import("@/components/admin/overview")>("@/components/admin/overview")).OverviewTab,
       // AccountsTab is built (AU2): tests/unit/admin/accounts.test.tsx.
       (await vi.importActual<typeof import("@/components/admin/lorekeeper")>("@/components/admin/lorekeeper")).LorekeeperTab,
     ];
