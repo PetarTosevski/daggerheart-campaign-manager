@@ -3,6 +3,7 @@
 import { useMutation } from "convex/react";
 import { useEffect, useRef, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { fitWithin } from "@/components/party/party-display";
 import { UploadNotice } from "@/components/uploads/upload-notice";
 import { errorMessage } from "@/lib/convex-errors";
@@ -146,28 +147,33 @@ export function Gallery({ entry, gm, onOpen }: { entry: GmEntry | PlayerEntry; g
               />
               {gm ? (
                 <div className="cx-tools">
-                  <button
-                    type="button"
-                    className={cn("cx-tb", g.shown && "on")}
+                  <BrandButton
+                    variant="neutral"
+                    size="sm"
+                    className="flex-none"
                     aria-pressed={!!g.shown}
                     title={g.shown ? "Players can see this. Click to hide it." : "Hidden from players. Click to reveal it."}
                     onClick={() => void run(() => setShown({ entryId, storageId: g.key, shown: !g.shown }))}
                   >
                     {g.shown ? "👁 Revealed" : "🔒 Hidden"}
-                  </button>
-                  <span className="flex gap-1">
-                    <button
-                      type="button"
-                      className={cn("cx-tb", isCover && "on")}
+                  </BrandButton>
+                  <span className="ml-auto flex gap-1">
+                    {/* The cover is lit with the Hope colour set (gb-hope), not aria-pressed: picking it again does not unpick it. */}
+                    <BrandButton
+                      variant="neutral"
+                      size="sm"
+                      icon
+                      className={cn(isCover && "gb-hope")}
                       title="Use as the main picture"
                       aria-label="Use as the main picture"
                       onClick={() => void run(() => setCover({ entryId, storageId: g.key }))}
                     >
                       ★
-                    </button>
-                    <button
-                      type="button"
-                      className="cx-tb"
+                    </BrandButton>
+                    <BrandButton
+                      variant="danger"
+                      size="sm"
+                      icon={confirmImg !== g.key}
                       title={confirmImg === g.key ? "Click again to delete this image" : "Delete image"}
                       aria-label={confirmImg === g.key ? "Click again to delete this image" : "Delete image"}
                       onClick={() => {
@@ -180,7 +186,7 @@ export function Gallery({ entry, gm, onOpen }: { entry: GmEntry | PlayerEntry; g
                       }}
                     >
                       {confirmImg === g.key ? "Sure?" : "×"}
-                    </button>
+                    </BrandButton>
                   </span>
                 </div>
               ) : null}
@@ -279,19 +285,19 @@ export function Lightbox({
         />
       ) : null}
       <div className="flex flex-wrap items-center justify-center gap-3.5 text-[#e6ecea]" onClick={(e) => e.stopPropagation()}>
-        <button type="button" className="cx-ghost" onClick={() => step(-1)} disabled={single} aria-label="Previous image">
+        <BrandButton variant="neutral" icon onClick={() => step(-1)} disabled={single} aria-label="Previous image">
           ‹
-        </button>
+        </BrandButton>
         <span className="font-display text-[18px]">{title}</span>
         <span className="cx-muted">
           {index + 1} / {images.length}
         </span>
-        <button type="button" className="cx-ghost" onClick={() => step(1)} disabled={single} aria-label="Next image">
+        <BrandButton variant="neutral" icon onClick={() => step(1)} disabled={single} aria-label="Next image">
           ›
-        </button>
-        <button type="button" className="cx-ghost" onClick={onClose}>
+        </BrandButton>
+        <BrandButton variant="cancel" onClick={onClose}>
           Close · Esc
-        </button>
+        </BrandButton>
       </div>
     </div>
   );

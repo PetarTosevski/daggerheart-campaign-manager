@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { TERRAIN_LABEL, type Terrain, type TravelMode } from "@/lib/domain/frames/horizon";
 import { hexDistance, isAdjacent, type Hex, type HexGrid } from "@/lib/world/hex";
 import { HORIZON_TRAVEL_MODES, type CrawlHex, type HexCrawl } from "@/lib/world/map-state";
@@ -143,9 +144,9 @@ export function HexCrawlPanel({
               </select>
             </label>
           </div>
-          <button type="button" className="mseg" aria-pressed={settingOrigin} onClick={() => onSettingOrigin(!settingOrigin)}>
+          <BrandButton variant="neutral" size="sm" aria-pressed={settingOrigin} onClick={() => onSettingOrigin(!settingOrigin)}>
             {settingOrigin ? "Click a hex centre on the map…" : "Set origin by clicking the map"}
-          </button>
+          </BrandButton>
         </div>
       </details>
       {selected ? (
@@ -221,14 +222,14 @@ export function HexCrawlPanel({
                   ))}
                 </select>
               </label>
-              <button type="button" className="zbtn zw zgold" disabled={!terrain} onClick={travel}>
+              <BrandButton variant="confirm" disabled={!terrain} onClick={travel}>
                 Move the party here
-              </button>
+              </BrandButton>
             </div>
           ) : null}
-          <button type="button" className="mseg" onClick={() => actions.placePartyHex(selected.q, selected.r)}>
+          <BrandButton variant="neutral" size="sm" onClick={() => actions.placePartyHex(selected.q, selected.r)}>
             Place the party here (no travel)
-          </button>
+          </BrandButton>
         </div>
       ) : (
         <p className="m-0 text-[13px] text-[#9fb2b6]">Click a hex on the map to edit it or move the party there.</p>

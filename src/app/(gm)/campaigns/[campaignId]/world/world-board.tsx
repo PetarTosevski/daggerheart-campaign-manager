@@ -5,6 +5,7 @@ import { Eye, EyeOff } from "lucide-react";
 
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { designAsset } from "@/lib/design-assets";
 import {
   METHOD_LABELS,
@@ -481,49 +482,49 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
               </>
             ) : null}
             {!horizon ? (
-              <button type="button" className="zbtn zw tip" data-tip="Terrain overlay · T" aria-pressed={showTerrain} onClick={() => setShowTerrain((s) => !s)}>
+              <BrandButton variant="tool" className="tip" data-tip="Terrain overlay · T" aria-pressed={showTerrain} onClick={() => setShowTerrain((s) => !s)}>
                 🗺 Terrain
-              </button>
+              </BrandButton>
             ) : (
-              <button type="button" className="zbtn zw tip" data-tip="Show the whole hex grid" aria-pressed={showGrid} onClick={() => setShowGrid((s) => !s)}>
+              <BrandButton variant="tool" className="tip" data-tip="Show the whole hex grid" aria-pressed={showGrid} onClick={() => setShowGrid((s) => !s)}>
                 ⬡ Hex grid
-              </button>
+              </BrandButton>
             )}
             {editable && !horizon ? (
-              <button type="button" className="zbtn zw tip" data-tip="Paint terrain · P" aria-pressed={painting} onClick={togglePaint}>
+              <BrandButton variant="tool" className="tip" data-tip="Paint terrain · P" aria-pressed={painting} onClick={togglePaint}>
                 🖌 Paint
-              </button>
+              </BrandButton>
             ) : null}
             {isGm ? (
-              <button type="button" className="zbtn zw tip" data-tip="Player view · V" aria-pressed={preview} onClick={togglePlayer}>
+              <BrandButton variant="tool" className="tip" data-tip="Player view · V" aria-pressed={preview} onClick={togglePlayer}>
                 {preview ? "✎ GM view" : "👁 Player view"}
-              </button>
+              </BrandButton>
             ) : null}
             {!horizon ? (
-              <button type="button" className="zbtn zw tip" data-tip="Measure / plan a route · M" aria-pressed={measuring} onClick={toggleMeasure}>
+              <BrandButton variant="tool" className="tip" data-tip="Measure / plan a route · M" aria-pressed={measuring} onClick={toggleMeasure}>
                 📏 Measure
-              </button>
+              </BrandButton>
             ) : null}
-            <button type="button" className="zbtn tip" data-tip="Zoom out · −" aria-label="Zoom out" onClick={() => panZoom.zoomAt(panZoom.view.z / 1.25)}>
+            <BrandButton variant="tool" icon className="tip" data-tip="Zoom out · −" aria-label="Zoom out" onClick={() => panZoom.zoomAt(panZoom.view.z / 1.25)}>
               −
-            </button>
+            </BrandButton>
             <span className="min-w-12 text-center text-[13px] text-[#9fb2b6]" aria-label="Zoom level">
               {Math.round(panZoom.view.z * 100)}%
             </span>
-            <button type="button" className="zbtn tip" data-tip="Zoom in · +" aria-label="Zoom in" onClick={() => panZoom.zoomAt(panZoom.view.z * 1.25)}>
+            <BrandButton variant="tool" icon className="tip" data-tip="Zoom in · +" aria-label="Zoom in" onClick={() => panZoom.zoomAt(panZoom.view.z * 1.25)}>
               +
-            </button>
-            <button type="button" className="zbtn zw tip" data-tip="Fit the whole map · 0" aria-label="Fit map" onClick={panZoom.fit}>
+            </BrandButton>
+            <BrandButton variant="tool" className="tip" data-tip="Fit the whole map · 0" aria-label="Fit map" onClick={panZoom.fit}>
               Fit
-            </button>
-            <button type="button" className="zbtn zw tip gap-1.5" data-tip="Hide / show all tokens · H" aria-pressed={hideToks} onClick={() => setHideToks((s) => !s)}>
+            </BrandButton>
+            <BrandButton variant="tool" className="tip" data-tip="Hide / show all tokens · H" aria-pressed={hideToks} onClick={() => setHideToks((s) => !s)}>
               {/* Open eye: tokens are hidden, click to show them; closed eye: click to hide them all. */}
               {hideToks ? <Eye className="size-4" aria-hidden="true" /> : <EyeOff className="size-4" aria-hidden="true" />}
               {hideToks ? "Show tokens" : "Hide all tokens"}
-            </button>
-            <button type="button" className="zbtn zw tip" aria-pressed={fs} aria-label={fs ? "Exit full screen (Esc)" : "Full screen"} data-tip={`${fs ? "Exit full screen (Esc)" : "Full screen"} · F`} onClick={toggleFs}>
+            </BrandButton>
+            <BrandButton variant="tool" className="tip" aria-pressed={fs} aria-label={fs ? "Exit full screen (Esc)" : "Full screen"} data-tip={`${fs ? "Exit full screen (Esc)" : "Full screen"} · F`} onClick={toggleFs}>
               {fs ? "✕ Exit full screen" : "⛶ Full screen"}
-            </button>
+            </BrandButton>
           </div>
         </div>
 
@@ -547,30 +548,31 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
               Brush
             </span>
             {BRUSH_SIZES.map((z) => (
-              <button
+              <BrandButton
                 key={z.size}
-                type="button"
-                className="zbtn tip"
+                variant="tool"
+                size="sm"
+                icon
+                className="tip"
                 aria-pressed={bsize === z.size}
                 aria-label={`Brush size ${z.label}`}
                 data-tip="Brush size · [ smaller  ] bigger"
                 onClick={() => setBsize(z.size)}
-                style={{ width: 36, minWidth: 36, height: 36, fontSize: 13 }}
               >
                 {z.label}
-              </button>
+              </BrandButton>
             ))}
             <span className="flex-1" />
-            <button type="button" className="zbtn zw tip" onClick={undoPaint} disabled={!undoCount} data-tip="Undo last stroke · Ctrl+Z">
+            <BrandButton variant="cancel" className="tip" onClick={undoPaint} disabled={!undoCount} data-tip="Undo last stroke · Ctrl+Z">
               ↶ Undo stroke{undoCount > 1 ? ` (${undoCount})` : ""}
-            </button>
+            </BrandButton>
             <span className="text-[11px] text-[#7f9297]">1–9 terrain · [ ] size · Ctrl+Z undo</span>
-            <button type="button" className="zbtn zw" onClick={resetTerrain}>
+            <BrandButton variant="neutral" onClick={resetTerrain}>
               Reset to suggested
-            </button>
-            <button type="button" className="zbtn zw zgold" onClick={togglePaint}>
+            </BrandButton>
+            <BrandButton variant="cancel" onClick={togglePaint}>
               Done
-            </button>
+            </BrandButton>
           </div>
         ) : null}
 
@@ -585,9 +587,9 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
                   ["free", "Freehand", "Press and drag to draw a path"],
                 ] as const
               ).map(([k, label, tip]) => (
-                <button key={k} type="button" className="mseg tip" aria-pressed={mmode === k} data-tip={tip} onClick={() => (setMmode(k), setMpts([]))}>
+                <BrandButton key={k} variant="neutral" size="sm" className="tip" aria-pressed={mmode === k} data-tip={tip} onClick={() => (setMmode(k), setMpts([]))}>
                   {label}
-                </button>
+                </BrandButton>
               ))}
               <span className="mx-1 h-6 w-px bg-[#2a3a40]" />
               <label className="flex items-center gap-1.5 text-[12px] text-[#9fb2b6]">
@@ -637,29 +639,29 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
                   aria-label="Travel hours per day"
                 />
               </label>
-              <button type="button" className="mseg" disabled={!editable} onClick={() => actions.setOptions({ units: units === "mi" ? "km" : "mi" })} title="Switch units">
+              <BrandButton variant="neutral" size="sm" disabled={!editable} onClick={() => actions.setOptions({ units: units === "mi" ? "km" : "mi" })} title="Switch units">
                 {units === "mi" ? "Miles" : "Kilometres"}
-              </button>
+              </BrandButton>
               {editable ? (
-                <button type="button" className="mseg" aria-haspopup="dialog" onClick={() => setRulesOpen(true)}>
+                <BrandButton variant="neutral" size="sm" aria-haspopup="dialog" onClick={() => setRulesOpen(true)}>
                   Speeds…
-                </button>
+                </BrandButton>
               ) : null}
               <span className="flex-1" />
-              <button type="button" className="mseg" disabled={!mpts.length} onClick={() => setMpts(mmode === "free" ? [] : mpts.slice(0, -1))}>
+              <BrandButton variant="cancel" size="sm" disabled={!mpts.length} onClick={() => setMpts(mmode === "free" ? [] : mpts.slice(0, -1))}>
                 Undo point
-              </button>
-              <button type="button" className="mseg" disabled={!mpts.length} onClick={() => setMpts([])}>
+              </BrandButton>
+              <BrandButton variant="neutral" size="sm" disabled={!mpts.length} onClick={() => setMpts([])}>
                 Clear
-              </button>
+              </BrandButton>
               {editable ? (
-                <button type="button" className="mseg tip" disabled={mpts.length < 2} data-tip="Move the party token along this route" onClick={sendPartyAlongRoute}>
+                <BrandButton variant="confirm" size="sm" className="tip" disabled={mpts.length < 2} data-tip="Move the party token along this route" onClick={sendPartyAlongRoute}>
                   Move party along route
-                </button>
+                </BrandButton>
               ) : null}
-              <button type="button" className="zbtn zw zgold" style={{ height: 34 }} onClick={toggleMeasure}>
+              <BrandButton variant="cancel" size="sm" onClick={toggleMeasure}>
                 Done
-              </button>
+              </BrandButton>
             </div>
             <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2">
               <span role="status" data-testid="route-total" className="font-display text-[18px] font-bold text-[#f4efe6]">

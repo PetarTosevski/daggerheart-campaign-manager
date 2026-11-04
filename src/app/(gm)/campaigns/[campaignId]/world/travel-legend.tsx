@@ -2,6 +2,7 @@
 
 import { useId, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { METHOD_LABELS, PACE_LABELS, SPEED_TERRAINS, SPEED_TERRAIN_CODE, canCross, maxSwimKm, swimsWater, terrainSpeed, type TravelMethod, type TravelPace, type TravelRules } from "@/lib/domain/travel";
 import { TERRAIN_COLOURS, TERRAIN_NAMES } from "@/lib/world/terrain";
 
@@ -27,9 +28,9 @@ export function TravelLegend({ rules, method, pace, onEdit }: { rules: TravelRul
           {METHOD_LABELS[method]} · {paceText} · km/day
         </span>
         {onEdit ? (
-          <button type="button" className="mseg ml-auto" aria-haspopup="dialog" onClick={onEdit}>
+          <BrandButton variant="neutral" size="sm" className="ml-auto" aria-haspopup="dialog" onClick={onEdit}>
             Edit speeds…
-          </button>
+          </BrandButton>
         ) : null}
       </div>
       {open ? (

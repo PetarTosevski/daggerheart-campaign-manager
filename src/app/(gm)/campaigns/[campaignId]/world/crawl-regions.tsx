@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { TERRAIN_LABEL, type Terrain } from "@/lib/domain/frames/horizon";
 import { hexKey, type Hex } from "@/lib/world/hex";
 import { BEARING_LABEL, ENCOUNTERS, HABITATS, RUMOR_TEXT_MAX, REGION_NAME_MAX, habitatLabel, type Region } from "@/lib/world/hex-crawl";
@@ -82,9 +83,9 @@ function EchoesSection({ campaignId, view, tokens, hasParty }: { campaignId: Id<
                 </label>
                 {echo?.collected ? <span className="text-[12px] text-[#9fb2b6]">Collected</span> : null}
                 {echo && !echo.collected ? (
-                  <button
-                    type="button"
-                    className="mseg"
+                  <BrandButton
+                    variant="confirm"
+                    size="sm"
                     disabled={collect.pending}
                     onClick={async () => {
                       const r = await collect.fire({ campaignId, tokenId: t.id });
@@ -92,7 +93,7 @@ function EchoesSection({ campaignId, view, tokens, hasParty }: { campaignId: Id<
                     }}
                   >
                     Collect the Echo
-                  </button>
+                  </BrandButton>
                 ) : null}
               </li>
             );
@@ -102,9 +103,9 @@ function EchoesSection({ campaignId, view, tokens, hasParty }: { campaignId: Id<
         <p className="m-0 text-[13px] text-[#9fb2b6]">Place sanctuary markers on the map first.</p>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          className="mseg"
+        <BrandButton
+          variant="neutral"
+          size="sm"
           disabled={!hasParty || locate.pending || !view.echoes.some((e) => !e.collected)}
           onClick={async () => {
             const r = await locate.fire({ campaignId, seekersAlerted: alert });
@@ -112,7 +113,7 @@ function EchoesSection({ campaignId, view, tokens, hasParty }: { campaignId: Id<
           }}
         >
           Locate Soul Echoes
-        </button>
+        </BrandButton>
         <label className="chk">
           <input type="checkbox" checked={alert} onChange={(e) => setAlert(e.target.checked)} /> Alerts the Seekers-in-Shadow
         </label>
@@ -169,9 +170,9 @@ function RegionsSection({
         }}
       >
         <input aria-label="New region name" placeholder="Name (optional)" maxLength={REGION_NAME_MAX} value={name} onChange={(e) => setName(e.target.value)} className="fld fsm min-w-0 flex-1" />
-        <button type="submit" className="mseg" disabled={generate.pending}>
+        <BrandButton type="submit" variant="confirm" size="sm" disabled={generate.pending}>
           Generate region
-        </button>
+        </BrandButton>
       </form>
       <p className="m-0 text-[12px] text-[#9fb2b6]">Rolls d20 habitat, d12 size, d8+d6 encounter, d4 terrain and d100 rumor (HF 170). Then paint its hexes: select a hex and press Paint.</p>
       <p aria-live="polite" className="m-0 text-[13px] text-danger empty:hidden">
@@ -219,14 +220,14 @@ function RegionRow({
           <span className="text-[12px] text-[#9fb2b6]">
             Habitat d20: {region.habitatRolls.join(", ")} · {region.impassable ? "Overtaken: nigh impossible to traverse." : HABITATS[region.habitat].examples}
           </span>
-          <button
-            type="button"
-            className="mseg"
+          <BrandButton
+            variant="neutral"
+            size="sm"
             disabled={!selected}
             onClick={() => selected && void actions.updateHex(selected.q, selected.r, { region: region.name, habitat, terrain: region.terrain })}
           >
             {selected ? `Paint hex ${selected.q}, ${selected.r} with this region` : "Select a hex to paint it"}
-          </button>
+          </BrandButton>
           <span className="font-bold text-[#e6ecea]">Encounters (GM only)</span>
           <ul className="m-0 flex list-none flex-col gap-1 p-0">
             {region.encounters.map((e, i) => (
@@ -238,9 +239,9 @@ function RegionRow({
               </li>
             ))}
           </ul>
-          <button type="button" className="mseg" disabled={roll.pending} onClick={() => void roll.fire({ campaignId, regionId: region.id })}>
+          <BrandButton variant="neutral" size="sm" disabled={roll.pending} onClick={() => void roll.fire({ campaignId, regionId: region.id })}>
             Roll another encounter
-          </button>
+          </BrandButton>
           <span className="font-bold text-[#e6ecea]">Rumor: d100 {region.rumor.roll === 100 ? "00" : String(region.rumor.roll).padStart(2, "0")} (HF 172–173)</span>
           <textarea
             aria-label={`Rumor for ${region.name}`}
@@ -257,9 +258,9 @@ function RegionRow({
             <input type="checkbox" checked={region.rumor.known} disabled={rumor.pending} onChange={(e) => void rumor.fire({ campaignId, regionId: region.id, known: e.target.checked })} />
             The party knows this rumor (players see it)
           </label>
-          <button type="button" className="mseg" disabled={remove.pending} onClick={() => void remove.fire({ campaignId, regionId: region.id })}>
+          <BrandButton variant="danger" size="sm" disabled={remove.pending} onClick={() => void remove.fire({ campaignId, regionId: region.id })}>
             Remove region
-          </button>
+          </BrandButton>
           <p aria-live="polite" className="m-0 text-[13px] text-danger empty:hidden">
             {error}
           </p>

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { BUILTIN_TOKEN_TYPES } from "@/lib/world/map-state";
 import { MARKER_SWATCHES, TOKEN_TYPE_ART, type TokenType } from "@/lib/world/token-types";
 
@@ -71,19 +72,15 @@ export function Palette({
                 }}
                 aria-label={`New name for ${t.label}`}
               />
-              <button
-                type="button"
-                className="pal-edit"
-                aria-label="Save name"
-                onClick={() => void saveRename(t)}
-              >
+              <BrandButton variant="confirm" size="sm" icon className="flex-none" aria-label="Save name" onClick={() => void saveRename(t)}>
                 ✓
-              </button>
+              </BrandButton>
             </div>
           ) : (
             <div key={t.id} className="pal-row">
-              <button
-                type="button"
+              <BrandButton
+                variant="tool"
+                size="sm"
                 className="pal"
                 draggable
                 aria-pressed={placing === t.id}
@@ -94,11 +91,11 @@ export function Palette({
                 onClick={() => onPick(placing === t.id ? null : t.id)}
               >
                 <TokenIcon type={t} />
-                <span className="overflow-hidden text-ellipsis whitespace-nowrap">{t.label}</span>
-              </button>
-              <button type="button" className="pal-edit tip" aria-label={`Rename ${t.label}`} data-tip="Rename" onClick={() => setRenaming({ id: t.id, draft: t.label })}>
+                <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{t.label}</span>
+              </BrandButton>
+              <BrandButton variant="neutral" size="sm" icon className="tip flex-none" aria-label={`Rename ${t.label}`} data-tip="Rename" onClick={() => setRenaming({ id: t.id, draft: t.label })}>
                 ✎
-              </button>
+              </BrandButton>
             </div>
           ),
         )}
@@ -128,14 +125,9 @@ export function Palette({
               />
             ))}
           </div>
-          <button
-            type="button"
-            onClick={addCustom}
-            disabled={!name.trim()}
-            className="min-h-9 cursor-pointer rounded-[9px] border-none bg-[#e3b45a] text-[13px] font-bold text-[#1a1408] disabled:cursor-not-allowed disabled:opacity-50"
-          >
+          <BrandButton variant="confirm" size="sm" onClick={addCustom} disabled={!name.trim()}>
             Add to menu
-          </button>
+          </BrandButton>
         </div>
       </details>
     </aside>
