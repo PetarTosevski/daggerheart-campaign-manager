@@ -121,6 +121,7 @@ export const EXPORTED_TABLES = [
   "spritePacks",
   "spritePackSprites",
   "lorekeeperBooks",
+  "lorekeeperIngests",
   "lorekeeperLibrary",
   "lorekeeperConversations",
   "lorekeeperMessages",

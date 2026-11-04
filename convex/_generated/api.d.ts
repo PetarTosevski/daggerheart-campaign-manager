@@ -12,6 +12,7 @@ import type * as accounts from "../accounts.js";
 import type * as actionLog from "../actionLog.js";
 import type * as adminAccounts from "../adminAccounts.js";
 import type * as adminExport from "../adminExport.js";
+import type * as adminLibrary from "../adminLibrary.js";
 import type * as adminLorekeeper from "../adminLorekeeper.js";
 import type * as adminMaintenance from "../adminMaintenance.js";
 import type * as adminOverview from "../adminOverview.js";
@@ -268,6 +269,7 @@ declare const fullApi: ApiFromModules<{
   actionLog: typeof actionLog;
   adminAccounts: typeof adminAccounts;
   adminExport: typeof adminExport;
+  adminLibrary: typeof adminLibrary;
   adminLorekeeper: typeof adminLorekeeper;
   adminMaintenance: typeof adminMaintenance;
   adminOverview: typeof adminOverview;

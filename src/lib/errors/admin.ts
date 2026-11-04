@@ -38,6 +38,8 @@ export const adminMessages = {
   BOOK_NOT_PDF: "Books must be PDF files.",
   /** A PDF whose text couldn't be read (scanned pages, damaged file; PDF0). */
   BOOK_PARSE_FAILED: "The text of that PDF couldn't be read.",
+  /** A second upload of a book while its last one is still being read (AD8). */
+  BOOK_INGEST_RUNNING: "That book is still being read. Wait for it to finish.",
   /** A write that met the owner's read-only view of a campaign (AD13, defence in depth). */
   OWNER_VIEW_READ_ONLY: "You're viewing this campaign read-only.",
   /** A suspended account (AD14, N11). */

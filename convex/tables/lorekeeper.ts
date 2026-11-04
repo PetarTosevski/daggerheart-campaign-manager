@@ -13,6 +13,7 @@ import {
   usageKindValidator,
   usageValidator,
 } from "../lib/validators/lorekeeper";
+import { pdfIngestResultValidator } from "../lib/pdf/config";
 
 /**
  * The Lorekeeper (D13, plan `.omc/plans/d13-lorekeeper.yaml`, analysis section 2). Books and chunks are one set
@@ -151,4 +152,27 @@ export const lorekeeperTables = {
     .index("by_campaign_period", ["campaignId", "period"])
     .index("by_kind_period", ["kind", "period"])
     .index("by_updated", ["updatedAt"]),
+
+  /**
+   * A book's PDF ingest status (config AD8, PDF0): one row per book key, rewritten by each upload, so the table holds
+   * at most one row per book. `running` blocks a second ingest of the same book; `convex/adminLibrary.ts` writes it
+   * and PDF0's `onDone` (`adminLibrary.recordIngest`) finishes it. Holds no book text.
+   */
+  lorekeeperIngests: defineTable({
+    bookKey: v.string(),
+    bookId: v.id("lorekeeperBooks"),
+    status: v.union(v.literal("running"), v.literal("done"), v.literal("failed")),
+    startedAt: v.number(),
+    startedBy: v.id("users"),
+    /** The printed page number of the PDF's first page (N8 a). */
+    firstPrintedPage: v.number(),
+    /** The title the book gets when the ingest succeeds (a replaced book keeps its old one until then). */
+    title: v.string(),
+    /** The upload created the book row, so a failed ingest removes the empty row again. */
+    newBook: v.boolean(),
+    finishedAt: v.optional(v.number()),
+    result: v.optional(pdfIngestResultValidator),
+  })
+    .index("by_key", ["bookKey"])
+    .index("by_book", ["bookId"]),
 };
