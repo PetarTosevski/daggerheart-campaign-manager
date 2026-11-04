@@ -3,10 +3,11 @@
 import "./token.css";
 
 import Image from "next/image";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { CONDITION_GLYPHS } from "./condition-icons";
 import type { HudTokenFace, TokenArcs, TokenCondition } from "./model";
 
 /** Most condition badges drawn side by side; the rest show as "+n" (the label names them all). */
@@ -17,29 +18,6 @@ const LEFT_HALF = "M0 46A46 46 0 0 1 0 -46";
 const RIGHT_HALF = "M0 46A46 46 0 0 0 0 -46";
 
 const HOPE_ICON = "M8 1l1.8 4.6L14.5 6l-3.6 3 1.1 4.7L8 11.3 4 13.7l1.1-4.7L1.5 6l4.7-.4z";
-
-/** The board's condition icons (CmpTokens "Icons"); a condition without one shows its initial. */
-const CONDITION_ICONS: Record<string, ReactNode> = {
-  hidden: (
-    <>
-      <path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8z" fill="none" stroke="currentColor" strokeWidth="1.4" />
-      <circle cx="8" cy="8" r="2" />
-      <path d="M2.5 13.5l11-11" stroke="currentColor" strokeWidth="1.6" />
-    </>
-  ),
-  vulnerable: (
-    <>
-      <path d="M8 1.5l5.5 2v4.3c0 3.2-2.4 5.5-5.5 6.7C4.9 13.3 2.5 11 2.5 7.8V3.5z" fill="none" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M8.8 3.2L6.6 7.4l2.6.5-1.8 4.3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-    </>
-  ),
-  restrained: (
-    <>
-      <rect x="1.5" y="5" width="7" height="6" rx="3" fill="none" stroke="currentColor" strokeWidth="1.5" />
-      <rect x="7.5" y="5" width="7" height="6" rx="3" fill="none" stroke="currentColor" strokeWidth="1.5" />
-    </>
-  ),
-};
 
 function Arcs({ arcs }: { arcs: TokenArcs }) {
   return (
@@ -59,7 +37,8 @@ function Badges({ conditions }: { conditions: readonly TokenCondition[] }) {
   return (
     <span className="tk-cds">
       {shown.map((c) => {
-        const icon = CONDITION_ICONS[c.id];
+        // Every condition the app knows has a glyph; only an unknown id falls back to its initial.
+        const icon = CONDITION_GLYPHS[c.id];
         return (
           <span key={c.id} className={cn("tk-cd", `tk-cd-${c.id}`)} title={c.label} data-condition={c.id}>
             {icon ? (

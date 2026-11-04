@@ -10,6 +10,7 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import type { TokenView } from "../../../convex/combatTokens";
 import { TokenFace, arcsOf, hopeByToken, otherFace, pcTokenFace, showsNumbers, toneOf } from "@/components/combat-map/hud/token";
 import type { OtherToken } from "@/components/combat-map/vision/use-vision";
+import { CONDITIONS } from "@/lib/validation/character-constants";
 
 const tokenId = (s: string) => s as Id<"combatTokens">;
 
@@ -186,5 +187,22 @@ describe("TokenFace", () => {
     expect(container.querySelector(".tk-ini")).toBeNull();
     expect(container.querySelector("path.a-hp")).toHaveAttribute("stroke-dasharray", "0 100");
     expect(face.label).toContain("down");
+  });
+
+  it("draws every condition as its own icon, never a letter, and keeps the condition name as the badge title (dcm-bxp.99.32.39)", () => {
+    const shapes = new Set<string>();
+    for (const id of CONDITIONS) {
+      const face = otherFace(other({ conditions: [{ id, label: id[0].toUpperCase() + id.slice(1) }] }), false);
+      const { container, unmount } = render(<TokenFace face={face} name="Moss" initials="M" size={48} />);
+      const badge = container.querySelector(".tk-cd");
+      expect(badge).toHaveAttribute("title", id[0].toUpperCase() + id.slice(1));
+      expect(badge).toHaveAttribute("data-condition", id);
+      const svg = badge?.querySelector("svg.ic");
+      expect(svg, id).not.toBeNull();
+      expect(badge?.textContent).toBe("");
+      shapes.add(svg?.innerHTML ?? "");
+      unmount();
+    }
+    expect(shapes.size).toBe(CONDITIONS.length);
   });
 });
