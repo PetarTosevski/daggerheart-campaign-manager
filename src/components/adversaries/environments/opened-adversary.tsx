@@ -5,6 +5,7 @@ import "./environments.css";
 
 import { useEffect, useRef, type ReactNode } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { ADVERSARIES } from "@/lib/srd/adversaries";
 
 import type { CatalogueEntryRef } from "../slots";
@@ -38,13 +39,13 @@ export function OpenedAdversary({ adversaryId, fromEnvironment, renderActions, o
           Potential adversary of <strong>{fromEnvironment}</strong>
         </p>
         {onBack ? (
-          <button type="button" onClick={onBack}>
+          <BrandButton variant="cancel" size="sm" onClick={onBack}>
             Back to {fromEnvironment}
-          </button>
+          </BrandButton>
         ) : null}
-        <button type="button" onClick={onClose}>
+        <BrandButton variant="cancel" size="sm" onClick={onClose}>
           Close
-        </button>
+        </BrandButton>
       </div>
       <StatBlock adversary={adversary} actions={renderActions(adversary)} />
     </section>

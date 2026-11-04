@@ -3,6 +3,7 @@
 import { useMutation, useQuery } from "convex/react";
 import { useState, type KeyboardEvent } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import { BP_COSTS } from "@/lib/domain/encounters/budget";
 
@@ -80,15 +81,29 @@ function InstanceRow({ campaignId, instance, first, last }: { campaignId: Id<"ca
       </div>
       <span className="enc-cost">{costLabel(instance)}</span>
       <span className="enc-row-actions">
-        <button type="button" className="enc-x" aria-label={`Move ${instance.label} up`} disabled={first} onClick={() => void run(() => reorder({ campaignId, instanceId: instance._id, direction: "up" }))}>
+        <BrandButton
+          variant="neutral"
+          size="sm"
+          icon
+          aria-label={`Move ${instance.label} up`}
+          disabled={first}
+          onClick={() => void run(() => reorder({ campaignId, instanceId: instance._id, direction: "up" }))}
+        >
           ↑
-        </button>
-        <button type="button" className="enc-x" aria-label={`Move ${instance.label} down`} disabled={last} onClick={() => void run(() => reorder({ campaignId, instanceId: instance._id, direction: "down" }))}>
+        </BrandButton>
+        <BrandButton
+          variant="neutral"
+          size="sm"
+          icon
+          aria-label={`Move ${instance.label} down`}
+          disabled={last}
+          onClick={() => void run(() => reorder({ campaignId, instanceId: instance._id, direction: "down" }))}
+        >
           ↓
-        </button>
-        <button type="button" className="enc-x" aria-label={`Remove ${instance.label}`} onClick={() => void run(() => remove({ campaignId, instanceId: instance._id }))}>
+        </BrandButton>
+        <BrandButton variant="danger" size="sm" icon aria-label={`Remove ${instance.label}`} onClick={() => void run(() => remove({ campaignId, instanceId: instance._id }))}>
           ×
-        </button>
+        </BrandButton>
       </span>
     </li>
   );
@@ -142,9 +157,8 @@ function Detail({
               }}
             />
           </label>
-          <button
-            type="button"
-            className="enc-ghost enc-danger"
+          <BrandButton
+            variant="danger"
             onClick={() => {
               if (!confirmDelete) {
                 setConfirmDelete(true);
@@ -158,7 +172,7 @@ function Detail({
             onBlur={() => setConfirmDelete(false)}
           >
             {confirmDelete ? "Click again to delete" : "Delete"}
-          </button>
+          </BrandButton>
         </div>
 
         <div className="enc-card enc-status" data-live={encounter.status === "running"}>
@@ -169,17 +183,16 @@ function Detail({
           </div>
           {encounter.status === "running" ? (
             <>
-              <button type="button" className="enc-ghost" onClick={() => onOpenEncounter(id)}>
+              <BrandButton variant="neutral" onClick={() => onOpenEncounter(id)}>
                 Open in tracker
-              </button>
-              <button type="button" className="enc-pill enc-pill-end" onClick={() => void run(() => end({ campaignId, encounterId: id }))}>
+              </BrandButton>
+              <BrandButton variant="danger" onClick={() => void run(() => end({ campaignId, encounterId: id }))}>
                 ■ End encounter
-              </button>
+              </BrandButton>
             </>
           ) : (
-            <button
-              type="button"
-              className="enc-pill enc-pill-start"
+            <BrandButton
+              variant="confirm"
               onClick={() =>
                 void run(async () => {
                   await start({ campaignId, encounterId: id });
@@ -188,7 +201,7 @@ function Detail({
               }
             >
               ▶ Start encounter
-            </button>
+            </BrandButton>
           )}
         </div>
         {error ? (
@@ -202,9 +215,9 @@ function Detail({
             <h2 id="enc-adv-h" className="enc-h">
               Adversaries
             </h2>
-            <button type="button" className="enc-ghost" onClick={() => setAdding(true)}>
+            <BrandButton variant="neutral" size="sm" onClick={() => setAdding(true)}>
               + Add adversary
-            </button>
+            </BrandButton>
           </div>
           {instances.length === 0 ? (
             <p className="enc-muted">No adversaries yet. Add them here or from a stat block in the Catalogue.</p>

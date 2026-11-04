@@ -3,6 +3,7 @@
 import { useMutation } from "convex/react";
 import { useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import { featureCountdownLabels } from "@/lib/domain/environments";
 import { MAX_FEAR } from "@/lib/domain/fear";
@@ -95,15 +96,14 @@ export function EnvironmentFearBar({ campaignId, fear }: { campaignId: Id<"campa
       <span className="env-fear-n" aria-hidden="true">
         {fear}
       </span>
-      <button
-        type="button"
-        className="env-act env-act-fear"
+      <BrandButton
+        variant="neutral"
         aria-label="Gain 1 Fear"
         disabled={fear >= MAX_FEAR || gain.pending}
         onClick={() => void gain.fire({ campaignId, direction: "increase" })}
       >
         + Fear
-      </button>
+      </BrandButton>
       {gain.error ? (
         <p role="alert" className="env-status env-status-error">
           {gain.error}
@@ -137,26 +137,25 @@ export function FeatureActions({
   return (
     <div className="env-acts">
       {cost !== undefined ? (
-        <button
-          type="button"
-          className="env-act env-act-fear"
+        <BrandButton
+          variant="confirm"
           disabled={short || busy}
           aria-describedby={short ? reasonId : undefined}
           onClick={() => void actions.spendFear(environment, feature)}
         >
           Spend {cost} Fear
-        </button>
+        </BrandButton>
       ) : null}
       {countdowns.length === 1 ? (
-        <button type="button" className="env-act" disabled={busy} onClick={() => void actions.startCountdown(environment, feature, countdowns[0])}>
+        <BrandButton variant="neutral" disabled={busy} onClick={() => void actions.startCountdown(environment, feature, countdowns[0])}>
           Start countdown
-        </button>
+        </BrandButton>
       ) : (
         // Several countdowns in one feature (e.g. a Progress and a Consequence Countdown): one button each.
         countdowns.map((label) => (
-          <button key={label} type="button" className="env-act" disabled={busy} onClick={() => void actions.startCountdown(environment, feature, label)}>
+          <BrandButton key={label} variant="neutral" disabled={busy} onClick={() => void actions.startCountdown(environment, feature, label)}>
             Start {label}
-          </button>
+          </BrandButton>
         ))
       )}
       {short ? (
@@ -176,9 +175,9 @@ export function EnvironmentStatus({ status }: { status: Status | null }) {
         {status?.text ?? ""}
       </p>
       {status?.undo ? (
-        <button type="button" className="env-act" onClick={status.undo}>
+        <BrandButton variant="cancel" onClick={status.undo}>
           Undo
-        </button>
+        </BrandButton>
       ) : null}
     </div>
   );

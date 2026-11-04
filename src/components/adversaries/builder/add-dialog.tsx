@@ -3,6 +3,7 @@
 import { useQuery } from "convex/react";
 import { useMemo, useState, type FormEvent } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import { adversariesFor } from "@/lib/domain/adversaries";
 import { ADVERSARIES } from "@/lib/srd/adversaries";
@@ -126,9 +127,9 @@ function AddForm({ campaignId, onClose, encounterId: fixedEncounter, adversaryId
           </label>
           <div className="enc-tiers" role="group" aria-label="Filter by tier">
             {[0, 1, 2, 3, 4].map((t) => (
-              <button key={t} type="button" className="enc-tier" aria-pressed={tier === t} onClick={() => setTier(t)}>
+              <BrandButton key={t} variant="neutral" size="sm" aria-pressed={tier === t} onClick={() => setTier(t)}>
                 {t === 0 ? "All tiers" : `Tier ${t}`}
-              </button>
+              </BrandButton>
             ))}
           </div>
           {matches.length === 0 ? (
@@ -198,12 +199,12 @@ function AddForm({ campaignId, onClose, encounterId: fixedEncounter, adversaryId
         </p>
       ) : null}
       <div className="enc-actions">
-        <button type="button" className="enc-ghost" onClick={onClose}>
+        <BrandButton variant="cancel" onClick={onClose}>
           Cancel
-        </button>
-        <button type="submit" className="enc-pill enc-pill-primary" disabled={!adversary || pending}>
+        </BrandButton>
+        <BrandButton type="submit" variant="confirm" disabled={!adversary || pending}>
           Add to encounter
-        </button>
+        </BrandButton>
       </div>
     </form>
   );

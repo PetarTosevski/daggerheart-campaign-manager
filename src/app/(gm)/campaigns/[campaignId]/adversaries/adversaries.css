@@ -135,17 +135,6 @@
   align-items: center;
   gap: 12px;
 }
-.adv-alert button {
-  min-height: 44px;
-  padding: 0 16px;
-  border-radius: 8px;
-  border: 1px solid var(--adv-error-text);
-  background: transparent;
-  color: var(--adv-error-text);
-  font-family: inherit;
-  font-size: 14px;
-  cursor: pointer;
-}
 
 .adv-gm-only {
   max-width: 640px;

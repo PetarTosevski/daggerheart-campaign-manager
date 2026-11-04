@@ -3,6 +3,7 @@
 import { useMutation } from "convex/react";
 import { useId, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import {
   battlePoints,
@@ -109,15 +110,15 @@ export function BudgetPanel({ campaignId, view, partyTier, variant = "builder", 
       <div className="enc-party">
         <span id="enc-pcs-label">Player characters</span>
         <span className="enc-stepper" role="group" aria-labelledby="enc-pcs-label">
-          <button type="button" className="enc-step" aria-label="Fewer player characters" disabled={encounter.pcs <= MIN_PCS} onClick={() => change({ kind: "pcs", delta: -1 })}>
+          <BrandButton variant="neutral" size="sm" icon aria-label="Fewer player characters" disabled={encounter.pcs <= MIN_PCS} onClick={() => change({ kind: "pcs", delta: -1 })}>
             −
-          </button>
+          </BrandButton>
           <span className="enc-num" aria-live="polite">
             {encounter.pcs}
           </span>
-          <button type="button" className="enc-step" aria-label="More player characters" disabled={encounter.pcs >= MAX_PCS} onClick={() => change({ kind: "pcs", delta: 1 })}>
+          <BrandButton variant="neutral" size="sm" icon aria-label="More player characters" disabled={encounter.pcs >= MAX_PCS} onClick={() => change({ kind: "pcs", delta: 1 })}>
             +
-          </button>
+          </BrandButton>
         </span>
       </div>
       <div

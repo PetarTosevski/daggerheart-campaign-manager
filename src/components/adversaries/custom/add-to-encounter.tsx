@@ -3,6 +3,7 @@
 import { useQuery } from "convex/react";
 import { useState, type FormEvent } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import { useIntent } from "@/lib/use-intent";
 
@@ -24,9 +25,9 @@ export function AddCustomToEncounter({ campaignId, custom }: { campaignId: Id<"c
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button type="button" className="adx-btn" onClick={() => setOpen(true)} aria-label={`Add ${custom.name} to an encounter`}>
+      <BrandButton variant="confirm" size="sm" onClick={() => setOpen(true)} aria-label={`Add ${custom.name} to an encounter`}>
         + Add to encounter
-      </button>
+      </BrandButton>
       <Modal open={open} onClose={() => setOpen(false)} title="Add to encounter">
         <AddForm campaignId={campaignId} custom={custom} onClose={() => setOpen(false)} />
       </Modal>
@@ -115,12 +116,12 @@ function AddForm({ campaignId, custom, onClose }: { campaignId: Id<"campaigns">;
         </p>
       ) : null}
       <div className="adx-actions">
-        <button type="button" className="adx-btn" onClick={onClose}>
+        <BrandButton variant="cancel" onClick={onClose}>
           Cancel
-        </button>
-        <button type="submit" className="adx-primary" disabled={create.pending || add.pending}>
+        </BrandButton>
+        <BrandButton type="submit" variant="confirm" disabled={create.pending || add.pending}>
           Add to encounter
-        </button>
+        </BrandButton>
       </div>
     </form>
   );

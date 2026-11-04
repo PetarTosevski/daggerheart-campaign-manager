@@ -24,41 +24,12 @@
 }
 .adx-pill-lg { font-size: 12px; padding: 3px 10px; }
 
-.adx-btn {
-  min-height: 44px;
-  min-width: 44px;
-  padding: 0 14px;
-  border-radius: 8px;
-  border: 1px solid var(--adv-border-strong);
-  background: transparent;
-  color: var(--adv-text);
-  font-family: var(--adv-font-ui);
-  font-size: 14px;
-  cursor: pointer;
-}
-.adx-btn:hover { background: #1b282d; }
-.adx-btn:disabled { opacity: 0.5; cursor: default; }
-.adx-btn:focus-visible,
-.adx-primary:focus-visible { outline: 2px solid var(--adv-acc); outline-offset: 2px; }
-.adx-primary {
-  min-height: 44px;
-  padding: 0 20px;
-  border-radius: 999px;
-  border: none;
-  background: var(--adv-acc);
-  color: var(--adv-acc-ink);
-  font-family: var(--adv-font-head);
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-}
-.adx-primary:disabled { opacity: 0.6; cursor: default; }
-/* Buttons on the parchment stat block head. */
-.adc-sb-actions .adx-btn { border-color: var(--adv-divider); color: var(--adv-ink); background: var(--adv-stat-bg); }
-.adc-sb-actions .adx-btn:hover { background: var(--adv-parch-head); }
-.adx-danger { color: #ffb4a8; border-color: #5a3330; }
-.adc-sb-actions .adx-danger { color: var(--adv-parch-rule); border-color: var(--adv-parch-rule); }
+/* Glass buttons on parchment (the stat block, the editor form): a wine focus ring instead of the pale gold one, which
+   disappears on the paper, and an opaque disabled glass (the translucent one turns muddy grey on the paper). */
+.adc-sb .gb:focus-visible,
+.adx-form .gb:focus-visible { outline-color: var(--adv-parch-rule); }
+.adc-sb .gb:disabled,
+.adx-form .gb:disabled { background: var(--adv-page); }
 .adx-error {
   margin: 0;
   padding: 10px 12px;
@@ -108,9 +79,6 @@
 .adx-in:focus,
 .adx-ta:focus { outline: 2px solid var(--adv-parch-rule); outline-offset: 1px; }
 .adx-hint { margin: 0; font-size: 13px; color: var(--adv-ink-soft); line-height: 1.45; }
-.adx-form .adx-btn { border-color: var(--adv-divider); color: var(--adv-ink); background: var(--adv-stat-bg); }
-.adx-form .adx-btn:hover { background: var(--adv-parch-head); }
-.adx-form .adx-danger { color: var(--adv-parch-rule); border-color: var(--adv-parch-rule); }
 .adx-item { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--adv-divider); border-radius: 6px; background: var(--adv-stat-bg); }
 .adx-item-tools { display: flex; flex-wrap: wrap; gap: 6px; }
 .adx-exp { display: grid; grid-template-columns: minmax(0, 1fr) 90px auto; gap: 8px; align-items: end; }
@@ -130,5 +98,5 @@
 @media (max-width: 480px) {
   .adx-form { padding: 14px; }
   .adx-exp { grid-template-columns: minmax(0, 1fr) 72px; }
-  .adx-exp .adx-btn { grid-column: 1 / -1; }
+  .adx-exp .gb { grid-column: 1 / -1; }
 }

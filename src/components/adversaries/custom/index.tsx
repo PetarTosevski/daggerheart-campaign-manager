@@ -6,6 +6,7 @@ import "./custom.css";
 import { useMutation, useQuery } from "convex/react";
 import { useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { blank, fromSrd, validateCustom, type CustomAdversaryInput, type CustomTier } from "@/lib/adversaries/custom";
 import { typeLabel } from "@/lib/adversaries/catalogue";
 import { errorMessage } from "@/lib/convex-errors";
@@ -75,9 +76,9 @@ export function DuplicateAdversary({
   }
   return (
     <>
-      <button type="button" className="adx-btn" onClick={open} aria-label={`Duplicate and edit ${adversary.name}`}>
+      <BrandButton variant="neutral" size="sm" onClick={open} aria-label={`Duplicate and edit ${adversary.name}`}>
         Duplicate &amp; edit
-      </button>
+      </BrandButton>
       <CustomEditor
         campaignId={campaignId}
         target={target}
@@ -107,9 +108,9 @@ function DeleteCustom({ campaignId, custom, onDeleted }: { campaignId: Id<"campa
   }
   return (
     <>
-      <button type="button" className="adx-btn adx-danger" onClick={() => void click()} onBlur={() => setConfirming(false)}>
+      <BrandButton variant="danger" size="sm" onClick={() => void click()} onBlur={() => setConfirming(false)}>
         {confirming ? "Confirm delete" : "Delete"}
-      </button>
+      </BrandButton>
       {error ? (
         <p role="alert" className="adx-error">
           {error}
@@ -153,9 +154,9 @@ export function CustomAdversaries({
         <span className="adx-count">
           {rows.length === 0 ? "None yet" : `${rows.length} ${rows.length === 1 ? "adversary" : "adversaries"}`} · only in this campaign
         </span>
-        <button type="button" className="adx-primary" onClick={() => setTarget({ mode: "new", initial: blank(1, "Standard"), blank: true })}>
+        <BrandButton variant="confirm" onClick={() => setTarget({ mode: "new", initial: blank(1, "Standard"), blank: true })}>
           New adversary
-        </button>
+        </BrandButton>
       </div>
       {rows.length === 0 ? (
         <p className="adx-empty">
@@ -203,16 +204,16 @@ export function CustomAdversaries({
                   <>
                     <CustomPill large />
                     <AddCustomToEncounter campaignId={campaignId} custom={selected} />
-                    <button type="button" className="adx-btn" onClick={() => setTarget({ mode: "edit", customId: selected._id, initial: inputOf(selected) })}>
+                    <BrandButton variant="neutral" size="sm" onClick={() => setTarget({ mode: "edit", customId: selected._id, initial: inputOf(selected) })}>
                       Edit
-                    </button>
-                    <button
-                      type="button"
-                      className="adx-btn"
+                    </BrandButton>
+                    <BrandButton
+                      variant="neutral"
+                      size="sm"
                       onClick={() => setTarget({ mode: "new", initial: inputOf(selected), ...(selected.basedOn ? { basedOn: selected.basedOn } : {}) })}
                     >
                       Duplicate &amp; edit
-                    </button>
+                    </BrandButton>
                     <DeleteCustom key={selected._id} campaignId={campaignId} custom={selected} onDeleted={() => onSelect("")} />
                   </>
                 }

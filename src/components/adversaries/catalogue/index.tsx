@@ -22,6 +22,7 @@ import {
   type CatalogueSort,
   type CatalogueTier,
 } from "@/lib/adversaries/catalogue";
+import { BrandButton } from "@/components/brand/buttons";
 import { adversariesFor } from "@/lib/domain/adversaries";
 import { ADVERSARIES } from "@/lib/srd/adversaries";
 import { adversaryArt } from "@/lib/srd/adversary-art";
@@ -38,9 +39,9 @@ const BOOKS: readonly { id: CatalogueBook; label: string }[] = [
 
 function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: ReactNode }) {
   return (
-    <button type="button" className="adc-chip" aria-pressed={on} onClick={onClick}>
+    <BrandButton variant="neutral" size="sm" className="min-w-11" aria-pressed={on} onClick={onClick}>
       {children}
-    </button>
+    </BrandButton>
   );
 }
 
@@ -269,9 +270,9 @@ export function Catalogue({ hopeAndFear, frameId, renderActions }: CatalogueProp
             </div>
           ))}
           {more ? (
-            <button type="button" className="adc-more" onClick={() => setLimit((n) => n + PAGE_MORE)}>
+            <BrandButton variant="neutral" className="m-2.5 w-[calc(100%-20px)]" onClick={() => setLimit((n) => n + PAGE_MORE)}>
               {more}
-            </button>
+            </BrandButton>
           ) : null}
           {matches.length === 0 ? <p className="adc-empty">No adversaries match these filters. Clear the search or pick another tier or type.</p> : null}
         </div>
