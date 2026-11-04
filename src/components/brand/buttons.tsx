@@ -18,17 +18,10 @@ import { cn } from "@/lib/utils";
  * player's colours apply). Layout classes (w-full, flex-1, self-start, ml-auto) still apply; colour, border, radius,
  * height and padding utilities do not (glass-button.css is unlayered, see its header).
  */
-export type BrandVariant =
-  | GlassRole
-  /** Legacy names (kept until plan glass-buttons GZ): primary and solid are confirm, outline and pill neutral. */
-  | "primary"
-  | "solid"
-  | "outline"
-  | "pill"
-  | "dangerSolid";
+export type BrandVariant = GlassRole;
 
-/** sm 34 px (44 px on touch), md 44 px, lg 54 px; xl is the legacy name of lg. */
-export type BrandSize = "sm" | "md" | "lg" | "xl";
+/** sm 34 px (44 px on touch), md 44 px (the default), lg 54 px (the headline buttons). */
+export type BrandSize = GlassSize;
 
 export type BrandButtonProps = {
   variant?: BrandVariant | null;
@@ -39,26 +32,6 @@ export type BrandButtonProps = {
   round?: boolean;
 };
 
-const LEGACY_ROLE: Partial<Record<BrandVariant, GlassRole>> = {
-  primary: "confirm",
-  solid: "confirm",
-  outline: "neutral",
-  pill: "neutral",
-  dangerSolid: "danger",
-};
-
-/** The glass role a variant draws (legacy names mapped); no variant is neutral. */
-export function brandRole(variant: BrandVariant | null | undefined): GlassRole {
-  if (!variant) return "neutral";
-  return LEGACY_ROLE[variant] ?? (variant as GlassRole);
-}
-
-function glassSize(variant: BrandVariant | null | undefined, size: BrandSize | null | undefined): GlassSize {
-  if (size === "sm") return "sm";
-  if (size === "lg" || size === "xl") return "lg";
-  // The legacy headline button ("Choose this Frame") is large unless the call site asks for small.
-  return variant === "primary" ? "lg" : "md";
-}
 
 /** The class string of a glass button (for links and components that only take a className). */
 export function brandButton({
@@ -70,7 +43,7 @@ export function brandButton({
   class: klass,
 }: BrandButtonProps & { className?: string; class?: string } = {}): string {
   return cn(
-    glassButtonClass({ role: brandRole(variant), size: glassSize(variant, size), icon, round, wrap: !icon }),
+    glassButtonClass({ role: variant ?? "neutral", size: size ?? "md", icon, round, wrap: !icon }),
     klass,
     className,
   );

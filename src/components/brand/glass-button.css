@@ -177,8 +177,9 @@
 .gb.gb-tool:focus-visible {
   box-shadow: inset 0 0 0 1px var(--gb-hover-rim);
 }
-/* switched on (toggles, active tools) */
-.gb[aria-pressed="true"] {
+/* switched on (toggles, active tools, the chosen radio of a glass radio group; `:where` keeps the toggles' weight) */
+.gb[aria-pressed="true"],
+.gb[aria-checked="true"]:where([role="radio"]) {
   --text: var(--gb-hope-soft);
   --rim: var(--gb-hope);
   --rgb: var(--gb-hope-rgb);

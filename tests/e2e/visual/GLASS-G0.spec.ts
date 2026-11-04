@@ -46,7 +46,7 @@ async function mountStrip(page: Page) {
     add("Chip on", "gb gb-neutral gb-sm gb-wrap", { "aria-pressed": "true" });
     add("Chip off", "gb gb-neutral gb-sm gb-wrap", { "aria-pressed": "false" });
     add("+", "gb gb-neutral gb-sm gb-icon", { "aria-label": "Add one" });
-    add("Start Session (primary, lg)", "gb gb-confirm gb-lg gb-wrap");
+    add("Start Session (confirm, lg)", "gb gb-confirm gb-lg gb-wrap");
     add("Disabled", "gb gb-confirm gb-wrap", { disabled: "" });
     host.prepend(row);
   });
@@ -103,7 +103,7 @@ test("GLASS-G0 the dashboard as the GM and as a player", { tag: "@visual" }, asy
       await strip.screenshot({ path: `${OUT}/strip-${who}-focus-cancel.png` });
     }
 
-    // The Players dialog (a real Modal in the shell): Invite is a confirm in the GM's Fear, the ✕ a round cancel in Hope.
+    // The Players dialog (a real Modal in the shell): Invite is neutral (G2: it has no side), the ✕ a round cancel in Hope.
     const gm = table.gm;
     for (const viewport of VIEWPORTS) {
       await gm.setViewportSize(viewport);
@@ -115,7 +115,7 @@ test("GLASS-G0 the dashboard as the GM and as a player", { tag: "@visual" }, asy
       if (viewport.width === 1440) {
         await dialog.getByRole("button", { name: "Invite", exact: true }).hover();
         await gm.waitForTimeout(400);
-        await shoot(gm, "players-dialog-gm-hover-invite");
+        await shoot(gm, "players-dialog-gm-hover-invite-neutral");
         await gm.mouse.move(0, 0);
         await dialog.getByRole("button", { name: "Close players" }).focus();
         await gm.keyboard.press("Tab");

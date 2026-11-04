@@ -4,6 +4,7 @@ import type { ConvexHttpClient } from "convex/browser";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { signInAsTestGm } from "../fixtures";
+import { openMapTools } from "../hud/helpers";
 import { D9_VIEWPORTS, bardDraft, convexAs, openCombatMap, visual } from "./helpers";
 
 // Shots for the C8 task doc (E2E_VISUAL=1): the player at night with a torch (a hidden enemy in the dim band and one
@@ -79,13 +80,28 @@ test("C8 fog of war, the player view, preview and fog brush at 1440, 1024 and 39
     await client.mutation(api.combatVision.revealTo, { campaignId, tokenId: banditId, characterId: ash.characterId! });
     await expect(playerBoard.getByRole("button", { name: "Bandit, Enemy, revealed to you" })).toBeVisible();
     await shootPlayer(player.locator(".cm-root"), "player-night");
-    await shootPlayer(player.getByRole("region", { name: "Your view" }), "player-card-night");
+    // "Your view" and the light pill live in the HUD's "Your character" drawer (plan combat-hud H8.1).
+    const playerDrawer = player.getByRole("complementary", { name: "Your character" });
+    /** Opens the drawer, checks the light pill, closes it again so the board shots stay drawer-free. */
+    const expectLight = async (phase: string) => {
+      await player.getByRole("button", { name: "Your character", exact: true }).click();
+      await expect(playerDrawer.getByTestId("combat-light-pill")).toContainText(phase);
+      await playerDrawer.press("Escape");
+      await expect(playerDrawer).toHaveCount(0);
+    };
+    await player.getByRole("button", { name: "Your character", exact: true }).click();
+    await shootPlayer(playerDrawer.getByRole("region", { name: "Your view" }), "player-card-night");
+    await playerDrawer.press("Escape");
+    await expect(playerDrawer).toHaveCount(0);
 
     // ---- GM: the Bandit selected (Reveal to… and carried light), the Vision & fog card with Hide marks.
     await page.goto(url);
+    await openMapTools(page); // Play is the HUD (plan combat-hud H8.1): the classic column is in its "Map tools" drawer.
     const tools = page.getByRole("complementary", { name: "Map tools" });
     const board = page.getByRole("region", { name: "Battle map" });
-    await board.getByRole("button", { name: /^Bandit, Enemy/ }).click();
+    // By keyboard: the open drawer may cover the token on screen.
+    await board.getByRole("button", { name: /^Bandit, Enemy/ }).focus();
+    await page.keyboard.press("Enter");
     await expect(tools.getByRole("region", { name: "Light and reveal" })).toBeVisible();
     await client.mutation(api.combatVision.paintFog, { campaignId, mapId, squares: [20, 21, 22, 23, 24].flatMap((x) => [2, 3].map((y) => y * 30 + x)), mark: "hide" });
     await client.mutation(api.combatVision.paintFog, { campaignId, mapId, squares: [25, 26, 27].flatMap((x) => [16, 17].map((y) => y * 30 + x)), mark: "reveal" });
@@ -102,13 +118,14 @@ test("C8 fog of war, the player view, preview and fog brush at 1440, 1024 and 39
     // ---- Day, then a dim phase: from NIGHT 2, five days to NIGHT 7 (Nautical Dawn, day), seven more to DAY 7
     // (Nautical Twilight, dim).
     await advance(client, campaignId, 5);
-    await expect(player.getByTestId("combat-light-pill")).toContainText("Nautical Dawn");
-    // By day: Ash looks east along the road to the map's edge; the padding stays fog (hidden edges, Q1).
+    await expectLight("Nautical Dawn");
+    // By day: Ash looks east along the road to the map's edge; the padding stays fog (hidden edges, Q1). Fit is the
+    // HUD dock's zoom button now.
     await place(ash._id, 22, 10, 0);
-    await playerBoard.getByRole("button", { name: "Fit" }).click();
+    await player.getByRole("toolbar", { name: "Map controls" }).getByRole("button", { name: "Fit the map to the screen" }).click();
     await shootPlayer(player.locator(".cm-root"), "player-day-edge");
     await advance(client, campaignId, 7);
-    await expect(player.getByTestId("combat-light-pill")).toContainText("Nautical Twilight");
+    await expectLight("Nautical Twilight");
     await shootPlayer(player.locator(".cm-root"), "player-dim");
   } finally {
     await context.close();

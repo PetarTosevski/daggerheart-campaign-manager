@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { api } from "../../../convex/_generated/api";
 import { signInAsTestGm } from "../fixtures";
+import { openMapTools } from "../hud/helpers";
 import { D9_VIEWPORTS, convexAs, openCombatMap, visual } from "./helpers";
 
 // Shots for the C3 task doc (E2E_VISUAL=1): the maps list with the map area, an uploaded image with its grid bar,
@@ -55,6 +56,7 @@ test("C3 maps list, image grid and the player's live map at 1440, 1024 and 390",
 
   await page.goto(url);
   const tools = page.getByRole("complementary", { name: "Map tools" });
+  await openMapTools(page); // Play is the HUD (plan combat-hud H8.1): the column is in its drawer.
   await expect(tools.getByRole("list", { name: "Campaign maps" }).getByRole("listitem")).toHaveCount(3);
   const { shoot } = visual(page, "C3", D9_VIEWPORTS);
   await expect(page.getByTestId("combat-map-canvas")).toBeVisible();

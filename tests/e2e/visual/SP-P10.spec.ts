@@ -97,9 +97,15 @@ test("SP-P10 the flow's dungeon hall at night for the GM and the player, Sprites
     for (let i = 0; i < 8; i++) await client.mutation(api.campaignTime.advance, { campaignId, idempotencyKey: crypto.randomUUID() });
 
     await player.goto(url);
-    const torch = player.getByRole("region", { name: "Your view" }).getByRole("group", { name: "Light you carry" }).getByRole("button", { name: "Torch", exact: true });
+    // "Your view" is in the HUD's "Your character" drawer (plan combat-hud H8.1); close it again after picking the
+    // torch so the player's shots show the map.
+    await player.getByRole("button", { name: "Your character", exact: true }).click();
+    const drawer = player.getByRole("complementary", { name: "Your character" });
+    const torch = drawer.getByRole("region", { name: "Your view" }).getByRole("group", { name: "Light you carry" }).getByRole("button", { name: "Torch", exact: true });
     await torch.click();
     await expect(torch).toHaveAttribute("aria-pressed", "true");
+    await drawer.press("Escape");
+    await expect(drawer).toHaveCount(0);
 
     const gmShots = visual(page, "SP-P10", D9_VIEWPORTS);
     const playerShots = visual(player, "SP-P10", D9_VIEWPORTS);

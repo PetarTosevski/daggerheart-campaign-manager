@@ -245,10 +245,12 @@ test("GLASS-G1 the Combat Map app bar as the GM and as a player", { tag: "@visua
       const bar = page.getByTestId("app-bar");
       await hoverShot(page, bar.getByRole("button", { name: "Full screen: hide the app bar" }), `app-bar-${who}-hover-full-screen`, "[data-testid=app-bar]");
       if (who === "gm") {
+        // Config S1: the gear opens the Campaign settings dialog (src/components/config/shell); its ✕ is a round cancel.
         await bar.getByTestId("app-bar-settings").click();
-        const players = page.getByRole("button", { name: "Players", exact: true });
-        await role(players, "neutral");
-        await shoot(page, "app-bar-gm-settings-popover");
+        const settings = page.getByTestId("campaign-settings");
+        await expect(settings).toBeVisible();
+        await role(settings.getByRole("button", { name: "Close campaign settings" }), "cancel");
+        await shoot(page, "app-bar-gm-campaign-settings");
         await page.keyboard.press("Escape");
       }
       await focusShot(page, bar.getByRole("link", { name: "Back to main menu" }), `app-bar-${who}-focus-back`);

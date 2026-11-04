@@ -1,58 +1,43 @@
 // Plan glass-buttons G0 (docs/tasks/TASK-GLASS-G0.md): brandButton keeps its signature and draws the arcane glass
-// button (src/components/brand/glass-button.css); the legacy variants map to roles, the sizes to the glass sizes, and
+// button (src/components/brand/glass-button.css); the variant is the role (GZ dropped the legacy names), the size the glass size, and
 // every labelled button may wrap. The viewer helpers give portalled content the campaign's data-viewer, and Modal's
 // close ✕ is a round cancel icon button.
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { BrandButton, brandButton, brandRole, type BrandSize, type BrandVariant } from "@/components/brand/buttons";
+import { BrandButton, brandButton, type BrandSize, type BrandVariant } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import { ViewerProvider, ViewerScope, useViewer, viewerFor } from "@/components/brand/viewer";
 
 const classes = (s: string) => s.split(" ").filter(Boolean);
 
-describe("brandButton: legacy variant -> glass role", () => {
-  const table: [BrandVariant | undefined, string][] = [
-    [undefined, "gb-neutral"],
-    ["primary", "gb-confirm"],
-    ["solid", "gb-confirm"],
-    ["outline", "gb-neutral"],
-    ["pill", "gb-neutral"],
-    ["danger", "gb-danger"],
-    ["dangerSolid", "gb-danger"],
-  ];
-  it.each(table)("%s -> %s", (variant, role) => {
-    const c = classes(brandButton({ variant }));
-    expect(c).toContain("gb");
-    expect(c).toContain(role);
-    expect(c.filter((x) => /^gb-(confirm|cancel|neutral|tool|danger|allow|deny|normal|advantage|disadvantage)$/.test(x))).toHaveLength(1);
+describe("brandButton: variant -> glass role", () => {
+  it("draws the variant's role, and no variant is neutral", () => {
+    expect(classes(brandButton())).toEqual(expect.arrayContaining(["gb", "gb-neutral"]));
+    for (const role of ["confirm", "cancel", "neutral", "tool", "danger", "allow", "deny", "normal", "advantage", "disadvantage"] as const) {
+      const c = classes(brandButton({ variant: role }));
+      expect(c).toContain(`gb-${role}`);
+      expect(c.filter((x) => /^gb-(confirm|cancel|neutral|tool|danger|allow|deny|normal|advantage|disadvantage)$/.test(x))).toHaveLength(1);
+    }
   });
 
-  it("names the explicit roles as they are", () => {
-    for (const role of ["confirm", "cancel", "neutral", "tool", "danger", "allow", "deny", "normal", "advantage", "disadvantage"] as const) {
-      expect(brandRole(role)).toBe(role);
-      expect(classes(brandButton({ variant: role }))).toContain(`gb-${role}`);
+  it("offers only the glass roles (plan glass-buttons GZ dropped primary, solid, outline, pill, dangerSolid)", () => {
+    for (const legacy of ["primary", "solid", "outline", "pill", "dangerSolid"]) {
+      // @ts-expect-error the legacy names are gone from BrandVariant
+      const v: BrandVariant = legacy;
+      expect(classes(brandButton({ variant: v }))).not.toContain("gb-confirm");
     }
   });
 });
 
 describe("brandButton: sizes", () => {
-  const sizeClass = (variant: BrandVariant | undefined, size: BrandSize | undefined) =>
-    classes(brandButton({ variant, size })).filter((x) => x === "gb-sm" || x === "gb-lg");
+  const sizeClass = (size: BrandSize | undefined) => classes(brandButton({ variant: "neutral", size })).filter((x) => x === "gb-sm" || x === "gb-lg");
 
-  it("sm -> gb-sm, md -> 44 px (no class), lg and xl -> gb-lg", () => {
-    expect(sizeClass("outline", "sm")).toEqual(["gb-sm"]);
-    expect(sizeClass("outline", "md")).toEqual([]);
-    expect(sizeClass("outline", undefined)).toEqual([]);
-    expect(sizeClass("solid", "lg")).toEqual(["gb-lg"]);
-    expect(sizeClass("pill", "xl")).toEqual(["gb-lg"]);
-  });
-
-  it("primary (the headline button) is large unless the call site asks for small", () => {
-    expect(sizeClass("primary", undefined)).toEqual(["gb-lg"]);
-    expect(sizeClass("primary", "md")).toEqual(["gb-lg"]);
-    expect(sizeClass("primary", "xl")).toEqual(["gb-lg"]);
-    expect(sizeClass("primary", "sm")).toEqual(["gb-sm"]);
+  it("sm -> gb-sm, md and none -> 44 px (no class), lg -> gb-lg", () => {
+    expect(sizeClass("sm")).toEqual(["gb-sm"]);
+    expect(sizeClass("md")).toEqual([]);
+    expect(sizeClass(undefined)).toEqual([]);
+    expect(sizeClass("lg")).toEqual(["gb-lg"]);
   });
 });
 
@@ -65,13 +50,13 @@ describe("brandButton: shape and call-site classes", () => {
   });
 
   it("keeps the call site's className (both the className and class keys)", () => {
-    expect(classes(brandButton({ variant: "solid", size: "lg", className: "w-full" }))).toContain("w-full");
-    expect(classes(brandButton({ variant: "solid", class: "self-start" }))).toContain("self-start");
+    expect(classes(brandButton({ variant: "confirm", size: "lg", className: "w-full" }))).toContain("w-full");
+    expect(classes(brandButton({ variant: "confirm", class: "self-start" }))).toContain("self-start");
   });
 
   it("BrandButton renders a type=button glass button with the call site's layout class", () => {
     render(
-      <BrandButton variant="primary" className="ml-auto">
+      <BrandButton variant="confirm" size="lg" className="ml-auto">
         Choose this Frame
       </BrandButton>,
     );

@@ -181,7 +181,7 @@ G11 owns `EndSceneButton` (`combat-map/actions/scene`), and G9 only passes a cla
   brief, your block in `glass-buttons.yaml`, the design file, and `docs/tasks/TASK-GLASS-G0.md`.
 - First step, before any edit: `git switch -C glass-<id> rebuild` (e.g. `glass-g3`). Then
   `node scripts/worktree-setup.mjs` and `E2E_PORT=<port> E2E_CONVEX_PORT=<port> pnpm e2e:setup` once.
-- Owns are binding: `pnpm tracer:guard glass-buttons <ID>`. If an existing spec needs an edit outside your owns (a
+- Owns are binding: `pnpm tracer:guard .omc/plans/glass-buttons.yaml <ID>` (the script takes the plan path). If an existing spec needs an edit outside your owns (a
   class assertion, say), stop and report. Specs select by role and name, so this should be rare.
 - Use `BrandButton` / `brandButton` with a role variant. Use `glassButtonClass` only where a plain class string is
   needed. No new hand-styled classes. Keep layout classes (width, alignment, gap) and drop colour, border, radius,

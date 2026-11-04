@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { api } from "../../../convex/_generated/api";
+import { openMapTools } from "../hud/helpers";
 import { D9_VIEWPORTS, openCombatMap, visual } from "./helpers";
 
 // Shots for the SP-P9 task doc (E2E_VISUAL=1): hand editing a Sprites forest map (the sprite picker with a search,
@@ -42,6 +43,7 @@ test("SP-P9 sprite and texture pickers on an edited forest map, and its Classic 
 
   await page.goto(url);
   await expect(page.getByTestId("combat-map-canvas")).toHaveAttribute("data-style", "sprites");
+  await openMapTools(page); // Play is the HUD (plan combat-hud H8.1): the mode switch is in its "Map tools" drawer.
   const tools = page.getByRole("complementary", { name: "Map tools" });
   await tools.getByRole("group", { name: "Map mode" }).getByRole("button", { name: /Edit map/ }).click();
   const card = tools.getByRole("region", { name: "Edit by hand" });

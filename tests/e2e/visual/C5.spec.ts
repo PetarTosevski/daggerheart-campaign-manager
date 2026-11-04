@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { api } from "../../../convex/_generated/api";
 import { squareIndex } from "../../../src/components/combat-map/editor/edit-model";
+import { openMapTools } from "../hud/helpers";
 import { D9_VIEWPORTS, openCombatMap, visual } from "./helpers";
 
 // Shots for the C5 task doc (E2E_VISUAL=1): the Edit tools card with the terrain palette over a hand-edited map,
@@ -35,6 +36,7 @@ test("C5 edit tools and the selected object at 1440, 1024 and 390", { tag: "@vis
   await page.goto(url);
   const tools = page.getByRole("complementary", { name: "Map tools" });
   await expect(page.getByTestId("combat-map-canvas")).toBeVisible();
+  await openMapTools(page); // Play is the HUD (plan combat-hud H8.1): the column is in its drawer.
   await tools.getByRole("group", { name: "Map mode" }).getByRole("button", { name: /Edit map/ }).click();
   const card = tools.getByRole("region", { name: "Edit by hand" });
   await card.getByRole("group", { name: "Edit tool" }).getByRole("button", { name: /Terrain/ }).click();
@@ -45,7 +47,10 @@ test("C5 edit tools and the selected object at 1440, 1024 and 390", { tag: "@vis
   // The crate selected with the Objects tool: its card, the outlines and the painted blockers.
   await page.setViewportSize(D9_VIEWPORTS[0]);
   await card.getByRole("group", { name: "Edit tool" }).getByRole("button", { name: /Objects/ }).click();
-  const box = (await page.getByTestId("combat-stage").boundingBox())!;
+  // Edit keeps the classic column, which can be taller than the window: bring the map's top back into view first.
+  const stage = page.getByTestId("combat-stage");
+  await stage.evaluate((el) => el.scrollIntoView({ block: "start" }));
+  const box = (await stage.boundingBox())!;
   const step = box.width / w;
   await page.mouse.click(box.x + 10 * step, box.y + 10 * step);
   await expect(card.getByRole("group", { name: "Selected object: Crate" })).toBeVisible();

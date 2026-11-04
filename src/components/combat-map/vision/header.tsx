@@ -109,12 +109,12 @@ export function PreviewPicker({ campaignId, role, mode, map, previewCharacterId,
 
   if (role !== "gm" || !map) return null;
   const disabled = pcs.length === 0 || mode !== "play";
-  const itemClass = glass ? `${glassButtonClass({ role: "neutral", size: "sm", wrap: true })} cm-pv-item` : "cm-btn cm-pv-item";
+  const itemClass = glass ? `${glassButtonClass({ role: "neutral", size: "sm", wrap: true })} cm-pv-item` : "cm-pv-item";
   return (
     <div className="cm-pv" ref={root}>
       <button
         type="button"
-        className={glass ? `${glassButtonClass({ role: "neutral", size: "sm", wrap: true })} cm-pv-btn` : "cm-btn cm-pv-btn"}
+        className={glass ? `${glassButtonClass({ role: "neutral", size: "sm", wrap: true })} cm-pv-btn` : "cm-pv-btn"}
         aria-haspopup="menu"
         aria-expanded={open}
         disabled={disabled}

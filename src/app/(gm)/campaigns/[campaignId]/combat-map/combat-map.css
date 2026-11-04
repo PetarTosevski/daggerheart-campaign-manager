@@ -2,9 +2,8 @@
  * Combat Map page (D9): the board's tokens and shared classes (reference/designs/project/Combat.dc.html, lines
  * 12-60) as custom properties on .cm-root, plus the page shell (header, two columns, map area). Feature slots
  * (src/components/combat-map/{maps,map-view,generate,editor,tokens,vision}) use these classes and variables and
- * keep their own rules in their own colocated .css. Class names follow the board (`cm-card`, `cm-btn`, `cm-lbl`,
- * `cm-seg`, `cm-live`, `cm-chip`, `cm-in`, `cm-ta`, `cm-go`, `cm-pip`, `cm-spin`); the board's `.sm` modifier is
- * `cm-sm`. Fonts come from the root layout: --font-cinzel (headings, numbers), --font-garamond (the scene text),
+ * keep their own rules in their own colocated .css. Class names follow the board (`cm-card`, `cm-lbl`, `cm-seg`,
+ * `cm-live`, `cm-in`, `cm-ta`, `cm-pip`, `cm-spin`); buttons are glass (brandButton). Fonts come from the root layout: --font-cinzel (headings, numbers), --font-garamond (the scene text),
  * --font-plex (UI).
  */
 .cm-root {
@@ -113,7 +112,14 @@
   outline: 2px solid var(--cm-acc);
   outline-offset: 1px;
 }
-.cm-btn {
+/*
+ * The HUD dock's Player view (`PreviewPicker` with `glass` off) and its menu items: the old `.cm-btn` look, which
+ * hud/dock/dock.css dresses as a dock button. Every other Combat Map button is glass (plan glass-buttons G10 / G11;
+ * GZ removed `.cm-btn`, `.cm-go`, `.cm-danger`, `.cm-chip`). `:where` keeps `.cm-btn`'s specificity, so the HUD
+ * looks exactly as before.
+ */
+.cm-pv-btn:where(:not(.gb)),
+.cm-pv-item:where(:not(.gb)) {
   min-height: 36px;
   padding: 0 12px;
   border-radius: 8px;
@@ -130,67 +136,20 @@
   box-sizing: border-box;
   white-space: nowrap;
 }
-.cm-btn:hover {
+.cm-pv-btn:where(:not(.gb)):hover,
+.cm-pv-item:where(:not(.gb)):hover {
   background: var(--cm-hover);
 }
-.cm-btn:focus-visible,
-.cm-go:focus-visible,
-.cm-chip:focus-visible,
+.cm-pv-btn:where(:not(.gb)):focus-visible,
+.cm-pv-item:where(:not(.gb)):focus-visible,
 .cm-seg button:not(.gb):focus-visible {
   outline: 2px solid var(--cm-acc);
   outline-offset: 2px;
 }
-.cm-btn[disabled] {
+.cm-pv-btn:where(:not(.gb))[disabled],
+.cm-pv-item:where(:not(.gb))[disabled] {
   opacity: 0.45;
   cursor: not-allowed;
-}
-.cm-btn[aria-pressed="true"] {
-  background: var(--cm-acc-bg);
-  border-color: var(--cm-acc);
-  color: var(--cm-acc-soft);
-}
-.cm-btn.cm-sm {
-  min-height: 30px;
-  padding: 0 9px;
-  font-size: 13px;
-}
-.cm-btn.cm-danger {
-  color: var(--cm-danger);
-  border-color: var(--cm-danger-border);
-}
-.cm-go {
-  min-height: 46px;
-  padding: 0 22px;
-  border-radius: 999px;
-  border: none;
-  background: var(--cm-acc);
-  color: var(--cm-acc-ink);
-  font-family: var(--cm-display);
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  cursor: pointer;
-}
-.cm-go[disabled] {
-  opacity: 0.5;
-  cursor: wait;
-}
-.cm-chip {
-  min-height: 34px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid #3a4d54;
-  background: var(--cm-field);
-  color: var(--cm-text);
-  font-size: 13px;
-  cursor: pointer;
-  font-family: inherit;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.cm-chip:hover {
-  border-color: var(--cm-acc);
 }
 .cm-seg {
   display: flex;
@@ -456,13 +415,13 @@
 }
 /* Touch targets of at least 44 px on tablets and phones (D12 H22); desktop keeps the board's sizes. */
 @media (max-width: 1100px), (pointer: coarse) {
-  .cm-btn,
-  .cm-btn.cm-sm,
-  .cm-chip,
+  .cm-pv-btn:where(:not(.gb)),
+  .cm-pv-item:where(:not(.gb)),
   .cm-seg button:not(.gb) {
     min-height: 44px;
   }
-  .cm-btn {
+  .cm-pv-btn:where(:not(.gb)),
+  .cm-pv-item:where(:not(.gb)) {
     min-width: 44px;
   }
 }
