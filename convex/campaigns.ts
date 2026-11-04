@@ -1,5 +1,6 @@
 import { v, type Infer } from "convex/values";
 
+import { resolveTableSettings } from "../src/lib/config/campaign-settings";
 import { appError } from "../src/lib/errors/app-error";
 import { campaignMessages } from "../src/lib/errors/campaigns";
 import { frameHasMechanic } from "../src/lib/frames/index";
@@ -76,6 +77,8 @@ async function summarise(ctx: QueryCtx, campaign: Doc<"campaigns">, role: Role, 
     lastOpenedAt,
     players: members.length,
     role,
+    settings: resolveTableSettings(campaign.tableSettings),
+    archived: campaign.archivedAt !== undefined,
   };
 }
 

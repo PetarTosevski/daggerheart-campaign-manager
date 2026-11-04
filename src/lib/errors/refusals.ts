@@ -18,6 +18,7 @@ import { adversaryActionMessages } from "./adversaryActions";
 import { combatActionMessages } from "./combatActions";
 import { combatFeatureMessages } from "./combatFeatures";
 import { combatMapMessages } from "./combatMap";
+import { configMessages } from "./config";
 import { spotlightMessages } from "./spotlight";
 
 /**
@@ -137,7 +138,15 @@ export type CombatRefusalCode =
   | keyof typeof spotlightMessages;
 
 /** Common and other domains' codes the combat surfaces also meet. */
-type SharedCode = "INVALID" | "NOT_FOUND" | "RATE_LIMITED" | "NOT_ENOUGH_HOPE" | "FEAR_EMPTY" | "CHARACTER_UNAVAILABLE" | "ENCOUNTER_NOT_RUNNING";
+type SharedCode =
+  | "INVALID"
+  | "NOT_FOUND"
+  | "RATE_LIMITED"
+  | "NOT_ENOUGH_HOPE"
+  | "FEAR_EMPTY"
+  | "CHARACTER_UNAVAILABLE"
+  | "ENCOUNTER_NOT_RUNNING"
+  | "COMBAT_TARGET_OUT_OF_RANGE";
 
 export type RefusalCode = CombatRefusalCode | SharedCode;
 
@@ -293,6 +302,8 @@ export const REFUSALS: Record<RefusalCode, Entry> = {
 
   // --- the other combat codes (no board row; the domain's own words)
   CARD_NOT_IN_LOADOUT: plain("—", "Not in your loadout", combatActionMessages.CARD_NOT_IN_LOADOUT, { hint: "Swap it in from your vault first.", before: ["card-tag"] }),
+  // Config S0 code, thrown by R2 when the GM refuses out-of-range actions (`tableSettings.outOfRange: "refuse"`).
+  COMBAT_TARGET_OUT_OF_RANGE: plain("—", "Out of range", configMessages.COMBAT_TARGET_OUT_OF_RANGE),
   COMBAT_NOT_YOUR_CHARACTER: plain("—", "Not your character", combatActionMessages.COMBAT_NOT_YOUR_CHARACTER),
   FEATURE_NOT_OWNED: plain("—", "Not your feature", combatFeatureMessages.FEATURE_NOT_OWNED),
   ADVERSARY_FEATURE_UNAVAILABLE: plain("—", "Can’t use that now", adversaryActionMessages.ADVERSARY_FEATURE_UNAVAILABLE, { before: ["attack-disabled"] }),

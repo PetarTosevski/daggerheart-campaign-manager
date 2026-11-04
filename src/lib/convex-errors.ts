@@ -11,6 +11,7 @@ import { combatActionMessages } from "./errors/combatActions";
 import { combatFeatureMessages } from "./errors/combatFeatures";
 import { combatMapMessages } from "./errors/combatMap";
 import { commonMessages } from "./errors/common";
+import { configMessages } from "./errors/config";
 import { deathMessages } from "./errors/death";
 import { diceMessages } from "./errors/dice";
 import { encounterMessages } from "./errors/encounters";
@@ -66,6 +67,7 @@ const MESSAGES = mergeMessages(
   spotlightMessages,
   noteMessages,
   lorekeeperMessages,
+  configMessages,
 );
 
 /**

@@ -427,6 +427,16 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
     const rows = await ctx.db.query("combatSeen").withIndex("by_campaign_token", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "combatSeen", rows);
   },
+  // Config S0: folded hands ("Hide cards") and the players' unsent character-wizard drafts of this campaign
+  // (custom-frame drafts have no campaign; P2's cron expires them).
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("handFolds").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "handFolds", rows);
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("userDrafts").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "userDrafts", rows);
+  },
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("operations").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "operations", rows);

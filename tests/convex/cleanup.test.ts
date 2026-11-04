@@ -183,6 +183,9 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     await ins("combatSpotlight", { campaignId: c, holder: { kind: "pc", characterId }, since: now, reason: "handedBack" });
     // A token the party saw this scene (spotlight-seen, user 2026-11-03).
     await ins("combatSeen", { campaignId: c, tokenId: pcTokenId, seenAt: now });
+    // A folded hand and an unsent character-wizard draft (config S0).
+    await ins("handFolds", { userId, campaignId: c, characterId, updatedAt: now });
+    await ins("userDrafts", { userId, kind: "characterWizard", campaignId: c, schemaVersion: 1, data: "{}", updatedAt: now });
     // A session with its prep (linking the encounter), a log line and a spotlight count (D10).
     const sessionId = await ins("sessions", { campaignId: c, n: 1, title: "The Bridge at Dawn", status: "live", startedAt: now, createdAt: now, updatedAt: now });
     await ins("sessionPrep", { campaignId: c, sessionId, scenes: [{ id: "s1", type: "combat", text: "Ambush" }], hooks: "", encounterId, updatedAt: now });
@@ -436,6 +439,32 @@ describe("cleanup crons", () => {
     expect(await leftovers(t, alsoDue)).toEqual({ rows: {}, blobs: [] });
     expect([await leftovers(t, inUndoWindow), await leftovers(t, live)]).toEqual(keptBefore);
     expect(keptBefore[0]!.rows.history).toBe(2);
+  });
+
+  it("purges a campaign's hand folds and drafts, and keeps other campaigns' rows and the custom-frame draft (config S0)", async () => {
+    const t = makeTest();
+    const userId = await user(t);
+    const due = await seedCampaign(t, userId, NOW - 31 * DAY);
+    const live = await seedCampaign(t, userId, undefined);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("userDrafts", { userId, kind: "customFrame", schemaVersion: 1, data: "{}", updatedAt: NOW });
+      await ctx.db.insert("userPreferences", { userId, dice3d: false, updatedAt: NOW });
+      await ctx.db.insert("userUiState", { userId, key: "tokenNames", value: true, updatedAt: NOW });
+    });
+    const liveBefore = await leftovers(t, live);
+    expect(liveBefore.rows).toMatchObject({ handFolds: 1, userDrafts: 1 });
+
+    await t.mutation(internal.cleanup.purgeDeletedCampaigns, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await leftovers(t, due)).toEqual({ rows: {}, blobs: [] });
+    expect(await leftovers(t, live)).toEqual(liveBefore);
+    const kept = await t.run(async (ctx) => ({
+      drafts: (await ctx.db.query("userDrafts").collect()).map((row) => row.kind).sort(),
+      preferences: (await ctx.db.query("userPreferences").collect()).length,
+      uiState: (await ctx.db.query("userUiState").collect()).length,
+    }));
+    expect(kept).toEqual({ drafts: ["characterWizard", "customFrame"], preferences: 1, uiState: 1 });
   });
 
   it("purges a combat map with more children than one batch over several runs (D9)", async () => {

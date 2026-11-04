@@ -140,6 +140,11 @@ const CAMPAIGN_SCOPED = [
   "playFor",
   "combatSpotlight",
   "combatSeen",
+  // Config S0: folded hands, bounded per campaign (members x characters).
+  "handFolds",
+  // Config S0: unsent drafts, bounded per user (one per kind and campaign); a character-wizard draft goes with its
+  // campaign, a custom-frame draft has none. P2 adds the 90-day expiry cron and its ALSO_RETENTION entry.
+  "userDrafts",
 ];
 /**
  * Campaign-scoped tables that also have a retention job of their own (listed once above, so this is a second note,
@@ -158,8 +163,11 @@ const ALSO_RETENTION: Record<string, string> = {
  * and by C3's map delete (`deleteMapChildren` in convex/lib/combatMaps.ts).
  */
 const MAP_SCOPED = ["combatMapObjects", "combatMapCells", "combatExplored"];
-/** Lorekeeper books and their chunks (D13): one set per deployment (about 20 books), replaced on re-ingest. */
-const BOUNDED = ["settings", "grants", "lorekeeperBooks", "lorekeeperChunks", "e2eCodes", "uploadNotices", ...Object.keys(authTables)];
+/**
+ * Lorekeeper books and their chunks (D13): one set per deployment (about 20 books), replaced on re-ingest. Config S0:
+ * `userPreferences` is one row per user; `userUiState` one row per user and key (7 keys).
+ */
+const BOUNDED = ["settings", "userPreferences", "userUiState", "grants", "lorekeeperBooks","lorekeeperChunks", "e2eCodes", "uploadNotices", ...Object.keys(authTables)];
 
 describe("stored fields", () => {
   test("no v.any() outside the allowlist", () => {

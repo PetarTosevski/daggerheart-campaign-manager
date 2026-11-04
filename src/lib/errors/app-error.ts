@@ -8,6 +8,7 @@ import { combatActionMessages } from "./combatActions";
 import { combatFeatureMessages } from "./combatFeatures";
 import { combatMapMessages } from "./combatMap";
 import { commonMessages } from "./common";
+import { configMessages } from "./config";
 import { deathMessages } from "./death";
 import { diceMessages } from "./dice";
 import { encounterMessages } from "./encounters";
@@ -48,6 +49,7 @@ export type AppErrorCode =
   | keyof typeof spotlightMessages
   | keyof typeof noteMessages
   | keyof typeof lorekeeperMessages
+  | keyof typeof configMessages
   | "IDEMPOTENCY_MISMATCH"
   | "NAME_TAKEN"
   | "OBJECTIVE_LIMIT"

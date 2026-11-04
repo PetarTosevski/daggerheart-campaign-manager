@@ -147,6 +147,7 @@ import type * as lib_validators_encounters from "../lib/validators/encounters.js
 import type * as lib_validators_lorekeeper from "../lib/validators/lorekeeper.js";
 import type * as lib_validators_maps from "../lib/validators/maps.js";
 import type * as lib_validators_notes from "../lib/validators/notes.js";
+import type * as lib_validators_preferences from "../lib/validators/preferences.js";
 import type * as lib_validators_rests from "../lib/validators/rests.js";
 import type * as lib_validators_sessions from "../lib/validators/sessions.js";
 import type * as lib_validators_spritePacks from "../lib/validators/spritePacks.js";
@@ -372,6 +373,7 @@ declare const fullApi: ApiFromModules<{
   "lib/validators/lorekeeper": typeof lib_validators_lorekeeper;
   "lib/validators/maps": typeof lib_validators_maps;
   "lib/validators/notes": typeof lib_validators_notes;
+  "lib/validators/preferences": typeof lib_validators_preferences;
   "lib/validators/rests": typeof lib_validators_rests;
   "lib/validators/sessions": typeof lib_validators_sessions;
   "lib/validators/spritePacks": typeof lib_validators_spritePacks;
