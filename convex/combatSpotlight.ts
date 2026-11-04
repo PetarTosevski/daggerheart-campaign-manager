@@ -123,7 +123,7 @@ const payValidator = v.union(v.literal("free"), v.literal("fear"));
 /**
  * The GM takes the spotlight (an interrupt for a Fear, an adversary's turn: CB p.100). With `tokenId` the GM spotlights
  * that adversary's token (reason `adversary`; COMBAT_TOKEN_NOT_FOUND, or INVALID for a token that is not an
- * adversary's) and the map lights it; without it the GM takes it generally (`gmTook`). `pay` (widened, H9.S): `free`
+ * adversary's, ADVERSARY_DEFEATED for a defeated one, user 2026-11-04) and the map lights it; without it the GM takes it generally (`gmTook`). `pay` (widened, H9.S): `free`
  * (default, as before) or `fear`: 1 Fear spent in the same mutation (NOT_ENOUGH_FEAR when the GM has none; nothing spent
  * when the spotlight does not move), which counts as that adversary's spotlight this GM turn (`takeWithFear`).
  */

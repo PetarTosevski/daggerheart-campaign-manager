@@ -47,7 +47,7 @@ export function PhoneStrip({ campaignId, mapId }: { campaignId: Id<"campaigns">;
           ))}
         </ul>
       )}
-      {spotlight === undefined || party === undefined ? null : <PhoneSpotlight state={spotlight} party={party} />}
+      {spotlight === undefined || party === undefined ? null : <PhoneSpotlight campaignId={campaignId} state={spotlight} party={party} />}
       {scene === undefined ? null : (
         <div className="hud-ph-mb hud-ph-fear" role="img" aria-label={`GM Fear ${scene.fear}`} data-testid="hud-phone-fear">
           <span className="hud-ph-in">

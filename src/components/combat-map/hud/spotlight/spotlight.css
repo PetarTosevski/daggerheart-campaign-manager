@@ -201,6 +201,10 @@
   color: #f6ead2;
   font: 700 26px/1 var(--hud-font-display);
 }
+/* An adversary's portrait (user 2026-11-04): the token's art filling the circle, like the PC portraits. */
+.hud-spf-img {
+  object-fit: cover;
+}
 .hud-spf-pc {
   background: #141e22;
   color: #c8d3d0;
@@ -229,11 +233,15 @@
   text-shadow: 0 1px 4px #000;
   white-space: nowrap;
 }
+/* The holder's full name, as its token's name tag reads it (user 2026-11-04): no ellipsis; it wraps (two lines for
+   "Volcanic Dragon: Ashen Tyrant") within the disc (176 px, clear of the day disc). */
 .hud-spd-l b {
   margin-top: 2px;
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  width: max-content;
+  max-width: 176px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
   font-size: 13px;
   letter-spacing: 0.04em;
   text-transform: none;
@@ -403,6 +411,7 @@
   flex-direction: column;
 }
 .hud-spr-t b {
+  overflow-wrap: anywhere;
   font-size: 14px;
   font-weight: 600;
 }
@@ -425,6 +434,23 @@
   border: 1px solid #33444a;
   border-radius: var(--hud-r-chip);
   padding: 4px 12px;
+}
+/* A defeated adversary (user 2026-11-04): dimmed, no Take, a "Defeated" tag. */
+.hud-spr-off {
+  cursor: not-allowed;
+}
+.hud-spr-off .hud-spr-f,
+.hud-spr-off .hud-spr-t {
+  opacity: 0.55;
+  filter: grayscale(1);
+}
+.hud-spr-dead {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--hud-danger);
+  border: 1px solid currentColor;
+  border-radius: var(--hud-r-chip);
+  padding: 3px 10px;
 }
 .hud-spr[aria-pressed="true"] {
   background: var(--hud-gold-soft);
@@ -593,7 +619,11 @@
   background: rgba(8, 12, 14, 0.88);
   font-size: 10px;
   color: #c8d3d0;
-  white-space: nowrap;
+  /* The full name (user 2026-11-04): it wraps, up to three lines on the phone, within 120 px. */
+  width: max-content;
+  max-width: 120px;
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 .hud-ms-l b {
   color: var(--spd-name);

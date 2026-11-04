@@ -8,6 +8,11 @@ export const spotlightMessages = {
    * back (answer 1c; user answer 2026-11-01, spotlight and movement).
    */
   SPOTLIGHT_WITH_GM: "The GM has the spotlight. Only reactions until it comes back to you.",
+  /**
+   * The GM spotlighting a defeated adversary (every HP marked, or marked defeated; a Minion group with every Minion
+   * gone): `combatSpotlight.gmTake` free or for Fear, and the tracker's `encounterTracking.spotlight` (user 2026-11-04).
+   */
+  ADVERSARY_DEFEATED: "A defeated adversary can't take the spotlight.",
 } as const satisfies Record<string, string>;
 
 export type SpotlightErrorCode = keyof typeof spotlightMessages;

@@ -169,3 +169,115 @@ test("the disc's place: left of the day disc, clear of the dock, at 1440, 1024 a
     await s.close();
   }
 });
+
+// User 2026-11-04: "If an adversary has a picture please use it on the spotlight icon as well", and the disc names the
+// holder in full, as its token's name tag reads it (no "VOLCANIC DRAGO…"): wrapped within the disc on desktop and phone.
+// The portrait follows the name: a player sees it only for an adversary the party saw; "The GM" shows none.
+const SPOT_OUT = "test-results/visual/spot-portrait";
+const spotShot = (page: Page, name: string) => page.screenshot({ path: `${SPOT_OUT}/${name}.png`, animations: "disabled" });
+
+test("an adversary's portrait and full name on the disc, the popover rows and the phone disc", async ({ browser }) => {
+  test.setTimeout(300_000);
+  const s = await hudScene(browser);
+  const { gm, player, client, campaignId, mapId, encounterId, enemies } = s;
+  const key = () => crypto.randomUUID();
+  try {
+    // The Volcanic Dragon: Ashen Tyrant (rulebook art) joins the encounter, in Moss's view.
+    const { instanceIds } = await client.mutation(api.encounters.addAdversary, {
+      campaignId,
+      encounterId,
+      source: { kind: "srd", adversaryId: "volcanic-dragon-ashen-tyrant" },
+      count: 1,
+      summoned: false,
+      idempotencyKey: key(),
+    });
+    await client.mutation(api.combatTokens.placeAdversaries, { campaignId, mapId, instanceIds, idempotencyKey: key() });
+    const dragon = (await client.query(api.combatTokensReads.list, { campaignId, mapId })).find((t) => t.instanceId === instanceIds[0])!;
+    await client.mutation(api.combatTokens.move, { campaignId, tokenId: dragon._id, x: 11, y: 7 });
+    expect(dragon.name).toBe("Volcanic Dragon: Ashen Tyrant");
+    await client.mutation(api.combatSpotlight.gmTake, { campaignId, tokenId: dragon._id, idempotencyKey: key() });
+
+    // GM, 1440: the disc shows the dragon's art and its full name, the same string as its token's name tag.
+    await gm.setViewportSize({ width: 1440, height: 900 });
+    await gm.goto(s.url);
+    const disc = gm.getByRole("button", { name: `Spotlight: ${dragon.name}. Change who has it` });
+    await expect(disc).toBeVisible({ timeout: 30_000 });
+    await expect(disc.getByTestId("hud-spotlight-art")).toHaveAttribute("src", /volcanic-dragon-ashen-tyrant/);
+    const tokenName = gm.locator(`[data-token='${dragon._id}'] .tk-name`);
+    const name = disc.getByTestId("hud-spotlight-name");
+    await expect(name).toHaveText((await tokenName.textContent())!);
+    // No ellipsis: it wraps to two lines within the disc.
+    expect(await name.evaluate((el) => el.scrollWidth <= el.clientWidth && getComputedStyle(el).textOverflow !== "ellipsis")).toBe(true);
+    const nameBox = (await name.boundingBox())!;
+    const discBox = (await disc.boundingBox())!;
+    expect(nameBox.height).toBeGreaterThan(20);
+    expect(nameBox.height).toBeLessThan(40);
+    expect(nameBox.x).toBeGreaterThanOrEqual(discBox.x - 1);
+    expect(nameBox.x + nameBox.width).toBeLessThanOrEqual(discBox.x + discBox.width + 1);
+    await gm.mouse.move(1, 400);
+    await spotShot(gm, "after-gm-disc-dragon-1440");
+
+    // The Adversaries rows show each token's art. A defeated adversary (every HP marked) sits last, disabled, "Defeated"
+    // and no Take (user 2026-11-04), and the server refuses it (ADVERSARY_DEFEATED, tests/convex/spotlight-v2.test.ts).
+    const lt = (await client.query(api.combatTokensReads.list, { campaignId, mapId })).find((t) => t._id === enemies.lieutenant.tokenId)!;
+    await client.mutation(api.encounterTracking.markHp, { campaignId, instanceId: lt.instanceId!, delta: 30, idempotencyKey: key() });
+    await disc.click();
+    const pop = gm.getByRole("dialog", { name: "Spotlight" });
+    const row = pop.getByRole("button", { name: `${dragon.name} has the spotlight` });
+    await expect(row.getByTestId("hud-spotlight-art")).toHaveAttribute("src", /volcanic-dragon-ashen-tyrant/);
+    await expect(row.locator(".hud-spr-t b")).toHaveText(dragon.name);
+    const dead = pop.getByRole("button", { name: `${enemies.lieutenant.name}, defeated: can't take the spotlight` });
+    await expect(dead).toHaveAttribute("aria-disabled", "true");
+    await expect(dead).toContainText("Defeated");
+    await expect(dead).not.toContainText("Take");
+    await expect(dead.getByTestId("hud-spotlight-art")).toHaveAttribute("src", /jagged-knife-lieutenant/);
+    const order = await pop.locator(".hud-spr").evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
+    expect(order.at(-1)).toBe(`${enemies.lieutenant.name}, defeated: can't take the spotlight`);
+    await expect(dead).toBeDisabled();
+    // Forced, the click does nothing: the popover stays and the dragon keeps it.
+    await dead.click({ force: true });
+    await expect(pop).toBeVisible();
+    await expect(gm.getByRole("button", { name: `Spotlight: ${dragon.name}. Change who has it` })).toBeVisible();
+    await gm.mouse.move(1, 400);
+    await spotShot(gm, "after-gm-popover-adversaries-1440");
+    await expectNoSeriousA11yViolations(gm);
+    await gm.keyboard.press("Escape");
+
+    // The player saw the dragon: its name and art on their disc.
+    await player.setViewportSize({ width: 1440, height: 900 });
+    await player.goto(s.url);
+    const playerDisc = player.getByRole("img", { name: `Spotlight: ${dragon.name}` });
+    await expect(playerDisc).toBeVisible({ timeout: 30_000 });
+    await expect(playerDisc.getByTestId("hud-spotlight-art")).toHaveAttribute("src", /volcanic-dragon-ashen-tyrant/);
+    await expect(playerDisc.getByTestId("hud-spotlight-name")).toHaveText((await player.locator(`[data-token='${dragon._id}'] .tk-name`).textContent())!);
+    await player.mouse.move(1, 400);
+    await spotShot(player, "after-player-disc-dragon-1440");
+
+    // Never seen (the Bandit behind the wall): "The GM", and no portrait.
+    await client.mutation(api.combatSpotlight.gmTake, { campaignId, tokenId: enemies.hiddenBandit.tokenId, idempotencyKey: key() });
+    const gmDisc = player.getByRole("img", { name: "Spotlight: The GM" });
+    await expect(gmDisc).toBeVisible();
+    await expect(gmDisc.locator(".hud-spf-en img, [data-testid=hud-spotlight-art]")).toHaveCount(0);
+    await spotShot(player, "after-player-disc-unseen-1440");
+
+    // Phone: the dragon's art and its full name, wrapped (at most three lines) on screen.
+    await client.mutation(api.combatSpotlight.gmTake, { campaignId, tokenId: dragon._id, idempotencyKey: key() });
+    await player.setViewportSize({ width: 390, height: 844 });
+    await player.goto(s.url);
+    const phone = player.getByRole("img", { name: `Spotlight: ${dragon.name}` });
+    await expect(phone).toBeVisible({ timeout: 30_000 });
+    await expect(phone.getByTestId("hud-spotlight-art")).toHaveAttribute("src", /volcanic-dragon-ashen-tyrant/);
+    const pill = phone.locator(".hud-ms-l");
+    await expect(pill).toHaveText(`Spotlight · ${dragon.name}`);
+    const pillBox = (await pill.boundingBox())!;
+    expect(pillBox.x).toBeGreaterThanOrEqual(0);
+    expect(pillBox.x + pillBox.width).toBeLessThanOrEqual(390);
+    expect(pillBox.height).toBeLessThan(48);
+    await spotShot(player, "after-player-phone-dragon-390");
+    await expectNoSeriousA11yViolations(player);
+    await client.mutation(api.combatSpotlight.gmTake, { campaignId, tokenId: enemies.hiddenBandit.tokenId, idempotencyKey: key() });
+    await expect(player.getByRole("img", { name: "Spotlight: The GM" }).locator(".hud-spf-en img, [data-testid=hud-spotlight-art]")).toHaveCount(0);
+  } finally {
+    await s.close();
+  }
+});

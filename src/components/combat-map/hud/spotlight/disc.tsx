@@ -3,6 +3,7 @@
 import "./spotlight.css";
 
 import { useMutation, useQuery } from "convex/react";
+import Image from "next/image";
 import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { refusalFor } from "@/lib/errors/refusals";
@@ -12,14 +13,16 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { Portrait, hpText, type HudPartyMember } from "../banners/banner";
 import { closePanel, togglePanel, usePanelOpen } from "../panels";
+import { artOf, type TokenArt } from "../token/model";
 import { hudButtonClass } from "../ui";
-import { afterHandTo, afterHandToParty, afterTake, discHolder, discLabel, initialOf, takePay, type DiscHolder, type SpotlightState } from "./model";
+import { afterHandTo, afterHandToParty, afterTake, discHolder, discLabel, holderArt, initialOf, isDefeatedRow, livingFirst, takePay, type DiscHolder, type SpotlightState } from "./model";
 
 /**
  * The spotlight disc (plan combat-hud H9.1; HANDOFF "App bar and spotlight"; CmpTokens 'Spotlight', GMDesktop, GMTablet,
  * Main, PlayerTablet, PlayerPhone). It hangs from a cord left of the day disc and shows whoever has the spotlight, lit
- * from above: the whole party (2 × 2 mini portraits, gold), one PC (the portrait, gold) or an adversary (its initial on
- * red, purple light). Faces cross-fade over 200 ms (none under prefers-reduced-motion).
+ * from above: the whole party (2 × 2 mini portraits, gold), one PC (the portrait, gold) or an adversary (purple light:
+ * the portrait its map token draws, user 2026-11-04, else its initial on red). Faces cross-fade over 200 ms (none under
+ * prefers-reduced-motion).
  *
  * - GM: a button "Spotlight: <name>. Change who has it" that opens the popover (`panels.ts` "spotlight", one GM panel
  *   at a time): tabs Party (the whole party first, user answer Q8 a, then each PC with class, Hope and HP) and
@@ -33,7 +36,7 @@ import { afterHandTo, afterHandToParty, afterTake, discHolder, discLabel, initia
  */
 
 type Pay = "free" | "fear";
-type AdversaryRow = { tokenId: Id<"combatTokens">; name: string; sub: string; hp: number; hpMax: number };
+type AdversaryRow = { tokenId: Id<"combatTokens">; name: string; sub: string; hp: number; hpMax: number; art: TokenArt | null; defeated: boolean };
 
 /** The GM's moves from the disc: intents with optimistic updates (CL3 / CL4); the last refusal in the refusal table's words. */
 function useDiscMoves(campaignId: Id<"campaigns">) {
@@ -99,10 +102,35 @@ function PartyFace({ party }: { party: readonly HudPartyMember[] }) {
 }
 
 /**
- * Every face the disc can show, stacked; only the holder's is on, so a change cross-fades (200 ms) without remounting.
- * The adversary layer's letter changes in place.
+ * An adversary's face (user 2026-11-04): the portrait its map token draws, cropped to the circle, or its initial when it
+ * has none or the image fails to load (remembered per source, so a new portrait gets its own try).
  */
-function DiscFaces({ holder, party }: { holder: DiscHolder; party: readonly HudPartyMember[] }) {
+function AdversaryFace({ name, art, sizes, initialClass }: { name: string; art: TokenArt | null; sizes: string; initialClass?: string }) {
+  const [failed, setFailed] = useState<string | null>(null);
+  if (art !== null && art.src !== failed) {
+    return (
+      <Image
+        src={art.src}
+        alt=""
+        fill
+        sizes={sizes}
+        // Uploads and rulebook art are remote URLs (no optimiser); design art is local and optimised.
+        unoptimized={art.remote}
+        className="hud-spf-img"
+        style={{ objectPosition: art.position }}
+        data-testid="hud-spotlight-art"
+        onError={() => setFailed(art.src)}
+      />
+    );
+  }
+  return initialClass ? <span className={initialClass}>{initialOf(name)}</span> : <>{initialOf(name)}</>;
+}
+
+/**
+ * Every face the disc can show, stacked; only the holder's is on, so a change cross-fades (200 ms) without remounting.
+ * The adversary layer's portrait or letter changes in place.
+ */
+function DiscFaces({ holder, party, art }: { holder: DiscHolder; party: readonly HudPartyMember[]; art: TokenArt | null }) {
   const pcOn = holder.kind === "pc" && !party.some((m) => m.characterId === holder.characterId);
   return (
     <>
@@ -119,7 +147,7 @@ function DiscFaces({ holder, party }: { holder: DiscHolder; party: readonly HudP
         {holder.kind === "pc" ? initialOf(holder.name) : ""}
       </span>
       <span className="hud-spf hud-spf-en" data-on={holder.kind === "adversary"}>
-        {holder.kind === "adversary" ? initialOf(holder.name) : ""}
+        {holder.kind === "adversary" ? <AdversaryFace name={holder.name} art={art} sizes="72px" /> : ""}
       </span>
       <span className="hud-spf hud-spf-en" data-on={holder.kind === "gm"}>
         <Flame className="hud-spf-flame" />
@@ -135,7 +163,27 @@ function useAdversaries(campaignId: Id<"campaigns">, mapId: Id<"combatMaps"> | u
   if (tokens === undefined) return undefined;
   return tokens
     .filter((t) => t.kind === "adversary")
-    .map((t) => ({ tokenId: t._id, name: t.name, sub: t.sub, hp: t.stats?.hp ?? 0, hpMax: t.stats?.hpMax ?? 0 }));
+    .map((t) => ({
+      tokenId: t._id,
+      name: t.name,
+      sub: t.sub,
+      hp: t.stats?.hp ?? 0,
+      hpMax: t.stats?.hpMax ?? 0,
+      art: artOf(t.portrait),
+      defeated: isDefeatedRow(t.stats),
+    }));
+}
+
+/**
+ * The art of the tokens the viewer may see, by token id, for the adversary holder's face: the GM's adversary rows, or a
+ * player's `combatVision.playerView` `others` (the same subscription the map's vision layer holds; portraits only, never
+ * a number, R4). `holderArt` reads it only for an adversary the disc names.
+ */
+function useTokenArt(campaignId: Id<"campaigns">, gm: boolean, adversaries: AdversaryRow[] | undefined): ReadonlyMap<string, TokenArt | null> | undefined {
+  const view = useQuery(api.combatVision.playerView, gm ? "skip" : { campaignId });
+  if (gm) return adversaries === undefined ? undefined : new Map(adversaries.map((a) => [a.tokenId as string, a.art]));
+  if (view?.state !== "ok") return undefined;
+  return new Map(view.others.map((t) => [t._id as string, artOf(t.portrait)]));
 }
 
 export type SpotlightDiscProps = {
@@ -151,6 +199,7 @@ export function SpotlightDisc({ campaignId, mapId, gm, fear }: SpotlightDiscProp
   const state = useQuery(api.combatSpotlight.state, { campaignId });
   const party = useQuery(api.combatHud.party, mapId ? { campaignId, mapId } : "skip");
   const adversaries = useAdversaries(campaignId, mapId, gm);
+  const tokenArt = useTokenArt(campaignId, gm, adversaries);
   const open = usePanelOpen("spotlight");
   const moves = useDiscMoves(campaignId);
   const popId = useId();
@@ -170,7 +219,7 @@ export function SpotlightDisc({ campaignId, mapId, gm, fear }: SpotlightDiscProp
       <span className="hud-spd-cord" aria-hidden="true" />
       <span className="hud-spd-beam" aria-hidden="true" />
       <span className="hud-spd-disc" aria-hidden="true">
-        <DiscFaces holder={holder} party={members} />
+        <DiscFaces holder={holder} party={members} art={holderArt(holder, tokenArt)} />
       </span>
       <span className="hud-spd-l" aria-hidden="true">
         Spotlight
@@ -396,14 +445,32 @@ function SpotlightPopover({ id, state, holder, party, adversaries, fear, moves, 
           ) : adversaries.length === 0 ? (
             <p className="hud-spp-muted">No adversaries on this map.</p>
           ) : (
-            adversaries.map((row) => {
+            livingFirst(adversaries).map((row) => {
               const has = holder.kind === "adversary" && holder.tokenId === row.tokenId;
+              // A defeated adversary (user 2026-11-04): at the bottom, disabled, "Defeated" in place of Take (the
+              // server refuses it too, ADVERSARY_DEFEATED).
+              if (row.defeated) {
+                return (
+                  <Row
+                    key={row.tokenId}
+                    gmRow
+                    has={has}
+                    off="Defeated"
+                    face={<AdversaryFace name={row.name} art={row.art} sizes="40px" initialClass="hud-spr-en" />}
+                    title={row.name}
+                    line={adversaryRowLine(row)}
+                    go="Take"
+                    label={`${row.name}, defeated: can't take the spotlight`}
+                    onClick={() => undefined}
+                  />
+                );
+              }
               return (
                 <Row
                   key={row.tokenId}
                   gmRow
                   has={has}
-                  face={<span className="hud-spr-en">{initialOf(row.name)}</span>}
+                  face={<AdversaryFace name={row.name} art={row.art} sizes="40px" initialClass="hud-spr-en" />}
                   title={row.name}
                   line={adversaryRowLine(row)}
                   go="Take"
@@ -429,6 +496,7 @@ function Row({
   description,
   go,
   label,
+  off,
   onClick,
 }: {
   has: boolean;
@@ -439,11 +507,21 @@ function Row({
   description?: string;
   go: string;
   label: string;
+  /** Disabled, with this tag in place of the go / "Has it" tag (a defeated adversary: "Defeated"). */
+  off?: string;
   onClick: () => void;
 }) {
   const lineId = useId();
   return (
-    <button type="button" className={cn(hudButtonClass(gmRow ? "primary" : "secondary"), "hud-spr", gmRow && "hud-spr-gm")} aria-pressed={has} aria-label={label} aria-describedby={lineId} onClick={onClick}>
+    <button
+      type="button"
+      className={cn(hudButtonClass(gmRow ? "primary" : "secondary"), "hud-spr", gmRow && "hud-spr-gm", off && "hud-spr-off")}
+      aria-pressed={has}
+      aria-disabled={off ? true : undefined}
+      aria-label={label}
+      aria-describedby={lineId}
+      onClick={off ? undefined : onClick}
+    >
       <span className="hud-spr-f" aria-hidden="true">
         {face}
       </span>
@@ -454,8 +532,8 @@ function Row({
       <span id={lineId} className="sr-only">
         {description ?? line}
       </span>
-      <span className={has ? "hud-spr-has" : "hud-spr-go"} aria-hidden="true">
-        {has ? "Has it" : go}
+      <span className={off ? "hud-spr-dead" : has ? "hud-spr-has" : "hud-spr-go"} aria-hidden="true">
+        {off ?? (has ? "Has it" : go)}
       </span>
     </button>
   );
@@ -463,16 +541,18 @@ function Row({
 
 /**
  * The phone's spotlight (PlayerPhone `.mspot`): a 44 px disc under the party strip, view only, with a "Spotlight ·
- * Moss" pill. Gold for the party or a PC, purple for an adversary or the GM.
+ * Moss" pill. Gold for the party or a PC, purple for an adversary or the GM (its portrait as on the map, else its
+ * initial). The phone is the players' (`HudPhone`), so the art comes from their `playerView`.
  */
-export function PhoneSpotlight({ state, party }: { state: SpotlightState; party: readonly HudPartyMember[] }) {
+export function PhoneSpotlight({ campaignId, state, party }: { campaignId: Id<"campaigns">; state: SpotlightState; party: readonly HudPartyMember[] }) {
   const holder = discHolder(state);
+  const tokenArt = useTokenArt(campaignId, false, undefined);
   const gm = holder.kind === "adversary" || holder.kind === "gm";
   return (
     <div className={cn("hud-mspot", gm && "hud-mspot-gm")} role="img" aria-label={discLabel(holder, false)} data-testid="hud-phone-spotlight">
       <span className="hud-ms-cord" aria-hidden="true" />
       <span className="hud-ms-disc" aria-hidden="true">
-        <DiscFaces holder={holder} party={party} />
+        <DiscFaces holder={holder} party={party} art={holderArt(holder, tokenArt)} />
       </span>
       <span className="hud-ms-l" aria-hidden="true">
         Spotlight · <b>{holder.name}</b>

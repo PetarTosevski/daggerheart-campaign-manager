@@ -2,6 +2,7 @@ import type { FunctionReturnType } from "convex/server";
 
 import type { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
+import type { TokenArt } from "../token/model";
 
 /**
  * The spotlight's display copy and optimistic updates (plan combat-hud H1.S; boards Main 'GM's turn', CmpTokens,
@@ -174,6 +175,33 @@ export function discLabel(holder: Pick<DiscHolder, "name">, gm: boolean): string
  */
 export function takePay(state: Pick<SpotlightState, "holder">, chosen: "free" | "fear"): "free" | "fear" {
   return state.holder?.kind === "gm" ? "free" : chosen;
+}
+
+/**
+ * The adversary holder's portrait on the disc (user 2026-11-04: "If an adversary has a picture please use it on the
+ * spotlight icon as well"): the art its map token draws (`artOf` over the token's portrait), looked up by token id in
+ * `art` (from the GM's `combatTokensReads.list`, or a player's `combatVision.playerView` `others`). Only for an
+ * adversary holder: while the disc says "The GM" (an adversary the party has not seen) it shows no portrait, so none can
+ * leak. Null draws the initial.
+ */
+export function holderArt(holder: DiscHolder, art: ReadonlyMap<string, TokenArt | null> | undefined): TokenArt | null {
+  if (holder.kind !== "adversary" || art === undefined) return null;
+  return art.get(holder.tokenId) ?? null;
+}
+
+/**
+ * Whether an adversary row is defeated (user 2026-11-04: "I shouldn't be allowed to take the spotlight of dead NPCs"):
+ * marked defeated (`stats.down`, a Minion group with every Minion gone included) or every HP marked, as the server's
+ * `adversaryDefeated` reads it (convex/lib/spotlight.ts, ADVERSARY_DEFEATED).
+ */
+export function isDefeatedRow(stats: { hp: number; hpMax: number; down: boolean } | null): boolean {
+  if (stats === null) return false;
+  return stats.down || (stats.hpMax > 0 && stats.hp >= stats.hpMax);
+}
+
+/** The Adversaries tab's order: the living first, the defeated at the bottom, each in the map's order. */
+export function livingFirst<T extends { defeated: boolean }>(rows: readonly T[]): T[] {
+  return [...rows.filter((r) => !r.defeated), ...rows.filter((r) => r.defeated)];
 }
 
 /** The letter on an adversary's face (Cinzel on red). */

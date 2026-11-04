@@ -289,6 +289,7 @@ export const REFUSALS: Record<RefusalCode, Entry> = {
     hint: null,
     before: ["control-disabled"],
   },
+  ADVERSARY_DEFEATED: plain("—", "GM: defeated", spotlightMessages.ADVERSARY_DEFEATED, { before: ["control-disabled"] }),
 
   // --- the other combat codes (no board row; the domain's own words)
   CARD_NOT_IN_LOADOUT: plain("—", "Not in your loadout", combatActionMessages.CARD_NOT_IN_LOADOUT, { hint: "Swap it in from your vault first.", before: ["card-tag"] }),

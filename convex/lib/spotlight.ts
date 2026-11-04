@@ -35,6 +35,7 @@
  * await assertMayAct(ctx, campaign, character, "action"); // or "move"; a reaction passes "reaction"
  * ```
  */
+import { isDefeated } from "../../src/lib/domain/encounters/damage";
 import { applySpotlight, spotlightsThisTurn } from "../../src/lib/domain/encounters/spotlight";
 import { appError } from "../../src/lib/errors/app-error";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -130,13 +131,30 @@ export async function moveToGm(
 /**
  * The GM spotlights one adversary (CB p.100: "the GM can make a move to spotlight an adversary"): the spotlight goes to
  * the GM with reason `adversary` and the row names the token, which the map lights (bead dcm-bxp.99.32.35).
- * COMBAT_TOKEN_NOT_FOUND for a token of another campaign, INVALID for a token that is not an adversary's. Returns
+ * COMBAT_TOKEN_NOT_FOUND for a token of another campaign, INVALID for a token that is not an adversary's,
+ * ADVERSARY_DEFEATED for a defeated adversary (`adversaryDefeated`; also refused by `takeWithFear`). Returns
  * whether the row changed (false when this adversary is already lit).
  */
 export async function spotlightAdversary(ctx: MutationCtx, campaign: Doc<"campaigns">, tokenId: string): Promise<boolean> {
   const token = await loadCombatToken(ctx, campaign._id, tokenId);
   if (token.ref.kind !== "adversary") throw appError("INVALID", "Only an adversary's token can be spotlighted.");
+  await assertNotDefeated(ctx, campaign._id, token);
   return setHolder(ctx, campaign._id, { kind: "gm" }, "adversary", undefined, token._id);
+}
+
+/**
+ * Whether an adversary instance is defeated (user 2026-11-04: "I shouldn't be allowed to take the spotlight of dead
+ * NPCs"): marked defeated (a Minion group with every Minion gone included), or every HP marked (CB p.208).
+ */
+export function adversaryDefeated(instance: Pick<Doc<"encounterAdversaries">, "defeated" | "hp" | "stats">): boolean {
+  return instance.defeated || isDefeated({ hp: instance.hp, hpMax: instance.stats.hpMax });
+}
+
+/** ADVERSARY_DEFEATED for an adversary token whose instance is defeated; a token without an instance passes. */
+async function assertNotDefeated(ctx: QueryCtx, campaignId: Id<"campaigns">, token: Doc<"combatTokens">): Promise<void> {
+  if (token.ref.kind !== "adversary") return;
+  const instance = await ctx.db.get("encounterAdversaries", token.ref.adversaryId);
+  if (instance !== null && instance.campaignId === campaignId && adversaryDefeated(instance)) throw appError("ADVERSARY_DEFEATED");
 }
 
 /**
@@ -205,6 +223,7 @@ export async function takeWithFear(
 ): Promise<{ moved: boolean; fearSpent: number }> {
   const token = tokenId === undefined ? null : await loadCombatToken(ctx, campaign._id, tokenId);
   if (token !== null && token.ref.kind !== "adversary") throw appError("INVALID", "Only an adversary's token can be spotlighted.");
+  if (token !== null) await assertNotDefeated(ctx, campaign._id, token);
   if ((await campaignFearState(ctx, campaign._id)).fear < INTERRUPT_FEAR) throw appError("NOT_ENOUGH_FEAR");
 
   const moved =

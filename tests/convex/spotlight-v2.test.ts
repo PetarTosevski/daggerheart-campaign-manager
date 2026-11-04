@@ -206,3 +206,43 @@ describe("combatSpotlight.gmTake pay (Q7 a)", () => {
     expect(await a.spotlightRows()).toEqual([]);
   });
 });
+
+describe("a defeated adversary can't take the spotlight (user 2026-11-04)", () => {
+  const defeat = (a: Awaited<ReturnType<typeof arena>>, id: Id<"encounterAdversaries">, patch: { hp?: number; defeated?: boolean; minionCount?: number }) =>
+    a.t.run(async (ctx) => {
+      await ctx.db.patch("encounterAdversaries", id, patch);
+    });
+
+  it("every HP marked: gmTake refuses it free and for 1 Fear (ADVERSARY_DEFEATED); nothing moves, no Fear spent", async () => {
+    const a = await arena();
+    await defeat(a, a.second.instanceId, { hp: 7 });
+    expect(await code(a.take({ tokenId: a.second.tokenId }))).toBe("ADVERSARY_DEFEATED");
+    expect(await code(a.take({ tokenId: a.second.tokenId, pay: "free" }))).toBe("ADVERSARY_DEFEATED");
+    expect(await code(a.take({ tokenId: a.second.tokenId, pay: "fear" }))).toBe("ADVERSARY_DEFEATED");
+    expect(await a.spotlightRows()).toEqual([]);
+    expect(await a.fear()).toBe(3);
+    expect(await a.log()).toEqual([]);
+    expect((await a.instance(a.second.instanceId)).spotlights).toBe(0);
+    // The living one still takes it.
+    expect(await a.take({ tokenId: a.first.tokenId })).toEqual({ moved: true });
+  });
+
+  it("marked defeated (a Minion group with every Minion gone): refused, also while the GM already holds it", async () => {
+    const a = await arena();
+    await a.take({ tokenId: a.first.tokenId });
+    await defeat(a, a.second.instanceId, { defeated: true, minionCount: 3, hp: 3 });
+    expect(await code(a.take({ tokenId: a.second.tokenId }))).toBe("ADVERSARY_DEFEATED");
+    expect(await code(a.take({ tokenId: a.second.tokenId, pay: "fear" }))).toBe("ADVERSARY_DEFEATED");
+    expect((await a.state()).adversaryTokenId).toBe(a.first.tokenId);
+    expect(await a.fear()).toBe(3);
+  });
+
+  it("the tracker's spotlight count refuses it too (encounterTracking.spotlight)", async () => {
+    const a = await arena();
+    await defeat(a, a.first.instanceId, { hp: 7, defeated: true });
+    const spot = a.gm.mutation(api.encounterTracking.spotlight, { campaignId: a.campaignId, instanceId: a.first.instanceId, idempotencyKey: key() });
+    expect(await code(spot)).toBe("ADVERSARY_DEFEATED");
+    expect((await a.instance(a.first.instanceId)).spotlights).toBe(0);
+    expect(await a.fear()).toBe(3);
+  });
+});

@@ -12,6 +12,7 @@ import { expireParty } from "./campaignTime";
 import { assertRunning, assertTextLength, assertWholeInRange, loadEncounter, loadInstance, MAX_INSTANCE_NOTE, MAX_INSTANCES, MAX_MINIONS, MAX_TAG, MAX_TAGS } from "./lib/encounters";
 import { FEAR_SPEND_REASONS, spendFear as spendCampaignFear } from "./lib/fear";
 import { gmQuery, keyedGmMutation } from "./lib/functions";
+import { adversaryDefeated } from "./lib/spotlight";
 import { customAdversaryFields, encounterConditionValidator } from "./lib/validators/encounters";
 
 /**
@@ -176,7 +177,8 @@ export const setNote = keyedGmMutation({
 
 /**
  * Counts one spotlight for the encounter's current GM turn (CB p.153, p.195). Past the limit the tracker warns; the
- * server never refuses (open question 5). Fear is not taken here: the GM uses "Spend Fear".
+ * server never refuses (open question 5). Fear is not taken here: the GM uses "Spend Fear". A defeated adversary
+ * can't be spotlighted (ADVERSARY_DEFEATED, user 2026-11-04).
  */
 export const spotlight = keyedGmMutation({
   args: { instanceId: v.string() },
@@ -184,6 +186,7 @@ export const spotlight = keyedGmMutation({
   handler: async (ctx, { instanceId }) =>
     ctx.once("encounter_spotlight", { instanceId }, async () => {
       const { instance, encounter } = await loadRunning(ctx, ctx.campaign._id, instanceId);
+      if (adversaryDefeated(instance)) throw appError("ADVERSARY_DEFEATED");
       // Every spotlight after the first in a GM turn spends 1 Fear (CB p.153); FEAR_EMPTY when the GM has none.
       const all = await ctx.db
         .query("encounterAdversaries")
