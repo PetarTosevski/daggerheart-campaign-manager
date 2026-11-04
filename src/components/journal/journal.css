@@ -27,7 +27,7 @@
   --jr-danger-border: #5a3330;
   --jr-paper: #f3e9d2;
   --jr-paper-ink: #2b2318;
-  --jr-paper-muted: #8a6d3b;
+  --jr-paper-muted: #6b5328; /* darkened from #8a6d3b for 4.5:1 on the parchment (axe colour contrast, JP1 / JT / JTh reports) */
   /* Scene types (design chips): text on a dark tint, each >= 4.5:1 on its tint. */
   --jr-exploration: #8fd6a4;
   --jr-exploration-bg: #15302a;
