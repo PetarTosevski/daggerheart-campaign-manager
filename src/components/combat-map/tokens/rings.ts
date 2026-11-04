@@ -1,57 +1,14 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { capRangeRings } from "@/lib/config/preferences";
+import { useUiState } from "@/lib/use-ui-state";
 
 /**
- * Range circles per token (R3): which tokens show their Melee / Very Close / Close / Far rings. A per-viewer
- * convenience kept in localStorage (plan data model: never stored on the server), so the GM and each player switch
- * their own. Off on the server and whenever storage is unavailable.
+ * Range circles per token (R3): which tokens show their Melee / Very Close / Close / Far rings. Each viewer's own
+ * choice, stored on their account (plan config U6e, Q15 b: `uiState` key `rangeRings`), so the GM and each player
+ * switch their own and it follows them to every device. None while the account's state loads.
+ * At most `RANGE_RINGS_MAX` (50) tokens are remembered; the oldest drop first (`capRangeRings`).
  */
-
-const KEY = "dh.combat.rings";
-/** Token ids remembered at most (oldest dropped first). */
-const MAX_REMEMBERED = 200;
-
-const listeners = new Set<() => void>();
-
-function readRaw(): string {
-  try {
-    return window.localStorage.getItem(KEY) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-function parse(raw: string): string[] {
-  if (raw === "") return [];
-  try {
-    const value: unknown = JSON.parse(raw);
-    return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-function write(ids: string[]) {
-  try {
-    window.localStorage.setItem(KEY, JSON.stringify(ids.slice(-MAX_REMEMBERED)));
-  } catch {
-    // Private window or blocked storage: the circles just don't persist.
-  }
-  for (const listener of listeners) listener();
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  const onStorage = (e: StorageEvent) => {
-    if (e.key === KEY) listener();
-  };
-  window.addEventListener("storage", onStorage);
-  return () => {
-    listeners.delete(listener);
-    window.removeEventListener("storage", onStorage);
-  };
-}
 
 export type Rings = {
   /** Whether this token shows its range circles. */
@@ -61,18 +18,21 @@ export type Rings = {
   hideAll: (tokenIds: readonly string[]) => void;
 };
 
+/** The list after toggling `tokenId`: removed if it was on, else added as the newest (capped). */
+export function toggledRings(current: readonly string[], tokenId: string): string[] {
+  return current.includes(tokenId) ? current.filter((id) => id !== tokenId) : capRangeRings([...current, tokenId]);
+}
+
 export function useRings(): Rings {
-  const raw = useSyncExternalStore(subscribe, readRaw, () => "");
-  const ids = new Set(parse(raw));
+  const [list, setList] = useUiState("rangeRings");
+  const ids = new Set(list);
   return {
     on: (tokenId) => ids.has(tokenId),
-    toggle: (tokenId) => {
-      const current = parse(readRaw());
-      write(current.includes(tokenId) ? current.filter((id) => id !== tokenId) : [...current, tokenId]);
-    },
+    toggle: (tokenId) => setList(toggledRings(list, tokenId)),
     hideAll: (tokenIds) => {
       const off = new Set(tokenIds);
-      write(parse(readRaw()).filter((id) => !off.has(id)));
+      const next = list.filter((id) => !off.has(id));
+      if (next.length !== list.length) setList(next);
     },
   };
 }

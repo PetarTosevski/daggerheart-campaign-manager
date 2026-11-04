@@ -4,7 +4,7 @@ import "../catalogue/catalogue.css";
 import "./environments.css";
 
 import { ChevronDown } from "lucide-react";
-import { useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
   PAGE_FIRST,
@@ -18,6 +18,7 @@ import {
   type CatalogueTier,
 } from "@/lib/adversaries/catalogue";
 import { BrandButton } from "@/components/brand/buttons";
+import { useUiState } from "@/lib/use-ui-state";
 import { adversariesFor } from "@/lib/domain/adversaries";
 import {
   NO_ENVIRONMENT_FILTERS,
@@ -59,29 +60,6 @@ function Thumb({ id }: { id: string }) {
   if (!art) return <span className="adc-thumb-none" aria-hidden="true" />;
   // eslint-disable-next-line @next/next/no-img-element -- static pre-optimised WebP from public/
   return <img className="adc-thumb" src={art.src} width={32} height={32} alt="" loading="lazy" decoding="async" />;
-}
-
-const SORT_KEY = "dcm:environment-sort";
-const SORT_EVENT = "dcm-environment-sort";
-/** The last choice, for when storage throws (private windows, blocked site data). */
-let sortFallback: CatalogueSort = "name";
-
-function readSort(): CatalogueSort {
-  try {
-    const stored = window.localStorage.getItem(SORT_KEY);
-    return stored === "book" || stored === "name" ? stored : sortFallback;
-  } catch {
-    return sortFallback;
-  }
-}
-
-function subscribeSort(onChange: () => void): () => void {
-  window.addEventListener(SORT_EVENT, onChange);
-  window.addEventListener("storage", onChange);
-  return () => {
-    window.removeEventListener(SORT_EVENT, onChange);
-    window.removeEventListener("storage", onChange);
-  };
 }
 
 function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: ReactNode }) {
@@ -145,17 +123,11 @@ export function EnvironmentCatalogue({ campaignId, fear, hopeAndFear, frameId, s
   const [filters, setFilters] = useState<EnvironmentFilters>(NO_ENVIRONMENT_FILTERS);
   const [limit, setLimit] = useState(PAGE_FIRST);
   const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(() => new Set());
-  // A–Z or book order, remembered per device (browser storage is for conveniences only).
-  const sort = useSyncExternalStore(subscribeSort, readSort, () => "name" as CatalogueSort);
+  // A–Z or book order, stored on the account (plan config U6e, Q15 b), so it follows the GM to every device.
+  const [sort, setSort] = useUiState("environmentSort");
   function chooseSort(next: CatalogueSort) {
     setLimit(PAGE_FIRST);
-    try {
-      window.localStorage.setItem(SORT_KEY, next);
-    } catch {
-      // Storage blocked: the order can't be remembered; fall back to the in-page event only.
-    }
-    sortFallback = next;
-    window.dispatchEvent(new Event(SORT_EVENT));
+    setSort(next);
   }
   const detailRef = useRef<HTMLElement>(null);
 

@@ -9,13 +9,21 @@ import { createElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Id } from "../../../convex/_generated/dataModel";
+import { UI_STATE_DEFAULTS } from "../../../src/lib/config/preferences";
 import type { CombatPageState } from "../../../src/components/combat-map/slots";
 
 let results: Record<string, unknown> = {};
+const sent: { name: string; args: unknown }[] = [];
 
 vi.mock("convex/react", () => ({
   useQuery: (ref: unknown, args: unknown) => (args === "skip" ? undefined : results[getFunctionName(ref as never)]),
-  useMutation: () => Object.assign(async () => null, { withOptimisticUpdate: () => async () => null }),
+  useMutation: (ref: unknown) => {
+    const run = async (args: unknown) => {
+      sent.push({ name: getFunctionName(ref as never), args });
+      return null;
+    };
+    return Object.assign(run, { withOptimisticUpdate: () => run });
+  },
 }));
 vi.mock("@/lib/use-intent", () => ({ useIntent: () => ({ fire: async () => null, pending: false, error: null }) }));
 vi.mock("@/app/(gm)/campaigns/[campaignId]/campaign-shell", () => ({ useCampaign: () => ({ options: { hopeAndFear: true } }) }));
@@ -68,7 +76,7 @@ let calls: string[] = [];
 beforeEach(() => {
   results = { "combatHud:party": [] };
   calls = [];
-  localStorage.clear();
+  sent.length = 0;
   publishBoard(board, { zoom: 0.91, zoomIn: () => calls.push("in"), zoomOut: () => calls.push("out"), fit: () => calls.push("fit") });
 });
 afterEach(() => {
@@ -101,8 +109,8 @@ describe("HudDock (GM)", () => {
     expect(button).toHaveAttribute("aria-expanded", "true");
   });
 
-  it("zoom − / % / + drive the published board; Names toggles the per-viewer flag", () => {
-    wrap(createElement(HudDock, { state: state() }));
+  it("zoom − / % / + drive the published board; Names toggles the viewer's account flag (config U6e)", () => {
+    const view = wrap(createElement(HudDock, { state: state() }));
     fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
     fireEvent.click(screen.getByRole("button", { name: "Zoom out" }));
     fireEvent.click(screen.getByRole("button", { name: "Fit the map to the screen" }));
@@ -110,8 +118,10 @@ describe("HudDock (GM)", () => {
     const names = screen.getByRole("button", { name: "Names" });
     expect(names).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(names);
-    expect(names).toHaveAttribute("aria-pressed", "true");
-    expect(localStorage.getItem("dh.combat.names")).toBe("1");
+    expect(sent).toContainEqual({ name: "uiState:set", args: { change: { key: "tokenNames", value: true } } });
+    results = { ...results, "uiState:get": { ...UI_STATE_DEFAULTS, tokenNames: true } };
+    view.rerender(createElement(HudProvider, null, createElement(HudDock, { state: state() }), createElement(Drawer), createElement(AreasFlag)));
+    expect(screen.getByRole("button", { name: "Names" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("Select and Measure switch the pointer tool", () => {

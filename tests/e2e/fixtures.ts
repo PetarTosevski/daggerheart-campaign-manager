@@ -3,7 +3,7 @@ import { ConvexHttpClient } from "convex/browser";
 import type { FunctionArgs } from "convex/server";
 
 import { api } from "../../convex/_generated/api";
-import { PREFERENCE_DEFAULTS } from "../../src/lib/config/preferences";
+import { PREFERENCE_DEFAULTS, UI_STATE_DEFAULTS, UI_STATE_KEYS } from "../../src/lib/config/preferences";
 
 export const E2E_GM_EMAIL = "e2e-gm@example.test";
 
@@ -59,6 +59,9 @@ export async function signInAsTestGm(page: Page, email = E2E_GM_EMAIL) {
     { key: "spotlightPing", value: d.spotlightPing },
   ];
   await Promise.all(defaults.map((change) => client.mutation(api.preferences.set, { change })));
+  // UI state too (config U6e): Names, range circles, catalogue sorts and roll-panel folds live on the account now.
+  const uiDefaults = UI_STATE_KEYS.map((key) => ({ key, value: UI_STATE_DEFAULTS[key] }) as FunctionArgs<typeof api.uiState.set>["change"]);
+  await Promise.all(uiDefaults.map((change) => client.mutation(api.uiState.set, { change })));
 }
 
 /** Signed-in home is the title menu; the account lives in its Settings dialog. */

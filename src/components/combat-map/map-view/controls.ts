@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 
-import { useViewerFlag } from "./use-viewer-flag";
+import { useUiState } from "@/lib/use-ui-state";
 
 /**
  * The map's controls as a small external store (plan combat-hud H9.0): zoom, Fit, Names, the pointer tool (Select /
@@ -10,11 +10,9 @@ import { useViewerFlag } from "./use-viewer-flag";
  * outside the board (the Combat HUD's bottom dock, the player's map controls) reads and drives the same board through
  * `useMapControls()`. With `chrome="full"` the board's own toolbar uses the same store, so both stay in step.
  *
- * Client state only: nothing here is saved on the server. Names is the per-viewer localStorage switch it always was.
+ * Client state only, except Names: each viewer's own switch, stored on their account (plan config U6e, Q15 b:
+ * `uiState` key `tokenNames`), so it follows them to every device.
  */
-
-/** localStorage key of the board's "Names" switch (per viewer). */
-export const NAMES_KEY = "dh.combat.names";
 
 /** What the pointer does on the map: Select is today's pointer (pan, tokens); Measure drags a range between squares. */
 export type MapTool = "select" | "measure";
@@ -95,9 +93,9 @@ export type MapControls = {
   setAreaTools: (on: boolean) => void;
 };
 
-/** The names switch, per viewer (localStorage), shared by the board and the dock. */
+/** The names switch, per viewer (on the account; off while it loads), shared by the board and the dock. */
 export function useShowNames(): [boolean, (on: boolean) => void] {
-  return useViewerFlag(NAMES_KEY);
+  return useUiState("tokenNames");
 }
 
 /** The map tool alone (the board's measure layer reads only this). */

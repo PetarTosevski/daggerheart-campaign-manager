@@ -4,13 +4,16 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Id } from "../../convex/_generated/dataModel";
+import { UI_STATE_DEFAULTS } from "@/lib/config/preferences";
 
 const calls: { name: string; args: unknown }[] = [];
 const functionName = (ref: unknown) => String((ref as Record<symbol, unknown>)[Symbol.for("functionName")] ?? ref);
 let feedRows: unknown[] = [];
+/** `uiState.get` (config U6e: the Roll dice fold is stored on the account); undefined = loading, the defaults. */
+let uiState: unknown = undefined;
 
 vi.mock("convex/react", () => ({
-  useQuery: () => undefined,
+  useQuery: (ref: unknown) => (functionName(ref) === "uiState:get" ? uiState : undefined),
   usePaginatedQuery: () => ({ results: feedRows, status: "Exhausted", loadMore: () => undefined }),
   useMutation: (ref: unknown) => {
     const name = functionName(ref);
@@ -33,6 +36,7 @@ const preview = () => screen.getByTestId("free-roll-preview");
 beforeEach(() => {
   calls.length = 0;
   feedRows = [];
+  uiState = undefined;
   window.localStorage.clear();
 });
 afterEach(() => vi.restoreAllMocks());
@@ -155,12 +159,16 @@ describe("the roll feed's Hidden and Revealed tags", () => {
 
   it("a player sees the Revealed tag too, and opens Roll dice for a public free roll", () => {
     feedRows = [{ ...baseRow, _id: "r2", summary: "GM: 1d12 = 7", visibility: "public", canUndo: false, revealed: true }];
-    render(<RollFeedPanel campaignId={campaignId} isGm={false} />);
+    const view = render(<RollFeedPanel campaignId={campaignId} isGm={false} />);
     expect(within(screen.getByRole("listitem", { name: "GM: 1d12 = 7" })).getByText("revealed")).toBeInTheDocument();
     const toggle = screen.getByRole("button", { name: "Roll dice" });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("form", { name: "Free roll" })).toBeNull();
     fireEvent.click(toggle);
+    expect(calls).toContainEqual({ name: "uiState:set", args: { change: { key: "freeRollFormOpen", value: true } } });
+    // The account now says open.
+    uiState = { ...UI_STATE_DEFAULTS, freeRollFormOpen: true };
+    view.rerender(<RollFeedPanel campaignId={campaignId} isGm={false} />);
     expect(screen.getByRole("form", { name: "Free roll" })).toHaveAttribute("id", "free-roll-form");
     expect(screen.queryByRole("form", { name: "GM roll" })).toBeNull();
   });
