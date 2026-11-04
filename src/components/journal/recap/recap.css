@@ -55,6 +55,42 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+/* Ink-on-paper buttons on the recap parchment (plan glass-buttons Q5 a); the ink passes 4.5:1 on the paper. */
+.jrr-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid rgba(107, 83, 40, 0.6);
+  border-radius: 999px;
+  background: transparent;
+  color: #6b5328;
+  font-family: var(--font-plex), ui-sans-serif, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.jrr-btn svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.jrr-btn:hover {
+  background: rgba(138, 109, 59, 0.14);
+}
+.jrr-btn:focus-visible {
+  outline: 2px solid #6b5328;
+  outline-offset: 2px;
+}
+.jrr-btn-main {
+  border-color: #6b5328;
+  background: #6b5328;
+  color: #fbf5e6;
+}
+.jrr-btn-main:hover {
+  background: #56421f;
+}
 .jrr-error {
   margin: 0;
   font-family: var(--font-plex), ui-sans-serif, sans-serif;

@@ -45,9 +45,9 @@ function ThreadRow({ campaignId, row, onOpen }: { campaignId: ThreadsRaisedProps
         <EntryText campaignId={campaignId} text={row.text} />
       </span>
       <BrandButton
-        variant="pill"
+        variant="neutral"
         size="sm"
-        className="jrth-open"
+        className="flex-none"
         title={`Open “${row.pageTitle}” in Notes`}
         aria-label={`${THREADS_RAISED_COPY.open}: ${row.pageTitle}`}
         onClick={onOpen}

@@ -6,7 +6,7 @@ import type { FunctionReturnType } from "convex/server";
 import { Check, Ellipsis, Plus } from "lucide-react";
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 
-import { brandButton } from "@/components/brand/buttons";
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import { nextSceneId } from "@/lib/domain/journal/scenes";
 import { cn } from "@/lib/utils";
@@ -148,17 +148,18 @@ function SceneMenu({ n, children }: { n: number; children: ReactNode }) {
 
   return (
     <div ref={root} className="jp-menu">
-      <button
+      <BrandButton
         ref={button}
-        type="button"
-        className="jp-menu-btn"
+        variant="neutral"
+        icon
+        round
         aria-label={`Scene ${n} options`}
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((v) => !v)}
       >
         <Ellipsis aria-hidden="true" />
-      </button>
+      </BrandButton>
       {/* The clicks land on the buttons inside; this only closes the menu after one. */}
       <div id={panelId} className="jp-menu-panel" hidden={!open} onClick={onPanelClick}>
         {open ? children : null}
@@ -234,42 +235,43 @@ function SceneRow({
           {pending ? null : (
             <SceneMenu n={n}>
               {canPlay ? (
-                <button type="button" className="jp-item" onClick={() => run(setState({ ...ids, sceneId: scene.id, state: "playing" }))}>
+                <BrandButton variant="neutral" size="sm" className="w-full" onClick={() => run(setState({ ...ids, sceneId: scene.id, state: "playing" }))}>
                   Play this scene
-                </button>
+                </BrandButton>
               ) : null}
               {combat && state === "planned" ? <p className="jp-hint">Plays when its encounter goes on the Combat Map.</p> : null}
               {state !== "done" ? (
-                <button type="button" className="jp-item" onClick={() => run(setState({ ...ids, sceneId: scene.id, state: "done" }))}>
+                <BrandButton variant="neutral" size="sm" className="w-full" onClick={() => run(setState({ ...ids, sceneId: scene.id, state: "done" }))}>
                   Mark done
-                </button>
+                </BrandButton>
               ) : null}
               {state !== "planned" ? (
-                <button type="button" className="jp-item" onClick={() => run(setState({ ...ids, sceneId: scene.id, state: "planned" }))}>
+                <BrandButton variant="neutral" size="sm" className="w-full" onClick={() => run(setState({ ...ids, sceneId: scene.id, state: "planned" }))}>
                   Back to planned
-                </button>
+                </BrandButton>
               ) : null}
               <div role="group" aria-labelledby={typeGroup} className="jp-types">
                 <span id={typeGroup} className="jr-lbl">
                   Type
                 </span>
                 {SESSION_SCENE_TYPES.map((type) => (
-                  <button
+                  <BrandButton
                     key={type}
-                    type="button"
-                    className="jp-item"
+                    variant="neutral"
+                    size="sm"
+                    className="jp-type-opt w-full"
                     aria-pressed={scene.type === type}
                     onClick={() => {
                       if (type !== scene.type) run(setScene({ ...ids, sceneId: scene.id, type }));
                     }}
                   >
                     {SCENE_TYPE_DISPLAY[type].label}
-                  </button>
+                  </BrandButton>
                 ))}
               </div>
-              <button type="button" className="jp-item jp-danger" onClick={() => run(removeScene({ ...ids, sceneId: scene.id }))}>
+              <BrandButton variant="danger" size="sm" className="w-full" onClick={() => run(removeScene({ ...ids, sceneId: scene.id }))}>
                 Remove scene
-              </button>
+              </BrandButton>
             </SceneMenu>
           )}
         </div>
@@ -306,16 +308,10 @@ export function AddSceneButton({ ids, count }: { ids: PlanIds; count: number }) 
   const full = count >= MAX_SCENES;
   return (
     <>
-      <button
-        type="button"
-        className={brandButton({ variant: "pill", size: "sm" })}
-        disabled={full}
-        title={full ? `A session holds at most ${MAX_SCENES} scenes.` : undefined}
-        onClick={() => run(addScene(ids))}
-      >
+      <BrandButton variant="neutral" size="sm" disabled={full} title={full ? `A session holds at most ${MAX_SCENES} scenes.` : undefined} onClick={() => run(addScene(ids))}>
         <Plus aria-hidden="true" />
         Add scene
-      </button>
+      </BrandButton>
       {error ? (
         <p role="alert" className="jp-error">
           {error}

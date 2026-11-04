@@ -7,7 +7,6 @@ import { useMutation, useQuery } from "convex/react";
 import { Pencil, Users } from "lucide-react";
 import { useId, useState, type FocusEvent, type KeyboardEvent } from "react";
 
-import { brandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import { cn } from "@/lib/utils";
 
@@ -32,7 +31,11 @@ import { Card, Parchment } from "../ui";
  *   characters' names, else 'None') and 'Loot' (inline edit, `sessionWrap.setLoot`, optimistic).
  */
 
-const btn = (variant: "pill" | "solid" | "outline") => cn(brandButton({ variant, size: "sm" }), "jrr-btn");
+/**
+ * The recap paper keeps ink-on-paper buttons (plan glass-buttons Q5 a: dark glass looks out of place on parchment):
+ * the main action is filled ink, the others an ink outline, like GM prep's Edit.
+ */
+const btn = (main = false) => cn("jrr-btn", main && "jrr-btn-main");
 
 /** The text the server stores for a write: trimmed, empty clears it (as `cleanText`). */
 const stored = (text: string) => text.trim() || undefined;
@@ -146,12 +149,12 @@ function RecapBody({ campaignId, sessionId, text }: { campaignId: Id<"campaigns"
           />
           {errorEl}
           <div className="jrr-row">
-            <button type="button" className={btn("solid")} onClick={() => save(draft)}>
+            <button type="button" className={btn(true)} onClick={() => save(draft)}>
               Save recap
             </button>
             <button
               type="button"
-              className={btn("outline")}
+              className={btn()}
               onClick={() => {
                 setDraft(null);
                 setError(null);
@@ -169,7 +172,7 @@ function RecapBody({ campaignId, sessionId, text }: { campaignId: Id<"campaigns"
     <Parchment className="jrr-parchment">
       {text ? <p className="jrr-text">{text}</p> : <p className="jrr-text jrr-empty">No recap yet. Anyone at the table can write it.</p>}
       {errorEl}
-      <button type="button" className={btn("pill")} onClick={() => setDraft(text ?? "")}>
+      <button type="button" className={btn()} onClick={() => setDraft(text ?? "")}>
         <Pencil aria-hidden="true" />
         {text ? "Edit recap" : "Write the recap"}
       </button>

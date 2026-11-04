@@ -3,6 +3,8 @@
 import { Compass, MessageCircle, Swords, Tent, type LucideIcon } from "lucide-react";
 import { Component, useId, type ReactNode } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
+
 import type { SessionSceneType } from "../../../../convex/lib/validators/sessions";
 
 /**
@@ -29,9 +31,9 @@ export class SlotBoundary extends Component<{ children: ReactNode; label: string
         <span>
           {this.props.label} failed to load{this.state.message ? `: ${this.state.message}` : "."}
         </span>
-        <button type="button" className="jr-ghost" onClick={() => this.setState({ failed: false, message: "" })}>
+        <BrandButton variant="neutral" size="sm" onClick={() => this.setState({ failed: false, message: "" })}>
           Try again
-        </button>
+        </BrandButton>
       </div>
     );
   }

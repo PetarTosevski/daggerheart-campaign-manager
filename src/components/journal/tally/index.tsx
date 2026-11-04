@@ -5,11 +5,10 @@ import "./tally.css";
 import { useMutation, useQuery } from "convex/react";
 import { useState } from "react";
 
-import { brandButton } from "@/components/brand/buttons";
+import { BrandButton } from "@/components/brand/buttons";
 import { CharacterPortrait } from "@/components/party/portrait";
 import { errorMessage } from "@/lib/convex-errors";
 import { leastSpotlightLine } from "@/lib/domain/journal";
-import { cn } from "@/lib/utils";
 
 import { api } from "../../../../convex/_generated/api";
 import type { PartyMember } from "../../../../convex/charactersReads";
@@ -96,9 +95,9 @@ function SpotlightCard({ campaignId, sessionId }: Omit<SpotlightProps, "isGm">) 
       className="jt-spot"
       actions={
         entries !== undefined && entries.length > 0 ? (
-          <button type="button" className={cn(brandButton({ variant: "pill", size: "sm" }), "jt-reset")} disabled={max === 0} onClick={onReset}>
+          <BrandButton variant="neutral" size="sm" disabled={max === 0} onClick={onReset}>
             Reset
-          </button>
+          </BrandButton>
         ) : null
       }
     >

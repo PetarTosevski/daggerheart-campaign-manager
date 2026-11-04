@@ -2,6 +2,7 @@
 
 import "@/components/journal/journal.css";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { useSessionEndedRedirect } from "@/lib/auth/use-session-ended-redirect";
 import { errorMessage } from "@/lib/convex-errors";
 
@@ -20,9 +21,9 @@ export default function JournalError({ error, retry }: { error: Error & { digest
         ) : (
           <div role="alert" className="jr-alert">
             <span>The journal failed to load. {errorMessage(error)}</span>
-            <button type="button" className="jr-ghost" onClick={() => retry()}>
+            <BrandButton variant="neutral" size="sm" onClick={() => retry()}>
               Try again
-            </button>
+            </BrandButton>
           </div>
         )}
       </main>

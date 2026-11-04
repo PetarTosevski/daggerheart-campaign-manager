@@ -55,10 +55,6 @@
   font-size: 12.5px;
 }
 
-.jt-reset {
-  min-height: 32px;
-}
-
 .jt-bars {
   list-style: none;
   margin: 0;
@@ -130,12 +126,6 @@
 
 .jt-least {
   font-size: 12.5px;
-}
-
-@media (max-width: 1100px), (pointer: coarse) {
-  .jt-reset {
-    min-height: 44px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

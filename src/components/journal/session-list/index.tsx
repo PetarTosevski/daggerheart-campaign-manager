@@ -5,10 +5,9 @@ import "./session-list.css";
 import { useQuery } from "convex/react";
 import { Plus } from "lucide-react";
 
-import { brandButton } from "@/components/brand/buttons";
+import { BrandButton } from "@/components/brand/buttons";
 import { formatSessionDate, sessionTitle } from "@/lib/domain/sessions";
 import { useIntent } from "@/lib/use-intent";
-import { cn } from "@/lib/utils";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
@@ -104,15 +103,10 @@ export function PlanSessionButton({ campaignId, isGm, onCreated }: PlanSessionBu
   }
   return (
     <div className="js-plan-wrap">
-      <button
-        type="button"
-        className={cn(brandButton({ variant: "outline", size: "md" }), "js-plan")}
-        disabled={create.pending}
-        onClick={() => void onClick()}
-      >
+      <BrandButton variant="confirm" className="w-full" disabled={create.pending} onClick={() => void onClick()}>
         <Plus aria-hidden="true" />
         Plan session {n}
-      </button>
+      </BrandButton>
       {create.error ? (
         <p role="alert" className="js-error">
           {create.error}

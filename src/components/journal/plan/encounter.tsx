@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useId, useState } from "react";
 
 import type { InstanceView } from "@/components/adversaries/builder/types";
-import { brandButton } from "@/components/brand/buttons";
+import { BrandButton, brandButton } from "@/components/brand/buttons";
 import { encounterTrackerHref } from "@/components/sessions/session-chip";
 import { errorMessage } from "@/lib/convex-errors";
 import { BP_COSTS, minionGroups } from "@/lib/domain/encounters/budget";
@@ -45,7 +45,7 @@ export function encounterChips(instances: readonly InstanceView[], pcs: number):
 
 type Ids = { campaignId: Id<"campaigns">; sessionId: Id<"sessions">; sceneId: string };
 
-const LINK = brandButton({ variant: "pill", size: "md", className: "px-3.5 text-sm" });
+const LINK = brandButton({ variant: "neutral", size: "sm" });
 
 /**
  * A Combat scene's encounter card (JP2, contract: ../slots.ts; design reference/designs/journal/journal_views.jpg,
@@ -130,9 +130,9 @@ function LinkedEncounter({ campaignId, sessionId, sceneId, encounterId, name, on
         <Link className={LINK} href={encounterTrackerHref(campaignId, encounterId)}>
           Edit in Adversaries
         </Link>
-        <button
-          type="button"
-          className="jr-ghost"
+        <BrandButton
+          variant="neutral"
+          size="sm"
           aria-label={`Unlink ${view?.encounter.name ?? name} from this scene`}
           onClick={() => {
             setError(null);
@@ -140,7 +140,7 @@ function LinkedEncounter({ campaignId, sessionId, sceneId, encounterId, name, on
           }}
         >
           Unlink
-        </button>
+        </BrandButton>
       </div>
       {error ? (
         <p role="alert" className="m-0 text-sm text-(--jr-danger)">
@@ -181,9 +181,9 @@ function NoEncounter({ campaignId, sessionId, sceneId }: Ids) {
     <section className={FRAME} aria-label="Encounter" data-testid="scene-encounter">
       <p className="jr-muted jr-m0 text-sm">No encounter yet. Build this fight with real stat blocks and Battle Points; it also appears in the Adversaries tab.</p>
       <div className="flex flex-wrap items-end gap-2">
-        <button type="button" className={brandButton({ variant: "solid", size: "md" })} disabled={create.pending} onClick={() => void create.fire({ campaignId, sessionId, sceneId })}>
+        <BrandButton variant="confirm" disabled={create.pending} onClick={() => void create.fire({ campaignId, sessionId, sceneId })}>
           Create encounter
-        </button>
+        </BrandButton>
         <label htmlFor={selectId} className="sr-only">
           Link an encounter
         </label>
@@ -202,9 +202,9 @@ function NoEncounter({ campaignId, sessionId, sceneId }: Ids) {
             </option>
           ))}
         </select>
-        <button type="button" className={brandButton({ variant: "outline", size: "md" })} disabled={picked === "" || linking} onClick={() => void onLink()}>
+        <BrandButton variant="neutral" disabled={picked === "" || linking} onClick={() => void onLink()}>
           Link
-        </button>
+        </BrandButton>
       </div>
       {(create.error ?? error) ? (
         <p role="alert" className="m-0 text-sm text-(--jr-danger)">

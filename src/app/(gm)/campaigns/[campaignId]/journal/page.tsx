@@ -30,7 +30,6 @@ import { SessionTally, Spotlight } from "@/components/journal/tally";
 import { ThreadsRaised } from "@/components/journal/threads";
 import { Card, Chip, SlotBoundary } from "@/components/journal/ui";
 import { frameName } from "@/lib/campaign-display";
-import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
@@ -302,7 +301,7 @@ function JournalBody({ campaign, isGm }: { campaign: CampaignSummary; isGm: bool
                       {isGm ? <ViewToggle view={view} onView={(sv) => navigate({ s: selectedId, sv })} /> : null}
                       <Link
                         href={`/campaigns/${campaignId}/combat-map`}
-                        className={cn(brandButton({ variant: "solid", size: "md" }), "jr-play")}
+                        className={brandButton({ variant: "confirm", className: "jr-play" })}
                       >
                         <MapIcon aria-hidden="true" />
                         Play on the Combat Map
