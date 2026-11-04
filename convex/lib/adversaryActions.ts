@@ -957,8 +957,8 @@ const words = (roll: RollRecord) => `${roll.total} (${roll.dice.filter((d) => !d
  * party characters, or PC tokens on the live map when the adversary has a token there (line of sight required, cover
  * gives disadvantage; Q2, Q18). An action needs the spotlight (CB p.194): the instance is spotlighted, the second
  * spotlight of a GM turn costs 1 Fear (CB p.153). Fear costs, an Experience and that spotlight return `confirmFear`
- * until `spendFear` covers them (Q19); NOT_ENOUGH_FEAR past the GM's Fear. Refusals: ADVERSARY_FEATURE_UNAVAILABLE,
- * ADVERSARY_NOT_SPOTLIT, COMBAT_TARGET_INVALID, COMBAT_NO_LINE_OF_SIGHT, ENCOUNTER_NOT_RUNNING, INVALID.
+ * until `spendFear` covers them (Q19); NOT_ENOUGH_FEAR past the GM's Fear. Refusals: ADVERSARY_DEFEATED (it can't act,
+ * so it is never spotlit; dcm-j5ft), ADVERSARY_FEATURE_UNAVAILABLE, ADVERSARY_NOT_SPOTLIT, COMBAT_TARGET_INVALID, COMBAT_NO_LINE_OF_SIGHT, ENCOUNTER_NOT_RUNNING, INVALID.
  */
 export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns">, user: Doc<"users">, args: ActionArgs, replay?: Replay, opts?: { forced?: boolean }): Promise<ActionResult | ConfirmFear> {
   const { instance, encounter, block, others } = await loadActor(ctx, campaign, args.instanceId);

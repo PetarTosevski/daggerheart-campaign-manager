@@ -187,15 +187,13 @@ function useAdversaries(campaignId: Id<"campaigns">, mapId: Id<"combatMaps"> | u
 }
 
 /**
- * The art of the tokens the viewer may see, by token id, for the adversary holder's face: the GM's adversary rows, or a
- * player's `combatVision.playerView` `others` (the same subscription the map's vision layer holds; portraits only, never
- * a number, R4). `holderArt` reads it only for an adversary the disc names.
+ * The GM's adversary art by token id, for the adversary holder's face (`holderArt`, which reads it only for an adversary
+ * the disc names). A player has none: their disc draws the state's `adversaryPortrait`, the party's knowledge
+ * (dcm-onze), whatever their own map draws.
  */
-function useTokenArt(campaignId: Id<"campaigns">, gm: boolean, adversaries: AdversaryRow[] | undefined): ReadonlyMap<string, TokenArt | null> | undefined {
-  const view = useQuery(api.combatVision.playerView, gm ? "skip" : { campaignId });
-  if (gm) return adversaries === undefined ? undefined : new Map(adversaries.map((a) => [a.tokenId as string, a.art]));
-  if (view?.state !== "ok") return undefined;
-  return new Map(view.others.map((t) => [t._id as string, artOf(t.portrait)]));
+function gmTokenArt(gm: boolean, adversaries: AdversaryRow[] | undefined): ReadonlyMap<string, TokenArt | null> | undefined {
+  if (!gm || adversaries === undefined) return undefined;
+  return new Map(adversaries.map((a) => [a.tokenId as string, a.art]));
 }
 
 export type SpotlightDiscProps = {
@@ -211,7 +209,7 @@ export function SpotlightDisc({ campaignId, mapId, gm, fear }: SpotlightDiscProp
   const state = useQuery(api.combatSpotlight.state, { campaignId });
   const party = useQuery(api.combatHud.party, mapId ? { campaignId, mapId } : "skip");
   const adversaries = useAdversaries(campaignId, mapId, gm);
-  const tokenArt = useTokenArt(campaignId, gm, adversaries);
+  const tokenArt = gmTokenArt(gm, adversaries);
   const open = usePanelOpen("spotlight");
   const moves = useDiscMoves(campaignId);
   const [reviving, setReviving] = useState<ReviveTarget | null>(null);
@@ -232,7 +230,7 @@ export function SpotlightDisc({ campaignId, mapId, gm, fear }: SpotlightDiscProp
       <span className="hud-spd-cord" aria-hidden="true" />
       <span className="hud-spd-beam" aria-hidden="true" />
       <span className="hud-spd-disc" aria-hidden="true">
-        <DiscFaces holder={holder} party={members} art={holderArt(holder, tokenArt)} />
+        <DiscFaces holder={holder} party={members} art={holderArt(holder, tokenArt, state.adversaryPortrait)} />
       </span>
       <span className="hud-spd-l" aria-hidden="true">
         Spotlight
@@ -565,17 +563,17 @@ function Row({
 /**
  * The phone's spotlight (PlayerPhone `.mspot`): a 44 px disc under the party strip, view only, with a "Spotlight ·
  * Moss" pill. Gold for the party or a PC, purple for an adversary or the GM (its portrait as on the map, else its
- * initial). The phone is the players' (`HudPhone`), so the art comes from their `playerView`.
+ * initial). The phone is the players' (`HudPhone`), so the art is the state's `adversaryPortrait` (party knowledge,
+ * dcm-onze).
  */
-export function PhoneSpotlight({ campaignId, state, party }: { campaignId: Id<"campaigns">; state: SpotlightState; party: readonly HudPartyMember[] }) {
+export function PhoneSpotlight({ state, party }: { state: SpotlightState; party: readonly HudPartyMember[] }) {
   const holder = discHolder(state);
-  const tokenArt = useTokenArt(campaignId, false, undefined);
   const gm = holder.kind === "adversary" || holder.kind === "gm";
   return (
     <div className={cn("hud-mspot", gm && "hud-mspot-gm")} role="img" aria-label={discLabel(holder, false)} data-testid="hud-phone-spotlight">
       <span className="hud-ms-cord" aria-hidden="true" />
       <span className="hud-ms-disc" aria-hidden="true">
-        <DiscFaces holder={holder} party={party} art={holderArt(holder, tokenArt)} />
+        <DiscFaces holder={holder} party={party} art={holderArt(holder, undefined, state.adversaryPortrait)} />
       </span>
       <span className="hud-ms-l" aria-hidden="true">
         Spotlight · <b>{holder.name}</b>

@@ -101,6 +101,19 @@ all.
 - **Bound**: one row per adversary token seen since the last scene end.
 - **Not cleared**: a deleted token's row. It lingers, harmless, until the next scene end.
 
+### Update: seen is party knowledge, the card always names it (dcm-onze, user 2026-11-04)
+
+- `combatSeen` was already one row per campaign + token, so no data change: once any player's character saw an
+  adversary, `combatSpotlight.state` names it for every player of the campaign, a player with no token on the map
+  included. The reset rules are unchanged.
+- `state` gains `adversaryPortrait` (a returns field only): the rulebook art the token draws (`adversaryArtSrc`), null
+  whenever `adversaryName` is null. The players' disc and phone disc draw it instead of reading their own
+  `playerView`, so the portrait is party knowledge too and is never sent for an adversary nobody saw.
+- `gmTurnTitle(state)` drops `drawn`: "<full label> has the spotlight" (the instance label the token shows, e.g.
+  "Jagged Knife Lieutenant has the spotlight") whenever a name is sent, drawn on this map or not; otherwise "The GM
+  has the spotlight". `GmTurnNotice` no longer subscribes to `playerView`.
+- The section below describes the first version.
+
 ### HUD
 
 `hud/spotlight` only:

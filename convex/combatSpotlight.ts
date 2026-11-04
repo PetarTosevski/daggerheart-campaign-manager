@@ -6,6 +6,7 @@ import { readSheet } from "./lib/characterSheet";
 import { campaignQuery, keyedGmMutation } from "./lib/functions";
 import { atLeast } from "./lib/permissions";
 import { giveTo, giveToParty, moveToGm, spotlightAdversary, spotlightOf, takeWithFear } from "./lib/spotlight";
+import { adversaryArtSrc } from "./lib/encounters";
 import { seenThisScene } from "./lib/spotlightSeen";
 import { spotlightReasonValidator } from "./tables/combatSpotlight";
 
@@ -48,35 +49,43 @@ export const spotlightStateValidator = v.object({
    * otherwise. An opaque id without a position: a player's map lights it only when that token is already among the
    * ones it draws (`combatVision.playerView` leaves fogged and hidden tokens out), so it never reveals one.
    * Players (user 2026-11-03): only when the party has seen that token this scene (`combatSeen`); never seen, null.
-   * The GM always.
+   * Seen by any player's character counts for every player (dcm-onze). The GM always.
    */
   adversaryTokenId: v.union(v.id("combatTokens"), v.null()),
   /**
-   * That adversary's display name (its encounter instance's label, the name a player's view gives the token), so a
-   * player whose map does not draw the token can read whose spotlight it is ("Jagged Knife Lieutenant has the
-   * spotlight"). Null whenever `adversaryTokenId` is null, or the token is no longer an adversary of this campaign.
+   * That adversary's display name (its encounter instance's label, the full name its token shows), for the players'
+   * GM's-turn card ("Jagged Knife Lieutenant has the spotlight", dcm-onze) and the disc. Null whenever
+   * `adversaryTokenId` is null, or the token is no longer an adversary of this campaign.
    */
   adversaryName: v.union(v.string(), v.null()),
+  /**
+   * That adversary's portrait (the rulebook art its map token draws, `adversaryArtSrc`), for the spotlight disc's face
+   * (dcm-onze: seen is party knowledge, so a player whose map does not draw the token gets it too). Null whenever
+   * `adversaryName` is null, or the adversary has no art (the disc draws its initial).
+   */
+  adversaryPortrait: v.union(v.string(), v.null()),
 });
 export type SpotlightStateView = Infer<typeof spotlightStateValidator>;
 
-/** The spotlighted adversary for the caller (user 2026-11-03): the GM always; a player only one the party saw this scene. */
-async function spotlitAdversary(
-  ctx: QueryCtx,
-  campaign: Doc<"campaigns">,
-  tokenId: Id<"combatTokens"> | undefined,
-  gm: boolean,
-): Promise<{ adversaryTokenId: Id<"combatTokens"> | null; adversaryName: string | null }> {
-  const none = { adversaryTokenId: null, adversaryName: null };
+type SpotlitAdversary = Pick<SpotlightStateView, "adversaryTokenId" | "adversaryName" | "adversaryPortrait">;
+
+/**
+ * The spotlighted adversary for the caller: the GM always; a player only one the party saw this scene (user 2026-11-03).
+ * Seen is party knowledge (dcm-onze, user 2026-11-04): `combatSeen` is per campaign, so once any player's character saw
+ * it, every player learns it, one who never saw it or has no token on the map included. Never seen: nothing.
+ */
+async function spotlitAdversary(ctx: QueryCtx, campaign: Doc<"campaigns">, tokenId: Id<"combatTokens"> | undefined, gm: boolean): Promise<SpotlitAdversary> {
+  const none = { adversaryTokenId: null, adversaryName: null, adversaryPortrait: null };
   if (tokenId === undefined) return none;
   if (!gm && !(await seenThisScene(ctx, campaign._id, tokenId))) return none;
   const token = await ctx.db.get("combatTokens", tokenId);
-  let adversaryName: string | null = null;
   if (token !== null && token.ref.kind === "adversary") {
     const instance = await ctx.db.get("encounterAdversaries", token.ref.adversaryId);
-    if (instance !== null && instance.campaignId === campaign._id) adversaryName = instance.label;
+    if (instance !== null && instance.campaignId === campaign._id) {
+      return { adversaryTokenId: tokenId, adversaryName: instance.label, adversaryPortrait: await adversaryArtSrc(ctx, campaign._id, instance) };
+    }
   }
-  return { adversaryTokenId: tokenId, adversaryName };
+  return { adversaryTokenId: tokenId, adversaryName: null, adversaryPortrait: null };
 }
 
 /** A campaign's character with its sheet name, or null when it is gone or belongs elsewhere. */
@@ -101,7 +110,7 @@ export const state = campaignQuery({
     const { campaign } = ctx;
     const canMove = atLeast(ctx.permission, "owner");
     const row = await spotlightOf(ctx, campaign._id);
-    const noAdversary = { adversaryTokenId: null, adversaryName: null };
+    const noAdversary = { adversaryTokenId: null, adversaryName: null, adversaryPortrait: null };
     const none = { holder: null, since: null, reason: null, rollBy: null, reactionsOnly: false, canMove, ...noAdversary };
     if (row === null) return none;
     const rollBy = row.rollBy === undefined ? null : await namedCharacter(ctx, campaign, row.rollBy);

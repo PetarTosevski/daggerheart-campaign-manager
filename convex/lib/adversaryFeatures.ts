@@ -35,6 +35,7 @@ import type { QueryCtx } from "../_generated/server";
 import { assertRunning, loadEncounter, loadInstance, MAX_INSTANCES } from "./encounters";
 import { campaignFearState } from "./fear";
 import { rules } from "./rolls";
+import { adversaryDefeated } from "./spotlight";
 import type { AdversaryBefore } from "./validators/actionLog";
 import type { HitRider } from "./validators/combatRequests";
 import { MAX_INSTANCE_FEATURE_USES, type InstanceEffect, type InstanceFeatureUse } from "./validators/encounters";
@@ -348,12 +349,16 @@ export function runOrThrow(effect: AdversaryFeatureEffect, context: AdversaryRun
 
 export type Loaded = { instance: Doc<"encounterAdversaries">; encounter: Doc<"encounters">; block: Block; others: Doc<"encounterAdversaries">[] };
 
-/** The acting instance of a running encounter, its stat block and the encounter's instances; refusals as `useFeature`. */
+/**
+ * The acting instance of a running encounter, its stat block and the encounter's instances; refusals as `useFeature`.
+ * ADVERSARY_DEFEATED for a defeated adversary (marked defeated or every HP marked, `adversaryDefeated`; bead dcm-j5ft):
+ * it can't act at all, so neither its attack nor a feature runs, and none of them spotlights it.
+ */
 export async function loadActor(ctx: QueryCtx, campaign: Doc<"campaigns">, instanceId: string): Promise<Loaded> {
   const instance = await loadInstance(ctx, campaign._id, instanceId);
   const encounter = await loadEncounter(ctx, campaign._id, instance.encounterId);
   assertRunning(encounter);
-  if (instance.defeated) throw appError("ADVERSARY_FEATURE_UNAVAILABLE", "A defeated adversary can't act.");
+  if (adversaryDefeated(instance)) throw appError("ADVERSARY_DEFEATED", "A defeated adversary can't act.");
   const block = await blockOf(ctx, instance);
   if (block === null) throw appError("ADVERSARY_FEATURE_UNAVAILABLE", "Its stat block is gone.");
   const others = await ctx.db

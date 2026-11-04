@@ -11,6 +11,8 @@ export const spotlightMessages = {
   /**
    * The GM spotlighting a defeated adversary (every HP marked, or marked defeated; a Minion group with every Minion
    * gone): `combatSpotlight.gmTake` free or for Fear, and the tracker's `encounterTracking.spotlight` (user 2026-11-04).
+   * Also a defeated adversary's own attack or feature (`adversaryActions`, `featureAsk`; bead dcm-j5ft): it can't act,
+   * so it is never spotlit by one ("A defeated adversary can't act.").
    */
   ADVERSARY_DEFEATED: "A defeated adversary can't take the spotlight.",
 } as const satisfies Record<string, string>;

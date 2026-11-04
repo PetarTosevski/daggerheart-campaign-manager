@@ -282,9 +282,24 @@ describe("adversaryActions.useFeature", () => {
     expect(row.payload.kind === "incomingHit" && row.payload.riders).toEqual([{ kind: "condition", condition: "restrained" }]);
     await a.respond(a.player, r.targets[0]!.requestId!, a.w.characterA, { kind: "noArmor" });
     expect((await a.sheet()).conditions).toContain("restrained");
-    // A defeated adversary can't act.
+    // A defeated adversary can't act (dcm-j5ft): ADVERSARY_DEFEATED, and nothing is spent or spotlit.
     await a.t.run((ctx) => ctx.db.patch(a.bear, { defeated: true }));
-    expect(await code(a.feature(a.bear, "Bite", [a.w.characterA]))).toBe("ADVERSARY_FEATURE_UNAVAILABLE");
+    expect(await code(a.feature(a.bear, "Bite", [a.w.characterA]))).toBe("ADVERSARY_DEFEATED");
+  });
+
+  it("a defeated adversary's attack or feature is refused before it is spotlit (dcm-j5ft)", async () => {
+    const a = await arena();
+    const before = await a.instance(a.bear);
+    // Every HP marked counts as defeated, even before the flag is set.
+    await a.t.run((ctx) => ctx.db.patch(a.bear, { hp: before.stats.hpMax }));
+    expect(await code(a.attack(a.bear, [a.w.characterA]))).toBe("ADVERSARY_DEFEATED");
+    expect(await code(a.feature(a.bear, "Bite", [a.w.characterA]))).toBe("ADVERSARY_DEFEATED");
+    const after = await a.instance(a.bear);
+    expect({ spotlights: after.spotlights, spotlightTurn: after.spotlightTurn, stress: after.stress }).toEqual({
+      spotlights: before.spotlights,
+      spotlightTurn: before.spotlightTurn,
+      stress: before.stress,
+    });
   });
 });
 

@@ -38,11 +38,11 @@ async function scene() {
     if (time === null) await ctx.db.insert("campaignTime", { campaignId, week: 1, cycle: "DAY", cycleDay: 3 });
     else await ctx.db.patch("campaignTime", time._id, { cycle: "DAY", cycleDay: 3 });
     const encounterId = await ctx.db.insert("encounters", { campaignId, name: "Ambush", status: "running", pcs: 2, adjustments: [], gmTurn: 1, createdAt: now, updatedAt: now, startedAt: now });
-    const adversary = async (label: string, x: number) => {
+    const adversary = async (label: string, x: number, srdId = "bear") => {
       const adversaryId = await ctx.db.insert("encounterAdversaries", {
         campaignId,
         encounterId,
-        source: { kind: "srd", adversaryId: "bear" },
+        source: { kind: "srd", adversaryId: srdId },
         label,
         order: x,
         summoned: false,
@@ -58,7 +58,7 @@ async function scene() {
       });
       return ctx.db.insert("combatTokens", { campaignId, mapId, size: 1, light: "none", revealedTo: [], ref: { kind: "adversary", adversaryId }, side: "enemy", x, y: 10, face: Math.PI });
     };
-    return { lieutenant: await adversary("Jagged Knife Lieutenant", 10), bandit: await adversary("Jagged Knife Bandit", 14) };
+    return { lieutenant: await adversary("Jagged Knife Lieutenant", 10, "jagged-knife-lieutenant"), bandit:await adversary("Jagged Knife Bandit", 14) };
   });
   const fog = (x: number, mark: "hide" | "erase") => gm.mutation(api.combatVision.paintFog, { campaignId, mapId, squares: [10 * W + x], mark });
   const view = async () => {
@@ -133,6 +133,38 @@ describe("spotlight-seen: which adversary holds the spotlight, for players", () 
     expect(await s.markSeen([])).toEqual({ added: 0 });
     expect(await s.rows()).toEqual([]);
     expect(SEEN_MAX).toBeGreaterThanOrEqual(MAX_COMBAT_TOKENS);
+  });
+
+  it("seen is party knowledge (dcm-onze): player A sees, player B with no token learns the name and portrait; nobody saw, neither does", async () => {
+    const s = await scene();
+    const bId = await s.t.run((ctx) => ctx.db.insert("users", { email: "b@example.com", emailVerificationTime: 1 }));
+    const b = s.t.withIdentity({ subject: `${bId}|session` });
+    await b.mutation(api.members.joinByCode, { code: await s.gm.mutation(api.members.rotateJoinCode, { campaignId: s.campaignId }) });
+    const stateB = () => b.query(api.combatSpotlight.state, { campaignId: s.campaignId });
+    const none = { adversaryTokenId: null, adversaryName: null, adversaryPortrait: null };
+
+    // Nobody saw it yet: neither player learns it (the card reads "The GM has the spotlight"); the GM does.
+    await s.spotlight(s.lieutenant);
+    const gmState = await s.state("gm");
+    expect(gmState).toMatchObject({ adversaryTokenId: s.lieutenant, adversaryName: "Jagged Knife Lieutenant" });
+    expect(await s.state("player")).toMatchObject(none);
+    expect(await stateB()).toMatchObject(none);
+
+    // Player A's character sees it: B, who has no token on the map, learns it from the party.
+    expect(await s.markSeen([s.lieutenant])).toEqual({ added: 1 });
+    expect(gmState.adversaryPortrait).toBe("/adversary-art/jagged-knife-lieutenant.webp");
+    const named = { adversaryTokenId: s.lieutenant, adversaryName: "Jagged Knife Lieutenant", adversaryPortrait: gmState.adversaryPortrait };
+    expect(await stateB()).toMatchObject(named);
+    expect(await s.state("player")).toMatchObject(named);
+    // The Bandit nobody saw stays unknown to both.
+    await s.spotlight(s.bandit);
+    expect(await stateB()).toMatchObject(none);
+    expect(await s.state("player")).toMatchObject(none);
+
+    // End scene clears it for the whole party.
+    await s.spotlight(s.lieutenant);
+    await s.gm.mutation(api.combatScenes.end, { campaignId: s.campaignId, idempotencyKey: key() });
+    expect(await stateB()).toMatchObject(none);
   });
 
   it("a PC holding the spotlight sends no adversary to anyone", async () => {

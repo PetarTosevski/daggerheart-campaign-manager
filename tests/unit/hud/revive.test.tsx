@@ -190,7 +190,7 @@ describe("ReviveBox", () => {
 });
 
 describe("the spotlight popover's defeated row (GM)", () => {
-  const state: SpotlightState = { holder: null, since: null, reason: null, rollBy: null, reactionsOnly: false, canMove: true, adversaryTokenId: null, adversaryName: null };
+  const state: SpotlightState = { holder: null, since: null, reason: null, rollBy: null, reactionsOnly: false, canMove: true, adversaryTokenId: null, adversaryName: null, adversaryPortrait: null };
   const tokens = [
     { _id: "tk-lt", kind: "adversary", instanceId: "i-lt", tracked: true, name: "Lieutenant", sub: "Leader", stats: { hp: 2, hpMax: 6, down: false } },
     { _id: OGRE.tokenId, kind: "adversary", instanceId: OGRE.instanceId, tracked: true, name: "Cave Ogre", sub: "Solo", stats: { hp: 8, hpMax: 8, down: true } },

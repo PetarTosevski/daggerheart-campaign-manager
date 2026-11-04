@@ -106,25 +106,14 @@ export function SpotlightHandBack({ campaignId, characterId, name }: { campaignI
 }
 
 /**
- * The tokens the player's map draws besides PCs (`combatVision.playerView`'s `others`, the subscription the vision layer
- * already holds): an empty set without a map or a token of theirs on it, null while loading or when skipped.
+ * The players' GM's-turn card (board Main 'GM's turn' `.gms`) and the reactions note (`.gmh`). Dcm-onze (user
+ * 2026-11-04): when the GM spotlighted an adversary the party saw this scene, the card names it by its full label
+ * ("Jagged Knife Lieutenant has the spotlight", `gmTurnTitle`), whether this player's map draws it or not.
  */
-function useDrawnOthers(campaignId: Id<"campaigns">, on: boolean): ReadonlySet<string> | null {
-  const view = useQuery(api.combatVision.playerView, on ? { campaignId } : "skip");
-  if (view === undefined) return null;
-  return new Set(view.state === "ok" ? view.others.map((t) => t._id) : []);
-}
-
-/**
- * The players' GM's-turn card (board Main 'GM's turn' `.gms`) and the reactions note (`.gmh`). User 2026-11-03: when
- * the GM spotlighted an adversary the party saw this scene and the map does not draw it now, the card names it
- * ("Jagged Knife Lieutenant has the spotlight", `gmTurnTitle`); a drawn one is lit on the map instead.
- */
-export function GmTurnNotice({ campaignId, state }: { campaignId: Id<"campaigns">; state: SpotlightState }): ReactNode {
-  const drawn = useDrawnOthers(campaignId, state.reactionsOnly && state.adversaryTokenId !== null);
+export function GmTurnNotice({ state }: { state: SpotlightState }): ReactNode {
   if (!state.reactionsOnly) return null;
   const reason = spotlightReasonLine(state);
-  const title = gmTurnTitle(state, drawn);
+  const title = gmTurnTitle(state);
   return (
     <>
       <div className="hud-spot-card" role="status" data-testid="hud-gm-turn">
@@ -154,5 +143,5 @@ function SpotlightPart({ campaignId }: { campaignId: Id<"campaigns"> }) {
     );
   }
   if (state.canMove) return null;
-  return <GmTurnNotice campaignId={campaignId} state={state} />;
+  return <GmTurnNotice state={state} />;
 }

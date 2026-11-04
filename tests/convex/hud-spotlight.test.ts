@@ -54,7 +54,7 @@ const rows = (w: World) => w.t.run((ctx) => ctx.db.query("combatSpotlight").coll
 describe("combatSpotlight.state", () => {
   it("starts with nobody in particular: no holder, no reactions-only, only the GM may move it", async () => {
     const w = await buildWorld();
-    const none = { holder: null, since: null, reason: null, rollBy: null, reactionsOnly: false, adversaryTokenId: null, adversaryName: null };
+    const none = { holder: null, since: null, reason: null, rollBy: null, reactionsOnly: false, adversaryTokenId: null, adversaryName: null, adversaryPortrait: null };
     expect(await state(w, "gm")).toEqual({ ...none, canMove: true });
     expect(await state(w, "player")).toEqual({ ...none, canMove: false });
     expect(await state(w, "grantee")).toEqual({ ...none, canMove: false });

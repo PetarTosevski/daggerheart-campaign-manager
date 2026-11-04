@@ -2,7 +2,7 @@ import type { FunctionReturnType } from "convex/server";
 
 import type { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
-import type { TokenArt } from "../token/model";
+import { artOf, type TokenArt } from "../token/model";
 
 /**
  * The spotlight's display copy and optimistic updates (plan combat-hud H1.S; boards Main 'GM's turn', CmpTokens,
@@ -63,8 +63,9 @@ export function afterTake(state: SpotlightState, now: number, tokenId?: Id<"comb
       reactionsOnly: state.reactionsOnly,
       canMove: state.canMove,
       adversaryTokenId: tokenId,
-      // The server names it; until then the card keeps its generic line.
+      // The server names it (and sends its portrait); until then the card keeps its generic line.
       adversaryName: null,
+      adversaryPortrait: null,
     };
   }
   return {
@@ -76,25 +77,35 @@ export function afterTake(state: SpotlightState, now: number, tokenId?: Id<"comb
     reactionsOnly: !state.canMove,
     adversaryTokenId: tokenId ?? null,
     adversaryName: null,
+    adversaryPortrait: null,
   };
 }
 
 /** The state right after `combatSpotlight.handTo` (the GM's optimistic update). */
 export function afterHandTo(state: SpotlightState, pc: { characterId: Id<"characters">; name: string }, now: number): SpotlightState {
   if (state.holder?.kind === "pc" && state.holder.characterId === pc.characterId) return state;
-  return { ...state, holder: { kind: "pc", ...pc }, since: now, reason: "handedBack", rollBy: null, reactionsOnly: false, adversaryTokenId: null, adversaryName: null };
+  return {
+    ...state,
+    holder: { kind: "pc", ...pc },
+    since: now,
+    reason: "handedBack",
+    rollBy: null,
+    reactionsOnly: false,
+    adversaryTokenId: null,
+    adversaryName: null,
+    adversaryPortrait: null,
+  };
 }
 
 /**
- * The players' GM's-turn card title (user 2026-11-03): "<adversary> has the spotlight" when the GM spotlighted an
- * adversary the party saw this scene but the player's map does not draw now (hidden, fogged, out of sight), so no light
- * shows whose turn it is; otherwise "The GM has the spotlight" (a drawn token stands in its light instead). The server
- * sends a player the name only for an adversary the party saw this scene (`combatSpotlight.state`).
+ * The players' GM's-turn card title (dcm-onze, user 2026-11-04): "<full label> has the spotlight" (the encounter
+ * instance's label, the name its token shows, e.g. "Jagged Knife Lieutenant has the spotlight") whenever the GM
+ * spotlighted an adversary the party saw this scene, drawn on this player's map or not; otherwise "The GM has the
+ * spotlight". The server sends a player the name only for an adversary the party saw (`combatSpotlight.state`).
  */
-export function gmTurnTitle(state: Pick<SpotlightState, "adversaryTokenId" | "adversaryName">, drawn: ReadonlySet<string> | null): string {
+export function gmTurnTitle(state: Pick<SpotlightState, "adversaryTokenId" | "adversaryName">): string {
   const { adversaryTokenId: tokenId, adversaryName: name } = state;
-  if (tokenId === null || name === null || drawn === null || drawn.has(tokenId)) return "The GM has the spotlight";
-  return `${name} has the spotlight`;
+  return tokenId === null || name === null ? "The GM has the spotlight" : `${name} has the spotlight`;
 }
 
 /**
@@ -137,7 +148,7 @@ export function isLit(lit: SpotlightLit | null, token: { _id: string; kind?: str
 /** The state right after `combatSpotlight.handToParty` (the GM's optimistic update, H9.S): nobody chosen. */
 export function afterHandToParty(state: SpotlightState): SpotlightState {
   if (state.holder === null) return state;
-  return { ...state, holder: null, since: null, reason: null, rollBy: null, reactionsOnly: false, adversaryTokenId: null, adversaryName: null };
+  return { ...state, holder: null, since: null, reason: null, rollBy: null, reactionsOnly: false, adversaryTokenId: null, adversaryName: null, adversaryPortrait: null };
 }
 
 /**
@@ -180,13 +191,14 @@ export function takePay(state: Pick<SpotlightState, "holder">, chosen: "free" | 
 /**
  * The adversary holder's portrait on the disc (user 2026-11-04: "If an adversary has a picture please use it on the
  * spotlight icon as well"): the art its map token draws (`artOf` over the token's portrait), looked up by token id in
- * `art` (from the GM's `combatTokensReads.list`, or a player's `combatVision.playerView` `others`). Only for an
- * adversary holder: while the disc says "The GM" (an adversary the party has not seen) it shows no portrait, so none can
+ * `art` (the GM's adversary rows), else `portrait`, the state's `adversaryPortrait` (a player's: seen is party
+ * knowledge, dcm-onze, so it does not depend on what this player's map draws). Only for an adversary holder: while the
+ * disc says "The GM" (an adversary the party has not seen) it shows no portrait, and the server sends none, so none can
  * leak. Null draws the initial.
  */
-export function holderArt(holder: DiscHolder, art: ReadonlyMap<string, TokenArt | null> | undefined): TokenArt | null {
-  if (holder.kind !== "adversary" || art === undefined) return null;
-  return art.get(holder.tokenId) ?? null;
+export function holderArt(holder: DiscHolder, art: ReadonlyMap<string, TokenArt | null> | undefined, portrait: string | null): TokenArt | null {
+  if (holder.kind !== "adversary") return null;
+  return art?.get(holder.tokenId) ?? (portrait === null ? null : artOf({ kind: "url", url: portrait }));
 }
 
 /**
