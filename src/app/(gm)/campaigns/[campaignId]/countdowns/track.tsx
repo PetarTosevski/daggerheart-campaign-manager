@@ -4,6 +4,7 @@ import type { OptimisticLocalStore } from "convex/browser";
 import { useMutation } from "convex/react";
 import { useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import { COUNTDOWN_STEP_TEXT_MAX, validateSteps, type CountdownRestMode, type CountdownStep } from "@/lib/domain/countdowns/advanced";
 import { cn } from "@/lib/utils";
@@ -164,22 +165,18 @@ export function RestModeSwitch({ value, onChange, disabled }: { value: Countdown
   return (
     <div role="group" aria-label="On long rest" className="flex flex-wrap items-center gap-2">
       <span className="text-[13px] text-[#9fb2b6]">On long rest</span>
-      <span className="flex overflow-hidden rounded-full border border-[#33444a]">
+      <span className="flex gap-1.5">
         {REST_MODES.map((m) => (
-          <button
+          <BrandButton
             key={m.mode}
-            type="button"
+            variant="neutral"
             aria-pressed={value === m.mode}
             title={m.hint}
             disabled={disabled}
             onClick={() => onChange(m.mode)}
-            className={cn(
-              "min-h-11 cursor-pointer px-3 text-[13px] disabled:cursor-not-allowed disabled:opacity-50",
-              value === m.mode ? "bg-brand font-semibold text-brand-ink" : "bg-transparent text-[#c9d2cf]",
-            )}
           >
             {m.label}
-          </button>
+          </BrandButton>
         ))}
       </span>
     </div>
@@ -296,14 +293,9 @@ export function LongTermTrack({
                 onChange={(restMode) => void setRestMode.fire({ campaignId, countdownId: countdown._id, restMode })}
               />
             )}
-            <button
-              type="button"
-              aria-expanded={editing}
-              onClick={() => setEditing((e) => !e)}
-              className="min-h-11 cursor-pointer text-[13px] text-[#c9d2cf] underline-offset-4 hover:underline"
-            >
+            <BrandButton variant="neutral" aria-expanded={editing} onClick={() => setEditing((e) => !e)}>
               {editing ? "Done editing" : "Edit steps"}
-            </button>
+            </BrandButton>
           </div>
           {countdown.armed === false ? (
             <p className="m-0 text-[12px] text-[#8fa3a8]">Not armed: long rests leave it alone. Switch Armed on to follow long rests.</p>

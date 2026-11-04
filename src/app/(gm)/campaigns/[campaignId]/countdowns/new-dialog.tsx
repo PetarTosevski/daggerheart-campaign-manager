@@ -20,7 +20,7 @@ import { useIntent } from "@/lib/use-intent";
 import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
 
-import { BTN, CATEGORY_LABEL } from "./shared";
+import { CATEGORY_LABEL } from "./shared";
 import { RestModeSwitch, StepEditor } from "./track";
 import { choiceOf, VisibilityPicker, visibilityOf } from "./visibility";
 
@@ -359,10 +359,10 @@ export function NewCountdownDialog({ campaignId, open, onClose }: { campaignId: 
           </p>
         ) : null}
         <div className="flex justify-end gap-2.5">
-          <button type="button" className={BTN} onClick={close}>
+          <BrandButton variant="cancel" onClick={close}>
             Cancel
-          </button>
-          <BrandButton type="submit" variant="solid" disabled={create.pending}>
+          </BrandButton>
+          <BrandButton type="submit" variant="confirm" disabled={create.pending}>
             {rolled && !longTerm ? `Roll ${formula}` : `Start at ${start}`}
           </BrandButton>
         </div>

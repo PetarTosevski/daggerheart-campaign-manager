@@ -4,6 +4,7 @@ import { useMutation } from "convex/react";
 import { Eye, EyeOff } from "lucide-react";
 import { useState, type CSSProperties } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import {
   applyCountdownAction,
@@ -23,7 +24,7 @@ import type { Id } from "../../../../../../convex/_generated/dataModel";
 import type { CountdownView } from "../../../../../../convex/countdowns";
 
 import { advancementLine } from "./new-dialog";
-import { BTN, CATEGORY_LABEL } from "./shared";
+import { CATEGORY_LABEL } from "./shared";
 import { LongTermTrack, useKeyed } from "./track";
 import { Hidden, VISIBILITY_OPTIONS, VisibilityForm } from "./visibility";
 
@@ -210,19 +211,17 @@ export function CountdownCard({ countdown, campaignId, readOnly }: { countdown: 
             {countdown.category === null ? <Hidden field="category" /> : <span>{CATEGORY_LABEL[countdown.category]}</span>}
             {paused ? <span className="rounded-full border border-[#4a5a60] px-2 py-0.5 text-[#c9d2cf]">Paused</span> : null}
             {readOnly ? null : (
-              <button
-                type="button"
+              <BrandButton
+                variant="neutral"
+                size="sm"
                 data-preset={preset}
                 aria-label={`Who can see ${name}: ${badge}`}
                 onClick={() => setEditingVisibility(true)}
-                className={cn(
-                  "flex min-h-7 cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 tracking-[0.08em] normal-case hover:border-brand",
-                  preset === "public" ? "border-[#33444a] text-[#9fb2b6]" : "border-[#7a5a2e] text-[#e6c88a]",
-                )}
+                className="normal-case"
               >
                 <BadgeIcon className="size-3.5" aria-hidden="true" />
                 {badge}
-              </button>
+              </BrandButton>
             )}
           </span>
         </div>
@@ -261,8 +260,8 @@ export function CountdownCard({ countdown, campaignId, readOnly }: { countdown: 
             </span>
           ) : null}
           {canArm ? (
-            <button
-              type="button"
+            <BrandButton
+              variant="neutral"
               aria-pressed={armed}
               aria-label={longTerm ? `Armed: ${name} follows long rests` : `Armed: ${name} advances on action rolls`}
               title={
@@ -275,7 +274,7 @@ export function CountdownCard({ countdown, campaignId, readOnly }: { countdown: 
                     : "Not armed: only your ticks move it. Click to arm."
               }
               onClick={() => void arm.fire({ campaignId, countdownId, armed: !armed })}
-              className="ml-auto flex min-h-11 cursor-pointer items-center gap-2 rounded-full px-2 text-[13px] text-[#c9d2cf]"
+              className="ml-auto"
             >
               <span
                 aria-hidden="true"
@@ -292,7 +291,7 @@ export function CountdownCard({ countdown, campaignId, readOnly }: { countdown: 
                 />
               </span>
               Armed
-            </button>
+            </BrandButton>
           ) : null}
         </div>
       ) : null}
@@ -355,32 +354,29 @@ export function CountdownCard({ countdown, campaignId, readOnly }: { countdown: 
 
       {readOnly || !progress ? null : (
         <div className="grid grid-cols-[1.2fr_1.4fr_1fr] gap-2">
-          <button
-            type="button"
-            className={cn(BTN, "border-transparent font-bold text-brand-ink")}
-            style={{ background: done ? "#5a2a2a" : "var(--brand)" }}
+          <BrandButton
+            variant="confirm"
             disabled={operate.pending || !canAdvanceCountdown(status, progress.value)}
             onClick={() => void act("advance")}
           >
             Tick −1
-          </button>
-          <button
-            type="button"
-            className={BTN}
+          </BrandButton>
+          <BrandButton
+            variant="neutral"
             aria-label={`Borrowed time: add one to ${name}`}
             disabled={operate.pending || !canReverseCountdown(status, progress.value, progress.start)}
             onClick={() => void act("reverse")}
           >
             Borrowed Time
-          </button>
+          </BrandButton>
           {paused ? (
-            <button type="button" className={BTN} disabled={operate.pending || !canResumeCountdown(status)} onClick={() => void act("resume")}>
+            <BrandButton variant="neutral" disabled={operate.pending || !canResumeCountdown(status)} onClick={() => void act("resume")}>
               Resume
-            </button>
+            </BrandButton>
           ) : (
-            <button type="button" className={BTN} disabled={operate.pending || !canPauseCountdown(status)} onClick={() => void act("pause")}>
+            <BrandButton variant="neutral" disabled={operate.pending || !canPauseCountdown(status)} onClick={() => void act("pause")}>
               Pause
-            </button>
+            </BrandButton>
           )}
         </div>
       )}
@@ -393,22 +389,17 @@ export function CountdownCard({ countdown, campaignId, readOnly }: { countdown: 
         confirmCancel ? (
           <div role="alertdialog" aria-label={`Cancel ${name}`} className="flex flex-wrap items-center gap-2 rounded-[10px] border border-danger-line bg-danger-bg px-3 py-2 text-[14px] text-[#ffd9d6]">
             <span className="flex-1">Cancel this countdown? It can’t be resumed.</span>
-            <button type="button" className={BTN} onClick={() => setConfirmCancel(false)}>
+            <BrandButton variant="cancel" size="sm" onClick={() => setConfirmCancel(false)}>
               Keep it
-            </button>
-            <button
-              type="button"
-              className="min-h-10 cursor-pointer rounded-[9px] bg-danger-solid px-3 text-[14px] font-semibold text-white disabled:opacity-50"
-              disabled={operate.pending}
-              onClick={() => void act("cancel")}
-            >
+            </BrandButton>
+            <BrandButton variant="danger" size="sm" disabled={operate.pending} onClick={() => void act("cancel")}>
               Cancel countdown
-            </button>
+            </BrandButton>
           </div>
         ) : (
-          <button type="button" className="self-end text-[13px] text-[#8fa3a8] underline-offset-4 hover:underline" onClick={() => setConfirmCancel(true)}>
+          <BrandButton variant="danger" size="sm" className="self-end" onClick={() => setConfirmCancel(true)}>
             Cancel countdown…
-          </button>
+          </BrandButton>
         )
       ) : null}
 

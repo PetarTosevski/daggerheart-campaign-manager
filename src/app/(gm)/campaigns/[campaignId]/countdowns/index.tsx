@@ -3,7 +3,7 @@
 import { useQuery } from "convex/react";
 import { useState } from "react";
 
-import { cn } from "@/lib/utils";
+import { BrandButton } from "@/components/brand/buttons";
 
 import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
@@ -12,7 +12,6 @@ import type { CountdownView } from "../../../../../../convex/countdowns";
 import { CountdownCard } from "./card";
 import { ChaseCard, NewChaseDialog } from "./chase";
 import { NewCountdownDialog } from "./new-dialog";
-import { BTN } from "./shared";
 
 type Item = { kind: "single"; countdown: CountdownView } | { kind: "chase"; party?: CountdownView; rivals?: CountdownView };
 
@@ -52,12 +51,12 @@ export function Countdowns({ campaignId, readOnly = false }: { campaignId: Id<"c
         </h2>
         {readOnly ? null : (
           <div className="flex flex-wrap gap-2">
-            <button type="button" className={cn(BTN, "min-h-11 px-4")} onClick={() => setChasing(true)}>
+            <BrandButton variant="neutral" onClick={() => setChasing(true)}>
               + New chase
-            </button>
-            <button type="button" className={cn(BTN, "min-h-11 px-4")} onClick={() => setCreating(true)}>
+            </BrandButton>
+            <BrandButton variant="confirm" onClick={() => setCreating(true)}>
               + New countdown
-            </button>
+            </BrandButton>
           </div>
         )}
       </div>
