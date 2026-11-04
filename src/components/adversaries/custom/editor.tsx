@@ -260,7 +260,7 @@ function EditorForm({
           </div>
           <p className="adx-hint">Leave a threshold blank for None. Improvised statistics for Tier {draft.tier} (Core Rulebook p. 208): attack +{improvised.modifier}, damage {improvised.damageRange}, Difficulty {improvised.difficulty}, thresholds {improvised.major}/{improvised.severe}.</p>
           <div>
-            <BrandButton variant="neutral" size="sm" onClick={() => setDraft((d) => withImprovisedStats(d, (TIERS.includes(d.tier as CustomTier) ? d.tier : 1) as CustomTier))}>
+            <BrandButton variant="neutral" ink onClick={() => setDraft((d) => withImprovisedStats(d, (TIERS.includes(d.tier as CustomTier) ? d.tier : 1) as CustomTier))}>
               Use Tier {draft.tier} improvised statistics
             </BrandButton>
           </div>
@@ -300,14 +300,14 @@ function EditorForm({
                 max={20}
                 onChange={(v) => set("experiences", draft.experiences.map((e, j) => (j === i ? { ...e, value: v ?? Number.NaN } : e)))}
               />
-              <BrandButton variant="danger" size="sm" onClick={() => set("experiences", draft.experiences.filter((_, j) => j !== i))}>
+              <BrandButton variant="danger" ink onClick={() => set("experiences", draft.experiences.filter((_, j) => j !== i))}>
                 Remove
               </BrandButton>
             </div>
           ))}
           {draft.experiences.length < 6 ? (
             <div>
-              <BrandButton variant="neutral" size="sm" onClick={() => set("experiences", [...draft.experiences, { name: "", value: 2 }])}>
+              <BrandButton variant="neutral" ink onClick={() => set("experiences", [...draft.experiences, { name: "", value: 2 }])}>
                 + Add Experience
               </BrandButton>
             </div>
@@ -337,12 +337,12 @@ function EditorForm({
                 <textarea className="adx-ta" rows={3} maxLength={2000} value={feature.text} onChange={(e) => setFeature(i, { text: e.target.value })} />
               </label>
               <div className="adx-item-tools">
-                <BrandButton variant="neutral" size="sm" icon disabled={i === 0} onClick={() => moveFeature(i, -1)} aria-label={`Move ${feature.name || "feature"} up`}>
+                <BrandButton variant="neutral" ink icon disabled={i === 0} onClick={() => moveFeature(i, -1)} aria-label={`Move ${feature.name || "feature"} up`}>
                   ↑
                 </BrandButton>
                 <BrandButton
                   variant="neutral"
-                  size="sm"
+                  ink
                   icon
                   disabled={i === draft.features.length - 1}
                   onClick={() => moveFeature(i, 1)}
@@ -350,7 +350,7 @@ function EditorForm({
                 >
                   ↓
                 </BrandButton>
-                <BrandButton variant="danger" size="sm" onClick={() => set("features", draft.features.filter((_, j) => j !== i))}>
+                <BrandButton variant="danger" ink onClick={() => set("features", draft.features.filter((_, j) => j !== i))}>
                   Remove feature
                 </BrandButton>
               </div>
@@ -358,7 +358,7 @@ function EditorForm({
           ))}
           {draft.features.length < 20 ? (
             <div>
-              <BrandButton variant="neutral" size="sm" onClick={() => set("features", [...draft.features, { name: "", kind: "passive", text: "" }])}>
+              <BrandButton variant="neutral" ink onClick={() => set("features", [...draft.features, { name: "", kind: "passive", text: "" }])}>
                 + Add feature
               </BrandButton>
             </div>
@@ -371,10 +371,10 @@ function EditorForm({
           </p>
         ) : null}
         <div className="adx-actions">
-          <BrandButton variant="cancel" onClick={onClose}>
+          <BrandButton variant="cancel" ink onClick={onClose}>
             Cancel
           </BrandButton>
-          <BrandButton type="submit" variant="confirm" disabled={create.pending || saving}>
+          <BrandButton type="submit" variant="confirm" ink disabled={create.pending || saving}>
             Save adversary
           </BrandButton>
         </div>

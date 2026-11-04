@@ -67,7 +67,7 @@ test("GLASS-G12 the GM's Plan, Log & recap, scene menu and End dialog", { tag: "
       await expectRole(gm.getByRole("button", { name: "Add", exact: true }), "neutral");
       // Q5 (a): the recap parchment keeps its ink buttons, not glass.
       const write = gm.getByRole("button", { name: /^(Write the recap|Edit recap)$/ });
-      await expect(write).toHaveClass(/\bjrr-btn\b/);
+      await expect(write).toHaveClass(/\binkb\b/);
       await expect(write).not.toHaveClass(/\bgb\b/);
       await shoot(gm, `gm-log-${w}`);
       if (w < 1100) await expectTouchTargets(gm);

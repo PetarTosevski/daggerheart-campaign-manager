@@ -98,6 +98,7 @@ export function EnvironmentFearBar({ campaignId, fear }: { campaignId: Id<"campa
       </span>
       <BrandButton
         variant="neutral"
+        ink
         aria-label="Gain 1 Fear"
         disabled={fear >= MAX_FEAR || gain.pending}
         onClick={() => void gain.fire({ campaignId, direction: "increase" })}
@@ -139,6 +140,7 @@ export function FeatureActions({
       {cost !== undefined ? (
         <BrandButton
           variant="confirm"
+          ink
           disabled={short || busy}
           aria-describedby={short ? reasonId : undefined}
           onClick={() => void actions.spendFear(environment, feature)}
@@ -147,13 +149,13 @@ export function FeatureActions({
         </BrandButton>
       ) : null}
       {countdowns.length === 1 ? (
-        <BrandButton variant="neutral" disabled={busy} onClick={() => void actions.startCountdown(environment, feature, countdowns[0])}>
+        <BrandButton variant="neutral" ink disabled={busy} onClick={() => void actions.startCountdown(environment, feature, countdowns[0])}>
           Start countdown
         </BrandButton>
       ) : (
         // Several countdowns in one feature (e.g. a Progress and a Consequence Countdown): one button each.
         countdowns.map((label) => (
-          <BrandButton key={label} variant="neutral" disabled={busy} onClick={() => void actions.startCountdown(environment, feature, label)}>
+          <BrandButton key={label} variant="neutral" ink disabled={busy} onClick={() => void actions.startCountdown(environment, feature, label)}>
             Start {label}
           </BrandButton>
         ))
@@ -175,7 +177,7 @@ export function EnvironmentStatus({ status }: { status: Status | null }) {
         {status?.text ?? ""}
       </p>
       {status?.undo ? (
-        <BrandButton variant="cancel" onClick={status.undo}>
+        <BrandButton variant="cancel" ink onClick={status.undo}>
           Undo
         </BrandButton>
       ) : null}

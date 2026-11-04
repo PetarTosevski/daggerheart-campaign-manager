@@ -33,9 +33,9 @@ const ALLOWED: Record<string, string> = {
   "src/components/party/features/": "the sheet's features panel (Q3 = a)",
   // The card face keeps its own buttons (design scope line).
   "src/app/(gm)/campaigns/[campaignId]/party/new/steps-5-9.tsx": "the wizard's domain card faces (wz-dk-btn, card face)",
-  // Q5 = a: buttons on paper keep their ink-on-paper look.
+  // Q5 = a: buttons on paper keep their ink-on-paper look. (The recap, the Lorekeeper answer card, the stat blocks and
+  // the custom adversary editor use the shared ink button, brandButton({ ink: true }), so they need no entry.)
   "src/components/notes/": "the Notes paper (Q5 = a; bj-ghost / bj-paper-btn) and its rows (bj-page-btn, bj-jl-btn)",
-  "src/components/journal/recap/index.tsx": "the recap paper (Q5 = a; jrr-btn)",
   // Text that edits in place: a row title, not an action button.
   "src/components/journal/log/index.tsx": "the log line's title that edits in place (jl-title-btn, a row)",
   "src/components/journal/session-head/index.tsx": "the session date that edits in place (js-head-date-btn, text)",
@@ -119,6 +119,8 @@ describe("button guard: no new hand-styled buttons", () => {
     expect(handStyled(`<button className="gb gb-confirm gb-wrap w-full">`)).toEqual([]);
     expect(handStyled(`<p className="trk-act-note">`)).toEqual([]);
     expect(handStyled(`<BrandButton variant="tool" className="cfg-acct-btn" />`)).toEqual([]);
+    expect(handStyled(`<BrandButton variant="confirm" ink />`)).toEqual([]);
+    expect(handStyled(`const c = "inkb inkb-main";`)).toEqual([]);
     expect(handStyled('className={`${brandButton({ variant: "tool" })} cfg-acct-btn`}')).toEqual([]);
     expect(handStyled('// the old `jr-ghost` class\nconst kind = "ghost";')).toEqual([]);
   });

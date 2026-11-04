@@ -33,8 +33,8 @@
 .env-opened-bar p { margin: 0; flex: 1 1 200px; color: var(--adv-muted); font-size: 14px; }
 .env-opened .adc-sb { max-height: none; }
 
-/* EF1: GM Fear at the top of the stat block, the actions' status line, and each feature's buttons (glass buttons:
-   Spend N Fear is the confirm, + Fear and Start countdown neutral, Undo a cancel; 44 px on touch). */
+/* EF1: GM Fear at the top of the stat block, the actions' status line, and each feature's buttons (ink on parchment,
+   bead dcm-jrju: Spend N Fear is filled ink, + Fear, Start countdown and Undo an ink outline; 44 px on touch). */
 .env-sb-top { padding: 12px 26px 8px; background: var(--adv-parch-head); border-bottom: 1px solid var(--adv-divider); }
 .env-fear { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .env-fear-label { font-family: var(--adv-font-head); font-size: 13px; letter-spacing: 0.06em; color: var(--adv-label); }
@@ -44,7 +44,7 @@
 .env-token-off { background-image: url(/design-assets/735d085e7eea18b8411e8d1f9e7162dd.png); opacity: 0.9; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5)); }
 .env-fear-n { font-family: var(--adv-font-head); font-size: 20px; font-weight: 900; color: var(--adv-kind-fear); min-width: 1.5ch; }
 .env-status-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.env-status-row > .gb { margin-top: 4px; }
+.env-status-row > .inkb { margin-top: 4px; }
 .env-status { margin: 4px 0 0; min-height: 1.4em; font-family: var(--adv-font-ui); font-size: 14px; color: var(--adv-ink); }
 .env-status:empty { margin: 0; min-height: 0; }
 .env-status-error { color: var(--adv-parch-rule); font-weight: 600; }

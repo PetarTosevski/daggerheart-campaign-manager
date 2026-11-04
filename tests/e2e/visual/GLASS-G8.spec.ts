@@ -6,7 +6,8 @@ import { ADVERSARIES } from "../../../src/lib/srd/adversaries";
 import { expectNoSeriousA11yViolations } from "../a11y";
 import { gmAndPlayer } from "../live";
 
-// Shots for docs/tasks/TASK-GLASS-G8.md (E2E_VISUAL=1): the Adversaries page's buttons as glass buttons (plan
+// Shots for docs/tasks/TASK-GLASS-G8.md (E2E_VISUAL=1): the Adversaries page's buttons as glass buttons, those on the
+// parchment stat blocks and the custom editor as ink buttons (bead dcm-jrju) (plan
 // .omc/plans/glass-buttons.yaml, G8): the Catalogue (filter chips, stat block actions, custom adversaries), the
 // Encounters builder (list, detail, Battle Points steppers, add dialog), the custom editor and the Environment tab
 // (Fear and feature actions), as the GM at 1440 x 900, 1024 x 768 and 390 x 844, and the player's GM-only panel; a
@@ -29,9 +30,15 @@ async function expectRole(button: Locator, role: string) {
   await expect(button).toHaveClass(new RegExp(`\\bgb-${role}\\b`));
 }
 
-/** On tablet and phone widths, every visible glass button inside `scope` is at least 44 px tall (and icons wide). */
+/** Bead dcm-jrju: buttons on the parchment (stat blocks, the custom editor) are ink: "main" filled, "danger" wine. */
+async function expectInk(button: Locator, tone?: "main" | "danger") {
+  await expect(button).toHaveClass(tone ? new RegExp(`\\binkb\\b.*\\binkb-${tone}\\b`) : /\binkb\b/);
+  await expect(button).not.toHaveClass(/\bgb\b/);
+}
+
+/** On tablet and phone widths, every visible glass or ink button inside `scope` is at least 44 px tall (and icons wide). */
 async function expectTouchTargets(scope: Locator) {
-  const small = await scope.locator(".gb").evaluateAll((els) =>
+  const small = await scope.locator(".gb, .inkb").evaluateAll((els) =>
     els
       .filter((el) => (el as HTMLElement).offsetParent !== null)
       .map((el) => ({ name: el.getAttribute("aria-label") ?? el.textContent?.trim() ?? "", ...el.getBoundingClientRect().toJSON() }))
@@ -95,16 +102,16 @@ test("GLASS-G8 the Adversaries page: catalogue, custom adversaries, encounters a
       await expect(gm.getByRole("heading", { level: 1, name: "Adversaries" })).toBeVisible();
       const block = gm.getByRole("complementary", { name: "Stat block" });
       const addSrd = block.getByRole("button", { name: /^Add .+ to an encounter$/ });
-      await expectRole(addSrd, "confirm");
-      await expectRole(block.getByRole("button", { name: /^Duplicate and edit / }), "neutral");
+      await expectInk(addSrd, "main");
+      await expectInk(block.getByRole("button", { name: /^Duplicate and edit / }));
       const tierAll = gm.getByRole("region", { name: "Adversary list" }).getByRole("group", { name: "Tier", exact: true }).getByRole("button", { name: "All", exact: true });
       await expectRole(tierAll, "neutral");
       await expect(tierAll).toHaveAttribute("aria-pressed", "true");
       const custom = gm.getByRole("region", { name: "Custom adversaries" });
       await expect(custom.getByRole("article", { name: "Cave Bear stat block" })).toBeVisible();
       await expectRole(custom.getByRole("button", { name: "New adversary" }), "confirm");
-      await expectRole(custom.getByRole("button", { name: "Delete" }), "danger");
-      await expectRole(custom.getByRole("button", { name: "Edit", exact: true }), "neutral");
+      await expectInk(custom.getByRole("button", { name: "Delete" }), "danger");
+      await expectInk(custom.getByRole("button", { name: "Edit", exact: true }));
       await shoot(gm, `catalogue-gm-${w}`);
       if (w < 1100) await expectTouchTargets(root);
 
@@ -139,9 +146,9 @@ test("GLASS-G8 the Adversaries page: catalogue, custom adversaries, encounters a
       await openTab(gm, "Environment");
       await gm.getByRole("region", { name: "Environment list" }).getByRole("button", { name: /^Raging River/ }).click();
       const env = gm.getByRole("complementary", { name: "Environment stat block" });
-      await expectRole(env.getByRole("button", { name: "Gain 1 Fear" }), "neutral");
-      await expectRole(env.getByRole("button", { name: "Spend 1 Fear" }).first(), "confirm");
-      await expectRole(env.getByRole("button", { name: "Start countdown" }).first(), "neutral");
+      await expectInk(env.getByRole("button", { name: "Gain 1 Fear" }));
+      await expectInk(env.getByRole("button", { name: "Spend 1 Fear" }).first(), "main");
+      await expectInk(env.getByRole("button", { name: "Start countdown" }).first());
       await shoot(gm, `environment-gm-${w}`);
       if (w < 1100) await expectTouchTargets(root);
     }
@@ -160,17 +167,17 @@ test("GLASS-G8 the Adversaries page: catalogue, custom adversaries, encounters a
     await keyboardFocus(gm, chip);
     await shoot(gm, "catalogue-gm-focus-chip", false);
     await expectNoSeriousA11yViolations(gm, { include: ".adv-main" });
-    // A focused button on the parchment: the wine focus ring.
+    // A focused button on the parchment: the ink focus ring.
     await keyboardFocus(gm, addSrd);
     await block.screenshot({ path: `${OUT}/catalogue-gm-focus-add.png` });
 
-    // The custom editor: parchment form with glass buttons, Cancel / Save adversary.
+    // The custom editor: parchment form with ink buttons, Cancel / Save adversary.
     const custom = gm.getByRole("region", { name: "Custom adversaries" });
     await custom.getByRole("button", { name: "Edit", exact: true }).click();
     const editor = gm.getByRole("dialog", { name: "Edit Cave Bear" });
-    await expectRole(editor.getByRole("button", { name: "Save adversary" }), "confirm");
-    await expectRole(editor.getByRole("button", { name: "Cancel" }), "cancel");
-    await expectRole(editor.getByRole("button", { name: "Remove feature" }).first(), "danger");
+    await expectInk(editor.getByRole("button", { name: "Save adversary" }), "main");
+    await expectInk(editor.getByRole("button", { name: "Cancel" }));
+    await expectInk(editor.getByRole("button", { name: "Remove feature" }).first(), "danger");
     await shoot(gm, "editor-gm-1440", false);
     await editor.getByRole("button", { name: "Save adversary" }).hover();
     await gm.waitForTimeout(400);
@@ -214,7 +221,7 @@ test("GLASS-G8 the Adversaries page: catalogue, custom adversaries, encounters a
     await expectNoSeriousA11yViolations(gm, { include: ".adv-main" });
     await spend.click();
     const undo = env.getByRole("button", { name: "Undo" });
-    await expectRole(undo, "cancel");
+    await expectInk(undo);
     await undo.scrollIntoViewIfNeeded();
     await env.locator(".env-sb-top").screenshot({ path: `${OUT}/environment-gm-undo.png` });
 

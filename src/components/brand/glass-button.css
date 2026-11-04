@@ -263,10 +263,18 @@
   font-size: 12.5px;
   border-radius: 10px;
 }
+/*
+ * Big buttons keep the old Cinzel capitals (user decision 2026-11-04, bead dcm-82nc): Cinzel 600, uppercase, 0.08em
+ * tracking, 15 px (the pre-glass size), same 54 px height; md and sm stay on Plex. The Combat HUD uses no lg button.
+ */
 .gb.gb-lg {
   height: 54px;
   padding: 0 26px;
-  font-size: 17px;
+  font-family: var(--font-cinzel), serif;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 .gb.gb-icon {
   width: 44px;

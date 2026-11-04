@@ -77,7 +77,7 @@ export function DuplicateAdversary({
   }
   return (
     <>
-      <BrandButton variant="neutral" size="sm" onClick={open} aria-label={`Duplicate and edit ${adversary.name}`}>
+      <BrandButton variant="neutral" ink onClick={open} aria-label={`Duplicate and edit ${adversary.name}`}>
         Duplicate &amp; edit
       </BrandButton>
       <CustomEditor
@@ -109,7 +109,7 @@ function DeleteCustom({ campaignId, custom, onDeleted }: { campaignId: Id<"campa
   }
   return (
     <>
-      <BrandButton variant="danger" size="sm" onClick={() => void click()} onBlur={() => setConfirming(false)}>
+      <BrandButton variant="danger" ink onClick={() => void click()} onBlur={() => setConfirming(false)}>
         {confirming ? "Confirm delete" : "Delete"}
       </BrandButton>
       {error ? (
@@ -205,12 +205,12 @@ export function CustomAdversaries({
                   <>
                     <CustomPill large />
                     <AddCustomToEncounter campaignId={campaignId} custom={selected} />
-                    <BrandButton variant="neutral" size="sm" onClick={() => setTarget({ mode: "edit", customId: selected._id, initial: inputOf(selected) })}>
+                    <BrandButton variant="neutral" ink onClick={() => setTarget({ mode: "edit", customId: selected._id, initial: inputOf(selected) })}>
                       Edit
                     </BrandButton>
                     <BrandButton
                       variant="neutral"
-                      size="sm"
+                      ink
                       onClick={() => setTarget({ mode: "new", initial: inputOf(selected), ...(selected.basedOn ? { basedOn: selected.basedOn } : {}) })}
                     >
                       Duplicate &amp; edit

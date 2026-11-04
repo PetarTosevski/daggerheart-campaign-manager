@@ -7,8 +7,8 @@ import { useMutation, useQuery } from "convex/react";
 import { Pencil, Users } from "lucide-react";
 import { useId, useState, type FocusEvent, type KeyboardEvent } from "react";
 
+import { brandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
-import { cn } from "@/lib/utils";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
@@ -33,9 +33,9 @@ import { Card, Parchment } from "../ui";
 
 /**
  * The recap paper keeps ink-on-paper buttons (plan glass-buttons Q5 a: dark glass looks out of place on parchment):
- * the main action is filled ink, the others an ink outline, like GM prep's Edit.
+ * the main action is filled ink, the others an ink outline (brandButton ink, src/components/brand/ink-button.css).
  */
-const btn = (main = false) => cn("jrr-btn", main && "jrr-btn-main");
+const btn = (main = false) => brandButton({ variant: main ? "confirm" : "neutral", ink: true });
 
 /** The text the server stores for a write: trimmed, empty clears it (as `cleanText`). */
 const stored = (text: string) => text.trim() || undefined;

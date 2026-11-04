@@ -119,7 +119,7 @@ export function AddToEncounter({ campaignId, adversary }: { campaignId: Id<"camp
   const [open, setOpen] = useState(false);
   return (
     <>
-      <BrandButton variant="confirm" size="sm" onClick={() => setOpen(true)} aria-label={`Add ${adversary.name} to an encounter`}>
+      <BrandButton variant="confirm" ink onClick={() => setOpen(true)} aria-label={`Add ${adversary.name} to an encounter`}>
         + Add to encounter
       </BrandButton>
       <AddAdversaryDialog campaignId={campaignId} open={open} onClose={() => setOpen(false)} adversaryId={adversary.id} />

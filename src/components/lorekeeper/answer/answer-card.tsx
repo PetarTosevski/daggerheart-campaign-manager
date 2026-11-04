@@ -115,7 +115,7 @@ function ErrorCard({ answer, onRetry }: AnswerCardProps) {
         <p>{text}</p>
         {onRetry ? (
           <div className="lk-acts">
-            <BrandButton variant="neutral" size="sm" onClick={onRetry}>
+            <BrandButton variant="neutral" ink onClick={onRetry}>
               {TRY_AGAIN_LABEL}
             </BrandButton>
           </div>
@@ -240,19 +240,19 @@ function Actions({ campaignId, answer, question, titles, isGm, mine, sentToGm, o
           switch (action) {
             case "copy":
               return (
-                <BrandButton key={action} variant="neutral" size="sm" onClick={copy}>
+                <BrandButton key={action} variant="neutral" ink onClick={copy}>
                   {ACTION_LABELS.copy}
                 </BrandButton>
               );
             case "openInBook":
               return (
-                <BrandButton key={action} variant="neutral" size="sm" onClick={onOpenBook}>
+                <BrandButton key={action} variant="neutral" ink onClick={onOpenBook}>
                   {ACTION_LABELS.openInBook}
                 </BrandButton>
               );
             case "pinRuling":
               return (
-                <BrandButton key={action} variant="neutral" size="sm" onClick={() => setPinning(true)}>
+                <BrandButton key={action} variant="neutral" ink onClick={() => setPinning(true)}>
                   {ACTION_LABELS.pinRuling}
                 </BrandButton>
               );
@@ -261,7 +261,7 @@ function Actions({ campaignId, answer, question, titles, isGm, mine, sentToGm, o
                 <BrandButton
                   key={action}
                   variant="neutral"
-                  size="sm"
+                  ink
                   disabled={sentToGm}
                   onClick={async () => {
                     setError(null);
@@ -277,7 +277,7 @@ function Actions({ campaignId, answer, question, titles, isGm, mine, sentToGm, o
               );
             case "showOnMap":
               return (
-                <Link key={action} href={`/campaigns/${campaignId}/combat-map`} className={brandButton({ variant: "neutral", size: "sm", className: "no-underline" })}>
+                <Link key={action} href={`/campaigns/${campaignId}/combat-map`} className={brandButton({ variant: "neutral", ink: true })}>
                   {ACTION_LABELS.showOnMap}
                 </Link>
               );

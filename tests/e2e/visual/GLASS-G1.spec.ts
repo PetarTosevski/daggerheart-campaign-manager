@@ -149,6 +149,9 @@ test("GLASS-G1 new campaign, a frame's intro and a join link", { tag: "@visual" 
     const choose = page.getByRole("button", { name: "Choose this Frame" });
     await role(choose, "confirm");
     await expect(choose).toHaveClass(/\bgb-lg\b/);
+    // Bead dcm-82nc: big buttons letter in Cinzel capitals.
+    await expect(choose).toHaveCSS("text-transform", "uppercase");
+    await expect(choose).toHaveCSS("font-family", /Cinzel/i);
     await role(page.getByRole("button", { name: "Overview" }), "neutral");
     await role(page.getByRole("button", { name: "View full art" }), "neutral");
     await glassTouchTargets(page, viewport.width);

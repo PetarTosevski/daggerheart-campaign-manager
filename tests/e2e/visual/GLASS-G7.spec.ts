@@ -7,7 +7,8 @@ import { gmAndPlayer } from "../live";
 // Plan glass-buttons G7 (docs/tasks/TASK-GLASS-G7.md; E2E_VISUAL=1): the Lorekeeper page as the GM and as a player at
 // 1440 x 900, 1024 x 768 and 390 x 844, plus its dialogs, the Conversations menu and the drawer. Ask = confirm,
 // Stop / Cancel / Got it / the drawer's ✕ = cancel, Unpin / delete a conversation = danger, Pin a ruling / Dismiss on a
-// player's Ask-the-GM = allow / deny, answer-card actions, suggestions and switches = neutral, the phones' 'Library &
+// player's Ask-the-GM = allow / deny, suggestions and switches = neutral (answer-card actions are ink on the parchment,
+// bead dcm-jrju), the phones' 'Library &
 // rulings' fold = tool. A hovered confirm and a keyboard-focused button pass axe; small buttons are 44 px on touch.
 // `pnpm e2e:setup` turns the fake model on (answers to 'Critical hits' and 'Do Hexes stack?').
 
@@ -89,7 +90,9 @@ test("GLASS-G7 the Lorekeeper as the GM and as a player", { tag: "@visual" }, as
         const web = composer(page).getByRole("group", { name: "Internet search" }).getByRole("button");
         await expect(web.first()).toHaveClass(/\bgb-neutral\b/);
         const copy = answers(page).filter({ hasText: "Rules unclear" }).getByRole("button", { name: "Copy" });
-        await expect(copy).toHaveClass(/\bgb-neutral\b/);
+        // Bead dcm-jrju: the answer card's actions are ink on the parchment, not glass.
+        await expect(copy).toHaveClass(/\binkb\b/);
+        await expect(copy).not.toHaveClass(/\bgb\b/);
         await expect(column(page).getByRole("button", { name: "Conversations" })).toHaveClass(/\bgb-neutral\b/);
 
         await openFold(page);
@@ -104,7 +107,7 @@ test("GLASS-G7 the Lorekeeper as the GM and as a player", { tag: "@visual" }, as
         }
 
         if (viewport.width <= 1100) {
-          // The touch breakpoint: small glass buttons are 44 px tall.
+          // The touch breakpoint: small glass buttons and ink buttons are 44 px tall.
           for (const button of [suggestion, copy, column(page).getByRole("button", { name: "Conversations" })]) {
             expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
           }
@@ -116,7 +119,7 @@ test("GLASS-G7 the Lorekeeper as the GM and as a player", { tag: "@visual" }, as
       const ask = composer(page).getByRole("button", { name: "Ask", exact: true });
       expect(await rim(ask)).toContain(confirmRim);
 
-      // A hovered confirm passes axe; then a keyboard-focused answer action (neutral glass on the parchment).
+      // A hovered confirm passes axe; then a keyboard-focused answer action (ink on the parchment).
       await ask.hover();
       await page.waitForTimeout(400);
       await composer(page).screenshot({ path: `${OUT}/composer-${who}-hover-ask.png` });

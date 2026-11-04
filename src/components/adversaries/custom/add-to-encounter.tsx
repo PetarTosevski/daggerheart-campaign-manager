@@ -25,7 +25,7 @@ export function AddCustomToEncounter({ campaignId, custom }: { campaignId: Id<"c
   const [open, setOpen] = useState(false);
   return (
     <>
-      <BrandButton variant="confirm" size="sm" onClick={() => setOpen(true)} aria-label={`Add ${custom.name} to an encounter`}>
+      <BrandButton variant="confirm" ink onClick={() => setOpen(true)} aria-label={`Add ${custom.name} to an encounter`}>
         + Add to encounter
       </BrandButton>
       <Modal open={open} onClose={() => setOpen(false)} title="Add to encounter">

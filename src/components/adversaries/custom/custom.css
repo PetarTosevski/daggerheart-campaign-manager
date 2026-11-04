@@ -24,12 +24,11 @@
 }
 .adx-pill-lg { font-size: 12px; padding: 3px 10px; }
 
-/* Glass buttons on parchment (the stat block, the editor form): a wine focus ring instead of the pale gold one, which
-   disappears on the paper, and an opaque disabled glass (the translucent one turns muddy grey on the paper). */
-.adc-sb .gb:focus-visible,
-.adx-form .gb:focus-visible { outline-color: var(--adv-parch-rule); }
-.adc-sb .gb:disabled,
-.adx-form .gb:disabled { background: var(--adv-page); }
+/* The stat block's and the editor's own buttons are ink on parchment (brandButton ink, bead dcm-jrju). A glass button
+   that still lands on a stat block (one passed in by another surface) gets a wine focus ring instead of the pale gold
+   one, which disappears on the paper, and an opaque disabled glass (the translucent one turns muddy grey on it). */
+.adc-sb .gb:focus-visible { outline-color: var(--adv-parch-rule); }
+.adc-sb .gb:disabled { background: var(--adv-page); }
 .adx-error {
   margin: 0;
   padding: 10px 12px;
@@ -98,5 +97,5 @@
 @media (max-width: 480px) {
   .adx-form { padding: 14px; }
   .adx-exp { grid-template-columns: minmax(0, 1fr) 72px; }
-  .adx-exp .gb { grid-column: 1 / -1; }
+  .adx-exp .inkb { grid-column: 1 / -1; }
 }

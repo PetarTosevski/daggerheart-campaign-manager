@@ -2,6 +2,9 @@
 // button (src/components/brand/glass-button.css); the variant is the role (GZ dropped the legacy names), the size the glass size, and
 // every labelled button may wrap. The viewer helpers give portalled content the campaign's data-viewer, and Modal's
 // close ✕ is a round cancel icon button.
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -120,5 +123,51 @@ describe("Modal", () => {
     expect(classes(close.className)).toEqual(expect.arrayContaining(["gb", "gb-cancel", "gb-icon", "gb-round"]));
     fireEvent.click(close);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("glass-button.css: big buttons letter in Cinzel capitals (bead dcm-82nc)", () => {
+  const css = readFileSync(join(__dirname, "../../../src/components/brand/glass-button.css"), "utf8");
+  const block = (selector: string) => css.match(new RegExp(`\\n${selector.replace(/\./g, "\\.")} \\{([^}]*)\\}`))?.[1] ?? "";
+
+  it("lg is Cinzel 600, uppercase, 0.08em, still 54 px tall", () => {
+    const lg = block(".gb.gb-lg");
+    expect(lg).toMatch(/font-family: var\(--font-cinzel\), serif;/);
+    expect(lg).toMatch(/font-weight: 600;/);
+    expect(lg).toMatch(/letter-spacing: 0\.08em;/);
+    expect(lg).toMatch(/text-transform: uppercase;/);
+    expect(lg).toMatch(/height: 54px;/);
+  });
+
+  it("md (.gb) and sm stay on Plex", () => {
+    expect(block(".gb")).toMatch(/font: 600 14px\/1 var\(--gb-font\);/);
+    expect(block(".gb.gb-sm")).not.toMatch(/font-family|text-transform/);
+  });
+});
+
+describe("brandButton ink: ink on parchment (bead dcm-jrju)", () => {
+  it("confirm / allow fill, danger / deny take the wine, the rest an outline; no glass classes", () => {
+    expect(classes(brandButton({ variant: "confirm", ink: true }))).toEqual(["inkb", "inkb-main"]);
+    expect(classes(brandButton({ variant: "allow", ink: true }))).toEqual(["inkb", "inkb-main"]);
+    expect(classes(brandButton({ variant: "danger", ink: true }))).toEqual(["inkb", "inkb-danger"]);
+    expect(classes(brandButton({ variant: "deny", ink: true }))).toEqual(["inkb", "inkb-danger"]);
+    for (const v of ["neutral", "cancel", "tool"] as const) expect(classes(brandButton({ variant: v, ink: true }))).toEqual(["inkb"]);
+    expect(classes(brandButton({ ink: true }))).toEqual(["inkb"]);
+  });
+
+  it("ignores size and round, keeps icon and layout classes", () => {
+    expect(classes(brandButton({ variant: "neutral", size: "sm", round: true, ink: true }))).toEqual(["inkb"]);
+    expect(classes(brandButton({ variant: "neutral", icon: true, ink: true, className: "ml-auto" }))).toEqual(["inkb", "inkb-icon", "ml-auto"]);
+  });
+
+  it("BrandButton passes ink through", () => {
+    render(
+      <BrandButton variant="confirm" ink>
+        Save recap
+      </BrandButton>,
+    );
+    const button = screen.getByRole("button", { name: "Save recap" });
+    expect(classes(button.className)).toEqual(["inkb", "inkb-main"]);
+    expect(button).toHaveAttribute("type", "button");
   });
 });
