@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { Modal } from "@/components/brand/modal";
 import { SlotBoundary } from "@/components/party/session/boundary";
-import { endDialogText, endReportLines, useWitherChoice, WitherChoiceField } from "@/components/sessions/live";
+import { endDialogText, endReportLines, useWitherChoice, WitherChoiceField } from "@/components/journal/end-session";
 import { WITHER_POOL } from "@/lib/domain/wither";
 import { frameHasMechanic } from "@/lib/frames";
 import { useIntent } from "@/lib/use-intent";

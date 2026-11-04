@@ -1,5 +1,0 @@
-/*
- * The Notes styles moved next to NotesBody (src/components/notes/notes.css, Journal JN). This file stays only for
- * notes/error.tsx, which still imports './notes.css'; JX1 / JX2 delete the old route and this file with it.
- */
-@import "../../../../../components/notes/notes.css";

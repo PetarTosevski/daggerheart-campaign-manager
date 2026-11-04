@@ -176,7 +176,7 @@ describe("session wrap-up", () => {
       nextDate: null,
       live: null,
       lastPlayed: null,
-      lastSessionText: "No sessions played yet. Write a recap in a session's Wrap-up stage and it will appear here.",
+      lastSessionText: "No sessions played yet. Write a recap in the Journal's Log & recap and it will appear here.",
     });
     const s1 = await env.create();
     const s2 = await env.create();
@@ -192,7 +192,7 @@ describe("session wrap-up", () => {
       nextDate: "2026-10-24",
       live: null,
       lastPlayed: { sessionId: s1, n: 1, recap: null },
-      lastSessionText: "Session 1 was played, but no recap was written. Add one in the session's Wrap-up.",
+      lastSessionText: "Session 1 was played, but no recap was written. Add one in the Journal's Log & recap.",
     });
     expect(JSON.stringify(d)).not.toContain("Secret plans");
     await env.gm.mutation(api.sessionWrap.setRecap, { campaignId: env.campaignId, sessionId: s1, recap: "They met the Warden." });

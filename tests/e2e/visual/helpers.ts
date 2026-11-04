@@ -147,9 +147,10 @@ export async function openCombatMap(page: Page, frame = "witherwild") {
 }
 
 /**
- * Signs in as the test GM, starts a campaign of `frame` through the UI and opens its Sessions page (D10,
- * .omc/plans/d10-sessions.yaml), with `query` (for example `?s=<id>&stage=play`) when given. Returns a Convex client
- * for seeding, the campaign id and name, and the page URL (without the query).
+ * Signs in as the test GM, starts a campaign of `frame` through the UI and opens its Journal on the Sessions sub-tab
+ * (plan .omc/plans/journal.yaml; the old Sessions page is gone since Journal JX2), with `query` (for example
+ * `?s=<id>&sv=log`) when given. Returns a Convex client for seeding, the campaign id and name, and the Journal URL
+ * (without the query).
  */
 export async function openSessions(page: Page, { frame = "witherwild", query = "" }: { frame?: string; query?: string } = {}) {
   await signInAsTestGm(page);
@@ -161,10 +162,36 @@ export async function openSessions(page: Page, { frame = "witherwild", query = "
   await page.getByRole("button", { name: "Start campaign" }).last().click();
   await expect(page.getByRole("heading", { level: 1, name: campaignName })).toBeVisible();
   const campaignId = new URL(page.url()).pathname.split("/")[2] as Id<"campaigns">;
-  const url = `/campaigns/${campaignId}/sessions`;
+  const url = `/campaigns/${campaignId}/journal`;
   await page.goto(`${url}${query}`);
-  await expect(page.getByRole("heading", { level: 1, name: "Sessions" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Journal" })).toBeVisible();
   return { client: await convexAs(page), campaignId, campaignName, url };
+}
+
+/** The Journal header's live chip ('Session N · live', with End session for the GM). */
+export const journalLiveChip = (page: Page) => page.getByTestId("journal-live-chip");
+
+/** The Journal header's Start / End report (a polite status under the header actions); `.locator("p")` gives its lines. */
+export const journalReport = (page: Page) => page.locator(".jh-report");
+
+/**
+ * The GM starts a session from the Journal header (on the Journal page): 'Start session N' (the selected or newest
+ * planned session; without one the server creates the next), then the confirm. The page opens its Log & recap.
+ */
+export async function startFromJournal(page: Page) {
+  await page.getByRole("button", { name: /^Start session \d+$/ }).click();
+  await page.getByRole("dialog", { name: /^Start session \d+\?$/ }).getByRole("button", { name: "Start session", exact: true }).click();
+  await expect(journalLiveChip(page)).toBeVisible();
+  await expect(page).toHaveURL(/sv=log/);
+}
+
+/** The GM ends the live session from the Journal header's live chip (`convertWither` sets the dialog's Wither choice). */
+export async function endFromJournal(page: Page, { convertWither }: { convertWither?: boolean } = {}) {
+  await journalLiveChip(page).getByRole("button", { name: "End session" }).click();
+  const dialog = page.getByRole("dialog", { name: "End the session?" });
+  if (convertWither !== undefined) await dialog.getByRole("checkbox", { name: /Turn Wither tokens into Fear/ }).setChecked(convertWither);
+  await dialog.getByRole("button", { name: "End session", exact: true }).click();
+  await expect(journalLiveChip(page)).toHaveCount(0);
 }
 
 /** The sheet's page tab ("Character Sheet", "Story & Advancement", "Domains") or a Domains sub-tab. */

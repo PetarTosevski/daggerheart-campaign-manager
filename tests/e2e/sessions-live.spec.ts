@@ -3,11 +3,14 @@ import { expect, test, type Page } from "@playwright/test";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { cardsForDomains, getClass } from "../../src/lib/srd/index";
-import { bardDraft, expectNoHorizontalScroll, openSessions } from "./visual/helpers";
+import { bardDraft, endFromJournal, expectNoHorizontalScroll, journalLiveChip, journalReport, openSessions } from "./visual/helpers";
 
-// D10 S3: the live card (B2, B6, B7, B10, K3, K4). The GM starts Session 1 from its card (a Seraph's Prayer Dice
-// appear on the sheet and in the start report, which is the session log's line), starts Session 2 (Session 1 becomes
-// Played), and ends Session 2 with a Wither token on a sheet (GM Fear rises; 'Session ended.').
+// D10 S3 in the Journal (JH; old live card removed in Journal JX2): the GM selects Session 1 and starts it from the
+// header ('Start session 1', B2, B10, K3: a Seraph's Prayer Dice appear on the sheet and in the start report), the list
+// marks it Live and the page opens its Log & recap; the GM ends it with a Wither token on a sheet (K4: GM Fear rises;
+// 'Session ended.') and the list marks it Played. Then 'Start session 2' names the next planned one.
+// Starting a session while another runs (B6) is not offered by the header (End first); the server path stays covered
+// by tests/convex/sessions.test.ts.
 
 /** A level-1 Seraph (Divine Wielder, Strength 2): two Prayer Dice at session start (Spellcast trait, K3). */
 function seraphDraft(name: string) {
@@ -24,57 +27,36 @@ function seraphDraft(name: string) {
   };
 }
 
-const list = (page: Page) => page.getByRole("complementary", { name: "Session list" });
-const liveCard = (page: Page) => page.getByRole("region", { name: "Live session" });
+const list = (page: Page) => page.getByRole("complementary", { name: "All sessions" }).getByRole("list", { name: "Sessions" });
 
-async function newSession(page: Page) {
-  await page.getByRole("button", { name: "+ New session" }).click();
-  await expect(page).toHaveURL(/stage=prep$/);
-}
-
-test("the GM starts and ends sessions from the live card; the party sync runs and the stage follows", async ({ page }) => {
+test("the GM starts and ends a session from the Journal header; the party sync runs and the list follows", async ({ page }) => {
   const { client, campaignId, url } = await openSessions(page);
   const { characterId } = await client.mutation(api.characters.create, { campaignId, draft: seraphDraft("Seren"), idempotencyKey: crypto.randomUUID() });
-  await newSession(page);
-  await newSession(page);
-  const items = list(page).getByRole("button");
-  await expect(items).toHaveCount(2);
+  const key = () => crypto.randomUUID();
+  const { sessionId: first } = await client.mutation(api.sessionRecords.create, { campaignId, idempotencyKey: key() });
+  await client.mutation(api.sessionRecords.create, { campaignId, idempotencyKey: key() });
+  await expect(list(page).getByRole("button")).toHaveCount(2);
 
-  // Session 1: not running yet; Start asks first, then switches to Play and reports the Prayer Dice.
-  await items.nth(1).click();
-  await expect(liveCard(page)).toContainText("Not running");
-  await expect(liveCard(page)).toContainText("Start the session when you sit down at the table.");
-  await liveCard(page).getByRole("button", { name: "Start session" }).click();
-  const startDialog = page.getByRole("dialog", { name: "Start the session?" });
-  await startDialog.getByRole("button", { name: "Start session" }).click();
-  await expect(page).toHaveURL(/stage=play/);
-  await expect(page.getByRole("tab", { name: "Play" })).toHaveAttribute("aria-selected", "true");
-  await expect(liveCard(page)).toContainText("Session in progress");
-  await expect(liveCard(page)).toContainText(/Live since \d\d:\d\d\./);
-  await expect(liveCard(page).getByRole("status")).toHaveText(/^Session started\. Seren rolled Prayer Dice: [1-4], [1-4]\.$/);
-  await expect(items.nth(1).locator(".ss-chip")).toHaveText("Live");
-  await expect(liveCard(page).getByRole("switch", { name: /Allow extra characters this session/ })).not.toBeChecked();
-  const sessionsUrl = page.url();
+  // Session 1 selected: 'Start session 1' asks first, then opens its Log & recap and reports the Prayer Dice.
+  await list(page).getByRole("button", { name: /^Session 1: / }).click();
+  await page.getByRole("button", { name: "Start session 1" }).click();
+  const startDialog = page.getByRole("dialog", { name: "Start session 1?" });
+  await expect(startDialog).toContainText("Start-of-session features are given out");
+  await startDialog.getByRole("button", { name: "Start session", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`s=${first}`));
+  await expect(page).toHaveURL(/sv=log/);
+  await expect(page.getByRole("tablist", { name: "Session view" }).getByRole("tab", { name: "Log & recap" })).toHaveAttribute("aria-selected", "true");
+  await expect(journalLiveChip(page)).toContainText("Session 1 · live");
+  await expect(journalReport(page)).toHaveText(/^Session started\. Seren rolled Prayer Dice: [1-4], [1-4]\.$/);
+  await expect(list(page).getByRole("button", { name: /^Session 1: .+, Live$/ })).toBeVisible();
+  const sessionUrl = page.url();
 
   // The Seraph's sheet holds the two Prayer Dice.
   await page.goto(`/campaigns/${campaignId}/party/${characterId}`);
   const held = page.getByRole("list", { name: "Held dice" }).getByRole("listitem");
   await expect(held).toHaveCount(2);
   await expect(held.first()).toHaveText(/^Prayer d4: [1-4]$/);
-  await page.goto(sessionsUrl);
-
-  // Session 2 while Session 1 runs: the card warns, Start ends Session 1 first (B6).
-  await items.nth(0).click();
-  await expect(liveCard(page)).toContainText("Session 1 is still running. Starting this one ends it.");
-  await liveCard(page).getByRole("button", { name: "Start session" }).click();
-  await expect(startDialog).toContainText("Session 1 is still running. Starting this one ends it.");
-  await startDialog.getByRole("button", { name: "Start session" }).click();
-  const report = liveCard(page).getByRole("status").locator("p");
-  await expect(report.nth(0)).toHaveText("Session 1 ended first.");
-  await expect(report.nth(1)).toHaveText("Seren lost 2 unspent dice.");
-  await expect(report.nth(2)).toHaveText(/^Session started\. Seren rolled Prayer Dice: [1-4], [1-4]\.$/);
-  await expect(items.nth(1).locator(".ss-chip")).toHaveText("Played");
-  await expect(items.nth(0).locator(".ss-chip")).toHaveText("Live");
+  await page.goto(sessionUrl);
 
   // A Wither token on the sheet (Witherwild): Severe Withered damage, until the Fear Die leaves a token (CB 261).
   let tokens = 0;
@@ -84,25 +66,22 @@ test("the GM starts and ends sessions from the live card; the party sync runs an
   }
   expect(tokens).toBeGreaterThan(0);
 
-  // End: asks first, switches to Wrap-up, converts the tokens to GM Fear (K4) and Session 2 is Played.
-  await liveCard(page).getByRole("button", { name: "End session" }).click();
-  const endDialog = page.getByRole("dialog", { name: "End the session?" });
-  await endDialog.getByRole("button", { name: "End session" }).click();
-  await expect(page).toHaveURL(/stage=wrap/);
-  await expect(page.getByRole("tab", { name: "Wrap-up" })).toHaveAttribute("aria-selected", "true");
-  await expect(liveCard(page).getByRole("status")).toContainText(`Session ended. ${tokens} Wither token${tokens === 1 ? "" : "s"} → +${tokens} Fear.`);
-  await expect(liveCard(page)).toContainText("This session has been played. Starting it again re-rolls Prayer Dice and refreshes Rally.");
-  await expect(items.nth(0).locator(".ss-chip")).toHaveText("Played");
+  // End: asks first, converts the tokens to GM Fear (K4) and Session 1 is Played; Start now names Session 2.
+  await endFromJournal(page);
+  await expect(journalReport(page)).toContainText(`Session ended. ${tokens} Wither token${tokens === 1 ? "" : "s"} → +${tokens} Fear.`);
+  await expect(list(page).getByRole("button", { name: /^Session 1: / })).not.toHaveAccessibleName(/(Live|Planned)$/);
+  await expect(page.getByRole("button", { name: "Start session 2" })).toBeVisible();
 
   await page.goto(`/campaigns/${campaignId}`);
   await expect(page.getByRole("button", { name: `Fear ${tokens} of 12` })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: `Fear ${tokens + 1} of 12` })).toHaveAttribute("aria-pressed", "false");
 
-  // Phone: the card stacks, the button is a 44 px target, no horizontal scroll.
+  // Phone: the Start button is a 44 px target, no horizontal scroll.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(url);
-  await expect(liveCard(page).getByRole("button", { name: "Start session" })).toBeVisible();
-  const box = await liveCard(page).getByRole("button", { name: "Start session" }).boundingBox();
+  const start = page.getByRole("button", { name: "Start session 2" });
+  await expect(start).toBeVisible();
+  const box = await start.boundingBox();
   expect(box!.height).toBeGreaterThanOrEqual(44);
   await expectNoHorizontalScroll(page);
 });

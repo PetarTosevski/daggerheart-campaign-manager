@@ -8,12 +8,13 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { cardsForDomains, getClass } from "../../src/lib/srd";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { signInAsTestGm } from "./fixtures";
+import { endFromJournal, journalReport, startFromJournal } from "./visual/helpers";
 
 // Plan session-features F4: one browser flow through a whole session with all four features (K1-K4, U1-U9, Q1), at
 // 1440x900 and 1024x768. A Hope & Fear Witherwild campaign; the GM plays Pip (Halfling Warrior), Bryn (Call of the
 // Slayer Warrior) and Mira (Moon Witch); a player who joined by code plays Kai (Halfling, Seaborne Warrior).
 //
-// Real APIs throughout: the GM starts and ends the session in the live card, rolls come through rolls.manualRoll
+// Real APIs throughout: the GM starts and ends the session from the Journal header, rolls come through rolls.manualRoll
 // (fixed dice) or the dice box (server dice), the Slayer Die is stored and spent in the dice box, the Tide token is
 // placed by rolls and spent in the player's dice box, the Tag Team is started by the GM and picked by the player (U9),
 // the New Moon negates Minor damage in the damage calculator, the bump is the Lunar Phases button, and the End is
@@ -106,7 +107,6 @@ async function campaignWithPlayer(page: Page, browser: Browser, viewport: { widt
 }
 
 const diceBox = (page: Page) => page.getByRole("region", { name: "Dice", exact: true });
-const liveCard = (page: Page) => page.getByRole("region", { name: "Live session" });
 const chips = (page: Page, name: string) => page.getByRole("article", { name }).getByRole("list", { name: "Session features" });
 
 for (const viewport of [
@@ -134,13 +134,10 @@ for (const viewport of [
       const before = await hopes();
 
       // ---- Start (K1, U1, K4, U6): two active Halflings give every active PC 2 Hope, capped; Mira's moon die is rolled.
-      await page.goto(`/campaigns/${campaignId}/sessions`);
-      await page.getByRole("button", { name: "+ New session" }).click();
-      await expect(page).toHaveURL(/stage=prep$/);
-      const playUrl = page.url().replace(/stage=prep$/, "stage=play");
-      await liveCard(page).getByRole("button", { name: "Start session" }).click();
-      await page.getByRole("dialog", { name: "Start the session?" }).getByRole("button", { name: "Start session" }).click();
-      const report = liveCard(page).getByRole("status").locator("p");
+      await page.goto(`/campaigns/${campaignId}/journal`);
+      await startFromJournal(page);
+      const playUrl = page.url();
+      const report = journalReport(page).locator("p");
       await expect(report.nth(0)).toHaveText("Session started.");
       await expect(report.nth(1)).toHaveText("Luckbringer (Pip, Kai): everyone gains 2 Hope.");
       await expect(report.nth(2)).toHaveText(/^Mira's moon die: [1-6] \((New|Waxing|Full|Waning): .+\)\.$/);
@@ -148,9 +145,9 @@ for (const viewport of [
       const rolled = (await sheetOf(mira)).sessionFeatures?.moonDie;
       expect(rolled).toBeGreaterThanOrEqual(1);
       expect(rolled).toBeLessThanOrEqual(6);
-      // The session log stamps the same notes after 'Session started.'.
+      // The Journal's session log stamps the same notes after 'Session started.'.
       await page.goto(playUrl);
-      const log = page.getByRole("region", { name: "Session log" }).getByRole("list", { name: "Log entries, newest first" }).getByRole("listitem");
+      const log = page.getByRole("region", { name: "Session log" }).getByRole("listitem");
       await expect(log.filter({ hasText: "Session started." }).filter({ hasText: "Luckbringer (Pip, Kai): everyone gains 2 Hope" }).filter({ hasText: `Mira's moon die: ${rolled} (` })).toHaveCount(1);
 
       // ---- Lunar Phases (U6, U7): the chip and the section show the rolled die.
@@ -282,9 +279,8 @@ for (const viewport of [
       // ---- End (K2, K3, U8): Slayer Dice -> Hope, Tide tokens cleared, the moon die ends; the report lists it.
       const preEnd = await hopes();
       await page.goto(playUrl);
-      await liveCard(page).getByRole("button", { name: "End session" }).click();
-      await page.getByRole("dialog", { name: "End the session?" }).getByRole("button", { name: "End session" }).click();
-      const status = liveCard(page).getByRole("status");
+      await endFromJournal(page);
+      const status = journalReport(page);
       await expect(report.nth(0)).toHaveText("Session ended.");
       const brynGain = Math.min(6, preEnd[1]! + 1) - preEnd[1]!;
       await expect(status).toContainText(`Bryn cleared 1 Slayer Die: +${brynGain} Hope.`);

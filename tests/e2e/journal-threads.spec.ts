@@ -78,12 +78,11 @@ test.describe("Threads raised", () => {
     await client.mutation(api.notesEntries.add, { campaignId, page: seeded.gmPage, kind: "task", text: "Find the bell-ringer" });
     await expect(rows(gm)).toHaveCount(3);
 
-    // Axe on this card only: the page's empty recap line (JR, `.jrr-text.jrr-empty`, #8a6d3b on parchment) fails
-    // color-contrast, which is JR's to fix (docs/tasks/TASK-JOURNAL-JTh.md).
+    // Axe on the whole page (the recap line's contrast is fixed, ccd41063).
     for (const viewport of VIEWPORTS) {
       await gm.setViewportSize(viewport);
       await expect(card(gm)).toBeVisible();
-      await expectNoSeriousA11yViolations(gm, { include: ".jrth" });
+      await expectNoSeriousA11yViolations(gm);
       await expectFitsViewport(gm);
     }
     await gm.setViewportSize(VIEWPORTS[0]);
@@ -103,7 +102,7 @@ test.describe("Threads raised", () => {
     await expect(rows(player)).toHaveCount(1);
     await expect(rows(player).first()).toContainText(PLAYER_TASK);
     await expect(card(player)).not.toContainText(SNIPER);
-    await expectNoSeriousA11yViolations(player, { include: ".jrth" });
+    await expectNoSeriousA11yViolations(player);
 
     await rows(player).first().getByRole("button", { name: /^In Notes/ }).click();
     await expect(player).toHaveURL(new RegExp(`[?&]page=${seeded.playerPage}(&|$)`));

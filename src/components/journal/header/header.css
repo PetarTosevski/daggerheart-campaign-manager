@@ -110,7 +110,7 @@
   cursor: pointer;
 }
 .jh-switch input,
-.jh-dialog .ss-live-wither input {
+.jh-dialog .jr-wither input {
   width: 20px;
   height: 20px;
   flex: none;
@@ -230,7 +230,7 @@
   font-size: 16px;
   color: #c9d2cf;
 }
-.jh-dialog .ss-live-wither {
+.jh-dialog .jr-wither {
   display: flex;
   gap: 10px;
   align-items: flex-start;

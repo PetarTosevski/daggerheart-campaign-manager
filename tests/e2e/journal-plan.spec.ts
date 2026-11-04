@@ -54,7 +54,7 @@ test("GM: the design's scenes, states and GM prep; axe at 1440 and 390", async (
   const { gm } = table;
   await gm.setViewportSize(VIEWPORTS[0]);
   await openJournal(gm, table);
-  await expect(plan(gm).getByRole("list", { name: "Planned scenes" }).getByRole("listitem")).toHaveCount(4);
+  await expect(plan(gm).getByRole("listitem", { name: /^Scene \d+$/ })).toHaveCount(4);
   for (const [i, s] of JOURNAL_SCENES.entries()) {
     await expect(scene(gm, i + 1).getByRole("textbox", { name: `Scene ${i + 1} title` })).toHaveValue(s.title);
     await expect(scene(gm, i + 1).getByRole("textbox", { name: `Scene ${i + 1} description` })).toHaveValue(s.text);
@@ -123,7 +123,7 @@ test("GM: add a scene, edit it in place, play it, mark it done, remove it", asyn
   await expect(scene(gm, 4).getByText("Next")).toBeVisible();
 
   await pick(gm, 5, "Remove scene");
-  await expect(plan(gm).getByRole("list", { name: "Planned scenes" }).getByRole("listitem")).toHaveCount(4);
+  await expect(plan(gm).getByRole("listitem", { name: /^Scene \d+$/ })).toHaveCount(4);
 
   // A Combat scene plays from the Combat Map: no 'Play this scene' in its menu.
   await pick(gm, 3, "Back to planned");

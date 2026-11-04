@@ -11,10 +11,6 @@ import { openJournal, seedJournal, type JournalTable } from "./journal/helpers";
 // a PC on the Combat Map and the bar grows; Reset zeroes the bars. Players (Q5) see neither card. Axe and no sideways
 // scroll at 1440x900 and 390x844.
 
-// axe on JT's own two cards: JR's recap text (.jrr-text) fails color-contrast on this page today,
-// reported to the orchestrator.
-const MY_CARDS = [".jt-tally", ".jt-spot"];
-
 const VIEWPORTS = [
   { width: 1440, height: 900 },
   { width: 390, height: 844 },
@@ -74,7 +70,7 @@ test("tally: Fear and a critical roll raise the tiles live; players see no tally
     await gm.setViewportSize(viewport);
     await expect(tallyOf(gm)).toBeVisible();
     await expectFitsViewport(gm);
-    await expectNoSeriousA11yViolations(gm, { include: MY_CARDS });
+    await expectNoSeriousA11yViolations(gm);
   }
   await gm.setViewportSize(VIEWPORTS[0]);
 });
@@ -103,7 +99,7 @@ test("spotlight: handing it to a PC on the Combat Map grows the bar live; Reset 
 
   await expect(bar(gm, "Brannoc")).toHaveAttribute("aria-label", "Brannoc: 1 spotlight moment");
   await expect(gm.getByText("Moss, Vex and Oriel have had the least spotlight this session.")).toBeVisible();
-  await expectNoSeriousA11yViolations(gm, { include: MY_CARDS });
+  await expectNoSeriousA11yViolations(gm);
 
   await spotOf(gm).getByRole("button", { name: "Reset" }).click();
   await expect(bar(gm, "Brannoc")).toHaveAttribute("aria-label", "Brannoc: 0 spotlight moments");

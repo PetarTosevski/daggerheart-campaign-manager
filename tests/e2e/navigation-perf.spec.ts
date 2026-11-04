@@ -74,7 +74,7 @@ test("campaign tabs show their page or the loading skeleton within 100 ms; revis
   await newCampaign(page);
   const nav = page.getByRole("navigation", { name: "Campaign sections" });
   const tabs = (await nav.getByRole("link").allTextContents()).map((t) => t.trim());
-  expect(tabs).toHaveLength(9);
+  expect(tabs).toHaveLength(8);
 
   // Let the nav's prefetches finish.
   await settled();

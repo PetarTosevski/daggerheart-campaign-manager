@@ -180,7 +180,7 @@ test("D10 S7: the hero session line, Start Session, the Last Session card and th
   // Nothing yet: the board's fallbacks (B9), an empty Wither panel (B12), and no temporary Session card.
   await expect(hero.getByTestId("hero-session")).toHaveText("No sessions yet");
   await expect(hero.getByTestId("hero-next-session")).toHaveText("Next session not scheduled");
-  await expect(last.getByTestId("last-session-text")).toHaveText("No sessions played yet. Write a recap in a session's Wrap-up stage and it will appear here.");
+  await expect(last.getByTestId("last-session-text")).toHaveText("No sessions played yet. Write a recap in the Journal's Log & recap and it will appear here.");
   await expect(last.getByRole("link", { name: "Open the Journal" })).toHaveAttribute("href", `/campaigns/${campaignId}/journal`);
   await expect(wither.getByTestId("wither-panel-count")).toHaveText("0 on sheets · 20 in pool");
   await expect(page.getByRole("heading", { name: "Session", exact: true })).toHaveCount(0);
@@ -205,7 +205,7 @@ test("D10 S7: the hero session line, Start Session, the Last Session card and th
   await expect(wither.getByRole("status")).toHaveText("Session ended.");
   await expect(hero.getByRole("button", { name: "Start Session", exact: true })).toBeVisible();
   await expect(hero.getByTestId("hero-session")).toHaveText("Session 1");
-  await expect(last.getByTestId("last-session-text")).toHaveText("Session 1 was played, but no recap was written. Add one in the session's Wrap-up.");
+  await expect(last.getByTestId("last-session-text")).toHaveText("Session 1 was played, but no recap was written. Add one in the Journal's Log & recap.");
 
   // A recap and a dated planned session reach the card and the hero.
   const sessionId = sessionUrl.searchParams.get("s")!;

@@ -1,0 +1,15 @@
+/* The End dialog's Wither choice (house rule, user 2026-10-20): Journal header and dashboard Wither panel. */
+.jr-wither {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  min-height: 44px;
+  cursor: pointer;
+}
+.jr-wither input {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  margin-top: 2px;
+  accent-color: var(--jr-acc, auto);
+}

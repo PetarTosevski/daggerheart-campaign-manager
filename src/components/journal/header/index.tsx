@@ -11,7 +11,7 @@ import { useOpenTome } from "@/app/(gm)/campaigns/[campaignId]/campaign-shell";
 import { brandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 // The live helpers stay in the old Sessions folder until JX2 moves them (plan journal.yaml, JH: imported, not copied).
-import { endDialogText, endReportLines, startReportLines, useWitherChoice, WitherChoiceField } from "@/components/sessions/live";
+import { endDialogText, endReportLines, startReportLines, useWitherChoice, WitherChoiceField } from "@/components/journal/end-session";
 import { errorMessage } from "@/lib/convex-errors";
 import { useIntent } from "@/lib/use-intent";
 import { cn } from "@/lib/utils";
