@@ -143,6 +143,16 @@ export const usageValidator = v.object({
 export type AnswerUsage = Infer<typeof usageValidator>;
 
 /**
+ * How `caps.reserve` let a question through (config AD6, Q20 a; absent = normally, under the limits):
+ * - `owner`: the app owner, never capped (later passes are booked without a check);
+ * - `gmOnly`: past the monthly spend limit with "GMs only", a GM asking up to the 120% ceiling (later passes too);
+ * - `short`: past the limit with "Shorter answers": Sonnet only, half the length, no stronger-model retry, no
+ *   internet pass.
+ */
+export const reservationModeValidator = v.union(v.literal("owner"), v.literal("gmOnly"), v.literal("short"));
+export type ReservationMode = Infer<typeof reservationModeValidator>;
+
+/**
  * The worst-case cost `caps.reserve` booked for an answer, with the counter periods it went to, so the final patch
  * (or the stale-run sweep) can `caps.settle` the same counters.
  */
@@ -152,6 +162,8 @@ export const reservationValidator = v.object({
   day: v.string(),
   /** UTC month "YYYY-MM" of the campaign and deployment counters. */
   month: v.string(),
+  /** Config AD6: how the question was let through; absent = normally. */
+  mode: v.optional(reservationModeValidator),
 });
 export type Reservation = Infer<typeof reservationValidator>;
 

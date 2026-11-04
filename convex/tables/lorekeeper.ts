@@ -132,8 +132,8 @@ export const lorekeeperTables = {
   /**
    * Cost counters (Q9, CD14), apart from the documents many queries read (CD10). One row per counter and period:
    * kind "user" (userId, UTC day "YYYY-MM-DD"), "campaign" (campaignId, UTC month "YYYY-MM") or "deployment"
-   * (month). Ids are fields, not encoded keys (CD6). Campaign rows go with the campaign; every row expires after
-   * 13 months.
+   * (month). Ids are fields, not encoded keys (CD6). User rows also count the day's internet passes (config AD6).
+   * Campaign rows go with the campaign; every row expires after 13 months.
    */
   lorekeeperUsage: defineTable({
     kind: usageKindValidator,
@@ -143,6 +143,8 @@ export const lorekeeperTables = {
     questions: v.number(),
     /** US dollars × 1,000,000: reservations plus settled costs. */
     costMicros: v.number(),
+    /** "user" rows only (config AD6): internet passes booked that day; absent = 0. */
+    webSearches: v.optional(v.number()),
     updatedAt: v.number(),
   })
     .index("by_user_period", ["userId", "period"])

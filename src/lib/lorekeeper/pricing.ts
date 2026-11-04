@@ -50,6 +50,8 @@ export const WEB_SEARCH_MICROS = (WEB_SEARCH_USD_PER_1000 / 1000) * 1_000_000;
 
 /** Default answer length cap (analysis 5.1). */
 export const DEFAULT_MAX_TOKENS = 2000;
+/** "Shorter answers" past the monthly spend limit (config AD6, Q20 a): half the answer length. */
+export const SHORT_MAX_TOKENS = DEFAULT_MAX_TOKENS / 2;
 /** Worst-case input tokens of one question: system + ~8k excerpts + history + context, with headroom. */
 export const RESERVE_INPUT_TOKENS = 20_000;
 

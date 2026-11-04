@@ -87,17 +87,28 @@ const mine = (w: World, who: keyof World["callers"], day = usageDay(NOW), month 
   w.callers[who].query(api.lorekeeperUsage.mine, { campaignId: w.campaignId, day, month });
 
 describe("caps limits", () => {
-  it("defaults to 40 questions, $50 per campaign and $150 server-wide", () => {
-    expect(capLimits()).toEqual({ dailyQuestions: 40, campaignMonthlyMicros: 50_000_000, deploymentMonthlyMicros: 150_000_000 });
+  useAllowlist(EMAILS);
+
+  it("defaults to 40 questions, 20 internet searches, $50 per campaign and $150 server-wide, pausing at the limit", async () => {
+    const w = await setup();
+    expect(await w.t.run((ctx) => capLimits(ctx, w.campaignId))).toEqual({
+      dailyQuestions: 40,
+      dailyWebSearches: 20,
+      campaignMonthlyMicros: 50_000_000,
+      deploymentMonthlyMicros: 150_000_000,
+      atLimit: "pause",
+    });
   });
 
-  it("reads the env vars in the call, and ignores values that are not non-negative numbers", () => {
+  it("reads the env vars in the call, and ignores values that are not non-negative numbers", async () => {
+    const w = await setup();
+    const limits = () => w.t.run((ctx) => capLimits(ctx, w.campaignId));
     process.env.LOREKEEPER_DAILY_QUESTIONS = "5";
     process.env.LOREKEEPER_CAMPAIGN_MONTHLY_USD = "12.5";
     process.env.LOREKEEPER_MONTHLY_USD = "-3";
-    expect(capLimits()).toEqual({ dailyQuestions: 5, campaignMonthlyMicros: 12_500_000, deploymentMonthlyMicros: 150_000_000 });
+    expect(await limits()).toMatchObject({ dailyQuestions: 5, campaignMonthlyMicros: 12_500_000, deploymentMonthlyMicros: 150_000_000 });
     process.env.LOREKEEPER_DAILY_QUESTIONS = "lots";
-    expect(capLimits().dailyQuestions).toBe(40);
+    expect((await limits()).dailyQuestions).toBe(40);
   });
 });
 
@@ -261,11 +272,12 @@ describe("lorekeeperUsage.mine", () => {
 
   it("shows the caller's own questions left today and the budgets as booleans", async () => {
     const w = await setup();
-    expect(await mine(w, "p1")).toEqual({ questionsLeft: 40, campaignCapReached: false, deploymentCapReached: false });
+    const fresh = { questionsLeft: 40, webSearchesLeft: 20, campaignCapReached: false, deploymentCapReached: false, shortAnswers: false };
+    expect(await mine(w, "p1")).toEqual(fresh);
     await w.ask("p1");
     await w.ask("p1");
     await w.ask("p2");
-    expect(await mine(w, "p1")).toEqual({ questionsLeft: 38, campaignCapReached: false, deploymentCapReached: false });
+    expect(await mine(w, "p1")).toEqual({ ...fresh, questionsLeft: 38 });
     // Never another user's numbers: p2 and the GM see their own counts.
     expect((await mine(w, "p2")).questionsLeft).toBe(39);
     expect((await mine(w, "gm")).questionsLeft).toBe(40);

@@ -3,7 +3,7 @@ import { v, type Infer } from "convex/values";
 import { createAnswerParser, type AnswerSnapshot, type ApiCitation } from "../src/lib/lorekeeper/answer";
 import { BOOKS_ONLY_MISS, STOPPED_EARLY_NOTE, WEB_MISS, WEB_UNAVAILABLE } from "../src/lib/lorekeeper/copy";
 import { modelForPass, nextStep, phaseForPass, streamsLive, type AnswerPhase, type Pass } from "../src/lib/lorekeeper/flow";
-import { addUsage, costMicros, ZERO_USAGE, type TokenUsage } from "../src/lib/lorekeeper/pricing";
+import { addUsage, costMicros, SHORT_MAX_TOKENS, ZERO_USAGE, type TokenUsage } from "../src/lib/lorekeeper/pricing";
 import { REFUSAL_FALLBACK_BETA, requestBody, WEB_SEARCH_MAX_USES } from "../src/lib/lorekeeper/prompt";
 import type { HistoryTurn, PromptChunk, PromptContext, PromptRuling, Quote as ParsedQuote } from "../src/lib/lorekeeper/types";
 import { internal } from "./_generated/api";
@@ -55,6 +55,10 @@ import { resolveTableSettings } from "../src/lib/config/campaign-settings";
  * the watchdog release whatever is still reserved. Every settle takes at most what is still reserved
  * (`settleReservation`), so no order of Stop, watchdog, run and stale-run sweep counts a reservation twice. The
  * question stays counted (no refund).
+ *
+ * Shorter answers (config AD6, Q20 a): an answer `caps.reserve` let through past the monthly limit with
+ * `reserved.mode: "short"` runs one Sonnet pass at half the length (SHORT_MAX_TOKENS), streamed live whatever its
+ * verdict, with no stronger-model retry and no internet pass; its answer stands as it is.
  */
 
 /** How often the run patches the streamed text (and checks for Stop). */
@@ -161,10 +165,13 @@ export const prepare = internalQuery({
       ...context.houseRules.map((r) => ({ title: r.title, text: r.text })),
     ];
     const promptContext: PromptContext = { frame: context.frame, characters: context.characters, party: context.party };
+    const short = answer.reserved?.mode === "short";
     return {
       question: questionRow.text,
       // The campaign's switch is read again here, so an ask started just before the GM turned internet search off never searches (config L1).
-      webSearch: conversation.webSearch && resolveTableSettings(campaign.tableSettings).lorekeeperWeb,
+      // A shorter answer (config AD6) never searches either.
+      webSearch: !short && conversation.webSearch && resolveTableSettings(campaign.tableSettings).lorekeeperWeb,
+      short,
       chunks,
       rulings,
       context: promptContext,
@@ -314,8 +321,9 @@ export const finalize = internalMutation({
 });
 
 /**
- * Reserves a later pass (the Opus retry, the web pass) against the answer's counters. Returns the micros reserved, or
- * null when a budget would go over (nothing reserved: the run skips the pass) or the answer is no longer in flight.
+ * Reserves a later pass (the Opus retry, the web pass) against the answer's counters, under the answer's reservation
+ * mode (config AD6). Returns the micros reserved, or null when a budget (or the asker's daily internet searches, for
+ * the web pass) would go over (nothing reserved: the run skips the pass) or the answer is no longer in flight.
  */
 export const reserveNextPass = internalMutation({
   args: { answerId: v.id("lorekeeperMessages"), model: v.string(), webSearches: v.optional(v.number()) },
@@ -323,7 +331,11 @@ export const reserveNextPass = internalMutation({
   handler: async (ctx, { answerId, model, webSearches }) => {
     const row = await ctx.db.get("lorekeeperMessages", answerId);
     if (!isInFlight(row) || row.reserved === undefined) return null;
-    const micros = await reservePass(ctx, scopesOf(row, row.reserved), model, Date.now(), webSearches === undefined ? {} : { webSearches });
+    const mode = row.reserved.mode;
+    const micros = await reservePass(ctx, scopesOf(row, row.reserved), model, Date.now(), {
+      ...(webSearches === undefined ? {} : { webSearches }),
+      ...(mode === undefined ? {} : { mode }),
+    });
     if (micros === null) return null;
     await ctx.db.patch("lorekeeperMessages", row._id, { reserved: { ...row.reserved, micros: row.reserved.micros + micros } });
     return micros;
@@ -562,7 +574,8 @@ export const run = internalAction({
     }
 
     const writer = new AnswerWriter(ctx, answerId);
-    const override = modelFor("answer");
+    // A shorter answer (config AD6) is Sonnet's, whatever the env model says.
+    const override = prep.short ? SONNET : modelFor("answer");
     let usageTotal: TokenUsage = { ...ZERO_USAGE };
     let cost = 0;
     let checkedAgain = false;
@@ -599,7 +612,11 @@ export const run = internalAction({
     const streamPass = async (pass: Pass, reservedMicros: number): Promise<PassResult> => {
       const passModel = modelForPass(pass, override);
       const fallback = passModel === SONNET || passModel === OPUS;
-      const { body, sources } = requestBody(prep.question, prep.chunks, prep.rulings, prep.context, prep.history, { model: passModel, refusalFallback: fallback });
+      const { body, sources } = requestBody(prep.question, prep.chunks, prep.rulings, prep.context, prep.history, {
+        model: passModel,
+        refusalFallback: fallback,
+        ...(prep.short ? { maxTokens: SHORT_MAX_TOKENS } : {}),
+      });
       const parser = createAnswerParser(sources);
       let decided = false;
       let live = false;
@@ -609,7 +626,8 @@ export const run = internalAction({
         // The phase is not touched here: it names the pass that runs, not the one the verdict line points to.
         if (!decided && snapshot.verdict !== null) {
           decided = true;
-          live = streamsLive(pass, snapshot.verdict, prep.webSearch);
+          // A shorter answer ends with its one pass, so it always streams.
+          live = prep.short || streamsLive(pass, snapshot.verdict, prep.webSearch);
         }
         if (live) writer.show(viewOf(snapshot));
         else writer.tick();
@@ -659,6 +677,8 @@ export const run = internalAction({
       }
 
       kept = answer;
+      // A shorter answer (config AD6) stands as it is: no retry, no internet, no books-only miss.
+      if (prep.short) return ["done", answer.final.prose, streamParts(answer.final.verdict, answer.final.quotes, answer.final.call, answer.final.web)];
       let step = nextStep({ pass: "primary", verdict: answer.final.verdict, webSearch: prep.webSearch });
       const retryReserved = step === "retry" ? await reserveNext("retry") : null;
       if (step === "retry" && retryReserved === null) {
