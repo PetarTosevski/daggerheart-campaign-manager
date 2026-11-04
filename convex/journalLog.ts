@@ -173,16 +173,25 @@ async function namesOf(ctx: QueryCtx, ids: Iterable<Id<"characters">>): Promise<
   return names;
 }
 
+/**
+ * The upper bound of a window's index range. A live session's open window has no upper bound: its `to` is the `now`
+ * the query ran at, so bounding by it would leave later rows outside the read range and the log would not update
+ * live (Convex re-runs a query only when its read ranges change). Closed windows end at their `to`.
+ */
+function upTo<Q extends { lte: (field: "at", value: number) => unknown }>(q: Q, w: LiveWindow): Q {
+  return w.open ? q : (q.lte("at", w.to) as Q);
+}
+
 async function feedLines(ctx: QueryCtx, campaignId: Id<"campaigns">, windows: readonly LiveWindow[], isGm: boolean) {
   const { rows, truncated } = await perWindow(windows, MAX_LOG_FEED_ROWS, (w, take) =>
     isGm
       ? ctx.db
           .query("actionLog")
-          .withIndex("by_campaign_at", (q) => q.eq("campaignId", campaignId).gte("at", w.from).lte("at", w.to))
+          .withIndex("by_campaign_at", (q) => upTo(q.eq("campaignId", campaignId).gte("at", w.from), w))
           .take(take)
       : ctx.db
           .query("actionLog")
-          .withIndex("by_campaign_visibility_at", (q) => q.eq("campaignId", campaignId).eq("visibility", "public").gte("at", w.from).lte("at", w.to))
+          .withIndex("by_campaign_visibility_at", (q) => upTo(q.eq("campaignId", campaignId).eq("visibility", "public").gte("at", w.from), w))
           .take(take),
   );
   const live = rows.filter((row) => row.undoneAt === undefined);
@@ -209,7 +218,7 @@ async function fearLines(ctx: QueryCtx, campaignId: Id<"campaigns">, windows: re
   const { rows, truncated } = await perWindow(windows, MAX_LOG_FEAR_ROWS, (w, take) =>
     ctx.db
       .query("history")
-      .withIndex("by_campaign_at", (q) => q.eq("campaignId", campaignId).gte("at", w.from).lte("at", w.to))
+      .withIndex("by_campaign_at", (q) => upTo(q.eq("campaignId", campaignId).gte("at", w.from), w))
       .take(take),
   );
   const lines: Line[] = rows.flatMap((row) =>
