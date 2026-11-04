@@ -22,7 +22,9 @@ import {
  *
  * | Helper            | Does                                                                                       |
  * |-------------------|--------------------------------------------------------------------------------------------|
- * | `notesRole`       | The caller's campaign role ('gm' / 'player'); a user with grants only gets NOT_FOUND       |
+ * | `notesRole`       | The caller's campaign role (gm / coGm / player); a user with grants only gets NOT_FOUND    |
+ * | `readsAsGm`       | Q6 a: the role reads Notes as the GM (creator or co-GM); viewer side only                  |
+ * | `ownsGmJournal`   | Identity: the user's journal is the GM journal (the creator's)                             |
  * | `currentJournal`  | The caller's current journal (D3) or null before the first write, with its character       |
  * | `ensureJournal`   | The current journal, creating it with its default pages (B7) or attaching it (D3)          |
  * | `defaultSessionId`| The live session, else the newest one the caller can see (D6)                              |
@@ -51,6 +53,23 @@ export async function notesRole(ctx: NotesCtx): Promise<Role> {
   const role = await campaignRole(ctx, ctx.user, ctx.campaign);
   if (role === null) throw appError("NOT_FOUND");
   return role;
+}
+
+/**
+ * Q6 a (config G2): whether a caller with this role (from `notesRole` / `campaignRole`) reads and acts in Notes as the
+ * GM: the creator and every co-GM. The same split as `readsJournalPage`'s viewer in lib/permissions.ts. Viewer side
+ * only: GM-only pages, planned sessions, the Players' journals list, tearing out a departed page.
+ */
+export function readsAsGm(role: Role): boolean {
+  return role !== "player";
+}
+
+/**
+ * Identity, not role (config G2): the GM journal is the campaign creator's account journal (`campaign.ownerId`). It
+ * has the GM template and visibilities, never departs and is labelled 'GM'. A co-GM's journal is a member journal.
+ */
+export function ownsGmJournal(campaign: Doc<"campaigns">, userId: Id<"users">): boolean {
+  return userId === campaign.ownerId;
 }
 
 /** Characters a player's journal list considers: theirs, in this campaign, not dead or retired (D1). */
@@ -90,7 +109,8 @@ export async function currentJournal(ctx: NotesCtx): Promise<CurrentJournal> {
     .query("journals")
     .withIndex("by_campaign_user", (q) => q.eq("campaignId", ctx.campaign._id).eq("userId", ctx.user._id))
     .take(100);
-  if (role === "gm") return { role, journal: journals[0] ?? null, character: null, attach: null };
+  // Identity: only the creator keeps the account journal; a co-GM's is a member journal (Q6 a).
+  if (ownsGmJournal(ctx.campaign, ctx.user._id)) return { role, journal: journals[0] ?? null, character: null, attach: null };
 
   const characters = await liveCharacters(ctx);
   const byCharacter = new Map<Id<"characters">, Doc<"journals">>();
@@ -149,7 +169,8 @@ export async function ensureJournal(
     }
     return { journal: current.journal, role, created: false, defaultPageIds: [] };
   }
-  const isGm = role === "gm";
+  // Identity: the GM template and visibilities belong to the creator's journal only.
+  const isGm = ownsGmJournal(ctx.campaign, ctx.user._id);
   const now = Date.now();
   const template = journalTemplate(isGm);
   const journalId = await ctx.db.insert("journals", {
@@ -162,7 +183,8 @@ export async function ensureJournal(
     createdAt: now,
     updatedAt: now,
   });
-  const sessionId = await defaultSessionId(ctx, isGm);
+  // Viewer side: a co-GM sees planned sessions like the GM.
+  const sessionId = await defaultSessionId(ctx, readsAsGm(role));
   const defaultPageIds: Id<"journalPages">[] = [];
   for (const page of template) {
     defaultPageIds.push(
@@ -199,8 +221,10 @@ export type PageAccess = {
   /** `owner` for the page owner, `view` for any other reader (permissionFor). */
   permission: "owner" | "view";
   isOwner: boolean;
-  /** The caller is the campaign's GM. */
+  /** The caller reads and acts as the GM: the creator or a co-GM (Q6 a, `readsAsGm`). */
   isGm: boolean;
+  /** Identity: the page's journal is the GM journal, the creator's (`ownsGmJournal`). */
+  ownerIsGm: boolean;
   /** D1, computed now. A departed journal is frozen (D2). */
   departed: boolean;
   /** Torn out (Q11): only its owner, or the GM who tore it out, gets here. */
@@ -241,7 +265,7 @@ export async function pageAccess(ctx: NotesCtx, pageRef: Id<"journalPages"> | Do
   if (permission === null) throw appError("NOTE_PAGE_NOT_FOUND");
   const isOwner = permission === "owner";
   const role = await cachedRole(ctx, ctx.user, ctx.campaign, cache);
-  const isGm = role === "gm";
+  const isGm = role !== null && readsAsGm(role);
   const isDeparted = await cachedDeparted(ctx, ctx.campaign, journal, cache);
   const binned = page.binnedAt !== undefined;
   // permissionFor answered, so the caller reads the page by the visibility table (for a torn-out page: the owner, or
@@ -263,6 +287,7 @@ export async function pageAccess(ctx: NotesCtx, pageRef: Id<"journalPages"> | Do
     permission: isOwner ? "owner" : "view",
     isOwner,
     isGm,
+    ownerIsGm: ownsGmJournal(ctx.campaign, journal.userId),
     departed: isDeparted,
     binned,
     canEditPage: flags.canEditPage,
@@ -353,18 +378,18 @@ async function templatePageId(ctx: NotesCtx, journal: Doc<"journals">, index: nu
  */
 export async function findPage(ctx: NotesCtx, ref: PageRef): Promise<PageAccess | null> {
   if (typeof ref === "string") return pageAccess(ctx, ref);
-  const { journal, role } = await currentJournal(ctx);
+  const { journal } = await currentJournal(ctx);
   if (journal === null) return null;
-  return pageAccess(ctx, await templatePageId(ctx, journal, ref.template, role === "gm"));
+  return pageAccess(ctx, await templatePageId(ctx, journal, ref.template, ownsGmJournal(ctx.campaign, journal.userId)));
 }
 
 /** A page ref in a mutation: a template ref creates (or attaches) the caller's journal first (CL6, D3). */
 export async function resolvePage(ctx: NotesMutationCtx, ref: PageRef): Promise<PageAccess> {
   if (typeof ref === "string") return pageAccess(ctx, ref);
-  const { journal, role, defaultPageIds } = await ensureJournal(ctx);
+  const { journal, defaultPageIds } = await ensureJournal(ctx);
   const created = defaultPageIds[ref.template];
   if (created !== undefined && Number.isInteger(ref.template)) return pageAccess(ctx, created);
-  return pageAccess(ctx, await templatePageId(ctx, journal, ref.template, role === "gm"));
+  return pageAccess(ctx, await templatePageId(ctx, journal, ref.template, ownsGmJournal(ctx.campaign, journal.userId)));
 }
 
 // ---------------------------------------------------------------- writes
@@ -428,7 +453,7 @@ export async function addSessionPages(
       kind: "log",
       title: sessionLogTitle(session),
       tape: newPageTape(live),
-      visibility: defaultVisibility(journal.userId === campaign.ownerId),
+      visibility: defaultVisibility(ownsGmJournal(campaign, journal.userId)),
       sessionId: session._id,
     });
     added += 1;

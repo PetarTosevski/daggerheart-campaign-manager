@@ -7,7 +7,7 @@ import { CLASSES } from "../src/lib/srd/classes";
 import type { Doc, Id } from "./_generated/dataModel";
 import { readSheet } from "./lib/characterSheet";
 import { campaignQuery } from "./lib/functions";
-import { notesRole, pageAccess, type NotesCtx, type PageAccess } from "./lib/notes";
+import { notesRole, ownsGmJournal, pageAccess, readsAsGm, type NotesCtx, type PageAccess } from "./lib/notes";
 import { cachedDeparted, pageReadCache, permissionFor, type PageReadCache } from "./lib/permissions";
 import { MAX_PAGES, pageKindValidator } from "./lib/validators/notes";
 
@@ -100,7 +100,8 @@ type Owner = { isGm: boolean; characterName: string | null; className: string | 
 
 /** The journal's owner as Q8 names them: the journal's character (name, class), else the account name. */
 async function ownerOf(ctx: NotesCtx, journal: Doc<"journals">): Promise<Owner> {
-  const isGm = journal.userId === ctx.campaign.ownerId;
+  // Identity: the GM journal is the creator's; a co-GM's is named like a player's.
+  const isGm = ownsGmJournal(ctx.campaign, journal.userId);
   let characterName: string | null = null;
   let className: string | null = null;
   if (!isGm && journal.characterId !== undefined) {
@@ -187,11 +188,13 @@ export const playerJournals = campaignQuery({
   args: {},
   returns: v.array(playerJournalRowValidator),
   handler: async (ctx): Promise<PlayerJournalRow[]> => {
-    if ((await notesRole(ctx)) !== "gm") return [];
+    // Viewer side (Q6 a): the creator and every co-GM list the other members' present journals.
+    if (!readsAsGm(await notesRole(ctx))) return [];
     const cache = pageReadCache(ctx.user, ctx.campaign);
     const rows: PlayerJournalRow[] = [];
     for (const journal of await campaignJournals(ctx)) {
-      if (journal.userId === ctx.campaign.ownerId || (await cachedDeparted(ctx, ctx.campaign, journal, cache))) continue;
+      // Identity: the GM journal and the caller's own (a co-GM's) are not players' journals.
+      if (ownsGmJournal(ctx.campaign, journal.userId) || journal.userId === ctx.user._id || (await cachedDeparted(ctx, ctx.campaign, journal, cache))) continue;
       const owner = await ownerOf(ctx, journal);
       const { whoName, whoSub } = journalWho(owner);
       rows.push({ journalId: journal._id, name: whoName, sub: whoSub, pageCount: await readableCount(ctx, journal, cache) });
@@ -215,7 +218,8 @@ export const pastJournals = campaignQuery({
     const cache = pageReadCache(ctx.user, ctx.campaign);
     const rows: PastJournalRow[] = [];
     for (const journal of await campaignJournals(ctx)) {
-      if (journal.userId === ctx.campaign.ownerId || !(await cachedDeparted(ctx, ctx.campaign, journal, cache))) continue;
+      // Identity: the GM journal never departs.
+      if (ownsGmJournal(ctx.campaign, journal.userId) || !(await cachedDeparted(ctx, ctx.campaign, journal, cache))) continue;
       // dcm-bxp.108: a departed journal with no page the caller can read is not listed.
       const pageCount = await readableCount(ctx, journal, cache);
       if (pageCount === 0) continue;
@@ -250,7 +254,8 @@ export const journalView = campaignQuery({
     // dcm-bxp.109: only the GM opens another person's present journal; a player opens their own and past journals,
     // and reads other players' shared pages in the Shared tabs.
     const own = journal.userId === ctx.user._id;
-    if (role !== "gm" && !own && !isDeparted) throw appError("NOT_FOUND");
+    // Q6 a: a co-GM opens a present journal like the GM (dcm-jh6d.10).
+    if (!readsAsGm(role) && !own && !isDeparted) throw appError("NOT_FOUND");
     const owner = await ownerOf(ctx, journal);
     const pages: JournalViewPage[] = [];
     const sessions = new Map<Id<"sessions">, Doc<"sessions"> | null>();
@@ -268,7 +273,7 @@ export const journalView = campaignQuery({
         kind: page.kind,
         tape: page.tape,
         createdAt: page.createdAt,
-        ...(await linkedSession(ctx, role === "gm", page, sessions)),
+        ...(await linkedSession(ctx, readsAsGm(role), page, sessions)),
         entryCount: page.entryCount,
         openCount: page.openCount,
         chip: visibilityLabel(effectiveReaders(page.visibility, { ownerIsGm: owner.isGm, departed: isDeparted }).visibility, owner.isGm),

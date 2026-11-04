@@ -394,7 +394,8 @@ async function journalPagePermission(
   if (page.binnedAt !== undefined) {
     if (isOwner) return "owner";
     // Q11, N1 actions.canRestore: the GM who tore it out, while they could still read it if it were not torn out.
-    if (role !== "gm" || page.binnedBy !== user._id) return null;
+    // A co-GM tears out a departed page like the GM (config G2), so they restore it too. `role` is never null here.
+    if (role === "player" || page.binnedBy !== user._id) return null;
   } else if (isOwner) return "owner";
   return (await readsJournalPage(ctx, user, role, campaign, journal, page, cache)) ? "view" : null;
 }

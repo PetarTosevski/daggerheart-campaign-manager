@@ -199,6 +199,7 @@ async function assertRoom(ctx: QueryCtx, campaign: Doc<"campaigns">, owner: Id<"
 async function ownerFor(ctx: MutationCtx, campaign: Doc<"campaigns">, permission: Permission, user: Doc<"users">, ownerId?: Id<"users">) {
   if (!ownerId || ownerId === user._id) return user._id;
   if (permission !== "owner") throw appError("FORBIDDEN");
+  // Identity: the creator has no member row; co-GMs and players are found below.
   if (ownerId === campaign.ownerId) return ownerId;
   const member = await ctx.db
     .query("campaignMembers")

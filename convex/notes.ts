@@ -14,6 +14,7 @@ import {
   defaultSessionId,
   ensureJournal,
   insertPage,
+  readsAsGm,
   resolvePage,
   type NotesCtx,
   type NotesMutationCtx,
@@ -164,11 +165,13 @@ export const journal = campaignQuery({
   returns: journalViewValidator,
   handler: async (ctx): Promise<JournalView> => {
     const current = await currentJournal(ctx);
+    // Identity: heading and template are the creator's GM journal's; sessions are viewer side (a co-GM sees planned).
     const isGm = current.role === "gm";
+    const seesPlanned = readsAsGm(current.role);
     const heading = { isGm, ...whoOf(ctx, isGm, current.character) };
 
     if (current.journal === null) {
-      const sessionId = await defaultSessionId(ctx, isGm);
+      const sessionId = await defaultSessionId(ctx, seesPlanned);
       const session = sessionId === undefined ? null : await ctx.db.get("sessions", sessionId);
       return {
         ...heading,
@@ -215,7 +218,7 @@ export const journal = campaignQuery({
           title: page.title,
           tape: page.tape,
           visibility: page.visibility,
-          ...(canSeeSession(ctx, isGm, session) ? { sessionId: session._id, session: sessionInfo(session) } : {}),
+          ...(canSeeSession(ctx, seesPlanned, session) ? { sessionId: session._id, session: sessionInfo(session) } : {}),
           createdAt: page.createdAt,
           entryCount: page.entryCount,
           openCount: page.openCount,
@@ -242,7 +245,7 @@ export const createPage = campaignMutation({
     const { journal, role } = await ensureJournal(ctx);
     const isGm = role === "gm";
     if (sessionId !== undefined && kind !== "log") throw appError("NOTE_SESSION_INVALID");
-    const session = sessionId === undefined ? null : await linkableSession(ctx, isGm, sessionId);
+    const session = sessionId === undefined ? null : await linkableSession(ctx, readsAsGm(role), sessionId);
     const pages = await listedPages(ctx, journal._id);
     return insertPage(ctx, journal, {
       kind,

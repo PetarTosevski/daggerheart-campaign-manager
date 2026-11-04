@@ -15,6 +15,7 @@ import { campaignRoleOf } from "./permissions";
  * whose journal has a character). The campaign's GM costs nothing.
  */
 export async function departed(ctx: QueryCtx, campaign: Doc<"campaigns">, journal: Doc<"journals">): Promise<boolean> {
+  // Identity (config G2): the GM journal is the creator's. A co-GM's journal departs like a member's when they leave.
   if (journal.userId === campaign.ownerId) return false;
   if ((await campaignRoleOf(ctx, journal.userId, campaign)) === null) return true;
   if (journal.characterId === undefined) return false;

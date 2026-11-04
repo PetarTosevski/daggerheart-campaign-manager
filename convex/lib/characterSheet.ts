@@ -43,7 +43,7 @@ import {
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { readVersioned } from "./blobs";
-import { atLeast, permissionFor, type Permission } from "./permissions";
+import { atLeast, campaignRoleOf, permissionFor, rolePermission, type Permission } from "./permissions";
 
 // ---------------------------------------------------------------- the stored sheet
 
@@ -334,7 +334,9 @@ export async function extraCharactersAllowed(ctx: QueryCtx, campaignId: Id<"camp
  * XC1: skipped while the GM allows extra characters for the running session.
  */
 export async function assertOneActive(ctx: QueryCtx, campaign: Doc<"campaigns">, owner: Id<"users">, except?: Id<"characters">) {
-  if (owner === campaign.ownerId) return;
+  // Role (config G2): the GM's and every co-GM's characters are exempt; `owner` is not the caller, so its role is
+  // read (the creator costs nothing). A player, an invitee or a departed owner is held to one active character.
+  if (atLeast(rolePermission(await campaignRoleOf(ctx, owner, campaign), { type: "campaign", campaign }, owner), "owner")) return;
   if (await extraCharactersAllowed(ctx, campaign._id)) return;
   const other = (await partyOf(ctx, campaign._id)).find((c) => c.ownerId === owner && c.status === "active" && c._id !== except);
   if (other === undefined) return;

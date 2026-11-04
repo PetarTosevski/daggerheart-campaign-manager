@@ -141,10 +141,7 @@ export function expectations(entry: Entry, kind: FunctionKind): [Role, Outcome][
  * `permissionFor` (config G2, bead dcm-jh6d.10, replaces those checks). Function name → bead id. The coGm row runs as
  * it.fails, so it turns red once G2 fixes the function, and the name must then leave this list.
  */
-export const COGM_KNOWN_GAPS: Record<string, string> = {
-  // lib/notes.ts `notesRole` treats a co-GM as a player: a present player journal is NOT_FOUND to them (Q6 a: GM view).
-  "notesJournals:journalView": "dcm-jh6d.10",
-};
+export const COGM_KNOWN_GAPS: Record<string, string> = {};
 
 /** What a call did: resolved to a value, or threw a ConvexError with an object payload. */
 type Observed = { value: unknown } | { code: string };

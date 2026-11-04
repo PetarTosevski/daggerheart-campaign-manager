@@ -271,6 +271,7 @@ export const read = userAction({
 
 /** The owner of an imported character: the GM, or a player in the campaign. */
 async function ownerFor(ctx: QueryCtx, campaign: Doc<"campaigns">, gm: Id<"users">, ownerId?: Id<"users">): Promise<Id<"users">> {
+  // Identity: the caller (the GM or a co-GM) or the creator, who has no member row; anyone else must be a member.
   if (!ownerId || ownerId === gm || ownerId === campaign.ownerId) return ownerId ?? gm;
   const member = await ctx.db
     .query("campaignMembers")

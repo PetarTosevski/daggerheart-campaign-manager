@@ -86,6 +86,7 @@ export const seedForcedAttackForE2e = internalMutation({
       campaignId: character.campaignId,
       encounterId: instance.encounterId,
       mapId: target.mapId,
+      // Identity: the e2e seed's request is raised by the creator.
       createdBy: campaign.ownerId,
       status: "open",
       createdAt: Date.now(),
