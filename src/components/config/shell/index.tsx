@@ -3,6 +3,7 @@
 import { SlotBoundary } from "@/components/party/session/boundary";
 
 import type { CampaignSummary } from "../../../../convex/campaigns";
+import { ArchivedBanner } from "../archived-banner";
 import { PresenceBeat } from "../presence-beat";
 import { SpotlightPing } from "../spotlight-ping";
 import { CampaignSettingsPanel } from "./panel";
@@ -14,7 +15,8 @@ export { closeSettings, openSettings, useSettingsSection } from "./url";
 
 /**
  * What the campaign shell mounts once per campaign page (plan config S1): the GM's Campaign settings panel (opened by
- * the gear through `?settings=`), the presence heartbeat (U3p) and the spotlight ping (U6d). Each in its own boundary.
+ * the gear through `?settings=`), the presence heartbeat (U3p), the spotlight ping (U6d), each in its own boundary, and the archived
+ * banner (S3; no query of its own, so no boundary).
  * The gear and avatar buttons live in `src/components/app-bar/account.tsx` (the bar and the art header both use them).
  */
 export function ConfigMounts({ campaign }: { campaign: CampaignSummary }) {
@@ -32,6 +34,7 @@ export function ConfigMounts({ campaign }: { campaign: CampaignSummary }) {
       <SlotBoundary fallback={null}>
         <SpotlightPing campaignId={campaign._id} isGm={isGm} />
       </SlotBoundary>
+      <ArchivedBanner campaign={campaign} />
     </>
   );
 }

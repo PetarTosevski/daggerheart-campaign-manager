@@ -1,7 +1,7 @@
 // Plan config U5: Campaign settings, Sessions (design reference/designs/config/Settings.dc.html, `.s-session`). The
 // board's rows minus the clock (Q4 d); each writes campaignSettings.set, one field per call with an optimistic update
-// on campaigns.get (rule 12); a refused save rolls back and shows inline; the Archive row is S3's stub (disabled,
-// creator only, Q7 a).
+// on campaigns.get (rule 12); a refused save rolls back and shows inline; the Archive row (S3) confirms, then archives
+// (creator only, Q7 a).
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { ConvexError } from "convex/values";
 import { useSyncExternalStore } from "react";
@@ -147,15 +147,15 @@ describe("Campaign settings: Sessions", () => {
     expect(settings().autoSessionLog).toBe(true);
   });
 
-  it("shows the Archive row as a disabled stub to the creator (S3 fills it)", () => {
+  it("shows the creator the Archive row; 'Archive…' asks first, then archives (S3)", async () => {
     render(<Section />);
     const row = screen.getByTestId("settings-archive");
     expect(within(row).getByText("Archive this campaign")).toBeInTheDocument();
     expect(within(row).getByText("Keeps everything read-only. You can restore it later.")).toBeInTheDocument();
-    const button = within(row).getByRole("button", { name: "Archive…" });
-    expect(button).toBeDisabled();
-    fireEvent.click(button);
+    fireEvent.click(within(row).getByRole("button", { name: "Archive…" }));
     expect(calls).toEqual([]);
+    fireEvent.click(within(group("Archive The Witherwild?")).getByRole("button", { name: "Archive" }));
+    await waitFor(() => expect(calls).toEqual([{ name: "campaignSettings:archive", args: { campaignId: C1 } }]));
   });
 
   it("hides the Archive row from a co-GM (only the creator archives, Q7 a)", () => {

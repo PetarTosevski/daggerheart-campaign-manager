@@ -221,6 +221,74 @@ function DeletedRow({ campaign, onRestored, onPurged }: { campaign: DeletedCampa
   );
 }
 
+/**
+ * One archived campaign (config S3, Q9 a): read-only for everyone, so Open for every member and Restore for its creator
+ * (`campaignSettings.unarchive`). Restoring moves it back into the saved campaigns above.
+ */
+function ArchivedRow({ campaign, onRestored }: { campaign: CampaignListItem; onRestored: () => void }) {
+  const unarchive = useMutation(api.campaignSettings.unarchive);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <li className="flex flex-col gap-3 rounded-xl border border-[#272434] bg-[#15141d] px-4 py-3.5 sm:px-6">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+        <span className="flex min-w-0 flex-[1_1_220px] flex-col gap-0.5">
+          <span className="font-display text-[20px] font-bold tracking-[0.03em] break-words">{campaign.name}</span>
+          <span className="text-[14px] text-label">
+            {frameName(campaign.frameId)} · {campaign.role === "gm" ? "Game Master" : "Player"} · Last opened{" "}
+            {dateFormat.format(campaign.lastOpenedAt)}
+          </span>
+        </span>
+        <div className="flex flex-wrap gap-2.5">
+          <Link href={`/campaigns/${campaign._id}`} aria-label={`Open ${campaign.name}`} className={brandButton({ variant: "neutral" })}>
+            Open
+          </Link>
+          {campaign.isCreator ? (
+            <BrandButton
+              variant="confirm"
+              aria-label={`Restore ${campaign.name} from the archive`}
+              disabled={busy}
+              onClick={() => {
+                setError(null);
+                setBusy(true);
+                unarchive({ campaignId: campaign._id }).then(onRestored, (e: unknown) => {
+                  setBusy(false);
+                  setError(errorMessage(e));
+                });
+              }}
+            >
+              Restore
+            </BrandButton>
+          ) : null}
+        </div>
+      </div>
+      {error ? (
+        <p role="alert" className="m-0 text-[14px] text-danger">
+          {error}
+        </p>
+      ) : null}
+    </li>
+  );
+}
+
+/** Archived campaigns (S3), under the saved ones; hidden when there are none. */
+function ArchivedCampaigns({ campaigns, onRestored }: { campaigns: CampaignListItem[]; onRestored: (id: Id<"campaigns">) => void }) {
+  if (campaigns.length === 0) return null;
+  return (
+    <section aria-labelledby="archived-campaigns" className="mt-4 flex flex-none flex-col gap-3">
+      <h2 id="archived-campaigns" className="m-0 text-[13px] tracking-[0.22em] text-muted-text uppercase">
+        Archived
+      </h2>
+      <ul className="m-0 flex list-none flex-col gap-3 p-0">
+        {campaigns.map((c) => (
+          <ArchivedRow key={c._id} campaign={c} onRestored={() => onRestored(c._id)} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 /** The GM's deleted campaigns, under the saved ones; hidden when there are none. */
 function DeletedCampaigns({ onRestored, onPurged }: { onRestored: (id: Id<"campaigns">) => void; onPurged: (id: Id<"campaigns">) => void }) {
   const deleted = useQuery(api.campaigns.listDeleted);
@@ -247,10 +315,13 @@ export function Chronicle() {
   const [deleted, setDeleted] = useState<CampaignListItem | null>(null);
   const [undoError, setUndoError] = useState<string | null>(null);
 
+  // Archived campaigns (S3) leave the bands for their own group, most recently opened first as the server sends them.
+  const active = useMemo(() => campaigns?.filter((c) => !c.archived), [campaigns]);
+  const archived = useMemo(() => campaigns?.filter((c) => c.archived) ?? [], [campaigns]);
   // Oldest first, so the first campaign you made is I (user 2026-10-21); the server lists most recently opened first.
-  const ordered = useMemo(() => (campaigns === undefined ? undefined : [...campaigns].sort((x, y) => x.createdAt - y.createdAt)), [campaigns]);
+  const ordered = useMemo(() => (active === undefined ? undefined : [...active].sort((x, y) => x.createdAt - y.createdAt)), [active]);
   // The most recently opened campaign starts expanded.
-  const expanded = openId === undefined ? campaigns?.[0]?._id : openId;
+  const expanded = openId === undefined ? active?.[0]?._id : openId;
 
   return (
     <div className="flex min-h-screen flex-col bg-ink-2 text-parchment">
@@ -282,9 +353,9 @@ export function Chronicle() {
             </div>
           ) : null}
 
-          {campaigns === undefined ? (
+          {ordered === undefined ? (
             <p className="text-muted-text">Loading campaigns…</p>
-          ) : campaigns.length === 0 ? (
+          ) : ordered.length === 0 ? (
             <div className="flex flex-col items-center gap-3.5 rounded-2xl border-2 border-dashed border-line-2 px-6 py-12 text-center text-[16px] text-label">
               No saved campaigns.
               <Link href="/new" className={brandButton({ variant: "confirm" })}>
@@ -292,7 +363,7 @@ export function Chronicle() {
               </Link>
             </div>
           ) : (
-            ordered!.map((campaign, index) => (
+            ordered.map((campaign, index) => (
               <Band
                 key={campaign._id}
                 campaign={campaign}
@@ -308,6 +379,8 @@ export function Chronicle() {
             ))
           )}
 
+          <ArchivedCampaigns campaigns={archived} onRestored={(id) => setOpenId(id)} />
+
           <DeletedCampaigns
             onRestored={(id) => {
               setOpenId(id);
@@ -319,9 +392,9 @@ export function Chronicle() {
           />
         </div>
 
-        {campaigns && campaigns.length > 1 ? (
+        {ordered && ordered.length > 1 ? (
           <nav aria-label="Jump to campaign" className="hidden flex-none flex-col items-center justify-center gap-1 sm:flex">
-            {ordered!.map((campaign, index) => {
+            {ordered.map((campaign, index) => {
               const on = campaign._id === expanded;
               return (
                 <a

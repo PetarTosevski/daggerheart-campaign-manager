@@ -1,7 +1,9 @@
 import { v, type Infer } from "convex/values";
 
 import { resolveTableSettings } from "../src/lib/config/campaign-settings";
-import { gmMutation } from "./lib/functions";
+import { appError } from "../src/lib/errors/app-error";
+import { creatorMutation, gmMutation } from "./lib/functions";
+import { liveSession } from "./lib/sessions";
 import {
   fearAtStartValidator,
   lorekeeperAskValidator,
@@ -44,6 +46,40 @@ export const set = gmMutation({
     const stored = campaign.tableSettings ?? {};
     if (resolveTableSettings(stored)[change.key] === change.value) return null;
     await ctx.db.patch("campaigns", campaign._id, { tableSettings: { ...stored, [change.key]: change.value } });
+    return null;
+  },
+});
+
+/** Why archiving waits while a session is live (Q9 a): ending the session is a write, which an archive would refuse. */
+export const ARCHIVE_LIVE_MESSAGE = "End the session first.";
+
+/**
+ * The creator archives the campaign (plan config S3; Q9 a, Q7 a): it becomes read-only for everyone (G1's wrapper guard
+ * refuses every other campaign mutation with CAMPAIGN_ARCHIVED) until the creator restores it. Refused with INVALID
+ * while a session is live. Idempotent: archiving an archived campaign keeps its first `archivedAt` and writes nothing.
+ */
+export const archive = creatorMutation({
+  args: {},
+  returns: v.null(),
+  archived: "allow",
+  handler: async (ctx) => {
+    const campaign = ctx.campaign;
+    if (campaign.archivedAt !== undefined) return null;
+    if ((await liveSession(ctx, campaign._id)) !== null) throw appError("INVALID", ARCHIVE_LIVE_MESSAGE);
+    await ctx.db.patch("campaigns", campaign._id, { archivedAt: Date.now() });
+    return null;
+  },
+});
+
+/** The creator restores an archived campaign (S3): writes open again. Idempotent: a campaign not archived writes nothing. */
+export const unarchive = creatorMutation({
+  args: {},
+  returns: v.null(),
+  archived: "allow",
+  handler: async (ctx) => {
+    const campaign = ctx.campaign;
+    if (campaign.archivedAt === undefined) return null;
+    await ctx.db.patch("campaigns", campaign._id, { archivedAt: undefined });
     return null;
   },
 });
