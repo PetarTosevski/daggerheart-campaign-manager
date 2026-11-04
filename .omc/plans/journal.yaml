@@ -501,6 +501,9 @@ waves:
         boards: [Log]
         depends_on: [J1, JD1, JD3a]
         owns:
+          - convex/journalTally.ts
+          - convex/sessionWrap.ts
+          - tests/convex/journal-tally.test.ts
           - src/components/journal/tally/**
           - tests/unit/journal/tally.test.tsx
           - tests/e2e/journal-tally.spec.ts
