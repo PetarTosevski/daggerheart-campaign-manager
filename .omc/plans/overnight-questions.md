@@ -321,3 +321,4 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - Revive: keeps the adversary's other conditions / effects; no public feed line for players; needs a running encounter; Minion groups choose how many come back. Defaults: keep.
 - JX2: the Journal header offers no way to start a second session while one is live (B6) or to restart a played session (B7); the server still supports both. Default: leave out. The milestone button was dropped from the UI.
 - Glass G0: large glass buttons use the design's Plex 17 px font, not the old Cinzel caps (headline buttons like "Choose this Frame", "+ Create character" look different). Default: follow the design.
+- Glass G12: the Journal's Plan / Log & recap switch stays a tab (not a glass switch); Unlink encounter is neutral; the log x is red only where it deletes. Defaults: keep.
