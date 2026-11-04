@@ -57,6 +57,16 @@ async function fearOf(ctx: QueryCtx, campaignId: Id<"campaigns">, session: Doc<"
   return { fearGained: tally.fearGained, fearSpent: tally.fearSpent, truncated };
 }
 
+/**
+ * The index range's upper end for one window. The open window of a live session ends at the `Date.now()` the query ran
+ * at, so bounding by it would leave later rows outside the read range and the tally would not update live (Convex
+ * re-runs a query only when a write lands in a range it read). Closed windows end at their `to`. Same rule as `upTo`
+ * in `convex/journalLog.ts`.
+ */
+function upTo<Q extends { lte: (field: "at", value: number) => unknown }>(q: Q, w: LiveWindow): Q {
+  return w.open ? q : (q.lte("at", w.to) as Q);
+}
+
 /** Critical rolls in the windows, not undone; at most MAX_TALLY_FEED_ROWS rows read in all. */
 async function criticalsOf(ctx: QueryCtx, campaignId: Id<"campaigns">, windows: readonly LiveWindow[]) {
   let left = MAX_TALLY_FEED_ROWS;
@@ -69,7 +79,7 @@ async function criticalsOf(ctx: QueryCtx, campaignId: Id<"campaigns">, windows: 
     }
     const rows = await ctx.db
       .query("actionLog")
-      .withIndex("by_campaign_at", (q) => q.eq("campaignId", campaignId).gte("at", w.from).lte("at", w.to))
+      .withIndex("by_campaign_at", (q) => upTo(q.eq("campaignId", campaignId).gte("at", w.from), w))
       .take(left + 1);
     if (rows.length > left) truncated = true;
     for (const row of rows.slice(0, left)) if (row.roll?.outcome === "critical" && row.undoneAt === undefined) criticals += 1;

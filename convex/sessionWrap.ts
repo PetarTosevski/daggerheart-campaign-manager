@@ -1,6 +1,6 @@
 import { v, type Infer } from "convex/values";
 
-import { inWindows } from "../src/lib/domain/journal";
+import type { LiveWindow } from "../src/lib/domain/journal";
 import { dashboardNumber, lastSessionText, nextPlannedSession, nextSessionLine } from "../src/lib/domain/sessions";
 import { appError } from "../src/lib/errors/app-error";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -124,6 +124,15 @@ export const callMilestone = keyedGmMutation({
 
 // ---------------------------------------------------------------- GM: after the session (Journal JD5)
 
+/**
+ * The index range's upper end for one window: none for the open window of a live session (its `to` is the query's own
+ * `Date.now()`, so a bound would leave later rows outside the read range and the query would not re-run on them), `to`
+ * for closed windows. Same rule as `upTo` in `convex/journalLog.ts`.
+ */
+function upTo<Q extends { lte: (field: "at", value: number) => unknown }>(q: Q, w: LiveWindow): Q {
+  return w.open ? q : (q.lte("at", w.to) as Q);
+}
+
 /** One character's level-up during the session: the latest `levelUp` feed row of that character in the live windows. */
 export const afterLevelUpValidator = v.object({
   characterId: v.id("characters"),
@@ -165,11 +174,12 @@ export const after = gmQuery({
     for (const w of windows) {
       const rows = await ctx.db
         .query("actionLog")
-        .withIndex("by_campaign_at", (q) => q.eq("campaignId", ctx.campaign._id).gte("at", w.from).lte("at", w.to))
+        .withIndex("by_campaign_at", (q) => upTo(q.eq("campaignId", ctx.campaign._id).gte("at", w.from), w))
         .take(MAX_TALLY_ROWS + 1);
       if (rows.length > MAX_TALLY_ROWS) truncated = true;
       for (const row of rows.slice(0, MAX_TALLY_ROWS)) {
-        if (row.kind !== "levelUp" || row.undoneAt !== undefined || row.characterId === undefined || !inWindows(windows, row.at)) continue;
+        // Each window's read range already bounds the row; the open window has no upper bound (see `upTo`).
+        if (row.kind !== "levelUp" || row.undoneAt !== undefined || row.characterId === undefined) continue;
         const known = latest.get(row.characterId);
         if (known === undefined || known.at <= row.at) latest.set(row.characterId, { characterId: row.characterId, summary: row.summary, at: row.at });
       }

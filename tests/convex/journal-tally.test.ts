@@ -212,6 +212,50 @@ describe("journalTally.tally", () => {
     expect(result.criticals).toBeLessThanOrEqual(MAX_TALLY_FEED_ROWS);
   });
 
+  // Journal JT: the open window's read has no upper time bound. A query's `Date.now()` is frozen when it runs, so a
+  // bound at `now` would leave later writes outside its read range and Convex would never re-run it (the tiles froze
+  // until a reload). The clock stays frozen here while rows land after it: the re-run must include them.
+  it("includes rows written after the query's own time in a live session's open window (live updates)", async () => {
+    const env = await setup();
+    await env.start();
+    vi.setSystemTime(NOW + 10 * MIN);
+    expect(await env.tally()).toMatchObject({ fearGained: 0, criticals: 0, live: true });
+    await env.roll(NOW + 11 * MIN, "critical");
+    await env.fear(NOW + 12 * MIN, "gain", 0, 1);
+    expect(await env.tally()).toMatchObject({ fearGained: 1, criticals: 1, live: true });
+  });
+
+  it("keeps the upper bound of a closed window: rows after End are out", async () => {
+    const env = await setup();
+    await env.start();
+    vi.setSystemTime(NOW + 10 * MIN);
+    await env.end();
+    await env.roll(NOW + 11 * MIN, "critical");
+    await env.fear(NOW + 12 * MIN, "gain", 0, 1);
+    await env.t.run((ctx) => ctx.db.patch("sessions", env.sessionId, { tally: undefined }));
+    expect(await env.tally()).toMatchObject({ fearGained: 0, criticals: 0, live: false });
+  });
+
+  it("sessionWrap.after includes a level-up written after the query's own time while live, not after End", async () => {
+    const env = await setup();
+    const vex = await env.character("Vex");
+    const levelUp = (at: number, summary: string) =>
+      env.t.run((ctx) =>
+        ctx.db.insert("actionLog", { campaignId: env.campaignId, characterId: vex, actorId: env.gmId, kind: "levelUp", visibility: "public", summary, undoable: false, at }),
+      );
+    const after = () => env.gm.query(api.sessionWrap.after, { campaignId: env.campaignId, sessionId: env.sessionId });
+    await env.start();
+    vi.setSystemTime(NOW + 10 * MIN);
+    expect((await after())?.levelUps).toEqual([]);
+    await levelUp(NOW + 11 * MIN, "Vex reached level 2.");
+    expect((await after())?.levelUps).toEqual([{ characterId: vex, summary: "Vex reached level 2.", at: NOW + 11 * MIN }]);
+
+    vi.setSystemTime(NOW + 20 * MIN);
+    await env.end();
+    await levelUp(NOW + 21 * MIN, "Vex reached level 3.");
+    expect((await after())?.levelUps.map((l) => l.summary)).toEqual(["Vex reached level 2."]);
+  });
+
   it("refuses a session of another campaign with SESSION_NOT_FOUND", async () => {
     const env = await setup();
     const { campaignId: other } = await env.gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "Other", idempotencyKey: key() });
