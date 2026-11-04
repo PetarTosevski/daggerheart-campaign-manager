@@ -1,5 +1,8 @@
 # Open Questions
 
+Nothing is open in this file. Decisions already made are recorded in
+`docs/decisions-d3-d11.md`. This file does not repeat them.
+
 ## Process
 
 This file holds unresolved rules and product decisions. Do not guess an answer
@@ -37,8 +40,8 @@ mechanic questions here.
 
 ## Open
 
-None yet.
+None.
 
 ## Resolved
 
-None yet.
+None. See `docs/decisions-d3-d11.md`.
