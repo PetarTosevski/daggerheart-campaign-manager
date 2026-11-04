@@ -3,6 +3,7 @@
 import { useQuery } from "convex/react";
 import Link from "next/link";
 
+import { brandButton } from "@/components/brand/buttons";
 import { SlotBoundary } from "@/components/party/session/boundary";
 
 import { api } from "../../../../../convex/_generated/api";
@@ -32,10 +33,7 @@ export function LastSession({ campaignId }: { campaignId: Id<"campaigns"> }) {
         <h2 id="last-h" className="m-0 font-display text-[22px] font-bold text-parchment">
           Last Session
         </h2>
-        <Link
-          href={`/campaigns/${campaignId}/journal`}
-          className="inline-flex min-h-11 items-center rounded-[10px] border border-[#33444a] px-4 text-[14px] text-[#e6ecea] hover:bg-white/5"
-        >
+        <Link href={`/campaigns/${campaignId}/journal`} className={brandButton({ variant: "neutral", className: "no-underline" })}>
           Open the Journal
         </Link>
       </div>

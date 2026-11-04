@@ -4,6 +4,7 @@ import { useQuery } from "convex/react";
 import Link from "next/link";
 import { Component, type ReactNode } from "react";
 
+import { brandButton } from "@/components/brand/buttons";
 import { journalHref } from "@/components/journal/slots";
 
 import { api } from "../../../convex/_generated/api";
@@ -41,7 +42,7 @@ function SessionChip({ campaignId, sessionId, n, live }: { campaignId: string; s
       href={sessionPlayHref(campaignId, sessionId)}
       aria-label={`Session ${n}${live ? ", live" : ""}: open it in the Journal`}
       data-testid="session-chip"
-      className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full border border-[#3f6a4a] bg-black/45 px-4 text-[14px] whitespace-nowrap text-[#d8f0e0] no-underline hover:bg-black/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5fd38d]"
+      className={brandButton({ variant: "neutral", className: "shrink-0 no-underline" })}
     >
       <span aria-hidden="true" className={live ? "size-2 rounded-full bg-[#56e0a8] shadow-[0_0_8px_#3fd39a]" : "size-2 rounded-full bg-[#4a5c62]"} />
       Session {n}

@@ -9,13 +9,13 @@ import { createContext, memo, useCallback, useContext, useEffect, useState, useS
 
 import { CampaignNav, CombatAppBarFrame } from "@/components/app-bar";
 import { BackLink, Wordmark } from "@/components/brand/brand";
+import { BrandButton, brandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import { ViewerProvider, viewerFor } from "@/components/brand/viewer";
 import { SlotBoundary } from "@/components/party/session/boundary";
 import { sessionPlayHref } from "@/components/sessions/session-chip";
 import { frameName } from "@/lib/campaign-display";
 import { frameHasMechanic } from "@/lib/frames";
-import { brandButton } from "@/components/brand/buttons";
 import { campaignArt } from "@/lib/campaign-art";
 import { formatSessionDate } from "@/lib/domain/sessions";
 import { useIntent } from "@/lib/use-intent";
@@ -102,8 +102,8 @@ function HeroSessionLine({ campaign }: { campaign: CampaignSummary }) {
   );
 }
 
-const heroPill =
-  "inline-flex min-h-[52px] cursor-pointer items-center rounded-full bg-brand px-[30px] font-display text-[16px] font-bold tracking-[0.1em] text-brand-ink hover:brightness-110 disabled:cursor-default disabled:opacity-60";
+/** The hero's main action (Start Session / Session N in progress): a large glass confirm in the viewer's colours. */
+const heroPill = brandButton({ variant: "confirm", size: "lg" });
 
 /**
  * GM: 'Start Session' (B8) starts the newest planned session, creating one when there is none, and opens its Log & recap
@@ -152,20 +152,12 @@ function HeroSessionAction({ campaignId, isGm }: { campaignId: Id<"campaigns">; 
           The next planned session starts (a new one if none is planned) and start-of-session features (such as Prayer Dice) are given out.
         </p>
         <div className="flex justify-end gap-2.5">
-          <button
-            type="button"
-            className="min-h-11 cursor-pointer rounded-[10px] border border-[#33444a] bg-transparent px-4 text-[14px] text-[#e6ecea] hover:bg-white/5"
-            onClick={() => setConfirm(false)}
-          >
+          <BrandButton variant="cancel" onClick={() => setConfirm(false)}>
             Cancel
-          </button>
-          <button
-            type="button"
-            className="min-h-11 cursor-pointer rounded-full border border-[#2f7a4f] bg-[#1f5236] px-5 text-[14px] font-semibold text-[#e6fff0] hover:bg-[#256342]"
-            onClick={() => void startSession()}
-          >
+          </BrandButton>
+          <BrandButton variant="confirm" onClick={() => void startSession()}>
             Start session
-          </button>
+          </BrandButton>
         </div>
       </Modal>
       {start.error ? (
@@ -207,14 +199,10 @@ const DashboardHero = memo(function DashboardHero({ campaign, onOpenTome }: { ca
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-      <button
-        type="button"
-        onClick={onOpenTome}
-        className="inline-flex min-h-[52px] cursor-pointer items-center gap-2.5 rounded-full border border-white/30 bg-black/35 px-[22px] text-[15px] text-parchment hover:bg-black/50"
-      >
-        <BookOpen className="size-[18px]" strokeWidth={1.6} aria-hidden="true" />
+      <BrandButton variant="neutral" size="lg" onClick={onOpenTome}>
+        <BookOpen strokeWidth={1.6} aria-hidden="true" />
         Open the Tome
-      </button>
+      </BrandButton>
       <SlotBoundary fallback={null}>
         <HeroSessionAction campaignId={campaign._id} isGm={campaign.role === "gm"} />
       </SlotBoundary>
@@ -353,7 +341,7 @@ function CampaignShellView({ campaign, children }: { campaign: CampaignSummary |
       <main className="flex min-h-screen flex-col items-center justify-center gap-5 bg-[#0d1417] p-6 text-center text-parchment">
         <h1 className="font-display text-[32px] font-bold">Campaign not found</h1>
         <p className="text-muted-text">It may have been deleted.</p>
-        <Link href="/campaigns" className={brandButton({ variant: "solid", size: "lg" })}>
+        <Link href="/campaigns" className={brandButton({ variant: "confirm", size: "lg" })}>
           Load a campaign
         </Link>
       </main>
@@ -391,15 +379,10 @@ function CampaignShellView({ campaign, children }: { campaign: CampaignSummary |
         <div className="flex flex-wrap items-center gap-2">
           <CampaignNav campaignId={campaign._id} isGm={isGm} variant="header" />
           {isGm ? (
-            <button
-              type="button"
-              onClick={openPlayers}
-              aria-haspopup="dialog"
-              className="inline-flex min-h-12 cursor-pointer items-center gap-2 rounded-xl bg-black/35 px-3.5 text-[14px] text-[#e6ecea] hover:bg-black/50"
-            >
-              <Users className="size-4" aria-hidden="true" />
+            <BrandButton variant="neutral" onClick={openPlayers} aria-haspopup="dialog">
+              <Users aria-hidden="true" />
               Players
-            </button>
+            </BrandButton>
           ) : (
             <span className="inline-flex min-h-12 items-center rounded-xl bg-black/35 px-3.5 text-[13px] tracking-[0.16em] text-fear uppercase">
               Player

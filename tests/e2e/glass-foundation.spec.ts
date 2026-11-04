@@ -65,15 +65,16 @@ test("the same confirm button has a Hope rim for a player and a Fear rim for the
       expect(await shadow(page, "Delete")).toContain("rgb(168, 71, 58)"); // ember, for everyone
     }
 
-    // A real one: the Players dialog (a native <dialog> inside the shell) inherits the GM's viewer. Invite (solid) is
-    // a confirm in Fear; the close ✕ is a round cancel in Hope.
-    await table.gm.getByRole("button", { name: "Players" }).click();
-    const dialog = table.gm.getByRole("dialog", { name: "Players" });
+    // A real one: the "Start the session?" dialog (a native <dialog> inside the shell) inherits the GM's viewer. Its
+    // Start session is a confirm in Fear; the close ✕ is a round cancel in Hope. (Plan glass-buttons G2 made the
+    // Players dialog's Invite neutral.)
+    await table.gm.getByRole("button", { name: "Start Session", exact: true }).click();
+    const dialog = table.gm.getByRole("dialog", { name: "Start the session?" });
     await expect(dialog).toBeVisible();
-    const invite = dialog.getByRole("button", { name: "Invite", exact: true });
+    const invite = dialog.getByRole("button", { name: "Start session", exact: true });
     await expect(invite).toHaveClass(/\bgb-confirm\b/);
     expect(await invite.evaluate((el) => getComputedStyle(el).boxShadow)).toContain(FEAR_RIM);
-    const close = dialog.getByRole("button", { name: "Close players" });
+    const close = dialog.getByRole("button", { name: "Close start the session?" });
     await expect(close).toHaveClass(/\bgb-cancel\b.*\bgb-round\b/);
     expect(await close.evaluate((el) => getComputedStyle(el).boxShadow)).toContain(HOPE_RIM);
     await expect(close).toHaveCSS("width", "44px");

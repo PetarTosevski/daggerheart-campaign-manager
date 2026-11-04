@@ -58,6 +58,7 @@ export function PlayersDialog({
             {access?.joinCode ? formatCode(access.joinCode) : "…"}
           </span>
           <BrandButton
+            variant="neutral"
             size="sm"
             disabled={!link}
             onClick={() =>
@@ -69,7 +70,7 @@ export function PlayersDialog({
           >
             {copied ? "Link copied" : "Copy join link"}
           </BrandButton>
-          <BrandButton size="sm" onClick={() => run(rotate({ campaignId, replace: true }))}>
+          <BrandButton variant="neutral" size="sm" onClick={() => run(rotate({ campaignId, replace: true }))}>
             New code
           </BrandButton>
         </div>
@@ -98,7 +99,7 @@ export function PlayersDialog({
             placeholder="player@example.com"
             className="min-h-11 flex-[1_1_220px] rounded-lg border border-line-2 bg-ink px-3 text-[15px] text-parchment placeholder:text-faint"
           />
-          <BrandButton type="submit" variant="solid">
+          <BrandButton type="submit" variant="neutral">
             Invite
           </BrandButton>
         </form>
@@ -112,7 +113,7 @@ export function PlayersDialog({
                 <span>
                   {i.email} <span className="text-subtle">· invited</span>
                 </span>
-                <BrandButton size="sm" aria-label={`Revoke invite for ${i.email}`} onClick={() => run(revoke({ inviteId: i._id }))}>
+                <BrandButton variant="danger" size="sm" aria-label={`Revoke invite for ${i.email}`} onClick={() => run(revoke({ inviteId: i._id }))}>
                   Revoke
                 </BrandButton>
               </li>

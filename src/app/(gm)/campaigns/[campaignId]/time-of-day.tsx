@@ -3,11 +3,11 @@
 import { useMutation, useQuery } from "convex/react";
 import { useState } from "react";
 
+import { brandButton } from "@/components/brand/buttons";
 import { useCampaignLight, useSetTimeOfDay } from "@/components/combat-map/vision/use-campaign-light";
 import { formatCalendarDay } from "@/lib/domain/campaign-time";
 import { DIM_PHASE_BADGE, LIGHT_LEVELS, LIGHT_LEVEL_LABEL, type LightLevel } from "@/lib/domain/combat-map/light";
 import { errorMessage } from "@/lib/convex-errors";
-import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
@@ -85,7 +85,7 @@ export function DayCard({ campaignId, readOnly = false }: { campaignId: Id<"camp
         <span aria-hidden="true">{ICON[level]}</span>
         {LIGHT_LEVEL_LABEL[level]}
       </span>
-      <span className="text-[13px] text-[#c9d2cf]">{LIGHT_RULE[level]}</span>
+      <span className="text-[13px] font-normal text-[#c9d2cf]">{LIGHT_RULE[level]}</span>
     </>
   );
   // The server decides who sets the light (edit access, as the old Day / Dim / Night control); End day is the GM's.
@@ -106,7 +106,7 @@ export function DayCard({ campaignId, readOnly = false }: { campaignId: Id<"camp
           aria-label={`Advance the time of day: now ${LIGHT_LEVEL_LABEL[level]}`}
           data-testid="time-of-day-cycle"
           onClick={() => void setter.set(nextTimeOfDay(level))}
-          className="flex min-h-11 cursor-pointer flex-col items-start gap-0.5 rounded-[10px] border border-[#2a3a40] bg-black/30 px-3 py-2 text-left hover:border-[#e3b45a] focus-visible:outline-2 focus-visible:outline-[#e3b45a]"
+          className={brandButton({ variant: "neutral", className: "flex-col gap-0.5" })}
         >
           {face}
         </button>
@@ -128,10 +128,7 @@ export function DayCard({ campaignId, readOnly = false }: { campaignId: Id<"camp
               setLastEnd(r.entryId);
             })
           }
-          className={cn(
-            "min-h-11 cursor-pointer rounded-full border border-[#e3b45a]/60 bg-[#e3b45a]/15 px-5 font-display text-[14px] font-bold tracking-[0.06em] text-[#f3cf86]",
-            "hover:bg-[#e3b45a]/25 disabled:cursor-default disabled:opacity-60",
-          )}
+          className={brandButton({ variant: "neutral" })}
         >
           End day
         </button>

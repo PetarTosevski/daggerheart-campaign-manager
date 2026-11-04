@@ -3,6 +3,8 @@
 import { useQuery } from "convex/react";
 import { useState, type CSSProperties } from "react";
 
+import { brandButton } from "@/components/brand/buttons";
+import { glassButtonClass } from "@/components/brand/glass-button";
 import { formatCalendarDay, getPhaseName, monthOf, weekInMonth } from "@/lib/domain/campaign-time";
 import { LIGHT_LEVEL_LABEL, lightOf } from "@/lib/domain/combat-map/light";
 import { useIntent } from "@/lib/use-intent";
@@ -203,13 +205,8 @@ export function TimeArc({ campaignId, readOnly = false }: { campaignId: Id<"camp
           data-testid="end-day"
           onClick={() => void passDay()}
           disabled={advance.pending}
-          className="min-h-[42px] cursor-pointer rounded-full border px-5 font-display text-[14px] font-bold tracking-[0.06em]"
-          style={{
-            borderColor: night ? "#ffcf6a" : "#a9b8ff",
-            background: night ? "rgba(255, 207, 106, 0.18)" : "rgba(80, 90, 180, 0.35)",
-            color: night ? "#ffe2a3" : "#dbe2ff",
-            boxShadow: `0 0 18px ${night ? "rgba(255, 207, 106, 0.35)" : "rgba(140, 160, 255, 0.4)"}`,
-          }}
+          // The week's turn keeps its colour hint as a glass tone: the dawn in Hope gold, the night in Fear purple.
+          className={glassButtonClass({ role: "neutral", tone: night ? "hope" : "fear", wrap: true })}
         >
           {night ? "☀ Bring the Dawn · begin a new week" : "☾ Bring the Night · begin a new week"}
         </button>
@@ -233,8 +230,10 @@ export function TimeArc({ campaignId, readOnly = false }: { campaignId: Id<"camp
   );
 }
 
-const endDayButton =
-  "min-h-11 cursor-pointer rounded-full border border-white/25 bg-black/45 px-5 font-display text-[14px] font-bold tracking-[0.06em] text-[#e6ecea] hover:bg-black/60 disabled:cursor-default disabled:opacity-60";
+/** End day passes time (no side): neutral glass. */
+const endDayButton = brandButton({ variant: "neutral" });
+/** Undo of the day's end backs out of it: cancel glass. */
+const undoButton = brandButton({ variant: "cancel" });
 
 export type EndDayResult = { week: number; day: number; newWeek: boolean; ended: number };
 
@@ -249,7 +248,7 @@ export function UndoEndDay({ entryId, onUndone }: { entryId: Id<"actionLog">; on
     <>
       <button
         type="button"
-        className={endDayButton}
+        className={undoButton}
         disabled={undo.pending}
         data-testid="undo-end-day"
         onClick={() =>

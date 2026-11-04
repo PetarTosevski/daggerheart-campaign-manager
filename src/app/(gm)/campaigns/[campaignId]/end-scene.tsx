@@ -35,7 +35,7 @@ export function EndScene({ campaignId, isGm }: { campaignId: Id<"campaigns">; is
       </h2>
       <p className="m-0 text-[14px] text-[#9fb2b6]">A scene lasts until its narrative situation has played out (CB 107).</p>
       <div className="flex flex-wrap gap-2.5">
-        <BrandButton variant="outline" size="sm" disabled={end.pending} onClick={() => setConfirm(true)}>
+        <BrandButton variant="danger" size="sm" disabled={end.pending} onClick={() => setConfirm(true)}>
           End scene
         </BrandButton>
       </div>
@@ -45,10 +45,10 @@ export function EndScene({ campaignId, isGm }: { campaignId: Id<"campaigns">; is
       <Modal open={confirm} onClose={() => setConfirm(false)} title="End the scene?" className="max-w-[480px]">
         <p className="m-0 text-[16px] text-[#c9d2cf]">Effects that last until the end of the scene end on every PC.</p>
         <div className="flex justify-end gap-2.5">
-          <BrandButton variant="outline" size="sm" onClick={() => setConfirm(false)}>
+          <BrandButton variant="cancel" size="sm" onClick={() => setConfirm(false)}>
             Cancel
           </BrandButton>
-          <BrandButton variant="primary" size="sm" onClick={() => void run()}>
+          <BrandButton variant="danger" size="sm" onClick={() => void run()}>
             End scene
           </BrandButton>
         </div>
