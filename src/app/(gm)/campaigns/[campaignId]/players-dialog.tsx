@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
+import { EmailInvites } from "@/components/config/sections/players/invite";
 import { errorMessage } from "@/lib/convex-errors";
 
 import { api } from "../../../../../convex/_generated/api";
@@ -29,8 +30,6 @@ export function PlayersDialog({
   const roster = useQuery(api.members.roster, open ? { campaignId } : "skip");
   const access = useQuery(api.members.access, open ? { campaignId } : "skip");
   const rotate = useMutation(api.members.rotateJoinCode);
-  const invite = useMutation(api.members.invite);
-  const revoke = useMutation(api.members.revokeInvite);
   const removePlayer = useMutation(api.members.removePlayer);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -79,47 +78,8 @@ export function PlayersDialog({
 
       <section className="flex flex-col gap-2.5">
         <SectionTitle>Invite by email</SectionTitle>
-        <form
-          className="flex flex-wrap gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const form = event.currentTarget;
-            const email = String(new FormData(form).get("email") ?? "");
-            setError(null);
-            invite({ campaignId, email })
-              .then(() => form.reset())
-              .catch((e) => setError(errorMessage(e)));
-          }}
-        >
-          <input
-            name="email"
-            type="email"
-            required
-            aria-label="Player email"
-            placeholder="player@example.com"
-            className="min-h-11 flex-[1_1_220px] rounded-lg border border-line-2 bg-ink px-3 text-[15px] text-parchment placeholder:text-faint"
-          />
-          <BrandButton type="submit" variant="neutral">
-            Invite
-          </BrandButton>
-        </form>
-        <p className="m-0 text-[13px] text-subtle">
-          The player gets an email with a sign-in link. The campaign appears once they sign in or sign up with that address, with Google or a verified password account.
-        </p>
-        {access?.invites.length ? (
-          <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
-            {access.invites.map((i) => (
-              <li key={i._id} className="flex items-center justify-between gap-3 text-[14px] text-body">
-                <span>
-                  {i.email} <span className="text-subtle">· invited</span>
-                </span>
-                <BrandButton variant="danger" size="sm" aria-label={`Revoke invite for ${i.email}`} onClick={() => run(revoke({ inviteId: i._id }))}>
-                  Revoke
-                </BrandButton>
-              </li>
-            ))}
-          </ul>
-        ) : null}
+        {/* Moved to Campaign settings, Players (config U3); the dialog imports it. */}
+        {open ? <EmailInvites campaignId={campaignId} /> : null}
       </section>
 
       <section className="flex flex-col gap-2.5">
