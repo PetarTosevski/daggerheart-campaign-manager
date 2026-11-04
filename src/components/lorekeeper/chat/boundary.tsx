@@ -2,6 +2,7 @@
 
 import { Component, type ReactNode } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 
 /**
@@ -29,16 +30,16 @@ export class ChatBoundary extends Component<
     return (
       <div role="alert" className="lk-alert">
         <span>{errorMessage(this.state.error)}</span>
-        <button
-          type="button"
-          className="lk-act lk-act-dark"
+        <BrandButton
+          variant="neutral"
+          size="sm"
           onClick={() => {
             this.setState({ error: null });
             action?.run();
           }}
         >
           {action?.label ?? "Try again"}
-        </button>
+        </BrandButton>
       </div>
     );
   }

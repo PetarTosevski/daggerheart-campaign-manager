@@ -4,6 +4,7 @@ import "./lorekeeper.css";
 
 import { Component, useLayoutEffect, useRef, type ReactNode } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { ConversationsMenu, LorekeeperChat } from "@/components/lorekeeper/chat";
 import { IndexPill, LorekeeperSide } from "@/components/lorekeeper/side";
 import { Sigil } from "@/components/lorekeeper/sigil";
@@ -34,9 +35,9 @@ class SlotBoundary extends Component<{ children: ReactNode; label: string }, { f
     return (
       <div role="alert" className="lk-alert">
         <span>{this.props.label} failed to load.</span>
-        <button type="button" className="lk-act lk-act-dark" onClick={() => this.setState({ failed: false })}>
+        <BrandButton variant="neutral" size="sm" onClick={() => this.setState({ failed: false })}>
           Try again
-        </button>
+        </BrandButton>
       </div>
     );
   }

@@ -5,9 +5,11 @@
  * the rest: cards and library rows (lk-card, lk-h, lk-lbl, lk-muted, lk-src, lk-book, lk-cover-*), pills (lk-pill,
  * lk-ok, lk-amber, lk-red), the stream (lk-stream, lk-q, lk-qb, lk-who, lk-a, lk-mini, lk-thinking, lk-dots), the
  * parchment answer (lk-ab, lk-verdict, lk-v-ok, lk-v-amber, lk-v-red, lk-quote, lk-cite, lk-chip, lk-call, lk-web,
- * lk-disc, lk-res, lk-acts, lk-act), the composer (lk-compose, lk-sugs, lk-sug, lk-inrow, lk-in, lk-send, lk-toggle),
- * rulings and legend (lk-ruling, lk-legend) and the drawer (lk-drawer, lk-fab). A slot adds CSS only in a colocated
- * .css in its own folder. The drawer (L7) is rendered outside this page: it puts .lk-root on its own container.
+ * lk-disc, lk-res, lk-acts), the composer (lk-compose, lk-sugs, lk-inrow, lk-in, lk-toggle), rulings and legend
+ * (lk-ruling, lk-legend) and the drawer (lk-drawer, lk-fab). A slot adds CSS only in a colocated .css in its own
+ * folder. Action buttons are arcane glass buttons (BrandButton, src/components/brand/buttons.tsx; plan glass-buttons
+ * G7), so the board's lk-act / lk-send / lk-sug looks are gone. The drawer (L7) is rendered outside this page: it
+ * puts .lk-root on its own container.
  * Fonts: the app's --font-cinzel, --font-garamond and --font-plex (src/app/layout.tsx), the board's three faces.
  * Not on the board: the 390 px targets of at least 44 px, and the sidebar staying in the flow above the chat on
  * phones (L7 folds it into 'Library & rulings', Q12).
@@ -103,11 +105,6 @@
 .lk-root .lk-cite { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12.5px; color: #6a5236; }
 .lk-root .lk-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; border: 1px solid #cdb88f; background: #fffaf0; color: #4a3820; font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
 .lk-root .lk-acts { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 4px; border-top: 1px dashed #cdb88f; }
-.lk-root .lk-act { min-height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid #cdb88f; background: transparent; color: #4a3820; font-family: inherit; font-size: 13px; cursor: pointer; }
-.lk-root .lk-act:hover { background: #fffaf0; }
-.lk-root .lk-act-dark { color: var(--lk-text); border-color: var(--lk-border); }
-.lk-root .lk-act-dark:hover { background: #1b282d; }
-.lk-root .lk-act:disabled { opacity: .6; cursor: default; }
 .lk-root .lk-call { padding: 10px 12px; border-radius: 10px; background: #fff6e2; border: 1px solid #e0b860; }
 .lk-root .lk-call .lk-lbl { color: #8a5a12; }
 .lk-root .lk-call p { font-size: 16.5px; }
@@ -132,16 +129,10 @@
 /* Composer */
 .lk-root .lk-compose { border-top: 1px solid var(--lk-line); padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; background: rgba(10, 16, 18, .7); }
 .lk-root .lk-sugs { display: flex; flex-wrap: wrap; gap: 6px; }
-.lk-root .lk-sug { min-height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid #3a4d54; background: #0f171a; color: var(--lk-text); font-family: inherit; font-size: 13px; cursor: pointer; }
-.lk-root .lk-sug:hover { border-color: var(--lk-gold); }
 .lk-root .lk-inrow { display: flex; gap: 8px; align-items: flex-end; }
 .lk-root .lk-in { flex: 1; min-height: 48px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--lk-border); background: var(--lk-field); color: var(--lk-text); font-family: var(--lk-serif); font-size: 18px; resize: none; box-sizing: border-box; }
 .lk-root .lk-in:focus { outline: 2px solid var(--lk-gold); outline-offset: 1px; }
-.lk-root .lk-send { min-height: 48px; padding: 0 20px; border-radius: 12px; border: none; background: var(--lk-gold); color: var(--lk-gold-ink); font-family: var(--lk-display); font-weight: 700; font-size: 15px; cursor: pointer; }
-.lk-root .lk-send:disabled { opacity: .55; cursor: default; }
-.lk-root .lk-toggle { display: inline-flex; padding: 3px; border-radius: 999px; background: #0f171a; border: 1px solid var(--lk-card-border); }
-.lk-root .lk-toggle button { min-height: 28px; padding: 0 12px; border-radius: 999px; border: none; background: transparent; color: var(--lk-muted); font-family: inherit; font-size: 12.5px; cursor: pointer; }
-.lk-root .lk-toggle button[aria-pressed="true"] { background: #24343a; color: #f3cf86; }
+.lk-root .lk-toggle { display: inline-flex; gap: 6px; }
 
 /* Sidebar cards */
 .lk-root .lk-ruling { padding: 10px; border-radius: 10px; background: #1a1610; border: 1px solid #4a3a1a; display: flex; flex-direction: column; gap: 4px; }
@@ -175,8 +166,5 @@
   .lk-root[data-page] .lk-sigil { width: 32px; height: 32px; }
   .lk-root[data-page] .lk-chathead-text .lk-muted { font-size: 12px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .lk-root .lk-compose { padding: 10px; }
-  .lk-root .lk-act,
-  .lk-root .lk-sug,
-  .lk-root .lk-chip,
-  .lk-root .lk-toggle button { min-height: 44px; }
+  .lk-root .lk-chip { min-height: 44px; }
 }

@@ -3,6 +3,7 @@
 import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { useLayoutEffect, useRef, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { EMPTY_INTRO, NEW_CONVERSATION_LABEL, YOU_LABEL } from "@/lib/lorekeeper/copy";
 import { askLocally, isLocalMessage, setVisibilityLocally, setWebSearchLocally, stopLocally } from "@/lib/optimistic/lorekeeper";
 
@@ -298,9 +299,9 @@ function Stream(
       }}
     >
       {props.canLoadMore ? (
-        <button type="button" className="lk-act lk-act-dark lk-earlier" onClick={props.onLoadMore}>
+        <BrandButton variant="neutral" size="sm" className="self-center" onClick={props.onLoadMore}>
           Show earlier messages
-        </button>
+        </BrandButton>
       ) : null}
       {loading && !showPending ? (
         <p role="status" className="lk-muted lk-loading">
@@ -355,9 +356,9 @@ function Stream(
       ) : null}
     </div>
       {away ? (
-        <button
-          type="button"
-          className="lk-act lk-act-dark lk-jump"
+        <BrandButton
+          variant="neutral"
+          className="lk-jump"
           onClick={() => {
             const el = ref.current;
             if (!el) return;
@@ -367,7 +368,7 @@ function Stream(
           }}
         >
           Jump to latest
-        </button>
+        </BrandButton>
       ) : null}
     </div>
   );

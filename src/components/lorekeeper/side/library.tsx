@@ -3,6 +3,7 @@
 import { useMutation, useQuery } from "convex/react";
 import { useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import { errorMessage } from "@/lib/convex-errors";
 import { ABOUT_BOOKS_LABEL, ABOUT_BOOKS_NOTE, ABOUT_BOOKS_TITLE, BOOK_INDEXED, BOOK_OFF, LIBRARY_COPY, LIBRARY_EMPTY, LIBRARY_TITLE, booksIndexedLabel } from "@/lib/lorekeeper/copy";
@@ -43,9 +44,9 @@ export function LibraryCard({ campaignId, access }: LorekeeperSideProps) {
       <div className="lk-cardhead">
         <h2 className="lk-h">{LIBRARY_TITLE}</h2>
         {access.isGm ? (
-          <button type="button" className="lk-act lk-act-dark" aria-haspopup="dialog" onClick={() => setAboutOpen(true)}>
+          <BrandButton variant="neutral" size="sm" aria-haspopup="dialog" onClick={() => setAboutOpen(true)}>
             {ABOUT_BOOKS_LABEL}
-          </button>
+          </BrandButton>
         ) : null}
       </div>
       <span className="lk-muted">{LIBRARY_COPY}</span>
@@ -107,9 +108,9 @@ function AboutBooksDialog({ open, onClose }: { open: boolean; onClose: () => voi
       <div className="lk-help">
         <p className="lk-dialog-text">{ABOUT_BOOKS_NOTE}</p>
         <div className="lk-formacts">
-          <button type="button" className="lk-send" onClick={onClose}>
+          <BrandButton variant="cancel" onClick={onClose}>
             Got it
-          </button>
+          </BrandButton>
         </div>
       </div>
     </Modal>

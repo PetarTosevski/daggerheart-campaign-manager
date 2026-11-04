@@ -5,6 +5,7 @@ import "./drawer.css";
 
 import { useEffect, useId, useRef } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { LOREKEEPER_NAME, LOREKEEPER_SUBTITLE } from "@/lib/lorekeeper/copy";
 
 import type { Id } from "../../../../convex/_generated/dataModel";
@@ -74,9 +75,9 @@ export function DrawerPanel({
                 </h2>
                 <span className="lk-muted">{LOREKEEPER_SUBTITLE}</span>
               </div>
-              <button type="button" className="lk-act lk-act-dark lk-drawerclose" aria-label="Close the Lorekeeper" onClick={onClose}>
+              <BrandButton variant="cancel" icon round className="flex-none" aria-label="Close the Lorekeeper" onClick={onClose}>
                 ✕
-              </button>
+              </BrandButton>
             </header>
             <div className="lk-body">
               <ChatBoundary label="The conversation" dark>

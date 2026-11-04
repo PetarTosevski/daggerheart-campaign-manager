@@ -3,6 +3,7 @@
 import { useMutation, useQuery } from "convex/react";
 import { useEffect, useId, useRef, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import { errorMessage } from "@/lib/convex-errors";
 import { CONVERSATIONS_LABEL, NEW_CONVERSATION_LABEL } from "@/lib/lorekeeper/copy";
@@ -59,21 +60,21 @@ export function ConversationsMenuView({ campaignId }: LorekeeperChatProps) {
 
   return (
     <div className="lk-convos" ref={root}>
-      <button
+      <BrandButton
         ref={toggle}
-        type="button"
-        className="lk-act lk-act-dark lk-convos-toggle"
+        variant="neutral"
+        size="sm"
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((was) => !was)}
       >
         {CONVERSATIONS_LABEL}
         <span aria-hidden="true"> ▾</span>
-      </button>
+      </BrandButton>
       <div id={panelId} className="lk-convos-panel" hidden={!open}>
-        <button type="button" className="lk-convos-new" onClick={() => pick("new")}>
+        <BrandButton variant="confirm" size="sm" onClick={() => pick("new")}>
           ＋ {NEW_CONVERSATION_LABEL}
-        </button>
+        </BrandButton>
         {lists === undefined ? (
           <p role="status" className="lk-muted">
             Loading…
@@ -148,9 +149,9 @@ function ConversationList({
                 </span>
               </button>
               {onDelete ? (
-                <button type="button" className="lk-convos-del" aria-label={`Delete “${row.title}”`} onClick={() => onDelete(row)}>
+                <BrandButton variant="danger" icon className="flex-none self-center" aria-label={`Delete “${row.title}”`} onClick={() => onDelete(row)}>
                   <span aria-hidden="true">🗑</span>
-                </button>
+                </BrandButton>
               ) : null}
             </li>
           ))}
@@ -182,12 +183,11 @@ function DeleteDialog({
         </p>
       ) : null}
       <div className="lk-formacts">
-        <button type="button" className="lk-act lk-act-dark" onClick={() => onDone(false)}>
+        <BrandButton variant="cancel" onClick={() => onDone(false)}>
           Cancel
-        </button>
-        <button
-          type="button"
-          className="lk-send lk-danger"
+        </BrandButton>
+        <BrandButton
+          variant="danger"
           disabled={busy}
           onClick={async () => {
             setBusy(true);
@@ -202,7 +202,7 @@ function DeleteDialog({
           }}
         >
           Delete
-        </button>
+        </BrandButton>
       </div>
     </Modal>
   );

@@ -2,6 +2,7 @@
 
 import "./lorekeeper.css";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { useSessionEndedRedirect } from "@/lib/auth/use-session-ended-redirect";
 import { errorMessage } from "@/lib/convex-errors";
 
@@ -18,9 +19,9 @@ export default function LorekeeperError({ error, retry }: { error: Error & { dig
         ) : (
           <div role="alert" className="lk-alert">
             <span>The Lorekeeper failed to load. {errorMessage(error)}</span>
-            <button type="button" className="lk-act lk-act-dark" onClick={() => retry()}>
+            <BrandButton variant="neutral" size="sm" onClick={() => retry()}>
               Try again
-            </button>
+            </BrandButton>
           </div>
         )}
       </main>

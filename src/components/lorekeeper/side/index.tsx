@@ -4,6 +4,7 @@ import "./side.css";
 
 import { useId, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { LEGEND_TITLE, VERDICT_COPY } from "@/lib/lorekeeper/copy";
 
 import type { LorekeeperSideProps } from "../slots";
@@ -44,12 +45,12 @@ export function LorekeeperSide(props: LorekeeperSideProps) {
   const bodyId = useId();
   return (
     <div className="lk-fold" data-open={open}>
-      <button type="button" className="lk-foldbtn" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen((was) => !was)}>
+      <BrandButton variant="tool" className="lk-foldbtn" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen((was) => !was)}>
         <span>Library &amp; rulings</span>
         <span aria-hidden="true" className="lk-foldicon">
           ▾
         </span>
-      </button>
+      </BrandButton>
       <div id={bodyId} className="lk-foldbody">
         <LibraryCard {...props} />
         <LegendCard />
