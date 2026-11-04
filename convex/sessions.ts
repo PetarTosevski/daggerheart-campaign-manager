@@ -25,6 +25,11 @@
  * - `current`: the started session, for every member, and whether extra characters are allowed in it.
  * - `allowExtraCharacters` (XC1, user 2026-10-18): while a session runs, the GM lifts the one-active-character rule
  *   for it (INVALID with no session). `end` switches it off; characters made active meanwhile stay active.
+ * - Fear at Start (config R3, Q1 a): with the campaign's table setting `fearAtStart` "pcs", `start` sets GM Fear to the
+ *   number of PCs that are not retired or dead, capped at 12 (the campaign-start rule of CB p.154 at every session;
+ *   "carry", the default and the book's rule, leaves Fear alone). The change is a Fear history row (action "reset")
+ *   and the start's campaign row carries it as `fearDelta`, so undoing the Start restores the previous Fear; the
+ *   start's log line says 'Fear reset to N'.
  * Each start and end writes one undoable `actionLog` group: a row per changed PC plus a campaign row carrying the
  * Fear. Undo restores the sheets and the Fear; the session's status and times and `sessionStartedAt` keep their
  * values (Q7, E6). `campaignState.sessionStartedAt` / `liveSessionId` are written with the session in the same
@@ -37,6 +42,8 @@ import { onSessionEnd, onSessionStart } from "../src/lib/domain/class-features/h
 import { sessionEndFeatures, sessionStartFeatures } from "../src/lib/domain/session-features";
 import { addTally, windowTally } from "../src/lib/domain/sessions";
 import { appError } from "../src/lib/errors/app-error";
+import { resolveTableSettings } from "../src/lib/config/campaign-settings";
+import { MAX_FEAR } from "../src/lib/domain/fear/index";
 import { resolveOptions } from "../src/lib/frames/options";
 import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -52,6 +59,7 @@ import { campaignQuery, keyedGmMutation } from "./lib/functions";
 import { addSessionPages } from "./lib/notes";
 import { insertSession, liveSession, loadSession, newestPlannedSession, tallyRows } from "./lib/sessions";
 import { MAX_LOG_ENTRIES, SESSION_TEXT_MAX } from "./lib/validators/sessions";
+import { recordHistory } from "./tables/history";
 
 /** One party: a handful of characters (a group holds at most 50 rows, one is the campaign's). */
 const PARTY_MAX = 49;
@@ -138,6 +146,27 @@ function lostDiceNotes(changes: { sheet: CharacterSheet; next: CharacterSheet }[
 /** The Wither conversion as the log and report say it: '3 Wither tokens → +3 Fear (1 Fear lost)'. */
 function witherNote(tokens: number, gained: number, lost: number): string {
   return `${tokens} Wither token${tokens === 1 ? "" : "s"} → +${gained} Fear${lost > 0 ? ` (${lost} Fear lost)` : ""}`;
+}
+
+// ---------------------------------------------------------------- Fear at Start (config R3)
+
+/** The PCs a reset counts (Q1 a): every character of the party that is not retired or dead. */
+const countsForFear = (character: Doc<"characters">) => character.status !== "retired" && character.status !== "dead";
+
+/**
+ * With `fearAtStart` "pcs", sets GM Fear to min(12, `pcs`) and records a change in `history` (action "reset");
+ * returns the Fear set and the signed change for the start's `fearDelta`, or null under "carry".
+ */
+async function fearAtStart(ctx: GmCtx, pcs: number): Promise<{ value: number; delta: number } | null> {
+  if (resolveTableSettings(ctx.campaign.tableSettings).fearAtStart !== "pcs") return null;
+  const campaignId = ctx.campaign._id;
+  const state = await campaignFearState(ctx, campaignId);
+  const value = Math.min(MAX_FEAR, pcs);
+  if (value !== state.fear) {
+    await ctx.db.patch("campaignState", state._id, { fear: value });
+    await recordHistory(ctx, ctx.user._id, { campaignId, kind: "fear", action: "reset", before: state.fear, after: value });
+  }
+  return { value, delta: value - state.fear };
 }
 
 // ---------------------------------------------------------------- end (shared by `end` and `start`, B6)
@@ -332,6 +361,8 @@ const startResult = v.object({
   features: v.optional(v.array(v.string())),
   /** The session that was live and was ended first (B6), with its End report. */
   ended: v.optional(endResult),
+  /** Config R3: the GM Fear the Start set under `fearAtStart` "pcs" (absent under "carry"). */
+  fearReset: v.optional(v.number()),
 });
 type StartResult = Infer<typeof startResult>;
 
@@ -363,16 +394,28 @@ export const start = keyedGmMutation({
       // dcm-bxp.111: every present journal gets this session's 'Session N' page (once per session).
       await addSessionPages(ctx, ctx.campaign, target);
       const groupId = newGroupId();
-      const active = (await party(ctx, campaignId)).filter(({ character }) => character.status === "active");
+      const members = await party(ctx, campaignId);
+      const active = members.filter(({ character }) => character.status === "active");
       // Class hooks first (Prayer Dice, Rally), then the session features on the result (F0: a changed sheet is a new reference).
       const hooked = active.map((c) => onSessionStart(c.sheet, rollDie));
       const { sheets, notes: features } = sessionStartFeatures(hooked, rollDie, featureScope(ctx.campaign));
       const changes = active.map((c, i) => ({ ...c, next: sheets[i] }));
       await saveChanged(ctx, { campaignId, actorId: ctx.user._id, groupId, summary: "session start" }, changes);
-      await logAction(ctx, { campaignId, actorId: ctx.user._id, kind: "session", visibility: "public", summary: "Session started", groupId, undoable: true });
+      const reset = await fearAtStart(ctx, members.filter(({ character }) => countsForFear(character)).length);
+      await logAction(ctx, {
+        campaignId,
+        actorId: ctx.user._id,
+        kind: "session",
+        visibility: "public",
+        summary: reset === null ? "Session started" : `Session started; Fear reset to ${reset.value}`,
+        groupId,
+        ...(reset !== null && reset.delta !== 0 ? { fearDelta: reset.delta } : {}),
+        undoable: true,
+      });
 
       const notes = prayerNotes(changes);
-      await stampLog(ctx, target, ctx.user._id, logLine("Session started.", [...notes, ...features]), "start", startedAt);
+      const resetNote = reset === null ? [] : [`Fear reset to ${reset.value}`];
+      await stampLog(ctx, target, ctx.user._id, logLine("Session started.", [...notes, ...features, ...resetNote]), "start", startedAt);
       return {
         startedAt,
         alreadyStarted: false,
@@ -382,6 +425,7 @@ export const start = keyedGmMutation({
         reminders: [],
         features,
         ...(ended === undefined ? {} : { ended }),
+        ...(reset === null ? {} : { fearReset: reset.value }),
       };
     }),
 });
