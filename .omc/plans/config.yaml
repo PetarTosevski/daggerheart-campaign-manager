@@ -497,7 +497,7 @@ waves:
           - convex/lorekeeperLibrary.ts
           - src/components/lorekeeper/**
         acceptance:
-          - "'Sources it may search': every book of lorekeeperLibrary.list with its switch (setEnabled) and 'Indexed' pill; the House rules (notes) book shows as 'Your <campaign> notes' (Q24 default); 'Table rulings & house rules · This page' locked on; 'GM-only notes · Never shown to players' locked off"
+          - "'Sources it may search': every book of lorekeeperLibrary.list with its switch (setEnabled) and 'Indexed' pill; the House rules (notes) book keeps its own row; 'Table rulings & house rules · This page' locked on; 'GM-only notes · Never shown to players' locked off; books.tsx (the GM's own PDF books, Q24 b) and limits.tsx (Ask for higher limits, Q21) are rendered as empty stubs that AU8 and AU3 fill"
           - "'Search the internet when the books don't say' switch (hint 'Results are marked From the internet · unofficial.') writes lorekeeperWeb; 'Who can ask' segmented Everyone / GM only writes lorekeeperAsk"
           - "e2e: GM sets GM only, a player's composer shows the GM-only line; lint, typecheck, tests pass"
       - id: U5
@@ -1109,7 +1109,7 @@ waves:
           - convex/convex.config.ts
           - convex/auth.config.ts
         acceptance:
-          - "Every mutation wrapper (user, keyed user, campaign, gm, creator) and userAction reads appStatus once and throws READ_ONLY_MODE when on, unless the caller is the owner or the wrapper option readOnly: 'allow' is set (only markOpened and presence.beat, Q31 default); a test walks the inventory of public mutations and checks each refuses (sample per wrapper) so a new wrapper can't skip it"
+          - "Every mutation wrapper (user, keyed user, campaign, gm, creator) and userAction reads appStatus once and throws READ_ONLY_MODE when on, unless the caller is the owner or the wrapper option readOnly: 'allow' is set (only markOpened and presence.heartbeat / disconnect, Q31); a test walks the inventory of public mutations and checks each refuses (sample per wrapper) so a new wrapper can't skip it"
           - "appStatus.get maybeUserQuery { readOnly, message } for everyone, signed out included; adminMaintenance.setReadOnly { on, message <= 200 } audited"
           - "adminMaintenance.keys returns booleans only: anthropicKey, resendKey + mailFrom, siteUrl, google (AUTH_GOOGLE_ID / SECRET present); 'database' = true when the query runs; a test asserts no returned string equals any env value"
           - "Backups (Q29 default): Convex has no function-callable backup API; adminMaintenance.backups returns the Convex dashboard link for this deployment (from CONVEX_CLOUD_URL) and says 'Backups are managed in the Convex dashboard'; no fake 'last backup' time"
@@ -1160,23 +1160,6 @@ waves:
         acceptance:
           - "settle / reserve detect the crossing in the same mutation, set appConfig.spendAlertMonth and schedule internal.spendAlert.send (Resend, the owner's verified email, no key in logs); a second crossing in the month sends nothing; fake mode on e2e sends nothing"
           - "lint, typecheck, vitest pass"
-      - id: AU1
-        title: "Admin UI: Overview tab"
-        part: B
-        size: S
-        mode: add
-        goal: "The Overview tab shows the four stat tiles, alerts, the campaigns card and Recent changes as the design draws them"
-        depends_on: [AD1, AD2]
-        owns:
-          - src/components/admin/overview/**
-          - tests/unit/admin/overview.test.tsx
-          - docs/tasks/TASK-CONFIG-AU1.md
-        reads:
-          - reference/designs/config/Admin.dc.html
-          - convex/adminOverview.ts
-        acceptance:
-          - "Tiles 'Accounts N · 1 owner · n GM · n players', 'Campaigns N of M allowed', 'Lorekeeper questions N this month', 'Lorekeeper spend $x of $y this month'; alerts with their text (e.g. '<name> is at 27 of 30 Lorekeeper questions today'); campaigns rows; 'Recent changes · Every change on this page is logged with who made it.' paginated"
-          - "Error boundary per card; lint, typecheck, tests pass"
       - id: AU2
         title: "Admin UI: Accounts tab"
         part: B
@@ -1193,27 +1176,7 @@ waves:
           - convex/adminAccounts.ts
         acceptance:
           - "'Who can join' section: New accounts (Invite link only / Open sign-up / Closed), steppers Campaigns per GM ('Archived campaigns don't count.'), Campaigns in the whole app ('New campaigns are refused past this.'), Characters per player in a campaign ('Includes retired characters.'), Players per campaign; no 'Who can create a campaign', no 'Waiting for you'"
-          - "Account table (Account / Role / Campaigns / Last seen / Actions) paginated; '···' = Add to testers / Remove from testers (Q28 default); lint, typecheck, tests pass"
-      - id: AU3
-        title: "Admin UI: Lorekeeper tab, and the GM's raise-limits row in campaign settings"
-        part: B
-        size: M
-        mode: add
-        blocked_on: Q21
-        goal: "The Lorekeeper tab shows the budget, the at-limit choice, the 80% email switch, per-person limits, 'Let GMs raise limits for their own table', use by campaign and the book library with Upload / Replace"
-        depends_on: [AD1, AD6, AD8]
-        owns:
-          - src/components/admin/lorekeeper/**
-          - src/components/config/sections/lorekeeper/limits.tsx
-          - tests/unit/admin/lorekeeper.test.tsx
-          - docs/tasks/TASK-CONFIG-AU3.md
-        reads:
-          - reference/designs/config/Admin.dc.html
-          - convex/adminLorekeeper.ts
-          - convex/adminLibrary.ts
-        acceptance:
-          - "Budget card (spend and questions this month, monthly limit stepper 'Resets on the 1st.', When the limit is reached: Pause the Lorekeeper / GMs only / Shorter answers, Email me at 80%); Limits per person (Questions per day 'For each player and GM. You have no limit.', Internet searches per day); GMs-raise switch per Q21; Use by campaign; Book library rows with Replace and 'Upload a book'"
-          - "limits.tsx is the GM-side row the Q21 answer needs (rendered only when the switch is on); lint, typecheck, tests pass"
+          - "Account table (Account / Role / Campaigns / Last seen / Actions) paginated; '···' = Add to testers / Remove from testers, plus an empty account-actions slot that AU9 fills with Suspend / Delete once Q28's design is approved; lint, typecheck, tests pass"
       - id: AU4
         title: "Admin UI: Feature switches tab and the tester list"
         part: B
@@ -1230,7 +1193,7 @@ waves:
           - convex/features.ts
           - convex/adminAccounts.ts
         acceptance:
-          - "Intro 'Turn new parts of the app on for yourself first, then testers, then everyone. Nothing is lost when a feature is off.'; one row per FEATURES entry (no combat HUD row); Testers card lists testers, Edit opens a picker over the account table"
+          - "Intro 'Turn new parts of the app on for yourself first, then testers, then everyone. Nothing is lost when a feature is off.'; one row per FEATURES entry (every board row but the combat HUD, Q25 b); the Journal and Share links rows follow N2 (recommended: saved like the others, with the note 'Always on for now: the old Sessions and Notes pages are gone' / 'Not built yet'); Testers card lists testers, Edit opens a picker over the account table"
           - "lint, typecheck, tests pass"
       - id: AU5
         title: "Admin UI: Maintenance tab and the read-only banner everywhere"
@@ -1296,18 +1259,238 @@ waves:
           - convex/spritePacks.ts
           - src/components/combat-map/tokens/**
         acceptance:
-          - "useFeature(key) reads features.mine (loading = on, so nothing flickers off for everyone); dice3d off forces 3D off whatever Preferences say; phoneLayout off renders the tablet layout under 600 px; lorekeeperWeb off hides the toggle and lorekeeperRun skips the web pass (featureOn); spriteTokens off draws portraits (the token renderer file is named in the task doc and owned by amending this tracer if needed)"
+          - "useFeature(key) reads features.mine (loading = on, so nothing flickers off for everyone); dice3d off forces 3D off whatever Preferences say; phoneLayout off renders the tablet layout under 600 px; lorekeeperWeb off hides the toggle and lorekeeperRun skips the web pass (featureOn); spriteTokens off draws portraits (the token renderer file is named in the task doc and owned by amending this tracer if needed); journal and shareLinks have no effect until N2 says otherwise (tested: switching them changes nothing)"
           - "lint, typecheck, tests pass"
-  # ------------------------------------------------------------------ wave 8: Part B close
+      - id: AD12
+        title: "Lorekeeper limit requests: a GM asks, the owner approves or declines and sets the campaign's numbers (Q21 changed)"
+        part: B
+        size: M
+        mode: add
+        blocked_on: N10
+        goal: "A GM or co-GM asks the app owner for higher Lorekeeper limits for their campaign; the owner sees the request, approves it with the numbers they choose (or sets a campaign's numbers directly) or declines it; the campaign's limits change at once and the GM sees the answer; there is no GM self-service"
+        depends_on: [AD0, AD6]
+        owns:
+          - convex/lorekeeperLimitRequests.ts
+          - tests/convex/limit-requests.test.ts
+          - tests/convex/authz/admin-limit-requests.entries.ts
+          - tests/convex/authz/admin-limit-requests.test.ts
+          - docs/tasks/TASK-CONFIG-AD12.md
+        reads:
+          - convex/lib/lorekeeper/caps.ts
+          - convex/lib/appConfig.ts
+          - convex/lib/adminAudit.ts
+          - convex/tables/admin.ts
+        acceptance:
+          - "request gmMutation (GM and co-GM) { wants: optional integers dailyQuestions / dailyWebSearches / bookCount / bookPages (each 0-1000, at least one), reason <= 300 }: LIMIT_REQUESTS_OFF when the owner's switch is off, LIMIT_REQUEST_PENDING while the campaign has a pending one; rate-limited; the requester can cancel"
+          - "forCampaign gmQuery: the campaign's current numbers (defaults or its lorekeeperCampaignLimits row), the pending request and the last decision; list appOwnerQuery paginated, pending first; decide appOwnerMutation { requestId, approve, numbers? } writes lorekeeperCampaignLimits (the owner's numbers, not necessarily the asked ones) and the decision; setCampaignLimits appOwnerMutation { campaignId, change } single field; each owner write is audited"
+          - "AD6's capLimits picks the new numbers up on the next question (test); N10 decides whether the owner is also emailed (recommended: no, the Overview alert only); Authz entries (gm class for the GM side, appOwner class for the rest); lint, typecheck, vitest pass"
+      - id: AD13
+        title: "Owner read-only view of any campaign (Q27 b): a query-only path through permissionFor, writes untouched"
+        part: B
+        size: M
+        mode: add
+        blocked_on: N1
+        goal: "The app owner can open any campaign and read it as N1 says (recommended: what the GM sees) without being a member, while every write, every action and every function that does not opt in stays exactly as it is for them; each open is logged"
+        depends_on: [AD0, AD10, G2]
+        owns:
+          - convex/lib/permissions.ts
+          - convex/lib/functions.ts
+          - convex/campaigns.ts
+          - convex/appAdmin.ts
+          - tests/convex/authz/harness.ts
+          - tests/convex/authz/world.ts
+          - tests/convex/authz-matrix.test.ts
+          - tests/convex/owner-view.test.ts
+          - docs/tasks/TASK-CONFIG-AD13.md
+        reads:
+          - convex/lib/appOwner.ts
+          - convex/lib/adminAudit.ts
+          - tests/convex/authz/**
+          - docs/best-practices.md
+        acceptance:
+          - "permissions.ts: permissionFor(ctx, user, campaignId, { ownerView: true }), and only with that option: when the caller has no member row, grant or invite and isAppOwner(ctx, user) is true, it returns the permission N1 picks ('owner' for the GM view, 'view' for the player view) with access.ownerView = true; never the 'creator' rank; without the option nothing changes (rule 2 holds: permissionFor stays the only decision point, isAppOwner the only owner check)"
+          - "functions.ts: only the campaign query wrappers (campaignQuery, gmQuery and their maybe-variants) pass ownerView: true; every mutation and action wrapper, keyed or not, and every direct permissionFor call elsewhere keep the default, so the owner's writes on a campaign they are not in stay NOT_FOUND exactly as today; a mutation that still meets an ownerView access (defence in depth) throws OWNER_VIEW_READ_ONLY"
+          - "campaigns.get adds ownerView (bool) to the summary (role per N1, isCreator false); markOpened is unchanged (NOT_FOUND for the owner), so the owner never shows in Last seen or member lists; appAdmin.openCampaign appOwnerMutation { campaignId } writes the 'campaign.view' audit row (a query can't write, so the Overview's Open calls it first)"
+          - "Authz matrix: the world's appOwner (not a member of the world's campaign) expects 'ok' on every campaign query class the option reaches and keeps NOT_FOUND / FORBIDDEN on every mutation and action class; a guard test fixes the appOwner's expected code for every mutation entry, so no write row can flip to ok; owner-view.test.ts: reads work; Fear, notes, a Lorekeeper question and character edits are refused; players' private notes and private Lorekeeper conversations stay hidden (they are hidden from the GM too)"
+          - "lint, typecheck, full vitest (matrix included) pass"
+      - id: LB1
+        title: "GM campaign books server: upload a PDF for one campaign, searched only by that campaign's Lorekeeper, within the campaign's book allowance (Q24 b)"
+        part: B
+        size: M
+        mode: add
+        blocked_on: N6
+        needs: dependency-ok
+        goal: "The campaign's GM (and co-GMs per N7) uploads a book PDF for their campaign; PDF0 parses and indexes it; it counts against the campaign's book allowance, is searched only by that campaign's Lorekeeper, can be removed, and is purged with the campaign"
+        depends_on: [AD0, AD6, PDF0]
+        owns:
+          - convex/tables/lorekeeper.ts
+          - convex/lib/validators/lorekeeper.ts
+          - convex/campaignBooks.ts
+          - convex/lorekeeperLibrary.ts
+          - convex/lib/lorekeeper/context.ts
+          - convex/cleanup.ts
+          - tests/convex/cleanup.test.ts
+          - tests/convex/campaign-books.test.ts
+          - tests/convex/authz/config-books.entries.ts
+          - tests/convex/authz/config-books.test.ts
+          - docs/tasks/TASK-CONFIG-LB1.md
+        reads:
+          - convex/pdfIngest.ts
+          - convex/lib/lorekeeper/caps.ts
+          - convex/lib/files.ts
+          - docs/lorekeeper.md
+        acceptance:
+          - "Widen lorekeeperBooks with campaignId?, uploadedBy? and sizeBytes? plus index by_campaign (rule 7: optional fields; no campaignId = a shared book); keys 'campaign:<campaignId>:<n>'"
+          - "campaignBooks.uploadUrl gmMutation (N7: recommended GM and co-GMs; rate-limited, rule 10); add gmMutation { storageId, title, firstPrintedPage }: application/pdf only, <= 20 MB and <= 300 pages, BOOK_ALLOWANCE past the campaign's bookCount / bookPages (N6 defaults: 3 books of up to 300 pages, raised only by the owner through AD12); deletes the file on any refusal, else PDF0's ingestPdf; list gmQuery; remove gmMutation deletes the book, its chunks (batched, scheduled) and its library rows"
+          - "lorekeeperLibrary.list returns the shared books plus this campaign's own; lib/lorekeeper/context.ts searches only enabled books that are shared or belong to this campaign, never another campaign's (test with two campaigns); questions answered from them count as normal questions"
+          - "cleanup.ts purges the campaign's books and chunks with the campaign (batched); the export (AD11) already excludes chunks; Authz entries; lint, typecheck, vitest pass"
+  # ------------------------------------------------------------------ wave 8: admin UI that needs wave 7, owner view UI, campaign books UI, suspend / delete server
   - wave: 8
     tracers:
+      - id: AU1
+        title: "Admin UI: Overview tab"
+        part: B
+        size: S
+        mode: add
+        goal: "The Overview tab shows the four stat tiles, alerts, the campaigns card and Recent changes as the design draws them"
+        depends_on: [AD1, AD2, AD13]
+        owns:
+          - src/components/admin/overview/**
+          - tests/unit/admin/overview.test.tsx
+          - docs/tasks/TASK-CONFIG-AU1.md
+        reads:
+          - reference/designs/config/Admin.dc.html
+          - convex/adminOverview.ts
+        acceptance:
+          - "Tiles 'Accounts N · 1 owner · n GM · n players', 'Campaigns N of M allowed', 'Lorekeeper questions N this month', 'Lorekeeper spend $x of $y this month'; alerts with their text (e.g. '<name> is at 27 of 30 Lorekeeper questions today'); campaigns rows; 'Recent changes · Every change on this page is logged with who made it.' paginated"
+          - "Campaigns card: 'Open' on every campaign (Q27 b); for a campaign the owner is not in it calls appAdmin.openCampaign (audited) and then opens /campaigns/<id> in the read-only view (AD13, AU7); the limit-request alert links to the Lorekeeper tab"
+          - "Error boundary per card; lint, typecheck, tests pass"
+      - id: AU3
+        title: "Admin UI: Lorekeeper tab with limit requests, and the GM's 'Ask for higher limits' row in campaign settings"
+        part: B
+        size: M
+        mode: add
+        blocked_on: Q21
+        goal: "The Lorekeeper tab shows the budget, the at-limit choice, the 80% email switch, per-person limits, the GM-requests switch, the waiting limit requests (approve with numbers / decline) and per-campaign limits, use by campaign and the book library with Upload / Replace (PDF); a GM asks for higher limits from their Lorekeeper settings"
+        depends_on: [AD1, AD6, AD8, AD12, U4]
+        owns:
+          - src/components/admin/lorekeeper/**
+          - src/components/config/sections/lorekeeper/limits.tsx
+          - tests/unit/admin/lorekeeper.test.tsx
+          - docs/tasks/TASK-CONFIG-AU3.md
+        reads:
+          - reference/designs/config/Admin.dc.html
+          - convex/adminLorekeeper.ts
+          - convex/adminLibrary.ts
+          - convex/lorekeeperLimitRequests.ts
+        acceptance:
+          - "Budget card (spend and questions this month, monthly limit stepper 'Resets on the 1st.', When the limit is reached: Pause the Lorekeeper / GMs only / Shorter answers, Email me at 80%); Limits per person (Questions per day 'For each player and GM. You have no limit.', Internet searches per day); the board's 'Let GMs raise limits' row re-labelled per N10 (recommended 'Let GMs ask for higher limits' · 'You approve each request.'); 'Requests' list (campaign, GM, what they ask for, reason, Approve with editable numbers / Decline); Use by campaign rows with each campaign's own numbers; Book library rows with Replace and 'Upload a book' (PDF, 'Up to 20 MB and 300 pages', upload progress then ingest status)"
+          - "limits.tsx (GM side, in Campaign settings > Lorekeeper, Q21 changed): this campaign's current numbers, 'Ask for higher limits' (questions per day, internet searches per day, books / pages, a short reason) while the owner's switch is on, the pending request's status and the last answer; hidden when the switch is off; lint, typecheck, tests pass"
+      - id: AU7
+        title: "Owner read-only view in the campaign pages: banner, no settings entry points, no bookkeeping"
+        part: B
+        size: S
+        mode: add
+        blocked_on: N1
+        goal: "When the owner opens a campaign they are not in, every page says it is a read-only view, the gear and the Players button are hidden, and the shell neither records the open nor joins presence"
+        depends_on: [AD13, U3p, SX]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
+          - src/components/config/owner-view-banner.tsx
+          - tests/unit/config/owner-view.test.tsx
+          - tests/e2e/owner-view.spec.ts
+          - docs/tasks/TASK-CONFIG-AU7.md
+        reads:
+          - convex/campaigns.ts
+          - src/components/config/**
+          - src/components/app-bar/**
+        acceptance:
+          - "With campaigns.get ownerView true: a banner on every campaign page 'Read-only view · You are not in this campaign. Nothing can be changed here.' (role=status), no gear, no Players button, markOpened and the presence hook not mounted; a write that still slips through shows OWNER_VIEW_READ_ONLY's message"
+          - "owner-view.spec.ts: the owner opens another GM's campaign from the Overview, reads the dashboard, Journal and Combat Map, sees the banner, and a write is refused; axe passes; lint, typecheck, tests pass"
+      - id: AU8
+        title: "Campaign settings > Lorekeeper: the GM's own books (upload a PDF, status, remove)"
+        part: B
+        size: S
+        mode: add
+        blocked_on: N6
+        goal: "In Campaign settings > Lorekeeper the GM uploads a book PDF for this campaign, sees it being read and then indexed, switches it on or off like any book, sees what is left of the allowance, and removes it"
+        depends_on: [U4, LB1]
+        owns:
+          - src/components/config/sections/lorekeeper/books.tsx
+          - src/components/config/sections/lorekeeper/books/**
+          - tests/unit/config/campaign-books.test.tsx
+          - tests/e2e/config-campaign-books.spec.ts
+          - docs/tasks/TASK-CONFIG-AU8.md
+        reads:
+          - reference/designs/config/Settings.dc.html
+          - convex/campaignBooks.ts
+          - src/components/brand/glass-button.ts
+        acceptance:
+          - "The board's 'Your Witherwild notes · Uploaded by you' row style for each own book ('<pages> pages · This campaign only'); 'Upload a book' (PDF, 'Up to 20 MB and 300 pages', the N6 numbers), progress, 'Reading the book…' then 'Indexed', a parse failure's message; Remove with confirm (glass 'danger'); 'N of M books used' and a link to 'Ask for higher limits' (AU3's limits.tsx)"
+          - "e2e uploads the fixture PDF, asks the Lorekeeper and gets a citation from it; a second campaign's Lorekeeper does not; lint, typecheck, tests pass"
+      - id: AD14
+        title: "Suspend and delete accounts with safeguards (Q28 b): needs a design and the user's confirmation"
+        part: B
+        size: L
+        mode: add
+        needs: design
+        blocked_on: N11
+        goal: "The owner suspends an account (it can't sign in or use the app and is signed out everywhere; its data stays) and lifts it, or deletes an account (suspended at once, erased after a 30-day undo window, its campaigns and characters handled as N11 says); nobody can suspend or delete the owner or themselves; every step is audited"
+        depends_on: [AD0, AD3, AD13]
+        owns:
+          - convex/tables/admin.ts
+          - convex/lib/validators/admin.ts
+          - convex/adminAccountActions.ts
+          - convex/accountPurge.ts
+          - convex/lib/functions.ts
+          - convex/lib/users.ts
+          - convex/crons.ts
+          - tests/convex/schema-guard.test.ts
+          - tests/convex/account-suspend.test.ts
+          - tests/convex/account-delete.test.ts
+          - tests/convex/authz/admin-account-actions.entries.ts
+          - tests/convex/authz/admin-account-actions.test.ts
+          - docs/tasks/TASK-CONFIG-AD14.md
+        reads:
+          - convex/lib/appOwner.ts
+          - convex/lib/adminAudit.ts
+          - convex/cleanup.ts
+          - convex/auth.ts
+        acceptance:
+          - "Not started before the user answers N11 and approves a design for the account menu and its confirm steps; the lines below are the plan's proposal"
+          - "accountStatus { userId, suspendedAt?, reason, deleteAfter?, by } by_user (new table in admin.ts, rule 7); suspend / unsuspend / scheduleDelete / cancelDelete appOwnerMutation { userId, reason, confirmEmail } (confirmEmail must equal the account's email; the owner's account and the caller's own are refused); suspending deletes the user's auth sessions and refresh tokens; every user wrapper and sign-in of an existing user (createOrUpdateUser) refuse a suspended account with ACCOUNT_SUSPENDED"
+          - "accountPurge (internal, batched, self-rescheduling, daily cron; rule 8) erases accounts past deleteAfter: their campaigns per N11 (recommended: handed to a co-GM if there is one, else deleted through today's campaign delete and purge), their characters in others' campaigns per N11 (recommended: kept, shown as a former player), their preferences, UI state, drafts, folds, invites and auth rows; audit rows keep the id only"
+          - "Authz class appOwner; lint, typecheck, vitest pass"
+  # ------------------------------------------------------------------ wave 9: suspend / delete UI, Part B close
+  - wave: 9
+    tracers:
+      - id: AU9
+        title: "Admin UI: Suspend / Delete in the account row's menu (after the design)"
+        part: B
+        size: S
+        mode: add
+        needs: design
+        blocked_on: N11
+        goal: "The account row's '···' menu offers Suspend / Lift suspension and Delete account with the safeguards the approved design draws"
+        depends_on: [AU2, AD14]
+        owns:
+          - src/components/admin/accounts/account-actions/**
+          - tests/unit/admin/account-actions.test.tsx
+          - tests/e2e/admin-account-actions.spec.ts
+          - docs/tasks/TASK-CONFIG-AU9.md
+        reads:
+          - convex/adminAccountActions.ts
+          - src/components/brand/glass-button.ts
+        acceptance:
+          - "Per the approved design; at least: a reason, typing the account's email to confirm, 'Deleted in 30 days · Undo' on the row, no menu on the owner's own row; glass 'danger' for the destructive buttons"
+          - "lint, typecheck, tests pass"
       - id: AX
         title: "Part B close: superadmin e2e, docs from env to admin, dcm-cd8 closed"
         part: B
         size: S
         mode: add
-        goal: "A browser spec proves no one but the owner reaches the admin page or any admin function, the docs say where each limit now lives, and the creation-cap bead is closed"
-        depends_on: [AU1, AU2, AU3, AU4, AU5, AU6, AF1, AD4, AD5a, AD5b, AD7]
+        goal: "Not waiting for AD14 / AU9 (Q28 needs a design). A browser spec proves no one but the owner reaches the admin page or any admin function, the docs say where each limit now lives, and the creation-cap bead is closed"
+        depends_on: [AU1, AU2, AU3, AU4, AU5, AU6, AU7, AU8, AF1, AD4, AD5a, AD5b, AD7]
         owns:
           - tests/e2e/admin-superadmin.spec.ts
           - tests/e2e/a11y-admin.spec.ts
@@ -1318,6 +1501,6 @@ waves:
           - convex/appAdmin.ts
           - convex/adminSetup.ts
         acceptance:
-          - "admin-superadmin.spec.ts: a GM and a player get 'Not found' at /admin and FORBIDDEN from a direct call of each admin function; the owner sees every tab; axe on every tab"
-          - "docs/lorekeeper.md and docs/deploy.md: limits and caps move from env to App admin (env stays the fallback), how to set the owner (npx convex run adminSetup:setOwner), what the export contains and excludes"
+          - "admin-superadmin.spec.ts: a GM and a player get 'Not allowed' at /admin (Q17 changed) and FORBIDDEN from a direct call of each admin function; the owner sees every tab and opens a campaign they are not in read-only (a write is refused); axe on every tab"
+          - "docs/lorekeeper.md and docs/deploy.md: limits and caps move from env to App admin (env stays the fallback), how to set the owner (npx convex run adminSetup:setOwner), what the export contains and excludes, PDF book uploads (owner and GM) and their limits, limit requests, the owner's read-only view"
           - "Full e2e suite green; lint, typecheck, tests pass"
