@@ -26,7 +26,15 @@ config.resolver.extraNodeModules = {
 
 // One physical copy of each, the one installed for this package. `convex/*`
 // covers convex/server, convex/values, and the rest of the public subpaths.
-const singletonRoots = ["convex", "react", "react-native"];
+const singletonRoots = [
+  "convex",
+  "react",
+  "react-native",
+  "react-native-screens",
+  "react-native-safe-area-context",
+  "react-native-gesture-handler",
+  "react-native-reanimated",
+];
 
 const nodeModuleShim = path.join(projectRoot, "src/shims/node-module.ts");
 
