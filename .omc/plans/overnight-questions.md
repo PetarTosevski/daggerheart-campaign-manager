@@ -336,3 +336,4 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - Party level = highest (keep). Journal: no second-live-session / replay buttons (keep). Remove scene: no confirm (keep). Deleting newest session reuses its number (keep). Archived: invite join allowed, drafts allowed (keep). Character sheets keep their buttons (G14/G15 stay skipped). Revive: CHANGE.
 - CHANGES (beads filed): least-spotlight tie names everyone; level-ups after End count for the ended session until the next one starts; Lorekeeper answer card buttons ink-on-parchment; stat block + custom adversary editor buttons ink-on-parchment; revive shows a feed line to players; Load Campaign badge 'Co-GM'; Fear reset at session start skips Away PCs; Journal encounter card gets a party-size stepper.
 - ANSWERED: big (lg) buttons use the old Cinzel capitals (B).
+- AU6: the App admin row uses neutral glass; the design drew it as a gold card. Ask: keep neutral glass or gold?
