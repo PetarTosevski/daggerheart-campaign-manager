@@ -11,6 +11,7 @@ import { CampaignNav, CombatAppBarFrame } from "@/components/app-bar";
 import { BackLink, Wordmark } from "@/components/brand/brand";
 import { Modal } from "@/components/brand/modal";
 import { SlotBoundary } from "@/components/party/session/boundary";
+import { sessionPlayHref } from "@/components/sessions/session-chip";
 import { frameName } from "@/lib/campaign-display";
 import { frameHasMechanic } from "@/lib/frames";
 import { brandButton } from "@/components/brand/buttons";
@@ -104,8 +105,9 @@ const heroPill =
   "inline-flex min-h-[52px] cursor-pointer items-center rounded-full bg-brand px-[30px] font-display text-[16px] font-bold tracking-[0.1em] text-brand-ink hover:brightness-110 disabled:cursor-default disabled:opacity-60";
 
 /**
- * GM: 'Start Session' (B8) starts the newest planned session, creating one when there is none, and opens it on Play;
- * while a session is live the pill reads 'Session N in progress' and opens it. Players see a chip while one is live.
+ * GM: 'Start Session' (B8) starts the newest planned session, creating one when there is none, and opens its Log & recap
+ * in the Journal (JX1); while a session is live the pill reads 'Session N in progress' and opens it there. Players see a
+ * chip while one is live.
  */
 function HeroSessionAction({ campaignId, isGm }: { campaignId: Id<"campaigns">; isGm: boolean }) {
   const summary = useQuery(api.sessionWrap.dashboard, { campaignId });
@@ -114,8 +116,8 @@ function HeroSessionAction({ campaignId, isGm }: { campaignId: Id<"campaigns">; 
   // A confirm before starting (user 2026-10-20), as the Sessions tab's live card has.
   const [confirm, setConfirm] = useState(false);
   if (summary === undefined) return null;
-  const sessions = `/campaigns/${campaignId}/sessions`;
-  const play = (sessionId: string) => `${sessions}?s=${sessionId}&stage=play`;
+  const journal = `/campaigns/${campaignId}/journal`;
+  const play = (sessionId: string) => sessionPlayHref(campaignId, sessionId);
 
   if (summary.live) {
     const label = `Session ${summary.live.n} in progress`;
@@ -135,8 +137,8 @@ function HeroSessionAction({ campaignId, isGm }: { campaignId: Id<"campaigns">; 
   async function startSession() {
     setConfirm(false);
     const result = await start.fire({ campaignId });
-    // Without a sessionId the server found one already live (alreadyStarted); the Sessions tab shows it.
-    if (result) router.push(result.sessionId ? play(result.sessionId) : sessions);
+    // Without a sessionId the server found one already live (alreadyStarted); the Journal opens on it.
+    if (result) router.push(result.sessionId ? play(result.sessionId) : journal);
   }
 
   return (

@@ -153,8 +153,8 @@ for (const viewport of [
       const gmTab2 = await page.context().newPage();
       try {
         // ---- 1. The GM: a session log linked to the live session (Q5, D6).
-        await gm.page.goto(`/campaigns/${campaignId}/notes`);
-        await expect(gm.page.getByRole("heading", { level: 1, name: "Game Master’s Journal" })).toBeVisible();
+        await gm.page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
+        await expect(gm.page.getByRole("group", { name: "Writing as" }).getByRole("button", { name: "Game Master", pressed: true })).toBeVisible();
         if (viewport.width < 640) {
           // The whole index column (search, pages, Shared, journals, bin, Quick keys) is behind the disclosure.
           await expect(index(gm.page).getByRole("searchbox")).toBeHidden();
@@ -176,7 +176,7 @@ for (const viewport of [
 
         // Writes; a second tab of the same account follows live.
         await gmTab2.setViewportSize(viewport);
-        await gmTab2.goto(`/campaigns/${campaignId}/notes?page=${log}`);
+        await gmTab2.goto(`/campaigns/${campaignId}/journal?tab=notes&page=${log}`);
         await expect(ownPaper(gmTab2).getByLabel("Page title")).toHaveValue("Session 2");
         await write(gm.page, "* bribe the ferryman");
         await write(gm.page, "- the toll is two silver");
@@ -205,8 +205,8 @@ for (const viewport of [
         await expect.poll(() => sharedTitles(B, campaignId, "gm")).toEqual(["Game Master/Session 2"]);
 
         // ---- 2. A writes in Ash's journal and adds to the GM's 'everyone' page: ' - Ash'.
-        await A.page.goto(`/campaigns/${campaignId}/notes`);
-        await expect(A.page.getByRole("heading", { level: 1, name: "Ash’s Journal" })).toBeVisible();
+        await A.page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
+        await expect(A.page.getByRole("group", { name: "Writing as" }).getByRole("button", { name: "Ash", pressed: true })).toBeVisible();
         await write(A.page, "o we crossed the river");
         let panel = await openTab(A.page, "Shared by GM");
         await expect(sharedRow(panel, "Rumors & hooks")).toBeVisible();
@@ -225,8 +225,8 @@ for (const viewport of [
         await dialog.getByRole("button", { name: "Done" }).click();
 
         // ---- B: sees the GM's 'everyone' page only, adds to it (' - Bram'), writes in Bram's journal.
-        await B.page.goto(`/campaigns/${campaignId}/notes`);
-        await expect(B.page.getByRole("heading", { level: 1, name: "Bram’s Journal" })).toBeVisible();
+        await B.page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
+        await expect(B.page.getByRole("group", { name: "Writing as" }).getByRole("button", { name: "Bram", pressed: true })).toBeVisible();
         panel = await openTab(B.page, "Shared by GM");
         await expect(panel.getByRole("button")).toHaveCount(1);
         await sharedRow(panel, "Session 2").click();
@@ -243,7 +243,7 @@ for (const viewport of [
         await expect(ownPaper(gm.page).getByText("the ferryman lied - Ash")).toBeVisible();
         await expect(ownPaper(gm.page).getByText("follow him at dusk - Bram")).toBeVisible();
 
-        await B.page.goto(`/campaigns/${campaignId}/notes`);
+        await B.page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
         await write(B.page, "o lost my map");
         await openOwnPage(B.page, "My goals");
         await write(B.page, "* find my sister");
@@ -334,7 +334,7 @@ test("mentions are name chips while writing and editing; the server stores the t
   const gm = await convexAs(page);
   const { entryId: npc } = await gm.mutation(api.codex.create, { campaignId, kind: "character", idempotencyKey: crypto.randomUUID() });
   await gm.mutation(api.codex.update, { entryId: npc, patch: { name: "Marlow", role: "Ferryman" } });
-  await page.goto(`/campaigns/${campaignId}/notes?page=template-0`);
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes&page=template-0`);
 
   const input = paperColumn(page).getByRole("textbox", { name: "New entry" });
   await input.click();

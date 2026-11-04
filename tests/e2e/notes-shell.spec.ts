@@ -3,11 +3,11 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 import { signInAsTestGm } from "./fixtures";
 import { expectNoHorizontalScroll, visual } from "./visual/helpers";
 
-// D11 N0: the Notes page shell (.omc/plans/d11-notes.yaml). The GM and a player each open Notes from the nav and get
-// the board's hero, the index column (search, the three page groups, the Shared tabs 'Shared by players' / 'Shared by
-// GM', the journals lists, the bin, Quick keys) and the paper column, driven by ?view. No PIN control (A1), no
-// 'Writing as' switcher (A2). An outsider gets the campaign not-found page. N0 has no notes functions yet: the slots are
-// stubs.
+// D11 N0: the Notes shell (.omc/plans/d11-notes.yaml), since Journal JX1 the Journal's Notes sub-tab. The GM and a
+// player each open the Journal from the nav, pick Notes and get the index column (search, the three page groups, the
+// Shared tabs 'Shared by players' / 'Shared by GM', the journals lists, the bin, Quick keys) and the paper column,
+// driven by ?view. No PIN control (A1); the 'Writing as' chips are there (JN2, Q12, reversing A2). An outsider gets the
+// campaign not-found page.
 
 const PLAYER = "e2e-player@example.test";
 // A test sign-in account (scripts/e2e-setup.mjs) that is not in the campaign.
@@ -47,7 +47,21 @@ async function playerJoins(page: Page, browser: Browser, campaignName: string) {
   return { player, close };
 }
 
-/** The shell every member sees: index column with the Shared tabs, paper column, Quick keys, and no PIN control. */
+/** From the campaign nav: the Journal link, then its Notes sub-tab. */
+async function openNotesFromNav(page: Page, campaignId: string, name: string) {
+  const nav = page.getByRole("navigation", { name: "Campaign sections" });
+  await expect(nav.getByRole("link", { name: "Notes" })).toHaveCount(0);
+  await expect(nav.getByRole("link", { name: "Sessions" })).toHaveCount(0);
+  await nav.getByRole("link", { name: "Journal" }).click();
+  await expect(page).toHaveURL(`/campaigns/${campaignId}/journal`);
+  await expect(page).toHaveTitle(`Journal · ${name}`);
+  await expect(nav.getByRole("link", { name: "Journal" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { level: 1, name: "Journal" })).toBeVisible();
+  await page.getByRole("tablist", { name: "Journal" }).getByRole("tab", { name: /^Notes/ }).click();
+  await expect(page).toHaveURL(`/campaigns/${campaignId}/journal?tab=notes`);
+}
+
+/** The shell every member sees: index column with the Shared tabs, paper column, Quick keys, Writing as, no PIN. */
 async function expectShell(page: Page) {
   const index = page.getByRole("complementary", { name: "Journal index" });
   await expect(index.getByRole("searchbox", { name: "Search the journal" })).toBeVisible();
@@ -60,18 +74,16 @@ async function expectShell(page: Page) {
   await expect(index.getByText("Torn-out pages", { exact: true })).toBeVisible();
   await expect(index.getByText("Quick keys", { exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "Journal page" }).getByRole("article", { name: "Page" })).toBeVisible();
-  await expect(page.getByText(/PIN|Writing as/)).toHaveCount(0);
+  await expect(page.getByText(/PIN/)).toHaveCount(0);
+  // JX1 flipped the old page's 'no Writing as' check (JN2, Q12): the chips sit over the paper.
+  await expect(page.getByRole("group", { name: "Writing as" })).toBeVisible();
 }
 
-test("the GM opens Notes from the nav: hero, index column with the Shared tabs and the paper column", async ({ page }) => {
+test("the GM opens the Journal's Notes from the nav: index column with the Shared tabs and the paper column", async ({ page }) => {
   const { name, campaignId } = await gmCreatesCampaign(page);
-  const nav = page.getByRole("navigation", { name: "Campaign sections" });
-  await nav.getByRole("link", { name: "Notes" }).click();
-  await expect(page).toHaveURL(`/campaigns/${campaignId}/notes`);
-  await expect(page).toHaveTitle(`Notes · ${name}`);
-  await expect(nav.getByRole("link", { name: "Notes" })).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("heading", { level: 1, name: "Game Master’s Journal" })).toBeVisible();
-  await expect(page.getByText("GM journal · private to the GM")).toBeVisible();
+  await openNotesFromNav(page, campaignId, name);
+  await expect(page.getByRole("group", { name: "Writing as" }).getByRole("button", { name: "Game Master", pressed: true })).toBeVisible();
+  await expect(page.getByRole("tablist", { name: "Journal" }).getByRole("tab", { name: "Notes 4 pages" })).toHaveAttribute("aria-selected", "true");
   await expectShell(page);
   await expect(page.getByText("Players’ journals", { exact: true })).toBeVisible();
 
@@ -82,19 +94,18 @@ test("the GM opens Notes from the nav: hero, index column with the Shared tabs a
   await expect(tabs.getByRole("tab", { name: "Shared by GM" })).toBeFocused();
   await expect(tabs.getByRole("tab", { name: "Shared by GM" })).toHaveAttribute("aria-selected", "true");
 
-  // ?view drives the paper column; the threads button toggles it.
-  const threads = page.getByRole("button", { name: /Open threads/ });
-  await threads.click();
-  await expect(page).toHaveURL(`/campaigns/${campaignId}/notes?view=threads`);
-  await expect(threads).toHaveAttribute("aria-pressed", "true");
+  // ?view drives the paper column; the Journal header's Open threads opens the threads view, 'Game Master' goes back.
+  await page.getByRole("button", { name: /^Open threads: \d+$/ }).click();
+  await expect(page).toHaveURL(`/campaigns/${campaignId}/journal?tab=notes&view=threads`);
   await expect(page.getByText("Nothing dangling. Suspicious…")).toBeVisible();
   await page.reload();
   await expect(page.getByRole("article", { name: "Open threads" })).toBeVisible();
-  await threads.click();
-  await expect(page).toHaveURL(`/campaigns/${campaignId}/notes`);
-  await page.goto(`/campaigns/${campaignId}/notes?view=journal&journal=placeholder`);
+  await page.getByRole("group", { name: "Writing as" }).getByRole("button", { name: "Game Master" }).click();
+  await expect(page).not.toHaveURL(/view=threads/);
+  await expect(page.getByRole("region", { name: "Journal page" }).getByRole("article", { name: "Page" })).toBeVisible();
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes&view=journal&journal=placeholder`);
   await expect(page.getByRole("article", { name: "Journal" })).toBeVisible();
-  await page.goto(`/campaigns/${campaignId}/notes?view=nonsense`);
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes&view=nonsense`);
   await expect(page.getByRole("article", { name: "Page" })).toBeVisible();
 });
 
@@ -102,10 +113,8 @@ test("a player opens Notes and gets the same shell with the two Shared tabs; an 
   const { name, campaignId } = await gmCreatesCampaign(page);
   const { player, close } = await playerJoins(page, browser, name);
   try {
-    await player.getByRole("navigation", { name: "Campaign sections" }).getByRole("link", { name: "Notes" }).click();
-    await expect(player).toHaveURL(`/campaigns/${campaignId}/notes`);
-    await expect(player).toHaveTitle(`Notes · ${name}`);
-    await expect(player.getByRole("heading", { level: 1, name: "Player’s Journal" })).toBeVisible();
+    await openNotesFromNav(player, campaignId, name);
+    await expect(player.getByRole("group", { name: "Writing as" }).getByRole("button", { name: "Player", pressed: true })).toBeVisible();
     await expectShell(player);
     await expect(player.getByText("Players’ journals", { exact: true })).toHaveCount(0);
   } finally {
@@ -114,7 +123,7 @@ test("a player opens Notes and gets the same shell with the two Shared tabs; an 
 
   const outsider = await signedInContext(browser, OUTSIDER);
   try {
-    await outsider.page.goto(`/campaigns/${campaignId}/notes`);
+    await outsider.page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
     await expect(outsider.page.getByRole("heading", { name: "Campaign not found" })).toBeVisible();
     await expect(outsider.page.getByRole("complementary", { name: "Journal index" })).toHaveCount(0);
   } finally {
@@ -125,24 +134,24 @@ test("a player opens Notes and gets the same shell with the two Shared tabs; an 
 test("the shell fits a phone: one column, no horizontal scroll, 44 px targets at 390 px", async ({ page }) => {
   const { campaignId } = await gmCreatesCampaign(page);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`/campaigns/${campaignId}/notes`);
-  await expect(page.getByRole("heading", { level: 1, name: "Game Master’s Journal" })).toBeVisible();
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
+  await expect(page.getByRole("group", { name: "Writing as" }).getByRole("button", { name: "Game Master", pressed: true })).toBeVisible();
   await expectNoHorizontalScroll(page);
   const index = await page.getByRole("complementary", { name: "Journal index" }).boundingBox();
   const paper = await page.getByRole("region", { name: "Journal page" }).boundingBox();
   expect(paper!.y).toBeGreaterThan(index!.y + index!.height - 1);
   for (const tab of await page.getByRole("tab").all()) expect((await tab.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-  expect((await page.getByRole("button", { name: /Open threads/ }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect((await page.getByRole("button", { name: /^Open threads: \d+$/ }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
 });
 
 // Shots for the N0 task doc (E2E_VISUAL=1); board counterparts: `node scripts/board-shots.mjs notes:empty notes:threads`.
 test("D11 N0 notes shell at 1440 and 390", { tag: "@visual" }, async ({ page }) => {
   const { campaignId } = await gmCreatesCampaign(page);
-  await page.goto(`/campaigns/${campaignId}/notes`);
-  await expect(page.getByRole("heading", { level: 1, name: "Game Master’s Journal" })).toBeVisible();
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
+  await expect(page.getByRole("group", { name: "Writing as" }).getByRole("button", { name: "Game Master", pressed: true })).toBeVisible();
   const { shoot } = visual(page, "D11-N0");
   await shoot(page.locator(".bj-root"), "shell");
-  await page.goto(`/campaigns/${campaignId}/notes?view=threads`);
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes&view=threads`);
   await expect(page.getByRole("article", { name: "Open threads" })).toBeVisible();
   await shoot(page.locator(".bj-root"), "threads");
 });

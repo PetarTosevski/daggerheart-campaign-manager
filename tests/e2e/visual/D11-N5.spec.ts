@@ -48,7 +48,7 @@ test("D11 N5 picker and mentions at 1440 and 390", { tag: "@visual" }, async ({ 
   // A deleted entry: its token stays and shows the stored name as plain text.
   await gm.mutation(api.codex.remove, { entryId: gone });
 
-  await page.goto(`/campaigns/${campaignId}/notes?page=${pageId}`);
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes&page=${pageId}`);
   const sheet = page.getByRole("region", { name: "Journal page" }).getByRole("article", { name: "Page" });
   await expect(sheet.getByRole("link", { name: "Mira" })).toHaveCount(2);
   await expect(sheet.getByRole("link")).toHaveCount(5);

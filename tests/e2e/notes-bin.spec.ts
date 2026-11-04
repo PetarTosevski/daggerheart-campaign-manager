@@ -116,7 +116,7 @@ for (const viewport of VIEWPORTS) {
     // Seed 'Rumors & hooks' (the journal's first write) to learn its id; the behaviour under test goes through the UI.
     const { pageId } = await client.mutation(api.notesEntries.add, { campaignId, page: { template: 1 }, kind: "note", text: "the mill burned" });
 
-    await page.goto(`/campaigns/${campaignId}/notes?page=${pageId}`);
+    await page.goto(`/campaigns/${campaignId}/journal?tab=notes&page=${pageId}`);
     await expect(paper(page).getByLabel("Page title")).toHaveValue("Rumors & hooks");
     await openIndex(page);
     await expect(page.getByRole("region", { name: "Torn-out pages" }).getByText("Nothing torn out.")).toBeVisible();
@@ -178,7 +178,7 @@ for (const viewport of VIEWPORTS) {
       // 'gm' is a player's default visibility (A4): the GM reads the page.
       expect(await codeOf(gm.query(api.notesEntries.entries, { campaignId, page: pageId }))).toBe("ok");
 
-      await player.goto(`/campaigns/${campaignId}/notes?page=${pageId}`);
+      await player.goto(`/campaigns/${campaignId}/journal?tab=notes&page=${pageId}`);
       await expect(paper(player).getByText("we crossed the river")).toBeVisible();
       await tearOut(player);
       await expect(toast(player)).toBeVisible();

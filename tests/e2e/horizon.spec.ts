@@ -47,7 +47,7 @@ test("the GM marks the Doom Track; players see Echoes and occurred events only",
   // dcm-bxp.60 (Q6): a mark made during a live session is stamped "(session N)".
   await page.getByRole("region", { name: "Campaign header" }).getByRole("button", { name: "Start Session", exact: true }).click();
   await page.getByRole("dialog", { name: "Start the session?" }).getByRole("button", { name: "Start session" }).click();
-  await expect(page).toHaveURL(/\/sessions\?s=[^&]+&stage=play$/);
+  await expect(page).toHaveURL(/\/journal\?s=[^&]+&sv=log$/);
   await page.goto(campaignUrl);
 
   const doom = page.getByRole("region", { name: /Doom Track/ });

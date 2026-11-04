@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { signInAsTestGm } from "../fixtures";
-import { bardDraft, D10_VIEWPORTS, openSessions, visual } from "./helpers";
+import { bardDraft, convexAs, D10_VIEWPORTS, visual } from "./helpers";
 
 // D10 S7 visual spec (E2E_VISUAL=1): the dashboard's hero session line with Start Session, the Last Session card and
 // Witherwild's Wither Tokens panel at 1440, 1024 and 390; empty, then seeded with the board's story (Liriel 2 Wither
@@ -14,8 +14,17 @@ import { bardDraft, D10_VIEWPORTS, openSessions, visual } from "./helpers";
 const RECAP = "The party crossed the river at dawn and met the ferryman, who warned them about the wither spreading through the Grove.";
 
 test("D10 S7 dashboard session regions at 1440, 1024 and 390", { tag: "@visual" }, async ({ page, browser }) => {
-  const { client, campaignId } = await openSessions(page);
-  await page.goto(`/campaigns/${campaignId}`);
+  // A new Witherwild campaign; its dashboard (JX1: no longer through the old Sessions page, which redirects now).
+  await signInAsTestGm(page);
+  await expect(page).toHaveURL("/");
+  const campaignName = `Visual ${crypto.randomUUID().slice(0, 8)}`;
+  await page.goto("/frames/witherwild");
+  await page.getByRole("button", { name: "Choose this Frame" }).click();
+  await page.getByRole("dialog", { name: "Name your campaign" }).getByLabel("Campaign name").fill(campaignName);
+  await page.getByRole("button", { name: "Start campaign" }).last().click();
+  await expect(page.getByRole("heading", { level: 1, name: campaignName })).toBeVisible();
+  const campaignId = new URL(page.url()).pathname.split("/")[2] as Id<"campaigns">;
+  const client = await convexAs(page);
   const hero = page.getByRole("region", { name: "Campaign header" });
   const last = page.getByRole("region", { name: "Last Session" });
   const wither = page.getByRole("region", { name: "Wither Tokens" });

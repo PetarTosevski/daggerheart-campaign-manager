@@ -86,8 +86,8 @@ for (const viewport of [
         await client.mutation(api.notesSharing.setVisibility, { campaignId, page: met, visibility: "everyone" });
 
         // ---- Page view; add an entry with a mention by keyboard (the @ picker open for axe).
-        await page.goto(`/campaigns/${campaignId}/notes`);
-        await expect(page.getByRole("heading", { level: 1, name: "Game Master’s Journal" })).toBeVisible();
+        await page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
+        await expect(page.getByRole("group", { name: "Writing as" }).getByRole("button", { name: "Game Master", pressed: true })).toBeVisible();
         await expect(ownPaper(page).getByLabel("Page title")).toHaveValue("Session 1");
         await axe(page, "page view");
         await axe(page, "campaign shell", { whole: true });
@@ -145,14 +145,17 @@ for (const viewport of [
         await expect(ownPaper(page).getByRole("button", { name: "Sharing: Everyone" })).toBeFocused();
 
         // ---- Threads view.
-        const threads = page.getByRole("button", { name: /Open threads/ });
+        // The Journal header's Open threads (JH) opens it; the 'Game Master' Writing-as chip (JN2) goes back.
+        const threads = page.getByRole("button", { name: /^Open threads: \d+$/ });
         await tabTo(page, threads, { back: true });
         await page.keyboard.press("Enter");
-        await expect(threads).toHaveAttribute("aria-pressed", "true");
+        await expect(page).toHaveURL(/[?&]view=threads/);
         await expect(paperColumn(page).getByText("wither spreads")).toBeVisible();
         await axe(page, "threads view");
+        const own = page.getByRole("group", { name: "Writing as" }).getByRole("button", { name: "Game Master" });
+        await tabTo(page, own);
         await page.keyboard.press("Enter");
-        await expect(threads).toHaveAttribute("aria-pressed", "false");
+        await expect(page).not.toHaveURL(/view=threads/);
 
         // ---- Shared tabs: the arrow keys switch them.
         await keyOpenIndex(page);
@@ -175,7 +178,7 @@ for (const viewport of [
         await axe(page, "journal view");
 
         // ---- Tear out a page and undo it by keyboard; then the bin.
-        await page.goto(`/campaigns/${campaignId}/notes?page=template-1`);
+        await page.goto(`/campaigns/${campaignId}/journal?tab=notes&page=template-1`);
         await expect(ownPaper(page).getByLabel("Page title")).toHaveValue("Rumors & hooks");
         const tear = ownPaper(page).getByRole("button", { name: "Tear out page" });
         await tabTo(page, tear);

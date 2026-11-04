@@ -181,17 +181,17 @@ test("D10 S7: the hero session line, Start Session, the Last Session card and th
   await expect(hero.getByTestId("hero-session")).toHaveText("No sessions yet");
   await expect(hero.getByTestId("hero-next-session")).toHaveText("Next session not scheduled");
   await expect(last.getByTestId("last-session-text")).toHaveText("No sessions played yet. Write a recap in a session's Wrap-up stage and it will appear here.");
-  await expect(last.getByRole("link", { name: "All sessions" })).toHaveAttribute("href", `/campaigns/${campaignId}/sessions`);
+  await expect(last.getByRole("link", { name: "Open the Journal" })).toHaveAttribute("href", `/campaigns/${campaignId}/journal`);
   await expect(wither.getByTestId("wither-panel-count")).toHaveText("0 on sheets · 20 in pool");
   await expect(page.getByRole("heading", { name: "Session", exact: true })).toHaveCount(0);
 
-  // Start Session (B8): no session yet, so one is created, started and opened on Play.
+  // Start Session (B8): no session yet, so one is created, started and opened on the Journal's Log & recap (JX1).
   await hero.getByRole("button", { name: "Start Session", exact: true }).click();
   // A confirm first (user 2026-10-20).
   await page.getByRole("dialog", { name: "Start the session?" }).getByRole("button", { name: "Start session" }).click();
-  await expect(page).toHaveURL(/\/sessions\?s=[^&]+&stage=play$/);
-  await expect(page.getByRole("tab", { name: "Play" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("region", { name: "Live session" })).toContainText("Session in progress");
+  await expect(page).toHaveURL(/\/journal\?s=[^&]+&sv=log$/);
+  await expect(page.getByRole("tablist", { name: "Session view" }).getByRole("tab", { name: "Log & recap" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("journal-live-chip")).toContainText("Session 1 · live");
   const sessionUrl = new URL(page.url());
 
   await page.goto(`/campaigns/${campaignId}`);

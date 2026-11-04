@@ -77,7 +77,7 @@ async function openIndex(page: Page) {
 
 /** Opens Ash's past journal from the index. */
 async function openPast(page: Page) {
-  await page.goto(page.url().split("?")[0]!);
+  await page.goto(`${page.url().split("?")[0]!}?tab=notes`);
   await openIndex(page);
   await pastList(page).getByRole("button", { name: /^Ash’s journal/ }).click();
   await expect(page).toHaveURL(/view=journal&journal=/);
@@ -101,7 +101,7 @@ for (const viewport of [
       const b = await playerJoins(browser, viewport, PLAYER_B, code, campaign, "Bram");
       const A = a.seat;
       const B = b.seat;
-      const notesUrl = `/campaigns/${campaignId}/notes`;
+      const notesUrl = `/campaigns/${campaignId}/journal?tab=notes`;
       const setStatus = (status: "active" | "dead" | "retired") => gm.client.mutation(api.characters.setStatus, { characterId: a.characterId, status });
       const pastNames = async (seat: Seat) => (await seat.client.query(api.notesJournals.pastJournals, { campaignId })).map((r) => [r.name, r.pageCount]);
       try {

@@ -5,9 +5,10 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, expectNoHorizontalScroll } from "./visual/helpers";
 
-// D11 N2: own journal and pages (.omc/plans/d11-notes.yaml). The GM opens Notes and sees the four default pages; with
-// Session 2 live, adds a session log titled 'Session 2' that shows its date; adds a collection, renames it and changes
-// its tape; a reload keeps it. A player with a character sees the player defaults under '<character>’s Journal'.
+// D11 N2: own journal and pages (.omc/plans/d11-notes.yaml), since JX1 in the Journal's Notes sub-tab. The GM opens
+// Notes and sees the four default pages; with Session 2 live, adds a session log titled 'Session 2' that shows its date;
+// adds a collection, renames it and changes its tape; a reload keeps it. A player with a character sees the player
+// defaults under their character's 'Writing as' chip.
 // Optimistic changes are confirmed on the server (expect.poll through a Convex client) before the page is left.
 
 const PLAYER = "e2e-player@example.test";
@@ -45,6 +46,9 @@ function group(page: Page, label: string) {
   return page.getByRole("navigation", { name: "Your pages" }).getByRole("group", { name: label });
 }
 
+/** The Journal's 'Notes N pages' sub-tab (JX1: the old hero's page count). */
+const notesTab = (page: Page) => page.getByRole("tablist", { name: "Journal" }).getByRole("tab", { name: /^Notes/ });
+
 test("the GM's journal: default pages, a session log for the live session, a renamed and re-taped collection", async ({ page }) => {
   const { campaignId } = await gmCreatesCampaign(page);
   const client = await convexAs(page);
@@ -54,9 +58,10 @@ test("the GM's journal: default pages, a session log for the live session, a ren
   await client.mutation(api.sessionRecords.setDate, { campaignId, sessionId: two, date: "2026-10-24" });
   await client.mutation(api.sessions.start, { campaignId, sessionId: two, idempotencyKey: uuid() });
 
-  await page.goto(`/campaigns/${campaignId}/notes`);
-  await expect(page.getByRole("heading", { level: 1, name: "Game Master’s Journal" })).toBeVisible();
-  await expect(page.getByText("GM journal · private to the GM · 4 pages · 0 entries")).toBeVisible();
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
+  await expect(page.getByRole("group", { name: "Writing as" }).getByRole("button", { name: "Game Master", pressed: true })).toBeVisible();
+  // The page count moved from the old hero's sub line to the Journal's 'Notes N pages' sub-tab (JX1).
+  await expect(notesTab(page)).toHaveAccessibleName("Notes 4 pages");
   await expect(group(page, "Session logs").getByRole("button", { name: /^Session 1/ })).toHaveAttribute("aria-current", "page");
   await expect(group(page, "Collections").getByRole("button", { name: /Rumors & hooks|Loot & debts/ })).toHaveText([/Rumors & hooks/, /Loot & debts/]);
   await expect(group(page, "Future log").getByRole("button", { name: /^Future log/ })).toBeVisible();
@@ -64,7 +69,7 @@ test("the GM's journal: default pages, a session log for the live session, a ren
   await expect(paper.getByLabel("Page title")).toHaveValue("Session 1");
   // The default Session 1 is linked to the live session (D6): its meta shows that session's date.
   await expect(paper.getByText(/^session log · .*24.*2026$/)).toBeVisible();
-  await expect(page.getByText(/PIN|Writing as/)).toHaveCount(0);
+  await expect(page.getByText(/PIN/)).toHaveCount(0);
 
   // '＋ New session log': the picker preselects the live session (D6).
   await group(page, "Session logs").getByRole("button", { name: "New session log" }).click();
@@ -76,7 +81,7 @@ test("the GM's journal: default pages, a session log for the live session, a ren
   await expect(paper.getByLabel("Page title")).toHaveValue("Session 2");
   await expect(paper.getByText(/^session log · .*24.*2026$/)).toBeVisible();
   await expect(group(page, "Session logs").getByRole("button", { name: /^Session 2/ })).toHaveAttribute("aria-current", "page");
-  await expect(page.getByText("GM journal · private to the GM · 5 pages · 0 entries")).toBeVisible();
+  await expect(notesTab(page)).toHaveAccessibleName("Notes 5 pages");
 
   // A collection: add, rename (Enter saves), change its tape.
   await group(page, "Collections").getByRole("button", { name: "New collection" }).click();
@@ -110,9 +115,9 @@ test("a player sees the player defaults under '<character>’s Journal'", async 
   try {
     const client = await convexAs(player);
     await client.mutation(api.characters.create, { campaignId, draft: bardDraft("Liriel"), idempotencyKey: crypto.randomUUID() });
-    await player.goto(`/campaigns/${campaignId}/notes`);
-    await expect(player.getByRole("heading", { level: 1, name: "Liriel’s Journal" })).toBeVisible();
-    await expect(player.getByText("Player journal · Bard · 4 pages · 0 entries")).toBeVisible();
+    await player.goto(`/campaigns/${campaignId}/journal?tab=notes`);
+    await expect(player.getByRole("group", { name: "Writing as" }).getByRole("button", { name: "Liriel", pressed: true })).toBeVisible();
+    await expect(notesTab(player)).toHaveAccessibleName("Notes 4 pages");
     await expect(group(player, "Session logs").getByRole("button", { name: /^Session 1/ })).toBeVisible();
     await expect(group(player, "Collections").getByRole("button", { name: /People we met|Clues & secrets|My goals/ })).toHaveText([
       /People we met/,
@@ -144,8 +149,8 @@ test("a player sees the player defaults under '<character>’s Journal'", async 
 test("at 390 px the pages sit behind a 'Pages' disclosure; the session picker fits", async ({ page }) => {
   const { campaignId } = await gmCreatesCampaign(page);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`/campaigns/${campaignId}/notes`);
-  await expect(page.getByRole("heading", { level: 1, name: "Game Master’s Journal" })).toBeVisible();
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
+  await expect(page.getByRole("group", { name: "Writing as" }).getByRole("button", { name: "Game Master", pressed: true })).toBeVisible();
   const toggle = page.getByRole("button", { name: /Pages/ });
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
   await expect(group(page, "Collections")).toBeHidden();

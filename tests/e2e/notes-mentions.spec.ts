@@ -57,7 +57,7 @@ test("the GM mentions an unmet NPC and renames it; the player gets it only once 
   await gm.mutation(api.codex.update, { entryId: npc, patch: { name: "Marlow", role: "Ferryman" } });
 
   // The GM writes with the picker, by keyboard only; the NPC is still secret.
-  await page.goto(`/campaigns/${campaignId}/notes?page=template-0`);
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes&page=template-0`);
   const input = paper(page).getByRole("textbox", { name: "New entry" });
   const combobox = paper(page).getByRole("combobox", { name: "New entry" });
   await input.click();
@@ -89,7 +89,7 @@ test("the GM mentions an unmet NPC and renames it; the player gets it only once 
   try {
     const client = await convexAs(player);
     await client.mutation(api.characters.create, { campaignId, draft: bardDraft("Ash"), idempotencyKey: crypto.randomUUID() });
-    await player.goto(`/campaigns/${campaignId}/notes?page=template-0`);
+    await player.goto(`/campaigns/${campaignId}/journal?tab=notes&page=template-0`);
     const playerInput = paper(player).getByRole("textbox", { name: "New entry" });
 
     // The party has not met the NPC: the player's picker does not offer it.
@@ -139,7 +139,7 @@ test("at 390 px: the picker is usable by touch, 44 px options, no horizontal scr
   const { entryId: ford } = await gm.mutation(api.codex.create, { campaignId, kind: "location", idempotencyKey: crypto.randomUUID() });
   await gm.mutation(api.codex.update, { entryId: ford, patch: { name: "Mabry Ford" } });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`/campaigns/${campaignId}/notes?page=template-0`);
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes&page=template-0`);
 
   const input = paper(page).getByRole("textbox", { name: "New entry" });
   await input.click();

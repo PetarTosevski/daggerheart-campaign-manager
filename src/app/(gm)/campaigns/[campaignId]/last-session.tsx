@@ -10,7 +10,7 @@ import type { Id } from "../../../../../convex/_generated/dataModel";
 
 /**
  * The dashboard's Last Session card (D10 S7, B9; board CampaignHub.dc.html l.236-243): the last played session's recap,
- * else the board's two fallbacks (from `sessionWrap.dashboard`), and 'All sessions' to the Sessions tab. Every member.
+ * else the board's two fallbacks (from `sessionWrap.dashboard`), and 'Open the Journal' (JX1). Every member.
  */
 function Card({ campaignId }: { campaignId: Id<"campaigns"> }) {
   const summary = useQuery(api.sessionWrap.dashboard, { campaignId });
@@ -33,10 +33,10 @@ export function LastSession({ campaignId }: { campaignId: Id<"campaigns"> }) {
           Last Session
         </h2>
         <Link
-          href={`/campaigns/${campaignId}/sessions`}
+          href={`/campaigns/${campaignId}/journal`}
           className="inline-flex min-h-11 items-center rounded-[10px] border border-[#33444a] px-4 text-[14px] text-[#e6ecea] hover:bg-white/5"
         >
-          All sessions
+          Open the Journal
         </Link>
       </div>
       <SlotBoundary fallback={<p className="m-0 text-[15px] text-[#c9d2cf]">The last session is unavailable. Reload the page.</p>}>

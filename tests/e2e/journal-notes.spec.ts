@@ -101,8 +101,10 @@ test("GM: the Notes sub-tab is the Notes UI without its hero; tasks, bullets, @m
   await expect(link).toHaveText("Tamsin");
   await expect(link).toHaveAttribute("href", `/campaigns/${campaignId}/codex?entry=${npc}`);
 
-  // The threads view (what the Journal header's Open threads button opens: ?tab=notes&view=threads).
-  await openJournal(gm, table, "?tab=notes&view=threads");
+  // The Journal header's Open threads button opens the threads view (?tab=notes&view=threads).
+  await gm.getByRole("button", { name: /^Open threads: \d+$/ }).click();
+  await expect(gm).toHaveURL(/[?&]view=threads(&|$)/);
+  await expect(gm).toHaveURL(/[?&]tab=notes(&|$)/);
   const threads = paperColumn(gm).getByRole("article", { name: "Open threads" });
   await expect(threads).toBeVisible();
   await expect(threads.getByText("ask Tamsin about her grandson")).toBeVisible();

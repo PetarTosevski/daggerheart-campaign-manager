@@ -14,7 +14,7 @@ test.describe.configure({ timeout: 240_000 });
 const expect = baseExpect.configure({ timeout: 20_000 });
 
 // The live map adds a screen-reader "(live)" to Combat Map.
-const NAV_GM = ["Dashboard", "Party", "Codex", "World Map", /^Combat Map \(live\)$/, "Adversaries", "Sessions", "Notes"];
+const NAV_GM = ["Dashboard", "Party", "Codex", "World Map", /^Combat Map \(live\)$/, "Adversaries", "Journal"];
 
 const bar = (page: Page) => page.getByTestId("app-bar");
 const nav = (page: Page) => page.getByRole("navigation", { name: "Campaign sections" });

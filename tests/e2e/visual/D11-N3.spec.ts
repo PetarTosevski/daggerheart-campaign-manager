@@ -63,7 +63,7 @@ test("D11 N3 entries page at 1440 and 390", { tag: "@visual" }, async ({ page, b
   await client.mutation(api.notesEntries.toggleStar, { campaignId, entryId: ids[1]! });
   await gm.mutation(api.notesEntries.add, { campaignId, page: pageId!, kind: "note", text: "Old Mag lied about the toll" });
 
-  await player.goto(`/campaigns/${campaignId}/notes?page=${pageId}`);
+  await player.goto(`/campaigns/${campaignId}/journal?tab=notes&page=${pageId}`);
   const sheet = player.getByRole("region", { name: "Journal page" }).getByRole("article", { name: "Page" });
   await expect(sheet.getByRole("listitem")).toHaveCount(12);
   await expect(sheet.getByText("Old Mag lied about the toll - GM")).toBeVisible();
