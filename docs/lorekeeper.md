@@ -5,29 +5,67 @@ the drawer that opens from the pill on every campaign page. It answers from your
 numbers. When the books don't settle a question, it checks again with a stronger model and, if the asker allows it,
 searches the internet.
 
-This page is for whoever runs the deployment. How the code works is in `docs/tasks/TASK-D13-L0.md` to
-`TASK-D13-L12.md`; the tables are in `docs/data-model.md`.
+This page is for whoever runs the deployment: the **app owner**, who sets the Lorekeeper's limits and the shared
+books in **App admin** (`/admin`, see `docs/deploy.md` "App admin" for naming the owner). How the code works is in
+`docs/tasks/TASK-D13-L0.md` to `TASK-D13-L12.md` and the config tracers (`docs/tasks/TASK-CONFIG-AD6.md`, `AD7`,
+`AD8`, `AD12`, `LB1`, `PDF0`, `AU3`, `AU8`); the tables are in `docs/data-model.md`.
 
 ## What you need
 
 1. The D13 functions deployed (`npx convex dev` for the dev deployment, `npx convex deploy` for production).
 2. `ANTHROPIC_API_KEY` set on the deployment (below). Without it, the composer's notice says "The Lorekeeper isn't
-   set up on this server." (once, above the conversation) and the drawer pill is hidden.
-3. At least one book ingested. Without books, every question ends as "Not in your books".
+   set up on this server." (once, above the conversation) and the drawer pill is hidden. App admin › Overview shows
+   an alert and Maintenance › Keys and connections shows "Missing".
+3. At least one book: uploaded as a PDF in App admin › Lorekeeper › Book library, or ingested from a text file with
+   the script (below). Without books, every question ends as "Not in your books".
+4. The app owner named once (`npx convex run adminSetup:setOwner`, `docs/deploy.md`), so someone can open App admin.
+   Without an owner the Lorekeeper still runs on the defaults and env values below.
 
-## Books: once per deployment, shared by every campaign
+## Books: shared books and campaign books
 
-- A book is stored **once per Convex deployment**, not per campaign. Every campaign on that deployment sees every
-  book you ingest. Only the frame books are limited: a campaign sees its own frame's book and no other frame's.
-- GMs don't add books. In the Library card on the Lorekeeper page, a GM only switches a book **on or off for
-  their campaign**. The defaults are:
-  - on: the Core Rulebook, Hope & Fear, and the campaign's own frame book;
-  - off: 'House rules (notes)'. When a GM turns it on, the GM's journal pages shared with everyone become extra
-    reading for the Lorekeeper.
-- GMs see an 'About books' button with a plain note: "Your server's admin adds rulebooks once for everyone; switch
-  books on/off for this campaign here; use House rules (notes) for table rules." Every GM sees the same note; there
-  is no admin role in the app. The admin is whoever can run the commands below against the deployment, on their
-  own machine.
+There are two kinds of book.
+
+**Shared books** are stored **once per Convex deployment**. Every campaign on that deployment sees every shared book.
+Only the frame books are limited: a campaign sees its own frame's book and no other frame's. The app owner adds or
+replaces them, either as a PDF in App admin (below) or as a text file with the ingest script.
+
+**Campaign books** belong to one campaign. Its GM and co-GMs upload them (N7 a) in Campaign settings › Lorekeeper ›
+'Upload a book'. Only that campaign's Library card lists them and only that campaign's Lorekeeper searches them; no
+other campaign and not the owner's shared library ever sees them. Questions answered from them count like any other
+question. They go away when the GM removes them (Remove, with a confirm) or when the campaign is purged.
+
+In the Library card on the Lorekeeper page (and in Campaign settings › Lorekeeper), a GM switches each book **on or
+off for their campaign**. The defaults are:
+
+- on: the Core Rulebook, Hope & Fear, the campaign's own frame book and the campaign's own books;
+- off: 'House rules (notes)'. When a GM turns it on, the GM's journal pages shared with everyone become extra
+  reading for the Lorekeeper.
+
+GMs see an 'About books' button with a plain note: "Your server's admin adds rulebooks once for everyone; switch
+books on/off for this campaign here; use House rules (notes) for table rules."
+
+### PDF uploads (owner and GM)
+
+Both uploads go through one server pipeline (`convex/pdfIngest.ts`, the `unpdf` reader; N5 a, N8 a):
+
+| | Owner: App admin › Lorekeeper › Book library | GM / co-GM: Campaign settings › Lorekeeper |
+|---|---|---|
+| What | a shared book: 'Upload a book' for a key with no book yet (`core`, `hopeFear`, `frame:<id>`), or Replace | a book for this campaign only |
+| Form | the PDF, an optional title, the printed page number of the PDF's first page | the PDF, a title (1-120 characters), the printed page number of the PDF's first page |
+| Limits | 20 MB and 300 pages per file | 20 MB and 300 pages per file; **no limit on the number of books** (N6 b) |
+| Upload URLs | 20 per hour per person | 20 per hour per person |
+
+- The file must be exactly `application/pdf` and start with `%PDF-`. A damaged or password-protected PDF, or one where
+  fewer than half the pages have text (a scan), is refused as "couldn't be read". The uploaded file is always deleted
+  after the read; only the page-tagged text chunks stay.
+- **Page numbers:** the uploader types the printed page number of the PDF's first page. PDF page *i* is then printed
+  page `first + i`, so quote chips and 'Open in the book' show the paper book's numbers. A footer page number within
+  3 of that still wins and names the chapter, as for text files.
+- While the server reads the PDF the row says 'Reading the PDF…' / 'Reading the book…'. One upload per book runs at a
+  time. A replaced shared book keeps its old text until the new PDF has been read; a failed replace keeps it.
+- Owner uploads are logged in Recent changes (`library.upload` / `library.replace`). GM uploads are not.
+- The text-file ingest script below still works for shared books and is the way to cut a frame book out of the core
+  book (`--pages`).
 
 ### Book keys
 
@@ -37,8 +75,9 @@ This page is for whoever runs the deployment. How the code works is in `docs/tas
 | `hopeFear` | Hope & Fear | the whole expansion |
 | `frame:<frameId>` | the frame's name | a page range of the core book, e.g. `frame:witherwild` (defaults to core pp. 254-261) |
 | `houseRules` | House rules (notes) | no text: registers the switch only (needs no file) |
+| `campaign:<campaignId>:<n>` | the GM's title | a campaign book (GM upload only; never ingested by the script or the owner's upload) |
 
-## Ingesting a book
+## Ingesting a book from a text file (script)
 
 The text never goes into git and never leaves your machine except into your own deployment.
 
@@ -108,6 +147,9 @@ pnpm lorekeeper:ingest core ~/books/core.txt --prod
 
 ## Removing a book
 
+A campaign book is removed by its GM or a co-GM (Campaign settings › Lorekeeper › Remove). App admin has no Remove
+for shared books; use the script:
+
 ```bash
 pnpm lorekeeper:ingest hopeFear --remove           # the dev deployment
 pnpm lorekeeper:ingest hopeFear --remove --prod    # production
@@ -126,22 +168,64 @@ pnpm lorekeeper:ingest hopeFear --remove --prod    # production
 - It runs through internal functions (`lorekeeperLibrary:findBook`, `:clearChunks`, `:clearSwitches`,
   `:deleteBook`) with your admin rights. No public function can remove books.
 
-## Environment variables
+## Limits: App admin first, env as the fallback
 
-Set them on the deployment, not in a `.env` file: `npx convex env set <NAME> <value>` (add `--prod` for
-production). A change takes effect on the next question, without a deploy.
+The Lorekeeper's limits are set by the app owner in **App admin › Lorekeeper** and take effect on the next question,
+without a deploy. Each number is read in this order: the owner's saved value, then the env var, then the code default
+(`convex/lib/appConfig.ts` `readAppConfig`). A malformed env value or a negative saved number falls back to the next
+step, so a typo never opens or closes a gate. The env vars stay as the fallback for a deployment with no owner or
+where the owner never saved a value.
+
+| Setting (App admin › Lorekeeper) | Env fallback | Default | What it does |
+|---|---|---|---|
+| Budget › Monthly spend limit | `LOREKEEPER_MONTHLY_USD` | `150` | Dollars for the whole deployment per calendar month (UTC). |
+| Budget › When the limit is reached | none | Pause the Lorekeeper | `pause`, `gmOnly` or `short` (below). |
+| Budget › Email me at 80% | none | on | One email to the owner's verified address per month when spend crosses 80% (Q32 a). |
+| Limits per person › Questions per day | `LOREKEEPER_DAILY_QUESTIONS` | `40` | Questions per person per UTC day. The owner has no limit. |
+| Limits per person › Internet searches per day | none | `20` | Internet searches per person per UTC day; past it the internet pass is skipped and the answer stands. |
+| Limits per person › Let GMs ask for higher limits | none | off | Opens limit requests (below). |
+| (no control; `adminLorekeeper.setLimit` `campaignMonthlyUsd`) | `LOREKEEPER_CAMPAIGN_MONTHLY_USD` | `50` | Dollars per campaign per calendar month (UTC); a hard stop in every mode. |
+| Use by campaign › Limits | none | the app's numbers | One campaign's own questions / internet searches per day (and stored book numbers, not enforced: N6 b). Empty = the app's number. |
+
+Feature switches › 'Lorekeeper internet search' (Off / Only me / Testers / Everyone) hides the composer's internet
+toggle and skips the internet pass for the people it is off for. Every change in App admin is logged in Overview ›
+Recent changes (kept 1 year).
+
+Settings that stay in the deployment's environment (`npx convex env set <NAME> <value>`, add `--prod` for
+production; a change takes effect on the next question):
 
 | Variable | Default | What it does |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | none | Required. Your Claude API key. Read only on the server, in `convex/lib/claude.ts`. |
+| `ANTHROPIC_API_KEY` | none | Required. Your Claude API key. Read only on the server, in `convex/lib/claude.ts`. App admin only shows Set / Missing. |
 | `LOREKEEPER_MODEL` | `claude-sonnet-5-5` | The model of the first pass and the internet pass. If unset, `ANTHROPIC_MODEL` is used (it also sets the photo import's model), then Sonnet 5.5. The stronger-model retry is always Opus 5.5. |
-| `LOREKEEPER_DAILY_QUESTIONS` | `40` | Questions per person per UTC day. |
-| `LOREKEEPER_CAMPAIGN_MONTHLY_USD` | `50` | Dollars per campaign per calendar month (UTC). |
-| `LOREKEEPER_MONTHLY_USD` | `150` | Dollars for the whole deployment per calendar month (UTC). |
+| `LOREKEEPER_DAILY_QUESTIONS`, `LOREKEEPER_CAMPAIGN_MONTHLY_USD`, `LOREKEEPER_MONTHLY_USD` | see above | Fallbacks only (table above). |
+| `AUTH_RESEND_KEY`, `MAIL_FROM`, `SITE_URL` | none | The 80% email and the limit-request emails send through these, linking to `<SITE_URL>/admin`. Without them nothing is sent (logged, never retried). |
 | `LOREKEEPER_FAKE_MODEL` | unset | Tests only: canned answers instead of the API. Honoured only on the local e2e backend; ignored everywhere else. |
 
 The server-wide default of $150 leaves $50 of a $200 monthly Anthropic limit for map generation and photo import.
 Set your Anthropic console limit as the last line of defence.
+
+### At the monthly limit (Q20 a)
+
+| When the limit is reached | Past the limit | Past 120% of the limit |
+|---|---|---|
+| Pause the Lorekeeper (default) | everyone is refused | same |
+| GMs only | GMs and co-GMs ask normally; players are refused | everyone is refused ('paused') |
+| Shorter answers | everyone gets a shorter answer: one Sonnet pass, at most 1,000 tokens, no retry, no internet | everyone is refused ('paused') |
+
+The campaign's monthly budget is a hard stop in every mode. The **app owner is never capped**: their questions are
+still counted and cost money, but no daily, campaign or deployment limit refuses them.
+
+### Limit requests (Q21 changed, N10 b)
+
+GMs never raise their own limits. While 'Let GMs ask for higher limits' is on, a GM or co-GM sees 'Lorekeeper limits'
+in Campaign settings › Lorekeeper with 'Ask for higher limits': more questions per day, more internet searches per
+day or more book room (0-1000 each) and a short reason (up to 300 characters). One request can be open per campaign;
+a GM can send 5 a day; the GM can withdraw it. The owner gets an email for every request and an alert on the Overview,
+and in App admin › Lorekeeper › Requests approves with the numbers they choose (prefilled with the asked ones) or
+declines. The approved numbers become the campaign's own limits (Use by campaign › Limits) from the next question. The
+GM sees the answer ('Last request approved / declined <date>'), never the owner's name. While the switch is off the GM
+side is hidden. Decided requests are deleted after 1 year.
 
 ## Costs and caps
 
@@ -193,7 +277,11 @@ How the caps work:
 - **Usage counters** are deleted after 13 months (daily job).
 - **Stuck answers**: an answer that has made no progress for 3 minutes ends as 'took too long', and an hourly job
   catches any still running after 10 minutes. Either way the booked cost is released.
-- **Books** stay until you re-ingest them. They don't belong to a campaign, so deleting a campaign keeps them.
+- **Shared books** stay until you replace or remove them. They don't belong to a campaign, so deleting a campaign
+  keeps them.
+- **Campaign books** stay until the GM removes them or the campaign is purged (their text chunks are deleted in
+  batches). An uploaded PDF file is deleted as soon as it has been read, whatever the result.
+- **Limit requests**: decided ones are deleted after 1 year; open ones wait for an answer.
 
 ## Privacy
 
@@ -217,10 +305,14 @@ How the caps work:
   search provider sees the search queries. Results are shown as 'From the internet · unofficial.', as plain text with
   links that open in a new tab (`rel="noopener nofollow"`).
 - **Conversations are public to the campaign by default** (every member can read them). The asker can make one
-  private; then only the asker can open it, not other players and not the GM. Public conversations hold nothing
-  secret, because no GM-only data is in any prompt.
+  private; then only the asker can open it, not other players and not the GM. The one exception is the **app
+  owner's read-only view** (App admin › Overview › Open, N1 changed): it shows everything in the campaign, private
+  conversations and players' private notes included, can change nothing, and every visit is logged
+  (`campaign.view` in Recent changes, once per campaign per day). Public conversations hold nothing secret, because
+  no GM-only data is in any prompt.
 - **Book text** stays in your deployment and is read only by server functions. Players see short quotes (up to 300
   characters each, at most 3 per answer). 'Open in the book' shows them the text of one cited page of a book that is
-  switched on for their campaign. The book text is copyrighted: keep the deployment private to your table.
+  switched on for their campaign. A campaign book is readable only inside its own campaign. The book text is
+  copyrighted: keep the deployment private to your table. The App admin export never contains book text.
 - Under Anthropic's commercial API terms, inputs are not used for training by default and are kept only under
   Anthropic's standard API retention.

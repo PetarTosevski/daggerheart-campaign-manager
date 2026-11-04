@@ -303,8 +303,9 @@ export function assertCanAct(character: Pick<Doc<"characters">, "status">, sheet
 }
 
 /**
- * The creation cap (review M5, dcm-bxp.38): `characters.create` refuses a campaign's next character at this many. Stays
- * 50 while testing; the user lowers it to 10 when testing is over (user 2026-10-30). Never above `CHARACTER_READ_BOUND`.
+ * The creation cap (review M5, dcm-bxp.38): `characters.create` refuses a campaign's next character at this many. It stays
+ * 50 as an abuse bound (config Q19 a); the per-player cap the owner sets in App admin (AD5b) is the everyday limit.
+ * Never above `CHARACTER_READ_BOUND`.
  */
 export const MAX_CHARACTERS_CREATED_PER_CAMPAIGN = 50;
 

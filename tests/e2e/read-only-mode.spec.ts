@@ -1,11 +1,10 @@
-import { execFileSync } from "node:child_process";
-
 import { expect as baseExpect, test, type Page } from "@playwright/test";
 import { ConvexHttpClient } from "convex/browser";
 
 import { api } from "../../convex/_generated/api";
 import { expectNoSeriousA11yViolations } from "./a11y";
 import { signInAsTestGm } from "./fixtures";
+import { E2E_OWNER_EMAIL, setAppOwner } from "./owner";
 
 // Plan config AU5 (server AD10 / AD11): the owner turns read-only mode on from App admin › Maintenance; every page
 // shows the banner (sign-in included); a player's write is refused with the banner's message; the owner can still
@@ -14,15 +13,10 @@ import { signInAsTestGm } from "./fixtures";
 test.describe.configure({ timeout: 240_000 });
 const expect = baseExpect.configure({ timeout: 20_000 });
 
-const OWNER = "e2e-au5-owner@example.test";
+// The shared e2e owner (tests/e2e/owner.ts): every owner spec uses the same account, so none hands the role away.
+const OWNER = E2E_OWNER_EMAIL;
 const PLAYER = "e2e-au5-player@example.test";
 const MESSAGE = "Updating the Combat Map. Back in about 10 minutes.";
-
-/** Names the app owner through the internal setup function (scripts/convex-e2e.mjs targets the e2e backend only). */
-function setOwner(email: string) {
-  const env = { ...process.env, E2E_CONVEX_PORT: process.env.E2E_CONVEX_PORT ?? "3212" };
-  execFileSync(process.execPath, ["scripts/convex-e2e.mjs", "run", "adminSetup:setOwner", JSON.stringify({ email })], { env, stdio: "pipe" });
-}
 
 /** The signed-in user's Convex Auth token from the page. */
 async function tokenOf(page: Page): Promise<string | null> {
@@ -39,11 +33,14 @@ test("the owner turns read-only on, a player's write explains why it fails, the 
   const playerContext = await browser.newContext();
   const owner = await ownerContext.newPage();
   const player = await playerContext.newPage();
+  // Kept outside the page: on a test timeout Playwright closes the pages before `finally` runs.
+  let ownerToken: string | null = null;
   try {
     // Both accounts exist before the mode is on (read-only blocks new accounts, AD4).
     await signInAsTestGm(owner, OWNER);
     await expect(owner).toHaveURL("/");
-    setOwner(OWNER);
+    setAppOwner();
+    ownerToken = await tokenOf(owner);
     await signInAsTestGm(player, PLAYER);
     await expect(player).toHaveURL("/");
 
@@ -83,7 +80,8 @@ test("the owner turns read-only on, a player's write explains why it fails, the 
     }
 
     // The owner is exempt: an export runs and downloads with the owner's token.
-    const exportRow = panel.getByText("Export everything", { exact: true }).locator("xpath=ancestor::div[contains(@class,'adm-row')][1]");
+    // The row itself (`.adm-row`), not its text block `.adm-row-t`, which an XPath `contains(@class, 'adm-row')` also matches.
+    const exportRow = panel.locator("div.adm-row").filter({ has: owner.getByText("Export everything", { exact: true }) });
     await exportRow.getByRole("button", { name: /^Export( again)?$/ }).click();
     await expect(exportRow.getByTestId("export-status")).toContainText("Ready. The file is deleted at", { timeout: 60_000 });
     const [download] = await Promise.all([owner.waitForEvent("download"), exportRow.getByRole("button", { name: "Download" }).click()]);
@@ -102,13 +100,13 @@ test("the owner turns read-only on, a player's write explains why it fails, the 
     await expect(join.getByRole("alert")).not.toContainText("read-only");
   } finally {
     // Never leave the shared e2e backend read-only for the next spec.
-    const token = await tokenOf(owner).catch(() => null);
+    const token = (await tokenOf(owner).catch(() => null)) ?? ownerToken;
     if (token) {
       const client = new ConvexHttpClient(process.env.E2E_CONVEX_URL!);
       client.setAuth(token);
       await client.mutation(api.adminMaintenance.setReadOnly, { on: false }).catch(() => {});
     }
-    await ownerContext.close();
-    await playerContext.close();
+    await ownerContext.close().catch(() => {});
+    await playerContext.close().catch(() => {});
   }
 });

@@ -1,5 +1,3 @@
-import { execFileSync } from "node:child_process";
-
 import { expect as baseExpect, test, type Page } from "@playwright/test";
 import { ConvexError } from "convex/values";
 
@@ -7,6 +5,7 @@ import { api } from "../../convex/_generated/api";
 import { expectNoSeriousA11yViolations } from "./a11y";
 import { appBar, artHeader, gear } from "./config/helpers";
 import { signInAsTestGm } from "./fixtures";
+import { E2E_OWNER_EMAIL, openFromOverview, setAppOwner } from "./owner";
 import { convexAs } from "./visual/helpers";
 
 // Plan config AU7 (Q27 b, N1 changed; server AD13, Overview AU1): the app owner opens another GM's campaign from App
@@ -16,14 +15,9 @@ import { convexAs } from "./visual/helpers";
 test.describe.configure({ timeout: 240_000 });
 const expect = baseExpect.configure({ timeout: 20_000 });
 
-const OWNER = "e2e-au7-owner@example.test";
+// The shared e2e owner (tests/e2e/owner.ts): every owner spec uses the same account, so none hands the role away.
+const OWNER = E2E_OWNER_EMAIL;
 const BANNER = "Read-only view · You are not in this campaign. Nothing can be changed here.";
-
-/** Names the app owner through the internal setup function (scripts/convex-e2e.mjs targets the e2e backend only). */
-function setOwner(email: string) {
-  const env = { ...process.env, E2E_CONVEX_PORT: process.env.E2E_CONVEX_PORT ?? "3212" };
-  execFileSync(process.execPath, ["scripts/convex-e2e.mjs", "run", "adminSetup:setOwner", JSON.stringify({ email })], { env, stdio: "pipe" });
-}
 
 const banner = (page: Page) => page.getByTestId("owner-view-banner");
 
@@ -49,11 +43,11 @@ test("the owner opens another GM's campaign read-only from the Overview: banner 
 
     await signInAsTestGm(owner, OWNER);
     await expect(owner).toHaveURL("/");
-    setOwner(OWNER);
+    setAppOwner();
 
     // Overview › Campaigns › Open: logs the visit, then the read-only dashboard (newest campaigns first).
     await owner.goto("/admin?tab=overview");
-    await owner.getByRole("button", { name: `Open ${name}` }).click();
+    await openFromOverview(owner, name);
     await expect(owner).toHaveURL(`/campaigns/${campaignId}`);
     await expect(owner.getByRole("heading", { level: 1, name })).toBeVisible();
     await expectReadOnlyChrome(owner);

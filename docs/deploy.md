@@ -87,7 +87,8 @@ Found by grepping `env.*` / `process.env.*` in `convex/`, `src/`, `scripts/`.
 | `AUTH_RESEND_KEY` | yes | **USER** | Resend API key (step 2). Sign-up, password-reset and invite emails. Only in Convex env. |
 | `MAIL_FROM` | yes | agent | Sender on the verified domain, e.g. `Duality Heart <noreply@dualityheart.com>`. |
 | `CONVEX_SITE_URL` | automatic | none | Provided by Convex itself to `convex/auth.config.ts`. Do not set. |
-| `LOREKEEPER_MODEL`, `LOREKEEPER_DAILY_QUESTIONS`, `LOREKEEPER_CAMPAIGN_MONTHLY_USD`, `LOREKEEPER_MONTHLY_USD`, `ANTHROPIC_MODEL` | optional | user | Defaults are fine; see `docs/lorekeeper.md`. |
+| `LOREKEEPER_MODEL`, `ANTHROPIC_MODEL` | optional | user | Defaults are fine; see `docs/lorekeeper.md`. |
+| `LOREKEEPER_DAILY_QUESTIONS`, `LOREKEEPER_CAMPAIGN_MONTHLY_USD`, `LOREKEEPER_MONTHLY_USD` | optional | user | **Fallbacks only.** The owner sets these limits in App admin (step 4a); a value saved there wins over the env var. |
 
 Generate the key pair only when production has neither key. The site is live; a new pair signs everyone out.
 Run locally, pipe straight into Convex, never print or save it:
@@ -117,6 +118,102 @@ Changing `JWT_PRIVATE_KEY` or `JWKS` signs everyone out. Do not rotate them on t
   test rails, off in production.
 
 Check: `npx convex env list --prod | sed -E 's/=.*//'` lists names only.
+
+## 4a. App admin (the app owner)
+
+Limits, caps, switches and maintenance that used to need an env var or a code change now live in **App admin**
+(`/admin`). Only the **app owner** can open it. Everyone else, a campaign's GM included, sees 'Not allowed', and
+every admin function answers them `FORBIDDEN`. The check is on the server (`appOwnerQuery` / `appOwnerMutation` /
+`appOwnerAction` in `convex/lib/functions.ts`); `tests/e2e/admin-superadmin.spec.ts` calls every admin function as a
+GM and a player.
+
+### Name the owner (once, Q16 a)
+
+The owner is one stored account id (`appConfig.ownerId`), never an env var or an email matched at request time. Only
+someone with the deployment's admin rights can set it:
+
+```bash
+# The account must exist and its email must be verified: sign in once on the site first.
+npx convex run --prod adminSetup:setOwner '{"email": "you@example.com"}'   # drop --prod for the dev deployment
+```
+
+- Unknown or unverified email: `NOT_FOUND` ("Sign in once and confirm the email first"). A blank email, or one shared
+  by two verified accounts: `INVALID`.
+- Running it again with another email hands the role over at once. Every run is logged (`owner.set`).
+- Changing the owner's email later does not move the role. An owner whose email is no longer verified is not the
+  owner until it is verified again.
+- The owner then finds 'App admin' in Preferences (the avatar menu), or goes to `/admin`.
+
+### What lives where now
+
+| What | Before | Now (App admin tab) | Fallback / default |
+|---|---|---|---|
+| Who can sign up | open sign-up only | Accounts › Who can join: Open sign-up / Invite link only / Closed | open |
+| Campaigns per GM, campaigns in the app | no limit | Accounts › Who can join | 10, 100 (archived and deleted campaigns don't count) |
+| Characters per player in a campaign | 50 per campaign (dcm-cd8) | Accounts › Who can join | 5 (retired included; GM and co-GM characters exempt) |
+| Players per campaign | no limit | Accounts › Who can join | 8 (co-GMs count, the creator doesn't) |
+| Lorekeeper monthly spend, questions per day | `LOREKEEPER_MONTHLY_USD`, `LOREKEEPER_DAILY_QUESTIONS` | Lorekeeper › Budget, Limits per person | the env var, then 150 / 40 |
+| Lorekeeper monthly budget per campaign | `LOREKEEPER_CAMPAIGN_MONTHLY_USD` | no control yet (`adminLorekeeper.setLimit` `campaignMonthlyUsd`) | the env var, then 50 |
+| Internet searches per day, what happens at the limit, the 80% email, GM limit requests, one campaign's own limits | none | Lorekeeper | 20, Pause, on, off |
+| Shared rulebooks | `pnpm lorekeeper:ingest` only | Lorekeeper › Book library (PDF upload, Replace) | the script still works |
+| Feature switches: 3D dice, phone layout, Lorekeeper internet search, sprite tokens (Journal and Share links are saved but do nothing yet, N2 a) | none | Feature switches: Off / Only me / Testers / Everyone; testers are picked there | Everyone |
+| Read-only mode with a banner | none | Maintenance › Maintenance mode | off |
+
+- The caps apply to the owner too. Lowering a cap never removes anything; it only refuses the next one.
+- The campaign-wide bound of 50 characters (`MAX_CHARACTERS_CREATED_PER_CAMPAIGN`) stays in code as an abuse bound
+  under the per-player cap (dcm-cd8 closed with that cap).
+- Every change is logged in Overview › Recent changes with who made it, together with campaigns created and deleted.
+  The log is kept 1 year (Q26 a).
+- Lorekeeper details (the at-limit modes, PDF uploads by the owner and by GMs and their limits, limit requests): see
+  `docs/lorekeeper.md`.
+
+### Read-only mode (Maintenance)
+
+'Read-only for everyone' takes an optional banner message (up to 200 characters). Every signed-in page and the
+sign-in page show the banner. Every write is refused with `READ_ONLY_MODE` and the message, and new accounts are
+refused. Exempt (Q31 a): the owner, background jobs (crons, an answer already running), opening a campaign and
+presence. Use it around a risky migration, and turn it off from the same switch.
+
+### Keys and backups (Maintenance)
+
+- Keys and connections shows only Set / Missing for the database, `ANTHROPIC_API_KEY`, email (`AUTH_RESEND_KEY` and
+  `MAIL_FROM`), `SITE_URL` and Google sign-in. Keys are never shown or changed in the app: change them with
+  `npx convex env set`.
+- Backups is a link to the Convex dashboard's Backups page (Q29 a). The app shows no backup time; take backups there.
+
+### Export everything (Maintenance › Backups)
+
+Export builds one JSON file in the background, and Download saves it as `dualityheart-export-YYYY-MM-DD.json`. The
+download goes through `GET <convex site>/admin/export?id=…` with the owner's sign-in token in a header, checked on
+every download. The file is deleted after **1 hour** (Q30 a).
+
+- **Contains** every table of the schema as stored (`_id` and `_creationTime` included): accounts, campaigns,
+  members, characters, sessions, Journal pages, maps, Lorekeeper conversations and usage, admin settings and the audit
+  log. Uploaded files (portraits, map images) appear by storage id only, without their bytes.
+- **Excludes** auth secrets and sessions (`authAccounts` with password hashes, `authSessions`, `authRefreshTokens`,
+  `authVerificationCodes`, `authVerifiers`, `authRateLimits`), book text (`lorekeeperChunks`), idempotency records
+  (`operations`), the export rows themselves (`adminExports`), the e2e codes table and the rate limiter's state. Each
+  campaign's `joinCode` is removed. The file lists its `excludedTables` and `redactedFields`.
+- It is not a restore format. For a full backup and restore, use the Convex dashboard or `npx convex export`.
+
+### The owner's read-only view of a campaign (Q27 b, N1 changed)
+
+Overview › Campaigns lists every campaign with 'Open'. Open logs the visit (`campaign.view`, once per campaign per
+day) and opens the campaign as its GM sees it, **with everything: players' private notes and private Lorekeeper
+conversations included**. A banner says 'Read-only view · You are not in this campaign. Nothing can be changed here.'
+There is no gear and no Players button, and the server refuses every write. The owner never shows as a member, as
+Online or in 'Last seen'.
+
+### Not built yet
+
+Suspending and deleting accounts from Accounts (Q28 b, AD14 / AU9) waits for its own design (N11). Until then,
+remove an account through the Convex dashboard.
+
+### e2e
+
+The e2e backend's owner is the test account `e2e-owner@example.test`, named by the specs that need it
+(`tests/e2e/owner.ts`). Every owner spec uses this one account and puts back any app-wide setting it changes.
+`pnpm e2e:setup` raises both campaign caps to 1,000,000, on the e2e backend only (`e2e:raiseCampaignCaps`).
 
 ### Vercel Production (`vercel env ls`, names only)
 
@@ -226,6 +323,8 @@ Not recorded as run. The site being live does not check these boxes.
 - [ ] Hand sharing switch and "hide my hand" behave (migration check).
 - [ ] Lorekeeper: ask a rules question; the answer quotes a page of the Core Rulebook.
 - [ ] Upload a portrait (png) succeeds; a non-image is rejected.
+- [ ] The owner (step 4a) opens App admin and every tab loads; a second, non-owner account sees 'Not allowed' at
+      `/admin`.
 - [ ] Vercel runtime logs and Convex production logs show no errors during the above.
 
 ## 10. Rollback
@@ -241,5 +340,10 @@ Not recorded as run. The site being live does not check these boxes.
 - **Sign-in broken** (auth env wrong): fix `SITE_URL`, `AUTH_GOOGLE_*`, `AUTH_RESEND_KEY`, `MAIL_FROM` with
   `npx convex env set --prod`; no redeploy needed. Never regenerate `JWT_PRIVATE_KEY`/`JWKS` as a fix, it signs
   everyone out.
-- **Lorekeeper cost runaway**: `npx convex env set --prod LOREKEEPER_DAILY_QUESTIONS 0` or lower the monthly caps.
+- **Lorekeeper cost runaway**: in App admin › Lorekeeper, lower the monthly spend limit (with 'Pause the
+  Lorekeeper') or Questions per day. A value saved there wins over the env vars, so
+  `npx convex env set --prod LOREKEEPER_DAILY_QUESTIONS 0` only helps while the owner has never saved that number.
+  Feature switches › Lorekeeper internet search › Off stops the internet pass for everyone.
+- **Risky change in progress**: App admin › Maintenance › 'Read-only for everyone' stops every write except the
+  owner's.
 - **Domain trouble**: remove the A and CNAME records at GoDaddy, or `vercel domains rm`; the `*.vercel.app` URL keeps working.
