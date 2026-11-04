@@ -189,6 +189,7 @@ import type * as notesThreads from "../notesThreads.js";
 import type * as photoImport from "../photoImport.js";
 import type * as playFor from "../playFor.js";
 import type * as preferences from "../preferences.js";
+import type * as presence from "../presence.js";
 import type * as rests from "../rests.js";
 import type * as restsReads from "../restsReads.js";
 import type * as rolls from "../rolls.js";
@@ -422,6 +423,7 @@ declare const fullApi: ApiFromModules<{
   photoImport: typeof photoImport;
   playFor: typeof playFor;
   preferences: typeof preferences;
+  presence: typeof presence;
   rests: typeof rests;
   restsReads: typeof restsReads;
   rolls: typeof rolls;
@@ -497,4 +499,5 @@ export declare const internal: FilterApi<
 export declare const components: {
   rateLimiter: import("@convex-dev/rate-limiter/_generated/component.js").ComponentApi<"rateLimiter">;
   migrations: import("@convex-dev/migrations/_generated/component.js").ComponentApi<"migrations">;
+  presence: import("@convex-dev/presence/_generated/component.js").ComponentApi<"presence">;
 };

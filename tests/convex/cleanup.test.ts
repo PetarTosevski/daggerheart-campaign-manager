@@ -1,7 +1,7 @@
 import type { GenericValidator } from "convex/values";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { api, internal } from "../../convex/_generated/api";
+import { api, components, internal } from "../../convex/_generated/api";
 import type { Doc, Id, TableNames } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
 import { ACTION_LOG_STRIP_BATCH, BATCH } from "../../convex/cleanup";
@@ -674,6 +674,27 @@ describe("cleanup crons", () => {
     await t.finishAllScheduledFunctions(vi.runAllTimers);
 
     expect(await leftovers(t, s)).toEqual(before);
+  });
+
+  it("removes the purged campaign's presence room and keeps other campaigns' rooms (config PR1)", async () => {
+    const t = makeTest();
+    const userId = await user(t);
+    const gm = t.withIdentity({ subject: `${userId}|s` });
+    const purged = await seedCampaign(t, userId, undefined);
+    const kept = await seedCampaign(t, userId, undefined);
+    for (const { campaignId } of [purged, kept]) {
+      await gm.mutation(api.presence.heartbeat, { roomId: campaignId, userId: "label", sessionId: "tab", interval: 10_000 });
+    }
+    const room = (roomId: Id<"campaigns">) => t.query(components.presence.public.listRoom, { roomId });
+    expect(await room(purged.campaignId)).toHaveLength(1);
+    await t.run((ctx) => ctx.db.patch("campaigns", purged.campaignId, { deletedAt: NOW - 31 * DAY }));
+
+    await t.mutation(internal.cleanup.purgeCampaign, { campaignId: purged.campaignId });
+    await t.finishInProgressScheduledFunctions();
+
+    expect(await room(purged.campaignId)).toEqual([]);
+    expect(await t.run((ctx) => ctx.db.get("campaigns", purged.campaignId))).toBeNull();
+    expect(await room(kept.campaignId)).toEqual([expect.objectContaining({ userId, online: true })]);
   });
 
   it("deletes unclaimed uploads older than 2 hours and keeps claimed or recent ones", async () => {

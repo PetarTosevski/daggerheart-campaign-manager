@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id, TableNames } from "./_generated/dataModel";
 import { internalMutation, type MutationCtx } from "./_generated/server";
 import { deleteMapChildren } from "./lib/combatMaps";
+import { removeCampaignRoom } from "./presence";
 
 /**
  * Retention for the tables that only grow (CD17, CD18), run by `crons.ts`.
@@ -447,7 +448,7 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
  * Deletes a campaign due for purge and everything in it, `BATCH` rows per
  * run: first every indexed step, then a paged scan of `campaignOpens` (it has
  * no campaign index, and players who left keep their rows), then the
- * campaign itself. Stops if the campaign is gone or was restored. Only a purge
+ * campaign's presence room (config PR1) and the campaign itself. Stops if the campaign is gone or was restored. Only a purge
  * started by `purgeDeletedCampaigns` (`sweep`) goes on to the next due campaign;
  * a GM's "Delete permanently" (`campaigns.purge`) purges its campaign alone.
  */
@@ -477,6 +478,8 @@ export const purgeCampaign = internalMutation({
       await ctx.scheduler.runAfter(0, internal.cleanup.purgeCampaign, { campaignId, opensCursor: page.continueCursor, sweep });
       return null;
     }
+    // The campaign's Online / Away room lives in the presence component (config PR1): a few rows per member.
+    await removeCampaignRoom(ctx, campaignId);
     await ctx.db.delete("campaigns", campaignId);
     if (sweep === true) await ctx.scheduler.runAfter(0, internal.cleanup.purgeDeletedCampaigns, {});
     return null;

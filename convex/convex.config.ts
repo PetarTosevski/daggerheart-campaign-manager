@@ -1,4 +1,5 @@
 import migrations from "@convex-dev/migrations/convex.config";
+import presence from "@convex-dev/presence/convex.config";
 import rateLimiter from "@convex-dev/rate-limiter/convex.config";
 import { defineApp } from "convex/server";
 import { v } from "convex/values";
@@ -44,5 +45,7 @@ const app = defineApp({
 
 app.use(rateLimiter);
 app.use(migrations);
+// Online / Away (config PR1, Q11 b): wrapped in convex/presence.ts; never called from the client directly.
+app.use(presence);
 
 export default app;
