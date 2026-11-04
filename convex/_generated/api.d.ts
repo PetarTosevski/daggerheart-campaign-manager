@@ -179,6 +179,7 @@ import type * as lib_validators_wither from "../lib/validators/wither.js";
 import type * as lorekeeper from "../lorekeeper.js";
 import type * as lorekeeperAsks from "../lorekeeperAsks.js";
 import type * as lorekeeperLibrary from "../lorekeeperLibrary.js";
+import type * as lorekeeperLimitRequests from "../lorekeeperLimitRequests.js";
 import type * as lorekeeperRetention from "../lorekeeperRetention.js";
 import type * as lorekeeperRulings from "../lorekeeperRulings.js";
 import type * as lorekeeperRun from "../lorekeeperRun.js";
@@ -434,6 +435,7 @@ declare const fullApi: ApiFromModules<{
   lorekeeper: typeof lorekeeper;
   lorekeeperAsks: typeof lorekeeperAsks;
   lorekeeperLibrary: typeof lorekeeperLibrary;
+  lorekeeperLimitRequests: typeof lorekeeperLimitRequests;
   lorekeeperRetention: typeof lorekeeperRetention;
   lorekeeperRulings: typeof lorekeeperRulings;
   lorekeeperRun: typeof lorekeeperRun;
