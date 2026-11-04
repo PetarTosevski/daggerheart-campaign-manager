@@ -186,6 +186,7 @@ import type * as notesSharing from "../notesSharing.js";
 import type * as notesThreads from "../notesThreads.js";
 import type * as photoImport from "../photoImport.js";
 import type * as playFor from "../playFor.js";
+import type * as preferences from "../preferences.js";
 import type * as rests from "../rests.js";
 import type * as restsReads from "../restsReads.js";
 import type * as rolls from "../rolls.js";
@@ -416,6 +417,7 @@ declare const fullApi: ApiFromModules<{
   notesThreads: typeof notesThreads;
   photoImport: typeof photoImport;
   playFor: typeof playFor;
+  preferences: typeof preferences;
   rests: typeof rests;
   restsReads: typeof restsReads;
   rolls: typeof rolls;

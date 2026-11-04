@@ -47,6 +47,8 @@ export const STRANGER_OWN: Record<string, string> = {
   "members:joinByCode": "joins with a code the caller was given (a wrong code is NOT_FOUND)",
   "users:viewer": "the caller's own account",
   "uiState:get": "the caller's own UI state (defaults for a stranger; config P2)",
+  "preferences:get": "the caller's own preferences (config P1)",
+  "preferences:importLegacy": "moves the caller's own old browser values to their account (config P1)",
 };
 
 const AREAS = Object.values(import.meta.glob("./authz/*.entries.ts", { eager: true, import: "default" }) as Record<string, Area>);
