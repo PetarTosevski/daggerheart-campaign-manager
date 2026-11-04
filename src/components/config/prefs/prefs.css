@@ -1,0 +1,18 @@
+/* The Preferences popover's rows (plan config U6a; design `.pm-pop .row`). Shared rows are in ../config.css. */
+
+/* The dice volume (design `.rng`): 150 px, gold, a 26 px tall hit area. */
+.cfg-rng {
+  flex: none;
+  width: 150px;
+  height: 26px;
+  margin: 0;
+  accent-color: #e3b45a;
+  cursor: pointer;
+}
+.cfg-prefs-err:empty {
+  display: none;
+}
+.cfg-prefs-err {
+  margin-top: 8px;
+  color: #f0a8a0;
+}

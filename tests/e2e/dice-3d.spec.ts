@@ -67,12 +67,13 @@ async function shownValues(dice: ReturnType<Page["getByRole"]>): Promise<string>
   return labels.map((l) => /: (\d+)/.exec(l)?.[1] ?? "?").join(",");
 }
 
-test("with reduced motion, 3D is off by default and no canvas appears even when switched on", async ({ page }) => {
+// The toggle follows the account (config U6a; an unset account is on), so reduced motion no longer flips its default;
+// canAnimate3d still keeps the canvas away.
+test("with reduced motion, no canvas appears even when 3D is switched on", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const { box } = await gmSheet(page);
-  const toggle = box.getByRole("checkbox", { name: "3D dice" });
-  await expect(toggle).not.toBeChecked();
-  await toggle.check();
+  // signInAsTestGm resets the account to its defaults (3D on); wait for the account's value, not the loading default.
+  await expect(box.getByRole("checkbox", { name: "3D dice" })).toBeChecked();
   await box.getByRole("button", { name: "Roll", exact: true }).click();
   await expect(box.getByTestId("last-roll")).toBeVisible();
   await expect(box.getByTestId("dice-3d")).toHaveCount(0);

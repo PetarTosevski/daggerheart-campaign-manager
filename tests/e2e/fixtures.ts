@@ -1,7 +1,9 @@
 import { expect, type Page } from "@playwright/test";
 import { ConvexHttpClient } from "convex/browser";
+import type { FunctionArgs } from "convex/server";
 
 import { api } from "../../convex/_generated/api";
+import { PREFERENCE_DEFAULTS } from "../../src/lib/config/preferences";
 
 export const E2E_GM_EMAIL = "e2e-gm@example.test";
 
@@ -45,6 +47,18 @@ export async function signInAsTestGm(page: Page, email = E2E_GM_EMAIL) {
   const client = new ConvexHttpClient(process.env.E2E_CONVEX_URL!);
   client.setAuth(token);
   await client.mutation(api.settings.update, { defaultMapStyle: "classic" });
+  // Preferences live on the account (config U6a) and the test accounts are shared: start every spec from the defaults
+  // so one spec's dice or text-size choice never leaks into the next.
+  const d = PREFERENCE_DEFAULTS;
+  const defaults: FunctionArgs<typeof api.preferences.set>["change"][] = [
+    { key: "dice3d", value: d.dice3d },
+    { key: "diceSound", value: d.diceSound },
+    { key: "diceVolume", value: d.diceVolume },
+    { key: "reduceMotion", value: d.reduceMotion },
+    { key: "textSize", value: d.textSize },
+    { key: "spotlightPing", value: d.spotlightPing },
+  ];
+  await Promise.all(defaults.map((change) => client.mutation(api.preferences.set, { change })));
 }
 
 /** Signed-in home is the title menu; the account lives in its Settings dialog. */
