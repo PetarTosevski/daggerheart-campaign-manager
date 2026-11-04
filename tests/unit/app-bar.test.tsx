@@ -1,6 +1,7 @@
 // Plan combat-hud H9.A: the Combat Map's app bar (src/components/app-bar). Nav from CAMPAIGN_SECTIONS in the user's
 // order (Q1 a), the live dot, the Lorekeeper pill opening the drawer store, the full-screen hide with its way back
-// (Q2 c), and the gear / avatar placeholders (Q3 c).
+// (Q2 c), and the gear / avatar (config S1: the gear opens Campaign settings through ?settings=, the avatar the
+// Preferences popover; the interim Players menu is gone).
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -15,9 +16,27 @@ vi.mock("convex/react", () => ({
   useQuery: (ref: unknown, args: unknown) => (args === "skip" ? undefined : results[functionName(ref)]),
 }));
 
-vi.mock("next/navigation", () => ({
-  usePathname: () => `/campaigns/${CAMPAIGN}/combat-map`,
-}));
+vi.mock("@convex-dev/auth/react", () => ({ useAuthActions: () => ({ signOut: () => Promise.resolve() }) }));
+
+// Next syncs history.replaceState into useSearchParams; model that with a store over window.location.search.
+vi.mock("next/navigation", async () => {
+  const { useSyncExternalStore } = await import("react");
+  const listeners = new Set<() => void>();
+  const replace = window.history.replaceState.bind(window.history);
+  window.history.replaceState = (...args: Parameters<History["replaceState"]>) => {
+    replace(...args);
+    for (const listener of listeners) listener();
+  };
+  const subscribe = (listener: () => void) => {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+  };
+  return {
+    usePathname: () => `/campaigns/${CAMPAIGN}/combat-map`,
+    useRouter: () => ({ push: () => undefined, replace: () => undefined }),
+    useSearchParams: () => new URLSearchParams(useSyncExternalStore(subscribe, () => window.location.search)),
+  };
+});
 
 const { CombatAppBarFrame, FULL_SCREEN_LABEL, SHOW_BAR_LABEL } = await import("@/components/app-bar");
 const { closeLorekeeperDrawer, useLorekeeperDrawerState } = await import("@/components/app-bar/lorekeeper-store");
@@ -37,6 +56,7 @@ beforeEach(() => {
   results["combatMaps:list"] = [];
   results["combatMaps:live"] = null;
   results["charactersReads:partySummary"] = [];
+  window.history.replaceState(null, "", `/campaigns/${CAMPAIGN}/combat-map`);
   act(() => closeLorekeeperDrawer(null));
 });
 
@@ -120,14 +140,23 @@ describe("full screen", () => {
   });
 });
 
-describe("gear and avatar placeholders", () => {
-  it("the GM's gear keeps Players one click away", () => {
+describe("gear and avatar", () => {
+  it("the GM's gear opens Campaign settings (?settings=table); the old Players menu is gone", () => {
     const onPlayers = vi.fn();
     renderBar({ onPlayers });
-    expect(screen.getByRole("button", { name: "Campaign settings" })).toBeInTheDocument();
-    fireEvent.click(screen.getByText("Players", { selector: "button" }));
-    expect(onPlayers).toHaveBeenCalledTimes(1);
-    expect(within(screen.getByRole("button", { name: "Your preferences" })).getByText("GM")).toBeInTheDocument();
+    const gear = screen.getByRole("button", { name: "Campaign settings" });
+    expect(gear).toHaveAttribute("aria-haspopup", "dialog");
+    expect(gear).toHaveAttribute("aria-expanded", "false");
+    expect(gear.className).toContain("gb-tool");
+    fireEvent.click(gear);
+    expect(window.location.search).toBe("?settings=table");
+    expect(gear).toHaveAttribute("aria-expanded", "true");
+    expect(onPlayers).not.toHaveBeenCalled();
+    expect(screen.queryByText("More campaign settings are on the way.")).toBeNull();
+    const avatar = screen.getByRole("button", { name: "Your preferences" });
+    expect(within(avatar).getByText("GM")).toBeInTheDocument();
+    expect(avatar.className).toContain("gb-tool");
+    expect(screen.queryByText("Your preferences are on the way.")).toBeNull();
   });
 
   it("a player's avatar shows their character's initial without art", () => {

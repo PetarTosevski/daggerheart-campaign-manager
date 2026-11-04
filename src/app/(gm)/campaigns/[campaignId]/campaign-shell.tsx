@@ -7,11 +7,12 @@ import { usePathname, useRouter } from "next/navigation";
 import { BookOpen, Users } from "lucide-react";
 import { createContext, memo, useCallback, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 
-import { CampaignNav, CombatAppBarFrame } from "@/components/app-bar";
+import { CampaignNav, CampaignSettingsButton, CombatAppBarFrame, PreferencesButton } from "@/components/app-bar";
 import { BackLink, Wordmark } from "@/components/brand/brand";
 import { BrandButton, brandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import { ViewerProvider, viewerFor } from "@/components/brand/viewer";
+import { ConfigMounts } from "@/components/config/shell";
 import { SlotBoundary } from "@/components/party/session/boundary";
 import { sessionPlayHref } from "@/components/sessions/session-chip";
 import { frameName } from "@/lib/campaign-display";
@@ -388,6 +389,11 @@ function CampaignShellView({ campaign, children }: { campaign: CampaignSummary |
               Player
             </span>
           )}
+          {/* Config S1: the gear (GM and co-GM) opens Campaign settings, the avatar opens Preferences. */}
+          <span className="cfg-acct">
+            {isGm ? <CampaignSettingsButton /> : null}
+            <PreferencesButton campaignId={campaign._id} isGm={isGm} />
+          </span>
         </div>
       </div>
       {pathname === `/campaigns/${campaign._id}` ? <DashboardHero campaign={campaign} onOpenTome={openOverview} /> : null}
@@ -414,6 +420,8 @@ function CampaignShellView({ campaign, children }: { campaign: CampaignSummary |
         )}
         <MemoTome campaign={campaign} chapter={tomeChapter} onChapter={setTomeChapter} onClose={closeTome} />
         {isGm ? <MemoPlayersDialog campaignId={campaign._id} open={playersOpen} onClose={closePlayers} /> : null}
+        {/* Campaign settings (GM), the presence heartbeat and the spotlight ping: once per campaign page. */}
+        <ConfigMounts campaign={campaign} />
       </div>
       </ViewerProvider>
       </OpenTomeContext.Provider>

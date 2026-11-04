@@ -1,0 +1,378 @@
+/*
+ * Campaign settings and Preferences (plan config; design reference/designs/config/Settings.dc.html). Shell (S1): the
+ * gear and avatar at the end of the headers (`.cfg-acct`, `.cfg-face`), the settings slide-over (`.cfg-setp*`, design
+ * `.setp`), the Preferences popover (`.cfg-pop`, design `.pm-pop`). Shared row classes for the section and preference
+ * slots: `.cfg-row`, `.cfg-row-t`, `.cfg-hint`, `.cfg-lbl`, `.cfg-muted`, `.cfg-sw` (switch), `.cfg-seg` (segmented).
+ * Unlayered, like glass-button.css; the glass overrides below are scoped to `.cfg-acct-btn`.
+ */
+
+/* ---------------------------------------------------------------- gear and avatar */
+
+/* The art header's pair (design `.acct`): 40 px dark discs on the art. */
+.cfg-acct {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+.cfg-acct .gb.gb-tool.cfg-acct-btn {
+  width: 40px;
+  height: 40px;
+  background: rgb(0 0 0 / 0.45);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.28);
+  color: #e6ecea;
+}
+.cfg-acct .gb.gb-tool.cfg-acct-btn:hover,
+.cfg-acct .gb.gb-tool.cfg-acct-btn:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--gb-hover-rim);
+}
+/* Open: the gear goes gold (design `.gear[aria-expanded=true]`), the avatar gets a gold ring. */
+.gb.gb-tool.cfg-acct-btn[aria-expanded="true"]:not(.cfg-ava) {
+  background: #2d2614;
+  color: #f3cf86;
+  box-shadow: inset 0 0 0 1px #e3b45a;
+}
+.gb.gb-tool.cfg-acct-btn.cfg-ava[aria-expanded="true"] {
+  box-shadow: 0 0 0 3px #e3b45a;
+}
+
+/* The face (HUD H9.A's avatar, design `.pf`): 'GM' on purple, or the player's portrait in a gold ring. */
+.cfg-face {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  overflow: hidden;
+  border-radius: 50%;
+  font: 700 11px/1 var(--font-display);
+}
+.cfg-face-gm {
+  background: #4b3a7a;
+  color: #efeaff;
+  box-shadow: 0 0 0 1.5px #c9bdf2;
+}
+.cfg-face-pc {
+  background: #121b1f;
+  color: #e6ecea;
+  box-shadow: 0 0 0 2px #e3b45a;
+}
+.cfg-face-big {
+  width: 40px;
+  height: 40px;
+}
+
+/* ---------------------------------------------------------------- settings slide-over (design .setp) */
+
+.cfg-setp {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(640px, 100vw);
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: #121b1f;
+  color: #e6ecea;
+  box-shadow:
+    inset 1px 0 0 #3a4d54,
+    -24px 0 60px rgb(0 0 0 / 0.55);
+  font: 400 14px/1.5 var(--font-sans);
+}
+.cfg-setp[open] {
+  display: flex;
+  flex-direction: column;
+}
+.cfg-setp::backdrop {
+  background: rgb(5 8 10 / 0.62);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .cfg-setp[open] {
+    animation: cfg-pin 0.28s cubic-bezier(0.2, 0.8, 0.3, 1);
+  }
+}
+/* Preferences' Reduce motion (U6b sets the attribute on <html>). */
+:root[data-reduce-motion] .cfg-setp[open] {
+  animation: none;
+}
+@keyframes cfg-pin {
+  from {
+    transform: translateX(40px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.cfg-setp-h {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 26px 28px 18px;
+}
+.cfg-kick {
+  font-size: 13px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: #c8d3d0;
+}
+.cfg-setp-title {
+  margin: 4px 0 0;
+  font: 900 28px/1.1 var(--font-display);
+}
+.cfg-setp-b {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  grid-template-columns: 170px minmax(0, 1fr);
+  border-top: 1px solid #1f2b30;
+}
+.cfg-snav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px 10px;
+  border-right: 1px solid #1f2b30;
+}
+.cfg-sn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #c8d3d0;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cfg-sn:hover {
+  background: #18232a;
+}
+.cfg-sn[aria-current="true"] {
+  background: #2d2614;
+  color: #f3cf86;
+  box-shadow: inset 0 0 0 1px #e3b45a;
+}
+.cfg-sn:focus-visible,
+.cfg-setp :focus-visible {
+  outline: 2px solid #e3b45a;
+  outline-offset: 2px;
+}
+.cfg-secs {
+  min-width: 0;
+  overflow: auto;
+  padding: 18px 26px 26px;
+}
+.cfg-sec-title {
+  margin: 0 0 8px;
+  font: 700 20px/1.2 var(--font-display);
+  color: #f3cf86;
+}
+.cfg-setp-f {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 28px;
+  border-top: 1px solid #1f2b30;
+  font-size: 12.5px;
+  color: #7fc29b;
+}
+
+/* Phone: one column, the section nav becomes a scrolling row. */
+@media (max-width: 640px) {
+  .cfg-setp-h {
+    padding: 18px 16px 12px;
+  }
+  .cfg-setp-b {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .cfg-snav {
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 8px;
+    border-right: 0;
+    border-bottom: 1px solid #1f2b30;
+    scrollbar-width: none;
+  }
+  .cfg-sn {
+    flex: none;
+  }
+  .cfg-secs {
+    padding: 16px;
+  }
+  .cfg-setp-f {
+    padding: 12px 16px;
+  }
+}
+
+/* ---------------------------------------------------------------- Preferences popover (design .pm-pop) */
+
+.cfg-pop {
+  position: fixed;
+  inset: auto;
+  top: 72px;
+  right: 16px;
+  box-sizing: border-box;
+  width: 360px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 88px);
+  margin: 0;
+  overflow: auto;
+  padding: 16px 18px 14px;
+  border: 0;
+  border-radius: 18px;
+  background: #141e22;
+  color: #e6ecea;
+  box-shadow:
+    0 0 0 1px #3a4d54,
+    0 24px 60px rgb(0 0 0 / 0.6);
+  font: 400 14px/1.5 var(--font-sans);
+}
+.cfg-pop :focus-visible {
+  outline: 2px solid #e3b45a;
+  outline-offset: 2px;
+}
+.cfg-pm-h {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #1f2b30;
+}
+.cfg-pm-f {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+/* The two footer buttons (design `.mini.wide`) stay on one line each. */
+.cfg-pm-f .gb.gb-wrap {
+  padding-inline: 10px;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- shared row classes (for the slots) */
+
+.cfg-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-top: 1px solid #1f2b30;
+}
+.cfg-sec-title + .cfg-row,
+.cfg-hint + .cfg-row {
+  border-top: 0;
+}
+.cfg-row.cfg-col {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+.cfg-pop .cfg-row {
+  padding: 10px 0;
+}
+.cfg-row-t {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.cfg-row-t b {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.cfg-row-t span {
+  font-size: 12.5px;
+  color: #9fb2b6;
+}
+.cfg-row-t em {
+  margin-top: 2px;
+  font-size: 11.5px;
+  font-style: normal;
+  color: #c9a8ff;
+}
+.cfg-hint {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: #9fb2b6;
+}
+.cfg-lbl {
+  margin: 6px 0 2px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #9fb2b6;
+}
+.cfg-muted {
+  margin: 0;
+  font-size: 12.5px;
+  color: #9fb2b6;
+}
+/* Switch (design `.sw`): <button role="switch" aria-checked> with an <i> knob. */
+.cfg-sw {
+  position: relative;
+  flex: none;
+  width: 46px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: #33444a;
+  cursor: pointer;
+}
+.cfg-sw i {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #e6ecea;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .cfg-sw i {
+    transition: left 0.18s;
+  }
+}
+.cfg-sw[aria-checked="true"] {
+  background: #e3b45a;
+}
+.cfg-sw[aria-checked="true"] i {
+  left: 23px;
+  background: #1a1408;
+}
+.cfg-sw:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/* Segmented choice (design `.seg2`): a group of glass neutral buttons with aria-pressed. */
+.cfg-seg {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: #0f171a;
+  box-shadow: inset 0 0 0 1px #253338;
+}
+.cfg-seg > * {
+  flex: 1;
+}

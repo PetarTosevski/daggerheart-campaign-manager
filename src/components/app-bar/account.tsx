@@ -1,122 +1,127 @@
 "use client";
 
-import { useQuery } from "convex/react";
-import Image from "next/image";
-import { useId, type ReactNode } from "react";
+import "@/components/config/config.css";
 
-import { BrandButton } from "@/components/brand/buttons";
-import { portraitSource } from "@/components/party/party-display";
+import { Settings } from "lucide-react";
+import { Suspense, useId, useRef, useState } from "react";
+
+import { BrandButton, brandButton } from "@/components/brand/buttons";
 import { SlotBoundary } from "@/components/party/session/boundary";
-import { designAsset } from "@/lib/design-assets";
+import { AvatarFace } from "@/components/config/shell/avatar";
+import { PreferencesBody } from "@/components/config/shell/preferences";
+import { closeSettings, openSettings, useSettingsSection } from "@/components/config/shell/url";
+import { SETTINGS_TITLE } from "@/components/config/slots";
 
-import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 
 /*
- * The app bar's right end (board GMDesktop `.ab-ic` gear, `.ab-ava` avatar; user answer Q3 (c), 2026-11-04): the
- * slots config plan S1 fills. Until S1 lands both are placeholder buttons that open a small note of what is coming;
- * the GM's gear also keeps today's Players dialog one click away (the art header's Players button is not on the
- * Combat Map). S1 replaces `CampaignSettingsButton` and `PreferencesButton` here; the bar imports nothing else.
+ * The end of every campaign header (plan config S1; design reference/designs/config/Settings.dc.html `.acct`): the
+ * GM's gear opens Campaign settings, the avatar opens Preferences. The Combat Map's app bar (index.tsx, HUD H9.A) and
+ * the tall art header (campaign-shell.tsx) render these same two components. They are glass tools (role `tool`,
+ * icon); the art header draws them 40 px on the art (config.css `.cfg-acct`), the bar keeps 44 px touch targets.
  */
 
-export const SETTINGS_LABEL = "Campaign settings";
+export const SETTINGS_LABEL = SETTINGS_TITLE;
 export const PREFERENCES_LABEL = "Your preferences";
 
-/** A native popover (`popover="auto"`: light dismiss, Escape, top layer) under the bar's right end. */
-function Popover({ id, title, children }: { id: string; title: string; children: ReactNode }) {
-  const titleId = `${id}-title`;
+function GearButton({ expanded, onClick }: { expanded: boolean; onClick?: () => void }) {
   return (
-    <div id={id} popover="auto" role="dialog" aria-labelledby={titleId} className="ab-pop">
-      <p id={titleId} className="ab-pop-title">
-        {title}
-      </p>
-      {children}
-    </div>
+    <BrandButton
+      variant="tool"
+      icon
+      round
+      className="cfg-acct-btn"
+      aria-label={SETTINGS_LABEL}
+      aria-haspopup="dialog"
+      aria-expanded={expanded}
+      onClick={onClick}
+      data-testid="app-bar-settings"
+    >
+      <Settings strokeWidth={2} aria-hidden="true" />
+    </BrandButton>
   );
 }
 
-function hidePopover(id: string) {
-  const element = document.getElementById(id);
-  if (element && typeof element.hidePopover === "function" && element.matches(":popover-open")) element.hidePopover();
+function LiveGear() {
+  const open = useSettingsSection() !== null;
+  return <GearButton expanded={open} onClick={() => (open ? closeSettings() : openSettings("table"))} />;
 }
 
-/** GM: the settings gear. Opens Players (today's dialog) and says Campaign settings are coming. */
-export function CampaignSettingsButton({ onPlayers }: { onPlayers: () => void }) {
-  const popId = `ab-settings-${useId()}`;
+/**
+ * GM and co-GM (`campaign.role === "gm"`; the caller decides): the gear. Opens Campaign settings (`?settings=table`;
+ * the panel is mounted once by the shell). `onPlayers` is what the Combat Map's bar still passes (H9.A's interim
+ * Players menu is gone; the header's Players button stays until SX); it is ignored.
+ */
+export function CampaignSettingsButton(props: { onPlayers?: () => void }) {
+  void props;
   return (
-    <>
-      <BrandButton variant="tool" icon aria-label={SETTINGS_LABEL} popoverTarget={popId} data-testid="app-bar-settings">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="3" />
-          <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" />
-        </svg>
-      </BrandButton>
-      <Popover id={popId} title={SETTINGS_LABEL}>
-        <BrandButton
-          variant="neutral"
-          className="w-full"
-          aria-haspopup="dialog"
-          onClick={() => {
-            hidePopover(popId);
-            onPlayers();
-          }}
-        >
-          Players
-        </BrandButton>
-        <p className="ab-pop-note">More campaign settings are on the way.</p>
-      </Popover>
-    </>
+    <Suspense fallback={<GearButton expanded={false} />}>
+      <LiveGear />
+    </Suspense>
   );
 }
 
-/** The player's own character (the first one they can edit), for the avatar. */
-function useOwnCharacter(campaignId: Id<"campaigns">) {
-  const party = useQuery(api.charactersReads.partySummary, { campaignId });
-  return party?.find((member) => member.canEdit && member.corrupt !== true) ?? null;
+/** The popover's width (config.css `.cfg-pop`: 360 px, at most the viewport less 16 px). */
+const popoverWidth = () => Math.min(360, window.innerWidth - 16);
+
+/**
+ * Puts the popover under the avatar, right edges aligned, kept 8 px inside the viewport on both sides (it is in the top
+ * layer, `position: fixed`; on a phone the avatar sits mid-row). Called on the avatar's click, before the browser opens
+ * the popover.
+ */
+function placeUnder(popover: HTMLElement | null, button: HTMLElement | null) {
+  if (!popover || !button) return;
+  const rect = button.getBoundingClientRect();
+  const right = Math.round(window.innerWidth - rect.right);
+  const maxRight = Math.round(window.innerWidth - popoverWidth() - 8);
+  popover.style.top = `${Math.round(rect.bottom + 10)}px`;
+  popover.style.right = `${Math.max(8, Math.min(right, maxRight))}px`;
 }
 
-function OwnPortrait({ campaignId }: { campaignId: Id<"campaigns"> }) {
-  const character = useOwnCharacter(campaignId);
-  if (!character) return <span aria-hidden="true">You</span>;
-  const source = portraitSource(character.sheet);
-  const src = source.kind === "upload" ? character.portraitUrl : source.kind === "asset" ? designAsset(source.asset) : undefined;
-  if (!src) return <span aria-hidden="true">{(character.sheet.name || "?").charAt(0).toUpperCase()}</span>;
-  return (
-    <Image
-      src={src}
-      alt=""
-      fill
-      sizes="44px"
-      // Uploads are served by Convex storage (another host); design art is local and optimised.
-      unoptimized={source.kind === "upload"}
-      style={{ objectFit: "cover", objectPosition: source.kind === "asset" ? source.position : "center 30%" }}
-    />
-  );
-}
-
-/** The avatar: "GM" for the GM; a player's character portrait. Opens a note that preferences are coming. */
+/**
+ * Everyone: the avatar ('GM' for the GM, a player's own character portrait). Opens the Preferences popover: a native
+ * `popover="auto"` (light dismiss, Escape, top layer, focus back to the avatar) whose body renders only while open.
+ */
 export function PreferencesButton({ campaignId, isGm }: { campaignId: Id<"campaigns">; isGm: boolean }) {
-  const popId = `ab-prefs-${useId()}`;
+  const popId = `cfg-prefs-${useId()}`;
+  const button = useRef<HTMLButtonElement>(null);
+  const popover = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const hide = () => {
+    const element = popover.current;
+    if (element && typeof element.hidePopover === "function" && element.matches(":popover-open")) element.hidePopover();
+  };
   return (
     <>
       <button
+        ref={button}
         type="button"
-        className={isGm ? "ab-ava" : "ab-ava ab-pc"}
+        className={`${brandButton({ variant: "tool", icon: true, round: true })} cfg-acct-btn cfg-ava`}
         aria-label={PREFERENCES_LABEL}
+        aria-haspopup="dialog"
+        aria-expanded={open}
         popoverTarget={popId}
+        onClick={() => placeUnder(popover.current, button.current)}
         data-testid="app-bar-avatar"
       >
-        {isGm ? (
-          <span aria-hidden="true">GM</span>
-        ) : (
-          <SlotBoundary fallback={<span aria-hidden="true">You</span>}>
-            <OwnPortrait campaignId={campaignId} />
-          </SlotBoundary>
-        )}
+        <AvatarFace campaignId={campaignId} isGm={isGm} />
       </button>
-      <Popover id={popId} title={PREFERENCES_LABEL}>
-        <p className="ab-pop-note">Your preferences are on the way.</p>
-      </Popover>
+      <div
+        ref={popover}
+        id={popId}
+        popover="auto"
+        role="dialog"
+        aria-label={PREFERENCES_LABEL}
+        className="cfg-pop"
+        data-testid="preferences"
+        onToggle={(event) => setOpen(event.newState === "open")}
+      >
+        {open ? (
+          <SlotBoundary fallback={<p role="alert" className="cfg-muted">Preferences could not load.</p>}>
+            <PreferencesBody campaignId={campaignId} isGm={isGm} onDone={hide} />
+          </SlotBoundary>
+        ) : null}
+      </div>
     </>
   );
 }

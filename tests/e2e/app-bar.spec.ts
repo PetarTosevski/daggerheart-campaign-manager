@@ -7,8 +7,9 @@ import { expectNoHorizontalScroll } from "./visual/helpers";
 // Plan combat-hud H9.A: the Combat Map's app bar (HANDOFF "App bar"; boards Main, GMDesktop, GMTablet, PlayerTablet).
 // User answers 2026-11-04: Q1 (a) the user's nav order and names, Combat Map current with a live dot, the Lorekeeper as
 // the gold pill on the right; Q2 (c) the bar on the Combat Map only (56 px, 52 px on tablet; a phone keeps the art
-// header) plus a full-screen button that hides it, back with the floating button or Escape; Q3 (c) the GM's gear
-// (Players, settings to come) and the avatar (GM initials; a player's character portrait).
+// header) plus a full-screen button that hides it, back with the floating button or Escape; Q3 (c) the GM's gear and
+// the avatar (GM initials; a player's character portrait), which config S1 turned into Campaign settings and
+// Preferences (tests/e2e/config-shell.spec.ts covers them in depth).
 
 test.describe.configure({ timeout: 240_000 });
 const expect = baseExpect.configure({ timeout: 20_000 });
@@ -58,14 +59,15 @@ test("the GM's and the player's Combat Map app bar: nav, Lorekeeper, full screen
     await expect(drawer).toBeHidden();
     await expect(pill).toBeFocused();
 
-    // The gear keeps Players one click away and says settings are coming.
-    await bar(gm).getByRole("button", { name: "Campaign settings" }).click();
+    // The gear opens Campaign settings (config S1); Escape closes it and focus comes back to the gear.
+    const gear = bar(gm).getByRole("button", { name: "Campaign settings" });
+    await gear.click();
     const settings = gm.getByRole("dialog", { name: "Campaign settings" });
-    await expect(settings.getByText("More campaign settings are on the way.")).toBeVisible();
-    await settings.getByRole("button", { name: "Players" }).click();
-    const players = gm.getByRole("dialog", { name: "Players" });
-    await expect(players).toBeVisible();
-    await players.getByRole("button", { name: "Close players" }).click();
+    await expect(settings).toBeVisible();
+    await expect(gm).toHaveURL(/[?&]settings=table/);
+    await gm.keyboard.press("Escape");
+    await expect(settings).toBeHidden();
+    await expect(gear).toBeFocused();
     await expect(bar(gm).getByRole("button", { name: "Your preferences" })).toHaveText("GM");
 
     // Full screen hides the bar; the floating button (focused) and Escape bring it back.
@@ -109,7 +111,7 @@ test("the GM's and the player's Combat Map app bar: nav, Lorekeeper, full screen
     const avatar = bar(player).getByRole("button", { name: "Your preferences" });
     await expect(avatar.locator("img")).toHaveCount(1);
     await avatar.click();
-    await expect(player.getByRole("dialog", { name: "Your preferences" }).getByText("Your preferences are on the way.")).toBeVisible();
+    await expect(player.getByRole("dialog", { name: "Your preferences" }).getByText("Saved to your account · follows you to every device")).toBeVisible();
     await player.keyboard.press("Escape");
     await expectNoSeriousA11yViolations(player, { include: "[data-testid=app-bar]" });
   } finally {

@@ -104,69 +104,13 @@
   filter: brightness(1.15);
 }
 
-/* The back link, full-screen and gear buttons are glass tools (brandButton variant "tool", 44 px); the avatar keeps
-   its own look (a portrait). */
-.ab-ava {
-  position: relative;
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  overflow: hidden;
-  border: 0;
-  border-radius: 50%;
-  background: #121b1f;
-  color: #e6ecea;
-  box-shadow: inset 0 0 0 1px #33444a;
-  cursor: pointer;
-}
-.ab-ava {
-  background: #4b3a7a;
-  color: #efeaff;
-  font: 700 11px var(--font-display);
-}
-.ab-ava.ab-pc {
-  box-shadow: 0 0 0 2px #e3b45a;
-  overflow: visible;
-}
-.ab-ava.ab-pc img {
-  border-radius: 50%;
-}
-
+/* The back link, full-screen, gear and avatar buttons are glass tools (brandButton variant "tool", 44 px); the gear
+   and avatar themselves live in account.tsx and config.css (`.cfg-acct-btn`, `.cfg-face`). */
 .abar :focus-visible {
   outline: 2px solid #e3b45a;
   outline-offset: 2px;
 }
 
-/* The gear's and avatar's notes (native popovers in the top layer, under the bar's right end). */
-.ab-pop {
-  position: fixed;
-  inset: auto;
-  top: calc(var(--app-bar-h, 56px) + 6px);
-  right: 16px;
-  width: 260px;
-  margin: 0;
-  padding: 12px;
-  border: 1px solid #33444a;
-  border-radius: 12px;
-  background: #121b1f;
-  color: #e6ecea;
-  box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
-  font: 400 13.5px/1.4 var(--font-sans);
-}
-.ab-pop-title {
-  margin: 0 0 8px;
-  font: 700 12px var(--font-display);
-  letter-spacing: 0.12em;
-  color: #f3cf86;
-  text-transform: uppercase;
-}
-.ab-pop-note {
-  margin: 8px 0 0;
-  color: #9fb0ac;
-}
 /* The way back from full screen: a glass icon button, top-left over the HUD; keyboard reachable and named. */
 .cab-show {
   position: fixed;
@@ -200,13 +144,9 @@
   }
   /* 44 px touch targets inside the 52 px bar. */
   .ab-nv,
-  .ab-lk,
-  .ab-ava {
+  .ab-lk {
     height: 44px;
     min-width: 44px;
-  }
-  .ab-ava {
-    width: 44px;
   }
   .ab-lk {
     justify-content: center;
