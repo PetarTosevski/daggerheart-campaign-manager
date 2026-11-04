@@ -331,3 +331,8 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 ## Archived campaigns (dcm-jh6d.64, 2026-11-04)
 - AR1. Can someone join an archived campaign with its invite code? Default taken: yes (matches opening an invite while archived).
 - AR2. Can a player keep editing a character-creation draft for an archived campaign? Default taken: yes (it is their own draft; creating the character is refused).
+
+## ANSWERS 2026-11-04 (afternoon batch)
+- Party level = highest (keep). Journal: no second-live-session / replay buttons (keep). Remove scene: no confirm (keep). Deleting newest session reuses its number (keep). Archived: invite join allowed, drafts allowed (keep). Character sheets keep their buttons (G14/G15 stay skipped). Revive: CHANGE.
+- CHANGES (beads filed): least-spotlight tie names everyone; level-ups after End count for the ended session until the next one starts; Lorekeeper answer card buttons ink-on-parchment; stat block + custom adversary editor buttons ink-on-parchment; revive shows a feed line to players; Load Campaign badge 'Co-GM'; Fear reset at session start skips Away PCs; Journal encounter card gets a party-size stepper.
+- ANSWERED: big (lg) buttons use the old Cinzel capitals (B).
