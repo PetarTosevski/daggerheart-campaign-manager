@@ -3,6 +3,7 @@
 import { useQuery } from "convex/react";
 import { useState } from "react";
 
+import { brandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 
 import { api } from "../../../../../convex/_generated/api";
@@ -76,6 +77,7 @@ function ChoicesForm({
   pending,
   onUse,
   onCancel,
+  glass,
 }: {
   ask: FeatureAsk;
   actor: string;
@@ -86,6 +88,7 @@ function ChoicesForm({
   pending: boolean;
   onUse: (args: ChoiceArgs) => void;
   onCancel: () => void;
+  glass: boolean;
 }) {
   const [a, setA] = useState<Answers>(() => initialAnswers(ask, panelTargets));
   const set = (patch: Partial<Answers>) => setA({ ...a, ...patch });
@@ -260,10 +263,10 @@ function ChoicesForm({
         </p>
       ) : null}
       <div className="trk-ask-row">
-        <button type="submit" className="trk-btn trk-btn-attack" disabled={pending || todo.length > 0}>
+        <button type="submit" className={glass ? brandButton({ variant: "confirm" }) : "trk-btn trk-btn-attack"} disabled={pending || todo.length > 0}>
           Use {ask.feature}
         </button>
-        <button type="button" className="trk-btn" onClick={onCancel}>
+        <button type="button" className={glass ? brandButton({ variant: "cancel" }) : "trk-btn"} onClick={onCancel}>
           Cancel
         </button>
       </div>
@@ -289,6 +292,7 @@ export function FeatureChoices({
   pending,
   onUse,
   onClose,
+  glass = false,
 }: {
   campaignId: Id<"campaigns">;
   instanceId: string;
@@ -301,6 +305,11 @@ export function FeatureChoices({
   pending: boolean;
   onUse: (args: ChoiceArgs) => void;
   onClose: () => void;
+  /**
+   * The Encounter tab's glass buttons (plan glass-buttons G9: Use = confirm, Cancel = cancel). Off by default: the
+   * Combat HUD's stat block opens this dialog too and keeps its old buttons, since the HUD is not restyled here.
+   */
+  glass?: boolean;
 }) {
   const [useId, setUseId] = useState(first.useId);
   const other = useQuery(api.adversaryActions.featureAsk, useId === first.useId ? "skip" : { campaignId, instanceId, feature: first.feature, use: useId });
@@ -329,7 +338,7 @@ export function FeatureChoices({
       ) : !ask.available ? (
         <p className="trk-ask-err">{ask.unavailable.join(". ")}</p>
       ) : (
-        <ChoicesForm key={ask.useId} ask={ask} actor={actor} self={instanceId} creatures={creatures} panelTargets={panelTargets} fear={fear} pending={pending} onUse={onUse} onCancel={onClose} />
+        <ChoicesForm key={ask.useId} ask={ask} actor={actor} self={instanceId} creatures={creatures} panelTargets={panelTargets} fear={fear} pending={pending} onUse={onUse} onCancel={onClose} glass={glass} />
       )}
     </Modal>
   );

@@ -2,6 +2,7 @@
 
 import { useState, type KeyboardEvent } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { Pip } from "@/components/party/sheet-ui";
 import { hordeHalved, MAX_DAMAGE, SEVERITY_LABEL, vulnerableFromStress } from "@/lib/domain/encounters/damage";
 import { spotlightLimit, spotlightStatus, spotlightsThisTurn } from "@/lib/domain/encounters/spotlight";
@@ -57,18 +58,12 @@ function Track({
         ))}
       </span>
       <span className="trk-steps">
-        <button type="button" className="trk-step" aria-label={`Clear 1 ${label} on ${owner}`} disabled={marked <= 0} onClick={() => onDelta(-1)}>
+        <BrandButton variant="neutral" size="sm" icon aria-label={`Clear 1 ${label} on ${owner}`} disabled={marked <= 0} onClick={() => onDelta(-1)}>
           −
-        </button>
-        <button
-          type="button"
-          className="trk-step"
-          aria-label={`Mark 1 ${label} on ${owner}`}
-          disabled={kind === "hp" && marked >= max}
-          onClick={() => onDelta(1)}
-        >
+        </BrandButton>
+        <BrandButton variant="neutral" size="sm" icon aria-label={`Mark 1 ${label} on ${owner}`} disabled={kind === "hp" && marked >= max} onClick={() => onDelta(1)}>
           +
-        </button>
+        </BrandButton>
       </span>
     </div>
   );
@@ -128,23 +123,22 @@ function DamageBox({ instance, actions, remaining }: { instance: TrackerInstance
           onKeyDown={onKey}
         />
       </label>
-      <button type="button" className="trk-chip" aria-pressed={resistant} onClick={() => setResistant((r) => !r)}>
+      <BrandButton variant="neutral" aria-pressed={resistant} onClick={() => setResistant((r) => !r)}>
         Resistant
-      </button>
-      <button type="button" className="trk-btn" disabled={!valid} onClick={() => void apply()}>
+      </BrandButton>
+      <BrandButton variant="confirm" disabled={!valid} onClick={() => void apply()}>
         Apply
-      </button>
+      </BrandButton>
       <p className="trk-result" aria-live="polite">
         {outcome?.text}
       </p>
       {outcome?.suggestedDefeats ? (
         <div className="trk-defeat" role="group" aria-label="Minions to defeat">
-          <button type="button" className="trk-step" aria-label="One fewer Minion" disabled={defeats <= 1} onClick={() => setDefeats((n) => n - 1)}>
+          <BrandButton variant="neutral" size="sm" icon aria-label="One fewer Minion" disabled={defeats <= 1} onClick={() => setDefeats((n) => n - 1)}>
             −
-          </button>
-          <button
-            type="button"
-            className="trk-btn trk-btn-danger"
+          </BrandButton>
+          <BrandButton
+            variant="danger"
             disabled={remaining <= 0}
             onClick={() =>
               void actions.defeatMinions(instance._id, Math.min(defeats, remaining)).then((r) => {
@@ -153,10 +147,10 @@ function DamageBox({ instance, actions, remaining }: { instance: TrackerInstance
             }
           >
             Defeat {Math.min(defeats, remaining)}
-          </button>
-          <button type="button" className="trk-step" aria-label="One more Minion" disabled={defeats >= remaining} onClick={() => setDefeats((n) => n + 1)}>
+          </BrandButton>
+          <BrandButton variant="neutral" size="sm" icon aria-label="One more Minion" disabled={defeats >= remaining} onClick={() => setDefeats((n) => n + 1)}>
             +
-          </button>
+          </BrandButton>
         </div>
       ) : null}
     </div>
@@ -177,9 +171,10 @@ function Tags({ instance, actions }: { instance: TrackerInstance; actions: Track
       {instance.tags.map((tag) => (
         <span key={tag} className="trk-tag">
           {tag}
-          <button
-            type="button"
-            className="trk-tag-x"
+          <BrandButton
+            variant="neutral"
+            size="sm"
+            icon
             aria-label={`Remove tag ${tag}`}
             onClick={() =>
               void actions.setTags(
@@ -189,7 +184,7 @@ function Tags({ instance, actions }: { instance: TrackerInstance; actions: Track
             }
           >
             ×
-          </button>
+          </BrandButton>
         </span>
       ))}
       {instance.tags.length < MAX_TAGS ? (
@@ -244,6 +239,7 @@ export function InstanceCard({
   const remaining = stats.hpMax - hp;
   const tracks = { hp, hpMax: stats.hpMax, stress, stressMax: stats.stressMax };
   const spot = spotlightStatus(spotlightsThisTurn(instance, gmTurn), spotlightLimit(rules?.relentless ?? null));
+  const maxed = spot.limit !== "X" && spot.count >= spot.limit;
   const halved = rules?.hordeX && !instance.defeated && hordeHalved(tracks);
   const autoVulnerable = vulnerableFromStress(tracks);
   const typeLine = instance.type ? `Tier ${instance.tier} ${instance.type}` : "deleted custom adversary";
@@ -280,10 +276,10 @@ export function InstanceCard({
 
       <div className="trk-conds" role="group" aria-label={`${instance.label} conditions`}>
         {CONDITIONS.map((c) => (
-          <button key={c.id} type="button" className="trk-chip" aria-pressed={instance.conditions.includes(c.id)} onClick={() => void actions.toggleCondition(instance._id, c.id)}>
+          <BrandButton key={c.id} variant="neutral" aria-pressed={instance.conditions.includes(c.id)} onClick={() => void actions.toggleCondition(instance._id, c.id)}>
             {c.label}
             {instance.conditions.includes(c.id) ? <span aria-hidden="true"> ×</span> : null}
-          </button>
+          </BrandButton>
         ))}
         {autoVulnerable && !instance.conditions.includes("vulnerable") ? <span className="trk-auto">Vulnerable · Stress full</span> : null}
       </div>
@@ -294,16 +290,15 @@ export function InstanceCard({
           {spot.label}
         </span>
         {spot.over ? <span className="trk-spot-warn">Past the limit for this GM turn</span> : null}
-        <button
-          type="button"
-          className="trk-btn trk-spot-btn"
-          // At or past its limit for this GM turn (1, or Relentless X): shown in the warning colour, never blocked.
-          data-maxed={spot.limit !== "X" && spot.count >= spot.limit}
+        <BrandButton
+          // At or past its limit for this GM turn (1, or Relentless X): ember (the warning colour), never blocked.
+          variant={maxed ? "danger" : "neutral"}
+          data-maxed={maxed}
           aria-label={`Spotlight ${instance.label}${spotlightCostsFear ? " (spends 1 Fear)" : ""}`}
           onClick={() => void actions.spotlight(instance._id)}
         >
           {spotlightCostsFear ? "Spotlight · 1 Fear" : "Spotlight"}
-        </button>
+        </BrandButton>
       </div>
     </article>
   );

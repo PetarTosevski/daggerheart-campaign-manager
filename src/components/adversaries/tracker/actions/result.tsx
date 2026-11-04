@@ -2,11 +2,16 @@
 
 import { useState } from "react";
 
+import { brandButton } from "@/components/brand/buttons";
+
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { rollText } from "./model";
 import type { ActionResult, Intent } from "./use-adversary-actions";
 
 const PROMPT_LABEL = { manual: "Apply", move: "Move", pcSave: "Reaction roll", summon: "Summon", countdown: "Countdown", spotlight: "Spotlight", choice: "Choice" } as const;
+
+/** The Combat HUD's stat block mounts this view too and keeps the parchment pills (it is not restyled by plan glass-buttons). */
+const HUD_BUTTON = "trk-btn trk-btn-parch trk-btn-sm";
 
 /**
  * The GM's view of an adversary action (AA2's `resolved` answer): the roll, hit or miss and damage per target and
@@ -19,13 +24,17 @@ export function ActionResultView({
   pending,
   onFire,
   onDismiss,
+  glass = false,
 }: {
   shown: ActionResult;
   nameOf: (id: string) => string;
   pending: boolean;
   onFire: (intent: Intent) => void;
   onDismiss: () => void;
+  /** The Encounter tab's glass buttons (plan glass-buttons G9): Clear and No back out, Yes confirms. Off in the HUD. */
+  glass?: boolean;
 }) {
+  const button = (variant: "confirm" | "cancel") => (glass ? brandButton({ variant, size: "sm" }) : HUD_BUTTON);
   const { label, result, actor, instanceId } = shown;
   // Offers the GM said No to, per result (a new result starts with none).
   const [declined, setDeclined] = useState<{ entryId: Id<"actionLog">; uses: string[] }>({ entryId: result.entryId, uses: [] });
@@ -37,7 +46,7 @@ export function ActionResultView({
     <section className="trk-res" aria-label="Action result" data-testid="tracker-action-result">
       <div className="trk-res-h">
         <strong>{label}</strong>
-        <button type="button" className="trk-btn trk-btn-parch trk-btn-sm" onClick={onDismiss}>
+        <button type="button" className={button("cancel")} onClick={onDismiss}>
           Clear
         </button>
       </div>
@@ -84,7 +93,7 @@ export function ActionResultView({
                 <span>Use {o.feature}?</span>
                 <button
                   type="button"
-                  className="trk-btn trk-btn-parch trk-btn-sm"
+                  className={button("confirm")}
                   disabled={pending}
                   onClick={() =>
                     onFire({
@@ -97,7 +106,7 @@ export function ActionResultView({
                 >
                   Yes
                 </button>
-                <button type="button" className="trk-btn trk-btn-parch trk-btn-sm" onClick={() => setDeclined({ entryId: result.entryId, uses: [...said, o.useId] })}>
+                <button type="button" className={button("cancel")} onClick={() => setDeclined({ entryId: result.entryId, uses: [...said, o.useId] })}>
                   No
                 </button>
               </li>

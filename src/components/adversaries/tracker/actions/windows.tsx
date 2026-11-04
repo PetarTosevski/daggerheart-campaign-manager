@@ -3,6 +3,8 @@
 import { useQuery } from "convex/react";
 import { useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
+
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { AdversaryActions } from "./use-adversary-actions";
@@ -50,15 +52,14 @@ export function ReactionWindows({ campaignId, encounterId, acts }: { campaignId:
                 <div className="trk-window-what">
                   <b>{t.pcName}</b>: {t.count} {t.name}
                 </div>
-                <button
-                  type="button"
-                  className="trk-btn"
+                <BrandButton
+                  variant="neutral"
                   disabled={resolving === `${t.characterId}:${t.name}`}
                   aria-label={`${t.pcName} escaped the ${t.name} tokens`}
                   onClick={() => void escape(t.characterId, t.name)}
                 >
                   Escaped
-                </button>
+                </BrandButton>
               </li>
             ))}
           </ul>
@@ -86,15 +87,14 @@ export function ReactionWindows({ campaignId, encounterId, acts }: { campaignId:
                 ? "Everyone answered."
                 : `Waiting for ${w.awaiting.map((a) => `${a.name} (${isHeld(w) ? "before-roll answer" : a.role === "target" ? "armor choice" : "ally reaction"})`).join(", ")}`}
             </div>
-            <button
-              type="button"
-              className="trk-btn"
+            <BrandButton
+              variant="confirm"
               disabled={resolving === w.requestId}
               aria-label={`Resolve now: ${w.attackerLabel} ${isHeld(w) ? "attacks" : "hit"} ${w.targetName}`}
               onClick={() => void resolve(w.requestId)}
             >
               Resolve now
-            </button>
+            </BrandButton>
           </li>
         ))}
       </ul>

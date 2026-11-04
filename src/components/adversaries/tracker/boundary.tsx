@@ -2,6 +2,8 @@
 
 import { Component, type ReactNode } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
+
 /**
  * Keeps one tracker panel's failing `useQuery` (reaction windows, the adversary actions, the map pane) from blanking
  * the tracker (rule 11, CL1); "Try again" remounts it.
@@ -24,9 +26,9 @@ export class TrackerBoundary extends Component<{ children: ReactNode; label: str
         <span>
           {this.props.label} failed to load{this.state.message ? `: ${this.state.message}` : "."}
         </span>
-        <button type="button" className="trk-btn" onClick={() => this.setState({ failed: false, message: "" })}>
+        <BrandButton variant="neutral" onClick={() => this.setState({ failed: false, message: "" })}>
           Try again
-        </button>
+        </BrandButton>
       </div>
     );
   }

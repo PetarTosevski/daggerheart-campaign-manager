@@ -3,6 +3,8 @@
 import { useQuery } from "convex/react";
 import { Component, type ReactNode } from "react";
 
+import { brandButton } from "@/components/brand/buttons";
+
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { needsChoices, type FeatureAsk } from "./ask";
@@ -17,15 +19,20 @@ type Props = {
   live: boolean;
   /** The GM tapped Use: with the feature's featureAsk when it loaded (null: send at once with the server's defaults). */
   onUse: (ask: FeatureAsk | null) => void;
+  /**
+   * The Encounter tab's glass confirm (plan glass-buttons G9). Off by default: the Combat HUD's stat block mounts this
+   * button too and keeps its own pill (statblock.css `.hsb-af-use .trk-btn`), since the HUD is not restyled here.
+   */
+  glass?: boolean;
 };
 
-function UseButton({ feature, fearCost, disabled, ask, onUse }: Omit<Props, "campaignId" | "instanceId" | "live"> & { ask: FeatureAsk | null }) {
+function UseButton({ feature, fearCost, disabled, ask, onUse, glass = false }: Omit<Props, "campaignId" | "instanceId" | "live"> & { ask: FeatureAsk | null }) {
   const blocked = ask !== null && !ask.available;
   return (
     <>
       <button
         type="button"
-        className="trk-btn trk-btn-parch trk-btn-sm"
+        className={glass ? brandButton({ variant: "confirm", size: "sm" }) : "trk-btn trk-btn-parch trk-btn-sm"}
         aria-label={`Use ${feature}${fearCost ? ` (${fearCost} Fear)` : ""}`}
         aria-haspopup={ask !== null && needsChoices(ask) ? "dialog" : undefined}
         disabled={disabled || blocked}
@@ -64,7 +71,7 @@ class AskBoundary extends Component<{ children: ReactNode; fallback: ReactNode }
  * when the server refuses it, Use sends at once as before (the server answers with its defaults or a refusal).
  */
 export function FeatureUse(props: Props) {
-  const plain = <UseButton feature={props.feature} fearCost={props.fearCost} disabled={props.disabled} onUse={props.onUse} ask={null} />;
+  const plain = <UseButton feature={props.feature} fearCost={props.fearCost} disabled={props.disabled} onUse={props.onUse} glass={props.glass} ask={null} />;
   return (
     <AskBoundary fallback={plain}>
       <AskedUse {...props} />

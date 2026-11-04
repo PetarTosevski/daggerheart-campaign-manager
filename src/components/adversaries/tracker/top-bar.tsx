@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { useIntent } from "@/lib/use-intent";
 
+import { BrandButton, brandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import { EndSceneButton } from "@/components/combat-map/actions/scene";
 import { TrackerSessionChip } from "@/components/sessions/session-chip";
@@ -36,22 +37,21 @@ function SpendFearDialog({ open, onClose, fear, actions }: { open: boolean; onCl
           to a roll.
         </p>
         <div className="trk-defeat" role="group" aria-label="Fear to spend">
-          <button type="button" className="trk-step" aria-label="Spend less Fear" disabled={n <= 1} onClick={() => setAmount(n - 1)}>
+          <BrandButton variant="neutral" size="sm" icon aria-label="Spend less Fear" disabled={n <= 1} onClick={() => setAmount(n - 1)}>
             −
-          </button>
+          </BrandButton>
           <span className="trk-amount" aria-live="polite">
             {n} Fear
           </span>
-          <button type="button" className="trk-step" aria-label="Spend more Fear" disabled={n >= fear} onClick={() => setAmount(n + 1)}>
+          <BrandButton variant="neutral" size="sm" icon aria-label="Spend more Fear" disabled={n >= fear} onClick={() => setAmount(n + 1)}>
             +
-          </button>
+          </BrandButton>
         </div>
         <div className="trk-reasons">
           {REASONS.map((r) => (
-            <button
+            <BrandButton
               key={r.id}
-              type="button"
-              className="trk-btn trk-btn-fear"
+              variant="confirm"
               disabled={fear < n}
               onClick={() =>
                 void actions.spendFear(n, r.id).then((result) => {
@@ -63,7 +63,7 @@ function SpendFearDialog({ open, onClose, fear, actions }: { open: boolean; onCl
               }
             >
               {r.label}
-            </button>
+            </BrandButton>
           ))}
         </div>
         {fear === 0 ? <p className="trk-muted">No Fear to spend.</p> : null}
@@ -102,10 +102,11 @@ export function TopBar({ campaignId, view, fear, actions }: { campaignId: Id<"ca
         <span className="trk-turn" data-testid="gm-turn">
           GM turn {encounter.gmTurn}
         </span>
-        <button type="button" className="trk-btn" disabled={!running} onClick={() => void actions.endGmTurn()}>
+        <BrandButton variant="neutral" disabled={!running} onClick={() => void actions.endGmTurn()}>
           End GM turn
-        </button>
-        <EndSceneButton campaignId={campaignId} className="trk-btn" />
+        </BrandButton>
+        {/* End scene ends something: EndSceneButton's own default is the danger glass button (G11). */}
+        <EndSceneButton campaignId={campaignId} />
       </div>
       <div className="trk-top-fear">
         <span className="trk-tokens" role="img" aria-label={`GM Fear ${fear} of ${MAX_FEAR}`} data-testid="tracker-fear">
@@ -116,18 +117,17 @@ export function TopBar({ campaignId, view, fear, actions }: { campaignId: Id<"ca
         <span className="trk-fear-n" aria-hidden="true">
           {fear}
         </span>
-        <button
-          type="button"
-          className="trk-btn trk-btn-fear"
+        <BrandButton
+          variant="neutral"
           aria-label="Gain 1 Fear"
           disabled={fear >= MAX_FEAR || gain.pending}
           onClick={() => void gain.fire({ campaignId, direction: "increase" })}
         >
           + Fear
-        </button>
-        <button type="button" className="trk-btn trk-btn-fear" disabled={!running || fear === 0} onClick={() => setSpending(true)}>
+        </BrandButton>
+        <BrandButton variant="confirm" disabled={!running || fear === 0} onClick={() => setSpending(true)}>
           Spend Fear
-        </button>
+        </BrandButton>
       </div>
       <div className="trk-top-bp" data-testid="tracker-bp">
         <span>
