@@ -11,6 +11,8 @@
  *   not, and (UNDO_EXPIRED) for a player when the action rolled (`groupRolled`).
  * - Pass `fearDelta` = the Fear `gainFear` actually gained (`gained`), never
  *   the requested amount; undo takes it back through `revertFear`.
+ * - A row with `before` takes what the character's `saveSheet` calls in this mutation added to the live session's
+ *   Hope spent / HP marked (`sessionTally`, dcm-z9rz.22); undo takes it back off that session's row (floor 0).
  * - One action touching several characters (rest, tag team, Life Support)
  *   gives every row the same `groupId` (`newGroupId()`); they undo together.
  * - `undoable: false` for rows with their own undo path (level-up).
@@ -36,7 +38,7 @@ import { appError } from "../../src/lib/errors/app-error";
 import type { CharacterSheetInput } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { assertOneActive, readSheet, storedSheet } from "./characterSheet";
+import { assertOneActive, readSheet, revertSessionTally, storedSheet, takeSessionTally } from "./characterSheet";
 import { closeRequest, declineGroupOffers, openRequests } from "./combatRequests";
 import { revertTicks } from "./countdownTicks";
 import { revertFear } from "./fear";
@@ -120,10 +122,13 @@ export function newGroupId(): string {
 export async function logAction(ctx: MutationCtx, entry: LogEntry): Promise<Id<"actionLog">> {
   const { before, summary, ...rest } = entry;
   if (before !== undefined && entry.characterId === undefined) throw new Error("logAction: `before` needs a characterId.");
+  // dcm-z9rz.22: a row that restores the sheet on undo carries what its saves added to the session tally.
+  const sessionTally = before !== undefined && entry.characterId !== undefined ? takeSessionTally(ctx, entry.characterId) : undefined;
   return ctx.db.insert("actionLog", {
     ...rest,
     summary: summary.slice(0, SUMMARY_MAX),
     ...(before !== undefined ? { before: JSON.stringify(storedSheet(before)) } : {}),
+    ...(sessionTally !== undefined ? { sessionTally } : {}),
     at: Date.now(),
   });
 }
@@ -278,7 +283,7 @@ async function restoreTime(ctx: MutationCtx, user: Doc<"users">, row: Doc<"actio
  * UNDO_USE_REST for a group holding a `refuse` kind (dcm-bxp.31). Restores each `before` sheet, reverts the
  * group's Fear (floor 0), takes back the countdown ticks the group's rows caused
  * where the countdown has not changed since (`revertTicks`, countdowns-advanced
- * D11), and marks every row undone.
+ * D11), takes the group's `sessionTally` back off the session tally (dcm-z9rz.22), and marks every row undone.
  */
 export async function undoEntry(
   ctx: MutationCtx,
@@ -368,6 +373,13 @@ export async function undoEntry(
   if (row.groupId !== undefined && group.some((r) => r.kind === "combat")) await declineGroupOffers(ctx, row.campaignId, row.groupId, user._id);
   // AA2b: the action's open incoming hits (reaction windows, after-hit offers) close with it.
   if (row.groupId !== undefined) await declineGroupHits(ctx, row.campaignId, row.groupId, user._id);
+
+  // dcm-z9rz.22: the Hope spent / HP marked the group's saves counted come off their session's tally (rows written before
+  // the field carry none, so their undo leaves the tally as it is).
+  await revertSessionTally(
+    ctx,
+    group.flatMap((r) => (r.characterId !== undefined && r.sessionTally !== undefined ? [{ ...r.sessionTally, characterId: r.characterId }] : [])),
+  );
 
   const fear = group.reduce((sum, r) => sum + (r.fearDelta ?? 0), 0);
   const fearReverted = fear === 0 ? 0 : (await revertFear(ctx, row.campaignId, fear)).reverted;

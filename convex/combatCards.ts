@@ -42,8 +42,8 @@ import {
   type InstanceWrite,
   type ResolvedCard,
 } from "./lib/cardRows";
-import { actorSheetAfter, buildRun, conditionMarkerOf, difficultyOf, isFeatureUseId, pickCard, planHandoff, replaying, runCard, writeSheetChanges, type BuiltRun, type CardPick, type HostRoll, type RunOutcome, type UsePick } from "./lib/cardRunner";
-import { assertCanAct, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
+import { actorSheetAfter, buildRun, conditionMarkerOf, difficultyOf, isFeatureUseId, pickCard, planHandoff, planHopePaid, replaying, runCard, writeSheetChanges, type BuiltRun, type CardPick, type HostRoll, type RunOutcome, type UsePick } from "./lib/cardRunner";
+import { assertCanAct, loadCharacter, noteHopeSpent, readSheet, saveSheet } from "./lib/characterSheet";
 import {
   attackScene,
   autoRiders,
@@ -488,7 +488,7 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
   );
 
   // Allies: tracks from the plan's creatures, Hope / effects / conditions from its steps.
-  const allyRows: { character: Doc<"characters">; before: CharacterSheet; after: CharacterSheet }[] = [];
+  const allyRows: { character: Doc<"characters">; tokenId: string; before: CharacterSheet; after: CharacterSheet }[] = [];
   for (const c of built.creatures.all) {
     if (c.kind !== "pc" || c.character._id === character._id) continue;
     const changedTo = plan.creatures.find((x) => x.id === c.tokenId)?.after;
@@ -499,16 +499,23 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
     if (u.roll) unshaken.push({ characterId: c.character._id, name: c.sheet.name, roll: u.roll });
     after = giveTo(u.sheet, gifts.byTarget.get(c.tokenId) ?? []);
     after = stampCaster(c.sheet, after, character._id);
-    if (changed(c.sheet, after)) allyRows.push({ character: c.character, before: c.sheet, after });
+    if (changed(c.sheet, after)) allyRows.push({ character: c.character, tokenId: c.tokenId, before: c.sheet, after });
   }
 
   const writes = castWrites(instanceWrites(plan, built.creatures, pick.name), plan, built, character._id, pick.name);
   await writeInstances(ctx, writes);
   const casterEnds = endRoll !== null && endRoll.kind === "action" ? await endForCasterOnInstances(ctx, campaign._id, actorToken, { kind: "roll", roll: endRoll }) : { before: [], lines: [] };
   const fearDelta = await applyFear(ctx, campaign._id, plan.gmFearDelta);
-  const sheetChanged = changed(sheet, next);
+  // dcm-z9rz.23: the Hope the use paid (its Experiences and its costs, even one the roll's own Hope paid, R8) counts as
+  // spent whatever it gained back; an ally counts the costs it paid for the use.
+  const hopePaid = Math.max(0, req.sheet.hope - built.paidSheet.hope) + planHopePaid(plan, actorToken, actorToken);
+  const sheetChanged = changed(sheet, next) || hopePaid > 0;
+  noteHopeSpent(ctx, character._id, hopePaid);
   if (sheetChanged) await saveSheet(ctx, character._id, next);
-  for (const a of allyRows) await saveSheet(ctx, a.character._id, a.after);
+  for (const a of allyRows) {
+    noteHopeSpent(ctx, a.character._id, planHopePaid(plan, a.tokenId, actorToken));
+    await saveSheet(ctx, a.character._id, a.after);
+  }
 
   const groupId = newGroupId();
   const damage = damageRolls(plan);

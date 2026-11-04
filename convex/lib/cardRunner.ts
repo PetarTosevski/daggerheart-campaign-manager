@@ -467,6 +467,19 @@ export function targetMin(spec: TargetSpec | undefined): number | undefined {
   return count !== undefined && (count.kind === "upTo" || count.kind === "any") ? count.min : undefined;
 }
 
+/**
+ * The Hope a plan's paid costs took from creature `id` (`actorId`: the plan's actor, whose own `pay` steps name no payer),
+ * for the session tally's exact spend (dcm-z9rz.23, `noteHopeSpent`). Pool costs (held dice, Favor, Focus) are no Hope.
+ */
+export function planHopePaid(plan: Pick<RunPlan, "steps">, id: string, actorId: string): number {
+  let paid = 0;
+  for (const step of plan.steps) {
+    if (step.kind !== "pay" || !step.paid || (step.payerId ?? actorId) !== id) continue;
+    for (const c of step.costs) if (c.resource === "hope" && c.pool === undefined) paid += c.amount;
+  }
+  return paid;
+}
+
 /** Whether a use spends Hope: its own costs or the costs of a step inside it (an optional "spend a Hope to ..."). */
 export function paysHope(use: Pick<CardUse, "costs" | "steps">): boolean {
   const walk = (x: unknown): boolean => {

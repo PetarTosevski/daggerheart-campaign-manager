@@ -83,9 +83,17 @@ export function storedSheet(sheet: CharacterSheetInput) {
  * (`hopeSpent`) and the Hit Points it marks (`hpMarked`; the sheet's `hp` is the marked count) to the PC's
  * `sessionCharacterStats` row for that session, in the same mutation. Every engine path that changes a sheet (cards,
  * attacks, hits, death moves, rests, the manual steppers) saves through here, so every path counts. A save that
- * raises Hope or clears HP (rests, level-ups, healing) never subtracts. Undo restores sheets directly (`undoGroup` in
- * convex/lib/actionLog.ts), not through here, so it neither adds nor subtracts. `current` is the stored character,
- * for a caller that already read it in this mutation; otherwise this reads it (one get).
+ * raises Hope or clears HP (rests, level-ups, healing) never subtracts. `current` is the stored character, for a
+ * caller that already read it in this mutation; otherwise this reads it (one get).
+ *
+ * Exact spend (dcm-z9rz.23, user 2026-11-04 "count the spend"): a path that pays Hope says how much through
+ * `noteHopeSpent` before the save, so a save that pays and gains in one go (an Experience on a roll with Hope, a card
+ * cost paid by the roll's own Hope) still counts what was paid. The save counts the larger of the noted spend and the
+ * net drop; a path that notes nothing counts the net drop.
+ *
+ * Undo (dcm-z9rz.22, user 2026-11-04 "undo removes it"): what a save counted waits for the character's next `logAction`
+ * row with a `before` in this mutation, which records it (`sessionTally`); undoing the row takes it back off the same
+ * session's row (`revertSessionTally`, floor 0). Undo itself restores sheets directly, never through here.
  */
 export async function saveSheet(
   ctx: MutationCtx,
@@ -96,11 +104,86 @@ export async function saveSheet(
   const stored = storedSheet(sheet);
   const previous = current ?? (await ctx.db.get("characters", characterId));
   await ctx.db.patch("characters", characterId, { sheet: stored, updatedAt: Date.now(), ...(stored.hp < stored.hpMax ? { deathMoveSpent: undefined } : {}) });
+  const state = tallyStateOf(ctx);
+  const declared = state.declared.get(characterId) ?? 0;
+  state.declared.delete(characterId);
   const before = previous === null ? null : trackedCounts(previous.sheet);
   if (previous === null || before === null) return;
-  const hopeSpent = Math.max(0, before.hope - stored.hope);
+  const hopeSpent = Math.max(0, declared, before.hope - stored.hope);
   const hpMarked = Math.max(0, stored.hp - before.hp);
-  if (hopeSpent > 0 || hpMarked > 0) await countLiveSessionStats(ctx, previous.campaignId, characterId, hopeSpent, hpMarked);
+  if (hopeSpent === 0 && hpMarked === 0) return;
+  const sessionId = await countLiveSessionStats(ctx, previous.campaignId, characterId, hopeSpent, hpMarked);
+  if (sessionId === null) return;
+  const waiting = state.pending.get(characterId);
+  state.pending.set(
+    characterId,
+    waiting !== undefined && waiting.sessionId === sessionId
+      ? { sessionId, hopeSpent: waiting.hopeSpent + hopeSpent, hpMarked: waiting.hpMarked + hpMarked }
+      : { sessionId, hopeSpent, hpMarked },
+  );
+}
+
+/** What one action added to a PC's `sessionCharacterStats` row (JD3b counters), as an action-log row records it. */
+export type SessionTallyDelta = { sessionId: Id<"sessions">; hopeSpent: number; hpMarked: number };
+
+/**
+ * The tally side state of one mutation, keyed by its `ctx.db` (Convex makes one per function run, so nothing crosses
+ * mutations or OCC retries): `declared` is the Hope a paying path noted for the character's next save (`noteHopeSpent`),
+ * `pending` what the character's saves counted since its last logged row (`takeSessionTally`).
+ */
+type TallyState = { declared: Map<string, number>; pending: Map<string, SessionTallyDelta> };
+const tallyStates = new WeakMap<object, TallyState>();
+
+function tallyStateOf(ctx: MutationCtx): TallyState {
+  let state = tallyStates.get(ctx.db);
+  if (state === undefined) {
+    state = { declared: new Map(), pending: new Map() };
+    tallyStates.set(ctx.db, state);
+  }
+  return state;
+}
+
+/**
+ * Says that the character's next `saveSheet` in this mutation pays `amount` Hope (dcm-z9rz.23), whatever it also gains.
+ * Call it just before that save; notes for one character add up. A note no save takes is dropped with the mutation.
+ */
+export function noteHopeSpent(ctx: MutationCtx, characterId: Id<"characters">, amount: number): void {
+  if (!(amount > 0)) return;
+  const state = tallyStateOf(ctx);
+  state.declared.set(characterId, (state.declared.get(characterId) ?? 0) + amount);
+}
+
+/** What the character's saves counted since its last logged row in this mutation, taken (once) by `logAction` (dcm-z9rz.22). */
+export function takeSessionTally(ctx: MutationCtx, characterId: Id<"characters">): SessionTallyDelta | undefined {
+  const state = tallyStates.get(ctx.db);
+  const delta = state?.pending.get(characterId);
+  if (delta !== undefined) state!.pending.delete(characterId);
+  return delta;
+}
+
+/**
+ * Takes counted deltas back off their sessions' rows (undo, dcm-z9rz.22), never below 0. One read per session and
+ * character; a row that is gone (its session purged) is skipped.
+ */
+export async function revertSessionTally(ctx: MutationCtx, deltas: readonly (SessionTallyDelta & { characterId: Id<"characters"> })[]): Promise<void> {
+  const sums = new Map<string, SessionTallyDelta & { characterId: Id<"characters"> }>();
+  for (const d of deltas) {
+    const key = `${d.sessionId}:${d.characterId}`;
+    const seen = sums.get(key);
+    sums.set(key, seen ? { ...seen, hopeSpent: seen.hopeSpent + d.hopeSpent, hpMarked: seen.hpMarked + d.hpMarked } : { ...d });
+  }
+  for (const d of sums.values()) {
+    if (d.hopeSpent === 0 && d.hpMarked === 0) continue;
+    const row = await ctx.db
+      .query("sessionCharacterStats")
+      .withIndex("by_session_character", (q) => q.eq("sessionId", d.sessionId).eq("characterId", d.characterId))
+      .unique();
+    if (row === null) continue;
+    await ctx.db.patch("sessionCharacterStats", row._id, {
+      hopeSpent: Math.max(0, row.hopeSpent - d.hopeSpent),
+      hpMarked: Math.max(0, row.hpMarked - d.hpMarked),
+    });
+  }
 }
 
 /** Hope and marked HP of a stored sheet blob (every sheet version stores both as numbers), or null for a blob without them. */
@@ -111,8 +194,8 @@ function trackedCounts(raw: unknown): { hope: number; hp: number } | null {
 }
 
 /**
- * Adds to the PC's `sessionCharacterStats` row of the campaign's live session (JD3b), creating it on the first drop.
- * No live session: nothing. A session already holding `CHARACTER_READ_BOUND` rows (= `MAX_SESSION_CHARACTER_STATS`)
+ * Adds to the PC's `sessionCharacterStats` row of the campaign's live session (JD3b), creating it on the first drop, and
+ * returns that session's id (null when nothing was counted). No live session: nothing. A session already holding `CHARACTER_READ_BOUND` rows (= `MAX_SESSION_CHARACTER_STATS`)
  * gets no new row, so a save never fails over a counter. The live session is read here (index `by_campaign_status_n`,
  * as `liveSession` in convex/lib/sessions.ts does) because that module imports this one.
  */
@@ -122,26 +205,27 @@ async function countLiveSessionStats(
   characterId: Id<"characters">,
   hopeSpent: number,
   hpMarked: number,
-): Promise<void> {
+): Promise<Id<"sessions"> | null> {
   const session = await ctx.db
     .query("sessions")
     .withIndex("by_campaign_status_n", (q) => q.eq("campaignId", campaignId).eq("status", "live"))
     .first();
-  if (session === null) return;
+  if (session === null) return null;
   const row = await ctx.db
     .query("sessionCharacterStats")
     .withIndex("by_session_character", (q) => q.eq("sessionId", session._id).eq("characterId", characterId))
     .unique();
   if (row !== null) {
     await ctx.db.patch("sessionCharacterStats", row._id, { hopeSpent: row.hopeSpent + hopeSpent, hpMarked: row.hpMarked + hpMarked });
-    return;
+    return session._id;
   }
   const rows = await ctx.db
     .query("sessionCharacterStats")
     .withIndex("by_session_character", (q) => q.eq("sessionId", session._id))
     .take(CHARACTER_READ_BOUND);
-  if (rows.length >= CHARACTER_READ_BOUND) return;
+  if (rows.length >= CHARACTER_READ_BOUND) return null;
   await ctx.db.insert("sessionCharacterStats", { campaignId, sessionId: session._id, characterId, hopeSpent, hpMarked });
+  return session._id;
 }
 
 // ---------------------------------------------------------------- access

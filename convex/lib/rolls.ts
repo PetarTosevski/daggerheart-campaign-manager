@@ -60,7 +60,7 @@ import { tickArmedCountdowns } from "../countdownRolls";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction } from "./actionLog";
-import { assertCanAct, loadCharacter, readSheet, saveSheet } from "./characterSheet";
+import { assertCanAct, loadCharacter, noteHopeSpent, readSheet, saveSheet } from "./characterSheet";
 import { rollDie } from "./dice";
 import { featureScope } from "./featureScope";
 import { campaignFearState, gainFear } from "./fear";
@@ -806,7 +806,11 @@ export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded:
   const extras = [...resolved.extras, ...advNames, ...autos.names, ...ends.labels, ...grants.labels];
   const { gained: rolledFear } = effects.fear > 0 ? await gainFear(ctx, campaign._id, effects.fear) : { gained: 0 };
   const gained = rolledFear + (autos.gmFearDelta > 0 ? (await gainFear(ctx, campaign._id, autos.gmFearDelta)).gained : 0);
-  const sheetChanged = changed(sheet, next);
+  // dcm-z9rz.23: the roll's costs (Experiences, options, the bearer's riders) count as spent even when it gains Hope, so a
+  // paid roll saves (and logs its `before`) even when its gain left the sheet as it was.
+  const hopePaid = sheet.hope - paid.hope;
+  const sheetChanged = changed(sheet, next) || hopePaid > 0;
+  noteHopeSpent(ctx, character._id, hopePaid);
   if (sheetChanged) await saveSheet(ctx, character._id, next);
   const entryId = await logAction(ctx, {
     campaignId: campaign._id,

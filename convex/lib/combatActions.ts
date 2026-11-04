@@ -79,6 +79,7 @@ import {
   extraSpecs,
   pcCombatant,
   pickCard,
+  planHopePaid,
   replaying,
   riderPartRuns,
   riderUse,
@@ -89,7 +90,7 @@ import {
   type RiderPart,
   type UsePick,
 } from "./cardRunner";
-import { saveSheet } from "./characterSheet";
+import { noteHopeSpent, saveSheet } from "./characterSheet";
 import { loadCombatMap } from "./combatMaps";
 import { loadScene, viewOf, type Scene, type Viewer } from "./combatVision";
 import { costText, limitText } from "./featureDrawer";
@@ -2621,7 +2622,13 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
 
   const { gained } = effects.fear > 0 ? await gainFear(ctx, campaign._id, effects.fear) : { gained: 0 };
   const fearChanged = gained + (await changeFear(ctx, campaign._id, riderFear));
-  const sheetChanged = changed(sheet0, finalSheet);
+  // dcm-z9rz.23: the Hope this attack paid (the roll's Experiences and options, every rider's costs, an after-roll feature
+  // paid from the roll's own Hope) counts as spent, even when the roll's Hope gives it back.
+  const hopePaid =
+    Math.max(0, sheetBeforeRoll.hope - duality.paid.hope) +
+    [...runs, ...(afterRun ? [afterRun] : [])].reduce((n, r) => n + planHopePaid(r.plan, r.built.context.actor.id, r.built.context.actor.id), 0);
+  const sheetChanged = changed(sheet0, finalSheet) || hopePaid > 0;
+  noteHopeSpent(ctx, character._id, hopePaid);
   if (sheetChanged) await saveSheet(ctx, character._id, finalSheet);
 
   // U4: each instance as it was before the attack; with its conditions, tags and effects when a rider changed them too.

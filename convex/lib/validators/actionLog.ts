@@ -109,6 +109,9 @@ export const timeChangeValidator = v.object({
   timeOfDayBefore: v.optional(v.union(v.literal("day"), v.literal("dim"), v.literal("night"))),
 });
 
+/** A row's counted Hope spent / HP marked and the live session they went to (dcm-z9rz.22). */
+export const sessionTallyValidator = v.object({ sessionId: v.id("sessions"), hopeSpent: v.number(), hpMarked: v.number() });
+
 /** The stored fields of one `actionLog` row (see convex/tables/actionLog.ts). */
 export const actionLogFields = {
   campaignId: v.id("campaigns"),
@@ -135,6 +138,12 @@ export const actionLogFields = {
   targets: v.optional(v.array(actionTargetValidator)),
   /** The calendar move of an End day / day jump (CT2, widened): undo of the latest one moves the calendar back. */
   timeChange: v.optional(timeChangeValidator),
+  /**
+   * What this row's action added to its character's `sessionCharacterStats` row (Journal JD3b counters: Hope spent, HP
+   * marked) while a session was live (dcm-z9rz.22, user 2026-11-04 "undo removes it"; widened, older rows have none and
+   * their undo leaves the tally as it is). Undo takes it back off that session's row, never below 0.
+   */
+  sessionTally: v.optional(sessionTallyValidator),
   undoable: v.boolean(),
   undoneAt: v.optional(v.number()),
   undoneBy: v.optional(v.id("users")),

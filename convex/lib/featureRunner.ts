@@ -53,12 +53,12 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction, newGroupId } from "./actionLog";
 import { dropDice, MAX_CARD_TARGETS, type CardChoice, type CardRoll, type DiceSlot } from "./cardChoices";
 import { afterUnstoppable, cardPromptValidator, damageRolls, effectEndsOf, endOnSheet, gmLines, instanceWrites, openCardHits, promptsOf, publicTargets, rollText, writeInstances } from "./cardRows";
-import { actorSheetAfter, effectOption, featureIdOfEffect, ownsEffect, tokenKeyOf, writeSheetChanges, type BuiltRun, type Delegated, type UsePick } from "./cardRunner";
+import { actorSheetAfter, effectOption, featureIdOfEffect, ownsEffect, planHopePaid, tokenKeyOf, writeSheetChanges, type BuiltRun, type Delegated, type UsePick } from "./cardRunner";
 import { setStance } from "./stanceDrop";
 import type { AdversaryBefore } from "./validators/actionLog";
 import { unshakableText, unshakePlan, type UnshakableRoll } from "./unshakable";
 import type { CompanionNumbers } from "./companion";
-import { partyOf, saveSheet } from "./characterSheet";
+import { noteHopeSpent, partyOf, saveSheet } from "./characterSheet";
 import type { AttackScene } from "./combatActions";
 import { hasServerMove, isMarkOf, isRolledFirst, openAllyRoll, spendTargetCount, withoutRollCosts } from "./featurePrompts";
 import { activeAreasOnMap, areaFactsFor } from "../combatAreas";
@@ -915,7 +915,10 @@ export async function resolveFeatureUse(
   const writes = instanceWrites(plan, built.creatures, pick.name);
   await writeInstances(ctx, writes);
   const fearDelta = await applyFear(ctx, campaign._id, plan.gmFearDelta);
-  const sheetChanged = changed(sheet, next);
+  // dcm-z9rz.23: the Hope the use paid (its Experiences and its costs, even one the roll's own Hope paid) counts as spent.
+  const hopePaid = Math.max(0, sheet.hope - built.paidSheet.hope) + planHopePaid(plan, actorToken, actorToken);
+  const sheetChanged = changed(sheet, next) || hopePaid > 0;
+  noteHopeSpent(ctx, character._id, hopePaid);
   if (sheetChanged) await saveSheet(ctx, character._id, next);
   const allyRows = [...others.values()].filter((o) => changed(o.before, o.after));
   for (const a of allyRows) await saveSheet(ctx, a.character._id, a.after);
