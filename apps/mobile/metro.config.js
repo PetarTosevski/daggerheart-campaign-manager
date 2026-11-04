@@ -1,4 +1,5 @@
 // Learn more https://docs.expo.dev/guides/customizing-metro
+const fs = require("fs");
 const path = require("path");
 const { getDefaultConfig } = require("expo/metro-config");
 
@@ -16,12 +17,23 @@ config.resolver.nodeModulesPaths = [
   mobileNodeModules,
   path.resolve(workspaceRoot, "node_modules"),
 ];
+config.resolver.unstable_enableSymlinks = true;
+// Shared website code imports packages that live in the repo root. Point Metro
+// at the real folder so a symlink that leaves this checkout still resolves.
+config.resolver.extraNodeModules = {
+  zod: fs.realpathSync(path.join(workspaceRoot, "node_modules/zod")),
+};
 
 // One physical copy of each, the one installed for this package. `convex/*`
 // covers convex/server, convex/values, and the rest of the public subpaths.
 const singletonRoots = ["convex", "react", "react-native"];
 
+const nodeModuleShim = path.join(projectRoot, "src/shims/node-module.ts");
+
 config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName === "node:module") {
+    return { type: "sourceFile", filePath: nodeModuleShim };
+  }
   const singleton = singletonRoots.find(
     (name) => moduleName === name || moduleName.startsWith(`${name}/`),
   );

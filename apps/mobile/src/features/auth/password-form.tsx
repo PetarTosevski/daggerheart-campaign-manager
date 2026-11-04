@@ -1,6 +1,8 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from "react-native";
+
+import { colors } from "../../theme/colors";
 
 import { authErrorText } from "./auth-error";
 import { SocialSignIn } from "./social-sign-in";
@@ -22,20 +24,26 @@ const LABELS: Record<Step, { title: string; submit: string }> = {
 };
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, gap: 12, padding: 24 },
-  label: { fontSize: 14, gap: 6 },
+  screen: { backgroundColor: colors.ink, flex: 1, gap: 12, padding: 24 },
+  title: { color: colors.parchment, fontSize: 22 },
+  label: { gap: 6 },
+  field: { color: colors.label, fontSize: 14 },
   input: {
+    backgroundColor: colors.panel,
+    borderColor: colors.line,
     borderRadius: 8,
     borderWidth: 1,
+    color: colors.parchment,
     fontSize: 16,
     minHeight: 44,
     paddingHorizontal: 12,
   },
-  hint: { fontSize: 13 },
+  hint: { color: colors.subtle, fontSize: 13 },
   button: { alignItems: "center", justifyContent: "center", minHeight: 44 },
-  error: { fontSize: 14 },
-  notice: { fontSize: 14 },
-  help: { fontSize: 14 },
+  buttonText: { color: colors.brand, fontSize: 16 },
+  error: { color: colors.danger, fontSize: 14 },
+  notice: { color: colors.ok, fontSize: 14 },
+  help: { color: colors.body, fontSize: 14 },
 });
 
 /** Email + password sign-in, account creation with an emailed code, and password reset by code. */
@@ -158,11 +166,11 @@ export function PasswordForm() {
   const submitLabel = pending ? "Please wait…" : LABELS[step].submit;
 
   return (
-    <View style={styles.screen}>
-      <Text accessibilityRole="header">{LABELS[step].title}</Text>
+    <SafeAreaView style={styles.screen}>
+      <Text accessibilityRole="header" style={styles.title}>{LABELS[step].title}</Text>
       {step === "signUp" ? (
         <View style={styles.label}>
-          <Text>Name</Text>
+          <Text style={styles.field}>Name</Text>
           <TextInput
             accessibilityLabel="Name"
             autoComplete="name"
@@ -176,7 +184,7 @@ export function PasswordForm() {
       ) : null}
       {step === "signIn" || step === "signUp" || step === "resetEmail" ? (
         <View style={styles.label}>
-          <Text>Email</Text>
+          <Text style={styles.field}>Email</Text>
           <TextInput
             accessibilityLabel="Email"
             autoCapitalize="none"
@@ -192,7 +200,7 @@ export function PasswordForm() {
       ) : null}
       {step === "signIn" || step === "signUp" ? (
         <View style={styles.label}>
-          <Text>Password</Text>
+          <Text style={styles.field}>Password</Text>
           <TextInput
             accessibilityLabel="Password"
             autoCapitalize="none"
@@ -213,7 +221,7 @@ export function PasswordForm() {
               ? `Enter the 6-digit code we emailed to ${email}.`
               : `If ${email} has an account, we emailed it a 6-digit code. Enter it with a new password.`}
           </Text>
-          <Text>6-digit code</Text>
+          <Text style={styles.field}>6-digit code</Text>
           <TextInput
             accessibilityLabel="6-digit code"
             autoComplete="sms-otp"
@@ -228,7 +236,7 @@ export function PasswordForm() {
       ) : null}
       {step === "resetCode" ? (
         <View style={styles.label}>
-          <Text>New password</Text>
+          <Text style={styles.field}>New password</Text>
           <TextInput
             accessibilityLabel="New password"
             autoCapitalize="none"
@@ -243,7 +251,7 @@ export function PasswordForm() {
         </View>
       ) : null}
       <Pressable accessibilityRole="button" disabled={pending} onPress={onSubmit} style={styles.button}>
-        <Text>{submitLabel}</Text>
+        <Text style={styles.buttonText}>{submitLabel}</Text>
       </Pressable>
       {step === "signIn" ? <SocialSignIn /> : null}
       {error ? (
@@ -264,32 +272,32 @@ export function PasswordForm() {
             onPress={resend}
             style={styles.button}
           >
-            <Text>{cooldown > 0 ? `Resend code in ${cooldown}s` : "Resend code"}</Text>
+            <Text style={styles.buttonText}>{cooldown > 0 ? `Resend code in ${cooldown}s` : "Resend code"}</Text>
           </Pressable>
           <Pressable
             accessibilityRole="button"
             onPress={() => go(step === "code" ? (origin?.flow === "signIn" ? "signIn" : "signUp") : "resetEmail")}
             style={styles.button}
           >
-            <Text>Use a different email</Text>
+            <Text style={styles.buttonText}>Use a different email</Text>
           </Pressable>
         </>
       ) : null}
       {step === "signIn" ? (
         <Pressable accessibilityRole="button" onPress={() => go("resetEmail")} style={styles.button}>
-          <Text>Forgot password?</Text>
+          <Text style={styles.buttonText}>Forgot password?</Text>
         </Pressable>
       ) : null}
       {step === "signIn" || step === "signUp" ? (
         <Pressable accessibilityRole="button" onPress={() => go(step === "signUp" ? "signIn" : "signUp")} style={styles.button}>
-          <Text>{step === "signUp" ? "Have an account? Sign in" : "New here? Create an account"}</Text>
+          <Text style={styles.buttonText}>{step === "signUp" ? "Have an account? Sign in" : "New here? Create an account"}</Text>
         </Pressable>
       ) : null}
       {step === "resetEmail" ? (
         <Pressable accessibilityRole="button" onPress={() => go("signIn")} style={styles.button}>
-          <Text>Back to sign in</Text>
+          <Text style={styles.buttonText}>Back to sign in</Text>
         </Pressable>
       ) : null}
-    </View>
+    </SafeAreaView>
   );
 }

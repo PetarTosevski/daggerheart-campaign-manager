@@ -1,8 +1,11 @@
 import { useConvexAuth } from "@convex-dev/auth/react";
 import { Redirect, Slot, useSegments } from "expo-router";
 
+import { StyleSheet, View } from "react-native";
+
 import { AppAuthProvider } from "../src/auth/provider";
 import { useBrandFonts } from "../src/theme/fonts";
+import { colors } from "../src/theme/colors";
 
 export { RouteErrorBoundary as ErrorBoundary } from "../src/shell/route-error";
 
@@ -24,9 +27,7 @@ function routeName(segments: readonly string[]): string {
 
 function signedOutAllowed(segments: readonly string[]): boolean {
   const root = segments[0];
-  if (root === undefined) return true;
-  if (root === "sign-in" || root === "(auth)" || root === "auth") return true;
-  return false;
+  return root === "sign-in" || root === "(auth)" || root === "auth";
 }
 
 function SessionGate() {
@@ -44,8 +45,14 @@ function SessionGate() {
           : null;
   return (
     <>
-      <Slot />
+      <View style={styles.slot}>
+        <Slot />
+      </View>
       {href ? <Redirect href={href} /> : null}
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  slot: { backgroundColor: colors.ink, flex: 1 },
+});
