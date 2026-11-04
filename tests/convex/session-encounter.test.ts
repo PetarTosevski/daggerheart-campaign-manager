@@ -38,9 +38,9 @@ async function setup() {
     (await gm.mutation(api.sessionPrep.createEncounter, { campaignId, sessionId, idempotencyKey: key() })).encounterId;
   const add = (encounterId: string, source: Source, count: number) =>
     gm.mutation(api.encounters.addAdversary, { campaignId, encounterId, source, count, summoned: false, idempotencyKey: key() });
-  const read = (mid: string = mapId) => gm.query(api.combatTokens.sessionEncounter, { campaignId, mapId: mid });
+  const read = (mid: string = mapId) => gm.query(api.combatTokensReads.sessionEncounter, { campaignId, mapId: mid });
   const place = (idempotencyKey = key(), mid: string = mapId) => gm.mutation(api.combatTokens.placeSessionEncounter, { campaignId, mapId: mid, idempotencyKey });
-  const tokens = () => gm.query(api.combatTokens.list, { campaignId, mapId });
+  const tokens = () => gm.query(api.combatTokensReads.list, { campaignId, mapId });
   const status = (encounterId: Id<"encounters">) => t.run(async (ctx) => (await ctx.db.get("encounters", encounterId))!.status);
   return { t, gm, p1, out, campaignId, mapId, newSession, sessionEncounter, add, read, place, tokens, status };
 }
@@ -63,7 +63,7 @@ describe("session encounter: access", () => {
     const { campaignId, mapId } = f;
     type Client = typeof f.gm;
     const all = {
-      sessionEncounter: (c: Client) => c.query(api.combatTokens.sessionEncounter, { campaignId, mapId }),
+      sessionEncounter: (c: Client) => c.query(api.combatTokensReads.sessionEncounter, { campaignId, mapId }),
       placeSessionEncounter: (c: Client) => c.mutation(api.combatTokens.placeSessionEncounter, { campaignId, mapId, idempotencyKey: key() }),
     };
     for (const [name, run] of Object.entries(all)) {
@@ -155,7 +155,7 @@ describe("session encounter: placing (Q2)", () => {
     expect(await f.place()).toEqual({ n: 1, added: 0, started: false });
     expect(await f.tokens()).toHaveLength(3);
     // The running queue on the Combatants card is empty too.
-    expect((await f.gm.query(api.combatTokens.combatants, { campaignId: f.campaignId, mapId: f.mapId })).queue).toEqual([]);
+    expect((await f.gm.query(api.combatTokensReads.combatants, { campaignId: f.campaignId, mapId: f.mapId })).queue).toEqual([]);
   });
 
   it("refuses with ENCOUNTER_RUNNING while another encounter runs and writes nothing", async () => {

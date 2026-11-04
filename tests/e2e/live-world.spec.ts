@@ -15,7 +15,7 @@ test("a Codex entry the GM shows and hides appears in and leaves the player's op
     const codex = `/campaigns/${campaignId}/codex`;
     for (const page of [gm, player]) {
       await page.goto(codex);
-      await expect(page.getByRole("heading", { level: 1, name: "Characters & Locations" })).toBeVisible();
+      await expect(page.getByRole("heading", { level: 1, name: "Codex" })).toBeVisible();
     }
     const name = `Vessa ${crypto.randomUUID().slice(0, 6)}`;
     const playerEntry = player.getByRole("complementary", { name: "Entries" }).getByRole("button", { name: new RegExp(name) });

@@ -12,17 +12,21 @@
  *
  * Rules (printed pages): CB p.153-154, p.194 spotlight and Fear; CB p.160 an Experience for a Fear; CB p.195 reactions.
  */
-import { adversaryFeatureId, adversaryFeatureUseKey, pickAdversaryUse, run, upfrontFear, type AdversaryPlan, type AdversaryRunContext, type InstanceModifiers, type StandardAttack } from "../../src/lib/domain/adversary-effects/run";
+import { adversaryFeatureId, adversaryFeatureUseKey, conditionStepsOf, lastingModsOf, pickAdversaryUse, run, upfrontFear, type AdversaryPlan, type AdversaryRunContext, type InstanceModifiers, type StandardAttack } from "../../src/lib/domain/adversary-effects/run";
 import type { AdversaryCost, AdversaryFeatureEffect, AdversaryFeatureUse, AdversaryRequirement, AdversaryStep } from "../../src/lib/domain/adversary-effects/types";
 import { passiveSummary, spotlightCost, triggeredUses, unmetAdversaryRequirements, type AdversaryEvent, type AdversaryState, type PassiveSummary, type TriggeredUse } from "../../src/lib/domain/adversary-actions/index";
 import { featureFearCost, hordeDamage, relentlessValue } from "../../src/lib/domain/adversaries/index";
-import type { PlanStep } from "../../src/lib/domain/card-effects/run";
-import type { Gate, Limit, NumberSource, TargetSpec, TriggerTargets } from "../../src/lib/domain/card-effects/types";
-import type { Combatant } from "../../src/lib/domain/combat-actions/index";
+import type { PlanStep, ResolvedMod } from "../../src/lib/domain/card-effects/run";
+import type { AttackedRider, BearerRider, ConditionRef, Duration, EndEvent, Escape, Gate, Limit, Mod, NumberSource, RollEnd, RollResult, Step, TargetSpec, TriggerTargets } from "../../src/lib/domain/card-effects/types";
+import { endsOnOccurrence, type EffectEnds, type EndOccurrence, type EndRole, type EndRoll } from "../../src/lib/domain/characters/expiry";
+import { tokenDistance, type Combatant } from "../../src/lib/domain/combat-actions/index";
+import type { MapCreature } from "../../src/lib/domain/combat-actions/numbers";
 import { turnSpotlights } from "../../src/lib/domain/encounters/spotlight";
 import { appError } from "../../src/lib/errors/app-error";
 import { ADVERSARIES } from "../../src/lib/srd/adversaries";
-import { adversaryEffects } from "../../src/lib/srd/adversary-effects/index";
+import { adversaryEffects, allAdversaryEffects } from "../../src/lib/srd/adversary-effects/index";
+import { allCardEffects } from "../../src/lib/srd/card-effects/index";
+import { allFeatureEffects } from "../../src/lib/srd/feature-effects/index";
 import { alwaysOnResistance } from "../../src/lib/srd/adversary-resistance";
 import type { AdversaryDef } from "../../src/lib/srd/types";
 import type { CharacterSheet, FeatureUse } from "../../src/lib/validation/characters";
@@ -33,13 +37,14 @@ import { campaignFearState } from "./fear";
 import { rules } from "./rolls";
 import type { AdversaryBefore } from "./validators/actionLog";
 import type { HitRider } from "./validators/combatRequests";
-import { MAX_INSTANCE_FEATURE_USES, type InstanceFeatureUse } from "./validators/encounters";
+import { MAX_INSTANCE_FEATURE_USES, type InstanceEffect, type InstanceFeatureUse } from "./validators/encounters";
+import { effectSource, instanceEffectSource, srdUses } from "./cardRows";
 
 const SRD_BY_ID = new Map<string, AdversaryDef>(ADVERSARIES.map((a) => [a.id, a]));
 
 // ---------------------------------------------------------------- the stat block
 
-export type BlockFeature = { name: string; kind: "passive" | "action" | "reaction" | "evolution"; text: string; fearCost?: number };
+export type BlockFeature = { name: string; kind: "passive" | "action" | "reaction" | "evolution"; text: string; fearCost?: number; countdown?: string | number };
 
 /** What the server reads of an instance's stat block: an SRD entry or the campaign's custom block. */
 export type Block = {
@@ -61,12 +66,45 @@ const srdRange = (r: string): StandardAttack["range"] => SRD_RANGES.find((x) => 
 
 const tierOf = (n: number): 1 | 2 | 3 | 4 => (n <= 1 ? 1 : n >= 4 ? 4 : (Math.round(n) as 2 | 3));
 
-/** The instance's stat block, or null when its source is gone. The instance's own resistance wins (CA2, Q8). */
+/**
+ * The instance's stat block, or null when its source is gone. The instance's own resistance wins (CA2, Q8). Lane E7
+ * (dcm-gx3): an Evolution on the instance (`evolvedBlock`) replaces its standard attack and drops the features it lost.
+ */
 export async function blockOf(ctx: QueryCtx, instance: Doc<"encounterAdversaries">): Promise<Block | null> {
+  const block = await printedBlockOf(ctx, instance);
+  return block === null ? null : evolvedBlock(block, instance);
+}
+
+const VOCABULARY_RANGES = ["melee", "veryClose", "close", "far", "veryFar"] as const;
+
+/**
+ * Lane E7, round 2 (dcm-gx3, Evolution, HF p.61): the block as the instance's modifiers changed it. The latest
+ * `standardAttack` replaces the standard attack (its ATK stays the printed one: Enraged Mountain Troll, HF p.65, "replace
+ * Skull Flail with the following standard attack: Claw Swipe: Very Close | 1d10+3 phy"); features in `featuresRemoved`
+ * are gone from the feature list and from the effect entries. `featuresAdded` are printed on the block already (Double
+ * Swipe) and stay listed.
+ */
+export function evolvedBlock(block: Block, instance: Pick<Doc<"encounterAdversaries">, "effects">): Block {
+  const effects = instance.effects ?? [];
+  const attack = [...effects].reverse().find((e) => e.standardAttack !== undefined)?.standardAttack;
+  const removed = new Set(effects.flatMap((e) => e.featuresRemoved ?? []));
+  if (attack === undefined && removed.size === 0) return block;
+  const range: StandardAttack["range"] = SRD_RANGES.find((x) => x === attack?.range) ?? VOCABULARY_RANGES.find((x) => x === attack?.range) ?? block.attack.range;
+  return {
+    ...block,
+    ...(attack ? { attack: { name: attack.name, modifier: block.attack.modifier, range, damage: attack.damage } } : {}),
+    features: block.features.filter((f) => !removed.has(f.name)),
+    effects: block.effects.filter((e) => !removed.has(e.feature)),
+  };
+}
+
+async function printedBlockOf(ctx: QueryCtx, instance: Doc<"encounterAdversaries">): Promise<Block | null> {
   const own = instance.resistance;
   const fromInstance = own === undefined ? undefined : own.conditional === undefined || instance.resistanceActive === true ? { physical: own.physical, magic: own.magic } : { physical: "none" as const, magic: "none" as const };
-  if (instance.source.kind === "srd") {
-    const def = SRD_BY_ID.get(instance.source.adversaryId);
+  // Lane E7 round 3 (dcm-3ag5, Transform): a `form` modifier swaps in that SRD stat block.
+  const form = formOf(instance);
+  if (form !== undefined || instance.source.kind === "srd") {
+    const def = form ?? (instance.source.kind === "srd" ? SRD_BY_ID.get(instance.source.adversaryId) : undefined);
     if (!def) return null;
     return {
       adversaryId: def.id,
@@ -100,15 +138,17 @@ export async function blockOf(ctx: QueryCtx, instance: Doc<"encounterAdversaries
 
 /** The instance as the engine reads it (side "adversary"). */
 export function selfCombatant(instance: Doc<"encounterAdversaries">, block: Block): Combatant {
+  // Lane E7 round 3: a Transform's form brings its own numbers (`instanceStatsOf`).
+  const stats = instanceStatsOf(instance);
   return {
     id: instance._id,
     side: "adversary",
-    difficulty: instance.stats.difficulty + (instance.effects ?? []).reduce((s, e) => s + (e.difficulty ?? 0), 0),
-    thresholds: { major: instance.stats.major, severe: instance.stats.severe },
+    difficulty: stats.difficulty + (instance.effects ?? []).reduce((s, e) => s + (e.difficulty ?? 0), 0),
+    thresholds: { major: stats.major, severe: stats.severe },
     hp: instance.hp,
-    hpMax: instance.stats.hpMax,
+    hpMax: stats.hpMax,
     stress: instance.stress,
-    stressMax: instance.stats.stressMax,
+    stressMax: stats.stressMax,
     defeated: instance.defeated,
     ...(block.resistance ? { resistance: block.resistance } : {}),
     conditions: instance.conditions,
@@ -179,36 +219,58 @@ function limitedSteps(steps: readonly AdversaryStep[]): { id: string; limit: Lim
  * prefix (a per-target limit appends the target). Null when the block has no such limit.
  */
 export function limitPerOf(block: Pick<Block, "adversaryId" | "effects">, key: string): Limit["per"] | null {
-  let best: { length: number; per: Limit["per"] } | null = null;
-  const consider = (prefix: string, per: Limit["per"]) => {
-    if ((key === prefix || key.startsWith(`${prefix}:`)) && (best === null || prefix.length > best.length)) best = { length: prefix.length, per };
+  return limitOf(block, key)?.per ?? null;
+}
+
+/** The limit of a stored use key (see `limitPerOf`), with its `period` (lane E7, dcm-c5h). */
+export function limitOf(block: Pick<Block, "adversaryId" | "effects">, key: string): Limit | null {
+  let best: { length: number; limit: Limit } | null = null;
+  const consider = (prefix: string, limit: Limit) => {
+    if ((key === prefix || key.startsWith(`${prefix}:`)) && (best === null || prefix.length > best.length)) best = { length: prefix.length, limit };
   };
   for (const e of block.effects) {
     for (const u of e.uses) {
-      if (u.limit) consider(adversaryFeatureUseKey(block.adversaryId, e.feature, u.id), u.limit.per);
-      for (const step of limitedSteps(u.steps)) consider(`card:${adversaryFeatureId(block.adversaryId, e.feature)}:${u.id}:${step.id}`, step.limit.per);
+      if (u.limit) consider(adversaryFeatureUseKey(block.adversaryId, e.feature, u.id), u.limit);
+      for (const step of limitedSteps(u.steps)) consider(`card:${adversaryFeatureId(block.adversaryId, e.feature)}:${u.id}:${step.id}`, step.limit);
     }
   }
-  return (best as { per: Limit["per"] } | null)?.per ?? null;
+  return (best as { limit: Limit } | null)?.limit ?? null;
+}
+
+/**
+ * Lane E7 (dcm-c5h): a "once per GM turn" use (Ravenous, HF p.97; `Limit.period: "gmTurn"`) is stored with the GM turn it
+ * was made in after its key (`<key>@gmTurn<N>`), so it counts only during that turn. The stored shape needs no new field.
+ */
+const GM_TURN_MARK = "@gmTurn";
+
+/** A stored key's own key and the GM turn it is bound to (none for every other period). */
+function splitGmTurn(key: string): { key: string; gmTurn?: number } {
+  const at = key.lastIndexOf(GM_TURN_MARK);
+  if (at < 0) return { key };
+  const turn = Number(key.slice(at + GM_TURN_MARK.length));
+  return Number.isInteger(turn) ? { key: key.slice(0, at), gmTurn: turn } : { key };
 }
 
 /**
  * Whether a stored use still counts (AA2b, AA2c): recorded in this run of the encounter (per-scene limits reset when
  * it ends), or a session limit recorded in the live session (user answer 2026-10-22: "'once per session' adversary
- * features last the whole session (reset at session end)"). `session` is `campaignState.sessionStartedAt`.
+ * features last the whole session (reset at session end)"). `session` is `campaignState.sessionStartedAt`. Lane E7: a
+ * use bound to a GM turn counts only in that turn (`gmTurn`, the encounter's current turn).
  */
-export function useCounts(u: InstanceFeatureUse, scene: number, session: number | undefined): boolean {
+export function useCounts(u: InstanceFeatureUse, scene: number, session: number | undefined, gmTurn?: number): boolean {
+  const bound = splitGmTurn(u.key).gmTurn;
+  if (bound !== undefined && gmTurn !== undefined && bound !== gmTurn) return false;
   return u.scene === scene || (u.session !== undefined && u.session === session);
 }
 
 /**
  * The instance's limited feature uses that still count (AA2b; "Once per scene", TASK-CA-AA1 Q4): the entries recorded
  * in this run of the encounter, and (AA2c) session-limited ones of the live session (`session`, optional: without it
- * only the scene's count).
+ * only the scene's count). Lane E7: GM-turn uses of this GM turn only, under their own key.
  */
 export function instanceUses(instance: Doc<"encounterAdversaries">, encounter: Doc<"encounters">, session?: number): FeatureUse[] {
   const scene = sceneOf(encounter);
-  return (instance.featureUses ?? []).filter((u) => useCounts(u, scene, session)).map((u) => ({ key: u.key, until: u.until }));
+  return (instance.featureUses ?? []).filter((u) => useCounts(u, scene, session, encounter.gmTurn)).map((u) => ({ key: splitGmTurn(u.key).key, until: u.until }));
 }
 
 /**
@@ -218,9 +280,18 @@ export function instanceUses(instance: Doc<"encounterAdversaries">, encounter: D
  */
 export function storedUses(instance: Doc<"encounterAdversaries">, encounter: Doc<"encounters">, block: Block, added: readonly FeatureUse[], session: number | undefined): InstanceFeatureUse[] {
   const scene = sceneOf(encounter);
-  const kept = (instance.featureUses ?? []).filter((u) => useCounts(u, scene, session));
+  const kept = (instance.featureUses ?? []).filter((u) => useCounts(u, scene, session, encounter.gmTurn));
   // A sheet's `featureUses` gained `scene` (sheet-drawer SD0); an instance's scene limit is `session` stamped with `scene`.
-  const fresh = added.map((u) => ({ key: u.key, until: u.until === "scene" ? ("session" as const) : u.until, scene, ...(session !== undefined && limitPerOf(block, u.key) === "session" ? { session } : {}) }));
+  const fresh = added.map((u) => {
+    const limit = limitOf(block, u.key);
+    return {
+      key: limit?.period === "gmTurn" ? `${u.key}${GM_TURN_MARK}${encounter.gmTurn}` : u.key,
+      // Wave 9 E5.3 (dcm-pg8x): a sheet's campaign-long memory has no instance period; an instance lasts the encounter.
+      until: u.until === "scene" || u.until === "campaign" ? ("session" as const) : u.until,
+      scene,
+      ...(session !== undefined && limit?.per === "session" ? { session } : {}),
+    };
+  });
   return [...kept, ...fresh].slice(-MAX_INSTANCE_FEATURE_USES);
 }
 
@@ -353,7 +424,7 @@ export type FeatureAsk = {
   /** Texts the GM confirms (`situations`): this use's requirements and gates, the passives and attack triggers that read them. */
   situations: { text: string; feature: string }[];
   /** Damage or clears "divided however you wish": pass `splits [{id: creature id, amount}]` among `among`. */
-  splits: { what: "damage" | "clear"; among: string; track?: string }[];
+  splits: { what: "damage" | "clear" | "hope" | "stress" | "hp"; among: string; track?: string }[];
   /** `either` costs in the order the runner meets them: pass the picked option index per entry as `eitherCosts`. */
   eitherCosts: { index: number; options: (CostAsk & { index: number })[] }[];
   /** The Fear `useFeature` will ask for (`confirmFear`), with the first option of each `either` cost; `perTrigger`: the
@@ -380,6 +451,18 @@ function walkSteps(steps: readonly AdversaryStep[], visit: (s: AdversaryStep) =>
       walkSteps(s.onSuccess, visit);
     }
   }
+}
+
+/** Lane E7 (dcm-bxp.78): what advances a feature's countdown, as its effect entry's `countdown` step says (V vocabulary). */
+export function countdownTickOn(block: Pick<Block, "effects">, feature: string): Extract<AdversaryStep, { kind: "countdown" }>["tickOn"] {
+  let found: Extract<AdversaryStep, { kind: "countdown" }>["tickOn"];
+  for (const e of block.effects) {
+    if (e.feature !== feature) continue;
+    for (const u of e.uses) walkSteps(u.steps, (s) => {
+      if (s.kind === "countdown" && s.tickOn !== undefined && found === undefined) found = s.tickOn;
+    });
+  }
+  return found;
 }
 
 const fixedOf = (n: NumberSource | undefined): number | null => (n?.kind === "fixed" ? n.value : null);
@@ -534,6 +617,11 @@ export async function featureAsk(ctx: QueryCtx, campaign: Doc<"campaigns">, args
       else if (s.to === "allies" || s.to === "selfAndAllies") ask.allies ??= targetAsk(s.pick);
     } else if ("to" in s && (s.to === "allies" || s.to === "selfAndAllies")) ask.allies ??= { side: "ally", range: "unlimited", count: "any", max: null, sight: false };
     if ((s.kind === "damage" || s.kind === "clear") && s.distribution === "split") ask.splits.push({ what: s.kind, among: s.to, ...(s.kind === "clear" ? { track: s.track } : {}) });
+    // Plan lanes-2 E7.4 (dcm-mvgc): a Hope gain "distributed among the PCs however they wish" (Stone of Omens, HF p.62),
+    // Stress "distributed among allies as it chooses" (Mind Meld, HF p.74) and split HP are asked the same way.
+    else if (s.kind === "hope" && s.change === "gain" && s.distribution === "split") ask.splits.push({ what: "hope", among: s.to });
+    else if (s.kind === "markStress" && s.distribution === "split") ask.splits.push({ what: "stress", among: s.to });
+    else if (s.kind === "markHp" && s.distribution === "split") ask.splits.push({ what: "hp", among: s.to });
   });
 
   // Situations the GM confirms: this use's, the passives' (they read the same list), and an attack's own triggers.
@@ -564,7 +652,7 @@ export async function featureAsk(ctx: QueryCtx, campaign: Doc<"campaigns">, args
   if (use.limit && !use.limit.perTarget) {
     const key = adversaryFeatureUseKey(block.adversaryId, effect.feature, use.id);
     const used = instanceUses(instance, encounter, state.sessionStartedAt).filter((u) => u.key === key).length;
-    if (used >= (use.limit.times ?? 1)) ask.unavailable.push(`Used up this ${use.limit.per === "scene" ? "scene" : use.limit.per === "session" ? "session" : "rest"}`);
+    if (used >= (use.limit.times ?? 1)) ask.unavailable.push(`Used up this ${use.limit.period === "gmTurn" ? "GM turn" : use.limit.per === "scene" ? "scene" : use.limit.per === "session" ? "session" : "rest"}`);
   }
   ask.available = ask.unavailable.length === 0;
 
@@ -574,4 +662,428 @@ export async function featureAsk(ctx: QueryCtx, campaign: Doc<"campaigns">, args
     }
   }
   return ask;
+}
+
+// ---------------------------------------------------------------- lasting effects an adversary gives or carries (lanes-2, E7)
+
+/** The prefix of the instance modifiers an adversary feature leaves (`adv:<adversaryId>/<feature>:<n>`). */
+const ADVERSARY_INSTANCE_EFFECT = /^adv:([^/:]+)\/(.+):\d+$/;
+/** A PC sheet effect an adversary feature left: `writeSheetChanges` keys it `card:<adversaryId>/<feature>:<n>`. */
+const ADVERSARY_SHEET_EFFECT = /^card:([^/:]+)\/(.+):\d+$/;
+
+const INSTANCE_UNTIL: Record<Duration, InstanceEffect["until"]> = {
+  temporary: "temporary",
+  rest: "temporary",
+  longRest: "temporary",
+  session: "temporary",
+  scene: "scene",
+  hit: "hit",
+  nextRoll: "hit",
+  manual: "temporary",
+  permanent: "permanent",
+};
+
+/** The most modifiers kept on one instance (cardRows keeps the same cap; the oldest go first). */
+const INSTANCE_EFFECTS_MAX = 20;
+
+const fixedOr = (n: NumberSource | undefined, fallback: number) => (n === undefined ? fallback : n.kind === "fixed" ? n.value : fallback);
+
+/** A vocabulary dice expression as the stat block prints it ("1d10+3 phy"). Numbers that aren't fixed read 1 die / +0. */
+function printedDamage(d: Extract<ResolvedMod, { kind: "standardAttack" }>): string {
+  const plus = fixedOr(d.damage.plus, 0);
+  return `${fixedOr(d.damage.count, 1)}d${d.damage.sides}${plus > 0 ? `+${plus}` : plus < 0 ? `${plus}` : ""} ${d.type === "magic" ? "mag" : "phy"}`;
+}
+
+/** The fields of an instance modifier its mods give (shared by `effect` and condition modifiers). */
+type ModFields = Omit<InstanceEffect, "id" | "source" | "label" | "until">;
+
+/**
+ * Lane E7 (rounds 2-3): what a list of resolved mods puts on an instance modifier: the Difficulty, attack, damage and
+ * HP-marked deltas, Blighting Strike's half damage, Goad Them On's disadvantage, Evolution's new standard attack and
+ * feature changes (dcm-gx3), and (round 3) `moveLimit` / `forcedMoveReduce` (dcm-3oe, dcm-wuu, dcm-1yo): a wind direction
+ * is read from the use's option `choices[direction.choice]` (Hurricane: one of the eight map directions).
+ */
+export function instanceModFields(mods: readonly (ResolvedMod | Mod)[], choices?: Readonly<Record<string, readonly string[]>>): ModFields {
+  const out: ModFields = {};
+  const sum = (stat: string) => mods.reduce((s, m) => s + (m.kind === "stat" && m.stat === stat && typeof m.delta === "number" ? m.delta : 0), 0);
+  for (const [stat, field] of [["difficulty", "difficulty"], ["attack", "attack"], ["damage", "damage"], ["hpMarked", "hpMarked"]] as const) {
+    const delta = sum(stat);
+    if (delta !== 0) out[field] = delta;
+  }
+  if (mods.some((m) => m.kind === "flag" && m.flag === "halfDamage")) out.halfDamage = true;
+  if (mods.some((m) => m.kind === "disadvantage")) out.disadvantage = true;
+  for (const m of mods) {
+    if (m.kind === "standardAttack") out.standardAttack = { name: m.name.slice(0, 80), range: m.range, damage: printedDamage(m) };
+    if (m.kind === "features") {
+      if (m.remove && m.remove.length > 0) out.featuresRemoved = [...m.remove].slice(0, 20);
+      if (m.add && m.add.length > 0) out.featuresAdded = [...m.add].slice(0, 20);
+      if (m.removeOptions && m.removeOptions.length > 0) out.optionsRemoved = m.removeOptions.map((o) => ({ feature: o.feature.slice(0, 80), choose: o.choose.slice(0, 40), option: o.option.slice(0, 40) })).slice(0, 20);
+    }
+    if (m.kind === "forcedMoveReduce") out.forcedMoveReduce = (out.forcedMoveReduce ?? 0) + Math.max(0, Math.trunc(m.steps));
+    if (m.kind === "moveLimit") {
+      const direction = m.direction ? choices?.[m.direction.choice]?.[0] : undefined;
+      out.moveLimit = { ...(m.maxRange ? { maxRange: m.maxRange } : {}), ...(direction ? { direction: direction.slice(0, 20) } : {}), ...(m.text ? { text: m.text.slice(0, 200) } : {}) };
+    }
+  }
+  return out;
+}
+
+/** The next free id under `key` (`<key>:<n>`). */
+function nextEffectId(existing: readonly InstanceEffect[], key: string): string {
+  let n = 1;
+  while (existing.some((e) => e.id === `${key}:${n}`) && n < 99) n++;
+  return `${key}:${n}`;
+}
+
+/**
+ * Lane E7, round 2 (dcm-gx3): the instance modifier an adversary feature's `effect` step on itself or an ally becomes
+ * (`instanceModFields`). The id names the feature (`adv:<adversaryId>/<feature>:<n>`) so its riders can be read back from
+ * the entry (`instanceBearerRiders`). Round 3: `choices` resolves a `moveLimit` wind direction; `endsOn` / `endFear` kept.
+ */
+export function adversaryInstanceEffect(
+  existing: readonly InstanceEffect[],
+  adversaryId: string,
+  feature: string,
+  step: Extract<PlanStep, { kind: "effect" }>,
+  choices?: Readonly<Record<string, readonly string[]>>,
+): InstanceEffect[] {
+  const effect: InstanceEffect = { id: nextEffectId(existing, `adv:${adversaryId}/${feature}`), source: feature.slice(0, 80), label: step.label.slice(0, 120), until: INSTANCE_UNTIL[step.duration], ...instanceModFields(step.mods, choices) };
+  if (step.endsOn && step.endsOn.length > 0) effect.endsOn = [...step.endsOn].slice(0, 10);
+  if (step.endFear !== undefined) effect.endFear = step.endFear;
+  // `replace` stacking (dcm-kkx): an older copy with this label goes first.
+  const kept = step.stacking === "replace" ? existing.filter((e) => e.label !== effect.label) : existing;
+  return [...kept, effect].slice(-INSTANCE_EFFECTS_MAX);
+}
+
+/** A condition plan step as `conditionInstanceEffect` reads it (the card runner's step, or E7's `conditionDetails`). */
+export type ConditionFields = {
+  condition: ConditionRef;
+  mods?: readonly (ResolvedMod | Mod)[];
+  endsOn?: readonly string[];
+  endsOnCaster?: readonly string[];
+  endsOnRoll?: RollEnd;
+  escape?: Escape;
+  recorded?: number;
+  endFear?: number;
+};
+
+/** A condition's name as an instance stores it (a standard condition or the tag). */
+const conditionName = (c: ConditionRef): string => (c.kind === "standard" ? c.condition : c.tag);
+
+/**
+ * Lane E7 round 3 (dcm-f70y, dcm-iedr, dcm-b77): the instance modifier a condition with entry fields becomes, so the
+ * engine reads its mods (a tag's Difficulty change, a moveLimit) and its ends while the condition lasts. `key` names the
+ * source (`adv:<adversaryId>/<feature>` or `card:<cardId>`); `casterId` is who gave it. Null when the condition carries
+ * nothing beyond its name (the stored condition / tag is enough). Exported for the card runner (E4 writes a card's
+ * conditions on instances through it).
+ */
+export function conditionInstanceEffect(existing: readonly InstanceEffect[], key: string, source: string, casterId: string, d: ConditionFields, choices?: Readonly<Record<string, readonly string[]>>): InstanceEffect[] | null {
+  const fields = instanceModFields(d.mods ?? [], choices);
+  const escape = d.escape
+    ? {
+        ...(d.escape.trait !== undefined ? { traits: [d.escape.trait].flat().map(String) } : {}),
+        ...(d.escape.difficulty?.kind === "fixed" ? { difficulty: d.escape.difficulty.value } : {}),
+        ...(d.escape.attack ? { attack: true } : {}),
+      }
+    : undefined;
+  const endsOnRoll = d.endsOnRoll ? { roll: String(d.endsOnRoll.roll), ...(d.endsOnRoll.by ? { by: d.endsOnRoll.by } : {}), ...(d.endsOnRoll.result ? { result: d.endsOnRoll.result } : {}) } : undefined;
+  const has = Object.keys(fields).length > 0 || (d.endsOn?.length ?? 0) > 0 || escape !== undefined || endsOnRoll !== undefined || (d.endsOnCaster?.length ?? 0) > 0 || d.recorded !== undefined || d.endFear !== undefined;
+  if (!has) return null;
+  const name = conditionName(d.condition);
+  const effect: InstanceEffect = {
+    id: nextEffectId(existing, key),
+    source: source.slice(0, 80),
+    label: name.slice(0, 120),
+    until: "temporary",
+    condition: name.slice(0, 80),
+    casterId,
+    ...fields,
+    ...(d.endsOn && d.endsOn.length > 0 ? { endsOn: [...d.endsOn].slice(0, 10) } : {}),
+    ...(d.endsOnCaster && d.endsOnCaster.length > 0 ? { endsOnCaster: [...d.endsOnCaster].slice(0, 10) } : {}),
+    ...(endsOnRoll ? { endsOnRoll } : {}),
+    ...(escape ? { escape } : {}),
+    ...(d.recorded !== undefined ? { recorded: d.recorded } : {}),
+    ...(d.endFear !== undefined ? { endFear: d.endFear } : {}),
+  };
+  // One modifier per condition and source: a second copy replaces the first.
+  const kept = existing.filter((e) => !(e.condition === effect.condition && e.id.startsWith(`${key}:`)));
+  return [...kept, effect].slice(-INSTANCE_EFFECTS_MAX);
+}
+
+/** Lane E7 round 3: modifiers that belong to a condition the instance no longer has go with it. */
+export function withoutClearedConditions(effects: readonly InstanceEffect[], conditions: readonly string[], tags: readonly string[]): InstanceEffect[] {
+  const held = new Set([...conditions, ...tags]);
+  return effects.filter((e) => e.condition === undefined || held.has(e.condition));
+}
+
+// ---------------------------------------------------------------- plan lanes-2 E7.4 (dcm-thwj): instance condition ends
+
+/**
+ * The ends a stored condition modifier carries (`conditionInstanceEffect`), as the sheet ends read them; undefined for a
+ * modifier tied to no condition or carrying no end. Stored names are `EndEvent` / `RollFilter` / `RollResult` strings.
+ */
+export function instanceEffectEnds(e: InstanceEffect): EffectEnds | undefined {
+  if (e.condition === undefined) return undefined;
+  const ends: EffectEnds = {
+    ...(e.endsOn && e.endsOn.length > 0 ? { endsOn: e.endsOn as EndEvent[] } : {}),
+    ...(e.endsOnCaster && e.endsOnCaster.length > 0 ? { endsOnCaster: e.endsOnCaster as EndEvent[] } : {}),
+    ...(e.endsOnRoll
+      ? { endsOnRoll: { roll: e.endsOnRoll.roll as RollEnd["roll"], ...(e.endsOnRoll.by ? { by: e.endsOnRoll.by } : {}), ...(e.endsOnRoll.result ? { result: e.endsOnRoll.result as RollResult } : {}) } }
+      : {}),
+  };
+  return Object.keys(ends).length > 0 ? ends : undefined;
+}
+
+/** What an instance holds that a condition end changes. */
+export type InstanceConditionState = { effects: readonly InstanceEffect[]; conditions: readonly string[]; tags: readonly string[] };
+
+/**
+ * The instance after `occ` (plan lanes-2 E7.4, dcm-thwj; dcm-iedr stored the fields). `role: "bearer"`: its own condition
+ * modifiers whose `endsOn` / bearer `endsOnRoll` hold (it took damage, it rolled). `role: "caster"` with `casterId`: the
+ * modifiers that creature gave it whose `endsOnCaster` / caster `endsOnRoll` hold ("until the caster takes Severe
+ * damage"). Each ended modifier takes its condition or tag with it unless another modifier still holds it. `ended`: the
+ * condition names that went. Pure; callers write and log it (undo puts the before-state back).
+ */
+export function endInstanceConditions(state: InstanceConditionState, occ: EndOccurrence, opts: { role: EndRole; casterId?: string }): InstanceConditionState & { ended: string[] } {
+  const gone: InstanceEffect[] = [];
+  for (const e of state.effects) {
+    if (opts.role === "caster" && (e.casterId === undefined || e.casterId !== opts.casterId)) continue;
+    const ends = instanceEffectEnds(e);
+    if (ends !== undefined && endsOnOccurrence(ends, occ, opts.role)) gone.push(e);
+  }
+  if (gone.length === 0) return { ...state, ended: [] };
+  const ids = new Set(gone.map((e) => e.id));
+  const effects = state.effects.filter((e) => !ids.has(e.id));
+  const stillHeld = new Set(effects.flatMap((e) => (e.condition === undefined ? [] : [e.condition])));
+  const ended = [...new Set(gone.flatMap((e) => (e.condition === undefined ? [] : [e.condition])))].filter((c) => !stillHeld.has(c));
+  const drop = new Set(ended);
+  return { effects, conditions: state.conditions.filter((c) => !drop.has(c)), tags: state.tags.filter((t) => !drop.has(t)), ended };
+}
+
+/**
+ * The made roll of an adversary's own action as an end reads it (its attack roll, or a feature's action roll): `success`
+ * is the roll's result (an attack: it hit a target). An adversary rolls a d20, so no Duality Die applies.
+ */
+export function adversaryEndRoll(input: { attack: boolean; success: boolean }): EndRoll {
+  return { kind: "action", ...(input.attack ? { attack: "other" as const } : {}), success: input.success };
+}
+
+/**
+ * Lane E7 round 3 (dcm-3ag5, Transform, HF p.142-143): the `changeForm` modifier: the instance now uses the SRD stat
+ * block `adversaryId` (its marked HP and Stress stay). Replaces an earlier form modifier.
+ */
+export function formInstanceEffect(existing: readonly InstanceEffect[], adversaryId: string, feature: string): InstanceEffect[] {
+  const def = SRD_BY_ID.get(adversaryId);
+  const kept = existing.filter((e) => e.form === undefined);
+  const effect: InstanceEffect = { id: nextEffectId(kept, `form:${feature}`.slice(0, 80)), source: feature.slice(0, 80), label: `Form: ${def?.name ?? adversaryId}`.slice(0, 120), until: "permanent", form: adversaryId };
+  return [...kept, effect].slice(-INSTANCE_EFFECTS_MAX);
+}
+
+/** The SRD stat block an instance's latest `form` modifier names (Transform), or undefined. */
+export function formOf(instance: Pick<Doc<"encounterAdversaries">, "effects">): AdversaryDef | undefined {
+  const form = [...(instance.effects ?? [])].reverse().find((e) => e.form !== undefined)?.form;
+  return form === undefined ? undefined : SRD_BY_ID.get(form);
+}
+
+/**
+ * Lane E7 round 3: the instance's numbers as the engine reads them: its stored stats, or under a `form` modifier the
+ * form's stat block (Difficulty, thresholds, HP and Stress maximums; marks are kept).
+ */
+export function instanceStatsOf(instance: Pick<Doc<"encounterAdversaries">, "effects" | "stats">): Doc<"encounterAdversaries">["stats"] {
+  const def = formOf(instance);
+  if (def === undefined) return instance.stats;
+  return { difficulty: def.difficulty, major: def.thresholds.major, severe: def.thresholds.severe, hpMax: def.hp, stressMax: def.stress ?? 0 };
+}
+
+/** The steps of the entry a lasting effect came from: an adversary feature (`<adversaryId>/<feature>`) or a card / PC feature. */
+function entrySteps(source: { adversaryId: string; feature: string } | { sourceId: string }): readonly unknown[] {
+  if ("adversaryId" in source) return (adversaryEffects(source.adversaryId).find((e) => e.feature === source.feature)?.uses ?? []).map((u) => u.steps);
+  // E6 (dcm-i2tv): a lookup can return the whole entry; walk its upgrades' options too.
+  const entry = srdUses(source.sourceId);
+  if (entry === undefined) return [];
+  if (Array.isArray(entry)) return entry.map((u) => u.steps);
+  const whole = entry as { uses: readonly { steps: unknown }[]; upgrades?: readonly unknown[] };
+  return [...whole.uses.map((u) => u.steps), ...(whole.upgrades ?? [])];
+}
+
+type LastingMods = { label: string; source: string; adversaryId?: string; mods: readonly Mod[] };
+
+/** Every sheet effect's entry mods (dcm-xyw, dcm-yd5h): adversary features' tags and conditions, cards' effects. */
+function sheetLasting(sheet: Pick<CharacterSheet, "effects">): LastingMods[] {
+  const out: LastingMods[] = [];
+  for (const e of sheet.effects) {
+    const label = e.text.split("; ")[0] ?? "";
+    const adv = ADVERSARY_SHEET_EFFECT.exec(e.id);
+    if (adv) {
+      out.push({ label, source: e.source, adversaryId: adv[1]!, mods: lastingModsOf(entrySteps({ adversaryId: adv[1]!, feature: adv[2]! }), label) });
+      continue;
+    }
+    const src = effectSource(e);
+    if (src) out.push({ label, source: e.source, mods: lastingModsOf(entrySteps({ sourceId: src.sourceId }), src.label) });
+  }
+  return out;
+}
+
+/**
+ * Lane E7, round 2 (dcm-xyw, dcm-yd5h, dcm-51s, dcm-346): the `attackedRider`s an adversary's attack on this PC gets
+ * from what the PC carries (Mark Target's mark, Chokehold's Vulnerable, Breaking Blow). `by`: `anyone` always; `caster`
+ * when the rider came from this adversary's stat block; `others` when it didn't; `pcs` never (an adversary attacks).
+ */
+export function attackedRidersOn(sheet: Pick<CharacterSheet, "effects">, attackerAdversaryId: string): AttackedRider[] {
+  const out: AttackedRider[] = [];
+  for (const l of sheetLasting(sheet)) {
+    const own = l.adversaryId === attackerAdversaryId;
+    for (const m of l.mods) {
+      if (m.kind !== "attackedRider") continue;
+      const r = m.rider;
+      if (r.by === "anyone" || (r.by === "caster" && own) || (r.by === "others" && !own)) out.push(r);
+    }
+  }
+  return out;
+}
+
+/**
+ * Lane E7, round 2 (dcm-mm0f, adversary half; dcm-f0m, dcm-bxp.99.19.3): the `bearerRider`s on what this instance
+ * carries (a card's On Fire or Poisoned, an adversary feature's modifier) that fire on `on`. The steps are the entry's;
+ * the server turns them into GM prompts.
+ */
+export function instanceBearerRiders(instance: Pick<Doc<"encounterAdversaries">, "effects" | "tags">, on: readonly BearerRider["on"][]): { label: string; source: string; rider: BearerRider }[] {
+  const out: { label: string; source: string; rider: BearerRider }[] = [];
+  const seen = new Set<string>();
+  for (const e of instance.effects ?? []) {
+    const adv = ADVERSARY_INSTANCE_EFFECT.exec(e.id);
+    const src = adv ? null : instanceEffectSource(e);
+    const steps = adv ? entrySteps({ adversaryId: adv[1]!, feature: adv[2]! }) : src ? entrySteps({ sourceId: src.sourceId }) : [];
+    seen.add(e.label);
+    for (const m of lastingModsOf(steps, e.label)) if (m.kind === "bearerRider" && on.includes(m.rider.on)) out.push({ label: e.label, source: e.source, rider: m.rider });
+  }
+  // A card's tag on an enemy (Cinder Grasp's On Fire) is stored as the tag alone: its riders come from the entry
+  // that gives a tag of that name.
+  for (const tag of instance.tags ?? []) {
+    if (seen.has(tag)) continue;
+    const found = tagEntry(tag);
+    if (found) for (const m of found.mods) if (m.kind === "bearerRider" && on.includes(m.rider.on)) out.push({ label: tag, source: found.source, rider: m.rider });
+  }
+  return out;
+}
+
+let TAG_ENTRIES: Map<string, { source: string; mods: readonly Mod[] }> | null = null;
+
+/** The first SRD entry (card, PC feature, adversary feature) that gives a tag of this name with mods, cached. */
+function tagEntry(tag: string): { source: string; mods: readonly Mod[] } | undefined {
+  if (TAG_ENTRIES === null) {
+    const map = new Map<string, { source: string; mods: readonly Mod[] }>();
+    const add = (source: string, uses: readonly { steps: readonly unknown[] }[]) => {
+      for (const [name, step] of conditionStepsOf(uses.map((u) => u.steps))) {
+        if (step.condition.kind === "tag" && step.mods && step.mods.length > 0 && !map.has(name)) map.set(name, { source, mods: step.mods });
+      }
+    };
+    for (const e of allCardEffects().values()) add(e.cardId, e.uses);
+    for (const e of allFeatureEffects().values()) add(e.featureId, e.uses);
+    for (const list of allAdversaryEffects().values()) for (const e of list) add(e.feature, e.uses);
+    TAG_ENTRIES = map;
+  }
+  return TAG_ENTRIES.get(tag);
+}
+
+/** Plan lanes-2 E7.4: what a bearer rider does to its own bearer, when the server can run every step of it. */
+export type SelfRiderSteps = { damage: { count: number; sides: number; plus: number; type: "physical" | "magic"; direct: boolean }[]; stress: number; hp: number };
+
+/**
+ * Plan lanes-2 E7.4 (dcm-mm0f adversary half, dcm-0wj1, dcm-f0m, dcm-bxp.99.19.3, dcm-kti): a bearer rider whose steps
+ * all land on the bearer itself with fixed numbers (Cinder Grasp's On Fire, CB p.328: "an extra 2d6 magic damage";
+ * Poisoned, CB p.32-33: "1d10 direct physical damage each time they act"; a Stress per action): the server runs them.
+ * Null when any step is something else (a choice, a roll, another creature, a non-fixed number): the GM keeps the prompt.
+ * Costs on the rider (a Hope to act, Shadow Shackles) are the PC's and keep the prompt too.
+ */
+export function selfRiderSteps(rider: BearerRider): SelfRiderSteps | null {
+  if ((rider.costs?.length ?? 0) > 0 || rider.roll !== undefined) return null;
+  const out: SelfRiderSteps = { damage: [], stress: 0, hp: 0 };
+  const fixed = (n: NumberSource | undefined, fallback: number) => (n === undefined ? fallback : n.kind === "fixed" ? n.value : null);
+  for (const s of rider.steps) {
+    if (!("to" in s) || s.to !== "self" || ("when" in s && s.when !== undefined)) return null;
+    if (s.kind === "damage") {
+      if (s.roll?.kind !== "dice" || (s.type !== "physical" && s.type !== "magic")) return null;
+      const d = s.roll.dice as { count: NumberSource; sides?: number; plus?: NumberSource };
+      const count = fixed(d.count, 1);
+      const plus = fixed(d.plus, 0);
+      if (count === null || plus === null || d.sides === undefined) return null;
+      out.damage.push({ count, sides: d.sides, plus, type: s.type, direct: s.direct === true });
+    } else if (s.kind === "markStress" || s.kind === "markHp") {
+      const n = fixed(s.amount, 1);
+      if (n === null || s.distribution === "split") return null;
+      if (s.kind === "markStress") out.stress += n;
+      else out.hp += n;
+    } else return null;
+  }
+  return out.damage.length > 0 || out.stress > 0 || out.hp > 0 ? out : null;
+}
+
+/** A short line for a rider's steps (a GM prompt): the step kinds, with the dice of a damage step when they are fixed. */
+export function riderStepsText(steps: readonly Step[]): string {
+  return steps
+    .map((s) => {
+      if (s.kind === "damage" && s.roll && s.roll.kind === "dice") {
+        const d = s.roll.dice as { count: NumberSource; sides?: number; plus?: NumberSource };
+        const plus = fixedOr(d.plus, 0);
+        return d.sides === undefined ? "damage" : `${fixedOr(d.count, 1)}d${d.sides}${plus ? `+${plus}` : ""} ${s.type ?? ""} damage`.replace(/\s+/g, " ").trim();
+      }
+      if (s.kind === "markHp" || s.kind === "markStress") return `mark ${"amount" in s ? fixedOr(s.amount as NumberSource | undefined, 1) : 1} ${s.kind === "markHp" ? "HP" : "Stress"}`;
+      return s.kind;
+    })
+    .join(", ");
+}
+
+/**
+ * Lane E7, round 2 (dcm-e16o, dcm-ttz, dcm-8rh): the creatures `creatureCount` counts, seen from `selfId`. With the live
+ * map: every token there, with its squares to the adversary (`fromSelf`) and to the first target (`fromTarget`).
+ * Without one (Q18): the party PCs and the encounter's undefeated instances, with no distances.
+ */
+export function mapCreatures(
+  selfId: string,
+  instances: readonly Pick<Doc<"encounterAdversaries">, "_id" | "defeated" | "source" | "label">[],
+  party: readonly { character: { _id: string } }[],
+  map: { tokens: readonly Doc<"combatTokens">[]; self: Doc<"combatTokens">; target?: Doc<"combatTokens"> } | null,
+): MapCreature[] {
+  const nameOf = (i: Pick<Doc<"encounterAdversaries">, "source" | "label">) => (i.source.kind === "srd" ? (SRD_BY_ID.get(i.source.adversaryId)?.name ?? i.label) : i.label);
+  if (map === null) {
+    return [
+      ...party.map((m): MapCreature => ({ id: m.character._id, side: "enemy", pc: true })),
+      ...instances.filter((i) => !i.defeated).map((i): MapCreature => ({ id: i._id, side: i._id === selfId ? "self" : "ally", pc: false, name: nameOf(i) })),
+    ];
+  }
+  const out: MapCreature[] = [];
+  for (const t of map.tokens) {
+    const distances = { fromSelf: tokenDistance(map.self, t), ...(map.target ? { fromTarget: tokenDistance(map.target, t) } : {}) };
+    if (t.ref.kind === "pc") out.push({ id: t.ref.characterId, side: "enemy", pc: true, ...distances });
+    else if (t.ref.kind === "adversary") {
+      const id = t.ref.adversaryId;
+      const inst = instances.find((i) => i._id === id);
+      if (inst === undefined || inst.defeated) continue;
+      out.push({ id, side: id === selfId ? "self" : "ally", pc: false, name: nameOf(inst), ...distances });
+    }
+  }
+  return out;
+}
+
+/** Lane E7, round 2 (dcm-idz; user answer 2026-10-31): the tag a GM-controlled PC carries. */
+export const GM_CONTROLLED = "GM-controlled";
+
+/**
+ * Lane E7, round 2 (dcm-idz): whether the GM controls this PC now (Enthralled, HF p.92; Weredrake Curse, HF p.143): an
+ * effect labelled `GM-controlled`, or one whose entry carries `Mod gmControl`. `asAdversary`: the stat block the PC uses
+ * meanwhile (the Weredrake's), when the entry names one. Null when not controlled.
+ */
+export function gmControlOf(sheet: Pick<CharacterSheet, "effects">): { asAdversary?: AdversaryDef } | null {
+  let controlled = sheet.effects.some((e) => (e.text.split("; ")[0] ?? "") === GM_CONTROLLED);
+  let asAdversary: AdversaryDef | undefined;
+  for (const l of sheetLasting(sheet)) {
+    for (const m of l.mods) {
+      if (m.kind !== "gmControl") continue;
+      controlled = true;
+      const def = m.asAdversary === undefined ? undefined : (SRD_BY_ID.get(m.asAdversary) ?? ADVERSARIES.find((a) => a.name === m.asAdversary));
+      if (def) asAdversary = def;
+    }
+  }
+  return controlled ? (asAdversary ? { asAdversary } : {}) : null;
 }

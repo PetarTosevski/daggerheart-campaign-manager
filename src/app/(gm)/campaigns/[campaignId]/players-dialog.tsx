@@ -103,7 +103,7 @@ export function PlayersDialog({
           </BrandButton>
         </form>
         <p className="m-0 text-[13px] text-subtle">
-          Email invites work for accounts that sign in with Google. Players who use a password should join with the code above.
+          The player gets an email with a sign-in link. The campaign appears once they sign in or sign up with that address, with Google or a verified password account.
         </p>
         {access?.invites.length ? (
           <ul className="m-0 flex list-none flex-col gap-1.5 p-0">

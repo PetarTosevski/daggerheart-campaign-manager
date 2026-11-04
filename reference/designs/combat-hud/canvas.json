@@ -1,0 +1,158 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "CmpBlocked.dc.html": {
+      "h": 1350,
+      "title": "Component \u00b7 Blocked & cost states",
+      "w": 1440,
+      "x": 7600,
+      "y": 2800
+    },
+    "CmpCards.dc.html": {
+      "h": 2210,
+      "title": "Component \u00b7 Cards & hand",
+      "w": 1440,
+      "x": 0,
+      "y": 2800
+    },
+    "CmpPicking.dc.html": {
+      "h": 1400,
+      "title": "Component \u00b7 One way to pick",
+      "w": 1440,
+      "x": 3040,
+      "y": 2800
+    },
+    "CmpPromptsGM.dc.html": {
+      "h": 1140,
+      "title": "Component \u00b7 Prompts \u00b7 GM",
+      "w": 1440,
+      "x": 6080,
+      "y": 2800
+    },
+    "CmpPromptsPlayer.dc.html": {
+      "h": 1250,
+      "title": "Component \u00b7 Prompts \u00b7 player",
+      "w": 1440,
+      "x": 4560,
+      "y": 2800
+    },
+    "CmpTokens.dc.html": {
+      "h": 3230,
+      "title": "Component \u00b7 Tokens, banners & conditions",
+      "w": 1440,
+      "x": 1520,
+      "y": 2800
+    },
+    "CmpTokensDesign.dc.html": {
+      "h": 1440,
+      "title": "Component \u00b7 Design tokens",
+      "w": 1440,
+      "x": 9120,
+      "y": 2800
+    },
+    "GMDesktop.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "title": "GM \u00b7 Desktop 1440 \u00b7 interactive",
+      "w": 1440,
+      "x": 0,
+      "y": 1400
+    },
+    "GMTablet.dc.html": {
+      "h": 768,
+      "is_interactive": true,
+      "title": "GM \u00b7 Tablet 1024 \u00b7 interactive",
+      "w": 1024,
+      "x": 1520,
+      "y": 1400
+    },
+    "Main.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "title": "Player \u00b7 Desktop 1440 \u00b7 interactive",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
+    "PlayerPhone.dc.html": {
+      "h": 940,
+      "title": "Player \u00b7 Phone 390",
+      "w": 1800,
+      "x": 2624,
+      "y": 0
+    },
+    "PlayerTablet.dc.html": {
+      "h": 768,
+      "is_interactive": true,
+      "title": "Player \u00b7 Tablet 1024 \u00b7 interactive",
+      "w": 1024,
+      "x": 1520,
+      "y": 0
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-11-01T17:11:43Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "noteOrder": [
+    "tPlayer",
+    "tGM",
+    "tCmp",
+    "sHow"
+  ],
+  "notes": {
+    "sHow": {
+      "fill": "teal",
+      "size": 24,
+      "text": "Preview boxes on the interactive boards switch states for review only; they are not part of the HUD. Click banners and tokens to open sheets (and stat blocks on the GM view). HANDOFF.md in the project files is the brief for Claude Code.",
+      "w": 520,
+      "x": 2624,
+      "y": 1400
+    },
+    "tCmp": {
+      "kind": "title1",
+      "maxW": 8000,
+      "text": "Components & system",
+      "w": 240,
+      "x": 0,
+      "y": 2500
+    },
+    "tGM": {
+      "kind": "title1",
+      "maxW": 2544,
+      "text": "GM view",
+      "w": 240,
+      "x": 0,
+      "y": 1100
+    },
+    "tPlayer": {
+      "kind": "title1",
+      "maxW": 4424,
+      "text": "Player view",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "PlayerTablet.dc.html",
+    "PlayerPhone.dc.html",
+    "GMDesktop.dc.html",
+    "GMTablet.dc.html",
+    "CmpCards.dc.html",
+    "CmpTokens.dc.html",
+    "CmpPicking.dc.html",
+    "CmpPromptsPlayer.dc.html",
+    "CmpPromptsGM.dc.html",
+    "CmpBlocked.dc.html",
+    "CmpTokensDesign.dc.html"
+  ],
+  "pages": [],
+  "title": "Combat HUD"
+}

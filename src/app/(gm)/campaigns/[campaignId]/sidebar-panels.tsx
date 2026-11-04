@@ -13,8 +13,8 @@ import { useCampaign, useOpenTome } from "./campaign-shell";
 export function TomePanel() {
   const openTome = useOpenTome();
   return (
-    <section aria-labelledby="tome-h" className="flex flex-col gap-2.5 rounded-[14px] bg-[#efe3c8] p-5 text-[#2a1f14]">
-      <h2 id="tome-h" className="m-0 font-display text-[22px] font-bold">
+    <section aria-labelledby="tome-h" className="flex flex-col gap-2.5 rounded-[14px] border border-[#2a3a40] bg-[#141e22] p-5">
+      <h2 id="tome-h" className="m-0 font-display text-[22px] font-bold text-parchment">
         Campaign Tome
       </h2>
       {TOME_CHAPTERS.map((c) => (
@@ -22,9 +22,9 @@ export function TomePanel() {
           key={c.id}
           type="button"
           onClick={() => openTome(c.id)}
-          className="flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border border-[#cdb88f] bg-[#e3d2ad] px-3 text-left font-serif text-[19px] hover:brightness-105"
+          className="flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border border-[#33444a] bg-[#1a262b] px-3 text-left font-serif text-[19px] text-[#e6ecea] hover:bg-white/5"
         >
-          <span className="w-7 font-display text-[#8e2b2b]">{c.numeral}</span>
+          <span className="w-7 font-display text-[#e3b45a]">{c.numeral}</span>
           {c.title}
         </button>
       ))}

@@ -17,6 +17,7 @@ import { noteMessages } from "./notes";
 import { photoImportMessages } from "./photoImport";
 import { restMessages } from "./rests";
 import { sessionMessages } from "./sessions";
+import { spotlightMessages } from "./spotlight";
 import { spritePackMessages } from "./spritePacks";
 import { witherMessages } from "./wither";
 
@@ -44,6 +45,7 @@ export type AppErrorCode =
   | keyof typeof adversaryActionMessages
   | keyof typeof sessionMessages
   | keyof typeof spritePackMessages
+  | keyof typeof spotlightMessages
   | keyof typeof noteMessages
   | keyof typeof lorekeeperMessages
   | "IDEMPOTENCY_MISMATCH"

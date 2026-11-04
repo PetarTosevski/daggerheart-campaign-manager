@@ -6,6 +6,9 @@ import { mapStyleValidator } from "../lib/validators/combatMaps";
 
 export { customFrameValidator, frameIdValidator };
 
+/** A campaign's time of day and a map's light (dcm-bxp.54, R8): day, dim (badge) or night (lights only). */
+export const timeOfDayValidator = v.union(v.literal("day"), v.literal("dim"), v.literal("night"));
+
 export const campaignTables = {
   campaigns: defineTable({
     ownerId: v.id("users"),
@@ -35,6 +38,12 @@ export const campaignTables = {
     tome: v.optional(tomeValidator),
     /** When the GM last cleared the roll feed (`feed.clear`): the feed shows only rows after it. */
     feedClearedAt: v.optional(v.number()),
+    /**
+     * The GM's time of day (dcm-bxp.54): Day / Dim / Night, the light every map of the campaign follows. Unset = day.
+     * Not used in a frame with campaign time (the Witherwild), where the time phase decides (`lightOf`).
+     * Written by `campaigns.setTimeOfDay` only.
+     */
+    timeOfDay: v.optional(timeOfDayValidator),
   })
     .index("by_owner_deletedAt_lastOpened", ["ownerId", "deletedAt", "lastOpenedAt"])
     .index("by_owner_deletedAt_nameKey", ["ownerId", "deletedAt", "nameKey"])

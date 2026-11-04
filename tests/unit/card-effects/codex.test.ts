@@ -169,7 +169,7 @@ describe("Book of Ava (CB p.332)", () => {
 describe("Book of Illiat (CB p.332)", () => {
   it("Slumber: on a hit the target is Asleep until it takes damage or the GM spends a Fear", () => {
     const p = plan("book-of-illiat", "slumber", [9, 2], { targets: [adv("a")] });
-    expect(ofKind(p, "condition")[0]).toMatchObject({ targetId: "a", condition: { kind: "tag", tag: "Asleep" }, duration: "manual" });
+    expect(ofKind(p, "condition")[0]).toMatchObject({ targetId: "a", condition: { kind: "tag", tag: "Asleep" }, duration: "manual", endsOn: ["takeDamage", "gmSpendsFear"] });
     expect(after(p, "a")).toMatchObject({ tags: ["Asleep"] });
   });
   it("Arcane Barrage: once per rest, any Hope; that many d6 magic damage, no roll", () => {
@@ -211,9 +211,15 @@ describe("Book of Tyfar (CB p.332)", () => {
   it("Magic Hand is for the table", () => {
     expect(prompts(plan("book-of-tyfar", "magic-hand", []), "manual")).toHaveLength(1);
   });
-  it("Mysterious Mist: Spellcast (13), the fog is for the table", () => {
-    expect(prompts(plan("book-of-tyfar", "mysterious-mist", [8, 5]), "manual")).toHaveLength(1);
+  it("Mysterious Mist: Spellcast (13); the area is placed on the picked square, no reminder (lanes-2 S1.4, dcm-9nlr)", () => {
+    expect(prompts(plan("book-of-tyfar", "mysterious-mist", [8, 5]), "manual")).toHaveLength(0);
     expect(prompts(plan("book-of-tyfar", "mysterious-mist", [4, 5]), "manual")).toHaveLength(0);
+  });
+
+  it("Mysterious Mist (user answer, dcm-gzmo): a point within Very Close, Very Close radius, blocks sight", () => {
+    const p = plan("book-of-tyfar", "mysterious-mist", [8, 5]);
+    expect(ofKind(p, "area")[0]!.area).toMatchObject({ label: "Mysterious Mist", centre: "point", radius: "veryClose", placeWithin: "veryClose", side: "all", blocksSight: true, duration: "temporary" });
+    expect(ofKind(plan("book-of-tyfar", "mysterious-mist", [4, 5]), "area")).toEqual([]);
   });
 });
 
@@ -224,8 +230,15 @@ describe("Book of Sitil (CB p.332)", () => {
   it("Parallela: 2 Hope on you or an ally in Close; marks the bearer until their next attack; one creature at a time", () => {
     const p = plan("book-of-sitil", "parallela", [], { targets: [ally("mira")] });
     expect(p.actor.after.hope).toBe(0);
-    expect(ofKind(p, "effect")[0]).toMatchObject({ targetId: "mira", label: "Parallela", duration: "manual" });
-    expect(prompts(p, "manual")[0]).toMatchObject({ targetIds: ["mira"] });
+    // Lanes SRD-C1 (dcm-y3e): one extra target on the bearer's next attack, which ends the effect; no manual step.
+    expect(ofKind(p, "effect")[0]).toMatchObject({
+      targetId: "mira",
+      label: "Parallela",
+      mods: [{ kind: "extraTargets", on: "attack", count: { kind: "fixed", value: 1 } }],
+      duration: "manual",
+      endsOn: ["bearerAttacks"],
+    });
+    expect(prompts(p, "manual")).toEqual([]);
     expect(p.exclusive).toBe(true);
   });
   it("Illusion: Spellcast (14)", () => {
@@ -289,11 +302,12 @@ describe("Book of Korvax (CB p.332)", () => {
 });
 
 describe("Book of Norai (CB p.333)", () => {
-  it("Mystic Tether: on a hit temporarily Restrained and a Stress; grounding a flyer is for the table", () => {
-    const p = plan("book-of-norai", "mystic-tether", [9, 2], { targets: [adv("a")] });
+  it("Mystic Tether: on a hit temporarily Restrained and a Stress; a flyer is grounded (move ground, dcm-yzr)", () => {
+    const p = plan("book-of-norai", "mystic-tether", [9, 2], { targets: [adv("a", { flying: true })] });
     expect(ofKind(p, "condition")[0]).toMatchObject({ targetId: "a", condition: { kind: "standard", condition: "restrained" }, duration: "temporary" });
-    expect(after(p, "a")).toMatchObject({ conditions: ["restrained"], stress: 1 });
-    expect(prompts(p, "manual")).toHaveLength(1);
+    expect(after(p, "a")).toMatchObject({ conditions: ["restrained"], stress: 1, flying: false });
+    expect(prompts(p, "manual")).toEqual([]);
+    expect(prompts(p, "move")[0]).toMatchObject({ targetIds: ["a"], step: { mode: "ground" } });
     const miss = plan("book-of-norai", "mystic-tether", [2, 3], { targets: [adv("a")] });
     expect(miss.creatures).toEqual([]);
   });
@@ -356,13 +370,18 @@ describe("Book of Grynn (CB p.333)", () => {
     expect(ofKind(p, "fold")).toEqual([{ kind: "fold", step: { kind: "negate", to: "triggerSubject", what: "damage" }, targetIds: ["mira"] }]);
     expect(p.limit).toEqual({ key: "card:book-of-grynn:arcane-deflection", until: "longRest", consumed: true });
   });
-  it("Time Lock: the object stops; maintaining it is a Spellcast Roll against the creature", () => {
-    expect(prompts(plan("book-of-grynn", "time-lock", []), "manual")).toHaveLength(1);
+  it("Time Lock: the object stops until your next rest (a self effect); a failed maintain roll ends it (endEffect)", () => {
+    const lock = plan("book-of-grynn", "time-lock", []);
+    expect(prompts(lock, "manual")).toEqual([]);
+    expect(ofKind(lock, "effect")[0]).toMatchObject({ targetId: "pc", label: "Time Lock", duration: "rest" });
     const situations = ["A creature tries to move your time-locked object"];
     const hold = plan("book-of-grynn", "time-lock-maintain", [9, 2], { targets: [adv("a")], situations });
-    expect(prompts(hold, "manual").map((m) => m.text)).toEqual(["Time Lock holds: the object doesn't move."]);
+    expect(ofKind(hold, "endEffect")).toEqual([]);
+    expect(prompts(hold, "manual")).toEqual([]);
     const lose = plan("book-of-grynn", "time-lock-maintain", [2, 3], { targets: [adv("a")], situations });
-    expect(prompts(lose, "manual").map((m) => m.text)).toEqual(["Time Lock ends: the creature moves the object."]);
+    expect(ofKind(lose, "endEffect")).toEqual([{ kind: "endEffect", targetId: "pc", of: "book-of-grynn", own: true }]);
+    // Lanes-2 S1.4: the card path applies the `endEffect` (dcm-m48i), so no reminder.
+    expect(prompts(lose, "manual")).toEqual([]);
   });
   it("Wall of Flame: Spellcast (15); whatever passes through later takes 4d10+3 magic", () => {
     expect(prompts(plan("book-of-grynn", "wall-of-flame", [8, 5]), "manual")).toHaveLength(1);
@@ -401,6 +420,13 @@ describe("Manifest Wall, Teleport (CB p.333)", () => {
     expect(off.limit?.consumed).toBe(true);
     expect(refusal("teleport", "main", { choices: { familiarity: 4 } })).toMatchObject({ reason: "choice" });
   });
+  it("Teleport offers only the four printed options +3 / +1 / 0 / −2 (dcm-uyc)", () => {
+    expect(effectOf("teleport").uses[0]!.choices![0]).toMatchObject({ values: [3, 1, 0, -2] });
+    // Infrequently: no modifier. 6 + 5 + 3 + 0 = 14.
+    expect(plan("teleport", "main", [6, 5], { choices: { familiarity: 0 } }).roll?.record.total).toBe(14);
+    expect(plan("teleport", "main", [6, 5], { choices: { familiarity: 1 } }).roll?.record.total).toBe(15);
+    for (const familiarity of [2, -1]) expect(refusal("teleport", "main", { choices: { familiarity } })).toMatchObject({ reason: "choice" });
+  });
 });
 
 describe("Banish (CB p.333)", () => {
@@ -412,6 +438,12 @@ describe("Banish (CB p.333)", () => {
     expect(ofKind(p, "condition")[0]).toMatchObject({ targetId: "a", condition: { kind: "tag", tag: "Banished" }, duration: "manual" });
     expect(p.actor.featureUses).toEqual([{ key: banishKey, until: "rest" }]);
     expect(prompts(p, "manual")).toHaveLength(1);
+  });
+  it("Lanes-2 S1 (dcm-b77): the condition records the Difficulty and carries the return save on PC Fear rolls", () => {
+    const p = plan("banish", "main", [9, 2, 4, 11, 7, 5], { targets: [adv("a")], optionals: ["banish"] });
+    const banished = ofKind(p, "condition")[0]!;
+    expect(banished).toMatchObject({ recorded: 11 });
+    expect(banished.mods).toMatchObject([{ kind: "bearerRider", rider: { on: "pcRollsWithFear" } }]);
   });
   it("a successful reaction roll marks a Stress instead", () => {
     const p = plan("banish", "main", [9, 2, 4, 11, 7, 15], { targets: [adv("a")], optionals: ["banish"] });
@@ -474,7 +506,8 @@ describe("Book of Homet, Codex-Touched, Book of Vyola (CB p.333)", () => {
     expect(refusal("codex-touched", "proficiency")).toMatchObject({ reason: "requirement" });
     const swap = plan("codex-touched", "swap", [], { actor: four });
     expect(swap.limit).toEqual({ key: "card:codex-touched:swap", until: "rest", consumed: true });
-    expect(prompts(swap, "manual")).toHaveLength(1);
+    // Lanes SRD-C1 (dcm-p1r): a `loadout` swapWithVault step (the server swaps with the card the Hand names).
+    expect(prompts(swap, "manual").map((m) => m.step)).toEqual([expect.objectContaining({ kind: "loadout", op: "swapWithVault" })]);
   });
   it("Memory Delve: Spellcast vs a target in Far; the question is for the GM", () => {
     expect(prompts(plan("book-of-vyola", "memory-delve", [9, 2], { targets: [adv("a")] }), "manual")).toHaveLength(1);
@@ -489,13 +522,15 @@ describe("Book of Homet, Codex-Touched, Book of Vyola (CB p.333)", () => {
     ]);
     expect(p.limit).toEqual({ key: "card:book-of-vyola:shared-clarity", until: "longRest", consumed: true });
     expect(refusal("book-of-vyola", "shared-clarity", { targets: [ally("a"), ally("b"), ally("c")] })).toMatchObject({ reason: "targets" });
+    // Lanes SRD-C1 (dcm-d7h): exactly two; the server refuses fewer than the minimum.
+    expect(effectOf("book-of-vyola").uses.find((u) => u.id === "shared-clarity")!.targets).toMatchObject({ count: { kind: "upTo", n: { kind: "fixed", value: 2 }, min: 2 } });
   });
 });
 
 describe("Book of Ronin, Disintegration Wave, Book of Yarrow, Transcendent Union (CB p.334)", () => {
   it("Transform: Spellcast (15); you stay an object until you take damage", () => {
     const p = plan("book-of-ronin", "transform", [8, 5]);
-    expect(ofKind(p, "effect")[0]).toMatchObject({ targetId: "pc", label: "Transformed", duration: "manual" });
+    expect(ofKind(p, "effect")[0]).toMatchObject({ targetId: "pc", label: "Transformed", duration: "manual", endsOn: ["takeDamage"] });
   });
   it("Eternal Enervation: once per long rest (spent even on a miss); on a hit permanently Vulnerable", () => {
     const p = plan("book-of-ronin", "eternal-enervation", [9, 2], { targets: [adv("a")] });
@@ -522,6 +557,9 @@ describe("Book of Ronin, Disintegration Wave, Book of Yarrow, Transcendent Union
     const p = plan("book-of-yarrow", "timejammer", [9, 6], { targets: [adv("a"), ally("mira")] });
     expect(ofKind(p, "condition").map((c) => c.targetId)).toEqual(["a", "mira"]);
     expect(ofKind(p, "condition")[0]).toMatchObject({ condition: { tag: "Time-Stopped" }, duration: "manual" });
+    // Lanes SRD-C1 (dcm-cwh): the caster's next action roll that targets another creature ends it.
+    const step = effectOf("book-of-yarrow").uses.find((u) => u.id === "timejammer")!.steps[0];
+    expect(step).toMatchObject({ kind: "condition", endsOnRoll: { roll: "action", by: "caster", targetsCreature: true } });
   });
   it("Magic Immunity: 5 Hope, immune to magic damage until your next rest", () => {
     const p = plan("book-of-yarrow", "magic-immunity", [], { actor: actor({ hope: 5 }) });
@@ -534,5 +572,7 @@ describe("Book of Ronin, Disintegration Wave, Book of Yarrow, Transcendent Union
     expect(p.actor.after.hope).toBe(0);
     expect(ofKind(p, "effect").map((e) => e.targetId)).toEqual(["mira", "tao"]);
     expect(p.limit).toEqual({ key: "card:transcendent-union", until: "longRest", consumed: true });
+    // Lanes SRD-C1 (dcm-d7h): "two or more".
+    expect(effectOf("transcendent-union").uses[0]!.targets).toMatchObject({ count: { kind: "any", min: 2 } });
   });
 });

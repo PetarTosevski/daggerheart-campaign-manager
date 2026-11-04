@@ -1,0 +1,254 @@
+/* Journal session log (JL). Tokens and shared classes: ../journal.css. */
+
+.jl-caption {
+  font-size: 12.5px;
+  color: var(--jr-muted);
+  text-align: right;
+}
+
+.jl-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+
+.jl-row {
+  display: grid;
+  grid-template-columns: 44px 32px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--jr-card-border);
+}
+.jl-row:last-child {
+  border-bottom: 0;
+}
+/* Hidden lines: struck through and muted, without opacity (text keeps its contrast, axe). */
+.jl-row[data-hidden="true"] .jl-title {
+  color: var(--jr-muted);
+  text-decoration: line-through;
+}
+.jl-row[data-hidden="true"] .jl-icon {
+  opacity: 0.5;
+}
+
+.jl-time {
+  padding-top: 6px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--jr-muted);
+}
+
+.jl-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--jr-field);
+  border: 1px solid var(--jr-card-border);
+  color: var(--jr-acc);
+}
+.jl-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.jl-icon[data-icon="fear"],
+.jl-icon[data-icon="gmRoll"],
+.jl-icon[data-icon="countdown"] {
+  color: #c4a7ff;
+}
+.jl-icon[data-icon="combatBegan"],
+.jl-icon[data-icon="combatEnded"],
+.jl-icon[data-icon="adversary"],
+.jl-icon[data-icon="death"] {
+  color: var(--jr-combat);
+}
+.jl-icon[data-icon="note"] {
+  color: var(--jr-muted);
+}
+
+.jl-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.jl-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--jr-text);
+  overflow-wrap: anywhere;
+}
+.jl-title-btn {
+  align-self: flex-start;
+  min-height: 32px;
+  margin: 0 -6px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+  cursor: text;
+}
+.jl-title-btn:hover {
+  background: var(--jr-hover);
+}
+.jl-title-btn:focus-visible,
+.jl-x:focus-visible,
+.jl-unhide:focus-visible,
+.jl-show:focus-visible {
+  outline: 2px solid var(--jr-acc);
+  outline-offset: 2px;
+}
+
+.jl-sub {
+  font-size: 13px;
+  color: var(--jr-muted);
+  overflow-wrap: anywhere;
+}
+.jl-tag {
+  font-style: italic;
+}
+
+.jl-edit {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  border: 1px solid var(--jr-acc);
+  background: var(--jr-field);
+  color: var(--jr-text);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.jl-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--jr-muted);
+  cursor: pointer;
+}
+.jl-x svg {
+  width: 16px;
+  height: 16px;
+}
+.jl-x:hover:not(:disabled) {
+  background: var(--jr-hover);
+  color: var(--jr-text);
+}
+.jl-x:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.jl-unhide,
+.jl-show {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--jr-border);
+  background: none;
+  color: var(--jr-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.jl-unhide:hover,
+.jl-show:hover {
+  background: var(--jr-hover);
+}
+.jl-show {
+  margin-top: 10px;
+}
+
+.jl-note {
+  margin: 10px 0 0;
+  font-size: 13px;
+}
+.jl-empty {
+  padding: 8px 0;
+}
+.jl-error {
+  margin: 10px 0 0;
+  color: var(--jr-danger);
+  font-size: 14px;
+}
+
+.jl-add {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+.jl-add-in {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 14px;
+  box-sizing: border-box;
+  border-radius: 10px;
+  border: 1px solid var(--jr-border);
+  background: var(--jr-field);
+  color: var(--jr-text);
+  font: inherit;
+  font-size: 15px;
+}
+.jl-add-in::placeholder {
+  color: var(--jr-muted);
+}
+.jl-add-in:focus-visible {
+  outline: 2px solid var(--jr-acc);
+  outline-offset: 1px;
+}
+.jl-add-btn {
+  min-height: 44px;
+}
+
+/* 44 px targets on tablets and coarse pointers (journal.css uses the same breakpoint). */
+@media (max-width: 1100px), (pointer: coarse) {
+  .jl-row {
+    grid-template-columns: 44px 32px minmax(0, 1fr) 44px;
+  }
+  .jl-x,
+  .jl-title-btn {
+    min-height: 44px;
+  }
+  .jl-x {
+    width: 44px;
+    height: 44px;
+  }
+  .jl-unhide,
+  .jl-show {
+    min-height: 44px;
+  }
+  .jl-row:has(.jl-unhide) {
+    grid-template-columns: 44px 32px minmax(0, 1fr) auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .jl-row {
+    grid-template-columns: 40px 28px minmax(0, 1fr) 44px;
+    gap: 8px;
+  }
+  .jl-icon {
+    width: 28px;
+    height: 28px;
+  }
+  .jl-caption {
+    display: none;
+  }
+}

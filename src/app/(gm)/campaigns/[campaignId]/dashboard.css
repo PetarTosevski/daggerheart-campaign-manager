@@ -32,12 +32,16 @@
 .tm-ic:hover{transform:scale(1.1)}
 .tm-ic:focus-visible,.tm-adv:focus-visible{outline:2px solid #fff;outline-offset:3px}
 @keyframes tmglow{0%,100%{box-shadow:0 0 12px 2px var(--g)}50%{box-shadow:0 0 22px 6px var(--g)}}
-.fz{position:absolute;box-sizing:border-box;padding:0;border:none;background-color:transparent;background-size:contain;background-position:center;background-repeat:no-repeat;cursor:pointer;transition:transform .15s,filter .2s}
+.fz{position:absolute;translate:-50% -50%;box-sizing:border-box;padding:0;border:none;background-color:transparent;background-size:contain;background-position:center;background-repeat:no-repeat;cursor:pointer;transition:transform .15s,filter .2s}
 .fz:hover{transform:scale(1.1)}
 .fz:focus-visible{outline:2px solid #e3d8ff;outline-offset:3px;border-radius:30%}
 .fz-on{background-image:url(/design-assets/daaa0236fefb950636d60b919dc16601.png);filter:drop-shadow(0 0 6px rgba(150,100,240,.75)) drop-shadow(0 3px 4px rgba(0,0,0,.6))}
 .fz-off{background-image:url(/design-assets/735d085e7eea18b8411e8d1f9e7162dd.png);opacity:.9;filter:drop-shadow(0 2px 3px rgba(0,0,0,.6))}
 .fz-big{display:block;background-image:url(/design-assets/daaa0236fefb950636d60b919dc16601.png);background-size:contain;background-position:center;background-repeat:no-repeat}
+/* dcm-hlj: the board's spiral is 330 px with tokens of 15% down to 9.5% (31-50 px). On touch screens and tablet
+   widths the spiral grows to 440 px where the column allows it, and no token is under the 44 px touch-target bar. */
+.fear-spiral{max-width:330px}
+@media (pointer:coarse),(max-width:1279px){.fear-spiral{max-width:440px}.fz{min-width:44px;min-height:44px}}
 @keyframes cdpulse{0%,100%{box-shadow:0 0 0 0 rgba(224,96,90,.5)}50%{box-shadow:0 0 0 8px rgba(224,96,90,0)}}
 @keyframes tmglow{0%,100%{box-shadow:0 0 12px 2px var(--g)}50%{box-shadow:0 0 22px 6px var(--g)}}
 /* CV1: what the GM hides from players. Dashed gold edge like an empty sand grain, over a faint hatch. */

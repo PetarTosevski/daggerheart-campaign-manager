@@ -1,0 +1,584 @@
+# Drawer-answers plan (follow-up to plan sheet-drawer, bead dcm-bxp.99.19): every user answer of 2026-10-29 / 2026-10-30
+# that needs a code change, the Beastform integration (dcm-bxp.99.19.6, B1), the runner gap dcm-d95 (Warden's Protection),
+# and the orchestrator wiring and bugs left over from SD4 / SD5 / SD6 / SD8 / CA8.
+# Status: DRAFT 2026-10-30, for the user to approve.
+# Format: docs/workflow.md. Extra keys per tracer (plan-check ignores them): title, size (S | M | L), foundation, closes.
+# Book pages: CB = Core Book, HF = Hope & Fear, PRINTED pages ("===== PAGE N =====" in .reference-private/text holds printed
+#   page N-1). Each tracer re-checks the pages it cites and quotes them in its task doc; never commit the books.
+#
+# Binding carry-overs (plan sheet-drawer and combat-actions): U1 players see hit / miss only; U4 automatic, GM undo; Q1
+#   out-of-range -> GM sanction; Q2 line of sight; Q6 every halving rounds up; Q13 situational conditions are a check box;
+#   CB p.107 "the player controlling the effects ... can apply the effects in any order".
+#
+# Cross-plan sequencing (orchestrator):
+#   - sheet-drawer waves 5-6 (SD7, SD-C, SD-A, SD-H, SD9) stay in sheet-drawer.yaml; the answers that belong to them are
+#     extra acceptance lines there (see the planner's report), not tracers here.
+#   - Overlaps with sheet-drawer wave 5: SD-H owns src/components/combat-map/actions/hand/roll-options.tsx (inside DA6's
+#     actions/hand/**) and convex/lib/rolls.ts; SD-A owns convex/lib/featureRunner.ts and convex/lib/combatVision.ts
+#     (DA10 / DA12 own featureRunner.ts); SD7 owns src/components/combat-map/drawer/use/** (no tracer here owns it).
+#     Run SD-H after DA6, and SD-A after DA12, or not at the same time.
+#   - Vocabulary rule (as SD0 / SD1): only DA0 changes src/lib/domain/card-effects/types.ts here, widen only. A tracer that
+#     finds another gap writes a manual step and files a bead labelled feature-effects vocabulary-gap.
+#   - No tracer here changes convex/schema.ts: stored additions are optional fields on existing validators (widen only, rule
+#     7) or new kinds of combatRequests rows. docs/data-model.md is updated by the orchestrator from each tracer's report.
+# Paths: C = src/app/(gm)/campaigns/[campaignId] (written out in full below).
+plan: drawer-answers
+waves:
+  # ---------------------------------------------------------------- wave 1: vocabulary, adversary roll, riders, Cloaked,
+  #                                                                   scenes, Oasis, Hand, D5 and drawer read model
+  - wave: 1
+    tracers:
+      - id: DA0
+        foundation: true
+        title: Vocabulary and pure engine for the answers (widen only) + Favor read as 3
+        size: M
+        closes: []
+        goal: The card vocabulary and the pure runner carry every new piece the answers need (stance-drop end event, severity step instead of an Armor Slot, damage cancelled to zero, default-on optional steps, a Stress-skipping outcome, a target count rolled before the pick, an attack flag on trait rolls, a server move into Melee, a use rolled by an ally), the Unshakable entry uses the new outcome, and an unset Favor reads as 3.
+        depends_on: []
+        owns:
+          - src/lib/domain/card-effects/types.ts
+          - src/lib/domain/card-effects/run.ts
+          - src/lib/domain/card-effects/availability.ts
+          - src/lib/domain/feature-effects/run.ts
+          - src/lib/srd/feature-effects/ancestry-core.ts
+          - tests/unit/card-effects/types-widen.test.ts
+          - tests/unit/feature-effects/engine/drawer-answers.test.ts
+          - tests/unit/feature-effects/ancestry-core.test.ts
+          - docs/tasks/TASK-DA-DA0.md
+        reads:
+          - src/lib/srd/feature-effects/**
+          - src/lib/domain/feature-effects/**
+          - src/lib/domain/class-features/classes/warlock.ts
+          - .omc/autopilot/sheet-drawer-analysis.md
+        acceptance:
+          - "Widen only (no member renamed or narrowed), STEP_KINDS and the drift check stay exhaustive, no any; every existing CE-*, AE-*, FE-* and engine test passes unchanged (types-widen.test.ts imports them all)"
+          - "EndEvent 'stanceDrops' for a condition a stance feature gives (dcm-bxp.99.19.10, HF p.12: 'When you drop out of a stance, you lose any ongoing benefits it provides.')"
+          - "reduceSeverity (and convertMarks) can say insteadOfArmorSlot: the window treats the step as the hit's one armor reduction (dcm-bxp.99.19.9 Stable, HF p.12: 'spend a Focus instead of an Armor Slot to reduce damage'; CB: 'You can only mark 1 Armor Slot per incoming attack.')"
+          - "A damage-cancel step (or reduceDamage to zero) that leaves the hit with no severity and ignores 'mark HP' from the attack's on-hit effects (dcm-bxp.99.19.13 Dark Aegis, HF p.14)"
+          - "optional steps can be defaultOn: run() applies a defaultOn optional when the choices omit it, and skips it only on an explicit 'off' (dcm-bxp.99.19.15 Draining Bane, HF p.14: 'you can clear a Stress')"
+          - "An outcome that cancels the Stress about to be marked; the Unshakable entry (ancestry-core.ts) becomes: auto on wouldMarkStress, d6, on a 6 cancel that Stress, logged; no manual line left (dcm-bxp.99.19.50 (1), CB p.59 Firbolg: 'When you would mark a Stress, roll a d6. On a result of 6, don't mark it.')"
+          - "TargetSpec count 'upTo dice' can be rolled before the pick: run() takes a server-rolled count from its context and refuses more targets than that count; it never rolls the count itself when one is given (dcm-d95, dcm-bxp.99.19.36, CB p.31 Warden's Protection: 'clear 2 Hit Points on 1d4 allies within Close range')"
+          - "A trait RollSpec can carry attack: true and rollMatches('attack') holds for it (dcm-bxp.99.19.6 item 5: Rampage's beforeYouRoll attack rider on the Beastform attack)"
+          - "A move step a server executes on success (mode intoMelee of a picked target) for Charge (dcm-bxp.99.19.16, CB p.59), and a use 'rolledBy ally' with the actor's Proficiency for Cannonball (dcm-bxp.99.19.21, CB p.33); types and pure planning only, the server parts are DA10 / DA12"
+          - "feature-effects/run.ts actorExtras reads an unset classState.favor as 3, as D5 favorOf does (SD4 follow-up; HF p.14); unit test: a warlock who never had a session start pays a Favor"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: DA1
+        title: Adversary attack roll - per-target disadvantage (Sturdy, Harrowing), Drained d12 record, held-attack label
+        size: M
+        closes: [dcm-bxp.99.19.45 (3), dcm-bxp.99.19.46 (3), dcm-bxp.99.19.49 (1) and (3) pin]
+        goal: One adversary attack roll against several PCs counts a target's disadvantage (Sturdy, Harrowing Invocation's protected PCs) only against that target, a Drained attacker's record shows d12s, and the tracker shows a held attack as 'attacks Mira, before the roll'.
+        depends_on: []
+        owns:
+          - src/lib/domain/adversary-actions/attack.ts
+          - convex/lib/adversaryActions.ts
+          - src/components/adversaries/tracker/actions/windows.tsx
+          - tests/unit/adversary-actions/attack-severity.test.ts
+          - tests/unit/adversary-actions/attack-per-target.test.ts
+          - tests/convex/adversary-attack-defences.test.ts
+          - tests/unit/tracker-held-attack.test.tsx
+          - docs/tasks/TASK-DA-DA1.md
+        reads:
+          - src/lib/domain/adversary-actions/**
+          - src/lib/domain/feature-effects/passives.ts
+          - src/lib/srd/feature-effects/warlock.ts
+          - src/lib/srd/feature-effects/ancestry-core.ts
+          - src/lib/domain/card-effects/run.ts
+          - convex/lib/incomingHits.ts
+          - convex/adversaryActions.ts
+        acceptance:
+          - "Sturdy (CB p.68 Orc: 'When you have 1 Hit Point remaining, attacks against you have disadvantage.'): on a multi-target adversary attack the disadvantage counts only against the Sturdy target (user 2026-10-30, changes SD2's whole-roll disadvantage); one roll, per-target totals (the extra d20 kept low only for that target); unit tests"
+          - "Harrowing Invocation (HF p.14: 'give them disadvantage on the roll. If the adversary fails the roll, they must also mark a Stress.'): disadvantage only against the protected PCs (the warlock and allies within Very Close); the adversary marks 1 Stress if the roll fails against ANY protected PC (user 2026-10-30). The SD4 code comment says 'failed against every PC it protected': check the behaviour and make it 'any'; report what was built"
+          - "Drained (HF p.14: 'uses a d12 instead of a d20 for attack rolls (including for advantage or disadvantage) until they fail a roll'): the roll record lists sides 12 for every die of a Drained attack (SD4 follow-up; fixed in adversaryActions.ts, card-effects/run.ts untouched); Drained ends only on a failed ATTACK roll (as built, pin test); nothing else about the adversary's rolls changes (user: 'Warlocks use the d20 for attack rolls only')"
+          - "Pin (dcm-bxp.99.19.49 (3)): a forced reroll of an adversary attack (Danger Sense) keeps the original advantage / disadvantage"
+          - "The tracker shows a held attack (preRoll) as 'attacks <PC>, before the roll' and no damage line, and the held result is a waiting line, not a manual prompt (SD4 follow-up); unit test"
+          - "pnpm lint, typecheck, vitest and tests/e2e/combat-adversary.spec.ts pass; tracer-guard passes"
+      - id: DA2
+        title: Attack riders - Death Strike pick, out-of-range extra targets to the GM, First Strike on a crit, Rise to the Challenge on by default
+        size: M
+        closes: [dcm-bxp.99.19.47 (1) and (3) pin, dcm-bxp.99.19.48 (2) pin and (3), dcm-bxp.99.19.49 (2), dcm-bxp.99.19.43, dcm-bxp.99.19.44 pin]
+        goal: A player's map attack lets them pick the one creature Death Strike hits, waits for the GM when a Hold Them Off / Surrounded extra target is out of range, doubles First Strike damage after the critical, and rolls Rise to the Challenge's d20 Hope Die by default with an off toggle.
+        depends_on: []
+        owns:
+          - convex/lib/combatActions.ts
+          - convex/combatActions.ts
+          - convex/combatCards.ts
+          - convex/lib/validators/combatRequests.ts
+          - convex/lib/combatRequests.ts
+          - convex/combatRequests.ts
+          - src/components/combat-map/actions/attack/**
+          - tests/convex/combat-riders.test.ts
+          - tests/unit/combat-riders.test.tsx
+          - tests/e2e/combat-riders.spec.ts
+          - tests/convex/authz/riders.entries.ts
+          - docs/tasks/TASK-DA-DA2.md
+        reads:
+          - convex/lib/cardRunner.ts
+          - convex/lib/featureRunner.ts
+          - src/lib/domain/feature-effects/**
+          - src/lib/srd/feature-effects/**
+          - src/components/combat-map/actions/targets/**
+          - docs/tasks/TASK-SD-SD5.md
+        acceptance:
+          - "Death Strike (HF p.8: 'When you deal Severe damage to a creature, you can mark a Stress to force them to mark an additional Hit Point.'): on a multi-target attack it hits ONE creature for one Stress and the PLAYER picks which (user 2026-10-30; replaces SD5's 'the first'): with one Severe creature it applies to it; with two or more the attack waits as a pending request with a 'Death Strike: pick one' prompt (players see hit / miss only, U1), the GM can Resolve now; tests"
+          - "Hold Them Off (CB p.38) and Surrounded (HF p.10): an out-of-range extra target no longer refuses the attack; the attack waits for GM approval like card targets (combat-actions Q1, user 2026-10-30); Approve resolves it with the same roll, Decline drops that target only; line of sight stays required (Q2); tests"
+          - "First Strike (HF p.8: 'The first time in a scene you succeed on an attack, you deal double damage.'): doubles the whole damage, added dice included (as built), and stacks with a critical: critical damage first, then doubled (dcm-bxp.99.19.43); a test with a known roll checks the total"
+          - "Rise to the Challenge (CB p.48: 'While you have 2 or fewer Hit Points unmarked, you can roll a d20 as your Hope Die.'): ON automatically while 2 or fewer HP are unmarked, for weapon attacks and useCard rolls, unless the request turns it off; the Attack bar shows it as a toggle that starts on (user 2026-10-30, replaces SD2's opt-in); 44 px; unit and convex tests"
+          - "Cloaked still ends after the rogue attacks, except Vanishing Act's Cloaked, which ends only on a roll with Fear or the next rest (pin, dcm-bxp.99.19.42, CB p.42)"
+          - "Pins: Sneak Attack allies = other PC tokens and GM-marked ally tokens, never neutral ones (dcm-bxp.99.19.48 (2)); an after-roll feature counts only the final roll's Hope / Fear and the discarded roll's Hope may pay and is then taken back (dcm-bxp.99.19.47 (3)); Surrounded's extra targets may be allies (dcm-bxp.99.19.44)"
+          - "Every new or changed public function has authz rows in riders.entries.ts (anonymous, outsider, player, GM; ConvexError.data.code); the inventory guard passes"
+          - "pnpm lint, typecheck, vitest and tests/e2e/combat-riders.spec.ts pass; tracer-guard passes"
+      - id: DA3
+        title: Cloaked ends on a move only when a revealed enemy can see the rogue (light), wired into combatTokens.move
+        size: S
+        closes: [dcm-bxp.99.19.48 (1)]
+        goal: When a Cloaked rogue's token ends a move, Cloaked ends only if a revealed enemy token has a clear line to it AND can see it under the map's day / dim / night and lights, and the move mutation actually calls this check.
+        depends_on: []
+        owns:
+          - convex/lib/combatMovement.ts
+          - convex/combatTokens.ts
+          - tests/convex/cloaked-move.test.ts
+          - docs/tasks/TASK-DA-DA3.md
+        reads:
+          - convex/lib/combatVision.ts
+          - src/lib/domain/combat-map/light.ts
+          - src/lib/domain/combat-map/vision.ts
+          - src/lib/domain/combat-map/sight.ts
+          - docs/tasks/TASK-SD-SD5.md
+        acceptance:
+          - "CB p.42 (Rogue, Cloaked): 'After you make an attack or end a move within line of sight of an adversary, you are no longer Cloaked.' User 2026-10-30: only a revealed (not hidden) enemy token with a clear line AND able to see the rogue given the map's day / dim / night and lights ends it (SD5 built clear line only)"
+          - "convex/combatTokens.ts move calls uncloakAfterMove after the token patch (SD5 orchestrator note); the change is a public, undoable feed row; a move that ends Cloaked and its undo restore the condition"
+          - "Vanishing Act's Cloaked is not ended by a move in sight (pin, dcm-bxp.99.19.42, CB p.42: 'You remain Cloaked in this way until you roll with Fear or until your next rest.')"
+          - "Convex tests: lit square in line -> ends; dark square, enemy without light -> stays; hidden enemy token -> stays; wall between -> stays"
+          - "pnpm lint, typecheck, vitest and tests/e2e/combat-movement.spec.ts pass; tracer-guard passes"
+      - id: DA4
+        title: Scenes and sessions - one End scene path, areas closed at session end, End scene on the Combat Map
+        size: S
+        closes: [dcm-bxp.99.19.49 (4) pin]
+        goal: The dashboard's End scene and the Combat Map's End scene run the same endScene, session end also ends the scene and closes scene and session areas, and the GM column on the Combat Map shows the End scene button.
+        depends_on: []
+        owns:
+          - convex/scenes.ts
+          - convex/sessions.ts
+          - convex/combatScenes.ts
+          - src/components/combat-map/actions/index.tsx
+          - tests/convex/scenes.test.ts
+          - tests/convex/session-scene-end.test.ts
+          - tests/e2e/combat-end-scene.spec.ts
+          - docs/tasks/TASK-DA-DA4.md
+        reads:
+          - src/components/combat-map/actions/scene/**
+          - src/lib/domain/characters/expiry.ts
+          - convex/lib/restHooks.ts
+          - convex/tables/combatAreas.ts
+          - docs/tasks/TASK-SD-SD8.md
+        acceptance:
+          - "scenes.end (dashboard, RF1) delegates to endScene from convex/combatScenes.ts: a PC whose only scene state is a feature limit, the Unstoppable Die or a stance is expired too, and scene areas close (SD8 follow-up); every existing scenes test passes; one undoable actionLog group as before"
+          - "sessions.end ends the scene (expire 'scene') and closes combatAreas with expires scene or session through endSceneAreas plus the session ones (SD8 follow-up; Q7, CB p.107 'END OF THE SCENE')"
+          - "Resolutions in src/components/combat-map/actions/index.tsx mounts EndSceneButton from ./scene for the GM (SD8 orchestrator note); e2e: the GM ends the scene from the map and a once-per-scene limit comes back"
+          - "Pin (dcm-bxp.99.19.49 (4)): Walk Between Worlds tokens clear at scene end"
+          - "No new public function; existing authz rows for scenes.end, sessions.end and combatScenes.end still pass"
+          - "pnpm lint, typecheck, vitest and tests/e2e/combat-end-scene.spec.ts pass; tracer-guard passes"
+      - id: DA5
+        title: Oasis - the player picks the downtime die to reroll (public mutation, stored die results, authz)
+        size: M
+        closes: [dcm-bxp.99.19.45 (1), (2) pin and (4) pin, dcm-bxp.99.19.47 (4) pin]
+        goal: After a short rest's downtime dice are shown, a Duneborne character gets a 'Reroll (keep higher)' button on any party member's downtime die, once per short rest, instead of SD-R's automatic lowest-die reroll.
+        depends_on: []
+        owns:
+          - convex/rests.ts
+          - convex/lib/validators/rests.ts
+          - convex/tables/rests.ts
+          - src/lib/domain/rest/feature-moves.ts
+          - src/components/party/rest/**
+          - tests/convex/rests-features.test.ts
+          - tests/unit/rest-feature-moves.test.ts
+          - tests/convex/authz/play.entries.ts
+          - tests/e2e/rest.spec.ts
+          - docs/tasks/TASK-DA-DA5.md
+        reads:
+          - src/lib/domain/rest/**
+          - convex/lib/restHooks.ts
+          - src/lib/srd/feature-effects/heritage-hf.ts
+          - docs/tasks/TASK-SD-SD-R.md
+        acceptance:
+          - "Oasis (HF p.27 Duneborne: 'During a short rest, you or an ally can reroll a die used for a downtime move and take the higher result.'): user 2026-10-30: the player picks; after the downtime dice are shown, each Duneborne holder gets a 'Reroll (keep higher)' button on any party member's downtime die, once per holder per short rest; SD-R's automatic lowest-die reroll is removed"
+          - "The rest stores each downtime die's result (optional field on the rests validators: widen only, old rows read back; rule 7); a keyed public mutation (for example rests.oasisReroll {restId, dieRef}) checks the holder owns Oasis, the rest was short, the die exists and was not rerolled by this holder, rolls on the server, keeps the higher result and applies the difference to the move's effect, in the rest's actionLog group so undo reverts it"
+          - "The picker shows the dice with the button (44 px, keyboard reachable) and the kept result; unit test"
+          - "Authz rows in tests/convex/authz/play.entries.ts for the new function (anonymous, outsider, player own and other, GM); tests assert ConvexError.data.code"
+          - "Pins: Efficient lets a short rest take only one long rest move (CB p.53, dcm-bxp.99.19.45 (2)); an interrupted short rest gives no Hardy, an interrupted long rest gives short rest benefits incl. Hardy, Efficient and Celestial Trance (CB p.105, (4)); Toxic Concoctions and Feed tokens are kept on an interrupted long rest (dcm-bxp.99.19.47 (4))"
+          - "pnpm lint, typecheck, vitest and tests/e2e/rest.spec.ts pass; tracer-guard passes"
+      - id: DA6
+        title: Hand and drawer - one shared 'Play for this character' switch, out-of-range card targets greyed, dialog picks reset
+        size: M
+        closes: [dcm-bxp.99.19.46 (2) and (4)]
+        goal: The GM has one 'Play for this character' switch per PC shared by the map Hand and the sheet drawer that stays on until switched off, the card dialog greys creatures out of the card's range with 'Out of range - GM approves', and a new card dialog starts with no picks.
+        depends_on: []
+        owns:
+          - convex/playFor.ts
+          - convex/tables/playFor.ts
+          - convex/schema.ts
+          - tests/convex/play-for.test.ts
+          - tests/convex/authz/play-for.entries.ts
+          - src/components/combat-map/actions/hand/**
+          - src/components/combat-map/actions/targets/**
+          - src/components/combat-map/drawer/index.tsx
+          - src/components/combat-map/play-for.ts
+          - tests/unit/play-for.test.tsx
+          - tests/unit/combat-hand.test.tsx
+          - tests/unit/card-dialog.test.tsx
+          - tests/unit/sheet-drawer.test.tsx
+          - tests/e2e/combat-actions-flow.spec.ts
+          - tests/e2e/sheet-drawer.spec.ts
+          - docs/tasks/TASK-DA-DA6.md
+        reads:
+          - src/components/combat-map/**
+          - src/lib/domain/combat-map/ranges.ts
+          - docs/tasks/TASK-CA-CA8.md
+          - docs/tasks/TASK-SD-SD6.md
+        acceptance:
+          - "One 'Play for this character' switch per PC for the map Hand and the sheet drawer (user 2026-10-30), kept in play-for.ts (useSyncExternalStore over localStorage keyed by campaign and character, no effects copying state, CL rules), persisted until the GM switches it off; the drawer's own copy that reset on open is removed; unit tests"
+          - "Card dialog: creatures out of the card's range stay listed but greyed with 'Out of range - GM approves' (user 2026-10-30; CA8 follow-up 2); picking one still sends the use for the GM's sanction (Q1)"
+          - "Picks no longer carry over between card dialogs (CA8 bug 3): opening a dialog starts with no picks and clears the map rings of the last dialog; combat-actions-flow.spec.ts no longer sets the picks explicitly to work around it"
+          - "No server change; the Attack bar target list behaves as before"
+          - "pnpm lint, typecheck, vitest, tests/e2e/combat-actions-flow.spec.ts and tests/e2e/sheet-drawer.spec.ts pass; tracer-guard passes"
+      - id: DA7
+        title: D5-delegated features and the drawer read model - Rogue's Dodge 'Active', Hex at the maximum, Prayer Dice not on damage, Drop out ends Evolution, armor max with augments
+        size: M
+        closes: [dcm-bxp.99.19.41, dcm-bxp.99.19.26, dcm-bxp.99.19.28, dcm-bxp.99.19.46 (1), dcm-bxp.99.19.40 pin]
+        goal: The drawer shows Rogue's Dodge as Active with Use disabled while its +2 lasts, a Hex at the maximum ends the oldest (or the one the player picks), Prayer Dice add to action and reaction rolls but not damage, Drop out of Beastform also ends Evolution, and the drawer's Armor maximum counts augments.
+        depends_on: []
+        owns:
+          - convex/lib/featureDrawer.ts
+          - convex/classFeatures.ts
+          - src/lib/domain/class-features/classes/rogue.ts
+          - src/lib/domain/class-features/classes/witch.ts
+          - src/lib/domain/class-features/classes/seraph.ts
+          - src/lib/domain/feature-effects/delegate.ts
+          - src/lib/srd/feature-effects/seraph-witch.ts
+          - src/components/combat-map/drawer/list/**
+          - src/components/party/features/panel.tsx
+          - tests/unit/drawer-list-states.test.tsx
+          - tests/unit/d5-answers.test.ts
+          - tests/convex/drawer-answers-d5.test.ts
+          - docs/tasks/TASK-DA-DA7.md
+        reads:
+          - convex/combatFeatures.ts
+          - convex/characters.ts
+          - src/lib/domain/characters/**
+          - src/lib/srd/feature-effects/ranger-rogue.ts
+          - src/lib/srd/feature-effects/druid-sorcerer.ts
+          - docs/tasks/TASK-SD-SD6.md
+        acceptance:
+          - "Rogue's Dodge (CB p.42: 'Spend 3 Hope to gain a +2 bonus to your Evasion until the next time an attack succeeds against you. Otherwise, this bonus lasts until your next rest.'): user 2026-10-30: neither refresh nor stack; while the +2 is active the drawer shows an 'Active' banner and Use is disabled, and the server refuses a second use; usable again after an attack succeeds against the rogue or a rest; drawer read model state 'active'; tests"
+          - "Hex (HF p.16: 'The maximum number of creatures you can Hex at one time is equal to your Spellcast trait.'): at the maximum a new Hex ends the oldest by default; before casting the player can pick which Hex to drop (a choice on the drawer entry, its options from the current hexes in the drawer read model, and the Party sheet's D5 Hex input); classFeatures.use params widen only; tests"
+          - "Prayer Dice (CB p.44: 'add to a roll's result after the roll is made'): action and reaction rolls, not damage rolls (user 2026-10-29): D5 prayerRoll refuses a damage roll; the table's roll use stays an after-roll answer and never matches damage; tests"
+          - "Drop out of Beastform (drawer 'Drop out' and the Party sheet's End) also ends Evolution's +1 trait (user 2026-10-30; CB p.30 Evolution: 'choose one trait to raise by +1 until you drop out of that Beastform'), in the same mutation and undo group; test"
+          - "featureDrawer.ts armor.max counts installed augments as characters.adjustResource does, so the drawer's + reaches the last slot (SD6 QUESTION 4); test"
+          - "Pin (dcm-bxp.99.19.40): Contacts Everywhere's +3 is picked after the roll, seeing both dice"
+          - "Changed public functions keep their authz rows (features.entries.ts / characters entries); tests assert ConvexError.data.code"
+          - "pnpm lint, typecheck, vitest and tests/e2e/sheet-drawer.spec.ts pass; tracer-guard passes"
+  # ---------------------------------------------------------------- wave 2: reaction window, Beastform, Purposeful Design
+  - wave: 2
+    tracers:
+      - id: DA8
+        title: Reaction window - every ready reaction after armor in the player's order, Stable, Dark Aegis, Celestial Wings, Draining Bane tick on
+        size: L
+        closes: [dcm-bxp.99.19.50 (3), dcm-bxp.99.19.9, dcm-bxp.99.19.13, dcm-bxp.99.19.30, dcm-bxp.99.19.15, dcm-bxp.99.19.47 (2) pin, dcm-bxp.99.19.48 (4) pin, dcm-bxp.99.19.50 (2) pin]
+        goal: After the Armor Slot answer every ready reaction that still fits the hit stays offered and the player picks the order, Stable and Celestial Wings lower severity by one instead of the slot, Dark Aegis cancels the damage to zero with no severity, and Draining Bane's 'clear a Stress' is ticked by default.
+        depends_on: [DA0, DA1]
+        owns:
+          - src/lib/domain/adversary-actions/window.ts
+          - src/lib/domain/adversary-actions/severity.ts
+          - convex/lib/incomingHits.ts
+          - convex/lib/adversaryHits.ts
+          - src/components/combat-map/actions/reactions/**
+          - src/lib/srd/feature-effects/stances.ts
+          - src/lib/srd/feature-effects/warlock.ts
+          - src/lib/srd/feature-effects/heritage-hf.ts
+          - tests/convex/feature-reactions.test.ts
+          - tests/unit/feature-window.test.ts
+          - tests/unit/adversary-actions/window.test.ts
+          - tests/unit/feature-effects/stances.test.ts
+          - tests/unit/feature-effects/warlock.test.ts
+          - tests/unit/feature-effects/heritage-hf.test.ts
+          - tests/e2e/combat-feature-reactions.spec.ts
+          - docs/tasks/TASK-DA-DA8.md
+        reads:
+          - src/lib/domain/card-effects/**
+          - src/lib/domain/feature-effects/**
+          - convex/lib/featureRunner.ts
+          - convex/lib/adversaryActions.ts
+          - docs/tasks/TASK-SD-SD4.md
+        acceptance:
+          - "DA1 follow-ups: attackRollOf (convex/lib/adversaryHits.ts) finds the attack roll by roll kind, not sides===20, and rerolls with the record's die size (Drained d12); incoming hits carry the target's own attack total and disadvantage so a rebuilt window and its rerolls use them (optional validator fields, widen only)"
+          - "USER 2026-10-30: Celestial Wings replaces the hit's one Armor Slot - Wings OR a real Armor Slot on a hit, never both (like Stable)"
+          - "CB p.107 'SIMULTANEOUS AND STACKING EFFECTS': '... the player controlling the effects ... can apply the effects in any order.' User 2026-10-30: after the Armor Slot answer every ready reaction that still fits the hit stays offered (not only severity-gated ones), and the player answers them in the order they pick; the 'afterArmor' severity-gated filter is removed; tests"
+          - "Stable (HF p.12): 'spend a Focus instead of an Armor Slot to reduce damage'. User: the Focus lowers severity by one, the Armor Slot is NOT marked, never more than 1 step in total with the slot, usable without armor while the PC has Focus (entry uses insteadOfArmorSlot from DA0); tests"
+          - "Celestial Wings (HF p.19: 'Once per scene while flying, you can spend a Hope instead of marking an Armor Slot.'): user 2026-10-29: any hit while flying, even with no armor or every slot marked, the Hope lowers severity by one, once per scene; built as the hit's armor reduction (no real slot on top), flagged in the task doc for the user to confirm"
+          - "Dark Aegis (HF p.14: 'when you would take damage, you can spend a Favor instead of marking Hit Points'): user 2026-10-29: the damage becomes zero, no HP marked, zero damage has no severity (no Minor / Major / Severe, so 'until you take Severe damage' and similar do not fire); the attack's on-hit effects (conditions) still apply but any extra 'mark HP' from them is ignored; tests"
+          - "Draining Bane (HF p.14: 'you can clear a Stress'): the before-roll prompt shows 'Clear a Stress' ticked by default (defaultOn from DA0); unticking skips it; test"
+          - "Pins: a halving reaction (Damage Sink, Increased Fortitude) and resistance both apply, reaction first then resistance, each rounding up (Q6; dcm-bxp.99.19.47 (2)); one answer (card or feature) per ally per hit (dcm-bxp.99.19.48 (4)); Elemental Dominion Fire's +1 Proficiency only on damage of attacks and spells (dcm-bxp.99.19.50 (2), CB p.30)"
+          - "Players still see no adversary roll; the hit player sees their own damage and severity (Q14); e2e: a Stable stance PC answers a hit without armor; Dark Aegis leaves 0 HP marked; after an Armor Slot a dwarf still gets Increased Fortitude; GM undo restores all"
+          - "pnpm lint, typecheck, vitest and tests/e2e/combat-feature-reactions.spec.ts pass; tracer-guard passes"
+      - id: DA9
+        title: Beastform integration - the table owns the form's stats (B1), Evolved and Hybrid holdings, form attack as attack, Vicious Maul temporary
+        size: M
+        closes: [dcm-bxp.99.19.19, dcm-bxp.99.19.6 (2) (3) (4) (5), dcm-bxp.99.19.20]
+        goal: A transformed druid gets the form's trait and Evasion once, from the drawer table, Evolved and Hybrid forms hold the right features and cost the right Stress, Rampage-style attack riders apply to the form attack, and Vicious Maul's Vulnerable is temporary.
+        depends_on: [DA0, DA7]
+        owns:
+          - src/lib/domain/class-features/classes/druid.ts
+          - src/lib/domain/feature-effects/owned.ts
+          - src/lib/domain/feature-effects/passives.ts
+          - src/lib/domain/characters/derived.ts
+          - src/lib/srd/feature-effects/beastforms.ts
+          - src/components/party/extras/beastform-panel.tsx
+          - tests/unit/feature-effects/beastforms.test.ts
+          - tests/unit/extras-beastform.test.ts
+          - tests/unit/feature-passives.test.ts
+          - tests/unit/derived.test.ts
+          - tests/unit/beastform-integration.test.ts
+          - tests/convex/beastform-integration.test.ts
+          - docs/tasks/TASK-DA-DA9.md
+        reads:
+          - src/lib/srd/beastforms.ts
+          - src/lib/frames/extras/beastform.ts
+          - src/lib/domain/feature-effects/**
+          - convex/classFeatures.ts
+          - convex/lib/featureRunner.ts
+          - convex/lib/combatActions.ts
+          - docs/tasks/TASK-SD-FE-beastforms.md
+          - docs/tasks/TASK-SD-SD2.md
+        acceptance:
+          - "B1 (user 2026-10-29; CB p.30 Beastform: 'add their Evasion bonus to your Evasion, and use the trait specified'): the drawer table owns the form's trait and Evasion bonuses; D5's Beastform effect (druid.ts) stops adding mods; the Party sheet's Beastform button still transforms and Ends; derived Evasion and traits read the form's stat line through passiveMods (SD2 follow-up 2); old sheets whose beastform effect still carries mods are not counted twice (test)"
+          - "Evolved forms hold the base form's features and stats plus the Evolved use keyed by the base id; Hybrid forms charge HYBRID_EXTRA_STRESS at transformation (CB p.34: 'mark an additional Stress'; CB p.35: 'mark 2 additional Stress') and hold the chosen features (dcm-bxp.99.19.6 (3) (4)); tests"
+          - "The form attack's roll is an attack (attack: true from DA0), so Rampage's beforeYouRoll attack rider applies (dcm-bxp.99.19.6 (5)); test"
+          - "Vicious Maul (Aquatic Predator, CB p.34: 'make them Vulnerable'): temporary, like Great Predator's (user 2026-10-29)"
+          - "Ending the form on its events (lastHp, majorDamage for Fragile forms) is DA10's; this tracer keeps beastformEndsOn as the one source"
+          - "pnpm lint, typecheck, vitest and tests/e2e/character-sheet.spec.ts pass; tracer-guard passes"
+      - id: DA11
+        title: Purposeful Design - the sheet records the chosen Experience and adds +1
+        size: S
+        closes: [dcm-bxp.99.19.18]
+        goal: A Clank's sheet records the Experience chosen for Purposeful Design (in the creation wizard, or once on the sheet for existing Clanks) and every roll and display adds +1 to it automatically.
+        depends_on: [DA0]
+        owns:
+          - convex/lib/validators/characters.ts
+          - src/lib/validation/characters.ts
+          - src/lib/domain/dice/index.ts
+          - convex/characters.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/new/steps-5-9.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/new/wizard-logic.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/identity.tsx
+          - src/components/combat-map/actions/roll-controls/index.tsx
+          - src/lib/srd/feature-effects/ancestry-core.ts
+          - tests/unit/purposeful-design.test.ts
+          - tests/convex/purposeful-design.test.ts
+          - tests/unit/wizard-logic.test.ts
+          - tests/convex/authz/characters.entries.ts
+          - tests/e2e/character-wizard.spec.ts
+          - docs/tasks/TASK-DA-DA11.md
+        reads:
+          - src/lib/srd/heritage.ts
+          - src/lib/domain/feature-effects/owned.ts
+          - convex/lib/characterSheet.ts
+        acceptance:
+          - "Purposeful Design (CB p.53 Clank: 'At character creation, choose one of your Experiences that best aligns with this purpose and gain a permanent +1 bonus to it.'): user 2026-10-29: the sheet records the chosen Experience (optional field, widen only, old sheets read back; rule 7) and adds +1 automatically: experienceBonus and every Experience display (sheet, roll controls, wizard review) show value + 1; the stored value is never bumped"
+          - "Chosen in the wizard for a Clank (mixed ancestries through owned()); existing Clanks pick it once on the sheet through a keyed intent (need edit on the character); the ancestry-core entry stops being a reminder"
+          - "New or changed public function has authz rows in characters.entries.ts; tests assert ConvexError.data.code"
+          - "pnpm lint, typecheck, vitest and tests/e2e/character-wizard.spec.ts pass; tracer-guard passes"
+  # ---------------------------------------------------------------- wave 3: event engine and server-prompted uses
+  - wave: 3
+    tracers:
+      - id: DA10
+        title: Event engine - Unshakable on every Stress mark, stance drop ends Grappling's Restrain, Beastform ends on its events
+        size: M
+        closes: [dcm-bxp.99.19.50 (1), dcm-bxp.99.19.10, dcm-bxp.99.19.6 (1)]
+        goal: Whenever a Firbolg would mark Stress through the server the d6 is rolled and a 6 skips it, a Restrain from Grappling ends when the stance drops, and a Beastform (and Evolution with it) ends on the last Hit Point or, for Fragile forms, Major damage.
+        depends_on: [DA0, DA4, DA8, DA9]
+        owns:
+          - convex/lib/unshakable.ts
+          - convex/lib/stanceDrop.ts
+          - convex/lib/incomingHits.ts
+          - convex/lib/adversaryFeatures.ts
+          - convex/lib/cardRunner.ts
+          - convex/lib/cardHand.ts
+          - convex/combatFeatures.ts
+          - convex/combatScenes.ts
+          - convex/lib/restHooks.ts
+          - src/lib/srd/feature-effects/stances.ts
+          - tests/convex/unshakable.test.ts
+          - tests/convex/stance-drop.test.ts
+          - tests/convex/beastform-ends.test.ts
+          - docs/tasks/TASK-DA-DA10.md
+        reads:
+          - src/lib/srd/feature-effects/ancestry-core.ts
+          - src/lib/srd/feature-effects/beastforms.ts
+          - src/lib/domain/characters/index.ts
+          - src/lib/domain/feature-effects/**
+          - convex/lib/featureRunner.ts
+        acceptance:
+          - "Unshakable (CB p.59 Firbolg: 'When you would mark a Stress, roll a d6. On a result of 6, don't mark it.'): user 2026-10-30: whenever the PC would mark Stress the server rolls a d6 and skips the Stress on a 6, logged (public row names the d6); one helper (convex/lib/unshakable.ts) used by adversary hits and adversary features, card and feature costs and Stress steps, the Hand's recall Stress and Flow State's 'Shift - 1 Stress'; each Stress is rolled separately; a manual tracker click on the sheet or drawer does not roll (see report); undo reverts it; tests with a fixed rng"
+          - "Grappling (HF p.12): user 2026-10-29: the Restrain ends when the stance drops ('When you drop out of a stance, you lose any ongoing benefits it provides.'): the condition carries endsOn stanceDrops; dropStance (convex/lib/stanceDrop.ts) runs on a shift to another stance, at scene end, on a rest and on the last Hit Point, and removes it from the instance in the same undo group; tests"
+          - "Beastform (CB p.30: 'If you mark your last Hit Point, you automatically drop out of this form'; CB p.32 Fragile: 'When you take Major or greater damage, you drop out of Beastform'): after a resolved hit the Beastform effect ends per beastformEndsOn(formId), and Evolution's +1 ends with it (dcm-bxp.99.19.6 (1)); tests"
+          - "Every existing feature-reactions, combat-cards, combat-features and scenes test passes unchanged"
+          - "pnpm lint, typecheck, vitest and tests/e2e/combat-feature-reactions.spec.ts pass; tracer-guard passes"
+      - id: DA12
+        title: Server-decided uses - Warden's Protection rolls 1d4 before the pick, Charge moves the token after a success
+        size: M
+        closes: [dcm-d95, dcm-bxp.99.19.36, dcm-bxp.99.19.16]
+        goal: Warden's Protection rolls its 1d4 on the server before the player picks that many allies, and Charge rolls Agility first and, on a success, the server moves the Firbolg's token into Melee range of the picked target.
+        depends_on: [DA0, DA2, DA3, DA11]
+        owns:
+          - convex/lib/featureRunner.ts
+          - convex/featurePrompts.ts
+          - convex/lib/featurePrompts.ts
+          - convex/lib/validators/combatRequests.ts
+          - convex/lib/combatRequests.ts
+          - convex/lib/combatMovement.ts
+          - src/lib/srd/feature-effects/druid-sorcerer.ts
+          - src/lib/srd/feature-effects/ancestry-core.ts
+          - tests/convex/feature-prompts.test.ts
+          - tests/convex/authz/prompts.entries.ts
+          - tests/convex/authz/prompts.test.ts
+          - tests/unit/feature-effects/druid-sorcerer.test.ts
+          - docs/tasks/TASK-DA-DA12.md
+        reads:
+          - convex/combatFeatures.ts
+          - convex/combatTokens.ts
+          - src/lib/domain/combat-map/movement.ts
+          - src/lib/domain/feature-effects/**
+          - docs/tasks/TASK-SD-FE-druid-sorcerer.md
+        acceptance:
+          - "USER 2026-10-30: Charge - the player picks the Melee square next to the target before rolling; on a success the server moves the token there (not the nearest free square)"
+          - "Warden's Protection (CB p.31: 'Once per long rest, spend 2 Hope to clear 2 Hit Points on 1d4 allies within Close range.'): user 2026-10-29: roll the 1d4 first, then pick that many allies (dcm-d95); a keyed public mutation rolls the count on the server and stores it (a combatRequests row kind, widen only; covered by the existing cleanup or a new batched cron, rule 8); useFeature reads it in featureRunner and refuses more allies than rolled; a second roll for the same use is refused until it is used or expires; the client never sends the count; tests"
+          - "Charge (CB p.59 Firbolg: 'When you succeed on an Agility Roll to move from Far or Very Far range into Melee range with one or more targets, you can mark a Stress to deal 1d12 physical damage to all targets within Melee range.'): user 2026-10-29: roll first; on a success the server moves the token into Melee range (nearest free reachable square in Melee of the picked target, through combatMovement; flagged for confirmation), then the optional Stress damage hits every enemy in Melee of the new square; on a failure the token stays; undo restores the square"
+          - "Authz rows in prompts.entries.ts for every new public function (anonymous, outsider, player own and other, GM); tests assert ConvexError.data.code; the inventory guard passes"
+          - "pnpm lint, typecheck, vitest and tests/e2e/combat-movement.spec.ts pass; tracer-guard passes"
+  # ---------------------------------------------------------------- wave 4: Cannonball
+  - wave: 4
+    tracers:
+      - id: DA13
+        title: Cannonball - the thrown ally gets a prompt and rolls from their own drawer
+        size: M
+        closes: [dcm-bxp.99.19.21, dcm-bxp.99.19.5]
+        goal: A druid's Cannonball sends the chosen ally a prompt in their drawer; the ally rolls Agility or Strength against a target within Close range with the druid's Proficiency, and a Hope adds a second target that takes half damage.
+        depends_on: [DA6, DA9, DA12]
+        owns:
+          - src/lib/srd/feature-effects/beastforms.ts
+          - convex/lib/featureRunner.ts
+          - convex/featurePrompts.ts
+          - convex/lib/featurePrompts.ts
+          - convex/lib/validators/combatRequests.ts
+          - src/components/combat-map/drawer/index.tsx
+          - src/components/combat-map/drawer/prompts/**
+          - tests/convex/cannonball.test.ts
+          - tests/unit/drawer-prompts.test.tsx
+          - tests/convex/authz/prompts.entries.ts
+          - tests/e2e/combat-cannonball.spec.ts
+          - docs/tasks/TASK-DA-DA13.md
+        reads:
+          - convex/combatFeatures.ts
+          - convex/lib/combatActions.ts
+          - src/components/combat-map/**
+          - docs/tasks/TASK-SD-FE-beastforms.md
+        acceptance:
+          - "USER 2026-10-30: Cannonball as the book (CB p.33) - the druid marks the Stress and is thrown; the THROWING ally gets the prompt in their drawer, rolls Agility or Strength (their choice) against a target within Close range; on a success d12+2 physical damage with the thrower's (ally's) Proficiency"
+          - "Cannonball (CB p.33: 'Mark a Stress to allow an ally to throw or launch you at an adversary. To do so, the ally makes an attack roll using Agility or Strength (their choice) against a target within Close range. On a success, the adversary takes d12+2 physical damage using the thrower's Proficiency. You can spend a Hope to target an additional adversary within Very Close range of the first. The second target takes half damage.'): user 2026-10-29: the thrown ally gets a prompt and rolls from their own drawer; book check in the task doc: whose Proficiency (the book says 'the thrower's', the thrower is the ally) - quote and confirm before building"
+          - "The druid's use pays the Stress and creates the prompt (rolledBy ally from DA0); the ally's drawer shows it with Agility / Strength, the target pick and the optional Hope second target (half damage, rounded up, Q6); the GM sees it in the pending list and can cancel it; public rows hit / miss only (U1); undo restores both sheets and the instances"
+          - "Authz rows for the new functions in prompts.entries.ts; e2e: druid in Beastform throws, ally rolls from the drawer, a Bandit takes damage; at desktop and 390 px"
+          - "pnpm lint, typecheck, vitest and tests/e2e/combat-cannonball.spec.ts pass; tracer-guard passes"
+  # ---------------------------------------------------------------- wave 5: answers given 2026-10-30 after the plan (beads .53, .54) and DA9's leftovers
+  - wave: 5
+    tracers:
+      - id: DA15
+        title: Oasis rerolls are a party pool, one per Duneborne; each player closes their own Oasis panel (dcm-bxp.99.19.54)
+        size: M
+        goal: Each Duneborne in the party adds exactly one reroll to a party pool usable on anyone's downtime die (keep higher); a die can take several rerolls while the pool lasts; each holder closes their own panel, which withdraws their unused reroll.
+        depends_on: []
+        owns:
+          - convex/rests.ts
+          - convex/lib/validators/rests.ts
+          - convex/tables/rests.ts
+          - src/lib/domain/rest/feature-moves.ts
+          - src/components/party/rest/**
+          - tests/convex/rests-features.test.ts
+          - tests/unit/rest-feature-moves.test.ts
+          - tests/convex/authz/play.entries.ts
+          - tests/e2e/rest.spec.ts
+          - docs/tasks/TASK-DA-DA15.md
+        reads: [docs/tasks/TASK-DA-DA5.md, docs/tasks/TASK-SD-SD-R.md, docs/best-practices.md]
+        acceptance:
+          - "USER 2026-10-30 (HF p.27 'During a short rest, you or an ally can reroll a die used for a downtime move and take the higher result'): rerolls = number of Oasis holders at the end of the short rest; any holder's 'Reroll (keep higher)' spends one from the pool on ANY party member's downtime die; the same die can be rerolled again while rerolls remain (keep the higher each time); when the pool is empty nobody can reroll"
+          - "Each holder closes their own Oasis panel (replaces DA5's GM-wide close): closing withdraws that holder's unused reroll from the pool; when every holder has closed, the window is over; rests.closeResults is removed or kept only as the GM's 'close for everyone' (state which in the task doc); starting the next rest still ends the window; server-enforced"
+          - "Stored fields widen only (optional); authz rows for every changed/new public function; undo reverts rerolls with the rest's group"
+          - "pnpm lint, typecheck, vitest, tests/e2e/rest.spec.ts and tracer-guard pass"
+      - id: DA16
+        title: The GM can move Purposeful Design's +1 to another Experience (dcm-bxp.99.19.54)
+        size: S
+        goal: The player picks the Purposeful Design Experience once; the GM can move it later as a correction; removing that Experience drops the +1 and offers the pick again.
+        depends_on: []
+        owns:
+          - convex/characters.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/identity.tsx
+          - tests/convex/purposeful-design.test.ts
+          - tests/unit/purposeful-design.test.ts
+          - tests/convex/authz/characters.entries.ts
+          - docs/tasks/TASK-DA-DA16.md
+        reads: [docs/tasks/TASK-DA-DA11.md, src/lib/domain/dice/index.ts, docs/best-practices.md]
+        acceptance:
+          - "choosePurposefulDesign (or a sibling) lets the GM (permissionFor need edit as GM) move the flag to another Experience of a Clank holder; the owner still picks only once; INVALID on a non-holder; one undoable actionLog row"
+          - "Removing the chosen Experience drops the flag and the sheet offers the pick again (as built - pin it)"
+          - "The +1 may take the shown value to +11 (level-up cap counts the stored value - pin it)"
+          - "authz rows updated; pnpm lint, typecheck, vitest, tests/e2e/character-sheet.spec.ts and tracer-guard pass"
+      - id: DA17
+        title: Several disadvantage sources on one target count once (dcm-bxp.99.19.53)
+        size: S
+        goal: An adversary attack against a target with Sturdy and Harrowing (or any several disadvantage sources) applies one disadvantage to that target, cancelled by one advantage.
+        depends_on: []
+        owns:
+          - src/lib/domain/adversary-actions/attack.ts
+          - convex/lib/adversaryActions.ts
+          - tests/unit/adversary-actions/attack-per-target.test.ts
+          - tests/convex/adversary-attack-defences.test.ts
+          - docs/tasks/TASK-DA-DA17.md
+        reads: [docs/tasks/TASK-DA-DA1.md, src/lib/domain/dice/index.ts]
+        acceptance:
+          - "USER 2026-10-30: disadvantage from several sources on the same target counts once (on/off), and one advantage source cancels it; per-target split from DA1 kept; tests for Sturdy+Harrowing vs one and two advantage sources"
+          - "pnpm lint, typecheck, vitest, tests/e2e/combat-adversary.spec.ts and tracer-guard pass"
+  - wave: 6
+    tracers:
+      - id: DA18
+        title: Cloaked rogue ending a move in dim light makes a Finesse roll against the highest seeing Difficulty (dcm-bxp.99.19.53)
+        size: S
+        goal: When a Cloaked rogue ends a move on a dim-light square in a revealed enemy's clear line, the server makes one Finesse action roll against the highest Difficulty among those enemies; success keeps Cloaked, failure ends it.
+        depends_on: [DA12]
+        owns:
+          - convex/lib/combatMovement.ts
+          - convex/combatTokens.ts
+          - tests/convex/cloaked-move.test.ts
+          - docs/tasks/TASK-DA-DA18.md
+        reads: [docs/tasks/TASK-DA-DA3.md, convex/combatVision.ts, convex/lib/rolls.ts]
+        acceptance:
+          - "USER 2026-10-30: dim light -> one Finesse action roll (Hope/Fear apply as usual: Hope to the rogue, Fear to the GM) vs the HIGHEST Difficulty among the revealed enemies with a clear line; success keeps Cloaked, failure ends it; clear light still ends it outright, darkness keeps it; Vanishing Act's Cloaked unaffected; the roll is a public, undoable feed row; players never see the Difficulty number (U1)"
+          - "pnpm lint, typecheck, vitest, tests/e2e/combat-movement.spec.ts and tracer-guard pass"
+      - id: DA19
+        title: Beastform trait bonus reaches every roll; Evolved forms filter their uses in the drawer and runner (DA9 follow-ups)
+        size: M
+        goal: Rolls read the form's trait bonus through derivedTraits (withPassiveTraits) on every roll path, and under Evolution the drawer lists and the runner accepts only the Evolved uses for the chosen base.
+        depends_on: [DA10, DA12, DA13]
+        owns:
+          - convex/lib/rolls.ts
+          - convex/rolls.ts
+          - convex/lib/featureDrawer.ts
+          - convex/combatFeatures.ts
+          - convex/lib/cardRunner.ts
+          - convex/lib/featureRunner.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet-context.tsx
+          - tests/convex/beastform-rolls.test.ts
+          - docs/tasks/TASK-DA-DA19.md
+        reads: [docs/tasks/TASK-DA-DA9.md, src/lib/domain/characters/derived.ts, src/lib/domain/feature-effects/owned.ts]
+        acceptance:
+          - "Every roll path that read withEffects(sheet).traits also applies withPassiveTraits (cardActor in cardRunner, convex/lib/rolls.ts, convex/rolls.ts, featureDrawer, combatFeatures, sheet-context); a druid in Agile Scout rolls Agility +1 from the sheet, the dice box, the map attack and the drawer's form attack (convex tests)"
+          - "featureDrawer and pickFeature read OwnedFeature.uses: under Legendary Beast only the Evolved uses for the chosen base are listed and accepted"
+          - "pnpm lint, typecheck, vitest, the sheet-drawer and combat-attack e2e specs and tracer-guard pass"

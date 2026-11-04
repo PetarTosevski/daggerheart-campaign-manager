@@ -10,7 +10,7 @@ import { toPaintSpec } from "../../src/components/combat-map/map-view/paint-spec
 import { generateFallbackLayout } from "../../src/lib/combat-map/fallback-layout";
 import type { PaintSpec } from "../../src/lib/combat-map/raster";
 import { clean, TERRAINS, type MapSpec } from "../../src/lib/domain/combat-map/spec";
-import { errorCode, key, OTHER_EMAIL, setupWithCampaign, useAllowlist } from "./helpers";
+import { errorCode, imageBlob, key, OTHER_EMAIL, setupWithCampaign, useAllowlist } from "./helpers";
 
 // D9 C3: combat maps (list, create, rename, duplicate, delete, live, image upload, grid). Every write and the GM
 // reads are GM-only (anonymous UNAUTHENTICATED, outsider NOT_FOUND, player FORBIDDEN); `live` is every member's.
@@ -30,7 +30,7 @@ async function withMap() {
   // convex-test records no content type, so set the one an upload would carry (as upload-claims.test.ts does).
   const storeImage = (contentType = "image/png", bytes = 64) =>
     ctx.t.run(async (c) => {
-      const id = await c.storage.store(new Blob([new Uint8Array(bytes)], { type: contentType }));
+      const id = await c.storage.store(imageBlob(contentType, bytes));
       await (c.db as unknown as { patch: (id: Id<"_storage">, value: { contentType: string }) => Promise<void> }).patch(id, { contentType });
       return id;
     });

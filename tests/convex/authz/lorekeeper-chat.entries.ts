@@ -7,7 +7,7 @@ import type { Area, Outcome, Role, World } from "./harness";
  *
  * Every function is a campaign wrapper with `need: "view"` (anon UNAUTHENTICATED, outsider NOT_FOUND). Past it,
  * conversations follow Q3: public to the campaign by default, private on the asker's request; a private one exists
- * only for its asker, and only the asker asks in, stops, toggles, makes private or deletes. Anything else answers
+ * only for its asker, and only the asker asks in, edits a question, stops, toggles, makes private or deletes. Anything else answers
  * LOREKEEPER_NOT_FOUND, the GM included.
  *
  * Every world gets one PRIVATE conversation of playerA with a question and an answer (inserted: `ask` would
@@ -48,6 +48,16 @@ async function privateConversation(w: World) {
   w.use("lorekeeperMessages", answerId);
 }
 
+/** playerA's question in the private conversation (`w.use` holds the answer for the other rows). */
+async function questionOf(w: World) {
+  const campaignId = w.campaignId;
+  const question = await w.t.run(async (ctx) =>
+    (await ctx.db.query("lorekeeperMessages").order("desc").take(50)).find((m) => m.campaignId === campaignId && m.role === "question"),
+  );
+  if (question === undefined) throw new Error("the matrix world has no Lorekeeper question");
+  return question._id;
+}
+
 const area: Area = {
   area: "lorekeeper-chat",
   setup: privateConversation,
@@ -62,6 +72,14 @@ const area: Area = {
       args: () => ({ question: "What does a critical hit do?", webSearch: false }),
       okCodes: ["LOREKEEPER_UNAVAILABLE"],
       expect: MEMBERS,
+    },
+    {
+      // LK3: only the question's asker edits it; past the author check, no key answers LOREKEEPER_UNAVAILABLE.
+      fn: api.lorekeeper.editQuestion,
+      access: "view",
+      args: async (w) => ({ questionId: await questionOf(w), question: "Do two Hexes stack on one target?" }),
+      okCodes: ["LOREKEEPER_UNAVAILABLE"],
+      expect: ASKER_ONLY,
     },
     { fn: api.lorekeeper.stop, access: "view", expect: ASKER_ONLY },
     { fn: api.lorekeeper.setWebSearch, access: "view", expect: ASKER_ONLY },

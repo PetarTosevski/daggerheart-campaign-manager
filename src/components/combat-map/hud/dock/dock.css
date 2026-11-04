@@ -1,0 +1,341 @@
+/*
+ * The GM's bottom dock (plan combat-hud H9.0; GMDesktop / GMTablet `.dock`, `.dk-*`) and a player's map controls.
+ * Board values: centred, bottom 16, padding 6, radius 18, rgba(11,18,20,.96) with a #33444a ring; buttons 44 px tall,
+ * min-width 52, icon over a 10.5 px label; pressed = gold #2d2614 with a gold ring; groups split by #253338. Sheet open:
+ * centred at left 640, icons only. Tablet: bottom 12, icons only, sheet open at left 342. Touch targets stay 44 px
+ * (AGENTS.md tablet rule), so the board's 34 px zoom buttons and 42 px tablet height grow to 44.
+ */
+
+/* ---------------------------------------------------------------- the dock region (shell.tsx) */
+.hud-r-dock {
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 70;
+  max-width: calc(100% - 32px);
+  transition: left var(--hud-t-map) var(--hud-ease-out);
+}
+.hud-root.hud-sh-open .hud-r-dock {
+  left: 640px;
+}
+
+.hud-dock {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 18px;
+  background: rgba(11, 18, 20, 0.96);
+  box-shadow:
+    0 0 0 1px #33444a,
+    0 14px 34px rgba(0, 0, 0, 0.55);
+  color: #c8d3d0;
+  font-family: var(--hud-font-ui);
+  pointer-events: auto;
+}
+.hud-dk-g {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 6px;
+  border-right: 1px solid #253338;
+}
+
+/* An icon over a short label. */
+.hud-dk-b {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 52px;
+  height: 44px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #c8d3d0;
+  font: 500 10.5px var(--hud-font-ui);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.hud-dk-b:hover {
+  background: #18232a;
+  color: #fff;
+}
+.hud-dk-b[aria-pressed="true"],
+.hud-dk-b[aria-expanded="true"] {
+  background: #2d2614;
+  color: #f3cf86;
+  box-shadow: inset 0 0 0 1px rgba(227, 180, 90, 0.6);
+}
+.hud-dk-b:focus-visible,
+.hud-dk-s:focus-visible,
+.hud-dk-pct:focus-visible,
+.hud-dock .cm-pv-btn:focus-visible,
+.hud-dock .hud-dk-end:focus-visible {
+  outline: 2px solid var(--hud-gold);
+  outline-offset: 2px;
+}
+
+/* The zoom: − 91 % +; the percentage fits the map. */
+.hud-dk-z {
+  gap: 0;
+}
+.hud-dk-s,
+.hud-dk-pct {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #c8d3d0;
+  cursor: pointer;
+}
+.hud-dk-s {
+  width: 44px;
+}
+.hud-dk-pct {
+  min-width: 50px;
+  color: #e6ecea;
+  font: 600 12.5px var(--hud-font-ui);
+  font-variant-numeric: tabular-nums;
+}
+.hud-dk-s:hover,
+.hud-dk-pct:hover {
+  background: #18232a;
+}
+
+/* Player view: the existing PreviewPicker ("👁 Player view ▾") dressed as a dock button; its menu opens upward. */
+.hud-dk-pv {
+  display: flex;
+}
+.hud-dock .cm-pv-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  min-width: 52px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #c8d3d0;
+  font: 500 12px var(--hud-font-ui);
+  white-space: nowrap;
+}
+.hud-dock .cm-pv-btn:hover:not(:disabled) {
+  background: #18232a;
+  color: #fff;
+}
+.hud-dock .cm-pv-btn[aria-expanded="true"] {
+  background: #2d2614;
+  color: #f3cf86;
+  box-shadow: inset 0 0 0 1px rgba(227, 180, 90, 0.6);
+}
+.hud-dock .cm-pv-menu {
+  top: auto;
+  bottom: calc(100% + 14px);
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+}
+
+/* End scene: flag-red outline (`.dk-end`), the existing HudEndScene button. */
+.hud-dk-endw {
+  position: relative;
+  display: flex;
+}
+.hud-dock .hud-dk-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 44px;
+  min-height: 44px;
+  margin-left: 2px;
+  padding: 0 14px;
+  border: 1px solid #6b3f3a;
+  border-radius: 12px;
+  background: transparent;
+  color: #f3a58f;
+  font: 600 13px var(--hud-font-ui);
+  white-space: nowrap;
+}
+/* The flag: ::after, as the arcane glass button draws its hover fill with ::before (glass-button.css). */
+.hud-dock .hud-dk-end::after {
+  content: "";
+  order: -1;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 21V4M5 4h11l-2 4 2 4H5'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+.hud-dock .hud-dk-end:hover:not(:disabled) {
+  background: #2a1412;
+}
+/* Its report ("Scene ended: …") above the dock, only when it says something. */
+.hud-dock [data-testid="end-scene-status"] {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 14px);
+  width: max-content;
+  max-width: 360px;
+  padding: 6px 12px;
+  border-radius: var(--hud-r-chip);
+  background: var(--hud-glass);
+  box-shadow: 0 0 0 1px var(--hud-line);
+  color: var(--hud-ink);
+  font: var(--hud-type-ui);
+}
+.hud-dock [data-testid="end-scene-status"]:empty {
+  display: none;
+}
+
+/* Icons only (tablet, a sheet open): the label stays for screen readers. */
+.hud-root.hud-sh-open .hud-dk-b {
+  min-width: 44px;
+}
+.hud-root.hud-sh-open .hud-dk-l,
+.hud-pmc .hud-dk-l {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Player view in icon-only mode: its eye alone (the text keeps the name; generated content is empty, so adds none). */
+.hud-root.hud-sh-open .hud-dock .cm-pv-btn {
+  font-size: 0;
+}
+.hud-dock .cm-pv-btn::before {
+  content: "";
+  display: none;
+  width: 18px;
+  height: 18px;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+.hud-root.hud-sh-open .hud-dock .cm-pv-btn::before {
+  display: block;
+}
+
+/* ---------------------------------------------------------------- the dock's pop-overs (Dice, Fog) */
+.hud-dock-pop {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 12px);
+  transform: translateX(-50%);
+  max-height: calc(100dvh - var(--app-bar-h, 0px) - 120px);
+  pointer-events: auto;
+}
+/*
+ * Fog (H9.6): its brush paints the map, so the pop-over sits at the screen's left edge above "Waiting on you" instead
+ * of over the middle of the map. The dock region is centred (left 50%, its own width), so x = 16 on the screen is
+ * 16 - 50vw + 50% inside it; with a sheet open the region is centred on x = 640 (tablet: tablet.css).
+ */
+.hud-dock-pop.hud-pop-fog {
+  left: calc(16px - 50vw + 50%);
+  transform: none;
+}
+.hud-root.hud-sh-open .hud-dock-pop.hud-pop-fog {
+  left: calc(16px - 640px + 50%);
+}
+
+/* ---------------------------------------------------------------- Log (Resolutions above the dock, right) */
+.hud-r-log {
+  right: 16px;
+  bottom: 80px;
+  width: 360px;
+  max-width: calc(100% - 32px);
+}
+.hud-log {
+  pointer-events: auto;
+}
+
+/* ---------------------------------------------------------------- a player's map controls (title row) */
+.hud-pmc {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+  border-radius: 14px;
+  background: var(--hud-glass);
+  box-shadow: 0 0 0 1px var(--hud-line);
+  pointer-events: auto;
+}
+.hud-pmc .hud-dk-b {
+  min-width: 44px;
+}
+.hud-pmc-z {
+  display: flex;
+  align-items: center;
+}
+
+/* ---------------------------------------------------------------- tablet (GMTablet `.tab .dock`) */
+@media (max-width: 1180px) {
+  .hud-r-dock {
+    bottom: 12px;
+  }
+  .hud-root.hud-sh-open .hud-r-dock {
+    left: 342px;
+  }
+  .hud-dock {
+    padding: 5px;
+  }
+  .hud-dk-b {
+    min-width: 44px;
+  }
+  .hud-dk-l {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .hud-dock .hud-dk-end {
+    padding: 0 12px;
+  }
+  .hud-dock .cm-pv-btn {
+    font-size: 0;
+  }
+  .hud-dock .cm-pv-btn::before {
+    display: block;
+  }
+  .hud-r-log {
+    right: 12px;
+    bottom: 74px;
+    width: 330px;
+  }
+}
+
+/* Narrow tablets (768 portrait): End scene keeps only its flag (the name stays for screen readers). */
+@media (max-width: 900px) {
+  .hud-dock .hud-dk-end {
+    gap: 0;
+    font-size: 0;
+  }
+}
+
+/* Phone width (a GM on a phone): the dock scrolls sideways instead of overflowing (H9.6 places it). */
+@media (max-width: 760px) {
+  .hud-r-dock {
+    left: 8px;
+    right: 8px;
+    max-width: none;
+    transform: none;
+  }
+  .hud-root.hud-sh-open .hud-r-dock {
+    left: 8px;
+  }
+  .hud-dock {
+    overflow-x: auto;
+  }
+}

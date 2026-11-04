@@ -3,6 +3,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { api } from "../../convex/_generated/api";
 import { signInAsTestGm } from "./fixtures";
 import { convexAs, expectNoHorizontalScroll, openCombatMap } from "./visual/helpers";
+import { openMapTools } from "./hud/helpers";
 
 // Sprite packs P6 (.omc/plans/sprite-packs.yaml): the GM flips a generated map between Classic and Sprites with one
 // click in the Combat Map header (optimistic: the canvas changes before the server answers), a player sees the live
@@ -33,6 +34,8 @@ test("the GM switches a generated map to Sprites and back; a player sees it chan
   await page.goto(url);
   const canvas = page.getByRole("region", { name: "Battle map" }).getByTestId("combat-map-canvas");
   await expect(canvas).toHaveAttribute("data-style", "classic");
+  // The map style switch sits in the head of the GM's "Map tools" drawer (Play is the HUD, plan combat-hud H8.1).
+  await openMapTools(page);
   const style = page.getByRole("group", { name: "Map style" });
   await expect(style.getByRole("button", { name: "Classic" })).toHaveAttribute("aria-pressed", "true");
   const classicBefore = await pixels(canvas);
@@ -78,6 +81,7 @@ test("the style switch fits a phone: 44 px targets, no horizontal scroll at 390 
   const { client, campaignId, mapId, url } = await generatedMap(page, "a dark dungeon with a crypt");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(url);
+  await openMapTools(page);
   const style = page.getByRole("group", { name: "Map style" });
   const sprites = style.getByRole("button", { name: "Sprites" });
   await expect(sprites).toBeVisible();

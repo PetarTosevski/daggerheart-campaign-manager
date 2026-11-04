@@ -7,12 +7,23 @@ import { expect, type Browser, type BrowserContext, type Page } from "@playwrigh
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import type { PublishedFrameId } from "../../src/lib/frames";
+import type { FrameId } from "../../src/lib/frames";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, type Draft } from "./visual/helpers";
 
 /** The player account of the e2e backend (`pnpm e2e:setup`). */
 export const E2E_PLAYER_EMAIL = "e2e-player@example.test";
+
+/** The pitch of a core campaign (`frame: "custom"`, no published frame). */
+const CORE_CAMPAIGN = {
+  pitch: "A core campaign.",
+  tones: ["Adventurous"],
+  themes: "",
+  touchstones: "",
+  partySize: 4,
+  startingTier: 1,
+  background: "custom",
+};
 
 export type LiveTable = {
   /** The GM's page, on the campaign dashboard. */
@@ -41,7 +52,8 @@ async function signedInPage(browser: Browser, email?: string): Promise<{ context
 }
 
 /**
- * The GM creates a campaign of `frame` through `convexAs` (plus its join code and characterA, a level-1 Bard;
+ * The GM creates a campaign of `frame` through `convexAs` (a core campaign with `frame: "custom"`, whose pitch is
+ * `CORE_CAMPAIGN`; plus its join code and characterA, a level-1 Bard;
  * `draft` overrides fields, `extra` goes to `characters.create` as is), the player joins by code through the
  * /join link in a second context, the GM assigns characterA to the player, and both pages end on the dashboard.
  * Call `close()` at the end of the test.
@@ -52,12 +64,17 @@ export async function gmAndPlayer(
     frame = "witherwild",
     draft = {},
     extra = {},
-  }: { frame?: PublishedFrameId; draft?: Partial<Draft>; extra?: Record<string, unknown> } = {},
+  }: { frame?: FrameId; draft?: Partial<Draft>; extra?: Record<string, unknown> } = {},
 ): Promise<LiveTable> {
   const gmSide = await signedInPage(browser);
   const client = await convexAs(gmSide.page);
   const campaignName = `Live ${crypto.randomUUID().slice(0, 8)}`;
-  const { campaignId } = await client.mutation(api.campaigns.create, { frameId: frame, name: campaignName, idempotencyKey: crypto.randomUUID() });
+  const { campaignId } = await client.mutation(api.campaigns.create, {
+    frameId: frame,
+    name: campaignName,
+    ...(frame === "custom" ? { custom: CORE_CAMPAIGN } : {}),
+    idempotencyKey: crypto.randomUUID(),
+  });
   const code = await client.mutation(api.members.rotateJoinCode, { campaignId });
   const characterName = draft.name ?? "Liriel";
   const { characterId } = await client.mutation(api.characters.create, {

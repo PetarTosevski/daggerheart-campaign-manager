@@ -6,6 +6,8 @@ import { run } from "@/lib/domain/card-effects/run";
 import type { CardEffect, CardUse, Mod } from "@/lib/domain/card-effects/types";
 import type { Combatant } from "@/lib/domain/combat-actions";
 import { queueRng } from "@/lib/domain/dice";
+import type { RollRecord } from "@/lib/domain/duality";
+import { plainRollAutos } from "../../../convex/lib/rolls";
 import { featureSlug, parseFeatureId } from "@/lib/domain/feature-effects/ids";
 import { applyUpgrades, asCardEffect, featureAvailability, runFeature, type FeatureRunContext } from "@/lib/domain/feature-effects";
 import type { FeatureEffect } from "@/lib/domain/feature-effects/types";
@@ -140,15 +142,25 @@ describe("Frontline Tank (CB p.36, CB p.107)", () => {
 describe("Unstoppable (CB p.36)", () => {
   const id = "class:guardian:unstoppable";
 
-  it("D5 gives the d4 die at 1 and keeps its once-per-long-rest key; the scene effect forbids Restrained", () => {
+  it("D5 gives the d4 die at 1 and keeps its once-per-long-rest key; the scene effect forbids Restrained and Vulnerable", () => {
     const sheet = sheetOf("guardian", "vengeance", { conditions: ["vulnerable"] });
     const result = runFeature(entry(id), undefined, ctx(actorOf(sheet), [], { sheet }));
     if (!result.ok) throw new Error(result.detail);
     expect(result.sheet!.classState.unstoppable).toEqual({ value: 1, max: 4 });
     expect(result.sheet!.conditions).toEqual([]);
     expect(result.plan.actor.featureUses).toEqual([{ key: "unstoppable", until: "longRest" }]);
-    expect(ofKind(result.plan, "effect")).toMatchObject([{ label: "Unstoppable", duration: "scene", mods: [{ kind: "flag", flag: "cannotBeRestrained" }] }]);
-    expect(ofKind(result.plan, "prompt").map((p) => p.text)).toEqual(["While Unstoppable you can't be Vulnerable."]);
+    // Lane SRD-F2 (dcm-v17): "can't be Restrained or Vulnerable" are both flags; no manual prompt is left.
+    expect(ofKind(result.plan, "effect")).toMatchObject([
+      {
+        label: "Unstoppable",
+        duration: "scene",
+        mods: [
+          { kind: "flag", flag: "cannotBeRestrained" },
+          { kind: "flag", flag: "cannotBeVulnerable" },
+        ],
+      },
+    ]);
+    expect(ofKind(result.plan, "prompt").filter((p) => p.prompt === "manual")).toEqual([]);
     const used = { ...sheet, featureUses: result.plan.actor.featureUses };
     expect(featureAvailability(used, entry(id))).toMatchObject({ state: "exhausted", label: "Back after a long rest" });
   });
@@ -295,6 +307,20 @@ describe("Attack of Opportunity (CB p.48)", () => {
     expect(ofKind(plan, "prompt").map((p) => [p.prompt, p.text])).toEqual([["move", "You move with them"]]);
   });
 
+  it("they can't move from where they are: a cannotMove effect on the adversary, ended by hand (lane SRD-F2)", () => {
+    const plan = ok(id, "strength", ctx(actor, [9, 3], { trigger: { source: adv("bandit") }, options: { effect: ["hold"] } }));
+    expect(ofKind(plan, "effect")).toMatchObject([{ targetId: "bandit", label: "Attack of Opportunity: can't move", duration: "manual", mods: [{ kind: "flag", flag: "cannotMove" }] }]);
+    expect(ofKind(plan, "prompt").filter((p) => p.prompt === "manual")).toEqual([]);
+  });
+
+  it("a critical's second effect must differ from the first (distinctFrom, lane SRD-F2)", () => {
+    const same = runFeature(entry(id), "strength", ctx(actor, [5, 5, 6], { trigger: { source: adv("bandit") }, options: { effect: ["damage"], critical: ["damage"] } }));
+    expect(same).toMatchObject({ ok: false, reason: "choice" });
+    const two = ok(id, "strength", ctx(actor, [5, 5], { trigger: { source: adv("bandit") }, options: { effect: ["hold"], critical: ["follow"] } }));
+    expect(ofKind(two, "effect")).toMatchObject([{ targetId: "bandit", mods: [{ kind: "flag", flag: "cannotMove" }] }]);
+    expect(ofKind(two, "prompt").map((p) => p.prompt)).toEqual(["move"]);
+  });
+
   it("a failure: nothing", () => {
     const plan = ok(id, "strength", ctx(actor, [2, 3], { trigger: { source: adv("bandit") }, options: { effect: ["damage"] } }));
     expect(plan.success).toBe(false);
@@ -311,11 +337,23 @@ describe("Combat Training (CB p.48)", () => {
 });
 
 describe("Call of the Brave (CB p.48)", () => {
-  it("Courage: a failed roll with Fear gains a Hope (the situation the server confirms)", () => {
-    expect(featureUse("subclass:call-of-the-brave:courage").activation).toEqual({ kind: "auto", trigger: { kind: "afterYouRoll", roll: "action", result: "failure" } });
-    const plan = ok("subclass:call-of-the-brave:courage", undefined, ctx(actorOf(warrior), [], { situations: ["The roll was with Fear"] }));
+  it("Courage: a failed roll with Fear gains a Hope (the trigger's duality, dcm-5z3)", () => {
+    const courage = featureUse("subclass:call-of-the-brave:courage");
+    expect(courage.activation).toEqual({ kind: "auto", trigger: { kind: "afterYouRoll", roll: "action", result: "failure", duality: "fear" } });
+    expect(courage.requires).toBeUndefined();
+    const plan = ok("subclass:call-of-the-brave:courage", undefined, ctx(actorOf(warrior), []));
     expect(plan.actor.after.hope).toBe(3);
-    expect(runFeature(entry("subclass:call-of-the-brave:courage"), undefined, ctx(actorOf(warrior), []))).toMatchObject({ ok: false, reason: "requirement" });
+  });
+
+  it("Courage on a plain action roll (the real entry through the server's plainRollAutos): only a failure with Fear", () => {
+    const sheet = sheetOf("warrior", "call-of-the-brave", { hope: 2 });
+    const record = (outcome: RollRecord["outcome"]): RollRecord => ({ kind: "action", manual: false, dice: [], modifier: 0, total: 5, outcome, difficulty: 15 });
+    const args = { kind: "action" as const, trait: "strength" as const, attack: false };
+    const fearFail = plainRollAutos(sheet, args, record("failFear"), { hopeAndFear: false }, 0, () => 1);
+    expect(fearFail.names).toEqual(["Courage"]);
+    expect(fearFail.sheet.hope).toBe(3);
+    expect(plainRollAutos(sheet, args, record("failHope"), { hopeAndFear: false }, 0, () => 1).names).toEqual([]);
+    expect(plainRollAutos(sheet, args, record("successFear"), { hopeAndFear: false }, 0, () => 1).names).toEqual([]);
   });
 
   it("Battle Ritual: once per long rest, confirmed: clear 2 Stress and gain 2 Hope", () => {
@@ -375,7 +413,8 @@ describe("Call of the Slayer (CB p.48)", () => {
     const ws = "subclass:call-of-the-slayer:weapon-specialist";
     const plan = ok(ws, "slayer-ones", ctx(actorOf(warrior), []));
     expect(ofKind(plan, "prompt").map((p) => p.prompt)).toEqual(["manual"]);
-    expect(plan.limit).toEqual({ key: "feat:subclass:call-of-the-slayer:weapon-specialist:slayer-ones", until: "longRest", consumed: true });
+    // Plan lanes-2 E8.4 (dcm-40rt): the limit shares the dice box's key, so one reroll per long rest across every path.
+    expect(plan.limit).toEqual({ key: "weaponSpecialistReroll", until: "longRest", consumed: true });
   });
 });
 

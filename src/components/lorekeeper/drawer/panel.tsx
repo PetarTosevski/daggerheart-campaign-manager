@@ -49,7 +49,9 @@ export function DrawerPanel({
       className="lk-root lk-drawerdlg"
       data-role={access.isGm ? "gm" : "player"}
       onClose={() => {
-        if (open) onClose();
+        // The native close event is queued; a reopen can run first (input outranks it), and then the dialog is open
+        // again: ignore that stale event so it does not shut the reopened drawer (J7).
+        if (open && !ref.current?.open) onClose();
       }}
       onClick={(event) => {
         if (event.target === ref.current) onClose();

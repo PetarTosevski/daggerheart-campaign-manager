@@ -154,12 +154,11 @@ export function signed(n: number): string {
   return "0";
 }
 
-/** "Elf", "Elf / Orc" (or the mixed name), "Shapeshifter (Elf form)". */
-export function ancestryLabel(a: CharacterSheet["ancestry"]): string {
-  if (a.kind === "single") return getAncestry(a.id)?.name ?? a.id;
-  if (a.kind === "mixed") return a.name || `${getAncestry(a.first)?.name ?? a.first} / ${getAncestry(a.second)?.name ?? a.second}`;
-  return `Shapeshifter (${getAncestry(a.form)?.name ?? a.form} form)`;
-}
+/**
+ * The ancestry label and the ancestry whose art stands in for a missing portrait: one implementation each, shared with
+ * the party cards and roster (dcm-bxp.15).
+ */
+export { ancestryLabel, portraitAncestryId as ancestryArtId } from "@/components/party/party-display";
 
 /** Roving-focus tabs (WAI-ARIA tabs pattern): the tab index an arrow, Home or End key moves to, or -1 for other keys. */
 export function nextTabIndex(key: string, current: number, count: number): number {
@@ -168,9 +167,4 @@ export function nextTabIndex(key: string, current: number, count: number): numbe
   if (key === "Home") return 0;
   if (key === "End") return count - 1;
   return -1;
-}
-
-/** The ancestry whose art stands in for a missing portrait. */
-export function ancestryArtId(a: CharacterSheet["ancestry"]): string {
-  return a.kind === "single" ? a.id : a.kind === "mixed" ? a.first : a.form;
 }

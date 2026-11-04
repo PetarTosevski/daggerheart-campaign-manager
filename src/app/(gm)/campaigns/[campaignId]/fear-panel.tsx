@@ -70,7 +70,7 @@ function FearTokens({ campaignId, readOnly = false }: { campaignId: Id<"campaign
         </h2>
         {readOnly ? null : <span className="text-[13px] text-[#9a8cc4]">Click a token to set</span>}
       </div>
-      <div className="relative aspect-square w-full max-w-[330px]">
+      <div className="fear-spiral relative aspect-square w-full">
         <svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true" className="absolute inset-0">
           <polyline points={points.join(" ")} fill="none" stroke="#3a2d5e" strokeWidth="0.8" strokeDasharray="1.5 1.5" />
           <polyline
@@ -86,11 +86,13 @@ function FearTokens({ campaignId, readOnly = false }: { campaignId: Id<"campaign
         <span className="fear-fog" aria-hidden="true" style={{ opacity: Math.max(0, ((fear - 2) / 10) * 0.6) }} />
         {SPOTS.map((spot, k) => {
           const value = k + 1;
+          // Centred on its spiral point (.fz translates by half its box), so the touch-screen 44 px floor in
+          // dashboard.css grows a token around its point instead of shifting it.
           const style: CSSProperties = {
             width: `${spot.size}%`,
             height: `${spot.size}%`,
-            left: `${(spot.x - spot.size / 2).toFixed(2)}%`,
-            top: `${(spot.y - spot.size / 2).toFixed(2)}%`,
+            left: `${spot.x.toFixed(2)}%`,
+            top: `${spot.y.toFixed(2)}%`,
             rotate: `${TILT[k]}deg`,
           };
           return (

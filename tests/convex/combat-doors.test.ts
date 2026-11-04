@@ -61,7 +61,7 @@ async function withDoorway() {
   await gm.mutation(api.characters.create, { campaignId, draft: draft("Bryn"), idempotencyKey: key() });
   const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
   await gm.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: key() });
-  const list = await gm.query(api.combatTokens.list, { campaignId, mapId });
+  const list = await gm.query(api.combatTokensReads.list, { campaignId, mapId });
   const ashToken = list.find((tk) => tk.name === "Ash")!._id;
   const brynToken = list.find((tk) => tk.name === "Bryn")!._id;
   const place = (tokenId: Id<"combatTokens">, x: number, y: number, face = 0) => t.run((c) => c.db.patch("combatTokens", tokenId, { x, y, face }));

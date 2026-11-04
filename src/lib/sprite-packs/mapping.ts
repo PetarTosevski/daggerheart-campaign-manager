@@ -54,9 +54,13 @@ function buildMapping(folder: FolderCatalog): FolderMapping {
   return { kinds, terrains };
 }
 
-const MAPPING: ReadonlyMap<string, FolderMapping> = new Map(
-  (Object.keys(CATALOG) as FolderId[]).map((id) => [id, buildMapping(CATALOG[id])]),
-);
+let mapping: ReadonlyMap<string, FolderMapping> | undefined;
+
+/** Every folder's mapping, built on first use (dcm-uh6r: loading this module builds nothing). */
+function folderMappings(): ReadonlyMap<string, FolderMapping> {
+  mapping ??= new Map((Object.keys(CATALOG) as FolderId[]).map((id) => [id, buildMapping(CATALOG[id])]));
+  return mapping;
+}
 
 /**
  * Candidate sprites for a Classic kind in a setting: the setting's (narrowed
@@ -65,7 +69,7 @@ const MAPPING: ReadonlyMap<string, FolderMapping> = new Map(
  */
 export function spriteCandidates(kind: ObjectKind, variant: string | undefined, setting: string): readonly ObjectEntry[] {
   for (const folder of [setting, COMMON_FOLDER]) {
-    const list = MAPPING.get(folder)?.kinds.get(kind);
+    const list = folderMappings().get(folder)?.kinds.get(kind);
     if (!list || list.length === 0) continue;
     if (variant) {
       const same = list.filter((e) => e.classic.variant === variant);
@@ -84,7 +88,7 @@ export function spriteCandidates(kind: ObjectKind, variant: string | undefined, 
  * setting that fell back to common's primary textures keeps them.
  */
 function texturePool(terrain: Terrain, setting: string): { base: readonly TextureEntry[]; gained: readonly TextureEntry[] } {
-  const of = (folder: string) => MAPPING.get(folder)?.terrains.get(terrain) ?? [];
+  const of = (folder: string) => folderMappings().get(folder)?.terrains.get(terrain) ?? [];
   const own = of(setting);
   const common = of(COMMON_FOLDER);
   const ownBase = own.filter((e) => e.extraSheet === undefined);

@@ -222,7 +222,8 @@ describe("combatActions.attack: hit, damage and the two rows", () => {
     // Skeleton Warrior: "resistant to physical damage" (CA2). Severe 2 so the halved damage still decides the HP.
     const skeleton = await a.enemy("Skeleton", 6, 10, { major: 1, severe: 100 }, { source: { kind: "srd", adversaryId: "skeleton-warrior" } });
     const r = resolved(await a.attack(a.player, [skeleton.tokenId]));
-    const halved = Math.floor(r.damage!.total / 2);
+    // Halving rounds up (CB p.107, Q6).
+    const halved = Math.ceil(r.damage!.total / 2);
     expect((await a.instance(skeleton.instanceId)).hp).toBe(halved >= 1 ? 2 : 0);
     expect((await a.rows()).find((row) => row.visibility === "gm")!.summary).toContain(`resistant: ${halved}`);
   });
@@ -346,18 +347,18 @@ describe("GM sanction for out-of-range targets (Q1)", () => {
     expect(await a.fear()).toBe(fearBefore);
     expect((await a.instance(far.instanceId)).hp).toBe(0);
 
-    const mine = await a.player.query(api.combatRequests.mine, { campaignId: a.campaignId });
+    const mine = await a.player.query(api.combatRequestsReads.mine, { campaignId: a.campaignId });
     expect(mine).toEqual([expect.objectContaining({ kind: "sanction", requestId: pending.requestId, characterName: "Ash", targets: [{ tokenId: far.tokenId, name: "Archer" }] })]);
     expectNoStats(mine);
-    expect(await a.w.as("otherPlayer").query(api.combatRequests.mine, { campaignId: a.campaignId })).toEqual([]);
-    expect((await a.gm.query(api.combatRequests.mine, { campaignId: a.campaignId })).map((m) => m.requestId)).toEqual([pending.requestId]);
+    expect(await a.w.as("otherPlayer").query(api.combatRequestsReads.mine, { campaignId: a.campaignId })).toEqual([]);
+    expect((await a.gm.query(api.combatRequestsReads.mine, { campaignId: a.campaignId })).map((m) => m.requestId)).toEqual([pending.requestId]);
 
     const approved = await a.gm.mutation(api.combatRequests.sanction, { campaignId: a.campaignId, requestId: pending.requestId, approve: true, idempotencyKey: key() });
     expect(approved.status).toBe("resolved");
     const pub = (await a.rows()).find((row) => row.visibility === "public" && row.kind === "combat")!;
     expect(pub.actorId).toBe(a.w.users.player);
     expect((await a.requests())[0]).toMatchObject({ status: "resolved", resolvedBy: a.w.users.gm });
-    expect(await a.player.query(api.combatRequests.mine, { campaignId: a.campaignId })).toEqual([]);
+    expect(await a.player.query(api.combatRequestsReads.mine, { campaignId: a.campaignId })).toEqual([]);
     expect(await code(a.gm.mutation(api.combatRequests.sanction, { campaignId: a.campaignId, requestId: pending.requestId, approve: true, idempotencyKey: key() }))).toBe("REQUEST_NOT_OPEN");
   });
 
@@ -369,7 +370,7 @@ describe("GM sanction for out-of-range targets (Q1)", () => {
     if (first.status !== "pending" || second.status !== "pending") throw new Error("expected pending");
     expect(await a.gm.mutation(api.combatRequests.sanction, { campaignId: a.campaignId, requestId: first.requestId, approve: false, idempotencyKey: key() })).toEqual({ status: "declined" });
     await a.t.run((ctx) => ctx.db.patch("encounters", a.encounterId, { status: "ended" }));
-    expect(await a.player.query(api.combatRequests.mine, { campaignId: a.campaignId })).toEqual([]);
+    expect(await a.player.query(api.combatRequestsReads.mine, { campaignId: a.campaignId })).toEqual([]);
     expect(await a.gm.mutation(api.combatRequests.sanction, { campaignId: a.campaignId, requestId: second.requestId, approve: true, idempotencyKey: key() })).toEqual({ status: "declined" });
     expect(await a.rows()).toEqual([]);
     expect((await a.requests()).map((r) => r.status)).toEqual(["declined", "declined"]);
@@ -432,7 +433,7 @@ describe("Minion picks (Q6, CB p.201)", () => {
       ]),
     );
     expectNoStats(r);
-    const mine = await a.player.query(api.combatRequests.mine, { campaignId: a.campaignId });
+    const mine = await a.player.query(api.combatRequestsReads.mine, { campaignId: a.campaignId });
     expect(mine).toEqual([expect.objectContaining({ kind: "minionOffer", entryId: r.entryId, extra })]);
 
     // Too many picks, and a pick outside the offer, are refused.
@@ -449,7 +450,7 @@ describe("Minion picks (Q6, CB p.201)", () => {
     expect(pickRows.every((row) => row.groupId === pickRows[0]!.groupId)).toBe(true);
     expect(pickRows.find((row) => row.visibility === "public")!.summary).not.toMatch(STAT_WORDS);
 
-    await a.player.mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: key() });
+    await a.gm.mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: key() });
     expect(await a.instance(pack.instanceId)).toMatchObject({ hp: 0, defeated: false });
     expect(await a.instance(more.instanceId)).toMatchObject({ hp: 0, defeated: false });
   });
@@ -469,19 +470,17 @@ describe("Minion picks (Q6, CB p.201)", () => {
 describe("undo (U4)", () => {
   allowWorldEmails();
 
-  it("the player or the GM undoes the group: instances, sheet and Fear come back", async () => {
-    for (const who of ["player", "gm"] as const) {
-      const a = await arena();
-      const bandit = await a.enemy("Bandit", 6, 10);
-      const sheetBefore = await a.sheet();
-      const fearBefore = await a.fear();
-      const r = resolved(await a.attack(a.player, [bandit.tokenId]));
-      const res = await a.w.as(who).mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: key() });
-      expect(res.undone).toHaveLength(2);
-      expect(await a.instance(bandit.instanceId)).toMatchObject({ hp: 0, stress: 0, defeated: false });
-      expect(await a.sheet()).toEqual(sheetBefore);
-      expect(await a.fear()).toBe(fearBefore);
-    }
+  it("the GM undoes the group: instances, sheet and Fear come back", async () => {
+    const a = await arena();
+    const bandit = await a.enemy("Bandit", 6, 10);
+    const sheetBefore = await a.sheet();
+    const fearBefore = await a.fear();
+    const r = resolved(await a.attack(a.player, [bandit.tokenId]));
+    const res = await a.gm.mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: key() });
+    expect(res.undone).toHaveLength(2);
+    expect(await a.instance(bandit.instanceId)).toMatchObject({ hp: 0, stress: 0, defeated: false });
+    expect(await a.sheet()).toEqual(sheetBefore);
+    expect(await a.fear()).toBe(fearBefore);
   });
 
   it("refuses with UNDO_STALE once the instance changed after the attack; another player can't undo it", async () => {
@@ -495,14 +494,12 @@ describe("undo (U4)", () => {
     expect(await code(a.gm.mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: key() }))).toBe("UNDO_STALE");
   });
 
-  it("a player gets the dice row's minute; the GM any time", async () => {
+  it("a player never undoes their rolled attack, even at once (user 2026-11-02); the GM does", async () => {
     const a = await arena();
     const bandit = await a.enemy("Bandit", 6, 10);
     const r = resolved(await a.attack(a.player, [bandit.tokenId]));
-    await a.t.run(async (ctx) => {
-      for (const row of await ctx.db.query("actionLog").collect()) await ctx.db.patch("actionLog", row._id, { at: row.at - 120_000 });
-    });
-    expect(await code(a.player.mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: key() }))).toBe("UNDO_STALE");
+    expect(await code(a.player.mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: key() }))).toBe("UNDO_EXPIRED");
+    expect(await code(a.gm.mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: key() }))).toBe("ok");
   });
 });
 

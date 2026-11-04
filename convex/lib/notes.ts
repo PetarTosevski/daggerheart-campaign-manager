@@ -55,13 +55,14 @@ export async function notesRole(ctx: NotesCtx): Promise<Role> {
 
 /** Characters a player's journal list considers: theirs, in this campaign, not dead or retired (D1). */
 async function liveCharacters(ctx: NotesCtx): Promise<Doc<"characters">[]> {
-  // A user's characters across campaigns are a handful; the campaign filter runs on that bounded result.
+  // The owner+campaign index reads only this campaign's characters (J7): a user with many characters in other
+  // campaigns (the shared e2e accounts own hundreds) still finds theirs here. A player has a handful in one campaign.
   const mine = await ctx.db
     .query("characters")
-    .withIndex("by_owner", (q) => q.eq("ownerId", ctx.user._id))
+    .withIndex("by_owner_campaign", (q) => q.eq("ownerId", ctx.user._id).eq("campaignId", ctx.campaign._id))
     .take(200);
   return mine
-    .filter((c) => c.campaignId === ctx.campaign._id && c.status !== "dead" && c.status !== "retired")
+    .filter((c) => c.status !== "dead" && c.status !== "retired")
     .sort((a, b) => a.createdAt - b.createdAt || a._creationTime - b._creationTime);
 }
 

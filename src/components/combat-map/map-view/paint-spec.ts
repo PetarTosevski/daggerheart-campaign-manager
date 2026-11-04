@@ -51,15 +51,21 @@ export type SpritePaintableLayout = Omit<PaintableLayout, "areas" | "objects"> &
 };
 
 /**
- * The built-in setting the sprite painter maps Classic kinds and terrains to (D1, D7): the stored built-in setting,
- * common only for a GM pack (its own sprites are drawn through refs), else the keyword pick (maps never switched to
+ * The built-in setting the sprite painter maps Classic kinds and terrains to (D1, D7): the stored built-in setting;
+ * for a GM pack (its own sprites are drawn through refs) the built-in setting it extends (`packExtends`, from
+ * `combatMapStyle.spriteSources`, dcm-bxp.86), else common only; else the keyword pick (maps never switched to
  * Sprites; `setStyle` stores this same pick on the first switch).
  */
-export function paintSetting(layout: Pick<SpritePaintableLayout, "setting" | "prompt" | "name">): string {
+export function paintSetting(layout: Pick<SpritePaintableLayout, "setting" | "prompt" | "name">, packExtends: string | null = null): string {
   const s = layout.setting;
   if (s && "builtin" in s) return isSettingId(s.builtin) ? s.builtin : "";
-  if (s && "pack" in s) return "";
+  if (s && "pack" in s) return packExtends !== null && isSettingId(packExtends) ? packExtends : "";
   return pickSetting(layout.prompt ?? "", layout.name);
+}
+
+/** Whether the layout is drawn in a GM pack's setting (then the canvas needs `spriteSources` for the pack's `extends`). */
+export function hasPackSetting(layout: Pick<SpritePaintableLayout, "setting">): boolean {
+  return layout.setting !== undefined && "pack" in layout.setting;
 }
 
 /** Whether the layout references an uploaded sprite anywhere (then the canvas needs `spriteSources`). */
@@ -86,12 +92,12 @@ export function decodeTextureCells(layout: Pick<SpritePaintableLayout, "w" | "h"
 }
 
 /** The sprite painter's spec for a stored layout and the uploaded sprites it may draw. */
-export function toSpritePaintSpec(layout: SpritePaintableLayout, uploaded: UploadedSprites): SpritePaintSpec {
+export function toSpritePaintSpec(layout: SpritePaintableLayout, uploaded: UploadedSprites, packExtends: string | null = null): SpritePaintSpec {
   return {
     ...toPaintSpec(layout),
     areas: layout.areas,
     objects: layout.objects.map(({ _id, ...object }) => ({ ...object, id: _id })),
-    setting: paintSetting(layout),
+    setting: paintSetting(layout, packExtends),
     textures: decodeTextureCells(layout),
     uploaded,
   };

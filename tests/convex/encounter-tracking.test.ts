@@ -94,7 +94,7 @@ describe("encounter tracking: access", () => {
 describe("encounter tracking: rules", () => {
   useAllowlist();
 
-  it("marks HP by thresholds 8/15: 7 → 1, 8 → 2, 15 → 3, resistant 15 → 1, 0 → none", async () => {
+  it("marks HP by thresholds 8/15: 7 → 1, 8 → 2, 15 → 3, resistant 15 → 8 → 2 (rounds up, CB p.107), 0 → none", async () => {
     const { gm, campaignId, add } = await running();
     const damage = async (amount: number, resistant = false) => {
       const id = await add(BURROWER);
@@ -103,7 +103,7 @@ describe("encounter tracking: rules", () => {
     expect(await damage(7)).toMatchObject({ severity: "minor", marked: 1, hp: 1, defeated: false, suggestedDefeats: null });
     expect(await damage(8)).toMatchObject({ severity: "major", marked: 2, hp: 2 });
     expect(await damage(15)).toMatchObject({ severity: "severe", marked: 3, hp: 3 });
-    expect(await damage(15, true)).toMatchObject({ taken: 7, severity: "minor", marked: 1 });
+    expect(await damage(15, true)).toMatchObject({ taken: 8, severity: "major", marked: 2 });
     expect(await damage(0)).toMatchObject({ severity: "none", marked: 0, hp: 0 });
     expect(await damage(1000).catch((e: unknown) => errorCode(e))).toBe("ENCOUNTER_RULE");
   });

@@ -68,7 +68,7 @@ test("players see only the characters the party knows, never the GM's notes", as
   const gmNote = "Secretly works for the Fanewraith";
 
   await page.goto(`/campaigns/${campaignId}/codex`);
-  await expect(page.getByRole("heading", { level: 1, name: "Characters & Locations" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Codex" })).toBeVisible();
   // The frame's characters are seeded once, all secret.
   await expect(page.getByRole("complementary", { name: "Entries" }).getByRole("button", { name: /Kreil Dirn/ })).toBeVisible();
 

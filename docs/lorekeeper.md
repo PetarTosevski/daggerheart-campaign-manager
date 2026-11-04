@@ -154,13 +154,19 @@ Prices per million tokens (`src/lib/lorekeeper/pricing.ts`, as of 2026-10-06):
 
 Web search costs $10 per 1,000 searches; a cache write costs 1.25 × the input price.
 
-What one question costs (estimates from the design; measured numbers are still to be recorded):
+What one question costs. Measured 2026-10-23 to 10-29 on the dev deployment (real books, real API; 31 passes,
+$3.20 in all; from `lorekeeperMessages.usage`). Medians, with the highest in brackets; no pass used thinking tokens:
 
-| Pass | When | About |
-|---|---|---|
-| First pass, Sonnet 5.5 | every question (about 11k tokens in, up to 2k out) | $0.04 |
-| Retry, Opus 5.5 | the first pass says 'Rules unclear' or 'Not in your books' | $0.08 more |
-| Internet pass, Sonnet 5.5 + up to 3 searches | still unclear or not found, and the asker left 'Search the internet too' on | $0.06 to $0.08 more |
+| Pass | When | Tokens in (uncached / cache read / cache write) | Out | Cost |
+|---|---|---|---|---|
+| First pass, Sonnet 5.5 (9 runs) | every question | 15k / 1.7k / 0 (max 18k uncached) | 0.4k (0.6k) | $0.035 ($0.041) |
+| Retry, Opus 5.5 (8 runs) | the first pass says 'Rules unclear' or 'Not in your books' | 28k / 2.5k / 2.4k (max 32k / 8.5k write) | 1k (1.6k) | $0.105 ($0.130) more |
+| Internet pass, Sonnet 5.5 (14 runs, 1 search each) | still unclear or not found, and 'Search the internet too' is on | 30k / 24k / 11k (max 34k / 34k / 13k) | 1.5k (2.2k) | $0.149 ($0.168) more |
+
+The design estimates were $0.04, $0.08 and $0.06-0.08. The first pass matches; the Opus retry and the internet pass cost
+more because their prompts carry 28-34k uncached input tokens, above `RESERVE_INPUT_TOKENS` (20k). The internet pass's
+booking ($0.10) is below what it really costs, so a person or campaign near a cap can go over it by up to about $0.07 per
+question (dcm-bxp.82.7 follow-up).
 
 A weekly table asking 30 questions a session spends a few dollars a month.
 

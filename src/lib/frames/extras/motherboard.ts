@@ -10,6 +10,8 @@ import { RELIC_VALUE, SCRAP_CATEGORIES, SCRAP_TABLES, STARTING_QUANTUM, scrapVal
 import type { Range } from "../../srd/types";
 import { rangeSchema, traitIdSchema } from "./common";
 
+export { augmentDefense } from "./motherboard-defense";
+
 export const SCRAP_NAMES: readonly string[] = SCRAP_CATEGORIES.flatMap((c) => SCRAP_TABLES[c].items.map((i) => i.name));
 const scrapName = z.string().refine((n) => SCRAP_NAMES.includes(n), "Unknown scrap.");
 
@@ -115,19 +117,6 @@ export function startingMotherboard(ikonis: Ikonis, classId: string): Motherboar
 }
 
 /** Installed augments that change defense (module sheet): Guard +1, Deny +2, Block +3 Armor Score and −1 Evasion. */
-const DEFENSE: Readonly<Record<string, { armorScore: number; evasion: number }>> = {
-  guard: { armorScore: 1, evasion: 0 },
-  deny: { armorScore: 2, evasion: 0 },
-  block: { armorScore: 3, evasion: -1 },
-};
-
-export function augmentDefense(installed: readonly string[]): { armorScore: number; evasion: number } {
-  return installed.reduce(
-    (sum, id) => ({ armorScore: sum.armorScore + (DEFENSE[id]?.armorScore ?? 0), evasion: sum.evasion + (DEFENSE[id]?.evasion ?? 0) }),
-    { armorScore: 0, evasion: 0 },
-  );
-}
-
 const have = (s: MotherboardState, name: string) => s.scrap[name] ?? 0;
 const withScrap = (s: MotherboardState, name: string, delta: number): MotherboardState => {
   const next = have(s, name) + delta;

@@ -144,7 +144,7 @@ describe("levelUp", () => {
     const knowledge = { ...rogueChoice, multiclass: { ...wizard, spellcastTrait: "knowledge" as const } };
     expect(await gm.mutation(api.levelUp.apply, { characterId: a, choice: knowledge, idempotencyKey: key() })).toEqual({ level: 5 });
     expect((await sheetOf(a)).multiclass).toEqual({ ...wizard, spellcastTrait: "knowledge" });
-    expect((await gm.query(api.characters.get, { characterId: a }))?.sheet.multiclass?.spellcastTrait).toBe("knowledge");
+    expect((await gm.query(api.charactersReads.get, { characterId: a }))?.sheet.multiclass?.spellcastTrait).toBe("knowledge");
     await gm.mutation(api.levelUp.undoLast, { characterId: a, idempotencyKey: key() });
     expect((await sheetOf(a)).multiclass).toBeUndefined();
 
@@ -308,6 +308,14 @@ describe("levelUp", () => {
       await t.run((ctx) => logAction(ctx, { campaignId, actorId: ids.gm, kind: "session", visibility: "public", summary: "Session started", undoable: true }));
       await t.run((ctx) => logAction(ctx, { campaignId, actorId: ids.gm, kind: "session", visibility: "public", summary: "Session ended.", undoable: true }));
       expect(await p1.query(api.levelUp.canUndo, { characterId: a })).toBe(true);
+    });
+
+    it("dcm-bxp.61 (user 2026-10-23: keep): an End pressed with no live session (the Wither panel's path) is no boundary", async () => {
+      const { gm, p1, campaignId, a } = await leveled(1000);
+      // No session is live: End writes no session row, so the player may still undo.
+      await gm.mutation(api.sessions.end, { campaignId, idempotencyKey: key() });
+      expect(await p1.query(api.levelUp.canUndo, { characterId: a })).toBe(true);
+      expect(await p1.mutation(api.levelUp.undoLast, { characterId: a, idempotencyKey: key() })).toEqual({ level: 1 });
     });
 
     it("an older entry without `at` is GM only", async () => {

@@ -47,7 +47,7 @@ test("gmAndPlayer opens the GM's and the player's dashboards on one campaign", a
     await expect(table.gm.getByRole("button", { name: "Players" })).toBeVisible();
     await expect(table.player.getByRole("button", { name: "Players" })).toHaveCount(0);
     // characterA belongs to the player now: the player's client reads it as its owner.
-    const character = await table.playerClient.query(api.characters.get, { characterId: table.characterId });
+    const character = await table.playerClient.query(api.charactersReads.get, { characterId: table.characterId });
     expect(character?.sheet.name).toBe(table.characterName);
   } finally {
     await table.close();

@@ -1,4 +1,4 @@
-/* Characters & Locations inputs, cards, thumbnails and badges, ported from the Codex board (cx-*). */
+/* Codex inputs, cards, thumbnails and badges, ported from the Codex board (cx-*). */
 .cx-in{min-height:44px;padding:0 12px;border-radius:8px;border:1px solid #33444a;background:#0b1214;color:#e6ecea;font-size:15px;font-family:inherit;box-sizing:border-box;width:100%}
 .cx-ta{width:100%;box-sizing:border-box;padding:12px 14px;border-radius:10px;border:1px solid #33444a;background:#0b1214;color:#e6ecea;font-size:17px;line-height:1.55;font-family:var(--font-garamond),serif;resize:vertical}
 .cx-in:focus,.cx-ta:focus{outline:2px solid var(--brand);outline-offset:1px}

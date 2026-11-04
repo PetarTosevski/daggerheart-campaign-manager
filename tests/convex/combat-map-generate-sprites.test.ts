@@ -4,7 +4,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { parseSetting, scenePrompt, settingOptions, settingPrompt } from "../../convex/combatMapGenerate";
 import { folderOfKey } from "../../src/lib/sprite-packs/index";
-import { errorCode, key, OTHER_EMAIL, setupWithCampaign, useAllowlist } from "./helpers";
+import { errorCode, imageBlob, key, OTHER_EMAIL, setupWithCampaign, useAllowlist } from "./helpers";
 
 // Sprite packs P7 (plan .omc/plans/sprite-packs.yaml): `generate` takes an optional setting (absent = "Let Claude
 // choose"). A Sprites map without a pick runs a classification call, then the sprite layout call (one generation,
@@ -77,7 +77,7 @@ async function withMap(style: "classic" | "sprites" = "sprites") {
     );
   const sprite = (packId: Id<"spritePacks">, name: string, category: "object" | "texture" = "object") =>
     t.run(async (c) => {
-      const storageId = await c.storage.store(new Blob([new Uint8Array(8)], { type: "image/webp" }));
+      const storageId = await c.storage.store(imageBlob("image/webp"));
       const fileId = await c.db.insert("files", { storageId, campaignId, uploadedBy: gmId, kind: "sprite", refId: "pending", createdAt: 1 });
       return c.db.insert("spritePackSprites", {
         campaignId,

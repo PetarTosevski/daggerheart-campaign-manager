@@ -13,7 +13,7 @@ export function PageTwo({ cls }: { cls: ClassDef | undefined }) {
     <div className="cs-page">
       <div className="cs-grid-story">
         <WealthBox />
-        <InventoryBox className="cs-span-2" />
+        <InventoryBox cls={cls} className="cs-span-2" />
       </div>
       <div className="cs-grid-text">
         <DescriptionBox cls={cls} />

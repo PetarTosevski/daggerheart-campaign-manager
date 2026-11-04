@@ -1,8 +1,8 @@
 // Built-in catalog: temple (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, obj, tex } from "./types";
+import { defineFolder, obj, tex, type FolderCatalog } from "./types";
 
-export const TEMPLE = defineFolder("temple", {
+export const TEMPLE = (): FolderCatalog => defineFolder("temple", {
   props: [
     obj("candle stand", "none", "tall", "crystal", { light: "faintglow" }),
     obj("offering bowl", "none", "low", "barrel", { standIn: false }),

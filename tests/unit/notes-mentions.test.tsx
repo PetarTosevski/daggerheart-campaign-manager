@@ -88,7 +88,7 @@ describe("MentionInput (rich editor, dcm-bxp.106)", () => {
 
     type("@ma");
     expect(combobox).toHaveAttribute("aria-expanded", "true");
-    const listbox = screen.getByRole("listbox", { name: "Characters & Locations" });
+    const listbox = screen.getByRole("listbox", { name: "Codex" });
     expect(editor).toHaveAttribute("aria-controls", listbox.id);
     expect(optionNames()).toEqual(["Mabry FordLocation", "MarlowFerryman", "Old MagCharacter"]);
     expect(screen.getAllByRole("option")[0]).toHaveAttribute("aria-selected", "true");
@@ -155,7 +155,7 @@ describe("MentionInput (rich editor, dcm-bxp.106)", () => {
     type("@");
     expect(optionNames()).toEqual(["MarlowFerryman"]);
     type("sab");
-    expect(screen.getByRole("option")).toHaveTextContent("No match in Characters & Locations.");
+    expect(screen.getByRole("option")).toHaveTextContent("No match in Codex.");
     expect(screen.getByRole("option")).toHaveAttribute("aria-disabled", "true");
     // Enter with nothing to choose submits the text as written.
     fireEvent.keyDown(editor, { key: "Enter" });

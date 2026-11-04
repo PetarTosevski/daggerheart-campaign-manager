@@ -98,12 +98,16 @@ export function manifestSource(manifest: BuiltinManifest): string {
     "",
     'import type { BuiltinManifest } from "../manifest";',
     "",
-    "export const BUILTIN_MANIFEST: BuiltinManifest = {",
-    `  schemaVersion: ${MANIFEST_SCHEMA_VERSION},`,
-    "  folders: {",
+    "let manifest: BuiltinManifest | undefined;",
+    "",
+    "/** The manifest, built on the first call (dcm-uh6r: modules that only reach the sprite code never evaluate the literal). */",
+    "export function builtinManifest(): BuiltinManifest {",
+    "  return (manifest ??= {",
+    `    schemaVersion: ${MANIFEST_SCHEMA_VERSION},`,
+    "    folders: {",
   ];
   for (const [folder, sprites] of Object.entries(manifest.folders)) {
-    lines.push(`    ${JSON.stringify(folder)}: [`);
+    lines.push(`      ${JSON.stringify(folder)}: [`);
     // Fixed key order, so a partial rebuild (which re-reads the other folders through zod) writes identical lines.
     for (const s of sprites) {
       const canonical = {
@@ -113,10 +117,10 @@ export function manifestSource(manifest: BuiltinManifest): string {
         variants: s.variants.map((v) => ({ file: v.file, px: { w: v.px.w, h: v.px.h } })),
         ...(s.seam !== undefined ? { seam: s.seam } : {}),
       };
-      lines.push(`      ${JSON.stringify(canonical)},`);
+      lines.push(`        ${JSON.stringify(canonical)},`);
     }
-    lines.push("    ],");
+    lines.push("      ],");
   }
-  lines.push("  },", "};", "");
+  lines.push("    },", "  });", "}", "");
   return lines.join("\n");
 }

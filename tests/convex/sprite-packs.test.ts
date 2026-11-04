@@ -4,7 +4,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { MAX_PACK_SPRITES, MAX_SPRITE_BYTES, MAX_SPRITE_PACKS, MAX_SPRITE_PX } from "../../convex/lib/validators/spritePacks";
 import { classicFits, suggestClassic, uniqueSlug, slugOf, defaultLabels } from "../../src/components/combat-map/packs/labels";
-import { errorCode, key, setupWithCampaign, useAllowlist } from "./helpers";
+import { errorCode, imageBlob, key, setupWithCampaign, useAllowlist } from "./helpers";
 
 // Sprite packs P8 (plan .omc/plans/sprite-packs.yaml): the GM's packs, uploads and labels. Every function is the
 // GM's (anonymous UNAUTHENTICATED, outsider NOT_FOUND, player FORBIDDEN); uploads follow CF16 / CF17 (E7): a
@@ -45,7 +45,7 @@ async function withPack() {
   // convex-test records no content type, so set the one an upload would carry (as combat-maps.test.ts does).
   const store = (contentType = "image/webp", bytes = 64) =>
     t.run(async (c) => {
-      const id = await c.storage.store(new Blob([new Uint8Array(bytes)], { type: contentType }));
+      const id = await c.storage.store(imageBlob(contentType, bytes));
       await (c.db as unknown as { patch: (id: Id<"_storage">, value: { contentType: string }) => Promise<void> }).patch(id, { contentType });
       return id;
     });

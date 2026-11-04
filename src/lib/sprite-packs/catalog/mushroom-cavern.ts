@@ -1,8 +1,8 @@
 // Built-in catalog: mushroom cavern (underdark) (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, glowTex, obj, tex } from "./types";
+import { defineFolder, glowTex, obj, tex, type FolderCatalog } from "./types";
 
-export const MUSHROOM_CAVERN = defineFolder("mushroom-cavern", {
+export const MUSHROOM_CAVERN = (): FolderCatalog => defineFolder("mushroom-cavern", {
   props: [
     obj("glowing blue mushroom", "none", "low", "mushroom", { light: "faintglow" }),
     obj("glowing purple mushroom", "none", "low", "mushroom", { light: "faintglow" }),

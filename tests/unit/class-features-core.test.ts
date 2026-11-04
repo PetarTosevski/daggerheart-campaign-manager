@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { readSheet } from "../../convex/lib/characterSheet";
+import { derivedDefense, derivedTraits } from "@/lib/domain/characters/derived";
 import { withEffects } from "@/lib/domain/characters/effects";
 import { expire } from "@/lib/domain/characters/expiry";
 import { afterDualityRoll, classActions, findFeature, onSessionEnd, onSessionStart, rollOptions } from "@/lib/domain/class-features/hooks";
@@ -297,8 +298,10 @@ describe("Druid (CB 30)", () => {
     expect(findFeature(druid, "beastform")?.cost).toEqual({ stress: 1 });
     const { sheet } = act(druid, "beastform", { params: { choice: "agile-scout" } });
     expect(sheet.effects[0]).toMatchObject({ id: "beastform", until: "manual" });
-    expect(withEffects(sheet).evasion).toBe(12);
-    expect(withEffects(sheet).traits.agility).toBe(3);
+    // B1 (user 2026-10-29, dcm-bxp.99.19.19): the drawer's table adds the form's Evasion and trait, not D5's effect.
+    expect(sheet.effects[0]?.mods).toBeUndefined();
+    expect(derivedDefense(withEffects(sheet)).evasion).toBe(derivedDefense(withEffects(druid)).evasion + 2);
+    expect(derivedTraits(withEffects(sheet)).agility).toBe(druid.traits.agility + 1);
     expect(act(druid, "beastform").sheet.effects[0]?.text).toMatch(/^Transformed/);
     expect(refusal(() => act(druid, "beastform", { params: { choice: "armored-sentry" } }))).toBe("CLASS_FEATURE_RULE");
     expect(findFeature(druid, "wildtouch")).toMatchObject({ automation: "text" });

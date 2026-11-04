@@ -17,7 +17,9 @@
 // ```
 
 import { RESET_LABEL } from "../card-effects/availability";
-import type { DelegateAnswer, DelegateHandler, DelegateSnapshot, HeldDieState } from "../card-effects/run";
+import type { DelegateAnswer, DelegateHandler, DelegateRequest, DelegateSnapshot, HeldDieState } from "../card-effects/run";
+import { LUNAR_BUMP_KEY, phaseOf, raiseMoonDie } from "../session-features/lunar";
+import { spendTideTokens } from "../session-features/tide";
 import type { CardUse, DieSides, Step } from "../card-effects/types";
 import type { RollRecord } from "../duality";
 import { findFeature } from "../class-features/hooks";
@@ -53,6 +55,32 @@ export function delegateFeature(sheet: Pick<CharacterSheet, "classId" | "multicl
 }
 
 /**
+ * Plan lanes E8: `delegate` keys that run a session feature (src/lib/domain/session-features) instead of a D5 feature.
+ * The entry's own costs pay the price (Know the Tide's tokens are the delegate's; Lunar Phases' Hope is the entry's
+ * `hope` cost), so these change only the session state and the once-per key.
+ * - `knowTheTide` (Seaborne, CB p.77, dcm-78x): "Before you make an action roll, you can spend any number of these tokens
+ *   to gain a +1 bonus to the roll for each token spent." Spends `amount` tokens (`spendTideTokens`); the entry's
+ *   `modifyRoll` adds the bonus.
+ * - `lunarPhasesBump` (Moon Witch mastery, HF p.17, dcm-lk8): "Once per rest, you can spend a Hope to increase the value
+ *   of this die by one. If you increase the value of a 6, it becomes a 1." Raises the moon die and marks LUNAR_BUMP_KEY,
+ *   the key the sheet's own button uses (`raiseMoonDie`).
+ */
+export const SESSION_DELEGATES: Readonly<Record<string, (sheet: CharacterSheet, params: DelegateRequest["params"]) => { sheet: CharacterSheet; summary: string }>> = {
+  knowTheTide: (sheet, params) => {
+    const n = params.amount ?? 0;
+    const spent = spendTideTokens(sheet, n);
+    return { sheet: spent.sheet, summary: `spent ${n} Tide ${n === 1 ? "token" : "tokens"}: +${spent.modifier} to the roll` };
+  },
+  [LUNAR_BUMP_KEY]: (sheet) => {
+    const r = raiseMoonDie(sheet);
+    return { sheet: r.sheet, summary: `moon die ${r.from} -> ${r.to} (${phaseOf(r.to).name})` };
+  },
+};
+
+/** The once-per keys of the session delegates (read as D5's `cost.use`). */
+const SESSION_ONCE: Readonly<Record<string, FeatureUse>> = { [LUNAR_BUMP_KEY]: { key: LUNAR_BUMP_KEY, until: "rest" } };
+
+/**
  * A D5 once-per key a use's delegated features already used (`rally`, `unstoppable`, `channelRawPower`, `commune`):
  * the use reads as exhausted with that key's reset label, or null when none is used.
  */
@@ -62,7 +90,7 @@ export function delegatedExhaustion(
   registry: Registry = CLASS_FEATURES,
 ): { key: string; until: FeatureUse["until"]; label: string } | null {
   for (const key of delegatedKeys(use)) {
-    const once = delegateFeature(sheet, key, registry)?.cost?.use;
+    const once = SESSION_ONCE[key] ?? delegateFeature(sheet, key, registry)?.cost?.use;
     if (once === undefined) continue;
     const entry = sheet.featureUses.find((u) => u.key === once.key);
     if (entry) return { key: once.key, until: entry.until, label: RESET_LABEL[entry.until] };
@@ -104,6 +132,19 @@ function resize(before: readonly HeldDie[], after: readonly HeldDie[], sides: Di
   return after.map((d) => (old.has(d.id) || d.value !== undefined ? d : { ...d, sides }));
 }
 
+/** A roll as it reads for a target it missed: its success becomes the failure with the same die (Hope / Fear). */
+export function missedFor(roll: RollRecord): RollRecord {
+  switch (roll.outcome) {
+    case "critical":
+    case "successHope":
+      return { ...roll, outcome: "failHope" };
+    case "successFear":
+      return { ...roll, outcome: "failFear" };
+    default:
+      return roll;
+  }
+}
+
 /** A handler for the runner's `delegate` steps, and the sheets the D5 features leave behind. */
 export function createDelegator(input: DelegatorInput): Delegator {
   const registry = input.registry ?? CLASS_FEATURES;
@@ -112,7 +153,21 @@ export function createDelegator(input: DelegatorInput): Delegator {
   const changed = new Set<string>();
   const rolls: RollRecord[] = [];
 
-  const handler: DelegateHandler = ({ feature, params, actor }): DelegateAnswer => {
+  const handler: DelegateHandler = ({ feature, params, actor, roll: ownRoll, hit }): DelegateAnswer => {
+    // Plan lanes E8 (dcm-78x, dcm-lk8): a session feature's key routes to its session-features rule.
+    const session = SESSION_DELEGATES[feature];
+    if (session) {
+      const base: CharacterSheet = { ...sheet, hope: actor.hope, stress: actor.stress, hp: actor.hp, armorMarked: actor.armor, featureUses: [...actor.featureUses] };
+      let done;
+      try {
+        done = session(base, params);
+      } catch (error) {
+        if (error instanceof RuleError) return { ok: false, detail: error.message };
+        throw error;
+      }
+      sheet = done.sheet;
+      return { ok: true, actor: { ...actor, featureUses: sheet.featureUses }, summary: done.summary };
+    }
     const meta = delegateFeature(sheet, feature, registry);
     if (!meta?.use) return { ok: false, detail: `No automated feature "${feature}".` };
     // The sheet takes the runner's resources so far (costs paid, Hope gained).
@@ -141,19 +196,30 @@ export function createDelegator(input: DelegatorInput): Delegator {
     if (dieId) base = { ...base, heldDice: base.heldDice.filter((d) => d.id !== dieId) };
     const ally = params.targetId ? others.filter((o) => o.characterId === params.targetId) : [];
     const pass = meta.target === "ally" ? ally : meta.target === "party" ? others : [];
+    // dcm-53f: a D5 feature that names its target in words (Hex, Marked for Death, Ranger's Focus: a "Target name" input)
+    // run on a creature of the use names it by the creature's id; the server swaps the id for its name
+    // (convex/lib/featureRunner.ts `nameDelegatedTargets`), so `classState.hexes` holds the instance, not "Target N".
+    const namesTarget = meta.target !== "ally" && meta.target !== "party" && (meta.inputs ?? []).some((i) => i.kind === "text" && i.param === "choice");
+    const choice = params.choice ?? (namesTarget ? params.targetId : undefined);
+    // Plan lanes-2 E8 (dcm-8dhe, dcm-d1d; Ranger's Focus, CB p.39: "make an attack against a target. On a success, that
+    // target becomes your Focus"): the use's own roll (or its follow-up's, `DelegateRequest.roll`) is the roll the D5
+    // feature acts on; the caller's `roll` (Volatile Magic, Patron's Boon: the latest roll) only without one. A roll that
+    // missed the step's target (`hit: false`) is a failure for that target.
+    const acted = ownRoll ?? input.roll;
+    const roll = acted && hit === false && ownRoll !== undefined ? missedFor(acted) : acted;
     let result;
     try {
       result = meta.use({
         sheet: base,
         params: {
-          ...(params.choice !== undefined ? { choice: params.choice } : {}),
+          ...(choice !== undefined ? { choice } : {}),
           ...(params.amount !== undefined ? { amount: params.amount } : {}),
           ...(params.targetId !== undefined ? { targetId: params.targetId } : {}),
           ...(params.dieIndexes ? { dieIndexes: params.dieIndexes } : {}),
         },
         rng: input.rng,
         others: pass,
-        ...(input.roll ? { roll: input.roll } : {}),
+        ...(roll ? { roll } : {}),
       });
     } catch (error) {
       // A D5 refusal is a RuleError with the player's words; anything else is a bug and goes on up.

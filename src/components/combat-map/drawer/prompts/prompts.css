@@ -1,0 +1,53 @@
+/* DA13: prompts in the sheet drawer (a use an ally rolls: Cannonball). */
+.sdp-prompts {
+  display: grid;
+  gap: 0.5rem;
+  margin-block: 0.5rem;
+}
+
+.sdp-card {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.6rem;
+  border: 1px solid var(--cm-line, #555);
+  border-radius: 0.5rem;
+}
+
+.sdp-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.sdp-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.sdp-row select {
+  min-height: 44px;
+  max-width: 100%;
+}
+
+.sdp-traits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.sdp-list {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sdp-waiting,
+.sdp-result {
+  margin: 0;
+}

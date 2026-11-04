@@ -3,7 +3,7 @@
  * image"). Pure, shared by `convex/combatMaps.ts` (attachImage, setGrid) and the client (optimistic size, drawing).
  */
 
-import { MAP_H_MAX, MAP_H_MIN, MAP_W_MAX, MAP_W_MIN } from "../../../lib/domain/combat-map/spec";
+import { MAP_H_MAX, MAP_H_MIN, MAP_W_MAX, MAP_W_MIN } from "../../../lib/domain/combat-map/spec-constants";
 
 /** Square size and offset in image pixels (`combatMaps.image.grid`). */
 export type ImageGrid = { readonly cell: number; readonly offsetX: number; readonly offsetY: number };

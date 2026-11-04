@@ -30,10 +30,20 @@
 // - NV1: a `tokens` cost may spend Favor, Focus or held dice (`pool`); `unaffordable` checks each pool on its own.
 // - NV7: a `situation` requirement with a `check` is decided from `RequirementState.facts` when the facts it needs are
 //   known; otherwise the player's confirmation of its text still decides it (Q13).
+//
+// Plan lanes, E5 (docs/tasks/TASK-LN-E5.md): every `StateCheck` tracer V widened is decided here from `StateFacts` /
+// `CreatureFacts` (track, tokens, within, allyNear, weaponRange, holdsItem, usedOnBefore, usedArmor, moonPhase, not,
+// anyOf, inArea for another creature); the callers fill the facts they know. Per-target memory (`usedOnKey`), an
+// `exhaust` step (`exhaustKey`), a limit's `period` (`limitPeriod`) and costs paid by another PC (`unaffordableBy`).
+//
+// Plan lanes-2, E5 (docs/tasks/TASK-LN2-E5.md): `optionRemoved` from `StateFacts.removedOptions` (dcm-qw4f); Hope costs
+// refused while a `cannotSpendHope` flag holds and `clearBlocked` for `cannotClearHp` / `cannotClearStress` (dcm-5kxg);
+// Words of Discord's memory lasts the whole campaign (`USED_ON_EVER`, user answer 2026-10-31, dcm-c75).
 
 import type { FeatureUse } from "../../validation/characters";
+import { EXPIRING_FEATURE_USES } from "../characters/expiry";
 import { RANGE_SQUARES } from "../combat-map/ranges";
-import type { ConditionRef, Cost, HeldDieKind, Limit, Range, Requirement, StateCheck, TokenPool, Track } from "./types";
+import type { ConditionRef, Cost, FeatureOptionRef, HeldDieKind, Limit, Mod, Payer, Range, Requirement, StateCheck, TokenPool, Track } from "./types";
 import type { DomainId } from "../../srd/types";
 
 /** Prefix of every domain-card key in `featureUses`. */
@@ -47,28 +57,48 @@ export function featureUseKey(cardId: string, useId?: string, targetId?: string)
 }
 
 /**
- * The `until` a limit is stored with. The sheet's `featureUses` knows rest, longRest and session; a "once per scene"
- * limit is stored as `session` (the GM's End scene does not clear feature uses; see the task doc's QUESTIONS).
+ * The `featureUses` periods that `expire` (characters/expiry.ts) ends: every limit period since dcm-55k (E6 fires
+ * `gmTurn`, campaign time fires `day` / `week`). Plan lanes-2 wave 9, E5.3 (dcm-bc67): a limit is stored with its real
+ * period (`limitPeriod`); `campaign` is not here, `expire` never ends it.
  */
-export function limitUntil(per: Limit["per"]): FeatureUse["until"] {
-  return per === "scene" ? "session" : per;
+export const EXPIRING_UNTIL: readonly FeatureUse["until"][] = EXPIRING_FEATURE_USES;
+
+/** The period a limit (or a bare `per`, the callers' older form) is stored for: `limitPeriod` (dcm-bc67). */
+function storedPeriod(limit: Limit | Limit["per"]): FeatureUse["until"] {
+  return typeof limit === "string" ? limit : limitPeriod(limit);
 }
 
 /**
- * The `until` a feature's limit is stored with (SD1, Q3, Q7): the limit's own period, `scene` included ("once per
- * scene"; CB p.107: "a scene continues until the current narrative situation has played out").
+ * The `until` a card's limit is stored with: its period (`limitPeriod`). A "once per
+ * scene" limit is stored as `session` (cards keep `session` until their tables move over; see the task doc's
+ * QUESTIONS). Takes the `Limit` (E5 round 2) or, as before, its `per`.
  */
-export function featureLimitUntil(per: Limit["per"]): FeatureUse["until"] {
-  return per;
+export function limitUntil(limit: Limit | Limit["per"]): FeatureUse["until"] {
+  const until = storedPeriod(limit);
+  return until === "scene" ? "session" : until;
 }
 
-/** The label of an exhausted card (CA5 Hand, CA7 sheet). */
+/**
+ * The `until` a feature's limit is stored with (SD1, Q3, Q7): the limit's own period (`limitPeriod`), `scene`
+ * included ("once per scene"; CB p.107: "a scene continues until the current narrative situation has played out").
+ * Takes the `Limit` (E5 round 2) or, as before, its `per`.
+ */
+export function featureLimitUntil(limit: Limit | Limit["per"]): FeatureUse["until"] {
+  return storedPeriod(limit);
+}
+
+/** The label of an exhausted card (CA5 Hand, CA7 sheet), for every period `featureUses` stores. */
 export const RESET_LABEL: Record<FeatureUse["until"], string> = {
   rest: "Back after a rest",
   longRest: "Back after a long rest",
   session: "Back next session",
-  // Plan sheet-drawer SD0 (Q7): the sheet's `featureUses` gained `scene`; nothing stores it until SD1 / SD8.
+  // Plan sheet-drawer SD0 (Q7): the sheet's `featureUses` gained `scene`.
   scene: "Back after the scene",
+  gmTurn: "Back after the GM's turn",
+  day: "Back tomorrow",
+  week: "Back in a week",
+  // Plan lanes-2, E5 (dcm-c75, dcm-pg8x): a campaign-long entry (`USED_ON_EVER`); nothing ends it.
+  campaign: "Not again this campaign",
 };
 
 export type Availability =
@@ -105,7 +135,7 @@ export function keyAvailability(sheet: { readonly featureUses?: readonly Feature
   const entries = (sheet.featureUses ?? []).filter((u) => u.key === key);
   const times = Math.max(1, limit?.times ?? 1);
   if (entries.length < times) return limit?.times ? { state: "ready", usesLeft: times - entries.length } : { state: "ready" };
-  const order: FeatureUse["until"][] = ["scene", "rest", "longRest", "session"];
+  const order: FeatureUse["until"][] = ["gmTurn", "scene", "rest", "longRest", "session", "day", "week", CAMPAIGN_UNTIL];
   const until = entries.map((e) => e.until).reduce((a, b) => (order.indexOf(b) > order.indexOf(a) ? b : a));
   return { state: "exhausted", until, label: RESET_LABEL[until] };
 }
@@ -119,7 +149,27 @@ export function limitConsumed(limit: Limit, success: boolean): boolean {
 
 /** `featureUses` with one more use of `key` recorded under the limit's period. */
 export function recordUse(featureUses: readonly FeatureUse[], key: string, limit: Limit): FeatureUse[] {
-  return [...featureUses, { key, until: limitUntil(limit.per) }];
+  return [...featureUses, { key, until: limitUntil(limit) }];
+}
+
+/**
+ * Plan lanes, E5 (dcm-aym, dcm-c5h): the period a limit really runs for: its `period` (a GM turn, a day, a week) when it
+ * names one, else `per`. `featureUses` stores every one of them since the validator widen; `limitUntil` /
+ * `featureLimitUntil` store it (dcm-bc67: `expire` ends every one, `EXPIRING_UNTIL`).
+ */
+export function limitPeriod(limit: Limit): Limit["per"] | NonNullable<Limit["period"]> {
+  return limit.period ?? limit.per;
+}
+
+/**
+ * Plan lanes, E5 (dcm-war): `featureUses` with `key` spent until `per` ends: an `exhaust` step (Rune Ward, CB p.328: "If
+ * the Ward Die result is 8, the ward's power ends … It can be recharged for free on your next rest"). Entries are added
+ * until `times` (the limit's, default 1) are recorded, so `keyAvailability` answers exhausted.
+ */
+export function exhaustKey(featureUses: readonly FeatureUse[], key: string, per: Limit["per"], times = 1): FeatureUse[] {
+  const have = featureUses.filter((u) => u.key === key).length;
+  const until = featureLimitUntil(per);
+  return [...featureUses, ...Array.from({ length: Math.max(0, Math.max(1, times) - have) }, () => ({ key, until }))];
 }
 
 // ---------------------------------------------------------------- requirements
@@ -132,6 +182,8 @@ export interface RequirementState {
   stressMax: number;
   armor: number;
   hope: number;
+  /** Plan lanes, E5: the actor's Hope slots, for a `track` check on free Hope (absent: not known). */
+  hopeMax?: number;
   armorWorn: boolean;
   loadoutDomains: readonly DomainId[];
   /** Card ids whose own sheet effect is active (Force of Nature's form, Smite charged). */
@@ -144,12 +196,29 @@ export interface RequirementState {
   facts?: StateFacts;
 }
 
-/** A creature's state as a `StateCheck` reads it (the trigger's subject, the target). */
+/**
+ * A creature's state as a `StateCheck` reads it (the trigger's subject, the target). Plan lanes, E5: every field after
+ * `hpMax` is optional (absent = not known here, so the check falls back to the player, Q13).
+ * - `stress` / `stressMax` / `armor` / `armorMax` / `hope`: the `track` check (`hope` is the Hope held).
+ * - `tokens`: named tokens on the creature (bramble tokens); `items`: what it holds (Enchanted Talisman).
+ * - `distance`: squares from the actor; `nearestAlly`: squares to the nearest ally of the actor (the actor not counted).
+ * - `areas`: the live map areas it stands in, as `StateFacts.areas`.
+ */
 export interface CreatureFacts {
   conditions: readonly string[];
   tags?: readonly string[];
   hp: number;
   hpMax: number;
+  stress?: number;
+  stressMax?: number;
+  armor?: number;
+  armorMax?: number;
+  hope?: number;
+  tokens?: Readonly<Record<string, number>>;
+  items?: readonly string[];
+  distance?: number;
+  nearestAlly?: number;
+  areas?: readonly { featureId: string; own: boolean }[];
 }
 
 /**
@@ -161,6 +230,17 @@ export interface CreatureFacts {
  * - `activeStance`: the active martial stance slug, null when none (Q5).
  * - `areas`: the live map areas the actor stands in (Q14), with whether the actor drew them.
  * - `isolation`: squares from the actor (`self`) and from the target (`target`) to the nearest other creature.
+ * Plan lanes, E5 (the checks V widened):
+ * - `armorMax`: the actor's Armor Slots (a `track` check on free Armor Slots).
+ * - `cardTokens`: tokens on the card or feature being used; `tokens` / `items`: the actor's named tokens and held items.
+ * - `nearestAlly`: squares from the actor to its nearest ally.
+ * - `weapons`: the range of the actor's primary and secondary weapon (null: none equipped) and of the attacking weapon.
+ * - `usedOnBefore`: this card or feature affected the target before (`usedOnBefore` reads it from `featureUses`).
+ * - `usedArmor`: the target marked an Armor Slot against this hit (lane E2 fills it in the reaction window).
+ * - `moonPhase`: the Lunar Phases moon die (lane E8 fills it).
+ * Plan lanes-2, E5:
+ * - `removedOptions`: the options removed for good from the actor's features (Seven-Headed, HF p.92; lane E7 fills it
+ *   from the instance's `features.removeOptions` mods with `removedOptions` below).
  */
 export interface StateFacts {
   conditions?: readonly string[];
@@ -174,6 +254,30 @@ export interface StateFacts {
   isolation?: { self?: number; target?: number };
   subject?: CreatureFacts;
   target?: CreatureFacts;
+  armorMax?: number;
+  cardTokens?: number;
+  tokens?: Readonly<Record<string, number>>;
+  items?: readonly string[];
+  nearestAlly?: number;
+  weapons?: { primary?: Range | null; secondary?: Range | null; attacking?: Range | null };
+  usedOnBefore?: boolean;
+  usedArmor?: boolean;
+  moonPhase?: number;
+  removedOptions?: readonly FeatureOptionRef[];
+}
+
+/**
+ * Plan lanes-2, E5 (dcm-qw4f): the options a list of mods removes for good (`features.removeOptions`): the
+ * `removedOptions` fact, and the options a runner refuses (Seven-Headed, HF p.92: "Permanently remove the Elemental
+ * Breath option that corresponds to the result").
+ */
+export function removedOptions(mods: readonly Mod[]): FeatureOptionRef[] {
+  return mods.flatMap((m) => (m.kind === "features" ? [...(m.removeOptions ?? [])] : []));
+}
+
+/** Whether `option` is among `removed` (same feature, `choose` step and option). */
+export function optionIsRemoved(option: FeatureOptionRef, removed: readonly FeatureOptionRef[]): boolean {
+  return removed.some((r) => r.feature === option.feature && r.choose === option.choose && r.option === option.option);
 }
 
 const reach = (range: Range) => (range === "veryFar" ? Infinity : RANGE_SQUARES[range]);
@@ -220,8 +324,10 @@ export function stateCheckMet(check: StateCheck, s: RequirementState): boolean |
       const slug = check.stance.startsWith(STANCE_PREFIX) ? check.stance.slice(STANCE_PREFIX.length) : check.stance;
       return f.activeStance === slug;
     }
-    case "inArea":
-      return f.areas?.some((a) => a.featureId === check.featureId && (check.owner !== "self" || a.own));
+    case "inArea": {
+      const areas = check.who === undefined || check.who === "self" ? f.areas : creature(f, check.who)?.areas;
+      return areas?.some((a) => a.featureId === check.featureId && (check.owner !== "self" || a.own));
+    }
     case "isolated": {
       const away = (n: number | undefined) => (n === undefined ? undefined : n > reach(check.range));
       const self = away(f.isolation?.self);
@@ -230,7 +336,127 @@ export function stateCheckMet(check: StateCheck, s: RequirementState): boolean |
       if (target === false) return false;
       return self === undefined || target === undefined ? undefined : true;
     }
+    // Plan lanes, E5: the checks tracer V widened (TASK-LN-V.md). An unknown fact still leaves it to the player (Q13).
+    case "track":
+      return between(trackValue(check, s), check);
+    case "tokens":
+      return between(tokenCount(check, f), check);
+    case "within": {
+      const d = creature(f, check.who)?.distance;
+      return d === undefined ? undefined : d <= reach(check.range);
+    }
+    case "allyNear": {
+      const d = check.of === "self" ? f.nearestAlly : f.target?.nearestAlly;
+      return d === undefined ? undefined : d <= reach(check.range);
+    }
+    case "weaponRange": {
+      const w = f.weapons;
+      if (w === undefined) return undefined;
+      const fits = (r: Range | null | undefined) => (r === undefined ? undefined : r !== null && reach(r) <= reach(check.atMost));
+      return check.weapon === "either" ? anyOf([fits(w.primary), fits(w.secondary)]) : fits(w[check.weapon]);
+    }
+    case "holdsItem": {
+      const items = check.who === "self" ? f.items : creature(f, check.who)?.items;
+      return items === undefined ? undefined : items.includes(check.item);
+    }
+    case "usedOnBefore":
+      return f.usedOnBefore;
+    case "usedArmor":
+      return f.usedArmor === undefined ? undefined : f.usedArmor === check.used;
+    case "moonPhase":
+      return f.moonPhase === undefined ? undefined : f.moonPhase === check.phase;
+    case "not": {
+      const inner = stateCheckMet(check.check, s);
+      return inner === undefined ? undefined : !inner;
+    }
+    case "anyOf":
+      return anyOf(check.checks.map((c) => stateCheckMet(c, s)));
+    // Plan lanes-2, E5 (dcm-qw4f): Seven-Headed, HF p.92: "if the corresponding option has already been removed".
+    case "optionRemoved":
+      return f.removedOptions === undefined ? undefined : optionIsRemoved(check.option, f.removedOptions);
   }
+}
+
+/** The trigger's subject or the target. */
+const creature = (f: StateFacts, who: "subject" | "target"): CreatureFacts | undefined => (who === "subject" ? f.subject : f.target);
+
+/** True when any holds, false when every one is known not to, else unknown. */
+function anyOf(results: readonly (boolean | undefined)[]): boolean | undefined {
+  if (results.some((r) => r === true)) return true;
+  return results.every((r) => r === false) ? false : undefined;
+}
+
+/** Whether `n` lies within `atLeast` / `atMost` (unknown when `n` is). */
+function between(n: number | undefined, bounds: { atLeast?: number; atMost?: number }): boolean | undefined {
+  if (n === undefined) return undefined;
+  return (bounds.atLeast === undefined || n >= bounds.atLeast) && (bounds.atMost === undefined || n <= bounds.atMost);
+}
+
+/**
+ * The tokens a `tokens` check counts: without `name` the tokens on this card or feature (Feed, Invisibility, Never
+ * Upstaged), with `name` the named tokens on the actor or the target (a creature without that kind holds 0).
+ * A name-less check on the target is not a reading the vocabulary defines: unknown.
+ */
+function tokenCount(check: Extract<StateCheck, { kind: "tokens" }>, f: StateFacts): number | undefined {
+  const who = check.who ?? "self";
+  if (check.name === undefined) return who === "self" ? f.cardTokens : undefined;
+  const held = who === "self" ? f.tokens : f.target?.tokens;
+  return held === undefined ? undefined : (held[check.name] ?? 0);
+}
+
+/** The number a `track` check compares: marks or free slots. Hope: `marked` is the Hope held, `free` the room up to the Hope slots. */
+function trackValue(check: Extract<StateCheck, { kind: "track" }>, s: RequirementState): number | undefined {
+  const f = s.facts ?? {};
+  let c: { hp?: number; hpMax?: number; stress?: number; stressMax?: number; armor?: number; armorMax?: number; hope?: number; hopeMax?: number };
+  if (check.who === "self") {
+    c = { hp: s.hp, hpMax: s.hpMax, stress: s.stress, stressMax: s.stressMax, armor: s.armor, armorMax: f.armorMax, hope: s.hope, hopeMax: s.hopeMax };
+  } else {
+    const o = creature(f, check.who);
+    if (o === undefined) return undefined;
+    c = o;
+  }
+  const pairs: Record<Track | "hope", [number | undefined, number | undefined]> = {
+    hp: [c.hp, c.hpMax],
+    stress: [c.stress, c.stressMax],
+    armor: [c.armor, c.armorMax],
+    hope: [c.hope, c.hopeMax],
+  };
+  const [marked, max] = pairs[check.track];
+  if (check.measure === "marked") return marked;
+  return marked === undefined || max === undefined ? undefined : Math.max(0, max - marked);
+}
+
+// ---------------------------------------------------------------- per-target memory (dcm-c75)
+
+/** The `featureUses` key that remembers a card or feature affected `targetId` (Words of Discord: "The next time you cast … on them"). */
+export function usedOnKey(key: string, targetId: string): string {
+  return `${key}:on:${targetId}`;
+}
+
+/** Whether the card or feature `key` affected `targetId` before: the `usedOnBefore` fact of a `usedOnBefore` check. */
+export function usedOnBefore(sheet: { readonly featureUses?: readonly FeatureUse[] }, key: string, targetId: string): boolean {
+  const k = usedOnKey(key, targetId);
+  return (sheet.featureUses ?? []).some((u) => u.key === k);
+}
+
+/** The `until` of an entry nothing ends (dcm-c75): `expire` (characters/expiry.ts) ends only the periods it lists. */
+export const CAMPAIGN_UNTIL = "campaign" as const satisfies FeatureUse["until"];
+
+/**
+ * Plan lanes-2, E5 (dcm-c75; user answer 2026-10-31: Words of Discord remembers a target "for the WHOLE CAMPAIGN: every
+ * later cast on a creature it has hit takes -5"): the `until` a memory without `since` is stored with, `CAMPAIGN_UNTIL`
+ * since `FEATURE_USE_UNTIL` (src/lib/validation/characters.ts) gained "campaign" (wave 9, E5.3, dcm-pg8x).
+ */
+export const USED_ON_EVER: FeatureUse["until"] = CAMPAIGN_UNTIL;
+
+/**
+ * `featureUses` remembering that `key` affected `targetId` until `since` ends. Without `since` the memory lasts the
+ * whole campaign (`USED_ON_EVER`; Words of Discord, CB p.335: "The next time you cast Words of Discord on them, gain a
+ * -5 penalty to the Spellcast Roll"). Recording again keeps one entry.
+ */
+export function recordUsedOn(featureUses: readonly FeatureUse[], key: string, targetId: string, since?: Limit["per"]): FeatureUse[] {
+  const k = usedOnKey(key, targetId);
+  return [...featureUses.filter((u) => u.key !== k), { key: k, until: since === undefined ? USED_ON_EVER : featureLimitUntil(since) }];
 }
 
 /**
@@ -288,6 +514,11 @@ export interface PayerState {
   favor?: number;
   focus?: number;
   heldDice?: Partial<Record<HeldDieKind, number>>;
+  /**
+   * Plan lanes-2, E5 (dcm-5kxg): the payer's rules flags from its conditions and effects (`Mod` `flag`): while
+   * `cannotSpendHope` holds, every Hope cost is short (Ravenous, HF p.94: "While Ravenous, a PC can't spend Hope").
+   */
+  flags?: readonly string[];
 }
 
 /**
@@ -335,11 +566,40 @@ export function unaffordable(costs: readonly PaidCost[], s: PayerState): PaidCos
     fear: s.fear ?? 0,
     gold: s.gold ?? 0,
   };
-  const short = (Object.keys(room) as PaidCost["resource"][]).filter((r) => total(r) > room[r]);
+  const short = (Object.keys(room) as PaidCost["resource"][]).filter((r) => total(r) > room[r] || (r === "hope" && total(r) > 0 && hopeBlocked(s.flags)));
   // NV1: each other pool on its own (Favor, Focus, each held-die kind); a short pool reads as "tokens".
   const pooled = new Map<string, number>();
   for (const c of costs) if (c.pool !== undefined) pooled.set(c.pool, (pooled.get(c.pool) ?? 0) + c.amount);
   const poolRoom = (pool: string): number => (pool === "favor" ? (s.favor ?? 0) : pool === "focus" ? (s.focus ?? 0) : (s.heldDice?.[pool as HeldDieKind] ?? 0));
   const poolShort = [...pooled].some(([pool, n]) => n > poolRoom(pool));
   return poolShort && !short.includes("tokens") ? [...short, "tokens"] : short;
+}
+
+/**
+ * Plan lanes, E5 (dcm-8yr, dcm-uj0): what a cost paid by `paidBy` is short of. Tactician (CB p.333: "they can spend a
+ * Hope") and Rune Ward (CB p.328: "The ward's holder can spend a Hope") draw on another PC: an unaffordable payer refuses
+ * the use, or skips the `pay` step, as an unaffordable actor does. `payers` holds the state of each payer the caller
+ * knows (`self` the actor); `null` when the payer is not known (no trigger subject, nobody picked): the caller then asks.
+ */
+export function unaffordableBy(costs: readonly PaidCost[], paidBy: Payer | undefined, payers: Partial<Record<Payer, PayerState>>): PaidCost["resource"][] | null {
+  const state = payers[paidBy ?? "self"];
+  return state === undefined ? null : unaffordable(costs, state);
+}
+
+// ---------------------------------------------------------------- flags that refuse spending or clearing (dcm-5kxg)
+
+type RuleFlag = Extract<Mod, { kind: "flag" }>["flag"];
+
+/** Whether the flags forbid spending Hope (Ravenous, HF p.94: "While Ravenous, a PC can't spend Hope"). */
+export function hopeBlocked(flags: readonly string[] | undefined): boolean {
+  return flags?.includes("cannotSpendHope" satisfies RuleFlag) ?? false;
+}
+
+/**
+ * Plan lanes-2, E5 (dcm-5kxg): whether the flags forbid clearing `track` (Afflicted, HF p.95: "While Afflicted, the
+ * target can't clear HP or Stress"). The clear steps (card-effects/run.ts, lane E3) and the rests skip a blocked track.
+ */
+export function clearBlocked(track: "hp" | "stress", flags: readonly string[] | undefined): boolean {
+  const flag: RuleFlag = track === "hp" ? "cannotClearHp" : "cannotClearStress";
+  return flags?.includes(flag) ?? false;
 }

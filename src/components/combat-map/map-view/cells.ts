@@ -11,7 +11,7 @@
  * fog `r` reveal / `h` hide.
  */
 
-import { TERRAINS, type Terrain } from "../../../lib/domain/combat-map/spec";
+import { TERRAINS, type Terrain } from "../../../lib/domain/combat-map/spec-constants";
 import type { FogMark } from "../../../lib/domain/combat-map/vision";
 
 export const CELL_TILE_ROWS = 8;

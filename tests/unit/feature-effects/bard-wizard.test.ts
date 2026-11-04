@@ -13,6 +13,8 @@ import type { FeatureEffect } from "@/lib/domain/feature-effects/types";
 import { FEATURE_CLASSIFICATION, FEATURE_EFFECTS } from "@/lib/srd/feature-effects";
 import { BARD_WIZARD_EFFECTS } from "@/lib/srd/feature-effects/bard-wizard";
 import type { CharacterSheet } from "@/lib/validation/characters";
+import { recallReductions } from "../../../convex/lib/cardHand";
+import { extraMoveGrantsOf } from "../../../convex/lib/featureRunner";
 import { actorOf, adversary, sheetOf } from "./engine/fixtures";
 
 // Plan sheet-drawer, tracer FE-bard-wizard: every Bard and Wizard feature usable in combat (or passive) runs through
@@ -249,11 +251,18 @@ describe("Eloquent (CB p.29)", () => {
     expect(ofKind(epic, "help")).toEqual([{ kind: "help", targetId: "b", die: 10, free: true }]);
   });
 
-  it("the mundane object and the extra downtime move are the table's; once per session", () => {
+  it("the mundane object is the table's; once per session", () => {
     const object = plan(fe.featureId, undefined, { actor: actorOf(special), targets: [ally("b")], options: { option: ["object"] } });
     expect(ofKind(object, "prompt")).toMatchObject([{ prompt: "manual", targetIds: ["b"], text: "Your ally finds a mundane object or tool they need." }]);
+    expect(object.limit).toEqual({ key: "feat:subclass:wordsmith:eloquent", until: "session", consumed: true });
+  });
+
+  it("an additional downtime move at the ally's next rest: a downtime grant the server records (dcm-bxp.99.19.2)", () => {
     const downtime = plan(fe.featureId, undefined, { actor: actorOf(special), targets: [ally("b")], options: { option: ["downtime"] } });
-    expect(ofKind(downtime, "prompt")).toMatchObject([{ prompt: "manual", text: "Your ally takes an additional downtime move during their next rest." }]);
+    const [grant] = ofKind(downtime, "prompt");
+    expect(grant).toMatchObject({ targetIds: ["b"], step: { kind: "downtime", op: "extraMove", at: "nextRest" } });
+    // featureRunner turns it into one grant for the ally (no manual row), which their next rest reads.
+    expect([...extraMoveGrantsOf(downtime)]).toEqual([["b", 1]]);
     expect(downtime.limit).toEqual({ key: "feat:subclass:wordsmith:eloquent", until: "session", consumed: true });
   });
 });
@@ -342,13 +351,23 @@ describe("Adept (CB p.50)", () => {
 });
 
 describe("Perfect Recall (CB p.50)", () => {
-  it("once per rest: the Recall Cost is 1 lower (left to the table: a vocabulary gap)", () => {
-    const fe = entry("subclass:school-of-knowledge:perfect-recall");
-    const sheet = sheetOf("wizard", "school-of-knowledge", { subclassRank: "specialization" });
+  const fe = entry("subclass:school-of-knowledge:perfect-recall");
+  const sheet = sheetOf("wizard", "school-of-knowledge", { subclassRank: "specialization" });
+
+  it("a rider on the recall: reduceRecallCost 1, once per rest (dcm-bxp.99.19.1)", () => {
+    expect(fe.uses[0]!.activation).toEqual({ kind: "rider", trigger: { kind: "whenYouRecall" } });
+    expect(fe.uses[0]!.steps).toMatchObject([{ kind: "loadout", op: "reduceRecallCost", amount: { kind: "fixed", value: 1 } }]);
     const p = plan(fe.featureId, undefined, { actor: actorOf(sheet) });
-    expect(ofKind(p, "prompt")).toMatchObject([{ prompt: "manual" }]);
     expect(p.limit).toEqual({ key: "feat:subclass:school-of-knowledge:perfect-recall", until: "rest", consumed: true });
     expect(runFeature(fe, undefined, { actor: actorOf(sheet, { featureUses: p.actor.featureUses }), gmFear: 0, rng: queueRng([]) })).toMatchObject({ ok: false, reason: "exhausted", detail: "Back after a rest" });
+  });
+
+  it("the server's recall takes 1 off when the player takes the rider, once per rest (the real entry)", () => {
+    const campaign = { frameId: "witherwild", options: {} } as never;
+    expect(recallReductions(sheet, campaign, 2, [])).toMatchObject({ cost: 2, names: [] });
+    const once = recallReductions(sheet, campaign, 2, [fe.featureId]);
+    expect(once).toMatchObject({ cost: 1, names: ["Perfect Recall"] });
+    expect(() => recallReductions(once.sheet, campaign, 2, [fe.featureId])).toThrow();
   });
 });
 

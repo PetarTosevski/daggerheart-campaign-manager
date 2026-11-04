@@ -3,9 +3,10 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 import { signInAsTestGm } from "./fixtures";
 import { D9_VIEWPORTS, expectNoHorizontalScroll, openCombatMap, visual } from "./visual/helpers";
 
-// D9 C0: the Combat Map page shell (.omc/plans/d9-combat-map.yaml). The GM gets the board's header with GM Fear,
-// the maps card, the Play / Edit switch and the empty map area; a player opens the same tab (it is not GM-only)
-// and gets the player layout: no maps card, no Fear, no edit tools.
+// D9 C0: the Combat Map page shell (.omc/plans/d9-combat-map.yaml). The GM with no map yet is in Edit: the header
+// with GM Fear, the maps card, the Play / Edit switch and the empty map area. A player opens the same tab (it is not
+// GM-only) and, since the cut-over (plan combat-hud H8.1), gets the Combat HUD: no maps card, no Fear buttons, no
+// edit tools.
 
 const PLAYER = "e2e-player@example.test";
 
@@ -69,19 +70,25 @@ test("the GM opens Combat Map from the nav: header with Fear, maps card, mode sw
   await expect(fear.getByTestId("combat-fear")).toHaveText("0");
 });
 
-test("a player opens Combat Map and gets the player layout without GM tools", async ({ page, browser }) => {
+test("a player opens Combat Map and gets the HUD without GM tools", async ({ page, browser }) => {
   const { name, campaignId } = await gmCreatesCampaign(page);
   const { player, close } = await playerJoins(page, browser, name);
   try {
     const nav = player.getByRole("navigation", { name: "Campaign sections" });
     await nav.getByRole("link", { name: "Combat Map" }).click();
     await expect(player).toHaveURL(`/campaigns/${campaignId}/combat-map`);
-    await expect(player.getByRole("heading", { level: 1, name: "Combat Map" })).toBeVisible();
-    await expect(player.getByRole("region", { name: "Battle map" }).getByText("No battle yet")).toBeVisible();
-    await expect(player.getByText("The GM hasn’t put a map live yet.")).toBeVisible();
+    await expect(player.getByTestId("combat-hud")).toBeVisible();
+    const title = player.getByTestId("hud-title");
+    await expect(title.getByRole("heading", { name: "Combat Map" })).toBeVisible();
+    await expect(title).toContainText("No live map yet");
+    const board = player.getByRole("region", { name: "Battle map" });
+    await expect(board.getByText("No battle yet")).toBeVisible();
+    await expect(board.getByText("The GM has not shown a map yet.")).toBeVisible();
     await expect(player.getByRole("heading", { name: "Maps" })).toHaveCount(0);
-    await expect(player.getByRole("group", { name: "GM Fear" })).toHaveCount(0);
+    // The Fear banner reads the GM's Fear; only the GM gets its buttons.
+    await expect(player.getByRole("group", { name: "GM Fear" }).getByRole("button")).toHaveCount(0);
     await expect(player.getByRole("group", { name: "Map mode" })).toHaveCount(0);
+    await expect(player.getByRole("button", { name: "Map tools" })).toHaveCount(0);
   } finally {
     await close();
   }

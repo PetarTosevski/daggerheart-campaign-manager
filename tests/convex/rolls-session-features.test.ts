@@ -251,10 +251,10 @@ describe("rolls session features: Know the Tide (CB 77, U4, U5, Q1)", () => {
   });
 
   it("undoing the roll takes its token back", async () => {
-    const { p2, tide, sheetOf } = await setup();
+    const { gm, p2, tide, sheetOf } = await setup();
     const { entryId } = await p2.mutation(api.rolls.manualRoll, { characterId: tide, roll: action, values: WITH_FEAR, idempotencyKey: key() });
     expect((await sheetOf(tide)).sessionFeatures?.tideTokens).toBe(1);
-    await p2.mutation(api.actionLog.undo, { entryId, idempotencyKey: key() });
+    await gm.mutation(api.actionLog.undo, { entryId, idempotencyKey: key() });
     expect((await sheetOf(tide)).sessionFeatures).toBeUndefined();
   });
 

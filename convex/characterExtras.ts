@@ -54,12 +54,13 @@ import { resolveOptions } from "../src/lib/frames/options";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
+import { EXTRA_SCHEMA_VERSION, installedAugments, motherboardState } from "./lib/motherboardState";
 import { parseOrCorrupt, readVersioned } from "./lib/blobs";
 import { rollDie } from "./lib/dice";
 import { keyedCampaignMutation, userMutation, userQuery } from "./lib/functions";
 import { campaignScope, runOnce } from "./lib/operations";
 import { atLeast, permissionFor, type Permission } from "./lib/permissions";
-import { applyTrackerRule, frameTrackerMutation, loadTracker, readTracker, TRACKER_SCHEMA_VERSION, writeTracker, type FrameTracker } from "./lib/trackers";
+import { frameTrackerMutation, loadTracker, readTracker, TRACKER_SCHEMA_VERSION, writeTracker, type FrameTracker } from "./lib/trackers";
 import {
   beastformStateValidator,
   companionStateValidator,
@@ -74,8 +75,6 @@ import {
   type ExtrasView,
 } from "./lib/validators/characterExtras";
 
-/** The version every `characterExtras` row is written with (CD3); bumping it needs an upgrade step in `readRow`. */
-const EXTRA_SCHEMA_VERSION = 1;
 
 /** The sheet fields the extras depend on (the full sheet is read by convex/characters.ts). */
 const sheetBasics = z.object({
@@ -136,25 +135,7 @@ async function readState<E extends Extra>(ctx: QueryCtx, loaded: Loaded, extra: 
   return (legacy ?? SCHEMAS[extra].initial) as StateOf[E];
 }
 
-/**
- * A character's Motherboard module (Ikonis, augments, scrap): its row, else
- * its old `frameTrackers` row (until the migration has run), else null; null
- * outside Motherboard.
- */
-export async function motherboardState(ctx: QueryCtx, campaign: Doc<"campaigns">, characterId: Id<"characters">): Promise<MotherboardState | null> {
-  if (campaign.frameId !== FRAME_OF.motherboard) return null;
-  const row = await extraRow(ctx, characterId, "motherboard");
-  if (row !== null) return readRow("motherboard", row);
-  return readTracker(ctx, campaign._id, extraKey(characterId, "motherboard"), motherboardStateSchema);
-}
-
-/**
- * The Ikonis augments a character has installed (Motherboard only, CB 301);
- * `[]` in other frames. `derivedDefense` adds Guard, Deny and Block.
- */
-export async function installedAugments(ctx: QueryCtx, campaign: Doc<"campaigns">, characterId: Id<"characters">): Promise<string[]> {
-  return (await motherboardState(ctx, campaign, characterId))?.installed ?? [];
-}
+export { installedAugments, motherboardState };
 
 /** Writes a new character's Motherboard module (`characters.create`). */
 export async function seedMotherboard(ctx: MutationCtx, campaignId: Id<"campaigns">, characterId: Id<"characters">, state: MotherboardState): Promise<void> {
@@ -188,7 +169,7 @@ function extraRow(ctx: QueryCtx, characterId: Id<"characters">, extra: Extra) {
 /**
  * Edit access and applicability (a frame extra outside its frame, or a class
  * extra on another class, is `MECHANIC_DISABLED`), then one idempotent change
- * of the extra's state. The domain's plain `Error`s become `EXTRA_RULE`.
+ * of the extra's state. The extras modules throw `RuleError` themselves.
  */
 async function change<E extends Extra, R>(
   ctx: MutationCtx & { user: Doc<"users"> },
@@ -212,7 +193,7 @@ async function change<E extends Extra, R>(
     },
     async () => {
       const row = await extraRow(ctx, characterId, extra);
-      const next = await applyTrackerRule("EXTRA_RULE", async () => apply(await readState(ctx, loaded, extra, row), loaded));
+      const next = await apply(await readState(ctx, loaded, extra, row), loaded);
       await storeExtra(ctx, loaded, extra, row, next.state);
       return next.result;
     },
@@ -351,7 +332,7 @@ async function corruptionChange<R>(
     { scopeKey: campaignScope(campaignId), key: op.idempotencyKey, kind: op.kind, request: { characterId, ...op.request }, createdBy: ctx.user._id, campaignId },
     async () => {
       const current = (await readTracker(ctx, campaignId, CORRUPTION_TRACKER_KEY, corruptionStateSchema)) ?? INITIAL_CORRUPTION;
-      const next = await applyTrackerRule("EXTRA_RULE", () => apply(current, loaded));
+      const next = await apply(current, loaded);
       await writeTracker(ctx, campaignId, CORRUPTION_TRACKER_KEY, next.state, TRACKER_SCHEMA_VERSION);
       return next.result;
     },

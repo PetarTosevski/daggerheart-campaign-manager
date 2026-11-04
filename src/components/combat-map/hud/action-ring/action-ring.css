@@ -1,0 +1,173 @@
+/*
+ * The action ring (plan combat-hud H3.4; board Main `.rad`, `.rad.on`, `.rad.off`, `.rad-tip`). A zero-size anchor at
+ * your token's centre in the map stage; each button is centred on its point of the arc. Colours are H0's --hud-*
+ * tokens; the board's locked browns have no token yet and are kept as literals here only.
+ */
+.hud-ar {
+  position: absolute;
+  width: 0;
+  height: 0;
+  /* Over the tokens (z 2) and the target rings (z 35), under the HUD's pop-ups (outside the map). */
+  z-index: 40;
+}
+
+.hud-ar-b {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--hud-card, #141e22);
+  color: var(--hud-ink, #e6ecea);
+  box-shadow:
+    0 0 0 1px #3a4d54,
+    0 6px 14px rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  pointer-events: auto;
+  animation: hud-ar-in 160ms ease-out both;
+}
+.hud-ar-b:hover {
+  background: #1c2a30;
+}
+.hud-ar-b:focus-visible,
+.hud-ar-mi:focus-visible {
+  outline: 2px solid var(--hud-gold-text, #f3cf86);
+  outline-offset: 3px;
+}
+.hud-ar-b.on {
+  background: var(--hud-gold, #e3b45a);
+  color: var(--hud-gold-ink, #1a1408);
+  box-shadow:
+    0 0 0 3px rgba(227, 180, 90, 0.35),
+    0 0 18px rgba(227, 180, 90, 0.6);
+}
+.hud-ar-b.off {
+  background: #1a1512;
+  color: #7d6a50;
+  box-shadow: 0 0 0 1px #6b3f22;
+  cursor: not-allowed;
+}
+.hud-ar-ic {
+  width: 18px;
+  height: 18px;
+}
+/* The label under the button (board `.rad span`). */
+.hud-ar-l {
+  position: absolute;
+  top: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  font: 600 10.5px/1 var(--hud-font-ui, "IBM Plex Sans", sans-serif);
+  white-space: nowrap;
+  color: var(--hud-ink, #e6ecea);
+  text-shadow: 0 1px 3px #000;
+  pointer-events: none;
+}
+.hud-ar-b.off .hud-ar-l {
+  color: #c9b79a;
+}
+
+/* A locked button's reason beside it (board `.rad-tip`). */
+.hud-ar-tip {
+  position: absolute;
+  z-index: 2;
+  white-space: nowrap;
+  font: 400 11.5px/1.2 var(--hud-font-ui, "IBM Plex Sans", sans-serif);
+  color: #f3c7a0;
+  background: #2a1a12;
+  box-shadow: 0 0 0 1px #6b3f22;
+  border-radius: 8px;
+  padding: 5px 9px;
+  pointer-events: none;
+}
+
+/* "More": the overflow as a list beside the ring. */
+.hud-ar-more {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 200px;
+  max-width: 280px;
+  padding: 8px;
+  border-radius: var(--hud-r-popup, 14px);
+  background: var(--hud-glass, rgba(13, 20, 23, 0.94));
+  box-shadow:
+    0 0 0 1px var(--hud-line, #253338),
+    0 10px 24px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+}
+.hud-ar-mi {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--hud-ink, #e6ecea);
+  text-align: left;
+  font: var(--hud-type-ui, 400 13px/1.35 sans-serif);
+  cursor: pointer;
+}
+.hud-ar-mi:hover {
+  background: #1c2a30;
+}
+.hud-ar-mi.on {
+  background: var(--hud-gold-soft, #2d2614);
+  color: var(--hud-gold-text, #f3cf86);
+}
+.hud-ar-mi.off {
+  color: #c9b79a;
+  cursor: not-allowed;
+}
+.hud-ar-mi .hud-ar-ic {
+  flex: none;
+}
+.hud-ar-mi-t {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hud-ar-mi-t small {
+  color: #f3c7a0;
+  font-size: 11.5px;
+}
+
+/* The classic Use flow (Warden's Protection, Charge) beside the ring, as the sheet panel shows it. */
+.hud-ar-classic {
+  position: absolute;
+  z-index: 3;
+  width: 320px;
+  max-height: 60vh;
+  overflow: auto;
+  border-radius: var(--hud-r-popup, 14px);
+  background: var(--hud-glass, rgba(13, 20, 23, 0.94));
+  box-shadow:
+    0 0 0 1px var(--hud-line, #253338),
+    0 10px 24px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+}
+
+@keyframes hud-ar-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hud-ar-b {
+    animation: none;
+  }
+}

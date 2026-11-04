@@ -23,7 +23,7 @@ import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import type { CombatMapLayout } from "../../../../convex/combatMaps";
 import type { ImageGrid } from "./grid";
-import { hasUploadedRefs, toPaintSpec, toSpritePaintSpec } from "./paint-spec";
+import { hasPackSetting, hasUploadedRefs, toPaintSpec, toSpritePaintSpec } from "./paint-spec";
 
 /** Pixels per square on the map canvas (the painter's and the board's CELL); zoom scales it with CSS. */
 export const MAP_CELL = 48;
@@ -125,11 +125,12 @@ function paintSpriteLayout(
   layout: CombatMapLayout,
   paint: PaintedTerrain,
   uploaded: sprites.UploadedSprites,
+  packExtends: string | null,
   prev: SpritePainted | null,
 ): SpritePainted | null {
   const ctx = canvas.getContext("2d");
   if (!ctx) return prev;
-  const spec = toSpritePaintSpec(layout, uploaded);
+  const spec = toSpritePaintSpec(layout, uploaded, packExtends);
   const art = spriteImages();
   // Hand-painted texture cells (P9) are not structure: like painted terrain they repaint only the squares they change.
   const structure = JSON.stringify([
@@ -224,7 +225,8 @@ type MapCanvasProps = {
  */
 export function MapCanvas(props: MapCanvasProps) {
   const sprite = props.layout.source !== "image" && props.layout.style === "sprites";
-  if (sprite && hasUploadedRefs(props.layout)) {
+  // dcm-bxp.86: a pack-setting map reads the sources for the pack's `extends` too.
+  if (sprite && (hasUploadedRefs(props.layout) || hasPackSetting(props.layout))) {
     return (
       <SourcesBoundary resetKey={props.layout._id} fallback={<CanvasView {...props} uploaded={NO_UPLOADS} />}>
         <WithSources {...props} />
@@ -239,7 +241,7 @@ function WithSources(props: MapCanvasProps) {
   const { campaignId } = useParams<{ campaignId: Id<"campaigns"> }>();
   const sources = useQuery(api.combatMapStyle.spriteSources, { campaignId, mapId: props.layout._id });
   const uploaded = useMemo<sprites.UploadedSprites>(() => (sources ? new Map(sources.sprites.map((s) => [s._id, s])) : NO_UPLOADS), [sources]);
-  return <CanvasView {...props} uploaded={uploaded} />;
+  return <CanvasView {...props} uploaded={uploaded} packExtends={sources?.extends ?? null} />;
 }
 
 /** Keeps a failed `spriteSources` read (a map that just stopped being live) from blanking the board. */
@@ -260,7 +262,16 @@ class SourcesBoundary extends Component<{ children: ReactNode; fallback: ReactNo
   }
 }
 
-function CanvasView({ layout, paint, image, grid, zoom, pad, uploaded }: MapCanvasProps & { uploaded: sprites.UploadedSprites }) {
+function CanvasView({
+  layout,
+  paint,
+  image,
+  grid,
+  zoom,
+  pad,
+  uploaded,
+  packExtends = null,
+}: MapCanvasProps & { uploaded: sprites.UploadedSprites; packExtends?: string | null }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const state = useRef<CanvasState>(null);
   const isImage = layout.source === "image";
@@ -275,7 +286,7 @@ function CanvasView({ layout, paint, image, grid, zoom, pad, uploaded }: MapCanv
       state.current = null;
       paintImage(el, layout.w, layout.h, image, grid ?? { cell: MAP_CELL, offsetX: 0, offsetY: 0 });
     } else if (style === "sprites") {
-      const painted = paintSpriteLayout(el, layout, paint, uploaded, prev?.style === "sprites" ? prev.painted : null);
+      const painted = paintSpriteLayout(el, layout, paint, uploaded, packExtends, prev?.style === "sprites" ? prev.painted : null);
       state.current = painted ? { style, painted } : null;
     } else {
       const painted = paintLayout(el, layout, paint, prev?.style === "classic" ? prev.painted : null);
@@ -284,7 +295,7 @@ function CanvasView({ layout, paint, image, grid, zoom, pad, uploaded }: MapCanv
     if (prev !== null && !isImage && prev.style !== style) fadeIn(el);
     // gridKey stands for `grid` (a new object on every render).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layout, paint, image, isImage, gridKey, style, uploaded]);
+  }, [layout, paint, image, isImage, gridKey, style, uploaded, packExtends]);
 
   // Sprites: repaint what an image changes once it has loaded (batched per frame); until then it draws Classic.
   useEffect(() => {

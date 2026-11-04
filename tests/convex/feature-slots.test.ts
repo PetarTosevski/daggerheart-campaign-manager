@@ -54,16 +54,16 @@ describe("feature slots (SS1)", () => {
     const { gm, create, stored } = await setup();
     const wizard = getClass("wizard")!;
     const war = await create(draft("wizard", "school-of-war", { kind: "single", id: "giant" }));
-    expect((await gm.query(api.characters.get, { characterId: war }))!.sheet).toMatchObject({ hpMax: wizard.startingHp + 2, stressMax: 6 });
+    expect((await gm.query(api.charactersReads.get, { characterId: war }))!.sheet).toMatchObject({ hpMax: wizard.startingHp + 2, stressMax: 6 });
     expect(await stored(war)).toMatchObject({ slotBonuses: ["subclass:school-of-war", "ancestry:giant:0"] });
 
     const guardian = getClass("guardian")!;
     const vengeance = await create(draft("guardian", "vengeance", { kind: "mixed", first: "human", second: "giant", name: "" }));
     // Human's first feature (High Stamina) only; Giant's second feature is Reach.
-    expect((await gm.query(api.characters.get, { characterId: vengeance }))!.sheet).toMatchObject({ hpMax: guardian.startingHp, stressMax: 8 });
+    expect((await gm.query(api.charactersReads.get, { characterId: vengeance }))!.sheet).toMatchObject({ hpMax: guardian.startingHp, stressMax: 8 });
 
     const plain = await create(draft("wizard", "school-of-knowledge", { kind: "single", id: "elf" }));
-    expect((await gm.query(api.characters.get, { characterId: plain }))!.sheet).toMatchObject({ hpMax: wizard.startingHp, stressMax: 6 });
+    expect((await gm.query(api.charactersReads.get, { characterId: plain }))!.sheet).toMatchObject({ hpMax: wizard.startingHp, stressMax: 6 });
     expect(await stored(plain)).not.toHaveProperty("slotBonuses");
   });
 

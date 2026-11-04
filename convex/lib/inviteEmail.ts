@@ -66,7 +66,7 @@ export function inviteEmail(gmName: string, campaignName: string, signInUrl: str
   return { subject, text, html };
 }
 
-/** `SITE_URL` is a Convex env var not (yet) declared in `convex.config.ts`, so it is read off the typed env loosely. */
+/** `SITE_URL` is the Convex env var declared in `convex.config.ts`: the app's public URL for sign-in links. */
 export function signInLink(env: Env): string | null {
   const base = env.SITE_URL?.trim().replace(/\/+$/, "");
   return base ? `${base}/signin` : null;

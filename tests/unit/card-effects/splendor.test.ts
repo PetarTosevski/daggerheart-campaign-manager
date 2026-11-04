@@ -327,6 +327,9 @@ describe("Smite (L5, CB p.340): once per rest, 3 Hope; the next weapon hit doubl
       { kind: "multiply", factor: 2 },
       { kind: "type", type: "magic" },
     ]);
+    // SRD-C2 (dcm-8x8): the strike ends the charge itself (no manual step).
+    expect(ofKind(plan, "endEffect")).toEqual([{ kind: "endEffect", targetId: "pc", of: "smite", own: true }]);
+    expect(prompts(plan, "manual")).toEqual([]);
     expect(run(effectOf("smite"), ctx([], { useId: "strike", targets: [adv("a")] }))).toMatchObject({ ok: false, reason: "requirement" });
   });
 });
@@ -372,7 +375,23 @@ describe("Zone of Protection (L6, CB p.340): Spellcast (16), once per long rest 
     const plan = ok("zone-of-protection", ctx([], { useId: "reduce", actor: actor({ cardTokens: 3 }), situations: ["The creature taking damage is inside your zone of protection"], trigger: { amount: 10, subject: ally("mira") } }));
     expect(folds(plan)).toEqual([{ kind: "reduceDamage", targetIds: ["mira"], amount: 3 }]);
     expect(ofKind(plan, "tokens")).toEqual([{ kind: "tokens", op: "add", before: 3, after: 4, die: 6 }]);
-    expect(prompts(plan, "manual")[0]!.text).toMatch(/exceed 6/);
+    // Below 7 the zone stays: no end, no manual step (SRD-C2).
+    expect(ofKind(plan, "endEffect")).toEqual([]);
+    expect(prompts(plan, "manual")).toEqual([]);
+  });
+  it("when the die's value would exceed 6 (it shows 7) the die is cleared and the zone ends for everyone in it", () => {
+    const plan = ok("zone-of-protection", ctx([], { useId: "reduce", actor: actor({ cardTokens: 6 }), allies: [ally("mira"), ally("kai")], situations: ["The creature taking damage is inside your zone of protection"], trigger: { amount: 10, subject: ally("mira") } }));
+    expect(folds(plan)).toEqual([{ kind: "reduceDamage", targetIds: ["mira"], amount: 6 }]);
+    expect(ofKind(plan, "tokens")).toEqual([
+      { kind: "tokens", op: "add", before: 6, after: 7, die: 6 },
+      { kind: "tokens", op: "clear", before: 7, after: 0, die: 6 },
+    ]);
+    expect(ofKind(plan, "endEffect")).toEqual([
+      { kind: "endEffect", targetId: "pc", of: "zone-of-protection", own: true },
+      { kind: "endEffect", targetId: "mira", of: "zone-of-protection", own: true },
+      { kind: "endEffect", targetId: "kai", of: "zone-of-protection", own: true },
+    ]);
+    expect(prompts(plan, "manual")).toEqual([]);
   });
 });
 
@@ -403,19 +422,26 @@ describe("Shield Aura (L8, CB p.341): a Stress; an Armor Slot reduces one more t
   it("a Stress: the target in Very Close range carries the aura; one creature at a time", () => {
     const plan = ok("shield-aura", ctx([], { targets: [ally("mira")] }));
     expect(plan.actor.after.stress).toBe(2);
-    expect(ofKind(plan, "condition")[0]).toMatchObject({ targetId: "mira", condition: { kind: "tag", tag: "Shield Aura" }, duration: "manual" });
+    // SRD-C2 (dcm-sim): the aura ends when it turns a hit into no Hit Points (the reaction window reads `endsOn`).
+    expect(ofKind(plan, "condition")[0]).toMatchObject({ targetId: "mira", condition: { kind: "tag", tag: "Shield Aura" }, duration: "manual", endsOn: ["reducedToNoHp"] });
     expect(plan.exclusive).toBe(true);
   });
   it("when the bearer marks an Armor Slot the severity drops one more threshold", () => {
     const plan = ok("shield-aura", ctx([], { useId: "aura-ally", trigger: { subject: ally("mira", { tags: ["Shield Aura"] }) } }));
     expect(folds(plan)).toEqual([{ kind: "reduceSeverity", targetIds: ["mira"], amount: 1 }]);
-    expect(prompts(plan, "manual")[0]!.text).toMatch(/no Hit Points/);
+    expect(prompts(plan, "manual")).toEqual([]);
     expect(ok("shield-aura", ctx([], { useId: "aura-ally", trigger: { subject: ally("kai") } })).steps).toEqual([]);
   });
-  it("on yourself, behind a confirmation", () => {
-    expect(run(effectOf("shield-aura"), ctx([], { useId: "aura-self" }))).toMatchObject({ ok: false, reason: "requirement" });
-    const plan = ok("shield-aura", ctx([], { useId: "aura-self", situations: ["You hold your own Shield Aura"] }));
+  // SRD-C2 (dcm-qdm): on yourself, the engine reads the Shield Aura tag you carry; no confirmation when it knows.
+  it("on yourself: the engine reads the aura's tag on you", () => {
+    const plan = ok("shield-aura", ctx([], { useId: "aura-self", actor: actor({ facts: { conditions: [], tags: ["Shield Aura"] } }) }));
     expect(folds(plan)).toEqual([{ kind: "reduceSeverity", targetIds: ["pc"], amount: 1 }]);
+    expect(prompts(plan, "manual")).toEqual([]);
+    // Known not to carry it: refused even with the box ticked.
+    expect(run(effectOf("shield-aura"), ctx([], { useId: "aura-self", actor: actor({ facts: { conditions: [], tags: [] } }), situations: ["You carry your own Shield Aura"] }))).toMatchObject({ ok: false, reason: "requirement" });
+    // Facts unknown: the player's confirmation stands in (Q13).
+    expect(run(effectOf("shield-aura"), ctx([], { useId: "aura-self" }))).toMatchObject({ ok: false, reason: "requirement" });
+    expect(run(effectOf("shield-aura"), ctx([], { useId: "aura-self", situations: ["You carry your own Shield Aura"] })).ok).toBe(true);
   });
 });
 
@@ -436,6 +462,14 @@ describe("Stunning Sunlight (L8, CB p.341): Hope picks who saves (14)", () => {
     ]);
     expect(ofKind(plan, "condition")).toEqual([{ kind: "condition", targetId: "b", condition: { kind: "tag", tag: "Stunned" }, duration: "temporary" }]);
     expect(ofKind(plan, "effect")[0]).toMatchObject({ targetId: "b", mods: [{ kind: "flag", flag: "cannotReact" }, { kind: "flag", flag: "cannotAct" }] });
+  });
+  // SRD-C2 (dcm-y45): "force that many targets you succeeded against": a picked target the roll missed doesn't save.
+  it("only targets the roll hit can be forced to save", () => {
+    // 9 + 4 + 3 = 16 hits a (12) but not b (Difficulty 18). a saves 15: 3d20+3 = 33.
+    const b = adv("b", { difficulty: 18 });
+    const plan = ok("stunning-sunlight", ctx([9, 4, 15, 10, 10, 10], { targets: [adv("a"), b], picked: [adv("a"), b], choices: { hope: 2 } }));
+    expect(ofKind(plan, "save").map((s) => s.targetId)).toEqual(["a"]);
+    expect(ofKind(plan, "damage").map((d) => d.result.after.id)).toEqual(["a"]);
   });
   it("a miss spends no Hope and nobody saves", () => {
     const plan = ok("stunning-sunlight", ctx([2, 3], { targets: [adv("a")], picked: [adv("a")], choices: { hope: 1 } }));
@@ -500,8 +534,15 @@ describe("Resurrection (L10, CB p.341): Spellcast (20)", () => {
     expect(ofKind(plan, "toVault")).toEqual([{ kind: "toVault", permanent: true }]);
     expect(ofKind(ok("resurrection", ctx([12, 9, 6])), "toVault")).toEqual([]);
   });
-  it("failure: no casting for a week (manual)", () => {
+  // SRD-C2 (dcm-aym): the week is the use's limit, used up only by a failure.
+  it("failure: no casting for a week (a limit with the period week, used up by the failure)", () => {
     const plan = ok("resurrection", ctx([2, 3]));
-    expect(prompts(plan, "manual").map((p) => p.text)).toEqual(["You can't cast Resurrection again for a week."]);
+    expect(prompts(plan, "manual")).toEqual([]);
+    expect(plan.limit).toMatchObject({ key: "card:resurrection", consumed: true });
+    expect(run(effectOf("resurrection"), ctx([], { actor: actor({ featureUses: plan.actor.featureUses }) }))).toMatchObject({ ok: false, reason: "exhausted" });
+    expect(effectOf("resurrection").uses[0]!.limit).toEqual({ per: "session", period: "week", consumedOn: "failure" });
+  });
+  it("a success doesn't use the week's limit", () => {
+    expect(ok("resurrection", ctx([12, 9, 6])).limit).toMatchObject({ consumed: false });
   });
 });

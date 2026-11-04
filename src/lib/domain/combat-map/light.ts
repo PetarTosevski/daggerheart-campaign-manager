@@ -1,10 +1,13 @@
 /**
  * Light by campaign time (R8) and light sources (R9, Q2, Q3).
  *
- * R8: Day phases and Nautical Dawn = full vision in the cone. Dim phases are
- * ONLY Nautical Twilight (last DAY day) and Nightfall (first NIGHT day): full
- * vision, tokens shown, ranged attacks at disadvantage. Other night phases are
- * night. (The board wrongly listed Nautical Dawn as dim.)
+ * R8, as changed by dcm-p40 (user 2026-10-30): dim light is the last day of a day cycle and the first day of a night
+ * cycle (Nautical Twilight, Nightfall), and the last day of a night cycle and the first day of a day cycle (Nautical
+ * Dawn, Dawn). Dim = full vision, tokens shown, ranged attacks at disadvantage. Every other day phase is day, every
+ * other night phase is night.
+ *
+ * Every campaign has a time of day (dcm-bxp.54, user 2026-10-21 / 2026-10-30): outside the Witherwild it is the GM's
+ * Day / Dim / Night (`campaigns.timeOfDay`), so `lightOf` also reads a light level as itself.
  *
  * R9 at night, [clear, dim] reach in squares: no light [1, 3]; torch and
  * lantern [6, 12]; Alistair's Torch [12, 12] (clear to Far, CB p.129);
@@ -18,29 +21,40 @@ import type { LightTrait } from "./traits";
 /** "day": full vision; "dim": full vision + disadvantage badge; "night": lights only. */
 export type LightLevel = "day" | "dim" | "night";
 
+export const LIGHT_LEVELS: readonly LightLevel[] = ["day", "dim", "night"];
+
+export const LIGHT_LEVEL_LABEL: Readonly<Record<LightLevel, string>> = { day: "Day", dim: "Dim", night: "Night" };
+
+export function isLightLevel(value: unknown): value is LightLevel {
+  return value === "day" || value === "dim" || value === "night";
+}
+
 const NIGHT_PHASES: ReadonlySet<string> = new Set<CampaignPhaseName>([
-  "Nightfall",
   "Moonrise",
   "Deep Night",
   "Midnight",
   "Witching Hour",
   "Small Hours",
+]);
+
+/** R8 / dcm-p40: the dim phases, the boundary days of the day and night cycles (days 1 and 7 of each). */
+export const DIM_PHASES: ReadonlySet<string> = new Set<CampaignPhaseName>([
+  "Dawn",
+  "Nautical Twilight",
+  "Nightfall",
   "Nautical Dawn",
 ]);
 
-/** R8: the only dim phases. Nautical Dawn is NOT dim (board fix). */
-export const DIM_PHASES: ReadonlySet<string> = new Set<CampaignPhaseName>([
-  "Nautical Twilight",
-  "Nightfall",
-]);
-
-/** Badge text for the dim phases (brief, section 5). */
+/** Badge text for dim light (brief, section 5). */
 export const DIM_PHASE_BADGE = "Dim light: ranged attacks at disadvantage";
 
-/** R8: the light level for a campaign time phase. Unknown names count as day. */
-export function lightOf(phase: CampaignPhaseName | string): LightLevel {
+/**
+ * R8: the light level for a campaign time phase (dcm-p40), or a light level read as itself (the campaign's time of
+ * day outside the Witherwild, dcm-bxp.54). Unknown names count as day.
+ */
+export function lightOf(phase: CampaignPhaseName | LightLevel | string): LightLevel {
+  if (isLightLevel(phase)) return phase;
   if (DIM_PHASES.has(phase)) return "dim";
-  if (phase === "Nautical Dawn") return "day";
   if (NIGHT_PHASES.has(phase)) return "night";
   return "day";
 }

@@ -167,15 +167,16 @@ art from the Claude Design boards, which the user approved for this private app
 7. Multi-user (user decision 2026-10-17): roles are per campaign. A campaign's
    creator is its GM; players join by email invite or join code. Anything
    hidden from players is enforced on the server, never only in the UI.
-   Sign-up stays limited to the env allowlist until the user opens it.
+   Sign-up is open (user decision 2026-10-23): anyone can create an account;
+   a password account works only after its emailed code.
 8. Never invent game rules.
 
 ## Approved technology stack
 
 - Next.js App Router, TypeScript strict mode
 - Convex (database, queries, mutations, live updates)
-- Convex Auth with Google and email + password sign-in, both limited to the
-  env allowlist
+- Convex Auth with Google and email + password sign-in, open sign-up; codes
+  and invite emails go through Resend (`convex/lib/authEmail.ts`)
 - Tailwind CSS and shadcn/ui primitives
 - Zod for input validation
 - Vitest (unit, and convex-test for Convex functions), Playwright (e2e)
@@ -192,12 +193,16 @@ exclusion.
 - `convex/schema.ts`: the schema (includes Convex Auth's `authTables`).
 - `convex/auth.ts`: Convex Auth. Google (with a `profile()` override that
   keeps `email_verified`), email + password (`password`), and the local-only
-  e2e provider; `createOrUpdateUser` (`convex/lib/users.ts`) applies the
-  allowlist and refuses a new password account for an email that already has
-  a user.
-- `convex/lib/allowlist.ts`: pure sign-in policy (allowlist =
-  `ALLOWED_EMAILS` ∪ legacy `GM_EMAILS` ∪ `SEED_ACCOUNTS` emails, verified
-  email for OAuth, local-only e2e sign-in). Unit-tested.
+  e2e provider. The password provider verifies the email with a 6-digit code
+  (`resend-otp`) and resets passwords by code (`resend-reset`); `withAuthErrors`
+  turns failures into `EMAIL_TAKEN`, `PASSWORD_TOO_SHORT`, `CODE_INVALID` and
+  `RATE_LIMITED`. `createOrUpdateUser` (`convex/lib/users.ts`) links accounts by
+  verified email only and refuses a new password account for an email that
+  already has one. `convex/lib/authRateLimit.ts` limits sign-ups and code sends
+  per email and globally.
+- `convex/lib/allowlist.ts`: the e2e-only and seed-account rails
+  (`isE2EDeployment`, `buildE2EProfile`, `SEED_ACCOUNTS`) and
+  `normalizeEmail`. Unit-tested. There is no sign-up allowlist.
 - `convex/lib/functions.ts`: the auth wrappers. Every client-callable function is
   `userQuery` / `userMutation` / `userAction` or a campaign/GM wrapper built on
   them; they put `user` (and `campaign`, `permission`) on `ctx`.
@@ -224,14 +229,14 @@ exclusion.
 - Production: a cloud deployment, deployed by Vercel (production builds
   only, `vercel.json`) with `npx convex deploy --cmd 'pnpm build'`.
   Env vars on Convex: `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`,
-  `ALLOWED_EMAILS` (or the legacy `GM_EMAILS`), `SITE_URL`,
-  `JWT_PRIVATE_KEY`, `JWKS`; optional `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`,
+  `AUTH_RESEND_KEY`, `MAIL_FROM`, `SITE_URL`, `JWT_PRIVATE_KEY`, `JWKS`;
+  optional `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`,
   `LOREKEEPER_MODEL` and the Lorekeeper caps `LOREKEEPER_DAILY_QUESTIONS`,
   `LOREKEEPER_CAMPAIGN_MONTHLY_USD`, `LOREKEEPER_MONTHLY_USD`
   (`convex/convex.config.ts`). Env var on Vercel: `CONVEX_DEPLOY_KEY`;
   `npx convex deploy` sets `NEXT_PUBLIC_CONVEX_URL` for the build.
-- `ANTHROPIC_API_KEY` lives only in the Convex env, never in Vercel,
-  `.env.local` or a `NEXT_PUBLIC_` variable.
+- `ANTHROPIC_API_KEY` and `AUTH_RESEND_KEY` live only in the Convex env,
+  never in Vercel, `.env.local` or a `NEXT_PUBLIC_` variable.
 - Dev-only variables never go to production: `SEED_ACCOUNTS` and
   `ALLOW_SEED_ACCOUNTS` (cloud dev test logins), and `E2E_AUTH_ENABLED`,
   `E2E_AUTH_SECRET` and `LOREKEEPER_FAKE_MODEL` (local e2e backend only).
@@ -369,7 +374,8 @@ Agents must not, without explicit approval:
 - Introduce a paid service.
 - Disable authentication or authorisation checks.
 - Remove event history.
-- Open sign-up beyond the allowlist without the user's go-ahead.
+- Close or restrict open sign-up, or skip the emailed code for password
+  accounts, without the user's go-ahead.
 - Add arbitrary executable custom mechanics.
 - Copy protected rules text or artwork into the application beyond what the
   user approved (frame lore, tomes and design art; rule text needed to run a

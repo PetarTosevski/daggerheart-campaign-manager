@@ -111,7 +111,7 @@ export function evolvedBases(formId: string): string[] {
 /**
  * The extra Stress a Hybrid form costs to take (CB p.34 Legendary Hybrid: "To transform into this creature, mark an
  * additional Stress"; CB p.35 Mythic Hybrid: "mark 2 additional Stress"). The transformation itself is the Beastform class
- * feature (D5 `beastform`, FE-druid-sorcerer), which charges 1 Stress; the integrator adds these (bead in the task doc).
+ * feature (D5 `beastform`, FE-druid-sorcerer), which charges 1 Stress; D5's `beastform` marks these on top (DA9).
  */
 export const HYBRID_EXTRA_STRESS: Readonly<Record<string, number>> = { "legendary-hybrid": 1, "mythic-hybrid": 2 };
 
@@ -141,14 +141,17 @@ const situation = (text: string): Requirement => ({ kind: "situation", text });
 
 const VULNERABLE = { kind: "standard", condition: "vulnerable" } as const;
 const RESTRAINED = { kind: "standard", condition: "restrained" } as const;
-/** CB p.32-33: "A Poisoned creature takes 1d10 direct physical damage each time they act" (the per-act damage is the GM's; bead). */
+/** CB p.32-33: "A Poisoned creature takes 1d10 direct physical damage each time they act" (`poisoned` below; dcm-mm0f runs it). */
 const POISONED = { kind: "tag", tag: "Poisoned" } as const;
 const POISON_TEXT = "Poisoned: the creature takes 1d10 direct physical damage each time they act (roll it when they act).";
 
 const enemy = (range: TargetSpec["range"], count: TargetSpec["count"] = { kind: "one" }, extra: Partial<TargetSpec> = {}): TargetSpec => ({ side: "enemy", range, count, ...extra });
 
-/** An attack roll with the form's trait against each target's Difficulty (CB p.32). */
-const formRoll = (trait: TraitId) => ({ kind: "trait" as const, trait, difficulty: { kind: "target" as const } });
+/**
+ * An attack roll with the form's trait against each target's Difficulty (CB p.32). `attack: true` (DA0, DA9): it is an
+ * attack roll, so "before you make an attack roll" riders (Rampage, CB p.33) apply to it (dcm-bxp.99.19.6 (5)).
+ */
+const formRoll = (trait: TraitId) => ({ kind: "trait" as const, trait, difficulty: { kind: "target" as const }, attack: true });
 
 /** "d8+2 physical damage using your Proficiency" (`profDelta`: "a +2 bonus to your Proficiency for this attack"). */
 const physical = (sides: DieSides, plus: number, profDelta = 0): Step => ({
@@ -163,6 +166,16 @@ const physical = (sides: DieSides, plus: number, profDelta = 0): Step => ({
 });
 
 const temporarily = (condition: typeof VULNERABLE | typeof RESTRAINED | typeof POISONED): Step => ({ kind: "condition", to: "targets", when: ["hit"], condition, duration: "temporary" });
+
+/**
+ * Temporarily Poisoned with what it does (plan lanes V, dcm-bxp.99.19.3): a `bearerRider` on the condition, "1d10 direct
+ * physical damage each time they act" (`self` in the rider is the bearer). The bearer's engines don't run condition riders
+ * yet (dcm-mm0f), so the entries keep the POISON_TEXT prompt beside it.
+ */
+const poisoned: Step = {
+  ...(temporarily(POISONED) as Extract<Step, { kind: "condition" }>),
+  mods: [{ kind: "bearerRider", rider: { on: "acts", steps: [{ kind: "damage", to: "self", roll: { kind: "dice", dice: { count: fixed(1), sides: 10 } }, type: "physical", direct: true }] } }],
+};
 
 const formUse = (u: Omit<CardUse, "requires"> & { requires?: readonly Requirement[] }): CardUse => ({ ...u, requires: [IN_BEASTFORM, ...(u.requires ?? [])] });
 
@@ -297,6 +310,11 @@ const fragile = (formId: string): FeatureEffect =>
 // airborne, you can ask the GM a question about the scene below you without needing to roll. The first time a character
 // makes a roll to act on this information, they gain advantage on the roll." Flying is the drawer's toggle (Q16); the
 // question is the GM's answer (text).
+// Lanes-2 wave 10 (S2.4): kept manual. The data would be an `effect` to `selfAndAllies` (picked allies, any range) with
+// an `advantage` mod on a marked situation, `endsOn: ["benefitGranted"]` and `sharedGrant: true`. It was tried through
+// the real path: the copies are written and the first roll that acts on it has advantage, but the other copies stay,
+// because each sheet numbers the feature's effects from 1 and cardRows `endSharedGrants` skips a copy whose id equals
+// one that ended (follow-up dcm-q9wc, lane w1-e6). Switch once that is fixed (silent reminders rule, dcm-s9md).
 const birdsEyeView = (formId: string): FeatureEffect =>
   entry(formId, "Bird’s-Eye View", [
     formUse({ id: "main", name: "Bird’s-Eye View (fly at will)", activation: { kind: "passive" }, mods: [], steps: [] }),
@@ -331,21 +349,19 @@ const thresholds = (formId: string, name: string, delta: number): FeatureEffect 
     }),
   ]);
 
-/** Vicious Maul (CB p.34): a Hope on a successful attack for Vulnerable and +1 Proficiency on this attack. */
-const viciousMaul = (formId: string, temporary: boolean): FeatureEffect =>
+/**
+ * Vicious Maul (CB p.34): a Hope on a successful attack for Vulnerable and +1 Proficiency on this attack. Great Predator
+ * prints "temporarily Vulnerable"; Aquatic Predator prints "make them Vulnerable", read as temporary too (user 2026-10-29,
+ * dcm-bxp.99.19.20).
+ */
+const viciousMaul = (formId: string): FeatureEffect =>
   entry(formId, "Vicious Maul", [
     formUse({
       id: "main",
       name: "Vicious Maul",
       activation: { kind: "rider", trigger: onSuccess },
       costs: [hope(1)],
-      steps: [
-        temporary
-          ? temporarily(VULNERABLE)
-          : // Aquatic Predator prints "make them Vulnerable" without "temporarily" and no end (question Q-FB2).
-            { kind: "condition", to: "targets", when: ["hit"], condition: VULNERABLE, duration: "manual", endsWhen: "No end is printed (CB p.34); the GM clears it" },
-        { kind: "modifyDamage", to: "targets", change: { kind: "proficiency", delta: 1 }, note: "+1 Proficiency for this attack" },
-      ],
+      steps: [temporarily(VULNERABLE), { kind: "modifyDamage", to: "targets", change: { kind: "proficiency", delta: 1 }, note: "+1 Proficiency for this attack" }],
     }),
   ]);
 
@@ -373,7 +389,8 @@ const evolvedEntry = (formId: string): FeatureEffect => {
 // Hybrid Features (CB p.34 Legendary Hybrid, p.35 Mythic Hybrid): "To transform into this creature, mark an additional
 // Stress [2 additional Stress]. Choose any two [three] Beastform options from Tiers 1–2 [1–3]. Choose a total of four
 // [five] advantages and two [three] features from those options." The extra Stress is paid at the transformation
-// (`HYBRID_EXTRA_STRESS`); the chosen features are their own entries, held through the Beastform state (beads).
+// (`HYBRID_EXTRA_STRESS`, by D5's `beastform`); the chosen features are their own entries, held through the Beastform
+// effect (`owned()`, DA9).
 const hybridEntry = (formId: string): FeatureEffect =>
   entry(formId, "Hybrid Features", [formUse({ id: "main", name: "Hybrid Features", activation: { kind: "passive" }, mods: [], steps: [] })]);
 
@@ -431,7 +448,7 @@ const FEATURES: readonly FeatureEffect[] = [
       id: "main",
       name: "Venomous Bite",
       activation: { kind: "auto", trigger: onMeleeSuccess },
-      steps: [temporarily(POISONED), { kind: "manual", to: "targets", text: POISON_TEXT }],
+      steps: [poisoned, { kind: "manual", to: "targets", text: POISON_TEXT }],
     }),
   ]),
   // Webslinger (Stalking Arachnid): "You can create a strong web material useful for both adventuring and battle. The web
@@ -476,16 +493,23 @@ const FEATURES: readonly FeatureEffect[] = [
       name: "Armored Shell (in your shell)",
       activation: { kind: "auto", trigger: { kind: "whenYouWouldTakeDamage", damageType: "physical" } },
       requires: [{ kind: "situation", text: "While in your shell", check: { kind: "featureEffect", featureId: "beastform:armored-sentry:armored-shell", option: "retracted" } }],
-      // No number source reads the Armor Score (bead): the reduction is the table's.
-      steps: [{ kind: "manual", to: "self", text: "In your shell: reduce this physical damage by your Armor Score (after applying resistance)." }],
+      // Lanes-2 wave 10 (S2.4; dcm-i9c1, dcm-bxp.99.19.4): `reduceDamage` by the Armor Score. The incoming-hit window's
+      // feature actor carries the sheet's stats (E2.4 `featureActor` from `sheetNumbers`, with the Beastform's effects),
+      // so the `stat` number reads the real Armor Score. "After applying resistance" is the window's order (CB p.107).
+      steps: [{ kind: "reduceDamage", to: "self", amount: { kind: "stat", stat: "armorScore", who: "self" }, note: "In your shell: physical damage is reduced by your Armor Score (after applying resistance)." }],
     }),
   ]),
-  // Cannonball (Armored Sentry): "Mark a Stress to allow an ally to throw or launch you at an adversary. To do so, the ally
-  // makes an attack roll using Agility or Strength (their choice) against a target within Close range. On a success, the
-  // adversary takes d12+2 physical damage using the thrower's Proficiency. You can spend a Hope to target an additional
-  // adversary within Very Close range of the first. The second target takes half the damage dealt to the first target."
-  // The ally's roll and Proficiency are not the actor's (question Q-FB3): the Stress and Hope are paid here, the throw is
-  // the table's.
+  // Cannonball (Armored Sentry), CB p.33: "Mark a Stress to allow an ally to throw or launch you at an adversary. To do so,
+  // the ally makes an attack roll using Agility or Strength (their choice) against a target within Close range. On a
+  // success, the adversary takes d12+2 physical damage using the thrower's Proficiency. You can spend a Hope to target an
+  // additional adversary within Very Close range of the first. The second target takes half the damage dealt to the first
+  // target."
+  // User 2026-10-29 / 2026-10-30 (dcm-bxp.99.19.21, DA13): the druid marks the Stress and is thrown; the THROWING ally gets
+  // a prompt in their drawer and rolls Agility or Strength (their choice) against a target within Close range of them; on
+  // a success d12+2 physical damage with the ally's Proficiency; the roll's Hope / Fear and a critical are the ally's.
+  // `rolledBy` (DA0): the druid's use pays the Stress and sends the roll (convex/featurePrompts.ts `allyRoll` runs it).
+  // The second target's Hope is the druid's ("You can spend a Hope"), ticked in the ally's prompt (TASK-DA-DA13.md Q1);
+  // half damage rounds up (CB p.107).
   entry("armored-sentry", "Cannonball", [
     formUse({
       id: "main",
@@ -493,18 +517,16 @@ const FEATURES: readonly FeatureEffect[] = [
       activation: { kind: "action" },
       costs: [stress(1)],
       targets: { side: "ally", range: "unlimited", count: { kind: "one" }, excludeSelf: true },
+      roll: { kind: "trait", trait: ["agility", "strength"], difficulty: { kind: "target" }, attack: true },
+      rolledBy: { who: "ally", proficiency: "roller", targets: enemy("close") },
       steps: [
-        {
-          kind: "manual",
-          to: "targets",
-          text: "Your ally throws you: they make an attack roll using Agility or Strength (their choice) against a target within Close range. On a success, the adversary takes d12+2 physical damage using the thrower's Proficiency.",
-        },
+        physical(12, 2),
         {
           kind: "optional",
           id: "second",
           label: "Spend a Hope to target an additional adversary within Very Close range of the first",
           costs: [hope(1)],
-          steps: [{ kind: "manual", to: "self", text: "The second adversary, within Very Close range of the first, takes half the damage dealt to the first target." }],
+          steps: [{ ...physical(12, 2), to: "picked", pick: enemy("veryClose", { kind: "one" }, { area: "aroundTarget", areaRange: "veryClose" }), scale: "half" } as Step],
         },
       ],
     }),
@@ -585,7 +607,7 @@ const FEATURES: readonly FeatureEffect[] = [
       activation: { kind: "action" },
       roll: formRoll("finesse"),
       targets: enemy("veryClose", { kind: "any" }),
-      steps: [physical(8, 4), temporarily(POISONED), { kind: "manual", to: "targets", when: ["hit"], text: POISON_TEXT }],
+      steps: [physical(8, 4), poisoned, { kind: "manual", to: "targets", when: ["hit"], text: POISON_TEXT }],
     }),
   ]),
   // Warning Hiss (Striking Serpent): "Mark a Stress to force any number of targets within Melee range to move back to Very
@@ -606,11 +628,12 @@ const FEATURES: readonly FeatureEffect[] = [
 
   // ---- Tier 3 (CB p.34)
   // Vicious Maul (Aquatic Predator): "When you succeed on an attack against a target, you can spend a Hope to make them
-  // Vulnerable and gain a +1 bonus to your Proficiency for this attack."
-  viciousMaul("aquatic-predator", false),
+  // Vulnerable and gain a +1 bonus to your Proficiency for this attack." Temporary, like Great Predator's (user
+  // 2026-10-29, dcm-bxp.99.19.20).
+  viciousMaul("aquatic-predator"),
   // Vicious Maul (Great Predator): "When you succeed on an attack against a target, you can spend a Hope to make them
   // temporarily Vulnerable and gain a +1 bonus to your Proficiency for this attack."
-  viciousMaul("great-predator", true),
+  viciousMaul("great-predator"),
   birdsEyeView("great-winged-beast"),
   evolvedEntry("legendary-beast"),
   hybridEntry("legendary-hybrid"),
@@ -695,7 +718,8 @@ const FEATURES: readonly FeatureEffect[] = [
       id: "main",
       name: "Devastating Strikes",
       activation: { kind: "rider", trigger: { kind: "whenTargetMarksHp", severity: "severe" } },
-      requires: [situation("The target is within Melee range")],
+      // "A target within Melee range": the `within` check (dcm-9l4); without the distance fact the map decides the words.
+      requires: [{ kind: "situation", text: "The target is within Melee range", check: { kind: "within", range: "melee", who: "target" } }],
       costs: [stress(1)],
       steps: [{ kind: "markHp", to: "targets", amount: fixed(1), note: "The target marks an additional Hit Point" }],
     }),

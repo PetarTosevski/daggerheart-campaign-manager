@@ -54,6 +54,9 @@ describe("authz matrix: sessions, players' view", () => {
         [played, "played"],
       ]);
       expect(list.find((s) => s._id === played)?.recap).toBe("They crossed the river.");
+      // Journal Q4: every member writes the recap of a session they can read; a planned one stays hidden.
+      expect(await codeOf(as.mutation(api.sessionWrap.setRecap, { campaignId, sessionId: live, recap: `${role} was here` }))).toBe("ok");
+      expect(await codeOf(as.mutation(api.sessionWrap.setRecap, { campaignId, sessionId: planned, recap: "x" }))).toBe("SESSION_NOT_FOUND");
       expect(list.every((s) => s.startedAt === undefined && s.endedAt === undefined)).toBe(true);
       expect(JSON.stringify(list)).not.toContain("GM secret hook");
 

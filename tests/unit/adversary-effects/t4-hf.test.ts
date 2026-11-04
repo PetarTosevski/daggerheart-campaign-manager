@@ -182,8 +182,11 @@ describe("the tier 4 Hope & Fear table", () => {
     collect(T4_HF_EFFECTS);
     for (const effect of T4_HF_EFFECTS) {
       for (const u of effect.uses) {
+        // Tags the use requires on the adversary itself (Omega Form, Full Form, Unhorsed); a `lacks` requirement holds without them.
+        const tags = (u.requires ?? []).flatMap((r) => (r.kind === "hasCondition" && !r.lacks && r.condition.kind === "tag" ? [r.condition.tag] : []));
         const result = run(effect, {
           ...context(effect.adversaryId),
+          self: selfOf(effect.adversaryId, { tags }),
           useId: u.id,
           tokens: 1,
           targets: [pc("a", { tags: ["Grappled"], conditions: ["vulnerable", "restrained"] })],
@@ -284,24 +287,30 @@ describe("shared features", () => {
   });
 
   it.each(["harbinger-of-death", "harbinger-of-famine", "harbinger-of-pestilence", "harbinger-of-war"])(
-    "%s: Mount: +2 Difficulty while mounted; knocked off by Severe damage; a Stress calls the mount back",
+    "%s: Mount: +2 Difficulty while mounted; knocked off by Severe damage (Unhorsed); a Stress calls the mount back",
     (id) => {
-      const mounted = "While the Harbinger is on their mount";
-      expect(passiveSummary(effectsOf(id), state()).difficulty).toBe(0);
-      expect(passiveSummary(effectsOf(id), state({ situations: [mounted] })).difficulty).toBe(2);
+      // Plan lanes, SRD-A2: on the mount is the absence of the Unhorsed tag (no GM confirmation needed).
+      expect(passiveSummary(effectsOf(id), state({ tags: [] })).difficulty).toBe(2);
+      expect(passiveSummary(effectsOf(id), state({ tags: ["Unhorsed"] })).difficulty).toBe(0);
       expect(fires(id, "Mount", "unhorsed", { kind: "onDamaged", stage: "did", severity: "severe" })).toBe(true);
       expect(fires(id, "Mount", "unhorsed", { kind: "onDamaged", stage: "did", severity: "major" })).toBe(false);
-      expect(attempt(id, "Mount", { useId: "unhorsed", spotlit: false })).toMatchObject({ ok: false, reason: "requirement" });
-      expect(prompts(runUse(id, "Mount", [], { useId: "unhorsed", spotlit: false, situations: [mounted] }), "manual")).toHaveLength(1);
-      const back = runUse(id, "Mount", [], { useId: "resummon" });
-      expect(back).toMatchObject({ needsSpotlight: true, self: { after: { stress: 1 } } });
+      expect(attempt(id, "Mount", { useId: "unhorsed", spotlit: false, self: selfOf(id, { tags: ["Unhorsed"] }) })).toMatchObject({ ok: false, reason: "requirement" });
+      const off = runUse(id, "Mount", [], { useId: "unhorsed", spotlit: false });
+      expect(off.self.after.tags).toEqual(["Unhorsed"]);
+      expect(prompts(off, "manual")).toEqual([]);
+      expect(attempt(id, "Mount", { useId: "resummon" })).toMatchObject({ ok: false, reason: "requirement" });
+      const back = runUse(id, "Mount", [], { useId: "resummon", self: selfOf(id, { tags: ["Unhorsed"] }) });
+      expect(back).toMatchObject({ needsSpotlight: true, self: { after: { stress: 1, tags: [] } } });
     },
   );
 
   it.each(["forlorne-lykona-dragon-form", "forlorne-lykona-faun-form"])("%s: Transform and Feed on Fear", (id) => {
     const t = runUse(id, "Transform", []);
     expect(t.self.after.stress).toBe(1);
-    expect(prompts(t, "manual")[0]!.text).toMatch(/swap her stat block/);
+    // Lanes-2, S4.4 (dcm-3ag5): a changeForm on herself to the other form; no manual step left.
+    const other = id === "forlorne-lykona-dragon-form" ? "forlorne-lykona-faun-form" : "forlorne-lykona-dragon-form";
+    expect(ofKind(t, "changeForm")).toEqual([expect.objectContaining({ targetId: "self", adversaryId: other })]);
+    expect(prompts(t, "manual")).toEqual([]);
     expect(fires(id, "Feed on Fear", "main", { kind: "pcRolls", roll: pcRoll(), band: "close" })).toBe(true);
     expect(fires(id, "Feed on Fear", "main", { kind: "pcRolls", roll: pcRoll({ success: true }), band: "close" })).toBe(false);
     expect(fires(id, "Feed on Fear", "main", { kind: "pcRolls", roll: pcRoll(), band: "far" })).toBe(false);
@@ -422,8 +431,9 @@ describe("Cephilith Priest (HF p.90)", () => {
 });
 
 describe("Cephilith Titan (HF p.91)", () => {
-  it("Merely a Projection: immune to physical damage, resistant to magic", () => {
+  it("Merely a Projection: immune to physical damage, resistant to magic, until the full form", () => {
     expect(passiveSummary(effectsOf("cephilith-titan"), state()).resistance).toEqual({ physical: "immune", magic: "resistant" });
+    expect(passiveSummary(effectsOf("cephilith-titan"), state({ tags: ["Full Form"] })).resistance).toBeUndefined();
   });
 
   it("Psychic Scream: a Fear; PCs within Far roll Instinct (22): 4d12 direct magic or a Stress", () => {
@@ -441,19 +451,20 @@ describe("Cephilith Titan (HF p.91)", () => {
     expect(ofKind(plan, "spotlight")[0]).toMatchObject({ who: "picked", count: 1 });
   });
 
-  it("“It’s Here…”: at half its HP (once per scene) it clears all HP; dropping Merely a Projection is manual", () => {
+  it("“It’s Here…”: at half its HP (once per scene) it clears all HP and takes its full form (no more Merely a Projection)", () => {
     expect(fires("cephilith-titan", "“It’s Here…”", "main", { kind: "onHpMarked", before: 4, after: 5, hpMax: 10 })).toBe(true);
     expect(fires("cephilith-titan", "“It’s Here…”", "main", { kind: "onHpMarked", before: 2, after: 4, hpMax: 10 })).toBe(false);
     const plan = runUse("cephilith-titan", "“It’s Here…”", [], { spotlit: false, self: selfOf("cephilith-titan", { hp: 5 }) });
     expect(plan.self.after.hp).toBe(0);
     expect(plan.limit).toMatchObject({ until: "session", consumed: true });
-    expect(prompts(plan, "manual")[0]!.text).toMatch(/Merely a Projection/);
+    expect(plan.self.after.tags).toEqual(["Full Form"]);
+    expect(prompts(plan, "manual")).toEqual([]);
   });
 
   it("“It’s Here…”: in full form a creature who marks HP from its standard attack marks one more", () => {
     expect(fires("cephilith-titan", "“It’s Here…”", "full-form", { kind: "onTargetMarksHp", attack: "standard" })).toBe(true);
     expect(attempt("cephilith-titan", "“It’s Here…”", { useId: "full-form", trigger: { subject: mira } })).toMatchObject({ ok: false, reason: "requirement" });
-    const plan = runUse("cephilith-titan", "“It’s Here…”", [], { useId: "full-form", spotlit: false, trigger: { subject: mira }, situations: ["The Titan is in its full form"] });
+    const plan = runUse("cephilith-titan", "“It’s Here…”", [], { useId: "full-form", spotlit: false, trigger: { subject: mira }, self: selfOf("cephilith-titan", { tags: ["Full Form"] }) });
     expect(after(plan, "mira")!.hp).toBe(1);
   });
 });
@@ -506,6 +517,8 @@ describe("Cloud Titan (HF p.91)", () => {
     const low = pc("lou", { evasion: 10 });
     const plan = runUse("cloud-titan", "Lightning Strike", [9, 1, 1, 1, 1, 5, 10, 2, 2, 2, 2, 3], { targets: [mira], followUp: [low] });
     expect(plan.self.after.stress).toBe(1);
+    // dcm-6n0p: the bounce's roll carries no modifier of its own; the runner adds the ATK once (10 + 3 = 13, not 16).
+    expect(ofKind(plan, "roll").map((r) => r.roll.record.total)).toEqual([12, 13]);
     // Bounce: 4d10 2+2+2+2 + 14 = 22, minus 1d10 3 = 19.
     expect(hitsOf(plan)).toEqual([
       ["mira", 18, "magic", false],
@@ -617,14 +630,18 @@ describe("Dragon Mother Mitera (HF p.92)", () => {
     expect(ofKind(plan, "effect")[0]!.mods).toEqual([{ kind: "stat", stat: "attack", delta: 2 }]);
   });
 
-  it("Elemental Breath 1, Fire: 4d12 magic to the picked targets; Armor Slot or 2 HP is manual", () => {
+  it("Elemental Breath 1, Fire: 4d12 magic to the picked targets; each picks an Armor Slot or 2 HP (dcm-bz8)", () => {
     const plan = runUse("dragon-mother-mitera", "Elemental Breath", [1, 2, 3, 4], { options: { head: ["fire"] }, followUp: [mira, bram] });
     expect(plan.self.after.stress).toBe(1);
     expect(hitsOf(plan)).toEqual([
       ["mira", 10, "magic", false],
       ["bram", 10, "magic", false],
     ]);
-    expect(prompts(plan, "manual")[0]!.text).toMatch(/Armor Slot or 2 additional HP/);
+    expect(prompts(plan, "manual")).toEqual([]);
+    expect(prompts(plan, "choose").map((p) => [p.chooserId, p.text])).toEqual([
+      ["mira", "Mark an Armor Slot or 2 additional HP"],
+      ["bram", "Mark an Armor Slot or 2 additional HP"],
+    ]);
   });
 
   it("Elemental Breath 2, Lightning: 4d12 magic to up to 1d6 targets", () => {
@@ -688,10 +705,30 @@ describe("Dragon Mother Mitera (HF p.92)", () => {
     const eight = runUse("dragon-mother-mitera", "Seven-Headed", [8], { spotlit: false, tokens: 5 });
     expect(eight.self.tokens).toEqual({ before: 5, after: 4 });
     expect(ofKind(eight, "countdown")).toEqual([{ kind: "countdown", op: "tick", label: "Diamond Hide", amount: 1, loop: false }]);
-    const remove = runUse("dragon-mother-mitera", "Seven-Headed", [3], { spotlit: false, tokens: 5, options: { head: ["remove"] } });
+    // Lanes-2, S4.4 (dcm-qw4f): a 3 removes 3. Acid for good (a permanent effect with features.removeOptions on Mitera).
+    const acid = { feature: "Elemental Breath", choose: "head", option: "acid" };
+    const remove = runUse("dragon-mother-mitera", "Seven-Headed", [3], { spotlit: false, tokens: 5 });
     expect(remove.self.tokens.after).toBe(5);
-    expect(prompts(remove, "manual")[0]!.text).toMatch(/Permanently remove/);
-    expect(runUse("dragon-mother-mitera", "Seven-Headed", [3], { spotlit: false, tokens: 5, options: { head: ["removed"] } }).self.tokens.after).toBe(4);
+    expect(ofKind(remove, "countdown")).toEqual([]);
+    expect(ofKind(remove, "effect")).toEqual([
+      expect.objectContaining({ targetId: "self", label: "Elemental Breath 3. Acid removed", duration: "permanent", mods: [{ kind: "features", removeOptions: [acid] }] }),
+    ]);
+    expect(prompts(remove, "manual")).toEqual([]);
+    // Another head gone: Acid still goes.
+    const other = runUse("dragon-mother-mitera", "Seven-Headed", [3], { spotlit: false, tokens: 5, removedOptions: [{ ...acid, option: "fire" }] });
+    expect(ofKind(other, "effect")).toHaveLength(1);
+    expect(other.self.tokens.after).toBe(5);
+    // Acid gone already: Diamond Hide ticks (removing it again changes nothing).
+    const gone = runUse("dragon-mother-mitera", "Seven-Headed", [3], { spotlit: false, tokens: 5, removedOptions: [acid] });
+    expect(gone.self.tokens.after).toBe(4);
+    expect(ofKind(gone, "countdown")).toEqual([expect.objectContaining({ op: "tick", label: "Diamond Hide" })]);
+    const known = runUse("dragon-mother-mitera", "Seven-Headed", [3], { spotlit: false, tokens: 5, removedOptions: [acid], effectsOn: { self: ["Elemental Breath 3. Acid removed"] } });
+    expect(ofKind(known, "effect")).toEqual([]);
+    expect(known.self.tokens.after).toBe(4);
+    // 6. Darkness: its cloud dissipates.
+    const dark = runUse("dragon-mother-mitera", "Seven-Headed", [6], { spotlit: false, tokens: 5 });
+    expect(ofKind(dark, "effect")[0]).toMatchObject({ mods: [{ kind: "features", removeOptions: [{ ...acid, option: "darkness" }] }] });
+    expect(prompts(dark, "manual")[0]!.text).toMatch(/Darkness cloud dissipates/);
   });
 });
 
@@ -779,10 +816,11 @@ describe("Forlorne Lykona, Faun Form (HF p.142)", () => {
 });
 
 describe("Gargantuan War Machine (HF p.93)", () => {
-  it("Awesome Size: on entering, each PC loses a Hope or marks 1d4 Stress (their choice, manual)", () => {
+  it("Awesome Size: on entering, each PC loses a Hope or marks 1d4 Stress (each PC's own pick, dcm-bz8)", () => {
     const plan = runUse("gargantuan-war-machine", "Awesome Size", [], { spotlit: false, picked: [mira, bram] });
     expect(plan.activation).toBe("auto");
-    expect(prompts(plan, "manual")[0]!.targetIds).toEqual(["mira", "bram"]);
+    expect(prompts(plan, "manual")).toEqual([]);
+    expect(prompts(plan, "choose").map((p) => p.chooserId)).toEqual(["mira", "bram"]);
   });
 
   it("Rocket Punch: a Stress, 4d12+10 direct physical and 2 Armor Slots without their benefit", () => {
@@ -873,13 +911,17 @@ describe("Harbinger of Death (HF p.94)", () => {
     expect(runUse("harbinger-of-death", "Fear the Reaper", [], { useId: "pc", spotlit: false }).gmFearDelta).toBe(1);
   });
 
-  it("Decapitate: 2 Fear; on a hit a d6 of 6 means all HP and a death move (manual)", () => {
+  it("Decapitate: 2 Fear; on a hit a d6 of 6 means all HP and a death move (dcm-702)", () => {
     expect(attempt("harbinger-of-death", "Decapitate", { targets: [mira], fearConfirmed: false })).toMatchObject({ reason: "confirmFear", detail: "2" });
     const plan = runUse("harbinger-of-death", "Decapitate", [10, 6], { targets: [mira] });
     expect(plan.fearSpent).toBe(2);
     expect(ofKind(plan, "check")[0]).toMatchObject({ dice: [6], passed: true });
-    expect(prompts(plan, "manual")[0]!.text).toMatch(/death move/);
-    expect(prompts(runUse("harbinger-of-death", "Decapitate", [10, 5], { targets: [mira] }), "manual")).toEqual([]);
+    expect(after(plan, "mira")!.hp).toBe(mira.hpMax);
+    expect(plan.deathMoves).toEqual(["mira"]);
+    expect(prompts(plan, "manual")).toEqual([]);
+    const five = runUse("harbinger-of-death", "Decapitate", [10, 5], { targets: [mira] });
+    expect(five.deathMoves).toEqual([]);
+    expect(ofKind(five, "mark")).toEqual([]);
     expect(ofKind(runUse("harbinger-of-death", "Decapitate", [1], { targets: [mira] }), "check")).toEqual([]);
   });
 
@@ -905,10 +947,11 @@ describe("Harbinger of Death (HF p.94)", () => {
 
 describe("Harbinger of Famine (HF p.94)", () => {
   it("Hunger Pangs: countdown (6) when it appears, ticks on its spotlight; when it triggers PCs within Far mark a Stress and are Ravenous", () => {
-    expect(ofKind(runUse("harbinger-of-famine", "Hunger Pangs", [], { useId: "activate", spotlit: false }), "countdown")[0]).toMatchObject({ start: 6, loop: true });
+    // A decreasing countdown (dcm-m5s).
+    expect(ofKind(runUse("harbinger-of-famine", "Hunger Pangs", [], { useId: "activate", spotlit: false }), "countdown")[0]).toMatchObject({ start: 6, loop: true, direction: "decreasing" });
     const plan = runUse("harbinger-of-famine", "Hunger Pangs", [], { useId: "trigger", spotlit: false, targets: [mira, bram] });
     expect(after(plan, "mira")).toMatchObject({ stress: 1, tags: ["Ravenous"] });
-    expect(prompts(plan, "manual").map((p) => p.text)).toEqual([expect.stringMatching(/can't spend Hope/), expect.stringMatching(/one lower/)]);
+    expect(prompts(plan, "manual").map((p) => p.text)).toEqual([expect.stringMatching(/can't spend Hope/)]);
   });
 
   it("Drain Essence: a Fear, up to three PCs (any range) take 4d6 magic", () => {
@@ -943,10 +986,20 @@ describe("Harbinger of Pestilence (HF p.94)", () => {
     expect(runUse("harbinger-of-pestilence", "Halo of Contagion", [2], { spotlit: false, trigger: { subject: mira } }).creatures).toEqual([]);
   });
 
-  it("Locust Swarm: 2 Fear; each PC near the point picks Armor Slot or 4d10 direct and a d6 (manual)", () => {
+  it("Locust Swarm: 2 Fear; each PC near the point picks Armor Slot or 4d10 direct and a d6 (dcm-bz8)", () => {
     const plan = runUse("harbinger-of-pestilence", "Locust Swarm", [], { targets: [mira, bram] });
     expect(plan.fearSpent).toBe(2);
-    expect(prompts(plan, "manual")[0]!.targetIds).toEqual(["mira", "bram"]);
+    expect(prompts(plan, "manual")).toEqual([]);
+    expect(prompts(plan, "choose").map((p) => p.chooserId)).toEqual(["mira", "bram"]);
+    const swarm = getUse("harbinger-of-pestilence", "Locust Swarm").steps[0]!;
+    expect(swarm).toMatchObject({
+      kind: "choose",
+      by: { to: "targets" },
+      options: [
+        { id: "armor", steps: [{ kind: "markArmor", to: "chooser" }] },
+        { id: "damage", steps: [{ kind: "damage", to: "chooser", direct: true }, { kind: "check", test: { kind: "totalAtMost", value: 2 }, then: [{ condition: { tag: "Contagious" } }] }] },
+      ],
+    });
   });
 
   it("Frog Spawn: a Fear; up to three PCs roll Presence or take 4d12 magic and a d6 (1–3: Contagious)", () => {
@@ -991,9 +1044,10 @@ describe("Harbinger of War (HF p.95)", () => {
 });
 
 describe("Owl Witch (HF p.95)", () => {
-  it("Ill Omen and Witch Barrier: the Fear Die bonus is a manual note; resistant to magic", () => {
-    const plan = runUse("owl-witch", "Ill Omen", [], { spotlit: false, trigger: { subject: mira } });
-    expect(prompts(plan, "manual")[0]!.targetIds).toEqual(["mira"]);
+  it("Ill Omen and Witch Barrier: the PC's Fear Die gains the GM's Fear (dcm-of7v); resistant to magic", () => {
+    const plan = runUse("owl-witch", "Ill Omen", [], { spotlit: false, gmFear: 4, trigger: { subject: mira } });
+    expect(ofKind(plan, "fold")).toEqual([expect.objectContaining({ targetIds: ["mira"], amount: 4, step: expect.objectContaining({ change: { kind: "dieBonus", die: "fear", amount: { kind: "gmFear" } } }) })]);
+    expect(prompts(plan, "manual")).toEqual([]);
     expect(passiveSummary(effectsOf("owl-witch"), state()).resistance).toEqual({ physical: "none", magic: "resistant" });
   });
 
@@ -1037,8 +1091,11 @@ describe("Ruby Dragon (HF p.95)", () => {
     expect(fires("ruby-dragon", "Hot-Blooded", "main", { kind: "onAttacked", stage: "succeeded", attackerBand: "veryClose" })).toBe(true);
     expect(fires("ruby-dragon", "Hot-Blooded", "main", { kind: "onAttacked", stage: "succeeded", attackerBand: "close" })).toBe(false);
     const plan = runUse("ruby-dragon", "Hot-Blooded", [], { spotlit: false, trigger: { source: mira } });
-    expect(after(plan, "mira")!.armor).toBe(1);
-    expect(prompts(plan, "manual")[0]!.text).toMatch(/1d4 HP/);
+    expect(after(plan, "mira")).toMatchObject({ armor: 1, hp: 0 });
+    expect(prompts(plan, "manual")).toEqual([]);
+    // Plan lanes, SRD-A2 (dcm-18i): no free Armor Slot: 1d4 HP instead (a 3).
+    const full = runUse("ruby-dragon", "Hot-Blooded", [3], { spotlit: false, trigger: { source: pc("mira", { armor: 6 }) } });
+    expect(after(full, "mira")).toMatchObject({ armor: 6, hp: 3 });
   });
 });
 
@@ -1052,11 +1109,17 @@ describe("Severed Shadow (HF p.95)", () => {
 });
 
 describe("Supreme Demiurge Adonix (HF p.96)", () => {
-  it("Elemental Archon 1, Fire Beam: an Agility roll; Severe or Minor damage is manual", () => {
+  it("Elemental Archon 1, Fire Beam: an Agility roll; Severe / Minor damage marks 3 / 1 fire HP outright (dcm-6rke, dcm-n7kt)", () => {
     const plan = runUse("supreme-demiurge-adonix", "Elemental Archon", [1], { followUp: [mira] });
     expect(plan.self.after.stress).toBe(1);
     const step = saveStep(saves(plan)[0]!);
-    expect(step).toMatchObject({ trait: "agility", onFail: [{ kind: "manual", text: "The target takes Severe damage." }], onSuccess: [{ kind: "manual", text: "The target takes Minor damage." }] });
+    // The Fireproof reminder stays until the direct mark path applies it (dcm-vvg1).
+    const fireproof = { kind: "manual", to: "targets", text: expect.stringMatching(/Fireproof/) };
+    expect(step).toMatchObject({
+      trait: "agility",
+      onFail: [{ kind: "markHp", to: "targets", amount: { kind: "fixed", value: 3 }, keyword: "fire" }, fireproof],
+      onSuccess: [{ kind: "markHp", to: "targets", amount: { kind: "fixed", value: 1 }, keyword: "fire" }, fireproof],
+    });
   });
 
   it("Elemental Archon 2, Thunderclap: everyone within Far marks a Stress and is Vulnerable", () => {
@@ -1067,6 +1130,8 @@ describe("Supreme Demiurge Adonix (HF p.96)", () => {
 
   it("Elemental Archon 3, Lightning Bolt: an attack (ATK +8) for 4d8 magic; the even-dice chain is manual", () => {
     const plan = runUse("supreme-demiurge-adonix", "Elemental Archon", [3, 5, 2, 4, 6, 8], { followUp: [mira] });
+    // d20 5 + ATK 8 (added by the runner to a follow-up with no modifier, dcm-6n0p) = 13 hits.
+    expect(ofKind(plan, "roll").map((r) => r.roll.record.total)).toEqual([13]);
     expect(hitsOf(plan)).toEqual([["mira", 20, "magic", false]]);
     expect(prompts(plan, "manual")[0]!.text).toMatch(/even/);
   });
@@ -1079,35 +1144,41 @@ describe("Supreme Demiurge Adonix (HF p.96)", () => {
   it("Alpha to Omega: when defeated (once per scene) it clears all HP and Stress; PCs roll Presence or lose a Hope (a Fear each)", () => {
     expect(fires("supreme-demiurge-adonix", "Alpha to Omega", "main", { kind: "onDefeated" })).toBe(true);
     const plan = runUse("supreme-demiurge-adonix", "Alpha to Omega", [], { spotlit: false, self: selfOf("supreme-demiurge-adonix", { hp: 12, stress: 7, defeated: true }), targets: [mira, bram] });
-    expect(plan.self.after).toMatchObject({ hp: 0, stress: 0 });
+    expect(plan.self.after).toMatchObject({ hp: 0, stress: 0, defeated: false, tags: ["Omega Form"] });
+    expect(plan.revived).toEqual(["self"]);
+    expect(prompts(plan, "manual")).toEqual([]);
     expect(plan.limit).toMatchObject({ consumed: true });
     expect(saveStep(saves(plan)[0]!)).toMatchObject({ trait: "presence", onFail: [{ kind: "hope", change: "lose" }, { kind: "fear", change: "gain" }] });
   });
 
   it("Forsaken: Omega form only; a Fear starts a 1d8 countdown on a PC; ticks on its spotlight; ends on Severe damage", () => {
-    const omega = ["Adonix is in Omega form"];
+    const omega = selfOf("supreme-demiurge-adonix", { tags: ["Omega Form"] });
     expect(attempt("supreme-demiurge-adonix", "Forsaken", { targets: [mira] })).toMatchObject({ ok: false, reason: "requirement" });
-    const plan = runUse("supreme-demiurge-adonix", "Forsaken", [5], { targets: [mira], situations: omega });
+    const plan = runUse("supreme-demiurge-adonix", "Forsaken", [5], { targets: [mira], self: omega });
     expect(plan.fearSpent).toBe(1);
     expect(ofKind(plan, "countdown")[0]).toMatchObject({ op: "start", label: "Forsaken", start: 5, onTrigger: "The PC must mark all their HP." });
     expect(after(plan, "mira")!.tags).toEqual(["Forsaken"]);
-    expect(ofKind(runUse("supreme-demiurge-adonix", "Forsaken", [], { useId: "tick", spotlit: false, situations: omega }), "countdown")[0]!.op).toBe("tick");
+    expect(ofKind(runUse("supreme-demiurge-adonix", "Forsaken", [], { useId: "tick", spotlit: false, self: omega }), "countdown")[0]!.op).toBe("tick");
     expect(fires("supreme-demiurge-adonix", "Forsaken", "end", { kind: "onDamaged", stage: "did", severity: "severe" })).toBe(true);
   });
 
-  it("Armageddon: defeated again in Omega form, a d6 of 5–6 means every PC makes a death move (manual)", () => {
-    const omega = ["Adonix is in Omega form"];
-    expect(prompts(runUse("supreme-demiurge-adonix", "Armageddon", [5], { spotlit: false, situations: omega, picked: [mira, bram] }), "manual")[0]!.targetIds).toEqual(["mira", "bram"]);
-    expect(prompts(runUse("supreme-demiurge-adonix", "Armageddon", [4], { spotlit: false, situations: omega, picked: [mira] }), "manual")).toEqual([]);
+  it("Armageddon: defeated again in Omega form, a d6 of 5–6 means every PC makes a death move (dcm-702)", () => {
+    const omega = selfOf("supreme-demiurge-adonix", { tags: ["Omega Form"] });
+    expect(attempt("supreme-demiurge-adonix", "Armageddon", { spotlit: false, picked: [mira] })).toMatchObject({ ok: false, reason: "requirement" });
+    const doom = runUse("supreme-demiurge-adonix", "Armageddon", [5], { spotlit: false, self: omega, picked: [mira, bram] });
+    expect(doom.deathMoves).toEqual(["mira", "bram"]);
+    expect(prompts(doom, "manual")).toEqual([]);
+    expect(runUse("supreme-demiurge-adonix", "Armageddon", [4], { spotlit: false, self: omega, picked: [mira] }).deathMoves).toEqual([]);
   });
 });
 
 describe("Temporal Enforcer (HF p.96)", () => {
   it("Time Looper: countdown (Loop 2d6) when it appears; when it triggers it clears all HP and Stress; rerolled on Severe damage", () => {
     expect(ofKind(runUse("temporal-enforcer", "Time Looper", [2, 5], { useId: "activate", spotlit: false }), "countdown")[0]).toMatchObject({ start: 7, loop: true });
-    const plan = runUse("temporal-enforcer", "Time Looper", [], { useId: "trigger", spotlit: false, self: selfOf("temporal-enforcer", { hp: 5, stress: 3, conditions: ["vulnerable", "restrained"] }) });
-    expect(plan.self.after).toMatchObject({ hp: 0, stress: 0, conditions: [] });
-    expect(prompts(plan, "manual")[0]!.text).toMatch(/other condition/);
+    // Plan lanes, SRD-A2 (dcm-730): every condition and tag.
+    const plan = runUse("temporal-enforcer", "Time Looper", [], { useId: "trigger", spotlit: false, self: selfOf("temporal-enforcer", { hp: 5, stress: 3, conditions: ["vulnerable", "restrained"], tags: ["Dazed"] }) });
+    expect(plan.self.after).toMatchObject({ hp: 0, stress: 0, conditions: [], tags: [] });
+    expect(prompts(plan, "manual")).toEqual([]);
     expect(ofKind(runUse("temporal-enforcer", "Time Looper", [6, 6], { useId: "reroll", spotlit: false }), "countdown")[0]).toMatchObject({ op: "start", start: 12 });
   });
 
@@ -1175,6 +1246,9 @@ describe("Wyrmlings (HF p.97)", () => {
     const plan = runUse("wyrmlings", "Ravenous", [], { spotlit: false });
     expect(plan.fearSpent).toBe(1);
     expect(ofKind(plan, "spotlight")[0]!.who).toBe("self");
+    // Once per GM turn (dcm-c5h): the limit carries the GM-turn period (the server keys it per GM turn).
+    expect(getUse("wyrmlings", "Ravenous").limit).toEqual({ per: "scene", period: "gmTurn" });
+    expect(attempt("wyrmlings", "Ravenous", { spotlit: false, featureUses: plan.self.featureUses })).toMatchObject({ ok: false, reason: "exhausted" });
   });
 
   it("Overwhelm: Minor damage (1 HP) from an attack in Melee lets a Stress buy a standard attack with advantage on the attacker", () => {
@@ -1204,7 +1278,8 @@ describe("Xero the Castle Killer (HF p.97)", () => {
     expect(plan.self.after.stress).toBe(1);
     const choose = saveStep(saves(plan)[0]!).onFail[0] as Extract<AdversaryStep, { kind: "choose" }>;
     expect(choose.options[0]!.steps).toEqual([{ kind: "markArmor", to: "targets", amount: { kind: "fixed", value: 2 } }]);
-    expect(choose.options[1]!.steps[0]).toMatchObject({ kind: "manual" });
+    // dcm-6rke: "take Severe damage" with no number marks 3 HP outright.
+    expect(choose.options[1]!.steps).toEqual([{ kind: "markHp", to: "targets", amount: { kind: "fixed", value: 3 }, note: "Severe damage: 3 HP" }]);
   });
 
   it("Radioactive Breath: a Fear charges a token (once until Severe damage); the beam spends it", () => {
@@ -1225,5 +1300,60 @@ describe("Xero the Castle Killer (HF p.97)", () => {
     const plan = runUse("xero-the-castle-killer", "Regeneration", [], { self: hurt, eitherCosts: [3] });
     expect(plan).toMatchObject({ fearSpent: 4, self: { after: { hp: 2 } } });
     expect(plan.limit).toMatchObject({ consumed: true });
+  });
+});
+
+describe("Lanes-2 S4: tier 4 Hope & Fear data switches", () => {
+  /** The keyword of every `damage` step of a feature (all uses, nested); "none" without one. */
+  const damageKeywords = (adversaryId: string, feature: string): string[] => {
+    const out: string[] = [];
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) return node.forEach(walk);
+      if (node === null || typeof node !== "object") return;
+      const o = node as Record<string, unknown>;
+      if (o.kind === "damage" && "roll" in o) out.push(typeof o.keyword === "string" ? o.keyword : "none");
+      Object.values(o).forEach(walk);
+    };
+    walk(effectOf(adversaryId, feature).uses);
+    return out;
+  };
+  /** The lasting condition a feature's failed reaction roll gives (first `condition` step with `mods`). */
+  const conditionWithMods = (adversaryId: string, feature: string): Record<string, unknown> | undefined => {
+    let found: Record<string, unknown> | undefined;
+    const walk = (node: unknown): void => {
+      if (found || node === null || typeof node !== "object") return;
+      if (Array.isArray(node)) return node.forEach(walk);
+      const o = node as Record<string, unknown>;
+      if (o.kind === "condition" && Array.isArray(o.mods)) found = o;
+      else Object.values(o).forEach(walk);
+    };
+    walk(effectOf(adversaryId, feature).uses);
+    return found;
+  };
+
+  it("fire damage carries keyword fire (dcm-dv6): Mitera's Fire head, Melting Breath, Volcanic Fissure", () => {
+    expect(damageKeywords("dragon-mother-mitera", "Elemental Breath")).toContain("fire");
+    expect(damageKeywords("ruby-dragon", "Melting Breath")).toEqual(["fire"]);
+    expect(damageKeywords("ruby-dragon", "Volcanic Fissure")).toEqual(["fire"]);
+    // Not fire: the Fire Titan Warlord's maul.
+    expect(damageKeywords("fire-titan-warlord", "Ground-Breaking")).toEqual(["none"]);
+  });
+
+  it("Burrowing Leechpoles: the tag adds the bearer's leechpole tokens to damage taken (dcm-kvx4); the 2d4 stays manual (dcm-n3mp)", () => {
+    expect(conditionWithMods("cephilith-abomination", "Burrowing Leechpoles")).toMatchObject({
+      condition: { kind: "tag", tag: "Leechpoles" },
+      mods: [{ kind: "damageTaken", change: { kind: "add", amount: { kind: "creatureTokens", who: "self", name: "leechpole" } } }],
+    });
+  });
+
+  it("Ravenous and Afflicted carry their flags (dcm-5kxg); the reminders stay (dcm-hgvx)", () => {
+    expect(conditionWithMods("harbinger-of-famine", "Hunger Pangs")).toMatchObject({ condition: { tag: "Ravenous" }, mods: [{ kind: "flag", flag: "cannotSpendHope" }] });
+    expect(conditionWithMods("owl-witch", "Nightmare Stare")).toMatchObject({
+      condition: { tag: "Afflicted" },
+      mods: [
+        { kind: "flag", flag: "cannotClearHp" },
+        { kind: "flag", flag: "cannotClearStress" },
+      ],
+    });
   });
 });

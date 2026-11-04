@@ -1,0 +1,554 @@
+/*
+ * The sheet panel (plan combat-hud H2.1; boards Main / GMDesktop `.sheet`, `.sh-top`, `.sh-stats`, `.trks`, `.ft`,
+ * `.thr`, `.xp`, `.cdl`, `.ro-note`, `.gm-note`). The panel frame is H0's `.hud-panel` (right 0, --hud-sheet-w, slide in
+ * over --hud-t-sheet, none under reduced motion); everything here is its content.
+ */
+
+/*
+ * The panel region (shell.css .hud-r-panel) has no width of its own, so H0's `max-width: 100%` on .hud-panel would
+ * squeeze the aside to 0 px (its content overflowing, the box itself invisible to hit tests and axe). Cap by the
+ * viewport instead.
+ */
+.hud-panel.hsh {
+  max-width: 100vw;
+}
+
+.hsh .hud-panel-top {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  padding: 22px 14px 16px 20px;
+}
+.hsh .hud-panel-title {
+  font: inherit;
+}
+.hsh .hud-panel-title:focus {
+  outline: none;
+}
+.hsh .hud-panel-title:focus-visible {
+  outline: 2px solid var(--hud-gold);
+  outline-offset: 2px;
+}
+.hsh .hud-panel-x {
+  order: 1;
+}
+.hsh .hud-panel-body {
+  gap: 0;
+  padding: 0 0 16px;
+}
+
+.hsh-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.hsh .hsh-face {
+  width: 60px;
+  height: 60px;
+}
+.hsh-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.hsh-name b {
+  font: 900 26px/1 var(--hud-font-display);
+  color: var(--hud-ink);
+  overflow-wrap: anywhere;
+}
+.hsh-name small {
+  margin-top: 4px;
+  font: 400 12.5px/1.2 var(--hud-font-ui);
+  color: var(--hud-muted);
+}
+
+/* The badge (Main `.sh-tag`: Spotlight gold; `.sh-ro` View only grey; GMDesktop `.sh-gm` GM edit purple). */
+.hsh-tag {
+  align-self: flex-start;
+  margin-left: auto;
+  padding: 4px 10px;
+  border-radius: var(--hud-r-chip);
+  font: 400 11.5px/1.2 var(--hud-font-ui);
+  white-space: nowrap;
+  color: var(--hud-gold-text);
+  background: var(--hud-gold-soft);
+  box-shadow: inset 0 0 0 1px var(--hud-gold);
+}
+.hsh-tag-ro {
+  color: var(--hud-muted);
+  background: var(--hud-inset);
+  box-shadow: inset 0 0 0 1px var(--hud-line-2);
+}
+.hsh-tag-gm {
+  color: var(--hud-fear-text);
+  background: var(--hud-fear-soft);
+  box-shadow: inset 0 0 0 1px var(--hud-fear);
+}
+
+/* The GM's "Play for this character" switch: a row of its own under the header (answer 5a: in the header). */
+.hsh-playfor {
+  order: 2;
+  flex-basis: 100%;
+}
+.hsh-playfor .hud-tog {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--hud-fear-soft);
+  box-shadow: inset 0 0 0 1px #3d3266;
+}
+
+.hsh-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.hsh-stats {
+  display: flex;
+  gap: 8px;
+  padding: 0 20px 16px;
+}
+
+/* Trackers (`.trks .trk`): label, pips, − n of N marked +. */
+.hsh-trks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 14px;
+}
+.hsh-trk {
+  display: grid;
+  grid-template-columns: 62px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 10px;
+}
+.hsh-trk-l {
+  font: 600 13px/1 var(--hud-font-ui);
+}
+.hsh-trk-hp .hsh-trk-l {
+  color: #f0a59b;
+}
+.hsh-trk-stress .hsh-trk-l {
+  color: #a9c1dc;
+}
+.hsh-trk .hud-pp {
+  flex-wrap: wrap;
+}
+.hsh-trk .hud-pp i {
+  width: 18px;
+  height: 11px;
+}
+.hsh-trk-armor .hud-pp i {
+  width: 15px;
+  height: 15px;
+}
+.hsh-trk-hope {
+  padding: 12px 8px;
+  background: var(--hud-gold-soft);
+  box-shadow: inset 0 0 0 1px #6b5420;
+}
+.hsh-trk-hope .hsh-trk-l {
+  color: var(--hud-gold-text);
+}
+.hsh-trk-hope .hud-pp {
+  gap: 7px;
+}
+.hsh-trk-hope .hud-pp i {
+  width: 13px;
+  height: 13px;
+}
+.hsh-trk-c {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.hsh-trk-c button {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--hud-line-2);
+  background: var(--hud-inset);
+  color: var(--hud-ink);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.hsh-trk-c button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.hsh-trk-c button:focus-visible,
+.hsh-use:focus-visible,
+.hsh-cond-tgs button:focus-visible {
+  outline: 2px solid var(--hud-gold);
+  outline-offset: 2px;
+}
+.hsh-trk-c output {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 44px;
+  text-align: center;
+}
+.hsh-trk-c output b {
+  font-size: 14px;
+}
+.hsh-trk-c output small {
+  font-size: 10px;
+  color: var(--hud-muted);
+  white-space: nowrap;
+}
+
+/* `.ro-note` / `.gm-note`. */
+.hsh-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 8px 20px 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--hud-inset);
+  font-size: 12px;
+  color: var(--hud-muted);
+}
+.hsh-note .hsh-ic {
+  color: #7d8f96;
+}
+.hsh-note-gm {
+  color: var(--hud-fear-text);
+}
+.hsh-note-gm .hsh-ic {
+  color: var(--hud-fear);
+}
+.hsh-ic {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.hsh-hide {
+  margin: 10px 14px 0;
+}
+.hsh-hide .hud-tog {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--hud-inset);
+}
+
+.hsh-sec {
+  margin: 0;
+  padding: 18px 20px 8px;
+  font: 700 15px/1 var(--hud-font-display);
+  color: var(--hud-gold-text);
+}
+.hsh-muted {
+  margin: 0 20px 8px;
+  font-size: 12.5px;
+  color: var(--hud-muted);
+}
+
+/* Features (`.ft`): name and text left, Use / locked cost / kind right. */
+.hsh-fts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hsh-ft {
+  display: grid;
+  /* The text keeps at least 60% of the row; long Use / React labels wrap inside the narrower action column
+     instead of squeezing the description to one word per line (dcm-4j10). */
+  grid-template-columns: minmax(60%, 1fr) minmax(0, auto);
+  align-items: center;
+  gap: 2px 10px;
+  margin: 0 12px;
+  padding: 10px;
+  border-radius: 10px;
+}
+.hsh-ft + .hsh-ft {
+  box-shadow: inset 0 1px 0 #1f2b30;
+}
+.hsh-ft-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.hsh-ft-main b {
+  font-weight: 600;
+}
+.hsh-ft-main small {
+  font-size: 11.5px;
+  color: var(--hud-muted);
+}
+.hsh-ft-notes {
+  font-size: 11px;
+  color: var(--hud-gold-text);
+}
+.hsh-ft-ro .hsh-ft-main b {
+  color: #c8d3d0;
+}
+.hsh-ft-used .hsh-ft-notes {
+  color: var(--hud-muted);
+}
+.hsh-ft-act {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+.hsh-use {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  max-width: 100%;
+  padding: 5px 14px;
+  border: 0;
+  border-radius: var(--hud-r-button);
+  background: var(--hud-gold);
+  color: var(--hud-gold-ink);
+  font: 700 12px/1.2 var(--hud-font-display);
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.hsh-use:disabled {
+  background: #33444a;
+  color: #9fb2b6;
+  cursor: not-allowed;
+}
+/* H6.2: a blocked Use stays focusable (aria-disabled) with its reason (board Main `.ft-x .use`, CmpBlocked `.dis`). */
+.hsh-use[aria-disabled="true"] {
+  background: #1a2327;
+  color: #7d8f96;
+  box-shadow: inset 0 0 0 1px #2c3a40;
+  cursor: not-allowed;
+}
+.hsh-use .hsh-ic {
+  width: 12px;
+  height: 12px;
+}
+.hsh-ft-main .hud-why {
+  margin-top: 4px;
+}
+.hsh-ft-main .hud-inl {
+  margin-top: 6px;
+}
+.hsh-use-ro {
+  background: #1a2327;
+  color: #7d8f96;
+  box-shadow: inset 0 0 0 1px #2c3a40;
+  font: 600 12px/1 var(--hud-font-ui);
+  cursor: default;
+}
+.hsh-k {
+  padding: 3px 9px;
+  border-radius: var(--hud-r-chip);
+  font-size: 11px;
+  color: var(--hud-muted);
+  box-shadow: inset 0 0 0 1px var(--hud-line-2);
+  white-space: nowrap;
+}
+.hsh-ft-ro .hsh-k {
+  color: #7d8f96;
+}
+/* The classic Use flow (drawer/use) and the D5 Use inside the panel, until H3.3. */
+.hsh-use-flow .sdu-panel,
+.hsh-prompts {
+  margin: 8px 14px 0;
+}
+
+/* Thresholds (`.thr`). */
+.hsh-thr {
+  display: flex;
+  gap: 6px;
+  padding: 0 20px;
+}
+.hsh-thr span {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 8px 0;
+  border-radius: 10px;
+  background: var(--hud-inset);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--hud-muted);
+}
+.hsh-thr b {
+  font: 900 17px/1.1 var(--hud-font-display);
+  color: var(--hud-ink);
+}
+.hsh-thr small {
+  font-weight: 400;
+  font-size: 11px;
+}
+
+/* Experiences (`.xp`). */
+.hsh-xp {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0 20px;
+  list-style: none;
+}
+.hsh-xp li {
+  padding: 6px 11px;
+  border-radius: var(--hud-r-chip);
+  background: var(--hud-inset);
+  box-shadow: inset 0 0 0 1px var(--hud-line-2);
+  font-size: 12.5px;
+}
+.hsh-xp b {
+  color: var(--hud-gold-text);
+}
+
+/* Conditions (`.cdl`) and lasting effects. */
+.hsh-cds {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0 20px;
+  list-style: none;
+  font-size: 12.5px;
+}
+.hsh-cdl,
+.hsh-eff {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+.hsh-cdl {
+  align-items: center;
+  color: #f3a58f;
+}
+.hsh-cdl small {
+  color: var(--hud-muted);
+}
+.hsh-cdl em,
+.hsh-eff em {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--hud-muted);
+  text-align: right;
+}
+.hsh-eff b {
+  color: var(--hud-gold-text);
+  font-weight: 600;
+}
+/* The GM's Attack for the PC played for (dcm-bxp.99.32.36): one gold button per weapon. */
+.hsh-atks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 20px 0;
+}
+.hsh-atk:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* End on a lasting effect (dcm-bxp.99.32.37): a quiet chip after its duration. */
+.hsh-end {
+  flex: none;
+  align-self: center;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--hud-r-chip);
+  background: var(--hud-inset);
+  box-shadow: inset 0 0 0 1px var(--hud-line-2);
+  color: var(--hud-ink);
+  font: 600 12px/1 var(--hud-font-ui);
+  cursor: pointer;
+}
+.hsh-end:hover {
+  box-shadow: inset 0 0 0 1px var(--hud-gold);
+}
+.hsh-end:focus-visible {
+  outline: 2px solid var(--hud-gold);
+  outline-offset: 2px;
+}
+.hsh-cond-tgs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 20px 0;
+}
+.hsh-cond-tgs button {
+  height: 28px;
+  padding: 0 11px;
+  border-radius: var(--hud-r-chip);
+  border: 0;
+  background: var(--hud-inset);
+  box-shadow: inset 0 0 0 1px var(--hud-line-2);
+  color: var(--hud-muted);
+  font: 500 12px/1 var(--hud-font-ui);
+  cursor: pointer;
+}
+.hsh-cond-tgs button[aria-pressed="true"] {
+  color: #ffd0c4;
+  background: #2a1412;
+  box-shadow: inset 0 0 0 1px #a0552a;
+}
+
+.hsh-error {
+  margin: 6px 20px 0;
+  font-size: 12px;
+  color: #ffb4a8;
+}
+
+/* Touch targets of at least 44 px on tablets and phones (as ui.css). */
+@media (max-width: 1100px), (pointer: coarse) {
+  .hsh-trk-c button {
+    width: 44px;
+    height: 44px;
+  }
+  .hsh-use,
+  .hsh-end,
+  .hsh-atk,
+  .hsh-cond-tgs button {
+    min-height: 44px;
+  }
+}
+
+/* H9.5: the class controls (counters, Beastform and stance, Flying) and DA7's "Active" (classic `sd-*` controls inside). */
+.hsh-class {
+  margin: 8px 20px 0;
+  gap: 10px;
+}
+.hsh-chips {
+  margin: 8px 20px 0;
+}
+.hsh-class .hsh-chips {
+  margin: 0;
+}
+.hsh-active {
+  font-size: 11.5px;
+  color: var(--hud-ally-picked);
+}
+.hsh-active-tag {
+  margin-right: 4px;
+  padding: 1px 8px;
+  border-radius: var(--hud-r-chip);
+  box-shadow: inset 0 0 0 1px var(--hud-ally-picked);
+  font-weight: 600;
+}
+/* The GM's greyed controls: no fading (axe contrast on the labels); their buttons are disabled, which says it. */
+.hsh-class.sd-grey[data-greyed="true"] {
+  opacity: 1;
+}
+.hsh-class .cm-lbl,
+.hsh-class .cm-muted {
+  color: var(--hud-muted);
+}

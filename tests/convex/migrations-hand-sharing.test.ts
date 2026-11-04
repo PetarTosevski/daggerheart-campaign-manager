@@ -56,7 +56,7 @@ describe("migrations/handSharing:moveSwitch", () => {
     expect(c!.options).toBeUndefined();
     expect(c!.playersSeeHands).toBe(true);
     // Read through the server: the switch is off in the first campaign.
-    expect((await gm.query(api.combatCards.handSharing, { campaignId })).playersSeeHands).toBe(false);
+    expect((await gm.query(api.combatCardsReads.handSharing, { campaignId })).playersSeeHands).toBe(false);
 
     await run(t, fn);
     expect(await t.run((ctx) => ctx.db.get("campaigns", campaignId))).toEqual(a);
@@ -85,7 +85,7 @@ describe("migrations/handSharing:moveHidden", () => {
     expect(s!.handHidden).toBeUndefined();
     const keys = await t.run(async (ctx) => (await ctx.db.query("frameTrackers").collect()).map((r) => r.key));
     expect(keys).toEqual(["someTracker"]);
-    expect((await gm.query(api.combatCards.handSharing, { campaignId })).hidden).toEqual([ash]);
+    expect((await gm.query(api.combatCardsReads.handSharing, { campaignId })).hidden).toEqual([ash]);
 
     await run(t, fn);
     expect((await t.run((ctx) => ctx.db.get("characters", ash)))!.handHidden).toBe(true);

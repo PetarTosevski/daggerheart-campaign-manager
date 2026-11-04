@@ -13,7 +13,7 @@ import { freshKey } from "./synth";
  * on the planned session alone, so both players get an empty list (players read only live and played sessions);
  * sessions.test.ts checks the players' view of live and played sessions.
  *
- * `combatTokens.sessionEncounter` and `combatTokens.placeSessionEncounter` (also bead .57) are in combat.entries.ts (H11).
+ * `combatTokensReads.sessionEncounter` and `combatTokens.placeSessionEncounter` (also bead .57) are in combat.entries.ts (H11).
  */
 
 /** GM-only, with the edit-grant member refused too. */
@@ -89,7 +89,7 @@ const play: Entry[] = [
 
 const wrap: Entry[] = [
   gm({ fn: api.sessionWrap.get }),
-  gm({ fn: api.sessionWrap.setRecap, args: () => ({ recap: "They crossed the river." }) }),
+  // sessionWrap.setRecap is every member's since Journal Q4: journal-recap.entries.ts.
   gm({ fn: api.sessionWrap.setLoot, args: () => ({ loot: "A silver key." }) }),
   gm({ fn: api.sessionWrap.setThreads, args: () => ({ threads: "Who burned the bridge?" }) }),
   gm({ fn: api.sessionWrap.callMilestone }),

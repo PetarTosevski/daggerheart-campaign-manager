@@ -5,6 +5,7 @@ import { useState } from "react";
 import { EVOLVED, HYBRID, resolveBeastform, type BeastformState } from "@/lib/frames/extras/beastform";
 import { TRAIT_LABEL, traitIdSchema } from "@/lib/frames/extras/common";
 import { BEASTFORMS } from "@/lib/srd/beastforms";
+import { HYBRID_EXTRA_STRESS } from "@/lib/srd/feature-effects/beastforms";
 import type { Beastform, TraitId } from "@/lib/srd/types";
 import { cn } from "@/lib/utils";
 import { useIntent } from "@/lib/use-intent";
@@ -51,6 +52,9 @@ export function BeastformPanel({
   const chosen = draft.formId ? BEASTFORMS.find((b) => b.id === draft.formId) : undefined;
   const evolved = chosen ? EVOLVED[chosen.id] : undefined;
   const hybrid = chosen ? HYBRID[chosen.id] : undefined;
+  // CB p.34 Legendary Hybrid: "mark an additional Stress"; CB p.35 Mythic Hybrid: "mark 2 additional Stress" (DA9: D5's
+  // Beastform marks it; the table's HYBRID_EXTRA_STRESS is the one number).
+  const hybridStress = chosen ? (HYBRID_EXTRA_STRESS[chosen.id] ?? 0) : 0;
   const sources = (draft.hybrid?.sources ?? []).map((id) => BEASTFORMS.find((b) => b.id === id)!).filter(Boolean);
 
   const pickForm = (formId: string | null) =>
@@ -145,7 +149,10 @@ export function BeastformPanel({
           Cancel
         </button>
       </div>
-      <p className={NOTE}>Mark the Stress (or spend 3 Hope for Evolution) on your sheet.</p>
+      <p className={NOTE}>
+        Mark the Stress (or spend 3 Hope for Evolution) on your sheet
+        {hybridStress ? `; this form marks ${hybridStress} additional Stress` : ""}. The sheet&apos;s Beastform adds the form&apos;s trait and Evasion.
+      </p>
     </div>
   );
 

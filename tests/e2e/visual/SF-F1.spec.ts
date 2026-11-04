@@ -37,7 +37,7 @@ test("SF-F1 Start and End reports at 1440, 1024 and 390", { tag: "@visual" }, as
       .map((c) => c.id),
   };
   const { characterId } = await client.mutation(api.characters.create, { campaignId, draft, idempotencyKey: crypto.randomUUID() });
-  const view = (await client.query(api.characters.get, { characterId }))!;
+  const view = (await client.query(api.charactersReads.get, { characterId }))!;
   const base = view.sheet as CharacterSheet;
   const row = (sheet: CharacterSheet) => ({ campaignId, ownerId: view.ownerId, createdBy: view.ownerId, status: "active", sheet: { schemaVersion: 2, ...sheet }, createdAt: 1, updatedAt: 1 });
   const human = { kind: "single" as const, id: "human" };

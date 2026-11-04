@@ -1,0 +1,58 @@
+/* B1: the drawer's server-decided uses (Warden's Protection, Charge). */
+.sdu-panel {
+  display: grid;
+  gap: 0.5rem;
+  margin-block: 0.5rem;
+  padding: 0.6rem;
+  border: 1px solid var(--cm-line, #555);
+  border-radius: 0.5rem;
+}
+
+.sdu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.sdu-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.sdu-body {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.sdu-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.sdu-row select,
+.sdu-panel .cm-btn {
+  min-height: 44px;
+  max-width: 100%;
+}
+
+.sdu-num {
+  width: 5rem;
+  min-height: 44px;
+}
+
+.sdu-allies {
+  display: grid;
+  gap: 0.3rem;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.sdu-note,
+.sdu-result {
+  margin: 0;
+}

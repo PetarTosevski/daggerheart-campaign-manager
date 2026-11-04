@@ -63,7 +63,7 @@ describe("identity lines", () => {
   });
 
   it("names a mixed ancestry by its chosen name or both halves", () => {
-    expect(heritageLine({ ...ident, ancestry: { kind: "mixed", first: "elf", second: "human", name: "" } })).toBe("Elf/Human · Ridgeborne");
+    expect(heritageLine({ ...ident, ancestry: { kind: "mixed", first: "elf", second: "human", name: "" } })).toBe("Elf / Human · Ridgeborne");
     expect(heritageLine({ ...ident, ancestry: { kind: "mixed", first: "elf", second: "human", name: "Half-elf" } })).toBe("Half-elf · Ridgeborne");
   });
 

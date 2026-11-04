@@ -1,0 +1,117 @@
+/* Journal JS: the session list, '+ Plan session N' and 'Campaign so far' (design journal_views.jpg, left column). */
+
+.js-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.js-item {
+  width: 100%;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--jr-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease-out, border-color 120ms ease-out;
+}
+.js-item:hover {
+  background: var(--jr-hover);
+}
+.js-item:focus-visible {
+  outline: 2px solid var(--jr-acc);
+  outline-offset: 2px;
+}
+.js-item[aria-current="true"] {
+  border-color: var(--jr-acc);
+  background: var(--jr-card);
+}
+.js-n {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: #1d292e;
+  color: var(--jr-acc);
+  font-family: var(--jr-serif);
+  font-size: 17px;
+  font-weight: 700;
+}
+.js-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.js-title {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.js-date {
+  font-size: 12px;
+  color: var(--jr-muted);
+}
+.js-item .jr-chip {
+  flex: none;
+}
+.js-empty {
+  padding: 4px 2px;
+}
+
+.js-plan-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.js-plan.js-plan {
+  width: 100%;
+  border-style: dashed;
+  border-radius: 12px;
+  background: transparent;
+  font-size: 14px;
+}
+.js-error {
+  margin: 0;
+  color: var(--jr-danger);
+  font-size: 13px;
+}
+
+.js-sofar {
+  margin-top: 8px;
+  gap: 8px;
+}
+.js-rows {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.js-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+}
+.js-row dt {
+  color: var(--jr-muted);
+}
+.js-row dd {
+  margin: 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}

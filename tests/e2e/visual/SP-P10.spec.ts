@@ -89,7 +89,7 @@ test("SP-P10 the flow's dungeon hall at night for the GM and the player, Sprites
     await client.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
     const { tokenId: wolfId } = await client.mutation(api.combatTokens.addCustom, { campaignId, mapId, name: "Dire Wolf", hp: 4, side: "enemy", idempotencyKey: crypto.randomUUID() });
     const { tokenId: ghoulId } = await client.mutation(api.combatTokens.addCustom, { campaignId, mapId, name: "Ghoul", hp: 3, side: "enemy", idempotencyKey: crypto.randomUUID() });
-    const ash = (await client.query(api.combatTokens.list, { campaignId, mapId })).find((t) => t.name === "Ash")!;
+    const ash = (await client.query(api.combatTokensReads.list, { campaignId, mapId })).find((t) => t.name === "Ash")!;
     await client.mutation(api.combatTokens.move, { campaignId, tokenId: ash._id, x: 4, y: 10 });
     await client.mutation(api.combatTokens.turn, { campaignId, tokenId: ash._id, angle: 0 });
     await client.mutation(api.combatTokens.move, { campaignId, tokenId: wolfId, x: 20, y: 10 });

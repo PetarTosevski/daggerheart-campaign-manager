@@ -17,7 +17,7 @@ import { terrainGlows } from "../../domain/combat-map/light";
 import type { PreparedMap } from "../painter";
 import { WALLISH, areaHits, isTerrain, paintKey, rasterize, type PaintArea, type PaintSpec, type PaintedTerrain, type TerrainId } from "../raster";
 import { BUILTIN_LOOKUP, builtinSpriteUrl } from "../../sprite-packs/builtin/index";
-import { CATALOG_ENTRIES, TEXTURE_SQUARES } from "../../sprite-packs/catalog/index";
+import { catalogEntries, TEXTURE_SQUARES } from "../../sprite-packs/catalog/index";
 import { textureCandidates } from "../../sprite-packs/mapping";
 import { COMMON_FOLDER } from "../../sprite-packs/settings";
 import type { SpriteRef } from "../../sprite-packs/traits";
@@ -100,14 +100,22 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const GLOW_GAIN = 0.16;
 const GLOW_ADD = 10;
 
-/** The URLs of the built-in glowing textures (catalog light not none, with a file in the pack). */
-const BUILTIN_GLOW_URLS: ReadonlySet<string> = new Set(
-  CATALOG_ENTRIES.flatMap((e) => {
-    if (e.category !== "texture" || e.light === "none") return [];
-    const art = BUILTIN_LOOKUP.get(e.key)?.art;
-    return art ? [builtinSpriteUrl(art)] : [];
-  }),
-);
+let builtinGlowUrls: ReadonlySet<string> | undefined;
+
+/**
+ * The URLs of the built-in glowing textures (catalog light not none, with a file in the pack). Built on first use
+ * (dcm-uh6r), so a Convex function that loads the vision engine without painting pays nothing for it.
+ */
+function glowUrls(): ReadonlySet<string> {
+  builtinGlowUrls ??= new Set(
+    catalogEntries().flatMap((e) => {
+      if (e.category !== "texture" || e.light === "none") return [];
+      const art = BUILTIN_LOOKUP.get(e.key)?.art;
+      return art ? [builtinSpriteUrl(art)] : [];
+    }),
+  );
+  return builtinGlowUrls;
+}
 
 /** The uploaded-sprite fields glow reads: the client's `UploadedSprite` and the server's row both have them. */
 export type GlowUpload = { readonly category: string; readonly light: string; readonly url?: string | null };
@@ -267,7 +275,7 @@ export function planTextures(
   const tedge = sourceEdges(cells, fw, fh);
   // F6: the glowing textures among the sources (built-in by catalog light, uploaded by the row's light).
   const glow = new Set<string>();
-  for (const s of sources) for (const a of s.arts) if (BUILTIN_GLOW_URLS.has(a.url)) glow.add(a.url);
+  for (const s of sources) for (const a of s.arts) if (glowUrls().has(a.url)) glow.add(a.url);
   for (const row of uploaded.values()) if (row.category === "texture" && row.light !== "none" && row.url !== null) glow.add(row.url);
   return glow.size === 0 ? { ff, fw, fh, cells, sources, tedge } : { ff, fw, fh, cells, sources, tedge, glow };
 }

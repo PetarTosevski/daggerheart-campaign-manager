@@ -24,12 +24,13 @@
 // ```
 
 import { maxDamage, parseDamage, type ParsedDamage } from "../adversaries/index";
-import type { DamageType } from "../card-effects/types";
+import type { Cost, DamageType } from "../card-effects/types";
 import { rollD20 } from "../card-effects/run";
 import { resolveHits, type HitResult } from "../combat-actions/hits";
 import { rollDamage, type Rng } from "../dice/index";
 import type { RollRecord } from "../duality";
 import { hordeHalved } from "../encounters/damage";
+import { versusMods, type CreatureInfo, type PassiveSheet, type PassiveState } from "../feature-effects/passives";
 
 /** A stat block's Attack Modifier: a number ("+3") or extra dice ("+2d4", the only one in the SRD). */
 export interface AttackModifier {
@@ -47,28 +48,99 @@ export function parseAttackModifier(modifier: number | string): AttackModifier {
   return { flat: Number.isFinite(n) ? Math.trunc(n) : 0, dice: null };
 }
 
-/** Extra d20s: each advantage or disadvantage source; they cancel one for one (CB p.161 keeps one extra die). */
+/** Extra d20s: each advantage or disadvantage source of the roll; they cancel one for one (CB p.161 keeps one extra die). */
 export interface AttackAdvantage {
   advantage?: number;
   disadvantage?: number;
 }
 
-/** A PC an attack is made against: their Evasion is the Difficulty (AR1). */
+/**
+ * A PC an attack is made against: their Evasion is the Difficulty (AR1). `advantage` / `disadvantage` are the sources the
+ * target's passives put on an attack against them (Sturdy, CB p.68); `pcTarget` fills all three. Several disadvantage
+ * sources count as one (DA17).
+ */
 export interface EvasionTarget {
   readonly id: string;
   readonly evasion: number;
+  readonly advantage?: number;
+  readonly disadvantage?: number;
+  /**
+   * Lane E7 round 3 (dcm-eut): disadvantages the attacker may buy off (Defensive stance, HF p.12: "unless the attacker
+   * marks a Stress to negate the disadvantage"), by feature id; once paid (`CreatureInfo.paidOff`) they are not counted.
+   */
+  readonly buyOff?: readonly { featureId: string; costs: readonly Cost[] }[];
+}
+
+/**
+ * A PC as a target of one adversary attack (SD2, NV9): their Evasion (already with the always-on passives, `derivedDefense`)
+ * plus the passives keyed to this attacker (CB p.39 Elusive Predator, HF p.8 Scorpion's Poise, CB p.38 Battle-Bonded:
+ * "+2 bonus to your Evasion against the attack"), and the disadvantage their passives put on attacks against them (CB p.68
+ * Sturdy: "When you have 1 Hit Point remaining, attacks against you have disadvantage"). `attacker` says what the adversary
+ * is: its condition tags (Focus, Marked for Death) and whether it is within the PC's companion's Melee range.
+ */
+export function pcTarget(id: string, sheet: PassiveSheet, evasion: number, attacker: CreatureInfo, state: PassiveState = {}): EvasionTarget {
+  const v = versusMods(sheet, "attacksByThem", attacker, state);
+  return { id, evasion: evasion + v.evasion, ...(v.advantage ? { advantage: v.advantage } : {}), ...(v.disadvantage ? { disadvantage: v.disadvantage } : {}), ...(v.buyOff && v.buyOff.length > 0 ? { buyOff: v.buyOff } : {}) };
+}
+
+/** One target's reading of the shared attack roll (DA1): the d20 it keeps, its total, a natural 20, hit or miss. */
+export interface TargetRoll {
+  readonly id: string;
+  /** The d20 this target keeps from the roll's dice (its own advantage / disadvantage over the same dice). */
+  readonly natural: number;
+  readonly total: number;
+  /** A natural 20 on the die this target keeps: a hit and critical damage (CB p.148). */
+  readonly critical: boolean;
+  readonly hit: boolean;
 }
 
 export interface AdversaryAttackResult {
-  /** The attack roll as `actionLog.roll` stores it (kind "action"; the kept d20 plus any modifier dice). */
+  /**
+   * The attack roll as `actionLog.roll` stores it (kind "action"; the d20s plus any modifier dice). `record`, `natural`,
+   * `total` and `critical` read the roll with every source any target carries counted once (SD2); `targets` per target.
+   */
   record: RollRecord;
   /** The kept d20. */
   natural: number;
   total: number;
   /** A natural 20: succeeds against every target and deals critical damage (AR2). */
   critical: boolean;
-  /** Hit or miss per target, one roll for all (AR7). */
+  /** Hit or miss per target, one roll for all (AR7), each judged with the die it keeps (DA1). */
   hits: HitResult[];
+  /** DA1: each target's kept d20, total and critical. */
+  targets: TargetRoll[];
+}
+
+/**
+ * The d20 one reader keeps from the roll's dice (CB p.161: "If an NPC has advantage, roll an extra d20 and take the
+ * highest result. Similarly, if an NPC has disadvantage, roll an extra d20 and use the lowest result."): `net` is the
+ * advantage sources minus the disadvantage sources (they cancel one for one); none, or no second die, keeps the first.
+ */
+export function keptDie(first: number, second: number | null, net: number): number {
+  if (net === 0 || second === null) return first;
+  return net > 0 ? Math.max(first, second) : Math.min(first, second);
+}
+
+/**
+ * A target's own disadvantage sources on an attack against them, on or off (DA17; user 2026-10-30): Sturdy (CB p.68)
+ * and Harrowing Invocation (HF p.14) on the same PC give that PC one disadvantage, which one advantage source cancels.
+ */
+export function ownDisadvantage(sources: number | undefined): 0 | 1 {
+  return (sources ?? 0) > 0 ? 1 : 0;
+}
+
+/**
+ * The extra disadvantage each target puts on one attack roll against several targets (DA1; user 2026-10-30): Sturdy
+ * (CB p.68) and Harrowing Invocation (HF p.14) count only against their own target, and several of them on one target
+ * count once (DA17, `ownDisadvantage`). What every target shares (`common`) counts for the whole roll; `residual` is what
+ * is left, by target id. A single target, or targets that all carry it, leave no residual: the roll is made as before.
+ */
+export function splitTargetDisadvantage(extra: readonly { id: string; disadvantage: number }[]): { common: number; residual: Map<string, number> } {
+  const own = extra.map((t) => ({ id: t.id, disadvantage: ownDisadvantage(t.disadvantage) }));
+  const common = own.length === 0 ? 0 : Math.min(...own.map((t) => t.disadvantage));
+  const residual = new Map<string, number>();
+  for (const t of own) if (t.disadvantage - common > 0) residual.set(t.id, t.disadvantage - common);
+  return { common, residual };
 }
 
 /**
@@ -76,6 +148,10 @@ export interface AdversaryAttackResult {
  * lower) + the Attack Modifier + an Experience bought with a Fear (`experienceBonus`; the caller charges the Fear, Q19).
  * Hit when the total meets or beats the target's Evasion; a natural 20 always hits. Modifier dice ("+2d4") roll after
  * the d20s.
+ *
+ * DA1 (user 2026-10-30, CB p.68 Sturdy): a target's own advantage / disadvantage counts only against that target. The
+ * roll is one pair of d20s; each target keeps its own die from it (`keptDie`): the extra d20 is kept low only for the
+ * Sturdy target, and its total, hit and critical are its own (`targets`).
  */
 export function adversaryAttack(
   atk: number | string,
@@ -86,17 +162,36 @@ export function adversaryAttack(
 ): AdversaryAttackResult {
   const mod = parseAttackModifier(atk);
   const flat = mod.flat + experienceBonus;
-  const { record, natural } = rollD20(rng, flat, adv.advantage ?? 0, adv.disadvantage ?? 0);
+  // The record (SD2): a source a target's passives add counts once for the roll, however many targets have it.
+  const advantage = (adv.advantage ?? 0) + (targets.some((t) => t.advantage) ? 1 : 0);
+  const disadvantage = (adv.disadvantage ?? 0) + (targets.some((t) => t.disadvantage) ? 1 : 0);
+  const base = (adv.advantage ?? 0) - (adv.disadvantage ?? 0);
+  // DA17: a target's own disadvantage sources count once (on / off); one advantage source cancels them.
+  const netOf = (t: EvasionTarget) => base + (t.advantage ?? 0) - ownDisadvantage(t.disadvantage);
+  const twoDice = advantage - disadvantage !== 0 || targets.some((t) => netOf(t) !== 0);
+  const first = rng(20);
+  const second = twoDice ? rng(20) : null;
+  const preset = second === null ? [first] : [first, second];
+  const rolled = rollD20((sides) => preset.shift() ?? rng(sides), flat, advantage, disadvantage);
+  // A second die only some targets read: listed, dropped for the record's reading.
+  const role = targets.some((t) => netOf(t) < 0) ? ("disadvantage" as const) : ("advantage" as const);
+  const d20s = rolled.record.dice.length === 1 && second !== null ? [...rolled.record.dice, { sides: 20, value: second, role, dropped: true }] : rolled.record.dice;
   const extra = mod.dice ? Array.from({ length: mod.dice.count }, () => rng(mod.dice!.sides)) : [];
-  const total = record.total + extra.reduce((s, n) => s + n, 0);
-  const dice = [...record.dice, ...extra.map((value) => ({ sides: mod.dice!.sides, value, role: "extra" as const }))];
-  const critical = natural === 20;
+  const extraSum = extra.reduce((s, n) => s + n, 0);
+  const total = rolled.record.total + extraSum;
+  const dice = [...d20s, ...extra.map((value) => ({ sides: mod.dice!.sides, value, role: "extra" as const }))];
+  const perTarget = targets.map((t): TargetRoll => {
+    const kept = keptDie(first, second, netOf(t));
+    const own = kept + flat + extraSum;
+    return { id: t.id, natural: kept, total: own, critical: kept === 20, hit: resolveHits(own, kept === 20, [{ id: t.id, difficulty: t.evasion }])[0]!.hit };
+  });
   return {
-    record: { ...record, kind: "action", dice, total },
-    natural,
+    record: { ...rolled.record, kind: "action", dice, total },
+    natural: rolled.natural,
     total,
-    critical,
-    hits: resolveHits(total, critical, targets.map((t) => ({ id: t.id, difficulty: t.evasion }))),
+    critical: rolled.natural === 20,
+    hits: perTarget.map((t) => ({ id: t.id, hit: t.hit })),
+    targets: perTarget,
   };
 }
 
@@ -173,4 +268,20 @@ export function standardAttackDamage(
 /** Minion Group Attack (AR9, CB p.201): X damage per Minion in the group, combined. */
 export function groupAttackDamage(x: number, groupSize: number): number {
   return Math.max(0, x) * Math.max(0, Math.trunc(groupSize));
+}
+
+/**
+ * Plan lanes-2, lane E7 (dcm-idz; user answer 2026-10-31): a GM-controlled PC (Enthralled, HF p.92: "you can spotlight
+ * them during a GM turn as if they were an adversary … makes a weapon attack against them using a d20 instead of Duality
+ * Dice") attacks like an adversary: one d20 + the weapon's trait against each target's Evasion or Difficulty, a natural 20
+ * hits and crits (CB p.148). The damage text is the weapon's with the PC's Proficiency as its dice count (CB, Damage Rolls: "you roll a
+ * number of your weapon's damage dice equal to your Proficiency"): "d8+1 phy" at Proficiency 2 is "2d8+1 phy".
+ *
+ * ```ts
+ * gmControlledWeaponAttack(2, "d8+1 phy", 2, [{ id: "mira", evasion: 12 }], rng); // d20 + 2 vs 12; damage "2d8+1 phy"
+ * ```
+ */
+export function gmControlledWeaponAttack(trait: number, weaponDamage: string, proficiency: number, targets: readonly EvasionTarget[], rng: Rng): { attack: AdversaryAttackResult; damage: string } {
+  const damage = weaponDamage.trim().replace(/^(\d*)d/, `${Math.max(1, Math.trunc(proficiency))}d`);
+  return { attack: adversaryAttack(trait, {}, 0, targets, rng), damage };
 }

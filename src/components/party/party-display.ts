@@ -65,11 +65,15 @@ export function portraitAncestryId(ancestry: CharacterSheet["ancestry"]): string
   return ancestry.form;
 }
 
+/**
+ * "Elf", "Elf / Orc" (or the mixed heritage's name), "Shapeshifter (Elf form)": the one ancestry label of the cards,
+ * the roster and the sheet (dcm-bxp.15; src/app/.../party/[characterId]/sheet-helpers.ts re-exports it).
+ */
 export function ancestryLabel(ancestry: CharacterSheet["ancestry"]): string {
   const name = (id: string) => getAncestry(id)?.name ?? id;
   if (ancestry.kind === "single") return name(ancestry.id);
-  if (ancestry.kind === "mixed") return ancestry.name.trim() || `${name(ancestry.first)}/${name(ancestry.second)}`;
-  return `Shapeshifter (${name(ancestry.form)})`;
+  if (ancestry.kind === "mixed") return ancestry.name.trim() || `${name(ancestry.first)} / ${name(ancestry.second)}`;
+  return `Shapeshifter (${name(ancestry.form)} form)`;
 }
 
 /** "Dwarf · Ridgeborne". */

@@ -1,5 +1,6 @@
 import { api } from "../../../convex/_generated/api";
 import type { Id, TableNames } from "../../../convex/_generated/dataModel";
+import { imageBlob, key } from "../helpers";
 import type { Area, Entry, Outcome, Role, World } from "./harness";
 
 /**
@@ -32,7 +33,7 @@ async function firstEntry(w: World): Promise<Id<"codexEntries">> {
 
 /** A file stored directly (no upload URL), unclaimed: the `_storage` row synthesis uses (system tables cannot be scanned). */
 async function storedFile(w: World) {
-  const storageId = await w.t.run((ctx) => ctx.storage.store(new Blob(["img"], { type: "image/png" })));
+  const storageId = await w.t.run((ctx) => ctx.storage.store(imageBlob("image/png")));
   // `use` is typed for user tables; synthesis looks the chosen id up before touching the table.
   w.use("_storage" as TableNames, storageId);
 }
@@ -42,7 +43,7 @@ async function entryImage(w: World) {
   const entryId = await firstEntry(w);
   const gm = w.users.gm;
   const storageId = await w.t.run(async (ctx) => {
-    const id = await ctx.storage.store(new Blob(["img"], { type: "image/jpeg" }));
+    const id = await ctx.storage.store(imageBlob("image/jpeg"));
     const entry = (await ctx.db.get(entryId))!;
     await ctx.db.insert("files", { storageId: id, campaignId: entry.campaignId, uploadedBy: gm, kind: "codexImage", refId: entryId, createdAt: 0 });
     const data = entry.data as { images: { storageId: string; shown: boolean }[]; cover: string | null };
@@ -80,6 +81,8 @@ const codex: Entry[] = [
   { fn: api.codex.importPins, access: "edit" },
   { fn: api.codex.update, access: "scoped", args: () => ({ patch: { name: "Renamed" } }), expect: GM_CHANGE },
   { fn: api.codex.setPin, access: "scoped", args: () => ({ tokenId: null }), expect: GM_CHANGE },
+  // dcm-bxp.16: needs edit on the entry and on the map; the grantee's campaign edit grant reaches both.
+  { fn: api.codex.dropPin, access: "scoped", args: () => ({ type: "village", x: 50, y: 50 }), expect: GM_CHANGE },
   { fn: api.codex.remove, access: "scoped", expect: GM_CHANGE },
   { fn: api.codex.imageUploadUrl, access: "scoped", expect: GM_CHANGE },
   { fn: api.codex.attachImage, access: "scoped", setup: storedFile, expect: GM_CHANGE },
@@ -139,11 +142,89 @@ const maps: Entry[] = [
   { fn: api.maps.setCrawlDay, access: "scoped", world: HORIZON, args: () => ({ day: 3 }), expect: GM_CHANGE },
 ];
 
+/**
+ * Age of Umbra pyre links to World map markers (dcm-bxp.18). They live in convex/trackers/ageOfUmbra.ts but are
+ * listed here with the World area's tracer (N1). As in trackers.entries.ts: `keyedGmMutation` is owner-only, so the
+ * grantee's campaign edit grant is FORBIDDEN; the query is a member read (players get only markers they can see).
+ */
+const UMBRA = { frameId: "age-of-umbra" } as const;
+
+/** A lit pyre (`pyreId`). */
+async function pyre(w: World) {
+  const { pyreId } = await w.as("gm").mutation(api.trackers.ageOfUmbra.addPyre, { campaignId: w.campaignId, settlement: "Ashford", idempotencyKey: key() });
+  w.set("pyreId", pyreId);
+}
+
+const pyreLinks: Entry[] = [
+  { fn: api.trackers.ageOfUmbra.pyreMap, access: "view", world: UMBRA, expect: { otherPlayer: "ok", grantee: "ok" } },
+  { fn: api.trackers.ageOfUmbra.linkPyre, access: "gm", world: UMBRA, setup: pyre, args: (w) => ({ pyreId: w.ids.pyreId, tokenId: null }), expect: { grantee: "FORBIDDEN" } },
+  { fn: api.trackers.ageOfUmbra.setVicinity, access: "gm", world: UMBRA, args: () => ({ km: 2 }), expect: { grantee: "FORBIDDEN" } },
+];
+
+/**
+ * Journey to Horizon hex crawl regions and Soul Echoes (dcm-bxp.17), in convex/trackers/horizon.ts, listed with the
+ * World area like the pyre links above: owner-only GM changes, a member read with the players' filtered view.
+ */
+const H = { ...HORIZON } as const;
+const GM_ONLY: Partial<Record<Role, Outcome>> = { grantee: "FORBIDDEN" };
+
+/** A generated region (`regionId`). */
+async function region(w: World) {
+  const { id } = await w.as("gm").mutation(api.trackers.horizon.generateRegion, { campaignId: w.campaignId, idempotencyKey: key() });
+  w.set("regionId", String(id));
+}
+
+/** A sanctuary marker (id 1). */
+async function sanctuary(w: World) {
+  const campaignId = w.campaignId;
+  await w.t.run((ctx) => ctx.db.insert("mapTokens", { campaignId, tokenId: 1, type: "sanctuary", x: 50, y: 50, name: "Cinteri", notes: "", hidden: false, location: false }));
+}
+
+/** A sanctuary marker (id 1) holding a Soul Echo. */
+async function echoSanctuary(w: World) {
+  await sanctuary(w);
+  await w.as("gm").mutation(api.trackers.horizon.setEcho, { campaignId: w.campaignId, tokenId: 1, hasEcho: true, idempotencyKey: key() });
+}
+
+/** The party on a hex and a located Echo. */
+async function located(w: World) {
+  await echoSanctuary(w);
+  await partyOnHex(w);
+  await w.as("gm").mutation(api.trackers.horizon.locateEchoes, { campaignId: w.campaignId, seekersAlerted: false, idempotencyKey: key() });
+}
+
+const crawl: Entry[] = [
+  { fn: api.trackers.horizon.crawl, access: "view", world: H, expect: { otherPlayer: "ok", grantee: "ok" } },
+  { fn: api.trackers.horizon.generateRegion, access: "gm", world: H, expect: GM_ONLY },
+  { fn: api.trackers.horizon.removeRegion, access: "gm", world: H, setup: region, args: (w) => ({ regionId: Number(w.ids.regionId) }), expect: GM_ONLY },
+  { fn: api.trackers.horizon.rollRegionEncounter, access: "gm", world: H, setup: region, args: (w) => ({ regionId: Number(w.ids.regionId) }), expect: GM_ONLY },
+  {
+    fn: api.trackers.horizon.setRegionEncounterUsed,
+    access: "gm",
+    world: H,
+    setup: region,
+    args: (w) => ({ regionId: Number(w.ids.regionId), index: 0, used: true }),
+    expect: GM_ONLY,
+  },
+  { fn: api.trackers.horizon.setRegionRumor, access: "gm", world: H, setup: region, args: (w) => ({ regionId: Number(w.ids.regionId), known: true }), expect: GM_ONLY },
+  {
+    fn: api.trackers.horizon.setEcho,
+    access: "gm",
+    world: H,
+    setup: sanctuary,
+    args: () => ({ tokenId: 1, hasEcho: true }),
+    expect: GM_ONLY,
+  },
+  { fn: api.trackers.horizon.collectEcho, access: "gm", world: H, setup: echoSanctuary, args: () => ({ tokenId: 1 }), expect: GM_ONLY },
+  { fn: api.trackers.horizon.locateEchoes, access: "gm", world: H, setup: (w) => echoSanctuary(w).then(() => partyOnHex(w)), args: () => ({ seekersAlerted: true }), expect: GM_ONLY },
+  { fn: api.trackers.horizon.setSeekersAlerted, access: "gm", world: H, setup: located, args: () => ({ alerted: true }), expect: GM_ONLY },
+];
+
 const area: Area = {
   area: "world",
   // codex.setPin's `tokenId` is a world-map marker number, not a combat token.
   nameHints: { tokenId: () => null },
-  entries: [...codex, ...maps, { fn: api.scenes.end, access: "gm" }],
+  entries: [...codex, ...maps, ...pyreLinks, ...crawl, { fn: api.scenes.end, access: "gm" }],
 };
 
 export default area;

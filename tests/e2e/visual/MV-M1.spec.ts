@@ -54,7 +54,7 @@ test("MV-M1 difficult hatch, doors, Blocked, the GM's warning and the movement-r
     await playerClient.mutation(api.members.joinByCode, { code });
     await playerClient.mutation(api.characters.create, { campaignId, draft: bardDraft("Ash"), idempotencyKey: crypto.randomUUID() });
     await client.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
-    const ash = (await client.query(api.combatTokens.list, { campaignId, mapId })).find((t) => t.name === "Ash")!;
+    const ash = (await client.query(api.combatTokensReads.list, { campaignId, mapId })).find((t) => t.name === "Ash")!;
     await client.mutation(api.combatTokens.move, { campaignId, tokenId: ash._id, x: 14, y: 17 });
     await client.mutation(api.combatTokens.turn, { campaignId, tokenId: ash._id, angle: 0 });
 
@@ -84,7 +84,7 @@ test("MV-M1 difficult hatch, doors, Blocked, the GM's warning and the movement-r
     await player.locator("body").click({ position: { x: 2, y: 2 } });
     await player.keyboard.press("d");
     await expect(mine).toHaveAttribute("data-square", "15,17");
-    await expect.poll(async () => (await playerClient.query(api.combatTokens.party, { campaignId, mapId })).find((t) => t._id === ash._id)?.x).toBe(15);
+    await expect.poll(async () => (await playerClient.query(api.combatTokensReads.party, { campaignId, mapId })).find((t) => t._id === ash._id)?.x).toBe(15);
     const card = player.getByRole("region", { name: "Selected token" });
     await expect(card.getByTestId("combat-difficult-note")).toBeVisible();
     await settle(player);
@@ -123,7 +123,7 @@ test("MV-M1 difficult hatch, doors, Blocked, the GM's warning and the movement-r
       await expect.poll(async () => Number(await gmNotice.getAttribute("data-seq"))).toBeGreaterThan(before);
       await expect(gmNotice).toHaveAttribute("data-kind", "warning");
       await board.screenshot({ path: `test-results/visual/MV-M1/gm-warning-${viewport.width}.png`, animations: "disabled" });
-      await expect.poll(async () => (await client.query(api.combatTokens.list, { campaignId, mapId })).find((t) => t._id === ash._id)?.x).toBe(10);
+      await expect.poll(async () => (await client.query(api.combatTokensReads.list, { campaignId, mapId })).find((t) => t._id === ash._id)?.x).toBe(10);
     }
     await page.setViewportSize(VIEWPORTS[0]);
   } finally {

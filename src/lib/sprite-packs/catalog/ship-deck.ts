@@ -1,8 +1,8 @@
 // Built-in catalog: ship deck (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, long, obj, tex } from "./types";
+import { defineFolder, long, obj, tex, type FolderCatalog } from "./types";
 
-export const SHIP_DECK = defineFolder("ship-deck", {
+export const SHIP_DECK = (): FolderCatalog => defineFolder("ship-deck", {
   props: [
     obj("deck cannon", "cover", "low", "barrel", { footprint: "rect", standIn: false }),
     obj("coil of rope", "none", "low", "barrel", { standIn: false }),

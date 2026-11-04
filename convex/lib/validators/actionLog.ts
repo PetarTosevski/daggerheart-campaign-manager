@@ -91,6 +91,24 @@ export const actionTargetValidator = v.object({
   tone: v.union(v.literal("hit"), v.literal("miss"), v.literal("effect")),
 });
 
+/** The campaign's day (the `campaignTime` row's fields): week, Witherwild cycle ("DAY" elsewhere) and day of the week. */
+export const campaignTimeSnapshotValidator = v.object({
+  week: v.number(),
+  cycle: v.union(v.literal("DAY"), v.literal("NIGHT")),
+  cycleDay: v.number(),
+});
+
+/**
+ * The calendar move of an End day or a Witherwild day-icon jump forward (plan lanes-2 CT2, dcm-jq4b; widened, older rows
+ * have none), on the group's campaign row. Undo moves the calendar back to `before` only while it still stands at `after`
+ * (the latest day's end, user answer 2026-11-01); `timeOfDayBefore` is set when End day reset the time of day to Day.
+ */
+export const timeChangeValidator = v.object({
+  before: campaignTimeSnapshotValidator,
+  after: campaignTimeSnapshotValidator,
+  timeOfDayBefore: v.optional(v.union(v.literal("day"), v.literal("dim"), v.literal("night"))),
+});
+
 /** The stored fields of one `actionLog` row (see convex/tables/actionLog.ts). */
 export const actionLogFields = {
   campaignId: v.id("campaigns"),
@@ -115,11 +133,18 @@ export const actionLogFields = {
   hopeGained: v.optional(v.boolean()),
   /** The public row of an adversary action (H3, widened; older rows have none): the token ids it named on the live map. */
   targets: v.optional(v.array(actionTargetValidator)),
+  /** The calendar move of an End day / day jump (CT2, widened): undo of the latest one moves the calendar back. */
+  timeChange: v.optional(timeChangeValidator),
   undoable: v.boolean(),
   undoneAt: v.optional(v.number()),
   undoneBy: v.optional(v.id("users")),
   /** Set when the GM deletes the row from the feed (`feed.remove`). Display only: undo and "latest roll" checks still see it. */
   removedAt: v.optional(v.number()),
+  /**
+   * When the GM revealed this hidden GM free roll (`rolls.reveal`; user 2026-11-04, widened). The feed tags such a row
+   * "Revealed". Rows revealed before the field have none: unknown, no tag. Never set on a row that was never hidden.
+   */
+  revealedAt: v.optional(v.number()),
   at: v.number(),
 };
 
@@ -130,6 +155,8 @@ export type Visibility = Infer<typeof visibilityValidator>;
 export type StoredRoll = Infer<typeof rollValidator>;
 export type AdversaryBefore = Infer<typeof adversaryBeforeValidator>;
 export type ActionTarget = Infer<typeof actionTargetValidator>;
+export type CampaignTimeSnapshot = Infer<typeof campaignTimeSnapshotValidator>;
+export type TimeChange = Infer<typeof timeChangeValidator>;
 
 // Drift checks: each type must be assignable to the other.
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;

@@ -123,6 +123,23 @@ const plan = (adversaryId: string, feature: string, dice: number[], over: Partia
 const stepsOf = <K extends AdversaryPlanStep["kind"]>(p: AdversaryPlan, kind: K) => p.steps.filter((s): s is Extract<AdversaryPlanStep, { kind: K }> => s.kind === kind);
 const prompts = (p: AdversaryPlan, prompt: string) => stepsOf(p, "prompt").filter((s) => s.prompt === prompt);
 const creature = (p: AdversaryPlan, id: string) => p.creatures.find((c) => c.id === id)?.after;
+/** Plan lanes, SRD-A1: every object of `kind` anywhere in an entry (steps, table rows, `ifUnable`, condition mods). */
+const partsOf = (adversaryId: string, feature: string, kind: string): Record<string, unknown>[] => {
+  const walk = (v: unknown): Record<string, unknown>[] =>
+    Array.isArray(v)
+      ? v.flatMap(walk)
+      : v !== null && typeof v === "object"
+        ? [...((v as { kind?: unknown }).kind === kind ? [v as Record<string, unknown>] : []), ...Object.values(v).flatMap(walk)]
+        : [];
+  return walk(effectOf(adversaryId, feature).uses);
+};
+const conditionStep = (adversaryId: string, feature: string, name: string) =>
+  partsOf(adversaryId, feature, "condition").find((c) => {
+    const ref = c.condition as { tag?: string; condition?: string };
+    return ref.tag === name || ref.condition === name;
+  });
+const fx = (value: number) => ({ kind: "fixed", value });
+const stressRider = (on: string) => ({ kind: "bearerRider", rider: { on, steps: [{ kind: "markStress", to: "self", amount: fx(1) }] } });
 const triggerOf = (adversaryId: string, feature: string, useId = "main"): AdversaryTrigger => {
   const a = effectOf(adversaryId, feature).uses.find((u) => u.id === useId)!.activation;
   if (a.kind !== "reaction" && a.kind !== "auto") throw new Error(`${feature} has no trigger`);
@@ -329,15 +346,25 @@ describe("Basilisk (HF p.70)", () => {
     const stiff = plan("basilisk", "CRONCH!", [], { targets: [pc("mira", { tags: ["Stiff"] })] });
     expect(stiff.self.after.stress).toBe(1);
     expect(prompts(stiff, "manual")).toEqual([]);
+    expect(stiff.deathMoves).toEqual([]);
+    // dcm-702: a deathMove step names the PC.
     const petrified = plan("basilisk", "CRONCH!", [], { targets: [pc("mira", { tags: ["Petrified"] })] });
-    expect(prompts(petrified, "manual")).toEqual([expect.objectContaining({ targetIds: ["mira"], text: "The target must make a death move." })]);
+    expect(petrified.deathMoves).toEqual(["mira"]);
+  });
+
+  it("Petrify: Stiff marks a Stress each time they act", () => {
+    expect(conditionStep("basilisk", "Petrify", "Stiff")!.mods).toEqual([stressRider("acts")]);
+    expect(partsOf("basilisk", "Petrify", "manual")).toEqual([]);
   });
 });
 
 describe("Berserkers (HF p.70)", () => {
-  it.each(["berserker-alpha", "berserker-initiate"])("%s Pack Fury: a reminder before each of its attacks", (id) => {
-    expect(matchesTrigger(triggerOf(id, "Pack Fury"), { kind: "onAttack", stage: "before", attack: "standard" })).toBe(true);
-    expect(prompts(plan(id, "Pack Fury", [], { spotlit: false, targets: [] }), "manual")).toHaveLength(1);
+  it.each(["berserker-alpha", "berserker-initiate"])("%s Pack Fury: +1 attack per ally within Very Close range of the target (a creature count)", (id) => {
+    const p = plan(id, "Pack Fury", [], { spotlit: false, targets: [] });
+    expect(prompts(p, "manual")).toEqual([]);
+    expect(p.modifiers).toEqual([
+      { kind: "mod", mod: { kind: "stat", stat: "attack", delta: { kind: "creatureCount", side: "allies", within: "veryClose", of: "target", excludeSelf: true } } },
+    ]);
   });
 
   it("Bark at the Moon: once per scene, a Fear: each ally within Close range clears a HP and a Stress", () => {
@@ -381,7 +408,14 @@ describe("Centaur Warden (HF p.70)", () => {
     expect(p.roll!.record.total).toBe(21);
     expect(p.incoming[0]).toMatchObject({ amount: 11, type: "physical" });
     expect(p.self.after.stress).toBe(1);
-    expect(prompts(p, "manual")).toHaveLength(1); // the 19-20 critical range
+    // S3.4: the runner reads critRange (dcm-mhn), so no manual reminder; a kept 19 is a critical, an 18 is not.
+    expect(prompts(p, "manual")).toHaveLength(0);
+    expect(p.roll!.critical).toBe(false);
+    const crit = plan("centaur-warden", "Eye of the Sage", [19, 2, 3, 4]);
+    expect(crit.roll!.critical).toBe(true);
+    expect(plan("centaur-warden", "Eye of the Sage", [18, 2, 3, 4]).roll!.critical).toBe(false);
+    // "critically succeeds on a roll of 19–20" (dcm-mhn).
+    expect(effectOf("centaur-warden", "Eye of the Sage").uses[0]!.roll).toEqual({ kind: "adversaryAttack", difficulty: { kind: "evasion" }, advantage: true, critRange: 19 });
   });
 
   it("Trample: a Fear, gallop, an Agility Reaction Roll for every target in the path", () => {
@@ -465,13 +499,23 @@ describe("Doppelhound (HF p.71)", () => {
     const placed = plan("doppelhound", "Blink Beast", [], { useId: "place", spotlit: false, targets: [] });
     expect(placed.self.after.tags).toEqual(["Duplicate"]);
     expect(runF("doppelhound", "Blink Beast", [], { useId: "attacked", spotlit: false, targets: [] })).toMatchObject({ ok: false, reason: "requirement" });
+    // dcm-v27: a duplicate token of itself.
+    expect(stepsOf(placed, "summon")).toEqual([expect.objectContaining({ label: "Duplicate", count: 1, range: "close", duplicate: true })]);
+    expect(prompts(placed, "manual")).toEqual([]);
     const withDup = selfOf("doppelhound", { tags: ["Duplicate"] });
-    expect(prompts(plan("doppelhound", "Blink Beast", [], { useId: "attacked", self: withDup, spotlit: false, targets: [] }), "manual")).toHaveLength(1);
+    // dcm-27j: the attacker's d6; odd targets the duplicate and the attack fails (negated), even is the Doppelhound.
+    const odd = plan("doppelhound", "Blink Beast", [3], { useId: "attacked", self: withDup, spotlit: false, targets: [] });
+    expect(stepsOf(odd, "check")).toMatchObject([{ total: 3, passed: true }]);
+    expect(stepsOf(odd, "fold")).toEqual([expect.objectContaining({ step: expect.objectContaining({ kind: "negate", what: "attack" }) })]);
+    const even = plan("doppelhound", "Blink Beast", [4], { useId: "attacked", self: withDup, spotlit: false, targets: [] });
+    expect([stepsOf(even, "check")[0]!.passed, stepsOf(even, "fold")]).toEqual([false, []]);
+    expect(prompts(even, "manual")).toEqual([]);
     expect(plan("doppelhound", "Blink Beast", [], { useId: "dispel", self: withDup, spotlit: false, targets: [] }).self.after.tags).toEqual([]);
     expect(runF("doppelhound", "Blink Beast", [], { useId: "conjure", spotlit: false, fearConfirmed: false, targets: [] })).toMatchObject({ reason: "confirmFear" });
     const conjured = plan("doppelhound", "Blink Beast", [], { useId: "conjure", spotlit: false, targets: [] });
     expect(conjured).toMatchObject({ fearSpent: 1 });
     expect(conjured.self.after.tags).toEqual(["Duplicate"]);
+    expect(stepsOf(conjured, "summon")).toEqual([expect.objectContaining({ duplicate: true })]);
   });
 
   it("Double Strike: a Stress, two standard attacks", () => {
@@ -537,7 +581,10 @@ describe("Entombed Cat Beast (HF p.72)", () => {
     expect(matchesTrigger(trigger, { kind: "onHit", attack: "standard", target: { conditions: [] } })).toBe(false);
     const p = plan("entombed-cat-beast", "Screeching Caterwaul", [], { useId: "rattled", spotlit: false, targets: [], trigger: { subject: pc("mira", { tags: ["Rattled"] }) } });
     expect(creature(p, "mira")!.tags).toEqual([]);
-    expect(prompts(p, "manual")).toHaveLength(1);
+    expect(prompts(p, "manual")).toEqual([]);
+    // "roll damage twice and take the better result" folds into the open hit (DamageChange best, dcm-51s).
+    expect(stepsOf(p, "fold")).toEqual([expect.objectContaining({ targetIds: ["mira"], step: expect.objectContaining({ kind: "modifyDamage", change: { kind: "best", of: 2 } }) })]);
+    expect(conditionStep("entombed-cat-beast", "Screeching Caterwaul", "Rattled")).toMatchObject({ endsOnRoll: { roll: "action", result: "withHope" } });
   });
 
   it("I Alone: when it appears, defeat any number of allies and gain a Fear for each", () => {
@@ -559,9 +606,10 @@ describe("Entombed Cat Beast (HF p.72)", () => {
 });
 
 describe("Entombed Elite Guard (HF p.72)", () => {
-  it("Battle Formation: a reminder when it is attacked", () => {
-    expect(matchesTrigger(triggerOf("entombed-elite-guard", "Battle Formation"), { kind: "onAttacked", stage: "targeted" })).toBe(true);
-    expect(prompts(plan("entombed-elite-guard", "Battle Formation", [], { spotlit: false, targets: [] }), "manual")).toHaveLength(1);
+  it("Battle Formation: +1 Difficulty per ally within Very Close range (a creature count)", () => {
+    const p = plan("entombed-elite-guard", "Battle Formation", [], { spotlit: false, targets: [] });
+    expect(prompts(p, "manual")).toEqual([]);
+    expect(p.modifiers).toEqual([{ kind: "mod", mod: { kind: "stat", stat: "difficulty", delta: { kind: "creatureCount", side: "allies", within: "veryClose", excludeSelf: true } } }]);
   });
 
   it("Javelin: an attack within Very Far range for 2d6+2 physical, no cost", () => {
@@ -709,7 +757,7 @@ describe("Fungispunj (HF p.74)", () => {
 
   it("Mind Meld: the Stress from an attack comes off the Sporophore for its allies to mark", () => {
     const p = plan("fungispunj-sporophore", "Mind Meld", [], { self: selfOf("fungispunj-sporophore", { stress: 2 }), spotlit: false, targets: [], trigger: { amount: 2 } });
-    expect(p.self.after.stress).toBe(0);
+    // The spread stays manual: the card runner doesn't split a markStress yet (dcm-63j).
     expect(prompts(p, "manual")).toHaveLength(1);
   });
 });
@@ -725,6 +773,11 @@ describe("Gargoyle (HF p.75)", () => {
     expect(matchesTrigger(triggerOf("gargoyle", "Petrifying Slash"), { kind: "onDealDamage", toPc: true })).toBe(true);
     const p = plan("gargoyle", "Petrifying Slash", [], { spotlit: false, targets: [], trigger: { subject: mira } });
     expect(prompts(p, "pcSave")).toEqual([expect.objectContaining({ targetIds: ["mira"] })]);
+    // Already Vulnerable and Restrained: a death move (dcm-702).
+    expect(partsOf("gargoyle", "Petrifying Slash", "deathMove")).toEqual([
+      expect.objectContaining({ to: "targets", when: [{ kind: "targetHas", condition: { kind: "standard", condition: "vulnerable" } }, { kind: "targetHas", condition: { kind: "standard", condition: "restrained" } }] }),
+    ]);
+    expect(partsOf("gargoyle", "Petrifying Slash", "manual")).toEqual([]);
   });
 });
 
@@ -756,16 +809,47 @@ describe("Gobstalker (HF p.75)", () => {
     expect(plan("gobstalker", "Anti-Mystica-Halitosis", [], { spotlit: false, targets: [] }).modifiers).toHaveLength(2);
   });
 
-  it("Tentacle Rays: a Stress, an attack; on a success the beam the d8 showed (or one picked for a Fear)", () => {
-    // 13 + 2 = 15 hits. Sear: 2d8 direct magic = 4 + 5.
-    const sear = plan("gobstalker", "Tentacle Rays", [13, 4, 5], { options: { beam: ["6"] } });
+  it("Tentacle Rays: a Stress, an attack; on a success the d8 table's beam (dcm-27j), or one picked for a Fear", () => {
+    // 13 + 2 = 15 hits. d8 6 Sear: 2d8 direct magic = 4 + 5.
+    const sear = plan("gobstalker", "Tentacle Rays", [13, 6, 4, 5], { options: { how: ["roll"] } });
     expect(sear).toMatchObject({ fearSpent: 0 });
+    expect(stepsOf(sear, "check")).toMatchObject([{ total: 6, row: 5, label: "Sear" }]);
     expect(sear.incoming[0]).toMatchObject({ amount: 9, type: "magic", direct: true });
-    const picked = plan("gobstalker", "Tentacle Rays", [13], { options: { beam: ["5"] }, optionals: ["choose-beam"] });
+    // d8 5 Paralyze: Vulnerable and Restrained.
+    const paralyzed = plan("gobstalker", "Tentacle Rays", [13, 5], { options: { how: ["roll"] } });
+    expect(creature(paralyzed, "mira")!.conditions).toEqual(["vulnerable", "restrained"]);
+    // A Fear picks the beam instead of the d8.
+    const picked = plan("gobstalker", "Tentacle Rays", [13], { options: { how: ["pick"], beam: ["5"] } });
     expect(picked.fearSpent).toBe(1);
+    expect(stepsOf(picked, "check")).toEqual([]);
     expect(creature(picked, "mira")!.conditions).toEqual(["vulnerable", "restrained"]);
-    const corrode = plan("gobstalker", "Tentacle Rays", [13, 3, 3], { options: { beam: ["2"] } });
+    // d8 2 Corrode: 2d8 magic and an Armor Slot without its benefit; no free slot doubles the damage (ifUnable).
+    const corrode = plan("gobstalker", "Tentacle Rays", [13, 2, 3, 3], { options: { how: ["roll"] } });
     expect(corrode.incoming[0]).toMatchObject({ amount: 6, type: "magic", forcedArmor: 1 });
+    expect(partsOf("gobstalker", "Tentacle Rays", "markArmor")[0]!.ifUnable).toEqual([expect.objectContaining({ kind: "modifyDamage", change: { kind: "multiply", factor: 2 } })]);
+    // d8 3 Doom (S3.4, dcm-spj0): every unmarked HP, bought down with Hope before the marks (the server's window).
+    const doom = plan("gobstalker", "Tentacle Rays", [13, 3], { options: { how: ["roll"] } });
+    expect(stepsOf(doom, "check")).toMatchObject([{ total: 3, label: "Doom" }]);
+    expect(prompts(doom, "manual")).toHaveLength(0);
+    expect(partsOf("gobstalker", "Tentacle Rays", "markHp")).toContainEqual(
+      { kind: "markHp", to: "targets", when: ["hit"], amount: { kind: "free", who: "target", track: "hp" }, reduceWith: "hope" },
+    );
+    // d8 8 Slow: Vulnerable, and Slowed costs a Stress to move.
+    const slow = plan("gobstalker", "Tentacle Rays", [13, 8], { options: { how: ["roll"] } });
+    expect(creature(slow, "mira")).toMatchObject({ conditions: ["vulnerable"], tags: ["Slowed"] });
+    expect(conditionStep("gobstalker", "Tentacle Rays", "Slowed")!.mods).toEqual([{ kind: "bearerRider", rider: { on: "moves", steps: [], timing: "before", costs: [{ kind: "stress", amount: fx(1) }] } }]);
+    // The table runs 1-8, a row each.
+    const table = partsOf("gobstalker", "Tentacle Rays", "check")[0]!.table as { atLeast: number; atMost: number; label: string }[];
+    expect(table.map((r) => [r.atLeast, r.atMost, r.label])).toEqual([
+      [1, 1, "Beguile"],
+      [2, 2, "Corrode"],
+      [3, 3, "Doom"],
+      [4, 4, "Hypnosis"],
+      [5, 5, "Paralyze"],
+      [6, 6, "Sear"],
+      [7, 7, "Scare"],
+      [8, 8, "Slow"],
+    ]);
     expect(prompts(plan("gobstalker", "Tentacle Rays", [13]), "choose")).toHaveLength(1);
     expect(plan("gobstalker", "Tentacle Rays", [9]).steps.some((s) => s.kind === "prompt")).toBe(false); // a miss: no beam
   });
@@ -812,6 +896,16 @@ describe("Guahalan (HF p.76-77)", () => {
     ]);
     const single = plan("guahalan-alebrujo", "Rip & Tear", [5, 15, 2, 2]);
     expect(single.self.after.stress).toBe(0);
+    // dcm-7az: a hit keeps the chain open (the GM is asked for the next target, a Stress each); a miss ends it.
+    expect(prompts(both, "followUp")).toHaveLength(1);
+    expect(prompts(p, "followUp")).toEqual([]);
+    expect(partsOf("guahalan-alebrujo", "Rip & Tear", "followUp")[0]!.repeat).toEqual({ until: "miss", costEach: [{ kind: "stress", amount: fx(1) }] });
+    expect(partsOf("guahalan-alebrujo", "Rip & Tear", "manual")).toEqual([]);
+  });
+
+  it("Howl of the Guahala: Panicked marks a Stress when they take the spotlight", () => {
+    expect(conditionStep("guahalan-alebrujo", "Howl of the Guahala", "Panicked")!.mods).toEqual([stressRider("spotlight")]);
+    expect(partsOf("guahalan-alebrujo", "Howl of the Guahala", "manual")).toEqual([]);
   });
 
   it("Brutal Spectacle: after Severe damage, a Fear: every target within Close range marks a Stress", () => {
@@ -853,10 +947,14 @@ describe("Guahalan (HF p.76-77)", () => {
     expect(stepsOf(p, "spotlight")).toHaveLength(1);
   });
 
-  it("Pack Attack: a Stress, a standard attack; the Shifter bonus is a reminder", () => {
+  it("Pack Attack: a Stress, a standard attack; + the other Shifters within Very Close range of the target (a creature count)", () => {
     const p = plan("guahalan-shifter", "Pack Attack", [11, 1, 1]);
-    expect(p.incoming[0]).toMatchObject({ amount: 6 });
-    expect(prompts(p, "manual")).toHaveLength(1);
+    expect(p.incoming[0]).toMatchObject({ amount: 6 }); // no map creatures in the context: +0 (dcm-e16o)
+    expect(prompts(p, "manual")).toEqual([]);
+    expect(partsOf("guahalan-shifter", "Pack Attack", "modifyDamage")[0]).toMatchObject({
+      when: ["hit"],
+      change: { kind: "add", amount: { kind: "creatureCount", side: "allies", within: "veryClose", of: "target", excludeSelf: true, name: "Guahalan Shifter" } },
+    });
   });
 
   it("Beast Bomb: when defeated, 5 magic damage to creatures within Melee range", () => {
@@ -866,6 +964,8 @@ describe("Guahalan (HF p.76-77)", () => {
       ["mira", 5, "magic"],
       ["bram", 5, "magic"],
     ]);
+    // "explodes in white flame": the fire keyword (dcm-dv6).
+    expect(partsOf("guahalan-spirit-beast", "Beast Bomb", "damage").map((d) => d.keyword)).toEqual(["fire"]);
   });
 
   it("Beast-Caller: a Fear summons 2d4 Spirit Beasts and spotlights one", () => {
@@ -917,9 +1017,12 @@ describe("Hill Titan, Hive Walker, Jack-o'-Lantern (HF p.77)", () => {
 
   it("Bee-Ruption: when it marks HP, Instinct Reaction Rolls within Very Close range; Restrained targets fail", () => {
     expect(matchesTrigger(triggerOf("hive-walker", "Bee-Ruption"), { kind: "onMarkHp", stage: "did", amount: 1, last: false })).toBe(true);
-    const p = plan("hive-walker", "Bee-Ruption", [], { spotlit: false, targets: [pc("mira", { conditions: ["restrained"] }), bram] });
-    expect(prompts(p, "manual")).toEqual([expect.objectContaining({ targetIds: ["mira"] })]);
-    expect(prompts(p, "pcSave")).toHaveLength(2);
+    // dcm-fev: a Restrained target fails without rolling; the other rolls. 1d8 per HP marked (2): 3 + 4 = 7 direct.
+    const p = plan("hive-walker", "Bee-Ruption", [3, 4], { self: selfOf("hive-walker", { hp: 2 }), spotlit: false, targets: [pc("mira", { conditions: ["restrained"] }), bram] });
+    expect(prompts(p, "manual")).toEqual([]);
+    expect(stepsOf(p, "save")).toEqual([expect.objectContaining({ targetId: "mira", success: false, autoFail: true })]);
+    expect(prompts(p, "pcSave")).toEqual([expect.objectContaining({ targetIds: ["bram"] })]);
+    expect(p.incoming).toEqual([expect.objectContaining({ targetId: "mira", amount: 7, type: "physical", direct: true })]);
   });
 
   it("Spine-Chilling Cackle: a PC within Very Close range rolls with Fear: a Stress for one more Fear", () => {
@@ -1002,14 +1105,33 @@ describe("Ravenous Mockery and Rust Eater (HF p.78)", () => {
 
   it("Rust Touch: a reminder on a weapon hit in Melee range; a crumbled weapon clears a HP", () => {
     const p = plan("rust-eater", "Rust Touch", [], { self: selfOf("rust-eater", { hp: 2 }), spotlit: false, targets: [], trigger: { source: mira }, optionals: ["devour-rust"] });
-    expect(prompts(p, "manual")).toHaveLength(1);
+    expect(prompts(p, "manual")).toEqual([]);
+    // dcm-0gh: the metal weapon's die drops a step (the server checks it is metal).
+    expect(stepsOf(p, "inventory")).toEqual([{ kind: "inventory", targetId: "mira", op: "damageWeapon", item: "metalWeapon" }]);
     expect(p.self.after.hp).toBe(1);
   });
 });
 
 describe("Scarecrow, Sprite, Stone Titan, Triceratops (HF p.79)", () => {
-  it("Made of Straw: a fire reminder when it would take damage", () => {
-    expect(prompts(plan("scarecrow", "Made of Straw", [], { useId: "fire", spotlit: false, targets: [] }), "manual")).toHaveLength(1);
+  it("Made of Straw: resistance to physical damage and a weakness to fire (dcm-dv6)", () => {
+    const fire = plan("scarecrow", "Made of Straw", [], { useId: "fire", spotlit: false, targets: [] });
+    expect(prompts(fire, "manual")).toEqual([]);
+    expect(fire.modifiers).toEqual([{ kind: "mod", mod: { kind: "weakness", keyword: "fire" } }]);
+  });
+
+  it("Dream Petal Poison: Sleepy until they take damage: a Presence Reaction Roll (13) before each action roll; a failure, 2 Stress or asleep", () => {
+    const sleepy = conditionStep("sprite", "Dream Petal Poison", "Sleepy")!;
+    expect(sleepy).toMatchObject({ endsOn: ["takeDamage"] });
+    const [mod] = sleepy.mods as { rider: { on: string; timing: string; steps: Record<string, unknown>[] } }[];
+    expect(mod!.rider).toMatchObject({ on: "actionRoll", timing: "before" });
+    expect(mod!.rider.steps[0]).toMatchObject({ kind: "save", to: "self", trait: "presence", difficulty: { kind: "fixed", value: defOf("sprite").difficulty } });
+    expect(conditionStep("sprite", "Dream Petal Poison", "Asleep")).toMatchObject({ endsOn: ["takeDamage"] });
+    expect(partsOf("sprite", "Dream Petal Poison", "manual")).toEqual([]);
+  });
+
+  it("Neurotoxic Spore Cloud: Poisoned rolls a d6 before each action roll; 4 or lower, a Stress", () => {
+    const [mod] = conditionStep("fungispunj-sporophore", "Neurotoxic Spore Cloud", "Poisoned")!.mods as Record<string, unknown>[];
+    expect(mod).toMatchObject({ kind: "bearerRider", rider: { on: "actionRoll", timing: "before", steps: [{ kind: "check", test: { kind: "totalAtMost", value: 4 } }] } });
   });
 
   it("Terror Vision: a Fear, 2d8 magic and Vulnerable until they roll with Hope", () => {
@@ -1136,11 +1258,15 @@ describe("Tyrannosaurus, Urco, Valdenhax (HF p.80)", () => {
   });
 
   it("Corpse Whisperer: a Fear; even resurrects the ally with half its HP cleared, odd clears a Stress", () => {
+    // dcm-27j: the d6's parity; dcm-145: a revive with half its HP cleared (4 → 2).
     const fallen = ally("fallen", { hp: 4, hpMax: 4, defeated: true });
-    const even = plan("valdenhax", "Corpse Whisperer", [], { targets: [fallen], options: { d6: ["even"] } });
+    const even = plan("valdenhax", "Corpse Whisperer", [4], { targets: [fallen] });
     expect(creature(even, "fallen")).toMatchObject({ hp: 2, defeated: false });
-    const odd = plan("valdenhax", "Corpse Whisperer", [], { self: selfOf("valdenhax", { stress: 1 }), targets: [fallen], options: { d6: ["odd"] } });
+    expect(even.revived).toEqual(["fallen"]);
+    const odd = plan("valdenhax", "Corpse Whisperer", [3], { self: selfOf("valdenhax", { stress: 1 }), targets: [fallen] });
     expect(odd.self.after.stress).toBe(0);
+    expect(odd.revived).toEqual([]);
+    expect(partsOf("valdenhax", "Corpse Whisperer", "manual")).toEqual([]);
   });
 
   it("Vexing Word: after a PC's roll, a Stress forces a reroll", () => {

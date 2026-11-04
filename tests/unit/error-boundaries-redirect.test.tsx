@@ -1,4 +1,4 @@
-// dcm-bxp.131 (plan followups-6, tracer G1): the six campaign error.tsx files that render their own body instead of
+// dcm-bxp.131 (plan followups-6, tracer G1; journal J1 added the journal segment): the campaign error.tsx files that render their own body instead of
 // RouteError also send an ended session to sign-in and back (B5, src/lib/auth/use-session-ended-redirect.ts). Every
 // other error keeps the page's own alert and 'Try again'.
 import type { ComponentType } from "react";
@@ -42,6 +42,11 @@ const PAGES: { segment: string; load: () => Promise<{ default: ErrorPage }>; fai
     segment: "sessions",
     load: () => import("@/app/(gm)/campaigns/[campaignId]/sessions/error"),
     failed: "The sessions failed to load.",
+  },
+  {
+    segment: "journal",
+    load: () => import("@/app/(gm)/campaigns/[campaignId]/journal/error"),
+    failed: "The journal failed to load.",
   },
   {
     segment: "adversaries",

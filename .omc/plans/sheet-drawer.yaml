@@ -418,6 +418,10 @@ waves:
           - src/lib/domain/feature-effects/passives.ts
           - src/lib/domain/adversary-actions/attack.ts
           - tests/unit/feature-passives.test.ts
+          - tests/convex/combat-attack.test.ts
+          - tests/convex/encounter-tracking.test.ts
+          - tests/unit/adversary-actions/attack-severity.test.ts
+          - tests/unit/combat-actions/damage.test.ts
           - docs/tasks/TASK-SD-SD2.md
         reads:
           - src/lib/srd/feature-effects/**

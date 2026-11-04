@@ -16,6 +16,7 @@
 
 import type {
   ConditionRef,
+  DamageKeyword,
   DamageRoll,
   DamageType,
   FlowStep,
@@ -26,8 +27,10 @@ import type {
   OutcomeStep,
   Range,
   RollFilter,
+  RollResult,
   RollSpec,
   Severity,
+  StateCheck,
   TargetSpec,
   TriggerTargets,
 } from "../card-effects/types";
@@ -91,6 +94,10 @@ export type AdversaryTrigger =
    * `minSeverity`: "takes Severe damage", "Major or greater"; `attackerWithin` / `attackerBeyond`: "from an attack
    * within Close range", "a creature beyond Very Close range"; `first`: "takes damage for the first time".
    */
+  /**
+   * Plan lanes, V (widened): `weaponAttack`: only damage from a weapon attack (Archer's Bane, HF p.62; dcm-2gn); `keyword`
+   * (Made of Straw, HF p.79: fire; dcm-dv6).
+   */
   | {
       kind: "onDamaged";
       stage?: "would" | "did";
@@ -100,6 +107,8 @@ export type AdversaryTrigger =
       attackerWithin?: Range;
       attackerBeyond?: Range;
       first?: "scene" | "ever";
+      weaponAttack?: boolean;
+      keyword?: DamageKeyword;
     }
   /**
    * This adversary marks HP: "marks HP", "marks 2 or more HP", "marks 2 or fewer HP from an attack within Melee range",
@@ -114,19 +123,28 @@ export type AdversaryTrigger =
       fromAttack?: boolean;
       attackerWithin?: Range;
       damageType?: DamageType;
+      /**
+       * Plan lanes, V (widened): also fires when a successful attack leaves 0 HP marked (Unreal Form, CB p.237: "marks 1 or
+       * fewer Hit Points from a successful attack"; dcm-2gn).
+       */
+      includeZero?: boolean;
     }
   /** Crossing a mark: "When the X has 3 or more HP marked", "marks half their HP" (fires once, when it is crossed). */
   | { kind: "onHpMarkedAtLeast"; value: number | "half" }
   /** "marks a Stress", "The first time in a scene the X marks their last Stress". */
-  | { kind: "onMarkStress"; last?: boolean; first?: "scene" | "ever" }
+  /** Plan lanes, V (widened): `stage: "would"`, before the Stress is marked (Mind Meld, HF p.74; dcm-2gn, dcm-63j). */
+  | { kind: "onMarkStress"; last?: boolean; first?: "scene" | "ever"; stage?: "would" | "did" }
   /** "When the X is defeated (by an attack that deals physical damage)"; "Once per scene when …" is the use's `limit`. */
   | { kind: "onDefeated"; damageType?: DamageType }
   /** "When an ally within Close range deals damage" (an adversary ally of this one). */
   | { kind: "allyDealtDamage"; range?: Range; allyName?: string }
   /** "When an allied Vampire marks HP", "When a creature within Close range takes damage from a different adversary". */
   | { kind: "allyMarksHp"; range?: Range; allyName?: string }
-  /** "When an ally dies within Close range", "an allied Leader is defeated". */
-  | { kind: "allyDefeated"; range?: Range; allyName?: string }
+  /**
+   * "When an ally dies within Close range", "an allied Leader is defeated".
+   * Plan lanes, V (widened): `allyType` narrows by the stat block's type (Cowardly, HF p.64: a Leader; dcm-2gn).
+   */
+  | { kind: "allyDefeated"; range?: Range; allyName?: string; allyType?: string }
   /**
    * An attack against this adversary: `targeted` ("a PC within Close range targets the X with an attack", "a creature
    * moves into Melee range to make an attack"), `succeeded` ("After a successful attack against the X within Melee
@@ -143,22 +161,34 @@ export type AdversaryTrigger =
    * A PC's roll: "When a PC within Close range fails with Fear", "rolls with Fear", "makes a Presence Roll", "succeeds
    * on a Spellcast Roll", "rolls a 14 or lower on a Presence Roll made against the X" (`totalAtMost`).
    */
+  /**
+   * Plan lanes, V (widened): `result` takes every `RollResult` (Urco Fearmonger, HF p.80: "failure with Hope"; Mind Games:
+   * "succeeds with Fear"; dcm-2gn); `notCritical` (Vexing Word, HF p.80; Archmage Counterspell: "not a critical success").
+   */
   | {
       kind: "pcRolls";
       roll?: RollFilter;
-      result?: "any" | "success" | "failure" | "withHope" | "withFear" | "failureWithFear";
+      result?: RollResult | "failureWithFear" | "failureWithHope";
       within?: Range;
       againstSelf?: boolean;
       totalAtMost?: number;
+      notCritical?: boolean;
     }
-  /** "When a PC moves within Melee range", "A PC must mark a Stress to move out of the X's Melee range" (`outOf`). */
-  | { kind: "pcMoves"; into?: Range; outOf?: Range }
+  /**
+   * "When a PC moves within Melee range", "A PC must mark a Stress to move out of the X's Melee range" (`outOf`).
+   * Plan lanes-2, V2 (widened): `stage: "would"`: before the move is made, so a `negate` `move` can stop it (Shield Wall, CB
+   * p.212: "A creature who tries to move within Very Close range of the Guard must succeed on an Agility Roll"; dcm-xobk).
+   */
+  | { kind: "pcMoves"; into?: Range; outOf?: Range; stage?: "would" | "did" }
   /** "When a PC takes Severe damage within Very Close range of the X", "a PC marks HP from the X's standard attack". */
   | { kind: "pcMarksHp"; within?: Range; minSeverity?: Severity; fromSelf?: boolean }
   /** "When a PC within Close range of the X gains a Hope", "a PC with no Hope takes the spotlight". */
   | { kind: "pcHope"; change: "gain" | "spend" | "none"; within?: Range }
-  /** "When the X is in the spotlight for the first time", "When you spotlight the X and they don't have a token on their stat block". */
-  | { kind: "onSpotlight"; first?: "scene" | "ever"; noTokens?: boolean }
+  /**
+   * "When the X is in the spotlight for the first time", "When you spotlight the X and they don't have a token on their stat block".
+   * Plan lanes, V (widened): `byFear`: the GM spent a Fear to spotlight it (Intimidating, HF p.89; dcm-2gn).
+   */
+  | { kind: "onSpotlight"; first?: "scene" | "ever"; noTokens?: boolean; byFear?: boolean }
   /** "When you spotlight an ally within Far range" (the GM spotlights another adversary). */
   | { kind: "allySpotlit"; range?: Range }
   /** "When a condition would be imposed on the X". */
@@ -169,7 +199,24 @@ export type AdversaryTrigger =
    * A story trigger the engine can't see ("When a PC or group is discussing something sensitive", "When the X's eggs
    * are threatened"): offered to the GM as a button with the text.
    */
-  | { kind: "situation"; text: string };
+  | { kind: "situation"; text: string }
+  // ---- Plan lanes, tracer V (widened; dcm-2gn)
+  /** "When a PC takes the spotlight within Very Close range" (Fear Aura, HF p.66; Panicked). */
+  | { kind: "pcSpotlit"; within?: Range }
+  /** "When an ally within Close range makes an attack" (Pack Alpha, HF p.76); `stage: "failed"`: "an ally fails an attack" (Air Support, HF p.83). */
+  | { kind: "allyAttacks"; range?: Range; stage?: "made" | "succeeded" | "failed" }
+  /** "When a PC would deal damage to a creature within Close range" of this adversary (Drake Guard Dog, HF p.82). */
+  | { kind: "pcDealsDamage"; within?: Range; stage?: "would" | "did" }
+  /** "When the PCs finish a long rest" (Midnight Heart, HF p.88); `rest` narrows the rest. */
+  | { kind: "pcsRest"; rest?: "short" | "long" }
+  // ---- Plan lanes-2, tracer V3 (widened; dcm-j63t)
+  /**
+   * "A PC escaped what the X put on them": the answer to a card `tokens.escape` (Encumber, CB p.218: "All bramble tokens
+   * can be removed by succeeding on a Finesse Roll (12 + the number of bramble tokens)"; Drain and Multiply spawns a Minion
+   * per bramble token removed). `name`: only tokens of that name (`"bramble"`); `condition`: only escaping that condition;
+   * `within`: the escaping PC is within this range of the X. The event's token count becomes `trigger.amount`.
+   */
+  | { kind: "pcEscapes"; name?: string; condition?: ConditionRef; within?: Range };
 
 /** Every trigger kind, for exhaustive switches and coverage tests (checked against `AdversaryTrigger` below). */
 export const ADVERSARY_TRIGGER_KINDS = [
@@ -197,6 +244,13 @@ export const ADVERSARY_TRIGGER_KINDS = [
   "wouldGainCondition",
   "timing",
   "situation",
+  // Plan lanes-2, tracer V3 (dcm-j63t). Listed before V's kinds: types-widen.test.ts pins V's four as the last ones.
+  "pcEscapes",
+  // Plan lanes, tracer V
+  "pcSpotlit",
+  "allyAttacks",
+  "pcDealsDamage",
+  "pcsRest",
 ] as const;
 
 export type AdversaryTriggerKind = (typeof ADVERSARY_TRIGGER_KINDS)[number];
@@ -225,14 +279,22 @@ export type AdversaryRequirement =
   /** "If the X makes its first attack in a scene before it's marked HP or Stress": `hpMarkedAtMost` 0 and `stressMarkedAtMost` 0. */
   | { kind: "hpMarkedAtMost"; value: number }
   | { kind: "stressMarkedAtMost"; value: number }
-  /** "While Hidden", "If the X is Hidden when …". */
-  | { kind: "hasCondition"; condition: ConditionRef }
+  /**
+   * "While Hidden", "If the X is Hidden when …".
+   * Plan lanes, V (widened): `lacks`: the adversary does NOT have it (Magical Weakness, CB p.231: "While Dazed, they can't
+   * use their Regeneration action"; dcm-2f3).
+   */
+  | { kind: "hasCondition"; condition: ConditionRef; lacks?: boolean }
   /** "they don't have a token on their stat block" (`atMost` 0); tokens on the stat block (Pool). */
   | { kind: "tokens"; atLeast?: number; atMost?: number }
   /** "another Dire Wolf is within Melee range of the target" (`name` unset: any ally). */
   | { kind: "allyWithin"; range: Range; of?: "self" | "target"; name?: string }
-  /** "While flying", "While the X is on their mount", "When the X attacks from the water". */
-  | { kind: "situation"; text: string };
+  /**
+   * "While flying", "While the X is on their mount", "When the X attacks from the water".
+   * Plan lanes, V (widened): `check`, as on the card `situation` requirement: a state the engine reads itself ("self" is
+   * this adversary); `text` still says it for a reader that doesn't.
+   */
+  | { kind: "situation"; text: string; check?: StateCheck };
 
 // ---------------------------------------------------------------- passive modifiers
 
@@ -256,11 +318,17 @@ export type AdversaryModifier =
   | { kind: "mod"; mod: Mod; to?: "self" | "allies" | "pcs"; within?: Range }
   | { kind: "horde"; damage: Extract<DamageRoll, { kind: "dice" } | { kind: "flat" }> }
   | { kind: "minion"; threshold: number }
-  | { kind: "relentless"; times: number }
+  /** Plan lanes, V (widened): `timesFrom`: X read when it is spotlighted (Hydra, CB p.231: "the Hydra's number of heads", its stat-block tokens; dcm-gx1). */
+  | { kind: "relentless"; times: number; timesFrom?: NumberSource }
   | { kind: "spotlightCostsFear" }
   | { kind: "directAttacks" }
   | { kind: "attackDamage"; add?: NumberSource; type?: DamageType }
-  | { kind: "conditionAura"; condition: ConditionRef; to: "pcs" | "allies" | "all"; within: Range };
+  | { kind: "conditionAura"; condition: ConditionRef; to: "pcs" | "allies" | "all"; within: Range }
+  /**
+   * Plan lanes, V: the adversary itself has the condition while the use's `requires` hold (Hand of Glory, HF p.67: Hidden
+   * while its stat block has 1 or more tokens; Fish-Tailed, HF p.82: Vulnerable out of the water; dcm-cdz).
+   */
+  | { kind: "selfCondition"; condition: ConditionRef };
 
 // ---------------------------------------------------------------- steps
 
@@ -293,8 +361,10 @@ export type AdversaryFlowStep =
       onFail: readonly AdversaryStep[];
       onSuccess: readonly AdversaryStep[];
     })
+  /** Plan lanes, V: a `table` row holds card steps (outcome and card flow steps; no summon / countdown / spotlight; dcm-27j). */
   | (Omit<CardFlow<"check">, "then" | "otherwise"> & { then: readonly AdversaryStep[]; otherwise: readonly AdversaryStep[] })
   | (Omit<CardFlow<"followUp">, "steps"> & { steps: readonly AdversaryStep[] });
+
 
 /** The steps only adversaries have: GM prompts the engine shows but does not decide. */
 export type AdversaryOnlyStep =
@@ -302,7 +372,20 @@ export type AdversaryOnlyStep =
    * Summon prompt (B3.2): "summon 1d4 Minions", "calls three Jagged Knife Lackeys". The GM adds the instances to the
    * running encounter; `adversaryId` preselects an SRD adversary.
    */
-  | (AdversaryStepBase & { kind: "summon"; label: string; count: NumberSource; adversaryId?: string; range?: Range })
+  /**
+   * Plan lanes, V (widened): `hp`: the summoned instance's HP (Drain and Multiply, CB p.218: "The Horde's HP is equal to the
+   * number of Minions combined"; dcm-145); `duplicate`: a second token of this same adversary instead of a new instance
+   * (Blink Beast, HF p.71; dcm-v27).
+   */
+  | (AdversaryStepBase & {
+      kind: "summon";
+      label: string;
+      count: NumberSource;
+      adversaryId?: string;
+      range?: Range;
+      hp?: NumberSource;
+      duplicate?: boolean;
+    })
   /**
    * Countdown prompt (B3.2): `start` a countdown printed with the feature ("Countdown (5)", `AdversaryFeature.countdown`),
    * `tick` one (`amount`, default 1), or `prompt` the GM with the text. `loop`: "Countdown (Loop 4)".
@@ -316,6 +399,14 @@ export type AdversaryOnlyStep =
       loop?: boolean;
       /** What happens when it triggers, as printed. */
       onTrigger?: string;
+      /**
+       * Plan lanes, V (widened): `direction`: an increasing / decreasing countdown (CB p.163: "each time a decreasing
+       * countdown triggers, its starting value decreases by 1"; All-Consuming Rage, CB p.235; dcm-m5s), with `onZero` (the
+       * major event at 0). `tickOn`: what advances it (dcm-bxp.78, user answer 2026-10-30: armed only for `actionRoll`).
+       */
+      direction?: "increasing" | "decreasing";
+      onZero?: string;
+      tickOn?: "actionRoll" | "spotlight" | "marksHp" | "takesDamage" | "other";
     })
   /**
    * Spotlight other adversaries: "Mark a Stress to spotlight 1d4 allies" (`allies`, `count`), "spotlight all Ruffians
@@ -365,7 +456,13 @@ export interface AdversaryFeatureUse {
    * Minions move into Melee range of the target and make one shared attack roll. On a success, they deal X damage each.
    * Combine this damage." The damage step's roll is the X per Minion; the engine multiplies it by the group size.
    */
-  groupAttack?: { within: Range };
+  /**
+   * Plan lanes, V (widened): `name` (adversaries of another name: On My Signal, CB p.212, the Archer Guards), `eachRolls`:
+   * each makes its own attack roll and the damage on one target combines (dcm-1ch), `advantage`.
+   */
+  groupAttack?: { within: Range; name?: string; eachRolls?: boolean; advantage?: boolean };
+  /** Plan lanes, V (widened): one target at a time: a new use clears what the last one placed (Judgment, CB p.236; Deathlock; dcm-vkp). */
+  exclusive?: boolean;
   /** `passive` uses: the always-on modifiers. */
   modifiers?: readonly AdversaryModifier[];
   steps: readonly AdversaryStep[];

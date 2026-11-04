@@ -10,6 +10,8 @@ import { errorMessage } from "@/lib/convex-errors";
 import { rallyDieStress } from "@/lib/domain/class-features/held-dice";
 import { classActions, hopeFeature } from "@/lib/domain/class-features/hooks";
 import { CLASS_FEATURES, CLASS_STATE_LABELS, classFeaturesAvailable } from "@/lib/domain/class-features/index";
+import { rogue, ROGUES_DODGE_BACK, roguesDodgeActive } from "@/lib/domain/class-features/classes/rogue";
+import { hexDropOptions } from "@/lib/domain/class-features/classes/witch";
 import type { FeatureInput, FeatureMeta } from "@/lib/domain/class-features/types";
 import { currentPhase, holdsSlayer, holdsTide, slayerCapacity, slayerDice, tideCapacity, tideTokens } from "@/lib/domain/session-features";
 import { characterSheetSchema } from "@/lib/validation/characters";
@@ -71,7 +73,7 @@ function AllyPicker({
   onChange: (v: Id<"characters"> | "") => void;
   label?: string;
 }) {
-  const party = useQuery(api.characters.listByCampaign, { campaignId });
+  const party = useQuery(api.charactersReads.listByCampaign, { campaignId });
   const allies = (party ?? []).filter((c) => c._id !== self && c.status === "active");
   return (
     <label className="ft-field">
@@ -167,9 +169,14 @@ function FeatureCard({ feature, props, blocked, variant }: { feature: FeatureMet
   // `select` options read the full sheet (loadout cards, tier); the panel's sheet is the server's view of it.
   const parsed = useMemo(() => characterSheetSchema.safeParse(character.sheet), [character.sheet]);
   const usable = canEdit && feature.use !== undefined;
+  // DA7: Rogue's Dodge can't be used again while its +2 holds (user 2026-10-30).
+  const active = feature.key === rogue.hopeFeature?.key && roguesDodgeActive({ effects: character.sheet.effects ?? [] });
+  // DA7: Hex at the maximum ends the oldest, or the Hex picked here (`amount`, user 2026-10-29).
+  const hexDrops = feature.key === "hex" && parsed.success ? hexDropOptions(parsed.data) : null;
   // A hard block (dead, away, unconscious) wins over the last result; the result wins over "Needs N Hope".
-  const message = canEdit ? (blocked ?? done ?? (short ? `Needs ${feature.cost?.hope} Hope.` : null)) : done;
-  const disabled = busy || blocked !== null || short || missing;
+  const activeText = active ? `Active: ${ROGUES_DODGE_BACK.charAt(0).toLowerCase()}${ROGUES_DODGE_BACK.slice(1)}.` : null;
+  const message = canEdit ? (blocked ?? activeText ?? done ?? (short ? `Needs ${feature.cost?.hope} Hope.` : null)) : done;
+  const disabled = busy || blocked !== null || short || missing || active;
 
   async function submit() {
     setDone(null);
@@ -234,6 +241,18 @@ function FeatureCard({ feature, props, blocked, variant }: { feature: FeatureMet
       <div className="ft-pickers">
         {feature.target === "ally" ? <AllyPicker campaignId={campaignId} self={character._id} allowSelf={!needsTarget} value={target} onChange={setTarget} /> : null}
         {inputs.map(renderInput)}
+        {hexDrops ? (
+          <label className="ft-field">
+            <Label>At the maximum, end</Label>
+            <select className={paperField.input} value={amount} onChange={(e) => setAmount(e.target.value)}>
+              {hexDrops.map((o) => (
+                <option key={o.value} value={o.value === 0 ? "" : String(o.value)}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
       </div>
     ) : null;
   // Always rendered so screen readers announce the result; empty, it takes no space.

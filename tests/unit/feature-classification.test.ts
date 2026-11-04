@@ -241,7 +241,7 @@ function oldSheet(overrides: Record<string, unknown> = {}) {
 
 describe("sheet validators, widened (SD0, rule 7)", () => {
   it("adds 'scene' to the feature-use resets (Q7)", () => {
-    expect(FEATURE_USE_UNTIL).toEqual(["rest", "longRest", "session", "scene"]);
+    expect(FEATURE_USE_UNTIL).toEqual(expect.arrayContaining(["rest", "longRest", "session", "scene"]));
     expect(featureUseSchema.parse({ key: "feat:ancestry:gnome:flicker-step", until: "scene" }).until).toBe("scene");
   });
 

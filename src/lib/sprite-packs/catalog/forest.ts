@@ -1,8 +1,8 @@
 // Built-in catalog: forest (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, long, obj, tex } from "./types";
+import { defineFolder, long, obj, tex, type FolderCatalog } from "./types";
 
-export const FOREST = defineFolder("forest", {
+export const FOREST = (): FolderCatalog => defineFolder("forest", {
   props: [
     obj("bush", "cover", "low", "bush", { variant: "green" }),
     obj("fern clump", "cover", "low", "bush"),

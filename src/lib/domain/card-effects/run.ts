@@ -43,6 +43,12 @@
 // - NV17 `replaceHopeGain` takes back the Hope this move's roll gave and gives a Favor or removes a Fear instead.
 // - `context.limitKeys` names the `featureUses` key and `until` of a limit (cards: `card:` keys, scene stored as session).
 //
+// Plan drawer-answers, DA0 (the user's answers of 2026-10-29 / 2026-10-30): a `defaultOn` optional runs unless named in
+// `context.optionalsOff`; a `rolledFirst` target count is the server's `context.rolledTargetCount` (`rollTargetCount`
+// rolls it); a trait roll marked `attack` is an attack for `rollMatches`; an `intoMelee` move is a server move prompt; a
+// `rolledBy` use pays and sends an `allyRoll` prompt, and the roller's run (`context.roller`) rolls and runs the steps.
+// `negate` stress / `ignoreOnHitHp`, `insteadOfArmorSlot` and `stanceDrops` travel on fold and condition steps as is.
+//
 // ```ts
 // const result = run(boltBeacon, { actor, gmFear: 3, targets: [bandit], rng });
 // if (!result.ok) throw refusal(result.reason);      // CARD_EXHAUSTED, CARD_COST_UNPAID, …
@@ -55,16 +61,20 @@ import type { RollOutcome, RollRecord } from "../duality";
 import { parseDamage } from "../adversaries/index";
 import { applyDamageTo, applyHpTo, applyStressTo, clearTrack, type Combatant, type DamageResult } from "../combat-actions/damage";
 import { resolveHits, type HitResult } from "../combat-actions/hits";
-import { resolveDice, resolveNumber, rollDice, type NumberEnv } from "../combat-actions/numbers";
+import { resolveDice, resolveNumber, rollDice, type MapCreature, type MarkedTracks, type NumberEnv } from "../combat-actions/numbers";
 import {
+  clearBlocked,
   featureUseKey,
+  stateCheckMet,
   keyAvailability,
   limitConsumed,
   limitUntil,
   resolveCosts,
   unaffordable,
+  unaffordableBy,
   unmetRequirements,
   type PaidCost,
+  type PayerState,
   type RequirementState,
   type StateFacts,
 } from "./availability";
@@ -73,13 +83,16 @@ import type {
   CardEffect,
   CardUse,
   ConditionRef,
+  CheckTest,
   Cost,
   DamageChange,
   DamageRoll,
   DamageType,
+  DiceExpr,
   DieSides,
   Duration,
   EndEvent,
+  Escape,
   Gate,
   HeldDieKind,
   Limit,
@@ -87,13 +100,16 @@ import type {
   ModStat,
   NumberSource,
   OutcomeStep,
+  Payer,
   Range,
   Recipient,
   Resource,
+  RollEnd,
   RollFilter,
   RollSpec,
   SaveDifficulty,
   Severity,
+  StateCheck,
   Step,
   TargetSpec,
   Track,
@@ -142,10 +158,36 @@ export interface ActorState extends Combatant {
   readonly focus?: number;
   /** Held dice (Rally, Prayer, Patron, Combo; Slayer Dice as unrolled d6s), spent by `tokens` costs with a held-die `pool`. */
   readonly heldDice?: readonly HeldDieState[];
-  /** The size of the actor's class dice, for `DiceExpr.sidesOf`. */
-  readonly dieSides?: Partial<Record<HeldDieKind | "unstoppable", number>>;
+  /**
+   * The size of the actor's class dice, for `DiceExpr.sidesOf`. Lanes-2 E3 (dcm-b9hc): `companion` is the Beastbound
+   * companion's damage die (d6 at level 1, stepped by Vicious; CB p.40).
+   */
+  readonly dieSides?: Partial<Record<HeldDieKind | "unstoppable" | "companion", number>>;
   /** What `situation.check` reads (NV7). */
   readonly facts?: StateFacts;
+  // ---- Plan lanes-2, tracer E3 (round 2; docs/tasks/TASK-LN2-E3.md). Optional: absent reads as 0 / unknown.
+  /** dcm-rs1z, dcm-e80y: the Know the Tide tokens held (CB p.77; `tideTokens` numbers). */
+  readonly tideTokens?: number;
+  /** dcm-rs1z, dcm-e80y: the current value of each class die (the Unstoppable Die, CB p.36; a held Rally Die; `classDie`). */
+  readonly classDice?: Partial<Record<HeldDieKind | "unstoppable", number>>;
+  /** dcm-rs1z: the actor's derived stats (`stat` numbers: Armor Score, thresholds, Evasion). */
+  readonly stats?: MarkedTracks["stats"];
+  /** dcm-b9hc (CB p.40: "Choose whether they deal physical or magic damage"): the companion's damage type; default physical. */
+  readonly companionDamageType?: DamageType;
+  /**
+   * Plan lanes-2 E8.4 (dcm-7l0g): limited rerolls of held dice the actor holds, applied when any use spends dice of that
+   * kind (Weapon Specialist, CB p.48: the Slayer Dice's 1s once per long rest). Spent: `key` is in `featureUses`.
+   */
+  readonly heldRerolls?: readonly HeldRerollGrant[];
+}
+
+/** A once-per reroll of held dice (`ActorState.heldRerolls`): the dice of kind `die` showing `atMost` or less. */
+export interface HeldRerollGrant {
+  readonly die: HeldDieKind;
+  readonly atMost: number;
+  /** The `featureUses` key the reroll spends, and until when. */
+  readonly key: string;
+  readonly until: FeatureUse["until"];
 }
 
 /** A held die as the runner spends it: `value` when it was rolled on receipt (Prayer Dice), else it is rolled when spent. */
@@ -173,6 +215,10 @@ export interface DelegateRequest {
   feature: string;
   params: { choice?: string; amount?: number; targetId?: string; dieIndexes?: number[] };
   actor: DelegateSnapshot;
+  /** Plan lanes, E3 (dcm-d1d): the use's own roll (or the follow-up's) the step runs after, e.g. Ranger's Focus's attack. */
+  roll?: RollRecord;
+  /** E3 (dcm-d1d): whether that roll hit the step's target (absent: no per-target roll). */
+  hit?: boolean;
 }
 
 /** The D5 feature's answer: the actor's resources after it, its feed line and any Fear it gave the GM; or a refusal. */
@@ -194,8 +240,11 @@ export interface RunContext {
   allies?: readonly Combatant[];
   /** The targets of a `followUp` step (Telekinesis' second target, Whirlwind's others). */
   followUp?: readonly Combatant[];
-  /** What set off a reaction / rider / auto. */
-  trigger?: { amount?: number; source?: Combatant; subject?: Combatant };
+  /**
+   * What set off a reaction / rider / auto. Plan lanes, V (widened): `damageType`: the type of the damage the trigger
+   * carries (Encore, CB p.335; dcm-86z; E1 fills it, E3 reads it).
+   */
+  trigger?: { amount?: number; source?: Combatant; subject?: Combatant; damageType?: DamageType | "both" };
   /** The player's numbers, by `NumberChoice` id. */
   choices?: Readonly<Record<string, number>>;
   /** The options picked in `choose` steps, by step id. */
@@ -230,7 +279,7 @@ export interface RunContext {
    * The `featureUses` key and `until` of a limit (`useId` the use, or `<useId>:<optionalId>` for an optional step's
    * limit). Default: the card keys (`featureUseKey`) and `limitUntil` (scene stored as session).
    */
-  limitKeys?: { key: (useId: string, targetId?: string) => string; until: (per: Limit["per"]) => FeatureUse["until"] };
+  limitKeys?: { key: (useId: string, targetId?: string) => string; until: (limit: Limit | Limit["per"]) => FeatureUse["until"] };
   /** Runs a `delegate` step's D5 feature (NV2). Without it the plan carries the step undone, for the server. */
   delegate?: DelegateHandler;
   /** The actor's companion (Q4): the creature of a `companion` pick. */
@@ -239,6 +288,85 @@ export interface RunContext {
   damageDice?: { reroll?: readonly number[]; double?: readonly number[] };
   /** Held dice picked for a delegated D5 feature (`FeatureParams.dieIndexes`, Prayer Dice). */
   dieIndexes?: readonly number[];
+  // ---- DA0 (drawer-answers)
+  /** `defaultOn` optional steps the player turned off (by id); a `defaultOn` optional runs unless named here. */
+  optionalsOff?: readonly string[];
+  /**
+   * The count of an `upTo` target count the server rolled before the pick (`rolledFirst`, Warden's Protection; dcm-d95).
+   * Given, it is the use's maximum and the runner rolls nothing for it; a `rolledFirst` count without it refuses the use.
+   */
+  rolledTargetCount?: number;
+  /**
+   * A `rolledBy` use's roller (Cannonball's ally): absent, the actor's run pays and sends the `allyRoll` prompt; given,
+   * this run is the roller's roll (no costs or limit again), with the roller's traits, and its Hope / Fear go to them.
+   */
+  roller?: RollerState;
+  // ---- Plan lanes, tracer E3 (steps, choices and saves; docs/tasks/TASK-LN-E3.md). All optional: absent reads as today.
+  /** dcm-bz8: the option each chooser of a `choose` step with `by` picked, by step id, then by creature id. */
+  chooserOptions?: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>>;
+  /** dcm-bz8 / dcm-6ju: whether each chooser of an `optional` step with `by` takes it, by step id, then by creature id. */
+  chooserOptionals?: Readonly<Record<string, Readonly<Record<string, boolean>>>>;
+  /** dcm-5xi: the Hope other PCs hold now (by id), for `hope.ifUnable` and `track` `hope` checks; unknown: not decided. */
+  hopeOf?: Readonly<Record<string, number>>;
+  /** dcm-xp0: named tokens on creatures now (bramble tokens), by creature id, then by name. */
+  creatureTokens?: Readonly<Record<string, Readonly<Record<string, number>>>>;
+  /** dcm-0gh: handfuls of gold a creature carries (by id), for a `gold` number (CB p.104: "10 handfuls to 1 bag"). */
+  goldOf?: Readonly<Record<string, number>>;
+  /** dcm-qbn: the held dice (by id) the player picked to spend; a `tokens` cost with a held-die pool spends these first. */
+  heldDicePicks?: readonly string[];
+  /** dcm-d1b: the Hope and Fear Die of the host roll a rider rides on (a `dualityDie` number reads it without a roll of its own). */
+  hostRoll?: { hope: number; fear: number };
+  /**
+   * dcm-rou / dcm-7az: the creatures of each further link of a repeating `followUp` (link 0 is `followUp`). Creatures
+   * named in an earlier link or as a target are dropped ("not already targeted", CB p.328).
+   */
+  chain?: readonly (readonly Combatant[])[];
+  /** dcm-q0a: the allies who pay to raise a `raised` save's Difficulty (Enchanting Song's other Sirens). */
+  saveRaisers?: readonly Combatant[];
+  /** dcm-b77: how many times a `falling` save was made before (its Difficulty falls by `step` each time). */
+  saveAttempt?: number;
+  /** dcm-kkx: the labels of the lasting effects each creature carries now (by id), for `effect.stacking`. */
+  effectsOn?: Readonly<Record<string, readonly string[]>>;
+  // ---- Plan lanes-2, tracer E3 (round 2; docs/tasks/TASK-LN2-E3.md). All optional: absent reads as before.
+  /**
+   * dcm-4zti: the numbers the server knows beyond the actor's tracks (cardRunner `BuiltRun.numbers`): the actor's and each
+   * creature's slot maximums, stats, gold and tokens (`self` / `byId`), and the creatures on the map (`creatureCount`).
+   */
+  numbers?: { self?: Partial<MarkedTracks>; byId?: Readonly<Record<string, Partial<MarkedTracks>>>; creatures?: readonly MapCreature[] };
+  /** dcm-4zti, dcm-a9c: what each payer of a `paidBy` cost holds (Rune Ward's holder, CB p.328; Tactician's ally). */
+  payers?: Partial<Record<Payer, PayerState>>;
+  /**
+   * dcm-fbsr, dcm-5kxg: the lasting mods each creature carries now (by id; the actor too): `marksMultiplier` doubles its
+   * costs and marks (Unstuck, CB p.237), flags `cannotClearHp` / `cannotClearStress` stop its clears (Afflicted, HF p.95),
+   * `cannotSpendHope` its Hope spends (Ravenous, HF p.94).
+   */
+  modsOn?: Readonly<Record<string, readonly Mod[]>>;
+  /**
+   * dcm-va0f (Unleash Hellfire, HF p.88: "If a target takes damage from multiple bursts, combine the damage"): for a use
+   * with `TargetSpec.points`, the indexes of the points whose area holds each creature (by id). A `perArea` damage step
+   * rolls once per point and each creature takes the sum of its points'.
+   */
+  pointsOf?: Readonly<Record<string, readonly number[]>>;
+  // ---- Plan lanes-2, tracer E3.3 (round 3; docs/tasks/TASK-LN3-E3.md). All optional: absent reads as before.
+  /**
+   * dcm-ldom (Hive Mind, HF p.65; Pack Fury, HF p.70-77): the creatures on the live map seen from the actor, for a
+   * `creatureCount` number in a step this runner resolves (the adversary runner forwards its own `creatures`). Wins over
+   * `numbers.creatures` when both are given.
+   */
+  creatures?: readonly MapCreature[];
+  /**
+   * dcm-q13x (user answer 2026-10-31, Chain Lightning, CB p.328): each link of a repeating `followUp` rolls its damage
+   * again ("every new wave of chained targets gets a fresh 2d8+4 roll"); off, the links share the move's damage (R9).
+   * Default off until the card tests that pin the shared roll move with it (see the task doc); the server sets it.
+   */
+  freshLinkDamage?: boolean;
+}
+
+/** DA0: the creature that makes a `rolledBy` use's roll. */
+export interface RollerState {
+  readonly id: string;
+  readonly traits: Readonly<Record<TraitId, number>>;
+  readonly proficiency: number;
 }
 
 // ---------------------------------------------------------------- outputs
@@ -248,7 +376,33 @@ export type ResolvedMod =
   | { kind: "stat"; stat: ModStat; delta: number; versus?: Versus }
   | { kind: "trait"; trait: TraitId | "all"; delta: number }
   | { kind: "set"; stat: ModStat | TraitId; to: number }
-  | Extract<Mod, { kind: "advantage" | "disadvantageAgainst" | "resistance" | "flag" }>;
+  | Extract<Mod, { kind: "advantage" | "disadvantageAgainst" | "resistance" | "flag" }>
+  // Plan lanes, tracer V: widened mods travel as written (no numbers resolved yet; the lanes that read them resolve them).
+  | Extract<
+      Mod,
+      {
+        kind:
+          | "attackedRider"
+          | "bearerRider"
+          | "disadvantage"
+          | "mustAttack"
+          | "weaponTrait"
+          | "extraTargets"
+          | "forcedMoveReduce"
+          | "moveLimit"
+          | "replaceCondition"
+          | "dualityDie"
+          | "gmControl"
+          | "standardAttack"
+          | "features"
+          | "weakness"
+          // Plan lanes-2, tracer V2 (TASK-LN-V2.md): travel as written too.
+          | "cannotAttackTarget"
+          | "moveRange"
+          | "damageTaken"
+          | "marksMultiplier";
+      }
+    >;
 
 export interface RollInfo {
   record: RollRecord;
@@ -265,7 +419,8 @@ export interface RollInfo {
 
 /** One entry of the plan, in order. Targets are creature ids; `self` steps carry the actor's id. */
 export type PlanStep =
-  | { kind: "pay"; phase: "upfront" | "afterRoll" | "optional"; costs: PaidCost[]; paid: boolean }
+  /** E3: `payerId` names a payer other than the actor (a chooser of a `by` optional, dcm-6ju; a save raiser, dcm-q0a). */
+  | { kind: "pay"; phase: "upfront" | "afterRoll" | "optional"; costs: PaidCost[]; paid: boolean; payerId?: string }
   | { kind: "roll"; roll: RollInfo }
   | { kind: "hits"; results: HitResult[] }
   | { kind: "damageRoll"; record: RollRecord; type: DamageType | "both" }
@@ -273,11 +428,30 @@ export type PlanStep =
   | { kind: "damage"; result: DamageResult }
   /** Damage to a PC: Armor Slots and the PC's thresholds are AA1's (the reaction window); nothing is applied here. */
   | { kind: "pcDamage"; targetId: string; amount: number; type: DamageType | "both"; direct: boolean }
-  | { kind: "mark"; targetId: string; track: Track; amount: number; hpMarked: number; overflow: boolean; noBenefit?: boolean }
+  /** `reduceWithHope`: HP from a `markHp` with `reduceWith: "hope"`; the PC may spend Hope to mark fewer (dcm-nnbl). */
+  | { kind: "mark"; targetId: string; track: Track; amount: number; hpMarked: number; overflow: boolean; noBenefit?: boolean; reduceWithHope?: boolean }
   | { kind: "clear"; targetId: string; track: Track; amount: number }
   | { kind: "hope"; targetId: string; delta: number }
   | { kind: "fear"; delta: number }
-  | { kind: "condition"; targetId: string; condition: ConditionRef; duration: Duration; endsWhen?: string; endsOn?: readonly EndEvent[] }
+  /**
+   * Lanes-2 E3 (dcm-iedr's runner half, dcm-b77, dcm-8bv): the step's `mods` (numbers resolved; a `recorded` number reads
+   * `recorded`), `endsOnCaster`, `endsOnRoll`, `escape`, the `record` number resolved when given, and the Fear a
+   * `gmSpendsFear` end costs.
+   */
+  | {
+      kind: "condition";
+      targetId: string;
+      condition: ConditionRef;
+      duration: Duration;
+      endsWhen?: string;
+      endsOn?: readonly EndEvent[];
+      mods?: ResolvedMod[];
+      endsOnCaster?: readonly EndEvent[];
+      endsOnRoll?: RollEnd;
+      escape?: Escape;
+      recorded?: number;
+      endFear?: number;
+    }
   | { kind: "clearCondition"; targetId: string; condition: ConditionRef }
   | {
       kind: "effect";
@@ -289,6 +463,11 @@ export type PlanStep =
       /** SD1: the events that also end it (NV5) and the option it stands for (NV7, "Channeling Fire"). */
       endsOn?: readonly EndEvent[];
       option?: string;
+      /** E3 (dcm-kkx): `replace`: the server ends an older copy with this label first (`refuse` copies are dropped by the runner when it knows). */
+      stacking?: "stack" | "replace" | "refuse";
+      /** Lanes-2 E3 (dcm-rao5, dcm-8bv): one grant shared by the use's recipients; the Fear a `gmSpendsFear` end costs. */
+      sharedGrant?: boolean;
+      endFear?: number;
     }
   /**
    * SD1 (NV2): a D5 feature run inside this use. `done`: the handler ran it (`summary` is its feed line); otherwise the
@@ -302,20 +481,88 @@ export type PlanStep =
   /** SD1 (NV19, Q12): a named Help an Ally: the ally's next action roll gets a d`die` advantage die; `free`: no Hope. */
   | { kind: "help"; targetId: string; die: DieSides; free: boolean }
   | { kind: "tokens"; op: "set" | "add" | "spend" | "clear"; before: number; after: number; die?: number }
+  /** E3 (dcm-xp0): named tokens (`name`, bramble tokens) on a creature instead of this card; the server stores them. */
+  | { kind: "creatureTokens"; targetId: string; name: string; op: "set" | "add" | "spend" | "clear"; before: number; after: number }
   | { kind: "toVault"; permanent: boolean }
-  | { kind: "save"; targetId: string; record: RollRecord; difficulty: number; success: boolean }
-  | { kind: "check"; total: number; dice: number[]; passed: boolean }
+  /**
+   * E3: `autoFail`: the recipient failed without rolling (dcm-fev; `record` has no dice); `raisedBy`: the allies who paid
+   * to raise the Difficulty (dcm-q0a); `advantage` / `disadvantage` on the roll (dcm-rb0).
+   */
+  | {
+      kind: "save";
+      targetId: string;
+      record: RollRecord;
+      difficulty: number;
+      success: boolean;
+      autoFail?: boolean;
+      raisedBy?: string[];
+      advantage?: number;
+      disadvantage?: number;
+    }
+  /** E3 (dcm-27j): `row` / `label`: the row of the check's table the total landed in. */
+  | { kind: "check"; total: number; dice: number[]; passed: boolean; row?: number; label?: string }
+  /**
+   * E3 (dcm-8x8, dcm-5fc): end a lasting effect, condition or area on `targetId` that `of` (a card or feature id) made;
+   * `own`: this use's own card or feature ("this spell ends"). The server ends it (lane E6).
+   */
+  | { kind: "endEffect"; targetId: string; of: string; own: boolean; option?: string }
+  /** E3 (dcm-0gh): a change to `targetId`'s inventory (steal an item, take gold, damage a weapon); the server writes it. */
+  /** Lanes-2 E3 (dcm-vf7i): `giveGold` (`amount` handfuls) and `giveItem` (`text` names it; unset: the GM's pick) to the recipient. */
+  | {
+      kind: "inventory";
+      targetId: string;
+      op: "take" | "takeGold" | "damageWeapon" | "giveGold" | "giveItem";
+      item?: "any" | "consumable" | "mostValuable" | "metalWeapon";
+      amount?: number;
+      text?: string;
+    }
+  /** Lanes-2 E3 (dcm-awh, dcm-4xl): the recipient shifts into martial stance `stance` (Stance Fighter, HF p.12); the server sets it. */
+  | { kind: "setStance"; targetId: string; stance: string }
+  /**
+   * Lanes-2 E3 (dcm-war): the use `useId` is spent until `until` (Rune Ward's 8, CB p.328). The runner already wrote the
+   * entries into `plan.actor.featureUses` (as `exhaustKey`); this step is for the feed.
+   */
+  | { kind: "exhaust"; key: string; until: FeatureUse["until"] }
+  /**
+   * Lanes-2 E3 (dcm-c8h3, dcm-zi3k): the attackers make an attack against a creature `against` picks (Words of Discord,
+   * CB p.335; Beguiled, HF p.75). `againstIds`: the creatures the use named for it (`picked`, never an attacker); empty:
+   * the GM picks. An adversary attacker makes its standard attack; a PC is prompted (the server's).
+   */
+  | { kind: "forcedAttack"; attackerIds: string[]; against: TargetSpec; againstIds: string[] }
+  /** Lanes-2 E3 (dcm-3ag5, Transform, HF p.142): the adversary instance takes stat block `adversaryId`, keeping its marks. */
+  | { kind: "changeForm"; targetId: string; adversaryId: string }
+  /**
+   * Lanes-2 E3 (dcm-inou, dcm-sa2; Weapon Specialist, CB p.48: "reroll any 1s"): the held dice of `die` this use spent that
+   * showed `atMost` or less, rolled again once each (`before` / `after` in spend order); `spent: heldDie` follows them.
+   */
+  | { kind: "heldReroll"; die: HeldDieKind; before: number[]; after: number[] }
   | { kind: "defeat"; targetId: string; amount?: number }
   /** Minion (X): extra Minions the attacker may defeat (CB p.201, Q6). */
   | { kind: "minionOffer"; targetId: string; extra: number }
-  /** A step for the table: a movement prompt (Q9), the card's words (manual), or a choice still missing. */
+  /**
+   * A step for the table: a movement prompt (Q9), the card's words (manual), or a choice still missing.
+   * DA0 (widened): a `move` with `server: true` is one the server makes itself (`intoMelee`: into Melee range of
+   * `anchorId`); `allyRoll` asks the ally in `targetIds` to make a `rolledBy` use's roll, `amount` the Proficiency its
+   * damage uses when it is the actor's.
+   */
   | {
       kind: "prompt";
-      prompt: "move" | "manual" | "choose" | "split" | "pcSave";
+      prompt: "move" | "manual" | "choose" | "split" | "pcSave" | "allyRoll" | "followUp";
       text: string;
       targetIds: string[];
       step?: Step;
       amount?: number;
+      server?: boolean;
+      anchorId?: string;
+      /**
+       * E3: a `pcSave`'s advantage / disadvantage dice (dcm-rb0) and its Difficulty when the runner knows it (dcm-q0a);
+       * `chooserId`: the creature a per-recipient `choose` asks (dcm-bz8). A `followUp` prompt asks for the next link of
+       * a repeating follow-up (dcm-rou, dcm-7az; `amount` is the link's index, `targetIds` the last link's creatures).
+       */
+      advantage?: number;
+      disadvantage?: number;
+      difficulty?: number;
+      chooserId?: string;
     }
   /**
    * An outcome the runner can't apply on its own: it changes another roll or another creature's incoming damage
@@ -414,7 +661,8 @@ export function rollMatches(filter: RollFilter, roll: RollSpec | undefined): boo
     case "action":
       return roll.kind !== "reaction";
     case "attack":
-      return roll.kind === "attack" || roll.kind === "spellcast";
+      // DA0: a trait roll marked `attack` (a Beastform's form attack, CB p.30) is an attack roll too.
+      return roll.kind === "attack" || roll.kind === "spellcast" || (roll.kind === "trait" && roll.attack === true);
     case "weaponAttack":
       return roll.kind === "attack";
     case "spellcast":
@@ -477,6 +725,8 @@ interface Scope {
   /** Hit or miss per creature for this scope's roll (absent = no roll: every recipient passes `hit`). */
   hits: ReadonlyMap<string, boolean> | null;
   roll: RollInfo | null;
+  /** E3 (dcm-bz8): inside a `by` choose / optional, the creature making the pick (`to: "chooser"`). */
+  chooser?: string;
 }
 
 interface Pending {
@@ -515,11 +765,16 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
   const unmet = unmetRequirements(use.requires, reqState(actor0));
   if (unmet.length > 0) return refuse("requirement", unmet.map((r) => r.kind).join(", "));
 
+  // DA0 (`rolledBy`, Cannonball): the actor's run pays and sends the roll to the roller (`sending`); the roller's run
+  // (`rolling`) makes the roll and runs the steps, and pays no cost or limit again.
+  const roller = use.rolledBy && context.roller ? context.roller : null;
+  const sending = use.rolledBy !== undefined && roller === null;
+
   // ---- limit (CB p.101, Q3)
   const targets0 = context.targets ?? [];
   const keyOf = context.limitKeys?.key ?? ((useId: string, targetId?: string) => featureUseKey(effect.cardId, useId, targetId));
   const untilOf = context.limitKeys?.until ?? limitUntil;
-  const limitKey = use.limit ? keyOf(use.id, use.limit.perTarget ? targets0[0]?.id : undefined) : null;
+  const limitKey = use.limit && !roller ? keyOf(use.id, use.limit.perTarget ? targets0[0]?.id : undefined) : null;
   if (use.limit && limitKey) {
     const availability = keyAvailability(actor0, limitKey, use.limit);
     if (availability.state === "exhausted") return refuse("exhausted", availability.label);
@@ -529,7 +784,8 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
   let actor: ActorState = { ...actor0 };
   const creatures = new Map<string, Combatant>();
   const before = new Map<string, Combatant>();
-  for (const c of [...targets0, ...(context.picked ?? []), ...(context.allies ?? []), ...(context.followUp ?? []), context.trigger?.source, context.trigger?.subject, context.companion]) {
+  const extra = [...(context.chain ?? []).flat(), ...(context.saveRaisers ?? [])];
+  for (const c of [...targets0, ...(context.picked ?? []), ...(context.allies ?? []), ...(context.followUp ?? []), context.trigger?.source, context.trigger?.subject, context.companion, ...extra]) {
     if (c && c.id !== actor.id && !creatures.has(c.id)) {
       creatures.set(c.id, c);
       before.set(c.id, c);
@@ -543,6 +799,8 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
   let gmFearDelta = 0;
   /** NV2: a delegated D5 feature refused (its RuleError text); the whole use is refused, nothing is written. */
   let delegateRefusal: string | null = null;
+  /** E3: a step's bad input (dcm-40m: the same option in two distinct choose steps); the use is refused. */
+  let stepRefusal: string | null = null;
   const snapshot = (): DelegateSnapshot => ({
     hope: actor.hope,
     stress: actor.stress,
@@ -561,19 +819,55 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
   const counts = { picked: targets0.length, hit: 0, failedSave: 0 };
   let lastRoll: number | undefined;
   let rollTotal: number | undefined;
+  let mainRoll: RollInfo | null = null;
 
+  /** The Proficiency the use's numbers read: the roller's when a `rolledBy` use says so, else the actor's. */
+  const proficiencyOf = () => (roller && use.rolledBy?.proficiency === "roller" ? roller.proficiency : actor.proficiency);
+  // Lanes-2 E3 (dcm-rs1z, dcm-4zti): the server's numbers for the actor and each creature, under the runner's own tracks.
+  const extrasOf = (id: string): Partial<MarkedTracks> => (id === actor.id ? (context.numbers?.self ?? {}) : (context.numbers?.byId?.[id] ?? {}));
+  /**
+   * Lanes-2 E3.3 (dcm-91tx, dcm-bxp.99.19.4): the stats a creature shows on its own: its thresholds, Evasion and (a PC's)
+   * Armor Score, which is its Armor Slots (CB, character creation: "you have a number of slots equal to your Armor
+   * Score"). The server's `numbers` and the actor's `stats` win over these.
+   */
+  const ownStats = (c: Combatant): NonNullable<MarkedTracks["stats"]> => ({
+    ...(c.thresholds.major !== null ? { majorThreshold: c.thresholds.major } : {}),
+    ...(c.thresholds.severe !== null ? { severeThreshold: c.thresholds.severe } : {}),
+    ...(c.evasion !== undefined ? { evasion: c.evasion } : {}),
+    ...(c.side === "pc" && c.armorMax !== undefined ? { armorScore: c.armorMax } : {}),
+  });
+  const tracksOf = (c: Combatant): MarkedTracks => {
+    const known = extrasOf(c.id);
+    const merged = { ...ownStats(c), ...(known.stats ?? {}), ...(c.id === actor.id ? (actor.stats ?? {}) : {}) };
+    const stats = Object.keys(merged).length > 0 ? merged : undefined;
+    const tokens = tokensOn.get(c.id) ?? known.tokens;
+    return {
+      ...known,
+      hp: c.hp,
+      stress: c.stress,
+      armor: c.armor,
+      hpMax: c.hpMax,
+      stressMax: c.stressMax,
+      ...(c.armorMax !== undefined ? { armorMax: c.armorMax } : {}),
+      ...(stats ? { stats } : {}),
+      ...(tokens ? { tokens } : {}),
+    };
+  };
+  /** dcm-a9c (5), dcm-d1b: the duality dice a `dualityDie` number reads: this move's roll, else the host roll. */
+  const dualityOf = (): { hope: number; fear: number } | undefined =>
+    mainRoll && mainRoll.record.kind !== "reaction" && mainRoll.hope + mainRoll.fear > 0 ? { hope: mainRoll.hope, fear: mainRoll.fear } : context.hostRoll;
   const env = (target?: Combatant): NumberEnv => ({
     traits: actor.traits,
     spellcast: actor.spellcast,
-    proficiency: actor.proficiency,
+    proficiency: proficiencyOf(),
     level: actor.level,
     tier: actor.tier,
     spent,
     choices,
     cardTokens: actor.cardTokens,
     gmFear: Math.max(0, Math.min(MAX_FEAR, context.gmFear + gmFearDelta)),
-    self: { hp: actor.hp, stress: actor.stress, armor: actor.armor },
-    target: target ? { id: target.id, hp: target.hp, stress: target.stress, armor: target.armor } : undefined,
+    self: tracksOf(actor),
+    target: target ? { id: target.id, ...tracksOf(target) } : undefined,
     markedThisMove: { self: markedSelf, byTarget: markedBy },
     targetCount: counts,
     rollTotal,
@@ -582,13 +876,83 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     vaultDomains: actor.vaultDomains,
     lastRoll,
     ...(actor.dieSides ? { dieSides: actor.dieSides } : {}),
+    // Lanes-2 E3 (dcm-rs1z, dcm-e80y, dcm-4zti): what E5's numbers.ts reads beyond the tracks.
+    ...(dualityOf() ? { dualityDice: dualityOf() } : {}),
+    ...((context.creatures ?? context.numbers?.creatures) ? { creatures: context.creatures ?? context.numbers?.creatures } : {}),
+    ...(actor.classDice ? { classDice: actor.classDice } : {}),
+    ...(actor.tideTokens !== undefined ? { tideTokens: actor.tideTokens } : {}),
+  });
+  /** E3 (dcm-xp0): named tokens on creatures, as this use changes them. */
+  const tokensOn = new Map<string, Record<string, number>>(Object.entries(context.creatureTokens ?? {}).map(([id, t]) => [id, { ...t }]));
+  const tokensOf = (id: string, name: string) => tokensOn.get(id)?.[name] ?? 0;
+  /** E3 (dcm-5xi): a creature's Hope, when known. */
+  const hopeChanged = new Map<string, number>();
+  const hopeOf = (id: string): number | undefined => {
+    if (id === actor.id) return actor.hope;
+    const known = context.hopeOf?.[id];
+    return known === undefined ? undefined : Math.max(0, known + (hopeChanged.get(id) ?? 0));
+  };
+  const freeOf = (c: Combatant, track: Track): number => {
+    const now = get(c.id);
+    const max = track === "hp" ? now.hpMax : track === "stress" ? now.stressMax : (now.armorMax ?? 0);
+    const marked = track === "hp" ? now.hp : track === "stress" ? now.stress : (now.armor ?? 0);
+    return Math.max(0, max - marked);
+  };
+  /**
+   * E3: the sources only the runner can read (the duality dice, free slots, creature tokens, gold) become fixed numbers
+   * before `resolveNumber` sees them, at any depth; the rest stay as written (numbers.ts reads them, lane E5).
+   */
+  /** Lanes-2 E3 (dcm-b77): the `record` number of the condition whose mods are being resolved. */
+  let recordedNow: number | undefined;
+  const bindNumber = (source: NumberSource, target?: Combatant): NumberSource => {
+    const fixedOf = (value: number): NumberSource => ({ kind: "fixed", value });
+    const whoOf = (who: "self" | "target") => (who === "self" ? actor : target);
+    switch (source.kind) {
+      case "dualityDie": {
+        // dcm-d1b (Midnight-Touched, CB p.337: "add the result of your Fear Die"): this move's roll, else the host roll.
+        const r = dualityOf();
+        return r ? fixedOf(source.die === "hope" ? r.hope : r.fear) : source;
+      }
+      case "recorded":
+        // Lanes-2 E3 (dcm-b77): inside a condition's mods, the number its `record` kept (Banish's return Difficulty).
+        return recordedNow === undefined ? source : fixedOf(recordedNow);
+      case "free": {
+        const c = whoOf(source.who);
+        return c ? fixedOf(freeOf(c, source.track)) : source;
+      }
+      case "creatureTokens": {
+        const c = whoOf(source.who);
+        return c ? fixedOf(tokensOf(c.id, source.name)) : source;
+      }
+      case "gold": {
+        const c = whoOf(source.who);
+        const handfuls = c ? context.goldOf?.[c.id] : undefined;
+        return handfuls === undefined ? source : fixedOf(source.unit === "bag" ? Math.floor(handfuls / 10) : handfuls);
+      }
+      case "sum":
+      case "product":
+      case "max":
+        return { ...source, of: source.of.map((n) => bindNumber(n, target)) };
+      case "calc":
+        return { ...source, of: bindNumber(source.of, target), ...(source.max ? { max: bindNumber(source.max, target) } : {}) };
+      case "dice":
+        return { ...source, dice: bindDice(source.dice, target) };
+      default:
+        return source;
+    }
+  };
+  const bindDice = (dice: DiceExpr, target?: Combatant): DiceExpr => ({
+    ...dice,
+    count: bindNumber(dice.count, target),
+    ...(dice.plus ? { plus: bindNumber(dice.plus, target) } : {}),
   });
   const num = (source: NumberSource, target?: Combatant): number => {
     const e = env(target);
-    const value = resolveNumber(source, e, rng);
+    const value = resolveNumber(bindNumber(source, target), e, rng);
     lastRoll = e.lastRoll;
     return value;
   };
+  const diceOf = (expr: DiceExpr) => resolveDice(bindDice(expr), env(), rng);
   const addMarked = (id: string, track: Track, n: number) => {
     if (n <= 0) return;
     const bucket = id === actor.id ? markedSelf : (markedBy[id] ??= {});
@@ -596,17 +960,29 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
   };
 
   // ---- choices
-  for (const choice of use.choices ?? []) {
-    const value = choices[choice.id] ?? choice.min;
-    const max = choice.max ? num(choice.max) : Infinity;
-    if (!Number.isInteger(value) || value < choice.min || value > max) return refuse("choice", `${choice.label}: ${value}`);
+  // E3: `values` (Teleport, CB p.333: "+3 / +1 / 0 / -2"; dcm-uyc) allows only the listed numbers (default the first one
+  // at or above `min`); `afterTargets` (Share the Burden, CB p.335; dcm-fnq) is checked once the targets are known, so its
+  // `max` reads the (first) target.
+  const checkChoice = (choice: NonNullable<CardUse["choices"]>[number], target?: Combatant): string | null => {
+    const fallback = choice.values ? (choice.values.find((n) => n >= choice.min) ?? choice.min) : choice.min;
+    const value = choices[choice.id] ?? fallback;
+    const max = choice.max ? num(choice.max, target) : Infinity;
+    if (!Number.isInteger(value) || value < choice.min || value > max) return `${choice.label}: ${value}`;
+    if (choice.values && !choice.values.includes(value)) return `${choice.label}: ${value} is not one of ${choice.values.join(", ")}`;
     choices[choice.id] = value;
+    return null;
+  };
+  for (const choice of use.choices ?? []) {
+    if (choice.afterTargets) continue;
+    const bad = checkChoice(choice);
+    if (bad) return refuse("choice", bad);
   }
 
   // ---- targets (CB p.104: any that fall within the parameters)
   const excluded: string[] = [];
   let targets = targets0;
-  const spec = use.targets && use.targets.side !== "trigger" ? (use.targets as TargetSpec) : undefined;
+  const useTargets = roller && use.rolledBy ? use.rolledBy.targets : use.targets;
+  const spec = useTargets && useTargets.side !== "trigger" ? (useTargets as TargetSpec) : undefined;
   if (spec) {
     targets = targets0.filter((t) => {
       const out = (spec.maxDifficulty !== undefined && (t.difficulty ?? 0) > spec.maxDifficulty) || (spec.excludeFlying === true && t.flying === true);
@@ -614,22 +990,53 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
       return !out;
     });
     const n = targets0.length;
+    const count = spec.count;
+    // DA0 (dcm-d95): a count rolled before the pick is the server's number; the runner never rolls it again.
+    if (count.kind === "upTo" && count.rolledFirst === true && context.rolledTargetCount === undefined) {
+      return refuse("targets", "Roll the number of targets first.");
+    }
     const max =
-      spec.count.kind === "one" ? 1 : spec.count.kind === "upTo" ? num(spec.count.n) : spec.count.kind === "any" && spec.count.max ? num(spec.count.max) : Infinity;
+      count.kind === "one"
+        ? 1
+        : count.kind === "upTo"
+          ? (context.rolledTargetCount ?? num(count.n))
+          : count.kind === "any" && count.max
+            ? num(count.max)
+            : Infinity;
     // With an area, `count` limits the picked anchor; the server passes every creature in the area as targets.
     if (spec.area === undefined && n > max) return refuse("targets", `At most ${max} target(s).`);
   }
-  if (use.targets && use.targets.side === "trigger") {
-    const who = use.targets.who === "source" ? context.trigger?.source : context.trigger?.subject;
+  if (useTargets && useTargets.side === "trigger") {
+    const who = useTargets.who === "source" ? context.trigger?.source : context.trigger?.subject;
     targets = who ? [who] : [];
   }
   counts.picked = targets.length;
+  for (const choice of use.choices ?? []) {
+    if (!choice.afterTargets) continue;
+    const bad = checkChoice(choice, targets[0] ? get(targets[0].id) : undefined);
+    if (bad) return refuse("choice", bad);
+  }
 
   // ---- upfront costs (CB p.90)
   let eitherIndex = 0;
   const pickEither = () => context.eitherCosts?.[eitherIndex++] ?? 0;
   const costAmount = (cost: Exclude<Cost, { kind: "either" | "gold" }>) => num(cost.amount);
-  const payer = () => ({
+  // Lanes-2 E3 (dcm-fbsr, dcm-5kxg): the lasting mods a creature carries (`context.modsOn`).
+  const modsOf = (id: string): readonly Mod[] => context.modsOn?.[id] ?? [];
+  const hasFlag = (id: string, flag: Extract<Mod, { kind: "flag" }>["flag"]) => modsOf(id).some((m) => m.kind === "flag" && m.flag === flag);
+  /** Lanes-2 E3.3 (dcm-hgvx): a creature's rules flags (`Mod` `flag`), as `PayerState.flags` and `clearBlocked` read them. */
+  const flagsOf = (id: string): string[] => modsOf(id).flatMap((m) => (m.kind === "flag" ? [m.flag] : []));
+  /** dcm-hgvx: a payer the server described, with the flags its creature carries here added (Ravenous, HF p.94). */
+  const payersWithFlags = (): Partial<Record<Payer, PayerState>> => {
+    const out: Partial<Record<Payer, PayerState>> = {};
+    for (const [key, state] of Object.entries(context.payers ?? {}) as [Payer, PayerState][]) {
+      const who = payerOf(key);
+      const extra = who ? flagsOf(who.id) : [];
+      out[key] = extra.length > 0 ? { ...state, flags: [...new Set([...(state.flags ?? []), ...extra])] } : state;
+    }
+    return out;
+  };
+  const payer = (): PayerState => ({
     hope: actor.hope,
     stress: actor.stress,
     stressMax: actor.stressMax,
@@ -642,7 +1049,11 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     favor: actor.favor ?? 0,
     focus: actor.focus ?? 0,
     heldDice: heldCounts(actor.heldDice ?? []),
+    // Lanes-2 E3.3 (dcm-hgvx): `unaffordable` refuses a Hope cost while `cannotSpendHope` holds.
+    flags: flagsOf(actor.id),
   });
+  /** Lanes-2 E3 (dcm-inou, dcm-sa2): the held dice this use spent, by kind, for a `rerollHeld` change. */
+  const heldSpent: { kind: HeldDieKind; dice: { sides: number; value: number }[] }[] = [];
   /** NV1: spends from Favor, Focus or held dice; the spent dice's values (stored, else rolled) feed `spent: heldDie`. */
   const payPool = (c: PaidCost): PaidCost => {
     const pool = c.pool!;
@@ -657,11 +1068,32 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
       return c;
     }
     const held = actor.heldDice ?? [];
-    const dice = held.filter((d) => d.kind === pool).slice(0, c.amount);
-    const values = dice.map((d) => d.value ?? rng(d.sides));
+    // E3 (dcm-qbn, Prayer Dice, CB p.44: the values are known, so the player picks which to spend): picked dice first.
+    const picks = context.heldDicePicks ?? [];
+    const ofKind = held.filter((d) => d.kind === pool);
+    const dice = [...ofKind.filter((d) => picks.includes(d.id)), ...ofKind.filter((d) => !picks.includes(d.id))].slice(0, c.amount);
+    let values = dice.map((d) => d.value ?? rng(d.sides));
+    // Plan lanes-2 E8.4 (dcm-7l0g, dcm-40rt; Weapon Specialist, CB p.48: "once per long rest when you roll your Slayer
+    // Dice, reroll any 1s"): an unspent `heldRerolls` grant of this kind rerolls the low dice just rolled, once each, and
+    // spends its key (the dice box's own `WEAPON_SPECIALIST_KEY`), whichever use spent the dice (Slayer's own rider).
+    for (const g of actor.heldRerolls ?? []) {
+      if (g.die !== pool || actor.featureUses.some((u) => u.key === g.key) || !values.some((n) => n <= g.atMost)) continue;
+      const before: number[] = [];
+      const after: number[] = [];
+      values = values.map((n, i) => {
+        if (n > g.atMost) return n;
+        const next = rng(dice[i]!.sides);
+        before.push(n);
+        after.push(next);
+        return next;
+      });
+      actor = { ...actor, featureUses: [...actor.featureUses, { key: g.key, until: g.until }] };
+      steps.push({ kind: "heldReroll", die: pool, before, after });
+    }
     const ids = new Set(dice.map((d) => d.id));
     actor = { ...actor, heldDice: held.filter((d) => !ids.has(d.id)) };
     spent.heldDie = (spent.heldDie ?? 0) + values.reduce((s, n) => s + n, 0);
+    heldSpent.push({ kind: pool, dice: dice.map((d, i) => ({ sides: d.sides, value: values[i]! })) });
     return { ...c, values };
   };
   /** Pays resolved costs; returns them with the spent dice's values filled in. */
@@ -686,11 +1118,94 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
       if (c.resource === "fear") gmFearDelta -= c.amount;
       return c;
     });
-  const upfront = resolveCosts(use.costs ?? [], costAmount, pickEither);
-  const short = unaffordable(upfront, payer());
-  if (short.length > 0) return refuse("cost", short.join(", "));
-  if (upfront.length > 0) {
-    steps.push({ kind: "pay", phase: "upfront", costs: payCosts(upfront), paid: true });
+  /** Unstuck (CB p.237: "they must double the amount spent or marked"): the factor on `what` for creature `id`. */
+  const multiplierOf = (id: string, what: "hope" | Track): number =>
+    modsOf(id).reduce((f, m) => (m.kind === "marksMultiplier" && m.of.includes(what) ? f * m.factor : f), 1);
+  /** Ravenous (HF p.94: "a PC can't spend Hope"): Hope in the costs of a creature that can't spend it. */
+  const hopeBarred = (id: string, costs: readonly PaidCost[]) => hasFlag(id, "cannotSpendHope") && costs.some((c) => c.resource === "hope" && c.pool === undefined && c.amount > 0);
+  /** Resolved costs for payer `id`, its Hope spends and marks multiplied (dcm-fbsr). */
+  const costsFor = (list: readonly Cost[], id: string): PaidCost[] =>
+    resolveCosts(list, costAmount, pickEither).map((c) =>
+      c.pool === undefined && (c.resource === "hope" || c.resource === "stress" || c.resource === "hp" || c.resource === "armor") ? { ...c, amount: c.amount * multiplierOf(id, c.resource) } : c,
+    );
+  /**
+   * E3: pays `costs` for `c`: the actor as any payment (CB p.90); another creature (a `by` chooser, a save raiser, a
+   * `paidBy` payer) marks its Stress / HP on its own track and loses Hope it holds. Lanes-2 E3 (dcm-a9c, dcm-4zti): a
+   * `payer` the server described (`context.payers`) is checked with `unaffordableBy`; otherwise unknown Hope is taken as
+   * enough (the server checks it). False (and nothing paid) when it can't.
+   */
+  const payBy = (c: Combatant, costs: readonly PaidCost[], phase: "upfront" | "afterRoll" | "optional", payerKey?: Payer): boolean => {
+    if (costs.length === 0) return true;
+    if (c.id === actor.id) {
+      const ok = unaffordable(costs, payer()).length === 0 && !hopeBarred(actor.id, costs);
+      steps.push({ kind: "pay", phase, costs: ok ? payCosts(costs) : [...costs], paid: ok });
+      return ok;
+    }
+    const hopeNeeded = costs.reduce((n, x) => n + (x.resource === "hope" ? x.amount : 0), 0);
+    const hope = hopeOf(c.id);
+    const described = payerKey ? unaffordableBy(costs, payerKey, payersWithFlags()) : null;
+    const short = described !== null ? described.length > 0 : hope !== undefined && hope < hopeNeeded;
+    if (short || hopeBarred(c.id, costs)) {
+      steps.push({ kind: "pay", phase, costs: [...costs], paid: false, payerId: c.id });
+      return false;
+    }
+    steps.push({ kind: "pay", phase, costs: [...costs], paid: true, payerId: c.id });
+    for (const x of costs) {
+      if (x.resource === "stress") {
+        const res = applyStressTo(get(c.id), x.amount);
+        put(res.after);
+        addMarked(c.id, "stress", res.stressMarked);
+        addMarked(c.id, "hp", res.hpMarked);
+        steps.push({ kind: "mark", targetId: c.id, track: "stress", amount: x.amount, hpMarked: res.hpMarked, overflow: res.overflow });
+      } else if (x.resource === "hp") {
+        const res = applyHpTo(get(c.id), x.amount);
+        put(res.after);
+        addMarked(c.id, "hp", res.hpMarked);
+        steps.push({ kind: "mark", targetId: c.id, track: "hp", amount: x.amount, hpMarked: res.hpMarked, overflow: false });
+      } else if (x.resource === "armor") {
+        const now = get(c.id);
+        const armor = Math.min(now.armorMax ?? 0, (now.armor ?? 0) + x.amount);
+        put({ ...now, armor });
+        addMarked(c.id, "armor", armor - (now.armor ?? 0));
+        steps.push({ kind: "mark", targetId: c.id, track: "armor", amount: x.amount, hpMarked: 0, overflow: false });
+      } else if (x.resource === "hope") {
+        hopeChanged.set(c.id, (hopeChanged.get(c.id) ?? 0) - x.amount);
+        steps.push({ kind: "hope", targetId: c.id, delta: -x.amount });
+      }
+    }
+    return true;
+  };
+  /** Lanes-2 E3: the creature a `paidBy` payer names (`chooser`: the scope's chooser). */
+  const payerOf = (who: Payer, chooser?: string): Combatant | undefined => {
+    switch (who) {
+      case "self":
+        return actor;
+      case "triggerSubject":
+        return context.trigger?.subject ? get(context.trigger.subject.id) : undefined;
+      case "triggerSource":
+        return context.trigger?.source ? get(context.trigger.source.id) : undefined;
+      case "picked":
+        return context.picked?.[0] ? get(context.picked[0].id) : undefined;
+      case "chooser":
+        return chooser ? get(chooser) : undefined;
+    }
+  };
+  // Lanes-2 E3 (dcm-a9c (2), dcm-uj0, dcm-8yr): a use `paidBy` another creature (Rune Ward's holder) is paid by them, and
+  // refused when they can't (checked against `context.payers` when the server gives it).
+  const upfrontPayer = use.paidBy && use.paidBy !== "self" && !roller ? payerOf(use.paidBy) : actor;
+  if (!upfrontPayer) return refuse("cost", `No ${use.paidBy ?? "payer"} to pay.`);
+  const upfront = roller ? [] : costsFor(use.costs ?? [], upfrontPayer.id);
+  if (upfrontPayer.id !== actor.id) {
+    const described = unaffordableBy(upfront, use.paidBy, payersWithFlags());
+    if ((described !== null && described.length > 0) || hopeBarred(upfrontPayer.id, upfront)) return refuse("cost", (described?.length ? described : ["hope"]).join(", "));
+    if (!payBy(upfrontPayer, upfront, "upfront", use.paidBy)) return refuse("cost", "hope");
+  } else {
+    const short = unaffordable(upfront, payer());
+    if (short.length > 0) return refuse("cost", short.join(", "));
+    if (hopeBarred(actor.id, upfront)) return refuse("cost", "hope");
+    if (upfront.length > 0) {
+      steps.push({ kind: "pay", phase: "upfront", costs: payCosts(upfront), paid: true });
+    }
   }
 
   // ---- the roll (R1, R9)
@@ -704,18 +1219,25 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     let info: RollInfo;
     if (rollSpec.kind === "adversaryAttack") {
       const { record, natural } = rollD20(rng, modifier, extraAdv, extraDis);
-      const critical = natural === 20;
+      // Lanes-2 E3 (dcm-mhn, Eye of the Sage, HF p.70: "critically succeeds on a roll of 19-20"): a widened crit range.
+      const critical = natural >= Math.min(20, rollSpec.critRange ?? 20);
       const success = perTarget ? true : critical || fixed === undefined || record.total >= fixed;
       info = { record: { ...record, kind: "action", ...(fixed !== undefined ? { difficulty: fixed } : {}) }, hope: 0, fear: 0, outcome: "none", critical, success, withHope: false, withFear: false, effects: { hope: 0, clearStress: 0, fear: 0 } };
     } else {
       const kind = rollSpec.kind === "reaction" ? "reaction" : "action";
       const traitValue = (() => {
         if (rollSpec.kind === "spellcast") return actor.spellcast;
-        if (rollSpec.kind === "reaction") return rollSpec.trait === "spellcast" ? actor.spellcast : (actor.traits[rollSpec.trait] ?? 0);
+        if (rollSpec.kind === "reaction") {
+          // Lanes-2 E3 (dcm-fjh, dcm-a9c (4); Attack of Opportunity, CB p.48: "a reaction roll using a trait of your
+          // choice"): `anyTrait` rolls the trait the player picked, else the default.
+          const trait = rollSpec.anyTrait && context.roll?.trait ? context.roll.trait : rollSpec.trait;
+          return trait === "spellcast" ? actor.spellcast : (actor.traits[trait] ?? 0);
+        }
         if (rollSpec.kind === "trait") {
           const options: readonly TraitId[] = typeof rollSpec.trait === "string" ? [rollSpec.trait] : rollSpec.trait;
           const picked: TraitId = context.roll?.trait && options.includes(context.roll.trait) ? context.roll.trait : options[0]!;
-          return actor.traits[picked] ?? 0;
+          // DA0: a `rolledBy` use rolls with the roller's trait ("using Agility or Strength (their choice)", CB p.33).
+          return (roller ? roller.traits : actor.traits)[picked] ?? 0;
         }
         const weapon = weaponFor(rollSpec.weapon);
         return weapon ? (actor.traits[weapon.trait] ?? 0) : 0;
@@ -813,7 +1335,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
         else if (ch.add) {
           const added: Die[] = [];
           for (let n = 0; n < ones; n++) {
-            const d = resolveDice(ch.add, env(), rng);
+            const d = diceOf(ch.add);
             for (const value of rollDice(d.count, d.sides, rng)) added.push({ sides: d.sides, value, role: "damage" });
             modifier += d.plus;
           }
@@ -832,11 +1354,14 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     return actor.weapons[slot] ?? (ref === "either" ? actor.weapons.primary ?? actor.weapons.secondary : undefined);
   }
 
-  let mainRoll: RollInfo | null = null;
   let mainHits: Map<string, boolean> | null = null;
   /** The Hope this move's roll actually gave (NV17 takes it back). */
   let rollHopeGained = 0;
-  if (use.roll) {
+  if (sending) {
+    // DA0: the actor's half of a `rolledBy` use: costs paid, the roll goes to the picked ally (Cannonball, CB p.33).
+    const proficiency = use.rolledBy!.proficiency === "actor" ? { amount: actor.proficiency } : {};
+    steps.push({ kind: "prompt", prompt: "allyRoll", text: `${use.name}: make the roll`, targetIds: targets.map((t) => t.id), ...proficiency });
+  } else if (use.roll) {
     const { info, hits } = rollOnce(use.roll, targets);
     mainRoll = info;
     mainHits = hits;
@@ -848,12 +1373,16 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     }
     // R8: the roll's Hope (and a critical's Stress) lands before any later payment.
     const fx = info.effects;
-    if (fx.hope) {
+    if (roller) {
+      // DA0: the roller's action roll: its Hope and a critical's Stress clear are the roller's (CB p.90).
+      if (fx.hope) steps.push({ kind: "hope", targetId: roller.id, delta: fx.hope });
+      if (fx.clearStress) steps.push({ kind: "clear", targetId: roller.id, track: "stress", amount: fx.clearStress });
+    } else if (fx.hope) {
       const hope = Math.min(actor.hopeMax, actor.hope + fx.hope);
       rollHopeGained = hope - actor.hope;
       actor = { ...actor, hope };
     }
-    if (fx.clearStress) actor = { ...actor, stress: Math.max(0, actor.stress - fx.clearStress) };
+    if (fx.clearStress && !roller) actor = { ...actor, stress: Math.max(0, actor.stress - fx.clearStress) };
     if (fx.fear) gmFearDelta += fx.fear;
   }
   const success = mainRoll ? mainRoll.success : true;
@@ -865,6 +1394,13 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
   let typeOverride: DamageType | undefined;
   let lastDamageTotal = 0;
   let anyDamageRolled = false;
+  /**
+   * dcm-vv2 item 2 (E3): the damage cache is per follow-up roll. R9 rolls one damage per move's attack (cached across a
+   * save's branches); a follow-up with its own roll (Double Swipe's second attack) is a new attack with its own damage.
+   */
+  let damageScope = "main";
+  let followUps = 0;
+  const damageKey = (roll: DamageRoll) => `${damageScope}|${JSON.stringify(roll)}`;
   /** The latest damage roll's plan entry, for NV8 changes made after it was rolled. */
   let lastDamage: { index: number; key: string; record: RollRecord } | null = null;
 
@@ -892,7 +1428,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
   };
 
   const rollDamageFor = (roll: DamageRoll, crit: boolean): { record: RollRecord; type: DamageType | "both" } => {
-    const key = JSON.stringify(roll);
+    const key = damageKey(roll);
     const cached = damageCache.get(key);
     if (cached) return cached;
     let pool: DicePool = [];
@@ -900,12 +1436,12 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     let type: DamageType | "both" = "physical";
     let critical = crit;
     if (roll.kind === "dice") {
-      const d = resolveDice(roll.dice, env(), rng);
+      const d = diceOf(roll.dice);
       pool = [{ count: d.count, sides: d.sides }];
       flat = d.plus;
     } else if (roll.kind === "weapon") {
       const weapon = weaponFor(roll.weapon);
-      let prof = actor.proficiency;
+      let prof = proficiencyOf();
       if (roll.proficiency === "half") prof = Math.ceil(prof / 2);
       else if (roll.proficiency) prof += roll.proficiency.delta;
       for (const ch of preDamage) if (ch.kind === "proficiency") prof += ch.delta;
@@ -920,9 +1456,19 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
       if (parsed?.dice) pool = [parsed.dice];
       flat = parsed?.modifier ?? 0;
       type = parsed?.type === "mag" ? "magic" : parsed?.type === "phy/mag" ? "both" : "physical";
+    } else if (roll.kind === "companion") {
+      // Lanes-2 E3 (dcm-b9hc, dcm-2z2; CB p.40: "their damage die is a d6 … using your Proficiency", "Choose whether they
+      // deal physical or magic damage"): the companion's die (`dieSides.companion`, d6 by default) x Proficiency.
+      let prof = proficiencyOf();
+      for (const ch of preDamage) if (ch.kind === "proficiency") prof += ch.delta;
+      pool = [{ count: Math.max(1, prof), sides: actor.dieSides?.companion ?? 6 }];
+      type = actor.companionDamageType ?? "physical";
     } else {
       critical = false;
       flat = roll.kind === "flat" ? num(roll.amount) : roll.kind === "sameAsTrigger" ? (context.trigger?.amount ?? 0) : lastDamageTotal;
+      // Lanes-2 E3 (dcm-86z, Encore, CB p.335: "the same damage … that your ally dealt"): the trigger's type, for a step
+      // typed `weapon`.
+      if (roll.kind === "sameAsTrigger" && context.trigger?.damageType) type = context.trigger.damageType;
     }
     // NV8: "Your damage die increases by one size" (Mythic Beast, CB p.35) before the dice are rolled.
     const sizeSteps = preDamage.reduce((n, ch) => n + (ch.kind === "dieSize" ? ch.steps : 0), 0);
@@ -984,10 +1530,52 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
         return (context.options?.[gate.choice] ?? []).includes(gate.option);
       case "requires":
         return unmetRequirements([gate.requirement], reqState(actor)).length === 0;
+      case "targetCheck":
+        // E3: read for each recipient (`who: "target"`); a state the runner can't decide holds (the table confirms, Q13).
+        return checkOn(gate.check, get(c.id)) ?? true;
+    }
+  };
+  /**
+   * E3: a `StateCheck` on a recipient. The runner decides what it tracks itself during the use (marks and free slots,
+   * Hope it knows, named tokens: dcm-5xi, dcm-xp0, dcm-18i); the rest goes to availability.ts `stateCheckMet` (lane E5)
+   * with the recipient as its target. Undefined: not known.
+   */
+  const checkOn = (check: StateCheck, c: Combatant): boolean | undefined => {
+    const between = (n: number, lo?: number, hi?: number) => (lo === undefined || n >= lo) && (hi === undefined || n <= hi);
+    const whoOf = (who: "self" | "target" | "subject" | undefined): Combatant | undefined =>
+      who === "self" ? actor : who === "subject" ? (context.trigger?.subject ? get(context.trigger.subject.id) : undefined) : c;
+    switch (check.kind) {
+      case "track": {
+        const w = whoOf(check.who);
+        if (!w) return undefined;
+        let n: number | undefined;
+        if (check.track === "hope") {
+          const hope = hopeOf(w.id);
+          n = hope === undefined ? undefined : check.measure === "marked" ? hope : w.id === actor.id ? actor.hopeMax - hope : undefined;
+        } else n = check.measure === "free" ? freeOf(w, check.track) : check.track === "hp" ? w.hp : check.track === "stress" ? w.stress : (w.armor ?? 0);
+        return n === undefined ? undefined : between(n, check.atLeast, check.atMost);
+      }
+      case "tokens": {
+        if (check.name === undefined) return (check.who ?? "self") === "self" ? between(actor.cardTokens, check.atLeast, check.atMost) : undefined;
+        const w = whoOf(check.who ?? "target");
+        return w ? between(tokensOf(w.id, check.name), check.atLeast, check.atMost) : undefined;
+      }
+      case "not": {
+        const inner = checkOn(check.check, c);
+        return inner === undefined ? undefined : !inner;
+      }
+      case "anyOf": {
+        const all = check.checks.map((x) => checkOn(x, c));
+        return all.some((x) => x === true) ? true : all.every((x) => x === false) ? false : undefined;
+      }
+      default: {
+        const facts: StateFacts = { ...(actor.facts ?? {}), target: { conditions: c.conditions, tags: c.tags ?? [], hp: c.hp, hpMax: c.hpMax } };
+        return stateCheckMet(check, { ...reqState(actor), facts });
+      }
     }
   };
   const isTargetGate = (g: Gate) =>
-    typeof g === "string" ? ["hit", "miss", "targetMarkedHp", "targetDefeated", "targetStressFull"].includes(g) : g.kind === "targetHas";
+    typeof g === "string" ? ["hit", "miss", "targetMarkedHp", "targetDefeated", "targetStressFull"].includes(g) : g.kind === "targetHas" || g.kind === "targetCheck";
   const needsFlush = (gates: readonly Gate[] | undefined) => (gates ?? []).some((g) => g === "targetMarkedHp" || g === "targetDefeated" || g === "targetStressFull");
 
   /** Whether a step without per-creature recipients may run: move gates hold, and a per-target gate holds for any target. */
@@ -1026,6 +1614,16 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
       case "selfAndAllies":
         list = [actor, ...(context.allies ?? []).map((c) => get(c.id))];
         break;
+      case "chooser":
+        // E3 (dcm-bz8): inside a `by` choose / optional, the creature making that pick.
+        list = scope.chooser ? [get(scope.chooser)] : [];
+        break;
+    }
+    // E3 (dcm-y45, Stunning Sunlight, CB p.341: "targets you succeeded against"): a pick only among the use's targets or
+    // the ones its roll hit (no roll: every target).
+    if (pick?.among) {
+      const among = pick.among;
+      list = list.filter((c) => scope.targets.includes(c.id) && (among === "targets" || !scope.hits || scope.hits.get(c.id) === true));
     }
     // Per-target gates filter `targets` one by one; for anyone else they hold when they hold for any target.
     const perCreature = to === "targets";
@@ -1058,20 +1656,37 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     switch (step.kind) {
       case "pay": {
         if (!stepGate(step.when, scope)) return true;
-        const costs = resolveCosts(step.costs, costAmount, pickEither);
-        const ok = unaffordable(costs, payer()).length === 0;
-        steps.push({ kind: "pay", phase: "afterRoll", costs: ok ? payCosts(costs) : costs, paid: ok });
-        return ok;
+        // Lanes-2 E3 (dcm-a9c (2), dcm-8yr): a `paidBy` payment is the payer's (a chooser inside a `by` step).
+        const who = step.paidBy && step.paidBy !== "self" ? payerOf(step.paidBy, scope.chooser) : actor;
+        if (!who) {
+          steps.push({ kind: "pay", phase: "afterRoll", costs: resolveCosts(step.costs, costAmount, pickEither), paid: false });
+          return false;
+        }
+        return payBy(who, costsFor(step.costs, who.id), "afterRoll", step.paidBy);
       }
       case "optional": {
-        if (!(context.optionals ?? []).includes(step.id) || !stepGate(step.when, scope)) return true;
+        if (step.by) {
+          // E3 (dcm-6ju; Money Talks, CB p.228): each chooser decides and pays for themselves.
+          if (!stepGate(step.when, scope)) return true;
+          for (const c of recipientsOf(step.by.to, undefined, scope, step.by.pick)) {
+            const taken = context.chooserOptionals?.[step.id]?.[c.id] ?? step.defaultOn === true;
+            if (!taken) continue;
+            const costs = costsFor(step.costs ?? [], c.id);
+            if (!payBy(c, costs, "optional", "chooser")) continue;
+            runSteps(step.steps, { ...scope, chooser: c.id });
+          }
+          return true;
+        }
+        // DA0: a `defaultOn` add-on runs unless the player turned it off (Draining Bane, dcm-bxp.99.19.15).
+        const taken = step.defaultOn === true ? !(context.optionalsOff ?? []).includes(step.id) : (context.optionals ?? []).includes(step.id);
+        if (!taken || !stepGate(step.when, scope)) return true;
         const optionalKey = keyOf(`${use.id}:${step.id}`);
         if (step.limit) {
           const availability = keyAvailability(actor, optionalKey, step.limit);
           if (availability.state === "exhausted") return true;
         }
-        const costs = resolveCosts(step.costs ?? [], costAmount, pickEither);
-        if (unaffordable(costs, payer()).length > 0) {
+        const costs = costsFor(step.costs ?? [], actor.id);
+        if (unaffordable(costs, payer()).length > 0 || hopeBarred(actor.id, costs)) {
           steps.push({ kind: "pay", phase: "optional", costs, paid: false });
           return true;
         }
@@ -1080,80 +1695,172 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
         }
         runSteps(step.steps, scope);
         if (step.limit && limitConsumed(step.limit, success)) {
-          actor = { ...actor, featureUses: [...actor.featureUses, { key: optionalKey, until: untilOf(step.limit.per) }] };
+          // Lanes-2 E3 (dcm-rs1z): the whole Limit, so its `period` is stored once the period ends (E5 round 2).
+          actor = { ...actor, featureUses: [...actor.featureUses, { key: optionalKey, until: untilOf(step.limit) }] };
         }
         return true;
       }
       case "choose": {
         if (!stepGate(step.when, scope)) return true;
+        const max = step.count ? num(step.count) : 1;
+        // E3 (dcm-40m, Twin Fang, HF p.9: "a second poison"): an option picked in `distinctFrom` can't be picked here.
+        const other = step.distinctFrom ? (context.options?.[step.distinctFrom] ?? []) : [];
+        const runPicks = (picked: readonly string[], inner: Scope): boolean => {
+          if (picked.some((id) => other.includes(id))) {
+            stepRefusal = `${step.label}: pick another option than in ${step.distinctFrom ?? ""}.`;
+            return false;
+          }
+          const list = (step.distinct ? [...new Set(picked)] : picked).slice(0, Math.max(0, max));
+          for (const id of list) {
+            const option = step.options.find((o) => o.id === id);
+            if (option) runSteps(option.steps, inner);
+          }
+          return true;
+        };
+        if (step.by) {
+          // E3 (dcm-bz8; Critical Inspiration, CB p.341: "all allies … can clear a Stress or gain a Hope"): each chooser
+          // picks their own option; `to: "chooser"` inside it is them. A chooser without a pick gets a choose prompt.
+          for (const c of recipientsOf(step.by.to, undefined, scope, step.by.pick)) {
+            const picked = context.chooserOptions?.[step.id]?.[c.id] ?? [];
+            if (picked.length === 0) {
+              steps.push({ kind: "prompt", prompt: "choose", text: step.label, targetIds: [c.id], step, chooserId: c.id });
+              continue;
+            }
+            if (!runPicks(picked, { ...scope, chooser: c.id })) return false;
+          }
+          return true;
+        }
         const picked = context.options?.[step.id] ?? [];
         if (picked.length === 0) {
           steps.push({ kind: "prompt", prompt: "choose", text: step.label, targetIds: [], step });
           return true;
         }
-        const max = step.count ? num(step.count) : 1;
-        const list = (step.distinct ? [...new Set(picked)] : picked).slice(0, Math.max(0, max));
-        for (const id of list) {
-          const option = step.options.find((o) => o.id === id);
-          if (option) runSteps(option.steps, scope);
-        }
-        return true;
+        return runPicks(picked, scope);
       }
       case "save": {
         if (!stepGate(step.when, scope)) return true;
-        const recipients = recipientsOf(step.to, step.when?.filter(isTargetGate), scope);
+        const recipients = recipientsOf(step.to, step.when?.filter(isTargetGate), scope, step.pick);
+        if (recipients.length === 0) return true;
+        // dcm-q0a (Enchanting Song, CB p.226: "Other Sirens … can mark a Stress to each add a +1 bonus to the Difficulty"):
+        // the raisers pay once for the step; the Difficulty is the same for every recipient.
+        const raisedBy: string[] = [];
+        const difficulty = saveDifficulty(step.difficulty, raisedBy);
+        const raised = raisedBy.length > 0 ? { raisedBy } : {};
         for (const r of recipients) {
-          if (r.side === "pc") {
-            steps.push({ kind: "prompt", prompt: "pcSave", text: "Reaction roll", targetIds: [r.id], step });
+          const own: Scope = { ...scope, targets: [r.id] };
+          const now = get(r.id);
+          // dcm-fev (Bee-Ruption, HF p.77: "Restrained targets automatically fail the reaction roll").
+          const autoFail = (step.autoFail ?? []).some((ref) => (ref.kind === "standard" ? now.conditions.includes(ref.condition) : (now.tags ?? []).includes(ref.tag)));
+          if (autoFail) {
+            const record: RollRecord = { kind: "reaction", dice: [], modifier: 0, total: 0, outcome: "none", manual: false, difficulty };
+            steps.push({ kind: "save", targetId: r.id, record, difficulty, success: false, autoFail: true, ...raised });
+            counts.failedSave += 1;
+            runSteps(step.onFail, own);
             continue;
           }
-          const difficulty = saveDifficulty(step.difficulty);
-          const { record } = rollD20(rng, 0, 0, 0);
+          // dcm-rb0 (Entice, HF p.85): advantage / disadvantage while `modsWhen` holds for this recipient.
+          const modsHold = (step.modsWhen ?? []).every((g) => targetGate(g, now, own));
+          const advantage = step.advantage && modsHold ? 1 : 0;
+          const disadvantage = step.disadvantage && modsHold ? 1 : 0;
+          const extra = { ...(advantage ? { advantage } : {}), ...(disadvantage ? { disadvantage } : {}) };
+          if (r.side === "pc") {
+            steps.push({ kind: "prompt", prompt: "pcSave", text: "Reaction roll", targetIds: [r.id], step, difficulty, ...extra });
+            continue;
+          }
+          const { record } = rollD20(rng, 0, advantage, disadvantage);
           const ok = record.total >= difficulty;
-          steps.push({ kind: "save", targetId: r.id, record: { ...record, difficulty }, difficulty, success: ok });
+          steps.push({ kind: "save", targetId: r.id, record: { ...record, difficulty }, difficulty, success: ok, ...extra, ...raised });
           if (!ok) counts.failedSave += 1;
-          runSteps(ok ? step.onSuccess : step.onFail, { ...scope, targets: [r.id] });
+          runSteps(ok ? step.onSuccess : step.onFail, own);
         }
         return true;
       }
       case "check": {
         if (!stepGate(step.when, scope)) return true;
-        const d = resolveDice(step.dice, env(), rng);
+        const d = diceOf(step.dice);
         const dice = rollDice(d.count, d.sides, rng);
         const total = dice.reduce((s, n) => s + n, 0) + d.plus;
         lastRoll = total;
-        const t = step.test;
-        const passed =
-          t.kind === "anyAtLeast"
-            ? dice.some((n) => n >= t.value)
-            : t.kind === "allAtMost"
-              ? dice.length > 0 && dice.every((n) => n <= t.value)
-              : t.kind === "totalAtLeast"
-                ? total >= t.value
-                : total <= t.value;
+        // dcm-27j (Broken Magic, HF p.68: "1-2 … 3-4 … 5-6"): the table row holding the total runs; no row: then / otherwise.
+        const rowIndex = step.table ? step.table.findIndex((x) => total >= x.atLeast && total <= x.atMost) : -1;
+        const row = rowIndex >= 0 ? step.table![rowIndex]! : null;
+        if (row) {
+          steps.push({ kind: "check", total, dice, passed: true, row: rowIndex, ...(row.label ? { label: row.label } : {}) });
+          runSteps(row.steps, scope);
+          return true;
+        }
+        const passed = testPasses(step.test, dice, total);
         steps.push({ kind: "check", total, dice, passed });
         runSteps(passed ? step.then : step.otherwise, scope);
         return true;
       }
       case "followUp": {
         if (!stepGate(step.when, scope)) return true;
-        const others = (context.followUp ?? []).map((c) => get(c.id));
-        if (step.roll) {
-          flush();
-          const { info, hits } = rollOnce(step.roll, others);
-          steps.push({ kind: "roll", roll: info });
-          steps.push({ kind: "hits", results: others.map((t) => ({ id: t.id, hit: hits.get(t.id) ?? false })) });
-          const fx = info.effects;
-          if (fx.hope) actor = { ...actor, hope: Math.min(actor.hopeMax, actor.hope + fx.hope) };
-          if (fx.clearStress) actor = { ...actor, stress: Math.max(0, actor.stress - fx.clearStress) };
-          if (fx.fear) gmFearDelta += fx.fear;
-          runSteps(step.steps, { targets: others.map((c) => c.id), hits, roll: info });
-        } else {
-          const hits = new Map<string, boolean>();
-          const r = scope.roll;
-          if (r) for (const h of resolveHits(r.record.total, r.critical, others.map((t) => ({ id: t.id, difficulty: t.difficulty ?? t.evasion ?? 0 })))) hits.set(h.id, h.hit);
-          if (r) steps.push({ kind: "hits", results: others.map((t) => ({ id: t.id, hit: hits.get(t.id) ?? false })) });
-          runSteps(step.steps, { targets: others.map((c) => c.id), hits: r ? hits : null, roll: r });
+        // E3 (dcm-rou, dcm-7az): a repeating follow-up runs one link per creature list (`followUp`, then `chain`), each
+        // without the creatures already targeted, until a link is empty (`noTargets`), its roll hits no one (`miss`), the
+        // `costEach` can't be paid or `max` repeats ran. Out of given links, a `followUp` prompt asks for the next one.
+        const repeat = step.repeat;
+        if (!repeat) {
+          runLink(step, scope, (context.followUp ?? []).map((c) => get(c.id)));
+          return true;
+        }
+        const links: (readonly Combatant[])[] = [context.followUp ?? [], ...(context.chain ?? [])];
+        const seen = new Set<string>(scope.targets);
+        let ran = 0;
+        let last: string[] = [];
+        let open = true;
+        for (let i = 0; i < links.length; i++) {
+          const others = links[i]!.filter((c) => !seen.has(c.id)).map((c) => get(c.id));
+          if (others.length === 0 || (i > 0 && repeat.max !== undefined && i > repeat.max)) {
+            open = false;
+            break;
+          }
+          if (i > 0 && !payBy(actor, costsFor(repeat.costEach ?? [], actor.id), "afterRoll")) {
+            open = false;
+            break;
+          }
+          for (const c of others) seen.add(c.id);
+          const damageBefore = steps.length;
+          // Lanes-2 E3.3 (dcm-q13x, user answer 2026-10-31: "every new wave of chained targets gets a fresh 2d8+4 roll"):
+          // each link is its own damage scope, so its damage is rolled again; one roll still serves the whole link (R9).
+          const outerScope = damageScope;
+          if (context.freshLinkDamage && !step.roll) damageScope = `${outerScope}|link${i}`;
+          const hitAny = runLink(step, scope, others);
+          damageScope = outerScope;
+          ran = i + 1;
+          last = others.map((c) => c.id);
+          // Lanes-2 E3 (dcm-4yg4, Lightning Strike, HF p.91: "Each time the lightning bounces, decrease the damage it deals
+          // by 1d10"): the link's damage changes once per link before it.
+          if (repeat.perLink && i > 0) applyPerLink(repeat.perLink, i, others);
+          if (repeat.until === "miss" && !hitAny) {
+            open = false;
+            break;
+          }
+          // Lanes-2 E3 (dcm-4yg4): `checkFails` goes on while the check holds: fresh `dice` (Lightning Strike: "roll a d6. On
+          // a result of 4 or higher, the lightning bounces"), or the link's own damage dice (Lightning Bolt, HF p.96: "If
+          // all results are even … until you roll an odd result").
+          if (repeat.until === "checkFails" && repeat.check) {
+            let dice: number[];
+            let total: number;
+            if (repeat.check.dice) {
+              const d = diceOf(repeat.check.dice);
+              dice = rollDice(d.count, d.sides, rng);
+              total = dice.reduce((n, x) => n + x, 0) + d.plus;
+            } else {
+              const rolled = steps.slice(damageBefore).filter((x): x is Extract<PlanStep, { kind: "damageRoll" }> => x.kind === "damageRoll").pop();
+              dice = (rolled?.record.dice ?? []).filter((x) => x.role === "damage" && !x.dropped).map((x) => x.value);
+              total = rolled?.record.total ?? 0;
+            }
+            const passed = testPasses(repeat.check.test, dice, total);
+            steps.push({ kind: "check", total, dice, passed });
+            if (!passed) {
+              open = false;
+              break;
+            }
+          }
+        }
+        if (open && ran > 0 && (repeat.max === undefined || ran <= repeat.max)) {
+          steps.push({ kind: "prompt", prompt: "followUp", text: step.note ?? "Pick the next targets (none ends it)", targetIds: last, step, amount: ran });
         }
         return true;
       }
@@ -1163,7 +1870,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     }
   };
 
-  const saveDifficulty = (d: SaveDifficulty): number => {
+  const saveDifficulty = (d: SaveDifficulty, raisedBy?: string[]): number => {
     switch (d.kind) {
       case "fixed":
         return d.value;
@@ -1173,20 +1880,117 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
         return num(d.value);
       case "actorDifficulty":
         return actor.difficulty ?? 0;
+      case "raised": {
+        // E3 (dcm-q0a): each raiser that pays adds `each`. The server picks the raisers within `allies.within` (positions
+        // are the server's); without `raisedBy` (a nested base) nobody pays.
+        const base = saveDifficulty(d.base);
+        if (!raisedBy) return base;
+        for (const c of context.saveRaisers ?? []) {
+          if (payBy(get(c.id), costsFor([d.cost], c.id), "afterRoll")) raisedBy.push(c.id);
+        }
+        return base + d.each * raisedBy.length;
+      }
+      case "falling":
+        // E3 (dcm-b77, Banish, CB p.333: "the Difficulty gains a -1 penalty and the target makes another reaction roll").
+        return num(d.start) - d.step * Math.max(0, context.saveAttempt ?? 0);
     }
   };
 
-  const crit = () => mainRoll !== null && mainRoll.critical && use.roll?.kind !== "reaction";
+
+  /** Lanes-2 E3 (dcm-4yg4): a repeating follow-up's `perLink` change, `times` over, on the link's pending damage. */
+  const applyPerLink = (change: DamageChange, times: number, others: readonly Combatant[]): void => {
+    const withPending = others.filter((c) => pending.has(c.id));
+    if (change.kind !== "add" || withPending.length === 0) {
+      for (let k = 0; k < times; k++) steps.push({ kind: "fold", step: { kind: "modifyDamage", to: "targets", change }, targetIds: others.map((c) => c.id) });
+      return;
+    }
+    let delta = 0;
+    for (let k = 0; k < times; k++) delta += num(change.amount);
+    for (const c of withPending) {
+      const p = pending.get(c.id)!;
+      p.amount = Math.max(0, p.amount + delta);
+    }
+  };
+
+  /**
+   * One run of a `followUp`'s steps against `others`: with its own roll (Telekinesis) or the scope's (Whirlwind). A
+   * follow-up with its own roll is a new attack, so its damage is rolled again (dcm-vv2 item 2: a per-follow-up damage
+   * cache); without one it shares the move's roll and damage (Whirlwind: "the same roll and damage", R9). True when the
+   * roll hit any of them (no roll: true).
+   */
+  const runLink = (step: Extract<Step, { kind: "followUp" }>, scope: Scope, others: readonly Combatant[]): boolean => {
+    const outer = damageScope;
+    if (step.roll) damageScope = `followUp${++followUps}`;
+    let hitAny: boolean;
+    if (step.roll) {
+      flush();
+      const { info, hits } = rollOnce(step.roll, others);
+      steps.push({ kind: "roll", roll: info });
+      steps.push({ kind: "hits", results: others.map((t) => ({ id: t.id, hit: hits.get(t.id) ?? false })) });
+      const fx = info.effects;
+      if (fx.hope) actor = { ...actor, hope: Math.min(actor.hopeMax, actor.hope + fx.hope) };
+      if (fx.clearStress) actor = { ...actor, stress: Math.max(0, actor.stress - fx.clearStress) };
+      if (fx.fear) gmFearDelta += fx.fear;
+      hitAny = [...hits.values()].some(Boolean);
+      runSteps(step.steps, { targets: others.map((c) => c.id), hits, roll: info });
+    } else {
+      const hits = new Map<string, boolean>();
+      const r = scope.roll;
+      if (r) for (const h of resolveHits(r.record.total, r.critical, others.map((t) => ({ id: t.id, difficulty: t.difficulty ?? t.evasion ?? 0 })))) hits.set(h.id, h.hit);
+      if (r) steps.push({ kind: "hits", results: others.map((t) => ({ id: t.id, hit: hits.get(t.id) ?? false })) });
+      hitAny = r ? [...hits.values()].some(Boolean) : true;
+      runSteps(step.steps, { targets: others.map((c) => c.id), hits: r ? hits : null, roll: r });
+    }
+    damageScope = outer;
+    return hitAny;
+  };
+
+  /** dcm-vv2 item 2 (E3): a critical is the scope's roll's (a follow-up's own roll), not always the use's main roll. */
+  const crit = (scope: Scope) => scope.roll !== null && scope.roll.critical && scope.roll.record.kind !== "reaction";
 
   const runOutcome = (step: OutcomeStep, scope: Scope): void => {
     const recipients = recipientsOf(step.to, step.when, scope, step.pick);
     const ids = recipients.map((r) => r.id);
-    const noRecipientStep = step.kind === "fear" || step.kind === "toVault" || step.kind === "tokens" || step.kind === "manual";
+    const noRecipientStep = step.kind === "fear" || step.kind === "toVault" || (step.kind === "tokens" && step.holder !== "recipient") || step.kind === "manual";
+    /**
+     * E3 (dcm-0ib, Siphon Essence, HF p.180: "clear a number of Hit Points equal to the number of Hit Points the target
+     * marked from this attack"): a number for the actor reads `who: "target"` as the scope's single target.
+     */
+    const amountFor = (source: NumberSource, r: Combatant): number =>
+      num(source, r.id === actor.id && scope.targets.length === 1 && scope.targets[0] !== actor.id ? get(scope.targets[0]!) : r);
     if (noRecipientStep && !stepGate(step.when, scope)) return;
     if (!noRecipientStep && recipients.length === 0) return;
     switch (step.kind) {
       case "damage": {
-        const rolled = rollDamageFor(step.roll, crit() && step.roll.kind !== "flat");
+        if (step.perArea && context.pointsOf) {
+          // Lanes-2 E3 (dcm-va0f, Unleash Hellfire, HF p.88: "If a target takes damage from multiple bursts, combine the
+          // damage"): one roll per point; each recipient takes the sum of the points whose area holds it.
+          const outer = damageScope;
+          const totals = new Map<number, number>();
+          let pointType: DamageType | "both" = "physical";
+          const points = [...new Set(recipients.flatMap((r) => context.pointsOf?.[r.id] ?? []))].sort((a, b) => a - b);
+          for (const i of points) {
+            damageScope = `${outer}|point${i}`;
+            const rolled = rollDamageFor(step.roll, crit(scope) && step.roll.kind !== "flat");
+            const type: DamageType | "both" = typeOverride ?? (step.type === "weapon" ? rolled.type : step.type);
+            steps.push({ kind: "damageRoll", record: rolled.record, type });
+            totals.set(i, rolled.record.total);
+            pointType = type;
+          }
+          damageScope = outer;
+          anyDamageRolled = points.length > 0;
+          for (const r of recipients) {
+            let amount = (context.pointsOf[r.id] ?? []).reduce((n, i) => n + (totals.get(i) ?? 0), 0);
+            if (amount === 0) continue;
+            if (step.scale === "half") amount = Math.ceil(amount / 2);
+            if (step.scale === "double") amount *= 2;
+            const type = pointType;
+            const p = pending.get(r.id);
+            pending.set(r.id, { amount: (p?.amount ?? 0) + amount, type: p && p.type !== type ? "both" : type, direct: (p?.direct ?? false) || step.direct === true, minimumSeverity: p?.minimumSeverity });
+          }
+          return;
+        }
+        const rolled = rollDamageFor(step.roll, crit(scope) && step.roll.kind !== "flat");
         anyDamageRolled = true;
         let type: DamageType | "both" = step.type === "weapon" ? rolled.type : step.type;
         if (typeOverride) type = typeOverride;
@@ -1196,15 +2000,15 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
         if (repeat !== 1) {
           // "1d20+2 magic damage for each Stress marked": the expression rolled that many times and totalled.
           const records = [rolled.record, ...Array.from({ length: Math.max(0, repeat - 1) }, () => {
-            damageCache.delete(JSON.stringify(step.roll));
-            return rollDamageFor(step.roll, crit()).record;
+            damageCache.delete(damageKey(step.roll));
+            return rollDamageFor(step.roll, crit(scope)).record;
           })].slice(0, repeat);
           total = records.reduce((s, r) => s + r.total, 0);
           record = { ...rolled.record, dice: records.flatMap((r) => r.dice), modifier: records.reduce((s, r) => s + r.modifier, 0), total };
         }
         lastDamageTotal = total;
         steps.push({ kind: "damageRoll", record, type });
-        lastDamage = { index: steps.length - 1, key: JSON.stringify(step.roll), record };
+        lastDamage = { index: steps.length - 1, key: damageKey(step.roll), record };
         const dieSides = record.dice.find((d) => d.role === "damage")?.sides ?? 0;
         const damageDice = record.dice.filter((d) => d.role === "damage" && !d.dropped).map((d) => d.value).sort((a, b) => a - b);
         recipients.forEach((r, index) => {
@@ -1215,7 +2019,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
             amount = Math.max(0, Math.min(total, share));
           } else if (step.distribution === "dropDiePerTarget") {
             // Deathrun: one die fewer for each later target (the lowest goes first; a critical's maximum goes with it).
-            const dropped = damageDice.slice(0, index).reduce((s, n) => s + n, 0) + (crit() ? index * dieSides : 0);
+            const dropped = damageDice.slice(0, index).reduce((s, n) => s + n, 0) + (crit(scope) ? index * dieSides : 0);
             if (index >= damageDice.length) return;
             amount = Math.max(0, total - dropped);
           }
@@ -1299,31 +2103,77 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
       }
       case "markHp": {
         flush();
+        if (step.distribution === "split") {
+          // E3 (dcm-zhc, Force Salvo, HF p.81: "The same creature can be targeted by up to three force bolts"): the marks
+          // are spread as the actor picks (`splits`), at most `maxPer` on one, never more than the total.
+          let left = Math.max(0, num(step.amount));
+          const total = left;
+          for (const r of recipients) {
+            const share = context.splits?.[r.id];
+            if (share === undefined) continue;
+            const amount = Math.max(0, Math.min(share, step.maxPer ?? Infinity, left));
+            left -= amount;
+            if (amount === 0) continue;
+            const res = applyHpTo(get(r.id), amount);
+            put(res.after);
+            addMarked(r.id, "hp", res.hpMarked);
+            steps.push({ kind: "mark", targetId: r.id, track: "hp", amount, hpMarked: res.hpMarked, overflow: false, ...(step.reduceWith === "hope" ? { reduceWithHope: true } : {}) });
+          }
+          if (recipients.some((r) => context.splits?.[r.id] === undefined)) {
+            steps.push({ kind: "prompt", prompt: "split", text: step.maxPer ? `Divide the marks (at most ${step.maxPer} each)` : "Divide the marks", targetIds: ids, step, amount: total });
+          }
+          return;
+        }
         for (const r of recipients) {
-          const amount = num(step.amount, r);
+          // Lanes-2 E3 (dcm-fbsr, Unstuck, CB p.237: "they must double the amount spent or marked").
+          const amount = amountFor(step.amount, r) * multiplierOf(r.id, "hp");
           const res = applyHpTo(get(r.id), amount);
           put(res.after);
           addMarked(r.id, "hp", res.hpMarked);
-          steps.push({ kind: "mark", targetId: r.id, track: "hp", amount, hpMarked: res.hpMarked, overflow: false });
+          steps.push({ kind: "mark", targetId: r.id, track: "hp", amount, hpMarked: res.hpMarked, overflow: false, ...(step.reduceWith === "hope" ? { reduceWithHope: true } : {}) });
         }
         return;
       }
       case "markStress": {
-        for (const r of recipients) {
-          const amount = num(step.amount, r);
+        const markStress = (r: Combatant, base: number) => {
+          const amount = base * multiplierOf(r.id, "stress");
           const res = applyStressTo(get(r.id), amount);
           put(res.after);
           addMarked(r.id, "stress", res.stressMarked);
           addMarked(r.id, "hp", res.hpMarked);
           steps.push({ kind: "mark", targetId: r.id, track: "stress", amount, hpMarked: res.hpMarked, overflow: res.overflow });
+        };
+        if (step.distribution === "split") {
+          // Lanes-2 E3 (dcm-63j, Mind Meld, HF p.74: "distributed among allies as it chooses"): the marks spread as the
+          // chooser picks (`splits`), never more than the total; a missing share is a split prompt.
+          let left = Math.max(0, num(step.amount));
+          const total = left;
+          for (const r of recipients) {
+            const share = context.splits?.[r.id];
+            if (share === undefined) continue;
+            const amount = Math.max(0, Math.min(share, left));
+            left -= amount;
+            if (amount > 0) markStress(r, amount);
+          }
+          if (recipients.some((r) => context.splits?.[r.id] === undefined)) {
+            steps.push({ kind: "prompt", prompt: "split", text: "Divide the Stress", targetIds: ids, step, amount: total });
+          }
+          return;
         }
+        for (const r of recipients) markStress(r, amountFor(step.amount, r));
         return;
       }
       case "markArmor": {
         for (const r of recipients) {
           const c = get(r.id);
+          // Lanes-2 E3 (dcm-nsjj, dcm-18i; Spit Acid, CB p.210: "If they can't mark an Armor Slot, they must mark an
+          // additional HP"): a recipient with no free Armor Slot runs `ifUnable` instead (`to: "targets"` is them).
+          if (step.ifUnable && (c.armorMax === undefined || (c.armor ?? 0) >= c.armorMax)) {
+            runSteps(step.ifUnable, { ...scope, targets: [r.id], hits: null });
+            continue;
+          }
           if (c.armorMax === undefined) continue;
-          const amount = num(step.amount, r);
+          const amount = num(step.amount, r) * multiplierOf(r.id, "armor");
           const armor = Math.min(c.armorMax, (c.armor ?? 0) + amount);
           put({ ...c, armor });
           addMarked(r.id, "armor", armor - (c.armor ?? 0));
@@ -1339,7 +2189,13 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
             const share = context.splits?.[r.id];
             if (share === undefined) continue;
             amount = share;
-          } else amount = num(step.amount, r);
+          } else amount = amountFor(step.amount, r);
+          // Lanes-2 E3 (dcm-5kxg; Afflicted, Nightmare Stare, HF p.95: "the target can't clear HP or Stress").
+          // Lanes-2 E3.3 (dcm-hgvx): read through E5's `clearBlocked`, the one place that maps a track to its flag.
+          if ((step.track === "hp" || step.track === "stress") && clearBlocked(step.track, flagsOf(r.id))) {
+            steps.push({ kind: "prompt", prompt: "manual", text: `Can't clear ${step.track === "hp" ? "Hit Points" : "Stress"} now`, targetIds: [r.id], step });
+            continue;
+          }
           const res = clearTrack(get(r.id), step.track, amount);
           put(res.after);
           steps.push({ kind: "clear", targetId: r.id, track: step.track, amount: res.cleared });
@@ -1350,14 +2206,44 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
         return;
       }
       case "hope": {
+        // Lanes-2 E3 (dcm-nh44, Stone of Omens, HF p.62: "which they can distribute among the PCs however they wish"): a
+        // `split` gain goes out as the chooser picks (`splits`), never more than the total; a missing share is a prompt.
+        const split = step.distribution === "split" && step.change === "gain";
+        let splitLeft = split ? Math.max(0, num(step.amount)) : 0;
+        if (split && recipients.some((r) => context.splits?.[r.id] === undefined)) {
+          steps.push({ kind: "prompt", prompt: "split", text: "Divide the Hope", targetIds: ids, step, amount: splitLeft });
+        }
         for (const r of recipients) {
-          const n = num(step.amount, r);
+          let n: number;
+          if (split) {
+            const share = context.splits?.[r.id];
+            if (share === undefined) continue;
+            n = Math.max(0, Math.min(share, splitLeft));
+            splitLeft -= n;
+            if (n === 0) continue;
+          } else n = amountFor(step.amount, r);
           const delta = step.change === "gain" ? n : -n;
+          if (step.change === "lose" && step.ifUnable) {
+            // E3 (dcm-5xi, Dreadhowl, CB p.222: "If a target is not able to lose a Hope, they must instead mark 2 Stress"):
+            // a recipient holding less Hope than the loss runs `ifUnable` instead (to: "targets" is them). Unknown Hope:
+            // the loss goes out and the table is asked.
+            const held = hopeOf(r.id);
+            if (held !== undefined && held < n) {
+              runSteps(step.ifUnable, { ...scope, targets: [r.id], hits: null });
+              continue;
+            }
+            if (held === undefined) {
+              steps.push({ kind: "prompt", prompt: "manual", text: step.note ?? "If they can't lose the Hope, apply the alternative", targetIds: [r.id], step });
+            }
+          }
           if (r.id === actor.id) {
             const hope = Math.max(0, Math.min(actor.hopeMax, actor.hope + delta));
             steps.push({ kind: "hope", targetId: r.id, delta: hope - actor.hope });
             actor = { ...actor, hope };
-          } else steps.push({ kind: "hope", targetId: r.id, delta });
+          } else {
+            hopeChanged.set(r.id, (hopeChanged.get(r.id) ?? 0) + delta);
+            steps.push({ kind: "hope", targetId: r.id, delta });
+          }
         }
         return;
       }
@@ -1379,6 +2265,12 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
             const implied = (cond.implies ?? []).filter((x) => !c.conditions.includes(x));
             put({ ...c, tags: [...new Set([...(c.tags ?? []), cond.tag])], conditions: [...c.conditions, ...implied] });
           }
+          // Lanes-2 E3 (dcm-iedr runner half, dcm-b77, dcm-8bv): the condition's mods (a `recorded` number reads the
+          // `record` kept with it: Banish, CB p.333), caster / roll ends, escape and the Fear a `gmSpendsFear` end costs.
+          const recorded = step.record ? num(step.record, r) : undefined;
+          recordedNow = recorded;
+          const mods = step.mods && step.mods.length > 0 ? resolveMods(step.mods, r) : undefined;
+          recordedNow = undefined;
           steps.push({
             kind: "condition",
             targetId: r.id,
@@ -1386,6 +2278,12 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
             duration: step.duration,
             ...(step.endsWhen ? { endsWhen: step.endsWhen } : {}),
             ...(step.endsOn ? { endsOn: step.endsOn } : {}),
+            ...(mods ? { mods } : {}),
+            ...(step.endsOnCaster ? { endsOnCaster: step.endsOnCaster } : {}),
+            ...(step.endsOnRoll ? { endsOnRoll: step.endsOnRoll } : {}),
+            ...(step.escape ? { escape: step.escape } : {}),
+            ...(recorded !== undefined ? { recorded } : {}),
+            ...(step.endFear ? { endFear: num(step.endFear, r) } : {}),
           });
         }
         return;
@@ -1393,6 +2291,13 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
       case "clearCondition": {
         for (const r of recipients) {
           const c = get(r.id);
+          if (step.all) {
+            // E3 (dcm-730, Purifying Aura, HF p.86: "and all conditions"): every condition and tag the recipient carries.
+            put({ ...c, conditions: [], tags: [] });
+            for (const x of c.conditions) steps.push({ kind: "clearCondition", targetId: r.id, condition: { kind: "standard", condition: x } as ConditionRef });
+            for (const tag of c.tags ?? []) steps.push({ kind: "clearCondition", targetId: r.id, condition: { kind: "tag", tag } as ConditionRef });
+            continue;
+          }
           const cond = step.condition;
           if (cond.kind === "standard") put({ ...c, conditions: c.conditions.filter((x) => x !== cond.condition) });
           else put({ ...c, tags: (c.tags ?? []).filter((x) => x !== cond.tag) });
@@ -1400,11 +2305,27 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
         }
         return;
       }
-      case "move":
+      case "move": {
+        if (step.mode === "intoMelee") {
+          // DA0 (Charge, dcm-bxp.99.19.16): the server moves the recipients into Melee range of the use's first target.
+          const anchorId = (step.relativeTo === "triggerSource" ? context.trigger?.source?.id : undefined) ?? scope.targets[0] ?? (context.picked ?? [])[0]?.id;
+          steps.push({ kind: "prompt", prompt: "move", text: step.note ?? moveText(step), targetIds: ids, step, server: true, ...(anchorId ? { anchorId } : {}) });
+          return;
+        }
+        if (step.mode === "ground") {
+          // E3 (dcm-yzr, Mystic Tether, CB p.333: "this spell grounds … them"): a flying recipient lands.
+          for (const r of recipients) if (get(r.id).flying) put({ ...get(r.id), flying: false });
+        }
         steps.push({ kind: "prompt", prompt: "move", text: step.note ?? moveText(step), targetIds: ids, step });
         return;
+      }
       case "effect": {
         for (const r of recipients) {
+          // E3 (dcm-kkx, Blight Seed, HF p.9: "This effect can't stack"): a `refuse` copy on a creature that has it is dropped.
+          if (step.stacking === "refuse" && (context.effectsOn?.[r.id] ?? []).includes(step.label)) {
+            steps.push({ kind: "prompt", prompt: "manual", text: `${step.label}: already on them (it can't stack)`, targetIds: [r.id], step });
+            continue;
+          }
           steps.push({
             kind: "effect",
             targetId: r.id,
@@ -1414,11 +2335,29 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
             ...(step.endsWhen ? { endsWhen: step.endsWhen } : {}),
             ...(step.endsOn ? { endsOn: step.endsOn } : {}),
             ...(step.option ? { option: step.option } : {}),
+            ...(step.stacking && step.stacking !== "stack" ? { stacking: step.stacking } : {}),
+            // Lanes-2 E3 (dcm-rao5 Bird's-Eye View, CB p.33; dcm-8bv Marked for Death, HF p.8).
+            ...(step.sharedGrant ? { sharedGrant: true } : {}),
+            ...(step.endFear ? { endFear: num(step.endFear, r) } : {}),
           });
         }
         return;
       }
       case "tokens": {
+        if (step.holder === "recipient") {
+          // E3 (dcm-xp0, Encumber, CB p.218: bramble tokens on the target): named tokens on each recipient.
+          const name = step.name ?? "tokens";
+          for (const r of recipients) {
+            const before = tokensOf(r.id, name);
+            const amount = step.amount ? num(step.amount, r) : 0;
+            const max = step.max ? num(step.max, r) : Infinity;
+            const raw = step.op === "set" ? amount : step.op === "add" ? before + amount : step.op === "spend" ? before - amount : 0;
+            const after = Math.max(0, Math.min(max, raw));
+            tokensOn.set(r.id, { ...(tokensOn.get(r.id) ?? {}), [name]: after });
+            steps.push({ kind: "creatureTokens", targetId: r.id, name, op: step.op, before, after });
+          }
+          return;
+        }
         const before = actor.cardTokens;
         const amount = step.amount ? num(step.amount) : 0;
         const max = step.max ? num(step.max) : Infinity;
@@ -1456,6 +2395,25 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
         return;
       case "modifyRoll": {
         const ch = step.change;
+        if (ch.kind === "rerollHeld" && heldSpent.some((h) => h.kind === ch.die)) {
+          // Lanes-2 E3 (dcm-inou, dcm-sa2; Weapon Specialist, CB p.48: "when you roll your Slayer Dice, reroll any 1s"): the
+          // dice of that kind this use spent showing `atMost` or less are rolled again once each; `spent: heldDie` follows.
+          const before: number[] = [];
+          const after: number[] = [];
+          for (const h of heldSpent) {
+            if (h.kind !== ch.die) continue;
+            h.dice = h.dice.map((d) => {
+              if (d.value > ch.atMost) return d;
+              const next = rng(d.sides);
+              before.push(d.value);
+              after.push(next);
+              return { ...d, value: next };
+            });
+          }
+          spent.heldDie = (spent.heldDie ?? 0) + after.reduce((n, v) => n + v, 0) - before.reduce((n, v) => n + v, 0);
+          steps.push({ kind: "heldReroll", die: ch.die, before, after });
+          return;
+        }
         const amount = ch.kind === "add" || ch.kind === "evasion" || ch.kind === "dieBonus" ? num(ch.amount) : undefined;
         steps.push({ kind: "fold", step, targetIds: ids, ...(amount !== undefined ? { amount } : {}) });
         return;
@@ -1475,7 +2433,10 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
           steps.push({ kind: "delegate", feature: step.feature, params, targetIds: ids, done: false });
           return;
         }
-        const answer = context.delegate({ feature: step.feature, params, actor: snapshot() });
+        // E3 (dcm-d1d, Ranger's Focus, CB p.38: "make the attack's target your Focus"): the D5 feature gets the roll the
+        // step runs after (the use's own, or its follow-up's) and whether it hit the step's target.
+        const hostHit = other && scope.hits ? { hit: scope.hits.get(other.id) ?? false } : {};
+        const answer = context.delegate({ feature: step.feature, params, actor: snapshot(), ...(scope.roll ? { roll: scope.roll.record } : {}), ...hostHit });
         if (!answer.ok) {
           delegateRefusal = answer.detail;
           return;
@@ -1555,18 +2516,89 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
       case "refreshFeature":
         steps.push({ kind: "fold", step, targetIds: ids });
         return;
+      case "endEffect":
+        // E3 (dcm-8x8 Confusing Aura, CB p.329: "this spell ends"; dcm-5fc Howling Rampage, HF p.40: "drop out of Wolf
+        // Form"): the server ends the effect (lane E6).
+        for (const id of ids) steps.push({ kind: "endEffect", targetId: id, of: step.of ?? effect.cardId, own: step.of === undefined, ...(step.option ? { option: step.option } : {}) });
+        return;
+      case "inventory":
+        // E3 (dcm-0gh, Quick Hands, CB p.225): the server changes the recipient's inventory. Lanes-2 E3 (dcm-vf7i,
+        // Contacts Everywhere, CB p.43: "1 handful of gold, a unique tool, or a mundane object"): `giveGold` / `giveItem`
+        // to the recipient (`text` names the item; unset: the GM's pick).
+        for (const r of recipients) {
+          steps.push({
+            kind: "inventory",
+            targetId: r.id,
+            op: step.op,
+            ...(step.item ? { item: step.item } : {}),
+            ...(step.amount ? { amount: num(step.amount, r) } : step.op === "giveGold" ? { amount: 1 } : {}),
+            ...(step.text ? { text: step.text } : {}),
+          });
+        }
+        return;
+      case "setStance": {
+        // Lanes-2 E3 (dcm-awh, Stance Fighter, HF p.12: "shift into a martial stance"): the stance named, or the player's
+        // pick in `choice`; without either the table picks.
+        const stance = step.stance ?? (step.choice ? context.options?.[step.choice]?.[0] : undefined);
+        if (stance === undefined) {
+          steps.push({ kind: "prompt", prompt: "manual", text: step.note ?? "Pick a martial stance", targetIds: ids, step });
+          return;
+        }
+        for (const r of recipients) steps.push({ kind: "setStance", targetId: r.id, stance });
+        return;
+      }
+      case "exhaust": {
+        // Lanes-2 E3 (dcm-war, dcm-a9c (3); Rune Ward, CB p.328: "If the Ward Die result is 8, the ward's power ends … It
+        // can be recharged for free on your next rest"): the use (or `useId`) is spent until `per`.
+        const useId = step.useId ?? use.id;
+        const key = keyOf(useId);
+        const times = effect.uses.find((u) => u.id === useId)?.limit?.times ?? 1;
+        // As availability.ts `exhaustKey`, with this runner's `until` (cards store a scene limit as session).
+        const until = untilOf(step.per);
+        const have = actor.featureUses.filter((u) => u.key === key).length;
+        actor = { ...actor, featureUses: [...actor.featureUses, ...Array.from({ length: Math.max(0, times - have) }, () => ({ key, until }))] };
+        steps.push({ kind: "exhaust", key, until });
+        // The card's words stay a line for the table until the feed shows `exhaust` entries (follow-up dcm-q40t).
+        if (step.note) steps.push({ kind: "prompt", prompt: "manual", text: step.note, targetIds: ids, step });
+        return;
+      }
+      case "forcedAttack": {
+        // Lanes-2 E3 (dcm-c8h3 Words of Discord, CB p.335; dcm-zi3k Beguiled, HF p.75): the recipients attack a creature
+        // `against` picks: the use's `picked` creatures (never an attacker), else the GM picks.
+        const againstIds = (context.picked ?? []).map((c) => c.id).filter((id) => !ids.includes(id));
+        steps.push({ kind: "forcedAttack", attackerIds: ids, against: step.against, againstIds });
+        return;
+      }
+      case "changeForm":
+        // Lanes-2 E3 (dcm-3ag5, Transform, HF p.142): an adversary takes the other stat block, keeping its marks; a PC
+        // recipient is the table's.
+        for (const r of recipients) {
+          if (r.side === "pc") steps.push({ kind: "prompt", prompt: "manual", text: step.note ?? "Change form", targetIds: [r.id], step });
+          else steps.push({ kind: "changeForm", targetId: r.id, adversaryId: step.adversaryId });
+        }
+        return;
+      // Plan lanes, tracer V: new outcome steps (TASK-LN-V.md); until their lane runs them, the table does it by hand.
+      case "loadout":
+      case "revive":
+      case "deathMove":
+      case "downtime":
+      case "armorCost":
+        steps.push({ kind: "prompt", prompt: "manual", text: step.note ?? step.kind, targetIds: ids, step });
+        return;
     }
   };
 
-  runSteps(use.steps, { targets: targets.map((t) => t.id), hits: mainHits, roll: mainRoll });
+  // DA0: a `rolledBy` use's steps run in the roller's run, after their roll.
+  if (!sending) runSteps(use.steps, { targets: targets.map((t) => t.id), hits: mainHits, roll: mainRoll });
   flush();
   if (delegateRefusal !== null) return refuse("choice", delegateRefusal);
+  if (stepRefusal !== null) return refuse("choice", stepRefusal);
 
   // ---- the limit (Q3, Q4)
   let limit: RunPlan["limit"] = null;
   if (use.limit && limitKey) {
     const consumed = limitConsumed(use.limit, success);
-    const until = untilOf(use.limit.per);
+    const until = untilOf(use.limit);
     limit = { key: limitKey, until, consumed };
     if (consumed) actor = { ...actor, featureUses: [...actor.featureUses, { key: limitKey, until }] };
   }
@@ -1608,8 +2640,73 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
   };
 }
 
+/**
+ * DA0 (dcm-d95): rolls the target count of a use whose `upTo` count is `rolledFirst` (Warden's Protection's 1d4, CB
+ * p.31), for the server to store before the player picks; null for any other use. The run then takes it as
+ * `RunContext.rolledTargetCount`.
+ */
+export function rollTargetCount(use: CardUse, actor: ActorState, rng: Rng, choices: Readonly<Record<string, number>> = {}): number | null {
+  const spec = use.targets;
+  if (!spec || spec.side === "trigger" || spec.count.kind !== "upTo" || spec.count.rolledFirst !== true) return null;
+  const env: NumberEnv = {
+    traits: actor.traits,
+    spellcast: actor.spellcast,
+    proficiency: actor.proficiency,
+    level: actor.level,
+    tier: actor.tier,
+    spent: {},
+    // Lanes-2 E3 (dcm-q3t1, dcm-gov; Otherworldly Ire, HF p.15: "spend any number of Favor to roll that many Patron
+    // Dice"): the count reads the player's choices (the Favor chosen); the caller pays the Favor with the roll.
+    choices: { ...choices },
+    cardTokens: actor.cardTokens,
+    gmFear: 0,
+    self: { hp: actor.hp, stress: actor.stress, armor: actor.armor },
+    ...(actor.classDice ? { classDice: actor.classDice } : {}),
+    ...(actor.tideTokens !== undefined ? { tideTokens: actor.tideTokens } : {}),
+    markedThisMove: { self: {}, byTarget: {} },
+    targetCount: { picked: 0, hit: 0, failedSave: 0 },
+    loadoutDomains: actor.loadoutDomains,
+    vaultDomains: actor.vaultDomains,
+    ...(actor.dieSides ? { dieSides: actor.dieSides } : {}),
+  };
+  return Math.max(0, resolveNumber(spec.count.n, env, rng));
+}
+
+/** A check's test on its dice and total (dcm-27j; lanes-2 dcm-4yg4: every die's parity). */
+function testPasses(t: CheckTest, dice: readonly number[], total: number): boolean {
+  switch (t.kind) {
+    case "anyAtLeast":
+      return dice.some((n) => n >= t.value);
+    case "allAtMost":
+      return dice.length > 0 && dice.every((n) => n <= t.value);
+    case "totalAtLeast":
+      return total >= t.value;
+    case "totalAtMost":
+      return total <= t.value;
+    // Lanes-2 V2 (dcm-4yg4, Lightning Bolt, HF p.96: "If all results are even").
+    case "allEven":
+    case "allOdd":
+      return dice.length > 0 && dice.every((n) => (n % 2 === 0) === (t.kind === "allEven"));
+    // dcm-27j: a fate roll's parity (CB p.168; Stone of Omens, HF p.62).
+    case "even":
+    case "odd":
+      return (total % 2 === 0) === (t.kind === "even");
+  }
+}
+
 function moveText(step: Extract<OutcomeStep, { kind: "move" }>): string {
   const range = step.range ? ` (${step.range})` : "";
-  const verb = { knockBack: "Knock back", pull: "Pull", teleport: "Teleport", move: "Move", flee: "Flee" }[step.mode];
+  const verb = {
+    knockBack: "Knock back",
+    pull: "Pull",
+    teleport: "Teleport",
+    move: "Move",
+    flee: "Flee",
+    intoMelee: "Move into Melee range",
+    ground: "Ground",
+    leaveScene: "Leave the scene",
+    // Plan lanes-2, V2 (dcm-z5a6, dcm-lvgm): a label until its lane moves the token.
+    withCaster: "Move along with the caster",
+  }[step.mode];
   return `${verb}${range}`;
 }

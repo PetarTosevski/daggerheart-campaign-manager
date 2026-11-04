@@ -220,7 +220,7 @@ test("Codex as GM and player, with the image lightbox open", async () => {
   const { scan, flush } = scanner();
   for (const [page, role] of [[gm, "GM"], [player, "player"]] as const) {
     await page.goto(route("/codex"));
-    await expect(page.getByRole("heading", { level: 1, name: "Characters & Locations" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Codex" })).toBeVisible();
     await page.getByRole("complementary", { name: "Entries" }).getByRole("button", { name: new RegExp(codexEntry.name) }).click();
     const detail = page.getByRole("region", { name: "Entry detail" });
     const image = detail.getByRole("button", { name: new RegExp(`^Open image of ${codexEntry.name}`) });
@@ -329,7 +329,7 @@ const TABLET_ROUTES: TabletRoute[] = [
     name: "codex",
     path: () => route("/codex"),
     role: "gm",
-    ready: (p) => expect(p.getByRole("heading", { level: 1, name: "Characters & Locations" })).toBeVisible(),
+    ready: (p) => expect(p.getByRole("heading", { level: 1, name: "Codex" })).toBeVisible(),
     primary: (p) => p.getByRole("button", { name: "+ New character" }),
     controls: (p) => p.getByRole("complementary", { name: "Entries" }).getByRole("button"),
   },
@@ -337,7 +337,7 @@ const TABLET_ROUTES: TabletRoute[] = [
     name: "codex-player",
     path: () => route("/codex"),
     role: "player",
-    ready: (p) => expect(p.getByRole("heading", { level: 1, name: "Characters & Locations" })).toBeVisible(),
+    ready: (p) => expect(p.getByRole("heading", { level: 1, name: "Codex" })).toBeVisible(),
     primary: (p) => p.getByRole("complementary", { name: "Entries" }).getByRole("button", { name: new RegExp(codexEntry.name) }),
   },
   {

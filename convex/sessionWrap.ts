@@ -1,16 +1,19 @@
 import { v, type Infer } from "convex/values";
 
+import { inWindows } from "../src/lib/domain/journal";
 import { dashboardNumber, lastSessionText, nextPlannedSession, nextSessionLine } from "../src/lib/domain/sessions";
+import { appError } from "../src/lib/errors/app-error";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
-import { campaignQuery, gmMutation, gmQuery, keyedGmMutation } from "./lib/functions";
+import { campaignMutation, campaignQuery, gmMutation, gmQuery, keyedGmMutation } from "./lib/functions";
 import { partyLevelUp } from "./lib/partyLevelUp";
-import { cleanText, lastPlayedSession, liveSession, loadSession, sessionPrepOf } from "./lib/sessions";
+import { campaignRole } from "./lib/permissions";
+import { cleanText, lastPlayedSession, liveSession, liveWindows, loadSession, MAX_TALLY_ROWS, sessionPrepOf } from "./lib/sessions";
 import { MAX_SESSIONS } from "./lib/validators/sessions";
 
 /**
- * Wrap-up (D10 S6, plan `.omc/plans/d10-sessions.yaml`, rule B5): the GM writes the recap (on `sessions`, players read
- * it for live and played sessions, Q4), 'Loot & gold' and 'Countdowns & threads' (on `sessionPrep`, GM-only, Q4) and
+ * Wrap-up (D10 S6, plan `.omc/plans/d10-sessions.yaml`, rule B5): the recap (on `sessions`; since Journal JD5 every
+ * member writes it and the whole table reads it for live and played sessions, Journal Q4), 'Loot & gold' and 'Countdowns & threads' (on `sessionPrep`, GM-only, Q4) and
  * calls the milestone (Q5: the roster's 'Party levels up', one way, stamped on the session). `dashboard` hands every
  * member the hero line, the next date and the Last Session card (B9) for S7.
  */
@@ -44,12 +47,24 @@ export const get = gmQuery({
   },
 });
 
-/** The recap (B5, B9): trimmed, at most 6000 characters (INVALID past it); empty clears it. Players read it (Q4). */
-export const setRecap = gmMutation({
+/**
+ * The recap (B5, B9; Journal Q4, user 2026-11-03: everyone can write it, always visible to the table): trimmed, at
+ * most 6000 characters (INVALID past it); empty clears it. The GM writes any session's recap. A player writes the
+ * recap of a live or played session (the ones they can read, `sessionRecords.list`); a planned one is
+ * SESSION_NOT_FOUND to them, as if it did not exist. Access is `permissionFor`'s `view` (the wrapper), and the writer
+ * must also be in the campaign (`campaignRole`, the role half of `permissionFor`, as `notesRole` does): a caller who
+ * reaches the campaign only through a grant reads the recap but does not write it (FORBIDDEN).
+ */
+export const setRecap = campaignMutation({
+  need: "view",
+  enough: "owner",
   args: { sessionId: v.string(), recap: v.string() },
   returns: v.null(),
   handler: async (ctx, { sessionId, recap }) => {
+    const gm = ctx.permission === "owner";
+    if (!gm && (await campaignRole(ctx, ctx.user, ctx.campaign)) !== "player") throw appError("FORBIDDEN");
     const session = await loadSession(ctx, ctx.campaign._id, sessionId);
+    if (!gm && session.status === "planned") throw appError("SESSION_NOT_FOUND");
     const text = cleanText("recap", recap);
     if (text !== (session.recap ?? "")) await ctx.db.patch("sessions", session._id, { recap: text === "" ? undefined : text, updatedAt: Date.now() });
     return null;
@@ -104,6 +119,68 @@ export const callMilestone = keyedGmMutation({
       await ctx.db.patch("sessions", session._id, { milestoneAt, updatedAt: milestoneAt });
       return { flagged, called: true, milestoneAt };
     });
+  },
+});
+
+// ---------------------------------------------------------------- GM: after the session (Journal JD5)
+
+/** One character's level-up during the session: the latest `levelUp` feed row of that character in the live windows. */
+export const afterLevelUpValidator = v.object({
+  characterId: v.id("characters"),
+  /** The feed row's text ('Vex reached level 4.', 'Vex can level up to 4.'). */
+  summary: v.string(),
+  at: v.number(),
+});
+
+/** The Journal's 'After the session' panel (Log & recap). */
+export const afterValidator = v.object({
+  sessionId: v.id("sessions"),
+  /** One entry per character, oldest first. */
+  levelUps: v.array(afterLevelUpValidator),
+  /** When the GM called the milestone on this session ('Milestone'), or null. */
+  milestoneAt: v.union(v.number(), v.null()),
+  /** 'Loot & gold' (`sessionPrep.loot`; written with `setLoot`), or null. */
+  loot: v.union(v.string(), v.null()),
+  /** A window held more than MAX_TALLY_ROWS feed rows: level-ups late in that window may be missing. */
+  truncated: v.boolean(),
+});
+export type SessionAfter = Infer<typeof afterValidator>;
+
+/**
+ * 'After the session' (Journal JD5, GM only, Q5): the characters with a `levelUp` feed row (not undone) during the
+ * session's live windows (`liveWindows`, so a restarted session counts every window), the milestone stamp and the loot.
+ * Each window reads at most MAX_TALLY_ROWS feed rows by `by_campaign_at`. null for an id that is not one of this
+ * campaign's sessions (a stale `?s=`), as `get` does. A planned session that never started has no windows: no level-ups.
+ */
+export const after = gmQuery({
+  args: { sessionId: v.string() },
+  returns: v.union(afterValidator, v.null()),
+  handler: async (ctx, { sessionId }) => {
+    const id = ctx.db.normalizeId("sessions", sessionId);
+    const session = id === null ? null : await ctx.db.get("sessions", id);
+    if (session === null || session.campaignId !== ctx.campaign._id) return null;
+    const [windows, prep] = await Promise.all([liveWindows(ctx, session), sessionPrepOf(ctx, session._id)]);
+    const latest = new Map<Id<"characters">, SessionAfter["levelUps"][number]>();
+    let truncated = false;
+    for (const w of windows) {
+      const rows = await ctx.db
+        .query("actionLog")
+        .withIndex("by_campaign_at", (q) => q.eq("campaignId", ctx.campaign._id).gte("at", w.from).lte("at", w.to))
+        .take(MAX_TALLY_ROWS + 1);
+      if (rows.length > MAX_TALLY_ROWS) truncated = true;
+      for (const row of rows.slice(0, MAX_TALLY_ROWS)) {
+        if (row.kind !== "levelUp" || row.undoneAt !== undefined || row.characterId === undefined || !inWindows(windows, row.at)) continue;
+        const known = latest.get(row.characterId);
+        if (known === undefined || known.at <= row.at) latest.set(row.characterId, { characterId: row.characterId, summary: row.summary, at: row.at });
+      }
+    }
+    return {
+      sessionId: session._id,
+      levelUps: [...latest.values()].sort((a, b) => a.at - b.at),
+      milestoneAt: session.milestoneAt ?? null,
+      loot: prep?.loot ?? null,
+      truncated,
+    };
   },
 });
 

@@ -61,7 +61,7 @@ export const ENDURANCE_START = 6;
 /** HF 153: "activate a long-term Lycanthropy Countdown (6)". */
 export const LYCANTHROPY_START = 6;
 
-/** Frame-owned countdowns keyed per character, off the dashboard list and off the project picker (`rests.projects` reads ownerKey = the id). */
+/** Frame-owned countdowns keyed per character, off the dashboard list and off the project picker (`restsReads.projects` reads ownerKey = the id). */
 export const enduranceOwnerKey = (characterId: string) => `endurance:${characterId}`;
 export const lycanthropyOwnerKey = (characterId: string) => `lycanthropy:${characterId}`;
 
@@ -186,11 +186,21 @@ export type RestMoveRules = {
 export const MARTIAL_PREPARATION_MOVE: RestMove = "martialPreparation";
 
 /**
+ * HF 176: "In a Journey to Horizon campaign, the players gain access to an additional downtime move: Locate Soul Echoes.
+ * When a PC uses this downtime move, they commune with the Vessel and have the Echoes within call out to their sisters.
+ * The PC learns the direction (north, south, east, west, or a combination) of the nearest sanctuary with a Soul Echo at
+ * its shrine." Plan lanes-2 E8.3 (dcm-dvia; user answer 2026-10-30: both a downtime move and the GM button): the move
+ * prompts the GM, whose Locate Soul Echoes button (convex/trackers/horizon.ts) gives the bearing.
+ */
+export const LOCATE_ECHOES_MOVE: RestMove = "locateSoulEchoes";
+
+/**
  * The frame and class downtime moves of one PC, on either rest, and the core
  * moves the frame forbids:
  * - Beast Feast (CB 278): Make a Feast; no moves that clear Stress, clear Hit
  *   Points or gain Hope (Berry's Restaurant, CB 279, is not modelled).
  * - The Age of Umbra (CB 289): Keep Watch.
+ * - Journey to Horizon (HF 176): Locate Soul Echoes, on short and long rests.
  * - Dark Heart of Andaluria with transformations on (HF 153): halt
  *   lycanthropy, offered to every PC (whether a PC carries the countdown is
  *   not checked; see TASK-D5-TI-b questions).
@@ -202,6 +212,7 @@ export function frameRestMoves({ frameId, transformations, warlock, martialPrepa
   const extra: RestMove[] = [];
   if (frameId === FRAME_IDS.beastFeast) extra.push(FEAST_MOVE);
   if (frameId === FRAME_IDS.ageOfUmbra) extra.push(KEEP_WATCH_MOVE);
+  if (frameId === FRAME_IDS.horizon) extra.push(LOCATE_ECHOES_MOVE);
   if (frameId === FRAME_IDS.andaluria && transformations) extra.push(HALT_LYCANTHROPY_MOVE);
   if (warlock) extra.push(TRIBUTE_MOVE);
   if (martialPreparation) extra.push(MARTIAL_PREPARATION_MOVE);

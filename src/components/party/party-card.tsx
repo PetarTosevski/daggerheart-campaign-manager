@@ -62,6 +62,24 @@ export function FallenOverlay({ name, canEdit, onRevive, busy }: { name: string;
 }
 
 /**
+ * Marks a character whose stored sheet the server can't read (`corrupt`, dcm-bxp.28): the card shows a placeholder sheet,
+ * read-only, so the party list still loads. Shared by the dashboard card and the roster.
+ */
+export function CorruptNotice({ character }: { character: Pick<CardCharacter, "corrupt"> }) {
+  if (!character.corrupt) return null;
+  return (
+    <p data-testid="corrupt-notice" className="m-0 rounded-[9px] border border-[#8e2b2b] bg-[rgb(40_10_10/0.6)] px-3 py-2 text-[13px] text-[#ffb4ac]">
+      This sheet can&apos;t be read, so it shows a placeholder and can&apos;t be edited. Its data is kept for a repair.
+    </p>
+  );
+}
+
+/** The card's accessible name: the character's, with why it looks different (fallen, unreadable). */
+export function cardLabel(character: Pick<CardCharacter, "corrupt" | "status" | "sheet">): string {
+  return character.sheet.name + (character.status === "dead" ? " (fallen)" : "") + (character.corrupt ? " (unreadable sheet)" : "");
+}
+
+/**
  * "Send away" for an active character and "Bring back" for a benched one
  * (X6: one active character per player). Shown to the owner and the GM; the
  * server refuses a second active character.
@@ -208,18 +226,18 @@ export function PartyCard({
   const adjust = useMutation(api.characters.adjustResource).withOptimisticUpdate((store, { characterId, resource, delta }) => {
     if (resource === "armor") return;
     // The dashboard reads the party summary (PF9); the roster reads the full list.
-    const summary = store.getQuery(api.characters.partySummary, { campaignId });
+    const summary = store.getQuery(api.charactersReads.partySummary, { campaignId });
     if (summary) {
       store.setQuery(
-        api.characters.partySummary,
+        api.charactersReads.partySummary,
         { campaignId },
         summary.map((c) => (c._id === characterId ? { ...c, sheet: applyResourceDelta(c.sheet, resource, delta) } : c)),
       );
     }
-    const list = store.getQuery(api.characters.listByCampaign, { campaignId });
+    const list = store.getQuery(api.charactersReads.listByCampaign, { campaignId });
     if (!list) return;
     store.setQuery(
-      api.characters.listByCampaign,
+      api.charactersReads.listByCampaign,
       { campaignId },
       list.map((c) => (c._id === characterId ? { ...c, sheet: applyResourceDelta(c.sheet, resource, delta) } : c)),
     );
@@ -252,7 +270,7 @@ export function PartyCard({
 
   return (
     <article
-      aria-label={name + (dead ? " (fallen)" : "")}
+      aria-label={cardLabel(character)}
       className={cn(
         "group/card relative flex flex-col gap-3 rounded-[14px] border bg-[#141e22] p-[18px]",
         dead ? "border-[#3a2a2a]" : "border-[#253338]",
@@ -267,6 +285,7 @@ export function PartyCard({
           {sub ? <span className="text-[13px] text-[#7f9297]">{sub}</span> : null}
         </span>
       </Link>
+      <CorruptNotice character={character} />
       <LevelUpCardBadge {...slot} />
       <DeathCardBadge {...slot} />
       <BenchButton character={character} busy={busy} onSet={status} />

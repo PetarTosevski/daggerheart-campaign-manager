@@ -246,6 +246,11 @@ export type LevelUpChoice = {
   trade?: { out: string; in: string };
   /** Needed with the multiclass pick. */
   multiclass?: MulticlassChoice;
+  /**
+   * Plan lanes-2 E8.3 / E8.4 (dcm-31hq, dcm-txlu): the picks of a gained card's "when you choose this card" use, by card
+   * id, then by its `choose` step id (Vitality, CB p.330); level-up/card-choices.ts lists them. The engine ignores them.
+   */
+  cardChoices?: Record<string, Record<string, string[]>>;
 };
 
 export type LevelUpContext = { allowExpansion: boolean };
