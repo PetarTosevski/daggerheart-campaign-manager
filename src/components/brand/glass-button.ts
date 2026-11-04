@@ -39,13 +39,19 @@ export type GlassButtonOptions = {
   icon?: boolean;
   /** A round icon button (the design's Close ✕). */
   round?: boolean;
+  /**
+   * Let a long label wrap instead of clipping: the size becomes a minimum height (brandButton sets this on every
+   * labelled button). The Combat HUD does not use it, so its buttons keep the design's fixed height.
+   */
+  wrap?: boolean;
 };
 
-export function glassButtonClass({ role, tone, size = "md", icon = false, round = false }: GlassButtonOptions): string {
+export function glassButtonClass({ role, tone, size = "md", icon = false, round = false, wrap = false }: GlassButtonOptions): string {
   const classes = ["gb", `gb-${role}`];
   if (tone) classes.push(`gb-${tone}`);
   if (size !== "md") classes.push(`gb-${size}`);
   if (icon) classes.push("gb-icon");
   if (round) classes.push("gb-round");
+  if (wrap) classes.push("gb-wrap");
   return classes.join(" ");
 }

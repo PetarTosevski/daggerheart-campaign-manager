@@ -10,6 +10,7 @@ import { createContext, memo, useCallback, useContext, useEffect, useState, useS
 import { CampaignNav, CombatAppBarFrame } from "@/components/app-bar";
 import { BackLink, Wordmark } from "@/components/brand/brand";
 import { Modal } from "@/components/brand/modal";
+import { ViewerProvider, viewerFor } from "@/components/brand/viewer";
 import { SlotBoundary } from "@/components/party/session/boundary";
 import { sessionPlayHref } from "@/components/sessions/session-chip";
 import { frameName } from "@/lib/campaign-display";
@@ -361,6 +362,7 @@ function CampaignShellView({ campaign, children }: { campaign: CampaignSummary |
 
   const art = campaignArt(campaign.frameId, campaign.custom?.background);
   const isGm = campaign.role === "gm";
+  const viewer = viewerFor(campaign.role);
   // Plan combat-hud H9.A (user answer Q2 c): the Combat Map gets the compact app bar instead of the tall art header
   // (a phone keeps the header); every other page keeps the header.
   const combatMap = pathname === `/campaigns/${campaign._id}/combat-map`;
@@ -414,7 +416,9 @@ function CampaignShellView({ campaign, children }: { campaign: CampaignSummary |
   return (
     <CampaignContext.Provider value={campaign}>
       <OpenTomeContext.Provider value={setTomeChapter}>
-      <div className="relative min-h-screen overflow-hidden bg-[#0d1417] font-sans text-[#e6ecea]">
+      <ViewerProvider viewer={viewer}>
+      {/* The viewer for the glass buttons' colours (GM: confirm in Fear, back out in Hope); dialogs inherit it. */}
+      <div data-viewer={viewer} className="relative min-h-screen overflow-hidden bg-[#0d1417] font-sans text-[#e6ecea]">
         {combatMap ? (
           <CombatAppBarFrame campaignId={campaign._id} isGm={isGm} header={header} onPlayers={openPlayers}>
             {page}
@@ -428,6 +432,7 @@ function CampaignShellView({ campaign, children }: { campaign: CampaignSummary |
         <MemoTome campaign={campaign} chapter={tomeChapter} onChapter={setTomeChapter} onClose={closeTome} />
         {isGm ? <MemoPlayersDialog campaignId={campaign._id} open={playersOpen} onClose={closePlayers} /> : null}
       </div>
+      </ViewerProvider>
       </OpenTomeContext.Provider>
     </CampaignContext.Provider>
   );
