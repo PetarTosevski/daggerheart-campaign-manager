@@ -9,8 +9,8 @@
 //   when `sound` is set); resolves `false` when 3D can't run (reduced motion,
 //   no WebGL, an import or render failure): the caller then shows the 2D result
 //   and its sound. It never throws.
-// - The caller already skips `play3d` when the per-device toggle is off or the
-//   device asks for reduced motion (settings.ts `canAnimate3d`); reduced motion
+// - The caller already skips `play3d` when the 3D toggle is off or the
+//   device or the account asks for reduced motion (settings.ts `canAnimate3d`); reduced motion
 //   is checked again here so no caller can animate against it (CL14).
 //
 // ```ts
@@ -19,16 +19,9 @@
 // ```
 
 import type { RolledDie } from "@/lib/domain/duality";
+import { prefersReducedMotion } from "@/lib/use-reduced-motion";
 
 export type Play3dRequest = { dice: readonly RolledDie[]; sound: boolean };
-
-function reducedMotion(): boolean {
-  try {
-    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  } catch {
-    return false;
-  }
-}
 
 /** Probes for WebGL before downloading three, then releases the probe's context. */
 function hasWebGl(): boolean {
@@ -45,7 +38,7 @@ function hasWebGl(): boolean {
 
 /** Animates the roll in 3D inside `container`, landing on the server's values; `false` means "show it in 2D". */
 export async function play3d(container: HTMLElement, request: Play3dRequest): Promise<boolean> {
-  if (request.dice.length === 0 || reducedMotion() || !hasWebGl()) return false;
+  if (request.dice.length === 0 || prefersReducedMotion() || !hasWebGl()) return false;
   try {
     const { playScene } = await import("./scene");
     return await playScene(container, request);

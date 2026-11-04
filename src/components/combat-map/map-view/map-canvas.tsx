@@ -18,6 +18,7 @@ import {
 import type { PaintObject, PaintSpec, PaintedTerrain } from "@/lib/combat-map/raster";
 import { spriteImages } from "@/lib/combat-map/sprites/loader";
 import * as sprites from "@/lib/combat-map/sprites/painter";
+import { prefersReducedMotion } from "@/lib/use-reduced-motion";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
@@ -201,10 +202,10 @@ function paintImage(canvas: HTMLCanvasElement, w: number, h: number, image: HTML
   ctx.stroke();
 }
 
-/** A short fade-in after the style changed, so the switch reads as one change; skipped with reduced motion. */
+/** A short fade-in after the style changed, so the switch reads as one change; skipped with reduced motion (device or account). */
 function fadeIn(el: HTMLCanvasElement) {
   if (typeof el.animate !== "function") return;
-  if (typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (prefersReducedMotion()) return;
   el.animate([{ opacity: 0.35 }, { opacity: 1 }], { duration: STYLE_FADE_MS, easing: "ease-out" });
 }
 

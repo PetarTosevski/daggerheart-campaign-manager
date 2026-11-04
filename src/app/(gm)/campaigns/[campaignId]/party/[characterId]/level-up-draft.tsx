@@ -19,6 +19,7 @@ import { cardsGained } from "@/lib/domain/level-up/on-choose";
 import { TRAIT_IDS } from "@/lib/srd/types";
 import { useIntent } from "@/lib/use-intent";
 import { ADVANCEMENT_OPTIONS, type AdvancementOption, type CharacterSheet } from "@/lib/validation/characters";
+import { prefersReducedMotion } from "@/lib/use-reduced-motion";
 
 import { api } from "../../../../../../../convex/_generated/api";
 
@@ -443,7 +444,6 @@ function focusTarget(step: LevelUpStepId) {
   const focusable = heading ?? target;
   if (!focusable.hasAttribute("tabindex")) focusable.setAttribute("tabindex", "-1");
   focusable.focus({ preventScroll: true });
-  const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
   // jsdom has no layout, so no scrollIntoView.
-  target.scrollIntoView?.({ block: "start", behavior: reduce ? "auto" : "smooth" });
+  target.scrollIntoView?.({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" });
 }

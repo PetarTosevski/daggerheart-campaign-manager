@@ -11,6 +11,7 @@ import { blank, fromSrd, validateCustom, type CustomAdversaryInput, type CustomT
 import { typeLabel } from "@/lib/adversaries/catalogue";
 import { errorMessage } from "@/lib/convex-errors";
 import { ADVERSARIES } from "@/lib/srd/adversaries";
+import { prefersReducedMotion } from "@/lib/use-reduced-motion";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../convex/_generated/dataModel";
@@ -50,7 +51,7 @@ function inputOf(row: Doc<"customAdversaries">): CustomAdversaryInput {
 const statBlockOf = (row: Doc<"customAdversaries">): StatBlockAdversary => ({ ...row, tier: row.tier as CustomTier });
 
 function scrollToCustom() {
-  const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const smooth = !prefersReducedMotion();
   document.getElementById(CUSTOM_SECTION_ID)?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
 }
 

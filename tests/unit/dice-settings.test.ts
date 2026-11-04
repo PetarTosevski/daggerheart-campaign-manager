@@ -1,11 +1,13 @@
 // Plan config U6a: the dice settings come from the account. useDiceSettings reads preferences.get (loading: today's
-// defaults, 3D off when the device asks for reduced motion), writes one preferences.set per changed field with an
-// optimistic update, never touches localStorage; playRollSound plays at the account's volume (silent at 0).
+// defaults, 3D off when the device or the account's Reduce motion asks for less motion), writes one preferences.set
+// per changed field with an optimistic update, never touches localStorage; playRollSound plays at the account's volume
+// (silent at 0).
 import { act, renderHook } from "@testing-library/react";
 import { useSyncExternalStore } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PREFERENCE_DEFAULTS } from "@/lib/config/preferences";
+import { REDUCE_MOTION_ATTR } from "@/lib/use-reduced-motion";
 
 const functionName = (ref: unknown) => String((ref as Record<symbol, unknown>)[Symbol.for("functionName")] ?? ref);
 const store = new Map<string, unknown>();
@@ -82,7 +84,10 @@ beforeEach(() => {
   }));
   vi.stubGlobal("Audio", FakeAudio);
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  document.documentElement.removeAttribute(REDUCE_MOTION_ATTR);
+});
 
 describe("useDiceSettings", () => {
   it("uses today's defaults while the account loads: 3D on, sound off, volume 60", () => {
@@ -95,6 +100,15 @@ describe("useDiceSettings", () => {
     const { result } = renderHook(() => useDiceSettings());
     expect(result.current[0].threeD).toBe(false);
     expect(canAnimate3d({ threeD: true, sound: false, volume: 60 })).toBe(false);
+  });
+
+  it("turns 3D off when the account's Reduce motion is on, even when the device doesn't ask (U6b)", () => {
+    document.documentElement.setAttribute(REDUCE_MOTION_ATTR, "");
+    const { result } = renderHook(() => useDiceSettings());
+    expect(result.current[0].threeD).toBe(false);
+    expect(canAnimate3d({ threeD: true, sound: false, volume: 60 })).toBe(false);
+    document.documentElement.removeAttribute(REDUCE_MOTION_ATTR);
+    expect(canAnimate3d({ threeD: true, sound: false, volume: 60 })).toBe(true);
   });
 
   it("reads the account's values", () => {

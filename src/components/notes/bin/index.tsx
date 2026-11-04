@@ -11,6 +11,7 @@ import { ViewerScope } from "@/components/brand/viewer";
 import { errorMessage } from "@/lib/convex-errors";
 import { binDaysLeft, daysLeftLabel, UNDO_MS } from "@/lib/domain/notes";
 import { binPageLocally, restorePageLocally } from "@/lib/optimistic/notes-bin";
+import { prefersReducedMotion } from "@/lib/use-reduced-motion";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
@@ -33,10 +34,6 @@ import { endTear, hideToast, showToast, startTear, useTearState, type TearFrame 
 
 /** How long the rip plays (board: the page is removed after 1450 ms; the stub fades by 1.5 s). */
 const RIP_MS = 1500;
-
-function prefersReducedMotion(): boolean {
-  return typeof window !== "undefined" && (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
-}
 
 // ---------------------------------------------------------------- tear out
 

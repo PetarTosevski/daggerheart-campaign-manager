@@ -23,7 +23,7 @@ import { afterHandTo, afterHandToParty, afterTake, discHolder, discLabel, holder
  * Main, PlayerTablet, PlayerPhone). It hangs from a cord left of the day disc and shows whoever has the spotlight, lit
  * from above: the whole party (2 × 2 mini portraits, gold), one PC (the portrait, gold) or an adversary (purple light:
  * the portrait its map token draws, user 2026-11-04, else its initial on red). Faces cross-fade over 200 ms (none under
- * prefers-reduced-motion).
+ * reduced motion, the device's or the account's).
  *
  * - GM: a button "Spotlight: <name>. Change who has it" that opens the popover (`panels.ts` "spotlight", one GM panel
  *   at a time): tabs Party (the whole party first, user answer Q8 a, then each PC with class, Hope and HP) and

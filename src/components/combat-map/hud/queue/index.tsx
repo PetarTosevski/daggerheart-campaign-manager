@@ -16,6 +16,7 @@ import { PartBoundary } from "../ui";
 import { QueueCard, useQueueAnswers, type QueueAnswers } from "./items";
 import { arrivalTitle, deathArrival, newArrivals, queueItems, type Arrival, type QueueItem } from "./model";
 import { HudResolutions } from "./resolutions";
+import { prefersReducedMotion } from "@/lib/use-reduced-motion";
 
 /**
  * The GM's request queue (plan combat-hud H5.1; boards GMDesktop 'Requests', CmpPromptsGM): "Waiting on you" with a
@@ -190,10 +191,10 @@ function useArrivals(arrivals: Arrival[] | null, badge: RefObject<HTMLElement | 
   }, [sig, badge]);
 }
 
-/** The count's pulse (Web Animations; no state, no re-render). Nothing under prefers-reduced-motion. */
+/** The count's pulse (Web Animations; no state, no re-render). Nothing under reduced motion (device or account). */
 function pulse(el: HTMLElement | null) {
   if (el === null || typeof el.animate !== "function") return;
-  if (typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (prefersReducedMotion()) return;
   el.animate(
     [
       { transform: "scale(1)", boxShadow: "0 0 0 0 rgba(143, 123, 209, 0.75)" },

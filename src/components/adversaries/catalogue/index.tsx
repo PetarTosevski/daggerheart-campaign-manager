@@ -28,6 +28,7 @@ import { adversariesFor } from "@/lib/domain/adversaries";
 import { ADVERSARIES } from "@/lib/srd/adversaries";
 import { adversaryArt } from "@/lib/srd/adversary-art";
 import { ADVERSARY_TYPES, type AdversaryType } from "@/lib/srd/types";
+import { prefersReducedMotion } from "@/lib/use-reduced-motion";
 
 import type { CatalogueProps } from "../slots";
 import { HopeFearPill, StatBlock } from "./stat-block";
@@ -130,7 +131,7 @@ export function Catalogue({ hopeAndFear, frameId, renderActions }: CatalogueProp
     setSelectedId(id);
     // One column (under 980 px): the stat block sits below the list, so bring it into view.
     if (window.matchMedia("(max-width: 980px)").matches) {
-      const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const smooth = !prefersReducedMotion();
       detailRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
     }
   }

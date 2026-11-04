@@ -8,6 +8,7 @@ import { DOMAIN_CARD_ART, EXPERIENCE_SUGGESTIONS, getClass, getDomain, getSubcla
 import { STARTING_EXPERIENCE_VALUE } from "@/lib/domain/characters";
 import { PURPOSEFUL_DESIGN_BONUS } from "@/lib/domain/dice";
 import { cn } from "@/lib/utils";
+import { prefersReducedMotion } from "@/lib/use-reduced-motion";
 
 import { Choice, formatModifier, Group, HfMini, traitLabel, type StepProps } from "./steps-1-4";
 import {
@@ -159,8 +160,7 @@ export function EquipmentStep({ state, update, opts }: StepProps) {
               // The equipment is set: move on to what is left on this step, the potion (and Next under it).
               requestAnimationFrame(() => {
                 const inventory = document.getElementById("wz-inventory");
-                const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-                inventory?.scrollIntoView?.({ block: "start", behavior: reduce ? "auto" : "smooth" });
+                inventory?.scrollIntoView?.({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" });
                 inventory?.parentElement?.querySelector<HTMLInputElement>('input[name="potion"]')?.focus({ preventScroll: true });
               });
             }}

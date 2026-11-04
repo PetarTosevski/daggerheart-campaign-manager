@@ -7,6 +7,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
 import { ADVERSARIES } from "@/lib/srd/adversaries";
+import { prefersReducedMotion } from "@/lib/use-reduced-motion";
 
 import type { CatalogueEntryRef } from "../slots";
 import { StatBlock } from "../catalogue/stat-block";
@@ -28,7 +29,7 @@ export function OpenedAdversary({ adversaryId, fromEnvironment, renderActions, o
   // Move focus (and the view) to what the GM opened.
   useEffect(() => {
     ref.current?.focus();
-    ref.current?.scrollIntoView?.({ block: "start", behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    ref.current?.scrollIntoView?.({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" });
   }, [adversaryId]);
   const adversary = ADVERSARIES.find((a) => a.id === adversaryId);
   if (!adversary) return null;

@@ -33,6 +33,7 @@ import { ADVERSARIES } from "@/lib/srd/adversaries";
 import { environmentArt } from "@/lib/srd/environment-art";
 import { ENVIRONMENTS } from "@/lib/srd/environments";
 import { ENVIRONMENT_TYPES, type EnvironmentDef, type EnvironmentType } from "@/lib/srd/types";
+import { prefersReducedMotion } from "@/lib/use-reduced-motion";
 
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { HopeFearPill } from "../catalogue/stat-block";
@@ -148,7 +149,7 @@ export function EnvironmentCatalogue({ campaignId, fear, hopeAndFear, frameId, s
     onSelect(id);
     // One column (under 980 px): the stat block sits below the list, so bring it into view.
     if (window.matchMedia("(max-width: 980px)").matches) {
-      const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const smooth = !prefersReducedMotion();
       detailRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
     }
   }
