@@ -155,8 +155,18 @@ function nodeRequire(): NodeRequire {
  * `SkiaApi` installed by `@shopify/react-native-skia`. In Node tests it is
  * the same factory built on CanvasKit, which that package already depends on.
  */
+function nativeSkia(): SkiaApi | null {
+  if (process.env.JEST_WORKER_ID !== undefined) return null;
+  const loaded = require("@shopify/react-native-skia") as { Skia?: SkiaApi };
+  const skia = loaded.Skia;
+  if (typeof skia !== "object" || skia === null || !("Paint" in skia) || !("Surface" in skia)) return null;
+  return skia;
+}
+
 export function loadSkia(): Promise<SkiaApi> {
   if (globalSkia.SkiaApi) return Promise.resolve(globalSkia.SkiaApi);
+  const onDevice = nativeSkia();
+  if (onDevice) return Promise.resolve(onDevice);
   canvasKitSkia ??= loadCanvasKit();
   return canvasKitSkia;
 }

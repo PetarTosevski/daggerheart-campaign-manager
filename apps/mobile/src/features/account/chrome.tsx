@@ -1,5 +1,6 @@
 import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, Text, View, type ViewStyle } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors } from "../../theme/colors";
 import { type } from "../../theme/fonts";
@@ -17,44 +18,37 @@ export function AccountHeader({
   style?: ViewStyle;
 }) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   return (
-    <View style={[styles.header, style]}>
+    <View style={[styles.header, { paddingTop: insets.top + space[2] }, style]}>
       {backHref ? (
         <Pressable
           accessibilityRole="button"
-          hitSlop={8}
-          onPress={() => router.push(backHref)}
+          hitSlop={12}
+          onPress={() => router.navigate(backHref)}
           style={styles.back}
         >
           <Text style={styles.backText}>{backLabel ?? "Back"}</Text>
         </Pressable>
-      ) : (
-        <View style={styles.backPlaceholder} />
-      )}
-      <Text accessibilityRole="header" style={styles.title}>
+      ) : null}
+      <Text accessibilityRole="header" numberOfLines={2} style={styles.title}>
         {title}
       </Text>
-      <View style={styles.backPlaceholder} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   header: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: space[3],
-    justifyContent: "space-between",
+    gap: space[2],
     paddingHorizontal: space[4],
-    paddingVertical: space[3],
+    paddingTop: space[2],
+    paddingBottom: space[3],
   },
   back: {
-    minHeight: hit.minHeight,
+    alignSelf: "flex-start",
     justifyContent: "center",
-    minWidth: 88,
-  },
-  backPlaceholder: {
-    minWidth: 88,
+    minHeight: hit.minHeight,
   },
   backText: {
     ...type.sans,
@@ -64,10 +58,8 @@ const styles = StyleSheet.create({
   title: {
     ...type.displayBold,
     color: colors.parchment,
-    flex: 1,
-    fontSize: 20,
-    letterSpacing: 1.2,
-    textAlign: "center",
+    fontSize: 22,
+    letterSpacing: 0.6,
     textTransform: "uppercase",
   },
 });
