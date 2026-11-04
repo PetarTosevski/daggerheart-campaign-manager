@@ -3,6 +3,7 @@
 import { useQuery } from "convex/react";
 import { useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { CARRIED_LIGHTS, CARRIED_LIGHT_LABEL, DIM_PHASE_BADGE, type CarriedLight, type LightLevel } from "@/lib/domain/combat-map/light";
 
 import { api } from "../../../../convex/_generated/api";
@@ -51,17 +52,18 @@ function LightPicker({ token, actions, label }: { token: Pick<TokenView, "_id" |
       <span className="cm-lbl">{label}</span>
       <div className="cm-row cm-vis-tight" role="group" aria-label={label}>
         {CARRIED_LIGHTS.map((l) => (
-          <button
+          <BrandButton
             key={l}
             type="button"
-            className="cm-btn cm-sm"
+            variant="neutral"
+            size="sm"
             aria-pressed={token.light === l}
             onClick={() => {
               if (token.light !== l) void actions.setCarriedLight(token._id, l);
             }}
           >
             {CARRIED_LIGHT_LABEL[l]}
-          </button>
+          </BrandButton>
         ))}
       </div>
     </div>
@@ -106,9 +108,10 @@ function DoorsCard(props: VisionPanelProps) {
                     Move next to it
                   </span>
                 )}
-                <button
+                <BrandButton
                   type="button"
-                  className="cm-btn cm-sm"
+                  variant="neutral"
+                  size="sm"
                   aria-pressed={d.open}
                   aria-label={`${d.open ? "Close" : "Open"} ${label.toLowerCase()}`}
                   aria-describedby={d.reach ? undefined : `cm-door-reach-${d._id}`}
@@ -116,7 +119,7 @@ function DoorsCard(props: VisionPanelProps) {
                   onClick={() => void actions.setOpen(d._id, !d.open)}
                 >
                   {d.open ? "Close" : "Open"}
-                </button>
+                </BrandButton>
               </span>
             </li>
           );
@@ -144,28 +147,29 @@ function YourView({ view, props }: { view: ViewOk; props: VisionPanelProps }) {
       </span>
       <div className="cm-row cm-between cm-vis-me">
         <strong className="cm-vis-name">{own.name}</strong>
-        <button
+        <BrandButton
           type="button"
-          className="cm-btn cm-sm"
+          variant="neutral"
+          size="sm"
           onClick={() => {
             onSelectToken(own._id);
             document.querySelector(`[data-token="${own._id}"]`)?.scrollIntoView({ block: "center", inline: "center" });
           }}
         >
           Find me
-        </button>
+        </BrandButton>
       </div>
       <span className="cm-muted" data-testid="combat-cone-text">
         {[own.sub, coneText(view.coneDeg, view.instinct)].filter(Boolean).join(" · ")}
       </span>
       <div className="cm-row cm-vis-tight">
         <span className="cm-lbl cm-vis-inline">Facing</span>
-        <button type="button" className="cm-btn cm-sm" onClick={() => void turns.turn(own._id, normalizeAngle(own.face - TURN_BUTTON_STEP))}>
+        <BrandButton type="button" variant="neutral" size="sm" onClick={() => void turns.turn(own._id, normalizeAngle(own.face - TURN_BUTTON_STEP))}>
           ⟲ Turn
-        </button>
-        <button type="button" className="cm-btn cm-sm" onClick={() => void turns.turn(own._id, normalizeAngle(own.face + TURN_BUTTON_STEP))}>
+        </BrandButton>
+        <BrandButton type="button" variant="neutral" size="sm" onClick={() => void turns.turn(own._id, normalizeAngle(own.face + TURN_BUTTON_STEP))}>
           Turn ⟳
-        </button>
+        </BrandButton>
       </div>
       <LightPicker token={own} actions={actions} label="Light you carry" />
       {view.light === "dim" ? <span className="cm-vis-dim">◐ {DIM_PHASE_BADGE}</span> : null}
@@ -193,12 +197,12 @@ function OtherCard({ token, onDone }: { token: OtherToken; onDone: () => void })
         {token.revealed ? " · revealed to you: it stands in dim light" : ""}
       </span>
       <div className="cm-row cm-vis-tight">
-        <button type="button" className="cm-btn cm-sm" aria-pressed={rings.on(token._id)} onClick={() => rings.toggle(token._id)} title="Range circles (R)">
+        <BrandButton type="button" variant="neutral" size="sm" aria-pressed={rings.on(token._id)} onClick={() => rings.toggle(token._id)} title="Range circles (R)">
           ◎ Range circles
-        </button>
-        <button type="button" className="cm-btn cm-sm" onClick={onDone}>
+        </BrandButton>
+        <BrandButton type="button" variant="cancel" size="sm" onClick={onDone}>
           Done
-        </button>
+        </BrandButton>
       </div>
     </section>
   );
@@ -274,13 +278,13 @@ function GmPanel(props: VisionPanelProps) {
         <div className="cm-vis-field">
           <span className="cm-lbl">See the map as</span>
           <div className="cm-row cm-vis-tight" role="group" aria-label="See the map as">
-            <button type="button" className="cm-btn cm-sm" aria-pressed={previewCharacterId === null} onClick={() => onPreview(null)}>
+            <BrandButton type="button" variant="neutral" size="sm" aria-pressed={previewCharacterId === null} onClick={() => onPreview(null)}>
               GM (everything)
-            </button>
+            </BrandButton>
             {pcs.map((p) => (
-              <button key={p.characterId} type="button" className="cm-btn cm-sm" aria-pressed={previewCharacterId === p.characterId} onClick={() => onPreview(p.characterId)}>
+              <BrandButton key={p.characterId} type="button" variant="neutral" size="sm" aria-pressed={previewCharacterId === p.characterId} onClick={() => onPreview(p.characterId)}>
                 {p.name}
-              </button>
+              </BrandButton>
             ))}
           </div>
           {previewed ? (
@@ -297,23 +301,24 @@ function GmPanel(props: VisionPanelProps) {
         <span className="cm-lbl">Fog brush (by hand, for every player)</span>
         <div className="cm-row cm-vis-tight" role="group" aria-label="Fog brush">
           {FOG_TOOLS.map(({ tool, label }) => (
-            <button key={tool} type="button" className="cm-btn cm-sm" aria-pressed={fogTool === tool} onClick={() => setFogTool(tool)}>
+            <BrandButton key={tool} type="button" variant="tool" size="sm" aria-pressed={fogTool === tool} onClick={() => setFogTool(tool)}>
               {label}
-            </button>
+            </BrandButton>
           ))}
         </div>
         <div className="cm-row cm-vis-tight">
           <span className="cm-lbl cm-vis-inline">Brush</span>
           <div className="cm-row cm-vis-tight" role="group" aria-label="Brush size">
             {BRUSHES.map((b) => (
-              <button key={b} type="button" className="cm-btn cm-sm" aria-pressed={brush === b} aria-label={`Brush ${b}`} onClick={() => setBrush(b)}>
+              <BrandButton key={b} type="button" variant="tool" size="sm" icon aria-pressed={brush === b} aria-label={`Brush ${b}`} onClick={() => setBrush(b)}>
                 {b}
-              </button>
+              </BrandButton>
             ))}
           </div>
-          <button
+          <BrandButton
             type="button"
-            className="cm-btn cm-sm"
+            variant="danger"
+            size="sm"
             disabled={marks.length === 0}
             onClick={() => {
               if (!confirmClear) {
@@ -326,10 +331,11 @@ function GmPanel(props: VisionPanelProps) {
             onBlur={() => setConfirmClear(false)}
           >
             {confirmClear ? "Click again to clear" : "Clear marks"}
-          </button>
-          <button
+          </BrandButton>
+          <BrandButton
             type="button"
-            className="cm-btn cm-sm"
+            variant="danger"
+            size="sm"
             onClick={() => {
               if (!confirmForget) {
                 setConfirmForget(true);
@@ -341,7 +347,7 @@ function GmPanel(props: VisionPanelProps) {
             onBlur={() => setConfirmForget(false)}
           >
             {confirmForget ? "Click again to forget" : "Forget explored"}
-          </button>
+          </BrandButton>
         </div>
         <span className="cm-muted cm-vis-small">
           Reveal shows those squares and the tokens on them to every player; Hide hides them; Erase returns them to normal sight. Forget
@@ -413,9 +419,9 @@ export function RevealPanel(props: RevealPanelProps) {
             {pcs.map((p) => {
               const on = revealedTo.includes(p.characterId);
               return (
-                <button key={p.characterId} type="button" className="cm-btn cm-sm" aria-pressed={on} onClick={() => void actions.reveal(token._id, p.characterId, !on)}>
+                <BrandButton key={p.characterId} type="button" variant="neutral" size="sm" aria-pressed={on} onClick={() => void actions.reveal(token._id, p.characterId, !on)}>
                   {on ? `👁 ${p.name}` : p.name}
-                </button>
+                </BrandButton>
               );
             })}
           </div>

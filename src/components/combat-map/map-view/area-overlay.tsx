@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { Component, useId, useState, type ReactNode } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { areaArt, FILL_TILE_SQUARES, type AreaArt } from "@/lib/combat-map/area-effects";
 import { errorMessage } from "@/lib/convex-errors";
 import { RANGE_SQUARES } from "@/lib/domain/combat-map/ranges";
@@ -82,9 +83,9 @@ class AreaBoundary extends Component<{ children: ReactNode; label: string | null
     return (
       <div role="alert" className="cm-alert cm-m0">
         {this.props.label} failed to load.{" "}
-        <button type="button" className="cm-btn cm-sm" onClick={() => this.setState({ failed: false })}>
+        <BrandButton type="button" variant="neutral" size="sm" onClick={() => this.setState({ failed: false })}>
           Try again
-        </button>
+        </BrandButton>
       </div>
     );
   }
@@ -285,9 +286,10 @@ function Tools({ campaignId, mapId }: ToolsProps) {
                   ))}
                 </select>
               ) : null}
-              <button
+              <BrandButton
                 type="button"
-                className="cm-btn cm-sm"
+                variant="neutral"
+                size="sm"
                 aria-label={`Move ${a.label}`}
                 onClick={() => {
                   setError(null);
@@ -300,10 +302,11 @@ function Tools({ campaignId, mapId }: ToolsProps) {
                 }}
               >
                 Move
-              </button>
-              <button
+              </BrandButton>
+              <BrandButton
                 type="button"
-                className="cm-btn cm-sm"
+                variant="danger"
+                size="sm"
                 aria-label={`Remove ${a.label}`}
                 onClick={() => {
                   setError(null);
@@ -311,7 +314,7 @@ function Tools({ campaignId, mapId }: ToolsProps) {
                 }}
               >
                 Remove
-              </button>
+              </BrandButton>
             </li>
           ))}
         </ul>
@@ -357,9 +360,9 @@ function Tools({ campaignId, mapId }: ToolsProps) {
           <input id={ids.sight} type="checkbox" checked={sight} onChange={(e) => setSight(e.target.checked)} />
           <span>Blocks sight</span>
         </label>
-        <button type="button" className="cm-btn cm-sm" disabled={ownerId === ""} onClick={startDraw}>
+        <BrandButton type="button" variant="neutral" size="sm" disabled={ownerId === ""} onClick={startDraw}>
           Pick on the map
-        </button>
+        </BrandButton>
         {pcs.length === 0 ? <p className="cm-muted">Add a PC token first: an area belongs to a character.</p> : null}
       </fieldset>
       {error ? (

@@ -4,6 +4,7 @@ import { useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { Component, useEffect, useEffectEvent, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { givesLight } from "@/lib/domain/combat-map/light";
 import { RANGE_BANDS } from "@/lib/domain/combat-map/ranges";
 import { anyInMelee } from "@/lib/domain/combat-map/reach";
@@ -376,9 +377,9 @@ export function VisionLayer(props: MapLayerProps) {
       {actions.error ? (
         <p role="alert" className="cm-alert cm-vis-error">
           {actions.error}
-          <button type="button" className="cm-btn cm-sm" onClick={actions.clearError}>
+          <BrandButton type="button" variant="cancel" size="sm" onClick={actions.clearError}>
             Dismiss
-          </button>
+          </BrandButton>
         </p>
       ) : null}
     </>

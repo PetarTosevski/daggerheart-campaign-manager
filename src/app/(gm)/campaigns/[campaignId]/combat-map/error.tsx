@@ -2,6 +2,7 @@
 
 import "./combat-map.css";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { useSessionEndedRedirect } from "@/lib/auth/use-session-ended-redirect";
 import { errorMessage } from "@/lib/convex-errors";
 
@@ -18,9 +19,9 @@ export default function CombatMapError({ error, retry }: { error: Error & { dige
         ) : (
           <div role="alert" className="cm-alert">
             <span>The combat map failed to load. {errorMessage(error)}</span>
-            <button type="button" className="cm-btn cm-sm" onClick={() => retry()}>
+            <BrandButton variant="neutral" size="sm" onClick={() => retry()}>
               Try again
-            </button>
+            </BrandButton>
           </div>
         )}
       </main>

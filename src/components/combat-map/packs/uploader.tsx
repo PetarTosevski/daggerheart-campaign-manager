@@ -3,6 +3,7 @@
 import { useMutation } from "convex/react";
 import { useId, useRef, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { UploadNotice } from "@/components/uploads/upload-notice";
 import { errorMessage } from "@/lib/convex-errors";
 import type { RgbaImage } from "@/lib/sprite-packs/cut";
@@ -209,9 +210,9 @@ export function Uploader({ campaignId, pack }: { campaignId: Id<"campaigns">; pa
             void addFiles(files);
           }}
         />
-        <button type="button" className="cm-btn" disabled={busy !== null} onClick={() => input.current?.click()}>
+        <BrandButton type="button" variant="neutral" disabled={busy !== null} onClick={() => input.current?.click()}>
           Choose images…
-        </button>
+        </BrandButton>
       </div>
 
       <div className="cm-pk-layout" role="group" aria-labelledby={layoutId}>
@@ -220,9 +221,9 @@ export function Uploader({ campaignId, pack }: { campaignId: Id<"campaigns">; pa
         </span>
         <div className="cm-pk-seg">
           {SHEET_LAYOUTS.map((l) => (
-            <button key={l} type="button" className="cm-btn cm-sm" aria-pressed={layout === l} disabled={busy !== null} onClick={() => chooseLayout(l)}>
+            <BrandButton key={l} type="button" variant="neutral" size="sm" aria-pressed={layout === l} disabled={busy !== null} onClick={() => chooseLayout(l)}>
               {SHEET_LAYOUT_INFO[l].label}
-            </button>
+            </BrandButton>
           ))}
         </div>
       </div>
@@ -248,12 +249,12 @@ export function Uploader({ campaignId, pack }: { campaignId: Id<"campaigns">; pa
               {done > 0 ? ` · ${done} uploaded` : ""}
             </p>
             <div className="cm-row">
-              <button type="button" className="cm-btn cm-sm" onClick={() => setRows((rs) => rs.map((r) => ({ ...r, selected: r.status.state !== "done" })))}>
+              <BrandButton type="button" variant="neutral" size="sm" onClick={() => setRows((rs) => rs.map((r) => ({ ...r, selected: r.status.state !== "done" })))}>
                 Select all
-              </button>
-              <button type="button" className="cm-btn cm-sm" onClick={() => setRows((rs) => rs.map((r) => ({ ...r, selected: false })))}>
+              </BrandButton>
+              <BrandButton type="button" variant="neutral" size="sm" onClick={() => setRows((rs) => rs.map((r) => ({ ...r, selected: false })))}>
                 Select none
-              </button>
+              </BrandButton>
             </div>
           </div>
           {notes.length > 0 ? (
@@ -269,12 +270,12 @@ export function Uploader({ campaignId, pack }: { campaignId: Id<"campaigns">; pa
             ))}
           </ol>
           <div className="cm-row">
-            <button type="button" className="cm-go" disabled={busy !== null || chosen.length === 0} onClick={() => void uploadSelected()}>
+            <BrandButton type="button" variant="confirm" disabled={busy !== null || chosen.length === 0} onClick={() => void uploadSelected()}>
               {busy === "uploading" ? "Uploading…" : `Upload selected (${chosen.length})`}
-            </button>
-            <button type="button" className="cm-btn" disabled={busy !== null} onClick={clear}>
+            </BrandButton>
+            <BrandButton type="button" variant="cancel" disabled={busy !== null} onClick={clear}>
               Clear
-            </button>
+            </BrandButton>
           </div>
         </>
       ) : null}

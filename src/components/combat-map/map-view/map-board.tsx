@@ -5,6 +5,7 @@ import "./map-view.css";
 import { useMutation, useQuery } from "convex/react";
 import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { FOG_PAD_SQUARES } from "@/lib/domain/combat-map/vision";
 import { errorMessage } from "@/lib/convex-errors";
 
@@ -256,38 +257,39 @@ function LoadedBoard(props: MapBoardChromeProps & { map: CombatMapSummary; layou
           <strong className="cm-map-title">{map.name}</strong>
           {map.live && gm ? <span className="cm-live">LIVE</span> : null}
           {gm && !map.live ? (
-            <button
+            <BrandButton
               type="button"
-              className="cm-btn cm-sm"
+              variant="neutral"
+              size="sm"
               onClick={() => {
                 setError(null);
                 setLive({ campaignId, mapId: map._id }).catch((e: unknown) => setError(errorMessage(e)));
               }}
             >
               Make live
-            </button>
+            </BrandButton>
           ) : null}
           <span className="cm-spacer" />
           {gm && mode !== "edit" ? (
-            <button type="button" className="cm-btn cm-sm" aria-pressed={areaTools} onClick={() => setAreaTools(!areaTools)} title="Draw, move, resize or remove effect areas">
+            <BrandButton type="button" variant="tool" size="sm" aria-pressed={areaTools} onClick={() => setAreaTools(!areaTools)} title="Draw, move, resize or remove effect areas">
               Areas
-            </button>
+            </BrandButton>
           ) : null}
-          <button type="button" className="cm-btn cm-sm" aria-pressed={showNames} onClick={() => setShowNames(!showNames)} title="Always show token names (N)">
+          <BrandButton type="button" variant="tool" size="sm" aria-pressed={showNames} onClick={() => setShowNames(!showNames)} title="Always show token names (N)">
             Aa Names
-          </button>
-          <button type="button" className="cm-btn cm-sm" aria-label="Zoom out" onClick={() => setZoom(zoom / ZOOM_STEP)}>
+          </BrandButton>
+          <BrandButton type="button" variant="tool" size="sm" icon aria-label="Zoom out" onClick={() => setZoom(zoom / ZOOM_STEP)}>
             −
-          </button>
+          </BrandButton>
           <span className="cm-muted cm-zoom" aria-live="polite" data-testid="combat-zoom">
             {zoomLabel(zoom)}
           </span>
-          <button type="button" className="cm-btn cm-sm" aria-label="Zoom in" onClick={() => setZoom(zoom * ZOOM_STEP)}>
+          <BrandButton type="button" variant="tool" size="sm" icon aria-label="Zoom in" onClick={() => setZoom(zoom * ZOOM_STEP)}>
             +
-          </button>
-          <button type="button" className="cm-btn cm-sm" onClick={fit}>
+          </BrandButton>
+          <BrandButton type="button" variant="tool" size="sm" onClick={fit}>
             Fit
-          </button>
+          </BrandButton>
         </div>
       ) : null}
       {editingGrid && grid ? (

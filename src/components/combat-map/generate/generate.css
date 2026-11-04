@@ -16,13 +16,10 @@
   flex-wrap: wrap;
   gap: 8px;
 }
-/* dcm-bxp.129: suggestion chips under the description; a tap fills the box. 44px touch targets (tablet a11y). */
+/* dcm-bxp.129: suggestion chips under the description; a tap fills the box (small glass: 44 px on touch). */
 .cm-scene-chips {
   flex-wrap: wrap;
   gap: 6px;
-}
-.cm-scene-chip {
-  min-height: 44px;
 }
 .cm-scene-busy {
   display: flex;
@@ -49,8 +46,6 @@
 }
 
 @media (max-width: 600px) {
-  .cm-scene-actions .cm-go,
-  .cm-scene-actions .cm-btn,
   .cm-scene-setting {
     min-height: 44px;
   }

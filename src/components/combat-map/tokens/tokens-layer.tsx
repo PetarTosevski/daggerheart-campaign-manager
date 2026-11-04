@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useEffectEvent, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { designAsset } from "@/lib/design-assets";
 import { RANGE_BANDS } from "@/lib/domain/combat-map/ranges";
 
@@ -408,9 +409,9 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
     {actions.error ? (
       <p role="alert" className="cm-alert cm-tokens-error">
         {actions.error}
-        <button type="button" className="cm-btn cm-sm" onClick={actions.clearError}>
+        <BrandButton type="button" variant="cancel" size="sm" onClick={actions.clearError}>
           Dismiss
-        </button>
+        </BrandButton>
       </p>
     ) : null}
     </>

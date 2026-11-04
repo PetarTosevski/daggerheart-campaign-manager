@@ -136,7 +136,7 @@
 .cm-btn:focus-visible,
 .cm-go:focus-visible,
 .cm-chip:focus-visible,
-.cm-seg button:focus-visible {
+.cm-seg button:not(.gb):focus-visible {
   outline: 2px solid var(--cm-acc);
   outline-offset: 2px;
 }
@@ -200,7 +200,7 @@
   background: var(--cm-field);
   border: 1px solid var(--cm-card-border);
 }
-.cm-seg button {
+.cm-seg button:not(.gb) {
   flex: 1;
   min-height: 38px;
   border-radius: 8px;
@@ -212,7 +212,7 @@
   font-weight: 700;
   cursor: pointer;
 }
-.cm-seg button[aria-pressed="true"] {
+.cm-seg button:not(.gb)[aria-pressed="true"] {
   background: var(--cm-acc);
   color: var(--cm-acc-ink);
 }
@@ -333,10 +333,6 @@
   font-size: 12px;
   letter-spacing: 0.14em;
   color: var(--cm-fear-text);
-}
-.cm-fear .cm-fear-step {
-  width: 30px;
-  padding: 0;
 }
 .cm-fear-n {
   font-family: var(--cm-display);
@@ -463,13 +459,10 @@
   .cm-btn,
   .cm-btn.cm-sm,
   .cm-chip,
-  .cm-seg button {
+  .cm-seg button:not(.gb) {
     min-height: 44px;
   }
   .cm-btn {
     min-width: 44px;
-  }
-  .cm-fear .cm-fear-step {
-    width: 44px;
   }
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import { SETTINGS } from "@/lib/sprite-packs/settings";
 
@@ -88,9 +89,9 @@ export function PackCard({ campaignId, pack, mutations }: { campaignId: Id<"camp
             onChange={(ext) => run(mutations.setPackExtends({ campaignId, packId: pack._id, extends: ext }))}
           />
         </span>
-        <button type="button" className="cm-btn cm-danger cm-pk-del" onClick={remove.click}>
+        <BrandButton type="button" variant="danger" onClick={remove.click}>
           {remove.asking ? "Confirm delete" : "Delete pack"}
-        </button>
+        </BrandButton>
       </div>
       {remove.asking ? (
         <p className="cm-muted cm-m0" role="status">
@@ -104,9 +105,9 @@ export function PackCard({ campaignId, pack, mutations }: { campaignId: Id<"camp
       ) : null}
 
       <div className="cm-row">
-        <button type="button" className="cm-btn" aria-expanded={adding} onClick={() => setAdding(!adding)}>
+        <BrandButton type="button" variant="neutral" aria-expanded={adding} onClick={() => setAdding(!adding)}>
           {adding ? "Hide upload" : "＋ Add sprites"}
-        </button>
+        </BrandButton>
       </div>
       {adding ? <Uploader campaignId={campaignId} pack={pack} /> : null}
 
@@ -163,15 +164,15 @@ function SpriteRow({
       </div>
       <SpriteFields values={sprite} onChange={save} />
       <div className="cm-row">
-        <button type="button" className="cm-btn cm-sm cm-pk-move" disabled={first} aria-label={`Move ${sprite.name} up`} onClick={() => run(mutations.reorderSprite({ campaignId, spriteId: sprite._id, direction: "up" }))}>
+        <BrandButton type="button" variant="neutral" size="sm" icon disabled={first} aria-label={`Move ${sprite.name} up`} onClick={() => run(mutations.reorderSprite({ campaignId, spriteId: sprite._id, direction: "up" }))}>
           ↑
-        </button>
-        <button type="button" className="cm-btn cm-sm cm-pk-move" disabled={last} aria-label={`Move ${sprite.name} down`} onClick={() => run(mutations.reorderSprite({ campaignId, spriteId: sprite._id, direction: "down" }))}>
+        </BrandButton>
+        <BrandButton type="button" variant="neutral" size="sm" icon disabled={last} aria-label={`Move ${sprite.name} down`} onClick={() => run(mutations.reorderSprite({ campaignId, spriteId: sprite._id, direction: "down" }))}>
           ↓
-        </button>
-        <button type="button" className="cm-btn cm-sm cm-danger" onClick={remove.click}>
+        </BrandButton>
+        <BrandButton type="button" variant="danger" size="sm" onClick={remove.click}>
           {remove.asking ? "Confirm delete" : "Delete"}
-        </button>
+        </BrandButton>
       </div>
     </li>
   );

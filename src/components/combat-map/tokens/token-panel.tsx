@@ -3,6 +3,7 @@
 import { useQuery } from "convex/react";
 import { useMemo, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { isDifficult } from "@/lib/domain/combat-map/movement";
 
 import { api } from "../../../../convex/_generated/api";
@@ -51,9 +52,9 @@ function HideAllCircles({ tokens }: { tokens: TokenView[] }) {
   const ids = tokens.map((t) => t._id);
   if (!ids.some((id) => rings.on(id))) return null;
   return (
-    <button type="button" className="cm-btn cm-sm" onClick={() => rings.hideAll(ids)}>
+    <BrandButton type="button" variant="neutral" size="sm" onClick={() => rings.hideAll(ids)}>
       ◎ Hide all circles
-    </button>
+    </BrandButton>
   );
 }
 
@@ -122,9 +123,9 @@ function FearEnds({ campaignId, token }: { campaignId: TokenPanelProps["campaign
       <span className="cm-lbl">Spend Fear to end</span>
       <div className="cm-row cm-tight" role="group" aria-label="Spend Fear to end">
         {ends.map((e) => (
-          <button key={e.effectId} type="button" className="cm-btn cm-sm" disabled={busy !== null} title={e.source} onClick={() => void end(e.effectId, e.fear)}>
+          <BrandButton key={e.effectId} type="button" variant="confirm" size="sm" disabled={busy !== null} title={e.source} onClick={() => void end(e.effectId, e.fear)}>
             End {e.label} · {e.fear} Fear
-          </button>
+          </BrandButton>
         ))}
       </div>
       {error ? (
@@ -185,16 +186,17 @@ function SelectedToken({ token, tokens, props }: { token: TokenView; tokens: Tok
           <span className="cm-lbl">Conditions</span>
           <div className="cm-row cm-tight" role="group" aria-label="Conditions">
             {PC_CONDITIONS.map((c) => (
-              <button
+              <BrandButton
                 key={c.id}
                 type="button"
-                className="cm-btn cm-sm"
+                variant="neutral"
+                size="sm"
                 aria-pressed={s.conditions.includes(c.id)}
                 disabled={!canEdit}
                 onClick={() => void actions.togglePcCondition(token, c.id)}
               >
                 {c.label}
-              </button>
+              </BrandButton>
             ))}
           </div>
         </div>
@@ -202,17 +204,17 @@ function SelectedToken({ token, tokens, props }: { token: TokenView; tokens: Tok
       {trackerClosed && gm ? <span className="cm-muted cm-small">The encounter isn’t running. Start it on the Adversaries tab to mark HP, Stress and conditions.</span> : null}
 
       <div className="cm-row cm-tight">
-        <button type="button" className="cm-btn cm-sm" aria-pressed={rings.on(token._id)} onClick={() => rings.toggle(token._id)} title="Range circles (R)">
+        <BrandButton type="button" variant="neutral" size="sm" aria-pressed={rings.on(token._id)} onClick={() => rings.toggle(token._id)} title="Range circles (R)">
           ◎ Range circles
-        </button>
+        </BrandButton>
         {token.canMove ? (
           <>
-            <button type="button" className="cm-btn cm-sm" aria-label="Turn left" onClick={() => void actions.turn(token._id, normalizeAngle(token.face - TURN_BUTTON_STEP))}>
+            <BrandButton type="button" variant="neutral" size="sm" icon aria-label="Turn left" onClick={() => void actions.turn(token._id, normalizeAngle(token.face - TURN_BUTTON_STEP))}>
               ⟲
-            </button>
-            <button type="button" className="cm-btn cm-sm" aria-label="Turn right" onClick={() => void actions.turn(token._id, normalizeAngle(token.face + TURN_BUTTON_STEP))}>
+            </BrandButton>
+            <BrandButton type="button" variant="neutral" size="sm" icon aria-label="Turn right" onClick={() => void actions.turn(token._id, normalizeAngle(token.face + TURN_BUTTON_STEP))}>
               ⟳
-            </button>
+            </BrandButton>
           </>
         ) : null}
         <HideAllCircles tokens={tokens} />
@@ -226,16 +228,17 @@ function SelectedToken({ token, tokens, props }: { token: TokenView; tokens: Tok
               <span className="cm-lbl">Conditions</span>
               <div className="cm-row cm-tight" role="group" aria-label="Conditions">
                 {TRACKER_CONDITIONS.map((c) => (
-                  <button
+                  <BrandButton
                     key={c.id}
                     type="button"
-                    className="cm-btn cm-sm"
+                    variant="neutral"
+                    size="sm"
                     aria-pressed={s.conditions.includes(c.id)}
                     disabled={!canEdit}
                     onClick={() => void actions.toggleCondition(token, c.id)}
                   >
                     {c.label}
-                  </button>
+                  </BrandButton>
                 ))}
               </div>
             </div>
@@ -245,33 +248,34 @@ function SelectedToken({ token, tokens, props }: { token: TokenView; tokens: Tok
             {(Object.keys(SIDES) as TokenView["side"][])
               .filter((k) => k !== "pc" || token.kind === "pc")
               .map((k) => (
-                <button key={k} type="button" className="cm-btn cm-sm" aria-pressed={token.side === k} onClick={() => void actions.setSide(token._id, k)}>
+                <BrandButton key={k} type="button" variant="neutral" size="sm" aria-pressed={token.side === k} onClick={() => void actions.setSide(token._id, k)}>
                   {SIDES[k].label}
-                </button>
+                </BrandButton>
               ))}
           </div>
           <div className="cm-row cm-tight" role="group" aria-label="Size">
             <span className="cm-lbl cm-inline-lbl">Size</span>
             {SIZES.map(({ size, label }) => (
-              <button key={size} type="button" className="cm-btn cm-sm" aria-pressed={token.size === size} onClick={() => void actions.setSize(token._id, size)}>
+              <BrandButton key={size} type="button" variant="neutral" size="sm" aria-pressed={token.size === size} onClick={() => void actions.setSize(token._id, size)}>
                 {label}
-              </button>
+              </BrandButton>
             ))}
           </div>
           <div className="cm-row cm-tight">
-            <button type="button" className="cm-btn cm-sm" onClick={() => onSelectToken(null)}>
+            <BrandButton type="button" variant="cancel" size="sm" onClick={() => onSelectToken(null)}>
               Done
-            </button>
-            <button
+            </BrandButton>
+            <BrandButton
               type="button"
-              className="cm-btn cm-sm cm-danger"
+              variant="danger"
+              size="sm"
               onClick={() => {
                 onSelectToken(null);
                 void actions.remove(token._id);
               }}
             >
               Remove from map
-            </button>
+            </BrandButton>
           </div>
         </div>
       ) : null}

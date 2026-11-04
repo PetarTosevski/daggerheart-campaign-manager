@@ -208,9 +208,7 @@
   padding: 0;
 }
 @media (max-width: 1100px), (pointer: coarse) {
-  .cm-area-tools select,
-  .cm-area-tools .cm-btn,
-  .cm-area-pick-bar .cm-btn {
+  .cm-area-tools select {
     min-height: 44px;
   }
 }

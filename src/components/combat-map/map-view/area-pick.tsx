@@ -2,6 +2,7 @@
 
 import { useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import { RANGE_SQUARES } from "@/lib/domain/combat-map/ranges";
 
@@ -99,9 +100,9 @@ export function AreaPickBanner({ mapId }: { mapId: string }) {
     return (
       <div className="cm-area-pick-bar" role="status" data-testid="area-pick-banner">
         <span>{pick.busy ? "Sending…" : `${pick.request.prompt}: click a square on the map.`}</span>
-        <button type="button" className="cm-btn cm-sm" onClick={cancelAreaPick} disabled={pick.busy}>
+        <BrandButton type="button" variant="cancel" size="sm" onClick={cancelAreaPick} disabled={pick.busy}>
           Cancel
-        </button>
+        </BrandButton>
       </div>
     );
   }
@@ -109,9 +110,9 @@ export function AreaPickBanner({ mapId }: { mapId: string }) {
   return (
     <div className="cm-area-pick-bar" role={pick.line.error ? "alert" : "status"} data-testid="area-pick-result" data-error={pick.line.error ? "true" : "false"}>
       <span>{pick.line.text}</span>
-      <button type="button" className="cm-btn cm-sm" aria-label="Dismiss" onClick={dismissAreaPickLine}>
+      <BrandButton type="button" variant="cancel" size="sm" icon aria-label="Dismiss" onClick={dismissAreaPickLine}>
         ✕
-      </button>
+      </BrandButton>
     </div>
   );
 }

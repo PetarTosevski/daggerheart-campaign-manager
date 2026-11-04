@@ -3,6 +3,7 @@
 import { useMutation } from "convex/react";
 import { useRef, useState } from "react";
 
+import { brandButton } from "@/components/brand/buttons";
 import { UploadNotice } from "@/components/uploads/upload-notice";
 import { errorMessage } from "@/lib/convex-errors";
 
@@ -87,7 +88,7 @@ export function MapImageButton({
   mapId,
   size,
   label,
-  className = "cm-btn",
+  className = brandButton({ variant: "neutral" }),
   onDone,
 }: {
   campaignId: Id<"campaigns">;
