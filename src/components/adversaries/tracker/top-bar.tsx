@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { useIntent } from "@/lib/use-intent";
 
-import { BrandButton, brandButton } from "@/components/brand/buttons";
+import { BrandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import { EndSceneButton } from "@/components/combat-map/actions/scene";
 import { TrackerSessionChip } from "@/components/sessions/session-chip";
