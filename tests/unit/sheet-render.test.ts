@@ -292,7 +292,9 @@ describe("character sheet", () => {
     fireEvent.click(within(ribbon).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByLabelText("Level-up to 2", REGION)).toBeNull();
     expect(screen.getByLabelText("Level up to 2", BUTTON)).toBeInTheDocument();
-    expect(calls).toEqual([]);
+    // No character write: only the account draft (config N4 b) was saved, and Cancel cleared it.
+    expect(calls.filter((c) => !c.name.startsWith("drafts:"))).toEqual([]);
+    expect(calls.at(-1)).toEqual({ name: "drafts:clear", args: { kind: "levelUp", characterId: "c1" } });
   });
 
   it("renders read-only with no edit controls for another player", () => {

@@ -12,8 +12,9 @@ import {
  * Every value the app saved in the browser before preferences moved to the account (config Q15 b), parsed into what
  * the account stores. Pure: the import (tracer IMP) writes the result and then removes `keys` and `dead`.
  *
- * Not preferences, so never read or listed here: Convex Auth's own `__convexAuth*` keys and the level-up draft in
- * sessionStorage (`dcm:level-up-draft:*`, N4 a).
+ * Not preferences, so never read or listed here: Convex Auth's own `__convexAuth*` keys and the old level-up draft in
+ * sessionStorage (`dcm:level-up-draft:*`; since config N4 b the level-up draft is saved on the account, and the
+ * sessionStorage copy, which ended with its tab, is not imported).
  *
  * Bad JSON, a value of the wrong shape, blocked storage (every call throws) and keys the app never wrote all give
  * nothing.

@@ -5,6 +5,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import crons from "../../convex/crons";
 import { BATCH, DRAFT_TTL_MS } from "../../convex/draftsRetention";
 import { DRAFT_MAX_BYTES, DRAFT_SCHEMA_VERSION } from "../../src/lib/config/preferences";
+import { buildWorld } from "./authz/world";
 import { errorCode, setupWithCampaign } from "./helpers";
 
 /** Config P2: unsent drafts on the account (Q15 b) and their 90-day expiry (rule 8). */
@@ -117,6 +118,117 @@ describe("drafts (P2)", () => {
     await player.mutation(api.drafts.importLegacy, { drafts });
     const rows = await t.run((ctx) => ctx.db.query("userDrafts").collect());
     expect(rows).toHaveLength(2);
+  });
+});
+
+/** Config N4 b: a guided level-up's unconfirmed picks are a `levelUp` draft per character on the account. */
+describe("level-up drafts (N4 b)", () => {
+  const levelUp = (characterId: Id<"characters">, data = '{"level":1}') =>
+    ({ kind: "levelUp", characterId, schemaVersion: 1, data }) as const;
+
+  it("saves, reads, replaces and clears a draft per character, stored with the character's campaign", async () => {
+    const w = await buildWorld();
+    const player = w.as("player");
+    expect(await player.query(api.drafts.get, { kind: "levelUp", characterId: w.characterA })).toBeNull();
+    await player.mutation(api.drafts.save, levelUp(w.characterA));
+    await player.mutation(api.drafts.save, levelUp(w.characterA, '{"level":2}'));
+    expect(await player.query(api.drafts.get, { kind: "levelUp", characterId: w.characterA })).toMatchObject({ schemaVersion: 1, data: '{"level":2}' });
+    const rows = await w.t.run((ctx) => ctx.db.query("userDrafts").collect());
+    expect(rows).toEqual([expect.objectContaining({ userId: w.users.player, kind: "levelUp", characterId: w.characterA, campaignId: w.campaignId })]);
+
+    // The GM's drafts are their own, one per character, and apart from a wizard draft in the same campaign.
+    const gm = w.as("gm");
+    await gm.mutation(api.drafts.save, levelUp(w.characterA, '{"gm":"a"}'));
+    await gm.mutation(api.drafts.save, levelUp(w.characterB, '{"gm":"b"}'));
+    await gm.mutation(api.drafts.save, { kind: "characterWizard", campaignId: w.campaignId, schemaVersion: 1, data: '{"step":1}' });
+    expect((await gm.query(api.drafts.get, { kind: "levelUp", characterId: w.characterA }))?.data).toBe('{"gm":"a"}');
+    expect((await gm.query(api.drafts.get, { kind: "levelUp", characterId: w.characterB }))?.data).toBe('{"gm":"b"}');
+    expect((await player.query(api.drafts.get, { kind: "levelUp", characterId: w.characterA }))?.data).toBe('{"level":2}');
+
+    await gm.mutation(api.drafts.clear, { kind: "levelUp", characterId: w.characterA });
+    expect(await gm.query(api.drafts.get, { kind: "levelUp", characterId: w.characterA })).toBeNull();
+    expect(await gm.query(api.drafts.get, { kind: "levelUp", characterId: w.characterB })).not.toBeNull();
+    expect(await gm.query(api.drafts.get, { kind: "characterWizard", campaignId: w.campaignId })).not.toBeNull();
+    expect(await player.query(api.drafts.get, { kind: "levelUp", characterId: w.characterA })).not.toBeNull();
+    await player.mutation(api.drafts.clear, { kind: "levelUp", characterId: w.characterA });
+    expect(await player.query(api.drafts.get, { kind: "levelUp", characterId: w.characterA })).toBeNull();
+  });
+
+  it("only the character's owner and the GM (or co-GM) read or write it: another player is FORBIDDEN, an outsider NOT_FOUND", async () => {
+    const w = await buildWorld();
+    const expected = { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", otherPlayer: "FORBIDDEN", player: "ok", grantee: "ok", coGm: "ok", gm: "ok" } as const;
+    for (const [role, outcome] of Object.entries(expected) as [keyof typeof expected, string][]) {
+      const caller = w.as(role);
+      const results = await Promise.all([
+        caller.query(api.drafts.get, { kind: "levelUp", characterId: w.characterA }).then(
+          () => "ok",
+          (e: unknown) => errorCode(e),
+        ),
+        caller.mutation(api.drafts.save, levelUp(w.characterA)).then(
+          () => "ok",
+          (e: unknown) => errorCode(e),
+        ),
+      ]);
+      expect({ role, results }).toEqual({ role, results: [outcome, outcome] });
+    }
+  });
+
+  it("a wizard draft keeps its campaign-view rule for every role (the matrix runs drafts.get/save with the level-up scope)", async () => {
+    const w = await buildWorld();
+    const expected = { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", otherPlayer: "ok", player: "ok", grantee: "ok", coGm: "ok", gm: "ok" } as const;
+    const wizardArgs = { kind: "characterWizard" as const, campaignId: w.campaignId };
+    for (const [role, outcome] of Object.entries(expected) as [keyof typeof expected, string][]) {
+      const caller = w.as(role);
+      const results = await Promise.all([
+        caller.query(api.drafts.get, wizardArgs).then(
+          () => "ok",
+          (e: unknown) => errorCode(e),
+        ),
+        caller.mutation(api.drafts.save, { ...wizardArgs, schemaVersion: 1, data: "{}" }).then(
+          () => "ok",
+          (e: unknown) => errorCode(e),
+        ),
+      ]);
+      expect({ role, results }).toEqual({ role, results: [outcome, outcome] });
+    }
+  });
+
+  it("clear only touches the caller's own row (no character check), so it never reveals or removes another's draft", async () => {
+    const w = await buildWorld();
+    await w.as("player").mutation(api.drafts.save, levelUp(w.characterA));
+    await w.as("otherPlayer").mutation(api.drafts.clear, { kind: "levelUp", characterId: w.characterA });
+    await w.as("outsider").mutation(api.drafts.clear, { kind: "levelUp", characterId: w.characterA });
+    await w.as("gm").mutation(api.drafts.clear, { kind: "levelUp", characterId: w.characterA });
+    expect(await w.as("player").query(api.drafts.get, { kind: "levelUp", characterId: w.characterA })).not.toBeNull();
+    await w.as("player").mutation(api.drafts.clear, { kind: "levelUp" });
+    expect(await w.as("player").query(api.drafts.get, { kind: "levelUp", characterId: w.characterA })).not.toBeNull();
+  });
+
+  it("a level-up draft names its character only (INVALID otherwise), and the other kinds refuse a character", async () => {
+    const w = await buildWorld();
+    const player = w.as("player");
+    const bad = [
+      { kind: "levelUp" as const, schemaVersion: 1, data: "{}" },
+      { ...levelUp(w.characterA), campaignId: w.campaignId },
+      { ...levelUp(w.characterA), data: "[1]" },
+      { kind: "characterWizard" as const, campaignId: w.campaignId, characterId: w.characterA, schemaVersion: 1, data: "{}" },
+      { kind: "customFrame" as const, characterId: w.characterA, schemaVersion: 1, data: "{}" },
+    ];
+    for (const args of bad) {
+      await expect(player.mutation(api.drafts.save, args)).rejects.toSatisfy((e) => errorCode(e) === "INVALID");
+    }
+    await expect(player.query(api.drafts.get, { kind: "levelUp" })).rejects.toSatisfy((e) => errorCode(e) === "INVALID");
+  });
+
+  it("goes with its campaign's purge path (by_campaign) and a deleted campaign hides it", async () => {
+    const w = await buildWorld();
+    await w.as("player").mutation(api.drafts.save, levelUp(w.characterA));
+    const byCampaign = await w.t.run((ctx) => ctx.db.query("userDrafts").withIndex("by_campaign", (q) => q.eq("campaignId", w.campaignId)).collect());
+    expect(byCampaign).toHaveLength(1);
+    await w.t.run((ctx) => ctx.db.patch("campaigns", w.campaignId, { deletedAt: Date.now() }));
+    await expect(w.as("player").query(api.drafts.get, { kind: "levelUp", characterId: w.characterA })).rejects.toSatisfy(
+      (e) => errorCode(e) === "NOT_FOUND",
+    );
   });
 });
 

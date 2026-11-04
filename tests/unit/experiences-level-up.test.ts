@@ -13,17 +13,23 @@ let restsCurrent: { open: OpenRest | null; shortRestsSinceLong: number; last: nu
 
 const functionName = (ref: unknown) => String((ref as Record<symbol, unknown>)[Symbol.for("functionName")] ?? ref);
 
+/** The account's level-up draft data (config N4 b; drafts.get / save / clear), apart from `calls`. */
+let accountDraft: string | null = null;
+
 vi.mock("convex/react", () => ({
-  useQuery: (ref: unknown) => {
+  useQuery: (ref: unknown, args: unknown) => {
     const name = functionName(ref);
     if (name === "restsReads:current") return restsCurrent;
     if (name === "charactersReads:listByCampaign") return current ? [current] : [];
+    if (name === "drafts:get") return args === "skip" ? undefined : accountDraft === null ? null : { schemaVersion: 1, data: accountDraft, updatedAt: 0 };
     return current;
   },
   useMutation: (ref: unknown) => {
     const name = functionName(ref);
-    return async (args: unknown) => {
-      calls.push({ name, args });
+    return async (args: { data?: string }) => {
+      if (name === "drafts:save") accountDraft = args.data ?? null;
+      else if (name === "drafts:clear") accountDraft = null;
+      else calls.push({ name, args });
     };
   },
 }));
@@ -82,11 +88,13 @@ function character(overrides: Partial<CharacterView> = {}): CharacterView {
 }
 
 const show = () => render(createElement(CharacterSheetView, { characterId: "c1" }));
-const KEY = "dcm:level-up-draft:c1";
 const pending = (level = 1) => character({ sheet: { ...character().sheet, level, levelUpPending: true } as CharacterView["sheet"] });
-/** Seeds the stored draft the provider restores (the tier boxes that tick picks come with GL1). */
-const storeDraft = (level: number, picks: unknown[]) =>
-  window.sessionStorage.setItem(KEY, JSON.stringify({ v: 1, level, step: "experiences", draft: { picks, experienceName: "", cardId: "" } }));
+/** Seeds the account draft the provider restores (the tier boxes that tick picks come with GL1). */
+const storeDraft = (level: number, picks: unknown[]) => {
+  accountDraft = JSON.stringify({ level, step: "experiences", draft: { picks, experienceName: "", cardId: "" } });
+};
+/** The account draft, parsed. */
+const saved = () => JSON.parse(accountDraft ?? "{}");
 const box = () => screen.getByRole("region", { name: "Experiences" });
 
 // GL2: in the guided level-up the Experiences box takes the achievement Experience (levels 2/5/8) and the targets of
@@ -94,7 +102,7 @@ const box = () => screen.getByRole("region", { name: "Experiences" });
 describe("Experiences in the guided level-up", () => {
   beforeEach(() => {
     calls.length = 0;
-    window.sessionStorage.clear();
+    accountDraft = null;
     current = character();
     restsCurrent = { open: null, shortRestsSinceLong: 0, last: null };
   });
@@ -125,7 +133,8 @@ describe("Experiences in the guided level-up", () => {
     fireEvent.change(input, { target: { value: "Court musician" } });
     expect(input).toHaveValue("Court musician");
     expect(within(steps).getAllByRole("listitem")[0]).toHaveAttribute("data-done", "true");
-    expect(JSON.parse(window.sessionStorage.getItem(KEY) ?? "{}").draft.experienceName).toBe("Court musician");
+    // Typing saves on the account after a pause (debounced); the start's save holds no name yet.
+    expect(saved().draft.experienceName).toBe("");
     expect(calls).toEqual([]);
 
     // Enter moves on to the advancements step (with an empty name it stays put).
@@ -135,9 +144,12 @@ describe("Experiences in the guided level-up", () => {
     fireEvent.change(input, { target: { value: "Court musician" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(within(steps).getAllByRole("listitem")[1]).toHaveAttribute("aria-current", "step");
+    // The step change is a click: it saves at once, with the typed name.
+    expect(saved()).toMatchObject({ step: "advancements", draft: { experienceName: "Court musician" } });
     fireEvent.click(within(steps).getByRole("button", { name: /New Experience/ }));
 
     fireEvent.click(within(ribbon).getByRole("button", { name: "Cancel" }));
+    expect(accountDraft).toBeNull();
     expect(within(box()).queryByRole("textbox", { name: /for level/ })).toBeNull();
     expect(within(box()).getByRole("textbox", { name: "New Experience" })).toBeInTheDocument();
   });
@@ -168,11 +180,11 @@ describe("Experiences in the guided level-up", () => {
     expect(minstrel).toBeChecked();
     expect(tongue).toBeChecked();
     expect(within(group).getByText("Choose two (2/2).")).toBeInTheDocument();
-    expect(JSON.parse(window.sessionStorage.getItem(KEY) ?? "{}").draft.picks).toEqual([{ option: "experiences", tier: 2, targets: ["e1", "e2"] }]);
+    expect(saved().draft.picks).toEqual([{ option: "experiences", tier: 2, targets: ["e1", "e2"] }]);
 
     fireEvent.click(minstrel);
     expect(minstrel).not.toBeChecked();
-    expect(JSON.parse(window.sessionStorage.getItem(KEY) ?? "{}").draft.picks[0].targets).toEqual(["e2"]);
+    expect(saved().draft.picks[0].targets).toEqual(["e2"]);
     expect(calls).toEqual([]);
   });
 

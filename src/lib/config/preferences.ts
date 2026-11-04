@@ -141,8 +141,15 @@ export function resolveUiState(rows: readonly { key: UiStateKey; value: UiStateV
 
 // ------------------------------------------------------------------ drafts
 
-export const DRAFT_KINDS = ["characterWizard", "customFrame"] as const;
+/**
+ * The draft kinds: the character wizard (per campaign), the custom frame form (no campaign) and a guided level-up's
+ * unconfirmed picks (per character, config N4 b; added 2026-11-04 as a widening, so older rows stay valid).
+ */
+export const DRAFT_KINDS = ["characterWizard", "customFrame", "levelUp"] as const;
 export type DraftKind = (typeof DRAFT_KINDS)[number];
+
+/** The kinds a browser held before drafts moved to the account (the one-time import); never a level-up draft. */
+export const LEGACY_DRAFT_KINDS = ["characterWizard", "customFrame"] as const satisfies readonly DraftKind[];
 
 /** The most bytes a draft's JSON text may hold (UTF-8). */
 export const DRAFT_MAX_BYTES = 64 * 1024;

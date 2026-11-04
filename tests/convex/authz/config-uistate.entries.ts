@@ -2,14 +2,17 @@ import { api } from "../../../convex/_generated/api";
 import type { Area } from "./harness";
 
 /**
- * Authz matrix: account UI state and drafts (plan config P2, Q15 b). Every function is a userQuery / userMutation on the
- * caller's own rows, so every signed-in role is ok. A character-wizard draft also needs view on its campaign:
- * `drafts.get` and `drafts.save` with the world's campaign are NOT_FOUND for the outsider. `drafts.clear` only
- * deletes the caller's own row and reveals nothing, so it has no campaign check. The imports skip what the caller
- * cannot see instead of failing.
+ * Authz matrix: account UI state and drafts (plan config P2, Q15 b; config N4 b). Every function is a userQuery /
+ * userMutation on the caller's own rows. A character-wizard draft needs view on its campaign (NOT_FOUND for an
+ * outsider, tests/convex/drafts.test.ts); a level-up draft needs edit on its character, which only the character's
+ * owner, the GM, a co-GM and an edit grant hold (`permissionFor` through `loadCharacter`). The matrix lists each
+ * function once, so `drafts.get` and `drafts.save` run with the stricter level-up scope on playerA's character:
+ * another player is FORBIDDEN, an outsider NOT_FOUND. `drafts.clear` only deletes the caller's own row and reveals
+ * nothing, so it has no campaign or character check. The imports skip what the caller cannot see instead of failing.
  */
 const wizard = (w: { campaignId: string }) => ({ kind: "characterWizard", campaignId: w.campaignId });
-const memberOk = { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", otherPlayer: "ok", player: "ok", grantee: "ok", gm: "ok" } as const;
+const levelUp = (w: { characterA: string }) => ({ kind: "levelUp", characterId: w.characterA });
+const editorsOk = { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", otherPlayer: "FORBIDDEN", player: "ok", grantee: "ok", gm: "ok" } as const;
 
 const area: Area = {
   area: "config-uistate",
@@ -17,14 +20,14 @@ const area: Area = {
     { fn: api.uiState.get, access: "user" },
     { fn: api.uiState.set, access: "user", args: () => ({ change: { key: "tokenNames", value: true } }) },
     { fn: api.uiState.importLegacy, access: "user", args: () => ({ uiState: { tokenNames: true } }) },
-    { fn: api.drafts.get, access: "scoped", args: wizard, expect: memberOk },
+    { fn: api.drafts.get, access: "scoped", args: levelUp, expect: editorsOk },
     {
       fn: api.drafts.save,
       access: "scoped",
-      args: (w) => ({ ...wizard(w), schemaVersion: 1, data: "{}" }),
-      expect: memberOk,
+      args: (w) => ({ ...levelUp(w), schemaVersion: 1, data: "{}" }),
+      expect: editorsOk,
     },
-    { fn: api.drafts.clear, access: "user", args: wizard },
+    { fn: api.drafts.clear, access: "user", args: levelUp },
     {
       fn: api.drafts.importLegacy,
       access: "user",

@@ -13,15 +13,22 @@ const calls: { name: string; args: unknown }[] = [];
 let current: CharacterView | null = null;
 const functionName = (ref: unknown) => String((ref as Record<symbol, unknown>)[Symbol.for("functionName")] ?? ref);
 
+/** The account's level-up draft data (config N4 b; drafts.get / save / clear), apart from `calls`. */
+let accountDraft: string | null = null;
+
 vi.mock("convex/react", () => ({
-  useQuery: (ref: unknown) => {
+  useQuery: (ref: unknown, args: unknown) => {
     const name = functionName(ref);
     if (name === "restsReads:current") return { open: null, shortRestsSinceLong: 0, last: null };
     if (name === "charactersReads:listByCampaign") return current ? [current] : [];
+    if (name === "drafts:get") return args === "skip" ? undefined : accountDraft === null ? null : { schemaVersion: 1, data: accountDraft, updatedAt: 0 };
     return current;
   },
-  useMutation: (ref: unknown) => async (args: unknown) => {
-    calls.push({ name: functionName(ref), args });
+  useMutation: (ref: unknown) => async (args: { data?: string }) => {
+    const name = functionName(ref);
+    if (name === "drafts:save") accountDraft = args.data ?? null;
+    else if (name === "drafts:clear") accountDraft = null;
+    else calls.push({ name, args });
   },
 }));
 
@@ -108,7 +115,7 @@ describe("Domain Deck in level-up mode", () => {
   beforeEach(() => {
     calls.length = 0;
     current = character();
-    window.sessionStorage.clear();
+    accountDraft = null;
   });
 
   it("chooses the level's card: Choose for level 2 replaces Take, cards new at level 2 face up, Undo choice", () => {
@@ -138,10 +145,11 @@ describe("Domain Deck in level-up mode", () => {
   });
 
   it("fills the additional domain card pick after the level's card", () => {
-    window.sessionStorage.setItem(
-      "dcm:level-up-draft:c1",
-      JSON.stringify({ v: 1, level: 1, step: "deck", draft: { picks: [{ option: "domainCard", tier: 2, targets: [] }, { option: "hp", tier: 2 }], experienceName: "Bard", cardId: GRACE1.id } }),
-    );
+    accountDraft = JSON.stringify({
+      level: 1,
+      step: "deck",
+      draft: { picks: [{ option: "domainCard", tier: 2, targets: [] }, { option: "hp", tier: 2 }], experienceName: "Bard", cardId: GRACE1.id },
+    });
     render(createElement(CharacterSheetView, { characterId: "c1" }));
     fireEvent.click(screen.getByRole("tab", { name: "Domains" }));
     const deck = screen.getByLabelText("Domain Deck", REGION);

@@ -11,7 +11,8 @@ import { SUBCLASSES } from "../../src/lib/srd/subclasses";
 // level, blocked ones stay disabled with their reason, earlier marks stay read-only, and ticked options with targets
 // show their chooser (traits, multiclass, subclass) or a button to Experiences / the Domain Deck.
 
-vi.mock("convex/react", () => ({ useMutation: () => async () => null }));
+// The account draft (drafts.get) is empty: each test starts the mode itself.
+vi.mock("convex/react", () => ({ useQuery: () => null, useMutation: () => async () => null }));
 
 const { LevelUpDraftProvider, useLevelUpDraft } = await import("@/app/(gm)/campaigns/[campaignId]/party/[characterId]/level-up-draft");
 const { TierBoxes } = await import("@/components/party/level-up/history");
@@ -101,7 +102,6 @@ const noBox = (name: string | RegExp) => expect(screen.queryByLabelText(name, CH
 
 describe("TierBoxes in the guided level-up", () => {
   beforeEach(() => {
-    sessionStorage.clear();
     document.body.innerHTML = "";
   });
 

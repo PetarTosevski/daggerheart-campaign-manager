@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery } from "convex/react";
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { z } from "zod";
 
 import { DRAFT_MAX_BYTES, DRAFT_SCHEMA_VERSION, utf8Bytes, type DraftKind } from "@/lib/config/preferences";
@@ -99,47 +99,58 @@ export function isTypedWizardPatch(patch: Partial<WizardState>): boolean {
   return keys.length > 0 && keys.every((k) => WIZARD_TYPED.has(k));
 }
 
-type DraftScope = { kind: "characterWizard"; campaignId: Id<"campaigns"> } | { kind: Extract<DraftKind, "customFrame"> };
+export type DraftScope =
+  | { kind: "characterWizard"; campaignId: Id<"campaigns"> }
+  | { kind: Extract<DraftKind, "customFrame"> }
+  | { kind: "levelUp"; characterId: Id<"characters"> };
 
 /**
- * The caller's draft of `scope`: `stored` is undefined while it loads, then `drafts.get`'s answer (parse it with
- * `parseDraft`). `save(data, { typed })` writes the draft (debounced when `typed`), `flush()` sends a waiting save
- * now, `clear()` drops any waiting save and deletes the draft. A refused or failed save is dropped: a draft is a
- * convenience, and the next change saves again.
+ * The caller's draft of `scope`: `stored` is undefined while it loads (or while `enabled` is false: the query is
+ * skipped, for a viewer who may not read the draft), then `drafts.get`'s answer (parse it with `parseDraft`).
+ * `save(data, { typed })` writes the draft (debounced when `typed`), `flush()` sends a waiting save now, `clear()`
+ * drops any waiting save and deletes the draft. A refused or failed save is dropped: a draft is a convenience, and
+ * the next change saves again. The three actions keep their identity while the scope is the same.
  */
-export function useAccountDraft(scope: DraftScope) {
-  const stored = useQuery(api.drafts.get, scope);
+export function useAccountDraft(scope: DraftScope, { enabled = true }: { enabled?: boolean } = {}) {
+  const stored = useQuery(api.drafts.get, enabled ? scope : "skip");
   const saveDraft = useMutation(api.drafts.save);
   const clearDraft = useMutation(api.drafts.clear);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const waiting = useRef<string | null>(null);
+  const scopeKey = JSON.stringify(scope);
 
-  const cancel = () => {
-    if (timer.current !== null) clearTimeout(timer.current);
-    timer.current = null;
-    waiting.current = null;
-  };
+  const actions = useMemo(() => {
+    const target = JSON.parse(scopeKey) as DraftScope;
 
-  const flush = () => {
-    const data = waiting.current;
-    cancel();
-    if (data === null) return;
-    saveDraft({ ...scope, schemaVersion: DRAFT_SCHEMA_VERSION, data }).catch(() => undefined);
-  };
+    const cancel = () => {
+      if (timer.current !== null) clearTimeout(timer.current);
+      timer.current = null;
+      waiting.current = null;
+    };
 
-  const save = (value: object, { typed = false }: { typed?: boolean } = {}) => {
-    const data = JSON.stringify(value);
-    if (utf8Bytes(data) > DRAFT_MAX_BYTES) return; // the server refuses it; keep the last saved draft
-    if (timer.current !== null) clearTimeout(timer.current);
-    waiting.current = data;
-    if (typed) timer.current = setTimeout(flush, DRAFT_DEBOUNCE_MS);
-    else flush();
-  };
+    const flush = () => {
+      const data = waiting.current;
+      cancel();
+      if (data === null) return;
+      saveDraft({ ...target, schemaVersion: DRAFT_SCHEMA_VERSION, data }).catch(() => undefined);
+    };
 
-  const clear = () => {
-    cancel();
-    clearDraft(scope).catch(() => undefined);
-  };
+    const save = (value: object, { typed = false }: { typed?: boolean } = {}) => {
+      const data = JSON.stringify(value);
+      if (utf8Bytes(data) > DRAFT_MAX_BYTES) return; // the server refuses it; keep the last saved draft
+      if (timer.current !== null) clearTimeout(timer.current);
+      waiting.current = data;
+      if (typed) timer.current = setTimeout(flush, DRAFT_DEBOUNCE_MS);
+      else flush();
+    };
 
-  return { stored, save, flush, clear };
+    const clear = () => {
+      cancel();
+      clearDraft(target).catch(() => undefined);
+    };
+
+    return { save, flush, clear };
+  }, [scopeKey, saveDraft, clearDraft]);
+
+  return { stored, ...actions };
 }

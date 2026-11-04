@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { z } from "zod";
 
 import { canLevelUp, fullSheet } from "@/components/party/level-up/shared";
@@ -22,6 +22,7 @@ import { ADVANCEMENT_OPTIONS, type AdvancementOption, type CharacterSheet } from
 import { prefersReducedMotion } from "@/lib/use-reduced-motion";
 
 import { api } from "../../../../../../../convex/_generated/api";
+import { parseDraft, useAccountDraft } from "../new/draft";
 
 // Guided level-up (plan guided-level-up, GL0). The sheet provides one LevelUpDraft per character; the ribbon and
 // the sections (Experiences, tier boxes, Domain Deck) read and change it through useLevelUpDraft(). The draft is
@@ -154,11 +155,12 @@ export function advancementsChosen(draft: LevelUpDraft): boolean {
   });
 }
 
-const storageKey = (characterId: string) => `dcm:level-up-draft:${characterId}`;
-
-const storedSchema = z.object({
-  v: z.literal(1),
-  /** The sheet level the draft was started at; a different level drops it. */
+/**
+ * The level-up draft as saved on the account (config N4 b, `drafts` kind `levelUp`, schemaVersion 1 in the envelope;
+ * `parseDraft` checks both). A draft that fails it is ignored: the mode starts off.
+ */
+export const levelUpDraftSchema = z.object({
+  /** The sheet level the draft was started at; at a different level it is ignored. */
   level: z.number(),
   step: z.enum(["experiences", "advancements", "deck", "finish"]),
   draft: z.object({
@@ -173,21 +175,15 @@ const storedSchema = z.object({
 
 type State = { active: boolean; level: number; step: LevelUpStepId; draft: LevelUpDraft };
 
-/** The stored draft for the character at `level`, or an inactive state; a draft from another level is removed. */
-function restore(characterId: string, level: number): State {
-  const inactive: State = { active: false, level, step: "finish", draft: EMPTY_DRAFT };
-  try {
-    const raw = window.sessionStorage.getItem(storageKey(characterId));
-    if (raw === null) return inactive;
-    const parsed = storedSchema.safeParse(JSON.parse(raw));
-    if (!parsed.success || parsed.data.level !== level) {
-      window.sessionStorage.removeItem(storageKey(characterId));
-      return inactive;
-    }
-    return { active: true, level, step: parsed.data.step, draft: parsed.data.draft };
-  } catch {
-    return inactive;
-  }
+/**
+ * The state from the account's draft (`drafts.get`'s answer, undefined while it loads): active at the stored step when
+ * it parses and was started at `level`, else inactive. A stale or bad draft is left on the account; the next start
+ * replaces it, and an unchanged draft expires (`draftsRetention`).
+ */
+export function restoreLevelUp(stored: unknown, level: number): State {
+  const parsed = parseDraft(stored, levelUpDraftSchema);
+  if (parsed === null || parsed.level !== level) return { active: false, level, step: "finish", draft: EMPTY_DRAFT };
+  return { active: true, level, step: parsed.step, draft: parsed.draft };
 }
 
 /** The step list for a new level: the Experience only at achievement levels (CB 109). */
@@ -233,7 +229,15 @@ export function LevelUpDraftProvider({
   const sheet = useMemo(() => fullSheet(character), [character]);
   const sheetLevel = sheet?.level ?? character.sheet.level;
   const canStart = canLevelUp(sheet, canEdit, isGm);
-  const [state, setState] = useState<State>(() => restore(characterId, sheetLevel));
+  // Config N4 b: the unconfirmed picks are saved on the account (another tab or device picks them up). Only a viewer
+  // who may level this character reads it (drafts.get needs edit on the character).
+  const account = useAccountDraft({ kind: "levelUp", characterId }, { enabled: canStart });
+  const fromAccount = useMemo(() => restoreLevelUp(account.stored, sheetLevel), [account.stored, sheetLevel]);
+  // The state since the viewer's first change; until then the account's draft is the state (no copy in an effect).
+  const [local, setLocal] = useState<State | null>(null);
+  // The latest committed state, read by handlers that run before the next render (two changes in one event).
+  const latest = useRef<State | null>(null);
+  const state = local ?? fromAccount;
   const [focusRequest, setFocusRequest] = useState<{ step: LevelUpStepId; n: number } | null>(null);
   const apply = useIntent(api.levelUp.apply);
 
@@ -241,16 +245,25 @@ export function LevelUpDraftProvider({
   const active = state.active && state.level === sheetLevel && canStart;
   const level = sheetLevel + 1;
   const ids = useMemo(() => stepIds(level), [level]);
+  const { save: saveDraft, clear: clearDraft } = account;
 
-  // sessionStorage is the outside system kept in step with the draft (so a reload keeps it).
-  useEffect(() => {
-    try {
-      if (active) window.sessionStorage.setItem(storageKey(characterId), JSON.stringify({ v: 1, level: state.level, step: state.step, draft: state.draft }));
-      else window.sessionStorage.removeItem(storageKey(characterId));
-    } catch {
-      // Storage blocked (private mode, previews): the draft lives for this page only.
-    }
-  }, [active, characterId, state]);
+  /** Sets the state and, while it is a live draft, saves it on the account (from the change handler, rule 13). */
+  const commit = useCallback(
+    (next: State, typed = false) => {
+      latest.current = next;
+      setLocal(next);
+      if (next.active && next.level === sheetLevel && canStart) saveDraft({ level: next.level, step: next.step, draft: next.draft }, { typed });
+    },
+    [canStart, saveDraft, sheetLevel],
+  );
+
+  /** Ends the mode and deletes the account's draft (Cancel, or a level-up applied). */
+  const end = useCallback(() => {
+    const next: State = { ...(latest.current ?? fromAccount), active: false, draft: EMPTY_DRAFT };
+    latest.current = next;
+    setLocal(next);
+    clearDraft();
+  }, [clearDraft, fromAccount]);
 
   // After a goTo has rendered the step's page, bring its target into view and focus its heading.
   useEffect(() => {
@@ -261,10 +274,11 @@ export function LevelUpDraftProvider({
     (step: LevelUpStepId) => {
       const nav = NAV[step];
       if (nav.page) navigate(nav.page, nav.collection);
-      setState((s) => (ids.includes(step) ? { ...s, step } : s));
+      const s = latest.current ?? fromAccount;
+      if (ids.includes(step) && s.step !== step) commit({ ...s, step });
       setFocusRequest((r) => ({ step, n: (r?.n ?? 0) + 1 }));
     },
-    [ids, navigate],
+    [commit, fromAccount, ids, navigate],
   );
 
   const value = useMemo<LevelUpDraftValue>(() => {
@@ -302,14 +316,15 @@ export function LevelUpDraftProvider({
       : NO_STEPS;
 
     /** Changes the draft while the mode is on. */
-    const edit = (fn: (d: LevelUpDraft) => LevelUpDraft) => {
+    const edit = (fn: (d: LevelUpDraft) => LevelUpDraft, typed = false) => {
       if (!active) return;
-      setState((s) => ({ ...s, draft: fn(s.draft) }));
+      const s = latest.current ?? state;
+      const next = fn(s.draft);
+      commit({ ...s, draft: next }, typed);
       // The edit that completes the advancements takes the player on to the Domain Deck (user request 2026-10-18).
-      const next = fn(draft);
-      if ((state.step === "advancements" || state.step === "experiences") && !advancementsChosen(draft) && advancementsChosen(next)) goTo("deck");
+      if ((s.step === "advancements" || s.step === "experiences") && !advancementsChosen(s.draft) && advancementsChosen(next)) goTo("deck");
       // Choosing the last card in the deck goes on to the summary (user request 2026-10-18).
-      else if (state.step === "deck" && advancementsChosen(next) && !cardsChosen(draft) && cardsChosen(next)) goTo("finish");
+      else if (s.step === "deck" && advancementsChosen(next) && !cardsChosen(s.draft) && cardsChosen(next)) goTo("finish");
     };
     const same = (option: AdvancementOption, tier: number) => (p: PickChoice) => p.option === option && p.tier === tier;
 
@@ -332,23 +347,23 @@ export function LevelUpDraftProvider({
         if (!canStart) return;
         apply.clearError();
         const first = ids[0] ?? "finish";
-        setState({ active: true, level: sheetLevel, step: first, draft: EMPTY_DRAFT });
+        commit({ active: true, level: sheetLevel, step: first, draft: EMPTY_DRAFT });
         const nav = NAV[first];
         if (nav.page) navigate(nav.page, nav.collection);
         setFocusRequest((r) => ({ step: first, n: (r?.n ?? 0) + 1 }));
       },
       cancel: () => {
         apply.clearError();
-        setState((s) => ({ ...s, active: false, draft: EMPTY_DRAFT }));
+        end();
       },
       finish: async () => {
         if (!active || problems.length > 0) return false;
         const result = await apply.fire({ characterId, choice });
         if (!result) return false;
-        setState((s) => ({ ...s, active: false, draft: EMPTY_DRAFT }));
+        end();
         return true;
       },
-      setExperienceName: (name) => edit((d) => ({ ...d, experienceName: name.slice(0, 200) })),
+      setExperienceName: (name) => edit((d) => ({ ...d, experienceName: name.slice(0, 200) }), true),
       togglePick: (option, tier, on, which) =>
         edit((d) => {
           const matches = d.picks.map((p, i) => (same(option, tier)(p) ? i : -1)).filter((i) => i !== -1);
@@ -375,7 +390,7 @@ export function LevelUpDraftProvider({
         edit((d) => ({ ...d, cardChoices: { ...d.cardChoices, [cardId]: { ...d.cardChoices?.[cardId], [stepId]: [...new Set(optionIds)].slice(0, 4) } } })),
       goTo,
     };
-  }, [active, apply, canStart, characterId, goTo, hopeAndFear, ids, level, navigate, sheet, sheetLevel, state]);
+  }, [active, apply, canStart, characterId, commit, end, goTo, hopeAndFear, ids, level, navigate, sheet, sheetLevel, state]);
 
   return (
     <LevelUpDraftContext.Provider value={value}>

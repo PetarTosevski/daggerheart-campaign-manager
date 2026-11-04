@@ -164,7 +164,8 @@ export const campaignTables = {
   }).index("by_user_key", ["userId", "key"]),
 
   /**
-   * Unsent drafts (config S0, Q15 b): the character wizard (per campaign) and the custom frame form (no campaign).
+   * Unsent drafts (config S0, Q15 b): the character wizard (per campaign), the custom frame form (no campaign) and a
+   * guided level-up's picks (config N4 b: per character, with `characterId` and its campaign's `campaignId`).
    * `data` is JSON text of at most `DRAFT_MAX_BYTES`, parsed with zod on the client, with its `schemaVersion` (rule 7).
    * Purged with its campaign; drafts expire after 90 days (P2's cron).
    */
@@ -172,11 +173,14 @@ export const campaignTables = {
     userId: v.id("users"),
     kind: draftKindValidator,
     campaignId: v.optional(v.id("campaigns")),
+    /** A level-up draft's character (config N4 b); unset for the other kinds. Added 2026-11-04 as a widening (rule 7). */
+    characterId: v.optional(v.id("characters")),
     schemaVersion: v.number(),
     data: v.string(),
     updatedAt: v.number(),
   })
     .index("by_user_kind_campaign", ["userId", "kind", "campaignId"])
+    .index("by_user_kind_character", ["userId", "kind", "characterId"])
     .index("by_campaign", ["campaignId"])
     // The 90-day expiry (config P2, `draftsRetention.expire`).
     .index("by_updated", ["updatedAt"]),
