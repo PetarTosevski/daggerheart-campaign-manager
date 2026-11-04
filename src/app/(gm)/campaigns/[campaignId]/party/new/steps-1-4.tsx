@@ -517,7 +517,7 @@ export function InfoStep({ state, update }: StepProps) {
               role="switch"
               aria-checked={state.pronounsLabel === "pronouns"}
               aria-label="Label as Pronouns"
-              className="wz-hint flex items-center gap-1.5 bg-transparent p-0 text-[13px]"
+              className="wz-hint flex items-center gap-1.5 bg-transparent p-0 text-[13px] max-sm:min-h-11"
               onClick={() => update({ pronounsLabel: state.pronounsLabel === "pronouns" ? "gender" : "pronouns" })}
             >
               <span aria-hidden="true" className={cn("relative inline-block h-4 w-7 rounded-full border border-current transition-colors", state.pronounsLabel === "pronouns" && "bg-current")}>

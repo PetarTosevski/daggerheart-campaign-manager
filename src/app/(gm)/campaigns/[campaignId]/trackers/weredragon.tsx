@@ -139,13 +139,16 @@ function ReadingPicker({ campaignId, roll }: { campaignId: Id<"campaigns">; roll
         ))}
       </ul>
       {clashes.length ? (
-        <ul role="alert" aria-label="Reading warnings" className="m-0 list-none rounded-lg border border-[#8f6a2b] bg-[#8f6a2b]/15 p-2 text-[13px] text-[#f0d9a8]">
-          {clashes.map((c) => (
-            <li key={c.place}>
-              {c.kinds.map((k) => REVELATION_LABELS[k]).join(" and ")} both send the PCs to {c.place}.
-            </li>
-          ))}
-        </ul>
+        // The alert wraps the list: role="alert" on the <ul> itself would drop its list role (axe `listitem`).
+        <div role="alert" aria-label="Reading warnings" className="rounded-lg border border-[#8f6a2b] bg-[#8f6a2b]/15 p-2 text-[13px] text-[#f0d9a8]">
+          <ul className="m-0 list-none p-0">
+            {clashes.map((c) => (
+              <li key={c.place}>
+                {c.kinds.map((k) => REVELATION_LABELS[k]).join(" and ")} both send the PCs to {c.place}.
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
       <div className="flex items-center gap-2">
         <BrandButton variant="confirm" size="sm" disabled={assign.pending} onClick={() => assign.fire({ campaignId, assignment })}>

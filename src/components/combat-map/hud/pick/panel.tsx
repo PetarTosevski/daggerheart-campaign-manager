@@ -57,7 +57,7 @@ function useSpot(anchorId: Id<"combatTokens"> | null, panel: React.RefObject<HTM
       if (!el || !(region instanceof HTMLElement)) return;
       const p = region.getBoundingClientRect();
       const h = el.offsetHeight;
-      const token = anchorId === null ? null : document.querySelector(`.hud-map [data-token="${anchorId}"]`);
+      const token = anchorId === null ? null : document.querySelector(`.hud-map .cm-tok[data-token="${anchorId}"]`);
       let x: number;
       let y: number;
       let flipped = false;

@@ -189,6 +189,24 @@
 .hud-sh-open .hud-ap-bar {
   left: calc(50% - var(--hud-sheet-w) / 2);
 }
+/* The GM's Areas pick (the dock's Areas uses map-view's AreaPickBanner: "Pick the centre of … click a square", then
+   "… drawn." with Dismiss) stands where the square-picking bar does, over the HUD. In the board's flow it sat at the
+   top-left under the party banners, hidden, and its Dismiss could not be reached (axe target-size). */
+.hud-map .cm-area-pick-bar {
+  position: absolute;
+  left: 50%;
+  top: 84px;
+  z-index: 41;
+  width: min(560px, calc(100% - 32px));
+  transform: translateX(-50%);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+}
+.hud-map .cm-area-pick-bar > span {
+  flex: 1;
+}
+.hud-sh-open .hud-map .cm-area-pick-bar {
+  left: calc(50% - var(--hud-sheet-w) / 2);
+}
 
 /* ---------------------------------------------------------------- the feature picker's extra rows */
 .hud-pf-group {
@@ -234,7 +252,8 @@
 }
 
 @media (max-width: 760px) {
-  .hud-ap-bar {
+  .hud-ap-bar,
+  .hud-map .cm-area-pick-bar {
     top: 64px;
   }
 }

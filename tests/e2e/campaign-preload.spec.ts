@@ -126,10 +126,14 @@ test("a hard load sends the page's queries together with campaigns.get, renders 
     expect(hold.sentWhileHeld, `${target.label} queries sent before any reply`).toEqual(expect.arrayContaining(target.queries));
     await expect(page.getByRole("navigation", { name: "Campaign sections" })).toBeVisible();
     expect(errors, `${target.label} hydration and page errors`).toEqual([]);
-    // One copy of the page at any moment: count the landmarks once the page has settled, then compare with the peak.
+    // One copy of the page at any moment: the peak landmark count never exceeds the settled page's. Some panels
+    // (the dashboard's Campaign day and rest panel) arrive after the ready landmark with their own queries, so the
+    // count only settles later: poll until the page's count reaches the peak. A second copy that came and went leaves
+    // the peak above it for good and fails the poll.
     await expect(target.ready(page)).toBeVisible();
-    const settled = await page.locator("section, main").count();
-    expect(await maxSections(), `${target.label} never two copies of the page`).toBeLessThanOrEqual(settled);
+    await expect
+      .poll(async () => (await maxSections()) - (await page.locator("section, main").count()), { message: `${target.label} never two copies of the page` })
+      .toBeLessThanOrEqual(0);
     await page.close();
   }
 });
