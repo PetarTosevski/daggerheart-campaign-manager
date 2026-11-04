@@ -91,7 +91,7 @@ export function WritingAs({ campaignId, access, view, journalId, onPage, onView 
           {chips.map((chip) => (
             <li key={chip.key}>
               <BrandButton
-                variant="pill"
+                variant="neutral"
                 size="sm"
                 aria-pressed={chip.pressed}
                 className={cn("bj-wa-chip", chip.isGm && "bj-wa-chip-gm")}

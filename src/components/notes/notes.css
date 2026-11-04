@@ -85,28 +85,6 @@
   gap: 10px;
   flex-wrap: wrap;
 }
-.bj-threads {
-  min-height: 48px;
-  padding: 0 20px;
-  border-radius: 999px;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 15px;
-  font-weight: 600;
-  background: rgba(0, 0, 0, 0.35);
-  color: #ece6d6;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-}
-.bj-threads[aria-pressed="true"] {
-  background: var(--bj-acc);
-  color: var(--bj-acc-ink);
-  border-color: transparent;
-}
-.bj-threads:disabled {
-  cursor: default;
-  opacity: 0.6;
-}
-.bj-threads:focus-visible,
 .bj-ghost:focus-visible,
 .bj-chip:focus-visible,
 .bj-tabs [role="tab"]:focus-visible {
@@ -188,11 +166,6 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-}
-.bj-plus {
-  min-height: 28px;
-  padding: 0 8px;
-  font-size: 13px;
 }
 .bj-empty {
   font-size: 13px;
@@ -383,10 +356,6 @@
 }
 .bj-paper-btn:hover:not(:disabled) {
   background: rgba(120, 90, 40, 0.12);
-}
-.bj-danger {
-  color: #8e2b2b;
-  border-color: #d8a8a0;
 }
 .bj-line {
   margin: 0 0 10px;
@@ -599,11 +568,9 @@
 
 /* Touch targets of at least 44 px on tablets and phones (D12 H22); desktop keeps the board's sizes. */
 @media (max-width: 1100px), (pointer: coarse) {
-  .bj-threads,
   .bj-ghost,
   .bj-chip,
-  .bj-tabs [role="tab"],
-  .bj-plus {
+  .bj-tabs [role="tab"] {
     min-height: 44px;
   }
 }

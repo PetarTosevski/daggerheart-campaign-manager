@@ -145,23 +145,6 @@
 .bj-toast[data-open="true"] {
   display: inline-flex;
 }
-.bj-toast-undo {
-  min-height: 44px;
-  min-width: 72px;
-  padding: 0 14px;
-  border-radius: 8px;
-  border: none;
-  background: var(--bj-acc);
-  color: var(--bj-acc-ink);
-  font-family: inherit;
-  font-size: 15px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.bj-toast-undo:focus-visible {
-  outline: 2px solid var(--bj-text);
-  outline-offset: 2px;
-}
 
 /* ---------------------------------------------------------------- torn-out pages (not on the board) */
 
@@ -232,23 +215,12 @@
   font-size: 12px;
   color: var(--bj-faint);
 }
-.bj-bin-restore {
-  flex: none;
-  min-height: 36px;
-  font-size: 13px;
-}
 .bj-bin-error {
   margin: 0;
   font-size: 13px;
   color: var(--bj-danger);
 }
 
-/* Touch targets of at least 44 px on tablets and phones (D12 H22); desktop keeps the board's sizes. */
-@media (max-width: 1100px), (pointer: coarse) {
-  .bj-bin-restore {
-    min-height: 44px;
-  }
-}
 @media (max-width: 720px) {
   .bj-toast-wrap {
     bottom: 16px;

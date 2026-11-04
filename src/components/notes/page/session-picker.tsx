@@ -5,6 +5,7 @@ import "./page.css";
 import { useQuery } from "convex/react";
 import { useId, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import { errorMessage } from "@/lib/convex-errors";
 import { sessionLogTitle } from "@/lib/domain/notes";
@@ -127,12 +128,12 @@ function PickerBody({
         </p>
       ) : null}
       <div className="bj-picker-actions">
-        <button type="button" className="bj-ghost" onClick={onClose}>
+        <BrandButton variant="cancel" onClick={onClose}>
           Cancel
-        </button>
-        <button type="submit" className="bj-picker-confirm" disabled={busy}>
+        </BrandButton>
+        <BrandButton variant="confirm" type="submit" disabled={busy}>
           {confirmLabel}
-        </button>
+        </BrandButton>
       </div>
     </form>
   );

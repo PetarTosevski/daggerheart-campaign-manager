@@ -1,7 +1,7 @@
 /*
  * 'Writing as' chips (Journal JN2, design journal_views.jpg panel 3): a row over the paper column, right-aligned like
- * the design's (label in small caps, portrait discs as initials). The chip is the brand pill (BrandButton); pressed it
- * takes the gold edge and ink of the design's 'Game Master' chip. Tokens from notes.css.
+ * the design's (label in small caps, portrait discs as initials). The chip is a neutral glass button (BrandButton) with
+ * `aria-pressed`: the pressed one glows gold (glass buttons G13). Tokens from notes.css.
  */
 .bj-wa-row {
   width: 100%;
@@ -40,15 +40,6 @@ p.bj-wa-row {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-}
-.bj-wa-chip {
-  gap: 8px;
-  padding-left: 5px;
-}
-.bj-wa-chip[aria-pressed="true"] {
-  border-color: var(--bj-acc);
-  color: var(--bj-acc);
-  background: linear-gradient(to bottom, #2a2414, #1a170d);
 }
 .bj-wa-face {
   width: 30px;

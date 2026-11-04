@@ -6,6 +6,7 @@ import { Caveat } from "next/font/google";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Component, useId, useState, type ReactNode } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { BinView, TornOutPages } from "@/components/notes/bin";
 import { DownloadJournalButton } from "@/components/notes/export";
 import { JournalHeading, WritingAs } from "@/components/notes/header";
@@ -56,9 +57,9 @@ export class SlotBoundary extends Component<{ children: ReactNode; label: string
         <span>
           {this.props.label} failed to load{this.state.message ? `: ${this.state.message}` : "."}
         </span>
-        <button type="button" className="bj-ghost" onClick={() => this.setState({ failed: false, message: "" })}>
+        <BrandButton variant="neutral" size="sm" onClick={() => this.setState({ failed: false, message: "" })}>
           Try again
-        </button>
+        </BrandButton>
       </div>
     );
   }
@@ -175,16 +176,16 @@ export function NotesBody(props: NotesBodyProps) {
       )}
       <main className="bj-main" data-chrome={chrome}>
         <aside className="bj-index" aria-label="Journal index">
-          <button
-            type="button"
-            className="bj-ghost bj-index-toggle"
+          <BrandButton
+            variant="neutral"
+            className="bj-index-toggle"
             aria-expanded={indexOpen}
             aria-controls={indexId}
             onClick={() => setIndexOpen(!indexOpen)}
           >
             <span aria-hidden="true">{indexOpen ? "▾" : "▸"}</span> Pages
             {current ? <span className="bj-index-current">· {current.title}</span> : null}
-          </button>
+          </BrandButton>
           <div id={indexId} className="bj-index-body" data-open={indexOpen}>
             <SlotBoundary label="Search">
               <JournalSearch {...slot} />

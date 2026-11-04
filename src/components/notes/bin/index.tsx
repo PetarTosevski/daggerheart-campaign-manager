@@ -6,6 +6,8 @@ import { useMutation, useQuery } from "convex/react";
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 
+import { BrandButton } from "@/components/brand/buttons";
+import { ViewerScope } from "@/components/brand/viewer";
 import { errorMessage } from "@/lib/convex-errors";
 import { binDaysLeft, daysLeftLabel, UNDO_MS } from "@/lib/domain/notes";
 import { binPageLocally, restorePageLocally } from "@/lib/optimistic/notes-bin";
@@ -172,7 +174,7 @@ function TearLayer({ campaignId, onPage }: Pick<NotesSlotProps, "campaignId" | "
       <span ref={anchor} hidden />
       {root
         ? createPortal(
-            <>
+            <ViewerScope>
               {tear ? <RipFrame key={tear.key} tear={tear} /> : null}
               <div className="bj-toast-wrap">
                 <div role="status" className="bj-toast" data-open={ownToast !== null || error !== null}>
@@ -181,16 +183,16 @@ function TearLayer({ campaignId, onPage }: Pick<NotesSlotProps, "campaignId" | "
                       <span>
                         Page torn out<span className="sr-only">: {ownToast.title}</span> ·
                       </span>
-                      <button type="button" className="bj-toast-undo" onClick={undo}>
+                      <BrandButton variant="cancel" onClick={undo}>
                         Undo
-                      </button>
+                      </BrandButton>
                     </>
                   ) : error ? (
                     <span>{error}</span>
                   ) : null}
                 </div>
               </div>
-            </>,
+            </ViewerScope>,
             root,
           )
         : null}
@@ -250,9 +252,9 @@ export function TornOutPages({ campaignId, pageId, view, onPage }: NotesSlotProp
                   </span>
                 </span>
               </button>
-              <button type="button" className="bj-ghost bj-bin-restore" aria-label={`Restore ${row.title}`} onClick={() => restoreRow(row)}>
+              <BrandButton variant="neutral" size="sm" className="flex-none" aria-label={`Restore ${row.title}`} onClick={() => restoreRow(row)}>
                 Restore
-              </button>
+              </BrandButton>
             </li>
           ))}
         </ul>

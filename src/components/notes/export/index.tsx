@@ -3,6 +3,7 @@
 import { useConvex } from "convex/react";
 import { useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import type { ExportPage } from "@/lib/domain/notes";
 
@@ -48,9 +49,9 @@ export function DownloadJournalButton({ campaignId }: NotesSlotProps) {
 
   return (
     <>
-      <button type="button" className="bj-threads" disabled={view === undefined || busy} aria-busy={busy || undefined} onClick={() => void download()}>
+      <BrandButton variant="neutral" disabled={view === undefined || busy} aria-busy={busy || undefined} onClick={() => void download()}>
         {busy ? "Preparing…" : "Download my journal"}
-      </button>
+      </BrandButton>
       {error !== null && (
         <span role="alert" className="bj-alert">
           {error}

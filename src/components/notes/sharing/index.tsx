@@ -5,6 +5,7 @@ import "./sharing.css";
 import { useMutation, useQuery } from "convex/react";
 import { useId, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import { errorMessage } from "@/lib/convex-errors";
 import { allowedVisibilities, visibilityLabel, type Visibility } from "@/lib/domain/notes";
@@ -167,9 +168,9 @@ function SharingDialog({
         </p>
       ) : null}
       <div className="bj-share-foot">
-        <button type="button" className="bj-ghost" onClick={onClose}>
+        <BrandButton variant="cancel" onClick={onClose}>
           Done
-        </button>
+        </BrandButton>
       </div>
     </Modal>
   );
