@@ -1,19 +1,72 @@
 import { appError } from "../../src/lib/errors/app-error";
 import type { Id } from "../_generated/dataModel";
-import type { MutationCtx } from "../_generated/server";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { normalizeJoinCode } from "../members";
 import { normalizeEmail } from "./allowlist";
+import { readAppConfig } from "./appConfig";
+import { readAppStatus } from "./functions";
 
 export const PASSWORD_PROVIDER_ID = "password";
 
 export type SignInArgs = {
   existingUserId: Id<"users"> | null;
   provider?: { id: string };
-  profile: Record<string, unknown> & { email?: string; emailVerified?: boolean };
+  profile: Record<string, unknown> & { email?: string; emailVerified?: boolean; joinCode?: string };
 };
+
+/** The refusal of a new account (config AD4), as an error code. */
+export type SignUpRefusal = "SIGN_UP_CLOSED" | "SIGN_UP_INVITE_ONLY";
+
+/** The longest join code accepted from the sign-up params before normalising (real codes are far shorter). */
+const MAX_JOIN_CODE_INPUT = 64;
+
+/** The join code carried in the sign-up params (the password form passes the one of a /join/<code> link), or null. */
+export function signUpJoinCode(raw: unknown): string | null {
+  if (typeof raw !== "string" || raw.length > MAX_JOIN_CODE_INPUT) return null;
+  const code = normalizeJoinCode(raw);
+  return code === "" ? null : code;
+}
+
+/**
+ * Whether the owner's sign-up mode (config AD4, Q18 a) refuses a NEW account for `email`; null when it is allowed.
+ * - Read-only mode (AD10) or `closed`: `SIGN_UP_CLOSED`.
+ * - `invite`: allowed for an email with a pending invite to a live campaign, or when `joinCode` is the code of a live
+ *   campaign; otherwise `SIGN_UP_INVITE_ONLY`.
+ * - `open` (the default): allowed.
+ * The answer depends only on the mode, the invites and the code, never on whether the email has an account, so
+ * callers can ask it before looking the email up (`auth.ts` does, so a refused sign-up reveals nothing).
+ */
+export async function signUpRefusal(
+  ctx: QueryCtx,
+  email: string,
+  joinCode: string | null,
+): Promise<SignUpRefusal | null> {
+  if ((await readAppStatus(ctx)).readOnly) return "SIGN_UP_CLOSED";
+  const { signUpMode } = await readAppConfig(ctx);
+  if (signUpMode === "open") return null;
+  if (signUpMode === "closed") return "SIGN_UP_CLOSED";
+  // A handful of invites per email at most; a deleted campaign's invite does not count.
+  const invites = await ctx.db
+    .query("campaignInvites")
+    .withIndex("by_email", (q) => q.eq("email", normalizeEmail(email)))
+    .take(20);
+  for (const invite of invites) {
+    const campaign = await ctx.db.get(invite.campaignId);
+    if (campaign !== null && campaign.deletedAt === undefined) return null;
+  }
+  if (joinCode !== null) {
+    const campaign = await ctx.db
+      .query("campaigns")
+      .withIndex("by_joinCode", (q) => q.eq("joinCode", joinCode))
+      .first();
+    if (campaign !== null && campaign.deletedAt === undefined) return null;
+  }
+  return "SIGN_UP_INVITE_ONLY";
+}
 
 /**
  * Convex Auth's `createOrUpdateUser` callback. Runs on every sign-in, account creation and code verification.
- * Sign-up is open; what keeps accounts apart is whether the email is verified.
+ * Who may sign up follows the owner's sign-up mode (below); what keeps accounts apart is whether the email is verified.
  * - Existing account (`existingUserId`): returned as is. When the profile says the email is now verified (the code
  *   was entered, or Google vouched), the user is marked verified here, because this callback replaces Convex
  *   Auth's default one, which would have done it.
@@ -25,9 +78,13 @@ export type SignInArgs = {
  *   marks it verified (the library sends a code instead of a session for an unverified account). Any other existing
  *   user is refused with `EMAIL_TAKEN`. (An abandoned unverified password account is replaced earlier, in `auth.ts`.)
  * The email is normalised to lower case.
+ *
+ * Sign-up mode (config AD4): only the insert of a NEW user is gated, by `signUpRefusal` (the password profile carries
+ * the join code; Google carries none, so in invite mode Google creates only invited emails). Signing in, verifying,
+ * and reusing or linking an existing user (the app owner's included) are never refused here.
  */
 export async function createOrUpdateUser(
-  ctx: Pick<MutationCtx, "db">,
+  ctx: MutationCtx,
   args: SignInArgs,
 ): Promise<Id<"users">> {
   const isPassword = args.provider?.id === PASSWORD_PROVIDER_ID;
@@ -87,6 +144,9 @@ export async function createOrUpdateUser(
     }
     return existing._id;
   }
+
+  const refusal = await signUpRefusal(ctx, email, isPassword ? signUpJoinCode(args.profile.joinCode) : null);
+  if (refusal !== null) throw appError(refusal);
 
   const name = typeof args.profile.name === "string" ? args.profile.name.trim() : "";
   if (isPassword) {

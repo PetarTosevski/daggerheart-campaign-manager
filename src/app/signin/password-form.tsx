@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
+import { adminMessages } from "@/lib/errors/admin";
 import { authMessages } from "@/lib/errors/auth";
 import { safeNextPath } from "@/lib/safe-next";
 
@@ -32,7 +33,22 @@ export function authErrorText(error: unknown, fallback: string): string {
   if (code === undefined && error instanceof Error) code = /"code":"([A-Z_]+)"/.exec(error.message)?.[1];
   if (code === "RATE_LIMITED") return RATE_LIMIT_TEXT;
   if (code === "EMAIL_TAKEN" || code === "PASSWORD_TOO_SHORT" || code === "CODE_INVALID") return authMessages[code];
+  if (code === "SIGN_UP_CLOSED" || code === "SIGN_UP_INVITE_ONLY") return adminMessages[code];
   return fallback;
+}
+
+/**
+ * The join code of the /join/<code> link that sent a signed-out visitor here (`?next=/join/<code>`), or null. A
+ * sign-up passes it, so invite-only mode (config AD4, Q18 a) lets the account be created; the server checks it.
+ */
+export function joinCodeFromNext(next: string | null): string | null {
+  const match = /^\/join\/([^/?#]{1,64})\/?$/.exec(next ?? "");
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
 }
 
 const LABELS: Record<Step, { form: string; submit: string }> = {
@@ -48,6 +64,9 @@ export function PasswordForm() {
   const { signIn } = useAuthActions();
   const router = useRouter();
   const next = useSearchParams().get("next");
+  const joinCode = joinCodeFromNext(next);
+  /** The extra sign-up params: the display name and the join link's code. */
+  const signUpParams = (name: string) => ({ name, ...(joinCode ? { joinCode } : {}) });
   const [step, setStep] = useState<Step>("signIn");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -112,7 +131,7 @@ export function PasswordForm() {
             flow,
             email: address,
             password: values.password,
-            ...(flow === "signUp" ? { name: values.name } : {}),
+            ...(flow === "signUp" ? signUpParams(values.name) : {}),
           }).then(({ signingIn }) => {
             if (signingIn) done({ signingIn });
             else {
@@ -160,7 +179,7 @@ export function PasswordForm() {
           flow: origin.flow,
           email,
           password: origin.password,
-          ...(origin.flow === "signUp" ? { name: origin.name } : {}),
+          ...(origin.flow === "signUp" ? signUpParams(origin.name) : {}),
         });
       }
       setNotice("We sent a new code.");
