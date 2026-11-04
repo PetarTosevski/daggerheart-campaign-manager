@@ -26,6 +26,8 @@ import { shadowReach, shadowSpec, type ShadowSpec } from "./shadows";
 export interface SpritePaintObject extends PaintObject {
   readonly id: string;
   readonly sprite?: SpriteRef;
+  /** Plan lanes-2 E4.4 (dcm-bxp.84): the GM's light override of a sprite object; absent = the art's own light. */
+  readonly light?: SpriteLight;
 }
 
 /**
@@ -69,8 +71,10 @@ function spriteScale(o: SpritePaintObject, art: ObjectArt): number {
 
 /** Resolves an object's art and drawn size. */
 export function placeObject(o: SpritePaintObject, setting: string, seed: number, uploaded: UploadedSprites): PlacedObject {
-  const art = objectArt(o, setting, seed, uploaded);
-  if (!art) return { o, art: null, sw: 0, sh: 0 };
+  const found = objectArt(o, setting, seed, uploaded);
+  if (!found) return { o, art: null, sw: 0, sh: 0 };
+  // The glow (and its bounds) follow the object's light override, as the server's vision does (`objectTraits`).
+  const art = o.light === undefined || o.sprite === undefined ? found : { ...found, light: o.light };
   const k = Math.min(art.w / art.px.w, art.h / art.px.h);
   const scale = spriteScale(o, art);
   return { o, art, sw: art.px.w * k * scale, sh: art.px.h * k * scale };

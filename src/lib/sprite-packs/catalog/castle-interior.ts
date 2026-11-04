@@ -1,8 +1,8 @@
 // Built-in catalog: castle interior (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, long, obj, tex } from "./types";
+import { defineFolder, long, obj, tex, type FolderCatalog } from "./types";
 
-export const CASTLE_INTERIOR = defineFolder("castle-interior", {
+export const CASTLE_INTERIOR = (): FolderCatalog => defineFolder("castle-interior", {
   props: [
     obj("banner stand", "none", "tall", "pillar", { standIn: false }),
     obj("suit of armour", "cover", "tall", "statue", { move: "block", standIn: false }),

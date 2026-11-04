@@ -32,32 +32,72 @@ import { type Infer } from "convex/values";
 import { pickUse, run, type ActorState, type PlanStep, type ResolvedMod, type RunContext, type RunPlan, type RunRefusal, type WeaponInfo } from "../../src/lib/domain/card-effects/run";
 import type { OtherSheet } from "../../src/lib/domain/class-features/types";
 import type { RollRecord } from "../../src/lib/domain/duality";
-import { featureKey, parseFeatureId } from "../../src/lib/domain/feature-effects/ids";
-import { FEATURE_CLASSIFICATION } from "../../src/lib/srd/feature-effects/classification";
-import type { CardEffect, CardUse, Duration, Range, Step, TargetSpec } from "../../src/lib/domain/card-effects/types";
+import { endsOnOccurrence, type EndRoll } from "../../src/lib/domain/characters/expiry";
+import { featureEffect } from "../../src/lib/srd/feature-effects/index";
+import type { CardEffect, CardUse, Duration, Mod, Range, Step, TargetSpec } from "../../src/lib/domain/card-effects/types";
+import { featureUseKey, recordUsedOn, usedOnBefore, type CreatureFacts, type PayerState, type StateFacts } from "../../src/lib/domain/card-effects/availability";
+import type { MapCreature, MarkedTracks } from "../../src/lib/domain/combat-actions/numbers";
+import { lastingModsOf } from "../../src/lib/domain/adversary-effects/run";
 import { lineOfSight, rangeCheck, rangeFromWeapon, tokenDistance, type Combatant, type SightResult } from "../../src/lib/domain/combat-actions/index";
 import { tokenVisibility } from "../../src/lib/domain/combat-map/index";
-import { derivedDefense, derivedThresholds } from "../../src/lib/domain/characters/derived";
+import { derivedDefense, derivedThresholds, withPassiveTraits } from "../../src/lib/domain/characters/derived";
 import { withEffects } from "../../src/lib/domain/characters/effects";
 import { hopeMax, tierForLevel } from "../../src/lib/domain/characters/index";
 import { spellcastTraitOf } from "../../src/lib/domain/characters/spellcast";
+import { gainSlots, type SlotCounts } from "../../src/lib/domain/characters/slots";
 import { minionValue } from "../../src/lib/domain/adversaries/index";
 import { assertTypedModifier, experienceBonus, spendHope, type Rng } from "../../src/lib/domain/dice/index";
 import { appError } from "../../src/lib/errors/app-error";
 import { ADVERSARIES } from "../../src/lib/srd/adversaries";
 import { alwaysOnResistance } from "../../src/lib/srd/adversary-resistance";
+import { adversaryEffects } from "../../src/lib/srd/adversary-effects/index";
 import { cardEffect, cardUsage } from "../../src/lib/srd/card-effects/index";
 import { getDomainCard, getWeapon } from "../../src/lib/srd/index";
 import type { AdversaryDef, DomainId, TraitId, Weapon } from "../../src/lib/srd/types";
-import { CONDITIONS, FEATURE_USES_MAX, type CharacterSheet, type Effect } from "../../src/lib/validation/characters";
+import type { CharacterSheet, Effect } from "../../src/lib/validation/characters";
+import { FEATURE_USES_MAX } from "../../src/lib/validation/character-constants";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
+import { activeAreasOnMap, areaFactsFor } from "../combatAreas";
 import type { AttackScene } from "./combatActions";
-import { DEFAULT_OPTIONALS, MAX_CARD_TARGETS, type CardRoll, type ParsedChoices } from "./cardChoices";
+import { preparedFor } from "./areaSight";
+import { DEFAULT_OPTIONALS, MAX_CARD_TARGETS, MAX_CHAIN_LINKS, type CardRoll, type ParsedChoices } from "./cardChoices";
 import type { ChoiceAsks } from "./cardRows";
 import { rangeBandValidator } from "./validators/combatRequests";
 import { readSheet } from "./characterSheet";
 import { rules } from "./rolls";
+import { stanceDropMarker } from "./stanceDrop";
+import {
+  cardIdOfEffect,
+  conditionMarkerOf,
+  conditionSources,
+  effectKeyOf,
+  featureIdOfEffect,
+  isFeatureUseId,
+  isMarker,
+  ownsEffect,
+  sourceEnds,
+  STANDARD,
+  tokenKeyOf,
+  withoutCondition,
+  type EndedCondition,
+} from "./conditionMarkers";
+
+export {
+  cardIdOfEffect,
+  conditionMarkerOf,
+  conditionSources,
+  effectKeyOf,
+  featureIdOfEffect,
+  isFeatureUseId,
+  ownsEffect,
+  sourceEnds,
+  tokenKeyOf,
+  withoutCondition,
+  type EndedCondition,
+};
+export { endedConditionLine } from "./conditionMarkers";
+import { unshakePlan, type UnshakableRoll } from "./unshakable";
 
 const SRD_BY_ID = new Map<string, AdversaryDef>(ADVERSARIES.map((a) => [a.id, a]));
 
@@ -117,15 +157,6 @@ function weaponInfo(weapon: Weapon | undefined, trait: TraitId | undefined): Wea
   };
 }
 
-/** Sheet effect ids written by cards: `card:<cardId>:<n>` (the sheet's list ids are at most 40 characters). */
-const CARD_EFFECT = /^card:([a-z0-9-]+):\d+$/;
-
-export function cardIdOfEffect(effect: Effect): string | null {
-  return CARD_EFFECT.exec(effect.id)?.[1] ?? null;
-}
-
-const STANDARD = new Set<string>(CONDITIONS);
-
 /** A PC as the engine reads it (an ally, or the actor before its card fields). Evasion and Armor after gear and effects. */
 export function pcCombatant(id: string, sheet: CharacterSheet): Combatant & { armor: number; armorMax: number } {
   const live = withEffects(sheet);
@@ -152,7 +183,8 @@ export function pcCombatant(id: string, sheet: CharacterSheet): Combatant & { ar
  * `cardId` is the `cardTokens` id: the card id, or `feat:<featureId>` for a feature (SD3).
  */
 export function cardActor(id: string, sheet: CharacterSheet, cardId: string, trait: TraitId | undefined): ActorState {
-  const live = withEffects(sheet);
+  // DA19 (B1, dcm-bxp.99.19.19): traits with the passive features' bonuses (a Beastform's statistics, CB p.30).
+  const live = withPassiveTraits(withEffects(sheet));
   const spellTrait = spellcastTraitOf(sheet);
   const domainsOf = (ids: readonly string[]) => ids.flatMap((c) => (getDomainCard(c) ? [getDomainCard(c)!.domain as DomainId] : []));
   const vault = sheet.domainCards.owned.filter((c) => !sheet.domainCards.loadout.includes(c));
@@ -163,8 +195,11 @@ export function cardActor(id: string, sheet: CharacterSheet, cardId: string, tra
   const s = weaponInfo(secondary, trait);
   if (p) weapons.primary = p;
   if (s) weapons.secondary = s;
+  const pc = pcCombatant(id, sheet);
   return {
-    ...pcCombatant(id, sheet),
+    ...pc,
+    // Plan lanes-2 E4.3 (dcm-q40t, dcm-rs1z): the derived stats a `stat` number reads (Armor Score, thresholds, Evasion).
+    stats: { armorScore: pc.armorMax, majorThreshold: pc.thresholds.major ?? 0, severeThreshold: pc.thresholds.severe ?? 0, evasion: pc.evasion ?? 0 },
     hope: sheet.hope,
     hopeMax: hopeMax(sheet.scars, sheet.hopeSlotBonus),
     traits: live.traits,
@@ -301,7 +336,7 @@ export class Creatures {
     if (index === s.viewer.index) creature = { kind: "self", tokenId: token._id, token };
     else if (token.side === "enemy") {
       if (!seenBy(s, index)) throw appError("COMBAT_NO_LINE_OF_SIGHT");
-      const sight = lineOfSight(s.scene.prepared, s.attacker, token, s.scene.visionObjects);
+      const sight = lineOfSight(s.attacker.ref.kind === "pc" ? preparedFor(s.scene, s.attacker.ref.characterId) : s.scene.prepared, s.attacker, token, s.scene.visionObjects);
       if (!sight.lineOfSight) throw appError("COMBAT_NO_LINE_OF_SIGHT");
       const linked = await enemyInstance(this.ctx, this.campaignId, token);
       if (linked === null) throw appError("COMBAT_TARGET_INVALID");
@@ -339,14 +374,6 @@ export class Creatures {
 type Band = Infer<typeof rangeBandValidator>;
 export type OutOfRange = { tokenId: Id<"combatTokens">; band: Band };
 
-/**
- * Cards whose follow-up creatures chain from the creature before them (CA4b user answer: "some cards may need to check
- * range from the target initially hit (chain lightning)"). Chain Lightning (Arcana 5, CB p.328): "Additional adversaries not already
- * targeted by Chain Lightning and within Close range of previous targets who took damage also make the saving throw ...
- * This chain continues until there are no more adversaries within range." The vocabulary can't name a chain origin
- * (`area: "aroundTarget"` reads as "of the target"), so the server lists them (gap bead dcm-dgu).
- */
-const CHAIN_CARDS = new Set(["chain-lightning"]);
 
 /** The `pick` of the use's first step sending to `to` (nested steps included), or the first follow-up's targets. */
 function stepSpec(steps: readonly Step[], match: (s: Step) => TargetSpec | undefined): TargetSpec | undefined {
@@ -374,14 +401,17 @@ export function extraSpecs(use: CardUse): { picked?: TargetSpec; allies?: Target
 /**
  * Where a creature of `spec` is measured from (CB p.103 "Ranges are measured from the actor unless `area` says
  * otherwise"): `aroundTarget` from the use's targets (any of them; a chain also from the earlier follow-ups), `aroundSelf`
- * from the actor with the area's radius, everything else from the actor with the spec's range. `aroundPoint`, `line`,
- * `front`, `path` and `between` have no point or shape on the map: the actor (gap bead dcm-dgu).
+ * from the actor with the area's radius, everything else from the actor with the spec's range. Plan lanes E4 (dcm-dgu):
+ * `origin: "target"` / `"chain"` measure from `from` (the use's targets; a chain also the earlier links) with the spec's
+ * range (`areaRange` when it has one). `aroundPoint` / `origin: "point"`, `line`, `front`, `path` and `between` have no
+ * point or shape among the use's arguments yet: the actor (task doc TASK-LN-E4.md).
  */
 export function rangeOrigin(scene: AttackScene, spec: TargetSpec | undefined, range: Range | "unlimited", from: readonly Creature[], c: Creature): { inRange: boolean; band: Band } | null {
   if (spec === undefined || c.kind === "self") return null;
   const origins = from.filter((o) => o.kind !== "self" && o.tokenId !== c.tokenId);
-  if (spec.area === "aroundTarget" && spec.areaRange !== undefined && origins.length > 0) {
-    const checks = origins.map((o) => rangeCheck(o.token, c.token, spec.areaRange!));
+  const fromOthers = spec.area === "aroundTarget" ? spec.areaRange : spec.origin === "target" || spec.origin === "chain" ? (spec.areaRange ?? range) : undefined;
+  if (fromOthers !== undefined && origins.length > 0) {
+    const checks = origins.map((o) => rangeCheck(o.token, c.token, fromOthers));
     const best = checks.reduce((a, b) => (b.distance < a.distance ? b : a));
     return { inRange: checks.some((x) => x.inRange), band: best.band };
   }
@@ -406,6 +436,12 @@ export type CardRequest = {
   gmFear: number;
   /** The latest action roll of the character succeeded with Hope (Second Wind's "The attack succeeded with Hope"). */
   lastRollWithHope: boolean;
+  /**
+   * Plan lanes-2 E4.3 (dcm-va0f, dcm-dgu (2)): the squares picked for a use whose targets name `points` or an
+   * `aroundPoint` / `origin: "point"` area (Unleash Hellfire's bursts, Zone of Protection). At most MAX_CARD_POINTS, each
+   * within the use's range of the actor. E1.3a passes `useCard`'s `point` / `points` args.
+   */
+  points?: readonly MapPoint[];
 };
 
 export type BuiltRun = {
@@ -423,6 +459,198 @@ const SECOND_WIND_SITUATION = "The attack succeeded with Hope";
 
 function specOf(use: CardUse): TargetSpec | undefined {
   return use.targets && use.targets.side !== "trigger" ? (use.targets as TargetSpec) : undefined;
+}
+
+/** Plan lanes E4 (dcm-d7h): the fewest targets a use takes ("choose two willing creatures", CB p.333-334). */
+export function targetMin(spec: TargetSpec | undefined): number | undefined {
+  const count = spec?.count;
+  return count !== undefined && (count.kind === "upTo" || count.kind === "any") ? count.min : undefined;
+}
+
+/** Whether a use spends Hope: its own costs or the costs of a step inside it (an optional "spend a Hope to ..."). */
+export function paysHope(use: Pick<CardUse, "costs" | "steps">): boolean {
+  const walk = (x: unknown): boolean => {
+    if (Array.isArray(x)) return x.some(walk);
+    if (x === null || typeof x !== "object") return false;
+    const costs = (x as { costs?: unknown }).costs;
+    if (Array.isArray(costs) && costs.some((c: { kind?: unknown } | null) => c?.kind === "hope")) return true;
+    return Object.values(x).some(walk);
+  };
+  return walk({ costs: use.costs, steps: use.steps });
+}
+
+/**
+ * Plan lanes E4 (dcm-zos): the instance's stat block has a modifier `noHopeFeaturesAgainst` (Fearsome Presence, CB p.239:
+ * "PCs can't spend Hope to use features against the Zombie"), read from its adversary effect entries.
+ */
+export function barsHopeFeatures(instance: Doc<"encounterAdversaries">): boolean {
+  if (instance.source.kind !== "srd") return false;
+  return adversaryEffects(instance.source.adversaryId).some((entry) => entry.uses.some((u) => (u.modifiers ?? []).some((m) => m.kind === "mod" && m.mod.kind === "flag" && m.mod.flag === "noHopeFeaturesAgainst")));
+}
+
+// ---------------------------------------------------------------- plan lanes-2 E4.3: what each creature carries
+//
+// dcm-q40t, dcm-x4ft, dcm-gl9, dcm-576v (docs/tasks/TASK-LN3-E4.md): the per-creature fields run.ts reads (lasting mods,
+// effect labels, Hope, gold, slot maximums and stats, payers) and the state facts its checks read. Runner ids are token
+// ids (the actor's is its own token, or its character id off the map).
+
+/** The first segment of a sheet effect's text: its label. */
+const labelOf = (e: Pick<Effect, "text">) => e.text.split("; ")[0] ?? "";
+
+/** An adversary feature's effect on a PC sheet (`card:<adversaryId>/<feature>:<n>`, lane E7) or on an instance (`adv:`). */
+const ADVERSARY_SHEET_EFFECT = /^card:([^/:]+)\/(.+):\d+$/;
+const ADVERSARY_INSTANCE_EFFECT = /^adv:([^/:]+)\/(.+):\d+$/;
+/** A card / feature modifier on an instance: `card:<id>:<n>` / `feat:<id>:<n>`, with an optional `~<caster>`. */
+const SOURCED_INSTANCE_EFFECT = /^(?:card|feat):(.+):\d+(?:~.+)?$/;
+
+/** The steps of the entry a lasting effect came from (a card, a PC feature, or an adversary feature). */
+function entryStepsOf(source: { adversaryId: string; feature: string } | { sourceId: string }): readonly unknown[] {
+  if ("adversaryId" in source) return (adversaryEffects(source.adversaryId).find((e) => e.feature === source.feature)?.uses ?? []).map((u) => u.steps);
+  return (cardEffect(source.sourceId)?.uses ?? featureEffect(source.sourceId)?.uses ?? []).map((u) => u.steps);
+}
+
+/** The lasting mods a PC carries (dcm-fbsr, dcm-5kxg): each sheet effect's entry mods, found by its label. */
+export function sheetModsOn(sheet: Pick<CharacterSheet, "effects">): Mod[] {
+  const out: Mod[] = [];
+  for (const e of sheet.effects) {
+    const adv = ADVERSARY_SHEET_EFFECT.exec(e.id);
+    const sourceId = adv ? null : (cardIdOfEffect(e) ?? featureIdOfEffect(e));
+    const steps = adv ? entryStepsOf({ adversaryId: adv[1]!, feature: adv[2]! }) : sourceId !== null ? entryStepsOf({ sourceId }) : [];
+    if (steps.length > 0) out.push(...lastingModsOf(steps, labelOf(e)));
+  }
+  return out;
+}
+
+/** The lasting mods an adversary instance carries: each modifier's entry mods (an adversary feature's or a card's). */
+export function instanceModsOn(instance: Pick<Doc<"encounterAdversaries">, "effects">): Mod[] {
+  const out: Mod[] = [];
+  for (const e of instance.effects ?? []) {
+    const adv = ADVERSARY_INSTANCE_EFFECT.exec(e.id);
+    const sourced = adv ? null : SOURCED_INSTANCE_EFFECT.exec(e.id);
+    const steps = adv ? entryStepsOf({ adversaryId: adv[1]!, feature: adv[2]! }) : sourced ? entryStepsOf({ sourceId: sourced[1]! }) : [];
+    if (steps.length > 0) out.push(...lastingModsOf(steps, e.label));
+  }
+  return out;
+}
+
+/** The rules flags among mods (`cannotSpendHope`, `cannotClearHp`, …), for a payer's `flags`. */
+const flagsOf = (mods: readonly Mod[]) => mods.flatMap((m) => (m.kind === "flag" ? [m.flag as string] : []));
+
+/** Gold as `goldOf` counts it: handfuls, a bag being 10 (CB p.104). */
+export const handfulsOf = (sheet: Pick<CharacterSheet, "gold">) => sheet.gold.handfuls + sheet.gold.bags * 10;
+
+/** A PC's numbers beyond its tracks (dcm-4zti): slot maximums, derived stats, gold. */
+function pcNumbers(sheet: CharacterSheet, c: Combatant & { armorMax?: number }): Partial<MarkedTracks> {
+  return {
+    hpMax: sheet.hpMax,
+    stressMax: sheet.stressMax,
+    ...(c.armorMax !== undefined ? { armorMax: c.armorMax } : {}),
+    stats: { armorScore: c.armorMax ?? 0, majorThreshold: c.thresholds.major ?? 0, severeThreshold: c.thresholds.severe ?? 0, evasion: c.evasion ?? 0 },
+    gold: { handfuls: sheet.gold.handfuls, bags: sheet.gold.bags },
+  };
+}
+
+/** What a PC payer holds (dcm-a9c: a `paidBy` cost; Rune Ward's holder, CB p.328). `cardTokens` are the use's own. */
+function pcPayer(sheet: CharacterSheet, c: Combatant & { armor?: number; armorMax?: number }, mods: readonly Mod[], cardTokens: number): PayerState {
+  const flags = flagsOf(mods);
+  return {
+    hope: sheet.hope,
+    stress: sheet.stress,
+    stressMax: sheet.stressMax,
+    hp: sheet.hp,
+    hpMax: sheet.hpMax,
+    armor: c.armor ?? sheet.armorMarked,
+    armorMax: c.armorMax ?? 0,
+    cardTokens,
+    gold: handfulsOf(sheet),
+    ...(flags.length > 0 ? { flags } : {}),
+  };
+}
+
+/** Squares from `token` to the nearest PC or ally token other than the actor's and its own (null: none). */
+function nearestAllyOf(scene: AttackScene, token: Doc<"combatTokens">): number | null {
+  let best: number | null = null;
+  for (const [i, t] of scene.scene.tokens.entries()) {
+    if (i === scene.viewer.index || t._id === token._id || (t.side !== "pc" && t.side !== "ally")) continue;
+    const d = tokenDistance(t, token);
+    if (best === null || d < best) best = d;
+  }
+  return best;
+}
+
+/**
+ * dcm-gl9 / dcm-576v: a named creature's facts for `who: target` / `subject` checks: its tracks, conditions, Hope, held
+ * items, squares from the actor, squares to the actor's nearest ally, and the live areas it stands in.
+ */
+function creatureFactsOf(c: Creature, actor: ActorState, actorSheet: CharacterSheet, scene: AttackScene | null, areas: readonly Doc<"combatAreas">[]): CreatureFacts {
+  const token = c.token;
+  const sheet = c.kind === "pc" ? c.sheet : c.kind === "self" ? actorSheet : null;
+  const combatant = c.kind === "self" ? actor : c.combatant;
+  const base: CreatureFacts = {
+    conditions: combatant.conditions ?? [],
+    ...(c.kind === "enemy" ? { tags: c.instance.tags } : sheet ? { tags: sheet.effects.map(labelOf) } : {}),
+    hp: combatant.hp,
+    hpMax: combatant.hpMax,
+    stress: combatant.stress,
+    stressMax: combatant.stressMax,
+    ...(sheet ? { armor: sheet.armorMarked, hope: sheet.hope, items: sheet.inventory.map((i) => i.name) } : {}),
+    ...("armorMax" in combatant && combatant.armorMax !== undefined ? { armorMax: combatant.armorMax } : {}),
+  };
+  if (scene === null) return base;
+  const nearestAlly = nearestAllyOf(scene, token);
+  const characterId = c.kind === "pc" ? c.character._id : c.kind === "self" && scene.attacker.ref.kind === "pc" ? scene.attacker.ref.characterId : null;
+  const inside = areaFactsFor(areas, scene.scene.tokens, token, characterId);
+  return {
+    ...base,
+    distance: tokenDistance(scene.attacker, token),
+    ...(nearestAlly !== null ? { nearestAlly } : {}),
+    ...(inside.length > 0 ? { areas: inside } : {}),
+  };
+}
+
+/** The creature a `usedOnBefore` memory names (dcm-c75): the instance for an enemy, the character for a PC. */
+function memoryIdOf(c: Creature): string | null {
+  return c.kind === "enemy" ? c.instance._id : c.kind === "pc" ? c.character._id : null;
+}
+
+/** Whether a card's entry reads the per-target memory (`usedOnBefore`; Words of Discord's second use, CB p.335). */
+export function readsUsedOn(effect: CardEffect): boolean {
+  return JSON.stringify(effect.uses).includes('"kind":"usedOnBefore"');
+}
+
+/** A picked square (Unleash Hellfire's bursts, Zone of Protection's point) as a footprint. */
+type MapPoint = { x: number; y: number };
+
+/** The most points one use picks (Unleash Hellfire: 1d4). */
+export const MAX_CARD_POINTS = 10;
+
+/**
+ * dcm-va0f (Unleash Hellfire, HF p.88): for a use with `TargetSpec.points`, the indexes of the picked points whose area
+ * (`areaRange`, default Very Close) holds each creature.
+ */
+export function pointsOfCreatures(points: readonly MapPoint[], radius: Range, creatures: readonly { id: string; token: Doc<"combatTokens"> }[]): Record<string, number[]> {
+  const out: Record<string, number[]> = {};
+  for (const c of creatures) {
+    const inside = points.flatMap((p, i) => (rangeCheck({ x: p.x, y: p.y, size: 1 }, c.token, radius).inRange ? [i] : []));
+    if (inside.length > 0) out[c.id] = inside;
+  }
+  return out;
+}
+
+/** The map creatures `creatureCount` counts (dcm-ttz), by token id, seen from the actor, with squares to it and the first target. */
+function mapCreaturesOf(scene: AttackScene, first: Doc<"combatTokens"> | undefined, nameOf: (t: Doc<"combatTokens">) => string | undefined): MapCreature[] {
+  return scene.scene.tokens.map((t, i): MapCreature => {
+    const name = nameOf(t);
+    return {
+      id: t._id,
+      side: i === scene.viewer.index ? "self" : t.side === "enemy" ? "enemy" : "ally",
+      pc: t.ref.kind === "pc",
+      ...(name !== undefined ? { name } : {}),
+      fromSelf: tokenDistance(scene.attacker, t),
+      ...(first ? { fromTarget: tokenDistance(first, t) } : {}),
+      at: { x: t.x, y: t.y, size: t.size },
+    };
+  });
 }
 
 function rangeOf(spec: TargetSpec | undefined, actor: ActorState, weapon: "primary" | "secondary" | undefined): Range | "unlimited" {
@@ -472,7 +700,11 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
   if (exp.hope > 0 && use.roll === undefined) throw invalid("This card makes no roll to add an Experience to.");
   const paidSheet = rules(() => spendHope(sheet, exp.hope));
   const base = cardActor(actorTokenId, paidSheet, pick.limitKey, roll.trait);
-  const actor = pick.actor ? pick.actor(base) : base;
+  const own = pick.actor ? pick.actor(base) : base;
+  // Plan lanes E4 (SD-A, Q14): the live map areas the actor stands in at this roll (`inArea` checks).
+  const mapAreas = scene ? await activeAreasOnMap(ctx, scene.scene.map._id) : [];
+  const areas = scene ? areaFactsFor(mapAreas, scene.scene.tokens, scene.attacker, req.character._id) : [];
+  const actor: ActorState = areas.length > 0 ? { ...own, facts: { ...(own.facts ?? {}), areas } } : own;
   const spec = specOf(use);
   const range = rangeOf(spec, actor, choices.weapon);
 
@@ -492,6 +724,14 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
   if (scene && spec?.side === "self" && targets.length === 0) targets = [{ kind: "self", tokenId: scene.attacker._id, token: scene.attacker }];
   const encounters = new Set(targets.flatMap((t) => (t.kind === "enemy" ? [t.encounter._id] : [])));
   if (encounters.size > 1) throw appError("COMBAT_TARGET_INVALID");
+  if (spec?.excludeSubject === true && choices.triggerSubject !== undefined) {
+    // Plan lanes E4 (dcm-ssf): "all other adversaries" leaves the trigger's creature out (Elemental Incarnation, CB p.30).
+    if (ids.includes(choices.triggerSubject)) throw appError("COMBAT_TARGET_INVALID", "The creature that set this off isn't one of its targets.");
+    targets = targets.filter((t) => t.tokenId !== choices.triggerSubject);
+  }
+  const min = targetMin(spec);
+  if (min !== undefined && targets.length < min) throw appError("COMBAT_TARGET_INVALID", `Pick at least ${min} targets.`);
+  if (paysHope(use)) for (const t of targets) if (t.kind === "enemy" && barsHopeFeatures(t.instance)) throw appError("COMBAT_TARGET_INVALID", `You can't spend Hope to use features against ${t.instance.label}.`);
 
   // ---- other creatures
   const list = async (tokenIds: readonly string[], allow: (c: Creature) => boolean) => {
@@ -519,14 +759,49 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
   const anchored = spec?.area === "aroundPoint" || spec?.area === "aroundTarget";
   for (const [i, t] of targets.entries()) {
     if (anchored && i > 0 && spec?.areaRange !== undefined) flag(t, rangeOrigin(creatures.scene, { ...spec, area: "aroundTarget" }, range, targets.slice(0, 1), t));
+    // Plan lanes E4 (dcm-dgu): the first target from the actor, the next from the first (`target`) or from every earlier one (`chain`).
+    else if (i > 0 && (spec?.origin === "target" || spec?.origin === "chain")) flag(t, rangeOrigin(creatures.scene, spec, range, spec.origin === "target" ? targets.slice(0, 1) : targets.slice(0, i), t));
     else flag(t, rangeOrigin(creatures.scene, spec && { ...spec, area: spec.area === "aroundSelf" ? "aroundSelf" : undefined }, range, [], t));
   }
   const specs = extraSpecs(use);
+  if (specs.picked?.excludeSubject === true && choices.triggerSubject !== undefined && choices.picked.includes(choices.triggerSubject)) throw appError("COMBAT_TARGET_INVALID", "The creature that set this off isn't one of its picks.");
   const extraRange = (s: TargetSpec | undefined) => (s === undefined ? "unlimited" : s.range === "weapon" ? (actor.weapons[choices.weapon ?? "primary"]?.range ?? "melee") : s.range);
   for (const c of picked) flag(c, rangeOrigin(creatures.scene, specs.picked, extraRange(specs.picked), targets, c));
   for (const c of allies) flag(c, rangeOrigin(creatures.scene, specs.allies, extraRange(specs.allies), targets, c));
-  const chain = CHAIN_CARDS.has(effect.cardId);
-  for (const [i, c] of followUp.entries()) flag(c, rangeOrigin(creatures.scene, specs.followUp, extraRange(specs.followUp), chain ? [...targets, ...followUp.slice(0, i)] : targets, c));
+  // Plan lanes-2 E4.3 (dcm-io4m): a chain is the entry's `origin: "chain"` (Chain Lightning's follow-up, CB p.328).
+  const chained = specs.followUp?.origin === "chain";
+  for (const [i, c] of followUp.entries()) flag(c, rangeOrigin(creatures.scene, specs.followUp, extraRange(specs.followUp), chained ? [...targets, ...followUp.slice(0, i)] : targets, c));
+  // dcm-x4ft (dcm-rou, dcm-7az): each further link of a repeating follow-up is measured from the link before it (link 0
+  // is `followUp`; "within Close range of previous targets", CB p.328).
+  const chain: Creature[][] = [];
+  for (const link of (choices.chain ?? []).slice(0, MAX_CHAIN_LINKS)) {
+    const linkCreatures = await list(link, (c) => c.kind !== "self");
+    const previous = chain.length === 0 ? (followUp.length > 0 ? followUp : targets) : chain[chain.length - 1]!;
+    for (const c of linkCreatures) flag(c, rangeOrigin(creatures.scene, specs.followUp, extraRange(specs.followUp), previous, c));
+    chain.push(linkCreatures);
+  }
+  // dcm-q0a: the allies who pay to raise a save's Difficulty.
+  const raisers = await list(choices.raisers ?? [], (c) => c.kind === "pc");
+  // dcm-va0f, dcm-dgu (2): picked squares, each on the map within the use's range of the actor; a target of an
+  // `aroundPoint` area is measured from the nearest point instead of the first target.
+  const points = [...(req.points ?? [])];
+  if (points.length > MAX_CARD_POINTS) throw appError("COMBAT_TARGET_INVALID", `At most ${MAX_CARD_POINTS} points.`);
+  if (points.length > 0 && scene) {
+    for (const p of points) {
+      if (!Number.isInteger(p.x) || !Number.isInteger(p.y) || p.x < 0 || p.y < 0 || p.x >= scene.map.w || p.y >= scene.map.h) throw appError("COMBAT_TARGET_INVALID", "That point is off the map.");
+      if (!rangeCheck(scene.attacker, { x: p.x, y: p.y, size: 1 }, range).inRange) throw appError("COMBAT_TARGET_INVALID", "That point is out of range.");
+    }
+    if (spec?.area === "aroundPoint" || spec?.origin === "point") {
+      const radius = spec.areaRange ?? range;
+      for (const t of targets) {
+        if (t.kind === "self") continue;
+        const inside = points.some((p) => rangeCheck({ x: p.x, y: p.y, size: 1 }, t.token, radius).inRange);
+        const at = outOfRange.findIndex((o) => o.tokenId === t.tokenId);
+        if (inside && at >= 0) outOfRange.splice(at, 1);
+        else if (!inside && at < 0) outOfRange.push({ tokenId: t.tokenId, band: rangeCheck({ x: points[0]!.x, y: points[0]!.y, size: 1 }, t.token, radius).band });
+      }
+    }
+  }
 
   // ---- the roll: cover gives one disadvantage (Q2); an attack roll adds the effects' attack bonus (CB p.96).
   const cover = targets.some((t) => t.kind === "enemy" && t.sight.cover);
@@ -536,7 +811,8 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
   // ---- card-specific fixes from the domain tables' "Notes for CA4"
   const numbers = { ...choices.numbers };
   if (effect.cardId === "share-the-burden") {
-    // Grace notes: cap the Stress transferred at the target's marked Stress (dcm-fnq).
+    // Grace notes: cap the Stress transferred at the target's marked Stress (dcm-fnq). Plan lanes-2 E4.3 (dcm-io4m): kept,
+    // since the choice's `max` alone refuses a number above it (INVALID) where the table expects the cap.
     const target = targets[0];
     const marked = target ? combatantOf(target, actor).stress : 0;
     if (numbers.stress !== undefined) numbers.stress = Math.max(1, Math.min(numbers.stress, marked));
@@ -556,9 +832,86 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
   if (source) trigger.source = source;
   if (subject) trigger.subject = subject;
   if (choices.triggerAmount !== undefined) trigger.amount = choices.triggerAmount;
+  // dcm-m5fy (Encore, CB p.335: "you deal the same damage to the target that your ally dealt"): the trigger's damage type.
+  if (choices.triggerDamageType !== undefined) trigger.damageType = choices.triggerDamageType;
+
+  // ---- Plan lanes-2 E4.3: what each named creature carries (dcm-q40t, dcm-x4ft) and the facts the checks read (dcm-gl9).
+  const actorMods = sheetModsOn(paidSheet);
+  const modsOn: Record<string, readonly Mod[]> = {};
+  const effectsOn: Record<string, string[]> = { [actor.id]: paidSheet.effects.map(labelOf) };
+  const hopeOf: Record<string, number> = { [actor.id]: actor.hope };
+  const goldOf: Record<string, number> = { [actor.id]: handfulsOf(paidSheet) };
+  const byId: Record<string, Partial<MarkedTracks>> = {};
+  if (actorMods.length > 0) modsOn[actor.id] = actorMods;
+  for (const c of creatures.all) {
+    if (c.kind === "self") continue;
+    const mods = c.kind === "pc" ? sheetModsOn(c.sheet) : instanceModsOn(c.instance);
+    if (mods.length > 0) modsOn[c.tokenId] = mods;
+    if (c.kind === "pc") {
+      effectsOn[c.tokenId] = c.sheet.effects.map(labelOf);
+      hopeOf[c.tokenId] = c.sheet.hope;
+      goldOf[c.tokenId] = handfulsOf(c.sheet);
+      byId[c.tokenId] = pcNumbers(c.sheet, c.combatant);
+    } else {
+      effectsOn[c.tokenId] = [...(c.instance.effects ?? []).map((e) => e.label), ...c.instance.tags];
+      byId[c.tokenId] = { hpMax: c.instance.stats.hpMax, stressMax: c.instance.stats.stressMax, stats: { majorThreshold: c.instance.stats.major ?? 0, severeThreshold: c.instance.stats.severe ?? 0 } };
+    }
+  }
+  // dcm-a9c: the payers a `paidBy` cost names (PCs; the actor is `self`).
+  const selfPayer = pcPayer(paidSheet, actor, actorMods, actor.cardTokens);
+  const payerOf = (c: Creature | undefined): PayerState | undefined => (c === undefined ? undefined : c.kind === "self" ? selfPayer : c.kind === "pc" ? pcPayer(c.sheet, c.combatant, modsOn[c.tokenId] ?? [], 0) : undefined);
+  const payers: NonNullable<RunContext["payers"]> = { self: selfPayer };
+  const subjectCreature = choices.triggerSubject !== undefined ? creatures.get(choices.triggerSubject) : undefined;
+  const sourceCreature = choices.triggerSource !== undefined ? creatures.get(choices.triggerSource) : undefined;
+  const subjectPayer = payerOf(subjectCreature);
+  const sourcePayer = payerOf(sourceCreature);
+  const pickedPayer = payerOf(picked[0]);
+  if (subjectPayer) payers.triggerSubject = subjectPayer;
+  if (sourcePayer) payers.triggerSource = sourcePayer;
+  if (pickedPayer) payers.picked = pickedPayer;
+  // dcm-va0f: which picked points hold each target.
+  const pointsOf = points.length > 0 && spec?.points !== undefined ? pointsOfCreatures(points, spec.areaRange ?? "veryClose", targets.flatMap((t) => (t.kind === "self" ? [] : [{ id: t.tokenId as string, token: t.token }]))) : undefined;
+  // dcm-gl9 / dcm-576v: the actor's facts (Armor Slots, the card's tokens, its nearest ally, its weapons' ranges, the
+  // per-target memory) and the first target's and the trigger subject's facts.
+  const first = targets.find((t) => t.kind !== "self");
+  const firstMemory = first ? memoryIdOf(first) : null;
+  const attacking = choices.weapon ?? (spec?.range === "weapon" || dealsWeaponDamage(use.steps) || use.roll?.kind === "attack" ? "primary" : undefined);
+  const nearestAlly = scene ? nearestAllyOf(scene, scene.attacker) : null;
+  const facts: StateFacts = {
+    armorMax: actor.armorMax,
+    cardTokens: actor.cardTokens,
+    weapons: {
+      primary: actor.weapons.primary?.range ?? null,
+      secondary: actor.weapons.secondary?.range ?? null,
+      ...(attacking !== undefined ? { attacking: actor.weapons[attacking]?.range ?? null } : {}),
+    },
+    ...(nearestAlly !== null ? { nearestAlly } : {}),
+    ...(readsUsedOn(effect) && firstMemory !== null ? { usedOnBefore: usedOnBefore(paidSheet, featureUseKey(effect.cardId), firstMemory) } : {}),
+    ...(first ? { target: creatureFactsOf(first, actor, paidSheet, scene, mapAreas) } : {}),
+    ...(subjectCreature ? { subject: creatureFactsOf(subjectCreature, actor, paidSheet, scene, mapAreas) } : {}),
+  };
+  // What the use's own pick (a feature's extras) already knows wins.
+  const ownFacts = actor.facts ?? {};
+  const fullActor: ActorState = {
+    ...actor,
+    facts: {
+      ...facts,
+      ...ownFacts,
+      ...(facts.target !== undefined || ownFacts.target !== undefined ? { target: { ...facts.target, ...ownFacts.target } as CreatureFacts } : {}),
+      ...(facts.subject !== undefined || ownFacts.subject !== undefined ? { subject: { ...facts.subject, ...ownFacts.subject } as CreatureFacts } : {}),
+    },
+  };
+  const nameOfToken = (t: Doc<"combatTokens">): string | undefined => {
+    const c = creatures.get(t._id);
+    if (c?.kind !== "enemy") return undefined;
+    return c.instance.source.kind === "srd" ? (SRD_BY_ID.get(c.instance.source.adversaryId)?.name ?? c.instance.label) : c.instance.label;
+  };
 
   const context: Omit<RunContext, "rng"> = {
-    actor,
+    actor: fullActor,
+    // dcm-qoq9 (user answer 2026-10-31, Chain Lightning, CB p.328: "every new wave of chained targets gets a fresh 2d8+4
+    // roll"): each chain link rolls its damage again.
+    freshLinkDamage: true,
     gmFear: req.gmFear,
     useId: use.id,
     // Off the map a self use targets the actor itself (SD3).
@@ -574,6 +927,25 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
     splits: choices.splits,
     situations,
     ...(nearest !== undefined ? { nearestEnemy: nearest } : {}),
+    // Plan lanes-2 E4.3 (dcm-x4ft): per-chooser picks, held dice, chain links, save raisers, other creatures' Hope and gold,
+    // the effect labels each carries (dcm-kkx stacking).
+    ...(choices.chooserOptions ? { chooserOptions: choices.chooserOptions } : {}),
+    ...(choices.chooserOptionals ? { chooserOptionals: choices.chooserOptionals } : {}),
+    ...(choices.heldDice ? { heldDicePicks: choices.heldDice } : {}),
+    ...(chain.length > 0 ? { chain: chain.map((link) => link.map((t) => combatantOf(t, actor))) } : {}),
+    ...(raisers.length > 0 ? { saveRaisers: raisers.map((t) => combatantOf(t, actor)) } : {}),
+    hopeOf,
+    goldOf,
+    effectsOn,
+    // dcm-q40t (dcm-4zti, dcm-a9c, dcm-fbsr, dcm-5kxg, dcm-va0f): numbers, payers, lasting mods, points.
+    numbers: {
+      self: pcNumbers(paidSheet, actor),
+      byId,
+      ...(scene ? { creatures: mapCreaturesOf(scene, first?.token, nameOfToken) } : {}),
+    },
+    payers,
+    modsOn,
+    ...(pointsOf ? { pointsOf } : {}),
     roll: {
       ...(roll.trait !== undefined ? { trait: roll.trait } : {}),
       ...(choices.weapon !== undefined ? { weapon: choices.weapon } : {}),
@@ -657,17 +1029,70 @@ export function runCard(built: BuiltRun, pick: CardPick, rng: Rng): RunOutcome {
     context = { ...context, picked: keep };
     plan = once(context, replaying(first.values, rng));
   }
+  const asks = choiceAsks(built, plan);
+  if (asks.length > 0) return { kind: "needsChoice", asks, dice: first.values };
+  const remembered = withUsedOn(plan, built, pick.effect);
+  return { kind: "plan", plan: withOnslaught(remembered, built.paidSheet, pick.use), picked: context.picked ?? [], dice: first.values, ...(delegated ? { delegated } : {}) };
+}
+
+/**
+ * The choices a plan still needs (nothing was paid or written): a `choose` step's options (plan lanes-2 E4.3, dcm-sc54:
+ * one ask per chooser of a `choose` with `by`, answered `by:<stepId>:<chooserId>`), a damage / clear split, and the next
+ * link of a repeating follow-up (`followUp`, answered `chain:<link>`; an empty list ends the chain).
+ */
+export function choiceAsks(built: BuiltRun, plan: RunPlan): ChoiceAsks {
   const asks: ChoiceAsks = [];
   for (const step of plan.steps) {
     if (step.kind !== "prompt") continue;
     if (step.prompt === "choose" && step.step?.kind === "choose") {
-      asks.push({ kind: "choose", stepId: step.step.id, label: step.step.label, options: step.step.options.map((o) => ({ id: o.id, label: o.label })) });
+      const chooser = step.chooserId !== undefined ? tokenIdsOf(built, [step.chooserId])[0] : undefined;
+      asks.push({ kind: "choose", stepId: step.step.id, label: step.step.label, options: step.step.options.map((o) => ({ id: o.id, label: o.label })), ...(chooser ? { chooserId: chooser } : {}) });
     } else if (step.prompt === "split") {
       asks.push({ kind: "split", label: step.text, tokenIds: tokenIdsOf(built, step.targetIds) });
+    } else if (step.prompt === "followUp" && chainGoesOn(built, step)) {
+      asks.push({ kind: "followUp", label: step.text, link: step.amount ?? 1, tokenIds: tokenIdsOf(built, step.targetIds) });
     }
   }
-  if (asks.length > 0) return { kind: "needsChoice", asks, dice: first.values };
-  return { kind: "plan", plan: withOnslaught(plan, built.paidSheet, pick.use), picked: context.picked ?? [], dice: first.values, ...(delegated ? { delegated } : {}) };
+  return asks;
+}
+
+/**
+ * Whether a repeating follow-up can take another link (Chain Lightning, CB p.328: "This chain continues until there are no
+ * more adversaries within range"): some creature of the follow-up's side on the map, not yet targeted by the use, within
+ * its range of a creature of the last link. Off the map, or a range the map can't measure, the chain asks.
+ */
+function chainGoesOn(built: BuiltRun, step: Extract<PlanStep, { kind: "prompt" }>): boolean {
+  const spec = step.step?.kind === "followUp" ? step.step.targets : undefined;
+  // A creature out of range waits for the GM first (pending); the next link is asked after.
+  if (built.outOfRange.length > 0) return false;
+  if (!built.creatures.onMap || spec === undefined || spec.range === "weapon" || spec.range === "unlimited") return true;
+  const range = spec.range;
+  const tokens = built.creatures.scene.scene.tokens;
+  const last = tokens.filter((t) => tokenIdsOf(built, step.targetIds).includes(t._id));
+  if (last.length === 0) return true;
+  const ctx = built.context;
+  const used = new Set<string>([...(ctx.targets ?? []), ...(ctx.followUp ?? []), ...(ctx.chain ?? []).flat()].map((c) => c.id));
+  for (const id of tokenIdsOf(built, [...used])) used.add(id);
+  const sideOk = (t: Doc<"combatTokens">) => (spec.side === "enemy" ? t.side === "enemy" : spec.side === "ally" || spec.side === "selfOrAlly" ? t.side !== "enemy" : true);
+  return tokens.some((t) => !used.has(t._id) && t._id !== built.creatures.scene.attacker._id && sideOk(t) && last.some((l) => rangeCheck(l, t, range).inRange));
+}
+
+/**
+ * Plan lanes-2 E4.3 (dcm-gl9, dcm-c75; Words of Discord, CB p.335: "The next time you cast Words of Discord on them, gain a
+ * -5 penalty"; user answer 2026-10-31: remembered for the whole campaign): a successful use of a card whose entry reads the
+ * per-target memory (`usedOnBefore`) remembers the creatures it hit (every target, for a roll against a fixed Difficulty)
+ * in the actor's `featureUses` (`recordUsedOn`; an enemy by its instance, a PC by its character). `buildRun` reads it back.
+ */
+export function withUsedOn(plan: RunPlan, built: BuiltRun, effect: CardEffect): RunPlan {
+  if (!plan.success || !readsUsedOn(effect)) return plan;
+  const hit = plan.hits.length > 0 ? plan.hits.filter((h) => h.hit).map((h) => h.id) : (built.context.targets ?? []).map((t) => t.id);
+  let featureUses = plan.actor.featureUses;
+  for (const id of hit) {
+    const c = built.creatures.get(id);
+    const memory = c ? memoryIdOf(c) : null;
+    if (memory !== null) featureUses = recordUsedOn(featureUses, featureUseKey(effect.cardId), memory);
+  }
+  return featureUses === plan.actor.featureUses ? plan : { ...plan, actor: { ...plan.actor, featureUses } };
 }
 
 /** Whether a use deals the weapon's damage (a `damage` step rolling `weapon`, nested steps included). */
@@ -715,6 +1140,50 @@ export function tokenIdsOf(built: BuiltRun, ids: readonly string[]): Id<"combatT
   });
 }
 
+// ---------------------------------------------------------------- plan lanes-2 E4.3: the new plan entries (dcm-q40t)
+
+/** A creature's name for the feed: the actor is "you", a PC its sheet's name, an enemy its instance label. */
+function runnerName(built: BuiltRun, id: string): string {
+  if (id === built.context.actor.id) return "you";
+  const c = built.creatures.get(id);
+  return c?.kind === "pc" ? c.sheet.name : c?.kind === "enemy" ? c.instance.label : "a creature";
+}
+
+/** What the plan's E3 entries hand to the server lanes (E7's forced attack prompt, E7's form change), by token id. */
+export type PlanHandoff = {
+  /** Feed words for setStance / exhaust / forcedAttack / changeForm / heldReroll, in plan order. */
+  notes: string[];
+  /** Words of Discord / Beguiled (CB p.335, HF p.75): attackers and the creatures named to be attacked (empty: GM picks). */
+  forcedAttacks: { attackerTokenIds: Id<"combatTokens">[]; againstTokenIds: Id<"combatTokens">[] }[];
+  /** Transform (HF p.142): the instance token that takes stat block `adversaryId`. */
+  changeForms: { tokenId: Id<"combatTokens">; adversaryId: string }[];
+};
+
+/**
+ * Plan lanes-2 E4.3 (dcm-q40t): reads the plan entries run.ts added in lanes-2 E3 that `writeSheetChanges` /
+ * `actorSheetAfter` don't write themselves: `setStance` (the actor's stance; featureRunner's `stancesOf` + `setStance`
+ * write it), `exhaust` (already in `plan.actor.featureUses`; feed only), `forcedAttack` and `changeForm` (handed to
+ * E7's adversary engine), `heldReroll` (feed: the dice before and after). Pure; the caller logs `notes`.
+ */
+export function planHandoff(built: BuiltRun, plan: RunPlan): PlanHandoff {
+  const out: PlanHandoff = { notes: [], forcedAttacks: [], changeForms: [] };
+  for (const s of plan.steps) {
+    if (s.kind === "setStance") out.notes.push(`${runnerName(built, s.targetId)}: stance ${s.stance}`);
+    else if (s.kind === "exhaust") out.notes.push(`spent until ${s.until}`);
+    else if (s.kind === "heldReroll") out.notes.push(`${s.die} dice rerolled: ${s.before.join(", ")} → ${s.after.join(", ")}`);
+    else if (s.kind === "changeForm") {
+      const tokenId = tokenIdsOf(built, [s.targetId])[0];
+      if (tokenId !== undefined) out.changeForms.push({ tokenId, adversaryId: s.adversaryId });
+      out.notes.push(`${runnerName(built, s.targetId)} changes form (${SRD_BY_ID.get(s.adversaryId)?.name ?? s.adversaryId})`);
+    } else if (s.kind === "forcedAttack") {
+      out.forcedAttacks.push({ attackerTokenIds: tokenIdsOf(built, s.attackerIds), againstTokenIds: tokenIdsOf(built, s.againstIds) });
+      const against = s.againstIds.length > 0 ? s.againstIds.map((id) => runnerName(built, id)).join(", ") : "a creature the GM picks";
+      out.notes.push(`${s.attackerIds.map((id) => runnerName(built, id)).join(", ")} must attack ${against}`);
+    }
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- sheet changes
 
 const UNTIL: Record<Duration, Effect["until"]> = {
@@ -743,54 +1212,14 @@ function sheetMods(mods: readonly ResolvedMod[]): { mods: NonNullable<Effect["mo
     else if (m.kind === "advantage") text.push(`advantage on ${m.on}`);
     else if (m.kind === "disadvantageAgainst") text.push(`${m.on} against them with disadvantage`);
     else if (m.kind === "resistance") text.push(`${m.level} to ${m.type} damage`);
-    else text.push(m.flag);
+    else if (m.kind === "flag") text.push(m.flag);
+    // Plan lanes, tracer V: widened mods show by kind until their lane stores them.
+    else text.push(m.kind);
   }
   return { mods: out, text };
 }
 
 // ---- SD3: which use an effect belongs to (cards `card:<cardId>:<n>`, features `feat:<hash>:<n>`)
-
-/** FNV-1a (32 bit) in base 36: a short, stable name for a feature id. */
-function shortHash(text: string): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i);
-    h = Math.imul(h, 0x01000193) >>> 0;
-  }
-  return h.toString(36);
-}
-
-/** Whether a runner id is a feature id (`<source>:<owner>[:<slug>]`); a card id has no colon. */
-export function isFeatureUseId(id: string): boolean {
-  return parseFeatureId(id) !== null;
-}
-
-/** The `cardTokens` id of a use's tokens: the card id, or `feat:<featureId>` for a feature. */
-export function tokenKeyOf(id: string): string {
-  return isFeatureUseId(id) ? featureKey(id) : id;
-}
-
-/**
- * The prefix of a use's sheet effect ids: `card:<cardId>`, or `feat:<hash>` for a feature (sheet effect ids hold at most
- * 40 characters and a feature id up to 53; `featureIdOfEffect` reads the hash back).
- */
-export function effectKeyOf(id: string): string {
-  return isFeatureUseId(id) ? `feat:${shortHash(id)}` : `card:${id}`;
-}
-
-const FEATURE_BY_HASH = new Map(Object.keys(FEATURE_CLASSIFICATION).map((id) => [effectKeyOf(id), id]));
-
-/** Whether a sheet effect belongs to this card or feature (`<prefix>:<n>`). */
-export function ownsEffect(effect: Pick<Effect, "id">, id: string): boolean {
-  const prefix = `${effectKeyOf(id)}:`;
-  return effect.id.startsWith(prefix) && /^\d+$/.test(effect.id.slice(prefix.length));
-}
-
-/** The feature id of a sheet effect written by a feature use, or null (NV7 `featureEffect` facts read it). */
-export function featureIdOfEffect(effect: Pick<Effect, "id">): string | null {
-  const m = /^(feat:[a-z0-9]+):\d+$/.exec(effect.id);
-  return m ? (FEATURE_BY_HASH.get(m[1]!) ?? null) : null;
-}
 
 /** The text segment that names an effect step's option ("Channeling Fire", NV7); `effectOption` reads it back. */
 const OPTION_PREFIX = "option: ";
@@ -830,37 +1259,104 @@ export function writeSheetChanges(sheet: CharacterSheet, steps: readonly PlanSte
   let effects = exclusive ? sheet.effects.filter((e) => !ownsEffect(e, cardId)) : [...sheet.effects];
   let conditions = [...sheet.conditions];
   let hope = sheet.hope;
+  let slotted: Pick<CharacterSheet, "hp" | "hpMax" | "stress" | "stressMax" | "slotBonuses"> = sheet;
   for (const step of steps) {
+    // DA10 (dcm-bxp.99.19.10): a condition the actor gives that ends when their stance drops (Grappling's Restrain) leaves
+    // a marker on the actor's sheet naming the target's token; `dropStance` (convex/lib/stanceDrop.ts) reads it.
+    if (isActor && step.kind === "condition" && step.targetId !== who && step.endsOn?.includes("stanceDrops")) {
+      const marker = stanceDropMarker(step.targetId, cardName, step.condition.kind === "standard" ? step.condition.condition : step.condition.tag);
+      effects = [...effects.filter((e) => e.id !== marker.id), marker].slice(-20);
+      continue;
+    }
     if (!("targetId" in step) || step.targetId !== who) continue;
     if (step.kind === "condition") {
       if (step.condition.kind === "standard") {
-        if (!conditions.includes(step.condition.condition)) conditions.push(step.condition.condition);
+        const condition = step.condition.condition;
+        if (!conditions.includes(condition)) conditions.push(condition);
+        // Lane C2 (dcm-bxp.99.19.52): a condition its entry ends on events (Vanishing Act's Cloaked) records its source.
+        if (sourceEnds(cardId, condition) !== undefined) {
+          effects = addEffect(
+            effects.filter((e) => !isMarker(e, cardId, condition)),
+            cardId,
+            cardName,
+            condition,
+            [],
+            step.duration,
+            step.endsWhen,
+          );
+        }
       } else {
         for (const c of step.condition.implies ?? []) if (!conditions.includes(c)) conditions.push(c);
-        effects = addEffect(effects, cardId, cardName, step.condition.tag, [], step.duration, step.endsWhen);
+        // Plan lanes-2 E4.3 (dcm-q40t, dcm-iedr): the condition's own mods ride on its effect (stored or named in its text).
+        effects = addEffect(effects, cardId, cardName, step.condition.tag, step.mods ?? [], step.duration, step.endsWhen);
       }
     } else if (step.kind === "clearCondition") {
       const cond = step.condition;
-      if (cond.kind === "standard") conditions = conditions.filter((c) => c !== cond.condition);
-      else effects = effects.filter((e) => !((cardIdOfEffect(e) !== null || featureIdOfEffect(e) !== null) && e.text.split(";")[0] === cond.tag));
+      if (cond.kind === "standard") {
+        conditions = conditions.filter((c) => c !== cond.condition);
+        effects = effects.filter((e) => conditionMarkerOf(e)?.condition !== cond.condition);
+      } else effects = effects.filter((e) => !((cardIdOfEffect(e) !== null || featureIdOfEffect(e) !== null) && e.text.split(";")[0] === cond.tag));
     } else if (step.kind === "effect") {
-      effects = addEffect(effects, cardId, cardName, step.label, step.mods, step.duration, step.endsWhen, step.option);
+      // Plan lanes-2 E4.3 (dcm-o3j; Vitality, CB p.330: "permanently gain ... one Stress slot, one Hit Point slot"): a
+      // permanent effect's Hit Point / Stress slot mods raise the sheet's maxima once (`gainSlots`, keyed by the use and
+      // its option); its other mods stay an effect.
+      const slots = step.duration === "permanent" ? slotCounts(step.mods) : null;
+      if (slots !== null) {
+        slotted = gainSlots(slotted, `${effectKeyOf(cardId)}:${(step.option ?? step.label).slice(0, 30)}`, capSlots(slotted, slots));
+        const rest = step.mods.filter((m) => !isSlotMod(m));
+        if (rest.length > 0) effects = addEffect(effects, cardId, cardName, step.label, rest, step.duration, step.endsWhen, step.option);
+      } else effects = addEffect(effects, cardId, cardName, step.label, step.mods, step.duration, step.endsWhen, step.option);
     } else if (step.kind === "hope" && !isActor) {
       hope += step.delta;
     }
   }
   const max = hopeMax(sheet.scars, sheet.hopeSlotBonus);
-  return { ...sheet, effects, conditions, hope: Math.max(0, Math.min(max, hope)) };
+  const slots = slotted === sheet ? {} : { hpMax: slotted.hpMax, stressMax: slotted.stressMax, ...(slotted.slotBonuses ? { slotBonuses: slotted.slotBonuses } : {}) };
+  return { ...sheet, ...slots, effects, conditions, hope: Math.max(0, Math.min(max, hope)) };
+}
+
+/** The most Hit Point or Stress slots a sheet holds (src/lib/validation/characters.ts). */
+const SLOTS_MAX = 12;
+
+const isSlotMod = (m: ResolvedMod) => m.kind === "stat" && (m.stat === "hpMax" || m.stat === "stressMax");
+
+/** Hit Point / Stress slot counts of resolved mods, or null when there are none (as slots.ts `slotsFromMods`). */
+function slotCounts(mods: readonly ResolvedMod[]): SlotCounts | null {
+  const out: SlotCounts = { hp: 0, stress: 0 };
+  for (const m of mods) {
+    if (m.kind !== "stat") continue;
+    if (m.stat === "hpMax") out.hp += m.delta;
+    else if (m.stat === "stressMax") out.stress += m.delta;
+  }
+  return out.hp === 0 && out.stress === 0 ? null : out;
+}
+
+/** Counts that keep the maxima within the sheet's limits. */
+function capSlots(sheet: Pick<CharacterSheet, "hpMax" | "stressMax">, c: SlotCounts): SlotCounts {
+  return { hp: Math.max(-sheet.hpMax + 1, Math.min(c.hp, SLOTS_MAX - sheet.hpMax)), stress: Math.max(-sheet.stressMax + 1, Math.min(c.stress, SLOTS_MAX - sheet.stressMax)) };
 }
 
 /**
  * The actor's sheet after the plan: resources, the limit entries, the card's tokens, effects, conditions, the vault.
  * SD3: a feature's Favor, Focus and held dice too (the runner's `after`; a held die it spent is gone). `paidSheet` is the
  * sheet the plan started from (a feature's D5 delegation passes the sheet its D5 features left: classState, held dice).
+ * DA10 (CB p.59 Unshakable, user 2026-10-30): an Unshakable actor rolls a d6 for each Stress the plan marks on them (its
+ * Stress costs and Stress steps; `convex/lib/unshakable.ts`) and a 6 skips that Stress. The roll goes to
+ * `unshakable.out` for the caller's log; `unshakable.rng` replaces the server's dice (rests pass theirs).
  */
-export function actorSheetAfter(paidSheet: CharacterSheet, plan: RunPlan, actorId: string, cardName: string): CharacterSheet {
+export function actorSheetAfter(paidSheet: CharacterSheet, plan: RunPlan, actorId: string, cardName: string, unshakable: { rng?: Rng; out?: UnshakableRoll[] } = {}): CharacterSheet {
+  const sheet = sheetAfterPlan(paidSheet, plan, actorId, cardName);
+  const u = unshakePlan(paidSheet, sheet, plan, actorId, true, unshakable.rng);
+  if (u.roll) unshakable.out?.push(u.roll);
+  return u.sheet;
+}
+
+function sheetAfterPlan(paidSheet: CharacterSheet, plan: RunPlan, actorId: string, cardName: string): CharacterSheet {
   const after = plan.actor.after;
-  const base = writeSheetChanges(paidSheet, plan.steps, actorId, plan.cardId, cardName, plan.exclusive, true);
+  // Lane C2: the use's own roll ends the actor's sourced conditions first (Vanishing Act: "until you roll with Fear"), so
+  // a condition the use itself gives is not ended by the roll that gave it.
+  const rolled = plan.roll === null ? paidSheet : endConditionsOnRoll(paidSheet, plan.roll.record).sheet;
+  const base = writeSheetChanges(rolled, plan.steps, actorId, plan.cardId, cardName, plan.exclusive, true);
   const tokenKey = tokenKeyOf(plan.cardId);
   const others = (paidSheet.cardTokens ?? []).filter((t) => t.cardId !== tokenKey);
   const cardTokens = after.cardTokens > 0 ? [...others, { cardId: tokenKey, count: Math.min(99, after.cardTokens) }] : others;
@@ -883,4 +1379,203 @@ export function actorSheetAfter(paidSheet: CharacterSheet, plan: RunPlan, actorI
     cardTokens,
     ...(toVault ? { domainCards: { ...paidSheet.domainCards, loadout: paidSheet.domainCards.loadout.filter((c) => c !== plan.cardId) } } : {}),
   };
+}
+
+// ---------------------------------------------------------------- condition sources (plan lanes, tracer C2)
+//
+// dcm-bxp.99.19.52 (docs/tasks/TASK-LN-C2.md). A standard condition on a PC sheet is a bare name (`conditions`). When the
+// entry that gives it ends it on events of its own (Vanishing Act, CB p.42: "You remain Cloaked in this way until you
+// roll with Fear or until your next rest"), `writeSheetChanges` also writes a source marker: a sheet effect of that entry
+// (`card:<cardId>:<n>` / `feat:<hash>:<n>`, as any card or feature effect) whose label is the condition's name and whose
+// `until` is the step's duration. The marker is the record of where the condition came from:
+// - `conditionSources` reads it (combatMovement / combatActions: a sourced Cloaked ends only by its own endings);
+// - `endConditionsOnRoll` ends a marker whose entry ends on the roll (and the condition with it);
+// - `lapsedConditions` drops a condition whose marker `expire` took (restHooks: "until your next rest");
+// - `withoutCondition` drops a condition with every marker for it (unconscious or dead, an ordinary Cloaked ending).
+// No stored shape changes: markers are ordinary `effects` entries (rule 7 needs no widening).
+
+/**
+ * `after` without the conditions whose markers were on `before` and are gone from `after` (an `expire` took them: a
+ * rest; or `endConditionsOnRoll`), unless another marker still holds the condition. The same sheet when none lapsed.
+ */
+export function lapsedConditions<T extends Pick<CharacterSheet, "conditions" | "effects">>(before: Pick<CharacterSheet, "effects">, after: T): { sheet: T; ended: EndedCondition[] } {
+  const kept = new Set(after.effects.map((e) => e.id));
+  const ended: EndedCondition[] = [];
+  let sheet = after;
+  for (const e of before.effects) {
+    const m = conditionMarkerOf(e);
+    if (m === null || kept.has(e.id) || !sheet.conditions.includes(m.condition)) continue;
+    if (sheet.effects.some((x) => conditionMarkerOf(x)?.condition === m.condition)) continue;
+    sheet = { ...sheet, conditions: sheet.conditions.filter((c) => c !== m.condition) };
+    ended.push({ condition: m.condition, source: e.source });
+  }
+  return { sheet, ended };
+}
+
+/** A made roll as the end engine reads it (`attack`: an attack roll). Damage and free rolls end nothing (null). */
+export function endRollOf(record: Pick<RollRecord, "kind" | "outcome">, attack?: EndRoll["attack"]): EndRoll | null {
+  if (record.kind !== "action" && record.kind !== "reaction") return null;
+  const o = record.outcome;
+  const duality = o === "critical" ? "critical" : o === "successHope" || o === "failHope" ? "hope" : o === "successFear" || o === "failFear" ? "fear" : undefined;
+  const success = o === "critical" || o === "successHope" || o === "successFear" ? true : o === "failHope" || o === "failFear" ? false : undefined;
+  return { kind: record.kind, ...(duality ? { duality } : {}), ...(success !== undefined ? { success } : {}), ...(attack ? { attack } : {}) };
+}
+
+/**
+ * The sheet after its bearer made `record`: every marker whose entry ends on that roll (Vanishing Act: a roll with Fear)
+ * goes, and its condition with it unless another marker still holds it. `ended` names them for the caller's feed.
+ */
+export function endConditionsOnRoll<T extends Pick<CharacterSheet, "conditions" | "effects">>(
+  sheet: T,
+  record: Pick<RollRecord, "kind" | "outcome">,
+  attack?: EndRoll["attack"],
+): { sheet: T; ended: EndedCondition[] } {
+  const roll = endRollOf(record, attack);
+  if (roll === null) return { sheet, ended: [] };
+  const gone = new Set(
+    sheet.effects
+      .filter((e) => {
+        const m = conditionMarkerOf(e);
+        const ends = m === null ? undefined : sourceEnds(m.sourceId, m.condition);
+        return ends !== undefined && endsOnOccurrence(ends, { kind: "roll", roll }, "bearer");
+      })
+      .map((e) => e.id),
+  );
+  if (gone.size === 0) return { sheet, ended: [] };
+  return lapsedConditions(sheet, { ...sheet, effects: sheet.effects.filter((e) => !gone.has(e.id)) });
+}
+
+// ---------------------------------------------------------------- riders (plan sheet-drawer SD5)
+
+/**
+ * Riders (SD5; docs/tasks/TASK-SD-SD5.md): a card's or a feature's `rider` (or `auto`) use rides on the actor's own attack.
+ * The server runs it as its own plan on the attack's targets and folds what lands on the attack itself (`modifyRoll`,
+ * `modifyDamage`, `addTargets`, `adjustHpMarked`) into the attack. A rider has no roll of its own, so the attack's roll
+ * decides its gates: `bindGates` keeps the steps whose move gates the attack's roll meets and drops the gates.
+ *
+ * A rider runs in two parts: `pre` (its costs, limit, folds and steps on the actor) before the attack's damage, and `post`
+ * (its steps on other creatures: Stress, conditions, movement prompts) after the damage is written, so they land on the
+ * instances as the damage left them. A before-roll rider's move-gated steps wait for the roll (`post`).
+ */
+
+/** The attack's roll as a rider's gates read it (a critical is a success with Hope, CB p.90). */
+export type HostRoll = { success: boolean; critical: boolean; withHope: boolean; withFear: boolean };
+
+/** Steps whose effect lands on the attack itself (the server folds them in). */
+export const FOLD_KINDS: ReadonlySet<Step["kind"]> = new Set<Step["kind"]>(["modifyDamage", "modifyRoll", "addTargets", "adjustHpMarked"]);
+
+const MOVE_GATE_NAMES: ReadonlySet<string> = new Set(["success", "failure", "critical", "withHope", "withFear"]);
+
+const isMoveGate = (g: unknown): g is string => typeof g === "string" && MOVE_GATE_NAMES.has(g);
+
+/** Whether a step waits on the move's roll (a `success`, `failure`, `critical`, `withHope` or `withFear` gate). */
+export function hasMoveGate(step: Step): boolean {
+  return (step.when ?? []).some(isMoveGate);
+}
+
+/** The same step with its nested step lists changed by `f`. */
+function mapNested(step: Step, f: (steps: readonly Step[]) => Step[]): Step {
+  switch (step.kind) {
+    case "optional":
+      return { ...step, steps: f(step.steps) };
+    case "choose":
+      return { ...step, options: step.options.map((o) => ({ ...o, steps: f(o.steps) })) };
+    case "save":
+      return { ...step, onFail: f(step.onFail), onSuccess: f(step.onSuccess) };
+    case "check":
+      return { ...step, then: f(step.then), otherwise: f(step.otherwise) };
+    case "followUp":
+      return { ...step, steps: f(step.steps) };
+    default:
+      return step;
+  }
+}
+
+/** The step without its move gates (they were decided by the host roll). */
+function withoutMoveGates(step: Step): Step {
+  const rest = (step.when ?? []).filter((g) => !isMoveGate(g));
+  const { when: _when, ...base } = step;
+  void _when;
+  return (rest.length > 0 ? { ...base, when: rest } : base) as Step;
+}
+
+/** Keeps the steps whose move gates the attack's roll meets, without those gates (nested lists too). */
+export function bindGates(steps: readonly Step[], roll: HostRoll): Step[] {
+  const holds = (g: string) => (g === "success" ? roll.success : g === "failure" ? !roll.success : g === "critical" ? roll.critical : g === "withHope" ? roll.withHope : roll.withFear);
+  const out: Step[] = [];
+  for (const step of steps) {
+    if ((step.when ?? []).some((g) => isMoveGate(g) && !holds(g))) continue;
+    out.push(mapNested(withoutMoveGates(step), (list) => bindGates(list, roll)));
+  }
+  return out;
+}
+
+export type RiderPart = "pre" | "post";
+
+/** Which part a step runs in; `split` for an optional or a choose whose own steps split. */
+function partOf(step: Step, before: boolean): RiderPart | "split" {
+  if (before && hasMoveGate(step)) return "post";
+  switch (step.kind) {
+    case "optional":
+    case "choose":
+      return "split";
+    case "save":
+    case "check":
+    case "followUp":
+      return "post";
+    case "pay":
+    case "fear":
+      return "pre";
+    default:
+      return FOLD_KINDS.has(step.kind) || ("to" in step && step.to === "self") ? "pre" : "post";
+  }
+}
+
+/**
+ * The steps of one part of a rider (`before`: a before-roll rider, whose move-gated steps all wait for `post`). An
+ * optional step keeps its costs and limit in `pre` and runs without them in `post`; a choose step stays in a part while
+ * one of its options has steps there.
+ */
+export function splitSteps(steps: readonly Step[], part: RiderPart, before: boolean): Step[] {
+  const out: Step[] = [];
+  for (const step of steps) {
+    const p = partOf(step, before);
+    if (p === part) out.push(step);
+    if (p !== "split") continue;
+    if (step.kind === "optional") {
+      const inner = splitSteps(step.steps, part, before);
+      if (part === "pre") out.push({ ...step, steps: inner });
+      else if (inner.length > 0) {
+        const { costs: _costs, limit: _limit, ...bare } = step;
+        void _costs;
+        void _limit;
+        out.push({ ...bare, steps: inner });
+      }
+    } else if (step.kind === "choose") {
+      const options = step.options.map((o) => ({ ...o, steps: splitSteps(o.steps, part, before) }));
+      if (options.some((o) => o.steps.length > 0)) out.push({ ...step, options });
+    }
+  }
+  return out;
+}
+
+/**
+ * One part of a rider's use, ready to run: `pre` keeps the costs, limit and requirements; `post` drops them (they were
+ * paid and checked in `pre`). `roll` binds the move gates (absent: a before-roll rider's `pre`, which keeps no gated step).
+ */
+export function riderUse(use: CardUse, part: RiderPart, before: boolean, roll: HostRoll | null): CardUse {
+  // Plan lanes E4 (dcm-jx6): a before-roll rider splits on its move gates first and binds them after, so a step gated on
+  // the host roll (Signature Move's "On a success, clear a Stress", CB p.331) lands in `post` and runs when the gate holds.
+  const steps = !roll ? splitSteps(use.steps, part, before) : before ? bindGates(splitSteps(use.steps, part, before), roll) : splitSteps(bindGates(use.steps, roll), part, before);
+  if (part === "pre") return { ...use, steps };
+  const { costs: _costs, limit: _limit, requires: _requires, ...rest } = use;
+  void _costs;
+  void _limit;
+  void _requires;
+  return { ...rest, steps };
+}
+
+/** Whether a part has anything to run (a `pre` part with costs or a limit runs even without steps). */
+export function riderPartRuns(use: CardUse, part: RiderPart): boolean {
+  return use.steps.length > 0 || (part === "pre" && ((use.costs ?? []).length > 0 || use.limit !== undefined));
 }

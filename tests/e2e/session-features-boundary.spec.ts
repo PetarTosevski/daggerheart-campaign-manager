@@ -44,7 +44,7 @@ function warriorDraft(name: string) {
 /** Seeds the party in a fresh Witherwild campaign; returns the ids by name. */
 async function seedParty(client: ConvexHttpClient, campaignId: Id<"campaigns">) {
   const { characterId: pip } = await client.mutation(api.characters.create, { campaignId, draft: warriorDraft("Pip"), idempotencyKey: crypto.randomUUID() });
-  const view = (await client.query(api.characters.get, { characterId: pip }))!;
+  const view = (await client.query(api.charactersReads.get, { characterId: pip }))!;
   const base = view.sheet as CharacterSheet;
   const row = (sheet: CharacterSheet) => ({ campaignId, ownerId: view.ownerId, createdBy: view.ownerId, status: "active", sheet: { schemaVersion: 2, ...sheet }, createdAt: 1, updatedAt: 1 });
   appendCharacters([
@@ -54,7 +54,7 @@ async function seedParty(client: ConvexHttpClient, campaignId: Id<"campaigns">) 
   ]);
   // Pip starts at Hope 5: Luckbringer's +2 stops at the maximum of 6 (K6).
   await client.mutation(api.characters.adjustResource, { characterId: pip, resource: "hope", delta: 5 - base.hope });
-  const party = await client.query(api.characters.listByCampaign, { campaignId });
+  const party = await client.query(api.charactersReads.listByCampaign, { campaignId });
   const idOf = (name: string) => party.find((c) => c.sheet.name === name)!._id;
   return { pip, rosa: idOf("Rosa"), bryn: idOf("Bryn"), kai: idOf("Kai") };
 }
@@ -64,7 +64,7 @@ const liveCard = (page: Page) => page.getByRole("region", { name: "Live session"
 test("Start gives the stacked Luckbringer Hope (capped); End clears Slayer Dice for Hope and Tide tokens; both reports list it", async ({ page }) => {
   const { client, campaignId } = await openSessions(page);
   const ids = await seedParty(client, campaignId);
-  const sheet = async (id: Id<"characters">) => (await client.query(api.characters.get, { characterId: id }))!.sheet as CharacterSheet;
+  const sheet = async (id: Id<"characters">) => (await client.query(api.charactersReads.get, { characterId: id }))!.sheet as CharacterSheet;
 
   await page.getByRole("button", { name: "+ New session" }).click();
   await expect(page).toHaveURL(/stage=prep$/);

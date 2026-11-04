@@ -23,9 +23,9 @@ const E2E_GM_EMAIL = "e2e-gm@example.test";
 // sign up with a password (docs/testing.md). Sign-up is open, so accounts need
 // no listing; this documents who uses which method. Test sign-in: the GM
 // (e2e-gm@) and two players (e2e-player@, and e2e-player2@, the second player /
-// outsider). Email + password only: one account per spec that signs up
-// (e2e-password-only@ in tests/e2e/players.spec.ts, e2e-session-ended@ in
-// tests/e2e/auth-session-ended.spec.ts), so neither depends on the other's password.
+// outsider). Email + password: specs that sign up (signup.spec.ts, players.spec.ts,
+// auth-session-ended.spec.ts, auth.spec.ts) make a fresh random @example.test
+// address per run, so no run depends on another's password.
 
 function readEnvFile() {
   if (!existsSync(ENV_FILE)) return {};

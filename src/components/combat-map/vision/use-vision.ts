@@ -174,6 +174,31 @@ export function useExploredSync(campaignId: Id<"campaigns">, viewing: Viewing, m
   }, [grows, bits, mapId, characterId, campaignId, markExplored]);
 }
 
+/**
+ * Records the adversaries the player's character sees as seen by the party this scene (user 2026-11-03: a player
+ * learns which adversary holds the spotlight only when the party saw it; convex/lib/spotlightSeen.ts). The same sync
+ * pattern as `useExploredSync`, derived from server data, never initialising anything:
+ * - the need comes from the server: `playerView`'s `unseenAdversaries` lists the adversaries the view shows that have
+ *   no record yet; the effect depends only on that list's text, so it runs when the list changes;
+ * - after `markSeen` the records exist, the view answers an empty list and nothing more is sent; End scene deletes the
+ *   records and the list fills again for what is still in sight;
+ * - the server keeps only tokens the character sees when the write arrives. A failed or refused write is not retried
+ *   for the same list (the dependencies did not change); the next change of view sends it again.
+ * Only the player's own client writes; the GM's preview never does.
+ */
+export function useSeenSync(campaignId: Id<"campaigns">, viewing: Viewing) {
+  const markSeen = useMutation(api.combatVision.markSeen);
+  const ok = viewing.kind === "player" ? okView(viewing) : null;
+  const characterId = ok?.characterId ?? null;
+  const unseen = ok?.unseenAdversaries.join(",") ?? "";
+  useEffect(() => {
+    if (characterId === null || unseen === "") return;
+    markSeen({ campaignId, characterId, tokenIds: unseen.split(",") }).catch(() => {
+      // Best effort: the next change of view sends the list again.
+    });
+  }, [unseen, characterId, campaignId, markSeen]);
+}
+
 // ---------------------------------------------------------------- writes, with optimistic updates (CL4)
 
 type LayoutObject = CombatMapLayout["objects"][number];
@@ -202,7 +227,7 @@ function patchDoor(store: OptimisticLocalStore, objectId: string, open: boolean)
 
 /** Sets a token's carried light in every cached token list and character view. */
 function patchLight(store: OptimisticLocalStore, tokenId: string, light: CarriedLight) {
-  for (const query of [api.combatTokens.list, api.combatTokens.party] as const) {
+  for (const query of [api.combatTokensReads.list, api.combatTokensReads.party] as const) {
     for (const { args, value } of store.getAllQueries(query)) {
       if (!value || !value.some((t) => t._id === tokenId)) continue;
       store.setQuery(query, args, value.map((t) => (t._id === tokenId ? { ...t, light } : t)));
@@ -218,10 +243,10 @@ function patchLight(store: OptimisticLocalStore, tokenId: string, light: Carried
 
 /** Adds or removes a character in a token's `revealedTo` (the GM's list). */
 function patchReveal(store: OptimisticLocalStore, tokenId: string, characterId: Id<"characters">, on: boolean) {
-  for (const { args, value } of store.getAllQueries(api.combatTokens.list)) {
+  for (const { args, value } of store.getAllQueries(api.combatTokensReads.list)) {
     if (!value || !value.some((t) => t._id === tokenId)) continue;
     store.setQuery(
-      api.combatTokens.list,
+      api.combatTokensReads.list,
       args,
       value.map((t) => {
         if (t._id !== tokenId) return t;

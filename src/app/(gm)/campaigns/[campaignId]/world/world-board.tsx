@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "convex/react";
 import { Eye, EyeOff } from "lucide-react";
 
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
@@ -40,8 +41,10 @@ import {
 } from "@/lib/world/terrain";
 import { tokenType, tokenTypes } from "@/lib/world/token-types";
 
+import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
 import type { MapView as MapViewData } from "../../../../../../convex/maps";
+import { CrawlKnown, CrawlRegionsPanel, unusedEncounters } from "./crawl-regions";
 import { CrawlInfo, HexCrawlPanel } from "./hex-panel";
 import { useMapActions } from "./map-actions";
 import { MapImageControl } from "./map-image";
@@ -71,6 +74,12 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
   const scale = mapScale(state.scaleKm, image.width, image.height);
   const rules = travelRules(state);
   const types = useMemo(() => tokenTypes(state), [state]);
+  // Age of Umbra (dcm-bxp.18): a lit or unlit badge on markers linked to a Sacred Pyre.
+  const pyreMap = useQuery(api.trackers.ageOfUmbra.pyreMap, data.frameId === "age-of-umbra" ? { campaignId } : "skip");
+  // Journey to Horizon (dcm-bxp.17): regions, Soul Echo sanctuaries and the last Locate Soul Echoes.
+  const crawlView = useQuery(api.trackers.horizon.crawl, horizon ? { campaignId } : "skip");
+  const gmCrawlView = crawlView?.role === "gm" ? crawlView : undefined;
+  const pyres = useMemo(() => new Map((pyreMap?.links ?? []).map((l) => [l.tokenId, l.lit])), [pyreMap]);
 
   // ---- board state
   const [placing, setPlacing] = useState<string | null>(null);
@@ -682,6 +691,7 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
           </p>
         ) : null}
         {crawl && !editable ? <CrawlInfo crawl={crawl} /> : null}
+        {crawl && !isGm && crawlView?.role === "player" ? <CrawlKnown view={crawlView} /> : null}
 
         <MapView
           viewport={viewport}
@@ -692,6 +702,7 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
           image={image}
           editable={editable}
           tokens={visibleTokens}
+          pyres={pyres}
           types={types}
           showTokens={!hideToks}
           selectedId={sel?.id ?? null}
@@ -740,15 +751,21 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
           footer={<MapImageControl campaignId={campaignId} hasUpload={!!state.customMap} isCustom={isCustom} scaleKm={state.scaleKm} />}
         >
           {crawl ? (
-            <HexCrawlPanel
-              crawl={crawl}
-              selected={selHex}
-              actions={actions}
-              showGrid={showGrid}
-              onShowGrid={setShowGrid}
-              settingOrigin={settingOrigin}
-              onSettingOrigin={(on) => (setSettingOrigin(on), on && setShowGrid(true))}
-            />
+            <>
+              <HexCrawlPanel
+                crawl={crawl}
+                selected={selHex}
+                actions={actions}
+                showGrid={showGrid}
+                onShowGrid={setShowGrid}
+                settingOrigin={settingOrigin}
+                onSettingOrigin={(on) => (setSettingOrigin(on), on && setShowGrid(true))}
+                encounterNote={(h) => unusedEncounters(gmCrawlView, crawl, h)}
+              />
+              {gmCrawlView ? (
+                <CrawlRegionsPanel campaignId={campaignId} crawl={crawl} view={gmCrawlView} tokens={state.tokens} selected={selHex} actions={actions} />
+              ) : null}
+            </>
           ) : null}
         </TokenPanel>
       ) : null}

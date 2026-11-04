@@ -76,6 +76,7 @@ export {
   moonDieLabel,
   negateMinor,
   phaseOf,
+  raiseMoonDie,
   rollMoonDie,
   type LunarBonuses,
   type MoonPhase,

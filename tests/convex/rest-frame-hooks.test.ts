@@ -79,7 +79,7 @@ async function setup(frameId: PublishedFrameId) {
   const choose = (who: typeof p1, restId: Id<"rests">, characterId: Id<"characters">, moves: { move: string }[]) =>
     who.mutation(api.rests.choose, { restId, characterId, moves: moves as { move: "prepare" }[], idempotencyKey: key() });
   const pickable = async (characterId: Id<"characters">) =>
-    (await gm.query(api.rests.current, { campaignId })).open?.moves.find((m) => m.characterId === characterId)?.moves;
+    (await gm.query(api.restsReads.current, { campaignId })).open?.moves.find((m) => m.characterId === characterId)?.moves;
   const campaignRow = async () => {
     const rows = await t.run((ctx) => ctx.db.query("actionLog").withIndex("by_campaign_at", (q) => q.eq("campaignId", campaignId)).collect());
     return rows.filter((r) => r.characterId === undefined).at(-1);
@@ -410,7 +410,7 @@ describe("frame rest hooks", () => {
           kind: "endurance",
         }),
       );
-      expect((await h.p1.query(api.rests.projects, { characterId: h.a })).map((p) => p._id)).toEqual([countdownId]);
+      expect((await h.p1.query(api.restsReads.projects, { characterId: h.a })).map((p) => p._id)).toEqual([countdownId]);
       const { restId } = await h.start("long");
       const pick = (id: Id<"countdowns">) =>
         h.p1.mutation(api.rests.choose, { restId, characterId: h.a, moves: [{ move: "workOnProject", countdownId: id }, { move: "prepare" }], idempotencyKey: key() });

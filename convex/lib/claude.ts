@@ -6,7 +6,8 @@
  * returned, logged or put into an error. Runs in an action (`fetch` and timers); no "use node" needed.
  *
  * On the local e2e deployment only, `LOREKEEPER_FAKE_MODEL=true` replaces the API with canned answers that go
- * through the same parser (`fakeStream`), so browser tests never call the real API. Anywhere else the flag is
+ * through the same parser (`fakeStream`), so browser tests never call the real API; `LOREKEEPER_FAKE_MODEL=fail`
+ * does the same but every answer stream fails (the answer error card). Anywhere else the flag is
  * ignored, key or no key. `messagesCreate` never uses the fake model: without a key it fails `unavailable`, as the
  * combat map and photo import always did.
  */
@@ -35,8 +36,15 @@ export function apiKey(): string | undefined {
 
 /** Whether canned answers replace the API: only on the local e2e deployment, and only with the flag set. */
 export function fakeModelEnabled(): boolean {
-  return isE2EDeployment(env) && env.LOREKEEPER_FAKE_MODEL === "true";
+  return isE2EDeployment(env) && (env.LOREKEEPER_FAKE_MODEL === "true" || env.LOREKEEPER_FAKE_MODEL === FAKE_FAIL_SWITCH);
 }
+
+/**
+ * `LOREKEEPER_FAKE_MODEL=fail`: the fake model is on and every stream fails (dcm-bxp.82.9). An e2e spec sets it with
+ * `npx convex env set`, sees the error card, sets the flag back to `true` and presses Try again, which re-sends the same
+ * text. Read only on the fake path (`fakeStream`), so it never touches the real API.
+ */
+export const FAKE_FAIL_SWITCH = "fail";
 
 /** Whether the Lorekeeper can answer on this deployment (L3's `lorekeeper.available`, a boolean only). */
 export function lorekeeperAvailable(): boolean {
@@ -491,7 +499,8 @@ const FAKE_EVENT_MS = 60;
 
 /**
  * A question containing this makes the fake stream fail with `overloaded_error` (ClaudeFailure "HTTP 529", so the
- * answer ends LOREKEEPER_FAILED and shows the error card). Only the fake model reads it (dcm-bxp.82.9).
+ * answer ends LOREKEEPER_FAILED and shows the error card). Only the fake model reads it (dcm-bxp.82.9). It fails
+ * every time, Try again included; to recover with Try again use the `LOREKEEPER_FAKE_MODEL=fail` switch instead.
  */
 export const FAKE_FAIL = /FAKE-FAIL/;
 
@@ -521,8 +530,11 @@ function fakeInputs(request: MessagesBody): { documents: FakeDocument[]; questio
   return { documents, question: (tagged?.[1] ?? text).trim(), web };
 }
 
-/** The canned reply for a request, as stream events (the board's four samples, in invented words). */
-export function fakeEvents(request: MessagesBody): Json[] {
+/**
+ * The canned reply for a request, as stream events (the board's four samples, in invented words). `fail` (the
+ * `LOREKEEPER_FAKE_MODEL=fail` switch) fails it whatever the question.
+ */
+export function fakeEvents(request: MessagesBody, fail = false): Json[] {
   const { documents, question, web } = fakeInputs(request);
   const model = String(request.model ?? SONNET);
   const events: Json[] = [
@@ -539,7 +551,7 @@ export function fakeEvents(request: MessagesBody): Json[] {
   const words = (text: string) => text.match(/^\s+|\S+\s*/g) ?? [text];
   let searches = 0;
 
-  if (FAKE_FAIL.test(question)) {
+  if (fail || FAKE_FAIL.test(question)) {
     // dcm-bxp.82.9: a canned failure for the answer error card; the stream reports overloaded_error before any text.
     events.push({ type: "error", error: { type: "overloaded_error", message: "Overloaded" } });
     return events;
@@ -592,7 +604,7 @@ export function fakeEvents(request: MessagesBody): Json[] {
 /** Plays `fakeEvents` as SSE bytes, one event per tick; the abort signal ends it like a cut connection. */
 async function* fakeStream(request: MessagesBody, signal: AbortSignal): AsyncIterable<Uint8Array> {
   const encoder = new TextEncoder();
-  for (const event of fakeEvents(request)) {
+  for (const event of fakeEvents(request, env.LOREKEEPER_FAKE_MODEL === FAKE_FAIL_SWITCH)) {
     await new Promise<void>((resolve, reject) => {
       if (signal.aborted) return reject(new Error("aborted"));
       const timer = setTimeout(() => {

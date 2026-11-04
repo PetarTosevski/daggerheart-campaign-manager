@@ -1,0 +1,46 @@
+/*
+ * The blocked-state marks (plan combat-hud H6.1; board CmpBlocked `.why`, `.inl`, `.hs-no`). Layer 1: the reason beside a
+ * disabled control (`.hud-why`) and the lock tag (`.hud-blocked-tag`, on ui.css's `.hud-hs .hud-hs-no`). Layer 2: the
+ * refusal under the pressed control (`.hud-inl`). Toasts (layer 3) are in toasts/toasts.css.
+ */
+.hud-why {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #f3c7a0;
+}
+.hud-blocked-tag {
+  gap: 5px;
+}
+.hud-inl {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 12.5px;
+  color: #f3c7a0;
+  background: #2a1a12;
+  border-radius: 10px;
+  padding: 8px 10px;
+  box-shadow: inset 0 0 0 1px #6b3f22;
+}
+.hud-inl b {
+  color: #ffd6a8;
+}
+.hud-inl small {
+  display: block;
+  margin-top: 2px;
+  color: #c9a98a;
+}
+.hud-why .hud-ic,
+.hud-inl .hud-ic,
+.hud-blocked-tag .hud-ic {
+  width: 1em;
+  height: 1em;
+  flex: none;
+}
+.hud-inl .hud-ic {
+  margin-top: 2px;
+}
+/* A blocked HUD button (aria-disabled, still focusable) takes the glass button's disabled look (glass-button.css). */

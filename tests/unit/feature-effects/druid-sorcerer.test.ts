@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { PlanStep, RunPlan } from "@/lib/domain/card-effects/run";
+import { rollTargetCount, type PlanStep, type RunPlan } from "@/lib/domain/card-effects/run";
 import type { Combatant } from "@/lib/domain/combat-actions";
 import { queueRng } from "@/lib/domain/dice";
 import { featureKey, featureSlug, parseFeatureId } from "@/lib/domain/feature-effects/ids";
@@ -154,9 +154,16 @@ describe("Warden of the Elements (CB p.30)", () => {
     expect(refused(INCARNATION, "fire", { actor: actorOf(druid, { facts: channelingFacts("earth") }), trigger: { source: attacker } })).toMatchObject({ ok: false, reason: "requirement" });
   });
 
-  it("Water: the Stress on the other adversaries is a manual step (vocabulary gap)", () => {
-    const plan = ok(INCARNATION, "water", { actor: actorOf(druid, { facts: channelingFacts("water") }) });
-    expect(ofKind(plan, "prompt").map((p) => p.prompt)).toEqual(["manual"]);
+  it("Water: on damage to an adversary within Melee, every other adversary picked by the server marks a Stress (lanes-2 S2)", () => {
+    const use = entry(INCARNATION).uses.find((u) => u.id === "water")!;
+    expect(use.activation).toEqual({ kind: "auto", trigger: { kind: "whenYouDealDamage", toEnemy: true, within: "melee" } });
+    const plan = ok(INCARNATION, "water", { actor: actorOf(druid, { facts: channelingFacts("water") }), targets: [adversary("ogre")], picked: [adversary("imp-1"), adversary("imp-2")] });
+    expect(ofKind(plan, "prompt")).toEqual([]);
+    const marked = plan.creatures.filter((c) => c.after.stress !== c.before.stress).map((c) => [c.id, c.after.stress - c.before.stress]);
+    expect(marked).toEqual([
+      ["imp-1", 1],
+      ["imp-2", 1],
+    ]);
   });
 
   it("Elemental Aura: once per rest while Channeling, a Close aura matching the element", () => {
@@ -230,17 +237,22 @@ describe("Warden of Renewal (CB p.31)", () => {
     expect(ofKind(plan, "clear").map((c) => c.amount)).toEqual([2, 1]);
   });
 
-  it("Warden's Protection: once per long rest, 2 Hope, up to 1d4 allies within Close clear 2 HP", () => {
+  it("Warden's Protection: once per long rest, 2 Hope, up to 1d4 allies within Close clear 2 HP (the 1d4 rolled first, dcm-d95)", () => {
     const allies = [ally("a"), ally("b")];
-    const plan = ok("subclass:warden-of-renewal:wardens-protection", undefined, { actor: actorOf(renewal), targets: allies, dice: [3] });
+    const wardens = entry("subclass:warden-of-renewal:wardens-protection");
+    // User 2026-10-29: the server rolls the 1d4 before the pick (`rollTargetCount`); the run rolls nothing for it.
+    expect(wardens.uses[0]!.targets).toMatchObject({ count: { kind: "upTo", rolledFirst: true } });
+    expect(rollTargetCount(wardens.uses[0]!, actorOf(renewal), queueRng([3]))).toBe(3);
+    const plan = ok("subclass:warden-of-renewal:wardens-protection", undefined, { actor: actorOf(renewal), targets: allies, rolledTargetCount: 3 });
     expect(plan.actor.after.hope).toBe(1);
     expect(ofKind(plan, "clear").map((c) => [c.targetId, c.amount])).toEqual([
       ["a", 2],
       ["b", 2],
     ]);
     expect(plan.limit).toMatchObject({ key: "feat:subclass:warden-of-renewal:wardens-protection", until: "longRest" });
-    // More allies than the 1d4 shows: refused.
-    expect(runFeature(entry("subclass:warden-of-renewal:wardens-protection"), undefined, { actor: actorOf(renewal), gmFear: 0, rng: queueRng([1]), targets: allies })).toMatchObject({ ok: false, reason: "targets" });
+    // More allies than the 1d4 showed: refused; without the server's roll: refused, nothing rolled.
+    expect(runFeature(wardens, undefined, { actor: actorOf(renewal), gmFear: 0, rng: queueRng([]), targets: allies, rolledTargetCount: 1 })).toMatchObject({ ok: false, reason: "targets" });
+    expect(runFeature(wardens, undefined, { actor: actorOf(renewal), gmFear: 0, rng: queueRng([]), targets: allies })).toMatchObject({ ok: false, reason: "targets" });
   });
 
   it("Defender: in Beastform, an ally within Close who marks 2+ HP marks 1 fewer for your Stress", () => {
@@ -320,7 +332,12 @@ describe("Primal Origin (CB p.47)", () => {
     expect(folds(roll)).toMatchObject([{ kind: "modifyRoll", amount: 2 }]);
     expect(folds(run("double"))).toMatchObject([{ kind: "modifyDamage", targetIds: ["ogre"], change: { kind: "doubleDice", which: "chosen", count: 1 } }]);
     expect(folds(run("target"))).toMatchObject([{ kind: "addTargets", amount: 1 }]);
-    expect(ofKind(run("reach"), "prompt")).toMatchObject([{ prompt: "manual" }]);
+    // Lanes-2 S2: the added target takes the host move's range (`hostRange`); reach is a fold plus its reminder.
+    expect(JSON.stringify(entry("subclass:primal-origin:manipulate-magic"))).toContain('"hostRange":true');
+    const reach = run("reach");
+    expect(folds(reach)).toMatchObject([{ kind: "modifyRoll", change: { kind: "reach", steps: 1 } }]);
+    // S2.4 (dcm-lbai): a weapon attack's reach is widened at setup; the line stays for spells only.
+    expect(ofKind(reach, "prompt")).toMatchObject([{ prompt: "manual", text: expect.stringContaining("On a spell") }]);
     expect(refused("subclass:primal-origin:manipulate-magic", undefined, { actor: actorOf(sorcerer), options: { option: ["roll"] } })).toMatchObject({ ok: false, reason: "requirement" });
   });
 

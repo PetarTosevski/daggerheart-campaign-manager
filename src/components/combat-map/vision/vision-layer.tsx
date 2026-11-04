@@ -17,6 +17,9 @@ import { spriteName } from "../editor/sprite-palette";
 import { useMapView } from "../map-view/context";
 import { hasUploadedRefs } from "../map-view/paint-spec";
 import { useCombatTargets } from "../actions/targets/state";
+import { isLit, type SpotlightLit } from "../hud/spotlight/model";
+import { SpotlightPools, useSpotlightLit } from "../hud/spotlight/light";
+import { TokenFace, otherFace, useHudTokens } from "../hud/token";
 import type { MapLayerProps } from "../slots";
 import { initialsOf } from "../tokens/geometry";
 import { useRings } from "../tokens/rings";
@@ -30,6 +33,7 @@ import {
   useDoors,
   useExploredSync,
   useFogMasks,
+  useSeenSync,
   useStoredExplored,
   useViewing,
   useVisionActions,
@@ -152,6 +156,7 @@ export function VisionLayer(props: MapLayerProps) {
   const stored = useStoredExplored(campaignId, viewing);
   const masks = useFogMasks(view, stored.mask);
   useExploredSync(campaignId, viewing, masks, stored.mask, stored.loaded);
+  useSeenSync(campaignId, viewing);
   const light = useCampaignLight(campaignId);
   const actions = useVisionActions(campaignId);
   const { fogTool, brush } = useVisionState();
@@ -161,6 +166,11 @@ export function VisionLayer(props: MapLayerProps) {
   const rings = useRings();
   // Combat actions (plan combat-actions CA5): a player's click on an enemy token also toggles it as a target.
   const targets = useCombatTargets();
+  // Combat HUD (plan combat-hud H1.3): inside the HUD shell the other tokens wear the HUD face (side colour, condition
+  // names; never an arc or a number, hard rule 2); otherwise the classic face, unchanged.
+  const hudFace = useHudTokens(mode) !== null;
+  // The spotlit adversary stands in a stage light, only when it is one of the tokens drawn here (bead dcm-bxp.99.32.35).
+  const lit = useSpotlightLit(campaignId, hudFace);
   const canvas = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -344,6 +354,8 @@ export function VisionLayer(props: MapLayerProps) {
           ringsOn={(id) => rings.on(id)}
           targeted={targets.targetTokenIds}
           onTarget={targets.toggleTarget}
+          hudFace={hudFace}
+          lit={lit}
         />
       ) : null}
       {brushing ? (
@@ -499,6 +511,8 @@ function OtherTokens({
   ringsOn,
   targeted,
   onTarget,
+  hudFace,
+  lit,
 }: {
   others: OtherToken[];
   w: number;
@@ -512,10 +526,15 @@ function OtherTokens({
   /** The picked targets (CA5's `ActionsProvider`) and the toggle a click on an enemy token calls. */
   targeted: readonly string[];
   onTarget: (id: Id<"combatTokens">) => void;
+  /** Combat HUD H1.3: draw the HUD face (no numbers: `others` carry none) instead of the classic one. */
+  hudFace: boolean;
+  /** What the scene spotlight lights (HUD only), matched against these tokens: never one the viewer is not sent. */
+  lit: SpotlightLit | null;
 }) {
   return (
     <div className="cm-tokens cm-vis-others" data-testid="combat-other-tokens" style={{ width: (w + 2 * pad) * cell, height: (h + 2 * pad) * cell, transform: `scale(${zoom})` }}>
       <div className="cm-tokens-map" style={{ left: pad * cell, top: pad * cell }}>
+        <SpotlightPools lit={lit} tokens={others} cell={cell} />
         {others
           .filter((t) => ringsOn(t._id))
           .map((t) => {
@@ -547,25 +566,31 @@ function OtherTokens({
           const deg = (t.face * 180) / Math.PI;
           // The adversary's rulebook art when it has some (user 2026-10-21), else the side's colour and initials.
           const art = t.portrait?.kind === "url" ? t.portrait.url : null;
+          const isTarget = targeted.includes(t._id);
+          const face = hudFace ? otherFace(t, isTarget) : null;
           return (
             <button
               key={t._id}
               type="button"
-              className={["cm-tok", "fixed", on ? "sel" : "", t.revealed ? "revealed" : ""].filter(Boolean).join(" ")}
+              className={["cm-tok", "fixed", on ? "sel" : "", t.revealed ? "revealed" : "", face ? "hud-tk" : ""].filter(Boolean).join(" ")}
               data-token={t._id}
               data-testid="combat-token"
               data-square={`${t.x},${t.y}`}
               data-face={Math.round(deg)}
-              aria-label={`${t.name}, ${side.label}${t.revealed ? ", revealed to you" : ""}${targeted.includes(t._id) ? ", your target" : ""}`}
+              aria-label={face ? face.label : `${t.name}, ${side.label}${t.revealed ? ", revealed to you" : ""}${isTarget ? ", your target" : ""}`}
               aria-pressed={on}
               style={{
                 left: t.x * cell + 3,
                 top: t.y * cell + 3,
                 width: t.size * cell - 6,
                 height: t.size * cell - 6,
-                ...(art ? { backgroundImage: `url(${art})`, backgroundSize: "cover", backgroundPosition: "center 25%" } : { background: SIDE_BACKGROUND[t.side] }),
-                border: `3px solid ${side.colour}`,
-                boxShadow: on ? `0 3px 8px rgba(0,0,0,.6), 0 0 0 3px #fff, 0 0 18px ${side.colour}` : "0 3px 8px rgba(0,0,0,.6)",
+                ...(face
+                  ? {}
+                  : {
+                      ...(art ? { backgroundImage: `url(${art})`, backgroundSize: "cover", backgroundPosition: "center 25%" } : { background: SIDE_BACKGROUND[t.side] }),
+                      border: `3px solid ${side.colour}`,
+                      boxShadow: on ? `0 3px 8px rgba(0,0,0,.6), 0 0 0 3px #fff, 0 0 18px ${side.colour}` : "0 3px 8px rgba(0,0,0,.6)",
+                    }),
                 zIndex: on ? 30 : 10,
               }}
               onPointerDown={(e) => e.preventDefault()}
@@ -575,14 +600,17 @@ function OtherTokens({
               }}
             >
               <span className="cm-face" aria-hidden="true" style={{ transform: `rotate(${deg}deg)`, ["--tc" as string]: side.colour }} />
-              {art ? null : (
+              {face ? <TokenFace face={face} name={t.name} initials={initialsOf(t.name, t.size)} size={t.size * cell} lit={isLit(lit, t)} /> : null}
+              {face || art ? null : (
                 <span className="cm-ini" aria-hidden="true" style={{ fontSize: Math.round(t.size * cell * 0.34) }}>
                   {initialsOf(t.name, t.size)}
                 </span>
               )}
-              <span className="cm-tag" aria-hidden="true" style={{ top: t.size * cell - 4 }}>
-                {t.name}
-              </span>
+              {face ? null : (
+                <span className="cm-tag" aria-hidden="true" style={{ top: t.size * cell - 4 }}>
+                  {t.name}
+                </span>
+              )}
               {t.revealed ? (
                 <span className="cm-badge cm-vis-rev" aria-hidden="true">
                   👁

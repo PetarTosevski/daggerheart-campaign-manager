@@ -6,7 +6,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
 import { MAX_CODEX_ENTRIES, MAX_CODEX_IMAGES, MAX_NAME, MAX_ROLE, MAX_TEXT } from "../../src/lib/codex/schema";
 import { MAX_TOKENS } from "../../src/lib/world/map-state";
-import { key, useAllowlist } from "./helpers";
+import { imageBlob, key, useAllowlist } from "./helpers";
 import { modules } from "./setup";
 
 // TE6: `codex.list` is a hot list query (every codex edit re-runs it for
@@ -57,7 +57,7 @@ async function fullCampaign(t: T) {
       for (let i = 0; i < 50; i++) {
         const n = batch * 50 + i;
         const storageIds: Id<"_storage">[] = [];
-        for (let g = 0; g < MAX_CODEX_IMAGES; g++) storageIds.push(await ctx.storage.store(new Blob(["img"], { type: "image/jpeg" })));
+        for (let g = 0; g < MAX_CODEX_IMAGES; g++) storageIds.push(await ctx.storage.store(imageBlob("image/jpeg")));
         const entryId = await ctx.db.insert("codexEntries", {
           campaignId,
           kind: n % 2 ? "location" : "character",

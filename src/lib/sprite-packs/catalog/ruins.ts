@@ -1,8 +1,8 @@
 // Built-in catalog: ruins (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, obj, tex } from "./types";
+import { defineFolder, obj, tex, type FolderCatalog } from "./types";
 
-export const RUINS = defineFolder("ruins", {
+export const RUINS = (): FolderCatalog => defineFolder("ruins", {
   props: [
     obj("broken column piece", "cover", "low", "rubble"),
     obj("fallen statue hand", "cover", "low", "rubble", { standIn: false }),

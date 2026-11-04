@@ -3,6 +3,7 @@
 import { useMutation } from "convex/react";
 import { useRef, useState } from "react";
 
+import { UploadNotice } from "@/components/uploads/upload-notice";
 import { errorMessage } from "@/lib/convex-errors";
 
 import { api } from "../../../../convex/_generated/api";
@@ -98,6 +99,9 @@ export function MapImageButton({
 }) {
   const input = useRef<HTMLInputElement>(null);
   const { upload, busy, error } = useMapImageUpload(campaignId);
+  // The map this button last made from an image: its notice shows here when the server removes that file (dcm-vqs0).
+  const [created, setCreated] = useState<Id<"combatMaps"> | null>(null);
+  const noticeMap = mapId ?? created;
   return (
     <span className="cm-upload">
       <input
@@ -113,7 +117,9 @@ export function MapImageButton({
           e.target.value = "";
           if (!file) return;
           void upload(file, { mapId, size }).then((id) => {
-            if (id !== null) onDone?.(id);
+            if (id === null) return;
+            if (!mapId) setCreated(id);
+            onDone?.(id);
           });
         }}
       />
@@ -125,6 +131,7 @@ export function MapImageButton({
           {error}
         </span>
       ) : null}
+      {noticeMap ? <UploadNotice kind="combatMap" scope={noticeMap} /> : null}
     </span>
   );
 }

@@ -1,14 +1,11 @@
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
-
-import { assetBackground } from "@/lib/design-assets";
-
-import { pipDelta } from "./sheet-helpers";
+import { useState, type ReactNode } from "react";
 
 /**
- * A text field saved on blur. Read-only viewers get plain text. The input
- * remounts when the saved value changes, so live edits from others show up.
+ * A text field saved on blur. Read-only viewers get plain text. It shows the saved value while unfocused, so live
+ * edits from others show up without remounting (CL7, dcm-bxp.40 item 7; the PaperText pattern in sections/story.tsx).
+ * After a save it keeps the typed text until the live value catches up, and drops it if `onSave` resolves to false.
  */
 export function TextField({
   label,
@@ -24,7 +21,7 @@ export function TextField({
 }: {
   label: string;
   value: string;
-  onSave: (next: string) => void;
+  onSave: (next: string) => unknown;
   readOnly: boolean;
   placeholder?: string;
   multiline?: boolean;
@@ -33,6 +30,7 @@ export function TextField({
   rows?: number;
   labelClassName?: string;
 }) {
+  const [draft, setDraft] = useState<{ text: string; base: string; editing: boolean } | null>(null);
   const labelEl = <span className={hideLabel ? "sr-only" : (labelClassName ?? "cs-lbl")}>{label}</span>;
   if (readOnly) {
     return (
@@ -48,30 +46,37 @@ export function TextField({
       </div>
     );
   }
-  const save = (next: string) => {
-    if (next !== value) onSave(next);
+  const shown = draft && (draft.editing || draft.base === value) ? draft.text : value;
+  const field = {
+    value: shown,
+    placeholder,
+    maxLength,
+    onFocus: () => setDraft((d) => (d && !d.editing && d.base === value ? { ...d, editing: true } : { text: value, base: value, editing: true })),
+    onChange: (e: { target: { value: string } }) => {
+      const text = e.target.value;
+      setDraft((d) => ({ text, base: d?.base ?? value, editing: true }));
+    },
+    onBlur: (e: { currentTarget: { value: string } }) => {
+      const text = multiline ? e.currentTarget.value : e.currentTarget.value.trim();
+      if (text === value) {
+        setDraft(null);
+        return;
+      }
+      setDraft({ text, base: draft?.base ?? value, editing: false });
+      void Promise.resolve(onSave(text)).then((ok) => {
+        if (ok === false) setDraft(null);
+      });
+    },
   };
   return (
     <label className="flex flex-col gap-1">
       {labelEl}
       {multiline ? (
-        <textarea
-          key={value}
-          className="cs-ta"
-          defaultValue={value}
-          placeholder={placeholder}
-          maxLength={maxLength}
-          rows={rows}
-          onBlur={(e) => save(e.target.value)}
-        />
+        <textarea className="cs-ta" rows={rows} {...field} />
       ) : (
         <input
-          key={value}
           className="cs-in"
-          defaultValue={value}
-          placeholder={placeholder}
-          maxLength={maxLength}
-          onBlur={(e) => save(e.target.value.trim())}
+          {...field}
           onKeyDown={(e) => {
             if (e.key === "Enter") e.currentTarget.blur();
           }}
@@ -125,64 +130,6 @@ export function Stepper({
           +
         </button>
       )}
-    </div>
-  );
-}
-
-const HOPE_COIN = { "--coin": assetBackground("adec0ee116c933de010a35432e8e5e36") } as CSSProperties;
-
-/**
- * A track of slots (hearts, diamonds, armor, Hope coins). Tapping a slot marks
- * up to it; tapping the last marked one clears it. `lost` trailing slots are
- * shown as scarred and can't be used.
- */
-export function Track({
-  name,
-  kind,
-  slots,
-  marked,
-  lost = 0,
-  onDelta,
-  readOnly,
-}: {
-  name: string;
-  kind: "heart" | "diamond" | "armor" | "coin";
-  slots: number;
-  marked: number;
-  lost?: number;
-  onDelta: (delta: number) => void;
-  readOnly: boolean;
-}) {
-  const usable = slots - lost;
-  const summary = `${name}: ${marked} of ${usable} marked${lost ? `, ${lost} lost to scars` : ""}`;
-  const style = kind === "coin" ? HOPE_COIN : undefined;
-  if (readOnly) {
-    return (
-      <div className="cs-slot-row" role="img" aria-label={summary} style={style}>
-        {Array.from({ length: slots }, (_, k) => (
-          <span key={k} aria-hidden="true" className={`cs-pip ${k >= usable ? "cs-scar" : `cs-${kind}${k < marked ? " on" : ""}`}`} />
-        ))}
-      </div>
-    );
-  }
-  return (
-    <div className="cs-slot-row" role="group" aria-label={summary} style={style}>
-      {Array.from({ length: slots }, (_, k) => {
-        if (k >= usable) {
-          return <span key={k} className="cs-pip cs-scar" role="img" aria-label={`${name} slot lost to a scar`} />;
-        }
-        const on = k < marked;
-        return (
-          <button
-            key={k}
-            type="button"
-            className={`cs-pip cs-${kind}${on ? " on" : ""}`}
-            aria-label={`${name} ${k + 1} of ${usable}`}
-            aria-pressed={on}
-            onClick={() => onDelta(pipDelta(k + 1, marked))}
-          />
-        );
-      })}
     </div>
   );
 }

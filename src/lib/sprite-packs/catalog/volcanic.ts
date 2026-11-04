@@ -1,8 +1,8 @@
 // Built-in catalog: volcanic (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, glowTex, long, obj, tex } from "./types";
+import { defineFolder, glowTex, long, obj, tex, type FolderCatalog } from "./types";
 
-export const VOLCANIC = defineFolder("volcanic", {
+export const VOLCANIC = (): FolderCatalog => defineFolder("volcanic", {
   props: [
     obj("lava rock", "cover", "low", "rock"),
     obj("steam vent", "none", "flat", "rubble", { standIn: false }),

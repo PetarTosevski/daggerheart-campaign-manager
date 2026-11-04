@@ -1,12 +1,20 @@
 import { defineTable } from "convex/server";
 
-import { sessionFields, sessionLogFields, sessionPrepFields, sessionSpotlightFields } from "../lib/validators/sessions";
+import {
+  sessionCharacterStatFields,
+  sessionFields,
+  sessionLogFields,
+  sessionLogOverrideFields,
+  sessionPrepFields,
+  sessionSpotlightFields,
+} from "../lib/validators/sessions";
 
 /**
- * The Sessions board (D10, plan `.omc/plans/d10-sessions.yaml`). S0 creates every table; later tracers only add
- * functions. Caps (convex/lib/validators/sessions.ts) are checked with an index `.take`. Every row carries its
- * `campaignId` and goes with the campaign's purge (convex/cleanup.ts); deleting a session deletes its prep, log and
- * spotlight rows (`deleteSessionRows`, convex/lib/sessions.ts).
+ * The Sessions board (D10, plan `.omc/plans/d10-sessions.yaml`) and the Journal (plan `.omc/plans/journal.yaml`,
+ * J0 adds the log overrides and the per-PC tally counters). Caps (convex/lib/validators/sessions.ts) are checked with
+ * an index `.take`. Every row carries its `campaignId` and goes with the campaign's purge (convex/cleanup.ts);
+ * deleting a session deletes its prep, log, spotlight, override and stats rows (`deleteSessionRows`,
+ * convex/lib/sessions.ts).
  */
 export const sessionTables = {
   /**
@@ -29,6 +37,23 @@ export const sessionTables = {
 
   /** Spotlight counts per (session, character) (B4). `by_campaign` serves the purge. */
   sessionSpotlights: defineTable(sessionSpotlightFields)
+    .index("by_session_character", ["sessionId", "characterId"])
+    .index("by_campaign", ["campaignId"]),
+
+  /**
+   * Journal: the GM's hide / edit of a merged log line, one row per (session, source, sourceId), at most
+   * MAX_LOG_OVERRIDES per session. `by_session_source` finds a line's override and lists a session's; `by_campaign`
+   * serves the purge.
+   */
+  sessionLogOverrides: defineTable(sessionLogOverrideFields)
+    .index("by_session_source", ["sessionId", "source", "sourceId"])
+    .index("by_campaign", ["campaignId"]),
+
+  /**
+   * Journal (Q8): Hope spent and HP marked per (session, PC) while the session is live, at most the campaign's
+   * character cap per session. `by_campaign` serves the purge.
+   */
+  sessionCharacterStats: defineTable(sessionCharacterStatFields)
     .index("by_session_character", ["sessionId", "characterId"])
     .index("by_campaign", ["campaignId"]),
 };

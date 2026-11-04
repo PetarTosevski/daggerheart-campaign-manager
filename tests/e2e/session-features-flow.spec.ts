@@ -127,9 +127,9 @@ for (const viewport of [
       const kai = await create(playerClient, warriorDraft("Kai", { ancestry: "halfling", communityId: "seaborne" }));
       seed({ characterId: mira, subclassRank: "mastery", level: 7 });
       // Pip at Hope 5: the stacked Luckbringer +2 stops at the maximum of 6 (K6).
-      const pipHope = (await gm.query(api.characters.get, { characterId: pip }))!.sheet.hope;
+      const pipHope = (await gm.query(api.charactersReads.get, { characterId: pip }))!.sheet.hope;
       await gm.mutation(api.characters.adjustResource, { characterId: pip, resource: "hope", delta: 5 - pipHope });
-      const sheetOf = async (id: Id<"characters">) => (await gm.query(api.characters.get, { characterId: id }))!.sheet as CharacterSheet;
+      const sheetOf = async (id: Id<"characters">) => (await gm.query(api.charactersReads.get, { characterId: id }))!.sheet as CharacterSheet;
       const hopes = async () => Promise.all([pip, bryn, mira, kai].map(async (id) => (await sheetOf(id)).hope));
       const before = await hopes();
 

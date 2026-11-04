@@ -251,22 +251,22 @@ describe("combatFeatures.useFeature: resolving", () => {
     const r = (await a.use(a.player, "hope:bard", { mapId: a.mapId, targetTokenIds: [far.tokenId] })) as { status: string; requestId: Id<"combatRequests"> };
     expect(r.status).toBe("pending");
     expect((await a.sheet()).hope).toBe(3);
-    const mine = await a.player.query(api.combatFeatures.pending, { campaignId: a.campaignId });
+    const mine = await a.player.query(api.combatFeaturesReads.pending, { campaignId: a.campaignId });
     expect(mine).toEqual([expect.objectContaining({ featureId: "hope:bard", featureName: "Make a Scene" })]);
     expect(keysOf(mine).filter((k) => STAT_KEYS.includes(k))).toEqual([]);
     resolved(await a.gm.mutation(api.combatFeatures.sanction, { campaignId: a.campaignId, requestId: r.requestId, approve: true, idempotencyKey: key() }));
     expect((await a.sheet()).hope).toBe(0);
-    expect(await a.player.query(api.combatFeatures.pending, { campaignId: a.campaignId })).toEqual([]);
+    expect(await a.player.query(api.combatFeaturesReads.pending, { campaignId: a.campaignId })).toEqual([]);
   });
 });
 
-describe("combatFeatures.drawer", () => {
+describe("combatFeaturesReads.drawer", () => {
   allowWorldEmails();
 
   it("trackers, every owned feature with its state and badges; other players only while hands are shared; no enemy field", async () => {
     const a = await arena();
     await asGuardian(a, { hope: 2 });
-    const d = await a.player.query(api.combatFeatures.drawer, { campaignId: a.campaignId, characterId: a.w.characterA });
+    const d = await a.player.query(api.combatFeaturesReads.drawer, { campaignId: a.campaignId, characterId: a.w.characterA });
     expect(d.trackers.hope.value).toBe(2);
     const tank = d.features.find((f) => f.featureId === "hope:guardian")!;
     expect(tank).toMatchObject({ source: "hope", automated: true, state: "ready" });
@@ -276,15 +276,15 @@ describe("combatFeatures.drawer", () => {
     expect(d.canFly).toBe(false);
     expect(keysOf(d).filter((k) => ["difficulty", "adversaryBefore", "thresholds"].includes(k))).toEqual([]);
     // Another player: shared by default, refused once the hand is hidden.
-    await a.w.as("otherPlayer").query(api.combatFeatures.drawer, { campaignId: a.campaignId, characterId: a.w.characterA });
+    await a.w.as("otherPlayer").query(api.combatFeaturesReads.drawer, { campaignId: a.campaignId, characterId: a.w.characterA });
     await a.player.mutation(api.combatCards.setHandHidden, { campaignId: a.campaignId, characterId: a.w.characterA, hidden: true });
-    expect(await code(a.w.as("otherPlayer").query(api.combatFeatures.drawer, { campaignId: a.campaignId, characterId: a.w.characterA }))).toBe("FORBIDDEN");
+    expect(await code(a.w.as("otherPlayer").query(api.combatFeaturesReads.drawer, { campaignId: a.campaignId, characterId: a.w.characterA }))).toBe("FORBIDDEN");
   });
 
   it("an exhausted feature shows its reset label (Q3)", async () => {
     const a = await arena();
     await a.edit(() => ({ communityId: "orderborne", featureUses: [{ key: "feat:community:orderborne:dedicated", until: "rest" }] }));
-    const d = await a.player.query(api.combatFeatures.drawer, { campaignId: a.campaignId, characterId: a.w.characterA });
+    const d = await a.player.query(api.combatFeaturesReads.drawer, { campaignId: a.campaignId, characterId: a.w.characterA });
     expect(d.features.find((f) => f.featureId === "community:orderborne:dedicated")).toMatchObject({ state: "exhausted", resetLabel: "Back after a rest" });
   });
 });
@@ -298,7 +298,7 @@ describe("Flying (Q16), stances and Refocus (Q5, HF p.12)", () => {
     await a.edit(() => ({ ancestry: { kind: "single", id: "faerie" } }));
     await a.player.mutation(api.combatFeatures.setFlying, { campaignId: a.campaignId, characterId: a.w.characterA, flying: true, idempotencyKey: key() });
     expect((await a.sheet()).effects.map((e) => e.id)).toContain("flying");
-    const d = await a.player.query(api.combatFeatures.drawer, { campaignId: a.campaignId, characterId: a.w.characterA });
+    const d = await a.player.query(api.combatFeaturesReads.drawer, { campaignId: a.campaignId, characterId: a.w.characterA });
     expect(d).toMatchObject({ flying: true, canFly: true });
     await a.player.mutation(api.combatFeatures.setFlying, { campaignId: a.campaignId, characterId: a.w.characterA, flying: false, idempotencyKey: key() });
     expect((await a.sheet()).effects.map((e) => e.id)).not.toContain("flying");

@@ -10,6 +10,7 @@ import {
   RETRY_THINKING_TEXT,
   STOPPED_EARLY_NOTE,
   THINKING_TEXT,
+  TRY_AGAIN_LABEL,
   WEB_DISCLAIMER_TITLE,
   WEB_THINKING_TEXT,
 } from "../../src/lib/lorekeeper/copy";
@@ -27,7 +28,9 @@ import { gmAndPlayer } from "./live";
 //    L11/L12) are recorded in order, and answer text only ever grows: a shown text that is replaced fails the run.
 // 2. The caps message: a campaign budget lowered to just above one question's worst case; the fake usage of the
 //    first answer passes it and the composer turns off for every member.
-// 3. axe on the page and the open drawer, and the keyboard path through composer, chips, toggle, actions and ✕.
+// 3. A failed answer: with LOREKEEPER_FAKE_MODEL=fail every fake stream fails, so the question ends in the error card;
+//    the switch goes back to `true` and Try again (which re-sends the same text) gets the answer (dcm-bxp.82.9).
+// 4. axe on the page and the open drawer, and the keyboard path through composer, chips, toggle, actions and ✕.
 
 test.describe.configure({ timeout: 240_000 });
 // `configure` returns a new expect; it does not change the imported one.
@@ -247,6 +250,42 @@ test("the caps message appears once the fake usage passes a lowered campaign bud
     expect(refused).toBe("LOREKEEPER_CAP_CAMPAIGN");
   } finally {
     convexEnv(["remove", "--", "LOREKEEPER_CAMPAIGN_MONTHLY_USD"]);
+    await table.close();
+  }
+});
+
+test("a failed answer shows the error card, and Try again gets the answer once the model is back", async ({ browser }) => {
+  const table = await gmAndPlayer(browser);
+  convexEnv(["set", "--", "LOREKEEPER_FAKE_MODEL", "fail"]);
+  try {
+    const { player, campaignId } = table;
+    await player.goto(`/campaigns/${campaignId}/lorekeeper`);
+    const { log, composer, answers } = chat(player);
+    // Books only, so the retried answer is the plain first pass (no internet block).
+    await expect(composer.getByRole("textbox", { name: "Your question" })).toBeEnabled();
+    await composer.getByRole("button", { name: "Books only" }).click();
+    await expect(composer.getByRole("button", { name: "Books only" })).toHaveAttribute("aria-pressed", "true");
+
+    // The switch fails every stream whatever the text. Try again re-sends this text, so it must not carry the FAKE-FAIL
+    // text trigger (that one fails every time; see FAKE_FAIL in convex/lib/claude.ts).
+    const question = "How does a critical hit work?";
+    await ask(composer, question);
+    // The card shows the stored code's text (LOREKEEPER_FAILED, straight apostrophe) or ERROR_TEXT (curly).
+    const failed = answers.filter({ hasText: /couldn.t answer just now/ });
+    await expect(failed).toHaveCount(1, { timeout: 60_000 });
+    const retry = failed.getByRole("button", { name: TRY_AGAIN_LABEL });
+    await expect(retry).toBeVisible();
+
+    convexEnv(["set", "--", "LOREKEEPER_FAKE_MODEL", "true"]);
+    await retry.click();
+    const answered = answers.filter({ hasText: "From the rules" });
+    await expect(answered.getByRole("button", { name: /^📖 Daggerheart Core Rulebook · p\.\d+$/ })).toBeVisible({ timeout: 60_000 });
+    await expect(answered.getByRole("button", { name: "Copy" })).toBeVisible();
+    // The failed card stays above the new answer, and the same question was asked twice.
+    await expect(failed).toHaveCount(1);
+    await expect(log.getByText(question, { exact: true })).toHaveCount(2);
+  } finally {
+    convexEnv(["set", "--", "LOREKEEPER_FAKE_MODEL", "true"]);
     await table.close();
   }
 });

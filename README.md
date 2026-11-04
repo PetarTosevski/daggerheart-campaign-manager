@@ -17,7 +17,8 @@ Daggerheart rulebook.
 
 - Next.js 16 (App Router), TypeScript in strict mode
 - Convex 1.46 (database, server functions, live queries, file storage, crons)
-- Convex Auth: Google and email + password. Sign-up is open.
+- Convex Auth: Google and email + password with open sign-up; a password
+  account works only after the code emailed to it (Resend)
 - Tailwind CSS and shadcn/ui primitives, Zod for validation
 - Vitest (unit tests in jsdom, Convex function tests with convex-test),
   Playwright with axe for end-to-end tests
@@ -46,8 +47,9 @@ typed list is in `convex/convex.config.ts`.
 | Variable | Where | Purpose |
 | --- | --- | --- |
 | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` | Convex | Google sign-in |
-| `ALLOWED_EMAILS` (legacy `GM_EMAILS`) | Convex | Declared and ignored. Sign-up is open. |
-| `SITE_URL` | Convex | The app's URL, for sign-in redirects |
+| `AUTH_RESEND_KEY` | Convex only | Resend API key for sign-up, reset and invite emails |
+| `MAIL_FROM` | Convex | Sender address on the verified Resend domain |
+| `SITE_URL` | Convex | The app's URL, for sign-in redirects and invite links |
 | `JWT_PRIVATE_KEY`, `JWKS` | Convex | Convex Auth session signing keys |
 | `ANTHROPIC_API_KEY` | Convex only | Photo import, combat map generation and the Lorekeeper; without it those features are unavailable |
 | `ANTHROPIC_MODEL`, `LOREKEEPER_MODEL` | Convex | Optional model overrides |
@@ -55,7 +57,7 @@ typed list is in `convex/convex.config.ts`.
 | `CONVEX_DEPLOY_KEY` | Vercel (production) | Lets the Vercel build run `npx convex deploy` |
 | `CONVEX_DEPLOYMENT`, `NEXT_PUBLIC_CONVEX_URL` | `.env.local` | Written by `npx convex dev`; on Vercel `npx convex deploy` sets the URL for the build |
 
-`ANTHROPIC_API_KEY` is a server secret: it lives only in the Convex
+`ANTHROPIC_API_KEY` and `AUTH_RESEND_KEY` are server secrets: they live only in the Convex
 environment, never in Vercel, `.env.local` or anything behind `NEXT_PUBLIC_`.
 
 Dev and test only, and never set on production: `SEED_ACCOUNTS` and

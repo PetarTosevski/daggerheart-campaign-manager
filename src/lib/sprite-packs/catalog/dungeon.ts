@@ -1,8 +1,8 @@
 // Built-in catalog: dungeon (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, obj, tex } from "./types";
+import { defineFolder, obj, tex, type FolderCatalog } from "./types";
 
-export const DUNGEON = defineFolder("dungeon", {
+export const DUNGEON = (): FolderCatalog => defineFolder("dungeon", {
   props: [
     obj("stone pillar (small)", "block", "tall", "pillar"),
     obj("iron cage", "cover", "tall", "crate", { move: "block", footprint: "rect", standIn: false }),

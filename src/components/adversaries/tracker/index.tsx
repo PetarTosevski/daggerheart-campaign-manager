@@ -100,7 +100,7 @@ function SelectedSide({
 /** The live map pane under the tracker (AA3, Q16), when the GM has a live map. */
 function LiveMap({ campaignId, onPickToken }: { campaignId: Id<"campaigns">; onPickToken: (token: MapToken) => void }) {
   const map = useLiveMap(campaignId);
-  const tokens = useQuery(api.combatTokens.list, map ? { campaignId, mapId: map._id } : "skip");
+  const tokens = useQuery(api.combatTokensReads.list, map ? { campaignId, mapId: map._id } : "skip");
   if (!map || tokens === undefined) return null;
   return <MapPane campaignId={campaignId} map={map} tokens={tokens} onPickToken={onPickToken} />;
 }

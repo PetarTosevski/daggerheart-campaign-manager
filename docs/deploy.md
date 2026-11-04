@@ -55,6 +55,9 @@ record whether the domain is verified or what `MAIL_FROM` is set to.
    (step 4), never in Vercel or git. Set `MAIL_FROM` to a sender on the verified domain, for example
    `Duality Heart <noreply@dualityheart.com>`.
 
+The sign-up code email (Convex Auth `Password` provider with `verify`, `convex/lib/authEmail.ts`) and the campaign
+invite email (`convex/lib/inviteEmail.ts`) both send through this key as `AUTH_RESEND_KEY`, from `MAIL_FROM` (step 4).
+
 ## 3. Convex production deployment
 
 The deployment already exists. Deploying happens through the Vercel build (`npx convex deploy` runs inside the build
@@ -76,13 +79,13 @@ Found by grepping `env.*` / `process.env.*` in `convex/`, `src/`, `scripts/`.
 | Variable | Needed | Who | Notes |
 |---|---|---|---|
 | `ANTHROPIC_API_KEY` | yes | — | Lorekeeper, map generation, photo import. Recorded as set on 2026-10-26; not re-checked here. |
-| `SITE_URL` | yes | agent | `https://dualityheart.com`. Convex Auth redirects here after OAuth. Dev has its own value; do not copy it. |
+| `SITE_URL` | yes | agent | `https://dualityheart.com`. Convex Auth redirects here after OAuth; invite emails link to `<SITE_URL>/signin`. Dev has its own value; do not copy it. |
 | `JWT_PRIVATE_KEY` | yes | agent, only if unset | RS256 private key (PKCS8). The site is live: do not generate a new pair if one is already set. Regenerating signs everyone out. |
 | `JWKS` | yes | agent, only if unset | Matching public JWKS. Same warning. |
 | `AUTH_GOOGLE_ID` | yes | **USER** | Google OAuth client id (see step 5). |
 | `AUTH_GOOGLE_SECRET` | yes | **USER** | Google OAuth client secret. |
-| `AUTH_RESEND_KEY` | yes | **USER** | Resend API key. Convex env only. |
-| `MAIL_FROM` | yes | **USER** | Sender on the verified domain. Convex env only. |
+| `AUTH_RESEND_KEY` | yes | **USER** | Resend API key (step 2). Sign-up, password-reset and invite emails. Only in Convex env. |
+| `MAIL_FROM` | yes | agent | Sender on the verified domain, e.g. `Duality Heart <noreply@dualityheart.com>`. |
 | `CONVEX_SITE_URL` | automatic | none | Provided by Convex itself to `convex/auth.config.ts`. Do not set. |
 | `LOREKEEPER_MODEL`, `LOREKEEPER_DAILY_QUESTIONS`, `LOREKEEPER_CAMPAIGN_MONTHLY_USD`, `LOREKEEPER_MONTHLY_USD`, `ANTHROPIC_MODEL` | optional | user | Defaults are fine; see `docs/lorekeeper.md`. |
 
@@ -107,9 +110,9 @@ Changing `JWT_PRIVATE_KEY` or `JWKS` signs everyone out. Do not rotate them on t
 
 ### Convex production: must NOT be set
 
-- `ALLOWED_EMAILS`, `GM_EMAILS`: unused. Open sign-up is on `master` (dcm-bxp.128). The code does not read them, so a
-  leftover value does not decide who may sign up. The 2026-10-26 launch blocker is finished. Do not set them to
-  limit sign-up. This runbook does not say whether a leftover value is still present on the deployment.
+- `ALLOWED_EMAILS`, `GM_EMAILS`: the old invite allowlist. Sign-up is open (dcm-bxp.128) and the code no longer reads
+  them; `GM_EMAILS` was set on prod for the invite-only launch, so remove it:
+  `npx convex env remove --prod GM_EMAILS` (and `ALLOWED_EMAILS` if listed). Do not set them again to limit sign-up.
 - `SEED_ACCOUNTS`, `ALLOW_SEED_ACCOUNTS`, `E2E_AUTH_ENABLED`, `E2E_AUTH_SECRET`, `LOREKEEPER_FAKE_MODEL`:
   test rails, off in production.
 
@@ -235,7 +238,7 @@ Not recorded as run. The site being live does not check these boxes.
   `convex deploy` restores the old functions. Data migrations are one way for new-shape rows: restore from a Convex
   backup if needed. Before a full rollback, take one: Convex dashboard, production, Settings, Backups,
   "Backup now" (**USER**), and note the time. This file does not record whether a backup was taken before launch.
-- **Sign-in broken** (auth env wrong): fix `SITE_URL`, `AUTH_GOOGLE_*`, `AUTH_RESEND_KEY` or `MAIL_FROM` with
+- **Sign-in broken** (auth env wrong): fix `SITE_URL`, `AUTH_GOOGLE_*`, `AUTH_RESEND_KEY`, `MAIL_FROM` with
   `npx convex env set --prod`; no redeploy needed. Never regenerate `JWT_PRIVATE_KEY`/`JWKS` as a fix, it signs
   everyone out.
 - **Lorekeeper cost runaway**: `npx convex env set --prod LOREKEEPER_DAILY_QUESTIONS 0` or lower the monthly caps.

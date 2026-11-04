@@ -202,28 +202,23 @@ export function packsHref(campaignId: Id<"campaigns">): string {
 //
 // | Folder                | Tracer   | Exports (mounted by the page)                                                   |
 // |-----------------------|----------|----------------------------------------------------------------------------------|
-// | `actions/`            | CA5      | `ActionsProvider`, `ActionsPanel` (player column), `Resolutions` (GM column),    |
-// |                       |          | `TargetsLayer` (map layer, Play); re-exports `targets/` and `gm/`                |
-// | `actions/attack/`     | CA5      | `AttackBar` (inside `ActionsPanel`)                                              |
-// | `actions/targets/`    | CA5      | `TargetsLayer`, `TargetList` (inside `ActionsPanel`)                             |
-// | `actions/dice/`       | CA5      | `MapDice` (inside `ActionsPanel`)                                                |
+// | `actions/`            | CA5      | `ActionsProvider`, `Resolutions` (GM column), `TargetsLayer` (map layer, Play);  |
+// |                       |          | re-exports `targets/` and `gm/`                                                  |
+// | `actions/targets/`    | CA5      | `TargetsLayer`, the target hints the HUD's pickers read                          |
 // | `actions/gm/`         | CA5      | `Resolutions`                                                                    |
-// | `actions/hand/`       | CA6      | `Hand` (inside `ActionsPanel`; the first tab of the phone bottom sheet)          |
 // | `actions/adversary/`  | AA5      | `AdversaryPanel` (GM column, Play), `HitFlashLayer` (map layer, Play)            |
-// | `actions/reactions/`  | AA4      | `IncomingHit` (player column, first)                                             |
+// | `actions/reactions/`  | AA4      | `GmOwnHits` (GM column), `PendingHits` (character sheet)                         |
 //
-// CA0 ships every export as a stub that renders nothing (providers render their children). The page mounts each in
-// its own error boundary: in Play only, with a map on screen. Order: player column IncomingHit, ActionsPanel, then
-// the view and token cards; GM column Combatants, the token card, AdversaryPanel, Reveal, Vision, Resolutions. Map
-// layers draw after the vision layer (fog), TargetsLayer then HitFlashLayer, so rings and flashes stay visible.
-// Picked targets are shared state of `ActionsProvider` (vision-layer's selection adds to it, the Attack bar and the
-// Hand read it); the page does not hold them. Players never get enemy numbers from any of these (U1).
+// Plan combat-hud H8.1 (cut-over): the player's side of the map (Hand, Attack, targets, dice, feed, incoming hits) is
+// the HUD's (`hud/`); the attack, hand and reactions folders keep only what the HUD reads (models, helpers, the card
+// face, the card result, the vault deck). The page mounts each export in its own error boundary: in Play only, with a
+// map on screen. GM column order: Combatants, the token card, AdversaryPanel, Reveal, Vision, Resolutions. Map layers
+// draw after the vision layer (fog), TargetsLayer then HitFlashLayer, so rings and flashes stay visible. Picked targets
+// are shared state of `ActionsProvider` (vision-layer's selection adds to it, the HUD's pickers read it); the page does
+// not hold them. Players never get enemy numbers from any of these (U1).
 
 /** The props every combat-actions panel gets: the page state with the map on screen. */
 export type ActionsSlotProps = CombatPageState & { map: CombatMapSummary };
-
-/** Player column: the Hand, the Attack bar, target list, map dice box and mini feed; a bottom sheet at <=760px (Q11). */
-export type ActionsPanelProps = ActionsSlotProps;
 
 /** GM column, last: the latest resolutions of the map's encounter with Undo (U4, Q10). */
 export type ResolutionsProps = ActionsSlotProps;
@@ -231,43 +226,21 @@ export type ResolutionsProps = ActionsSlotProps;
 /** GM column, under the token card: Attack and feature buttons for the selected adversary token (Q12, Q16, Q19). */
 export type AdversaryPanelProps = ActionsSlotProps;
 
-/** Player column, first: the open incoming hit on the player's character (armor choice) or an ally's (reaction cards; Q13, Q14). */
+/** GM column: the open incoming hits on the PCs the GM owns (armor choice, reaction cards; Q13, Q14). */
 export type IncomingHitProps = ActionsSlotProps;
 
 /** Map layers of the combat actions (target rings, hit flashes): the usual layer props. */
 export type ActionsLayerProps = MapLayerProps;
 
-// ---------------------------------------------------------------- sheet drawer (plan .omc/plans/sheet-drawer.yaml)
+// ---------------------------------------------------------------- feature use (plan .omc/plans/sheet-drawer.yaml)
 //
-// | Folder         | Tracer    | Exports (mounted by the page)                                                    |
-// |----------------|-----------|----------------------------------------------------------------------------------|
-// | `drawer/`      | SD0 → SD6 | `SheetDrawer` (one per page, opened by the page's Sheet button)                  |
-// | `drawer/use/`  | SD0 → SD7 | `FeatureUse` (inside `SheetDrawer`: one feature's Use dialog, choices and result) |
-//
-// The page (SD0) owns the Sheet button: in Play, in the header's tools (the top bar) and, at 760 px and below, in a
-// bar under the map (the bottom bar). It shows for a player whose PC has a token on the live map, and for the GM while
-// a PC token is selected (`sheetCharacterId`). The page mounts `SheetDrawer` once, in its own error boundary, keeps it
-// mounted after the first open (so closing returns focus to the button and the map stays as it was: no remount, no
-// `key=` on live content, CL7) and passes `open` / `onClose`. SD0 ships `SheetDrawer` as a modal with the "Full sheet"
-// link and `FeatureUse` as a stub that renders nothing. Players never get enemy numbers from either (U1).
+// The classic sheet drawer went with the cut-over (plan combat-hud H8.1): the HUD's sheet panel (`hud/sheet`) shows a
+// PC's trackers and features. `drawer/use/` keeps `FeatureUse` (one feature's Use dialog, choices and result), which
+// the HUD's sheet and action ring open; `drawer/prompts/` and `drawer/list/controls.tsx` keep the parts the HUD's
+// sheet shows. Players never get enemy numbers from either (U1).
 
 /**
- * The drawer over the live map (SD6): the character's HP / Stress / Hope / Armor trackers and every owned feature with
- * its Use button (`FeatureUse`); a right-side modal dialog, full screen at 760 px and below. `characterId` is the PC
- * whose sheet it shows: the player's own, or the PC token the GM selected.
- */
-export type SheetDrawerProps = {
-  campaignId: Id<"campaigns">;
-  role: CombatRole;
-  /** The map on screen, or null (features without enemy targets still work without one). */
-  map: CombatMapSummary | null;
-  characterId: Id<"characters">;
-  open: boolean;
-  onClose: () => void;
-};
-
-/**
- * One feature's Use flow inside the drawer (SD7): the choices and targets dialog of the Hand (CA6), then the result.
+ * One feature's Use flow (SD7): the choices and targets dialog of the Hand (CA6), then the result.
  * `featureId` is a feature id (src/lib/domain/feature-effects/ids.ts); `useId` one of its uses (default its first).
  * `onClose` ends the flow (used, passed or cancelled).
  */
@@ -281,12 +254,12 @@ export type FeatureUseProps = {
   onClose: () => void;
 };
 
-/** A token as the Sheet button reads it (`combatTokens.party`: the map's PC tokens). */
+/** A PC token as `combatTokensReads.party` lists it (the map's PC tokens). */
 export type SheetTokenRef = { _id: Id<"combatTokens">; kind: string; characterId?: Id<"characters">; mine: boolean };
 
 /**
- * Whose sheet the Sheet button opens, or null for no button: a player's own PC token on the map (`mine`), or, for the
- * GM, the selected token when it is a PC's.
+ * Whose sheet a viewer's "Sheet" opens, or null for none: a player's own PC token on the map (`mine`), or, for the GM,
+ * the selected token when it is a PC's.
  */
 export function sheetCharacterId(role: CombatRole, tokens: readonly SheetTokenRef[], selectedTokenId: Id<"combatTokens"> | null): Id<"characters"> | null {
   const pc = (t: SheetTokenRef) => t.kind === "pc" && t.characterId !== undefined;
@@ -294,7 +267,7 @@ export function sheetCharacterId(role: CombatRole, tokens: readonly SheetTokenRe
   return token?.characterId ?? null;
 }
 
-/** A character's full sheet on the Party page (the drawer's "Full sheet" link). */
+/** A character's full sheet on the Party page (the "Full sheet" link). */
 export function sheetHref(campaignId: Id<"campaigns">, characterId: Id<"characters">): string {
   return `/campaigns/${campaignId}/party/${characterId}`;
 }

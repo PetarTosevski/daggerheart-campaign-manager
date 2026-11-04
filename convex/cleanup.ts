@@ -327,6 +327,15 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
     const rows = await ctx.db.query("sessionSpotlights").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "sessionSpotlights", rows);
   },
+  // Journal J0: the GM's log overrides and the per-PC tally counters.
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("sessionLogOverrides").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "sessionLogOverrides", rows);
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("sessionCharacterStats").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "sessionCharacterStats", rows);
+  },
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("sessionPrep").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "sessionPrep", rows);
@@ -402,6 +411,21 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("combatAreas").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "combatAreas", rows);
+  },
+  // The GM's "Play for this character" switches (plan drawer-answers DA6); the index's prefix is the campaign.
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("playFor").withIndex("by_campaign_user_character", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "playFor", rows);
+  },
+  // Who holds the spotlight (plan combat-hud H1.S): one row per campaign.
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("combatSpotlight").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "combatSpotlight", rows);
+  },
+  // Adversary tokens the party saw this scene (spotlight-seen, user 2026-11-03): referenced by id only.
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("combatSeen").withIndex("by_campaign_token", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "combatSeen", rows);
   },
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("operations").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
@@ -566,7 +590,7 @@ async function isKeptUnverifiedUser(ctx: MutationCtx, userId: Id<"users">): Prom
   if (campaign !== null) return true;
   const member = await ctx.db.query("campaignMembers").withIndex("by_user", (q) => q.eq("userId", userId)).first();
   if (member !== null) return true;
-  const character = await ctx.db.query("characters").withIndex("by_owner", (q) => q.eq("ownerId", userId)).first();
+  const character = await ctx.db.query("characters").withIndex("by_owner_campaign", (q) => q.eq("ownerId", userId)).first();
   if (character !== null) return true;
   const accounts = await ctx.db
     .query("authAccounts")

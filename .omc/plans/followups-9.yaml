@@ -101,3 +101,61 @@ waves:
           - "Two unverified sign-ups pending at once on the e2e deployment both verify (convex test proves it); no fixed shared code hash"
           - "The mechanism is e2e-only (isE2EDeployment + E2E_AUTH_ENABLED), safe under concurrent requests (no module-level mutable state shared across requests), adds no public function reachable outside e2e (any new public endpoint is gated like the existing e2e rails and has authz/unauthenticated-sweep coverage)"
           - "e2e specs read the code through the new mechanism; docs/testing.md explains it; pnpm lint, typecheck, vitest, the three sign-in e2e specs and tracer-guard pass"
+  - wave: 5
+    tracers:
+      - id: J5
+        title: Google-only accounts can add a password through the sign-up code flow (dcm-bxp.128.3)
+        size: S
+        goal: A user who signed up with Google can create a password for the same email via Create account; after the emailed code the password account links to their existing user.
+        depends_on: []
+        owns:
+          - convex/auth.ts
+          - convex/lib/users.ts
+          - convex/lib/authEmail.ts
+          - src/app/signin/password-form.tsx
+          - tests/convex/auth-signup.test.ts
+          - tests/convex/create-or-update-user.test.ts
+          - tests/unit/signin-password-form.test.tsx
+          - tests/e2e/auth.spec.ts
+          - docs/tasks/TASK-F9-J5.md
+        reads: [docs/tasks/TASK-OS-OS3.md, docs/tasks/TASK-F9-J4.md, docs/best-practices.md]
+        acceptance:
+          - "Sign-up with an email whose user has only a Google account sends the code; entering it creates a password authAccount linked to that same user id (no second user, same campaigns); a wrong/expired code leaves the user unchanged"
+          - "An email that already has a password account still gets EMAIL_TAKEN; the code step text says 'add a password to your account' in this case if it can be told apart without revealing anything new to a stranger"
+          - "Sign-in afterwards works with both Google and the password; convex tests cover link, no-duplicate and EMAIL_TAKEN; pnpm lint, typecheck, vitest, tests/e2e/auth.spec.ts and tracer-guard pass"
+  - wave: 6
+    tracers:
+      - id: J6
+        title: Lorekeeper flow e2e takes the Try again step after a FAKE-FAIL answer (dcm-bxp.82.9)
+        size: S
+        goal: The Lorekeeper flow e2e asks a FAKE-FAIL question, sees the answer error card and recovers with Try again.
+        depends_on: []
+        owns:
+          - convex/lib/claude.ts
+          - tests/e2e/lorekeeper-flow.spec.ts
+          - docs/tasks/TASK-F9-J6.md
+        reads: [src/components/lorekeeper/**, docs/lorekeeper.md, docs/testing.md]
+        acceptance:
+          - "lorekeeper-flow.spec.ts asks a question containing FAKE-FAIL, sees the error card ('couldn't answer just now' + Try again), presses Try again and gets an answer (Try again re-sends the same text, so the fake fails while a backend env switch such as LOREKEEPER_FAKE_FAIL is set - only on the fake model path - and the spec sets it with convexEnv, then removes it before Try again, as the caps test does)"
+          - "pnpm lint, typecheck, vitest, tests/e2e/lorekeeper-flow.spec.ts and tracer-guard pass"
+  - wave: 7
+    tracers:
+      - id: J7
+        title: Notes journals keep the character for players with many characters; preload spec matches PF9; Lorekeeper drawer reopen race (dcm-bxp.141)
+        size: S
+        goal: The full e2e suite is green again - Notes finds the caller's character in this campaign through an owner+campaign index, the preload spec expects partySummary, and a stale dialog close event no longer shuts a reopened Lorekeeper drawer.
+        depends_on: []
+        owns:
+          - convex/tables/characters.ts
+          - convex/lib/notes.ts
+          - convex/cleanup.ts
+          - tests/convex/notes-many-characters.test.ts
+          - tests/e2e/campaign-preload.spec.ts
+          - src/components/lorekeeper/drawer/panel.tsx
+          - docs/tasks/TASK-F9-J7.md
+        reads: [convex/notesJournals.ts, convex/notesSharing.ts, tests/e2e/lorekeeper-flow.spec.ts, docs/best-practices.md]
+        acceptance:
+          - "characters index by_owner is replaced by by_owner_campaign [ownerId, campaignId] (schema-guard forbids prefix indexes; cleanup.ts uses it as a prefix query); liveCharacters queries it with eq(owner).eq(campaign) and a bounded take; convex test: a player owning more than 200 characters in other campaigns still gets their character on the journal (name, characterId)"
+          - "campaign-preload.spec.ts Dashboard target expects characters:partySummary (PF9)"
+          - "Lorekeeper drawer ignores a native close event that arrives after the drawer was reopened; lorekeeper-flow.spec.ts:293 passes 3 runs in a row"
+          - "Notes specs (live-notes, notes-a11y, notes-entries, notes-flow, notes-journals, notes-pages, notes-sharing), campaign-preload and lorekeeper-flow pass; pnpm lint, typecheck, vitest and tracer-guard pass"

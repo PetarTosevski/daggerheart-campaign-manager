@@ -4,7 +4,7 @@ import { api, internal } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { emptyEntry } from "../../src/lib/codex/schema";
 import { initialMapState, type MapToken } from "../../src/lib/world/map-state";
-import { errorCode, key, useAllowlist } from "./helpers";
+import { errorCode, imageBlob, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
 async function setup(frameId: "witherwild" | "beast-feast" = "witherwild") {
@@ -54,7 +54,7 @@ async function putV1Map(t: T, campaignId: Id<"campaigns">, tokens: MapToken[]) {
 /** convex-test files carry no content type, so attach the way `attachImage` would. */
 async function attach(t: T, entryId: Id<"codexEntries">, uploadedBy: Id<"users">, shown = false) {
   return t.run(async (ctx) => {
-    const storageId = await ctx.storage.store(new Blob(["img"], { type: "image/jpeg" }));
+    const storageId = await ctx.storage.store(imageBlob("image/jpeg"));
     const entry = (await ctx.db.get(entryId))!;
     await ctx.db.insert("files", { storageId, campaignId: entry.campaignId, uploadedBy, kind: "codexImage", refId: entryId, createdAt: 0 });
     const data = entry.data as { images: { storageId: string; shown: boolean }[]; cover: string | null };
@@ -448,7 +448,7 @@ describe("codex", () => {
     const { entryId } = await gm.mutation(api.codex.create, { campaignId, kind: "character", idempotencyKey: key() });
     for (let i = 0; i < 8; i++) await attach(t, entryId, ids.gm);
     expect(errorCode(await fail(gm.mutation(api.codex.imageUploadUrl, { entryId })))).toBe("INVALID");
-    const extra = await t.run((ctx) => ctx.storage.store(new Blob(["x"], { type: "image/png" })));
+    const extra = await t.run((ctx) => ctx.storage.store(imageBlob("image/png")));
     expect(await gm.mutation(api.codex.attachImage, { entryId, storageId: extra })).toEqual({ error: expect.any(String) });
     expect(await t.run((ctx) => ctx.storage.getUrl(extra))).toBeNull();
     expect(await t.run(async (ctx) => (await ctx.db.query("files").collect()).length)).toBe(8);

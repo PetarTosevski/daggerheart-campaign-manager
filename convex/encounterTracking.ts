@@ -8,6 +8,7 @@ import { ADVERSARIES } from "../src/lib/srd/adversaries";
 import type { AdversaryDef } from "../src/lib/srd/types";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
+import { expireParty } from "./campaignTime";
 import { assertRunning, assertTextLength, assertWholeInRange, loadEncounter, loadInstance, MAX_INSTANCE_NOTE, MAX_INSTANCES, MAX_MINIONS, MAX_TAG, MAX_TAGS } from "./lib/encounters";
 import { FEAR_SPEND_REASONS, spendFear as spendCampaignFear } from "./lib/fear";
 import { gmQuery, keyedGmMutation } from "./lib/functions";
@@ -198,7 +199,8 @@ export const spotlight = keyedGmMutation({
 
 /**
  * Ends the GM turn: `gmTurn` + 1. Spotlight counts reset because each instance's count is only read for the turn it
- * was stored in (no write to every instance).
+ * was stored in (no write to every instance). The party's feature uses limited to a GM turn end
+ * (`expire(sheet, "gmTurn")`, one undoable actionLog group; nothing to end writes nothing).
  */
 export const endGmTurn = keyedGmMutation({
   args: { encounterId: v.string() },
@@ -209,6 +211,8 @@ export const endGmTurn = keyedGmMutation({
       assertRunning(encounter);
       const gmTurn = encounter.gmTurn + 1;
       await ctx.db.patch("encounters", encounter._id, { gmTurn, updatedAt: Date.now() });
+      // Plan lanes-2 CT (dcm-gfk3): uses limited to a GM turn end with it, logged as one undoable group.
+      await expireParty(ctx, ctx.campaign, ctx.user._id, "gmTurn", `GM turn ${encounter.gmTurn} ended`);
       return { gmTurn };
     }),
 });

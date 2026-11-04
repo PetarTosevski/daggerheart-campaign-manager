@@ -5,8 +5,12 @@ import {
   addPyre as add,
   adjustBranches as adjust,
   assertCanRollLurking,
+  atPyreMode,
+  effectiveAtPyre,
   igniteBranch as ignite,
   INITIAL_UMBRA,
+  linkPyre as link,
+  partyNearLitPyre,
   LURKING_FEAR,
   LURKING_OUTCOMES,
   LURKING_TEXT,
@@ -14,16 +18,25 @@ import {
   removePyre as remove,
   renamePyre as rename,
   resolveLurking,
+  setAtPyreChoice,
   setPyreLit,
+  setVicinity as vicinity,
   settlementSchema,
   umbraStateSchema,
+  vicinityKm,
   watchersSchema,
+  type UmbraState,
 } from "../../src/lib/frames/trackers/age-of-umbra";
+import { mapScale } from "../../src/lib/domain/travel/index";
+import { mapImageSize } from "../../src/lib/world/map-state";
+import type { Doc } from "../_generated/dataModel";
+import type { QueryCtx } from "../_generated/server";
 import { applyResourceDelta } from "../../src/lib/domain/characters/index";
 import { keepWatchRolls } from "../../src/lib/domain/rest/frame-hooks/index";
 import { rollDie } from "../lib/dice";
 import { gainFear } from "../lib/fear";
 import { campaignQuery, keyedGmMutation } from "../lib/functions";
+import { playerTokenFilter, readMapTokens, tokenRow } from "../lib/maps";
 import type { RestHook } from "../lib/restHooks";
 import { assertTrackerFrame, frameTrackerMutation, loadTracker, TRACKER_SCHEMA_VERSION, writeTracker, type FrameTracker } from "../lib/trackers";
 
@@ -69,6 +82,25 @@ const lurkingResult = v.object({
 
 export type LurkingResult = Infer<typeof lurkingResult>;
 
+/**
+ * dcm-bxp.18: whether the party marker is within the vicinity of a lit pyre
+ * linked to a World map marker. Reads the map's markers only when a lit pyre
+ * is linked; an unreadable map counts as "not near".
+ */
+async function nearLitPyre(ctx: QueryCtx, campaign: Doc<"campaigns">, state: UmbraState): Promise<boolean> {
+  if (!state.pyres.some((p) => p.lit && p.tokenId !== undefined)) return false;
+  const map = await readMapTokens(ctx, campaign).catch(() => null);
+  if (map === null) return false;
+  const image = mapImageSize(campaign.frameId, map.state);
+  const markers = new Map(map.tokens.map((t) => [t.id, { x: t.x, y: t.y }]));
+  return partyNearLitPyre(state.pyres, markers, map.state.party, mapScale(map.state.scaleKm, image.width, image.height), vicinityKm(state));
+}
+
+/** Whether the party is at a Sacred Pyre now: the GM's checkbox, or the map in automatic mode. */
+async function atPyreNow(ctx: QueryCtx, campaign: Doc<"campaigns">, state: UmbraState): Promise<boolean> {
+  return atPyreMode(state) === "gm" ? state.atPyre : effectiveAtPyre(state, await nearLitPyre(ctx, campaign, state));
+}
+
 /** A settlement name, or the wrapper sends the ZodError as INVALID with its first message. */
 function settlement(raw: string): string {
   const parsed = settlementSchema.safeParse(raw);
@@ -85,12 +117,72 @@ export const get = campaignQuery({
     assertTrackerFrame(ctx.campaign, umbraTracker);
     const state = await loadTracker(ctx, ctx.campaign._id, umbraTracker);
     return {
-      pyres: state.pyres,
+      pyres: state.pyres.map(({ id, settlement, lit }) => ({ id, settlement, lit })),
       blessedBranches: state.blessedBranches,
-      atPyre: state.atPyre,
+      atPyre: await atPyreNow(ctx, ctx.campaign, state),
       gm: ctx.permission === "owner" ? { log: state.log } : null,
     };
   },
+});
+
+const pyreMapView = v.object({
+  /** The checkbox decides ("gm") or the map does ("auto"). */
+  mode: v.union(v.literal("auto"), v.literal("gm")),
+  vicinityKm: v.number(),
+  /** The map's answer: the party marker within the vicinity of a lit linked pyre. */
+  nearLitPyre: v.boolean(),
+  /** Each linked pyre's marker; players get only markers they can see. */
+  links: v.array(v.object({ pyreId: v.string(), tokenId: v.number(), lit: v.boolean() })),
+});
+
+export type PyreMapView = Infer<typeof pyreMapView>;
+
+/** dcm-bxp.18: the pyres' World map links and the automatic "at a Sacred Pyre" (Show on map, the markers' lit badge). */
+export const pyreMap = campaignQuery({
+  need: "view",
+  enough: "owner",
+  args: {},
+  returns: pyreMapView,
+  handler: async (ctx): Promise<PyreMapView> => {
+    assertTrackerFrame(ctx.campaign, umbraTracker);
+    const state = await loadTracker(ctx, ctx.campaign._id, umbraTracker);
+    const linked = state.pyres.flatMap((p) => (p.tokenId === undefined ? [] : [{ pyreId: p.id, tokenId: p.tokenId, lit: p.lit }]));
+    let links = linked;
+    if (ctx.permission !== "owner" && linked.length > 0) {
+      const map = await readMapTokens(ctx, ctx.campaign).catch(() => null);
+      const canSee = map === null ? () => false : await playerTokenFilter(ctx, ctx.campaign).catch(() => () => false);
+      const visible = new Set((map?.tokens ?? []).filter(canSee).map((t) => t.id));
+      links = linked.filter((l) => visible.has(l.tokenId));
+    }
+    return { mode: atPyreMode(state), vicinityKm: vicinityKm(state), nearLitPyre: await nearLitPyre(ctx, ctx.campaign, state), links };
+  },
+});
+
+/** dcm-bxp.18: links a pyre to a World map marker, or unlinks it (null). INVALID when the marker isn't on the map. */
+export const linkPyre = keyedGmMutation({
+  args: { pyreId: v.string(), tokenId: v.union(v.number(), v.null()) },
+  returns: v.null(),
+  handler: async (ctx, { pyreId, tokenId }) => {
+    assertTrackerFrame(ctx.campaign, umbraTracker);
+    if (tokenId !== null && (!Number.isInteger(tokenId) || (await tokenRow(ctx, ctx.campaign._id, tokenId)) === null)) {
+      throw appError("INVALID", "That marker is no longer on the map.");
+    }
+    return frameTrackerMutation(ctx, umbraTracker, { kind: "umbra_link_pyre", request: { pyreId, tokenId } }, (state) => ({
+      state: link(state, pyreId, tokenId),
+      result: null,
+    }));
+  },
+});
+
+/** dcm-bxp.18: the vicinity (km) within which the party marker counts as at a lit linked pyre. */
+export const setVicinity = keyedGmMutation({
+  args: { km: v.number() },
+  returns: v.object({ vicinityKm: v.number() }),
+  handler: (ctx, { km }) =>
+    frameTrackerMutation(ctx, umbraTracker, { kind: "umbra_set_vicinity", request: { km } }, (state) => {
+      const next = vicinity(state, km);
+      return { state: next, result: { vicinityKm: vicinityKm(next) } };
+    }),
 });
 
 export const addPyre = keyedGmMutation({
@@ -168,12 +260,13 @@ export const igniteBranch = keyedGmMutation({
   },
 });
 
+/** The GM's "at a Sacred Pyre" checkbox (overrides the map); null hands the decision back to the map (dcm-bxp.18). */
 export const setAtPyre = keyedGmMutation({
-  args: { atPyre: v.boolean() },
+  args: { atPyre: v.union(v.boolean(), v.null()) },
   returns: v.null(),
   handler: (ctx, { atPyre }) =>
     frameTrackerMutation(ctx, umbraTracker, { kind: "umbra_set_at_pyre", request: { atPyre } }, (state) => ({
-      state: { ...state, atPyre },
+      state: setAtPyreChoice(state, atPyre),
       result: null,
     })),
 });
@@ -192,7 +285,7 @@ export const rollLurkingDarkness = keyedGmMutation({
     const watchers = parsed.data;
     const campaignId = ctx.campaign._id;
     return frameTrackerMutation<typeof umbraStateSchema, LurkingResult>(ctx, umbraTracker, { kind: "umbra_lurking_darkness", request: { watchers } }, async (state) => {
-      assertCanRollLurking(state);
+      assertCanRollLurking(state, await nearLitPyre(ctx, ctx.campaign, state));
       const roll = resolveLurking(rollDie(12), watchers);
       const fearGained = LURKING_FEAR[roll.outcome];
       const next = logLurking(state, { ...roll, fearGained, at: Date.now() });
@@ -215,7 +308,7 @@ export const rollLurkingDarkness = keyedGmMutation({
 export const ageOfUmbraRestHook: RestHook = async (ctx, { campaign, choices, sheets, rng }) => {
   if (campaign.frameId !== umbraTracker.frameId) return [];
   const state = await loadTracker(ctx, campaign._id, umbraTracker);
-  if (state.atPyre) return [];
+  if (await atPyreNow(ctx, campaign, state)) return [];
   const watchers = keepWatchRolls(choices, new Set<string>(sheets.keys()), rng);
   const roll = resolveLurking(rng(12), watchers);
   const fearGained = LURKING_FEAR[roll.outcome];

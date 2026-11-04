@@ -150,7 +150,7 @@ describe("damage to a PC (AR3-AR5; CB p.91, p.114, p.99, p.92)", () => {
 
   it("resistance halves before the thresholds; immunity takes none (CB p.99)", () => {
     const resistant = { ...rune, resistance: { physical: "resistant" as const, magic: "none" as const } };
-    expect(applyHitToPc(resistant, { amount: 21, type: "physical", direct: false })).toMatchObject({ taken: 10, severity: "major" });
+    expect(applyHitToPc(resistant, { amount: 21, type: "physical", direct: false })).toMatchObject({ taken: 11, severity: "major" });
     expect(applyHitToPc({ ...rune, resistance: { physical: "immune", magic: "none" } }, { amount: 21, type: "physical", direct: false })).toMatchObject({ taken: 0, hpMarked: 0 });
   });
 

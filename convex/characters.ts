@@ -1,4 +1,4 @@
-import { v, type Infer } from "convex/values";
+import { v } from "convex/values";
 
 import {
   applyResourceDelta,
@@ -18,6 +18,7 @@ import { applySlotBonuses } from "../src/lib/domain/characters/slots";
 import { negateMinor } from "../src/lib/domain/session-features/index";
 import { spellcastTraitOf } from "../src/lib/domain/characters/spellcast";
 import { addCard, cardTakeProblem, sourcesFor } from "../src/lib/domain/level-up/index";
+import { holdsPurposefulDesign } from "../src/lib/domain/dice/index";
 import { assertEquipment, assertSource, IKONIS_ONLY } from "../src/lib/equipment-rules";
 import { appError, RuleError } from "../src/lib/errors/app-error";
 import { FRAME_OF } from "../src/lib/frames/extras/common";
@@ -33,43 +34,30 @@ import {
   getSubclass,
   getWeapon,
 } from "../src/lib/srd/index";
-import { TRAIT_IDS } from "../src/lib/srd/types";
-import {
-  characterDraftSchema,
-  characterSheetSchema,
-  sheetPatchSchema,
-  type CharacterDraft,
-  type CharacterSheet,
-  type CharacterSheetInput,
-} from "../src/lib/validation/characters";
+import { characterDraftSchema, sheetPatchSchema, type CharacterDraft } from "../src/lib/validation/character-input";
+import { characterSheetSchema, type CharacterSheet, type CharacterSheetInput } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { installedAugments, seedMotherboard } from "./characterExtras";
 import { logAction } from "./lib/actionLog";
 import { moveCardFor, writeHandHidden } from "./lib/cardHand";
+import { withoutCondition } from "./lib/conditionMarkers";
 import { featureScope } from "./sessionFeatures";
-import { editable, findCharacter, loadCharacter, readSheet, saveSheet, storedSheet } from "./lib/characterSheet";
-import { claimFile, deleteFilesOf, deleteOwnFile, isAllowedImage, isClaimed, ownFileUrl } from "./lib/files";
-import { campaignQuery, keyedCampaignMutation, keyedUserMutation, userMutation, userQuery } from "./lib/functions";
+import { editable, loadCharacter, readSheet, saveSheet, storedSheet } from "./lib/characterSheet";
+import { claimFile, deleteFilesOf, deleteOwnFile, isAllowedImage, isClaimed } from "./lib/files";
+import { keyedCampaignMutation, keyedUserMutation, userMutation } from "./lib/functions";
 import { assertMechanicEnabled } from "./lib/mechanics";
-import { atLeast, type Permission } from "./lib/permissions";
-import {
-  characterDraftValidator,
-  characterStatusValidator,
-  characterViewValidator,
-  conditionValidator,
-  goldValidator,
-  sheetPatchValidator,
-  traitIdValidator,
-  type CharacterView,
-} from "./lib/validators/characters";
+import { type Permission } from "./lib/permissions";
+import { characterDraftValidator, characterStatusValidator, conditionValidator, goldValidator, sheetPatchValidator, traitIdValidator, type CharacterView } from "./lib/validators/characters";
 import { ikonisValidator } from "./lib/validators/characterExtras";
 import { gainWitherToken } from "./wither";
 import { witherGainValidator } from "./lib/validators/wither";
-import { assertOneActive, MAX_CHARACTERS_PER_CAMPAIGN, partyOf } from "./lib/characterSheet";
+import { assertOneActive, MAX_CHARACTERS_CREATED_PER_CAMPAIGN, MAX_CHARACTERS_PER_CAMPAIGN, partyOf } from "./lib/characterSheet";
 export { assertOneActive, MAX_CHARACTERS_PER_CAMPAIGN };
 
 export type { CharacterView };
+// The reads moved to convex/charactersReads.ts (dcm-uh6r); re-exported for existing importers.
+export { partyMemberValidator, type PartyMember } from "./charactersReads";
 // Moved to convex/lib/characterSheet.ts (D5 T0); re-exported for existing importers.
 export { loadCharacter, readSheet, storedSheet };
 
@@ -82,212 +70,6 @@ function newId(): string {
 function invalid(message: string): never {
   throw appError("INVALID", message);
 }
-
-// ---------------------------------------------------------------- the stored sheet
-
-/** Stands in for a sheet that fails to read, so one bad character doesn't fail the party list. */
-function placeholderSheet(raw: unknown): CharacterView["sheet"] {
-  const stored = typeof raw === "object" && raw !== null ? (raw as { name?: unknown }).name : undefined;
-  const name = typeof stored === "string" && stored.trim() !== "" ? stored.trim().slice(0, 80) : "Unreadable character";
-  return {
-    name,
-    pronouns: "",
-    description: "",
-    level: 1,
-    classId: "",
-    subclassId: "",
-    ancestry: { kind: "single", id: "" },
-    communityId: "",
-    traits: Object.fromEntries(TRAIT_IDS.map((t) => [t, 0])) as CharacterSheet["traits"],
-    traitMarks: {},
-    evasion: 0,
-    hpMax: 1,
-    hp: 0,
-    stressMax: 1,
-    stress: 0,
-    hope: 0,
-    scars: 0,
-    armorMarked: 0,
-    proficiency: 1,
-    primaryWeaponId: "",
-    inventory: [],
-    gold: { handfuls: 0, bags: 0, chest: false },
-    experiences: [],
-    domainCards: { owned: [], loadout: [] },
-    background: [],
-    connections: [],
-    notes: "",
-  };
-}
-
-// ---------------------------------------------------------------- reads
-
-/** URL of the character's own uploaded portrait, or null (bad id, someone else's file, or gone). */
-function portraitFileUrl(ctx: QueryCtx, characterId: Id<"characters">, storageId: string): Promise<string | null> {
-  return ownFileUrl(ctx, "portrait", characterId, storageId);
-}
-
-/** `away` for the views: a death-move reason as `away`, a bench as `benched: true` (X6). */
-function awayView(c: Doc<"characters">): Pick<CharacterView, "away" | "benched"> {
-  if (c.away === undefined) return {};
-  const { reason, note } = c.away;
-  if (reason === "benched") return { benched: true };
-  return { away: { reason, ...(note === undefined ? {} : { note }) } };
-}
-
-async function toView(ctx: QueryCtx, c: Doc<"characters">, sheet: CharacterSheet, viewer: Doc<"users">, canEdit: boolean): Promise<CharacterView> {
-  const portraitUrl = sheet.portrait?.kind === "upload" ? await portraitFileUrl(ctx, c._id, sheet.portrait.storageId) : null;
-  // Only editors get the upload's storage id; everyone else gets `portraitUrl` and a placeholder id.
-  const shown: CharacterSheet = !canEdit && sheet.portrait?.kind === "upload" ? { ...sheet, portrait: { kind: "upload", storageId: "hidden" } } : sheet;
-  return {
-    _id: c._id,
-    ownerId: c.ownerId,
-    status: c.status,
-    ...awayView(c),
-    sheet: shown,
-    portraitUrl,
-    canEdit,
-    mine: c.ownerId === viewer._id,
-    updatedAt: c.updatedAt,
-  };
-}
-
-/** Every character in the campaign as a view; a sheet that fails to read comes back marked `corrupt`. */
-async function partyViews(ctx: QueryCtx, user: Doc<"users">, campaignId: Id<"campaigns">, permission: Permission): Promise<CharacterView[]> {
-  // One party: a handful of characters.
-  const rows = await ctx.db
-    .query("characters")
-    .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
-    .collect();
-  // Edit on the campaign edits every sheet; otherwise only your own.
-  const editsAll = atLeast(permission, "edit");
-  return Promise.all(
-    rows.map(async (c): Promise<CharacterView> => {
-      let sheet: CharacterSheet;
-      try {
-        sheet = readSheet(c.sheet);
-      } catch {
-        const mine = c.ownerId === user._id;
-        return { _id: c._id, ownerId: c.ownerId, status: c.status, ...awayView(c), sheet: placeholderSheet(c.sheet), portraitUrl: null, canEdit: false, mine, updatedAt: c.updatedAt, corrupt: true };
-      }
-      return toView(ctx, c, sheet, user, editsAll || c.ownerId === user._id);
-    }),
-  );
-}
-
-/** Every character in the campaign; everyone in it can read every sheet. A sheet that fails to read comes back marked `corrupt`. */
-export const listByCampaign = campaignQuery({
-  need: "view",
-  enough: "edit",
-  args: {},
-  returns: v.array(characterViewValidator),
-  handler: (ctx) => partyViews(ctx, ctx.user, ctx.campaign._id, ctx.permission),
-});
-
-// ---------------------------------------------------------------- the dashboard's party summary (PF9)
-
-/**
- * The sheet fields the dashboard party card and its badges read: name, class line (class, subclass, ancestry,
- * community, level), portrait, the HP/Stress/Hope tiles (with scars and Light in the Dark), armor, and the D5 badges
- * (level-up pending, conditions for "Unconscious", Wither tokens, journey ends). The optional ones come back only when
- * they show something, so an HP tick re-sends a few hundred bytes per character instead of the whole sheet. Every
- * field has `CharacterView`'s type, so a full view is also a `PartyMember` (the party card takes either).
- */
-const partySheetValidator = v.object({
-  name: v.string(),
-  level: v.number(),
-  classId: v.string(),
-  subclassId: v.string(),
-  ancestry: characterViewValidator.fields.sheet.fields.ancestry,
-  communityId: v.string(),
-  portrait: characterViewValidator.fields.sheet.fields.portrait,
-  hp: v.number(),
-  hpMax: v.number(),
-  stress: v.number(),
-  stressMax: v.number(),
-  hope: v.number(),
-  scars: v.number(),
-  armorMarked: v.number(),
-  hopeSlotBonus: v.optional(v.number()),
-  levelUpPending: v.optional(v.boolean()),
-  conditions: characterViewValidator.fields.sheet.fields.conditions,
-  wither: v.optional(v.number()),
-  journeyEnds: v.optional(v.boolean()),
-});
-
-/** One dashboard party card: `CharacterView` without `ownerId`, `mine`, `updatedAt` and most of the sheet. */
-export const partyMemberValidator = v.object({
-  _id: v.id("characters"),
-  status: characterViewValidator.fields.status,
-  away: characterViewValidator.fields.away,
-  benched: characterViewValidator.fields.benched,
-  sheet: partySheetValidator,
-  portraitUrl: v.union(v.string(), v.null()),
-  canEdit: v.boolean(),
-  corrupt: v.optional(v.literal(true)),
-});
-
-export type PartyMember = Infer<typeof partyMemberValidator>;
-
-/** The card's slice of a view; drops what the card never shows, and the optional fields that show nothing. */
-function partyMember(view: CharacterView): PartyMember {
-  const { sheet: s } = view;
-  return {
-    _id: view._id,
-    status: view.status,
-    ...(view.away === undefined ? {} : { away: view.away }),
-    ...(view.benched === undefined ? {} : { benched: view.benched }),
-    sheet: {
-      name: s.name,
-      level: s.level,
-      classId: s.classId,
-      subclassId: s.subclassId,
-      ancestry: s.ancestry,
-      communityId: s.communityId,
-      ...(s.portrait === undefined ? {} : { portrait: s.portrait }),
-      hp: s.hp,
-      hpMax: s.hpMax,
-      stress: s.stress,
-      stressMax: s.stressMax,
-      hope: s.hope,
-      scars: s.scars,
-      armorMarked: s.armorMarked,
-      ...(s.hopeSlotBonus ? { hopeSlotBonus: s.hopeSlotBonus } : {}),
-      ...(s.levelUpPending ? { levelUpPending: true as const } : {}),
-      ...(s.conditions?.length ? { conditions: s.conditions } : {}),
-      ...(s.wither ? { wither: s.wither } : {}),
-      ...(s.journeyEnds ? { journeyEnds: true as const } : {}),
-    },
-    portraitUrl: view.portraitUrl,
-    canEdit: view.canEdit,
-    ...(view.corrupt ? { corrupt: true as const } : {}),
-  };
-}
-
-/**
- * The dashboard's party (PF9): `listByCampaign`'s rows cut to what a party card shows. Same access, same reads (the
- * party's characters and their portrait files); everyone in the campaign sees every card, as with `listByCampaign`.
- */
-export const partySummary = campaignQuery({
-  need: "view",
-  enough: "edit",
-  args: {},
-  returns: v.array(partyMemberValidator),
-  handler: async (ctx) => (await partyViews(ctx, ctx.user, ctx.campaign._id, ctx.permission)).map(partyMember),
-});
-
-/** One character, or null when the id is bad, it is gone, or the caller can't see it. A corrupt sheet throws CHARACTER_CORRUPT. */
-export const get = userQuery({
-  args: { characterId: v.string() },
-  returns: v.union(characterViewValidator, v.null()),
-  handler: async (ctx, args) => {
-    const id = ctx.db.normalizeId("characters", args.characterId);
-    if (id === null) return null;
-    const found = await findCharacter(ctx, ctx.user, id, "edit");
-    if (found === null) return null;
-    return toView(ctx, found.character, readSheet(found.character.sheet), ctx.user, atLeast(found.permission, "edit"));
-  },
-});
 
 // ---------------------------------------------------------------- creation
 
@@ -350,6 +132,10 @@ export function sheetFromDraft(draft: CharacterDraft, allowExpansion: boolean, i
   if (new Set(draft.domainCards).size !== draft.domainCards.length) throw new RuleError("INVALID", "Choose two different domain cards.");
 
   if (!STARTING_POTIONS.includes(draft.potion)) throw new RuleError("INVALID", "Choose a Minor Health Potion or a Minor Stamina Potion.");
+  // Purposeful Design (CB p.53, DA11): only an ancestry that gives it may name the Experience.
+  if (draft.purposefulExperience !== undefined && !holdsPurposefulDesign(draft.ancestry, { hopeAndFear: allowExpansion })) {
+    throw new RuleError("INVALID", "Only a character with Purposeful Design picks an Experience for it.");
+  }
 
   const sheet: CharacterSheetInput = {
     name: draft.name,
@@ -381,7 +167,13 @@ export function sheetFromDraft(draft: CharacterDraft, allowExpansion: boolean, i
       (name) => ({ id: newId(), name }),
     ),
     gold: ikonis ? { ...MOTHERBOARD_STARTING_GOLD } : { handfuls: 1, bags: 0, chest: false },
-    experiences: draft.experiences.map((name) => ({ id: newId(), name, value: STARTING_EXPERIENCE_VALUE })),
+    // The +1 is recorded on the chosen Experience, never added to its value (DA11).
+    experiences: draft.experiences.map((name, i) => ({
+      id: newId(),
+      name,
+      value: STARTING_EXPERIENCE_VALUE,
+      ...(i === draft.purposefulExperience ? { purposefulDesign: true as const } : {}),
+    })),
     domainCards: { owned: [...draft.domainCards], loadout: [...draft.domainCards] },
     background: draft.background,
     connections: draft.connections,
@@ -398,7 +190,8 @@ const STARTING_POTIONS = ["Minor Health Potion", "Minor Stamina Potion"];
 
 /** Refuses a new character past the campaign's cap, or a second active one for `owner`. */
 async function assertRoom(ctx: QueryCtx, campaign: Doc<"campaigns">, owner: Id<"users">) {
-  if ((await partyOf(ctx, campaign._id)).length >= MAX_CHARACTERS_PER_CAMPAIGN) invalid(`A campaign holds at most ${MAX_CHARACTERS_PER_CAMPAIGN} characters.`);
+  // The creation cap, not the read bound (dcm-bxp.38): a campaign above a lowered cap still reads every character.
+  if ((await partyOf(ctx, campaign._id)).length >= MAX_CHARACTERS_CREATED_PER_CAMPAIGN) invalid(`A campaign holds at most ${MAX_CHARACTERS_CREATED_PER_CAMPAIGN} characters.`);
   await assertOneActive(ctx, campaign, owner);
 }
 
@@ -491,7 +284,14 @@ export const updateSheet = userMutation({
     // CB 104: a category holds at most 9 marks (a 10th rolls over through adjustGold).
     if (rest.gold) next.gold = { ...rest.gold, handfuls: Math.min(rest.gold.handfuls, MAX_HANDFULS), bags: Math.min(rest.gold.bags, MAX_BAGS) };
     if (inventory !== undefined) next.inventory = inventory.map((item) => (typeof item === "string" ? { id: newId(), name: item } : item));
-    if (experiences !== undefined) next.experiences = experiences.map((e) => ({ ...e, id: e.id ?? newId() }));
+    if (experiences !== undefined) {
+      // Purposeful Design stays on the Experience the sheet recorded (DA11); a whole-list write can't move or add it.
+      const chosen = sheet.experiences.find((e) => e.purposefulDesign)?.id;
+      next.experiences = experiences.map((e) => {
+        const id = e.id ?? newId();
+        return { id, name: e.name, value: e.value, ...(id === chosen ? { purposefulDesign: true as const } : {}) };
+      });
+    }
     if (secondaryWeaponId === null) delete next.secondaryWeaponId;
     else if (secondaryWeaponId !== undefined) next.secondaryWeaponId = secondaryWeaponId;
     if (armorId === null) delete next.armorId;
@@ -547,14 +347,35 @@ export const setGoldChest = userMutation({
   },
 });
 
-/** Sets one trait's modifier. GM only: players change traits through level-up (user 2026-10-18). */
+/** The range of a trait or Experience modifier (`characterSheetSchema`). */
+const MODIFIER_MIN = -5;
+const MODIFIER_MAX = 10;
+
+/** A modifier moved by `delta` (an intent, dcm-bxp.28), kept within the modifier range. */
+function shifted(current: number, delta: number): number {
+  assertDelta(delta, MODIFIER_MAX - MODIFIER_MIN);
+  return Math.min(MODIFIER_MAX, Math.max(MODIFIER_MIN, current + delta));
+}
+
+/** Exactly one of `value` and `delta`. */
+function oneOf(value: number | undefined, delta: number | undefined): void {
+  if ((value === undefined) === (delta === undefined)) invalid("Send a value or a change, not both.");
+}
+
+/**
+ * Sets one trait's modifier (`value`), or moves it by `delta` (the sheet's steppers send a delta, so two quick clicks
+ * add up instead of the second overwriting the first; dcm-bxp.28), kept within -5..+10. GM only: players change traits
+ * through level-up (user 2026-10-18).
+ */
 export const setTrait = userMutation({
-  args: { characterId: v.id("characters"), trait: traitIdValidator, value: v.number() },
+  args: { characterId: v.id("characters"), trait: traitIdValidator, value: v.optional(v.number()), delta: v.optional(v.number()) },
   returns: v.null(),
-  handler: async (ctx, { characterId, trait, value }) => {
+  handler: async (ctx, { characterId, trait, value, delta }) => {
+    oneOf(value, delta);
     const { character } = await loadCharacter(ctx, ctx.user, characterId, "owner", "owner");
     const sheet = readSheet(character.sheet);
-    await saveSheet(ctx, character._id, { ...sheet, traits: { ...sheet.traits, [trait]: value } });
+    const next = delta === undefined ? value! : shifted(sheet.traits[trait], delta);
+    await saveSheet(ctx, character._id, { ...sheet, traits: { ...sheet.traits, [trait]: next } });
     return null;
   },
 });
@@ -598,15 +419,32 @@ export const addExperience = userMutation({
   },
 });
 
-/** Renames an Experience or sets its bonus, by id. Owner or GM. */
+/**
+ * Renames an Experience, sets its stored bonus (`value`) or moves it by `delta` (an intent, dcm-bxp.28; kept within
+ * -5..+10), by id. `value` and `delta` don't go together. Owner or GM.
+ */
 export const setExperience = userMutation({
-  args: { characterId: v.id("characters"), experienceId: v.string(), name: v.optional(v.string()), value: v.optional(v.number()) },
+  args: {
+    characterId: v.id("characters"),
+    experienceId: v.string(),
+    name: v.optional(v.string()),
+    value: v.optional(v.number()),
+    delta: v.optional(v.number()),
+  },
   returns: v.null(),
-  handler: async (ctx, { characterId, experienceId, name, value }) => {
+  handler: async (ctx, { characterId, experienceId, name, value, delta }) => {
+    if (value !== undefined && delta !== undefined) oneOf(value, delta);
     const { character, sheet } = await editable(ctx, ctx.user, characterId);
     if (!sheet.experiences.some((e) => e.id === experienceId)) throw appError("NOT_FOUND");
     const experiences = sheet.experiences.map((e) =>
-      e.id === experienceId ? { ...e, ...(name !== undefined ? { name } : {}), ...(value !== undefined ? { value } : {}) } : e,
+      e.id === experienceId
+        ? {
+            ...e,
+            ...(name !== undefined ? { name } : {}),
+            ...(value !== undefined ? { value } : {}),
+            ...(delta !== undefined ? { value: shifted(e.value, delta) } : {}),
+          }
+        : e,
     );
     await saveSheet(ctx, character._id, { ...sheet, experiences });
     return null;
@@ -623,6 +461,52 @@ export const removeExperience = userMutation({
     await saveSheet(ctx, character._id, { ...sheet, experiences: sheet.experiences.filter((e) => e.id !== experienceId) });
     return null;
   },
+});
+
+/**
+ * Purposeful Design (Clank, CB p.53: "At character creation, choose one of your Experiences that best aligns with this
+ * purpose and gain a permanent +1 bonus to it."): records the chosen Experience (DA11, user 2026-10-29). The stored value
+ * stays; rolls and displays add the +1 (`experienceValue`), so the shown value may reach +11 (the level-up cap counts the
+ * stored value, user 2026-10-30).
+ * - The owner picks once, for a character created without the choice.
+ * - The GM (permission `owner` on the character) may move the +1 to another Experience later, as a correction (DA16,
+ *   user 2026-10-30). Moving it to the Experience that already holds it is a no-op.
+ * Removing the chosen Experience removes the +1 with it, and the sheet offers the pick again.
+ * Each pick or move writes one undoable feed row. Refusals: FEATURE_NOT_OWNED (the sheet doesn't hold the feature),
+ * NOT_FOUND (no such Experience), INVALID (the owner's second pick).
+ */
+export const choosePurposefulDesign = keyedUserMutation({
+  args: { characterId: v.id("characters"), experienceId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { characterId, experienceId }) =>
+    ctx.once("character_purposeful_design", { characterId, experienceId }, async () => {
+      const { campaign, character, permission } = await loadCharacter(ctx, ctx.user, characterId, "edit", "owner");
+      const sheet = readSheet(character.sheet);
+      if (!holdsPurposefulDesign(sheet.ancestry, { hopeAndFear: resolveOptions(campaign.frameId, campaign.options).hopeAndFear })) {
+        throw appError("FEATURE_NOT_OWNED");
+      }
+      const target = sheet.experiences.find((e) => e.id === experienceId);
+      if (target === undefined) throw appError("NOT_FOUND");
+      const current = sheet.experiences.find((e) => e.purposefulDesign);
+      if (current !== undefined && permission !== "owner") invalid("Purposeful Design already has its Experience.");
+      if (current?.id === experienceId) return null;
+      const experiences = sheet.experiences.map((e) => (e.id === experienceId ? { ...e, purposefulDesign: true as const } : { id: e.id, name: e.name, value: e.value }));
+      await saveSheet(ctx, character._id, { ...sheet, experiences });
+      await logAction(ctx, {
+        campaignId: campaign._id,
+        characterId: character._id,
+        actorId: ctx.user._id,
+        kind: "feature",
+        visibility: "public",
+        summary:
+          current === undefined
+            ? `${sheet.name}: Purposeful Design gives +1 to ${target.name}`
+            : `${sheet.name}: Purposeful Design's +1 moved from ${current.name} to ${target.name}`,
+        before: sheet,
+        undoable: true,
+      });
+      return null;
+    }),
 });
 
 /**
@@ -657,15 +541,21 @@ export const adjustResource = userMutation({
 /**
  * Switches one condition on the sheet (CB p.102: Vulnerable, Restrained, Hidden...): on when it was off, off when it was
  * on. Owner or GM; used by the Combat Map's token card (user 2026-10-20).
+ *
+ * Plan lanes-2 E1.3a: turning a condition off drops its source marker too (`withoutCondition`; dcm-bxp.99.19.68: else a
+ * later ordinary Cloaked would read as Vanishing Act's until the next rest). Turning Unconscious on drops Cloaked, any
+ * Cloaked (dcm-bxp.99.19.63; user 2026-10-30: a rogue who is unconscious or dead drops Cloaked).
  */
 export const toggleCondition = userMutation({
   args: { characterId: v.id("characters"), condition: conditionValidator },
   returns: v.object({ conditions: v.array(conditionValidator) }),
   handler: async (ctx, { characterId, condition }) => {
     const { character, sheet: s } = await editable(ctx, ctx.user, characterId);
-    const conditions = s.conditions.includes(condition) ? s.conditions.filter((c) => c !== condition) : [...s.conditions, condition];
-    await saveSheet(ctx, character._id, { ...s, conditions });
-    return { conditions };
+    const on = !s.conditions.includes(condition);
+    let next: CharacterSheet = on ? { ...s, conditions: [...s.conditions, condition] } : withoutCondition(s, condition);
+    if (on && condition === "unconscious") next = withoutCondition(next, "cloaked");
+    await saveSheet(ctx, character._id, next);
+    return { conditions: next.conditions };
   },
 });
 
@@ -736,11 +626,21 @@ export const applyDamage = keyedUserMutation({
  * Moves a domain card between loadout (max 5) and vault; from the vault it costs the card's Recall Cost in Stress unless
  * during an open party rest (CB 101, 105). The character's player, or the GM for any character of the campaign, logged as
  * the GM acting for it (CA4b). See `moveCardFor` in convex/lib/cardHand.ts.
+ *
+ * Plan lanes-2, E1 (dcm-cfpv, dcm-bxp.99.19.1): `recallRiders` names the `whenYouRecall` rider uses the player takes with
+ * a recall (`<featureId or cardId>` or `<id>:<useId>`; Perfect Recall, CB p.50: "Once per rest, when you recall a domain
+ * card in your vault, you can reduce its Recall Cost by 1"). At most 5; a rider that can't run is INVALID.
  */
 export const moveCard = userMutation({
-  args: { characterId: v.id("characters"), cardId: v.string(), to: v.union(v.literal("loadout"), v.literal("vault")), duringRest: v.optional(v.boolean()) },
+  args: {
+    characterId: v.id("characters"),
+    cardId: v.string(),
+    to: v.union(v.literal("loadout"), v.literal("vault")),
+    duringRest: v.optional(v.boolean()),
+    recallRiders: v.optional(v.array(v.string())),
+  },
   returns: v.null(),
-  handler: (ctx, { characterId, cardId, to, duringRest }) => moveCardFor(ctx, ctx.user, characterId, cardId, to, duringRest),
+  handler: (ctx, { characterId, cardId, to, duringRest, recallRiders }) => moveCardFor(ctx, ctx.user, characterId, cardId, to, duringRest, recallRiders ?? []),
 });
 
 /**
@@ -849,17 +749,5 @@ export const attachPortrait = userMutation({
     if (sheet.portrait?.kind === "upload") await deleteOwnFile(ctx, "portrait", characterId, sheet.portrait.storageId);
     await saveSheet(ctx, character._id, next.data);
     return { error: null };
-  },
-});
-
-/** Resolves an uploaded portrait's URL. */
-export const portraitUrl = userQuery({
-  args: { characterId: v.id("characters") },
-  returns: v.union(v.string(), v.null()),
-  handler: async (ctx, { characterId }) => {
-    const { character } = await loadCharacter(ctx, ctx.user, characterId, "view");
-    const sheet = readSheet(character.sheet);
-    if (sheet.portrait?.kind !== "upload") return null;
-    return portraitFileUrl(ctx, character._id, sheet.portrait.storageId);
   },
 });

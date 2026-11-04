@@ -1,0 +1,217 @@
+/*
+ * The Combat HUD token (plan combat-hud H1.3): board CmpTokens "Token anatomy" / "Token kinds" (reference/designs/
+ * combat-hud/boards/CmpTokens.dc.html, .tk-* rules) and HANDOFF "Tokens". The board's classes are kept (tk-arc,
+ * tk-face, tk-name, tk-hope, tk-cd) under `.hud-tk`, the classic token button the HUD face sits in. `--s` is the token's
+ * footprint in stage pixels (one square for a normal token).
+ */
+
+/* The button: the classic footprint (drag, keys, the turn knob and facing arrow keep working), drawn by the face. */
+.cm-tok.hud-tk {
+  --tk-you: var(--hud-gold, #e3b45a);
+  --tk-ally-pc: var(--hud-ally-pc, #9fd8c4);
+  --tk-ally: var(--hud-ally-picked, #9fd8b0);
+  --tk-neutral: #9aa5a8;
+  --tk-enemy: var(--hud-enemy, #c0392b);
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+
+/* The face's centre: the board's zero-size `.tk`, every part placed around it. */
+.hud-tk-c {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.hud-tk-c .tk-face {
+  position: absolute;
+  left: calc(var(--s) * -0.4);
+  top: calc(var(--s) * -0.4);
+  width: calc(var(--s) * 0.8);
+  height: calc(var(--s) * 0.8);
+  box-sizing: border-box;
+  border-radius: 50%;
+  overflow: hidden;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--tk-ally-pc);
+  background-color: #1d2a2f;
+  box-shadow: 0 0 0 2px #0d1417, 0 3px 8px rgba(0, 0, 0, 0.6);
+  transition: box-shadow 0.15s;
+}
+.hud-tk-c .tk-img {
+  object-fit: cover;
+}
+.hud-tk-c .tk-ini {
+  font: 700 calc(var(--s) * 0.32) / 1 var(--hud-font-display, "Cinzel", serif);
+  color: #f6ead2;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+/* Side colour (HANDOFF "Side colour"). */
+.tk-you .tk-face {
+  border-color: var(--tk-you);
+  box-shadow: 0 0 0 2px #0d1417, 0 0 0 4px rgba(227, 180, 90, 0.45), 0 0 18px rgba(227, 180, 90, 0.7);
+}
+.tk-ally .tk-face {
+  border-color: var(--tk-ally);
+  background-color: #1a2e24;
+}
+.tk-neutral .tk-face {
+  border-color: var(--tk-neutral);
+  background-color: #3a4246;
+}
+.tk-enemy .tk-face {
+  border-color: var(--tk-enemy);
+  background-color: #4a1814;
+}
+.tk-down .tk-face {
+  filter: grayscale(1) brightness(0.6);
+}
+
+/*
+ * The token in the spotlight (bead dcm-bxp.99.32.35; the pool under it is hud/spotlight/light.css): a warm halo behind
+ * the face (under the arcs, badges and face, painted first) and the face a touch brighter, as if lit from above.
+ */
+.hud-tk-c.tk-lit::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--s) * -0.66);
+  top: calc(var(--s) * -0.66);
+  width: calc(var(--s) * 1.32);
+  height: calc(var(--s) * 1.32);
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--hud-gold-text, #f3cf86) 85%, transparent) 55%,
+    color-mix(in srgb, var(--hud-gold, #e3b45a) 45%, transparent) 78%,
+    transparent 100%
+  );
+}
+.tk-lit .tk-face {
+  filter: brightness(1.14) saturate(1.06);
+}
+.tk-lit.tk-down .tk-face {
+  filter: grayscale(1) brightness(0.75);
+}
+
+/* Hover, focus and the selected token (the board's hover ring; selection keeps the classic white ring). */
+.cm-tok.hud-tk:hover .tk-face,
+.cm-tok.hud-tk:focus-visible .tk-face {
+  box-shadow: 0 0 0 2px #0d1417, 0 0 0 4px #f3cf86;
+}
+.cm-tok.hud-tk.sel .tk-face {
+  box-shadow: 0 0 0 2px #0d1417, 0 0 0 4px #fff, 0 0 16px rgba(255, 255, 255, 0.55);
+}
+.cm-tok.hud-tk:focus-visible {
+  outline: none;
+}
+
+/* The arcs: left half HP left (red), right half Stress marked (blue); pathLength 100 and stroke-dasharray. */
+.hud-tk-c .tk-arc {
+  position: absolute;
+  left: calc(var(--s) * -0.56);
+  top: calc(var(--s) * -0.56);
+  width: calc(var(--s) * 1.12);
+  height: calc(var(--s) * 1.12);
+  z-index: 1;
+  overflow: visible;
+}
+.hud-tk-c .tk-arc path {
+  fill: none;
+  stroke-width: 9;
+  stroke-linecap: round;
+}
+.hud-tk-c .a-bg {
+  stroke: rgba(5, 8, 10, 0.75);
+}
+.hud-tk-c .a-hp {
+  stroke: var(--hud-hp, #e0503f);
+}
+.hud-tk-c .a-st {
+  stroke: var(--hud-stress, #7a9cc4);
+}
+
+.hud-tk-c .tk-name {
+  position: absolute;
+  top: calc(var(--s) * 0.58);
+  left: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  z-index: 3;
+  font: 600 11px/1 var(--hud-font-ui, "IBM Plex Sans", sans-serif);
+  color: #e6ecea;
+  background: rgba(13, 20, 23, 0.9);
+  padding: 3px 7px;
+  border-radius: 999px;
+}
+
+.hud-tk-c .tk-hope {
+  position: absolute;
+  left: calc(var(--s) * 0.22);
+  top: calc(var(--s) * -0.66);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  font: 700 10.5px/1 var(--hud-font-ui, "IBM Plex Sans", sans-serif);
+  color: #1a1408;
+  background: var(--hud-hope, #e3b45a);
+  padding: 2px 5px 2px 3px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px #0d1417;
+}
+.hud-tk-c .tk-hope .ic {
+  width: 10px;
+  height: 10px;
+}
+
+/* Condition badges, bottom right; more stack beside the first. */
+.hud-tk-c .tk-cds {
+  position: absolute;
+  left: calc(var(--s) * 0.26);
+  top: calc(var(--s) * 0.1);
+  z-index: 4;
+  display: flex;
+  gap: 2px;
+}
+.hud-tk-c .tk-cd {
+  width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: #1d1022;
+  color: #f3a58f;
+  border: 1px solid #f3a58f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 700 10px/1 var(--hud-font-ui, "IBM Plex Sans", sans-serif);
+}
+.hud-tk-c .tk-cd .ic {
+  width: 11px;
+  height: 11px;
+}
+.hud-tk-c .tk-cd-restrained {
+  color: #f3cf86;
+  border-color: #f3cf86;
+  background: #2d2614;
+}
+.hud-tk-c .tk-cd-more {
+  color: #e6ecea;
+  border-color: #3a4d54;
+  background: #141e22;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-tk-c .tk-face {
+    transition: none;
+  }
+}

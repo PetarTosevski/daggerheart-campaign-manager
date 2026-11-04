@@ -78,6 +78,18 @@ const entries: Entry[] = [
   { fn: api.adversaryActions.windows, access: "gm" },
   // AA2c: what a feature use needs (GM only: the stat block's numbers).
   { fn: api.adversaryActions.featureAsk, access: "gm", args: (w) => ({ instanceId: w.ids.bear, feature: "Bite" }) },
+  { fn: api.adversaryActions.startCountdown, access: "gm", args: (w) => ({ instanceId: w.ids.bear, feature: "Bite" }), okCodes: ["INVALID"] },
+  // Lanes-2 E7 (dcm-idz): a GM-controlled PC attacks; characterA isn't GM-controlled, so the GM gets INVALID past the check.
+  { fn: api.adversaryActions.gmControlledAttack, access: "gm", args: (w) => ({ characterId: w.characterA, targets: [w.ids.bear] }), okCodes: ["INVALID"] },
+  // Lanes-2 E7 round 3 (dcm-f70y): a forced standard attack outside the spotlight.
+  { fn: api.adversaryActions.forcedAttack, access: "gm", args: (w) => ({ instanceId: w.ids.bear, targets: [w.characterA] }) },
+  // Plan lanes-2 E7.4 (dcm-0hlq): a PC escaped named tokens; characterA holds none, so the GM gets INVALID past the check.
+  { fn: api.adversaryActions.pcEscape, access: "gm", args: (w) => ({ characterId: w.characterA, name: "bramble" }), okCodes: ["INVALID"] },
+  // Plan lanes-2 E7.4 (dcm-wiwi): the party's named tokens (GM only).
+  { fn: api.adversaryActions.pcTokens, access: "gm" },
+  // Lanes-2 E2.4 (dcm-sk4r): the GM's keyword ask on a hit (the area's hit asks nothing: INVALID past the check).
+  { fn: api.hitKeywords.answer, access: "gm", args: (w) => ({ requestId: w.ids.requestId, answer: { keyword: "fire", carries: true } }), okCodes: ["INVALID"] },
+  { fn: api.hitKeywords.asks, access: "gm" },
 ];
 
 const area: Area = { area: "adversary-actions", setup, entries };

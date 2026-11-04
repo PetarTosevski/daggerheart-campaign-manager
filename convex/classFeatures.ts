@@ -17,7 +17,7 @@
  */
 import { v } from "convex/values";
 
-import { expire } from "../src/lib/domain/characters/expiry";
+import { expire, withCasterOnNew } from "../src/lib/domain/characters/expiry";
 import { findFeature, hopeFeature } from "../src/lib/domain/class-features/hooks";
 import { rallyDieStress } from "../src/lib/domain/class-features/held-dice";
 import { CLASS_FEATURES, classFeaturesAvailable } from "../src/lib/domain/class-features/index";
@@ -26,19 +26,26 @@ import { appError } from "../src/lib/errors/app-error";
 import { resolveOptions } from "../src/lib/frames/options";
 import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { env, internalMutation, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { isE2EDeployment } from "./lib/allowlist";
 import { logAction, newGroupId } from "./lib/actionLog";
-import { assertCanAct, editable, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
+import { partyMembers } from "./lib/adversaryHits";
+import { afterUnstoppable, liftTargetTags } from "./lib/cardRows";
+import { assertCanAct, editable, editsCaster, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { payCost } from "./lib/classFeatureCost";
 import { rollDie } from "./lib/dice";
 import { gainFear, revertFear } from "./lib/fear";
 import { keyedUserMutation, userQuery } from "./lib/functions";
+import { atLeast } from "./lib/permissions";
 import { rollValidator, type StoredRoll } from "./lib/validators/actionLog";
 
 /** How far back the latest live roll is looked for. */
 const ROLL_SCAN = 20;
 /** The most characters a party feature reaches. */
 const PARTY_MAX = 50;
+
+/** The Guardian's D5 Unstoppable actions that can remove the die (src/lib/domain/class-features/classes/guardian.ts). */
+const UNSTOPPABLE_ACTIONS: ReadonlySet<string> = new Set(["unstoppableHit", "endUnstoppable"]);
 
 /** The character's newest action log row that carries a roll and is not undone, or null. */
 async function latestRoll(ctx: QueryCtx, characterId: Id<"characters">): Promise<StoredRoll | null> {
@@ -132,7 +139,16 @@ export const use = keyedUserMutation({
       const subjectId = (feature.target === "ally" ? others[0]?.id : undefined) ?? character._id;
       const roll = (await latestRoll(ctx, subjectId)) ?? undefined;
 
-      const result = feature.use({ sheet: paid, params, rng: rollDie, others: others.map(({ characterId, sheet }) => ({ characterId, sheet })), roll });
+      const used = feature.use({ sheet: paid, params, rng: rollDie, others: others.map(({ characterId, sheet }) => ({ characterId, sheet })), roll });
+      // Plan lanes-2 E6.3 (dcm-v17): once a D5 Unstoppable action removed the die, the feature's sheet effect ends too.
+      const lapsed = UNSTOPPABLE_ACTIONS.has(featureKey) ? { ...used, sheet: afterUnstoppable(used.sheet) } : used;
+      // Plan lanes-2 wave 10, E6.4 (dcm-lztq): the effects this use writes record their caster, on the user's sheet and
+      // on the others' (Life Support, Witch's Charm), so caster-tied ends find them.
+      const result = {
+        ...lapsed,
+        sheet: withCasterOnNew(sheet, lapsed.sheet, character._id),
+        ...(lapsed.others ? { others: lapsed.others.map((o) => ({ ...o, sheet: withCasterOnNew(others.find((x) => x.characterId === o.characterId)?.sheet ?? { effects: [] }, o.sheet, character._id) })) } : {}),
+      };
       const fearDelta = await changeFear(ctx, campaign._id, result.fearDelta ?? 0);
 
       const loaded = new Map<string, { id: Id<"characters">; before: CharacterSheet }>([
@@ -171,28 +187,72 @@ export const use = keyedUserMutation({
     }),
 });
 
-/** Ends one active effect by its End button (owner or GM), e.g. Evolution when the Druid drops out of Beastform. */
+/**
+ * Effects that end together with another (user 2026-10-30, dcm-bxp.99.19.46 (1)): dropping out of Beastform (the drawer's
+ * Drop out, the Party sheet's End) also ends Evolution's +1 trait (CB p.30 Evolution: "choose one trait to raise by +1
+ * until you drop out of that Beastform").
+ */
+const ENDS_WITH: Readonly<Record<string, readonly string[]>> = { beastform: ["evolution"] };
+
+/**
+ * Ends one active effect by its End button, and the effects that end with it (`ENDS_WITH`), in one write and one
+ * undoable actionLog row. Who may: whoever edits the bearer (its player, the GM) and, since plan hud-pre-w9
+ * (dcm-bxp.99.32.37, user 2026-11-02), whoever edits the effect's caster (`casterId`, `editsCaster`): the player whose
+ * character cast it on an ally. Any other member is FORBIDDEN (also for an effect that is gone), an outsider NOT_FOUND.
+ */
 export const endEffect = keyedUserMutation({
   args: { characterId: v.id("characters"), effectId: v.string() },
   returns: v.null(),
   handler: async (ctx, { characterId, effectId }) =>
     ctx.once("class_feature_end_effect", { characterId, effectId }, async () => {
-      const { campaign, character, sheet } = await editable(ctx, ctx.user, characterId);
+      const { campaign, character, permission } = await loadCharacter(ctx, ctx.user, characterId, "view", "edit");
+      const sheet = readSheet(character.sheet);
       const effect = sheet.effects.find((e) => e.id === effectId);
+      if (!atLeast(permission, "edit") && (effect === undefined || !(await editsCaster(ctx, ctx.user, campaign._id, effect)))) throw appError("FORBIDDEN");
       if (effect === undefined) throw appError("CLASS_FEATURE_RULE", "That effect has already ended.");
-      await saveSheet(ctx, character._id, { ...sheet, effects: sheet.effects.filter((e) => e.id !== effectId) });
+      const ending = new Set([effectId, ...(ENDS_WITH[effectId] ?? [])]);
+      const ended = sheet.effects.filter((e) => ending.has(e.id));
+      const after = { ...sheet, effects: sheet.effects.filter((e) => !ending.has(e.id)) };
+      await saveSheet(ctx, character._id, after);
+      // Plan lanes-2 wave 10, E6.4 (dcm-mvoo): an ended effect that names its instance (Marked for Death, HF p.8) lifts
+      // the tag there, in the same undo group.
+      const groupId = ended.some((e) => e.targetInstanceId !== undefined) ? newGroupId() : undefined;
+      if (groupId !== undefined) {
+        const still = [after, ...(await partyMembers(ctx, campaign._id)).filter((m) => m.character._id !== character._id).map((m) => m.sheet)];
+        await liftTargetTags(ctx, { campaignId: campaign._id, ended, still, groupId, actorId: ctx.user._id });
+      }
       await logAction(ctx, {
+        ...(groupId !== undefined ? { groupId } : {}),
         campaignId: campaign._id,
         characterId: character._id,
         actorId: ctx.user._id,
         kind: "feature",
         visibility: "public",
-        summary: `ended ${effect.source}`,
+        summary: `ended ${ended.map((e) => e.source).join(", ")}`,
         before: sheet,
         undoable: true,
       });
       return null;
     }),
+});
+
+/**
+ * E2E seeding (tests/e2e/hud-gm-playfor.spec.ts, hud-pre-w9): puts one lasting effect (until the next rest) on a
+ * character's sheet, cast by `casterId` when given, as a card or feature would record it. Internal (admin key only,
+ * `convex run`), and refused on anything but the local e2e backend.
+ */
+export const seedEffectForE2e = internalMutation({
+  args: { characterId: v.id("characters"), effectId: v.string(), source: v.string(), text: v.string(), casterId: v.optional(v.id("characters")) },
+  returns: v.null(),
+  handler: async (ctx, { characterId, effectId, source, text, casterId }) => {
+    if (!isE2EDeployment(env)) throw new Error("seedEffectForE2e runs only on the local e2e backend.");
+    const character = await ctx.db.get("characters", characterId);
+    if (character === null) throw new Error("No such character.");
+    const sheet = readSheet(character.sheet);
+    const effect = { id: effectId, source, text, until: "rest" as const, ...(casterId !== undefined ? { casterId } : {}) };
+    await saveSheet(ctx, characterId, { ...sheet, effects: [...sheet.effects.filter((e) => e.id !== effectId), effect] });
+    return null;
+  },
 });
 
 /** An attack succeeded against the character (decision 8: a manual button until D8 reports hits): ends every "until hit" effect. */

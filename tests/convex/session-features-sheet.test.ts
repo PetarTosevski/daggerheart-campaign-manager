@@ -61,7 +61,7 @@ describe("sheet.sessionFeatures (widened, optional)", () => {
     expect(SHEET_VERSION).toBe(2);
     expect("sessionFeatures" in stored).toBe(false);
     expect(readSheet(stored).sessionFeatures).toBeUndefined();
-    const view = await gm.query(api.characters.get, { characterId: id });
+    const view = await gm.query(api.charactersReads.get, { characterId: id });
     expect(view?.sheet.sessionFeatures).toBeUndefined();
   });
 
@@ -73,7 +73,7 @@ describe("sheet.sessionFeatures (widened, optional)", () => {
     expect(stored.schemaVersion).toBe(2);
     expect(stored.sessionFeatures).toEqual(features);
     expect(readSheet(stored).sessionFeatures).toEqual(features);
-    const view = await gm.query(api.characters.get, { characterId: id });
+    const view = await gm.query(api.charactersReads.get, { characterId: id });
     expect(view?.sheet.sessionFeatures).toEqual(features);
 
     await save((s) => ({ ...s, sessionFeatures: { moonDie: 1 } }));

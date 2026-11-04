@@ -1,8 +1,8 @@
 // Built-in catalog: snow and tundra (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, obj, tex } from "./types";
+import { defineFolder, obj, tex, type FolderCatalog } from "./types";
 
-export const SNOW_AND_TUNDRA = defineFolder("snow-and-tundra", {
+export const SNOW_AND_TUNDRA = (): FolderCatalog => defineFolder("snow-and-tundra", {
   props: [
     obj("snowy rock", "cover", "low", "rock"),
     obj("ice chunk", "cover", "low", "rock", { standIn: false }),

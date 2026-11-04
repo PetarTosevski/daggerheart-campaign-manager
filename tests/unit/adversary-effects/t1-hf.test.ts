@@ -115,6 +115,24 @@ const summary = (adversaryId: string, over: Partial<AdversaryState> = {}, dice: 
 const fearOf = (costs: readonly AdversaryCost[] | undefined) => (costs ?? []).filter((c) => c.kind === "fear").reduce((n, c) => n + (c.amount.kind === "fixed" ? c.amount.value : 0), 0);
 const stressOf = (costs: readonly AdversaryCost[] | undefined) => (costs ?? []).filter((c) => c.kind === "stress").reduce((n, c) => n + (c.amount.kind === "fixed" ? c.amount.value : 0), 0);
 
+/** Plan lanes, SRD-A1: every object of `kind` anywhere in an entry (steps, table rows, `ifUnable`, condition mods, areas). */
+const partsOf = (adversaryId: string, feature: string, kind: string): Record<string, unknown>[] => {
+  const walk = (v: unknown): Record<string, unknown>[] =>
+    Array.isArray(v)
+      ? v.flatMap(walk)
+      : v !== null && typeof v === "object"
+        ? [...((v as { kind?: unknown }).kind === kind ? [v as Record<string, unknown>] : []), ...Object.values(v).flatMap(walk)]
+        : [];
+  return walk(entry(adversaryId, feature).uses);
+};
+const conditionStep = (adversaryId: string, feature: string, name: string) =>
+  partsOf(adversaryId, feature, "condition").find((c) => {
+    const ref = c.condition as { tag?: string; condition?: string };
+    return ref.tag === name || ref.condition === name;
+  });
+const stressOn = (on: string) => ({ kind: "bearerRider", rider: { on, steps: [{ kind: "markStress", to: "self", amount: { kind: "fixed", value: 1 } }] } });
+const manualCount = (adversaryId: string, feature: string) => partsOf(adversaryId, feature, "manual").length;
+
 // ---------------------------------------------------------------- the table as a whole (Q15)
 
 describe("the tier 1 Hope & Fear table", () => {
@@ -250,7 +268,9 @@ describe("Ahuizotl (HF p.62)", () => {
     expect(prompts(plan, "move")[0]).toMatchObject({ targetIds: ["mira"], step: { mode: "pull", range: "melee" } });
     expect(after(plan, "mira")).toMatchObject({ conditions: ["restrained"], tags: ["Bagged"] });
     expect(ofKind(plan, "condition")[0]).toMatchObject({ duration: "temporary" });
-    expect(prompts(plan, "manual")).toHaveLength(1);
+    expect(prompts(plan, "manual")).toEqual([]);
+    // "The Ahuizotl has advantage on attacks against targets Restrained in this way" (dcm-51s, dcm-xyw).
+    expect(conditionStep("ahuizotl", "Drag and Bag", "Bagged")!.mods).toEqual([{ kind: "attackedRider", rider: { by: "caster", advantage: true } }]);
   });
 });
 
@@ -261,11 +281,23 @@ describe("Atototl (HF p.62)", () => {
     expect(plan.modifiers).toEqual([{ kind: "mod", mod: { kind: "disadvantageAgainst", on: "attack" } }]);
   });
 
-  it("Stone of Omens: a GM button when a PC searches the remains; a d12 fate roll, the even / odd outcome by hand", () => {
-    const plan = ok("atototl", "Stone of Omens", [7]);
-    expect(plan).toMatchObject({ activation: "reaction", needsSpotlight: false });
-    expect(ofKind(plan, "check")).toMatchObject([{ total: 7, dice: [7], passed: true }]);
-    expect(prompts(plan, "manual")).toHaveLength(1);
+  it("Stone of Omens: a GM button when a PC searches the remains; a d12 fate roll: even, the PC gains half in Hope; odd, the GM half in Fear", () => {
+    // Odd 7: the GM gains half, 3.5 rounded up = 4 (CB p.107 "round up unless otherwise specified"; dcm-27j).
+    const odd = ok("atototl", "Stone of Omens", [7], { targets: [mira] });
+    expect(odd).toMatchObject({ activation: "reaction", needsSpotlight: false });
+    expect(ofKind(odd, "check")).toMatchObject([{ total: 7, dice: [7], passed: false }]);
+    expect(odd.gmFearDelta).toBe(4);
+    expect(ofKind(odd, "hope")).toEqual([]);
+    // Even 8: 4 Hope, split among every PC as the searching PC wishes (S3.4, dcm-nh44): 3 to Mira, 1 to Bram.
+    expect(use("atototl", "Stone of Omens").targets).toEqual({ side: "enemy", range: "unlimited", count: { kind: "all" } });
+    const even = ok("atototl", "Stone of Omens", [8], { targets: [mira, bram], splits: { mira: 3, bram: 1 } });
+    expect(ofKind(even, "check")).toMatchObject([{ total: 8, passed: true }]);
+    expect(ofKind(even, "hope")).toEqual([
+      { kind: "hope", targetId: "mira", delta: 3 },
+      { kind: "hope", targetId: "bram", delta: 1 },
+    ]);
+    expect(even.gmFearDelta).toBe(0);
+    expect(manualCount("atototl", "Stone of Omens")).toBe(0);
   });
 
   it("Archer's Bane: a Fear, an attack roll against the far attacker; a hit negates the damage and deals it back", () => {
@@ -316,12 +348,14 @@ describe("Common Ruffian (HF p.62)", () => {
     if (u.activation.kind !== "reaction") throw new Error("reaction");
     expect(matchesTrigger(u.activation.trigger, { kind: "onHpMarked", before: 1, after: 2, hpMax: 4 })).toBe(true);
     expect(matchesTrigger(u.activation.trigger, { kind: "onHpMarked", before: 2, after: 3, hpMax: 4 })).toBe(false);
+    // dcm-icd: fleeing is a `leaveScene` move (the plan lists who fled).
     const fled = ok("common-ruffian", "Survival Instinct", [4]);
-    expect(prompts(fled, "manual")[0]!.text).toMatch(/flees/);
+    expect(fled.fled).toEqual(["common-ruffian-1"]);
+    expect(prompts(fled, "manual")).toEqual([]);
     expect(fled.gmFearDelta).toBe(0);
     const stays = ok("common-ruffian", "Survival Instinct", [3]);
     expect(stays.gmFearDelta).toBe(1);
-    expect(prompts(stays, "manual")).toEqual([]);
+    expect(stays.fled).toEqual([]);
   });
 });
 
@@ -336,7 +370,9 @@ describe("Darkweave Crawler (HF p.63)", () => {
     const plan = ok("darkweave-crawler", "Darkweave Venom", [], { trigger: { subject: mira } });
     expect(plan.self.after.stress).toBe(1);
     expect(ofKind(plan, "condition")).toMatchObject([{ targetId: "mira", condition: { kind: "tag", tag: "Exhausted" }, duration: "manual", endsWhen: "they succeed on a Strength Roll (9)" }]);
-    expect(prompts(plan, "manual")[0]).toMatchObject({ targetIds: ["mira"] });
+    expect(prompts(plan, "manual")).toEqual([]);
+    // "While Exhausted, the target must mark a Stress each time they make an action roll." (dcm-kti)
+    expect(conditionStep("darkweave-crawler", "Darkweave Venom", "Exhausted")!.mods).toEqual([stressOn("actionRoll")]);
     // The Crawler's one Stress slot can't pay twice.
     expect(refusal("darkweave-crawler", "Darkweave Venom", { self: inst("darkweave-crawler", { stress: 1 }), trigger: { subject: mira } })).toMatchObject({ ok: false, reason: "cost", code: "ADVERSARY_FEATURE_UNAVAILABLE" });
   });
@@ -411,9 +447,10 @@ describe("Elk (HF p.64)", () => {
   it("Bolt: after marking HP or Stress, a Reaction Roll (10) or it flees", () => {
     const fails = ok("elk", "Bolt", [9], { useId: "hp" });
     expect(ofKind(fails, "save")).toMatchObject([{ targetId: "elk-1", difficulty: 10, success: false }]);
-    expect(prompts(fails, "manual")[0]!.text).toMatch(/flees/);
+    expect(fails.fled).toEqual(["elk-1"]);
     const holds = ok("elk", "Bolt", [10], { useId: "stress" });
-    expect(prompts(holds, "manual")).toEqual([]);
+    expect(holds.fled).toEqual([]);
+    expect(manualCount("elk", "Bolt")).toBe(0);
     expect(triggeredUses(adversaryEffects("elk"), { kind: "onMarkStress", last: false }, state("elk"))).toMatchObject([{ mode: "auto", use: { id: "stress" } }]);
   });
 });
@@ -435,8 +472,9 @@ describe("Falcon (HF p.64)", () => {
 
 describe("Grimmling Warband (HF p.64)", () => {
   it("Cowardly: at its last Stress or when a Leader ally falls, a d6 of 2 or lower and it flees", () => {
-    expect(prompts(ok("grimmling-warband", "Cowardly", [2], { useId: "last-stress" }), "manual")[0]!.text).toMatch(/flees/);
-    expect(prompts(ok("grimmling-warband", "Cowardly", [3], { useId: "leader-defeated" }), "manual")).toEqual([]);
+    expect(ok("grimmling-warband", "Cowardly", [2], { useId: "last-stress" }).fled).toEqual(["grimmling-warband-1"]);
+    expect(ok("grimmling-warband", "Cowardly", [3], { useId: "leader-defeated" }).fled).toEqual([]);
+    expect(manualCount("grimmling-warband", "Cowardly")).toBe(0);
     const effects = adversaryEffects("grimmling-warband");
     expect(triggeredUses(effects, { kind: "onMarkStress", last: false }, state("grimmling-warband"))).toEqual([]);
     expect(triggeredUses(effects, { kind: "onMarkStress", last: true }, state("grimmling-warband"))).toHaveLength(1);
@@ -471,10 +509,13 @@ describe("Kelpie (HF p.64) and the other 'mark a Stress to move out' passives", 
     expect(prompts(ok("kelpie", "Heart’s Desire", [], { spotlit: false }), "manual")).toHaveLength(1);
   });
 
-  it("Shapeshifter: a Stress to change form; the viewers' disadvantage is manual", () => {
+  it("Shapeshifter: a Stress to change form; rolls against it have disadvantage when the roller finds the form alluring", () => {
     const plan = ok("kelpie", "Shapeshifter", []);
     expect(plan.self.after).toMatchObject({ stress: 1, tags: ["Shapeshifted"] });
-    expect(prompts(plan, "manual")).toHaveLength(1);
+    expect(prompts(plan, "manual")).toEqual([]);
+    expect(conditionStep("kelpie", "Shapeshifter", "Shapeshifted")!.mods).toEqual([
+      { kind: "disadvantageAgainst", on: "any", situation: "The roller finds the Kelpie's form pleasing or alluring" },
+    ]);
   });
 
   it("Enchant: a Fear; the PC makes an Instinct Reaction Roll against the Kelpie's Difficulty or is Enchanted", () => {
@@ -510,12 +551,20 @@ describe("Masque Muerte (HF p.65)", () => {
     const plan = ok("masque-muerte", "Tag Team", [], { trigger: { subject: mira } });
     expect(after(plan, "mira")).toMatchObject({ tags: ["Pinned"], conditions: ["restrained"] });
     expect(plan.fearSpent).toBe(1);
+    // "takes an extra 1d12 magic damage from the Masque Muerte's attacks" (dcm-51s).
+    expect(conditionStep("masque-muerte", "Tag Team", "Pinned")!.mods).toEqual([
+      { kind: "attackedRider", rider: { by: "caster", damage: { kind: "add", amount: { kind: "dice", dice: { count: { kind: "fixed", value: 1 }, sides: 12 } }, type: "magic" } } },
+    ]);
   });
 });
 
 describe("Mechanorb (HF p.65)", () => {
-  it("Hive Mind: shown (the vocabulary can't count allies)", () => {
-    expect(prompts(ok("mechanorb", "Hive Mind", [], { spotlit: false }), "manual")).toHaveLength(1);
+  it("Hive Mind: +1 Difficulty per other Mechanorb within Close range (a creature count)", () => {
+    const plan = ok("mechanorb", "Hive Mind", [], { spotlit: false });
+    expect(prompts(plan, "manual")).toEqual([]);
+    expect(plan.modifiers).toEqual([
+      { kind: "mod", mod: { kind: "stat", stat: "difficulty", delta: { kind: "creatureCount", side: "allies", within: "close", name: "Mechanorb", excludeSelf: true } } },
+    ]);
   });
 
   it("Adaptive Tactics: a miss adds a Pool token, tokens add to attacks, Severe damage or a defeat clears them", () => {
@@ -553,10 +602,17 @@ describe("Mountain Troll (HF p.65)", () => {
     expect(plan.incoming).toMatchObject([{ targetId: "mira", amount: 9 }]);
   });
 
-  it("Enraged Mountain Troll: once a scene, +1 Difficulty and the feature swap by hand", () => {
+  it("Enraged Mountain Troll: once a scene, +1 Difficulty, the feature swap and Claw Swipe as a permanent effect", () => {
     const plan = ok("mountain-troll", "Enraged Mountain Troll", []);
-    expect(ofKind(plan, "effect")).toMatchObject([{ targetId: "mountain-troll-1", mods: [{ kind: "stat", stat: "difficulty", delta: 1 }], duration: "permanent" }]);
-    expect(prompts(plan, "manual")[0]!.text).toMatch(/Claw Swipe/);
+    expect(ofKind(plan, "effect")).toMatchObject([{ targetId: "mountain-troll-1", mods: [{ kind: "stat", stat: "difficulty", delta: 1 }, {}, {}], duration: "permanent" }]);
+    expect(prompts(plan, "manual")).toEqual([]);
+    // dcm-gx3: "loses their Stolen Armor and Flail Swipe features … gain the Double Swipe feature … Claw Swipe: Very Close | 1d10+3 phy".
+    const effect = partsOf("mountain-troll", "Enraged Mountain Troll", "effect")[0]!;
+    expect(effect.mods).toEqual([
+      { kind: "stat", stat: "difficulty", delta: { kind: "fixed", value: 1 } },
+      { kind: "features", remove: ["Stolen Armor", "Flail Swipe"], add: ["Double Swipe"] },
+      { kind: "standardAttack", name: "Claw Swipe", range: "veryClose", damage: { count: { kind: "fixed", value: 1 }, sides: 10, plus: { kind: "fixed", value: 3 } }, type: "physical" },
+    ]);
     expect(refusal("mountain-troll", "Enraged Mountain Troll", { featureUses: plan.self.featureUses })).toMatchObject({ ok: false, reason: "exhausted" });
   });
 
@@ -583,10 +639,16 @@ describe("Octopus (HF p.66)", () => {
     expect(plan.self.after.stress).toBe(0);
   });
 
-  it("Squirt Ink: a Stress; the GM picks land or underwater and the area is manual", () => {
+  it("Squirt Ink: a Stress; the GM picks land (an ink area: Agility Reaction Roll on entering or Vulnerable) or underwater (a sight-blocking cloud)", () => {
     const land = ok("octopus", "Squirt Ink", [], { options: { where: ["land"] } });
-    expect(prompts(land, "manual")[0]!.text).toMatch(/Agility Reaction Roll/);
-    expect(prompts(ok("octopus", "Squirt Ink", [], { options: { where: ["underwater"] } }), "manual")[0]!.text).toMatch(/line of sight/);
+    expect(prompts(land, "manual")).toEqual([]);
+    const [ink] = ofKind(land, "area");
+    expect(ink!.area).toMatchObject({ label: "Ink", centre: "point", radius: "veryClose", side: "all", duration: "scene" });
+    expect(ink!.area.onEnter).toMatchObject([
+      { kind: "save", to: "triggerSubject", trait: "agility", onFail: [{ kind: "condition", to: "triggerSubject", condition: { kind: "standard", condition: "vulnerable" }, endsWhen: "until they exit the area" }] },
+    ]);
+    const [cloud] = ofKind(ok("octopus", "Squirt Ink", [], { options: { where: ["underwater"] } }), "area");
+    expect(cloud!.area).toMatchObject({ label: "Cloud of darkness", radius: "veryClose", blocksSight: true });
     expect(prompts(ok("octopus", "Squirt Ink", []), "choose")).toHaveLength(1);
   });
 });
@@ -698,7 +760,10 @@ describe("Redcap Candlemaker (HF p.67)", () => {
   it("Hand of Glory: 5 tokens and Hidden when it appears; a token off per HP it marks", () => {
     const appear = ok("redcap-candlemaker", "Hand of Glory", [], { useId: "appear" });
     expect(appear.self.tokens).toEqual({ before: 0, after: 5 });
-    expect(appear.self.after.conditions).toEqual(["hidden"]);
+    // Hidden while the stat block holds a token: a passive condition on itself (dcm-cdz).
+    expect(summary("redcap-candlemaker", { tokens: 5 }).selfConditions).toEqual([{ kind: "standard", condition: "hidden" }]);
+    expect(summary("redcap-candlemaker", { tokens: 0 }).selfConditions ?? []).toEqual([]);
+    expect(manualCount("redcap-candlemaker", "Hand of Glory")).toBe(0);
     const burn = ok("redcap-candlemaker", "Hand of Glory", [], { useId: "burn", tokens: 5, trigger: { amount: 2 } });
     expect(burn.self.tokens).toEqual({ before: 5, after: 3 });
     expect(triggeredUses(adversaryEffects("redcap-candlemaker"), { kind: "onMarkHp", stage: "did", amount: 1, last: false }, state("redcap-candlemaker"))).toEqual([]);
@@ -718,9 +783,12 @@ describe("Redcap Candlemaker (HF p.67)", () => {
 });
 
 describe("Redcap Skinner (HF p.67)", () => {
-  it("Shallow Cuts: a PC's failed roll is a GM prompt (1 damage per Skinner in Melee, combined, by hand)", () => {
+  it("Shallow Cuts: a PC's failed roll: 1 physical damage per Skinner within Melee range of them, one hit (a creature count)", () => {
     const plan = ok("redcap-skinner", "Shallow Cuts", [], { trigger: { source: mira } });
-    expect(prompts(plan, "manual")[0]).toMatchObject({ targetIds: ["mira"] });
+    expect(prompts(plan, "manual")).toEqual([]);
+    expect(partsOf("redcap-skinner", "Shallow Cuts", "damage")).toEqual([
+      { kind: "damage", to: "targets", roll: { kind: "flat", amount: { kind: "creatureCount", side: "allies", name: "Redcap Skinner", within: "melee", of: "target" } }, type: "physical" },
+    ]);
     const fail = { kind: "pcRolls" as const, roll: { kind: "action" as const, success: false, withHope: true, withFear: false } };
     expect(triggeredUses(adversaryEffects("redcap-skinner"), fail, state("redcap-skinner"))).toHaveLength(1);
   });
@@ -773,19 +841,28 @@ describe("Sawtoothed Gillbeast (HF p.68)", () => {
 });
 
 describe("Soul-Shattered Mage (HF p.68)", () => {
-  it("Broken Magic: a Stress; the GM picks the move the d6 shows", () => {
-    expect(prompts(ok("soul-shattered-mage", "Broken Magic", []), "choose")).toHaveLength(1);
+  it("Broken Magic: a Stress and a d6; its row (1–2, 3–4, 5–6) is the move", () => {
+    // dcm-27j: a check table, no GM choice.
+    expect(prompts(ok("soul-shattered-mage", "Broken Magic", [1, 3, 4], { followUp: [mira] }), "choose")).toEqual([]);
     // 1–2 Dimension Rift: teleport and 2d6 direct magic (3 + 4).
-    const rift = ok("soul-shattered-mage", "Broken Magic", [3, 4], { options: { move: ["dimension-rift"] }, followUp: [mira] });
-    expect(rift.incoming).toMatchObject([{ targetId: "mira", amount: 7, type: "magic", direct: true }]);
-    expect(prompts(rift, "move")[0]).toMatchObject({ step: { mode: "teleport" } });
-    // 3–4 Time Dilation: the group is Slowed (Vulnerable) until they roll with Hope.
-    const slow = ok("soul-shattered-mage", "Broken Magic", [], { options: { move: ["time-dilation"] }, followUp: [mira, bram] });
+    for (const d6 of [1, 2]) {
+      const rift = ok("soul-shattered-mage", "Broken Magic", [d6, 3, 4], { followUp: [mira] });
+      expect(ofKind(rift, "check")).toMatchObject([{ total: d6, row: 0, label: "Dimension Rift" }]);
+      expect(rift.incoming).toMatchObject([{ targetId: "mira", amount: 7, type: "magic", direct: true }]);
+      expect(prompts(rift, "move")[0]).toMatchObject({ step: { mode: "teleport" } });
+    }
+    // 3–4 Time Dilation: the group is Slowed (Vulnerable) until they roll with Hope; a Stress when they move.
+    const slow = ok("soul-shattered-mage", "Broken Magic", [4], { followUp: [mira, bram] });
+    expect(ofKind(slow, "check")).toMatchObject([{ total: 4, row: 1, label: "Time Dilation" }]);
     expect(slow.creatures.map((c) => [c.id, c.after.tags, c.after.conditions])).toEqual([["mira", ["Slowed"], ["vulnerable"]], ["bram", ["Slowed"], ["vulnerable"]]]);
-    // 5–6 Discordant Visions: d20 10 + 2 = 12 hits Mira only; 2d8 direct magic (3 + 4).
-    const visions = ok("soul-shattered-mage", "Broken Magic", [10, 3, 4], { options: { move: ["discordant-visions"] }, followUp: [mira, bram] });
+    expect(conditionStep("soul-shattered-mage", "Broken Magic", "Slowed")).toMatchObject({ endsOnRoll: { roll: "action", result: "withHope" }, mods: [stressOn("moves")] });
+    // 5–6 Discordant Visions: d20 10 + 2 ATK (the runner adds the stat block's ATK, dcm-b3bb / dcm-6n0p) = 12 hits Mira only; 2d8 direct magic (3 + 4).
+    const visions = ok("soul-shattered-mage", "Broken Magic", [5, 10, 3, 4], { followUp: [mira, bram] });
+    expect(ofKind(visions, "check")).toMatchObject([{ total: 5, row: 2, label: "Discordant Visions" }]);
     expect(visions.incoming).toMatchObject([{ targetId: "mira", amount: 7, direct: true }]);
     expect(visions.self.after.stress).toBe(1);
+    expect(ok("soul-shattered-mage", "Broken Magic", [6, 10, 3, 4], { followUp: [mira, bram] }).incoming).toMatchObject([{ targetId: "mira", amount: 7 }]);
+    expect(manualCount("soul-shattered-mage", "Broken Magic")).toBe(0);
   });
 
   it("Feel My Pain: when it marks HP, d6s equal to its marked Stress as direct magic to every PC within Very Close", () => {
@@ -795,8 +872,9 @@ describe("Soul-Shattered Mage (HF p.68)", () => {
 });
 
 describe("Spellbound Armor (HF p.68)", () => {
-  it("Tireless: shown (no modifier for immunity to forced Stress)", () => {
-    expect(prompts(ok("spellbound-armor", "Tireless", [], { spotlit: false }), "manual")).toHaveLength(1);
+  it("Tireless: the noForcedStress flag (dcm-yea)", () => {
+    expect(prompts(ok("spellbound-armor", "Tireless", [], { spotlit: false }), "manual")).toEqual([]);
+    expect(summary("spellbound-armor").flags).toContain("noForcedStress");
   });
 
   it("Clatter & Recombobulate: once a scene at its defeat, a Fear clears 2 HP and spotlights it", () => {
@@ -812,12 +890,15 @@ describe("Viper (HF p.69)", () => {
     const plan = ok("viper", "Venomous", [], { trigger: { subject: mira } });
     expect(plan.activation).toBe("auto");
     expect(after(plan, "mira")!.tags).toEqual(["Envenomated"]);
+    expect(conditionStep("viper", "Venomous", "Envenomated")!.mods).toEqual([stressOn("actionRoll")]);
+    expect(prompts(plan, "manual")).toEqual([]);
   });
 });
 
 describe("Waxwork Creation (HF p.69)", () => {
-  it("No Vital Organs: shown (no modifier for critical-damage immunity)", () => {
-    expect(prompts(ok("waxwork-creation", "No Vital Organs", [], { spotlit: false }), "manual")).toHaveLength(1);
+  it("No Vital Organs: the noCritDamage flag (dcm-yea)", () => {
+    expect(prompts(ok("waxwork-creation", "No Vital Organs", [], { spotlit: false }), "manual")).toEqual([]);
+    expect(summary("waxwork-creation").flags).toContain("noCritDamage");
   });
 
   it("Wax Ball: a Stress, an attack within Far; 1d12+2 and Restrained until a Strength Roll (15)", () => {
@@ -872,7 +953,9 @@ describe("Will-o'-the-Wisps (HF p.69)", () => {
 describe("Yufo (HF p.69)", () => {
   it("Telepathic and Psychic Strongbox: shown", () => {
     expect(prompts(ok("yufo", "Telepathic", [], { spotlit: false }), "manual")).toHaveLength(1);
-    expect(prompts(ok("yufo", "Psychic Strongbox", [], { spotlit: false }), "manual")).toHaveLength(1);
+    // Psychic Strongbox: the mindImmune flag (dcm-yea).
+    expect(prompts(ok("yufo", "Psychic Strongbox", [], { spotlit: false }), "manual")).toEqual([]);
+    expect(summary("yufo").flags).toContain("mindImmune");
   });
 
   it("Glitch Wave: a Fear; up to three targets within Close make Instinct Reaction Rolls or are desynced", () => {
@@ -897,5 +980,53 @@ describe("Yufo (HF p.69)", () => {
         endsWhen: "they use a downtime move to repair their armor",
       },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------- plan lanes, SRD-A1: riders and endings now in the data
+
+describe("tier 1 Hope & Fear conditions carry what they do (SRD-A1, dcm-kti, dcm-51s)", () => {
+  it("Shadow Fang: Shaky gives disadvantage on attack rolls", () => {
+    expect(conditionStep("darkweave-spinner", "Shadow Fang", "Shaky")!.mods).toEqual([{ kind: "disadvantage", on: "attack" }]);
+    expect(manualCount("darkweave-spinner", "Shadow Fang")).toBe(0);
+  });
+
+  it("“Get ’em Off, Get ’em Off!”: Covered in Spiders rolls a d6 on each action roll; 4 or higher: a Stress or the GM's Fear", () => {
+    const [mod] = conditionStep("darkweave-swarmlings", "“Get ’em Off, Get ’em Off!”", "Covered in Spiders")!.mods as Record<string, unknown>[];
+    expect(mod).toMatchObject({ kind: "bearerRider", rider: { on: "actionRoll", steps: [{ kind: "check", dice: { sides: 6 }, test: { kind: "totalAtLeast", value: 4 } }] } });
+    const choose = partsOf("darkweave-swarmlings", "“Get ’em Off, Get ’em Off!”", "choose")[0]!;
+    expect((choose.options as { id: string }[]).map((o) => o.id)).toEqual(["stress", "fear"]);
+    // dcm-72qk (a): the player picks, "Mark a Stress" | "GM gains Fear"; the PC-roll rider isn't run yet (dcm-mm0f), so a
+    // manual reminder says so (dcm-s9md).
+    expect((choose.options as { label: string }[]).map((o) => o.label)).toEqual(["Mark a Stress", "GM gains Fear"]);
+    expect(manualCount("darkweave-swarmlings", "“Get ’em Off, Get ’em Off!”")).toBe(1);
+    expect(partsOf("darkweave-swarmlings", "“Get ’em Off, Get ’em Off!”", "manual")[0]!.text).toContain("the player picks");
+  });
+
+  it("Dance in the Flames: both damages carry the fire keyword (dcm-dv6)", () => {
+    expect(partsOf("redcap-candlemaker", "Dance in the Flames", "damage").map((d) => d.keyword)).toEqual(["fire", "fire"]);
+  });
+
+  it("Howl at the Moon: a failed save loses a Hope (and the GM gains a Fear); no Hope: a Stress and Vulnerable until they roll with Hope", () => {
+    const hope = partsOf("rugaru", "Howl at the Moon", "hope")[0]!;
+    expect(hope).toMatchObject({ change: "lose", amount: { kind: "fixed", value: 1 } });
+    expect(hope.ifUnable).toEqual([
+      { kind: "markStress", to: "targets", amount: { kind: "fixed", value: 1 } },
+      expect.objectContaining({ condition: { kind: "standard", condition: "vulnerable" }, endsOnRoll: { roll: "action", result: "withHope" } }),
+    ]);
+    expect(partsOf("rugaru", "Howl at the Moon", "fear")[0]!.when).toEqual([{ kind: "targetCheck", check: { kind: "track", who: "target", track: "hope", measure: "marked", atLeast: 1 } }]);
+    expect(manualCount("rugaru", "Howl at the Moon")).toBe(0);
+  });
+
+  it("Smothering Grapple: Trapped marks a Stress and moves with the Creation on its spotlight; freed by its Major damage", () => {
+    expect(conditionStep("waxwork-creation", "Smothering Grapple", "Trapped")).toMatchObject({
+      endsOnCaster: ["majorDamage"],
+      mods: [{ kind: "bearerRider", rider: { on: "casterSpotlit", steps: [{ kind: "markStress", to: "self" }, { kind: "move", to: "self", relativeTo: "triggerSource" }] } }],
+    });
+    expect(manualCount("waxwork-creation", "Smothering Grapple")).toBe(0);
+  });
+
+  it("Glitch Wave: Desynced gives disadvantage on Instinct Rolls", () => {
+    expect(conditionStep("yufo", "Glitch Wave", "Desynced")!.mods).toEqual([{ kind: "disadvantage", on: "instinct" }]);
   });
 });

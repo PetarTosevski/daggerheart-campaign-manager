@@ -68,6 +68,7 @@ export function HexCrawlPanel({
   onShowGrid,
   settingOrigin,
   onSettingOrigin,
+  encounterNote,
 }: {
   crawl: HexCrawl;
   selected: Hex | null;
@@ -76,6 +77,8 @@ export function HexCrawlPanel({
   onShowGrid: (on: boolean) => void;
   settingOrigin: boolean;
   onSettingOrigin: (on: boolean) => void;
+  /** The destination region's unused encounters, shown when the roll activates one (dcm-bxp.17). */
+  encounterNote?: (h: Hex) => string | null;
 }) {
   const [mode, setMode] = useState<TravelMode>(crawl.travelMode);
   const [die, setDie] = useState<4 | 6 | 8>(6);
@@ -96,7 +99,7 @@ export function HexCrawlPanel({
     setResult(
       `${r.days} ${r.days === 1 ? "day" : "days"}${r.weatherRoll ? ` (weather ${r.weatherRoll})` : ""} · now Day ${r.day}. Encounter dice ${r.dice.join(", ")}: ${
         r.encounter ? "an encounter!" : "no encounter (you may spend a Fear to activate one)."
-      }`,
+      }${(r.encounter && encounterNote?.(selected)) ? ` ${encounterNote(selected)}` : ""}`,
     );
   }
 

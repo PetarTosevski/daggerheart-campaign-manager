@@ -43,7 +43,7 @@ test("C8 fog of war, the player view, preview and fog brush at 1440, 1024 and 39
     const { tokenId: banditId } = await add("Bandit");
     const { tokenId: archerId } = await add("Bandit Archer");
     const { tokenId: wolfId } = await add("Wolf");
-    const tokens = await client.query(api.combatTokens.list, { campaignId, mapId });
+    const tokens = await client.query(api.combatTokensReads.list, { campaignId, mapId });
     const ash = tokens.find((t) => t.name === "Ash")!;
     const liriel = tokens.find((t) => t.name === "Liriel")!;
     const place = async (tokenId: Id<"combatTokens">, x: number, y: number, face?: number) => {

@@ -1,8 +1,8 @@
 // Built-in catalog: desert (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, obj, tex } from "./types";
+import { defineFolder, obj, tex, type FolderCatalog } from "./types";
 
-export const DESERT = defineFolder("desert", {
+export const DESERT = (): FolderCatalog => defineFolder("desert", {
   props: [
     obj("cactus", "cover", "low", "bush", { standIn: false }),
     obj("desert rock", "cover", "low", "rock"),

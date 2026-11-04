@@ -26,6 +26,9 @@ export type UseRequest = {
   targetTokenIds: Id<"combatTokens">[];
   choices: CardChoice[];
   roll?: FunctionArgs<typeof api.combatCards.useCard>["roll"];
+  /** Plan lanes-2 E1.4a: the square a `point` area goes on, and a wall's other end (picked on the map, `areaPickOf`). */
+  point?: { x: number; y: number };
+  points?: { x: number; y: number }[];
 };
 
 type Waiting = { request: UseRequest; asks: NeedsChoice["asks"] };
@@ -63,11 +66,11 @@ export type CardActions = ReturnType<typeof useCardActions>;
 /** Moves a vault card into the loadout (rule 12: the Hand shows it there at once; a refusal puts it back). */
 export function useRecall({ campaignId, characterId }: { campaignId: Id<"campaigns">; characterId: Id<"characters"> }) {
   const move = useMutation(api.characters.moveCard).withOptimisticUpdate((store, { cardId, to }) => {
-    const hand: HandView | undefined = store.getQuery(api.combatCards.hand, { campaignId, characterId });
+    const hand: HandView | undefined = store.getQuery(api.combatCardsReads.hand, { campaignId, characterId });
     if (hand === undefined || to !== "loadout") return;
     const card = hand.vault.find((c) => c.cardId === cardId);
     if (!card) return;
-    store.setQuery(api.combatCards.hand, { campaignId, characterId }, {
+    store.setQuery(api.combatCardsReads.hand, { campaignId, characterId }, {
       ...hand,
       loadout: [...hand.loadout, { ...card, place: "loadout" }],
       vault: hand.vault.filter((c) => c.cardId !== cardId),
@@ -76,13 +79,16 @@ export function useRecall({ campaignId, characterId }: { campaignId: Id<"campaig
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
 
-  async function recall(cardId: string, duringRest: boolean) {
+  /** Plan lanes-2 E1.3a (dcm-ego9): `recallRiders` are the checked recall riders (Perfect Recall), sent with the move. */
+  async function recall(cardId: string, duringRest: boolean, recallRiders: readonly string[] = []): Promise<boolean> {
     setError(null);
     setPending(cardId);
     try {
-      await move({ characterId, cardId, to: "loadout", duringRest });
+      await move({ characterId, cardId, to: "loadout", duringRest, ...(recallRiders.length > 0 ? { recallRiders: [...recallRiders] } : {}) });
+      return true;
     } catch (e) {
       setError(errorMessage(e));
+      return false;
     } finally {
       setPending(null);
     }

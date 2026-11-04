@@ -155,7 +155,8 @@ describe("Hope & Fear class features", () => {
     let sheet = await sheetOf(w);
     expect(sheet.classState.hexes).toEqual(["Target 1"]);
     expect(sheet.stress).toBe(1);
-    expect(await codeOf(use(w, "hex"))).toBe("CLASS_FEATURE_RULE"); // Knowledge +1: one Hex at a time
+    expect(await codeOf(use(w, "hex"))).toBe("ok"); // Knowledge +1: one Hex at a time - the new Hex replaces the oldest (dcm-bxp.99.19.26)
+    expect((await sheetOf(w)).classState.hexes).toHaveLength(1);
     const { restId } = await gm.mutation(api.rests.start, { campaignId, kind: "short", idempotencyKey: key() });
     await gm.mutation(api.rests.finish, { campaignId, restId, idempotencyKey: key() });
     sheet = await sheetOf(w);

@@ -145,7 +145,7 @@ test("the GM plays a character sheet: tracks, damage, cards and notes", async ({
   await notes.blur();
   // The blur save is a live mutation: wait until the server has it before reloading.
   const client = await convexAs(page);
-  await expect.poll(async () => (await client.query(api.characters.get, { characterId }))?.sheet.notes).toBe("Owes the innkeeper 3 gold.");
+  await expect.poll(async () => (await client.query(api.charactersReads.get, { characterId }))?.sheet.notes).toBe("Owes the innkeeper 3 gold.");
   await page.reload();
   await page.getByRole("tab", { name: "Story & Advancement" }).click();
   await expect(page.getByRole("textbox", { name: "Notes" })).toHaveValue("Owes the innkeeper 3 gold.");

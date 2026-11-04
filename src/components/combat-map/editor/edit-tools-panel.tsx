@@ -6,7 +6,7 @@ import { useId, useState } from "react";
 import { mapLightReach } from "@/lib/domain/combat-map/light";
 import { SIGHT_DEFAULTS, SIGHT_LABEL, SIGHT_MODES, sightOf, type SightMode } from "@/lib/domain/combat-map/sight";
 import type { ObjectKind } from "@/lib/domain/combat-map/spec";
-import type { SpriteRef } from "../../../../convex/lib/validators/combatMaps";
+import { OBJECT_LIGHTS, type ObjectLight, type SpriteRef } from "../../../../convex/lib/validators/combatMaps";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
@@ -276,6 +276,36 @@ function TexturePicker({ textures, picked, onPick }: { textures: readonly Textur
 
 type LayoutObject = CombatMapLayout["objects"][number];
 
+/** The light names of the sprite light select (sprite packs Q1). */
+const OBJECT_LIGHT_LABEL: Readonly<Record<ObjectLight, string>> = { none: "None", faintglow: "Faint glow", torch: "Torch", campfire: "Campfire" };
+
+/**
+ * A sprite object's light (plan lanes-2 E4.4, dcm-bxp.84; Q1: "none / faint glow / torch / campfire"): the sprite's own
+ * light ("Default (torch)") or one picked by hand (`combatVision.setObjectLight`).
+ */
+function LightSelect({ object, spriteLight, onSet }: { object: LayoutObject; spriteLight: ObjectLight; onSet: (light: ObjectLight | "default") => void }) {
+  const id = useId();
+  return (
+    <div className="cm-ed-row">
+      <label htmlFor={id}>Light</label>
+      <select
+        id={id}
+        className="cm-in"
+        data-testid="combat-object-light"
+        value={object.light ?? "default"}
+        onChange={(e) => onSet(e.target.value as ObjectLight | "default")}
+      >
+        <option value="default">Default ({OBJECT_LIGHT_LABEL[spriteLight].toLowerCase()})</option>
+        {OBJECT_LIGHTS.map((light) => (
+          <option key={light} value={light}>
+            {OBJECT_LIGHT_LABEL[light]}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 /**
  * The board's selected-object card: sight setting (R7), light switch (R9), size, turn, Done and Delete. A sprite
  * object shows its sprite's name, and its manifest sight is the "Default" of the sight setting (D3).
@@ -291,7 +321,9 @@ function ObjectPanel({
   edits: ReturnType<typeof useEditMutations>;
   onDone: () => void;
 }) {
-  const traits = sprites.traitsOf(object);
+  const own = sprites.traitsOf(object);
+  // Plan lanes-2 E4.4 (dcm-bxp.84): the GM's light override replaces the sprite's light (as the server's `objectTraits`).
+  const traits = own && object.light !== undefined ? { ...own, light: object.light } : own;
   const label = sprites.nameOf(object) ?? objectLabel(object.kind);
   const effective = sightOf({ kind: object.kind, sight: object.sight ?? null, traits, open: object.open ?? null });
   const fallback: SightMode = traits?.sight ?? (SIGHT_DEFAULTS as Readonly<Record<string, SightMode>>)[object.kind as ObjectKind] ?? "none";
@@ -319,6 +351,7 @@ function ObjectPanel({
           </>
         )}
       </span>
+      {own ? <LightSelect object={object} spriteLight={own.light} onSet={(light) => edits.setLight(object._id, light)} /> : null}
       {reach ? (
         <>
           <button type="button" className="cm-btn cm-sm cm-ed-start" aria-pressed={lit} onClick={() => edits.update(object._id, { lit: !lit })}>

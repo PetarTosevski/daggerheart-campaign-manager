@@ -14,6 +14,8 @@ import {
   type MulticlassChoice,
   type PickChoice,
 } from "@/lib/domain/level-up";
+import { cardChoiceAsks, cardChoiceProblems, cardChoicesFor, type CardChoiceAsk } from "@/lib/domain/level-up/card-choices";
+import { cardsGained } from "@/lib/domain/level-up/on-choose";
 import { TRAIT_IDS } from "@/lib/srd/types";
 import { useIntent } from "@/lib/use-intent";
 import { ADVANCEMENT_OPTIONS, type AdvancementOption, type CharacterSheet } from "@/lib/validation/characters";
@@ -38,6 +40,8 @@ export type LevelUpDraft = {
   cardId: string;
   trade?: { out: string; in: string };
   multiclass?: MulticlassChoice;
+  /** Plan lanes-2 E8.4 (dcm-txlu): the picks of gained cards' "when you choose this card" uses (Vitality, CB p.330). */
+  cardChoices?: Record<string, Record<string, string[]>>;
 };
 
 export type LevelUpStep = { id: LevelUpStepId; label: string; done: boolean };
@@ -62,6 +66,8 @@ export type LevelUpDraftValue = {
   issues: LevelUpIssue[];
   /** Picks used of the level's two (Proficiency and multiclass cost both). */
   picksUsed: number;
+  /** What the gained cards' "when you choose this card" uses ask (Vitality's two benefits); empty for most cards. */
+  cardAsks: CardChoiceAsk[];
   steps: LevelUpStep[];
   step: LevelUpStepId;
   pending: boolean;
@@ -82,6 +88,8 @@ export type LevelUpDraftValue = {
   setCardId: (cardId: string) => void;
   setTrade: (trade: { out: string; in: string } | null) => void;
   setMulticlass: (multiclass: MulticlassChoice | null) => void;
+  /** Sets the options picked for a gained card's choose step (`cardAsks`). */
+  setCardChoice: (cardId: string, stepId: string, optionIds: string[]) => void;
   /** Shows the step: sets the page (and Domains sub-tab), scrolls its target into view and focuses its heading. */
   goTo: (step: LevelUpStepId) => void;
 };
@@ -100,6 +108,7 @@ const INACTIVE: LevelUpDraftValue = {
   problems: [],
   issues: [],
   picksUsed: 0,
+  cardAsks: [],
   steps: NO_STEPS,
   step: "finish",
   pending: false,
@@ -113,6 +122,7 @@ const INACTIVE: LevelUpDraftValue = {
   setCardId: noop,
   setTrade: noop,
   setMulticlass: noop,
+  setCardChoice: noop,
   goTo: noop,
 };
 
@@ -156,6 +166,7 @@ const storedSchema = z.object({
     cardId: z.string(),
     trade: z.object({ out: z.string(), in: z.string() }).optional(),
     multiclass: z.object({ classId: z.string(), domainId: z.string(), subclassId: z.string(), spellcastTrait: z.enum(TRAIT_IDS).optional() }).optional(),
+    cardChoices: z.record(z.string(), z.record(z.string(), z.array(z.string()).max(4))).optional(),
   }),
 });
 
@@ -259,15 +270,24 @@ export function LevelUpDraftProvider({
     const draft = active ? state.draft : EMPTY_DRAFT;
     const achievement = ACHIEVEMENT_LEVELS.includes(level);
     const takesMulticlass = draft.picks.some((p) => p.option === "multiclass");
+    // dcm-txlu: the gained cards' choosing picks (Vitality's two benefits), asked here and sent as `cardChoices`.
+    const gained = cardsGained({ cardId: draft.cardId, picks: draft.picks, ...(draft.trade?.in ? { tradeIn: draft.trade.in } : {}) });
+    const cardAsks = active ? cardChoiceAsks(gained) : [];
+    const cardChoices = cardChoicesFor(cardAsks, draft.cardChoices ?? {});
     const choice: LevelUpChoice = {
       picks: draft.picks.map(({ option, tier, targets }) => (targets ? { option, tier, targets } : { option, tier })),
       cardId: draft.cardId,
       ...(achievement ? { experienceName: draft.experienceName.trim() } : {}),
       ...(draft.trade?.out && draft.trade.in ? { trade: draft.trade } : {}),
       ...(takesMulticlass && draft.multiclass ? { multiclass: draft.multiclass } : {}),
+      ...(Object.keys(cardChoices).length > 0 ? { cardChoices } : {}),
     };
-    const problems = active && sheet ? validateLevelUp(sheet, choice, { allowExpansion: hopeAndFear }) : [];
-    const issues = sheet ? problems.map((message) => ({ message, target: issueTarget(message, sheet) })) : [];
+    const ruleProblems = active && sheet ? validateLevelUp(sheet, choice, { allowExpansion: hopeAndFear }) : [];
+    const cardProblems = active && sheet ? cardChoiceProblems(cardAsks, cardChoices) : [];
+    const problems = [...ruleProblems, ...cardProblems];
+    const issues = sheet
+      ? [...ruleProblems.map((message) => ({ message, target: issueTarget(message, sheet) })), ...cardProblems.map((message) => ({ message, target: "deck" as const }))]
+      : [];
     const stepOf = (target: LevelUpTarget): LevelUpStepId => (ids.includes(target) ? target : "advancements");
     const picksUsed = draft.picks.reduce((sum, p) => sum + OPTION_RULES[p.option].cost, 0);
     const label: Record<LevelUpStepId, string> = {
@@ -302,6 +322,7 @@ export function LevelUpDraftProvider({
       problems,
       issues,
       picksUsed,
+      cardAsks,
       steps,
       step: active ? state.step : "finish",
       pending: apply.pending,
@@ -349,11 +370,57 @@ export function LevelUpDraftProvider({
       setCardId: (cardId) => edit((d) => ({ ...d, cardId })),
       setTrade: (trade) => edit((d) => withOptional(d, "trade", trade)),
       setMulticlass: (multiclass) => edit((d) => withOptional(d, "multiclass", multiclass)),
+      setCardChoice: (cardId, stepId, optionIds) =>
+        edit((d) => ({ ...d, cardChoices: { ...d.cardChoices, [cardId]: { ...d.cardChoices?.[cardId], [stepId]: [...new Set(optionIds)].slice(0, 4) } } })),
       goTo,
     };
   }, [active, apply, canStart, characterId, goTo, hopeAndFear, ids, level, navigate, sheet, sheetLevel, state]);
 
-  return <LevelUpDraftContext.Provider value={value}>{children}</LevelUpDraftContext.Provider>;
+  return (
+    <LevelUpDraftContext.Provider value={value}>
+      {children}
+      <LevelUpCardChoices />
+    </LevelUpDraftContext.Provider>
+  );
+}
+
+/**
+ * Plan lanes-2 E8.4 (dcm-txlu; user 2026-10-31: plain minimal UI, a later redesign restyles it): the picks a gained card
+ * asks when it is chosen (Vitality, CB p.330: "permanently gain two of the following benefits"), as check boxes, shown
+ * from the Domain card step on while such a card is in the draft. Renders nothing otherwise.
+ */
+export function LevelUpCardChoices() {
+  const lu = useLevelUpDraft();
+  if (!lu.active || lu.cardAsks.length === 0 || (lu.step !== "deck" && lu.step !== "finish")) return null;
+  return (
+    <section className="lu-ribbon lu-card-choices" aria-label="Card choices">
+      {lu.cardAsks.map((ask) => {
+        const picked = lu.choice.cardChoices?.[ask.cardId]?.[ask.stepId] ?? [];
+        const full = picked.length >= ask.count;
+        return (
+          <fieldset key={`${ask.cardId}:${ask.stepId}`} className="lu-rb-summary">
+            <legend className="lu-rb-sub">
+              {ask.name}: {ask.label} (choose {ask.count})
+            </legend>
+            {ask.options.map((o) => {
+              const on = picked.includes(o.id);
+              return (
+                <label key={o.id} style={{ display: "block" }}>
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    disabled={!on && full}
+                    onChange={(e) => lu.setCardChoice(ask.cardId, ask.stepId, e.target.checked ? [...picked, o.id] : picked.filter((id) => id !== o.id))}
+                  />{" "}
+                  {o.label}
+                </label>
+              );
+            })}
+          </fieldset>
+        );
+      })}
+    </section>
+  );
 }
 
 /** The draft with an optional field set, or removed when `value` is null. */

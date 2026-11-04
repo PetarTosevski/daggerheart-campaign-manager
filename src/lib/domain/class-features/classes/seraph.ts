@@ -1,8 +1,9 @@
 // Seraph (CB 44). Hope feature: Life Support clears a Hit Point on an ally (decision 7: written only through the feature).
 // Class feature: Prayer Dice (settled rule). At session start the Seraph rolls d4s equal to their subclass's
-// Spellcast trait, none when it is 0 or less, held until session end (`expire(sheet, "session")` clears the
+// Spellcast trait, none when it is 0 or less (Devout rolls one more and drops the lowest), held until session end (`expire(sheet, "session")` clears the
 // rest). A spent die's value goes to one of: Hope for the Seraph or an ally, reducing incoming damage (a
-// reminder for the damage calculator), or the Seraph's latest roll after it is made.
+// reminder for the damage calculator), or the Seraph's latest action or reaction roll after it is made (not a damage
+// roll, user 2026-10-29).
 // `params.dieIndexes` picks Prayer Dice by their order on the sheet (default: the first one).
 import { applyResourceDelta } from "../../characters/index";
 import { actionOutcome } from "../../duality";
@@ -18,11 +19,22 @@ export function prayerDiceCount(sheet: CharacterSheet): number {
   return trait ? Math.max(0, sheet.traits[trait]) : 0;
 }
 
-/** The sheet with fresh Prayer Dice rolled (earlier ones replaced). */
+/**
+ * Devout (Divine Wielder specialization, CB p.44): "When you roll your Prayer Dice, you can roll an additional die and
+ * discard the lowest result." Held through the primary subclass's specialization or mastery card (a multiclass has only
+ * the foundation, CB p.111). Rolling the extra die is always better, so it is automatic.
+ */
+export function hasDevout(sheet: Pick<CharacterSheet, "subclassId" | "subclassRank">): boolean {
+  return sheet.subclassId === "divine-wielder" && sheet.subclassRank !== "foundation";
+}
+
+/** The sheet with fresh Prayer Dice rolled (earlier ones replaced); with Devout one die more is rolled and the lowest dropped. */
 export function rollPrayerDice(sheet: CharacterSheet, rng: Rng): CharacterSheet {
   const kept = sheet.heldDice.filter((d) => d.kind !== "prayer");
   const count = Math.min(prayerDiceCount(sheet), 20 - kept.length);
-  const prayer = Array.from({ length: count }, (_, i): HeldDie => ({ id: `prayer-${i + 1}`, kind: "prayer", sides: 4, value: rng(4), until: "session" }));
+  const rolled = Array.from({ length: count + (hasDevout(sheet) ? 1 : 0) }, () => rng(4));
+  if (rolled.length > count) rolled.splice(rolled.indexOf(Math.min(...rolled)), 1);
+  const prayer = rolled.map((value, i): HeldDie => ({ id: `prayer-${i + 1}`, kind: "prayer", sides: 4, value, until: "session" }));
   return { ...sheet, heldDice: [...kept, ...prayer] };
 }
 
@@ -79,18 +91,20 @@ const prayerDamage: FeatureMeta = {
 const prayerRoll: FeatureMeta = {
   key: "prayerRoll",
   name: "Prayer Dice: add to your roll",
-  text: "Spend Prayer Dice after your roll is made: add their value to its result.",
+  text: "Spend Prayer Dice after your action or reaction roll is made: add their value to its result.",
   automation: "auto",
   target: "self",
   inputs: [PRAYER_INPUT],
   use: ({ sheet, params, roll }) => {
     if (roll === undefined || roll.kind === "free") refuse("Roll first: you have no roll to add to.");
+    // CB p.44 "add to a roll's result after the roll is made": action and reaction rolls, not damage (user 2026-10-29).
+    if (roll.kind === "damage") refuse("Prayer Dice add to action and reaction rolls, not to damage rolls.");
     const paid = spendPrayer(sheet, params);
     const total = roll.total + paid.value;
     const hope = dualityDie(roll, "hope");
     const fear = dualityDie(roll, "fear");
     // Only success or failure can change: Hope and Fear depend on the dice, so what the roll gave stays.
-    const outcome = roll.kind !== "damage" && hope !== undefined && fear !== undefined ? actionOutcome(hope, fear, total, roll.difficulty) : roll.outcome;
+    const outcome = hope !== undefined && fear !== undefined ? actionOutcome(hope, fear, total, roll.difficulty) : roll.outcome;
     return { sheet: paid.sheet, roll: { ...roll, total, outcome }, summary: `spent ${dice(paid.count)} on the roll, ${roll.total} → ${total}` };
   },
 };

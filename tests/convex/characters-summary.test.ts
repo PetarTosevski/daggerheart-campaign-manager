@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { errorCode, key, useAllowlist } from "./helpers";
+import { errorCode, imageBlob, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
-// PF9 (.omc/plans/performance.yaml): the dashboard's party cards read `characters.partySummary`, a projection of
-// `characters.listByCampaign` with only what a card shows. Same access and same reads; a much smaller result, so an HP
+// PF9 (.omc/plans/performance.yaml): the dashboard's party cards read `charactersReads.partySummary`, a projection of
+// `charactersReads.listByCampaign` with only what a card shows. Same access and same reads; a much smaller result, so an HP
 // tick re-sends a few hundred bytes per character instead of the whole sheet.
 //
 // Measured below (4 level-1 bards, the PF0 bench party), wire JSON bytes / documents read / database queries:
@@ -115,25 +115,25 @@ describe("characters.partySummary", () => {
 
   it("refuses anonymous callers and outsiders", async () => {
     const { t, as, campaignId } = await party();
-    expect(await codeOf(t.query(api.characters.partySummary, { campaignId }))).toBe("UNAUTHENTICATED");
-    expect(await codeOf(as("stranger").query(api.characters.partySummary, { campaignId }))).toBe("NOT_FOUND");
+    expect(await codeOf(t.query(api.charactersReads.partySummary, { campaignId }))).toBe("UNAUTHENTICATED");
+    expect(await codeOf(as("stranger").query(api.charactersReads.partySummary, { campaignId }))).toBe("NOT_FOUND");
   });
 
   it("shows every member every card, editable by its owner and the GM only", async () => {
     const { as, campaignId, characters } = await party();
-    const gm = await as("gm").query(api.characters.partySummary, { campaignId });
+    const gm = await as("gm").query(api.charactersReads.partySummary, { campaignId });
     expect(gm.map((c) => c.sheet.name).sort()).toEqual(["Ash", "Brin", "Cael", "Dov"]);
     expect(gm.every((c) => c.canEdit)).toBe(true);
 
-    const p1 = await as("p1").query(api.characters.partySummary, { campaignId });
+    const p1 = await as("p1").query(api.charactersReads.partySummary, { campaignId });
     expect(p1).toHaveLength(4);
     expect(p1.filter((c) => c.canEdit).map((c) => c._id)).toEqual([characters.p1]);
   });
 
   it("returns only the card's fields, matching listByCampaign", async () => {
     const { as, campaignId } = await party();
-    const full = await as("p2").query(api.characters.listByCampaign, { campaignId });
-    const summary = await as("p2").query(api.characters.partySummary, { campaignId });
+    const full = await as("p2").query(api.charactersReads.listByCampaign, { campaignId });
+    const summary = await as("p2").query(api.charactersReads.partySummary, { campaignId });
     expect(summary.map((c) => c._id)).toEqual(full.map((c) => c._id));
     for (const [i, c] of summary.entries()) {
       expect(Object.keys(c).sort()).toEqual(["_id", "canEdit", "portraitUrl", "sheet", "status"]);
@@ -153,7 +153,7 @@ describe("characters.partySummary", () => {
       await ctx.db.patch("characters", row._id, { sheet: { ...(row.sheet as object), wither: 3, levelUpPending: true, conditions: ["unconscious"], journeyEnds: true } });
     });
     await as("gm").mutation(api.characters.setStatus, { characterId: characters.p3!, status: "away" });
-    const byId = new Map((await as("p1").query(api.characters.partySummary, { campaignId })).map((c) => [c._id, c]));
+    const byId = new Map((await as("p1").query(api.charactersReads.partySummary, { campaignId })).map((c) => [c._id, c]));
     expect(byId.get(characters.p1!)!.sheet.hp).toBe(2);
     expect(byId.get(characters.p2!)!.sheet).toMatchObject({ wither: 3, levelUpPending: true, conditions: ["unconscious"], journeyEnds: true });
     expect(byId.get(characters.p3!)).toMatchObject({ status: "away", benched: true });
@@ -162,13 +162,13 @@ describe("characters.partySummary", () => {
 
   it("hides an uploaded portrait's storage id from everyone but the sheet's editors", async () => {
     const { t, as, campaignId, characters } = await party();
-    const storageId = await t.run((ctx) => ctx.storage.store(new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" })));
+    const storageId = await t.run((ctx) => ctx.storage.store(imageBlob("image/png")));
     await t.run(async (ctx) => {
       const row = (await ctx.db.get("characters", characters.p1!))!;
       await ctx.db.patch("characters", row._id, { sheet: { ...(row.sheet as object), portrait: { kind: "upload", storageId } } });
     });
     const portraitOf = async (who: "p1" | "p2" | "gm") =>
-      (await as(who).query(api.characters.partySummary, { campaignId })).find((c) => c._id === characters.p1)!.sheet.portrait;
+      (await as(who).query(api.charactersReads.partySummary, { campaignId })).find((c) => c._id === characters.p1)!.sheet.portrait;
     expect(await portraitOf("p1")).toEqual({ kind: "upload", storageId });
     expect(await portraitOf("gm")).toEqual({ kind: "upload", storageId });
     expect(await portraitOf("p2")).toEqual({ kind: "upload", storageId: "hidden" });
@@ -177,15 +177,15 @@ describe("characters.partySummary", () => {
   it("marks a sheet that fails to read as corrupt instead of failing the party", async () => {
     const { t, as, campaignId, characters } = await party();
     await t.run((ctx) => ctx.db.patch("characters", characters.p2!, { sheet: { name: "Brin", hp: "lots" } }));
-    const summary = await as("gm").query(api.characters.partySummary, { campaignId });
+    const summary = await as("gm").query(api.charactersReads.partySummary, { campaignId });
     expect(summary.find((c) => c._id === characters.p2)).toMatchObject({ corrupt: true, canEdit: false, sheet: { name: "Brin" } });
     expect(summary).toHaveLength(4);
   });
 
   it("is a fraction of listByCampaign's bytes for the same reads (PF0: <= 1.5 KB for 4 characters)", async () => {
     const { t, users, campaignId } = await party();
-    const full = await reads(t, users.gm, (c) => c.runQuery(api.characters.listByCampaign, { campaignId }));
-    const summary = await reads(t, users.gm, (c) => c.runQuery(api.characters.partySummary, { campaignId }));
+    const full = await reads(t, users.gm, (c) => c.runQuery(api.charactersReads.listByCampaign, { campaignId }));
+    const summary = await reads(t, users.gm, (c) => c.runQuery(api.charactersReads.partySummary, { campaignId }));
     console.info("PF9 listByCampaign vs partySummary (GM, 4 bards)", { full, summary });
     expect(summary.bytes).toBeLessThanOrEqual(1_536);
     expect(summary.bytes * 3).toBeLessThan(full.bytes);

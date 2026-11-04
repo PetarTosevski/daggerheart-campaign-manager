@@ -97,7 +97,8 @@ async function setup() {
       entryId: Id<"actionLog">;
     };
   };
-  const undo = (entryId: Id<"actionLog">) => p1.mutation(api.actionLog.undo, { entryId, idempotencyKey: key() });
+  // A roll is the GM's to undo (the player-undo rule, user 2026-11-02).
+  const undo = (entryId: Id<"actionLog">) => gm.mutation(api.actionLog.undo, { entryId, idempotencyKey: key() });
   const history = (id: Id<"countdowns">) =>
     t.run(async (ctx) =>
       (await ctx.db.query("history").withIndex("by_campaign_at", (q) => q.eq("campaignId", campaignId)).collect()).filter(

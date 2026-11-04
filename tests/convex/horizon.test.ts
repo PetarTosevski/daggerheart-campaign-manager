@@ -170,12 +170,12 @@ describe("Horizon Doom Track and Soul Echoes", () => {
     const start = (kind: "short" | "long") => gm.mutation(api.rests.start, { campaignId, kind, idempotencyKey: key() });
     await gm.mutation(api.maps.placePartyHex, { campaignId, q: 10, r: 10 });
     expect(errorCode(await start("long").catch((e) => e))).toBe("REST_RULE");
-    expect((await gm.query(api.rests.current, { campaignId })).open).toBeNull();
+    expect((await gm.query(api.restsReads.current, { campaignId })).open).toBeNull();
     const { width, height } = WORLD_MAPS["journey-to-horizon"];
     const p = hexToPixel({ q: 10, r: 10 }, initialHexCrawl().grid);
     await gm.mutation(api.maps.addToken, { campaignId, type: "sanctuary", x: (p.x / width) * 100, y: (p.y / height) * 100, idempotencyKey: key() });
-    expect((await gm.query(api.rests.current, { campaignId })).open).toBeNull();
+    expect((await gm.query(api.restsReads.current, { campaignId })).open).toBeNull();
     const { restId } = await start("long");
-    expect((await gm.query(api.rests.current, { campaignId })).open?._id).toBe(restId);
+    expect((await gm.query(api.restsReads.current, { campaignId })).open?._id).toBe(restId);
   });
 });

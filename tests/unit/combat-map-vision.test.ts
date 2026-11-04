@@ -139,16 +139,13 @@ describe("line of sight (R7)", () => {
 });
 
 describe("light by phase (R8)", () => {
-  it("only Nautical Twilight and Nightfall are dim; Nautical Dawn is day (board fix)", () => {
-    expect([...DIM_PHASES].sort()).toEqual(["Nautical Twilight", "Nightfall"]);
-    expect(lightOf("Nautical Dawn")).toBe("day");
-    expect(lightOf("Nautical Twilight")).toBe("dim");
-    expect(lightOf("Nightfall")).toBe("dim");
+  it("the boundary days of both cycles are dim (dcm-p40)", () => {
+    expect([...DIM_PHASES].sort()).toEqual(["Dawn", "Nautical Dawn", "Nautical Twilight", "Nightfall"]);
   });
 
   it("maps every campaign phase", () => {
     for (const phase of getCyclePhases("DAY")) {
-      expect(lightOf(phase), phase).toBe(phase === "Nautical Twilight" ? "dim" : "day");
+      expect(lightOf(phase), phase).toBe(phase === "Nautical Twilight" || phase === "Dawn" ? "dim" : "day");
     }
     const night = getCyclePhases("NIGHT").map((p) => [p, lightOf(p)]);
     expect(night).toEqual([
@@ -158,7 +155,7 @@ describe("light by phase (R8)", () => {
       ["Midnight", "night"],
       ["Witching Hour", "night"],
       ["Small Hours", "night"],
-      ["Nautical Dawn", "day"],
+      ["Nautical Dawn", "dim"],
     ]);
   });
 

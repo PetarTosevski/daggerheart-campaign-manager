@@ -349,7 +349,18 @@ describe("Breaking Blow (CB p.331)", () => {
     expect(plan.actor.after.stress).toBe(2);
     expect(ofKind(plan, "condition")[0]).toMatchObject({ targetId: "a", condition: { kind: "tag", tag: "Breaking Blow" }, duration: "hit" });
     expect(plan.creatures[0]!.after.tags).toEqual(["Breaking Blow"]);
-    expect(ofKind(plan, "prompt")[0]).toMatchObject({ prompt: "manual", targetIds: ["a"] });
+    // Lanes-2 S1 (dcm-ky8b): another PC's 2d12 is the table's reminder until PC attacks read attackedRider (dcm-yd5h).
+    const prompts = ofKind(plan, "prompt");
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toMatchObject({ prompt: "manual", targetIds: ["a"] });
+    expect(JSON.stringify(prompts[0])).toContain("another PC");
+  });
+  it("another creature's next successful attack gets the 2d12 through the mark's attackedRider (dcm-9gw)", () => {
+    const step = cardUse("breaking-blow").steps[0];
+    expect(step).toMatchObject({
+      kind: "condition",
+      mods: [{ kind: "attackedRider", rider: { by: "others", onSuccess: true, damage: { kind: "add", amount: { kind: "dice", dice: { count: { kind: "fixed", value: 2 }, sides: 12 } } } } }],
+    });
   });
   it("your next successful attack adds 2d12 and clears the mark", () => {
     const plan = ok("breaking-blow", ctx([7, 9], { useId: "extra", targets: [adv("a", { tags: ["Breaking Blow"] })] }));

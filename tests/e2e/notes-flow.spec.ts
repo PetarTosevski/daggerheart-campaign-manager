@@ -339,7 +339,7 @@ test("mentions are name chips while writing and editing; the server stores the t
   const input = paperColumn(page).getByRole("textbox", { name: "New entry" });
   await input.click();
   await input.pressSequentially("* ask @mar");
-  const listbox = paperColumn(page).getByRole("listbox", { name: "Characters & Locations" });
+  const listbox = paperColumn(page).getByRole("listbox", { name: "Codex" });
   await expect(listbox.getByRole("option", { name: /Marlow/ })).toHaveAttribute("aria-selected", "true");
   await input.press("Enter");
   await expect(listbox).toHaveCount(0);

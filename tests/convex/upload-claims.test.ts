@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { errorCode, key, useAllowlist } from "./helpers";
+import { errorCode, imageBlob, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
 const GM = "gm@example.com";
@@ -67,7 +67,7 @@ describe("uploads claimed elsewhere", () => {
     const { entryId: theirEntry } = await victim.mutation(api.codex.create, { campaignId: theirs, kind: "character", idempotencyKey: key() });
     const theirCharacter = await character(t, theirs, ids.victim);
     const files = await t.run(async (ctx) => {
-      const store = () => ctx.storage.store(new Blob(["png"], { type: "image/png" }));
+      const store = () => ctx.storage.store(imageBlob("image/png"));
       const map = await store();
       const codex = await store();
       const portrait = await store();
@@ -100,7 +100,7 @@ describe("uploads claimed elsewhere", () => {
     // (system tables aren't writable in the types, but convex-test allows it).
     const upload = (contentType: string) =>
       t.run(async (ctx) => {
-        const id = await ctx.storage.store(new Blob(["img"], { type: contentType }));
+        const id = await ctx.storage.store(imageBlob(contentType));
         await (ctx.db as unknown as { patch: (id: Id<"_storage">, value: { contentType: string }) => Promise<void> }).patch(id, { contentType });
         return id;
       });
@@ -136,7 +136,7 @@ describe("uploads claimed elsewhere", () => {
 
     // Attach an uploaded map the way attachMapImage records it (convex-test has no content types).
     const storageId = await t.run(async (ctx) => {
-      const id = await ctx.storage.store(new Blob(["png"], { type: "image/png" }));
+      const id = await ctx.storage.store(imageBlob("image/png"));
       await ctx.db.insert("files", { storageId: id, campaignId, uploadedBy: ids.gm, kind: "map", refId: campaignId, createdAt: 0 });
       const row = (await ctx.db
         .query("maps")

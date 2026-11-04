@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { api } from "../../convex/_generated/api";
 import { D10_VIEWPORTS, bardDraft, openCombatMap, visual } from "./visual/helpers";
+import { openMapTools } from "./hud/helpers";
 
 // D10 S8: the Combat Map's '＋ Session encounter' (bead dcm-bxp.50, B11, Q2). The GM links an encounter with a Solo
 // and two Standards to the planned session, opens a map and clicks '＋ Session encounter': the encounter runs, three
@@ -31,6 +32,7 @@ function combatantsOf(page: Page) {
 test("the GM places the planned session's encounter with one click; a second click adds nothing", async ({ page }) => {
   const { client, campaignId, url, encounterId, sessionId } = await seed(page);
   await page.goto(url);
+  await openMapTools(page);
   const combatants = combatantsOf(page);
   const button = combatants.getByRole("button", { name: "＋ Session encounter" });
 
@@ -48,10 +50,10 @@ test("the GM places the planned session's encounter with one click; a second cli
   await expect(board.getByTestId("combat-token")).toHaveCount(3);
   await expect(combatants.getByTestId("combat-token-count")).toHaveText("0 party · 3 enemies");
   await expect.poll(async () => (await client.query(api.encounters.get, { campaignId, encounterId }))?.encounter.status).toBe("running");
-  const solo = board.getByRole("button", { name: /^Acid Burrower, Enemy/ });
+  const solo = board.getByRole("button", { name: /^Open the Acid Burrower’s stat block/ });
   await expect(solo).toBeVisible();
   const box = (await solo.boundingBox())!;
-  const bandit = (await board.getByRole("button", { name: /^Jagged Knife Bandit, Enemy/ }).boundingBox())!;
+  const bandit = (await board.getByRole("button", { name: /^Open the Jagged Knife Bandit’s stat block/ }).boundingBox())!;
   expect(Math.round(box.width / bandit.width)).toBe(2);
   // The running encounter's queue is empty: everything is on the map.
   await expect(combatants.getByRole("group", { name: "From the Adversaries tab" })).toHaveCount(0);
@@ -69,6 +71,7 @@ test("another running encounter is refused with 'End the running encounter first
   const { encounterId: other } = await client.mutation(api.encounters.create, { campaignId, name: "Wolves", idempotencyKey: crypto.randomUUID() });
   await client.mutation(api.encounters.start, { campaignId, encounterId: other });
   await page.goto(url);
+  await openMapTools(page);
   const combatants = combatantsOf(page);
   await combatants.getByRole("button", { name: "＋ Session encounter" }).click();
   await expect(combatants.getByRole("alert")).toHaveText("End the running encounter first.");
@@ -82,6 +85,7 @@ test("D10 S8 combatants card at 1440, 1024 and 390", { tag: "@visual" }, async (
   const { client, campaignId, url, encounterId, sessionId } = await seed(page);
   await client.mutation(api.sessionPrep.linkEncounter, { campaignId, sessionId, encounterId });
   await page.goto(url);
+  await openMapTools(page);
   const combatants = combatantsOf(page);
   const button = combatants.getByRole("button", { name: "＋ Session encounter" });
   await expect(button).toBeEnabled();

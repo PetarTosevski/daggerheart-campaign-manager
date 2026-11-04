@@ -8,7 +8,8 @@ import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { builtinManifestSchema, type BuiltinManifest, MANIFEST_SCHEMA_VERSION } from "../../../src/lib/sprite-packs/manifest";
+import { type BuiltinManifest, MANIFEST_SCHEMA_VERSION } from "../../../src/lib/sprite-packs/manifest";
+import { builtinManifestSchema } from "../../../src/lib/sprite-packs/manifest-schema";
 import { encodeItem, folderManifest, manifestSource, type Encoded } from "./encode";
 import { MANIFEST_FILE, OVERRIDES_FILE, PUBLIC_DIR, type Options } from "./options";
 import { loadOverrides } from "./overrides";
@@ -17,8 +18,8 @@ import { writeReport } from "./report";
 
 async function currentManifest(): Promise<BuiltinManifest> {
   if (!existsSync(MANIFEST_FILE)) return { schemaVersion: MANIFEST_SCHEMA_VERSION, folders: {} };
-  const mod = (await import(pathToFileURL(MANIFEST_FILE).href)) as { BUILTIN_MANIFEST: BuiltinManifest };
-  return builtinManifestSchema.parse(mod.BUILTIN_MANIFEST);
+  const mod = (await import(pathToFileURL(MANIFEST_FILE).href)) as { builtinManifest: () => BuiltinManifest };
+  return builtinManifestSchema.parse(mod.builtinManifest());
 }
 
 export async function run(opts: Options, mode: "cut" | "build"): Promise<void> {

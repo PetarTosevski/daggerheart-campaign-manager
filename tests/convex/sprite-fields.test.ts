@@ -8,7 +8,7 @@ import { decodeCells } from "../../src/components/combat-map/map-view/cells";
 import { errorMessage, mergeMessages } from "../../src/lib/convex-errors";
 import { spritePackMessages } from "../../src/lib/errors/spritePacks";
 import { ANCESTRIES, ARMOR, COMMUNITIES, cardsForDomains, getClass, subclassesForClass, WEAPONS } from "../../src/lib/srd/index";
-import { errorCode, key, setupWithCampaign, useAllowlist } from "./helpers";
+import { errorCode, imageBlob, key, setupWithCampaign, useAllowlist } from "./helpers";
 import { ConvexError } from "convex/values";
 
 // Sprite packs P0 (plan .omc/plans/sprite-packs.yaml): the widened map, area, object and cell fields and the
@@ -65,7 +65,7 @@ async function withSpriteMap() {
   const sprite = (packId: Id<"spritePacks">, name: string, light: SpriteLight, order: number) =>
     t.run(async (c) => {
       const gmId = (await c.db.query("users").first())!._id;
-      const storageId = await c.storage.store(new Blob([new Uint8Array(8)], { type: "image/webp" }));
+      const storageId = await c.storage.store(imageBlob("image/webp"));
       const fileId = await c.db.insert("files", { storageId, campaignId, uploadedBy: gmId, kind: "sprite", refId: "pending", createdAt: 1 });
       const id = await c.db.insert("spritePackSprites", {
         campaignId,

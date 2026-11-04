@@ -18,13 +18,21 @@ import { askerNames } from "../conversations/names";
 import { Sigil } from "../sigil";
 import type { LorekeeperChatProps } from "../slots";
 import { ChatBoundary } from "./boundary";
+import { editLocally } from "./edit";
+import { QuestionBubble } from "./question";
 import { resolveSelection, useSelection } from "./selection";
+
+/** LK3: why Save on an edited question waits (the server refuses an edit while an answer is on its way). */
+const EDIT_WAITS_FOR_ANSWER = "Save is ready once the current answer finishes, or Stop it.";
+const EDIT_WAITS_FOR_SEND = "Sending…";
 
 /** Messages per page of history (newest first; 'Show earlier messages' loads more). */
 const PAGE = 40;
 
 type Pending = { question: string; conversationId?: Id<"lorekeeperConversations"> };
 type Notice = { text: string; newConversation: boolean };
+/** LK3: saves an edit of the caller's question (replaces from there on); resolves false when it failed. */
+type EditFn = (questionId: Id<"lorekeeperMessages">, question: string) => Promise<boolean>;
 type AskFn = (question: string, target: { conversationId?: Id<"lorekeeperConversations">; webSearch: boolean; visibility: ConversationVisibility }) => Promise<boolean>;
 
 /**
@@ -44,6 +52,7 @@ export function ChatView({ campaignId, access, variant }: LorekeeperChatProps) {
   const [selection, select] = useSelection(campaignId);
   const current = resolveSelection(selection, lists?.mine);
   const ask = useMutation(api.lorekeeper.ask).withOptimisticUpdate((store, args) => askLocally(store, args));
+  const edit = useMutation(api.lorekeeper.editQuestion).withOptimisticUpdate((store, args) => editLocally(store, args));
   const [pending, setPending] = useState<Pending | null>(null);
   const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -79,6 +88,20 @@ export function ChatView({ campaignId, access, variant }: LorekeeperChatProps) {
     }
   };
 
+  const editQuestion: EditFn = async (questionId, question) => {
+    setNotice(null);
+    setSending(true);
+    try {
+      await edit({ campaignId, questionId, question });
+      return true;
+    } catch (error) {
+      setNotice(askFailure(error));
+      return false;
+    } finally {
+      setSending(false);
+    }
+  };
+
   const startNew = () => {
     setNotice(null);
     select("new");
@@ -97,6 +120,7 @@ export function ChatView({ campaignId, access, variant }: LorekeeperChatProps) {
     sending,
     notice,
     onAsk: askQuestion,
+    onEdit: editQuestion,
     onNewConversation: startNew,
     newWeb,
     setNewWeb,
@@ -135,6 +159,7 @@ type PaneProps = {
   sending: boolean;
   notice: Notice | null;
   onAsk: AskFn;
+  onEdit: EditFn;
   onNewConversation: () => void;
   newWeb: boolean;
   setNewWeb: (on: boolean) => void;
@@ -176,6 +201,7 @@ function ConversationPane(props: PaneProps) {
         loading={loading}
         showPending={showPending}
         canLoadMore={history.status === "CanLoadMore"}
+        answering={streamingAnswer !== null}
         onLoadMore={() => history.loadMore(PAGE)}
         onRetry={
           target
@@ -220,6 +246,8 @@ function Stream(
     loading: boolean;
     showPending: boolean;
     canLoadMore: boolean;
+    /** The caller's answer is on its way here: no question can be edited until it ends. */
+    answering: boolean;
     onLoadMore: () => void;
     onRetry?: (question: string) => void;
   },
@@ -233,10 +261,23 @@ function Stream(
   const mine = conversation?.mine ?? false;
   const asker = mine ? YOU_LABEL : conversation ? (props.names.get(conversation.userId) ?? "A player") : YOU_LABEL;
 
-  // Follow the stream while the reader is at the bottom (scrolling up stops it). DOM only, no state.
+  // What was last seen at the end of the log, so an arrival can be told from an answer growing. A ref, not state.
+  const seen = useRef<{ id?: string; live: boolean; pending: boolean; loading: boolean } | null>(null);
+
+  // LK2: an arrival (open or conversation switch, a new question or answer, the pending question, an answer starting
+  // to stream) always brings the log to its end, even if the reader had scrolled up. Between arrivals the stream is
+  // followed only while the reader is at the bottom; after scrolling up, 'Jump to latest' returns. DOM only, no state.
   useLayoutEffect(() => {
     const el = ref.current;
-    if (el && stuck.current) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    const id = last?._id as string | undefined;
+    const live = last?.status === "streaming";
+    const before = seen.current;
+    const arrived =
+      before === null || before.id !== id || before.pending !== showPending || before.loading !== loading || (live && !before.live);
+    seen.current = { id, live: live || (before !== null && before.id === id && before.live), pending: showPending, loading };
+    if (arrived) stuck.current = true;
+    if (stuck.current) el.scrollTop = el.scrollHeight;
   }, [last?._id, last?.text.length, last?.status, showPending, loading]);
 
   const empty = !loading && messages.length === 0 && !showPending;
@@ -275,11 +316,16 @@ function Stream(
       ) : null}
       {messages.map((message, index) => {
         if (message.role === "question") {
+          // LK3: the asker edits their own question; Save asks again, nothing is answered while editing.
+          const editable = mine && props.available === true && !isLocalMessage(message._id);
           return (
-            <div key={message._id} className="lk-q">
-              <span className="lk-who">{asker}</span>
-              <div className="lk-qb">{message.text}</div>
-            </div>
+            <QuestionBubble
+              key={message._id}
+              asker={asker}
+              text={message.text}
+              onEdit={editable ? (question) => props.onEdit(message._id, question) : undefined}
+              waiting={props.disabled ?? (props.answering ? EDIT_WAITS_FOR_ANSWER : props.sending ? EDIT_WAITS_FOR_SEND : null)}
+            />
           );
         }
         const before = messages[index - 1];
