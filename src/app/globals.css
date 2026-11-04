@@ -166,6 +166,80 @@
     @apply font-sans;
   }
 }
+/*
+ * Text size (plan config U6b, Q12 a): CSS zoom on the app root, set by PrefsSync as data-text-size on <html>.
+ * Small 0.9, Medium 1, Large 1.15 (TEXT_SIZE_ZOOM in src/lib/config/preferences.ts; tests/unit/prefs-sync.test.tsx
+ * checks the two agree). Pointer math that divides by getBoundingClientRect / offsetWidth (the Combat Map's) stays
+ * correct under zoom.
+ *
+ * Zoom scales viewport units too (100dvh inside a 1.15 root paints 115% of the screen), so the surfaces that are
+ * exactly one screen tall divide them by --text-zoom: the Combat HUD under the app bar, the Campaign settings
+ * slide-over and the Preferences popover. Other vh / vw uses are min-heights or caps that only grow or shrink a
+ * little (TASK-CONFIG-U6b.md lists them).
+ */
+html {
+  --text-zoom: 1;
+}
+html[data-text-size="small"] {
+  zoom: 0.9;
+  --text-zoom: 0.9;
+}
+html[data-text-size="large"] {
+  zoom: 1.15;
+  --text-zoom: 1.15;
+}
+html[data-text-size] .hud-root {
+  height: calc(100dvh / var(--text-zoom) - var(--app-bar-h, 0px));
+}
+html[data-text-size] .cfg-setp {
+  width: min(640px, 100vw / var(--text-zoom));
+  max-width: calc(100vw / var(--text-zoom));
+  height: calc(100dvh / var(--text-zoom));
+  max-height: calc(100dvh / var(--text-zoom));
+}
+html[data-text-size] .cfg-pop {
+  max-width: calc(100vw / var(--text-zoom) - 16px);
+  max-height: calc(100dvh / var(--text-zoom) - 88px);
+}
+
+/*
+ * Reduce motion (U6b, Q13 a): the account's switch calms the app even when the device doesn't ask. PrefsSync sets
+ * data-reduce-motion on <html>; this is what every `@media (prefers-reduced-motion: reduce)` block in the app does
+ * (transition: none / animation: none, the HUD's motion tokens at 0), applied everywhere at once. The exceptions mirror
+ * those blocks: loading spinners keep turning (.cm-spin slower), and the Combat Map's hit flash keeps its plain fade,
+ * because flash.tsx removes it on animationend. Nothing here adds motion when the device asks for less.
+ */
+html[data-reduce-motion] {
+  scroll-behavior: auto !important;
+}
+html[data-reduce-motion] *:not(.animate-spin, .cm-spin, .cmx-flash),
+html[data-reduce-motion] *::before,
+html[data-reduce-motion] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+html[data-reduce-motion] .cmx-flash {
+  animation: cmx-fade 1.8s linear forwards !important;
+  transition: none !important;
+}
+html[data-reduce-motion] .cm-spin {
+  animation-duration: 2.4s !important;
+}
+html[data-reduce-motion] .hud-root {
+  --hud-t-sheet: 0ms;
+  --hud-t-map: 0ms;
+  --hud-t-card: 0ms;
+  --hud-t-banner: 0ms;
+  --hud-t-fast: 0ms;
+}
+html[data-reduce-motion] .ln-card[data-current],
+html[data-reduce-motion] button.gold-hand:hover,
+html[data-reduce-motion] button.gold-bag:hover,
+html[data-reduce-motion] button.gold-chest:hover {
+  transform: none;
+}
+
 @layer components {
   /* Small caps label used across the boards ("THE PITCH", "TIER 2 · LEVEL 4"). */
   .eyebrow {
