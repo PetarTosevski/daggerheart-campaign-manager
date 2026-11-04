@@ -823,3 +823,19 @@ Plain choices; the first option is the one we recommend, and the plan is built o
   - (b) Deleted.
 - Safety, recommended: **you type their email to confirm and give a reason; delete waits 30 days with Undo; you can't
   suspend or delete yourself; every step is logged.**
+
+## User answers 2026-11-04 (N questions, binding)
+- N1 (changed): the owner's read-only view shows EVERYTHING, including players' private notes and private Lorekeeper chats; still no changes possible and every visit is logged.
+- N2 (a) Journal / Share links switches do nothing yet.
+- N3 (a) Automatic one-time import on first load.
+- N5 (a) Yes to @convex-dev/presence and a PDF reader.
+- N9 (a) Done in SX: the Players button opens Campaign settings at Players.
+- N4 (b, changed): unconfirmed level-up picks are saved on the account (like the wizard draft), not only in the tab.
+- N6 (b, changed): no book-count limit per campaign; only 20 MB / 300 pages per file.
+- N7 (a) GM and co-GMs upload campaign books.
+- N8 (a) unpdf; the uploader types the printed page number of the PDF's first page; citations use printed pages.
+- N10 (b, changed): limit requests also email the owner for every request.
+- N11 suspend: (rec.) signed out everywhere, can't sign in, nothing deleted, campaigns stay playable, liftable.
+- N11 delete own campaigns: (a) handed to a co-GM if any, else deleted with the restore window.
+- N11 delete characters elsewhere: (a) kept as "former player"; the GM can retire or delete them.
+- N11 safety: not asked; recommended default stands (type email + reason, delete waits 30 days with Undo, no self-target, every step logged).
