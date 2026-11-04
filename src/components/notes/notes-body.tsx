@@ -8,7 +8,7 @@ import { Component, useId, useState, type ReactNode } from "react";
 
 import { BinView, TornOutPages } from "@/components/notes/bin";
 import { DownloadJournalButton } from "@/components/notes/export";
-import { JournalHeading } from "@/components/notes/header";
+import { JournalHeading, WritingAs } from "@/components/notes/header";
 import { PageGroups } from "@/components/notes/index-column";
 import { JournalsList, JournalView } from "@/components/notes/journals";
 import { JournalPage } from "@/components/notes/page";
@@ -168,7 +168,11 @@ export function NotesBody(props: NotesBodyProps) {
             </SlotBoundary>
           </div>
         </header>
-      ) : null}
+      ) : (
+        <SlotBoundary label="Writing as">
+          <WritingAs {...slot} />
+        </SlotBoundary>
+      )}
       <main className="bj-main" data-chrome={chrome}>
         <aside className="bj-index" aria-label="Journal index">
           <button
