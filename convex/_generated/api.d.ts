@@ -12,6 +12,7 @@ import type * as accounts from "../accounts.js";
 import type * as actionLog from "../actionLog.js";
 import type * as adversaryActions from "../adversaryActions.js";
 import type * as auth from "../auth.js";
+import type * as campaignSettings from "../campaignSettings.js";
 import type * as campaignTime from "../campaignTime.js";
 import type * as campaigns from "../campaigns.js";
 import type * as characterExtras from "../characterExtras.js";
@@ -238,6 +239,7 @@ declare const fullApi: ApiFromModules<{
   actionLog: typeof actionLog;
   adversaryActions: typeof adversaryActions;
   auth: typeof auth;
+  campaignSettings: typeof campaignSettings;
   campaignTime: typeof campaignTime;
   campaigns: typeof campaigns;
   characterExtras: typeof characterExtras;
