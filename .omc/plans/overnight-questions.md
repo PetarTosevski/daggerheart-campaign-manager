@@ -320,3 +320,4 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - JX1: /sessions and /notes redirect to the Journal keeping only s / stage / view / page / journal (other params dropped); the session chip reads "Session N, live: open it in the Journal". Defaults: keep.
 - Revive: keeps the adversary's other conditions / effects; no public feed line for players; needs a running encounter; Minion groups choose how many come back. Defaults: keep.
 - JX2: the Journal header offers no way to start a second session while one is live (B6) or to restart a played session (B7); the server still supports both. Default: leave out. The milestone button was dropped from the UI.
+- Glass G0: large glass buttons use the design's Plex 17 px font, not the old Cinzel caps (headline buttons like "Choose this Frame", "+ Create character" look different). Default: follow the design.
