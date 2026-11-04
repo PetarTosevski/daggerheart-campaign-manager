@@ -13,6 +13,8 @@ import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import type { SlotProps } from "../slots";
 
+import { deathResultText, DeathMoveWait } from "./waiting";
+
 // Short reminders of CB 106; the book has the full text.
 const MOVE_HINTS: Record<DeathMove, string> = {
   blazeOfGlory: "Take one last action, which critically succeeds, then cross through the veil.",
@@ -47,13 +49,19 @@ function DeathMoveControls({
   // Closing the modal hides it until the character changes again.
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
   const [result, setResult] = useState<string | null>(null);
+  // Castle High: the reason picked with Blaze of Glory carries to its finish step (dcm-bxp.40 item 5).
+  const [awayReason, setAwayReason] = useState<AwayReason>("infirmary");
   if (state === undefined) return null;
+  const reason = { awayReason, setAwayReason };
 
   const due = state.awaitingMove || state.pending !== null;
   const open = due && dismissedAt !== updatedAt;
+  // HD4: while a player's move waits for the GM, the strip shows the wait (player) or the confirm card (GM).
+  const waiting = state.request;
 
   return (
     <>
+      {waiting ? <DeathMoveWait characterId={characterId} name={name} level={sheet.level} request={waiting} isGm={isGm} onDone={setResult} /> : null}
       {due && !open ? (
         <div className="db-row">
           <Pill variant="solid" onClick={() => setDismissedAt(null)}>
@@ -61,14 +69,14 @@ function DeathMoveControls({
           </Pill>
         </div>
       ) : null}
-      {result || state.undoEntryId ? (
+      {result || (state.undoEntryId && !waiting) ? (
         <div className="db-row sh-small">
           {result ? (
             <p role="status" className="m-0">
               {result}
             </p>
           ) : null}
-          {state.undoEntryId ? (
+          {state.undoEntryId && !waiting ? (
             <Pill
               disabled={undo.pending}
               onClick={() =>
@@ -89,16 +97,19 @@ function DeathMoveControls({
       ) : null}
       <PaperModal open={open} onClose={() => setDismissedAt(updatedAt)} title="Death move">
         {state.pending?.move === "blazeOfGlory" ? (
-          <FinishBlaze characterId={characterId} name={name} lessLethal={state.lessLethal} request={!isGm} onDone={setResult} />
+          <FinishBlaze characterId={characterId} name={name} lessLethal={state.lessLethal} request={!isGm} onDone={setResult} {...reason} />
         ) : state.pending?.move === "riskItAll" ? (
           <SplitRiskItAll key={state.undoEntryId ?? "risk"} characterId={characterId} value={state.pending.value} hp={sheet.hp} stress={sheet.stress} onDone={setResult} />
         ) : (
-          <ChooseMove characterId={characterId} name={name} level={sheet.level} lessLethal={state.lessLethal} request={!isGm} onDone={setResult} />
+          <ChooseMove characterId={characterId} name={name} level={sheet.level} lessLethal={state.lessLethal} request={!isGm} onDone={setResult} {...reason} />
         )}
       </PaperModal>
     </>
   );
 }
+
+/** The Castle High reason, held by `DeathMoveControls` so Blaze of Glory's choose and finish steps share it. */
+type AwayReasonState = { awayReason: AwayReason; setAwayReason: (r: AwayReason) => void };
 
 /** Where a Castle High character goes instead of dying (HF 127). A player's pick is a request the GM settles (LL1). */
 function AwayReasonPicker({ value, onChange, request }: { value: AwayReason; onChange: (r: AwayReason) => void; request: boolean }) {
@@ -147,6 +158,8 @@ function ChooseMove({
   lessLethal,
   request,
   onDone,
+  awayReason,
+  setAwayReason,
 }: {
   characterId: Id<"characters">;
   name: string;
@@ -154,20 +167,16 @@ function ChooseMove({
   lessLethal: boolean;
   request: boolean;
   onDone: (text: string) => void;
-}) {
+} & AwayReasonState) {
   const choose = useIntent(api.deathMoves.choose);
   const [action, setAction] = useState("");
-  const [awayReason, setAwayReason] = useState<AwayReason>("infirmary");
 
   async function pick(move: DeathMove) {
     const r = await choose.fire({ characterId, move, ...(move === "blazeOfGlory" && action.trim() ? { action: action.trim() } : {}), ...(lessLethal ? { awayReason } : {}) });
     if (!r) return;
-    if (move === "avoidDeath") {
-      onDone(`Hope Die ${r.hopeDie} against level ${level}: ${r.scarred ? "a scar" : "no scar"}.${r.journeyEnds ? " The last Hope slot is gone: the journey ends." : ""}`);
-    } else if (move === "riskItAll") {
-      const lead = `Hope ${r.hopeDie}, Fear ${r.fearDie}: `;
-      onDone(lead + (r.status !== "active" ? (r.status === "away" ? `away instead of dead${request ? " (requested; the GM decides)" : ""}.` : "death.") : r.pending ? "clear Hit Points and Stress." : "matching dice, everything cleared."));
-    } else onDone("Blaze of Glory: the action critically succeeds.");
+    // HD4: a player's move waits for the GM; the strip shows the wait, so there is no result yet.
+    if (r.awaitingGm) onDone("");
+    else onDone(deathResultText(move, r, level, request));
   }
 
   return (
@@ -202,15 +211,16 @@ function FinishBlaze({
   lessLethal,
   request,
   onDone,
+  awayReason,
+  setAwayReason,
 }: {
   characterId: Id<"characters">;
   name: string;
   lessLethal: boolean;
   request: boolean;
   onDone: (text: string) => void;
-}) {
+} & AwayReasonState) {
   const finish = useIntent(api.deathMoves.finishBlaze);
-  const [awayReason, setAwayReason] = useState<AwayReason>("infirmary");
   return (
     <>
       <p className="db-lede">{name} takes their last action, which critically succeeds. When it is done, they cross through the veil.</p>

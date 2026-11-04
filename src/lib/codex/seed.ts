@@ -1,5 +1,5 @@
 // The frame's starting characters (the board's SEED and SEED_AL), created once
-// per campaign the first time its GM opens Characters & Locations. All start
+// per campaign the first time its GM opens Codex. All start
 // secret from the players. Pure module.
 
 type SeedCharacter = { name: string; role: string; allegiance?: string };

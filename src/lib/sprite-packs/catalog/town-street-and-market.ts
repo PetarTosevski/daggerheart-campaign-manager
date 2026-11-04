@@ -1,8 +1,8 @@
 // Built-in catalog: town street and market (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, long, obj, tex } from "./types";
+import { defineFolder, long, obj, tex, type FolderCatalog } from "./types";
 
-export const TOWN_STREET_AND_MARKET = defineFolder("town-street-and-market", {
+export const TOWN_STREET_AND_MARKET = (): FolderCatalog => defineFolder("town-street-and-market", {
   props: [
     obj("market crate of apples", "cover", "low", "crate"),
     obj("fish barrel", "cover", "low", "barrel"),

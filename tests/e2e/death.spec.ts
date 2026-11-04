@@ -127,6 +127,16 @@ test("Castle High: a player's less-lethal pick is a request; the GM changes it a
   const dialog = player.getByRole("dialog", { name: "Death move" });
   await expect(dialog.getByText(/the GM decides/)).toBeVisible();
   await dialog.getByRole("button", { name: "Blaze of Glory" }).click();
+  // HD4 (answer 15b): the player's move waits for the GM's confirm.
+  await expect(dialog).toBeHidden();
+  await expect(player.getByRole("status").filter({ hasText: "Waiting for the GM to confirm Blaze of Glory." })).toBeVisible();
+  await expect(player.getByTestId("death-request")).toHaveText("Blaze of Glory: waiting for the GM");
+  await page.goto(`/campaigns/${campaignId}/party/${characterId}`);
+  const card = page.getByRole("group", { name: "Death move to confirm" });
+  await expect(card).toContainText("chose Blaze of Glory");
+  await card.getByRole("button", { name: "Confirm the death move" }).click();
+  await expect(card).toBeHidden();
+
   const finish = dialog.getByRole("button", { name: "End the action" });
   await expect(finish).toBeVisible();
   await dialog.getByRole("radio", { name: "Request: Sent home" }).check();
@@ -136,6 +146,8 @@ test("Castle High: a player's less-lethal pick is a request; the GM changes it a
   await expect(player.getByTestId("death-away-requested")).toHaveText("Requested");
   // Only the GM settles it.
   await expect(player.getByRole("button", { name: "Confirm" })).toHaveCount(0);
+  // User 2026-11-03: players can't undo death moves, even their own Blaze of Glory finish (no dice); the GM can.
+  await expect(player.getByRole("button", { name: "Undo death move" })).toHaveCount(0);
 
   // The GM sees the request on the dashboard's party card, then changes it on the sheet.
   await page.goto(`/campaigns/${campaignId}`);
@@ -164,4 +176,61 @@ test("the status row marks a hero dead after a confirm (FALLEN in the banner) an
 
   await status.getByRole("button", { name: "Active", exact: true }).click();
   await expect(page.getByTestId("character-status")).toHaveCount(0);
+});
+
+test("HD4: a player's death move waits for the GM, who sends it back, then confirms the next one and can undo it", async ({ page, browser }) => {
+  await signInAsTestGm(page);
+  await expect(page).toHaveURL("/");
+  const gm = await convexAs(page);
+  const name = `Wren ${crypto.randomUUID().slice(0, 8)}`;
+  const { campaignId } = await gm.mutation(api.campaigns.create, { frameId: "witherwild", name: `Death ${name}`, idempotencyKey: crypto.randomUUID() });
+  const code = await gm.mutation(api.members.rotateJoinCode, { campaignId: campaignId as Id<"campaigns"> });
+
+  const context = await browser.newContext();
+  const player = await context.newPage();
+  await signInAsTestGm(player, "e2e-player@example.test");
+  await expect(player).toHaveURL("/");
+  const playerApi = await convexAs(player);
+  await playerApi.mutation(api.members.joinByCode, { code });
+  const { characterId } = await playerApi.mutation(api.characters.create, {
+    campaignId: campaignId as Id<"campaigns">,
+    draft: bardDraft(name),
+    idempotencyKey: crypto.randomUUID(),
+  });
+  await playerApi.mutation(api.characters.adjustResource, { characterId, resource: "hp", delta: 5 });
+
+  // The player picks Risk It All: nothing is rolled; the sheet shows the wait.
+  await player.goto(`/campaigns/${campaignId}/party/${characterId}`);
+  const dialog = player.getByRole("dialog", { name: "Death move" });
+  await dialog.getByRole("button", { name: "Risk It All" }).click();
+  await expect(dialog).toBeHidden();
+  const waiting = player.getByTestId("death-waiting");
+  await expect(waiting.getByRole("status")).toHaveText("Waiting for the GM to confirm Risk It All.");
+  await expect(player.getByText(/Hope \d+, Fear \d+/)).toHaveCount(0);
+
+  // The GM sees it on the dashboard's party card, then sends it back from the sheet.
+  await page.goto(`/campaigns/${campaignId}`);
+  await expect(page.getByTestId("death-request")).toHaveText("Risk It All: waiting for the GM");
+  await page.goto(`/campaigns/${campaignId}/party/${characterId}`);
+  const card = page.getByRole("group", { name: "Death move to confirm" });
+  await expect(card).toContainText(`${name} chose Risk It All.`);
+  await card.getByRole("button", { name: "Send it back" }).click();
+  await expect(card).toBeHidden();
+
+  // The player chooses again: Avoid Death, and the GM confirms it; the dice roll only now.
+  await expect(waiting).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Avoid Death" }).click();
+  await expect(waiting.getByRole("status")).toHaveText("Waiting for the GM to confirm Avoid Death.");
+  await expect(card).toContainText("chose Avoid Death");
+  await card.getByRole("button", { name: "Confirm the death move" }).click();
+  await expect(page.getByRole("status").filter({ hasText: /Hope Die \d+ against level 1/ })).toBeVisible();
+  await expect(player.getByTestId("death-unconscious")).toHaveText("Unconscious");
+  await expect(waiting).toHaveCount(0);
+
+  // Undo still works: the GM's undo takes back the move and the request, and the move is due again.
+  await page.getByRole("region", { name: "Death moves" }).getByRole("button", { name: "Undo death move" }).click();
+  await expect(player.getByTestId("death-unconscious")).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  await context.close();
 });

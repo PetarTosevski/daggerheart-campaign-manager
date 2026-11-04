@@ -1,7 +1,9 @@
 import type { FunctionReturnType } from "convex/server";
 
-import type { CardEffect, CardUse, Cost, Limit, NumberSource, Step, TargetSpec } from "@/lib/domain/card-effects/types";
-import type { TraitId } from "@/lib/srd/types";
+import { rangeCheck, type Footprint } from "@/lib/domain/combat-actions/distance";
+import { limitPeriod } from "@/lib/domain/card-effects/availability";
+import type { CardEffect, CardUse, Cost, Limit, NumberSource, Payer, Range, Step, TargetSpec } from "@/lib/domain/card-effects/types";
+import { TRAIT_IDS, type TraitId } from "@/lib/srd/types";
 
 import type { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
@@ -14,7 +16,7 @@ import type { RollValues } from "../roll-controls";
  * No React here, so the unit tests read it directly.
  */
 
-export type HandView = FunctionReturnType<typeof api.combatCards.hand>;
+export type HandView = FunctionReturnType<typeof api.combatCardsReads.hand>;
 export type HandCard = HandView["loadout"][number];
 export type HandUse = HandCard["uses"][number];
 export type UseOutcome = FunctionReturnType<typeof api.combatCards.useCard>;
@@ -24,10 +26,19 @@ export type ChoiceAsk = NeedsChoice["asks"][number];
 export type CardChoice = { id: string; value: number | string | string[] | boolean };
 
 /** A creature on the map the dialog can offer: the actor ("self"), another PC, an enemy, an ally or a neutral token. */
-export type Creature = { tokenId: Id<"combatTokens">; name: string; side: "self" | "pc" | "enemy" | "ally" | "neutral" };
+export type Creature = {
+  tokenId: Id<"combatTokens">;
+  name: string;
+  side: "self" | "pc" | "enemy" | "ally" | "neutral";
+  /** Where the token stands (top-left square and size), for the dialog's range check (DA6); unknown: never greyed. */
+  at?: Footprint;
+};
 
-/** Who a use's own targets are, when the player picks them. `max` null: several, no fixed cap the client knows. */
-export type TargetAsk = { side: "enemy" | "ally" | "selfOrAlly" | "any"; max: number | null; range: string };
+/**
+ * Who a use's own targets are, when the player picks them. `max` null: several, no fixed cap the client knows.
+ * `area` / `areaRange`: the card's shape, when it names one (an area around a target measures from the first target).
+ */
+export type TargetAsk = { side: "enemy" | "ally" | "selfOrAlly" | "any"; max: number | null; range: string; area?: TargetSpec["area"]; areaRange?: Range };
 
 export type RecipientKey = "picked" | "allies" | "followUp";
 
@@ -49,6 +60,11 @@ export type UseForm = {
   choose: { stepId: string; label: string; options: { id: string; label: string }[]; count: number | null }[];
   /** The use makes an action roll: the Hand's roll-options strip applies to it (Experiences, advantage, Help; F8-I1). */
   rolls: boolean;
+  /**
+   * Plan lanes-2, E5 (dcm-u4pq): the use swaps a vault card into the loadout (`loadout` `swapWithVault`; Codex-Touched,
+   * CB p.333: "replace this card with any card from your vault"): the dialog asks which (`swapWith`).
+   */
+  swapWithVault?: boolean;
 };
 
 /** Optional steps the server takes unless declined (convex/lib/cardRunner.ts `DEFAULT_OPTIONALS`). */
@@ -88,7 +104,31 @@ export function targetAsk(use: Pick<CardUse, "targets">): TargetAsk | null {
   const t = use.targets;
   if (t === undefined || t.side === "trigger" || t.side === "self" || t.side === "point" || t.side === "object") return null;
   if (t.count.kind === "all") return null;
-  return { side: t.side, max: maxOf(t), range: t.range };
+  return { side: t.side, max: maxOf(t), range: t.range, ...(t.area !== undefined ? { area: t.area } : {}), ...(t.areaRange !== undefined ? { areaRange: t.areaRange } : {}) };
+}
+
+const BANDS: ReadonlySet<string> = new Set<Range>(["melee", "veryClose", "close", "far", "veryFar"]);
+const isBand = (range: string | undefined): range is Range => range !== undefined && BANDS.has(range);
+
+/**
+ * Whether a creature the dialog offers is out of the card's range (DA6, user answer 2026-10-30): it stays listed, greyed,
+ * and picking it sends the use for the GM's sanction (Q1). Mirrors the server's check (convex/lib/cardRunner.ts
+ * rangeOrigin): from the actor's token, with `areaRange` around yourself; an area around a point or a target measures
+ * the first target from the actor and the others from that first target. The actor itself, a creature whose position
+ * is unknown, and "weapon" / "unlimited" ranges are never greyed (the dialog doesn't know the weapon's range).
+ */
+export function outOfRange(ask: TargetAsk, creatures: readonly Creature[], picked: readonly string[], c: Creature): boolean {
+  if (c.side === "self" || c.at === undefined) return false;
+  const anchored = ask.area === "aroundPoint" || ask.area === "aroundTarget";
+  const anchorId = picked[0];
+  if (anchored && ask.areaRange !== undefined && anchorId !== undefined && anchorId !== c.tokenId) {
+    const anchor = creatures.find((x) => x.tokenId === anchorId);
+    if (anchor !== undefined && anchor.side !== "self" && anchor.at !== undefined) return !rangeCheck(anchor.at, c.at, ask.areaRange).inRange;
+  }
+  const actor = creatures.find((x) => x.side === "self")?.at;
+  const radius = ask.area === "aroundSelf" ? (ask.areaRange ?? ask.range) : ask.range;
+  if (actor === undefined || !isBand(radius)) return false;
+  return !rangeCheck(actor, c.at, radius).inRange;
 }
 
 const RECIPIENT_LABEL: Record<RecipientKey, string> = {
@@ -130,7 +170,13 @@ export function formFor(use: CardUse): UseForm {
     optionals: [],
     recipients: [],
     weapon: usesEitherWeapon(use.roll) || usesEitherWeapon(use.steps),
-    traits: use.roll?.kind === "trait" && Array.isArray(use.roll.trait) ? [...(use.roll.trait as readonly TraitId[])] : null,
+    // Plan lanes, E5 (dcm-fjh): "a reaction roll using a trait of your choice" (Attack of Opportunity, CB p.48) asks for any trait.
+    traits:
+      use.roll?.kind === "trait" && Array.isArray(use.roll.trait)
+        ? [...(use.roll.trait as readonly TraitId[])]
+        : use.roll?.kind === "reaction" && use.roll.anyTrait
+          ? [...TRAIT_IDS]
+          : null,
     gmDifficulty: use.roll !== undefined && "difficulty" in use.roll && use.roll.difficulty.kind === "gm",
     choose: [],
     rolls: use.roll !== undefined,
@@ -156,6 +202,7 @@ export function formFor(use: CardUse): UseForm {
       else if (step.to === "allies" || step.to === "selfAndAllies") addRecipient("allies", pickSide ?? "ally");
     }
     if (step.kind === "redirectDamage" && step.target === "picked") addRecipient("picked", step.pick?.side ?? "enemy");
+    if (step.kind === "loadout" && step.op === "swapWithVault") form.swapWithVault = true;
   });
   form.eithers = eitherCosts.flatMap((c, index) => (c.kind === "either" ? [{ index, options: c.options.map((o) => o.map(costLabel).join(" and ")) }] : []));
   return form;
@@ -196,7 +243,7 @@ export function fitsSide(c: Creature, side: TargetSpec["side"]): boolean {
 export function needsDialog(form: UseForm, opts: { spells: number; pickedEnemies: number; gm: boolean }): boolean {
   if (opts.spells > 1) return true;
   if (form.numbers.length || form.eithers.length || form.situations.length || form.optionals.length || form.recipients.length || form.choose.length) return true;
-  if (form.weapon || form.traits || (form.gmDifficulty && opts.gm)) return true;
+  if (form.weapon || form.traits || form.swapWithVault || (form.gmDifficulty && opts.gm)) return true;
   if (form.targets === null) return false;
   return !(form.targets.side === "enemy" && form.targets.max === 1 && opts.pickedEnemies > 0);
 }
@@ -321,18 +368,67 @@ export function usedRollOptions(request: { roll?: RollAnswers }): boolean {
   return r !== undefined && ((r.experienceIds?.length ?? 0) > 0 || (r.advantage ?? 0) > 0 || (r.disadvantage ?? 0) > 0 || (r.help ?? 0) > 0);
 }
 
-/** The server's after-the-roll asks answered: `opt:<step>` for a choose step, `split:<tokenId>` for a damage share. */
+/**
+ * Where the after-the-roll dialog keeps an ask's picks: a choose step's id (with its chooser, `<step>:<token>`, for a
+ * per-chooser pick), or `chain:<link>` for a repeating follow-up's next link (plan lanes-2 E1.4a, dcm-tn8u).
+ */
+export function askKey(a: ChoiceAsk): string {
+  if (a.kind === "choose") return a.chooserId !== undefined ? `${a.stepId}:${a.chooserId}` : a.stepId;
+  if (a.kind === "followUp") return `chain:${a.link}`;
+  return "split";
+}
+
+/**
+ * The server's after-the-roll asks answered: `opt:<step>` for a choose step, `by:<step>:<chooser>` for one chooser's pick
+ * (dcm-sc54, Critical Inspiration / Rousing Strike's per-ally picks), `chain:<link>` with the picked creatures of a
+ * follow-up's next link, `split:<tokenId>` for a damage share.
+ */
 export function answerChoices(asks: readonly ChoiceAsk[], options: Readonly<Record<string, readonly string[]>>, splits: Readonly<Record<string, number>>): CardChoice[] {
   const out: CardChoice[] = [];
   for (const a of asks) {
     if (a.kind === "choose") {
-      const picked = options[a.stepId] ?? [];
-      if (picked.length > 0) out.push({ id: `opt:${a.stepId}`, value: [...picked] });
+      const picked = options[askKey(a)] ?? [];
+      if (picked.length > 0) out.push({ id: a.chooserId !== undefined ? `by:${a.stepId}:${a.chooserId}` : `opt:${a.stepId}`, value: [...picked] });
+    } else if (a.kind === "followUp") {
+      const picked = options[askKey(a)] ?? [];
+      if (picked.length > 0) out.push({ id: askKey(a), value: [...picked] });
     } else {
       for (const tokenId of a.tokenIds) out.push({ id: `split:${tokenId}`, value: splits[tokenId] ?? 0 });
     }
   }
   return out;
+}
+
+/** What the Hand asks the map for before a use with an area on a picked square: its label, ranges and how many squares. */
+export type AreaPick = { label: string; radius: Range; placeWithin?: Range; squares: 1 | 2 };
+
+/**
+ * Plan lanes-2 E1.4a (Hand point picking): a use whose area goes on a square the player picks: a `point`-centred area
+ * (Mysterious Mist, Eclipse; one square) or a wall (Veil of Night, CB p.336: "between two points"; two squares). Null
+ * for any other use. The first such area counts (at any depth of the steps).
+ */
+export function areaPickOf(use: Pick<CardUse, "steps">): AreaPick | null {
+  const walk = (steps: readonly Step[]): AreaPick | null => {
+    for (const step of steps) {
+      if (step.kind === "area" && (step.area.centre === "point" || step.area.shape === "wall")) {
+        return { label: step.area.label, radius: step.area.radius, ...(step.area.placeWithin ? { placeWithin: step.area.placeWithin } : {}), squares: step.area.shape === "wall" ? 2 : 1 };
+      }
+      const inner =
+        step.kind === "choose"
+          ? step.options.flatMap((o) => o.steps)
+          : step.kind === "optional" || step.kind === "followUp"
+            ? step.steps
+            : step.kind === "save"
+              ? [...step.onFail, ...step.onSuccess]
+              : step.kind === "check"
+                ? [...step.then, ...step.otherwise, ...(step.table ?? []).flatMap((r) => r.steps)]
+                : [];
+      const found = inner.length > 0 ? walk(inner) : null;
+      if (found) return found;
+    }
+    return null;
+  };
+  return walk(use.steps);
 }
 
 /** "Recall: 2 Stress", "Recall: free" (a 0-cost card, or any card while the GM's rest is open; CB p.101, p.105). */
@@ -354,13 +450,35 @@ export const RANGE_LABEL: Record<string, string> = {
   unlimited: "Any range",
 };
 
-const PER_LABEL: Record<Limit["per"], string> = { rest: "rest", longRest: "long rest", session: "session", scene: "scene" };
+const PER_LABEL: Record<Limit["per"] | NonNullable<Limit["period"]>, string> = {
+  rest: "rest",
+  longRest: "long rest",
+  session: "session",
+  scene: "scene",
+  // Plan lanes, E5 (dcm-aym, dcm-c5h): a limit's `period` names the label when it has one.
+  gmTurn: "GM turn",
+  day: "day",
+  week: "week",
+};
 
-/** "Once per rest", "3× per scene", "Once per long rest on a success" (CB p.101). */
+/** "Once per rest", "3× per scene", "Once per long rest on a success", "Once per week on a failure" (CB p.101). */
 export function limitLabel(limit: Limit): string {
   const times = limit.times ?? 1;
   const on = limit.consumedOn === "success" ? " on a success" : limit.consumedOn === "failure" ? " on a failure" : "";
-  return `${times === 1 ? "Once" : `${times}×`} per ${PER_LABEL[limit.per]}${on}`;
+  return `${times === 1 ? "Once" : `${times}×`} per ${PER_LABEL[limitPeriod(limit)]}${on}`;
+}
+
+const PAYER_LABEL: Record<Payer, string> = {
+  self: "",
+  triggerSubject: "They pay: ",
+  triggerSource: "They pay: ",
+  picked: "The ally pays: ",
+  chooser: "The chooser pays: ",
+};
+
+/** Plan lanes, E5 (dcm-8yr, dcm-uj0): a cost badge's prefix when another creature pays it (Tactician, Rune Ward's holder). */
+export function payerPrefix(paidBy: Payer | undefined): string {
+  return PAYER_LABEL[paidBy ?? "self"];
 }
 
 /** A badge on a card face: a cost (gold), a limit (blue) or how it is used (passive, reaction, out of combat). */
@@ -381,11 +499,11 @@ export function cardBadges(card: Pick<HandCard, "state" | "uses">, effect: CardE
   if (playable.length > 1) return [{ kind: "how", text: `${playable.length} spells` }];
   const use = effect?.uses.find((u) => u.id === playable[0]!.useId);
   if (!use) return [];
-  const badges: Badge[] = (use.costs ?? []).map((c) => ({ kind: "cost", text: costLabel(c) }));
+  const badges: Badge[] = (use.costs ?? []).map((c) => ({ kind: "cost", text: `${payerPrefix(use.paidBy)}${costLabel(c)}` }));
   for (const step of use.steps) {
     if (step.kind === "pay") {
       const when = step.when?.includes("success") ? "On a success: " : "";
-      badges.push(...step.costs.map((c) => ({ kind: "cost" as const, text: `${when}${costLabel(c)}` })));
+      badges.push(...step.costs.map((c) => ({ kind: "cost" as const, text: when ? `${when}${payerPrefix(step.paidBy).toLowerCase()}${costLabel(c)}` : `${payerPrefix(step.paidBy)}${costLabel(c)}` })));
     }
   }
   if (use.limit) badges.push({ kind: "limit", text: limitLabel(use.limit) });

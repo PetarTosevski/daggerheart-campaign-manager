@@ -179,7 +179,7 @@ describe("the tier 3 core table", () => {
         const situations = reqs.flatMap((r) => (r.kind === "situation" ? [r.text] : []));
         const tokens = reqs.reduce((n, r) => (r.kind === "tokens" ? Math.max(n, r.atLeast ?? 0) : n), 0);
         const hp = reqs.reduce((n, r) => (r.kind === "hpMarkedAtLeast" && typeof r.value === "number" ? Math.max(n, r.value) : n), 0);
-        const tags = reqs.flatMap((r) => (r.kind === "hasCondition" && r.condition.kind === "tag" ? [r.condition.tag] : []));
+        const tags = reqs.flatMap((r) => (r.kind === "hasCondition" && !r.lacks && r.condition.kind === "tag" ? [r.condition.tag] : []));
         const result = run(effect, {
           ...context(effect.adversaryId),
           self: selfOf(effect.adversaryId, { hp, tags }),
@@ -270,21 +270,37 @@ describe("shared features", () => {
   it.each([
     ["greater-earth-elemental", "Crushing Blows"],
     ["huge-green-ooze", "Acidic Form"],
-  ] as const)("%s %s: a hit target marks an Armor Slot without its benefit; no slot is a manual extra HP", (id, feature) => {
+  ] as const)("%s %s: a hit target marks an Armor Slot without its benefit; with no free slot an extra HP (dcm-18i)", (id, feature) => {
     expect(fired(id, { kind: "onHit", attack: "feature" })).toContain(`${feature}:main:auto`);
     const plan = runUse(id, feature, [], { spotlit: false, trigger: { subject: pc("mira", { armor: 1 }) } });
-    expect(after(plan, "mira")).toMatchObject({ armor: 2 });
+    expect(after(plan, "mira")).toMatchObject({ armor: 2, hp: 0 });
     expect(ofKind(plan, "mark")).toEqual([expect.objectContaining({ targetId: "mira", track: "armor", amount: 1, noBenefit: true })]);
-    expect(prompts(plan, "manual")[0]).toMatchObject({ targetIds: ["mira"] });
+    expect(prompts(plan, "manual")).toEqual([]);
+    // Plan lanes, SRD-A2: all 4 Armor Slots marked: no slot to mark, so the target marks an additional HP instead.
+    const full = runUse(id, feature, [], { spotlit: false, trigger: { subject: pc("mira", { armor: 4 }) } });
+    expect(ofKind(full, "mark")).toEqual([
+      expect.objectContaining({ targetId: "mira", track: "hp", amount: 1 }),
+      expect.objectContaining({ targetId: "mira", track: "armor", amount: 1, noBenefit: true }),
+    ]);
+    expect(after(full, "mira")).toMatchObject({ armor: 4, hp: 1 });
   });
 });
 
 // ---------------------------------------------------------------- adversary by adversary
 
 describe("Adult Flickerfly (CB p.228)", () => {
-  it("Never Misses: before every attack, a manual halved Evasion", () => {
-    expect(fired("adult-flickerfly", { kind: "onAttack", stage: "before", attack: "standard" })).toEqual(["Never Misses:main:auto"]);
-    expect(prompts(runUse("adult-flickerfly", "Never Misses", [], { spotlit: false }), "manual")[0]!.text).toMatch(/Evasion is halved/);
+  it("Never Misses: the attacksHalveEvasion flag halves the target's Evasion on the standard attack (lanes-2 S4, dcm-4c9m)", () => {
+    expect(fired("adult-flickerfly", { kind: "onAttack", stage: "before", attack: "standard" })).toEqual([]);
+    const passives = passiveSummary(effectsOf("adult-flickerfly"), state());
+    expect(passives.flags).toContain("attacksHalveEvasion");
+    // d20 5 + 3 (ATK) = 8 beats Bram's Evasion 15 halved (8, rounded up); 3d20 = 1 + 1 + 1 = 3 physical.
+    const rng = queueRng([5, 1, 1, 1]);
+    const result = runStandardAttack(context("adult-flickerfly", { passives, targets: [bram], rng }));
+    expect(result.ok && result.plan.incoming).toEqual([hitOn("bram", 3, "physical", { attackTotal: 8 })]);
+    rng.done();
+    // Without the passive the same roll misses.
+    const plain = runStandardAttack(context("adult-flickerfly", { targets: [bram], rng: queueRng([5]) }));
+    expect(plain.ok && plain.plan.incoming).toEqual([]);
   });
 
   it("Deadly Flight: only while flying (the flag)", () => {
@@ -343,12 +359,16 @@ describe("Demon of Avarice (CB p.228)", () => {
     expect(hoard.self.tokens).toEqual({ before: 0, after: 3 });
   });
 
-  it("Money Talks: handfuls the PCs spend go to the Demon; paying gold instead of HP is the PC's (manual)", () => {
+  it("Money Talks: handfuls the PCs spend go to the Demon; the hit PC may pay gold instead of HP (dcm-5cn5)", () => {
     const collect = runUse("demon-of-avarice", "Money Talks", [], { useId: "collect", tokens: 1, trigger: { amount: 2 } });
     expect(collect.self.tokens).toEqual({ before: 1, after: 3 });
     expect(fired("demon-of-avarice", { kind: "onTargetMarksHp", attack: "standard" })).toEqual(["Money Talks:pay-instead:auto"]);
     expect(fired("demon-of-avarice", { kind: "onTargetMarksHp", attack: "feature" })).toEqual([]);
-    expect(prompts(runUse("demon-of-avarice", "Money Talks", [], { useId: "pay-instead", trigger: { subject: mira } }), "manual")[0]).toMatchObject({ targetIds: ["mira"] });
+    // Lanes-2, S4.4: an optional each hit PC decides, converting HP marks into gold (the damage window's gold grant).
+    expect(effectOf("demon-of-avarice", "Money Talks").uses.find((u) => u.id === "pay-instead")!.steps).toEqual([
+      expect.objectContaining({ kind: "optional", by: { to: "targets" }, steps: [{ kind: "convertMarks", to: "targets", from: "hp", into: "gold" }] }),
+    ]);
+    expect(prompts(runUse("demon-of-avarice", "Money Talks", [], { useId: "pay-instead", trigger: { subject: mira } }), "manual")).toEqual([]);
   });
 
   it("Numbers Must Go Up: the handfuls add to its attack rolls", () => {
@@ -460,7 +480,7 @@ describe("Demon of Jealousy (CB p.229)", () => {
     expect(ofKind(plan, "fold")).toEqual([expect.objectContaining({ targetIds: ["mira"], amount: 3 })]);
   });
 
-  it("What's Yours Is Mine: Severe damage within Very Close; a Fear forces a Finesse save, the theft is manual", () => {
+  it("What's Yours Is Mine: Severe damage within Very Close; a Fear forces a Finesse save, a failure steals an item (dcm-0gh)", () => {
     expect(fired("demon-of-jealousy", { kind: "pcMarksHp", band: "veryClose", severity: "severe" })).toEqual(["What's Yours Is Mine:main:reaction"]);
     expect(fired("demon-of-jealousy", { kind: "pcMarksHp", band: "veryClose", severity: "major" })).toEqual([]);
     expect(attempt("demon-of-jealousy", "What's Yours Is Mine", { trigger: { subject: mira }, fearConfirmed: false })).toMatchObject({ ok: false, reason: "confirmFear" });
@@ -468,7 +488,7 @@ describe("Demon of Jealousy (CB p.229)", () => {
     const save = prompts(plan, "pcSave");
     expect(save[0]).toMatchObject({ targetIds: ["mira"] });
     expect(saveStep(save[0]!)).toMatchObject({ trait: "finesse" });
-    expect(saveStep(save[0]!).onFail[0]).toMatchObject({ kind: "manual" });
+    expect(saveStep(save[0]!).onFail).toEqual([expect.objectContaining({ kind: "inventory", to: "targets", op: "take", item: "any" })]);
   });
 });
 
@@ -552,11 +572,16 @@ describe("Dryad (CB p.230)", () => {
 });
 
 describe("Greater Earth Elemental (CB p.230)", () => {
-  it("Immovable Object: physical damage is reduced by 7; a push is a manual two ranges shorter", () => {
+  it("Immovable Object: physical damage is reduced by 7; a forced move is two ranges shorter (passive), by hand a manual", () => {
     expect(fired("greater-earth-elemental", { kind: "onDamaged", stage: "would", damageType: "physical" })).toEqual(["Immovable Object:reduce:auto"]);
     expect(fired("greater-earth-elemental", { kind: "onDamaged", stage: "would", damageType: "magic" })).toEqual([]);
     expect(ofKind(runUse("greater-earth-elemental", "Immovable Object", [], { useId: "reduce" }), "fold")).toEqual([expect.objectContaining({ targetIds: ["self"], amount: 7 })]);
     expect(prompts(runUse("greater-earth-elemental", "Immovable Object", [], { useId: "immovable" }), "manual")).toHaveLength(1);
+    // Lanes-2, S4.4 (dcm-1yo): the passive the server's forced moves read (forcedMoveReduceOf).
+    expect(effectOf("greater-earth-elemental", "Immovable Object").uses.find((u) => u.id === "push")).toMatchObject({
+      activation: { kind: "passive" },
+      modifiers: [{ kind: "mod", mod: { kind: "forcedMoveReduce", steps: 2 } }],
+    });
   });
 
   it("Rockslide: a Stress; an Agility save (19) in front within Close: 2d12+5 and Vulnerable, half on a success", () => {
@@ -665,10 +690,12 @@ describe("Hydra (CB p.231)", () => {
     expect(runUse("hydra", "Many-Headed Menace", [], { useId: "lose-head", tokens: 3 }).self.tokens).toEqual({ before: 3, after: 2 });
   });
 
-  it("Relentless (X): up to five spotlights (the most heads); the heads limit is a manual reminder", () => {
-    expect(passiveSummary(effectsOf("hydra"), state()).relentless).toBe(5);
-    expect(fired("hydra", { kind: "onSpotlight", tokens: 3 }, { tokens: 3 })).toEqual(["Relentless (X):heads:auto"]);
-    expect(prompts(runUse("hydra", "Relentless (X)", [], { useId: "heads" }), "manual")[0]!.text).toMatch(/heads/);
+  it("Relentless (X): X is its heads, the tokens on its stat block (dcm-gx1)", () => {
+    expect(passiveSummary(effectsOf("hydra"), state({ tokens: 3 })).relentless).toBe(3);
+    expect(passiveSummary(effectsOf("hydra"), state({ tokens: 5 })).relentless).toBe(5);
+    // No heads counted yet: at least one spotlight.
+    expect(passiveSummary(effectsOf("hydra"), state()).relentless).toBe(1);
+    expect(fired("hydra", { kind: "onSpotlight", tokens: 3 }, { tokens: 3 })).toEqual([]);
   });
 
   it("Regeneration: with marked HP, a Fear clears a HP and grows two heads (up to five)", () => {
@@ -678,6 +705,8 @@ describe("Hydra (CB p.231)", () => {
     expect(plan.self.after.hp).toBe(1);
     expect(plan.self.tokens).toEqual({ before: 2, after: 4 });
     expect(runUse("hydra", "Regeneration", [], { self: selfOf("hydra", { hp: 2 }), tokens: 4 }).self.tokens.after).toBe(5);
+    // Plan lanes, SRD-A2 (dcm-2f3): not while Dazed (Magical Weakness).
+    expect(attempt("hydra", "Regeneration", { self: selfOf("hydra", { hp: 2, tags: ["Dazed"] }) })).toMatchObject({ ok: false, reason: "requirement" });
   });
 
   it("Terrifying Chorus: every PC within Far loses 2 Hope", () => {
@@ -687,13 +716,13 @@ describe("Hydra (CB p.231)", () => {
     ]);
   });
 
-  it("Magical Weakness: magic damage Dazes it (immune to magic; Regeneration blocked is manual)", () => {
+  it("Magical Weakness: magic damage Dazes it (immune to magic; Regeneration's own requirement blocks it)", () => {
     expect(fired("hydra", { kind: "onDamaged", stage: "did", damageType: "magic" })).toContain("Magical Weakness:main:reaction");
     expect(fired("hydra", { kind: "onDamaged", stage: "did", damageType: "physical" })).not.toContain("Magical Weakness:main:reaction");
     const plan = runUse("hydra", "Magical Weakness", [], { spotlit: false });
     expect(plan.self.after.tags).toEqual(["Dazed"]);
     expect(ofKind(plan, "effect")).toEqual([expect.objectContaining({ targetId: "self", label: "Dazed", endsWhen: "the next roll with Fear" })]);
-    expect(prompts(plan, "manual")[0]!.text).toMatch(/Regeneration/);
+    expect(prompts(plan, "manual")).toEqual([]);
   });
 });
 
@@ -807,10 +836,11 @@ describe("Vault Guardians (CB p.232-233)", () => {
     expect(prompts(runUse("vault-guardian-sentinel", "Kinetic Slam", [], { trigger: { subject: mira } }), "move")).toEqual([expect.objectContaining({ targetIds: ["mira"] })]);
   });
 
-  it("Sentinel Box In: a Stress tags one target Boxed In (its disadvantage is manual)", () => {
+  it("Sentinel Box In: a Stress tags one target Boxed In, one at a time (dcm-vkp; its disadvantage is manual)", () => {
     const plan = runUse("vault-guardian-sentinel", "Box In", [], { targets: [mira] });
     expect(after(plan, "mira")!.tags).toEqual(["Boxed In"]);
     expect(prompts(plan, "manual")).toHaveLength(1);
+    expect(useOf("vault-guardian-sentinel", "Box In").exclusive).toBe(true);
   });
 
   it("Sentinel Mana Bolt: a Fear; an Agility save around a point: 2d8+20 magic and knocked back, half on a success", () => {

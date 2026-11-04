@@ -18,7 +18,7 @@ async function gmCreatesCampaign(page: Page, frame: string) {
 }
 
 async function openWorld(page: Page) {
-  await page.getByRole("navigation", { name: "Campaign sections" }).getByRole("link", { name: "World" }).click();
+  await page.getByRole("navigation", { name: "Campaign sections" }).getByRole("link", { name: "World Map" }).click();
   const map = page.getByRole("application", { name: /^Map of/ });
   await expect(map).toBeVisible();
   return map;

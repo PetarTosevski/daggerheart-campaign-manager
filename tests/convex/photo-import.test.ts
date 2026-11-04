@@ -4,7 +4,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { DEFAULT_MODEL, PHOTO_MAX_BYTES } from "../../convex/photoImport";
 import { messagesResponse, validDraft, warriorReading } from "../fixtures/photo-import";
-import { errorCode, GM_EMAIL, key, OTHER_EMAIL, setupWithCampaign, useAllowlist } from "./helpers";
+import { errorCode, GM_EMAIL, imageBlob, imageBytes, key, OTHER_EMAIL, setupWithCampaign, useAllowlist } from "./helpers";
 
 const PLAYER_EMAIL = "player@example.com";
 
@@ -29,7 +29,7 @@ async function fail(promise: Promise<unknown>): Promise<unknown> {
 /** Stores a file; convex-test records no content type, so it is patched in (as in upload-claims.test.ts). */
 const store = (s: Setup, contentType = "image/jpeg", bytes = 64) =>
   s.t.run(async (ctx) => {
-    const id = await ctx.storage.store(new Blob([new Uint8Array(bytes)], { type: contentType }));
+    const id = await ctx.storage.store(imageBlob(contentType, bytes));
     await (ctx.db as unknown as { patch: (id: Id<"_storage">, value: { contentType: string }) => Promise<void> }).patch(id, { contentType });
     return id;
   });
@@ -145,6 +145,7 @@ describe("photo import", () => {
     const s = await setup();
     // 100 001 bytes: several encoding slices, and a length that isn't a multiple of 3.
     const bytes = Uint8Array.from({ length: 100_001 }, (_, i) => (i * 37) % 256);
+    bytes.set(imageBytes("image/png").subarray(0, 8)); // the byte check (CF16) needs a real PNG header
     const storageId = await s.t.run(async (ctx) => {
       const id = await ctx.storage.store(new Blob([bytes], { type: "image/png" }));
       await (ctx.db as unknown as { patch: (id: Id<"_storage">, value: { contentType: string }) => Promise<void> }).patch(id, { contentType: "image/png" });
@@ -242,7 +243,7 @@ describe("photo import", () => {
     expect(log).toEqual([expect.objectContaining({ kind: "import", visibility: "public", undoable: false })]);
 
     // The player sees it like any other character.
-    const view = await s.player.query(api.characters.get, { characterId });
+    const view = await s.player.query(api.charactersReads.get, { characterId });
     expect(view?.sheet.level).toBe(5);
   });
 

@@ -32,7 +32,11 @@
 .db-reason{margin:0;padding:10px 12px;border:1px dashed rgba(91,43,43,.35);border-radius:8px;background:rgba(91,43,43,.05);display:flex;flex-wrap:wrap;gap:6px 18px}
 .db-reason legend{padding:0 4px}
 .db-reason label{display:inline-flex;align-items:center;gap:8px;min-height:44px;font-size:16px;cursor:pointer}
-.db-reason input{width:18px;height:18px;color-scheme:light;accent-color:var(--sheet-wine,#5b2b2b)}
+.db-reason input{width:18px;height:18px;accent-color:var(--sheet-wine,#5b2b2b)}
 .db-split{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;font-size:16px}
 .db-split .sh-num{width:88px;min-height:48px;text-align:center;font-size:20px}
 .db-alert{margin:0;font-size:15px;color:#8e2b2b}
+
+/* HD4: a player's death move waiting for the GM; the GM's confirm card (answer 15b). */
+.db-confirm{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border:1.5px solid var(--sheet-wine,#5b2b2b);border-radius:10px;background:#fffaf0;color:var(--sheet-ink,#2a1f14);font-size:16px}
+.db-wait p{font-size:16px;color:var(--sheet-ink-soft,#4a3a26)}

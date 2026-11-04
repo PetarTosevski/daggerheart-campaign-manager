@@ -39,7 +39,7 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { campaignQuery, keyedGmMutation, keyedUserMutation } from "../lib/functions";
 import { applyRule } from "../lib/mechanics";
 import { atLeast, campaignAccess } from "../lib/permissions";
-import { applyTrackerRule, assertTrackerFrame, readTracker, TRACKER_SCHEMA_VERSION, writeTracker } from "../lib/trackers";
+import { assertTrackerFrame, readTracker, TRACKER_SCHEMA_VERSION, writeTracker } from "../lib/trackers";
 import { recordHistory } from "../tables/history";
 
 const FRAME = { frameId: FIVE_BANNERS_FRAME_ID };
@@ -368,11 +368,9 @@ export const advanceWeek = keyedGmMutation({
     const campaignId = ctx.campaign._id;
     return ctx.once("five_banners_advance_week", { picks }, async () => {
       const objectives = await listObjectives(ctx, campaignId);
-      const plan = await applyTrackerRule("WEEK_RULE", () =>
-        planWeekAdvance(
-          objectives.map((o) => ({ id: o._id, nation: o.nation, name: o.name, status: o.status, currentValue: o.currentValue })),
-          picks,
-        ),
+      const plan = planWeekAdvance(
+        objectives.map((o) => ({ id: o._id, nation: o.nation, name: o.name, status: o.status, currentValue: o.currentValue })),
+        picks,
       );
       const now = Date.now();
       const advanced: Id<"countdowns">[] = [];

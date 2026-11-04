@@ -14,8 +14,8 @@ const KIND_LABEL = { short: "Short rest", long: "Long rest" } as const;
 
 /** The dashboard's rest panel: the GM starts, finishes, interrupts and undoes party rests; players see the open rest. */
 export function Launcher({ campaignId, isGm }: CampaignSlotProps) {
-  const state = useQuery(api.rests.current, { campaignId });
-  const party = useQuery(api.characters.partySummary, { campaignId });
+  const state = useQuery(api.restsReads.current, { campaignId });
+  const party = useQuery(api.charactersReads.partySummary, { campaignId });
   const start = useIntent(api.rests.start);
   const finish = useIntent(api.rests.finish);
   const interrupt = useIntent(api.rests.interrupt);
@@ -76,6 +76,33 @@ export function Launcher({ campaignId, isGm }: CampaignSlotProps) {
                   Undo rest
                 </BrandButton>
               ) : null}
+            </div>
+          ) : null}
+          {last !== null && last.resultsOpen ? (
+            // DA5: the short rest's results while the Oasis window is open (HF 27). DA15: the party's pool (one reroll
+            // per Duneborne); each holder closes their own panel on their sheet, and the group goes once all have.
+            <div role="group" aria-label="Rest results" className="flex flex-col gap-2 text-[14px] text-[#c9d2cf]">
+              <ul aria-label="Downtime dice" className="m-0 flex list-none flex-col gap-1 p-0">
+                {last.dice.map((d, i) => {
+                  const name = (id: string) => party.find((c) => c._id === id)?.sheet.name ?? "A PC";
+                  return (
+                    // The dice never move: the roll order is their identity.
+                    <li key={i}>
+                      <strong className="text-parchment">{name(d.characterId)}</strong>: {MOVE_LABELS[d.move]}
+                      {d.targetId !== undefined ? ` on ${name(d.targetId)}` : ""}, d{d.sides} {d.value} + tier {d.bonus}
+                      {d.rerolls.length > 0 ? ` (Oasis: first ${d.rolled})` : ""}
+                    </li>
+                  );
+                })}
+              </ul>
+              <span data-testid="oasis-pool">
+                Oasis (HF 27): {last.oasisLeft} {last.oasisLeft === 1 ? "reroll" : "rerolls"} left for the party. Still open:{" "}
+                {last.oasisHolders
+                  .filter((h) => !last.oasisClosed.includes(h))
+                  .map((h) => party.find((c) => c._id === h)?.sheet.name ?? "A PC")
+                  .join(", ")}
+                .
+              </span>
             </div>
           ) : null}
           {isGm && last !== null && last.kind === "long" && last.status === "finished" ? <LongTermAfterRest campaignId={campaignId} /> : null}

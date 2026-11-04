@@ -1,0 +1,249 @@
+/*
+ * "Areas on the map" (plan combat-hud H5.3; GMDesktop 'Areas' `.ar`): the GM's area panel, bottom right of the pop
+ * region above the dock (plan combat-hud H9.2, GMDesktop `.gmc .ar`: right 182, bottom 80, clear of the dock and the
+ * Player view box; 360 wide; tablet right 12, bottom 74, 320 wide). The pop region moves left of the sheet panel while
+ * one is open (shell.css), so the panel does too.
+ */
+.hud-areas {
+  position: absolute;
+  right: 182px;
+  bottom: 80px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  /* Clear of the Fear banner and the discs hanging at the top. */
+  max-height: calc(100% - 80px - 200px);
+  overflow: auto;
+  padding: 16px;
+  border-radius: var(--hud-r-panel);
+  background: rgba(13, 20, 23, 0.96);
+  box-shadow:
+    0 0 0 1px #3a4d54,
+    0 16px 40px rgba(0, 0, 0, 0.55);
+  color: var(--hud-ink);
+  outline: none;
+}
+.hud-areas:focus-visible {
+  box-shadow:
+    0 0 0 2px var(--hud-fear-text),
+    0 16px 40px rgba(0, 0, 0, 0.55);
+}
+.hud-areas-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hud-areas h2 {
+  flex: 1;
+  margin: 0;
+  font: 700 15px/1 var(--hud-font-display);
+  color: var(--hud-fear-text);
+}
+.hud-areas h3 {
+  margin: 6px 0 0;
+  font: 700 13px/1 var(--hud-font-display);
+  color: var(--hud-gold-text);
+}
+.hud-areas-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--hud-line-2);
+  border-radius: 50%;
+  background: var(--hud-inset);
+  color: var(--hud-ink);
+  cursor: pointer;
+}
+.hud-areas-x svg {
+  width: 16px;
+  height: 16px;
+}
+/*
+ * The header's fold button (user answer 2026-11-02, dcm-bxp.99.32.28): the whole title unfolds / folds the panel.
+ * Folded, only the header bar shows, so the tokens under the panel take clicks again.
+ */
+.hud-areas-fold {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.hud-areas-fold::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-135deg) translate(-2px, -2px);
+}
+.hud-areas-fold[aria-expanded="false"]::after {
+  transform: rotate(45deg) translate(-2px, -2px);
+}
+.hud-areas-fold:focus-visible {
+  outline: 2px solid var(--hud-fear-text);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.hud-areas-folded {
+  padding: 8px 12px 8px 16px;
+}
+.hud-areas-b {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hud-areas-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hud-areas-i {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 12px;
+  background: #121b1f;
+}
+.hud-areas-t {
+  flex: 1;
+  min-width: 120px;
+  display: flex;
+  flex-direction: column;
+}
+.hud-areas-t b {
+  font-size: 13px;
+}
+.hud-areas-t span,
+.hud-areas-none {
+  font-size: 11.5px;
+  color: var(--hud-muted);
+}
+.hud-areas-none {
+  margin: 0;
+}
+.hud-areas-sw {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #0f0c1c;
+  box-shadow: inset 0 0 0 2px #5b4a8f;
+}
+.hud-areas-sw-wall {
+  height: 8px;
+  border-radius: 4px;
+}
+.hud-areas .hud-btn {
+  padding: 0 13px;
+  font-weight: 600;
+}
+.hud-areas-sel,
+.hud-areas-f input[type="text"],
+.hud-areas-f select {
+  height: 34px;
+  border-radius: 9px;
+  border: 1px solid var(--hud-line-2);
+  background: #0b1214;
+  color: var(--hud-ink);
+  padding: 0 10px;
+  font: inherit;
+  font-size: 13px;
+}
+.hud-areas-sel {
+  height: 32px;
+  padding: 0 6px;
+}
+.hud-areas-f {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  align-items: end;
+}
+.hud-areas-f label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--hud-muted);
+}
+.hud-areas-f .hud-areas-c {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  font-size: 12.5px;
+  color: var(--hud-ink);
+}
+.hud-areas-seg {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--hud-inset);
+}
+.hud-areas-seg button {
+  flex: 1;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #c8d3d0;
+  font-size: 12px;
+  cursor: pointer;
+}
+.hud-areas-seg button[aria-pressed="true"] {
+  background: #1f1a33;
+  color: var(--hud-fear-text);
+  box-shadow: inset 0 0 0 1px var(--hud-fear);
+}
+.hud-areas .hud-areas-go {
+  background: var(--hud-fear-text);
+  color: var(--hud-fear-ink);
+}
+.hud-areas-seg button:focus-visible,
+.hud-areas-x:focus-visible,
+.hud-areas-f input:focus-visible,
+.hud-areas-f select:focus-visible,
+.hud-areas-sel:focus-visible {
+  outline: 2px solid var(--hud-gold);
+  outline-offset: 2px;
+}
+.hud-areas-err {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--hud-danger-bg);
+  color: var(--hud-danger);
+  font-size: 12.5px;
+}
+@media (max-width: 1180px) {
+  .hud-areas {
+    width: 320px;
+  }
+  /* GMTablet `.tab .ar` (H9.2): bottom right above the dock; tablet.css's older "under the Fear banner" placement goes. */
+  .hud-root[data-role="gm"] .hud-areas {
+    top: auto;
+    right: 12px;
+    bottom: 74px;
+    max-height: calc(100% - 74px - 232px);
+  }
+}

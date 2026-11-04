@@ -1,0 +1,138 @@
+/*
+ * The sheet drawer's kept parts (plan sheet-drawer, SD6; combat-hud H8.1 deleted the drawer dialog): the class
+ * controls (counters, Flying, Beastform, stances; in the HUD sheet since H9.5), the D5 Use and the feature Use flow the
+ * HUD's sheet shows. Loaded by `hud/sheet/panel.tsx`. Colours are the page's tokens (--cm-*, combat-map.css).
+ */
+
+.sd-grey {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.sd-grey[data-greyed="true"] {
+  opacity: 0.55;
+}
+
+/* ---------------------------------------------------------------- switch (the look of CA6's "Play for this character") */
+
+.sd-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.sd-check input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--cm-acc, #e3b45a);
+}
+
+/* ---------------------------------------------------------------- trackers */
+
+.sd-chips {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sd-chip {
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--cm-border, #33444a);
+  font-size: 13px;
+}
+.sd-error {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--cm-danger-border, #5a3330);
+  color: var(--cm-danger, #ffb4a8);
+  font-size: 14px;
+}
+.sd-boundary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* ---------------------------------------------------------------- features */
+
+.sd-flying {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.sd-shift-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sd-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--cm-border, #33444a);
+  font-size: 12px;
+  color: var(--cm-muted, #9fb2b6);
+  white-space: nowrap;
+}
+.sd-badge-on {
+  margin-left: 8px;
+  color: var(--cm-live-text, #9fe7bb);
+  border-color: var(--cm-live-dot, #5fd38d);
+}
+.sd-shift .cm-btn,
+.sd-refocus .cm-btn {
+  min-height: 44px;
+}
+.sd-stances {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.sd-focus {
+  margin: 0;
+}
+.sd-refocus,
+.sd-shift {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+}
+.sd-d5,
+.sd-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+  margin-top: 8px;
+}
+.sd-form {
+  margin: 0 0 8px;
+}
+.sd-d5 .cm-btn,
+.sd-form .cm-btn,
+.sd-flying .cm-btn {
+  min-height: 44px;
+}
+.sd-shift-buttons {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ---------------------------------------------------------------- phones */

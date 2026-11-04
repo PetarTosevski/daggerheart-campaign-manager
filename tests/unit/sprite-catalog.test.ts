@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { MAP_LIGHT_REACH, OBJECT_KINDS, SIGHT_DEFAULTS, TERRAINS, isLightObject } from "@/lib/domain/combat-map";
 import {
   CATALOG,
-  CATALOG_ENTRIES,
+  catalogEntries,
   COMMON_FOLDER,
   DEFAULT_SETTING,
   EMPTY_MANIFEST,
@@ -152,7 +152,7 @@ describe("catalog vs docs/sprite-packs/prompts.md", () => {
 
   it("extra sheets: the village (town-street-and-market/large-2, P4V) and batch 2 (props-2, large-2 or the town's large-3, terrain-2 in every folder, P11)", () => {
     const counts = new Map<string, number>();
-    for (const e of CATALOG_ENTRIES.filter((x) => x.extraSheet !== undefined)) {
+    for (const e of catalogEntries().filter((x) => x.extraSheet !== undefined)) {
       const id = `${folderOfKey(e.key)}/${e.extraSheet}`;
       counts.set(id, (counts.get(id) ?? 0) + 1);
     }
@@ -165,11 +165,11 @@ describe("catalog vs docs/sprite-packs/prompts.md", () => {
     expected.set("town-street-and-market/large-2", 9);
     expect(Object.fromEntries([...counts].sort())).toEqual(Object.fromEntries([...expected].sort()));
     // Every extra-sheet object is placed by sprite ref only, never as a Classic stand-in.
-    for (const e of CATALOG_ENTRIES) if (e.extraSheet && e.category === "object") expect(e.standIn, e.key).toBe(false);
+    for (const e of catalogEntries()) if (e.extraSheet && e.category === "object") expect(e.standIn, e.key).toBe(false);
   });
 
   it("keys are unique and match <folder>/<slug> (D8)", () => {
-    const keys = CATALOG_ENTRIES.map((e) => e.key);
+    const keys = catalogEntries().map((e) => e.key);
     expect(new Set(keys).size).toBe(keys.length);
     // 20 folders x 29 primary items, the village (9), batch 2 (20 x 29, P11).
     expect(keys).toHaveLength(20 * (16 + 9 + 4) + 9 + 20 * (16 + 9 + 4));
@@ -232,7 +232,7 @@ describe("extra sheets: new items, not variants (user answer 2026-10-21)", () =>
 
 describe("traits (D2, D3, D4, D5, D6, Q1)", () => {
   it("sizes are within 1..4; props 1 x 1, large 2 x 2 or long 2 x 1 rect (extra-sheet items: any rect size), textures TEXTURE_SQUARES (D4)", () => {
-    for (const e of CATALOG_ENTRIES) {
+    for (const e of catalogEntries()) {
       for (const side of [e.w, e.h]) {
         expect(side).toBeGreaterThanOrEqual(SPRITE_SIZE_MIN);
         expect(side).toBeLessThanOrEqual(SPRITE_SIZE_MAX);
@@ -249,7 +249,7 @@ describe("traits (D2, D3, D4, D5, D6, Q1)", () => {
   });
 
   it("every light sprite's Classic kind is a light kind with the same reach; no other sprite maps to a light kind (D2)", () => {
-    for (const e of CATALOG_ENTRIES) {
+    for (const e of catalogEntries()) {
       if (e.category !== "object") continue;
       const kind = e.classic.kind;
       expect(OBJECT_KINDS).toContain(kind);
@@ -265,7 +265,7 @@ describe("traits (D2, D3, D4, D5, D6, Q1)", () => {
 
   it("gives torch, campfire and faint-glow light exactly to the Q1 lists", () => {
     const withLight = (light: string) =>
-      CATALOG_ENTRIES.filter((e) => e.light === light)
+      catalogEntries().filter((e) => e.light === light)
         .map((e) => e.key)
         .sort();
     expect(withLight("torch")).toEqual(
@@ -373,7 +373,7 @@ describe("traits (D2, D3, D4, D5, D6, Q1)", () => {
   });
 
   it("glowing textures carry the faint-glow light; every other texture gives none (F6)", () => {
-    const glowing = CATALOG_ENTRIES.filter((e) => e.category === "texture" && e.light !== "none").map((e) => e.key);
+    const glowing = catalogEntries().filter((e) => e.category === "texture" && e.light !== "none").map((e) => e.key);
     expect(glowing.sort()).toEqual([...GLOWING_TEXTURES].sort());
     for (const key of GLOWING_TEXTURES) expect(catalogEntry(key), key).toMatchObject({ category: "texture", light: "faintglow" });
     // Classic lava's textures both glow, so a lava square glows whichever of them it draws.
@@ -383,7 +383,7 @@ describe("traits (D2, D3, D4, D5, D6, Q1)", () => {
   });
 
   it("flat sprites cast no shadow and are not sight blockers; textures are flat, none, rect with a known terrain (D3, D5, D6)", () => {
-    for (const e of CATALOG_ENTRIES) {
+    for (const e of catalogEntries()) {
       if (e.height === "flat") expect(e.sight, e.key).toBe("none");
       if (e.category === "texture") {
         expect(TERRAINS).toContain(e.terrain);
@@ -608,7 +608,7 @@ describe("movement trait (map-movement M0, D1, D2; doors: user answer 2026-10-21
 
   it("every object has a move: the default (blocks sight and tall = block, else difficult for a bush / log / bones / rubble Classic kind, else open) unless overridden", () => {
     const difficultKinds = ["bush", "log", "bones", "rubble"];
-    for (const e of CATALOG_ENTRIES) {
+    for (const e of catalogEntries()) {
       if (e.category !== "object") continue;
       const fallback = e.sight === "block" && e.height === "tall" ? "block" : difficultKinds.includes(e.classic.kind) ? "difficult" : "open";
       expect(e.move, e.key).toBe(OVERRIDES[e.key] ?? fallback);
@@ -617,7 +617,7 @@ describe("movement trait (map-movement M0, D1, D2; doors: user answer 2026-10-21
   });
 
   it("textures take their terrain class's movement", () => {
-    for (const e of CATALOG_ENTRIES) {
+    for (const e of catalogEntries()) {
       if (e.category !== "texture") continue;
       const expected = ["wall", "void"].includes(e.terrain) ? "block" : ["water", "deep", "swamp", "snow", "lava"].includes(e.terrain) ? "difficult" : "open";
       expect(e.move, e.key).toBe(expected);
@@ -648,7 +648,7 @@ describe("movement trait (map-movement M0, D1, D2; doors: user answer 2026-10-21
       const e = catalogEntry(key);
       expect([key, e?.category === "object" ? e.classic.kind : null, e?.move]).toEqual([key, "door", "door"]);
     }
-    const classicDoors = CATALOG_ENTRIES.filter((e) => e.category === "object" && e.classic.kind === "door").map((e) => e.key);
+    const classicDoors = catalogEntries().filter((e) => e.category === "object" && e.classic.kind === "door").map((e) => e.key);
     expect(classicDoors.sort()).toEqual([...doors].sort());
   });
 

@@ -69,6 +69,9 @@ const SHORT_EQUIVALENT: Partial<Record<RestMove, RestMove>> = {
   martialPreparation: "martialPreparation",
 };
 
+/** A long rest move with no short rest equal: Tend to All Wounds, Clear All Stress, Repair All Armor, Work on a Project. */
+const longOnly = (m: RestMove) => REST_MOVES.long.includes(m) && !REST_MOVES.short.includes(m);
+
 /**
  * The moves an interrupted rest still gives (CB 105): an interrupted short
  * rest gives nothing; an interrupted long rest gives "the benefits of a short
@@ -76,10 +79,17 @@ const SHORT_EQUIVALENT: Partial<Record<RestMove, RestMove>> = {
  * a Project (long rest only) is lost. Tribute (a downtime move on either
  * rest, HF 14) and Martial Preparation (either rest, CB 48) stay; the frame moves are dropped (their hooks read the
  * picks themselves).
+ *
+ * `efficient` (Clank, CB 53: "When you take a short rest, you can choose a long rest move instead of a short rest
+ * move"; user 2026-10-30, dcm-bxp.99.19.58): an interrupted long rest is a short rest, so the holder keeps ONE pick at
+ * full long-rest strength, the first long-rest-only move in pick order (Tend to All Wounds still clears all HP, Work on
+ * a Project still ticks); the other picks convert as everyone's.
  */
-export function interruptedMoves(kind: RestKind, moves: readonly ChosenMove[]): ChosenMove[] {
+export function interruptedMoves(kind: RestKind, moves: readonly ChosenMove[], efficient = false): ChosenMove[] {
   if (kind === "short") return [];
-  return moves.flatMap((m) => {
+  const kept = efficient ? moves.findIndex((m) => longOnly(m.move)) : -1;
+  return moves.flatMap((m, i) => {
+    if (i === kept) return [{ ...m }];
     const move = SHORT_EQUIVALENT[m.move];
     return move === undefined ? [] : [{ move, ...(m.targetId !== undefined ? { targetId: m.targetId } : {}) }];
   });
@@ -193,6 +203,8 @@ export function applyMoves(kind: RestKind, input: Readonly<Record<string, Charac
         case "makeAFeast":
         case "keepWatch":
         case "haltLycanthropy":
+        // Journey to Horizon (HF 176): no sheet change; the rest hook prompts the GM for the bearing (dcm-dvia).
+        case "locateSoulEchoes":
           break;
       }
       if (onAlly) say(targetId, `${mover.name} used ${MOVE_LABELS[m.move]} on them`);

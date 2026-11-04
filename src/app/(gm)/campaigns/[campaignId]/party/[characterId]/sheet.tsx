@@ -128,7 +128,7 @@ function SheetPaper({
 /** The 3-page character sheet; owner and GM edit, everyone else in the campaign reads. A route; × goes back to the roster. */
 export function CharacterSheetView({ characterId }: { characterId: string }) {
   const campaign = useCampaign();
-  const character = useQuery(api.characters.get, { characterId });
+  const character = useQuery(api.charactersReads.get, { characterId });
   const rosterHref = `/campaigns/${campaign._id}/party`;
 
   if (character === undefined) {

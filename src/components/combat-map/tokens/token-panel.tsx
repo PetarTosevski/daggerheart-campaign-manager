@@ -13,7 +13,7 @@ import { normalizeAngle, TURN_BUTTON_STEP } from "./geometry";
 import { DIFFICULT_TEXT, useMoveNotes } from "./move-notes";
 import { useRings } from "./rings";
 import { PC_CONDITIONS, SIDES, TRACKER_CONDITIONS } from "./sides";
-import { useTokenActions, useTokens, type TokenActions, type TokenView } from "./use-tokens";
+import { useFearEnds, useTokenActions, useTokens, type TokenActions, type TokenView } from "./use-tokens";
 
 const SIZES = [
   { size: 1, label: "1×1" },
@@ -110,6 +110,32 @@ function useDifficultNote({ campaignId, role, map }: TokenPanelProps, token: Tok
   return false;
 }
 
+/**
+ * GM only (plan lanes-2 E6.3, dcm-kmr): one button per effect or condition a Fear spend ends (Slumber, CB p.332: "or the
+ * GM spends a Fear"; Marked for Death, HF p.8: Fear equal to the tier), showing the cost. Hidden when there is none.
+ */
+function FearEnds({ campaignId, token }: { campaignId: TokenPanelProps["campaignId"]; token: TokenView }) {
+  const { ends, end, busy, error } = useFearEnds(campaignId, token, true);
+  if (ends.length === 0) return null;
+  return (
+    <div className="cm-tokfield">
+      <span className="cm-lbl">Spend Fear to end</span>
+      <div className="cm-row cm-tight" role="group" aria-label="Spend Fear to end">
+        {ends.map((e) => (
+          <button key={e.effectId} type="button" className="cm-btn cm-sm" disabled={busy !== null} title={e.source} onClick={() => void end(e.effectId, e.fear)}>
+            End {e.label} · {e.fear} Fear
+          </button>
+        ))}
+      </div>
+      {error ? (
+        <p role="alert" className="cm-alert cm-m0">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function SelectedToken({ token, tokens, props }: { token: TokenView; tokens: TokenView[]; props: TokenPanelProps }) {
   const { campaignId, role, map, onSelectToken } = props;
   const gm = role === "gm";
@@ -194,6 +220,7 @@ function SelectedToken({ token, tokens, props }: { token: TokenView; tokens: Tok
 
       {gm ? (
         <div className="cm-tokgm">
+          <FearEnds campaignId={campaignId} token={token} />
           {s && token.kind !== "pc" ? (
             <div className="cm-tokfield">
               <span className="cm-lbl">Conditions</span>

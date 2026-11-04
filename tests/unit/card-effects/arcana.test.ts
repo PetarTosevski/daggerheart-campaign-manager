@@ -144,13 +144,36 @@ describe("Rune Ward (L1, CB p.328): the holder spends a Hope to reduce damage by
   it("an 8 on the Ward Die still reduces, then the ward's power ends until your next rest", () => {
     const plan = ok("rune-ward", ctx([8], { trigger: { amount: 11 } }));
     expect(folds(plan)).toEqual([{ kind: "reduceDamage", targetIds: ["pc"], amount: 8 }]);
+    // Lanes SRD-C1 (dcm-war): an `exhaust` step spends both uses until the next rest; the runner shows it to the
+    // table with the card's words until run.ts writes it (dcm-a9c).
+    const exhausts = prompts(plan, "manual").map((p) => p.step);
+    expect(exhausts).toEqual([
+      expect.objectContaining({ kind: "exhaust", per: "rest", useId: "main" }),
+      expect.objectContaining({ kind: "exhaust", per: "rest", useId: "ally" }),
+    ]);
     expect(prompts(plan, "manual")[0]!.text).toMatch(/recharged for free on your next rest/);
+    // Lanes-2 R1 (dcm-s9md): the `exhaust` steps' notes are the reminder (run.ts shows them as manual prompts until
+    // dcm-a9c writes `exhaust`), so no separate manual step: exactly these two texts, the card's words once.
+    expect(prompts(plan, "manual").map((p) => p.text)).toEqual([
+      "The Ward Die rolled 8: the ward's power ends after it reduces damage this turn. It can be recharged for free on your next rest.",
+      "The ward is spent whoever holds it.",
+    ]);
+  });
+  it("the ward's holder can be an ally at any range (unlimited trigger)", () => {
+    expect(effectOf("rune-ward").uses.find((u) => u.id === "ally")!.activation).toMatchObject({ trigger: { kind: "whenAllyWouldTakeDamage", unlimited: true } });
   });
   it("an ally holds it: the ally spends the Hope and their damage is reduced", () => {
     const plan = ok("rune-ward", ctx([3], { useId: "ally", trigger: { amount: 9, subject: ally("mira") } }));
     expect(ofKind(plan, "hope")).toEqual([{ kind: "hope", targetId: "mira", delta: -1 }]);
     expect(folds(plan)).toEqual([{ kind: "reduceDamage", targetIds: ["mira"], amount: 3 }]);
     expect(plan.actor.after.hope).toBe(2);
+    // Lanes-2 S1 (dcm-uj0): the use's cost is paid by the holder (`paidBy: "triggerSubject"`), not by you.
+    expect(ofKind(plan, "pay")[0]).toMatchObject({ phase: "upfront", paid: true, payerId: "mira" });
+    // Lanes-2 S1.4: the server passes the holder's Hope (dcm-q40t), so no reminder.
+    expect(prompts(plan, "manual")).toEqual([]);
+  });
+  it("an ally holds it with no Hope: refused, you pay nothing (paidBy)", () => {
+    expect(run(effectOf("rune-ward"), ctx([3], { useId: "ally", hopeOf: { mira: 0 }, trigger: { amount: 9, subject: ally("mira") } }))).toMatchObject({ ok: false, reason: "cost" });
   });
   it("refused without a Hope", () => {
     expect(run(effectOf("rune-ward"), ctx([], { actor: actor({ hope: 0 }) }))).toMatchObject({ ok: false, reason: "cost", detail: "hope" });
@@ -193,13 +216,25 @@ describe("Wall Walk (L1, CB p.328)", () => {
 });
 
 describe("Cinder Grasp (L2, CB p.328)", () => {
-  it("on a success 1d20+3 magic and temporarily On Fire; the On Fire damage is a manual step", () => {
+  it("on a success 1d20+3 magic and temporarily On Fire; On Fire carries its 2d6 rider", () => {
     // 8 + 3 + 3 = 14 beats 12; 1d20+3 = 15 + 3 = 18: Severe, 3 HP.
     const plan = ok("cinder-grasp", ctx([8, 3, 15], { targets: [adv("a")] }));
     expect(ofKind(plan, "damage")[0]!.result).toMatchObject({ incoming: 18, severity: "severe", hpMarked: 3 });
     expect(ofKind(plan, "condition")[0]).toMatchObject({ targetId: "a", condition: { kind: "tag", tag: "On Fire" }, duration: "temporary" });
     expect(plan.creatures[0]!.after.tags).toEqual(["On Fire"]);
+    // The manual reminder stays until the server runs bearer riders (dcm-0wj1).
     expect(prompts(plan, "manual")[0]).toMatchObject({ targetIds: ["a"] });
+  });
+  it("On Fire (lanes SRD-C1, dcm-f0m): after each action the bearer takes 2d6 magic damage", () => {
+    const step = effectOf("cinder-grasp").uses[0]!.steps.find((s) => s.kind === "condition");
+    expect(step).toMatchObject({
+      mods: [
+        {
+          kind: "bearerRider",
+          rider: { on: "acts", timing: "after", steps: [{ kind: "damage", to: "self", roll: { kind: "dice", dice: { count: { kind: "fixed", value: 2 }, sides: 6 } }, type: "magic" }] },
+        },
+      ],
+    });
   });
   it("a miss does nothing to the target; with Fear the GM gains a Fear", () => {
     const plan = ok("cinder-grasp", ctx([2, 3], { targets: [adv("a")] }));
@@ -244,7 +279,7 @@ describe("Flight (L3, CB p.328)", () => {
   it("Spellcast (15): tokens equal to Agility and Flying", () => {
     const plan = ok("flight", ctx([9, 4]));
     expect(ofKind(plan, "tokens")).toEqual([{ kind: "tokens", op: "set", before: 0, after: 2 }]);
-    expect(ofKind(plan, "effect")[0]).toMatchObject({ label: "Flying", mods: [{ kind: "flag", flag: "flying" }], duration: "manual" });
+    expect(ofKind(plan, "effect")[0]).toMatchObject({ label: "Flying", mods: [{ kind: "flag", flag: "flying" }], duration: "manual", endsOn: ["tokensGone"] });
   });
   it("minimum 1 token with a negative Agility; nothing on a failure", () => {
     const low = actor({ traits: { agility: -1, strength: 1, finesse: 1, instinct: 0, presence: 1, knowledge: 3 } });
@@ -253,11 +288,16 @@ describe("Flight (L3, CB p.328)", () => {
     expect(ofKind(fail, "tokens")).toEqual([]);
     expect(ofKind(fail, "effect")).toEqual([]);
   });
-  it("each action roll while flying spends a token; the descent is a manual step", () => {
+  it("each action roll while flying spends a token; the last one ends Flying (tokensGone), with the table's reminder", () => {
     const plan = ok("flight", ctx([], { useId: "spend", actor: actor({ cardTokens: 2, activeCardEffects: ["flight"] }) }));
     expect(plan.activation).toBe("auto");
     expect(plan.actor.after.cardTokens).toBe(1);
-    expect(prompts(plan, "manual")).toHaveLength(1);
+    // Lanes-2 R1 (dcm-s9md): one manual reminder (the token step's note is not a prompt) until dcm-erhv lands.
+    expect(prompts(plan, "manual").map((p) => p.text)).toEqual([
+      "If that was the last Flight token: after the action that spends the last token is resolved, you descend to the ground directly below you (end Flying).",
+    ]);
+    expect(prompts(plan, "manual")[0]!.targetIds).toEqual(["pc"]);
+    expect(ok("flight", ctx([], { useId: "spend", actor: actor({ cardTokens: 1, activeCardEffects: ["flight"] }) })).actor.after.cardTokens).toBe(0);
     expect(run(effectOf("flight"), ctx([], { useId: "spend" }))).toMatchObject({ ok: false, reason: "requirement" });
   });
 });
@@ -305,8 +345,9 @@ describe("Preservation Blast (L4, CB p.328)", () => {
 describe("Chain Lightning (L5, CB p.328)", () => {
   it("2 Stress; beaten targets save against your roll's total, failures take 2d8+4; the first link of the chain likewise", () => {
     // 8 + 5 + 3 = 16: beats a (12), not b (20). a saves 10 < 16: fails, 2d8+4 = 3 + 5 + 4 = 12 (Major).
-    // The chain: c saves 4 < 16 and takes the same 12 (one damage roll for the move, CB p.104).
-    const plan = ok("chain-lightning", ctx([8, 5, 10, 3, 5, 4], { targets: [adv("a"), adv("b", { difficulty: 20 })], followUp: [adv("c")] }));
+    // The chain: c saves 4 < 16 and takes a fresh 2d8+4 = 6 + 5 + 4 = 15 (dcm-qoq9, user answer 2026-10-31: "every new
+    // wave of chained targets gets a fresh 2d8+4 roll"; the server sets freshLinkDamage).
+    const plan = ok("chain-lightning", ctx([8, 5, 10, 3, 5, 4, 6, 5], { freshLinkDamage: true, targets: [adv("a"), adv("b", { difficulty: 20 })], followUp: [adv("c")] }));
     expect(ofKind(plan, "pay")[0]).toMatchObject({ phase: "upfront", costs: [{ resource: "stress", amount: 2 }] });
     expect(ofKind(plan, "save").map((s) => [s.targetId, s.difficulty, s.success])).toEqual([
       ["a", 16, false],
@@ -314,10 +355,30 @@ describe("Chain Lightning (L5, CB p.328)", () => {
     ]);
     expect(ofKind(plan, "damage").map((d) => [d.result.targetId, d.result.incoming, d.result.hpMarked])).toEqual([
       ["a", 12, 2],
-      ["c", 12, 2],
+      ["c", 15, 3],
     ]);
     expect(plan.actor.after).toMatchObject({ stress: 3, hope: 3 });
-    expect(prompts(plan, "manual")[0]!.text).toMatch(/chain continues/);
+    // Lanes SRD-C1 (dcm-rou): no manual step; with no next link given, the runner asks for it.
+    expect(prompts(plan, "manual")).toEqual([]);
+    expect(prompts(plan, "followUp")).toHaveLength(1);
+  });
+  it("the chain continues link by link (origin chain) until a link finds no one", () => {
+    // 8 + 5 + 3 = 16 beats a. a saves 10, fails: 2d8+4 = 3 + 5 + 4 = 12. Link 1 (c) saves 4, fails: a fresh 2d8+4 = 1 + 2
+    // + 4 = 7 (dcm-qoq9). Link 2 (d) saves 3, fails: 8 + 8 + 4 = 20. An empty third link ends the chain.
+    const plan = ok("chain-lightning", ctx([8, 5, 10, 3, 5, 4, 1, 2, 3, 8, 8], { freshLinkDamage: true, targets: [adv("a")], followUp: [adv("c")], chain: [[adv("d")], []] }));
+    expect(ofKind(plan, "save").map((s) => [s.targetId, s.success])).toEqual([
+      ["a", false],
+      ["c", false],
+      ["d", false],
+    ]);
+    expect(ofKind(plan, "damage").map((d) => [d.result.targetId, d.result.incoming])).toEqual([
+      ["a", 12],
+      ["c", 7],
+      ["d", 20],
+    ]);
+    expect(prompts(plan, "followUp")).toEqual([]);
+    const follow = effectOf("chain-lightning").uses[0]!.steps.find((s) => s.kind === "followUp");
+    expect(follow).toMatchObject({ targets: { origin: "chain" }, repeat: { until: "noTargets" } });
   });
   it("a target who saves takes nothing", () => {
     const plan = ok("chain-lightning", ctx([8, 5, 16], { targets: [adv("a")] }));
@@ -436,7 +497,18 @@ describe("Confusing Aura (L8, CB p.329)", () => {
     const broken = ok("confusing-aura", ctx([1, 4, 3], { useId: "attacked", actor: aura }));
     expect(broken.actor.after.cardTokens).toBe(0);
     expect(ofKind(broken, "fold")).toEqual([]);
-    expect(prompts(broken, "manual")[0]!.text).toMatch(/Confusing Aura ends/);
+    // Lanes SRD-C1 (dcm-8x8): the spell's own effect ends (an `endEffect` for the server).
+    expect(ofKind(broken, "endEffect")).toEqual([{ kind: "endEffect", targetId: "pc", of: "confusing-aura", own: true }]);
+    // Lanes-2 S1.4: the card path applies `endEffect` (dcm-m48i), so no reminder.
+    expect(prompts(broken, "manual")).toEqual([]);
+    // A layer that holds shows no reminder.
+    const saved = ok("confusing-aura", ctx([2, 5, 1], { useId: "attacked", actor: aura }));
+    expect(prompts(saved, "manual")).toEqual([]);
+  });
+  it("the extra layers are capped by your unmarked Stress (dcm-8x8)", () => {
+    // Stress 1 of 6: at most 5 more.
+    expect(ok("confusing-aura", ctx([9, 4], { choices: { layers: 5 } })).actor.after.stress).toBe(6);
+    expect(run(effectOf("confusing-aura"), ctx([9, 4], { choices: { layers: 6 } }))).toMatchObject({ ok: false, reason: "choice" });
   });
 });
 
@@ -468,7 +540,7 @@ describe("Earthquake (L9, CB p.329)", () => {
 describe("Sensory Projection (L9, CB p.329)", () => {
   it("once per rest (used up by the attempt): Spellcast (15) for the vision", () => {
     const plan = ok("sensory-projection", ctx([9, 4]));
-    expect(ofKind(plan, "effect")[0]).toMatchObject({ label: "Sensory Projection", endsWhen: "you take damage or cast another spell" });
+    expect(ofKind(plan, "effect")[0]).toMatchObject({ label: "Sensory Projection", endsWhen: "you take damage or cast another spell", endsOn: ["takeDamage", "castsSpell"] });
     const fail = ok("sensory-projection", ctx([2, 3]));
     expect(ofKind(fail, "effect")).toEqual([]);
     expect(fail.actor.featureUses).toEqual([{ key: "card:sensory-projection", until: "rest" }]);
@@ -482,10 +554,10 @@ describe("Adjust Reality (L10, CB p.329)", () => {
     expect(folds(plan)).toEqual([{ kind: "modifyRoll", targetIds: ["mira"], amount: undefined }]);
     expect(run(effectOf("adjust-reality"), ctx([], { useId: "main", actor: actor({ hope: 4 }) }))).toMatchObject({ ok: false, reason: "cost" });
   });
-  it("any other roll (damage, reaction) is a manual step for 5 Hope", () => {
-    const plan = ok("adjust-reality", ctx([], { useId: "other", actor: actor({ hope: 6 }) }));
-    expect(plan.actor.after.hope).toBe(1);
-    expect(prompts(plan, "manual")).toHaveLength(1);
+  it("covers any roll (lanes SRD-C1, dcm-3ft): one reaction, no manual fallback", () => {
+    const effect = effectOf("adjust-reality");
+    expect(effect.uses.map((u) => u.id)).toEqual(["main"]);
+    expect(effect.uses[0]!.activation).toMatchObject({ trigger: { kind: "afterAllyRolls", roll: "any", includeSelf: true } });
   });
 });
 

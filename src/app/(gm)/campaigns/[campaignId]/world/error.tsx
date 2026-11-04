@@ -4,5 +4,5 @@ import { CampaignRouteError, type RouteErrorProps } from "@/components/route-err
 
 /** The world map failed to render (rule 11): the campaign chrome stays, with the reason and a retry. */
 export default function WorldError(props: RouteErrorProps) {
-  return <CampaignRouteError {...props} title="World" what="The world map failed to load." />;
+  return <CampaignRouteError {...props} title="World Map" what="The world map failed to load." />;
 }

@@ -264,18 +264,21 @@ describe("Invisibility (CB p.334)", () => {
     expect(plan.actor.after).toMatchObject({ stress: 1, cardTokens: 0 });
   });
 
-  it("each action of the Invisible creature spends a token", () => {
+  it("each action of the Invisible creature spends a token; the last one ends the effect (tokensGone, dcm-7n7)", () => {
     const plan = ok(run(invis, ctx([], { useId: "spend-token", actor: actor({ cardTokens: 1 }) })));
     expect(plan.actor.after.cardTokens).toBe(0);
-    expect(manualTexts(plan)).toEqual(["If that was the last token, Invisibility ends once this action is resolved."]);
+    // Lanes-2 S1.4: the card path ends tokensGone effects (dcm-m48i / dcm-erhv), so no reminder.
+    expect(manualTexts(plan)).toEqual([]);
     expect(run(invis, ctx([], { useId: "spend-token" }))).toMatchObject({ ok: false, reason: "cost" });
+    const cast = ok(run(invis, ctx([4, 3], { targets: [ally("mira")] })));
+    expect(ofKind(cast, "effect")[0]).toMatchObject({ label: "Invisible", endsOn: ["tokensGone"] });
   });
 });
 
 describe("Through Your Eyes (CB p.335)", () => {
   it("an effect on you until your next rest (or another spell) and the senses as a manual step", () => {
     const plan = ok(run(effectOf("through-your-eyes"), ctx([], { targets: [adv("a")] })));
-    expect(ofKind(plan, "effect")[0]).toMatchObject({ targetId: "pc", label: "Through Your Eyes", duration: "rest", endsWhen: "you cast another spell" });
+    expect(ofKind(plan, "effect")[0]).toMatchObject({ targetId: "pc", label: "Through Your Eyes", duration: "rest", endsWhen: "you cast another spell", endsOn: ["castsSpell"] });
     expect(ofKind(plan, "prompt")[0]).toMatchObject({ prompt: "manual", targetIds: ["a"] });
     expect(plan.roll).toBeNull();
   });
@@ -312,7 +315,12 @@ describe("Words of Discord (CB p.335)", () => {
     const plan = ok(run(words, ctx([6, 4], { targets: [adv("a")] })));
     expect(plan.roll?.record.total).toBe(13);
     expect(after(plan, "a")).toMatchObject({ stress: 1 });
+    // Lanes-2 S1 (dcm-f70y): the forced attack is data; the manual step stays until the server runs it.
+    expect(ofKind(plan, "forcedAttack")).toEqual([{ kind: "forcedAttack", attackerIds: ["a"], against: { side: "enemy", range: "unlimited", count: { kind: "one" } }, againstIds: [] }]);
     expect(manualTexts(plan)).toHaveLength(1);
+    const victim = ok(run(words, ctx([6, 4], { targets: [adv("a")], picked: [adv("b")] })));
+    expect(ofKind(victim, "forcedAttack")[0]!.againstIds).toEqual(["b"]);
+    expect(ofKind(ok(run(words, ctx([2, 3], { targets: [adv("a")] }))), "forcedAttack")).toEqual([]);
   });
 
   it("the next cast on the same target takes a -5 penalty", () => {
@@ -322,6 +330,11 @@ describe("Words of Discord (CB p.335)", () => {
     expect(plan.success).toBe(false);
     expect(after(plan, "a")).toBeUndefined();
     expect(run(words, ctx([6, 4], { useId: "again", targets: [adv("a")] }))).toMatchObject({ ok: false, reason: "requirement" });
+  });
+
+  it("the repeat cast's requirement is the engine-readable memory (usedOnBefore, dcm-c75)", () => {
+    const again = words.uses.find((u) => u.id === "again")!;
+    expect(again.requires).toEqual([{ kind: "situation", text: "You have cast Words of Discord on this target before", check: { kind: "usedOnBefore" } }]);
   });
 });
 
@@ -357,6 +370,16 @@ describe("Share the Burden (CB p.335)", () => {
 
   it("refuses zero Stress", () => {
     expect(run(share, ctx([], { targets: [ally("mira")], choices: { stress: 0 } }))).toMatchObject({ ok: false, reason: "choice" });
+  });
+
+  it("caps the transfer at the target's marked Stress, read after the target is picked (dcm-fnq)", () => {
+    // Mira has 3 Stress marked: 3 is allowed, 4 is not.
+    const all = ok(run(share, ctx([], { targets: [ally("mira")], choices: { stress: 3 } })));
+    expect(after(all, "mira")).toMatchObject({ stress: 0 });
+    expect(all.actor.after).toMatchObject({ stress: 4, hope: 5 });
+    expect(run(share, ctx([], { targets: [ally("mira")], choices: { stress: 4 } }))).toMatchObject({ ok: false, reason: "choice" });
+    expect(run(share, ctx([], { targets: [ally("tao", { stress: 1 })], choices: { stress: 2 } }))).toMatchObject({ ok: false, reason: "choice" });
+    expect(share.uses[0]!.choices![0]).toMatchObject({ afterTargets: true, max: { kind: "marked", who: "target", track: "stress" } });
   });
 });
 
@@ -442,6 +465,15 @@ describe("Encore (CB p.335)", () => {
     expect(plan.hits).toEqual([{ id: "a", hit: true }]);
     expect(ofKind(plan, "damage")[0]!.result).toMatchObject({ incoming: 9, severity: "major", hpMarked: 2 });
     expect(ofKind(plan, "toVault")).toEqual([]);
+  });
+
+  it("the damage takes the trigger's type (sameAsTrigger typed weapon, dcm-m5fy); no reminder (lanes-2 S1.4)", () => {
+    const magic = ok(run(encore, ctx([9, 4], { trigger: { amount: 9, subject: bandit, damageType: "magic" } })));
+    expect(ofKind(magic, "damageRoll")[0]).toMatchObject({ type: "magic" });
+    const physical = ok(run(encore, ctx([9, 4], { trigger: { amount: 9, subject: bandit, damageType: "physical" } })));
+    expect(ofKind(physical, "damageRoll")[0]).toMatchObject({ type: "physical" });
+    expect(manualTexts(magic)).toEqual([]);
+    expect(manualTexts(ok(run(encore, ctx([2, 5], { trigger: { amount: 9, subject: bandit } }))))).toEqual([]);
   });
 
   it("a success with Fear deals the damage and places the card in your vault; a critical does not", () => {

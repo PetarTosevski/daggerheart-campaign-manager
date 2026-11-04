@@ -34,7 +34,7 @@ test("a Slayer stores a Slayer Die and spends it on a damage roll; a Seaborne PC
   const tideName = `Kai ${crypto.randomUUID().slice(0, 6)}`;
   const { characterId: slayer } = await client.mutation(api.characters.create, { campaignId, draft: warriorDraft(slayerName, "call-of-the-slayer", "wildborne"), idempotencyKey: crypto.randomUUID() });
   const { characterId: tide } = await client.mutation(api.characters.create, { campaignId, draft: warriorDraft(tideName, "call-of-the-brave", "seaborne"), idempotencyKey: crypto.randomUUID() });
-  const hopeOf = async (id: Id<"characters">) => (await client.query(api.characters.get, { characterId: id }))!.sheet.hope;
+  const hopeOf = async (id: Id<"characters">) => (await client.query(api.charactersReads.get, { characterId: id }))!.sheet.hope;
 
   // The Slayer rolls with Hope (Hope 8, Fear 3): the box asks to take the Hope or store a Slayer Die.
   const hopeBefore = await hopeOf(slayer);

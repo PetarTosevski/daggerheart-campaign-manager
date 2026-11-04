@@ -60,7 +60,7 @@ type PickerHandle = { count: () => number; choose: (index: number) => boolean };
 /**
  * The add / edit field with the @ picker (D11 N5; Q6, D7) as a rich editor (dcm-bxp.106): a single-line
  * contenteditable in which every mention is a name chip while writing and editing, never the raw token. Typing '@'
- * (at the start, after a space or right after a chip) opens a listbox of the Characters & Locations entries the
+ * (at the start, after a space or right after a chip) opens a listbox of the Codex entries the
  * writer can see, filtered by what follows the '@'. Arrow keys move, Enter or a click puts a chip there with a space
  * after it, Escape closes the list (a second Escape cancels an edit). Backspace removes a chip whole. At most
  * MAX_MENTIONS chips per entry: then the list only says so. Enter without an open choice submits the stored text
@@ -276,13 +276,13 @@ function MentionOptions({ ref, campaignId, query, full, listId, optionId, active
   const note = full
     ? `At most ${MAX_MENTIONS} links in one entry.`
     : data === undefined
-      ? "Loading Characters & Locations…"
+      ? "Loading Codex…"
       : data.entries.length === 0
-        ? "Nothing in Characters & Locations yet."
-        : "No match in Characters & Locations.";
+        ? "Nothing in Codex yet."
+        : "No match in Codex.";
 
   return (
-    <ul className="bj-mi-list" role="listbox" id={listId} aria-label="Characters & Locations">
+    <ul className="bj-mi-list" role="listbox" id={listId} aria-label="Codex">
       {options.length === 0 ? (
         <li className="bj-mi-note" role="option" id={optionId(0)} aria-selected={false} aria-disabled="true">
           {note}

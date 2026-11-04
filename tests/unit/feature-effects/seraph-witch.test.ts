@@ -11,6 +11,11 @@ import { FEATURE_CLASSIFICATION, featureEffect } from "@/lib/srd/feature-effects
 import { SERAPH_WITCH_EFFECTS } from "@/lib/srd/feature-effects/seraph-witch";
 import { SUBCLASSES } from "@/lib/srd/subclasses";
 import { actorOf, adversary, sheetOf } from "./engine/fixtures";
+import { endEffects, payMaintain } from "@/lib/domain/characters/expiry";
+import { LUNAR_BUMP_KEY } from "@/lib/domain/session-features/lunar";
+import type { Effect } from "@/lib/validation/characters";
+import { stepEnds } from "../../../convex/lib/cardRows";
+import { rollResultHolds } from "../../../convex/lib/rolls";
 
 // Plan sheet-drawer, tracer FE-seraph-witch: every Seraph and Witch feature classified combat or passive, run through
 // runFeature with fixed dice. Expected values come from the feature texts by hand (CB p.44-45, HF p.16-17); the readings
@@ -148,14 +153,9 @@ describe("Prayer Dice (CB p.44, p.107): spend any number on yourself or an ally 
 });
 
 describe("Spirit Weapon (CB p.44)", () => {
-  it("lets a Melee or Very Close weapon attack within Close", () => {
-    expect(entry("subclass:divine-wielder:spirit-weapon").uses.find((u) => u.id === "reach")!.mods).toEqual([{ kind: "set", stat: "meleeWeaponRange", to: { kind: "fixed", value: 2 } }]);
-  });
-
-  it("a Stress adds one more adversary within Close to the same attack roll", () => {
-    const plan = ok("subclass:divine-wielder:spirit-weapon", "extra-target", { actor: seraph({ stress: 1 }), situations: ["You attack with your Spirit Weapon (an equipped weapon with a range of Melee or Very Close)"] });
-    expect(plan.actor.after.stress).toBe(2);
-    expect(ofKind(plan, "fold")[0]).toMatchObject({ step: { kind: "addTargets", targets: { side: "enemy", range: "close" }, damage: "same" }, amount: 1 });
+  it("is the Attack bar's box: a passive with nothing to apply (lanes-2 wave 10 S2.4, dcm-xbtw)", () => {
+    // The server decides it (convex/lib/combatActions.ts `spiritWeaponOn`): ticked, Close reach and one more adversary for a Stress.
+    expect(entry("subclass:divine-wielder:spirit-weapon").uses).toEqual([{ id: "reach", name: "Spirit Weapon", activation: { kind: "passive" }, mods: [], steps: [] }]);
   });
 });
 
@@ -183,10 +183,8 @@ describe("Sparing Touch (CB p.44) and Devout's second use", () => {
 });
 
 describe("Sacred Resonance (CB p.44): matching Spirit Weapon damage dice are doubled", () => {
-  it("rides on a successful weapon attack once the player confirms the Spirit Weapon", () => {
-    const plan = ok("subclass:divine-wielder:sacred-resonance", undefined, { actor: seraph(), targets: [adversary("bandit")], situations: ["You roll damage for your Spirit Weapon"] });
-    expect(ofKind(plan, "fold")[0]).toMatchObject({ step: { kind: "modifyDamage", change: { kind: "doubleDice", which: "matching" } } });
-    expect(refused("subclass:divine-wielder:sacred-resonance", undefined, { actor: seraph() })).toMatchObject({ ok: false, reason: "requirement" });
+  it("is read by the attack path on a ticked Spirit Weapon attack: a passive with nothing to apply (S2.4, dcm-xbtw)", () => {
+    expect(entry("subclass:divine-wielder:sacred-resonance").uses).toEqual([{ id: "main", name: "Sacred Resonance", activation: { kind: "passive" }, mods: [], steps: [] }]);
   });
 });
 
@@ -227,7 +225,13 @@ describe("Ethereal Visage (CB p.45) and Ascendant (CB p.45)", () => {
 
   it("a success with Hope on a Presence Roll removes a Fear instead of the Hope (folded into that roll)", () => {
     const use = entry("subclass:winged-sentinel:ethereal-visage").uses.find((u) => u.id === "fear")!;
-    expect(use.activation).toEqual({ kind: "reaction", trigger: { kind: "afterYouRoll", roll: "presence", result: "withHope" } });
+    // SRD-F3 (dcm-nhr): only a success with Hope (a critical counts), not a failure with Hope.
+    expect(use.activation).toEqual({ kind: "reaction", trigger: { kind: "afterYouRoll", roll: "presence", result: "successWithHope" } });
+    const holds = (roll: { success: boolean; critical: boolean; withHope: boolean; withFear: boolean }) => rollResultHolds("successWithHope", undefined, roll);
+    expect(holds({ success: true, critical: false, withHope: true, withFear: false })).toBe(true);
+    expect(holds({ success: true, critical: true, withHope: true, withFear: false })).toBe(true);
+    expect(holds({ success: false, critical: false, withHope: true, withFear: false })).toBe(false);
+    expect(holds({ success: true, critical: false, withHope: false, withFear: true })).toBe(false);
     const plan = ok("subclass:winged-sentinel:ethereal-visage", "fear", { actor: seraph() });
     expect(ofKind(plan, "fold")[0]).toMatchObject({ step: { kind: "replaceHopeGain", with: "removeFear" } });
   });
@@ -258,7 +262,8 @@ describe("Hex (HF p.16): a Stress, a target within Far, - tier to its damage and
     if (!result.ok) throw new Error(result.detail);
     const plan = result.plan;
     expect(plan.actor.after.stress).toBe(sheet.stress + 1);
-    expect(result.sheet!.classState.hexes).toEqual(["Target 1"]);
+    // Plan lanes E8 (dcm-53f): the delegate names the Hex by the creature (its id here; the server swaps in its name).
+    expect(result.sheet!.classState.hexes).toEqual(["bandit"]);
     expect(ofKind(plan, "delegate")[0]).toMatchObject({ feature: "hex", done: true, targetIds: ["bandit"] });
     expect(ofKind(plan, "condition")[0]).toMatchObject({ targetId: "bandit", condition: { kind: "tag", tag: "Hexed" }, duration: "temporary" });
     expect(ofKind(plan, "effect")[0]).toMatchObject({
@@ -273,9 +278,9 @@ describe("Hex (HF p.16): a Stress, a target within Far, - tier to its damage and
     expect(plan.holdLimit).toBe(2);
   });
 
-  it("D5 refuses a Hex past your Spellcast trait (question 2 in the task doc)", () => {
+  it("a Hex past your Spellcast trait ends the oldest Hex (user 2026-10-30, dcm-bxp.99.19.26)", () => {
     const full = { ...sheet, classState: { ...sheet.classState, hexes: ["Target 1", "Target 2"] } };
-    expect(runFeature(entry("class:witch:hex"), undefined, { actor: actorOf(full, { spellcast: 2, tier: 2 }), gmFear: 2, rng: queueRng([]), sheet: full, targets: [adversary("bandit")] })).toMatchObject({ ok: false, reason: "choice" });
+    expect(runFeature(entry("class:witch:hex"), undefined, { actor: actorOf(full, { spellcast: 2, tier: 2 }), gmFear: 2, rng: queueRng([]), sheet: full, targets: [adversary("bandit")] })).toMatchObject({ ok: true });
   });
 
   it("at tier 4 the penalty is 4; without a sheet the plan carries the D5 step for the server", () => {
@@ -301,6 +306,11 @@ describe("Enchanted Talisman (HF p.16)", () => {
     expect(plan.actor.after).toMatchObject({ hope: 1, cardTokens: 2 });
     expect(ofKind(plan, "condition")[0]).toMatchObject({ targetId: "mira", condition: { kind: "tag", tag: "Enchanted Talisman" }, duration: "rest" });
     expect(plan.limit).toMatchObject({ key: "feat:subclass:hedge:enchanted-talisman:imbue", until: "rest" });
+  });
+
+  it("SRD-F3 (dcm-3i4): the holder can be anywhere (an unlimited window)", () => {
+    const protect = entry("subclass:hedge:enchanted-talisman").uses.find((u) => u.id === "protect")!;
+    expect(protect.activation).toEqual({ kind: "reaction", trigger: { kind: "whenAllyWouldTakeDamage", range: "veryFar", includeSelf: true, unlimited: true } });
   });
 
   it("when the holder takes damage, a token makes them mark one fewer Hit Point", () => {
@@ -331,6 +341,8 @@ describe("Circle of Power (HF p.16, Q14)", () => {
         centre: "point",
         radius: "veryClose",
         side: "selfAndAllies",
+        // SRD-F3 (dcm-ii4): "until the last token is removed or you exit the circle".
+        endsOn: ["tokensGone", "ownerLeavesArea"],
         mods: [
           { kind: "stat", stat: "majorThreshold", delta: 2 },
           { kind: "stat", stat: "severeThreshold", delta: 2 },
@@ -342,9 +354,15 @@ describe("Circle of Power (HF p.16, Q14)", () => {
     expect(plan.limit).toMatchObject({ until: "rest", consumed: true });
   });
 
-  it("a roll or an evaded attack inside the circle removes a token", () => {
-    expect(ofKind(ok("subclass:hedge:circle-of-power", "roll", { actor: witch({ cardTokens: 3 }) }), "tokens")).toEqual([{ kind: "tokens", op: "spend", before: 3, after: 2 }]);
-    expect(ofKind(ok("subclass:hedge:circle-of-power", "evade", { actor: witch({ cardTokens: 1 }) }), "tokens")).toEqual([{ kind: "tokens", op: "spend", before: 1, after: 0 }]);
+  it("an action roll or an evaded attack inside the circle removes a token; one outside it does not (SRD-F3, dcm-ii4)", () => {
+    const inside = { subject: { conditions: [], hp: 0, hpMax: 6, areas: [{ featureId: "subclass:hedge:circle-of-power", own: false }] } };
+    const outside = { subject: { conditions: [], hp: 0, hpMax: 6, areas: [] } };
+    expect(ofKind(ok("subclass:hedge:circle-of-power", "roll", { actor: witch({ cardTokens: 3, facts: inside }) }), "tokens")).toEqual([{ kind: "tokens", op: "spend", before: 3, after: 2 }]);
+    expect(ofKind(ok("subclass:hedge:circle-of-power", "evade", { actor: witch({ cardTokens: 1, facts: inside }) }), "tokens")).toEqual([{ kind: "tokens", op: "spend", before: 1, after: 0 }]);
+    for (const id of ["roll", "evade"]) {
+      expect(refused("subclass:hedge:circle-of-power", id, { actor: witch({ cardTokens: 3, facts: outside }) })).toMatchObject({ ok: false, reason: "requirement" });
+    }
+    expect(entry("subclass:hedge:circle-of-power").uses.find((u) => u.id === "roll")!.activation).toMatchObject({ trigger: { kind: "afterAllyRolls", roll: "action", includeSelf: true } });
   });
 });
 
@@ -357,12 +375,22 @@ describe("Night's Glamour (HF p.17)", () => {
     expect(ofKind(ok("subclass:moon:nights-glamour", "main", { actor: witch(), dice: [3, 2] }), "effect")).toEqual([]);
   });
 
-  it("a Stress maintains it; the appearance advantage needs the Glamour", () => {
+  it("a Stress maintains it (SRD-F3, dcm-4qv: the effect's maintain); the appearance advantage needs the Glamour", () => {
     const glamoured = { facts: { featureEffects: [{ featureId: "subclass:moon:nights-glamour" }] } };
-    const plan = ok("subclass:moon:nights-glamour", "maintain-hp", { actor: witch({ ...glamoured, stress: 0 }) });
-    expect(plan.actor.after.stress).toBe(1);
-    expect(ofKind(plan, "prompt")[0]).toMatchObject({ prompt: "manual" });
-    expect(refused("subclass:moon:nights-glamour", "maintain-damage", { actor: witch({ facts: { featureEffects: [] } }) })).toMatchObject({ ok: false, reason: "requirement" });
+    const uses = entry("subclass:moon:nights-glamour").uses;
+    expect(uses.map((u) => u.id)).toEqual(["main", "appearance"]);
+    // Marking a Hit Point (or dealing damage) ends the Glamour unless the Stress is paid; paid, it stays.
+    const ends = stepEnds("subclass:moon:nights-glamour", "Glamoured")!.ends;
+    expect(ends.maintain).toEqual({ costs: [{ kind: "stress", amount: { kind: "fixed", value: 1 } }] });
+    const effect = { id: "feat:glamour:1", text: "Glamoured", until: "manual", mods: {} } as unknown as Effect;
+    const endsOf = () => ends;
+    const hit = { kind: "damageTaken", severity: "minor", hpMarked: 1, lastHp: false } as const;
+    const dropped = endEffects({ effects: [effect] }, hit, endsOf);
+    expect(dropped).toMatchObject({ ended: [effect], maintainable: [effect] });
+    expect(dropped.sheet.effects).toEqual([]);
+    expect(endEffects({ effects: [effect] }, hit, endsOf, { maintained: new Set([effect.id]) }).sheet.effects).toEqual([effect]);
+    expect(endEffects({ effects: [effect] }, { kind: "damageDealt", severity: "minor" }, endsOf).maintainable).toEqual([effect]);
+    expect(payMaintain({ hope: 2, stress: 0, stressMax: 6, hp: 0, hpMax: 6 }, ends.maintain!)).toMatchObject({ stress: 1 });
     expect(refused("subclass:moon:nights-glamour", "appearance", { actor: witch({ facts: { featureEffects: [] } }), situations: ["The roll leverages your illusory appearance"] })).toMatchObject({ ok: false, reason: "requirement" });
     expect(ok("subclass:moon:nights-glamour", "appearance", { actor: witch(glamoured), situations: ["The roll leverages your illusory appearance"] }).steps).toEqual([]);
   });
@@ -386,9 +414,27 @@ describe("Moonbeam, Ire of Pale Light, Lunar Phases (HF p.17)", () => {
     expect(ofKind(plan, "fold")[0]).toMatchObject({ step: { kind: "negate", what: "damage" } });
     expect(plan.actor.after.hope).toBe(0);
     expect(entry("subclass:moon:lunar-phases").uses.find((u) => u.id === "new")!.activation).toMatchObject({ trigger: { kind: "whenYouWouldTakeDamage", severity: "minor" } });
+    // SRD-F3 (dcm-lk8): the moon die decides New when the server knows it, without the box.
+    expect(ok("subclass:moon:lunar-phases", "new", { actor: witch({ hope: 1, facts: { moonPhase: 1 } }) }).actor.after.hope).toBe(0);
+    expect(refused("subclass:moon:lunar-phases", "new", { actor: witch({ hope: 1, facts: { moonPhase: 4 } }), situations: ["Your moon die shows a 1 (New)"] })).toMatchObject({ ok: false, reason: "requirement" });
+    // Without a sheet the plan carries the session delegate for the server.
     const bump = ok("subclass:moon:lunar-phases", "bump", { actor: witch({ hope: 1 }) });
-    expect(bump.limit).toMatchObject({ until: "rest", consumed: true });
-    expect(ofKind(bump, "prompt")[0]).toMatchObject({ prompt: "manual" });
+    expect(ofKind(bump, "delegate")).toMatchObject([{ feature: "lunarPhasesBump", done: false }]);
+    expect(bump.actor.after.hope).toBe(0);
+    expect(ofKind(bump, "prompt")).toEqual([]);
     expect(entry("subclass:moon:lunar-phases").uses.find((u) => u.id === "phases")!.mods).toEqual([]);
+  });
+
+  it("SRD-F3 (dcm-lk8): the bump raises the moon die (6 becomes 1) with the sheet button's once-per-rest key", () => {
+    const sheet = sheetOf("witch", "moon", { subclassRank: "mastery", hope: 2, sessionFeatures: { moonDie: 6 } });
+    const result = runFeature(entry("subclass:moon:lunar-phases"), "bump", { actor: actorOf(sheet), gmFear: 0, rng: queueRng([]), sheet });
+    if (!result.ok) throw new Error(result.detail);
+    expect(result.sheet!.sessionFeatures?.moonDie).toBe(1);
+    expect(result.plan.actor.after.hope).toBe(1);
+    expect(result.plan.actor.featureUses).toContainEqual({ key: LUNAR_BUMP_KEY, until: "rest" });
+    // The sheet's own button and the drawer share the key: once used, the drawer use is exhausted until a rest.
+    const used = { ...result.sheet!, featureUses: [{ key: LUNAR_BUMP_KEY, until: "rest" as const }] };
+    expect(runFeature(entry("subclass:moon:lunar-phases"), "bump", { actor: actorOf(used), gmFear: 0, rng: queueRng([]), sheet: used })).toMatchObject({ ok: false, reason: "exhausted" });
+    expect(featureAvailability(used, entry("subclass:moon:lunar-phases"))).toMatchObject({ state: "exhausted" });
   });
 });

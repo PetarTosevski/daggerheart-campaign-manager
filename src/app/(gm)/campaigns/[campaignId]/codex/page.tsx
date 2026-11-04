@@ -22,7 +22,7 @@ import { PinPicker } from "./pin-picker";
 
 const KIND_LABEL: Record<CodexKind, string> = { character: "Characters", location: "Locations" };
 
-/** Characters & Locations (the Codex board): the GM's people and places, and what the party knows of them. */
+/** Codex (the Codex board): the GM's people and places, and what the party knows of them. */
 export default function CodexPage() {
   // `useSearchParams` (the `?entry=` link) needs a Suspense boundary.
   return (
@@ -166,7 +166,7 @@ function CodexBoard() {
           <span className="text-[13px] tracking-[0.24em] text-[#c8d3d0] uppercase">
             {campaign.name} · {frameName(frameId)}
           </span>
-          <h1 className="m-0 font-display text-[32px] leading-[1.05] font-black text-parchment sm:text-[44px]">Characters &amp; Locations</h1>
+          <h1 className="m-0 font-display text-[32px] leading-[1.05] font-black text-parchment sm:text-[44px]">Codex</h1>
           <span className="text-[15px] text-[#d6dfdc]">{headerLine}</span>
         </div>
         {isGmUser ? (

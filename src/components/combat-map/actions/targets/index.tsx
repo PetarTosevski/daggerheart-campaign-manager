@@ -5,18 +5,18 @@ import type { FunctionReturnType } from "convex/server";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
-import type { ActionsLayerProps, ActionsPanelProps } from "../../slots";
+import type { ActionsLayerProps } from "../../slots";
 import { useTokens } from "../../tokens/use-tokens";
-import type { OtherToken } from "../../vision/use-vision";
-import { seenTargets, useActor, useCombatTargets, type WeaponSlot } from "./state";
+import { useActor, useCombatTargets, type WeaponSlot } from "./state";
 
 export { ActionsProvider, useCombatTargets, useActor, seenTargets, type Aim, type CombatTargets, type WeaponSlot, type Actor } from "./state";
 
 /**
  * Targets (plan combat-actions CA5): the rings on picked enemy tokens (a map layer of its own, not map-canvas) and the
- * list of the enemies the character can attack, each with its Defined Range band and the hint from
+ * hints the HUD's picking panel shows for each enemy, its Defined Range band and the hint from
  * `combatActions.targets` (Q1: out of range waits for the GM; Q2: line of sight required, cover gives disadvantage).
- * Players only ever get bands and booleans here, never an enemy's numbers (U1).
+ * Players only ever get bands and booleans here, never an enemy's numbers (U1). The classic target list went with
+ * the cut-over (plan combat-hud H8.1): the HUD's picking panel lists the targets.
  */
 
 export type TargetHint = FunctionReturnType<typeof api.combatActions.targets>[number];
@@ -130,88 +130,4 @@ function GmRings(props: ActionsLayerProps) {
     return t ? [{ id, x: t.x, y: t.y, size: t.size, tone: t.side === "enemy" ? "ok" : "ally", band: null }] : [];
   });
   return <Rings rings={rings} viewport={viewport} />;
-}
-
-/** One row of the target list: the enemy's name, band and hint, pressed while it is a target. */
-export function TargetRows({
-  enemies,
-  hints,
-  picked,
-  onToggle,
-}: {
-  enemies: readonly Pick<OtherToken, "_id" | "name">[];
-  hints: readonly TargetHint[];
-  picked: readonly Id<"combatTokens">[];
-  onToggle: (tokenId: Id<"combatTokens">) => void;
-}) {
-  const names = new Map<string, string>(enemies.map((t) => [t._id, t.name]));
-  const listed = new Set<string>(hints.map((h) => h.tokenId));
-  // Attackable enemies first (as the server lists them), then picked tokens that can't be attacked.
-  const rows: { tokenId: Id<"combatTokens">; hint: TargetHint | undefined }[] = [
-    ...hints.filter((h) => names.has(h.tokenId)).map((h) => ({ tokenId: h.tokenId, hint: h })),
-    ...picked.filter((id) => !listed.has(id) && names.has(id)).map((id) => ({ tokenId: id, hint: undefined })),
-  ];
-  if (rows.length === 0) {
-    return (
-      <p className="cm-muted cma-note" data-testid="combat-no-targets">
-        No enemy in sight. Enemies you can see appear here; tap one on the map to target it.
-      </p>
-    );
-  }
-  return (
-    <ul className="cma-targets" aria-label="Enemies in sight">
-      {rows.map(({ tokenId, hint }) => {
-        const on = picked.includes(tokenId);
-        const { tone, text } = hintOf(hint);
-        const name = names.get(tokenId)!;
-        return (
-          <li key={tokenId}>
-            <button
-              type="button"
-              className="cma-target"
-              data-tone={tone}
-              aria-pressed={on}
-              data-testid="combat-target"
-              aria-label={`${name}${hint ? `, ${BAND_LABEL[hint.band]}` : ""}, ${text}`}
-              onClick={() => onToggle(tokenId)}
-            >
-              <span className="cma-target-check" aria-hidden="true">
-                {on ? "◎" : "○"}
-              </span>
-              <span className="cma-target-name">{name}</span>
-              {hint ? <span className="cma-band">{BAND_LABEL[hint.band]}</span> : null}
-              <span className="cma-hint">{text}</span>
-            </button>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-/** Player column: the enemies the character sees and can attack; a row (or the token on the map) toggles a target. */
-export function TargetList(props: ActionsPanelProps) {
-  const { campaignId, map } = props;
-  const actor = useActor(props);
-  const { targetTokenIds, toggleTarget, slot } = useCombatTargets();
-  const hints = useTargetHints(campaignId, actor?.characterId ?? null, map._id, slot);
-  if (!actor) return null;
-  if (hints === undefined) {
-    return (
-      <p role="status" className="cm-muted">
-        Loading targets…
-      </p>
-    );
-  }
-  return (
-    <div className="cma-targets-wrap">
-      <div className="cma-row">
-        <span className="cm-lbl">Targets</span>
-        <span className="cm-muted cma-small" data-testid="combat-target-count">
-          {seenTargets(targetTokenIds, actor.enemies).length} picked
-        </span>
-      </div>
-      <TargetRows enemies={actor.enemies} hints={hints} picked={targetTokenIds} onToggle={toggleTarget} />
-    </div>
-  );
 }

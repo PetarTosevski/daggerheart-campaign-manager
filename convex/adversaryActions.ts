@@ -1,17 +1,43 @@
 import { v } from "convex/values";
 
-import { awaiting } from "../src/lib/domain/adversary-actions/index";
+import { adversaryCountdownArmed, adversaryCountdownLabels, adversaryCountdownName, awaiting, countdownLabelBonus } from "../src/lib/domain/adversary-actions/index";
+import { COUNTDOWN_DICE_SIDES, MAX_COUNTDOWN_DICE, startFromDice } from "../src/lib/domain/countdowns/advanced";
+import { COUNTDOWN_VISIBILITY_PRESETS, MAX_COUNTDOWN_START } from "../src/lib/domain/countdowns/index";
+import { parseCountdownLabel } from "../src/lib/domain/countdowns/labels";
+import { environmentCountdownCategory } from "../src/lib/domain/environments/index";
 import { appError } from "../src/lib/errors/app-error";
+import { COUNTDOWN_DETAILS_MAX_LENGTH } from "../src/lib/validation/countdowns";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { adversaryAction, afterHitTriggers, type ActionArgs } from "./lib/adversaryActions";
-import { featureAsk as featureAskOf } from "./lib/adversaryFeatures";
+import { adversaryAction, afterHitTriggers, forcedStandardAttack, gmControlledAttack as gmControlledAttackOf, isPreRollRow, pcEscape as pcEscapeOf, replayHeld, respondPreRoll, type ActionArgs, type PreRollRow } from "./lib/adversaryActions";
+import { answeringFeatures, hopeAndFearOf } from "./lib/adversaryHits";
+import { blockOf, countdownTickOn, featureAsk as featureAskOf } from "./lib/adversaryFeatures";
+import { rollDice } from "./lib/dice";
+import { loadInstance } from "./lib/encounters";
+import { recordHistory } from "./tables/history";
 import { assertCanAct, loadCharacter, readSheet } from "./lib/characterSheet";
 import { closeRequest, encounterRunning, loadOpenRequest, openRequests } from "./lib/combatRequests";
 import { campaignQuery, gmQuery, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
-import { groupUndone, hasAfterHit, hitView, isHitRow, isPcAttacker, memberId, rebuildWindow, resolveIncomingHit, respondAfterHit, respondToHit, type HitResolution, type HitRow } from "./lib/incomingHits";
+import {
+  featureView,
+  groupUndone,
+  hasAfterHit,
+  hitView,
+  isHitRow,
+  isPcAttacker,
+  memberId,
+  partyMembers,
+  rebuildWindow,
+  resolveIncomingHit,
+  respondAfterHit,
+  respondToHit,
+  type HitResolution,
+  type HitRow,
+  type HitView,
+} from "./lib/incomingHits";
 import { rollValidator } from "./lib/validators/actionLog";
-import { hitChoiceValidator } from "./lib/validators/combatRequests";
+import { hitChoiceValidator, preRollFeatureChoiceValidator } from "./lib/validators/combatRequests";
+import { traitIdValidator } from "./lib/validators/characters";
 
 /**
  * Adversary actions against PCs (plan combat-actions, tracer AA2; docs/tasks/TASK-CA-AA2.md). The GM attacks with an
@@ -39,6 +65,11 @@ const sharedArgs = {
   spendFear: v.optional(v.number()),
   /** Reactions on this attack the GM opted into (Heavy Hitter, …; Q19 default No), by feature name. */
   reactions: v.optional(v.array(v.string())),
+  /**
+   * Lane E7 round 3 (dcm-eut): the PC feature ids whose "unless the attacker marks a Stress" disadvantage the attacker pays
+   * off for this attack (Defensive stance, HF p.12); the attacker marks the cost. Unpaid ones come back in the GM feed.
+   */
+  buyOffs: v.optional(v.array(v.string())),
 };
 
 const featureArgs = {
@@ -50,6 +81,13 @@ const featureArgs = {
   picked: v.optional(v.array(v.string())),
   allies: v.optional(v.array(v.string())),
   followUp: v.optional(v.array(v.string())),
+  /**
+   * Lane E7, round 2 (dcm-e16o, dcm-7az): the creatures of each further link of a repeating follow-up (Rip & Tear, HF
+   * p.76: "not already targeted"), link by link; the first link is `followUp`.
+   */
+  chain: v.optional(v.array(v.array(v.string()))),
+  /** Lane E7, round 2 (dcm-q0a): the allies (instance ids) who pay to raise a save's Difficulty (Enchanting Song, CB p.226). */
+  raisers: v.optional(v.array(v.string())),
   /** A reaction fired by hand: who set it off (character, token or instance id) and the amount. */
   trigger: v.optional(v.object({ sourceId: v.optional(v.string()), subjectId: v.optional(v.string()), amount: v.optional(v.number()) })),
   options: v.optional(v.array(v.object({ id: v.string(), values: v.array(v.string()) }))),
@@ -89,6 +127,8 @@ const resolvedActionValidator = v.object({
   fearDelta: v.number(),
   prompts: v.array(promptValidator),
   offers: v.array(v.object({ feature: v.string(), useId: v.string(), trigger: v.string() })),
+  /** SD4 (Q2): nothing was rolled yet; the attack waits for the PCs' before-roll answers in this request. */
+  held: v.optional(v.id("combatRequests")),
 });
 
 function whole(n: number | undefined, max: number, what: string) {
@@ -99,7 +139,7 @@ function checkArgs(args: ActionArgs) {
   whole(args.advantage, 3, "Advantage");
   whole(args.disadvantage, 3, "Disadvantage");
   whole(args.spendFear, 12, "Fear to spend");
-  for (const list of [args.reactions, args.situations, args.options, args.optionals, args.eitherCosts, args.splits]) {
+  for (const list of [args.reactions, args.situations, args.options, args.optionals, args.eitherCosts, args.splits, args.chain, args.raisers, args.buyOffs, ...(args.chain ?? [])]) {
     if ((list?.length ?? 0) > MAX_LIST) throw appError("INVALID", `At most ${MAX_LIST} entries per list.`);
   }
 }
@@ -137,6 +177,74 @@ export const useFeature = keyedGmMutation({
     }),
 });
 
+/**
+ * Lane E7, round 2 (dcm-idz; user answer 2026-10-31): a GM-controlled PC (the `GM-controlled` tag: Enthralled, HF p.92;
+ * Weredrake Curse, HF p.143) attacks like an adversary: d20 + the weapon's trait (or the stat block's ATK under the
+ * Weredrake's) against other PCs' Evasion (a reaction window, this PC the attacker) or adversaries' Difficulty (a GM damage
+ * prompt). A weapon whose trait is "choice" takes the GM-picked `trait` per attack (dcm-grqt). Refusals: NOT_FOUND,
+ * INVALID (not GM-controlled, no weapon, a choice weapon without `trait`), COMBAT_TARGET_INVALID. GM only, keyed, `roll`.
+ */
+export const gmControlledAttack = keyedGmMutation({
+  rateLimit: "roll",
+  args: { characterId: v.id("characters"), targets: v.array(v.string()), weapon: v.optional(v.union(v.literal("primary"), v.literal("secondary"))), trait: v.optional(traitIdValidator) },
+  returns: resolvedActionValidator,
+  handler: async (ctx, args) => ctx.once("adversary_gm_controlled", args, async () => gmControlledAttackOf(ctx, ctx.campaign, ctx.user, args)),
+});
+
+/**
+ * Lane E7 round 3 (dcm-f70y, dcm-c8h3, dcm-zi3k): a forced attack. The instance makes its standard attack against
+ * `targets` (PCs or other instances of its encounter) outside its spotlight (Words of Discord, CB p.335; Beguiled, HF
+ * p.75): no spotlight, no Fear. Adversary runs that force an adversary's attack call it themselves; this is the GM's
+ * button for a card's forced attack until the card runner hands it over (E4). Refusals as `attack`. GM only, keyed, `roll`.
+ */
+export const forcedAttack = keyedGmMutation({
+  rateLimit: "roll",
+  args: { instanceId: v.string(), targets: v.array(v.string()) },
+  returns: resolvedActionValidator,
+  handler: async (ctx, args) =>
+    ctx.once("adversary_forced_attack", args, async () => {
+      if (args.targets.length > MAX_LIST) throw appError("INVALID", `At most ${MAX_LIST} entries per list.`);
+      return forcedStandardAttack(ctx, ctx.campaign, ctx.user, args);
+    }),
+});
+
+/**
+ * Plan lanes-2 E7.4 (dcm-0hlq, dcm-thwj): a PC escaped the named tokens an adversary put on them (Encumber's bramble
+ * tokens, CB p.218); the table rolled, the GM records the success. The tokens come off the sheet and the running
+ * encounter hears `pcEscapes` (Drain and Multiply). GM only, keyed. INVALID without such tokens; NOT_FOUND outside the party.
+ */
+export const pcEscape = keyedGmMutation({
+  args: { characterId: v.id("characters"), name: v.string() },
+  returns: v.object({
+    groupId: v.string(),
+    tokens: v.number(),
+    lines: v.array(v.string()),
+    prompts: v.array(v.object({ kind: v.string(), text: v.string() })),
+    offers: v.array(v.object({ instanceId: v.id("encounterAdversaries"), feature: v.string(), useId: v.string() })),
+  }),
+  handler: async (ctx, args) =>
+    ctx.once("adversary_pc_escape", args, async () => {
+      if (args.name.length === 0 || args.name.length > 40) throw appError("INVALID", "Token names are 1 to 40 characters.");
+      return pcEscapeOf(ctx, ctx.campaign, ctx.user, args);
+    }),
+});
+
+/**
+ * Plan lanes-2 E7.4 (dcm-wiwi, dcm-0hlq): the named tokens on the party's sheets (`creatureTokens`; Encumber's bramble
+ * tokens), for the GM's "Escaped" button. Reads only. GM only.
+ */
+export const pcTokens = gmQuery({
+  args: {},
+  returns: v.array(v.object({ characterId: v.id("characters"), pcName: v.string(), name: v.string(), count: v.number() })),
+  handler: async (ctx) => {
+    const out = [];
+    for (const m of await partyMembers(ctx, ctx.campaign._id)) {
+      for (const t of m.sheet.creatureTokens ?? []) if (t.count > 0) out.push({ characterId: m.character._id, pcName: m.sheet.name, name: t.name, count: t.count });
+    }
+    return out;
+  },
+});
+
 const targetAskValidator = v.union(
   v.null(),
   v.object({ side: v.string(), range: v.string(), count: v.union(v.literal("one"), v.literal("upTo"), v.literal("all"), v.literal("any")), max: v.union(v.number(), v.null()), sight: v.boolean() }),
@@ -165,7 +273,7 @@ const featureAskValidator = v.object({
   options: v.array(v.object({ id: v.string(), label: v.string(), count: v.union(v.number(), v.null()), distinct: v.boolean(), options: v.array(v.object({ id: v.string(), label: v.string() })) })),
   optionals: v.array(v.object({ id: v.string(), label: v.string(), fear: v.number(), stress: v.number() })),
   situations: v.array(v.object({ text: v.string(), feature: v.string() })),
-  splits: v.array(v.object({ what: v.union(v.literal("damage"), v.literal("clear")), among: v.string(), track: v.optional(v.string()) })),
+  splits: v.array(v.object({ what: v.union(v.literal("damage"), v.literal("clear"), v.literal("hope"), v.literal("stress"), v.literal("hp")), among: v.string(), track: v.optional(v.string()) })),
   eitherCosts: v.array(v.object({ index: v.number(), options: v.array(v.object({ index: v.number(), ...costAskValidator })) })),
   fear: v.object({ total: v.number(), spotlight: v.number(), feature: v.number(), perTrigger: v.boolean(), gmFear: v.number(), enough: v.boolean() }),
   stress: v.number(),
@@ -185,10 +293,13 @@ export const featureAsk = gmQuery({
   handler: async (ctx, args) => featureAskOf(ctx, ctx.campaign, args),
 });
 
-/** The hit row when it can still be answered; a hit whose encounter ended or whose action was undone is declined (null). */
-async function liveHit(ctx: Parameters<typeof closeRequest>[0], campaignId: Id<"campaigns">, requestId: Id<"combatRequests">, by: Id<"users">): Promise<HitRow | null> {
+/**
+ * The hit (or, SD4, before-roll) row when it can still be answered; one whose encounter ended or whose action was undone
+ * is declined (null).
+ */
+async function liveRow(ctx: Parameters<typeof closeRequest>[0], campaignId: Id<"campaigns">, requestId: Id<"combatRequests">, by: Id<"users">): Promise<HitRow | PreRollRow | null> {
   const row = await loadOpenRequest(ctx, campaignId, requestId);
-  if (!isHitRow(row)) throw appError("NOT_FOUND");
+  if (!isHitRow(row) && !isPreRollRow(row)) throw appError("NOT_FOUND");
   if (!(await encounterRunning(ctx, row)) || (await groupUndone(ctx, row))) {
     await closeRequest(ctx, row._id, "declined", by);
     return null;
@@ -207,24 +318,35 @@ const answerResult = v.object({
 
 /**
  * An answer in a hit's reaction window (Q13, Q17), for a character the caller edits (its player or the GM): the target's
- * `armor {slots?}` / `noArmor` / `pass`, or an offered reaction `card {cardId}` (paid at once: Stress, Hope, its
- * once-per entry). NOT_A_RESPONDER for a character the window doesn't list or that already answered; REQUEST_NOT_OPEN
- * once resolved. The last answer resolves the hit in the same mutation. A hit whose encounter ended or whose action the
- * GM undid comes back `declined`.
+ * `armor {slots?}` / `noArmor` / `pass`, an offered reaction `card {cardId}` (paid at once: Stress, Hope, its once-per
+ * entry), or (SD4) an offered `feature {featureId, useId?, choices}` (paid at once: Hope, Stress, Favor, Focus, held
+ * dice). SD4 (Q2): on a before-roll prompt, a before-roll `feature` or `pass`; the last answer rolls the held attack.
+ * NOT_A_RESPONDER for a character the window doesn't list or that already answered; REQUEST_NOT_OPEN once resolved. The
+ * last answer resolves the hit in the same mutation. A hit whose encounter ended or whose action the GM undid comes back
+ * `declined`.
  */
 export const respond = keyedCampaignMutation({
   need: "view",
   enough: "owner",
   rateLimit: "roll",
-  args: { requestId: v.id("combatRequests"), characterId: v.id("characters"), choice: hitChoiceValidator },
+  args: { requestId: v.id("combatRequests"), characterId: v.id("characters"), choice: v.union(hitChoiceValidator, preRollFeatureChoiceValidator) },
   returns: answerResult,
   handler: async (ctx, args) =>
     ctx.once("adversary_respond", args, async () => {
       const { campaign, character } = await loadCharacter(ctx, ctx.user, args.characterId, "edit", "owner");
       if (campaign._id !== ctx.campaign._id) throw appError("NOT_FOUND");
-      if (args.choice.kind === "card") assertCanAct(character, readSheet(character.sheet));
-      const row = await liveHit(ctx, ctx.campaign._id, args.requestId, ctx.user._id);
+      if (args.choice.kind === "card" || args.choice.kind === "feature") assertCanAct(character, readSheet(character.sheet));
+      const row = await liveRow(ctx, ctx.campaign._id, args.requestId, ctx.user._id);
       if (row === null) return { status: "declined" as const, requestId: args.requestId };
+      if (isPreRollRow(row)) {
+        if (args.choice.kind !== "feature" && args.choice.kind !== "pass") throw appError("INVALID", "Use a before-roll feature or pass.");
+        const { complete } = await respondPreRoll(ctx, { row, characterId: args.characterId, choice: args.choice, by: ctx.user._id });
+        if (!complete) return { status: "open" as const, requestId: row._id };
+        const fresh = await ctx.db.get("combatRequests", row._id);
+        if (fresh === null || !isPreRollRow(fresh)) throw new Error("respond: the held attack is gone.");
+        await replayHeld(ctx, fresh, ctx.user._id);
+        return { status: "resolved" as const, requestId: row._id };
+      }
       // AA2b: a resolved hit waiting for the target's after-hit card (Unbreakable) takes only that answer.
       if (hasAfterHit(row)) return { status: await respondAfterHit(ctx, { row, characterId: args.characterId, choice: args.choice, by: ctx.user._id }), requestId: row._id };
       const { complete } = await respondToHit(ctx, { row, characterId: args.characterId, choice: args.choice, by: ctx.user._id });
@@ -247,7 +369,10 @@ function resolutionFlags(res: HitResolution): { deathMove?: boolean; afterHit?: 
   return { ...(res.deathMove ? { deathMove: true } : {}), ...(res.afterHit ? { afterHit: true } : {}) };
 }
 
-/** The GM's "Resolve now" (Q17): whoever hasn't answered takes no armor and plays no card. */
+/**
+ * The GM's "Resolve now" (Q17): whoever hasn't answered takes no armor and plays no card. SD4 (Q2): on a before-roll
+ * prompt, whoever hasn't answered passes and the held attack rolls now (`preRoll`).
+ */
 export const resolve = keyedGmMutation({
   args: { requestId: v.id("combatRequests") },
   returns: v.union(
@@ -259,12 +384,20 @@ export const resolve = keyedGmMutation({
       severity: severityValidator,
       hpMarked: v.number(),
       deathMove: v.boolean(),
+      /** SD4: a held attack rolled (its hits open their own windows). */
+      preRoll: v.optional(v.boolean()),
     }),
   ),
   handler: async (ctx, { requestId }) =>
     ctx.once("adversary_resolve", { requestId }, async () => {
-      const row = await liveHit(ctx, ctx.campaign._id, requestId, ctx.user._id);
+      const row = await liveRow(ctx, ctx.campaign._id, requestId, ctx.user._id);
       if (row === null) return { status: "declined" as const, requestId };
+      if (isPreRollRow(row)) {
+        const result = await replayHeld(ctx, row, ctx.user._id);
+        if (result === null) return { status: "declined" as const, requestId };
+        const first = row.payload.attack.targetCharacterIds[0]!;
+        return { status: "resolved" as const, requestId, targetId: first, severity: "none" as const, hpMarked: 0, deathMove: false, preRoll: true };
+      }
       if (hasAfterHit(row)) {
         // AA2b: the hit already resolved; "Resolve now" passes the after-hit offer.
         const offer = row.payload.afterHit;
@@ -277,17 +410,64 @@ export const resolve = keyedGmMutation({
     }),
 });
 
-/** Open hits of a running encounter whose action wasn't undone (reads leave stale rows for the next write to decline). */
-async function liveHits(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<HitRow[]> {
-  const out: HitRow[] = [];
+/** SD4: open hit and before-roll rows of a running encounter whose action wasn't undone. */
+async function liveRows(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<(HitRow | PreRollRow)[]> {
+  const out: (HitRow | PreRollRow)[] = [];
   for (const row of await openRequests(ctx, campaignId)) {
-    if (!isHitRow(row) || !(await encounterRunning(ctx, row)) || (await groupUndone(ctx, row))) continue;
+    if ((!isHitRow(row) && !isPreRollRow(row)) || !(await encounterRunning(ctx, row)) || (await groupUndone(ctx, row))) continue;
     out.push(row);
   }
   return out;
 }
 
+/**
+ * SD4 (Q2): what one character sees of a held attack: "Bandit attacks Mira", their before-roll features with Use, and
+ * Pass; only while they owe an answer. Nothing is rolled yet, so there are no numbers.
+ */
+async function preRollView(ctx: QueryCtx, row: PreRollRow, characterId: Id<"characters">): Promise<HitView | null> {
+  const p = row.payload;
+  const responder = p.responders.find((r) => r.characterId === characterId);
+  if (!responder || row.responses.some((r) => r.characterId === characterId)) return null;
+  const party = await partyMembers(ctx, row.campaignId);
+  const me = party.find((m) => m.character._id === characterId);
+  if (!me) return null;
+  const hopeAndFear = await hopeAndFearOf(ctx, row.campaignId);
+  const effects = answeringFeatures(me.sheet, hopeAndFear);
+  const features = responder.featureIds.flatMap((id) => {
+    const effect = effects.find((f) => f.featureId === id);
+    const use = effect?.uses.find((u) => u.activation.kind === "reaction");
+    return effect && use ? [featureView(effect, use.id, me.sheet, hopeAndFear)] : [];
+  });
+  const targets = p.attack.targetCharacterIds;
+  const names = targets.map((id) => party.find((m) => m.character._id === id)?.sheet.name ?? "Unknown");
+  return {
+    requestId: row._id,
+    attackerLabel: p.attacker.label,
+    targetCharacterId: targets.includes(characterId) ? characterId : targets[0]!,
+    targetName: names.join(", "),
+    role: targets.includes(characterId) ? "target" : "ally",
+    awaiting: true,
+    cardIds: [],
+    createdAt: row.createdAt,
+    preRoll: true,
+    features,
+  };
+}
+
 const armorStepValidator = v.object({ slots: v.number(), severity: severityValidator, hp: v.number() });
+
+/** SD4: a feature answer as the prompt shows it (its SRD name and text, and what its Use asks). */
+const featureViewValidator = v.object({
+  featureId: v.string(),
+  useId: v.string(),
+  name: v.string(),
+  text: v.string(),
+  numbers: v.array(v.object({ id: v.string(), label: v.string(), min: v.number() })),
+  options: v.array(v.object({ id: v.string(), label: v.string(), options: v.array(v.object({ id: v.string(), label: v.string() })) })),
+  /** DA8 (widened): `defaultOn` optionals are ticked unless the player unticks them (Draining Bane). */
+  optionals: v.array(v.object({ id: v.string(), label: v.string(), defaultOn: v.optional(v.boolean()) })),
+  situations: v.array(v.string()),
+});
 
 /**
  * A character's open hits (need edit on the character: its player or the GM). As the hit PC (Q14): the damage, its
@@ -319,14 +499,26 @@ export const pending = campaignQuery({
       deathMove: v.optional(v.boolean()),
       /** AA2b: after a redirect (I Am Your Shield), the PC hit first. */
       originalTargetName: v.optional(v.string()),
+      /** SD4: the features this character may answer with now (Iron Will, Thick Skin, Not This Time, …). */
+      features: v.optional(v.array(featureViewValidator)),
+      /** SD4: the hit PC answered armor; a severity-gated feature (Thick Skin) or Done is left. */
+      armorAnswered: v.optional(v.boolean()),
+      /** SD4 (Q2): a before-roll prompt (nothing rolled yet): a feature's Use, or Pass. */
+      preRoll: v.optional(v.boolean()),
+      /**
+       * Lane E7, round 2 (dcm-5cn5; widened, absent = none): answers the attacker grants the hit PC (Money Talks, CB p.228:
+       * "spend a handful of gold instead of marking HP"). E2's window fills it; `respond` takes the answer through
+       * `hitChoiceValidator` (validators/combatRequests.ts).
+       */
+      grants: v.optional(v.array(v.object({ id: v.string(), label: v.string(), amount: v.optional(v.number()) }))),
     }),
   ),
   handler: async (ctx, { characterId }) => {
     const { campaign } = await loadCharacter(ctx, ctx.user, characterId, "edit", "owner");
     if (campaign._id !== ctx.campaign._id) throw appError("NOT_FOUND");
     const views = [];
-    for (const row of await liveHits(ctx, ctx.campaign._id)) {
-      const view = await hitView(ctx, row, characterId);
+    for (const row of await liveRows(ctx, ctx.campaign._id)) {
+      const view = isPreRollRow(row) ? await preRollView(ctx, row, characterId) : await hitView(ctx, row, characterId);
       if (view) views.push(view);
     }
     return views;
@@ -358,11 +550,17 @@ export const windows = gmQuery({
       createdAt: v.number(),
       /** AA2b: the hit resolved; only its target's after-hit answer (`awaiting`) is left. */
       afterHit: v.optional(v.boolean()),
+      /** SD4 (Q2): the attack is held before its roll (no damage yet); `awaiting` are the PCs with a before-roll feature. */
+      preRoll: v.optional(v.boolean()),
     }),
   ),
   handler: async (ctx) => {
     const out = [];
-    for (const row of await liveHits(ctx, ctx.campaign._id)) {
+    for (const row of await liveRows(ctx, ctx.campaign._id)) {
+      if (isPreRollRow(row)) {
+        out.push(await preRollWindow(ctx, row));
+        continue;
+      }
       const { state, members } = await rebuildWindow(ctx, row);
       const nameOf = (id: string) => members.find((m: { character: Doc<"characters"> }) => m.character._id === id)?.sheet.name ?? "Unknown";
       const p = row.payload;
@@ -389,3 +587,90 @@ export const windows = gmQuery({
     return out;
   },
 });
+
+/**
+ * Lane E7 (dcm-bxp.78; user answers 2026-10-30): the Start button of a countdown an adversary's feature names ("Countdown
+ * (Loop 1d6)", "Countdown (Decreasing 8)", "Doom Countdown (1d6+1)"), on the tracker's countdown prompt and the instance's
+ * stat block. Builds a dashboard countdown from the label (mode, repeat, fixed or rolled start, as the environments'
+ * `startCountdown`), Private, armed only when it ticks on action rolls (CB p.162). `characterId` makes it a per-PC one,
+ * "<Adversary>: <Feature> - <PC>". GM only, keyed. INVALID when the feature names no such countdown; NOT_FOUND for an
+ * instance, feature or PC outside the campaign. Linking it to the instance (the "End this countdown?" prompt on defeat)
+ * needs a countdowns field: follow-up bead (TASK-LN-E7.md).
+ */
+export const startCountdown = keyedGmMutation({
+  args: { instanceId: v.string(), feature: v.string(), label: v.optional(v.string()), characterId: v.optional(v.id("characters")) },
+  returns: v.object({ countdownId: v.id("countdowns"), name: v.string(), startingValue: v.number(), armed: v.boolean() }),
+  handler: async (ctx, args) => {
+    const campaignId = ctx.campaign._id;
+    const instance = await loadInstance(ctx, campaignId, args.instanceId);
+    const block = await blockOf(ctx, instance);
+    const feature = block?.features.find((f) => f.name === args.feature);
+    if (!block || !feature) throw appError("NOT_FOUND");
+    // A custom block stores its countdown as a number ("Countdown (N)").
+    const printed = typeof feature.countdown === "number" ? `Countdown (${feature.countdown})` : feature.countdown;
+    const labels = adversaryCountdownLabels({ text: feature.text, ...(printed !== undefined ? { countdown: printed } : {}) });
+    const label = args.label === undefined ? labels[0] : labels.find((l) => l === args.label);
+    const bonus = label === undefined ? { label: "", plus: 0 } : countdownLabelBonus(label);
+    const parsed = label === undefined ? null : parseCountdownLabel(bonus.label);
+    if (label === undefined || parsed === null) throw appError("INVALID", "That feature has no such countdown.");
+    let pcName: string | undefined;
+    if (args.characterId !== undefined) {
+      const member = (await partyMembers(ctx, campaignId)).find((m) => m.character._id === args.characterId);
+      if (!member) throw appError("NOT_FOUND");
+      pcName = member.sheet.name;
+    }
+    return ctx.once("adversary_start_countdown", args, async () => {
+      const { mode, repeat, start } = parsed;
+      const rolled = start.kind === "fixed" ? start.value : startFromDice(rollDice(start.count, start.sides), MAX_COUNTDOWN_START) + bonus.plus;
+      const startingValue = Math.min(MAX_COUNTDOWN_START, Math.max(1, rolled));
+      const sides = COUNTDOWN_DICE_SIDES.find((n) => start.kind === "dice" && n === start.sides);
+      const startDice = start.kind === "dice" && bonus.plus === 0 && sides !== undefined && start.count >= 1 && start.count <= MAX_COUNTDOWN_DICE ? { count: start.count, sides } : undefined;
+      const armed = mode !== "longTerm" && adversaryCountdownArmed(feature.text, countdownTickOn(block, feature.name));
+      const name = adversaryCountdownName(instance.label, labels.length > 1 ? `${feature.name} (${label})` : feature.name, pcName);
+      const countdownId = await ctx.db.insert("countdowns", {
+        campaignId,
+        name,
+        description: feature.text.slice(0, COUNTDOWN_DETAILS_MAX_LENGTH),
+        category: environmentCountdownCategory(label),
+        startingValue,
+        currentValue: startingValue,
+        consequence: "",
+        status: "active",
+        createdAt: Date.now(),
+        visibility: COUNTDOWN_VISIBILITY_PRESETS.private,
+        armed,
+        ...(mode !== "standard" ? { mode } : {}),
+        ...(repeat !== null && mode !== "longTerm" ? { repeat, initialValue: startingValue } : {}),
+        ...(startDice !== undefined && mode !== "longTerm" ? { startDice } : {}),
+      });
+      await recordHistory(ctx, ctx.user._id, { campaignId, kind: "countdown", action: "create", countdownId, before: null, after: { currentValue: startingValue, status: "active" } });
+      return { countdownId, name, startingValue, armed };
+    });
+  },
+});
+
+/** SD4 (Q2): the GM's line for a held attack: who it targets and who still has to answer before the roll. */
+async function preRollWindow(ctx: QueryCtx, row: PreRollRow) {
+  const p = row.payload;
+  const party = await partyMembers(ctx, row.campaignId);
+  const nameOf = (id: string) => party.find((m) => m.character._id === id)?.sheet.name ?? "Unknown";
+  const first = p.attack.targetCharacterIds[0]!;
+  return {
+    requestId: row._id,
+    ...(row.encounterId ? { encounterId: row.encounterId } : {}),
+    instanceId: p.attacker.instanceId,
+    attackerLabel: p.attacker.label,
+    ...(p.attacker.feature !== undefined ? { feature: p.attacker.feature } : {}),
+    originalTargetId: first,
+    targetCharacterId: first,
+    targetName: p.attack.targetCharacterIds.map(nameOf).join(", "),
+    damage: 0,
+    damageType: "physical" as const,
+    direct: false,
+    critical: false,
+    awaiting: p.responders.filter((r) => !row.responses.some((x) => x.characterId === r.characterId)).map((r) => ({ characterId: r.characterId, name: nameOf(r.characterId), role: p.attack.targetCharacterIds.includes(r.characterId) ? ("target" as const) : ("ally" as const) })),
+    answers: row.responses.length,
+    createdAt: row.createdAt,
+    preRoll: true,
+  };
+}

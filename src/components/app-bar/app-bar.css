@@ -1,0 +1,290 @@
+/*
+ * The Combat Map app bar (plan combat-hud H9.A). Sizes and colours from the boards: Main / GMDesktop `.abar` (56 px,
+ * 36 px items) and GMTablet `.appf.tab .abar` (52 px, no wordmark, icon-only Lorekeeper). Tablet is 761-1180 px, as
+ * the HUD's own breakpoints (hud/responsive/tablet.css); there every control is a 44 px touch target. A phone
+ * (<= 760 px) keeps the tall art header and gets no bar.
+ */
+
+.cab-frame {
+  --app-bar-h: 56px;
+}
+.cab-frame[data-bar-hidden] {
+  --app-bar-h: 0px;
+}
+
+.cab-phone-header {
+  display: none;
+}
+
+.abar {
+  position: relative;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-sizing: border-box;
+  height: var(--app-bar-h);
+  padding: 0 16px;
+  background: #0b1214;
+  border-bottom: 1px solid #1f2b30;
+  font-family: var(--font-sans);
+}
+
+.ab-back {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  color: #ece6d6;
+  box-shadow: inset 0 0 0 1px #33444a;
+}
+.ab-back:hover {
+  background: #18232a;
+}
+
+.ab-wm {
+  flex: none;
+  margin-right: 8px;
+  font: 900 19px/1 var(--font-display);
+  letter-spacing: 0.1em;
+  color: #ece6d6;
+}
+
+.ab-nav {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.ab-nv {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  color: #c8d3d0;
+  font-size: 13.5px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.ab-nv:hover {
+  background: #18232a;
+}
+.ab-nv[aria-current="page"] {
+  background: #e3b45a;
+  color: #1a1408;
+  font-weight: 600;
+}
+
+.ab-live {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2f9b5a;
+  box-shadow: 0 0 0 3px rgb(47 155 90 / 0.25);
+}
+
+.ab-r {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.ab-lk {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 14px 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: #2d2614;
+  color: #f3cf86;
+  box-shadow: inset 0 0 0 1px #e3b45a;
+  font: 600 13px var(--font-sans);
+  text-decoration: none;
+  cursor: pointer;
+}
+.ab-lk:hover {
+  filter: brightness(1.15);
+}
+
+.ab-ic,
+.ab-ava {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 50%;
+  background: #121b1f;
+  color: #e6ecea;
+  box-shadow: inset 0 0 0 1px #33444a;
+  cursor: pointer;
+}
+.ab-ic:hover {
+  background: #18232a;
+}
+.ab-ava {
+  background: #4b3a7a;
+  color: #efeaff;
+  font: 700 11px var(--font-display);
+}
+.ab-ava.ab-pc {
+  box-shadow: 0 0 0 2px #e3b45a;
+  overflow: visible;
+}
+.ab-ava.ab-pc img {
+  border-radius: 50%;
+}
+
+.abar :focus-visible {
+  outline: 2px solid #e3b45a;
+  outline-offset: 2px;
+}
+
+/* The gear's and avatar's notes (native popovers in the top layer, under the bar's right end). */
+.ab-pop {
+  position: fixed;
+  inset: auto;
+  top: calc(var(--app-bar-h, 56px) + 6px);
+  right: 16px;
+  width: 260px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #33444a;
+  border-radius: 12px;
+  background: #121b1f;
+  color: #e6ecea;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
+  font: 400 13.5px/1.4 var(--font-sans);
+}
+.ab-pop-title {
+  margin: 0 0 8px;
+  font: 700 12px var(--font-display);
+  letter-spacing: 0.12em;
+  color: #f3cf86;
+  text-transform: uppercase;
+}
+.ab-pop-note {
+  margin: 8px 0 0;
+  color: #9fb0ac;
+}
+.ab-pop-btn {
+  display: flex;
+  width: 100%;
+  min-height: 40px;
+  align-items: center;
+  padding: 0 12px;
+  border: 1px solid #33444a;
+  border-radius: 9px;
+  background: transparent;
+  color: #e6ecea;
+  font: inherit;
+  cursor: pointer;
+}
+.ab-pop-btn:hover {
+  background: #18232a;
+}
+
+/* The way back from full screen: small, top-left, over the HUD; keyboard reachable and named. */
+.cab-show {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 300;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: rgb(11 18 20 / 0.72);
+  color: #ece6d6;
+  box-shadow: inset 0 0 0 1px #33444a;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.cab-show:hover,
+.cab-show:focus-visible {
+  opacity: 1;
+}
+.cab-show:focus-visible {
+  outline: 2px solid #e3b45a;
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------- tablet (GMTablet, PlayerTablet) */
+@media (max-width: 1180px) {
+  .cab-frame {
+    --app-bar-h: 52px;
+  }
+  .abar {
+    gap: 8px;
+    padding: 0 10px;
+  }
+  .ab-wm,
+  .ab-lk-text {
+    display: none;
+  }
+  .ab-nv {
+    padding: 0 8px;
+    font-size: 12.5px;
+  }
+  /* 44 px touch targets inside the 52 px bar. */
+  .ab-back,
+  .ab-nv,
+  .ab-lk,
+  .ab-ic,
+  .ab-ava {
+    height: 44px;
+    min-width: 44px;
+  }
+  .ab-back,
+  .ab-ic,
+  .ab-ava {
+    width: 44px;
+  }
+  .ab-lk {
+    justify-content: center;
+    width: 44px;
+    padding: 0;
+  }
+  .ab-pop-btn {
+    min-height: 44px;
+  }
+  .cab-show {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* ---------------------------------------------------------------- phone: today's art header, no bar */
+@media (max-width: 760px) {
+  .cab-frame,
+  .cab-frame[data-bar-hidden] {
+    --app-bar-h: 0px;
+  }
+  .abar,
+  .cab-show {
+    display: none;
+  }
+  .cab-phone-header {
+    display: block;
+  }
+}

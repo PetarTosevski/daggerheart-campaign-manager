@@ -79,6 +79,8 @@ test("the GM plans scenes and hooks and builds the session encounter; reload kee
   await expect(spent).toHaveText(/Spent 4 of 16/);
   await prep.getByRole("button", { name: "Fewer player characters" }).click();
   await expect(spent).toHaveText(/Spent 4 of 13/);
+  // The 13 above is the optimistic update; reload only once the panel's writes are saved (dcm-o0tx).
+  await expect(prep.getByTestId("bp-panel")).toHaveAttribute("aria-busy", "false");
 
   // Reload keeps all of it.
   await page.reload();

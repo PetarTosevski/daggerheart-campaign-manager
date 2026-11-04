@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>App admin</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0d1417}
+.jr{overflow-x:hidden;min-height:100vh;background:#0d1417;color:#e6ecea;font:14px/1.5 'IBM Plex Sans',sans-serif}
+.wrap{max-width:1344px;margin:0 auto;padding:0 48px;box-sizing:border-box}
+.jr a{color:inherit}
+button{font:inherit;cursor:pointer}
+.hdr{position:relative;overflow:hidden}
+.hdr-bg{position:absolute;inset:0;background-size:cover;background-position:center 40%;background-image:url(/_blob/d69136bf0c8eddbad10c2eb636b1b5ca)}
+.hdr-sh{position:absolute;inset:0;background:rgba(6,12,14,.72)}
+.hdr-in{position:relative;padding-top:22px;padding-bottom:0;display:flex;flex-direction:column;gap:22px}
+.top{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:16px}
+.back{width:44px;height:44px;border-radius:10px;border:1px solid rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.3);color:#ece6d6}
+.wm{font:900 30px/1 'Cinzel',serif;letter-spacing:.1em}
+.nav{display:flex;align-items:center;flex-wrap:wrap;gap:2px;padding:4px;border-radius:12px;background:rgba(0,0,0,.4);margin-left:auto}
+.nv{min-height:40px;padding:0 13px;border-radius:8px;font-size:14px;display:inline-flex;align-items:center;gap:6px;text-decoration:none;color:#e6ecea}
+.nv:hover{background:rgba(255,255,255,.08)}
+.nv[aria-current="page"]{background:#e3b45a;color:#1a1408;font-weight:600}
+.nsep{width:1px;height:22px;background:rgba(255,255,255,.22);margin:0 6px}
+.livedot,.dot{width:8px;height:8px;border-radius:50%;background:#5fd38a;box-shadow:0 0 0 3px rgba(95,211,138,.22);display:inline-block;flex:none}
+.tr{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.sess{display:inline-flex;align-items:center;gap:9px;height:44px;padding:0 6px 0 14px;border-radius:999px;background:rgba(0,0,0,.45);box-shadow:inset 0 0 0 1px rgba(95,211,138,.45);font-size:13px}
+.sess b{font-weight:600}
+.sess-b{height:32px;padding:0 12px;border-radius:999px;border:1px solid rgba(255,255,255,.25);background:transparent;color:#e6ecea;font-size:12.5px}
+.lk{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#e3b45a;background:rgba(0,0,0,.45);box-shadow:inset 0 0 0 1px #e3b45a}
+.title{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.kick{font-size:13px;text-transform:uppercase;letter-spacing:.24em;color:#c8d3d0}
+.title h1{margin:4px 0 4px;font:900 44px/1.05 'Cinzel',serif}
+.title p{margin:0;color:#d6dfdc;font-size:15px}
+.threads{display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 16px;border-radius:999px;border:1px solid rgba(201,168,255,.6);background:rgba(25,20,48,.7);color:#e6dcff;font-size:14px}
+.threads b{background:#c9a8ff;color:#1a1030;border-radius:999px;padding:1px 8px;font-size:12px}
+.subtabs{display:flex;align-items:flex-end;gap:4px;flex-wrap:wrap}
+.subtabs [role=tab]{height:50px;padding:0 22px;border:0;border-radius:12px 12px 0 0;background:rgba(0,0,0,.42);color:#c8d3d0;font:700 17px/1 'Cinzel',serif;display:inline-flex;align-items:center;gap:10px}
+.subtabs [role=tab] span{font:500 12px/1 'IBM Plex Sans';color:#9fb2b6;background:rgba(255,255,255,.08);border-radius:999px;padding:3px 8px}
+.subtabs [role=tab][aria-selected="true"]{background:#0d1417;color:#f3cf86}
+.sp{flex:1}
+.wa{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding-bottom:10px}
+.wa-l{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:#c8d3d0;margin-right:4px}
+.who{height:36px;padding:0 12px 0 5px;border-radius:999px;border:1px solid rgba(255,255,255,.22);background:rgba(0,0,0,.35);color:#e6ecea;font-size:13px;display:inline-flex;align-items:center;gap:7px}
+.who[aria-pressed="true"]{background:#2d2614;border-color:#e3b45a;color:#f3cf86}
+.pf{display:inline-flex;flex:none;border-radius:50%;background-size:cover;background-position:center 30%;box-shadow:0 0 0 1.5px #9fd8c4}
+.pf.gm{width:24px;height:24px;align-items:center;justify-content:center;font:700 9px/1 'IBM Plex Sans';background:#5b4a8f;color:#fff;box-shadow:0 0 0 1.5px #c9bdf2}
+.grid{display:grid;grid-template-columns:300px minmax(0,1fr);gap:28px;align-items:start;padding-top:28px;padding-bottom:56px}
+.side{display:flex;flex-direction:column;gap:6px;position:sticky;top:16px}
+.lbl{font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;color:#9fb2b6;font-weight:600}
+.sl{display:flex;align-items:center;gap:12px;width:100%;padding:10px 12px;border-radius:12px;border:0;background:transparent;color:#e6ecea;text-align:left}
+.sl:hover{background:#141e22}
+.sl.on{background:#141e22;box-shadow:inset 0 0 0 1px #e3b45a}
+.sl-n{flex:none;width:34px;height:34px;border-radius:10px;background:#1d2a2f;display:flex;align-items:center;justify-content:center;font:900 15px/1 'Cinzel',serif;color:#f3cf86}
+.sl-t{flex:1;min-width:0;display:flex;flex-direction:column}.sl-t b{font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sl-t span{font-size:12px;color:#9fb2b6}
+.st{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;border-radius:999px;padding:3px 9px;white-space:nowrap}
+.st-live{color:#9ff0bd;background:#12291c}.st-plan{color:#c8d3d0;background:#1d2a2f}
+.st.big{font-size:13px;padding:6px 12px}
+.ghost{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 14px;border-radius:10px;border:1px dashed #3a4d54;background:transparent;color:#e6ecea;font-size:13.5px;text-decoration:none;justify-content:center}
+.side>.ghost{margin-top:4px}
+.ghost.sm{min-height:34px;padding:0 12px;border-style:solid;border-color:#33444a;font-size:12.5px;border-radius:999px}
+.card{background:#141e22;border-radius:16px;box-shadow:inset 0 0 0 1px #253338;padding:18px 20px}
+.card.mini{margin-top:14px;padding:14px 16px;display:flex;flex-direction:column;gap:6px}
+.kv{display:flex;justify-content:space-between;gap:10px;font-size:13px;color:#9fb2b6}.kv b{color:#e6ecea;font-weight:600;text-align:right}
+.main{min-width:0;display:flex;flex-direction:column;gap:18px}
+.sh{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.kick2{font-size:12.5px;color:#9fb2b6;letter-spacing:.04em}
+.sh-t{margin:2px 0 0;font:900 30px/1.1 'Cinzel',serif}
+.seg{display:inline-flex;padding:4px;border-radius:12px;background:#141e22;box-shadow:inset 0 0 0 1px #253338}
+.seg button{height:36px;padding:0 16px;border:0;border-radius:9px;background:transparent;color:#c8d3d0;font-size:13.5px;font-weight:600}
+.seg button[aria-pressed="true"]{background:#2d2614;color:#f3cf86;box-shadow:inset 0 0 0 1px #e3b45a}
+.go{display:inline-flex;align-items:center;gap:8px;height:44px;padding:0 18px;border-radius:999px;background:#e3b45a;color:#1a1408 !important;text-decoration:none;font:700 14px/1 'Cinzel',serif}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:18px;align-items:start}
+.card-h{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.card h2{margin:0;font:700 18px/1.2 'Cinzel',serif;color:#f3cf86}
+.muted{font-size:12.5px;color:#9fb2b6}
+.scene{display:flex;gap:14px;padding:14px 0;border-top:1px solid #1f2b30}
+.scene:first-of-type{border-top:0}
+.scene.now{margin:0 -12px;padding:14px 12px;border-radius:14px;background:#17201f;box-shadow:inset 0 0 0 1px rgba(227,180,90,.45);border-top:0}
+.sc-n{flex:none;width:28px;height:28px;border-radius:50%;background:#1d2a2f;display:flex;align-items:center;justify-content:center;font:700 13px/1 'Cinzel',serif;color:#c8d3d0}
+.sc-b{flex:1;min-width:0}
+.sc-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.sc-h b{font-size:15px;font-weight:600}
+.ty{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;border-radius:999px;padding:3px 9px 3px 7px}
+.ss{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#9fb2b6}
+.ss-done{color:#7fc29b}.ss-now{color:#9ff0bd;font-weight:600}
+.sc-b p{margin:6px 0 0;color:#c8d3d0;font:15px/1.45 'EB Garamond',serif}
+.enc{margin-top:10px;padding:12px;border-radius:12px;background:#0f171a;box-shadow:inset 0 0 0 1px #253338}
+.enc-l{font-size:12px;font-weight:600;color:#f08a7a;margin-bottom:8px}
+.enc-c{display:flex;flex-wrap:wrap;gap:6px}
+.enc-c span{font-size:12.5px;padding:5px 10px;border-radius:999px;background:#2a1412;color:#ffd0c4}.enc-c small{color:#d9a79c;margin-left:4px}
+.enc-a{display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap}
+.sent{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:#7fc29b;margin-right:auto}
+.prep{margin-top:16px;padding:14px 16px;border-radius:12px;background:#f3ead4;color:#2a1f14}
+.prep .lbl{color:#8a6d3b}
+.prep ul{margin:6px 0 0;padding-left:20px;font:22px/1.25 'Caveat',cursive}
+.bp-top{display:flex;align-items:baseline;gap:8px;margin-top:8px}
+.bp-top b{font:900 40px/1 'Cinzel',serif;color:#f3cf86}.bp-top span{color:#9fb2b6}
+.bp-left{margin-left:auto;color:#7fc29b !important;font-weight:600}
+.bar{height:8px;border-radius:999px;background:#0b1214;margin:10px 0 12px;overflow:hidden}.bar i{display:block;height:100%;background:#e3b45a;border-radius:999px}
+.adj{display:flex;align-items:center;gap:9px;padding:6px 0;font-size:13px;color:#c8d3d0;cursor:pointer}
+.adj input{width:16px;height:16px;accent-color:#e3b45a;margin:0}
+.adj span{flex:1}.adj b{color:#f3cf86;font-weight:600}
+.costs{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.costs span{font-size:12px;color:#c8d3d0;padding:4px 9px;border-radius:999px;background:#0f171a;box-shadow:inset 0 0 0 1px #253338}.costs b{color:#f3cf86;margin-left:4px}
+.log{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.log li{display:grid;grid-template-columns:48px 30px minmax(0,1fr) auto;gap:10px;align-items:start;padding:10px 0;border-top:1px solid #1f2b30}
+.log li:first-child{border-top:0}
+.log time{font-size:12.5px;color:#9fb2b6;font-variant-numeric:tabular-nums;padding-top:5px}
+.li-i{width:30px;height:30px;border-radius:50%;background:#1d2a2f;display:flex;align-items:center;justify-content:center;color:#f3cf86}
+.log li>span:nth-child(3){display:flex;flex-direction:column}.log b{font-weight:600}.log li>span span{font-size:12.5px;color:#9fb2b6}
+.x{width:30px;height:30px;border-radius:50%;border:0;background:transparent;color:#7d8f96;font-size:18px}
+.newlog{display:flex;gap:8px;margin-top:10px}
+.newlog input,.search{flex:1;min-height:42px;padding:0 12px;border-radius:10px;border:1px solid #33444a;background:#0b1214;color:#e6ecea;font:inherit;box-sizing:border-box}
+.recap{padding:16px 18px;border-radius:12px;background:#f3ead4;color:#2a1f14}
+.recap p{margin:0 0 10px;font:16px/1.55 'EB Garamond',serif}
+.recap .ghost{color:#2a1f14;border-color:#cdb88f}
+.rcol{display:flex;flex-direction:column;gap:18px}
+.tally{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.tally div{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px;border-radius:12px;background:#0f171a;color:#c8d3d0}
+.tally b{font:900 22px/1.1 'Cinzel',serif;color:#e6ecea}.tally span{font-size:11.5px;color:#9fb2b6}
+.tally div:nth-child(-n+2) svg{color:#8f7bd1}.tally div:nth-child(3) svg{color:#e3b45a}.tally div:nth-child(4) svg{color:#e0503f}
+.sp-r{display:grid;grid-template-columns:26px 64px 1fr 20px;gap:10px;align-items:center;padding:5px 0}
+.sp-r b{font-size:13px;font-weight:600}.sp-r em{font-style:normal;text-align:right;color:#f3cf86;font-weight:600}
+.sp-bar{height:8px;border-radius:999px;background:#0b1214;overflow:hidden}.sp-bar i{display:block;height:100%;background:#9fd8c4;border-radius:999px}
+.thr{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
+.thr li{display:flex;align-items:center;gap:8px;font-size:13px;color:#e6ecea}.thr li svg{color:#c9a8ff;flex:none}
+.thr a{margin-left:auto;font-size:12px;color:#c9a8ff;white-space:nowrap}
+/* notes */
+.search{width:100%;margin-bottom:10px}
+.ig{display:flex;flex-direction:column;gap:2px;margin-bottom:10px}
+.ig-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px}
+.ib{width:28px;height:28px;border-radius:8px;border:1px solid #33444a;background:transparent;color:#c8d3d0;display:flex;align-items:center;justify-content:center}
+.pg{display:flex;align-items:center;gap:10px;width:100%;min-height:38px;padding:0 10px;border-radius:9px;border:0;background:transparent;color:#e6ecea;font-size:13.5px;text-align:left}
+.pg:hover{background:#141e22}.pg.on{background:#141e22;box-shadow:inset 0 0 0 1px #e3b45a}
+.pg-t{flex:none;width:6px;height:22px;border-radius:3px}
+.pg svg{vertical-align:-2px}
+.keys span{font-size:13px;color:#9fb2b6;line-height:1.5}.keys b{color:#e6ecea}.keys b.g{color:#f0cf8a}
+.paper{position:relative;border-radius:6px 14px 14px 6px;background-color:#f3ead4;background-image:radial-gradient(circle,rgba(90,70,40,.28) 1.1px,transparent 1.3px);background-size:22px 22px;background-position:11px 11px;box-shadow:0 18px 50px rgba(0,0,0,.55),inset 14px 0 18px -14px rgba(90,60,20,.45);color:#2a1f14;padding:64px 48px 36px 76px;min-height:700px;box-sizing:border-box}
+.paper::before{content:'';position:absolute;left:46px;top:0;bottom:0;width:2px;background:rgba(176,58,46,.35)}
+.tape{position:absolute;top:-14px;left:50%;transform:translateX(-50%) rotate(-1.5deg);padding:10px 34px 8px;font:700 34px/1 'Caveat',cursive;color:#2a1f14;box-shadow:0 3px 8px rgba(0,0,0,.25);white-space:nowrap;background:repeating-linear-gradient(45deg,#f0cf8a 0 10px,#e3b45a 10px 20px)}
+.pmeta{display:flex;align-items:center;gap:10px;margin:0 0 16px;font:22px/1 'Caveat',cursive;color:#6a5236}
+.pmeta a{color:#8e2b2b}
+.pbtn{min-height:32px;padding:0 12px;border-radius:8px;border:1px solid #cdb88f;background:transparent;color:#4a3a26;font:13px 'IBM Plex Sans'}
+.r{display:flex;align-items:flex-start;gap:10px;padding:3px 6px;min-height:34px}
+.bul{width:30px;flex:none;text-align:center;font:700 24px/30px 'Caveat',cursive}
+.tx{flex:1;font:25px/30px 'Caveat',cursive}
+.r-done .tx{text-decoration:line-through;color:#8a7350}
+.r-event .bul{color:#2f6a8f}.r-note .bul{color:#6a5236}.r-idea .bul{color:#b8842a}.r-fear .bul,.r-fear .tx{color:#6b3fa0}
+.men{background:rgba(227,180,90,.35);border-radius:4px;padding:0 3px;border-bottom:2px solid #b8842a}
+.r-add input{flex:1;border:0;border-bottom:2px dashed rgba(90,70,40,.4);background:transparent;font:25px 'Caveat',cursive;color:#2a1f14;padding:2px}
+/* tab switching */
+.tab-notes,.only-notes{display:none}
+.t-notes .tab-notes{display:block}.t-notes .tab-sessions{display:none}.t-notes .only-notes{display:flex}
+.v-recap{display:none}
+.v-recap-on .v-recap{display:block}.v-recap-on .v-plan{display:none}
+@media (max-width:1100px){.cols{grid-template-columns:1fr}}
+@media (max-width:860px){.paper{padding:56px 18px 28px 44px}.paper::before{left:28px}.tape{font-size:24px;padding:8px 18px 6px;max-width:86%;overflow:hidden;text-overflow:ellipsis}.tx{font-size:22px}.pmeta{flex-wrap:wrap;font-size:19px}.subtabs [role=tab]{padding:0 14px;font-size:15px}.wm{font-size:22px}.sh-t{font-size:24px}.grid{grid-template-columns:1fr}.side{position:static}.nav{margin-left:0}.wrap{padding:0 16px}.title h1{font-size:34px}}
+
+.jr{position:relative;min-height:1230px}
+.acct{display:flex;align-items:center;gap:6px}
+.gear,.ava{width:40px;height:40px;border-radius:50%;border:0;display:inline-flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);color:#e6ecea;box-shadow:inset 0 0 0 1px rgba(255,255,255,.28)}
+.gear[aria-expanded="true"]{background:#2d2614;color:#f3cf86;box-shadow:inset 0 0 0 1px #e3b45a}
+.ava{padding:0}.ava .pf{width:36px;height:36px;font-size:11px}
+.ava[aria-expanded="true"]{box-shadow:0 0 0 3px #e3b45a}
+.pf.big{width:40px;height:40px;font-size:11px}
+.p-set,.p-pref,.p-page{display:none}
+.jr:not(.o-set):not(.o-pref) .p-page{display:block}
+.pv{position:absolute;left:24px;bottom:24px;z-index:90;display:flex;align-items:center;gap:6px;padding:6px 8px 6px 14px;border-radius:999px;background:#0b1214;box-shadow:0 0 0 1px #3a4d54,0 10px 30px rgba(0,0,0,.5);font-size:12px}
+.pv span{color:#9fb2b6;letter-spacing:.14em;text-transform:uppercase;font-size:11px;margin-right:4px}
+.pv button{min-height:34px;padding:0 14px;border-radius:999px;border:0;background:transparent;color:#c8d3d0;font-size:13px;font-weight:600}
+.pv button[aria-pressed="true"]{background:#2d2614;color:#f3cf86;box-shadow:inset 0 0 0 1px #e3b45a}
+.callout{position:absolute;z-index:40;right:96px;top:80px;width:340px;padding:10px 14px;border-radius:12px;background:#e3b45a;color:#1a1408;font-size:13px;font-weight:600;line-height:1.35;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.callout::before{content:"";position:absolute;right:40px;top:-6px;width:12px;height:12px;background:#e3b45a;transform:rotate(45deg)}
+.jr:not(.o-set):not(.o-pref) .acct button{box-shadow:0 0 0 2px #e3b45a}
+.o-set .p-set{display:block}.o-set .setp{display:flex}.o-pref .p-pref{display:block}
+.back-dim{position:absolute;inset:0;z-index:50;background:rgba(5,8,10,.62)}
+.setp{position:absolute;right:0;top:0;bottom:0;width:640px;z-index:60;flex-direction:column;background:#121b1f;box-shadow:inset 1px 0 0 #3a4d54,-24px 0 60px rgba(0,0,0,.55);animation:pin .28s cubic-bezier(.2,.8,.3,1)}
+@keyframes pin{from{transform:translateX(40px);opacity:0}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.setp{animation:none}}
+.setp-h{display:flex;align-items:flex-start;justify-content:space-between;padding:26px 28px 18px}
+.setp-h h2{margin:4px 0 0;font:900 28px/1.1 'Cinzel',serif}
+.xb{width:40px;height:40px;border-radius:50%;border:1px solid #33444a;background:#0f171a;color:#c8d3d0;display:flex;align-items:center;justify-content:center}
+.setp-b{flex:1;min-height:0;display:grid;grid-template-columns:170px minmax(0,1fr);gap:0;border-top:1px solid #1f2b30}
+.snav{display:flex;flex-direction:column;gap:2px;padding:16px 10px;border-right:1px solid #1f2b30}
+.sn{display:flex;align-items:center;gap:10px;min-height:42px;padding:0 12px;border:0;border-radius:10px;background:transparent;color:#c8d3d0;font-size:14px;text-align:left}
+.sn:hover{background:#18232a}
+.sn[aria-current="true"]{background:#2d2614;color:#f3cf86;box-shadow:inset 0 0 0 1px #e3b45a}
+.secs{overflow:auto;padding:18px 26px 26px}
+.sec{display:none}
+.x-table .s-table,.x-rules .s-rules,.x-players .s-players,.x-lore .s-lore,.x-session .s-session{display:block}
+.sec h3{margin:0 0 8px;font:700 20px/1.2 'Cinzel',serif;color:#f3cf86}
+.hint{margin:0 0 10px;font-size:13px;color:#9fb2b6}
+.row,.rule,.pl,.danger,.invite{display:flex;align-items:center;gap:14px;padding:14px 0;border-top:1px solid #1f2b30}
+.sec h3+.row,.sec .hint+.rule,.sec h3+.pl{border-top:0}
+.row.col{flex-direction:column;align-items:stretch;gap:10px}
+.row-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.row-t b{font-weight:600;font-size:14.5px}.row-t span{font-size:12.5px;color:#9fb2b6}.row-t em{font-style:normal;font-size:11.5px;color:#c9a8ff;margin-top:2px}
+.sw{flex:none;width:46px;height:26px;border-radius:999px;border:0;background:#33444a;position:relative;padding:0}
+.sw i{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#e6ecea;transition:left .18s}
+.sw[aria-checked="true"]{background:#e3b45a}.sw[aria-checked="true"] i{left:23px;background:#1a1408}
+.sw[disabled]{opacity:.45;cursor:not-allowed}
+.lockt{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:#9fb2b6}
+.seg2{display:flex;gap:4px;padding:4px;border-radius:12px;background:#0f171a;box-shadow:inset 0 0 0 1px #253338}
+.seg2 button{flex:1;min-height:38px;border:0;border-radius:9px;background:transparent;color:#c8d3d0;font-size:13px;font-weight:600}
+.seg2 button[aria-pressed="true"]{background:#2d2614;color:#f3cf86;box-shadow:inset 0 0 0 1px #e3b45a}
+.addb{margin-top:12px;display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 14px;border-radius:10px;border:1px dashed #3a4d54;background:transparent;color:#e6ecea;font-size:13.5px}
+.pl .pf{width:38px;height:38px}
+.role{font-size:12px;color:#f3cf86;background:#2d2614;border-radius:999px;padding:3px 10px}
+.on{font-size:12px;color:#9ff0bd}.on.off{color:#7d8f96}
+.mini{min-height:34px;padding:0 12px;border-radius:999px;border:1px solid #33444a;background:transparent;color:#e6ecea;font-size:13px;display:inline-flex;align-items:center;gap:6px;justify-content:center}
+.mini.wide{flex:1}
+.invite{flex-direction:column;align-items:stretch;gap:10px}
+.inv{display:flex;gap:8px;align-items:center}.inv .mini.wide{flex:none;min-height:40px}
+.inv code{flex:1;min-height:40px;display:flex;align-items:center;padding:0 12px;border-radius:10px;background:#0b1214;box-shadow:inset 0 0 0 1px #33444a;font:13px ui-monospace,Menlo,monospace;color:#c8d3d0;white-space:nowrap}
+.lbl2{font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:#9fb2b6;font-weight:600;margin:6px 0 2px}
+.danger{margin-top:20px;border-top:1px solid #4a2a28 !important;border-radius:0}
+.danger-b{border-color:#6b3f3a;color:#f3a58f}
+.setp-f{display:flex;align-items:center;gap:8px;padding:14px 28px;border-top:1px solid #1f2b30;font-size:12.5px;color:#7fc29b}
+.pm-pop{position:absolute;right:96px;top:80px;width:360px;z-index:70;padding:16px 18px 14px;border-radius:18px;background:#141e22;box-shadow:0 0 0 1px #3a4d54,0 24px 60px rgba(0,0,0,.6)}
+.pm-pop::before{content:"";position:absolute;right:13px;top:-8px;width:14px;height:14px;background:#141e22;transform:rotate(45deg);box-shadow:-1px -1px 0 #3a4d54}
+.pm-h{display:flex;align-items:center;gap:12px;padding-bottom:10px;border-bottom:1px solid #1f2b30;margin-bottom:6px}
+.pm-pop .row{padding:10px 0}
+.rng{width:150px;accent-color:#e3b45a}
+.pm-f{display:flex;gap:8px;margin-top:10px}
+.pm-adm{display:flex;align-items:center;gap:12px;margin-top:10px;padding:10px 12px;border-radius:12px;background:#2d2614;color:#f3cf86;text-decoration:none;box-shadow:inset 0 0 0 1px rgba(227,180,90,.5)}
+.pm-adm span{flex:1;display:flex;flex-direction:column}.pm-adm b{font-weight:600;font-size:14px}.pm-adm em{font-style:normal;font-size:12px;color:#d8c49a}
+
+.adm-h{background:#0b1214;border-bottom:1px solid #1f2b30}
+.adm-h .hdr-in{padding-bottom:26px}
+.own{margin-left:auto;display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:999px;background:#2d2614;color:#f3cf86;font-size:12.5px;font-weight:600;box-shadow:inset 0 0 0 1px rgba(227,180,90,.5)}
+.saved{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#7fc29b}
+.adm{display:grid;grid-template-columns:220px minmax(0,1fr);gap:32px;padding-top:28px;padding-bottom:48px}
+.anav{display:flex;flex-direction:column;gap:2px;position:sticky;top:20px;align-self:start}
+.acont{min-width:0}
+.sec{display:none}
+.x-ov .s-ov,.x-acc .s-acc,.x-lore .s-lore,.x-flags .s-flags,.x-maint .s-maint{display:flex;flex-direction:column;gap:18px}
+.card{background:#121b1f;border:1px solid #1f2b30;border-radius:16px;padding:18px 22px 8px}
+.card .card-h{display:block;margin-bottom:6px}
+.card .row.col{flex-direction:row;align-items:center}.card .row.col .seg2{flex:none;width:460px}.card-h h3{margin:0;font:700 19px/1.2 'Cinzel',serif;color:#f3cf86}.card-h p{margin:4px 0 0;font-size:13px;color:#9fb2b6}
+.card .row:first-of-type,.card .flag:first-of-type{border-top:0}
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.tile{background:#121b1f;border:1px solid #1f2b30;border-radius:16px;padding:16px 18px;display:flex;flex-direction:column;gap:4px}
+.tile span{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#9fb2b6}
+.tile b{font:900 32px/1.1 'Cinzel',serif;color:#e6ecea}.tile em{font-style:normal;font-size:12.5px;color:#9fb2b6}
+.alert{display:flex;gap:12px;align-items:flex-start;padding:14px 18px;border-radius:14px;background:#2d2614;color:#f3cf86;box-shadow:inset 0 0 0 1px rgba(227,180,90,.5)}
+.alert .row-t span{color:#d8c49a}
+.crow,.pend{display:flex;align-items:center;gap:14px;padding:14px 0;border-top:1px solid #1f2b30}
+.card-h+.crow,.card-h+.pend{border-top:0}
+.on{display:inline-flex;align-items:center;gap:5px}
+.log{list-style:none;margin:0;padding:0 0 10px}
+.log li{display:flex;gap:10px;padding:9px 0;border-top:1px solid #1f2b30;font-size:13.5px;color:#c8d3d0}
+.log li:first-child{border-top:0}.log time{width:110px;flex:none;color:#7d8f96;font-size:12.5px}.log b{color:#e6ecea;font-weight:600}
+.stp{display:inline-flex;align-items:center;gap:2px;padding:3px;border-radius:12px;background:#0f171a;box-shadow:inset 0 0 0 1px #253338}
+.stp button{width:36px;height:36px;border:0;border-radius:9px;background:transparent;color:#e6ecea;font-size:18px}
+.stp button:hover{background:#18232a}
+.stp b{min-width:54px;text-align:center;font-size:15px}.stp small{font-size:12px;color:#9fb2b6;margin-left:3px}
+.mt{padding:12px 0}.mt-t{display:flex;justify-content:space-between;font-size:13.5px;margin-bottom:8px}.mt-t span{color:#c8d3d0}.mt-t i{font-style:normal;color:#9fb2b6;font-weight:400}
+.mt-b{height:10px;border-radius:999px;background:#1f2b30;overflow:hidden}.mt-b span{display:block;height:100%;border-radius:999px;background:#e3b45a}
+.mt.warn .mt-b span{background:#f08a7a}
+.stack{display:flex;height:14px;border-radius:999px;overflow:hidden;gap:3px;margin:8px 0 10px}
+.lg{list-style:none;margin:0;padding:0 0 12px;display:flex;gap:22px;font-size:13.5px}
+.lg li{display:flex;align-items:center;gap:8px}.lg i{width:10px;height:10px;border-radius:3px}.lg b{font-weight:600}
+.addb{margin-bottom:14px}
+.tb{width:100%;border-collapse:collapse;margin-bottom:8px;font-size:13.5px}
+.tb th{text-align:left;font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:#9fb2b6;font-weight:600;padding:8px 8px 8px 0;border-bottom:1px solid #1f2b30}
+.tb td{padding:10px 8px 10px 0;border-bottom:1px solid #1f2b30}.tb tr:last-child td{border-bottom:0}
+.tb .dim{color:#9fb2b6}.tb .ar{text-align:right}
+.who2{display:inline-flex;align-items:center;gap:10px}.who2 b{font-weight:600}
+.pf.ini{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:#253338;color:#c8d3d0;font-size:12px;font-weight:600}
+.rl{font-size:12px;border-radius:999px;padding:3px 10px;font-weight:600}
+.r-own{background:#2d2614;color:#f3cf86}.r-gm{background:#241b38;color:#c9a8ff}.r-pl{background:#13261c;color:#9ff0bd}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.mini.gold{background:#e3b45a;border-color:#e3b45a;color:#1a1408;font-weight:600}
+.flag{display:flex;align-items:center;gap:18px;padding:14px 0;border-top:1px solid #1f2b30}
+.flag .row-t em{color:#7d8f96}
+.seg2.sm{flex:none;width:380px}.seg2.sm button{min-height:34px;font-size:12.5px}
+.tst{display:flex}.tst .pf{margin-right:-6px;box-shadow:0 0 0 2px #121b1f}
+.inp{min-height:42px;padding:0 12px;border-radius:10px;border:0;background:#0b1214;box-shadow:inset 0 0 0 1px #33444a;color:#e6ecea;font:14px 'IBM Plex Sans',sans-serif}
+.note{display:flex;align-items:center;gap:8px;margin:4px 0 14px;font-size:12.5px;color:#9fb2b6}
+</style>
+</helmet>
+<div class="{{ rootCls }}"><section class="hdr adm-h" aria-label="App admin header"><div class="wrap hdr-in"><div class="top"><div class="brand"><a href="CampaignHub.dc.html" class="back" aria-label="Back to your campaigns"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a><span class="wm">DAGGERHEART</span></div><span class="own"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Owner only</span><div class="acct"><button type="button" class="ava" aria-label="Your menu"><span class="pf gm">GM</span></button></div></div><div class="title"><div><div class="kick">Whole app · every campaign</div><h1>App admin</h1><p>Limits, costs and switches for the app. GMs and players never see this page.</p></div><div class="tr"><span class="saved"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>Saved · changes apply right away</span></div></div></div></section><main class="wrap adm"><nav class="anav" aria-label="Admin sections"><button type="button" class="sn" aria-current="{{ c_ov }}" onClick="{{ go_ov }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Overview</button><button type="button" class="sn" aria-current="{{ c_acc }}" onClick="{{ go_acc }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/></svg>Accounts</button><button type="button" class="sn" aria-current="{{ c_lore }}" onClick="{{ go_lore }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6c3-1.5 6-1.5 8 .5v12c-2-2-5-2-8-.5Z"/><path d="M20 6c-3-1.5-6-1.5-8 .5v12c2-2 5-2 8-.5Z"/></svg>Lorekeeper</button><button type="button" class="sn" aria-current="{{ c_flags }}" onClick="{{ go_flags }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>Feature switches</button><button type="button" class="sn" aria-current="{{ c_maint }}" onClick="{{ go_maint }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 6l3 3M15 8l2 2"/></svg>Maintenance</button></nav><div class="acont"><div class="sec s-ov"><div class="tiles"><div class="tile"><span>Accounts</span><b>7</b><em>1 owner · 1 GM · 5 players</em></div><div class="tile"><span>Campaigns</span><b>2</b><em>of 6 allowed</em></div><div class="tile"><span>Lorekeeper questions</span><b>412</b><em>this month</em></div><div class="tile"><span>Lorekeeper spend</span><b>$8.40</b><em>of $20.00 this month</em></div></div><div class="alert"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20Z"/><path d="M12 10v4M12 17v.5"/></svg><div class="row-t"><b>Mira is at 27 of 30 Lorekeeper questions today</b><span>Age of Umbra · resets at midnight. Raise the daily limit under Lorekeeper if this keeps happening.</span></div></div><section class="card"><div class="card-h"><h3>Campaigns</h3></div><div class="crow"><div class="row-t"><b>The Witherwild</b><span>GM You · 4 players</span></div><span class="on">Session 6 · live now</span><button type="button" class="mini">Open</button></div><div class="crow"><div class="row-t"><b>Age of Umbra</b><span>GM Mira · 3 players</span></div><span class="on off">Last played 29 Oct</span><button type="button" class="mini">Open</button></div></section><section class="card"><div class="card-h"><h3>Recent changes</h3><p>Every change on this page is logged with who made it.</p></div><ul class="log"><li><time>2 Nov · 23:40</time><b>You</b> switched New combat HUD to Everyone</li><li><time>2 Nov · 18:12</time><b>You</b> raised the Lorekeeper monthly cap to $20</li><li><time>29 Oct · 21:05</time><b>Mira</b> created Age of Umbra</li><li><time>27 Oct · 10:30</time><b>You</b> approved Mira as a GM</li></ul></section></div><div class="sec s-acc"><section class="card"><div class="card-h"><h3>Who can join and create</h3></div><div class="row col"><div class="row-t"><b>New accounts</b><span>How people get into the app.</span></div><div class="seg2" role="group" aria-label="New accounts"><button type="button" aria-pressed="true">Invite link only</button><button type="button" aria-pressed="false">Open sign-up</button><button type="button" aria-pressed="false">Closed</button></div></div><div class="row col"><div class="row-t"><b>Who can create a campaign</b></div><div class="seg2" role="group" aria-label="Who can create a campaign"><button type="button" aria-pressed="false">Only me</button><button type="button" aria-pressed="true">Approved GMs</button><button type="button" aria-pressed="false">Anyone</button></div></div><div class="row"><div class="row-t"><b>Campaigns per GM</b><span>Archived campaigns don’t count.</span></div><div class="stp" role="group" aria-label="Campaigns per GM"><button type="button" aria-label="Fewer">−</button><b>3<small></small></b><button type="button" aria-label="More">+</button></div></div><div class="row"><div class="row-t"><b>Campaigns in the whole app</b><span>New campaigns are refused past this.</span></div><div class="stp" role="group" aria-label="Campaigns in the whole app"><button type="button" aria-label="Fewer">−</button><b>6<small></small></b><button type="button" aria-label="More">+</button></div></div><div class="row"><div class="row-t"><b>Characters per player in a campaign</b><span>Includes retired characters.</span></div><div class="stp" role="group" aria-label="Characters per player in a campaign"><button type="button" aria-label="Fewer">−</button><b>2<small></small></b><button type="button" aria-label="More">+</button></div></div><div class="row"><div class="row-t"><b>Players per campaign</b></div><div class="stp" role="group" aria-label="Players per campaign"><button type="button" aria-label="Fewer">−</button><b>6<small></small></b><button type="button" aria-label="More">+</button></div></div></section><section class="card"><div class="card-h"><h3>Waiting for you</h3></div><div class="pend"><div class="row-t"><b>Teo asked to run a campaign</b><span>Signed up 1 Nov through Luka’s invite.</span></div><button type="button" class="mini">Decline</button><button type="button" class="mini gold">Make GM</button></div></section><section class="card"><div class="card-h"><h3>Accounts</h3></div><table class="tb"><thead><tr><th>Account</th><th>Role</th><th>Campaigns</th><th>Last seen</th><th><span class="vh">Actions</span></th></tr></thead><tbody><tr><td><span class="who2"><span class="pf gm" style="width: 32px; height: 32px">GM</span><b>You</b></span></td><td><span class="rl r-own">Owner</span></td><td>The Witherwild</td><td class="dim">Now</td><td class="ar"></td></tr><tr><td><span class="who2"><span class="pf ini" style="width: 32px; height: 32px">M</span><b>Mira</b></span></td><td><span class="rl r-gm">GM</span></td><td>Age of Umbra</td><td class="dim">2 h ago</td><td class="ar"><button type="button" class="mini" aria-label="Options for Mira">···</button></td></tr><tr><td><span class="who2"><span class="pf" style="width: 32px; height: 32px; background-image: url(/_blob/be57849e2691fd81cba090c59180adbe)"></span><b>Ana</b></span></td><td><span class="rl r-pl">Player</span></td><td>The Witherwild</td><td class="dim">Now</td><td class="ar"><button type="button" class="mini" aria-label="Options for Ana">···</button></td></tr><tr><td><span class="who2"><span class="pf" style="width: 32px; height: 32px; background-image: url(/_blob/ce3bd61e37b2b11d90cafe82b2434bc4)"></span><b>Marko</b></span></td><td><span class="rl r-pl">Player</span></td><td>The Witherwild</td><td class="dim">Now</td><td class="ar"><button type="button" class="mini" aria-label="Options for Marko">···</button></td></tr><tr><td><span class="who2"><span class="pf" style="width: 32px; height: 32px; background-image: url(/_blob/4545211440f18f0d8b10d7f81de2a5e8)"></span><b>Iva</b></span></td><td><span class="rl r-pl">Player</span></td><td>The Witherwild</td><td class="dim">1 day ago</td><td class="ar"><button type="button" class="mini" aria-label="Options for Iva">···</button></td></tr><tr><td><span class="who2"><span class="pf" style="width: 32px; height: 32px; background-image: url(/_blob/1399e0ba62407761a44a19f0a680134a)"></span><b>Luka</b></span></td><td><span class="rl r-pl">Player</span></td><td>The Witherwild, Age of Umbra</td><td class="dim">Now</td><td class="ar"><button type="button" class="mini" aria-label="Options for Luka">···</button></td></tr><tr><td><span class="who2"><span class="pf ini" style="width: 32px; height: 32px">A</span><b>Ash</b></span></td><td><span class="rl r-pl">Player</span></td><td>Age of Umbra</td><td class="dim">4 days ago</td><td class="ar"><button type="button" class="mini" aria-label="Options for Ash">···</button></td></tr></tbody></table></section></div><div class="sec s-lore"><section class="card"><div class="card-h"><h3>Budget</h3></div><div class="mt"><div class="mt-t"><span>Spend this month</span><b>$8.40 <i>of $20.00</i></b></div><div class="mt-b" role="meter" aria-valuenow="8.4" aria-valuemax="20" aria-label="Spend this month"><span style="width: 42%"></span></div></div><div class="mt"><div class="mt-t"><span>Questions this month</span><b>412 <i>of 1500</i></b></div><div class="mt-b" role="meter" aria-valuenow="412" aria-valuemax="1500" aria-label="Questions this month"><span style="width: 27%"></span></div></div><div class="row"><div class="row-t"><b>Monthly spend limit</b><span>Resets on the 1st.</span></div><div class="stp" role="group" aria-label="Monthly spend limit"><button type="button" aria-label="Fewer">−</button><b>$20<small></small></b><button type="button" aria-label="More">+</button></div></div><div class="row col"><div class="row-t"><b>When the limit is reached</b></div><div class="seg2" role="group" aria-label="When the limit is reached"><button type="button" aria-pressed="false">Pause the Lorekeeper</button><button type="button" aria-pressed="true">GMs only</button><button type="button" aria-pressed="false">Shorter answers</button></div></div><div class="row"><div class="row-t"><b>Email me at 80%</b></div><button type="button" role="switch" aria-checked="true" class="sw" aria-label="Email me at 80%"><i></i></button></div></section><section class="card"><div class="card-h"><h3>Limits per person</h3></div><div class="row"><div class="row-t"><b>Questions per day</b><span>For each player and GM. You have no limit.</span></div><div class="stp" role="group" aria-label="Questions per day"><button type="button" aria-label="Fewer">−</button><b>30<small></small></b><button type="button" aria-label="More">+</button></div></div><div class="row"><div class="row-t"><b>Internet searches per day</b><span>Only campaigns that allow internet search use these.</span></div><div class="stp" role="group" aria-label="Internet searches per day"><button type="button" aria-label="Fewer">−</button><b>10<small></small></b><button type="button" aria-label="More">+</button></div></div><div class="row"><div class="row-t"><b>Let GMs raise limits for their own table</b><span>Up to the app limits above.</span></div><button type="button" role="switch" aria-checked="false" class="sw" aria-label="Let GMs raise limits for their own table"><i></i></button></div></section><section class="card"><div class="card-h"><h3>Use by campaign</h3><p>Questions this month.</p></div><div class="stack" aria-hidden="true"><span style="width: 65.0%; background: #e3b45a"></span><span style="width: 35.0%; background: #9fd8c4"></span></div><ul class="lg"><li><i style="background: #e3b45a"></i>The Witherwild<b>268</b></li><li><i style="background: #9fd8c4"></i>Age of Umbra<b>144</b></li></ul></section><section class="card"><div class="card-h"><h3>Book library</h3><p>Shared by every campaign. GMs choose which ones their Lorekeeper searches.</p></div><div class="row"><div class="row-t"><b>Daggerheart Core Rulebook</b><span>412 pages · indexed</span></div><button type="button" class="mini">Replace</button></div><div class="row"><div class="row-t"><b>Daggerheart SRD</b><span>Indexed</span></div><button type="button" class="mini">Replace</button></div><div class="row"><div class="row-t"><b>Your Witherwild notes</b><span>38 pages · The Witherwild only</span></div><button type="button" class="mini">Replace</button></div><button type="button" class="addb"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20V8M6 14l6-6 6 6M4 4h16"/></svg>Upload a book</button></section></div><div class="sec s-flags"><section class="card"><div class="card-h"><h3>Feature switches</h3><p>Turn new parts of the app on for yourself first, then testers, then everyone. Nothing is lost when a feature is off.</p></div><div class="flag"><div class="row-t"><b>New combat HUD</b><span>Banners, token rings and the sheet panel on the Combat Map.</span><em>Changed 2 Nov</em></div><div class="seg2 sm" role="group" aria-label="New combat HUD"><button type="button" aria-pressed="false">Off</button><button type="button" aria-pressed="false">Only me</button><button type="button" aria-pressed="false">Testers</button><button type="button" aria-pressed="true">Everyone</button></div></div><div class="flag"><div class="row-t"><b>Journal</b><span>Sessions and Notes as one tab. Replaces the old Sessions page.</span><em>Changed 2 Nov</em></div><div class="seg2 sm" role="group" aria-label="Journal"><button type="button" aria-pressed="false">Off</button><button type="button" aria-pressed="true">Only me</button><button type="button" aria-pressed="false">Testers</button><button type="button" aria-pressed="false">Everyone</button></div></div><div class="flag"><div class="row-t"><b>3D dice</b><span>Players can still turn them off in Preferences.</span><em>Changed 14 Oct</em></div><div class="seg2 sm" role="group" aria-label="3D dice"><button type="button" aria-pressed="false">Off</button><button type="button" aria-pressed="false">Only me</button><button type="button" aria-pressed="false">Testers</button><button type="button" aria-pressed="true">Everyone</button></div></div><div class="flag"><div class="row-t"><b>Phone layout</b><span>The Combat Map on screens under 600 px wide.</span><em>Changed 30 Oct</em></div><div class="seg2 sm" role="group" aria-label="Phone layout"><button type="button" aria-pressed="false">Off</button><button type="button" aria-pressed="false">Only me</button><button type="button" aria-pressed="true">Testers</button><button type="button" aria-pressed="false">Everyone</button></div></div><div class="flag"><div class="row-t"><b>Lorekeeper internet search</b><span>GMs still choose per campaign.</span><em>Changed 20 Oct</em></div><div class="seg2 sm" role="group" aria-label="Lorekeeper internet search"><button type="button" aria-pressed="false">Off</button><button type="button" aria-pressed="false">Only me</button><button type="button" aria-pressed="false">Testers</button><button type="button" aria-pressed="true">Everyone</button></div></div><div class="flag"><div class="row-t"><b>Sprite tokens</b><span>Animated character sprites instead of portraits.</span><em>Changed —</em></div><div class="seg2 sm" role="group" aria-label="Sprite tokens"><button type="button" aria-pressed="true">Off</button><button type="button" aria-pressed="false">Only me</button><button type="button" aria-pressed="false">Testers</button><button type="button" aria-pressed="false">Everyone</button></div></div><div class="flag"><div class="row-t"><b>Share links</b><span>Read-only links to a session recap for people without an account.</span><em>Changed —</em></div><div class="seg2 sm" role="group" aria-label="Share links"><button type="button" aria-pressed="true">Off</button><button type="button" aria-pressed="false">Only me</button><button type="button" aria-pressed="false">Testers</button><button type="button" aria-pressed="false">Everyone</button></div></div></section><section class="card"><div class="card-h"><h3>Testers</h3></div><div class="row"><span class="tst"><span class="pf" style="width: 28px; height: 28px; background-image: url(/_blob/1399e0ba62407761a44a19f0a680134a)"></span><span class="pf ini" style="width: 28px; height: 28px">M</span></span><div class="row-t"><b>Luka and Mira</b><span>See features set to Testers.</span></div><button type="button" class="mini">Edit</button></div></section></div><div class="sec s-maint"><section class="card"><div class="card-h"><h3>Maintenance mode</h3></div><div class="row"><div class="row-t"><b>Read-only for everyone</b><span>Everyone can read, but nothing can be changed. A banner says why.</span></div><button type="button" role="switch" aria-checked="false" class="sw" aria-label="Read-only for everyone"><i></i></button></div><div class="row col"><div class="row-t"><b>Banner message</b></div><input class="inp" value="Updating the Combat Map. Back in about 10 minutes." aria-label="Banner message"></div></section><section class="card"><div class="card-h"><h3>Backups</h3></div><div class="row"><div class="row-t"><b>Last backup</b><span>Today · 03:00 · automatic, every night</span></div><button type="button" class="mini"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>Download</button></div><div class="row"><div class="row-t"><b>Export everything</b><span>Every campaign, character and note as one JSON file.</span></div><button type="button" class="mini"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>Export</button></div></section><section class="card"><div class="card-h"><h3>Keys and connections</h3></div><div class="row"><div class="row-t"><b>Anthropic API key</b><span>From the deployment’s environment variables</span></div><span class="on"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>Set</span></div><div class="row"><div class="row-t"><b>Database</b><span>From the deployment’s environment variables</span></div><span class="on"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>Connected</span></div><div class="row"><div class="row-t"><b>Email</b><span>From the deployment’s environment variables</span></div><span class="on"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>Set</span></div><p class="note"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Keys are never shown or changed here. Change them in the deployment settings.</p></section></div></div></main></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1300}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const sec = (this.state || {}).sec || 'ov';
+    const out = { rootCls: 'jr x-' + sec };
+    ['ov', 'acc', 'lore', 'flags', 'maint'].forEach((k) => { out['c_' + k] = sec === k ? 'true' : 'false'; out['go_' + k] = () => this.setState({ sec: k }); });
+    return out;
+  }
+}
+</script>
+</body>
+</html>

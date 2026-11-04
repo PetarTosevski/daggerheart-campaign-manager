@@ -13,7 +13,7 @@ test.describe.configure({ timeout: 120_000 });
 const expect = baseExpect.configure({ timeout: 20_000 });
 
 const PLAYER = "e2e-player@example.test";
-// An allowlisted account (scripts/e2e-setup.mjs) that is not in the campaign.
+// A test sign-in account (scripts/e2e-setup.mjs) that is not in the campaign.
 const OUTSIDER = "e2e-player2@example.test";
 
 async function gmCreatesCampaign(page: Page) {

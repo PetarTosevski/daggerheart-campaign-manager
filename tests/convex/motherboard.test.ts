@@ -70,7 +70,7 @@ async function setup(frameId: "motherboard" | "witherwild", classId = "ranger") 
     ...(motherboard ? { ikonis: IKONIS } : {}),
     idempotencyKey: key(),
   });
-  const sheetOf = async (id: Id<"characters">) => (await p1.query(api.characters.get, { characterId: id }))!.sheet;
+  const sheetOf = async (id: Id<"characters">) => (await p1.query(api.charactersReads.get, { characterId: id }))!.sheet;
   const edit = (id: Id<"characters">, change: (s: CharacterSheet) => CharacterSheet) =>
     t.run(async (ctx) => saveSheet(ctx, id, change(readSheet((await ctx.db.get("characters", id))!.sheet))));
   const corruption = () => t.run((ctx) => readTracker(ctx, campaignId, CORRUPTION_TRACKER_KEY, corruptionStateSchema));

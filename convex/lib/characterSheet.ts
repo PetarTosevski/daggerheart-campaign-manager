@@ -76,10 +76,72 @@ export function storedSheet(sheet: CharacterSheetInput) {
   return { schemaVersion: SHEET_VERSION, ...characterSheetSchema.parse(sheet) };
 }
 
-/** Saves a sheet. A cleared Hit Point also clears `deathMoveSpent` (LL1), so marking the last one again asks for a death move. */
-export async function saveSheet(ctx: MutationCtx, characterId: Id<"characters">, sheet: CharacterSheetInput): Promise<void> {
+/**
+ * Saves a sheet. A cleared Hit Point also clears `deathMoveSpent` (LL1), so marking the last one again asks for a death move.
+ *
+ * Journal JD3b (user Q8): while the character's campaign has a live session, the save also adds the Hope it lowers
+ * (`hopeSpent`) and the Hit Points it marks (`hpMarked`; the sheet's `hp` is the marked count) to the PC's
+ * `sessionCharacterStats` row for that session, in the same mutation. Every engine path that changes a sheet (cards,
+ * attacks, hits, death moves, rests, the manual steppers) saves through here, so every path counts. A save that
+ * raises Hope or clears HP (rests, level-ups, healing) never subtracts. Undo restores sheets directly (`undoGroup` in
+ * convex/lib/actionLog.ts), not through here, so it neither adds nor subtracts. `current` is the stored character,
+ * for a caller that already read it in this mutation; otherwise this reads it (one get).
+ */
+export async function saveSheet(
+  ctx: MutationCtx,
+  characterId: Id<"characters">,
+  sheet: CharacterSheetInput,
+  current?: Pick<Doc<"characters">, "campaignId" | "sheet">,
+): Promise<void> {
   const stored = storedSheet(sheet);
+  const previous = current ?? (await ctx.db.get("characters", characterId));
   await ctx.db.patch("characters", characterId, { sheet: stored, updatedAt: Date.now(), ...(stored.hp < stored.hpMax ? { deathMoveSpent: undefined } : {}) });
+  const before = previous === null ? null : trackedCounts(previous.sheet);
+  if (previous === null || before === null) return;
+  const hopeSpent = Math.max(0, before.hope - stored.hope);
+  const hpMarked = Math.max(0, stored.hp - before.hp);
+  if (hopeSpent > 0 || hpMarked > 0) await countLiveSessionStats(ctx, previous.campaignId, characterId, hopeSpent, hpMarked);
+}
+
+/** Hope and marked HP of a stored sheet blob (every sheet version stores both as numbers), or null for a blob without them. */
+function trackedCounts(raw: unknown): { hope: number; hp: number } | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const { hope, hp } = raw as { hope?: unknown; hp?: unknown };
+  return typeof hope === "number" && typeof hp === "number" ? { hope, hp } : null;
+}
+
+/**
+ * Adds to the PC's `sessionCharacterStats` row of the campaign's live session (JD3b), creating it on the first drop.
+ * No live session: nothing. A session already holding `CHARACTER_READ_BOUND` rows (= `MAX_SESSION_CHARACTER_STATS`)
+ * gets no new row, so a save never fails over a counter. The live session is read here (index `by_campaign_status_n`,
+ * as `liveSession` in convex/lib/sessions.ts does) because that module imports this one.
+ */
+async function countLiveSessionStats(
+  ctx: MutationCtx,
+  campaignId: Id<"campaigns">,
+  characterId: Id<"characters">,
+  hopeSpent: number,
+  hpMarked: number,
+): Promise<void> {
+  const session = await ctx.db
+    .query("sessions")
+    .withIndex("by_campaign_status_n", (q) => q.eq("campaignId", campaignId).eq("status", "live"))
+    .first();
+  if (session === null) return;
+  const row = await ctx.db
+    .query("sessionCharacterStats")
+    .withIndex("by_session_character", (q) => q.eq("sessionId", session._id).eq("characterId", characterId))
+    .unique();
+  if (row !== null) {
+    await ctx.db.patch("sessionCharacterStats", row._id, { hopeSpent: row.hopeSpent + hopeSpent, hpMarked: row.hpMarked + hpMarked });
+    return;
+  }
+  const rows = await ctx.db
+    .query("sessionCharacterStats")
+    .withIndex("by_session_character", (q) => q.eq("sessionId", session._id))
+    .take(CHARACTER_READ_BOUND);
+  if (rows.length >= CHARACTER_READ_BOUND) return;
+  await ctx.db.insert("sessionCharacterStats", { campaignId, sessionId: session._id, characterId, hopeSpent, hpMarked });
 }
 
 // ---------------------------------------------------------------- access
@@ -123,6 +185,20 @@ export async function editable(ctx: QueryCtx, user: Doc<"users">, characterId: I
 }
 
 /**
+ * Whether the user edits the character that cast a lasting effect (plan hud-pre-w9, dcm-bxp.99.32.37, user 2026-11-02:
+ * the effect's caster may End it on another PC's sheet). The effect's stored `casterId` (E6.4) names a character of the
+ * same campaign; the check is `permissionFor` on that character (`findCharacter`, edit). An effect without a caster,
+ * or whose caster is not a character of this campaign, is nobody's by this rule.
+ */
+export async function editsCaster(ctx: QueryCtx, user: Doc<"users">, campaignId: Id<"campaigns">, effect: { casterId?: string }): Promise<boolean> {
+  if (effect.casterId === undefined) return false;
+  const casterId = ctx.db.normalizeId("characters", effect.casterId);
+  if (casterId === null) return false;
+  const caster = await findCharacter(ctx, user, casterId, "edit");
+  return caster !== null && caster.campaign._id === campaignId && atLeast(caster.permission, "edit");
+}
+
+/**
  * Refuses a character who can't roll or use features: dead, away (Castle High)
  * or unconscious (decision 9; CB 106). Throws `CHARACTER_UNAVAILABLE`.
  */
@@ -132,15 +208,28 @@ export function assertCanAct(character: Pick<Doc<"characters">, "status">, sheet
   }
 }
 
-/** Reversible default (review M5; stays 50 while testing): the most characters a campaign holds. */
-export const MAX_CHARACTERS_PER_CAMPAIGN = 50;
+/**
+ * The creation cap (review M5, dcm-bxp.38): `characters.create` refuses a campaign's next character at this many. Stays
+ * 50 while testing; the user lowers it to 10 when testing is over (user 2026-10-30). Never above `CHARACTER_READ_BOUND`.
+ */
+export const MAX_CHARACTERS_CREATED_PER_CAMPAIGN = 50;
 
-/** The campaign's characters, bounded by the cap itself. */
+/**
+ * The read bound (dcm-bxp.38): how many of a campaign's characters every bounded party read takes (`partyOf`, rests,
+ * sessions, combat scenes, card hands, combat reveals). It stays 50 when the creation cap drops, so a campaign that
+ * holds more characters than a lowered cap (made before it dropped) is still read whole.
+ */
+export const CHARACTER_READ_BOUND = 50;
+
+/** The read bound under its old name (dcm-bxp.38): the party reads outside convex/characters.ts import it. */
+export const MAX_CHARACTERS_PER_CAMPAIGN = CHARACTER_READ_BOUND;
+
+/** The campaign's characters, bounded by the read bound. */
 export function partyOf(ctx: QueryCtx, campaignId: Id<"campaigns">) {
   return ctx.db
     .query("characters")
     .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
-    .take(MAX_CHARACTERS_PER_CAMPAIGN);
+    .take(CHARACTER_READ_BOUND);
 }
 
 /** XC1: true while the GM allows extra active characters for the running session. */

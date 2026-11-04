@@ -1,16 +1,7 @@
 import { v, type Infer } from "convex/values";
 
 import { TRAIT_IDS, type TraitId } from "../../../src/lib/srd/types";
-import {
-  ADVANCEMENT_OPTIONS,
-  CONDITIONS,
-  EFFECT_UNTIL,
-  FEATURE_USE_UNTIL,
-  HELD_DIE_KINDS,
-  HELD_DIE_UNTIL,
-  PRONOUNS_LABELS,
-  SUBCLASS_RANKS,
-} from "../../../src/lib/validation/characters";
+import { ADVANCEMENT_OPTIONS, CONDITIONS, EFFECT_UNTIL, FEATURE_USE_UNTIL, HELD_DIE_KINDS, HELD_DIE_UNTIL, PRONOUNS_LABELS, SUBCLASS_RANKS } from "../../../src/lib/validation/character-constants";
 
 /**
  * Convex validators for characters (CD19). They describe shapes only; the zod
@@ -64,6 +55,8 @@ export const characterDraftValidator = v.object({
   classItem: v.string(),
   background: v.array(v.string()),
   experiences: v.array(v.string()),
+  /** Purposeful Design (CB p.53, DA11): the index of the Experience that gets the +1. Optional (widened). */
+  purposefulExperience: v.optional(v.union(v.literal(0), v.literal(1))),
   domainCards: v.array(v.string()),
   connections: v.array(v.string()),
   portrait: v.optional(portraitValidator),
@@ -71,7 +64,8 @@ export const characterDraftValidator = v.object({
 
 export const inventoryItemValidator = v.object({ id: v.string(), name: v.string() });
 
-export const experienceValidator = v.object({ id: v.string(), name: v.string(), value: v.number() });
+/** `purposefulDesign` (DA11, optional, widened): the Experience a Clank chose for Purposeful Design (+1, CB p.53). */
+export const experienceValidator = v.object({ id: v.string(), name: v.string(), value: v.number(), purposefulDesign: v.optional(v.literal(true)) });
 
 /** A sheet edit (`sheetPatchSchema`): every field optional; `null` unequips. */
 export const sheetPatchValidator = v.object({
@@ -86,7 +80,7 @@ export const sheetPatchValidator = v.object({
   armorId: v.optional(v.union(v.string(), v.null())),
   inventory: v.optional(v.array(v.union(v.string(), inventoryItemValidator))),
   gold: v.optional(goldValidator),
-  experiences: v.optional(v.array(v.object({ id: v.optional(v.string()), name: v.string(), value: v.number() }))),
+  experiences: v.optional(v.array(v.object({ id: v.optional(v.string()), name: v.string(), value: v.number(), purposefulDesign: v.optional(v.literal(true)) }))),
   background: v.optional(v.array(v.string())),
   connections: v.optional(v.array(v.string())),
   notes: v.optional(v.string()),
@@ -122,7 +116,9 @@ export const effectValidator = v.object({
       damage: v.optional(v.number()),
       trait: v.optional(v.object({ id: traitIdValidator, delta: v.number() })),
     }),
-  ),
+  ),  /** Who cast it / which instance it targets (V4, dcm-lztq, dcm-qxb6; zod effectSchema). */
+  casterId: v.optional(v.string()),
+  targetInstanceId: v.optional(v.string()),
 });
 
 export const heldDieValidator = v.object({
@@ -179,6 +175,8 @@ const d5SheetFields = {
   ),
   /** Tokens on domain cards (`cardTokensSchema`, plan combat-actions CA0): one `{cardId, count}` per card holding any. */
   cardTokens: v.optional(v.array(v.object({ cardId: v.string(), count: v.number() }))),
+  /** Named creature tokens on the PC (V4, dcm-wiwi; zod creatureTokens). */
+  creatureTokens: v.optional(v.array(v.object({ name: v.string(), count: v.number() }))),
 };
 
 /** The current sheet (`characterSheetSchema`, version 2) as queries return it. Keep in step with the zod schema. */
@@ -217,6 +215,13 @@ export const sheetValidator = v.object({
   portrait: v.optional(portraitValidator),
   ...d5SheetFields,
 });
+
+/**
+ * The stored sheet blob as `storedSheet` writes it: the current sheet with its `schemaVersion` (CD3). `characters.sheet`
+ * is still `v.any()`; it narrows to this (dcm-bxp.28, CD4) only after, on every deployment, `migrations/characters:
+ * versionSheets` has run and `migrations/characters:auditSheets` reports no row that fails it.
+ */
+export const storedSheetValidator = v.object({ schemaVersion: v.number(), ...sheetValidator.fields });
 
 /**
  * The statuses `characters.setStatus` sets by hand. `away` there benches the

@@ -1,0 +1,266 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Arcane Glass Buttons</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one narrow column — live demo first, then the rules, the numbers and the copyable CSS. Single dark theme on purpose: it is the game's night palette. */
+:root{
+  color-scheme:dark;
+  --page:#0b1214; --panel:#121b1f; --inset:#0f171a; --line:#253338; --line-2:#33444a;
+  --ink:#e6ecea; --muted:#9fb2b6; --faint:#7d8f96;
+  --hope:#e3b45a; --hope-soft:#f3cf86; --hope-rgb:227,180,90; --hope-fill:linear-gradient(#f0c873,#c8953f); --hope-ink:#2f2357;
+  --fear:#8f7bd1; --fear-soft:#d9cffc; --fear-rgb:143,123,209; --fear-fill:linear-gradient(#5b48a3,#3b2d6b); --fear-ink:#f3cf86;
+  --ember:#a8473a; --ember-soft:#f3a58f; --ember-rgb:224,80,63; --ember-fill:linear-gradient(#c8503c,#8a2a1e); --ember-ink:#f3cf86;
+  --display:'Cinzel',Georgia,'Times New Roman',serif;
+  --ui:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+}
+body{background:var(--page);color:var(--ink);font:15px/1.55 var(--ui)}
+.wrap{max-width:1040px;margin:0 auto;padding-block:48px 72px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:44px}
+h1{margin:0;font:900 clamp(30px,5vw,44px)/1.05 var(--display);text-wrap:balance}
+h2{margin:0 0 14px;font:700 21px/1.2 var(--display);color:var(--hope-soft);text-wrap:balance}
+.lede{margin:10px 0 0;color:var(--muted);max-width:66ch}
+.lede b{color:var(--ink);font-weight:600}
+.kick{font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--faint);font-weight:600;margin-bottom:10px}
+section p{margin:0 0 12px;max-width:68ch}
+code{font-family:var(--mono);font-size:.88em;color:var(--hope-soft)}
+
+/* ================= the button system (this block is what ships) ================= */
+.btn{
+  --text:var(--ink); --rim:var(--line-2); --rgb:13,20,23; --glass:.0; --fill:linear-gradient(#2c3c42,#1f2b30); --fill-ink:var(--hope-soft);
+  position:relative;isolation:isolate;overflow:hidden;
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  height:44px;padding:0 18px;border:0;border-radius:12px;
+  font:600 14px/1 var(--ui);letter-spacing:0;white-space:nowrap;cursor:pointer;
+  color:var(--text);
+  background:radial-gradient(120% 140% at 50% 120%,rgba(var(--rgb),var(--glass)),rgba(13,20,23,.86) 70%);
+  box-shadow:inset 0 0 0 1px var(--rim),inset 0 0 14px rgba(var(--rgb),.2);
+  transition:color .22s ease,box-shadow .22s ease,transform .15s ease;
+}
+.btn::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;pointer-events:none;background:var(--fill);transform:scaleY(0);transform-origin:50% 100%;transition:transform .26s cubic-bezier(.3,.7,.3,1)}
+.btn:hover::before,.btn:focus-visible::before{transform:scaleY(1)}
+.btn:hover,.btn:focus-visible{color:var(--fill-ink);box-shadow:inset 0 0 0 1px var(--text)}
+.btn:focus-visible{outline:2px solid var(--hope-soft);outline-offset:3px}
+.btn:active{transform:scale(.96)}
+.btn svg{width:16px;height:16px;flex:none}
+
+/* colour sets */
+.btn.is-hope{--text:var(--hope-soft);--rim:var(--hope);--rgb:var(--hope-rgb);--fill:var(--hope-fill);--fill-ink:var(--hope-ink)}
+.btn.is-fear{--text:var(--fear-soft);--rim:var(--fear);--rgb:var(--fear-rgb);--fill:var(--fear-fill);--fill-ink:var(--fear-ink)}
+
+/* roles: colour depends on who is looking */
+[data-viewer="player"] .btn[data-role="confirm"],[data-viewer="gm"] .btn[data-role="cancel"]{--text:var(--hope-soft);--rim:var(--hope);--rgb:var(--hope-rgb);--fill:var(--hope-fill);--fill-ink:var(--hope-ink)}
+[data-viewer="player"] .btn[data-role="cancel"],[data-viewer="gm"] .btn[data-role="confirm"]{--text:var(--fear-soft);--rim:var(--fear);--rgb:var(--fear-rgb);--fill:var(--fear-fill);--fill-ink:var(--fear-ink)}
+.btn[data-role="confirm"]{--glass:.38}
+.btn[data-role="cancel"]{--glass:.22}
+.btn[data-role="neutral"]{--text:#c8d3d0}
+.btn[data-role="neutral"]:hover,.btn[data-role="neutral"]:focus-visible{box-shadow:inset 0 0 0 1px #8a6a2e}
+.btn[data-role="danger"]{--text:var(--ember-soft);--rim:var(--ember);--rgb:var(--ember-rgb);--glass:.38;--fill:var(--ember-fill);--fill-ink:var(--ember-ink)}
+/* toolbar tools: invisible until hovered or switched on */
+.btn[data-role="tool"]{--text:#c8d3d0;background:transparent;box-shadow:none}
+.btn[data-role="tool"]:hover,.btn[data-role="tool"]:focus-visible{box-shadow:inset 0 0 0 1px #8a6a2e}
+/* switched on (toggles, active tools) */
+.btn[aria-pressed="true"]{--text:var(--hope-soft);--rim:var(--hope);--rgb:var(--hope-rgb);--glass:.3;--fill:var(--hope-fill);--fill-ink:var(--hope-ink);
+  background:radial-gradient(120% 140% at 50% 120%,rgba(var(--rgb),var(--glass)),rgba(13,20,23,.86) 70%);box-shadow:inset 0 0 0 1px var(--rim)}
+/* GM rulings on a player's request: allowing gives the table hope, refusing feeds fear (same for every viewer) */
+.btn[data-role="allow"]{--text:var(--hope-soft);--rim:var(--hope);--rgb:var(--hope-rgb);--glass:.38;--fill:var(--hope-fill);--fill-ink:var(--hope-ink)}
+.btn[data-role="deny"]{--text:var(--fear-soft);--rim:var(--fear);--rgb:var(--fear-rgb);--glass:.3;--fill:var(--fear-fill);--fill-ink:var(--fear-ink)}
+/* roll toggle: Normal is neutral; Advantage / Disadvantage take Hope / Fear, flipped for the GM */
+[data-viewer="player"] .btn[data-role="advantage"],[data-viewer="gm"] .btn[data-role="disadvantage"]{--text:var(--hope-soft);--rgb:var(--hope-rgb);--fill:var(--hope-fill);--fill-ink:var(--hope-ink)}
+[data-viewer="player"] .btn[data-role="disadvantage"],[data-viewer="gm"] .btn[data-role="advantage"]{--text:var(--fear-soft);--rgb:var(--fear-rgb);--fill:var(--fear-fill);--fill-ink:var(--fear-ink)}
+.btn[data-role="advantage"],.btn[data-role="disadvantage"]{--rim:var(--line-2);--glass:0}
+[data-viewer="player"] .btn[data-role="advantage"][aria-pressed="true"],[data-viewer="gm"] .btn[data-role="disadvantage"][aria-pressed="true"]{--text:var(--hope-soft);--rim:var(--hope);--rgb:var(--hope-rgb);--glass:.34;--fill:var(--hope-fill);--fill-ink:var(--hope-ink)}
+[data-viewer="player"] .btn[data-role="disadvantage"][aria-pressed="true"],[data-viewer="gm"] .btn[data-role="advantage"][aria-pressed="true"]{--text:var(--fear-soft);--rim:var(--fear);--rgb:var(--fear-rgb);--glass:.4;--fill:var(--fear-fill);--fill-ink:var(--fear-ink)}
+.btn[data-role="normal"]{--text:#c8d3d0}
+.btn[data-role="normal"][aria-pressed="true"]{--text:var(--ink);--rim:#c8d3d0;--rgb:200,211,208;--glass:.16;--fill:linear-gradient(#2c3c42,#1f2b30);--fill-ink:var(--hope-soft)}
+/* sizes */
+.btn.sm{height:34px;padding:0 13px;font-size:12.5px;border-radius:10px}
+.btn.lg{height:54px;padding:0 26px;font-size:17px}
+.btn.icon{width:44px;padding:0}
+.btn.round{border-radius:50%}
+/* disabled: no fill, no motion, reason sits beside it */
+.btn:disabled{--text:#5f7178;color:var(--text);background:rgba(13,20,23,.6);box-shadow:inset 0 0 0 1px var(--line);cursor:not-allowed;transform:none}
+.btn:disabled::before{display:none}
+@media (prefers-reduced-motion:reduce){.btn,.btn::before{transition:none}}
+/* ================= end of the shipped block ================= */
+
+/* page furniture */
+.demo{border-radius:20px;background:var(--inset);box-shadow:inset 0 0 0 1px var(--line);padding:22px;display:flex;flex-direction:column;gap:20px}
+.bar{display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between}
+.bar .note{color:var(--muted);font-size:13.5px;max-width:52ch;margin:0}
+.seg{display:inline-flex;gap:4px;padding:4px;border-radius:14px;background:var(--page);box-shadow:inset 0 0 0 1px var(--line)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.cell{display:flex;flex-direction:column;gap:10px;padding:16px 14px 12px;border-radius:14px;background:var(--panel);min-width:0}
+.cell .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;min-height:48px}
+.cell.wide{grid-column:span 2}
+@media (max-width:560px){.cell.wide{grid-column:auto}.cell .seg{flex-wrap:wrap}}
+.cap{font-size:12px;color:var(--faint)}
+.why{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:#f0a03c}
+.ctx{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.card{padding:16px 18px;border-radius:16px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line);min-width:0}
+.card h3{margin:0;font:700 17px/1.2 var(--display)}
+.card p{margin:6px 0 14px;font-size:13.5px;color:var(--muted)}
+.card .f{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.dock{display:inline-flex;gap:4px;align-items:center;padding:6px;border-radius:18px;background:rgba(11,18,20,.96);box-shadow:0 0 0 1px var(--line-2);flex-wrap:wrap}
+.dock .sep{width:1px;height:28px;background:var(--line);margin:0 4px}
+.tbl{overflow-x:auto;border-radius:14px;box-shadow:inset 0 0 0 1px var(--line)}
+table{border-collapse:collapse;width:100%;min-width:620px;font-size:14px}
+th,td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:600;background:var(--panel)}
+tr:last-child td{border-bottom:0}
+.sw{display:inline-flex;align-items:center;gap:8px;font-weight:600}
+.sw i{width:14px;height:14px;border-radius:4px;flex:none}
+.sw.h{color:var(--hope-soft)}.sw.h i{background:var(--hope)}
+.sw.f{color:var(--fear-soft)}.sw.f i{background:var(--fear)}
+.sw.e{color:var(--ember-soft)}.sw.e i{background:var(--ember)}
+.sw.n{color:#c8d3d0}.sw.n i{background:var(--line-2)}
+.ex{color:var(--muted);font-size:13.5px}
+.why-box{padding:14px 18px;border-radius:14px;background:var(--panel);color:var(--muted);font-size:14px;max-width:none}
+.why-box b{color:var(--ink)}
+dl{display:grid;grid-template-columns:minmax(120px,180px) 1fr;gap:10px 18px;margin:0}
+dt{color:var(--faint);font-size:13px;font-weight:600}
+dd{margin:0;min-width:0}
+.code{position:relative;border-radius:16px;background:#070c0e;box-shadow:inset 0 0 0 1px var(--line)}
+.code pre{margin:0;padding:18px 18px 18px;overflow:auto;max-height:520px;font:12.5px/1.6 var(--mono);color:#c8d3d0;tab-size:2}
+.code .copy{position:absolute;top:10px;right:10px}
+.copied{font-size:12.5px;color:#7fc29b;margin-left:8px}
+@media (max-width:560px){dl{grid-template-columns:1fr}.dock .sep{display:none}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="kick">Daggerheart Campaign Manager · Combat HUD</div>
+    <h1>Arcane Glass Buttons</h1>
+    <p class="lede">Every button outside the character sheets and the card face. Dark glass at rest; on hover the button’s own colour fills up from the bottom and the text takes the other colour. <b>Players confirm in Hope and back out in Fear. The GM confirms in Fear and backs out in Hope.</b></p>
+  </header>
+
+  <section aria-labelledby="demo-h">
+    <h2 id="demo-h">Try it</h2>
+    <div class="demo" id="demo" data-viewer="player">
+      <div class="bar">
+        <div class="seg" role="group" aria-label="Who is looking">
+          <button type="button" class="btn sm" data-role="neutral" id="v-player" aria-pressed="true">Player view</button>
+          <button type="button" class="btn sm" data-role="neutral" id="v-gm" aria-pressed="false">GM view</button>
+        </div>
+        <p class="note" id="viewer-note">Player view: confirms are Hope gold, cancels are Fear purple. Hover or tab to any button.</p>
+      </div>
+
+      <div class="grid">
+        <div class="cell"><div class="row"><button type="button" class="btn" data-role="confirm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 17.5 21 11V3h-8l-6.5 6.5M13 19l6-6M16 16l4 4M19 21l2-2"/></svg>Cast on Lieutenant</button></div><span class="cap">Confirm</span></div>
+        <div class="cell"><div class="row"><button type="button" class="btn" data-role="cancel">Back</button><button type="button" class="btn" data-role="cancel">Decline</button></div><span class="cap">Cancel · back · decline</span></div>
+        <div class="cell"><div class="row"><button type="button" class="btn" data-role="neutral">Roll options</button><button type="button" class="btn icon" data-role="neutral" aria-label="Dice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1" fill="currentColor"/><circle cx="15" cy="15" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg></button></div><span class="cap">Neutral tool</span></div>
+        <div class="cell"><div class="row"><button type="button" class="btn" data-role="danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>End scene</button></div><span class="cap">Danger (same for everyone)</span></div>
+        <div class="cell"><div class="row"><button type="button" class="btn" data-role="confirm" disabled>Wall Walk</button><span class="why">Needs 1 Hope</span></div><span class="cap">Disabled, with the reason beside it</span></div>
+        <div class="cell wide"><div class="row"><span class="seg" role="group" aria-label="Roll"><button type="button" class="btn sm toggle" data-role="normal" aria-pressed="false">Normal</button><button type="button" class="btn sm toggle" data-role="advantage" aria-pressed="true">Advantage</button><button type="button" class="btn sm toggle" data-role="disadvantage" aria-pressed="false">Disadvantage</button></span></div><span class="cap">Roll toggle · click through them. Player: Advantage in Hope, Disadvantage in Fear. GM: the other way round.</span></div>
+        <div class="cell"><div class="row"><button type="button" class="btn sm" data-role="confirm">Use</button><button type="button" class="btn sm" data-role="cancel">Not now</button><button type="button" class="btn lg" data-role="confirm">Roll</button></div><span class="cap">Small · large</span></div>
+        <div class="cell"><div class="row"><button type="button" class="btn icon round" data-role="cancel" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button><button type="button" class="btn sm" data-role="cancel">Undo</button></div><span class="cap">Close and undo are cancels too</span></div>
+      </div>
+
+      <div class="ctx">
+        <div class="card" id="ctx-a"><h3>Vicious Entangle</h3><p>Pick 1 target within Far. Spends your last Hope.</p><div class="f"><button type="button" class="btn" data-role="cancel">Back</button><button type="button" class="btn" data-role="confirm">Cast on Lieutenant</button></div></div>
+        <div class="card" id="ctx-b"><h3>You were hit</h3><p>The Bandit hit Moss for 9. Mark an Armor Slot to drop it to Minor?</p><div class="f"><button type="button" class="btn" data-role="cancel">Take 2 HP</button><button type="button" class="btn" data-role="confirm">Mark Armor · take 1 HP</button></div></div>
+      </div>
+
+      <div><div class="dock" role="toolbar" aria-label="Map tools example">
+        <button type="button" class="btn icon tool" data-role="tool" aria-pressed="true" aria-label="Select"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3l14 8-6 2-2 6Z"/></svg></button>
+        <button type="button" class="btn icon tool" data-role="tool" aria-pressed="false" aria-label="Areas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8" stroke-dasharray="3 3"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg></button>
+        <button type="button" class="btn icon tool" data-role="tool" aria-pressed="false" aria-label="Player view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+        <span class="sep" aria-hidden="true"></span>
+        <button type="button" class="btn" data-role="danger">End scene</button>
+      </div></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="rules-h">
+    <h2 id="rules-h">Who gets which colour</h2>
+    <div class="tbl"><table>
+      <thead><tr><th>Role</th><th>Player sees</th><th>GM sees</th><th>Examples</th></tr></thead>
+      <tbody>
+        <tr><td><b>Confirm</b></td><td><span class="sw h"><i></i>Hope gold</span></td><td><span class="sw f"><i></i>Fear purple</span></td><td class="ex">Cast on…, Attack…, Use, Spend 2 Fear, Set &amp; roll, Mark Armor, Resolve now</td></tr>
+        <tr><td><b>Cancel</b></td><td><span class="sw f"><i></i>Fear purple</span></td><td><span class="sw h"><i></i>Hope gold</span></td><td class="ex">Cancel, Back, Not now, Pass, Skip, Take 2 HP, Undo, Close (✕)</td></tr>
+        <tr><td><b>Allow</b> <span class="ex">(GM ruling)</span></td><td><span class="sw h"><i></i>Hope gold</span></td><td><span class="sw h"><i></i>Hope gold</span></td><td class="ex">Allow on a player’s request: out of range, a reaction, anything waiting on the GM</td></tr>
+        <tr><td><b>Deny</b> <span class="ex">(GM ruling)</span></td><td><span class="sw f"><i></i>Fear purple</span></td><td><span class="sw f"><i></i>Fear purple</span></td><td class="ex">Decline on a player’s request</td></tr>
+        <tr><td><b>Neutral</b></td><td><span class="sw n"><i></i>Grey glass</span></td><td><span class="sw n"><i></i>Grey glass</span></td><td class="ex">Dice, Sheet, Roll options, Vault, Waiting on you, settings, toggles</td></tr>
+        <tr><td><b>Tool</b></td><td><span class="sw n"><i></i>Clear until hovered</span></td><td><span class="sw n"><i></i>Clear until hovered</span></td><td class="ex">Bottom-dock tools: Select, Measure, Areas, Fog, Names, zoom</td></tr>
+        <tr><td><b>Advantage</b></td><td><span class="sw h"><i></i>Hope gold</span></td><td><span class="sw f"><i></i>Fear purple</span></td><td class="ex">Roll toggle, attack and adversary pickers</td></tr>
+        <tr><td><b>Disadvantage</b></td><td><span class="sw f"><i></i>Fear purple</span></td><td><span class="sw h"><i></i>Hope gold</span></td><td class="ex">Roll toggle, attack and adversary pickers (Normal stays grey)</td></tr>
+        <tr><td><b>Danger</b></td><td><span class="sw e"><i></i>Ember red</span></td><td><span class="sw e"><i></i>Ember red</span></td><td class="ex">End scene in the dock</td></tr>
+      </tbody>
+    </table></div>
+    <p class="why-box" style="margin-top:12px"><b>Why it flips.</b> A player who backs out does it out of fear, so their cancel is Fear. When the GM backs off, the players get some breathing room, so the GM’s cancel is Hope. Each side’s confirm is their own resource’s colour. <b>One exception:</b> when the GM answers something a player asked for, Allow is Hope and Decline is Fear, because that is what the answer means for the table.</p>
+  </section>
+
+  <section aria-labelledby="spec-h">
+    <h2 id="spec-h">The numbers</h2>
+    <dl>
+      <dt>Size</dt><dd>44 px tall (34 small, 54 large), 18 px side padding, 12 px radius (10 small, round for icon-only close). Icon-only buttons are 44 × 44.</dd>
+      <dt>Type</dt><dd>IBM Plex Sans 600, 14 px (12.5 small, 17 large). No capitals, no tracking.</dd>
+      <dt>Rest</dt><dd>Dark glass <code>rgba(13,20,23,.86)</code> with the role colour rising from the bottom (38% for confirm, 22% for cancel), a 1 px rim in the role colour and a soft 14 px inner glow.</dd>
+      <dt>Hover / focus</dt><dd>A fill layer scales up from the bottom over 260 ms (<code>cubic-bezier(.3,.7,.3,1)</code>); text turns to the other colour over 220 ms. Gold fill <code>#f0c873 → #c8953f</code> with deep-purple text <code>#2f2357</code>. Purple fill <code>#5b48a3 → #3b2d6b</code> with gold text <code>#f3cf86</code>. Ember fill <code>#c8503c → #8a2a1e</code> with gold text. Neutral fill slate <code>#2c3c42 → #1f2b30</code> with gold text. Keyboard focus shows the same fill plus a 2 px gold outline, 3 px offset.</dd>
+      <dt>Press</dt><dd><code>scale(.96)</code>, 150 ms.</dd>
+      <dt>Switched on</dt><dd><code>aria-pressed="true"</code>: gold glass at rest, gold rim. Roll toggle: Normal switches on in pale grey glass; Advantage and Disadvantage show their colour as text when off and as full glass when on (Hope / Fear for players, Fear / Hope for the GM).</dd>
+      <dt>Disabled</dt><dd>Grey glass, grey text, no fill, no press. Put the reason next to it (“Needs 1 Hope”).</dd>
+      <dt>Reduced motion</dt><dd>The fill and colour change happen instantly.</dd>
+      <dt>Out of scope</dt><dd>Character sheets and the card face (<code>.hc-face</code>) keep their own buttons.</dd>
+    </dl>
+  </section>
+
+  <section aria-labelledby="css-h">
+    <h2 id="css-h">CSS to drop in</h2>
+    <p>Put <code>data-viewer="player"</code> or <code>data-viewer="gm"</code> on the combat page root, then give each button <code>class="btn"</code> and a <code>data-role</code> of <code>confirm</code>, <code>cancel</code>, <code>neutral</code>, <code>tool</code>, <code>danger</code>, or <code>allow</code> / <code>deny</code> for the GM’s answer to a player’s request; the roll toggle uses <code>normal</code>, <code>advantage</code> and <code>disadvantage</code> with <code>aria-pressed</code>. Sizes: add <code>sm</code>, <code>lg</code>, <code>icon</code>, <code>round</code>.</p>
+    <div class="code">
+      <button type="button" class="btn sm copy" data-role="neutral" id="copy-btn">Copy CSS</button>
+      <pre id="css-src" tabindex="0"></pre>
+    </div>
+    <p style="margin-top:12px" class="ex">In React this is one <code>&lt;Button role="confirm" | "cancel" | "neutral" | "tool" | "danger" | "allow" | "deny" | "normal" | "advantage" | "disadvantage"&gt;</code> that renders <code>&lt;button className="btn" data-role={role}&gt;</code>; the viewer comes from the page, not from each button.</p>
+  </section>
+</div>
+
+<script>
+(function(){
+  // show the shipped CSS block from this page's own stylesheet
+  var css = document.querySelector('style').textContent;
+  var a = css.indexOf('/* ================= the button system');
+  var b = css.indexOf('/* ================= end of the shipped block');
+  var tokens = ':root{\n  --ink:#e6ecea; --line:#253338; --line-2:#33444a;\n  --hope:#e3b45a; --hope-soft:#f3cf86; --hope-rgb:227,180,90; --hope-fill:linear-gradient(#f0c873,#c8953f); --hope-ink:#2f2357;\n  --fear:#8f7bd1; --fear-soft:#d9cffc; --fear-rgb:143,123,209; --fear-fill:linear-gradient(#5b48a3,#3b2d6b); --fear-ink:#f3cf86;\n  --ember:#a8473a; --ember-soft:#f3a58f; --ember-rgb:224,80,63; --ember-fill:linear-gradient(#c8503c,#8a2a1e); --ember-ink:#f3cf86;\n  --ui:\'IBM Plex Sans\',system-ui,sans-serif;\n}\n\n';
+  var block = tokens + css.slice(a, b).replace('/* ================= the button system (this block is what ships) ================= */\n', '/* Arcane glass buttons */\n').replace(/\n\s*\n/g, '\n');
+  var pre = document.getElementById('css-src');
+  pre.textContent = block.trim() + '\n';
+
+  var copy = document.getElementById('copy-btn');
+  copy.addEventListener('click', function(){
+    var done = function(){ copy.textContent = 'Copied'; setTimeout(function(){ copy.textContent = 'Copy CSS'; }, 1600); };
+    var fallback = function(){ var r = document.createRange(); r.selectNodeContents(pre); var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); copy.textContent = 'Selected · press Ctrl+C'; };
+    try { navigator.clipboard.writeText(pre.textContent).then(done, fallback); } catch (e) { fallback(); }
+  });
+
+  // viewer switch
+  var demo = document.getElementById('demo');
+  var vp = document.getElementById('v-player'), vg = document.getElementById('v-gm'), note = document.getElementById('viewer-note');
+  function setViewer(v){
+    demo.setAttribute('data-viewer', v);
+    vp.setAttribute('aria-pressed', v === 'player'); vg.setAttribute('aria-pressed', v === 'gm');
+    note.textContent = v === 'player' ? 'Player view: confirms are Hope gold, cancels are Fear purple. Hover or tab to any button.'
+                                      : 'GM view: confirms are Fear purple, cancels are Hope gold. Hover or tab to any button.';
+    var a = document.querySelector('#ctx-a'), bb = document.querySelector('#ctx-b');
+    if (v === 'gm') {
+      a.innerHTML = '<h3>Spend 2 Fear?</h3><p>1 to spotlight the Lieutenant, 1 for Coup de Grace on Moss (Vulnerable).</p><div class="f"><button type="button" class="btn" data-role="cancel">Cancel</button><button type="button" class="btn" data-role="confirm">Spend 2 Fear</button></div>';
+      bb.innerHTML = '<h3>Out of range: your call</h3><p>Moss wants to cast Vicious Entangle on the Sniper. It is Very Far; the card reaches Far.</p><div class="f"><button type="button" class="btn" data-role="deny">Decline</button><button type="button" class="btn" data-role="allow">Allow</button></div>';
+    } else {
+      a.innerHTML = '<h3>Vicious Entangle</h3><p>Pick 1 target within Far. Spends your last Hope.</p><div class="f"><button type="button" class="btn" data-role="cancel">Back</button><button type="button" class="btn" data-role="confirm">Cast on Lieutenant</button></div>';
+      bb.innerHTML = '<h3>You were hit</h3><p>The Bandit hit Moss for 9. Mark an Armor Slot to drop it to Minor?</p><div class="f"><button type="button" class="btn" data-role="cancel">Take 2 HP</button><button type="button" class="btn" data-role="confirm">Mark Armor · take 1 HP</button></div>';
+    }
+  }
+  vp.addEventListener('click', function(){ setViewer('player'); });
+  vg.addEventListener('click', function(){ setViewer('gm'); });
+
+  // toggles in the demo behave like a segmented control
+  document.querySelectorAll('.seg').forEach(function(seg){
+    if (seg.getAttribute('aria-label') === 'Who is looking') return;
+    seg.addEventListener('click', function(e){ var t = e.target.closest('button'); if (!t) return; seg.querySelectorAll('button').forEach(function(x){ x.setAttribute('aria-pressed', x === t); }); });
+  });
+  document.querySelectorAll('.dock .tool').forEach(function(t){ t.addEventListener('click', function(){ t.setAttribute('aria-pressed', t.getAttribute('aria-pressed') !== 'true'); }); });
+})();
+</script>
+
+</body></html>

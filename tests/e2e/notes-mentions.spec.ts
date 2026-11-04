@@ -63,7 +63,7 @@ test("the GM mentions an unmet NPC and renames it; the player gets it only once 
   await input.click();
   await input.pressSequentially("* ask @mar");
   await expect(combobox).toHaveAttribute("aria-expanded", "true");
-  const listbox = paper(page).getByRole("listbox", { name: "Characters & Locations" });
+  const listbox = paper(page).getByRole("listbox", { name: "Codex" });
   await expect(listbox.getByRole("option", { name: /Marlow/ })).toHaveAttribute("aria-selected", "true");
   await expect(input).toHaveAttribute("aria-activedescendant", (await listbox.getByRole("option", { name: /Marlow/ }).getAttribute("id"))!);
   await input.press("Enter");
@@ -95,7 +95,7 @@ test("the GM mentions an unmet NPC and renames it; the player gets it only once 
     // The party has not met the NPC: the player's picker does not offer it.
     await playerInput.click();
     await playerInput.pressSequentially("met @mar");
-    await expect(paper(player).getByRole("option")).toHaveText(["Nothing in Characters & Locations yet."]);
+    await expect(paper(player).getByRole("option")).toHaveText(["Nothing in Codex yet."]);
 
     // Known now: the open list updates live; the player picks it with the keyboard.
     await gm.mutation(api.codex.update, { entryId: npc, patch: { known: true } });

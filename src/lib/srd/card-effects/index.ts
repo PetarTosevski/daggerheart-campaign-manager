@@ -2,33 +2,44 @@
 // Pure data: no framework imports, relative imports only (bundled into Convex).
 
 import type { CardEffect } from "../../domain/card-effects/types";
-import { ARCANA_EFFECTS } from "./arcana";
-import { BLADE_EFFECTS } from "./blade";
-import { BONE_EFFECTS } from "./bone";
-import { CODEX_EFFECTS } from "./codex";
-import { DREAD_EFFECTS } from "./dread";
-import { GRACE_EFFECTS } from "./grace";
-import { MIDNIGHT_EFFECTS } from "./midnight";
-import { SAGE_EFFECTS } from "./sage";
-import { SPLENDOR_EFFECTS } from "./splendor";
-import { VALOR_EFFECTS } from "./valor";
+import { arcanaEffects } from "./arcana";
+import { bladeEffects } from "./blade";
+import { boneEffects } from "./bone";
+import { codexEffects } from "./codex";
+import { dreadEffects } from "./dread";
+import { graceEffects } from "./grace";
+import { midnightEffects } from "./midnight";
+import { sageEffects } from "./sage";
+import { splendorEffects } from "./splendor";
+import { valorEffects } from "./valor";
 
 export { CARD_CLASSIFICATION, cardClass, cardUsage } from "./classification";
 export type { CardClass, CardHow } from "./classification";
 
-/** Each domain's table, in `DOMAINS` order. */
-export const DOMAIN_EFFECT_TABLES: Readonly<Record<string, readonly CardEffect[]>> = {
-  arcana: ARCANA_EFFECTS,
-  blade: BLADE_EFFECTS,
-  bone: BONE_EFFECTS,
-  codex: CODEX_EFFECTS,
-  grace: GRACE_EFFECTS,
-  midnight: MIDNIGHT_EFFECTS,
-  sage: SAGE_EFFECTS,
-  splendor: SPLENDOR_EFFECTS,
-  valor: VALOR_EFFECTS,
-  dread: DREAD_EFFECTS,
-};
+let tables: Readonly<Record<string, readonly CardEffect[]>> | undefined;
+
+/**
+ * Each domain's table, in `DOMAINS` order. Built on the first read (dcm-uh6r): a Convex function that loads this module
+ * but never reads a card's effect evaluates none of the tables.
+ */
+export function domainEffectTables(): Readonly<Record<string, readonly CardEffect[]>> {
+  tables ??= {
+    arcana: arcanaEffects(),
+    blade: bladeEffects(),
+    bone: boneEffects(),
+    codex: codexEffects(),
+    grace: graceEffects(),
+    midnight: midnightEffects(),
+    sage: sageEffects(),
+    splendor: splendorEffects(),
+    valor: valorEffects(),
+    dread: dreadEffects(),
+  };
+  return tables;
+}
+
+/** Each domain's table (tests); bundles that only call the functions below drop it. */
+export const DOMAIN_EFFECT_TABLES: Readonly<Record<string, readonly CardEffect[]>> = /* @__PURE__ */ domainEffectTables();
 
 /** Merges tables into one map; a card id listed twice is a bug in a table, so it throws. */
 export function mergeEffectTables(tables: readonly (readonly CardEffect[])[]): ReadonlyMap<string, CardEffect> {
@@ -42,10 +53,18 @@ export function mergeEffectTables(tables: readonly (readonly CardEffect[])[]): R
   return merged;
 }
 
-/** Every card's effect entry, by card id. */
-export const CARD_EFFECTS: ReadonlyMap<string, CardEffect> = mergeEffectTables(Object.values(DOMAIN_EFFECT_TABLES));
+let mergedEffects: ReadonlyMap<string, CardEffect> | undefined;
+
+/** Every card's effect entry, by card id; merged on the first read (dcm-uh6r). */
+export function allCardEffects(): ReadonlyMap<string, CardEffect> {
+  mergedEffects ??= mergeEffectTables(Object.values(domainEffectTables()));
+  return mergedEffects;
+}
+
+/** Every card's effect entry, by card id (tests, the dice situations list); bundles that only call the functions drop it. */
+export const CARD_EFFECTS: ReadonlyMap<string, CardEffect> = /* @__PURE__ */ allCardEffects();
 
 /** The effect entry of a card, or undefined while its domain tracer has not written it. */
 export function cardEffect(cardId: string): CardEffect | undefined {
-  return CARD_EFFECTS.get(cardId);
+  return allCardEffects().get(cardId);
 }

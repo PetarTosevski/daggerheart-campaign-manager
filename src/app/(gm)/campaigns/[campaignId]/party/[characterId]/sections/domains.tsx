@@ -161,7 +161,7 @@ export function DomainCardsSection({ cls }: { cls: ClassDef | undefined }) {
   // The vault starts spread so its cards and recall costs are in view; the deck gathers and spreads it again.
   const [vaultOpen, setVaultOpen] = useState(true);
   // The server makes a "during rest" swap free only while the campaign has an open rest (CB 101, 105).
-  const rests = useQuery(api.rests.current, canEdit ? { campaignId: slot.campaignId } : "skip");
+  const rests = useQuery(api.restsReads.current, canEdit ? { campaignId: slot.campaignId } : "skip");
   const restOpen = Boolean(rests?.open);
   const [busy, setBusy] = useState<string | null>(null);
   const owned = sheet.domainCards.owned.length;

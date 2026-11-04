@@ -1,0 +1,237 @@
+/*
+ * Combat HUD at tablet width (plan combat-hud H7.1, v2 placement H9.6; boards PlayerTablet / GMTablet 1024 × 768, their
+ * `.tab` rules; HANDOFF "Layout · Tablet"). shell.css imports this file first, and the parts' own CSS loads after it, so
+ * every rule here starts at `.hud-root` to win by specificity, not by order.
+ *
+ * Range: 761-1180 px. The parts' own `max-width: 1180px` blocks (sizes that phones keep too) stay where they are; the
+ * rules here are the tablet's positions only, so the phone layout (H7.2, ≤ 760 px) starts from the same base. The size
+ * tokens (sheet 340 px, map -60 px / .92, edge 16) are hud.css's tablet values. The touch-target block applies at phone
+ * width too (a GM on a phone keeps the tablet layout, answer 13a).
+ *
+ * Wave 10 parts place themselves in their own CSS: the dock bottom 12, icons only (dock.css); "Waiting on you" at
+ * 12 / 12 with its queue above it (queue.css); Log right 12 / bottom 74 (dock.css); Areas right 12 / bottom 74
+ * (areas.css); the spotlight disc right 208 (spotlight.css); the 52 px app bar (app-bar). What is left lands here:
+ *   banners    108 px wide every 114 px from x = 12, 186 px tall (yours 206), 42 px portrait, 36 px seal
+ *   title      x = 484, y = 14; a player's row under it (Dice, Sheet, Your character's icon; the map controls under
+ *              them), kept left of the spotlight disc
+ *   feed       hidden (players' "Just now")
+ *   hand       x = 300 to x = 760; 150 while a sheet is open
+ *   pop-ups    result right 16 / bottom 228, 392 wide; toasts right 24 / bottom 220; the GM's-turn card at x = 484;
+ *              the reactions note x = 330 / bottom 196; all move left of the 340 px sheet while it is open
+ *   panels     the death move 470 px; Areas 360 px. The picking panel (292 px) and the hit window (320 px) keep their
+ *              desktop widths: pick/panel.tsx and hit/spot.ts place them with those widths (PANEL_W, HIT_W), so a
+ *              narrower CSS box would sit off its anchor (the boards' 262 / 290 are a 30 px difference)
+ */
+@media (min-width: 761px) and (max-width: 1180px) {
+  /* ---------------------------------------------------------------- banners (.tab .bn) */
+  .hud-root .hud-r-banners {
+    left: 12px;
+  }
+  .hud-root .hud-r-banners > .hbn-row {
+    --hbn-step: 114px;
+    --hbn-w: 108px;
+  }
+  .hud-root .hbn {
+    height: 186px;
+  }
+  .hud-root .hbn.hbn-you {
+    height: 206px;
+  }
+  .hud-root .hbn-in {
+    padding-top: 12px;
+    gap: 4px;
+  }
+  .hud-root .hbn-face {
+    width: 42px;
+    height: 42px;
+  }
+  .hud-root .hbn-initial {
+    font-size: 18px;
+  }
+  .hud-root .hbn-name {
+    max-width: 96px;
+    font-size: 13.5px;
+  }
+  .hud-root .hbn-c {
+    font-size: 10px;
+  }
+  .hud-root .hbn-cds {
+    max-width: 96px;
+  }
+  .hud-root .hbn-rows .hud-pp i {
+    width: 8px;
+    height: 6px;
+  }
+  .hud-root .hbn-rows .hud-pp-armor i {
+    width: 7px;
+    height: 8px;
+  }
+  .hud-root .hbn-seal {
+    width: 36px;
+    height: 36px;
+    bottom: -12px;
+  }
+  .hud-root .hbn-seal b {
+    font-size: 14px;
+  }
+
+  /* ---------------------------------------------------------------- title and toolbar (.tab .title, .tr, .gtools) */
+  .hud-root .hud-r-scene {
+    left: 484px;
+    top: 14px;
+    transform: none;
+  }
+  .hud-root .hud-tr {
+    /* From x = 484 to the spotlight disc's label (disc right 208, its label about 48 px either side of it). */
+    max-width: calc(100vw - 484px - 256px);
+    justify-content: flex-start;
+  }
+
+  /* ---------------------------------------------------------------- the feed (.tab .me) */
+  .hud-root .hud-feed {
+    display: none;
+  }
+
+  /* ---------------------------------------------------------------- the hand (.tab .bot) */
+  .hud-root .hud-r-hand {
+    left: 300px;
+    /* PlayerTablet's hand ends at x = 760 (Roll options and the deck right of it). */
+    right: 264px;
+  }
+  .hud-root.hud-sh-open .hud-r-hand {
+    left: 150px;
+    right: calc(var(--hud-sheet-w) + var(--hud-edge));
+  }
+
+  /* ---------------------------------------------------------------- pop-ups (.tab .res, .blk, .gms, .gmh) */
+  .hud-root .hud-res-spot {
+    left: auto;
+    right: 16px;
+    bottom: 228px;
+    width: 392px;
+  }
+  .hud-root .hud-r-hand > .hud-toasts {
+    right: calc(24px - 264px);
+    left: auto;
+    bottom: 220px;
+  }
+  .hud-root.hud-sh-open .hud-r-hand > .hud-toasts {
+    right: 0;
+  }
+  .hud-root .hud-spot-card {
+    left: 484px;
+    /* Under the toolbar's two rows (the board's 116 is under one). */
+    top: 172px;
+  }
+  /* shell.css places the note from --hud-pop-note-left; `html` outranks its `.hud-root` / `.hud-sh-open` values. */
+  html .hud-root {
+    --hud-pop-note-left: 330px;
+  }
+  html .hud-root.hud-sh-open {
+    --hud-pop-note-left: 150px;
+  }
+  .hud-root .hud-spot-note {
+    bottom: 196px;
+  }
+  .hud-root dialog.hud-dm {
+    width: 470px;
+  }
+  /*
+   * The GM's dock beside a sheet (GMTablet `.tab.sh-open .dock`: centred at x = 342): with Map tools and 44 px buttons
+   * it is wider than the 684 px the panel leaves, so it wraps to two rows between "Waiting on you" (x = 12-112) and the
+   * panel. (`html`: dock.css's own `.hud-sh-open` rule loads after this file.)
+   */
+  html .hud-root.hud-sh-open .hud-r-dock {
+    left: calc((100vw - var(--hud-sheet-w) + 120px) / 2);
+    max-width: calc(100vw - var(--hud-sheet-w) - 132px);
+  }
+  .hud-root.hud-sh-open .hud-dock {
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 4px;
+  }
+  /* Fog's pop-over at the screen's left edge (dock.css), x = 12 here, also beside a sheet. */
+  .hud-root .hud-dock-pop.hud-pop-fog {
+    left: calc(12px - 50vw + 50%);
+  }
+  html .hud-root.hud-sh-open .hud-dock-pop.hud-pop-fog {
+    left: calc(12px - (100vw - var(--hud-sheet-w) + 120px) / 2 + 50%);
+  }
+  /* The hand's Roll options and Hide cards stay above the two-row dock (shell.css: 98 px above one row). */
+  .hud-root[data-role="gm"].hud-sh-open .hud-fanside {
+    margin-bottom: 128px;
+  }
+  /* Areas (areas.css places it bottom right above the dock): the desktop 360, as at the board's 320 the form's rows
+     (Circle / Wall, Belongs to, Pick on map) spill out. */
+  .hud-root .hud-areas {
+    width: 360px;
+  }
+}
+
+/* ---------------------------------------------------------------- touch targets (≥ 44 px at tablet and phone width) */
+@media (max-width: 1180px) {
+  .hud-root .hud-btn,
+  .hud-root .hud-opt,
+  .hud-root .hud-tog {
+    min-height: 44px;
+  }
+  .hud-root .hud-areas-seg button,
+  .hud-root .hud-areas-fold,
+  .hud-root .hsb-spot,
+  .hud-root .hsb-atk,
+  .hud-root .hsb-seg button,
+  .hud-root .hud-pk-r,
+  .hud-root .hud-pk .hud-pk-go {
+    min-height: 44px;
+  }
+  .hud-root .hud-toast-x {
+    flex: none;
+    /* 46, not 44: a sub-pixel layout measured 43.9 and failed the 44 px touch-target check. */
+    min-width: 46px;
+    min-height: 46px;
+    margin: -10px -10px -10px 0;
+  }
+  .hud-root .hud-pk-x {
+    width: 44px;
+    height: 44px;
+  }
+  /* The stat block's steppers and Use pills (statblock.css: 28 px and 26 px on the desktop parchment). */
+  .hud-root .hsb-step button {
+    width: 44px;
+    height: 44px;
+  }
+  .hud-root .hsb .hsb-af-use .trk-btn {
+    min-width: 44px;
+    height: 44px;
+  }
+  .hud-root .hud-step button,
+  .hud-root .hud-panel-x,
+  .hud-root .hud-areas-x,
+  .hud-root .hud-pop-x,
+  .hud-root .hud-fb-ctl button {
+    width: 44px;
+    height: 44px;
+  }
+  /* The day disc's pop-over: Day / Dim / Night (scene.css draws them 30 px on the desktop). */
+  .hud-root .hud-sun .hud-seg button {
+    height: 44px;
+  }
+}
+
+/* ---------------------------------------------------------------- a player's title row beside the spotlight disc
+ * Desktop below 1600 px: Dice, Sheet and "Your character" (the drawer; the boards have no such button) would run from
+ * x = 690 into the spotlight disc's label (disc right 300). "Your character" shows its icon there, as at tablet width
+ * (its text stays its accessible name), and the row stops left of the disc.
+ */
+@media (min-width: 1181px) and (max-width: 1599.98px) {
+  .hud-root .hud-scene-pl .hud-tr {
+    max-width: calc(100vw - 690px - 400px);
+  }
+  .hud-root .hud-scene-pl .hud-tr > [aria-controls="hud-tools"] {
+    gap: 0;
+    min-width: 44px;
+    padding-inline: 0;
+    justify-content: center;
+    font-size: 0;
+  }
+}

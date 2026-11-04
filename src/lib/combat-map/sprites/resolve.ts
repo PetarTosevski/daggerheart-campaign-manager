@@ -6,7 +6,7 @@
 // the textures of its Classic terrain class in the setting and in common, else the Classic terrain.
 // A broken ref (deleted upload, unknown key, file gone) counts as no ref (D9). Pure: no DOM, no React.
 
-import { OBJECT_KINDS, type ObjectKind, type Terrain } from "../../domain/combat-map/spec";
+import { OBJECT_KINDS, type ObjectKind, type Terrain } from "../../domain/combat-map/spec-constants";
 import { BUILTIN_LOOKUP, builtinSpriteUrl } from "../../sprite-packs/builtin/index";
 import type { SpriteFootprint, SpriteHeight, SpriteLight } from "../../sprite-packs/catalog/index";
 import { pickSprite, textureCandidates } from "../../sprite-packs/mapping";

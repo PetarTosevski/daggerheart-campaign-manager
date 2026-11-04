@@ -15,7 +15,7 @@ test("PD1 travel pace and travel-speed legend at 1440 and 390", { tag: "@visual"
   await page.getByRole("dialog", { name: "Name your campaign" }).getByLabel("Campaign name").fill(name);
   await page.getByRole("button", { name: "Start campaign" }).last().click();
   await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
-  await page.getByRole("navigation", { name: "Campaign sections" }).getByRole("link", { name: "World" }).click();
+  await page.getByRole("navigation", { name: "Campaign sections" }).getByRole("link", { name: "World Map" }).click();
   await expect(page.getByRole("application", { name: /^Map of/ })).toBeVisible();
   const { shoot } = visual(page, "PD1");
   const legend = page.getByRole("region", { name: "Travel speeds" });

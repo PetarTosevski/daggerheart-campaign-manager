@@ -231,3 +231,39 @@
     flex: 1 1 auto;
   }
 }
+
+/* SD4: a feature answer's controls (a count, a pick, an optional step, a situation to confirm). */
+.ih-feat .ih-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+  border: 0;
+  padding: 0;
+  font-size: 0.85rem;
+}
+.ih-feat .ih-pick legend {
+  margin-bottom: 2px;
+}
+.ih-feat .ih-pick label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+}
+.ih-feat .ih-pick input[type="number"] {
+  width: 4.5em;
+  min-height: 44px;
+}
+.ih-feat .ih-pick input[type="checkbox"],
+.ih-feat .ih-pick input[type="radio"] {
+  width: 20px;
+  height: 20px;
+}
+.ih-feat {
+  --dc: #6b5a2b;
+}
+.ih-feat .ih-pick {
+  grid-column: 1 / -1;
+}

@@ -33,12 +33,16 @@ describe("damage through thresholds", () => {
     expect(damageSeverity(-2, T, false)).toBe("none");
   });
 
-  it("halves resistant damage before the thresholds (CB p.99), rounding down", () => {
+  it("halves resistant damage before the thresholds (CB p.99) and rounds up (CB p.107, Q6)", () => {
+    // CB p.99: 26 physical damage against physical resistance is 13. CB p.107: "round up unless otherwise specified".
     expect(damageTaken(26, true)).toBe(13);
-    expect(damageTaken(15, true)).toBe(7);
-    expect(hpForDamage(15, T, true)).toBe(1);
+    expect(damageTaken(15, true)).toBe(8);
+    expect(damageTaken(1, true)).toBe(1);
+    expect(damageTaken(0, true)).toBe(0);
+    expect(hpForDamage(14, T, true)).toBe(1);
+    expect(hpForDamage(15, T, true)).toBe(2);
     expect(hpForDamage(16, T, true)).toBe(2);
-    expect(hpForDamage(1, T, true)).toBe(0);
+    expect(hpForDamage(1, T, true)).toBe(1);
   });
 
   it("treats a None threshold as never reached, and None/None (Minions) as defeat on any damage", () => {

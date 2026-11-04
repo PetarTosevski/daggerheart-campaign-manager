@@ -1,20 +1,21 @@
 /**
- * The GM's adversary controls on the Combat Map and the hit flashes (plan combat-actions AA5) with Convex mocked: the
+ * The Combat Map's hit flashes and the adversary model the HUD reads (plan combat-actions AA5) with Convex mocked: the
  * flashes (rows already in the feed don't replay; hits, misses and roll-less features flash the tokens the row's
- * `targets` name by id, followups-7 H3; adversary tokens for the GM only; GM rows and undone rows never do), the range / sight rows (CB p.103-104, Q2), the panel acting
- * for the selected adversary token with the Encounter tab's own controls (Attack fired once with the picked targets; a
- * PC out of sight not offered; the adversary stays picked when a PC token is selected), the GM's adversary
- * resolutions with Undo (U4), and the incoming-hit prompt for a PC the GM owns (user answer 2026-10-22).
+ * `targets` name by id, followups-7 H3; adversary tokens for the GM only; GM rows and undone rows never do), the range /
+ * sight rows (CB p.103-104, Q2), and the incoming-hit prompt for a PC the GM owns (user answer 2026-10-22).
+ *
+ * Plan combat-hud H8.2 deleted the GM column's adversary controls and "Adversary actions" Resolutions card: the HUD
+ * stat block (tests/unit/hud/statblock-panel.test.tsx "Attack opens the purple session…", "a feature with PC targets
+ * opens the purple panel…", "rows: in range, out of range…, out of sight", FearConfirm tests) and the HUD Resolutions
+ * (tests/unit/hud/queue-cards.test.tsx "Resolutions", tests/unit/hud/queue-model.test.tsx "resolutionRows") cover them.
  */
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { AdversaryControls } from "@/components/combat-map/actions/adversary/controls";
 import { HitFlashLayer } from "@/components/combat-map/actions/adversary/flash";
 import { adversaryResolutionsOf, attackBand, newActionFlashes, rangeRows } from "@/components/combat-map/actions/adversary/model";
-import { AdversaryResolutions } from "@/components/combat-map/actions/adversary/resolutions";
 import { GmOwnHits } from "@/components/combat-map/actions/reactions";
-import type { AdversaryPanelProps, ActionsLayerProps } from "@/components/combat-map/slots";
+import type { ActionsLayerProps, ActionsSlotProps } from "@/components/combat-map/slots";
 
 import type { Id } from "../../convex/_generated/dataModel";
 
@@ -35,14 +36,6 @@ vi.mock("convex/react", () => ({
   },
 }));
 
-vi.mock("@/components/party/dice/dice3d", () => ({ play3d: async () => false }));
-
-/** Line of sight for the panel: Tabby (x >= 10) is behind a wall. The real `sightOn` is tested on its own below. */
-vi.mock("@/components/combat-map/actions/adversary/sight", async (importActual) => {
-  const actual = await importActual<typeof import("@/components/combat-map/actions/adversary/sight")>();
-  return { ...actual, useLiveSight: () => (_from: unknown, to: { x: number }) => ({ lineOfSight: to.x < 10, cover: false }) };
-});
-
 afterEach(() => {
   calls.length = 0;
   for (const k of Object.keys(results)) delete results[k];
@@ -52,7 +45,7 @@ afterEach(() => {
 const CAMPAIGN = "c1" as Id<"campaigns">;
 const MAP = { _id: "m1" as Id<"combatMaps">, name: "Old road", live: true, source: "generated" as const, w: 20, h: 20 };
 
-const state = (over: Partial<AdversaryPanelProps> = {}): AdversaryPanelProps => ({
+const state = (over: Partial<ActionsSlotProps> = {}): ActionsSlotProps => ({
   campaignId: CAMPAIGN,
   role: "gm",
   mode: "play",
@@ -172,109 +165,6 @@ describe("range and sight (CB p.103-104, Q2)", () => {
   });
 });
 
-const BEAR = {
-  _id: "cb1",
-  name: "Bear",
-  tier: 1,
-  type: "Bruiser",
-  description: "A large bear.",
-  motives: "Maul",
-  difficulty: 14,
-  thresholds: { major: 9, severe: 17 },
-  hp: 7,
-  stress: 2,
-  attack: { modifier: 1, name: "Claws", range: "Melee", damage: "1d8+3 phy" },
-  experiences: [],
-  features: [
-    { name: "Overwhelming Force", kind: "passive", text: "Knock back." },
-    { name: "Roar", kind: "action", text: "Spend a Fear to roar.", fearCost: 1 },
-  ],
-};
-const TOKENS = [
-  { _id: "t-bear", kind: "adversary", instanceId: "i1", name: "Bear", x: 5, y: 5, size: 1 },
-  { _id: "t-mira", kind: "pc", characterId: "mira", name: "Mira", x: 6, y: 5, size: 1 },
-  { _id: "t-tabby", kind: "pc", characterId: "tabby", name: "Tabby", x: 15, y: 5, size: 1 },
-];
-const INSTANCE = {
-  _id: "i1",
-  label: "Bear",
-  hp: 1,
-  stress: 0,
-  stats: { hpMax: 7, stressMax: 2 },
-  defeated: false,
-  spotlights: 0,
-  spotlightTurn: 0,
-  source: { kind: "custom", customId: "cb1" },
-};
-
-function seedEncounter() {
-  queries["combatTokens:list"] = TOKENS;
-  queries["combatMaps:list"] = [MAP];
-  queries["encounters:list"] = { active: [{ _id: "e1", status: "running", name: "Road" }], ended: [] };
-  queries["encounters:get"] = { encounter: { _id: "e1", status: "running", gmTurn: 1, name: "Road" }, instances: [INSTANCE] };
-  queries["encounterTracking:customBlocks"] = [BEAR];
-  queries["campaigns:fear"] = 3;
-  queries["characters:listByCampaign"] = [
-    { _id: "mira", status: "active", sheet: { name: "Mira" } },
-    { _id: "tabby", status: "active", sheet: { name: "Tabby" } },
-  ];
-  queries["adversaryActions:windows"] = [];
-}
-
-describe("AdversaryControls", () => {
-  it("asks for an adversary token, or a running encounter", () => {
-    seedEncounter();
-    const { rerender } = render(<AdversaryControls {...state()} />);
-    expect(screen.getByTestId("adversary-hint").textContent).toMatch(/Select an adversary token/);
-    queries["encounters:list"] = { active: [], ended: [] };
-    rerender(<AdversaryControls {...state({ selectedTokenId: "t-bear" as Id<"combatTokens"> })} />);
-    expect(screen.getByText(/No encounter is running/)).toBeTruthy();
-  });
-
-  it("acts for the selected adversary with the Encounter tab's controls; a PC out of sight isn't offered", async () => {
-    seedEncounter();
-    results["adversaryActions:attack"] = [
-      { status: "resolved", groupId: "g", entryId: "e", roll: { kind: "action", dice: [{ sides: 20, value: 12, role: "d20" }], modifier: 1, total: 13, outcome: "none", manual: false }, success: true, targets: [{ characterId: "mira", hit: true, requestId: "r1", damage: 8, resolved: false }], fearDelta: 0, prompts: [], offers: [] },
-    ];
-    const { rerender } = render(<AdversaryControls {...state({ selectedTokenId: "t-bear" as Id<"combatTokens"> })} />);
-    const sel = screen.getByTestId("adversary-selected");
-    expect(within(sel).getByRole("heading", { name: "Bear" })).toBeTruthy();
-    const ranges = within(sel).getByRole("list", { name: "Range and sight" });
-    expect(ranges.textContent).toMatch(/Mira\s*Melee\s*In sight/);
-    expect(ranges.textContent).toMatch(/Tabby\s*Far\s*No line of sight\s*beyond Claws \(Melee\)/);
-
-    const panel = within(sel).getByRole("region", { name: "Adversary actions" });
-    const targets = within(panel).getByRole("group", { name: "Targets" });
-    expect(within(targets).queryByRole("button", { name: "Tabby" })).toBeNull();
-    fireEvent.click(within(targets).getByRole("button", { name: "Mira" }));
-
-    // Selecting Mira's token on the map keeps acting for the Bear.
-    rerender(<AdversaryControls {...state({ selectedTokenId: "t-mira" as Id<"combatTokens"> })} />);
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "⚔ Attack Mira with Claws" }));
-    });
-    const attacks = calls.filter((c) => c.name === "adversaryActions:attack");
-    expect(attacks).toHaveLength(1);
-    expect(attacks[0]!.args).toMatchObject({ campaignId: CAMPAIGN, instanceId: "i1", targets: ["mira"] });
-    expect(screen.getByTestId("tracker-action-result").textContent).toMatch(/Mira\s*Hit\s*8 damage\s*waiting for answers/);
-
-    // Done stops acting for it.
-    fireEvent.click(screen.getByRole("button", { name: "Stop acting for Bear" }));
-    expect(screen.getByTestId("adversary-hint")).toBeTruthy();
-  });
-
-  it("asks before spending Fear on a feature (Q19)", async () => {
-    seedEncounter();
-    results["adversaryActions:useFeature"] = [{ status: "confirmFear", fear: 1, spotlight: 0, feature: 1, experience: 0 }];
-    render(<AdversaryControls {...state({ selectedTokenId: "t-bear" as Id<"combatTokens"> })} />);
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Use Roar (1 Fear)" }));
-    });
-    expect(screen.getByRole("group", { name: "Spend Fear?" }).textContent).toMatch(/Spend 1 Fear\? 1 for the feature\./);
-    expect(calls.filter((c) => c.name === "adversaryActions:useFeature")[0]!.args).not.toHaveProperty("spendFear");
-  });
-});
-
 const layer = (role: "gm" | "player"): ActionsLayerProps => ({
   ...state({ role }),
   viewport: { cell: 40, zoom: 1, w: 20, h: 20, pad: 0, toSquares: () => ({ x: 0, y: 0 }), showNames: false },
@@ -290,7 +180,7 @@ describe("HitFlashLayer", () => {
   const MIRA_HIT: FeedTarget[] = [{ tokenId: "t-mira", side: "pc", tone: "hit" }];
 
   it("doesn't replay old rows, flashes a new hit on the PC token, and drops it after its animation", () => {
-    queries["combatTokens:party"] = [{ _id: "t-mira", name: "Mira", x: 2, y: 3, size: 1 }];
+    queries["combatTokensReads:party"] = [{ _id: "t-mira", name: "Mira", x: 2, y: 3, size: 1 }];
     queries["feed:list"] = feed([{ _id: "old", kind: "adversary", visibility: "public", summary: "Bandit hit Mira", targets: MIRA_HIT }]);
     const { rerender } = render(<HitFlashLayer {...layer("player")} />);
     rerender(<HitFlashLayer {...layer("player")} />);
@@ -313,7 +203,7 @@ describe("HitFlashLayer", () => {
   });
 
   it("the GM reads every token and sees an adversary token a feature touched flash", () => {
-    queries["combatTokens:list"] = [
+    queries["combatTokensReads:list"] = [
       { _id: "t-mira", name: "Mira", x: 2, y: 3, size: 1 },
       { _id: "t-wolf", name: "Wolf", x: 6, y: 1, size: 1 },
     ];
@@ -325,28 +215,6 @@ describe("HitFlashLayer", () => {
     const flash = screen.getByTestId("combat-hit-flash");
     expect(flash.getAttribute("data-tone")).toBe("effect");
     expect(flash.style.left).toBe("240px");
-  });
-});
-
-describe("AdversaryResolutions", () => {
-  it("lists the GM's adversary rows with Undo, once per click", async () => {
-    queries["feed:list"] = feed([
-      { _id: "g1", kind: "adversary", visibility: "gm", summary: "Bear Claws: 15 vs Mira 12: hit", canUndo: true } as never,
-      { _id: "p1", kind: "adversary", visibility: "public", summary: "Bear hit Mira" },
-    ]);
-    render(<AdversaryResolutions {...state()} />);
-    const list = screen.getByRole("list", { name: "Latest adversary actions" });
-    expect(within(list).getAllByTestId("combat-resolution")).toHaveLength(1);
-    await act(async () => {
-      fireEvent.click(within(list).getByRole("button", { name: "Undo: Bear Claws: 15 vs Mira 12: hit" }));
-    });
-    expect(calls.filter((c) => c.name === "actionLog:undo").map((c) => c.args.entryId)).toEqual(["g1"]);
-  });
-
-  it("renders nothing before any adversary acted", () => {
-    queries["feed:list"] = feed([{ _id: "p1", kind: "combat", visibility: "gm", summary: "Mira hit Bear" }]);
-    const { container } = render(<AdversaryResolutions {...state()} />);
-    expect(container.innerHTML).toBe("");
   });
 });
 
@@ -371,7 +239,7 @@ describe("GmOwnHits (user answer 2026-10-22)", () => {
   };
 
   it("gives a PC the GM owns the same prompt in the GM column, and nothing for the players' PCs", () => {
-    queries["characters:listByCampaign"] = [
+    queries["charactersReads:listByCampaign"] = [
       { _id: "gm-pc", mine: true, canEdit: true, status: "active", updatedAt: 1, sheet: { name: "Rook" } },
       { _id: "mira", mine: false, canEdit: true, status: "active", updatedAt: 1, sheet: { name: "Mira" } },
     ];
@@ -386,7 +254,7 @@ describe("GmOwnHits (user answer 2026-10-22)", () => {
   });
 
   it("renders nothing for a player (their prompt is in the player column)", () => {
-    queries["characters:listByCampaign"] = [{ _id: "gm-pc", mine: true, canEdit: true, status: "active", updatedAt: 1, sheet: { name: "Rook" } }];
+    queries["charactersReads:listByCampaign"] = [{ _id: "gm-pc", mine: true, canEdit: true, status: "active", updatedAt: 1, sheet: { name: "Rook" } }];
     queries["adversaryActions:pending"] = [hit];
     const { container } = render(<GmOwnHits campaignId={CAMPAIGN} role="player" />);
     expect(container.innerHTML).toBe("");

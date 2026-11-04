@@ -6,15 +6,24 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { logAction } from "./lib/actionLog";
 import { assertCanAct, loadCharacter, readSheet } from "./lib/characterSheet";
 import {
+  addedOutOfRange,
+  answerRiderPick,
   attackDuality,
   attackRollFields,
   attackScene,
+  awaitingAttackValidator,
   beforeOf,
   checkTargets,
   equippedWeapon,
+  hostOf,
   pendingAttackValidator,
+  pickRiders,
   resolveAttack,
   resolvedAttackValidator,
+  riderOptions,
+  riderOptionValidator,
+  rollFromStored,
+  setupReach,
   targetHints,
   targetHintValidator,
   weaponIn,
@@ -23,7 +32,8 @@ import {
 } from "./lib/combatActions";
 import { loadCombatMap } from "./lib/combatMaps";
 import { loadScene, viewOf } from "./lib/combatVision";
-import { closeRequest, encounterRunning, groupOffer, openSanction } from "./lib/combatRequests";
+import { closeRequest, encounterRunning, groupOffer, loadOpenRequest, openSanction } from "./lib/combatRequests";
+import { afterRollChoiceValidator, MAX_RIDERS_PER_ATTACK, riderPickChoiceValidator, riderValidator, type ForcedAttackPayload } from "./lib/validators/combatRequests";
 import { featureScope } from "./lib/featureScope";
 import { campaignQuery, keyedCampaignMutation } from "./lib/functions";
 import { prepareDuality, rules, type Loaded } from "./lib/rolls";
@@ -51,6 +61,25 @@ async function attacker(ctx: QueryCtx & { user: Doc<"users">; campaign: Doc<"cam
   return { campaign, character, sheet: readSheet(character.sheet), gm: permission === "owner" };
 }
 
+/**
+ * E1.4b (dcm-uxsd): the open forced-attack request for this character, with its locked targets (the same set, any order).
+ * NOT_FOUND for another campaign's or another kind of request, REQUEST_NOT_OPEN once answered or when its encounter
+ * ended (declined then), INVALID for another character's or a changed target list.
+ */
+async function forcedRequest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<"campaigns"> }, requestId: Id<"combatRequests">, characterId: Id<"characters">, targetTokenIds: readonly Id<"combatTokens">[]): Promise<{ row: Doc<"combatRequests">; payload: ForcedAttackPayload }> {
+  const row = await loadOpenRequest(ctx, ctx.campaign._id, requestId);
+  const payload = row.payload;
+  if (payload.kind !== "forcedAttack") throw appError("NOT_FOUND");
+  if (!(await encounterRunning(ctx, row))) {
+    await closeRequest(ctx, row._id, "declined", ctx.user._id);
+    throw appError("REQUEST_NOT_OPEN");
+  }
+  if (payload.characterId !== characterId) throw appError("INVALID", "That forced attack is another character's.");
+  const locked = new Set<string>(payload.targetTokenIds);
+  if (targetTokenIds.length !== locked.size || !targetTokenIds.every((id) => locked.has(id))) throw appError("INVALID", "A forced attack's targets are locked.");
+  return { row, payload };
+}
+
 /** The stored roll options back as the attack's arguments (every field optional in the sanction, AA0). */
 function rollOf(args: AttackRoll): AttackRoll {
   return {
@@ -64,6 +93,9 @@ function rollOf(args: AttackRoll): AttackRoll {
     ...(args.damageOptions !== undefined ? { damageOptions: args.damageOptions } : {}),
     ...(args.slayerDice !== undefined ? { slayerDice: args.slayerDice } : {}),
     ...(args.tideTokens !== undefined ? { tideTokens: args.tideTokens } : {}),
+    ...(args.riseToTheChallenge !== undefined ? { riseToTheChallenge: args.riseToTheChallenge } : {}),
+    // E1.3b (dcm-xbtw): the "Use as Spirit Weapon" box.
+    ...(args.spiritWeapon !== undefined ? { spiritWeapon: args.spiritWeapon } : {}),
   };
 }
 
@@ -83,29 +115,61 @@ export const attack = keyedCampaignMutation({
     targetTokenIds: v.array(v.id("combatTokens")),
     slot: weaponSlotValidator,
     ...attackRollFields,
+    /** SD5: riders taken with the attack (at most MAX_RIDERS_PER_ATTACK). */
+    riders: v.optional(v.array(riderValidator)),
+    /**
+     * Plan lanes-2 wave 10, E1.4b (dcm-uxsd): the open `forcedAttack` request this attack answers (Beguiled, HF p.75). Its
+     * targets are locked: `targetTokenIds` must be exactly the request's (else INVALID); the GM chose them, so no range
+     * sanction is asked. The attack's rows join the forcing use's undo group and the request is resolved.
+     */
+    forcedRequestId: v.optional(v.id("combatRequests")),
+    /**
+     * E1.4b (dcm-kso9; user answer 2026-11-01): the option picked before rolling for a target's rider benefit (Lead by
+     * Example, CB p.342: clear a Stress or gain a Hope). The attack uses the rider up, hit or miss. Not kept by a GM sanction.
+     */
+    benefit: v.optional(v.string()),
   },
-  returns: v.union(resolvedAttackValidator, pendingAttackValidator),
+  returns: v.union(resolvedAttackValidator, pendingAttackValidator, awaitingAttackValidator),
   handler: async (ctx, args) =>
     ctx.once("combat_attack", args, async () => {
-      const { characterId, mapId, targetTokenIds, slot, ...options } = args;
+      const { characterId, mapId, targetTokenIds, slot, riders = [], forcedRequestId, benefit, ...options } = args;
+      if (riders.length > MAX_RIDERS_PER_ATTACK) throw appError("INVALID", `At most ${MAX_RIDERS_PER_ATTACK} riders.`);
       const loaded = await attacker(ctx, characterId);
+      const forced = forcedRequestId === undefined ? null : await forcedRequest(ctx, forcedRequestId, characterId, targetTokenIds);
       const scene = await attackScene(ctx, ctx.campaign, loaded.character, mapId);
       const weapon = equippedWeapon(loaded.sheet, slot);
-      const targets = await checkTargets(ctx, ctx.campaign, scene, weapon, targetTokenIds);
       const roll = rollOf(options);
+      const picked = pickRiders(loaded.sheet, ctx.campaign, hostOf(weapon, slot, roll.trait), riders);
+      // E1.4b (dcm-lbai): a reach picked with the attack widens its own range check.
+      const targets = await checkTargets(ctx, ctx.campaign, scene, weapon, targetTokenIds, roll, setupReach(picked));
+      if (forced !== null) {
+        const result = await resolveAttack(ctx, { loaded, actorId: ctx.user._id, scene, weapon, slot, targets, roll, riders, groupId: forced.payload.groupId, ...(benefit !== undefined ? { benefit } : {}) });
+        await closeRequest(ctx, forced.row._id, "resolved", ctx.user._id);
+        return result;
+      }
       const outOfRange = targets.filter((t) => !t.check.inRange);
-      if (outOfRange.length === 0) return resolveAttack(ctx, { loaded, actorId: ctx.user._id, scene, weapon, slot, targets, roll });
+      // DA2 (combat-actions Q1, user 2026-10-30): a rider's extra target out of its range waits for the GM too.
+      const added = addedOutOfRange(scene, weapon, picked);
+      if (outOfRange.length === 0 && added.length === 0) return resolveAttack(ctx, { loaded, actorId: ctx.user._id, scene, weapon, slot, targets, roll, riders, ...(benefit !== undefined ? { benefit } : {}) });
 
-      // Q1: wait for the GM. Refuse now what the approval would refuse anyway (a character who can't act, unpaid costs).
+      // Q1: wait for the GM. Refuse now what the approval would refuse anyway (a character who can't act, unpaid costs,
+      // a rider that doesn't ride on this attack).
       assertCanAct(loaded.character, loaded.sheet);
       rules(() => prepareDuality(loaded.sheet, attackDuality(weapon, roll, targets.some((t) => t.sight.cover)), featureScope(ctx.campaign), null));
-      const bands = outOfRange.map((t) => ({ tokenId: t.token._id, band: t.check.band }));
+      const bands = [...outOfRange.map((t) => ({ tokenId: t.token._id, band: t.check.band })), ...added.filter((a) => !outOfRange.some((t) => t.token._id === a.tokenId))];
       const requestId = await openSanction(ctx, {
         campaignId: ctx.campaign._id,
         encounterId: targets[0]!.encounter._id,
         mapId: scene.map._id,
         createdBy: ctx.user._id,
-        payload: { schemaVersion: 1, kind: "sanction", characterId, action: { kind: "attack", slot, targetTokenIds, roll }, outOfRange: bands },
+        payload: {
+          schemaVersion: 1,
+          kind: "sanction",
+          characterId,
+          action: { kind: "attack", slot, targetTokenIds, roll, ...(riders.length > 0 ? { riders } : {}) },
+          outOfRange: bands,
+          ...(added.length > 0 ? { added: added.map((a) => a.tokenId) } : {}),
+        },
       });
       return { status: "pending" as const, requestId, outOfRange: bands };
     }),
@@ -127,8 +191,94 @@ export const targets = campaignQuery({
     const scene = await loadScene(ctx, ctx.campaign, map);
     const viewer = viewOf(scene, character);
     if (viewer === null) return [];
-    return targetHints(ctx, ctx.campaign, { map, scene, viewer, attacker: scene.tokens[viewer.index]! }, weaponIn(sheet, slot ?? "primary"));
+    return targetHints(ctx, ctx.campaign, { map, scene, viewer, attacker: scene.tokens[viewer.index]! }, weaponIn(sheet, slot ?? "primary"), { sheet, characterId: character._id });
   },
+});
+
+/**
+ * SD5: the riders that ride on the character's attack with the weapon in `slot` (default primary): every rider use of a
+ * loadout card and of a held feature whose trigger fits a weapon attack, with its phase, costs, limit, readiness and the
+ * choices it asks (numbers, options, situations to confirm, extra targets). The character's own sheet only (U1, CF6).
+ */
+export const riders = campaignQuery({
+  need: "view",
+  args: { characterId: v.id("characters"), slot: v.optional(weaponSlotValidator) },
+  returns: v.array(riderOptionValidator),
+  handler: async (ctx, { characterId, slot }) => {
+    const { sheet } = await attacker(ctx, characterId);
+    const weapon = weaponIn(sheet, slot ?? "primary");
+    if (weapon === undefined) return [];
+    return riderOptions(sheet, ctx.campaign, hostOf(weapon, slot ?? "primary", undefined));
+  },
+});
+
+/**
+ * SD5 (Q1, CB p.107): answers an attack held after its roll: `use` one of its after-roll features (its costs and limit
+ * apply; the roll is rerolled or changed, and the new result stands) or `pass`. The attacker's player or the GM (Resolve
+ * now); another player is FORBIDDEN. The attack then resolves with the dice it already rolled, and the rows belong to
+ * the player who attacked. A request whose encounter ended is declined. REQUEST_NOT_OPEN once answered; NOT_FOUND for
+ * another campaign's or a non-after-roll request; INVALID for a feature the request doesn't offer.
+ */
+export const afterRoll = keyedCampaignMutation({
+  need: "view",
+  rateLimit: "roll",
+  args: { requestId: v.id("combatRequests"), choice: afterRollChoiceValidator },
+  returns: v.union(resolvedAttackValidator, v.object({ status: v.literal("declined") })),
+  handler: async (ctx, { requestId, choice }) =>
+    ctx.once("combat_after_roll", { requestId, choice }, async () => {
+      const row = await loadOpenRequest(ctx, ctx.campaign._id, requestId);
+      if (row.payload.kind !== "afterRoll") throw appError("NOT_FOUND");
+      const p = row.payload;
+      const loaded = await attacker(ctx, p.characterId);
+      if (!(await encounterRunning(ctx, row)) || row.mapId === undefined) {
+        await closeRequest(ctx, row._id, "declined", ctx.user._id);
+        return { status: "declined" as const };
+      }
+      if (choice.kind === "use" && !p.options.some((o) => o.featureId === choice.featureId && (choice.useId === undefined || choice.useId === o.useId))) throw appError("INVALID", "That feature isn't offered on this roll.");
+      const answer = choice.kind === "use" ? { ...choice, useId: choice.useId ?? p.options.find((o) => o.featureId === choice.featureId)!.useId } : choice;
+      const scene = await attackScene(ctx, ctx.campaign, loaded.character, row.mapId);
+      const weapon = equippedWeapon(loaded.sheet, p.action.slot);
+      const targets = await checkTargets(ctx, ctx.campaign, scene, weapon, p.action.targetTokenIds, rollFromStored(p.action.roll));
+      const result = await resolveAttack(ctx, {
+        loaded,
+        actorId: row.createdBy,
+        scene,
+        weapon,
+        slot: p.action.slot,
+        targets,
+        roll: rollFromStored(p.action.roll),
+        riders: p.action.riders ?? [],
+        held: { dice: p.dice, answer },
+        ...(p.action.waived ? { waived: p.action.waived } : {}),
+      });
+      if (result.status !== "resolved") throw appError("INVALID");
+      await closeRequest(ctx, row._id, "resolved", ctx.user._id);
+      return result;
+    }),
+});
+
+/**
+ * DA2 (HF p.8 Death Strike: "When you deal Severe damage to a creature, you can mark a Stress to force them to mark an
+ * additional Hit Point"; user 2026-10-30): answers a damage-phase rider prompt after an attack: `use` on the ONE creature
+ * picked from its candidates (its cost paid now), or `pass`. The attacker's player or the GM; another player FORBIDDEN.
+ * Logged into the attack's group (undoing the attack undoes it). A prompt whose encounter ended, or whose attack was
+ * undone, is declined. REQUEST_NOT_OPEN once answered; NOT_FOUND for another campaign's or another kind of request.
+ */
+export const riderPick = keyedCampaignMutation({
+  need: "view",
+  args: { requestId: v.id("combatRequests"), choice: riderPickChoiceValidator },
+  returns: v.object({ status: v.union(v.literal("resolved"), v.literal("passed"), v.literal("declined")) }),
+  handler: async (ctx, { requestId, choice }) =>
+    ctx.once("combat_rider_pick", { requestId, choice }, async () => {
+      const row = await loadOpenRequest(ctx, ctx.campaign._id, requestId);
+      if (row.payload.kind !== "riderPick") throw appError("NOT_FOUND");
+      const loaded = await attacker(ctx, row.payload.characterId);
+      if (!(await encounterRunning(ctx, row))) {
+        await closeRequest(ctx, row._id, "declined", ctx.user._id);
+        return { status: "declined" as const };
+      }
+      return { status: await answerRiderPick(ctx, loaded, row, choice, ctx.user._id) };
+    }),
 });
 
 const pickResult = v.object({

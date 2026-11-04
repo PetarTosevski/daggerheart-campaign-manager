@@ -63,7 +63,7 @@ test("D11 N5 picker and mentions at 1440 and 390", { tag: "@visual" }, async ({ 
     await input.fill("");
     await input.click();
     await input.pressSequentially("Pay @ma");
-    const listbox = sheet.getByRole("listbox", { name: "Characters & Locations" });
+    const listbox = sheet.getByRole("listbox", { name: "Codex" });
     await expect(listbox.getByRole("option")).toHaveCount(3);
     await input.press("ArrowDown");
     await listbox.scrollIntoViewIfNeeded();

@@ -1,8 +1,8 @@
 // Built-in catalog: sewers (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, long, obj, tex } from "./types";
+import { defineFolder, long, obj, tex, type FolderCatalog } from "./types";
 
-export const SEWERS = defineFolder("sewers", {
+export const SEWERS = (): FolderCatalog => defineFolder("sewers", {
   props: [
     obj("grate", "none", "flat", "rubble", { move: "open", footprint: "rect", standIn: false }),
     obj("rat", "none", "low", "rock", { standIn: false }),

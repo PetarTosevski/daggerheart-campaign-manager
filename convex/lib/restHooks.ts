@@ -31,19 +31,8 @@
  * ```
  */
 import type { Rng } from "../../src/lib/domain/class-features/types";
-import {
-  CORRUPTION_TRACK_SIZE,
-  CORRUPTION_TRACKER_KEY,
-  corruptionStateSchema,
-  FEAST_MOVE,
-  FRAME_IDS,
-  frameRestMoves,
-  INITIAL_CORRUPTION,
-  rollCorruption,
-  rollsCorruption,
-} from "../../src/lib/domain/rest/frame-hooks/index";
-import { classFeaturesAvailable } from "../../src/lib/domain/class-features/index";
-import type { RestKind, RestMove } from "../../src/lib/domain/rest/index";
+import { CORRUPTION_TRACK_SIZE, CORRUPTION_TRACKER_KEY, corruptionStateSchema, FEAST_MOVE, FRAME_IDS, INITIAL_CORRUPTION, LOCATE_ECHOES_MOVE, rollCorruption, rollsCorruption } from "../../src/lib/domain/rest/frame-hooks/index";
+import type { RestKind } from "../../src/lib/domain/rest/index";
 import { BEASTBOUND_SUBCLASS_ID } from "../../src/lib/frames/extras/common";
 import { resolveOptions } from "../../src/lib/frames/options";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
@@ -53,6 +42,8 @@ import { ageOfUmbraRestHook } from "../trackers/ageOfUmbra";
 import { andaluriaRestHook } from "../trackers/andaluria";
 import { colossusRestHook } from "../trackers/colossus";
 import { horizonRestHook } from "../trackers/horizon";
+import { endedConditionLine, lapsedConditions } from "./cardRunner";
+import { readSheet } from "./characterSheet";
 import { readTracker, TRACKER_SCHEMA_VERSION, writeTracker } from "./trackers";
 
 export type RestHookInput = {
@@ -109,8 +100,74 @@ const motherboardRestHook: RestHook = async (ctx, { campaign, sheets, rng }) => 
   return lines;
 };
 
+/**
+ * Journey to Horizon, Locate Soul Echoes (HF 176: "The PC learns the direction (north, south, east, west, or a
+ * combination) of the nearest sanctuary with a Soul Echo at its shrine. At the GM's discretion, using this downtime move
+ * alerts nearby Seekers-in-Shadow of the Vessel's general direction as well."). Plan lanes-2 E8.3 (dcm-dvia; user answer
+ * 2026-10-30: a downtime move and the GM button): each resting PC who chose it gets a line asking the GM for the bearing.
+ * The bearing (party hex and Echo map are GM-only), a tie between sanctuaries (the GM picks) and the Seekers alert stay
+ * the GM button's (convex/trackers/horizon.ts). An interrupted rest drops frame moves (CB 105).
+ */
+export const locateSoulEchoesRestHook: RestHook = async (_ctx, { campaign, interrupted, choices, sheets }) => {
+  if (campaign.frameId !== FRAME_IDS.horizon || interrupted) return [];
+  return choices
+    .filter((c) => sheets.has(c.characterId) && c.moves.some((m) => m.move === LOCATE_ECHOES_MOVE))
+    .map((c) => `${sheets.get(c.characterId)!.name} uses Locate Soul Echoes: the GM gives the bearing of the nearest sanctuary with a Soul Echo (Locate Soul Echoes on the world map)`);
+};
+
+/** Areas a rest looks at (a campaign draws few at a time; ended ones are swept by the cron). */
+const AREAS_MAX = 200;
+
+/**
+ * Live map areas end with their caster's rest (sheet-drawer SD8, `combatAreas.expires`): `rest` on any rest, `longRest`
+ * on a long one (an interrupted long rest runs as `short`, CB 105). Frame-independent; areas keep their own history, so
+ * the rest's undo does not bring one back (contract above). No feed line: the map shows the area gone.
+ */
+const endAreasRestHook: RestHook = async (ctx, { campaign, kind, sheets }) => {
+  const rows = await ctx.db
+    .query("combatAreas")
+    .withIndex("by_campaign", (q) => q.eq("campaignId", campaign._id))
+    .take(AREAS_MAX);
+  const now = Date.now();
+  for (const area of rows) {
+    const ends = area.expires === "rest" || (area.expires === "longRest" && kind === "long");
+    if (area.status === "active" && ends && sheets.has(area.characterId)) await ctx.db.patch("combatAreas", area._id, { status: "ended", endedAt: now });
+  }
+  return [];
+};
+
+/**
+ * Sourced conditions end with their marker (plan lanes C2, dcm-bxp.99.19.52; convex/lib/cardRunner.ts `lapsedConditions`):
+ * the rest's expiry took a condition's source marker (Vanishing Act, CB p.42: "You remain Cloaked in this way until you
+ * roll with Fear or until your next rest"), so the condition goes too. Frame-independent. The stored sheet (one `get` per
+ * resting PC; not yet saved by the rest) holds the markers the expiry took; the rested sheet loses the condition, so the
+ * rest's own save, log and undo carry it. One feed line per ended condition.
+ */
+const sourcedConditionsRestHook: RestHook = async (ctx, { campaign, sheets }) => {
+  const lines: string[] = [];
+  for (const [id, rested] of sheets) {
+    const character = await ctx.db.get("characters", id);
+    if (character === null || character.campaignId !== campaign._id) continue;
+    const out = lapsedConditions(readSheet(character.sheet), rested);
+    if (out.ended.length === 0) continue;
+    sheets.set(id, out.sheet);
+    lines.push(...out.ended.map((e) => endedConditionLine(rested.name, e)));
+  }
+  return lines;
+};
+
 /** Every frame's rest hook, in order; Horizon first, since it may refuse the rest. */
-export const REST_HOOKS: readonly RestHook[] = [horizonRestHook, ageOfUmbraRestHook, colossusRestHook, beastFeastRestHook, andaluriaRestHook, motherboardRestHook];
+export const REST_HOOKS: readonly RestHook[] = [
+  horizonRestHook,
+  locateSoulEchoesRestHook,
+  ageOfUmbraRestHook,
+  colossusRestHook,
+  beastFeastRestHook,
+  andaluriaRestHook,
+  motherboardRestHook,
+  endAreasRestHook,
+  sourcedConditionsRestHook,
+];
 
 /** Runs every hook; returns their feed lines. */
 export async function runRestHooks(ctx: MutationCtx, input: RestHookInput): Promise<string[]> {
@@ -119,22 +176,4 @@ export async function runRestHooks(ctx: MutationCtx, input: RestHookInput): Prom
   return lines;
 }
 
-/**
- * One PC's frame and class downtime moves (on either rest) and the core moves
- * the frame forbids (`frameRestMoves`): Make a Feast and the Beast Feast
- * restriction (CB 278), Keep Watch (CB 289), halting lycanthropy (HF 153,
- * transformations on), Tribute for a Warlock while its features are offered
- * (HF 14), and Martial Preparation for everyone while `party.martialPreparation`
- * (a resting PC holds the Call of the Slayer mastery card, CB 48; the caller
- * reads the party). `rests.choose` checks picks against it and `rests.current`
- * lists it.
- */
-export function restMovesFor(
-  campaign: Doc<"campaigns">,
-  sheet: Pick<CharacterSheet, "classId" | "multiclass">,
-  party: { martialPreparation: boolean } = { martialPreparation: false },
-): { extra: RestMove[]; forbidden: readonly RestMove[] } {
-  const options = resolveOptions(campaign.frameId, campaign.options);
-  const warlock = [sheet.classId, sheet.multiclass?.classId].includes("warlock") && classFeaturesAvailable("warlock", options.hopeAndFear);
-  return frameRestMoves({ frameId: campaign.frameId, transformations: options.transformations, warlock, martialPreparation: party.martialPreparation });
-}
+export { restMovesFor } from "./restMoves";

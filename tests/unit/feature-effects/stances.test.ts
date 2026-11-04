@@ -133,10 +133,10 @@ describe("Tier 2 (HF p.12)", () => {
     expect(use("anchored", undefined, { actor: actor("anchored") }).ok).toBe(true);
   });
 
-  it("Defensive: a Melee attack on you gets the disadvantage-unless-a-Stress prompt (manual)", () => {
-    expect(entry("defensive").uses[0]!.activation).toEqual({ kind: "auto", trigger: { kind: "whenAttacked", stage: "targeted", from: "melee" } });
-    const plan = ok(use("defensive", undefined, { actor: actor("defensive"), trigger: { source: adversary("bandit") } }));
-    expect(ofKind(plan, "prompt")).toMatchObject([{ prompt: "manual", targetIds: ["bandit"], text: expect.stringContaining("marks a Stress") as string }]);
+  it("Defensive: a passive disadvantage on Melee attackers, bought off with a Stress (S2.4, dcm-eut)", () => {
+    const u = entry("defensive").uses[0]!;
+    expect(u.activation).toEqual({ kind: "passive" });
+    expect(u.mods).toEqual([{ kind: "disadvantageAgainst", on: "attack", from: "melee", buyOff: [{ kind: "stress", amount: { kind: "fixed", value: 1 } }] }]);
   });
 
   it("Otherworldly: on a successful attack, physical or magic damage", () => {
@@ -161,18 +161,26 @@ describe("Tier 3 (HF p.12)", () => {
     expect(use("grappling", undefined, { actor: actor("grappling"), targets: [adversary("a")] })).toMatchObject({ ok: false, reason: "requirement" });
   });
 
+  it("SRD-F1 (dcm-9l4): Grappling's Melee is the target's distance when the engine knows it", () => {
+    const near = actor("grappling", { facts: { activeStance: "grappling", target: { conditions: [], hp: 0, hpMax: 5, distance: 1 } } });
+    expect(ok(use("grappling", undefined, { actor: near, targets: [adversary("a")], options: { grapple: ["restrain"] } })).actor.after.focus).toBe(1);
+    const far = actor("grappling", { facts: { activeStance: "grappling", target: { conditions: [], hp: 0, hpMax: 5, distance: 6 } } });
+    expect(use("grappling", undefined, { actor: far, situations: melee, targets: [adversary("a")], options: { grapple: ["restrain"] } })).toMatchObject({ ok: false, reason: "requirement" });
+  });
+
   it("Scary: on a successful attack the target marks a Stress", () => {
     const plan = ok(use("scary", undefined, { actor: actor("scary"), targets: [adversary("a")] }));
     expect(creature(plan, "a").stress).toBe(1);
     expect(ofKind(plan, "mark")).toMatchObject([{ targetId: "a", track: "stress", amount: 1 }]);
   });
 
-  it("Stable: a Focus instead of an Armor Slot reduces the damage one threshold", () => {
+  it("Stable: a Focus instead of an Armor Slot reduces the damage one threshold (user 2026-10-29: it IS the hit's slot)", () => {
     const u = entry("stable").uses[0]!;
     expect(u.activation).toEqual({ kind: "reaction", trigger: { kind: "whenYouWouldTakeDamage" } });
     const plan = ok(use("stable", undefined, { actor: actor("stable"), trigger: { amount: 9 } }));
     expect(plan.actor.after).toMatchObject({ focus: 1, armor: plan.actor.before.armor });
-    expect(ofKind(plan, "fold")).toMatchObject([{ step: { kind: "reduceSeverity", steps: 1 }, amount: 1 }]);
+    // DA8 (dcm-bxp.99.19.9): the step stands for the one Armor Slot (no slot marked, never two steps with a slot).
+    expect(ofKind(plan, "fold")).toMatchObject([{ step: { kind: "reduceSeverity", steps: 1, insteadOfArmorSlot: true }, amount: 1 }]);
     expect(use("stable", undefined, { actor: actor("stable", { focus: 0 }) })).toMatchObject({ ok: false, reason: "cost" });
   });
 

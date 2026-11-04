@@ -3,14 +3,13 @@ import { v, type Infer } from "convex/values";
 import { decodeCells } from "../../src/components/combat-map/map-view/cells";
 import { decodeTextureCells, paintSetting } from "../../src/components/combat-map/map-view/paint-spec";
 import { glowingSquares } from "../../src/lib/combat-map/sprites/terrain";
-import { getPhaseName, type CampaignPhaseName } from "../../src/lib/domain/campaign-time/index";
+import type { CampaignPhaseName } from "../../src/lib/domain/campaign-time/index";
 import {
   SAMPLES_PER_SQUARE,
   createView,
   decodeExplored,
   encodeExplored,
   exploredLength,
-  lightOf,
   prepareMap,
   tokenVisibility,
   visibleSquares,
@@ -23,16 +22,25 @@ import {
   type VisionToken,
 } from "../../src/lib/domain/combat-map/index";
 import { appError } from "../../src/lib/errors/app-error";
-import { frameHasMechanic } from "../../src/lib/frames/index";
 import { CLASSES } from "../../src/lib/srd/classes";
-import { pcPortrait, type TokenView } from "../combatTokens";
+import type { TokenView } from "./validators/combatTokens";
+import { pcPortrait } from "./pcPortrait";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
+import { campaignLight } from "./campaignLight";
+import { derivedTraits } from "../../src/lib/domain/characters/derived";
+import type { FeatureScope } from "../../src/lib/domain/class-features/types";
+import { withEffects } from "../../src/lib/domain/characters/effects";
+import { activeAreasOnMap, areaSightBlocks } from "../combatAreas";
+import { preparedFor, type AreaSightBlock } from "./areaSight";
 import { readSheet } from "./characterSheet";
+import { hudConditionValidator, hudConditions } from "./combatHud";
+import { featureScope } from "./featureScope";
 import { adversaryArtSrc } from "./encounters";
 import { CELL_TILE_ROWS, MAX_MAP_H, objectsOnMap, tokensOnMap } from "./combatMaps";
 import { atLeast, permissionFor } from "./permissions";
-import { mapSpriteRefs, objectTraits, resolveRefs, type UploadedSprites } from "./spriteSources";
+import { mapSpriteRefs, objectTraits, resolveRefs, resolveSetting, type UploadedSprites } from "./spriteSources";
+import { seenTokenIds } from "./spotlightSeen";
 import { CELL_LAYERS, tokenSideValidator } from "./validators/combatMaps";
 
 /**
@@ -51,12 +59,11 @@ const MAX_CELL_TILES = CELL_LAYERS.length * Math.ceil(MAX_MAP_H / CELL_TILE_ROWS
 
 // ---------------------------------------------------------------- validators
 
-/** The campaign time's light (R8): day, dim (badge) or night (lights only). */
-export const lightLevelValidator = v.union(v.literal("day"), v.literal("dim"), v.literal("night"));
 
 /**
  * A token a player sees that is not a PC (adversary, ally, neutral, custom): name, size, side and facing only
- * (R4: never HP, Stress, Difficulty, conditions or anything else), plus an adversary's rulebook art; without art
+ * (R4: never HP, Stress, Difficulty, thresholds or anything else), plus an adversary's rulebook art and its condition
+ * names (Combat HUD HD1, answer 10a); without art
  * the client draws initials from the name. `revealed`: in dim light at night and shown only because the GM revealed
  * it to this character (R10); the client marks it (the board's dashed outline).
  */
@@ -75,6 +82,12 @@ export const otherTokenValidator = v.object({
    * (and every custom token's row) is exactly the D9 shape; `null` is accepted for the client's portrait type.
    */
   portrait: v.optional(v.union(v.object({ kind: v.literal("url"), url: v.string() }), v.null())),
+  /**
+   * Combat HUD HD1 (user answer 10a, bead dcm-bxp.99.32.8): the token's conditions as names only (the tracker
+   * instance's for an adversary, the custom token's own), for the HUD's badges. Never a number. Sent only when there
+   * is one, so a row without conditions is exactly the D9 shape (widened, optional).
+   */
+  conditions: v.optional(v.array(hudConditionValidator)),
 });
 export type OtherToken = Infer<typeof otherTokenValidator>;
 
@@ -108,28 +121,27 @@ export type Scene = {
   readonly tokens: readonly Doc<"combatTokens">[];
   /** Same order as `tokens`. */
   readonly visionTokens: readonly VisionToken[];
-  /** The campaign time phase, or null for a frame without campaign time (treated as day). */
-  readonly phase: CampaignPhaseName | null;
+  /**
+   * What the vision engine reads as the time (`createView`'s `phase`, `lightOf`): the campaign time phase in a frame
+   * with campaign time, else the campaign's time of day as a light level (dcm-bxp.54; `lightOf` reads it as itself).
+   * Every caller that passes `scene.phase` to the engine or to `lightOf` thus follows the campaign's light.
+   */
+  readonly phase: CampaignPhaseName | LightLevel;
+  /** The campaign time phase for display, or null for a frame without campaign time. */
+  readonly phaseName: CampaignPhaseName | null;
   readonly light: LightLevel;
+  /** Plan lanes-2 E4 (dcm-o44e): the live sight-blocking areas, with who sees through them (`AreaSpec.seeThrough`). */
+  readonly areaBlocks: readonly AreaSightBlock[];
+  /** The blocking grid without the named areas' discs (a viewer who sees through them); `prepared` when none. */
+  readonly preparedWithout: (areaIds: ReadonlySet<string>) => PreparedMap;
+  /**
+   * Plan lanes-2 E4.4 (dcm-bxp.99.19.64): the campaign's feature scope (its frame's options), so a viewer's Instinct reads
+   * the passive features the rolls read (`withPassiveTraits(withEffects(sheet), featureScope(campaign))`). Absent: core.
+   */
+  readonly scope?: FeatureScope;
 };
 
-/**
- * The campaign's time phase (R8). Campaign time is a Witherwild mechanic: other frames have none and get null
- * (vision as by day). A Witherwild campaign without a time row is at the initial time (week 1, DAY day 1).
- */
-export async function campaignPhase(ctx: QueryCtx, campaign: Doc<"campaigns">): Promise<CampaignPhaseName | null> {
-  if (!frameHasMechanic(campaign.frameId, "campaignTime")) return null;
-  const row = await ctx.db
-    .query("campaignTime")
-    .withIndex("by_campaign", (q) => q.eq("campaignId", campaign._id))
-    .unique();
-  if (row === null) return getPhaseName("DAY", 1);
-  try {
-    return getPhaseName(row.cycle, row.cycleDay);
-  } catch {
-    return null;
-  }
-}
+export { campaignLight, campaignPhase, lightLevelValidator, type CampaignLight } from "./campaignLight";
 
 /** A token as the engine reads it. */
 function visionTokenOf(token: Doc<"combatTokens">): VisionToken {
@@ -189,23 +201,49 @@ export async function loadScene(ctx: QueryCtx, campaign: Doc<"campaigns">, map: 
   const cells = decodeCells(tiles, map.w, map.h);
   const sprites = map.style === "sprites" && map.source !== "image";
   const uploaded = await resolveRefs(ctx, campaign._id, sprites ? mapSpriteRefs(map, objects) : objects.map((o) => o.sprite));
-  const vision = visionObjectsWith(objects, uploaded);
-  const prepared = prepareMap({
+  const tokens = await tokensOnMap(ctx, map._id);
+  // Plan lanes E4 (SD-A, dcm-bhp): a live sight-blocking area (Dark Cloud, CB p.42: "Anyone in this cloud can't see outside
+  // of it, and anyone outside of it can't see in") is a blocking disc for every viewer.
+  // Plan lanes-2 E4 (dcm-o44e): a see-through area (Eclipse, Veil of Night) is left out for the viewers it lets through.
+  const areaBlocks = areaSightBlocks(await activeAreasOnMap(ctx, map._id), tokens);
+  const base = visionObjectsWith(objects, uploaded);
+  const vision = [...base, ...areaBlocks.flatMap((b) => b.discs)];
+  const glow = sprites ? { glow: spriteGlow(map, tiles, cells.paint, uploaded, await packSettingExtends(ctx, map)) } : {};
+  const prepareWith = (objs: readonly VisionObject[]) => prepareMap({
     w: map.w,
     h: map.h,
     base: map.base,
     areas: map.areas,
-    objects: vision,
+    objects: [...objs],
     paint: cells.paint,
     block: cells.block,
     image: map.source === "image",
     // F6: on a Sprites map the textures decide which squares glow (as the sprite painter draws them); a Classic map
     // leaves it to the engine's terrain rule (lava).
-    ...(sprites ? { glow: spriteGlow(map, tiles, cells.paint, uploaded) } : {}),
+    ...glow,
   });
-  const tokens = await tokensOnMap(ctx, map._id);
-  const phase = await campaignPhase(ctx, campaign);
-  return { map, objects, uploaded, visionObjects: vision, prepared, fog: cells.fog, tokens, visionTokens: tokens.map(visionTokenOf), phase, light: lightOf(phase ?? "") };
+  const prepared = prepareWith(vision);
+  const preparedWithout = (areaIds: ReadonlySet<string>): PreparedMap => {
+    const kept = areaBlocks.filter((b) => !areaIds.has(b.areaId));
+    return kept.length === areaBlocks.length ? prepared : prepareWith([...base, ...kept.flatMap((b) => b.discs)]);
+  };
+  const { phase, light } = await campaignLight(ctx, campaign);
+  return {
+    map,
+    objects,
+    uploaded,
+    visionObjects: vision,
+    prepared,
+    fog: cells.fog,
+    tokens,
+    visionTokens: tokens.map(visionTokenOf),
+    phase: phase ?? light,
+    phaseName: phase,
+    light,
+    areaBlocks,
+    preparedWithout,
+    scope: featureScope(campaign),
+  };
 }
 
 /**
@@ -217,16 +255,26 @@ function spriteGlow(
   tiles: readonly { layer: string; tile: number; cells: string }[],
   paint: Record<string, string>,
   uploaded: UploadedSprites,
+  packExtends: string | null,
 ): string[] {
   const textureCells = tiles.flatMap(({ layer, tile, cells }) => (layer === "texture" ? [{ tile, cells }] : []));
   const textures = decodeTextureCells({ w: map.w, h: map.h, texturePalette: map.texturePalette, textureCells });
-  return glowingSquares(map, paint, textures, paintSetting(map), uploaded);
+  return glowingSquares(map, paint, textures, paintSetting(map, packExtends), uploaded);
 }
 
-/** The character's Instinct (R6); an unreadable sheet counts as 0. */
-function instinctOf(character: Doc<"characters">): number {
+/** dcm-bxp.86: the built-in setting a pack-setting map's pack extends (the painter's setting for it), else null (no read). */
+async function packSettingExtends(ctx: QueryCtx, map: Doc<"combatMaps">): Promise<string | null> {
+  if (map.setting === undefined || !("pack" in map.setting)) return null;
+  return (await resolveSetting(ctx, map)).extends;
+}
+
+/**
+ * The character's Instinct (R6) after effects and passive features (a Beastform's trait bonus, CB p.30; plan lanes E4,
+ * dcm-bxp.99.19.64); an unreadable sheet counts as 0.
+ */
+function instinctOf(character: Doc<"characters">, scope?: FeatureScope): number {
   try {
-    return readSheet(character.sheet).traits.instinct;
+    return derivedTraits(withEffects(readSheet(character.sheet)), scope).instinct;
   } catch {
     return 0;
   }
@@ -237,17 +285,19 @@ function tokenIndexOf(scene: Scene, characterId: Id<"characters">): number {
   return scene.tokens.findIndex((t) => t.ref.kind === "pc" && t.ref.characterId === characterId);
 }
 
+export { preparedFor };
+
 export type Viewer = { readonly index: number; readonly instinct: number; readonly view: ViewerView };
 
 /** The character's view (C1 `createView`): own cone and lights, every token's carried light, GM fog marks. Null off the map. */
 export function viewOf(scene: Scene, character: Doc<"characters">): Viewer | null {
   const index = tokenIndexOf(scene, character._id);
   if (index < 0) return null;
-  const instinct = instinctOf(character);
+  const instinct = instinctOf(character, scene.scope);
   const view = createView(
-    scene.prepared,
+    preparedFor(scene, character._id),
     { token: scene.visionTokens[index]!, characterId: character._id, instinct },
-    { phase: scene.phase ?? "", tokens: scene.visionTokens, fog: scene.fog },
+    { phase: scene.phase, tokens: scene.visionTokens, fog: scene.fog },
   );
   return { index, instinct, view };
 }
@@ -340,20 +390,23 @@ async function pcView(
 }
 
 /**
- * A non-PC token's name (the tracker instance's label for an adversary, or the custom name) and, for an adversary,
- * its rulebook art (`adversaryArtSrc`). Nothing else is read (R4). With no art the portrait is `null`, never absent.
+ * A non-PC token's name (the tracker instance's label for an adversary, or the custom name), for an adversary its
+ * rulebook art (`adversaryArtSrc`), and its condition names when it has any (HD1, answer 10a). Nothing else is read
+ * (R4). With no art the portrait is `null`, never absent.
  */
 async function otherIdentity(
   ctx: QueryCtx,
   campaign: Doc<"campaigns">,
   token: Doc<"combatTokens">,
-): Promise<Pick<OtherToken, "name" | "portrait">> {
-  if (token.ref.kind === "custom") return { name: token.ref.name, portrait: null };
+): Promise<Pick<OtherToken, "name" | "portrait" | "conditions">> {
+  const named = (ids: readonly string[]) => (ids.length > 0 ? { conditions: hudConditions(ids) } : {});
+  if (token.ref.kind === "custom") return { name: token.ref.name, portrait: null, ...named(token.ref.conditions) };
   if (token.ref.kind === "adversary") {
     const instance = await ctx.db.get("encounterAdversaries", token.ref.adversaryId);
     if (instance === null || instance.campaignId !== campaign._id) return { name: "Unknown", portrait: null };
     const url = await adversaryArtSrc(ctx, campaign._id, instance);
-    return url === null ? { name: instance.label, portrait: null } : { name: instance.label, portrait: { kind: "url", url } };
+    const portrait = url === null ? null : { kind: "url" as const, url };
+    return { name: instance.label, portrait, ...named(instance.conditions) };
   }
   return { name: "Unknown", portrait: null };
 }
@@ -370,6 +423,8 @@ export type ViewResult = {
   vision: Infer<typeof visionMaskValidator>;
   pcs: TokenView[];
   others: OtherToken[];
+  /** Adversary tokens in `others` the party has not been recorded as seeing this scene (`combatVision.markSeen`). */
+  unseenAdversaries: Id<"combatTokens">[];
 };
 
 /**
@@ -392,6 +447,8 @@ export async function buildView(
   const clear = grid.levels.map((l) => (l === 2 ? 1 : 0));
   const pcs: TokenView[] = [];
   const others: OtherToken[] = [];
+  const unseenAdversaries: Id<"combatTokens">[] = [];
+  const seenBefore = await seenTokenIds(ctx, campaign._id);
   for (let i = 0; i < scene.tokens.length; i++) {
     const token = scene.tokens[i]!;
     const own = i === viewer.index;
@@ -402,6 +459,7 @@ export async function buildView(
     }
     const seenAs = tokenVisibility(viewer.view, scene.visionTokens[i]!);
     if (seenAs === "hidden") continue;
+    if (token.ref.kind === "adversary" && !seenBefore.has(token._id)) unseenAdversaries.push(token._id);
     others.push({
       _id: token._id,
       ...(await otherIdentity(ctx, campaign, token)),
@@ -418,12 +476,30 @@ export async function buildView(
     mapId: scene.map._id,
     characterId: character._id,
     tokenId: scene.tokens[viewer.index]!._id,
-    phase: scene.phase,
+    phase: scene.phaseName,
     light: scene.light,
     instinct: viewer.instinct,
     coneDeg: viewer.view.coneDeg,
     vision: { sw: grid.sw, sh: grid.sh, scale: grid.scale, seen: encodeExplored(seen), clear: encodeExplored(clear) },
     pcs,
     others,
+    unseenAdversaries,
   };
+}
+
+/**
+ * The adversary tokens among `tokenIds` that `character` sees now on the scene's map (spotlight-seen, user
+ * 2026-11-03): what `combatVision.markSeen` may record. Empty when the character has no token on the map.
+ */
+export function adversariesSeenNow(scene: Scene, character: Doc<"characters">, tokenIds: readonly string[]): Id<"combatTokens">[] {
+  const viewer = viewOf(scene, character);
+  if (viewer === null) return [];
+  const wanted = new Set(tokenIds);
+  const out: Id<"combatTokens">[] = [];
+  for (let i = 0; i < scene.tokens.length; i++) {
+    const token = scene.tokens[i]!;
+    if (token.ref.kind !== "adversary" || !wanted.has(token._id)) continue;
+    if (tokenVisibility(viewer.view, scene.visionTokens[i]!) !== "hidden") out.push(token._id);
+  }
+  return out;
 }

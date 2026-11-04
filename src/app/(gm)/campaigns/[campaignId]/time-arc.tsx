@@ -1,9 +1,10 @@
 "use client";
 
 import { useQuery } from "convex/react";
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 
-import { getPhaseName, monthOf, weekInMonth } from "@/lib/domain/campaign-time";
+import { formatCalendarDay, getPhaseName, monthOf, weekInMonth } from "@/lib/domain/campaign-time";
+import { LIGHT_LEVEL_LABEL, lightOf } from "@/lib/domain/combat-map/light";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../../convex/_generated/api";
@@ -69,8 +70,12 @@ function progressPath(day: number) {
 /** The Witherwild 7-phase arc in the dashboard header. Only rendered for frames with campaign time. */
 export function TimeArc({ campaignId, readOnly = false }: { campaignId: Id<"campaigns">; readOnly?: boolean }) {
   const time = useQuery(api.campaignTime.get, { campaignId });
-  const advance = useIntent(api.campaignTime.advance);
+  // Plan lanes-2 CT (dcm-ztb8): the day 7 button and End day both pass a day through `endDay`, which ends the
+  // once-per-day (and on day 7 the weekly) feature uses; `advance` stays for API callers.
+  const advance = useIntent(api.campaignTime.endDay);
   const setDay = useIntent(api.campaignTime.setDay);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [lastEnd, setLastEnd] = useState<Id<"actionLog"> | null>(null);
 
   if (time === undefined) return <div className="h-[230px]" aria-busy="true" />;
 
@@ -78,9 +83,16 @@ export function TimeArc({ campaignId, readOnly = false }: { campaignId: Id<"camp
   const c1 = night ? "#2b2f6b" : "#9a5a1a";
   const c2 = night ? "#a9b8ff" : "#ffcf6a";
   const error = advance.error ?? setDay.error;
+  const passDay = async () => {
+    const result = await advance.fire({ campaignId });
+    if (result) {
+      setNotice(endDayNotice(result));
+      setLastEnd(result.entryId);
+    }
+  };
 
   return (
-    <section aria-label="Time of the long cycle" className="flex w-full max-w-[600px] flex-col items-center gap-1.5 self-center">
+    <section id="time-arc" aria-label="Time of the long cycle" className="flex w-full max-w-[600px] flex-col items-center gap-1.5 self-center">
       <div className="relative aspect-[560/170] w-full max-w-[560px]">
         <svg viewBox="0 0 560 170" width="100%" height="100%" aria-hidden="true" className="absolute inset-0 overflow-visible">
           <defs>
@@ -129,7 +141,9 @@ export function TimeArc({ campaignId, readOnly = false }: { campaignId: Id<"camp
               aria-current={current ? "step" : undefined}
               disabled={readOnly || setDay.pending || advance.pending}
               onClick={() => {
-                if (!current) void setDay.fire({ campaignId, cycleDay: day });
+                if (current) return;
+                setLastEnd(null);
+                void setDay.fire({ campaignId, cycleDay: day });
               }}
               style={style}
             >
@@ -170,11 +184,24 @@ export function TimeArc({ campaignId, readOnly = false }: { campaignId: Id<"camp
         <span>
           Current week cycle: <strong style={{ color: c2 }}>{night ? "Night" : "Day"}</strong>
         </span>
+        <span aria-hidden="true" className="hidden opacity-40 sm:inline">
+          |
+        </span>
+        {/* dcm-bxp.54 / dcm-p40: the phase decides the light every map follows (read-only; no separate override). */}
+        <span data-testid="time-light">
+          Light: <strong style={{ color: c2 }}>{LIGHT_LEVEL_LABEL[lightOf(getPhaseName(time.cycle, time.cycleDay))]}</strong>
+        </span>
       </div>
+      {time.cycleDay < 7 && !readOnly ? (
+        <button type="button" onClick={() => void passDay()} disabled={advance.pending} className={endDayButton} data-testid="end-day">
+          End day
+        </button>
+      ) : null}
       {time.cycleDay === 7 && !readOnly ? (
         <button
           type="button"
-          onClick={() => void advance.fire({ campaignId })}
+          data-testid="end-day"
+          onClick={() => void passDay()}
           disabled={advance.pending}
           className="min-h-[42px] cursor-pointer rounded-full border px-5 font-display text-[14px] font-bold tracking-[0.06em]"
           style={{
@@ -187,8 +214,116 @@ export function TimeArc({ campaignId, readOnly = false }: { campaignId: Id<"camp
           {night ? "☀ Bring the Dawn · begin a new week" : "☾ Bring the Night · begin a new week"}
         </button>
       ) : null}
+      <p role="status" aria-live="polite" className="m-0 min-h-0 text-[13px] text-[#c9d2cf] empty:hidden" data-testid="end-day-notice">
+        {notice}
+      </p>
+      {lastEnd !== null && !readOnly ? (
+        <UndoEndDay
+          entryId={lastEnd}
+          onUndone={() => {
+            setLastEnd(null);
+            setNotice("End day undone.");
+          }}
+        />
+      ) : null}
       <p role="status" aria-live="polite" className="m-0 min-h-0 text-[13px] text-danger empty:hidden">
         {error}
+      </p>
+    </section>
+  );
+}
+
+const endDayButton =
+  "min-h-11 cursor-pointer rounded-full border border-white/25 bg-black/45 px-5 font-display text-[14px] font-bold tracking-[0.06em] text-[#e6ecea] hover:bg-black/60 disabled:cursor-default disabled:opacity-60";
+
+export type EndDayResult = { week: number; day: number; newWeek: boolean; ended: number };
+
+/**
+ * Undo of the End day just pressed (plan lanes-2 CT2, dcm-jq4b): `actionLog.undo` on its campaign row gives the uses
+ * back and, while it is the latest day's end, moves the day (and the time of day it reset) back. The feed's Undo does
+ * the same for any End day row; an older one gives back its uses only (user answer 2026-11-01).
+ */
+export function UndoEndDay({ entryId, onUndone }: { entryId: Id<"actionLog">; onUndone: () => void }) {
+  const undo = useIntent(api.actionLog.undo);
+  return (
+    <>
+      <button
+        type="button"
+        className={endDayButton}
+        disabled={undo.pending}
+        data-testid="undo-end-day"
+        onClick={() =>
+          void undo.fire({ entryId }).then((r) => {
+            if (r) onUndone();
+          })
+        }
+      >
+        {"Undo the day's end"}
+      </button>
+      <p role="status" aria-live="polite" className="m-0 min-h-0 text-[13px] text-danger empty:hidden">
+        {undo.error}
+      </p>
+    </>
+  );
+}
+
+/** The line after an End day: what passed and how many limits came back. */
+export function endDayNotice(r: EndDayResult): string {
+  const passed = r.newWeek ? `Week ${r.week} begins` : `Day ${r.day} begins`;
+  return r.ended === 0 ? `${passed}.` : `${passed}; ${r.ended} limit${r.ended === 1 ? "" : "s"} refreshed.`;
+}
+
+/**
+ * Days and weeks for a frame without the Witherwild arc (plan lanes-2 CT, dcm-ztb8; user answer 2026-10-31): "Week N ·
+ * Day D" for everyone and the GM's End day button, which ends once-per-day uses (and weekly ones after day 7). Rendered
+ * beside the time-of-day control in the dashboard header (the button's place was not specified: TASK-LN3-CT QUESTIONS).
+ */
+export function CampaignDay({ campaignId, readOnly = false }: { campaignId: Id<"campaigns">; readOnly?: boolean }) {
+  const calendar = useQuery(api.campaignTime.calendar, { campaignId });
+  const endDay = useIntent(api.campaignTime.endDay);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [lastEnd, setLastEnd] = useState<Id<"actionLog"> | null>(null);
+  if (calendar === undefined) return <div className="h-[86px]" aria-busy="true" />;
+  return (
+    <section aria-label="Campaign day" className="flex flex-col items-center gap-2 self-center" data-testid="campaign-day">
+      <span className="text-[11px] tracking-[0.24em] text-[#e6ecea] uppercase opacity-80">Campaign day</span>
+      <span
+        className="inline-flex min-h-11 items-center rounded-full border border-white/20 bg-black/45 px-4 font-display text-[15px] font-semibold text-[#f3cf86]"
+        data-testid="campaign-day-label"
+      >
+        {formatCalendarDay(calendar.week, calendar.day)}
+      </span>
+      {readOnly ? null : (
+        <button
+          type="button"
+          className={endDayButton}
+          disabled={endDay.pending}
+          data-testid="end-day"
+          onClick={() =>
+            void endDay.fire({ campaignId }).then((r) => {
+              if (!r) return;
+              setNotice(endDayNotice(r));
+              setLastEnd(r.entryId);
+            })
+          }
+        >
+          End day
+        </button>
+      )}
+      <p role="status" aria-live="polite" className="m-0 min-h-0 text-[13px] text-[#c9d2cf] empty:hidden" data-testid="end-day-notice">
+        {notice}
+      </p>
+      {lastEnd !== null && !readOnly ? (
+        <UndoEndDay
+          entryId={lastEnd}
+          onUndone={() => {
+            setLastEnd(null);
+            setNotice("End day undone.");
+          }}
+        />
+      ) : null}
+      <p role="status" aria-live="polite" className="m-0 min-h-0 text-[13px] text-danger empty:hidden">
+        {endDay.error}
       </p>
     </section>
   );

@@ -118,7 +118,7 @@ test("a Moon Witch negates Minor damage under a New moon and bumps the die; chip
   await expect(take).toContainText("Minor damage: mark 1 Hit Point. New Moon: or spend a Hope to negate it.");
   await take.getByRole("button", { name: "Spend a Hope to negate this Minor damage" }).click();
   await expect(take).toContainText("The New Moon negates the Minor damage");
-  await expect.poll(async () => (await client.query(api.characters.get, { characterId: miraId }))?.sheet).toMatchObject({ hope: 2, hp: 0 });
+  await expect.poll(async () => (await client.query(api.charactersReads.get, { characterId: miraId }))?.sheet).toMatchObject({ hope: 2, hp: 0 });
   await expect(sheet.getByRole("group", { name: "Hope: 2 of 6 marked" })).toBeVisible();
 
   // The bump: 1 -> 2, Waxing highlighted, the button now disabled for the rest.

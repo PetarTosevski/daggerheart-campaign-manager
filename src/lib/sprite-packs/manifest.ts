@@ -5,55 +5,15 @@
  * it; they come from the hand-curated catalog, joined by `createSpriteLookup`.
  */
 
-import { z } from "zod";
+import type { z } from "zod";
 
-import { catalogEntry, folderOfKey, type CatalogEntry } from "./catalog";
+import { catalogEntry, type CatalogEntry } from "./catalog";
+import type { builtinManifestSchema, manifestFileSchema, manifestSpriteSchema } from "./manifest-schema";
 
 export const MANIFEST_SCHEMA_VERSION = 1;
 
-const pxSchema = z.object({
-  w: z.number().int().positive(),
-  h: z.number().int().positive(),
-});
-
-/** One cut, content-hashed WebP under public/sprite-packs (D8). */
-export const manifestFileSchema = z.object({
-  /** Path relative to /sprite-packs/, e.g. `forest/oak-tree.1a2b3c4d.webp`. */
-  file: z.string().regex(/^[a-z0-9-]+\/[a-z0-9-]+(\.[a-z0-9]+)?\.(webp|png)$/),
-  px: pxSchema,
-});
 export type ManifestFile = z.infer<typeof manifestFileSchema>;
-
-export const manifestSpriteSchema = manifestFileSchema.extend({
-  /** Catalog key `<folder>/<slug>` (D8). */
-  key: z.string().regex(/^[a-z0-9-]+\/[a-z0-9-]+$/),
-  /** Further cuts of the same item (variant 2, 3, ...), mixed like terrain variants. */
-  variants: z.array(manifestFileSchema).default([]),
-  /** Textures: tileability after the seam fix, 0 (bad) .. 1 (seamless). */
-  seam: z.number().min(0).max(1).optional(),
-});
 export type ManifestSprite = z.infer<typeof manifestSpriteSchema>;
-
-export const builtinManifestSchema = z
-  .object({
-    schemaVersion: z.literal(MANIFEST_SCHEMA_VERSION),
-    /** Per folder (the 19 settings and common), the cut sprites. */
-    folders: z.record(z.string().regex(/^[a-z0-9-]+$/), z.array(manifestSpriteSchema)),
-  })
-  .superRefine((manifest, ctx) => {
-    const seen = new Set<string>();
-    for (const [folder, sprites] of Object.entries(manifest.folders)) {
-      sprites.forEach((sprite, i) => {
-        if (folderOfKey(sprite.key) !== folder) {
-          ctx.addIssue({ code: "custom", path: ["folders", folder, i, "key"], message: `key not in folder ${folder}` });
-        }
-        if (seen.has(sprite.key)) {
-          ctx.addIssue({ code: "custom", path: ["folders", folder, i, "key"], message: "duplicate key" });
-        }
-        seen.add(sprite.key);
-      });
-    }
-  });
 export type BuiltinManifest = z.infer<typeof builtinManifestSchema>;
 
 /** A valid manifest with no sprites (before P4 has run). */
@@ -72,21 +32,32 @@ export type SpriteLookup = {
   readonly unknownKeys: readonly string[];
 };
 
-/** Joins a parsed manifest with the catalog. */
-export function createSpriteLookup(manifest: BuiltinManifest): SpriteLookup {
-  const art = new Map<string, ManifestSprite>();
-  const unknownKeys: string[] = [];
-  for (const sprites of Object.values(manifest.folders)) {
-    for (const sprite of sprites) {
-      if (catalogEntry(sprite.key)) art.set(sprite.key, sprite);
-      else unknownKeys.push(sprite.key);
+/**
+ * Joins a parsed manifest with the catalog; the join is built on the first read (dcm-uh6r). `manifest` may be a function,
+ * called on that first read, so a lazily built manifest (the built-in one) is not built before a sprite is looked up.
+ */
+export function createSpriteLookup(manifest: BuiltinManifest | (() => BuiltinManifest)): SpriteLookup {
+  let joined: { art: Map<string, ManifestSprite>; unknownKeys: string[] } | undefined;
+  const join = () => {
+    if (joined) return joined;
+    const art = new Map<string, ManifestSprite>();
+    const unknownKeys: string[] = [];
+    for (const sprites of Object.values((typeof manifest === "function" ? manifest() : manifest).folders)) {
+      for (const sprite of sprites) {
+        if (catalogEntry(sprite.key)) art.set(sprite.key, sprite);
+        else unknownKeys.push(sprite.key);
+      }
     }
-  }
+    joined = { art, unknownKeys };
+    return joined;
+  };
   return {
     get: (key) => {
       const entry = catalogEntry(key);
-      return entry ? { entry, art: art.get(key) ?? null } : null;
+      return entry ? { entry, art: join().art.get(key) ?? null } : null;
     },
-    unknownKeys,
+    get unknownKeys() {
+      return join().unknownKeys;
+    },
   };
 }

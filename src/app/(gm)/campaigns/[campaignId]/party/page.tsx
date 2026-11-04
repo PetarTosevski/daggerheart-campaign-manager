@@ -17,7 +17,7 @@ import { CreateCard, RosterCard } from "./roster";
 /** Party board, roster view: every hero in the campaign. */
 export default function PartyPage() {
   const campaign = useCampaign();
-  const characters = useQuery(api.characters.listByCampaign, { campaignId: campaign._id });
+  const characters = useQuery(api.charactersReads.listByCampaign, { campaignId: campaign._id });
   const table = useQuery(api.members.roster, { campaignId: campaign._id });
   const newHref = `/campaigns/${campaign._id}/party/new`;
   const isGm = campaign.role === "gm";

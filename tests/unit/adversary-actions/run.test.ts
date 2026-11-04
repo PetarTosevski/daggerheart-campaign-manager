@@ -229,6 +229,12 @@ describe("Minions, PCs marked directly, prompts (AR9, AR5)", () => {
     expect(ok(run(reap, ctx([], { targets: [pcTarget("mira", { hp: 4 })] }))).deathMoves).toEqual(["mira"]);
   });
 
+  it("a markHp with reduceWith hope marks its HP step as reducible with Hope (dcm-nnbl)", () => {
+    const doom = feature({ targets: { side: "enemy", range: "melee", count: { kind: "one" } }, steps: [{ kind: "markHp", to: "targets", amount: fixed(2), reduceWith: "hope" }] }, "Doom");
+    const marks = ok(run(doom, ctx([], { targets: [pcTarget("mira")] }))).steps.filter((s) => s.kind === "mark");
+    expect(marks).toEqual([expect.objectContaining({ track: "hp", amount: 2, reduceWithHope: true })]);
+  });
+
   it("summon and countdown prompts resolve their numbers after the steps", () => {
     const call = feature({
       needsSpotlight: true,

@@ -4,6 +4,7 @@ import { useMutation } from "convex/react";
 import { useEffect, useRef, useState } from "react";
 
 import { fitWithin } from "@/components/party/party-display";
+import { UploadNotice } from "@/components/uploads/upload-notice";
 import { errorMessage } from "@/lib/convex-errors";
 import { MAX_CODEX_IMAGES } from "@/lib/codex/schema";
 import type { GmEntry, PlayerEntry } from "@/lib/codex/view";
@@ -217,6 +218,7 @@ export function Gallery({ entry, gm, onOpen }: { entry: GmEntry | PlayerEntry; g
           {error}
         </div>
       ) : null}
+      {gm ? <UploadNotice kind="codexImage" scope={entryId} /> : null}
     </div>
   );
 }

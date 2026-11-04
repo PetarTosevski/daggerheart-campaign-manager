@@ -3,6 +3,7 @@
 import { useMutation } from "convex/react";
 import { useRef, useState } from "react";
 
+import { UploadNotice } from "@/components/uploads/upload-notice";
 import { errorMessage } from "@/lib/convex-errors";
 
 import { api } from "../../../../../../convex/_generated/api";
@@ -117,6 +118,7 @@ export function MapImageControl({ campaignId, hasUpload, isCustom, scaleKm }: { 
       <p role="status" aria-live="polite" className="m-0 text-[13px] text-[#f3dfb0]">
         {status}
       </p>
+      <UploadNotice kind="map" scope={campaignId} />
     </section>
   );
 }

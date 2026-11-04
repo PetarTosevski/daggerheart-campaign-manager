@@ -94,7 +94,7 @@ for (const viewport of [
         const input = ownPaper(page).getByRole("textbox", { name: "New entry" });
         await tabTo(page, input);
         await page.keyboard.type("* ask @mar");
-        const listbox = ownPaper(page).getByRole("listbox", { name: "Characters & Locations" });
+        const listbox = ownPaper(page).getByRole("listbox", { name: "Codex" });
         await expect(listbox.getByRole("option", { name: /Marlow/ })).toHaveAttribute("aria-selected", "true");
         await axe(page, "@ picker");
         await page.keyboard.press("Enter");

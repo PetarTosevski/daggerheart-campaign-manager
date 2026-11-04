@@ -59,8 +59,11 @@ test("the GM places the party and an encounter, moves, turns and marks an advers
     await playerClient.mutation(api.members.joinByCode, { code });
     const { characterId: ashId } = await playerClient.mutation(api.characters.create, { campaignId, draft: bardDraft("Ash"), idempotencyKey: crypto.randomUUID() });
 
-    // ---- GM: the Combatants card.
+    // ---- GM: the Combatants card, in the HUD's "Map tools" drawer (plan combat-hud H8.1: Play is always the HUD). At the
+    // board's desktop size the GM's spotlight panel (top middle) stays clear of the Bear's square.
+    await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(url);
+    await page.getByRole("button", { name: "Map tools" }).click();
     const tools = page.getByRole("complementary", { name: "Map tools" });
     const combatants = tools.getByRole("region", { name: "Combatants" });
     await expect(combatants.getByRole("button", { name: "＋ Session encounter" })).toBeDisabled();
@@ -71,9 +74,12 @@ test("the GM places the party and an encounter, moves, turns and marks an advers
     await queue.getByRole("button", { name: /Bear/ }).click();
     await expect(queue).toHaveCount(0);
     await expect(combatants.getByTestId("combat-token-count")).toHaveText("2 party · 1 enemy");
+    // Close the drawer before working on the board (it covers the map's left edge).
+    await tools.press("Escape");
+    await expect(tools).toHaveCount(0);
 
     const board = page.getByRole("region", { name: "Battle map" });
-    const bear = board.getByRole("button", { name: /^Bear, Enemy/ });
+    const bear = board.getByRole("button", { name: /^Open the Bear’s stat block/ });
     await expect(board.getByTestId("combat-token")).toHaveCount(3);
     await expect(bear).toHaveAttribute("data-face", "180");
 
@@ -96,7 +102,8 @@ test("the GM places the party and an encounter, moves, turns and marks an advers
     await page.mouse.up();
     await expect(bear).toHaveAttribute("data-face", "0");
 
-    // Mark 2 HP in the token panel: the tracker shows 2.
+    // Mark 2 HP in the token panel (the drawer's token card; the selection stays): the tracker shows 2.
+    await page.getByRole("button", { name: "Map tools" }).click();
     const panel = tools.getByRole("region", { name: "Selected token" });
     await expect(panel.getByText(/Difficulty 14/)).toBeVisible();
     await panel.getByRole("group", { name: "Hit Point" }).getByRole("button", { name: "Hit Point 2", exact: true }).click();
@@ -114,8 +121,8 @@ test("the GM places the party and an encounter, moves, turns and marks an advers
     // ---- The player: their own token moves, another PC's does not, no adversary is sent to them.
     await player.goto(url);
     const playerBoard = player.getByRole("region", { name: "Battle map" });
-    const mine = playerBoard.getByRole("button", { name: /^Ash, Party.*your character/ });
-    const theirs = playerBoard.getByRole("button", { name: /^Liriel, Party/ });
+    const mine = playerBoard.getByRole("button", { name: /^Open Ash’s sheet \(your character\)/ });
+    const theirs = playerBoard.getByRole("button", { name: /^Open Liriel’s sheet/ });
     await expect(mine).toBeVisible();
     await expect(theirs).toBeVisible();
     // C8: by day the Bear stands in Ash's cone, so the player sees it, with no stats (R4).
@@ -127,14 +134,14 @@ test("the GM places the party and an encounter, moves, turns and marks an advers
     await expect(mine).toHaveAttribute("data-square", `${mx + 1},${my}`);
     await expect(mine).toHaveAttribute("data-face", "0");
     // The GM's map follows.
-    await expect(board.getByRole("button", { name: /^Ash, Party/ })).toHaveAttribute("data-square", `${mx + 1},${my}`);
+    await expect(board.getByRole("button", { name: /^Open Ash’s sheet/ })).toHaveAttribute("data-square", `${mx + 1},${my}`);
     // Keyboard (user 2026-10-21): with nothing focused, ArrowDown moves the player's own token one square and turns it south;
     // E turns it a step clockwise.
     await player.keyboard.press("Escape");
     await player.locator("body").click({ position: { x: 5, y: 5 } });
     await player.keyboard.press("ArrowDown");
     await expect(mine).toHaveAttribute("data-square", `${mx + 1},${my + 1}`);
-    await expect(board.getByRole("button", { name: /^Ash, Party/ })).toHaveAttribute("data-square", `${mx + 1},${my + 1}`);
+    await expect(board.getByRole("button", { name: /^Open Ash’s sheet/ })).toHaveAttribute("data-square", `${mx + 1},${my + 1}`);
     const faceBefore = Number(await mine.getAttribute("data-face"));
     await player.keyboard.press("e");
     await expect.poll(async () => Number(await mine.getAttribute("data-face"))).not.toBe(faceBefore);
@@ -144,17 +151,21 @@ test("the GM places the party and an encounter, moves, turns and marks an advers
     await expect(theirs).toHaveAttribute("aria-pressed", "true");
     await expect(theirs).toHaveAttribute("data-square", before!);
     await expect(playerBoard.getByRole("alert")).toHaveCount(0);
-    // The selected token's card: no turn buttons on another PC's token.
-    const playerPanel = player.getByRole("region", { name: "Selected token" });
+    // The selected token's card, in the "Your character" drawer: no turn buttons on another PC's token.
+    await player.getByRole("button", { name: "Your character", exact: true }).click();
+    const drawer = player.getByRole("complementary", { name: "Your character" });
+    const playerPanel = drawer.getByRole("region", { name: "Selected token" });
     await expect(playerPanel.getByRole("button", { name: "Turn left" })).toHaveCount(0);
     await expect(playerPanel.getByRole("button", { name: "◎ Range circles" })).toBeVisible();
-    // Conditions: another PC's are read-only; the player switches their own, which lands on the character sheet.
+    // Conditions: another PC's are read-only; the player switches their own on their HUD sheet, which lands on the
+    // character sheet.
     await expect(playerPanel.getByRole("group", { name: "Conditions" }).getByRole("button", { name: "Vulnerable" })).toBeDisabled();
-    await mine.click();
-    const vulnerable = playerPanel.getByRole("group", { name: "Conditions" }).getByRole("button", { name: "Vulnerable" });
+    await drawer.press("Escape");
+    await player.getByTestId("hud-sheet-button").click();
+    const vulnerable = player.getByRole("complementary", { name: "Ash’s sheet" }).getByRole("group", { name: "Switch conditions" }).getByRole("button", { name: "Vulnerable" });
     await vulnerable.click();
     await expect(vulnerable).toHaveAttribute("aria-pressed", "true");
-    await expect.poll(async () => (await playerClient.query(api.characters.get, { characterId: ashId }))?.sheet.conditions).toEqual(["vulnerable"]);
+    await expect.poll(async () => (await playerClient.query(api.charactersReads.get, { characterId: ashId }))?.sheet.conditions).toEqual(["vulnerable"]);
   } finally {
     await context.close();
   }

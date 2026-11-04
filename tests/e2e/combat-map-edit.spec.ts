@@ -41,6 +41,7 @@ test("the GM paints a stone floor, adds a tree and a crate, sets the crate to bl
   const tools = page.getByRole("complementary", { name: "Map tools" });
   const stage = page.getByTestId("combat-stage");
   await expect(page.getByTestId("combat-map-canvas")).toBeVisible();
+  await page.getByRole("button", { name: "Map tools" }).click(); // Play is the HUD (plan combat-hud H8.1): the column is in its drawer.
   await tools.getByRole("group", { name: "Map mode" }).getByRole("button", { name: /Edit map/ }).click();
   const card = tools.getByRole("region", { name: "Edit by hand" });
   await expect(card).toBeVisible();
@@ -96,6 +97,7 @@ test("the GM paints a stone floor, adds a tree and a crate, sets the crate to bl
   // ---- Reload: the floor, both objects and the crate's sight setting are still there.
   await page.reload();
   await expect(page.getByTestId("combat-map-canvas")).toBeVisible();
+  await page.getByRole("button", { name: "Map tools" }).click(); // Play is the HUD (plan combat-hud H8.1): the column is in its drawer.
   await tools.getByRole("group", { name: "Map mode" }).getByRole("button", { name: /Edit map/ }).click();
   await card.getByRole("group", { name: "Edit tool" }).getByRole("button", { name: /Objects/ }).click();
   await expect(card.getByRole("button", { name: "Undo all painting" })).toHaveCount(0); // only on the Terrain tool
@@ -170,6 +172,7 @@ test("an uploaded image offers the sight tools only; Move view lets the map pan"
   expect(attached.ok).toBe(true);
 
   await page.goto(url);
+  await page.getByRole("button", { name: "Map tools" }).click(); // Play is the HUD (plan combat-hud H8.1): the column is in its drawer.
   const tools = page.getByRole("complementary", { name: "Map tools" });
   const maps = tools.getByRole("list", { name: "Campaign maps" });
   await expect(maps.getByRole("listitem")).toHaveCount(2);

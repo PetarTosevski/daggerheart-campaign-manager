@@ -34,6 +34,7 @@ import {
   pointValidator,
   settingRefValidator,
   sightModeValidator,
+  objectLightValidator,
   spriteRefValidator,
   type CombatGrid,
 } from "./lib/validators/combatMaps";
@@ -85,6 +86,8 @@ const objectViewValidator = v.object({
   open: v.optional(v.boolean()),
   /** Sprite packs: the object's sprite (absent = mapped from `kind` in the Sprites style, D1). */
   sprite: v.optional(spriteRefValidator),
+  /** Plan lanes-2 E4.4 (dcm-bxp.84): a sprite object's light override (absent = the sprite's own light). */
+  light: v.optional(objectLightValidator),
 });
 
 /**
@@ -209,7 +212,7 @@ async function layoutOf(ctx: QueryCtx, map: Doc<"combatMaps">, gm: boolean): Pro
     seed: map.seed,
     updatedAt: map.updatedAt,
     image: map.image ? { url: await imageUrl(ctx, map), grid: map.image.grid } : null,
-    objects: objects.map(({ _id, kind, x, y, r, rot, variant, len, span, points, sight, lit, open, sprite }) => ({
+    objects: objects.map(({ _id, kind, x, y, r, rot, variant, len, span, points, sight, lit, open, sprite, light }) => ({
       _id,
       kind,
       x,
@@ -224,6 +227,7 @@ async function layoutOf(ctx: QueryCtx, map: Doc<"combatMaps">, gm: boolean): Pro
       ...(lit === undefined ? {} : { lit }),
       ...(open === true ? { open } : {}),
       ...(sprite === undefined ? {} : { sprite }),
+      ...(light === undefined ? {} : { light }),
     })),
     cells: cells.flatMap(({ layer, tile, cells: text }) => (layer === "texture" ? [] : [{ layer, tile, cells: text }])),
     ...(textureCells.length === 0 ? {} : { textureCells }),

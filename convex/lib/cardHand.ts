@@ -1,118 +1,42 @@
 /**
  * The cards a character holds (plan combat-actions, tracers CA4 / CA4b; docs/tasks/TASK-CA-CA4.md, TASK-CA-CA4b.md):
- * the Hand `combatCards.hand` returns (each card's state from the sheet's `featureUses`, Q3), and the cards' timing uses
+ * the Hand `combatCardsReads.hand` returns (each card's state from the sheet's `featureUses`, Q3), and the cards' timing uses
  * a rest runs (CA4b): every loadout card's `auto` use with a `timing` trigger at `afterRest` runs on every rest before
  * the rest's expiry (so Wild Surge, which needs its effect active, still sees it: "the form drops", one more Stress),
  * and those at `afterLongRest` run after a finished long rest's expiry (Inspirational Words: "Place a number of tokens
  * equal to your Presence on this card"; unspent ones are cleared by the same `set`). An interrupted long rest is a short
  * rest (CB p.105), so only `afterRest` runs.
  */
-import { v, type Infer } from "convex/values";
 
-import { cardAvailability, RESET_LABEL } from "../../src/lib/domain/card-effects/availability";
-import { run } from "../../src/lib/domain/card-effects/run";
-import type { CardUse, TargetSpec } from "../../src/lib/domain/card-effects/types";
+import { run, type RunPlan } from "../../src/lib/domain/card-effects/run";
+import type { CardUse } from "../../src/lib/domain/card-effects/types";
 import type { Rng } from "../../src/lib/domain/dice/index";
-import { cardEffect, cardUsage } from "../../src/lib/srd/card-effects/index";
+import { owned } from "../../src/lib/domain/feature-effects/owned";
+import { runFeature } from "../../src/lib/domain/feature-effects/run";
+import { cardEffect } from "../../src/lib/srd/card-effects/index";
+import { featureEffect } from "../../src/lib/srd/feature-effects/index";
 import { getDomainCard } from "../../src/lib/srd/index";
-import { markStress } from "../../src/lib/domain/characters/index";
 import { appError } from "../../src/lib/errors/app-error";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
+import { resolveOptions } from "../../src/lib/frames/options";
 import type { Doc, Id } from "../_generated/dataModel";
-import type { MutationCtx, QueryCtx } from "../_generated/server";
+import type { MutationCtx } from "../_generated/server";
 import { logAction } from "./actionLog";
-import { actorSheetAfter, cardActor, cardIdOfEffect } from "./cardRunner";
-import { loadCharacter, MAX_CHARACTERS_PER_CAMPAIGN, readSheet, saveSheet } from "./characterSheet";
+import { actorSheetAfter, cardActor, cardIdOfEffect, tokenKeyOf } from "./cardRunner";
+import { loadCharacter, readSheet, saveSheet } from "./characterSheet";
+import { markStressOn, unshakableText, type UnshakableRoll } from "./unshakable";
+import { reductionOf } from "./cardHandView";
 
-export const handUseValidator = v.object({
-  useId: v.string(),
-  name: v.string(),
-  activation: v.union(v.literal("action"), v.literal("reaction"), v.literal("rider"), v.literal("auto"), v.literal("passive")),
-  ready: v.boolean(),
-  resetLabel: v.union(v.null(), v.string()),
-  usesLeft: v.union(v.null(), v.number()),
-  /** Whether the use rolls (the Hand shows the roll options). */
-  rolls: v.boolean(),
-  /** Who it targets: side, range ("weapon", "unlimited" or a band) and count kind; null for trigger targets or none. */
-  targets: v.union(v.null(), v.object({ side: v.string(), range: v.string(), count: v.string() })),
-  /** NumberChoices the player sets first ("spend any number of Hope"). */
-  choices: v.array(v.object({ id: v.string(), label: v.string(), min: v.number() })),
-});
-
-export const handCardValidator = v.object({
-  cardId: v.string(),
-  name: v.string(),
-  domain: v.string(),
-  level: v.number(),
-  type: v.string(),
-  recallCost: v.number(),
-  place: v.union(v.literal("loadout"), v.literal("vault")),
-  usage: v.union(v.literal("combat"), v.literal("passive"), v.literal("outOfCombat")),
-  /** ready / exhausted (its card key used up, CB p.101), passive (always on), outOfCombat (CARD_NOT_COMBAT on the map). */
-  state: v.union(v.literal("ready"), v.literal("exhausted"), v.literal("passive"), v.literal("outOfCombat")),
-  resetLabel: v.union(v.null(), v.string()),
-  tokens: v.number(),
-  uses: v.array(handUseValidator),
-});
-export type HandCard = Infer<typeof handCardValidator>;
-
-function specOf(use: CardUse): TargetSpec | undefined {
-  return use.targets && use.targets.side !== "trigger" ? (use.targets as TargetSpec) : undefined;
-}
-
-/** One card of the Hand: its state from the sheet's `featureUses` (Q3, the same answer CA7 greys the sheet with). */
-export function handCard(sheet: CharacterSheet, cardId: string, place: "loadout" | "vault"): HandCard | null {
-  const card = getDomainCard(cardId);
-  if (card === undefined) return null;
-  const usage = cardUsage(cardId);
-  const effect = cardEffect(cardId);
-  const uses = (effect?.uses ?? []).map((u) => {
-    const a = cardAvailability(sheet, cardId, { useId: u.id, ...(u.limit ? { limit: u.limit } : {}) });
-    const spec = specOf(u);
-    return {
-      useId: u.id,
-      name: u.name,
-      activation: u.activation.kind,
-      ready: a.state === "ready",
-      resetLabel: a.state === "exhausted" ? a.label : null,
-      usesLeft: a.state === "ready" && a.usesLeft !== undefined ? a.usesLeft : null,
-      rolls: u.roll !== undefined,
-      targets: spec ? { side: spec.side, range: spec.range, count: spec.count.kind } : null,
-      choices: (u.choices ?? []).map((c) => ({ id: c.id, label: c.label, min: c.min })),
-    };
-  });
-  const main = cardAvailability(sheet, cardId);
-  const limited = (effect?.uses ?? []).filter((u) => u.activation.kind !== "passive");
-  const allSpent = limited.length > 0 && limited.every((u) => u.limit !== undefined && cardAvailability(sheet, cardId, { useId: u.id, limit: u.limit }).state === "exhausted");
-  let state: HandCard["state"];
-  let resetLabel: string | null = null;
-  if (usage === "outOfCombat") state = "outOfCombat";
-  else if (main.state === "exhausted" || allSpent) {
-    state = "exhausted";
-    resetLabel = main.state === "exhausted" ? main.label : (uses.find((u) => u.resetLabel !== null)?.resetLabel ?? RESET_LABEL.rest);
-  } else state = usage === "passive" ? "passive" : "ready";
-  return {
-    cardId,
-    name: card.name,
-    domain: card.domain,
-    level: card.level,
-    type: card.type,
-    recallCost: card.recallCost,
-    place,
-    usage,
-    state,
-    resetLabel,
-    tokens: sheet.cardTokens?.find((t) => t.cardId === cardId)?.count ?? 0,
-    uses,
-  };
-}
-
-/** The loadout, then the vault (`owned − loadout`), each card with its state. */
-export function handOf(sheet: CharacterSheet): { loadout: HandCard[]; vault: HandCard[] } {
-  const loadout = sheet.domainCards.loadout.flatMap((id) => handCard(sheet, id, "loadout") ?? []);
-  const vault = sheet.domainCards.owned.filter((id) => !sheet.domainCards.loadout.includes(id)).flatMap((id) => handCard(sheet, id, "vault") ?? []);
-  return { loadout, vault };
-}
+export {
+  handCard,
+  handCardValidator,
+  handOf,
+  handUseValidator,
+  recallRiderOptionValidator,
+  recallRiderOptions,
+  type HandCard,
+  type RecallRiderOption,
+} from "./cardHandView";
 
 // ---------------------------------------------------------------- who sees a hand (F7-H4, dcm-bxp.99.24)
 
@@ -127,33 +51,7 @@ export function handOf(sheet: CharacterSheet): { loadout: HandCard[]; vault: Han
  * `frameTrackers` `handPrivacy` blob; `migrations/handSharing` moves those over and deletes the old key and row.
  */
 
-/** The GM's switch "Players can see each other's cards" (on unless the GM turned it off). */
-export function playersSeeHands(campaign: Pick<Doc<"campaigns">, "playersSeeHands">): boolean {
-  return campaign.playersSeeHands !== false;
-}
-
-/** The characters whose player hides their hand (at most the campaign's character cap). */
-export async function hiddenHands(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<Id<"characters">[]> {
-  // The campaign's characters are capped; an index on `handHidden` would be a field-prefix duplicate of `by_campaign`.
-  const rows = await ctx.db.query("characters").withIndex("by_campaign", (q) => q.eq("campaignId", campaignId)).take(MAX_CHARACTERS_PER_CAMPAIGN);
-  return rows.flatMap((row) => (row.handHidden === true ? [row._id] : []));
-}
-
-/**
- * Hides or shows one character's hand from the other players; writes only when it changes. Callers check access
- * first; a character missing or in another campaign is left alone.
- */
-export async function writeHandHidden(ctx: MutationCtx, campaignId: Id<"campaigns">, characterId: Id<"characters">, hidden: boolean): Promise<void> {
-  const character = await ctx.db.get("characters", characterId);
-  if (character === null || character.campaignId !== campaignId) return;
-  if ((character.handHidden === true) === hidden) return;
-  await ctx.db.patch("characters", characterId, { handHidden: hidden ? true : undefined });
-}
-
-/** Whether the campaign's other players may read this character's hand: the GM's switch on and the hand not hidden. */
-export function handSharedWithPlayers(campaign: Pick<Doc<"campaigns">, "playersSeeHands">, character: Pick<Doc<"characters">, "handHidden">): boolean {
-  return playersSeeHands(campaign) && character.handHidden !== true;
-}
+export { handSharedWithPlayers, hiddenHands, playersSeeHands, writeHandHidden } from "./handSharing";
 
 // ---------------------------------------------------------------- loadout and vault
 
@@ -165,7 +63,15 @@ export function handSharedWithPlayers(campaign: Pick<Doc<"campaigns">, "playersS
  * for someone else's character, and a recall that cost Stress, write an undoable actionLog row (the GM as actor, the
  * character's id on the row, its sheet before).
  */
-export async function moveCardFor(ctx: MutationCtx, user: Doc<"users">, characterId: Id<"characters">, cardId: string, to: "loadout" | "vault", duringRest: boolean | undefined): Promise<null> {
+export async function moveCardFor(
+  ctx: MutationCtx,
+  user: Doc<"users">,
+  characterId: Id<"characters">,
+  cardId: string,
+  to: "loadout" | "vault",
+  duringRest: boolean | undefined,
+  recallRiders: readonly string[] = [],
+): Promise<null> {
   const { campaign, character, permission } = await loadCharacter(ctx, user, characterId, "edit", "owner");
   const s = readSheet(character.sheet);
   const refuse = (message: string) => appError("INVALID", message);
@@ -174,6 +80,8 @@ export async function moveCardFor(ctx: MutationCtx, user: Doc<"users">, characte
   const card = getDomainCard(cardId);
   let next: CharacterSheet = { ...s };
   let paid = 0;
+  let unshakable: UnshakableRoll | null = null;
+  const used: string[] = [];
   if (to === "vault") {
     if (!inLoadout) return null;
     next.domainCards = { ...s.domainCards, loadout: s.domainCards.loadout.filter((c) => c !== cardId) };
@@ -182,7 +90,7 @@ export async function moveCardFor(ctx: MutationCtx, user: Doc<"users">, characte
     if (s.domainCards.loadout.length >= 5) throw refuse("Your loadout holds at most 5 cards; vault one first.");
     if ((card?.level ?? 99) > s.level) throw refuse("That card is above your level.");
     next.domainCards = { ...s.domainCards, loadout: [...s.domainCards.loadout, cardId] };
-    const recall = card?.recallCost ?? 0;
+    let recall = card?.recallCost ?? 0;
     const resting =
       duringRest === true &&
       (await ctx.db
@@ -190,15 +98,25 @@ export async function moveCardFor(ctx: MutationCtx, user: Doc<"users">, characte
         .withIndex("by_campaign_status_started", (q) => q.eq("campaignId", campaign._id).eq("status", "open"))
         .first()) !== null;
     if (!resting && recall > 0) {
-      const { stress, hp } = markStress(next, recall);
-      next = { ...next, stress, hp };
+      // Plan lanes, E1 (dcm-bxp.99.19.1): a recall rider lowers the Recall Cost (Perfect Recall, CB p.50).
+      const lowered = recallReductions(next, campaign, recall, recallRiders);
+      next = lowered.sheet;
+      recall = lowered.cost;
+      used.push(...lowered.names);
+    }
+    if (!resting && recall > 0) {
+      // DA10: Unshakable (CB p.59) rolls a d6 for each Stress of the Recall Cost; a 6 skips that one.
+      const marked = markStressOn(next, recall);
+      next = marked.sheet;
+      unshakable = marked.roll;
       paid = recall;
     }
   }
   await saveSheet(ctx, character._id, next);
   const forSomeone = permission === "owner" && character.ownerId !== user._id;
-  if (forSomeone || paid > 0) {
-    const what = to === "vault" ? `vaults ${card?.name ?? cardId}` : `recalls ${card?.name ?? cardId}${paid > 0 ? ` (${paid} Stress)` : ""}`;
+  if (forSomeone || paid > 0 || used.length > 0) {
+    const uses = used.length > 0 ? `; ${used.join(", ")}` : "";
+    const what = to === "vault" ? `vaults ${card?.name ?? cardId}` : `recalls ${card?.name ?? cardId}${paid > 0 || used.length > 0 ? ` (${paid} Stress${unshakable ? `; ${unshakableText(unshakable)}` : ""}${uses})` : ""}`;
     await logAction(ctx, {
       campaignId: campaign._id,
       characterId: character._id,
@@ -211,6 +129,55 @@ export async function moveCardFor(ctx: MutationCtx, user: Doc<"users">, characte
     });
   }
   return null;
+}
+
+/** At most this many recall riders per move. */
+const MAX_RECALL_RIDERS = 5;
+
+/**
+ * Plan lanes, E1 (dcm-bxp.99.19.1): the `whenYouRecall` uses that lower a recall's cost. Perfect Recall (School of
+ * Knowledge, CB p.50): "Once per rest, when you recall a domain card in your vault, you can reduce its Recall Cost by 1."
+ * An `auto` use always runs; a `rider` use runs when the player took it (`riders`: `<featureId or cardId>` or
+ * `<id>:<useId>`). Each runs through the runner (its limit and costs; one that can't run is skipped, a rider the player
+ * took refuses with INVALID) and takes its `reduceRecallCost` amount off. Never below 0.
+ */
+export function recallReductions(sheet: CharacterSheet, campaign: Pick<Doc<"campaigns">, "frameId" | "options">, cost: number, riders: readonly string[]): { sheet: CharacterSheet; cost: number; names: string[] } {
+  if (riders.length > MAX_RECALL_RIDERS) throw appError("INVALID", "Too many recall riders.");
+  let next = sheet;
+  let left = cost;
+  const names: string[] = [];
+  const takes = (id: string, use: CardUse): "auto" | "rider" | null => {
+    const a = use.activation;
+    if ((a.kind !== "auto" && a.kind !== "rider") || a.trigger.kind !== "whenYouRecall" || reductionOf(use) === 0) return null;
+    if (a.kind === "auto") return "auto";
+    return riders.includes(id) || riders.includes(`${id}:${use.id}`) ? "rider" : null;
+  };
+  const apply = (kind: "auto" | "rider", name: string, result: { ok: true; plan: RunPlan } | { ok: false; detail: string }, use: CardUse) => {
+    if (!result.ok) {
+      if (kind === "rider") throw appError("INVALID", `${name}: ${result.detail}`);
+      return;
+    }
+    next = actorSheetAfter(next, result.plan, "self", name);
+    left = Math.max(0, left - reductionOf(use));
+    names.push(use.name);
+  };
+  for (const id of sheet.domainCards.loadout) {
+    const effect = cardEffect(id);
+    if (effect === undefined) continue;
+    for (const use of effect.uses) {
+      const kind = takes(id, use);
+      if (kind !== null && left > 0) apply(kind, use.name, run(effect, { actor: cardActor("self", next, id, undefined), gmFear: 0, useId: use.id, targets: [], rng: () => 1 }), use);
+    }
+  }
+  for (const held of owned(sheet, { hopeAndFear: resolveOptions(campaign.frameId, campaign.options).hopeAndFear })) {
+    const entry = featureEffect(held.featureId);
+    if (entry === undefined) continue;
+    for (const use of entry.uses) {
+      const kind = takes(held.featureId, use);
+      if (kind !== null && left > 0) apply(kind, held.name, runFeature(entry, use.id, { actor: cardActor("self", next, tokenKeyOf(held.featureId), undefined), gmFear: 0, targets: [], rng: () => 1 }), use);
+    }
+  }
+  return { sheet: next, cost: left, names };
 }
 
 // ---------------------------------------------------------------- timing uses at a rest
@@ -240,11 +207,43 @@ export function runRestTiming(sheet: CharacterSheet, actorId: string, at: RestTi
       if (trigger?.kind !== "timing" || trigger.at !== at) continue;
       const result = run(effect, { actor: cardActor(actorId, next, cardId, undefined), gmFear: 0, useId: use.id, targets: [], rng });
       if (!result.ok) continue;
-      let after = actorSheetAfter(next, result.plan, actorId, card.name);
+      // DA10: an Unshakable PC rolls a d6 for each Stress the use marks (Wild Surge's rest Stress), with the rest's dice.
+      const rolled: UnshakableRoll[] = [];
+      let after = actorSheetAfter(next, result.plan, actorId, card.name, { rng, out: rolled });
       if (ENDS_ON_REST.has(cardId)) after = { ...after, effects: after.effects.filter((e) => cardIdOfEffect(e) !== cardId) };
       if (JSON.stringify(after) === JSON.stringify(next)) continue;
       next = after;
-      lines.push(use.name);
+      lines.push(rolled.length > 0 ? `${use.name} (${rolled.map(unshakableText).join("; ")})` : use.name);
+    }
+  }
+  const features = runFeatureTokenTiming(next, actorId, at, rng);
+  return { sheet: features.sheet, lines: [...lines, ...features.lines] };
+}
+
+/**
+ * The token housekeeping of the features a sheet holds (sheet-drawer SD8): an `auto` use timed `at` this point of a rest
+ * whose steps only move tokens runs on the sheet, as each feature's text says ("When you take a long rest, clear all
+ * unspent tokens": Toxic Concoctions, HF p.9; "Clear all tokens from this card when you take a rest": Enchanted Talisman,
+ * HF p.16; "When you take a long rest, remove a token": Feed, HF). A timed use that does anything else (Hardy's Hit
+ * Point, the rest-time moves) belongs to the rest flow (`convex/rests.ts`, SD-R) and is skipped here. Focus is not
+ * cleared by a rest: HF p.12 clears it only when the Martial Artist refocuses. Pure, like `runRestTiming`.
+ */
+function runFeatureTokenTiming(sheet: CharacterSheet, actorId: string, at: RestTiming, rng: Rng): { sheet: CharacterSheet; lines: string[] } {
+  let next = sheet;
+  const lines: string[] = [];
+  for (const held of owned(sheet)) {
+    const entry = featureEffect(held.featureId);
+    if (entry === undefined) continue;
+    for (const use of entry.uses) {
+      const trigger = use.activation.kind === "auto" ? use.activation.trigger : undefined;
+      if (trigger?.kind !== "timing" || trigger.at !== at) continue;
+      if (use.steps.length === 0 || use.steps.some((step) => step.kind !== "tokens")) continue;
+      const result = runFeature(entry, use.id, { actor: cardActor(actorId, next, tokenKeyOf(held.featureId), undefined), gmFear: 0, targets: [], rng });
+      if (!result.ok) continue;
+      const after = actorSheetAfter(next, result.plan, actorId, held.name, { rng });
+      if (JSON.stringify(after) === JSON.stringify(next)) continue;
+      next = after;
+      lines.push(`${held.name}: ${use.name}`);
     }
   }
   return { sheet: next, lines };

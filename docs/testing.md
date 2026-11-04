@@ -24,7 +24,7 @@ local, account-free Convex backend (`CONVEX_AGENT_MODE=anonymous`, deployment
 
 `pnpm e2e:setup` (idempotent) writes `.env.e2e.local` (git-ignored) with a
 random `E2E_AUTH_SECRET`, pushes the functions once, and sets the backend's
-env vars: `ALLOWED_EMAILS` (the five test accounts), `E2E_AUTH_ENABLED`,
+env vars: `E2E_AUTH_ENABLED`,
 `E2E_AUTH_SECRET`, `SITE_URL`, and a freshly generated `JWT_PRIVATE_KEY` /
 `JWKS` pair. No real secret is needed anywhere.
 
@@ -37,21 +37,25 @@ question containing `FAKE-FAIL` makes the fake model's stream fail
 error card with Try again (`tests/e2e/visual/D13-L6.spec.ts`). The combat map
 generator and photo import never use the fake model.
 
-**One email per sign-in method.** A user created through the test sign-in has
-no password account, so a later password sign-up with that email fails (and
-so does the password sign-in), whatever spec ran first. Every allowlisted
-account (`E2E_ALLOWED` in `scripts/e2e-setup.mjs`) uses exactly one method:
+**Accounts.** Sign-up is open, so no email is listed anywhere. The fixed
+test sign-in accounts (verified, no password, like a Google user):
 
 | Email | Sign-in method | Used by |
 |---|---|---|
 | `e2e-gm@example.test` | test sign-in | the GM in most specs |
 | `e2e-player@example.test` | test sign-in | the first player |
 | `e2e-player2@example.test` | test sign-in | the second player / outsider (lorekeeper-shell, notes-*, visual/D11-N6) |
-| `e2e-password-only@example.test` | email + password | `tests/e2e/players.spec.ts` only |
-| `e2e-session-ended@example.test` | email + password | `tests/e2e/auth-session-ended.spec.ts` only |
 
-A new spec that needs another account, or signs up with a password, gets its
-own email in `E2E_ALLOWED`, then `pnpm e2e:setup`.
+**Password sign-ups use a fresh, unique email per test** (for example
+`` `signup-${crypto.randomUUID().slice(0, 8)}@example.test` ``), sign up through
+Create account and enter the emailed code (below). Never reuse a fixed email
+for a password account: a rerun on the same backend would hit EMAIL_TAKEN, and
+two specs would depend on each other's password. A test sign-in user that later
+creates a password account is linked to the same user (J5, `tests/e2e/auth.spec.ts`).
+The browser specs of open sign-up are `tests/e2e/signup.spec.ts` (code, wrong
+code, short password, existing email, reset), `tests/e2e/players.spec.ts`
+(invite and join code for a brand-new password account) and
+`tests/e2e/auth-session-ended.spec.ts`.
 
 Sign-up and reset codes on the e2e backend: no email is sent and each code is
 random (Convex Auth looks codes up by hash with `unique()`, so one fixed code

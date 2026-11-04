@@ -1,0 +1,34 @@
+/*
+ * The card's own rows in the picking panel (plan combat-hud H3.1; CmpPicking). They sit in H3.0's `.hud-pk-extra`
+ * between the target rows and the rider switches, built from H0's ChoiceRow / Stepper on the --hud-* tokens.
+ */
+.hud-cr {
+  display: grid;
+  gap: 10px;
+  max-height: 42vh;
+  overflow-y: auto;
+}
+.hud-cr-g {
+  display: grid;
+  gap: 4px;
+}
+.hud-cr-l {
+  margin: 0;
+  color: var(--hud-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.hud-cr-num {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+.hud-cr-note {
+  margin: 0;
+  color: var(--hud-muted);
+  font-size: 12px;
+}
+.hud-cr .hud-opt {
+  padding: 7px 10px;
+}

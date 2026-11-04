@@ -93,7 +93,7 @@ function RestReference({ picked }: { picked?: { kind: RestKind; moves: readonly 
 /** The reference text with this character's picks from the open rest. */
 function LiveRestReference() {
   const { slot } = useSheet();
-  const state = useQuery(api.rests.current, { campaignId: slot.campaignId });
+  const state = useQuery(api.restsReads.current, { campaignId: slot.campaignId });
   const open = state?.open ?? null;
   const choice = open?.choices.find((c) => c.characterId === slot.character._id);
   return <RestReference picked={open && choice ? { kind: open.kind, moves: choice.moves.map((m) => m.move) } : undefined} />;

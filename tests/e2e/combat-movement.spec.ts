@@ -28,7 +28,8 @@ function rect(x0: number, y0: number, x1: number, y1: number): number[] {
 
 /** Screen pixels per map square at the current zoom. */
 async function squarePx(page: Page): Promise<number> {
-  const text = (await page.getByRole("region", { name: "Battle map" }).getByTestId("combat-zoom").textContent()) ?? "100%";
+  // The zoom is in the HUD's dock / map controls since plan combat-hud H9.0 (the map has no toolbar of its own there).
+  const text = (await page.getByTestId("combat-zoom").textContent()) ?? "100%";
   return 48 * (Number.parseInt(text, 10) / 100);
 }
 
@@ -66,7 +67,7 @@ for (const viewport of VIEWPORTS) {
       // on 13..15 x 14..16. A wall at x = 9, rows 13..19, with a Classic door in its gap at (9, 16), and a Ghoul
       // behind it at (12, 16).
       await client.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
-      const ash = (await client.query(api.combatTokens.list, { campaignId, mapId })).find((t) => t.name === "Ash")!;
+      const ash = (await client.query(api.combatTokensReads.list, { campaignId, mapId })).find((t) => t.name === "Ash")!;
       const { tokenId: ghoulId } = await client.mutation(api.combatTokens.addCustom, { campaignId, mapId, name: "Ghoul", hp: 3, side: "enemy", idempotencyKey: crypto.randomUUID() });
       await client.mutation(api.combatTokens.move, { campaignId, tokenId: ghoulId, x: 12, y: 16 });
       await client.mutation(api.combatMapEdit.paintCells, { campaignId, mapId, squares: rect(6, 8, 6, 12), paint: "wall" });
@@ -89,7 +90,7 @@ for (const viewport of VIEWPORTS) {
         await client.mutation(api.combatTokens.turn, { campaignId, tokenId: ash._id, angle: 0 });
       };
       const serverSquare = async (who: ConvexHttpClient) => {
-        const t = (await who.query(api.combatTokens.party, { campaignId, mapId })).find((p) => p._id === ash._id)!;
+        const t = (await who.query(api.combatTokensReads.party, { campaignId, mapId })).find((p) => p._id === ash._id)!;
         return `${t.x},${t.y}`;
       };
       const doorOpen = async () => (await client.query(api.combatMaps.get, { campaignId, mapId }))?.objects.find((o) => o._id === doorId)?.open === true;
@@ -98,7 +99,8 @@ for (const viewport of VIEWPORTS) {
       await place(5, 10);
       await player.goto(url);
       const board = player.getByRole("region", { name: "Battle map" });
-      const mine = board.getByRole("button", { name: /^Ash, Party.*your character/ });
+      // Plan combat-hud H8.1: Play is the HUD; the player's own token reads "Open Ash’s sheet (your character), …".
+      const mine = board.getByRole("button", { name: /^Open Ash’s sheet \(your character\)/ });
       const notice = board.getByTestId("combat-move-notice");
       await expect(mine).toHaveAttribute("data-square", "5,10");
       await expect(notice).toHaveAttribute("role", "status");
@@ -106,12 +108,12 @@ for (const viewport of VIEWPORTS) {
       const press = async (key: string) => {
         await player.keyboard.press(key);
       };
-      /** Runs `move` and expects a fresh "Blocked" announcement, with Ash back on `square` on screen and on the server. */
+      /** Runs `move` and expects a fresh blocked announcement, with Ash back on `square` on screen and on the server. */
       const expectBlocked = async (move: () => Promise<void>, square: string) => {
         const before = Number(await notice.getAttribute("data-seq"));
         await move();
         await expect.poll(async () => Number(await notice.getAttribute("data-seq"))).toBeGreaterThan(before);
-        await expect(notice).toHaveText("Blocked");
+        await expect(notice).toHaveText("Something blocks the way.");
         await expect(notice).toHaveAttribute("data-kind", "blocked");
         await expect(mine).toHaveAttribute("data-square", square);
         await expect.poll(() => serverSquare(playerClient)).toBe(square);
@@ -151,7 +153,12 @@ for (const viewport of VIEWPORTS) {
       await press("d");
       await expect(mine).toHaveAttribute("data-square", "13,15");
       await expect.poll(() => serverSquare(playerClient)).toBe("13,15");
-      await expect(player.getByRole("region", { name: "Selected token" }).getByTestId("combat-difficult-note")).toHaveText(DIFFICULT);
+      // The token card (in the HUD's "Your character" drawer) says a movement roll is needed.
+      await player.getByRole("button", { name: "Your character", exact: true }).click();
+      const drawer = player.getByRole("complementary", { name: "Your character" });
+      await expect(drawer.getByRole("region", { name: "Selected token" }).getByTestId("combat-difficult-note")).toHaveText(DIFFICULT);
+      await drawer.press("Escape");
+      await player.locator("body").click({ position: { x: 2, y: 2 } });
       const hatch = board.getByTestId("combat-difficult-hatch");
       await expect(hatch).toHaveCount(1);
       await expect.poll(async () => Number(await hatch.getAttribute("data-squares"))).toBeGreaterThan(0);
@@ -191,7 +198,7 @@ for (const viewport of VIEWPORTS) {
       await place(5, 10);
       await page.goto(url);
       const gmBoard = page.getByRole("region", { name: "Battle map" });
-      const gmAsh = gmBoard.getByRole("button", { name: /^Ash, Party/ });
+      const gmAsh = gmBoard.getByRole("button", { name: /^Open Ash’s sheet/ });
       await expect(gmAsh).toHaveAttribute("data-square", "5,10");
       // The GM sees every difficult square hatched (the garden plot's 9 at least).
       await expect.poll(async () => Number(await gmBoard.getByTestId("combat-difficult-hatch").getAttribute("data-squares"))).toBeGreaterThanOrEqual(9);

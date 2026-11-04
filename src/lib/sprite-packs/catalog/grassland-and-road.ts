@@ -1,8 +1,8 @@
 // Built-in catalog: grassland and road (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, long, obj, tex } from "./types";
+import { defineFolder, long, obj, tex, type FolderCatalog } from "./types";
 
-export const GRASSLAND_AND_ROAD = defineFolder("grassland-and-road", {
+export const GRASSLAND_AND_ROAD = (): FolderCatalog => defineFolder("grassland-and-road", {
   props: [
     obj("milestone", "cover", "low", "rock", { standIn: false }),
     obj("wildflowers", "none", "flat", "bush", { standIn: false }),

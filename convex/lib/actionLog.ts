@@ -8,7 +8,7 @@
  * - Pass `before` = the character's sheet BEFORE the change (the `sheet` you
  *   read) and save the sheet before logging; undo restores exactly it, and is
  *   refused (UNDO_STALE) once the character changed after the row, logged or
- *   not, or a player's dice row is older than `PLAYER_DICE_UNDO_MS`.
+ *   not, and (UNDO_EXPIRED) for a player when the action rolled (`groupRolled`).
  * - Pass `fearDelta` = the Fear `gainFear` actually gained (`gained`), never
  *   the requested amount; undo takes it back through `revertFear`.
  * - One action touching several characters (rest, tag team, Life Support)
@@ -18,6 +18,9 @@
  *   HP; U1); everything else is public.
  * - A combat action passes `adversaryBefore` (the instances before it, on its GM row); undo restores them (U4) unless an
  *   instance changed after the group's newest row (UNDO_STALE), and declines the group's open Minion offer.
+ * - End day / a Witherwild day jump forward passes `timeChange` (the calendar before and after, CT2, dcm-jq4b) on its
+ *   campaign row; undo moves the calendar (and the time of day End day reset) back while it still stands at `after`
+ *   (the latest day's end). Undoing an older one gives back its uses only, with a feed line (user answer 2026-11-01).
  *
  * ```ts
  * const groupId = newGroupId();
@@ -28,16 +31,18 @@
  * });
  * ```
  */
+import { formatCalendarDay } from "../../src/lib/domain/campaign-time/index";
 import { appError } from "../../src/lib/errors/app-error";
 import type { CharacterSheetInput } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
-import type { MutationCtx } from "../_generated/server";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { assertOneActive, readSheet, storedSheet } from "./characterSheet";
 import { closeRequest, declineGroupOffers, openRequests } from "./combatRequests";
 import { revertTicks } from "./countdownTicks";
 import { revertFear } from "./fear";
+import { recordHistory } from "../tables/history";
 import { campaignAccess } from "./permissions";
-import type { ActionKind, AdversaryBefore, StoredRoll, Visibility } from "./validators/actionLog";
+import type { ActionKind, AdversaryBefore, CampaignTimeSnapshot, StoredRoll, TimeChange, Visibility } from "./validators/actionLog";
 
 /** The longest feed line; longer summaries are cut. */
 export const SUMMARY_MAX = 300;
@@ -46,11 +51,44 @@ const GROUP_MAX = 50;
 /** How far back undo looks for a character's latest live row. */
 const LATEST_SCAN = 100;
 /**
- * How long after a dice row (a roll or a death move) its actor may still undo
- * it; the GM can undo it any time (review M2: no rerolling by undo). A
- * reversible default pending the user's review.
+ * THE player-undo rule (user answers 2026-11-02, Combat HUD: "If the roll has happened players can't undo rolls"; "Yes,
+ * GM-only undo of rolls"). Decided per action (the row's `groupId` group) from the stored roll data:
+ * - Rolled: any row of the group carries a `roll` (an action, reaction, damage or death-move roll, a PC's attack or card
+ *   use that rolled, a GM-confirmed death move, a move whose Cloaked roll joined it). Only the GM undoes it; a player
+ *   gets UNDO_EXPIRED ("Only the GM can undo a roll").
+ * - Rolled nothing: a feature use without dice, a tracker edit, a death-move request still waiting for the GM (HD4's
+ *   "Take it back"), an import. Its actor (or the GM) may undo it.
+ * - Death moves (user 2026-11-03, "Players can't undo death moves"): a group holding any death-move row other than a
+ *   waiting request (`isDeathRequestRow`) is GM-only too, rolled or not: a confirmed move, Blaze of Glory's finish step,
+ *   Risk It All's split. A player gets UNDO_EXPIRED ("Only the GM can undo a death move.").
+ * `groupGmOnly` is the whole rule. Token moves, requests and waiting uses are taken back through their own paths (`combatTokens.move`,
+ * `combatWithdraw.withdraw`), never by undoing a roll.
+ * `undoEntry` enforces it; `feed.list`'s `canUndo` and `deathMoves.state`'s `undoEntryId` apply it (`viewerCanUndo`), so
+ * a player never sees an Undo they cannot use.
  */
-export const PLAYER_DICE_UNDO_MS = 60_000;
+export function groupRolled(group: readonly Pick<Doc<"actionLog">, "roll">[]): boolean {
+  return group.some((r) => r.roll !== undefined);
+}
+
+/** The groupId prefix of a player's death-move request row (HD4, `deathMoves.choose`). */
+export const DEATH_REQUEST_GROUP_PREFIX = "death-request:";
+
+type UndoRuleRow = Pick<Doc<"actionLog">, "kind" | "roll" | "before" | "groupId">;
+
+/** A player's death-move request row waiting for the GM (HD4): kind death, no roll, no `before`, a `death-request:` group. */
+export function isDeathRequestRow(row: UndoRuleRow): boolean {
+  return row.kind === "death" && row.roll === undefined && row.before === undefined && (row.groupId?.startsWith(DEATH_REQUEST_GROUP_PREFIX) ?? false);
+}
+
+/** The death-move exception (user 2026-11-03): the group holds a death-move row that is not a waiting request. */
+export function groupDeathMove(group: readonly UndoRuleRow[]): boolean {
+  return group.some((r) => r.kind === "death" && !isDeathRequestRow(r));
+}
+
+/** THE player-undo rule: whether only the GM may undo this group (it rolled, or it is a death move). */
+export function groupGmOnly(group: readonly UndoRuleRow[]): boolean {
+  return groupRolled(group) || groupDeathMove(group);
+}
 
 export type LogEntry = {
   campaignId: Id<"campaigns">;
@@ -68,6 +106,8 @@ export type LogEntry = {
   fearDelta?: number;
   /** An action roll with Hope: whether it gave the Hope (`rolls.storeSlayerDie` takes it back). */
   hopeGained?: boolean;
+  /** End day / a day jump forward (CT2): the calendar before and after, on the group's campaign row. */
+  timeChange?: TimeChange;
   undoable: boolean;
 };
 
@@ -98,6 +138,27 @@ export async function latestLiveRow(ctx: MutationCtx, characterId: Id<"character
   return rows.find((row) => row.undoneAt === undefined) ?? null;
 }
 
+/** The rows of a row's action (its group, at most `GROUP_MAX + 1` read: more is refused by undo). */
+async function groupOf(ctx: QueryCtx, row: Doc<"actionLog">): Promise<Doc<"actionLog">[]> {
+  if (row.groupId === undefined) return [row];
+  return ctx.db
+    .query("actionLog")
+    .withIndex("by_campaign_group", (q) => q.eq("campaignId", row.campaignId).eq("groupId", row.groupId))
+    .take(GROUP_MAX + 1);
+}
+
+/**
+ * Whether the viewer may press Undo on a live undoable row, before the checks only the mutation makes (UNDO_STALE):
+ * the GM always; a player only on their own public row of an action that rolled nothing and is no death move (`groupGmOnly`). One group
+ * read for a player's own grouped row.
+ */
+export async function viewerCanUndo(ctx: QueryCtx, row: Doc<"actionLog">, viewerId: Id<"users">, isGm: boolean): Promise<boolean> {
+  if (!row.undoable || row.undoneAt !== undefined) return false;
+  if (isGm) return true;
+  if (row.actorId !== viewerId || row.visibility !== "public") return false;
+  return !groupGmOnly(await groupOf(ctx, row));
+}
+
 export type UndoResult = { undone: Id<"actionLog">[]; fearReverted: number };
 
 /** Log order: by `at`, then insertion. */
@@ -117,7 +178,8 @@ function byTime(a: Doc<"actionLog">, b: Doc<"actionLog">): number {
  *   than their row's `at` and undo stamps the undo time, so a newer row undone
  *   since explains a newer `updatedAt`. Not caught: an unlogged change between
  *   two rows that are then undone newest first; closing that needs each row to
- *   store the character's `updatedAt` before the action.
+ *   store the character's `updatedAt` before the action (dcm-bxp.31 part 1,
+ *   open: see docs/tasks/TASK-LN-N2.md).
  */
 async function assertNothingNewer(ctx: MutationCtx, characterId: Id<"characters">, own: Doc<"actionLog">[], inGroup: Set<string>): Promise<void> {
   const [oldest] = [...own].sort(byTime);
@@ -169,13 +231,51 @@ async function declineGroupHits(ctx: MutationCtx, campaignId: Id<"campaigns">, g
   }
 }
 
+const sameDay = (a: CampaignTimeSnapshot, b: CampaignTimeSnapshot) => a.week === b.week && a.cycle === b.cycle && a.cycleDay === b.cycleDay;
+
+/**
+ * The calendar half of undoing an End day / a day jump (CT2, dcm-jq4b; user answer 2026-11-01). While the campaign still
+ * stands on the day the action reached (`after`: no later day has passed), the calendar goes back to `before` (recorded
+ * in `history` as every time change is) and the time of day End day reset comes back. Otherwise a later day stands: the
+ * group's uses come back (the caller restores them) and the calendar stays, with a public feed line saying so.
+ */
+async function restoreTime(ctx: MutationCtx, user: Doc<"users">, row: Doc<"actionLog">, time: TimeChange): Promise<void> {
+  const current = await ctx.db
+    .query("campaignTime")
+    .withIndex("by_campaign", (q) => q.eq("campaignId", row.campaignId))
+    .unique();
+  if (current !== null && sameDay(current, time.after)) {
+    const before = { week: time.before.week, cycle: time.before.cycle, cycleDay: time.before.cycleDay };
+    await ctx.db.patch("campaignTime", current._id, before);
+    await recordHistory(ctx, user._id, {
+      campaignId: row.campaignId,
+      kind: "campaignTime",
+      action: "undoEndDay",
+      before: { week: current.week, cycle: current.cycle, cycleDay: current.cycleDay },
+      after: before,
+    });
+    if (time.timeOfDayBefore !== undefined) await ctx.db.patch("campaigns", row.campaignId, { timeOfDay: time.timeOfDayBefore });
+    return;
+  }
+  const stands = current === null ? "" : `; the calendar stays on ${formatCalendarDay(current.week, current.cycleDay)}`;
+  await logAction(ctx, {
+    campaignId: row.campaignId,
+    actorId: user._id,
+    kind: "session",
+    visibility: "public",
+    summary: `End of ${formatCalendarDay(time.before.week, time.before.cycleDay)} undone: its uses are back${stands} (a later day has passed)`,
+    undoable: false,
+  });
+}
+
 /**
  * Undoes a row and the rest of its group. Allowed for the row's actor and the
  * campaign's GM (`permissionFor`); others with access get FORBIDDEN, outsiders
  * NOT_FOUND. Refused with UNDO_STALE when the row is not undoable, already
- * undone, when a player undoes a dice row (roll or death move) older than
- * `PLAYER_DICE_UNDO_MS`, or when anything newer happened to a character in
- * the group (`assertNothingNewer`). Restores each `before` sheet, reverts the
+ * undone, or when anything newer happened to a character in the group
+ * (`assertNothingNewer`); with UNDO_EXPIRED when a player undoes an action
+ * that rolled (`groupRolled`: the player-undo rule); with
+ * UNDO_USE_REST for a group holding a `refuse` kind (dcm-bxp.31). Restores each `before` sheet, reverts the
  * group's Fear (floor 0), takes back the countdown ticks the group's rows caused
  * where the countdown has not changed since (`revertTicks`, countdowns-advanced
  * D11), and marks every row undone.
@@ -184,7 +284,7 @@ export async function undoEntry(
   ctx: MutationCtx,
   user: Doc<"users">,
   entryId: Id<"actionLog">,
-  /** Kinds with their own undo path (`rest`: `rests.undo` also reopens the rest); refused with UNDO_STALE. */
+  /** Kinds with their own undo path (`rest`: `rests.undo` also reopens the rest); refused with UNDO_USE_REST (`message` overrides its text when set). */
   refuse: { kinds: ActionKind[]; message: string } = { kinds: [], message: "" },
 ): Promise<UndoResult> {
   const row = await ctx.db.get("actionLog", entryId);
@@ -195,24 +295,16 @@ export async function undoEntry(
   if (!isGm && row.visibility === "gm") throw appError("NOT_FOUND");
   if (!isGm && row.actorId !== user._id) throw appError("FORBIDDEN");
 
-  const group =
-    row.groupId === undefined
-      ? [row]
-      : await ctx.db
-          .query("actionLog")
-          .withIndex("by_campaign_group", (q) => q.eq("campaignId", row.campaignId).eq("groupId", row.groupId))
-          .take(GROUP_MAX + 1);
+  const group = await groupOf(ctx, row);
   // A partial group would restore some sheets and miss others: refuse instead.
   if (group.length > GROUP_MAX) throw appError("UNDO_STALE", "This action touched too many characters to undo.");
-  if (group.some((r) => refuse.kinds.includes(r.kind))) throw appError("UNDO_STALE", refuse.message);
+  if (group.some((r) => refuse.kinds.includes(r.kind))) throw appError("UNDO_USE_REST", refuse.message || undefined);
   if (group.some((r) => !r.undoable || r.undoneAt !== undefined)) throw appError("UNDO_STALE");
 
+  // The player-undo rule (`groupRolled`): once the dice rolled, only the GM undoes the action.
+  if (!isGm && groupRolled(group)) throw appError("UNDO_EXPIRED");
+  if (!isGm && groupDeathMove(group)) throw appError("UNDO_EXPIRED", "Only the GM can undo a death move.");
   const now = Date.now();
-  // A combat attack (CA3) is a dice row too: its player has the same minute (no rerolling by undo).
-  const dice = group.filter((r) => r.roll !== undefined && (r.kind === "roll" || r.kind === "death" || r.kind === "combat"));
-  if (!isGm && dice.some((r) => now - r.at > PLAYER_DICE_UNDO_MS)) {
-    throw appError("UNDO_STALE", "Only the GM can undo a roll after the first minute.");
-  }
 
   const inGroup = new Set<string>(group.map((r) => r._id));
   const characterIds = [...new Set(group.flatMap((r) => (r.characterId ? [r.characterId] : [])))];
@@ -287,5 +379,9 @@ export async function undoEntry(
   );
 
   for (const r of group) await ctx.db.patch("actionLog", r._id, { undoneAt: now, undoneBy: user._id });
+
+  // CT2: an End day / day jump moves the calendar back when it is the latest (after marking, so its feed line is newer).
+  const timeRow = group.find((r) => r.timeChange !== undefined);
+  if (timeRow?.timeChange !== undefined) await restoreTime(ctx, user, timeRow, timeRow.timeChange);
   return { undone: group.map((r) => r._id), fearReverted };
 }

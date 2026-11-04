@@ -6,7 +6,8 @@
 //
 // Class features (HF 16):
 // - Hex: mark a Stress to temporarily Hex a target within Far range (`classState.hexes`, named by `params.choice` or
-//   "Target N"): −tier to its damage rolls and Difficulty (the GM applies it). At most Spellcast-trait targets at once.
+//   "Target N"): −tier to its damage rolls and Difficulty (the GM applies it). At most Spellcast-trait targets at once:
+//   at the maximum a new Hex ends the oldest, or the one picked in `params.amount` (user 2026-10-29, `hexesToEnd`).
 //   Temporary: "Clear Hexes" ends them, and every rest and session end clears them.
 // - Commune: once per long rest, roll Spellcast-trait d6s and read a result on the chart.
 import type { CharacterSheet } from "../../../validation/characters";
@@ -35,6 +36,31 @@ function unhexed(sheet: CharacterSheet): CharacterSheet {
   const classState = { ...sheet.classState };
   delete classState.hexes;
   return { ...sheet, classState };
+}
+
+/**
+ * The Hexes a new Hex ends at the maximum (HF p.16: "The maximum number of creatures you can Hex at one time is equal to
+ * your Spellcast trait"; user 2026-10-29: the oldest by default, or the one the player picks before casting). `pick` is
+ * the 1-based place of the Hex to end in the list (`FeatureParams.amount`); absent or 0 ends the oldest. When the list
+ * is longer than the maximum allows (the trait went down), the oldest others end too, so the new Hex fits.
+ */
+export function hexesToEnd(hexes: readonly string[], max: number, pick: number | undefined): string[] {
+  if (hexes.length < max) return [];
+  if (pick !== undefined && (!Number.isInteger(pick) || pick < 0 || pick > hexes.length)) refuse("Choose a Hex you hold to end.");
+  const first = hexes[pick ? pick - 1 : 0]!;
+  const rest = hexes.filter((h) => h !== first);
+  return [first, ...rest.slice(0, hexes.length - max)];
+}
+
+/**
+ * The Hex to end before casting at the maximum, as picker options (`value`: the `amount` to send): the oldest first
+ * (the default), then every current Hex by its place. Null below the maximum, when a new Hex ends nothing.
+ */
+export function hexDropOptions(sheet: CharacterSheet): { value: number; label: string }[] | null {
+  const hexes = sheet.classState.hexes ?? [];
+  const max = witchSpellcast(sheet);
+  if (max === 0 || hexes.length === 0 || hexes.length < max) return null;
+  return [{ value: 0, label: `The oldest (${hexes[0]})` }, ...hexes.map((h, i) => ({ value: i + 1, label: h }))];
 }
 
 export const witch: ClassFeatures = {
@@ -69,15 +95,20 @@ export const witch: ClassFeatures = {
       target: "none",
       inputs: [{ kind: "text", param: "choice", label: "Target name", placeholder: "Target 1" }],
       use: ({ sheet, params }) => {
-        const hexes = sheet.classState.hexes ?? [];
+        const held = sheet.classState.hexes ?? [];
         const max = witchSpellcast(sheet);
-        if (hexes.length >= max) refuse(max === 0 ? "Your Spellcast trait allows no Hexes." : `You can Hex at most ${max} at a time (your Spellcast trait).`);
-        const target = params.choice?.trim().slice(0, 80) || `Target ${Array.from({ length: hexes.length + 1 }, (_, i) => i + 1).find((n) => !hexes.includes(`Target ${n}`))}`;
-        if (hexes.includes(target)) refuse(`${target} is already Hexed.`);
+        if (max === 0) refuse("Your Spellcast trait allows no Hexes.");
+        const named = params.choice?.trim().slice(0, 80);
+        if (named && held.includes(named)) refuse(`${named} is already Hexed.`);
+        // At the maximum the new Hex ends one: the oldest, or the one the player picked (user 2026-10-29).
+        const ended = held.length >= max ? hexesToEnd(held, max, params.amount) : [];
+        const hexes = held.filter((h) => !ended.includes(h));
+        const target = named || `Target ${Array.from({ length: hexes.length + 1 }, (_, i) => i + 1).find((n) => !hexes.includes(`Target ${n}`))}`;
         const tier = tierForLevel(sheet.level);
+        const end = ended.length > 0 ? `; ended the Hex on ${ended.join(", ")}` : "";
         return {
           sheet: { ...sheet, classState: { ...sheet.classState, hexes: [...hexes, target] } },
-          summary: `used Hex on ${target}: −${tier} to its damage rolls and Difficulty`,
+          summary: `used Hex on ${target}: −${tier} to its damage rolls and Difficulty${end}`,
         };
       },
     },

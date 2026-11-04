@@ -2,37 +2,48 @@
 // Pure data: no framework imports, relative imports only (bundled into Convex).
 
 import type { FeatureEffect } from "../../domain/feature-effects/types";
-import { ANCESTRY_CORE_EFFECTS } from "./ancestry-core";
-import { ASSASSIN_BRAWLER_EFFECTS } from "./assassin-brawler";
-import { BARD_WIZARD_EFFECTS } from "./bard-wizard";
+import { ancestryCoreEffects } from "./ancestry-core";
+import { assassinBrawlerEffects } from "./assassin-brawler";
+import { bardWizardEffects } from "./bard-wizard";
 import { BEASTFORM_EFFECTS } from "./beastforms";
-import { DRUID_SORCERER_EFFECTS } from "./druid-sorcerer";
-import { GUARDIAN_WARRIOR_EFFECTS } from "./guardian-warrior";
-import { HERITAGE_HF_EFFECTS } from "./heritage-hf";
-import { RANGER_ROGUE_EFFECTS } from "./ranger-rogue";
-import { SERAPH_WITCH_EFFECTS } from "./seraph-witch";
+import { druidSorcererEffects } from "./druid-sorcerer";
+import { guardianWarriorEffects } from "./guardian-warrior";
+import { heritageHfEffects } from "./heritage-hf";
+import { rangerRogueEffects } from "./ranger-rogue";
+import { seraphWitchEffects } from "./seraph-witch";
 import { STANCE_EFFECTS } from "./stances";
-import { TRANSFORMATION_EFFECTS } from "./transformations";
-import { WARLOCK_EFFECTS } from "./warlock";
+import { transformationEffects } from "./transformations";
+import { warlockEffects } from "./warlock";
 
 export { FEATURE_CLASSIFICATION, MARTIAL_STANCE_SLUGS, featureClass, featureUsage } from "./classification";
 export type { FeatureClass, FeatureHow } from "./classification";
 
-/** Each group's table, by the FE tracer that fills it. */
-export const FEATURE_EFFECT_TABLES: Readonly<Record<string, readonly FeatureEffect[]>> = {
-  "bard-wizard": BARD_WIZARD_EFFECTS,
-  "druid-sorcerer": DRUID_SORCERER_EFFECTS,
-  "guardian-warrior": GUARDIAN_WARRIOR_EFFECTS,
-  "ranger-rogue": RANGER_ROGUE_EFFECTS,
-  "seraph-witch": SERAPH_WITCH_EFFECTS,
-  "assassin-brawler": ASSASSIN_BRAWLER_EFFECTS,
-  warlock: WARLOCK_EFFECTS,
-  "ancestry-core": ANCESTRY_CORE_EFFECTS,
-  "heritage-hf": HERITAGE_HF_EFFECTS,
-  beastforms: BEASTFORM_EFFECTS,
-  transformations: TRANSFORMATION_EFFECTS,
-  stances: STANCE_EFFECTS,
-};
+let tables: Readonly<Record<string, readonly FeatureEffect[]>> | undefined;
+
+/**
+ * Each group's table, by the FE tracer that fills it. Built on the first read (dcm-uh6r): a Convex function that loads
+ * this module but never reads a feature's effect evaluates none of the tables.
+ */
+export function featureEffectTables(): Readonly<Record<string, readonly FeatureEffect[]>> {
+  tables ??= {
+    "bard-wizard": bardWizardEffects(),
+    "druid-sorcerer": druidSorcererEffects(),
+    "guardian-warrior": guardianWarriorEffects(),
+    "ranger-rogue": rangerRogueEffects(),
+    "seraph-witch": seraphWitchEffects(),
+    "assassin-brawler": assassinBrawlerEffects(),
+    warlock: warlockEffects(),
+    "ancestry-core": ancestryCoreEffects(),
+    "heritage-hf": heritageHfEffects(),
+    beastforms: BEASTFORM_EFFECTS,
+    transformations: transformationEffects(),
+    stances: STANCE_EFFECTS,
+  };
+  return tables;
+}
+
+/** Each group's table (tests); bundles that only call the functions below drop it. */
+export const FEATURE_EFFECT_TABLES: Readonly<Record<string, readonly FeatureEffect[]>> = /* @__PURE__ */ featureEffectTables();
 
 /** Merges tables into one map; a feature id listed twice is a bug in a table, so it throws. */
 export function mergeFeatureTables(tables: readonly (readonly FeatureEffect[])[]): ReadonlyMap<string, FeatureEffect> {
@@ -46,10 +57,18 @@ export function mergeFeatureTables(tables: readonly (readonly FeatureEffect[])[]
   return merged;
 }
 
-/** Every feature's effect entry, by feature id. */
-export const FEATURE_EFFECTS: ReadonlyMap<string, FeatureEffect> = mergeFeatureTables(Object.values(FEATURE_EFFECT_TABLES));
+let mergedEffects: ReadonlyMap<string, FeatureEffect> | undefined;
+
+/** Every feature's effect entry, by feature id; merged on the first read (dcm-uh6r). */
+export function allFeatureEffects(): ReadonlyMap<string, FeatureEffect> {
+  mergedEffects ??= mergeFeatureTables(Object.values(featureEffectTables()));
+  return mergedEffects;
+}
+
+/** Every feature's effect entry, by feature id (tests, the dice situations list); bundles that only call the functions drop it. */
+export const FEATURE_EFFECTS: ReadonlyMap<string, FeatureEffect> = /* @__PURE__ */ allFeatureEffects();
 
 /** The effect entry of a feature, or undefined while its FE tracer has not written it. */
 export function featureEffect(featureId: string): FeatureEffect | undefined {
-  return FEATURE_EFFECTS.get(featureId);
+  return allFeatureEffects().get(featureId);
 }

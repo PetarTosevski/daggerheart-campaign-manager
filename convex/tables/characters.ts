@@ -30,6 +30,21 @@ export const characterTables = {
      */
     deathMoveSpent: v.optional(v.literal(true)),
     /**
+     * HD4 (combat-hud answer 15b, widened; older rows have none): a player's chosen death move waiting for the GM's
+     * confirm. Nothing is rolled or applied until `deathMoves.confirm`; `deathMoves.decline` sends it back. `entryId` is
+     * the feed row that announced it: once that row is undone (the player takes it back), the request no longer counts.
+     */
+    deathRequest: v.optional(
+      v.object({
+        move: v.union(v.literal("blazeOfGlory"), v.literal("avoidDeath"), v.literal("riskItAll")),
+        action: v.optional(v.string()),
+        awayReason: v.optional(v.union(v.literal("infirmary"), v.literal("sentHome"))),
+        requestedBy: v.id("users"),
+        entryId: v.id("actionLog"),
+        at: v.number(),
+      }),
+    ),
+    /**
      * F7-H4 / F8-I1 (dcm-bxp.99.27): set while the character's player hides their hand from the other players on the
      * Combat Map (unset = shared while the GM's switch is on). `combatCards.setHandHidden` writes it;
      * `migrations/handSharing:moveHidden` moved it here from the `frameTrackers` `handPrivacy` blob.
@@ -40,7 +55,9 @@ export const characterTables = {
     updatedAt: v.number(),
   })
     .index("by_campaign", ["campaignId"])
-    .index("by_owner", ["ownerId"]),
+    // J7 (dcm-bxp.141): a user's characters in one campaign (Notes' current journal), however many they own elsewhere;
+    // its ownerId prefix serves the per-user reads (replaces by_owner, which schema-guard forbids as a prefix).
+    .index("by_owner_campaign", ["ownerId", "campaignId"]),
 
   /**
    * A character's extras (beastform, companion, Motherboard wallet, Beast

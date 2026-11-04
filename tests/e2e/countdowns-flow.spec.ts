@@ -204,7 +204,8 @@ for (const viewport of VIEWPORTS) {
       const afterFeed = { ...afterTag, "The dam breaks": 3 };
       await serverIs(afterFeed);
 
-      // ---- 7. The player rolls a success with Fear and undoes it: its ticks come back (D11, Q5).
+      // ---- 7. The player rolls a success with Fear; once dice are rolled only the GM can undo (user 2026-11-02,
+      // groupGmOnly in convex/lib/actionLog.ts), so the player gets no Undo and the GM undoes it: its ticks come back (D11, Q5).
       const undone = await roll([3, 8]);
       const lastSummary = (await gm.query(api.feed.list, { campaignId, paginationOpts: { numItems: 50, cursor: null } })).page.find((r) => r._id === undone.entryId)!.summary;
       await serverIs({
@@ -217,7 +218,11 @@ for (const viewport of VIEWPORTS) {
       await player.goto(campaignUrl);
       const playerFeed = player.getByRole("list", { name: "Rolls" });
       const last = playerFeed.getByRole("listitem", { name: lastSummary, exact: true });
-      await last.getByRole("button", { name: "Undo" }).click();
+      await expect(last).toHaveCount(1);
+      await expect(last.getByRole("button", { name: "Undo" })).toHaveCount(0);
+      const gmLast = gmFeed.getByRole("listitem", { name: lastSummary, exact: true });
+      await gmLast.getByRole("button", { name: "Undo" }).click();
+      await expect(gmLast.getByText("undone")).toBeVisible();
       await expect(last.getByText("undone")).toBeVisible();
       await serverIs(afterFeed);
       await expect(value("Rockfall")).toHaveText("2/3");

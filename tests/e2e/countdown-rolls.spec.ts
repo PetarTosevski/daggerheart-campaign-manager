@@ -108,11 +108,12 @@ test("the GM ticks a countdown from a player's roll in the feed; the player's un
   await expect(tick.getByRole("button", { name: "Apply" })).toBeDisabled();
   await tick.getByRole("button", { name: "Close", exact: true }).click();
 
-  // The player undoes the roll within the minute: the tick comes back.
+  // A roll is the GM's to undo (user 2026-11-02): the player's row has no Undo; the GM's undo brings the tick back.
   await player.goto(`/campaigns/${campaignId}`);
   const playerRow = feedOf(player).getByRole("listitem").filter({ hasText: `${hero}: Agility action roll` });
   await expect(playerRow.getByRole("button", { name: /^Tick countdowns/ })).toHaveCount(0);
-  await playerRow.getByRole("button", { name: "Undo" }).click();
+  await expect(playerRow.getByRole("button", { name: "Undo" })).toHaveCount(0);
+  await row.getByRole("button", { name: "Undo" }).click();
   await expect(playerRow.getByText("undone")).toBeVisible();
   await expect(card.getByTestId("countdown-value")).toHaveText("4/4");
   // An undone row no longer offers the button.
@@ -177,14 +178,13 @@ test("the feed ticks both sides of a chase from one row; the dialog hints 5-10 f
   await expect(card.getByTestId("chase-value-rivals")).toHaveText("2/6");
   await expect.poll(async () => (await gm.query(api.countdowns.listByCampaign, { campaignId })).map((c) => c.currentValue)).toEqual([5, 2]);
 
-  // The server's state: the pair's row shows it ticked; the player's undo takes both ticks back.
+  // The server's state: the pair's row shows it ticked; the GM's undo takes both ticks back.
   await page.reload();
   await row.getByRole("button", { name: /^Tick countdowns/ }).click();
   await expect(tick.getByRole("checkbox", { name: "Chase: The party and The thief" })).toBeChecked();
   await expect(tick.getByRole("checkbox", { name: "Chase: The party and The thief" })).toBeDisabled();
   await tick.getByRole("button", { name: "Close", exact: true }).click();
-  await player.goto(`/campaigns/${campaignId}`);
-  await feedOf(player).getByRole("listitem").filter({ hasText: `${hero}: Agility action roll` }).getByRole("button", { name: "Undo" }).click();
+  await row.getByRole("button", { name: "Undo" }).click();
   await expect.poll(async () => (await gm.query(api.countdowns.listByCampaign, { campaignId })).map((c) => c.currentValue)).toEqual([6, 3]);
   await expect(card.getByTestId("chase-value-party")).toHaveText("6/6");
   await close();

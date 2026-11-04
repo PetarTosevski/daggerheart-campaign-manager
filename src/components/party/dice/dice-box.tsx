@@ -7,6 +7,8 @@ import { useMemo, useRef, useState, type ReactNode } from "react";
 
 import { Label, Pill, SheetBox } from "@/components/party/sheet-ui";
 import { BRAWLERS_STRIKE } from "@/lib/domain/class-features/classes/brawler";
+import { derivedTraits } from "@/lib/domain/characters/derived";
+import { withEffects } from "@/lib/domain/characters/effects";
 import { rollOptions, weaponOverrides } from "@/lib/domain/class-features/hooks";
 import { CLASS_FEATURES } from "@/lib/domain/class-features/index";
 import type { FeatureScope, RollPrompt } from "@/lib/domain/class-features/types";
@@ -26,11 +28,13 @@ import type { CharacterView } from "../../../../convex/characters";
 import { play3d } from "./dice3d";
 import { AdvantageStepper, BoardDiceToggles, CountStepper, DiceTiles } from "./parts";
 import { canAnimate3d, useDiceSettings } from "./settings";
+import { situationalDice } from "./situations";
 import { SlayerOffer } from "./slayer";
 import { playRollSound } from "./sound";
 import { TagTeam } from "./tag-team";
 
 type Mode = "action" | "reaction" | "damage";
+type AttackWeapon = "primary" | "secondary" | "none";
 /** `slayer`: how many of the roll's last dice are spent Slayer Dice (labelled "Slayer d6"). */
 type Result = { id: number; entryId: Id<"actionLog">; roll: RollRecord; prompts: RollPrompt[]; label: string; fearGained?: number; slayer: number };
 
@@ -161,6 +165,8 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
     return parsed.success ? parsed.data : null;
   }, [view]);
   const unavailable = isUnavailable(character);
+  // dcm-hnbk: the traits with effects and passive bonuses (Beastform, CB p.30/32), as the Attack bar reads them.
+  const traits = useMemo(() => (sheet ? derivedTraits(withEffects(sheet)) : view.traits), [sheet, view.traits]);
 
   const [mode, setMode] = useState<Mode>("action");
   const [trait, setTrait] = useState<TraitId>("agility");
@@ -171,6 +177,7 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
   const [edge, setEdge] = useState(0);
   const [help, setHelp] = useState(0);
   const [attack, setAttack] = useState(false);
+  const [attackWeaponPick, setAttackWeapon] = useState<AttackWeapon>("primary");
   const [ikonisAttack, setIkonisAttack] = useState(false);
   const [chosen, setChosen] = useState<string[]>([]);
   const [source, setSource] = useState("primary");
@@ -180,6 +187,8 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
   // Session features (U3, U5): local form state until the roll, reset after it.
   const [slayerSpend, setSlayerSpend] = useState(0);
   const [tideSpend, setTideSpend] = useState(0);
+  // E1.4b (dcm-hqk1): the situations ticked for this roll ("In conversation", Reliable Backup, CB p.43).
+  const [situations, setSituations] = useState<string[]>([]);
   const [result, setResult] = useState<Result | null>(null);
   const [history, setHistory] = useState<Result[]>([]);
   const [rolling, setRolling] = useState(false);
@@ -231,6 +240,9 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
       : overrides.find((o) => o.key === damageSourceKey)?.damageType) === "magic");
   const options = allOptions.filter((o) => !(o.physicalOnly && magicSource));
   const useIkonis = mode === "action" && ikonisAttack && ikonis !== null;
+  // dcm-6qrn: the picked weapon falls back to "none" when that slot is empty (derived, never copied into state).
+  const attackWeapon: AttackWeapon = attackWeaponPick === "primary" && !view.primaryWeaponId ? (view.secondaryWeaponId ? "secondary" : "none") : attackWeaponPick === "secondary" && !view.secondaryWeaponId ? "none" : attackWeaponPick;
+  const weaponSlot = attackWeapon === "none" ? null : attackWeapon;
   const rollTrait = useIkonis && ikonis.trait ? ikonis.trait : trait;
   // '+ Slayer Dice' on attack and damage rolls while the pool holds dice (K2); '+ Tide tokens' on action rolls, only
   // for a Know the Tide holder, never shown (not even disabled) to anyone else (U5).
@@ -240,6 +252,9 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
   const tideHeld = sheet ? tideTokens(sheet) : 0;
   const showTide = sheet !== null && holdsTide(sheet) && mode === "action";
   const tideCount = showTide ? Math.min(tideSpend, tideHeld) : 0;
+  // E1.4b (dcm-hqk1): a held situational Hope Die (Reliable Backup's d20) is offered on a Presence Roll only.
+  const situational = mode !== "damage" && rollTrait === "presence" ? situationalDice(view.effects) : [];
+  const ticked = situations.filter((x) => situational.some((o) => o.situation === x));
 
   /** What the result row says the roll was: "Presence +2 action roll vs 12", "Primary: Rapier (1d8) · Waxing Moon +2 · critical". */
   function rollLabel(): string {
@@ -253,7 +268,7 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
     }
     const diff = toInt(difficulty);
     const tide = tideCount > 0 ? ` · Know the Tide +${tideCount}` : "";
-    return `${TRAIT_LABEL[rollTrait]} ${signed(view.traits[rollTrait])} ${mode} roll${diff !== undefined ? ` vs ${diff}` : ""}${tide}`;
+    return `${TRAIT_LABEL[rollTrait]} ${signed(traits[rollTrait])} ${mode} roll${diff !== undefined ? ` vs ${diff}` : ""}${tide}`;
   }
 
   /** " · Slayer d6 ×2 (4, 6)": the spent Slayer Dice, the roll's last dice. */
@@ -308,15 +323,19 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
       disadvantage,
       help: mode === "reaction" ? 0 : help,
       attack: mode === "action" && (attack || useIkonis),
+      // dcm-6qrn (user answer 2026-10-31): an attack roll names its weapon, or none (a non-weapon attack).
+      ...(mode === "action" && attack && !useIkonis && weaponSlot !== null ? { weapon: weaponSlot } : {}),
       options: picked,
       ...(useIkonis ? { ikonis: true } : {}),
       ...(slayerCount > 0 ? { slayerDice: slayerCount } : {}),
       ...(tideCount > 0 ? { tideTokens: tideCount } : {}),
+      ...(ticked.length > 0 ? { situations: ticked } : {}),
     };
     const out = await actionRoll.fire({ characterId: character._id, ...args });
     if (out) {
       setSlayerSpend(0);
       setTideSpend(0);
+      setSituations([]);
       await show(out.entryId, out.roll, out.prompts, label, slayerCount, out.fearGained);
     }
   }
@@ -414,7 +433,7 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
               <select className="dc-in" value={rollTrait} disabled={useIkonis && ikonis.trait !== null} onChange={(e) => setTrait(e.target.value as TraitId)}>
                 {TRAIT_IDS.map((t) => (
                   <option key={t} value={t}>
-                    {TRAIT_LABEL[t]} {signed(view.traits[t])}
+                    {TRAIT_LABEL[t]} {signed(traits[t])}
                   </option>
                 ))}
               </select>
@@ -475,6 +494,16 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
               <Chip checked={attack} onChange={setAttack}>
                 Attack roll
               </Chip>
+              {attack && !useIkonis ? (
+                <label className="dc-field">
+                  <Label>Weapon</Label>
+                  <select className="dc-in" value={attackWeapon} onChange={(e) => setAttackWeapon(e.target.value as AttackWeapon)}>
+                    {view.primaryWeaponId ? <option value="primary">Primary weapon</option> : null}
+                    {view.secondaryWeaponId ? <option value="secondary">Secondary weapon</option> : null}
+                    <option value="none">No weapon</option>
+                  </select>
+                </label>
+              ) : null}
               {ikonis ? (
                 <Chip checked={ikonisAttack} onChange={setIkonisAttack}>
                   Ikonis attack ({ikonis.label}
@@ -483,6 +512,15 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
                 </Chip>
               ) : null}
               <CountStepper label="Help dice" value={help} max={ADVANTAGE_LIMIT} onChange={setHelp} />
+            </div>
+          ) : null}
+          {situational.length > 0 ? (
+            <div className="dc-group" data-testid="dice-situations">
+              {situational.map((o) => (
+                <Chip key={o.situation} checked={ticked.includes(o.situation)} onChange={(on) => setSituations((xs) => (on ? [...xs, o.situation] : xs.filter((x) => x !== o.situation)))}>
+                  In conversation: use {o.label} (d{o.sides} Hope Die)
+                </Chip>
+              ))}
             </div>
           ) : null}
           {showSlayer || showTide ? (

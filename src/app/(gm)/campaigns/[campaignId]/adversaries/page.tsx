@@ -102,7 +102,7 @@ function Builder({
   onOpenEncounter: (id: string) => void;
   initialEncounterId: string | null;
 }) {
-  const party = useQuery(api.characters.listByCampaign, { campaignId });
+  const party = useQuery(api.charactersReads.listByCampaign, { campaignId });
   if (party === undefined) {
     return (
       <p role="status" className="adv-count">

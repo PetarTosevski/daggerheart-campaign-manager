@@ -55,7 +55,17 @@ const area: Area = {
   entries: [
     // ---------------------------------------------------------------- classFeatures
     { fn: api.classFeatures.use, access: "own", args: () => ({ featureKey: "none", params: {} }), okCodes: ["CLASS_FEATURE_RULE"] },
-    { fn: api.classFeatures.endEffect, access: "own", okCodes: ["CLASS_FEATURE_RULE"] },
+    // hud-pre-w9 (dcm-bxp.99.32.37): playerB's character cast the effect on characterA, so playerB may End it too (the
+    // caster rule); the other refusals (an effect that isn't the caller's caster's) are in tests/convex/hud-end-effect.test.ts.
+    {
+      fn: api.classFeatures.endEffect,
+      access: "own",
+      setup: (w) => patchSheet(w, w.characterA, () => ({ effects: [{ id: "authz-ward", source: "Rune Ward", text: "Reduce damage", until: "rest", casterId: w.characterB }] })),
+      args: (w) => ({ characterId: w.characterA, effectId: "authz-ward" }),
+      expect: { otherPlayer: "ok" },
+      okCodes: ["CLASS_FEATURE_RULE"],
+      note: "The effect's caster's player may end it (editsCaster).",
+    },
     { fn: api.classFeatures.gotHit, access: "own", okCodes: ["CLASS_FEATURE_RULE"] },
     // Character rolls are public: every member reads the latest one.
     { fn: api.classFeatures.lastRoll, access: "own" },
@@ -77,8 +87,12 @@ const area: Area = {
     { fn: api.deathMoves.returnFromAway, access: "own", expect: { player: "FORBIDDEN" }, okCodes: ["DEATH_MOVE_RULE"] },
     { fn: api.deathMoves.settleAway, access: "own", expect: { player: "FORBIDDEN" }, okCodes: ["DEATH_MOVE_RULE"] },
     { fn: api.deathMoves.state, access: "own" },
+    { fn: api.deathMoves.confirm, access: "own", expect: { player: "FORBIDDEN" }, okCodes: ["DEATH_MOVE_NOT_WAITING"] },
+    { fn: api.deathMoves.decline, access: "own", expect: { player: "FORBIDDEN" }, okCodes: ["DEATH_MOVE_NOT_WAITING"] },
     {
-      // A real death move by playerA (every Hit Point marked, then Avoid Death): its actor or the GM undoes it.
+      // playerA chooses a death move (every Hit Point marked, then Avoid Death): a request waiting for the GM, nothing rolled,
+      // so its actor or the GM undoes it ("Take it back"). A rolled move is the GM's alone (the player-undo rule,
+      // convex/lib/actionLog.ts `groupRolled`; tests/convex/hud-death-confirm.test.ts).
       fn: api.deathMoves.undo,
       access: "scoped",
       expect: { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", otherPlayer: "FORBIDDEN", player: "ok", gm: "ok" },
@@ -90,14 +104,18 @@ const area: Area = {
     },
 
     // ---------------------------------------------------------------- rests
-    { fn: api.rests.current, access: "view" },
-    { fn: api.rests.projects, access: "own" },
+    { fn: api.restsReads.current, access: "view" },
+    { fn: api.restsReads.projects, access: "own" },
     { fn: api.rests.start, access: "gm", okCodes: ["REST_RULE"] },
     { fn: api.rests.finish, access: "gm", setup: openRest },
     { fn: api.rests.interrupt, access: "gm", setup: openRest },
     // The open rest is the latest but changed nothing yet: the GM meets REST_RULE after the access check.
     { fn: api.rests.undo, access: "gm", setup: openRest, okCodes: ["REST_RULE"] },
     { fn: api.rests.choose, access: "own", setup: openRest, okCodes: ["REST_RULE"] },
+    // DA5: the Oasis holder's owner or the GM; the open rest has no dice yet, so access passes and the rule answers.
+    { fn: api.rests.oasisReroll, access: "own", setup: openRest, args: () => ({ die: 0 }), okCodes: ["REST_RULE"] },
+    // DA15: a holder closes their own Oasis panel (owner or GM); the open rest has not ended, so access passes and the rule answers.
+    { fn: api.rests.closeOasis, access: "own", setup: openRest, okCodes: ["REST_RULE"] },
     { fn: api.rests.createProject, access: "own", args: () => ({ name: "Forge a blade", startingValue: 4 }) },
 
     // ---------------------------------------------------------------- rolls
@@ -135,6 +153,8 @@ const area: Area = {
       },
     },
     { fn: api.rolls.gmRoll, access: "gm", args: () => ({ dice: [{ count: 1, sides: 6 }] }) },
+    // Any member rolls a public free roll of mixed dice (user 2026-11-04); not character-scoped, so the other player too.
+    { fn: api.rolls.freeRoll, access: "view", args: () => ({ dice: [{ count: 3, sides: 6 }, { count: 1, sides: 8 }], modifier: 2 }) },
     {
       fn: api.rolls.reveal,
       access: "gm",

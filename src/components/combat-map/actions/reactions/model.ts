@@ -11,8 +11,12 @@ import type { api } from "../../../../../convex/_generated/api";
  */
 
 export type HitView = FunctionReturnType<typeof api.adversaryActions.pending>[number];
+/** SD4: a feature answer as the server describes it (name, text, what its Use asks). */
+export type FeatureView = NonNullable<HitView["features"]>[number];
 export type Severity = NonNullable<HitView["severity"]>;
 export type ArmorStep = NonNullable<HitView["armorPreview"]>[number];
+/** Plan lanes-2, E2.3: a grant the attacker gives the hit PC (Hope for fewer forced HP, gold instead of HP). */
+export type GrantView = NonNullable<HitView["grants"]>[number];
 
 export const SEVERITY_LABEL: Record<Severity, string> = { none: "No damage", minor: "Minor", major: "Major", severe: "Severe" };
 
@@ -24,17 +28,37 @@ export type PromptMode =
   | "armorMany"
   /** The hit PC with no slot to mark, or direct damage (CB p.99): OK only. */
   | "ok"
-  /** An ally with an eligible reaction card: the cards with Use, and Pass. */
+  /** An ally with an eligible reaction card or feature: the answers with Use, and Pass. */
   | "ally"
+  /** SD4 (Q2): before the adversary's roll: the before-roll features with Use, and Pass. */
+  | "preRoll"
+  /**
+   * The hit PC marked an Armor Slot, said Don't / OK (A1) or (DA8) used a slot substitute such as Stable; every card or feature that still
+   * fits the hit (DA8, user 2026-10-30, CB p.107: in the order the player picks) with Use, and Done.
+   */
+  | "afterArmor"
   /** Nothing owed: "Bandit hit Mira", waiting for the others (Q14). */
   | "waiting";
 
 export function promptMode(view: HitView): PromptMode {
   if (!view.awaiting) return "waiting";
+  if (view.preRoll) return "preRoll";
   if (view.role === "ally") return "ally";
+  if (view.armorAnswered) return "afterArmor";
   const max = view.maxSlots ?? 0;
   if (view.direct || max <= 0) return "ok";
   return max === 1 ? "armorOne" : "armorMany";
+}
+
+/**
+ * The slot counts the hit PC may mark (1..maxSlots). E2 (dcm-s77): when the attacker makes slots dearer (Armor Eater,
+ * HF p.71: "must mark an additional Armor Slot to reduce the severity") the server lists only whole steps in the preview
+ * (0, 2, 4), so a count that buys nothing isn't offered.
+ */
+export function armorCounts(view: Pick<HitView, "maxSlots" | "armorPreview">): number[] {
+  const listed = (view.armorPreview ?? []).map((s) => s.slots).filter((n) => n > 0);
+  if (listed.length > 0) return listed;
+  return Array.from({ length: view.maxSlots ?? 0 }, (_, i) => i + 1);
 }
 
 function hpText(hp: number): string {
@@ -64,7 +88,13 @@ export function damageLine(view: HitView): string {
 export function armorQuestion(view: HitView): string {
   const mode = promptMode(view);
   if (mode === "ok") return view.direct ? "Direct damage: Armor Slots can't reduce it." : "No Armor Slot to mark.";
-  if (mode === "armorMany") return "Mark any number of Armor Slots to reduce it.";
+  if (mode === "armorMany") {
+    // E2 (dcm-s77): one dearer step ("Mark 2 Armor Slots to make it Minor?").
+    const counts = armorCounts(view);
+    const only = counts.length === 1 ? stepFor(view, counts[0]!) : undefined;
+    if (only) return only.severity === "none" ? `Mark ${only.slots} Armor Slots to take no damage?` : `Mark ${only.slots} Armor Slots to make it ${SEVERITY_LABEL[only.severity]}?`;
+    return "Mark any number of Armor Slots to reduce it.";
+  }
   const one = stepFor(view, 1);
   if (!one) return "Mark an Armor Slot?";
   return one.severity === "none" ? "Mark an Armor Slot to take no damage?" : `Mark an Armor Slot to make it ${SEVERITY_LABEL[one.severity]}?`;
@@ -96,22 +126,83 @@ export function playableCards(view: Pick<HitView, "role" | "cardIds">): string[]
   return view.role === "target" ? view.cardIds.filter((id) => !ALLY_ONLY_CARDS.has(id)) : view.cardIds;
 }
 
-/** What `respond` takes (the server's `hitChoiceValidator`). */
+/** One choice of a feature answer (`useFeature`'s ids: `n:<id>`, `opt:<step>`, `optional:<step>`, `situations`). */
+export type FeatureChoice = { id: string; value: number | string | string[] | boolean };
+
+/** What `respond` takes (the server's `hitChoiceValidator`, and SD4's feature answer). */
 export type HitChoice =
   | { kind: "armor"; slots?: number }
   | { kind: "noArmor" }
   | { kind: "pass" }
-  | { kind: "card"; cardId: string; useId?: string };
+  | { kind: "card"; cardId: string; useId?: string }
+  | { kind: "feature"; featureId: string; useId?: string; choices: FeatureChoice[] }
+  /** Plan lanes-2, E2.3: take a grant, paying `amount` (1..the grant's amount). */
+  | { kind: "grant"; id: string; amount: number };
+
+/** Plan lanes-2, E2.3: the most a grant takes (its listed amount; at least 1). */
+export function grantMax(grant: Pick<GrantView, "amount">): number {
+  return Math.max(1, Math.trunc(grant.amount ?? 1));
+}
+
+/** Plan lanes-2, E2.3: a typed count clamped to 1..the grant's most. */
+export function grantAmount(grant: Pick<GrantView, "amount">, typed: number): number {
+  return Math.min(grantMax(grant), Math.max(1, Math.trunc(Number.isFinite(typed) ? typed : 1)));
+}
+
+/** What the player set on a feature answer's controls, before it becomes the choice list. */
+export type FeaturePicks = {
+  numbers: Record<string, number>;
+  options: Record<string, string>;
+  optionals: Record<string, boolean>;
+  situations: Record<string, boolean>;
+};
 
 /**
- * The optimistic `pending` after an answer (CL4): an ally's Use / Pass or the target's armor answer ends what they owe;
- * a card the target plays first (Shrug It Off) only leaves the list of cards, the armor question stays. A redirect
- * (I Am Your Shield) is the server's to show, so the ally's card answer just stops awaiting.
+ * A feature's controls at their defaults: the smallest counts, the first option of each pick, optional steps off except
+ * the `defaultOn` ones (DA8: Draining Bane's "Clear a Stress" is ticked, user answer 2026-10-29).
+ */
+export function defaultPicks(feature: FeatureView): FeaturePicks {
+  return {
+    numbers: Object.fromEntries(feature.numbers.map((n) => [n.id, Math.max(1, n.min)])),
+    options: Object.fromEntries(feature.options.flatMap((o) => (o.options[0] ? [[o.id, o.options[0].id]] : []))),
+    optionals: Object.fromEntries(feature.optionals.flatMap((o) => (o.defaultOn ? [[o.id, true]] : []))),
+    situations: {},
+  };
+}
+
+/** Whether every situation the feature asks about is confirmed (Q13: the player confirms it). */
+export function situationsConfirmed(feature: FeatureView, picks: FeaturePicks): boolean {
+  return feature.situations.every((text) => picks.situations[text] === true);
+}
+
+/** The `respond` choice of a feature answer with the player's picks. */
+export function featureChoice(feature: FeatureView, picks: FeaturePicks): HitChoice {
+  const choices: FeatureChoice[] = [
+    ...feature.numbers.map((n) => ({ id: `n:${n.id}`, value: picks.numbers[n.id] ?? Math.max(1, n.min) })),
+    ...feature.options.flatMap((o) => (picks.options[o.id] ? [{ id: `opt:${o.id}`, value: [picks.options[o.id]!] }] : [])),
+    ...feature.optionals.map((o) => ({ id: `optional:${o.id}`, value: picks.optionals[o.id] === true })),
+    ...(feature.situations.length > 0 ? [{ id: "situations", value: feature.situations.filter((t) => picks.situations[t] === true) }] : []),
+  ];
+  return { kind: "feature", featureId: feature.featureId, useId: feature.useId, choices };
+}
+
+/**
+ * The optimistic `pending` after an answer (CL4): an ally's Use / Pass ends what they owe; a card or feature the target
+ * plays leaves its list, the armor question stays until answered; a marked slot (DA8) or Don't / OK (A1, user answer
+ * 2026-10-30) leaves the cards and features still listed (the server then lists what fits now) or, with none, ends what
+ * they owe; Done ends it. A
+ * redirect (I Am Your Shield) is the server's to show, so the ally's card answer just stops awaiting.
  */
 export function afterAnswer(views: readonly HitView[], requestId: HitView["requestId"], choice: HitChoice): HitView[] {
   return views.map((v) => {
     if (v.requestId !== requestId) return v;
-    if (choice.kind === "card" && v.role === "target") return { ...v, cardIds: v.cardIds.filter((id) => id !== choice.cardId) };
-    return { ...v, awaiting: false };
+    if (v.role !== "target" || v.preRoll || v.afterHit || choice.kind === "pass") return { ...v, awaiting: false };
+    // Plan lanes-2, E2.3: a taken grant leaves the list; the rest of the prompt stays.
+    if (choice.kind === "grant") return { ...v, grants: (v.grants ?? []).filter((g) => g.id !== choice.id) };
+    const cardIds = choice.kind === "card" ? v.cardIds.filter((id) => id !== choice.cardId) : v.cardIds;
+    const features = choice.kind === "feature" ? (v.features ?? []).filter((f) => f.featureId !== choice.featureId) : (v.features ?? []);
+    const armorAnswered = v.armorAnswered === true || choice.kind === "armor" || choice.kind === "noArmor";
+    const left = cardIds.length + features.length > 0;
+    return { ...v, cardIds, features, ...(armorAnswered ? { armorAnswered: true } : {}), awaiting: !armorAnswered || left };
   });
 }

@@ -4,6 +4,8 @@ import { designAsset } from "@/lib/design-assets";
 import { TRAIT_LABEL, traitIdSchema } from "@/lib/frames/extras/common";
 import { IKONIS_RANGES, IKONIS_TRAINING_CLASS_ID, type Ikonis } from "@/lib/frames/extras/motherboard";
 import { DOMAIN_CARD_ART, EXPERIENCE_SUGGESTIONS, getClass, getDomain, getSubclass, getWeapon, type Armor, type Weapon } from "@/lib/srd";
+import { STARTING_EXPERIENCE_VALUE } from "@/lib/domain/characters";
+import { PURPOSEFUL_DESIGN_BONUS } from "@/lib/domain/dice";
 import { cn } from "@/lib/utils";
 
 import { Choice, formatModifier, Group, HfMini, traitLabel, type StepProps } from "./steps-1-4";
@@ -12,6 +14,7 @@ import {
   classItemsFor,
   domainCardOptions,
   gearSummary,
+  holdsPurposefulDesignNow,
   POTIONS,
   primaryWeaponsFor,
   secondaryWeaponsFor,
@@ -320,9 +323,12 @@ export function ConnectionsStep({ state, update }: StepProps) {
 
 // ---------------------------------------------------------------- Step 7
 
-export function ExperiencesStep({ state, update }: StepProps) {
+export function ExperiencesStep({ state, update, opts }: StepProps) {
   const [a, b] = state.experiences;
   const chosen = [a.trim(), b.trim()];
+  // Purposeful Design (Clank, CB p.53, DA11): the chosen Experience shows its permanent +1.
+  const purposeful = holdsPurposefulDesignNow(state, opts);
+  const modifier = (i: 0 | 1) => STARTING_EXPERIENCE_VALUE + (purposeful && state.purposefulExperience === i ? PURPOSEFUL_DESIGN_BONUS : 0);
   return (
     <div className="flex flex-col gap-4">
       <p className="wz-lead">
@@ -344,12 +350,31 @@ export function ExperiencesStep({ state, update }: StepProps) {
               value={state.experiences[i]}
               onChange={(e) => update({ experiences: i === 0 ? [e.target.value, b] : [a, e.target.value] })}
             />
-            <span className="wz-plus" aria-label="Modifier +2">
-              {formatModifier(2)}
+            <span className="wz-plus" aria-label={`Modifier ${formatModifier(modifier(i as 0 | 1))}`}>
+              {formatModifier(modifier(i as 0 | 1))}
             </span>
           </div>
         ))}
       </div>
+      {purposeful ? (
+        <fieldset className="m-0 flex min-w-0 flex-col gap-1.5 border-0 p-0">
+          <legend className="wz-lbl">Purposeful Design · +1 to the Experience that best aligns with your purpose</legend>
+          <div className="flex flex-wrap gap-1.5">
+            {([0, 1] as const).map((i) => (
+              <Choice
+                key={i}
+                type="radio"
+                name="purposeful-design"
+                checked={state.purposefulExperience === i}
+                onSelect={() => update({ purposefulExperience: i })}
+                label={`Purposeful Design: ${chosen[i] || `Experience ${i + 1}`}`}
+              >
+                {chosen[i] || `Experience ${i + 1}`}
+              </Choice>
+            ))}
+          </div>
+        </fieldset>
+      ) : null}
       <div className="wz-examples">
         <span className="wz-lbl">Examples · click to use, click again to remove</span>
         {EXPERIENCE_SUGGESTIONS.map((group) => (

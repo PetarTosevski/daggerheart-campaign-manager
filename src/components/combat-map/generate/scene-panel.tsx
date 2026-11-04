@@ -3,9 +3,11 @@
 import "./generate.css";
 
 import { useAction, useMutation, useQuery } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import { useRef, useState } from "react";
 
 import { errorMessage } from "@/lib/convex-errors";
+import { DEFAULT_SETTING } from "@/lib/sprite-packs/settings";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../convex/_generated/api";
@@ -14,6 +16,7 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 import type { SettingRef } from "../../../../convex/lib/validators/combatMaps";
 import { MapImageButton } from "../maps";
 import type { CombatMapSummary, ScenePanelProps } from "../slots";
+import { sceneChips } from "./scene-chips";
 import { SettingSelect } from "./setting-select";
 
 /** The board's size presets (convex/lib/combatMaps.ts MAP_SIZES). */
@@ -43,6 +46,22 @@ function resultMessage(result: GenerateResult): string {
   return "Drawn from keywords in your description. (Claude isn’t set up on this server; with an API key it draws the scene itself.)";
 }
 
+type SettingOptions = FunctionReturnType<typeof api.combatMapStyle.settings> | undefined;
+
+/**
+ * dcm-bxp.129: the built-in setting whose suggestion chips the card shows.
+ * - A built-in setting: that one. A GM pack: the built-in setting it adds to (`extends`); a pack with its own setting
+ *   (or a list not loaded yet) shows no setting chips, since the client cannot tell what it depicts.
+ * - "Let Claude choose": the setting this map was last drawn with, if any, else the generator's own fallback
+ *   (DEFAULT_SETTING, D7), so a GM sees suggestions before picking anything.
+ */
+function chipSetting(picked: SettingRef | null, stored: SettingRef | undefined, options: SettingOptions): string | null {
+  const ref = picked ?? stored ?? null;
+  if (ref === null) return DEFAULT_SETTING;
+  if ("builtin" in ref) return ref.builtin;
+  return options?.packs.find((p) => p._id === ref.pack)?.extends?.id ?? null;
+}
+
 /** What a click on one of the card's buttons does: fill the map on screen or make a new one, and ask for a variation or not. */
 type Run = { target: "current" | "new"; another: boolean };
 
@@ -60,6 +79,9 @@ export function ScenePanel({ campaignId, map, onMapCreated }: ScenePanelProps) {
   const generate = useAction(api.combatMapGenerate.generate);
   const stop = useMutation(api.combatMapGenerate.stop);
   const create = useIntent(api.combatMaps.create);
+  // Both are subscribed already (the campaign shell holds campaigns.get, the Setting picker holds settings).
+  const campaign = useQuery(api.campaigns.get, { campaignId });
+  const settingOptions = useQuery(api.combatMapStyle.settings, { campaignId });
 
   const mapId = map?._id ?? null;
   // The GM's typing and size pick, per map: switching maps shows that map's own description again (the board).
@@ -90,6 +112,8 @@ export function ScenePanel({ campaignId, map, onMapCreated }: ScenePanelProps) {
   const source = map?.source ?? null;
   // The setting the GM picked (sent to generate; absent = Let Claude choose): the map's own pick, else the pending one.
   const pickedSetting: SettingRef | null = map ? (layout?.settingPicked === true && layout.setting ? layout.setting : null) : pendingSetting;
+
+  const chips = sceneChips(chipSetting(pickedSetting, map ? layout?.setting : undefined, settingOptions), campaign?.frameId);
 
   async function run({ target, another }: Run) {
     const desc = prompt.trim();
@@ -160,6 +184,21 @@ export function ScenePanel({ campaignId, map, onMapCreated }: ScenePanelProps) {
           onChange={(e) => setDraft({ mapId, text: e.target.value })}
         />
       </label>
+      {chips.length > 0 ? (
+        <div className="cm-row cm-scene-chips" role="group" aria-label="Suggested scenes">
+          {chips.map((chip) => (
+            <button
+              key={chip.text}
+              type="button"
+              className="cm-btn cm-sm cm-scene-chip"
+              title={chip.text}
+              onClick={() => setDraft({ mapId, text: chip.text })}
+            >
+              {chip.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <SettingSelect
         campaignId={campaignId}
         mapId={mapId}

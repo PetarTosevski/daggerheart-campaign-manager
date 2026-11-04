@@ -42,6 +42,7 @@ export function useAdversaryActions(campaignId: Id<"campaigns">) {
   const attack = useMutation(api.adversaryActions.attack).withOptimisticUpdate((store, args) => lowerFear(store, args.spendFear));
   const featureUse = useMutation(api.adversaryActions.useFeature).withOptimisticUpdate((store, args) => lowerFear(store, args.spendFear));
   const resolveHit = useMutation(api.adversaryActions.resolve);
+  const escapeTokens = useMutation(api.adversaryActions.pcEscape);
 
   async function send(intent: Intent, spendFear?: number) {
     setError(null);
@@ -81,6 +82,16 @@ export function useAdversaryActions(campaignId: Id<"campaigns">) {
       setError(null);
       try {
         return await resolveHit({ campaignId, requestId, idempotencyKey: crypto.randomUUID() });
+      } catch (e) {
+        setError(errorMessage(e));
+        return null;
+      }
+    },
+    /** Plan lanes-2 E7.4 (dcm-0hlq): the GM records a PC's successful escape from their named tokens (bramble). */
+    escape: async (characterId: Id<"characters">, name: string) => {
+      setError(null);
+      try {
+        return await escapeTokens({ campaignId, characterId, name, idempotencyKey: crypto.randomUUID() });
       } catch (e) {
         setError(errorMessage(e));
         return null;

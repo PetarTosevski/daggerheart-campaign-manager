@@ -5,7 +5,7 @@ import { freshKey } from "./synth";
 /**
  * Authz matrix: core (campaigns, members, settings, users, fear, wither, feed, history, actionLog, campaignTime) and the
  * EXEMPT list. Tracer H5 (.omc/plans/d12-hardening.yaml), docs/tasks/TASK-D12-H5.md. The world is the default
- * witherwild campaign, which has campaign time and Wither tokens. `characters:get` stays here (a worked H0 entry).
+ * witherwild campaign, which has campaign time and Wither tokens. `charactersReads:get` stays here (a worked H0 entry).
  */
 
 /** One undoable, public actionLog row on characterA, written by the GM (a Wither token correction). */
@@ -17,6 +17,20 @@ async function gmLogRow(w: World) {
 async function pendingInvite(w: World) {
   const inviteId = await w.as("gm").mutation(api.members.invite, { campaignId: w.campaignId, email: "invitee@example.com" });
   w.set("inviteId", inviteId);
+}
+
+/** A combat map of the campaign (the thumbnail's subject); registers `thumbMapId`. */
+async function thumbnailMap(w: World) {
+  const { mapId } = await w.as("gm").mutation(api.combatMaps.create, { campaignId: w.campaignId, size: "small", idempotencyKey: freshKey() });
+  w.set("thumbMapId", mapId);
+}
+
+/** A byte-check notice for the GM (dismiss's subject, dcm-vqs0); registers `noticeId`. */
+async function gmUploadNotice(w: World) {
+  const noticeId = await w.t.run((ctx) =>
+    ctx.db.insert("uploadNotices", { userId: w.users.gm, kind: "map", scope: w.campaignId, createdAt: Date.now() }),
+  );
+  w.set("noticeId", noticeId);
 }
 
 /** The GM deleted the campaign (restore's subject). */
@@ -55,6 +69,18 @@ const area: Area = {
     },
     { fn: api.campaigns.setOption, access: "gm", args: () => ({ option: "witherPersists", enabled: true }) },
     { fn: api.campaigns.setPlayersSeeHands, access: "gm", args: () => ({ enabled: false }) },
+    // dcm-bxp.54: every member reads the time of day; edit access sets it. The world is a Witherwild campaign, whose
+    // time phase decides the light, so the GM and an edit grantee pass the access check and get INVALID.
+    { fn: api.campaigns.timeOfDay, access: "view" },
+    { fn: api.campaigns.setTimeOfDay, access: "edit", args: () => ({ timeOfDay: "night" }), okCodes: ["INVALID"] },
+    // dcm-bxp.97 (lane M owns this file, not combat.entries.ts): a Maps card thumbnail's painted cells, GM only.
+    {
+      fn: api.combatMapStyle.thumbnail,
+      access: "gm",
+      setup: thumbnailMap,
+      args: (w) => ({ mapId: w.ids.thumbMapId }),
+      expect: { grantee: "FORBIDDEN" },
+    },
     // Only a custom campaign has a tome: on the witherwild world the GM passes the access check and gets INVALID.
     { fn: api.campaigns.updateTome, access: "gm", args: () => ({ chapter: "overview", text: "Once upon a time" }), okCodes: ["INVALID"] },
 
@@ -87,6 +113,17 @@ const area: Area = {
     { fn: api.settings.update, access: "user", args: () => ({ tableName: "Friday table" }) },
     { fn: api.users.viewer, access: "maybe" },
 
+    // ---- upload notices (dcm-vqs0): the caller's own notices only, so no campaign check.
+    { fn: api.uploadNotices.mine, access: "user", args: (w) => ({ kind: "map", scope: w.campaignId }) },
+    // Someone else's notice is NOT_FOUND; the owner dismisses it.
+    {
+      fn: api.uploadNotices.dismiss,
+      access: "scoped",
+      setup: gmUploadNotice,
+      args: (w) => ({ noticeId: w.ids.noticeId }),
+      expect: { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", otherPlayer: "NOT_FOUND", player: "NOT_FOUND", grantee: "NOT_FOUND", gm: "ok" },
+    },
+
     // ---- fear
     // GM only, keyed: every default applies, the synthesizer fills campaignId, direction ("increase") and idempotencyKey.
     { fn: api.fear.adjust, access: "gm" },
@@ -101,7 +138,8 @@ const area: Area = {
     { fn: api.feed.remove, access: "gm", setup: gmLogRow, expect: { grantee: "FORBIDDEN" } },
     { fn: api.feed.clear, access: "gm", expect: { grantee: "FORBIDDEN" } },
     { fn: api.history.list, access: "gm", expect: { grantee: "FORBIDDEN" } },
-    // Undo is for the row's actor and the GM (`undoEntry`); the row here is the GM's, so every player is FORBIDDEN.
+    // Undo is for the GM, and for the row's actor when the action rolled nothing (`undoEntry`, the player-undo rule; a
+    // player's rolled row is UNDO_EXPIRED: tests/convex/action-log.test.ts). The row here is the GM's: players FORBIDDEN.
     {
       fn: api.actionLog.undo,
       access: "scoped",
@@ -115,13 +153,16 @@ const area: Area = {
     { fn: api.campaignTime.advance, access: "gm", expect: { grantee: "FORBIDDEN" } },
     // A new campaign starts on day 1; setDay must change the day.
     { fn: api.campaignTime.setDay, access: "gm", args: () => ({ cycleDay: 2 }), expect: { grantee: "FORBIDDEN" } },
+    // Plan lanes-2 CT: every frame counts days; members read the day, only the GM ends it.
+    { fn: api.campaignTime.calendar, access: "view" },
+    { fn: api.campaignTime.endDay, access: "gm", expect: { grantee: "FORBIDDEN" } },
 
     // ---- characters (worked H0 entry)
     // A character read: strangers get null instead of NOT_FOUND (no existence leak); party members may view.
-    { fn: api.characters.get, access: "own", expect: { outsider: "null" } },
+    { fn: api.charactersReads.get, access: "own", expect: { outsider: "null" } },
   ],
   exempt: {
-    "auth:signIn": "Convex Auth's sign-in action: public by design; covered by tests/e2e/auth.spec.ts and create-or-update-user.test.ts",
+    "auth:signIn": "Convex Auth's sign-in action: public by design; covered by tests/e2e/auth.spec.ts, tests/e2e/signup.spec.ts and create-or-update-user.test.ts",
     "auth:signOut": "Convex Auth's sign-out action: public by design and acts only on the caller's own session; covered by tests/e2e/auth.spec.ts",
     "auth:isAuthenticated": "Convex Auth's session probe: public by design, returns only whether the caller is signed in",
   },

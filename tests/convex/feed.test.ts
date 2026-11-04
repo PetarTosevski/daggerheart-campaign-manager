@@ -80,11 +80,13 @@ describe("feed.list", () => {
     expect(playerView.page.map((r) => r.kind)).toEqual(["roll"]);
     expect(playerView.page.every((r) => r.visibility === "public")).toBe(true);
     expect(playerView.page[0]).not.toHaveProperty("before");
-    expect(playerView.page[0]?.canUndo).toBe(true);
+    // The player-undo rule (user 2026-11-02): a roll is the GM's to undo, so the roller gets no Undo.
+    expect(playerView.page[0]?.canUndo).toBe(false);
 
     const gmView = await gm.query(api.feed.list, { campaignId, paginationOpts: page });
     expect(gmView.page.map((r) => r.kind)).toEqual(["gmRoll", "roll"]);
     expect(gmView.page[0]).toMatchObject({ visibility: "gm", revealable: true, canUndo: true });
+    expect(gmView.page[1]).toMatchObject({ kind: "roll", canUndo: true });
 
     await gm.mutation(api.rolls.reveal, { campaignId, entryId: secret.entryId });
     const after = await p1.query(api.feed.list, { campaignId, paginationOpts: page });
@@ -110,11 +112,29 @@ describe("feed.list", () => {
   });
 
   it("marks undone rows and drops their undo button", async () => {
-    const { p1, campaignId, a } = await setup();
+    const { gm, p1, campaignId, a } = await setup();
     const { entryId } = await p1.mutation(api.rolls.actionRoll, { characterId: a, ...agility, idempotencyKey: key() });
-    await p1.mutation(api.actionLog.undo, { entryId, idempotencyKey: key() });
+    await gm.mutation(api.actionLog.undo, { entryId, idempotencyKey: key() });
     const { page: rows } = await p1.query(api.feed.list, { campaignId, paginationOpts: page });
     expect(rows[0]).toMatchObject({ undone: true, canUndo: false });
+  });
+
+  it("the player-undo rule: Undo on the player's own row that rolled nothing, not on one whose action rolled", async () => {
+    const { t, ids, p1, campaignId, a } = await setup();
+    const roll = { kind: "action" as const, dice: [{ sides: 12, value: 8, role: "hope" as const }], modifier: 0, total: 8, outcome: "none" as const, manual: false };
+    await t.run(async (ctx) => {
+      const base = { campaignId, characterId: a, actorId: ids.p1, visibility: "public" as const, undoable: true, at: Date.now() };
+      // One action that rolled: its feature row carries no dice but shares the group.
+      await ctx.db.insert("actionLog", { ...base, kind: "roll", summary: "rolled", roll, groupId: "rolled" });
+      await ctx.db.insert("actionLog", { ...base, kind: "feature", summary: "rider", groupId: "rolled", at: base.at + 1 });
+      await ctx.db.insert("actionLog", { ...base, kind: "feature", summary: "plain", groupId: "plain", at: base.at + 2 });
+    });
+    const { page: rows } = await p1.query(api.feed.list, { campaignId, paginationOpts: page });
+    expect(rows.map((r) => [r.summary, r.canUndo])).toEqual([
+      ["plain", true],
+      ["rider", false],
+      ["rolled", false],
+    ]);
   });
 
   it("passes an adversary row's target token ids: the GM gets every one, a player only the PC tokens (H3)", async () => {

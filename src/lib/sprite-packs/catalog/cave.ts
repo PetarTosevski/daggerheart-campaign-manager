@@ -1,8 +1,8 @@
 // Built-in catalog: cave (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, obj, tex } from "./types";
+import { defineFolder, obj, tex, type FolderCatalog } from "./types";
 
-export const CAVE = defineFolder("cave", {
+export const CAVE = (): FolderCatalog => defineFolder("cave", {
   props: [
     obj("stalagmite", "cover", "low", "rock", { standIn: false }),
     obj("glowing mushroom cluster", "none", "low", "mushroom", { light: "faintglow" }),

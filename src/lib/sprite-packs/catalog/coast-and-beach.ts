@@ -1,8 +1,8 @@
 // Built-in catalog: coast and beach (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, long, obj, tex } from "./types";
+import { defineFolder, long, obj, tex, type FolderCatalog } from "./types";
 
-export const COAST_AND_BEACH = defineFolder("coast-and-beach", {
+export const COAST_AND_BEACH = (): FolderCatalog => defineFolder("coast-and-beach", {
   props: [
     obj("seashell", "none", "flat", "bones", { standIn: false }),
     obj("crab", "none", "low", "rock", { standIn: false }),

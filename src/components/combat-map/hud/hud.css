@@ -1,0 +1,136 @@
+/*
+ * Combat HUD design tokens (plan combat-hud H0; board reference/designs/combat-hud/preview/CmpTokensDesign.dc.html).
+ * Set on .hud-root, which sits inside the page's .cm-root, so the --hud-* values reuse the page's --cm-* ones where
+ * the board's colour is the same. Fonts are the app's next/font variables from src/app/layout.tsx (--font-cinzel,
+ * --font-plex, --font-garamond), never the boards' Google Fonts link. Every HUD part reads these variables; none
+ * hard-codes a board colour.
+ */
+.hud-root {
+  /* Colour (CmpTokensDesign "Colour") */
+  --hud-page: var(--cm-page, #0d1417);
+  --hud-card: var(--cm-card, #141e22);
+  --hud-inset: #0f171a;
+  --hud-line: var(--cm-card-border, #253338);
+  --hud-line-2: var(--cm-border, #33444a);
+  --hud-ink: var(--cm-text, #e6ecea);
+  --hud-muted: var(--cm-muted, #9fb2b6);
+  --hud-gold: #e3b45a;
+  --hud-gold-soft: var(--cm-acc-bg, #2d2614);
+  --hud-gold-text: var(--cm-acc-soft, #f3cf86);
+  --hud-gold-ink: var(--cm-acc-ink, #1a1408);
+  --hud-hope: #e3b45a;
+  --hud-hp: #e0503f;
+  --hud-hp-pip: #d0473a;
+  --hud-stress: #7a9cc4;
+  --hud-stress-pip: #6f8fb3;
+  --hud-armor: #c9d3d4;
+  --hud-fear: #8f7bd1;
+  --hud-fear-soft: #191430;
+  --hud-fear-text: #c9bdf2;
+  --hud-fear-ink: #120c20;
+  --hud-out: #f0a03c;
+  --hud-no-sight: #f08a7a;
+  --hud-ally-picked: #9fd8b0;
+  --hud-ally-pc: #9fd8c4;
+  --hud-enemy: #c0392b;
+  --hud-parchment: #f4ead2;
+  --hud-parchment-ink: #3a2e1e;
+  --hud-danger: #ffd0c4;
+  --hud-danger-bg: #2a1412;
+  --hud-glass: rgba(13, 20, 23, 0.94);
+
+  /* Type (CmpTokensDesign "Type") */
+  --hud-font-display: var(--font-cinzel), "Cinzel", serif;
+  --hud-font-ui: var(--font-plex), "IBM Plex Sans", sans-serif;
+  --hud-font-prose: var(--font-garamond), "EB Garamond", serif;
+  --hud-type-display: 900 30px/1.05 var(--hud-font-display);
+  --hud-type-title: 700 17px/1.15 var(--hud-font-display);
+  --hud-type-big: 900 44px/1 var(--hud-font-display);
+  --hud-type-ui: 400 13px/1.35 var(--hud-font-ui);
+  --hud-type-label: 600 11px/1.2 var(--hud-font-ui);
+  --hud-type-prose: 400 15px/1.35 var(--hud-font-prose);
+  --hud-label-tracking: 0.14em;
+
+  /* Radii (CmpTokensDesign "Radii") */
+  --hud-r-chip: 999px;
+  --hud-r-button: 999px;
+  --hud-r-card: 12px;
+  --hud-r-panel: 16px;
+  --hud-r-sheet: 0px;
+  --hud-r-popup: 14px;
+
+  /* Motion (CmpTokensDesign "Motion"); zeroed under prefers-reduced-motion below */
+  --hud-t-sheet: 280ms;
+  --hud-t-map: 350ms;
+  --hud-t-card: 220ms;
+  --hud-t-banner: 180ms;
+  --hud-t-fast: 150ms;
+  --hud-ease-out: cubic-bezier(0.2, 0.8, 0.3, 1);
+  --hud-dots-period: 1.2s;
+
+  /* Layout (HANDOFF "Layout"): desktop sizes; the tablet / phone tracers (H7.x) override them */
+  --hud-sheet-w: 400px;
+  --hud-map-shift: -125px;
+  --hud-map-scale: 0.94;
+  --hud-edge: 24px;
+
+  font: var(--hud-type-ui);
+  color: var(--hud-ink);
+}
+
+@media (max-width: 1180px) {
+  .hud-root {
+    --hud-sheet-w: 340px;
+    --hud-map-shift: -60px;
+    --hud-map-scale: 0.92;
+    --hud-edge: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-root {
+    --hud-t-sheet: 0ms;
+    --hud-t-map: 0ms;
+    --hud-t-card: 0ms;
+    --hud-t-banner: 0ms;
+    --hud-t-fast: 0ms;
+  }
+  .hud-root *,
+  .hud-root *::before,
+  .hud-root *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+@keyframes hud-dots {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes hud-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(40px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes hud-panel-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-40px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
