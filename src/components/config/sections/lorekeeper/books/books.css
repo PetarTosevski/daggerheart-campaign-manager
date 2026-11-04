@@ -1,0 +1,61 @@
+/* Campaign settings > Lorekeeper, the GM's own books (config AU8). Rows and the pill are ../lorekeeper.css and config.css. */
+.cfg-row-t .cfg-lk-pill.cfg-bk-reading {
+  background: rgb(227 180 90 / 0.16);
+  color: #e3b45a;
+}
+.cfg-bk-bad,
+.cfg-bk-err {
+  color: #f0a8a0;
+}
+.cfg-bk-err {
+  margin-top: 8px;
+}
+.cfg-bk-confirm {
+  flex-wrap: wrap;
+}
+.cfg-bk-q {
+  flex: 1 1 12rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.cfg-bk-form {
+  gap: 6px;
+}
+.cfg-bk-field {
+  margin-top: 6px;
+  font-size: 13px;
+}
+.cfg-bk-inp {
+  min-height: 44px;
+  border: 1px solid #33444a;
+  border-radius: 10px;
+  background: #0f171a;
+  padding: 0 12px;
+  color: #e6ecea;
+}
+.cfg-bk-inp:focus-visible {
+  outline: 2px solid #e3b45a;
+}
+.cfg-bk-inp-n {
+  max-width: 8rem;
+}
+.cfg-bk-small {
+  font-size: 12px;
+}
+.cfg-bk-prog {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+.cfg-bk-prog progress {
+  flex: 1;
+  accent-color: #e3b45a;
+}
+.cfg-bk-acts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}

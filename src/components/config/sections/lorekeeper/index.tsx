@@ -13,7 +13,7 @@ import { errorMessage } from "@/lib/convex-errors";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { TableSettingChange } from "../../../../../convex/campaignSettings";
-import { BOOK_KEY_HOUSE_RULES } from "../../../../../convex/lib/validators/lorekeeper";
+import { BOOK_KEY_HOUSE_RULES, isCampaignBookKey } from "../../../../../convex/lib/validators/lorekeeper";
 import type { LibraryBook } from "../../../../../convex/lorekeeperLibrary";
 import type { SettingsSectionProps } from "../../slots";
 import { LorekeeperCampaignBooks } from "./books";
@@ -70,7 +70,8 @@ export function LorekeeperSection(props: SettingsSectionProps): ReactNode {
   const toggleBook = (book: LibraryBook) => void run(() => setEnabled({ campaignId, bookId: book.bookId, enabled: !book.enabled }));
   const { settings } = campaign;
 
-  const books = library?.books.filter((book) => book.key !== BOOK_KEY_HOUSE_RULES) ?? [];
+  // The GM's own books (AU8) have their own rows in `LorekeeperCampaignBooks`.
+  const books = library?.books.filter((book) => book.key !== BOOK_KEY_HOUSE_RULES && !isCampaignBookKey(book.key)) ?? [];
   const notes = library?.books.find((book) => book.key === BOOK_KEY_HOUSE_RULES);
 
   return (
