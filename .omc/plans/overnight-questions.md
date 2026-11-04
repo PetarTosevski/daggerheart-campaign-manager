@@ -323,3 +323,4 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - Glass G0: large glass buttons use the design's Plex 17 px font, not the old Cinzel caps (headline buttons like "Choose this Frame", "+ Create character" look different). Default: follow the design.
 - Glass G12: the Journal's Plan / Log & recap switch stays a tab (not a glass switch); Unlink encounter is neutral; the log x is red only where it deletes. Defaults: keep.
 - Glass G7: the Lorekeeper answer card is parchment, but its buttons (Copy, Open in book, Pin, Ask the GM) became dark glass (the plan's G7 goal); Q5 kept ink buttons only for Notes, recap and the Tome. Default: glass. Alternative: ink buttons on answer cards too.
+- Glass G8: buttons on parchment stat blocks and the custom adversary editor are dark glass (with a wine focus ring), like the character wizard; Q5 kept ink only for Notes / recap / Tome. Default: glass.
