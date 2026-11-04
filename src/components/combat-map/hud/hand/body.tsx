@@ -8,12 +8,10 @@ import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
-import { useViewerFlag } from "../../map-view/use-viewer-flag";
 import { useAreaPick } from "../../map-view/area-pick";
 import type { DialogRequest } from "../../actions/hand/dialog";
 import { VaultDeck } from "../../actions/hand/dock";
 import { HandCardFace } from "../../actions/hand/face";
-import { handHiddenKey } from "../../actions/hand";
 import { areaPickOf, formFor, LOADOUT_MAX, needsDialog, playableUses, rollOf, usedRollOptions, type AreaPick, type CardChoice, type ChoiceAsk, type Creature, type HandCard, type UseOutcome } from "../../actions/hand/model";
 import { CardResult, type LastCard } from "../../actions/hand/result";
 import { useRecall } from "../../actions/hand/use-card";
@@ -37,6 +35,7 @@ import {
   type CardPickEnv,
   type PointPicker,
 } from "../pick-card";
+import { useHandFold } from "./use-fold";
 import { CardBacks, catchMore, FanCard, FullCard, RollOptionsBody, SidePop } from "./parts";
 import { cardLook, loadoutFullText, recallText, type HandMode, type LookContext } from "./states";
 
@@ -55,7 +54,8 @@ import { cardLook, loadoutFullText, recallText, type HandMode, type LookContext 
  * out-of-range line stays above the fan.
  * Drag-to-play stays the classic dock's.
  *
- * Hide cards (answer 16a) folds the viewer's own fan on their screen only: this browser's flag, never a server call.
+ * Hide cards (answer 16a) folds the viewer's own fan for them alone; the choice is stored on their account per campaign
+ * and character (plan config U6c, Q15 b: `useHandFold`), so it follows them to every device.
  */
 
 export type HudHandBodyProps = {
@@ -73,22 +73,6 @@ export type HudHandBodyProps = {
   /** Where an area card asks the map for its square: H3.3's HUD picker (`classicPointPicker` only outside the HUD shell). */
   pointPicker?: PointPicker;
 };
-
-/**
- * "Hide cards": this browser's flag (the classic hand's key, so both views agree), and the choice held for the visit
- * too, so it works where nothing can be stored (a private window).
- */
-function useFolded(key: string): [boolean, (on: boolean) => void] {
-  const [stored, store] = useViewerFlag(key);
-  const [picked, setPicked] = useState<{ key: string; on: boolean } | null>(null);
-  return [
-    picked?.key === key ? picked.on : stored,
-    (on) => {
-      setPicked({ key, on });
-      store(on);
-    },
-  ];
-}
 
 type Open = "vault" | "rolls" | null;
 
@@ -113,7 +97,7 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
   const [last, setLast] = useState<LastCard | null>(null);
   const [rollOptions, setRollOptions] = useState<RollValues>(NO_ROLL_OPTIONS);
   const [checkedRiders, setCheckedRiders] = useState<string[]>([]);
-  const [folded, setFolded] = useFolded(handHiddenKey(campaignId, characterId));
+  const [folded, setFolded] = useHandFold(campaignId, characterId);
   const moreFrom = useRef<HTMLElement | null>(null);
   const deck = useRef<HTMLSpanElement>(null);
   const rollsButton = useRef<HTMLButtonElement>(null);

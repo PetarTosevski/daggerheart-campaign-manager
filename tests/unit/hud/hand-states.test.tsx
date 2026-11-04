@@ -1,7 +1,7 @@
 /**
  * The HUD hand (plan combat-hud H2.3; docs/tasks/TASK-HUD-H2.3.md; board CmpCards): the states around the app's own
  * card face (tags, lift and glow, grey wash) as pure functions, and the hand itself with Convex mocked: the fan with the
- * classic face, Hide cards (local, no server call, answer 16a), Roll options, the full card view (More, Use / Close,
+ * classic face, Hide cards (stored on the account, config U6c), Roll options, the full card view (More, Use / Close,
  * Escape), Use opening the picking panel's session (H3.1; the panel itself: tests/unit/hud/card-pick.test.tsx), the vault with its recall labels, the GM's locked hand, another player's hand
  * view only, and a hidden hand.
  */
@@ -215,19 +215,25 @@ describe("the HUD hand", () => {
     expect(screen.getByRole("button", { name: "Open vault, 0 cards" })).toBeTruthy();
   });
 
-  it("Hide cards folds the fan on this screen only (no server call) and Show cards brings it back", () => {
+  it("Hide cards asks the account to fold this hand (preferences.setFold, config U6c); a folded hand shows Show cards", () => {
     setHand([CHAOS, ENTANGLE]);
     setCharacter(2);
-    renderHand();
+    queries["preferences:folds"] = [];
+    const first = renderHand();
+    expect(fanCards()).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: "Hide cards" }));
+    expect(calls).toEqual([{ name: "preferences:setFold", args: { campaignId: CAMPAIGN, characterId: MOSS, folded: true } }]);
+    first.unmount();
+    calls.length = 0;
+    // The account says folded (the optimistic update, then the server): the fan folds; Show cards asks to unfold.
+    queries["preferences:folds"] = [MOSS];
+    renderHand();
     expect(screen.queryAllByTestId("hud-hand-card")).toHaveLength(0);
     expect(screen.getByTestId("hud-hand-folded")).toBeTruthy();
-    expect(calls).toEqual([]);
     const show = screen.getByRole("button", { name: "Show cards (2)" });
     expect(show.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(show);
-    expect(fanCards()).toHaveLength(2);
-    expect(calls).toEqual([]);
+    expect(calls).toEqual([{ name: "preferences:setFold", args: { campaignId: CAMPAIGN, characterId: MOSS, folded: false } }]);
   });
 
   it("Roll options: Experiences with their Hope cost (greyed 'Needs 1 Hope' once spoken for), advantage −3..+3, Help; Esc closes", () => {
