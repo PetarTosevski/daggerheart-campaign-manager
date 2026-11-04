@@ -128,7 +128,7 @@ export const purgeDeletedCampaigns = internalMutation({
     // `deletedAt` is a timestamp, so `gte 0` skips the live campaigns (undefined sorts first).
     const due = await ctx.db
       .query("campaigns")
-      .withIndex("by_deletedAt", (q) => q.gte("deletedAt", 0).lte("deletedAt", cutoff))
+      .withIndex("by_deletedAt_archivedAt", (q) => q.gte("deletedAt", 0).lte("deletedAt", cutoff))
       .first();
     if (due !== null) await ctx.scheduler.runAfter(0, internal.cleanup.purgeCampaign, { campaignId: due._id, sweep: true });
     return null;

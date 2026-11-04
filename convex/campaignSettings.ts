@@ -2,6 +2,7 @@ import { v, type Infer } from "convex/values";
 
 import { resolveTableSettings } from "../src/lib/config/campaign-settings";
 import { appError } from "../src/lib/errors/app-error";
+import { assertCampaignCaps } from "./campaigns";
 import { creatorMutation, gmMutation } from "./lib/functions";
 import { liveSession } from "./lib/sessions";
 import {
@@ -79,6 +80,7 @@ export const unarchive = creatorMutation({
   handler: async (ctx) => {
     const campaign = ctx.campaign;
     if (campaign.archivedAt === undefined) return null;
+    await assertCampaignCaps(ctx, campaign.ownerId); // AD5a: archived didn't count toward the caps; restored, it does
     await ctx.db.patch("campaigns", campaign._id, { archivedAt: undefined });
     return null;
   },

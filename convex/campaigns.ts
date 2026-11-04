@@ -1,6 +1,7 @@
 import { v, type Infer } from "convex/values";
 
 import { resolveTableSettings } from "../src/lib/config/campaign-settings";
+import { adminMessages } from "../src/lib/errors/admin";
 import { appError } from "../src/lib/errors/app-error";
 import { campaignMessages } from "../src/lib/errors/campaigns";
 import { frameHasMechanic } from "../src/lib/frames/index";
@@ -10,6 +11,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { normalizeEmail } from "./lib/allowlist";
+import { readAppConfig } from "./lib/appConfig";
 import { playersSeeHands } from "./lib/handSharing";
 import { seedCodex } from "./lib/codex";
 import { campaignFearState } from "./lib/fear";
@@ -281,8 +283,34 @@ function liveNamesake(ctx: QueryCtx, ownerId: Id<"users">, nameKey: string) {
 }
 
 /**
+ * The campaign caps (config AD5a, Q19 a, Q9 a): refuses one more live, non-archived campaign for this GM past
+ * `campaignsPerGm` (CAP_CAMPAIGNS_PER_GM) or in the app past `campaignsApp` (CAP_CAMPAIGNS_APP). Archived and deleted
+ * campaigns don't count; the app owner is capped too. Each count is one indexed read of at most `cap` rows, and the
+ * index range sits in the read set, so two concurrent creates past the cap conflict and retry (OCC).
+ * Called by `create`, `restore` and `campaignSettings.unarchive` before a campaign becomes live and not archived.
+ */
+export async function assertCampaignCaps(ctx: QueryCtx, ownerId: Id<"users">): Promise<void> {
+  const { caps } = await readAppConfig(ctx);
+  const mine = await ctx.db
+    .query("campaigns")
+    .withIndex("by_owner_deletedAt_archivedAt", (q) =>
+      q.eq("ownerId", ownerId).eq("deletedAt", undefined).eq("archivedAt", undefined),
+    )
+    .take(caps.campaignsPerGm);
+  if (mine.length >= caps.campaignsPerGm) {
+    throw appError("CAP_CAMPAIGNS_PER_GM", adminMessages.CAP_CAMPAIGNS_PER_GM);
+  }
+  const all = await ctx.db
+    .query("campaigns")
+    .withIndex("by_deletedAt_archivedAt", (q) => q.eq("deletedAt", undefined).eq("archivedAt", undefined))
+    .take(caps.campaignsApp);
+  if (all.length >= caps.campaignsApp) throw appError("CAP_CAMPAIGNS_APP", adminMessages.CAP_CAMPAIGNS_APP);
+}
+
+/**
  * Creates a campaign with its Fear state, campaign time (if the frame has
- * it), join code and the frame's starting characters (all secret). Rate-limited per user.
+ * it), join code and the frame's starting characters (all secret). Rate-limited per user. Refused past the campaign
+ * caps (AD5a, `assertCampaignCaps`).
  */
 export const create = keyedUserMutation({
   rateLimit: "createCampaign",
@@ -300,6 +328,7 @@ export const create = keyedUserMutation({
       if ((await liveNamesake(ctx, user._id, nameKey)) !== null) {
         throw appError("NAME_TAKEN", campaignMessages.NAME_TAKEN);
       }
+      await assertCampaignCaps(ctx, user._id);
       const tier = input.custom?.startingTier ?? 1;
       const now = Date.now();
       // XS1: the GM's Expansions setting, when set, decides Hope & Fear for frames that offer it.
@@ -393,7 +422,7 @@ export const remove = creatorMutation({
 });
 
 /**
- * Undoes `remove` (its creator only). Not a campaign wrapper, because those treat a
+ * Undoes `remove` (its creator only), within the campaign caps unless it is archived (AD5a). Not a campaign wrapper, because those treat a
  * deleted campaign as missing; a deleted campaign is `NOT_FOUND` to anyone
  * who does not own it.
  */
@@ -414,6 +443,8 @@ export const restore = userMutation({
     if ((await liveNamesake(ctx, campaign.ownerId, campaign.nameKey)) !== null) {
       throw appError("NAME_TAKEN", "Another campaign now uses that name.");
     }
+    // AD5a: an archived campaign comes back archived and doesn't count toward the caps (unarchive checks them).
+    if (campaign.archivedAt === undefined) await assertCampaignCaps(ctx, campaign.ownerId);
     await ctx.db.patch("campaigns", campaign._id, { deletedAt: undefined });
     return null;
   },

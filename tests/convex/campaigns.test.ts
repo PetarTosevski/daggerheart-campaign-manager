@@ -344,7 +344,9 @@ describe("campaigns", () => {
   });
 
   it("rate-limits campaign creation per user", async () => {
-    const { gm, other } = await setup();
+    const { t, gm, other } = await setup();
+    // The campaigns-per-GM cap (AD5a, default 10) would refuse first; raise it so the rate limit is what's tested.
+    await t.run((ctx) => ctx.db.insert("appConfig", { key: "app", caps: { campaignsPerGm: 1000 }, updatedAt: 0 }));
     // Bursts of 30, refilling at 10 an hour.
     for (let i = 0; i < 30; i++) {
       await gm.mutation(api.campaigns.create, { frameId: "witherwild", name: `C${i}`, idempotencyKey: `k${i}` });

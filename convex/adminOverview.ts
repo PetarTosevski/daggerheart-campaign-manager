@@ -114,7 +114,7 @@ async function nameOf(ctx: QueryCtx, userId: Id<"users">): Promise<string | null
 async function liveCampaigns(ctx: QueryCtx): Promise<Doc<"campaigns">[]> {
   return ctx.db
     .query("campaigns")
-    .withIndex("by_deletedAt", (q) => q.eq("deletedAt", undefined))
+    .withIndex("by_deletedAt_archivedAt", (q) => q.eq("deletedAt", undefined))
     .take(ADMIN_READ_BOUND + 1);
 }
 
@@ -239,7 +239,7 @@ export const campaigns = appOwnerQuery({
   handler: async (ctx, { paginationOpts }) => {
     const page = await ctx.db
       .query("campaigns")
-      .withIndex("by_deletedAt", (q) => q.eq("deletedAt", undefined))
+      .withIndex("by_deletedAt_archivedAt", (q) => q.eq("deletedAt", undefined))
       .order("desc")
       .paginate(clampPage(paginationOpts));
     const rows = await Promise.all(

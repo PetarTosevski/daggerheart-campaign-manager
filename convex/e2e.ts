@@ -11,7 +11,28 @@ import { v } from "convex/values";
 
 import { internal } from "./_generated/api";
 import { env as typedEnv, httpAction, internalMutation, internalQuery } from "./_generated/server";
-import { buildE2EProfile, normalizeEmail, type Env } from "./lib/allowlist";
+import { buildE2EProfile, isE2EDeployment, normalizeEmail, type Env } from "./lib/allowlist";
+import { appConfigRow } from "./lib/appOwner";
+
+/** The campaign caps on the e2e backend: far above what repeated runs of the suite create (AD5a). */
+export const E2E_CAMPAIGN_CAP = 1_000_000;
+
+/**
+ * Raises the campaign caps (config AD5a) on the local e2e backend, where the shared test GM keeps every campaign every
+ * run creates. `scripts/e2e-setup.mjs` runs it; it refuses on any other deployment. Keeps the other saved settings.
+ */
+export const raiseCampaignCaps = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    if (!isE2EDeployment(typedEnv)) throw new Error("e2e:raiseCampaignCaps runs only on the local e2e backend");
+    const caps = { campaignsPerGm: E2E_CAMPAIGN_CAP, campaignsApp: E2E_CAMPAIGN_CAP };
+    const row = await appConfigRow(ctx);
+    if (row === null) await ctx.db.insert("appConfig", { key: "app", caps, updatedAt: Date.now() });
+    else await ctx.db.patch("appConfig", row._id, { caps: { ...row.caps, ...caps }, updatedAt: Date.now() });
+    return null;
+  },
+});
 
 /** Stores the code for the email, replacing any earlier one (one row per email). */
 export const recordCode = internalMutation({

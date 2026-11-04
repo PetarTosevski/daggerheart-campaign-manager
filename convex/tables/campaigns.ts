@@ -61,9 +61,14 @@ export const campaignTables = {
   })
     .index("by_owner_deletedAt_lastOpened", ["ownerId", "deletedAt", "lastOpenedAt"])
     .index("by_owner_deletedAt_nameKey", ["ownerId", "deletedAt", "nameKey"])
+    /** Counts a GM's live, non-archived campaigns for the campaigns-per-GM cap (config AD5a). */
+    .index("by_owner_deletedAt_archivedAt", ["ownerId", "deletedAt", "archivedAt"])
     .index("by_joinCode", ["joinCode"])
-    /** Finds campaigns deleted long enough ago to purge (CD18). */
-    .index("by_deletedAt", ["deletedAt"]),
+    /**
+     * Finds campaigns deleted long enough ago to purge (CD18), lists the live ones (admin) and counts the live,
+     * non-archived ones for the app-wide cap (config AD5a). Replaced `by_deletedAt`, its prefix (CD15).
+     */
+    .index("by_deletedAt_archivedAt", ["deletedAt", "archivedAt"]),
 
   /**
    * When a user (GM or player) last opened a campaign. Kept off the campaign
