@@ -2,6 +2,7 @@ import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { brandButton } from "@/components/brand/buttons";
 import { cn } from "@/lib/utils";
 
 /** The hexagon mark above the title (TitleMenu). */
@@ -23,6 +24,10 @@ export function Wordmark({ className }: { className?: string }) {
   );
 }
 
+/**
+ * The header's back arrow: a glass tool button (clear until hovered; plan glass-buttons G1). `className` takes layout
+ * only; colour, border and background utilities do not apply to a glass button.
+ */
 export function BackLink({
   href,
   label,
@@ -33,15 +38,8 @@ export function BackLink({
   className?: string;
 }) {
   return (
-    <Link
-      href={href}
-      aria-label={label}
-      className={cn(
-        "flex size-11 flex-none items-center justify-center rounded-[10px] border border-line-2 text-parchment hover:bg-raised",
-        className,
-      )}
-    >
-      <ChevronLeft className="size-[18px]" strokeWidth={2} aria-hidden="true" />
+    <Link href={href} aria-label={label} className={brandButton({ variant: "tool", icon: true, className: cn("flex-none", className) })}>
+      <ChevronLeft strokeWidth={2} aria-hidden="true" />
     </Link>
   );
 }
@@ -68,11 +66,7 @@ export function PageHeader({
       )}
     >
       <div className="flex flex-wrap items-center gap-[18px]">
-        <BackLink
-          href={backHref}
-          label={backLabel}
-          className={translucent ? "border-[#3a3f49] bg-black/30" : undefined}
-        />
+        <BackLink href={backHref} label={backLabel} />
         <Wordmark className="text-[32px] sm:text-[40px]" />
         <h1 className="text-[13px] font-medium tracking-[0.24em] text-muted-text uppercase">{title}</h1>
       </div>

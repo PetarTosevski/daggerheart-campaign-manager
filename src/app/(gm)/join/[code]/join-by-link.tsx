@@ -30,11 +30,11 @@ export function JoinByLink({ code }: { code: string }) {
         </p>
       ) : null}
       <div className="flex flex-wrap justify-center gap-3">
-        <Link href="/" className={brandButton({ variant: "outline", size: "lg" })}>
+        <Link href="/" className={brandButton({ variant: "cancel", size: "lg" })}>
           Not now
         </Link>
         <BrandButton
-          variant="primary"
+          variant="confirm"
           size="lg"
           disabled={pending}
           onClick={() => {

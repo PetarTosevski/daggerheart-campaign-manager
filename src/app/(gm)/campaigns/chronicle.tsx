@@ -94,7 +94,7 @@ function Band({
       {open ? (
         <div className="flex flex-wrap items-center justify-end gap-4 px-6 pb-7 sm:pr-10 sm:pl-[216px]">
           <div className="flex flex-wrap gap-3">
-            <Link href={`/campaigns/${campaign._id}`} className={brandButton({ variant: "solid", size: "lg", className: "px-7" })}>
+            <Link href={`/campaigns/${campaign._id}`} className={brandButton({ variant: "confirm", size: "lg" })}>
               Resume Campaign
             </Link>
             <BrandButton
@@ -103,7 +103,7 @@ function Band({
               aria-label={`${isGm ? "Delete" : "Leave"} ${campaign.name}`}
               onClick={() => setConfirming(true)}
             >
-              {isGm ? <Trash2 className="!size-4" strokeWidth={1.8} aria-hidden="true" /> : null}
+              {isGm ? <Trash2 strokeWidth={1.8} aria-hidden="true" /> : null}
               {isGm ? "Delete" : "Leave"}
             </BrandButton>
           </div>
@@ -122,11 +122,11 @@ function Band({
               ? "It will be removed from your saved campaigns."
               : "You'll need a new invite or join code to come back."}
           </span>
-          <BrandButton variant="outline" className="border-[#5a3a3a]" onClick={() => setConfirming(false)}>
+          <BrandButton variant="cancel" onClick={() => setConfirming(false)}>
             Keep it
           </BrandButton>
           <BrandButton
-            variant="dangerSolid"
+            variant="danger"
             onClick={() => {
               setError(null);
               (isGm ? remove({ campaignId: campaign._id }) : leave({ campaignId: campaign._id }))
@@ -175,8 +175,7 @@ function DeletedRow({ campaign, onRestored, onPurged }: { campaign: DeletedCampa
         </span>
         <div className="flex flex-wrap gap-2.5">
           <BrandButton
-            variant="outline"
-            className="border-brand text-brand"
+            variant="confirm"
             aria-label={`Restore ${campaign.name}`}
             disabled={busy}
             onClick={() => run(restore({ campaignId: campaign._id }), onRestored)}
@@ -190,7 +189,7 @@ function DeletedRow({ campaign, onRestored, onPurged }: { campaign: DeletedCampa
             disabled={busy}
             onClick={() => setConfirming(true)}
           >
-            <Trash2 className="!size-4" strokeWidth={1.8} aria-hidden="true" />
+            <Trash2 strokeWidth={1.8} aria-hidden="true" />
             Delete permanently
           </BrandButton>
         </div>
@@ -205,10 +204,10 @@ function DeletedRow({ campaign, onRestored, onPurged }: { campaign: DeletedCampa
             Delete <strong>{campaign.name}</strong> permanently? Its characters, sessions, notes and maps are erased for
             good. This can&apos;t be undone.
           </span>
-          <BrandButton variant="outline" className="border-[#5a3a3a]" disabled={busy} onClick={() => setConfirming(false)}>
+          <BrandButton variant="cancel" disabled={busy} onClick={() => setConfirming(false)}>
             Keep it
           </BrandButton>
-          <BrandButton variant="dangerSolid" disabled={busy} onClick={() => run(purge({ campaignId: campaign._id }), onPurged)}>
+          <BrandButton variant="danger" disabled={busy} onClick={() => run(purge({ campaignId: campaign._id }), onPurged)}>
             Delete {campaign.name} forever
           </BrandButton>
         </div>
@@ -266,9 +265,8 @@ export function Chronicle() {
             >
               <span>{undoError ?? `Deleted ${deleted.name}.`}</span>
               <BrandButton
-                variant="outline"
+                variant="cancel"
                 size="sm"
-                className="border-brand text-brand"
                 onClick={() => {
                   setUndoError(null);
                   restore({ campaignId: deleted._id })
@@ -289,7 +287,7 @@ export function Chronicle() {
           ) : campaigns.length === 0 ? (
             <div className="flex flex-col items-center gap-3.5 rounded-2xl border-2 border-dashed border-line-2 px-6 py-12 text-center text-[16px] text-label">
               No saved campaigns.
-              <Link href="/new" className={brandButton({ variant: "solid", size: "md" })}>
+              <Link href="/new" className={brandButton({ variant: "confirm" })}>
                 Create a campaign
               </Link>
             </div>

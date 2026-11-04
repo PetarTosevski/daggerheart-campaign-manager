@@ -246,7 +246,7 @@ export function PasswordForm() {
           </span>
         </div>
       ) : null}
-      <BrandButton type="submit" variant="solid" size="lg" disabled={pending}>
+      <BrandButton type="submit" variant="confirm" size="lg" disabled={pending}>
         {pending ? "Please wait…" : LABELS[step].submit}
       </BrandButton>
       {error ? (

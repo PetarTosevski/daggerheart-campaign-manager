@@ -25,9 +25,6 @@ function SectionTitle({ id, children }: { id: string; children: string }) {
   );
 }
 
-const DATA_BUTTON =
-  "min-h-11 cursor-pointer rounded-[10px] border border-line-2 bg-[#1d1a27] px-4 font-sans text-[14px] text-parchment";
-
 type Status = { text: string; ok: boolean };
 
 /**
@@ -88,19 +85,15 @@ function SavedData({ settings, onReplaced }: { settings: SettingsView; onReplace
         it to keep them, or paste one here to restore.
       </p>
       <div className="flex flex-wrap gap-2">
-        <button type="button" className={DATA_BUTTON} onClick={showBackup}>
+        <BrandButton variant="neutral" onClick={showBackup}>
           Show backup
-        </button>
-        <button type="button" className={DATA_BUTTON} onClick={restoreBackup} disabled={busy}>
+        </BrandButton>
+        <BrandButton variant="neutral" onClick={restoreBackup} disabled={busy}>
           Restore from pasted backup
-        </button>
-        <button
-          type="button"
-          className="ml-auto min-h-11 cursor-pointer rounded-[10px] border border-[#8e2b2b] bg-transparent px-4 font-sans text-[14px] text-[#ff9a92]"
-          onClick={() => setConfirming(true)}
-        >
+        </BrandButton>
+        <BrandButton variant="danger" className="ml-auto" onClick={() => setConfirming(true)}>
           Reset settings…
-        </button>
+        </BrandButton>
       </div>
       <textarea
         ref={box}
@@ -136,21 +129,12 @@ function SavedData({ settings, onReplaced }: { settings: SettingsView; onReplace
             Put your table name, name, accent colour, expansion defaults and map style back to their defaults? Your campaigns
             are not affected.
           </span>
-          <button
-            type="button"
-            className="min-h-11 cursor-pointer rounded-lg border border-[#5a3a3a] bg-transparent px-3.5 font-sans text-parchment"
-            onClick={() => setConfirming(false)}
-          >
+          <BrandButton variant="cancel" onClick={() => setConfirming(false)}>
             Cancel
-          </button>
-          <button
-            type="button"
-            className="min-h-11 cursor-pointer rounded-lg border-none bg-[#b8322a] px-3.5 font-sans font-semibold text-white"
-            onClick={resetSettings}
-            disabled={busy}
-          >
+          </BrandButton>
+          <BrandButton variant="danger" onClick={resetSettings} disabled={busy}>
             Reset
-          </button>
+          </BrandButton>
         </div>
       ) : null}
     </section>
@@ -340,7 +324,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
                 Signed in as <span data-testid="viewer-email">{viewer?.email ?? "…"}</span>
               </span>
               <BrandButton
-                variant="outline"
+                variant="neutral"
                 onClick={() => void signOut().then(() => router.push("/signin"))}
               >
                 Sign out

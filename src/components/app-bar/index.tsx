@@ -8,6 +8,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
+import { BrandButton, brandButton } from "@/components/brand/buttons";
 import { SlotBoundary } from "@/components/party/session/boundary";
 import { SigilIcon } from "@/components/lorekeeper/sigil";
 
@@ -188,8 +189,8 @@ export function CombatAppBarFrame({ campaignId, isGm, header, onPlayers, childre
     <div className="cab-frame" data-bar-hidden={hidden ? "" : undefined} data-testid="combat-app-frame">
       {hidden ? null : (
         <header className="abar" data-testid="app-bar">
-          <Link href="/" className="ab-back" aria-label="Back to main menu">
-            <ChevronLeft className="size-[18px]" strokeWidth={2} aria-hidden="true" />
+          <Link href="/" className={brandButton({ variant: "tool", icon: true })} aria-label="Back to main menu">
+            <ChevronLeft strokeWidth={2} aria-hidden="true" />
           </Link>
           <span className="ab-wm">DAGGERHEART</span>
           <SlotBoundary fallback={<CampaignNav campaignId={campaignId} isGm={isGm} variant="bar" />}>
@@ -199,9 +200,9 @@ export function CombatAppBarFrame({ campaignId, isGm, header, onPlayers, childre
             <SlotBoundary fallback={<LorekeeperLink campaignId={campaignId} />}>
               <LorekeeperPill campaignId={campaignId} />
             </SlotBoundary>
-            <button ref={fullScreenButton} type="button" className="ab-ic" aria-label={FULL_SCREEN_LABEL} onClick={hide}>
-              <Maximize2 className="size-[17px]" strokeWidth={2} aria-hidden="true" />
-            </button>
+            <BrandButton ref={fullScreenButton} variant="tool" icon aria-label={FULL_SCREEN_LABEL} onClick={hide}>
+              <Maximize2 strokeWidth={2} aria-hidden="true" />
+            </BrandButton>
             {isGm ? <CampaignSettingsButton onPlayers={onPlayers} /> : null}
             <PreferencesButton campaignId={campaignId} isGm={isGm} />
           </span>
@@ -209,9 +210,11 @@ export function CombatAppBarFrame({ campaignId, isGm, header, onPlayers, childre
       )}
       <div className="cab-phone-header">{header}</div>
       {hidden ? (
-        <button ref={showButton} type="button" className="cab-show" aria-label={SHOW_BAR_LABEL} title={`${SHOW_BAR_LABEL} (Esc)`} onClick={show}>
-          <Minimize2 className="size-4" strokeWidth={2} aria-hidden="true" />
-        </button>
+        <span className="cab-show">
+          <BrandButton ref={showButton} variant="neutral" icon aria-label={SHOW_BAR_LABEL} title={`${SHOW_BAR_LABEL} (Esc)`} onClick={show}>
+            <Minimize2 strokeWidth={2} aria-hidden="true" />
+          </BrandButton>
+        </span>
       ) : null}
       {children}
     </div>

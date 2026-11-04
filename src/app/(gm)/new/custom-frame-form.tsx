@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { assetBackground } from "@/lib/design-assets";
 import { CUSTOM_BACKGROUNDS, CUSTOM_TONES } from "@/lib/frames";
 import { cn } from "@/lib/utils";
@@ -130,18 +131,14 @@ export function CustomFrameForm({ draft, onChange }: { draft: CustomDraft; onCha
           {CUSTOM_TONES.map((tone) => {
             const on = draft.tones.includes(tone);
             return (
-              <button
+              <BrandButton
                 key={tone}
-                type="button"
+                variant="neutral"
                 aria-pressed={on}
                 onClick={() => set("tones", on ? draft.tones.filter((t) => t !== tone) : [...draft.tones, tone])}
-                className={cn(
-                  "min-h-11 cursor-pointer rounded-full border px-[18px] text-[15px]",
-                  on ? "border-brand bg-brand text-brand-ink" : "border-line-2 bg-transparent text-parchment",
-                )}
               >
                 {tone}
-              </button>
+              </BrandButton>
             );
           })}
         </div>
