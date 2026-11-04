@@ -1,0 +1,31 @@
+/* Campaign settings, Lorekeeper (plan config U4; design `.s-lore`). Shared rows are in ../../config.css. */
+.cfg-row-t .cfg-lk-pill {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.cfg-row-t .cfg-lk-pill[data-on="true"] {
+  background: rgb(91 196 140 / 0.16);
+  color: #8fe0b4;
+}
+.cfg-row-t .cfg-lk-pill[data-on="false"] {
+  background: rgb(240 120 110 / 0.16);
+  color: #f0a8a0;
+}
+.cfg-lk-lock {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+}
+.cfg-lk-err:empty {
+  display: none;
+}
+.cfg-lk-err {
+  margin-top: 8px;
+  color: #f0a8a0;
+}

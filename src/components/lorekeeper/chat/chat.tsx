@@ -4,6 +4,7 @@ import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { useLayoutEffect, useRef, useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
+import { configMessages } from "@/lib/errors/config";
 import { EMPTY_INTRO, NEW_CONVERSATION_LABEL, YOU_LABEL } from "@/lib/lorekeeper/copy";
 import { askLocally, isLocalMessage, setVisibilityLocally, setWebSearchLocally, stopLocally } from "@/lib/optimistic/lorekeeper";
 
@@ -43,6 +44,8 @@ type AskFn = (question: string, target: { conversationId?: Id<"lorekeeperConvers
  */
 export function ChatView({ campaignId, access, variant }: LorekeeperChatProps) {
   const available = useQuery(api.lorekeeper.available, { campaignId });
+  // Config L1 / U4: who may ask and whether the internet pass is allowed in this campaign (live).
+  const rules = useQuery(api.lorekeeper.access, { campaignId });
   const lists = useQuery(api.lorekeeper.listConversations, { campaignId });
   const library = useQuery(api.lorekeeperLibrary.list, { campaignId });
   const usage = useQuery(api.lorekeeperUsage.mine, { campaignId, ...usagePeriod(new Date()) });
@@ -112,7 +115,8 @@ export function ChatView({ campaignId, access, variant }: LorekeeperChatProps) {
     campaignId,
     isGm: access.isGm,
     available,
-    disabled: disabledReason(available, usage ?? undefined),
+    disabled: available !== false && rules?.canAsk === false ? configMessages.LOREKEEPER_GM_ONLY : disabledReason(available, usage ?? undefined),
+    webAllowed: rules?.webAllowed !== false,
     questionsLeft: usage?.questionsLeft,
     titles,
     sent,
@@ -152,6 +156,7 @@ type PaneProps = {
   isGm: boolean;
   available: boolean | undefined;
   disabled: string | null;
+  webAllowed: boolean;
   questionsLeft: number | undefined;
   titles: BookTitles;
   sent: ReadonlySet<string>;
@@ -222,6 +227,7 @@ function ConversationPane(props: PaneProps) {
             : undefined
         }
         webSearch={webSearch}
+        webAllowed={props.webAllowed}
         onWebSearch={(on) => {
           if (target) void setWebSearch({ campaignId, conversationId: target.conversationId, webSearch: on });
           else props.setNewWeb(on);

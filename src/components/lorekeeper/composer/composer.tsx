@@ -39,6 +39,8 @@ export type ComposerProps = {
   onStop?: () => void;
   webSearch: boolean;
   onWebSearch: (on: boolean) => void;
+  /** Config L1 / U4: false while the GM keeps the internet off for the campaign (the toggle is hidden). Default true. */
+  webAllowed?: boolean;
   /** The conversation's visibility (Q3) when the caller may change it. */
   visibility: { value: ConversationVisibility; onChange: (next: ConversationVisibility) => void } | null;
   /** Why the last ask failed; `newConversation` offers 'Start a new conversation'. */
@@ -57,7 +59,7 @@ export type ComposerProps = {
  * screen. Any other notice (a failed ask, the questions left) stays under the toggles.
  */
 export function Composer(props: ComposerProps) {
-  const { disabled, questionsLeft, streaming, sending, onAsk, onStop, webSearch, onWebSearch, visibility, notice, onNewConversation } = props;
+  const { disabled, questionsLeft, streaming, sending, onAsk, onStop, webSearch, onWebSearch, webAllowed = true, visibility, notice, onNewConversation } = props;
   const [draft, setDraft] = useState("");
   const counterId = useId();
   const noticeId = useId();
@@ -130,15 +132,19 @@ export function Composer(props: ComposerProps) {
         </span>
       ) : null}
       <div className="lk-togglerow">
-        <span className="lk-lbl">{WEB_TOGGLE_LABEL}</span>
-        <div className="lk-toggle" role="group" aria-label={WEB_TOGGLE_GROUP_LABEL}>
-          <BrandButton variant="neutral" size="sm" aria-pressed={webSearch} onClick={() => onWebSearch(true)}>
-            {WEB_TOGGLE_ON}
-          </BrandButton>
-          <BrandButton variant="neutral" size="sm" aria-pressed={!webSearch} onClick={() => onWebSearch(false)}>
-            {WEB_TOGGLE_OFF}
-          </BrandButton>
-        </div>
+        {webAllowed ? (
+          <>
+            <span className="lk-lbl">{WEB_TOGGLE_LABEL}</span>
+            <div className="lk-toggle" role="group" aria-label={WEB_TOGGLE_GROUP_LABEL}>
+              <BrandButton variant="neutral" size="sm" aria-pressed={webSearch} onClick={() => onWebSearch(true)}>
+                {WEB_TOGGLE_ON}
+              </BrandButton>
+              <BrandButton variant="neutral" size="sm" aria-pressed={!webSearch} onClick={() => onWebSearch(false)}>
+                {WEB_TOGGLE_OFF}
+              </BrandButton>
+            </div>
+          </>
+        ) : null}
         {visibility ? (
           <BrandButton
             variant="neutral"
