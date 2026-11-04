@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "convex/react";
+import { BrandButton } from "@/components/brand/buttons";
 import { useState } from "react";
 
 import {
@@ -23,7 +24,7 @@ import { cn } from "@/lib/utils";
 import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
 import type { CampaignSummary } from "../../../../../../convex/campaigns";
-import { TRACKER_BTN, TrackerCard } from "./tracker-card";
+import { TrackerCard } from "./tracker-card";
 
 const FIELD = "rounded-lg border border-[#33444a] bg-[#0d1417] px-3 text-[15px] text-[#e6ecea]";
 const STATUS_LABEL: Record<RevelationStatus, string> = { hidden: "Hidden", revealed: "Revealed", achieved: "Achieved" };
@@ -85,9 +86,9 @@ function RollNightSky({ campaignId, waiting }: { campaignId: Id<"campaigns">; wa
   const read = useIntent(api.trackers.weredragon.readNightSky);
   return (
     <div className="flex flex-col items-end gap-1">
-      <button type="button" className={TRACKER_BTN} disabled={read.pending || waiting} onClick={() => read.fire({ campaignId })}>
+      <BrandButton variant="confirm" size="sm" disabled={read.pending || waiting} onClick={() => read.fire({ campaignId })}>
         Roll the night sky
-      </button>
+      </BrandButton>
       <ErrorLine error={read.error} />
     </div>
   );
@@ -147,9 +148,9 @@ function ReadingPicker({ campaignId, roll }: { campaignId: Id<"campaigns">; roll
         </ul>
       ) : null}
       <div className="flex items-center gap-2">
-        <button type="button" className={TRACKER_BTN} disabled={assign.pending} onClick={() => assign.fire({ campaignId, assignment })}>
+        <BrandButton variant="confirm" size="sm" disabled={assign.pending} onClick={() => assign.fire({ campaignId, assignment })}>
           Apply reading
-        </button>
+        </BrandButton>
         <ErrorLine error={assign.error} />
       </div>
     </div>
@@ -256,9 +257,9 @@ function ForlorneSecrets({ campaignId, isGm, secrets }: { campaignId: Id<"campai
           className={cn(FIELD, "py-2 font-serif")}
         />
         <div className="flex items-center gap-2">
-          <button type="submit" className={TRACKER_BTN} disabled={submit.pending || !draft.trim()}>
+          <BrandButton type="submit" variant="confirm" size="sm" disabled={submit.pending || !draft.trim()}>
             Submit secret
-          </button>
+          </BrandButton>
           <ErrorLine error={submit.error} />
         </div>
       </form>

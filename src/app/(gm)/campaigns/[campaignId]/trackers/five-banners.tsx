@@ -6,6 +6,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
+import { glassButtonClass } from "@/components/brand/glass-button";
 import { Modal } from "@/components/brand/modal";
 import { canAdvanceCountdown, canCancelCountdown, canReverseCountdown } from "@/lib/domain/countdowns";
 import {
@@ -33,7 +34,7 @@ import { useIntent } from "@/lib/use-intent";
 import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
 import type { CampaignSummary } from "../../../../../../convex/campaigns";
-import { TRACKER_BTN, TrackerCard } from "./tracker-card";
+import { TrackerCard } from "./tracker-card";
 
 const fb = api.trackers.fiveBanners;
 type View = NonNullable<FunctionReturnType<typeof fb.state>>;
@@ -78,17 +79,17 @@ function RevealToggle({
   const toggle = useIntent(fb.toggleReveal);
   return (
     <span className="inline-flex flex-col items-end">
-      <button
-        type="button"
+      <BrandButton
+        variant="neutral"
+        size="sm"
         aria-pressed={revealed}
         aria-label={`Reveal ${label} to players`}
         disabled={toggle.pending}
         onClick={() => void toggle.fire({ campaignId, target, revealed: !revealed })}
-        className={cn(TRACKER_BTN, "inline-flex items-center gap-1.5 text-[13px]", revealed ? "border-brand text-brand" : "text-[#8fa3a8]")}
       >
         {revealed ? <Eye className="size-4" aria-hidden="true" /> : <EyeOff className="size-4" aria-hidden="true" />}
         {revealed ? "Shown" : "Hidden"}
-      </button>
+      </BrandButton>
       <Errors messages={[toggle.error]} />
     </span>
   );
@@ -185,15 +186,15 @@ function RelationshipEditor({ campaignId, rel }: { campaignId: Id<"campaigns">; 
   return (
     <div role="group" aria-label={`${name} relationship`} className="flex flex-wrap items-center gap-2 rounded-[10px] border border-[#253338] bg-[#10181b] p-3">
       <span className="flex-1 font-display text-[15px] text-parchment">{name}</span>
-      <button type="button" className={TRACKER_BTN} aria-label={`Worsen ${name} relationship`} disabled={set.pending || rel.value <= MIN_RELATIONSHIP} onClick={() => change(-1)}>
+      <BrandButton variant="neutral" size="sm" icon aria-label={`Worsen ${name} relationship`} disabled={set.pending || rel.value <= MIN_RELATIONSHIP} onClick={() => change(-1)}>
         −
-      </button>
+      </BrandButton>
       <span className={cn("min-w-[120px] rounded-md border px-2 py-1.5 text-center text-[14px]", ratingTone(rel.value))} data-testid="relationship-value">
         {relationshipLabel(rel.value)} ({formatRating(rel.value)})
       </span>
-      <button type="button" className={TRACKER_BTN} aria-label={`Improve ${name} relationship`} disabled={set.pending || rel.value >= MAX_RELATIONSHIP} onClick={() => change(1)}>
+      <BrandButton variant="neutral" size="sm" icon aria-label={`Improve ${name} relationship`} disabled={set.pending || rel.value >= MAX_RELATIONSHIP} onClick={() => change(1)}>
         +
-      </button>
+      </BrandButton>
       <RevealToggle campaignId={campaignId} label={`${name} relationship`} revealed={rel.revealed} target={{ type: "relationship", a: rel.a, b: rel.b }} />
       <Errors messages={[set.error]} />
     </div>
@@ -236,32 +237,32 @@ function ObjectiveRow({ objective, campaignId, gm }: { objective: Objective; cam
       {gm ? (
         <div className="flex flex-wrap items-center gap-2">
           {done ? (
-            <button type="button" className={TRACKER_BTN} disabled={operate.pending} onClick={() => act("dismiss")}>
+            <BrandButton variant="neutral" size="sm" disabled={operate.pending} onClick={() => act("dismiss")}>
               Dismiss
-            </button>
+            </BrandButton>
           ) : (
             <>
-              <button
-                type="button"
-                className={cn(TRACKER_BTN, "border-transparent bg-brand font-bold text-brand-ink hover:bg-brand")}
+              <BrandButton
+                variant="confirm"
+                size="sm"
                 aria-label={`Tick ${name} down one`}
                 disabled={operate.pending || !canAdvanceCountdown(status, value)}
                 onClick={() => act("advance")}
               >
                 Tick −1
-              </button>
-              <button type="button" className={TRACKER_BTN} aria-label={`Set ${name} back one`} disabled={operate.pending || !canReverseCountdown(status, value, start)} onClick={() => act("reverse")}>
+              </BrandButton>
+              <BrandButton variant="neutral" size="sm" aria-label={`Set ${name} back one`} disabled={operate.pending || !canReverseCountdown(status, value, start)} onClick={() => act("reverse")}>
                 +1
-              </button>
-              <button type="button" className={TRACKER_BTN} disabled={operate.pending} onClick={() => act(status === "paused" ? "resume" : "pause")}>
+              </BrandButton>
+              <BrandButton variant="neutral" size="sm" disabled={operate.pending} onClick={() => act(status === "paused" ? "resume" : "pause")}>
                 {status === "paused" ? "Resume" : "Pause"}
-              </button>
+              </BrandButton>
             </>
           )}
           {done ? (
-            <button type="button" className={TRACKER_BTN} aria-label={`Set ${name} back one`} disabled={operate.pending} onClick={() => act("reverse")}>
+            <BrandButton variant="neutral" size="sm" aria-label={`Set ${name} back one`} disabled={operate.pending} onClick={() => act("reverse")}>
               Reopen
-            </button>
+            </BrandButton>
           ) : null}
           <span className="flex-1" />
           <RevealToggle campaignId={campaignId} label={name} revealed={objective.revealed} target={{ type: "objective", countdownId }} />
@@ -271,17 +272,17 @@ function ObjectiveRow({ objective, campaignId, gm }: { objective: Objective; cam
         confirmCancel ? (
           <div role="alertdialog" aria-label={`Cancel ${name}`} className="flex flex-wrap items-center gap-2 text-[13px] text-[#ffd9d6]">
             <span className="flex-1">Abandon this objective?</span>
-            <button type="button" className={TRACKER_BTN} onClick={() => setConfirmCancel(false)}>
+            <BrandButton variant="cancel" size="sm" onClick={() => setConfirmCancel(false)}>
               Keep it
-            </button>
-            <button type="button" className={cn(TRACKER_BTN, "border-transparent bg-danger-solid font-semibold text-white hover:bg-danger-solid")} disabled={operate.pending} onClick={() => act("cancel")}>
+            </BrandButton>
+            <BrandButton variant="danger" size="sm" disabled={operate.pending} onClick={() => act("cancel")}>
               Abandon
-            </button>
+            </BrandButton>
           </div>
         ) : (
-          <button type="button" className="min-h-10 self-end text-[12px] text-[#8fa3a8] underline-offset-4 hover:underline" onClick={() => setConfirmCancel(true)}>
+          <BrandButton variant="danger" size="sm" className="self-end" onClick={() => setConfirmCancel(true)}>
             Abandon objective…
-          </button>
+          </BrandButton>
         )
       ) : null}
       <Errors messages={[operate.error]} />
@@ -335,7 +336,7 @@ function NewObjectiveDialog({ campaignId, nation, open, onClose }: { campaignId:
               disabled={limit(k) !== null}
               title={limit(k) ?? undefined}
               onClick={() => pickKind(k)}
-              className={cn(TRACKER_BTN, "min-h-11", kind === k && "border-brand bg-brand font-bold text-brand-ink hover:bg-brand")}
+              className={glassButtonClass({ role: "neutral", tone: kind === k ? "hope" : undefined, wrap: true })}
             >
               {k === "objective-major" ? `Major (${MAJOR_STEPS} steps)` : "Minor (4–6 steps)"}
             </button>
@@ -350,7 +351,7 @@ function NewObjectiveDialog({ campaignId, nation, open, onClose }: { campaignId:
                 role="radio"
                 aria-checked={steps === n}
                 onClick={() => setSteps(n)}
-                className={cn(TRACKER_BTN, "min-h-11 font-display text-[18px]", steps === n && "border-brand bg-brand font-bold text-brand-ink hover:bg-brand")}
+                className={glassButtonClass({ role: "neutral", tone: steps === n ? "hope" : undefined, wrap: true })}
               >
                 {n}
               </button>
@@ -370,10 +371,10 @@ function NewObjectiveDialog({ campaignId, nation, open, onClose }: { campaignId:
           </p>
         ) : null}
         <div className="flex justify-end gap-2.5">
-          <button type="button" className={TRACKER_BTN} onClick={close}>
+          <BrandButton variant="cancel" onClick={close}>
             Cancel
-          </button>
-          <BrandButton type="submit" variant="solid" disabled={create.pending || limit(kind) !== null}>
+          </BrandButton>
+          <BrandButton type="submit" variant="confirm" disabled={create.pending || limit(kind) !== null}>
             Start at {steps}
           </BrandButton>
         </div>
@@ -416,10 +417,10 @@ function SheetDialog({ campaignId, nation, open, onClose }: { campaignId: Id<"ca
           </p>
         ) : null}
         <div className="flex justify-end gap-2.5">
-          <button type="button" className={TRACKER_BTN} onClick={close}>
+          <BrandButton variant="cancel" onClick={close}>
             Cancel
-          </button>
-          <BrandButton type="submit" variant="solid" disabled={save.pending}>
+          </BrandButton>
+          <BrandButton type="submit" variant="confirm" disabled={save.pending}>
             Save
           </BrandButton>
         </div>
@@ -449,9 +450,9 @@ function NationCard({ nation, campaignId, gm }: { nation: Nation; campaignId: Id
         </dl>
       ) : null}
       {gm ? (
-        <button type="button" className={cn(TRACKER_BTN, "self-start text-[13px]")} aria-label={`Edit ${nation.name} assets and problems`} onClick={() => setDialog("sheet")}>
+        <BrandButton variant="neutral" size="sm" className="self-start" aria-label={`Edit ${nation.name} assets and problems`} onClick={() => setDialog("sheet")}>
           Edit sheet
-        </button>
+        </BrandButton>
       ) : null}
       <div className="flex flex-col gap-2">
         <span className="text-[11px] tracking-[0.14em] text-[#8fa3a8] uppercase">Objectives</span>
@@ -465,16 +466,16 @@ function NationCard({ nation, campaignId, gm }: { nation: Nation; campaignId: Id
           <p className="m-0 text-[13px] text-[#8fa3a8]">{gm ? "No objective countdowns yet." : "None revealed."}</p>
         )}
         {gm ? (
-          <button
-            type="button"
-            className={cn(TRACKER_BTN, "text-[13px]")}
+          <BrandButton
+            variant="neutral"
+            size="sm"
             aria-label={`New ${nation.name} objective`}
             disabled={objectivesFull}
             title={objectivesFull ? "One major and two minor objectives at a time." : undefined}
             onClick={() => setDialog("objective")}
           >
             + Objective
-          </button>
+          </BrandButton>
         ) : null}
       </div>
       {gm && dialog === "objective" ? <NewObjectiveDialog campaignId={campaignId} nation={nation} open onClose={() => setDialog(null)} /> : null}
@@ -548,10 +549,10 @@ function AdvanceWeekDialog({ view, campaignId, onClose, onDone }: { view: View; 
           </p>
         ) : null}
         <div className="flex justify-end gap-2.5">
-          <button type="button" className={TRACKER_BTN} onClick={onClose}>
+          <BrandButton variant="cancel" onClick={onClose}>
             Cancel
-          </button>
-          <BrandButton type="submit" variant="solid" disabled={advance.pending}>
+          </BrandButton>
+          <BrandButton type="submit" variant="confirm" disabled={advance.pending}>
             Advance week
           </BrandButton>
         </div>
@@ -577,9 +578,9 @@ export function FiveBannersTracker({ campaign }: { campaign: CampaignSummary }) 
       subtitle={`Week ${view.week} · Faction relationships & objective countdowns`}
       actions={
         gm ? (
-          <button type="button" className={cn(TRACKER_BTN, "min-h-11 px-4")} onClick={() => setAdvancing(true)}>
+          <BrandButton variant="confirm" onClick={() => setAdvancing(true)}>
             Advance week
-          </button>
+          </BrandButton>
         ) : null
       }
     >

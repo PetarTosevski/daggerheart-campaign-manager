@@ -3,6 +3,8 @@
 import { useQuery } from "convex/react";
 import { useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
+import { glassButtonClass } from "@/components/brand/glass-button";
 import { COLOSSI_TOTAL, EMERGENCE_POWER, MAX_POWER, SIPHON_SLOTS } from "@/lib/frames/trackers/colossus";
 import { cn } from "@/lib/utils";
 import { useIntent } from "@/lib/use-intent";
@@ -10,7 +12,7 @@ import { useIntent } from "@/lib/use-intent";
 import { api } from "../../../../../../convex/_generated/api";
 import type { CampaignSummary } from "../../../../../../convex/campaigns";
 import type { ColossusView } from "../../../../../../convex/trackers/colossus";
-import { TRACKER_BTN, TrackerCard } from "./tracker-card";
+import { TrackerCard } from "./tracker-card";
 
 type Props = { campaign: CampaignSummary };
 
@@ -49,7 +51,7 @@ function HuntCard({ campaign, view }: Props & { view: ColossusView }) {
             aria-checked={view.phase === phase}
             disabled={readOnly || setPhase.pending}
             onClick={() => view.phase !== phase && void setPhase.fire({ campaignId: campaign._id, phase })}
-            className={cn(TRACKER_BTN, "flex-1 capitalize", view.phase === phase && "border-brand bg-brand/15 text-parchment")}
+            className={cn(glassButtonClass({ role: "neutral", tone: view.phase === phase ? "hope" : undefined, wrap: true }), "flex-1 capitalize")}
           >
             {phase}
           </button>
@@ -84,9 +86,8 @@ function HuntCard({ campaign, view }: Props & { view: ColossusView }) {
       </div>
 
       {readOnly ? null : (
-        <button
-          type="button"
-          className={TRACKER_BTN}
+        <BrandButton
+          variant="confirm"
           disabled={allSlain || defeat.pending}
           onClick={async () => {
             const result = await defeat.fire({ campaignId: campaign._id });
@@ -94,7 +95,7 @@ function HuntCard({ campaign, view }: Props & { view: ColossusView }) {
           }}
         >
           Colossus defeated
-        </button>
+        </BrandButton>
       )}
       {notice ? (
         <p role="status" className="m-0 rounded-lg border border-[#5b4a2a] bg-[#2a2010] px-3 py-2 text-[14px] text-[#f4e3bd]">
@@ -157,15 +158,15 @@ function KudamatCard({
         </p>
         <div className="flex flex-wrap gap-2">
           {(["short", "long"] as const).map((kind) => (
-            <button
+            <BrandButton
               key={kind}
-              type="button"
-              className={TRACKER_BTN}
+              variant="neutral"
+              size="sm"
               disabled={phase !== "hunt" || markRest.pending}
               onClick={() => void markRest.fire({ campaignId: campaign._id, kind })}
             >
               {kind === "short" ? "Correction: short rest +1" : "Correction: long rest +2"}
-            </button>
+            </BrandButton>
           ))}
           {phase !== "hunt" ? <span className="self-center text-[13px] text-[#9fb2b6]">Rests mark the track only during a hunt.</span> : null}
         </div>
@@ -225,9 +226,9 @@ function KudamatCard({
             onChange={(e) => setPower(e.target.value)}
             className="min-h-10 w-24 rounded-[9px] border border-[#33444a] bg-[#10181b] px-2 text-[14px] text-parchment"
           />
-          <button type="submit" className={TRACKER_BTN} disabled={!powerValid || correct.pending}>
+          <BrandButton type="submit" variant="confirm" size="sm" disabled={!powerValid || correct.pending}>
             Set
-          </button>
+          </BrandButton>
         </form>
       </div>
 
