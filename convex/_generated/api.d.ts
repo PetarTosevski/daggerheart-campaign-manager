@@ -208,6 +208,7 @@ import type * as migrations_limitRequestDecidedAt from "../migrations/limitReque
 import type * as migrations_mapTrailMode from "../migrations/mapTrailMode.js";
 import type * as migrations_maps from "../migrations/maps.js";
 import type * as migrations_motherboardEconomy from "../migrations/motherboardEconomy.js";
+import type * as migrations_ruleDefaults from "../migrations/ruleDefaults.js";
 import type * as migrations_run from "../migrations/run.js";
 import type * as migrations_sessions from "../migrations/sessions.js";
 import type * as migrations_sheetEffectCaster from "../migrations/sheetEffectCaster.js";
@@ -480,6 +481,7 @@ declare const fullApi: ApiFromModules<{
   "migrations/mapTrailMode": typeof migrations_mapTrailMode;
   "migrations/maps": typeof migrations_maps;
   "migrations/motherboardEconomy": typeof migrations_motherboardEconomy;
+  "migrations/ruleDefaults": typeof migrations_ruleDefaults;
   "migrations/run": typeof migrations_run;
   "migrations/sessions": typeof migrations_sessions;
   "migrations/sheetEffectCaster": typeof migrations_sheetEffectCaster;
