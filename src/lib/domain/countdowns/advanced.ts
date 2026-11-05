@@ -19,6 +19,7 @@
 // chaseStart(6, "decent"); // { pursuers: 6, escapee: 3 }
 // ```
 
+import type { ModeOf } from "../../rules/registry";
 import type { RollOutcome, RollRecord } from "../duality";
 import { CountdownRuleError, type CountdownStatus } from "./index";
 
@@ -265,6 +266,27 @@ export type CountedRollContext = {
 export function countsAsActionRoll(roll: Pick<RollRecord, "kind" | "outcome"> | undefined, context: CountedRollContext): boolean {
   if (roll === undefined || context.undone || context.logKind !== "roll" || context.tagTeam === "pending") return false;
   return roll.kind === "action" && roll.outcome !== "none";
+}
+
+/**
+ * Whether armed countdowns tick by themselves on a counted action roll (rule switch K1 `countdownTicks`, CB p.162):
+ * Book yes; Manual no, the GM gets a note instead (`manualTickNote`, user answer Q3 a, 2026-11-05).
+ */
+export function rollsTickCountdowns(mode: ModeOf<"countdownTicks"> = "book"): boolean {
+  return mode === "book";
+}
+
+/** One armed countdown a roll would tick, for the Manual note: its value now and how far the roll would tick it. */
+export type ManualTick = { name: string; currentValue: number; amount: number };
+
+/**
+ * K1 Manual's GM note for one counted roll (Q3 a): "Action roll: tick Ambush (3), Collapse (5) by 2?". A countdown the
+ * roll would not move (amount 0: a dynamic countdown on the other side's outcome, an ended chase) is left out; null when
+ * nothing is left (no note).
+ */
+export function manualTickNote(ticks: readonly ManualTick[]): string | null {
+  const named = ticks.filter((t) => t.amount > 0).map((t) => `${t.name} (${t.currentValue})${t.amount > 1 ? ` by ${t.amount}` : ""}`);
+  return named.length === 0 ? null : `Action roll: tick ${named.join(", ")}?`;
 }
 
 /**
