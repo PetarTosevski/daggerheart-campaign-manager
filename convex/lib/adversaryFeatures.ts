@@ -24,6 +24,7 @@ import type { MapCreature } from "../../src/lib/domain/combat-actions/numbers";
 import { turnSpotlights } from "../../src/lib/domain/encounters/spotlight";
 import { appError } from "../../src/lib/errors/app-error";
 import { ADVERSARIES } from "../../src/lib/srd/adversaries";
+import { srdAdversary } from "../../src/lib/srd/adversary-lookup";
 import { adversaryEffects, allAdversaryEffects } from "../../src/lib/srd/adversary-effects/index";
 import { allCardEffects } from "../../src/lib/srd/card-effects/index";
 import { allFeatureEffects } from "../../src/lib/srd/feature-effects/index";
@@ -41,7 +42,6 @@ import type { HitRider } from "./validators/combatRequests";
 import { MAX_INSTANCE_FEATURE_USES, type InstanceEffect, type InstanceFeatureUse } from "./validators/encounters";
 import { effectSource, instanceEffectSource, srdUses } from "./cardRows";
 
-const SRD_BY_ID = new Map<string, AdversaryDef>(ADVERSARIES.map((a) => [a.id, a]));
 
 // ---------------------------------------------------------------- the stat block
 
@@ -105,7 +105,7 @@ async function printedBlockOf(ctx: QueryCtx, instance: Doc<"encounterAdversaries
   // Lane E7 round 3 (dcm-3ag5, Transform): a `form` modifier swaps in that SRD stat block.
   const form = formOf(instance);
   if (form !== undefined || instance.source.kind === "srd") {
-    const def = form ?? (instance.source.kind === "srd" ? SRD_BY_ID.get(instance.source.adversaryId) : undefined);
+    const def = form ?? (instance.source.kind === "srd" ? srdAdversary(instance.source.adversaryId) : undefined);
     if (!def) return null;
     return {
       adversaryId: def.id,
@@ -878,7 +878,7 @@ export function adversaryEndRoll(input: { attack: boolean; success: boolean }): 
  * block `adversaryId` (its marked HP and Stress stay). Replaces an earlier form modifier.
  */
 export function formInstanceEffect(existing: readonly InstanceEffect[], adversaryId: string, feature: string): InstanceEffect[] {
-  const def = SRD_BY_ID.get(adversaryId);
+  const def = srdAdversary(adversaryId);
   const kept = existing.filter((e) => e.form === undefined);
   const effect: InstanceEffect = { id: nextEffectId(kept, `form:${feature}`.slice(0, 80)), source: feature.slice(0, 80), label: `Form: ${def?.name ?? adversaryId}`.slice(0, 120), until: "permanent", form: adversaryId };
   return [...kept, effect].slice(-INSTANCE_EFFECTS_MAX);
@@ -887,7 +887,7 @@ export function formInstanceEffect(existing: readonly InstanceEffect[], adversar
 /** The SRD stat block an instance's latest `form` modifier names (Transform), or undefined. */
 export function formOf(instance: Pick<Doc<"encounterAdversaries">, "effects">): AdversaryDef | undefined {
   const form = [...(instance.effects ?? [])].reverse().find((e) => e.form !== undefined)?.form;
-  return form === undefined ? undefined : SRD_BY_ID.get(form);
+  return form === undefined ? undefined : srdAdversary(form);
 }
 
 /**
@@ -1050,7 +1050,7 @@ export function mapCreatures(
   party: readonly { character: { _id: string } }[],
   map: { tokens: readonly Doc<"combatTokens">[]; self: Doc<"combatTokens">; target?: Doc<"combatTokens"> } | null,
 ): MapCreature[] {
-  const nameOf = (i: Pick<Doc<"encounterAdversaries">, "source" | "label">) => (i.source.kind === "srd" ? (SRD_BY_ID.get(i.source.adversaryId)?.name ?? i.label) : i.label);
+  const nameOf = (i: Pick<Doc<"encounterAdversaries">, "source" | "label">) => (i.source.kind === "srd" ? (srdAdversary(i.source.adversaryId)?.name ?? i.label) : i.label);
   if (map === null) {
     return [
       ...party.map((m): MapCreature => ({ id: m.character._id, side: "enemy", pc: true })),
@@ -1086,7 +1086,7 @@ export function gmControlOf(sheet: Pick<CharacterSheet, "effects">): { asAdversa
     for (const m of l.mods) {
       if (m.kind !== "gmControl") continue;
       controlled = true;
-      const def = m.asAdversary === undefined ? undefined : (SRD_BY_ID.get(m.asAdversary) ?? ADVERSARIES.find((a) => a.name === m.asAdversary));
+      const def = m.asAdversary === undefined ? undefined : (srdAdversary(m.asAdversary) ?? ADVERSARIES.find((a) => a.name === m.asAdversary));
       if (def) asAdversary = def;
     }
   }

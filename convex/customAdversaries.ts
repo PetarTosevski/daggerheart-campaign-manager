@@ -2,7 +2,7 @@ import { v } from "convex/values";
 
 import { validateCustom, type CustomAdversaryInput } from "../src/lib/adversaries/custom";
 import { appError } from "../src/lib/errors/app-error";
-import { ADVERSARIES } from "../src/lib/srd/adversaries";
+import { srdAdversary } from "../src/lib/srd/adversary-lookup";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { MAX_CUSTOM, MAX_INSTANCES } from "./lib/encounters";
@@ -16,7 +16,6 @@ import { customAdversaryFields } from "./lib/validators/encounters";
  * (source `custom`), which snapshots their numbers, so an edit never moves live pips.
  */
 
-const SRD_IDS = new Set(ADVERSARIES.map((a) => a.id));
 
 const f = customAdversaryFields;
 const inputFields = {
@@ -102,7 +101,7 @@ export const create = keyedGmMutation({
     ctx.once("custom_adversary_create", { adversary, basedOn: basedOn ?? null }, async () => {
       const campaignId = ctx.campaign._id;
       const input = validateCustom(adversary);
-      if (basedOn !== undefined && !SRD_IDS.has(basedOn)) throw appError("ADVERSARY_UNKNOWN");
+      if (basedOn !== undefined && srdAdversary(basedOn) === undefined) throw appError("ADVERSARY_UNKNOWN");
       const existing = await ctx.db
         .query("customAdversaries")
         .withIndex("by_campaign_name", (q) => q.eq("campaignId", campaignId))

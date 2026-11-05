@@ -4,8 +4,7 @@ import { applyCondition, applyMark, damageSeverity, damageTaken, hpForDamage, is
 import { applySpotlight, spotlightCostsFear, turnSpotlights } from "../src/lib/domain/encounters/spotlight";
 import { minionValue } from "../src/lib/domain/adversaries/index";
 import { appError } from "../src/lib/errors/app-error";
-import { ADVERSARIES } from "../src/lib/srd/adversaries";
-import type { AdversaryDef } from "../src/lib/srd/types";
+import { srdAdversary } from "../src/lib/srd/adversary-lookup";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { expireParty } from "./campaignTime";
@@ -26,7 +25,6 @@ import { customAdversaryFields, encounterConditionValidator } from "./lib/valida
  * functions in src/lib/domain/encounters/damage.ts and spotlight.ts, which the tracker's optimistic updates share.
  */
 
-const SRD_BY_ID = new Map<string, AdversaryDef>(ADVERSARIES.map((a) => [a.id, a]));
 
 const severityValidator = v.union(v.literal("none"), v.literal("minor"), v.literal("major"), v.literal("severe"), v.literal("defeat"));
 const tracksResult = v.object({ hp: v.number(), stress: v.number(), defeated: v.boolean() });
@@ -44,7 +42,7 @@ async function loadRunning(ctx: MutationCtx, campaignId: Id<"campaigns">, instan
 /** X of the instance's "Minion (X)" (SRD or custom block); null when unknown. */
 async function minionX(ctx: MutationCtx, instance: Doc<"encounterAdversaries">): Promise<number | null> {
   if (instance.source.kind === "srd") {
-    const def = SRD_BY_ID.get(instance.source.adversaryId);
+    const def = srdAdversary(instance.source.adversaryId);
     return def ? minionValue(def) : null;
   }
   const custom = await ctx.db.get("customAdversaries", instance.source.customId);

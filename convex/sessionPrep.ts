@@ -3,7 +3,7 @@ import { v, type Infer } from "convex/values";
 import { BP_COSTS, budgetFor, minionGroups, spentFor, verdict, type BudgetEntry } from "../src/lib/domain/encounters/budget";
 import { sceneEncounterId } from "../src/lib/domain/journal/scenes";
 import { appError } from "../src/lib/errors/app-error";
-import { ADVERSARIES } from "../src/lib/srd/adversaries";
+import { srdAdversary } from "../src/lib/srd/adversary-lookup";
 import type { AdversaryType } from "../src/lib/srd/types";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -30,7 +30,6 @@ const DEFAULT_PCS = 4;
 /** Characters read to count the active ones (as D8's `create`). */
 const MAX_CHARACTERS_READ = 100;
 
-const SRD_BY_ID = new Map(ADVERSARIES.map((a) => [a.id, a]));
 
 // ---------------------------------------------------------------- validators
 
@@ -117,7 +116,7 @@ async function instanceEntries(ctx: QueryCtx, encounter: Doc<"encounters">): Pro
   for (const row of rows) {
     let block: { type: AdversaryType; tier: number } | null;
     if (row.source.kind === "srd") {
-      block = SRD_BY_ID.get(row.source.adversaryId) ?? null;
+      block = srdAdversary(row.source.adversaryId) ?? null;
     } else {
       const customId = row.source.customId;
       if (!customs.has(customId)) {

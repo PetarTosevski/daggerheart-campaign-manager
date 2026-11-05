@@ -50,12 +50,12 @@ import { minionValue } from "../../src/lib/domain/adversaries/index";
 import { placeTideToken, rollGaveHope, WITH_HOPE } from "../../src/lib/domain/session-features/index";
 import { appError } from "../../src/lib/errors/app-error";
 import { TRAIT_LABEL } from "../../src/lib/frames/extras/common";
-import { ADVERSARIES } from "../../src/lib/srd/adversaries";
+import { srdAdversary } from "../../src/lib/srd/adversary-lookup";
 import { alwaysOnResistance } from "../../src/lib/srd/adversary-resistance";
 import { allCardEffects, cardEffect, cardUsage } from "../../src/lib/srd/card-effects/index";
 import { allFeatureEffects, featureEffect } from "../../src/lib/srd/feature-effects/index";
 import { getDomainCard, getWeapon } from "../../src/lib/srd/index";
-import type { AdversaryDef, DomainId, TraitId, Weapon } from "../../src/lib/srd/types";
+import type { DomainId, TraitId, Weapon } from "../../src/lib/srd/types";
 import type { CharacterSheet, Effect } from "../../src/lib/validation/characters";
 import type { EndRoll, EndSeverity } from "../../src/lib/domain/characters/expiry";
 import { tickArmedCountdowns } from "../countdownRolls";
@@ -115,7 +115,6 @@ import { rollDie } from "./dice";
 /** The most targets one attack names (the bound `combatRequests` documents, CD8). */
 export const MAX_TARGETS = 20;
 
-const SRD_BY_ID = new Map<string, AdversaryDef>(ADVERSARIES.map((a) => [a.id, a]));
 
 // ---------------------------------------------------------------- validators
 
@@ -443,7 +442,7 @@ async function blockOf(ctx: QueryCtx, instance: Doc<"encounterAdversaries">): Pr
   const own = instance.resistance;
   const fromInstance = own === undefined ? undefined : own.conditional === undefined || instance.resistanceActive === true ? { physical: own.physical, magic: own.magic } : { physical: "none" as const, magic: "none" as const };
   if (instance.source.kind === "srd") {
-    const def = SRD_BY_ID.get(instance.source.adversaryId);
+    const def = srdAdversary(instance.source.adversaryId);
     const minionX = def ? minionValue(def) : null;
     return { minion: def?.type === "Minion" || minionX !== null, minionX, resistance: fromInstance ?? alwaysOnResistance(instance.source.adversaryId) };
   }

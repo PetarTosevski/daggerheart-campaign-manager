@@ -4,8 +4,7 @@ import { adversariesFor } from "../src/lib/domain/adversaries/index";
 import { instanceStats, nextLabels, type StatSource } from "../src/lib/domain/encounters/instances";
 import { appError } from "../src/lib/errors/app-error";
 import { resolveOptions } from "../src/lib/frames/options";
-import { ADVERSARIES } from "../src/lib/srd/adversaries";
-import type { AdversaryDef } from "../src/lib/srd/types";
+import { srdAdversary } from "../src/lib/srd/adversary-lookup";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {
@@ -51,7 +50,6 @@ const DEFAULT_PCS = 4;
 /** Characters read to count the active ones for the default party size. */
 const MAX_CHARACTERS_READ = 100;
 
-const SRD_BY_ID = new Map<string, AdversaryDef>(ADVERSARIES.map((a) => [a.id, a]));
 
 // ---------------------------------------------------------------- validators
 
@@ -129,7 +127,7 @@ async function resolveSource(
 ): Promise<{ name: string; block: StatSource }> {
   if (source.kind === "srd") {
     const options = resolveOptions(campaign.frameId, campaign.options);
-    const def = SRD_BY_ID.get(source.adversaryId);
+    const def = srdAdversary(source.adversaryId);
     const usable = def && adversariesFor([def], { hopeAndFear: options.hopeAndFear, frameId: campaign.frameId }).length === 1;
     if (!def || !usable) throw appError("ADVERSARY_UNKNOWN");
     return { name: def.name, block: def };
@@ -191,7 +189,7 @@ export const get = gmQuery({
       }
     }
     const instances = rows.map((row) => {
-      const block = row.source.kind === "srd" ? (SRD_BY_ID.get(row.source.adversaryId) ?? null) : (customs.get(row.source.customId) ?? null);
+      const block = row.source.kind === "srd" ? (srdAdversary(row.source.adversaryId) ?? null) : (customs.get(row.source.customId) ?? null);
       return { ...row, name: block?.name ?? null, type: block?.type ?? null, tier: block?.tier ?? null };
     });
     return { encounter, instances };

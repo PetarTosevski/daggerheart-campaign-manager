@@ -48,12 +48,12 @@ import { gainSlots, type SlotCounts } from "../../src/lib/domain/characters/slot
 import { minionValue } from "../../src/lib/domain/adversaries/index";
 import { assertTypedModifier, experienceBonus, spendHope, type Rng } from "../../src/lib/domain/dice/index";
 import { appError } from "../../src/lib/errors/app-error";
-import { ADVERSARIES } from "../../src/lib/srd/adversaries";
+import { srdAdversary } from "../../src/lib/srd/adversary-lookup";
 import { alwaysOnResistance } from "../../src/lib/srd/adversary-resistance";
 import { adversaryEffects } from "../../src/lib/srd/adversary-effects/index";
 import { cardEffect, cardUsage } from "../../src/lib/srd/card-effects/index";
 import { getDomainCard, getWeapon } from "../../src/lib/srd/index";
-import type { AdversaryDef, DomainId, TraitId, Weapon } from "../../src/lib/srd/types";
+import type { DomainId, TraitId, Weapon } from "../../src/lib/srd/types";
 import type { CharacterSheet, Effect } from "../../src/lib/validation/characters";
 import { FEATURE_USES_MAX } from "../../src/lib/validation/character-constants";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -99,7 +99,6 @@ export {
 export { endedConditionLine } from "./conditionMarkers";
 import { unshakePlan, type UnshakableRoll } from "./unshakable";
 
-const SRD_BY_ID = new Map<string, AdversaryDef>(ADVERSARIES.map((a) => [a.id, a]));
 
 // ---------------------------------------------------------------- the card and its use
 
@@ -224,7 +223,7 @@ async function blockOf(ctx: QueryCtx, instance: Doc<"encounterAdversaries">): Pr
   const own = instance.resistance;
   const fromInstance = own === undefined ? undefined : own.conditional === undefined || instance.resistanceActive === true ? { physical: own.physical, magic: own.magic } : { physical: "none" as const, magic: "none" as const };
   if (instance.source.kind === "srd") {
-    const def = SRD_BY_ID.get(instance.source.adversaryId);
+    const def = srdAdversary(instance.source.adversaryId);
     const minionX = def ? minionValue(def) : null;
     return { minion: def?.type === "Minion" || minionX !== null, minionX, resistance: fromInstance ?? alwaysOnResistance(instance.source.adversaryId) };
   }
@@ -917,7 +916,7 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
   const nameOfToken = (t: Doc<"combatTokens">): string | undefined => {
     const c = creatures.get(t._id);
     if (c?.kind !== "enemy") return undefined;
-    return c.instance.source.kind === "srd" ? (SRD_BY_ID.get(c.instance.source.adversaryId)?.name ?? c.instance.label) : c.instance.label;
+    return c.instance.source.kind === "srd" ? (srdAdversary(c.instance.source.adversaryId)?.name ?? c.instance.label) : c.instance.label;
   };
 
   const context: Omit<RunContext, "rng"> = {
@@ -1187,7 +1186,7 @@ export function planHandoff(built: BuiltRun, plan: RunPlan): PlanHandoff {
     else if (s.kind === "changeForm") {
       const tokenId = tokenIdsOf(built, [s.targetId])[0];
       if (tokenId !== undefined) out.changeForms.push({ tokenId, adversaryId: s.adversaryId });
-      out.notes.push(`${runnerName(built, s.targetId)} changes form (${SRD_BY_ID.get(s.adversaryId)?.name ?? s.adversaryId})`);
+      out.notes.push(`${runnerName(built, s.targetId)} changes form (${srdAdversary(s.adversaryId)?.name ?? s.adversaryId})`);
     } else if (s.kind === "forcedAttack") {
       out.forcedAttacks.push({ attackerTokenIds: tokenIdsOf(built, s.attackerIds), againstTokenIds: tokenIdsOf(built, s.againstIds) });
       const against = s.againstIds.length > 0 ? s.againstIds.map((id) => runnerName(built, id)).join(", ") : "a creature the GM picks";
