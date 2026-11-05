@@ -7,7 +7,7 @@ import { HitBoundary } from "./boundary";
 import { PendingHits } from "./pending";
 
 /**
- * Incoming-hit prompt on the character sheet (AA4): `adversaryActions.pending` and
+ * Incoming-hit prompt on the character sheet (AA4): `adversaryActionsReads.pending` and
  * `adversaryActions.respond` for a viewer who can edit this character.
  */
 export function IncomingSlot({ campaignId, character, canEdit }: SheetSlotProps) {

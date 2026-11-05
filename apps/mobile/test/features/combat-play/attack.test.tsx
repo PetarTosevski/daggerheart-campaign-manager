@@ -1,7 +1,8 @@
 import { beforeEach, expect, jest, test } from "@jest/globals";
 import { fireEvent } from "@testing-library/react-native";
 
-import { renderAsPlayer } from "../../harness";
+import { api } from "../../../src/convex";
+import { fn, renderAsPlayer } from "../../harness";
 import { resetMotionTest } from "../../theme/mock-reanimated";
 import { CombatPlaySlot } from "../../../src/features/combat-map/play";
 
@@ -20,12 +21,12 @@ test("attack calls combatActions:attack", async () => {
   const props = slotProps();
   const screen = await renderAsPlayer(<CombatPlaySlot {...props} />, {
     queries: {
-      "combatCardsReads:hand": { characterId: okCharacterId(props), loadout: [], vault: [] },
-      "charactersReads:get": characterForAttack(),
-      "adversaryActions:pending": [],
+      [fn(api.combatCardsReads.hand)]: { characterId: okCharacterId(props), loadout: [], vault: [] },
+      [fn(api.charactersReads.get)]: characterForAttack(),
+      [fn(api.adversaryActionsReads.pending)]: [],
     },
     mutations: {
-      "combatActions:attack": (args) => {
+      [fn(api.combatActions.attack)]: (args) => {
         calls.push(args);
         return {
           status: "resolved",

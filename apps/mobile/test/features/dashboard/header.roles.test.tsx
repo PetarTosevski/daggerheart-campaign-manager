@@ -5,7 +5,8 @@ import { getPhaseName } from "../../../../../src/lib/domain/campaign-time";
 import { resetMotionTest } from "../../theme/mock-reanimated";
 import { SessionBlock } from "../../../src/features/dashboard/header";
 import { OfflineFrame } from "../../../src/shell/offline";
-import { renderAsGm, renderAsPlayer } from "../../harness";
+import { api } from "../../../src/convex";
+import { fn, renderAsGm, renderAsPlayer } from "../../harness";
 import { ERROR_TEXT, campaign, failQuery, sessions } from "./fixtures";
 
 jest.mock("expo-crypto", () => {
@@ -31,7 +32,7 @@ const played = {
 test("the header names the frame, the session line, and the last session", async () => {
   const screen = await renderAsPlayer(
     <SessionBlock campaign={campaign("player")} />,
-    { queries: { "sessionWrap:dashboard": played } },
+    { queries: { [fn(api.sessionWrap.dashboard)]: played } },
   );
   expect(screen.getByText("Active campaign · Beast Feast")).toBeTruthy();
   expect(screen.getByRole("header", { name: "The Table" })).toBeTruthy();
@@ -40,19 +41,19 @@ test("the header names the frame, the session line, and the last session", async
   expect(screen.getByText("The party left the caves.")).toBeTruthy();
   expect(screen.queryByLabelText("Time of the long cycle")).toBeNull();
   expect(screen.queryByRole("button", { name: "Start Session" })).toBeNull();
-  expect(screen.client.subscribed).toEqual(["sessionWrap:dashboard"]);
+  expect(screen.client.subscribed).toEqual([fn(api.sessionWrap.dashboard)]);
 });
 
 test("a live session is shown to both roles and the GM does not get Start Session", async () => {
   const live = sessions({ sessionId: "session-1", n: 4 });
   const player = await renderAsPlayer(<SessionBlock campaign={campaign("player")} />, {
-    queries: { "sessionWrap:dashboard": live },
+    queries: { [fn(api.sessionWrap.dashboard)]: live },
   });
   expect(player.getByText("Session 4 in progress")).toBeTruthy();
   expect(player.queryByRole("button", { name: "Start Session" })).toBeNull();
 
   const gm = await renderAsGm(<SessionBlock campaign={campaign("gm")} />, {
-    queries: { "sessionWrap:dashboard": live },
+    queries: { [fn(api.sessionWrap.dashboard)]: live },
   });
   expect(gm.getByText("Session 4 in progress")).toBeTruthy();
   expect(gm.queryByRole("button", { name: "Start Session" })).toBeNull();
@@ -61,9 +62,9 @@ test("a live session is shown to both roles and the GM does not get Start Sessio
 test("the GM confirms Start Session once", async () => {
   const calls: { campaignId: string; idempotencyKey: string }[] = [];
   const screen = await renderAsGm(<SessionBlock campaign={campaign("gm")} />, {
-    queries: { "sessionWrap:dashboard": sessions(null) },
+    queries: { [fn(api.sessionWrap.dashboard)]: sessions(null) },
     mutations: {
-      "sessions:start": (args) => {
+      [fn(api.sessions.start)]: (args) => {
         calls.push(args as { campaignId: string; idempotencyKey: string });
         return { sessionId: "session-9" };
       },
@@ -83,14 +84,14 @@ test("the header covers loading, an empty session line, a failed query, and offl
   expect(loading.getByText("Loading the last session")).toBeTruthy();
 
   const empty = await renderAsGm(<SessionBlock campaign={campaign("gm")} />, {
-    queries: { "sessionWrap:dashboard": sessions(null) },
+    queries: { [fn(api.sessionWrap.dashboard)]: sessions(null) },
   });
   expect(empty.getByText("No sessions yet · Tier 2 · Level 3 · Next session not scheduled")).toBeTruthy();
   expect(empty.getByText("No session has been played yet.")).toBeTruthy();
 
   jest.spyOn(console, "error").mockImplementation(() => undefined);
   const broken = await renderAsPlayer(<SessionBlock campaign={campaign("player")} />, {
-    queries: { "sessionWrap:dashboard": failQuery },
+    queries: { [fn(api.sessionWrap.dashboard)]: failQuery },
   });
   expect(broken.getByRole("header", { name: "Campaign" })).toBeTruthy();
   expect(broken.getByText(ERROR_TEXT)).toBeTruthy();
@@ -99,27 +100,27 @@ test("the header covers loading, an empty session line, a failed query, and offl
     <OfflineFrame offline>
       <SessionBlock campaign={campaign("gm")} />
     </OfflineFrame>,
-    { queries: { "sessionWrap:dashboard": sessions(null) } },
+    { queries: { [fn(api.sessionWrap.dashboard)]: sessions(null) } },
   );
   expect(offline.getByText("Showing the last update.")).toBeTruthy();
   const start = offline.getByRole("button", { name: "Start Session" });
   expect(start.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(start);
-  expect(offline.client.called).not.toContain("sessions:start");
+  expect(offline.client.called).not.toContain(fn(api.sessions.start));
 });
 
 test("a player can read the long cycle and cannot change the day", async () => {
   const time = { cycle: "DAY" as const, cycleDay: 1, week: 1 };
   const screen = await renderAsPlayer(<SessionBlock campaign={campaign("player", "witherwild")} />, {
-    queries: { "sessionWrap:dashboard": played, "campaignTime:get": time },
+    queries: { [fn(api.sessionWrap.dashboard)]: played, [fn(api.campaignTime.get)]: time },
   });
   expect(screen.getByLabelText("Time stage").props.children).toBe(getPhaseName("DAY", 1));
   const day = screen.getByRole("button", { name: `Day 2: ${getPhaseName("DAY", 2)}` });
   expect(day.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(day);
   expect(screen.queryByRole("button", { name: "Bring the Night" })).toBeNull();
-  expect(screen.client.called).not.toContain("campaignTime:setDay");
-  expect(screen.client.subscribed).toEqual(["sessionWrap:dashboard", "campaignTime:get"]);
+  expect(screen.client.called).not.toContain(fn(api.campaignTime.setDay));
+  expect(screen.client.subscribed).toEqual([fn(api.sessionWrap.dashboard), fn(api.campaignTime.get)]);
 });
 
 test("the GM sets another day and brings the night from day 7", async () => {
@@ -127,11 +128,11 @@ test("the GM sets another day and brings the night from day 7", async () => {
   const advances: unknown[] = [];
   const choosing = await renderAsGm(<SessionBlock campaign={campaign("gm", "witherwild")} />, {
     queries: {
-      "sessionWrap:dashboard": played,
-      "campaignTime:get": { cycle: "DAY", cycleDay: 1, week: 1 },
+      [fn(api.sessionWrap.dashboard)]: played,
+      [fn(api.campaignTime.get)]: { cycle: "DAY", cycleDay: 1, week: 1 },
     },
     mutations: {
-      "campaignTime:setDay": (args) => {
+      [fn(api.campaignTime.setDay)]: (args) => {
         days.push(args as { cycleDay: number });
         return null;
       },
@@ -142,11 +143,11 @@ test("the GM sets another day and brings the night from day 7", async () => {
 
   const last = await renderAsGm(<SessionBlock campaign={campaign("gm", "witherwild")} />, {
     queries: {
-      "sessionWrap:dashboard": played,
-      "campaignTime:get": { cycle: "DAY", cycleDay: 7, week: 1 },
+      [fn(api.sessionWrap.dashboard)]: played,
+      [fn(api.campaignTime.get)]: { cycle: "DAY", cycleDay: 7, week: 1 },
     },
     mutations: {
-      "campaignTime:advance": (args) => {
+      [fn(api.campaignTime.advance)]: (args) => {
         advances.push(args);
         return null;
       },

@@ -4,7 +4,8 @@ import { fireEvent } from "@testing-library/react-native";
 import { resetMotionTest } from "../../theme/mock-reanimated";
 import { RollFeed } from "../../../src/features/dashboard/roll-feed";
 import { OfflineFrame } from "../../../src/shell/offline";
-import { renderAsGm, renderAsPlayer } from "../../harness";
+import { api } from "../../../src/convex";
+import { fn, renderAsGm, renderAsPlayer } from "../../harness";
 import { ERROR_TEXT, actionRoll, campaignId, failQuery } from "./fixtures";
 
 const seenPages: unknown[][] = [];
@@ -66,7 +67,7 @@ test("the feed asks for 15 rows and shows the server dice", async () => {
   const loadMore = jest.fn();
   const screen = await renderAsPlayer(ui(false), {
     queries: {
-      "feed:list": { ...page, loadMore, results: [actionRoll()] },
+      [fn(api.feed.list)]: { ...page, loadMore, results: [actionRoll()] },
     },
   });
   expect(seenPages).toContainEqual([{ campaignId }, { initialNumItems: 15 }]);
@@ -77,8 +78,8 @@ test("the feed asks for 15 rows and shows the server dice", async () => {
   expect(screen.queryByRole("button", { name: "Roll in secret" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Clear feed" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Delete from the feed: Briar rolls" })).toBeNull();
-  expect(screen.client.subscribed).toEqual(["feed:list"]);
-  expect(screen.client.subscribed).not.toContain("countdownRolls:countedRows");
+  expect(screen.client.subscribed).toEqual([fn(api.feed.list)]);
+  expect(screen.client.subscribed).not.toContain(fn(api.countdownRolls.countedRows));
 });
 
 test("the GM can roll, reveal, delete, undo, and tick only after opening the sheet", async () => {
@@ -89,31 +90,31 @@ test("the GM can roll, reveal, delete, undo, and tick only after opening the she
   };
   const screen = await renderAsGm(ui(true), {
     queries: {
-      "feed:list": page,
-      "countdownRolls:countedRows": ["row-1"],
-      "countdownRolls:preview": {
+      [fn(api.feed.list)]: page,
+      [fn(api.countdownRolls.countedRows)]: ["row-1"],
+      [fn(api.countdownRolls.preview)]: {
         countdowns: [{ countdownId: "cd-1", name: "The Lure", amount: 2, ticked: false }],
       },
     },
     mutations: {
-      "rolls:gmRoll": record,
-      "rolls:reveal": record,
-      "feed:remove": record,
-      "actionLog:undo": record,
-      "countdownRolls:applyRoll": record,
+      [fn(api.rolls.gmRoll)]: record,
+      [fn(api.rolls.reveal)]: record,
+      [fn(api.feed.remove)]: record,
+      [fn(api.actionLog.undo)]: record,
+      [fn(api.countdownRolls.applyRoll)]: record,
     },
   });
-  expect(screen.client.subscribed).toEqual(["feed:list", "countdownRolls:countedRows"]);
-  expect(screen.client.subscribed).not.toContain("countdownRolls:preview");
+  expect(screen.client.subscribed).toEqual([fn(api.feed.list), fn(api.countdownRolls.countedRows)]);
+  expect(screen.client.subscribed).not.toContain(fn(api.countdownRolls.preview));
 
   await fireEvent.press(screen.getByRole("button", { name: "Roll in secret" }));
   await fireEvent.press(screen.getByRole("button", { name: "Reveal Briar rolls" }));
   await fireEvent.press(screen.getByRole("button", { name: "Delete from the feed: Briar rolls" }));
   await fireEvent.press(screen.getByRole("button", { name: "Undo Briar rolls" }));
-  expect(screen.client.called).toEqual(["rolls:gmRoll", "rolls:reveal", "feed:remove", "actionLog:undo"]);
+  expect(screen.client.called).toEqual([fn(api.rolls.gmRoll), fn(api.rolls.reveal), fn(api.feed.remove), fn(api.actionLog.undo)]);
 
   await fireEvent.press(screen.getByRole("button", { name: "Tick countdowns for Briar rolls" }));
-  expect(screen.client.subscribed).toContain("countdownRolls:preview");
+  expect(screen.client.subscribed).toContain(fn(api.countdownRolls.preview));
   expect(screen.getByText("The Lure: tick 2")).toBeTruthy();
   await fireEvent.press(screen.getByRole("button", { name: "Apply roll to countdowns" }));
   expect(calls.some((args) => {
@@ -126,18 +127,18 @@ test("the feed covers loading, empty, error, and an offline secret roll", async 
   const loading = await renderAsPlayer(ui(false), { queries: {} });
   expect(loading.getByText("Loading rolls")).toBeTruthy();
 
-  const empty = await renderAsPlayer(ui(false), { queries: { "feed:list": [] } });
+  const empty = await renderAsPlayer(ui(false), { queries: { [fn(api.feed.list)]: [] } });
   expect(empty.getByText("No rolls yet. Roll from a character sheet and it shows up here for everyone.")).toBeTruthy();
 
   jest.spyOn(console, "error").mockImplementation(() => undefined);
-  const broken = await renderAsPlayer(ui(false), { queries: { "feed:list": failQuery } });
+  const broken = await renderAsPlayer(ui(false), { queries: { [fn(api.feed.list)]: failQuery } });
   expect(broken.getByRole("header", { name: "Roll Feed" })).toBeTruthy();
   expect(broken.getByText(ERROR_TEXT)).toBeTruthy();
 
-  const offline = await renderAsGm(ui(true, true), { queries: { "feed:list": [] } });
+  const offline = await renderAsGm(ui(true, true), { queries: { [fn(api.feed.list)]: [] } });
   expect(offline.getByText("Showing the last update.")).toBeTruthy();
   const secret = offline.getByRole("button", { name: "Roll in secret" });
   expect(secret.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(secret);
-  expect(offline.client.called).not.toContain("rolls:gmRoll");
+  expect(offline.client.called).not.toContain(fn(api.rolls.gmRoll));
 });

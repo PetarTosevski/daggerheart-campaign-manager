@@ -7,7 +7,8 @@ import { CombatEditSlot } from "../../../src/features/combat-map/edit";
 import { CombatMapScreen } from "../../../src/features/combat-map";
 import { CampaignProvider, CampaignScreen } from "../../../src/shell/campaign-provider";
 import { OfflineFrame } from "../../../src/shell/offline";
-import { renderAsGm, renderAsPlayer } from "../../harness";
+import { api } from "../../../src/convex";
+import { fn, renderAsGm, renderAsPlayer } from "../../harness";
 import { campaignId, campaignRecord, editSlotQueries, liveLayout, playerViewOk } from "./fixtures";
 
 beforeEach(() => {
@@ -40,16 +41,16 @@ function editSlot(isGm: boolean) {
 test("a player never mounts the combat edit slot", async () => {
   const screen = await renderAsPlayer(combatScreen(), {
     queries: {
-      "campaigns:get": campaignRecord("player"),
-      "combatMaps:live": live,
-      "combatVision:playerView": view,
+      [fn(api.campaigns.get)]: campaignRecord("player"),
+      [fn(api.combatMaps.live)]: live,
+      [fn(api.combatVision.playerView)]: view,
     },
   });
   expect(screen.queryByTestId("combat-edit-slot", { includeHiddenElements: true })).toBeNull();
 });
 
 test("a closed GM edit slot does not subscribe to style or edit reads", async () => {
-  const forbidden = ["combatMapStyle:settings", "combatMapStyle:spriteSources", "combatMaps:get"];
+  const forbidden = [fn(api.combatMapStyle.settings), fn(api.combatMapStyle.spriteSources), fn(api.combatMaps.get)];
   const screen = await renderAsGm(editSlot(true), { queries: editSlotQueries(live) });
   expect(screen.getByRole("button", { name: "Open GM map editor" })).toBeTruthy();
   for (const name of forbidden) {
@@ -59,7 +60,7 @@ test("a closed GM edit slot does not subscribe to style or edit reads", async ()
 
 test("CombatEditSlot renders nothing for a player", async () => {
   const screen = await renderAsPlayer(editSlot(false), {
-    queries: { "campaigns:get": campaignRecord("player") },
+    queries: { [fn(api.campaigns.get)]: campaignRecord("player") },
   });
   expect(screen.queryByTestId("combat-edit-slot")).toBeNull();
 });
@@ -81,5 +82,5 @@ test("a GM sees the object palette after opening map editor and choosing Objects
 test("opening map editor subscribes to combatMapStyle settings", async () => {
   const screen = await renderAsGm(editSlot(true), { queries: editSlotQueries(live) });
   await fireEvent.press(screen.getByText("GM map editor"));
-  expect(screen.client.subscribed).toContain("combatMapStyle:settings");
+  expect(screen.client.subscribed).toContain(fn(api.combatMapStyle.settings));
 });

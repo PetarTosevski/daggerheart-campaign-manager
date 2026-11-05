@@ -4,7 +4,8 @@ import { fireEvent } from "@testing-library/react-native";
 import { resetMotionTest } from "../../theme/mock-reanimated";
 import { Countdowns } from "../../../src/features/dashboard/countdowns";
 import { OfflineFrame } from "../../../src/shell/offline";
-import { renderAsGm, renderAsPlayer } from "../../harness";
+import { api } from "../../../src/convex";
+import { fn, renderAsGm, renderAsPlayer } from "../../harness";
 import { ERROR_TEXT, campaignId, countdown, failQuery } from "./fixtures";
 
 jest.mock("expo-crypto", () => {
@@ -39,7 +40,7 @@ const gmRow = countdown({
 
 test("a player sees the server countdown and none of the GM tools", async () => {
   const screen = await renderAsPlayer(ui(false), {
-    queries: { "countdowns:listByCampaign": [playerRow] },
+    queries: { [fn(api.countdowns.listByCampaign)]: [playerRow] },
   });
   expect(screen.getByText("The Lure")).toBeTruthy();
   expect(screen.getByText("4 / 6")).toBeTruthy();
@@ -48,16 +49,16 @@ test("a player sees the server countdown and none of the GM tools", async () => 
   expect(screen.queryByRole("button", { name: "New chase" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Advance The Lure" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Arm countdown" })).toBeNull();
-  expect(screen.client.subscribed).toEqual(["countdowns:listByCampaign"]);
-  expect(screen.client.subscribed).not.toContain("countdownTracks:setStep");
+  expect(screen.client.subscribed).toEqual([fn(api.countdowns.listByCampaign)]);
+  expect(screen.client.subscribed).not.toContain(fn(api.countdownTracks.setStep));
 });
 
 test("a hidden step is shown only when the server sends it, and Advance is one intent", async () => {
   const calls: { countdownId: string; action: string; idempotencyKey: string }[] = [];
   const screen = await renderAsGm(ui(true), {
-    queries: { "countdowns:listByCampaign": [gmRow] },
+    queries: { [fn(api.countdowns.listByCampaign)]: [gmRow] },
     mutations: {
-      "countdowns:operate": (args) => {
+      [fn(api.countdowns.operate)]: (args) => {
         calls.push(args as { countdownId: string; action: string; idempotencyKey: string });
         return null;
       },
@@ -76,7 +77,7 @@ test("a hidden step is shown only when the server sends it, and Advance is one i
 
 test("a nameless countdown is Countdown", async () => {
   const screen = await renderAsPlayer(ui(false), {
-    queries: { "countdowns:listByCampaign": [countdown({ name: null, currentValue: null, startingValue: null })] },
+    queries: { [fn(api.countdowns.listByCampaign)]: [countdown({ name: null, currentValue: null, startingValue: null })] },
   });
   expect(screen.getByText("Countdown")).toBeTruthy();
   expect(screen.queryByText("4 / 6")).toBeNull();
@@ -86,21 +87,21 @@ test("countdowns cover loading, empty, error, and offline", async () => {
   const loading = await renderAsPlayer(ui(false), { queries: {} });
   expect(loading.getByText("Loading countdowns")).toBeTruthy();
 
-  const playerEmpty = await renderAsPlayer(ui(false), { queries: { "countdowns:listByCampaign": [] } });
+  const playerEmpty = await renderAsPlayer(ui(false), { queries: { [fn(api.countdowns.listByCampaign)]: [] } });
   expect(playerEmpty.getByText("No countdowns running.")).toBeTruthy();
 
-  const gmEmpty = await renderAsGm(ui(true), { queries: { "countdowns:listByCampaign": [] } });
+  const gmEmpty = await renderAsGm(ui(true), { queries: { [fn(api.countdowns.listByCampaign)]: [] } });
   expect(gmEmpty.getByText("No countdowns running. Start one from 20 down to 1.")).toBeTruthy();
 
   jest.spyOn(console, "error").mockImplementation(() => undefined);
-  const broken = await renderAsGm(ui(true), { queries: { "countdowns:listByCampaign": failQuery } });
+  const broken = await renderAsGm(ui(true), { queries: { [fn(api.countdowns.listByCampaign)]: failQuery } });
   expect(broken.getByRole("header", { name: "Countdowns" })).toBeTruthy();
   expect(broken.getByText(ERROR_TEXT)).toBeTruthy();
 
-  const offline = await renderAsGm(ui(true, true), { queries: { "countdowns:listByCampaign": [gmRow] } });
+  const offline = await renderAsGm(ui(true, true), { queries: { [fn(api.countdowns.listByCampaign)]: [gmRow] } });
   expect(offline.getByText("Showing the last update.")).toBeTruthy();
   const advance = offline.getByRole("button", { name: "Advance The Lure" });
   expect(advance.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(advance);
-  expect(offline.client.called).not.toContain("countdowns:operate");
+  expect(offline.client.called).not.toContain(fn(api.countdowns.operate));
 });

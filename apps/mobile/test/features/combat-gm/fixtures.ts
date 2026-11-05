@@ -1,5 +1,7 @@
 import type { CombatMapLayout } from "../../../src/features/combat-map/contract";
 import { campaignId, campaignRecord, liveLayout, playerViewOk } from "../combat-view/fixtures";
+import { api } from "../../../src/convex";
+import { fn } from "../../harness";
 
 export { campaignId, campaignRecord, liveLayout, playerViewOk };
 
@@ -77,19 +79,19 @@ export function tokenList() {
 
 export function gmSlotQueries(live: CombatMapLayout) {
   return {
-    "campaigns:get": campaignRecord("gm"),
-    "campaigns:fear": 2,
-    "combatMaps:live": live,
-    "combatVision:playerView": { state: "noCharacter", mapId: live._id },
-    "combatMaps:list": mapList(live),
-    "combatTokensReads:combatants": { partyLeft: 1, encounter: { _id: "enc-1", name: "Ambush" }, queue: [] },
-    "combatTokensReads:list": tokenList(),
-    "combatCardsReads:handSharing": { playersSeeHands: true, hidden: [] },
-    "combatVision:doors": { mapId: live._id, doors: [] },
-    "encounters:list": {
+    [fn(api.campaigns.get)]: campaignRecord("gm"),
+    [fn(api.campaigns.fear)]: 2,
+    [fn(api.combatMaps.live)]: live,
+    [fn(api.combatVision.playerView)]: { state: "noCharacter", mapId: live._id },
+    [fn(api.combatMaps.list)]: mapList(live),
+    [fn(api.combatTokensReads.combatants)]: { partyLeft: 1, encounter: { _id: "enc-1", name: "Ambush" }, queue: [] },
+    [fn(api.combatTokensReads.list)]: tokenList(),
+    [fn(api.combatCardsReads.handSharing)]: { playersSeeHands: true, hidden: [] },
+    [fn(api.combatVision.doors)]: { mapId: live._id, doors: [] },
+    [fn(api.encounters.list)]: {
       active: [{ _id: "enc-1", name: "Ambush", status: "running" as const }],
       planned: [],
     },
-    "combatRequestsReads:mine": [],
+    [fn(api.combatRequestsReads.mine)]: [],
   };
 }

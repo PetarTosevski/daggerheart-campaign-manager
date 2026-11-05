@@ -4,7 +4,7 @@ import { useMutation } from "convex/react";
 import { scanGmFunctions } from "../../harness/gm-functions";
 import { fireEvent } from "@testing-library/react-native";
 
-import { renderAsPlayer } from "../../harness";
+import { fn, renderAsPlayer } from "../../harness";
 import { resetMotionTest } from "../../theme/mock-reanimated";
 import { api } from "../../../src/convex";
 import { CombatPlaySlot } from "../../../src/features/combat-map/play";
@@ -40,9 +40,9 @@ test("combat play subscribes to player combat mutations only", async () => {
   const props = slotProps();
   const screen = await renderAsPlayer(<CombatPlaySlot {...props} />, {
     queries: {
-      "combatCardsReads:hand": { characterId: okCharacterId(props), loadout: [], vault: [] },
-      "charactersReads:get": characterForAttack(),
-      "adversaryActions:pending": [],
+      [fn(api.combatCardsReads.hand)]: { characterId: okCharacterId(props), loadout: [], vault: [] },
+      [fn(api.charactersReads.get)]: characterForAttack(),
+      [fn(api.adversaryActionsReads.pending)]: [],
     },
   });
   expect(screen.getByTestId("combat-play-slot")).toBeTruthy();
@@ -50,6 +50,6 @@ test("combat play subscribes to player combat mutations only", async () => {
   expect(screen.getByTestId("combat-play-token")).toBeTruthy();
   expectNoGm(screen);
   expect([...screen.client.subscribed].sort()).toEqual(
-    ["adversaryActions:pending", "charactersReads:get", "combatCardsReads:hand"].sort(),
+    [fn(api.adversaryActionsReads.pending), fn(api.charactersReads.get), fn(api.combatCardsReads.hand)].sort(),
   );
 });

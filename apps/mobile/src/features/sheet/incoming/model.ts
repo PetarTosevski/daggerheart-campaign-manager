@@ -9,7 +9,7 @@ import type { api } from "../../../convex";
  * `src/components/combat-map/actions/reactions/model.ts`.
  */
 
-export type HitView = FunctionReturnType<typeof api.adversaryActions.pending>[number];
+export type HitView = FunctionReturnType<typeof api.adversaryActionsReads.pending>[number];
 export type Severity = NonNullable<HitView["severity"]>;
 export type ArmorStep = NonNullable<HitView["armorPreview"]>[number];
 

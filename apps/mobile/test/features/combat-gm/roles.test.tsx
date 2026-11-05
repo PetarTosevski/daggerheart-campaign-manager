@@ -5,7 +5,8 @@ import { resetMotionTest } from "../../theme/mock-reanimated";
 import { CombatGmSlot } from "../../../src/features/combat-map/gm";
 import { CombatGmTools } from "../../../src/features/combat-map/gm/tools";
 import { OfflineFrame } from "../../../src/shell/offline";
-import { renderAsGm, renderAsPlayer } from "../../harness";
+import { api } from "../../../src/convex";
+import { fn, renderAsGm, renderAsPlayer } from "../../harness";
 import { campaignId, gmSlotQueries, liveLayout, playerViewOk } from "./fixtures";
 
 jest.mock("expo-crypto", () => {
@@ -42,7 +43,7 @@ async function openTools(screen: Awaited<ReturnType<typeof renderAsGm>>) {
 }
 
 test("a closed GM slot does not subscribe to GM-only combat reads", async () => {
-  const forbidden = ["combatMaps:list", "combatTokensReads:list", "combatVision:previewAs"];
+  const forbidden = [fn(api.combatMaps.list), fn(api.combatTokensReads.list), fn(api.combatVision.previewAs)];
   const screen = await renderAsGm(gmSlot(true), { queries: gmSlotQueries(live) });
   expect(screen.getByRole("button", { name: "Open GM combat tools" })).toBeTruthy();
   for (const name of forbidden) {
@@ -53,7 +54,7 @@ test("a closed GM slot does not subscribe to GM-only combat reads", async () => 
 test("CombatGmSlot renders nothing for a player and never subscribes to GM combat queries", async () => {
   const screen = await renderAsPlayer(gmSlot(false), {
     queries: {
-      "campaigns:fear": 0,
+      [fn(api.campaigns.fear)]: 0,
     },
   });
   expect(screen.queryByTestId("combat-gm-slot")).toBeNull();
@@ -66,12 +67,12 @@ test("the GM combat tools subscribe to map, token, vision and encounter reads", 
   expect(screen.getByTestId("combat-gm-slot")).toBeTruthy();
   expect(screen.getByTestId("combat-fear")).toBeTruthy();
   expect(screen.getByTestId("combat-hand-sharing")).toBeTruthy();
-  expect(screen.client.subscribed).toContain("combatMaps:list");
-  expect(screen.client.subscribed).toContain("combatTokensReads:list");
-  expect(screen.client.subscribed).toContain("combatTokensReads:combatants");
-  expect(screen.client.subscribed).toContain("combatCardsReads:handSharing");
-  expect(screen.client.subscribed).toContain("encounters:list");
-  expect(screen.client.subscribed).toContain("combatRequestsReads:mine");
+  expect(screen.client.subscribed).toContain(fn(api.combatMaps.list));
+  expect(screen.client.subscribed).toContain(fn(api.combatTokensReads.list));
+  expect(screen.client.subscribed).toContain(fn(api.combatTokensReads.combatants));
+  expect(screen.client.subscribed).toContain(fn(api.combatCardsReads.handSharing));
+  expect(screen.client.subscribed).toContain(fn(api.encounters.list));
+  expect(screen.client.subscribed).toContain(fn(api.combatRequestsReads.mine));
 });
 
 test("Make live sends combatMaps:setLive", async () => {
@@ -79,7 +80,7 @@ test("Make live sends combatMaps:setLive", async () => {
   const screen = await renderAsGm(gmSlot(true, true), {
     queries: gmSlotQueries(live),
     mutations: {
-      "combatMaps:setLive": (args) => {
+      [fn(api.combatMaps.setLive)]: (args) => {
         calls.push(args);
         return null;
       },
@@ -95,7 +96,7 @@ test("Fear increase sends fear:adjust", async () => {
   const screen = await renderAsGm(gmSlot(true, true), {
     queries: gmSlotQueries(live),
     mutations: {
-      "fear:adjust": (args) => {
+      [fn(api.fear.adjust)]: (args) => {
         calls.push(args);
         return null;
       },
@@ -111,7 +112,7 @@ test("hand sharing toggles campaigns:setPlayersSeeHands", async () => {
   const screen = await renderAsGm(gmSlot(true, true), {
     queries: gmSlotQueries(live),
     mutations: {
-      "campaigns:setPlayersSeeHands": (args) => {
+      [fn(api.campaigns.setPlayersSeeHands)]: (args) => {
         calls.push(args);
         return null;
       },
@@ -126,9 +127,9 @@ test("preview as a PC subscribes to combatVision:previewAs", async () => {
   const screen = await renderAsGm(gmSlot(true, true), {
     queries: {
       ...gmSlotQueries(live),
-      "combatVision:previewAs": playerViewOk(),
+      [fn(api.combatVision.previewAs)]: playerViewOk(),
     },
   });
   await fireEvent.press(screen.getByRole("button", { name: "Briar" }));
-  expect(screen.client.subscribed).toContain("combatVision:previewAs");
+  expect(screen.client.subscribed).toContain(fn(api.combatVision.previewAs));
 });

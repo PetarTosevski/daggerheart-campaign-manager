@@ -15,8 +15,8 @@ import {
   missingByStep,
   normalizeWizard,
 } from "../../../src/features/party/create/wizard-logic";
-import type { Id } from "../../../src/convex";
-import { renderAsGm, renderAsPlayer } from "../../harness";
+import { api, type Id } from "../../../src/convex";
+import { fn, renderAsGm, renderAsPlayer } from "../../harness";
 import { campaignRecord, inCampaign, queriesFor } from "../party/fixture";
 
 const mockReplace = jest.fn();
@@ -84,7 +84,7 @@ test("a restored complete draft can call characters.create", async () => {
       ...queriesFor("player", []),
     },
     mutations: {
-      "characters:create": (args) => {
+      [fn(api.characters.create)]: (args) => {
         calls.push(args);
         return { characterId: "char-new" };
       },
@@ -102,19 +102,19 @@ test("a restored complete draft can call characters.create", async () => {
     draft: expect.objectContaining({ name: "Brakka Stonefist", classId: "guardian" }),
   });
   expect(mockReplace).toHaveBeenCalledWith("/campaign/campaign-1/party/char-new");
-  expect(screen.client.subscribed).toEqual(["campaigns:get", "charactersReads:listByCampaign"]);
+  expect(screen.client.subscribed).toEqual([fn(api.campaigns.get), fn(api.charactersReads.listByCampaign)]);
 });
 
 test("a player never subscribes to photoImport", async () => {
   const screen = await renderAsPlayer(inCampaign("player", <PartyScreen />), {
     queries: {
       ...queriesFor("player", []),
-      "photoImport:available": true,
+      [fn(api.photoImport.available)]: true,
     },
   });
   expect(screen.getByRole("button", { name: "+ Create character" })).toBeTruthy();
   expect(screen.queryByText("Import from photo")).toBeNull();
-  expect(screen.client.subscribed).not.toContain("photoImport:available");
+  expect(screen.client.subscribed).not.toContain(fn(api.photoImport.available));
 });
 
 test("the GM sees photo import when available", async () => {
@@ -122,21 +122,21 @@ test("the GM sees photo import when available", async () => {
     <PhotoImportButton campaignId={"campaign-1" as Id<"campaigns">} hopeAndFear isGm />,
     {
       queries: {
-        "photoImport:available": true,
+        [fn(api.photoImport.available)]: true,
       },
     },
   );
   await waitFor(() => {
     expect(screen.getByText("Import from photo")).toBeTruthy();
   });
-  expect(screen.client.subscribed).toEqual(["photoImport:available"]);
+  expect(screen.client.subscribed).toEqual([fn(api.photoImport.available)]);
 });
 
 test("CreateCharacterSlot links to the wizard for the GM", async () => {
   const screen = await renderAsGm(inCampaign("gm", <CreateCharacterSlot campaignId="campaign-1" />), {
     queries: {
-      "campaigns:get": campaignRecord("gm"),
-      "photoImport:available": false,
+      [fn(api.campaigns.get)]: campaignRecord("gm"),
+      [fn(api.photoImport.available)]: false,
     },
   });
   expect(screen.getByRole("button", { name: "+ Create character" })).toBeTruthy();

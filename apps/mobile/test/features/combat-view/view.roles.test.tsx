@@ -1,8 +1,17 @@
 import { beforeEach, expect, jest, test } from "@jest/globals";
 import { fireEvent, waitFor } from "@testing-library/react-native";
 
-import "../../theme/mock-reanimated";
 import { resetMotionTest } from "../../theme/mock-reanimated";
+import { CombatMapScreen } from "../../../src/features/combat-map";
+import { CampaignProvider, CampaignScreen } from "../../../src/shell/campaign-provider";
+import { OfflineFrame } from "../../../src/shell/offline";
+import { api } from "../../../src/convex";
+import { fn, renderAsGm, renderAsPlayer } from "../../harness";
+import { campaignId, campaignRecord, liveLayout, playerViewOk } from "./fixtures";
+
+jest.mock("expo-crypto", () => ({
+  randomUUID: () => "00000000-0000-4000-8000-000000000001",
+}));
 
 jest.mock("react-native-gesture-handler", () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -23,11 +32,6 @@ jest.mock("react-native-gesture-handler", () => {
     GestureDetector: ({ children }: { children: React.ReactNode }) => React.createElement(View, null, children),
   };
 });
-import { CombatMapScreen } from "../../../src/features/combat-map";
-import { CampaignProvider, CampaignScreen } from "../../../src/shell/campaign-provider";
-import { OfflineFrame } from "../../../src/shell/offline";
-import { renderAsGm, renderAsPlayer } from "../../harness";
-import { campaignId, campaignRecord, liveLayout, playerViewOk } from "./fixtures";
 
 jest.mock("@shopify/react-native-skia", () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -72,15 +76,15 @@ const live = liveLayout();
 const view = playerViewOk();
 
 const playerQueries = {
-  "campaigns:get": campaignRecord("player"),
-  "combatMaps:live": live,
-  "combatVision:playerView": view,
+  [fn(api.campaigns.get)]: campaignRecord("player"),
+  [fn(api.combatMaps.live)]: live,
+  [fn(api.combatVision.playerView)]: view,
 };
 
 const gmQueries = {
-  "campaigns:get": campaignRecord("gm"),
-  "combatMaps:live": live,
-  "combatVision:playerView": { state: "noCharacter", mapId: live._id },
+  [fn(api.campaigns.get)]: campaignRecord("gm"),
+  [fn(api.combatMaps.live)]: live,
+  [fn(api.combatVision.playerView)]: { state: "noCharacter", mapId: live._id },
 };
 
 function layoutViewport(screen: Awaited<ReturnType<typeof renderAsPlayer>>) {
@@ -89,17 +93,17 @@ function layoutViewport(screen: Awaited<ReturnType<typeof renderAsPlayer>>) {
   });
 }
 
-const forbidden = ["combatMaps:list", "combatMaps:get", "combatTokensReads:list", "combatVision:previewAs"];
+const forbidden = [fn(api.combatMaps.list), fn(api.combatMaps.get), fn(api.combatTokensReads.list), fn(api.combatVision.previewAs)];
 
 test("a player combat screen subscribes to live and playerView only among combat queries", async () => {
   const screen = await renderAsPlayer(screenFor(), { queries: playerQueries });
   layoutViewport(screen);
   expect(screen.client.subscribed).toEqual([
-    "campaigns:get",
-    "combatMaps:live",
-    "combatVision:playerView",
-    "combatHud:party",
-    "combatHud:scene",
+    fn(api.campaigns.get),
+    fn(api.combatMaps.live),
+    fn(api.combatVision.playerView),
+    fn(api.combatHud.party),
+    fn(api.combatHud.scene),
   ]);
   for (const name of forbidden) {
     expect(screen.client.subscribed).not.toContain(name);
@@ -113,8 +117,8 @@ test("a player combat screen subscribes to live and playerView only among combat
 test("a GM combat screen uses live and playerView and never GM-only combat reads", async () => {
   const screen = await renderAsGm(screenFor(), { queries: gmQueries });
   layoutViewport(screen);
-  expect(screen.client.subscribed).toContain("combatMaps:live");
-  expect(screen.client.subscribed).toContain("combatVision:playerView");
+  expect(screen.client.subscribed).toContain(fn(api.combatMaps.live));
+  expect(screen.client.subscribed).toContain(fn(api.combatVision.playerView));
   for (const name of forbidden) {
     expect(screen.client.subscribed).not.toContain(name);
   }
@@ -127,26 +131,26 @@ test("shows an empty state when no map is live", async () => {
   const screen = await renderAsPlayer(screenFor(), {
     queries: {
       ...playerQueries,
-      "combatMaps:live": null,
-      "combatVision:playerView": { state: "noMap" },
+      [fn(api.combatMaps.live)]: null,
+      [fn(api.combatVision.playerView)]: { state: "noMap" },
     },
   });
   expect(screen.getByText("The GM has not shown a map yet.")).toBeTruthy();
   expect(screen.queryByTestId("combat-empty-gm")).toBeNull();
-  expect(screen.client.subscribed).not.toContain("combatMaps:list");
+  expect(screen.client.subscribed).not.toContain(fn(api.combatMaps.list));
 });
 
 test("a GM with no live map can start one without opening the other GM tools", async () => {
   const screen = await renderAsGm(screenFor(), {
     queries: {
       ...gmQueries,
-      "combatMaps:live": null,
-      "combatVision:playerView": { state: "noMap" },
-      "combatMaps:list": [],
+      [fn(api.combatMaps.live)]: null,
+      [fn(api.combatVision.playerView)]: { state: "noMap" },
+      [fn(api.combatMaps.list)]: [],
     },
   });
   expect(screen.getByTestId("combat-empty-gm")).toBeTruthy();
   expect(screen.getByText("New Small map")).toBeTruthy();
-  expect(screen.client.subscribed).toContain("combatMaps:list");
-  expect(screen.client.subscribed).not.toContain("combatTokensReads:list");
+  expect(screen.client.subscribed).toContain(fn(api.combatMaps.list));
+  expect(screen.client.subscribed).not.toContain(fn(api.combatTokensReads.list));
 });

@@ -4,7 +4,8 @@ import { fireEvent } from "@testing-library/react-native";
 import { resetMotionTest } from "../../theme/mock-reanimated";
 import { FearPanel } from "../../../src/features/dashboard/fear";
 import { OfflineFrame } from "../../../src/shell/offline";
-import { renderAsGm, renderAsPlayer } from "../../harness";
+import { api } from "../../../src/convex";
+import { fn, renderAsGm, renderAsPlayer } from "../../harness";
 import { ERROR_TEXT, campaignId, failQuery } from "./fixtures";
 
 jest.mock("expo-crypto", () => {
@@ -34,9 +35,9 @@ function fearUi(isGm: boolean, offline = false) {
 test("two taps send two increase intents and show an optimistic +2", async () => {
   const calls: FearCall[] = [];
   const screen = await renderAsGm(fearUi(true), {
-    queries: { "campaigns:fear": 3 },
+    queries: { [fn(api.campaigns.fear)]: 3 },
     mutations: {
-      "fear:adjust": (args) => {
+      [fn(api.fear.adjust)]: (args) => {
         calls.push(args as FearCall);
         return null;
       },
@@ -55,15 +56,15 @@ test("two taps send two increase intents and show an optimistic +2", async () =>
   expect(calls[0]?.campaignId).toBe(campaignId);
   expect(calls[1]?.campaignId).toBe(campaignId);
   expect(calls[0]?.idempotencyKey).not.toBe(calls[1]?.idempotencyKey);
-  expect(screen.client.called).toEqual(["fear:adjust", "fear:adjust"]);
+  expect(screen.client.called).toEqual([fn(api.fear.adjust), fn(api.fear.adjust)]);
 });
 
 test("a decrease is one intent, and Fear does not pass 0 or 12", async () => {
   const calls: FearCall[] = [];
   const low = await renderAsGm(fearUi(true), {
-    queries: { "campaigns:fear": 0 },
+    queries: { [fn(api.campaigns.fear)]: 0 },
     mutations: {
-      "fear:adjust": (args) => {
+      [fn(api.fear.adjust)]: (args) => {
         calls.push(args as FearCall);
         return null;
       },
@@ -76,9 +77,9 @@ test("a decrease is one intent, and Fear does not pass 0 or 12", async () => {
 
   calls.length = 0;
   const high = await renderAsGm(fearUi(true), {
-    queries: { "campaigns:fear": 12 },
+    queries: { [fn(api.campaigns.fear)]: 12 },
     mutations: {
-      "fear:adjust": (args) => {
+      [fn(api.fear.adjust)]: (args) => {
         calls.push(args as FearCall);
         return null;
       },
@@ -90,12 +91,12 @@ test("a decrease is one intent, and Fear does not pass 0 or 12", async () => {
 });
 
 test("a player sees the number and no Fear controls", async () => {
-  const screen = await renderAsPlayer(fearUi(false), { queries: { "campaigns:fear": 3 } });
+  const screen = await renderAsPlayer(fearUi(false), { queries: { [fn(api.campaigns.fear)]: 3 } });
   expect(screen.getByText("3")).toBeTruthy();
   expect(screen.getByLabelText("Fear")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Increase Fear" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Decrease Fear" })).toBeNull();
-  expect(screen.client.subscribed).toEqual(["campaigns:fear"]);
+  expect(screen.client.subscribed).toEqual([fn(api.campaigns.fear)]);
 });
 
 test("Fear covers loading, and a failed query stays inside the panel", async () => {
@@ -103,7 +104,7 @@ test("Fear covers loading, and a failed query stays inside the panel", async () 
   expect(loading.getByText("Loading Fear")).toBeTruthy();
 
   jest.spyOn(console, "error").mockImplementation(() => undefined);
-  const broken = await renderAsPlayer(fearUi(false), { queries: { "campaigns:fear": failQuery } });
+  const broken = await renderAsPlayer(fearUi(false), { queries: { [fn(api.campaigns.fear)]: failQuery } });
   expect(broken.getByRole("header", { name: "GM Fear" })).toBeTruthy();
   expect(broken.getByText(ERROR_TEXT)).toBeTruthy();
 });
@@ -111,9 +112,9 @@ test("Fear covers loading, and a failed query stays inside the panel", async () 
 test("offline disables Fear plus and minus", async () => {
   const calls: unknown[] = [];
   const screen = await renderAsGm(fearUi(true, true), {
-    queries: { "campaigns:fear": 3 },
+    queries: { [fn(api.campaigns.fear)]: 3 },
     mutations: {
-      "fear:adjust": (args) => {
+      [fn(api.fear.adjust)]: (args) => {
         calls.push(args);
         return null;
       },

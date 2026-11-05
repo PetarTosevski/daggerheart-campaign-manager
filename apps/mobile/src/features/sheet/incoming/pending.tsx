@@ -65,7 +65,7 @@ export function PendingHits({
   characterId: Id<"characters">;
   characterName: string;
 }) {
-  const views = useQuery(api.adversaryActions.pending, { campaignId, characterId }) as HitView[] | undefined;
+  const views = useQuery(api.adversaryActionsReads.pending, { campaignId, characterId });
   const respond = useRespond(campaignId, characterId);
   if (views === undefined || views.length === 0) return null;
   const owed = views.filter((v) => v.awaiting);

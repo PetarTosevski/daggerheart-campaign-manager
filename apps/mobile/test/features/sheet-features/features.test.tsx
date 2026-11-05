@@ -5,7 +5,7 @@ import { fireEvent } from "@testing-library/react-native";
 import { useMutation } from "convex/react";
 
 import { scanGmFunctions } from "../../harness/gm-functions";
-import { renderAsGm, renderAsPlayer } from "../../harness";
+import { fn, renderAsGm, renderAsPlayer } from "../../harness";
 import { resetMotionTest } from "../../theme/mock-reanimated";
 import { api } from "../../../src/convex";
 import { FeaturesSlot } from "../../../src/features/sheet/features";
@@ -159,7 +159,7 @@ test("a warrior on Witherwild does not subscribe to character extras", async () 
     inCampaign(<FeaturesSlot {...slotProps(character)} />),
     {
       queries: {
-        "campaigns:get": {
+        [fn(api.campaigns.get)]: {
           _id: "campaign-1",
           frameId: "witherwild",
           name: "Table",
@@ -177,8 +177,8 @@ test("a warrior on Witherwild does not subscribe to character extras", async () 
     },
   );
   expect(screen.getByLabelText("Features slot for Mira")).toBeTruthy();
-  expect(screen.client.subscribed).toEqual(["campaigns:get"]);
-  expect(screen.client.subscribed).not.toContain("characterExtras:get");
+  expect(screen.client.subscribed).toEqual([fn(api.campaigns.get)]);
+  expect(screen.client.subscribed).not.toContain(fn(api.characterExtras.get));
   expectNoGm(screen);
 });
 
@@ -187,7 +187,7 @@ test("lunar phases show for a Moon Witch at mastery and bump the moon die", asyn
   const calls: unknown[] = [];
   const screen = await renderAsPlayer(inCampaign(<FeaturesSlot {...slotProps(character)} />), {
     queries: {
-      "campaigns:get": {
+      [fn(api.campaigns.get)]: {
         _id: "campaign-1",
         frameId: "witherwild",
         name: "Table",
@@ -203,7 +203,7 @@ test("lunar phases show for a Moon Witch at mastery and bump the moon die", asyn
       },
     },
     mutations: {
-      "sessionFeatures:bumpMoonDie": (args) => {
+      [fn(api.sessionFeatures.bumpMoonDie)]: (args) => {
         calls.push(args);
         return null;
       },
@@ -268,7 +268,7 @@ test("session chips show Slayer dice for a Slayer holder", async () => {
   };
   const screen = await renderAsPlayer(inCampaign(<FeaturesSlot {...slotProps(withSlayer)} />), {
     queries: {
-      "campaigns:get": {
+      [fn(api.campaigns.get)]: {
         _id: "campaign-1",
         frameId: "witherwild",
         name: "Table",
@@ -329,7 +329,7 @@ test("a druid opens the Beastform sheet from class extras", async () => {
   if (!character) throw new Error("fixture");
   const screen = await renderAsPlayer(inCampaign(<FeaturesSlot {...slotProps(character)} />), {
     queries: {
-      "campaigns:get": {
+      [fn(api.campaigns.get)]: {
         _id: "campaign-1",
         frameId: "witherwild",
         name: "Table",
@@ -343,7 +343,7 @@ test("a druid opens the Beastform sheet from class extras", async () => {
         lastOpenedAt: 1,
         players: 2,
       },
-      "characterExtras:get": {
+      [fn(api.characterExtras.get)]: {
         canEdit: true,
         level: 3,
         tier: 1,
@@ -359,7 +359,7 @@ test("a druid opens the Beastform sheet from class extras", async () => {
   });
   await fireEvent.press(screen.getByRole("button", { name: "Beastform" }));
   expect(screen.getByRole("header", { name: "Druid Beastform" })).toBeTruthy();
-  expect(screen.client.subscribed).toContain("characterExtras:get");
+  expect(screen.client.subscribed).toContain(fn(api.characterExtras.get));
   expectNoGm(screen);
 });
 
@@ -367,7 +367,7 @@ test("the GM sees the same features region without GM-only calls", async () => {
   const character = moonCharacter();
   const screen = await renderAsGm(inCampaign(<FeaturesSlot {...slotProps(character)} isGm />), {
     queries: {
-      "campaigns:get": {
+      [fn(api.campaigns.get)]: {
         _id: "campaign-1",
         frameId: "witherwild",
         name: "Table",

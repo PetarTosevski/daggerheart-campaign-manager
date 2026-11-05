@@ -4,7 +4,8 @@ import { fireEvent } from "@testing-library/react-native";
 import { resetMotionTest } from "../../theme/mock-reanimated";
 import { IncomingSlot } from "../../../src/features/sheet/incoming";
 import type { SheetSlotProps } from "../../../src/features/sheet/contract";
-import { renderAsPlayer } from "../../harness";
+import { api } from "../../../src/convex";
+import { fn, renderAsPlayer } from "../../harness";
 import { readCharacter } from "../../../src/features/sheet/types";
 import { characterRecord } from "../party/fixture";
 
@@ -52,9 +53,9 @@ function slotProps(overrides: Partial<SheetSlotProps> = {}): SheetSlotProps {
 test("incoming hit answers with adversaryActions:respond", async () => {
   const calls: unknown[] = [];
   const screen = await renderAsPlayer(<IncomingSlot {...slotProps()} />, {
-    queries: { "adversaryActions:pending": [miraHit] },
+    queries: { [fn(api.adversaryActionsReads.pending)]: [miraHit] },
     mutations: {
-      "adversaryActions:respond": (args) => {
+      [fn(api.adversaryActions.respond)]: (args) => {
         calls.push(args);
         return { status: "open", requestId: REQ };
       },
@@ -68,7 +69,7 @@ test("incoming hit answers with adversaryActions:respond", async () => {
     characterId: "char-1",
     choice: { kind: "armor", slots: 1 },
   });
-  expect(screen.client.subscribed).toEqual(["adversaryActions:pending"]);
+  expect(screen.client.subscribed).toEqual([fn(api.adversaryActionsReads.pending)]);
 });
 
 test("a reader does not mount the incoming slot", async () => {

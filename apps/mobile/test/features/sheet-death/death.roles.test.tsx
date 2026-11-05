@@ -4,7 +4,8 @@ import { fireEvent } from "@testing-library/react-native";
 import { resetMotionTest } from "../../theme/mock-reanimated";
 import { DeathSlot } from "../../../src/features/sheet/death";
 import type { SheetSlotProps } from "../../../src/features/sheet/contract";
-import { renderAsGm, renderAsPlayer } from "../../harness";
+import { api } from "../../../src/convex";
+import { fn, renderAsGm, renderAsPlayer } from "../../harness";
 import { readCharacter } from "../../../src/features/sheet/types";
 import { characterRecord } from "../party/fixture";
 
@@ -44,9 +45,9 @@ function awayCharacter(isGm: boolean): SheetSlotProps {
 test("the GM settles a less-lethal away request; a player only sees Requested", async () => {
   const calls: unknown[] = [];
   const gm = await renderAsGm(<DeathSlot {...awayCharacter(true)} />, {
-    queries: { "deathMoves:state": deathState },
+    queries: { [fn(api.deathMoves.state)]: deathState },
     mutations: {
-      "deathMoves:settleAway": (args) => {
+      [fn(api.deathMoves.settleAway)]: (args) => {
         calls.push(args);
         return null;
       },
@@ -57,7 +58,7 @@ test("the GM settles a less-lethal away request; a player only sees Requested", 
   expect(calls[0]).toMatchObject({ characterId: "char-1", reason: "infirmary" });
 
   const player = await renderAsPlayer(<DeathSlot {...awayCharacter(false)} />, {
-    queries: { "deathMoves:state": deathState },
+    queries: { [fn(api.deathMoves.state)]: deathState },
   });
   expect(player.getByTestId("death-away-requested")).toBeTruthy();
   expect(player.queryByText("Confirm")).toBeNull();
@@ -66,12 +67,12 @@ test("the GM settles a less-lethal away request; a player only sees Requested", 
 
 test("Return to play is GM-only", async () => {
   const gm = await renderAsGm(<DeathSlot {...awayCharacter(true)} />, {
-    queries: { "deathMoves:state": { ...deathState, awayRequested: false } },
+    queries: { [fn(api.deathMoves.state)]: { ...deathState, awayRequested: false } },
   });
   expect(gm.getByText("Return to play")).toBeTruthy();
 
   const player = await renderAsPlayer(<DeathSlot {...awayCharacter(false)} />, {
-    queries: { "deathMoves:state": { ...deathState, awayRequested: false } },
+    queries: { [fn(api.deathMoves.state)]: { ...deathState, awayRequested: false } },
   });
   expect(player.queryByText("Return to play")).toBeNull();
 });
@@ -88,9 +89,9 @@ test("applyDamage sends one keyed mutation per apply", async () => {
     character,
   };
   const screen = await renderAsPlayer(<DeathSlot {...props} />, {
-    queries: { "deathMoves:state": { ...deathState, lessLethal: false, awayRequested: false } },
+    queries: { [fn(api.deathMoves.state)]: { ...deathState, lessLethal: false, awayRequested: false } },
     mutations: {
-      "characters:applyDamage": (args) => {
+      [fn(api.characters.applyDamage)]: (args) => {
         calls.push(args);
         return { severity: "major", marks: 2, hp: 4, armorMarked: 0 };
       },

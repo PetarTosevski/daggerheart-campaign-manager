@@ -1,4 +1,4 @@
-import { beforeEach, expect, test } from "@jest/globals";
+import { beforeEach, expect, jest, test } from "@jest/globals";
 import { Text } from "react-native";
 
 import { resetMotionTest } from "../../theme/mock-reanimated";
@@ -7,6 +7,10 @@ import type { SheetSlotProps } from "../../../src/features/sheet/contract";
 import { renderAsPlayer } from "../../harness";
 import { characterRecord } from "../party/fixture";
 import { readCharacter } from "../../../src/features/sheet/types";
+
+jest.mock("expo-crypto", () => ({
+  randomUUID: () => "00000000-0000-4000-8000-000000000001",
+}));
 
 beforeEach(() => {
   resetMotionTest();

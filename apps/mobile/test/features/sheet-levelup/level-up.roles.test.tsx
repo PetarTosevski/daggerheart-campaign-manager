@@ -5,7 +5,7 @@ import { fireEvent } from "@testing-library/react-native";
 import { useMutation } from "convex/react";
 
 import { scanGmFunctions } from "../../harness/gm-functions";
-import { renderAsGm, renderAsPlayer, type RenderedScreen } from "../../harness";
+import { fn, renderAsGm, renderAsPlayer, type RenderedScreen } from "../../harness";
 import { resetMotionTest } from "../../theme/mock-reanimated";
 import { api, type Id } from "../../../src/convex";
 import { readSheet } from "../../../../../convex/lib/characterSheet";
@@ -112,7 +112,7 @@ test("a player with a pending level-up starts the ribbon and finishes with level
   const character = pendingCharacter();
   const screen = await renderAsPlayer(<LevelUpSlot {...slotProps(character, "player")} />, {
     mutations: {
-      "levelUp:apply": (args) => {
+      [fn(api.levelUp.apply)]: (args) => {
         calls.push(args);
         return { level: 2 };
       },
@@ -137,11 +137,11 @@ test("a player editor subscribes to canUndo only when undo is offered", async ()
   const character = leveledCharacter();
   const screen = await renderAsPlayer(<LevelUpSlot {...slotProps(character, "player")} />, {
     queries: {
-      "levelUp:canUndo": true,
+      [fn(api.levelUp.canUndo)]: true,
     },
   });
   expect(screen.getByRole("button", { name: "Undo level 2" })).toBeTruthy();
-  expect(screen.client.subscribed).toContain("levelUp:canUndo");
+  expect(screen.client.subscribed).toContain(fn(api.levelUp.canUndo));
   expectNoGm(screen);
 });
 
@@ -150,7 +150,7 @@ test("undo sends levelUp.undoLast; the GM never subscribes to canUndo", async ()
   const character = leveledCharacter();
   const gm = await renderAsGm(<LevelUpSlot {...slotProps(character, "gm")} />, {
     mutations: {
-      "levelUp:undoLast": (args) => {
+      [fn(api.levelUp.undoLast)]: (args) => {
         calls.push(args);
         return { level: 1 };
       },
@@ -158,7 +158,7 @@ test("undo sends levelUp.undoLast; the GM never subscribes to canUndo", async ()
   });
   await fireEvent.press(gm.getByRole("button", { name: "Undo level 2" }));
   expect(calls[0]).toMatchObject({ characterId: "char-1" });
-  expect(gm.client.subscribed).not.toContain("levelUp:canUndo");
+  expect(gm.client.subscribed).not.toContain(fn(api.levelUp.canUndo));
 });
 
 test("the GM can correct the level; a player never sees that control", async () => {
@@ -166,7 +166,7 @@ test("the GM can correct the level; a player never sees that control", async () 
   const character = pendingCharacter({ level: 3, levelUpPending: false });
   const gm = await renderAsGm(<LevelUpSlot {...slotProps(character, "gm")} />, {
     mutations: {
-      "levelUp:correctLevel": (args) => {
+      [fn(api.levelUp.correctLevel)]: (args) => {
         calls.push(args);
         return { level: 4 };
       },

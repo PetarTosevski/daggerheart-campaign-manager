@@ -3,7 +3,7 @@ import { useMutation } from "convex/react";
 import { fireEvent } from "@testing-library/react-native";
 
 import { scanGmFunctions } from "../../harness/gm-functions";
-import { renderAsGm, renderAsPlayer, type RenderedScreen } from "../../harness";
+import { fn, renderAsGm, renderAsPlayer, type RenderedScreen } from "../../harness";
 import { resetMotionTest } from "../../theme/mock-reanimated";
 import { api, type Id } from "../../../src/convex";
 import { RestSlot, type RestSheetState } from "../../../src/features/sheet/rest";
@@ -133,10 +133,10 @@ test("a player saves two short-rest moves", async () => {
   const seen: unknown[] = [];
   const screen = await renderAsPlayer(<RestSlot {...slot(true)} restState={openRest("short")} />, {
     queries: {
-      "charactersReads:listByCampaign": [characterRecord({ canEdit: true }), ally],
+      [fn(api.charactersReads.listByCampaign)]: [characterRecord({ canEdit: true }), ally],
     },
     mutations: {
-      "rests:choose": (args) => {
+      [fn(api.rests.choose)]: (args) => {
         seen.push(args);
         return null;
       },
@@ -154,8 +154,8 @@ test("a player saves two short-rest moves", async () => {
     ],
   });
   expect(typeof (seen[0] as { idempotencyKey: unknown }).idempotencyKey).toBe("string");
-  expect(screen.client.subscribed).toEqual(["charactersReads:listByCampaign"]);
-  expect(screen.client.called).toEqual(["rests:choose"]);
+  expect(screen.client.subscribed).toEqual([fn(api.charactersReads.listByCampaign)]);
+  expect(screen.client.called).toEqual([fn(api.rests.choose)]);
   expectNoGm(screen);
 });
 
@@ -163,15 +163,15 @@ test("a player targets an ally and creates a project on a long rest", async () =
   const seen: unknown[] = [];
   const screen = await renderAsPlayer(<RestSlot {...slot(true)} restState={openRest("long")} />, {
     queries: {
-      "charactersReads:listByCampaign": [characterRecord({ canEdit: true }), ally],
-      "restsReads:projects": [{ _id: "proj-1", name: "Forge", startingValue: 4, currentValue: 3, status: "active" }],
+      [fn(api.charactersReads.listByCampaign)]: [characterRecord({ canEdit: true }), ally],
+      [fn(api.restsReads.projects)]: [{ _id: "proj-1", name: "Forge", startingValue: 4, currentValue: 3, status: "active" }],
     },
     mutations: {
-      "rests:choose": (args) => {
+      [fn(api.rests.choose)]: (args) => {
         seen.push(args);
         return null;
       },
-      "rests:createProject": (args) => {
+      [fn(api.rests.createProject)]: (args) => {
         seen.push(args);
         return { countdownId: "proj-2" };
       },
@@ -192,8 +192,8 @@ test("a player targets an ally and creates a project on a long rest", async () =
       { move: "clearAllStress" },
     ],
   });
-  expect(screen.client.subscribed).toEqual(["charactersReads:listByCampaign", "restsReads:projects"]);
-  expect(screen.client.called).toEqual(["rests:createProject", "rests:choose"]);
+  expect(screen.client.subscribed).toEqual([fn(api.charactersReads.listByCampaign), fn(api.restsReads.projects)]);
+  expect(screen.client.called).toEqual([fn(api.rests.createProject), fn(api.rests.choose)]);
   expectNoGm(screen);
 });
 

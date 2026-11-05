@@ -10,7 +10,7 @@ import { HIT_RETRY_DELAYS_MS, HIT_RETRY_STABLE_MS } from "./model";
 
 type State = { failed: boolean; attempts: number };
 
-/** Retries a failing `adversaryActions.pending` read before surfacing an error (website HitBoundary). */
+/** Retries a failing `adversaryActionsReads.pending` read before surfacing an error (website HitBoundary). */
 export class HitBoundary extends Component<{ children: ReactNode }, State> {
   override state: State = { failed: false, attempts: 0 };
   private timer: ReturnType<typeof setTimeout> | null = null;

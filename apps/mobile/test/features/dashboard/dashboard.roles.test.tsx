@@ -5,7 +5,8 @@ import { resetMotionTest } from "../../theme/mock-reanimated";
 import { DashboardScreen } from "../../../src/features/dashboard";
 import { CampaignProvider } from "../../../src/shell/campaign-provider";
 import { OfflineFrame } from "../../../src/shell/offline";
-import { renderAsGm, renderAsPlayer } from "../../harness";
+import { api } from "../../../src/convex";
+import { fn, renderAsGm, renderAsPlayer } from "../../harness";
 import { ERROR_TEXT, actionRoll, campaign, character, countdown, restState, sessions } from "./fixtures";
 
 jest.mock("expo-crypto", () => {
@@ -47,29 +48,29 @@ function screenFor(offline = false) {
 
 function ready(role: "gm" | "player", extra: Record<string, unknown> = {}) {
   return {
-    "campaigns:get": campaign(role),
-    "sessionWrap:dashboard": played,
-    "campaigns:fear": 3,
-    "charactersReads:partySummary": [briar, ash],
-    "restsReads:current": restState(),
-    "feed:list": [actionRoll()],
-    "countdowns:listByCampaign": [countdown()],
-    "maps:locations": [{ id: "loc-1", name: "Haven", typeLabel: "Village", partyHere: true, hidden: false }],
-    "countdownTracks:afterRest": { restId: "rest-1", lines: [{ countdownId: "cd-9", line: "The Lure holds." }], reminders: [] },
-    "countdownRolls:countedRows": ["row-1"],
+    [fn(api.campaigns.get)]: campaign(role),
+    [fn(api.sessionWrap.dashboard)]: played,
+    [fn(api.campaigns.fear)]: 3,
+    [fn(api.charactersReads.partySummary)]: [briar, ash],
+    [fn(api.restsReads.current)]: restState(),
+    [fn(api.feed.list)]: [actionRoll()],
+    [fn(api.countdowns.listByCampaign)]: [countdown()],
+    [fn(api.maps.locations)]: [{ id: "loc-1", name: "Haven", typeLabel: "Village", partyHere: true, hidden: false }],
+    [fn(api.countdownTracks.afterRest)]: { restId: "rest-1", lines: [{ countdownId: "cd-9", line: "The Lure holds." }], reminders: [] },
+    [fn(api.countdownRolls.countedRows)]: ["row-1"],
     ...extra,
   };
 }
 
 const playerSubscribed = [
-  "campaigns:get",
-  "sessionWrap:dashboard",
-  "campaigns:fear",
-  "charactersReads:partySummary",
-  "restsReads:current",
-  "feed:list",
-  "countdowns:listByCampaign",
-  "maps:locations",
+  fn(api.campaigns.get),
+  fn(api.sessionWrap.dashboard),
+  fn(api.campaigns.fear),
+  fn(api.charactersReads.partySummary),
+  fn(api.restsReads.current),
+  fn(api.feed.list),
+  fn(api.countdowns.listByCampaign),
+  fn(api.maps.locations),
 ];
 
 test("a player dashboard never subscribes to a GM query", async () => {
@@ -77,7 +78,7 @@ test("a player dashboard never subscribes to a GM query", async () => {
   const screen = await renderAsPlayer(screenFor(), {
     queries: ready("player"),
     mutations: {
-      "characters:adjustResource": (args) => {
+      [fn(api.characters.adjustResource)]: (args) => {
         calls.push(args as { delta: number });
         return null;
       },
@@ -85,8 +86,8 @@ test("a player dashboard never subscribes to a GM query", async () => {
   });
 
   expect(screen.client.subscribed).toEqual(playerSubscribed);
-  expect(screen.client.subscribed).not.toContain("countdownRolls:countedRows");
-  expect(screen.client.subscribed).not.toContain("countdownTracks:afterRest");
+  expect(screen.client.subscribed).not.toContain(fn(api.countdownRolls.countedRows));
+  expect(screen.client.subscribed).not.toContain(fn(api.countdownTracks.afterRest));
   expect(screen.queryByText(ERROR_TEXT)).toBeNull();
 
   expect(screen.getByRole("header", { name: "The Table" })).toBeTruthy();
@@ -123,7 +124,7 @@ test("GM controls render for the GM, including the two GM-only queries", async (
   const screen = await renderAsGm(screenFor(), {
     queries: ready("gm"),
     mutations: {
-      "campaigns:setOption": (args) => {
+      [fn(api.campaigns.setOption)]: (args) => {
         rules.push(args as { option: string; enabled: boolean });
         return null;
       },
@@ -132,11 +133,11 @@ test("GM controls render for the GM, including the two GM-only queries", async (
 
   expect(screen.client.subscribed).toEqual([
     ...playerSubscribed.slice(0, 5),
-    "countdownTracks:afterRest",
-    "feed:list",
-    "countdownRolls:countedRows",
-    "countdowns:listByCampaign",
-    "maps:locations",
+    fn(api.countdownTracks.afterRest),
+    fn(api.feed.list),
+    fn(api.countdownRolls.countedRows),
+    fn(api.countdowns.listByCampaign),
+    fn(api.maps.locations),
   ]);
   expect(screen.getByRole("button", { name: "Increase Fear" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Decrease Fear" })).toBeTruthy();
@@ -153,7 +154,7 @@ test("GM controls render for the GM, including the two GM-only queries", async (
 });
 
 test("the dashboard shows a loading line for each section", async () => {
-  const loading = await renderAsPlayer(screenFor(), { queries: { "campaigns:get": campaign("player") } });
+  const loading = await renderAsPlayer(screenFor(), { queries: { [fn(api.campaigns.get)]: campaign("player") } });
   expect(loading.getByText("Loading sessions")).toBeTruthy();
   expect(loading.getByText("Loading Fear")).toBeTruthy();
   expect(loading.getByText("Loading the party")).toBeTruthy();
@@ -166,14 +167,14 @@ test("the dashboard shows a loading line for each section", async () => {
 test("an empty dashboard shows the empty copy and hides Rest from a player", async () => {
   const empty = await renderAsPlayer(screenFor(), {
     queries: {
-      "campaigns:get": campaign("player"),
-      "sessionWrap:dashboard": sessions(null),
-      "campaigns:fear": 0,
-      "charactersReads:partySummary": [],
-      "restsReads:current": { open: null, shortRestsSinceLong: 0, last: null },
-      "feed:list": [],
-      "countdowns:listByCampaign": [],
-      "maps:locations": [],
+      [fn(api.campaigns.get)]: campaign("player"),
+      [fn(api.sessionWrap.dashboard)]: sessions(null),
+      [fn(api.campaigns.fear)]: 0,
+      [fn(api.charactersReads.partySummary)]: [],
+      [fn(api.restsReads.current)]: { open: null, shortRestsSinceLong: 0, last: null },
+      [fn(api.feed.list)]: [],
+      [fn(api.countdowns.listByCampaign)]: [],
+      [fn(api.maps.locations)]: [],
     },
   });
   expect(empty.getByLabelText("Fear").props.children).toBe("0");
@@ -190,5 +191,5 @@ test("offline disables a GM Fear change", async () => {
   expect(offline.getByText("Showing the last update.")).toBeTruthy();
   expect(offline.getByRole("button", { name: "Increase Fear" }).props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(offline.getByRole("button", { name: "Increase Fear" }));
-  expect(offline.client.called).not.toContain("fear:adjust");
+  expect(offline.client.called).not.toContain(fn(api.fear.adjust));
 });

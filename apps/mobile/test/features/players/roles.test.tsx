@@ -3,7 +3,8 @@ import { fireEvent } from "@testing-library/react-native";
 
 import { resetMotionTest } from "../../theme/mock-reanimated";
 import { PlayersScreen } from "../../../src/features/players";
-import { renderAsGm, renderAsPlayer } from "../../harness";
+import { api } from "../../../src/convex";
+import { fn, renderAsGm, renderAsPlayer } from "../../harness";
 import { accessEmptyCode, gmQueries, inCampaign, playerQueries } from "./fixture";
 
 beforeEach(() => {
@@ -20,8 +21,8 @@ test("a player sees the table and never subscribes to members.access", async () 
   expect(screen.queryByTestId("join-code")).toBeNull();
   expect(screen.queryByRole("button", { name: "Invite player" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Remove Nikola" })).toBeNull();
-  expect(screen.client.subscribed).toEqual(["campaigns:get", "members:roster"]);
-  expect(screen.client.subscribed).not.toContain("members:access");
+  expect(screen.client.subscribed).toEqual([fn(api.campaigns.get), fn(api.members.roster)]);
+  expect(screen.client.subscribed).not.toContain(fn(api.members.access));
 });
 
 test("the GM can invite, rotate the join code, and remove a player", async () => {
@@ -32,19 +33,19 @@ test("the GM can invite, rotate the join code, and remove a player", async () =>
   const screen = await renderAsGm(inCampaign("gm", <PlayersScreen />), {
     queries: gmQueries(),
     mutations: {
-      "members:invite": (args) => {
+      [fn(api.members.invite)]: (args) => {
         calls.push({ name: "invite", args });
         return "invite-2";
       },
-      "members:rotateJoinCode": (args) => {
+      [fn(api.members.rotateJoinCode)]: (args) => {
         calls.push({ name: "rotate", args });
         return "ABCD1234";
       },
-      "members:removePlayer": (args) => {
+      [fn(api.members.removePlayer)]: (args) => {
         calls.push({ name: "remove", args });
         return null;
       },
-      "members:revokeInvite": (args) => {
+      [fn(api.members.revokeInvite)]: (args) => {
         calls.push({ name: "revoke", args });
         return null;
       },
@@ -83,23 +84,23 @@ test("the GM can invite, rotate the join code, and remove a player", async () =>
 
 test("the GM gets a join code on first open when none exists yet", async () => {
   const screen = await renderAsGm(inCampaign("gm", <PlayersScreen />), {
-    queries: gmQueries({ "members:access": accessEmptyCode }),
+    queries: gmQueries({ [fn(api.members.access)]: accessEmptyCode }),
     mutations: {
-      "members:rotateJoinCode": () => "WXYZ5678",
+      [fn(api.members.rotateJoinCode)]: () => "WXYZ5678",
     },
   });
-  expect(screen.client.called).toContain("members:rotateJoinCode");
+  expect(screen.client.called).toContain(fn(api.members.rotateJoinCode));
   expect(screen.getByTestId("join-code").props.children).toBe("…");
 });
 
 test("loading, unreadable roster, and offline GM controls", async () => {
   const loading = await renderAsPlayer(inCampaign("player", <PlayersScreen />), {
-    queries: { "campaigns:get": playerQueries()["campaigns:get"] },
+    queries: { [fn(api.campaigns.get)]: playerQueries()[fn(api.campaigns.get)] },
   });
   expect(loading.getByRole("progressbar", { name: "Loading players" })).toBeTruthy();
 
   const broken = await renderAsPlayer(inCampaign("player", <PlayersScreen />), {
-    queries: playerQueries({ "members:roster": { bad: true } }),
+    queries: playerQueries({ [fn(api.members.roster)]: { bad: true } }),
   });
   expect(broken.getByText("The roster could not be read.")).toBeTruthy();
 
@@ -107,7 +108,7 @@ test("loading, unreadable roster, and offline GM controls", async () => {
   const offline = await renderAsGm(inCampaign("gm", <PlayersScreen />, true), {
     queries: gmQueries(),
     mutations: {
-      "members:removePlayer": (args) => {
+      [fn(api.members.removePlayer)]: (args) => {
         calls.push(args);
         return null;
       },

@@ -6,7 +6,8 @@ import { PanelBoundary } from "../../../src/features/dashboard/chrome";
 import { PartyBlock } from "../../../src/features/dashboard/party";
 import { RestLauncher } from "../../../src/features/dashboard/rests";
 import { OfflineFrame } from "../../../src/shell/offline";
-import { renderAsGm, renderAsPlayer } from "../../harness";
+import { api } from "../../../src/convex";
+import { fn, renderAsGm, renderAsPlayer } from "../../harness";
 import { ERROR_TEXT, campaignId, character, failQuery, restState } from "./fixtures";
 
 jest.mock("expo-crypto", () => {
@@ -53,41 +54,41 @@ function ui(isGm: boolean, offline = false) {
 test("a player with no open rest does not mount Rest or afterRest", async () => {
   const screen = await renderAsPlayer(ui(false), {
     queries: {
-      "charactersReads:partySummary": [briar],
-      "restsReads:current": restState(),
+      [fn(api.charactersReads.partySummary)]: [briar],
+      [fn(api.restsReads.current)]: restState(),
     },
   });
   expect(screen.getByText("Briar")).toBeTruthy();
   expect(screen.queryByRole("header", { name: "Rest" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Start short rest" })).toBeNull();
-  expect(screen.client.subscribed).toEqual(["charactersReads:partySummary", "restsReads:current"]);
-  expect(screen.client.subscribed).not.toContain("countdownTracks:afterRest");
+  expect(screen.client.subscribed).toEqual([fn(api.charactersReads.partySummary), fn(api.restsReads.current)]);
+  expect(screen.client.subscribed).not.toContain(fn(api.countdownTracks.afterRest));
 });
 
 test("an open rest shows the player's moves and hides Finish", async () => {
   const screen = await renderAsPlayer(ui(false), {
     queries: {
-      "charactersReads:partySummary": [briar],
-      "restsReads:current": openRest,
+      [fn(api.charactersReads.partySummary)]: [briar],
+      [fn(api.restsReads.current)]: openRest,
     },
   });
   expect(screen.getByText("Short rest under way. Each player picks two moves on their sheet.")).toBeTruthy();
   expect(screen.getByText("Briar: Tend to Wounds, Clear Stress")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Finish rest" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Interrupt" })).toBeNull();
-  expect(screen.client.subscribed).not.toContain("countdownTracks:afterRest");
+  expect(screen.client.subscribed).not.toContain(fn(api.countdownTracks.afterRest));
 });
 
 test("the GM starts, finishes, undoes, and sees a long-rest tick only after a finished long rest", async () => {
   const starts: { kind: string }[] = [];
   const idle = await renderAsGm(ui(true), {
     queries: {
-      "charactersReads:partySummary": [briar],
-      "restsReads:current": restState({ shortRestsSinceLong: 3 }),
-      "countdownTracks:afterRest": { restId: "rest-1", lines: [], reminders: [] },
+      [fn(api.charactersReads.partySummary)]: [briar],
+      [fn(api.restsReads.current)]: restState({ shortRestsSinceLong: 3 }),
+      [fn(api.countdownTracks.afterRest)]: { restId: "rest-1", lines: [], reminders: [] },
     },
     mutations: {
-      "rests:start": (args) => {
+      [fn(api.rests.start)]: (args) => {
         starts.push(args as { kind: string });
         return null;
       },
@@ -100,16 +101,16 @@ test("the GM starts, finishes, undoes, and sees a long-rest tick only after a fi
   expect(short.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(idle.getByRole("button", { name: "Start long rest" }));
   expect(starts).toEqual([expect.objectContaining({ kind: "long", campaignId })]);
-  expect(idle.client.subscribed).toContain("countdownTracks:afterRest");
+  expect(idle.client.subscribed).toContain(fn(api.countdownTracks.afterRest));
 
   const finishes: { restId: string }[] = [];
   const running = await renderAsGm(ui(true), {
     queries: {
-      "charactersReads:partySummary": [briar, ash],
-      "restsReads:current": openRest,
+      [fn(api.charactersReads.partySummary)]: [briar, ash],
+      [fn(api.restsReads.current)]: openRest,
     },
     mutations: {
-      "rests:finish": (args) => {
+      [fn(api.rests.finish)]: (args) => {
         finishes.push(args as { restId: string });
         return null;
       },
@@ -118,7 +119,7 @@ test("the GM starts, finishes, undoes, and sees a long-rest tick only after a fi
   await fireEvent.press(running.getByRole("button", { name: "Finish rest" }));
   expect(finishes).toEqual([expect.objectContaining({ restId: "rest-open" })]);
   expect(running.getByRole("button", { name: "Revive Ash" })).toBeTruthy();
-  expect(running.client.subscribed).not.toContain("countdownTracks:afterRest");
+  expect(running.client.subscribed).not.toContain(fn(api.countdownTracks.afterRest));
 });
 
 test("rests cover loading, an empty party, a failed query, and offline", async () => {
@@ -127,7 +128,7 @@ test("rests cover loading, an empty party, a failed query, and offline", async (
   expect(loading.getByText("Loading rests")).toBeTruthy();
 
   const empty = await renderAsPlayer(ui(false), {
-    queries: { "charactersReads:partySummary": [], "restsReads:current": restState({ last: null }) },
+    queries: { [fn(api.charactersReads.partySummary)]: [], [fn(api.restsReads.current)]: restState({ last: null }) },
   });
   expect(empty.getByText("No characters yet. Open the Party tab to create the first hero.")).toBeTruthy();
   expect(empty.queryByRole("header", { name: "Rest" })).toBeNull();
@@ -137,21 +138,21 @@ test("rests cover loading, an empty party, a failed query, and offline", async (
     <PanelBoundary title="Rest">
       <RestLauncher campaignId={campaignId} isGm={false} party={[briar]} />
     </PanelBoundary>,
-    { queries: { "restsReads:current": failQuery } },
+    { queries: { [fn(api.restsReads.current)]: failQuery } },
   );
   expect(broken.getByRole("header", { name: "Rest" })).toBeTruthy();
   expect(broken.getByText(ERROR_TEXT)).toBeTruthy();
 
   const offline = await renderAsGm(ui(true, true), {
     queries: {
-      "charactersReads:partySummary": [briar],
-      "restsReads:current": restState({ last: null }),
-      "countdownTracks:afterRest": { restId: "rest-1", lines: [], reminders: [] },
+      [fn(api.charactersReads.partySummary)]: [briar],
+      [fn(api.restsReads.current)]: restState({ last: null }),
+      [fn(api.countdownTracks.afterRest)]: { restId: "rest-1", lines: [], reminders: [] },
     },
   });
   expect(offline.getByText("Showing the last update.")).toBeTruthy();
   const start = offline.getByRole("button", { name: "Start long rest" });
   expect(start.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(start);
-  expect(offline.client.called).not.toContain("rests:start");
+  expect(offline.client.called).not.toContain(fn(api.rests.start));
 });

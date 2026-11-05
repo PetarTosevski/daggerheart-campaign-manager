@@ -1,7 +1,14 @@
+import { assertKnownFunction } from "./convex-functions";
 import { convexDir, scanGmFunctions } from "./gm-functions";
 
 export type Role = "player" | "gm";
 
+/**
+ * Mocks keyed by Convex function name. Build each key from the generated api with
+ * `fn` (`{ [fn(api.campaigns.fear)]: 4 }`) rather than a hand-written string. Every
+ * key, and every function a render subscribes to or calls, must be a public export
+ * under `convex/`; anything else throws, so a renamed or moved function fails here.
+ */
 export type FakeHandlers = {
   /** Values returned for a subscribed query. A function is called with the args. */
   queries?: Record<string, unknown>;
@@ -41,6 +48,13 @@ export function createFakeConvex(role: Role, handlers: FakeHandlers = {}): FakeC
   const queries = handlers.queries ?? {};
   const mutations = handlers.mutations ?? {};
   const actions = handlers.actions ?? {};
+  for (const [kind, table] of [
+    ["queries", queries],
+    ["mutations", mutations],
+    ["actions", actions],
+  ] as const) {
+    for (const name of Object.keys(table)) assertKnownFunction(name, `mocked in ${kind}`);
+  }
 
   return {
     role,
@@ -49,6 +63,7 @@ export function createFakeConvex(role: Role, handlers: FakeHandlers = {}): FakeC
     watch(name, id) {
       const holders = active.get(name) ?? new Set<string>();
       if (holders.has(id)) return;
+      assertKnownFunction(name, "subscribed");
       if (role === "player" && gm.has(name)) {
         subscribed.push(name);
         throw new Error(`Player subscribed to GM function ${name}`);
@@ -83,6 +98,7 @@ export function createFakeConvex(role: Role, handlers: FakeHandlers = {}): FakeC
     },
     call(name, args, kind) {
       called.push(name);
+      assertKnownFunction(name, `called as a ${kind}`);
       if (role === "player" && gm.has(name)) {
         throw new Error(`Player called GM function ${name}`);
       }

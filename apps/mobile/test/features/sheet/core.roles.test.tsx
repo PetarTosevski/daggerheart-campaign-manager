@@ -1,4 +1,4 @@
-import { beforeEach, expect, test } from "@jest/globals";
+import { beforeEach, expect, jest, test } from "@jest/globals";
 import { useQuery } from "convex/react";
 import { Text } from "react-native";
 import { fireEvent } from "@testing-library/react-native";
@@ -9,8 +9,12 @@ import type { Id } from "../../../src/convex";
 import { CharacterSheet } from "../../../src/features/sheet";
 import { QueryBoundary } from "../../../src/features/sheet/query-boundary";
 import { readCharacter } from "../../../src/features/sheet/types";
-import { renderAsGm, renderAsPlayer } from "../../harness";
+import { fn, renderAsGm, renderAsPlayer } from "../../harness";
 import { campaignRecord, characterRecord, inCampaign } from "../party/fixture";
+
+jest.mock("expo-crypto", () => ({
+  randomUUID: () => "00000000-0000-4000-8000-000000000001",
+}));
 
 beforeEach(() => {
   resetMotionTest();
@@ -33,8 +37,8 @@ test("readCharacter keeps session and play fields for dice and lunar panels", ()
 
 function sheetQueries(role: "gm" | "player", character: unknown) {
   return {
-    "campaigns:get": campaignRecord(role),
-    "charactersReads:get": character,
+    [fn(api.campaigns.get)]: campaignRecord(role),
+    [fn(api.charactersReads.get)]: character,
   };
 }
 
@@ -52,8 +56,8 @@ test("a reader sees the sheet and no steppers", async () => {
   expect(screen.queryByRole("button", { name: "Decrease Hit Points" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Increase Agility" })).toBeNull();
   expect(screen.queryByLabelText("Name")).toBeNull();
-  expect(screen.client.subscribed).toEqual(["campaigns:get", "charactersReads:get"]);
-  expect(screen.client.subscribed).not.toContain("restsReads:current");
+  expect(screen.client.subscribed).toEqual([fn(api.campaigns.get), fn(api.charactersReads.get)]);
+  expect(screen.client.subscribed).not.toContain(fn(api.restsReads.current));
 });
 
 test("an editor sends a resource delta, and a second tap sends another", async () => {
@@ -61,14 +65,14 @@ test("an editor sends a resource delta, and a second tap sends another", async (
   const screen = await renderAsPlayer(inCampaign("player", <CharacterSheet characterId="char-1" />), {
     queries: sheetQueries("player", characterRecord({ canEdit: true })),
     mutations: {
-      "characters:adjustResource": (args) => {
+      [fn(api.characters.adjustResource)]: (args) => {
         calls.push(args);
         return { hp: 2, stress: 1, hope: 4, armorMarked: 0, scars: 0 };
       },
     },
   });
   expect(screen.getByLabelText("Hope 2 of 6")).toBeTruthy();
-  expect(screen.client.subscribed).toContain("restsReads:current");
+  expect(screen.client.subscribed).toContain(fn(api.restsReads.current));
   await fireEvent.press(screen.getByRole("button", { name: "Increase Hope" }));
   await fireEvent.press(screen.getByRole("button", { name: "Increase Hope" }));
   expect(calls).toEqual([
@@ -84,7 +88,7 @@ test("the GM can correct a trait; a player editor cannot", async () => {
   const gm = await renderAsGm(inCampaign("gm", <CharacterSheet characterId="char-1" />), {
     queries: sheetQueries("gm", characterRecord({ canEdit: true })),
     mutations: {
-      "characters:updateSheet": (args) => {
+      [fn(api.characters.updateSheet)]: (args) => {
         calls.push(args);
         return null;
       },
@@ -107,7 +111,7 @@ test("the GM can correct a trait; a player editor cannot", async () => {
 
 test("loading, missing, and offline states", async () => {
   const loading = await renderAsPlayer(inCampaign("player", <CharacterSheet characterId="char-1" />), {
-    queries: { "campaigns:get": campaignRecord("player") },
+    queries: { [fn(api.campaigns.get)]: campaignRecord("player") },
   });
   expect(loading.getByRole("progressbar", { name: "Loading character" })).toBeTruthy();
 
@@ -120,7 +124,7 @@ test("loading, missing, and offline states", async () => {
   const offline = await renderAsPlayer(inCampaign("player", <CharacterSheet characterId="char-1" />, true), {
     queries: sheetQueries("player", characterRecord({ canEdit: true })),
     mutations: {
-      "characters:adjustResource": (args) => {
+      [fn(api.characters.adjustResource)]: (args) => {
         calls.push(args);
         return undefined;
       },
@@ -144,7 +148,7 @@ test("a failing character query shows the error", async () => {
     </QueryBoundary>,
     {
       queries: {
-        "charactersReads:get": () => {
+        [fn(api.charactersReads.get)]: () => {
           throw new Error("sheet down");
         },
       },
@@ -161,11 +165,11 @@ test("story, cards, heritage, and the downtime reference are on the sheet", asyn
   const screen = await renderAsGm(inCampaign("gm", <CharacterSheet characterId="char-1" />), {
     queries: sheetQueries("gm", characterRecord({ canEdit: true })),
     mutations: {
-      "characters:moveCard": (args) => {
+      [fn(api.characters.moveCard)]: (args) => {
         calls.push(args);
         return null;
       },
-      "characters:adjustGold": (args) => {
+      [fn(api.characters.adjustGold)]: (args) => {
         calls.push(args);
         return { handfuls: 2, bags: 0, chest: false };
       },

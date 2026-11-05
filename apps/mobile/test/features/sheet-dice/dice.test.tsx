@@ -3,7 +3,7 @@ import { useMutation } from "convex/react";
 import { fireEvent } from "@testing-library/react-native";
 
 import { scanGmFunctions } from "../../harness/gm-functions";
-import { renderAsPlayer, type RenderedScreen } from "../../harness";
+import { fn, renderAsPlayer, type RenderedScreen } from "../../harness";
 import { resetMotionTest } from "../../theme/mock-reanimated";
 import { api, type Id } from "../../../src/convex";
 import { DiceSlot } from "../../../src/features/sheet/dice";
@@ -74,12 +74,12 @@ test("an editor rolls Hope and Fear through actionRoll", async () => {
   const seen: unknown[] = [];
   const screen = await renderAsPlayer(<DiceSlot {...slotProps()} />, {
     queries: {
-      "campaigns:fear": 2,
-      "characterExtras:get": null,
-      "rolls:pendingChoices": { slayer: null, tagTeam: null },
+      [fn(api.campaigns.fear)]: 2,
+      [fn(api.characterExtras.get)]: null,
+      [fn(api.rolls.pendingChoices)]: { slayer: null, tagTeam: null },
     },
     mutations: {
-      "rolls:actionRoll": (args) => {
+      [fn(api.rolls.actionRoll)]: (args) => {
         seen.push(args);
         return {
           entryId: "log-1",
@@ -102,13 +102,13 @@ test("an editor rolls Hope and Fear through actionRoll", async () => {
   });
   expect(screen.getByLabelText("Dice")).toBeTruthy();
   await fireEvent.press(screen.getByRole("button", { name: "Roll Hope & Fear" }));
-  expect(screen.client.called).toContain("rolls:actionRoll");
+  expect(screen.client.called).toContain(fn(api.rolls.actionRoll));
   expect(seen[0]).toMatchObject({ characterId: "char-1", kind: "action", trait: "agility" });
   expect(typeof (seen[0] as { idempotencyKey: string }).idempotencyKey).toBe("string");
   expect(screen.getByLabelText("Hope d12: 8")).toBeTruthy();
   expect(screen.getByLabelText("Fear d12: 3")).toBeTruthy();
   expect(screen.getByText("13")).toBeTruthy();
-  expect(screen.client.subscribed).toEqual(["campaigns:fear", "characterExtras:get", "rolls:pendingChoices"]);
+  expect(screen.client.subscribed).toEqual([fn(api.campaigns.fear), fn(api.characterExtras.get), fn(api.rolls.pendingChoices)]);
   expectNoGm(screen);
 });
 
@@ -116,12 +116,12 @@ test("an editor rolls damage through damageRoll", async () => {
   const seen: unknown[] = [];
   const screen = await renderAsPlayer(<DiceSlot {...slotProps()} />, {
     queries: {
-      "campaigns:fear": 1,
-      "characterExtras:get": null,
-      "rolls:pendingChoices": { slayer: null, tagTeam: null },
+      [fn(api.campaigns.fear)]: 1,
+      [fn(api.characterExtras.get)]: null,
+      [fn(api.rolls.pendingChoices)]: { slayer: null, tagTeam: null },
     },
     mutations: {
-      "rolls:damageRoll": (args) => {
+      [fn(api.rolls.damageRoll)]: (args) => {
         seen.push(args);
         return {
           entryId: "log-2",
@@ -158,12 +158,12 @@ test("a Slayer holder sees the spend stepper and sends slayerDice on damage", as
     />,
     {
       queries: {
-        "campaigns:fear": 0,
-        "characterExtras:get": null,
-        "rolls:pendingChoices": { slayer: null, tagTeam: null },
+        [fn(api.campaigns.fear)]: 0,
+        [fn(api.characterExtras.get)]: null,
+        [fn(api.rolls.pendingChoices)]: { slayer: null, tagTeam: null },
       },
       mutations: {
-        "rolls:damageRoll": (args) => {
+        [fn(api.rolls.damageRoll)]: (args) => {
           seen.push(args);
           return {
             entryId: "log-3",
@@ -202,9 +202,9 @@ test("only a Know the Tide holder sees Tide tokens on action rolls", async () =>
     />,
     {
       queries: {
-        "campaigns:fear": 0,
-        "characterExtras:get": null,
-        "rolls:pendingChoices": { slayer: null, tagTeam: null },
+        [fn(api.campaigns.fear)]: 0,
+        [fn(api.characterExtras.get)]: null,
+        [fn(api.rolls.pendingChoices)]: { slayer: null, tagTeam: null },
       },
     },
   );
@@ -213,9 +213,9 @@ test("only a Know the Tide holder sees Tide tokens on action rolls", async () =>
 
   const other = await renderAsPlayer(<DiceSlot {...slotProps()} />, {
     queries: {
-      "campaigns:fear": 0,
-      "characterExtras:get": null,
-      "rolls:pendingChoices": { slayer: null, tagTeam: null },
+      [fn(api.campaigns.fear)]: 0,
+      [fn(api.characterExtras.get)]: null,
+      [fn(api.rolls.pendingChoices)]: { slayer: null, tagTeam: null },
     },
   });
   expect(other.queryByLabelText("Tide tokens to spend")).toBeNull();
@@ -225,9 +225,9 @@ test("only a Know the Tide holder sees Tide tokens on action rolls", async () =>
 test("a pending Slayer choice renders the offer", async () => {
   const screen = await renderAsPlayer(<DiceSlot {...slotProps()} />, {
     queries: {
-      "campaigns:fear": 0,
-      "characterExtras:get": null,
-      "rolls:pendingChoices": {
+      [fn(api.campaigns.fear)]: 0,
+      [fn(api.characterExtras.get)]: null,
+      [fn(api.rolls.pendingChoices)]: {
         slayer: {
           entryId: "log-4",
           prompt: {
@@ -244,12 +244,12 @@ test("a pending Slayer choice renders the offer", async () => {
       },
     },
     mutations: {
-      "rolls:storeSlayerDie": () => ({ slayerDice: 1, capacity: 3, hope: 2 }),
+      [fn(api.rolls.storeSlayerDie)]: () => ({ slayerDice: 1, capacity: 3, hope: 2 }),
     },
   });
   expect(screen.getByText("Store a Slayer Die instead of taking the Hope?")).toBeTruthy();
   await fireEvent.press(screen.getByRole("button", { name: "Store a Slayer Die" }));
-  expect(screen.client.called).toContain("rolls:storeSlayerDie");
+  expect(screen.client.called).toContain(fn(api.rolls.storeSlayerDie));
   expectNoGm(screen);
 });
 
@@ -257,9 +257,9 @@ test("Tag Team apply picks a roll for both characters", async () => {
   const seen: unknown[] = [];
   const screen = await renderAsPlayer(<DiceSlot {...slotProps()} />, {
     queries: {
-      "campaigns:fear": 0,
-      "characterExtras:get": null,
-      "rolls:pendingChoices": {
+      [fn(api.campaigns.fear)]: 0,
+      [fn(api.characterExtras.get)]: null,
+      [fn(api.rolls.pendingChoices)]: {
         slayer: null,
         tagTeam: {
           entryId: "log-5",
@@ -299,13 +299,13 @@ test("Tag Team apply picks a roll for both characters", async () => {
           ],
         },
       },
-      "charactersReads:listByCampaign": [
+      [fn(api.charactersReads.listByCampaign)]: [
         characterRecord({ canEdit: true, name: "Mira" }),
         { ...characterRecord({ canEdit: true, name: "Bryn", mine: false }), _id: "char-2" },
       ],
     },
     mutations: {
-      "rolls:tagTeamApply": (args) => {
+      [fn(api.rolls.tagTeamApply)]: (args) => {
         seen.push(args);
         return { outcome: "successHope", fearGained: 0 };
       },
@@ -313,6 +313,6 @@ test("Tag Team apply picks a roll for both characters", async () => {
   });
   await fireEvent.press(screen.getByRole("button", { name: "Use Bryn’s roll" }));
   expect(seen[0]).toMatchObject({ entryId: "log-5", pick: "char-2" });
-  expect(screen.client.called).toContain("rolls:tagTeamApply");
+  expect(screen.client.called).toContain(fn(api.rolls.tagTeamApply));
   expectNoGm(screen);
 });

@@ -1,4 +1,6 @@
 import type { ReactElement } from "react";
+import { api } from "../../../src/convex";
+import { fn } from "../../harness";
 
 import { CampaignProvider, CampaignScreen } from "../../../src/shell/campaign-provider";
 import { OfflineFrame } from "../../../src/shell/offline";
@@ -56,17 +58,17 @@ export function inCampaign(role: "gm" | "player", ui: ReactElement, offline = fa
 
 export function gmQueries(overrides: Record<string, unknown> = {}) {
   return {
-    "campaigns:get": campaignRecord("gm"),
-    "members:roster": gmRoster,
-    "members:access": accessWithCode,
+    [fn(api.campaigns.get)]: campaignRecord("gm"),
+    [fn(api.members.roster)]: gmRoster,
+    [fn(api.members.access)]: accessWithCode,
     ...overrides,
   };
 }
 
 export function playerQueries(overrides: Record<string, unknown> = {}) {
   return {
-    "campaigns:get": campaignRecord("player"),
-    "members:roster": playerRoster,
+    [fn(api.campaigns.get)]: campaignRecord("player"),
+    [fn(api.members.roster)]: playerRoster,
     ...overrides,
   };
 }

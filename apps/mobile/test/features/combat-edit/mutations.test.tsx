@@ -4,8 +4,8 @@ import { fireEvent } from "@testing-library/react-native";
 
 import { resetMotionTest } from "../../theme/mock-reanimated";
 import { CombatEditTools } from "../../../src/features/combat-map/edit/edit-tools";
-import type { Id } from "../../../src/convex";
-import { renderAsGm } from "../../harness";
+import { api, type Id } from "../../../src/convex";
+import { fn, renderAsGm } from "../../harness";
 import { campaignId, editSlotQueries, liveLayout, playerViewOk } from "./fixtures";
 
 beforeEach(() => {
@@ -25,7 +25,7 @@ test("undo all painting calls combatMapEdit:clearPaint", async () => {
     {
       queries: editSlotQueries(live),
       mutations: {
-        "combatMapEdit:clearPaint": (args) => {
+        [fn(api.combatMapEdit.clearPaint)]: (args) => {
           calls.push(args);
           return null;
         },
@@ -44,7 +44,7 @@ test("Classic style switch calls combatMapStyle:setStyle", async () => {
     {
       queries: editSlotQueries(live),
       mutations: {
-        "combatMapStyle:setStyle": (args) => {
+        [fn(api.combatMapStyle.setStyle)]: (args) => {
           calls.push(args);
           return null;
         },
@@ -62,7 +62,7 @@ test("picking a setting calls combatMapStyle:setSetting", async () => {
     {
       queries: editSlotQueries(live),
       mutations: {
-        "combatMapStyle:setSetting": (args) => {
+        [fn(api.combatMapStyle.setSetting)]: (args) => {
           calls.push(args);
           return null;
         },
