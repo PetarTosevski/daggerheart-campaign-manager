@@ -1,6 +1,7 @@
 // Character rules from the Core Book, chapter 1 (creation) and chapter 2
 // (damage thresholds, armor). Pure module: bundled into Convex.
 
+import type { RuleModes } from "../../rules/registry";
 import type { TraitId } from "../../srd/types";
 import type { Condition } from "../../validation/characters";
 
@@ -69,11 +70,36 @@ const MARKS: Record<Severity, number> = { none: 0, minor: 1, major: 2, severe: 3
 const ORDER: Severity[] = ["none", "minor", "major", "severe"];
 
 /**
+ * The PC rule modes these helpers read (plan rule-switches, tracer RDM): D4 `stressOverflow`, D5
+ * `fullStressVulnerable` and the optional `massiveDamage`. A missing field is the Book behaviour (Massive off), so `{}`
+ * is today's rules; `ruleModesOf(campaign)` can be passed as it is.
+ */
+export type PcDamageRules = Partial<Pick<RuleModes, "stressOverflow" | "fullStressVulnerable" | "massiveDamage">>;
+
+/**
+ * Massive damage (CB p.91, "OPTIONAL RULE: MASSIVE DAMAGE": "your table can implement a Massive threshold. If you ever
+ * take damage equal to double your Severe threshold, you mark 4 Hit Points"): with the rule on, damage at or above
+ * twice the Severe threshold.
+ */
+export function isMassiveDamage(damage: number, t: Pick<Thresholds, "severe">, rules: PcDamageRules = {}): boolean {
+  return rules.massiveDamage === true && t.severe > 0 && damage >= 2 * t.severe;
+}
+
+/**
  * Hit Points to mark: Minor 1, Major 2, Severe 3. Marking an Armor Slot
  * reduces the severity by one threshold ("Severe to Major, Major to Minor, or
- * Minor to None"); one slot per attack.
+ * Minor to None"); one slot per attack. With Massive Damage on (CB p.91) damage
+ * at twice the Severe threshold marks 4; the Massive threshold sits above Severe,
+ * so an Armor Slot reduces it to Severe (3). `massive` is set (true) only for
+ * Massive damage, so the Book's result is unchanged.
  */
-export function hitPointsToMark(damage: number, t: Thresholds, useArmorSlot = false): { severity: Severity; marks: number } {
+export function hitPointsToMark(
+  damage: number,
+  t: Thresholds,
+  useArmorSlot = false,
+  rules: PcDamageRules = {},
+): { severity: Severity; marks: number; massive?: true } {
+  if (isMassiveDamage(damage, t, rules)) return { severity: "severe", marks: useArmorSlot ? 3 : 4, massive: true };
   let severity = damageSeverity(damage, t);
   if (useArmorSlot && severity !== "none") severity = ORDER[ORDER.indexOf(severity) - 1];
   return { severity, marks: MARKS[severity] };
@@ -84,20 +110,39 @@ export function hitPointsToMark(damage: number, t: Thresholds, useArmorSlot = fa
  * 1 or more Stress but your slots are already full, you must instead mark 1
  * Hit Point" — one Hit Point in total, however much Stress overflowed. Marking
  * the last Stress slot makes the character Vulnerable until they clear one.
+ *
+ * Rule switches (tracer RDM): D4 Manual drops the extra Stress and marks no HP
+ * (`overflow: true` says it happened); D5 Manual never sets `vulnerable`
+ * (`full: true` says the track is full). Both fields are only set under their
+ * Manual mode, so the Book's result is unchanged.
  */
 export function markStress(
   current: { stress: number; stressMax: number; hp: number; hpMax: number },
   amount: number,
-): { stress: number; hp: number; vulnerable: boolean } {
+  rules: PcDamageRules = {},
+): { stress: number; hp: number; vulnerable: boolean; overflow?: true; full?: true } {
   const free = Math.max(0, current.stressMax - current.stress);
   const toStress = Math.min(free, Math.max(0, amount));
   const overflow = amount - toStress > 0;
   const stress = current.stress + toStress;
+  const full = stress >= current.stressMax;
+  const overflowManual = rules.stressOverflow === "manual";
+  const fullManual = rules.fullStressVulnerable === "manual";
   return {
     stress,
-    hp: overflow ? Math.min(current.hpMax, current.hp + 1) : current.hp,
-    vulnerable: stress >= current.stressMax,
+    hp: overflow && !overflowManual ? Math.min(current.hpMax, current.hp + 1) : current.hp,
+    vulnerable: full && !fullManual,
+    ...(overflow && overflowManual ? { overflow: true as const } : {}),
+    ...(full && fullManual ? { full: true as const } : {}),
   };
+}
+
+/**
+ * The PC's Vulnerable from a full Stress track (CB p.92: "When you mark your last Stress, you become Vulnerable … until
+ * you clear at least 1 Stress"). D5 Manual: never (the GM adds Vulnerable by hand).
+ */
+export function pcVulnerableFromStress(sheet: { stress: number; stressMax: number }, rules: PcDamageRules = {}): boolean {
+  return rules.fullStressVulnerable !== "manual" && sheet.stressMax > 0 && sheet.stress >= sheet.stressMax;
 }
 
 const MODIFIER = /([+\-−]\d+) to (Evasion|Armor Score)(?! while)/g;
@@ -138,7 +183,7 @@ type Tracks = {
  * adjustResource and optimistic UI updates). Hope stops at `hopeMax`;
  * clearing a Hit Point wakes an Unconscious character (CB 106, Avoid Death).
  */
-export function applyResourceDelta<T extends Tracks>(sheet: T, resource: Resource, delta: number): T {
+export function applyResourceDelta<T extends Tracks>(sheet: T, resource: Resource, delta: number, rules: PcDamageRules = {}): T {
   const clamp = (n: number, max: number) => Math.max(0, Math.min(max, n));
   const max = (scars: number) => hopeMax(scars, sheet.hopeSlotBonus ?? 0);
   const next = { ...sheet };
@@ -150,7 +195,7 @@ export function applyResourceDelta<T extends Tracks>(sheet: T, resource: Resourc
   }
   if (resource === "stress") {
     if (delta > 0) {
-      const marked = markStress(sheet, delta);
+      const marked = markStress(sheet, delta, rules);
       next.stress = marked.stress;
       next.hp = marked.hp;
     } else next.stress = clamp(sheet.stress + delta, sheet.stressMax);

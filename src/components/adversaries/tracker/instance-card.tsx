@@ -4,7 +4,7 @@ import { useState, type KeyboardEvent } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
 import { Pip } from "@/components/party/sheet-ui";
-import { hordeHalved, MAX_DAMAGE, SEVERITY_LABEL, vulnerableFromStress } from "@/lib/domain/encounters/damage";
+import { hordeHalved, lastHp, MAX_DAMAGE, SEVERITY_LABEL, stressFull, vulnerableFromStress, type DamageRules } from "@/lib/domain/encounters/damage";
 import { spotlightLimit, spotlightStatus, spotlightsThisTurn } from "@/lib/domain/encounters/spotlight";
 
 import type { BlockRules } from "./rules";
@@ -77,7 +77,11 @@ function thresholdsText(major: number | null, severe: number | null, type: strin
 
 type DamageOutcome = { text: string; suggestedDefeats: number | null };
 
-/** The damage box: amount, Resistant, Apply; a Minion group gets the suggested defeats to confirm (CB p.201, Q4). */
+/**
+ * The damage box: amount, Resistant, Apply; a Minion group gets the suggested defeats to confirm (CB p.201, Q4). The
+ * result line follows the campaign's modes: "Massive" (CB p.91), "resists: not halved" (D2 Manual), "last HP: not
+ * defeated" (D8 Manual).
+ */
 function DamageBox({ instance, actions, remaining }: { instance: TrackerInstance; actions: TrackerActions; remaining: number }) {
   const [amount, setAmount] = useState("");
   const [resistant, setResistant] = useState(false);
@@ -90,7 +94,7 @@ function DamageBox({ instance, actions, remaining }: { instance: TrackerInstance
     if (!valid) return;
     const result = await actions.applyDamage(instance._id, value, resistant);
     if (!result) return;
-    const halved = resistant ? ` (halved to ${result.taken})` : "";
+    const halved = !resistant ? "" : result.resistanceApplied ? ` (halved to ${result.taken})` : " (resists: not halved, GM's call)";
     if (result.suggestedDefeats !== null) {
       setDefeats(Math.max(1, result.suggestedDefeats));
       setOutcome({
@@ -98,7 +102,9 @@ function DamageBox({ instance, actions, remaining }: { instance: TrackerInstance
         suggestedDefeats: result.suggestedDefeats,
       });
     } else {
-      setOutcome({ text: `${SEVERITY_LABEL[result.severity]}: ${result.marked} HP marked${halved}`, suggestedDefeats: null });
+      const label = result.massive ? "Massive" : SEVERITY_LABEL[result.severity];
+      const standing = result.lastHp && !result.defeated ? " · last HP: not defeated" : "";
+      setOutcome({ text: `${label}: ${result.marked} HP marked${halved}${standing}`, suggestedDefeats: null });
     }
     setAmount("");
   }
@@ -215,12 +221,18 @@ function Tags({ instance, actions }: { instance: TrackerInstance; actions: Track
  * sheet's sheet-ui pips on a parchment strip), the damage box, Minion group count
  * and defeats, the Horde halved note, conditions (+ Vulnerable while Stress is full, CB p.178), tags and the spotlight
  * counter for this GM turn. The name button selects it and shows its stat block.
+ *
+ * Rule switches (plan rule-switches, tracer RDM): `modes` are the campaign's modes. D5 Manual shows "Stress full" with
+ * no Vulnerable; D8 Manual shows "Last HP" on an adversary with every HP marked that the GM has not defeated; F3 Manual
+ * labels an extra spotlight "Spotlight · extra" (no Fear is spent; the GM gets a note).
  */
 export function InstanceCard({
   instance,
   rules,
   gmTurn,
   spotlightCostsFear = false,
+  extraSpotlight = false,
+  modes = {},
   selected,
   onSelect,
   actions,
@@ -230,6 +242,10 @@ export function InstanceCard({
   gmTurn: number;
   /** A spotlight was already given this GM turn, so the next one spends 1 Fear (CB p.153). */
   spotlightCostsFear?: boolean;
+  /** F3 Manual: the next spotlight is an extra one this GM turn, but no Fear is spent by itself. */
+  extraSpotlight?: boolean;
+  /** The campaign's damage rule modes (unset = the Book). */
+  modes?: DamageRules;
   selected: boolean;
   onSelect: () => void;
   actions: TrackerActions;
@@ -241,7 +257,9 @@ export function InstanceCard({
   const spot = spotlightStatus(spotlightsThisTurn(instance, gmTurn), spotlightLimit(rules?.relentless ?? null));
   const maxed = spot.limit !== "X" && spot.count >= spot.limit;
   const halved = rules?.hordeX && !instance.defeated && hordeHalved(tracks);
-  const autoVulnerable = vulnerableFromStress(tracks);
+  const autoVulnerable = vulnerableFromStress(tracks, modes);
+  const fullOnly = !autoVulnerable && stressFull(tracks);
+  const standing = !instance.defeated && modes.adversaryDefeated === "manual" && lastHp(tracks);
   const typeLine = instance.type ? `Tier ${instance.tier} ${instance.type}` : "deleted custom adversary";
 
   return (
@@ -253,6 +271,7 @@ export function InstanceCard({
         </button>
         <span className="trk-type">{typeLine}</span>
         {instance.defeated ? <span className="trk-badge trk-badge-defeated">Defeated</span> : null}
+        {standing ? <span className="trk-badge trk-badge-defeated">Last HP</span> : null}
         <span className="trk-diff">
           Difficulty <b>{stats.difficulty}</b>
           <span className="trk-thr" data-testid="thresholds">
@@ -282,6 +301,7 @@ export function InstanceCard({
           </BrandButton>
         ))}
         {autoVulnerable && !instance.conditions.includes("vulnerable") ? <span className="trk-auto">Vulnerable · Stress full</span> : null}
+        {fullOnly ? <span className="trk-auto">Stress full</span> : null}
       </div>
       <Tags instance={instance} actions={actions} />
 
@@ -294,10 +314,10 @@ export function InstanceCard({
           // At or past its limit for this GM turn (1, or Relentless X): ember (the warning colour), never blocked.
           variant={maxed ? "danger" : "neutral"}
           data-maxed={maxed}
-          aria-label={`Spotlight ${instance.label}${spotlightCostsFear ? " (spends 1 Fear)" : ""}`}
+          aria-label={`Spotlight ${instance.label}${spotlightCostsFear ? " (spends 1 Fear)" : extraSpotlight ? " (extra spotlight, no Fear spent)" : ""}`}
           onClick={() => void actions.spotlight(instance._id)}
         >
-          {spotlightCostsFear ? "Spotlight · 1 Fear" : "Spotlight"}
+          {spotlightCostsFear ? "Spotlight · 1 Fear" : extraSpotlight ? "Spotlight · extra" : "Spotlight"}
         </BrandButton>
       </div>
     </article>
