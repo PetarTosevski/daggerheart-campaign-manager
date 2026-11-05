@@ -162,6 +162,20 @@ describe("dcm-0wj1 / dcm-f0m: bearer riders on itself run when it acts", () => {
     const rows = await t.run((ctx) => ctx.db.query("actionLog").withIndex("by_campaign_at", (q) => q.eq("campaignId", campaignId)).collect());
     expect(rows.some((r) => r.visibility === "gm" && /On Fire \(.*\): Troll acts and takes \d+ magic damage/.test(r.summary))).toBe(true);
   });
+
+  it("Poisoned (Venomous Bite / Strike, CB p.32-33): the instance takes 1d10 direct physical damage when it acts, no GM prompt", async () => {
+    const { w, gm, campaignId, add, get, t } = await arena();
+    const troll = await add("mountain-troll", "Troll", 0, { tags: ["Poisoned"] });
+    await gm.mutation(api.adversaryActions.attack, { campaignId, instanceId: troll, targets: [w.characterA], spendFear: 1, idempotencyKey: key() });
+    const rows = await t.run((ctx) => ctx.db.query("actionLog").withIndex("by_campaign_at", (q) => q.eq("campaignId", campaignId)).collect());
+    const line = rows.map((r) => /Poisoned \(beastform:.*\): Troll acts and takes (\d+) direct physical damage \((\d+) HP\)/.exec(r.summary)).find((m) => m !== null);
+    expect(line).toBeDefined();
+    const [rolled, marked] = [Number(line![1]), Number(line![2])];
+    expect(rolled).toBeGreaterThanOrEqual(1);
+    expect(rolled).toBeLessThanOrEqual(10);
+    expect((await get(troll)).hp).toBe(marked);
+    expect(rows.some((r) => /Poisoned.*1d10/.test(r.summary))).toBe(false);
+  });
 });
 
 describe("dcm-spj0: Hope before forced HP with no hit (Doom, HF p.75)", () => {

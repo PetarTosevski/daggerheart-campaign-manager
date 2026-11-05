@@ -231,7 +231,8 @@ describe("Tier 1 features (CB p.32)", () => {
   it("Venomous Bite: automatic on a Melee success, the target temporarily Poisoned", () => {
     const plan = ok(bf("stalking-arachnid", "Venomous Bite"), undefined, { actor: inForm("stalking-arachnid"), rng: queueRng([]), targets: [foe("bandit")] });
     expect(ofKind(plan, "condition")[0]).toMatchObject({ condition: { kind: "tag", tag: "Poisoned" }, duration: "temporary" });
-    expect(ofKind(plan, "prompt")[0]!.text).toContain("1d10 direct physical damage each time they act");
+    // dcm-bxp.99.19.3: the bearer's engine runs the 1d10 (the condition's rider); no manual prompt.
+    expect(ofKind(plan, "prompt")).toEqual([]);
   });
 
   it("Webslinger: a Finesse Roll against a target within Close; on a success temporarily Restrained", () => {
@@ -417,7 +418,7 @@ describe("Tier 3 and 4 features (CB p.34-35)", () => {
 });
 
 describe("SRD-F1: Poisoned (CB p.32-33) carries its rider", () => {
-  it("Venomous Bite and Venomous Strike: the condition's bearer rider is 1d10 direct physical each time they act; the prompt stays (dcm-mm0f)", () => {
+  it("Venomous Bite and Venomous Strike: the condition's bearer rider is 1d10 direct physical each time they act; no manual prompt (dcm-bxp.99.19.3)", () => {
     for (const [form, name] of [
       ["stalking-arachnid", "Venomous Bite"],
       ["striking-serpent", "Venomous Strike"],
@@ -429,7 +430,7 @@ describe("SRD-F1: Poisoned (CB p.32-33) carries its rider", () => {
         duration: "temporary",
         mods: [{ kind: "bearerRider", rider: { on: "acts", steps: [{ kind: "damage", to: "self", roll: { kind: "dice", dice: { count: { kind: "fixed", value: 1 }, sides: 10 } }, type: "physical", direct: true }] } }],
       });
-      expect(steps.some((s) => s.kind === "manual"), name).toBe(true);
+      expect(steps.some((s) => s.kind === "manual"), name).toBe(false);
     }
   });
 });

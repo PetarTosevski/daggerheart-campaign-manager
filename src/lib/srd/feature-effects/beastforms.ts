@@ -141,9 +141,8 @@ const situation = (text: string): Requirement => ({ kind: "situation", text });
 
 const VULNERABLE = { kind: "standard", condition: "vulnerable" } as const;
 const RESTRAINED = { kind: "standard", condition: "restrained" } as const;
-/** CB p.32-33: "A Poisoned creature takes 1d10 direct physical damage each time they act" (`poisoned` below; dcm-mm0f runs it). */
+/** CB p.32-33: "A Poisoned creature takes 1d10 direct physical damage each time they act" (`poisoned` below). */
 const POISONED = { kind: "tag", tag: "Poisoned" } as const;
-const POISON_TEXT = "Poisoned: the creature takes 1d10 direct physical damage each time they act (roll it when they act).";
 
 const enemy = (range: TargetSpec["range"], count: TargetSpec["count"] = { kind: "one" }, extra: Partial<TargetSpec> = {}): TargetSpec => ({ side: "enemy", range, count, ...extra });
 
@@ -169,8 +168,10 @@ const temporarily = (condition: typeof VULNERABLE | typeof RESTRAINED | typeof P
 
 /**
  * Temporarily Poisoned with what it does (plan lanes V, dcm-bxp.99.19.3): a `bearerRider` on the condition, "1d10 direct
- * physical damage each time they act" (`self` in the rider is the bearer). The bearer's engines don't run condition riders
- * yet (dcm-mm0f), so the entries keep the POISON_TEXT prompt beside it.
+ * physical damage each time they act" (`self` in the rider is the bearer). The bearer's engines run it, so there is no
+ * manual prompt beside it (dcm-bxp.99.19.3): an adversary takes the damage when it acts (convex/lib/adversaryActions.ts,
+ * `selfRiderSteps`; the instance's "Poisoned" tag finds this rider through `tagEntry`), a PC before each of its action
+ * rolls (convex/lib/rolls.ts `bearerRiderRuns`).
  */
 const poisoned: Step = {
   ...(temporarily(POISONED) as Extract<Step, { kind: "condition" }>),
@@ -448,7 +449,7 @@ const FEATURES: readonly FeatureEffect[] = [
       id: "main",
       name: "Venomous Bite",
       activation: { kind: "auto", trigger: onMeleeSuccess },
-      steps: [poisoned, { kind: "manual", to: "targets", text: POISON_TEXT }],
+      steps: [poisoned],
     }),
   ]),
   // Webslinger (Stalking Arachnid): "You can create a strong web material useful for both adventuring and battle. The web
@@ -607,7 +608,7 @@ const FEATURES: readonly FeatureEffect[] = [
       activation: { kind: "action" },
       roll: formRoll("finesse"),
       targets: enemy("veryClose", { kind: "any" }),
-      steps: [physical(8, 4), poisoned, { kind: "manual", to: "targets", when: ["hit"], text: POISON_TEXT }],
+      steps: [physical(8, 4), poisoned],
     }),
   ]),
   // Warning Hiss (Striking Serpent): "Mark a Stress to force any number of targets within Melee range to move back to Very
