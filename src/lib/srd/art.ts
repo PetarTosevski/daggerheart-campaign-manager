@@ -266,8 +266,8 @@ export const PORTRAITS: Readonly<Record<string, PortraitArt>> = {
 };
 
 /** Domain card id -> asset id. */
-export const DOMAIN_CARD_ART: Readonly<Record<string, string>> = Object.fromEntries(
-  DOMAIN_CARDS.flatMap((card) => (card.art ? [[card.id, card.art]] : [])),
+export const DOMAIN_CARD_ART: Readonly<Record<string, string>> = /* @__PURE__ */ Object.fromEntries(
+  /* @__PURE__ */ DOMAIN_CARDS.flatMap((card) => (card.art ? [[card.id, card.art]] : [])),
 );
 
 /** Transformation art keyed by board art key (transformation id, plus vampire variants). */
