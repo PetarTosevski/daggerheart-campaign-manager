@@ -31,7 +31,7 @@ import { campaignLight } from "./campaignLight";
 import { derivedTraits } from "../../src/lib/domain/characters/derived";
 import type { FeatureScope } from "../../src/lib/domain/class-features/types";
 import { withEffects } from "../../src/lib/domain/characters/effects";
-import { activeAreasOnMap, areaSightBlocks } from "../combatAreas";
+import { activeAreasOnMap, areaSightBlocks } from "./combatAreas";
 import { preparedFor, type AreaSightBlock } from "./areaSight";
 import { readSheet } from "./characterSheet";
 import { hudConditionValidator, hudConditions } from "./combatHud";

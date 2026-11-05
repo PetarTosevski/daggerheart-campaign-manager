@@ -17,7 +17,7 @@ import { effectEndsOf, needsChoiceValidator, pendingCardValidator, type ChoiceAs
 import { actorSheetAfter, buildRun, replaying, runCard, type BuiltRun, type RunOutcome } from "./lib/cardRunner";
 import type { RunPlan } from "../src/lib/domain/card-effects/run";
 import type { CardUse } from "../src/lib/domain/card-effects/types";
-import { MAX_AREA_COUNT } from "./combatAreas";
+import { MAX_AREA_COUNT } from "./lib/combatAreas";
 import { afterUse, foldPcRolls, foldSteps, rerunWith, runWithRiders, autoUsesOn, rollHost, type RiderSheets, type Square } from "./combatCards";
 import { companionFor, companionNumbers } from "./lib/companion";
 import { assertCanAct, loadCharacter, readSheet, saveSheet, storedSheet } from "./lib/characterSheet";

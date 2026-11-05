@@ -61,7 +61,7 @@ import type { CompanionNumbers } from "./companion";
 import { noteHopeSpent, partyOf, saveSheet } from "./characterSheet";
 import type { AttackScene } from "./combatActions";
 import { hasServerMove, isMarkOf, isRolledFirst, openAllyRoll, spendTargetCount, withoutRollCosts } from "./featurePrompts";
-import { activeAreasOnMap, areaFactsFor } from "../combatAreas";
+import { activeAreasOnMap, areaFactsFor } from "./combatAreas";
 import { campaignFearState, gainFear, spendFear } from "./fear";
 import { changed } from "./rolls";
 import { rollValidator } from "./validators/actionLog";

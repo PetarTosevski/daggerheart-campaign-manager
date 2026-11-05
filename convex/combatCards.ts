@@ -88,7 +88,7 @@ import { changed } from "./lib/rolls";
 import { logUnshakable, unshakePlan, type UnshakableRoll } from "./lib/unshakable";
 import { MAX_RIDERS_PER_ATTACK, riderValidator, type Rider } from "./lib/validators/combatRequests";
 import type { PlanStep, RunPlan } from "../src/lib/domain/card-effects/run";
-import { activeAreasOnMap, MAX_AREA_COUNT, placeAreasFromPlan } from "./combatAreas";
+import { activeAreasOnMap, MAX_AREA_COUNT, placeAreasFromPlan } from "./lib/combatAreas";
 import type { Step } from "../src/lib/domain/card-effects/types";
 import { rangeFromWeapon } from "../src/lib/domain/combat-actions/index";
 

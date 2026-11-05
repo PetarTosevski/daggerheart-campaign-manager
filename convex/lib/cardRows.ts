@@ -28,7 +28,7 @@ import type { TraitId } from "../../src/lib/srd/types";
 import type { CharacterSheet, Condition, Effect } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
-import { activeAreasOnMap, areaSpecOf, endArea } from "../combatAreas";
+import { activeAreasOnMap, areaSpecOf, endArea } from "./combatAreas";
 import { logAction } from "./actionLog";
 import { cardIdOfEffect, difficultyOf, effectKeyOf, effectOption, endRollOf, featureIdOfEffect, isFeatureUseId, lapsedConditions, tokenIdsOf, type BuiltRun, type Creatures, type EnemyCreature } from "./cardRunner";
 import { readSheet, saveSheet } from "./characterSheet";

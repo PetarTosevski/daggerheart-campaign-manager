@@ -5,7 +5,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import { MAX_AREA_COUNT } from "../../convex/combatAreas";
+import { MAX_AREA_COUNT } from "../../convex/lib/combatAreas";
 import { pickSquaresInTurn } from "../../src/components/combat-map/drawer/use";
 import { areaUseArgs, MAX_PICKED_SQUARES, pickAreaOf, pickPrompt, squaresToPick } from "../../src/components/combat-map/drawer/use/model";
 import { finishAreaPick, useAreaPick } from "../../src/components/combat-map/map-view/area-pick";

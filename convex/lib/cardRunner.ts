@@ -58,7 +58,7 @@ import type { CharacterSheet, Effect } from "../../src/lib/validation/characters
 import { FEATURE_USES_MAX } from "../../src/lib/validation/character-constants";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
-import { activeAreasOnMap, areaFactsFor } from "../combatAreas";
+import { activeAreasOnMap, areaFactsFor } from "./combatAreas";
 import type { AttackScene } from "./combatActions";
 import { preparedFor } from "./areaSight";
 import { DEFAULT_OPTIONALS, MAX_CARD_TARGETS, MAX_CHAIN_LINKS, type CardRoll, type ParsedChoices } from "./cardChoices";

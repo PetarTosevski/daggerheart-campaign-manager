@@ -50,7 +50,7 @@ import { parseChoices, type CardChoice } from "./cardChoices";
 import { cardActor, cardIdOfEffect, effectOption, endConditionsOnRoll, endedConditionLine, featureIdOfEffect, pcCombatant, writeSheetChanges, type EndedCondition } from "./cardRunner";
 import { partyOf, readSheet } from "./characterSheet";
 import { tokensOnMap } from "./combatMaps";
-import { activeAreasOnMap, areaFactsFor } from "../combatAreas";
+import { activeAreasOnMap, areaFactsFor } from "./combatAreas";
 import type { HitRider, IncomingHitPayload, PcAttacker } from "./validators/combatRequests";
 
 /** One hit before armor, as the runner's `IncomingHitDraft` gives it. */

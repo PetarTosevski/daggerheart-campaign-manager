@@ -17,7 +17,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
-import { forcedMoveReduceOf } from "../../convex/combatAreas";
+import { forcedMoveReduceOf } from "../../convex/lib/combatAreas";
 import { pcRollAdversaryUses } from "../../convex/lib/adversaryActions";
 import { instanceStatsOf } from "../../convex/lib/adversaryFeatures";
 import { markHpKeyword } from "../../convex/lib/adversaryHits";

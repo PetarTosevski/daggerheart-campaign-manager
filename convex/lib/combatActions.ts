@@ -65,7 +65,7 @@ import { logAction, newGroupId } from "./actionLog";
 import { parseChoices, type CardChoice, type ParsedChoices } from "./cardChoices";
 import { adversaryBefore, cardPromptValidator, endAdversaryConditionsForCaster, endAdversaryConditionsOnRoll, endForCasterOnInstances, endForCasterOnSheets, endOnDefeat, endOnInstance, endOnSheet, gmLines, holdsSource, instanceEffectSource, instanceWrites, promptsOf, srdUses, writeInstances, type CardPrompt, type InstanceWrite, type SourceLookup } from "./cardRows";
 import { adversaryState, blockOf as adversaryBlockOf, riderStepsText } from "./adversaryFeatures";
-import { activeAreasOnMap, memberConditionsFor, observerConditions } from "../combatAreas";
+import { activeAreasOnMap, memberConditionsFor, observerConditions } from "./combatAreas";
 import {
   actorSheetAfter,
   bindGates,

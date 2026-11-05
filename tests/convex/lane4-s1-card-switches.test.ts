@@ -24,7 +24,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { areaSpecOf } from "../../convex/combatAreas";
+import { areaSpecOf } from "../../convex/lib/combatAreas";
 import { readSheet, saveSheet } from "../../convex/lib/characterSheet";
 import { bandsOnMap, openIncomingHit, partyMembers } from "../../convex/lib/incomingHits";
 import { tokenDistance } from "../../src/lib/domain/combat-actions/distance";
