@@ -32,7 +32,8 @@ import {
 } from "@/components/combat-map/hud/pick-area";
 import { placementProblem, previewRadius, startCursor } from "@/components/combat-map/hud/pick-area/model";
 import { featureBlocked, featureChoices, featureOptions, riderPicksOf, useFeatureUse } from "@/components/combat-map/hud/pick-feature";
-import { areaAskOf, featurePlan, featureRiderOptions, hopeShortfall, payLine, resultLine } from "@/components/combat-map/hud/pick-feature/model";
+import { areaAskOf, featurePlan, hasActionRoll, hopeShortfall, payLine, resultLine, riderSwitches } from "@/components/combat-map/hud/pick-feature/model";
+import type { RiderOption } from "@/components/combat-map/actions/attack/riders";
 import { ridersToSend } from "@/components/combat-map/actions/attack/riders";
 import { HudProvider } from "@/components/combat-map/hud/state";
 import type { CombatPageState, MapLayerProps } from "@/components/combat-map/slots";
@@ -45,6 +46,8 @@ let results: unknown[] = [];
 const functionName = (ref: unknown) => String((ref as Record<symbol, unknown>)[Symbol.for("functionName")] ?? ref);
 
 const read: string[] = [];
+/** One-shot reads (`useConvex().query`): the feature picker's `combatFeatures.riders` (dcm-bxp.99.32.19). */
+const oneShot: { name: string; args: Record<string, unknown> }[] = [];
 vi.mock("convex/react", () => ({
   useQuery: (ref: unknown, args: unknown) => {
     if (args !== "skip") read.push(functionName(ref));
@@ -58,12 +61,19 @@ vi.mock("convex/react", () => ({
     };
     return Object.assign(run, { withOptimisticUpdate: () => run });
   },
+  useConvex: () => ({
+    query: async (ref: unknown, args: Record<string, unknown>) => {
+      oneShot.push({ name: functionName(ref), args });
+      return queries[functionName(ref)] ?? [];
+    },
+  }),
 }));
 
 afterEach(() => {
   for (const k of Object.keys(queries)) delete queries[k];
   calls.length = 0;
   read.length = 0;
+  oneShot.length = 0;
   results = [];
   act(() => resetAreaPickForTests());
   hudResults.reset();
@@ -315,6 +325,24 @@ describe("square picking: the bar and the map layer", () => {
 
 // ---------------------------------------------------------------- the feature picker
 
+/** Feed's Fear Die as `combatFeatures.riders` lists it on Fangs' action roll (HF p.39). */
+const FEED_RIDER: RiderOption = {
+  source: "feature",
+  id: "transformation:vampire:feed",
+  useId: "fear-die",
+  name: "Feed: Fear Die a d20",
+  phase: "before",
+  when: "Before the roll",
+  ready: true,
+  resetLabel: null,
+  costs: [],
+  limit: null,
+  numbers: [],
+  options: [],
+  situations: [],
+  addTargets: null,
+};
+
 const FEED = {
   featureId: "transformation:vampire:feed",
   name: "Feed",
@@ -336,15 +364,16 @@ describe("feature uses: the model", () => {
     expect(featurePlan("nope", "main").kind).toBe("classic");
   });
 
-  it("dcm-aiwg: Fangs' action roll offers Feed's Fear Die (before the roll); Feed's own rider waits for the damage", () => {
+  it("dcm-aiwg / dcm-bxp.99.32.19: the server's riders become switches (default-on ones ride by themselves); no action roll, no riders", () => {
     const plan = featurePlan("transformation:vampire:fangs", "main");
     if (plan.kind !== "panel") throw new Error("panel");
-    const riders = featureRiderOptions({ featureId: "transformation:vampire:fangs", use: plan.use, trait: "agility", features: [FEED], cards: [] });
+    expect(hasActionRoll(plan.use)).toBe(true);
+    const riders = riderSwitches([FEED_RIDER, { ...FEED_RIDER, id: "subclass:call-of-the-brave:rise-to-the-challenge", useId: "main", defaultOn: true }]);
     expect(riders.map((r) => [r.id, r.useId, r.phase])).toEqual([["transformation:vampire:feed", "fear-die", "before"]]);
-    // Feed's Fear Die rides on any action roll; nothing rides on a use without one.
+    // Nothing rides on a use without an action roll (the picker asks the server nothing for it).
     const cloak = featurePlan("subclass:nightwalker:shadow-stepper", "main");
     if (cloak.kind !== "panel") throw new Error("panel");
-    expect(featureRiderOptions({ featureId: "subclass:nightwalker:shadow-stepper", use: cloak.use, features: [FEED], cards: [] })).toEqual([]);
+    expect(hasActionRoll(cloak.use)).toBe(false);
     // The switches and what goes to the server.
     const options = featureOptions(plan.form, riders);
     expect(options).toEqual([expect.objectContaining({ id: "rider:feature|transformation:vampire:feed|fear-die", label: "Feed: Fear Die a d20", disabled: false })]);
@@ -391,6 +420,7 @@ function seedFeatures() {
   seedView();
   queries["combatFeaturesReads:drawer"] = { characterId: CHARACTER, trackers: { hope: { value: 2, max: 6 } }, features: [FEED] };
   queries["combatCardsReads:hand"] = { characterId: CHARACTER, loadout: [], vault: [] };
+  queries["combatFeatures:riders"] = [FEED_RIDER];
 }
 
 describe("feature uses: the picker (useFeatureUse)", () => {
@@ -420,6 +450,11 @@ describe("feature uses: the picker (useFeatureUse)", () => {
       name: "combatFeatures:useFeature",
       args: { campaignId: CAMPAIGN, characterId: CHARACTER, mapId: MAP, featureId: "transformation:vampire:fangs", useId: "main", targetTokenIds: [LT], roll: { trait: "finesse" }, riders: [{ source: "feature", id: "transformation:vampire:feed", useId: "fear-die", choices: [] }] },
     });
+    // dcm-bxp.99.32.19: the riders came from the server, for the trait the panel held (opened on Agility, sent on Finesse).
+    expect(oneShot).toEqual([
+      { name: "combatFeatures:riders", args: { campaignId: CAMPAIGN, characterId: CHARACTER, featureId: "transformation:vampire:fangs", useId: "main", trait: "agility" } },
+      { name: "combatFeatures:riders", args: { campaignId: CAMPAIGN, characterId: CHARACTER, featureId: "transformation:vampire:fangs", useId: "main", trait: "finesse" } },
+    ]);
     // dcm-bxp.99.32.26: the result panel shows it (the roll, Hit per target by name), not the square-picking bar.
     await waitFor(() => expect(hudResults.get()).not.toBeNull());
     const entry = hudResults.get();
@@ -463,6 +498,7 @@ describe("feature uses: the picker (useFeatureUse)", () => {
   it("Dark Cloud: nothing to ask, so no panel: straight to the square; the send has `point`", async () => {
     seedFeatures();
     queries["combatFeaturesReads:drawer"] = { characterId: CHARACTER, trackers: { hope: { value: 2, max: 6 } }, features: [] };
+    queries["combatFeatures:riders"] = [];
     const opened = vi.fn();
     render(
       <Hud>
@@ -471,8 +507,9 @@ describe("feature uses: the picker (useFeatureUse)", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Use subclass:nightwalker:dark-cloud" }));
     expect(opened).toHaveBeenCalledWith("area");
+    // The server's riders come first (none), then straight to the square.
+    expect(await screen.findByTestId("hud-area-banner")).toHaveTextContent("Pick the centre of Dark Cloud within Close");
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.getByTestId("hud-area-banner")).toHaveTextContent("Pick the centre of Dark Cloud within Close");
     fireEvent.click(screen.getByTestId("hud-area-layer"), px(9, 6));
     results = [{ status: "resolved", entryId: "e", featureId: "f", useId: "main", roll: { total: 16 }, damage: [], success: true, targets: [], fearDelta: 0, prompts: [], notes: [] }];
     fireEvent.click(screen.getByRole("button", { name: "Place Dark Cloud here" }));

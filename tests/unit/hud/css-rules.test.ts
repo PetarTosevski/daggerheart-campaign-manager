@@ -43,3 +43,13 @@ describe("Spend n Fear? at the GM's phone width (dcm-bxp.99.32.44)", () => {
     expect(css("ui/ui.css")).toMatch(/\.hud-panel \{[^}]*z-index: 90;/);
   });
 });
+
+describe("target rings under the HUD overlay (dcm-bxp.99.32.45)", () => {
+  it("the ring layer stacks below .hud-over at every width, so a panel's roll chips are never covered by a ring", () => {
+    const pick = css("pick/pick.css").replace(/\/\*[\s\S]*?\*\//g, "");
+    const over = Number(/\.hud-over \{[^}]*z-index: (\d+);/.exec(css("shell.css"))![1]);
+    const layers = Array.from(pick.matchAll(/\.hud-tg-layer \{[^}]*z-index: (\d+);/g), (m) => Number(m[1]));
+    expect(layers.length).toBeGreaterThan(0);
+    for (const z of layers) expect(z).toBeLessThan(over);
+  });
+});

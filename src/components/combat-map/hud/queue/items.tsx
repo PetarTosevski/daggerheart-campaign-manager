@@ -16,6 +16,7 @@ import {
   cloakSub,
   difficultyReason,
   difficultyRoll,
+  gmPromptSub,
   isAlreadyAnswered,
   itemLabel,
   outOfRangeReason,
@@ -93,6 +94,11 @@ export function useQueueAnswers(campaignId: CampaignId) {
     }
   });
 
+  const gmPrompt = useMutation(api.adversaryPrompts.answer).withOptimisticUpdate((store, { requestId }) => {
+    const rows = store.getQuery(api.adversaryPromptsReads.pending, { campaignId });
+    if (rows !== undefined) store.setQuery(api.adversaryPromptsReads.pending, { campaignId }, drop(rows, requestId));
+  });
+
   async function run(item: QueueItem, send: (key: { campaignId: CampaignId; requestId: RequestId; idempotencyKey: string }) => Promise<AnswerOutcome>) {
     const { key } = item;
     setBusy((b) => new Set(b).add(key));
@@ -164,6 +170,12 @@ export function useQueueAnswers(campaignId: CampaignId) {
         await cancelAlly(k);
         return { line: `Cancelled: ${item.row.rollerName}’s roll for ${item.row.featureName}.` };
       }),
+    /** dcm-bxp.99.32.27: an adversary feature's GM prompt, applied by hand (Done) or dismissed. */
+    gmPrompt: (item: Extract<QueueItem, { kind: "gmPrompt" }>, done: boolean) =>
+      run(item, async ({ requestId, idempotencyKey }) => {
+        await gmPrompt({ campaignId, requestId, done, idempotencyKey });
+        return { line: `${done ? "Done" : "Dismissed"}: ${item.row.instanceLabel} · ${item.row.feature}.` };
+      }),
   };
 }
 
@@ -196,6 +208,11 @@ const ICON = {
   fire: (
     <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
       <path d="M8 1c1.5 3 4.5 4.5 4.5 8.2A4.5 4.5 0 0 1 3.5 9.2C3.5 7 5 6 5.5 4.5 6.5 6 7 6.2 7.3 6 7.6 4 8 2.5 8 1z" />
+    </svg>
+  ),
+  feature: (
+    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <path d="M2 12h12l-1-7-3 3-2-5-2 5-3-3z" />
     </svg>
   ),
   ally: (
@@ -326,6 +343,21 @@ export function QueueCard({ item, answers }: { item: QueueItem; answers: QueueAn
             Waiting on {item.row.rollerName} to roll.
             <WaitingDots className="hud-q-dots" />
           </p>
+          <CardError text={error} />
+        </Popup>
+      );
+    case "gmPrompt":
+      return (
+        <Popup
+          icon={ICON.feature}
+          tone="gm"
+          title={item.row.feature}
+          sub={gmPromptSub(item.row)}
+          testId="hud-queue-gm-prompt"
+          primary={{ label: "Done", ariaLabel: `Done: ${label}`, disabled: busy, onClick: () => void answers.gmPrompt(item, true) }}
+          secondary={no("Dismiss", () => void answers.gmPrompt(item, false), busy, `Dismiss: ${label}`)}
+        >
+          <p>{item.row.text}</p>
           <CardError text={error} />
         </Popup>
       );

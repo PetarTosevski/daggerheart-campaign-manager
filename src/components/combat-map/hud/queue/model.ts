@@ -4,7 +4,7 @@
  * Convex calls. Unit tests: tests/unit/hud/queue-model.test.tsx.
  *
  * ```ts
- * queueItems({ attacks, cards, features, difficulties, windows, cloaks, keywords, allyRolls }); // oldest first
+ * queueItems({ attacks, cards, features, difficulties, windows, cloaks, keywords, allyRolls, gmPrompts }); // oldest first
  * resolutionRows(feedPage);                                                                     // newest first, 8
  * errorCode(e);                                                                                 // "REQUEST_NOT_OPEN"
  * ```
@@ -62,6 +62,19 @@ export type KeywordAsk = {
 /** `featurePromptsReads.allyRolls`'s `pending` (the GM's list). */
 export type AllyRollAsk = { requestId: string; characterName: string; rollerName: string; featureName: string; createdAt: number };
 
+/**
+ * `adversaryPromptsReads.pending` (dcm-bxp.99.32.27): one stored GM prompt of an adversary feature use, the step the GM
+ * applies by hand (summon the Lackeys, tick a countdown, a PC's save, ...).
+ */
+export type GmPromptAsk = {
+  requestId: string;
+  instanceLabel: string;
+  feature: string;
+  prompt: "manual" | "move" | "pcSave" | "summon" | "countdown" | "spotlight" | "choice";
+  text: string;
+  createdAt: number;
+};
+
 /** One queue card. `kind` picks the card and the keyed mutation that answers it. */
 export type QueueItem =
   | { kind: "attack"; key: string; createdAt: number; row: AttackSanction }
@@ -71,7 +84,8 @@ export type QueueItem =
   | { kind: "reactions"; key: string; createdAt: number; row: ReactionWindow }
   | { kind: "cloak"; key: string; createdAt: number; row: CloakAsk }
   | { kind: "keyword"; key: string; createdAt: number; row: KeywordAsk }
-  | { kind: "allyRoll"; key: string; createdAt: number; row: AllyRollAsk };
+  | { kind: "allyRoll"; key: string; createdAt: number; row: AllyRollAsk }
+  | { kind: "gmPrompt"; key: string; createdAt: number; row: GmPromptAsk };
 
 export type QueueSources = {
   attacks?: readonly AttackSanction[] | undefined;
@@ -82,6 +96,7 @@ export type QueueSources = {
   cloaks?: readonly CloakAsk[] | undefined;
   keywords?: readonly KeywordAsk[] | undefined;
   allyRolls?: readonly AllyRollAsk[] | undefined;
+  gmPrompts?: readonly GmPromptAsk[] | undefined;
 };
 
 /**
@@ -99,6 +114,7 @@ export function queueItems(s: QueueSources): QueueItem[] {
     ...(s.cloaks ?? []).map((row) => ({ kind: "cloak" as const, key: row.requestId, createdAt: row.createdAt, row })),
     ...(s.keywords ?? []).map((row) => ({ kind: "keyword" as const, key: row.requestId, createdAt: row.createdAt, row })),
     ...(s.allyRolls ?? []).map((row) => ({ kind: "allyRoll" as const, key: row.requestId, createdAt: row.createdAt, row })),
+    ...(s.gmPrompts ?? []).map((row) => ({ kind: "gmPrompt" as const, key: row.requestId, createdAt: row.createdAt, row })),
   ];
   return items.map((item, i) => ({ item, i })).sort((a, b) => a.item.createdAt - b.item.createdAt || a.i - b.i).map(({ item }) => item);
 }
@@ -175,6 +191,21 @@ export function cloakSub(row: Pick<CloakAsk, "label" | "targets">): string {
   return on ? `${row.label} on ${on}` : row.label;
 }
 
+const PROMPT_KIND: Record<GmPromptAsk["prompt"], string> = {
+  manual: "Apply it by hand",
+  move: "Move it",
+  pcSave: "A PC rolls to resist",
+  summon: "Summon",
+  countdown: "Countdown",
+  spotlight: "Spotlight",
+  choice: "Choose for the feature",
+};
+
+/** A GM prompt card's sub line: "Jagged Knife Lieutenant · Summon" (board CmpPromptsGM "Choose for the feature"). */
+export function gmPromptSub(row: Pick<GmPromptAsk, "instanceLabel" | "prompt">): string {
+  return `${row.instanceLabel} · ${PROMPT_KIND[row.prompt]}`;
+}
+
 /** A short name for an item, for "Already answered: …" and the result line. */
 export function itemLabel(item: QueueItem): string {
   switch (item.kind) {
@@ -192,6 +223,8 @@ export function itemLabel(item: QueueItem): string {
       return `${item.row.attackerLabel} → ${item.row.targetName}`;
     case "allyRoll":
       return `${item.row.rollerName} · ${item.row.featureName}`;
+    case "gmPrompt":
+      return `${item.row.instanceLabel} · ${item.row.feature}`;
   }
 }
 
@@ -217,6 +250,8 @@ export function arrivalTitle(item: QueueItem): string {
       return `${item.row.targetName}: ${item.row.question}`;
     case "allyRoll":
       return `${item.row.rollerName}: ally roll`;
+    case "gmPrompt":
+      return `${item.row.instanceLabel}: ${item.row.feature}`;
   }
 }
 
@@ -232,6 +267,16 @@ export function deathArrival(characterId: string, name: string, requestKey: stri
 export function newArrivals(seen: ReadonlySet<string> | null, now: readonly Arrival[]): Arrival[] {
   if (seen === null) return [];
   return now.filter((a) => !seen.has(a.key));
+}
+
+// ---------------------------------------------------------------- withdrawals (dcm-bxp.99.32.40)
+
+/** `combatRequestsReads.withdrawn`: a request its player took back. */
+export type Withdrawal = { requestId: string; characterName: string; useName: string; withdrawnAt: number };
+
+/** The GM's toast for a withdrawal: "Vex withdrew Bolt Beacon" (user 2026-11-02). */
+export function withdrawalArrival(row: Pick<Withdrawal, "requestId" | "characterName" | "useName">): Arrival {
+  return { key: `withdrawn:${row.requestId}`, title: `${row.characterName} withdrew ${row.useName}` };
 }
 
 /** The `code` of a `ConvexError<AppError>` (CF13), or undefined for anything else. */

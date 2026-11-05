@@ -264,7 +264,7 @@ function StatBlockBody({
     return guarded(() => acts.feature({ instanceId: instance._id, feature, ...args }, { label: `${label} uses ${feature}`, actor: who, feature }));
   }
 
-  const chips = conditionChips(instance.conditions, ends ?? []);
+  const chips = conditionChips(instance.conditions, ends ?? [], instance.conditionSources);
   const absent = CONDITIONS.filter((c) => !instance.conditions.includes(c));
   const hpMax = instance.stats.hpMax;
   const stressMax = instance.stats.stressMax;
@@ -316,6 +316,11 @@ function StatBlockBody({
           {chips.map((c) => (
             <li key={c.key} className="hsb-cd">
               {c.label}
+              {c.from ? (
+                <small className="hsb-cd-src" data-testid="hud-statblock-condition-source">
+                  {c.from}
+                </small>
+              ) : null}
               {c.end ? (
                 <EndByFear label={c.label} cost={c.end.fear} why={fearBlocked(c.end.fear, fear)} onEnd={() => void endEffect(c.end!)} />
               ) : c.condition ? (

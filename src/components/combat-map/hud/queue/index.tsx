@@ -14,7 +14,7 @@ import type { HudPartProps } from "../state";
 import { hudToasts } from "../toasts/store";
 import { PartBoundary } from "../ui";
 import { QueueCard, useQueueAnswers, type QueueAnswers } from "./items";
-import { arrivalTitle, deathArrival, newArrivals, queueItems, type Arrival, type QueueItem } from "./model";
+import { arrivalTitle, deathArrival, newArrivals, queueItems, withdrawalArrival, type Arrival, type QueueItem } from "./model";
 import { HudResolutions } from "./resolutions";
 import { prefersReducedMotion } from "@/lib/use-reduced-motion";
 
@@ -30,6 +30,8 @@ import { prefersReducedMotion } from "@/lib/use-reduced-motion";
  * - Does <name>'s Cloaked end?: `cloakPromptsReads.pending` — Yes, it ends / No, it stays (`cloakPrompts.answer`);
  * - Was this hit fire?: `hitKeywordsReads.asks` — Yes / No (`hitKeywords.answer`);
  * - ally rolls: `featurePromptsReads.allyRolls` (the GM's `pending`) — Cancel the roll (`featurePrompts.cancelAllyRoll`);
+ * - an adversary feature's GM prompts (summon, countdown, manual, ...): `adversaryPromptsReads.pending` — Done / Dismiss
+ *   (`adversaryPrompts.answer`, dcm-bxp.99.32.27);
  * - the death move confirm: `deathMoves.state` per PC — H4.3's `GmDeathConfirm` (Confirm the death move / Send it back).
  *
  * Every answer is the existing keyed mutation with an optimistic update that drops the card at once. A request someone
@@ -58,6 +60,7 @@ export const QueueInSheet = createContext(false);
 function GmQueue({ campaignId }: { campaignId: Id<"campaigns"> }) {
   const inSheet = useContext(QueueInSheet);
   const queue = useQueue(campaignId);
+  useWithdrawToasts(campaignId);
   if (inSheet) {
     return (
       <div className="hud-q-col" data-testid="hud-queue-column">
@@ -92,6 +95,7 @@ function useQueue(campaignId: Id<"campaigns">): Queue {
   const windows = useQuery(api.adversaryActionsReads.windows, { campaignId });
   const cloaks = useQuery(api.cloakPromptsReads.pending, { campaignId });
   const keywords = useQuery(api.hitKeywordsReads.asks, { campaignId });
+  const gmPrompts = useQuery(api.adversaryPromptsReads.pending, { campaignId });
   const characters = useQuery(api.charactersReads.listByCampaign, { campaignId });
   const live = useMemo(() => (characters ?? []).filter((c) => !c.corrupt), [characters]);
   // `allyRolls` reads for a character the caller edits; the GM's `pending` lists every open throw of the campaign.
@@ -115,6 +119,7 @@ function useQueue(campaignId: Id<"campaigns">): Queue {
     cloaks,
     keywords,
     allyRolls: ally?.pending,
+    gmPrompts,
   });
   const dying = live.flatMap((c) => {
     const s: unknown = deaths[c._id];
@@ -123,7 +128,7 @@ function useQueue(campaignId: Id<"campaigns">): Queue {
     return request === null ? [] : [deathArrival(c._id, c.sheet.name, String(request.at ?? ""))];
   });
   const count = items.length + dying.length;
-  const loading = mine === undefined || cards === undefined || features === undefined || difficulties === undefined || windows === undefined || cloaks === undefined || keywords === undefined;
+  const loading = mine === undefined || cards === undefined || features === undefined || difficulties === undefined || windows === undefined || cloaks === undefined || keywords === undefined || gmPrompts === undefined;
   const settled = !loading && characters !== undefined && (anyPc === undefined || ally !== undefined) && live.every((c) => deaths[c._id] !== undefined);
   const arrivals = settled ? [...items.map((item) => ({ key: item.key, title: arrivalTitle(item) })), ...dying] : null;
   return { items, live, count, loading, arrivals, answers };
@@ -189,6 +194,25 @@ function useArrivals(arrivals: Arrival[] | null, badge: RefObject<HTMLElement | 
     if (openPanelNow() === "queue") return;
     for (const a of fresh) hudToasts.push({ title: a.title, message: "Waiting on you", tone: "neutral", key: `queue|${a.key}` });
   }, [sig, badge]);
+}
+
+/**
+ * dcm-bxp.99.32.40 (user 2026-11-02): besides the feed line, the GM gets a short toast "Vex withdrew Bolt Beacon" when a
+ * player withdraws a request (`combatRequestsReads.withdrawn`, the latest few). Only withdrawals that arrive after the
+ * read first loaded toast: the first result is the baseline (the server's clock never meets the browser's), and the ids
+ * already seen are remembered. UI only: nothing is sent. Two mounted queues (desktop and phone sheet) share the toast key.
+ */
+function useWithdrawToasts(campaignId: Id<"campaigns">) {
+  const rows = useQuery(api.combatRequestsReads.withdrawn, { campaignId });
+  const seen = useRef<Set<string> | null>(null);
+  const sig = rows === undefined ? null : JSON.stringify(rows.map(withdrawalArrival));
+  useEffect(() => {
+    if (sig === null) return;
+    const now = JSON.parse(sig) as Arrival[];
+    const fresh = newArrivals(seen.current, now);
+    seen.current = new Set([...(seen.current ?? []), ...now.map((a) => a.key)]);
+    for (const a of fresh.reverse()) hudToasts.push({ title: a.title, message: "It left Waiting on you.", tone: "neutral", key: a.key });
+  }, [sig]);
 }
 
 /** The count's pulse (Web Animations; no state, no re-render). Nothing under reduced motion (device or account). */

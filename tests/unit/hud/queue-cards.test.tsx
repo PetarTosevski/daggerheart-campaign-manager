@@ -16,6 +16,8 @@ const calls: { name: string; args: Record<string, unknown> }[] = [];
 const queries: Record<string, unknown> = {};
 const results: Record<string, unknown> = {};
 const failures: Record<string, unknown> = {};
+/** Each mutation's optimistic updater, by function name. */
+const updaters: Record<string, (store: unknown, args: Record<string, unknown>) => void> = {};
 const functionName = (ref: unknown) => String((ref as Record<symbol, unknown>)[Symbol.for("functionName")] ?? ref);
 
 vi.mock("convex/react", () => ({
@@ -35,13 +37,18 @@ vi.mock("convex/react", () => ({
       if (failures[name]) throw failures[name];
       return results[name];
     };
-    return Object.assign(run, { withOptimisticUpdate: () => run });
+    return Object.assign(run, {
+      withOptimisticUpdate: (fn: (store: unknown, args: Record<string, unknown>) => void) => {
+        updaters[name] = fn;
+        return run;
+      },
+    });
   },
 }));
 
 afterEach(() => {
   calls.length = 0;
-  for (const m of [queries, results, failures]) for (const k of Object.keys(m)) delete m[k];
+  for (const m of [queries, results, failures, updaters]) for (const k of Object.keys(m)) delete m[k];
 });
 
 function page(role: "gm" | "player"): CombatPageState {
@@ -61,6 +68,7 @@ function empty() {
   queries["adversaryActionsReads:windows"] = [];
   queries["cloakPromptsReads:pending"] = [];
   queries["hitKeywordsReads:asks"] = [];
+  queries["adversaryPromptsReads:pending"] = [];
   queries["charactersReads:listByCampaign"] = [moss];
   queries["featurePromptsReads:allyRolls"] = { asks: [], waiting: [], allies: [], pending: [] };
   queries["deathMoves:state"] = { "c-moss": deathBase };
@@ -185,6 +193,54 @@ describe("Waiting on you", () => {
     expect(calls[0]!.args).toEqual(expect.objectContaining({ requestId: "r-clo", ends: true }));
     expect(calls[1]!.args).toEqual(expect.objectContaining({ requestId: "r-key", answer: { keyword: "fire", carries: true } }));
     expect(calls[3]!.args).toEqual(expect.objectContaining({ requestId: "r-ally" }));
+  });
+
+  it("dcm-bxp.99.32.27: an adversary feature's GM prompt is a card; Done / Dismiss send adversaryPrompts.answer and drop it at once", async () => {
+    full();
+    queries["adversaryPromptsReads:pending"] = [
+      { requestId: "r-gp", instanceId: "i1", instanceLabel: "Jagged Knife Lieutenant", feature: "More Where That Came From", prompt: "summon", text: "Summon three Jagged Knife Lackeys, who appear at Far range.", groupId: "g", createdAt: 9 },
+      { requestId: "r-gp2", instanceId: "i1", instanceLabel: "Jagged Knife Lieutenant", feature: "Tactician", prompt: "manual", text: "Two allies within Close spotlight.", groupId: "g2", createdAt: 10 },
+    ];
+    results["adversaryPrompts:answer"] = { status: "resolved" };
+    render(<HudQueue state={page("gm")} />);
+    expect(screen.getByTestId("hud-queue-count")).toHaveTextContent("10");
+    const [card] = screen.getAllByTestId("hud-queue-gm-prompt");
+    expect(card!.querySelector(".hud-pc-t")).toHaveTextContent("More Where That Came From");
+    expect(card).toHaveTextContent("Jagged Knife Lieutenant · Summon");
+    expect(card).toHaveTextContent("Summon three Jagged Knife Lackeys, who appear at Far range.");
+    await act(async () => fireEvent.click(within(card!).getByRole("button", { name: "Done: Jagged Knife Lieutenant · More Where That Came From" })));
+    expect(calls[0]).toEqual({ name: "adversaryPrompts:answer", args: { campaignId: "camp", requestId: "r-gp", done: true, idempotencyKey: expect.any(String) } });
+    expect(screen.getByTestId("hud-queue-result")).toHaveTextContent("Done: Jagged Knife Lieutenant · More Where That Came From.");
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Dismiss: Jagged Knife Lieutenant · Tactician" })));
+    expect(calls[1]!.args).toEqual(expect.objectContaining({ requestId: "r-gp2", done: false }));
+    // The optimistic update drops the answered row from the read at once.
+    const set = vi.fn();
+    const store = { getQuery: () => queries["adversaryPromptsReads:pending"], setQuery: set };
+    updaters["adversaryPrompts:answer"]!(store, { campaignId: "camp", requestId: "r-gp", done: true });
+    expect(set).toHaveBeenCalledWith(expect.anything(), { campaignId: "camp" }, [expect.objectContaining({ requestId: "r-gp2" })]);
+    // Nothing loaded yet: nothing to drop.
+    const none = vi.fn();
+    updaters["adversaryPrompts:answer"]!({ getQuery: () => undefined, setQuery: none }, { campaignId: "camp", requestId: "r-gp", done: true });
+    expect(none).not.toHaveBeenCalled();
+  });
+
+  it("dcm-bxp.99.32.40: a withdrawal after the queue started listening toasts 'Vex withdrew Bolt Beacon' once; older ones never", () => {
+    hudToasts.reset();
+    empty();
+    const older = { requestId: "r-old", characterId: "c-v", characterName: "Vex", useName: "Old Use", withdrawnAt: 1 };
+    queries["combatRequestsReads:withdrawn"] = [older];
+    const view = render(<HudQueue state={page("gm")} />);
+    expect(hudToasts.get()).toEqual([]);
+    const fresh = { requestId: "r-new", characterId: "c-v", characterName: "Vex", useName: "Bolt Beacon", withdrawnAt: 2 };
+    queries["combatRequestsReads:withdrawn"] = [fresh, older];
+    view.rerender(<HudQueue state={page("gm")} />);
+    expect(hudToasts.get()).toEqual([expect.objectContaining({ title: "Vex withdrew Bolt Beacon", tone: "neutral" })]);
+    // The same rows again (a re-render, another read refresh): no second toast.
+    hudToasts.reset();
+    queries["combatRequestsReads:withdrawn"] = [{ ...fresh }, { ...older }];
+    view.rerender(<HudQueue state={page("gm")} />);
+    expect(hudToasts.get()).toEqual([]);
+    hudToasts.reset();
   });
 
   it("the death confirm answers through deathMoves.confirm", async () => {

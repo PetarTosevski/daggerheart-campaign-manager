@@ -44,6 +44,8 @@ vi.mock("convex/react", () => ({
     };
     return Object.assign(run, { withOptimisticUpdate: () => run });
   },
+  // The feature picker's one-shot riders read (dcm-bxp.99.32.19).
+  useConvex: () => ({ query: async (ref: unknown) => queries[functionName(ref)] ?? [] }),
 }));
 vi.mock("@/components/combat-map/drawer/use", () => ({ FeatureUse: () => <section data-testid="classic-feature-use" /> }));
 vi.mock("@/components/combat-map/drawer/prompts", () => ({ DrawerPrompts: () => <div data-testid="classic-prompts" /> }));

@@ -1,9 +1,10 @@
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
+import { useConvex, useMutation, useQuery } from "convex/react";
 import { useEffect, useRef } from "react";
 
 import type { Footprint } from "@/lib/domain/combat-actions/distance";
+import { refusalFor } from "@/lib/errors/refusals";
 import type { TraitId } from "@/lib/srd/types";
 
 import { api } from "../../../../../convex/_generated/api";
@@ -16,18 +17,20 @@ import type { CombatMapSummary, CombatRole } from "../../slots";
 import { usePick, type PickApi, type PickContext, type PickOption, type PickOutcome, type PickRowInput, type PickSelection, type PickSessionSpec } from "../pick";
 import { chainAnswer, chainRows, startAreaPick, type ChainCreature, type ChainLinks } from "../pick-area";
 import { showFeatureResult } from "../result";
+import { hudToasts } from "../toasts/store";
 import { AskRows, FormRows } from "./rows";
 import {
   areaAskOf,
   askText,
   featurePlan,
-  featureRiderOptions,
+  hasActionRoll,
   hopeShortfall,
   noPickText,
   payLine,
   riderLabel,
   riderNote,
   riderPill,
+  riderSwitches,
   ruleOf,
   type FeaturePlan,
   type FeatureUseOutcome,
@@ -61,7 +64,7 @@ export type FeatureUseArgs = {
   /** The character using it: the player's own; the GM's Play-for PC. */
   characterId: Id<"characters">;
   /**
-   * The viewer may use this character's features (own sheet; the GM with Play for on). False skips the drawer and hand
+   * The viewer may use this character's features (own sheet; the GM with Play for on). False skips the drawer and riders
    * reads: they refuse another player's hidden hand (FORBIDDEN), and `open` answers "classic".
    */
   canUse?: boolean;
@@ -167,8 +170,8 @@ export function useFeatureUse({ campaignId, role, map, characterId, canUse = tru
   const gm = role === "gm";
   const live = map?.live === true ? map : null;
   const sendUse = useMutation(api.combatFeatures.useFeature);
+  const convex = useConvex();
   const drawer = useQuery(api.combatFeaturesReads.drawer, canUse ? { campaignId, characterId } : "skip");
-  const hand = useQuery(api.combatCardsReads.hand, canUse ? { campaignId, characterId } : "skip");
   const actor = useActor({ campaignId, role, mode: "play", map: live, previewCharacterId: null });
   const gmTokens = useQuery(api.combatTokensReads.list, gm && live && canUse ? { campaignId, mapId: live._id } : "skip");
 
@@ -204,144 +207,168 @@ export function useFeatureUse({ campaignId, role, map, characterId, canUse = tru
     const actorSpec = gm && self ? { actor: { tokenId: self.tokenId, characterId } } : {};
     const selfRow: PickRowInput = { tokenId: self.tokenId, name: gm ? self.name : "You", side: "self", band: null, reach: "in" };
     const origin: Footprint = { x: self.x, y: self.y, size: self.size };
-    const ridersFor = (trait: TraitId | undefined) => featureRiderOptions({ featureId, use: plan.use, ...(trait ? { trait } : {}), features: drawer?.features, cards: hand?.loadout });
-    const riders = ridersFor(initialData(plan.form).trait);
-    const options = featureOptions(plan.form, riders);
-    const hopeShort = hopeShortfall(plan.use.costs, hope);
-    const base = { campaignId, characterId, mapId, featureId, useId: plan.use.id };
+    /**
+     * dcm-bxp.99.32.19: the riders on the use's action roll come from the server (`combatFeatures.riders`, for the trait
+     * and weapon the panel holds); a use without an action roll has none and opens at once.
+     */
+    const ridersFor = async (data: Pick<FormData, "trait" | "weapon">): Promise<RiderOption[]> =>
+      hasActionRoll(plan.use)
+        ? riderSwitches(
+            await convex.query(api.combatFeatures.riders, {
+              campaignId,
+              characterId,
+              featureId,
+              useId: plan.use.id,
+              ...(data.trait ? { trait: data.trait } : {}),
+              ...(data.weapon ? { weapon: data.weapon } : {}),
+            }),
+          )
+        : [];
+    if (hasActionRoll(plan.use)) {
+      ridersFor(initialData(plan.form)).then((riders) => start(plan, riders), (e: unknown) => hudToasts.refusal(refusalFor(e, { subject: title })));
+    } else {
+      start(plan, []);
+    }
+    return plan.kind === "area" ? "area" : "picker";
 
-    /** Sends the use; a `needsChoice` opens the panel for the server's asks (chain links on the map). */
-    async function run(args: { targetTokenIds: Id<"combatTokens">[]; choices: CardChoice[]; roll?: { trait?: TraitId; difficulty?: number }; riders: ReturnType<typeof ridersToSend>; point?: { x: number; y: number }; points?: { x: number; y: number }[] }, step: number, links: Id<"combatTokens">[][], rows: readonly PickRowInput[]): Promise<PickOutcome> {
-      const { riders: sent, ...rest } = args;
-      const out: FeatureUseOutcome = await sendUse({ ...base, idempotencyKey: crypto.randomUUID(), ...rest, ...(sent.length > 0 ? { riders: sent } : {}) });
-      if (out.status === "pending") return { kind: "pending", requestId: out.requestId };
-      if (out.status === "needsChoice") {
-        openAsks(args, out.asks, step + 1, links, rows);
-        return { kind: "stay" };
+    /** Opens the panel (or the square pick) once the riders are known. */
+    function start(chosen: Extract<FeaturePlan, { kind: "panel" | "area" }>, riders: RiderOption[]): void {
+      const options = featureOptions(chosen.form, riders);
+      const hopeShort = hopeShortfall(chosen.use.costs, hope);
+      const base = { campaignId, characterId, mapId, featureId, useId: chosen.use.id };
+
+      /** Sends the use; a `needsChoice` opens the panel for the server's asks (chain links on the map). */
+      async function run(args: { targetTokenIds: Id<"combatTokens">[]; choices: CardChoice[]; roll?: { trait?: TraitId; difficulty?: number }; riders: ReturnType<typeof ridersToSend>; point?: { x: number; y: number }; points?: { x: number; y: number }[] }, step: number, links: Id<"combatTokens">[][], rows: readonly PickRowInput[]): Promise<PickOutcome> {
+        const { riders: sent, ...rest } = args;
+        const out: FeatureUseOutcome = await sendUse({ ...base, idempotencyKey: crypto.randomUUID(), ...rest, ...(sent.length > 0 ? { riders: sent } : {}) });
+        if (out.status === "pending") return { kind: "pending", requestId: out.requestId };
+        if (out.status === "needsChoice") {
+          openAsks(args, out.asks, step + 1, links, rows);
+          return { kind: "stay" };
+        }
+        // dcm-bxp.99.32.26: the result panel (H4.1), as a card's or an attack's result.
+        showFeatureResult({ characterId, actorName, featureName: title, result: out, names });
+        return { kind: "done" };
       }
-      // dcm-bxp.99.32.26: the result panel (H4.1), as a card's or an attack's result.
-      showFeatureResult({ characterId, actorName, featureName: title, result: out, names });
-      return { kind: "done" };
-    }
 
-    function openAsks(args: Parameters<typeof run>[0], asks: readonly ChoiceAsk[], step: number, links: Id<"combatTokens">[][], rows: readonly PickRowInput[]) {
-      const chainAsk = asks.find((a): a is Extract<ChoiceAsk, { kind: "followUp" }> => a.kind === "followUp");
-      const lastLink = links[links.length - 1] ?? [];
-      const askRows = chainAsk ? chainRows(chainAsk.tokenIds, creatures, lastLink) : rows;
-      const data: AskData = { asks, options: {}, splits: {}, chain: { links } };
-      const primaryFor = (d: AskData): PickSessionSpec<AskData>["primary"] => ({
-        label: (s) => (chainAsk ? (s.targetIds.length > 0 ? "Next link" : "Stop here") : "Confirm"),
-        send: async (s) => {
-          const answers = answerChoices(
-            asks.filter((a) => a.kind !== "followUp"),
-            d.options,
-            d.splits,
-          );
-          const chain = chainAsk ? [chainAnswer(chainAsk.link, s.targetIds)] : [];
-          const nextLinks = chainAsk && s.targetIds.length > 0 ? [...links, [...s.targetIds]] : links;
-          return run({ ...args, choices: [...args.choices, ...answers, ...chain] }, step, nextLinks, rows);
-        },
-      });
-      latest.current.open<AskData>({
-        id: `${baseId}:ask:${step}`,
-        source: { kind: "feature", name: title },
-        // The server's asks for a use already under way: the GM's spotlight never holds them back.
-        followUp: true,
-        rule: chainAsk ? { side: "any", max: null, range: "unlimited", min: 0, text: askText(asks) } : { side: "any", max: null, range: "unlimited", min: 0, locked: true, text: askText(asks) },
-        rows: askRows,
-        ...(chainAsk ? {} : { picked: askRows.map((r) => r.tokenId) }),
-        ...actorSpec,
-        data,
-        extra: (ctx: PickContext<AskData>) => (
-          <AskRows asks={asks} data={ctx.data} names={names} onChange={(next) => ctx.update({ data: next, primary: primaryFor(next) })} />
-        ),
-        primary: primaryFor(data),
-      });
-    }
-
-    // ---- squares on the map
-    if (plan.kind === "area") {
-      const startSquares = (choices: CardChoice[], ridersSent: ReturnType<typeof ridersToSend>, roll: { trait?: TraitId } | undefined, n: number) => {
-        startAreaPick({
-          ...areaAskOf(title, plan.area, plan.picks, origin, n),
-          id: baseId,
-          mapId,
-          pay: payLine(plan.use.costs, hope),
-          send: async (squares) => {
-            const squareArgs = areaUseArgs(plan.picks, squares);
-            const out = await sendUse({
-              ...base,
-              idempotencyKey: crypto.randomUUID(),
-              targetTokenIds: [],
-              point: squareArgs.point,
-              ...(squareArgs.points ? { points: squareArgs.points } : {}),
-              choices: [...choices, ...squareArgs.choices],
-              ...(roll ? { roll } : {}),
-              ...(ridersSent.length > 0 ? { riders: ridersSent } : {}),
-            });
-            if (out.status === "pending") return { kind: "pending", line: `${title}: waiting for the GM to approve.` };
-            return { kind: "done", line: areaUseLine(title, plan.area.label, out) };
+      function openAsks(args: Parameters<typeof run>[0], asks: readonly ChoiceAsk[], step: number, links: Id<"combatTokens">[][], rows: readonly PickRowInput[]) {
+        const chainAsk = asks.find((a): a is Extract<ChoiceAsk, { kind: "followUp" }> => a.kind === "followUp");
+        const lastLink = links[links.length - 1] ?? [];
+        const askRows = chainAsk ? chainRows(chainAsk.tokenIds, creatures, lastLink) : rows;
+        const data: AskData = { asks, options: {}, splits: {}, chain: { links } };
+        const primaryFor = (d: AskData): PickSessionSpec<AskData>["primary"] => ({
+          label: (s) => (chainAsk ? (s.targetIds.length > 0 ? "Next link" : "Stop here") : "Confirm"),
+          send: async (s) => {
+            const answers = answerChoices(
+              asks.filter((a) => a.kind !== "followUp"),
+              d.options,
+              d.splits,
+            );
+            const chain = chainAsk ? [chainAnswer(chainAsk.link, s.targetIds)] : [];
+            const nextLinks = chainAsk && s.targetIds.length > 0 ? [...links, [...s.targetIds]] : links;
+            return run({ ...args, choices: [...args.choices, ...answers, ...chain] }, step, nextLinks, rows);
           },
         });
-      };
-      if (asksNothing(plan.form, options) && !hopeShort) {
-        pick.finish();
-        startSquares([], [], undefined, 1);
-        return "area";
+        latest.current.open<AskData>({
+          id: `${baseId}:ask:${step}`,
+          source: { kind: "feature", name: title },
+          // The server's asks for a use already under way: the GM's spotlight never holds them back.
+          followUp: true,
+          rule: chainAsk ? { side: "any", max: null, range: "unlimited", min: 0, text: askText(asks) } : { side: "any", max: null, range: "unlimited", min: 0, locked: true, text: askText(asks) },
+          rows: askRows,
+          ...(chainAsk ? {} : { picked: askRows.map((r) => r.tokenId) }),
+          ...actorSpec,
+          data,
+          extra: (ctx: PickContext<AskData>) => (
+            <AskRows asks={asks} data={ctx.data} names={names} onChange={(next) => ctx.update({ data: next, primary: primaryFor(next) })} />
+          ),
+          primary: primaryFor(data),
+        });
       }
-      openPanel(plan, (s, data) => {
-        const ridersNow = ridersFor(data.trait);
-        startSquares(featureChoices(plan.form, data, s), ridersToSend(ridersNow, riderPicksOf(ridersNow, s.options)), data.trait ? { trait: data.trait } : undefined, data.numbers[plan.form.numbers[0]?.id ?? ""] ?? 1);
-        return Promise.resolve({ kind: "done" });
-      });
-      return "area";
-    }
 
-    openPanel(plan, async (s, data) => {
-      const ridersNow = ridersFor(data.trait);
-      const roll = { ...(data.trait ? { trait: data.trait } : {}), ...(gm && data.difficulty !== undefined ? { difficulty: data.difficulty } : {}) };
-      // A use with no target rule shows you as its (locked) row; the server takes no target for it.
-      const picks = ruleOf(plan.form) ? s.targetIds : [];
-      const rows: PickRowInput[] = picks.length > 0 ? s.targets.map((t) => ({ tokenId: t.tokenId, name: t.name, side: t.side, band: t.band, reach: t.reach })) : [selfRow];
-      return run(
-        {
-          targetTokenIds: [...picks],
-          choices: featureChoices(plan.form, data, s),
-          ...(Object.keys(roll).length > 0 ? { roll } : {}),
-          riders: ridersToSend(ridersNow, riderPicksOf(ridersNow, s.options)),
-        },
-        0,
-        picks.length > 0 ? [[...picks]] : [],
-        rows,
-      );
-    });
-    return "picker";
+      // ---- squares on the map
+      if (chosen.kind === "area") {
+        const startSquares = (choices: CardChoice[], ridersSent: ReturnType<typeof ridersToSend>, roll: { trait?: TraitId } | undefined, n: number) => {
+          startAreaPick({
+            ...areaAskOf(title, chosen.area, chosen.picks, origin, n),
+            id: baseId,
+            mapId,
+            pay: payLine(chosen.use.costs, hope),
+            send: async (squares) => {
+              const squareArgs = areaUseArgs(chosen.picks, squares);
+              const out = await sendUse({
+                ...base,
+                idempotencyKey: crypto.randomUUID(),
+                targetTokenIds: [],
+                point: squareArgs.point,
+                ...(squareArgs.points ? { points: squareArgs.points } : {}),
+                choices: [...choices, ...squareArgs.choices],
+                ...(roll ? { roll } : {}),
+                ...(ridersSent.length > 0 ? { riders: ridersSent } : {}),
+              });
+              if (out.status === "pending") return { kind: "pending", line: `${title}: waiting for the GM to approve.` };
+              return { kind: "done", line: areaUseLine(title, chosen.area.label, out) };
+            },
+          });
+        };
+        if (asksNothing(chosen.form, options) && !hopeShort) {
+          latest.current.finish();
+          startSquares([], [], undefined, 1);
+          return;
+        }
+        openPanel(chosen, async (s, data) => {
+          const ridersNow = await ridersFor(data);
+          startSquares(featureChoices(chosen.form, data, s), ridersToSend(ridersNow, riderPicksOf(ridersNow, s.options)), data.trait ? { trait: data.trait } : undefined, data.numbers[chosen.form.numbers[0]?.id ?? ""] ?? 1);
+          return { kind: "done" };
+        });
+        return;
+      }
 
-    function openPanel(p: Extract<FeaturePlan, { kind: "panel" | "area" }>, go: (s: PickSelection, data: FormData) => Promise<PickOutcome>) {
-      const rule = ruleOf(p.form);
-      const primaryFor = (data: FormData): PickSessionSpec<FormData>["primary"] => ({
-        label: (s) => (p.kind === "area" ? (p.picks.kind === "wall" ? "Pick the two ends" : "Pick the square") : s.targets[0] && rule ? `Use ${title} on ${s.targets[0].name}` : `Use ${title}`),
-        pay: () => payLine(p.use.costs, hope),
-        blocked: (s) => featureBlocked(p.form, data, s, hopeShort),
-        send: (s) => go(s, data),
+      openPanel(chosen, async (s, data) => {
+        const ridersNow = await ridersFor(data);
+        const roll = { ...(data.trait ? { trait: data.trait } : {}), ...(gm && data.difficulty !== undefined ? { difficulty: data.difficulty } : {}) };
+        // A use with no target rule shows you as its (locked) row; the server takes no target for it.
+        const picks = ruleOf(chosen.form) ? s.targetIds : [];
+        const rows: PickRowInput[] = picks.length > 0 ? s.targets.map((t) => ({ tokenId: t.tokenId, name: t.name, side: t.side, band: t.band, reach: t.reach })) : [selfRow];
+        return run(
+          {
+            targetTokenIds: [...picks],
+            choices: featureChoices(chosen.form, data, s),
+            ...(Object.keys(roll).length > 0 ? { roll } : {}),
+            riders: ridersToSend(ridersNow, riderPicksOf(ridersNow, s.options)),
+          },
+          0,
+          picks.length > 0 ? [[...picks]] : [],
+          rows,
+        );
       });
-      const data = initialData(p.form);
-      const recipients = (side: string) => creatures.filter((c) => fitsSide({ tokenId: c.tokenId, name: c.name, side: c.side }, side as Parameters<typeof fitsSide>[1]));
-      pick.open<FormData>({
-        id: baseId,
-        source: { kind: "feature", name: title },
-        rule: rule ? { ...rule, min: 1 } : { side: "selfOrAlly", max: 1, range: "unlimited", min: 0, locked: true, text: p.kind === "area" ? `Then pick ${p.picks.kind === "wall" ? "two points" : "a square"} on the map` : noPickText(p.use.targets) },
-        ...(rule ? {} : { rows: [selfRow], picked: [self!.tokenId] }),
-        ...actorSpec,
-        options,
-        data,
-        ...(asksNothing(p.form, []) ? {} : { extra: (ctx: PickContext<FormData>) => <FormRows form={p.form} data={ctx.data} gm={gm} recipients={recipients} onChange={(next) => ctx.update({ data: next, primary: primaryFor(next) })} /> }),
-        primary: primaryFor(data),
-      });
+
+      function openPanel(p: Extract<FeaturePlan, { kind: "panel" | "area" }>, go: (s: PickSelection, data: FormData) => Promise<PickOutcome>) {
+        const rule = ruleOf(p.form);
+        const primaryFor = (data: FormData): PickSessionSpec<FormData>["primary"] => ({
+          label: (s) => (p.kind === "area" ? (p.picks.kind === "wall" ? "Pick the two ends" : "Pick the square") : s.targets[0] && rule ? `Use ${title} on ${s.targets[0].name}` : `Use ${title}`),
+          pay: () => payLine(p.use.costs, hope),
+          blocked: (s) => featureBlocked(p.form, data, s, hopeShort),
+          send: (s) => go(s, data),
+        });
+        const data = initialData(p.form);
+        const recipients = (side: string) => creatures.filter((c) => fitsSide({ tokenId: c.tokenId, name: c.name, side: c.side }, side as Parameters<typeof fitsSide>[1]));
+        latest.current.open<FormData>({
+          id: baseId,
+          source: { kind: "feature", name: title },
+          rule: rule ? { ...rule, min: 1 } : { side: "selfOrAlly", max: 1, range: "unlimited", min: 0, locked: true, text: p.kind === "area" ? `Then pick ${p.picks.kind === "wall" ? "two points" : "a square"} on the map` : noPickText(p.use.targets) },
+          ...(rule ? {} : { rows: [selfRow], picked: [self!.tokenId] }),
+          ...actorSpec,
+          options,
+          data,
+          ...(asksNothing(p.form, []) ? {} : { extra: (ctx: PickContext<FormData>) => <FormRows form={p.form} data={ctx.data} gm={gm} recipients={recipients} onChange={(next) => ctx.update({ data: next, primary: primaryFor(next) })} /> }),
+          primary: primaryFor(data),
+        });
+      }
     }
   }
 
   return { open };
 }
 
-export { featurePlan, featureRiderOptions, areaAskOf, payLine, resultLine, costPill } from "./model";
+export { featurePlan, areaAskOf, payLine, resultLine, costPill } from "./model";

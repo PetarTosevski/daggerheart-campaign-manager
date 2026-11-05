@@ -241,10 +241,14 @@
 }
 
 /* ---------------------------------------------------------------- the target rings (CmpTokens `.tg-*`) */
+/*
+ * The rings sit over the tokens but under the HUD overlay (`.hud-over`, z 30) at every width: the panels (roll chips,
+ * rows, footer) cover a ring that falls behind them, and every ring outside a panel stays clickable (dcm-bxp.99.32.45).
+ */
 .hud-tg-layer {
   position: absolute;
   inset: 0;
-  z-index: 35;
+  z-index: 29;
   pointer-events: none;
 }
 .hud-tg-aim {
@@ -496,13 +500,9 @@
     font-size: 14px;
   }
   /*
-   * The map's own layers stack over the HUD overlay (`.hud-over`, z 30): on a phone the target rings and the action
-   * ring would draw on top of the sheet. The rings drop under the overlay (still over the tokens) and the action ring
-   * hides while the sheet is up (the board's phone frame shows neither over the sheet).
+   * The action ring stacks over the HUD overlay (`.hud-over`, z 30) and would draw on top of the sheet: it hides while
+   * the sheet is up (the board's phone frame shows none over the sheet). The rings already sit under the overlay.
    */
-  .hud-tg-layer {
-    z-index: 29;
-  }
   .hud-root:has(.hud-pk) .hud-ar {
     visibility: hidden;
   }
