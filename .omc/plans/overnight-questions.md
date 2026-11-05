@@ -337,3 +337,8 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 - CHANGES (beads filed): least-spotlight tie names everyone; level-ups after End count for the ended session until the next one starts; Lorekeeper answer card buttons ink-on-parchment; stat block + custom adversary editor buttons ink-on-parchment; revive shows a feed line to players; Load Campaign badge 'Co-GM'; Fear reset at session start skips Away PCs; Journal encounter card gets a party-size stepper.
 - ANSWERED: big (lg) buttons use the old Cinzel capitals (B).
 - AU6: the App admin row uses neutral glass; the design drew it as a gold card. Ask: keep neutral glass or gold?
+
+## ANSWERS 2026-11-05
+- Q28 / N11 (AD14, AU9): build now without a separate design; a simple '···' menu per account row in the existing admin look (type the email + a reason to confirm, 'Deleted in 30 days · Undo' on the row). Supersedes 'needs: design'.
+- AU6 App admin row: user asked for a side-by-side comparison (dark glass vs the design's gold card) before choosing.
+- Next: the optional rules list (every optional rule with its book page) for the user to check before the rule switches (dcm-bxp.134).

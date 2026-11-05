@@ -1433,7 +1433,7 @@ waves:
         part: B
         size: L
         mode: add
-        needs: design
+        needs: none  # user 2026-11-05: build now without a separate design
         blocked_on: N11
         goal: "The owner suspends an account (it can't sign in or use the app and is signed out everywhere; its data stays) and lifts it, or deletes an account (suspended at once, erased after a 30-day undo window, its campaigns and characters handled as N11 says); nobody can suspend or delete the owner or themselves; every step is audited"
         depends_on: [AD0, AD3, AD13]
@@ -1457,7 +1457,7 @@ waves:
           - convex/cleanup.ts
           - convex/auth.ts
         acceptance:
-          - "Not started before the user answers N11 and approves a design for the account menu and its confirm steps; the lines below are the plan's proposal"
+          - "User 2026-11-05: N11 answered (config-briefs.md), build without a separate design"
           - "accountStatus { userId, suspendedAt?, reason, deleteAfter?, by } by_user (new table in admin.ts, rule 7); suspend / unsuspend / scheduleDelete / cancelDelete appOwnerMutation { userId, reason, confirmEmail } (confirmEmail must equal the account's email; the owner's account and the caller's own are refused); suspending deletes the user's auth sessions and refresh tokens; every user wrapper and sign-in of an existing user (createOrUpdateUser) refuse a suspended account with ACCOUNT_SUSPENDED"
           - "accountPurge (internal, batched, self-rescheduling, daily cron; rule 8) erases accounts past deleteAfter: their campaigns per N11 (recommended: handed to a co-GM if there is one, else deleted through today's campaign delete and purge), their characters in others' campaigns per N11 (recommended: kept, shown as a former player), their preferences, UI state, drafts, folds, invites and auth rows; audit rows keep the id only"
           - "Authz class appOwner; lint, typecheck, vitest pass"
@@ -1469,7 +1469,7 @@ waves:
         part: B
         size: S
         mode: add
-        needs: design
+        needs: none  # user 2026-11-05: simple menu in the existing admin look
         blocked_on: N11
         goal: "The account row's '···' menu offers Suspend / Lift suspension and Delete account with the safeguards the approved design draws"
         depends_on: [AU2, AD14]
