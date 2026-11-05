@@ -1,9 +1,10 @@
 "use client";
 
+import { useQuery } from "convex/react";
 import { useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
-import { TERRAIN_LABEL, type Terrain } from "@/lib/domain/frames/horizon";
+import { GOOD_FORTUNE_ENTRY, SETBACK_ENTRY, TERRAIN_LABEL, encounterBonus, type Terrain } from "@/lib/domain/frames/horizon";
 import { hexKey, type Hex } from "@/lib/world/hex";
 import { BEARING_LABEL, ENCOUNTERS, HABITATS, RUMOR_TEXT_MAX, REGION_NAME_MAX, habitatLabel, type Region } from "@/lib/world/hex-crawl";
 import { SANCTUARY_TYPE, type HexCrawl, type MapToken } from "@/lib/world/map-state";
@@ -158,6 +159,8 @@ function RegionsSection({
   actions: MapActions;
 }) {
   const generate = useIntent(api.trackers.horizon.generateRegion);
+  // Horizon encounter bonuses (optional rule, HF p.171; rule-switches OH): off until the GM turns it on in House rules.
+  const bonuses = useQuery(api.ruleSettings.get, { campaignId })?.modes.horizonEncounterBonuses === true;
   const [name, setName] = useState("");
   return (
     <div className={SECTION}>
@@ -181,7 +184,7 @@ function RegionsSection({
       {view.regions.length ? (
         <ul aria-label="Regions" className="m-0 flex list-none flex-col gap-1.5 p-0">
           {[...view.regions].reverse().map((r) => (
-            <RegionRow key={r.id} campaignId={campaignId} region={r as Region} painted={crawl.hexes.filter((h) => h.region === r.name).length} selected={selected} actions={actions} />
+            <RegionRow key={r.id} campaignId={campaignId} region={r as Region} bonuses={bonuses} painted={crawl.hexes.filter((h) => h.region === r.name).length} selected={selected} actions={actions} />
           ))}
         </ul>
       ) : null}
@@ -192,12 +195,15 @@ function RegionsSection({
 function RegionRow({
   campaignId,
   region,
+  bonuses,
   painted,
   selected,
   actions,
 }: {
   campaignId: Id<"campaigns">;
   region: Region;
+  /** The Horizon encounter bonuses switch is on. */
+  bonuses: boolean;
   painted: number;
   selected: Hex | null;
   actions: MapActions;
@@ -206,9 +212,10 @@ function RegionRow({
   const used = useIntent(api.trackers.horizon.setRegionEncounterUsed);
   const rumor = useIntent(api.trackers.horizon.setRegionRumor);
   const remove = useIntent(api.trackers.horizon.removeRegion);
+  const activate = useIntent(api.horizonEncounters.activate);
   const [draft, setDraft] = useState<string | null>(null);
   const habitat = habitatLabel(region);
-  const error = roll.error ?? used.error ?? rumor.error ?? remove.error;
+  const error = roll.error ?? used.error ?? activate.error ?? rumor.error ?? remove.error;
 
   return (
     <li className="rounded-[10px] border border-[#253338] bg-[#0d1417] px-2.5 py-2 text-[13px] text-[#c8d3d0]">
@@ -230,14 +237,25 @@ function RegionRow({
           </BrandButton>
           <span className="font-bold text-[#e6ecea]">Encounters (GM only)</span>
           <ul className="m-0 flex list-none flex-col gap-1 p-0">
-            {region.encounters.map((e, i) => (
-              <li key={`${region.id}-${i}`}>
-                <label className="chk">
-                  <input type="checkbox" checked={e.used} disabled={used.pending} onChange={(ev) => void used.fire({ campaignId, regionId: region.id, index: i, used: ev.target.checked })} />
-                  {e.total} ({e.dice.join("+")}): {ENCOUNTERS[e.total]}
-                </label>
-              </li>
-            ))}
+            {region.encounters.map((e, i) => {
+              // With the switch on, running entry 4 or 12 applies its optional bonus (HF p.171) in the same click.
+              const bonus = encounterBonus(e.total, 0, bonuses);
+              const run = (checked: boolean) =>
+                bonus && checked ? activate.fire({ campaignId, regionId: region.id, index: i }) : used.fire({ campaignId, regionId: region.id, index: i, used: checked });
+              return (
+                <li key={`${region.id}-${i}`}>
+                  <label className="chk">
+                    <input type="checkbox" checked={e.used} disabled={used.pending || activate.pending} onChange={(ev) => void run(ev.target.checked)} />
+                    {e.total} ({e.dice.join("+")}): {ENCOUNTERS[e.total]}
+                  </label>
+                  {bonus && !e.used ? (
+                    <span className="block pl-6 text-[12px] text-[#f3cf86]" data-testid={`encounter-bonus-${region.id}-${i}`}>
+                      {e.total === SETBACK_ENTRY ? "Running it: GM +1 Fear per PC (house rule on)" : e.total === GOOD_FORTUNE_ENTRY ? "Running it: each PC +1 Hope (house rule on)" : null}
+                    </span>
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
           <BrandButton variant="neutral" size="sm" disabled={roll.pending} onClick={() => void roll.fire({ campaignId, regionId: region.id })}>
             Roll another encounter
