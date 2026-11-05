@@ -106,8 +106,10 @@ describe("rule switches: rests (RR)", () => {
       expect(row.fearDelta).toBe(fearGained);
 
       // An ordinary long rest in the same mode: 1d4 + PCs.
+      const fearBefore = await fear();
       const plain = await finish((await start("long")).restId);
-      expect(plain.fearGained).toBe(plain.fearRoll! + 2);
+      // Fear stops at 12, so after the first rest the gain may be capped.
+      expect(plain.fearGained).toBe(Math.min(plain.fearRoll! + 2, 12 - fearBefore));
     });
 
     it("Extended downtime interrupted runs as a short rest: book Fear (1d4)", async () => {
