@@ -191,4 +191,63 @@ describe("apple-native sign-in", () => {
     expect(dev.tokens?.token).toEqual(expect.any(String));
     expect((await users(t))[0]?.email).toBe("dev@example.com");
   });
+
+  it("refuses an existing Apple account that is suspended (AD14)", async () => {
+    const t = makeTest();
+    const firstNonce = "nonce-before-suspension";
+    await signIn(t, await identityToken(await claims(firstNonce, { email: "ada@example.com", email_verified: true })), firstNonce);
+    await t.run(async (ctx) => {
+      const user = (await ctx.db.query("users").first())!;
+      await ctx.db.insert("accountStatus", { userId: user._id, suspendedAt: Date.now(), updatedAt: Date.now(), reason: "Spam", by: user._id });
+    });
+    const nonce = "nonce-suspended";
+    expect(errorCode(await caught(signIn(t, await identityToken(await claims(nonce)), nonce)))).toBe("ACCOUNT_SUSPENDED");
+  });
+
+  it("fetches Apple's keys once for repeat sign-ins", async () => {
+    // A fresh module graph, so the key cache starts empty for this test.
+    vi.resetModules();
+    const t = makeTest();
+    for (const nonce of ["nonce-cache-1", "nonce-cache-2", "nonce-cache-3"]) {
+      const result = await signIn(t, await identityToken(await claims(nonce, { email: "ada@example.com", email_verified: true })), nonce);
+      expect(result.tokens?.token).toEqual(expect.any(String));
+    }
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a malformed token without fetching keys or spending the limit", async () => {
+    vi.resetModules();
+    const t = makeTest();
+    for (const token of ["not-a-jwt", `${b64url(JSON.stringify({ alg: "none", kid: "test" }))}.e30.sig`]) {
+      expect(errorCode(await caught(signIn(t, token, "nonce-malformed")))).toBe("FORBIDDEN");
+    }
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+  });
+
+  it("caps apple-native attempts with RATE_LIMITED", async () => {
+    const t = makeTest();
+    const forged = `${b64url(JSON.stringify({ alg: "RS256", kid: "test" }))}.${b64url(JSON.stringify(await claims("nonce-flood")))}.c2ln`;
+    const codes = new Set<unknown>();
+    for (let i = 0; i < 60; i++) codes.add(errorCode(await caught(signIn(t, forged, "nonce-flood"))));
+    expect(codes).toEqual(new Set(["FORBIDDEN"]));
+    expect(errorCode(await caught(signIn(t, forged, "nonce-flood")))).toBe("RATE_LIMITED");
+    // The cap holds a real token too: the bucket is spent before the signature is checked.
+    const nonce = "nonce-after-flood";
+    const real = await identityToken(await claims(nonce, { email: "ada@example.com", email_verified: true }));
+    expect(errorCode(await caught(signIn(t, real, nonce)))).toBe("RATE_LIMITED");
+    expect(await users(t)).toEqual([]);
+  });
+
+  it("answers a retryable RATE_LIMITED when Apple's keys cannot be fetched", async () => {
+    vi.resetModules();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("down", { status: 503 })),
+    );
+    const t = makeTest();
+    const nonce = "nonce-outage";
+    const token = await identityToken(await claims(nonce, { email: "ada@example.com", email_verified: true }));
+    expect(errorCode(await caught(signIn(t, token, nonce)))).toBe("RATE_LIMITED");
+    expect(await users(t)).toEqual([]);
+  });
 });

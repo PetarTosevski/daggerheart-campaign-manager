@@ -6,7 +6,7 @@ import { fireEvent, render, waitFor } from "@testing-library/react-native";
 import { Platform } from "react-native";
 
 import SignInScreen from "../../app/(auth)/sign-in";
-import { googleRedirectTo } from "../../src/auth/google";
+import { googleRedirectTo, oauthCode } from "../../src/auth/google";
 
 type Started = { signingIn: boolean; redirect?: URL };
 type BrowserSession = { type: "success"; url: string } | { type: "cancel" | "dismiss" };
@@ -78,6 +78,7 @@ jest.mock("expo-apple-authentication", () => {
 
 beforeEach(() => {
   process.env.EXPO_PUBLIC_SOCIAL_SIGN_IN = "true";
+  process.env.EXPO_PUBLIC_SITE_URL = "https://dualityheart.com/";
   mockSignIn.mockReset();
   mockOpenAuthSession.mockReset();
   mockAppleSignIn.mockReset();
@@ -105,10 +106,40 @@ function setPlatform(os: "ios" | "android") {
   Object.defineProperty(Platform, "OS", { configurable: true, get: () => os });
 }
 
-test("the redirect stays on the app scheme", () => {
-  expect(googleRedirectTo("dualityheart")).toBe("dualityheart://auth");
-  expect(googleRedirectTo("dualityheart-dev")).toBe("dualityheart-dev://auth");
-  expect(() => googleRedirectTo("exp")).toThrow(/Unsupported app scheme/);
+test("the redirect is the site's https return address, never a custom scheme", () => {
+  expect(googleRedirectTo("https://dualityheart.com")).toBe("https://dualityheart.com/auth");
+  expect(googleRedirectTo("https://dev.dualityheart.com/")).toBe("https://dev.dualityheart.com/auth");
+  for (const site of ["dualityheart://", "http://dualityheart.com", "https://user@dualityheart.com", "not a url"]) {
+    expect(() => googleRedirectTo(site)).toThrow(/Unsupported site URL/);
+  }
+});
+
+test("only a return to the expected https address yields a code", () => {
+  const redirectTo = "https://dualityheart.com/auth";
+  expect(oauthCode("https://dualityheart.com/auth?code=abc", redirectTo)).toBe("abc");
+  for (const url of [
+    "dualityheart://auth?code=abc",
+    "https://evil.test/auth?code=abc",
+    "https://dualityheart.com/other?code=abc",
+    "https://dualityheart.com/auth",
+    "https://dualityheart.com/auth?code=",
+    "garbage",
+  ]) {
+    expect(oauthCode(url, redirectTo)).toBeNull();
+  }
+});
+
+test("a Google return through a custom scheme is ignored", async () => {
+  setPlatform("ios");
+  mockSignIn.mockResolvedValueOnce({
+    signingIn: false,
+    redirect: new URL("https://auth.example/api/auth/signin/google?code=verifier"),
+  });
+  mockOpenAuthSession.mockResolvedValueOnce({ type: "success", url: "dualityheart://auth?code=stolen" });
+  const screen = await render(<SignInScreen />);
+  await fireEvent.press(screen.getByRole("button", { name: "Sign in with Google" }));
+  await waitFor(() => expect(mockOpenAuthSession).toHaveBeenCalledTimes(1));
+  expect(mockSignIn).toHaveBeenCalledTimes(1);
 });
 
 test("iOS shows Google and Apple together", async () => {
@@ -131,16 +162,16 @@ test("Google opens the system auth session and then exchanges the code", async (
     signingIn: false,
     redirect: new URL("https://auth.example/api/auth/signin/google?code=verifier"),
   });
-  mockOpenAuthSession.mockResolvedValueOnce({ type: "success", url: "dualityheart://auth?code=oauth-code" });
+  mockOpenAuthSession.mockResolvedValueOnce({ type: "success", url: "https://dualityheart.com/auth?code=oauth-code" });
   mockSignIn.mockResolvedValueOnce({ signingIn: true });
   const screen = await render(<SignInScreen />);
   await fireEvent.press(screen.getByRole("button", { name: "Sign in with Google" }));
   await waitFor(() => expect(mockSignIn).toHaveBeenCalledTimes(2));
-  expect(mockSignIn).toHaveBeenNthCalledWith(1, "google", { redirectTo: "dualityheart://auth" });
+  expect(mockSignIn).toHaveBeenNthCalledWith(1, "google", { redirectTo: "https://dualityheart.com/auth" });
   expect(mockOpenAuthSession).toHaveBeenCalledWith(
     "https://auth.example/api/auth/signin/google?code=verifier",
-    "dualityheart://auth",
-    { preferEphemeralSession: false },
+    "https://dualityheart.com/auth",
+    { preferEphemeralSession: false, preferUniversalLinks: true },
   );
   expect(mockSignIn).toHaveBeenNthCalledWith(2, "google", { code: "oauth-code" });
   expect(mockAppleSignIn).not.toHaveBeenCalled();

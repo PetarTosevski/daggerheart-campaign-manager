@@ -13,7 +13,8 @@ import { appError } from "../src/lib/errors/app-error";
 import { internal } from "./_generated/api";
 import { env, internalQuery, type ActionCtx, type MutationCtx } from "./_generated/server";
 import { buildE2EProfile, normalizeEmail } from "./lib/allowlist";
-import { fetchAppleIdentityKeys, verifyAppleIdentityToken } from "./lib/appleIdentity";
+import { AppleKeyCache, appleTokenKeyId, verifyAppleIdentityToken } from "./lib/appleIdentity";
+import { enforceAppleSignInLimit } from "./lib/appleSignInLimit";
 import { resendCodeProvider } from "./lib/authEmail";
 import { enforceAuthLimit } from "./lib/authRateLimit";
 import { isAccountSuspended } from "./lib/functions";
@@ -180,6 +181,9 @@ function withAuthErrors(base: ReturnType<typeof Password>) {
  * its own user. A later sign-in can omit the email when this Apple user id
  * already has an account.
  */
+/** Apple's signing keys, kept for the life of the isolate so repeat sign-ins do not refetch them (dcm-gdzi.6). */
+const appleKeys = new AppleKeyCache();
+
 const appleNativeProvider = ConvexCredentials({
   id: APPLE_PROVIDER_ID,
   authorize: async (credentials, ctx) => {
@@ -190,13 +194,24 @@ const appleNativeProvider = ConvexCredentials({
       throw appError("INVALID");
     }
     const name = typeof credentials.name === "string" ? credentials.name.trim().slice(0, 80) : "";
+    // Shape first (no fetch, no token spent), then the flood cap, then Apple's cached keys (dcm-gdzi.6).
+    let kid;
+    try {
+      kid = appleTokenKeyId(identityToken);
+    } catch {
+      throw appError("FORBIDDEN");
+    }
+    await enforceAppleSignInLimit(ctx);
+    let keys;
+    try {
+      keys = await appleKeys.keysFor(kid);
+    } catch {
+      // Apple's keys could not be fetched: an outage, not a forged token, so the person may simply try again.
+      throw appError("RATE_LIMITED", "Sign in with Apple is unavailable right now. Try again in a moment.");
+    }
     let identity;
     try {
-      identity = await verifyAppleIdentityToken({
-        identityToken,
-        nonce,
-        keys: await fetchAppleIdentityKeys(),
-      });
+      identity = await verifyAppleIdentityToken({ identityToken, nonce, keys });
     } catch (error) {
       if (error instanceof ConvexError) throw error;
       throw appError("FORBIDDEN");

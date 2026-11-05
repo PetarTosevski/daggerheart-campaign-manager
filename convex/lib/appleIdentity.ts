@@ -40,6 +40,65 @@ async function fetchAppleIdentityKeys(fetchImpl: typeof fetch = globalThis.fetch
   return (body as { keys: AppleJwk[] }).keys;
 }
 
+/** How long fetched keys are trusted before a refetch. Apple rotates its keys rarely and announces a new `kid` first. */
+const APPLE_KEYS_TTL_MS = 6 * 60 * 60 * 1000;
+/** The shortest gap between two fetches, so tokens naming made-up `kid`s cannot turn into a fetch each. */
+const APPLE_KEYS_MIN_REFETCH_MS = 60 * 1000;
+
+/**
+ * Apple's signing keys, cached in the isolate (dcm-gdzi.6). One fetch serves every sign-in for `APPLE_KEYS_TTL_MS`;
+ * a token whose `kid` is not cached refetches at most once per `APPLE_KEYS_MIN_REFETCH_MS` (Apple rotated); concurrent
+ * callers share one fetch. When a refetch fails, the stale keys keep serving; with no keys at all it throws `keys`.
+ */
+class AppleKeyCache {
+  private keys: AppleJwk[] | null = null;
+  private fetchedAt = 0;
+  private pending: Promise<AppleJwk[]> | null = null;
+
+  constructor(
+    private readonly fetchKeys: () => Promise<AppleJwk[]> = () => fetchAppleIdentityKeys(),
+    private readonly now: () => number = Date.now,
+  ) {}
+
+  /** The keys to verify a token signed with `kid`. */
+  async keysFor(kid: string): Promise<AppleJwk[]> {
+    const age = this.now() - this.fetchedAt;
+    if (this.keys !== null && age < APPLE_KEYS_TTL_MS) {
+      if (this.keys.some((key) => key.kid === kid) || age < APPLE_KEYS_MIN_REFETCH_MS) return this.keys;
+    }
+    try {
+      return await this.refresh();
+    } catch (error) {
+      if (this.keys !== null) return this.keys;
+      throw error;
+    }
+  }
+
+  private refresh(): Promise<AppleJwk[]> {
+    this.pending ??= this.fetchKeys()
+      .then((keys) => {
+        this.keys = keys;
+        this.fetchedAt = this.now();
+        return keys;
+      })
+      .finally(() => {
+        this.pending = null;
+      });
+    return this.pending;
+  }
+}
+
+/** The `kid` of a well-formed RS256 identity token, read before any key is fetched; `malformed` otherwise. */
+function appleTokenKeyId(identityToken: string): string {
+  const parts = identityToken.split(".");
+  if (parts.length !== 3 || parts.some((part) => part.length === 0)) throw new AppleIdentityError("malformed");
+  const header = decodeJson(parts[0]);
+  if (!isRecord(header) || header.alg !== "RS256" || typeof header.kid !== "string" || header.kid.length === 0) {
+    throw new AppleIdentityError("malformed");
+  }
+  return header.kid;
+}
+
 async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   let hex = "";
@@ -53,16 +112,11 @@ async function verifyAppleIdentityToken(input: {
   keys: readonly AppleJwk[];
   now?: number;
 }): Promise<AppleIdentity> {
-  const parts = input.identityToken.split(".");
-  if (parts.length !== 3 || parts.some((part) => part.length === 0)) throw new AppleIdentityError("malformed");
-  const [encodedHeader, encodedPayload, encodedSignature] = parts;
-  const header = decodeJson(encodedHeader);
-  if (!isRecord(header) || header.alg !== "RS256" || typeof header.kid !== "string") {
-    throw new AppleIdentityError("malformed");
-  }
+  const kid = appleTokenKeyId(input.identityToken);
+  const [encodedHeader, encodedPayload, encodedSignature] = input.identityToken.split(".");
   const jwk = input.keys.find(
     (key) =>
-      key.kid === header.kid &&
+      key.kid === kid &&
       key.kty === "RSA" &&
       typeof key.n === "string" &&
       typeof key.e === "string" &&
@@ -135,8 +189,12 @@ void 0; export {
   APPLE_ISSUER,
   APPLE_JWKS_URL,
   APPLE_AUDIENCES,
+  APPLE_KEYS_MIN_REFETCH_MS,
+  APPLE_KEYS_TTL_MS,
   AppleIdentityError,
+  AppleKeyCache,
+  appleTokenKeyId,
   fetchAppleIdentityKeys,
   sha256Hex,
   verifyAppleIdentityToken,
-}; export type { AppleIdentity };
+}; export type { AppleIdentity, AppleJwk };

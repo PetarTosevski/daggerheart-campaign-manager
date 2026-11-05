@@ -1,10 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   APPLE_ISSUER,
+  APPLE_KEYS_MIN_REFETCH_MS,
+  APPLE_KEYS_TTL_MS,
   AppleIdentityError,
+  AppleKeyCache,
+  appleTokenKeyId,
   sha256Hex,
   verifyAppleIdentityToken,
+  type AppleJwk,
 } from "../../convex/lib/appleIdentity";
 
 const RS256 = { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" } as const;
@@ -117,5 +122,74 @@ describe("verifyAppleIdentityToken", () => {
     expect(await reason(() => verifyAppleIdentityToken({ identityToken: noneAlg, nonce: RAW_NONCE, keys: [jwk], now: NOW }))).toBe(
       "malformed",
     );
+  });
+});
+
+describe("appleTokenKeyId", () => {
+  it("reads the kid of an RS256 token and refuses anything else before a key is fetched", async () => {
+    const { pair } = await keyPair();
+    expect(appleTokenKeyId(await sign(pair.privateKey, await claims(), { alg: "RS256", kid: "k1" }))).toBe("k1");
+    for (const header of [{ alg: "none", kid: "k1" }, { alg: "RS256" }, { alg: "RS256", kid: "" }, { alg: "HS256", kid: "k1" }]) {
+      expect(await reason(async () => appleTokenKeyId(await sign(pair.privateKey, await claims(), header)))).toBe("malformed");
+    }
+    for (const token of ["", "a.b", "a..c", "!!!.e30.sig"]) {
+      expect(await reason(async () => appleTokenKeyId(token))).toBe("malformed");
+    }
+  });
+});
+
+describe("AppleKeyCache", () => {
+  const key = (kid: string) => ({ kty: "RSA", n: "n", e: "AQAB", kid }) as AppleJwk;
+
+  function cache(responses: Array<AppleJwk[] | Error>) {
+    let now = NOW;
+    const fetchKeys = vi.fn(async () => {
+      const next = responses.shift();
+      if (next === undefined || next instanceof Error) throw next ?? new Error("no response");
+      return next;
+    });
+    return { cache: new AppleKeyCache(fetchKeys, () => now), fetchKeys, advance: (ms: number) => (now += ms) };
+  }
+
+  it("fetches once for repeat sign-ins with a known kid", async () => {
+    const { cache: keys, fetchKeys, advance } = cache([[key("a")]]);
+    for (let i = 0; i < 5; i++) {
+      expect((await keys.keysFor("a")).map((k) => k.kid)).toEqual(["a"]);
+      advance(APPLE_KEYS_MIN_REFETCH_MS);
+    }
+    expect(fetchKeys).toHaveBeenCalledTimes(1);
+  });
+
+  it("shares one fetch between concurrent sign-ins", async () => {
+    const { cache: keys, fetchKeys } = cache([[key("a")]]);
+    await Promise.all([keys.keysFor("a"), keys.keysFor("a"), keys.keysFor("a")]);
+    expect(fetchKeys).toHaveBeenCalledTimes(1);
+  });
+
+  it("refetches on an unknown kid (Apple rotated), at most once a minute", async () => {
+    const { cache: keys, fetchKeys, advance } = cache([[key("a")], [key("a"), key("b")]]);
+    await keys.keysFor("a");
+    expect((await keys.keysFor("b")).map((k) => k.kid)).toEqual(["a"]);
+    expect(fetchKeys).toHaveBeenCalledTimes(1);
+    advance(APPLE_KEYS_MIN_REFETCH_MS);
+    expect((await keys.keysFor("b")).map((k) => k.kid)).toEqual(["a", "b"]);
+    expect(fetchKeys).toHaveBeenCalledTimes(2);
+    await keys.keysFor("b");
+    expect(fetchKeys).toHaveBeenCalledTimes(2);
+  });
+
+  it("refetches after the TTL and keeps the stale keys when that refetch fails", async () => {
+    const { cache: keys, fetchKeys, advance } = cache([[key("a")], new Error("down"), [key("c")]]);
+    await keys.keysFor("a");
+    advance(APPLE_KEYS_TTL_MS);
+    expect((await keys.keysFor("a")).map((k) => k.kid)).toEqual(["a"]);
+    expect(fetchKeys).toHaveBeenCalledTimes(2);
+    expect((await keys.keysFor("a")).map((k) => k.kid)).toEqual(["c"]);
+    expect(fetchKeys).toHaveBeenCalledTimes(3);
+  });
+
+  it("throws when the first fetch fails and there are no keys yet", async () => {
+    const { cache: keys } = cache([new AppleIdentityError("keys")]);
+    expect(await reason(() => keys.keysFor("a"))).toBe("keys");
   });
 });
