@@ -307,6 +307,6 @@ across sessions, also in the dashboard's Campaign Rules panel)? → RS0, RU
 - Q13 (c, changed) Fate roll: a 'Fate roll' button in every player's dice box (Hope or Fear die, no GM step), no Hope/Fear gained.
 - Q14 (a, changed from rec.) Conflict between PCs: attacks on PCs vs Evasion through the normal hit path AND a GM 'Contest' request (instigator action roll vs target reaction roll; instigator must beat it).
 - Q15 (a, changed) Horizon: the app also rolls the d14 Encounter table and shows the entry; it applies only the optional bonuses automatically (4: GM +1 Fear per PC, 12: each PC +1 Hope); the GM runs the rest.
-- Q16 (changed) Shared domain cards: a three-way setting Allow / Warn / Refuse (default Warn? -> default per 'off by default' = Allow? ASK if unclear; recommended default: Warn).
+- Q16 (changed) Shared domain cards: a three-way setting Allow / Warn / Refuse (user 2026-11-05: new campaigns default to Warn).
 - Q17 (a) the live-session lock covers every switch, including today's campaign options.
 - Q18 (a) players read the list from a 'House rules' item in the avatar menu.
