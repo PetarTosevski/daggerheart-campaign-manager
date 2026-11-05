@@ -1,0 +1,75 @@
+/* App admin, Accounts: the row marks and the confirm dialog of Suspend / Delete account (config AU9). */
+
+.aca-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.aca-sus {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #2a1e14;
+  color: #f3b98f;
+  font-size: 11.5px;
+  box-shadow: inset 0 0 0 1px #5a3a26;
+}
+.aca-del {
+  color: #f3a58f;
+}
+.aca-err {
+  margin: 0;
+  color: #f3a58f;
+  font-size: 13px;
+}
+
+.aca-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.aca-body {
+  margin: 0;
+  color: var(--adm-soft, #c9d6d8);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.aca-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+.aca-field > label {
+  font-weight: 600;
+}
+.aca-field small {
+  color: var(--adm-muted, #8fa3a7);
+  font-size: 12.5px;
+}
+.aca-inp {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: #0f171a;
+  color: var(--adm-text, #e8eef0);
+  font: inherit;
+  box-shadow: inset 0 0 0 1px #2b3a40;
+}
+textarea.aca-inp {
+  min-height: 84px;
+  resize: vertical;
+}
+.aca-inp:focus-visible {
+  outline: 2px solid var(--adm-acc, #9fd8c4);
+  outline-offset: 2px;
+}
+.aca-btns {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}

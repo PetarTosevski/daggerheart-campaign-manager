@@ -10,7 +10,7 @@ import { errorMessage } from "@/lib/convex-errors";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
-import { AccountActions } from "./account-actions";
+import { AccountActions, AccountStatusMark } from "./account-actions";
 import {
   accountInitial,
   accountName,
@@ -172,6 +172,7 @@ export function AccountTable() {
                       <span className="adma-who-t">
                         <b>{accountName(account)}</b>
                         {account.tester ? <span className="adma-tag">Tester</span> : null}
+                        <AccountStatusMark account={account} now={now} />
                       </span>
                     </span>
                   </td>
