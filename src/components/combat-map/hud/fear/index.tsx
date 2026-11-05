@@ -18,7 +18,7 @@ export { FearConfirm, fearAfterSpend, fearReasonsText, type FearConfirmProps } f
  * The top-right of the HUD (plan combat-hud H1.2; Main / GMDesktop, CmpTokens 'GM Fear · players' / 'GM Fear · GM'):
  * the purple rod, the Fear banner (− / + on the GM view only, no confirm: answer 6a) and the day / time disc hanging
  * left of it (answer 9b). One small read, `combatHud.scene`, feeds both. While a sheet is open the banner moves left of
- * the panel and the disc hides (HANDOFF "Layout"; `.sh-open` on the HUD root).
+ * the panel and the disc hides (HANDOFF "Layout"; `.hud-sh-open` on the HUD root, shell.css).
  */
 export function HudFear({ state }: HudPartProps): ReactNode {
   const scene = useQuery(api.combatHud.scene, { campaignId: state.campaignId });

@@ -19,6 +19,7 @@ import {
   attackResultView,
   cardResultView,
   choseCount,
+  featureResultView,
   damageFormula,
   dualityParts,
   gainsOf,
@@ -193,6 +194,15 @@ describe("the result panel's model", () => {
     const mixed = attackResultView({ characterId: CHARACTER, actorName: "Moss", weaponName: "Shortstaff", damageType: "magic", names: NAMES, result: { ...base, targets: [{ tokenId: LT, hit: true, defeated: false }, { tokenId: BANDIT, hit: false, defeated: false }], riders: ["Marked for Death"] } });
     expect(mixed).toMatchObject({ title: "Shortstaff", sub: "Moss · Attack Roll", success: null, fear: 1, notes: ["With Marked for Death"] });
     expect(attackResultView({ characterId: CHARACTER, actorName: "Moss", weaponName: "Shortstaff", damageType: null, names: NAMES, result: { ...base, targets: [{ tokenId: LT, hit: true, defeated: true }] } }).targets[0]!.verdict).toBe("Defeated");
+  });
+
+  it("builds a feature use's view (dcm-bxp.99.32.26): the roll, Hit / Miss per target by name, its notes and steps, no art", () => {
+    const result = { entryId: "e3", roll: ROLL, damage: [], success: false, targets: [{ tokenId: LT, hit: false, defeated: false }], fearDelta: 1, prompts: [{ kind: "manual" as const, text: "Move up to Close" }], notes: ["Favor 1", ""] };
+    const view = featureResultView({ characterId: CHARACTER, actorName: "Moss", featureName: "Fangs", result, names: NAMES });
+    expect(view).toMatchObject({ id: "e3", kind: "feature", title: "Fangs", sub: "Moss · Roll", cardId: null, success: false, fear: 1, notes: ["Favor 1"], prompts: [{ kind: "manual", text: "Move up to Close" }] });
+    expect(view.targets).toEqual([{ tokenId: LT, name: "Lieutenant", verdict: "Miss" }]);
+    // No roll (Shadow Stepper): "Moss · Feature", no outcome.
+    expect(featureResultView({ characterId: CHARACTER, actorName: "Moss", featureName: "Shadow Stepper", result: { ...result, roll: null, targets: [], fearDelta: undefined }, names: NAMES })).toMatchObject({ sub: "Moss · Feature", success: null, fear: 0 });
   });
 
   it("the held roll's lines; splits with and without a total; ally picks grouped by step; answers merged", () => {

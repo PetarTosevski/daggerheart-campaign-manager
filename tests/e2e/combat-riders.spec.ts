@@ -144,7 +144,7 @@ async function aim(s: Scene, tokenId: string) {
   const { player } = s;
   await player
     .getByRole("region", { name: "Battle map" })
-    .getByRole("button", { name: /^Open Ash’s sheet \(your character\)/ })
+    .getByRole("button", { name: /^Ash \(your character\): actions/ })
     .click();
   const open = player.getByRole("toolbar", { name: "Your actions (Ash)" }).getByRole("button", { name: "Attack" });
   await expect(open).toBeEnabled({ timeout: 30_000 });

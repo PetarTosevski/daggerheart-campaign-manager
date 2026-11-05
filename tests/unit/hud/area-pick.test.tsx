@@ -10,6 +10,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { HudPick, PickProvider } from "@/components/combat-map/hud/pick";
+import { hudResults } from "@/components/combat-map/hud/result";
 import {
   bannerText,
   cancelAreaPick,
@@ -65,6 +66,7 @@ afterEach(() => {
   read.length = 0;
   results = [];
   act(() => resetAreaPickForTests());
+  hudResults.reset();
 });
 
 const CAMPAIGN = "c1" as Id<"campaigns">;
@@ -418,7 +420,13 @@ describe("feature uses: the picker (useFeatureUse)", () => {
       name: "combatFeatures:useFeature",
       args: { campaignId: CAMPAIGN, characterId: CHARACTER, mapId: MAP, featureId: "transformation:vampire:fangs", useId: "main", targetTokenIds: [LT], roll: { trait: "finesse" }, riders: [{ source: "feature", id: "transformation:vampire:feed", useId: "fear-die", choices: [] }] },
     });
-    expect(await screen.findByTestId("hud-area-line")).toHaveTextContent("Fangs · rolled 15 · Lieutenant: Hit");
+    // dcm-bxp.99.32.26: the result panel shows it (the roll, Hit per target by name), not the square-picking bar.
+    await waitFor(() => expect(hudResults.get()).not.toBeNull());
+    const entry = hudResults.get();
+    if (entry?.kind !== "result") throw new Error("a result");
+    expect(entry.view).toMatchObject({ kind: "feature", title: "Fangs", sub: "Vex · Roll", characterId: CHARACTER, success: true });
+    expect(entry.view.targets).toEqual([{ tokenId: LT, name: "Lieutenant", verdict: "Hit" }]);
+    expect(screen.queryByTestId("hud-area-line")).toBeNull();
     expect(screen.queryByRole("dialog", { name: "Fangs" })).toBeNull();
   });
 
@@ -512,7 +520,9 @@ describe("feature uses: the picker (useFeatureUse)", () => {
     fireEvent.click(go);
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]!.args).toMatchObject({ featureId: "subclass:nightwalker:shadow-stepper", targetTokenIds: [] });
-    expect(await screen.findByTestId("hud-area-line")).toHaveTextContent("Shadow Stepper · done");
+    // dcm-bxp.99.32.26: the result panel ("Vex · Feature", no roll), not the square-picking bar.
+    await waitFor(() => expect(hudResults.get()).toMatchObject({ kind: "result", view: { kind: "feature", title: "Shadow Stepper", sub: "Vex · Feature" } }));
+    expect(screen.queryByTestId("hud-area-line")).toBeNull();
   });
 
   it("a sheet the viewer can't use (view only, GM without Play for): no drawer or hand read (a hidden hand refuses them), classic", () => {

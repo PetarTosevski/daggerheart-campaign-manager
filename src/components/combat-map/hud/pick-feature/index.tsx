@@ -14,7 +14,8 @@ import { useActor } from "../../actions/targets";
 import { areaUseArgs, areaUseLine } from "../../drawer/use/model";
 import type { CombatMapSummary, CombatRole } from "../../slots";
 import { usePick, type PickApi, type PickContext, type PickOption, type PickOutcome, type PickRowInput, type PickSelection, type PickSessionSpec } from "../pick";
-import { chainAnswer, chainRows, showPickLine, startAreaPick, type ChainCreature, type ChainLinks } from "../pick-area";
+import { chainAnswer, chainRows, startAreaPick, type ChainCreature, type ChainLinks } from "../pick-area";
+import { showFeatureResult } from "../result";
 import { AskRows, FormRows } from "./rows";
 import {
   areaAskOf,
@@ -24,7 +25,6 @@ import {
   hopeShortfall,
   noPickText,
   payLine,
-  resultLine,
   riderLabel,
   riderNote,
   riderPill,
@@ -50,7 +50,8 @@ import {
  *   also has riders or options the panel comes first and its primary ("Pick the square") starts the square pick.
  * - "classic": the HUD has no flow for it; the caller keeps the classic `FeatureUse` (Warden's Protection's rolled count,
  *   Charge), or there is no live map / token to act from.
- * The result ("Fangs · rolled 14 · Lieutenant: Hit") shows in the square-picking bar's line (`showPickLine`).
+ * The result shows in the result panel (H4.1, `showFeatureResult`; dcm-bxp.99.32.26): the roll, Hit / Miss / Defeated
+ * per target, the use's notes and table steps.
  */
 
 export type FeatureUseArgs = {
@@ -174,10 +175,13 @@ export function useFeatureUse({ campaignId, role, map, characterId, canUse = tru
   // Who is on the map, for names, chain rows and the actor's square.
   let creatures: Creature[] = [];
   let self: (Footprint & { tokenId: Id<"combatTokens">; name: string }) | null = null;
+  /** The character's name for the result panel's sub line ("Moss · Roll"). */
+  let actorName = "";
   if (gm) {
     creatures = (gmTokens ?? []).map((t) => ({ tokenId: t._id, name: t.name, side: t.characterId === characterId ? "self" : t.side, at: { x: t.x, y: t.y, size: t.size } }));
     const mine = gmTokens?.find((t) => t.characterId === characterId);
     if (mine) self = { tokenId: mine._id, name: mine.name, x: mine.x, y: mine.y, size: mine.size };
+    actorName = mine?.name ?? "";
   } else if (actor && actor.characterId === characterId) {
     const view = actor.view;
     creatures = [
@@ -186,6 +190,7 @@ export function useFeatureUse({ campaignId, role, map, characterId, canUse = tru
     ];
     const me = view.pcs.find((p) => p._id === view.tokenId);
     if (me) self = { tokenId: me._id, name: "You", x: me.x, y: me.y, size: me.size };
+    actorName = me?.name ?? "You";
   }
   const hope = drawer?.trackers.hope.value ?? null;
 
@@ -214,7 +219,8 @@ export function useFeatureUse({ campaignId, role, map, characterId, canUse = tru
         openAsks(args, out.asks, step + 1, links, rows);
         return { kind: "stay" };
       }
-      showPickLine(resultLine(title, out, names));
+      // dcm-bxp.99.32.26: the result panel (H4.1), as a card's or an attack's result.
+      showFeatureResult({ characterId, actorName, featureName: title, result: out, names });
       return { kind: "done" };
     }
 

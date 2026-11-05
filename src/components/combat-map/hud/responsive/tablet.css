@@ -168,6 +168,21 @@
   }
 }
 
+/*
+ * The portrait tablet (768 x 1024; dcm-bxp.99.32.41): between x = 300 and right 264 the hand had 204 px, so its row
+ * clipped the side buttons (Roll options, Hide cards) and the map under them took the clicks. The bottom edge is free
+ * left and right of the hand here, so the hand spans the width; the toasts keep their right 24 px.
+ */
+@media (min-width: 761px) and (max-width: 900px) {
+  .hud-root .hud-r-hand {
+    left: 16px;
+    right: 16px;
+  }
+  .hud-root .hud-r-hand > .hud-toasts {
+    right: 8px;
+  }
+}
+
 /* ---------------------------------------------------------------- touch targets (≥ 44 px at tablet and phone width) */
 @media (max-width: 1180px) {
   .hud-root .hud-btn,

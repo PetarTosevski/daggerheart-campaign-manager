@@ -253,3 +253,20 @@ export function waitingReason(w: Pick<WaitingUse, "targets" | "outOfRange">): st
   const lines = w.outOfRange.map((o) => `${names.get(o.tokenId) ?? "The target"} is ${BAND_WORD[o.band]}.`);
   return lines.length > 0 ? lines.join(" ") : "It is out of range.";
 }
+
+/** A box on screen, relative to the pop region. */
+export type Box = { left: number; top: number; right: number; bottom: number };
+
+/**
+ * The panel's top, kept clear of the HUD's fixed controls (dcm-bxp.99.32.22: a player's map controls, Zoom out
+ * first): a control the panel's columns would cover pushes the panel below it. The edge stays the floor.
+ */
+export function clearTop(y: number, x: number, width: number, obstacles: readonly Box[], edge: number): number {
+  let top = edge;
+  for (const o of obstacles) {
+    if (o.right <= x || o.left >= x + width) continue;
+    if (o.bottom <= top) continue;
+    top = Math.max(top, o.bottom + edge);
+  }
+  return Math.max(y, top);
+}

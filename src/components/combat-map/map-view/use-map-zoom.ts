@@ -10,6 +10,32 @@ const WHEEL_STEP = 1.12;
 
 const clampZoom = (z: number) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z));
 
+/**
+ * The CSS scale on the element's ancestors: its on-screen width over its layout width (1 when it has no size). The
+ * Combat HUD scales the map's viewport while a sheet is open (make room, plan combat-hud H2.2: 0.94, tablet 0.92), so
+ * client pixels are layout pixels times this (dcm-bxp.99.32.14).
+ */
+export function cssScale(el: HTMLElement): number {
+  const width = el.getBoundingClientRect().width;
+  return el.offsetWidth > 0 && width > 0 ? width / el.offsetWidth : 1;
+}
+
+/**
+ * The stage point (unzoomed layout px) under the client point (cx, cy): `s` is the stage's client rect, `scale` the
+ * CSS scale on it (`cssScale`).
+ */
+export function anchorAt(s: Pick<DOMRect, "left" | "top">, zoom: number, scale: number, cx: number, cy: number) {
+  return { px: (cx - s.left) / (zoom * scale), py: (cy - s.top) / (zoom * scale), cx, cy };
+}
+
+/**
+ * How far to scroll the viewport (its layout px) so the anchored stage point sits under its client point at zoom `z`:
+ * the client distance to close, divided by the CSS scale, since a scroll moves the stage by `scale` client px per px.
+ */
+export function anchorScroll(s: Pick<DOMRect, "left" | "top">, a: { px: number; py: number; cx: number; cy: number }, z: number, scale: number) {
+  return { x: (s.left - a.cx) / scale + a.px * z, y: (s.top - a.cy) / scale + a.py * z };
+}
+
 /** A rectangle of the stage in unzoomed pixels. */
 export type FitArea = { x: number; y: number; w: number; h: number };
 
@@ -46,7 +72,7 @@ export function useMapZoom(
       const s = st.getBoundingClientRect();
       const cx = clientX ?? v.left + v.width / 2;
       const cy = clientY ?? v.top + v.height / 2;
-      anchor.current = { px: (cx - s.left) / zoomRef.current, py: (cy - s.top) / zoomRef.current, cx, cy };
+      anchor.current = anchorAt(s, zoomRef.current, cssScale(st), cx, cy);
     }
     zoomRef.current = next;
     setZoomState(next);
@@ -64,8 +90,8 @@ export function useMapZoom(
   function scrollToAnchor(a: { px: number; py: number; cx: number; cy: number }, z: number) {
     const vp = viewport.current;
     if (!vp || !stage) return;
-    const s = stage.getBoundingClientRect();
-    vp.scrollBy(s.left - (a.cx - a.px * z), s.top - (a.cy - a.py * z));
+    const by = anchorScroll(stage.getBoundingClientRect(), a, z, cssScale(stage));
+    vp.scrollBy(by.x, by.y);
   }
 
   function fit() {

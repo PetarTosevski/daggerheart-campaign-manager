@@ -28,7 +28,7 @@ const ringAttack = (page: Page) => page.getByRole("toolbar", { name: "Your actio
 async function openAttack(page: Page): Promise<Locator> {
   await page
     .getByRole("region", { name: "Battle map" })
-    .getByRole("button", { name: /^Open Moss’s sheet \(your character\)/ })
+    .getByRole("button", { name: /^Moss \(your character\): actions/ })
     .click();
   const attack = ringAttack(page);
   await expect(attack).toBeEnabled({ timeout: 30_000 });
@@ -84,10 +84,16 @@ test("a player picks: the panel beside the target, rows and rings in step, out o
     await expect(pickRow(player, enemies.bandit.tokenId)).toHaveAttribute("aria-pressed", "false");
     await expect(ring(player, enemies.lieutenant.tokenId)).toHaveClass(/hud-tg-out/);
     await expect(panel.getByTestId("hud-pick-pay")).toContainText("the GM approves first");
-    await expectNoSeriousA11yViolations(player, {
-      exclude: 'button[aria-label="Zoom out"]',
-      reason: "H3.2's taller panel beside the Lieutenant partly covers the map toolbar's Zoom out (target-size); dcm-bxp.99.32.22",
-    });
+    // dcm-bxp.99.32.22: the taller panel beside the Lieutenant stands clear of the map controls (Zoom out).
+    const zoomOut = await player.getByTestId("hud-map-controls").getByRole("button", { name: "Zoom out" }).boundingBox();
+    await expect
+      .poll(async () => {
+        const b = (await panel.boundingBox())!;
+        const z = zoomOut!;
+        return b.x < z.x + z.width && b.x + b.width > z.x && b.y < z.y + z.height && b.y + b.height > z.y;
+      })
+      .toBe(false);
+    await expectNoSeriousA11yViolations(player);
 
     // Esc cancels: the panel and rings go, focus goes back to the ring's Attack button.
     await pickRow(player, enemies.lieutenant.tokenId).focus();

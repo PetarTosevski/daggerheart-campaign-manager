@@ -25,7 +25,7 @@ test("the action ring offers reactions, greyed with their reason until their tri
     await player.setViewportSize({ width: 1440, height: 900 });
     await player.goto(s.url);
     await expect(player.getByTestId("combat-hud")).toBeVisible();
-    const token = player.getByRole("region", { name: "Battle map" }).getByRole("button", { name: /^Open Moss’s sheet \(your character\)/ });
+    const token = player.getByRole("region", { name: "Battle map" }).getByRole("button", { name: /^Moss \(your character\): actions/ });
     await token.click();
     const ring = player.getByRole("toolbar", { name: "Your actions (Moss)" });
     // The ring box has no size of its own (its buttons sit around the token): wait for Attack.

@@ -2,7 +2,7 @@
  * The Fear banner and the day / time disc (plan combat-hud H1.2; Main / GMDesktop `.rod2` `.fb` `.sun`, CmpTokens
  * 'GM Fear' and 'Light'). The fear region sits at right var(--hud-edge), top 0 (shell.css); this box is the banner's
  * own 150 x 262 px at top 8, and the rod and disc hang from it by the board's offsets (rod right 12 / top 6, disc
- * right 206 / top 0 on the page). While a sheet is open (.sh-open) the box moves left of the panel and the disc hides.
+ * right 206 / top 0 on the page). While a sheet is open the box moves left of the panel and the disc hides (shell.css, `.hud-sh-open`).
  */
 .hud-fear {
   position: relative;
@@ -10,9 +10,6 @@
   height: 262px;
   margin-top: 8px;
   transition: transform var(--hud-t-map) var(--hud-ease-out);
-}
-.hud-root.sh-open .hud-fear {
-  transform: translateX(calc(-1 * var(--hud-sheet-w)));
 }
 .hud-fear-loading {
   margin: 12px 0 0;
@@ -140,10 +137,6 @@
   top: -8px;
   right: 182px;
   transition: opacity var(--hud-t-fast);
-}
-.hud-root.sh-open .hud-sun {
-  opacity: 0;
-  pointer-events: none;
 }
 .hud-sun,
 .hud-sun-btn {
@@ -350,6 +343,16 @@
   .hud-fc {
     right: 0;
     top: 96px;
+  }
+}
+/*
+ * At the GM's phone width the sheet and stat block are full screen (--hud-sheet-w: 100vw, phone.css): there is no room
+ * beside them, so the card stays put over the panel (z 90) instead of moving off-screen (dcm-bxp.99.32.44).
+ */
+@media (max-width: 760px) {
+  .hud-root.hud-sh-open .hud-fc {
+    transform: none;
+    z-index: 91;
   }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -19,7 +19,7 @@ import { featurePlan, useFeatureUse } from "../pick-feature";
 import { useSpotlight } from "../spotlight";
 import { useHud, type HudLayerProps } from "../state";
 import { hudToasts } from "../toasts";
-import { raiseHand } from "./hand";
+import { raiseHand } from "../hand/raise";
 import {
   attackLock,
   castLock,
@@ -42,7 +42,6 @@ import {
 import { closeActionRing, useActionRing, type RingOpen } from "./store";
 
 export { closeActionRing, openActionRing, toggleActionRing, useActionRing, resetActionRingForTests, type RingOpen } from "./store";
-export { raiseHand } from "./hand";
 export * from "./model";
 
 /**

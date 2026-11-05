@@ -63,9 +63,6 @@
   border-radius: var(--hud-r-chip);
   padding: 7px 14px;
 }
-.sh-open .hud-spot-note {
-  left: 560px;
-}
 
 /* The banner's " · Spotlight" (CmpTokens `.bn-c`; kept, user answer Q11 b). */
 .hud-spot-bn {

@@ -14,7 +14,7 @@ import type { HudPartProps } from "../state";
 import { Popup } from "../ui";
 import { AsksPanel } from "./asks";
 import { HeldRoll, RiderAsk, type RiderRow } from "./held";
-import { attackResultView, cardResultView, weaponDamageType } from "./model";
+import { attackResultView, cardResultView, featureResultView, weaponDamageType } from "./model";
 import { ResultPanel } from "./panel";
 import { hudResults, useHudResultEntry, type AsksEntry } from "./store";
 
@@ -106,6 +106,11 @@ export function showCardResult(input: Parameters<typeof cardResultView>[0]): voi
   hudResults.show(cardResultView(input));
 }
 
+/** A resolved feature use (the picking panel, dcm-bxp.99.32.26): shows its result. */
+export function showFeatureResult(input: Parameters<typeof featureResultView>[0]): void {
+  hudResults.show(featureResultView(input));
+}
+
 /**
  * What `combatActions.attack` answered (the attack picker): a resolved attack shows its result; a held one ("awaiting")
  * is remembered by weapon so "Your roll waits" (from the server's request) can name it once answered; pending shows
@@ -135,4 +140,4 @@ export function askAfterRoll(input: Omit<AsksEntry, "kind" | "id">): void {
 }
 
 export { hudResults, useHudResultEntry, type AsksEntry, type HudResultEntry } from "./store";
-export { attackResultView, cardResultView, withAnswers, type ResultView } from "./model";
+export { attackResultView, cardResultView, featureResultView, withAnswers, type ResultView } from "./model";

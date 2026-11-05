@@ -87,7 +87,7 @@ test("an attack's result through the action ring; on a phone the result is a bot
 
     await player
       .getByRole("region", { name: "Battle map" })
-      .getByRole("button", { name: /^Open Moss’s sheet \(your character\)/ })
+      .getByRole("button", { name: /^Moss \(your character\): actions/ })
       .click();
     const open = player.getByRole("toolbar", { name: "Your actions (Moss)" }).getByRole("button", { name: "Attack" });
     await expect(open).toBeEnabled({ timeout: 30_000 });

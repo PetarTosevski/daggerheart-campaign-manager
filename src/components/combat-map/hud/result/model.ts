@@ -35,8 +35,8 @@ export type ResultView = {
   /** Unique per result (the actionLog entry). */
   id: string;
   characterId: string;
-  kind: "card" | "attack";
-  /** "Vicious Entangle", "Shortstaff". */
+  kind: "card" | "attack" | "feature";
+  /** "Vicious Entangle", "Shortstaff", "Fangs". */
   title: string;
   /** "Moss · Spellcast Roll", "Moss · Attack". */
   sub: string;
@@ -190,6 +190,36 @@ export function cardResultView(input: {
     fear: Math.max(0, result.fearDelta ?? 0),
     prompts: result.prompts.map((p) => ({ kind: p.kind, text: p.text })),
     notes: result.minionOffer ? ["Your damage can defeat more Minions: pick them in the prompt."] : [],
+  };
+}
+
+/**
+ * A resolved feature use (`combatFeatures.useFeature`'s `resolved`, convex/lib/featureRunner.ts
+ * `resolvedFeatureValidator`) through the picking panel (dcm-bxp.99.32.26; it used to be one line in the square-picking
+ * bar). No art; the feature's own notes (Favor, Help dice, areas) go under the rows.
+ */
+export function featureResultView(input: {
+  characterId: string;
+  actorName: string;
+  featureName: string;
+  result: { entryId: string; roll: RollRecord | null; damage: readonly RollRecord[]; success: boolean; targets: readonly Target[]; fearDelta?: number; prompts: readonly Prompt[]; notes: readonly string[] };
+  names: Names;
+}): ResultView {
+  const { result } = input;
+  return {
+    id: result.entryId,
+    characterId: input.characterId,
+    kind: "feature",
+    title: input.featureName,
+    sub: [input.actorName, result.roll ? "Roll" : "Feature"].join(" · "),
+    cardId: null,
+    roll: result.roll,
+    success: result.roll ? result.success : null,
+    damage: result.damage.map((d) => lineOf(d, null, result.roll?.outcome === "critical")),
+    targets: targetsOf(result.targets, input.names),
+    fear: Math.max(0, result.fearDelta ?? 0),
+    prompts: result.prompts.map((p) => ({ kind: p.kind, text: p.text })),
+    notes: result.notes.filter((n) => n.length > 0),
   };
 }
 

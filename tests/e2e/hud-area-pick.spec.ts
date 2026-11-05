@@ -121,7 +121,11 @@ test("the GM plays for Vex: Dark Cloud by keyboard and by pointer on a shifted m
     await expect(go).toBeEnabled();
     await go.click();
     await expect(panel).toHaveCount(0);
-    await expect(gm.getByTestId("hud-area-line")).toContainText("Shadow Stepper");
+    // dcm-bxp.99.32.26: a feature use's result shows in the result panel (not the square-picking bar).
+    const result = gm.getByTestId("hud-result");
+    await expect(result).toHaveAttribute("data-kind", "feature");
+    await expect(result).toContainText("Shadow Stepper");
+    await expect(gm.getByTestId("hud-area-line").filter({ hasText: "Shadow Stepper" })).toHaveCount(0);
     await expect.poll(async () => (await client.query(api.charactersReads.get, { characterId: vex.characterId }))!.sheet.stress).toBe(stressBefore + 1);
   } finally {
     await s.close();

@@ -2,9 +2,8 @@
 // tablet pass for the player's hand at the bottom of the map. Bar (D12, docs/tasks/TASK-D12-H1.md): zero serious or
 // critical axe findings in every state of the hand (the fan, a card's Use focused, the roll options open, the vault
 // open, folded with "Show cards (n)"); at 1024x768 no sideways scroll and the map still in view above the hand; at
-// 390 px the phone sheet's Hand tab fits with 44 px controls. Known HUD gaps (dcm-bxp.99.32.41, `test.fixme` below): the
-// side buttons are 28 px on tablets, and at 768x1024 the map hint covers them. Drag-to-aim is gone
-// by design: Use opens the picking panel (tests/e2e/hud-card-pick.spec.ts). The GM's locked view and the full card are
+// 390 px the phone sheet's Hand tab fits with 44 px controls; on tablets the side buttons are 44 px and clickable
+// (dcm-bxp.99.32.41). Drag-to-aim is gone by design: Use opens the picking panel (tests/e2e/hud-card-pick.spec.ts). The GM's locked view and the full card are
 // in tests/e2e/hud-hand.spec.ts.
 
 import { expect, test, type Locator, type Page } from "@playwright/test";
@@ -93,6 +92,8 @@ test("the HUD hand passes axe in every state, fits tablets and the phone's Hand 
     await expect(phoneHand.getByTestId("hud-hand-card")).toHaveCount(2);
     await expectFitsViewport(player);
     await expectTouchTargets(sideButtons(phoneHand));
+    // dcm-bxp.99.32.41 (3): the sheet's tabs (Hand, Attack, Dice, Feed) are 44 px too.
+    await expectTouchTargets(tabs.getByRole("tab"));
     await expectNoSeriousA11yViolations(player, { include: '[data-testid="hud-phone-tab-hand"]' });
     await phoneHand.getByRole("button", { name: "Roll options" }).click();
     await expect(player.getByTestId("hud-hand-rolls").getByRole("group", { name: "Advantage" })).toBeVisible();
@@ -103,9 +104,8 @@ test("the HUD hand passes axe in every state, fits tablets and the phone's Hand 
   }
 });
 
-// dcm-bxp.99.32.41: the classic hand kept 44 px side buttons on tablets; the HUD's are 28 px (hud/hand/hand.css), and
-// at 768x1024 the map's hint line covers them. Unfixme once the HUD hand is fixed.
-test.fixme("on tablets the HUD hand's side buttons are 44 px and clear of the map hint, folded and shown", async ({ browser }) => {
+// dcm-bxp.99.32.41: on tablets the HUD hand's side buttons are 44 px (hud/hand/hand.css) and nothing covers them.
+test("on tablets the HUD hand's side buttons are 44 px and clear of the map hint, folded and shown", async ({ browser }) => {
   const s = await hudScene(browser);
   const { player } = s;
   try {

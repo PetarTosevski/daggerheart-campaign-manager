@@ -80,7 +80,7 @@ test("MV-M1 difficult hatch, doors, Blocked, the GM's warning and the movement-r
     await player.goto(url);
     const playerBoard = player.getByRole("region", { name: "Battle map" });
     // HUD tokens are named for the sheet a click opens (plan combat-hud H8.1).
-    const mine = playerBoard.getByRole("button", { name: /^Open Ash’s sheet \(your character\)/ });
+    const mine = playerBoard.getByRole("button", { name: /^Ash \(your character\): actions/ });
     await expect(mine).toHaveAttribute("data-square", "14,17", { timeout: 30_000 });
     await player.locator("body").click({ position: { x: 2, y: 2 } });
     await player.keyboard.press("d");

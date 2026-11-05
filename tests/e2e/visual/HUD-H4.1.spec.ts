@@ -65,7 +65,7 @@ test("HUD-H4.1 the result panel", { tag: "@visual" }, async ({ browser }) => {
       await expect(player.getByTestId("combat-hud")).toBeVisible();
       await player
         .getByRole("region", { name: "Battle map" })
-        .getByRole("button", { name: /^Open Moss’s sheet \(your character\)/ })
+        .getByRole("button", { name: /^Moss \(your character\): actions/ })
         .click();
       const attack = player.getByRole("toolbar", { name: "Your actions (Moss)" }).getByRole("button", { name: "Attack" });
       await expect(attack).toBeEnabled({ timeout: 30_000 });
