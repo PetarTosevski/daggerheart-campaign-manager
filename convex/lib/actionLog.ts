@@ -229,11 +229,12 @@ async function adversariesToRestore(ctx: MutationCtx, group: Doc<"actionLog">[])
 
 /**
  * Declines the open `incomingHit` rows of an undone group (AA2b; AA2's open item: "actionLog undo declines open incomingHit
- * rows of the undone group"). Open requests per campaign are few (`openRequests` is bounded).
+ * rows of the undone group"), and its open `gmPrompt` rows (dcm-bxp.99.32.27: an undone adversary feature use takes its
+ * GM prompts with it). Open requests per campaign are few (`openRequests` is bounded).
  */
 async function declineGroupHits(ctx: MutationCtx, campaignId: Id<"campaigns">, groupId: string, by: Id<"users">): Promise<void> {
   for (const r of await openRequests(ctx, campaignId)) {
-    if (r.payload.kind === "incomingHit" && r.payload.groupId === groupId) await closeRequest(ctx, r._id, "declined", by);
+    if ((r.payload.kind === "incomingHit" || r.payload.kind === "gmPrompt") && r.payload.groupId === groupId) await closeRequest(ctx, r._id, "declined", by);
   }
 }
 

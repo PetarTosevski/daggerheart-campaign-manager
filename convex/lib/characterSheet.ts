@@ -76,7 +76,12 @@ export function readSheet(raw: unknown): CharacterSheet {
 
 /** The stored form of a sheet: validated (a ZodError becomes INVALID), defaults filled, with its `schemaVersion`. */
 export function storedSheet(sheet: CharacterSheetInput) {
-  return { schemaVersion: SHEET_VERSION, ...characterSheetSchema.parse(sheet) };
+  const parsed = characterSheetSchema.parse(sheet);
+  // dcm-bxp.99.32.1: a condition's provenance goes with the condition (cleared by any path, it is no longer "from" anything).
+  const sources = parsed.conditionSources?.filter((s) => parsed.conditions.includes(s.condition));
+  const { conditionSources: _dropped, ...rest } = parsed;
+  void _dropped;
+  return { schemaVersion: SHEET_VERSION, ...rest, ...(sources && sources.length > 0 ? { conditionSources: sources } : {}) };
 }
 
 /**

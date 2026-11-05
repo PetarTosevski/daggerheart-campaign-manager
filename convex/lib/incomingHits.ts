@@ -325,7 +325,7 @@ export function featureRefusal(r: RunRefusal) {
     case "exhausted":
       return appError("FEATURE_EXHAUSTED", r.detail);
     case "cost":
-      return appError("FEATURE_COST_UNPAID", `Short of: ${r.detail}.`);
+      return appError("FEATURE_COST_UNPAID", `Short of: ${r.detail}.`, r.shortfall);
     case "targets":
       return appError("COMBAT_TARGET_INVALID", r.detail);
     case "requirement":

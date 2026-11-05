@@ -214,7 +214,11 @@ export function experienceBonus(experiences: readonly Experience[], ids: readonl
 
 /** Spends Hope, or refuses (the caller maps it to NOT_ENOUGH_HOPE). */
 export class NotEnoughHopeError extends Error {
-  constructor() {
+  constructor(
+    /** dcm-bxp.99.32.2: the Hope asked for and held, when known (the refusal's `shortfall`). */
+    readonly need?: number,
+    readonly have?: number,
+  ) {
     super("Not enough Hope.");
     this.name = "NotEnoughHopeError";
   }
@@ -222,7 +226,7 @@ export class NotEnoughHopeError extends Error {
 
 export function spendHope(sheet: CharacterSheet, amount: number): CharacterSheet {
   if (amount <= 0) return sheet;
-  if (sheet.hope < amount) throw new NotEnoughHopeError();
+  if (sheet.hope < amount) throw new NotEnoughHopeError(amount, sheet.hope);
   return { ...sheet, hope: sheet.hope - amount };
 }
 

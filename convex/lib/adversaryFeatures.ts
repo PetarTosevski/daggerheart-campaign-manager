@@ -343,7 +343,7 @@ export function optionalIds(use: AdversaryFeatureUse): string[] {
 export function runOrThrow(effect: AdversaryFeatureEffect, context: AdversaryRunContext): AdversaryPlan {
   const result = rules(() => run(effect, context));
   if (result.ok) return result.plan;
-  if (result.code) throw appError(result.code, result.detail);
+  if (result.code) throw appError(result.code, result.detail, result.shortfall);
   throw appError(result.reason === "targets" ? "COMBAT_TARGET_INVALID" : "INVALID", result.detail);
 }
 

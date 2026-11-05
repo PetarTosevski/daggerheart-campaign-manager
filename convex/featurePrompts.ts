@@ -517,7 +517,7 @@ export const allyRoll = keyedCampaignMutation({
       const secondId = second?.kind === "optional" ? second.id : null;
       if (args.secondTokenId !== undefined && secondId === null) throw appError("INVALID", "That use has no second target.");
       const hopeCost = args.secondTokenId !== undefined && secondId !== null ? optionalHope(base, secondId) : 0;
-      if (druidSheet.hope < hopeCost) throw appError("FEATURE_COST_UNPAID", `Short of: ${hopeCost} Hope (${druidSheet.name}).`);
+      if (druidSheet.hope < hopeCost) throw appError("FEATURE_COST_UNPAID", `Short of: ${hopeCost} Hope (${druidSheet.name}).`, { resource: "hope", need: hopeCost, have: druidSheet.hope });
 
       const name = featureName(p.featureId);
       const feature = ownedHere(druidSheet, campaign).find((f) => f.featureId === p.featureId) ?? { featureId: p.featureId, source: entry.source, owner: entry.owner, name, text: "", usage: "combat" as const };

@@ -1,6 +1,6 @@
 import { ConvexError } from "convex/values";
 
-import { appError, RuleError, type AppErrorCode } from "../../src/lib/errors/app-error";
+import { appError, RuleError, type AppErrorCode, type Shortfall } from "../../src/lib/errors/app-error";
 import { frameHasMechanic, type ExclusiveMechanic } from "../../src/lib/frames/index";
 import type { Doc } from "../_generated/dataModel";
 
@@ -9,6 +9,12 @@ export function assertMechanicEnabled(campaign: Doc<"campaigns">, mechanic: Excl
   if (!frameHasMechanic(campaign.frameId, mechanic)) {
     throw appError("MECHANIC_DISABLED");
   }
+}
+
+/** dcm-bxp.99.32.2: a domain error's Hope numbers (`NotEnoughHopeError` need / have) as the refusal's `shortfall`. */
+function shortfallOf(error: Error): Shortfall | undefined {
+  const { need, have } = error as Error & { need?: unknown; have?: unknown };
+  return error.name === "NotEnoughHopeError" && typeof need === "number" && typeof have === "number" ? { resource: "hope", need, have } : undefined;
 }
 
 /**
@@ -21,7 +27,7 @@ export function applyRule<T>(code: AppErrorCode, expected: abstract new (...args
   try {
     return run();
   } catch (error) {
-    if (error instanceof expected) throw new RuleError(code, error.message);
+    if (error instanceof expected) throw new RuleError(code, error.message, shortfallOf(error));
     throw error;
   }
 }

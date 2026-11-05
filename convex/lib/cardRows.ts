@@ -104,7 +104,17 @@ export const needsChoiceValidator = v.object({
         /** Plan lanes-2 E6 (dcm-sc54): the chooser of a `choose` step with `by` (the client answers `by:<stepId>:<chooserId>`). */
         chooserId: v.optional(v.id("combatTokens")),
       }),
-      v.object({ kind: v.literal("split"), label: v.string(), tokenIds: v.array(v.id("combatTokens")) }),
+      v.object({
+        kind: v.literal("split"),
+        label: v.string(),
+        tokenIds: v.array(v.id("combatTokens")),
+        /**
+         * dcm-bxp.99.32.23 (widened; plan combat-hud H4.1 "Split 14 damage between your targets", "n left"): the total to
+         * share, the actor's own number (its damage total, the Hope, Stress, marks or clears it hands out), never an
+         * adversary's. Absent on an older server: the HUD shows "n shared" and does not block on "left".
+         */
+        amount: v.optional(v.number()),
+      }),
       /** Plan lanes-2 E6 (dcm-sc54): the creatures of the next link of a repeating follow-up (the client answers `chain:<link>`). */
       v.object({ kind: v.literal("followUp"), label: v.string(), link: v.number(), tokenIds: v.array(v.id("combatTokens")) }),
     ),

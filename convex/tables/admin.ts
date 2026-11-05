@@ -137,5 +137,7 @@ export const adminTables = {
     decidedBy: v.optional(v.id("users")),
   })
     .index("by_status_createdAt", ["status", "createdAt"])
+    /** Retention (dcm-bxp.82.14): decided requests expire a year after `decidedAt` (convex/adminRetention.ts). */
+    .index("by_status_decidedAt", ["status", "decidedAt"])
     .index("by_campaign_status", ["campaignId", "status"]),
 };

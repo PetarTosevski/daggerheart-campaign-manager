@@ -196,7 +196,7 @@ production; a change takes effect on the next question):
 
 | Variable | Default | What it does |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | none | Required. Your Claude API key. Read only on the server, in `convex/lib/claude.ts`. App admin only shows Set / Missing. |
+| `ANTHROPIC_API_KEY` | none | Required. Your Claude API key. Read only on the server: its value only in `convex/lib/claude.ts` (every Claude call goes through it); App admin's checks (`convex/adminMaintenance.ts`, `convex/adminOverview.ts`) only test whether it is set and show Set / Missing. |
 | `LOREKEEPER_MODEL` | `claude-sonnet-5-5` | The model of the first pass and the internet pass. If unset, `ANTHROPIC_MODEL` is used (it also sets the photo import's model), then Sonnet 5.5. The stronger-model retry is always Opus 5.5. |
 | `LOREKEEPER_DAILY_QUESTIONS`, `LOREKEEPER_CAMPAIGN_MONTHLY_USD`, `LOREKEEPER_MONTHLY_USD` | see above | Fallbacks only (table above). |
 | `AUTH_RESEND_KEY`, `MAIL_FROM`, `SITE_URL` | none | The 80% email and the limit-request emails send through these, linking to `<SITE_URL>/admin`. Without them nothing is sent (logged, never retried). |
@@ -210,7 +210,7 @@ Set your Anthropic console limit as the last line of defence.
 | When the limit is reached | Past the limit | Past 120% of the limit |
 |---|---|---|
 | Pause the Lorekeeper (default) | everyone is refused | same |
-| GMs only | GMs and co-GMs ask normally; players are refused | everyone is refused ('paused') |
+| GMs only | GMs and co-GMs ask normally; players are refused | GMs and co-GMs are refused ('paused'); players keep the monthly-limit refusal they got past the limit |
 | Shorter answers | everyone gets a shorter answer: one Sonnet pass, at most 1,000 tokens, no retry, no internet | everyone is refused ('paused') |
 
 The campaign's monthly budget is a hard stop in every mode. The **app owner is never capped**: their questions are
@@ -287,12 +287,12 @@ How the caps work:
   keeps them.
 - **Campaign books** stay until the GM removes them or the campaign is purged (their text chunks are deleted in
   batches). An uploaded PDF file is deleted as soon as it has been read, whatever the result.
-- **Limit requests**: decided ones are deleted after 1 year; open ones wait for an answer.
+- **Limit requests**: decided ones are deleted 1 year after the decision; open ones wait for an answer.
 
 ## Privacy
 
-- **The API key never reaches a browser.** It lives in the deployment's environment and is read only on the server,
-  in `convex/lib/claude.ts`. It is never returned, logged or put in an error, and there is no `NEXT_PUBLIC_`
+- **The API key never reaches a browser.** It lives in the deployment's environment and is read only on the server:
+  its value only in `convex/lib/claude.ts`, and App admin's checks only test whether it is set. It is never returned, logged or put in an error, and there is no `NEXT_PUBLIC_`
   variable for it. Browsers only learn whether the Lorekeeper is available (true or false). The e2e privacy spec
   checks that no page, HTTP response or WebSocket message contains 'ANTHROPIC' or 'sk-ant'.
 - **What goes to Anthropic with a question:**

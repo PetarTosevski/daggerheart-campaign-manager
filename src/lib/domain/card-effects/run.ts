@@ -70,6 +70,7 @@ import {
   limitConsumed,
   limitUntil,
   resolveCosts,
+  shortfalls,
   unaffordable,
   unaffordableBy,
   unmetRequirements,
@@ -115,6 +116,7 @@ import type {
   Track,
   Versus,
 } from "./types";
+import type { Shortfall } from "../../errors/app-error";
 import type { FeatureUse } from "../../validation/characters";
 import { TRAIT_IDS, type DomainId, type TraitId } from "../../srd/types";
 
@@ -615,6 +617,8 @@ export type RunRefusal = {
   /** noUse: no such use; requirement: unmet (`unmet`); exhausted: CARD_EXHAUSTED; cost: CARD_COST_UNPAID (`short`); choice / targets: bad input. */
   reason: "noUse" | "requirement" | "exhausted" | "cost" | "choice" | "targets";
   detail: string;
+  /** dcm-bxp.99.32.2: on a `cost` refusal, the first short resource with what the use needs and what the payer has. */
+  shortfall?: Shortfall;
 };
 
 export type RunResult = { ok: true; plan: RunPlan } | RunRefusal;
@@ -627,7 +631,10 @@ export function pickUse(effect: CardEffect, useId?: string): CardUse | undefined
   return effect.uses.find((u) => u.activation.kind === "action") ?? effect.uses[0];
 }
 
-const refuse = (reason: RunRefusal["reason"], detail: string): RunRefusal => ({ ok: false, reason, detail });
+const refuse = (reason: RunRefusal["reason"], detail: string, shortfall?: Shortfall): RunRefusal => ({ ok: false, reason, detail, ...(shortfall ? { shortfall } : {}) });
+
+/** dcm-bxp.99.32.2: a Hope cost refused by a flag (Ravenous): the use's Hope, of which the payer may spend none. */
+const hopeShortfall = (costs: readonly PaidCost[]): Shortfall => ({ resource: "hope", need: costs.filter((c) => c.resource === "hope" && c.pool === undefined).reduce((n, c) => n + c.amount, 0), have: 0 });
 
 const MOVE_GATES = new Set<string>(["success", "failure", "critical", "withHope", "withFear"]);
 
@@ -1196,13 +1203,17 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
   if (!upfrontPayer) return refuse("cost", `No ${use.paidBy ?? "payer"} to pay.`);
   const upfront = roller ? [] : costsFor(use.costs ?? [], upfrontPayer.id);
   if (upfrontPayer.id !== actor.id) {
-    const described = unaffordableBy(upfront, use.paidBy, payersWithFlags());
-    if ((described !== null && described.length > 0) || hopeBarred(upfrontPayer.id, upfront)) return refuse("cost", (described?.length ? described : ["hope"]).join(", "));
+    const payers = payersWithFlags();
+    const described = unaffordableBy(upfront, use.paidBy, payers);
+    if ((described !== null && described.length > 0) || hopeBarred(upfrontPayer.id, upfront)) {
+      const state = payers[use.paidBy ?? "self"];
+      return refuse("cost", (described?.length ? described : ["hope"]).join(", "), (state ? shortfalls(upfront, state)[0] : undefined) ?? hopeShortfall(upfront));
+    }
     if (!payBy(upfrontPayer, upfront, "upfront", use.paidBy)) return refuse("cost", "hope");
   } else {
     const short = unaffordable(upfront, payer());
-    if (short.length > 0) return refuse("cost", short.join(", "));
-    if (hopeBarred(actor.id, upfront)) return refuse("cost", "hope");
+    if (short.length > 0) return refuse("cost", short.join(", "), shortfalls(upfront, payer())[0]);
+    if (hopeBarred(actor.id, upfront)) return refuse("cost", "hope", hopeShortfall(upfront));
     if (upfront.length > 0) {
       steps.push({ kind: "pay", phase: "upfront", costs: payCosts(upfront), paid: true });
     }

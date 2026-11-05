@@ -962,7 +962,7 @@ export function cardRefusal(r: RunRefusal) {
     case "exhausted":
       return appError("CARD_EXHAUSTED", r.detail);
     case "cost":
-      return appError("CARD_COST_UNPAID", `Short of: ${r.detail}.`);
+      return appError("CARD_COST_UNPAID", `Short of: ${r.detail}.`, r.shortfall);
     case "targets":
       return appError("COMBAT_TARGET_INVALID", r.detail);
     default:

@@ -163,6 +163,11 @@ describe("combatSpotlight.gmTake pay (Q7 a)", () => {
     const a = await arena();
     await a.setFear(0);
     expect(await code(a.take({ tokenId: a.second.tokenId, pay: "fear" }))).toBe("NOT_ENOUGH_FEAR");
+    // dcm-bxp.99.32.2: with the structured shortfall.
+    expect(await a.take({ tokenId: a.second.tokenId, pay: "fear" }).then(() => null, (e: unknown) => (e as { data?: unknown }).data)).toMatchObject({
+      code: "NOT_ENOUGH_FEAR",
+      shortfall: { resource: "fear", need: 1, have: 0 },
+    });
     expect(await a.spotlightRows()).toEqual([]);
     expect((await a.instance(a.second.instanceId)).spotlights).toBe(0);
     expect(await a.log()).toEqual([]);

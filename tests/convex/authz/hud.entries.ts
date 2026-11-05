@@ -79,6 +79,8 @@ const area: Area = {
       args: (w) => ({ requestId: w.ids.requestId }),
       expect: { otherPlayer: "FORBIDDEN", grantee: "ok" },
     },
+    // dcm-bxp.99.32.40: the GM's latest withdrawals, for the toast (gmQuery: players and the edit grantee FORBIDDEN).
+    { fn: api.combatRequestsReads.withdrawn, access: "gm", expect: { otherPlayer: "FORBIDDEN", grantee: "FORBIDDEN" } },
     // H5.3: what End scene would end, for its confirm (gmQuery: the GM only; the edit grantee and players FORBIDDEN).
     { fn: api.combatHud.sceneEndPreview, access: "gm", expect: { otherPlayer: "FORBIDDEN", grantee: "FORBIDDEN" } },
   ],

@@ -102,7 +102,7 @@ import {
 } from "./incomingHits";
 import { rollDie } from "./dice";
 import type { ActionTarget, AdversaryBefore, StoredRoll } from "./validators/actionLog";
-import type { CombatResponse, HitRider, PreRollPayload } from "./validators/combatRequests";
+import { MAX_GM_PROMPTS_PER_USE, type CombatResponse, type HitRider, type PreRollPayload } from "./validators/combatRequests";
 import { ENCOUNTER_CONDITIONS, MAX_CREATURE_TOKEN_KINDS, type EncounterCondition, type InstanceEffect } from "./validators/encounters";
 
 // The stat block, limits, riders and the runner's helpers moved to ./adversaryFeatures.ts (AA2c, CH9); same names here.
@@ -991,7 +991,7 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
   const experienceFear = experience ? 1 : 0;
   const asked = spotlightFear + featureFear + experienceFear;
   if (asked > 0 && (args.spendFear ?? 0) < asked) return { status: "confirmFear", fear: asked, spotlight: spotlightFear, feature: featureFear, experience: experienceFear };
-  if (asked > fearNow) throw appError("NOT_ENOUGH_FEAR");
+  if (asked > fearNow) throw appError("NOT_ENOUGH_FEAR", undefined, { resource: "fear", need: asked, have: fearNow });
 
   const scene = await actionScene(ctx, campaign, instance);
   const base = { encounter, self: instance, block, scene };
@@ -1394,6 +1394,22 @@ async function finish(ctx: MutationCtx, f: FinishInput): Promise<ActionResult> {
     if (o) Object.assign(o, entry);
     else outcomes.push(entry);
     if (resolution) await afterHitTriggers(ctx, resolution, f.user._id);
+  }
+  // dcm-bxp.99.32.27: a feature use's GM prompts are stored open for the HUD queue (a reload or a second GM tab keeps them).
+  if (f.attackerFeature !== undefined) {
+    for (const p of w.prompts.slice(0, MAX_GM_PROMPTS_PER_USE)) {
+      await ctx.db.insert("combatRequests", {
+        campaignId: campaign._id,
+        encounterId: f.encounter._id,
+        ...(map ? { mapId: map._id } : {}),
+        kind: "gmPrompt",
+        status: "open",
+        createdBy: f.user._id,
+        createdAt: Date.now(),
+        responses: [],
+        payload: { schemaVersion: 1, kind: "gmPrompt", instanceId: w.instance._id, instanceLabel: w.instance.label.slice(0, 80), feature: f.attackerFeature.slice(0, 80), prompt: p.kind, text: p.text.slice(0, 1000), groupId: f.groupId },
+      });
+    }
   }
   return { status: "resolved", groupId: f.groupId, entryId, roll: f.roll, success: f.success, targets: outcomes, fearDelta, prompts: w.prompts, offers: f.offers };
 }

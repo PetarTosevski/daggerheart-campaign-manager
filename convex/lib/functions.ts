@@ -158,7 +158,7 @@ import { atLeast, campaignAccess, type CampaignPermission, type Permission } fro
 
 /** CF14: only expected errors become `ConvexError<AppError>`; everything else is returned as is. */
 export function normaliseError(error: unknown): unknown {
-  if (error instanceof RuleError) return appError(error.code, error.message);
+  if (error instanceof RuleError) return appError(error.code, error.message, error.shortfall);
   if (error instanceof ZodError) return appError("INVALID", error.issues[0]?.message);
   return error;
 }

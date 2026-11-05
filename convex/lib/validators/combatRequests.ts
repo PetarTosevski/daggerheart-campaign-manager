@@ -77,10 +77,16 @@ export const combatRequestKindValidator = v.union(
   v.literal("difficulty"),
   v.literal("cloakPrompt"),
   v.literal("forcedAttack"),
+  v.literal("gmPrompt"),
 );
 
-/** `open` until answered; `resolved` (approved / hit applied) or `declined` (the GM refused a sanction). */
-export const combatRequestStatusValidator = v.union(v.literal("open"), v.literal("resolved"), v.literal("declined"));
+/**
+ * `open` until answered; `resolved` (approved / hit applied), `declined` (the GM refused a sanction, or the request was
+ * closed with its encounter or undo) or `withdrawn` (dcm-bxp.99.32.17: the player took back their own sanction or
+ * Charge before the GM answered, `combatWithdraw.withdraw`; older withdrawals were stored `declined`, see
+ * `migrations/combatRequestWithdrawn`).
+ */
+export const combatRequestStatusValidator = v.union(v.literal("open"), v.literal("resolved"), v.literal("declined"), v.literal("withdrawn"));
 
 /** A Defined Range band on the map (CB p.103), as `rangeCheck` reports it (CA1). */
 export const rangeBandValidator = v.union(
@@ -607,6 +613,39 @@ export const forcedAttackPayloadValidator = v.object({
   groupId: v.string(),
 });
 
+/** What a `gmPrompt` asks the GM to do (convex/lib/adversaryFeatures.ts `Prompt`). */
+export const gmPromptKindValidator = v.union(
+  v.literal("manual"),
+  v.literal("move"),
+  v.literal("pcSave"),
+  v.literal("summon"),
+  v.literal("countdown"),
+  v.literal("spotlight"),
+  v.literal("choice"),
+);
+
+/** The most GM prompts one adversary use stores (CD8); a use rarely has more than three. */
+export const MAX_GM_PROMPTS_PER_USE = 12;
+
+/**
+ * `gmPrompt` (dcm-bxp.99.32.27, widened; plan combat-hud H5.1, board CmpPromptsGM "More Where That Came From: Choose for
+ * the feature"): one GM prompt of an adversary feature use (summon, countdown, manual, a PC's save, ...), the step the GM
+ * applies by hand. Stored open so a reload or a second GM tab keeps it and the HUD queue lists it
+ * (`adversaryPromptsReads.pending`); the GM marks it done or dismisses it (`adversaryPrompts.answer`). Closed (declined)
+ * when the use is undone (its `groupId`) or the encounter ends. `instanceLabel` / `feature` name the adversary and the
+ * printed feature; `text` is the prompt as `useFeature` returns it. GM only: never read by a player.
+ */
+export const gmPromptPayloadValidator = v.object({
+  schemaVersion: v.literal(1),
+  kind: v.literal("gmPrompt"),
+  instanceId: v.id("encounterAdversaries"),
+  instanceLabel: v.string(),
+  feature: v.string(),
+  prompt: gmPromptKindValidator,
+  text: v.string(),
+  groupId: v.string(),
+});
+
 /** The payload of a `combatRequests` row; `kind` matches the row's `kind`. */
 export const combatRequestPayloadValidator = v.union(
   sanctionPayloadValidator,
@@ -621,6 +660,7 @@ export const combatRequestPayloadValidator = v.union(
   difficultyPayloadValidator,
   cloakPromptPayloadValidator,
   forcedAttackPayloadValidator,
+  gmPromptPayloadValidator,
 );
 
 /**

@@ -17,7 +17,7 @@ export function payCost(sheet: CharacterSheet, cost: FeatureCost | undefined): C
   if (cost === undefined) return sheet;
   let next = sheet;
   if (cost.hope) {
-    if (next.hope < cost.hope) throw appError("NOT_ENOUGH_HOPE", `This costs ${cost.hope} Hope.`);
+    if (next.hope < cost.hope) throw appError("NOT_ENOUGH_HOPE", `This costs ${cost.hope} Hope.`, { resource: "hope", need: cost.hope, have: next.hope });
     next = { ...next, hope: next.hope - cost.hope };
   }
   if (cost.stress) next = applyResourceDelta(next, "stress", cost.stress);

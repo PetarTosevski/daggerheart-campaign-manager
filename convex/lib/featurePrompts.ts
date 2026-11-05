@@ -22,7 +22,7 @@
  */
 import { pickUse, rollTargetCount } from "../../src/lib/domain/card-effects/run";
 import type { CardUse, Cost, Step } from "../../src/lib/domain/card-effects/types";
-import { actorExtras, asCardEffect, featureCostShort } from "../../src/lib/domain/feature-effects/run";
+import { actorExtras, asCardEffect, featureCostShort, featureCostShortfalls } from "../../src/lib/domain/feature-effects/run";
 import { appError } from "../../src/lib/errors/app-error";
 import { featureEffect } from "../../src/lib/srd/feature-effects/index";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
@@ -132,7 +132,7 @@ export async function rollAndStoreCount(
   let payer = input.sheet;
   if (chosen.length > 0) {
     const short = featureCostShort(actor, { ...input.use, costs: rollCosts }, input.choices ?? {});
-    if (short.length > 0) throw appError("FEATURE_COST_UNPAID", `Short of: ${short.join(", ")}.`);
+    if (short.length > 0) throw appError("FEATURE_COST_UNPAID", `Short of: ${short.join(", ")}.`, featureCostShortfalls(actor, { ...input.use, costs: rollCosts }, input.choices ?? {})[0]);
     payer = payRollCosts(input.sheet, rollCosts, input.choices ?? {});
   }
   const count = rollTargetCount(withChosenCount(input.use, input.choices ?? {}), { ...actor, ...actorExtras(payer) }, rollDie);

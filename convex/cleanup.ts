@@ -70,9 +70,9 @@ export const expireOperations = internalMutation({
 });
 
 /**
- * Deletes resolved and declined `combatRequests` rows whose `resolvedAt` is older than `COMBAT_REQUEST_TTL_MS`
+ * Deletes resolved, declined and withdrawn `combatRequests` rows whose `resolvedAt` is older than `COMBAT_REQUEST_TTL_MS`
  * (rule 8; plan combat-actions AA0). Open rows stay until answered or purged with their campaign. `BATCH` rows per
- * run across both statuses, rescheduling itself while a full batch was deleted. A closed row without `resolvedAt`
+ * run across the closed statuses, rescheduling itself while a full batch was deleted. A closed row without `resolvedAt`
  * (never written that way) sorts first in the index and is swept too.
  */
 export const expireCombatRequests = internalMutation({
@@ -81,7 +81,7 @@ export const expireCombatRequests = internalMutation({
   handler: async (ctx) => {
     const cutoff = Date.now() - COMBAT_REQUEST_TTL_MS;
     const budget: Budget = { left: BATCH };
-    for (const status of ["resolved", "declined"] as const) {
+    for (const status of ["resolved", "declined", "withdrawn"] as const) {
       const rows = await ctx.db
         .query("combatRequests")
         .withIndex("by_status_resolved", (q) => q.eq("status", status).lt("resolvedAt", cutoff))

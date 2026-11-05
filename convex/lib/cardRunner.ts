@@ -979,7 +979,7 @@ export function refusalError(r: RunRefusal) {
     case "exhausted":
       return appError("CARD_EXHAUSTED", r.detail);
     case "cost":
-      return appError("CARD_COST_UNPAID", `Short of: ${r.detail}.`);
+      return appError("CARD_COST_UNPAID", `Short of: ${r.detail}.`, r.shortfall);
     case "targets":
       return appError("COMBAT_TARGET_INVALID", r.detail);
     case "requirement":
@@ -1060,7 +1060,7 @@ export function choiceAsks(built: BuiltRun, plan: RunPlan): ChoiceAsks {
       const chooser = step.chooserId !== undefined ? tokenIdsOf(built, [step.chooserId])[0] : undefined;
       asks.push({ kind: "choose", stepId: step.step.id, label: step.step.label, options: step.step.options.map((o) => ({ id: o.id, label: o.label })), ...(chooser ? { chooserId: chooser } : {}) });
     } else if (step.prompt === "split") {
-      asks.push({ kind: "split", label: step.text, tokenIds: tokenIdsOf(built, step.targetIds) });
+      asks.push({ kind: "split", label: step.text, tokenIds: tokenIdsOf(built, step.targetIds), ...(step.amount !== undefined ? { amount: step.amount } : {}) });
     } else if (step.prompt === "followUp" && chainGoesOn(built, step)) {
       asks.push({ kind: "followUp", label: step.text, link: step.amount ?? 1, tokenIds: tokenIdsOf(built, step.targetIds) });
     }

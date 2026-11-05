@@ -285,7 +285,7 @@ function combatRequest(
   instanceId: Id<"encounterAdversaries">,
   o: {
     at: number;
-    status?: "open" | "resolved" | "declined";
+    status?: "open" | "resolved" | "declined" | "withdrawn";
     resolvedAt?: number;
     encounterId?: Id<"encounters">;
     mapId?: Id<"combatMaps">;
@@ -596,14 +596,14 @@ describe("cleanup crons", () => {
     expect(kept).toEqual({ books: [null, null, live.campaignId], chunks: 1, kinds: ["campaign", "deployment", "user"] });
   });
 
-  it("expires resolved and declined combat requests a day after resolvedAt, in batches, and keeps open or recent ones (AA0)", async () => {
+  it("expires resolved, declined and withdrawn combat requests a day after resolvedAt, in batches, and keeps open or recent ones (AA0)", async () => {
     const t = makeTest();
     const userId = await user(t);
     const s = await seedCampaign(t, userId, undefined);
     const req = (o: Parameters<typeof combatRequest>[4]) => combatRequest(s.campaignId, userId, s.characterId, s.instanceId, o);
     const kept = await t.run(async (ctx) => {
       for (let i = 0; i < BATCH + 30; i++) {
-        const status = i % 2 === 0 ? "resolved" : "declined";
+        const status = (["resolved", "declined", "withdrawn"] as const)[i % 3]!;
         await ctx.db.insert("combatRequests", req({ at: NOW - 3 * DAY, status, resolvedAt: NOW - 2 * DAY + i }));
       }
       return [

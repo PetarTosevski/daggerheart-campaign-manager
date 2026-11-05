@@ -18,7 +18,7 @@ const DAY = 24 * 60 * MINUTE;
 export const AUDIT_TTL_MS = ADMIN_AUDIT_TTL_DAYS * DAY;
 /** An export file lives an hour (Q30 a). */
 export const EXPORT_TTL_MS = ADMIN_EXPORT_TTL_MINUTES * MINUTE;
-/** Approved and declined limit requests are kept for a year (pending ones wait for the owner). */
+/** Approved and declined limit requests are kept for a year after the decision (pending ones wait for the owner). */
 export const LIMIT_REQUEST_TTL_MS = LIMIT_REQUEST_TTL_DAYS * DAY;
 
 /** Deletes audit rows older than `AUDIT_TTL_MS`. */
@@ -57,8 +57,10 @@ export const expireExports = internalMutation({
 });
 
 /**
- * Deletes approved and declined limit requests created over `LIMIT_REQUEST_TTL_MS` ago (by `by_status_createdAt`).
- * Pending requests are never expired: they wait for the owner's answer.
+ * Deletes approved and declined limit requests decided over `LIMIT_REQUEST_TTL_MS` ago (by `by_status_decidedAt`,
+ * dcm-bxp.82.14). Pending requests are never expired: they wait for the owner's answer. The range starts at 0, so a
+ * decided row without `decidedAt` (`decide` always writes it; `migrations/limitRequestDecidedAt` backfills any old
+ * one) is never mistaken for an old one.
  */
 export const expireLimitRequests = internalMutation({
   args: {},
@@ -69,7 +71,7 @@ export const expireLimitRequests = internalMutation({
     for (const status of ["approved", "declined"] as const) {
       const rows = await ctx.db
         .query("lorekeeperLimitRequests")
-        .withIndex("by_status_createdAt", (q) => q.eq("status", status).lt("createdAt", cutoff))
+        .withIndex("by_status_decidedAt", (q) => q.eq("status", status).gte("decidedAt", 0).lt("decidedAt", cutoff))
         .take(BATCH - handled);
       for (const row of rows) await ctx.db.delete("lorekeeperLimitRequests", row._id);
       handled += rows.length;

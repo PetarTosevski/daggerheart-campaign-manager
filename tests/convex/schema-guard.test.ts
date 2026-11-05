@@ -166,12 +166,12 @@ const ALSO_RETENTION: Record<string, string> = {
   journalPages: "torn-out pages are purged 30 days after binnedAt, with their entries and recipients (D11 N7 cron)",
   lorekeeperUsage:
     "usage counters expire 13 months after their last update (D13 L0 cron); per-user and deployment rows have no campaign",
-  combatRequests: "resolved and declined requests are swept a day after resolvedAt (combat-actions AA0 cron)",
+  combatRequests: "resolved, declined and withdrawn requests are swept a day after resolvedAt (combat-actions AA0 cron)",
   combatAreas: "ended map areas (ended scenes and sessions) are swept a day after endedAt (sheet-drawer SD0 cron)",
   actionLog: "undo snapshots are stripped 30 days after `at`, the rows stay, no longer undoable (dcm-c26 cron, reads by_undoable_at)",
   userDrafts: "drafts not saved for 90 days expire, custom-frame drafts (no campaign) included (config P2 cron, reads by_updated)",
   lorekeeperLimitRequests:
-    "approved and declined requests expire 365 days after createdAt (config AD0; adminRetention.expireLimitRequests, reads by_status_createdAt)",
+    "approved and declined requests expire 365 days after decidedAt (config AD0, dcm-bxp.82.14; adminRetention.expireLimitRequests, reads by_status_decidedAt)",
 };
 /**
  * Child rows of a combat map (D9): reached through `mapId` and deleted before their map, by the campaign purge
