@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
 import { TERRAIN_LABEL, type Terrain, type TravelMode } from "@/lib/domain/frames/horizon";
-import { hexDistance, isAdjacent, type Hex, type HexGrid } from "@/lib/world/hex";
+import { hexDistance, isAdjacent, sameGrid, type Hex, type HexGrid } from "@/lib/world/hex";
 import { HORIZON_TRAVEL_MODES, type CrawlHex, type HexCrawl } from "@/lib/world/map-state";
 
 import type { MapActions } from "./map-actions";
@@ -70,8 +70,14 @@ export function HexCrawlPanel({
   settingOrigin,
   onSettingOrigin,
   encounterNote,
+  uploaded,
+  printed,
 }: {
   crawl: HexCrawl;
+  /** The GM uploaded their own map: only then is the grid calibrated by hand. */
+  uploaded: boolean;
+  /** The grid printed on the frame's own map, if it has one (`PRINTED_HEX_GRIDS`). */
+  printed: HexGrid | null;
   selected: Hex | null;
   actions: MapActions;
   showGrid: boolean;
@@ -86,7 +92,6 @@ export function HexCrawlPanel({
   const [terrainPick, setTerrainPick] = useState<number | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const grid = crawl.grid;
-  const setGrid = (patch: Partial<HexGrid>) => actions.setHexGrid({ ...grid, ...patch });
   const hex = selected ? crawl.hexes.find((h) => h.q === selected.q && h.r === selected.r) : undefined;
   const adjacent = !!(selected && crawl.party && isAdjacent(crawl.party, selected));
   const terrain = terrainPick ?? hex?.terrain ?? null;
@@ -127,18 +132,28 @@ export function HexCrawlPanel({
       <details className="rounded-[10px] border border-dashed border-[#33444a] p-2.5" onToggle={(e) => {
           if (e.currentTarget.open) onShowGrid(true);
         }}>
-        <summary className="cursor-pointer text-[13px] text-[#f3cf86]">Calibrate the grid</summary>
+        <summary className="cursor-pointer text-[13px] text-[#f3cf86]">{uploaded ? "Calibrate the grid" : "The grid"}</summary>
         <div className="mt-2 flex flex-col gap-2">
           <label className="chk">
             <input type="checkbox" checked={showGrid} onChange={(e) => onShowGrid(e.target.checked)} /> Show the whole grid
           </label>
+          {uploaded ? null : (
+            <p className="m-0 text-[12px] text-[#9fb2b6]">The hexes follow the grid printed on the map. Upload your own map to calibrate a grid over it.</p>
+          )}
+          {printed && !sameGrid(grid, printed) ? (
+            <BrandButton variant="neutral" size="sm" onClick={() => actions.calibrateHexGrid({ field: "printed" })}>
+              Use the map&apos;s printed grid
+            </BrandButton>
+          ) : null}
+        </div>
+        {uploaded ? <div className="mt-2 flex flex-col gap-2">
           <div className="grid grid-cols-2 gap-2">
-            <NumberField label="Origin x (px)" value={grid.originX} onSave={(originX) => setGrid({ originX })} />
-            <NumberField label="Origin y (px)" value={grid.originY} onSave={(originY) => setGrid({ originY })} />
-            <NumberField label="Hex size (px)" value={grid.size} step={0.5} min={10} max={400} onSave={(size) => setGrid({ size: Math.max(10, Math.min(400, size)) })} />
+            <NumberField label="Origin x (px)" value={grid.originX} onSave={(value) => actions.calibrateHexGrid({ field: "originX", value })} />
+            <NumberField label="Origin y (px)" value={grid.originY} onSave={(value) => actions.calibrateHexGrid({ field: "originY", value })} />
+            <NumberField label="Hex size (px)" value={grid.size} step={0.5} min={10} max={400} onSave={(size) => actions.calibrateHexGrid({ field: "size", value: Math.max(10, Math.min(400, size)) })} />
             <label className="flex flex-col gap-1 text-[12px] text-[#9fb2b6]">
               Orientation
-              <select className="fld fsm" value={grid.orientation} onChange={(e) => setGrid({ orientation: e.target.value as HexGrid["orientation"] })}>
+              <select className="fld fsm" value={grid.orientation} onChange={(e) => actions.calibrateHexGrid({ field: "orientation", value: e.target.value as HexGrid["orientation"] })}>
                 <option value="flat">Flat top</option>
                 <option value="pointy">Pointy top</option>
               </select>
@@ -147,7 +162,7 @@ export function HexCrawlPanel({
           <BrandButton variant="neutral" size="sm" aria-pressed={settingOrigin} onClick={() => onSettingOrigin(!settingOrigin)}>
             {settingOrigin ? "Click a hex centre on the map…" : "Set origin by clicking the map"}
           </BrandButton>
-        </div>
+        </div> : null}
       </details>
       {selected ? (
         <div className="flex flex-col gap-2 border-t border-[#253338] pt-2.5">

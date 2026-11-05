@@ -52,7 +52,14 @@ export const travelRulesValidator = v.object({
   fast: v.number(),
 });
 
-export const hexGridValidator = v.object({ originX: v.number(), originY: v.number(), size: v.number(), orientation: v.union(v.literal("flat"), v.literal("pointy")) });
+/** `sizeY` widened (dcm-kggd): the printed Horizon grid is a hair taller than regular hexes. */
+export const hexGridValidator = v.object({
+  originX: v.number(),
+  originY: v.number(),
+  size: v.number(),
+  sizeY: v.optional(v.number()),
+  orientation: v.union(v.literal("flat"), v.literal("pointy")),
+});
 
 const hexCrawlValidator = v.object({
   grid: hexGridValidator,

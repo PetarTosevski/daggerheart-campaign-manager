@@ -1,5 +1,6 @@
 // Hex grid for the Journey to Horizon hex crawl (Hope & Fear p.171; D6).
-// Axial coordinates (q, r) over the map image, calibrated in image pixels.
+// Axial coordinates (q, r) over the map image, calibrated in image pixels
+// (the printed grids of the built-in maps: ./printed-grids.ts).
 // Pure module: bundled into Convex.
 
 export type HexOrientation = "flat" | "pointy";
@@ -7,8 +8,13 @@ export type HexGrid = {
   /** Centre of hex (0, 0) in image pixels. */
   originX: number;
   originY: number;
-  /** Centre-to-corner radius in image pixels. */
+  /** Centre-to-corner radius in image pixels (horizontal). */
   size: number;
+  /**
+   * Vertical centre-to-corner radius when the printed hexes are slightly
+   * taller or flatter than regular ones (art scaled unevenly). Unset: `size`.
+   */
+  sizeY?: number;
   orientation: HexOrientation;
 };
 export type Hex = { q: number; r: number };
@@ -25,10 +31,35 @@ export const hexKey = (h: Hex) => `${h.q},${h.r}`;
 /** Centre of a hex in image pixels. */
 export function hexToPixel(h: Hex, grid: HexGrid): { x: number; y: number } {
   const { size, originX, originY } = grid;
+  const sizeY = verticalSize(grid);
   if (grid.orientation === "flat") {
-    return { x: originX + size * 1.5 * h.q, y: originY + size * SQRT3 * (h.r + h.q / 2) };
+    return { x: originX + size * 1.5 * h.q, y: originY + sizeY * SQRT3 * (h.r + h.q / 2) };
   }
-  return { x: originX + size * SQRT3 * (h.q + h.r / 2), y: originY + size * 1.5 * h.r };
+  return { x: originX + size * SQRT3 * (h.q + h.r / 2), y: originY + sizeY * 1.5 * h.r };
+}
+
+/** The grid's vertical centre-to-corner radius (`sizeY`, else `size`). */
+export const verticalSize = (grid: HexGrid) => grid.sizeY ?? grid.size;
+
+/** The same grid with hexes `k` times as large about the same centres (markers drawn inside a hex). */
+export function scaleGrid(grid: HexGrid, k: number): HexGrid {
+  return { ...grid, size: grid.size * k, ...(grid.sizeY !== undefined ? { sizeY: grid.sizeY * k } : {}) };
+}
+
+/** A hex's bounding box in image pixels: corner to corner across its points, edge to edge across its flats. */
+export function hexBox(grid: HexGrid): { width: number; height: number } {
+  const sizeY = verticalSize(grid);
+  return grid.orientation === "flat" ? { width: 2 * grid.size, height: SQRT3 * sizeY } : { width: SQRT3 * grid.size, height: 2 * sizeY };
+}
+
+/** The hex of grid `to` that holds the centre of hex `h` of grid `from` (recalibration). */
+export function remapHex(h: Hex, from: HexGrid, to: HexGrid): Hex {
+  const c = hexToPixel(h, from);
+  return pixelToHex(c.x, c.y, to);
+}
+
+export function sameGrid(a: HexGrid, b: HexGrid): boolean {
+  return a.originX === b.originX && a.originY === b.originY && a.size === b.size && verticalSize(a) === verticalSize(b) && a.orientation === b.orientation;
 }
 
 /** Rounds fractional axial coordinates to the containing hex (cube rounding). */
@@ -49,7 +80,7 @@ export function roundHex(q: number, r: number): Hex {
 /** The hex containing an image-pixel point. */
 export function pixelToHex(x: number, y: number, grid: HexGrid): Hex {
   const px = (x - grid.originX) / grid.size;
-  const py = (y - grid.originY) / grid.size;
+  const py = (y - grid.originY) / verticalSize(grid);
   if (grid.orientation === "flat") {
     const q = (2 / 3) * px;
     return roundHex(q, (-1 / 3) * px + (SQRT3 / 3) * py);
@@ -84,7 +115,7 @@ export function hexCorners(h: Hex, grid: HexGrid): { x: number; y: number }[] {
   const offset = grid.orientation === "flat" ? 0 : 30;
   return Array.from({ length: 6 }, (_, i) => {
     const a = ((60 * i + offset) * Math.PI) / 180;
-    return { x: c.x + grid.size * Math.cos(a), y: c.y + grid.size * Math.sin(a) };
+    return { x: c.x + grid.size * Math.cos(a), y: c.y + verticalSize(grid) * Math.sin(a) };
   });
 }
 
@@ -103,7 +134,7 @@ export function hexesCovering(width: number, height: number, grid: HexGrid): Hex
   const corners = [pixelToHex(0, 0, grid), pixelToHex(width, 0, grid), pixelToHex(0, height, grid), pixelToHex(width, height, grid)];
   const qs = corners.map((h) => h.q);
   const rs = corners.map((h) => h.r);
-  const span = Math.ceil(Math.max(width, height) / grid.size);
+  const span = Math.ceil(Math.max(width, height) / Math.min(grid.size, verticalSize(grid)));
   const qMin = Math.min(...qs) - 2;
   const qMax = Math.max(...qs) + 2;
   const rMin = Math.min(...rs) - span;
@@ -112,7 +143,8 @@ export function hexesCovering(width: number, height: number, grid: HexGrid): Hex
   for (let q = qMin; q <= qMax; q++) {
     for (let r = rMin; r <= rMax; r++) {
       const c = hexToPixel({ q, r }, grid);
-      if (c.x < -grid.size || c.y < -grid.size || c.x > width + grid.size || c.y > height + grid.size) continue;
+      const m = Math.max(grid.size, verticalSize(grid));
+      if (c.x < -m || c.y < -m || c.x > width + m || c.y > height + m) continue;
       out.push({ q, r });
       if (out.length >= MAX_GRID_HEXES) return out;
     }
