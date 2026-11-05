@@ -54,3 +54,17 @@ waves:
           - docs/tasks/**
         acceptance:
           - unit + Convex tests per bead; touched e2e specs pass; pnpm lint, pnpm typecheck pass
+  - wave: 3
+    tracers:
+      - id: FH-AP
+        beads: [dcm-bxp.99.32.24]
+        goal: "Per-ally picks: PC cards whose allies choose (Rousing Strike, Critical Inspiration and similar) and adversary features that ask each PC (Locust Swarm, Awesome Size, Money Talks...) send each pick to that ally's own screen; the whole card waits until all answer; the GM answers any outstanding pick from the queue; only the ally or the GM may answer; Undo or encounter end cancels (user 2026-11-05)"
+        depends_on: [FH-UI2]
+        owns:
+          - convex/**
+          - src/lib/**
+          - src/components/combat-map/**
+          - tests/**
+          - docs/tasks/**
+        acceptance:
+          - Convex tests for wait / answer / GM answer / refusal / undo / encounter end; HUD unit tests; one e2e two-browser spec; pnpm lint, pnpm typecheck pass
