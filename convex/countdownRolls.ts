@@ -64,6 +64,8 @@ async function countedRow(ctx: QueryCtx, row: Doc<"actionLog">): Promise<boolean
   const undone = row.undoneAt !== undefined;
   if (row.groupId === undefined) return countsAsActionRoll(row.roll, { logKind: row.kind, undone });
   const group = await groupOf(ctx, row);
+  // A plain roll that got a group only for its Manual rule notes (plan rule-switches RA) counts as a plain roll.
+  if (group.length === 1 && group[0]!._id === row._id) return countsAsActionRoll(row.roll, { logKind: row.kind, undone });
   const tagTeam = group.length >= 2 && group.length <= 4 && group.every((r) => r.kind === "roll" && r.roll?.kind === "action");
   if (!tagTeam) return false;
   if (group.length === 4 && group[2]!._id === row._id) return countsAsActionRoll(row.roll, { logKind: row.kind, undone, tagTeam: "result" });

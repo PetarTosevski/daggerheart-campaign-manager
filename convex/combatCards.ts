@@ -82,6 +82,7 @@ import type { AdversaryBefore } from "./lib/validators/actionLog";
 import { closeRequest, encounterRunning, loadOpenRequest, openMinionOffer, openRiderPick } from "./lib/combatRequests";
 import { rollDie } from "./lib/dice";
 import { campaignFearState, gainFear, spendFear } from "./lib/fear";
+import { afterPcActionRoll } from "./lib/rollAftermath";
 import { campaignMutation, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
 import { fearFor } from "./lib/fearVisibility";
 import { changed } from "./lib/rolls";
@@ -595,6 +596,12 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
   // Armed countdowns tick right after an action roll, as for `actionRoll` (countdowns-advanced K1); never a reaction roll.
   if (plan.roll && countsAsActionRoll(plan.roll.record, { logKind: "roll", undone: false })) {
     await tickArmedCountdowns(ctx, { campaignId: campaign._id, entryId, outcome: plan.roll.record.outcome, actorId });
+  }
+  // Plan rule-switches RA (S1): the card's action roll failing (no target hit, or under its Difficulty) or rolling with Fear
+  // hands the spotlight to the GM, or notes it, in the use's group. R3 stays Book here: the card engine
+  // (src/lib/domain/card-effects/run.ts) gains the roll's Hope and Fear itself.
+  if (plan.roll && plan.roll.record.kind === "action" && plan.roll.record.outcome !== "none") {
+    await afterPcActionRoll(ctx, campaign, { characterId: character._id, name: sheet.name, kind: "action", success: plan.success, withFear: plan.roll.withFear, groupId, actorId });
   }
 
   // AA2b: card damage to another PC opens their incoming hit (armor, ally reactions) instead of a manual prompt.

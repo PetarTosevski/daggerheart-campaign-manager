@@ -63,6 +63,7 @@ import type { AttackScene } from "./combatActions";
 import { hasServerMove, isMarkOf, isRolledFirst, openAllyRoll, spendTargetCount, withoutRollCosts } from "./featurePrompts";
 import { activeAreasOnMap, areaFactsFor } from "./combatAreas";
 import { campaignFearState, gainFear, spendFear } from "./fear";
+import { afterPcActionRoll } from "./rollAftermath";
 import { changed } from "./rolls";
 import { rollValidator } from "./validators/actionLog";
 
@@ -979,6 +980,12 @@ export async function resolveFeatureUse(
   }
   if (plan.roll && countsAsActionRoll(plan.roll.record, { logKind: "roll", undone: false })) {
     await tickArmedCountdowns(ctx, { campaignId: campaign._id, entryId, outcome: plan.roll.record.outcome, actorId });
+  }
+  // Plan rule-switches RA (S1): the use's action roll (an ally's roll for Cannonball, `featurePrompts.allyRoll`, has the ally
+  // as `character`) failing or rolling with Fear hands the spotlight to the GM, or notes it, in the use's group. R3 stays
+  // Book here: the card engine (src/lib/domain/card-effects/run.ts) gains the roll's Hope and Fear itself.
+  if (plan.roll && plan.roll.record.kind === "action" && plan.roll.record.outcome !== "none") {
+    await afterPcActionRoll(ctx, campaign, { characterId: character._id, name: sheet.name, kind: "action", success: plan.success, withFear: plan.roll.withFear, groupId, actorId });
   }
   if (built.creatures.onMap) {
     const hitTokens = await openCardHits(ctx, { plan, built, campaignId: campaign._id, groupId, actorId, attacker: { characterId: character._id, label: sheet.name, cardId: plan.cardId, feature: pick.name } });

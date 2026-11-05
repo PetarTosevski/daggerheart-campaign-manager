@@ -97,6 +97,7 @@ import { costText, limitText } from "./featureDrawer";
 import { factsOf, ownedHere, pickFeature, withCreatureAreas } from "./featureRunner";
 import { featureScope } from "./featureScope";
 import { campaignFearState, gainFear, spendFear } from "./fear";
+import { afterPcActionRoll, fearWithheldBy } from "./rollAftermath";
 import { closeRequest, openAfterRoll, openMinionOffer, openRiderPick } from "./combatRequests";
 import { bandsOnMap, partyMembers } from "./adversaryHits";
 import { pcRollAdversaryUses } from "./adversaryActions";
@@ -2220,7 +2221,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   // Plan lanes, E1: a bonus on one duality die (dcm-3ou, dcm-jog) changes the roll, so its Hope, Stress and Fear follow it.
   if (folds.dieBonus.length > 0) {
     roll = withDieBonuses(roll, folds.dieBonus);
-    effects = dualityEffects("action", roll.outcome);
+    effects = dualityEffects("action", roll.outcome, duality.hopeFear);
     finalSheet = placeTideToken(applyDualityEffects(duality.paid, effects), roll.outcome, "action").sheet;
   }
   let rolled = { ...duality.rolled, roll };
@@ -2310,7 +2311,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
       forced = changed.forced;
       rolled = { ...rolled, hope: roll.dice.find((d) => d.role === "hope")?.value ?? rolled.hope, roll };
     }
-    effects = dualityEffects("action", roll.outcome);
+    effects = dualityEffects("action", roll.outcome, duality.hopeFear);
     effectsBase = base;
     finalSheet = placeTideToken(applyDualityEffects(base, effects), roll.outcome, "action").sheet;
     hits = forced ? hits.map((h) => ({ ...h, hit: true })) : hitsOf(roll);
@@ -2325,7 +2326,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   if (advUses.bonuses.length > 0) {
     roll = withDieBonuses(roll, advUses.bonuses);
     rolled = { ...rolled, roll };
-    effects = dualityEffects("action", roll.outcome);
+    effects = dualityEffects("action", roll.outcome, duality.hopeFear);
     finalSheet = placeTideToken(applyDualityEffects(effectsBase, effects), roll.outcome, "action").sheet;
     hits = forced ? hits.map((h) => ({ ...h, hit: true })) : hitsOf(roll);
   }
@@ -2680,7 +2681,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     ...(sheetChanged ? { before: sheet0 } : {}),
     ...(fearChanged !== 0 ? { fearDelta: fearChanged } : {}),
     // As `actionRoll`: whether the roll gave its Hope (after its costs), so `rolls.storeSlayerDie` can take it back (K2).
-    ...(WITH_HOPE.includes(roll.outcome) ? { hopeGained: rollGaveHope(duality.paid, roll.outcome, "action") } : {}),
+    ...(WITH_HOPE.includes(roll.outcome) ? { hopeGained: effects.hope > 0 && rollGaveHope(duality.paid, roll.outcome, "action") } : {}),
     undoable: true,
   });
   await logAction(ctx, {
@@ -2758,6 +2759,18 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   if (countsAsActionRoll(roll, { logKind: "roll", undone: false })) {
     await tickArmedCountdowns(ctx, { campaignId: campaign._id, entryId, outcome: roll.outcome, actorId: req.actorId });
   }
+  // Plan rule-switches RA (S1, R3): an attack that hit nobody failed (CB p.96); with Fear or failed, the spotlight goes to the
+  // GM (or the GM gets a note); R3 Manual notes the Fear the roll did not gain. In the attack's group.
+  await afterPcActionRoll(ctx, campaign, {
+    characterId: character._id,
+    name: sheet0.name,
+    kind: "action",
+    success: hostRoll.success,
+    withFear: hostRoll.withFear,
+    fearWithheld: fearWithheldBy(duality.hopeFear, "action", roll.outcome),
+    groupId,
+    actorId: req.actorId,
+  });
 
   const minionOffer = extra > 0 ? await offerMinions(ctx, req, { groupId, entryId, extra, total: roll.total, critical }) : null;
   const riderPicks: Infer<typeof riderPickOfferValidator>[] = [];

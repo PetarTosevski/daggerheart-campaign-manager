@@ -16,6 +16,7 @@ import { conditionSources, difficultyOf, endConditionsOnRoll, withoutCondition }
 import { readSheet, saveSheet } from "./characterSheet";
 import { rollDie } from "./dice";
 import { gainFear } from "./fear";
+import { afterPcActionRoll, fearWithheldBy, outcomeWithFear } from "./rollAftermath";
 import { changed, resolveDuality, type DualityArgs, type Loaded } from "./rolls";
 import { appError } from "../../src/lib/errors/app-error";
 import { closeRequest, openDifficulty } from "./combatRequests";
@@ -401,7 +402,8 @@ const GROUP_SCAN = 50;
  */
 async function rollCloak(ctx: MutationCtx, loaded: Loaded, highest: Difficulty, actorId: Id<"users">, groupId: string): Promise<boolean> {
   const { campaign, character, sheet } = loaded;
-  const { paid, next, roll, effects } = await resolveDuality(ctx, loaded, cloakRollArgs(highest.value), rollDie, false);
+  // R3 Manual (plan rule-switches RA): `resolveDuality` gains neither the Hope nor the Fear; the aftermath notes the Fear.
+  const { paid, next, roll, effects, hopeFear } = await resolveDuality(ctx, loaded, cloakRollArgs(highest.value), rollDie, false);
   const success = roll.outcome === "critical" || roll.outcome === "successHope" || roll.outcome === "successFear";
   // Lane C2: the roll ends the rogue's other sourced conditions it ends (a roll with Fear), as any roll does.
   const after = endConditionsOnRoll(success ? next : uncloaked(next), roll).sheet;
@@ -422,7 +424,7 @@ async function rollCloak(ctx: MutationCtx, loaded: Loaded, highest: Difficulty, 
     groupId,
     ...(sheetChanged ? { before: sheet } : {}),
     ...(gained !== 0 ? { fearDelta: gained } : {}),
-    ...(WITH_HOPE.includes(roll.outcome) ? { hopeGained: rollGaveHope(paid, roll.outcome, "action") } : {}),
+    ...(WITH_HOPE.includes(roll.outcome) ? { hopeGained: effects.hope > 0 && rollGaveHope(paid, roll.outcome, "action") } : {}),
     undoable: true,
   });
   await logAction(ctx, {
@@ -438,5 +440,16 @@ async function rollCloak(ctx: MutationCtx, loaded: Loaded, highest: Difficulty, 
   if (countsAsActionRoll(roll, { logKind: "roll", undone: false })) {
     await tickArmedCountdowns(ctx, { campaignId: campaign._id, entryId, outcome: roll.outcome, actorId });
   }
+  // Plan rule-switches RA (S1, R3): a failure or a roll with Fear hands the spotlight to the GM (or notes it), in the group.
+  await afterPcActionRoll(ctx, campaign, {
+    characterId: character._id,
+    name: sheet.name,
+    kind: "action",
+    success,
+    withFear: outcomeWithFear(roll.outcome),
+    fearWithheld: fearWithheldBy(hopeFear, "action", roll.outcome),
+    groupId,
+    actorId,
+  });
   return !success;
 }

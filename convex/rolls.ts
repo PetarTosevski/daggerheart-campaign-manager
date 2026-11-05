@@ -88,6 +88,7 @@ import {
   versus,
 } from "./lib/rolls";
 import { featureScope } from "./lib/featureScope";
+import { afterPcActionRoll, fearWithheldBy, hopeFearModeOf, outcomeSucceeds, outcomeWithFear } from "./lib/rollAftermath";
 import { rollValidator } from "./lib/validators/actionLog";
 import { traitIdValidator } from "./lib/validators/characters";
 
@@ -212,15 +213,21 @@ export const tagTeam = keyedUserMutation({
     }),
 });
 
-/** The rows of a Tag Team group, initiator first (at most 4: two rolls, two results). */
+/**
+ * The rows of a Tag Team group, initiator first (at most 4: two rolls, two results), without the GM's rule notes the
+ * roll's aftermath adds to it (plan rule-switches RA: at most 2, kind `rule`). A plain roll that got a group for its notes
+ * reads as one row.
+ */
 async function tagTeamGroup(ctx: QueryCtx, row: Doc<"actionLog">): Promise<Doc<"actionLog">[]> {
   if (row.groupId === undefined) return [];
   return (
     await ctx.db
       .query("actionLog")
       .withIndex("by_campaign_group", (q) => q.eq("campaignId", row.campaignId).eq("groupId", row.groupId))
-      .take(5)
-  ).sort((a, b) => a.at - b.at || a._creationTime - b._creationTime);
+      .take(8)
+  )
+    .filter((r) => r.kind !== "rule")
+    .sort((a, b) => a.at - b.at || a._creationTime - b._creationTime);
 }
 
 /** Exactly two live action rolls of two characters: a Tag Team Roll waiting for its pick. */
@@ -252,7 +259,8 @@ async function slayerRoll(ctx: QueryCtx, characterId: Id<"characters">): Promise
   if (row === null) return null;
   const attack = row.kind === "combat" && row.visibility === "public";
   if ((row.kind !== "roll" && !attack) || row.roll?.kind !== "action" || !WITH_HOPE.includes(row.roll.outcome)) return null;
-  if (!attack && row.groupId !== undefined && (await tagTeamGroup(ctx, row)).length !== 4) return null;
+  // A grouped plain roll (its group holds only GM rule notes besides it) reads as one row; a Tag Team needs its 4.
+  if (!attack && row.groupId !== undefined && ![1, 4].includes((await tagTeamGroup(ctx, row)).length)) return null;
   return row;
 }
 
@@ -363,9 +371,12 @@ export const tagTeamApply = keyedUserMutation({
         if (latest?._id !== r._id) throw appError("DICE_RULE", "Someone in this Tag Team Roll has acted since; it can't be applied any more.");
       }
 
-      const effects = dualityEffects("action", chosen.outcome);
+      // Plan rule-switches RA: R3 Manual gains neither the Hope nor the GM's Fear (the GM gets a note for the Fear below).
+      const hopeFear = hopeFearModeOf(lead.campaign);
+      const effects = dualityEffects("action", chosen.outcome, hopeFear);
       const { gained } = effects.fear > 0 ? await gainFear(ctx, lead.campaign._id, effects.fear * group.length) : { gained: 0 };
       let firstResult: Id<"actionLog"> | null = null;
+      const names: string[] = [];
       for (const [i, r] of group.entries()) {
         const character = await ctx.db.get("characters", r.characterId!);
         if (character === null) continue;
@@ -374,6 +385,7 @@ export const tagTeamApply = keyedUserMutation({
         const next = placeTideToken(applyDualityEffects(sheet, { ...effects, fear: 0 }), chosen.outcome, "action").sheet;
         const sheetChanged = changed(sheet, next);
         if (sheetChanged) await saveSheet(ctx, character._id, next);
+        names.push(sheet.name);
         const gain = effects.hope > 0 ? (next.hope > sheet.hope ? " gains a Hope" : " (Hope full)") : "";
         const resultId = await logAction(ctx, {
           campaignId: lead.campaign._id,
@@ -386,11 +398,22 @@ export const tagTeamApply = keyedUserMutation({
           groupId: row.groupId,
           ...(sheetChanged ? { before: sheet } : {}),
           ...(i === 0 && gained !== 0 ? { fearDelta: gained } : {}),
-          ...(WITH_HOPE.includes(chosen.outcome) ? { hopeGained: rollGaveHope(sheet, chosen.outcome, "action") } : {}),
+          ...(WITH_HOPE.includes(chosen.outcome) ? { hopeGained: effects.hope > 0 && rollGaveHope(sheet, chosen.outcome, "action") } : {}),
           undoable: true,
         });
         firstResult ??= resultId;
       }
+      // Plan rule-switches RA (S1, R3): the chosen roll's aftermath, once for the pair (CB p.97), in the Tag Team's group.
+      await afterPcActionRoll(ctx, lead.campaign, {
+        characterId: first.characterId,
+        name: names.join(" and "),
+        kind: "action",
+        success: outcomeSucceeds(chosen.outcome),
+        withFear: outcomeWithFear(chosen.outcome),
+        fearWithheld: fearWithheldBy(hopeFear, "action", chosen.outcome, group.length),
+        groupId: row.groupId,
+        actorId: ctx.user._id,
+      });
       // R10 (CB p.97): the pair's Tag Team counts as one action roll for countdowns, keyed on the group's first result row.
       if (firstResult !== null && countsAsActionRoll(chosen, { logKind: "roll", undone: false, tagTeam: "result" })) {
         await tickArmedCountdowns(ctx, { campaignId: lead.campaign._id, entryId: firstResult, outcome: chosen.outcome, actorId: ctx.user._id });

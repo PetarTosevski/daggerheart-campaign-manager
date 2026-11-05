@@ -4,7 +4,8 @@
  * `convex/combatActions.ts` reuses the same Duality and damage steps for weapon attacks on the Combat Map.
  *
  * - `duality(ctx, loaded, args, rng, manual)`: a character's Duality roll, saved and logged (one public row), Fear gained,
- *   armed countdowns ticked, class-feature prompts returned. `resolveDuality` is its first half (pay, roll, apply Hope /
+ *   armed countdowns ticked, the roll's aftermath run (spotlight S1, R3 Manual note: ./rollAftermath), class-feature
+ *   prompts returned. Hope and Fear follow the campaign's R3 switch (`hopeFearModeOf`). `resolveDuality` is its first half (pay, roll, apply Hope /
  *   Stress) without saving or logging, for callers that log their own rows (a combat attack).
  * - `damage(ctx, loaded, args, rng, manual)`: a damage roll, saved and logged. `resolveDamage` is its first half.
  * - Validators of the roll arguments and results (`dualityFields`, `damageFields`, ...), shared by both modules.
@@ -59,8 +60,9 @@ import { motherboardState } from "./motherboardState";
 import { tickArmedCountdowns } from "../countdownRolls";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { logAction } from "./actionLog";
+import { logAction, newGroupId } from "./actionLog";
 import { assertCanAct, loadCharacter, noteHopeSpent, readSheet, saveSheet } from "./characterSheet";
+import { applyPcActionRoll, fearWithheldBy, hopeFearModeOf, outcomeSucceeds, outcomeWithFear, planPcActionRoll } from "./rollAftermath";
 import { rollDie } from "./dice";
 import { featureScope } from "./featureScope";
 import { campaignFearState, gainFear } from "./fear";
@@ -725,10 +727,12 @@ export async function resolveDuality(ctx: QueryCtx, loaded: Loaded, args: Dualit
   swap.arm(undefined);
   const roll: RollRecord = withHopeSides({ ...rolled.roll, manual }, hopeDie.sides);
   const extras = [...prepared, ...hopeDie.labels, ...riders.lines];
-  const effects = dualityEffects(args.kind, roll.outcome);
+  // Plan rule-switches RA: R3 Manual gains neither the roll's Hope nor its Fear (`dualityEffects`).
+  const hopeFear = hopeFearModeOf(campaign);
+  const effects = dualityEffects(args.kind, roll.outcome, hopeFear);
   // A roll with Fear places a Know the Tide token in the same saved sheet and row, so undoing the roll takes it back (U4).
   const next = placeTideToken(applyDualityEffects(paid, effects), roll.outcome, args.kind).sheet;
-  return { scope, paid, next, extras, trait, rolled, roll, effects };
+  return { scope, paid, next, extras, trait, rolled, roll, effects, hopeFear };
 }
 
 /**
@@ -776,7 +780,7 @@ export function grantEndsOnRoll<K>(
 export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded, args: DualityArgs, rng: Rng, manual: boolean) {
   const { campaign, character, sheet } = loaded;
   const resolved = await resolveDuality(ctx, loaded, args, rng, manual);
-  const { scope, paid, trait, rolled } = resolved;
+  const { scope, paid, trait, rolled, hopeFear } = resolved;
   let { roll, effects } = resolved;
   let rolledNext = resolved.next;
   // E1.4b (dcm-m7tm, roll half): the running encounter's adversary uses on this PC's roll (Ill Omen, HF p.95; Backhanded
@@ -788,7 +792,7 @@ export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded:
   });
   if (advUses.bonuses.length > 0) {
     roll = withDieBonuses(roll, advUses.bonuses);
-    effects = dualityEffects(args.kind, roll.outcome);
+    effects = dualityEffects(args.kind, roll.outcome, hopeFear);
     rolledNext = placeTideToken(applyDualityEffects(paid, effects), roll.outcome, args.kind).sheet;
   }
   // Plan lanes, E1: the automatic uses the roll sets off (Courage), with the server's dice, in the same row (undo reverts them).
@@ -816,6 +820,17 @@ export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded:
   const sheetChanged = changed(sheet, next) || hopePaid > 0;
   noteHopeSpent(ctx, character._id, hopePaid);
   if (sheetChanged) await saveSheet(ctx, character._id, next);
+  // Plan rule-switches RA (S1, R3): what the roll sets off. A plain roll has no group; it gets one only when a GM note joins
+  // it (undoing the roll takes the note back), so a Book roll's row stays as it was.
+  const aftermath = await planPcActionRoll(ctx, campaign, {
+    characterId: character._id,
+    name: sheet.name,
+    kind: args.kind,
+    success: outcomeSucceeds(roll.outcome),
+    withFear: outcomeWithFear(roll.outcome),
+    fearWithheld: fearWithheldBy(hopeFear, args.kind, roll.outcome),
+  });
+  const groupId = aftermath.notes.length > 0 ? newGroupId() : undefined;
   const entryId = await logAction(ctx, {
     campaignId: campaign._id,
     characterId: character._id,
@@ -824,12 +839,15 @@ export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded:
     visibility: "public",
     summary: dualitySummary(sheet.name, { kind: args.kind, trait, modifier: args.modifier }, roll, extras, loaded.gm),
     roll,
+    ...(groupId !== undefined ? { groupId } : {}),
     ...(sheetChanged ? { before: sheet } : {}),
     ...(gained !== 0 ? { fearDelta: gained } : {}),
-    // `paid` is the sheet after the roll's costs and before its gains (K2: the Slayer store takes back only a gained Hope).
-    ...(args.kind === "action" && WITH_HOPE.includes(roll.outcome) ? { hopeGained: rollGaveHope(paid, roll.outcome, args.kind) } : {}),
+    // `paid` is the sheet after the roll's costs and before its gains (K2: the Slayer store takes back only a gained Hope;
+    // R3 Manual gains none).
+    ...(args.kind === "action" && WITH_HOPE.includes(roll.outcome) ? { hopeGained: effects.hope > 0 && rollGaveHope(paid, roll.outcome, args.kind) } : {}),
     undoable: true,
   });
+  await applyPcActionRoll(ctx, campaign, aftermath, { groupId, actorId: ctx.user._id });
   // E1.3b (dcm-79v1): the other sheets whose shared grant ended, each a row with its sheet before (undo puts it back).
   for (const p of grants.party) {
     await saveSheet(ctx, p.key.character._id, p.sheet);
