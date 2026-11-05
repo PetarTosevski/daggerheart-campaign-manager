@@ -290,3 +290,14 @@ across sessions, also in the dashboard's Campaign Rules panel)? → RS0, RU
 - (a) **A "House rules" item in the Preferences popover (avatar) opens the same list read-only.**
 - (b) The dashboard's Campaign Rules panel lists the modes for players.
 - (c) Players don't see it in the app; the Lorekeeper answers questions about it.
+
+## User answers 2026-11-05 (Q1-Q8, binding)
+- Q1 (a) running campaigns keep today's frame rules; only new campaigns start off.
+- Q2 (b, changed) R3 Manual: both stop; the GM gets a note for each roll with Fear, and players add their own Hope on the sheet.
+- Q3 (a) armed countdowns stop ticking; one GM note per PC action roll naming them.
+- Q4 (a) action goes through with a warning to the player and a note to the GM.
+- Q5 (a) the Minion picker opens on the GM's screen; the attack waits.
+- Q6 (changed) darkness: the GM picks per campaign: (A) impose disadvantage, (B) raise Difficulty by N (default 2, GM sets N), or (C) both.
+- Q7 (a) 'Extended downtime (several days)' is an extra choice on the GM's long rest: 1d6 Fear per PC.
+- Q8 (a) two rows; X2 read-only while X1 is Manual.
+- Q9-Q18: still open (user paused to clarify).
