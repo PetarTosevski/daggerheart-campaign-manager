@@ -13,6 +13,7 @@
 // ```
 
 import { RuleError } from "../../errors/app-error";
+import type { ModeOf } from "../../rules/registry";
 import type { CharacterSheet } from "../../validation/characters";
 import { applyResourceDelta, hopeMax, tierForLevel } from "../characters/index";
 import { expire } from "../characters/expiry";
@@ -56,6 +57,42 @@ export function restFear(kind: RestKind, d4: number, activePcs: number): number 
   return kind === "short" ? d4 : d4 + activePcs;
 }
 
+/** F2 Fear from rests (rule switch, plan rule-switches RR). */
+export type FearFromRestsMode = ModeOf<"fearFromRests">;
+/** T4 Interrupted rest (rule switch, plan rule-switches RR). */
+export type InterruptedRestMode = ModeOf<"interruptedRest">;
+
+/**
+ * Whether the GM may start this rest as Extended downtime (Q7 a, user 2026-11-05): only a long rest, and only while F2
+ * is set to Extended downtime. It is a choice for one rest, not every long rest.
+ */
+export function canStartExtended(mode: FearFromRestsMode, kind: RestKind): boolean {
+  return mode === "extendedDowntime" && kind === "long";
+}
+
+/**
+ * How a rest that runs as `kind` (an interrupted long rest runs as a short one) gains Fear: `manual` (F2 Manual: the
+ * app adds none and the GM gets `restFearPrompt`), `extended` (a long rest the GM started as Extended downtime, CB 181:
+ * 1d6 per PC) or `book` (`restFear`, CB 105). An extended rest that is interrupted runs as a short rest: book Fear.
+ */
+export function restFearRule(kind: RestKind, extended = false, mode: FearFromRestsMode = "book"): "book" | "extended" | "manual" {
+  if (mode === "manual") return "manual";
+  return extended && kind === "long" && mode === "extendedDowntime" ? "extended" : "book";
+}
+
+/** "If you're fast-forwarding the story across multiple days (or longer) … You gain 1d6 Fear per PC" (CB 181): one d6 per active PC, summed. */
+export function extendedDowntimeFear(d6s: readonly number[]): number {
+  return d6s.reduce((sum, d) => sum + d, 0);
+}
+
+/** F2 Manual: the book's Fear, said rather than applied ("Gain 1d4 Fear", "Gain 1d4 + 4 Fear"; CB 105). */
+export function restFearPrompt(kind: RestKind, activePcs: number): string {
+  return kind === "short" ? "Gain 1d4 Fear" : `Gain 1d4 + ${activePcs} Fear`;
+}
+
+/** T4 Manual: the GM's note when the Interrupt closes a rest and applies nothing. */
+export const INTERRUPTED_REST_NOTE = "Rest interrupted: decide what anyone keeps";
+
 const SHORT_EQUIVALENT: Partial<Record<RestMove, RestMove>> = {
   tendToWounds: "tendToWounds",
   clearStress: "clearStress",
@@ -85,8 +122,9 @@ const longOnly = (m: RestMove) => REST_MOVES.long.includes(m) && !REST_MOVES.sho
  * full long-rest strength, the first long-rest-only move in pick order (Tend to All Wounds still clears all HP, Work on
  * a Project still ticks); the other picks convert as everyone's.
  */
-export function interruptedMoves(kind: RestKind, moves: readonly ChosenMove[], efficient = false): ChosenMove[] {
-  if (kind === "short") return [];
+export function interruptedMoves(kind: RestKind, moves: readonly ChosenMove[], efficient = false, mode: InterruptedRestMode = "book"): ChosenMove[] {
+  // T4 Manual: the Interrupt only closes the rest; the GM decides what anyone keeps.
+  if (kind === "short" || mode === "manual") return [];
   const kept = efficient ? moves.findIndex((m) => longOnly(m.move)) : -1;
   return moves.flatMap((m, i) => {
     if (i === kept) return [{ ...m }];

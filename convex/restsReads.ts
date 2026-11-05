@@ -5,6 +5,8 @@ import { oasisPool } from "../src/lib/domain/rest/feature-moves";
 import { loadCharacter } from "./lib/characterSheet";
 import { campaignQuery, userQuery } from "./lib/functions";
 import { choicesOf, groupUndoable, isProject, oasisPoolOf, oasisWindowOpen, pickableMoves, recentRests } from "./lib/restView";
+import { ruleModesOf } from "./lib/ruleModes";
+import { fearFromRestsModeValidator } from "./lib/validators/ruleModes";
 import { downtimeDieValidator, restChoiceMoveValidator, restKindValidator, restMoveValidator, restStatusValidator } from "./lib/validators/rests";
 import { seesFear } from "./campaigns";
 
@@ -47,12 +49,20 @@ export const current = campaignQuery({
         kind: restKindValidator,
         startedAt: v.number(),
         gmOverride: v.boolean(),
+        /** A long rest the GM started as Extended downtime (several days, CB 181; plan rule-switches RR). */
+        extended: v.boolean(),
         choices: v.array(choiceView),
         moves: v.array(movesView),
       }),
       v.null(),
     ),
     shortRestsSinceLong: v.number(),
+    /** The rest rule switches the launcher follows (plan rule-switches RR): F2, T2, T4. */
+    rules: v.object({
+      fearFromRests: fearFromRestsModeValidator,
+      shortRestLimit: v.union(v.literal("book"), v.literal("manual")),
+      interruptedRest: v.union(v.literal("book"), v.literal("manual")),
+    }),
     last: v.union(
       v.object({
         _id: v.id("rests"),
@@ -61,6 +71,8 @@ export const current = campaignQuery({
         finishedAt: v.union(v.number(), v.null()),
         fearRoll: v.union(v.number(), v.null()),
         fearGained: v.union(v.number(), v.null()),
+        /** F2 Manual: the Fear the book gives, said not applied ("Long rest: Gain 1d4 + 4 Fear"); null otherwise or when Fear is hidden. */
+        fearPrompt: v.union(v.string(), v.null()),
         undoable: v.boolean(),
         /** The downtime dice it rolled, in roll order (`oasisReroll`'s `die` is the index); empty for older rows. */
         dice: v.array(downtimeDieValidator),
@@ -82,6 +94,7 @@ export const current = campaignQuery({
     const newest = rests[0];
     const last = newest !== undefined && newest.status !== "open" ? newest : null;
     const fearShown = seesFear(ctx.campaign, ctx.permission);
+    const modes = ruleModesOf(ctx.campaign);
     return {
       open:
         open === null
@@ -91,10 +104,12 @@ export const current = campaignQuery({
               kind: open.kind,
               startedAt: open.startedAt,
               gmOverride: open.gmOverride ?? false,
+              extended: open.extended === true,
               choices: (await choicesOf(ctx, open._id)).map((c) => ({ characterId: c.characterId, moves: c.moves })),
               moves: await pickableMoves(ctx, ctx.campaign, open.kind),
             },
       shortRestsSinceLong: shortRestsSinceLong(rests),
+      rules: { fearFromRests: modes.fearFromRests, shortRestLimit: modes.shortRestLimit, interruptedRest: modes.interruptedRest },
       last:
         last === null
           ? null
@@ -105,6 +120,7 @@ export const current = campaignQuery({
               finishedAt: last.finishedAt ?? null,
               fearRoll: fearShown ? (last.fearRoll ?? null) : null,
               fearGained: fearShown ? (last.fearGained ?? null) : null,
+              fearPrompt: fearShown ? (last.fearPrompt ?? null) : null,
               undoable: await groupUndoable(ctx, ctx.campaign._id, last.groupId),
               dice: last.dice ?? [],
               oasisHolders: last.oasisHolders ?? [],

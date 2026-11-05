@@ -1,6 +1,11 @@
 // Downtime moves and rest counting (CB 105): the light part of the rest rules,
-// with no imports, so the rest UI can use it without the class-feature registry.
+// with no runtime imports, so the rest UI can use it without the class-feature registry.
 // The rules that change sheets live in ./index.ts, which re-exports this module.
+
+import type { ModeOf } from "../../rules/registry";
+
+/** T2 Short-rest limit (rule switch, plan rule-switches RR): Book refuses a fourth short rest, Manual warns. */
+export type ShortRestLimitMode = ModeOf<"shortRestLimit">;
 
 export type RestKind = "short" | "long";
 
@@ -93,6 +98,17 @@ export const SHORT_REST_LIMIT_MESSAGE = "A party can take up to three short rest
  * interrupted long rest still gives short-rest benefits "(even if they've
  * already had three short rests)" (CB 105); that is not a new rest.
  */
-export function mustLongRest(kind: RestKind, shortRests: number): boolean {
+export function mustLongRest(kind: RestKind, shortRests: number, mode: ShortRestLimitMode = "book"): boolean {
+  return mode === "book" && overShortRestLimit(kind, shortRests);
+}
+
+/**
+ * True when a new rest of this kind breaks the book's limit (a fourth short rest in a row, CB 105), whatever the mode:
+ * in Manual (T2) the rest still starts, the launcher warns and the GM gets `SHORT_REST_LIMIT_NOTE`.
+ */
+export function overShortRestLimit(kind: RestKind, shortRests: number): boolean {
   return kind === "short" && shortRests >= MAX_SHORT_RESTS;
 }
+
+/** T2 Manual: the GM's note when a fourth short rest in a row starts anyway. */
+export const SHORT_REST_LIMIT_NOTE = "Fourth short rest in a row: the book says long rest";
