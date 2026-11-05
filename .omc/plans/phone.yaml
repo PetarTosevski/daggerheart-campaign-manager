@@ -1,0 +1,316 @@
+# Phone plan (2026-11-05): land PR #2 (Expo app in apps/mobile, author NikolaBlagoevski) on rebuild. Epic: bead dcm-gdzi.
+# Review: .omc/reviews/pr-2-mobile.md ("How to land it"). Format: docs/workflow.md. Extra keys (plan-check ignores them):
+# title, beads, pr.
+#
+# Approved by the user 2026-11-05: the stack (Expo, React Native, Jest, Skia join AGENTS.md's approved stack; written in
+# PX3) and landing as stacked PRs.
+#
+# Integration branch: phone/on-rebuild (worktree .claude/worktrees/phone-rebase), the PR rebased onto rebuild with
+# Nikola's 48 commits kept under his name. Unlike other plans, every tracer here branches from phone/on-rebuild, not
+# rebuild: first step, before any edit, `git switch -C <tracer branch> phone/on-rebuild`. The orchestrator squash-merges
+# tracers into phone/on-rebuild and checks them with `pnpm tracer:guard .omc/plans/phone.yaml <id> phone/on-rebuild`.
+#
+# Landing: once the waves are merged, the orchestrator rebases phone/on-rebuild onto rebuild's tip and cuts the nine
+# stacked PRs from the review (field `pr` on each tracer says which PR its work ships in). Each PR must pass pnpm lint,
+# pnpm typecheck, pnpm test and `pnpm --filter @dualityheart/mobile run check` on its own.
+#   1 server/auth  2 workspace+tooling+shell  3 account  4 dashboard+trackers  5 party+sheet
+#   6 codex/world/players/tome  7 journal  8 lorekeeper  9 combat
+#
+# Rules for every tracer:
+#   - Agents run vitest/jest with --maxWorkers=2 and only the specs they touch; the orchestrator runs the full suites.
+#   - Phone code follows docs/best-practices.md where it applies (intents not snapshots, no mutations from effects, no
+#     key= on live content, error boundary around every useQuery subtree, assert ConvexError.data.code).
+#   - Shared logic comes from the website's src/lib, never a copied model (dcm-gdzi.30).
+#   - Later waves' owns are directory-level; the orchestrator narrows them before launching a wave if two tracers collide.
+plan: phone
+waves:
+  # ------------------------------------------------------------------ wave 1: the P0 crashes
+  - wave: 1
+    tracers:
+      - id: PX1
+        title: "Journal replaces Sessions and Notes in the phone shell"
+        beads: [dcm-gdzi.1]
+        pr: 2
+        goal: "Every /campaign/* route renders again on rebuild: the phone nav shows Journal where Sessions was (a tab), the Journal screen holds the existing Sessions and Notes screens as two sub-tabs, and /sessions, /notes (and their detail routes' parents) redirect into it; the full Journal port is PX12"
+        depends_on: []
+        owns:
+          - apps/mobile/src/shell/sections.ts
+          - apps/mobile/app/campaign/[campaignId]/_layout.tsx
+          - apps/mobile/app/campaign/[campaignId]/journal.tsx
+          - apps/mobile/app/campaign/[campaignId]/sessions.tsx
+          - apps/mobile/app/campaign/[campaignId]/notes.tsx
+          - apps/mobile/src/features/journal/**
+          - apps/mobile/test/shell/sections.test.ts
+          - apps/mobile/test/shell/routes.test.ts
+          - apps/mobile/test/shell/more.test.tsx
+          - apps/mobile/test/shell/campaign.test.tsx
+          - apps/mobile/test/features/journal/**
+        reads:
+          - src/lib/campaign-sections.ts
+          - src/app/(gm)/campaigns/[campaignId]/journal/**
+          - apps/mobile/src/features/sessions/**
+          - apps/mobile/src/features/notes/**
+        acceptance:
+          - apps/mobile tsc --noEmit reports no error in the owned files or from campaign-sections
+          - sections/routes tests cover journal as a tab and sessions/notes as redirects
+          - a journal test renders both sub-tabs for a player and a GM
+      - id: PX2
+        title: "Incoming hit reads adversaryActionsReads.pending; test mocks keyed by api refs"
+        beads: [dcm-gdzi.2]
+        pr: 5
+        goal: "The sheet's incoming-hit prompt subscribes to api.adversaryActionsReads.pending (moved on rebuild), and the test harness keys query/mutation mocks by the generated api reference (getFunctionName), so a renamed or moved function fails the phone tests instead of passing on a stale string"
+        depends_on: []
+        owns:
+          - apps/mobile/src/features/sheet/incoming/**
+          - apps/mobile/test/harness/**
+          - apps/mobile/test/features/sheet/**
+          - apps/mobile/test/features/combat-play/**
+          - apps/mobile/test/features/combat-view/**
+          - apps/mobile/test/features/combat-gm/**
+          - apps/mobile/test/features/combat-edit/**
+          - apps/mobile/test/features/sheet-death/**
+          - apps/mobile/test/features/sheet-dice/**
+          - apps/mobile/test/features/sheet-features/**
+          - apps/mobile/test/features/sheet-levelup/**
+          - apps/mobile/test/features/sheet-rest/**
+          - apps/mobile/test/features/party-create/**
+          - apps/mobile/test/features/players/**
+          - apps/mobile/test/features/dashboard/**
+        reads:
+          - convex/adversaryActionsReads.ts
+          - convex/adversaryActions.ts
+          - convex/_generated/api.d.ts
+        acceptance:
+          - no apps/mobile source calls api.adversaryActions.pending
+          - harness mocks resolve by function reference; a test proves an unknown/renamed ref throws
+          - jest suites for sheet and the harness pass
+
+  # ------------------------------------------------------------------ wave 2: PR 1 and PR 2 (server, tooling, shell)
+  - wave: 2
+    tracers:
+      - id: PX3
+        title: "Root checks include apps/mobile; stack written into AGENTS.md"
+        beads: [dcm-gdzi.31, dcm-gdzi.3]
+        pr: 2
+        goal: "pnpm lint, pnpm typecheck and the pre-commit hook cover apps/mobile with tsconfig and ESLint aligned to CH1/CH2, CI runs the mobile check, and AGENTS.md (and the CLAUDE.md copy) lists Expo, React Native, Jest and Skia for apps/mobile"
+        depends_on: [PX1, PX2]
+        owns:
+          - package.json
+          - tsconfig.json
+          - eslint.config.mjs
+          - apps/mobile/tsconfig.json
+          - apps/mobile/eslint.config.js
+          - scripts/pre-commit.sh
+          - .github/workflows/ci.yml
+          - AGENTS.md
+          - CLAUDE.md
+        acceptance:
+          - pnpm lint and pnpm typecheck fail on a deliberate error in apps/mobile
+          - CI workflow runs the mobile check
+      - id: PX4
+        title: "Server/auth: safe native redirect, rate-limited apple-native with cached keys"
+        beads: [dcm-gdzi.5, dcm-gdzi.6]
+        pr: 1
+        goal: "Google sign-in on the phone no longer returns the code through a custom scheme anyone can claim, and apple-native is rate-limited and caches Apple's signing keys"
+        depends_on: [PX1, PX2]
+        owns:
+          - convex/auth.ts
+          - convex/lib/apple*.ts
+          - convex/lib/nativeRedirect*.ts
+          - convex/http.ts
+          - apps/mobile/src/auth/**
+          - tests/convex/apple-native.test.ts
+          - tests/unit/apple-identity.test.ts
+          - tests/unit/native-redirect.test.ts
+          - apps/mobile/test/auth/**
+        acceptance:
+          - tests cover the redirect allowlist, the rate limit (ConvexError.data.code) and key caching
+      - id: PX5
+        title: "Shell: switch campaign, one QueryBoundary, signed-out guard"
+        beads: [dcm-gdzi.27, dcm-gdzi.32, dcm-gdzi.9]
+        pr: 2
+        goal: "Switch campaign opens the campaign list, every screen uses one shared QueryBoundary with errorMessage, /campaign is unreachable signed out and /auth's callback cannot spin forever"
+        depends_on: [PX1, PX2]
+        owns:
+          - apps/mobile/src/shell/**
+          - apps/mobile/src/ui/**
+          - apps/mobile/app/_layout.tsx
+          - apps/mobile/app/auth.tsx
+          - apps/mobile/app/index.tsx
+          - apps/mobile/app/campaign/_layout.tsx
+          - apps/mobile/app/campaign/index.tsx
+          - apps/mobile/test/shell/**
+          - apps/mobile/test/ui/**
+        acceptance:
+          - shell tests cover switch campaign, signed-out redirect and the callback timeout
+
+  # ------------------------------------------------------------------ wave 3: shared models, then PR 3 and PR 4
+  - wave: 3
+    tracers:
+      - id: PX6
+        title: "Copied pure models move into src/lib"
+        beads: [dcm-gdzi.30]
+        pr: 2
+        goal: "The phone imports the Lorekeeper answer/composer, names, selection, codex and dashboard models from src/lib instead of its own copies"
+        depends_on: [PX3, PX5]
+        owns:
+          - src/lib/**
+          - apps/mobile/src/features/lorekeeper/**
+          - apps/mobile/src/features/codex/**
+          - apps/mobile/src/features/dashboard/**
+          - apps/mobile/test/shared-imports.test.ts
+        acceptance:
+          - shared-imports test fails on a copied model; web and phone suites pass
+      - id: PX7
+        title: "Account: error and join codes, markOpened, clipboard, deletion, settings"
+        beads: [dcm-gdzi.7, dcm-gdzi.8, dcm-gdzi.28, dcm-gdzi.29, dcm-gdzi.33, dcm-gdzi.35]
+        pr: 3
+        goal: "Sign-in handles rebuild's error and join codes, opening a campaign calls campaigns.markOpened, Copy join link uses expo-clipboard/Share, the account can be deleted in-app (with Apple token revocation), name fields send single-field intents, and Campaign settings plus account Preferences match rebuild"
+        depends_on: [PX4, PX5]
+        owns:
+          - apps/mobile/src/features/account/**
+          - apps/mobile/src/features/auth/**
+          - apps/mobile/src/features/settings/**
+          - apps/mobile/src/features/players/**
+          - apps/mobile/app/(auth)/**
+          - apps/mobile/app/join/**
+          - apps/mobile/app/settings.tsx
+          - apps/mobile/app/campaign/[campaignId]/settings.tsx
+          - apps/mobile/app/campaign/[campaignId]/players.tsx
+          - apps/mobile/test/features/account/**
+          - apps/mobile/test/features/players/**
+        acceptance:
+          - role tests for each flow; deletion covered by a Convex test if a server change is needed
+      - id: PX8
+        title: "Dashboard and trackers: nullable Fear, co-GM and read-only modes"
+        beads: [dcm-gdzi.4, dcm-gdzi.24, dcm-gdzi.34]
+        pr: 4
+        goal: "Null Fear renders and edits safely, tracker text fields save trimmed text without key= on live content, and co-GM, archived, owner view, read-only mode and feature switches behave as on the web"
+        depends_on: [PX5]
+        owns:
+          - apps/mobile/src/features/trackers/**
+          - apps/mobile/app/campaign/[campaignId]/index.tsx
+          - apps/mobile/test/features/trackers/**
+          - apps/mobile/test/features/dashboard/**
+        acceptance:
+          - tests for null Fear, a co-GM and an archived campaign
+
+  # ------------------------------------------------------------------ wave 4: PR 5, 6, 7, 8
+  - wave: 4
+    tracers:
+      - id: PX9
+        title: "Party and sheet on shared web models"
+        beads: [dcm-gdzi.19, dcm-gdzi.20, dcm-gdzi.21, dcm-gdzi.22, dcm-gdzi.23, dcm-gdzi.25, dcm-gdzi.26]
+        pr: 5
+        goal: "The sheet uses the web's incoming-hit and wizard models from src/lib, resources update optimistically with Stress past full marking HP, traits send intents, death moves guard and report errors, the companion keeps saved Stress"
+        depends_on: [PX6]
+        owns:
+          - apps/mobile/src/features/sheet/**
+          - apps/mobile/src/features/party/**
+          - apps/mobile/app/campaign/[campaignId]/party.tsx
+          - apps/mobile/app/campaign/[campaignId]/party/**
+          - apps/mobile/test/features/sheet*/**
+          - apps/mobile/test/features/party*/**
+        acceptance:
+          - sheet, party and wizard role tests pass
+      - id: PX10
+        title: "Codex, World view, Players, Tome"
+        beads: [dcm-gdzi.15]
+        pr: 6
+        goal: "The world map memoises its paths and lives outside the ScrollView; codex, players and tome use shared models"
+        depends_on: [PX6, PX7]
+        owns:
+          - apps/mobile/src/features/world/**
+          - apps/mobile/src/features/tome/**
+          - apps/mobile/app/campaign/[campaignId]/world.tsx
+          - apps/mobile/app/campaign/[campaignId]/tome.tsx
+          - apps/mobile/app/campaign/[campaignId]/codex.tsx
+          - apps/mobile/app/campaign/[campaignId]/codex/**
+          - apps/mobile/test/features/world*/**
+          - apps/mobile/test/features/tome/**
+          - apps/mobile/test/features/codex/**
+        acceptance:
+          - world, codex and tome tests pass
+      - id: PX12
+        title: "Journal: full port against rebuild"
+        beads: [dcm-gdzi.1]
+        pr: 7
+        goal: "The Journal screen ports rebuild's Plan, Log and recap, and Notes panels (journalLog, journalTally, journalThreads, notes*), replacing the old Sessions screens"
+        depends_on: [PX1, PX6]
+        owns:
+          - apps/mobile/src/features/journal/**
+          - apps/mobile/src/features/sessions/**
+          - apps/mobile/src/features/notes/**
+          - apps/mobile/app/campaign/[campaignId]/journal.tsx
+          - apps/mobile/app/campaign/[campaignId]/sessions/**
+          - apps/mobile/app/campaign/[campaignId]/notes/**
+          - apps/mobile/test/features/journal/**
+          - apps/mobile/test/features/sessions/**
+          - apps/mobile/test/features/notes/**
+        acceptance:
+          - journal role tests for player and GM
+      - id: PX13
+        title: "Lorekeeper uses lorekeeper.access"
+        beads: [dcm-gdzi.36]
+        pr: 8
+        goal: "Asking is GM-only, web search is off and limits show, all from lorekeeper.access"
+        depends_on: [PX6]
+        owns:
+          - apps/mobile/app/campaign/[campaignId]/lorekeeper.tsx
+          - apps/mobile/test/features/lorekeeper/**
+        acceptance:
+          - lorekeeper role tests pass
+
+  # ------------------------------------------------------------------ wave 5: PR 9 combat (paint performance first)
+  - wave: 5
+    tracers:
+      - id: PX14
+        title: "Combat map: paint performance, then view correctness"
+        beads: [dcm-gdzi.14, dcm-gdzi.10, dcm-gdzi.11, dcm-gdzi.12, dcm-gdzi.13, dcm-gdzi.18]
+        pr: 9
+        goal: "The map paints within budget, the GM sees tokens, image maps have fog and alignment, markExplored/markSeen are written like the web, pinch zoom is stable, and the dock, tokens and touch targets fit a phone; behind a flag"
+        depends_on: [PX9]
+        owns:
+          - apps/mobile/src/features/combat-map/**
+          - apps/mobile/app/campaign/[campaignId]/combat-map.tsx
+          - apps/mobile/test/features/combat-*/**
+        acceptance:
+          - combat view tests pass; a device check is recorded in docs/phone-client.md
+  # ------------------------------------------------------------------ wave 6: PR 9 combat tools
+  - wave: 6
+    tracers:
+      - id: PX15
+        title: "Combat play and GM tools"
+        beads: [dcm-gdzi.16, dcm-gdzi.17]
+        pr: 9
+        goal: "Self and untargeted cards, exhausted cards and results work; the GM gets a target picker, real vision/fog tools and object drag"
+        depends_on: [PX14]
+        owns:
+          - apps/mobile/src/features/combat-map/**
+          - apps/mobile/src/features/adversaries/**
+          - apps/mobile/src/features/packs/**
+          - apps/mobile/app/campaign/[campaignId]/(gm)/**
+          - apps/mobile/test/features/combat-*/**
+          - apps/mobile/test/features/adversaries/**
+          - apps/mobile/test/features/packs/**
+        acceptance:
+          - combat play/GM tests pass
+
+  # ------------------------------------------------------------------ wave 7: finish
+  - wave: 7
+    tracers:
+      - id: PX16
+        title: "Tests, infra and polish"
+        beads: [dcm-gdzi.39, dcm-gdzi.38, dcm-gdzi.37]
+        pr: 2
+        goal: "Fixtures validate against the Convex validators, Vercel installs only the web workspace, CI time is bounded, the preview bundle id and codegen hack are fixed, and the status bar, font splash gate, sign-in screen, offline banner and dates are polished"
+        depends_on: [PX10, PX12, PX13, PX15]
+        owns:
+          - apps/mobile/test/harness/**
+          - apps/mobile/app.config.ts
+          - apps/mobile/eas.json
+          - apps/mobile/scripts/**
+          - vercel.json
+          - apps/mobile/src/theme/**
+        acceptance:
+          - a fixture that breaks a validator fails jest; Vercel build installs no Expo packages
