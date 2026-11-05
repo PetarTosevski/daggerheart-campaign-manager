@@ -38,3 +38,19 @@ waves:
           - docs/tasks/**
         acceptance:
           - Convex tests per bead; authz entries for any new public function; pnpm lint, pnpm typecheck pass
+  - wave: 2
+    tracers:
+      - id: FH-UI2
+        beads: [dcm-bxp.99.32.19, dcm-bxp.99.32.27, dcm-bxp.99.32.25, dcm-bxp.99.32.1, dcm-bxp.99.32.40, dcm-bxp.99.32.2, dcm-bxp.99.32.24, dcm-bxp.99.32.45]
+        goal: "The HUD uses FH-SV's server halves (feature riders, GM prompt queue cards, withdraw toast, condition sources, shortfall text, held-attack seeds in the visual specs), per-ally picks work as the user decided 2026-11-05, and hud-attack-pick passes"
+        depends_on: [FH-UI, FH-SV]
+        owns:
+          - src/components/combat-map/**
+          - src/components/sheet/**
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/**
+          - convex/**
+          - src/lib/**
+          - tests/**
+          - docs/tasks/**
+        acceptance:
+          - unit + Convex tests per bead; touched e2e specs pass; pnpm lint, pnpm typecheck pass
