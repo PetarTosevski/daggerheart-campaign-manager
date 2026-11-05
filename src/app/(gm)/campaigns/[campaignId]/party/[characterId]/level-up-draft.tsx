@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { z } from "zod";
+import * as z from "@/lib/zod";
 
 import { canLevelUp, fullSheet } from "@/components/party/level-up/shared";
 import type { SlotProps } from "@/components/party/slots";

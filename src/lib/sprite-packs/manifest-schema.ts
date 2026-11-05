@@ -3,7 +3,7 @@
  * script and the tests parse a manifest, so the Convex functions that resolve sprites do not build these schemas on
  * every call. `./index` re-exports them.
  */
-import { z } from "zod";
+import * as z from "../zod";
 
 import { folderOfKey } from "./catalog";
 import { MANIFEST_SCHEMA_VERSION } from "./manifest";

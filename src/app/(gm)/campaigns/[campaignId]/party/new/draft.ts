@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery } from "convex/react";
 import { useMemo, useRef } from "react";
-import { z } from "zod";
+import * as z from "@/lib/zod";
 
 import { DRAFT_MAX_BYTES, DRAFT_SCHEMA_VERSION, utf8Bytes, type DraftKind } from "@/lib/config/preferences";
 

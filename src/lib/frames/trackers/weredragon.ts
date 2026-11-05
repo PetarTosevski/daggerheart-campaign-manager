@@ -1,6 +1,6 @@
 // Reign of the Weredragon: the Astromancer's Revelations (Hope & Fear
 // pp.140-141). Pure module: bundled into Convex functions, relative imports only.
-import { z } from "zod";
+import * as z from "../../zod";
 
 import { RuleError } from "../../errors/app-error";
 

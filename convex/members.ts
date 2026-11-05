@@ -1,5 +1,5 @@
 import { v, type Infer } from "convex/values";
-import { z } from "zod";
+import * as z from "../src/lib/zod";
 
 import { appError } from "../src/lib/errors/app-error";
 import type { Doc, Id } from "./_generated/dataModel";

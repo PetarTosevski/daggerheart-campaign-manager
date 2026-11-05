@@ -1,6 +1,6 @@
 // Dark Heart of Andaluria: the Hunt and Liminal Clues (Hope & Fear pp.154-155).
 // Pure module: bundled into Convex functions, relative imports only.
-import { z } from "zod";
+import * as z from "../../zod";
 
 import { RuleError } from "../../errors/app-error";
 

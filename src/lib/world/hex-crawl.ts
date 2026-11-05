@@ -3,7 +3,7 @@
 // dcm-bxp.17). Pure and deterministic given the injected `roll`: bundled into
 // Convex, so no framework imports.
 
-import { z } from "zod";
+import * as z from "../zod";
 
 import type { Roll } from "../domain/frames/horizon";
 import { RuleError } from "../errors/app-error";

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "../../src/lib/zod";
 
 import { migrations } from "../lib/migrations";
 

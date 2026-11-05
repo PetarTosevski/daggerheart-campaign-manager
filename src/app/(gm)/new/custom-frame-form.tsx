@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { z } from "zod";
+import * as z from "@/lib/zod";
 
 import { parseDraft, useAccountDraft } from "@/app/(gm)/campaigns/[campaignId]/party/new/draft";
 

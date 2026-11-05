@@ -4,7 +4,7 @@
  * keyword fallback) into a valid spec, dropping junk and keeping valid parts.
  */
 
-import { z } from "zod";
+import * as z from "../../zod";
 
 import { TERRAINS, OBJECT_KINDS, AREA_SHAPES, OBJECT_VARIANTS, MAP_W_MIN, MAP_W_MAX, MAP_H_MIN, MAP_H_MAX, MAX_AREAS, MAX_OBJECTS, MAX_POINTS, MAX_TITLE, OBJECT_R_MIN, OBJECT_R_MAX, COORD_MARGIN, type Terrain, type ObjectKind, type AreaShape, type ObjectVariant } from "./spec-constants";
 

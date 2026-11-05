@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "../zod";
 
 import { MAX_LEVEL } from "../domain/characters/index";
 import { TRAIT_IDS, type TraitId } from "../srd/types";

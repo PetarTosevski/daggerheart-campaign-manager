@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "../zod";
 
 export const CAMPAIGN_TIME_NOTE_MAX_LENGTH = 200;
 

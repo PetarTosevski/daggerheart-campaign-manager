@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { z } from "zod";
+import * as z from "../src/lib/zod";
 
 import { hopeMax, tierForLevel } from "../src/lib/domain/characters/index";
 import { gatherScrap as rollScrap } from "../src/lib/domain/frames/motherboard";

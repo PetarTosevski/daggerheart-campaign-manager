@@ -2,7 +2,7 @@
 // (Core Book pp.288-289). Pure module: bundled into Convex, so no framework
 // imports.
 
-import { z } from "zod";
+import * as z from "../../zod";
 
 import { distanceKm, type MapScale } from "../../domain/travel/index";
 import { RuleError } from "../../errors/app-error";

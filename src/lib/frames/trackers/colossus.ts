@@ -2,7 +2,7 @@
 // Kudamat's Power (Core Book pp.318, 327). Pure module: bundled into Convex,
 // so no framework imports.
 
-import { z } from "zod";
+import * as z from "../../zod";
 
 import { RuleError } from "../../errors/app-error";
 

@@ -2,7 +2,7 @@
 // GM reviews before anything is saved. Pure: no framework imports, relative
 // imports only (bundled into Convex and the client).
 
-import { z } from "zod";
+import * as z from "../zod";
 
 import { characterSheetSchema, experienceSchema } from "../validation/characters";
 

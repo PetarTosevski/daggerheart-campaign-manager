@@ -1,6 +1,6 @@
 // Ranger (Beastbound) companion sheet (Core Book pp.40–41).
 
-import { z } from "zod";
+import * as z from "../../zod";
 
 import { RuleError } from "../../errors/app-error";
 

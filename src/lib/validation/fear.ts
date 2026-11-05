@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "../zod";
 
 export const fearDirectionSchema = z.enum(["increase", "decrease"]);
 export const fearEventTypeSchema = z.enum(["adjustment", "correction"]);

@@ -1,5 +1,5 @@
 import { v, type Infer } from "convex/values";
-import { z } from "zod";
+import * as z from "../src/lib/zod";
 
 import {
   applyCountdownAction,

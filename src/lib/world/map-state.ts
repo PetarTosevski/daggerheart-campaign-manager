@@ -2,7 +2,7 @@
 // pins (D7). Ported from reference/designs/project/World.dc.html. Pure module:
 // bundled into Convex.
 
-import { z } from "zod";
+import * as z from "../zod";
 
 import { DEFAULT_TRAVEL_RULES, OPTIONAL_SPEED_TERRAINS, LEGACY_TRAIL_MODES, SPEED_TERRAINS, TRAVEL_METHODS, TRAVEL_PACES, trailMethod, type SpeedTerrain } from "../domain/travel/index";
 import type { PublishedFrameId } from "../frames/index";
