@@ -1,0 +1,271 @@
+import { StyleSheet } from "react-native";
+
+import { colors } from "../../theme/colors";
+import { type } from "../../theme/fonts";
+import { hit, radius, space } from "../../theme/spacing";
+
+export const advStyles = StyleSheet.create({
+  stack: {
+    gap: space[4],
+    paddingBottom: space[8],
+  },
+  section: {
+    gap: space[3],
+  },
+  title: {
+    color: colors.parchment,
+    fontFamily: type.displayBold.fontFamily,
+    fontSize: 32,
+    fontWeight: type.displayBold.fontWeight,
+  },
+  h2: {
+    color: colors.parchment,
+    fontFamily: type.displayBold.fontFamily,
+    fontSize: 20,
+    fontWeight: type.displayBold.fontWeight,
+  },
+  h3: {
+    color: colors.parchment,
+    fontFamily: type.sansSemibold.fontFamily,
+    fontSize: 16,
+    fontWeight: type.sansSemibold.fontWeight,
+  },
+  label: {
+    color: colors.label,
+    fontFamily: type.sans.fontFamily,
+    fontSize: 12,
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+  },
+  body: {
+    color: colors.body,
+    fontFamily: type.sans.fontFamily,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  muted: {
+    color: colors.mutedText,
+    fontFamily: type.sans.fontFamily,
+    fontSize: 13,
+  },
+  error: {
+    color: colors.danger,
+    fontFamily: type.sans.fontFamily,
+    fontSize: 14,
+  },
+  status: {
+    color: colors.ok,
+    fontFamily: type.sans.fontFamily,
+    fontSize: 14,
+  },
+  card: {
+    backgroundColor: colors.panel,
+    borderColor: colors.line,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    gap: space[3],
+    padding: space[4],
+  },
+  cardOn: {
+    borderColor: colors.brand,
+  },
+  row: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: space[2],
+  },
+  between: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: space[2],
+    justifyContent: "space-between",
+  },
+  grow: {
+    flex: 1,
+  },
+  input: {
+    backgroundColor: colors.ink2,
+    borderColor: colors.line2,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    color: colors.parchment,
+    fontFamily: type.sans.fontFamily,
+    fontSize: 16,
+    minHeight: hit.minHeight,
+    paddingHorizontal: space[3],
+    paddingVertical: space[2],
+  },
+  textarea: {
+    minHeight: 96,
+    paddingTop: space[3],
+    textAlignVertical: "top",
+  },
+  tabRow: {
+    backgroundColor: colors.ink2,
+    borderColor: colors.line,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: space[1],
+    padding: space[1],
+  },
+  tab: {
+    alignItems: "center",
+    borderRadius: radius.md,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: hit.minHeight,
+    paddingHorizontal: space[2],
+  },
+  tabOn: {
+    backgroundColor: colors.brand,
+  },
+  tabText: {
+    color: colors.parchment,
+    fontFamily: type.sans.fontFamily,
+    fontSize: 14,
+  },
+  tabTextOn: {
+    color: colors.brandInk,
+    fontFamily: type.sansSemibold.fontFamily,
+    fontWeight: type.sansSemibold.fontWeight,
+  },
+  chip: {
+    alignItems: "center",
+    borderColor: colors.line2,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: hit.minHeight,
+    paddingHorizontal: space[3],
+  },
+  chipOn: {
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
+  },
+  chipHint: {
+    borderColor: colors.hope,
+    borderStyle: "dashed",
+  },
+  listRow: {
+    alignItems: "center",
+    borderColor: colors.line,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: space[3],
+    minHeight: hit.minHeight,
+    paddingHorizontal: space[3],
+    paddingVertical: space[2],
+  },
+  listRowOn: {
+    backgroundColor: colors.raised,
+    borderColor: colors.brand,
+  },
+  rowName: {
+    color: colors.parchment,
+    fontFamily: type.displayBold.fontFamily,
+    fontSize: 16,
+    fontWeight: type.displayBold.fontWeight,
+  },
+  badge: {
+    alignSelf: "flex-start",
+    borderColor: colors.line2,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    paddingHorizontal: space[2],
+    paddingVertical: 2,
+  },
+  badgeText: {
+    color: colors.label,
+    fontFamily: type.sans.fontFamily,
+    fontSize: 12,
+  },
+  paper: {
+    backgroundColor: colors.ink2,
+    borderColor: colors.line2,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    gap: space[2],
+    padding: space[4],
+  },
+  serif: {
+    color: colors.parchment,
+    fontFamily: type.serif.fontFamily,
+    fontSize: 17,
+    lineHeight: 25,
+  },
+  serifItalic: {
+    color: colors.body,
+    fontFamily: type.serif.fontFamily,
+    fontSize: 16,
+    fontStyle: "italic",
+    lineHeight: 23,
+  },
+  stat: {
+    color: colors.body,
+    fontFamily: type.sans.fontFamily,
+    fontSize: 14,
+  },
+  statStrong: {
+    color: colors.parchment,
+    fontFamily: type.sansSemibold.fontFamily,
+    fontWeight: type.sansSemibold.fontWeight,
+  },
+  meter: {
+    backgroundColor: colors.ink2,
+    borderColor: colors.line2,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    height: 12,
+    overflow: "hidden",
+  },
+  meterFill: {
+    backgroundColor: colors.brand,
+    height: "100%",
+  },
+  meterOver: {
+    backgroundColor: colors.dangerSolid,
+  },
+  stepper: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: space[2],
+  },
+  stepBtn: {
+    alignItems: "center",
+    borderColor: colors.line2,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: hit.minHeight,
+    minWidth: hit.minHeight,
+  },
+  stepText: {
+    color: colors.parchment,
+    fontFamily: type.sansSemibold.fontFamily,
+    fontSize: 18,
+    fontWeight: type.sansSemibold.fontWeight,
+  },
+  stepValue: {
+    color: colors.parchment,
+    fontFamily: type.sansSemibold.fontFamily,
+    fontSize: 16,
+    fontWeight: type.sansSemibold.fontWeight,
+    minWidth: 72,
+    textAlign: "center",
+  },
+  fear: {
+    color: colors.fear,
+    fontFamily: type.sansSemibold.fontFamily,
+    fontSize: 16,
+    fontWeight: type.sansSemibold.fontWeight,
+  },
+  defeated: {
+    opacity: 0.6,
+  },
+  disabled: {
+    opacity: 0.5,
+  },
+});

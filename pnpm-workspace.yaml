@@ -1,5 +1,9 @@
+packages: ['apps/*']
 allowBuilds:
   esbuild: false
+  # Expo's file watcher. The native postinstall is optional; leaving it unlisted
+  # makes pnpm 11 fail CI with ERR_PNPM_IGNORED_BUILDS.
+  "@parcel/watcher": false
   sharp: true
   unrs-resolver: true
 # Patch releases for advisories in Next.js's bundled build tooling (postcss).

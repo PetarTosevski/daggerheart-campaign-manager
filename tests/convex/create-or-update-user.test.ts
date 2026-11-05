@@ -181,4 +181,65 @@ describe("createOrUpdateUser (sign-in callback)", () => {
       expect(again).toBe(id);
     });
   });
+
+  describe("apple-native accounts", () => {
+    const apple = { id: "apple-native" };
+
+    it("signs a verified email into the existing verified user", async () => {
+      const t = makeTest();
+      const id = await t.run((ctx) => ctx.db.insert("users", { email: "ada@example.com", emailVerificationTime: 1 }));
+      const linked = await t.run((ctx) =>
+        createOrUpdateUser(ctx, {
+          existingUserId: null,
+          provider: apple,
+          profile: { email: "Ada@example.com", emailVerified: true },
+        }),
+      );
+      expect(linked).toBe(id);
+      expect(await t.run((ctx) => ctx.db.query("users").collect())).toHaveLength(1);
+    });
+
+    it("creates a separate user for a Hide My Email address", async () => {
+      const t = makeTest();
+      const first = await t.run((ctx) =>
+        createOrUpdateUser(ctx, {
+          existingUserId: null,
+          provider: apple,
+          profile: { email: "ada@example.com", emailVerified: true, name: "Ada" },
+        }),
+      );
+      const relay = await t.run((ctx) =>
+        createOrUpdateUser(ctx, {
+          existingUserId: null,
+          provider: apple,
+          profile: { email: "hide@privaterelay.appleid.com", emailVerified: true },
+        }),
+      );
+      expect(relay).not.toBe(first);
+      const users = await t.run((ctx) => ctx.db.query("users").collect());
+      expect(users.map((user) => user.email).sort()).toEqual(["ada@example.com", "hide@privaterelay.appleid.com"]);
+    });
+
+    it("refuses a profile whose email is not verified", async () => {
+      const t = makeTest();
+      const error = await t
+        .run((ctx) =>
+          createOrUpdateUser(ctx, {
+            existingUserId: null,
+            provider: apple,
+            profile: { email: "ada@example.com" },
+          }),
+        )
+        .catch((e) => e);
+      expect(errorCode(error)).toBe("FORBIDDEN");
+      expect(await t.run((ctx) => ctx.db.query("users").collect())).toEqual([]);
+    });
+
+    it("returns the existing account when a later sign-in has no email", async () => {
+      const t = makeTest();
+      const id = await t.run((ctx) => ctx.db.insert("users", { email: "ada@example.com", emailVerificationTime: 1 }));
+      const result = await t.run((ctx) => createOrUpdateUser(ctx, { existingUserId: id, provider: apple, profile: {} }));
+      expect(result).toBe(id);
+    });
+  });
 });
