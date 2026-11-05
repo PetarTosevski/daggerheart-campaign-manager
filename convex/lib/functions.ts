@@ -50,6 +50,8 @@
  *   builders, which only the owner passes. `readOnly: "allow"` lets a mutation run anyway: only `campaigns.markOpened`
  *   and `presence.heartbeat` / `disconnect` use it (Q31 a), and `tests/convex/read-only-mode.test.ts` pins that list.
  *   Queries always run; `internal*` functions (crons, a Lorekeeper answer already started) keep running.
+ * - Suspended accounts (config AD14, N11): every builder (`maybeUserQuery` included) throws `ACCOUNT_SUSPENDED` for a
+ *   signed-in account that is suspended or waiting for deletion (`isAccountSuspended`), right after the sign-in check.
  * - App owner (superadmin, config AD0): the `appOwner*` builders let only the
  *   app owner through, decided by `isAppOwner` (`lib/appOwner.ts`, the only
  *   owner check: one stored user id, named with the deployment admin key).
@@ -244,8 +246,34 @@ async function refuseReadOnly(ctx: QueryCtx, user: Doc<"users">, readOnly: "allo
 
 // ---------------------------------------------------------------- shared steps
 
-async function signedIn(ctx: QueryCtx): Promise<Doc<"users">> {
+// ---------------------------------------------------------------- suspended accounts
+
+/**
+ * Whether the account is suspended or waiting for deletion (config AD14, N11): its `accountStatus` row, one indexed
+ * read of a table that holds only such accounts. The app owner can never be suspended (`adminAccountActions`).
+ */
+export async function isAccountSuspended(ctx: QueryCtx, userId: Id<"users">): Promise<boolean> {
+  const row = await ctx.db
+    .query("accountStatus")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .first();
+  return row !== null && (row.suspendedAt !== undefined || row.deleteAfter !== undefined);
+}
+
+/** Throws ACCOUNT_SUSPENDED for a suspended account (AD14): every user wrapper refuses it before anything else. */
+async function refuseSuspended(ctx: QueryCtx, user: Doc<"users">): Promise<Doc<"users">> {
+  if (await isAccountSuspended(ctx, user._id)) throw appError("ACCOUNT_SUSPENDED");
+  return user;
+}
+
+/** The signed-in user (null when signed out); a suspended account is refused with ACCOUNT_SUSPENDED (AD14). */
+async function currentUser(ctx: QueryCtx): Promise<Doc<"users"> | null> {
   const user = await getUser(ctx);
+  return user === null ? null : refuseSuspended(ctx, user);
+}
+
+async function signedIn(ctx: QueryCtx): Promise<Doc<"users">> {
+  const user = await currentUser(ctx);
   if (user === null) throw appError("UNAUTHENTICATED");
   return user;
 }
@@ -329,7 +357,7 @@ export const userQuery = customQuery(baseQuery, {
 /** A query that also runs signed out: `ctx.user` is null then. For "null when signed out / not found" reads. */
 export const maybeUserQuery = customQuery(baseQuery, {
   args: {},
-  input: async (ctx) => ({ ctx: { user: await getUser(ctx) }, args: {} }),
+  input: async (ctx) => ({ ctx: { user: await currentUser(ctx) }, args: {} }),
 });
 
 /** A signed-in user's mutation: `ctx.user`; options `rateLimit`, `readOnly`. */
@@ -363,7 +391,7 @@ type ActionUser = { user: Doc<"users">; readOnlyRefused: boolean } | null;
 export const actionUser = internalQuery({
   args: {},
   handler: async (ctx): Promise<ActionUser> => {
-    const user = await getUser(ctx);
+    const user = await currentUser(ctx);
     return user === null ? null : { user, readOnlyRefused: await readOnlyRefuses(ctx, user, undefined) };
   },
 });
@@ -418,7 +446,7 @@ type ActionAppOwner = { user: Doc<"users">; owner: boolean } | null;
 export const actionAppOwner = internalQuery({
   args: {},
   handler: async (ctx): Promise<ActionAppOwner> => {
-    const user = await getUser(ctx);
+    const user = await currentUser(ctx);
     return user === null ? null : { user, owner: await isAppOwner(ctx, user) };
   },
 });

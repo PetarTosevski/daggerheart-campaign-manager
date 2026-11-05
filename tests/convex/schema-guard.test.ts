@@ -195,6 +195,8 @@ const BOUNDED = [
   "appStatus",
   "featureSwitches",
   "appTesters",
+  // Config AD14: one row per suspended or to-be-deleted account; deleted on Lift / Undo and by `accountPurge`.
+  "accountStatus",
   ...Object.keys(authTables),
 ];
 

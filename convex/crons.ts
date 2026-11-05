@@ -39,5 +39,7 @@ crons.cron("expire old drafts", "31 4 * * *", internal.draftsRetention.expire, {
 crons.cron("expire admin audit", "43 4 * * *", internal.adminRetention.expireAudit, {});
 crons.cron("expire limit requests", "57 4 * * *", internal.adminRetention.expireLimitRequests, {});
 crons.cron("expire admin exports", "3 * * * *", internal.adminRetention.expireExports, {});
+// Deleted accounts (plan config AD14, N11): erased once their 30-day undo window has passed, one after another; daily.
+crons.cron("erase deleted accounts", "27 5 * * *", internal.accountPurge.purgeDueAccounts, {});
 
 export default crons;

@@ -56,6 +56,16 @@ export const campaignLimitNumbersValidator = v.object({
   bookPages: v.optional(v.number()),
 });
 
+/**
+ * One suspended or to-be-deleted account as the owner's account table shows it (AD14, `adminAccountActions.statuses`):
+ * `suspended` when suspended by hand, `deleteAfter` while a deletion waits (null otherwise).
+ */
+export const accountStatusValidator = v.object({
+  userId: v.id("users"),
+  suspended: v.boolean(),
+  deleteAfter: v.union(v.number(), v.null()),
+});
+
 /** The effective settings `readAppConfig` returns (defaults applied; `appAdmin.settings`'s `returns`). */
 export const appSettingsValidator = v.object({
   signUpMode: signUpModeValidator,

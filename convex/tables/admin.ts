@@ -87,6 +87,27 @@ export const adminTables = {
   }).index("by_createdAt", ["createdAt"]),
 
   /**
+   * A suspended or to-be-deleted account (AD14, Q28 b, N11): one row per user, only while the account is suspended or
+   * waiting for deletion; no row = a normal account. `suspendedAt` set = suspended by hand (Lift suspension clears it);
+   * `deleteAfter` set = deletion scheduled (refused like a suspension until then; Undo clears it, `accountPurge` erases
+   * the account after it). The row is deleted when both are clear, and with the account.
+   */
+  accountStatus: defineTable({
+    userId: v.id("users"),
+    suspendedAt: v.optional(v.number()),
+    /** When `accountPurge` erases the account: 30 days after the owner chose Delete account. */
+    deleteAfter: v.optional(v.number()),
+    /** The owner's reason for the latest step, at most `ACCOUNT_REASON_MAX` characters (adminAccountActions.ts). */
+    reason: v.string(),
+    /** Who took the latest step (the app owner). */
+    by: v.id("users"),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    // The daily purge reads the accounts past their `deleteAfter` (unset sorts first, so `gte 0` skips them).
+    .index("by_deleteAfter", ["deleteAfter"]),
+
+  /**
    * A campaign's Lorekeeper numbers set by the owner (Q21 changed, Q24; AD12 writes, AD6 applies). No row, or a
    * missing field, = the app defaults.
    */

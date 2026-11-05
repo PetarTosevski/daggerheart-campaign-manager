@@ -4,7 +4,7 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { normalizeJoinCode } from "../members";
 import { normalizeEmail } from "./allowlist";
 import { readAppConfig } from "./appConfig";
-import { readAppStatus } from "./functions";
+import { isAccountSuspended, readAppStatus } from "./functions";
 
 export const PASSWORD_PROVIDER_ID = "password";
 
@@ -79,6 +79,9 @@ export async function signUpRefusal(
  *   user is refused with `EMAIL_TAKEN`. (An abandoned unverified password account is replaced earlier, in `auth.ts`.)
  * The email is normalised to lower case.
  *
+ * Suspended accounts (config AD14, N11): any sign-in or link that lands on a suspended account, or one waiting for
+ * deletion, is refused with `ACCOUNT_SUSPENDED`.
+ *
  * Sign-up mode (config AD4): only the insert of a NEW user is gated, by `signUpRefusal` (the password profile carries
  * the join code; Google carries none, so in invite mode Google creates only invited emails). Signing in, verifying,
  * and reusing or linking an existing user (the app owner's included) are never refused here.
@@ -91,6 +94,8 @@ export async function createOrUpdateUser(
   const verified = args.profile.emailVerified === true;
 
   if (args.existingUserId !== null) {
+    // AD14 (N11): a suspended account, or one waiting for deletion, can't sign in.
+    if (await isAccountSuspended(ctx, args.existingUserId)) throw appError("ACCOUNT_SUSPENDED");
     if (verified) {
       const user = await ctx.db.get(args.existingUserId);
       if (user !== null && user.emailVerificationTime === undefined) {
@@ -110,6 +115,8 @@ export async function createOrUpdateUser(
     .withIndex("email", (q) => q.eq("email", email))
     .unique();
   if (existing !== null) {
+    // AD14: signing in to (or linking a new login to) a suspended account is refused too.
+    if (await isAccountSuspended(ctx, existing._id)) throw appError("ACCOUNT_SUSPENDED");
     if (isPassword) {
       if (existing.emailVerificationTime === undefined) throw appError("EMAIL_TAKEN");
       const held = await ctx.db
