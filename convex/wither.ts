@@ -5,6 +5,8 @@
  * - `gainWitherToken` (helper): one token plus a public Fear Die roll; at or
  *   below the tokens → a scar and the tokens cleared. Called by
  *   `characters.applyDamage` (Severe damage from a Withered source) and `gain`.
+ *   With rule switch W1 `witherTokens` on Manual, `applyDamage` no longer calls
+ *   it (a GM-only note instead); `gain` and `adjust` stay the GM's own hands.
  * - `gain` (GM): the manual "+ Wither" button.
  * - `adjust` (GM): corrects the tokens by a delta, no roll.
  * Every change writes an undoable `actionLog` row. No per-PC cap (decision).

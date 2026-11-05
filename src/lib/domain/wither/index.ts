@@ -12,6 +12,7 @@
 // const gain = gainWither(sheet, rollDie(FEAR_DIE_SIDES)); // { sheet, tokens, fearDie, scarred }
 // ```
 
+import type { ModeOf } from "../../rules/registry";
 import { hopeMax, scarsMax } from "../characters/index";
 
 /** The Fear Die of the Duality Dice. */
@@ -57,4 +58,14 @@ export function gainWither<T extends WitherSheet>(sheet: T, fearDie: number): Wi
 /** The GM's correction: tokens moved by `delta`, kept within 0..99; no Fear Die. */
 export function adjustWither<T extends { wither: number }>(sheet: T, delta: number): T {
   return { ...sheet, wither: Math.max(0, Math.min(WITHER_MAX, sheet.wither + delta)) };
+}
+
+/**
+ * What Severe damage from a Withered source does (rule switch W1 `witherTokens`, CB 261): Book `"gain"` (one token
+ * and the Fear Die, `gainWither`), Manual `"note"` (nothing on the sheet; the GM is told to add the token and ask for
+ * the roll), and `"none"` when the damage is not Severe or its source is not Withered. The mode defaults to Book.
+ */
+export function witherOnDamage(severity: "none" | "minor" | "major" | "severe", withered: boolean, mode: ModeOf<"witherTokens"> = "book"): "gain" | "note" | "none" {
+  if (!withered || severity !== "severe") return "none";
+  return mode === "manual" ? "note" : "gain";
 }

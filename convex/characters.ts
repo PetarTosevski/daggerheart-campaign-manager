@@ -51,6 +51,8 @@ import { type Permission } from "./lib/permissions";
 import { characterDraftValidator, characterStatusValidator, conditionValidator, goldValidator, sheetPatchValidator, traitIdValidator, type CharacterView } from "./lib/validators/characters";
 import { ikonisValidator } from "./lib/validators/characterExtras";
 import { gainWitherToken } from "./wither";
+import { postRuleNote, ruleMode } from "./lib/ruleModes";
+import { witherOnDamage } from "../src/lib/domain/wither/index";
 import { witherGainValidator } from "./lib/validators/wither";
 import { assertCharacterCap, assertOneActive, MAX_CHARACTERS_CREATED_PER_CAMPAIGN, MAX_CHARACTERS_PER_CAMPAIGN, partyOf } from "./lib/characterSheet";
 export { assertOneActive, MAX_CHARACTERS_PER_CAMPAIGN };
@@ -570,7 +572,8 @@ export const toggleCondition = userMutation({
  * resulting Hit Points (Core, "Hit Points and Damage Thresholds"). Owner or GM.
  * `withered` (Witherwild, CB 261): Severe damage (after the Armor Slot) from a
  * Withered source also gains a Wither token and rolls the Fear Die
- * (convex/wither.ts); outside Witherwild it is MECHANIC_DISABLED. Keyed
+ * (convex/wither.ts); with rule W1 `witherTokens` on Manual it adds nothing
+ * and posts a GM-only note instead; outside Witherwild it is MECHANIC_DISABLED. Keyed
  * (review L2): a retry with the same idempotency key returns the first result.
  * `negateMinor` (Lunar Phases, New moon, HF p.17 "Spend a Hope to negate Minor
  * damage"; plan session-features U6): allowed only when F0's `canNegateMinor`
@@ -618,9 +621,19 @@ export const applyDamage = keyedUserMutation({
       }
       const next: CharacterSheet = { ...armored, hp: Math.min(s.hpMax, s.hp + result.marks) };
       await saveSheet(ctx, character._id, next);
-      // The Wither row's `before` is the damaged sheet: undoing it takes back the token, not the damage.
+      // W1 (rule switch `witherTokens`, CB 261). Book: the Wither row's `before` is the damaged sheet, so undoing it
+      // takes back the token, not the damage. Manual: no token and no roll; the GM gets a note. Plain damage is
+      // unlogged (no action group), so the note carries no characterId or groupId and is never undoable.
+      const witherStep = witherOnDamage(result.severity, withered ?? false, withered ? ruleMode(campaign, "witherTokens") : "book");
+      if (witherStep === "note") {
+        await postRuleNote(ctx, campaign, {
+          ruleId: "witherTokens",
+          summary: `${s.name} took Severe damage from a Withered source: add a Wither token and roll?`,
+          actorId: ctx.user._id,
+        });
+      }
       const wither =
-        withered && result.severity === "severe"
+        witherStep === "gain"
           ? await gainWitherToken(ctx, { campaignId: campaign._id, characterId: character._id, sheet: next, actorId: ctx.user._id, source: "Severe Withered damage" })
           : undefined;
       return { severity: result.severity, marks: result.marks, hp: next.hp, armorMarked: next.armorMarked, ...(wither ? { wither } : {}) };
