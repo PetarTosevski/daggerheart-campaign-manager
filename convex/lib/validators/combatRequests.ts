@@ -78,6 +78,7 @@ export const combatRequestKindValidator = v.union(
   v.literal("cloakPrompt"),
   v.literal("forcedAttack"),
   v.literal("gmPrompt"),
+  v.literal("allyPick"),
 );
 
 /**
@@ -646,6 +647,89 @@ export const gmPromptPayloadValidator = v.object({
   groupId: v.string(),
 });
 
+/**
+ * `allyPick` (plan finish-hud-lk FH-AP, widened; dcm-bxp.99.32.24, user 2026-11-05): a card, feature or adversary feature
+ * whose `choose` step has each chooser pick their own option (`by`: Rousing Strike, CB p.342; Critical Inspiration,
+ * CB p.341; Locust Swarm, Awesome Size, Elemental Breath's Fire, HF p.92-93). Each chooser answers on their own screen
+ * (`allyPicks.answer`: that character's player, or the GM for anyone, a no-show included); nothing of the use applies
+ * until every chooser answered, then the server runs it with the picks (`source`). Declined when the use's actionLog group
+ * is undone or its encounter ends (as a reaction window). At most `MAX_ALLY_PICK_CHOOSERS` choosers.
+ */
+export const allyPickChooserValidator = v.object({
+  stepId: v.string(),
+  /** The runner's id of the chooser (`by:<stepId>:<chooserId>`): a PC card's token id, an adversary feature's character id. */
+  chooserId: v.string(),
+  /** The chooser's character (its player answers); unset: only the GM answers. */
+  characterId: v.optional(v.id("characters")),
+  name: v.string(),
+  label: v.string(),
+  options: v.array(v.object({ id: v.string(), label: v.string() })),
+});
+
+/** One chooser's answer: the option picked, who sent it (the character's player or the GM) and when. */
+export const allyPickAnswerValidator = v.object({ stepId: v.string(), chooserId: v.string(), options: v.array(v.string()), by: v.id("users"), at: v.number() });
+
+/** A PC's rider (Rousing Strike on a critical attack), held after the attack: it runs whole on the stored roll once all picked. */
+export const allyPickRiderSourceValidator = v.object({
+  kind: v.literal("rider"),
+  characterId: v.id("characters"),
+  rider: v.object({ source: v.union(v.literal("card"), v.literal("feature")), id: v.string(), useId: v.string(), name: v.string() }),
+  /** The rider's own choices as the player sent them with the attack. */
+  choices: v.array(cardChoiceValidator),
+  hostRoll: hostRollValidator,
+  /** The attack's public actionLog row; once it is undone the picks are closed. */
+  entryId: v.id("actionLog"),
+});
+
+/** `adversaryActions.useFeature`'s arguments, kept to run the feature once all picked. */
+export const heldFeatureArgsValidator = v.object({
+  instanceId: v.string(),
+  feature: v.optional(v.string()),
+  useId: v.optional(v.string()),
+  targets: v.array(v.string()),
+  picked: v.optional(v.array(v.string())),
+  allies: v.optional(v.array(v.string())),
+  followUp: v.optional(v.array(v.string())),
+  chain: v.optional(v.array(v.array(v.string()))),
+  raisers: v.optional(v.array(v.string())),
+  trigger: v.optional(v.object({ sourceId: v.optional(v.string()), subjectId: v.optional(v.string()), amount: v.optional(v.number()) })),
+  options: v.optional(v.array(v.object({ id: v.string(), values: v.array(v.string()) }))),
+  optionals: v.optional(v.array(v.string())),
+  situations: v.optional(v.array(v.string())),
+  eitherCosts: v.optional(v.array(v.number())),
+  splits: v.optional(v.array(v.object({ id: v.string(), amount: v.number() }))),
+  advantage: v.optional(v.number()),
+  disadvantage: v.optional(v.number()),
+  experience: v.optional(v.string()),
+  spendFear: v.optional(v.number()),
+  reactions: v.optional(v.array(v.string())),
+  buyOffs: v.optional(v.array(v.string())),
+});
+
+/** An adversary feature use held before anything applied, with the die values its first run rolled (replayed first). */
+export const allyPickAdversarySourceValidator = v.object({
+  kind: v.literal("adversary"),
+  instanceId: v.id("encounterAdversaries"),
+  args: heldFeatureArgsValidator,
+  dice: v.array(v.number()),
+});
+
+export const allyPickPayloadValidator = v.object({
+  schemaVersion: v.literal(1),
+  kind: v.literal("allyPick"),
+  /** The card or feature ("Rousing Strike", "Locust Swarm") and who used it ("Brannoc", "Harbinger"). */
+  name: v.string(),
+  actorName: v.string(),
+  /** The use's actionLog group: the run joins it, and undoing it closes the picks. */
+  groupId: v.string(),
+  source: v.union(allyPickRiderSourceValidator, allyPickAdversarySourceValidator),
+  choosers: v.array(allyPickChooserValidator),
+  answers: v.array(allyPickAnswerValidator),
+});
+
+/** The most choosers one `allyPick` row holds (a party of 12 and the actor). */
+export const MAX_ALLY_PICK_CHOOSERS = 13;
+
 /** The payload of a `combatRequests` row; `kind` matches the row's `kind`. */
 export const combatRequestPayloadValidator = v.union(
   sanctionPayloadValidator,
@@ -661,6 +745,7 @@ export const combatRequestPayloadValidator = v.union(
   cloakPromptPayloadValidator,
   forcedAttackPayloadValidator,
   gmPromptPayloadValidator,
+  allyPickPayloadValidator,
 );
 
 /**
@@ -740,3 +825,6 @@ export type KeywordAsk = Infer<typeof keywordAskValidator>;
 export type KeywordAnswer = Infer<typeof keywordAnswerValidator>;
 export type CloakPromptPayload = Infer<typeof cloakPromptPayloadValidator>;
 export type ForcedAttackPayload = Infer<typeof forcedAttackPayloadValidator>;
+export type AllyPickPayload = Infer<typeof allyPickPayloadValidator>;
+export type AllyPickChooser = Infer<typeof allyPickChooserValidator>;
+export type HeldFeatureArgs = Infer<typeof heldFeatureArgsValidator>;

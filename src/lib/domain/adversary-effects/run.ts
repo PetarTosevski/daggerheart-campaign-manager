@@ -97,6 +97,11 @@ export interface AdversaryRunContext {
   trigger?: { amount?: number; source?: Combatant; subject?: Combatant };
   /** `choose` step picks and `optional` steps the GM took (an optional Fear step defaults to No, Q19). */
   options?: Readonly<Record<string, readonly string[]>>;
+  /**
+   * FH-AP (user 2026-11-05): each chooser's own pick of a `choose` step with `by` (Locust Swarm, Awesome Size, the Fire
+   * head), by step id then the chooser's id, answered on each PC's screen; a chooser without one is a choose prompt.
+   */
+  chooserOptions?: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>>;
   optionals?: readonly string[];
   eitherCosts?: readonly number[];
   splits?: Readonly<Record<string, number>>;
@@ -598,6 +603,7 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
     ...(followUpIn ? { followUp: followUpIn } : {}),
     ...(context.trigger ? { trigger: context.trigger } : {}),
     ...(context.options ? { options: context.options } : {}),
+    ...(context.chooserOptions ? { chooserOptions: context.chooserOptions } : {}),
     ...(context.optionals ? { optionals: context.optionals } : {}),
     ...(context.eitherCosts ? { eitherCosts: context.eitherCosts } : {}),
     ...(context.splits ? { splits: context.splits } : {}),

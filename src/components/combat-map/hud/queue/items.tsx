@@ -7,6 +7,7 @@ import { refusalFor, refusalForCode, type Refusal } from "@/lib/errors/refusals"
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
+import { AllyPickCard } from "../ally-picks";
 import { RefusalMessage, hudToasts } from "../blocked";
 import { Popup, Stepper, WaitingDots, hudButtonClass, type HudButtonRole } from "../ui";
 import {
@@ -123,6 +124,8 @@ export function useQueueAnswers(campaignId: CampaignId) {
   }
 
   return {
+    /** FH-AP: the per-ally pick card answers on its own (`AllyPickCard`); it needs the campaign. */
+    campaignId,
     busy,
     errors,
     result,
@@ -361,6 +364,9 @@ export function QueueCard({ item, answers }: { item: QueueItem; answers: QueueAn
           <CardError text={error} />
         </Popup>
       );
+    case "allyPick":
+      // FH-AP (user 2026-11-05): the GM answers a pick its player hasn't (the player's own card, on the GM tone).
+      return <AllyPickCard campaignId={answers.campaignId} pick={item.row} gm />;
   }
 }
 

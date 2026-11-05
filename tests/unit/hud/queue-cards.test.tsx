@@ -69,6 +69,7 @@ function empty() {
   queries["cloakPromptsReads:pending"] = [];
   queries["hitKeywordsReads:asks"] = [];
   queries["adversaryPromptsReads:pending"] = [];
+  queries["allyPicksReads:open"] = [];
   queries["charactersReads:listByCampaign"] = [moss];
   queries["featurePromptsReads:allyRolls"] = { asks: [], waiting: [], allies: [], pending: [] };
   queries["deathMoves:state"] = { "c-moss": deathBase };

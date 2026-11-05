@@ -123,8 +123,8 @@ function buildTable(): CardEffect[] {
     },
 
     // Critical Inspiration (Valor 3, CB p.341): "Once per rest, when you critically succeed on an attack, all allies within
-    // Very Close range can clear a Stress or gain a Hope." Each ally picks: the ones who clear a Stress are `picked`, the
-    // ones who gain a Hope are `allies` (two disjoint lists from the dialog).
+    // Very Close range can clear a Stress or gain a Hope." FH-AP (user 2026-11-05): each ally picks their own option on
+    // their own screen (`by`); the server names the allies (every PC within Very Close range) and the card waits for them.
     {
       cardId: "critical-inspiration",
       uses: [
@@ -135,20 +135,14 @@ function buildTable(): CardEffect[] {
           limit: { per: "rest" },
           steps: [
             {
-              kind: "clear",
-              to: "picked",
-              pick: { side: "ally", range: "veryClose", count: { kind: "any" }, area: "aroundSelf", excludeSelf: true },
-              track: "stress",
-              amount: fixed(1),
-              note: "Allies within Very Close range who choose to clear a Stress",
-            },
-            {
-              kind: "hope",
-              to: "allies",
-              pick: { side: "ally", range: "veryClose", count: { kind: "any" }, area: "aroundSelf", excludeSelf: true },
-              change: "gain",
-              amount: fixed(1),
-              note: "Allies within Very Close range who choose to gain a Hope",
+              kind: "choose",
+              id: "inspiration",
+              label: "Clear a Stress or gain a Hope",
+              by: { to: "allies", pick: { side: "ally", range: "veryClose", count: { kind: "all" }, area: "aroundSelf", excludeSelf: true } },
+              options: [
+                { id: "stress", label: "Clear a Stress", steps: [{ kind: "clear", to: "chooser", track: "stress", amount: fixed(1) }] },
+                { id: "hope", label: "Gain a Hope", steps: [{ kind: "hope", to: "chooser", change: "gain", amount: fixed(1) }] },
+              ],
             },
           ],
         },
@@ -257,8 +251,9 @@ function buildTable(): CardEffect[] {
     },
 
     // Rousing Strike (Valor 5, CB p.342): "Once per rest, when you critically succeed on an attack, you and all allies who
-    // can see or hear you can clear a Hit Point or 1d4 Stress." You pick in the dialog; allies who clear a Hit Point are
-    // `picked`, allies who clear 1d4 Stress are `allies` (each rolls their own d4).
+    // can see or hear you can clear a Hit Point or 1d4 Stress." FH-AP (user 2026-11-05): you and each ally pick your own
+    // option, each on their own screen (`by`; each rolls their own d4); the server names the allies (every PC on the map)
+    // and the card waits for every pick.
     {
       cardId: "rousing-strike",
       uses: [
@@ -270,28 +265,13 @@ function buildTable(): CardEffect[] {
           steps: [
             {
               kind: "choose",
-              id: "self",
-              label: "You clear a Hit Point or 1d4 Stress",
+              id: "rousing",
+              label: "Clear a Hit Point or 1d4 Stress",
+              by: { to: "selfAndAllies", pick: { side: "ally", range: "unlimited", count: { kind: "all" }, excludeSelf: true } },
               options: [
-                { id: "hp", label: "Clear a Hit Point", steps: [{ kind: "clear", to: "self", track: "hp", amount: fixed(1) }] },
-                { id: "stress", label: "Clear 1d4 Stress", steps: [{ kind: "clear", to: "self", track: "stress", amount: dice(1, 4) }] },
+                { id: "hp", label: "Clear a Hit Point", steps: [{ kind: "clear", to: "chooser", track: "hp", amount: fixed(1) }] },
+                { id: "stress", label: "Clear 1d4 Stress", steps: [{ kind: "clear", to: "chooser", track: "stress", amount: dice(1, 4) }] },
               ],
-            },
-            {
-              kind: "clear",
-              to: "picked",
-              pick: { side: "ally", range: "unlimited", count: { kind: "any" }, excludeSelf: true },
-              track: "hp",
-              amount: fixed(1),
-              note: "Allies who can see or hear you and choose to clear a Hit Point",
-            },
-            {
-              kind: "clear",
-              to: "allies",
-              pick: { side: "ally", range: "unlimited", count: { kind: "any" }, excludeSelf: true },
-              track: "stress",
-              amount: dice(1, 4),
-              note: "Allies who can see or hear you and choose to clear 1d4 Stress",
             },
           ],
         },

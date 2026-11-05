@@ -212,12 +212,13 @@ describe("Maestro (CB p.28)", () => {
 
   it("when you give a Rally Die to an ally, they gain a Hope or clear a Stress (their pick)", () => {
     expect(fe.uses[0]!.activation).toEqual({ kind: "auto", trigger: { kind: "whenYouGiveDie", die: "rally" } });
-    const hope = plan(fe.featureId, undefined, { actor, trigger: { subject: ally("b") }, options: { benefit: ["hope"] } });
+    // FH-AP (user 2026-11-05): the ally's own pick (`by` the trigger's subject).
+    const hope = plan(fe.featureId, undefined, { actor, trigger: { subject: ally("b") }, chooserOptions: { benefit: { b: ["hope"] } } });
     expect(ofKind(hope, "hope")).toEqual([{ kind: "hope", targetId: "b", delta: 1 }]);
-    const stress = plan(fe.featureId, undefined, { actor, trigger: { subject: ally("b") }, options: { benefit: ["stress"] } });
+    const stress = plan(fe.featureId, undefined, { actor, trigger: { subject: ally("b") }, chooserOptions: { benefit: { b: ["stress"] } } });
     expect(ofKind(stress, "clear")).toEqual([{ kind: "clear", targetId: "b", track: "stress", amount: 1 }]);
     // Without a pick the ally is asked.
-    expect(ofKind(plan(fe.featureId, undefined, { actor, trigger: { subject: ally("b") } }), "prompt")).toMatchObject([{ prompt: "choose" }]);
+    expect(ofKind(plan(fe.featureId, undefined, { actor, trigger: { subject: ally("b") } }), "prompt")).toMatchObject([{ prompt: "choose", chooserId: "b" }]);
   });
 });
 

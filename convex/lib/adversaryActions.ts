@@ -83,6 +83,7 @@ import { saveSheet } from "./characterSheet";
 import { logUnshakable, unshake } from "./unshakable";
 import { closeRequest } from "./combatRequests";
 import { liveCombatMap, tokensOnMap } from "./combatMaps";
+import { holdForAllyPicks, pickDice } from "./allyPicks";
 import { loadScene, type Scene } from "./combatVision";
 import { MAX_INSTANCES } from "./encounters";
 import { campaignFearState, gainFear, spendFear } from "./fear";
@@ -754,6 +755,8 @@ export type ActionResult = {
   offers: Offer[];
   /** SD4 (Q2): the attack waits, unrolled, for before-roll answers in this `preRoll` request. */
   held?: Id<"combatRequests">;
+  /** FH-AP: nothing applied yet; the use waits for the PCs' own picks in this `allyPick` request. */
+  picks?: Id<"combatRequests">;
 };
 
 /** SD4: the tag Draining Bane leaves on the adversary (HF p.14, "While Drained"). */
@@ -960,7 +963,15 @@ const words = (roll: RollRecord) => `${roll.total} (${roll.dice.filter((d) => !d
  * until `spendFear` covers them (Q19); NOT_ENOUGH_FEAR past the GM's Fear. Refusals: ADVERSARY_DEFEATED (it can't act,
  * so it is never spotlit; dcm-j5ft), ADVERSARY_FEATURE_UNAVAILABLE, ADVERSARY_NOT_SPOTLIT, COMBAT_TARGET_INVALID, COMBAT_NO_LINE_OF_SIGHT, ENCOUNTER_NOT_RUNNING, INVALID.
  */
-export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns">, user: Doc<"users">, args: ActionArgs, replay?: Replay, opts?: { forced?: boolean }): Promise<ActionResult | ConfirmFear> {
+export async function adversaryAction(
+  ctx: MutationCtx,
+  campaign: Doc<"campaigns">,
+  user: Doc<"users">,
+  args: ActionArgs,
+  replay?: Replay,
+  /** FH-AP: `picks`, the run of a held use with its PCs' picks, in the held use's group, its first dice replayed. */
+  opts?: { forced?: boolean; picks?: { chooserOptions: Record<string, Record<string, string[]>>; dice: readonly number[]; groupId: string } },
+): Promise<ActionResult | ConfirmFear> {
   const { instance, encounter, block, others } = await loadActor(ctx, campaign, args.instanceId);
   const self = selfCombatant(instance, block);
 
@@ -995,7 +1006,7 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
 
   const scene = await actionScene(ctx, campaign, instance);
   const base = { encounter, self: instance, block, scene };
-  const groupId = replay?.groupId ?? newGroupId();
+  const groupId = replay?.groupId ?? opts?.picks?.groupId ?? newGroupId();
   const w = new Work(instance, block, scene.party, others, encounter, fearState.sessionStartedAt);
   const label = instance.label;
   const featureName = args.feature ?? block.attack.name;
@@ -1110,8 +1121,12 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
     goldOf: partyGoldOf(scene.party),
     // dcm-qw4f: the options its features lost for good (Seven-Headed).
     removedOptions: (instance.effects ?? []).flatMap((e) => e.optionsRemoved ?? []),
+    // FH-AP: each PC's own pick, once they all answered (convex/lib/allyPicks.ts).
+    ...(opts?.picks ? { chooserOptions: opts.picks.chooserOptions } : {}),
     rng: rollDie,
   };
+  // FH-AP: a use that is not an attack records its dice, so the run with the PCs' picks replays them.
+  const pickRolls = pickDice(opts?.picks?.dice);
   if (args.options) w.options = context.options;
   // DA1: the runner reads the whole roll's die; a target that keeps a lower one meets its Evasion raised by the difference,
   // which is the same hit or miss as its own total against its own Evasion.
@@ -1126,7 +1141,13 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
   const later: Rolled[] = [];
   let plan = attack
     ? runOrThrow(effect, { ...context, targets: targets.picks.filter((p) => !lowerIds.has(p.combatant.id)).map((p) => shifted(p, natural)), rng: presetDice(net !== 0 && second !== null ? [first, second] : [first], later) })
-    : runOrThrow(effect, context);
+    : runOrThrow(effect, { ...context, rng: pickRolls.rng });
+  // FH-AP (user 2026-11-05): PCs who each pick their own option (Locust Swarm, Awesome Size, the Fire head) answer on their
+  // own screens first; the whole use waits (nothing paid or applied) and runs again with their picks and these dice.
+  if (!attack && !replay && opts?.picks === undefined) {
+    const held = await holdForAllyPicks(ctx, { campaign, user, instance, encounter, party: scene.party, args, plan, dice: pickRolls.values, groupId, featureName });
+    if (held) return held;
+  }
   if (lower.length > 0) {
     const top = Math.max(...lower.map((p) => keptBy(p.combatant.id)));
     // One die, no advantage or disadvantage left over: the runner keeps `top`.

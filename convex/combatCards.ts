@@ -80,6 +80,7 @@ import { setStance } from "./lib/stanceDrop";
 import type { InstanceEffect } from "./lib/validators/encounters";
 import type { AdversaryBefore } from "./lib/validators/actionLog";
 import { closeRequest, encounterRunning, loadOpenRequest, openMinionOffer, openRiderPick } from "./lib/combatRequests";
+import { openRiderAllyPicks, riderHasOwnPicks } from "./lib/allyPicks";
 import { rollDie } from "./lib/dice";
 import { campaignFearState, gainFear, spendFear } from "./lib/fear";
 import { afterPcActionRoll } from "./lib/rollAftermath";
@@ -830,7 +831,10 @@ export async function runWithRiders<P extends UsePick>(ctx: MutationCtx, use: Ri
   const host = use.host;
   // DA2: damage-phase riders (Death Strike) are prompts after the use's damage, never run from a toggle; default-on
   // riders (Rise to the Challenge, CB p.48) join unless turned off.
-  const chosen = pickRiders(use.sheet, use.campaign, host, riders).filter((r) => r.phase !== "damage");
+  const chosenAll = pickRiders(use.sheet, use.campaign, host, riders).filter((r) => r.phase !== "damage");
+  // FH-AP: a rider whose choosers each pick their own option (Rousing Strike) waits for the picks after the use (`post`).
+  const ownPicks = chosenAll.filter(riderHasOwnPicks);
+  const chosen = chosenAll.filter((r) => !ownPicks.includes(r));
   const picked = [...chosen, ...defaultOnRiders(use.sheet, use.campaign, host, riseOff, chosen), ...autoUsesOn(use.sheet, use.campaign, host)];
   const rec = recorder(rollDie);
   const fear = await campaignFearState(ctx, use.campaign._id);
@@ -946,6 +950,9 @@ export async function runWithRiders<P extends UsePick>(ctx: MutationCtx, use: Ri
     // DA2 (HF p.8 Death Strike; user 2026-10-30): a damage-phase rider is a Use / Pass prompt, with a pick of the ONE
     // creature when several took the damage it needs; never applied without it.
     if (groupId !== undefined) {
+      // FH-AP (user 2026-11-05): the riders whose choosers each pick their own option, when their trigger held.
+      const holding = ownPicks.filter((r) => resultHolds(r.trigger, hostRoll) && rollTargetHolds(r.trigger, host, use.scene.attacker, subject) && (rollOnly(r.trigger) || hitIds.length > 0));
+      if (holding.length > 0) await openRiderAllyPicks(ctx, { env, riders: holding, hostRoll, entryId, groupId, ...(encounterOf(built) ? { encounterId: encounterOf(built)! } : {}), createdBy: actorId });
       for (const r of damagePrompts(use.sheet, use.campaign, host)) {
         const severity = r.trigger.kind === "whenTargetMarksHp" || r.trigger.kind === "whenEnemyTakesDamage" ? r.trigger.severity : undefined;
         const candidates: Id<"combatTokens">[] = [];

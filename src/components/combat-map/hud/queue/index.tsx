@@ -32,6 +32,8 @@ import { prefersReducedMotion } from "@/lib/use-reduced-motion";
  * - ally rolls: `featurePromptsReads.allyRolls` (the GM's `pending`) — Cancel the roll (`featurePrompts.cancelAllyRoll`);
  * - an adversary feature's GM prompts (summon, countdown, manual, ...): `adversaryPromptsReads.pending` — Done / Dismiss
  *   (`adversaryPrompts.answer`, dcm-bxp.99.32.27);
+ * - a per-ally pick nobody answered yet (FH-AP, user 2026-11-05: the GM answers a no-show's pick): `allyPicksReads.open`
+ *   — the option chips and Choose (`allyPicks.answer`, the same `AllyPickCard` the player's screen shows);
  * - the death move confirm: `deathMoves.state` per PC — H4.3's `GmDeathConfirm` (Confirm the death move / Send it back).
  *
  * Every answer is the existing keyed mutation with an optimistic update that drops the card at once. A request someone
@@ -96,6 +98,7 @@ function useQueue(campaignId: Id<"campaigns">): Queue {
   const cloaks = useQuery(api.cloakPromptsReads.pending, { campaignId });
   const keywords = useQuery(api.hitKeywordsReads.asks, { campaignId });
   const gmPrompts = useQuery(api.adversaryPromptsReads.pending, { campaignId });
+  const allyPicks = useQuery(api.allyPicksReads.open, { campaignId });
   const characters = useQuery(api.charactersReads.listByCampaign, { campaignId });
   const live = useMemo(() => (characters ?? []).filter((c) => !c.corrupt), [characters]);
   // `allyRolls` reads for a character the caller edits; the GM's `pending` lists every open throw of the campaign.
@@ -120,6 +123,7 @@ function useQueue(campaignId: Id<"campaigns">): Queue {
     keywords,
     allyRolls: ally?.pending,
     gmPrompts,
+    allyPicks,
   });
   const dying = live.flatMap((c) => {
     const s: unknown = deaths[c._id];
@@ -128,7 +132,7 @@ function useQueue(campaignId: Id<"campaigns">): Queue {
     return request === null ? [] : [deathArrival(c._id, c.sheet.name, String(request.at ?? ""))];
   });
   const count = items.length + dying.length;
-  const loading = mine === undefined || cards === undefined || features === undefined || difficulties === undefined || windows === undefined || cloaks === undefined || keywords === undefined || gmPrompts === undefined;
+  const loading = mine === undefined || cards === undefined || features === undefined || difficulties === undefined || windows === undefined || cloaks === undefined || keywords === undefined || gmPrompts === undefined || allyPicks === undefined;
   const settled = !loading && characters !== undefined && (anyPc === undefined || ally !== undefined) && live.every((c) => deaths[c._id] !== undefined);
   const arrivals = settled ? [...items.map((item) => ({ key: item.key, title: arrivalTitle(item) })), ...dying] : null;
   return { items, live, count, loading, arrivals, answers };

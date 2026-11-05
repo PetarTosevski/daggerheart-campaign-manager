@@ -102,6 +102,7 @@ import { closeRequest, openAfterRoll, openMinionOffer, openRiderPick } from "./c
 import { bandsOnMap, partyMembers } from "./adversaryHits";
 import { pcRollAdversaryUses } from "./adversaryActions";
 import { openIncomingHit } from "./incomingHits";
+import { openRiderAllyPicks, riderHasOwnPicks } from "./allyPicks";
 import { readSheet } from "./characterSheet";
 import { changed, hopeDieSwitch, liveMods, sheetCarriedMods, prepareDuality, resolveDamage, resolveDuality, retotal, rollResultHolds, rules, sheetBearerMods, withDieBonus, withDieBonuses, withHopeSides, type DualityArgs, type LiveMod, type Loaded } from "./rolls";
 
@@ -205,6 +206,8 @@ export const resolvedAttackValidator = v.object({
   riderPrompts: v.optional(v.array(cardPromptValidator)),
   /** DA2: damage-phase riders waiting for the player's Use / Pass and pick (Death Strike, HF p.8). */
   riderPicks: v.optional(v.array(riderPickOfferValidator)),
+  /** FH-AP (user 2026-11-05): riders whose choosers each pick their own option (Rousing Strike), waiting for the picks. */
+  allyPicks: v.optional(v.array(v.object({ requestId: v.id("combatRequests"), name: v.string() }))),
 });
 export type ResolvedAttack = Infer<typeof resolvedAttackValidator>;
 
@@ -972,7 +975,8 @@ function optionOf(source: "card" | "feature", id: string, name: string, use: Car
     costs: (use.costs ?? []).map(costText),
     limit: use.limit ? limitText(use.limit) : null,
     numbers: (use.choices ?? []).map((c) => ({ id: `n:${c.id}`, label: c.label, min: c.min, max: c.max?.kind === "fixed" ? c.max.value : null })),
-    options: steps.flatMap((st) => (st.kind === "choose" ? [{ id: `opt:${st.id}`, label: st.label, options: st.options.map((o) => ({ id: o.id, label: o.label })) }] : [])),
+    // FH-AP: a `choose` with `by` is each chooser's own pick after the attack (convex/lib/allyPicks.ts), never asked here.
+    options: steps.flatMap((st) => (st.kind === "choose" && st.by === undefined ? [{ id: `opt:${st.id}`, label: st.label, options: st.options.map((o) => ({ id: o.id, label: o.label })) }] : [])),
     situations: (use.requires ?? []).flatMap((r) => (r.kind === "situation" && r.check === undefined && MAP_SITUATIONS[r.text] === undefined ? [r.text] : [])),
     addTargets: add ? { max: add.count.kind === "fixed" ? add.count.value : null, range: add.targets.range } : null,
   };
@@ -2138,8 +2142,12 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     rollUsedExperience: options.experienceIds.length > 0,
   };
   // DA2: damage-phase riders (Death Strike) are prompts after the damage (`damagePrompts`), never run from a toggle.
-  const picked = pickRiders(sheet0, campaign, host, req.riders ?? []).filter((r) => r.phase !== "damage");
-  const autos = [...autoRiders(sheet0, campaign, host), ...defaultOnRiders(sheet0, campaign, host, options.riseToTheChallenge === false, picked)];
+  const pickedAll = pickRiders(sheet0, campaign, host, req.riders ?? []).filter((r) => r.phase !== "damage");
+  // FH-AP (user 2026-11-05): a rider whose choosers each pick their own option (Rousing Strike) never runs inline; it
+  // waits for the picks after the attack (`openRiderAllyPicks` below).
+  const ownPicks = pickedAll.filter(riderHasOwnPicks);
+  const picked = pickedAll.filter((r) => !ownPicks.includes(r));
+  const autos = [...autoRiders(sheet0, campaign, host), ...defaultOnRiders(sheet0, campaign, host, options.riseToTheChallenge === false, pickedAll)];
   const folds = emptyFolds();
   const runs: RiderRun[] = [];
   const allTargets: CheckedTarget[] = [...req.targets];
@@ -2784,6 +2792,14 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     });
     riderPicks.push({ requestId, name: rider.name, candidates });
   }
+  // FH-AP (user 2026-11-05): the riders whose choosers each pick their own option, when their trigger held (Rousing
+  // Strike on a critical): each chooser answers on their own screen and the rider runs once all picked.
+  const holding = ownPicks.filter((r) => {
+    const holds = resultHolds(r.trigger, hostRoll) && rollTargetHolds(r.trigger, host, req.scene.attacker, main ? subjectOf(main) : undefined) && (rollOnly(r.trigger) || hitIds().length > 0);
+    if (!holds) skipped.push(r.name);
+    return holds;
+  });
+  const allyPicks = holding.length > 0 ? await openRiderAllyPicks(ctx, { env, riders: holding, hostRoll, entryId, groupId, encounterId: main!.encounter._id, createdBy: req.actorId }) : [];
   const prompts = afterDualityRoll(finalSheet, { hope: rolled.hope, fear: rolled.fear, roll }, CLASS_FEATURES, duality.scope);
   const outcomes = [
     ...results.map((r) => ({ tokenId: r.target.token._id, hit: r.hit, defeated: r.defeated })),
@@ -2802,6 +2818,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     ...(skipped.length > 0 ? { skipped } : {}),
     ...(riderPrompts.length > 0 ? { riderPrompts: riderPrompts.filter((p) => p.kind !== "fold") } : {}),
     ...(riderPicks.length > 0 ? { riderPicks } : {}),
+    ...(allyPicks.length > 0 ? { allyPicks } : {}),
   };
 }
 

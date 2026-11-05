@@ -15,6 +15,8 @@
 
 import { ConvexError } from "convex/values";
 
+import { myPicks, type MyPick, type PickRow } from "../ally-picks/model";
+
 /** The five Defined Range bands (CB p.103), as the server's `outOfRange` rows name them. */
 export type Band = "melee" | "veryClose" | "close" | "far" | "veryFar";
 
@@ -85,7 +87,11 @@ export type QueueItem =
   | { kind: "cloak"; key: string; createdAt: number; row: CloakAsk }
   | { kind: "keyword"; key: string; createdAt: number; row: KeywordAsk }
   | { kind: "allyRoll"; key: string; createdAt: number; row: AllyRollAsk }
-  | { kind: "gmPrompt"; key: string; createdAt: number; row: GmPromptAsk };
+  | { kind: "gmPrompt"; key: string; createdAt: number; row: GmPromptAsk }
+  | { kind: "allyPick"; key: string; createdAt: number; row: AllyPickAsk };
+
+/** FH-AP: one outstanding per-ally pick (its request id up front, as every other card's row). */
+export type AllyPickAsk = MyPick & { requestId: string };
 
 export type QueueSources = {
   attacks?: readonly AttackSanction[] | undefined;
@@ -97,6 +103,8 @@ export type QueueSources = {
   keywords?: readonly KeywordAsk[] | undefined;
   allyRolls?: readonly AllyRollAsk[] | undefined;
   gmPrompts?: readonly GmPromptAsk[] | undefined;
+  /** FH-AP: `allyPicksReads.open` (the GM's): every outstanding per-ally pick, one card each (a no-show's pick). */
+  allyPicks?: readonly PickRow[] | undefined;
 };
 
 /**
@@ -115,6 +123,7 @@ export function queueItems(s: QueueSources): QueueItem[] {
     ...(s.keywords ?? []).map((row) => ({ kind: "keyword" as const, key: row.requestId, createdAt: row.createdAt, row })),
     ...(s.allyRolls ?? []).map((row) => ({ kind: "allyRoll" as const, key: row.requestId, createdAt: row.createdAt, row })),
     ...(s.gmPrompts ?? []).map((row) => ({ kind: "gmPrompt" as const, key: row.requestId, createdAt: row.createdAt, row })),
+    ...myPicks(s.allyPicks ?? []).map((pick) => ({ kind: "allyPick" as const, key: pick.key, createdAt: pick.row.createdAt, row: { ...pick, requestId: pick.row.requestId } })),
   ];
   return items.map((item, i) => ({ item, i })).sort((a, b) => a.item.createdAt - b.item.createdAt || a.i - b.i).map(({ item }) => item);
 }
@@ -225,6 +234,8 @@ export function itemLabel(item: QueueItem): string {
       return `${item.row.rollerName} · ${item.row.featureName}`;
     case "gmPrompt":
       return `${item.row.instanceLabel} · ${item.row.feature}`;
+    case "allyPick":
+      return `${item.row.chooser.name} · ${item.row.row.name}`;
   }
 }
 
@@ -252,6 +263,8 @@ export function arrivalTitle(item: QueueItem): string {
       return `${item.row.rollerName}: ally roll`;
     case "gmPrompt":
       return `${item.row.instanceLabel}: ${item.row.feature}`;
+    case "allyPick":
+      return `${item.row.chooser.name}: ${item.row.row.name} pick`;
   }
 }
 
