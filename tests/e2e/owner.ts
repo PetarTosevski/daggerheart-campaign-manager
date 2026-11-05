@@ -24,9 +24,9 @@ export function setAppOwner(email = E2E_OWNER_EMAIL) {
 }
 
 /**
- * Clicks 'Open <name>' in App admin › Overview › Campaigns, loading more pages until the row shows. The list pages
- * `campaigns.by_deletedAt_archivedAt` descending, so every archived campaign on the shared backend sorts ahead of the
- * live ones and a new campaign is not always on the first page.
+ * Clicks 'Open <name>' in App admin › Overview › Campaigns, loading more pages until the row shows. The list puts live
+ * campaigns first, newest first, then archived ones; an archived campaign, or a live one with newer ones after it on
+ * the shared backend, is not always on the first page.
  */
 export async function openFromOverview(page: Page, name: string) {
   const open = page.getByRole("button", { name: `Open ${name}`, exact: true });

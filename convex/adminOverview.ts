@@ -1,4 +1,9 @@
-import { paginationOptsValidator, paginationResultValidator, type PaginationOptions } from "convex/server";
+import {
+  paginationOptsValidator,
+  paginationResultValidator,
+  type PaginationOptions,
+  type PaginationResult,
+} from "convex/server";
 import { v } from "convex/values";
 
 import { appError } from "../src/lib/errors/app-error";
@@ -229,19 +234,66 @@ export const alerts = appOwnerQuery({
   },
 });
 
+/** The two phases of the campaigns card: live (not archived) campaigns, then archived ones. */
+type CampaignPhase = "live" | "archived";
+
+/** The card's cursor: the phase, a colon, then that phase's index cursor (empty = the start of its range). */
+function encodeCampaignCursor(phase: CampaignPhase, cursor: string | null): string {
+  return `${phase}:${cursor ?? ""}`;
+}
+
+function decodeCampaignCursor(cursor: string): { phase: CampaignPhase; cursor: string | null } {
+  const at = cursor.indexOf(":");
+  const phase = cursor.slice(0, at);
+  if (at < 0 || (phase !== "live" && phase !== "archived")) throw appError("INVALID");
+  const inner = cursor.slice(at + 1);
+  return { phase, cursor: inner === "" ? null : inner };
+}
+
+/** One phase's index range: `archivedAt` unset (live), or set (archived; an unset field sorts below every number). */
+function campaignPhaseQuery(ctx: QueryCtx, phase: CampaignPhase) {
+  return ctx.db
+    .query("campaigns")
+    .withIndex("by_deletedAt_archivedAt", (q) =>
+      phase === "live" ? q.eq("deletedAt", undefined).eq("archivedAt", undefined) : q.eq("deletedAt", undefined).gte("archivedAt", 0),
+    )
+    .order("desc");
+}
+
 /**
- * The campaigns card: every live (not deleted) campaign, newest first, with its GM's name, member count, live now
- * and last played. The id is for "Open" (Q27 b: the read-only view is AD13's, the link AU1's).
+ * One page of the campaigns card (dcm-jh6d.65): live campaigns newest first, then archived ones, newest archived first.
+ * `by_deletedAt_archivedAt` descending as one range would list every archived campaign first, so the card reads the two
+ * ranges in turn, one `paginate` per call (Convex allows one). The cursor names the phase; the page that ends the live
+ * range may be short and hands over to the archived range (or is the last page when nothing is archived). A null
+ * cursor starts the live phase.
+ */
+async function campaignsPage(ctx: QueryCtx, opts: PaginationOptions): Promise<PaginationResult<Doc<"campaigns">>> {
+  const start = opts.cursor === null ? { phase: "live" as const, cursor: null } : decodeCampaignCursor(opts.cursor);
+  const end = opts.endCursor == null ? null : decodeCampaignCursor(opts.endCursor);
+  // An end cursor in the next phase (a split at the hand-over) means "to the end of this range".
+  const endCursor = end !== null && end.phase === start.phase ? (end.cursor ?? undefined) : undefined;
+  const result = await campaignPhaseQuery(ctx, start.phase).paginate({ ...opts, cursor: start.cursor, endCursor });
+  const wrap = (cursor: string) => encodeCampaignCursor(start.phase, cursor);
+  const out = {
+    ...result,
+    continueCursor: wrap(result.continueCursor),
+    ...(result.splitCursor ? { splitCursor: wrap(result.splitCursor) } : {}),
+  };
+  if (start.phase === "archived" || !result.isDone) return out;
+  const anyArchived = await campaignPhaseQuery(ctx, "archived").first();
+  return anyArchived === null ? out : { ...out, isDone: false, continueCursor: encodeCampaignCursor("archived", null) };
+}
+
+/**
+ * The campaigns card: every live (not deleted) campaign, the non-archived ones newest first and then the archived ones
+ * (`campaignsPage`), with its GM's name, member count, live now and last played. The id is for "Open" (Q27 b: the
+ * read-only view is AD13's, the link AU1's).
  */
 export const campaigns = appOwnerQuery({
   args: { paginationOpts: paginationOptsValidator },
   returns: paginationResultValidator(campaignRowValidator),
   handler: async (ctx, { paginationOpts }) => {
-    const page = await ctx.db
-      .query("campaigns")
-      .withIndex("by_deletedAt_archivedAt", (q) => q.eq("deletedAt", undefined))
-      .order("desc")
-      .paginate(clampPage(paginationOpts));
+    const page = await campaignsPage(ctx, clampPage(paginationOpts));
     const rows = await Promise.all(
       page.page.map(async (campaign) => {
         const [gmName, members, state, lastEnded] = await Promise.all([

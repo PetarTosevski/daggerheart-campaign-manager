@@ -274,6 +274,53 @@ describe("adminOverview.campaigns", () => {
     expect(JSON.stringify([first, second])).not.toContain("@example.com");
   });
 
+  it("lists live campaigns first, newest first, then archived ones, newest archived first (dcm-jh6d.65)", async () => {
+    const { t, ids, owner } = await setup();
+    // Interleaved creation, so neither creation order nor archivedAt order alone gives the expected list.
+    await insertCampaign(t, ids.gm, "Live 1", { createdAt: NOW - 5000 });
+    await insertCampaign(t, ids.gm, "Archived early", { createdAt: NOW - 4000, archivedAt: NOW - 100 });
+    await insertCampaign(t, ids.gm, "Live 2", { createdAt: NOW - 3000 });
+    await insertCampaign(t, ids.gm, "Archived late", { createdAt: NOW - 2000, archivedAt: NOW - 50 });
+    await insertCampaign(t, ids.gm, "Live 3", { createdAt: NOW - 1000 });
+    await insertCampaign(t, ids.gm, "Deleted", { deletedAt: NOW });
+    const expected = ["Live 3", "Live 2", "Live 1", "Archived late", "Archived early"];
+
+    const all = await owner.query(api.adminOverview.campaigns, { paginationOpts: { cursor: null, numItems: 10 } });
+    // The page that ends the live range hands over to the archived one.
+    expect(all.page.map((row) => row.name)).toEqual(["Live 3", "Live 2", "Live 1"]);
+    expect(all.isDone).toBe(false);
+    const rest = await owner.query(api.adminOverview.campaigns, { paginationOpts: { cursor: all.continueCursor, numItems: 10 } });
+    expect(rest.page.map((row) => [row.name, row.archived])).toEqual([
+      ["Archived late", true],
+      ["Archived early", true],
+    ]);
+    expect(rest.isDone).toBe(true);
+
+    const names: string[] = [];
+    let cursor: string | null = null;
+    for (let i = 0; i < 10; i++) {
+      const page: { page: { name: string }[]; isDone: boolean; continueCursor: string } = await owner.query(
+        api.adminOverview.campaigns,
+        { paginationOpts: { cursor, numItems: 2 } },
+      );
+      names.push(...page.page.map((row) => row.name));
+      if (page.isDone) break;
+      cursor = page.continueCursor;
+    }
+    expect(names).toEqual(expected);
+  });
+
+  it("ends on the live range when nothing is archived, and refuses a forged cursor with INVALID", async () => {
+    const { t, ids, owner } = await setup();
+    await insertCampaign(t, ids.gm, "Only");
+    const page = await owner.query(api.adminOverview.campaigns, { paginationOpts: { cursor: null, numItems: 10 } });
+    expect(page.page.map((row) => row.name)).toEqual(["Only"]);
+    expect(page.isDone).toBe(true);
+    expect(errorCode(await fail(owner.query(api.adminOverview.campaigns, { paginationOpts: { cursor: "bogus", numItems: 10 } })))).toBe(
+      "INVALID",
+    );
+  });
+
   it(`never returns more than ${ADMIN_PAGE_MAX} rows a page`, async () => {
     const { t, ids, owner } = await setup();
     await t.run(async (ctx) => {
