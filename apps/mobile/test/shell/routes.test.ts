@@ -45,3 +45,19 @@ test("GM routes sit in the protected group", () => {
   expect(fs.existsSync(path.join(appDir, "campaign/[campaignId]/(gm)/adversaries/[encounterId].tsx"))).toBe(true);
   expect(fs.existsSync(path.join(appDir, "campaign/[campaignId]/(gm)/packs.tsx"))).toBe(true);
 });
+
+test("Journal is a route, and Sessions and Notes redirect into its sub-tabs", () => {
+  const dir = path.join(appDir, "campaign/[campaignId]");
+  const layout = fs.readFileSync(path.join(dir, "_layout.tsx"), "utf8");
+  const sessions = fs.readFileSync(path.join(dir, "sessions.tsx"), "utf8");
+  const notes = fs.readFileSync(path.join(dir, "notes.tsx"), "utf8");
+  expect(fs.existsSync(path.join(dir, "journal.tsx"))).toBe(true);
+  expect(sessions).toContain("<Redirect");
+  expect(sessions).toContain('journalHref(firstParam(params.campaignId), "sessions")');
+  expect(notes).toContain("<Redirect");
+  expect(notes).toContain('journalHref(firstParam(params.campaignId), "notes")');
+  expect(fs.existsSync(path.join(dir, "sessions/[sessionId].tsx"))).toBe(true);
+  expect(fs.existsSync(path.join(dir, "notes/[pageId].tsx"))).toBe(true);
+  expect(layout).not.toContain('sectionLabel("sessions")');
+  expect(layout).not.toContain('sectionLabel("notes")');
+});

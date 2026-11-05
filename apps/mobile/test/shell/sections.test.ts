@@ -1,12 +1,11 @@
 import { expect, test } from "@jest/globals";
 
 import { CAMPAIGN_SECTIONS, visibleToPlayers } from "../../../../src/lib/campaign-sections";
-import { activeTab, moreItems, sectionHref, tabItems } from "../../src/shell/sections";
+import { activeTab, moreItems, sectionHref, sectionLabel, tabItems } from "../../src/shell/sections";
 
 const PLAYER_MORE = [
   "Codex",
   "World Map",
-  "Notes",
   "Lorekeeper",
   "Players",
   "Tome",
@@ -14,9 +13,18 @@ const PLAYER_MORE = [
   "Switch campaign",
 ];
 
-test("tabs are Dashboard, Party, Combat Map, and Sessions", () => {
-  expect(tabItems().map((item) => item.label)).toEqual(["Dashboard", "Party", "Combat Map", "Sessions"]);
-  expect(tabItems().map((item) => item.slug)).toEqual(["", "party", "combat-map", "sessions"]);
+test("tabs are Dashboard, Party, Combat Map, and Journal (where Sessions was)", () => {
+  expect(tabItems().map((item) => item.label)).toEqual(["Dashboard", "Party", "Combat Map", "Journal"]);
+  expect(tabItems().map((item) => item.slug)).toEqual(["", "party", "combat-map", "journal"]);
+});
+
+test("Sessions and Notes are no longer phone destinations, and the Journal labels them", () => {
+  const slugs = [...tabItems(), ...moreItems(true)].map((item) => item.slug);
+  expect(slugs).not.toContain("sessions");
+  expect(slugs).not.toContain("notes");
+  expect(sectionLabel("journal")).toBe("Journal");
+  expect(() => sectionLabel("sessions")).toThrow();
+  expect(() => sectionLabel("notes")).toThrow();
 });
 
 test("More lists the shared destinations, and Adversaries only for the GM", () => {
@@ -25,7 +33,6 @@ test("More lists the shared destinations, and Adversaries only for the GM", () =
     "Codex",
     "World Map",
     "Adversaries",
-    "Notes",
     "Lorekeeper",
     "Players",
     "Tome",
@@ -62,6 +69,11 @@ test("section paths stay under the campaign, and Switch campaign leaves it", () 
   expect(activeTab("/campaign/c1", "c1")).toBe("");
   expect(activeTab("/campaign/c1/", "c1")).toBe("");
   expect(activeTab("/campaign/c1/combat-map", "c1")).toBe("combat-map");
+  expect(activeTab("/campaign/c1/journal", "c1")).toBe("journal");
+  expect(activeTab("/campaign/c1/sessions", "c1")).toBe("journal");
+  expect(activeTab("/campaign/c1/sessions/s1", "c1")).toBe("journal");
+  expect(activeTab("/campaign/c1/notes/p1", "c1")).toBe("journal");
+  expect(activeTab("/campaign/c1/notesy", "c1")).toBeNull();
   expect(activeTab("/campaign/c1/adversaries", "c1")).toBeNull();
   expect(activeTab("/campaign/c1/settings", "c1")).toBeNull();
 });

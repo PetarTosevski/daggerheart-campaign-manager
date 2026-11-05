@@ -43,8 +43,8 @@ function CampaignShell({ campaignId }: { campaignId: string }) {
             <Stack.Screen name="party/new" options={{ title: "New character" }} />
             <Stack.Screen name="party/[characterId]" options={{ title: "Character" }} />
             <Stack.Screen name="codex/[entryId]" options={{ title: sectionLabel("codex") }} />
-            <Stack.Screen name="notes/[pageId]" options={{ title: sectionLabel("notes") }} />
-            <Stack.Screen name="sessions/[sessionId]" options={{ title: sectionLabel("sessions") }} />
+            <Stack.Screen name="notes/[pageId]" options={{ title: sectionLabel("journal") }} />
+            <Stack.Screen name="sessions/[sessionId]" options={{ title: sectionLabel("journal") }} />
             <Stack.Protected
               guard={isGm}
               redirectTo={campaignId.length > 0 ? dashboardHref(campaignId) : "/campaign"}

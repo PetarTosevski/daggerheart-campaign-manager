@@ -15,10 +15,9 @@ const PHONE_PLACEMENT = {
   party: "tab",
   world: "more",
   codex: "more",
-  sessions: "tab",
   "combat-map": "tab",
   adversaries: "more",
-  notes: "more",
+  journal: "tab",
   lorekeeper: "more",
 } as const satisfies Record<CampaignSection["slug"], PhonePlacement>;
 
@@ -26,8 +25,11 @@ type TabSlug = {
   [Slug in CampaignSection["slug"]]: (typeof PHONE_PLACEMENT)[Slug] extends "tab" ? Slug : never;
 }[CampaignSection["slug"]];
 
-/** Dashboard, Party, Combat Map, Sessions. A tab slug left out of this list fails typecheck. */
-const TAB_ORDER = ["", "party", "combat-map", "sessions"] as const satisfies readonly TabSlug[];
+/**
+ * Dashboard, Party, Combat Map, Journal (Journal sits where Sessions was; it replaced Sessions and Notes). A tab slug
+ * left out of this list fails typecheck.
+ */
+const TAB_ORDER = ["", "party", "combat-map", "journal"] as const satisfies readonly TabSlug[];
 
 type MissingTab = Exclude<TabSlug, (typeof TAB_ORDER)[number]>;
 type AssertNever<T extends never> = T;
@@ -80,11 +82,17 @@ export function sectionHref(campaignId: string, slug: string): string {
   return `/campaign/${campaignId}/${slug}`;
 }
 
+/** Old Sessions and Notes paths (the detail screens, and the lists that redirect) belong to the Journal tab. */
+const JOURNAL_PATHS = ["sessions", "notes"] as const;
+
 /** The tab slug when `pathname` is one of the four tabs, otherwise null (a More destination). */
 export function activeTab(pathname: string, campaignId: string): string | null {
   const base = dashboardHref(campaignId);
   const path = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
   if (path === base) return "";
+  for (const old of JOURNAL_PATHS) {
+    if (path === `${base}/${old}` || path.startsWith(`${base}/${old}/`)) return "journal";
+  }
   for (const tab of tabItems()) {
     if (tab.slug.length > 0 && path === `${base}/${tab.slug}`) return tab.slug;
   }

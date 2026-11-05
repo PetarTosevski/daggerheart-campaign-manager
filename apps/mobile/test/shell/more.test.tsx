@@ -29,20 +29,21 @@ test("the tab bar shows the four sections and More", async () => {
   expect(screen.getByRole("tab", { name: "Dashboard" })).toBeTruthy();
   expect(screen.getByRole("tab", { name: "Party" })).toBeTruthy();
   expect(screen.getByRole("tab", { name: "Combat Map" })).toBeTruthy();
-  expect(screen.getByRole("tab", { name: "Sessions" })).toBeTruthy();
+  expect(screen.getByRole("tab", { name: "Journal" })).toBeTruthy();
+  expect(screen.queryByRole("tab", { name: "Sessions" })).toBeNull();
   expect(screen.getByRole("tab", { name: "Party" }).props.accessibilityState).toEqual({ selected: true });
   expect(screen.getByRole("tab", { name: "Dashboard" }).props.accessibilityState).toEqual({ selected: false });
   await fireEvent.press(screen.getByRole("button", { name: "More" }));
   expect(onMore).toHaveBeenCalledTimes(1);
-  await fireEvent.press(screen.getByRole("tab", { name: "Sessions" }));
-  expect(onSelect).toHaveBeenCalledWith("sessions");
+  await fireEvent.press(screen.getByRole("tab", { name: "Journal" }));
+  expect(onSelect).toHaveBeenCalledWith("journal");
 });
 
 test("a player More sheet has no Adversaries", async () => {
   const screen = await render(<MoreSheet isGm={false} onClose={() => undefined} onSelect={() => undefined} open />);
   expect(screen.getByRole("button", { name: "Codex" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "World Map" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Notes" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Notes" })).toBeNull();
   expect(screen.getByRole("button", { name: "Lorekeeper" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Players" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Tome" })).toBeTruthy();
