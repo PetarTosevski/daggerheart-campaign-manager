@@ -248,15 +248,21 @@ $3.20 in all; from `lorekeeperMessages.usage`). Medians, with the highest in bra
 | Internet pass, Sonnet 5.5 (14 runs, 1 search each) | still unclear or not found, and 'Search the internet too' is on | 30k / 24k / 11k (max 34k / 34k / 13k) | 1.5k (2.2k) | $0.149 ($0.168) more |
 
 The design estimates were $0.04, $0.08 and $0.06-0.08. The first pass matches; the Opus retry and the internet pass cost
-more because their prompts carry 28-34k uncached input tokens, above `RESERVE_INPUT_TOKENS` (20k). The internet pass's
-booking ($0.10) is below what it really costs, so a person or campaign near a cap can go over it by up to about $0.07 per
-question (dcm-bxp.82.7 follow-up).
+more because their prompts carry 28-34k uncached input tokens (the same book prompt counts about twice as many tokens
+on Opus as on Sonnet), and the internet pass gets its search results back as input. The internet pass makes one request
+and the API reports that request's usage summed over the model's turns around each search, which would explain how
+its output passes max_tokens (2.2k against 2,000).
+
+The bookings below are set above these measurements (dcm-5n07; `src/lib/lorekeeper/pricing.ts`): a book pass books
+45k input tokens (`RESERVE_INPUT_TOKENS`) and its max_tokens; the internet pass books 120k input tokens
+(`WEB_RESERVE_INPUT_TOKENS`, about 1.5 × the 81k measured with one search), 4k output tokens and all 3 searches. Every
+input token is booked at the cache-write price, so a booking is never below a measured pass.
 
 A weekly table asking 30 questions a session spends a few dollars a month.
 
 How the caps work:
 
-- Before each pass the server books that pass's worst case (Sonnet $0.07, Opus $0.14, internet pass $0.10) against
+- Before each pass the server books that pass's worst case (Sonnet $0.13, Opus $0.27, internet pass $0.37; a shorter answer $0.12) against
   the person's day and the campaign's and the server's month. After the pass it replaces the booking with the real
   cost from the API's usage numbers. A stopped or failed pass is charged for what it used.
 - Past the daily question cap or a money cap, the composer turns off for the people concerned and says why. The

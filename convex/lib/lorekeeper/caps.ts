@@ -2,7 +2,7 @@ import { makeFunctionReference } from "convex/server";
 
 import type { AtLimitMode } from "../../../src/lib/admin/config";
 import { appError } from "../../../src/lib/errors/app-error";
-import { PRIMARY_MODEL, reserveMicros, SHORT_MAX_TOKENS } from "../../../src/lib/lorekeeper/pricing";
+import { PRIMARY_MODEL, reserveMicros, SHORT_MAX_TOKENS, webReserveMicros } from "../../../src/lib/lorekeeper/pricing";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
 import { readAppConfig } from "../appConfig";
@@ -134,7 +134,8 @@ export type RemainingFor = (
 
 /**
  * Options of a later pass's worst case (`reserveMicros`): the web pass passes its `webSearches` (max_uses), which
- * also makes it count against the daily internet searches. `mode` is the answer's `reserved.mode`.
+ * also makes it count against the daily internet searches and books `webReserveMicros` unless `maxTokens` or
+ * `inputTokens` is given. `mode` is the answer's `reserved.mode`.
  */
 export type PassOptions = { maxTokens?: number; inputTokens?: number; webSearches?: number; mode?: ReservationMode };
 
@@ -302,8 +303,13 @@ export const reserve: Reserve = async (ctx, user, campaign, model, now) => {
 /** Books a later pass's worst case, or returns null (nothing booked) when a budget would go over. */
 export const reservePass: ReservePass = async (ctx, scopes, model, now, opts = {}) => {
   if (opts.mode === "short") return null;
-  const micros = reserveMicros(model, opts.maxTokens, { inputTokens: opts.inputTokens, webSearches: opts.webSearches });
   const web = (opts.webSearches ?? 0) > 0;
+  // The web pass books its own worst case (search results as input, output summed over its turns; dcm-5n07) unless
+  // the caller names the numbers.
+  const micros =
+    web && opts.maxTokens === undefined && opts.inputTokens === undefined
+      ? webReserveMicros(model, opts.webSearches ?? 0)
+      : reserveMicros(model, opts.maxTokens, { inputTokens: opts.inputTokens, webSearches: opts.webSearches });
   const [rows, limits] = await Promise.all([counters(ctx, scopes), capLimits(ctx, scopes.campaignId)]);
   if (opts.mode !== "owner") {
     if (web && (rows.user?.webSearches ?? 0) >= limits.dailyWebSearches) return null;

@@ -19,8 +19,8 @@ vi.mock("../../convex/lib/lorekeeper/retrieve", () => ({ retrieve: async () => [
 
 const NOW = new Date("2026-10-21T12:00:00Z").getTime();
 const MONTH = usageMonth(NOW);
-const SONNET_RESERVE = reserveMicros(PRIMARY_MODEL); // 70_000
-const SHORT_RESERVE = reserveMicros(PRIMARY_MODEL, SHORT_MAX_TOKENS); // 60_000
+const SONNET_RESERVE = reserveMicros(PRIMARY_MODEL); // 132_500
+const SHORT_RESERVE = reserveMicros(PRIMARY_MODEL, SHORT_MAX_TOKENS); // 122_500
 const OPUS_RESERVE = reserveMicros(RETRY_MODEL);
 const ENV_NAMES = ["LOREKEEPER_DAILY_QUESTIONS", "LOREKEEPER_CAMPAIGN_MONTHLY_USD", "LOREKEEPER_MONTHLY_USD", "LOREKEEPER_MODEL", "ANTHROPIC_MODEL", "ANTHROPIC_API_KEY"];
 const EMAILS = "owner@example.com,gm@example.com,co@example.com,p1@example.com,out@example.com";
