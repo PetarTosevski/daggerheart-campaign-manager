@@ -8,6 +8,7 @@ import { colors } from "../theme/colors";
 import { space } from "../theme/spacing";
 import { Empty } from "../ui/empty";
 import { Loading } from "../ui/loading";
+import { QueryBoundary } from "../ui/query-boundary";
 
 export type LoadedCampaign = NonNullable<FunctionReturnType<typeof api.campaigns.get>>;
 
@@ -58,7 +59,7 @@ export function useCampaign(): LoadedCampaign {
   return state.campaign;
 }
 
-/** Loading, Not found, or the screen. Does not subscribe; the provider already did. */
+/** Loading, Not found, or the screen inside the shared `QueryBoundary`. Does not subscribe; the provider already did. */
 export function CampaignScreen({ children }: { children: ReactNode }) {
   const state = useCampaignState();
   if (state.status === "loading") {
@@ -75,7 +76,11 @@ export function CampaignScreen({ children }: { children: ReactNode }) {
       </View>
     );
   }
-  return <View style={styles.fill}>{children}</View>;
+  return (
+    <View style={styles.fill}>
+      <QueryBoundary>{children}</QueryBoundary>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({

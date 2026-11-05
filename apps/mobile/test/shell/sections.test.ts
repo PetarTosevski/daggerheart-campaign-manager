@@ -65,7 +65,7 @@ test("section paths stay under the campaign, and Switch campaign leaves it", () 
   expect(sectionHref("c1", "")).toBe("/campaign/c1");
   expect(sectionHref("c1", "world")).toBe("/campaign/c1/world");
   expect(sectionHref("c1", "adversaries")).toBe("/campaign/c1/adversaries");
-  expect(sectionHref("c1", "switch-campaign")).toBe("/campaign");
+  expect(sectionHref("c1", "switch-campaign")).toBe("/campaigns");
   expect(activeTab("/campaign/c1", "c1")).toBe("");
   expect(activeTab("/campaign/c1/", "c1")).toBe("");
   expect(activeTab("/campaign/c1/combat-map", "c1")).toBe("combat-map");

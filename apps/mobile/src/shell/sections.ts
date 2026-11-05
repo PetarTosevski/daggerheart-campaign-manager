@@ -76,8 +76,11 @@ export function dashboardHref(campaignId: string): string {
   return `/campaign/${campaignId}`;
 }
 
+/** The campaign list (`app/campaigns/index.tsx`): where Switch campaign goes. */
+export const CAMPAIGNS_HREF = "/campaigns";
+
 export function sectionHref(campaignId: string, slug: string): string {
-  if (slug === "switch-campaign") return "/campaign";
+  if (slug === "switch-campaign") return CAMPAIGNS_HREF;
   if (slug.length === 0) return dashboardHref(campaignId);
   return `/campaign/${campaignId}/${slug}`;
 }

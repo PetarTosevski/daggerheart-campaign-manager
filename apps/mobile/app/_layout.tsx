@@ -4,6 +4,7 @@ import { StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { AppAuthProvider } from "../src/auth/provider";
+import { sessionRedirect } from "../src/shell/session-gate";
 import { useBrandFonts } from "../src/theme/fonts";
 import { colors } from "../src/theme/colors";
 
@@ -20,31 +21,14 @@ export default function RootLayout() {
   );
 }
 
-function routeName(segments: readonly string[]): string {
-  const parts = segments.filter((segment) => segment.length > 0 && !segment.startsWith("("));
-  const leaf = parts[parts.length - 1];
-  if (!leaf || leaf === "index") return "index";
-  return leaf;
-}
-
-function signedOutAllowed(segments: readonly string[]): boolean {
-  const root = segments[0];
-  return root === "sign-in" || root === "(auth)" || root === "auth";
-}
-
+/**
+ * Slot stays mounted so the navigator exists before a redirect; `sessionRedirect` decides where a visitor may be
+ * (signed out: only sign-in and `/auth`). `app/campaign/_layout.tsx` also refuses to render a campaign signed out.
+ */
 function SessionGate() {
   const { isAuthenticated, isLoading } = useConvexAuth();
   const segments = useSegments();
-  const route = routeName(segments);
-  const href = isLoading
-    ? null
-    : !isAuthenticated && !signedOutAllowed(segments)
-      ? "/sign-in"
-      : isAuthenticated && route === "sign-in"
-        ? "/home"
-        : isAuthenticated && route === "index"
-          ? "/home"
-          : null;
+  const href = sessionRedirect({ isAuthenticated, isLoading, segments });
   return (
     <>
       <View style={styles.slot}>

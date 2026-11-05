@@ -7,7 +7,7 @@ import { colors } from "../theme/colors";
 import { type } from "../theme/fonts";
 import { hit, space } from "../theme/spacing";
 import { MoreSheet } from "./more-sheet";
-import { activeTab, sectionHref, tabItems } from "./sections";
+import { activeTab, CAMPAIGNS_HREF, sectionHref, tabItems } from "./sections";
 
 export function TabBar({
   active,
@@ -53,7 +53,7 @@ export function CampaignTabBar({ campaignId, isGm }: { campaignId: string; isGm:
   function select(slug: string) {
     setOpen(false);
     if (slug === "switch-campaign") {
-      router.replace("/campaign");
+      router.replace(CAMPAIGNS_HREF);
       return;
     }
     router.navigate(sectionHref(campaignId, slug));
