@@ -45,7 +45,7 @@ export function resolveRuleModes(frameId: FrameId, stored: StoredRuleModes | nul
     if ((isSwitchRule(rule) || isToggleRule(rule)) && rule.param) {
       const p = rule.param;
       const n = storedValue(stored, p.key);
-      out[p.key] = inFrame && typeof n === "number" && Number.isInteger(n) && n >= p.min && n <= p.max ? n : p.default;
+      out[p.key] = inFrame && typeof n === "number" && Number.isInteger(n) && n >= p.min && (p.max === undefined || n <= p.max) ? n : p.default;
     }
   }
   for (const rule of RULES as readonly RuleDef[]) {

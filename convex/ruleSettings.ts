@@ -60,8 +60,8 @@ export const set = gmMutation({
     } else {
       const param = "param" in rule ? rule.param : undefined;
       const n = change.value;
-      if (param === undefined || typeof n !== "number" || !Number.isInteger(n) || n < param.min || n > param.max) {
-        throw appError("SETTING_INVALID", param ? `Pick a whole number from ${param.min} to ${param.max}.` : undefined);
+      if (param === undefined || typeof n !== "number" || !Number.isInteger(n) || n < param.min || (param.max !== undefined && n > param.max)) {
+        throw appError("SETTING_INVALID", param ? (param.max === undefined ? `Pick a whole number of at least ${param.min}.` : `Pick a whole number from ${param.min} to ${param.max}.`) : undefined);
       }
     }
     if (resolved[change.key] === change.value) return null;

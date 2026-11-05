@@ -100,7 +100,8 @@ describe("ruleSettings.set", () => {
       { key: "spotlightTrackerTokens", value: 0 },
       { key: "spotlightTrackerTokens", value: 7 },
       { key: "spotlightTrackerTokens", value: 2.5 },
-      { key: "darknessDifficulty", value: 5 },
+      { key: "darknessDifficulty", value: 0 },
+      { key: "darknessDifficulty", value: 1.5 },
     ] as const;
     for (const change of refused) {
       expect(errorCode(await gm.mutation(api.ruleSettings.set, { campaignId, change }).catch((e: unknown) => e))).toBe("SETTING_INVALID");

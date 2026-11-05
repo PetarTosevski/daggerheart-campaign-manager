@@ -55,7 +55,8 @@ export type RuleParamDef = {
   readonly key: string;
   readonly label: string;
   readonly min: number;
-  readonly max: number;
+  /** No upper limit when absent (darkness: user 2026-11-05, any whole number). */
+  readonly max?: number;
   readonly default: number;
 };
 
@@ -227,7 +228,7 @@ export const RULES = [
       { id: "both", label: "Dim light: both", notInBooks: true },
       MANUAL,
     ],
-    param: { key: "darknessDifficulty", label: "Difficulty raised by", min: 1, max: 4, default: 2 },
+    param: { key: "darknessDifficulty", label: "Difficulty raised by", min: 1, default: 2 },
   },
   { id: "outOfRange", code: "M4", area: "map", kind: "bookOnly", title: "Out-of-range targets", does: "A table setting: an out-of-range attack asks the GM or is refused.", refs: [CB(103)] },
 
