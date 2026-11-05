@@ -340,5 +340,5 @@ Defaults taken while the user was asleep; each is reversible. Confirm or change 
 
 ## ANSWERS 2026-11-05
 - Q28 / N11 (AD14, AU9): build now without a separate design; a simple '···' menu per account row in the existing admin look (type the email + a reason to confirm, 'Deleted in 30 days · Undo' on the row). Supersedes 'needs: design'.
-- AU6 App admin row: user asked for a side-by-side comparison (dark glass vs the design's gold card) before choosing.
+- AU6 App admin row: after a side-by-side comparison the user chose B, the design's gold card.
 - Next: the optional rules list (every optional rule with its book page) for the user to check before the rule switches (dcm-bxp.134).

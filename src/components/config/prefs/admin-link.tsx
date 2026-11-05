@@ -5,8 +5,6 @@ import { ArrowRight, Lock } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { brandButton } from "@/components/brand/buttons";
-
 import { api } from "../../../../convex/_generated/api";
 import type { PreferencesSlotProps } from "../slots";
 
@@ -22,12 +20,13 @@ export function AppAdminLink(props: PreferencesSlotProps): ReactNode {
   return (
     <Link
       href="/admin"
-      className={brandButton({ variant: "neutral", className: "mt-2.5 w-full justify-start gap-3 text-left" })}
+      // The design's gold card (`.pm-adm`; user 2026-11-05 chose it over neutral glass).
+      className="mt-2.5 flex w-full items-center gap-3 rounded-xl bg-[#2d2614] px-3 py-2.5 text-left text-[#f3cf86] no-underline shadow-[inset_0_0_0_1px_rgba(227,180,90,0.5)] hover:bg-[#3a3119] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f3cf86]"
     >
       <Lock aria-hidden="true" className="size-4 flex-none" />
       <span className="flex min-w-0 flex-1 flex-col">
         <b className="text-sm font-semibold">App admin</b>
-        <em className="text-xs not-italic opacity-80">Limits, costs and feature switches · only you</em>
+        <em className="text-xs not-italic text-[#d8c49a]">Limits, costs and feature switches · only you</em>
       </span>
       <ArrowRight aria-hidden="true" className="size-4 flex-none" />
     </Link>

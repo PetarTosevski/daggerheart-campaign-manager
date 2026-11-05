@@ -33,7 +33,7 @@ describe("AppAdminLink", () => {
     const link = screen.getByRole("link", { name: /App admin/ });
     expect(link.getAttribute("href")).toBe("/admin");
     expect(link.textContent).toContain("Limits, costs and feature switches · only you");
-    expect(link.className).toContain("gb");
+    expect(link.className).toContain("bg-[#2d2614]");
     expect(asked).toContain("appAdmin:me");
   });
 
