@@ -15,6 +15,7 @@ import { env, internalQuery, type ActionCtx, type MutationCtx } from "./_generat
 import { buildE2EProfile, normalizeEmail } from "./lib/allowlist";
 import { resendCodeProvider } from "./lib/authEmail";
 import { enforceAuthLimit } from "./lib/authRateLimit";
+import { isAccountSuspended } from "./lib/functions";
 import {
   createOrUpdateUser,
   PASSWORD_PROVIDER_ID,
@@ -34,6 +35,28 @@ export const signUpGate = internalQuery({
   handler: (ctx, { email, joinCode }) => signUpRefusal(ctx, email, joinCode),
 });
 
+/**
+ * Whether a signed-in account is suspended or waiting for deletion (config AD14). Asked after a password or e2e
+ * sign-in of an existing account, which Convex Auth finishes without calling `createOrUpdateUser`.
+ */
+export const accountSuspended = internalQuery({
+  args: { userId: v.string() },
+  returns: v.boolean(),
+  handler: async (ctx, { userId }) => {
+    const id = ctx.db.normalizeId("users", userId);
+    return id !== null && (await isAccountSuspended(ctx, id));
+  },
+});
+
+/** Refuses a sign-in result whose account is suspended, so the person is turned away at the sign-in screen. */
+async function refuseSuspendedSignIn<T>(ctx: ActionCtx, result: T): Promise<T> {
+  const userId = (result as { userId?: unknown } | null)?.userId;
+  if (typeof userId === "string" && (await ctx.runQuery(internal.auth.accountSuspended, { userId }))) {
+    throw appError("ACCOUNT_SUSPENDED");
+  }
+  return result;
+}
+
 const E2E_PROVIDER_ID = "e2e";
 
 // Test-only sign-in. Always registered, so no env var is read at module scope;
@@ -48,7 +71,7 @@ const e2eProvider = ConvexCredentials({
       provider: E2E_PROVIDER_ID,
       account: { id: profile.email },
     }).catch(() => null);
-    if (existing !== null) return { userId: existing.user._id };
+    if (existing !== null) return refuseSuspendedSignIn(ctx as unknown as ActionCtx, { userId: existing.user._id });
     const { user } = await createAccount(ctx, {
       provider: E2E_PROVIDER_ID,
       account: { id: profile.email },
@@ -131,7 +154,7 @@ function withAuthErrors(base: ReturnType<typeof Password>) {
           });
         }
       }
-      return await inner(params, ctx);
+      return await refuseSuspendedSignIn(ctx, await inner(params, ctx));
     } catch (error) {
       if (error instanceof ConvexError) throw error;
       const message = error instanceof Error ? error.message : "";

@@ -63,6 +63,7 @@ export const EXPORTED_TABLES = [
   "featureSwitches",
   "appTesters",
   "adminAudit",
+  "accountStatus",
   "lorekeeperCampaignLimits",
   "lorekeeperLimitRequests",
   "campaigns",

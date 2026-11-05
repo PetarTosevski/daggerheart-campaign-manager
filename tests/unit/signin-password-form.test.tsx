@@ -99,6 +99,7 @@ describe("PasswordForm", () => {
   it("each code has its own text; unknown errors get the step's fallback", () => {
     expect(authErrorText(new ConvexError({ code: "EMAIL_TAKEN" }), "x")).toMatch(/already has an account/);
     expect(authErrorText(new ConvexError({ code: "PASSWORD_TOO_SHORT" }), "x")).toMatch(/at least 8/);
+    expect(authErrorText(new ConvexError({ code: "ACCOUNT_SUSPENDED" }), "x")).toMatch(/suspended/);
     expect(authErrorText(new ConvexError({ code: "CODE_INVALID" }), "x")).toMatch(/new one/);
     expect(authErrorText(new ConvexError({ code: "RATE_LIMITED" }), "x")).toMatch(/Wait a few minutes/);
     // The message the auth proxy forwards once src/lib/auth-errors.ts has restored the code of a redacted error.
