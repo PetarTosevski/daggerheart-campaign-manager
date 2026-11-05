@@ -674,3 +674,24 @@ waves:
           - "live-rule-switches.spec.ts (two browsers): with a live session the GM's controls are disabled and a forced call is refused with RULES_LOCKED; the player opens House rules read-only and sees the modes; after End session the GM changes a mode and the player's list updates"
           - "a11y-rule-switches.spec.ts: axe on House rules (GM, locked, player) at 1440x900 and 1024x768; keyboard-only mode change"
           - "docs/game-interpretation.md and docs/rules-index.md list every registry rule with its modes and pages from the TASK docs; the full e2e suite passes on rebuild; lint, typecheck, vitest pass"
+  # ------------------------------------------------------------------ follow-up (user answers 2026-11-06)
+  - wave: 10
+    tracers:
+      - id: RA2
+        title: "R3 on card and feature rolls; S1 on every PC action roll"
+        beads: [dcm-jh6d.67]
+        goal: "In R3 Manual, card and feature rolls also gain no Hope / Fear and post the R3 note (the run context carries the mode); a critical keeps its Hope and Stress clear in every mode; S1 (spotlight to the GM on Fear or a failure) fires on every PC action roll, not only in a running encounter"
+        depends_on: [RA]
+        owns:
+          - src/lib/domain/card-effects/**
+          - convex/lib/cardRunner.ts
+          - convex/lib/featureRunner.ts
+          - convex/lib/rollAftermath.ts
+          - src/lib/domain/dice/index.ts
+          - tests/convex/rules-roll-aftermath.test.ts
+          - tests/unit/rules/roll-aftermath.test.ts
+          - tests/unit/card-effects/**
+          - tests/convex/rules-card-rolls.test.ts
+          - docs/tasks/TASK-RULES-RA2.md
+        acceptance:
+          - Convex tests for a card roll and a feature roll in R3 Book and Manual; S1 outside an encounter; crit Hope kept in Manual; lint, typecheck pass
