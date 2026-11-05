@@ -300,4 +300,13 @@ across sessions, also in the dashboard's Campaign Rules panel)? → RS0, RU
 - Q6 (changed) darkness: the GM picks per campaign: (A) impose disadvantage, (B) raise Difficulty by N (default 2, GM sets N), or (C) both.
 - Q7 (a) 'Extended downtime (several days)' is an extra choice on the GM's long rest: 1d6 Fear per PC.
 - Q8 (a) two rows; X2 read-only while X1 is Manual.
-- Q9-Q18: still open (user paused to clarify).
+- Q9 (a) Spotlight Tracker: GM sets tokens per PC (book suggests 3, CB p.89 'Optional tool'); action rolls spend automatically; at 0 the player is warned, not stopped; all refill when every PC is out; GM can refill early.
+- Q10 (a) Falling / collision: GM button in the token menu; the app rolls and applies through the normal hit path (collision direct).
+- Q11 (b, changed) Underwater: full rule; the extra breath tick on a failure or a roll with Fear happens automatically (twice if both).
+- Q12 (a) Coins row 0-9 rolling over into handfuls.
+- Q13 (c, changed) Fate roll: a 'Fate roll' button in every player's dice box (Hope or Fear die, no GM step), no Hope/Fear gained.
+- Q14 (a, changed from rec.) Conflict between PCs: attacks on PCs vs Evasion through the normal hit path AND a GM 'Contest' request (instigator action roll vs target reaction roll; instigator must beat it).
+- Q15 (a, changed) Horizon: the app also rolls the d14 Encounter table and shows the entry; it applies only the optional bonuses automatically (4: GM +1 Fear per PC, 12: each PC +1 Hope); the GM runs the rest.
+- Q16 (changed) Shared domain cards: a three-way setting Allow / Warn / Refuse (default Warn? -> default per 'off by default' = Allow? ASK if unclear; recommended default: Warn).
+- Q17 (a) the live-session lock covers every switch, including today's campaign options.
+- Q18 (a) players read the list from a 'House rules' item in the avatar menu.
