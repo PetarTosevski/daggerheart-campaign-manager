@@ -75,7 +75,9 @@ import { getDomainCard } from "../../src/lib/srd/index";
 import type { CharacterSheet, Effect } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { lastHpNote } from "../../src/lib/domain/death/index";
 import { logAction } from "./actionLog";
+import { postRuleNote, ruleMode } from "./ruleModes";
 import {
   answeringFeatures,
   armorCostOf,
@@ -687,6 +689,10 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
     await saveSheet(ctx, target.character._id, next);
     // The sheet's death move is due at once (user answer 2026-10-22; CB p.91): a new last HP clears an earlier "spent".
     if (deathMove) await ctx.db.patch("characters", target.character._id, { deathMoveSpent: undefined });
+    // Rule switches RX, X1 Manual (CB p.106): nobody is asked for the death move; the GM gets a note instead.
+    const campaign = deathMove ? await ctx.db.get("campaigns", row.campaignId) : null;
+    const promptManual = campaign !== null && ruleMode(campaign, "deathMovePrompt") === "manual";
+    const deathWords = !deathMove ? "" : promptManual ? " and marked their last Hit Point" : " and must make a death move";
     await logAction(ctx, {
       campaignId: row.campaignId,
       characterId: target.character._id,
@@ -697,11 +703,14 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
         ? `${targetName} avoided ${p.attacker.label}'s hit`
         : res.negated
           ? `${targetName} took no damage from ${p.attacker.label}'s hit`
-          : `${targetName} took ${p.attacker.label}'s hit${guardWords}${deathMove ? " and must make a death move" : ""}${autos.length > 0 ? ` (${autos.join(", ")})` : ""}${endedWords.length > 0 ? `; ${endedWords.join(", ")}` : ""}`,
+          : `${targetName} took ${p.attacker.label}'s hit${guardWords}${deathWords}${autos.length > 0 ? ` (${autos.join(", ")})` : ""}${endedWords.length > 0 ? `; ${endedWords.join(", ")}` : ""}`,
       groupId: p.groupId,
       before: sheet,
       undoable: true,
     });
+    if (campaign !== null && promptManual) {
+      await postRuleNote(ctx, campaign, { ruleId: "deathMovePrompt", summary: lastHpNote(targetName), characterId: target.character._id, groupId: p.groupId, actorId: row.createdBy });
+    }
     // Plan lanes-2, E2 (dcm-wjv): allies whose effects the hit PC made ended with it (Eye of the Storm on an ally).
     for (const o of hitEnds.others) {
       await saveSheet(ctx, o.character._id, o.sheet);
@@ -718,7 +727,7 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
       ...(shaken.roll ? [unshakableText(shaken.roll)] : []),
     ];
     gm.push(
-      `${targetName}: ${result.incoming} ${TYPE_WORD[p.damageType]}${resisted} → ${SEVERITY_WORD[result.severityBefore]}${armor}${forced} → ${SEVERITY_WORD[result.severity]} → ${marks.join(", ")}${deathMove ? "; death move" : ""}`,
+      `${targetName}: ${result.incoming} ${TYPE_WORD[p.damageType]}${resisted} → ${SEVERITY_WORD[result.severityBefore]}${armor}${forced} → ${SEVERITY_WORD[result.severity]} → ${marks.join(", ")}${deathMove ? (promptManual ? "; last HP" : "; death move") : ""}`,
     );
   } else if (target) {
     gm.push(`${targetName}: ${res.missed ? "the hit became a miss" : "no damage"}`);

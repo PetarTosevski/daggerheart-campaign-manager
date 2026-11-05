@@ -18,6 +18,7 @@
 // deathStatus(true, "sentHome");   // { status: "away", away: { reason: "sentHome" } }
 // ```
 
+import type { ModeOf } from "../../rules/registry";
 import type { Condition } from "../../validation/characters";
 import { applyResourceDelta, hopeMax } from "../characters/index";
 import { dualityOutcome } from "../duality";
@@ -62,13 +63,63 @@ export function canMakeDeathMove(c: { status: string; hp: number; hpMax: number;
   return c.status === "active" && c.hpMax > 0 && c.hp >= c.hpMax && !c.conditions.includes("unconscious");
 }
 
+/** X1 "Death move prompt" (CB 106; rule switches RX): Book asks the player; Manual asks nobody (the GM gets a note). */
+export type DeathPromptMode = ModeOf<"deathMovePrompt">;
+/** X2 "Death moves resolve themselves" (CB 106; rule switches RX): Book rolls and applies; Manual rolls nothing. */
+export type DeathResolveMode = ModeOf<"deathMoveResolve">;
+/** The moves X2 covers: the two that roll. */
+export type RolledDeathMove = Exclude<DeathMove, "blazeOfGlory">;
+
+/** Whether the app asks for a death move now: one is due (`canMakeDeathMove`) and X1 is Book (the default). */
+export function deathMovePrompted(c: { status: string; hp: number; hpMax: number; conditions: readonly string[] }, mode: DeathPromptMode = "book"): boolean {
+  return mode === "book" && canMakeDeathMove(c);
+}
+
+/** X1 Manual: the GM's note when a PC marks their last Hit Point. */
+export function lastHpNote(name: string): string {
+  return `${name} marked their last HP: their death move is made at the table.`;
+}
+
+/**
+ * Whether the app rolls and applies this move by itself (X2). Blaze of Glory rolls nothing, so it is the same in every
+ * mode; Avoid Death and Risk It All roll only in Book (the default).
+ */
+export function resolvesItself(move: DeathMove, mode: DeathResolveMode = "book"): boolean {
+  return move === "blazeOfGlory" || mode === "book";
+}
+
+/**
+ * X2 Manual: the public line of a move the app does not roll. Avoid Death still drops the character unconscious (no
+ * roll decides that); the player rolls in the dice box and the GM marks the rest on the sheet.
+ */
+export function manualMoveSummary(name: string, move: RolledDeathMove): string {
+  return move === "avoidDeath"
+    ? `${name} avoids death and drops unconscious. Roll the Hope Die in the dice box; the GM marks any scar.`
+    : `${name} risks it all. Roll the Duality Dice in the dice box; the GM applies the outcome.`;
+}
+
+/**
+ * X2 Manual: the GM's note saying what to roll and what follows (CB 106). Under Castle High's less-lethal rule (HF 127)
+ * a Fear result sends the character away instead of killing them.
+ */
+export function manualMoveNote(name: string, move: RolledDeathMove, level: number, lessLethal: boolean): string {
+  if (move === "avoidDeath") return `Avoid Death (${name}): roll the Hope Die; scar at or under level ${level}.`;
+  const fear = lessLethal ? `${name} goes to the infirmary or home instead of dying (less lethal)` : `${name} dies`;
+  return `Risk It All (${name}): roll the Duality Dice. Hope higher: clear Hit Points and Stress worth the Hope Die; Fear higher: ${fear}; matching dice: clear all Hit Points and Stress.`;
+}
+
+/** Avoid Death's first part (CB 106): the character drops unconscious. Every X2 mode applies it; no roll decides it. */
+export function dropUnconscious<T extends Pick<Tracks, "conditions">>(sheet: T): T {
+  const conditions: readonly Condition[] = sheet.conditions.includes("unconscious") ? sheet.conditions : [...sheet.conditions, "unconscious"];
+  return { ...sheet, conditions };
+}
+
 /**
  * Avoid Death (CB 106): the character drops unconscious; a Hope Die at or under
  * the level adds a scar. A scar on the last Hope slot sets `journeyEnds`.
  */
 export function avoidDeath<T extends Tracks>(sheet: T, hopeDie: number): { sheet: T; scarred: boolean; journeyEnds: boolean } {
-  const conditions: readonly Condition[] = sheet.conditions.includes("unconscious") ? sheet.conditions : [...sheet.conditions, "unconscious"];
-  let next: T = { ...sheet, conditions };
+  let next: T = dropUnconscious(sheet);
   const scarred = hopeDie <= sheet.level;
   let journeyEnds = Boolean(sheet.journeyEnds);
   if (scarred) {

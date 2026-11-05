@@ -2,7 +2,7 @@ import { v, type Infer } from "convex/values";
 
 import { derivedDefense } from "../../src/lib/domain/characters/derived";
 import { hopeMax } from "../../src/lib/domain/characters/index";
-import { canMakeDeathMove } from "../../src/lib/domain/death/index";
+import { deathMovePrompted } from "../../src/lib/domain/death/index";
 import { CLASSES } from "../../src/lib/srd/classes";
 import type { Effect } from "../../src/lib/validation/characters";
 import { installedAugments } from "./motherboardState";
@@ -11,6 +11,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { readSheet } from "./characterSheet";
 import { featureScope } from "./featureScope";
+import { ruleMode } from "./ruleModes";
 
 /**
  * Combat HUD data (plan `.omc/plans/combat-hud.yaml`, tracer HD1; bead dcm-bxp.99.32.8). The small projections the
@@ -74,7 +75,7 @@ export const hudPartyMemberValidator = v.object({
   conditions: v.array(hudConditionValidator),
   /** Every Hit Point marked, or the character is dead. */
   down: v.boolean(),
-  /** A death move is due (CB p.106): active, every HP marked, not unconscious, and not returned to play by the GM. */
+  /** A death move is due (CB p.106): active, every HP marked, not unconscious, not returned to play by the GM, and X1 is Book. */
   deathMoveDue: v.boolean(),
 });
 export type HudPartyMember = Infer<typeof hudPartyMemberValidator>;
@@ -115,9 +116,10 @@ export async function partyMemberOf(
     conditions: hudConditions(sheet.conditions),
     down: character.status === "dead" || (sheet.hpMax > 0 && sheet.hp >= sheet.hpMax),
     // deathMoves' `dueNow`: a character the GM returned to play with every HP marked owes none until they mark one again.
+    // Rule switches RX, X1 Manual: nobody is asked (the GM got a note; `down` still shows the PC at 0 HP).
     deathMoveDue:
       character.deathMoveSpent !== true &&
-      canMakeDeathMove({ status: character.status, hp: sheet.hp, hpMax: sheet.hpMax, conditions: sheet.conditions }),
+      deathMovePrompted({ status: character.status, hp: sheet.hp, hpMax: sheet.hpMax, conditions: sheet.conditions }, ruleMode(campaign, "deathMovePrompt")),
   };
 }
 

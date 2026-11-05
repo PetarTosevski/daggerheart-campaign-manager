@@ -19,6 +19,12 @@ export function deathResultText(
   level: number,
   awayRequested: boolean,
 ): string {
+  // Rule switches RX, X2 Manual: the app rolled nothing; the player rolls in the dice box and the GM applies the result.
+  if (move !== "blazeOfGlory" && r.hopeDie === null) {
+    return move === "avoidDeath"
+      ? `Unconscious. Roll your Hope Die in the dice box: at or under level ${level}, the GM marks a scar.`
+      : "Roll your Duality Dice in the dice box; the GM applies the outcome.";
+  }
   if (move === "avoidDeath") {
     return `Hope Die ${r.hopeDie} against level ${level}: ${r.scarred ? "a scar" : "no scar"}.${r.journeyEnds ? " The last Hope slot is gone: the journey ends." : ""}`;
   }
