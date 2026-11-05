@@ -18,6 +18,7 @@ import { lorekeeperMessages } from "./lorekeeper";
 import { noteMessages } from "./notes";
 import { photoImportMessages } from "./photoImport";
 import { restMessages } from "./rests";
+import { ruleMessages } from "./rules";
 import { sessionMessages } from "./sessions";
 import { spotlightMessages } from "./spotlight";
 import { spritePackMessages } from "./spritePacks";
@@ -52,6 +53,7 @@ export type AppErrorCode =
   | keyof typeof lorekeeperMessages
   | keyof typeof configMessages
   | keyof typeof adminMessages
+  | keyof typeof ruleMessages
   | "IDEMPOTENCY_MISMATCH"
   | "NAME_TAKEN"
   | "OBJECTIVE_LIMIT"

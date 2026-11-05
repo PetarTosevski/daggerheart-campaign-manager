@@ -9,6 +9,7 @@ import {
   tomeValidator,
 } from "../lib/validators/campaigns";
 import { mapStyleValidator } from "../lib/validators/combatMaps";
+import { storedRuleModesValidator } from "../lib/validators/ruleModes";
 import { draftKindValidator, textSizeValidator, uiStateKeyValidator, uiStateValueValidator } from "../lib/validators/preferences";
 
 export { customFrameValidator, frameIdValidator };
@@ -58,6 +59,13 @@ export const campaignTables = {
     tableSettings: v.optional(storedTableSettingsValidator),
     /** When the creator archived the campaign (config Q9 a): read-only for everyone; cleared by unarchive. */
     archivedAt: v.optional(v.number()),
+    /**
+     * The House rules' rule switches (plan rule-switches RS0): a typed object of optional fields, one per settable rule
+     * of `src/lib/rules/registry.ts`; an unset field (or no object) is the registry default (Book / optional rule off,
+     * Defined Ranges on). Written only by `ruleSettings.set`, between sessions; read through `ruleModesOf`
+     * (convex/lib/ruleModes.ts). Widen only.
+     */
+    ruleModes: v.optional(storedRuleModesValidator),
   })
     .index("by_owner_deletedAt_lastOpened", ["ownerId", "deletedAt", "lastOpenedAt"])
     .index("by_owner_deletedAt_nameKey", ["ownerId", "deletedAt", "nameKey"])

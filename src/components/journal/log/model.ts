@@ -44,6 +44,7 @@ export const LOG_ICONS: Record<JournalLogIcon, { Icon: LucideIcon; label: string
   countdown: { Icon: Hourglass, label: "Countdown" },
   combat: { Icon: Sword, label: "Attack" },
   adversary: { Icon: Shield, label: "Adversary" },
+  rule: { Icon: PenLine, label: "Manual rule note" },
   fear: { Icon: Droplet, label: "Fear" },
   combatBegan: { Icon: Swords, label: "Combat began" },
   combatEnded: { Icon: Flag, label: "Combat ended" },

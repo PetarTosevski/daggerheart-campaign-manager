@@ -26,6 +26,7 @@ import {
   userQuery,
 } from "./lib/functions";
 import { atLeast, campaignAccess, inviteEmail, permissionFor, type CampaignPermission } from "./lib/permissions";
+import { assertRulesUnlocked } from "./lib/ruleModes";
 import {
   campaignSummaryValidator,
   customFrameValidator,
@@ -537,12 +538,16 @@ export const updateTome = gmMutation({
   },
 });
 
-/** Switches an optional rule for the campaign. GM only. */
+/**
+ * Switches an optional rule for the campaign (the frame's campaign options). GM and co-GM. Locked while a session is
+ * live (RULES_LOCKED; rule switches Q17 a: every switch in House rules and the Campaign Rules panel).
+ */
 export const setOption = gmMutation({
   args: { option: v.string(), enabled: v.boolean() },
   returns: v.null(),
   handler: async (ctx, { option, enabled }) => {
     const campaign = ctx.campaign;
+    await assertRulesUnlocked(ctx, campaign._id);
     if (!isCampaignOptionId(option) || !optionsFor(campaign.frameId).some((o) => o.id === option)) {
       throw appError("INVALID", "That rule isn't available in this campaign.");
     }
