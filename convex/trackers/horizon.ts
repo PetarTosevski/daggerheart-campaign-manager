@@ -48,6 +48,7 @@ import { gainFear } from "../lib/fear";
 import { campaignQuery, keyedGmMutation, type Once } from "../lib/functions";
 import { listMapTokens, saveScalars, tokenRow, writableMap } from "../lib/maps";
 import type { RestHook } from "../lib/restHooks";
+import { ruleMode } from "../lib/ruleModes";
 import {
   assertTrackerFrame,
   deleteTracker,
@@ -512,19 +513,26 @@ async function resetEndurance(ctx: MutationCtx, campaign: Doc<"campaigns">, inpu
  * In Journey to Horizon, REST_RULE when the hex crawl puts the party in a hex
  * with no sanctuary marker; other frames, or no crawl, pass. `rests.start`
  * calls it up front; the rest hook checks again on finish. `map`: the
- * caller's already loaded map.
+ * caller's already loaded map. W2 Manual (house rule): never refuses; the
+ * rest hook warns instead (convex/lib/restHooks.ts).
  */
 export async function assertSanctuaryLongRest(ctx: MutationCtx, campaign: Doc<"campaigns">, map?: Awaited<ReturnType<typeof writableMap>>): Promise<void> {
-  if (campaign.frameId !== horizonTracker.frameId) return;
+  if (ruleMode(campaign, "horizonSanctuaryRest") === "manual") return;
+  if (await partyOutsideSanctuary(ctx, campaign, map)) {
+    throw appError("REST_RULE", "Outside a sanctuary the party can take only short rests (HF 176). Move the party to a sanctuary, or interrupt the rest for a short rest's benefits.");
+  }
+}
+
+/** Journey to Horizon: the hex crawl puts the party in a hex with no sanctuary marker (other frames, or no crawl: false). */
+export async function partyOutsideSanctuary(ctx: MutationCtx, campaign: Doc<"campaigns">, map?: Awaited<ReturnType<typeof writableMap>>): Promise<boolean> {
+  if (campaign.frameId !== horizonTracker.frameId) return false;
   const { scalars } = map ?? (await writableMap(ctx, campaign));
   const crawl = scalars.hexCrawl;
-  if (!crawl?.party) return;
+  if (!crawl?.party) return false;
   const image = mapImageSize(campaign.frameId, scalars);
   const party = hexKey(crawl.party);
   const tokens = await listMapTokens(ctx, campaign._id);
-  if (!tokens.some((t) => t.type === SANCTUARY_TYPE && hexKey(tokenHex(t, image, crawl.grid)) === party)) {
-    throw appError("REST_RULE", "Outside a sanctuary the party can take only short rests (HF 176). Move the party to a sanctuary, or interrupt the rest for a short rest's benefits.");
-  }
+  return !tokens.some((t) => t.type === SANCTUARY_TYPE && hexKey(tokenHex(t, image, crawl.grid)) === party);
 }
 
 /**

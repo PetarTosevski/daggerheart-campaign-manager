@@ -236,7 +236,9 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
     sheets.set(pc._id, rested);
     cardLines.set(pc._id, lines);
   }
-  const hookLines = await runRestHooks(ctx, { campaign, rest, kind, interrupted, actorId: ctx.user._id, choices: allChoices, sheets, rng: rollDie });
+  // Created before the hooks so their Manual notes join the rest's undo group.
+  const groupId = newGroupId();
+  const hookLines = await runRestHooks(ctx, { campaign, rest, kind, interrupted, actorId: ctx.user._id, choices: allChoices, sheets, rng: rollDie, groupId });
 
   const projectLines: string[] = [];
   for (const work of moved.projects) {
@@ -289,7 +291,6 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
     fearLine = `GM gains ${gained} Fear (${kind === "long" ? `1d4 ${fearRoll} + ${pcs.length} PCs` : `1d4 ${fearRoll}`})`;
   }
 
-  const groupId = newGroupId();
   const label = interrupted ? "Interrupted long rest (short-rest benefits)" : rest.kind === "long" ? "Long rest" : "Short rest";
   for (const pc of pcs) {
     const after = sheets.get(pc._id)!;

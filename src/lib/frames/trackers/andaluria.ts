@@ -3,6 +3,20 @@
 import * as z from "../../zod";
 
 import { RuleError } from "../../errors/app-error";
+import type { ModeOf } from "../../rules/registry";
+
+/**
+ * W7 (HF 153): "It ticks down each time the PC takes a rest without using a downtime move to halt their lycanthropy's
+ * progression." Manual (house rule): never; the GM gets `lycanthropyRestNote` and ticks it by hand.
+ */
+export function restTicksLycanthropy(halted: boolean, mode: ModeOf<"andaluriaLycanthropy"> = "book"): boolean {
+  return !halted && mode === "book";
+}
+
+/** W7 Manual: the GM's note for one bitten PC's rest. */
+export function lycanthropyRestNote(name: string): string {
+  return `Rest: tick Lycanthropy for ${name} unless they halted it`;
+}
 
 export const ANDALURIA_FRAME_ID = "dark-heart-of-andaluria";
 export const ANDALURIA_TRACKER_KEY = "andaluria";
