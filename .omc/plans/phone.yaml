@@ -85,6 +85,25 @@ waves:
           - harness mocks resolve by function reference; a test proves an unknown/renamed ref throws
           - jest suites for sheet and the harness pass
 
+      - id: PX4
+        title: "Server/auth: safe native redirect, rate-limited apple-native with cached keys"
+        beads: [dcm-gdzi.5, dcm-gdzi.6]
+        pr: 1
+        goal: "Google sign-in on the phone no longer returns the code through a custom scheme anyone can claim, and apple-native is rate-limited and caches Apple's signing keys"
+        depends_on: []   # no file shared with PX1/PX2; started early (user 2026-11-05: more agents on the phone)
+        owns:
+          - convex/auth.ts
+          - convex/lib/apple*.ts
+          - convex/lib/nativeRedirect*.ts
+          - convex/http.ts
+          - apps/mobile/src/auth/**
+          - tests/convex/apple-native.test.ts
+          - tests/unit/apple-identity.test.ts
+          - tests/unit/native-redirect.test.ts
+          - apps/mobile/test/auth/**
+        acceptance:
+          - tests cover the redirect allowlist, the rate limit (ConvexError.data.code) and key caching
+
   # ------------------------------------------------------------------ wave 2: PR 1 and PR 2 (server, tooling, shell)
   - wave: 2
     tracers:
@@ -107,24 +126,6 @@ waves:
         acceptance:
           - pnpm lint and pnpm typecheck fail on a deliberate error in apps/mobile
           - CI workflow runs the mobile check
-      - id: PX4
-        title: "Server/auth: safe native redirect, rate-limited apple-native with cached keys"
-        beads: [dcm-gdzi.5, dcm-gdzi.6]
-        pr: 1
-        goal: "Google sign-in on the phone no longer returns the code through a custom scheme anyone can claim, and apple-native is rate-limited and caches Apple's signing keys"
-        depends_on: [PX1, PX2]
-        owns:
-          - convex/auth.ts
-          - convex/lib/apple*.ts
-          - convex/lib/nativeRedirect*.ts
-          - convex/http.ts
-          - apps/mobile/src/auth/**
-          - tests/convex/apple-native.test.ts
-          - tests/unit/apple-identity.test.ts
-          - tests/unit/native-redirect.test.ts
-          - apps/mobile/test/auth/**
-        acceptance:
-          - tests cover the redirect allowlist, the rate limit (ConvexError.data.code) and key caching
       - id: PX5
         title: "Shell: switch campaign, one QueryBoundary, signed-out guard"
         beads: [dcm-gdzi.27, dcm-gdzi.32, dcm-gdzi.9]
