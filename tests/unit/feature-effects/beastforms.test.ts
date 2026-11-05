@@ -247,7 +247,7 @@ describe("Tier 1 features (CB p.32)", () => {
 });
 
 describe("Tier 2 features (CB p.33)", () => {
-  it("Armored Shell: physical resistance; an Armor Slot to retract; in the shell the reduction is prompted", () => {
+  it("Armored Shell: physical resistance; an Armor Slot to retract; in the shell physical damage is reduced by the Armor Score", () => {
     const e = bf("armored-sentry", "Armored Shell");
     expect(useOf(e).mods).toEqual([{ kind: "resistance", type: "physical", level: "resistant" }]);
     const retract = ok(e, "retract", { actor: inForm("armored-sentry"), rng: queueRng([]) });
