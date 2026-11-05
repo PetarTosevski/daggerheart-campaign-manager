@@ -8,8 +8,10 @@
  * @module
  */
 
+import type * as accountPurge from "../accountPurge.js";
 import type * as accounts from "../accounts.js";
 import type * as actionLog from "../actionLog.js";
+import type * as adminAccountActions from "../adminAccountActions.js";
 import type * as adminAccounts from "../adminAccounts.js";
 import type * as adminExport from "../adminExport.js";
 import type * as adminLibrary from "../adminLibrary.js";
@@ -267,8 +269,10 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  accountPurge: typeof accountPurge;
   accounts: typeof accounts;
   actionLog: typeof actionLog;
+  adminAccountActions: typeof adminAccountActions;
   adminAccounts: typeof adminAccounts;
   adminExport: typeof adminExport;
   adminLibrary: typeof adminLibrary;
