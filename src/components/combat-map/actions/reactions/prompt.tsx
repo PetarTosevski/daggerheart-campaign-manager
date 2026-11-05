@@ -36,7 +36,7 @@ import {
 
 /**
  * The incoming-hit prompt (plan combat-actions AA4), shared by the Combat Map and the character sheet. One card per
- * open hit on (or near) the character, from `adversaryActions.pending`:
+ * open hit on (or near) the character, from `adversaryActionsReads.pending`:
  * - the hit PC: "14 damage: Major (2 HP). Mark an Armor Slot to make it Minor?" with Mark / Don't (CB p.114), a count
  *   to mark under I Am Your Shield (CB p.341), OK only for direct damage or no free slot (CB p.99); their own
  *   reaction cards (Shrug It Off, Unyielding Armor) with Use before the armor answer;
@@ -114,9 +114,9 @@ export class HitBoundary extends Component<{ children: ReactNode }, { failed: bo
 function useRespond(campaignId: Id<"campaigns">) {
   const run = useMutation(api.adversaryActions.respond).withOptimisticUpdate((store, args) => {
     const query = { campaignId, characterId: args.characterId };
-    const views = store.getQuery(api.adversaryActions.pending, query);
+    const views = store.getQuery(api.adversaryActionsReads.pending, query);
     if (views === undefined) return;
-    store.setQuery(api.adversaryActions.pending, query, afterAnswer(views, args.requestId, args.choice));
+    store.setQuery(api.adversaryActionsReads.pending, query, afterAnswer(views, args.requestId, args.choice));
   });
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<{ requestId: string; message: string } | null>(null);
@@ -152,7 +152,7 @@ export function PendingHits({
   characterName: string;
   variant: PromptVariant;
 }) {
-  const views = useQuery(api.adversaryActions.pending, { campaignId, characterId });
+  const views = useQuery(api.adversaryActionsReads.pending, { campaignId, characterId });
   const respond = useRespond(campaignId);
   if (views === undefined || views.length === 0) return null;
   const owed = views.filter((v) => v.awaiting);

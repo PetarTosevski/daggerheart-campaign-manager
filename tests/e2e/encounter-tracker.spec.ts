@@ -143,7 +143,7 @@ test("the GM tracks damage, Stress, conditions, Fear, the spotlight and attacks 
   await player.goto(`/campaigns/${campaignId}`);
   await expect(player.getByRole("heading", { name: "Roll Feed" })).toBeVisible();
   await expect(player.getByText(/d20 \d+/)).toHaveCount(0);
-  for (const hit of await playerClient.query(api.adversaryActions.pending, { campaignId, characterId: miraId })) expect(hit).not.toHaveProperty("roll");
+  for (const hit of await playerClient.query(api.adversaryActionsReads.pending, { campaignId, characterId: miraId })) expect(hit).not.toHaveProperty("roll");
   await close();
 });
 

@@ -96,8 +96,8 @@ async function arena() {
   const row = (id: Id<"combatRequests">) => t.run(async (ctx) => (await ctx.db.get("combatRequests", id))!);
   const respond = (requestId: Id<"combatRequests">, characterId: Id<"characters">, choice: Record<string, unknown>) =>
     player.mutation(api.adversaryActions.respond, { campaignId, requestId, characterId, choice: choice as never, idempotencyKey: key() });
-  const pending = (characterId: Id<"characters">) => player.query(api.adversaryActions.pending, { campaignId, characterId });
-  const asks = () => gm.query(api.hitKeywords.asks, { campaignId });
+  const pending = (characterId: Id<"characters">) => player.query(api.adversaryActionsReads.pending, { campaignId, characterId });
+  const asks = () => gm.query(api.hitKeywordsReads.asks, { campaignId });
   const answer = (requestId: Id<"combatRequests">, carries: boolean) => gm.mutation(api.hitKeywords.answer, { campaignId, requestId, answer: { keyword: "fire", carries }, idempotencyKey: key() });
   return { w, t, ids, edit, hit, sheet, row, respond, pending, asks, answer, player, gm };
 }
@@ -202,7 +202,7 @@ describe("dcm-sk4r: Fireproof and the GM's ask", () => {
     await expect(a.player.mutation(api.hitKeywords.answer, { campaignId: a.w.campaignId, requestId: requestId!, answer: { keyword: "fire", carries: true }, idempotencyKey: key() })).rejects.toMatchObject({
       data: { code: "FORBIDDEN" },
     });
-    await expect(a.player.query(api.hitKeywords.asks, { campaignId: a.w.campaignId })).rejects.toMatchObject({ data: { code: "FORBIDDEN" } });
+    await expect(a.player.query(api.hitKeywordsReads.asks, { campaignId: a.w.campaignId })).rejects.toMatchObject({ data: { code: "FORBIDDEN" } });
   });
 });
 

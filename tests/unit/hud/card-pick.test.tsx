@@ -201,7 +201,7 @@ function seed(loadout: HandCard[], { hope = 1, vault = [] as HandCard[] } = {}) 
       { _id: BANDIT, name: "Bandit", side: "enemy", x: 15, y: 10, size: 1, face: 0, revealed: false },
     ],
   };
-  queries["combatActions:targets"] = [
+  queries["combatActionsReads:targets"] = [
     { tokenId: LT, band: "far", inRange: true, lineOfSight: true, cover: false },
     { tokenId: BANDIT, band: "far", inRange: true, lineOfSight: true, cover: false },
   ];

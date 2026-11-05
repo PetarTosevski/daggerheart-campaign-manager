@@ -12,13 +12,13 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { cardRollValidator, keepDice, keptDice, parseChoices, type CardRoll } from "./lib/cardChoices";
 import { needsChoiceValidator } from "./lib/cardRows";
-import { buildRun, Creatures, extraSpecs, replaying, runCard } from "./lib/cardRunner";
-import { assertCanAct, loadCharacter, readSheet } from "./lib/characterSheet";
+import { buildRun, Creatures, replaying, runCard } from "./lib/cardRunner";
+import { assertCanAct, readSheet } from "./lib/characterSheet";
 import { attackScene, type AttackScene } from "./lib/combatActions";
 import { answerCloakDifficulty, movementGrid, uncloakAfterAttack, uncloakAfterMove } from "./lib/combatMovement";
 import type { MovementGrid } from "../src/lib/domain/combat-map/movement";
 import { closeRequest, encounterRunning, loadOpenRequest, openDifficulty, openServerMove } from "./lib/combatRequests";
-import { allyRollLive, isAllyRollRow, liveAllyRolls, liveTargetCount, optionalHope, rollAndStoreCount, rolledFirstUse, rollerUse, type AllyRollRow } from "./lib/featurePrompts";
+import { allyRollLive, editableHere, featureName, isAllyRollRow, liveTargetCount, optionalHope, rollAndStoreCount, rolledFirstUse, rollerUse, tokenName, type AllyRollRow } from "./lib/featurePrompts";
 import {
   featureRefusal,
   featureSlot,
@@ -53,19 +53,13 @@ import { atLeast } from "./lib/permissions";
  *   the GM's Difficulty (dcm-bxp.99.19.61): `answerDifficulty` (plan lanes B2) runs it, as it runs a Cloaked rogue's
  *   Finesse roll that waits for one (dcm-bxp.99.19.62 (1)).
  *
- * - `allyRolls` / `allyRoll` / `cancelAllyRoll` (DA13): a use another PC rolls. CB p.33 Cannonball: "the ally makes an
+ * - `allyRolls` (featurePromptsReads.ts, dcm-uh6r) / `allyRoll` / `cancelAllyRoll` (DA13): a use another PC rolls. CB p.33 Cannonball: "the ally makes an
  *   attack roll using Agility or Strength (their choice) against a target within Close range." User 2026-10-30
  *   (dcm-bxp.99.19.21): the druid's use (`combatFeatures.useFeature`) pays the Stress and opens the prompt; the throwing
  *   ally rolls from their own drawer with their Proficiency, Hope and critical; the GM can cancel.
  *
  * What a player receives never holds an enemy's HP, Stress, thresholds or Difficulty (U1).
  */
-
-async function editableHere(ctx: QueryCtx & { user: Doc<"users">; campaign: Doc<"campaigns"> }, characterId: Id<"characters">) {
-  const { campaign, character } = await loadCharacter(ctx, ctx.user, characterId, "edit", "owner");
-  if (campaign._id !== ctx.campaign._id) throw appError("NOT_FOUND");
-  return { campaign, character, sheet: readSheet(character.sheet) };
-}
 
 /** The limit keys of a feature are `feat:<featureId>[:<useId>][:<target>]` (convex/lib/featureRunner.ts). */
 function limitUsed(sheet: CharacterSheet, featureId: string): boolean {
@@ -464,142 +458,6 @@ export const answerDifficulty = keyedGmMutation({
 });
 
 // ---------------------------------------------------------------- a use rolled by an ally (Cannonball, CB p.33)
-
-/** The name a player may see for a token: a PC's name, an adversary instance's label (no numbers, U1). */
-async function tokenName(ctx: QueryCtx, campaignId: Id<"campaigns">, token: Doc<"combatTokens">): Promise<string> {
-  if (token.ref.kind === "custom") return token.ref.name;
-  if (token.ref.kind === "companion") return "Companion";
-  if (token.ref.kind === "pc") {
-    const c = await ctx.db.get("characters", token.ref.characterId);
-    return c === null || c.campaignId !== campaignId ? "Unknown" : readSheet(c.sheet).name;
-  }
-  const instance = await ctx.db.get("encounterAdversaries", token.ref.adversaryId);
-  return instance !== null && instance.campaignId === campaignId ? instance.label : "Unknown";
-}
-
-async function characterName(ctx: QueryCtx, campaignId: Id<"campaigns">, id: Id<"characters">): Promise<string> {
-  const c = await ctx.db.get("characters", id);
-  return c === null || c.campaignId !== campaignId ? "Unknown" : readSheet(c.sheet).name;
-}
-
-function featureName(featureId: string): string {
-  return featureEffect(featureId)?.uses[0]?.name ?? featureId;
-}
-
-const enemyChoice = v.object({
-  tokenId: v.id("combatTokens"),
-  name: v.string(),
-  /** Within the throw's range of the ally (Close for Cannonball). */
-  inRange: v.boolean(),
-  /** The other enemies the second target may be (Very Close of this one, for Cannonball's Hope). */
-  near: v.array(v.id("combatTokens")),
-});
-
-const askView = v.object({
-  requestId: v.id("combatRequests"),
-  /** Who is thrown (the druid) and the feature. */
-  characterName: v.string(),
-  featureName: v.string(),
-  /** The druid's Hope now: the second target spends one of it. */
-  hope: v.number(),
-  /** The optional step that adds the second target, or null. */
-  secondLabel: v.union(v.null(), v.string()),
-  enemies: v.array(enemyChoice),
-});
-
-const allyRollsView = v.object({
-  /** Rolls this character is asked to make (their drawer's prompt). */
-  asks: v.array(askView),
-  /** This character's own throws waiting for an ally. */
-  waiting: v.array(v.object({ requestId: v.id("combatRequests"), rollerName: v.string(), featureName: v.string() })),
-  /** The PCs on the map this character can ask (for the druid's throw); empty without a map or a token. */
-  allies: v.array(v.object({ tokenId: v.id("combatTokens"), name: v.string() })),
-  /** GM: every open ally roll of the campaign (the pending list, with Cancel). Empty for a player. */
-  pending: v.array(v.object({ requestId: v.id("combatRequests"), characterName: v.string(), rollerName: v.string(), featureName: v.string(), createdAt: v.number() })),
-});
-
-/** The enemies the roller sees on the map, with the throw's range and which may be the second target (U1: names only). */
-async function enemyChoices(ctx: QueryCtx, campaign: Doc<"campaigns">, roller: Doc<"characters">, row: AllyRollRow): Promise<Infer<typeof enemyChoice>[]> {
-  if (row.mapId === undefined) return [];
-  const use = pickUse(asCardEffect(featureEffect(row.payload.featureId)!), row.payload.useId);
-  if (use?.rolledBy === undefined) return [];
-  let scene;
-  try {
-    scene = await attackScene(ctx, campaign, roller, row.mapId);
-  } catch {
-    return [];
-  }
-  const enemies = await new Creatures(ctx, campaign._id, scene, readSheet(roller.sheet)).visibleEnemies();
-  const second = extraSpecs(rollerUse(use)).picked;
-  const nearRange = second?.areaRange ?? second?.range ?? "veryClose";
-  return enemies.map((e) => ({
-    tokenId: e.tokenId,
-    name: e.instance.label,
-    inRange: rangeCheck(scene.attacker, e.token, use.rolledBy!.targets.range === "weapon" ? "melee" : use.rolledBy!.targets.range).inRange,
-    near: enemies.filter((o) => o.tokenId !== e.tokenId && rangeCheck(e.token, o.token, nearRange === "weapon" ? "melee" : nearRange).inRange).map((o) => o.tokenId),
-  }));
-}
-
-/**
- * DA13: the ally rolls of a character the caller edits (their own; the GM any): the rolls they are asked to make, their
- * own throws waiting for an ally, the PCs on `mapId` they can ask, and for the GM every open one. Names and bands only
- * (U1): no adversary numbers.
- */
-export const allyRolls = campaignQuery({
-  need: "view",
-  args: { characterId: v.id("characters"), mapId: v.optional(v.id("combatMaps")) },
-  returns: allyRollsView,
-  handler: async (ctx, args) => {
-    const { campaign, character } = await editableHere(ctx, args.characterId);
-    const rows = await liveAllyRolls(ctx, campaign._id);
-    const asks = [];
-    const waiting = [];
-    for (const row of rows) {
-      const p = row.payload;
-      if (p.rollerCharacterId === character._id) {
-        const druid = await ctx.db.get("characters", p.characterId);
-        if (druid === null || druid.campaignId !== campaign._id) continue;
-        const use = pickUse(asCardEffect(featureEffect(p.featureId)!), p.useId);
-        const second = use?.steps.find((s) => s.kind === "optional");
-        const druidSheet = readSheet(druid.sheet);
-        asks.push({
-          requestId: row._id,
-          characterName: druidSheet.name,
-          featureName: featureName(p.featureId),
-          hope: druidSheet.hope,
-          secondLabel: second?.kind === "optional" ? second.label : null,
-          enemies: await enemyChoices(ctx, campaign, character, row),
-        });
-      }
-      if (p.characterId === character._id) waiting.push({ requestId: row._id, rollerName: await characterName(ctx, campaign._id, p.rollerCharacterId), featureName: featureName(p.featureId) });
-    }
-    const allies = [];
-    if (args.mapId !== undefined) {
-      try {
-        const scene = await attackScene(ctx, campaign, character, args.mapId);
-        for (const t of scene.scene.tokens) {
-          if (t._id === scene.attacker._id || t.side !== "pc" || t.ref.kind !== "pc") continue;
-          allies.push({ tokenId: t._id, name: await tokenName(ctx, campaign._id, t) });
-        }
-      } catch {
-        // no live map or no token of this character: nobody to ask
-      }
-    }
-    const pending = [];
-    if (atLeast(ctx.permission, "owner")) {
-      for (const row of rows) {
-        pending.push({
-          requestId: row._id,
-          characterName: await characterName(ctx, campaign._id, row.payload.characterId),
-          rollerName: await characterName(ctx, campaign._id, row.payload.rollerCharacterId),
-          featureName: featureName(row.payload.featureId),
-          createdAt: row.createdAt,
-        });
-      }
-    }
-    return { asks, waiting, allies, pending };
-  },
-});
 
 /** The open ally roll with this id, or NOT_FOUND (another kind, another campaign); REQUEST_NOT_OPEN once answered. */
 async function loadAllyRoll(ctx: QueryCtx & { campaign: Doc<"campaigns"> }, requestId: Id<"combatRequests">): Promise<AllyRollRow> {

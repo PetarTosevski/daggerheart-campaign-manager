@@ -23,23 +23,16 @@ import {
   pickRiders,
   resolveAttack,
   resolvedAttackValidator,
-  riderOptions,
-  riderOptionValidator,
   rollFromStored,
   setupReach,
-  targetHints,
-  targetHintValidator,
-  weaponIn,
   weaponSlotValidator,
   withoutTargets,
   type AttackRoll,
 } from "./lib/combatActions";
-import { loadCombatMap } from "./lib/combatMaps";
-import { loadScene, viewOf } from "./lib/combatVision";
 import { closeRequest, encounterRunning, groupOffer, loadOpenRequest, openSanction } from "./lib/combatRequests";
 import { afterRollChoiceValidator, MAX_RIDERS_PER_ATTACK, riderPickChoiceValidator, riderValidator, type ForcedAttackPayload } from "./lib/validators/combatRequests";
 import { featureScope } from "./lib/featureScope";
-import { campaignQuery, keyedCampaignMutation } from "./lib/functions";
+import { keyedCampaignMutation } from "./lib/functions";
 import { fearFor } from "./lib/fearVisibility";
 import { prepareDuality, rules, type Loaded } from "./lib/rolls";
 import type { AdversaryBefore } from "./lib/validators/actionLog";
@@ -52,7 +45,8 @@ import type { AdversaryBefore } from "./lib/validators/actionLog";
  * - `attack`: one Duality roll against every target's Difficulty, damage on any hit, HP marked on the encounter
  *   instances, one undoable actionLog group (public: hit / miss; GM: damage, severity, HP). A target out of the
  *   weapon's range turns the attack into a GM sanction (Q1); no line of sight refuses it (Q2).
- * - `targets`: the enemy tokens the character sees, with band, range, line of sight and cover only (U1, CF6).
+ * - `targets` (combatActionsReads.ts, dcm-uh6r): the enemy tokens the character sees, with band, range, line of sight and
+ *   cover only (U1, CF6); `riders` there too.
  * - `pickMinions`: the attacker picks the extra Minions their damage defeats (Q6, CB p.201), once.
  *
  * What a player receives never holds an enemy's HP, Stress, thresholds or Difficulty (U1): the returns validators
@@ -211,43 +205,6 @@ export const attack = keyedCampaignMutation({
       });
       return { status: "pending" as const, requestId, outOfRange: bands };
     }), "fearGained", ctx.permission),
-});
-
-/**
- * The enemy tokens the character's token sees on the live map that can be attacked, each with only its Defined Range
- * band, whether it is within the weapon's range (`slot`, default primary), line of sight and cover (U1, CF6). Empty
- * when the map is not live or the character has no token on it.
- */
-export const targets = campaignQuery({
-  need: "view",
-  args: { characterId: v.id("characters"), mapId: v.id("combatMaps"), slot: v.optional(weaponSlotValidator) },
-  returns: v.array(targetHintValidator),
-  handler: async (ctx, { characterId, mapId, slot }) => {
-    const { character, sheet } = await attacker(ctx, characterId);
-    const map = await loadCombatMap(ctx, ctx.campaign._id, mapId);
-    if (!map.live) return [];
-    const scene = await loadScene(ctx, ctx.campaign, map);
-    const viewer = viewOf(scene, character);
-    if (viewer === null) return [];
-    return targetHints(ctx, ctx.campaign, { map, scene, viewer, attacker: scene.tokens[viewer.index]! }, weaponIn(sheet, slot ?? "primary"), { sheet, characterId: character._id });
-  },
-});
-
-/**
- * SD5: the riders that ride on the character's attack with the weapon in `slot` (default primary): every rider use of a
- * loadout card and of a held feature whose trigger fits a weapon attack, with its phase, costs, limit, readiness and the
- * choices it asks (numbers, options, situations to confirm, extra targets). The character's own sheet only (U1, CF6).
- */
-export const riders = campaignQuery({
-  need: "view",
-  args: { characterId: v.id("characters"), slot: v.optional(weaponSlotValidator) },
-  returns: v.array(riderOptionValidator),
-  handler: async (ctx, { characterId, slot }) => {
-    const { sheet } = await attacker(ctx, characterId);
-    const weapon = weaponIn(sheet, slot ?? "primary");
-    if (weapon === undefined) return [];
-    return riderOptions(sheet, ctx.campaign, hostOf(weapon, slot ?? "primary", undefined));
-  },
 });
 
 /**

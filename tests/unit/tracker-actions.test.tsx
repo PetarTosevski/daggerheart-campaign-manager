@@ -530,7 +530,7 @@ describe("ReactionWindows", () => {
   }
 
   it("lists who still has to answer and resolves now on the GM's tap (Q17); other encounters' windows are left out", async () => {
-    queries["adversaryActions:windows"] = [WINDOW, { ...WINDOW, requestId: "r2", encounterId: "enc2", targetName: "Elsewhere" }];
+    queries["adversaryActionsReads:windows"] = [WINDOW, { ...WINDOW, requestId: "r2", encounterId: "enc2", targetName: "Elsewhere" }];
     results["adversaryActions:resolve"] = [{ status: "resolved", requestId: "r1", targetId: "mira", severity: "major", hpMarked: 2, deathMove: false }];
     render(<Windows />);
     const region = screen.getByRole("region", { name: "Reaction windows" });
@@ -545,7 +545,7 @@ describe("ReactionWindows", () => {
   });
 
   it("renders nothing without an open window", () => {
-    queries["adversaryActions:windows"] = [];
+    queries["adversaryActionsReads:windows"] = [];
     const { container } = render(<Windows />);
     expect(container).toBeEmptyDOMElement();
   });

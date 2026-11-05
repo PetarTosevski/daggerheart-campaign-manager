@@ -318,7 +318,7 @@ describe("combatActions.attack: targets, line of sight and range", () => {
     const near = await a.enemy("Near", 6, 10);
     const far = await a.enemy("Far", 8, 10);
     await a.enemy("Lurker", 1, 10);
-    const hints = await a.player.query(api.combatActions.targets, { campaignId: a.campaignId, characterId: a.w.characterA, mapId: a.mapId });
+    const hints = await a.player.query(api.combatActionsReads.targets, { campaignId: a.campaignId, characterId: a.w.characterA, mapId: a.mapId });
     expect(hints.map((h) => Object.keys(h).sort())).toEqual(hints.map(() => ["band", "cover", "inRange", "lineOfSight", "tokenId"]));
     expect(hints).toEqual(
       expect.arrayContaining([

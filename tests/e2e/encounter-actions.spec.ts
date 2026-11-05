@@ -120,7 +120,7 @@ test("the GM attacks Mira from the Encounter tab, Mira's player marks an Armor S
     await expect(windows.getByTestId("tracker-window")).toContainText("Waiting for Mira (armor choice)");
 
     // Mira's player marks an Armor Slot (their own client; AA4 puts the prompt on the map and the sheet).
-    const hits = await s.playerClient.query(api.adversaryActions.pending, { campaignId: s.campaignId, characterId: s.miraId });
+    const hits = await s.playerClient.query(api.adversaryActionsReads.pending, { campaignId: s.campaignId, characterId: s.miraId });
     expect(hits).toHaveLength(1);
     expect(hits[0]).not.toHaveProperty("roll");
     await s.playerClient.mutation(api.adversaryActions.respond, {

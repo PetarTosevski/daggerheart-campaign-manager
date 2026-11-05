@@ -239,7 +239,7 @@ function seedMap() {
       { _id: SNIPER, name: "Sniper", side: "enemy", x: 9, y: 9, size: 1, face: 0, revealed: false },
     ],
   };
-  queries["combatActions:targets"] = [
+  queries["combatActionsReads:targets"] = [
     { tokenId: LT, band: "close", inRange: true, lineOfSight: true, cover: false },
     { tokenId: BANDIT, band: "close", inRange: true, lineOfSight: true, cover: false },
     { tokenId: SNIPER, band: "close", inRange: true, lineOfSight: true, cover: false },

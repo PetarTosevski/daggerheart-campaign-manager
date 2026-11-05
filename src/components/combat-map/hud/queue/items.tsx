@@ -75,21 +75,21 @@ export function useQueueAnswers(campaignId: CampaignId) {
     if (rows !== undefined) store.setQuery(api.combatRequestsReads.difficulties, { campaignId }, drop(rows, requestId));
   });
   const resolve = useMutation(api.adversaryActions.resolve).withOptimisticUpdate((store, { requestId }) => {
-    const rows = store.getQuery(api.adversaryActions.windows, { campaignId });
-    if (rows !== undefined) store.setQuery(api.adversaryActions.windows, { campaignId }, drop(rows, requestId));
+    const rows = store.getQuery(api.adversaryActionsReads.windows, { campaignId });
+    if (rows !== undefined) store.setQuery(api.adversaryActionsReads.windows, { campaignId }, drop(rows, requestId));
   });
   const cloak = useMutation(api.cloakPrompts.answer).withOptimisticUpdate((store, { requestId }) => {
-    const rows = store.getQuery(api.cloakPrompts.pending, { campaignId });
-    if (rows !== undefined) store.setQuery(api.cloakPrompts.pending, { campaignId }, drop(rows, requestId));
+    const rows = store.getQuery(api.cloakPromptsReads.pending, { campaignId });
+    if (rows !== undefined) store.setQuery(api.cloakPromptsReads.pending, { campaignId }, drop(rows, requestId));
   });
   const keyword = useMutation(api.hitKeywords.answer).withOptimisticUpdate((store, { requestId }) => {
-    const rows = store.getQuery(api.hitKeywords.asks, { campaignId });
-    if (rows !== undefined) store.setQuery(api.hitKeywords.asks, { campaignId }, drop(rows, requestId));
+    const rows = store.getQuery(api.hitKeywordsReads.asks, { campaignId });
+    if (rows !== undefined) store.setQuery(api.hitKeywordsReads.asks, { campaignId }, drop(rows, requestId));
   });
   const cancelAlly = useMutation(api.featurePrompts.cancelAllyRoll).withOptimisticUpdate((store, { requestId }) => {
-    for (const q of store.getAllQueries(api.featurePrompts.allyRolls)) {
+    for (const q of store.getAllQueries(api.featurePromptsReads.allyRolls)) {
       if (q.value === undefined) continue;
-      store.setQuery(api.featurePrompts.allyRolls, q.args, { ...q.value, asks: drop(q.value.asks, requestId), waiting: drop(q.value.waiting, requestId), pending: drop(q.value.pending, requestId) });
+      store.setQuery(api.featurePromptsReads.allyRolls, q.args, { ...q.value, asks: drop(q.value.asks, requestId), waiting: drop(q.value.waiting, requestId), pending: drop(q.value.pending, requestId) });
     }
   });
 

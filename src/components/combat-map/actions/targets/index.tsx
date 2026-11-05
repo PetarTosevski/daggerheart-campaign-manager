@@ -14,12 +14,12 @@ export { ActionsProvider, useCombatTargets, useActor, seenTargets, type Aim, typ
 /**
  * Targets (plan combat-actions CA5): the rings on picked enemy tokens (a map layer of its own, not map-canvas) and the
  * hints the HUD's picking panel shows for each enemy, its Defined Range band and the hint from
- * `combatActions.targets` (Q1: out of range waits for the GM; Q2: line of sight required, cover gives disadvantage).
+ * `combatActionsReads.targets` (Q1: out of range waits for the GM; Q2: line of sight required, cover gives disadvantage).
  * Players only ever get bands and booleans here, never an enemy's numbers (U1). The classic target list went with
  * the cut-over (plan combat-hud H8.1): the HUD's picking panel lists the targets.
  */
 
-export type TargetHint = FunctionReturnType<typeof api.combatActions.targets>[number];
+export type TargetHint = FunctionReturnType<typeof api.combatActionsReads.targets>[number];
 export type RangeBand = TargetHint["band"];
 
 export const BAND_LABEL: Record<RangeBand, string> = {
@@ -43,7 +43,7 @@ export function hintOf(hint: TargetHint | undefined): { tone: HintTone; text: st
 
 /** The character's attackable enemies with hints for the weapon in `slot` (shared subscription; undefined = loading). */
 export function useTargetHints(campaignId: Id<"campaigns">, characterId: Id<"characters"> | null, mapId: Id<"combatMaps">, slot: WeaponSlot) {
-  return useQuery(api.combatActions.targets, characterId ? { campaignId, characterId, mapId, slot } : "skip");
+  return useQuery(api.combatActionsReads.targets, characterId ? { campaignId, characterId, mapId, slot } : "skip");
 }
 
 const RING_COLOUR: Record<HintTone, string> = {

@@ -149,7 +149,7 @@ describe("incoming-hit model", () => {
 });
 
 function renderFor(characterId: Id<"characters">, name: string, views: HitView[]) {
-  queries["adversaryActions:pending"] = views;
+  queries["adversaryActionsReads:pending"] = views;
   return render(<PendingHits campaignId={CAMPAIGN} characterId={characterId} characterName={name} variant="map" />);
 }
 
@@ -225,14 +225,14 @@ const character = (id: string, name: string, mine: boolean) => ({ _id: id, mine,
 describe("GmOwnHits in the GM column", () => {
   it("a player gets nothing here (they answer in the HUD's hit window)", () => {
     queries["charactersReads:listByCampaign"] = [character(MIRA, "Mira", true)];
-    queries["adversaryActions:pending"] = [miraHit];
+    queries["adversaryActionsReads:pending"] = [miraHit];
     const { container } = render(<GmOwnHits {...mapProps("player")} />);
     expect(container.innerHTML).toBe("");
   });
 
   it("the GM sees the prompts of the characters they own only", () => {
     queries["charactersReads:listByCampaign"] = [character(MIRA, "Mira", true), character(TABBY, "Tabby", false)];
-    queries["adversaryActions:pending"] = [miraHit];
+    queries["adversaryActionsReads:pending"] = [miraHit];
     queries["deathMoves:state"] = { awaitingMove: false, pending: null, undoEntryId: null, lessLethal: false, awayRequested: false };
     render(<GmOwnHits {...mapProps("gm")} />);
     expect(screen.getAllByTestId("incoming-hit")).toHaveLength(1);
@@ -241,7 +241,7 @@ describe("GmOwnHits in the GM column", () => {
 
   it("a hit to the last Hit Point brings up the death move", () => {
     queries["charactersReads:listByCampaign"] = [character(MIRA, "Mira", true)];
-    queries["adversaryActions:pending"] = [];
+    queries["adversaryActionsReads:pending"] = [];
     queries["deathMoves:state"] = { awaitingMove: true, pending: null, undoEntryId: null, lessLethal: false, awayRequested: false };
     render(<GmOwnHits {...mapProps("gm")} />);
     expect(screen.getByTestId("incoming-hit-death")).toBeTruthy();
@@ -251,7 +251,7 @@ describe("GmOwnHits in the GM column", () => {
 describe("SheetIncomingHit", () => {
   it("shows the prompt to an editor and nothing to anyone else", async () => {
     const { SheetIncomingHit } = await import("@/app/(gm)/campaigns/[campaignId]/party/[characterId]/incoming-hit");
-    queries["adversaryActions:pending"] = [miraHit];
+    queries["adversaryActionsReads:pending"] = [miraHit];
     const { unmount } = render(<SheetIncomingHit />);
     expect(screen.getByRole("region", { name: "Incoming hit: Bandit hit Mira" })).toBeTruthy();
     unmount();

@@ -74,7 +74,7 @@ function seed() {
       { _id: WALLED, name: "Bandit B", side: "enemy", x: 21, y: 5, size: 1, face: 0, revealed: false },
     ],
   };
-  queries["combatActions:targets"] = [
+  queries["combatActionsReads:targets"] = [
     { tokenId: LT, band: "far", inRange: false, lineOfSight: true, cover: false },
     { tokenId: BANDIT, band: "close", inRange: true, lineOfSight: true, cover: false },
     { tokenId: SNIPER, band: "veryFar", inRange: false, lineOfSight: true, cover: false },
@@ -275,7 +275,7 @@ describe("the picking panel", () => {
 
   it("loading targets shows a status line; a locked rule ignores taps", () => {
     seed();
-    delete queries["combatActions:targets"];
+    delete queries["combatActionsReads:targets"];
     renderHud(card({ rule: { side: "enemy", max: 1, range: "far", locked: true } }));
     open();
     expect(within(panel()).getByRole("status")).toHaveTextContent("Loading the targets");

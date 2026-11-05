@@ -129,7 +129,7 @@ describe("model", () => {
 
 describe("the throwing ally's prompt", () => {
   it("rolls with the picked trait at a target in Close range, with Ash's Hope for a second target in Very Close range", async () => {
-    queries["featurePrompts:allyRolls"] = view({ asks: [ask()] });
+    queries["featurePromptsReads:allyRolls"] = view({ asks: [ask()] });
     results["featurePrompts:allyRoll"] = [
       { status: "resolved", roll: { kind: "action", dice: [], modifier: 0, total: 16, outcome: "successHope", manual: false }, damage: [{ kind: "damage", dice: [], modifier: 2, total: 9, outcome: "none", manual: false }], targets: [{ tokenId: "t-bandit", hit: true, defeated: false }, { tokenId: "t-two", hit: true, defeated: false }] },
     ];
@@ -165,7 +165,7 @@ describe("the throwing ally's prompt", () => {
   });
 
   it("without Ash's Hope the second target can't be ticked; a refusal shows an alert", async () => {
-    queries["featurePrompts:allyRolls"] = view({ asks: [ask({ hope: 0 })] });
+    queries["featurePromptsReads:allyRolls"] = view({ asks: [ask({ hope: 0 })] });
     results["featurePrompts:allyRoll"] = [new ConvexError({ code: "COMBAT_TARGET_INVALID" })];
     show(BRYN, []);
     const card = screen.getByTestId("ally-roll-ask");
@@ -180,7 +180,7 @@ describe("the throwing ally's prompt", () => {
   });
 
   it("greys the controls while the GM has not turned on Play for this character", () => {
-    queries["featurePrompts:allyRolls"] = view({ asks: [ask()] });
+    queries["featurePromptsReads:allyRolls"] = view({ asks: [ask()] });
     show(BRYN, [], "gm", false);
     expect((screen.getByLabelText("Target within Close range") as HTMLSelectElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Roll the throw" }) as HTMLButtonElement).disabled).toBe(true);
@@ -189,7 +189,7 @@ describe("the throwing ally's prompt", () => {
 
 describe("the druid's throw", () => {
   it("picks the ally on the map and uses Cannonball on them (the Stress is the server's)", async () => {
-    queries["featurePrompts:allyRolls"] = view({ allies: [{ tokenId: tok("t-bryn"), name: "Bryn" }] });
+    queries["featurePromptsReads:allyRolls"] = view({ allies: [{ tokenId: tok("t-bryn"), name: "Bryn" }] });
     results["combatFeatures:useFeature"] = [{ status: "resolved" }];
     show(ASH, [cannonball()]);
     const start = screen.getByTestId("ally-roll-start");
@@ -205,19 +205,19 @@ describe("the druid's throw", () => {
   });
 
   it("while a throw waits it says so and offers no second throw; a used Cannonball can't be asked", () => {
-    queries["featurePrompts:allyRolls"] = view({ waiting: [{ requestId: req("r1"), rollerName: "Bryn", featureName: "Cannonball" }], allies: [{ tokenId: tok("t-bryn"), name: "Bryn" }] });
+    queries["featurePromptsReads:allyRolls"] = view({ waiting: [{ requestId: req("r1"), rollerName: "Bryn", featureName: "Cannonball" }], allies: [{ tokenId: tok("t-bryn"), name: "Bryn" }] });
     show(ASH, [cannonball()]);
     expect(screen.getByTestId("ally-roll-waiting").textContent).toBe("Cannonball: waiting for Bryn to make the roll.");
     expect(screen.queryByTestId("ally-roll-start")).toBeNull();
     cleanup();
-    queries["featurePrompts:allyRolls"] = view({ allies: [{ tokenId: tok("t-bryn"), name: "Bryn" }] });
+    queries["featurePromptsReads:allyRolls"] = view({ allies: [{ tokenId: tok("t-bryn"), name: "Bryn" }] });
     show(ASH, [cannonball(false)]);
     fireEvent.change(screen.getByLabelText("Ally who throws you"), { target: { value: "t-bryn" } });
     expect((screen.getByRole("button", { name: "Ask to throw · 1 Stress" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("renders nothing for a character without prompts", () => {
-    queries["featurePrompts:allyRolls"] = view();
+    queries["featurePromptsReads:allyRolls"] = view();
     const { container } = show(BRYN, []);
     expect(container.innerHTML).toBe("");
   });
@@ -226,7 +226,7 @@ describe("the druid's throw", () => {
 describe("the GM's pending list", () => {
   it("lists every open throw with Cancel, which drops it at once", async () => {
     const pending = [{ requestId: req("r1"), characterName: "Ash", rollerName: "Bryn", featureName: "Cannonball", createdAt: 1 }];
-    queries["featurePrompts:allyRolls"] = view({ pending });
+    queries["featurePromptsReads:allyRolls"] = view({ pending });
     show(BRYN, [], "gm");
     const list = screen.getByTestId("ally-roll-pending");
     expect(within(list).getByText("Ash's Cannonball: Bryn rolls")).toBeTruthy();
@@ -240,7 +240,7 @@ describe("the GM's pending list", () => {
   });
 
   it("a player never sees the pending list", () => {
-    queries["featurePrompts:allyRolls"] = view({ pending: [{ requestId: req("r1"), characterName: "Ash", rollerName: "Bryn", featureName: "Cannonball", createdAt: 1 }] });
+    queries["featurePromptsReads:allyRolls"] = view({ pending: [{ requestId: req("r1"), characterName: "Ash", rollerName: "Bryn", featureName: "Cannonball", createdAt: 1 }] });
     const { container } = show(BRYN, [], "player");
     expect(container.querySelector("[data-testid='ally-roll-pending']")).toBeNull();
   });

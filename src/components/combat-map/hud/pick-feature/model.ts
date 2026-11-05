@@ -24,7 +24,7 @@ import type { CostResource } from "../ui";
  *
  * dcm-aiwg: the riders that ride on a feature's own action roll (Fangs + Feed's "Fear Die a d20", HF p.39). The server
  * takes them (`combatFeatures.useFeature({ riders })`, plan lanes-2 E1.3a) but lists rider options only for a weapon
- * attack (`combatActions.riders`). `featureRiderOptions` mirrors the server's `riderOptions` / `riderPhase` for a feature
+ * attack (`combatActionsReads.riders`). `featureRiderOptions` mirrors the server's `riderOptions` / `riderPhase` for a feature
  * host (convex/lib/combatActions.ts; host = `rollHost` with `fromUse` the feature) from what the client holds: the held
  * features' uses and readiness (`combatFeaturesReads.drawer`) and the loadout's (`combatCardsReads.hand`). Before-roll and
  * after-roll riders only (a damage-phase rider is a prompt after the damage, DA2); default-on riders (Rise to the

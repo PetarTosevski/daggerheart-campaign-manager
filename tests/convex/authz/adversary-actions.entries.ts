@@ -74,8 +74,8 @@ const entries: Entry[] = [
     expect: NOT_THEIRS,
   },
   { fn: api.adversaryActions.resolve, access: "gm", args: (w) => ({ requestId: w.ids.requestId }) },
-  { fn: api.adversaryActions.pending, access: "view", args: (w) => ({ characterId: w.characterA }), expect: NOT_THEIRS },
-  { fn: api.adversaryActions.windows, access: "gm" },
+  { fn: api.adversaryActionsReads.pending, access: "view", args: (w) => ({ characterId: w.characterA }), expect: NOT_THEIRS },
+  { fn: api.adversaryActionsReads.windows, access: "gm" },
   // AA2c: what a feature use needs (GM only: the stat block's numbers).
   { fn: api.adversaryActions.featureAsk, access: "gm", args: (w) => ({ instanceId: w.ids.bear, feature: "Bite" }) },
   { fn: api.adversaryActions.startCountdown, access: "gm", args: (w) => ({ instanceId: w.ids.bear, feature: "Bite" }), okCodes: ["INVALID"] },
@@ -89,7 +89,7 @@ const entries: Entry[] = [
   { fn: api.adversaryActions.pcTokens, access: "gm" },
   // Lanes-2 E2.4 (dcm-sk4r): the GM's keyword ask on a hit (the area's hit asks nothing: INVALID past the check).
   { fn: api.hitKeywords.answer, access: "gm", args: (w) => ({ requestId: w.ids.requestId, answer: { keyword: "fire", carries: true } }), okCodes: ["INVALID"] },
-  { fn: api.hitKeywords.asks, access: "gm" },
+  { fn: api.hitKeywordsReads.asks, access: "gm" },
 ];
 
 const area: Area = { area: "adversary-actions", setup, entries };

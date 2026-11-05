@@ -17,9 +17,9 @@ import type { PickActor, PickContext, PickOutcome, PickPatch, PickRow, PickRowIn
  * The HUD's weapon attack picker, pure (plan combat-hud H3.2; boards CmpPicking 'Weapon attack', CmpPromptsPlayer 'With
  * this attack', 'Forced attack', 'Lead by Example', 'Your hit can defeat 2 more Minions'). It builds the pick-session
  * spec (H3.0's `usePick().open`) from what the classic Attack bar already reads: the equipped weapons
- * (`equippedWeapons`), the riders of `combatActions.riders` (`ridersToSend`, `riderProblem`, `riseToSend`), the roll
+ * (`equippedWeapons`), the riders of `combatActionsReads.riders` (`ridersToSend`, `riderProblem`, `riseToSend`), the roll
  * options (Experiences, advantage, Help: `RollValues`), the sheet's trait pick / extra targets / Spirit Weapon
- * (`actions/attack/mods.ts`), a target's rider benefit (Lead by Example: `combatActions.targets` `benefits`) and the
+ * (`actions/attack/mods.ts`), a target's rider benefit (Lead by Example: `combatActionsReads.targets` `benefits`) and the
  * forced attacks of `combatRequestsReads.forcedAttacks`. `combatActions.attack` decides; nothing here is a rule of its own.
  * No React here (the extra rows come in as a render function), so the unit tests read it directly.
  */
@@ -47,7 +47,7 @@ export type ForcedAttack = {
   targets: readonly { tokenId: Id<"combatTokens">; name: string }[];
 };
 
-/** A target's rider benefit (`combatActions.targets` `benefits`): Lead by Example's options. */
+/** A target's rider benefit (`combatActionsReads.targets` `benefits`): Lead by Example's options. */
 export type Benefit = NonNullable<TargetHint["benefits"]>[number];
 
 /** The picker's decisions, as `combatActions.attack` takes them (the hook adds campaign, character, map and the key). */
@@ -90,7 +90,7 @@ export type AttackInput = {
   weapons: readonly AttackWeapon[];
   proficiency: number;
   roller: Roller;
-  /** `combatActions.riders` per equipped weapon slot. */
+  /** `combatActionsReads.riders` per equipped weapon slot. */
   riders: Partial<Record<WeaponSlot, readonly RiderOption[]>>;
   /** The sheet lets the player pick the roll's trait for this slot (dcm-5dg: Versatile Fighter, a "choice" weapon). */
   traitPick: Partial<Record<WeaponSlot, boolean>>;

@@ -9,7 +9,7 @@ import type { PickOption, PickReach, PickRow, PickRowInput, PickRule, PickSelect
 /**
  * The picking panel's pure model (plan combat-hud H3.0). The rows reuse the classic rules, never a copy: who fits a
  * side and whether a creature is out of a card's range come from the Hand model (`fitsSide`, `outOfRange`, the same
- * check the server's card runner makes), a weapon's reach and line of sight from `combatActions.targets` (the server's
+ * check the server's card runner makes), a weapon's reach and line of sight from `combatActionsReads.targets` (the server's
  * hints), the band from the engine's `rangeCheck`. No React here, so the unit tests read it directly.
  */
 
@@ -59,7 +59,7 @@ export function buildRows({
 }: {
   creatures: readonly PickCreature[];
   rule: PickRule;
-  /** `combatActions.targets` for the actor (enemies it sees); undefined while loading or for no PC actor. */
+  /** `combatActionsReads.targets` for the actor (enemies it sees); undefined while loading or for no PC actor. */
   hints: readonly TargetHint[] | undefined;
   picked: readonly string[];
 }): PickRow[] {

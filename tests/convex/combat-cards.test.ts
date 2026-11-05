@@ -461,12 +461,12 @@ describe("AA2b: card damage to another PC, Onslaught on card attacks", () => {
     expect(hit!.payload.kind === "incomingHit" && hit!.payload.attacker).toEqual({ kind: "pc", characterId: a.w.characterA, label: "Ash", cardId: "book-of-grynn", feature: "Book of Grynn" });
     expect(hit!.payload.kind === "incomingHit" && hit!.payload.targetCharacterId).toBe(a.w.characterB);
     expect(hit!.status).toBe("open");
-    const windows = await a.gm.query(api.adversaryActions.windows, { campaignId: a.campaignId });
+    const windows = await a.gm.query(api.adversaryActionsReads.windows, { campaignId: a.campaignId });
     expect(windows[0]).toMatchObject({ requestId: hit!._id, attackerCharacterId: a.w.characterA, attackerLabel: "Ash", targetName: "Bryn" });
     expect("instanceId" in windows[0]!).toBe(false);
     // Ash doesn't answer their own card's hit; Bryn sees their own numbers.
-    expect(await a.player.query(api.adversaryActions.pending, { campaignId: a.campaignId, characterId: a.w.characterA })).toEqual([]);
-    const [view] = await other.query(api.adversaryActions.pending, { campaignId: a.campaignId, characterId: a.w.characterB });
+    expect(await a.player.query(api.adversaryActionsReads.pending, { campaignId: a.campaignId, characterId: a.w.characterA })).toEqual([]);
+    const [view] = await other.query(api.adversaryActionsReads.pending, { campaignId: a.campaignId, characterId: a.w.characterB });
     expect(view).toMatchObject({ requestId: hit!._id, role: "target", attackerLabel: "Ash", maxSlots: 1 });
     let answer = await other.mutation(api.adversaryActions.respond, { campaignId: a.campaignId, requestId: hit!._id, characterId: a.w.characterB, choice: { kind: "noArmor" }, idempotencyKey: key() });
     // A1 (dcm-bxp.99.19.55 (3)): "Don't mark" keeps the window open while a reaction still fits (Get Back Up); Done ends it.

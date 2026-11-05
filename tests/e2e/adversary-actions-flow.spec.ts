@@ -298,8 +298,8 @@ test("adversary actions from both pages: I Am Your Shield, armor, undo, a multi-
     expect(await fear()).toBe(Math.min(12, fearBefore - ask.fear + (anyHit ? 1 : 0)));
     await undo(boom);
     await expect.poll(fear).toBe(fearBefore);
-    expect(await gm.query(api.adversaryActions.pending, { campaignId, characterId: mira })).toEqual([]);
-    expect(await gm.query(api.adversaryActions.pending, { campaignId, characterId: tabby })).toEqual([]);
+    expect(await gm.query(api.adversaryActionsReads.pending, { campaignId, characterId: mira })).toEqual([]);
+    expect(await gm.query(api.adversaryActionsReads.pending, { campaignId, characterId: tabby })).toEqual([]);
 
     // ---- 4. Momentum on the Elemental's standard attack: a hit gains the GM a Fear at once; undo takes it back.
     let momentum = false;
@@ -338,7 +338,7 @@ test("adversary actions from both pages: I Am Your Shield, armor, undo, a multi-
       expect(r.roll?.dice.filter((d) => d.sides === 20)).toHaveLength(1);
       if (r.targets[0]!.hit) {
         grouped = true;
-        const [hit] = await gm.query(api.adversaryActions.pending, { campaignId, characterId: mira });
+        const [hit] = await gm.query(api.adversaryActionsReads.pending, { campaignId, characterId: mira });
         expect(hit?.damage).toBe(9);
         // Mira's player is asked about armor against the combined damage, without the roll (Q13, Q14).
         const win = a.page.getByRole("dialog", { name: "You were hit" });

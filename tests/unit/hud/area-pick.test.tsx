@@ -104,7 +104,7 @@ function seedView() {
       { _id: BANDIT, name: "Bandit", side: "enemy", x: 9, y: 7, size: 1, face: 0, revealed: false },
     ],
   };
-  queries["combatActions:targets"] = [
+  queries["combatActionsReads:targets"] = [
     { tokenId: LT, band: "melee", inRange: true, lineOfSight: true, cover: false },
     { tokenId: BANDIT, band: "veryClose", inRange: true, lineOfSight: true, cover: false },
   ];

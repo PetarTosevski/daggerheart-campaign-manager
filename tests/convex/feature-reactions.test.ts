@@ -110,7 +110,7 @@ async function arena() {
   const request = (id: Id<"combatRequests">) => t.run(async (ctx) => (await ctx.db.get("combatRequests", id))!);
   const respond = (c: Client, requestId: Id<"combatRequests">, characterId: Id<"characters">, choice: Record<string, unknown>) =>
     c.mutation(api.adversaryActions.respond, { campaignId, requestId, characterId, choice: choice as never, idempotencyKey: key() });
-  const pending = (c: Client, characterId: Id<"characters">) => c.query(api.adversaryActions.pending, { campaignId, characterId });
+  const pending = (c: Client, characterId: Id<"characters">) => c.query(api.adversaryActionsReads.pending, { campaignId, characterId });
   const feature = (featureId: string, choices: { id: string; value: unknown }[] = []) => ({ kind: "feature", featureId, choices });
   const groupRow = (groupId: string) => t.run(async (ctx) => (await ctx.db.query("actionLog").collect()).find((r) => r.groupId === groupId && r.visibility === "public")!);
   const undo = (entryId: Id<"actionLog">) => gm.mutation(api.actionLog.undo, { entryId, idempotencyKey: key() });
@@ -236,7 +236,7 @@ describe("before the roll (Q2)", () => {
     expect(view!.features?.map((f) => f.featureId)).toEqual(["subclass:pact-of-the-endless:harrowing-invocation"]);
     expect(keysOf(view).filter((k) => ROLL_KEYS.includes(k) || k === "damage")).toEqual([]);
     expect(await a.pending(a.other, a.w.characterB)).toEqual([]);
-    expect((await a.gm.query(api.adversaryActions.windows, { campaignId: a.campaignId }))[0]).toMatchObject({ preRoll: true, awaiting: [{ characterId: a.w.characterA }] });
+    expect((await a.gm.query(api.adversaryActionsReads.windows, { campaignId: a.campaignId }))[0]).toMatchObject({ preRoll: true, awaiting: [{ characterId: a.w.characterA }] });
   });
 
   it("Harrowing Invocation (HF p.14): disadvantage turns the 15 into a 2: a miss, and the Bear marks a Stress", async () => {
@@ -288,8 +288,8 @@ describe("before the roll (Q2)", () => {
     expect(await code(a.respond(a.other, requestId, a.w.characterA, { kind: "pass" }))).toBe("FORBIDDEN");
     expect(await code(a.pending(a.other, a.w.characterA))).toBe("FORBIDDEN");
     expect(await code(a.respond(a.w.as("outsider"), requestId, a.w.characterA, { kind: "pass" }))).not.toBe("ok");
-    expect(await code(a.gm.query(api.adversaryActions.windows, { campaignId: a.campaignId }))).toBe("ok");
-    expect(await code(a.player.query(api.adversaryActions.windows, { campaignId: a.campaignId }))).not.toBe("ok");
+    expect(await code(a.gm.query(api.adversaryActionsReads.windows, { campaignId: a.campaignId }))).toBe("ok");
+    expect(await code(a.player.query(api.adversaryActionsReads.windows, { campaignId: a.campaignId }))).not.toBe("ok");
     // The GM may answer for the PC (edit on every character).
     expect(await a.respond(a.gm, requestId, a.w.characterA, { kind: "pass" })).toMatchObject({ status: "resolved" });
   });

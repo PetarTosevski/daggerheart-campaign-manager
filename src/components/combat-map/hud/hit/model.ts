@@ -2,7 +2,7 @@ import { SEVERITY_LABEL, armorCounts, promptMode, stepFor, type GrantView, type 
 
 /**
  * Pure model of the HUD's hit window (plan combat-hud H4.2; Main 'You're hit', CmpPromptsPlayer 'Pay something else?').
- * Everything comes from the classic prompt's data (`adversaryActions.pending`, through `actions/reactions/model.ts`)
+ * Everything comes from the classic prompt's data (`adversaryActionsReads.pending`, through `actions/reactions/model.ts`)
  * and the character's own thresholds and trackers (`combatHud.sheet`); nothing here invents a number the engine did not
  * give. Text follows answer 2: pips show what is left, words say what is marked ("2 → 3 of 6 marked").
  */

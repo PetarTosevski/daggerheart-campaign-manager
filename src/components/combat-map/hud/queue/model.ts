@@ -29,7 +29,7 @@ export type CardSanction = AttackSanction & { cardName: string };
 export type FeatureSanction = AttackSanction & { featureName: string };
 /** `combatRequestsReads.difficulties`. */
 export type DifficultyAsk = { requestId: string; characterName: string; createdAt: number; ask: "charge" | "cloak"; target: Named | null; seers: Named[] };
-/** `adversaryActions.windows`. */
+/** `adversaryActionsReads.windows`. */
 export type ReactionWindow = {
   requestId: string;
   attackerLabel: string;
@@ -44,9 +44,9 @@ export type ReactionWindow = {
   afterHit?: boolean;
   preRoll?: boolean;
 };
-/** `cloakPrompts.pending`. */
+/** `cloakPromptsReads.pending`. */
 export type CloakAsk = { requestId: string; characterName: string; label: string; targets: Named[]; createdAt: number };
-/** `hitKeywords.asks`. */
+/** `hitKeywordsReads.asks`. */
 export type KeywordAsk = {
   requestId: string;
   attackerLabel: string;
@@ -59,7 +59,7 @@ export type KeywordAsk = {
   damageType: "physical" | "magic" | "both";
   createdAt: number;
 };
-/** `featurePrompts.allyRolls`'s `pending` (the GM's list). */
+/** `featurePromptsReads.allyRolls`'s `pending` (the GM's list). */
 export type AllyRollAsk = { requestId: string; characterName: string; rollerName: string; featureName: string; createdAt: number };
 
 /** One queue card. `kind` picks the card and the keyed mutation that answers it. */

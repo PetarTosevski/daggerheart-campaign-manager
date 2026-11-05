@@ -26,10 +26,10 @@ import { prefersReducedMotion } from "@/lib/use-reduced-motion";
  * - out of range, your call: `combatRequestsReads.mine` (attack sanctions), `combatCardsReads.pending`, `combatFeaturesReads.pending`
  *   — Allow / Decline (`combatRequests.sanction`, `combatCards.sanction`, `combatFeatures.sanction`);
  * - Set the Difficulty: `combatRequestsReads.difficulties` — Set and roll / Decline (`featurePrompts.answerDifficulty`);
- * - Reactions: `adversaryActions.windows` — Resolve now (`adversaryActions.resolve`);
- * - Does <name>'s Cloaked end?: `cloakPrompts.pending` — Yes, it ends / No, it stays (`cloakPrompts.answer`);
- * - Was this hit fire?: `hitKeywords.asks` — Yes / No (`hitKeywords.answer`);
- * - ally rolls: `featurePrompts.allyRolls` (the GM's `pending`) — Cancel the roll (`featurePrompts.cancelAllyRoll`);
+ * - Reactions: `adversaryActionsReads.windows` — Resolve now (`adversaryActions.resolve`);
+ * - Does <name>'s Cloaked end?: `cloakPromptsReads.pending` — Yes, it ends / No, it stays (`cloakPrompts.answer`);
+ * - Was this hit fire?: `hitKeywordsReads.asks` — Yes / No (`hitKeywords.answer`);
+ * - ally rolls: `featurePromptsReads.allyRolls` (the GM's `pending`) — Cancel the roll (`featurePrompts.cancelAllyRoll`);
  * - the death move confirm: `deathMoves.state` per PC — H4.3's `GmDeathConfirm` (Confirm the death move / Send it back).
  *
  * Every answer is the existing keyed mutation with an optimistic update that drops the card at once. A request someone
@@ -89,14 +89,14 @@ function useQueue(campaignId: Id<"campaigns">): Queue {
   const cards = useQuery(api.combatCardsReads.pending, { campaignId });
   const features = useQuery(api.combatFeaturesReads.pending, { campaignId });
   const difficulties = useQuery(api.combatRequestsReads.difficulties, { campaignId });
-  const windows = useQuery(api.adversaryActions.windows, { campaignId });
-  const cloaks = useQuery(api.cloakPrompts.pending, { campaignId });
-  const keywords = useQuery(api.hitKeywords.asks, { campaignId });
+  const windows = useQuery(api.adversaryActionsReads.windows, { campaignId });
+  const cloaks = useQuery(api.cloakPromptsReads.pending, { campaignId });
+  const keywords = useQuery(api.hitKeywordsReads.asks, { campaignId });
   const characters = useQuery(api.charactersReads.listByCampaign, { campaignId });
   const live = useMemo(() => (characters ?? []).filter((c) => !c.corrupt), [characters]);
   // `allyRolls` reads for a character the caller edits; the GM's `pending` lists every open throw of the campaign.
   const anyPc = live[0]?._id;
-  const ally = useQuery(api.featurePrompts.allyRolls, anyPc === undefined ? "skip" : { campaignId, characterId: anyPc });
+  const ally = useQuery(api.featurePromptsReads.allyRolls, anyPc === undefined ? "skip" : { campaignId, characterId: anyPc });
   // useQueries needs a stable request object (a new one each render loops): keyed on the PCs' ids.
   const ids = live.map((c) => c._id).join(",");
   const deathRequests = useMemo(

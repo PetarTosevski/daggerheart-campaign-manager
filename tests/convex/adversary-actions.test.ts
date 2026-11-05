@@ -131,7 +131,7 @@ async function arena(options: { map?: boolean } = {}) {
     gm.mutation(api.adversaryActions.useFeature, { campaignId, instanceId, feature: name, targets, idempotencyKey: key(), ...extra });
   const respond = (c: Client, requestId: Id<"combatRequests">, characterId: Id<"characters">, choice: Record<string, unknown>) =>
     c.mutation(api.adversaryActions.respond, { campaignId, requestId, characterId, choice: choice as never, idempotencyKey: key() });
-  const pending = (c: Client, characterId: Id<"characters">) => c.query(api.adversaryActions.pending, { campaignId, characterId });
+  const pending = (c: Client, characterId: Id<"characters">) => c.query(api.adversaryActionsReads.pending, { campaignId, characterId });
   return { w, t, campaignId, gm, player, other, encounterId, bear, dummy, mapId, edit, sheet, instance, fear, setFear, request, rows, feed, attack, feature, respond, pending };
 }
 
@@ -357,14 +357,14 @@ describe("adversaryActions: the reaction window", () => {
     const severity = pcSeverity(damage, derivedThresholds(await a.sheet())).severity;
     expect(r).toMatchObject({ status: "resolved", targetId: a.w.characterA, severity, hpMarked: hpForSeverity(severity) });
     expect((await a.sheet()).armorMarked).toBe(0);
-    const windows = await a.gm.query(api.adversaryActions.windows, { campaignId: a.campaignId });
+    const windows = await a.gm.query(api.adversaryActionsReads.windows, { campaignId: a.campaignId });
     expect(windows).toEqual([]);
   });
 
   it("the GM sees open windows and who still has to answer", async () => {
     const a = await arena();
     const { requestId, damage } = await bearHitsAsh(a);
-    const [win] = await a.gm.query(api.adversaryActions.windows, { campaignId: a.campaignId });
+    const [win] = await a.gm.query(api.adversaryActionsReads.windows, { campaignId: a.campaignId });
     expect(win).toMatchObject({ requestId, attackerLabel: "Bear", damage, targetName: "Ash", awaiting: [{ characterId: a.w.characterA, name: "Ash", role: "target" }] });
   });
 });
@@ -596,7 +596,7 @@ describe("AA2b: death move, riders, after-hit cards, scene limits", () => {
     const [view] = await a.pending(a.player, a.w.characterA);
     expect(view).toMatchObject({ requestId, afterHit: true, deathMove: true, cardIds: ["unbreakable"], role: "target", awaiting: true });
     expect(view!.damage).toBeUndefined();
-    const windows = await a.gm.query(api.adversaryActions.windows, { campaignId: a.campaignId });
+    const windows = await a.gm.query(api.adversaryActionsReads.windows, { campaignId: a.campaignId });
     expect(windows[0]).toMatchObject({ requestId, afterHit: true, awaiting: [{ characterId: a.w.characterA, role: "target" }] });
     // Only Ash answers it.
     expect(await code(a.respond(a.other, requestId, a.w.characterB, { kind: "pass" }))).toBe("NOT_A_RESPONDER");

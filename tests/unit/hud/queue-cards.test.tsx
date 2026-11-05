@@ -58,11 +58,11 @@ function empty() {
   queries["combatCardsReads:pending"] = [];
   queries["combatFeaturesReads:pending"] = [];
   queries["combatRequestsReads:difficulties"] = [];
-  queries["adversaryActions:windows"] = [];
-  queries["cloakPrompts:pending"] = [];
-  queries["hitKeywords:asks"] = [];
+  queries["adversaryActionsReads:windows"] = [];
+  queries["cloakPromptsReads:pending"] = [];
+  queries["hitKeywordsReads:asks"] = [];
   queries["charactersReads:listByCampaign"] = [moss];
-  queries["featurePrompts:allyRolls"] = { asks: [], waiting: [], allies: [], pending: [] };
+  queries["featurePromptsReads:allyRolls"] = { asks: [], waiting: [], allies: [], pending: [] };
   queries["deathMoves:state"] = { "c-moss": deathBase };
   queries["feed:list"] = { page: [], isDone: true, continueCursor: "" };
 }
@@ -72,12 +72,12 @@ function full() {
   queries["combatRequestsReads:mine"] = [{ kind: "sanction", requestId: "r-att", characterId: "c-moss", characterName: "Moss", createdAt: 1, slot: "primary", targets: [sniper], outOfRange: [{ tokenId: "t-sniper", band: "veryFar" }] }];
   queries["combatCardsReads:pending"] = [{ requestId: "r-card", characterId: "c-moss", characterName: "Moss", cardId: "vicious-entangle", cardName: "Vicious Entangle", useId: "main", createdAt: 2, targets: [sniper], outOfRange: [{ tokenId: "t-sniper", band: "veryFar" }] }];
   queries["combatRequestsReads:difficulties"] = [{ requestId: "r-dif", characterId: "c-b", characterName: "Brannoc", createdAt: 3, ask: "charge", target: { tokenId: "t-b", name: "Bandit" }, seers: [] }];
-  queries["adversaryActions:windows"] = [
+  queries["adversaryActionsReads:windows"] = [
     { requestId: "r-win", attackerLabel: "Bandit", originalTargetId: "c-moss", targetCharacterId: "c-moss", targetName: "Moss", damage: 9, damageType: "physical", direct: false, critical: false, awaiting: [{ characterId: "c-o", name: "Oriel", role: "ally" }], answers: 0, createdAt: 4 },
   ];
-  queries["cloakPrompts:pending"] = [{ requestId: "r-clo", characterId: "c-v", characterName: "Vex", label: "Words of Discord", targets: [{ tokenId: "t-b", name: "Bandit" }], createdAt: 5 }];
-  queries["hitKeywords:asks"] = [{ requestId: "r-key", attackerLabel: "Bandit", targetCharacterId: "c-a", targetName: "Ash", keyword: "fire", guard: "Fireproof", question: "Was this hit fire?", damage: 6, damageType: "physical", createdAt: 6 }];
-  queries["featurePrompts:allyRolls"] = { asks: [], waiting: [], allies: [], pending: [{ requestId: "r-ally", characterName: "Moss", rollerName: "Brannoc", featureName: "Cannonball", createdAt: 7 }] };
+  queries["cloakPromptsReads:pending"] = [{ requestId: "r-clo", characterId: "c-v", characterName: "Vex", label: "Words of Discord", targets: [{ tokenId: "t-b", name: "Bandit" }], createdAt: 5 }];
+  queries["hitKeywordsReads:asks"] = [{ requestId: "r-key", attackerLabel: "Bandit", targetCharacterId: "c-a", targetName: "Ash", keyword: "fire", guard: "Fireproof", question: "Was this hit fire?", damage: 6, damageType: "physical", createdAt: 6 }];
+  queries["featurePromptsReads:allyRolls"] = { asks: [], waiting: [], allies: [], pending: [{ requestId: "r-ally", characterName: "Moss", rollerName: "Brannoc", featureName: "Cannonball", createdAt: 7 }] };
   queries["deathMoves:state"] = { "c-moss": { ...deathBase, request: { move: "avoidDeath", entryId: "e", at: 8 } } };
 }
 

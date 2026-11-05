@@ -79,8 +79,8 @@ export function useAttackPicker(state: AttackState, playFor: Id<"characters"> | 
   const character = useQuery(api.charactersReads.get, on ? { characterId } : "skip");
   const weapons = character ? equippedWeapons(character.sheet) : [];
   const hasSecondary = weapons.some((w) => w.slot === "secondary");
-  const ridersPrimary = useQuery(api.combatActions.riders, on ? { campaignId, characterId, slot: "primary" } : "skip");
-  const ridersSecondary = useQuery(api.combatActions.riders, on && hasSecondary ? { campaignId, characterId, slot: "secondary" } : "skip");
+  const ridersPrimary = useQuery(api.combatActionsReads.riders, on ? { campaignId, characterId, slot: "primary" } : "skip");
+  const ridersSecondary = useQuery(api.combatActionsReads.riders, on && hasSecondary ? { campaignId, characterId, slot: "secondary" } : "skip");
   const hints = useTargetHints(campaignId, on ? characterId : null, mapId ?? ("" as Id<"combatMaps">), "primary");
   const forcedAll = useQuery(api.combatRequestsReads.forcedAttacks, on ? { campaignId } : "skip");
   const attack = useMutation(api.combatActions.attack);

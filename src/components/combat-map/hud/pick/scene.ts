@@ -12,11 +12,11 @@ import type { PickActor, PickRow, PickSessionSpec } from "./types";
 /**
  * The creatures a session can list and the rows it shows (plan combat-hud H3.0). One hook for the panel and the ring
  * layer: Convex shares one subscription per query and arguments, so both read the same data (and the classic slots'
- * `playerView` / `combatActions.targets` subscriptions too).
+ * `playerView` / `combatActionsReads.targets` subscriptions too).
  *
  * - A player: their character's view (`combatVision.playerView`): their own token ("self"), the other PCs, every other
  *   token they see, with condition names (HD1, answer 10a; never a number). Line of sight and a weapon's reach: the
- *   server's `combatActions.targets` hints for the rule's weapon slot.
+ *   server's `combatActionsReads.targets` hints for the rule's weapon slot.
  * - The GM: every token of the map (`combatTokensReads.list`) with `spec.actor` as "self"; hints only for a PC actor.
  */
 

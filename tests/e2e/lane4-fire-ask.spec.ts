@@ -83,9 +83,9 @@ for (const carries of [true, false]) {
     await expect(page.getByTestId("hud-queue-result")).toHaveText(carries ? "Ember’s Fireproof applies." : "Not fire: the hit stands as it is.", { timeout: 30_000 });
     await expect(page.getByTestId("hud-queue-keyword")).toHaveCount(0);
     if (carries) {
-      await expect.poll(async () => (await s.gm.query(api.adversaryActions.windows, { campaignId: s.campaignId })).length).toBe(0);
+      await expect.poll(async () => (await s.gm.query(api.adversaryActionsReads.windows, { campaignId: s.campaignId })).length).toBe(0);
       expect((await sheetOf(s.gm, s.ember)).hp).toBe(0);
     } else await expect.poll(async () => (await sheetOf(s.gm, s.ember)).hp).toBeGreaterThan(0);
-    expect(await s.gm.query(api.hitKeywords.asks, { campaignId: s.campaignId })).toEqual([]);
+    expect(await s.gm.query(api.hitKeywordsReads.asks, { campaignId: s.campaignId })).toEqual([]);
   });
 }

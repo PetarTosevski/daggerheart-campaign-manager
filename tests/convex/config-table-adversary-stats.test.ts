@@ -85,8 +85,8 @@ describe("config U1: adversary HP, Stress and Difficulty are always off for play
       "combatHud.scene": () => player.query(api.combatHud.scene, { campaignId }),
       "combatHud.sheet": () => player.query(api.combatHud.sheet, { characterId: ash }),
       "combatTokensReads.party": () => player.query(api.combatTokensReads.party, { campaignId, mapId }),
-      "combatActions.targets": () => player.query(api.combatActions.targets, { campaignId, characterId: ash, mapId }),
-      "combatActions.riders": () => player.query(api.combatActions.riders, { campaignId, characterId: ash }),
+      "combatActionsReads.targets": () => player.query(api.combatActionsReads.targets, { campaignId, characterId: ash, mapId }),
+      "combatActionsReads.riders": () => player.query(api.combatActionsReads.riders, { campaignId, characterId: ash }),
       "combatSpotlight.state": () => player.query(api.combatSpotlight.state, { campaignId }),
       "combatMaps.live": () => player.query(api.combatMaps.live, { campaignId }),
       "combatAreas.list": () => player.query(api.combatAreas.list, { campaignId, mapId }),
@@ -96,7 +96,7 @@ describe("config U1: adversary HP, Stress and Difficulty are always off for play
       "combatRequestsReads.mine": () => player.query(api.combatRequestsReads.mine, { campaignId }),
       "combatRequestsReads.difficulties": () => player.query(api.combatRequestsReads.difficulties, { campaignId }),
       "combatRequestsReads.forcedAttacks": () => player.query(api.combatRequestsReads.forcedAttacks, { campaignId }),
-      "adversaryActions.pending": () => player.query(api.adversaryActions.pending, { campaignId, characterId: ash }),
+      "adversaryActionsReads.pending": () => player.query(api.adversaryActionsReads.pending, { campaignId, characterId: ash }),
     };
 
     const found: Record<string, string[]> = {};
@@ -111,7 +111,7 @@ describe("config U1: adversary HP, Stress and Difficulty are always off for play
     // The test sees the adversaries at all: the player's vision and target list name them.
     const view = await player.query(api.combatVision.playerView, { campaignId });
     expect(view.state === "ok" && view.others.map((o) => o.name).sort()).toEqual(["Bandit", bear.name].sort());
-    const targets = JSON.stringify(await reads["combatActions.targets"]!());
+    const targets = JSON.stringify(await reads["combatActionsReads.targets"]!());
     expect(targets).toContain(bear._id);
     // The leak finder does catch stats next to an adversary's name (the GM's own token list carries HP).
     expect(leaks(await gm.query(api.combatTokensReads.list, { campaignId, mapId }), marks).length).toBeGreaterThan(0);

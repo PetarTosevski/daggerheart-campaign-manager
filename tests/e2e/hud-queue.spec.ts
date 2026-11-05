@@ -227,7 +227,7 @@ test("Reactions: an adversary's hit waits on the player; Resolve now settles it"
     // The Brute's attack is in Resolutions (Log) with Undo.
     await dock(gm).getByRole("button", { name: "Log" }).click();
     await expect(gm.getByTestId("hud-resolution").first()).toContainText("Brute", { timeout: 30_000 });
-    await expect.poll(async () => (await client.query(api.adversaryActions.windows, { campaignId })).length).toBe(0);
+    await expect.poll(async () => (await client.query(api.adversaryActionsReads.windows, { campaignId })).length).toBe(0);
   } finally {
     await s.close();
   }

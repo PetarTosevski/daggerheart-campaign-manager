@@ -475,7 +475,7 @@ describe("the ring", () => {
     fireEvent.click(parry);
     expect(featureOpen).not.toHaveBeenCalled();
     // The server offers it for an open hit: it unlocks and takes focus to the hit window's Use.
-    queries["adversaryActions:pending"] = [{ features: [{ featureId: "f:Parry", useId: "u1" }] }];
+    queries["adversaryActionsReads:pending"] = [{ features: [{ featureId: "f:Parry", useId: "u1" }] }];
     const hit = document.createElement("div");
     hit.dataset.testid = "hud-hit-window";
     hit.innerHTML = '<ul><li data-testid="hud-hit-feature" data-feature="f:Parry" data-use="u1"><button type="button" aria-label="Use Parry">Use</button></li></ul>';

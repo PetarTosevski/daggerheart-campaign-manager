@@ -21,7 +21,7 @@ const isHeld = (w: object) => "preRoll" in w && w.preRoll === true;
  * (SD4 Q2, `preRoll`) is a waiting line: "Bandit attacks Mira, before the roll", no damage; Resolve now rolls it.
  */
 export function ReactionWindows({ campaignId, encounterId, acts }: { campaignId: Id<"campaigns">; encounterId: string; acts: AdversaryActions }) {
-  const windows = useQuery(api.adversaryActions.windows, { campaignId });
+  const windows = useQuery(api.adversaryActionsReads.windows, { campaignId });
   // Plan lanes-2 E7.4 (dcm-wiwi, dcm-0hlq): named tokens on the PCs (bramble) and the GM's "Escaped" button.
   const pcTokens = useQuery(api.adversaryActions.pcTokens, { campaignId });
   const [resolving, setResolving] = useState<string | null>(null);

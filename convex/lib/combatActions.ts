@@ -1,6 +1,6 @@
 /**
  * Weapon attacks on the Combat Map (plan combat-actions, tracer CA3): the shared steps behind `combatActions.attack`,
- * `combatActions.targets`, `combatActions.pickMinions` and the GM's sanction (`combatRequests.sanction`). Callers are
+ * `combatActionsReads.targets`, `combatActions.pickMinions` and the GM's sanction (`combatRequests.sanction`). Callers are
  * campaign wrappers that already loaded the character with edit permission; these helpers only scope, check, roll and
  * write. The rules are CA1's pure engine (src/lib/domain/combat-actions) and the dice internals of ./rolls.
  *
@@ -214,7 +214,7 @@ export const pendingAttackValidator = v.object({
   outOfRange: v.array(v.object({ tokenId: v.id("combatTokens"), band: rangeBandValidator })),
 });
 
-/** `combatActions.targets`: per visible enemy token only the band and whether it can be attacked (U1, CF6). */
+/** `combatActionsReads.targets`: per visible enemy token only the band and whether it can be attacked (U1, CF6). */
 export const targetHintValidator = v.object({
   tokenId: v.id("combatTokens"),
   band: rangeBandValidator,
@@ -275,7 +275,7 @@ export function weaponIn(sheet: CharacterSheet, slot: WeaponSlot): Weapon | unde
   return id ? getWeapon(id) : undefined;
 }
 
-/** `combatActions.targets`: every enemy token the character sees that can be attacked, with its band and hints. */
+/** `combatActionsReads.targets`: every enemy token the character sees that can be attacked, with its band and hints. */
 export async function targetHints(ctx: QueryCtx, campaign: Doc<"campaigns">, s: AttackScene, weapon: Weapon | undefined, attacker?: { sheet: CharacterSheet; characterId: string }): Promise<Infer<typeof targetHintValidator>[]> {
   const hints: Infer<typeof targetHintValidator>[] = [];
   for (const [i, token] of s.scene.tokens.entries()) {

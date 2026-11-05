@@ -50,11 +50,11 @@ function empty() {
   queries["combatCardsReads:pending"] = [];
   queries["combatFeaturesReads:pending"] = [];
   queries["combatRequestsReads:difficulties"] = [];
-  queries["adversaryActions:windows"] = [];
-  queries["cloakPrompts:pending"] = [];
-  queries["hitKeywords:asks"] = [];
+  queries["adversaryActionsReads:windows"] = [];
+  queries["cloakPromptsReads:pending"] = [];
+  queries["hitKeywordsReads:asks"] = [];
   queries["charactersReads:listByCampaign"] = [moss];
-  queries["featurePrompts:allyRolls"] = { asks: [], waiting: [], allies: [], pending: [] };
+  queries["featurePromptsReads:allyRolls"] = { asks: [], waiting: [], allies: [], pending: [] };
   queries["deathMoves:state"] = { "c-moss": deathBase };
   queries["feed:list"] = { page: [], isDone: true, continueCursor: "" };
 }

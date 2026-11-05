@@ -56,7 +56,7 @@ export * from "./model";
  *   <each feature with a Use button>   H3.3's `useFeatureUse().open()`; "classic" shows the classic FeatureUse beside the
  *            ring (Warden's Protection, Charge), as the sheet panel does
  *   <each reaction (the sheet's React)>   locked "… waits for its trigger" until the server offers it for an open hit
- *            (`adversaryActions.pending`'s features); then it takes you to that answer's Use in the hit window
+ *            (`adversaryActionsReads.pending`'s features); then it takes you to that answer's Use in the hit window
  *   <each out-of-combat Use (the sheet's D5 Use: Commune)>   `classFeatures.use`, its summary as a toast
  *   (user answer 2026-11-02: reactions and out-of-combat Uses join the ring)
  *
@@ -99,7 +99,7 @@ function ActionRing({ layer, open, characterId, name, centre, size }: { layer: H
   const sheet = useQuery(api.combatHud.sheet, { characterId });
   const hand = useQuery(api.combatCardsReads.hand, { campaignId, characterId });
   // The reactions the server offers right now: the answers of this character's open hits (the hit window's query).
-  const pending = useQuery(api.adversaryActions.pending, { campaignId, characterId });
+  const pending = useQuery(api.adversaryActionsReads.pending, { campaignId, characterId });
   const outsideUse = useMutation(api.classFeatures.use);
   const [outsideBusy, setOutsideBusy] = useState<string | null>(null);
   // H6.2: while the GM holds the spotlight every action here waits (answer 1c); its reason is the button's lock.

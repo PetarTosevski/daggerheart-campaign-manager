@@ -243,7 +243,7 @@ describe("GmOwnHits (user answer 2026-10-22)", () => {
       { _id: "gm-pc", mine: true, canEdit: true, status: "active", updatedAt: 1, sheet: { name: "Rook" } },
       { _id: "mira", mine: false, canEdit: true, status: "active", updatedAt: 1, sheet: { name: "Mira" } },
     ];
-    queries["adversaryActions:pending"] = [hit];
+    queries["adversaryActionsReads:pending"] = [hit];
     queries["deathMoves:state"] = { awaitingMove: false, pending: null, undoEntryId: null, lessLethal: false, awayRequested: false };
     render(<GmOwnHits campaignId={CAMPAIGN} role="gm" />);
     const cards = screen.getAllByTestId("incoming-hit");
@@ -255,7 +255,7 @@ describe("GmOwnHits (user answer 2026-10-22)", () => {
 
   it("renders nothing for a player (their prompt is in the player column)", () => {
     queries["charactersReads:listByCampaign"] = [{ _id: "gm-pc", mine: true, canEdit: true, status: "active", updatedAt: 1, sheet: { name: "Rook" } }];
-    queries["adversaryActions:pending"] = [hit];
+    queries["adversaryActionsReads:pending"] = [hit];
     const { container } = render(<GmOwnHits campaignId={CAMPAIGN} role="player" />);
     expect(container.innerHTML).toBe("");
   });

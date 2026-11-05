@@ -104,7 +104,7 @@ async function arena() {
   const instance = (id: Id<"encounterAdversaries">) => t.run(async (ctx) => (await ctx.db.get("encounterAdversaries", id))!);
   const respond = (requestId: Id<"combatRequests">, characterId: Id<"characters">, choice: Record<string, unknown>) =>
     player.mutation(api.adversaryActions.respond, { campaignId, requestId, characterId, choice: choice as never, idempotencyKey: key() });
-  const pending = (characterId: Id<"characters">) => player.query(api.adversaryActions.pending, { campaignId, characterId });
+  const pending = (characterId: Id<"characters">) => player.query(api.adversaryActionsReads.pending, { campaignId, characterId });
   /** An answer, then Done if the window stays open. */
   const answer = async (requestId: Id<"combatRequests">, characterId: Id<"characters">, choice: Record<string, unknown>) => {
     const r = await respond(requestId, characterId, choice);

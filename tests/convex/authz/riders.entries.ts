@@ -5,7 +5,7 @@ import { freshKey } from "./synth";
 
 /**
  * Authz matrix: riders and the after-roll step on map attacks (plan sheet-drawer, tracer SD5; docs/tasks/TASK-SD-SD5.md).
- * `combatActions.riders` reads the character's own sheet (edit: the character's player or the GM; another player is
+ * `combatActionsReads.riders` reads the character's own sheet (edit: the character's player or the GM; another player is
  * FORBIDDEN, U1). `combatActions.afterRoll` answers a held attack for a character the caller edits (the player's Use /
  * Pass, the GM's Resolve now). Content: tests/convex/combat-riders.test.ts.
  */
@@ -99,7 +99,7 @@ async function held(w: World) {
 }
 
 const entries: Entry[] = [
-  { fn: api.combatActions.riders, access: "view", args: (w) => ({ characterId: w.characterA }), expect: NOT_THEIRS },
+  { fn: api.combatActionsReads.riders, access: "view", args: (w) => ({ characterId: w.characterA }), expect: NOT_THEIRS },
   {
     fn: api.combatActions.afterRoll,
     access: "view",

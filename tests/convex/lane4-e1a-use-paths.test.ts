@@ -196,13 +196,13 @@ describe("E1.4a: the GM's Cloaked prompt (dcm-vx5n)", () => {
     const r = await a.card("hex", { targetTokenIds: [bear.tokenId] });
     if (r.status !== "resolved") throw new Error(r.status);
     expect((await a.sheet()).conditions).toContain("cloaked");
-    const rows = await a.gm.query(api.cloakPrompts.pending, { campaignId: a.campaignId });
+    const rows = await a.gm.query(api.cloakPromptsReads.pending, { campaignId: a.campaignId });
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ label: "Deft Maneuvers", targets: [{ tokenId: bear.tokenId, name: "Bear" }] });
     const out = await a.gm.mutation(api.cloakPrompts.answer, { campaignId: a.campaignId, requestId: rows[0]!.requestId, ends: true, idempotencyKey: key() });
     expect(out.status).toBe("ended");
     expect((await a.sheet()).conditions).not.toContain("cloaked");
-    expect(await a.gm.query(api.cloakPrompts.pending, { campaignId: a.campaignId })).toHaveLength(0);
+    expect(await a.gm.query(api.cloakPromptsReads.pending, { campaignId: a.campaignId })).toHaveLength(0);
     await a.undo(r.entryId);
     expect((await a.sheet()).conditions).toContain("cloaked");
   });
@@ -237,7 +237,7 @@ describe("E1.4a: the GM's Cloaked prompt (dcm-vx5n)", () => {
 
   it("only the GM lists and answers the prompts (a player is FORBIDDEN)", async () => {
     const a = await arena();
-    expect(errorCode(await a.player.query(api.cloakPrompts.pending, { campaignId: a.campaignId }).catch((e: unknown) => e))).toBe("FORBIDDEN");
+    expect(errorCode(await a.player.query(api.cloakPromptsReads.pending, { campaignId: a.campaignId }).catch((e: unknown) => e))).toBe("FORBIDDEN");
   });
 });
 
