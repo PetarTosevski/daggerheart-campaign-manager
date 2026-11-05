@@ -1,0 +1,40 @@
+# Finish Combat Map player actions (dcm-bxp.99) and the Lorekeeper (dcm-bxp.82), user 2026-11-05.
+# Format: docs/workflow.md. Branch from rebuild (`git switch -C <branch> rebuild`). Excluded: dcm-bxp.99.32.4, .5, .10
+# (they ship in .omc/plans/rule-switches.yaml).
+# Split by layer so the two tracers never share a file: FH-UI owns the client, FH-SV owns the server and pure libs.
+# Server work whose HUD wiring is client-side (.32.19, .32.23, .32.27, .32.40) lands its server half in FH-SV; the
+# orchestrator launches FH-UI2 for the wiring after both merge.
+# Host load: 5 agents run at once; vitest --maxWorkers=2 on touched files only, e2e only the touched spec, never full suites.
+plan: finish-hud-lk
+waves:
+  - wave: 1
+    tracers:
+      - id: FH-UI
+        beads: [dcm-bxp.99.32.22, dcm-bxp.99.32.34, dcm-bxp.99.32.38, dcm-bxp.99.32.41, dcm-bxp.99.32.44, dcm-bxp.99.32.13, dcm-bxp.99.32.14, dcm-bxp.99.32.20, dcm-bxp.99.32.21, dcm-bxp.99.32.26, dcm-bxp.99.32.32]
+        goal: "The HUD layout and accessibility bugs are fixed: nothing covers Zoom out or the hand buttons, panels fit 390 px and tablets, touch targets are >= 44 px, Vault Recall is locked while the GM holds the spotlight, class names are unique, the zoom anchor holds with a sheet open, the action ring's Cast uses a raiseHand() export, and a feature use's result shows in the result panel"
+        depends_on: []
+        owns:
+          - src/components/combat-map/**
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/**
+          - tests/unit/combat-map/**
+          - tests/unit/hud/**
+          - tests/e2e/*hud*
+          - tests/e2e/a11y-*.spec.ts
+        acceptance:
+          - each bead's case has a unit or e2e assertion; pnpm lint, pnpm typecheck pass
+      - id: FH-SV
+        beads: [dcm-bxp.82.14, dcm-bxp.99.19.60, dcm-bxp.99.32.17, dcm-bxp.99.32.2, dcm-bxp.99.32.19, dcm-bxp.99.32.23, dcm-bxp.99.32.27, dcm-bxp.99.32.1, dcm-bxp.99.32.24, dcm-bxp.99.32.25, dcm-bxp.99.32.40]
+        goal: "The server halves are done: decided Lorekeeper limit requests expire on decidedAt (indexed, widen-migrate-narrow), targetCount drops expiresAt, combatRequests can be withdrawn, cost refusals carry a structured shortfall, feature rider options and split amounts come from the server, adversary feature GM prompts are stored open requests, conditions carry provenance, per-ally picks are answerable by each ally, and an e2e seed for held attacks exists"
+        depends_on: []
+        owns:
+          - convex/**
+          - src/lib/**
+          - tests/convex/**
+          - tests/unit/lib/**
+          - tests/e2e/seed/**
+          - scripts/e2e-seed*
+          - docs/lorekeeper.md
+          - docs/data-model.md
+          - docs/tasks/**
+        acceptance:
+          - Convex tests per bead; authz entries for any new public function; pnpm lint, pnpm typecheck pass
