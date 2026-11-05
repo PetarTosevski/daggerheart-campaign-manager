@@ -4,6 +4,7 @@ import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { ChevronDown, X } from "lucide-react";
 import { useState } from "react";
 
+import { ruleNoteTag } from "@/components/combat-map/hud/feed/model";
 import { errorMessage } from "@/lib/convex-errors";
 import { useUiState } from "@/lib/use-ui-state";
 import { useIntent } from "@/lib/use-intent";
@@ -76,6 +77,21 @@ function FreeRollSection({ campaignId }: { campaignId: Id<"campaigns"> }) {
       </button>
       {open ? <FreeRollForm campaignId={campaignId} mode="public" /> : null}
     </div>
+  );
+}
+
+/**
+ * A Manual rule's note (kind `rule`, GM-only; plan rule-switches RU): a 'Manual' tag and the rule's title before the
+ * summary. Nothing for any other row.
+ */
+function RuleNoteTag({ row }: { row: { kind: string; ruleId?: string } }) {
+  const rule = ruleNoteTag(row);
+  if (rule === null) return null;
+  return (
+    <span className="flex items-center gap-1.5 text-[12px] text-[#c9a8ff]">
+      <span className="rounded border border-[#6b5a9a] px-1.5 text-[11px] tracking-[0.1em] uppercase">{rule.tag}</span>
+      {rule.title}
+    </span>
   );
 }
 
@@ -173,6 +189,7 @@ export function RollFeedPanel({ campaignId, isGm }: { campaignId: Id<"campaigns"
               className={`flex flex-col gap-1.5 rounded-[10px] border border-[#253338] bg-[#10181b] px-3 py-2 ${row.undone ? "opacity-50" : ""}`}
             >
               <div className="flex flex-wrap items-center gap-2 text-[15px] text-[#e6ecea]">
+                <RuleNoteTag row={row} />
                 <span className={row.undone ? "line-through" : ""}>{row.summary}</span>
                 {row.roll?.manual ? <span className="rounded border border-[#5b4a2a] px-1.5 text-[11px] tracking-[0.1em] text-[#f4e3bd] uppercase">manual</span> : null}
                 {/* Fear colours while hidden; Hope colours once revealed (user 2026-11-04). A roll never hidden gets no tag. */}

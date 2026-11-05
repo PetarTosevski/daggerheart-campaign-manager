@@ -42,6 +42,8 @@ const common = {
    * that rolled nothing (the player-undo rule, convex/lib/actionLog.ts `groupRolled`). Undo may still say UNDO_STALE.
    */
   canUndo: v.boolean(),
+  /** A Manual rule's note (kind `rule`, GM-only, plan rule-switches): its registry id, for the 'Manual' tag's title. */
+  ruleId: v.optional(v.string()),
 };
 
 /** A player only ever receives public rows. */
@@ -93,6 +95,7 @@ export const list = campaignQuery({
         ...(row.targets !== undefined ? { targets: isGm ? row.targets : row.targets.filter((t) => t.side === "pc") } : {}),
         undone: row.undoneAt !== undefined,
         ...(row.revealedAt !== undefined ? { revealed: true as const } : {}),
+        ...(row.ruleId !== undefined ? { ruleId: row.ruleId } : {}),
         canUndo: row.kind !== "rest" && !(row.groupId !== undefined && restGroups.has(row.groupId)) && (await viewerCanUndo(ctx, row, ctx.user._id, isGm)),
       };
       if (isGm) return { ...shown, visibility: row.visibility, revealable: row.kind === "gmRoll" && row.visibility === "gm" };

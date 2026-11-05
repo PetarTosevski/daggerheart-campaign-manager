@@ -10,12 +10,13 @@ import { cn } from "@/lib/utils";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { HudPartProps } from "../state";
-import { FEED_ROWS, feedDetail, feedIcon, type FeedIcon } from "./model";
+import { FEED_ROWS, feedDetail, feedIcon, ruleNoteTag, type FeedIcon } from "./model";
 
 /**
  * "Just now" bottom-left on the player view (plan combat-hud H4.3; Main `.me`; HANDOFF "Feed"): the newest public rows
  * of `feed.list`, live. The GM's left column holds the request queue and Resolutions with Undo instead (H5.1), so the
- * GM view shows nothing here. Players read only public rows (the server decides).
+ * GM view shows nothing here. Players read only public rows (the server decides). A Manual rule's note (kind `rule`,
+ * GM-only, so it reaches this list only if a GM view mounts it) carries the 'Manual' tag and the rule's title.
  */
 export function HudFeed({ state }: HudPartProps): ReactNode {
   if (state.role === "gm") return null;
@@ -38,10 +39,17 @@ function JustNow({ campaignId }: { campaignId: Id<"campaigns"> }) {
         <ul className="hud-feed-list" aria-live="polite" aria-relevant="additions">
           {page.page.map((row) => {
             const detail = feedDetail(row);
+            const rule = ruleNoteTag(row);
             return (
               <li key={row._id} className={cn(row.undone && "hud-feed-undone")} data-kind={row.kind}>
                 <span className="hud-feed-i">{ICONS[feedIcon(row)]}</span>
                 <span>
+                  {rule ? (
+                    <span className="hud-feed-rule">
+                      <i>{rule.tag}</i>
+                      {rule.title ? ` ${rule.title}` : null}{" "}
+                    </span>
+                  ) : null}
                   <b>{row.summary}</b>
                   {detail ? <span> {detail}</span> : null}
                 </span>

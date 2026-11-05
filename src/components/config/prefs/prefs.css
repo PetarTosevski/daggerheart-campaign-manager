@@ -9,6 +9,39 @@
   accent-color: #e3b45a;
   cursor: pointer;
 }
+/* Players' House rules (plan rule-switches RU): a disclosure button, then the read-only rule rows. */
+.cfg-prefs-rules-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #e6ecea;
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.cfg-prefs-rules-btn svg {
+  flex: none;
+  color: #8fa3a8;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .cfg-prefs-rules-btn svg {
+    transition: transform 0.18s;
+  }
+}
+.cfg-prefs-rules-shut {
+  transform: rotate(-90deg);
+}
+.cfg-pop .cfg-prefs-rules .cfg-rs-grp > .cfg-rules-list {
+  padding-left: 4px;
+}
 .cfg-prefs-err:empty {
   display: none;
 }
