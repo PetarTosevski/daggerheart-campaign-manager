@@ -204,7 +204,7 @@ describe("Hope spent / HP marked counters (JD3b)", () => {
     expect(await s.stats(sessionId)).toEqual({ [s.a]: [0, hpMax] });
   });
 
-  it("death moves: an Avoid Death scar that takes the last Hope slot's Hope counts as Hope spent (caveat)", async () => {
+  it("death moves: Hope lost to an Avoid Death scar closing its slot is not Hope spent (dcm-z9rz.27)", async () => {
     const s = await setup();
     const hpMax = (await s.sheet()).hpMax;
     await s.edit(() => ({ hope: 6, scars: 0, hp: hpMax, stress: 3 }));
@@ -214,9 +214,12 @@ describe("Hope spent / HP marked counters (JD3b)", () => {
     if (r.awaitingGm) await s.gm.mutation(api.deathMoves.confirm, { characterId: s.a, idempotencyKey: key() });
     const after = await s.sheet();
     expect(after.scars).toBe(1);
-    // The scar closes a Hope slot, so the sixth Hope goes (applyResourceDelta clamps Hope to the slots left).
+    // The scar closes a Hope slot, so the sixth Hope goes (applyResourceDelta clamps Hope to the slots left); nobody paid it.
     expect(after.hope).toBe(5);
-    expect(await s.stats(sessionId)).toEqual({ [s.a]: [1, 0] });
+    expect(await s.stats(sessionId)).toEqual({});
+    // Hope paid after the scar still counts.
+    await s.step("hope", -2);
+    expect(await s.stats(sessionId)).toEqual({ [s.a]: [2, 0] });
   });
 
   it("a rest that clears Hit Points never subtracts", async () => {

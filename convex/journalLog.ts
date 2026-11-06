@@ -53,11 +53,14 @@ export type JournalLogSource = (typeof JOURNAL_LOG_SOURCES)[number];
 export const journalLogSourceValidator = v.union(...JOURNAL_LOG_SOURCES.map((s) => v.literal(s)));
 
 /**
- * The icon a line shows: a feed row's action kind, or one of the log's own kinds (Fear change, combat began / ended,
- * session start / end, scene began, another automatic line, the GM's note).
+ * The icon a line shows: a feed row's action kind or its roll's type (`feedIcon`, dcm-z9rz.28), or one of the log's own
+ * kinds (Fear change, combat began / ended, session start / end, scene began, another automatic line, the GM's note).
  */
 export const journalLogIconValidator = v.union(
   actionKindValidator,
+  v.literal("reactionRoll"),
+  v.literal("damageRoll"),
+  v.literal("attackRoll"),
   v.literal("fear"),
   v.literal("combatBegan"),
   v.literal("combatEnded"),
@@ -139,6 +142,20 @@ export function encounterTitle(event: EncounterEvent, name: string): string {
   return `${ENCOUNTER_EVENTS[event]}: ${name.trim() || "Unnamed encounter"}`;
 }
 
+/**
+ * A feed row's icon by its roll type (dcm-z9rz.28): a PC's reaction or damage roll, an attack roll on the Combat Map
+ * (a `combat` row's action roll, a weapon or a card), else the row's kind (an action roll stays `roll`, a GM roll
+ * `gmRoll`). Rows without a roll keep their kind.
+ */
+export function feedIcon(row: { kind: ActionKind; roll?: Pick<StoredRoll, "kind"> }): JournalLogIcon {
+  const roll = row.roll?.kind;
+  if (roll === undefined || row.kind === "gmRoll" || row.kind === "adversary") return row.kind;
+  if (roll === "reaction") return "reactionRoll";
+  if (roll === "damage") return "damageRoll";
+  if (row.kind === "combat" && roll === "action") return "attackRoll";
+  return row.kind;
+}
+
 /** The icon of a `sessionLog` line: its event, a legacy start / end stamp by its text, another auto line, or a GM note. */
 function sessionLineIcon(row: Doc<"sessionLog">): JournalLogIcon {
   if (!row.auto) return "note";
@@ -217,7 +234,7 @@ async function feedLines(ctx: QueryCtx, campaignId: Id<"campaigns">, windows: re
     ...(row.roll !== undefined && row.roll.kind !== "damage"
       ? { sub: rollSub(row.characterId === undefined ? null : (names.get(row.characterId) ?? "A character"), row.roll) }
       : {}),
-    icon: row.kind satisfies ActionKind,
+    icon: feedIcon(row),
     removable: false,
     edited: false,
   }));

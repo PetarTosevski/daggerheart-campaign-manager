@@ -1,7 +1,7 @@
 // Journal JT (plan .omc/plans/journal.yaml, docs/tasks/TASK-JOURNAL-JT.md): the six tally tiles ('-' before the session
 // was live, a floor note when truncated) and the Spotlight bars (scaled to the highest count, Reset optimistic, the
-// least-spotlight line, no tap to add: Q9). The tiles are GM only (Q5); the bars reach players when
-// `journalTally.spotlight` returns them (config JO3).
+// least-spotlight line, no tap to add: Q9). The tiles reach every member (dcm-z9rz.25; no Fear tiles while
+// `fearHidden`); the bars reach players when `journalTally.spotlight` returns them (config JO3).
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -35,8 +35,8 @@ const model = await import("../../../src/components/journal/tally/model");
 const CAMPAIGN = "c1" as Id<"campaigns">;
 const SESSION = "s6" as Id<"sessions">;
 
-const TALLY: JournalTally = { fearGained: 4, fearSpent: 3, hopeSpent: 9, hpMarked: 7, adversariesDefeated: 2, criticals: 2, live: true, truncated: false };
-const NULL_TALLY: JournalTally = { fearGained: null, fearSpent: null, hopeSpent: null, hpMarked: null, adversariesDefeated: null, criticals: null, live: false, truncated: false };
+const TALLY: JournalTally = { fearGained: 4, fearSpent: 3, hopeSpent: 9, hpMarked: 7, adversariesDefeated: 2, criticals: 2, live: true, truncated: false, fearHidden: false };
+const NULL_TALLY: JournalTally = { fearGained: null, fearSpent: null, hopeSpent: null, hpMarked: null, adversariesDefeated: null, criticals: null, live: false, truncated: false, fearHidden: false };
 
 const entry = (id: string, name: string, count: number, due = false): SpotlightEntry => ({ characterId: id as Id<"characters">, name, count, due });
 const SPOT = [entry("moss", "Moss", 6), entry("brannoc", "Brannoc", 5), entry("vex", "Vex", 3), entry("oriel", "Oriel", 2, true)];
@@ -72,13 +72,21 @@ describe("SessionTally", () => {
     expect(screen.getByText(/at least the counts shown/)).toBeTruthy();
   });
 
-  it("shows a loading line, and nothing for players", () => {
+  it("shows a loading line", () => {
     state.results["journalTally:tally"] = undefined;
-    const { unmount } = render(<SessionTally campaignId={CAMPAIGN} sessionId={SESSION} isGm />);
+    render(<SessionTally campaignId={CAMPAIGN} sessionId={SESSION} isGm />);
     expect(screen.getByRole("status").textContent).toBe("Loading the tally…");
-    unmount();
-    const { container } = render(<SessionTally campaignId={CAMPAIGN} sessionId={SESSION} isGm={false} />);
-    expect(container.textContent).toBe("");
+  });
+
+  it("dcm-z9rz.25: players get the tiles too, without the Fear tiles while fearHidden", () => {
+    render(<SessionTally campaignId={CAMPAIGN} sessionId={SESSION} isGm={false} />);
+    expect(within(screen.getByRole("list", { name: "Session tally counts" })).getAllByRole("listitem")).toHaveLength(6);
+    cleanup();
+    state.results["journalTally:tally"] = { ...TALLY, fearGained: null, fearSpent: null, fearHidden: true };
+    render(<SessionTally campaignId={CAMPAIGN} sessionId={SESSION} isGm={false} />);
+    const tiles = within(screen.getByRole("list", { name: "Session tally counts" })).getAllByRole("listitem");
+    expect(tiles.map((t) => t.textContent)).toEqual(["9 Hope spent", "7 HP marked", "2 Adversaries defeated", "2 Critical successes"]);
+    expect(screen.queryByText("Counts itself once the session starts.")).toBeNull();
   });
 });
 

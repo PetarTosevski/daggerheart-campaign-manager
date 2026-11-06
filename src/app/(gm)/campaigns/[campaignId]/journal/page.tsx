@@ -41,8 +41,8 @@ import { useCampaign } from "../campaign-shell";
  * reference/designs/journal/journal_views.jpg). The page owns the header frame, the Sessions / Notes sub-tabs, the
  * Sessions columns, the Plan / Log & recap toggle, the 'Play on the Combat Map' link and the URL state
  * (`?tab=sessions|notes&s=<session id>&sv=plan|log`, plus the Notes params it never touches); every feature lives in
- * a slot under src/components/journal/ (contract: slots.ts). Players get the list, the heading, the log and the recap
- * (Q5), never the toggle; the server decides what each reads.
+ * a slot under src/components/journal/ (contract: slots.ts). Players get the list, the heading, the log, the recap
+ * and the tally (Q5, dcm-z9rz.25), never the toggle; the server decides what each reads.
  */
 
 const TAB_LABEL: Record<JournalTab, string> = { sessions: "Sessions", notes: "Notes" };
@@ -179,11 +179,9 @@ function SessionColumns({ slot, view, onOpenPage }: { slot: JournalSessionProps;
         </SlotBoundary>
       </div>
       <div className="jr-right">
-        {slot.isGm ? (
-          <SlotBoundary label="The session tally">
-            <SessionTally {...slot} />
-          </SlotBoundary>
-        ) : null}
+        <SlotBoundary label="The session tally">
+          <SessionTally {...slot} />
+        </SlotBoundary>
         <SlotBoundary label="The spotlight">
           <Spotlight {...slot} />
         </SlotBoundary>

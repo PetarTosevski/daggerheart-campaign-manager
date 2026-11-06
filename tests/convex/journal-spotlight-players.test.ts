@@ -7,7 +7,8 @@ import { errorCode, key } from "./helpers";
 
 // Config JO3 (plan .omc/plans/config.yaml, user answer Q5 a): `journalTally.spotlight`, the Journal's spotlight bars,
 // is a view query. The GM and co-GMs always get the bars; a player gets them only with the table setting
-// `spotlightToPlayers` on (default off), else null; an outsider is NOT_FOUND. The tally tiles stay GM-only.
+// `spotlightToPlayers` on (default off), else null; an outsider is NOT_FOUND. The tally tiles reach players too
+// (dcm-z9rz.25), without Fear numbers while "Players see the GM's Fear" is off.
 
 allowWorldEmails();
 
@@ -56,10 +57,20 @@ describe("journalTally.spotlight for players (JO3)", () => {
     }
   });
 
-  it("the tally tiles stay GM-only with the setting on", async () => {
+  it("dcm-z9rz.25: players read the tally tiles, Fear only while 'Players see the GM's Fear' is on; a planned session is not theirs", async () => {
     const s = await setup();
-    await s.setSetting(true);
-    expect(await codeOf(s.w.as("player").query(api.journalTally.tally, { campaignId: s.campaignId, sessionId: s.sessionId }))).toBe("FORBIDDEN");
+    const tally = (role: Parameters<typeof s.w.as>[0], sessionId: string = s.sessionId) =>
+      s.w.as(role).query(api.journalTally.tally, { campaignId: s.campaignId, sessionId });
+    const fearSetting = (value: boolean) =>
+      s.w.as("gm").mutation(api.campaignSettings.set, { campaignId: s.campaignId, change: { key: "playersSeeFear", value } });
+    await fearSetting(false);
+    expect(await tally("player")).toMatchObject({ fearGained: null, fearSpent: null, hopeSpent: 0, criticals: 0, live: true, fearHidden: true });
+    expect(await tally("gm")).toMatchObject({ fearGained: 0, fearSpent: 0, fearHidden: false });
+    await fearSetting(true);
+    expect(await tally("otherPlayer")).toMatchObject({ fearGained: 0, fearSpent: 0, fearHidden: false });
+    const { sessionId: planned } = await s.w.as("gm").mutation(api.sessionRecords.create, { campaignId: s.campaignId, idempotencyKey: key() });
+    expect(await codeOf(tally("player", planned))).toBe("SESSION_NOT_FOUND");
+    expect(await codeOf(tally("gm", planned))).toBe("ok");
   });
 
   it("an outsider gets NOT_FOUND and a signed-out caller UNAUTHENTICATED, setting on or off", async () => {
