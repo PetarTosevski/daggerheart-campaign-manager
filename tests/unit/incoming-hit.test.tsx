@@ -11,8 +11,8 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { GmOwnHits, HitBoundary, PendingHits } from "@/components/combat-map/actions/reactions";
-import { HIT_RETRY_DELAYS_MS } from "@/components/combat-map/actions/reactions/prompt";
 import {
+  HIT_RETRY_DELAYS_MS,
   afterAnswer,
   armorQuestion,
   damageLine,
@@ -21,7 +21,7 @@ import {
   promptMode,
   reactionCard,
   type HitView,
-} from "@/components/combat-map/actions/reactions/model";
+} from "@/lib/combat-map/reactions";
 
 import type { Id } from "../../convex/_generated/dataModel";
 

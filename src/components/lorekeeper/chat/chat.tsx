@@ -5,7 +5,11 @@ import { useLayoutEffect, useRef, useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
 import { configMessages } from "@/lib/errors/config";
+import type { BookTitles } from "@/lib/lorekeeper/answer-model";
+import { askFailure, disabledReason, usagePeriod } from "@/lib/lorekeeper/composer-model";
 import { EMPTY_INTRO, NEW_CONVERSATION_LABEL, YOU_LABEL } from "@/lib/lorekeeper/copy";
+import { askerNames } from "@/lib/lorekeeper/names";
+import { resolveSelection } from "@/lib/lorekeeper/selection";
 import { askLocally, isLocalMessage, setVisibilityLocally, setWebSearchLocally, stopLocally } from "@/lib/optimistic/lorekeeper";
 
 import { api } from "../../../../convex/_generated/api";
@@ -13,16 +17,13 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 import type { ConversationView, MessageView } from "../../../../convex/lorekeeper";
 import type { ConversationVisibility } from "../../../../convex/lib/validators/lorekeeper";
 import { AnswerCard, ThinkingRow } from "../answer/answer-card";
-import type { BookTitles } from "../answer/model";
 import { Composer } from "../composer/composer";
-import { askFailure, disabledReason, usagePeriod } from "../composer/model";
-import { askerNames } from "../conversations/names";
 import { Sigil } from "../sigil";
 import type { LorekeeperChatProps } from "../slots";
 import { ChatBoundary } from "./boundary";
 import { editLocally } from "./edit";
 import { QuestionBubble } from "./question";
-import { resolveSelection, useSelection } from "./selection";
+import { useSelection } from "./selection";
 
 /** LK3: why Save on an edited question waits (the server refuses an edit while an answer is on its way). */
 const EDIT_WAITS_FOR_ANSWER = "Save is ready once the current answer finishes, or Stop it.";

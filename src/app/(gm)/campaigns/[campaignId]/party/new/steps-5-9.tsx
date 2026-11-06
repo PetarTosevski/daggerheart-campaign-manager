@@ -24,7 +24,7 @@ import {
   suggestedLoadout,
   toggleCard,
   toggleExperience,
-} from "./wizard-logic";
+} from "@/lib/party/wizard-logic";
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const burdenLabel = (b: Weapon["burden"]) => (b === "two-handed" ? "Two-Handed" : b === "one-handed" ? "One-Handed" : "Barehanded");

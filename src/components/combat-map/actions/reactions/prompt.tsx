@@ -6,12 +6,9 @@ import { useMutation, useQuery } from "convex/react";
 import { Component, useState, type CSSProperties, type ReactNode } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
-import { errorMessage } from "@/lib/convex-errors";
-import { DOMAINS } from "@/lib/srd/domains";
-
-import { api } from "../../../../../convex/_generated/api";
-import type { Id } from "../../../../../convex/_generated/dataModel";
 import {
+  HIT_RETRY_DELAYS_MS,
+  HIT_RETRY_STABLE_MS,
   afterAnswer,
   armorCounts,
   armorQuestion,
@@ -32,7 +29,12 @@ import {
   type GrantView,
   type HitChoice,
   type HitView,
-} from "./model";
+} from "@/lib/combat-map/reactions";
+import { errorMessage } from "@/lib/convex-errors";
+import { DOMAINS } from "@/lib/srd/domains";
+
+import { api } from "../../../../../convex/_generated/api";
+import type { Id } from "../../../../../convex/_generated/dataModel";
 
 /**
  * The incoming-hit prompt (plan combat-actions AA4), shared by the Combat Map and the character sheet. One card per
@@ -52,11 +54,6 @@ import {
  */
 
 export type PromptVariant = "map" | "sheet";
-
-/** Waits before each quiet retry of a failed prompt load (followups-7 H3): 3 retries, then "Try again". */
-export const HIT_RETRY_DELAYS_MS = [500, 1500, 4000] as const;
-/** A retried prompt that stays up this long has recovered: the next failure starts the retries afresh. */
-export const HIT_RETRY_STABLE_MS = 10_000;
 
 /**
  * Keeps a failing `pending` read (rule 11) from taking the page down. A failed load (a transient error would otherwise

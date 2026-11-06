@@ -6,6 +6,7 @@ import { useId, useState } from "react";
 import { BrandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import { errorMessage } from "@/lib/convex-errors";
+import { clip } from "@/lib/lorekeeper/answer-model";
 import { RULINGS_COPY, RULINGS_EMPTY, RULINGS_TITLE, pinnedLabel } from "@/lib/lorekeeper/copy";
 
 import { api } from "../../../../convex/_generated/api";
@@ -16,12 +17,6 @@ import { resolveLocally, unpinLocally, updateRulingLocally } from "./optimistic"
 
 type Ruling = { _id: Id<"lorekeeperRulings">; title: string; text: string; meta: string };
 type OpenAsk = { _id: Id<"lorekeeperAsks">; messageId: Id<"lorekeeperMessages">; askerName: string; characterName: string | null; question: string; call: string | null };
-
-/** One line, cut to `max` characters with an ellipsis (the pin dialog's starting values). */
-function clip(raw: string, max: number): string {
-  const line = raw.replace(/\s+/g, " ").trim();
-  return line.length <= max ? line : `${line.slice(0, max - 1).trimEnd()}…`;
-}
 
 /**
  * The Table rulings card (board Lorekeeper.dc.html; Q8, Q14): '<N> pinned', the board's copy, and a card per ruling

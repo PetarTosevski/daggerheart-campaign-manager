@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import type { HitView } from "@/components/combat-map/actions/reactions/model";
+import type { HitView } from "@/lib/combat-map/reactions";
 import {
   armorAsk,
   grantNote,

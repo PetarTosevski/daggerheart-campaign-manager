@@ -1,9 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import * as z from "@/lib/zod";
 
-import { canLevelUp, fullSheet } from "@/components/party/level-up/shared";
 import type { SlotProps } from "@/components/party/slots";
 import {
   ACHIEVEMENT_LEVELS,
@@ -16,35 +14,39 @@ import {
 } from "@/lib/domain/level-up";
 import { cardChoiceAsks, cardChoiceProblems, cardChoicesFor, type CardChoiceAsk } from "@/lib/domain/level-up/card-choices";
 import { cardsGained } from "@/lib/domain/level-up/on-choose";
-import { TRAIT_IDS } from "@/lib/srd/types";
+import {
+  EMPTY_LEVEL_UP_DRAFT,
+  PICKS_PER_LEVEL,
+  TARGET_COUNT,
+  advancementsChosen,
+  canLevelUp,
+  cardsChosen,
+  fullSheet,
+  issueTarget,
+  restoreLevelUp,
+  stepIds,
+  type LevelUpDraft,
+  type LevelUpState,
+  type LevelUpStepId,
+  type LevelUpTarget,
+} from "@/lib/party/level-up";
 import { useIntent } from "@/lib/use-intent";
-import { ADVANCEMENT_OPTIONS, type AdvancementOption, type CharacterSheet } from "@/lib/validation/characters";
+import type { AdvancementOption, CharacterSheet } from "@/lib/validation/characters";
 import { prefersReducedMotion } from "@/lib/use-reduced-motion";
 
 import { api } from "../../../../../../../convex/_generated/api";
-import { parseDraft, useAccountDraft } from "../new/draft";
+import { useAccountDraft } from "../new/draft";
 
 // Guided level-up (plan guided-level-up, GL0). The sheet provides one LevelUpDraft per character; the ribbon and
 // the sections (Experiences, tier boxes, Domain Deck) read and change it through useLevelUpDraft(). The draft is
-// submitted once, as the LevelUpChoice levelUp.apply already takes. API and target ids: docs/tasks/TASK-GL0.md.
+// submitted once, as the LevelUpChoice levelUp.apply already takes. API and target ids: docs/tasks/TASK-GL0.md. The pure
+// parts (draft shape, stored schema, step checks) live in src/lib/party/level-up.ts, shared with the phone app.
 
-/** Where a choice is made on the sheet; each has a target element `#lu-target-<id>`. */
-export type LevelUpTarget = "experiences" | "advancements" | "deck";
-/** A ribbon step: the targets in book order (CB 109-111), then the summary. */
-export type LevelUpStepId = LevelUpTarget | "finish";
+// sections/identity.tsx imports these two from here.
+export { advancementsChosen, cardsChosen } from "@/lib/party/level-up";
+
 export type SheetPage = "sheet" | "story" | "domains";
 export type SheetCollection = "cards" | "heritage";
-
-/** The choice being built: LevelUpChoice with the Experience name always present ("" until typed). */
-export type LevelUpDraft = {
-  picks: PickChoice[];
-  experienceName: string;
-  cardId: string;
-  trade?: { out: string; in: string };
-  multiclass?: MulticlassChoice;
-  /** Plan lanes-2 E8.4 (dcm-txlu): the picks of gained cards' "when you choose this card" uses (Vitality, CB p.330). */
-  cardChoices?: Record<string, Record<string, string[]>>;
-};
 
 export type LevelUpStep = { id: LevelUpStepId; label: string; done: boolean };
 /** A validateLevelUp problem with the place it is fixed. */
@@ -96,7 +98,6 @@ export type LevelUpDraftValue = {
   goTo: (step: LevelUpStepId) => void;
 };
 
-const EMPTY_DRAFT: LevelUpDraft = { picks: [], experienceName: "", cardId: "" };
 const NO_STEPS: LevelUpStep[] = [];
 const noop = () => {};
 
@@ -105,7 +106,7 @@ const INACTIVE: LevelUpDraftValue = {
   canStart: false,
   level: 0,
   sheet: null,
-  draft: EMPTY_DRAFT,
+  draft: EMPTY_LEVEL_UP_DRAFT,
   choice: { picks: [], cardId: "" },
   problems: [],
   issues: [],
@@ -136,77 +137,6 @@ const NAV: Record<LevelUpStepId, { page?: SheetPage; collection?: SheetCollectio
   finish: { id: "lu-ribbon-summary" },
 };
 
-/** How many targets a pick takes (CB 110): two traits, two Experiences, one card. */
-const TARGET_COUNT: Partial<Record<AdvancementOption, number>> = { traits: 2, experiences: 2, domainCard: 1 };
-
-const PICKS_PER_LEVEL = 2;
-
-/**
- * Both picks are taken and every chooser that lives in the tier boxes or Experiences is filled (the domainCard pick's
- * card is chosen in the deck). Used to move on to the Domain Deck once the advancements are done.
- */
-export function advancementsChosen(draft: LevelUpDraft): boolean {
-  const cost = draft.picks.reduce((sum, p) => sum + OPTION_RULES[p.option].cost, 0);
-  if (cost < PICKS_PER_LEVEL) return false;
-  return draft.picks.every((p) => {
-    if (p.option === "multiclass") return Boolean(draft.multiclass?.classId && draft.multiclass.domainId && draft.multiclass.subclassId);
-    const count = TARGET_COUNT[p.option];
-    return p.option === "domainCard" || !count || (p.targets?.length ?? 0) === count;
-  });
-}
-
-/**
- * The level-up draft as saved on the account (config N4 b, `drafts` kind `levelUp`, schemaVersion 1 in the envelope;
- * `parseDraft` checks both). A draft that fails it is ignored: the mode starts off.
- */
-export const levelUpDraftSchema = z.object({
-  /** The sheet level the draft was started at; at a different level it is ignored. */
-  level: z.number(),
-  step: z.enum(["experiences", "advancements", "deck", "finish"]),
-  draft: z.object({
-    picks: z.array(z.object({ option: z.enum(ADVANCEMENT_OPTIONS), tier: z.number(), targets: z.array(z.string()).optional() })).max(2),
-    experienceName: z.string().max(200),
-    cardId: z.string(),
-    trade: z.object({ out: z.string(), in: z.string() }).optional(),
-    multiclass: z.object({ classId: z.string(), domainId: z.string(), subclassId: z.string(), spellcastTrait: z.enum(TRAIT_IDS).optional() }).optional(),
-    cardChoices: z.record(z.string(), z.record(z.string(), z.array(z.string()).max(4))).optional(),
-  }),
-});
-
-type State = { active: boolean; level: number; step: LevelUpStepId; draft: LevelUpDraft };
-
-/**
- * The state from the account's draft (`drafts.get`'s answer, undefined while it loads): active at the stored step when
- * it parses and was started at `level`, else inactive. A stale or bad draft is left on the account; the next start
- * replaces it, and an unchanged draft expires (`draftsRetention`).
- */
-export function restoreLevelUp(stored: unknown, level: number): State {
-  const parsed = parseDraft(stored, levelUpDraftSchema);
-  if (parsed === null || parsed.level !== level) return { active: false, level, step: "finish", draft: EMPTY_DRAFT };
-  return { active: true, level, step: parsed.step, draft: parsed.draft };
-}
-
-/** The step list for a new level: the Experience only at achievement levels (CB 109). */
-function stepIds(level: number): LevelUpStepId[] {
-  return ACHIEVEMENT_LEVELS.includes(level) ? ["experiences", "advancements", "deck", "finish"] : ["advancements", "deck", "finish"];
-}
-
-const optionLabels = Object.values(OPTION_RULES).map((r) => `${r.label}:`);
-
-/** Where a validateLevelUp message is fixed: slot problems at the tier boxes, cards in the deck, Experiences in their box. */
-export function issueTarget(message: string, sheet: Pick<CharacterSheet, "experiences">): LevelUpTarget {
-  if (optionLabels.some((l) => message.startsWith(l))) return "advancements";
-  if (/domain card|^Trade |deck holds|^You already have |out of reach at this level/i.test(message)) return "deck";
-  if (/Experience/.test(message) || sheet.experiences.some((x) => message.startsWith(`${x.name} is already at`))) return "experiences";
-  return "advancements";
-}
-
-/** The level's card and every extra domainCard pick's card are chosen, and no exchange is half set up. */
-export function cardsChosen(draft: LevelUpDraft): boolean {
-  if (!draft.cardId || (draft.trade && !(draft.trade.out && draft.trade.in))) return false;
-  return draft.picks.every((p) => p.option !== "domainCard" || (p.targets?.length ?? 0) === 1);
-}
-
 const LevelUpDraftContext = createContext<LevelUpDraftValue | null>(null);
 
 /** The level-up draft; outside the provider (or for viewers who cannot level) an inactive value whose actions do nothing. */
@@ -234,9 +164,9 @@ export function LevelUpDraftProvider({
   const account = useAccountDraft({ kind: "levelUp", characterId }, { enabled: canStart });
   const fromAccount = useMemo(() => restoreLevelUp(account.stored, sheetLevel), [account.stored, sheetLevel]);
   // The state since the viewer's first change; until then the account's draft is the state (no copy in an effect).
-  const [local, setLocal] = useState<State | null>(null);
+  const [local, setLocal] = useState<LevelUpState | null>(null);
   // The latest committed state, read by handlers that run before the next render (two changes in one event).
-  const latest = useRef<State | null>(null);
+  const latest = useRef<LevelUpState | null>(null);
   const state = local ?? fromAccount;
   const [focusRequest, setFocusRequest] = useState<{ step: LevelUpStepId; n: number } | null>(null);
   const apply = useIntent(api.levelUp.apply);
@@ -249,7 +179,7 @@ export function LevelUpDraftProvider({
 
   /** Sets the state and, while it is a live draft, saves it on the account (from the change handler, rule 13). */
   const commit = useCallback(
-    (next: State, typed = false) => {
+    (next: LevelUpState, typed = false) => {
       latest.current = next;
       setLocal(next);
       if (next.active && next.level === sheetLevel && canStart) saveDraft({ level: next.level, step: next.step, draft: next.draft }, { typed });
@@ -259,7 +189,7 @@ export function LevelUpDraftProvider({
 
   /** Ends the mode and deletes the account's draft (Cancel, or a level-up applied). */
   const end = useCallback(() => {
-    const next: State = { ...(latest.current ?? fromAccount), active: false, draft: EMPTY_DRAFT };
+    const next: LevelUpState = { ...(latest.current ?? fromAccount), active: false, draft: EMPTY_LEVEL_UP_DRAFT };
     latest.current = next;
     setLocal(next);
     clearDraft();
@@ -282,7 +212,7 @@ export function LevelUpDraftProvider({
   );
 
   const value = useMemo<LevelUpDraftValue>(() => {
-    const draft = active ? state.draft : EMPTY_DRAFT;
+    const draft = active ? state.draft : EMPTY_LEVEL_UP_DRAFT;
     const achievement = ACHIEVEMENT_LEVELS.includes(level);
     const takesMulticlass = draft.picks.some((p) => p.option === "multiclass");
     // dcm-txlu: the gained cards' choosing picks (Vitality's two benefits), asked here and sent as `cardChoices`.
@@ -347,7 +277,7 @@ export function LevelUpDraftProvider({
         if (!canStart) return;
         apply.clearError();
         const first = ids[0] ?? "finish";
-        commit({ active: true, level: sheetLevel, step: first, draft: EMPTY_DRAFT });
+        commit({ active: true, level: sheetLevel, step: first, draft: EMPTY_LEVEL_UP_DRAFT });
         const nav = NAV[first];
         if (nav.page) navigate(nav.page, nav.collection);
         setFocusRequest((r) => ({ step: first, n: (r?.n ?? 0) + 1 }));

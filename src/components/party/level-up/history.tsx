@@ -15,7 +15,7 @@ import type { AdvancementOption, CharacterSheet } from "@/lib/validation/charact
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 
-import { OPTION_SHORT, OPTION_TEXT } from "./shared";
+import { OPTION_SHORT, OPTION_TEXT } from "@/lib/party/level-up";
 import { TierPicker } from "./tier-pickers";
 
 const UNLOCK_LEVEL = { 2: 2, 3: 5, 4: 8 } as const;

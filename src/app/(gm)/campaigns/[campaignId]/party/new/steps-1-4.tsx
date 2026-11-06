@@ -31,7 +31,7 @@ import {
   suggestedTraits,
   type WizardOptions,
   type WizardState,
-} from "./wizard-logic";
+} from "@/lib/party/wizard-logic";
 
 export type StepProps = {
   state: WizardState;

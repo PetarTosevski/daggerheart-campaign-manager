@@ -7,14 +7,15 @@ import { BrandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import { errorMessage } from "@/lib/convex-errors";
 import { CONVERSATIONS_LABEL, NEW_CONVERSATION_LABEL } from "@/lib/lorekeeper/copy";
+import { askerNames } from "@/lib/lorekeeper/names";
+import { resolveSelection } from "@/lib/lorekeeper/selection";
 import { removeConversationLocally } from "@/lib/optimistic/lorekeeper";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import type { ConversationView } from "../../../../convex/lorekeeper";
-import { resolveSelection, useSelection } from "../chat/selection";
+import { useSelection } from "../chat/selection";
 import type { LorekeeperChatProps } from "../slots";
-import { askerNames } from "./names";
 
 /**
  * The 'Conversations' menu in the chat header (D13 L6): 'New conversation', the caller's own conversations (newest

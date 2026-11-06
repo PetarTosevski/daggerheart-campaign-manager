@@ -20,7 +20,7 @@ import {
 import { useFeature } from "@/lib/use-feature";
 
 import type { ConversationVisibility } from "../../../../convex/lib/validators/lorekeeper";
-import { QUESTION_MAX, counterText, sendsOnKey } from "./model";
+import { QUESTION_MAX, counterText, sendsOnKey } from "@/lib/lorekeeper/composer-model";
 
 /** 'questions left today' shows from this many down (and with every cap reason). */
 const LEFT_FROM = 10;
