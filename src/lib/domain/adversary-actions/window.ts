@@ -32,7 +32,24 @@ import type { Combatant } from "../combat-actions/damage";
 import { withinRange } from "../combat-actions/distance";
 import type { Rng } from "../dice/index";
 import type { FeatureUse } from "../../validation/characters";
-import { applyHitToPc, armorOptions, armorSteps, damageBeforeArmor, hpForSeverity, marksFactor, slotsPerStep, stepDown, type HitAdjustments, type PcDefense, type PcHit, type PcHitResult, type PcSeverity } from "./severity";
+import {
+  applyHitToPc,
+  armorOffered,
+  armorOptions,
+  armorSteps,
+  damageBeforeArmor,
+  hpForSeverity,
+  marksFactor,
+  MASSIVE_HP,
+  slotsPerStep,
+  stepDownMassive,
+  type HitAdjustments,
+  type HitRules,
+  type PcDefense,
+  type PcHit,
+  type PcHitResult,
+  type PcSeverity,
+} from "./severity";
 
 // ---------------------------------------------------------------- inputs
 
@@ -174,6 +191,18 @@ export interface WindowState {
   party?: readonly WindowPc[];
   /** SD4: the attacker as a creature (a feature answer's trigger source). */
   attacker?: Combatant;
+  /**
+   * Plan rule-switches RC2: the campaign's rule modes the hit reads (A1 Armor Slots, D2, D4, D5, Massive Damage). Absent
+   * = the Book. A1 Manual: nobody is armor-capable, the target prompt offers no slot and an armor answer is refused.
+   */
+  rules?: HitRules;
+}
+
+/** The hit's severity (and Massive, CB p.91) after `armor` Armor Slot steps and `other` severity steps, and the HP it marks. */
+function severityAfter(before: { severity: PcSeverity; massive?: true }, armor: number, other: number): { severity: PcSeverity; massive: boolean; hp: number } {
+  const armored = stepDownMassive(before.severity, before.massive === true, armor);
+  const s = stepDownMassive(armored.severity, armored.massive, other);
+  return { severity: s.severity, massive: s.massive, hp: s.massive ? MASSIVE_HP : hpForSeverity(s.severity) };
 }
 
 // ---------------------------------------------------------------- eligibility
@@ -574,11 +603,10 @@ export function progress(state: WindowState, target: PcDefense): HitProgress {
   // DA8: a cancelled damage (Dark Aegis, a reflection) is zero: no severity, no Hit Points (user answer 2026-10-29).
   const cancelled = folds.some((f) => f.kind === "negateDamage");
   const amount = cancelled ? 0 : amountNow(state, folds);
-  const before = cancelled ? "none" : damageBeforeArmor(target, { ...state.hit, amount }).severity;
-  // E2 (dcm-s77): dearer slots buy whole steps only.
-  const severity = stepDown(stepDown(before, realStepsChosen(state)), severitySteps(folds, state));
+  const before = cancelled ? { severity: "none" as const } : damageBeforeArmor(target, { ...state.hit, amount }, 0, state.rules);
+  // E2 (dcm-s77): dearer slots buy whole steps only. RC2: a Massive hit (CB p.91) steps down to Severe first.
+  const { severity, hp: base } = severityAfter(before, realStepsChosen(state), severitySteps(folds, state));
   const delta = (state.hit.hpMarkedDelta ?? 0) + folds.reduce((n, f) => n + (f.kind === "hpMarked" && applies(f.targetIds, state) ? f.delta : 0), 0);
-  const base = hpForSeverity(severity);
   return { amount, severity, hp: base > 0 ? Math.max(0, base + delta) * marksFactor(target, "hp") : 0, armorAnswered: armorAnswered(state, state.targetId) };
 }
 
@@ -700,6 +728,8 @@ export interface OpenInput {
   party: readonly WindowPc[];
   /** SD4: the attacker as a creature (a feature's trigger source: Revenge, Not This Time); absent = unknown. */
   attacker?: Combatant;
+  /** RC2: the campaign's rule modes (`ruleModesOf`); absent = the Book. */
+  rules?: HitRules;
 }
 
 const SEVERITIES: readonly PcSeverity[] = ["severe", "major", "minor"];
@@ -729,11 +759,13 @@ function answersAtOpen(pc: WindowPc, role: "target" | "ally", hit: WindowHit, se
 export function openWindow(input: OpenInput): WindowState {
   const { hit, targetId, party } = input;
   const armorCapable: Record<string, boolean> = {};
-  for (const pc of party) armorCapable[pc.id] = armorOptions(pc, hit).canUseArmor;
+  // RC2, A1 Manual: no Armor Slot is offered, so nobody is armor-capable (no prompt; the player marks armor on the sheet).
+  const offered = armorOffered(input.rules);
+  for (const pc of party) armorCapable[pc.id] = offered && armorOptions(pc, hit).canUseArmor;
   const target = party.find((p) => p.id === targetId);
   const responders: Responder[] = [];
   if (target) {
-    const severity = damageBeforeArmor(target, hit).severity;
+    const severity = damageBeforeArmor(target, hit, 0, input.rules).severity;
     const creatures: TriggerCreatures = { ...(target.actor ? { subject: target.actor } : {}), ...(input.attacker ? { source: input.attacker } : {}) };
     const { cardIds: cards, featureIds: features } = answersAtOpen(target, "target", hit, severity, armorCapable[target.id] ?? false, creatures);
     // Plan lanes-2, E2.3: a grant to answer (Hope before forced HP, gold instead of HP) makes the target a responder too, so
@@ -745,7 +777,19 @@ export function openWindow(input: OpenInput): WindowState {
       if (allyCards.length > 0 || allyFeatures.length > 0) responders.push({ characterId: pc.id, role: "ally", cardIds: allyCards, ...(allyFeatures.length > 0 ? { featureIds: allyFeatures } : {}) });
     }
   }
-  return { hit, originalTargetId: targetId, targetId, responders, responses: [], armorCapable, released: [], closedEarly: false, party, ...(input.attacker ? { attacker: input.attacker } : {}) };
+  return {
+    hit,
+    originalTargetId: targetId,
+    targetId,
+    responders,
+    responses: [],
+    armorCapable,
+    released: [],
+    closedEarly: false,
+    party,
+    ...(input.attacker ? { attacker: input.attacker } : {}),
+    ...(input.rules ? { rules: input.rules } : {}),
+  };
 }
 
 const isArmorAnswer = (c: HitChoice) => c.kind === "armor" || c.kind === "noArmor" || c.kind === "pass";
@@ -807,6 +851,8 @@ export function respond(state: WindowState, response: WindowResponse, options: {
   // armor answer is refused, and so is an armor answer after a slot substitute (Stable, Wings: never both, CB p.114).
   const armorDone = responder.role === "target" && armorAnswered(state, who);
   if (armorDone && (choice.kind === "armor" || choice.kind === "noArmor")) return { ok: false, code: "NOT_A_RESPONDER", detail: "The armor answer is in." };
+  // RC2, A1 Manual: no Armor Slot is offered on this hit (a stored one replays and `resolveWindow` ignores it).
+  if (!options.replay && choice.kind === "armor" && !armorOffered(state.rules)) return { ok: false, code: "NOT_A_RESPONDER", detail: "Armor Slots are marked on the sheet in this campaign." };
   if (choice.kind === "card") {
     const played = state.responses.some((x) => x.characterId === who && x.choice.kind === "card" && x.choice.cardId === choice.cardId);
     if (!responder.cardIds.includes(choice.cardId) || played) return { ok: false, code: "NOT_A_RESPONDER", detail: choice.cardId };
@@ -1076,7 +1122,8 @@ export function resolveWindow(state: WindowState, party: readonly PcDefense[]): 
   for (const f of folds) if (f.kind === "manual") manual.push(f.text);
 
   const armorAnswer = state.responses.find((r) => r.characterId === state.targetId && isArmorAnswer(r.choice));
-  const armorSlotsChosen = armorAnswer?.choice.kind === "armor" ? Math.max(1, armorAnswer.choice.slots ?? 1) : 0;
+  // RC2, A1 Manual: no Armor Slot softens the hit, whatever was stored.
+  const armorSlotsChosen = armorAnswer?.choice.kind === "armor" && armorOffered(state.rules) ? Math.max(1, armorAnswer.choice.slots ?? 1) : 0;
   const amount = amountNow(state, folds);
   const reflected = reflects.map((f) => ({ to: f.to, targetIds: f.targetIds, amount }));
   const conditionNegated = folds.some((f) => f.kind === "negateCondition");
@@ -1097,13 +1144,18 @@ export function resolveWindow(state: WindowState, party: readonly PcDefense[]): 
       if (f.kind === "convert" && applies(f.targetIds, state)) convert = f.into;
     }
     const hit: PcHit = { ...state.hit, amount: amountNow(state, list), ...(hpDelta !== 0 ? { hpMarkedDelta: (state.hit.hpMarkedDelta ?? 0) + hpDelta } : {}) };
-    return applyHitToPc(target, hit, {
-      armorSlots: armorSlotsChosen,
-      extraSlots: extra,
-      reduceSeverity,
-      negate: negated,
-      ...(convert ? { convert } : {}),
-    });
+    return applyHitToPc(
+      target,
+      hit,
+      {
+        armorSlots: armorSlotsChosen,
+        extraSlots: extra,
+        reduceSeverity,
+        negate: negated,
+        ...(convert ? { convert } : {}),
+      },
+      state.rules,
+    );
   };
   const result = marks(folds);
   // E2 (dcm-sim): a card whose own folds made the difference between Hit Points and none ends what it marked so.
@@ -1233,11 +1285,12 @@ export function targetPrompt(state: WindowState, target: PcDefense): { damage: n
   const extra = extraSlotsNow(state);
   const amount = amountNow(state, folds);
   const hit = { ...state.hit, amount };
-  const max = armorOptions(target, hit, extra).maxSlots;
+  // RC2, A1 Manual: no slot is offered.
+  const max = armorOffered(state.rules) ? armorOptions(target, hit, extra).maxSlots : 0;
   // A1 (dcm-bxp.99.19.55 (6)): a slot substitute (Stable, Wings) took one of the slots the hit allows (E2: one step's
   // worth of dearer slots, dcm-s77).
   const left = substituteTaken(state) && extra !== "any" ? Math.min(max, Math.max(0, extra) * slotsPerStep(hit)) : max;
-  return { damage: amount, severity: damageBeforeArmor(target, hit).severity, maxSlots: left };
+  return { damage: amount, severity: damageBeforeArmor(target, hit, 0, state.rules).severity, maxSlots: left };
 }
 
 /**
@@ -1247,15 +1300,15 @@ export function targetPrompt(state: WindowState, target: PcDefense): { damage: n
  */
 export function targetArmorPreview(state: WindowState, target: PcDefense): { slots: number; severity: PcSeverity; hp: number }[] {
   const prompt = targetPrompt(state, target);
-  const base = damageBeforeArmor(target, { ...state.hit, amount: prompt.damage }).severity;
+  const base = damageBeforeArmor(target, { ...state.hit, amount: prompt.damage }, 0, state.rules);
   const per = slotsPerStep(state.hit);
   // E2: dearer slots (dcm-s77) are listed in whole steps (0, 2, 4); a marked slot adds what it sets off (Shield Aura, dcm-sim).
+  // RC2: a Massive hit (CB p.91, the optional rule on) marks 4 HP and steps down to Severe first.
   return Array.from({ length: Math.floor(prompt.maxSlots / per) + 1 }, (_, n) => {
     const folds = allFolds(state, n > 0 || realSlotsChosen(state) > 0);
     const steps = severitySteps(folds, state);
     const delta = (state.hit.hpMarkedDelta ?? 0) + folds.reduce((m, f) => m + (f.kind === "hpMarked" && applies(f.targetIds, state) ? f.delta : 0), 0);
-    const severity = base === "none" ? "none" : stepDown(stepDown(base, n), steps);
-    const hp = hpForSeverity(severity);
+    const { severity, hp } = base.severity === "none" ? { severity: "none" as const, hp: 0 } : severityAfter(base, n, steps);
     return { slots: n * per, severity, hp: hp > 0 ? Math.max(0, hp + delta) * marksFactor(target, "hp") : 0 };
   });
 }

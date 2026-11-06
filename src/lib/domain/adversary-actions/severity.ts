@@ -41,15 +41,31 @@ import type { DamageType } from "../card-effects/types";
 import { damageSeverity, isMassiveDamage, markStress, type PcDamageRules, type Severity, type Thresholds } from "../characters/index";
 import { resistanceAgainst, type ResistanceLevel } from "../combat-actions/damage";
 import { damageTaken, type DamageRules } from "../encounters/damage";
+import type { RuleModes } from "../../rules/registry";
 
 /** The damage rule modes a hit on a PC reads (plan rule-switches): D2, D4, D5 and Massive Damage. Unset = the Book. */
 export type PcHitRules = PcDamageRules & Pick<DamageRules, "resistance">;
+
+/**
+ * Everything the reaction window of a hit on a PC reads from the campaign's rule switches (plan rule-switches, RC2): the
+ * damage modes, and A1 `armorSlots` (CB p.114 "negate some (or all) of it by marking an available Armor Slot"; CB p.19
+ * "You can only mark one Armor Slot per attack"). A1 Manual: no Armor Slot is offered to anyone, so the damage lands at
+ * full severity and the player marks armor and fixes HP on the sheet. Forced slots (Shredding Strike, CB p.195) and slot
+ * substitutes (Stable, Celestial Wings) are features, not the prompt, and still apply. Unset = the Book.
+ */
+export type HitRules = PcHitRules & Partial<Pick<RuleModes, "armorSlots">>;
+
+/** Whether the hit offers Armor Slots at all: A1 Book yes, A1 Manual no (see `HitRules`). */
+export function armorOffered(rules: Pick<HitRules, "armorSlots"> = {}): boolean {
+  return rules.armorSlots !== "manual";
+}
 
 export type { Severity as PcSeverity, Thresholds as PcThresholds };
 
 const ORDER: readonly Severity[] = ["none", "minor", "major", "severe"];
 const MARKS: Record<Severity, number> = { none: 0, minor: 1, major: 2, severe: 3 };
-const MASSIVE_HP = 4;
+/** HP Massive damage marks (CB p.91). */
+export const MASSIVE_HP = 4;
 
 /** Whether a Stress mark overflowed: Book, it marked the 1 HP (CB p.92); D4 Manual, the extra Stress was dropped. */
 function overflowed(next: { hp: number; overflow?: true }, hpBefore: number, rules: PcHitRules): boolean {

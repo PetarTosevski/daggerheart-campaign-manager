@@ -7,3 +7,4 @@ export * from "./attack";
 export * from "./severity";
 export * from "./features";
 export * from "./window";
+export * from "./rule-notes";

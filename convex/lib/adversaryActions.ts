@@ -24,7 +24,21 @@ import type { AdversaryFeatureEffect } from "../../src/lib/domain/adversary-effe
 import { adversaryAttack, adversaryDamage, gmControlledWeaponAttack } from "../../src/lib/domain/adversary-actions/attack";
 import { getWeapon } from "../../src/lib/srd/index";
 import type { TraitId } from "../../src/lib/srd/types";
-import { actorWithSubject, featureReady, keptDie, passiveSummary, pcTarget, preRollFits, splitTargetDisadvantage, type AdversaryEvent, type RollFacts } from "../../src/lib/domain/adversary-actions/index";
+import {
+  actorWithSubject,
+  adversarySpotlightNote,
+  featureReady,
+  hiddenCondition,
+  hiddenTargetNote,
+  keptDie,
+  passiveSummary,
+  pcTarget,
+  preRollFits,
+  splitTargetDisadvantage,
+  type AdversaryEvent,
+  type RollFacts,
+} from "../../src/lib/domain/adversary-actions/index";
+import type { ModeOf } from "../../src/lib/rules/registry";
 import { runFeature } from "../../src/lib/domain/feature-effects/run";
 import type { FeatureEffect } from "../../src/lib/domain/feature-effects/types";
 import { resolveOptions } from "../../src/lib/frames/options";
@@ -104,6 +118,8 @@ import {
   type PartyMember,
 } from "./incomingHits";
 import { rollDie } from "./dice";
+import { postRuleNote, ruleMode } from "./ruleModes";
+import { moveToGm, spotlightAdversary, spotlightOf } from "./spotlight";
 import type { ActionTarget, AdversaryBefore, StoredRoll } from "./validators/actionLog";
 import { MAX_GM_PROMPTS_PER_USE, type CombatResponse, type HitRider, type PreRollPayload } from "./validators/combatRequests";
 import { ENCOUNTER_CONDITIONS, MAX_CREATURE_TOKEN_KINDS, type EncounterCondition, type InstanceEffect } from "./validators/encounters";
@@ -827,9 +843,15 @@ function hiddenAgainst(conditions: readonly string[]): number {
  * Disadvantage sources a PC target puts on an attack against them, by this attacker: a Hidden (or Cloaked) PC
  * (dcm-f3l7, CB p.103), and a PC's passives (CB p.68 Sturdy, at 1 HP left).
  */
-function targetDisadvantage(p: Pick, instance: Doc<"encounterAdversaries">, gated: { selfToken?: Doc<"combatTokens">; paidOff: readonly string[]; offers: BuyOffer[] }): number {
+function targetDisadvantage(
+  p: Pick,
+  instance: Doc<"encounterAdversaries">,
+  gated: { selfToken?: Doc<"combatTokens">; paidOff: readonly string[]; offers: BuyOffer[] },
+  /** Rule switches RC2, C1 (CB p.102): Manual = Hidden / Cloaked give no disadvantage by themselves (the GM gets a note). */
+  conditionDice: ModeOf<"conditionDice"> = "book",
+): number {
   if (p.kind !== "pc") return 0;
-  const hidden = hiddenAgainst(p.member.sheet.conditions);
+  const hidden = conditionDice === "manual" ? 0 : hiddenAgainst(p.member.sheet.conditions);
   // Lane E7 round 3 (dcm-eut): the distance for a `from: "melee"` gate (no map: unknown, the gate doesn't count) and the
   // buy-offs the GM paid for this attack (Defensive stance, HF p.12: "unless the attacker marks a Stress").
   const distance = gated.selfToken && p.token ? tokenDistance(gated.selfToken, p.token) : undefined;
@@ -1018,7 +1040,7 @@ export async function adversaryAction(
     const targets = (await resolveCreatures(ctx, base, args.targets, false)).picks;
     w.prompts.push({ kind: "manual", text: `${manualFeature!.name}: ${manualFeature!.text}` });
     w.fearDelta -= featureFear;
-    return finish(ctx, { campaign, user, encounter, w, groupId, spotlight: needsSpotlight && !spotlit, spotlightFear, roll: null, success: true, outcomes: targets.map((t) => outcomeOf(t, true)), offers: [], publicText: `${label} used ${manualFeature!.name}`, gmText: [`${label} used ${manualFeature!.name} (no automation: the GM applies it)`], attackerFeature: manualFeature!.name });
+    return finish(ctx, { campaign, user, encounter, w, groupId, spotlight: needsSpotlight && !spotlit, needsSpotlight, spotlightFear, roll: null, success: true, outcomes: targets.map((t) => outcomeOf(t, true)), offers: [], publicText: `${label} used ${manualFeature!.name}`, gmText: [`${label} used ${manualFeature!.name} (no automation: the GM applies it)`], attackerFeature: manualFeature!.name });
   }
 
   const attack = isAttackUse(use);
@@ -1046,7 +1068,8 @@ export async function adversaryAction(
   // of a target's own sources (Sturdy and Harrowing) count once; one advantage source cancels them.
   const buyOffers: BuyOffer[] = [];
   const gated = { ...(scene.map ? { selfToken: scene.map.selfToken } : {}), paidOff: args.buyOffs ?? [], offers: buyOffers };
-  const own = attack ? targets.picks.map((p) => ({ id: p.combatant.id, disadvantage: targetDisadvantage(p, instance, gated) + (p.kind === "pc" ? (replay?.disadvantageAgainst[p.member.character._id] ?? 0) : 0) })) : [];
+  const conditionDice = ruleMode(campaign, "conditionDice");
+  const own = attack ? targets.picks.map((p) => ({ id: p.combatant.id, disadvantage: targetDisadvantage(p, instance, gated, conditionDice) + (p.kind === "pc" ? (replay?.disadvantageAgainst[p.member.character._id] ?? 0) : 0) })) : [];
   const { common, residual } = splitTargetDisadvantage(own);
   const disadvantage = (args.disadvantage ?? 0) + (attack && targets.cover ? 1 : 0) + common;
   // The whole roll's net advantage as rollD20 counts it (the use's own flags; Goad Them On adds a disadvantage).
@@ -1298,7 +1321,15 @@ export async function adversaryAction(
   }
   // Plan lanes-2 E7.4 (dcm-thwj): stored condition ends on its roll and on the HP the plans marked on instances.
   w.settleEnds(plan.roll ? adversaryEndRoll({ attack, success: attack ? hitIds.size > 0 : plan.success }) : null);
-  const result = await finish(ctx, { campaign, user, encounter, w, groupId, spotlight: needsSpotlight && !spotlit, spotlightFear: 0, roll, success: plan.success, outcomes, offers, publicText, gmText, ...(args.feature !== undefined ? { attackerFeature: args.feature } : {}) });
+  // Rule switches RC2, C1 Manual (CB p.102): the attack on a Hidden / Cloaked PC was rolled without its disadvantage.
+  if (attack && conditionDice === "manual") {
+    for (const p of targets.picks) {
+      const condition = p.kind === "pc" ? hiddenCondition(p.member.sheet.conditions) : null;
+      if (p.kind !== "pc" || condition === null) continue;
+      await postRuleNote(ctx, campaign, { ruleId: "conditionDice", summary: hiddenTargetNote(label, p.member.sheet.name, condition), characterId: p.member.character._id, groupId, actorId: user._id });
+    }
+  }
+  const result = await finish(ctx, { campaign, user, encounter, w, groupId, spotlight: needsSpotlight && !spotlit, needsSpotlight, spotlightFear: 0, roll, success: plan.success, outcomes, offers, publicText, gmText, ...(args.feature !== undefined ? { attackerFeature: args.feature } : {}) });
   if (forcedPcs.length > 0) {
     const live = await liveCombatMap(ctx, campaign._id);
     const tokens = live ? await tokensOnMap(ctx, live._id) : [];
@@ -1357,6 +1388,8 @@ type FinishInput = {
   w: Work;
   groupId: string;
   spotlight: boolean;
+  /** The action needs the spotlight (CB p.194): the spotlight goes to the GM on this adversary (S1, bead dcm-bxp.99.32.4). */
+  needsSpotlight: boolean;
   /** Fear for the spotlight not yet in `w.fearDelta` (the manual path). */
   spotlightFear: number;
   roll: RollRecord | null;
@@ -1369,10 +1402,44 @@ type FinishInput = {
   attackerFeature?: string;
 };
 
+/**
+ * S1, the adversary side (bead dcm-bxp.99.32.4; CB p.100: "When play passes to the GM, the GM can make a move to
+ * spotlight an adversary"; CB p.194: "For an adversary to use an action, they must have the spotlight"). Book: the
+ * spotlight goes to the GM on this adversary; its token on the live map is lit (`spotlightAdversary`), else the GM just
+ * holds it (`moveToGm`, reason `adversary`). An adversary already lit writes nothing, so a Fear paid for it
+ * (`combatSpotlight.gmTake` pay "fear") is never paid again and its spotlight this GM turn is not counted twice (the
+ * encounter's count is `commit`'s, unchanged). Manual: the spotlight stays where it is and the GM gets a note in the
+ * action's group, unless the GM already holds it on this adversary.
+ */
+async function spotlightActor(
+  ctx: MutationCtx,
+  campaign: Doc<"campaigns">,
+  actorId: Id<"users">,
+  instance: Doc<"encounterAdversaries">,
+  tokens: readonly Doc<"combatTokens">[],
+  groupId: string,
+): Promise<void> {
+  const token = tokens.find((t) => t.ref.kind === "adversary" && t.ref.adversaryId === instance._id);
+  if (ruleMode(campaign, "spotlightToGm") === "manual") {
+    const row = await spotlightOf(ctx, campaign._id);
+    const held = row?.holder.kind === "gm" && (token === undefined || row.adversaryTokenId === token._id);
+    if (!held) await postRuleNote(ctx, campaign, { ruleId: "spotlightToGm", summary: adversarySpotlightNote(instance.label), groupId, actorId });
+    return;
+  }
+  if (token) await spotlightAdversary(ctx, campaign, token._id);
+  else await moveToGm(ctx, campaign, "adversary");
+}
+
 /** Writes the action and logs its group: the GM row (roll, damage, `adversaryBefore`, Fear), the public row, then one incoming hit per hit PC. */
 async function finish(ctx: MutationCtx, f: FinishInput): Promise<ActionResult> {
   const { w, campaign } = f;
   const log = { campaignId: campaign._id, actorId: f.user._id, groupId: f.groupId };
+  const map = await liveCombatMap(ctx, campaign._id);
+  const bands = await bandsOnMap(ctx, map?._id);
+  const tokens = map ? await tokensOnMap(ctx, map._id) : [];
+  // S1 (bead dcm-bxp.99.32.4): before the action's own marks are written (an adversary that marks its last HP acting
+  // still had the spotlight for that action).
+  if (f.needsSpotlight) await spotlightActor(ctx, campaign, f.user._id, w.instance, tokens, f.groupId);
   const fearDelta = await applyFear(ctx, campaign._id, w.fearDelta - f.spotlightFear);
   const adversaryBefore = await commit(ctx, w, log, f.spotlight ? { gmTurn: f.encounter.gmTurn } : null);
   const gmLines = [...f.gmText, ...w.gm, ...w.prompts.map((p) => `${p.kind}: ${p.text}`)];
@@ -1386,9 +1453,6 @@ async function finish(ctx: MutationCtx, f: FinishInput): Promise<ActionResult> {
     ...(fearDelta !== 0 ? { fearDelta } : {}),
     undoable: true,
   });
-  const map = await liveCombatMap(ctx, campaign._id);
-  const bands = await bandsOnMap(ctx, map?._id);
-  const tokens = map ? await tokensOnMap(ctx, map._id) : [];
   const publicId = await logAction(ctx, { ...log, kind: "adversary", visibility: "public", summary: f.publicText, undoable: true });
   // H3: the tokens it named, by id, so the map flashes them without reading names out of the text.
   const targets = publicTargets(tokens, f.outcomes, w, f.roll !== null);
