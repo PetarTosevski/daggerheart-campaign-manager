@@ -90,7 +90,7 @@ async function renderReady(
     "accountSelfDelete:deleteMyAccount": (args: unknown) => {
       book.deletes.push(args);
       if (extra?.deleteThrows) throw new ConvexError({ code: "OWNER_ACCOUNT_UNDELETABLE", message: "The app owner's account can't be deleted." });
-      return null;
+      return { deleteAfter: 1 };
     },
   };
   const screen = await render(<SettingsScreen />, {

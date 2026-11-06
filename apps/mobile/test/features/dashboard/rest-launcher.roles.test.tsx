@@ -37,6 +37,7 @@ const openRest = restState({
     kind: "short",
     startedAt: 1,
     gmOverride: false,
+    extended: false,
     choices: [{ characterId: "char-1", moves: [{ move: "tendToWounds" }, { move: "clearStress" }] }],
     moves: [],
   },
@@ -90,7 +91,7 @@ test("the GM starts, finishes, undoes, and sees a long-rest tick only after a fi
     mutations: {
       [fn(api.rests.start)]: (args) => {
         starts.push(args as { kind: string });
-        return null;
+        return { restId: "rest-2" };
       },
     },
   });
@@ -112,7 +113,7 @@ test("the GM starts, finishes, undoes, and sees a long-rest tick only after a fi
     mutations: {
       [fn(api.rests.finish)]: (args) => {
         finishes.push(args as { restId: string });
-        return null;
+        return { fearRoll: null, fearGained: 0 };
       },
     },
   });

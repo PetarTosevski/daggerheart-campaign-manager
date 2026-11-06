@@ -4,6 +4,7 @@ import { fireEvent } from "@testing-library/react-native";
 import { resetMotionTest } from "../../theme/mock-reanimated";
 import { HomeScreen } from "../../../src/features/account/home";
 import { renderAsGm, renderAsPlayer } from "../../harness";
+import { campaignListRow } from "../../harness/records";
 
 const mockPush = jest.fn();
 
@@ -13,7 +14,7 @@ jest.mock("expo-router", () => ({
 
 const settings = { tableName: "Thursday Night Crew", gmName: "Ada", accent: "#e3b45a", expansions: { hopeAndFear: true }, defaultMapStyle: "classic" as const };
 
-const campaign = {
+const campaign = campaignListRow({
   _id: "campaign-1",
   name: "The Table",
   frameId: "beast-feast",
@@ -34,7 +35,7 @@ const campaign = {
   fear: 0,
   players: 2,
   role: "gm" as const,
-};
+});
 
 beforeEach(() => {
   resetMotionTest();

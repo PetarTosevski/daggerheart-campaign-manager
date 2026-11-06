@@ -2,12 +2,13 @@ import type { ReactElement } from "react";
 
 import { CampaignProvider } from "../../../src/shell/campaign-provider";
 import { OfflineFrame } from "../../../src/shell/offline";
+import { campaignSummary, characterRow } from "../../harness/records";
 
 export const campaignId = "campaign-1";
 export const encounterId = "encounter-1";
 
 export function campaignRecord(role: "gm" | "player") {
-  return {
+  return campaignSummary({
     _id: campaignId,
     frameId: "witherwild",
     name: "The Table",
@@ -27,7 +28,7 @@ export function campaignRecord(role: "gm" | "player") {
     createdAt: 1,
     lastOpenedAt: 1,
     players: 2,
-  };
+  });
 }
 
 export function encounterSummary(overrides: Record<string, unknown> = {}) {
@@ -96,7 +97,7 @@ export function gmQueries(overrides: Record<string, unknown> = {}) {
     "campaigns:get": campaignRecord("gm"),
     "encounters:list": encounterList(),
     "customAdversaries:list": [],
-    "charactersReads:listByCampaign": [{ _id: "pc-1", status: "active" }, { _id: "pc-2", status: "active" }],
+    "charactersReads:listByCampaign": [characterRow({ _id: "pc-1", status: "active" }), characterRow({ _id: "pc-2", status: "active" })],
     "campaigns:fear": 4,
     "encounters:get": encounterView(),
     ...overrides,

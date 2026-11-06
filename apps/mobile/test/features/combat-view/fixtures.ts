@@ -1,9 +1,10 @@
 import type { CombatMapLayout, CombatPlayerView } from "../../../src/features/combat-map/contract";
+import { campaignSummary } from "../../harness/records";
 
 export const campaignId = "campaign-1";
 
 export function campaignRecord(role: "gm" | "player") {
-  return {
+  return campaignSummary({
     _id: campaignId,
     frameId: "witherwild",
     name: "The Table",
@@ -16,7 +17,7 @@ export function campaignRecord(role: "gm" | "player") {
     createdAt: 1,
     lastOpenedAt: 1,
     players: 2,
-  };
+  });
 }
 
 export function liveLayout(overrides: Partial<CombatMapLayout> = {}): CombatMapLayout {

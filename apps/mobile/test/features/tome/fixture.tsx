@@ -3,11 +3,12 @@ import type { ReactElement } from "react";
 import type { LoadedCampaign } from "../../../src/shell/campaign-provider";
 import { CampaignProvider, CampaignScreen } from "../../../src/shell/campaign-provider";
 import { OfflineFrame } from "../../../src/shell/offline";
+import { campaignSummary } from "../../harness/records";
 
 export const campaignId = "campaign-1";
 
 export function publishedCampaign(role: "gm" | "player"): LoadedCampaign {
-  return {
+  return campaignSummary({
     _id: campaignId,
     name: "The Table",
     frameId: "witherwild",
@@ -17,11 +18,11 @@ export function publishedCampaign(role: "gm" | "player"): LoadedCampaign {
     custom: null,
     tome: null,
     options: { hopeAndFear: true },
-  } as LoadedCampaign;
+  }) as unknown as LoadedCampaign;
 }
 
 export function customCampaign(role: "gm" | "player"): LoadedCampaign {
-  return {
+  return campaignSummary({
     _id: campaignId,
     name: "My Custom Tale",
     frameId: "custom",
@@ -34,6 +35,8 @@ export function customCampaign(role: "gm" | "player"): LoadedCampaign {
       touchstones: "Dark City",
       tones: ["Gothic", "Hopeful"],
       background: "city",
+      partySize: 4,
+      startingTier: 1,
     },
     tome: {
       overview: "The city remembers.",
@@ -41,7 +44,7 @@ export function customCampaign(role: "gm" | "player"): LoadedCampaign {
       mechanics: "",
     },
     options: { hopeAndFear: true },
-  } as LoadedCampaign;
+  }) as unknown as LoadedCampaign;
 }
 
 export function inCampaign(campaign: LoadedCampaign, ui: ReactElement, offline = false) {

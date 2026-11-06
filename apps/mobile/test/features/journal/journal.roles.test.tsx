@@ -70,7 +70,7 @@ test("a player's Sessions list: the sessions they may see, Campaign so far, no P
 
 test("the GM's Sessions list: + Plan session N creates the next session and opens it on Plan", async () => {
   const onNavigate = jest.fn<JournalNavigate>();
-  const create = jest.fn((_args: unknown) => Promise.resolve({ sessionId: "session-3" }));
+  const create = jest.fn((_args: unknown) => Promise.resolve({ sessionId: "session-3", n: 3 }));
   const screen = await renderAsGm(journal({ s: ALL_SESSIONS }, onNavigate), {
     queries: baseQueries("gm"),
     mutations: { [fn(api.sessionRecords.create)]: create },
@@ -112,7 +112,7 @@ test("with no session in the URL the GM's Journal opens on the live session, not
 
 test("the GM starts the selected planned session and lands on its Log & recap", async () => {
   const onNavigate = jest.fn<JournalNavigate>();
-  const start = jest.fn((_args: unknown) => Promise.resolve({ sessionId: "session-2", alreadyStarted: false, notes: [], features: [], reminders: [] }));
+  const start = jest.fn((_args: unknown) => Promise.resolve({ sessionId: "session-2", startedAt: 1, alreadyStarted: false, notes: [], features: [], reminders: [] }));
   const screen = await renderAsGm(journal({ s: ALL_SESSIONS }, onNavigate), {
     queries: baseQueries("gm"),
     mutations: { [fn(api.sessions.start)]: start },
@@ -127,7 +127,7 @@ test("the GM starts the selected planned session and lands on its Log & recap", 
 
 test("with 'A new session opens on' set to the Combat Map, Start goes to the map", async () => {
   const onNavigate = jest.fn<JournalNavigate>();
-  const start = jest.fn((_args: unknown) => Promise.resolve({ sessionId: "session-2", alreadyStarted: false }));
+  const start = jest.fn((_args: unknown) => Promise.resolve({ sessionId: "session-2", startedAt: 1, alreadyStarted: false }));
   const screen = await renderAsGm(journal({ s: ALL_SESSIONS }, onNavigate), {
     queries: baseQueries("gm", undefined, { sessionOpensOn: "combatMap" }),
     mutations: { [fn(api.sessions.start)]: start },
@@ -139,7 +139,7 @@ test("with 'A new session opens on' set to the Combat Map, Start goes to the map
 });
 
 test("the GM ends the live session and reads the report; a player sees the live chip only", async () => {
-  const end = jest.fn((_args: unknown) => Promise.resolve({ tokens: 0, fearGained: 0, fearLost: 0, journeyEnds: [] }));
+  const end = jest.fn((_args: unknown) => Promise.resolve({ tokens: 0, fearGained: 0, fearLost: 0, journeyEnds: [], entryId: null }));
   const queries = { ...baseQueries("gm", [live, played]), [fn(api.sessions.current)]: { startedAt: 1, extraCharacters: false, n: 2 } };
   const screen = await renderAsGm(journal({ s: ALL_SESSIONS }), { queries, mutations: { [fn(api.sessions.end)]: end } });
   expect(screen.getByText("Session 2 · live")).toBeTruthy();
@@ -160,7 +160,7 @@ test("the GM ends the live session and reads the report; a player sees the live 
 // ---------------------------------------------------------------- the GM's session
 
 test("the GM's session opens on Plan: scenes, GM prep and Battle Points, no log reads", async () => {
-  const addScene = jest.fn(ok);
+  const addScene = jest.fn((_args: unknown) => Promise.resolve({ sceneId: "scene-new" }));
   const setState = jest.fn(ok);
   const screen = await renderAsGm(journal({ s: planned._id }), {
     queries: gmPlanQueries(),
@@ -191,7 +191,7 @@ test("the GM's Log & recap: the log with hide / delete / add, the recap, tally, 
   const onNavigate = jest.fn<JournalNavigate>();
   const hide = jest.fn(ok);
   const remove = jest.fn(ok);
-  const add = jest.fn(ok);
+  const add = jest.fn((_args: unknown) => Promise.resolve({ logId: "log-new" }));
   const reset = jest.fn(ok);
   const screen = await renderAsGm(journal({ s: played._id, sv: "log" }, onNavigate), {
     queries: gmLogQueries(),

@@ -77,7 +77,7 @@ test("with web search not allowed an ask never requests it", async () => {
     mutations: {
       [fn(api.lorekeeper.ask)]: (args) => {
         asked.push(args);
-        return { conversationId, questionId: "msg-q9", answerId: "msg-a9" };
+        return { conversationId, answerId: "msg-a9" };
       },
     },
   });
@@ -90,14 +90,14 @@ test("with web search not allowed an ask never requests it", async () => {
 test("daily limits show: questions left near the cap, and the cap notice when spent", async () => {
   const near = await renderAsPlayer(<LorekeeperChat {...chat(false)} />, {
     queries: lorekeeperQueries("player", {
-      [fn(api.lorekeeperUsage.mine)]: { questionsLeft: 3, campaignCapReached: false, deploymentCapReached: false },
+      [fn(api.lorekeeperUsage.mine)]: { questionsLeft: 3, webSearchesLeft: 10, campaignCapReached: false, deploymentCapReached: false, shortAnswers: false },
     }),
   });
   expect(near.getByText(questionsLeftLabel(3))).toBeTruthy();
 
   const spent = await renderAsPlayer(<LorekeeperChat {...chat(false)} />, {
     queries: lorekeeperQueries("player", {
-      [fn(api.lorekeeperUsage.mine)]: { questionsLeft: 0, campaignCapReached: false, deploymentCapReached: false },
+      [fn(api.lorekeeperUsage.mine)]: { questionsLeft: 0, webSearchesLeft: 10, campaignCapReached: false, deploymentCapReached: false, shortAnswers: false },
     }),
   });
   expect(spent.getByText(CAP_USER_TEXT)).toBeTruthy();

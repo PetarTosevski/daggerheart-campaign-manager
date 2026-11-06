@@ -11,6 +11,7 @@ import { QueryBoundary } from "../../../src/ui/query-boundary";
 import { fn, renderAsGm, renderAsPlayer } from "../../harness";
 import { campaignRecord, characterRecord, inCampaign, sheetCharacter } from "../party/fixture";
 import { canMarkStress, stepResource, stepTrait } from "../../../src/features/sheet/optimistic";
+import { ruleSettingsRecord } from "../../harness/records";
 
 jest.mock("expo-crypto", () => ({
   randomUUID: () => "00000000-0000-4000-8000-000000000001",
@@ -38,7 +39,7 @@ function sheetQueries(role: "gm" | "player", character: unknown, stressOverflow:
   return {
     [fn(api.campaigns.get)]: campaignRecord(role),
     [fn(api.charactersReads.get)]: character,
-    [fn(api.ruleSettings.get)]: { modes: { stressOverflow, fullStressVulnerable: "book" }, locked: false, canEdit: role === "gm" },
+    [fn(api.ruleSettings.get)]: ruleSettingsRecord({ stressOverflow, fullStressVulnerable: "book" }, { locked: false, canEdit: role === "gm" }),
   };
 }
 

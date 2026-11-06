@@ -21,6 +21,7 @@ beforeEach(() => {
 const deathState = {
   awaitingMove: false,
   pending: null,
+  request: null,
   undoEntryId: null,
   lessLethal: true,
   awayRequested: true,

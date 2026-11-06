@@ -4,6 +4,7 @@ import { fireEvent } from "@testing-library/react-native";
 import { resetMotionTest } from "../../theme/mock-reanimated";
 import { CampaignListScreen } from "../../../src/features/account/campaign-list";
 import { renderAsGm, renderAsPlayer } from "../../harness";
+import { campaignListRow } from "../../harness/records";
 
 const mockPush = jest.fn();
 
@@ -20,7 +21,7 @@ const options = {
   witherPersists: false,
 };
 
-const gmCampaign = {
+const gmCampaign = campaignListRow({
   _id: "campaign-gm",
   name: "GM Table",
   frameId: "beast-feast" as const,
@@ -35,7 +36,7 @@ const gmCampaign = {
   players: 1,
   role: "gm" as const,
   isCreator: true,
-};
+});
 
 const playerCampaign = { ...gmCampaign, _id: "campaign-player", name: "Player Table", role: "player" as const, isCreator: false };
 const coGmCampaign = { ...gmCampaign, _id: "campaign-cogm", name: "Co Table", isCreator: false, fear: null };

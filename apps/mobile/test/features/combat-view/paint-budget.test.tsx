@@ -129,7 +129,7 @@ test("live updates repaint only what changed: a token move or a new layout objec
   await waitFor(() => expect(paintStats.fog).toBe(2));
 
   // A door or object change repaints the base once.
-  layout = liveLayout({ updatedAt: 200, objects: [{ _id: "obj-1", kind: "crate", x: 2, y: 2, r: 1 }] as never });
+  layout = liveLayout({ updatedAt: 200, objects: [{ _id: "obj-1", kind: "crate", x: 2, y: 2, r: 1, rot: 0 }] as never });
   await screen.rerender(screenFor());
   await flush();
   expect(paintStats.base).toBe(2);

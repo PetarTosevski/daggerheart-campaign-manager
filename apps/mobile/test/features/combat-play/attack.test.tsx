@@ -7,6 +7,7 @@ import { resetMotionTest } from "../../theme/mock-reanimated";
 import { CombatPlaySlot } from "../../../src/features/combat-map/play";
 
 import { characterForAttack, okCharacterId, slotProps } from "./fixtures";
+import { ruleSettingsRecord } from "../../harness/records";
 
 jest.mock("expo-crypto", () => ({
   randomUUID: () => "00000000-0000-4000-8000-000000000003",
@@ -49,7 +50,7 @@ async function renderAttack(opts: {
       [fn(api.charactersReads.get)]: character(opts.secondary),
       [fn(api.adversaryActionsReads.pending)]: [],
       [fn(api.combatActionsReads.targets)]: opts.hints ?? [hint],
-      [fn(api.ruleSettings.get)]: { modes: { lineOfSight: opts.mode ?? "book" }, locked: false, canEdit: false },
+      [fn(api.ruleSettings.get)]: ruleSettingsRecord({ lineOfSight: opts.mode ?? "book" }, { locked: false, canEdit: false }),
     },
     mutations: { [fn(api.combatActions.attack)]: opts.attack ?? (() => null), ...opts.extra },
   });

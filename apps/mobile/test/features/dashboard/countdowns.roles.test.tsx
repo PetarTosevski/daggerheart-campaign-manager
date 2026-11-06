@@ -60,7 +60,7 @@ test("a hidden step is shown only when the server sends it, and Advance is one i
     mutations: {
       [fn(api.countdowns.operate)]: (args) => {
         calls.push(args as { countdownId: string; action: string; idempotencyKey: string });
-        return null;
+        return { previousValue: 4, newValue: 3, status: "active" };
       },
     },
   });

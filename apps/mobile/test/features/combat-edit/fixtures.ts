@@ -18,6 +18,9 @@ export function editSlotQueries(live: CombatMapLayout) {
       view: "gm" as const,
       mapId: live._id,
       style: "classic" as const,
+      setting: { builtin: "forest" },
+      settingPicked: false,
+      extends: null,
       sprites: [],
     },
   };

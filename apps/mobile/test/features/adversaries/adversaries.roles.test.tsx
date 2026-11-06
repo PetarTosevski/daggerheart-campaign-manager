@@ -6,6 +6,15 @@ import AdversariesRoute from "../../../app/campaign/[campaignId]/(gm)/adversarie
 import EncounterRoute from "../../../app/campaign/[campaignId]/(gm)/adversaries/[encounterId]";
 import { renderAsGm, renderAsPlayer } from "../../harness";
 import { campaignId, campaignRecord, encounterId, encounterList, encounterView, gmQueries, inCampaign } from "./fixture";
+import { campaignSummary } from "../../harness/records";
+
+// A player sent off a GM route lands on the dashboard; the dashboard's own queries are its tests' business.
+jest.mock("../../../src/features/dashboard", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { Text } = require("react-native") as typeof import("react-native");
+  return { DashboardScreen: () => <Text accessibilityRole="header">Dashboard</Text> };
+});
+
 
 const mockPush = jest.fn();
 
@@ -26,7 +35,7 @@ beforeEach(() => {
 });
 
 /** The dashboard stub's campaign shape (no frame), so the player tests stay off the live dashboard. */
-const playerStub = { _id: campaignId, name: "The Table", role: "player" };
+const playerStub = campaignSummary({ _id: campaignId, name: "The Table", role: "player" });
 
 test("a player opening adversaries lands on the dashboard and never subscribes to encounters:list", async () => {
   const screen = await renderAsPlayer(inCampaign(<AdversariesRoute />), {

@@ -10,6 +10,20 @@ import { DiceSlot } from "../../../src/features/sheet/dice";
 import type { SheetSlotProps } from "../../../src/features/sheet/contract";
 import { characterRecord, asSheetCharacter } from "../party/fixture";
 
+/** A character with no frame or class extras (`characterExtras.get` for a plain sheet). */
+const NO_EXTRAS = {
+  canEdit: true,
+  level: 1,
+  tier: 1,
+  ingredientCapacity: 0,
+  beastform: null,
+  companion: null,
+  motherboard: null,
+  beastFeast: null,
+  castleHigh: null,
+  cookbook: null,
+};
+
 jest.mock("expo-crypto", () => {
   let keys = 0;
   return {
@@ -74,7 +88,7 @@ test("an editor rolls Hope and Fear through actionRoll", async () => {
   const screen = await renderAsPlayer(<DiceSlot {...slotProps()} />, {
     queries: {
       [fn(api.campaigns.fear)]: 2,
-      [fn(api.characterExtras.get)]: null,
+      [fn(api.characterExtras.get)]: NO_EXTRAS,
       [fn(api.rolls.pendingChoices)]: { slayer: null, tagTeam: null },
     },
     mutations: {
@@ -116,7 +130,7 @@ test("an editor rolls damage through damageRoll", async () => {
   const screen = await renderAsPlayer(<DiceSlot {...slotProps()} />, {
     queries: {
       [fn(api.campaigns.fear)]: 1,
-      [fn(api.characterExtras.get)]: null,
+      [fn(api.characterExtras.get)]: NO_EXTRAS,
       [fn(api.rolls.pendingChoices)]: { slayer: null, tagTeam: null },
     },
     mutations: {
@@ -158,7 +172,7 @@ test("a Slayer holder sees the spend stepper and sends slayerDice on damage", as
     {
       queries: {
         [fn(api.campaigns.fear)]: 0,
-        [fn(api.characterExtras.get)]: null,
+        [fn(api.characterExtras.get)]: NO_EXTRAS,
         [fn(api.rolls.pendingChoices)]: { slayer: null, tagTeam: null },
       },
       mutations: {
@@ -202,7 +216,7 @@ test("only a Know the Tide holder sees Tide tokens on action rolls", async () =>
     {
       queries: {
         [fn(api.campaigns.fear)]: 0,
-        [fn(api.characterExtras.get)]: null,
+        [fn(api.characterExtras.get)]: NO_EXTRAS,
         [fn(api.rolls.pendingChoices)]: { slayer: null, tagTeam: null },
       },
     },
@@ -213,7 +227,7 @@ test("only a Know the Tide holder sees Tide tokens on action rolls", async () =>
   const other = await renderAsPlayer(<DiceSlot {...slotProps()} />, {
     queries: {
       [fn(api.campaigns.fear)]: 0,
-      [fn(api.characterExtras.get)]: null,
+      [fn(api.characterExtras.get)]: NO_EXTRAS,
       [fn(api.rolls.pendingChoices)]: { slayer: null, tagTeam: null },
     },
   });
@@ -225,7 +239,7 @@ test("a pending Slayer choice renders the offer", async () => {
   const screen = await renderAsPlayer(<DiceSlot {...slotProps()} />, {
     queries: {
       [fn(api.campaigns.fear)]: 0,
-      [fn(api.characterExtras.get)]: null,
+      [fn(api.characterExtras.get)]: NO_EXTRAS,
       [fn(api.rolls.pendingChoices)]: {
         slayer: {
           entryId: "log-4",
@@ -257,7 +271,7 @@ test("Tag Team apply picks a roll for both characters", async () => {
   const screen = await renderAsPlayer(<DiceSlot {...slotProps()} />, {
     queries: {
       [fn(api.campaigns.fear)]: 0,
-      [fn(api.characterExtras.get)]: null,
+      [fn(api.characterExtras.get)]: NO_EXTRAS,
       [fn(api.rolls.pendingChoices)]: {
         slayer: null,
         tagTeam: {

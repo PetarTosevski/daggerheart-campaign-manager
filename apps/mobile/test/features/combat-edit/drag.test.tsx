@@ -52,6 +52,33 @@ test("dragging an object with the Objects tool moves it (dcm-gdzi.17: the drag i
   expect(calls.add).toBeUndefined();
 });
 
+test("on a full-size 30 x 20 map a drag on an object far from the origin moves it", async () => {
+  const big = liveLayout({
+    w: 30,
+    h: 20,
+    objects: [{ _id: "obj-far" as Id<"combatMapObjects">, kind: "tree", x: 25, y: 15, r: 1, rot: 0 }],
+  });
+  const calls: Record<string, unknown[]> = {};
+  const screen = await renderAsGm(<CombatEditTools campaignId={id} isGm layout={big} view={playerViewOk()} />, {
+    queries: editSlotQueries(big),
+    mutations: {
+      [fn(api.combatMapEdit.moveObject)]: (args) => {
+        (calls.move ??= []).push(args);
+        return null;
+      },
+    },
+  });
+  await fireEvent.press(screen.getByText("Objects"));
+  const { pan } = mapGestures();
+  await act(async () => {
+    pan.onBegin({ x: 25.2, y: 15.2 });
+    pan.onUpdate({ x: 27.4, y: 16.4, translationX: 12, translationY: 4 });
+    pan.onEnd({ x: 27.4, y: 16.4, translationX: 12, translationY: 4 });
+  });
+  expect(calls.move).toHaveLength(1);
+  expect(calls.move?.[0]).toMatchObject({ campaignId: id, objectId: "obj-far" });
+});
+
 test("a drag that starts off every object pans instead, and moves nothing", async () => {
   const calls: Record<string, unknown[]> = {};
   await render(calls);

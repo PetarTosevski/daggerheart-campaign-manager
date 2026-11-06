@@ -89,8 +89,9 @@ export function gmSlotQueries(live: CombatMapLayout) {
     [fn(api.combatCardsReads.handSharing)]: { playersSeeHands: true, hidden: [] },
     [fn(api.combatVision.doors)]: { mapId: live._id, doors: [] },
     [fn(api.encounters.list)]: {
-      active: [{ _id: "enc-1", name: "Ambush", status: "running" as const }],
-      planned: [],
+      active: [{ _id: "enc-1", name: "Ambush", status: "running" as const, pcs: 2, updatedAt: 1 }],
+      ended: [],
+      moreEnded: false,
     },
     [fn(api.combatRequestsReads.mine)]: [],
   };

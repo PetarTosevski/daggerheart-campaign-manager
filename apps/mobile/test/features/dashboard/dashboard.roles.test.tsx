@@ -55,8 +55,8 @@ function ready(role: "gm" | "player", extra: Record<string, unknown> = {}) {
     [fn(api.restsReads.current)]: restState(),
     [fn(api.feed.list)]: [actionRoll()],
     [fn(api.countdowns.listByCampaign)]: [countdown()],
-    [fn(api.maps.locations)]: [{ id: "loc-1", name: "Haven", typeLabel: "Village", partyHere: true, hidden: false }],
-    [fn(api.countdownTracks.afterRest)]: { restId: "rest-1", lines: [{ countdownId: "cd-9", line: "The Lure holds." }], reminders: [] },
+    [fn(api.maps.locations)]: [{ id: 1, name: "Haven", typeLabel: "Village", colour: "#c9a24a", path: "M0 0", partyHere: true, hidden: false }],
+    [fn(api.countdownTracks.afterRest)]: { restId: "rest-1", lines: [{ countdownId: "cd-9", name: "The Lure", currentValue: 3, line: "The Lure holds." }], reminders: [] },
     [fn(api.countdownRolls.countedRows)]: ["row-1"],
     ...extra,
   };
@@ -80,7 +80,7 @@ test("a player dashboard never subscribes to a GM query", async () => {
     mutations: {
       [fn(api.characters.adjustResource)]: (args) => {
         calls.push(args as { delta: number });
-        return null;
+        return { hp: 3, stress: 0, hope: 2, armorMarked: 0, scars: 0 };
       },
     },
   });
@@ -171,7 +171,7 @@ test("an empty dashboard shows the empty copy and hides Rest from a player", asy
       [fn(api.sessionWrap.dashboard)]: sessions(null),
       [fn(api.campaigns.fear)]: 0,
       [fn(api.charactersReads.partySummary)]: [],
-      [fn(api.restsReads.current)]: { open: null, shortRestsSinceLong: 0, last: null },
+      [fn(api.restsReads.current)]: restState({ last: null }),
       [fn(api.feed.list)]: [],
       [fn(api.countdowns.listByCampaign)]: [],
       [fn(api.maps.locations)]: [],
