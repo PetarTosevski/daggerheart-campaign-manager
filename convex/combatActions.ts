@@ -16,7 +16,7 @@ import {
   attackScene,
   awaitingAttackValidator,
   beforeOf,
-  checkTargets,
+  checkAttackTargets,
   coverApplies,
   equippedWeapon,
   hostOf,
@@ -34,10 +34,14 @@ import { closeRequest, encounterRunning, groupOffer, loadOpenRequest, openSancti
 import { afterRollChoiceValidator, MAX_RIDERS_PER_ATTACK, riderPickChoiceValidator, riderValidator, type ForcedAttackPayload } from "./lib/validators/combatRequests";
 import { featureScope } from "./lib/featureScope";
 import { assertMayAct } from "./lib/spotlight";
-import { keyedCampaignMutation } from "./lib/functions";
+import { keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
 import { fearFor } from "./lib/fearVisibility";
-import { prepareDuality, rules, type Loaded } from "./lib/rolls";
-import type { AdversaryBefore } from "./lib/validators/actionLog";
+import { duality, editable, prepareDuality, rules, type Loaded } from "./lib/rolls";
+import { rollDie } from "./lib/dice";
+import { outcomeSucceeds } from "./lib/rollAftermath";
+import { ruleModesOf } from "./lib/ruleModes";
+import { traitIdValidator } from "./lib/validators/characters";
+import { rollValidator, type AdversaryBefore } from "./lib/validators/actionLog";
 
 /**
  * Weapon attacks on enemy tokens from the Combat Map (plan combat-actions, tracer CA3; docs/tasks/TASK-CA-CA3.md).
@@ -50,6 +54,9 @@ import type { AdversaryBefore } from "./lib/validators/actionLog";
  * - `targets` (combatActionsReads.ts, dcm-uh6r): the enemy tokens the character sees, with band, range, line of sight and
  *   cover only (U1, CF6); `riders` there too.
  * - `pickMinions`: the attacker picks the extra Minions their damage defeats (Q6, CB p.201), once.
+ * - Plan rule-switches OP, optional rule "Conflict between PCs" (CB p.168; off by default): `attack` also takes another
+ *   PC's token (against their Evasion; the damage opens their incoming-hit window), and `contest` is the GM's Contest
+ *   (the instigator's action roll against the target's reaction total). docs/tasks/TASK-RULES-OP.md.
  *
  * What a player receives never holds an enemy's HP, Stress, thresholds or Difficulty (U1): the returns validators
  * below have no such field, and the public row's summary names only Hit / Miss / Defeated.
@@ -176,9 +183,11 @@ export const attack = keyedCampaignMutation({
         }
       }
       // E1.4b (dcm-lbai): a reach picked with the attack widens its own range check.
-      const targets = await checkTargets(ctx, ctx.campaign, scene, weapon, targetTokenIds, roll, setupReach(picked));
+      // Plan rule-switches OP: with "Conflict between PCs" on (CB p.168), another PC's token is a target too (`pcs`).
+      const { adversaries: targets, pcs } = await checkAttackTargets(ctx, ctx.campaign, scene, weapon, targetTokenIds, roll, setupReach(picked));
+      const pcTargets = pcs.length > 0 ? { pcTargets: pcs } : {};
       if (forced !== null) {
-        const result = await resolveAttack(ctx, { loaded, actorId: ctx.user._id, scene, weapon, slot, targets, roll, riders, groupId: forced.payload.groupId, ...(benefit !== undefined ? { benefit } : {}) });
+        const result = await resolveAttack(ctx, { loaded, actorId: ctx.user._id, scene, weapon, slot, targets, ...pcTargets, roll, riders, groupId: forced.payload.groupId, ...(benefit !== undefined ? { benefit } : {}) });
         await closeRequest(ctx, forced.row._id, "resolved", ctx.user._id);
         return result;
       }
@@ -187,7 +196,13 @@ export const attack = keyedCampaignMutation({
       if (refuse && outOfRange.length > 0) throw outOfRangeRefusal(outOfRange.map((t) => t.check));
       // DA2 (combat-actions Q1, user 2026-10-30): a rider's extra target out of its range waits for the GM too.
       const added = addedOutOfRange(scene, weapon, picked);
-      if (outOfRange.length === 0 && added.length === 0) return resolveAttack(ctx, { loaded, actorId: ctx.user._id, scene, weapon, slot, targets, roll, riders, ...(benefit !== undefined ? { benefit } : {}) });
+      // OP: an attack on a PC never waits for the GM's range sanction (its approval re-checks adversary targets only):
+      // anything out of range is refused instead, as with the GM's "refuse" setting.
+      if (pcs.length > 0) {
+        const far = [...outOfRange.map((t) => t.check), ...pcs.flatMap((p) => (p.check && !p.check.inRange ? [p.check] : [])), ...added];
+        if (far.length > 0) throw outOfRangeRefusal(far);
+      }
+      if (outOfRange.length === 0 && added.length === 0) return resolveAttack(ctx, { loaded, actorId: ctx.user._id, scene, weapon, slot, targets, ...pcTargets, roll, riders, ...(benefit !== undefined ? { benefit } : {}) });
 
       // Q1: wait for the GM. Refuse now what the approval would refuse anyway (a character who can't act, unpaid costs,
       // a rider that doesn't ride on this attack).
@@ -210,6 +225,44 @@ export const attack = keyedCampaignMutation({
       });
       return { status: "pending" as const, requestId, outOfRange: bands };
     }), "fearGained", ctx.permission),
+});
+
+/** One side of a Contest: the character, the trait it rolls and a modifier the GM types (the roll's other options stay off). */
+const contestSide = v.object({ characterId: v.id("characters"), trait: traitIdValidator, modifier: v.number() });
+const contestRoll = v.object({ entryId: v.id("actionLog"), roll: rollValidator });
+
+/**
+ * Plan rule-switches OP: the GM calls a Contest between two PCs (optional rule "Conflict between PCs", CB p.168: "On any
+ * other kind of action roll, the instigator makes an action roll and the target makes a reaction roll. To succeed, the
+ * instigator must beat a Difficulty equal to the total value of the reaction roll."). The server rolls the target's
+ * reaction roll first, then the instigator's action roll with that total as its Difficulty; both are the characters' own
+ * rolls as the dice box makes them (`duality`: Hope, Stress, the GM's Fear, countdown ticks and the spotlight for the
+ * action roll; a reaction roll gains nothing, CB p.99), each its own undoable public row. The GM and co-GMs only (players
+ * FORBIDDEN); MECHANIC_DISABLED while the rule is off; INVALID for one character on both sides; NOT_FOUND for another
+ * campaign's character; a character who can't act (dead, away, unconscious) is refused by the roll.
+ */
+export const contest = keyedGmMutation({
+  rateLimit: "roll",
+  args: { instigator: contestSide, target: contestSide },
+  returns: v.object({ difficulty: v.number(), success: v.boolean(), reaction: contestRoll, action: contestRoll }),
+  handler: async (ctx, { instigator, target }) =>
+    ctx.once("combat_contest", { instigator, target }, async () => {
+      if (!ruleModesOf(ctx.campaign).pcConflict) throw appError("MECHANIC_DISABLED");
+      if (instigator.characterId === target.characterId) throw appError("INVALID", "A Contest needs two characters.");
+      const by = await editable(ctx, ctx.user, instigator.characterId);
+      const against = await editable(ctx, ctx.user, target.characterId);
+      if (by.campaign._id !== ctx.campaign._id || against.campaign._id !== ctx.campaign._id) throw appError("NOT_FOUND");
+      const plain = { experienceIds: [], advantage: 0, disadvantage: 0, help: 0, attack: false, options: [] };
+      const reaction = await duality(ctx, against, { kind: "reaction", trait: target.trait, modifier: target.modifier, ...plain }, rollDie, false);
+      const difficulty = reaction.roll.total;
+      const action = await duality(ctx, by, { kind: "action", trait: instigator.trait, modifier: instigator.modifier, difficulty, ...plain }, rollDie, false);
+      return {
+        difficulty,
+        success: outcomeSucceeds(action.roll.outcome),
+        reaction: { entryId: reaction.entryId, roll: reaction.roll },
+        action: { entryId: action.entryId, roll: action.roll },
+      };
+    }),
 });
 
 /**
@@ -238,7 +291,8 @@ export const afterRoll = keyedCampaignMutation({
       const answer = choice.kind === "use" ? { ...choice, useId: choice.useId ?? p.options.find((o) => o.featureId === choice.featureId)!.useId } : choice;
       const scene = await attackScene(ctx, ctx.campaign, loaded.character, row.mapId);
       const weapon = equippedWeapon(loaded.sheet, p.action.slot);
-      const targets = await checkTargets(ctx, ctx.campaign, scene, weapon, p.action.targetTokenIds, rollFromStored(p.action.roll));
+      // Plan rule-switches OP: a held attack on PCs ("Conflict between PCs") checks them again too.
+      const { adversaries: targets, pcs } = await checkAttackTargets(ctx, ctx.campaign, scene, weapon, p.action.targetTokenIds, rollFromStored(p.action.roll));
       const result = await resolveAttack(ctx, {
         loaded,
         actorId: row.createdBy,
@@ -246,6 +300,7 @@ export const afterRoll = keyedCampaignMutation({
         weapon,
         slot: p.action.slot,
         targets,
+        ...(pcs.length > 0 ? { pcTargets: pcs } : {}),
         roll: rollFromStored(p.action.roll),
         riders: p.action.riders ?? [],
         held: { dice: p.dice, answer },
