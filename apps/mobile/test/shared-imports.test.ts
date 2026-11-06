@@ -220,8 +220,6 @@ const KNOWN_COPIES: readonly string[] = [
   "apps/mobile/src/features/notes/sharing.tsx chipText",
   "apps/mobile/src/features/notes/slots.ts toPageRef",
   "apps/mobile/src/features/notes/use-journal.ts selectedPage",
-  "apps/mobile/src/features/sessions/live-card.tsx hhmm",
-  "apps/mobile/src/features/sessions/play-stage.tsx clock",
   // Combat map and sprite packs
   "apps/mobile/src/features/combat-map/edit/edit-actions.ts placementOf",
   "apps/mobile/src/features/combat-map/fog-paint.ts fogImage",

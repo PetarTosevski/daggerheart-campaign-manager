@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { Pressable, Text, View } from "react-native";
 
 import {
@@ -10,29 +10,14 @@ import {
   isStruck,
   THREADS_COPY,
   threadPageLink,
-  threadsButtonLabel,
 } from "../../../../../src/lib/domain/notes";
 import type { ThreadRow } from "../../../../../convex/notesThreads";
 import { api, type Id } from "../../convex";
+import { useOpenThreads } from "../journal/data";
 import { EntryText } from "./mentions";
 import type { NotesSlotProps } from "./slots";
 import { notesStyles } from "./styles";
 
-function useThreads(campaignId: Id<"campaigns">) {
-  return useQuery(api.notesThreads.threads, { campaignId });
-}
-
-export function ThreadsButton({ campaignId, view, onView }: NotesSlotProps) {
-  const threads = useThreads(campaignId);
-  const on = view === "threads";
-  return (
-    <Pressable accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => onView(on ? "page" : "threads")}>
-      <Text style={notesStyles.chip}>
-        {threads === undefined ? "Open threads · …" : threadsButtonLabel(threads.length)}
-      </Text>
-    </Pressable>
-  );
-}
 
 function ThreadRowView({
   campaignId,
@@ -74,7 +59,8 @@ function ThreadRowView({
 }
 
 export function ThreadsView({ campaignId, onPage }: NotesSlotProps) {
-  const threads = useThreads(campaignId);
+  // One `notesThreads.threads` for the Journal (its header button and Campaign so far read it too).
+  const threads = useOpenThreads();
   const cycle = useMutation(api.notesEntries.cycle);
   return (
     <View accessibilityLabel={THREADS_COPY.title} style={notesStyles.paper}>

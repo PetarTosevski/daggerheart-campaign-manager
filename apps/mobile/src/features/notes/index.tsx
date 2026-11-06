@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { ScrollView, Text, View } from "react-native";
 
 import { useCampaign } from "../../shell/campaign-provider";
@@ -6,7 +6,6 @@ import { colors } from "../../theme/colors";
 import { space } from "../../theme/spacing";
 import { TornOutPages } from "./bin";
 import { DownloadJournalButton } from "./export";
-import { JournalHeading } from "./header";
 import { PageGroups } from "./index-column";
 import { JournalsList } from "./journals";
 import { PaperColumn } from "./paper-column";
@@ -15,85 +14,63 @@ import { JournalSearch, useJournalSearch } from "./search";
 import { SharedSection } from "./shared";
 import type { NotesSlotProps, NotesView } from "./slots";
 import { notesStyles } from "./styles";
-import { ThreadsButton } from "./threads";
-import { NotesJournalProvider } from "./journal-context";
 import { selectedPage, useJournal } from "./use-journal";
 
-export function NotesScreen({ initialPageId }: { initialPageId?: string | null }) {
+/** Rewrites the Notes params of the Journal's URL (null removes one). */
+export type NotesNavigate = (next: { view?: string | null; page?: string | null }) => void;
+
+/**
+ * The Journal's Notes sub-tab (website: src/components/journal/notes-tab, the Notes UI without its hero; the Journal
+ * header holds the title and Open threads, 'Download my journal' sits with the index). The view and the page are the
+ * Journal's URL params (`view`, `page`), so 'Open threads' and Threads raised' 'In Notes' land here; `header` (the
+ * Journal header and sub-tabs) scrolls with the notes. Lives inside the Journal's data provider (`notes.journal`,
+ * `notesThreads.threads` and `sessionRecords.list`, subscribed once for the screen).
+ */
+export function NotesScreen({
+  view,
+  pageId,
+  onNavigate,
+  header,
+}: {
+  view: NotesView;
+  pageId: string | null;
+  onNavigate: NotesNavigate;
+  header?: ReactNode;
+}) {
   return (
     <NotesSlotBoundary label="Notes">
-      <NotesBody initialPageId={initialPageId ?? null} />
+      <NotesBody header={header} onNavigate={onNavigate} pageId={pageId} view={view} />
     </NotesSlotBoundary>
   );
 }
 
-function NotesBody({ initialPageId }: { initialPageId: string | null }) {
+function NotesBody({
+  view,
+  pageId,
+  onNavigate,
+  header,
+}: {
+  view: NotesView;
+  pageId: string | null;
+  onNavigate: NotesNavigate;
+  header?: ReactNode;
+}) {
   const campaign = useCampaign();
   const campaignId = campaign._id;
   const isGm = campaign.role === "gm";
   const [search, setSearch] = useState("");
-  const [view, setView] = useState<NotesView>("page");
-  const [pageId, setPageId] = useState<string | null>(initialPageId);
   const [journalId, setJournalId] = useState<string | null>(null);
   const matchingPageIds = useJournalSearch({ campaignId, search });
-  return (
-    <NotesJournalProvider campaignId={campaignId}>
-      <NotesBodyInner
-        campaign={campaign}
-        campaignId={campaignId}
-        isGm={isGm}
-        journalId={journalId}
-        matchingPageIds={matchingPageIds}
-        pageId={pageId}
-        search={search}
-        setJournalId={setJournalId}
-        setPageId={setPageId}
-        setSearch={setSearch}
-        setView={setView}
-        view={view}
-      />
-    </NotesJournalProvider>
-  );
-}
-
-function NotesBodyInner({
-  campaign,
-  campaignId,
-  isGm,
-  search,
-  setSearch,
-  view,
-  setView,
-  pageId,
-  setPageId,
-  journalId,
-  setJournalId,
-  matchingPageIds,
-}: {
-  campaign: ReturnType<typeof useCampaign>;
-  campaignId: NotesSlotProps["campaignId"];
-  isGm: boolean;
-  search: string;
-  setSearch: (text: string) => void;
-  view: NotesView;
-  setView: (view: NotesView) => void;
-  pageId: string | null;
-  setPageId: (id: string | null) => void;
-  journalId: string | null;
-  setJournalId: (id: string | null) => void;
-  matchingPageIds: ReadonlySet<string> | null;
-}) {
   const journal = useJournal();
   const current = view === "page" && journal ? selectedPage(journal, pageId) : null;
 
   function onPage(nextPageId: string | null, nextView?: NotesView) {
-    setPageId(nextPageId);
-    if (nextView) setView(nextView);
+    onNavigate({ page: nextPageId, ...(nextView ? { view: nextView === "page" ? null : nextView } : {}) });
   }
 
   function onView(nextView: NotesView, nextJournalId?: string | null) {
-    setView(nextView);
     if (nextJournalId !== undefined) setJournalId(nextJournalId);
+    onNavigate({ view: nextView === "page" ? null : nextView });
   }
 
   const slot: NotesSlotProps = {
@@ -111,21 +88,7 @@ function NotesBodyInner({
 
   return (
     <ScrollView contentContainerStyle={[notesStyles.screen, { paddingHorizontal: space[4] }]}>
-      <View style={notesStyles.hero}>
-        <Text style={notesStyles.campaign}>{campaign.name}</Text>
-        <NotesSlotBoundary label="The journal heading">
-          <JournalHeading {...slot} />
-        </NotesSlotBoundary>
-        <View style={notesStyles.actions}>
-          <NotesSlotBoundary label="Open threads">
-            <ThreadsButton {...slot} />
-          </NotesSlotBoundary>
-          <NotesSlotBoundary label="Download">
-            <DownloadJournalButton {...slot} />
-          </NotesSlotBoundary>
-        </View>
-      </View>
-
+      {header}
       <View style={notesStyles.indexBlock}>
         <NotesSlotBoundary label="Search">
           <JournalSearch {...slot} />
@@ -142,21 +105,18 @@ function NotesBodyInner({
         <NotesSlotBoundary label="Torn-out pages">
           <TornOutPages {...slot} />
         </NotesSlotBoundary>
+        <NotesSlotBoundary label="Download">
+          <DownloadJournalButton {...slot} />
+        </NotesSlotBoundary>
         <View style={notesStyles.card}>
           <Text style={notesStyles.label}>Quick keys</Text>
-          <Text style={notesStyles.cardText}>
-            Start a line with * task · o event · - note · ! idea · + Hope · ^ Fear
-          </Text>
+          <Text style={notesStyles.cardText}>Start a line with * task · o event · - note · ! idea · + Hope · ^ Fear</Text>
           <Text style={notesStyles.cardText}>Type @name to link someone or somewhere from Characters & Locations.</Text>
         </View>
       </View>
 
       <View style={{ gap: space[2] }}>
-        {current ? (
-          <Text style={{ color: colors.subtle, fontSize: 13 }}>
-            Viewing: {current.title}
-          </Text>
-        ) : null}
+        {current ? <Text style={{ color: colors.subtle, fontSize: 13 }}>Viewing: {current.title}</Text> : null}
         <PaperColumn {...slot} />
       </View>
     </ScrollView>

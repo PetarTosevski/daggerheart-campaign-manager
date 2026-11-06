@@ -112,7 +112,7 @@ export function MentionInput({
 
   function insertMention(name: string, id: string) {
     if (countMentions(value) >= MAX_MENTIONS) return;
-    const prefix = atMatch ? value.slice(0, atMatch.index! + (atMatch[0].startsWith(" ") ? 1 : 0)) : value;
+    const prefix = atMatch ? value.slice(0, atMatch.index + (atMatch[0].startsWith(" ") ? 1 : 0)) : value;
     const token = formatToken(name, id);
     const next = `${prefix}${token} `;
     setValue(next);

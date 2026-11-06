@@ -2,7 +2,7 @@ import { beforeEach, expect, test } from "@jest/globals";
 
 import { resetMotionTest } from "../../theme/mock-reanimated";
 import { JournalsList } from "../../../src/features/notes/journals";
-import { NotesJournalProvider } from "../../../src/features/notes/journal-context";
+import { JournalDataProvider } from "../../../src/features/journal/data";
 import type { NotesSlotProps } from "../../../src/features/notes/slots";
 import { renderAsGm, renderAsPlayer } from "../../harness";
 import type { Id } from "../../../src/convex";
@@ -28,9 +28,9 @@ const baseSlot: Omit<NotesSlotProps, "access"> = {
 function journalsTree(isGm: boolean) {
   const slot: NotesSlotProps = { ...baseSlot, access: { isGm } };
   return (
-    <NotesJournalProvider campaignId={campaignId}>
+    <JournalDataProvider campaignId={campaignId}>
       <JournalsList {...slot} />
-    </NotesJournalProvider>
+    </JournalDataProvider>
   );
 }
 

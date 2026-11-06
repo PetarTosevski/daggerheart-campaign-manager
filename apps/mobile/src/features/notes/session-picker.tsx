@@ -1,11 +1,11 @@
-import { useQuery } from "convex/react";
 import { useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 
 import { errorMessage } from "../../../../../src/lib/convex-errors";
 import { sessionLogTitle } from "../../../../../src/lib/domain/notes";
 import { formatSessionDate } from "../../../../../src/lib/domain/sessions/status";
-import { api, type Id } from "../../convex";
+import { type Id } from "../../convex";
+import { useSessions } from "../journal/data";
 import { Button } from "../../ui/button";
 import { Sheet } from "../../ui/sheet";
 import { notesStyles } from "./styles";
@@ -57,7 +57,8 @@ function PickerBody({
   onClose: () => void;
   onPick: (sessionId: Id<"sessions"> | null) => Promise<void>;
 }) {
-  const sessions = useQuery(api.sessionRecords.list, { campaignId });
+  // The Journal's one `sessionRecords.list` (the sub-tab count and the session list read it too).
+  const sessions = useSessions();
   const [choice, setChoice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

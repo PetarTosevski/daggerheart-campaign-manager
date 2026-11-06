@@ -1,75 +1,209 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useRouter } from "expo-router";
+import type { ReactNode } from "react";
+import { Pressable, ScrollView, Text, View } from "react-native";
 
-import { colors } from "../../theme/colors";
-import { type } from "../../theme/fonts";
-import { hit, radius, space } from "../../theme/spacing";
+import type { Id } from "../../convex";
+import { useCampaign } from "../../shell/campaign-provider";
+import { space } from "../../theme/spacing";
 import { NotesScreen } from "../notes";
-import { SessionsScreen } from "../sessions";
-import { JOURNAL_TAB_LABEL, JOURNAL_TABS, type JournalTab } from "./tabs";
+import { parseView } from "../notes/slots";
+import { JournalDataProvider, useJournalData } from "./data";
+import { JournalHeader } from "./header";
+import { SessionLog } from "./log";
+import { PlanView } from "./plan";
+import { AfterSession, Recap } from "./recap";
+import { SessionHeading } from "./session-head";
+import { CampaignSoFar, PlanSessionButton, SessionList } from "./session-list";
+import { js } from "./styles";
+import { JOURNAL_TAB_LABEL, JOURNAL_TABS, parseJournalTab, parseSessionView, SESSION_VIEWS, type JournalTab, type SessionView } from "./tabs";
+import { SessionTally, Spotlight } from "./tally";
+import { ThreadsRaised } from "./threads";
+import { Button } from "../../ui/button";
+import { Slot, Tabs } from "./ui";
 
 export { JOURNAL_TABS, journalHref, parseJournalTab, type JournalTab } from "./tabs";
 
+/** The Journal's URL params as the route reads them (each first value, or undefined). */
+export type JournalParams = { tab?: string; s?: string; sv?: string; view?: string; page?: string };
+
+/** Rewrites the given params (null removes one) and keeps the rest; the route turns it into `router.setParams`. */
+export type JournalNavigate = (next: Partial<Record<keyof JournalParams, string | null>>) => void;
+
 /**
- * Journal: one tab for Sessions and Notes (the website's Journal, JX1). For now it hosts the existing phone Sessions
- * and Notes screens as two sub-tabs; the full Journal port is PX12. The selected sub-tab is URL state owned by the
- * route (`?tab=`), so this screen only reports presses. Both hosted screens carry their own query boundary.
+ * The Journal (the website's /journal page, src/app/(gm)/campaigns/[campaignId]/journal/page.tsx, design
+ * reference/designs/journal/journal_views.jpg): the header with the live session and Start / End, the Sessions /
+ * Notes sub-tabs, and on Sessions the list ('All sessions', '+ Plan session N', 'Campaign so far'); a session opens as
+ * its own screen with its heading, the GM's Plan / Log & recap toggle and 'Play on the Combat Map'. On a phone the
+ * website's columns stack: Plan is the scenes, the GM prep and the Battle Points; Log & recap is the log, the recap,
+ * then the GM's tally, the spotlight (players only when the GM's setting allows; the server decides), Threads raised
+ * and the GM's After the session. Players never get the toggle, the plan, the tally or After the session (Q5).
+ * All state is in the URL (`tab`, `s`, `sv`, and the Notes params `view`, `page`), owned by the route.
  */
-export function JournalScreen({ tab, onTab }: { tab: JournalTab; onTab: (tab: JournalTab) => void }) {
+export function JournalScreen({ params, onNavigate }: { params: JournalParams; onNavigate: JournalNavigate }) {
+  const campaignId = useCampaign()._id;
   return (
-    <View style={styles.screen}>
-      <View accessibilityLabel="Journal" accessibilityRole="tablist" style={styles.tabRow}>
-        {JOURNAL_TABS.map((id) => (
-          <Pressable
-            key={id}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: tab === id }}
-            onPress={() => onTab(id)}
-            style={[styles.tab, tab === id ? styles.tabOn : null]}
-          >
-            <Text style={[styles.tabText, tab === id ? styles.tabTextOn : null]}>{JOURNAL_TAB_LABEL[id]}</Text>
-          </Pressable>
-        ))}
-      </View>
-      <View style={styles.body}>{tab === "notes" ? <NotesScreen /> : <SessionsScreen />}</View>
-    </View>
+    <Slot label="The journal">
+      <JournalDataProvider campaignId={campaignId}>
+        <JournalBody onNavigate={onNavigate} params={params} />
+      </JournalDataProvider>
+    </Slot>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    gap: space[3],
-  },
-  tabRow: {
-    backgroundColor: colors.ink2,
-    borderColor: colors.line,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: space[1],
-    padding: space[1],
-  },
-  tab: {
-    alignItems: "center",
-    borderRadius: radius.pill,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: hit.minHeight,
-  },
-  tabOn: {
-    backgroundColor: colors.brand,
-  },
-  tabText: {
-    color: colors.parchment,
-    fontFamily: type.sans.fontFamily,
-    fontSize: 14,
-  },
-  tabTextOn: {
-    color: colors.brandInk,
-    fontFamily: type.sansSemibold.fontFamily,
-    fontWeight: type.sansSemibold.fontWeight,
-  },
-  body: {
-    flex: 1,
-  },
-});
+function JournalBody({ params, onNavigate }: { params: JournalParams; onNavigate: JournalNavigate }) {
+  const campaign = useCampaign();
+  const isGm = campaign.role === "gm";
+  const { sessions, notesJournal } = useJournalData();
+  const tab = parseJournalTab(params.tab);
+  const view = parseSessionView(params.sv, isGm);
+  const selectedId = params.s ? (params.s as Id<"sessions">) : null;
+
+  const openSession = (id: Id<"sessions">, sv?: SessionView) => onNavigate({ tab: "sessions", s: id, ...(sv ? { sv } : {}) });
+  const openPage = (pageId: string) => onNavigate({ tab: "notes", view: null, page: pageId });
+  const pageCount = notesJournal === undefined ? undefined : notesJournal.journal === null ? notesJournal.templates.length : notesJournal.journal.pageCount;
+  const count: Record<JournalTab, string> = {
+    sessions: sessions === undefined ? "" : ` ${sessions.length}`,
+    notes: pageCount === undefined ? "" : ` · ${pageCount} ${pageCount === 1 ? "page" : "pages"}`,
+  };
+
+  const top = (
+    <View style={{ gap: space[3] }}>
+      <JournalHeader onOpenSession={openSession} onThreads={() => onNavigate({ tab: "notes", view: "threads" })} selectedId={selectedId} />
+      <Tabs
+        label="Journal"
+        onSelect={(next) => onNavigate({ tab: next })}
+        selected={tab}
+        tabs={JOURNAL_TABS.map((id) => ({ id, label: `${JOURNAL_TAB_LABEL[id]}${count[id]}` }))}
+      />
+    </View>
+  );
+
+  if (tab === "notes") {
+    return (
+      <NotesScreen
+        header={top}
+        onNavigate={(next) => onNavigate(next)}
+        pageId={params.page ?? null}
+        view={parseView(params.view)}
+      />
+    );
+  }
+
+  return (
+    <ScrollView contentContainerStyle={[js.scroll, { paddingHorizontal: space[4] }]}>
+      {top}
+      {selectedId === null ? (
+        <>
+          <Slot label="The session list">
+            <SessionList onSelect={(id) => openSession(id)} selectedId={selectedId} />
+          </Slot>
+          {isGm ? (
+            <Slot label="Plan session">
+              <PlanSessionButton onCreated={(id) => openSession(id, "plan")} />
+            </Slot>
+          ) : null}
+          <Slot label="Campaign so far">
+            <CampaignSoFar />
+          </Slot>
+        </>
+      ) : (
+        <SessionScreen
+          onBack={() => onNavigate({ s: null, sv: null })}
+          onOpenPage={openPage}
+          onView={(sv) => onNavigate({ s: selectedId, sv })}
+          sessionId={selectedId}
+          view={view}
+        />
+      )}
+    </ScrollView>
+  );
+}
+
+function SessionScreen({
+  sessionId,
+  view,
+  onView,
+  onBack,
+  onOpenPage,
+}: {
+  sessionId: Id<"sessions">;
+  view: SessionView;
+  onView: (view: SessionView) => void;
+  onBack: () => void;
+  onOpenPage: (pageId: string) => void;
+}) {
+  const campaign = useCampaign();
+  const router = useRouter();
+  const isGm = campaign.role === "gm";
+  const { sessions } = useJournalData();
+  const ids = { campaignId: campaign._id, sessionId };
+  const back = (
+    <Pressable accessibilityLabel="All sessions" accessibilityRole="button" onPress={onBack} style={js.link}>
+      <Text style={js.linkText}>‹ All sessions</Text>
+    </Pressable>
+  );
+  if (sessions === undefined) {
+    return (
+      <>
+        {back}
+        <Text style={js.muted}>Loading the session…</Text>
+      </>
+    );
+  }
+  // An id from the URL is untrusted: only a session of the caller's list opens (players never get planned ones).
+  const session = sessions.find((s) => s._id === sessionId);
+
+  let columns: ReactNode = null;
+  if (session !== undefined && view === "plan") {
+    columns = (
+      <Slot label="The plan">
+        <PlanView ids={ids} status={session.status} />
+      </Slot>
+    );
+  } else if (session !== undefined) {
+    columns = (
+      <>
+        <Slot label="The session log">
+          <SessionLog ids={ids} isGm={isGm} />
+        </Slot>
+        <Slot label="The recap">
+          <Recap ids={ids} isGm={isGm} session={session} />
+        </Slot>
+        {isGm ? (
+          <Slot label="The session tally">
+            <SessionTally ids={ids} />
+          </Slot>
+        ) : null}
+        <Slot label="The spotlight">
+          <Spotlight ids={ids} isGm={isGm} />
+        </Slot>
+        <Slot label="Threads raised">
+          <ThreadsRaised ids={ids} onOpenPage={onOpenPage} />
+        </Slot>
+        {isGm ? (
+          <Slot label="After the session">
+            <AfterSession ids={ids} />
+          </Slot>
+        ) : null}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {back}
+      <Slot label="The session">
+        <SessionHeading onDeleted={onBack} session={session} />
+      </Slot>
+      {session !== undefined ? (
+        <>
+          {isGm ? <Tabs label="Session view" onSelect={onView} selected={view} tabs={SESSION_VIEWS} /> : null}
+          <Button accessibilityLabel="Play on the Combat Map" onPress={() => router.push(`/campaign/${campaign._id}/combat-map`)} variant="solid">
+            Play on the Combat Map →
+          </Button>
+        </>
+      ) : null}
+      {columns}
+    </>
+  );
+}

@@ -1,23 +1,10 @@
-import { useQuery } from "convex/react";
-import { createContext, useContext, type ReactNode } from "react";
-
 import type { JournalView } from "../../../../../convex/notes";
-import { api, type Id } from "../../convex";
+import { useJournalData } from "../journal/data";
 
-const JournalContext = createContext<JournalView | undefined>(undefined);
-
-/** One `notes.journal` subscription for the whole notes tree (Convex dedupes on web; the test harness does not). */
-export function NotesJournalProvider({
-  campaignId,
-  children,
-}: {
-  campaignId: Id<"campaigns">;
-  children: ReactNode;
-}) {
-  const journal = useQuery(api.notes.journal, { campaignId });
-  return <JournalContext.Provider value={journal}>{children}</JournalContext.Provider>;
-}
-
+/**
+ * The caller's notes journal (`notes.journal`). Notes lives in the Journal's Notes sub-tab, which subscribes once for
+ * the whole screen (the 'Notes N pages' count reads it too); Convex dedupes on the web, the test harness does not.
+ */
 export function useJournal(): JournalView | undefined {
-  return useContext(JournalContext);
+  return useJournalData().notesJournal;
 }
