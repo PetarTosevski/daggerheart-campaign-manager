@@ -262,6 +262,19 @@ export const pcAttackerValidator = v.object({
 });
 
 /**
+ * A fall or a collision (plan rule-switches OFA, widened; optional rule "Falling and collision damage", CB p.168): the
+ * GM's hazard button hits a PC with no creature behind it. Told apart from the others by `kind`. `hazard` is the height
+ * ("veryClose", "close", "far" = Far or Very Far) or "collision"; `label` names it in the feed ("A fall from Close range").
+ */
+export const hazardAttackerValidator = v.object({
+  kind: v.literal("hazard"),
+  hazard: v.union(v.literal("veryClose"), v.literal("close"), v.literal("far"), v.literal("collision")),
+  label: v.string(),
+  /** Never set (a hazard has no feature); kept so every attacker shape reads `feature` alike. */
+  feature: v.optional(v.string()),
+});
+
+/**
  * What an attack does to whoever takes its hit besides the damage (AA2b; user answer 2026-10-22: "the attack's rider
  * (e.g. Bite's Restrained) MOVES WITH THE DAMAGE to that ally"). Applied when the hit resolves, to the PC who took it,
  * unless the hit was avoided. `fromCondition` marks a card tag's effect (Bold Presence avoids it with the condition).
@@ -322,7 +335,7 @@ export const keywordAnswerValidator = v.object({ keyword: damageKeywordValidator
 export const incomingHitPayloadValidator = v.object({
   schemaVersion: v.literal(1),
   kind: v.literal("incomingHit"),
-  attacker: v.union(adversaryAttackerValidator, pcAttackerValidator),
+  attacker: v.union(adversaryAttackerValidator, pcAttackerValidator, hazardAttackerValidator),
   targetCharacterId: v.id("characters"),
   /** The target's PC token on the live map, when there is one. */
   targetTokenId: v.optional(v.id("combatTokens")),
@@ -809,6 +822,7 @@ export type HitRider = Infer<typeof hitRiderValidator>;
 export type AfterHit = Infer<typeof afterHitValidator>;
 export type AdversaryAttacker = Infer<typeof adversaryAttackerValidator>;
 export type PcAttacker = Infer<typeof pcAttackerValidator>;
+export type HazardAttacker = Infer<typeof hazardAttackerValidator>;
 export type CombatRequestPayload = Infer<typeof combatRequestPayloadValidator>;
 export type HitResponder = Infer<typeof hitResponderValidator>;
 export type HitChoice = Infer<typeof hitChoiceValidator>;

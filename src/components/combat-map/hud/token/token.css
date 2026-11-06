@@ -215,3 +215,20 @@
     transition: none;
   }
 }
+
+/*
+ * Falling and collision (plan rule-switches OFA): the GM's "Fall" pill on a PC token reuses the Revive pill
+ * (`.hud-rv-btn.hud-rv-tok`, revive.css); the box lists the book's four choices, one per row.
+ */
+.hud-fall .hud-fall-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+}
+.hud-fall .hud-fall-list .hud-btn {
+  width: 100%;
+  justify-content: flex-start;
+}

@@ -105,6 +105,8 @@ import {
   spentDiceChoice,
   standardDamageOf,
   cardRefusal,
+  isAdversaryAttacker,
+  isHazardAttacker,
   isHitRow,
   isPcAttacker,
   memberId,
@@ -441,7 +443,7 @@ export async function respondToHit(ctx: MutationCtx, input: RespondInput): Promi
     if (!ran.result.ok) throw featureRefusal(ran.result);
     assertPicked(ran.result.plan);
     const damage = ran.folds.some((f) => f.kind === "rerollDamage") ? await standardDamageOf(ctx, row, attacker) : null;
-    folds = resolveRerolls(ran.folds, `${row._id}:${index}:reroll`, isPcAttacker(row.payload.attacker) ? null : await attackRollOf(ctx, row), damage, { disadvantage: row.payload.attackDisadvantage ?? 0 });
+    folds = resolveRerolls(ran.folds, `${row._id}:${index}:reroll`, isAdversaryAttacker(row.payload.attacker) ? await attackRollOf(ctx, row) : null, damage, { disadvantage: row.payload.attackDisadvantage ?? 0 });
     const plan = ran.result.plan;
     const spent = spentDiceChoice(plan);
     const stored: AnswerChoice = { kind: "feature", featureId: effect.featureId, useId: plan.useId, choices: [...choice.choices.filter((c) => c.id !== "spentDice"), ...(spent ? [spent] : [])] };
@@ -473,7 +475,7 @@ export async function respondToHit(ctx: MutationCtx, input: RespondInput): Promi
       campaignId: row.campaignId,
       characterId,
       actorId: row.createdBy,
-      kind: isPcAttacker(row.payload.attacker) ? "combat" : "adversary",
+      kind: hitLogKind(row.payload.attacker),
       visibility: "public",
       summary: `${member.sheet.name} uses ${feature.name}${characterId === state.targetId ? "" : ` for ${targetName}`}${manual.length > 0 ? ` (${manual.join("; ")})` : ""}`.slice(0, 1000),
       groupId: row.payload.groupId,
@@ -539,6 +541,20 @@ export type HitResolution = {
 const SEVERITY_WORD: Record<PcSeverity, string> = { none: "No damage", minor: "Minor", major: "Major", severe: "Severe" };
 const TYPE_WORD = { physical: "phy", magic: "mag", both: "phy/mag" } as const;
 
+/** The actionLog kind of a hit's rows: `adversary` for an instance's hit, `combat` for a PC's card or a hazard (OFA). */
+export function hitLogKind(attacker: HitAttacker): "combat" | "adversary" {
+  return isAdversaryAttacker(attacker) ? "adversary" : "combat";
+}
+
+/**
+ * The public row's words for a hit (no numbers, Q14): "Brute's hit"; a hazard (plan rule-switches OFA) names itself
+ * ("a fall from Close range"), so the rows read "Ash took damage from a fall from Close range".
+ */
+function hitWords(attacker: HitAttacker): { took: string; avoided: string; noDamage: string } {
+  if (isHazardAttacker(attacker)) return { took: `took damage from ${attacker.label}`, avoided: `avoided ${attacker.label}`, noDamage: `took no damage from ${attacker.label}` };
+  return { took: `took ${attacker.label}'s hit`, avoided: `avoided ${attacker.label}'s hit`, noDamage: `took no damage from ${attacker.label}'s hit` };
+}
+
 /**
  * Resolves the hit (Q17: complete, or the GM's "Resolve now" with `early`): AA1's `resolveWindow`, then the target's
  * HP / Stress / Armor / Hope on the sheet (CB p.91, p.114, p.92), reflected damage dealt to the attacker, and the rows:
@@ -561,7 +577,7 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
   const adversaryBefore: AdversaryBefore[] = [];
   let afterHit: AfterHit | null = null;
   const autos: string[] = [];
-  const kind = isPcAttacker(p.attacker) ? ("combat" as const) : ("adversary" as const);
+  const kind = hitLogKind(p.attacker);
   // Rule switches RC2: the modes the window resolved with (A1, D2, D4, D5, Massive Damage).
   const hitRules = rebuilt.state.rules ?? {};
   let riderOverflowDropped = false;
@@ -709,10 +725,10 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
       kind,
       visibility: "public",
       summary: res.missed
-        ? `${targetName} avoided ${p.attacker.label}'s hit`
+        ? `${targetName} ${hitWords(p.attacker).avoided}`
         : res.negated
-          ? `${targetName} took no damage from ${p.attacker.label}'s hit`
-          : `${targetName} took ${p.attacker.label}'s hit${guardWords}${deathWords}${autos.length > 0 ? ` (${autos.join(", ")})` : ""}${endedWords.length > 0 ? `; ${endedWords.join(", ")}` : ""}`,
+          ? `${targetName} ${hitWords(p.attacker).noDamage}`
+          : `${targetName} ${hitWords(p.attacker).took}${guardWords}${deathWords}${autos.length > 0 ? ` (${autos.join(", ")})` : ""}${endedWords.length > 0 ? `; ${endedWords.join(", ")}` : ""}`,
       groupId: p.groupId,
       before: sheet,
       undoable: true,
@@ -747,7 +763,7 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
     );
   } else if (target) {
     gm.push(`${targetName}: ${res.missed ? "the hit became a miss" : "no damage"}`);
-    await logAction(ctx, { campaignId: row.campaignId, actorId: row.createdBy, kind, visibility: "public", summary: `${targetName} avoided ${p.attacker.label}'s hit`, groupId: p.groupId, undoable: true });
+    await logAction(ctx, { campaignId: row.campaignId, actorId: row.createdBy, kind, visibility: "public", summary: `${targetName} ${hitWords(p.attacker).avoided}`, groupId: p.groupId, undoable: true });
   }
   if (afterHit) gm.push(`${targetName} may answer ${afterHit.cardIds.map((id) => answerName(id)).join(", ")}`);
   if (res.targetId !== res.originalTargetId) gm.push(`(redirected from ${rebuilt.members.find((m) => m.character._id === res.originalTargetId)?.sheet.name ?? "the first target"})`);
@@ -1041,7 +1057,7 @@ export async function respondAfterHit(ctx: MutationCtx, input: RespondInput & { 
   if (!offer.cardIds.includes(offered)) throw appError("NOT_A_RESPONDER", offered);
   const members = await partyMembers(ctx, row.campaignId);
   const member = members.find((m) => m.character._id === characterId);
-  const kind = isPcAttacker(row.payload.attacker) ? ("combat" as const) : ("adversary" as const);
+  const kind = hitLogKind(row.payload.attacker);
   // Plan lanes-2, E2 (dcm-4qv): paying a `maintain` (Night's Glamour's Stress, HF p.17) puts the ended effect back.
   if (choice.kind === "feature" && isMaintainId(choice.featureId)) {
     if (!member) {
@@ -1394,7 +1410,7 @@ export async function answerKeywordAsk(ctx: MutationCtx, input: { row: HitRow; a
   await logAction(ctx, {
     campaignId: row.campaignId,
     actorId: input.by,
-    kind: isPcAttacker(row.payload.attacker) ? "combat" : "adversary",
+    kind: hitLogKind(row.payload.attacker),
     visibility: "gm",
     summary: `${row.payload.attacker.label} → ${name}: the hit ${answer.carries ? "was" : "wasn't"} ${ask.keyword} (${ask.feature}${answer.carries ? " applies" : " doesn't apply"})`,
     groupId: row.payload.groupId,

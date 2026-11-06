@@ -51,6 +51,7 @@ import type * as combatCardsReads from "../combatCardsReads.js";
 import type * as combatEffects from "../combatEffects.js";
 import type * as combatFeatures from "../combatFeatures.js";
 import type * as combatFeaturesReads from "../combatFeaturesReads.js";
+import type * as combatHazards from "../combatHazards.js";
 import type * as combatHud from "../combatHud.js";
 import type * as combatMapEdit from "../combatMapEdit.js";
 import type * as combatMapGenerate from "../combatMapGenerate.js";
@@ -337,6 +338,7 @@ declare const fullApi: ApiFromModules<{
   combatEffects: typeof combatEffects;
   combatFeatures: typeof combatFeatures;
   combatFeaturesReads: typeof combatFeaturesReads;
+  combatHazards: typeof combatHazards;
   combatHud: typeof combatHud;
   combatMapEdit: typeof combatMapEdit;
   combatMapGenerate: typeof combatMapGenerate;
