@@ -4,7 +4,7 @@ import { useQuery } from "convex/react";
 import { useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
-import { CARRIED_LIGHTS, CARRIED_LIGHT_LABEL, dimLightBadge, type CarriedLight, type DarknessMode, type LightLevel } from "@/lib/domain/combat-map/light";
+import { CARRIED_LIGHTS, CARRIED_LIGHT_LABEL, darknessBadge, type CarriedLight, type DarknessMode, type LightLevel } from "@/lib/domain/combat-map/light";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
@@ -142,10 +142,11 @@ function YourView({ view, props }: { view: ViewOk; props: VisionPanelProps }) {
   const actions = useVisionActions(campaignId);
   const turns = useTokenActions(campaignId, map);
   // M3 Darkness (plan rule-switches RM): the Book until the campaign's rules load.
-  const darkness = useQuery(api.ruleSettings.get, { campaignId })?.modes.darkness ?? "book";
+  const modes = useQuery(api.ruleSettings.get, { campaignId })?.modes;
+  const darkness = modes?.darkness ?? "book";
   const own = view.pcs.find((t) => t._id === view.tokenId);
   if (!own) return null;
-  const badge = dimLightBadge(view.light, darkness);
+  const badge = darknessBadge(view.light, darkness, modes?.darknessDifficulty);
   return (
     <section className="cm-card cm-card-me" aria-labelledby="cm-me-h">
       <span id="cm-me-h" className="cm-lbl">

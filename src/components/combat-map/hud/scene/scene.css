@@ -214,6 +214,50 @@
 .hud-pop-dice {
   width: 420px;
 }
+/* Plan rule-switches OE: the scene's environment chips (dim light, Underwater) and the GM's Underwater pop-over. */
+.hud-env {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.hud-title .hud-env-chip {
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+.hud-title .hud-env-water {
+  color: #9fd8f0;
+}
+.hud-pop-env {
+  width: 360px;
+}
+.hud-env-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.hud-env-p {
+  margin: 0;
+  color: var(--hud-muted);
+  font-size: 13px;
+}
+.hud-env-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.hud-env-row input[type="number"] {
+  width: 64px;
+}
+.hud-env-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
 /* The GM's Dice (user answer 2026-11-02): "GM roll" / "For <PC>" over the GM roller or the PC's dice box. */
 .hud-gm-dice {
   display: flex;

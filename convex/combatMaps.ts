@@ -437,7 +437,10 @@ export const duplicate = keyedGmMutation({
       const campaignId = ctx.campaign._id;
       const map = await loadCombatMap(ctx, campaignId, mapId);
       await assertCanAddMap(ctx, campaignId);
+      // OE: a copy starts dry (its own Breath countdown would be shared otherwise).
       const { _id, _creationTime, image, ...fields } = map;
+      delete fields.underwater;
+      delete fields.breathCountdownId;
       void _id;
       void _creationTime;
       const copyId = await ctx.db.insert("combatMaps", {

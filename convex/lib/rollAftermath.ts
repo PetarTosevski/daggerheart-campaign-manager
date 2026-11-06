@@ -27,6 +27,14 @@
  * the token back; a plain roll gets a group for it as it does for a note (`planPcActionRoll` lists it in `notes`).
  * Off: nothing.
  *
+ * Underwater (optional rule `underwater`, CB p.168, plan rule-switches OE, user answer Q11 b): while the live map is
+ * marked Underwater (`combatScenes.setUnderwater`) and the roller has a PC token on it, each PC action roll ticks the
+ * scene's breath countdown (a dashboard countdown row) once, once more on a failure and once more with Fear, through
+ * `applyTick` with the group's first row as its entry, so undoing the roll takes the tick back. Once the countdown has
+ * ended (0 before this roll), each roller marks 1 Stress instead (D4 `stressOverflow` respected: Manual drops the
+ * overflow and notes the GM); the Stress is a row with the sheet before in the roll's group (undo restores it). A Tag
+ * Team ticks once and both PCs mark the Stress. Off, or no Underwater live map: nothing.
+ *
  * ```ts
  * const hopeFear = hopeFearModeOf(campaign);
  * const effects = dualityEffects("action", roll.outcome, hopeFear);
@@ -34,12 +42,18 @@
  * await afterPcActionRoll(ctx, campaign, { characterId, name, kind: "action", success, withFear, fearWithheld: fearWithheldBy(hopeFear, "action", roll.outcome), groupId, actorId });
  * ```
  */
+import { markStress } from "../../src/lib/domain/characters/index";
+import { breathEnded, breathTicks } from "../../src/lib/domain/combat-map/light";
 import type { HopeFearMode } from "../../src/lib/domain/dice/index";
 import type { RollOutcome } from "../../src/lib/domain/duality";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { logAction } from "./actionLog";
 import { plannedSpends, recordTokenSpends, spendActionTokens, type Spent } from "./actionTokens";
-import { ruleMode, postRuleNote } from "./ruleModes";
+import { readSheet, saveSheet } from "./characterSheet";
+import { liveCombatMap, MAX_COMBAT_TOKENS } from "./combatMaps";
+import { applyTick } from "./countdownTicks";
+import { ruleMode, ruleModesOf, postRuleNote } from "./ruleModes";
 import { gmHoldsSpotlight, moveToGm } from "./spotlight";
 
 /** The campaign's R3 mode, for `dualityEffects`. */
@@ -77,8 +91,52 @@ export type PcActionRoll = {
   fearWithheld?: number;
 };
 
-/** A GM note (S1, R3 Manual), or a planned Spotlight Tracker spend (`tokenOf`: recorded hidden, never shown as a note). */
-type Note = { ruleId: "spotlightToGm" | "hopeFearFromRolls"; summary: string } | { ruleId: "spotlightTracker"; summary: string; tokenOf: Id<"characters"> };
+/**
+ * A GM note (S1, R3 Manual), a planned Spotlight Tracker spend (`tokenOf`: recorded hidden, never shown as a note) or the
+ * planned Underwater breath step (`breath`: the countdown to tick and by how much, the PCs who mark a Stress; plan OE).
+ */
+type Note =
+  | { ruleId: "spotlightToGm" | "hopeFearFromRolls"; summary: string }
+  | { ruleId: "spotlightTracker"; summary: string; tokenOf: Id<"characters"> }
+  | { ruleId: "underwater"; summary: string; breath: BreathStep };
+
+/** Underwater (plan OE): tick `countdownId` by `ticks` (0 once it has ended), and each of `stress` marks 1 Stress. */
+export type BreathStep = { countdownId: Id<"countdowns">; ticks: number; stress: Id<"characters">[] };
+
+/**
+ * The live map when the Underwater optional rule is on and the GM marked it Underwater, with its breath countdown (null
+ * when it was deleted), or null. Reads the campaign's live map row and one countdown.
+ */
+export async function liveUnderwater(
+  ctx: QueryCtx,
+  campaign: Doc<"campaigns">,
+): Promise<{ map: Doc<"combatMaps">; breath: Doc<"countdowns"> | null } | null> {
+  if (!ruleMode(campaign, "underwater")) return null;
+  const map = await liveCombatMap(ctx, campaign._id);
+  if (map === null || map.underwater !== true) return null;
+  const breath = map.breathCountdownId === undefined ? null : await ctx.db.get("countdowns", map.breathCountdownId);
+  return { map, breath: breath !== null && breath.campaignId === campaign._id ? breath : null };
+}
+
+/**
+ * Underwater (plan OE): what this action roll does to the breath countdown, or null (rule off, no Underwater live map,
+ * none of the rollers on it, no countdown, or it is paused / cancelled). Reads only.
+ */
+async function planBreath(ctx: QueryCtx, campaign: Doc<"campaigns">, rollers: readonly Id<"characters">[], roll: { success: boolean; withFear: boolean }): Promise<BreathStep | null> {
+  const scene = await liveUnderwater(ctx, campaign);
+  if (scene === null || scene.breath === null) return null;
+  const tokens = await ctx.db
+    .query("combatTokens")
+    .withIndex("by_map", (q) => q.eq("mapId", scene.map._id))
+    .take(MAX_COMBAT_TOKENS);
+  const onMap = new Set(tokens.flatMap((t) => (t.ref.kind === "pc" ? [t.ref.characterId as string] : [])));
+  const underwater = rollers.filter((id) => onMap.has(id));
+  if (underwater.length === 0) return null;
+  const breath = scene.breath;
+  if (breathEnded(breath)) return { countdownId: breath._id, ticks: 0, stress: underwater };
+  if (breath.status !== "active") return null;
+  return { countdownId: breath._id, ticks: breathTicks(roll), stress: [] };
+}
 
 /**
  * What the roll sets off: a spotlight move (S1 Book), the GM notes (S1 and R3 Manual) and, for an action roll, a
@@ -116,6 +174,8 @@ export async function planPcActionRoll(ctx: QueryCtx, campaign: Doc<"campaigns">
   for (const s of await plannedSpends(ctx, campaign, out.spenders)) {
     out.notes.push({ ruleId: "spotlightTracker", summary: `${roll.name}: an action token spent (${s.left} left)`, tokenOf: s.characterId });
   }
+  const breath = await planBreath(ctx, campaign, out.spenders, roll);
+  if (breath !== null) out.notes.push({ ruleId: "underwater", summary: `${roll.name}: breath`, breath });
   const fear = roll.fearWithheld ?? (roll.withFear ? fearWithheldBy(hopeFearModeOf(campaign), roll.kind, "successFear") : 0);
   if (fear > 0) out.notes.push({ ruleId: "hopeFearFromRolls", summary: `${roll.name} rolled with Fear: gain ${fear} Fear?` });
   const reason = roll.withFear ? "rollWithFear" : !roll.success ? "failedRoll" : null;
@@ -147,9 +207,12 @@ export async function applyPcActionRoll(
       await recordTokenSpends(ctx, campaign, recorded, { groupId: row.groupId, actorId: row.actorId, summary: (s: Spent) => lines.get(s.characterId)!, shown: false });
     }
   }
+  for (const note of aftermath.notes) {
+    if (note.ruleId === "underwater" && row.groupId !== undefined) await applyBreath(ctx, campaign, note.breath, { groupId: row.groupId, actorId: row.actorId });
+  }
   if (aftermath.move !== null) await moveToGm(ctx, campaign, aftermath.move, aftermath.rollBy);
   for (const note of aftermath.notes) {
-    if (note.ruleId === "spotlightTracker") continue;
+    if (note.ruleId === "spotlightTracker" || note.ruleId === "underwater") continue;
     await postRuleNote(ctx, campaign, { ruleId: note.ruleId, summary: note.summary, groupId: row.groupId, actorId: row.actorId });
   }
 }
@@ -163,4 +226,53 @@ export async function afterPcActionRoll(
   const aftermath = await planPcActionRoll(ctx, campaign, roll);
   await applyPcActionRoll(ctx, campaign, aftermath, roll);
   return aftermath;
+}
+
+/** The first row of the roll's group that is not a rule note: the entry a breath tick is recorded on (undo reverts it). */
+async function groupEntry(ctx: QueryCtx, campaign: Doc<"campaigns">, groupId: string): Promise<Id<"actionLog"> | null> {
+  const rows = await ctx.db
+    .query("actionLog")
+    .withIndex("by_campaign_group", (q) => q.eq("campaignId", campaign._id).eq("groupId", groupId))
+    .take(60);
+  return rows.find((r) => r.kind !== "rule")?._id ?? null;
+}
+
+/**
+ * Underwater (plan OE): applies a planned breath step in the roll's group. The tick goes through `applyTick` (history,
+ * trigger notice when it reaches 0, a `countdownTicks` row on the group's first row so undo takes it back). Each PC in
+ * `stress` marks 1 Stress (D4 respected through `markStress`: Book overflow marks 1 HP; Manual drops it and notes the GM)
+ * in a public row with the sheet before, in the group.
+ */
+export async function applyBreath(ctx: MutationCtx, campaign: Doc<"campaigns">, step: BreathStep, row: { groupId: string; actorId: Id<"users"> }): Promise<void> {
+  if (step.ticks > 0) {
+    const countdown = await ctx.db.get("countdowns", step.countdownId);
+    const entryId = await groupEntry(ctx, campaign, row.groupId);
+    if (countdown !== null && countdown.status === "active" && entryId !== null) {
+      await applyTick(ctx, countdown, step.ticks, { source: "roll", entryId, actorId: row.actorId });
+    }
+  }
+  if (step.stress.length === 0) return;
+  const rules = ruleModesOf(campaign);
+  for (const characterId of step.stress) {
+    const character = await ctx.db.get("characters", characterId);
+    if (character === null || character.campaignId !== campaign._id) continue;
+    const sheet = readSheet(character.sheet);
+    const marked = markStress(sheet, 1, rules);
+    const next = { ...sheet, stress: marked.stress, hp: marked.hp };
+    const changed = next.stress !== sheet.stress || next.hp !== sheet.hp;
+    if (changed) await saveSheet(ctx, characterId, next, character);
+    const what = next.stress !== sheet.stress ? "marks 1 Stress" : next.hp !== sheet.hp ? "has no Stress left to mark: marks 1 Hit Point" : "has no Stress left to mark";
+    await logAction(ctx, {
+      campaignId: campaign._id,
+      characterId,
+      actorId: row.actorId,
+      kind: "combat",
+      visibility: "public",
+      summary: `${sheet.name} is out of breath underwater: ${what}`,
+      groupId: row.groupId,
+      ...(changed ? { before: sheet } : {}),
+      undoable: true,
+    });
+    if (marked.overflow === true) await postRuleNote(ctx, campaign, { ruleId: "stressOverflow", summary: `${sheet.name}: Stress full, mark 1 HP?`, groupId: row.groupId, actorId: row.actorId });
+  }
 }

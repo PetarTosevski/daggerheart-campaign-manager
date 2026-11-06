@@ -99,6 +99,7 @@ import type * as lib_adversaryActions from "../lib/adversaryActions.js";
 import type * as lib_adversaryFeatures from "../lib/adversaryFeatures.js";
 import type * as lib_adversaryHits from "../lib/adversaryHits.js";
 import type * as lib_allowlist from "../lib/allowlist.js";
+import type * as lib_allyPickHold from "../lib/allyPickHold.js";
 import type * as lib_allyPicks from "../lib/allyPicks.js";
 import type * as lib_appConfig from "../lib/appConfig.js";
 import type * as lib_appOwner from "../lib/appOwner.js";
@@ -386,6 +387,7 @@ declare const fullApi: ApiFromModules<{
   "lib/adversaryFeatures": typeof lib_adversaryFeatures;
   "lib/adversaryHits": typeof lib_adversaryHits;
   "lib/allowlist": typeof lib_allowlist;
+  "lib/allyPickHold": typeof lib_allyPickHold;
   "lib/allyPicks": typeof lib_allyPicks;
   "lib/appConfig": typeof lib_appConfig;
   "lib/appOwner": typeof lib_appOwner;

@@ -119,6 +119,8 @@ export const WIRED_RULES: ReadonlySet<string> = new Set([
   "fateRolls",
   "definedRanges",
   "fallingDamage",
+  // OE (2026-11-06).
+  "underwater",
 ]);
 
 export type RuleGroup = { area: RuleArea; label: string; rules: readonly RuleDef[] };
