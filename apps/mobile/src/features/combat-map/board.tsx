@@ -1,26 +1,18 @@
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { useEffect, useRef, useState } from "react";
-import { LayoutChangeEvent, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { type Id } from "../../convex";
 import { useCampaign } from "../../shell/campaign-provider";
 import { sectionLabel } from "../../shell/sections";
 import { colors } from "../../theme/colors";
 import { type } from "../../theme/fonts";
 import { space } from "../../theme/spacing";
-import { Button } from "../../ui/button";
-import { useMapPanZoom } from "../world/pan-zoom";
-
-import { FOG_PAD_SQUARES } from "../../../../../src/lib/domain/combat-map/vision";
 
 import type { CombatMapLayout, CombatPlayerView } from "./contract";
 import { CombatEditSlot } from "./edit";
 import { EmptyGmMaps } from "./gm/empty-maps";
 import { CombatGmSlot } from "./gm";
 import { CombatHudBar } from "./hud-bar";
-import { CombatMapCanvas } from "./map-canvas";
+import { GmLiveMap, PlayerLiveMap } from "./live-map";
 import { CombatPlaySlot } from "./play";
-import { stageAspect } from "./paint-layout";
 
 export function CombatBoard({
   layout,
@@ -32,49 +24,7 @@ export function CombatBoard({
   const campaign = useCampaign();
   const isGm = campaign.role === "gm";
   const player = !isGm;
-
-  const [viewport, setViewport] = useState({ w: 0, h: 0 });
-  const aspect = layout ? stageAspect(layout, player) : 1;
-  const pad = player ? FOG_PAD_SQUARES : 0;
-  const frameW = layout ? layout.w / (layout.w + 2 * pad) : 1;
-  const frameH = layout ? layout.h / (layout.h + 2 * pad) : 1;
-  const panZoom = useMapPanZoom(viewport.w, viewport.h, aspect, frameW, frameH);
-  const fitted = useRef(false);
-
-  const onLayout = (e: LayoutChangeEvent) => {
-    const { width, height } = e.nativeEvent.layout;
-    setViewport({ w: width, h: height });
-  };
-
-  useEffect(() => {
-    if (fitted.current || viewport.w <= 0 || viewport.h <= 0) return;
-    fitted.current = true;
-    panZoom.fit();
-  }, [panZoom, viewport.h, viewport.w]);
-
-  const panStart = useRef({ x: 0, y: 0 });
-  /* eslint-disable react-hooks/refs -- RNGH callbacks run outside React render. */
-  const pan = Gesture.Pan()
-    .onBegin(() => {
-      panStart.current = { x: panZoom.view.x, y: panZoom.view.y };
-    })
-    .onUpdate((e) => {
-      panZoom.setView({
-        z: panZoom.view.z,
-        x: panStart.current.x + e.translationX,
-        y: panStart.current.y + e.translationY,
-      });
-    })
-    .runOnJS(true);
-
-  const pinch = Gesture.Pinch()
-    .onUpdate((e) => {
-      panZoom.zoomAt(panZoom.view.z * e.scale, viewport.w / 2, viewport.h / 2);
-    })
-    .runOnJS(true);
-  /* eslint-enable react-hooks/refs */
-
-  const gesture = Gesture.Simultaneous(pan, pinch);
+  const campaignId = campaign._id;
 
   if (layout === null || view === undefined) {
     return (
@@ -98,36 +48,25 @@ export function CombatBoard({
 
   return (
     <View style={styles.screen}>
-      <CombatHudBar campaignId={campaign._id as Id<"campaigns">} mapId={layout._id} />
-      <GestureDetector gesture={gesture}>
-        <View onLayout={onLayout} style={styles.mapShell} testID="combat-viewport">
-          {viewport.w > 0 ? (
-            <CombatMapCanvas
-              isGm={isGm}
-              label={`Battle map ${layout.name}`}
-              layout={layout}
-              panView={panZoom.view}
-              view={view}
-            />
-          ) : null}
-        </View>
-      </GestureDetector>
-      <View style={styles.dock}>
-        <View style={styles.toolbar}>
-          <Button onPress={() => panZoom.zoomAt(panZoom.view.z / 1.25)} variant="outline">
-            Zoom out
-          </Button>
-          <Text style={styles.zoom}>{Math.round(panZoom.view.z * 100)}%</Text>
-          <Button onPress={() => panZoom.zoomAt(panZoom.view.z * 1.25)} variant="outline">
-            Zoom in
-          </Button>
-          <Button onPress={panZoom.fit} variant="outline">
-            Fit map
-          </Button>
-        </View>
+      <CombatHudBar campaignId={campaignId} mapId={layout._id} />
+      <View style={styles.map}>
+        {/* Keyed by the map's id (identity, not live content): a new live map mounts a fresh view and is fitted. */}
+        {isGm ? (
+          <GmLiveMap campaignId={campaignId} key={layout._id} layout={layout} />
+        ) : (
+          <PlayerLiveMap campaignId={campaignId} key={layout._id} layout={layout} view={view} />
+        )}
+      </View>
+      {/* The dock scrolls inside at most 45% of the screen, so open panels never squeeze the map to nothing. */}
+      <ScrollView
+        contentContainerStyle={styles.dockContent}
+        keyboardShouldPersistTaps="handled"
+        style={styles.dock}
+        testID="combat-dock"
+      >
         {isGm ? <CombatGmSlot {...slotProps} /> : <CombatPlaySlot {...slotProps} />}
         <CombatEditSlot {...slotProps} />
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -161,29 +100,19 @@ const styles = StyleSheet.create({
     fontSize: 15,
     paddingVertical: space[6],
   },
-  mapShell: {
-    backgroundColor: "#0b1214",
+  map: {
     flex: 1,
-    overflow: "hidden",
+    minHeight: 240,
   },
   dock: {
     backgroundColor: colors.panel,
     borderTopColor: colors.line,
     borderTopWidth: 1,
+    flexGrow: 0,
+    maxHeight: "45%",
+  },
+  dockContent: {
     gap: space[2],
     padding: space[3],
-  },
-  toolbar: {
-    alignItems: "center",
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: space[2],
-  },
-  zoom: {
-    color: colors.subtle,
-    fontFamily: type.sans.fontFamily,
-    fontSize: 13,
-    minWidth: 48,
-    textAlign: "center",
   },
 });

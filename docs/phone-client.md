@@ -83,16 +83,55 @@ that map. That means the signed-in person has a character on that battle. The
 player campaign used for the check had no such character, so the action button
 never appeared. That is the server view, not a missing control.
 
+## Combat map: paint budget and device checks (PX14)
+
+The combat map is behind a flag (`apps/mobile/src/features/combat-map/flag.ts`): on in development builds, off in
+a release build unless `EXPO_PUBLIC_PHONE_COMBAT_MAP=1` (`=0` turns it off in development too). With the flag off
+the screen says the map is on the website.
+
+How it paints now:
+
+- The base map is painted once per change of what the painter reads (`paintKey`: terrain, areas, objects, cells,
+  style), at 48 px a square with the long side capped at 2048 px, without the fog margin. It stays a Skia image; no
+  pixels are copied into JavaScript. Token moves, the name, `updatedAt` and GM fog marks do not repaint it.
+- Sprite files are decoded once and kept by URL (up to 160) across paints. Sprite origins follow
+  `EXPO_PUBLIC_SITE_URL`.
+- Object shadows use an offscreen layer the size of the surface plus the shadow's reach, not three surfaces wide.
+- A player's fog is a small image (the map plus two squares at 12 px a square), rebuilt only when the vision text
+  or the stored explored area changes. Past it, the screen background is the unseen fog colour.
+- Pan and pinch use the world map's `useMapGesture` (per-frame deltas, pinch about the fingers) writing Reanimated
+  shared values; the Skia group transform and the token layer follow them. A drag or pinch re-renders nothing; the
+  zoom label updates when the drag ends.
+- `paintStats` (`combat-map/paint-stats.ts`) counts base paints, fog builds and sprite decodes and keeps the last
+  paint times. `test/features/combat-view/paint-budget.test.tsx` checks 300 gesture frames make no paint and no
+  React commit, and 20 live updates with the same paint inputs make no paint.
+
+Check on a real iPhone and a mid-range Android phone (not done; no simulator in the agent run):
+
+- [ ] A Large sprite map paints in under about a second after its pictures are cached, and a second visit or a token
+      move does not repaint (read `paintStats.lastBaseMs` and `paintStats.base` from the debugger).
+- [ ] Panning and pinching a Large map holds 60 fps (Perf Monitor), with the dock open and closed.
+- [ ] Pinch zoom keeps the square under the fingers there, has no jitter and does not run away; two-finger drag
+      pans; Fit frames the battlefield.
+- [ ] Token initials stay readable at full zoom (the token layer is scaled by a transform).
+- [ ] A player sees fog on a generated map and on an uploaded image map; the image lines up with the tokens'
+      squares; explored areas stay after the character walks away and come back after reopening the app.
+- [ ] The GM sees every token (adversaries included) and no fog.
+- [ ] The dim-light badge shows in dim light with Darkness on Book and not on Manual.
+- [ ] The dock scrolls when panels are open and the map keeps at least 240 pt.
+- [ ] Zoom buttons and target chips are easy to hit (44 pt).
+- [ ] Android: no blank map on a GPU with a 4096 px texture limit.
+
 ## Not done
 
 - The app is portrait only (`orientation: "portrait"` in `apps/mobile/app.config.ts`).
   Letting the combat map turn sideways was discussed and not built. The installed
   development app was compiled portrait-only, so a later change also needs a new
   dev-client build before the simulator can rotate.
-- Painting a sprite map can freeze the screen. After the pictures download, the
-  paint runs on the UI thread. Two things make it slow: each object's shadow is
-  drawn far off the canvas, and a player view paints 24 squares of fog margin at
-  48 pixels a square. Neither cut landed in this pause.
+- Painting a sprite map still runs on the JavaScript thread. PX14 cut the shadow
+  layer and the fog margin and paints only when the layout changes; a change to
+  one object still repaints the whole map (the website repaints only the changed
+  rectangle). Check the time on a device (list above).
 - The website's phone combat HUD is not ported. There is no spotlight, and no
   Hand / Attack / Dice / Feed sheet. The phone uses the party strip, Fear, the
   zoom dock, and the existing play and GM panels.

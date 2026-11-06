@@ -48,6 +48,7 @@ export function playerViewOk(overrides: Partial<Extract<CombatPlayerView, { stat
     light: "day",
     instinct: 0,
     coneDeg: 70,
+    unseenAdversaries: [],
     vision: {
       sw: 8,
       sh: 8,

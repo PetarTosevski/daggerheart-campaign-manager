@@ -320,6 +320,26 @@ export class SkiaCanvasContext {
     });
   }
 
+  /**
+   * `drawImage` through a Gaussian blur of `sigma` device pixels (canvas `filter = "blur(<sigma>px)"`), for the fog's
+   * soft edge. Drawn in device space at the given rectangle.
+   */
+  drawImageBlurred(source: SkiaMapCanvas, dx: number, dy: number, dw: number, dh: number, sigma: number): void {
+    if (dw === 0 || dh === 0) return;
+    const image = source.snapshot();
+    const paint = this.skia.Paint();
+    paint.setAntiAlias(true);
+    if (sigma > 0) paint.setImageFilter(this.skia.ImageFilter.MakeBlur(sigma, sigma, TileMode.Clamp, null, null));
+    this.canvas.drawImageRectOptions(
+      image,
+      this.skia.XYWHRect(0, 0, source.width, source.height),
+      this.skia.XYWHRect(dx, dy, dw, dh),
+      FilterMode.Linear,
+      MipmapMode.None,
+      paint,
+    );
+  }
+
   readPixels(): Uint8ClampedArray {
     const pixels = this.getImageData(0, 0, this.width, this.height);
     return pixels.data;
@@ -388,6 +408,11 @@ export class SkiaCanvasContext {
     const sigma = Math.max(blur / 2, 0);
     const pad = Math.ceil(Math.abs(dx) + Math.abs(dy) + blur * 4 + Math.max(this.width, this.height) + 64);
     const bounds = this.skia.XYWHRect(-pad, -pad, this.width + pad * 2, this.height + pad * 2);
+    // The offscreen layer only needs the surface plus the shadow's reach (offset and 3 sigma): anything further out
+    // casts no shadow onto the surface. A layer three surfaces wide per shadowed object was the sprite paint's main
+    // cost on a phone (dcm-gdzi.14). The recording keeps the wide cull rect; recording allocates no pixels.
+    const reach = Math.ceil(Math.abs(dx) + Math.abs(dy) + sigma * 3 + 2);
+    const layerBounds = this.skia.XYWHRect(-reach, -reach, this.width + reach * 2, this.height + reach * 2);
     const recorder = this.skia.PictureRecorder();
     const recording = recorder.beginRecording(bounds);
     recording.concat(this.canvas.getTotalMatrix().get());
@@ -406,7 +431,7 @@ export class SkiaCanvasContext {
     layer.setImageFilter(filter);
     this.canvas.save();
     this.useDeviceSpace();
-    this.canvas.saveLayer(layer, bounds);
+    this.canvas.saveLayer(layer, layerBounds);
     this.canvas.drawPicture(picture);
     this.canvas.restore();
     this.canvas.restore();

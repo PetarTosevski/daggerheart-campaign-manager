@@ -132,6 +132,7 @@ export interface SkiaApi {
       input: null,
       crop: null,
     ): SkDisposable;
+    MakeBlur(sigmaX: number, sigmaY: number, mode: number, input: null, crop: null): SkDisposable;
   };
   PictureRecorder(): SkPictureRecorder;
 }

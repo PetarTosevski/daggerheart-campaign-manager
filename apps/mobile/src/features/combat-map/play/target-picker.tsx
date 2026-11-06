@@ -45,6 +45,9 @@ export function TargetPicker({ view }: { view: OkView }) {
 const styles = StyleSheet.create({
   wrap: { flexDirection: "row", flexWrap: "wrap", gap: space[2] },
   chip: {
+    // A 44 pt touch target (dcm-gdzi.18).
+    justifyContent: "center",
+    minHeight: 44,
     borderColor: colors.line2,
     borderRadius: radius.pill,
     borderWidth: 1,

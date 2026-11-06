@@ -9,7 +9,12 @@ import { useIntent } from "../../adversaries/intent";
 import { useCombatGm } from "./context";
 import { gmStyles } from "./styles";
 
-const SIZES = [{ key: "small" as const, label: "Small 22×15" }];
+/** The board's three sizes (convex/lib/combatMaps.ts MAP_SIZES), as on the empty GM screen (dcm-gdzi.18). */
+const SIZES = [
+  { key: "small" as const, label: "Small 22×15" },
+  { key: "medium" as const, label: "Medium 30×20" },
+  { key: "large" as const, label: "Large 40×27" },
+];
 
 export function CombatGmMaps() {
   const { campaignId, layout, maps } = useCombatGm();
