@@ -5,7 +5,7 @@ import { pickUse, type RunPlan } from "../src/lib/domain/card-effects/run";
 import { bandOf, rangeCheck, tokenDistance } from "../src/lib/domain/combat-actions/distance";
 import { actorExtras, asCardEffect } from "../src/lib/domain/feature-effects/run";
 import { featureEffect } from "../src/lib/srd/feature-effects/index";
-import { checkMove } from "../src/lib/domain/combat-map/movement";
+import { checkMove, moveVerdict, type WallsMode } from "../src/lib/domain/combat-map/movement";
 import { appError } from "../src/lib/errors/app-error";
 import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -32,6 +32,7 @@ import {
 } from "./lib/featureRunner";
 import { rollDie } from "./lib/dice";
 import { campaignFearState } from "./lib/fear";
+import { ruleMode } from "./lib/ruleModes";
 import { campaignQuery, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
 import { fearFor } from "./lib/fearVisibility";
 import { atLeast } from "./lib/permissions";
@@ -174,6 +175,7 @@ function squareProblem(
   target: Doc<"combatTokens">,
   square: { x: number; y: number },
   gm: boolean,
+  walls: WallsMode = "book",
 ): { code: "INVALID" | "MOVE_BLOCKED"; message?: string } | { next: { x: number; y: number; face: number } } {
   const { x, y } = square;
   const next = moveToken(attacker, x, y, map);
@@ -181,7 +183,8 @@ function squareProblem(
   const at = { x, y, size: sizeOf(attacker) };
   if (tokens.some((t) => t._id !== attacker._id && overlaps(at, { x: t.x, y: t.y, size: sizeOf(t) }))) return { code: "MOVE_BLOCKED" };
   if (tokenDistance(at, target) !== 1) return { code: "INVALID", message: "Pick a square in Melee range of the target." };
-  if (checkMove(grid, attacker, next, at.size).blocked && !gm) return { code: "MOVE_BLOCKED" };
+  // M2: in Manual a Charge may land past a wall too (rule switches RM).
+  if (moveVerdict(checkMove(grid, attacker, next, at.size), gm, walls).refused) return { code: "MOVE_BLOCKED" };
   return { next };
 }
 
@@ -193,7 +196,7 @@ async function chargeSquare(ctx: QueryCtx & { campaign: Doc<"campaigns"> }, atta
   const target = tokens.find((t) => t._id === args.targetTokenId);
   if (target === undefined || target.side !== "enemy") throw appError("COMBAT_TARGET_INVALID");
   if (!chargeable(attacker, target)) throw appError("INVALID", "Charge starts from Far or Very Far range of the target.");
-  const out = squareProblem(await movementGrid(ctx, ctx.campaign._id, map), map, attacker, tokens, target, args.square, gm);
+  const out = squareProblem(await movementGrid(ctx, ctx.campaign._id, map), map, attacker, tokens, target, args.square, gm, ruleMode(ctx.campaign, "wallsBlock"));
   if ("code" in out) throw appError(out.code, out.message);
   return { target, next: out.next };
 }
@@ -258,7 +261,7 @@ export const chargeOptions = campaignQuery({
       const squares = [];
       for (let y = target.y - size; y <= target.y + ts; y++) {
         for (let x = target.x - size; x <= target.x + ts; x++) {
-          const ok = squareProblem(grid, map, attacker, tokens, target, { x, y }, gm);
+          const ok = squareProblem(grid, map, attacker, tokens, target, { x, y }, gm, ruleMode(campaign, "wallsBlock"));
           if ("next" in ok) squares.push({ x, y, label: sideOf({ x, y, size }, { x: target.x, y: target.y, size: ts }) });
         }
       }
