@@ -22,6 +22,8 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { conflictEdge } from "../../convex/lib/combatActions";
 import { pcCombatant } from "../../convex/lib/cardRunner";
 import { readSheet, saveSheet } from "../../convex/lib/characterSheet";
+import { openSanction } from "../../convex/lib/combatRequests";
+import { contestLine, parseModifier, sideCharacter } from "../../src/components/combat-map/hud/dock/contest";
 import { conflictRows } from "../../src/components/combat-map/hud/pick-attack/model";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { allowWorldEmails, buildWorld, type Client } from "./authz/world";
@@ -100,6 +102,18 @@ describe("pure helpers", () => {
     expect(conflictEdge([["vulnerable"]], 1)).toEqual({ advantage: 0, disadvantage: 0 });
     expect(conflictEdge([["vulnerable"], []], 0)).toEqual({ advantage: 0, disadvantage: 0 });
     expect(conflictEdge([], 0)).toEqual({ advantage: 0, disadvantage: 0 });
+  });
+
+  it("OP2 Contest panel: modifiers are clamped whole numbers; a side's pick falls back to the first other PC; result lines", () => {
+    expect([parseModifier("3"), parseModifier("-2.7"), parseModifier("99"), parseModifier(""), parseModifier("x")]).toEqual([3, -2, 20, 0, 0]);
+    const party = [{ characterId: "a" as Id<"characters"> }, { characterId: "b" as Id<"characters"> }];
+    expect(sideCharacter(party, null, null)).toBe("a");
+    expect(sideCharacter(party, null, "a" as Id<"characters">)).toBe("b");
+    expect(sideCharacter(party, "b" as Id<"characters">, "b" as Id<"characters">)).toBe("b");
+    expect(sideCharacter(party, "gone" as Id<"characters">, "a" as Id<"characters">)).toBe("b");
+    const roll = { kind: "action" as const, dice: [], modifier: 0, total: 15, outcome: "successHope" as const, manual: false };
+    expect(contestLine("Ash", roll, 12)).toBe("Ash: 15 vs 12, success with Hope");
+    expect(contestLine("Bryn", { ...roll, kind: "reaction" as const, total: 12 })).toBe("Bryn: 12");
   });
 
   it("conflictRows: enemies and PCs from the hints, in reach first; no line of sight is los (Manual: pickable, flagged)", () => {
@@ -241,5 +255,56 @@ describe("on: the GM's Contest (CB p.168)", () => {
     const side = { characterId: a.w.characterA, trait: "presence" as const, modifier: 0 };
     expect(await code(a.contest(a.gm, side, side))).toBe("INVALID");
     expect(await code(a.contest(a.w.as("player"), side, { ...side, characterId: a.w.characterB }))).toBe("FORBIDDEN");
+  });
+});
+
+/**
+ * Plan rule-switches OP2: the GM's range sanction (`combatRequests.sanction`) re-checks PC targets with
+ * `checkAttackTargets` and resolves them against their Evasion. The request is seeded as `openSanction` writes it, with
+ * no encounter (an attack on PCs only belongs to none); `combatActions.attack` still refuses an out-of-range PC itself
+ * (outside OP2's files, see docs/tasks/TASK-RULES-OP2.md).
+ */
+describe("on: the GM's range sanction for an attack on a PC (OP2)", () => {
+  type Arena = Awaited<ReturnType<typeof arena>>;
+  const sanctionFor = (a: Arena) =>
+    a.t.run((ctx) =>
+      openSanction(ctx, {
+        campaignId: a.campaignId,
+        mapId: a.mapId,
+        createdBy: a.w.users.player,
+        payload: { schemaVersion: 1, kind: "sanction", characterId: a.w.characterA, action: { kind: "attack", slot: "primary", targetTokenIds: [a.bryn], roll: {} }, outOfRange: [{ tokenId: a.bryn, band: "far" }] },
+      }),
+    );
+  const sanction = (a: Arena, requestId: Id<"combatRequests">, approve = true) =>
+    a.gm.mutation(api.combatRequests.sanction, { campaignId: a.campaignId, requestId, approve, idempotencyKey: key() });
+  const status = async (a: Arena, id: Id<"combatRequests">) => (await a.t.run((ctx) => ctx.db.get("combatRequests", id)))!.status;
+
+  it("approval rolls the waiting attack against the PC's Evasion (no encounter needed) and opens their window", async () => {
+    dice(12, 3, 4);
+    const a = await arena(true, { x: 15, y: 10 });
+    const requestId = await sanctionFor(a);
+    const r = await sanction(a, requestId);
+    if (r.status !== "resolved") throw new Error(`expected resolved, got ${r.status}`);
+    diceInRange(r.roll);
+    expect(r.targets).toEqual([{ tokenId: a.bryn, hit: true, defeated: false }]);
+    const [hit] = await a.hits();
+    expect(hit?.payload).toMatchObject({ kind: "incomingHit", targetCharacterId: a.w.characterB, attackTotal: r.roll.total });
+    expect(await status(a, requestId)).toBe("resolved");
+  });
+
+  it("decline closes it with nothing rolled", async () => {
+    const a = await arena(true, { x: 15, y: 10 });
+    const requestId = await sanctionFor(a);
+    expect(await sanction(a, requestId, false)).toEqual({ status: "declined" });
+    expect(await a.rows()).toEqual([]);
+  });
+
+  it("with the rule turned off meanwhile, approval is COMBAT_TARGET_INVALID and the request stays open", async () => {
+    const a = await arena(true, { x: 15, y: 10 });
+    const requestId = await sanctionFor(a);
+    await a.t.run((ctx) => ctx.db.patch("campaigns", a.campaignId, { ruleModes: {} }));
+    expect(await code(sanction(a, requestId))).toBe("COMBAT_TARGET_INVALID");
+    expect(await status(a, requestId)).toBe("open");
+    expect(await a.rows()).toEqual([]);
   });
 });

@@ -4,7 +4,7 @@ import { appError } from "../src/lib/errors/app-error";
 import { env, internalMutation } from "./_generated/server";
 import { isE2EDeployment } from "./lib/allowlist";
 import { readSheet } from "./lib/characterSheet";
-import { attackScene, awaitingAttackValidator, checkTargets, equippedWeapon, resolveAttack, resolvedAttackValidator, rollFromStored, withoutTargets } from "./lib/combatActions";
+import { attackScene, awaitingAttackValidator, checkAttackTargets, equippedWeapon, resolveAttack, resolvedAttackValidator, rollFromStored, withoutTargets } from "./lib/combatActions";
 import { closeRequest, encounterRunning, loadOpenRequest } from "./lib/combatRequests";
 import { keyedGmMutation } from "./lib/functions";
 
@@ -31,7 +31,8 @@ const declined = v.object({ status: v.literal("declined") });
 /**
  * The GM approves (`approve: true`) or declines a sanction (Q1). Declining closes it. Approving re-checks the attacker's
  * token, line of sight and targets (COMBAT_NO_LINE_OF_SIGHT / COMBAT_TARGET_INVALID leave the request open, so the GM
- * can decline it), skips the range check the GM just waived, and resolves the attack. A request whose encounter ended
+ * can decline it), skips the range check the GM just waived, and resolves the attack. OP2: its targets may be other PCs
+ * ("Conflict between PCs" on), and such a request may belong to no encounter (it counts as running). A request whose encounter ended
  * is declined instead. REQUEST_NOT_OPEN once answered; NOT_FOUND for another campaign's or a non-sanction request.
  */
 export const sanction = keyedGmMutation({
@@ -57,10 +58,13 @@ export const sanction = keyedGmMutation({
       const loaded = { campaign: ctx.campaign, character, sheet: readSheet(character.sheet), gm: false };
       const scene = await attackScene(ctx, ctx.campaign, character, row.mapId);
       const weapon = equippedWeapon(loaded.sheet, action.slot);
-      const targets = await checkTargets(ctx, ctx.campaign, scene, weapon, action.targetTokenIds, rollFromStored(action.roll));
+      // Plan rule-switches OP2 ("Conflict between PCs", CB p.168): another PC the attack names is a target again on approval
+      // (`pcs`, while the rule is on; with it off a PC token is COMBAT_TARGET_INVALID and the request stays open).
+      const { adversaries: targets, pcs } = await checkAttackTargets(ctx, ctx.campaign, scene, weapon, action.targetTokenIds, rollFromStored(action.roll));
       const riders = dropOnly ? withoutTargets(action.riders ?? [], added) : (action.riders ?? []);
       const waived = dropOnly ? [] : (row.payload.added ?? []);
-      const result = await resolveAttack(ctx, { loaded, actorId: row.createdBy, scene, weapon, slot: action.slot, targets, roll: rollFromStored(action.roll), riders, waived });
+      const pcTargets = pcs.length > 0 ? { pcTargets: pcs } : {};
+      const result = await resolveAttack(ctx, { loaded, actorId: row.createdBy, scene, weapon, slot: action.slot, targets, ...pcTargets, roll: rollFromStored(action.roll), riders, waived });
       await closeRequest(ctx, row._id, "resolved", ctx.user._id);
       return result;
     }),
