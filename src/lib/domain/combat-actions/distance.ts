@@ -11,7 +11,12 @@
 // tokenDistance({ x: 0, y: 0, size: 2 }, { x: 5, y: 0 });      // 4 (from the nearest edge square x=1)
 // rangeCheck({ x: 0, y: 0 }, { x: 7, y: 0 }, "close");          // { distance: 7, band: "far", inRange: false }
 // rangeFromWeapon("Very Close");                                // "veryClose"
+// rangeCheck({ x: 0, y: 0 }, { x: 30, y: 0 }, "melee", false);   // { distance: 30, band: "veryFar", inRange: true }
 // ```
+//
+// Rule switches ODR: Defined Ranges is an optional rule (CB p.103), on by default. Off (`definedRanges` false) the GM
+//   judges ranges by eye: `rangeCheck` still reports the distance and band, but every target is `inRange`, so nothing
+//   is refused or sent to the GM's sanction for its range.
 
 import { rangeBandOf, type RangeBandKey } from "../combat-map/ranges";
 import type { Range } from "../card-effects/types";
@@ -70,9 +75,12 @@ export interface RangeCheck {
   inRange: boolean;
 }
 
-/** Distance, band and whether `to` is within `range` of `from` (CB p.103, Q1). */
-export function rangeCheck(from: Footprint, to: Footprint, range: Range | "unlimited"): RangeCheck {
+/**
+ * Distance, band and whether `to` is within `range` of `from` (CB p.103, Q1). `definedRanges` false (the optional rule
+ * off, rule switches ODR): always `inRange`, the GM judges by eye.
+ */
+export function rangeCheck(from: Footprint, to: Footprint, range: Range | "unlimited", definedRanges = true): RangeCheck {
   const distance = tokenDistance(from, to);
   const band = bandOf(distance);
-  return { distance, band, inRange: withinRange(band, range) };
+  return { distance, band, inRange: !definedRanges || withinRange(band, range) };
 }

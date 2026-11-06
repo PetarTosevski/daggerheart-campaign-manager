@@ -244,7 +244,22 @@ export const targetHintValidator = v.object({
 
 // ---------------------------------------------------------------- the scene around the attacker
 
-export type AttackScene = { map: Doc<"combatMaps">; scene: Scene; viewer: Viewer; attacker: Doc<"combatTokens"> };
+export type AttackScene = {
+  map: Doc<"combatMaps">;
+  scene: Scene;
+  viewer: Viewer;
+  attacker: Doc<"combatTokens">;
+  /**
+   * Rule switches ODR: the campaign's Defined Ranges (CB p.103 optional rule). False: no range check refuses or waits
+   * for the GM (`rangesOn`). Absent (a scene built without `attackScene`) = on, today's behaviour.
+   */
+  definedRanges?: boolean;
+};
+
+/** Rule switches ODR: whether the scene's range checks count squares (Defined Ranges on; absent = on). */
+export function rangesOn(s: Pick<AttackScene, "definedRanges"> | null | undefined): boolean {
+  return s?.definedRanges !== false;
+}
 
 /**
  * The live map and the character's view on it. COMBAT_MAP_NOT_FOUND for a map that is not this campaign's live map
@@ -256,7 +271,7 @@ export async function attackScene(ctx: QueryCtx, campaign: Doc<"campaigns">, cha
   const scene = await loadScene(ctx, campaign, map);
   const viewer = viewOf(scene, character);
   if (viewer === null) throw appError("COMBAT_TOKEN_NOT_FOUND");
-  return { map, scene, viewer, attacker: scene.tokens[viewer.index]! };
+  return { map, scene, viewer, attacker: scene.tokens[viewer.index]!, definedRanges: ruleModesOf(campaign).definedRanges };
 }
 
 /** An enemy token's encounter instance, when it can be attacked: an enemy-side adversary token of a running encounter, not defeated. */
@@ -292,11 +307,13 @@ export function weaponIn(sheet: CharacterSheet, slot: WeaponSlot): Weapon | unde
 /** `combatActionsReads.targets`: every enemy token the character sees that can be attacked, with its band and hints. */
 export async function targetHints(ctx: QueryCtx, campaign: Doc<"campaigns">, s: AttackScene, weapon: Weapon | undefined, attacker?: { sheet: CharacterSheet; characterId: string }): Promise<Infer<typeof targetHintValidator>[]> {
   const hints: Infer<typeof targetHintValidator>[] = [];
+  // Rule switches ODR: Defined Ranges off marks every target in range (the GM judges by eye).
+  const ranges = ruleModesOf(campaign).definedRanges;
   for (const [i, token] of s.scene.tokens.entries()) {
     if (i === s.viewer.index || token.side !== "enemy" || !seenBy(s, i)) continue;
     const linked = await enemyInstance(ctx, campaign._id, token);
     if (linked === null) continue;
-    const check = rangeCheck(s.attacker, token, weapon ? rangeFromWeapon(weapon.range) : "melee");
+    const check = rangeCheck(s.attacker, token, weapon ? rangeFromWeapon(weapon.range) : "melee", ranges);
     const sight = sightTo(s, token);
     // E1.4b (dcm-kso9): the rider benefits the attacker would get on this target.
     const benefits = attacker ? riderBenefits(instanceAttackedRiders(linked.instance, attacker.sheet, { tokenId: s.attacker._id, characterId: attacker.characterId })) : [];
@@ -368,7 +385,8 @@ export async function checkTargets(ctx: QueryCtx, campaign: Doc<"campaigns">, s:
     if (allowed === null) throw appError("COMBAT_NO_LINE_OF_SIGHT");
     const linked = await enemyInstance(ctx, campaign._id, token);
     if (linked === null) throw appError(seen && sight.lineOfSight ? "COMBAT_TARGET_INVALID" : "COMBAT_NO_LINE_OF_SIGHT");
-    checked.push({ token, ...linked, check: rangeCheck(s.attacker, token, range), sight, ...allowed });
+    // Rule switches ODR: Defined Ranges off, every target is in range (no refusal, no GM sanction for range).
+    checked.push({ token, ...linked, check: rangeCheck(s.attacker, token, range, ruleModesOf(campaign).definedRanges), sight, ...allowed });
   }
   if (new Set(checked.map((c) => c.encounter._id)).size > 1) throw appError("COMBAT_TARGET_INVALID");
   return checked;
@@ -1343,6 +1361,8 @@ export function addRange(spec: TargetSpec, weapon: Weapon, reach = 0): Range {
  */
 export function addedOutOfRange(s: AttackScene, weapon: Weapon, picked: readonly PickedRider[]): { tokenId: Id<"combatTokens">; band: RangeCheck["band"] }[] {
   const out: { tokenId: Id<"combatTokens">; band: RangeCheck["band"] }[] = [];
+  // Rule switches ODR: Defined Ranges off, no extra target is out of range.
+  if (!rangesOn(s)) return out;
   for (const r of picked) {
     if (r.addSpec === undefined) continue;
     const range = addRange(r.addSpec, weapon);
@@ -1414,7 +1434,7 @@ async function addedTargets(
     const sight = sightTo(s, token);
     const allowed = sightAllows(sightMode, seenBy(s, index), sight);
     if (allowed === null) throw appError("COMBAT_NO_LINE_OF_SIGHT");
-    const check = rangeCheck(s.attacker, token, range);
+    const check = rangeCheck(s.attacker, token, range, ruleModesOf(campaign).definedRanges);
     if (!check.inRange && !waived.has(id)) throw appError("COMBAT_TARGET_INVALID", `${add.rider.name}: a target is out of range.`);
     if (anyCreature(add.spec) && token.ref.kind === "pc") {
       const character = await ctx.db.get("characters", token.ref.characterId);
@@ -3039,7 +3059,8 @@ async function offerMinions(
     if (linked === null || linked.encounter._id !== encounterId) continue;
     const block = await blockOf(ctx, linked.instance);
     if (!block.minion) continue;
-    if (!rangeCheck(s.attacker, token, range).inRange) continue;
+    // Rule switches ODR: Defined Ranges off, every Minion is offered (the attacker or GM judges the range by eye).
+    if (!rangeCheck(s.attacker, token, range, modes.definedRanges).inRange) continue;
     if (!attack.critical && attack.total < difficultyOf(linked.instance)) continue;
     const available = Math.min(attack.extra, linked.instance.stats.hpMax - linked.instance.hp);
     if (available > 0) candidates.push({ instanceId: linked.instance._id, tokenId: token._id, name: linked.instance.label, available });

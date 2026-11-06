@@ -120,8 +120,10 @@ export function AreaPickBanner({ mapId }: { mapId: string }) {
 /**
  * The click layer over the map while a pick for this map runs: the hovered square (and the preview circle) shows; a
  * click picks it. It stops the board's pan on its own pointer downs (the map-view pointer contract).
+ * Rule switches ODR: with Defined Ranges off (`definedRanges` false, CB p.103 optional rule) the square still places,
+ * but no preview circle counts squares (the GM judges the area's reach by eye).
  */
-export function AreaPickLayer({ mapId, viewport }: { mapId: string; viewport: CombatMapViewport }) {
+export function AreaPickLayer({ mapId, viewport, definedRanges = true }: { mapId: string; viewport: CombatMapViewport; definedRanges?: boolean }) {
   const pick = useAreaPick();
   const [hover, setHover] = useState<Square | null>(null);
   const request = pick.request;
@@ -129,7 +131,7 @@ export function AreaPickLayer({ mapId, viewport }: { mapId: string; viewport: Co
   const { w, h, pad, cell, zoom } = viewport;
   const step = cell * zoom;
   const at = (e: ReactMouseEvent<HTMLDivElement>) => squareAt(viewport.toSquares(e.clientX, e.clientY), w, h);
-  const reach = request.radius ? RANGE_SQUARES[request.radius] + 0.5 : null;
+  const reach = request.radius && definedRanges ? RANGE_SQUARES[request.radius] + 0.5 : null;
   return (
     <div
       className="cm-area-pick"
