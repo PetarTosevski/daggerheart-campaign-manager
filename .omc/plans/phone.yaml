@@ -345,3 +345,31 @@ waves:
         acceptance:
           - tests for null Fear, a co-GM and an archived campaign
 
+  # ------------------------------------------------------------------ follow-ups 2 (user answers 2026-11-06)
+  - wave: 9
+    tracers:
+      - id: PXF
+        title: "Journal opens on the live session, portrait resize, Delete account, read-only campaigns, co-GM list, feature switches"
+        beads: [dcm-gdzi.44, dcm-gdzi.34]
+        pr: 3
+        goal: "The phone Journal opens on the live (else newest) session like the web; portraits are really resized before upload (expo-image-manipulator); Settings has Delete account on accountSelfDelete.deleteMyAccount and the phone Apple provider sends authorizationCode so revocation has a refresh token; archived / owner view / read-only campaigns turn writes off in the shell with the banners on every campaign page; the campaign list shows co-GM campaigns with Leave and a badge; the phoneLayout and lorekeeperWeb feature switches gate the combat map and Lorekeeper web search"
+        depends_on: [PX12, PX9, PX7]
+        owns:
+          - apps/mobile/src/features/journal/index.tsx
+          - apps/mobile/app/campaign/[campaignId]/journal.tsx
+          - apps/mobile/src/features/sheet/portrait*
+          - apps/mobile/src/features/settings/**
+          - apps/mobile/src/auth/**
+          - apps/mobile/src/shell/**
+          - apps/mobile/app/campaign/[campaignId]/_layout.tsx
+          - apps/mobile/src/features/account/**
+          - apps/mobile/app/campaigns/**
+          - apps/mobile/package.json
+          - pnpm-lock.yaml
+          - convex/auth.ts
+          - apps/mobile/test/features/journal/**
+          - apps/mobile/test/features/account/**
+          - apps/mobile/test/shell/**
+          - apps/mobile/test/auth/**
+        acceptance:
+          - tests per goal; pnpm typecheck; full apps/mobile jest passes
