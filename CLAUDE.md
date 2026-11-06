@@ -71,6 +71,9 @@ Every build plan is a list of tracer bullets, written and run as
 - **Unspecified mechanics:** before designing any mechanic the user has not
   specified, ask whether it is core or frame-exclusive and how it works. Never
   guess.
+- **Stack:** only the approved stack (`AGENTS.md`, "Approved technology
+  stack"). Expo, React Native, Jest and Skia are approved for the phone app in
+  `apps/mobile` only (user decision 2026-11-05), never for the website.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:1105d646 -->
 ## Beads Issue Tracker
@@ -133,9 +136,10 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 ```bash
 pnpm install          # also installs the git hooks (prepare script)
 pnpm dev              # Next.js; run `npx convex dev` alongside it
-pnpm lint
-pnpm typecheck        # tsc --noEmit, includes convex/
+pnpm lint             # lint:web + lint:mobile (apps/mobile's own config)
+pnpm typecheck        # typecheck:web (tsc --noEmit, includes convex/) + typecheck:mobile
 pnpm test             # vitest: unit (jsdom) + convex (convex-test)
+pnpm --filter @dualityheart/mobile run check   # phone app: eslint, tsc, jest
 pnpm e2e:setup        # once per checkout: local e2e Convex backend
 pnpm test:e2e         # Playwright; starts the local backend + e2e build
 E2E_PORT=<port> E2E_CONVEX_PORT=<port> pnpm test:e2e   # non-default ports (worktrees: use the ports pnpm worktree:setup prints)
@@ -143,8 +147,10 @@ pnpm build
 ```
 
 Pre-commit hook (`.beads/hooks/pre-commit` -> `scripts/pre-commit.sh`): ESLint
-on staged files + typecheck; skip once with `git commit --no-verify`. CI:
-`.github/workflows/ci.yml`. Details: `docs/testing.md`.
+on staged files + web typecheck, plus `typecheck:mobile` when staged files can
+affect apps/mobile; skip once with `git commit --no-verify`. CI:
+`.github/workflows/ci.yml` (the phone check runs as its own job). Details:
+`docs/testing.md`.
 
 What the suite enforces: the authorization matrix
 (`tests/convex/authz-matrix.test.ts` and `tests/convex/authz/<area>.entries.ts`;

@@ -26,9 +26,27 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
-      - run: pnpm typecheck
+      # The web half of `pnpm lint` / `pnpm typecheck`; the mobile job runs
+      # the app's half, in parallel, so neither job nears its timeout.
+      - run: pnpm lint:web
+      - run: pnpm typecheck:web
       - run: pnpm test
+
+  mobile:
+    name: Phone app (apps/mobile) lint, typecheck, jest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # eslint ., tsc --noEmit and jest --ci inside apps/mobile.
       - run: pnpm --filter @dualityheart/mobile run check
 
   e2e:
