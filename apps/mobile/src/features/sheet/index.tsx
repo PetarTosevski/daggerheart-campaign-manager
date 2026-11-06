@@ -4,6 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useMutation, useQuery } from "convex/react";
 
 import { errorMessage } from "../../../../../src/lib/convex-errors";
+import type { TraitId } from "../../../../../src/lib/srd/types";
 import { FRAME_OF } from "../../../../../src/lib/frames/extras/common";
 import { api } from "../../convex";
 import type { Id } from "../../convex";
@@ -14,7 +15,8 @@ import { radius, space } from "../../theme/spacing";
 import { Button } from "../../ui/button";
 import { Empty } from "../../ui/empty";
 import { Loading } from "../../ui/loading";
-import { className, heritageLine, subclassName } from "./catalog";
+import { withOptimistic } from "../adversaries/use-tracker";
+import { className, defenseOf, heritageLine, subclassName } from "./catalog";
 import { CardsSection } from "./cards";
 import type { SheetSlotProps } from "./contract";
 import { DeathSlot } from "./death";
@@ -26,12 +28,13 @@ import { HeritageSection } from "./heritage";
 import { IdentitySection } from "./identity";
 import { IncomingSlot } from "./incoming";
 import { LevelUpSlot } from "./level-up";
-import { QueryBoundary } from "./query-boundary";
+import { QueryBoundary } from "../../ui/query-boundary";
 import { RestSlot } from "./rest";
 import { ResourcesSection } from "./resources";
 import { StatusSection } from "./status";
 import { StorySection } from "./story";
-import { readCharacter, readOpenRest, type Resource, type SheetCharacter, type SheetData } from "./types";
+import { stepResource, stepTrait, useStressRules } from "./optimistic";
+import { openRestFor, type Resource, type SheetCharacter, type SheetData } from "./types";
 
 const PAGES = [
   { id: "sheet", label: "Character Sheet" },
@@ -71,11 +74,7 @@ function CharacterBody({ characterId, onClose }: { characterId: string; onClose?
       </View>
     );
   }
-  const character = readCharacter(raw);
-  if (!character) {
-    return <Empty message="This character sheet could not be read." title="Character" />;
-  }
-  return <LoadedSheet campaignId={campaign._id} character={character} frameId={campaign.frameId} hopeAndFear={campaign.options.hopeAndFear === true} isGm={campaign.role === "gm"} onClose={onClose} />;
+  return <LoadedSheet campaignId={campaign._id} character={raw} frameId={campaign.frameId} hopeAndFear={campaign.options.hopeAndFear === true} isGm={campaign.role === "gm"} onClose={onClose} />;
 }
 
 function LoadedSheet({
@@ -98,7 +97,19 @@ function LoadedSheet({
   const rest = useQuery(api.restsReads.current, character.canEdit ? { campaignId } : "skip");
   const [page, setPage] = useState<PageId>("sheet");
   const [error, setError] = useState<string | null>(null);
-  const adjustResource = useMutation(api.characters.adjustResource);
+  const rules = useStressRules(campaignId);
+  // Optimistic (dcm-gdzi.22): the sheet query moves at once with the website's `applyResourceDelta`, so Stress past
+  // full marks a Hit Point under D4 Book and drops it under Manual (CB p.92, p.106); a failed call rolls it back.
+  const adjustResource = withOptimistic(useMutation(api.characters.adjustResource), (store, args) => {
+    const current = store.getQuery(api.charactersReads.get, { characterId: args.characterId });
+    if (!current) return;
+    store.setQuery(api.charactersReads.get, { characterId: args.characterId }, stepResource(current, args.resource, args.delta, rules, armorMax));
+  });
+  const setTrait = withOptimistic(useMutation(api.characters.setTrait), (store, args) => {
+    const current = store.getQuery(api.charactersReads.get, { characterId: args.characterId });
+    if (!current || args.delta === undefined) return;
+    store.setQuery(api.charactersReads.get, { characterId: args.characterId }, stepTrait(current, args.trait, args.delta));
+  });
   const updateSheet = useMutation(api.characters.updateSheet);
   const moveCard = useMutation(api.characters.moveCard);
   const takeCard = useMutation(api.characters.takeCard);
@@ -111,13 +122,6 @@ function LoadedSheet({
   const removeExperience = useMutation(api.characters.removeExperience);
   const setStatus = useMutation(api.characters.setStatus);
   const sheet = character.sheet;
-  const signature = `${sheet.hp}|${sheet.stress}|${sheet.hope}|${sheet.armorMarked}|${sheet.scars}`;
-  const [tracked, setTracked] = useState(signature);
-  const [pending, setPending] = useState<Partial<Record<Resource, number>>>({});
-  if (tracked !== signature) {
-    setTracked(signature);
-    setPending({});
-  }
 
   async function run(work: () => Promise<unknown>) {
     setError(null);
@@ -129,28 +133,21 @@ function LoadedSheet({
   }
 
   const canEdit = character.canEdit && character.corrupt !== true;
-  const slot: SheetSlotProps = { campaignId, isGm, hopeAndFear, character, canEdit };
-  const openRest = canEdit ? readOpenRest(rest, character._id) : null;
-  const augments = installedAugments(extras);
-
-  function shown(resource: Resource): number {
-    const server = resource === "armor" ? sheet.armorMarked : sheet[resource];
-    return server + (pending[resource] ?? 0);
-  }
+  const openRest = canEdit ? openRestFor(rest, character._id) : null;
+  const augments = extras?.motherboard?.installed ?? [];
+  const slot: SheetSlotProps = { campaignId, isGm, hopeAndFear, character, canEdit, augments };
+  const armorMax = defenseOf(sheet, augments).armorScore;
 
   function onStep(resource: Resource, delta: number) {
-    setPending((current) => ({ ...current, [resource]: (current[resource] ?? 0) + delta }));
-    void run(async () => {
-      try {
-        await adjustResource({ characterId: character._id, resource, delta });
-      } catch (caught) {
-        setPending((current) => ({ ...current, [resource]: (current[resource] ?? 0) - delta }));
-        throw caught;
-      }
-    });
+    void run(() => adjustResource({ characterId: character._id, resource, delta }));
   }
 
-  function onUpdate(patch: Partial<Pick<SheetData, "name" | "pronouns" | "description" | "notes" | "background" | "connections" | "traits">>) {
+  /** One trait by a delta (rule 12: an intent, not the whole traits object; GM only, CB p.41 level-up for players). */
+  function onTrait(trait: TraitId, delta: number) {
+    void run(() => setTrait({ characterId: character._id, trait, delta }));
+  }
+
+  function onUpdate(patch: Partial<Pick<SheetData, "name" | "pronouns" | "description" | "notes" | "background" | "connections">>) {
     void run(() => updateSheet({ characterId: character._id, patch }));
   }
 
@@ -195,8 +192,8 @@ function LoadedSheet({
       {page === "sheet" ? (
         <View style={styles.stack}>
           <IncomingSlot {...slot} />
-          <IdentitySection canEdit={canEdit} character={character} isGm={isGm} onUpdate={onUpdate} />
-          <ResourcesSection augments={augments} onStep={onStep} readOnly={!canEdit} sheet={sheet} shown={shown} />
+          <IdentitySection canEdit={canEdit} character={character} isGm={isGm} onTrait={onTrait} onUpdate={onUpdate} />
+          <ResourcesSection augments={augments} onStep={onStep} readOnly={!canEdit} rules={rules} sheet={sheet} />
           <DiceSlot {...slot} />
           <EquipmentSection
             canEdit={canEdit}
@@ -257,14 +254,6 @@ function LoadedSheet({
       </Text>
     </ScrollView>
   );
-}
-
-function installedAugments(value: unknown): string[] {
-  if (typeof value !== "object" || value === null || !("motherboard" in value)) return [];
-  const board = value.motherboard;
-  if (typeof board !== "object" || board === null || !("installed" in board)) return [];
-  const installed = board.installed;
-  return Array.isArray(installed) ? installed.filter((item): item is string => typeof item === "string") : [];
 }
 
 const styles = StyleSheet.create({

@@ -8,7 +8,7 @@ import type { AdvancementOption, CharacterSheet } from "../../../../../../src/li
 
 import { api } from "../../../convex";
 import type { Id } from "../../../convex";
-import { useIntent } from "../../trackers/intent";
+import { useIntent } from "../intent";
 import { colors } from "../../../theme/colors";
 import { type } from "../../../theme/fonts";
 import { radius, space } from "../../../theme/spacing";

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRouter } from "expo-router";
 import { ScrollView, StyleSheet, Text } from "react-native";
 
 import { useQuery } from "convex/react";
@@ -9,11 +9,8 @@ import { useCampaign } from "../../shell/campaign-provider";
 import { colors } from "../../theme/colors";
 import { type } from "../../theme/fonts";
 import { space } from "../../theme/spacing";
-import { Empty } from "../../ui/empty";
 import { Loading } from "../../ui/loading";
-import { CharacterSheet } from "../sheet";
-import { QueryBoundary } from "../sheet/query-boundary";
-import { readParty, readTable } from "../sheet/types";
+import { QueryBoundary } from "../../ui/query-boundary";
 import { RosterCard } from "./card";
 import { CreateCharacterSlot } from "./create";
 import { PartyLevelUp } from "./level-up";
@@ -30,16 +27,10 @@ function PartyBody() {
   const campaign = useCampaign();
   const listed = useQuery(api.charactersReads.listByCampaign, { campaignId: campaign._id });
   const roster = useQuery(api.members.roster, { campaignId: campaign._id });
-  const [openId, setOpenId] = useState<string | null>(null);
-  if (openId) {
-    return <CharacterSheet characterId={openId} onClose={() => setOpenId(null)} />;
-  }
+  const router = useRouter();
   if (listed === undefined || roster === undefined) return <Loading label="Loading the party" />;
-  const characters = readParty(listed);
-  const table = readTable(roster);
-  if (characters == null || table == null) {
-    return <Empty message="The party could not be read." title="The Party" />;
-  }
+  const characters = listed;
+  const table = roster;
   const isGm = campaign.role === "gm";
   return (
     <ScrollView contentContainerStyle={styles.stack}>
@@ -64,7 +55,7 @@ function PartyBody() {
             character={character}
             isGm={isGm}
             key={character._id}
-            onOpen={() => setOpenId(character._id)}
+            onOpen={() => router.push(`/campaign/${campaign._id}/party/${character._id}`)}
             table={table}
           />
         );

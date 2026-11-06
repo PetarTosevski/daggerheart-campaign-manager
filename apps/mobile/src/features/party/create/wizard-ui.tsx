@@ -3,10 +3,18 @@ import { Pressable, Text, View } from "react-native";
 
 import { wizardStyles as s } from "./styles";
 
+/** Shared domain cards (CB p.21, plan rule-switches OSC): the campaign's mode and who holds which card. */
+export type SharedCards = {
+  mode: import("../../../../../../src/lib/domain/characters").SharedCardsMode;
+  holders: ReadonlyMap<string, readonly string[]>;
+};
+
 export type StepProps = {
   state: import("./wizard-logic").WizardState;
   update: (patch: Partial<import("./wizard-logic").WizardState>) => void;
   opts: import("./wizard-logic").WizardOptions;
+  /** Undefined while `ruleSettings.get` or the party loads. */
+  shared?: SharedCards;
 };
 
 export function Group({ legend, children }: { legend: string; children: ReactNode }) {

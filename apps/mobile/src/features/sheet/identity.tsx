@@ -9,18 +9,22 @@ import { Button } from "../../ui/button";
 import { PortraitControl } from "../party/portrait";
 import { signed, traitLabel, TRAIT_IDS } from "./catalog";
 import { Line, Section } from "./chrome";
-import type { SheetCharacter, SheetData } from "./types";
+import type { TraitId } from "../../../../../src/lib/srd/types";
+import type { SheetCharacter } from "./types";
 
 export function IdentitySection({
   character,
   canEdit,
   isGm,
+  onTrait,
   onUpdate,
 }: {
   character: SheetCharacter;
   canEdit: boolean;
   isGm: boolean;
-  onUpdate: (patch: { name?: string; pronouns?: string; description?: string; traits?: SheetData["traits"] }) => void;
+  /** One trait by a delta (rule 12: an intent, never the whole traits object). */
+  onTrait: (trait: TraitId, delta: number) => void;
+  onUpdate: (patch: { name?: string; pronouns?: string; description?: string }) => void;
 }) {
   const sheet = character.sheet;
   const writes = useWritesEnabled();
@@ -32,6 +36,7 @@ export function IdentitySection({
         hasPortrait={character.portraitUrl !== null}
         name={sheet.name}
         portraitUrl={character.portraitUrl}
+        portrait={character.sheet.portrait}
       />
       <Field
         label="Name"
@@ -67,7 +72,7 @@ export function IdentitySection({
                   <Button
                     accessibilityLabel={`Decrease ${traitLabel(trait)}`}
                     disabled={!writes || value <= -5}
-                    onPress={() => onUpdate({ traits: { ...sheet.traits, [trait]: value - 1 } })}
+                    onPress={() => onTrait(trait, -1)}
                     variant="outline"
                   >
                     −
@@ -75,7 +80,7 @@ export function IdentitySection({
                   <Button
                     accessibilityLabel={`Increase ${traitLabel(trait)}`}
                     disabled={!writes || value >= 10}
-                    onPress={() => onUpdate({ traits: { ...sheet.traits, [trait]: value + 1 } })}
+                    onPress={() => onTrait(trait, 1)}
                     variant="outline"
                   >
                     +

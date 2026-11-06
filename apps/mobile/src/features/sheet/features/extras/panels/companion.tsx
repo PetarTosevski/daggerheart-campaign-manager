@@ -38,12 +38,20 @@ export function CompanionPanel({
   canEdit: boolean;
 }) {
   const save = useIntent(api.characterExtras.saveCompanion);
-  const [draft, setDraft] = useState<CompanionState>(state);
+  // Only the fields edited here (dcm-gdzi.20): everything else, Stress included, always reads the saved state, so a
+  // Stress pip saved meanwhile is never written back by Save.
+  const [edits, setEdits] = useState<Partial<Omit<CompanionState, "stress">>>({});
+  const draft: CompanionState = { ...state, ...edits };
   const stats = companionStats(draft, level);
   const saved = companionStats(state, level);
-  const dirty = JSON.stringify(draft) !== JSON.stringify(state);
+  const dirty = (Object.keys(edits) as (keyof typeof edits)[]).some((k) => JSON.stringify(edits[k]) !== JSON.stringify(state[k]));
   const ro = !canEdit;
-  const patch = (p: Partial<CompanionState>) => setDraft({ ...draft, ...p });
+  const patch = (p: Partial<Omit<CompanionState, "stress">>) => setEdits((current) => ({ ...current, ...p }));
+
+  async function saveEdits() {
+    const done = await save.fire({ characterId, state: { ...state, ...edits } });
+    if (done !== undefined) setEdits({});
+  }
 
   const setTraining = (id: TrainingId, n: number) => {
     const training = { ...draft.training, [id]: n };
@@ -99,7 +107,7 @@ export function CompanionPanel({
           label="Companion Stress"
           marked={state.stress}
           total={saved.stressMax}
-          disabled={ro || save.pending || dirty}
+          disabled={ro || save.pending}
           onSet={(stress) => void save.fire({ characterId, state: { ...state, stress } })}
         />
         <Text style={styles.evasion}>{`${stats.evasion} Evasion`}</Text>
@@ -259,7 +267,7 @@ export function CompanionPanel({
           <Button
             accessibilityLabel="Save companion"
             disabled={!dirty || save.pending}
-            onPress={() => void save.fire({ characterId, state: draft })}
+            onPress={() => void saveEdits()}
             variant="solid"
           >
             Save companion
@@ -267,7 +275,7 @@ export function CompanionPanel({
           <Button
             accessibilityLabel="Discard changes"
             disabled={!dirty}
-            onPress={() => setDraft(state)}
+            onPress={() => setEdits({})}
             variant="outline"
           >
             Discard changes

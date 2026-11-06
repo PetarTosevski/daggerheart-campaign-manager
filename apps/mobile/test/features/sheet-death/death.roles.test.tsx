@@ -1,13 +1,14 @@
 import { beforeEach, expect, jest, test } from "@jest/globals";
-import { fireEvent } from "@testing-library/react-native";
+import { act, fireEvent } from "@testing-library/react-native";
+import { ConvexError } from "convex/values";
 
+import { errorMessage } from "../../../../../src/lib/convex-errors";
 import { resetMotionTest } from "../../theme/mock-reanimated";
 import { DeathSlot } from "../../../src/features/sheet/death";
 import type { SheetSlotProps } from "../../../src/features/sheet/contract";
 import { api } from "../../../src/convex";
 import { fn, renderAsGm, renderAsPlayer } from "../../harness";
-import { readCharacter } from "../../../src/features/sheet/types";
-import { characterRecord } from "../party/fixture";
+import { sheetCharacter } from "../party/fixture";
 
 jest.mock("expo-crypto", () => ({
   randomUUID: () => "00000000-0000-4000-8000-000000000002",
@@ -26,12 +27,10 @@ const deathState = {
 };
 
 function awayCharacter(isGm: boolean): SheetSlotProps {
-  const base = readCharacter(
-    characterRecord({
+  const base = sheetCharacter({
       canEdit: true,
       status: "away",
-    }),
-  );
+    });
   if (!base) throw new Error("fixture");
   return {
     campaignId: "campaign-1",
@@ -79,7 +78,7 @@ test("Return to play is GM-only", async () => {
 
 test("applyDamage sends one keyed mutation per apply", async () => {
   const calls: unknown[] = [];
-  const character = readCharacter(characterRecord({ canEdit: true }));
+  const character = sheetCharacter({ canEdit: true });
   if (!character) throw new Error("fixture");
   const props: SheetSlotProps = {
     campaignId: "campaign-1",
@@ -108,10 +107,39 @@ test("applyDamage sends one keyed mutation per apply", async () => {
 });
 
 test("a reader does not subscribe to death queries", async () => {
-  const character = readCharacter(characterRecord({ canEdit: false }));
+  const character = sheetCharacter({ canEdit: false });
   if (!character) throw new Error("fixture");
   const screen = await renderAsPlayer(
     <DeathSlot campaignId="campaign-1" canEdit={false} character={character} hopeAndFear isGm={false} />,
   );
   expect(screen.client.subscribed).toEqual([]);
+});
+
+function dyingProps(): SheetSlotProps {
+  return { campaignId: "campaign-1", isGm: false, hopeAndFear: true, canEdit: true, character: sheetCharacter({ canEdit: true }, { hp: 6 }) };
+}
+
+const dying = { ...deathState, awaitingMove: true, lessLethal: false, awayRequested: false };
+
+test("a death move fires once on a double tap and shows a refusal's text (dcm-gdzi.21)", async () => {
+  const calls: unknown[] = [];
+  let reject: (e: unknown) => void = () => undefined;
+  const screen = await renderAsPlayer(<DeathSlot {...dyingProps()} />, {
+    queries: { [fn(api.deathMoves.state)]: dying },
+    mutations: {
+      [fn(api.deathMoves.choose)]: (args) => {
+        calls.push(args);
+        return new Promise((_, no) => {
+          reject = no;
+        });
+      },
+    },
+  });
+  await fireEvent.press(screen.getByText("Avoid Death"));
+  await fireEvent.press(screen.getByText("Avoid Death"));
+  expect(calls).toHaveLength(1);
+  await act(async () => {
+    reject(new ConvexError({ code: "FORBIDDEN" }));
+  });
+  expect(screen.getByText(errorMessage(new ConvexError({ code: "FORBIDDEN" })))).toBeTruthy();
 });

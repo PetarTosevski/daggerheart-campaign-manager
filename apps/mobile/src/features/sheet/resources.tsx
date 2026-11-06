@@ -1,20 +1,23 @@
+import type { PcDamageRules } from "../../../../../src/lib/domain/characters/index";
 import { armorOf, defenseOf, hopeMax, scarsMax, thresholdsOf } from "./catalog";
 import { Line, Section, Stepper } from "./chrome";
+import { canMarkStress } from "./optimistic";
 import type { Resource, SheetData } from "./types";
 
 export function ResourcesSection({
   sheet,
   augments,
   readOnly,
-  shown,
+  rules,
   onStep,
 }: {
   sheet: SheetData;
   augments: readonly string[];
   readOnly: boolean;
-  shown: (resource: Resource) => number;
+  rules: PcDamageRules;
   onStep: (resource: Resource, delta: number) => void;
 }) {
+  const shown = (resource: Resource) => (resource === "armor" ? sheet.armorMarked : sheet[resource]);
   const defense = defenseOf(sheet, augments);
   const thresholds = thresholdsOf(sheet);
   const armor = armorOf(sheet.armorId);
@@ -41,7 +44,8 @@ export function ResourcesSection({
         value={shown("hp")}
       />
       <Stepper
-        detail={`Stress ${shown("stress")} of ${sheet.stressMax}`}
+        detail={`Stress ${shown("stress")} of ${sheet.stressMax}${sheet.stress >= sheet.stressMax && canMarkStress(sheet, rules) ? ", full: one more marks a Hit Point" : ""}`}
+        canIncrease={canMarkStress(sheet, rules)}
         label="Stress"
         max={sheet.stressMax}
         min={0}

@@ -14,7 +14,7 @@ import { TRAIT_IDS } from "../../../../../../src/lib/srd/types";
 import { ADVANCEMENT_OPTIONS, type AdvancementOption, type CharacterSheet } from "../../../../../../src/lib/validation/characters";
 
 import { api } from "../../../convex";
-import { useIntent } from "../../trackers/intent";
+import { useIntent } from "../intent";
 import type { SheetSlotProps } from "../contract";
 
 import { canLevelUp, fullSheet } from "./shared";

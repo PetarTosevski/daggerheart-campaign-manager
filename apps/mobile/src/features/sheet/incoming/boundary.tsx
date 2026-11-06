@@ -1,4 +1,4 @@
-import { Component, type ReactNode } from "react";
+import { Component, Fragment, type ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { colors } from "../../../theme/colors";
@@ -8,11 +8,15 @@ import { Button } from "../../../ui/button";
 
 import { HIT_RETRY_DELAYS_MS, HIT_RETRY_STABLE_MS } from "./model";
 
-type State = { failed: boolean; attempts: number };
+/** `generation` counts remounts: a retry mounts the children afresh, so `useQuery` subscribes again rather than rethrowing. */
+type State = { failed: boolean; attempts: number; generation: number };
 
-/** Retries a failing `adversaryActionsReads.pending` read before surfacing an error (website HitBoundary). */
+/**
+ * Retries a failing `adversaryActionsReads.pending` read quietly before surfacing an error (the website's HitBoundary,
+ * TASK-CA-AA5 Q5: an owed prompt shouldn't vanish on a transient error), then Try again.
+ */
 export class HitBoundary extends Component<{ children: ReactNode }, State> {
-  override state: State = { failed: false, attempts: 0 };
+  override state: State = { failed: false, attempts: 0, generation: 0 };
   private timer: ReturnType<typeof setTimeout> | null = null;
 
   static getDerivedStateFromError(): Partial<State> {
@@ -25,7 +29,7 @@ export class HitBoundary extends Component<{ children: ReactNode }, State> {
     const delay = HIT_RETRY_DELAYS_MS[this.state.attempts];
     if (delay === undefined) return;
     this.timer = setTimeout(() => {
-      this.setState((s) => ({ failed: false, attempts: s.attempts + 1 }));
+      this.setState((s) => ({ failed: false, attempts: s.attempts + 1, generation: s.generation + 1 }));
       this.timer = setTimeout(() => {
         this.timer = null;
         this.setState({ attempts: 0 });
@@ -43,12 +47,12 @@ export class HitBoundary extends Component<{ children: ReactNode }, State> {
   }
 
   override render() {
-    if (!this.state.failed) return this.props.children;
+    if (!this.state.failed) return <Fragment key={this.state.generation}>{this.props.children}</Fragment>;
     if (this.state.attempts < HIT_RETRY_DELAYS_MS.length) return null;
     return (
       <View accessibilityRole="alert" style={styles.alert}>
         <Text style={styles.alertText}>The incoming hit failed to load.</Text>
-        <Button onPress={() => this.setState({ failed: false, attempts: 0 })} variant="outline">
+        <Button onPress={() => this.setState((s) => ({ failed: false, attempts: 0, generation: s.generation + 1 }))} variant="outline">
           Try again
         </Button>
       </View>

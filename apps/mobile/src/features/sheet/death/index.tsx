@@ -26,7 +26,7 @@ export function DeathSlot(props: SheetSlotProps) {
         {canEdit ? (
           <>
             <DeathMoveControls {...props} deathState={deathState} />
-            <TakeDamage character={character} />
+            <TakeDamage augments={props.augments} character={character} />
           </>
         ) : null}
       </DeathBoundary>

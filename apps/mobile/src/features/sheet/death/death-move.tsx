@@ -1,10 +1,7 @@
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { useMutation } from "convex/react";
-import * as Crypto from "expo-crypto";
 
 import { DEATH_MOVE_LABELS, type AwayReason, type DeathMove } from "../../../../../../src/lib/domain/death/index";
-import { errorMessage } from "../../../../../../src/lib/convex-errors";
 import { api } from "../../../convex";
 import { useWritesEnabled } from "../../../shell/offline";
 import { colors } from "../../../theme/colors";
@@ -13,6 +10,7 @@ import { radius, space } from "../../../theme/spacing";
 import { Button } from "../../../ui/button";
 import { Sheet } from "../../../ui/sheet";
 import type { SheetSlotProps } from "../contract";
+import { useIntent } from "../intent";
 import type { DeathMoveState } from "./types";
 
 const MOVE_HINTS: Record<DeathMove, string> = {
@@ -27,7 +25,7 @@ export function DeathMoveControls({
   isGm,
   deathState: state,
 }: SheetSlotProps & { deathState: DeathMoveState | undefined }) {
-  const undo = useMutation(api.deathMoves.undo);
+  const undo = useIntent(api.deathMoves.undo);
   const writes = useWritesEnabled();
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
@@ -53,17 +51,20 @@ export function DeathMoveControls({
           ) : null}
           {state.undoEntryId ? (
             <Button
-              disabled={!writes}
-              onPress={() =>
-                void undo({ entryId: state.undoEntryId!, idempotencyKey: Crypto.randomUUID() }).then(() => {
-                  setResult("Death move undone.");
-                })
-              }
+              disabled={!writes || undo.pending}
+              onPress={() => {
+                const entryId = state.undoEntryId;
+                if (!entryId) return;
+                void undo.fire({ entryId }).then((r) => {
+                  if (r !== undefined) setResult("Death move undone.");
+                });
+              }}
               variant="outline"
             >
               Undo death move
             </Button>
           ) : null}
+          <ErrorLine message={undo.error} />
         </View>
       ) : null}
       <Sheet onClose={() => setDismissedKey(modalKey)} open={open} title="Death move">
@@ -81,7 +82,7 @@ export function DeathMoveControls({
             hp={character.sheet.hp}
             onDone={setResult}
             stress={character.sheet.stress}
-            undoKey={state.undoEntryId ?? "risk"}
+            key={state.undoEntryId ?? "risk"}
             value={state.pending.value}
           />
         ) : (
@@ -157,24 +158,22 @@ function ChooseMove({
   isGm: boolean;
   onDone: (text: string) => void;
 }) {
-  const choose = useMutation(api.deathMoves.choose);
+  const choose = useIntent(api.deathMoves.choose);
   const writes = useWritesEnabled();
   const [action, setAction] = useState("");
   const [awayReason, setAwayReason] = useState<AwayReason>("infirmary");
-  const [error, setError] = useState<string | null>(null);
   const request = lessLethal && !isGm;
 
   async function pick(move: DeathMove) {
     if (!writes) return;
-    setError(null);
-    try {
-      const r = await choose({
-        characterId,
-        move,
-        idempotencyKey: Crypto.randomUUID(),
-        ...(move === "blazeOfGlory" && action.trim() ? { action: action.trim() } : {}),
-        ...(lessLethal ? { awayReason } : {}),
-      });
+    const r = await choose.fire({
+      characterId,
+      move,
+      ...(move === "blazeOfGlory" && action.trim() ? { action: action.trim() } : {}),
+      ...(lessLethal ? { awayReason } : {}),
+    });
+    if (r === undefined) return;
+    {
       if (move === "avoidDeath") {
         onDone(
           `Hope Die ${r.hopeDie} against level ${level}: ${r.scarred ? "a scar" : "no scar"}.${r.journeyEnds ? " The last Hope slot is gone: the journey ends." : ""}`,
@@ -192,8 +191,6 @@ function ChooseMove({
                 : "matching dice, everything cleared."),
         );
       } else onDone("Blaze of Glory: the action critically succeeds.");
-    } catch (caught) {
-      setError(errorMessage(caught));
     }
   }
 
@@ -203,7 +200,7 @@ function ChooseMove({
       {lessLethal ? <AwayReasonPicker onChange={setAwayReason} request={request} value={awayReason} /> : null}
       {(["blazeOfGlory", "avoidDeath", "riskItAll"] as const).map((move) => (
         <View key={move} style={styles.moveBlock}>
-          <MoveOption disabled={!writes} move={move} onPick={() => void pick(move)} />
+          <MoveOption disabled={!writes || choose.pending} move={move} onPick={() => void pick(move)} />
           {move === "blazeOfGlory" ? (
             <TextInput
               accessibilityLabel="Last action (optional)"
@@ -217,12 +214,17 @@ function ChooseMove({
           ) : null}
         </View>
       ))}
-      {error ? (
-        <Text accessibilityRole="alert" style={styles.error}>
-          {error}
-        </Text>
-      ) : null}
+      <ErrorLine message={choose.error} />
     </View>
+  );
+}
+
+function ErrorLine({ message }: { message: string | null }) {
+  if (!message) return null;
+  return (
+    <Text accessibilityRole="alert" style={styles.error}>
+      {message}
+    </Text>
   );
 }
 
@@ -239,7 +241,7 @@ function FinishBlaze({
   isGm: boolean;
   onDone: (text: string) => void;
 }) {
-  const finish = useMutation(api.deathMoves.finishBlaze);
+  const finish = useIntent(api.deathMoves.finishBlaze);
   const writes = useWritesEnabled();
   const [awayReason, setAwayReason] = useState<AwayReason>("infirmary");
   const request = lessLethal && !isGm;
@@ -251,11 +253,10 @@ function FinishBlaze({
       </Text>
       {lessLethal ? <AwayReasonPicker onChange={setAwayReason} request={request} value={awayReason} /> : null}
       <Button
-        disabled={!writes}
+        disabled={!writes || finish.pending}
         onPress={() =>
-          void finish({
+          void finish.fire({
             characterId,
-            idempotencyKey: Crypto.randomUUID(),
             ...(lessLethal ? { awayReason } : {}),
           }).then((r) => {
             if (r)
@@ -270,6 +271,7 @@ function FinishBlaze({
       >
         {lessLethal ? "End the action" : "Cross through the veil"}
       </Button>
+      <ErrorLine message={finish.error} />
     </View>
   );
 }
@@ -279,17 +281,15 @@ function SplitRiskItAll({
   value,
   hp,
   stress,
-  undoKey,
   onDone,
 }: {
   characterId: SheetSlotProps["character"]["_id"];
   value: number;
   hp: number;
   stress: number;
-  undoKey: string;
   onDone: (text: string) => void;
 }) {
-  const resolve = useMutation(api.deathMoves.resolveRiskItAll);
+  const resolve = useIntent(api.deathMoves.resolveRiskItAll);
   const writes = useWritesEnabled();
   const total = Math.min(value, hp + stress);
   const minHp = Math.max(0, total - stress);
@@ -297,7 +297,7 @@ function SplitRiskItAll({
   const [hpClear, setHpClear] = useState(maxHp);
   const stressClear = total - hpClear;
   return (
-    <View key={undoKey} style={styles.modalBody}>
+    <View style={styles.modalBody}>
       <Text style={styles.lede}>
         The Hope Die shows {value}: clear {total} in total, split between Hit Points and Stress.
       </Text>
@@ -314,16 +314,17 @@ function SplitRiskItAll({
         Stress to clear: {stressClear}
       </Text>
       <Button
-        disabled={!writes}
+        disabled={!writes || resolve.pending}
         onPress={() =>
-          void resolve({ characterId, hp: hpClear, stress: stressClear, idempotencyKey: Crypto.randomUUID() }).then((r) => {
-            if (r) onDone(`Cleared ${hpClear} Hit Points and ${stressClear} Stress.`);
+          void resolve.fire({ characterId, hp: hpClear, stress: stressClear }).then((r) => {
+            if (r !== undefined) onDone(`Cleared ${hpClear} Hit Points and ${stressClear} Stress.`);
           })
         }
         variant="solid"
       >
         Clear them
       </Button>
+      <ErrorLine message={resolve.error} />
     </View>
   );
 }

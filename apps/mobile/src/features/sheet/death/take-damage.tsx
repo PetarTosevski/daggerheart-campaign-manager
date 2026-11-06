@@ -1,10 +1,7 @@
 import { useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
-import { useMutation } from "convex/react";
-import * as Crypto from "expo-crypto";
 
 import { hitPointsToMark, type Severity, type Thresholds } from "../../../../../../src/lib/domain/characters";
-import { errorMessage } from "../../../../../../src/lib/convex-errors";
 import { api } from "../../../convex";
 import { useWritesEnabled } from "../../../shell/offline";
 import { colors } from "../../../theme/colors";
@@ -13,6 +10,7 @@ import { radius, space } from "../../../theme/spacing";
 import { Button } from "../../../ui/button";
 import { defenseOf, thresholdsOf } from "../catalog";
 import type { SheetSlotProps } from "../contract";
+import { useIntent } from "../intent";
 
 type DamagePlan = { severity: Severity; marks: number; armorUsed: boolean };
 
@@ -30,43 +28,36 @@ function planDamage(damage: number, thresholds: Thresholds, useArmorSlot: boolea
   return { ...result, armorUsed };
 }
 
-/** Manual damage entry (`characters.applyDamage`), matching the website calculator. */
-export function TakeDamage({ character }: Pick<SheetSlotProps, "character">) {
-  const applyDamage = useMutation(api.characters.applyDamage);
+/**
+ * Manual damage entry (`characters.applyDamage`), matching the website calculator. `augments`: the Motherboard
+ * augments installed in the character's Ikonis (`characterExtras.get`), which the server counts into the Armor Score
+ * (`derivedDefense(sheet, installedAugments)` in `characters.applyDamage`), so "Use an Armor Slot" offers the same slots.
+ */
+export function TakeDamage({ character, augments = [] }: Pick<SheetSlotProps, "character"> & { augments?: readonly string[] }) {
+  const applyDamage = useIntent(api.characters.applyDamage);
   const writes = useWritesEnabled();
   const sheet = character.sheet;
   const thresholds = thresholdsOf(sheet);
-  const armorScore = defenseOf(sheet).armorScore;
+  const armorScore = defenseOf(sheet, augments).armorScore;
   const armorFree = Math.max(0, armorScore - sheet.armorMarked);
   const [raw, setRaw] = useState("");
   const [useArmor, setUseArmor] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const busy = applyDamage.pending;
+  const error = applyDamage.error;
   const damage = Number.parseInt(raw, 10);
   const valid = Number.isFinite(damage) && damage > 0;
   const plan = valid ? planDamage(damage, thresholds, useArmor, armorFree) : null;
 
   async function apply() {
     if (!plan || !writes) return;
-    setBusy(true);
-    setError(null);
     setOutcome(null);
-    try {
-      await applyDamage({
-        characterId: character._id,
-        damage,
-        useArmorSlot: plan.armorUsed,
-        idempotencyKey: Crypto.randomUUID(),
-      });
-      setOutcome(`${SEVERITY_LABEL[plan.severity]}: ${plan.marks} Hit Point${plan.marks === 1 ? "" : "s"} marked.`);
-      setRaw("");
-      setUseArmor(false);
-    } catch (caught) {
-      setError(errorMessage(caught));
-    } finally {
-      setBusy(false);
-    }
+    const result = await applyDamage.fire({ characterId: character._id, damage, useArmorSlot: plan.armorUsed });
+    if (result === undefined) return;
+    // The server's answer, not the preview (it derives thresholds with the campaign's feature scope).
+    setOutcome(`${SEVERITY_LABEL[result.severity]}: ${result.marks} Hit Point${result.marks === 1 ? "" : "s"} marked.`);
+    setRaw("");
+    setUseArmor(false);
   }
 
   return (

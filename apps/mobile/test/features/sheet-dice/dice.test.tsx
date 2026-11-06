@@ -8,8 +8,7 @@ import { resetMotionTest } from "../../theme/mock-reanimated";
 import { api, type Id } from "../../../src/convex";
 import { DiceSlot } from "../../../src/features/sheet/dice";
 import type { SheetSlotProps } from "../../../src/features/sheet/contract";
-import { readCharacter } from "../../../src/features/sheet/types";
-import { characterRecord } from "../party/fixture";
+import { characterRecord, asSheetCharacter } from "../party/fixture";
 
 jest.mock("expo-crypto", () => {
   let keys = 0;
@@ -37,7 +36,7 @@ function slotProps(overrides?: Partial<SheetSlotProps> & { sheetPatch?: Record<s
   if (overrides?.sheetPatch) {
     base.sheet = { ...base.sheet, ...overrides.sheetPatch };
   }
-  let character = readCharacter(base);
+  let character = asSheetCharacter(base);
   if (!character) throw new Error("fixture");
   if (overrides?.sheetPatch) {
     character = { ...character, sheet: { ...character.sheet, ...overrides.sheetPatch } };

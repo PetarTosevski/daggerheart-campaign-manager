@@ -83,15 +83,14 @@ export function RosterCard({
       <Button onPress={onOpen} variant="outline">
         Open character sheet
       </Button>
-      {canEdit || isGm ? (
-        <PortraitControl
-          canEdit={canEdit}
-          characterId={character._id}
-          hasPortrait={character.portraitUrl !== null}
-          name={sheet.name}
-          portraitUrl={character.portraitUrl}
-        />
-      ) : null}
+      <PortraitControl
+        canEdit={canEdit}
+        characterId={character._id}
+        hasPortrait={character.portraitUrl !== null}
+        name={sheet.name}
+        portrait={sheet.portrait}
+        portraitUrl={character.portraitUrl}
+      />
       {canEdit && !dead ? (
         <Button
           accessibilityLabel={`Kill ${sheet.name}`}

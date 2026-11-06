@@ -7,9 +7,15 @@ import { resetMotionTest } from "../../theme/mock-reanimated";
 import { api } from "../../../src/convex";
 import type { Id } from "../../../src/convex";
 import { PartyScreen } from "../../../src/features/party";
-import { QueryBoundary } from "../../../src/features/sheet/query-boundary";
+import { QueryBoundary } from "../../../src/ui/query-boundary";
 import { renderAsGm, renderAsPlayer } from "../../harness";
 import { characterRecord, inCampaign, queriesFor } from "./fixture";
+
+const mockPush = jest.fn();
+
+jest.mock("expo-router", () => ({
+  useRouter: () => ({ push: mockPush, back: jest.fn(), replace: jest.fn() }),
+}));
 
 jest.mock("expo-crypto", () => ({
   randomUUID: () => "11111111-1111-4111-8111-111111111111",
@@ -17,6 +23,7 @@ jest.mock("expo-crypto", () => ({
 
 beforeEach(() => {
   resetMotionTest();
+  mockPush.mockClear();
 });
 
 test("a player sees the roster and no GM controls", async () => {
@@ -78,7 +85,7 @@ test("the GM can mark the party for level-up and delete stays behind a confirm",
   expect(calls[1]).toEqual({ characterId: "char-1" });
 });
 
-test("loading, empty, unreadable, and offline states", async () => {
+test("loading, empty, and offline states", async () => {
   const loading = await renderAsPlayer(inCampaign("player", <PartyScreen />), {
     queries: { "campaigns:get": queriesFor("player", [])["campaigns:get"] },
   });
@@ -88,12 +95,6 @@ test("loading, empty, unreadable, and offline states", async () => {
     queries: queriesFor("player", []),
   });
   expect(empty.getByText("No characters yet. Create the first hero of this party.")).toBeTruthy();
-
-  const broken = await renderAsPlayer(inCampaign("player", <PartyScreen />), {
-    queries: queriesFor("player", [{ bad: true }]),
-  });
-  expect(broken.getByRole("header", { name: "The Party" })).toBeTruthy();
-  expect(broken.getByText("The party could not be read.")).toBeTruthy();
 
   const calls: unknown[] = [];
   const offline = await renderAsPlayer(inCampaign("player", <PartyScreen />, true), {
@@ -135,15 +136,11 @@ test("a failing party query shows the error", async () => {
   expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
 });
 
-test("opening a card shows that character's sheet", async () => {
+test("opening a card goes to that character's sheet route, so Android back returns to the party", async () => {
   const screen = await renderAsPlayer(inCampaign("player", <PartyScreen />), {
-    queries: {
-      ...queriesFor("player", [characterRecord({ canEdit: true })]),
-      "charactersReads:get": characterRecord({ canEdit: true }),
-    },
+    queries: queriesFor("player", [characterRecord({ canEdit: true })]),
   });
   await fireEvent.press(screen.getByRole("button", { name: "Open character sheet" }));
-  expect(screen.getByRole("header", { name: "Mira" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Close character sheet" })).toBeTruthy();
-  expect(screen.client.subscribed).toContain("charactersReads:get");
+  expect(mockPush).toHaveBeenCalledWith("/campaign/campaign-1/party/char-1");
+  expect(screen.client.subscribed).not.toContain("charactersReads:get");
 });

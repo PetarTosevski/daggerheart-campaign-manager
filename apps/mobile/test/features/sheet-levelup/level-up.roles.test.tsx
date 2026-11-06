@@ -77,11 +77,12 @@ function pendingCharacter(overrides: Record<string, unknown> = {}): SheetCharact
   const sheet = readSheet(sheetBlob(overrides));
   return {
     _id: "char-1" as Id<"characters">,
-    ownerId: "player-1",
+    ownerId: "player-1" as Id<"users">,
     status: "active",
     mine: true,
     canEdit: true,
     portraitUrl: null,
+    updatedAt: 1,
     sheet: sheet as unknown as SheetCharacter["sheet"],
   };
 }

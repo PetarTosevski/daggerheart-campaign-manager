@@ -25,6 +25,7 @@ export function Stepper({
   max,
   readOnly,
   detail,
+  canIncrease,
   onStep,
 }: {
   label: string;
@@ -33,6 +34,8 @@ export function Stepper({
   max: number;
   readOnly: boolean;
   detail?: string;
+  /** Overrides `value < max` for +: Stress at full can still be marked when the extra lands on a Hit Point. */
+  canIncrease?: boolean;
   onStep: (delta: number) => void;
 }) {
   const writes = useWritesEnabled();
@@ -57,7 +60,7 @@ export function Stepper({
           </Button>
           <Button
             accessibilityLabel={`Increase ${label}`}
-            disabled={!writes || value >= max}
+            disabled={!writes || !(canIncrease ?? value < max)}
             onPress={() => onStep(1)}
             variant="outline"
           >

@@ -1,7 +1,12 @@
 // Pure state and gating for the character creation wizard (Party board, Core ch. 1).
-// No React: unit-tested in tests/unit/wizard-logic.test.ts.
+// No React. The website's version is src/app/(gm)/campaigns/[campaignId]/party/new/wizard-logic.ts; it imports through
+// "@/lib", which the phone can't resolve, so this file stays a parallel copy until that model moves into src/lib
+// (dcm-gdzi.23). Rules come from src/lib: thresholds and defense through the sheet's `derivedThresholds` /
+// `derivedDefense`, Purposeful Design through `holdsPurposefulDesign`, shared cards through `sharedCardNote`.
 
-import { TRAIT_POOL } from "../../../../../../src/lib/domain/characters";
+import { cardHolders, sharedCardNote, TRAIT_POOL, type SharedCardsMode } from "../../../../../../src/lib/domain/characters";
+import { derivedDefense, derivedThresholds } from "../../../../../../src/lib/domain/characters/derived";
+import { holdsPurposefulDesign } from "../../../../../../src/lib/domain/dice";
 import {
   ANCESTRIES,
   ARMOR,
@@ -16,9 +21,7 @@ import {
   getClass,
   getStartingSuggestion,
   getSubclass,
-  getWeapon,
   type ClassDef,
-  type Feature,
   type Source,
   type TraitId,
 } from "../../../../../../src/lib/srd";
@@ -75,6 +78,8 @@ export type WizardState = {
   classItem: string | null;
   background: string[];
   experiences: [string, string];
+  /** Purposeful Design (Clank, CB p.53, DA11): which of the two Experiences gets the permanent +1; null = not chosen. */
+  purposefulExperience: 0 | 1 | null;
   domainCards: string[];
   connections: string[];
   /** GM only: who the character belongs to (a user id); null = the GM. */
@@ -108,6 +113,7 @@ export const emptyWizard = (): WizardState => ({
   classItem: null,
   background: [],
   experiences: ["", ""],
+  purposefulExperience: null,
   domainCards: [],
   connections: [],
   ownerId: null,
@@ -157,6 +163,7 @@ export function restoreWizard(raw: unknown): WizardState {
     classItem: str(r.classItem),
     background: strings(r.background),
     experiences: [exps[0] ?? "", exps[1] ?? ""],
+    purposefulExperience: r.purposefulExperience === 0 || r.purposefulExperience === 1 ? r.purposefulExperience : null,
     domainCards: strings(r.domainCards),
     connections: strings(r.connections),
     ownerId: str(r.ownerId),
@@ -261,6 +268,8 @@ export function normalizeWizard(state: WizardState, opts: WizardOptions): Wizard
     classItem: state.classItem && items.includes(state.classItem) ? state.classItem : null,
     domainCards: [...new Set(state.domainCards.filter((id) => cardIds.has(id)))].slice(0, 2),
   };
+  // The Purposeful Design pick only while the ancestry gives the feature (a Clank, or a mixed ancestry through `owned`).
+  if (next.purposefulExperience !== null && !hasPurposefulDesign(next, opts)) next.purposefulExperience = null;
   const portraitOk = state.portrait === null || state.portrait === "none" || portraitOptions(next).some((p) => p.key === state.portrait);
   return portraitOk ? next : { ...next, portrait: null };
 }
@@ -302,10 +311,41 @@ export function missingByStep(s: WizardState, opts?: WizardOptions): Record<numb
       classItemsFor(cls).length > 0 && !s.classItem && "a class item",
     ),
     6: [],
-    7: list(!has(s.experiences[0]) && "a first Experience", !has(s.experiences[1]) && "a second Experience"),
+    7: list(
+      !has(s.experiences[0]) && "a first Experience",
+      !has(s.experiences[1]) && "a second Experience",
+      s.purposefulExperience === null && hasPurposefulDesign(s, opts) && "an Experience for Purposeful Design",
+    ),
     8: list(left > 0 && `${left} more domain card${left === 1 ? "" : "s"}`),
     9: [],
   };
+}
+
+/** Who holds which card, from `charactersReads.listByCampaign` (vault and loadout); empty under `allow`. */
+export function partyCardHolders(
+  mode: SharedCardsMode,
+  party: readonly { _id: string; sheet: { name: string; domainCards: { owned: readonly string[]; loadout: readonly string[] } } }[],
+): ReadonlyMap<string, readonly string[]> {
+  if (mode === "allow") return new Map();
+  return cardHolders(party.map((row) => ({ id: row._id, name: row.sheet.name, cards: [...row.sheet.domainCards.owned, ...row.sheet.domainCards.loadout] })));
+}
+
+/**
+ * Shared domain cards under Refuse (CB p.21, plan rule-switches OSC): one "still needed" line per pick another character
+ * holds. Allow and Warn add nothing (Warn only notes the card, `sharedCardNote`).
+ */
+export function refusedCardsMissing(
+  picks: readonly string[],
+  mode: SharedCardsMode,
+  holders: ReadonlyMap<string, readonly string[]>,
+  nameOf: (cardId: string) => string,
+): string[] {
+  if (mode !== "refuse") return [];
+  const out: string[] = [];
+  for (const id of picks) {
+    if (sharedCardNote(mode, holders, id) !== null) out.push(`a card nobody else holds instead of ${nameOf(id)}`);
+  }
+  return out;
 }
 
 /** "Still needed: a, b and c", or "" when nothing is missing. */
@@ -378,26 +418,29 @@ export function suggestedLoadout(state: WizardState, opts: WizardOptions) {
   return { primaryWeaponId: primary.id, secondaryWeaponId: secondary?.id ?? null, armorId: armor?.id ?? null };
 }
 
-const featureMod = (feature: Feature | null | undefined, stat: "Evasion" | "Armor Score") => {
-  if (!feature) return 0;
-  let total = 0;
-  for (const m of feature.text.matchAll(new RegExp(`([+\\-−]\\d+) to ${stat}`, "g"))) {
-    total += parseInt(m[1].replace("−", "-"), 10);
-  }
-  return total;
-};
-
-/** Board's gear summary: Evasion and Armor Score with equipment features applied. */
+/**
+ * The gear summary at level 1: Evasion, Armor Score and damage thresholds as the sheet will show them, through the
+ * sheet's own `derivedDefense` / `derivedThresholds` (equipment modifiers, thresholds with the level added: 6 / 12 for
+ * Gambeson at level 1, CB p.90).
+ */
 export function gearSummary(state: WizardState) {
   const cls = state.classId ? getClass(state.classId) : undefined;
-  const primary = state.primaryWeaponId ? getWeapon(state.primaryWeaponId) : undefined;
-  const secondary = state.secondaryWeaponId ? getWeapon(state.secondaryWeaponId) : undefined;
-  const armor = state.armorId ? getArmor(state.armorId) : undefined;
-  const gear = [primary?.feature, secondary?.feature, armor?.feature];
-  const evasion = (cls?.startingEvasion ?? 10) + gear.reduce((n, f) => n + featureMod(f, "Evasion"), 0);
-  const armorScore = armor ? armor.baseScore + gear.reduce((n, f) => n + featureMod(f, "Armor Score"), 0) : null;
-  const parts = [`Evasion ${evasion}`];
-  if (armor) parts.push(`Armor Score ${armorScore}`, `Thresholds ${armor.baseThresholds.major} / ${armor.baseThresholds.severe}`);
+  const atLevel1 = {
+    level: 1,
+    proficiency: 1,
+    evasion: cls?.startingEvasion ?? 10,
+    classId: state.classId ?? "",
+    subclassId: state.subclassId ?? "",
+    primaryWeaponId: state.primaryWeaponId ?? "",
+    secondaryWeaponId: state.secondaryWeaponId ?? undefined,
+    armorId: state.armorId ?? undefined,
+  };
+  const defense = derivedDefense(atLevel1);
+  const parts = [`Evasion ${defense.evasion}`];
+  if (state.armorId && getArmor(state.armorId)) {
+    const thresholds = derivedThresholds(atLevel1);
+    parts.push(`Armor Score ${defense.armorScore}`, `Thresholds ${thresholds.major} / ${thresholds.severe}`);
+  }
   parts.push("Proficiency 1");
   return parts.join(" · ");
 }
@@ -424,14 +467,22 @@ export function portraitOptions(state: WizardState) {
   return keys;
 }
 
+/** The ancestry the draft will send. */
+function ancestryOf(s: WizardState): CharacterDraft["ancestry"] {
+  if (s.ancestryMode === "mixed") return { kind: "mixed", first: s.mixedFirst ?? "", second: s.mixedSecond ?? "", name: s.mixedName.trim() };
+  if (s.ancestryMode === "shapeshifter") return { kind: "shapeshifter", form: s.shapeForm ?? "", feature: s.shapeFeature ?? "" };
+  return { kind: "single", id: s.ancestryId ?? "" };
+}
+
+/** Whether the chosen ancestry gives Purposeful Design (Clank, CB p.53), read through `owned` (mixed ancestries, CB p.71). */
+export function hasPurposefulDesign(s: WizardState, opts?: WizardOptions): boolean {
+  if (s.ancestryMode === null) return false;
+  return holdsPurposefulDesign(ancestryOf(s), { hopeAndFear: opts?.hopeAndFear ?? true });
+}
+
 /** Builds the server draft from a complete, normalized state. */
-export function toCharacterDraft(s: WizardState, portrait: string | null): CharacterDraft {
-  const ancestry: CharacterDraft["ancestry"] =
-    s.ancestryMode === "mixed"
-      ? { kind: "mixed", first: s.mixedFirst ?? "", second: s.mixedSecond ?? "", name: s.mixedName.trim() }
-      : s.ancestryMode === "shapeshifter"
-        ? { kind: "shapeshifter", form: s.shapeForm ?? "", feature: s.shapeFeature ?? "" }
-        : { kind: "single", id: s.ancestryId ?? "" };
+export function toCharacterDraft(s: WizardState, portrait: string | null, opts?: WizardOptions): CharacterDraft {
+  const ancestry = ancestryOf(s);
   const answers = (list: string[]) => list.map((x) => x.trim());
   return {
     classId: s.classId ?? "",
@@ -451,6 +502,8 @@ export function toCharacterDraft(s: WizardState, portrait: string | null): Chara
     classItem: s.classItem ?? "",
     background: answers(s.background),
     experiences: [s.experiences[0].trim(), s.experiences[1].trim()],
+    // Sent only for a character with Purposeful Design, so other drafts are unchanged (DA11).
+    ...(s.purposefulExperience !== null && hasPurposefulDesign(s, opts) ? { purposefulExperience: s.purposefulExperience } : {}),
     domainCards: [...s.domainCards],
     connections: answers(s.connections),
     ...(portrait ? { portrait: { kind: "asset" as const, asset: portrait } } : {}),

@@ -9,7 +9,7 @@ import { space } from "../../../theme/spacing";
 import { Button } from "../../../ui/button";
 import type { SheetSlotProps } from "../contract";
 
-import { useIntent } from "../../trackers/intent";
+import { useIntent } from "../intent";
 import { useLevelUpDraft } from "./draft";
 import { canLevelUp, fullSheet } from "./shared";
 

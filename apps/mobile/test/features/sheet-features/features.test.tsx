@@ -1,6 +1,6 @@
 import { webcrypto } from "node:crypto";
 
-import { beforeEach, expect, test } from "@jest/globals";
+import { beforeEach, expect, jest, test } from "@jest/globals";
 import { fireEvent } from "@testing-library/react-native";
 import { useMutation } from "convex/react";
 
@@ -11,11 +11,16 @@ import { api } from "../../../src/convex";
 import { FeaturesSlot } from "../../../src/features/sheet/features";
 import type { SheetSlotProps } from "../../../src/features/sheet/contract";
 import type { SheetCharacter } from "../../../src/features/sheet/types";
-import { readCharacter } from "../../../src/features/sheet/types";
+import { asSheetCharacter } from "../party/fixture";
 import type { ReactElement } from "react";
 
 import { CampaignProvider, CampaignScreen } from "../../../src/shell/campaign-provider";
 import { OfflineFrame } from "../../../src/shell/offline";
+
+jest.mock("expo-crypto", () => ({
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  randomUUID: () => (require("node:crypto") as typeof import("node:crypto")).randomUUID(),
+}));
 
 beforeEach(() => {
   resetMotionTest();
@@ -32,7 +37,7 @@ function expectNoGm(screen: Awaited<ReturnType<typeof renderAsPlayer>>) {
 }
 
 function moonCharacter(overrides: Record<string, unknown> = {}): SheetCharacter {
-  const base = readCharacter({
+  const base = asSheetCharacter({
     _id: "char-moon",
     ownerId: "player-1",
     status: "active",
@@ -117,7 +122,7 @@ test("a player render fails when it calls a GM-only function", async () => {
 });
 
 test("a warrior on Witherwild does not subscribe to character extras", async () => {
-  const character = readCharacter({
+  const character = asSheetCharacter({
     _id: "char-1",
     ownerId: "player-1",
     status: "active",
@@ -219,7 +224,7 @@ test("lunar phases show for a Moon Witch at mastery and bump the moon die", asyn
 });
 
 test("session chips show Slayer dice for a Slayer holder", async () => {
-  const character = readCharacter({
+  const character = asSheetCharacter({
     _id: "char-slayer",
     ownerId: "player-1",
     status: "active",
@@ -289,7 +294,7 @@ test("session chips show Slayer dice for a Slayer holder", async () => {
 });
 
 test("a druid opens the Beastform sheet from class extras", async () => {
-  const character = readCharacter({
+  const character = asSheetCharacter({
     _id: "char-druid",
     ownerId: "player-1",
     status: "active",

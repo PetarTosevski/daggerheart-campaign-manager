@@ -1,5 +1,8 @@
 import type { ReactElement } from "react";
 
+import { characterSheetSchema } from "../../../../../src/lib/validation/characters";
+import type { SheetCharacter } from "../../../src/features/sheet/types";
+
 import { CampaignProvider, CampaignScreen } from "../../../src/shell/campaign-provider";
 import { OfflineFrame } from "../../../src/shell/offline";
 
@@ -69,6 +72,25 @@ export function characterRecord(overrides: { canEdit: boolean; mine?: boolean; s
       notes: "Keep the sword close.",
     },
   };
+}
+
+/**
+ * `characterRecord` as the typed `charactersReads.get` view the sheet reads: the sheet goes through the website's
+ * `characterSheetSchema`, so every defaulted field is filled like a stored sheet.
+ */
+export function sheetCharacter(
+  overrides: Parameters<typeof characterRecord>[0],
+  sheet: Record<string, unknown> = {},
+  extra: Record<string, unknown> = {},
+): SheetCharacter {
+  const record = characterRecord(overrides);
+  return asSheetCharacter({ ...record, ...extra, sheet: { ...record.sheet, ...sheet } });
+}
+
+/** Any character-like record as the typed view (the sheet through `characterSheetSchema`, so defaults are filled). */
+export function asSheetCharacter(record: { sheet: Record<string, unknown> } & Record<string, unknown>): SheetCharacter {
+  const parsed = characterSheetSchema.parse({ secondaryWeaponId: "", ...record.sheet });
+  return { updatedAt: 1, ...record, sheet: parsed } as unknown as SheetCharacter;
 }
 
 export const tableRecord = {

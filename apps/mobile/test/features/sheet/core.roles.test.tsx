@@ -7,10 +7,10 @@ import { resetMotionTest } from "../../theme/mock-reanimated";
 import { api } from "../../../src/convex";
 import type { Id } from "../../../src/convex";
 import { CharacterSheet } from "../../../src/features/sheet";
-import { QueryBoundary } from "../../../src/features/sheet/query-boundary";
-import { readCharacter } from "../../../src/features/sheet/types";
+import { QueryBoundary } from "../../../src/ui/query-boundary";
 import { fn, renderAsGm, renderAsPlayer } from "../../harness";
-import { campaignRecord, characterRecord, inCampaign } from "../party/fixture";
+import { campaignRecord, characterRecord, inCampaign, sheetCharacter } from "../party/fixture";
+import { canMarkStress, stepResource, stepTrait } from "../../../src/features/sheet/optimistic";
 
 jest.mock("expo-crypto", () => ({
   randomUUID: () => "00000000-0000-4000-8000-000000000001",
@@ -20,31 +20,31 @@ beforeEach(() => {
   resetMotionTest();
 });
 
-test("readCharacter keeps session and play fields for dice and lunar panels", () => {
-  const character = readCharacter({
-    ...characterRecord({ canEdit: true }),
-    sheet: {
-      ...characterRecord({ canEdit: true }).sheet,
-      sessionFeatures: { moonDie: 3, slayerDice: 1 },
-      featureUses: [{ key: "lunar:bump", until: "rest" }],
-      conditions: ["unconscious"],
-    },
-  });
-  expect(character?.sheet.sessionFeatures).toEqual({ moonDie: 3, slayerDice: 1 });
-  expect(character?.sheet.featureUses).toEqual([{ key: "lunar:bump", until: "rest" }]);
-  expect(character?.sheet.conditions).toEqual(["unconscious"]);
+test("a step moves the sheet at once with the shared rules: Stress past full marks a Hit Point unless D4 is Manual", () => {
+  const full = sheetCharacter({ canEdit: true }, { stress: 6, hp: 2 });
+  const book = stepResource(full, "stress", 1, {}, 3);
+  expect(book.sheet.stress).toBe(6);
+  expect(book.sheet.hp).toBe(3);
+  const manual = stepResource(full, "stress", 1, { stressOverflow: "manual" }, 3);
+  expect(manual.sheet.hp).toBe(2);
+  expect(canMarkStress(full.sheet, {})).toBe(true);
+  expect(canMarkStress(full.sheet, { stressOverflow: "manual" })).toBe(false);
+  expect(stepResource(full, "armor", 5, {}, 3).sheet.armorMarked).toBe(3);
+  expect(stepResource(full, "hope", 9, {}, 3).sheet.hope).toBe(6);
+  expect(stepTrait(full, "agility", 20).sheet.traits.agility).toBe(10);
 });
 
-function sheetQueries(role: "gm" | "player", character: unknown) {
+function sheetQueries(role: "gm" | "player", character: unknown, stressOverflow: "book" | "manual" = "book") {
   return {
     [fn(api.campaigns.get)]: campaignRecord(role),
     [fn(api.charactersReads.get)]: character,
+    [fn(api.ruleSettings.get)]: { modes: { stressOverflow, fullStressVulnerable: "book" }, locked: false, canEdit: role === "gm" },
   };
 }
 
 test("a reader sees the sheet and no steppers", async () => {
   const screen = await renderAsPlayer(inCampaign("player", <CharacterSheet characterId="char-1" />), {
-    queries: sheetQueries("player", characterRecord({ canEdit: false, mine: false })),
+    queries: sheetQueries("player", sheetCharacter({ canEdit: false, mine: false })),
   });
   expect(screen.getByRole("header", { name: "Mira" })).toBeTruthy();
   expect(screen.getByText("Warrior · Call of the Brave · Level 1")).toBeTruthy();
@@ -56,7 +56,7 @@ test("a reader sees the sheet and no steppers", async () => {
   expect(screen.queryByRole("button", { name: "Decrease Hit Points" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Increase Agility" })).toBeNull();
   expect(screen.queryByLabelText("Name")).toBeNull();
-  expect(screen.client.subscribed).toEqual([fn(api.campaigns.get), fn(api.charactersReads.get)]);
+  expect(screen.client.subscribed).toEqual([fn(api.campaigns.get), fn(api.charactersReads.get), fn(api.ruleSettings.get)]);
   expect(screen.client.subscribed).not.toContain(fn(api.restsReads.current));
 });
 
@@ -79,8 +79,29 @@ test("an editor sends a resource delta, and a second tap sends another", async (
     { characterId: "char-1", resource: "hope", delta: 1 },
     { characterId: "char-1", resource: "hope", delta: 1 },
   ]);
-  expect(screen.getByLabelText("Hope 4 of 6")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Increase Agility" })).toBeNull();
+});
+
+test("Stress at full: + marks a Hit Point under the Book, and is off under D4 Manual", async () => {
+  const calls: unknown[] = [];
+  const full = sheetCharacter({ canEdit: true }, { stress: 6 });
+  const book = await renderAsPlayer(inCampaign("player", <CharacterSheet characterId="char-1" />), {
+    queries: sheetQueries("player", full),
+    mutations: {
+      [fn(api.characters.adjustResource)]: (args) => {
+        calls.push(args);
+        return { hp: 3, stress: 6, hope: 2, armorMarked: 0, scars: 0 };
+      },
+    },
+  });
+  expect(book.getByLabelText("Stress 6 of 6, full: one more marks a Hit Point")).toBeTruthy();
+  await fireEvent.press(book.getByRole("button", { name: "Increase Stress" }));
+  expect(calls).toEqual([{ characterId: "char-1", resource: "stress", delta: 1 }]);
+
+  const manual = await renderAsPlayer(inCampaign("player", <CharacterSheet characterId="char-1" />), {
+    queries: sheetQueries("player", full, "manual"),
+  });
+  expect(manual.getByRole("button", { name: "Increase Stress" }).props.accessibilityState).toEqual({ disabled: true });
 });
 
 test("the GM can correct a trait; a player editor cannot", async () => {
@@ -88,19 +109,15 @@ test("the GM can correct a trait; a player editor cannot", async () => {
   const gm = await renderAsGm(inCampaign("gm", <CharacterSheet characterId="char-1" />), {
     queries: sheetQueries("gm", characterRecord({ canEdit: true })),
     mutations: {
-      [fn(api.characters.updateSheet)]: (args) => {
+      [fn(api.characters.setTrait)]: (args) => {
         calls.push(args);
         return null;
       },
     },
   });
   await fireEvent.press(gm.getByRole("button", { name: "Increase Agility" }));
-  expect(calls[0]).toEqual({
-    characterId: "char-1",
-    patch: {
-      traits: { agility: 3, strength: 1, finesse: 1, instinct: 0, presence: 0, knowledge: -1 },
-    },
-  });
+  // One trait by a delta (rule 12), never the whole traits object.
+  expect(calls[0]).toEqual({ characterId: "char-1", trait: "agility", delta: 1 });
 
   const player = await renderAsPlayer(inCampaign("player", <CharacterSheet characterId="char-1" />), {
     queries: sheetQueries("player", characterRecord({ canEdit: true })),

@@ -3,12 +3,15 @@ import { Text, TextInput, View } from "react-native";
 import { TRAIT_LABEL, traitIdSchema } from "../../../../../../src/lib/frames/extras/common";
 import { IKONIS_RANGES, IKONIS_TRAINING_CLASS_ID } from "../../../../../../src/lib/frames/extras/motherboard";
 import { EXPERIENCE_SUGGESTIONS, getClass, getDomain, getSubclass, getWeapon, type Armor, type Weapon } from "../../../../../../src/lib/srd";
+import { sharedCardNote, STARTING_EXPERIENCE_VALUE } from "../../../../../../src/lib/domain/characters";
+import { PURPOSEFUL_DESIGN_BONUS } from "../../../../../../src/lib/domain/dice";
 
 import {
   armorFor,
   classItemsFor,
   domainCardOptions,
   gearSummary,
+  hasPurposefulDesign,
   POTIONS,
   primaryWeaponsFor,
   secondaryWeaponsFor,
@@ -282,9 +285,12 @@ export function ConnectionsStep({ state, update }: BaseStepProps) {
   );
 }
 
-export function ExperiencesStep({ state, update }: BaseStepProps) {
+export function ExperiencesStep({ state, update, opts }: BaseStepProps) {
   const [a, b] = state.experiences;
   const chosen = [a.trim(), b.trim()];
+  // Purposeful Design (Clank, CB p.53, DA11): the chosen Experience shows its permanent +1.
+  const purposeful = hasPurposefulDesign(state, opts);
+  const modifier = (i: 0 | 1) => STARTING_EXPERIENCE_VALUE + (purposeful && state.purposefulExperience === i ? PURPOSEFUL_DESIGN_BONUS : 0);
   return (
     <View style={{ gap: 16 }}>
       <Text style={s.lead}>Choose two Experiences at +2.</Text>
@@ -299,6 +305,9 @@ export function ExperiencesStep({ state, update }: BaseStepProps) {
         style={s.input}
         value={a}
       />
+      <Text accessibilityLabel={`First Experience modifier +${modifier(0)}`} style={s.hint}>
+        +{modifier(0)}
+      </Text>
       <Text accessibilityLabel="Second Experience" style={s.label}>
         Second Experience
       </Text>
@@ -310,6 +319,25 @@ export function ExperiencesStep({ state, update }: BaseStepProps) {
         style={s.input}
         value={b}
       />
+      <Text accessibilityLabel={`Second Experience modifier +${modifier(1)}`} style={s.hint}>
+        +{modifier(1)}
+      </Text>
+      {purposeful ? (
+        <Group legend="Purposeful Design · +1 to the Experience that best aligns with your purpose">
+          <View style={s.chipRow}>
+            {([0, 1] as const).map((i) => (
+              <Choice
+                checked={state.purposefulExperience === i}
+                key={i}
+                label={`Purposeful Design: ${chosen[i] || `Experience ${i + 1}`}`}
+                onPress={() => update({ purposefulExperience: i })}
+              >
+                <Text>{chosen[i] || `Experience ${i + 1}`}</Text>
+              </Choice>
+            ))}
+          </View>
+        </Group>
+      ) : null}
       {EXPERIENCE_SUGGESTIONS.map((group) => (
         <View key={group.category} style={{ gap: 8 }}>
           <Text style={s.label}>{group.category}</Text>
@@ -332,7 +360,7 @@ export function ExperiencesStep({ state, update }: BaseStepProps) {
   );
 }
 
-export function DomainCardsStep({ state, update, opts }: BaseStepProps) {
+export function DomainCardsStep({ state, update, opts, shared }: BaseStepProps) {
   const picks = state.domainCards;
   return (
     <View style={{ gap: 16 }}>
@@ -342,7 +370,10 @@ export function DomainCardsStep({ state, update, opts }: BaseStepProps) {
       </Text>
       {domainCardOptions(state.classId, opts).map((card) => {
         const on = picks.includes(card.id);
-        const full = !on && picks.length >= 2;
+        // Shared domain cards (CB p.21, rule-switches OSC): Warn notes the card; Refuse also keeps it from being chosen.
+        const note = shared ? sharedCardNote(shared.mode, shared.holders, card.id) : null;
+        const refused = note !== null && shared?.mode === "refuse";
+        const full = !on && (picks.length >= 2 || refused);
         const domain = getDomain(card.domain);
         return (
           <View key={card.id} style={[s.choice, full && { opacity: 0.5 }]}>
@@ -351,10 +382,15 @@ export function DomainCardsStep({ state, update, opts }: BaseStepProps) {
               {domain?.name ?? card.domain} · Recall {card.recallCost}
             </Text>
             <Text style={s.lead}>{card.text}</Text>
+            {note !== null ? (
+              <Text style={refused ? s.error : s.hint} testID="shared-card-note">
+                {refused ? `${note}; this campaign doesn't share domain cards.` : `${note}.`}
+              </Text>
+            ) : null}
             <Choice
               checked={on}
               disabled={full}
-              label={`Choose ${card.name}`}
+              label={note ? `Choose ${card.name} (${note})` : `Choose ${card.name}`}
               onPress={() => update({ domainCards: toggleCard(picks, card.id) })}
               type="checkbox"
             >

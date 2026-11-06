@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type ComponentType } from "react";
 import { ScrollView, Text, View } from "react-native";
 
 import { FRAME_OF } from "../../../../../../src/lib/frames/extras/common";
+import { getDomainCard } from "../../../../../../src/lib/srd";
 import { api } from "../../../convex";
 import type { Id } from "../../../convex";
 import { useCampaign } from "../../../shell/campaign-provider";
@@ -11,7 +12,7 @@ import { useWritesEnabled } from "../../../shell/offline";
 import { Button } from "../../../ui/button";
 import { Loading } from "../../../ui/loading";
 import { useIntent } from "../../trackers/intent";
-import { loadWizardDraft, saveWizardDraft } from "./draft-storage";
+import { createDraftSaver, isTypedPatch, loadWizardDraft } from "./draft-storage";
 import { ClassStep, HeritageStep, InfoStep, TraitsStep } from "./steps-1-4";
 import { BackgroundStep, ConnectionsStep, DomainCardsStep, EquipmentStep, ExperiencesStep } from "./steps-5-9";
 import { wizardStyles as s } from "./styles";
@@ -21,14 +22,16 @@ import {
   incompleteSteps,
   missingByStep,
   normalizeWizard,
+  partyCardHolders,
   portraitAsset,
+  refusedCardsMissing,
   STEP_COUNT,
   STEP_TITLES,
   stillNeeded,
   toCharacterDraft,
   type WizardState,
 } from "./wizard-logic";
-import type { StepProps } from "./wizard-ui";
+import type { SharedCards, StepProps } from "./wizard-ui";
 
 const STEPS: ComponentType<StepProps>[] = [
   ClassStep,
@@ -52,26 +55,53 @@ export function CharacterWizard() {
   const opts = useMemo(() => ({ hopeAndFear: campaign.options.hopeAndFear, ikonis }), [campaign.options.hopeAndFear, ikonis]);
   const roster = useQuery(api.members.roster, isGm ? { campaignId } : "skip");
   const party = useQuery(api.charactersReads.listByCampaign, { campaignId });
+  const rules = useQuery(api.ruleSettings.get, { campaignId });
   const create = useIntent(api.characters.create);
+  const draft = useMemo(() => createDraftSaver(campaignId), [campaignId]);
 
   const [raw, setRaw] = useState<WizardState | null>(null);
   useEffect(() => {
-    void loadWizardDraft(campaignId).then(setRaw);
+    let live = true;
+    void loadWizardDraft(campaignId).then((loaded) => {
+      if (live) setRaw(loaded);
+    });
+    return () => {
+      live = false;
+    };
   }, [campaignId]);
+  // Leaving the screen writes a typed change that is still waiting for its pause.
+  useEffect(() => () => draft.flush(), [draft]);
 
   const state = useMemo(() => (raw ? normalizeWizard(raw, opts) : null), [raw, opts]);
-  const missing = useMemo(() => (state ? missingByStep(state, opts) : {}), [state, opts]);
+  // Shared domain cards (CB p.21, rule-switches OSC): Warn notes a card another character holds, Refuse holds step 8.
+  const mode = rules?.modes.sharedDomainCards;
+  const shared = useMemo<SharedCards | undefined>(
+    () => (mode === undefined || party === undefined ? undefined : { mode, holders: partyCardHolders(mode, party) }),
+    [mode, party],
+  );
+  const missing = useMemo(() => {
+    if (!state) return {};
+    const base = missingByStep(state, opts);
+    if (!shared) return base;
+    const refused = refusedCardsMissing(state.domainCards, shared.mode, shared.holders, (id) => getDomainCard(id)?.name ?? id);
+    return refused.length === 0 ? base : { ...base, 8: [...(base[8] ?? []), ...refused] };
+  }, [state, opts, shared]);
   const step = state?.step ?? 1;
-
-  useEffect(() => {
-    if (raw) void saveWizardDraft(campaignId, raw);
-  }, [campaignId, raw]);
 
   if (raw === null || state === null || party === undefined) {
     return <Loading label="Loading character creation" />;
   }
 
-  const update = (patch: Partial<WizardState>) => setRaw((prev) => (prev ? { ...normalizeWizard(prev, opts), ...patch } : prev));
+  // Saved from the change itself (rule 13): typing waits for a pause, a tap saves at once.
+  const update = (patch: Partial<WizardState>) => {
+    const next = { ...normalizeWizard(raw, opts), ...patch };
+    setRaw(next);
+    draft.save(next, { typed: isTypedPatch(patch) });
+  };
+  const startOver = () => {
+    setRaw(emptyWizard());
+    void draft.clear();
+  };
 
   const owners = roster
     ? [{ userId: roster.gm.userId, name: `${roster.gm.name} (you)` }, ...roster.players.map((p) => ({ userId: p.userId, name: p.name }))]
@@ -91,12 +121,12 @@ export function CharacterWizard() {
     if (!state || !allOk || blocker || create.pending || !writes) return;
     const result = await create.fire({
       campaignId,
-      draft: toCharacterDraft(state, portraitAsset(state)),
+      draft: toCharacterDraft(state, portraitAsset(state), opts),
       ...(ownerId ? { ownerId } : {}),
       ...(ikonis ? { ikonis: state.ikonis } : {}),
     });
     if (result) {
-      await saveWizardDraft(campaignId, null);
+      await draft.clear();
       router.replace(`/campaign/${campaignId}/party/${result.characterId}`);
     }
   }
@@ -117,7 +147,7 @@ export function CharacterWizard() {
         </Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
           {hasDraft ? (
-            <Button onPress={() => setRaw(emptyWizard())} variant="outline">
+            <Button onPress={startOver} variant="outline">
               Start over
             </Button>
           ) : null}
@@ -176,7 +206,7 @@ export function CharacterWizard() {
           })}
         </View>
 
-        <Step opts={opts} state={state} update={update} />
+        <Step opts={opts} shared={shared} state={state} update={update} />
 
         <View style={s.footer}>
           {step > 1 ? (

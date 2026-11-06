@@ -1,1 +1,1 @@
-export { useIntent } from "../../dashboard/intent";
+export { useIntent } from "../intent";

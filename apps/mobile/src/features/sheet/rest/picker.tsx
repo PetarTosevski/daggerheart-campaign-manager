@@ -19,7 +19,7 @@ import { radius, space } from "../../../theme/spacing";
 import { Button } from "../../../ui/button";
 import { Section } from "../chrome";
 import type { SheetCharacter } from "../types";
-import { readParty } from "../types";
+
 import { useIntent } from "./intent";
 
 type RestState = FunctionReturnType<typeof api.restsReads.current>;
@@ -38,11 +38,12 @@ export function RestPicker({
   open: OpenRest;
 }) {
   const choice = open.choices.find((item) => item.characterId === character._id);
-  const kindLabel = open.kind === "short" ? "Short rest" : "Long rest";
+  // Extended downtime (CB 181, rule F2) changes only the GM's Fear; the moves are a long rest's.
+  const kindLabel = open.kind === "short" ? "Short rest" : open.extended ? "Long rest (Extended downtime)" : "Long rest";
   const unavailable = character.status !== "active" ? character.status : null;
 
   const partyRaw = useQuery(api.charactersReads.listByCampaign, canEdit ? { campaignId } : "skip");
-  const party = canEdit ? readParty(partyRaw) : null;
+  const party = canEdit ? partyRaw : null;
   if (canEdit && party === undefined) {
     return (
       <Text accessibilityRole="status" style={styles.status}>
@@ -103,14 +104,15 @@ function MoveForm({
   const choose = useIntent(api.rests.choose);
   const projects = useQuery(api.restsReads.projects, kind === "long" ? { characterId: character._id } : "skip");
   const writes = useWritesEnabled();
-  const [picks, setPicks] = useState<Pick[]>(() =>
-    Array.from({ length: MOVES_PER_REST }, (_, index) => initial[index] ?? { move: moves[0] ?? "prepare" }),
-  );
-  const [saved, setSaved] = useState(initial.length > 0);
+  // The picks follow the saved choice (another device, the GM) until this form changes one (dcm-gdzi.26); saving
+  // hands them back to the server's.
+  const [edits, setEdits] = useState<Pick[] | null>(null);
+  const picks: Pick[] =
+    edits ?? Array.from({ length: MOVES_PER_REST }, (_, index) => initial[index] ?? { move: moves[0] ?? "prepare" });
+  const saved = edits === null && initial.length > 0;
 
   function set(index: number, next: Pick) {
-    setSaved(false);
-    setPicks((all) => all.map((pick, key) => (key === index ? next : pick)));
+    setEdits(picks.map((pick, key) => (key === index ? next : pick)));
   }
 
   return (
@@ -202,9 +204,11 @@ function MoveForm({
       ) : null}
       <Button
         accessibilityLabel="Save moves"
-        disabled={!writes}
+        disabled={!writes || choose.pending}
         onPress={() =>
-          void choose.fire({ restId, characterId: character._id, moves: picks }).then((result) => setSaved(result !== undefined))
+          void choose.fire({ restId, characterId: character._id, moves: picks }).then((result) => {
+            if (result !== undefined) setEdits(null);
+          })
         }
         variant="primary"
       >
@@ -304,6 +308,8 @@ const styles = StyleSheet.create({
     gap: space[2],
   },
   chip: {
+    justifyContent: "center",
+    minHeight: 44,
     borderColor: colors.line,
     borderRadius: radius.pill,
     borderWidth: 1,
@@ -311,6 +317,8 @@ const styles = StyleSheet.create({
     paddingVertical: space[2],
   },
   chipOn: {
+    justifyContent: "center",
+    minHeight: 44,
     backgroundColor: colors.brand,
     borderColor: colors.brand,
     borderRadius: radius.pill,

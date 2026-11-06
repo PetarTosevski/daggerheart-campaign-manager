@@ -11,6 +11,8 @@ export type SheetSlotProps = {
   hopeAndFear: boolean;
   character: SheetCharacter;
   canEdit: boolean;
+  /** Motherboard augments installed in the Ikonis (`characterExtras.get`); the server counts them into the Armor Score. */
+  augments?: readonly string[];
 };
 
 export const SHEET_SLOT_IDS = ["dice", "level-up", "death", "incoming", "rest", "features"] as const;

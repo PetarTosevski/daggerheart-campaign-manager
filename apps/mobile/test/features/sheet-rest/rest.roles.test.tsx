@@ -7,8 +7,7 @@ import { fn, renderAsGm, renderAsPlayer, type RenderedScreen } from "../../harne
 import { resetMotionTest } from "../../theme/mock-reanimated";
 import { api, type Id } from "../../../src/convex";
 import { RestSlot, type RestSheetState } from "../../../src/features/sheet/rest";
-import { readCharacter } from "../../../src/features/sheet/types";
-import { characterRecord } from "../party/fixture";
+import { characterRecord, sheetCharacter } from "../party/fixture";
 
 jest.mock("expo-crypto", () => {
   let keys = 0;
@@ -28,7 +27,7 @@ const gmNames = new Set(scanGmFunctions());
 const campaignId = "campaign-1" as Id<"campaigns">;
 
 function slot(canEdit: boolean, mine = true) {
-  const character = readCharacter(characterRecord({ canEdit, mine }));
+  const character = sheetCharacter({ canEdit, mine });
   if (!character) throw new Error("fixture");
   return {
     campaignId,
@@ -226,4 +225,24 @@ test("the GM can read another character's picks without calling player mutations
   const screen = await renderAsGm(<RestSlot {...props} isGm restState={state} />);
   expect(screen.getByText(/Picked: Prepare, Prepare/)).toBeTruthy();
   expectNoGm(screen);
+});
+
+test("the picks follow a choice saved elsewhere until this form changes one; Extended downtime is named", async () => {
+  const withChoice = (moves: string[]): RestSheetState => {
+    const base = openRest("long");
+    return {
+      ...base,
+      open: {
+        ...base.open!,
+        extended: true,
+        choices: [{ characterId: "char-1" as Id<"characters">, moves: moves.map((move) => ({ move })) }],
+      } as NonNullable<RestSheetState["open"]>,
+    };
+  };
+  const queries = { [fn(api.charactersReads.listByCampaign)]: [characterRecord({ canEdit: true })], [fn(api.restsReads.projects)]: [] };
+  const screen = await renderAsPlayer(<RestSlot {...slot(true)} restState={withChoice(["prepare", "prepare"])} />, { queries });
+  expect(screen.getByRole("header", { name: "Long rest (Extended downtime): downtime moves" })).toBeTruthy();
+  expect(screen.getAllByRole("radio", { name: "Prepare" }).map((r) => r.props.accessibilityState.checked)).toEqual([true, true]);
+  await screen.rerender(<RestSlot {...slot(true)} restState={withChoice(["clearAllStress", "prepare"])} />);
+  expect(screen.getAllByRole("radio", { name: "Clear All Stress" })[0]!.props.accessibilityState.checked).toBe(true);
 });

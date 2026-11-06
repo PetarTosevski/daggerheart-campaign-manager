@@ -5,8 +5,7 @@ import { resetMotionTest } from "../../theme/mock-reanimated";
 import { sheetSlots } from "../../../src/features/sheet/slots";
 import type { SheetSlotProps } from "../../../src/features/sheet/contract";
 import { renderAsPlayer } from "../../harness";
-import { characterRecord } from "../party/fixture";
-import { readCharacter } from "../../../src/features/sheet/types";
+import { sheetCharacter } from "../party/fixture";
 
 jest.mock("expo-crypto", () => ({
   randomUUID: () => "00000000-0000-4000-8000-000000000001",
@@ -17,7 +16,7 @@ beforeEach(() => {
 });
 
 test("every sheet slot mounts with the contract props", async () => {
-  const character = readCharacter(characterRecord({ canEdit: false, mine: false }));
+  const character = sheetCharacter({ canEdit: false, mine: false });
   if (!character) throw new Error("fixture");
   const props: SheetSlotProps = {
     campaignId: "campaign-1",
