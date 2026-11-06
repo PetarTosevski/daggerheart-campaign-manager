@@ -182,29 +182,6 @@ waves:
           - apps/mobile/test/features/players/**
         acceptance:
           - role tests for each flow; deletion covered by a Convex test if a server change is needed
-      - id: PX8
-        title: "Dashboard and trackers: nullable Fear, co-GM and read-only modes"
-        beads: [dcm-gdzi.4, dcm-gdzi.24, dcm-gdzi.34]
-        pr: 4
-        goal: "Null Fear renders and edits safely, tracker text fields save trimmed text without key= on live content, and co-GM, archived, owner view, read-only mode and feature switches behave as on the web"
-        depends_on: [PX5]
-        owns:
-          - apps/mobile/src/features/trackers/**
-          - apps/mobile/app/campaign/[campaignId]/index.tsx
-          # Fear can be null on rebuild: the files typecheck:mobile filters today (user round 2026-11-06).
-          - apps/mobile/src/features/adversaries/encounter-screen.tsx
-          - apps/mobile/src/features/adversaries/encounters.tsx
-          - apps/mobile/src/features/adversaries/environments.tsx
-          - apps/mobile/src/features/adversaries/use-tracker.ts
-          - apps/mobile/src/features/combat-map/gm/context.tsx
-          - apps/mobile/src/features/combat-map/gm/use-adversary-actions.ts
-          - apps/mobile/src/features/dashboard/fear.tsx
-          - package.json
-          - apps/mobile/test/features/trackers/**
-          - apps/mobile/test/features/dashboard/**
-        acceptance:
-          - tests for null Fear, a co-GM and an archived campaign
-
   # ------------------------------------------------------------------ wave 4: PR 5, 6, 7, 8
   - wave: 4
     tracers:
@@ -345,3 +322,26 @@ waves:
           - apps/mobile/test/auth/**
         acceptance:
           - the full apps/mobile jest run has no ExpoCrypto failures; shell tests cover the join next and markOpened
+      - id: PX8
+        title: "Dashboard and trackers: nullable Fear, co-GM and read-only modes"
+        beads: [dcm-gdzi.4, dcm-gdzi.24, dcm-gdzi.34]
+        pr: 4
+        goal: "Null Fear renders and edits safely, tracker text fields save trimmed text without key= on live content, and co-GM, archived, owner view, read-only mode and feature switches behave as on the web"
+        depends_on: [PX5, PX6]
+        owns:
+          - apps/mobile/src/features/trackers/**
+          - apps/mobile/app/campaign/[campaignId]/index.tsx
+          # Fear can be null on rebuild: the files typecheck:mobile filters today (user round 2026-11-06).
+          - apps/mobile/src/features/adversaries/encounter-screen.tsx
+          - apps/mobile/src/features/adversaries/encounters.tsx
+          - apps/mobile/src/features/adversaries/environments.tsx
+          - apps/mobile/src/features/adversaries/use-tracker.ts
+          - apps/mobile/src/features/combat-map/gm/context.tsx
+          - apps/mobile/src/features/combat-map/gm/use-adversary-actions.ts
+          - apps/mobile/src/features/dashboard/fear.tsx
+          - package.json
+          - apps/mobile/test/features/trackers/**
+          - apps/mobile/test/features/dashboard/**
+        acceptance:
+          - tests for null Fear, a co-GM and an archived campaign
+
