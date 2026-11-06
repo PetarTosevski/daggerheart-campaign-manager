@@ -1,17 +1,22 @@
-import type { CodexKind } from "../../../../../src/lib/codex/schema";
-import { factionsFor, regionsFor } from "../../../../../src/lib/codex/schema";
-import {
-  groupOf,
-  matchesSearch,
-  previewForPlayers,
-  unknownGroupLabel,
-  type GmEntry,
-  type PlayerEntry,
-} from "../../../../../src/lib/codex/view";
+import type { Infer } from "convex/values";
 
-import type { AnyEntry, CodexList, CodexPin } from "./types";
-import { isGmList } from "./types";
+import type { codexListValidator } from "../../../convex/lib/validators/codex";
 
+import { factionsFor, regionsFor, type CodexKind } from "./schema";
+import { groupOf, matchesSearch, previewForPlayers, unknownGroupLabel, type GmEntry, type PlayerEntry } from "./view";
+
+/**
+ * The Codex list as the viewer sees it: which entries, their group tabs, list rows, header and empty text. Pure and
+ * framework-free, shared by the website's Codex board and the phone app's Codex screen.
+ */
+
+/** What `codex.list` returns: the GM's codex with the map's pins, or the players' codex. */
+export type CodexList = Infer<typeof codexListValidator>;
+/** A map pin in the GM's codex. */
+export type CodexPin = Extract<CodexList, { role: "gm" }>["pins"][number];
+export type AnyEntry = GmEntry | PlayerEntry;
+
+/** One row of the entry list. */
 export type ListRow = {
   _id: string;
   name: string;
@@ -24,6 +29,7 @@ export type ListRow = {
   imageText: string;
 };
 
+/** A group tab over the list (All, each region or faction, Unknown), with its count. */
 export type GroupTab = { key: string; label: string; count: number };
 
 const KIND_LABEL: Record<CodexKind, string> = { character: "Characters", location: "Locations" };
@@ -32,18 +38,31 @@ export function kindLabel(kind: CodexKind): string {
   return KIND_LABEL[kind];
 }
 
-export function visibleEntries(
-  data: CodexList | undefined,
-  frameId: string,
-  preview: boolean,
-): { entries: AnyEntry[]; pins: CodexPin[]; gm: boolean } {
+export function isGmList(data: CodexList | undefined): data is Extract<CodexList, { role: "gm" }> {
+  return data?.role === "gm";
+}
+
+export function isGmEntry(entry: AnyEntry, gm: boolean): entry is GmEntry {
+  return gm && "known" in entry;
+}
+
+function groupKeyOf(entry: AnyEntry, gm: boolean): string {
+  return groupOf(
+    { kind: entry.kind, region: entry.region, allegiance: "allegiance" in entry ? entry.allegiance : undefined, allegianceShown: entry.allegianceShown },
+    gm,
+  );
+}
+
+/**
+ * Entries as the current viewer sees them: the GM's full entries, or the player view (real, or the GM's preview).
+ * `gm` is true only for the GM's own view (not while previewing).
+ */
+export function visibleEntries(data: CodexList | undefined, frameId: string, preview: boolean): { entries: AnyEntry[]; pins: CodexPin[]; gm: boolean } {
   if (data === undefined) return { entries: [], pins: [], gm: false };
   if (isGmList(data)) {
     const pins = data.pins;
     if (preview) {
-      const entries = data.entries
-        .map((entry) => previewForPlayers(frameId, entry, pins))
-        .filter((entry): entry is PlayerEntry => entry !== null);
+      const entries = data.entries.map((entry) => previewForPlayers(frameId, entry, pins)).filter((entry): entry is PlayerEntry => entry !== null);
       return { entries, pins, gm: false };
     }
     return { entries: data.entries, pins, gm: true };
@@ -51,8 +70,9 @@ export function visibleEntries(
   return { entries: data.entries, pins: [], gm: false };
 }
 
+/** The entries of one kind that match the search and group, the group tabs, and how many match the search. */
 export function filterEntries(
-  entries: AnyEntry[],
+  entries: readonly AnyEntry[],
   kind: CodexKind,
   groupKey: string,
   search: string,
@@ -61,51 +81,26 @@ export function filterEntries(
 ): { shown: AnyEntry[]; groupTabs: GroupTab[]; baseCount: number } {
   const ofKind = entries.filter((entry) => entry.kind === kind);
   const base = ofKind.filter((entry) => matchesSearch({ name: entry.name, role: "role" in entry ? entry.role : undefined }, search));
-  const groupFor = (entry: AnyEntry) =>
-    groupOf(
-      {
-        kind: entry.kind,
-        region: entry.region,
-        allegiance: "allegiance" in entry ? entry.allegiance : undefined,
-        allegianceShown: entry.allegianceShown,
-      },
-      gm,
-    );
-  const shown = base.filter((entry) => groupKey === "all" || groupFor(entry) === groupKey);
+  const shown = base.filter((entry) => groupKey === "all" || groupKeyOf(entry, gm) === groupKey);
   const regions = regionsFor(frameId);
   const groupNames = kind === "location" ? regions : factionsFor(frameId);
   const groupTabs =
     kind === "character" || regions.length
-      ? [
-          { key: "all", label: "All" },
-          ...groupNames.map((name) => ({ key: name, label: name })),
-          { key: "", label: unknownGroupLabel(kind, gm) },
-        ]
-          .map((tab) => ({
-            ...tab,
-            count: tab.key === "all" ? base.length : base.filter((entry) => groupFor(entry) === tab.key).length,
-          }))
+      ? [{ key: "all", label: "All" }, ...groupNames.map((name) => ({ key: name, label: name })), { key: "", label: unknownGroupLabel(kind, gm) }]
+          .map((tab) => ({ ...tab, count: tab.key === "all" ? base.length : base.filter((entry) => groupKeyOf(entry, gm) === tab.key).length }))
           .filter((tab) => !(tab.key === "" && tab.count === 0 && groupKey !== ""))
       : [];
   return { shown, groupTabs, baseCount: base.length };
 }
 
-export function toListRows(entries: AnyEntry[], gm: boolean): ListRow[] {
+/** The list rows of the shown entries. */
+export function toListRows(entries: readonly AnyEntry[], gm: boolean): ListRow[] {
   return entries.map((entry) => {
-    const group = groupOf(
-      {
-        kind: entry.kind,
-        region: entry.region,
-        allegiance: "allegiance" in entry ? entry.allegiance : undefined,
-        allegianceShown: entry.allegianceShown,
-      },
-      gm,
-    );
+    const group = groupKeyOf(entry, gm);
     const cover = entry.images.find((image) => image.key === entry.cover)?.url ?? null;
-    const name = entry.name || (entry.kind === "location" ? "Unnamed location" : "Unnamed character");
     return {
       _id: entry._id,
-      name,
+      name: entry.name || (entry.kind === "location" ? "Unnamed location" : "Unnamed character"),
       subtitle: ("role" in entry && entry.role) || (entry.kind === "location" ? "Location" : "Character"),
       coverUrl: cover,
       initial: (entry.name || "?").charAt(0).toUpperCase(),
@@ -122,6 +117,7 @@ export function toListRows(entries: AnyEntry[], gm: boolean): ListRow[] {
   });
 }
 
+/** The line under the Codex title: the GM's counts, else 'What your party knows'. */
 export function headerLine(data: CodexList | undefined, gm: boolean): string {
   if (!isGmList(data) || !gm) return "What your party knows";
   const knownCount = data.entries.filter((entry) => entry.known).length;
@@ -130,6 +126,7 @@ export function headerLine(data: CodexList | undefined, gm: boolean): string {
   return `${characters} characters · ${locations} locations · ${knownCount} known to the players`;
 }
 
+/** What an empty list says. `searching`: the search box holds more than whitespace. */
 export function emptyMessage(kind: CodexKind, gm: boolean, searching: boolean): string {
   if (searching) return "Nothing matches that search.";
   if (gm) {
@@ -140,7 +137,7 @@ export function emptyMessage(kind: CodexKind, gm: boolean, searching: boolean): 
   return "The party has not met anyone here yet.";
 }
 
-export function findEntry(entries: AnyEntry[], entryId: string): AnyEntry | undefined {
+export function findEntry(entries: readonly AnyEntry[], entryId: string): AnyEntry | undefined {
   return entries.find((entry) => entry._id === entryId);
 }
 

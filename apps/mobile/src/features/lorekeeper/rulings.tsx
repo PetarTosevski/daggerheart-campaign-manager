@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Text, TextInput, View } from "react-native";
 
 import { errorMessage } from "../../../../../src/lib/convex-errors";
+import { clip } from "../../../../../src/lib/lorekeeper/answer-model";
 import { RULINGS_COPY, RULINGS_EMPTY, RULINGS_TITLE, pinnedLabel } from "../../../../../src/lib/lorekeeper/copy";
 import { LOREKEEPER_LIMITS } from "../../../../../convex/lib/validators/lorekeeper";
 import { api, type Id } from "../../convex";
@@ -20,11 +21,6 @@ type OpenAsk = {
   question: string;
   call: string | null;
 };
-
-function clip(raw: string, max: number): string {
-  const line = raw.replace(/\s+/g, " ").trim();
-  return line.length <= max ? line : `${line.slice(0, max - 1).trimEnd()}…`;
-}
 
 export function RulingsCard({ campaignId, access }: LorekeeperSideProps) {
   const rulings = useQuery(api.lorekeeperRulings.list, { campaignId });

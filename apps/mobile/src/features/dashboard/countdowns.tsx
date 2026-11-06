@@ -3,6 +3,7 @@ import type { FunctionReturnType } from "convex/server";
 import { useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 
+import { listItems } from "../../../../../src/lib/domain/countdowns/items";
 import { api, type Id } from "../../convex";
 import { useWritesEnabled } from "../../shell/offline";
 import { colors } from "../../theme/colors";
@@ -15,31 +16,6 @@ import { NewCountdownForm } from "./gm-panels";
 import { useIntent } from "./intent";
 
 type Countdown = FunctionReturnType<typeof api.countdowns.listByCampaign>[number];
-type Item =
-  | { kind: "single"; countdown: Countdown }
-  | { kind: "chase"; party?: Countdown; rivals?: Countdown };
-
-function listItems(countdowns: readonly Countdown[]): Item[] {
-  const byId = new Map(countdowns.map((countdown) => [countdown._id, countdown]));
-  const placed = new Set<string>();
-  const items: Item[] = [];
-  for (const countdown of countdowns) {
-    if (placed.has(countdown._id)) continue;
-    if (countdown.chase === null) {
-      items.push({ kind: "single", countdown });
-      continue;
-    }
-    const partner = byId.get(countdown.chase.partnerId);
-    placed.add(countdown._id);
-    if (partner) placed.add(partner._id);
-    items.push(
-      countdown.chase.side === "party"
-        ? { kind: "chase", party: countdown, rivals: partner }
-        : { kind: "chase", party: partner, rivals: countdown },
-    );
-  }
-  return items;
-}
 
 export function Countdowns({ campaignId, isGm }: { campaignId: Id<"campaigns">; isGm: boolean }) {
   return (

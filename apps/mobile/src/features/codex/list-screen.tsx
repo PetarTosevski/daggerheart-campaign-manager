@@ -21,7 +21,7 @@ import {
   kindLabel,
   toListRows,
   visibleEntries,
-} from "./list-model";
+} from "../../../../../src/lib/codex/list-model";
 import { codexStyles } from "./styles";
 
 export function CodexListScreen() {

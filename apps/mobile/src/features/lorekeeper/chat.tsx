@@ -7,10 +7,10 @@ import type { ConversationView, MessageView } from "../../../../../convex/loreke
 import type { ConversationVisibility } from "../../../../../convex/lib/validators/lorekeeper";
 import { api, type Id } from "../../convex";
 import { AnswerCard, ThinkingRow } from "./answer-card";
-import type { BookTitles } from "./answer-model";
-import { askFailure, disabledReason, usagePeriod } from "./composer-model";
+import type { BookTitles } from "../../../../../src/lib/lorekeeper/answer-model";
+import { askFailure, disabledReason, usagePeriod } from "../../../../../src/lib/lorekeeper/composer-model";
 import { Composer } from "./composer";
-import { askerNames } from "./names";
+import { askerNames } from "../../../../../src/lib/lorekeeper/names";
 import { resolveSelection, useSelection } from "./selection";
 import type { LorekeeperChatProps } from "./slots";
 import { lkStyles } from "./styles";

@@ -1,26 +1,26 @@
-import { errorMessage } from "../../../../../src/lib/convex-errors";
-import { lorekeeperMessages } from "../../../../../src/lib/errors/lorekeeper";
-import {
-  CAP_CAMPAIGN_TEXT,
-  CAP_DEPLOYMENT_TEXT,
-  CAP_USER_TEXT,
-  NOT_SET_UP,
-  RATE_LIMITED_TEXT,
-} from "../../../../../src/lib/lorekeeper/copy";
-import { LOREKEEPER_LIMITS } from "../../../../../convex/lib/validators/lorekeeper";
+import { LOREKEEPER_LIMITS } from "../../../convex/lib/validators/lorekeeper";
+import { errorMessage } from "../convex-errors";
+import { lorekeeperMessages } from "../errors/lorekeeper";
 
 import { errorCode } from "./answer-model";
+import { CAP_CAMPAIGN_TEXT, CAP_DEPLOYMENT_TEXT, CAP_USER_TEXT, NOT_SET_UP, RATE_LIMITED_TEXT } from "./copy";
+
+/** Pure helpers of the composer (D13 L6), shared by the website and the phone app. Unit-tested in tests/unit/lorekeeper-ui. */
 
 export const QUESTION_MAX = LOREKEEPER_LIMITS.question;
+/** The character count shows from here on ('<n> / 1,000'), near the end of the limit. */
 export const COUNTER_FROM = 900;
 
+/** `lorekeeperUsage.mine`'s answer. */
 export type Usage = { questionsLeft: number; campaignCapReached: boolean; deploymentCapReached: boolean };
 
+/** The current UTC day and month `lorekeeperUsage.mine` takes (CF10: coarse, so the query stays cached). */
 export function usagePeriod(now: Date): { day: string; month: string } {
   const iso = now.toISOString();
   return { day: iso.slice(0, 10), month: iso.slice(0, 7) };
 }
 
+/** Why the composer is disabled, or null: not set up, then the caps (L5 order: user, campaign, server). */
 export function disabledReason(available: boolean | undefined, usage: Usage | undefined): string | null {
   if (available === false) return NOT_SET_UP;
   if (usage === undefined) return null;
@@ -30,10 +30,12 @@ export function disabledReason(available: boolean | undefined, usage: Usage | un
   return null;
 }
 
+/** '<n> / 1,000' near the end of the limit, else null. */
 export function counterText(length: number): string | null {
   return length >= COUNTER_FROM ? `${length.toLocaleString("en-US")} / ${QUESTION_MAX.toLocaleString("en-US")}` : null;
 }
 
+/** What the composer says when `ask` fails; `newConversation` offers 'Start a new conversation' (L3 note). */
 export function askFailure(error: unknown): { text: string; newConversation: boolean } {
   switch (errorCode(error)) {
     case "RATE_LIMITED":
@@ -51,4 +53,9 @@ export function askFailure(error: unknown): { text: string; newConversation: boo
     default:
       return { text: errorMessage(error), newConversation: false };
   }
+}
+
+/** Enter sends; Shift+Enter (and Enter while an IME composes) types a new line. */
+export function sendsOnKey(event: { key: string; shiftKey: boolean; isComposing?: boolean }): boolean {
+  return event.key === "Enter" && !event.shiftKey && !event.isComposing;
 }

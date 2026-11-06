@@ -33,7 +33,7 @@ import {
   quoteSection,
   safeUrl,
   verdictTone,
-} from "./answer-model";
+} from "../../../../../src/lib/lorekeeper/answer-model";
 import { BookSheet, type BookPage } from "./book-sheet";
 import { PinSheet } from "./pin-sheet";
 import { MiniSigil } from "./sigil";

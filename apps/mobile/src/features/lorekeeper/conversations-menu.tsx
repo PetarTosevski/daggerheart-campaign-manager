@@ -8,7 +8,7 @@ import type { ConversationView } from "../../../../../convex/lorekeeper";
 import { api, type Id } from "../../convex";
 import { Button } from "../../ui/button";
 import { Sheet } from "../../ui/sheet";
-import { askerNames } from "./names";
+import { askerNames } from "../../../../../src/lib/lorekeeper/names";
 import { resolveSelection, useSelection } from "./selection";
 import type { LorekeeperChatProps } from "./slots";
 import { lkStyles } from "./styles";

@@ -17,7 +17,7 @@ import {
 } from "../../../../../src/lib/lorekeeper/copy";
 import type { ConversationVisibility } from "../../../../../convex/lib/validators/lorekeeper";
 import { Button } from "../../ui/button";
-import { QUESTION_MAX, counterText } from "./composer-model";
+import { QUESTION_MAX, counterText } from "../../../../../src/lib/lorekeeper/composer-model";
 import { lkStyles } from "./styles";
 
 const LEFT_FROM = 10;

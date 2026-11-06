@@ -9,7 +9,7 @@ import { Button } from "../../ui/button";
 import { Empty } from "../../ui/empty";
 
 import { GmDetail } from "./gm-detail";
-import { findEntry, visibleEntries } from "./list-model";
+import { findEntry, visibleEntries } from "../../../../../src/lib/codex/list-model";
 import type { PlayerEntry } from "../../../../../src/lib/codex/view";
 import { PlayerDetail } from "./player-detail";
 import { codexStyles } from "./styles";

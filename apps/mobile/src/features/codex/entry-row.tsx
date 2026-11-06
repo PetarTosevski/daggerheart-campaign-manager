@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { groupBadgeColors } from "../../../../../src/lib/codex/view";
 import { colors } from "../../theme/colors";
 
-import type { ListRow } from "./list-model";
+import type { ListRow } from "../../../../../src/lib/codex/list-model";
 import { codexStyles } from "./styles";
 
 export function EntryRow({
