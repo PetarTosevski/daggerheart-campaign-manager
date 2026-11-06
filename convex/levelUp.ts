@@ -13,6 +13,7 @@ import type { CharacterSheet } from "../src/lib/validation/characters";
 import { ADVANCEMENT_OPTIONS } from "../src/lib/validation/character-constants";
 import type { Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
+import { assertCardsUnshared } from "./characters";
 import { logAction } from "./lib/actionLog";
 import { loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { campaignFearState } from "./lib/fear";
@@ -144,6 +145,8 @@ export const apply = keyedUserMutation({
       );
       // dcm-31hq: a gained card's "when you choose this card" picks (Vitality) are written with the level.
       const gained = cardsGained({ cardId: levelChoice.cardId, picks: levelChoice.picks, ...(levelChoice.trade ? { tradeIn: levelChoice.trade.in } : {}) });
+      // Shared domain cards (CB p.21, plan rule-switches OSC): under Refuse, a card another character holds can't be taken.
+      await assertCardsUnshared(ctx, campaign, gained, "LEVEL_UP_RULE", character._id);
       const { sheet: next, lines } = withChosenCards(leveled, character._id, gained, cardChoices);
       await saveSheet(ctx, character._id, next);
       await logAction(ctx, {

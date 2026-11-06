@@ -110,7 +110,8 @@ export const characterSheetV1Schema = z.object({
   secondaryWeaponId: z.string().optional(),
   armorId: z.string().optional(),
   inventory: z.array(z.string().trim().min(1).max(200)).max(60),
-  gold: z.object({ handfuls: z.number().int().min(0).max(99), bags: z.number().int().min(0).max(99), chest: z.boolean() }),
+  // coins: the Gold coins optional rule (CB p.104, plan rule-switches OSC), 0-9; widened, unset reads as 0.
+  gold: z.object({ handfuls: z.number().int().min(0).max(99), bags: z.number().int().min(0).max(99), chest: z.boolean(), coins: z.number().int().min(0).max(9).optional() }),
   experiences: z.array(experienceV1Schema).max(12),
   domainCards: z.object({ owned: z.array(z.string()).max(40), loadout: z.array(z.string()).max(5) }),
   background: z.array(z.string().max(TEXT)).max(12),

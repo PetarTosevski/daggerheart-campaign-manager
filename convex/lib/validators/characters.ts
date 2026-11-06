@@ -21,7 +21,8 @@ export const portraitValidator = v.union(
 /** How the `pronouns` field is labelled (dcm-bxp.35): "gender" (the default when missing) or "pronouns". */
 export const pronounsLabelValidator = v.union(...PRONOUNS_LABELS.map((l) => v.literal(l)));
 
-export const goldValidator = v.object({ handfuls: v.number(), bags: v.number(), chest: v.boolean() });
+/** `coins?` (0–9): the Gold coins optional rule (CB p.104, plan rule-switches OSC); widened, unset reads as 0. */
+export const goldValidator = v.object({ handfuls: v.number(), bags: v.number(), chest: v.boolean(), coins: v.optional(v.number()) });
 
 const ancestryValidator = v.union(
   v.object({ kind: v.literal("single"), id: v.string() }),
