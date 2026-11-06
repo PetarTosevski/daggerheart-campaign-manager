@@ -1,4 +1,7 @@
+import { getFunctionName } from "convex/server";
+
 import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
 import { makeTest } from "./setup";
 
 export const GM_EMAIL = "gm@example.com";
@@ -24,6 +27,39 @@ export function errorCode(error: unknown): unknown {
 
 let keys = 0;
 export const key = () => `key-${++keys}`;
+
+/** The player acts the GM hands the spotlight back before (`handingBack`): every non-reaction act S2 can refuse. */
+const PLAYER_ACTS = new Set([
+  "combatActions:attack",
+  "combatCards:useCard",
+  "combatFeatures:useFeature",
+  "rolls:actionRoll",
+  "rolls:manualRoll",
+  "rolls:tagTeam",
+  "combatTokens:move",
+  "characters:moveCard",
+]);
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- any convex-test client (its mutation is generic).
+type MutationClient = { mutation: (...args: any[]) => Promise<any> };
+
+/**
+ * S2 (plan rule-switches RS2): a roll with Fear or a failure hands the spotlight to the GM, and in a running encounter
+ * players then wait (SPOTLIGHT_WITH_GM). For tests about something else that act again right after such a roll: the
+ * returned client is `client`, except that before each player act (`PLAYER_ACTS`) the GM hands the spotlight to the
+ * party (`combatSpotlight.handToParty`, nothing when nobody holds it). Waiting itself: rules-spotlight-wait.test.ts.
+ */
+export function handingBack<C extends MutationClient>(client: C, gm: MutationClient, campaignId: Id<"campaigns">): C {
+  return new Proxy(client, {
+    get(target, prop, receiver) {
+      if (prop !== "mutation") return Reflect.get(target, prop, receiver) as unknown;
+      return async (ref: Parameters<typeof getFunctionName>[0], ...rest: unknown[]) => {
+        if (PLAYER_ACTS.has(getFunctionName(ref))) await gm.mutation(api.combatSpotlight.handToParty, { campaignId, idempotencyKey: key() });
+        return target.mutation(ref, ...rest);
+      };
+    },
+  });
+}
 
 export async function setupWithCampaign(frameId: "witherwild" | "beast-feast" = "witherwild") {
   const t = makeTest();

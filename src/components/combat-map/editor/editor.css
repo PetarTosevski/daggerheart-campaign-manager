@@ -29,7 +29,7 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
 }
-.cm-btn.cm-ed-terrain {
+.gb.cm-ed-terrain {
   justify-content: flex-start;
   text-transform: capitalize;
 }
@@ -63,19 +63,6 @@
 }
 .cm-ed-note {
   font-size: 13px;
-}
-.cm-linkbtn {
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--cm-acc-soft);
-  font: inherit;
-  text-decoration: underline;
-  cursor: pointer;
-}
-.cm-linkbtn:focus-visible {
-  outline: 2px solid var(--cm-acc);
-  outline-offset: 2px;
 }
 
 /* The overlay over the map in Edit: lets every pointer through with Move view, takes the left button otherwise. */
@@ -115,7 +102,8 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
 }
-.cm-btn.cm-ed-sprite {
+/* Layout only on the glass tool tiles (thumbnail left, name ellipsised); the look is glass-button.css. */
+.gb.cm-ed-sprite {
   justify-content: flex-start;
   gap: 8px;
   min-width: 0;
@@ -148,12 +136,6 @@
   display: inline-block;
 }
 
-/* Touch targets of at least 44 px on tablets and phones (D12 H22). */
-@media (max-width: 1100px), (pointer: coarse) {
-  .cm-linkbtn {
-    min-height: 44px;
-  }
-}
 @media (max-width: 760px) {
   .cm-ed-sprites-scroll {
     max-height: 420px;

@@ -1,7 +1,7 @@
 // Pure state and gating for the character creation wizard (Party board, Core ch. 1).
 // No React: unit-tested in tests/unit/wizard-logic.test.ts.
 
-import { TRAIT_POOL } from "@/lib/domain/characters";
+import { TRAIT_POOL, type SharedCardsMode } from "@/lib/domain/characters";
 import { derivedDefense, derivedThresholds } from "@/lib/domain/characters/derived";
 import { holdsPurposefulDesign } from "@/lib/domain/dice";
 import {
@@ -316,6 +316,20 @@ export function missingByStep(s: WizardState, opts?: WizardOptions): Record<numb
     8: list(left > 0 && `${left} more domain card${left === 1 ? "" : "s"}`),
     9: [],
   };
+}
+
+/**
+ * Shared domain cards under Refuse (CB p.21, plan rule-switches OSC): what step 8 still needs for each picked card another
+ * character of the campaign holds ("a card Mira doesn't hold instead of Rune Ward"). Nothing under Allow or Warn.
+ */
+export function sharedCardsMissing(picks: readonly string[], mode: SharedCardsMode, holders: ReadonlyMap<string, readonly string[]>, nameOf: (cardId: string) => string): string[] {
+  if (mode !== "refuse") return [];
+  return picks.flatMap((id) => {
+    const names = holders.get(id);
+    if (!names || names.length === 0) return [];
+    const who = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]} don't` : `${names[0]} doesn't`;
+    return [`a card ${who} hold instead of ${nameOf(id)}`];
+  });
 }
 
 /** "Still needed: a, b and c", or "" when nothing is missing. */

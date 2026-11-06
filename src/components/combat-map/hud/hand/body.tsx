@@ -1,24 +1,22 @@
 "use client";
 
 import { useQuery } from "convex/react";
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { cardEffect } from "@/lib/srd/card-effects";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
-import { useViewerFlag } from "../../map-view/use-viewer-flag";
 import { useAreaPick } from "../../map-view/area-pick";
 import type { DialogRequest } from "../../actions/hand/dialog";
 import { VaultDeck } from "../../actions/hand/dock";
 import { HandCardFace } from "../../actions/hand/face";
-import { handHiddenKey } from "../../actions/hand";
 import { areaPickOf, formFor, LOADOUT_MAX, needsDialog, playableUses, rollOf, usedRollOptions, type AreaPick, type CardChoice, type ChoiceAsk, type Creature, type HandCard, type UseOutcome } from "../../actions/hand/model";
 import { CardResult, type LastCard } from "../../actions/hand/result";
 import { useRecall } from "../../actions/hand/use-card";
 import { NO_ROLL_OPTIONS, rollProblem, rollSummary, type Roller, type RollValues } from "../../actions/roll-controls";
-import { RefusalMessage, hudToasts } from "../blocked";
+import { BlockedReason, RefusalMessage, hudToasts } from "../blocked";
 import { usePick, type PickOutcome } from "../pick";
 import { useAreaPickState } from "../pick-area";
 import { askAfterRoll, hudResults, showCardResult, withAnswers } from "../result";
@@ -37,8 +35,10 @@ import {
   type CardPickEnv,
   type PointPicker,
 } from "../pick-card";
+import { useRaiseHandle } from "./raise";
+import { useHandFold } from "./use-fold";
 import { CardBacks, catchMore, FanCard, FullCard, RollOptionsBody, SidePop } from "./parts";
-import { cardLook, loadoutFullText, recallText, type HandMode, type LookContext } from "./states";
+import { cardLook, loadoutFullText, recallBlocked, recallText, type HandMode, type LookContext } from "./states";
 
 /**
  * The HUD hand (plan combat-hud H2.3; boards CmpCards and Main): the loadout as the domains tab's fan along the bottom
@@ -55,7 +55,8 @@ import { cardLook, loadoutFullText, recallText, type HandMode, type LookContext 
  * out-of-range line stays above the fan.
  * Drag-to-play stays the classic dock's.
  *
- * Hide cards (answer 16a) folds the viewer's own fan on their screen only: this browser's flag, never a server call.
+ * Hide cards (answer 16a) folds the viewer's own fan for them alone; the choice is stored on their account per campaign
+ * and character (plan config U6c, Q15 b: `useHandFold`), so it follows them to every device.
  */
 
 export type HudHandBodyProps = {
@@ -73,22 +74,6 @@ export type HudHandBodyProps = {
   /** Where an area card asks the map for its square: H3.3's HUD picker (`classicPointPicker` only outside the HUD shell). */
   pointPicker?: PointPicker;
 };
-
-/**
- * "Hide cards": this browser's flag (the classic hand's key, so both views agree), and the choice held for the visit
- * too, so it works where nothing can be stored (a private window).
- */
-function useFolded(key: string): [boolean, (on: boolean) => void] {
-  const [stored, store] = useViewerFlag(key);
-  const [picked, setPicked] = useState<{ key: string; on: boolean } | null>(null);
-  return [
-    picked?.key === key ? picked.on : stored,
-    (on) => {
-      setPicked({ key, on });
-      store(on);
-    },
-  ];
-}
 
 type Open = "vault" | "rolls" | null;
 
@@ -113,10 +98,13 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
   const [last, setLast] = useState<LastCard | null>(null);
   const [rollOptions, setRollOptions] = useState<RollValues>(NO_ROLL_OPTIONS);
   const [checkedRiders, setCheckedRiders] = useState<string[]>([]);
-  const [folded, setFolded] = useFolded(handHiddenKey(campaignId, characterId));
+  const [folded, setFolded] = useHandFold(campaignId, characterId);
   const moreFrom = useRef<HTMLElement | null>(null);
   const deck = useRef<HTMLSpanElement>(null);
   const rollsButton = useRef<HTMLButtonElement>(null);
+  const fanRef = useRef<HTMLUListElement>(null);
+  /** Cast unfolded the hand: focus its first playable card once the fan is drawn. */
+  const raiseFocus = useRef(false);
   const ids = useId();
   const fanId = `${ids}-fan`;
   const vaultId = `${ids}-vault`;
@@ -142,6 +130,8 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
   const chainCard = loadout.find((c) => pick.session?.spec.id === cardChainSessionId(characterId, c.cardId));
   const areaCard = areaFor !== null && (hudArea?.spec.id === areaPickId(areaFor) || areaPick.request !== null) ? areaFor : null;
   const playingId = sessionCard?.cardId ?? chainCard?.cardId ?? areaCard ?? waitingCard?.cardId ?? (actions.pending ? casting : null);
+  const spotlightWithGm = spotlight?.reactionsOnly === true;
+  const recallReasonId = `${ids}-recall-why`;
   const ctx = (card: HandCard): LookContext => ({
     mode,
     canPlay,
@@ -149,7 +139,7 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
     hope: roller?.hope ?? null,
     playing: playingId === card.cardId,
     rollBlock,
-    spotlightWithGm: spotlight?.reactionsOnly === true,
+    spotlightWithGm,
   });
 
   /** A press on a blocked Use (H6.2, board Main 'Can't afford'): the refusal as a toast near the hand. */
@@ -315,8 +305,14 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
     if (sessionCard && pick.session) pick.update(cardPatch(envFor(sessionCard, next), pick.session.spec.data as CardPickData));
   }
 
-  async function recallCard(cardId: string) {
-    if (await recall.recall(cardId, restOpen, sentRiders)) setCheckedRiders([]);
+  async function recallCard(card: HandCard) {
+    // H6.2 / dcm-bxp.99.32.38: a press while the GM holds the spotlight shows the refusal instead.
+    const blocked = recallBlocked(card, spotlightWithGm);
+    if (blocked) {
+      hudToasts.refusal(blocked.refusal);
+      return;
+    }
+    if (await recall.recall(card.cardId, restOpen, sentRiders)) setCheckedRiders([]);
   }
 
   function openMore(cardId: string, from: HTMLElement) {
@@ -329,6 +325,28 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
     setOpen(null);
     back?.focus();
   }
+
+  // ------------------------------------------------------------ Cast raises the hand (dcm-bxp.99.32.20)
+
+  /** Focuses the first card whose Use is enabled, else the first card; focus raises it (hand.css). */
+  function focusFirstCard() {
+    const fan = fanRef.current;
+    const use = fan?.querySelector<HTMLButtonElement>('[data-testid="hud-hand-card"] button.cmh-use:not(:disabled):not([aria-disabled="true"])');
+    const card = use ?? fan?.querySelector<HTMLElement>('[data-testid="hud-hand-card"]');
+    card?.focus({ preventScroll: true });
+  }
+  useRaiseHandle(mode === "own", () => {
+    if (folded) {
+      raiseFocus.current = true;
+      setFolded(false);
+    } else focusFirstCard();
+  });
+  // Focus is not state: an effect may move it once the unfolded fan is drawn.
+  useEffect(() => {
+    if (!raiseFocus.current || folded) return;
+    raiseFocus.current = false;
+    focusFirstCard();
+  }, [folded]);
 
   // ------------------------------------------------------------ render
 
@@ -362,7 +380,7 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
         ) : loadout.length === 0 ? (
           <p className="hud-hand-note hud-hand-empty">No cards in the loadout.</p>
         ) : showFan ? (
-          <ul id={fanId} className="hud-fan" aria-label="Loadout" data-testid="hud-hand-fan">
+          <ul ref={fanRef} id={fanId} className="hud-fan" aria-label="Loadout" data-testid="hud-hand-fan">
             {loadout.map((card, i) => {
               const look = cardLook(card, ctx(card));
               return (
@@ -416,6 +434,11 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
                     ))}
                   </fieldset>
                 ) : null}
+                {canPlay && vault.length > 0 && spotlightWithGm ? (
+                  <BlockedReason id={recallReasonId}>
+                    {recallBlocked(vault[0]!, true)?.text}
+                  </BlockedReason>
+                ) : null}
                 {vault.length === 0 ? (
                   <p className="hud-hand-pop-empty">The vault is empty.</p>
                 ) : (
@@ -426,12 +449,15 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
                           <HandCardFace card={card} locked={!canPlay} />
                         </div>
                         {canPlay ? (
+                          // A known limit (H6.2): Recall stays focusable (aria-disabled) and says why; a press shows the refusal.
                           <button
                             type="button"
                             className="hud-rec-btn"
-                            disabled={loadoutFull !== null || recall.pending !== null}
+                            disabled={!spotlightWithGm && (loadoutFull !== null || recall.pending !== null)}
+                            aria-disabled={spotlightWithGm ? true : undefined}
+                            aria-describedby={spotlightWithGm ? recallReasonId : undefined}
                             aria-label={`${loadoutFull ?? recallText(card.recallCost, restOpen)}, ${card.name}`}
-                            onClick={() => void recallCard(card.cardId)}
+                            onClick={() => void recallCard(card)}
                           >
                             {loadoutFull ?? recallText(card.recallCost, restOpen)}
                           </button>

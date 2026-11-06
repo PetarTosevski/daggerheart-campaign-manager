@@ -13,6 +13,7 @@ import { EnvironmentCatalogue } from "@/components/adversaries/environments";
 import { OpenedAdversary } from "@/components/adversaries/environments/opened-adversary";
 import type { CatalogueEntryRef } from "@/components/adversaries/slots";
 import { EncounterTracker } from "@/components/adversaries/tracker";
+import { BrandButton } from "@/components/brand/buttons";
 import { countLine } from "@/lib/adversaries/catalogue";
 import { adversariesFor } from "@/lib/domain/adversaries";
 import { ADVERSARIES } from "@/lib/srd/adversaries";
@@ -57,13 +58,13 @@ class SlotBoundary extends Component<{ children: ReactNode; label: string }, { f
         <span>
           {this.props.label} failed to load{this.state.message ? `: ${this.state.message}` : "."}
         </span>
-        <button type="button" onClick={() => this.setState({ failed: false, message: "" })}>
+        <BrandButton variant="neutral" size="sm" onClick={() => this.setState({ failed: false, message: "" })}>
           Try again
-        </button>
+        </BrandButton>
         {/* A chunk that failed to load (e.g. while the app was updating) needs a full reload. */}
-        <button type="button" onClick={() => window.location.reload()}>
+        <BrandButton variant="neutral" size="sm" onClick={() => window.location.reload()}>
           Reload page
-        </button>
+        </BrandButton>
       </div>
     );
   }

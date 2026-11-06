@@ -12,11 +12,11 @@ import type { PickActor, PickRow, PickSessionSpec } from "./types";
 /**
  * The creatures a session can list and the rows it shows (plan combat-hud H3.0). One hook for the panel and the ring
  * layer: Convex shares one subscription per query and arguments, so both read the same data (and the classic slots'
- * `playerView` / `combatActions.targets` subscriptions too).
+ * `playerView` / `combatActionsReads.targets` subscriptions too).
  *
  * - A player: their character's view (`combatVision.playerView`): their own token ("self"), the other PCs, every other
  *   token they see, with condition names (HD1, answer 10a; never a number). Line of sight and a weapon's reach: the
- *   server's `combatActions.targets` hints for the rule's weapon slot.
+ *   server's `combatActionsReads.targets` hints for the rule's weapon slot.
  * - The GM: every token of the map (`combatTokensReads.list`) with `spec.actor` as "self"; hints only for a PC actor.
  */
 
@@ -43,6 +43,11 @@ export function usePickScene(state: CombatPageState, spec: PickSessionSpec<unkno
   const gmTokens = useQuery(api.combatTokensReads.list, !player && spec !== null && state.map !== null ? { campaignId: state.campaignId, mapId: state.map._id } : "skip");
   const characterId: Id<"characters"> | null = spec === null ? null : player ? (actor?.characterId ?? null) : (spec.actor?.characterId ?? null);
   const hints = useTargetHints(state.campaignId, spec !== null && state.map !== null ? characterId : null, state.map?._id ?? ("" as Id<"combatMaps">), spec?.rule.slot ?? "primary");
+  // Rule switches RFC, M1: a Manual campaign lets a no-line-of-sight target be picked (Book until the modes load).
+  const modes = useQuery(api.ruleSettings.get, spec !== null && state.map !== null ? { campaignId: state.campaignId } : "skip")?.modes;
+  const sightMode = modes?.lineOfSight;
+  // Rule switches ODR2: Defined Ranges (on until loaded).
+  const definedRanges = modes?.definedRanges ?? true;
   if (spec === null || state.map === null) return EMPTY;
 
   let creatures: PickCreature[] = [];
@@ -80,7 +85,7 @@ export function usePickScene(state: CombatPageState, spec: PickSessionSpec<unkno
       };
     });
   }
-  const rows = spec.rows ? rowsFrom(spec.rows) : buildRows({ creatures, rule: spec.rule, hints, picked });
+  const rows = spec.rows ? rowsFrom(spec.rows) : buildRows({ creatures, rule: spec.rule, hints, picked, ...(sightMode !== undefined ? { sightMode } : {}), definedRanges });
   // The rule's weapon reach and line of sight wait for the hints of a PC actor.
   const loading = characterId !== null && hints === undefined && !spec.rows;
   return { tokens, rows, actorTokenId, loading };

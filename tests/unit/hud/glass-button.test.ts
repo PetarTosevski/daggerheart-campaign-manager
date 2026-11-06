@@ -8,6 +8,11 @@ describe("glassButtonClass", () => {
     expect(glassButtonClass({ role: "confirm" })).toBe("gb gb-confirm");
     expect(glassButtonClass({ role: "cancel", tone: "hope", size: "sm" })).toBe("gb gb-cancel gb-hope gb-sm");
     expect(glassButtonClass({ role: "cancel", icon: true, round: true })).toBe("gb gb-cancel gb-icon gb-round");
+    expect(glassButtonClass({ role: "confirm", size: "lg", wrap: true })).toBe("gb gb-confirm gb-lg gb-wrap");
+  });
+
+  it("never wraps unless asked, so the HUD's buttons keep the design's fixed height", () => {
+    expect(glassButtonClass({ role: "neutral", size: "sm" })).not.toContain("gb-wrap");
   });
 });
 

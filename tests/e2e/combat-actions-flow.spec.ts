@@ -162,7 +162,7 @@ async function useCard(page: Page, name: string) {
 async function openAttack(page: Page, name: string) {
   await page
     .getByRole("region", { name: "Battle map" })
-    .getByRole("button", { name: new RegExp(`^Open ${name}’s sheet \\(your character\\)`) })
+    .getByRole("button", { name: new RegExp(`^${name} \\(your character\\): actions`) })
     .click();
   const attack = page.getByRole("toolbar", { name: `Your actions (${name})` }).getByRole("button", { name: "Attack" });
   await expect(attack).toBeEnabled({ timeout: 30_000 });

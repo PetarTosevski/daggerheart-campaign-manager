@@ -17,6 +17,10 @@
  *   stay in their tracker's log.
  * - It may throw `REST_RULE` to refuse the rest (Horizon: a long rest outside
  *   a sanctuary); it runs first so nothing is written before a refusal.
+ * - Rule switches (plan rule-switches RF): a hook reads its frame rule's mode
+ *   with `ruleMode`; in Manual it applies nothing and posts a GM-only note
+ *   with `postRuleNote` (W2 sanctuary, W5 Siphoning, W6 Lurking Darkness,
+ *   W7 Lycanthropy; W4 lives in `restMovesFor`). Guide: docs/tasks/TASK-RULES-RF.md.
  * - `restMovesFor` lists a PC's frame and class downtime moves (Make a Feast,
  *   Keep Watch, halt lycanthropy, Tribute, Martial Preparation) and the core moves the frame
  *   forbids (Beast Feast); `rests.choose` checks picks against it.
@@ -41,9 +45,10 @@ import type { MutationCtx } from "../_generated/server";
 import { ageOfUmbraRestHook } from "../trackers/ageOfUmbra";
 import { andaluriaRestHook } from "../trackers/andaluria";
 import { colossusRestHook } from "../trackers/colossus";
-import { horizonRestHook } from "../trackers/horizon";
+import { horizonRestHook, partyOutsideSanctuary } from "../trackers/horizon";
 import { endedConditionLine, lapsedConditions } from "./cardRunner";
 import { readSheet } from "./characterSheet";
+import { postRuleNote, ruleMode } from "./ruleModes";
 import { readTracker, TRACKER_SCHEMA_VERSION, writeTracker } from "./trackers";
 
 export type RestHookInput = {
@@ -57,6 +62,12 @@ export type RestHookInput = {
   /** The resting PCs' sheets by id; a hook may replace entries. */
   sheets: Map<Id<"characters">, CharacterSheet>;
   rng: Rng;
+  /**
+   * The rest's actionLog group, when the caller made it before the hooks: a Manual rule note (`postRuleNote`) joins it,
+   * so undoing the rest undoes the note, and may then name its character. Without it the notes are campaign-wide and
+   * never undoable.
+   */
+  groupId?: string;
 };
 
 export type RestHook = (ctx: MutationCtx, input: RestHookInput) => Promise<string[]>;
@@ -115,6 +126,22 @@ export const locateSoulEchoesRestHook: RestHook = async (_ctx, { campaign, inter
     .map((c) => `${sheets.get(c.characterId)!.name} uses Locate Soul Echoes: the GM gives the bearing of the nearest sanctuary with a Soul Echo (Locate Soul Echoes on the world map)`);
 };
 
+/** W2 Manual: the GM's note. */
+export const SANCTUARY_NOTE = "Long rest outside a sanctuary";
+
+/**
+ * Journey to Horizon, W2 Manual (house rule; HF 176: "The PCs can gain the benefits of a long rest only in a
+ * sanctuary"): `assertSanctuaryLongRest` lets a long rest outside a sanctuary through, so this hook warns in the rest's
+ * feed row and posts the GM a note. Book: the refusal stands and this hook finds nothing to say. An interrupted long
+ * rest runs as `short` and needs no sanctuary.
+ */
+export const horizonSanctuaryRestHook: RestHook = async (ctx, { campaign, kind, actorId, groupId }) => {
+  if (campaign.frameId !== FRAME_IDS.horizon || kind !== "long" || ruleMode(campaign, "horizonSanctuaryRest") !== "manual") return [];
+  if (!(await partyOutsideSanctuary(ctx, campaign))) return [];
+  await postRuleNote(ctx, campaign, { ruleId: "horizonSanctuaryRest", summary: SANCTUARY_NOTE, actorId, ...(groupId !== undefined ? { groupId } : {}) });
+  return [`Warning: ${SANCTUARY_NOTE} (HF 176: long rests only in a sanctuary; house rule Manual)`];
+};
+
 /** Areas a rest looks at (a campaign draws few at a time; ended ones are swept by the cron). */
 const AREAS_MAX = 200;
 
@@ -159,6 +186,7 @@ const sourcedConditionsRestHook: RestHook = async (ctx, { campaign, sheets }) =>
 /** Every frame's rest hook, in order; Horizon first, since it may refuse the rest. */
 export const REST_HOOKS: readonly RestHook[] = [
   horizonRestHook,
+  horizonSanctuaryRestHook,
   locateSoulEchoesRestHook,
   ageOfUmbraRestHook,
   colossusRestHook,

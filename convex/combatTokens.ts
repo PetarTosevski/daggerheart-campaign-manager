@@ -2,13 +2,14 @@ import { v } from "convex/values";
 
 import { freeSquares, moveToken, snapTurn, startFace, startSide } from "../src/components/combat-map/tokens/geometry";
 import { rasterize, type TerrainId } from "../src/lib/combat-map/raster";
-import { checkMove } from "../src/lib/domain/combat-map/movement";
+import { checkMove, moveVerdict, wallsNote } from "../src/lib/domain/combat-map/movement";
 import { rangeCheck } from "../src/lib/domain/combat-actions/distance";
 import { appError } from "../src/lib/errors/app-error";
 import { applyCondition } from "../src/lib/domain/encounters/damage";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { areasAfterMove, carryAlong, endAreasOnCasterEvent, endAreasOwnerLeft, moveRules, rangeTriggersAfterMove } from "./combatAreas";
+import { areasAfterMove, carryAlong, endAreasOnCasterEvent, endAreasOwnerLeft, moveRules, rangeTriggersAfterMove } from "./lib/combatAreas";
+import { newGroupId } from "./lib/actionLog";
 import { partyOf, readSheet } from "./lib/characterSheet";
 import {
   MAX_TOKEN_NAME,
@@ -19,9 +20,12 @@ import {
   loadCombatToken,
   tokensOnMap,
 } from "./lib/combatMaps";
-import { movementGrid, uncloakAfterMove } from "./lib/combatMovement";
+import { movementGrid, uncloakAfterMove, unhideAfterEnemyMove } from "./lib/combatMovement";
 import { MAX_INSTANCES, startEncounter } from "./lib/encounters";
 import { pcPortrait } from "./lib/pcPortrait";
+import { postRuleNote, ruleMode } from "./lib/ruleModes";
+import { refillActionTokens, trackerTokens } from "./lib/actionTokens";
+import { assertMayAct } from "./lib/spotlight";
 import { tokenViewValidator, type TokenView } from "./lib/validators/combatTokens";
 import { campaignMutation, gmMutation, keyedGmMutation } from "./lib/functions";
 import { atLeast, permissionFor } from "./lib/permissions";
@@ -145,7 +149,7 @@ async function moverName(ctx: QueryCtx, token: Doc<"combatTokens">): Promise<str
 async function movableToken(ctx: CampaignCtx<MutationCtx>, tokenId: string) {
   const token = await loadCombatToken(ctx, ctx.campaign._id, tokenId);
   const map = await loadCombatMap(ctx, ctx.campaign._id, token.mapId);
-  if (atLeast(ctx.permission, "owner")) return { token, map };
+  if (atLeast(ctx.permission, "owner")) return { token, map, character: null };
   // Players see only the live map (R2, Q1).
   if (!map.live) throw appError("COMBAT_MAP_NOT_FOUND");
   if (token.ref.kind !== "pc") throw appError("COMBAT_NOT_YOUR_TOKEN");
@@ -153,7 +157,7 @@ async function movableToken(ctx: CampaignCtx<MutationCtx>, tokenId: string) {
   if (character === null || character.campaignId !== ctx.campaign._id) throw appError("COMBAT_NOT_YOUR_TOKEN");
   const permission = await permissionFor(ctx, ctx.user, { type: "character", campaign: ctx.campaign, character }, "edit");
   if (!atLeast(permission, "edit")) throw appError("COMBAT_NOT_YOUR_TOKEN");
-  return { token, map };
+  return { token, map, character };
 }
 
 // ---------------------------------------------------------------- GM: placing tokens
@@ -231,6 +235,8 @@ export const placeSessionEncounter = keyedGmMutation({
       if (found === null) throw appError("SESSION_NO_ENCOUNTER");
       const { session, encounter } = found;
       const started = await startEncounter(ctx, campaignId, encounter, "End the running encounter first.");
+      // Spotlight Tracker (user 2026-11-06): every PC refills when an encounter starts.
+      if (started && trackerTokens(ctx.campaign) !== null) await refillActionTokens(ctx, campaignId);
       // Journal JD4 (Q7): the encounter's scene becomes Playing now, "Scene N began" logged while live.
       await playCurrentScene(ctx, found, ctx.user._id);
       const existing = await tokensOnMap(ctx, map._id);
@@ -368,7 +374,8 @@ export async function removeDuplicates(ctx: MutationCtx, token: Doc<"combatToken
 /**
  * Writes a second position of a creature (Blink Beast, HF p.71: "a duplicate of itself appears ... within Close range";
  * E7's `summon.duplicate` calls it): a token with the original's `ref`, side and size on square (x, y), `duplicateOf` the
- * original. The square must be on the map and within `within` (default Close) of the original (COMBAT_TARGET_INVALID); a
+ * original. The square must be on the map and within `within` (default Close) of the original (COMBAT_TARGET_INVALID; any
+ * square with Defined Ranges off, rule switches ODR2); a
  * duplicate of a duplicate names the original. The original's earlier duplicates go first (one second position at a time,
  * unless `keepOld`). COMBAT_TOKEN_LIMIT past the map's tokens.
  */
@@ -381,7 +388,10 @@ export async function placeDuplicate(
   if (map === null) throw appError("COMBAT_MAP_NOT_FOUND");
   const at = { x: Math.trunc(input.x), y: Math.trunc(input.y), size: original.size };
   if (!Number.isFinite(input.x) || !Number.isFinite(input.y) || at.x < 0 || at.y < 0 || at.x + at.size > map.w || at.y + at.size > map.h) throw appError("COMBAT_TARGET_INVALID", "That square is off the map.");
-  if (!rangeCheck(original, at, input.within ?? "close").inRange) throw appError("COMBAT_TARGET_INVALID", `The duplicate must appear within ${input.within ?? "close"} range.`);
+  // Rule switches ODR2: with Defined Ranges off the square needn't be within range of the original (no squares counted).
+  const campaign = await ctx.db.get("campaigns", map.campaignId);
+  const ranges = campaign === null || ruleMode(campaign, "definedRanges");
+  if (!rangeCheck(original, at, input.within ?? "close", ranges).inRange) throw appError("COMBAT_TARGET_INVALID", `The duplicate must appear within ${input.within ?? "close"} range.`);
   if (input.keepOld !== true) await removeDuplicates(ctx, original);
   await assertCanAddTokens(ctx, map._id);
   const { _id: _ignored, _creationTime: _created, ...fields } = original;
@@ -415,12 +425,18 @@ export const clear = gmMutation({
  * MOVE_BLOCKED, which carries no position; the GM's move always goes through and returns `blocked: true` so the map can
  * warn. `difficult`: the move crossed or ended on difficult terrain (a movement roll is needed to pass this turn, D5).
  * Players already receive the whole layout (`combatMaps.live`, Q1), so neither answer tells them anything new.
+ * M2 Walls and doors (plan rule-switches RM; the app's own rule, not in the books): in Manual nothing is refused or
+ * flagged (`blocked` and `difficult` false) and a player's move through a wall, a closed door or difficult terrain posts
+ * a GM-only note (`moveVerdict`, `wallsNote`).
+ * C2 Hidden / Cloaked end on the map (CB p.102): Manual changes nothing on the sheet and notes it (`uncloakAfterMove`).
  *
  * Cloaked (DA3, DA18): a PC token that ends a move on the live map where a revealed enemy token sees it in clear light
  * loses Cloaked; in dim light only, the rogue makes one Finesse action roll against the highest Difficulty among those
  * enemies, and a failure ends it (`uncloakAfterMove`, public undoable feed rows); Vanishing Act's Cloaked stays. A dim
  * time phase counts as dim light. The GM's drag of a conscious rogue (not the GM's own character) is not the rogue's move:
  * no roll, Cloaked stays. An unconscious or dead rogue's token that moves drops Cloaked (dcm-bxp.99.19.62).
+ * C2 Book (plan rule-switches RFA, CB p.102): an ordinary Hidden ends the same way on the PC's own move, and when an enemy
+ * token moves to where it sees the Hidden PC (`unhideAfterEnemyMove`; a Cloaked PC stays unseen, CB p.42).
  */
 export const move = campaignMutation({
   need: "view",
@@ -443,25 +459,35 @@ export const move = campaignMutation({
     carried: v.optional(v.array(v.object({ tokenId: v.id("combatTokens"), x: v.number(), y: v.number() }))),
   }),
   handler: async (ctx, { tokenId, x, y, carry }) => {
-    const { token, map } = await movableToken(ctx, tokenId);
+    const { token, map, character } = await movableToken(ctx, tokenId);
     const byGm = atLeast(ctx.permission, "owner");
     const next = moveToken(token, x, y, map);
     const stays = next.x === token.x && next.y === token.y;
-    const { blocked, difficult } = stays
-      ? { blocked: false, difficult: false }
-      : checkMove(await movementGrid(ctx, ctx.campaign._id, map), token, next, token.size);
-    if (blocked && !byGm) throw appError("MOVE_BLOCKED");
+    // S2 (plan rule-switches RS2; user answer 2026-11-01): a player's token move waits while the GM holds the spotlight
+    // (Manual: it goes through and the GM gets a note). The GM's drags never wait.
+    if (character !== null && !stays) await assertMayAct(ctx, ctx.campaign, character, "move", await moverName(ctx, token));
+    // M2 Walls and doors (plan rule-switches RM): the app rule refuses a player's blocked move; Manual lets it through
+    // unflagged and notes what a player's move went through for the GM.
+    const { refused, blocked, difficult, crossed } = moveVerdict(
+      stays ? { blocked: false, difficult: false } : checkMove(await movementGrid(ctx, ctx.campaign._id, map), token, next, token.size),
+      byGm,
+      ruleMode(ctx.campaign, "wallsBlock"),
+    );
+    if (refused) throw appError("MOVE_BLOCKED");
     let name: string | null = null;
     const nameOf = async () => (name ??= await moverName(ctx, token));
+    if (crossed !== null) await postRuleNote(ctx, ctx.campaign, { ruleId: "wallsBlock", summary: wallsNote(await nameOf(), crossed), groupId: newGroupId(), actorId: ctx.user._id });
     // Plan lanes-2 E4: an area's hold (Bramble Patch), movement limits (Creeping Fire) and the adversaries' pcMoves features.
     const rules = stays ? { warnings: [], triggers: [] } : await moveRules(ctx, { campaignId: ctx.campaign._id, map, before: token, after: next, byGm, actorId: ctx.user._id, nameOf });
     await ctx.db.patch("combatTokens", token._id, next);
-    const carried = carry === undefined || carry.length === 0 || stays ? [] : await carryAlong(ctx, { map, carrierBefore: token, carrierAfter: next, carry, byGm });
+    const carried = carry === undefined || carry.length === 0 || stays ? [] : await carryAlong(ctx, { map, carrierBefore: token, carrierAfter: next, carry, byGm, definedRanges: ruleMode(ctx.campaign, "definedRanges") });
     // dcm-rx1k / dcm-bpr: the caster's areas that end when the caster moves.
     if (!stays && token.ref.kind === "pc") await endAreasOnCasterEvent(ctx, ctx.campaign._id, token.ref.characterId, "moves");
     // CB p.42 (Rogue, Cloaked): "end a move within line of sight of an adversary" ends it (Q9, plan drawer-answers DA3).
     // A GM's drag is not the rogue's move (dcm-bxp.99.19.62 (2)): `byGm`.
     if (!stays) await uncloakAfterMove(ctx, ctx.campaign, map, { ...token, ...next }, ctx.user._id, { byGm });
+    // C2 (plan rule-switches RFA; CB p.102): "After an adversary moves to where they would see you … you are no longer Hidden."
+    if (!stays) await unhideAfterEnemyMove(ctx, ctx.campaign, map, { ...token, ...next }, ctx.user._id);
     // Plan lanes E4 (dcm-cma, dcm-wuu, dcm-ii4): live areas that react to entering, passing through, crossing or leaving.
     const areas = stays ? [] : await areasAfterMove(ctx, ctx.campaign._id, map._id, token, { ...token, ...next }, ctx.user._id, nameOf);
     // Plan lanes-2 E4.4 (dcm-ii4): a caster carried out of their own circle has exited it too.

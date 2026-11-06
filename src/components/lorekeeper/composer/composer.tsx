@@ -2,6 +2,7 @@
 
 import { useId, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import {
   ASK_LABEL,
   COMPOSER_LABEL,
@@ -16,6 +17,7 @@ import {
   WEB_TOGGLE_ON,
   questionsLeftLabel,
 } from "@/lib/lorekeeper/copy";
+import { useFeature } from "@/lib/use-feature";
 
 import type { ConversationVisibility } from "../../../../convex/lib/validators/lorekeeper";
 import { QUESTION_MAX, counterText, sendsOnKey } from "./model";
@@ -38,6 +40,8 @@ export type ComposerProps = {
   onStop?: () => void;
   webSearch: boolean;
   onWebSearch: (on: boolean) => void;
+  /** Config L1 / U4: false while the GM keeps the internet off for the campaign (the toggle is hidden). Default true. */
+  webAllowed?: boolean;
   /** The conversation's visibility (Q3) when the caller may change it. */
   visibility: { value: ConversationVisibility; onChange: (next: ConversationVisibility) => void } | null;
   /** Why the last ask failed; `newConversation` offers 'Start a new conversation'. */
@@ -56,7 +60,10 @@ export type ComposerProps = {
  * screen. Any other notice (a failed ask, the questions left) stays under the toggles.
  */
 export function Composer(props: ComposerProps) {
-  const { disabled, questionsLeft, streaming, sending, onAsk, onStop, webSearch, onWebSearch, visibility, notice, onNewConversation } = props;
+  const { disabled, questionsLeft, streaming, sending, onAsk, onStop, webSearch, onWebSearch, webAllowed: campaignWeb = true, visibility, notice, onNewConversation } = props;
+  // Config AF1: the owner's Lorekeeper internet search switch, off for this user, hides the toggle too (the answer run
+  // skips the web pass on the server either way).
+  const webAllowed = useFeature("lorekeeperWeb") && campaignWeb;
   const [draft, setDraft] = useState("");
   const counterId = useId();
   const noticeId = useId();
@@ -84,9 +91,16 @@ export function Composer(props: ComposerProps) {
       ) : null}
       <div className="lk-sugs">
         {SUGGESTIONS.map((suggestion) => (
-          <button key={suggestion.key} type="button" className="lk-sug" disabled={blocked} onClick={() => void send(suggestion.question)}>
+          <BrandButton
+            key={suggestion.key}
+            variant="neutral"
+            size="sm"
+            className="flex-none"
+            disabled={blocked}
+            onClick={() => void send(suggestion.question)}
+          >
             {suggestion.label}
-          </button>
+          </BrandButton>
         ))}
       </div>
       <div className="lk-inrow">
@@ -107,13 +121,13 @@ export function Composer(props: ComposerProps) {
           }}
         />
         {streaming ? (
-          <button type="button" className="lk-send" disabled={!onStop} onClick={onStop}>
+          <BrandButton variant="cancel" className="flex-none" disabled={!onStop} onClick={onStop}>
             {STOP_LABEL}
-          </button>
+          </BrandButton>
         ) : (
-          <button type="button" className="lk-send" disabled={blocked} onClick={() => void send(draft)}>
+          <BrandButton variant="confirm" className="flex-none" disabled={blocked} onClick={() => void send(draft)}>
             {ASK_LABEL}
-          </button>
+          </BrandButton>
         )}
       </div>
       {counter ? (
@@ -122,24 +136,28 @@ export function Composer(props: ComposerProps) {
         </span>
       ) : null}
       <div className="lk-togglerow">
-        <span className="lk-lbl">{WEB_TOGGLE_LABEL}</span>
-        <div className="lk-toggle" role="group" aria-label={WEB_TOGGLE_GROUP_LABEL}>
-          <button type="button" aria-pressed={webSearch} onClick={() => onWebSearch(true)}>
-            {WEB_TOGGLE_ON}
-          </button>
-          <button type="button" aria-pressed={!webSearch} onClick={() => onWebSearch(false)}>
-            {WEB_TOGGLE_OFF}
-          </button>
-        </div>
+        {webAllowed ? (
+          <>
+            <span className="lk-lbl">{WEB_TOGGLE_LABEL}</span>
+            <div className="lk-toggle" role="group" aria-label={WEB_TOGGLE_GROUP_LABEL}>
+              <BrandButton variant="neutral" size="sm" aria-pressed={webSearch} onClick={() => onWebSearch(true)}>
+                {WEB_TOGGLE_ON}
+              </BrandButton>
+              <BrandButton variant="neutral" size="sm" aria-pressed={!webSearch} onClick={() => onWebSearch(false)}>
+                {WEB_TOGGLE_OFF}
+              </BrandButton>
+            </div>
+          </>
+        ) : null}
         {visibility ? (
-          <button
-            type="button"
-            className="lk-visibility"
+          <BrandButton
+            variant="neutral"
+            size="sm"
             aria-pressed={visibility.value === "private"}
             onClick={() => visibility.onChange(visibility.value === "private" ? "campaign" : "private")}
           >
             <span aria-hidden="true">{visibility.value === "private" ? "🔒" : "👁"}</span> Private
-          </button>
+          </BrandButton>
         ) : null}
         {visibility ? (
           <span className="lk-vistext">{visibility.value === "private" ? VISIBILITY_PRIVATE : VISIBILITY_PUBLIC}</span>
@@ -150,9 +168,9 @@ export function Composer(props: ComposerProps) {
           {notice ? <span>{notice.text}</span> : null}
           {left}
           {notice?.newConversation ? (
-            <button type="button" className="lk-act lk-act-dark" onClick={onNewConversation}>
+            <BrandButton variant="neutral" size="sm" onClick={onNewConversation}>
               Start a new conversation
-            </button>
+            </BrandButton>
           ) : null}
         </div>
       ) : null}

@@ -1,0 +1,40 @@
+/* Threads raised (JTh): rows of bullet, text and 'In Notes' on the dark card. Tokens from ../journal.css. */
+.jrth-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.jrth-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.35;
+  color: var(--jr-text);
+}
+.jrth-bul {
+  text-align: center;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--jr-text);
+}
+.jrth-row[data-kind="fear"] .jrth-bul {
+  color: #c4a2ff;
+  text-shadow: 0 0 6px rgba(140, 80, 220, 0.45);
+}
+.jrth-row[data-kind="fear"] .jrth-text {
+  color: #d9c6ff;
+}
+.jrth-text {
+  overflow-wrap: anywhere;
+}
+.jrth-text .bj-mention {
+  color: var(--jr-acc);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

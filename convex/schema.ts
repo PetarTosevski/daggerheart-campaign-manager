@@ -2,6 +2,7 @@ import { authTables } from "@convex-dev/auth/server";
 import { defineSchema } from "convex/server";
 
 import { actionLogTables } from "./tables/actionLog";
+import { adminTables } from "./tables/admin";
 import { campaignTables } from "./tables/campaigns";
 import { characterTables } from "./tables/characters";
 import { codexTables } from "./tables/codex";
@@ -50,5 +51,6 @@ export default defineSchema({
   ...spritePackTables,
   ...notesTables,
   ...lorekeeperTables,
+  ...adminTables,
   ...e2eTables,
 });

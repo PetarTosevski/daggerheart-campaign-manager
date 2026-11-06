@@ -7,14 +7,47 @@ import {
   modifyAccountCredentials,
   retrieveAccount,
 } from "@convex-dev/auth/server";
-import { ConvexError } from "convex/values";
+import { ConvexError, v } from "convex/values";
 
 import { appError } from "../src/lib/errors/app-error";
-import { env, type ActionCtx, type MutationCtx } from "./_generated/server";
+import { internal } from "./_generated/api";
+import { env, internalQuery, type ActionCtx, type MutationCtx } from "./_generated/server";
+import { resumeSelfDeletedAccount } from "./accountSelfDelete";
 import { buildE2EProfile, normalizeEmail } from "./lib/allowlist";
 import { resendCodeProvider } from "./lib/authEmail";
 import { enforceAuthLimit } from "./lib/authRateLimit";
-import { createOrUpdateUser, PASSWORD_PROVIDER_ID, type SignInArgs } from "./lib/users";
+import {
+  createOrUpdateUser,
+  PASSWORD_PROVIDER_ID,
+  signUpJoinCode,
+  signUpRefusal,
+  type SignInArgs,
+} from "./lib/users";
+
+/**
+ * The sign-up mode's answer for a password sign-up (config AD4), asked by `withAuthErrors` before the email is looked
+ * up: null when a new account would be allowed, else the refusal code. It depends only on the mode, the email's
+ * invites and the join code, never on whether the email has an account.
+ */
+export const signUpGate = internalQuery({
+  args: { email: v.string(), joinCode: v.union(v.string(), v.null()) },
+  returns: v.union(v.literal("SIGN_UP_CLOSED"), v.literal("SIGN_UP_INVITE_ONLY"), v.null()),
+  handler: (ctx, { email, joinCode }) => signUpRefusal(ctx, email, joinCode),
+});
+
+/**
+ * Refuses a sign-in result whose account is suspended or waiting for the owner's deletion (config AD14), so the person
+ * is turned away at the sign-in screen. Asked after a password, e2e (or phone Apple) sign-in of an existing account,
+ * which Convex Auth finishes without calling `createOrUpdateUser`. A deletion the account asked for itself is cancelled
+ * instead and the sign-in goes on (DEL1, `accountSelfDelete.signInAllowed`).
+ */
+async function refuseSuspendedSignIn<T>(ctx: ActionCtx, result: T): Promise<T> {
+  const userId = (result as { userId?: unknown } | null)?.userId;
+  if (typeof userId === "string" && !(await ctx.runMutation(internal.accountSelfDelete.signInAllowed, { userId }))) {
+    throw appError("ACCOUNT_SUSPENDED");
+  }
+  return result;
+}
 
 const E2E_PROVIDER_ID = "e2e";
 
@@ -30,7 +63,7 @@ const e2eProvider = ConvexCredentials({
       provider: E2E_PROVIDER_ID,
       account: { id: profile.email },
     }).catch(() => null);
-    if (existing !== null) return { userId: existing.user._id };
+    if (existing !== null) return refuseSuspendedSignIn(ctx as unknown as ActionCtx, { userId: existing.user._id });
     const { user } = await createAccount(ctx, {
       provider: E2E_PROVIDER_ID,
       account: { id: profile.email },
@@ -89,6 +122,14 @@ function withAuthErrors(base: ReturnType<typeof Password>) {
         validatePasswordRequirements(params.password);
         await enforceAuthLimit(ctx, "authSignUp", email);
         await enforceAuthLimit(ctx, "authSignUpGlobal");
+        // Sign-up mode (AD4), after the rate limits (so join-code guesses spend tokens) and before the email is looked
+        // up: a refused sign-up gets the same answer whether or not the email has an account. This also refuses a
+        // Google user adding a password while sign-ups are refused (they keep signing in with Google).
+        const refusal = await ctx.runQuery(internal.auth.signUpGate, {
+          email,
+          joinCode: signUpJoinCode(params.joinCode),
+        });
+        if (refusal !== null) throw appError(refusal);
         const found = await retrieveAccount(ctx, { provider: PASSWORD_PROVIDER_ID, account: { id: email } }).catch(
           (error: unknown) => {
             if (error instanceof Error && error.message === "InvalidAccountId") return null;
@@ -105,7 +146,7 @@ function withAuthErrors(base: ReturnType<typeof Password>) {
           });
         }
       }
-      return await inner(params, ctx);
+      return await refuseSuspendedSignIn(ctx, await inner(params, ctx));
     } catch (error) {
       if (error instanceof ConvexError) throw error;
       const message = error instanceof Error ? error.message : "";
@@ -118,6 +159,12 @@ function withAuthErrors(base: ReturnType<typeof Password>) {
     }
   };
   return { ...base, options: { ...options, authorize } } as unknown as typeof base;
+}
+
+/** `createOrUpdateUser` behind the self-deletion cancel (DEL1): an OAuth sign-in of an existing account. */
+export async function signInCallback(ctx: MutationCtx, args: SignInArgs) {
+  if (args.existingUserId !== null) await resumeSelfDeletedAccount(ctx, args.existingUserId);
+  return createOrUpdateUser(ctx, args);
 }
 
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
@@ -135,7 +182,7 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
         };
       },
     }),
-    // Email + password. Sign-up is open; a new account works only after the emailed 6-digit code is entered
+    // Email + password. Sign-up follows the owner's sign-up mode (AD4); a new account works only after the emailed 6-digit code is entered
     // (`verify`), and a forgotten password is reset by another emailed code (`reset`).
     withAuthErrors(
       Password({
@@ -146,7 +193,9 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
         profile(params) {
           const email = typeof params.email === "string" ? normalizeEmail(params.email) : "";
           const name = typeof params.name === "string" ? params.name.trim().slice(0, 80) : "";
-          return { email, ...(name ? { name } : {}) };
+          // The join code of a /join/<code> link (AD4): read by `createOrUpdateUser` for invite mode, never stored.
+          const joinCode = signUpJoinCode(params.joinCode);
+          return { email, ...(name ? { name } : {}), ...(joinCode ? { joinCode } : {}) };
         },
       }),
     ),
@@ -165,7 +214,8 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   callbacks: {
     // The callback's ctx is typed for any data model; this app's schema is
     // the one in convex/schema.ts.
-    createOrUpdateUser: (ctx, args) =>
-      createOrUpdateUser(ctx as unknown as MutationCtx, args as unknown as SignInArgs),
+    // Signing in to an account that asked for its own deletion cancels it first (DEL1), so `createOrUpdateUser`'s
+    // suspension check (AD14) refuses only what the owner set.
+    createOrUpdateUser: (ctx, args) => signInCallback(ctx as unknown as MutationCtx, args as unknown as SignInArgs),
   },
 });

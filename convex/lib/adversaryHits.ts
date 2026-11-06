@@ -25,6 +25,7 @@ import {
   runReactionFeature,
   type ArmorCost,
   type Fold,
+  type HitRules,
   type PcDefense,
   type WindowHit,
   type WindowPc,
@@ -50,8 +51,10 @@ import { parseChoices, type CardChoice } from "./cardChoices";
 import { cardActor, cardIdOfEffect, effectOption, endConditionsOnRoll, endedConditionLine, featureIdOfEffect, pcCombatant, writeSheetChanges, type EndedCondition } from "./cardRunner";
 import { partyOf, readSheet } from "./characterSheet";
 import { tokensOnMap } from "./combatMaps";
-import { activeAreasOnMap, areaFactsFor } from "../combatAreas";
-import type { HitRider, IncomingHitPayload, PcAttacker } from "./validators/combatRequests";
+import { activeAreasOnMap, areaFactsFor } from "./combatAreas";
+import { ruleModesOf } from "./ruleModes";
+import type { RuleModes } from "../../src/lib/rules/registry";
+import type { AdversaryAttacker, HazardAttacker, HitRider, IncomingHitPayload, PcAttacker } from "./validators/combatRequests";
 
 /** One hit before armor, as the runner's `IncomingHitDraft` gives it. */
 export type HitDraft = {
@@ -77,9 +80,19 @@ export function isPcAttacker(attacker: HitAttacker): attacker is PcAttacker {
   return "kind" in attacker && attacker.kind === "pc";
 }
 
-/** The attacking instance, or null for a PC attacker. */
+/** A fall or a collision (plan rule-switches OFA, CB p.168): no creature behind the hit. */
+export function isHazardAttacker(attacker: HitAttacker): attacker is HazardAttacker {
+  return "kind" in attacker && attacker.kind === "hazard";
+}
+
+/** An adversary instance made the hit (neither a PC's card nor a hazard). */
+export function isAdversaryAttacker(attacker: HitAttacker): attacker is AdversaryAttacker {
+  return "instanceId" in attacker;
+}
+
+/** The attacking instance, or null for a PC attacker or a hazard. */
 export function attackerInstanceId(attacker: HitAttacker): Id<"encounterAdversaries"> | null {
-  return isPcAttacker(attacker) ? null : attacker.instanceId;
+  return isAdversaryAttacker(attacker) ? attacker.instanceId : null;
 }
 
 /** An active character of the campaign with a readable sheet. */
@@ -181,6 +194,23 @@ export function answeringFeatures(sheet: CharacterSheet, hopeAndFear: boolean): 
 export async function hopeAndFearOf(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<boolean> {
   const campaign = await ctx.db.get("campaigns", campaignId);
   return campaign === null ? true : resolveOptions(campaign.frameId, campaign.options).hopeAndFear;
+}
+
+/** The rule modes a hit on a PC follows (plan rule-switches RC2): A1, D2, D4, D5 and Massive Damage, from `ruleModesOf`. */
+export function hitRulesFrom(modes: RuleModes): HitRules {
+  return {
+    armorSlots: modes.armorSlots,
+    resistance: modes.resistance,
+    stressOverflow: modes.stressOverflow,
+    fullStressVulnerable: modes.fullStressVulnerable,
+    massiveDamage: modes.massiveDamage,
+  };
+}
+
+/** The campaign's hit rules (`hitRulesFrom`); a campaign that is gone reads the Book. */
+export async function hitRulesOf(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<HitRules> {
+  const campaign = await ctx.db.get("campaigns", campaignId);
+  return campaign === null ? {} : hitRulesFrom(ruleModesOf(campaign));
 }
 
 /**
@@ -435,7 +465,7 @@ export function goldForHp(effects: readonly AdversaryFeatureEffect[], feature: s
 /** E2.3 (dcm-5cn5): `goldForHp` from the attacking instance's stat block; never for a PC attacker. */
 export async function goldForHpOf(ctx: QueryCtx, row: { campaignId: Id<"campaigns">; payload: Pick<IncomingHitPayload, "attacker"> }): Promise<boolean> {
   const attacker = row.payload.attacker;
-  if (isPcAttacker(attacker)) return false;
+  if (!isAdversaryAttacker(attacker)) return false;
   const instance = await ctx.db.get("encounterAdversaries", attacker.instanceId);
   if (instance === null || instance.campaignId !== row.campaignId) return false;
   const block = await blockOf(ctx, instance);
@@ -484,7 +514,7 @@ export function hitArmorCost(effects: readonly AdversaryFeatureEffect[], feature
 /** E2 (dcm-s77): the hit's dearer Armor Slots from its attacking instance's stat block; none for a PC attacker. */
 export async function armorCostOf(ctx: QueryCtx, row: { campaignId: Id<"campaigns">; payload: Pick<IncomingHitPayload, "attacker"> }): Promise<ArmorCost | undefined> {
   const attacker = row.payload.attacker;
-  if (isPcAttacker(attacker)) return undefined;
+  if (!isAdversaryAttacker(attacker)) return undefined;
   const instance = await ctx.db.get("encounterAdversaries", attacker.instanceId);
   if (instance === null || instance.campaignId !== row.campaignId) return undefined;
   const block = await blockOf(ctx, instance);
@@ -541,6 +571,8 @@ export function hitKeywordInfo(effects: readonly AdversaryFeatureEffect[], featu
 export async function hitKeywordInfoOf(ctx: QueryCtx, row: { campaignId: Id<"campaigns">; payload: Pick<IncomingHitPayload, "attacker"> }): Promise<KeywordInfo> {
   const attacker = row.payload.attacker;
   if (isPcAttacker(attacker)) return stepsKeyword(cardEffect(attacker.cardId)?.uses.flatMap((u) => [...u.steps]) ?? [], "damage") ?? { known: false };
+  // Plan rule-switches OFA: a fall or a collision carries no keyword (no GM ask).
+  if (!isAdversaryAttacker(attacker)) return { known: true };
   const instance = await ctx.db.get("encounterAdversaries", attacker.instanceId);
   if (instance === null || instance.campaignId !== row.campaignId) return { known: false };
   const block = await blockOf(ctx, instance);
@@ -587,7 +619,7 @@ export function markHpKeyword(effects: readonly AdversaryFeatureEffect[], featur
 /** E2.4 (dcm-n7kt): `markHpKeyword` from the attacking instance's stat block. */
 export async function markHpKeywordOf(ctx: QueryCtx, row: { campaignId: Id<"campaigns">; payload: Pick<IncomingHitPayload, "attacker"> }): Promise<DamageKeyword | undefined> {
   const attacker = row.payload.attacker;
-  if (isPcAttacker(attacker)) return undefined;
+  if (!isAdversaryAttacker(attacker)) return undefined;
   const instance = await ctx.db.get("encounterAdversaries", attacker.instanceId);
   if (instance === null || instance.campaignId !== row.campaignId) return undefined;
   const block = await blockOf(ctx, instance);
@@ -612,12 +644,17 @@ export async function attackerAreasOnMap(ctx: QueryCtx, mapId: Id<"combatMaps"> 
   const map = await ctx.db.get("combatMaps", mapId);
   if (map === null || !map.live) return undefined;
   const tokens = await tokensOnMap(ctx, mapId);
-  const token = isPcAttacker(attacker)
-    ? tokens.find((t) => t.ref.kind === "pc" && t.ref.characterId === attacker.characterId)
-    : tokens.find((t) => t.ref.kind === "adversary" && t.ref.adversaryId === attacker.instanceId);
+  const token = attackerToken(tokens, attacker);
   if (!token) return undefined;
   const areas = await activeAreasOnMap(ctx, mapId);
   return areaFactsFor(areas, tokens, token, null).map((a) => a.featureId);
+}
+
+/** The attacker's token on the map: the PC's or the instance's; none for a hazard (OFA). */
+function attackerToken(tokens: readonly Doc<"combatTokens">[], attacker: HitAttacker): Doc<"combatTokens"> | undefined {
+  if (isPcAttacker(attacker)) return tokens.find((t) => t.ref.kind === "pc" && t.ref.characterId === attacker.characterId);
+  if (isAdversaryAttacker(attacker)) return tokens.find((t) => t.ref.kind === "adversary" && t.ref.adversaryId === attacker.instanceId);
+  return undefined;
 }
 
 /** The typed id of a character the window names by string (always one of the party, or the stored target). */
@@ -654,9 +691,7 @@ export async function attackerBandsOnMap(ctx: QueryCtx, mapId: Id<"combatMaps"> 
   const map = await ctx.db.get("combatMaps", mapId);
   if (map === null || !map.live) return () => undefined;
   const tokens = await tokensOnMap(ctx, mapId);
-  const from = isPcAttacker(attacker)
-    ? tokens.find((t) => t.ref.kind === "pc" && t.ref.characterId === attacker.characterId)
-    : tokens.find((t) => t.ref.kind === "adversary" && t.ref.adversaryId === attacker.instanceId);
+  const from = attackerToken(tokens, attacker);
   if (!from) return () => undefined;
   return (id) => {
     const token = tokens.find((t) => t.ref.kind === "pc" && t.ref.characterId === id);
@@ -708,7 +743,7 @@ export function windowHitOf(
     type: hit.type,
     direct: hit.direct,
     ...(hit.forcedArmor > 0 ? { forcedArmor: hit.forcedArmor } : {}),
-    attackerId: isPcAttacker(attacker) ? attacker.characterId : attacker.instanceId,
+    attackerId: isPcAttacker(attacker) ? attacker.characterId : isAdversaryAttacker(attacker) ? attacker.instanceId : `hazard:${attacker.hazard}`,
     critical: hit.critical,
     ...(hit.attackTotal !== undefined ? { attackTotal: hit.attackTotal } : {}),
     ...(riders.some(isConditionRider) ? { conditionRiders: true } : {}),
@@ -743,6 +778,7 @@ export async function attackerCombatant(ctx: QueryCtx, row: { campaignId: Id<"ca
     const member = members.find((m) => m.character._id === attacker.characterId);
     return member ? { instance: null, combatant: pcCombatant(member.character._id, member.sheet) } : null;
   }
+  if (!isAdversaryAttacker(attacker)) return null;
   const instance = await ctx.db.get("encounterAdversaries", attacker.instanceId);
   if (instance === null || instance.campaignId !== row.campaignId) return null;
   return {
@@ -904,7 +940,7 @@ export async function rebuildWindow(ctx: QueryCtx, row: HitRow, attackTotal?: nu
   const attackerAreas = await attackerAreasOnMap(ctx, row.mapId, p.attacker);
   const party = windowParty(members, p.targetCharacterId, bands, { hopeAndFear, toAttacker, ...(keyword ? { keyword } : {}), ...(attackerAreas ? { attackerAreas } : {}) });
   const attacker = await attackerCombatant(ctx, row, everyone);
-  const attackRoll = isPcAttacker(p.attacker) ? null : await attackRollOf(ctx, row);
+  const attackRoll = isAdversaryAttacker(p.attacker) ? await attackRollOf(ctx, row) : null;
   // DA8 (DA1 follow-up 2): the target's own total, stored with the hit, before the whole roll's.
   const total = attackTotal ?? p.attackTotal ?? attackRoll?.total;
   const hit = windowHitOf(
@@ -920,7 +956,9 @@ export async function rebuildWindow(ctx: QueryCtx, row: HitRow, attackTotal?: nu
     return { characterId: r.characterId, role: r.role, cardIds: r.cardIds.filter((id) => !isFeatureId(id)), ...(featureIds.length > 0 ? { featureIds } : {}) };
   });
   // The stored responders stand (no eligibility re-run); only the armor capacity is read from today's party.
-  const opened = openWindow({ hit, targetId: p.targetCharacterId, party: party.map((x) => ({ ...x, features: [], cards: [] })) });
+  // RC2: the campaign's rule modes (A1, D2, D4, D5, Massive) ride on the window.
+  const rules = await hitRulesOf(ctx, row.campaignId);
+  const opened = openWindow({ hit, targetId: p.targetCharacterId, party: party.map((x) => ({ ...x, features: [], cards: [] })), rules });
   let state: WindowState = { ...opened, party, responders, ...(attacker ? { attacker: attacker.combatant } : {}) };
   let damage: { text: string; critical: boolean } | null | undefined;
   for (const [i, answer] of row.responses.entries()) {
@@ -962,7 +1000,7 @@ export function cardRefusal(r: RunRefusal) {
     case "exhausted":
       return appError("CARD_EXHAUSTED", r.detail);
     case "cost":
-      return appError("CARD_COST_UNPAID", `Short of: ${r.detail}.`);
+      return appError("CARD_COST_UNPAID", `Short of: ${r.detail}.`, r.shortfall);
     case "targets":
       return appError("COMBAT_TARGET_INVALID", r.detail);
     default:
@@ -1035,7 +1073,10 @@ export function applyRiders(
   ignoreHp = false,
   refused: ReadonlySet<string> = new Set(),
   hope: { amount: number; factor?: number } = { amount: 0 },
-): { sheet: CharacterSheet; applied: number; hopeSpent: number } {
+  /** RC2: D4 (CB p.92) for a Stress rider past a full track; unset = the Book. */
+  rules: Pick<HitRules, "stressOverflow"> = {},
+): { sheet: CharacterSheet; applied: number; hopeSpent: number; overflowDropped?: true } {
+  let overflowDropped = false;
   let next = sheet;
   let applied = 0;
   let hopeLeft = Math.max(0, Math.trunc(hope.amount));
@@ -1058,7 +1099,10 @@ export function applyRiders(
         next = { ...next, hope: Math.max(0, Math.min(hopeMax(next.scars, next.hopeSlotBonus), next.hope + r.delta)) };
         break;
       case "stress": {
-        const marked = applyStressTo(pcCombatant("rider", next), r.amount).after;
+        const res = applyStressTo(pcCombatant("rider", next), r.amount, rules);
+        const marked = res.after;
+        // D4 Manual: the Stress past a full track is dropped, no HP (the caller tells the GM).
+        if (res.overflow === true && rules.stressOverflow === "manual") overflowDropped = true;
         next = { ...next, stress: Math.min(next.stressMax, marked.stress), hp: ignoreHp ? next.hp : Math.min(next.hpMax, marked.hp) };
         break;
       }
@@ -1072,7 +1116,7 @@ export function applyRiders(
       }
     }
   }
-  return { sheet: next, applied, hopeSpent };
+  return { sheet: next, applied, hopeSpent, ...(overflowDropped ? { overflowDropped: true as const } : {}) };
 }
 
 /** Runs one of the hit PC's after-hit card uses with the hit as its trigger (dice seeded from the row: no fishing). */

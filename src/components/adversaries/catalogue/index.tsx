@@ -3,7 +3,7 @@
 import "./catalogue.css";
 
 import { ChevronDown } from "lucide-react";
-import { useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
   NO_FILTERS,
@@ -22,10 +22,13 @@ import {
   type CatalogueSort,
   type CatalogueTier,
 } from "@/lib/adversaries/catalogue";
+import { BrandButton } from "@/components/brand/buttons";
+import { useUiState } from "@/lib/use-ui-state";
 import { adversariesFor } from "@/lib/domain/adversaries";
 import { ADVERSARIES } from "@/lib/srd/adversaries";
 import { adversaryArt } from "@/lib/srd/adversary-art";
 import { ADVERSARY_TYPES, type AdversaryType } from "@/lib/srd/types";
+import { prefersReducedMotion } from "@/lib/use-reduced-motion";
 
 import type { CatalogueProps } from "../slots";
 import { HopeFearPill, StatBlock } from "./stat-block";
@@ -38,9 +41,9 @@ const BOOKS: readonly { id: CatalogueBook; label: string }[] = [
 
 function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: ReactNode }) {
   return (
-    <button type="button" className="adc-chip" aria-pressed={on} onClick={onClick}>
+    <BrandButton variant="neutral" size="sm" className="min-w-11" aria-pressed={on} onClick={onClick}>
       {children}
-    </button>
+    </BrandButton>
   );
 }
 
@@ -96,29 +99,6 @@ const TYPE_MEANING: Record<AdversaryType, string> = {
   Support: "Enhance their allies and disrupt their opponents.",
 };
 
-const SORT_KEY = "dcm:adversary-sort";
-const SORT_EVENT = "dcm-adversary-sort";
-/** The last choice, for when storage throws (private windows, blocked site data). */
-let sortFallback: CatalogueSort = "name";
-
-function readSort(): CatalogueSort {
-  try {
-    const stored = window.localStorage.getItem(SORT_KEY);
-    return stored === "book" || stored === "name" ? stored : sortFallback;
-  } catch {
-    return sortFallback;
-  }
-}
-
-function subscribeSort(onChange: () => void): () => void {
-  window.addEventListener(SORT_EVENT, onChange);
-  window.addEventListener("storage", onChange);
-  return () => {
-    window.removeEventListener(SORT_EVENT, onChange);
-    window.removeEventListener("storage", onChange);
-  };
-}
-
 export function Catalogue({ hopeAndFear, frameId, renderActions }: CatalogueProps) {
   const visible = useMemo(() => adversariesFor(ADVERSARIES, { hopeAndFear, frameId }), [hopeAndFear, frameId]);
   const [filters, setFilters] = useState<CatalogueFilters>(NO_FILTERS);
@@ -126,17 +106,11 @@ export function Catalogue({ hopeAndFear, frameId, renderActions }: CatalogueProp
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Tier groups the GM folded away (click a tier's heading).
   const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(() => new Set());
-  // A–Z or book order, remembered per device (browser storage is for conveniences only).
-  const sort = useSyncExternalStore(subscribeSort, readSort, () => "name" as CatalogueSort);
+  // A–Z or book order, stored on the account (plan config U6e, Q15 b), so it follows the GM to every device.
+  const [sort, setSort] = useUiState("adversarySort");
   function chooseSort(next: CatalogueSort) {
     setLimit(PAGE_FIRST);
-    try {
-      window.localStorage.setItem(SORT_KEY, next);
-    } catch {
-      // Storage blocked: the order can't be remembered; fall back to the in-page event only.
-    }
-    sortFallback = next;
-    window.dispatchEvent(new Event(SORT_EVENT));
+    setSort(next);
   }
   const detailRef = useRef<HTMLElement>(null);
 
@@ -157,7 +131,7 @@ export function Catalogue({ hopeAndFear, frameId, renderActions }: CatalogueProp
     setSelectedId(id);
     // One column (under 980 px): the stat block sits below the list, so bring it into view.
     if (window.matchMedia("(max-width: 980px)").matches) {
-      const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const smooth = !prefersReducedMotion();
       detailRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
     }
   }
@@ -269,9 +243,9 @@ export function Catalogue({ hopeAndFear, frameId, renderActions }: CatalogueProp
             </div>
           ))}
           {more ? (
-            <button type="button" className="adc-more" onClick={() => setLimit((n) => n + PAGE_MORE)}>
+            <BrandButton variant="neutral" className="m-2.5 w-[calc(100%-20px)]" onClick={() => setLimit((n) => n + PAGE_MORE)}>
               {more}
-            </button>
+            </BrandButton>
           ) : null}
           {matches.length === 0 ? <p className="adc-empty">No adversaries match these filters. Clear the search or pick another tier or type.</p> : null}
         </div>

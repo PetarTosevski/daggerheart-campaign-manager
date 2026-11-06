@@ -25,7 +25,7 @@ test("the action ring offers reactions, greyed with their reason until their tri
     await player.setViewportSize({ width: 1440, height: 900 });
     await player.goto(s.url);
     await expect(player.getByTestId("combat-hud")).toBeVisible();
-    const token = player.getByRole("region", { name: "Battle map" }).getByRole("button", { name: /^Open Moss’s sheet \(your character\)/ });
+    const token = player.getByRole("region", { name: "Battle map" }).getByRole("button", { name: /^Moss \(your character\): actions/ });
     await token.click();
     const ring = player.getByRole("toolbar", { name: "Your actions (Moss)" });
     // The ring box has no size of its own (its buttons sit around the token): wait for Attack.
@@ -53,7 +53,7 @@ test("the GM's Resolutions list a player's roll with Fear, with Undo", async ({ 
     await gm.setViewportSize({ width: 1440, height: 900 });
     await gm.goto(s.url);
     await expect(gm.getByTestId("combat-hud")).toBeVisible();
-    const fear = (await s.client.query(api.combatHud.scene, { campaignId: s.campaignId })).fear;
+    const fear = (await s.client.query(api.combatHud.scene, { campaignId: s.campaignId })).fear!; // the GM always gets a number (R1)
     await playerClient.mutation(api.rolls.manualRoll, { characterId: moss.characterId, roll: agility, values: [3, 8], idempotencyKey: crypto.randomUUID() });
 
     // Resolutions open from the dock's Log (plan combat-hud H9.2).

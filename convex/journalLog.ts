@@ -1,5 +1,6 @@
 import { v, type Infer } from "convex/values";
 
+import { resolveTableSettings } from "../src/lib/config/campaign-settings";
 import { inWindows, logMark, mergeLog, type LiveWindow } from "../src/lib/domain/journal";
 import { appError } from "../src/lib/errors/app-error";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -10,6 +11,8 @@ import { campaignQuery, gmMutation } from "./lib/functions";
 import { cleanText, liveWindows, loadSession } from "./lib/sessions";
 import { actionKindValidator, type ActionKind, type StoredRoll } from "./lib/validators/actionLog";
 import { MAX_LOG_ENTRIES, MAX_LOG_OVERRIDES, sessionLogSourceValidator, type SessionLogSource } from "./lib/validators/sessions";
+import { seesFear } from "./campaigns";
+import { hideFearNumbers } from "./feed";
 
 /**
  * The Journal's session log (plan `.omc/plans/journal.yaml`, JD2; user answer 'Session log = automatic from the action
@@ -25,6 +28,10 @@ import { MAX_LOG_ENTRIES, MAX_LOG_OVERRIDES, sessionLogSourceValidator, type Ses
  * The GM hides or re-words any line through `sessionLogOverrides` (`hide`, `unhide`, `setText`); a GM line's text is
  * edited in place. Adding and deleting GM lines stay `sessionPlay.addLog` / `removeLog`. Every "during the session"
  * read goes through `liveWindows` (a played session can be started again, D10 B7).
+ *
+ * The campaign setting 'Write the session log from the Combat Map' (`tableSettings.autoSessionLog`, config JO2,
+ * default on) gates the `feed`, `fear` and `encounter` sources: off, they are not read and the log is the session's own
+ * lines. Nothing is deleted, so turning it on again shows them (with their overrides) as before.
  *
  * Who reads it (user Q5): every member. Players get the log of live and played sessions without the GM-hidden lines
  * and without GM-only feed rows; a planned session is SESSION_NOT_FOUND for them, as it is missing from their list.
@@ -46,11 +53,16 @@ export type JournalLogSource = (typeof JOURNAL_LOG_SOURCES)[number];
 export const journalLogSourceValidator = v.union(...JOURNAL_LOG_SOURCES.map((s) => v.literal(s)));
 
 /**
- * The icon a line shows: a feed row's action kind, or one of the log's own kinds (Fear change, combat began / ended,
- * session start / end, scene began, another automatic line, the GM's note).
+ * The icon a line shows: a feed row's action kind or its roll's type (`feedIcon`, dcm-z9rz.28), or one of the log's own
+ * kinds (Fear change, combat began / ended, session start / end, scene began, another automatic line, the GM's note).
  */
 export const journalLogIconValidator = v.union(
   actionKindValidator,
+  v.literal("reactionRoll"),
+  v.literal("damageRoll"),
+  v.literal("attackRoll"),
+  /** A social roll (the row's `social` flag, Journal JF2): a mouth icon. */
+  v.literal("socialRoll"),
   v.literal("fear"),
   v.literal("combatBegan"),
   v.literal("combatEnded"),
@@ -124,9 +136,28 @@ export function fearText(row: { action: string; before: number; after: number })
   return { title: change };
 }
 
+/** A Fear history line as a player reads it while "Players see the GM's Fear" is off (config R1): no numbers. */
+export const HIDDEN_FEAR_TITLE = "Fear changed";
+
 /** 'Combat began: Ambush at the Forest Camp'. */
 export function encounterTitle(event: EncounterEvent, name: string): string {
   return `${ENCOUNTER_EVENTS[event]}: ${name.trim() || "Unnamed encounter"}`;
+}
+
+/**
+ * A feed row's icon by its roll type (dcm-z9rz.28): a PC's reaction or damage roll, an attack roll on the Combat Map
+ * (a `combat` row's action roll, a weapon or a card), else the row's kind (an action roll stays `roll`, a GM roll
+ * `gmRoll`). Rows without a roll keep their kind. A PC's social roll (the row's `social` flag, Journal JF2: made in a
+ * Social scene or with 'Social roll' ticked) shows the social icon, whatever its roll kind.
+ */
+export function feedIcon(row: { kind: ActionKind; roll?: Pick<StoredRoll, "kind">; social?: boolean }): JournalLogIcon {
+  const roll = row.roll?.kind;
+  if (roll === undefined || row.kind === "gmRoll" || row.kind === "adversary") return row.kind;
+  if (row.social === true && row.kind === "roll") return "socialRoll";
+  if (roll === "reaction") return "reactionRoll";
+  if (roll === "damage") return "damageRoll";
+  if (row.kind === "combat" && roll === "action") return "attackRoll";
+  return row.kind;
 }
 
 /** The icon of a `sessionLog` line: its event, a legacy start / end stamp by its text, another auto line, or a GM note. */
@@ -207,7 +238,7 @@ async function feedLines(ctx: QueryCtx, campaignId: Id<"campaigns">, windows: re
     ...(row.roll !== undefined && row.roll.kind !== "damage"
       ? { sub: rollSub(row.characterId === undefined ? null : (names.get(row.characterId) ?? "A character"), row.roll) }
       : {}),
-    icon: row.kind satisfies ActionKind,
+    icon: feedIcon(row),
     removable: false,
     edited: false,
   }));
@@ -287,7 +318,7 @@ function sessionOverrides(ctx: QueryCtx, sessionId: Id<"sessions">) {
 }
 
 /**
- * The session log, oldest first (JD2, user Q5). The GM gets every line with its `hidden` flag; players get live and
+ * The session log, oldest first (JD2, user Q5); with `autoSessionLog` off, only the session's own lines (JO2). The GM gets every line with its `hidden` flag; players get live and
  * played sessions only (a planned one is SESSION_NOT_FOUND), without hidden lines and GM-only feed rows. Each source is
  * read with a bounded take; `truncated` says one hit its cap.
  */
@@ -302,22 +333,38 @@ export const list = campaignQuery({
     if (!isGm && session.status === "planned") throw appError("SESSION_NOT_FOUND");
     const campaignId = ctx.campaign._id;
     const windows = await liveWindows(ctx, session);
+    // JO2: with "Write the session log from the Combat Map" off, only the session's own lines (start / end / scene
+    // stamps, the GM's typed lines) are read. The setting comes from the campaign the wrapper already loaded.
+    const auto = resolveTableSettings(ctx.campaign.tableSettings).autoSessionLog;
+    const none = { lines: [] as Line[], truncated: false };
     const [feed, fear, encounters, own, overrides] = await Promise.all([
-      feedLines(ctx, campaignId, windows, isGm),
-      fearLines(ctx, campaignId, windows),
-      encounterLines(ctx, campaignId, windows),
+      auto ? feedLines(ctx, campaignId, windows, isGm) : none,
+      auto ? fearLines(ctx, campaignId, windows) : none,
+      auto ? encounterLines(ctx, campaignId, windows) : none,
       ownLines(ctx, session._id),
       sessionOverrides(ctx, session._id),
     ]);
     const byKey = new Map(overrides.map((o) => [`${o.source}:${o.sourceId}`, o]));
-    const lines = mergeLog([own, feed.lines, fear.lines, encounters.lines]).flatMap((line): JournalLogLine[] => {
+    // R1: with "Players see the GM's Fear" off, a player's Fear lines read 'Fear changed' and the feed and automatic
+    // lines lose their Fear numbers. The GM's own words (typed lines, re-wordings) are theirs to share.
+    const fearShown = seesFear(ctx.campaign, ctx.permission);
+    const playerView = (line: Line): Line => {
+      if (fearShown) return line;
+      if (line.source === "fear") return { ...line, title: HIDDEN_FEAR_TITLE, sub: undefined };
+      if (line.source === "feed" || line.source === "auto") return { ...line, title: hideFearNumbers(line.title) };
+      return line;
+    };
+    const lines = mergeLog([own, feed.lines, fear.lines, encounters.lines]).flatMap((merged): JournalLogLine[] => {
+      const line = playerView(merged);
       const key = `${line.source}:${line.sourceId}`;
       const override = line.source === "gm" ? undefined : byKey.get(key);
       const hidden = override?.hidden ?? false;
       if (hidden && !isGm) return [];
+      const { sub, ...rest } = line;
       return [
         {
-          ...line,
+          ...rest,
+          ...(sub !== undefined ? { sub } : {}),
           key,
           title: override?.text ?? line.title,
           hidden,

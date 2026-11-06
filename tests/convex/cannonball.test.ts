@@ -116,7 +116,7 @@ async function arena() {
   const open = async () => (await rows()).filter((r) => r.kind === "allyRoll" && r.status === "open");
   const throwAsh = (as: "player" | "gm" = "player") =>
     w.as(as).mutation(api.combatFeatures.useFeature, { campaignId, characterId: w.characterA, mapId, featureId: CANNONBALL, targetTokenIds: [ids.bryn], choices: [], idempotencyKey: key() });
-  const view = (as: "player" | "otherPlayer" | "gm", characterId: Id<"characters">) => w.as(as).query(api.featurePrompts.allyRolls, { campaignId, characterId, mapId });
+  const view = (as: "player" | "otherPlayer" | "gm", characterId: Id<"characters">) => w.as(as).query(api.featurePromptsReads.allyRolls, { campaignId, characterId, mapId });
   const roll = (requestId: Id<"combatRequests">, over: Partial<{ trait: "agility" | "strength"; target: Id<"combatTokens">; second: Id<"combatTokens"> }> = {}, as: "otherPlayer" | "gm" | "player" = "otherPlayer") =>
     w.as(as).mutation(api.featurePrompts.allyRoll, {
       campaignId,

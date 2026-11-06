@@ -44,12 +44,7 @@ export function FrameIntro({ frameId }: { frameId: PublishedFrameId }) {
 
       <main className="relative mx-auto flex w-full max-w-[1344px] flex-1 items-start px-4 py-7 sm:px-12">
         {hidden ? (
-          <BrandButton
-            variant="pill"
-            size="lg"
-            className="border-white/20 bg-[rgb(9_12_16/0.82)]"
-            onClick={() => setHidden(false)}
-          >
+          <BrandButton variant="neutral" size="lg" onClick={() => setHidden(false)}>
             <Eye strokeWidth={1.8} aria-hidden="true" />
             Show details
           </BrandButton>
@@ -129,24 +124,14 @@ export function FrameIntro({ frameId }: { frameId: PublishedFrameId }) {
             </div>
 
             <div className="flex flex-wrap gap-3 pt-1.5">
-              <BrandButton variant="primary" size="xl" onClick={() => setNaming(true)}>
+              <BrandButton variant="confirm" size="lg" onClick={() => setNaming(true)}>
                 Choose this Frame
               </BrandButton>
-              <BrandButton
-                variant="pill"
-                size="xl"
-                className="border-[#4a505a] bg-black/30 px-5 text-[15px]"
-                onClick={() => setChapter("overview")}
-              >
+              <BrandButton variant="neutral" size="lg" onClick={() => setChapter("overview")}>
                 <BookOpen strokeWidth={1.6} aria-hidden="true" />
                 Overview
               </BrandButton>
-              <BrandButton
-                variant="pill"
-                size="xl"
-                className="ml-auto border-white/20 px-5 text-[15px]"
-                onClick={() => setHidden(true)}
-              >
+              <BrandButton variant="neutral" size="lg" className="ml-auto" onClick={() => setHidden(true)}>
                 <EyeOff strokeWidth={1.8} aria-hidden="true" />
                 View full art
               </BrandButton>

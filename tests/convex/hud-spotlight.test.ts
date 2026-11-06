@@ -51,10 +51,17 @@ async function secondCampaign(w: World) {
 
 const rows = (w: World) => w.t.run((ctx) => ctx.db.query("combatSpotlight").collect());
 
+/**
+ * A running encounter in the world's campaign: players wait on the GM's spotlight only during one (S2, plan rule-switches
+ * RS2, user answer 2026-11-06).
+ */
+const fight = (w: World) =>
+  w.t.run((ctx) => ctx.db.insert("encounters", { campaignId: w.campaignId, name: "Fight", status: "running", pcs: 2, adjustments: [], gmTurn: 1, createdAt: 1, updatedAt: 1, startedAt: 1 }));
+
 describe("combatSpotlight.state", () => {
   it("starts with nobody in particular: no holder, no reactions-only, only the GM may move it", async () => {
     const w = await buildWorld();
-    const none = { holder: null, since: null, reason: null, rollBy: null, reactionsOnly: false, adversaryTokenId: null, adversaryName: null };
+    const none = { holder: null, since: null, reason: null, rollBy: null, reactionsOnly: false, adversaryTokenId: null, adversaryName: null, adversaryPortrait: null };
     expect(await state(w, "gm")).toEqual({ ...none, canMove: true });
     expect(await state(w, "player")).toEqual({ ...none, canMove: false });
     expect(await state(w, "grantee")).toEqual({ ...none, canMove: false });
@@ -63,6 +70,7 @@ describe("combatSpotlight.state", () => {
 
   it("the GM takes it: players read reactions only, the GM does not; taking it again writes nothing", async () => {
     const w = await buildWorld();
+    await fight(w);
     expect(await take(w)).toEqual({ moved: true });
     const gm = await state(w, "gm");
     expect(gm).toMatchObject({ holder: { kind: "gm" }, reason: "gmTook", rollBy: null, reactionsOnly: false, canMove: true });
@@ -119,6 +127,7 @@ describe("combatSpotlight.state", () => {
 
   it("one campaign's spotlight never shows in another", async () => {
     const w = await buildWorld();
+    await fight(w);
     const other = await secondCampaign(w);
     await take(w);
     expect(await w.as("gm").query(api.combatSpotlight.state, { campaignId: other.campaignId })).toMatchObject({ holder: null });
@@ -130,6 +139,7 @@ describe("combatSpotlight.state", () => {
 describe("moveToGm (CB p.100, p.149)", () => {
   it("a PC's roll with Fear moves it to the GM and names the roller; a later failure keeps the first move", async () => {
     const w = await buildWorld();
+    await fight(w);
     await handTo(w, w.characterA);
     const moved = await w.t.run(async (ctx) => moveToGm(ctx, (await ctx.db.get("campaigns", w.campaignId))!, "rollWithFear", w.characterA));
     expect(moved).toBe(true);
@@ -281,6 +291,7 @@ describe("assertMayAct (answer 1c; user answer 2026-11-01: token moves too)", ()
 
   it("while the GM holds it a player may only react: actions and token moves are SPOTLIGHT_WITH_GM", async () => {
     const w = await buildWorld();
+    await fight(w);
     await take(w);
     expect(await mayAct(w, "player", w.characterA, "action")).toBe("SPOTLIGHT_WITH_GM");
     expect(await mayAct(w, "player", w.characterA, "move")).toBe("SPOTLIGHT_WITH_GM");

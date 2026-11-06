@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 import type { Id } from "../../../../../convex/_generated/dataModel";
+import { useDefinedRanges } from "../../map-view/measure";
 import { usePick } from "../pick";
 import { usePickScene } from "../pick/scene";
 import type { HudLayerProps } from "../state";
@@ -33,7 +34,10 @@ export function HudAreaPickLayer(props: HudLayerProps) {
   );
 }
 
-function AreaLayer({ viewport, live }: HudLayerProps & { live: AreaPickLive }) {
+function AreaLayer({ viewport, live: picking, campaignId }: HudLayerProps & { live: AreaPickLive }) {
+  // Rule switches ODR2: with Defined Ranges off no radius preview and no amber squares.
+  const definedRanges = useDefinedRanges(campaignId);
+  const live = { ...picking, spec: { ...picking.spec, definedRanges } };
   const [hover, setHover] = useState<Square | null>(null);
   const drag = useRef<{ index: number; pointerId: number } | null>(null);
   const { w, h, pad, cell, zoom } = viewport;

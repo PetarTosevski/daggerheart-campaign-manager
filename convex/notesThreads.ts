@@ -7,7 +7,7 @@ import { appError } from "../src/lib/errors/app-error";
 import type { Doc, Id } from "./_generated/dataModel";
 import { readSheet } from "./lib/characterSheet";
 import { campaignQuery } from "./lib/functions";
-import { currentJournal, type NotesCtx } from "./lib/notes";
+import { currentJournal, ownsGmJournal, readsAsGm, type NotesCtx } from "./lib/notes";
 import { entryKindValidator, entryStateValidator, MAX_PAGE_ENTRIES, MAX_PAGES, pageKindValidator } from "./lib/validators/notes";
 
 /**
@@ -87,7 +87,8 @@ export type ExportChunk = Infer<typeof exportChunkValidator>;
 /** The caller's current journal (D3), or null before their first write. */
 async function ownJournal(ctx: NotesCtx): Promise<{ journal: Doc<"journals"> | null; isGm: boolean }> {
   const current = await currentJournal(ctx);
-  return { journal: current.journal, isGm: current.role === "gm" };
+  // Viewer side (Q6 a): a co-GM sees planned sessions like the GM.
+  return { journal: current.journal, isGm: readsAsGm(current.role) };
 }
 
 /** The journal's pages that are not torn out, by id (bounded by MAX_PAGES). */
@@ -122,7 +123,8 @@ function authorLabeller(ctx: NotesCtx) {
     const key = `${entry.authorId}|${entry.authorCharacterId ?? ""}`;
     const known = cache.get(key);
     if (known !== undefined) return known;
-    const isGm = entry.authorId === ctx.campaign.ownerId;
+    // Identity: 'GM' labels the creator's entries.
+    const isGm = ownsGmJournal(ctx.campaign, entry.authorId);
     const character = isGm || entry.authorCharacterId === undefined ? null : await ctx.db.get("characters", entry.authorCharacterId);
     const user = isGm ? null : await ctx.db.get("users", entry.authorId);
     const label = authorLabel({ isGm, characterName: characterName(character), accountName: user?.name ?? null });

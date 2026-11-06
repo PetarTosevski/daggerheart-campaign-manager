@@ -3,6 +3,7 @@
 import { useMutation } from "convex/react";
 import { useId, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import {
   battlePoints,
@@ -18,8 +19,9 @@ import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import type { EncounterView } from "./types";
 
-const MIN_PCS = 1;
-const MAX_PCS = 12;
+/** The party size the encounter builder allows (same clamp as convex/encounters.ts setBudget). */
+export const MIN_PCS = 1;
+export const MAX_PCS = 12;
 
 export type BudgetChange = { kind: "pcs"; delta: number } | { kind: "adjustment"; adjustment: BpAdjustmentId; on: boolean };
 
@@ -109,15 +111,15 @@ export function BudgetPanel({ campaignId, view, partyTier, variant = "builder", 
       <div className="enc-party">
         <span id="enc-pcs-label">Player characters</span>
         <span className="enc-stepper" role="group" aria-labelledby="enc-pcs-label">
-          <button type="button" className="enc-step" aria-label="Fewer player characters" disabled={encounter.pcs <= MIN_PCS} onClick={() => change({ kind: "pcs", delta: -1 })}>
+          <BrandButton variant="neutral" size="sm" icon aria-label="Fewer player characters" disabled={encounter.pcs <= MIN_PCS} onClick={() => change({ kind: "pcs", delta: -1 })}>
             −
-          </button>
+          </BrandButton>
           <span className="enc-num" aria-live="polite">
             {encounter.pcs}
           </span>
-          <button type="button" className="enc-step" aria-label="More player characters" disabled={encounter.pcs >= MAX_PCS} onClick={() => change({ kind: "pcs", delta: 1 })}>
+          <BrandButton variant="neutral" size="sm" icon aria-label="More player characters" disabled={encounter.pcs >= MAX_PCS} onClick={() => change({ kind: "pcs", delta: 1 })}>
             +
-          </button>
+          </BrandButton>
         </span>
       </div>
       <div
@@ -181,7 +183,7 @@ const STATE_FILL = { under: "bg-(--jr-acc)", exact: "bg-(--jr-acc)", over: "bg-(
 /**
  * The Journal Plan board's card (design reference/designs/journal/journal_views.jpg, right column): 'X of Y spent',
  * 'Z left', the bar, the party formula with the starting budget, the adjustments with their deltas, the cost table.
- * The party size is set in the builder (Adversaries tab); this card shows it.
+ * The party size is set in the builder (Adversaries tab) or on the Journal's encounter card (JP2); this card shows it.
  */
 function JournalBudget({
   title,

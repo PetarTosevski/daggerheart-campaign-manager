@@ -6,14 +6,14 @@ import type { FunctionReturnType } from "convex/server";
 import { Check, Ellipsis, Plus } from "lucide-react";
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 
-import { brandButton } from "@/components/brand/buttons";
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import { nextSceneId } from "@/lib/domain/journal/scenes";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
-import { MAX_SCENES, SESSION_SCENE_TYPES, SESSION_TEXT_MAX, type SessionSceneState, type SessionStatus } from "../../../../convex/lib/validators/sessions";
+import { MAX_SCENES, SESSION_SCENE_TYPES, SESSION_TEXT_MAX, type SessionSceneState, type SessionSceneType, type SessionStatus } from "../../../../convex/lib/validators/sessions";
 import { SCENE_TYPE_DISPLAY, TypeChip } from "../ui";
 import { SceneEncounter } from "./encounter";
 
@@ -148,17 +148,18 @@ function SceneMenu({ n, children }: { n: number; children: ReactNode }) {
 
   return (
     <div ref={root} className="jp-menu">
-      <button
+      <BrandButton
         ref={button}
-        type="button"
-        className="jp-menu-btn"
+        variant="neutral"
+        icon
+        round
         aria-label={`Scene ${n} options`}
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((v) => !v)}
       >
         <Ellipsis aria-hidden="true" />
-      </button>
+      </BrandButton>
       {/* The clicks land on the buttons inside; this only closes the menu after one. */}
       <div id={panelId} className="jp-menu-panel" hidden={!open} onClick={onPanelClick}>
         {open ? children : null}
@@ -234,42 +235,43 @@ function SceneRow({
           {pending ? null : (
             <SceneMenu n={n}>
               {canPlay ? (
-                <button type="button" className="jp-item" onClick={() => run(setState({ ...ids, sceneId: scene.id, state: "playing" }))}>
+                <BrandButton variant="neutral" size="sm" className="w-full" onClick={() => run(setState({ ...ids, sceneId: scene.id, state: "playing" }))}>
                   Play this scene
-                </button>
+                </BrandButton>
               ) : null}
               {combat && state === "planned" ? <p className="jp-hint">Plays when its encounter goes on the Combat Map.</p> : null}
               {state !== "done" ? (
-                <button type="button" className="jp-item" onClick={() => run(setState({ ...ids, sceneId: scene.id, state: "done" }))}>
+                <BrandButton variant="neutral" size="sm" className="w-full" onClick={() => run(setState({ ...ids, sceneId: scene.id, state: "done" }))}>
                   Mark done
-                </button>
+                </BrandButton>
               ) : null}
               {state !== "planned" ? (
-                <button type="button" className="jp-item" onClick={() => run(setState({ ...ids, sceneId: scene.id, state: "planned" }))}>
+                <BrandButton variant="neutral" size="sm" className="w-full" onClick={() => run(setState({ ...ids, sceneId: scene.id, state: "planned" }))}>
                   Back to planned
-                </button>
+                </BrandButton>
               ) : null}
               <div role="group" aria-labelledby={typeGroup} className="jp-types">
                 <span id={typeGroup} className="jr-lbl">
                   Type
                 </span>
                 {SESSION_SCENE_TYPES.map((type) => (
-                  <button
+                  <BrandButton
                     key={type}
-                    type="button"
-                    className="jp-item"
+                    variant="neutral"
+                    size="sm"
+                    className="jp-type-opt w-full"
                     aria-pressed={scene.type === type}
                     onClick={() => {
                       if (type !== scene.type) run(setScene({ ...ids, sceneId: scene.id, type }));
                     }}
                   >
                     {SCENE_TYPE_DISPLAY[type].label}
-                  </button>
+                  </BrandButton>
                 ))}
               </div>
-              <button type="button" className="jp-item jp-danger" onClick={() => run(removeScene({ ...ids, sceneId: scene.id }))}>
+              <BrandButton variant="danger" size="sm" className="w-full" onClick={() => run(removeScene({ ...ids, sceneId: scene.id }))}>
                 Remove scene
-              </button>
+              </BrandButton>
             </SceneMenu>
           )}
         </div>
@@ -294,9 +296,19 @@ function SceneRow({
   );
 }
 
-/** '+ Add scene' (optimistic: the row shows at once, disabled until the server's id arrives). Refused past MAX_SCENES. */
+/** The order '+ Add scene' offers the types in (dcm-z9rz.30: Exploration / Social / Combat / Downtime). */
+export const ADD_SCENE_TYPES: readonly SessionSceneType[] = ["exploration", "social", "combat", "downtime"];
+
+/**
+ * '+ Add scene' asks the scene's type first (dcm-z9rz.30): the button opens a row of the four types and Cancel
+ * (Escape closes it too); picking one adds the scene (optimistic: the row shows at once, disabled until the server's id
+ * arrives). Refused past MAX_SCENES.
+ */
 export function AddSceneButton({ ids, count }: { ids: PlanIds; count: number }) {
   const { error, run } = useRun();
+  const [picking, setPicking] = useState(false);
+  const groupId = useId();
+  const opener = useRef<HTMLButtonElement>(null);
   const addScene = useMutation(api.sessionPrep.addScene).withOptimisticUpdate((store, args) =>
     patchPrep(store, { campaignId: args.campaignId, sessionId: args.sessionId }, (prep) => ({
       ...prep,
@@ -304,24 +316,64 @@ export function AddSceneButton({ ids, count }: { ids: PlanIds; count: number }) 
     })),
   );
   const full = count >= MAX_SCENES;
+
+  function close() {
+    setPicking(false);
+    opener.current?.focus();
+  }
+
+  function pick(type: SessionSceneType) {
+    close();
+    run(addScene({ ...ids, type }));
+  }
+
   return (
-    <>
-      <button
-        type="button"
-        className={brandButton({ variant: "pill", size: "sm" })}
+    <div className="jp-add">
+      <BrandButton
+        ref={opener}
+        variant="neutral"
+        size="sm"
         disabled={full}
+        aria-expanded={picking && !full}
+        aria-controls={groupId}
         title={full ? `A session holds at most ${MAX_SCENES} scenes.` : undefined}
-        onClick={() => run(addScene(ids))}
+        onClick={() => setPicking((v) => !v)}
       >
         <Plus aria-hidden="true" />
         Add scene
-      </button>
+      </BrandButton>
+      {picking && !full ? (
+        <div
+          id={groupId}
+          role="group"
+          aria-labelledby={`${groupId}-l`}
+          className="jp-add-types"
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              close();
+            }
+          }}
+        >
+          <span id={`${groupId}-l`} className="jr-lbl">
+            Scene type
+          </span>
+          {ADD_SCENE_TYPES.map((type, i) => (
+            <BrandButton key={type} variant="neutral" size="sm" autoFocus={i === 0} onClick={() => pick(type)}>
+              {SCENE_TYPE_DISPLAY[type].label}
+            </BrandButton>
+          ))}
+          <BrandButton variant="neutral" size="sm" onClick={close}>
+            Cancel
+          </BrandButton>
+        </div>
+      ) : null}
       {error ? (
         <p role="alert" className="jp-error">
           {error}
         </p>
       ) : null}
-    </>
+    </div>
   );
 }
 

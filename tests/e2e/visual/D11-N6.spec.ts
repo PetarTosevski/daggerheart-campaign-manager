@@ -4,6 +4,7 @@ import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { signInAsTestGm } from "../fixtures";
 import { bardDraft, convexAs, visual, VIEWPORTS } from "./helpers";
+import { gmJoinCode } from "../config/helpers";
 
 // D11 N6 visual spec (E2E_VISUAL=1): the sharing dialog (GM and player), the Shared tabs and a shared page, at
 // 1440x900 and 390x844. Not on the board: judged against the board's tokens (docs/tasks/TASK-D11-N6.md).
@@ -47,11 +48,7 @@ test("D11 N6 sharing dialog, Shared tabs and a shared page at 1440 and 390", { t
   const campaignId = new URL(page.url()).pathname.split("/")[2] as Id<"campaigns">;
   const gm = await convexAs(page);
 
-  await page.getByRole("button", { name: "Players" }).click();
-  const players = page.getByRole("dialog", { name: "Players" });
-  await expect(players.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await players.getByTestId("join-code").textContent())!;
-  await players.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
 
   const contexts: BrowserContext[] = [];
   async function join(email: string, hero: string) {
@@ -86,7 +83,7 @@ test("D11 N6 sharing dialog, Shared tabs and a shared page at 1440 and 390", { t
   }
 
   async function openDialog(p: Page, pageParam: string) {
-    await p.goto(`/campaigns/${campaignId}/notes?page=${pageParam}`);
+    await p.goto(`/campaigns/${campaignId}/journal?tab=notes&page=${pageParam}`);
     await p.getByRole("region", { name: "Journal page" }).getByRole("button", { name: /^Sharing: / }).click();
     const dialog = p.getByRole("dialog", { name: "Share this page" });
     await expect(dialog.getByRole("group", { name: "Chosen players" }).getByRole("checkbox", { name: "Bram" })).toBeVisible();
@@ -102,7 +99,7 @@ test("D11 N6 sharing dialog, Shared tabs and a shared page at 1440 and 390", { t
   await a.page.keyboard.press("Escape");
 
   // The GM's Shared tabs: players' pages grouped by player, and their own shared pages.
-  await page.goto(`/campaigns/${campaignId}/notes`);
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
   const shared = page.getByRole("complementary", { name: "Journal index" }).getByRole("region", { name: "Shared" });
   await expect(shared.getByRole("group", { name: "Ash" })).toBeVisible();
   await shootIndex(page, shared, "shared-players-gm");
@@ -111,13 +108,13 @@ test("D11 N6 sharing dialog, Shared tabs and a shared page at 1440 and 390", { t
   await shootIndex(page, shared, "shared-gm-gm");
 
   // A shared page read by the GM, with the add row.
-  await page.goto(`/campaigns/${campaignId}/notes?view=shared-players&page=${ashLog}`);
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes&view=shared-players&page=${ashLog}`);
   const view = page.getByRole("region", { name: "Journal page" });
   await expect(view.getByText("The ferryman lies - GM")).toBeVisible();
   await gmShots.shoot(view, "shared-page-gm");
 
   // Ash's Shared tab ('Shared by GM') and the GM's page read by Ash.
-  await a.page.goto(`/campaigns/${campaignId}/notes`);
+  await a.page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
   const ashShared = a.page.getByRole("complementary", { name: "Journal index" }).getByRole("region", { name: "Shared" });
   await ashShared.getByRole("tab", { name: "Shared by GM" }).click();
   await expect(ashShared.getByRole("button", { name: /Rumors & hooks/ })).toBeVisible();

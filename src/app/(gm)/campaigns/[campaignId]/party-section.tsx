@@ -3,6 +3,7 @@
 import { useQuery } from "convex/react";
 import Link from "next/link";
 
+import { brandButton } from "@/components/brand/buttons";
 import { PartyCard } from "@/components/party/party-card";
 
 import { api } from "../../../../../convex/_generated/api";
@@ -22,10 +23,7 @@ export function PartySection({ campaignId }: { campaignId: Id<"campaigns"> }) {
         <h2 id="party-h" className="m-0 font-display text-[24px] font-bold text-parchment">
           The Party
         </h2>
-        <Link
-          href={`${base}/new`}
-          className="inline-flex min-h-11 items-center rounded-[10px] border border-[#33444a] px-4 text-[14px] text-[#e6ecea] hover:bg-white/5"
-        >
+        <Link href={`${base}/new`} className={brandButton({ variant: "neutral", className: "no-underline" })}>
           + Create character
         </Link>
       </div>

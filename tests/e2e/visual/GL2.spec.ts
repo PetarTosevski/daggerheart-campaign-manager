@@ -4,11 +4,11 @@ import { expectNoHorizontalScroll, openSheet, visual } from "./helpers";
 
 // GL2: the Experiences box in the guided level-up at 1440 and 390. ▲ (level 2) brings the player to the box with
 // a highlighted "New Experience (+2)" input; with the "+1 to two Experiences" advancement in the draft the box shows
-// one checkbox per Experience. The tier boxes that tick the advancement come with GL1, so the spec seeds the stored
-// draft (the provider restores it on reload). Board counterpart: none (the board has no guided mode).
+// one checkbox per Experience. The spec ticks the advancement in the tier boxes; the draft is saved on the account
+// (config N4 b), so a reload restores it. Board counterpart: none (the board has no guided mode).
 
 test("GL2 Experiences in the guided level-up at 1440 and 390", { tag: "@visual" }, async ({ page }) => {
-  const { sheet, characterId } = await openSheet(page);
+  const { sheet } = await openSheet(page);
   const { shoot } = visual(page, "GL2");
   const box = sheet.getByRole("region", { name: "Experiences" });
 
@@ -20,13 +20,11 @@ test("GL2 Experiences in the guided level-up at 1440 and 390", { tag: "@visual" 
   await expect(ribbon.getByRole("listitem").filter({ hasText: "New Experience" })).toHaveAttribute("data-done", "true");
   await shoot(box, "new-experience");
 
-  // Add the "+1 to two Experiences" pick to the stored draft and reload.
-  await page.evaluate((id) => {
-    const key = `dcm:level-up-draft:${id}`;
-    const stored = JSON.parse(sessionStorage.getItem(key)!);
-    stored.draft.picks = [{ option: "experiences", tier: 2, targets: [] }];
-    sessionStorage.setItem(key, JSON.stringify(stored));
-  }, characterId);
+  // Tick the "+1 to two Experiences" pick (a click: the draft saves on the account at once, config N4 b) and reload.
+  await sheet.getByRole("tablist", { name: "Sheet pages" }).getByRole("tab", { name: "Story & Advancement" }).click();
+  await sheet.getByLabel("Tier 2: +1 to two Experiences for level 2").check();
+  await sheet.getByRole("tablist", { name: "Sheet pages" }).getByRole("tab", { name: "Character Sheet" }).click();
+  await expect(box.getByRole("group", { name: "+1 to two Experiences for level 2" })).toBeVisible();
   await page.reload();
   const group = box.getByRole("group", { name: "+1 to two Experiences for level 2" });
   await expect(box.getByRole("textbox", { name: "New Experience (+2) for level 2" })).toHaveValue("Court musician");

@@ -19,19 +19,27 @@
  * ended"); undoing the campaign row restores every sheet. Areas keep their own history (like trackers): undo does not
  * bring one back, the feature is used again.
  */
-import { v } from "convex/values";
+import { v, type Infer } from "convex/values";
 
 import { expire } from "../src/lib/domain/characters/expiry";
+import { BREATH_MIN, BREATH_START, darknessBadge } from "../src/lib/domain/combat-map/light";
+import { MAX_COUNTDOWN_START } from "../src/lib/domain/countdowns/index";
 import { appError } from "../src/lib/errors/app-error";
 import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { logAction, newGroupId } from "./lib/actionLog";
+import { campaignLight } from "./lib/campaignLight";
 import { MAX_CHARACTERS_PER_CAMPAIGN, readSheet, saveSheet } from "./lib/characterSheet";
-import { keyedGmMutation } from "./lib/functions";
+import { liveCombatMap, loadCombatMap, loadCombatToken, MAX_COMBAT_TOKENS } from "./lib/combatMaps";
+import { campaignQuery, keyedGmMutation } from "./lib/functions";
+import { atLeast } from "./lib/permissions";
+import { liveUnderwater } from "./lib/rollAftermath";
+import { ruleMode, ruleModesOf } from "./lib/ruleModes";
 import { forgetSeen } from "./lib/spotlightSeen";
 import { endStanceConditions, withoutStance } from "./lib/stanceDrop";
 import type { AreaExpires } from "./lib/validators/combatMaps";
+import { recordHistory } from "./tables/history";
 
 /** Sheets one scene end may change: an undo group holds at most 50 rows (convex/lib/actionLog.ts), one is the campaign's. */
 const PARTY_MAX = 49;
@@ -140,4 +148,183 @@ export const end = keyedGmMutation({
     entryId: v.union(v.id("actionLog"), v.null()),
   }),
   handler: async (ctx) => ctx.once("combat_scene_end", {}, () => endScene(ctx, ctx.campaign, ctx.user._id)),
+});
+
+// ---------------------------------------------------------------- the environment (plan rule-switches OE)
+
+/** A creature on the live map the GM can mark "fights underwater" (CB p.168: "like a Siren or Shark"). */
+const environmentCreature = v.object({ tokenId: v.id("combatTokens"), name: v.string(), side: v.string(), fightsUnderwater: v.boolean() });
+
+const environmentValidator = v.object({
+  /** M3's badge for the campaign's light, naming the active mode (`darknessBadge`); null outside dim light or in Manual. */
+  darkness: v.union(v.string(), v.null()),
+  /** The Underwater optional rule is on in this campaign. */
+  underwaterRule: v.boolean(),
+  /** The live map, when there is one. */
+  mapId: v.union(v.id("combatMaps"), v.null()),
+  /** The live map is marked Underwater (rule on). */
+  underwater: v.boolean(),
+  /** Its breath countdown, while underwater. */
+  breath: v.union(v.object({ countdownId: v.id("countdowns"), current: v.number(), start: v.number(), status: v.string() }), v.null()),
+  /** GM and co-GMs: they mark the scene and the creatures. */
+  canEdit: v.boolean(),
+  /** GM only (players get []): the creatures on the live map while the rule is on. */
+  creatures: v.array(environmentCreature),
+});
+
+/** A token's name for the GM's list: the PC's name, the instance's label, the custom name. */
+async function creatureName(ctx: QueryCtx, campaignId: Id<"campaigns">, token: Doc<"combatTokens">): Promise<string> {
+  if (token.ref.kind === "custom") return token.ref.name;
+  if (token.ref.kind === "companion") return "Companion";
+  if (token.ref.kind === "pc") {
+    const c = await ctx.db.get("characters", token.ref.characterId);
+    return c === null || c.campaignId !== campaignId ? "Unknown" : readSheet(c.sheet).name;
+  }
+  const instance = await ctx.db.get("encounterAdversaries", token.ref.adversaryId);
+  return instance !== null && instance.campaignId === campaignId ? instance.label : "Unknown";
+}
+
+/**
+ * The scene's environment for the HUD (every member): M3's dim-light badge naming the active mode, and the Underwater
+ * state of the live map with its breath countdown. The GM also gets the creatures to mark "fights underwater".
+ */
+export const environment = campaignQuery({
+  need: "view",
+  enough: "owner",
+  args: {},
+  returns: environmentValidator,
+  handler: async (ctx) => {
+    const { campaign } = ctx;
+    const modes = ruleModesOf(campaign);
+    const { light } = await campaignLight(ctx, campaign);
+    const canEdit = atLeast(ctx.permission, "owner");
+    const map = await liveCombatMap(ctx, campaign._id);
+    const scene = await liveUnderwater(ctx, campaign);
+    const breath = scene?.breath ?? null;
+    const creatures: Infer<typeof environmentCreature>[] = [];
+    if (canEdit && modes.underwater && map !== null) {
+      const tokens = await ctx.db
+        .query("combatTokens")
+        .withIndex("by_map", (q) => q.eq("mapId", map._id))
+        .take(MAX_COMBAT_TOKENS);
+      for (const t of tokens) creatures.push({ tokenId: t._id, name: await creatureName(ctx, campaign._id, t), side: t.side, fightsUnderwater: t.fightsUnderwater === true });
+    }
+    return {
+      darkness: darknessBadge(light, modes.darkness, modes.darknessDifficulty),
+      underwaterRule: modes.underwater,
+      mapId: map?._id ?? null,
+      underwater: scene !== null,
+      breath: breath === null ? null : { countdownId: breath._id, current: breath.currentValue, start: breath.startingValue, status: breath.status },
+      canEdit,
+      creatures,
+    };
+  },
+});
+
+/** MECHANIC_DISABLED unless the Underwater optional rule is on. */
+function assertUnderwaterOn(campaign: Doc<"campaigns">): void {
+  if (!ruleMode(campaign, "underwater")) throw appError("MECHANIC_DISABLED", "The Underwater rule is off in this campaign.");
+}
+
+/** A breath start: a whole number from 3 (CB p.168: "3 or higher") to the countdown cap, else INVALID. */
+function breathStart(value: number | undefined): number {
+  const start = value ?? BREATH_START;
+  if (!Number.isInteger(start) || start < BREATH_MIN || start > MAX_COUNTDOWN_START) {
+    throw appError("INVALID", `The breath countdown starts between ${BREATH_MIN} and ${MAX_COUNTDOWN_START}.`);
+  }
+  return start;
+}
+
+/**
+ * The GM marks a Combat Map scene Underwater, or not (optional rule, CB p.168; plan rule-switches OE). On: creates the
+ * scene's breath countdown (a public, unarmed dashboard countdown "Breath", start `breath`, default 3), which every PC
+ * action roll on the live map ticks (`rollAftermath`); again with another `breath` restarts it there. Off: cancels the
+ * countdown. MECHANIC_DISABLED while the rule is off; COMBAT_MAP_NOT_FOUND for another campaign's map; INVALID for a
+ * start outside 3..20. A public feed line says what changed (not undoable: the GM switches it back).
+ */
+export const setUnderwater = keyedGmMutation({
+  args: { mapId: v.id("combatMaps"), underwater: v.boolean(), breath: v.optional(v.number()) },
+  returns: v.object({ breathCountdownId: v.union(v.id("countdowns"), v.null()) }),
+  handler: async (ctx, { mapId, underwater, breath }) =>
+    ctx.once("combat_scene_underwater", { mapId, underwater, breath }, async () => {
+      const campaign = ctx.campaign;
+      assertUnderwaterOn(campaign);
+      const map = await loadCombatMap(ctx, campaign._id, mapId);
+      const start = breathStart(breath);
+      const existing = map.breathCountdownId === undefined ? null : await ctx.db.get("countdowns", map.breathCountdownId);
+      const countdown = existing !== null && existing.campaignId === campaign._id && existing.status !== "cancelled" ? existing : null;
+      const log = (summary: string) => logAction(ctx, { campaignId: campaign._id, actorId: ctx.user._id, kind: "combat", visibility: "public", summary, undoable: false });
+
+      if (!underwater) {
+        if (countdown !== null) {
+          await ctx.db.patch("countdowns", countdown._id, { status: "cancelled" });
+          await recordHistory(ctx, ctx.user._id, {
+            campaignId: campaign._id,
+            kind: "countdown",
+            action: "cancel",
+            countdownId: countdown._id,
+            before: { currentValue: countdown.currentValue, status: countdown.status },
+            after: { currentValue: countdown.currentValue, status: "cancelled" },
+          });
+        }
+        if (map.underwater === true || map.breathCountdownId !== undefined) {
+          await ctx.db.patch("combatMaps", map._id, { underwater: undefined, breathCountdownId: undefined });
+          await log(`${map.name} is no longer underwater`);
+        }
+        return { breathCountdownId: null };
+      }
+
+      if (map.underwater === true && countdown !== null) {
+        // Already underwater: a new start restarts the breath countdown.
+        if (breath !== undefined && (countdown.startingValue !== start || countdown.currentValue !== start || countdown.status !== "active")) {
+          await ctx.db.patch("countdowns", countdown._id, { startingValue: start, currentValue: start, status: "active", completedAt: undefined });
+          await recordHistory(ctx, ctx.user._id, {
+            campaignId: campaign._id,
+            kind: "countdown",
+            action: "set",
+            countdownId: countdown._id,
+            before: { currentValue: countdown.currentValue, status: countdown.status, startingValue: countdown.startingValue },
+            after: { currentValue: start, status: "active", startingValue: start },
+          });
+          await log(`${map.name}: the breath countdown starts again at ${start}`);
+        }
+        return { breathCountdownId: countdown._id };
+      }
+
+      const breathCountdownId = await ctx.db.insert("countdowns", {
+        campaignId: campaign._id,
+        name: "Breath",
+        description: `Underwater: ${map.name}`.slice(0, 200),
+        category: "consequence",
+        startingValue: start,
+        currentValue: start,
+        status: "active",
+        consequence: "Each PC action underwater marks a Stress.",
+        createdAt: Date.now(),
+        kind: "breath",
+      });
+      await recordHistory(ctx, ctx.user._id, { campaignId: campaign._id, kind: "countdown", action: "create", countdownId: breathCountdownId, before: null, after: { currentValue: start, status: "active" } });
+      await ctx.db.patch("combatMaps", map._id, { underwater: true, breathCountdownId });
+      await log(`${map.name} is underwater: attack rolls have disadvantage; breath ${start}`);
+      return { breathCountdownId };
+    }),
+});
+
+/**
+ * The GM marks a creature's token as fighting easily underwater (CB p.168: "like a Siren or Shark making an attack on a
+ * PC"): its attack rolls get no Underwater disadvantage. MECHANIC_DISABLED while the rule is off; COMBAT_TOKEN_NOT_FOUND
+ * for another campaign's token.
+ */
+export const setFightsUnderwater = keyedGmMutation({
+  args: { tokenId: v.id("combatTokens"), fightsUnderwater: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, { tokenId, fightsUnderwater }) =>
+    ctx.once("combat_token_fights_underwater", { tokenId, fightsUnderwater }, async () => {
+      assertUnderwaterOn(ctx.campaign);
+      const token = await loadCombatToken(ctx, ctx.campaign._id, tokenId);
+      if ((token.fightsUnderwater === true) !== fightsUnderwater) {
+        await ctx.db.patch("combatTokens", token._id, { fightsUnderwater: fightsUnderwater ? true : undefined });
+      }
+      return null;
+    }),
 });

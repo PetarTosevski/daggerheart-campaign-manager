@@ -16,10 +16,11 @@ import { usePick } from "../pick";
 import { useAttackPicker } from "../pick-attack";
 import { useAreaPickState } from "../pick-area";
 import { featurePlan, useFeatureUse } from "../pick-feature";
+import { SpotlightWarning } from "../blocked/reason";
 import { useSpotlight } from "../spotlight";
 import { useHud, type HudLayerProps } from "../state";
 import { hudToasts } from "../toasts";
-import { raiseHand } from "./hand";
+import { raiseHand } from "../hand/raise";
 import {
   attackLock,
   castLock,
@@ -42,7 +43,6 @@ import {
 import { closeActionRing, useActionRing, type RingOpen } from "./store";
 
 export { closeActionRing, openActionRing, toggleActionRing, useActionRing, resetActionRingForTests, type RingOpen } from "./store";
-export { raiseHand } from "./hand";
 export * from "./model";
 
 /**
@@ -56,7 +56,7 @@ export * from "./model";
  *   <each feature with a Use button>   H3.3's `useFeatureUse().open()`; "classic" shows the classic FeatureUse beside the
  *            ring (Warden's Protection, Charge), as the sheet panel does
  *   <each reaction (the sheet's React)>   locked "… waits for its trigger" until the server offers it for an open hit
- *            (`adversaryActions.pending`'s features); then it takes you to that answer's Use in the hit window
+ *            (`adversaryActionsReads.pending`'s features); then it takes you to that answer's Use in the hit window
  *   <each out-of-combat Use (the sheet's D5 Use: Commune)>   `classFeatures.use`, its summary as a toast
  *   (user answer 2026-11-02: reactions and out-of-combat Uses join the ring)
  *
@@ -99,12 +99,14 @@ function ActionRing({ layer, open, characterId, name, centre, size }: { layer: H
   const sheet = useQuery(api.combatHud.sheet, { characterId });
   const hand = useQuery(api.combatCardsReads.hand, { campaignId, characterId });
   // The reactions the server offers right now: the answers of this character's open hits (the hit window's query).
-  const pending = useQuery(api.adversaryActions.pending, { campaignId, characterId });
+  const pending = useQuery(api.adversaryActionsReads.pending, { campaignId, characterId });
   const outsideUse = useMutation(api.classFeatures.use);
   const [outsideBusy, setOutsideBusy] = useState<string | null>(null);
   // H6.2: while the GM holds the spotlight every action here waits (answer 1c); its reason is the button's lock.
   const spotlight = useSpotlight(campaignId);
   const spot = spotlightLock(spotlight?.reactionsOnly === true);
+  // S2 Manual (plan rule-switches RS2, user answer Q4 a): nothing locks; the ring says "The GM has the spotlight".
+  const warn = spotlight?.spotlightWarning === true;
   const [tip, setTip] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [classic, setClassic] = useState<Classic | null>(null);
@@ -308,6 +310,11 @@ function ActionRing({ layer, open, characterId, name, centre, size }: { layer: H
       {tipItem && tipAt && !more.some((m) => m.id === tipItem.id) ? (
         <div className="hud-ar-tip" style={{ left: tipAt.x + 30, top: tipAt.y - 14 }} aria-hidden="true" data-testid="hud-ar-tip">
           {tipItem.locked}
+        </div>
+      ) : null}
+      {warn ? (
+        <div className="hud-ar-warn" style={{ top: size / 2 + 8 }}>
+          <SpotlightWarning show />
         </div>
       ) : null}
       {sheet === undefined ? (

@@ -33,7 +33,7 @@ const sendRef = makeFunctionReference<"action", { inviteId: Doc<"campaignInvites
 const loadRef = makeFunctionReference<
   "query",
   { inviteId: Doc<"campaignInvites">["_id"] },
-  { to: string; gmName: string; campaignName: string } | null
+  { to: string; gmName: string; campaignName: string; asCoGm: boolean } | null
 >("lib/inviteEmail:load");
 
 const limiter = new RateLimiter(components.rateLimiter, INVITE_EMAIL_LIMITS);
@@ -48,12 +48,13 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-/** The email for one invite: subject, plain text and HTML, with a button to `signInUrl`. */
-export function inviteEmail(gmName: string, campaignName: string, signInUrl: string): InviteEmail {
+/** The email for one invite: subject, plain text and HTML, with a button to `signInUrl`; `asCoGm` says "as co-GM" (Q8 b). */
+export function inviteEmail(gmName: string, campaignName: string, signInUrl: string, asCoGm = false): InviteEmail {
   const gm = oneLine(gmName) || "A game master";
   const campaign = oneLine(campaignName) || "a campaign";
-  const subject = `${gm} invited you to ${campaign} on Duality Heart`;
-  const intro = `${gm} invited you to join ${campaign} on Duality Heart.`;
+  const as = asCoGm ? " as co-GM" : "";
+  const subject = `${gm} invited you to ${campaign}${as} on Duality Heart`;
+  const intro = `${gm} invited you to join ${campaign}${as} on Duality Heart.`;
   const how = "Sign in, or create an account, with this email address and the campaign will appear on your home page.";
   const outro = "If you were not expecting this, you can ignore this email.";
   const text = `${intro}\n\n${how}\n${signInUrl}\n\n${outro}\n`;
@@ -102,7 +103,7 @@ export async function scheduleInviteEmail(
 /** What the send needs: recipient, GM and campaign names. Null when the invite was revoked in the meantime. */
 export const load = internalQuery({
   args: { inviteId: v.id("campaignInvites") },
-  returns: v.union(v.null(), v.object({ to: v.string(), gmName: v.string(), campaignName: v.string() })),
+  returns: v.union(v.null(), v.object({ to: v.string(), gmName: v.string(), campaignName: v.string(), asCoGm: v.boolean() })),
   handler: async (ctx, { inviteId }) => {
     const invite = await ctx.db.get("campaignInvites", inviteId);
     if (invite === null) return null;
@@ -115,6 +116,7 @@ export const load = internalQuery({
       to: invite.email,
       gmName: gm?.name?.trim() || gm?.email?.split("@")[0] || "",
       campaignName: campaign.name,
+      asCoGm: invite.role === "coGm",
     };
   },
 });
@@ -133,7 +135,7 @@ export const send = internalAction({
       const from = env.MAIL_FROM?.trim();
       const link = signInLink(env);
       if (!key || !from || !link) throw new Error("Email is not configured (AUTH_RESEND_KEY, MAIL_FROM or SITE_URL).");
-      const { subject, text, html } = inviteEmail(data.gmName, data.campaignName, link);
+      const { subject, text, html } = inviteEmail(data.gmName, data.campaignName, link, data.asCoGm);
       const res = await fetch(RESEND_URL, {
         method: "POST",
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },

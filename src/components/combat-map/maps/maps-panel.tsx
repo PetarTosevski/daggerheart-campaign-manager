@@ -3,6 +3,7 @@
 import { useMutation, useQuery } from "convex/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { BrandButton, brandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import { useIntent } from "@/lib/use-intent";
 
@@ -48,24 +49,24 @@ export function MapsPanel({ campaignId, selectedMapId, onSelectMap }: MapsPanelP
         <h2 id="cm-maps-h" className="cm-h">
           Maps
         </h2>
-        <button type="button" className="cm-btn cm-sm" aria-expanded={adding} onClick={() => setAdding(!adding)}>
+        <BrandButton type="button" variant="neutral" size="sm" aria-expanded={adding} onClick={() => setAdding(!adding)}>
           ＋ New map
-        </button>
+        </BrandButton>
       </div>
       {adding ? (
         <div className="cm-newmap" role="group" aria-label="New map">
           <span className="cm-lbl">Blank map</span>
           <div className="cm-row">
             {SIZES.map((s) => (
-              <button key={s.key} type="button" className="cm-btn cm-sm" disabled={create.pending} onClick={() => void createBlank(s.key)}>
+              <BrandButton key={s.key} type="button" variant="neutral" size="sm" disabled={create.pending} onClick={() => void createBlank(s.key)}>
                 {s.label} {s.w}×{s.h}
-              </button>
+              </BrandButton>
             ))}
           </div>
           <MapImageButton
             campaignId={campaignId}
             label="🖼 From my own map image"
-            className="cm-btn cm-sm"
+            className={brandButton({ variant: "neutral", size: "sm" })}
             onDone={(id) => {
               setAdding(false);
               onSelectMap(id);
@@ -219,24 +220,25 @@ function MapRow({
           {map.w} × {map.h} · {SOURCE_LABEL[map.source]}
         </span>
         <span className="cm-maprow-actions">
-          <button type="button" className="cm-btn cm-sm" disabled={map.live} onClick={() => run(setLive({ campaignId, mapId: map._id }))}>
+          <BrandButton type="button" variant="neutral" size="sm" disabled={map.live} onClick={() => run(setLive({ campaignId, mapId: map._id }))}>
             Set live
-          </button>
-          <button type="button" className="cm-btn cm-sm" onClick={() => setRenaming(map.name)}>
+          </BrandButton>
+          <BrandButton type="button" variant="neutral" size="sm" onClick={() => setRenaming(map.name)}>
             Rename
-          </button>
-          <button
+          </BrandButton>
+          <BrandButton
             type="button"
-            className="cm-btn cm-sm"
+            variant="neutral"
+            size="sm"
             disabled={duplicate.pending}
             onClick={() => void duplicate.fire({ campaignId, mapId: map._id })}
           >
             Duplicate
-          </button>
-          <MapImageButton campaignId={campaignId} mapId={map._id} label="Image" className="cm-btn cm-sm" onDone={onOpen} />
-          <button type="button" className="cm-btn cm-sm cm-danger" onClick={clickDelete}>
+          </BrandButton>
+          <MapImageButton campaignId={campaignId} mapId={map._id} label="Image" className={brandButton({ variant: "neutral", size: "sm" })} onDone={onOpen} />
+          <BrandButton type="button" variant="danger" size="sm" onClick={clickDelete}>
             {confirmDelete ? "Confirm delete" : "Delete"}
-          </button>
+          </BrandButton>
         </span>
         {duplicate.error ? (
           <span role="alert" className="cm-err">

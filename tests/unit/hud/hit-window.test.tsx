@@ -74,7 +74,7 @@ const sheetOf = (hp: number, armor: number, armorMax = 3) => ({
 function seed({ mine = [{ _id: MOSS, name: "Moss" }], hits = { [MOSS]: [hitView()] } as Record<string, HitView[]>, sheet = sheetOf(2, 1) } = {}) {
   queries["charactersReads:listByCampaign"] = mine.map((c) => ({ _id: c._id, mine: true, corrupt: false, sheet: { name: c.name } }));
   queries["combatHud:party"] = mine.map((c) => ({ characterId: c._id, tokenId: `t-${c._id}` }));
-  queries["adversaryActions:pending"] = (args: { characterId: string }) => hits[args.characterId] ?? [];
+  queries["adversaryActionsReads:pending"] = (args: { characterId: string }) => hits[args.characterId] ?? [];
   queries["combatHud:sheet"] = sheet;
 }
 

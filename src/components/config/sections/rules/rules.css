@@ -1,0 +1,220 @@
+/* Campaign settings, House rules (plan config U2; design `.s-rules`: `.rule`, `.addb`). Shared rows are in ../../config.css. */
+.cfg-rules-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cfg-hint + .cfg-rules-list > .cfg-row:first-child {
+  border-top: 0;
+}
+.cfg-rules-gap {
+  margin-top: 4px;
+}
+.cfg-rule {
+  align-items: flex-start;
+}
+.cfg-rule-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cfg-rule-acts {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.cfg-rule-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cfg-rule-field {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #33444a;
+  border-radius: 10px;
+  background: #0f171a;
+  color: #e6ecea;
+  font: inherit;
+  font-size: 14px;
+  resize: vertical;
+}
+.cfg-rule-field:focus-visible {
+  outline: 2px solid #e3b45a;
+  outline-offset: 1px;
+}
+.cfg-rule-count {
+  align-self: flex-end;
+  font-size: 11.5px;
+}
+/* The design's `.addb`: a dashed outline on the glass neutral button. */
+.cfg-rules-add {
+  margin-top: 12px;
+  gap: 6px;
+  border: 1px dashed #3a4d54;
+}
+.cfg-rules-err:empty {
+  display: none;
+}
+.cfg-rules-err {
+  margin-top: 8px;
+  color: #f0a8a0;
+}
+
+/* ---------------------------------------------------------------- rule rows (plan rule-switches RU) */
+.cfg-rs {
+  margin-bottom: 4px;
+}
+.cfg-rs-lock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #2d2614;
+  box-shadow: inset 0 0 0 1px #5b4a2a;
+  color: #f3cf86;
+  font-size: 13px;
+}
+.cfg-rs-lock svg {
+  flex: none;
+}
+/* An area: a disclosure group (native details). */
+.cfg-rs-grp {
+  border-top: 1px solid #1f2b30;
+}
+.cfg-rs-grp > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 2px;
+  cursor: pointer;
+  list-style: none;
+}
+.cfg-rs-grp > summary::-webkit-details-marker {
+  display: none;
+}
+.cfg-rs-grp > summary::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin: 0 4px 0 2px;
+  border-right: 2px solid #8fa3a8;
+  border-bottom: 2px solid #8fa3a8;
+  transform: rotate(-45deg);
+}
+.cfg-rs-grp[open] > summary::before {
+  transform: rotate(45deg);
+}
+.cfg-rs-grp-t {
+  flex: 1;
+  font-weight: 600;
+  font-size: 14.5px;
+  color: #e6ecea;
+}
+.cfg-rs-grp > summary:focus-visible {
+  outline: 2px solid #e3b45a;
+  outline-offset: 2px;
+}
+.cfg-rs-grp > .cfg-rules-list {
+  padding-left: 14px;
+}
+.cfg-rs-grp > .cfg-rules-list > .cfg-row:first-child {
+  border-top: 0;
+}
+.cfg-rs-row .cfg-row-t em {
+  color: #9fb2b6;
+}
+/* The mode picker: a radio group in the segmented control's look; the options wrap on narrow screens. */
+.cfg-rs-seg {
+  flex-wrap: wrap;
+}
+.cfg-rs-opt {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 4px 10px;
+  border-radius: 9px;
+  color: #c8d3d0;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+}
+.cfg-rs-opt:hover {
+  background: #18232a;
+}
+.cfg-rs-opt input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.cfg-rs-opt[data-checked] {
+  background: #2d2614;
+  color: #f3cf86;
+  box-shadow: inset 0 0 0 1px #e3b45a;
+}
+.cfg-rs-opt:has(input:focus-visible) {
+  outline: 2px solid #e3b45a;
+  outline-offset: 1px;
+}
+.cfg-rs-opt:has(input:disabled) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.cfg-rs-opt:has(input:disabled) input {
+  cursor: not-allowed;
+}
+.cfg-rs-nib {
+  font-size: 11px;
+  font-weight: 500;
+  color: #c9a8ff;
+}
+.cfg-rs-now {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 0;
+}
+.cfg-rs-mode {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: #18232a;
+  box-shadow: inset 0 0 0 1px #33444a;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #e6ecea;
+}
+.cfg-rs-mode.cfg-rs-changed {
+  background: #2d2614;
+  box-shadow: inset 0 0 0 1px #e3b45a;
+  color: #f3cf86;
+}
+.cfg-rs-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cfg-rs-step > span {
+  flex: 1;
+}
+.cfg-rs-num {
+  min-width: 2ch;
+  font-weight: 700;
+  text-align: center;
+}

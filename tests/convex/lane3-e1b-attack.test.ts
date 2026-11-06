@@ -17,7 +17,7 @@ import { effectKeyOf } from "../../convex/lib/cardRunner";
 import { readSheet, saveSheet } from "../../convex/lib/characterSheet";
 import type { CharacterSheet, Effect } from "../../src/lib/validation/characters";
 import { allowWorldEmails, buildWorld, type Client } from "./authz/world";
-import { errorCode, key } from "./helpers";
+import { errorCode, handingBack, key } from "./helpers";
 
 allowWorldEmails();
 afterEach(() => vi.restoreAllMocks());
@@ -35,7 +35,8 @@ async function arena() {
   const w = await buildWorld();
   const { t, campaignId } = w;
   const gm = w.as("gm");
-  const player = w.as("player");
+  // S2 (plan rule-switches RS2): the GM hands the spotlight back before each act (`handingBack`).
+  const player = handingBack(w.as("player"), gm, w.campaignId);
   const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
   const now = Date.now();
   const encounterId = await t.run(async (ctx) => {

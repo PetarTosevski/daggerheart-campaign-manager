@@ -2,13 +2,13 @@
 export const CAMPAIGN_SECTIONS = [
   { slug: "", label: "Dashboard", phase: "D2" },
   { slug: "party", label: "Party", phase: "D4" },
-  // User 2026-11-02: Codex, World Map, Combat Map, Adversaries (GM only), then Sessions, Notes, Lorekeeper.
+  // User 2026-11-03: Codex, World Map, Combat Map, Adversaries (GM only), Journal (where Sessions was: it replaces Sessions
+  // and Notes, whose old routes redirect to its sub-tabs), Lorekeeper.
   { slug: "codex", label: "Codex", phase: "D7" },
   { slug: "world", label: "World Map", phase: "D6" },
   { slug: "combat-map", label: "Combat Map", phase: "D9" },
   { slug: "adversaries", label: "Adversaries", phase: "D8", gmOnly: true },
-  { slug: "sessions", label: "Sessions", phase: "D10" },
-  { slug: "notes", label: "Notes", phase: "D11" },
+  { slug: "journal", label: "Journal", phase: "JX1" },
   { slug: "lorekeeper", label: "Lorekeeper", phase: "D13" },
 ] as const;
 

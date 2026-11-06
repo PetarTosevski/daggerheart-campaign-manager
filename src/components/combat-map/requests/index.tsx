@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 
 import { api } from "../../../../convex/_generated/api";
@@ -21,6 +22,9 @@ import "./requests.css";
  * Plan combat-hud H8.2 (cut-over, GM side): the GM column's campaign-wide list (every waiting Charge and Cloaked roll)
  * and the "Does <name>'s Cloaked end?" prompts (`cloak.tsx`) are gone; the HUD's "Waiting on you" queue
  * (`hud/queue`) asks them.
+ *
+ * Plan glass-buttons G11: Roll is the glass allow and Decline the glass deny (the GM's yes / no to a player's request,
+ * the same colours for every viewer).
  */
 
 export type DifficultyRow = FunctionReturnType<typeof api.combatRequestsReads.difficulties>[number];
@@ -103,12 +107,12 @@ function DifficultyList({ campaignId, characterId, ask }: { campaignId: Id<"camp
                     value={raw}
                     onChange={(e) => setValues((v) => ({ ...v, [r.requestId]: e.target.value }))}
                   />
-                  <button type="button" className="cm-btn cm-sm" disabled={pending || !ok} aria-label={`Roll: ${text}`} onClick={() => void send(r.requestId, n)}>
+                  <BrandButton variant="allow" disabled={pending || !ok} aria-label={`Roll: ${text}`} onClick={() => void send(r.requestId, n)}>
                     Roll
-                  </button>
-                  <button type="button" className="cm-btn cm-sm cm-danger" disabled={pending} aria-label={`Decline: ${text}`} onClick={() => void send(r.requestId, null)}>
+                  </BrandButton>
+                  <BrandButton variant="deny" disabled={pending} aria-label={`Decline: ${text}`} onClick={() => void send(r.requestId, null)}>
                     Decline
-                  </button>
+                  </BrandButton>
                 </span>
               </li>
             );

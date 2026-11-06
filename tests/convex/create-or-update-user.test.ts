@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { createOrUpdateUser } from "../../convex/lib/users";
+import type { Id } from "../../convex/_generated/dataModel";
+import type { MutationCtx } from "../../convex/_generated/server";
+import { createOrUpdateUser, type SignInArgs } from "../../convex/lib/users";
 import { errorCode } from "./helpers";
 import { makeTest } from "./setup";
 
@@ -180,5 +182,119 @@ describe("createOrUpdateUser (sign-in callback)", () => {
       const again = await t.run((ctx) => createOrUpdateUser(ctx, { existingUserId: null, provider: google, profile: verifiedGm }));
       expect(again).toBe(id);
     });
+  });
+});
+
+describe("createOrUpdateUser: sign-up mode (config AD4, Q18 a)", () => {
+  type T = ReturnType<typeof makeTest>;
+  const setMode = (t: T, signUpMode: "open" | "invite" | "closed", ownerId?: Id<"users">) =>
+    t.run((ctx) => ctx.db.insert("appConfig", { key: "app", signUpMode, updatedAt: 1, ...(ownerId ? { ownerId } : {}) }));
+  const setReadOnly = (t: T) => t.run((ctx) => ctx.db.insert("appStatus", { key: "app", readOnly: true, updatedAt: 1 }));
+  const campaign = (ctx: MutationCtx, ownerId: Id<"users">, joinCode: string, deletedAt?: number) =>
+    ctx.db.insert("campaigns", {
+      ownerId,
+      frameId: "witherwild",
+      name: joinCode,
+      nameKey: joinCode.toLowerCase(),
+      tier: 1,
+      level: 1,
+      createdAt: 1,
+      lastOpenedAt: 1,
+      joinCode,
+      ...(deletedAt === undefined ? {} : { deletedAt }),
+    });
+  const create = (t: T, provider: { id: string }, profile: SignInArgs["profile"]) =>
+    t.run((ctx) => createOrUpdateUser(ctx, { existingUserId: null, provider, profile })).catch((e: unknown) => e);
+  const newcomer = { email: "new@example.com", emailVerified: true };
+  const users = (t: T) => t.run((ctx) => ctx.db.query("users").collect());
+  const gmWith = (t: T, build: (ctx: MutationCtx, gm: Id<"users">) => Promise<unknown>) =>
+    t.run(async (ctx) => {
+      const gm = await ctx.db.insert("users", { email: "gm@example.com", emailVerificationTime: 1 });
+      await build(ctx, gm);
+    });
+
+  it("closed: refuses a new Google or password user with SIGN_UP_CLOSED and creates nothing", async () => {
+    const t = makeTest();
+    await setMode(t, "closed");
+    expect(errorCode(await create(t, google, newcomer))).toBe("SIGN_UP_CLOSED");
+    expect(errorCode(await create(t, password, { email: "new@example.com" }))).toBe("SIGN_UP_CLOSED");
+    expect(await users(t)).toEqual([]);
+  });
+
+  it("read-only mode refuses a new user even when sign-up is open", async () => {
+    const t = makeTest();
+    await setMode(t, "open");
+    await setReadOnly(t);
+    expect(errorCode(await create(t, google, newcomer))).toBe("SIGN_UP_CLOSED");
+    expect(await users(t)).toEqual([]);
+  });
+
+  it("closed and read-only never refuse an existing user: the owner, a code entered, a password linked to Google", async () => {
+    const t = makeTest();
+    const ownerId = await t.run((ctx) => ctx.db.insert("users", { email: "owner@example.com", emailVerificationTime: 1 }));
+    const pendingId = await t.run((ctx) => ctx.db.insert("users", { email: "ana@example.com" }));
+    await setMode(t, "closed", ownerId);
+    await setReadOnly(t);
+    expect(await create(t, google, { email: "Owner@example.com", emailVerified: true })).toBe(ownerId);
+    const verified = await t.run((ctx) =>
+      createOrUpdateUser(ctx, {
+        existingUserId: pendingId,
+        provider: password,
+        profile: { email: "ana@example.com", emailVerified: true },
+      }),
+    );
+    expect(verified).toBe(pendingId);
+    expect(await create(t, password, { email: "owner@example.com" })).toBe(ownerId);
+    expect(await users(t)).toHaveLength(2);
+  });
+
+  it("invite: refuses an uninvited email without a code with SIGN_UP_INVITE_ONLY", async () => {
+    const t = makeTest();
+    await setMode(t, "invite");
+    expect(errorCode(await create(t, google, newcomer))).toBe("SIGN_UP_INVITE_ONLY");
+    expect(errorCode(await create(t, password, { email: "new@example.com" }))).toBe("SIGN_UP_INVITE_ONLY");
+    expect(await users(t)).toEqual([]);
+  });
+
+  it("invite: allows Google and password for an email with a pending invite to a live campaign", async () => {
+    const t = makeTest();
+    await gmWith(t, async (ctx, gm) => {
+      const campaignId = await campaign(ctx, gm, "LIVE1");
+      await ctx.db.insert("campaignInvites", { campaignId, email: "new@example.com", invitedBy: gm, createdAt: 1 });
+      await ctx.db.insert("campaignInvites", { campaignId, email: "pw@example.com", invitedBy: gm, createdAt: 1 });
+    });
+    await setMode(t, "invite");
+    expect(typeof (await create(t, google, { email: "New@Example.com", emailVerified: true }))).toBe("string");
+    expect(typeof (await create(t, password, { email: "pw@example.com" }))).toBe("string");
+  });
+
+  it("invite: an invite to a deleted campaign does not count", async () => {
+    const t = makeTest();
+    await gmWith(t, async (ctx, gm) => {
+      const campaignId = await campaign(ctx, gm, "GONE1", 5);
+      await ctx.db.insert("campaignInvites", { campaignId, email: "new@example.com", invitedBy: gm, createdAt: 1 });
+    });
+    await setMode(t, "invite");
+    expect(errorCode(await create(t, google, newcomer))).toBe("SIGN_UP_INVITE_ONLY");
+  });
+
+  it("invite: a password sign-up with a live campaign's join code is allowed; a wrong or deleted one is not", async () => {
+    const t = makeTest();
+    await gmWith(t, async (ctx, gm) => {
+      await campaign(ctx, gm, "LIVE1");
+      await campaign(ctx, gm, "GONE1", 5);
+    });
+    await setMode(t, "invite");
+    expect(errorCode(await create(t, password, { email: "a@example.com", joinCode: "NOPE1" }))).toBe("SIGN_UP_INVITE_ONLY");
+    expect(errorCode(await create(t, password, { email: "a@example.com", joinCode: "GONE1" }))).toBe("SIGN_UP_INVITE_ONLY");
+    // Normalised like a typed code (case, separators).
+    expect(typeof (await create(t, password, { email: "a@example.com", joinCode: "live-1" }))).toBe("string");
+  });
+
+  it("invite: Google ignores a join code (Google sign-up works only for invited emails)", async () => {
+    const t = makeTest();
+    await gmWith(t, (ctx, gm) => campaign(ctx, gm, "LIVE1"));
+    await setMode(t, "invite");
+    expect(errorCode(await create(t, google, { ...newcomer, joinCode: "LIVE1" }))).toBe("SIGN_UP_INVITE_ONLY");
   });
 });

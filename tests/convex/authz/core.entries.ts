@@ -49,14 +49,16 @@ const area: Area = {
     { fn: api.campaigns.get, access: "maybe", args: (w) => ({ campaignId: w.campaignId }), expect: { outsider: "null", otherPlayer: "ok", grantee: "ok" } },
     // Any member records their own open; the player row is the one the acceptance asks for.
     { fn: api.campaigns.markOpened, access: "view", expect: { otherPlayer: "ok", grantee: "ok" } },
-    { fn: api.campaigns.remove, access: "gm", expect: { grantee: "FORBIDDEN" } },
-    // Not a campaign wrapper (a deleted campaign is missing to those): only the owner sees and restores a deleted
-    // campaign; everyone else gets NOT_FOUND, members included.
+    // Config G1: the creator only (Q7 a); a co-GM, who passes every GM wrapper, is FORBIDDEN.
+    { fn: api.campaigns.remove, access: "creator", expect: { coGm: "FORBIDDEN", gm: "ok" } },
+    // Not a campaign wrapper (a deleted campaign is missing to those): only the creator (`permissionFor(..., "creator")`)
+    // sees and restores a deleted campaign; everyone else gets NOT_FOUND, members and co-GMs included. On a live
+    // campaign a co-GM is FORBIDDEN for restore and purge (tests/convex/co-gm.test.ts).
     {
       fn: api.campaigns.restore,
       access: "scoped",
       setup: deletedCampaign,
-      expect: { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", otherPlayer: "NOT_FOUND", player: "NOT_FOUND", grantee: "NOT_FOUND", gm: "ok" },
+      expect: { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", otherPlayer: "NOT_FOUND", player: "NOT_FOUND", grantee: "NOT_FOUND", coGm: "NOT_FOUND", gm: "ok" },
     },
     // The caller's own deleted campaigns.
     { fn: api.campaigns.listDeleted, access: "user" },
@@ -65,7 +67,7 @@ const area: Area = {
       fn: api.campaigns.purge,
       access: "scoped",
       setup: deletedCampaign,
-      expect: { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", otherPlayer: "NOT_FOUND", player: "NOT_FOUND", grantee: "NOT_FOUND", gm: "ok" },
+      expect: { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", otherPlayer: "NOT_FOUND", player: "NOT_FOUND", grantee: "NOT_FOUND", coGm: "NOT_FOUND", gm: "ok" },
     },
     { fn: api.campaigns.setOption, access: "gm", args: () => ({ option: "witherPersists", enabled: true }) },
     { fn: api.campaigns.setPlayersSeeHands, access: "gm", args: () => ({ enabled: false }) },
@@ -121,7 +123,7 @@ const area: Area = {
       access: "scoped",
       setup: gmUploadNotice,
       args: (w) => ({ noticeId: w.ids.noticeId }),
-      expect: { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", otherPlayer: "NOT_FOUND", player: "NOT_FOUND", grantee: "NOT_FOUND", gm: "ok" },
+      expect: { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", otherPlayer: "NOT_FOUND", player: "NOT_FOUND", grantee: "NOT_FOUND", coGm: "NOT_FOUND", gm: "ok" },
     },
 
     // ---- fear

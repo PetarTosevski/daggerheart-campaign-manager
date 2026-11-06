@@ -7,13 +7,18 @@ import { usePathname, useRouter } from "next/navigation";
 import { BookOpen, Users } from "lucide-react";
 import { createContext, memo, useCallback, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 
-import { CampaignNav, CombatAppBarFrame } from "@/components/app-bar";
+import { CampaignNav, CampaignSettingsButton, CombatAppBarFrame, PreferencesButton } from "@/components/app-bar";
 import { BackLink, Wordmark } from "@/components/brand/brand";
+import { BrandButton, brandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
+import { ViewerProvider, viewerFor } from "@/components/brand/viewer";
+import { OwnerViewBanner } from "@/components/config/owner-view-banner";
+import { ConfigMounts, openSettings } from "@/components/config/shell";
+import { sessionOpensOnHref } from "@/lib/config/campaign-settings";
 import { SlotBoundary } from "@/components/party/session/boundary";
+import { sessionPlayHref } from "@/components/sessions/session-chip";
 import { frameName } from "@/lib/campaign-display";
 import { frameHasMechanic } from "@/lib/frames";
-import { brandButton } from "@/components/brand/buttons";
 import { campaignArt } from "@/lib/campaign-art";
 import { formatSessionDate } from "@/lib/domain/sessions";
 import { useIntent } from "@/lib/use-intent";
@@ -25,7 +30,6 @@ import type { CampaignSummary } from "../../../../../convex/campaigns";
 import type { TomeChapterId } from "@/lib/frames/tomes";
 
 import { CampaignTome } from "./campaign-tome";
-import { PlayersDialog } from "./players-dialog";
 import { TimeArc } from "./time-arc";
 import { DayCard } from "./time-of-day";
 
@@ -51,18 +55,22 @@ export function useOpenTome(): (chapter: TomeChapterId) => void {
   return openTome;
 }
 
-/** The campaign's live GM Fear (`campaigns.fear`; undefined while loading). Wrap the reader in an error boundary (CL1). */
-export function useCampaignFear(): number | undefined {
+/**
+ * The campaign's live GM Fear (`campaigns.fear`; undefined while loading; null for a player while the GM hides it,
+ * config R1: show "?"). Wrap the reader in an error boundary (CL1).
+ */
+export function useCampaignFear(): number | null | undefined {
   return useQuery(api.campaigns.fear, { campaignId: useCampaign()._id });
 }
 
 /**
- * Renders `children` with the live GM Fear once it has loaded (nothing before). Only this subtree re-renders on a Fear
- * change; put it inside the reader's error boundary.
+ * Renders `children` with the live GM Fear once it has loaded (nothing before, and nothing while it is hidden: every
+ * reader is a GM screen, and the GM always gets the number). Only this subtree re-renders on a Fear change; put it
+ * inside the reader's error boundary.
  */
 export function WithFear({ children }: { children: (fear: number) => ReactNode }) {
   const fear = useCampaignFear();
-  return fear === undefined ? null : children(fear);
+  return fear === undefined || fear === null ? null : children(fear);
 }
 
 function TierLevel({ campaign }: { campaign: CampaignSummary }) {
@@ -100,22 +108,26 @@ function HeroSessionLine({ campaign }: { campaign: CampaignSummary }) {
   );
 }
 
-const heroPill =
-  "inline-flex min-h-[52px] cursor-pointer items-center rounded-full bg-brand px-[30px] font-display text-[16px] font-bold tracking-[0.1em] text-brand-ink hover:brightness-110 disabled:cursor-default disabled:opacity-60";
+/** The hero's main action (Start Session / Session N in progress): a large glass confirm in the viewer's colours. */
+const heroPill = brandButton({ variant: "confirm", size: "lg" });
 
 /**
- * GM: 'Start Session' (B8) starts the newest planned session, creating one when there is none, and opens it on Play;
- * while a session is live the pill reads 'Session N in progress' and opens it. Players see a chip while one is live.
+ * GM: 'Start Session' (B8) starts the newest planned session, creating one when there is none, then goes where the
+ * campaign's 'A new session opens on' setting says (config SX, as JO1 does in the Journal header): the session's Log &
+ * recap in the Journal (JX1), or the Combat Map. While a session is live the pill reads 'Session N in progress' and opens
+ * it in the Journal. Players see a chip while one is live. The owner's read-only view (AU7) keeps the GM's link to a live
+ * session and never shows Start Session.
  */
-function HeroSessionAction({ campaignId, isGm }: { campaignId: Id<"campaigns">; isGm: boolean }) {
+function HeroSessionAction({ campaignId, isGm, canStart }: { campaignId: Id<"campaigns">; isGm: boolean; canStart: boolean }) {
   const summary = useQuery(api.sessionWrap.dashboard, { campaignId });
   const start = useIntent(api.sessions.start);
+  const opensOn = useCampaign().settings.sessionOpensOn;
   const router = useRouter();
   // A confirm before starting (user 2026-10-20), as the Sessions tab's live card has.
   const [confirm, setConfirm] = useState(false);
   if (summary === undefined) return null;
-  const sessions = `/campaigns/${campaignId}/sessions`;
-  const play = (sessionId: string) => `${sessions}?s=${sessionId}&stage=play`;
+  const journal = `/campaigns/${campaignId}/journal`;
+  const play = (sessionId: string) => sessionPlayHref(campaignId, sessionId);
 
   if (summary.live) {
     const label = `Session ${summary.live.n} in progress`;
@@ -130,13 +142,16 @@ function HeroSessionAction({ campaignId, isGm }: { campaignId: Id<"campaigns">; 
       </span>
     );
   }
-  if (!isGm) return null;
+  if (!canStart) return null;
 
   async function startSession() {
     setConfirm(false);
     const result = await start.fire({ campaignId });
-    // Without a sessionId the server found one already live (alreadyStarted); the Sessions tab shows it.
-    if (result) router.push(result.sessionId ? play(result.sessionId) : sessions);
+    if (!result) return;
+    // Without a sessionId the server found one already live (alreadyStarted): the Journal opens on it, and no one moves
+    // by the setting. Navigation happens here, after the mutation resolved (rule 13: never from an effect).
+    if (!result.sessionId) router.push(journal);
+    else router.push(sessionOpensOnHref(campaignId, opensOn) ?? play(result.sessionId));
   }
 
   return (
@@ -149,20 +164,12 @@ function HeroSessionAction({ campaignId, isGm }: { campaignId: Id<"campaigns">; 
           The next planned session starts (a new one if none is planned) and start-of-session features (such as Prayer Dice) are given out.
         </p>
         <div className="flex justify-end gap-2.5">
-          <button
-            type="button"
-            className="min-h-11 cursor-pointer rounded-[10px] border border-[#33444a] bg-transparent px-4 text-[14px] text-[#e6ecea] hover:bg-white/5"
-            onClick={() => setConfirm(false)}
-          >
+          <BrandButton variant="cancel" onClick={() => setConfirm(false)}>
             Cancel
-          </button>
-          <button
-            type="button"
-            className="min-h-11 cursor-pointer rounded-full border border-[#2f7a4f] bg-[#1f5236] px-5 text-[14px] font-semibold text-[#e6fff0] hover:bg-[#256342]"
-            onClick={() => void startSession()}
-          >
+          </BrandButton>
+          <BrandButton variant="confirm" onClick={() => void startSession()}>
             Start session
-          </button>
+          </BrandButton>
         </div>
       </Modal>
       {start.error ? (
@@ -176,16 +183,18 @@ function HeroSessionAction({ campaignId, isGm }: { campaignId: Id<"campaigns">; 
 
 /** Title block of the dashboard header ("ACTIVE CAMPAIGN · THE WITHERWILD"). Memoized: it re-renders only with the campaign. */
 const DashboardHero = memo(function DashboardHero({ campaign, onOpenTome }: { campaign: CampaignSummary; onOpenTome: () => void }) {
+  // Config AU7: the app owner's read-only view reads as the GM but changes nothing (no clock, no Start Session).
+  const canEdit = campaign.role === "gm" && !campaign.ownerView;
   return (
     <div className="relative mx-auto flex max-w-[1344px] flex-col gap-9 px-4 pt-2 pb-8 sm:px-12">
       {frameHasMechanic(campaign.frameId, "campaignTime") ? (
-        <TimeArc campaignId={campaign._id} readOnly={campaign.role !== "gm"} />
+        <TimeArc campaignId={campaign._id} readOnly={!canEdit} />
       ) : (
         // Every campaign without the arc, core included (TASK-CORE-CALENDAR): the day card, top-right above the title
         // on desktop, under the title block on narrow screens.
         <div className="order-last flex sm:order-none sm:justify-end">
           <SlotBoundary fallback={null}>
-            <DayCard campaignId={campaign._id} readOnly={campaign.role !== "gm"} />
+            <DayCard campaignId={campaign._id} readOnly={!canEdit} />
           </SlotBoundary>
         </div>
       )}
@@ -204,16 +213,12 @@ const DashboardHero = memo(function DashboardHero({ campaign, onOpenTome }: { ca
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-      <button
-        type="button"
-        onClick={onOpenTome}
-        className="inline-flex min-h-[52px] cursor-pointer items-center gap-2.5 rounded-full border border-white/30 bg-black/35 px-[22px] text-[15px] text-parchment hover:bg-black/50"
-      >
-        <BookOpen className="size-[18px]" strokeWidth={1.6} aria-hidden="true" />
+      <BrandButton variant="neutral" size="lg" onClick={onOpenTome}>
+        <BookOpen strokeWidth={1.6} aria-hidden="true" />
         Open the Tome
-      </button>
+      </BrandButton>
       <SlotBoundary fallback={null}>
-        <HeroSessionAction campaignId={campaign._id} isGm={campaign.role === "gm"} />
+        <HeroSessionAction campaignId={campaign._id} isGm={campaign.role === "gm"} canStart={canEdit} />
       </SlotBoundary>
       </div>
       </div>
@@ -252,7 +257,6 @@ export function CampaignSectionLoading({ label = "Loading page" }: { label?: str
 }
 
 const MemoTome = memo(CampaignTome);
-const MemoPlayersDialog = memo(PlayersDialog);
 
 /** `campaigns.get` as the campaign layout preloads it on the server (PF4, CL5). */
 export type PreloadedCampaign = Preloaded<typeof api.campaigns.get>;
@@ -331,15 +335,15 @@ function LiveCampaignShell({ campaignId, children }: { campaignId: string; child
 function CampaignShellView({ campaign, children }: { campaign: CampaignSummary | null | undefined; children: ReactNode }) {
   const markOpened = useMutation(api.campaigns.markOpened);
   const pathname = usePathname();
-  const [playersOpen, setPlayersOpen] = useState(false);
   const [tomeChapter, setTomeChapter] = useState<TomeChapterId | null>(null);
   const openOverview = useCallback(() => setTomeChapter("overview"), []);
   const closeTome = useCallback(() => setTomeChapter(null), []);
-  const openPlayers = useCallback(() => setPlayersOpen(true), []);
-  const closePlayers = useCallback(() => setPlayersOpen(false), []);
+  // Config SX (Q10 b): the Players button is a shortcut to Campaign settings at Players, the one Players UI.
+  const openPlayers = useCallback(() => openSettings("players"), []);
   const hydrated = useHydrated();
 
-  const foundId = campaign ? campaign._id : null;
+  // Config AU7: the owner's read-only view never records the open (they are not a member; AU1 logged the visit).
+  const foundId = campaign && !campaign.ownerView ? campaign._id : null;
   useEffect(() => {
     if (foundId) void markOpened({ campaignId: foundId }).catch(() => undefined);
   }, [foundId, markOpened]);
@@ -350,7 +354,7 @@ function CampaignShellView({ campaign, children }: { campaign: CampaignSummary |
       <main className="flex min-h-screen flex-col items-center justify-center gap-5 bg-[#0d1417] p-6 text-center text-parchment">
         <h1 className="font-display text-[32px] font-bold">Campaign not found</h1>
         <p className="text-muted-text">It may have been deleted.</p>
-        <Link href="/campaigns" className={brandButton({ variant: "solid", size: "lg" })}>
+        <Link href="/campaigns" className={brandButton({ variant: "confirm", size: "lg" })}>
           Load a campaign
         </Link>
       </main>
@@ -359,6 +363,10 @@ function CampaignShellView({ campaign, children }: { campaign: CampaignSummary |
 
   const art = campaignArt(campaign.frameId, campaign.custom?.background);
   const isGm = campaign.role === "gm";
+  // Config AU7 (Q27 b, N1): the app owner's read-only view of a campaign they are not in. It reads as the GM
+  // (`role: "gm"`) but has no gear, no Players button, no markOpened and no presence, and shows the banner.
+  const ownerView = campaign.ownerView;
+  const viewer = viewerFor(campaign.role);
   // Plan combat-hud H9.A (user answer Q2 c): the Combat Map gets the compact app bar instead of the tall art header
   // (a phone keeps the header); every other page keeps the header.
   const combatMap = pathname === `/campaigns/${campaign._id}/combat-map`;
@@ -386,21 +394,21 @@ function CampaignShellView({ campaign, children }: { campaign: CampaignSummary |
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <CampaignNav campaignId={campaign._id} isGm={isGm} variant="header" />
-          {isGm ? (
-            <button
-              type="button"
-              onClick={openPlayers}
-              aria-haspopup="dialog"
-              className="inline-flex min-h-12 cursor-pointer items-center gap-2 rounded-xl bg-black/35 px-3.5 text-[14px] text-[#e6ecea] hover:bg-black/50"
-            >
-              <Users className="size-4" aria-hidden="true" />
+          {ownerView ? null : isGm ? (
+            <BrandButton variant="neutral" onClick={openPlayers} aria-haspopup="dialog">
+              <Users aria-hidden="true" />
               Players
-            </button>
+            </BrandButton>
           ) : (
             <span className="inline-flex min-h-12 items-center rounded-xl bg-black/35 px-3.5 text-[13px] tracking-[0.16em] text-fear uppercase">
               Player
             </span>
           )}
+          {/* Config S1: the gear (GM and co-GM) opens Campaign settings, the avatar opens Preferences. */}
+          <span className="cfg-acct">
+            {isGm && !ownerView ? <CampaignSettingsButton /> : null}
+            <PreferencesButton campaignId={campaign._id} isGm={isGm} />
+          </span>
         </div>
       </div>
       {pathname === `/campaigns/${campaign._id}` ? <DashboardHero campaign={campaign} onOpenTome={openOverview} /> : null}
@@ -412,9 +420,11 @@ function CampaignShellView({ campaign, children }: { campaign: CampaignSummary |
   return (
     <CampaignContext.Provider value={campaign}>
       <OpenTomeContext.Provider value={setTomeChapter}>
-      <div className="relative min-h-screen overflow-hidden bg-[#0d1417] font-sans text-[#e6ecea]">
+      <ViewerProvider viewer={viewer}>
+      {/* The viewer for the glass buttons' colours (GM: confirm in Fear, back out in Hope); dialogs inherit it. */}
+      <div data-viewer={viewer} className="relative min-h-screen overflow-hidden bg-[#0d1417] font-sans text-[#e6ecea]">
         {combatMap ? (
-          <CombatAppBarFrame campaignId={campaign._id} isGm={isGm} header={header} onPlayers={openPlayers}>
+          <CombatAppBarFrame campaignId={campaign._id} isGm={isGm} header={header} onPlayers={openPlayers} settings={!ownerView}>
             {page}
           </CombatAppBarFrame>
         ) : (
@@ -424,8 +434,11 @@ function CampaignShellView({ campaign, children }: { campaign: CampaignSummary |
           </>
         )}
         <MemoTome campaign={campaign} chapter={tomeChapter} onChapter={setTomeChapter} onClose={closeTome} />
-        {isGm ? <MemoPlayersDialog campaignId={campaign._id} open={playersOpen} onClose={closePlayers} /> : null}
+        {/* Campaign settings (GM), the presence heartbeat and the spotlight ping: once per campaign page. The owner's
+            read-only view (AU7) mounts none of them, only its banner (which carries the archived line). */}
+        {ownerView ? <OwnerViewBanner archived={campaign.archived} /> : <ConfigMounts campaign={campaign} />}
       </div>
+      </ViewerProvider>
       </OpenTomeContext.Provider>
     </CampaignContext.Provider>
   );

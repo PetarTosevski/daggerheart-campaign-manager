@@ -9,14 +9,13 @@ const HOUR_MS = 3_600_000;
 
 /**
  * The line under the Spotlight bars: who has had the least spotlight this session. Several PCs tied at the lowest
- * count are named together ('Oriel and Vex have had …'). Null with no PCs, or when every PC has the same count
- * (nobody stands out).
+ * count are named together ('Oriel and Vex have had …'), and when every PC has the same count (all zero too) every PC
+ * is named (user 2026-11-04, dcm-nvq4; J0 hid the line then). Null with fewer than two PCs (nobody to compare with).
  */
 export function leastSpotlightLine(entries: readonly { name: string; count: number }[]): string | null {
-  if (entries.length === 0) return null;
+  if (entries.length < 2) return null;
   const min = Math.min(...entries.map((e) => e.count));
   const least = entries.filter((e) => e.count === min).map((e) => e.name);
-  if (least.length === entries.length) return null;
   const names = least.length === 1 ? least[0] : `${least.slice(0, -1).join(", ")} and ${least.at(-1)}`;
   return `${names} ${least.length === 1 ? "has" : "have"} had the least spotlight this session.`;
 }

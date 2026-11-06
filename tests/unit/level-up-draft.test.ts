@@ -7,21 +7,46 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { DOMAIN_CARDS } from "../../src/lib/srd/domain-cards";
 
 // The guided level-up draft (plan guided-level-up, GL0): picks, the built LevelUpChoice, problems with their
-// steps, sessionStorage restore, cancel, finish and goTo.
+// steps, the account draft (config N4 b: drafts kind levelUp) restore, cancel, finish and goTo.
 
 const calls: { name: string; args: unknown }[] = [];
+/** drafts.save / drafts.clear calls, apart from `calls` (the level-up intents). */
+const draftCalls: { name: string; args: Record<string, unknown> }[] = [];
+/** The account's level-up drafts by character id, as drafts.get returns them (a fake server). */
+const accountDrafts = new Map<string, { schemaVersion: number; data: string; updatedAt: number }>();
+/** drafts.get's arguments, or "skip", per render. */
+const draftReads: unknown[] = [];
 const functionName = (ref: unknown) => String((ref as Record<symbol, unknown>)[Symbol.for("functionName")] ?? ref);
 
 vi.mock("convex/react", () => ({
-  useMutation: (ref: unknown) => async (args: unknown) => {
-    calls.push({ name: functionName(ref), args });
+  useQuery: (ref: unknown, args: unknown) => {
+    if (functionName(ref) !== "drafts:get") return undefined;
+    draftReads.push(args);
+    if (args === "skip") return undefined;
+    return accountDrafts.get(String((args as { characterId: string }).characterId)) ?? null;
+  },
+  useMutation: (ref: unknown) => async (args: Record<string, unknown>) => {
+    const name = functionName(ref);
+    if (name === "drafts:save") {
+      draftCalls.push({ name, args });
+      accountDrafts.set(String(args.characterId), { schemaVersion: args.schemaVersion as number, data: args.data as string, updatedAt: 0 });
+      return null;
+    }
+    if (name === "drafts:clear") {
+      draftCalls.push({ name, args });
+      accountDrafts.delete(String(args.characterId));
+      return null;
+    }
+    calls.push({ name, args });
     return { level: 2 };
   },
 }));
 
 const { LevelUpDraftProvider, useLevelUpDraft, issueTarget, advancementsChosen, cardsChosen } = await import("@/app/(gm)/campaigns/[campaignId]/party/[characterId]/level-up-draft");
+const { DRAFT_DEBOUNCE_MS } = await import("@/app/(gm)/campaigns/[campaignId]/party/new/draft");
 
-const KEY = "dcm:level-up-draft:c1";
+/** The account draft of c1, parsed. */
+const storedDraft = () => JSON.parse(accountDrafts.get("c1")!.data) as Record<string, unknown>;
 /** A level-1 card of the Bard's domains the fixture doesn't own. */
 const CARD = DOMAIN_CARDS.find((c) => c.domain === "grace" && c.level === 1 && c.source === "core" && c.id !== "deft-deceiver")!;
 
@@ -84,7 +109,9 @@ function setup(view: CharacterView = character(), { isGm = false } = {}) {
 describe("useLevelUpDraft", () => {
   beforeEach(() => {
     calls.length = 0;
-    sessionStorage.clear();
+    draftCalls.length = 0;
+    draftReads.length = 0;
+    accountDrafts.clear();
     document.body.innerHTML = "";
   });
 
@@ -222,52 +249,94 @@ describe("useLevelUpDraft", () => {
     expect(result.current.choice).not.toHaveProperty("experienceName");
   });
 
-  it("restores the draft from sessionStorage and drops one from another level", () => {
+  it("saves the draft on the account per character from each change and restores it on another mount", () => {
     const first = setup();
     act(() => first.result.current.start());
+    expect(draftCalls[0]).toEqual({
+      name: "drafts:save",
+      args: expect.objectContaining({ kind: "levelUp", characterId: "c1", schemaVersion: 1 }),
+    });
     act(() => first.result.current.togglePick("hp", 2));
     act(() => first.result.current.goTo("advancements"));
-    const stored = JSON.parse(sessionStorage.getItem(KEY)!);
-    expect(stored).toMatchObject({ v: 1, level: 1, step: "advancements", draft: { picks: [{ option: "hp", tier: 2 }] } });
+    expect(storedDraft()).toEqual({ level: 1, step: "advancements", draft: { picks: [{ option: "hp", tier: 2 }], experienceName: "", cardId: "" } });
+    expect(draftCalls.every((c) => c.name === "drafts:save" && c.args.characterId === "c1" && c.args.kind === "levelUp")).toBe(true);
     first.unmount();
 
+    // Another tab or device: the same account draft opens the mode at its step.
     const again = setup();
+    expect(draftReads.at(-1)).toEqual({ kind: "levelUp", characterId: "c1" });
     expect(again.result.current.active).toBe(true);
     expect(again.result.current.step).toBe("advancements");
     expect(again.result.current.draft.picks).toEqual([{ option: "hp", tier: 2 }]);
     again.unmount();
 
+    // A draft started at another level is ignored (left for the next start to replace), not a crash.
+    const before = draftCalls.length;
     const levelled = setup(character({ level: 2 }));
     expect(levelled.result.current.active).toBe(false);
-    expect(sessionStorage.getItem(KEY)).toBeNull();
+    expect(draftCalls).toHaveLength(before);
   });
 
-  it("ignores a broken stored draft and works when storage throws", () => {
-    sessionStorage.setItem(KEY, "{not json");
-    expect(setup().result.current.active).toBe(false);
+  it("debounces a typed Experience name and saves a click at once", () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = setup();
+      act(() => result.current.start());
+      const afterStart = draftCalls.length;
+      act(() => result.current.setExperienceName("Court"));
+      act(() => result.current.setExperienceName("Court musician"));
+      expect(draftCalls).toHaveLength(afterStart);
+      act(() => vi.advanceTimersByTime(DRAFT_DEBOUNCE_MS));
+      expect(draftCalls).toHaveLength(afterStart + 1);
+      expect(storedDraft()).toMatchObject({ draft: { experienceName: "Court musician" } });
 
-    const spy = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-      throw new Error("blocked");
-    });
-    const setSpy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new Error("blocked");
-    });
-    const { result } = setup();
-    act(() => result.current.start());
-    expect(result.current.active).toBe(true);
-    spy.mockRestore();
-    setSpy.mockRestore();
+      act(() => result.current.togglePick("hp", 2));
+      expect(draftCalls).toHaveLength(afterStart + 2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it("cancel ends the mode and drops the stored draft", () => {
+  it("ignores a bad account draft: another schemaVersion, broken JSON or a wrong shape", () => {
+    const good = JSON.stringify({ level: 1, step: "advancements", draft: { picks: [], experienceName: "", cardId: "" } });
+    const bad = [
+      { schemaVersion: 2, data: good, updatedAt: 0 },
+      { schemaVersion: 1, data: "{not json", updatedAt: 0 },
+      { schemaVersion: 1, data: JSON.stringify({ level: 1, step: "nowhere", draft: {} }), updatedAt: 0 },
+      { schemaVersion: 1, data: JSON.stringify({ level: 1, step: "deck", draft: { picks: [{ option: "nope", tier: 2 }], experienceName: "", cardId: "" } }), updatedAt: 0 },
+    ];
+    for (const stored of bad) {
+      accountDrafts.set("c1", stored);
+      const { result, unmount } = setup();
+      expect(result.current.active).toBe(false);
+      act(() => result.current.start());
+      expect(result.current.active).toBe(true);
+      unmount();
+    }
+    accountDrafts.set("c1", { schemaVersion: 1, data: good, updatedAt: 0 });
+    expect(setup().result.current.active).toBe(true);
+  });
+
+  it("a viewer who cannot level never reads or writes the draft", () => {
+    accountDrafts.set("c1", { schemaVersion: 1, data: JSON.stringify({ level: 1, step: "advancements", draft: { picks: [], experienceName: "", cardId: "" } }), updatedAt: 0 });
+    const reader = setup(character({}, { canEdit: false }));
+    expect(draftReads.every((a) => a === "skip")).toBe(true);
+    expect(reader.result.current.active).toBe(false);
+    act(() => reader.result.current.start());
+    act(() => reader.result.current.goTo("deck"));
+    expect(draftCalls).toEqual([]);
+  });
+
+  it("cancel ends the mode and clears the account draft", () => {
     const { result } = setup();
     act(() => result.current.start());
     act(() => result.current.togglePick("hp", 2));
-    expect(sessionStorage.getItem(KEY)).not.toBeNull();
+    expect(accountDrafts.has("c1")).toBe(true);
     act(() => result.current.cancel());
     expect(result.current.active).toBe(false);
     expect(result.current.draft.picks).toEqual([]);
-    expect(sessionStorage.getItem(KEY)).toBeNull();
+    expect(draftCalls.at(-1)).toEqual({ name: "drafts:clear", args: { kind: "levelUp", characterId: "c1" } });
+    expect(accountDrafts.has("c1")).toBe(false);
   });
 
   it("finish refuses while problems remain, then calls levelUp.apply once with the choice", async () => {
@@ -302,6 +371,9 @@ describe("useLevelUpDraft", () => {
       experienceName: "Never misses a cue",
     });
     expect(result.current.active).toBe(false);
+    // The applied level-up's draft is gone from the account.
+    expect(draftCalls.at(-1)).toEqual({ name: "drafts:clear", args: { kind: "levelUp", characterId: "c1" } });
+    expect(accountDrafts.has("c1")).toBe(false);
   });
 
   it("goTo switches the page and sub-tab and focuses the target's heading, or the page tab when it is missing", () => {

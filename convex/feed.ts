@@ -6,6 +6,20 @@ import type { Doc } from "./_generated/dataModel";
 import { viewerCanUndo } from "./lib/actionLog";
 import { campaignQuery, gmMutation } from "./lib/functions";
 import { actionKindValidator, actionTargetValidator, rollValidator, visibilityValidator } from "./lib/validators/actionLog";
+import { seesFear } from "./campaigns";
+
+/**
+ * A feed summary without its GM Fear numbers (config R1, user Q3 changed): what a player reads while "Players see the
+ * GM's Fear" is off. 'Fear 3 → 5' reads 'Fear changed'; 'GM gains 2 Fear (1d4 2)' reads 'GM gains Fear'; 'Spent 1
+ * Fear: …', '+2 Fear (1 Fear lost)' lose their numbers. A roll's 'with Fear' and the Fear Die ('Fear 3', 'Fear Die 4')
+ * are the dice, not the pool, and stay.
+ */
+export function hideFearNumbers(text: string): string {
+  return text
+    .replace(/\bFear \d+ → \d+/g, "Fear changed")
+    .replace(/\bFear \(1d4[^)]*\)/g, "Fear")
+    .replace(/[+\-−]?\d+ Fear\b/g, "Fear");
+}
 
 /** What every feed row shows. Never the `before` snapshot: it holds the whole sheet, notes included. */
 const common = {
@@ -28,6 +42,8 @@ const common = {
    * that rolled nothing (the player-undo rule, convex/lib/actionLog.ts `groupRolled`). Undo may still say UNDO_STALE.
    */
   canUndo: v.boolean(),
+  /** A Manual rule's note (kind `rule`, GM-only, plan rule-switches): its registry id, for the 'Manual' tag's title. */
+  ruleId: v.optional(v.string()),
 };
 
 /** A player only ever receives public rows. */
@@ -49,6 +65,8 @@ export const list = campaignQuery({
   returns: paginationResultValidator(v.union(gmRow, playerRow)),
   handler: async (ctx, { paginationOpts }) => {
     const isGm = ctx.permission === "owner";
+    // R1: with "Players see the GM's Fear" off, a player's rows carry no Fear change (no fearDelta, no numbers).
+    const fearShown = seesFear(ctx.campaign, ctx.permission);
     const clearedAt = ctx.campaign.feedClearedAt ?? -1;
     const page = isGm
       ? await ctx.db
@@ -68,15 +86,16 @@ export const list = campaignQuery({
         _id: row._id,
         at: row.at,
         kind: row.kind,
-        summary: row.summary,
+        summary: fearShown ? row.summary : hideFearNumbers(row.summary),
         ...(row.roll !== undefined ? { roll: row.roll } : {}),
         ...(row.characterId !== undefined ? { characterId: row.characterId } : {}),
         actorId: row.actorId,
-        ...(row.fearDelta !== undefined ? { fearDelta: row.fearDelta } : {}),
+        ...(row.fearDelta !== undefined && fearShown ? { fearDelta: row.fearDelta } : {}),
         // Adversary tokens flash for the GM only (H3 user answer).
         ...(row.targets !== undefined ? { targets: isGm ? row.targets : row.targets.filter((t) => t.side === "pc") } : {}),
         undone: row.undoneAt !== undefined,
         ...(row.revealedAt !== undefined ? { revealed: true as const } : {}),
+        ...(row.ruleId !== undefined ? { ruleId: row.ruleId } : {}),
         canUndo: row.kind !== "rest" && !(row.groupId !== undefined && restGroups.has(row.groupId)) && (await viewerCanUndo(ctx, row, ctx.user._id, isGm)),
       };
       if (isGm) return { ...shown, visibility: row.visibility, revealable: row.kind === "gmRoll" && row.visibility === "gm" };

@@ -114,7 +114,7 @@ test("PlayerTablet at 1024 × 768: banners, title, map controls left of the disc
 
     // Picking a target (PlayerTablet 'Picking a target'): the action ring and the picking panel at touch size.
     await setHope(s, moss.characterId, 2);
-    await player.getByRole("region", { name: "Battle map" }).getByRole("button", { name: /^Open Moss’s sheet \(your character\)/ }).click();
+    await player.getByRole("region", { name: "Battle map" }).getByRole("button", { name: /^Moss \(your character\): actions/ }).click();
     const ring = player.getByRole("toolbar", { name: "Your actions (Moss)" });
     await expect(ring.getByRole("button", { name: "Attack", exact: true })).toBeEnabled({ timeout: 30_000 });
     // The buttons pop in (scale .6 → 1 over 160 ms): measure them at rest.

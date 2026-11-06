@@ -103,13 +103,6 @@ for (const viewport of [
       const confirm = page.getByTestId("hud-fear-confirm");
       await expect(confirm).toContainText(/Spend \d Fear\?/);
       await expectNoSeriousA11yViolations(page, { include: "[data-testid=hud-fear-confirm]" });
-      if (viewport.width < 640) {
-        // At 390 the open stat block pushes "Spend n Fear?" off-screen (dcm-bxp.99.32.44): its answer is checked at 1440
-        // until that is fixed.
-        test.info().annotations.push({ type: "known bug", description: "dcm-bxp.99.32.44: FearConfirm off-screen at 390 with the stat block open" });
-        await expectNoHorizontalScroll(page);
-        return;
-      }
       await confirm.getByRole("button", { name: /^Spend \d Fear$/ }).click();
       await expect(block.getByTestId("tracker-action-result")).toContainText("Bandit uses Roar", { timeout: 30_000 });
       await expectNoSeriousA11yViolations(page, { include: body });

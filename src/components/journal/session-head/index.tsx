@@ -6,14 +6,15 @@ import { useMutation } from "convex/react";
 import { Ellipsis } from "lucide-react";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
-import { formatSessionDate, sessionTitle } from "@/lib/domain/sessions";
+import { sessionTitle } from "@/lib/domain/sessions";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import type { SessionListItem } from "../../../../convex/sessionRecords";
 import { SESSION_TEXT_MAX } from "../../../../convex/lib/validators/sessions";
-import { patchListed, shortSessionDate, startTime, useSessionList } from "../session-list";
+import { fullSessionDate, patchListed, shortSessionDate, startTime, useSessionList } from "../session-list";
 import type { SessionHeadingProps } from "../slots";
 import { Chip } from "../ui";
 
@@ -115,29 +116,24 @@ function SessionMenu({
 
   return (
     <div ref={root} className="js-menu">
-      <button
-        type="button"
-        className="js-menu-btn"
+      <BrandButton
+        variant="neutral"
+        icon
+        round
         aria-label="Session menu"
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => (open ? close() : setOpen(true))}
       >
         <Ellipsis aria-hidden="true" />
-      </button>
+      </BrandButton>
       <div id={panelId} className="js-menu-panel" hidden={!open}>
-        <button type="button" className="js-menu-item" disabled={live} onClick={togglePlayed}>
+        <BrandButton variant="neutral" size="sm" className="w-full" disabled={live} onClick={togglePlayed}>
           {played ? "Mark as not played" : "Mark as played"}
-        </button>
-        <button
-          type="button"
-          className="js-menu-item js-danger"
-          disabled={live || deleting}
-          aria-live="polite"
-          onClick={() => void onDelete()}
-        >
+        </BrandButton>
+        <BrandButton variant="danger" size="sm" className="w-full" disabled={live || deleting} aria-live="polite" onClick={() => void onDelete()}>
           {confirming ? "Click again to delete" : "Delete session"}
-        </button>
+        </BrandButton>
         {live ? <p className="js-menu-note">End the session first to mark it or delete it.</p> : null}
       </div>
     </div>
@@ -211,7 +207,7 @@ export function SessionHeading({ campaignId, isGm, sessionId, onDeleted }: Sessi
   }
 
   const dateText = (
-    <span className="js-head-date" title={formatSessionDate(session.date)}>
+    <span className="js-head-date" title={fullSessionDate(session.date)}>
       {date}
     </span>
   );
@@ -238,7 +234,7 @@ export function SessionHeading({ campaignId, isGm, sessionId, onDeleted }: Sessi
           <button
             type="button"
             className="js-head-edit js-head-date-btn"
-            title={`Change the date (${formatSessionDate(session.date)})`}
+            title={`Change the date (${fullSessionDate(session.date)})`}
             onClick={() => begin("date")}
           >
             {date}

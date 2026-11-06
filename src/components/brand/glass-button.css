@@ -9,6 +9,13 @@
  *
  * Colours are --gb-* tokens: the design's values, with the app's own token where it has the same colour (--brand is
  * the Hope gold). A surface with its own palette maps them (the Combat HUD does, in hud/ui/ui.css).
+ *
+ * Cascade (plan glass-buttons G0, docs/tasks/TASK-GLASS-G0.md): this file is deliberately NOT in a @layer. It beats
+ * every Tailwind utility, so a call site's colour, border, radius, height or padding utilities (`px-7`, `rounded-full`,
+ * `h-9`, `bg-*`) have no effect on a glass button; drop them. Layout utilities still apply, because `.gb` does not set
+ * them: width (`w-full`), margins (`ml-auto`), self-alignment (`self-start`), flex (`flex-1`), order. Moving it into
+ * `@layer components` would flip the HUD's own rules (unlayered, tuned against `.gb`'s specificity) and let stale
+ * utilities leak onto glass buttons.
  */
 :root {
   --gb-hope: var(--brand, #e3b45a);
@@ -170,8 +177,9 @@
 .gb.gb-tool:focus-visible {
   box-shadow: inset 0 0 0 1px var(--gb-hover-rim);
 }
-/* switched on (toggles, active tools) */
-.gb[aria-pressed="true"] {
+/* switched on (toggles, active tools, the chosen radio of a glass radio group; `:where` keeps the toggles' weight) */
+.gb[aria-pressed="true"],
+.gb[aria-checked="true"]:where([role="radio"]) {
   --text: var(--gb-hope-soft);
   --rim: var(--gb-hope);
   --rgb: var(--gb-hope-rgb);
@@ -255,10 +263,18 @@
   font-size: 12.5px;
   border-radius: 10px;
 }
+/*
+ * Big buttons keep the old Cinzel capitals (user decision 2026-11-04, bead dcm-82nc): Cinzel 600, uppercase, 0.08em
+ * tracking, 15 px (the pre-glass size), same 54 px height; md and sm stay on Plex. The Combat HUD uses no lg button.
+ */
 .gb.gb-lg {
   height: 54px;
   padding: 0 26px;
-  font-size: 17px;
+  font-family: var(--font-cinzel), serif;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 .gb.gb-icon {
   width: 44px;
@@ -266,6 +282,39 @@
 }
 .gb.gb-round {
   border-radius: 50%;
+}
+
+/*
+ * Wrapping labels (glassButtonClass({ wrap: true }); brandButton sets it): the size is a minimum height and a long
+ * label breaks onto a second line instead of being clipped. The HUD never sets it, so its buttons are unchanged.
+ */
+.gb.gb-wrap {
+  height: auto;
+  min-height: 44px;
+  padding-block: 8px;
+  line-height: 1.2;
+  white-space: normal;
+  text-align: center;
+  text-wrap: balance;
+}
+.gb.gb-wrap.gb-sm {
+  min-height: 34px;
+  padding-block: 6px;
+}
+.gb.gb-wrap.gb-lg {
+  min-height: 54px;
+  padding-block: 10px;
+}
+
+/*
+ * Touch: a small button is 44 px tall on tablets and phones (the app's touch breakpoint). `:where()` keeps the
+ * specificity at zero, so every surface rule (the HUD's own touch heights) still wins; it only lifts the 34 px floor.
+ */
+@media (max-width: 1100px), (pointer: coarse) {
+  :where(.gb.gb-sm),
+  .gb.gb-wrap.gb-sm {
+    min-height: 44px;
+  }
 }
 
 /* disabled (or aria-disabled: blocked but still focusable): no fill, no motion; the reason sits beside it */

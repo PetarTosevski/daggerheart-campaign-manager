@@ -6,13 +6,17 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 
+import { BrandButton, brandButton } from "@/components/brand/buttons";
+import { useSharedCards } from "@/components/party/level-up/shared-cards";
 import { FRAME_OF } from "@/lib/frames/extras/common";
+import { getDomainCard } from "@/lib/srd";
 import { useIntent } from "@/lib/use-intent";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../../convex/_generated/dataModel";
 import { useCampaign } from "../../campaign-shell";
+import { isTypedWizardPatch, useAccountDraft, wizardFromDraft } from "./draft";
 import { ClassStep, HeritageStep, InfoStep, TraitsStep, type StepProps } from "./steps-1-4";
 import { BackgroundStep, ConnectionsStep, DomainCardsStep, EquipmentStep, ExperiencesStep } from "./steps-5-9";
 import {
@@ -22,7 +26,7 @@ import {
   missingByStep,
   normalizeWizard,
   portraitAsset,
-  restoreWizard,
+  sharedCardsMissing,
   STEP_COUNT,
   STEP_TITLES,
   stillNeeded,
@@ -43,29 +47,24 @@ const STEPS: ComponentType<StepProps>[] = [
   ConnectionsStep,
 ];
 
-const storageKey = (campaignId: string) => `dh.characterWizard.${campaignId}`;
-
-/** The unsent draft is a per-device convenience: storage may be missing or blocked. */
-function loadDraft(campaignId: string): WizardState {
-  try {
-    const raw = window.localStorage.getItem(storageKey(campaignId));
-    return raw ? restoreWizard(JSON.parse(raw)) : emptyWizard();
-  } catch {
-    return emptyWizard();
-  }
-}
-
-function saveDraft(campaignId: string, state: WizardState | null) {
-  try {
-    if (state) window.localStorage.setItem(storageKey(campaignId), JSON.stringify(state));
-    else window.localStorage.removeItem(storageKey(campaignId));
-  } catch {
-    // Storage unavailable: the draft just isn't kept.
-  }
-}
-
-/** Party board: the 9-step character creation wizard (Core ch. 1). */
+/**
+ * Party board: the 9-step character creation wizard (Core ch. 1). Its unsent draft lives on the account
+ * (`useAccountDraft`, config U6f), so the wizard opens once the draft has loaded and starts from it.
+ */
 export function CharacterWizard() {
+  const campaign = useCampaign();
+  const draft = useAccountDraft({ kind: "characterWizard", campaignId: campaign._id });
+  if (draft.stored === undefined) {
+    return (
+      <main className="mx-auto w-full max-w-[1168px] px-0 py-6 sm:px-6 sm:py-8" aria-busy="true">
+        <div className="wz-paper min-h-[480px] rounded-none sm:rounded-[14px]" />
+      </main>
+    );
+  }
+  return <Wizard draft={draft} initial={wizardFromDraft(draft.stored)} />;
+}
+
+function Wizard({ draft, initial }: { draft: ReturnType<typeof useAccountDraft>; initial: WizardState }) {
   const campaign = useCampaign();
   const campaignId = campaign._id;
   const router = useRouter();
@@ -75,17 +74,28 @@ export function CharacterWizard() {
   const roster = useQuery(api.members.roster, isGm ? { campaignId } : "skip");
   const create = useIntent(api.characters.create);
 
-  // The campaign shell only renders once the campaign has loaded on the client, so storage is safe to read here.
-  const [raw, setRaw] = useState<WizardState>(() => loadDraft(campaignId));
+  const [raw, setRaw] = useState<WizardState>(initial);
   const state = useMemo(() => normalizeWizard(raw, opts), [raw, opts]);
-  const missing = useMemo(() => missingByStep(state, opts), [state, opts]);
+  // Shared domain cards (CB p.21, rule-switches OSC): Refuse holds step 8 while a pick is another character's card.
+  const shared = useSharedCards(campaignId);
+  const missing = useMemo(() => {
+    const base = missingByStep(state, opts);
+    if (!shared) return base;
+    const refused = sharedCardsMissing(state.domainCards, shared.mode, shared.holders, (id) => getDomainCard(id)?.name ?? id);
+    return refused.length === 0 ? base : { ...base, 8: [...(base[8] ?? []), ...refused] };
+  }, [state, opts, shared]);
   const step = state.step;
 
-  useEffect(() => {
-    saveDraft(campaignId, raw);
-  }, [campaignId, raw]);
-
-  const update = (patch: Partial<WizardState>) => setRaw((prev) => ({ ...normalizeWizard(prev, opts), ...patch }));
+  // Saved from the change itself (rule 13): typing waits for a pause, a click saves at once.
+  const update = (patch: Partial<WizardState>) => {
+    const next = { ...normalizeWizard(raw, opts), ...patch };
+    setRaw(next);
+    draft.save(next, { typed: isTypedWizardPatch(patch) });
+  };
+  const startOver = () => {
+    setRaw(emptyWizard());
+    draft.clear();
+  };
 
   // Move focus to the new step's heading so keyboard and screen-reader users land at its start.
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -120,7 +130,7 @@ export function CharacterWizard() {
       ...(ikonis ? { ikonis: state.ikonis } : {}),
     });
     if (result) {
-      saveDraft(campaignId, null);
+      draft.clear();
       router.push(`/campaigns/${campaignId}/party/${result.characterId}`);
     }
   }
@@ -144,12 +154,17 @@ export function CharacterWizard() {
           </div>
           <div className="flex items-center gap-2">
             {hasDraft ? (
-              <button type="button" className="wz-ghost" onClick={() => setRaw(emptyWizard())}>
+              <BrandButton variant="danger" size="sm" onClick={startOver}>
                 Start over
-              </button>
+              </BrandButton>
             ) : null}
-            <Link href={`/campaigns/${campaignId}/party`} className="wz-close" aria-label="Cancel character creation">
-              <X className="size-4" aria-hidden="true" />
+            <Link
+              href={`/campaigns/${campaignId}/party`}
+              className={brandButton({ variant: "cancel", icon: true, round: true, className: "flex-none" })}
+              aria-label="Cancel character creation"
+              onClick={draft.flush}
+            >
+              <X aria-hidden="true" />
             </Link>
           </div>
         </div>
@@ -209,24 +224,24 @@ export function CharacterWizard() {
           </ol>
         </nav>
 
-        <Step state={state} update={update} opts={opts} />
+        <Step state={state} update={update} opts={opts} shared={shared} />
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#cdb88f] pt-4">
           {step > 1 ? (
-            <button type="button" className="wz-outline" onClick={() => goTo(step - 1)}>
+            <BrandButton variant="cancel" size="lg" onClick={() => goTo(step - 1)}>
               ‹ Back
-            </button>
+            </BrandButton>
           ) : (
-            <Link href={`/campaigns/${campaignId}/party`} className="wz-outline">
+            <Link href={`/campaigns/${campaignId}/party`} className={brandButton({ variant: "cancel", size: "lg" })} onClick={draft.flush}>
               Cancel
             </Link>
           )}
           <span className="flex-1" />
           <div className="flex flex-col items-end gap-1.5">
             {step < STEP_COUNT ? (
-              <button
-                type="button"
-                className="wz-primary"
+              <BrandButton
+                variant="confirm"
+                size="lg"
                 aria-disabled={!stepOk}
                 aria-describedby={nextTip ? "cc-next-missing" : undefined}
                 title={nextTip || undefined}
@@ -235,18 +250,18 @@ export function CharacterWizard() {
                 }}
               >
                 Next: {STEP_TITLES[step]} ›
-              </button>
+              </BrandButton>
             ) : (
-              <button
-                type="button"
-                className="wz-primary"
+              <BrandButton
+                variant="confirm"
+                size="lg"
                 aria-disabled={!allOk || Boolean(blocker) || create.pending}
                 aria-describedby={blocker ? "cc-blocked" : createTip ? "cc-missing" : undefined}
                 title={createTip || undefined}
                 onClick={() => void submit()}
               >
                 {create.pending ? "Creating…" : "Create character"}
-              </button>
+              </BrandButton>
             )}
             {step < STEP_COUNT && nextTip ? (
               <span id="cc-next-missing" className="wz-req" aria-live="polite">

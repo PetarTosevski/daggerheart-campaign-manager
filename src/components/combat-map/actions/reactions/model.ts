@@ -6,11 +6,11 @@ import type { api } from "../../../../../convex/_generated/api";
 
 /**
  * Pure model of the incoming-hit prompt (plan combat-actions AA4). What a player reads comes only from
- * `adversaryActions.pending`: the hit PC their own damage, its severity against their own thresholds and what each Armor
+ * `adversaryActionsReads.pending`: the hit PC their own damage, its severity against their own thresholds and what each Armor
  * Slot gives; an ally only who hit whom and their eligible cards (Q13, Q14). Never the roll or an adversary's numbers.
  */
 
-export type HitView = FunctionReturnType<typeof api.adversaryActions.pending>[number];
+export type HitView = FunctionReturnType<typeof api.adversaryActionsReads.pending>[number];
 /** SD4: a feature answer as the server describes it (name, text, what its Use asks). */
 export type FeatureView = NonNullable<HitView["features"]>[number];
 export type Severity = NonNullable<HitView["severity"]>;

@@ -11,7 +11,7 @@ import { assetBackground } from "@/lib/design-assets";
 import { PUBLISHED_FRAMES, type PublishedFrame } from "@/lib/frames";
 import { cn } from "@/lib/utils";
 
-import { clearCustomDraft, CustomFrameForm, useCustomDraft, type CustomDraft } from "./custom-frame-form";
+import { CustomFrameForm, useCustomDraft, type CustomDraft } from "./custom-frame-form";
 import { NameCampaignDialog, useCreateCampaign } from "./create-campaign";
 
 export function ExpansionBadge({ small = false }: { small?: boolean }) {
@@ -149,7 +149,7 @@ function FrameDetails({ frame }: { frame: PublishedFrame }) {
         <Detail label="Touchstones">{frame.touchstones}</Detail>
       </div>
       <div className="mt-auto flex flex-wrap gap-3">
-        <Link href={`/frames/${frame.id}`} className={brandButton({ variant: "outline", size: "lg" })}>
+        <Link href={`/frames/${frame.id}`} className={brandButton({ variant: "neutral", size: "lg" })}>
           Preview full frame
         </Link>
       </div>
@@ -165,8 +165,8 @@ export function FrameSelect() {
   const [selectedId, setSelectedId] = useState<string>(PUBLISHED_FRAMES[Math.max(0, initial)].id);
   const [search, setSearch] = useState("");
   const [naming, setNaming] = useState(false);
-  const [draft, setDraft] = useCustomDraft();
-  const custom = useCreateCampaign({ onCreated: clearCustomDraft });
+  const [draft, setDraft, clearDraft] = useCustomDraft();
+  const custom = useCreateCampaign({ onCreated: clearDraft });
 
   const frames = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -260,16 +260,15 @@ export function FrameSelect() {
       </main>
 
       <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-[#2a2838] px-4 py-5 sm:px-12">
-        <Link href="/" className={brandButton({ variant: "outline", size: "lg" })}>
+        <Link href="/" className={brandButton({ variant: "cancel", size: "lg" })}>
           Back
         </Link>
         <span className="text-[14px] text-muted-text" aria-live="polite">
           {custom.error ?? summary}
         </span>
         <BrandButton
-          variant="primary"
+          variant="confirm"
           size="lg"
-          className="px-8"
           disabled={(!isFrame && !customName) || custom.pending}
           onClick={() => {
             if (isFrame) setNaming(true);

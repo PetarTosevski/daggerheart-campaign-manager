@@ -39,7 +39,7 @@ const CAMPAIGN = "c1" as Id<"campaigns">;
 const MOSS = "moss" as Id<"characters">;
 const BRANNOC = "brannoc" as Id<"characters">;
 
-const base: SpotlightState = { holder: null, since: null, reason: null, rollBy: null, reactionsOnly: false, canMove: false, adversaryTokenId: null, adversaryName: null };
+const base: SpotlightState = { holder: null, since: null, reason: null, rollBy: null, reactionsOnly: false, canMove: false, adversaryTokenId: null, adversaryName: null, adversaryPortrait: null };
 const gmTurn = (canMove: boolean): SpotlightState => ({
   holder: { kind: "gm" },
   since: 1,
@@ -49,6 +49,7 @@ const gmTurn = (canMove: boolean): SpotlightState => ({
   canMove,
   adversaryTokenId: null,
   adversaryName: null,
+  adversaryPortrait: null,
 });
 const mossHolds = (canMove: boolean): SpotlightState => ({
   ...base,
@@ -72,32 +73,25 @@ describe("the players' view", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
-  it("names a spotlighted adversary the party saw when the map does not draw it; a drawn one keeps the GM's title (user 2026-11-03)", () => {
+  it("names a spotlighted adversary the party saw by its full label, drawn on this map or not (dcm-onze)", () => {
     const LT = "lt" as Id<"combatTokens">;
-    const named: SpotlightState = { ...gmTurn(false), reason: "adversary", rollBy: null, adversaryTokenId: LT, adversaryName: "Jagged Knife Lieutenant" };
+    const named: SpotlightState = { ...gmTurn(false), reason: "adversary", rollBy: null, adversaryTokenId: LT, adversaryName: "Jagged Knife Lieutenant", adversaryPortrait: null };
     queries["combatSpotlight:state"] = named;
-    queries["combatVision:playerView"] = { state: "ok", others: [] };
     const { rerender } = render(<HudSpotlight state={page("player")} />);
     expect(screen.getByTestId("hud-gm-turn-title")).toHaveTextContent(/^Jagged Knife Lieutenant has the spotlight$/);
     expect(screen.getByTestId("hud-gm-turn")).toHaveTextContent("An adversary is acting.");
-    // Drawn on the player's map: the light shows it; the title stays generic.
-    queries["combatVision:playerView"] = { state: "ok", others: [{ _id: LT }] };
-    rerender(<HudSpotlight state={page("player")} />);
-    expect(screen.getByTestId("hud-gm-turn-title")).toHaveTextContent(/^The GM has the spotlight$/);
-    // Never seen this scene: the server sends neither id nor name.
-    queries["combatSpotlight:state"] = { ...named, adversaryTokenId: null, adversaryName: null };
+    // Never seen by the party this scene: the server sends neither id nor name.
+    queries["combatSpotlight:state"] = { ...named, adversaryTokenId: null, adversaryName: null, adversaryPortrait: null };
     rerender(<HudSpotlight state={page("player")} />);
     expect(screen.getByTestId("hud-gm-turn-title")).toHaveTextContent(/^The GM has the spotlight$/);
   });
 
-  it("gmTurnTitle: the name only with an id, a name and a loaded view that does not draw the token", () => {
+  it("gmTurnTitle: '<full label> has the spotlight' with an id and a name, no short form; else the GM (dcm-onze)", () => {
     const LT = "lt" as Id<"combatTokens">;
-    const s = { adversaryTokenId: LT, adversaryName: "Bear 2" };
-    expect(gmTurnTitle(s, new Set())).toBe("Bear 2 has the spotlight");
-    expect(gmTurnTitle(s, new Set([LT]))).toBe("The GM has the spotlight");
-    expect(gmTurnTitle(s, null)).toBe("The GM has the spotlight");
-    expect(gmTurnTitle({ adversaryTokenId: LT, adversaryName: null }, new Set())).toBe("The GM has the spotlight");
-    expect(gmTurnTitle({ adversaryTokenId: null, adversaryName: null }, new Set())).toBe("The GM has the spotlight");
+    expect(gmTurnTitle({ adversaryTokenId: LT, adversaryName: "Jagged Knife Lieutenant" })).toBe("Jagged Knife Lieutenant has the spotlight");
+    expect(gmTurnTitle({ adversaryTokenId: LT, adversaryName: "Bear 2" })).toBe("Bear 2 has the spotlight");
+    expect(gmTurnTitle({ adversaryTokenId: LT, adversaryName: null })).toBe("The GM has the spotlight");
+    expect(gmTurnTitle({ adversaryTokenId: null, adversaryName: null })).toBe("The GM has the spotlight");
   });
 
   it("shows nothing while a PC or nobody holds it, and a status line while loading", () => {
@@ -179,16 +173,16 @@ describe("copy and optimistic updates (model.ts)", () => {
 
   it("take and hand-back give the server's next state; a repeat changes nothing", () => {
     const taken = afterTake(mossHolds(true), 5);
-    expect(taken).toEqual({ holder: { kind: "gm" }, since: 5, reason: "gmTook", rollBy: null, reactionsOnly: false, canMove: true, adversaryTokenId: null, adversaryName: null });
+    expect(taken).toEqual({ holder: { kind: "gm" }, since: 5, reason: "gmTook", rollBy: null, reactionsOnly: false, canMove: true, adversaryTokenId: null, adversaryName: null, adversaryPortrait: null });
     expect(afterTake(taken, 9)).toBe(taken);
     const back = afterHandTo(taken, { characterId: BRANNOC, name: "Brannoc" }, 7);
-    expect(back).toEqual({ holder: { kind: "pc", characterId: BRANNOC, name: "Brannoc" }, since: 7, reason: "handedBack", rollBy: null, reactionsOnly: false, canMove: true, adversaryTokenId: null, adversaryName: null });
+    expect(back).toEqual({ holder: { kind: "pc", characterId: BRANNOC, name: "Brannoc" }, since: 7, reason: "handedBack", rollBy: null, reactionsOnly: false, canMove: true, adversaryTokenId: null, adversaryName: null, adversaryPortrait: null });
     expect(afterHandTo(back, { characterId: BRANNOC, name: "Brannoc" }, 9)).toBe(back);
   });
 
   it("spotlighting an adversary names its token; another adversary keeps `since`; a hand-back clears it", () => {
     const lit = afterTake(mossHolds(true), 5, KNIFE);
-    expect(lit).toEqual({ holder: { kind: "gm" }, since: 5, reason: "adversary", rollBy: null, reactionsOnly: false, canMove: true, adversaryTokenId: KNIFE, adversaryName: null });
+    expect(lit).toEqual({ holder: { kind: "gm" }, since: 5, reason: "adversary", rollBy: null, reactionsOnly: false, canMove: true, adversaryTokenId: KNIFE, adversaryName: null, adversaryPortrait: null });
     expect(afterTake(lit, 9, KNIFE)).toBe(lit);
     // A general take while the GM holds it keeps the lit adversary (as the server does).
     expect(afterTake(lit, 9)).toBe(lit);

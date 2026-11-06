@@ -38,8 +38,24 @@ const LOCK = (
 );
 
 export function HudAttack({ state }: { state: CombatPageState }) {
-  if (state.role !== "player" || state.map === null) return null;
+  if (state.map === null) return null;
+  if (state.role === "gm") return <GmMinionOffers state={state} />;
+  if (state.role !== "player") return null;
   return <PlayerAttack state={state} />;
+}
+
+/**
+ * Rule switches RC1, D6 variant "GM picks the extra Minions" (not in the books, Q5 a): every PC's open Minion offer waits
+ * on the GM's HUD, picked with the same panel. Nothing in the Book (the attacker picks) or Manual (no offer opens).
+ */
+function GmMinionOffers({ state }: { state: CombatPageState }) {
+  const gmPicks = useQuery(api.ruleSettings.get, { campaignId: state.campaignId })?.modes.minions === "gmPicks";
+  if (!gmPicks) return null;
+  return (
+    <ul className="hud-atk-prompts" aria-label="Minion picks">
+      <MinionOffers state={state} characterId={null} />
+    </ul>
+  );
 }
 
 function PlayerAttack({ state }: { state: CombatPageState }) {
@@ -73,19 +89,33 @@ function PlayerAttack({ state }: { state: CombatPageState }) {
   );
 }
 
-/** The character's open Minion offers (`combatRequestsReads.mine`), each a prompt card that opens the Minion pick. */
-function MinionOffers({ state, characterId }: { state: CombatPageState; characterId: Id<"characters"> }) {
+/**
+ * The character's open Minion offers (`combatRequestsReads.mine`), each a prompt card that opens the Minion pick. For the
+ * GM (`characterId` null, D6 variant) every PC's offer. RC1: while the GM picks (variant), a player's offer is a "the GM
+ * picks" card without buttons.
+ */
+function MinionOffers({ state, characterId }: { state: CombatPageState; characterId: Id<"characters"> | null }) {
   const { campaignId } = state;
   const pick = usePick();
   const actor = useActor(state);
   const rows = useQuery(api.combatRequestsReads.mine, { campaignId });
+  const gmPicks = useQuery(api.ruleSettings.get, { campaignId })?.modes.minions === "gmPicks";
   const pickMinions = useMutation(api.combatActions.pickMinions).withOptimisticUpdate((store, args) => {
     const mine = store.getQuery(api.combatRequestsReads.mine, { campaignId });
     if (mine !== undefined) store.setQuery(api.combatRequestsReads.mine, { campaignId }, mine.filter((r) => !(r.kind === "minionOffer" && r.entryId === args.entryId)));
   });
   const [errors, setErrors] = useState<Readonly<Record<string, Refusal | null>>>({});
-  const offers = (rows ?? []).flatMap((r) => (r.kind === "minionOffer" && r.characterId === characterId ? [r] : []));
+  const offers = (rows ?? []).flatMap((r) => (r.kind === "minionOffer" && (characterId === null || r.characterId === characterId) ? [r] : []));
   if (offers.length === 0) return null;
+  if (characterId !== null && gmPicks) {
+    return offers.map((offer) => (
+      <li key={offer.requestId}>
+        <Popup icon={SWORDS} title={minionTitle(offer.extra)} sub="The GM picks them" testId="hud-attack-minions-gm">
+          <p>In this campaign the GM picks the extra Minions your hit defeats (a house rule, not in the books).</p>
+        </Popup>
+      </li>
+    ));
+  }
 
   const send = (offer: MinionOffer) => async (instanceIds: Id<"encounterAdversaries">[]) => {
     await pickMinions({ campaignId, entryId: offer.entryId, instanceIds, idempotencyKey: crypto.randomUUID() });
@@ -113,8 +143,8 @@ function MinionOffers({ state, characterId }: { state: CombatPageState; characte
     <li key={offer.requestId}>
       <Popup
         icon={SWORDS}
-        title={minionTitle(offer.extra)}
-        sub="After your hit"
+        title={characterId === null ? `${offer.characterName}’s hit can defeat ${offer.extra} more Minion${offer.extra === 1 ? "" : "s"}` : minionTitle(offer.extra)}
+        sub={characterId === null ? "You pick them" : "After your hit"}
         testId="hud-attack-minions"
         primary={{ label: "Pick Minions", onClick: () => open(offer) }}
         secondary={

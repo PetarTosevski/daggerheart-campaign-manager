@@ -65,7 +65,7 @@ test("a weapon attack through the panel: tiles, chips, one primary; a Minion hit
     // The action ring's Attack (H3.4): a click on Moss opens the ring.
     await player
       .getByRole("region", { name: "Battle map" })
-      .getByRole("button", { name: /^Open Moss’s sheet \(your character\)/ })
+      .getByRole("button", { name: /^Moss \(your character\): actions/ })
       .click();
     const open = player.getByRole("toolbar", { name: "Your actions (Moss)" }).getByRole("button", { name: "Attack" });
     await expect(open).toBeEnabled({ timeout: 30_000 });

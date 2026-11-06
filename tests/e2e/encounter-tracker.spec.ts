@@ -4,6 +4,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, expectNoHorizontalScroll } from "./visual/helpers";
+import { gmJoinCode } from "./config/helpers";
 
 // D8 A4: the live encounter tracker on the Adversaries page's Encounters tab. Damage through thresholds (CB p.91),
 // Stress, conditions, Spend Fear (the dashboard's GM Fear goes down, CB p.154), spotlights per GM turn (CB p.153) and
@@ -29,11 +30,7 @@ async function gmCreatesCampaign(page: Page) {
 }
 
 async function playerJoins(page: Page, browser: Browser, campaignName: string) {
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
-  await dialog.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
 
   const context = await browser.newContext();
   const player = await context.newPage();
@@ -146,7 +143,7 @@ test("the GM tracks damage, Stress, conditions, Fear, the spotlight and attacks 
   await player.goto(`/campaigns/${campaignId}`);
   await expect(player.getByRole("heading", { name: "Roll Feed" })).toBeVisible();
   await expect(player.getByText(/d20 \d+/)).toHaveCount(0);
-  for (const hit of await playerClient.query(api.adversaryActions.pending, { campaignId, characterId: miraId })) expect(hit).not.toHaveProperty("roll");
+  for (const hit of await playerClient.query(api.adversaryActionsReads.pending, { campaignId, characterId: miraId })) expect(hit).not.toHaveProperty("roll");
   await close();
 });
 

@@ -48,9 +48,9 @@ const calls: Record<string, Call> = {
   respondAsAsh: (c, x) => c.mutation(api.adversaryActions.respond, { campaignId: x.w.campaignId, requestId: x.requestId, characterId: x.w.characterA, choice: { kind: "noArmor" }, idempotencyKey: key() }),
   respondAsBryn: (c, x) => c.mutation(api.adversaryActions.respond, { campaignId: x.w.campaignId, requestId: x.requestId, characterId: x.w.characterB, choice: { kind: "pass" }, idempotencyKey: key() }),
   resolve: (c, x) => c.mutation(api.adversaryActions.resolve, { campaignId: x.w.campaignId, requestId: x.requestId, idempotencyKey: key() }),
-  pendingAsh: (c, x) => c.query(api.adversaryActions.pending, { campaignId: x.w.campaignId, characterId: x.w.characterA }),
-  pendingBryn: (c, x) => c.query(api.adversaryActions.pending, { campaignId: x.w.campaignId, characterId: x.w.characterB }),
-  windows: (c, x) => c.query(api.adversaryActions.windows, { campaignId: x.w.campaignId }),
+  pendingAsh: (c, x) => c.query(api.adversaryActionsReads.pending, { campaignId: x.w.campaignId, characterId: x.w.characterA }),
+  pendingBryn: (c, x) => c.query(api.adversaryActionsReads.pending, { campaignId: x.w.campaignId, characterId: x.w.characterB }),
+  windows: (c, x) => c.query(api.adversaryActionsReads.windows, { campaignId: x.w.campaignId }),
   featureAsk: (c, x) => c.query(api.adversaryActions.featureAsk, { campaignId: x.w.campaignId, instanceId: x.bear, feature: "Bite" }),
 };
 
@@ -82,10 +82,10 @@ describe("adversaryActions roles: target, ally, other, GM", () => {
 
   it("the ally sees only who was hit; the target sees their damage; a responder who already answered is refused", async () => {
     const x = await world();
-    const [allyView] = await x.w.as("otherPlayer").query(api.adversaryActions.pending, { campaignId: x.w.campaignId, characterId: x.w.characterB });
+    const [allyView] = await x.w.as("otherPlayer").query(api.adversaryActionsReads.pending, { campaignId: x.w.campaignId, characterId: x.w.characterB });
     expect(allyView).toMatchObject({ role: "ally", targetName: "Ash", cardIds: ["i-am-your-shield"] });
     expect(allyView!.damage).toBeUndefined();
-    const [targetView] = await x.w.as("player").query(api.adversaryActions.pending, { campaignId: x.w.campaignId, characterId: x.w.characterA });
+    const [targetView] = await x.w.as("player").query(api.adversaryActionsReads.pending, { campaignId: x.w.campaignId, characterId: x.w.characterA });
     expect(targetView).toMatchObject({ role: "target", damage: 6 });
     await calls.respondAsBryn!(x.w.as("otherPlayer"), x);
     expect(await code(calls.respondAsBryn!(x.w.as("otherPlayer"), x))).toBe("NOT_A_RESPONDER");

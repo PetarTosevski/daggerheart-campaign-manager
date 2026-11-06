@@ -2,9 +2,10 @@
 // Kudamat's Power (Core Book pp.318, 327). Pure module: bundled into Convex,
 // so no framework imports.
 
-import { z } from "zod";
+import * as z from "../../zod";
 
 import { RuleError } from "../../errors/app-error";
+import type { ModeOf } from "../../rules/registry";
 
 /** "The Siphoning Track starts with one slot marked" (p.327); the sheet has 10 slots. */
 export const SIPHON_SLOTS = 10;
@@ -93,20 +94,35 @@ export function resolveSiphon(
 }
 
 /**
+ * W5 (CB 327): the marks a hunt-phase rest adds, once (short) or twice (long). Manual (house rule): none; the GM marks
+ * the track by hand after `siphonRestNote`.
+ */
+export function restSiphonMarks(kind: RestKind, mode: ModeOf<"colossusSiphoning"> = "book"): number {
+  if (mode === "manual") return 0;
+  return kind === "long" ? 2 : 1;
+}
+
+/** W5 Manual: the GM's note for a hunt-phase rest. */
+export function siphonRestNote(kind: RestKind): string {
+  return `Hunt phase rest: mark Siphoning ${kind === "long" ? "twice" : "once"}`;
+}
+
+/**
  * A rest during the hunt phase marks the track once (short) or twice (long).
  * Marks apply one at a time: when a mark fills the track it resolves at once
- * and any remaining mark lands on the reset track.
+ * and any remaining mark lands on the reset track. `mode` (W5): Manual marks nothing.
  */
 export function markRest(
   state: ColossusState,
   kind: RestKind,
   roll: RollD12s,
   at: number,
+  mode: ModeOf<"colossusSiphoning"> = "book",
 ): { state: ColossusState; rolls: SiphonRoll[] } {
   if (state.phase !== "hunt") throw new RuleError("TRACKER_RULE", "Rests mark the Siphoning Track only during the hunt phase.");
   let next = state;
   const rolls: SiphonRoll[] = [];
-  for (let i = 0; i < (kind === "long" ? 2 : 1); i++) {
+  for (let i = 0; i < restSiphonMarks(kind, mode); i++) {
     next = { ...next, siphonMarked: Math.min(SIPHON_SLOTS, next.siphonMarked + 1) };
     if (next.siphonMarked === SIPHON_SLOTS) {
       const resolved = resolveSiphon(next, "full", roll, at);

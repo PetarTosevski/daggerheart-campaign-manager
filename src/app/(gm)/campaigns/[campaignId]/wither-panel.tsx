@@ -3,9 +3,10 @@
 import { useQuery } from "convex/react";
 import { useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import { SlotBoundary } from "@/components/party/session/boundary";
-import { endDialogText, endReportLines, useWitherChoice, WitherChoiceField } from "@/components/sessions/live";
+import { endDialogText, endReportLines, useWitherChoice, WitherChoiceField } from "@/components/journal/end-session";
 import { WITHER_POOL } from "@/lib/domain/wither";
 import { frameHasMechanic } from "@/lib/frames";
 import { useIntent } from "@/lib/use-intent";
@@ -62,9 +63,8 @@ function Panel({ campaignId, isGm }: { campaignId: Id<"campaigns">; isGm: boolea
         <p className="wither-panel-shadow m-0 text-[14px] text-[#e3d8ff]">House rule: Wither stays on the sheets across sessions.</p>
       ) : null}
       {isGm ? (
-        <button
-          type="button"
-          className="min-h-12 cursor-pointer rounded-[10px] border border-[#6b4f96] bg-[#2a2145] px-3 text-[15px] font-semibold text-[#efe8ff] hover:bg-[#352a57] disabled:cursor-default disabled:opacity-60"
+        <BrandButton
+          variant="danger"
           disabled={total === undefined || end.pending}
           onClick={() => {
             wither.reset();
@@ -72,7 +72,7 @@ function Panel({ campaignId, isGm }: { campaignId: Id<"campaigns">; isGm: boolea
           }}
         >
           {wither.convert ? `End Session · convert ${total ?? 0} to Fear` : "End Session · keep Wither"}
-        </button>
+        </BrandButton>
       ) : null}
       {end.error ? (
         <p role="alert" className="m-0 text-[14px] text-[#f0a8a0]">
@@ -99,20 +99,12 @@ function Panel({ campaignId, isGm }: { campaignId: Id<"campaigns">; isGm: boolea
             <WitherChoiceField choice={wither} />
           </div>
           <div className="flex justify-end gap-2.5">
-            <button
-              type="button"
-              className="min-h-11 cursor-pointer rounded-[10px] border border-[#33444a] bg-transparent px-4 text-[14px] text-[#e6ecea] hover:bg-white/5"
-              onClick={() => setConfirm(false)}
-            >
+            <BrandButton variant="cancel" onClick={() => setConfirm(false)}>
               Cancel
-            </button>
-            <button
-              type="button"
-              className="min-h-11 cursor-pointer rounded-full border border-[#8e2b2b] bg-[#5a1f1f] px-5 text-[14px] font-semibold text-[#ffe9e6] hover:bg-[#6e2626]"
-              onClick={() => void run()}
-            >
+            </BrandButton>
+            <BrandButton variant="danger" onClick={() => void run()}>
               End session
-            </button>
+            </BrandButton>
           </div>
         </Modal>
       ) : null}

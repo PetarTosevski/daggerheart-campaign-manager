@@ -1,0 +1,40 @@
+# World map hex overlay alignment (bead dcm-kggd), user 2026-11-05. Format: docs/workflow.md.
+# Branch from rebuild. Reference screenshot: reference/bugs-world-hex-mismatch.png.
+plan: world-hex
+waves:
+  - wave: 1
+    tracers:
+      - id: WH1
+        beads: [dcm-kggd]
+        goal: "On every World Map, the overlay hexes (the party's hex, the move target, the dashed neighbour ring, crawl regions) have the same orientation, size and offset as the hexes printed on the map image, so each overlay hex covers exactly one printed hex; built-in frame maps are calibrated, and a map whose grid isn't known can be calibrated by the GM"
+        depends_on: []
+        owns:
+          - src/lib/world/**
+          - src/app/(gm)/campaigns/[campaignId]/world/**
+          - convex/maps.ts
+          - convex/lib/maps.ts
+          - convex/lib/validators/maps.ts
+          - convex/tables/maps.ts
+          - convex/migrations/worldHex*.ts
+          - tests/unit/world/**
+          - tests/convex/world-hex*.test.ts
+          - tests/convex/authz/maps.entries.ts
+          - tests/e2e/world*.spec.ts
+          - docs/tasks/TASK-WH1.md
+        acceptance:
+          - a unit test per built-in map pins its grid (orientation, size, origin) and checks overlay centres land on printed hex centres
+          - e2e screenshot of each built-in world map with the overlay visible; pnpm lint, pnpm typecheck pass
+  - wave: 2
+    tracers:
+      - id: WH2
+        beads: [dcm-kggd]
+        goal: "Clicking a hex that holds a marker (or the party) still gives the GM the hex panel's 'Travel here' / move-the-party action: the marker no longer swallows the hex click; the marker's own editor stays reachable"
+        depends_on: [WH1]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/world/**
+          - src/lib/world/hex-tokens.ts
+          - tests/unit/world/**
+          - tests/e2e/world-hex.spec.ts
+          - docs/tasks/TASK-WH2.md
+        acceptance:
+          - unit test for the click routing; e2e: clicking a marker's hex shows Travel here; pnpm lint, typecheck pass

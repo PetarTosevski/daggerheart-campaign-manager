@@ -43,6 +43,7 @@ async function setup() {
   type Instance = { defeated: boolean; hp?: number; minionCount?: number; hpMax?: number };
   const encounter = (startedAt: number | undefined, instances: Instance[]) =>
     t.run(async (ctx) => {
+      const ids: Id<"encounterAdversaries">[] = [];
       const encounterId = await ctx.db.insert("encounters", {
         campaignId,
         name: "Ambush at the Forest Camp",
@@ -55,7 +56,7 @@ async function setup() {
         ...(startedAt === undefined ? {} : { startedAt }),
       });
       for (const [order, i] of instances.entries()) {
-        await ctx.db.insert("encounterAdversaries", {
+        const id = await ctx.db.insert("encounterAdversaries", {
           campaignId,
           encounterId,
           source: { kind: "srd", adversaryId: "bear" },
@@ -73,7 +74,9 @@ async function setup() {
           spotlightTurn: 1,
           updatedAt: NOW,
         });
+        ids.push(id);
       }
+      return ids;
     });
   const character = (name: string) =>
     t.run((ctx) => ctx.db.insert("characters", { campaignId, ownerId: gmId, createdBy: gmId, status: "active", sheet: { name }, createdAt: NOW, updatedAt: NOW } as never));
@@ -95,7 +98,7 @@ describe("journalTally.tally", () => {
 
   it("is all null before the session was ever live", async () => {
     const env = await setup();
-    expect(await env.tally()).toEqual({ ...NULL_TALLY, live: false, truncated: false });
+    expect(await env.tally()).toEqual({ ...NULL_TALLY, live: false, truncated: false, fearHidden: false });
   });
 
   it("counts the six numbers of a live session's open window", async () => {
@@ -131,6 +134,7 @@ describe("journalTally.tally", () => {
       criticals: 2,
       live: true,
       truncated: false,
+      fearHidden: false,
     });
   });
 
@@ -159,6 +163,45 @@ describe("journalTally.tally", () => {
     vi.setSystemTime(NOW + 150 * MIN);
     await env.end();
     expect(await env.tally()).toMatchObject({ fearGained: 2, fearSpent: 3, criticals: 2, adversariesDefeated: 3, live: false, truncated: false });
+  });
+
+  // dcm-z9rz.26 (user 2026-11-05): every adversary defeated during the session counts, also in a fight started in an
+  // earlier session; defeats from before the session, or after it, do not.
+  it("counts defeats during the session in a fight started before it", async () => {
+    const env = await setup();
+    const ids = await env.encounter(NOW - 30 * MIN, [
+      { defeated: true }, // defeated during the session (an action logged it while alive)
+      { defeated: true }, // defeated before the session: no action in the session saw it alive
+      { defeated: true }, // still standing at End, defeated in the next session
+      { defeated: false, minionCount: 6, hpMax: 6, hp: 5 }, // 2 Minions down before, 3 more during the session
+    ]);
+    const hit = (at: number, before: { instanceId: Id<"encounterAdversaries">; hp: number; defeated: boolean }[]) =>
+      env.t.run((ctx) =>
+        ctx.db.insert("actionLog", {
+          campaignId: env.campaignId,
+          actorId: env.gmId,
+          kind: "combat",
+          visibility: "gm",
+          summary: "hit",
+          adversaryBefore: before.map((b) => ({ ...b, stress: 0 })),
+          undoable: false,
+          at,
+        }),
+      );
+    await env.start();
+    await hit(NOW + 1 * MIN, [
+      { instanceId: ids[0]!, hp: 2, defeated: false },
+      { instanceId: ids[2]!, hp: 0, defeated: false },
+      { instanceId: ids[3]!, hp: 2, defeated: false },
+    ]);
+    vi.setSystemTime(NOW + 5 * MIN);
+    // Live: the open window ends now, so the third counts until the session ends.
+    expect(await env.tally()).toMatchObject({ adversariesDefeated: 1 + 1 + 3 });
+    vi.setSystemTime(NOW + 10 * MIN);
+    await env.end();
+    // Next session's first action on the third saw it still standing: it was not defeated in this session.
+    await hit(NOW + 70 * MIN, [{ instanceId: ids[2]!, hp: 3, defeated: false }]);
+    expect(await env.tally()).toMatchObject({ adversariesDefeated: 1 + 3, live: false });
   });
 
   it("takes Fear of finished windows from the stored tally, and from history when none is stored", async () => {
@@ -210,6 +253,51 @@ describe("journalTally.tally", () => {
     expect(result.truncated).toBe(true);
     expect(result.criticals).toBeGreaterThan(MAX_TALLY_FEED_ROWS - 10);
     expect(result.criticals).toBeLessThanOrEqual(MAX_TALLY_FEED_ROWS);
+  });
+
+  // Journal JT: the open window's read has no upper time bound. A query's `Date.now()` is frozen when it runs, so a
+  // bound at `now` would leave later writes outside its read range and Convex would never re-run it (the tiles froze
+  // until a reload). The clock stays frozen here while rows land after it: the re-run must include them.
+  it("includes rows written after the query's own time in a live session's open window (live updates)", async () => {
+    const env = await setup();
+    await env.start();
+    vi.setSystemTime(NOW + 10 * MIN);
+    expect(await env.tally()).toMatchObject({ fearGained: 0, criticals: 0, live: true });
+    await env.roll(NOW + 11 * MIN, "critical");
+    await env.fear(NOW + 12 * MIN, "gain", 0, 1);
+    expect(await env.tally()).toMatchObject({ fearGained: 1, criticals: 1, live: true });
+  });
+
+  it("keeps the upper bound of a closed window: rows after End are out", async () => {
+    const env = await setup();
+    await env.start();
+    vi.setSystemTime(NOW + 10 * MIN);
+    await env.end();
+    await env.roll(NOW + 11 * MIN, "critical");
+    await env.fear(NOW + 12 * MIN, "gain", 0, 1);
+    await env.t.run((ctx) => ctx.db.patch("sessions", env.sessionId, { tally: undefined }));
+    expect(await env.tally()).toMatchObject({ fearGained: 0, criticals: 0, live: false });
+  });
+
+  it("sessionWrap.after includes a level-up written after the query's own time while live, and after End (dcm-m6l4)", async () => {
+    const env = await setup();
+    const vex = await env.character("Vex");
+    const levelUp = (at: number, summary: string) =>
+      env.t.run((ctx) =>
+        ctx.db.insert("actionLog", { campaignId: env.campaignId, characterId: vex, actorId: env.gmId, kind: "levelUp", visibility: "public", summary, undoable: false, at }),
+      );
+    const after = () => env.gm.query(api.sessionWrap.after, { campaignId: env.campaignId, sessionId: env.sessionId });
+    await env.start();
+    vi.setSystemTime(NOW + 10 * MIN);
+    expect((await after())?.levelUps).toEqual([]);
+    await levelUp(NOW + 11 * MIN, "Vex reached level 2.");
+    expect((await after())?.levelUps).toEqual([{ characterId: vex, summary: "Vex reached level 2.", at: NOW + 11 * MIN }]);
+
+    vi.setSystemTime(NOW + 20 * MIN);
+    await env.end();
+    // After End and before any next session: still this session's (its latest level-up wins).
+    await levelUp(NOW + 21 * MIN, "Vex reached level 3.");
+    expect((await after())?.levelUps.map((l) => l.summary)).toEqual(["Vex reached level 3."]);
   });
 
   it("refuses a session of another campaign with SESSION_NOT_FOUND", async () => {

@@ -50,15 +50,15 @@ test("D11 N4 threads view and search at 1440 and 390", { tag: "@visual" }, async
   }
   await client.mutation(api.notesEntries.toggleStar, { campaignId, entryId: star! });
 
-  await page.goto(`/campaigns/${campaignId}/notes`);
-  await page.getByRole("button", { name: /^🧵 Open threads · 4$/ }).click();
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
+  await page.getByRole("button", { name: "Open threads: 4" }).click();
   const paper = page.getByRole("region", { name: "Journal page" });
   await expect(paper.getByRole("article", { name: "Open threads" }).getByRole("listitem")).toHaveCount(4);
   const { shoot } = visual(page, "D11-N4");
   await page.mouse.move(0, 0); // no hover highlight on a row
   await shoot(paper, "threads");
 
-  await page.goto(`/campaigns/${campaignId}/notes`);
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
   await page.getByRole("searchbox", { name: "Search the journal" }).fill("ferry");
   const nav = page.getByRole("navigation", { name: "Your pages" });
   await expect(nav.getByRole("button", { name: /Rumors & hooks/ })).toHaveCount(0);

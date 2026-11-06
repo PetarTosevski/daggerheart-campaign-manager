@@ -1,4 +1,4 @@
-// Dice follow-ups (plan followups-5 F8): the GM roll form folds away and remembers it per device (dcm-bxp.34), the
+// Dice follow-ups (plan followups-5 F8): the GM roll form folds away, stored on the account (dcm-bxp.34, config U6e), the
 // damage result names the automatic Waxing Moon +2 (dcm-bxp.66), and the Tag Team partner who picks the roll sees
 // the confirmation (dcm-bxp.67).
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CharacterView } from "../../convex/characters";
 import type { Id } from "../../convex/_generated/dataModel";
 import type { RollRecord } from "@/lib/domain/duality";
+import { UI_STATE_DEFAULTS } from "@/lib/config/preferences";
 
 const calls: { name: string; args: unknown }[] = [];
 const results: Record<string, unknown> = {};
@@ -94,6 +95,7 @@ const damage = (values: number[], modifier: number): RollRecord => ({
 
 beforeEach(() => {
   calls.length = 0;
+  delete queries["uiState:get"];
   for (const k of Object.keys(results)) delete results[k];
   try {
     window.localStorage.clear();
@@ -174,43 +176,26 @@ describe("Tag Team partner confirmation (dcm-bxp.67)", () => {
 describe("GM roll form collapse (dcm-bxp.34)", () => {
   const panel = () => render(<RollFeedPanel campaignId={"k1" as Id<"campaigns">} isGm />);
 
-  it("is open by default; folding it hides only the form and is remembered on this device", () => {
+  it("is open by default; folding it hides only the form and is stored on the account (config U6e)", () => {
     const first = panel();
     const toggle = screen.getByRole("button", { name: "Secret GM roll" });
     expect(toggle).toHaveAttribute("aria-expanded", "true");
     expect(toggle).toHaveAttribute("aria-controls", "gm-roll-form");
     expect(screen.getByRole("form", { name: "GM roll" })).toHaveAttribute("id", "gm-roll-form");
     fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByRole("form", { name: "GM roll" })).toBeNull();
-    // The feed below stays.
-    expect(screen.getByText(/No rolls yet/)).toBeInTheDocument();
-    expect(window.localStorage.getItem("dcm:gm-roll-form-collapsed")).toBe("1");
+    expect(calls).toContainEqual({ name: "uiState:set", args: { change: { key: "gmRollFormCollapsed", value: true } } });
     first.unmount();
 
+    // The account now says folded: the form is hidden, the feed below stays.
+    queries["uiState:get"] = { ...UI_STATE_DEFAULTS, gmRollFormCollapsed: true };
     panel();
     expect(screen.getByRole("button", { name: "Secret GM roll" })).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("form", { name: "GM roll" })).toBeNull();
+    expect(screen.getByText(/No rolls yet/)).toBeInTheDocument();
+    calls.length = 0;
     fireEvent.click(screen.getByRole("button", { name: "Secret GM roll" }));
-    expect(screen.getByRole("form", { name: "GM roll" })).toBeInTheDocument();
-    expect(window.localStorage.getItem("dcm:gm-roll-form-collapsed")).toBe("0");
-  });
-
-  it("still folds when browser storage throws", () => {
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-      throw new Error("blocked");
-    });
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new Error("blocked");
-    });
-    panel();
-    const toggle = screen.getByRole("button", { name: "Secret GM roll" });
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-    fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByRole("form", { name: "GM roll" })).toBeNull();
-    fireEvent.click(toggle);
-    expect(screen.getByRole("form", { name: "GM roll" })).toBeInTheDocument();
+    expect(calls).toContainEqual({ name: "uiState:set", args: { change: { key: "gmRollFormCollapsed", value: false } } });
+    expect(window.localStorage.getItem("dcm:gm-roll-form-collapsed")).toBeNull();
   });
 
   it("players never see the form or its toggle", () => {

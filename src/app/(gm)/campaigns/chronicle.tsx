@@ -7,7 +7,7 @@ import { useMemo, useState } from "react";
 
 import { PageHeader } from "@/components/brand/brand";
 import { BrandButton, brandButton } from "@/components/brand/buttons";
-import { frameName, roman } from "@/lib/campaign-display";
+import { campaignRoleLabel, frameName, roman } from "@/lib/campaign-display";
 import { errorMessage } from "@/lib/convex-errors";
 import { cn } from "@/lib/utils";
 
@@ -32,7 +32,8 @@ function Band({
 }) {
   const remove = useMutation(api.campaigns.remove);
   const leave = useMutation(api.members.leave);
-  const isGm = campaign.role === "gm";
+  // Delete is the creator's alone; a co-GM (role "gm", not the creator) leaves like a player (dcm-6dtb).
+  const canDelete = campaign.isCreator;
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,10 +69,10 @@ function Band({
             <span
               className={cn(
                 "rounded-full border px-2.5 py-0.5 text-[11px] tracking-[0.16em]",
-                isGm ? "border-brand/60 text-brand" : "border-[#5b4a8f] text-fear",
+                campaign.role === "gm" ? "border-brand/60 text-brand" : "border-[#5b4a8f] text-fear",
               )}
             >
-              {isGm ? "Game Master" : "Player"}
+              {campaignRoleLabel(campaign)}
             </span>
           </span>
           <span className="font-display text-[28px] font-bold tracking-[0.03em] sm:text-[34px]">{campaign.name}</span>
@@ -86,7 +87,7 @@ function Band({
           </span>
           <span className="flex min-w-[76px] flex-col items-center gap-0.5 rounded-[10px] bg-fear-bg px-3.5 py-2.5 text-fear">
             <span className="text-[12px] tracking-[0.12em] uppercase">Fear</span>
-            <strong className="text-[24px]">{campaign.fear}</strong>
+            <strong className="text-[24px]" {...(campaign.fear === null ? { "aria-label": "Fear hidden by the GM" } : {})}>{campaign.fear ?? "?"}</strong>
           </span>
         </span>
       </button>
@@ -94,17 +95,17 @@ function Band({
       {open ? (
         <div className="flex flex-wrap items-center justify-end gap-4 px-6 pb-7 sm:pr-10 sm:pl-[216px]">
           <div className="flex flex-wrap gap-3">
-            <Link href={`/campaigns/${campaign._id}`} className={brandButton({ variant: "solid", size: "lg", className: "px-7" })}>
+            <Link href={`/campaigns/${campaign._id}`} className={brandButton({ variant: "confirm", size: "lg" })}>
               Resume Campaign
             </Link>
             <BrandButton
               variant="danger"
               size="lg"
-              aria-label={`${isGm ? "Delete" : "Leave"} ${campaign.name}`}
+              aria-label={`${canDelete ? "Delete" : "Leave"} ${campaign.name}`}
               onClick={() => setConfirming(true)}
             >
-              {isGm ? <Trash2 className="!size-4" strokeWidth={1.8} aria-hidden="true" /> : null}
-              {isGm ? "Delete" : "Leave"}
+              {canDelete ? <Trash2 strokeWidth={1.8} aria-hidden="true" /> : null}
+              {canDelete ? "Delete" : "Leave"}
             </BrandButton>
           </div>
         </div>
@@ -113,28 +114,28 @@ function Band({
       {open && confirming ? (
         <div
           role="alertdialog"
-          aria-label={isGm ? "Confirm delete" : "Confirm leave"}
+          aria-label={canDelete ? "Confirm delete" : "Confirm leave"}
           className="mx-6 mb-7 flex flex-wrap items-center gap-3 rounded-[10px] border border-danger-line bg-danger-bg px-4 py-3.5 sm:mr-10 sm:ml-[216px]"
         >
           <span className="flex-[1_1_260px] text-[15px] text-[#ffd9d6]">
-            {isGm ? "Delete" : "Leave"} <strong>{campaign.name}</strong>?{" "}
-            {isGm
+            {canDelete ? "Delete" : "Leave"} <strong>{campaign.name}</strong>?{" "}
+            {canDelete
               ? "It will be removed from your saved campaigns."
               : "You'll need a new invite or join code to come back."}
           </span>
-          <BrandButton variant="outline" className="border-[#5a3a3a]" onClick={() => setConfirming(false)}>
+          <BrandButton variant="cancel" onClick={() => setConfirming(false)}>
             Keep it
           </BrandButton>
           <BrandButton
-            variant="dangerSolid"
+            variant="danger"
             onClick={() => {
               setError(null);
-              (isGm ? remove({ campaignId: campaign._id }) : leave({ campaignId: campaign._id }))
-                .then(() => (isGm ? onDeleted(campaign) : undefined))
+              (canDelete ? remove({ campaignId: campaign._id }) : leave({ campaignId: campaign._id }))
+                .then(() => (canDelete ? onDeleted(campaign) : undefined))
                 .catch((e) => setError(errorMessage(e)));
             }}
           >
-            {isGm ? "Delete" : "Leave"}
+            {canDelete ? "Delete" : "Leave"}
           </BrandButton>
           {error ? (
             <p role="alert" className="m-0 w-full text-[14px] text-danger">
@@ -175,8 +176,7 @@ function DeletedRow({ campaign, onRestored, onPurged }: { campaign: DeletedCampa
         </span>
         <div className="flex flex-wrap gap-2.5">
           <BrandButton
-            variant="outline"
-            className="border-brand text-brand"
+            variant="confirm"
             aria-label={`Restore ${campaign.name}`}
             disabled={busy}
             onClick={() => run(restore({ campaignId: campaign._id }), onRestored)}
@@ -190,7 +190,7 @@ function DeletedRow({ campaign, onRestored, onPurged }: { campaign: DeletedCampa
             disabled={busy}
             onClick={() => setConfirming(true)}
           >
-            <Trash2 className="!size-4" strokeWidth={1.8} aria-hidden="true" />
+            <Trash2 strokeWidth={1.8} aria-hidden="true" />
             Delete permanently
           </BrandButton>
         </div>
@@ -205,10 +205,10 @@ function DeletedRow({ campaign, onRestored, onPurged }: { campaign: DeletedCampa
             Delete <strong>{campaign.name}</strong> permanently? Its characters, sessions, notes and maps are erased for
             good. This can&apos;t be undone.
           </span>
-          <BrandButton variant="outline" className="border-[#5a3a3a]" disabled={busy} onClick={() => setConfirming(false)}>
+          <BrandButton variant="cancel" disabled={busy} onClick={() => setConfirming(false)}>
             Keep it
           </BrandButton>
-          <BrandButton variant="dangerSolid" disabled={busy} onClick={() => run(purge({ campaignId: campaign._id }), onPurged)}>
+          <BrandButton variant="danger" disabled={busy} onClick={() => run(purge({ campaignId: campaign._id }), onPurged)}>
             Delete {campaign.name} forever
           </BrandButton>
         </div>
@@ -219,6 +219,74 @@ function DeletedRow({ campaign, onRestored, onPurged }: { campaign: DeletedCampa
         </p>
       ) : null}
     </li>
+  );
+}
+
+/**
+ * One archived campaign (config S3, Q9 a): read-only for everyone, so Open for every member and Restore for its creator
+ * (`campaignSettings.unarchive`). Restoring moves it back into the saved campaigns above.
+ */
+function ArchivedRow({ campaign, onRestored }: { campaign: CampaignListItem; onRestored: () => void }) {
+  const unarchive = useMutation(api.campaignSettings.unarchive);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <li className="flex flex-col gap-3 rounded-xl border border-[#272434] bg-[#15141d] px-4 py-3.5 sm:px-6">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+        <span className="flex min-w-0 flex-[1_1_220px] flex-col gap-0.5">
+          <span className="font-display text-[20px] font-bold tracking-[0.03em] break-words">{campaign.name}</span>
+          <span className="text-[14px] text-label">
+            {frameName(campaign.frameId)} · {campaignRoleLabel(campaign)} · Last opened{" "}
+            {dateFormat.format(campaign.lastOpenedAt)}
+          </span>
+        </span>
+        <div className="flex flex-wrap gap-2.5">
+          <Link href={`/campaigns/${campaign._id}`} aria-label={`Open ${campaign.name}`} className={brandButton({ variant: "neutral" })}>
+            Open
+          </Link>
+          {campaign.isCreator ? (
+            <BrandButton
+              variant="confirm"
+              aria-label={`Restore ${campaign.name} from the archive`}
+              disabled={busy}
+              onClick={() => {
+                setError(null);
+                setBusy(true);
+                unarchive({ campaignId: campaign._id }).then(onRestored, (e: unknown) => {
+                  setBusy(false);
+                  setError(errorMessage(e));
+                });
+              }}
+            >
+              Restore
+            </BrandButton>
+          ) : null}
+        </div>
+      </div>
+      {error ? (
+        <p role="alert" className="m-0 text-[14px] text-danger">
+          {error}
+        </p>
+      ) : null}
+    </li>
+  );
+}
+
+/** Archived campaigns (S3), under the saved ones; hidden when there are none. */
+function ArchivedCampaigns({ campaigns, onRestored }: { campaigns: CampaignListItem[]; onRestored: (id: Id<"campaigns">) => void }) {
+  if (campaigns.length === 0) return null;
+  return (
+    <section aria-labelledby="archived-campaigns" className="mt-4 flex flex-none flex-col gap-3">
+      <h2 id="archived-campaigns" className="m-0 text-[13px] tracking-[0.22em] text-muted-text uppercase">
+        Archived
+      </h2>
+      <ul className="m-0 flex list-none flex-col gap-3 p-0">
+        {campaigns.map((c) => (
+          <ArchivedRow key={c._id} campaign={c} onRestored={() => onRestored(c._id)} />
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -248,10 +316,13 @@ export function Chronicle() {
   const [deleted, setDeleted] = useState<CampaignListItem | null>(null);
   const [undoError, setUndoError] = useState<string | null>(null);
 
+  // Archived campaigns (S3) leave the bands for their own group, most recently opened first as the server sends them.
+  const active = useMemo(() => campaigns?.filter((c) => !c.archived), [campaigns]);
+  const archived = useMemo(() => campaigns?.filter((c) => c.archived) ?? [], [campaigns]);
   // Oldest first, so the first campaign you made is I (user 2026-10-21); the server lists most recently opened first.
-  const ordered = useMemo(() => (campaigns === undefined ? undefined : [...campaigns].sort((x, y) => x.createdAt - y.createdAt)), [campaigns]);
+  const ordered = useMemo(() => (active === undefined ? undefined : [...active].sort((x, y) => x.createdAt - y.createdAt)), [active]);
   // The most recently opened campaign starts expanded.
-  const expanded = openId === undefined ? campaigns?.[0]?._id : openId;
+  const expanded = openId === undefined ? active?.[0]?._id : openId;
 
   return (
     <div className="flex min-h-screen flex-col bg-ink-2 text-parchment">
@@ -266,9 +337,8 @@ export function Chronicle() {
             >
               <span>{undoError ?? `Deleted ${deleted.name}.`}</span>
               <BrandButton
-                variant="outline"
+                variant="cancel"
                 size="sm"
-                className="border-brand text-brand"
                 onClick={() => {
                   setUndoError(null);
                   restore({ campaignId: deleted._id })
@@ -284,17 +354,17 @@ export function Chronicle() {
             </div>
           ) : null}
 
-          {campaigns === undefined ? (
+          {ordered === undefined ? (
             <p className="text-muted-text">Loading campaigns…</p>
-          ) : campaigns.length === 0 ? (
+          ) : ordered.length === 0 ? (
             <div className="flex flex-col items-center gap-3.5 rounded-2xl border-2 border-dashed border-line-2 px-6 py-12 text-center text-[16px] text-label">
               No saved campaigns.
-              <Link href="/new" className={brandButton({ variant: "solid", size: "md" })}>
+              <Link href="/new" className={brandButton({ variant: "confirm" })}>
                 Create a campaign
               </Link>
             </div>
           ) : (
-            ordered!.map((campaign, index) => (
+            ordered.map((campaign, index) => (
               <Band
                 key={campaign._id}
                 campaign={campaign}
@@ -310,6 +380,8 @@ export function Chronicle() {
             ))
           )}
 
+          <ArchivedCampaigns campaigns={archived} onRestored={(id) => setOpenId(id)} />
+
           <DeletedCampaigns
             onRestored={(id) => {
               setOpenId(id);
@@ -321,9 +393,9 @@ export function Chronicle() {
           />
         </div>
 
-        {campaigns && campaigns.length > 1 ? (
+        {ordered && ordered.length > 1 ? (
           <nav aria-label="Jump to campaign" className="hidden flex-none flex-col items-center justify-center gap-1 sm:flex">
-            {ordered!.map((campaign, index) => {
+            {ordered.map((campaign, index) => {
               const on = campaign._id === expanded;
               return (
                 <a

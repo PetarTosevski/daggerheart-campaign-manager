@@ -2,10 +2,14 @@ import { v, type Infer } from "convex/values";
 
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
+import { appError } from "../src/lib/errors/app-error";
+import { recordTokenSpends, refillActionTokens, spendActionTokens, trackerTokens } from "./lib/actionTokens";
+import { newGroupId } from "./lib/actionLog";
 import { readSheet } from "./lib/characterSheet";
 import { campaignQuery, keyedGmMutation } from "./lib/functions";
 import { atLeast } from "./lib/permissions";
-import { giveTo, giveToParty, moveToGm, spotlightAdversary, spotlightOf, takeWithFear } from "./lib/spotlight";
+import { giveTo, giveToParty, moveToGm, playersWaitNow, spotlightAdversary, spotlightOf, takeWithFear } from "./lib/spotlight";
+import { adversaryArtSrc } from "./lib/encounters";
 import { seenThisScene } from "./lib/spotlightSeen";
 import { spotlightReasonValidator } from "./tables/combatSpotlight";
 
@@ -23,6 +27,11 @@ import { spotlightReasonValidator } from "./tables/combatSpotlight";
  *   without Fear are not logged in the action log: its undo restores sheets, adversaries, Fear and time only, so the
  *   GM's undo is the opposite move (docs/tasks/TASK-HUD-H1.S.md). A paid take is logged, and its undo gives the Fear back
  *   (docs/tasks/TASK-HUD-H9.S.md).
+ * - `refillTokens()` (the GM, keyed): Spotlight Tracker (optional rule, CB p.89, plan rule-switches RT): every PC's
+ *   action tokens back to full before everyone is out (the app refills by itself once every PC on the live map is at
+ *   0). MECHANIC_DISABLED while the rule is off. Not logged, like the moves without Fear.
+ * - `spendToken({ characterId })` (the GM, keyed): spends a PC's token for a significant action without a roll (plan
+ *   rule-switches RFB); logged GM-only, its Undo gives the token back. MECHANIC_DISABLED while the rule is off.
  */
 
 const holderViewValidator = v.union(
@@ -39,8 +48,13 @@ export const spotlightStateValidator = v.object({
   reason: v.union(spotlightReasonValidator, v.null()),
   /** The PC whose roll moved it to the GM, for "Moss rolled with Fear". */
   rollBy: v.union(v.null(), v.object({ characterId: v.id("characters"), name: v.string() })),
-  /** The caller may only react (a player, while the GM holds it): the "Reactions only" note, H6.2's disabled controls. */
+  /**
+   * The caller may only react (a player, while the GM holds it): the "Reactions only" note, H6.2's disabled controls.
+   * S2 (plan rule-switches RS2): only in Book and while an encounter is running (user answer 2026-11-06).
+   */
   reactionsOnly: v.boolean(),
+  /** S2 Manual (Q4 a): a player, while the GM holds it in a running encounter: nothing locks, the HUD warns. Absent otherwise. */
+  spotlightWarning: v.optional(v.literal(true)),
   /** The caller may take the spotlight or hand it back (the GM). */
   canMove: v.boolean(),
   /**
@@ -48,35 +62,43 @@ export const spotlightStateValidator = v.object({
    * otherwise. An opaque id without a position: a player's map lights it only when that token is already among the
    * ones it draws (`combatVision.playerView` leaves fogged and hidden tokens out), so it never reveals one.
    * Players (user 2026-11-03): only when the party has seen that token this scene (`combatSeen`); never seen, null.
-   * The GM always.
+   * Seen by any player's character counts for every player (dcm-onze). The GM always.
    */
   adversaryTokenId: v.union(v.id("combatTokens"), v.null()),
   /**
-   * That adversary's display name (its encounter instance's label, the name a player's view gives the token), so a
-   * player whose map does not draw the token can read whose spotlight it is ("Jagged Knife Lieutenant has the
-   * spotlight"). Null whenever `adversaryTokenId` is null, or the token is no longer an adversary of this campaign.
+   * That adversary's display name (its encounter instance's label, the full name its token shows), for the players'
+   * GM's-turn card ("Jagged Knife Lieutenant has the spotlight", dcm-onze) and the disc. Null whenever
+   * `adversaryTokenId` is null, or the token is no longer an adversary of this campaign.
    */
   adversaryName: v.union(v.string(), v.null()),
+  /**
+   * That adversary's portrait (the rulebook art its map token draws, `adversaryArtSrc`), for the spotlight disc's face
+   * (dcm-onze: seen is party knowledge, so a player whose map does not draw the token gets it too). Null whenever
+   * `adversaryName` is null, or the adversary has no art (the disc draws its initial).
+   */
+  adversaryPortrait: v.union(v.string(), v.null()),
 });
 export type SpotlightStateView = Infer<typeof spotlightStateValidator>;
 
-/** The spotlighted adversary for the caller (user 2026-11-03): the GM always; a player only one the party saw this scene. */
-async function spotlitAdversary(
-  ctx: QueryCtx,
-  campaign: Doc<"campaigns">,
-  tokenId: Id<"combatTokens"> | undefined,
-  gm: boolean,
-): Promise<{ adversaryTokenId: Id<"combatTokens"> | null; adversaryName: string | null }> {
-  const none = { adversaryTokenId: null, adversaryName: null };
+type SpotlitAdversary = Pick<SpotlightStateView, "adversaryTokenId" | "adversaryName" | "adversaryPortrait">;
+
+/**
+ * The spotlighted adversary for the caller: the GM always; a player only one the party saw this scene (user 2026-11-03).
+ * Seen is party knowledge (dcm-onze, user 2026-11-04): `combatSeen` is per campaign, so once any player's character saw
+ * it, every player learns it, one who never saw it or has no token on the map included. Never seen: nothing.
+ */
+async function spotlitAdversary(ctx: QueryCtx, campaign: Doc<"campaigns">, tokenId: Id<"combatTokens"> | undefined, gm: boolean): Promise<SpotlitAdversary> {
+  const none = { adversaryTokenId: null, adversaryName: null, adversaryPortrait: null };
   if (tokenId === undefined) return none;
   if (!gm && !(await seenThisScene(ctx, campaign._id, tokenId))) return none;
   const token = await ctx.db.get("combatTokens", tokenId);
-  let adversaryName: string | null = null;
   if (token !== null && token.ref.kind === "adversary") {
     const instance = await ctx.db.get("encounterAdversaries", token.ref.adversaryId);
-    if (instance !== null && instance.campaignId === campaign._id) adversaryName = instance.label;
+    if (instance !== null && instance.campaignId === campaign._id) {
+      return { adversaryTokenId: tokenId, adversaryName: instance.label, adversaryPortrait: await adversaryArtSrc(ctx, campaign._id, instance) };
+    }
   }
-  return { adversaryTokenId: tokenId, adversaryName };
+  return { adversaryTokenId: tokenId, adversaryName: null, adversaryPortrait: null };
 }
 
 /** A campaign's character with its sheet name, or null when it is gone or belongs elsewhere. */
@@ -101,13 +123,15 @@ export const state = campaignQuery({
     const { campaign } = ctx;
     const canMove = atLeast(ctx.permission, "owner");
     const row = await spotlightOf(ctx, campaign._id);
-    const noAdversary = { adversaryTokenId: null, adversaryName: null };
+    const noAdversary = { adversaryTokenId: null, adversaryName: null, adversaryPortrait: null };
     const none = { holder: null, since: null, reason: null, rollBy: null, reactionsOnly: false, canMove, ...noAdversary };
     if (row === null) return none;
     const rollBy = row.rollBy === undefined ? null : await namedCharacter(ctx, campaign, row.rollBy);
     if (row.holder.kind === "gm") {
       const adversary = await spotlitAdversary(ctx, campaign, row.adversaryTokenId, canMove);
-      return { holder: { kind: "gm" as const }, since: row.since, reason: row.reason, rollBy, reactionsOnly: !canMove, canMove, ...adversary };
+      // S2 (RS2): players wait only in a running encounter; Manual warns instead of locking.
+      const wait = canMove ? null : await playersWaitNow(ctx, campaign);
+      return { holder: { kind: "gm" as const }, since: row.since, reason: row.reason, rollBy, reactionsOnly: wait === "book", canMove, ...adversary, ...(wait === "manual" ? { spotlightWarning: true as const } : {}) };
     }
     const pc = await namedCharacter(ctx, campaign, row.holder.characterId);
     if (pc === null) return none;
@@ -123,7 +147,7 @@ const payValidator = v.union(v.literal("free"), v.literal("fear"));
 /**
  * The GM takes the spotlight (an interrupt for a Fear, an adversary's turn: CB p.100). With `tokenId` the GM spotlights
  * that adversary's token (reason `adversary`; COMBAT_TOKEN_NOT_FOUND, or INVALID for a token that is not an
- * adversary's) and the map lights it; without it the GM takes it generally (`gmTook`). `pay` (widened, H9.S): `free`
+ * adversary's, ADVERSARY_DEFEATED for a defeated one, user 2026-11-04) and the map lights it; without it the GM takes it generally (`gmTook`). `pay` (widened, H9.S): `free`
  * (default, as before) or `fear`: 1 Fear spent in the same mutation (NOT_ENOUGH_FEAR when the GM has none; nothing spent
  * when the spotlight does not move), which counts as that adversary's spotlight this GM turn (`takeWithFear`).
  */
@@ -156,4 +180,47 @@ export const handToParty = keyedGmMutation({
   args: {},
   returns: movedValidator,
   handler: async (ctx) => ctx.once("spotlight_hand_to_party", {}, async () => ({ moved: await giveToParty(ctx, ctx.campaign) })),
+});
+
+/**
+ * The GM refills every PC's Spotlight Tracker action tokens by hand (plan rule-switches RT, user answer Q9 a: "GM can
+ * refill early"; CB p.89). `refilled`: how many PCs had spent tokens (0: everyone was full already). MECHANIC_DISABLED
+ * while the optional rule is off.
+ */
+export const refillTokens = keyedGmMutation({
+  args: {},
+  returns: v.object({ refilled: v.number() }),
+  handler: async (ctx) =>
+    ctx.once("spotlight_refill_tokens", {}, async () => {
+      if (trackerTokens(ctx.campaign) === null) throw appError("MECHANIC_DISABLED", "The Spotlight Tracker is off in this campaign.");
+      return { refilled: await refillActionTokens(ctx, ctx.campaign._id) };
+    }),
+});
+
+/**
+ * The GM (or a co-GM) spends one of a PC's Spotlight Tracker action tokens for a significant action without a roll (CB
+ * p.89: "each time they make an action roll or perform a significant action while in the spotlight, they remove 1
+ * token"; plan rule-switches RFB, user answer 2026-11-06). As a roll's spend: only a PC on the live map with a token
+ * left spends (`spent` false otherwise, nothing written), and when every PC on the map is then out, all refill
+ * (`refilled`). A spend is logged as a GM-only feed line ("Mira: an action token spent for a significant action"),
+ * whose Undo gives the token back. MECHANIC_DISABLED while the optional rule is off; NOT_FOUND for a character of another
+ * campaign.
+ */
+export const spendToken = keyedGmMutation({
+  args: { characterId: v.id("characters") },
+  returns: v.object({ spent: v.boolean(), refilled: v.boolean() }),
+  handler: async (ctx, { characterId }) =>
+    ctx.once("spotlight_spend_token", { characterId }, async () => {
+      if (trackerTokens(ctx.campaign) === null) throw appError("MECHANIC_DISABLED", "The Spotlight Tracker is off in this campaign.");
+      const pc = await namedCharacter(ctx, ctx.campaign, characterId);
+      if (pc === null) throw appError("NOT_FOUND");
+      const { spent, refilled } = await spendActionTokens(ctx, ctx.campaign, [characterId]);
+      await recordTokenSpends(ctx, ctx.campaign, spent, {
+        groupId: newGroupId(),
+        actorId: ctx.user._id,
+        summary: (s) => `${pc.name}: an action token spent for a significant action (${s.left} left${refilled ? "; everyone out, all refilled" : ""})`,
+        shown: true,
+      });
+      return { spent: spent.length > 0, refilled };
+    }),
 });

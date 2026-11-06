@@ -633,14 +633,14 @@
   flex: none;
 }
 .hud-ph-q .hud-q,
-.hud-ph-q .hud-res {
+.hud-ph-q .hud-q-res {
   box-shadow: none;
 }
 .hud-ph-q .hud-q-scroll {
   overflow: visible;
 }
 /* Folded: only the heading with its count ("Waiting on you 3"). */
-.hud-ph-q[data-open="false"] :is(.hud-q-scroll, .hud-q-result, .hud-res) {
+.hud-ph-q[data-open="false"] :is(.hud-q-scroll, .hud-q-result, .hud-q-res) {
   display: none;
 }
 .hud-ph-q[data-open="false"] .hud-q {
@@ -736,7 +736,7 @@
     bottom: calc(var(--hud-ph-q-fold) + var(--hud-ph-dock-h) + 12px);
     width: auto;
   }
-  .hud-root[data-role="gm"] .hud-log .hud-res {
+  .hud-root[data-role="gm"] .hud-log .hud-q-res {
     max-height: calc(100dvh - var(--hud-ph-q-fold) - var(--hud-ph-dock-h) - 140px);
   }
   .hud-root[data-role="gm"] .hud-areas {

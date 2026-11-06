@@ -256,10 +256,10 @@ test("spotlight-seen: a never-seen adversary stays anonymous; one seen this scen
     await expectNoSeriousA11yViolations(player);
     await shot(player, "player-seen-hidden-adversary-named-1440");
 
-    // Back in sight: the light shows it, and the card goes back to the GM's title.
+    // Back in sight: the light shows it, and the card still names it by its full label (dcm-onze).
     await s.client.mutation(api.combatVision.paintFog, { campaignId: s.campaignId, mapId: s.mapId, squares: [lieutenantSquare], mark: "erase" });
     await expectLit(player, lieutenant.tokenId);
-    await expect(title).toHaveText("The GM has the spotlight");
+    await expect(title).toHaveText(`${lieutenant.name} has the spotlight`);
   } finally {
     await s.close();
   }

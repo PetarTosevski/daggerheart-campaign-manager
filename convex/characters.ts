@@ -12,6 +12,10 @@ import {
   STARTING_HOPE,
   STARTING_PROFICIENCY,
   STARTING_STRESS,
+  cardHolders,
+  sharedCardRefusal,
+  type CardHolder,
+  type Gold,
 } from "../src/lib/domain/characters/index";
 import { derivedDefense, derivedThresholds } from "../src/lib/domain/characters/derived";
 import { applySlotBonuses } from "../src/lib/domain/characters/slots";
@@ -51,8 +55,10 @@ import { type Permission } from "./lib/permissions";
 import { characterDraftValidator, characterStatusValidator, conditionValidator, goldValidator, sheetPatchValidator, traitIdValidator, type CharacterView } from "./lib/validators/characters";
 import { ikonisValidator } from "./lib/validators/characterExtras";
 import { gainWitherToken } from "./wither";
+import { postRuleNote, ruleMode } from "./lib/ruleModes";
+import { witherOnDamage } from "../src/lib/domain/wither/index";
 import { witherGainValidator } from "./lib/validators/wither";
-import { assertOneActive, MAX_CHARACTERS_CREATED_PER_CAMPAIGN, MAX_CHARACTERS_PER_CAMPAIGN, partyOf } from "./lib/characterSheet";
+import { assertCharacterCap, assertOneActive, MAX_CHARACTERS_CREATED_PER_CAMPAIGN, MAX_CHARACTERS_PER_CAMPAIGN, partyOf } from "./lib/characterSheet";
 export { assertOneActive, MAX_CHARACTERS_PER_CAMPAIGN };
 
 export type { CharacterView };
@@ -69,6 +75,35 @@ function newId(): string {
 /** An expected validation failure, sent as `{ code: "INVALID", message }`. */
 function invalid(message: string): never {
   throw appError("INVALID", message);
+}
+
+/**
+ * Shared domain cards (CB p.21, plan rule-switches OSC): under `refuse`, throws `code` when another character of the
+ * campaign (every character but `exceptId`, whatever its status) holds one of `cardIds` in its loadout or vault. `allow`
+ * and `warn` (the default) never refuse; the pickers show the `warn` note. Reads the party only under `refuse`.
+ */
+export async function assertCardsUnshared(
+  ctx: QueryCtx,
+  campaign: Doc<"campaigns">,
+  cardIds: readonly string[],
+  code: "INVALID" | "LEVEL_UP_RULE",
+  exceptId?: Id<"characters">,
+): Promise<void> {
+  const mode = ruleMode(campaign, "sharedDomainCards");
+  const wanted = cardIds.filter((id) => id !== "");
+  if (mode !== "refuse" || wanted.length === 0) return;
+  const party: CardHolder[] = [];
+  for (const c of await partyOf(ctx, campaign._id)) {
+    let sheet: CharacterSheet;
+    try {
+      sheet = readSheet(c.sheet);
+    } catch {
+      continue;
+    }
+    party.push({ id: c._id, name: sheet.name, cards: [...sheet.domainCards.owned, ...sheet.domainCards.loadout] });
+  }
+  const problem = sharedCardRefusal(mode, cardHolders(party, exceptId), wanted, (id) => getDomainCard(id)?.name ?? id);
+  if (problem !== null) throw appError(code, problem);
 }
 
 // ---------------------------------------------------------------- creation
@@ -188,10 +223,14 @@ export function sheetFromDraft(draft: CharacterDraft, allowExpansion: boolean, i
 /** "Your choice of a Minor Health Potion … or a Minor Stamina Potion" (Core ch. 1, step 5). */
 const STARTING_POTIONS = ["Minor Health Potion", "Minor Stamina Potion"];
 
-/** Refuses a new character past the campaign's cap, or a second active one for `owner`. */
+/**
+ * Refuses a new character past the campaign's cap, past `owner`'s per-player cap (AD5b, CAP_CHARACTERS_PER_PLAYER),
+ * or a second active one for `owner`.
+ */
 async function assertRoom(ctx: QueryCtx, campaign: Doc<"campaigns">, owner: Id<"users">) {
   // The creation cap, not the read bound (dcm-bxp.38): a campaign above a lowered cap still reads every character.
   if ((await partyOf(ctx, campaign._id)).length >= MAX_CHARACTERS_CREATED_PER_CAMPAIGN) invalid(`A campaign holds at most ${MAX_CHARACTERS_CREATED_PER_CAMPAIGN} characters.`);
+  await assertCharacterCap(ctx, campaign, owner);
   await assertOneActive(ctx, campaign, owner);
 }
 
@@ -199,6 +238,7 @@ async function assertRoom(ctx: QueryCtx, campaign: Doc<"campaigns">, owner: Id<"
 async function ownerFor(ctx: MutationCtx, campaign: Doc<"campaigns">, permission: Permission, user: Doc<"users">, ownerId?: Id<"users">) {
   if (!ownerId || ownerId === user._id) return user._id;
   if (permission !== "owner") throw appError("FORBIDDEN");
+  // Identity: the creator has no member row; co-GMs and players are found below.
   if (ownerId === campaign.ownerId) return ownerId;
   const member = await ctx.db
     .query("campaignMembers")
@@ -232,6 +272,7 @@ export const create = keyedCampaignMutation({
     }
     const sheet = sheetFromDraft(parsed, resolveOptions(ctx.campaign.frameId, ctx.campaign.options).hopeAndFear, motherboard);
     const owner = await ownerFor(ctx, ctx.campaign, ctx.permission, ctx.user, ownerId);
+    await assertCardsUnshared(ctx, ctx.campaign, parsed.domainCards, "INVALID");
     return ctx.once("character_create", { draft: parsed, owner, ikonis: designed ?? null }, async () => {
       await assertRoom(ctx, ctx.campaign, owner);
       const now = Date.now();
@@ -282,7 +323,11 @@ export const updateSheet = userMutation({
     const { secondaryWeaponId, armorId, inventory, experiences, ...rest } = clean;
     const next: CharacterSheet = { ...sheet, ...rest };
     // CB 104: a category holds at most 9 marks (a 10th rolls over through adjustGold).
-    if (rest.gold) next.gold = { ...rest.gold, handfuls: Math.min(rest.gold.handfuls, MAX_HANDFULS), bags: Math.min(rest.gold.bags, MAX_BAGS) };
+    // Gold coins (OSC) change only through adjustGold: a whole-gold write keeps the stored coins.
+    if (rest.gold) {
+      const { coins } = sheet.gold as Gold;
+      next.gold = { handfuls: Math.min(rest.gold.handfuls, MAX_HANDFULS), bags: Math.min(rest.gold.bags, MAX_BAGS), chest: rest.gold.chest, ...(coins === undefined ? {} : { coins }) };
+    }
     if (inventory !== undefined) next.inventory = inventory.map((item) => (typeof item === "string" ? { id: newId(), name: item } : item));
     if (experiences !== undefined) {
       // Purposeful Design stays on the Experience the sheet recorded (DA11); a whole-list write can't move or add it.
@@ -321,14 +366,18 @@ function assertDelta(delta: number, max: number) {
   if (!Number.isInteger(delta) || delta === 0 || Math.abs(delta) > max) invalid("Change by a whole number.");
 }
 
-/** Adds `delta` handfuls or bags of gold (each kept within 0–99). Owner or GM. */
+/**
+ * Adds `delta` coins, handfuls or bags of gold. Owner or GM. `coins` only while the campaign's Gold coins rule is on
+ * (CB p.104, plan rule-switches OSC; MECHANIC_DISABLED otherwise): 10 coins roll over into 1 handful.
+ */
 export const adjustGold = userMutation({
-  args: { characterId: v.id("characters"), coin: v.union(v.literal("handfuls"), v.literal("bags")), delta: v.number() },
+  args: { characterId: v.id("characters"), coin: v.union(v.literal("coins"), v.literal("handfuls"), v.literal("bags")), delta: v.number() },
   returns: goldValidator,
   handler: async (ctx, { characterId, coin, delta }) => {
     assertDelta(delta, 99);
-    const { character, sheet } = await editable(ctx, ctx.user, characterId);
-    // CB 104: at most 9 handfuls and 9 bags; a 10th rolls over into the next category, and only one chest.
+    const { campaign, character, sheet } = await editable(ctx, ctx.user, characterId);
+    if (coin === "coins" && !ruleMode(campaign, "goldCoins")) throw appError("MECHANIC_DISABLED", "Gold coins are off in this campaign.");
+    // CB 104: at most 9 handfuls and 9 bags (and 9 coins); a 10th rolls over into the next category, and only one chest.
     const gold = addGold(sheet.gold, coin, delta);
     if (gold === null) invalid("You already have a chest of gold; store some before you take more.");
     await saveSheet(ctx, character._id, { ...sheet, gold });
@@ -565,7 +614,8 @@ export const toggleCondition = userMutation({
  * resulting Hit Points (Core, "Hit Points and Damage Thresholds"). Owner or GM.
  * `withered` (Witherwild, CB 261): Severe damage (after the Armor Slot) from a
  * Withered source also gains a Wither token and rolls the Fear Die
- * (convex/wither.ts); outside Witherwild it is MECHANIC_DISABLED. Keyed
+ * (convex/wither.ts); with rule W1 `witherTokens` on Manual it adds nothing
+ * and posts a GM-only note instead; outside Witherwild it is MECHANIC_DISABLED. Keyed
  * (review L2): a retry with the same idempotency key returns the first result.
  * `negateMinor` (Lunar Phases, New moon, HF p.17 "Spend a Hope to negate Minor
  * damage"; plan session-features U6): allowed only when F0's `canNegateMinor`
@@ -613,9 +663,19 @@ export const applyDamage = keyedUserMutation({
       }
       const next: CharacterSheet = { ...armored, hp: Math.min(s.hpMax, s.hp + result.marks) };
       await saveSheet(ctx, character._id, next);
-      // The Wither row's `before` is the damaged sheet: undoing it takes back the token, not the damage.
+      // W1 (rule switch `witherTokens`, CB 261). Book: the Wither row's `before` is the damaged sheet, so undoing it
+      // takes back the token, not the damage. Manual: no token and no roll; the GM gets a note. Plain damage is
+      // unlogged (no action group), so the note carries no characterId or groupId and is never undoable.
+      const witherStep = witherOnDamage(result.severity, withered ?? false, withered ? ruleMode(campaign, "witherTokens") : "book");
+      if (witherStep === "note") {
+        await postRuleNote(ctx, campaign, {
+          ruleId: "witherTokens",
+          summary: `${s.name} took Severe damage from a Withered source: add a Wither token and roll?`,
+          actorId: ctx.user._id,
+        });
+      }
       const wither =
-        withered && result.severity === "severe"
+        witherStep === "gain"
           ? await gainWitherToken(ctx, { campaignId: campaign._id, characterId: character._id, sheet: next, actorId: ctx.user._id, source: "Severe Withered damage" })
           : undefined;
       return { severity: result.severity, marks: result.marks, hp: next.hp, armorMarked: next.armorMarked, ...(wither ? { wither } : {}) };
@@ -656,6 +716,7 @@ export const takeCard = userMutation({
     const sources = sourcesFor({ allowExpansion: resolveOptions(campaign.frameId, campaign.options).hopeAndFear });
     const problem = cardTakeProblem(s, cardId, sources);
     if (problem) invalid(problem.message);
+    await assertCardsUnshared(ctx, campaign, [cardId], "INVALID", character._id);
     await saveSheet(ctx, character._id, { ...s, domainCards: addCard(s.domainCards, cardId) });
     return null;
   },

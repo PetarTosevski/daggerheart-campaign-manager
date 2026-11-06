@@ -31,11 +31,12 @@ import { isE2EDeployment } from "./lib/allowlist";
 import { logAction, newGroupId } from "./lib/actionLog";
 import { partyMembers } from "./lib/adversaryHits";
 import { afterUnstoppable, liftTargetTags } from "./lib/cardRows";
-import { assertCanAct, editable, editsCaster, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
+import { assertCanAct, editable, editsCaster, loadCharacter, noteHopeSpent, readSheet, saveSheet } from "./lib/characterSheet";
 import { payCost } from "./lib/classFeatureCost";
 import { rollDie } from "./lib/dice";
 import { gainFear, revertFear } from "./lib/fear";
 import { keyedUserMutation, userQuery } from "./lib/functions";
+import { fearFor } from "./lib/fearVisibility";
 import { atLeast } from "./lib/permissions";
 import { rollValidator, type StoredRoll } from "./lib/validators/actionLog";
 
@@ -157,6 +158,8 @@ export const use = keyedUserMutation({
       ]);
       // Rows: the user, each changed other, and the roll's owner when the roll changed.
       const rows = new Set<string>([character._id]);
+      // dcm-z9rz.23: the feature's Hope cost counts as spent even when the use gives Hope back.
+      noteHopeSpent(ctx, character._id, sheet.hope - paid.hope);
       await saveSheet(ctx, character._id, result.sheet);
       for (const other of result.others ?? []) {
         const target = loaded.get(other.characterId);
@@ -183,7 +186,8 @@ export const use = keyedUserMutation({
           undoable: true,
         });
       }
-      return { summary: result.summary, roll: result.roll ?? null };
+      // dcm-jh6d.62: a player's summary loses GM Fear numbers while the GM's Fear is hidden.
+      return fearFor(ctx, ctx.user, campaign, { summary: result.summary, roll: result.roll ?? null }, null);
     }),
 });
 

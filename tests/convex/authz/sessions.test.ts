@@ -23,12 +23,13 @@ async function codeOf(call: Promise<unknown>): Promise<string> {
 /**
  * The players' view of sessions, for what a matrix outcome cannot state: a player's list holds the live and played
  * sessions (with recap, without the GM's times) and never a planned one, and on a live or played session every GM
- * read (prep, log, spotlight, tally, wrap) refuses a player.
+ * read (prep, wrap) refuses a player. (The Journal's log, spotlight and tally reads have their own player rules:
+ * journal-log.test.ts, journal-spotlight-players.test.ts.)
  */
 describe("authz matrix: sessions, players' view", () => {
   allowWorldEmails();
 
-  it("players read only live and played sessions; GM prep, the log and spotlight counts stay GM-only", async () => {
+  it("players read only live and played sessions; GM prep and wrap-up stay GM-only", async () => {
     const w = await buildWorld();
     const campaignId = w.campaignId;
     const gm = w.as("gm");
@@ -41,7 +42,6 @@ describe("authz matrix: sessions, players' view", () => {
     await gm.mutation(api.sessionPrep.setHooks, { campaignId, sessionId: live, hooks: "GM secret hook" });
     await gm.mutation(api.sessions.start, { campaignId, sessionId: live, idempotencyKey: freshKey() });
     await gm.mutation(api.sessionPlay.addLog, { campaignId, sessionId: live, text: "GM log line", idempotencyKey: freshKey() });
-    await gm.mutation(api.sessionPlay.bumpSpotlight, { campaignId, sessionId: live, characterId: w.characterA, idempotencyKey: freshKey() });
     const planned = await create();
 
     expect((await gm.query(api.sessionRecords.list, { campaignId })).map((s) => s._id)).toEqual([planned, live, played]);
@@ -67,9 +67,6 @@ describe("authz matrix: sessions, players' view", () => {
 
       for (const sessionId of [live, played]) {
         expect(await codeOf(as.query(api.sessionPrep.get, { campaignId, sessionId }))).toBe("FORBIDDEN");
-        expect(await codeOf(as.query(api.sessionPlay.log, { campaignId, sessionId }))).toBe("FORBIDDEN");
-        expect(await codeOf(as.query(api.sessionPlay.spotlight, { campaignId, sessionId }))).toBe("FORBIDDEN");
-        expect(await codeOf(as.query(api.sessionPlay.tally, { campaignId, sessionId }))).toBe("FORBIDDEN");
         expect(await codeOf(as.query(api.sessionWrap.get, { campaignId, sessionId }))).toBe("FORBIDDEN");
       }
     }

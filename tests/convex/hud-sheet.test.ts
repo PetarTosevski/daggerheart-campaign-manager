@@ -132,6 +132,24 @@ describe("combatHud.sheet", () => {
     expect(sheet.evasion).toBe(base + 2);
   });
 
+  it("dcm-bxp.99.32.1: a stored conditionSources entry gives the condition its source and until; without one, the static until stays", async () => {
+    const w = await buildWorld();
+    const edit = editor(w);
+    await edit(w.characterA, () => ({
+      conditions: ["restrained", "vulnerable", "hidden"],
+      conditionSources: [
+        { condition: "restrained", source: "Vicious Entangle (Moss)", endsWhen: "they break free" },
+        { condition: "vulnerable", source: "Pounce", until: "scene" },
+      ],
+    }));
+    const sheet = await w.as("otherPlayer").query(api.combatHud.sheet, { characterId: w.characterA });
+    expect(sheet.conditions).toEqual([
+      { id: "restrained", label: "Restrained", source: "Vicious Entangle (Moss)", until: "until they break free" },
+      { id: "vulnerable", label: "Vulnerable", source: "Pounce", until: "until the end of the scene" },
+      { id: "hidden", label: "Hidden", source: null, until: "until an adversary would see you, you move into their sight, or you attack" },
+    ]);
+  });
+
   it("names the feature a condition came from (its marker) and does not list the marker as an effect", async () => {
     const w = await buildWorld();
     const edit = editor(w);

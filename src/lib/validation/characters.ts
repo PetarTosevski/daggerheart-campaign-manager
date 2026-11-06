@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "../zod";
 
 import { MAX_LEVEL } from "../domain/characters/index";
 import { TRAIT_IDS, type TraitId } from "../srd/types";
@@ -10,6 +10,8 @@ import {
   EFFECT_UNTIL,
   HELD_DIE_UNTIL,
   FEATURE_USE_UNTIL,
+  CONDITION_UNTIL,
+  CONDITION_ENDS_WHEN_MAX,
   PRONOUNS_LABELS,
   pronounsFieldLabel,
   HELD_DIE_KINDS,
@@ -108,7 +110,8 @@ export const characterSheetV1Schema = z.object({
   secondaryWeaponId: z.string().optional(),
   armorId: z.string().optional(),
   inventory: z.array(z.string().trim().min(1).max(200)).max(60),
-  gold: z.object({ handfuls: z.number().int().min(0).max(99), bags: z.number().int().min(0).max(99), chest: z.boolean() }),
+  // coins: the Gold coins optional rule (CB p.104, plan rule-switches OSC), 0-9; widened, unset reads as 0.
+  gold: z.object({ handfuls: z.number().int().min(0).max(99), bags: z.number().int().min(0).max(99), chest: z.boolean(), coins: z.number().int().min(0).max(9).optional() }),
   experiences: z.array(experienceV1Schema).max(12),
   domainCards: z.object({ owned: z.array(z.string()).max(40), loadout: z.array(z.string()).max(5) }),
   background: z.array(z.string().max(TEXT)).max(12),
@@ -142,6 +145,22 @@ export const advancementSchema = z.object({
 });
 
 const modifier = z.number().int().min(-10).max(10);
+
+/**
+ * dcm-bxp.99.32.1 (widened, no version bump: optional, absent = the condition's origin is unknown): where a condition on
+ * the sheet came from and when it ends, for the HUD's "From Vicious Entangle (Moss) - until it breaks free". One entry
+ * per condition (`conditions` stays the list of ids every reader uses); `storedSheet` drops entries whose condition is
+ * gone. `source`: what gave it ("Vicious Entangle"); `casterId`: who did, as a plain id string (a character's or an
+ * adversary instance's, as `effectSchema.casterId`); `until` (CONDITION_UNTIL) and `endsWhen`, the event in words.
+ */
+export const conditionSourceSchema = z.object({
+  condition: z.enum(CONDITIONS),
+  source: shortText,
+  casterId: z.string().min(1).max(40).optional(),
+  until: z.enum(CONDITION_UNTIL).optional(),
+  endsWhen: z.string().trim().min(1).max(CONDITION_ENDS_WHEN_MAX).optional(),
+});
+export type ConditionSource = z.infer<typeof conditionSourceSchema>;
 
 export const effectSchema = z.object({
   id: z.string().min(1).max(EFFECT_ID_MAX),
@@ -307,6 +326,8 @@ export const characterSheetSchema = characterSheetV1Schema.extend({
   /** Set by the GM's "Party levels up" (CB 109); cleared when the owner levels up. */
   levelUpPending: z.boolean().default(false),
   conditions: z.array(z.enum(CONDITIONS)).max(CONDITIONS.length).default([]),
+  /** dcm-bxp.99.32.1 (widened, optional): where each condition came from and when it ends (`conditionSourceSchema`). */
+  conditionSources: z.array(conditionSourceSchema).max(CONDITIONS.length).optional(),
   /** Temporary effects; derived values add their `mods` (`withEffects`), base stats never change. */
   effects: z.array(effectSchema).max(20).default([]),
   /** Dice held for later (Rally, Prayer, patron, combo). */

@@ -10,7 +10,8 @@ import { freshKey } from "./synth";
  *   It runs on the live session, so every member writes it: both players, the grantee (who also joined by code) and
  *   the GM. A planned session refuses players with SESSION_NOT_FOUND, and a grant-only caller (not a member) gets
  *   FORBIDDEN; both are checked in tests/convex/journal-recap.test.ts.
- * - `sessionWrap.after`: GM only (Q5: players do not see 'After the session'); the edit grant does not reach it.
+ * - `sessionWrap.after`: every member reads it (Journal JF2, dcm-z9rz.32, user 2026-11-06); on the live session, so
+ *   both players and the grantee get it. A planned session is SESSION_NOT_FOUND for players (journal-recap.test.ts).
  * - `sessionRecords.summary`: every member reads 'Campaign so far'.
  */
 
@@ -31,7 +32,7 @@ const area: Area = {
       args: () => ({ recap: "They crossed the river." }),
       expect: { otherPlayer: "ok", grantee: "ok" },
     },
-    { fn: api.sessionWrap.after, access: "gm", expect: { grantee: "FORBIDDEN" } },
+    { fn: api.sessionWrap.after, access: "view", setup: liveSession, expect: { otherPlayer: "ok", grantee: "ok" } },
     { fn: api.sessionRecords.summary, access: "view", expect: { otherPlayer: "ok", grantee: "ok" } },
   ],
 };

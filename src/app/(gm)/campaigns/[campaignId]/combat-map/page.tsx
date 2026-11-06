@@ -4,6 +4,7 @@ import "./combat-map.css";
 
 import { Component, useState, type ReactNode } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { ActionsProvider, TargetsLayer } from "@/components/combat-map/actions";
 import { HitFlashLayer } from "@/components/combat-map/actions/adversary";
 import { HudShell, ToolsHead } from "@/components/combat-map/hud";
@@ -53,9 +54,9 @@ class SlotBoundary extends Component<{ children: ReactNode; label: string }, { f
         <span>
           {this.props.label} failed to load{this.state.message ? `: ${this.state.message}` : "."}
         </span>
-        <button type="button" className="cm-btn cm-sm" onClick={() => this.setState({ failed: false, message: "" })}>
+        <BrandButton variant="neutral" size="sm" onClick={() => this.setState({ failed: false, message: "" })}>
           Try again
-        </button>
+        </BrandButton>
       </div>
     );
   }
@@ -69,27 +70,29 @@ function FearPill({ campaignId, fear }: { campaignId: Id<"campaigns">; fear: num
       <span className="cm-fear-lbl" aria-hidden="true">
         GM FEAR
       </span>
-      <button
-        type="button"
-        className="cm-btn cm-sm cm-fear-step"
+      <BrandButton
+        variant="neutral"
+        size="sm"
+        icon
         aria-label="Spend a Fear"
         disabled={fear <= 0 || adjust.pending}
         onClick={() => void adjust.fire({ campaignId, direction: "decrease" })}
       >
         −
-      </button>
+      </BrandButton>
       <strong className="cm-fear-n" aria-label={`${fear} of ${MAX_FEAR} Fear`} data-testid="combat-fear">
         {fear}
       </strong>
-      <button
-        type="button"
-        className="cm-btn cm-sm cm-fear-step"
+      <BrandButton
+        variant="neutral"
+        size="sm"
+        icon
         aria-label="Gain a Fear"
         disabled={fear >= MAX_FEAR || adjust.pending}
         onClick={() => void adjust.fire({ campaignId, direction: "increase" })}
       >
         +
-      </button>
+      </BrandButton>
       {adjust.error ? (
         <span role="status" className="cm-fear-err">
           {adjust.error}
@@ -103,12 +106,12 @@ function FearPill({ campaignId, fear }: { campaignId: Id<"campaigns">; fear: num
 function ModeSwitch({ mode, onMode }: { mode: CombatMode; onMode: (mode: CombatMode) => void }) {
   return (
     <div className="cm-seg" role="group" aria-label="Map mode">
-      <button type="button" aria-pressed={mode === "play"} onClick={() => onMode("play")}>
+      <BrandButton variant="neutral" size="sm" className="flex-1" aria-pressed={mode === "play"} onClick={() => onMode("play")}>
         ▶ Play
-      </button>
-      <button type="button" aria-pressed={mode === "edit"} onClick={() => onMode("edit")}>
+      </BrandButton>
+      <BrandButton variant="neutral" size="sm" className="flex-1" aria-pressed={mode === "edit"} onClick={() => onMode("edit")}>
         ✎ Edit map
-      </button>
+      </BrandButton>
     </div>
   );
 }
@@ -329,7 +332,7 @@ function HeaderTools({ campaign, state }: { campaign: CampaignSummary; state: Co
             </SlotBoundary>
           ) : null}
           <SlotBoundary label="Player view">
-            <PreviewPicker {...state} />
+            <PreviewPicker {...state} glass />
           </SlotBoundary>
         </>
       ) : null}

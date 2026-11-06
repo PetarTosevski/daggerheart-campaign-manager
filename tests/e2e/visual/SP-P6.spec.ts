@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 
 import { api } from "../../../convex/_generated/api";
+import { openMapTools } from "../hud/helpers";
 import { D9_VIEWPORTS, openCombatMap, visual } from "./helpers";
 
 // Shots for the SP-P6 task doc (E2E_VISUAL=1): one forest, one tavern and one dungeon map, each in Classic and in
@@ -46,8 +47,16 @@ test("SP-P6 forest, tavern and dungeon maps in Classic and Sprites at 1440, 1024
     for (const style of ["classic", "sprites"] as const) {
       await client.mutation(api.combatMapStyle.setStyle, { campaignId, mapId, style });
       await page.goto(url);
+      // Play is the HUD (plan combat-hud H8.1): the maps list is in the "Map tools" drawer. Pick the map there, then
+      // close the drawer so the shot shows the whole map.
+      await openMapTools(page);
       const tools = page.getByRole("complementary", { name: "Map tools" });
       await tools.getByRole("listitem").filter({ hasText: map.title }).getByRole("button", { name: map.title }).click();
+      await expect(page.getByTestId("hud-title").getByRole("heading")).toHaveText(map.title);
+      if ((await tools.count()) > 0) {
+        await tools.press("Escape");
+        await expect(tools).toHaveCount(0);
+      }
       const canvas = page.getByRole("region", { name: "Battle map" }).getByTestId("combat-map-canvas");
       await expect(canvas).toHaveAttribute("data-style", style);
       await page.waitForLoadState("networkidle");

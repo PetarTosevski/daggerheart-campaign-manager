@@ -9,7 +9,6 @@
   --ih-field: var(--cm-field, #0b1214);
   --ih-line: var(--cm-border, #33444a);
   --ih-acc: var(--cm-acc, #e3b45a);
-  --ih-acc-ink: var(--cm-acc-ink, #1a1408);
   --ih-danger: var(--cm-danger, #ffb4a8);
   display: flex;
   flex-direction: column;
@@ -24,7 +23,6 @@
   --ih-field: #fbf4e4;
   --ih-line: var(--sheet-line, #d1b98b);
   --ih-acc: var(--sheet-wine, #5b2b2b);
-  --ih-acc-ink: #fbf4e4;
   --ih-danger: #8a2a24;
 }
 .ih-dock {
@@ -78,34 +76,13 @@
   flex-wrap: wrap;
   gap: 8px;
 }
-.ih-btn {
-  min-height: 44px;
-  padding: 0 16px;
-  border-radius: 10px;
-  border: 1px solid var(--ih-line);
-  background: transparent;
-  color: var(--ih-text);
-  font-family: inherit;
-  font-size: 15px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
+/* Plan glass-buttons G11: the buttons are glass. On the sheet's parchment the focus ring takes the wine (the pale gold
+   ring disappears on the paper) and disabled glass is opaque, as on the Adversaries parchment (G8). */
+.ih-wrap[data-variant="sheet"] .gb:focus-visible {
+  outline-color: var(--ih-acc);
 }
-.ih-btn.ih-go {
-  border-color: var(--ih-acc);
-  background: var(--ih-acc);
-  color: var(--ih-acc-ink);
-  font-weight: 700;
-}
-.ih-btn:focus-visible {
-  outline: 2px solid var(--ih-acc);
-  outline-offset: 2px;
-}
-.ih-btn[disabled] {
-  opacity: 0.5;
-  cursor: not-allowed;
+.ih-wrap[data-variant="sheet"] .gb:disabled {
+  background: #0d1417;
 }
 .ih-step {
   font-weight: 400;
@@ -156,7 +133,7 @@
   line-height: 1.45;
   color: var(--ih-text);
 }
-.ih-rc .ih-btn {
+.ih-rc > .gb {
   grid-column: 2;
   grid-row: 1;
 }
@@ -227,7 +204,7 @@
     padding: 12px 4px;
     border: 0;
   }
-  .ih-actions .ih-btn {
+  .ih-actions .gb {
     flex: 1 1 auto;
   }
 }

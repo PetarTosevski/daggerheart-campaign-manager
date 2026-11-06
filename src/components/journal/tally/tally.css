@@ -1,0 +1,135 @@
+/* Journal session tally and Spotlight (JT). Tokens and shared classes: ../journal.css. */
+
+.jt-tiles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.jt-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--jr-field);
+  border: 1px solid var(--jr-card-border);
+  min-width: 0;
+}
+
+.jt-tile-icon {
+  width: 15px;
+  height: 15px;
+  color: var(--jr-muted);
+}
+.jt-tile[data-tile="fearGained"] .jt-tile-icon,
+.jt-tile[data-tile="fearSpent"] .jt-tile-icon {
+  color: #c9a8ff;
+}
+.jt-tile[data-tile="hopeSpent"] .jt-tile-icon,
+.jt-tile[data-tile="criticals"] .jt-tile-icon {
+  color: var(--jr-acc);
+}
+.jt-tile[data-tile="hpMarked"] .jt-tile-icon {
+  color: var(--jr-combat);
+}
+
+.jt-tile-n {
+  font-family: var(--jr-serif);
+  font-size: 26px;
+  line-height: 1.1;
+  color: var(--jr-text);
+}
+
+.jt-tile-l {
+  font-size: 12px;
+  line-height: 1.25;
+  color: var(--jr-muted);
+}
+
+.jt-note {
+  font-size: 12.5px;
+}
+
+.jt-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.jt-bar-row {
+  display: grid;
+  grid-template-columns: 28px minmax(56px, 88px) minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 10px;
+}
+
+.jt-face {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  overflow: hidden;
+  display: inline-flex;
+}
+.jt-face > * {
+  border-radius: 999px;
+}
+
+.jt-initial {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--jr-hover);
+  color: var(--jr-text);
+  font-size: 13px;
+}
+
+.jt-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--jr-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jt-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--jr-field);
+  border: 1px solid var(--jr-card-border);
+  overflow: hidden;
+}
+
+.jt-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--jr-exploration);
+  transition: width 240ms ease;
+}
+
+.jt-count {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--jr-text);
+}
+
+.jt-least {
+  font-size: 12.5px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jt-fill {
+    transition: none;
+  }
+}

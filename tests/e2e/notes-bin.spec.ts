@@ -5,6 +5,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, expectNoHorizontalScroll } from "./visual/helpers";
+import { gmJoinCode } from "./config/helpers";
 
 // D11 N7: the bin (.omc/plans/d11-notes.yaml). The GM tears out a page (two clicks, the rip and its sound), presses
 // Undo and it is back; tears it out again, opens it under Torn-out pages and restores it. A player tears out their
@@ -48,11 +49,7 @@ async function gmCreatesCampaign(page: Page) {
 }
 
 async function playerJoins(page: Page, browser: Browser, campaignName: string, viewport: { width: number; height: number }) {
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
-  await dialog.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
   const context = await browser.newContext({ viewport, reducedMotion: "reduce" });
   const player = await context.newPage();
   await signInAsTestGm(player, PLAYER);
@@ -116,7 +113,7 @@ for (const viewport of VIEWPORTS) {
     // Seed 'Rumors & hooks' (the journal's first write) to learn its id; the behaviour under test goes through the UI.
     const { pageId } = await client.mutation(api.notesEntries.add, { campaignId, page: { template: 1 }, kind: "note", text: "the mill burned" });
 
-    await page.goto(`/campaigns/${campaignId}/notes?page=${pageId}`);
+    await page.goto(`/campaigns/${campaignId}/journal?tab=notes&page=${pageId}`);
     await expect(paper(page).getByLabel("Page title")).toHaveValue("Rumors & hooks");
     await openIndex(page);
     await expect(page.getByRole("region", { name: "Torn-out pages" }).getByText("Nothing torn out.")).toBeVisible();
@@ -178,7 +175,7 @@ for (const viewport of VIEWPORTS) {
       // 'gm' is a player's default visibility (A4): the GM reads the page.
       expect(await codeOf(gm.query(api.notesEntries.entries, { campaignId, page: pageId }))).toBe("ok");
 
-      await player.goto(`/campaigns/${campaignId}/notes?page=${pageId}`);
+      await player.goto(`/campaigns/${campaignId}/journal?tab=notes&page=${pageId}`);
       await expect(paper(player).getByText("we crossed the river")).toBeVisible();
       await tearOut(player);
       await expect(toast(player)).toBeVisible();

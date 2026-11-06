@@ -1,10 +1,10 @@
 import { v, type Infer } from "convex/values";
 
-import { inWindows } from "../src/lib/domain/journal";
+import type { LiveWindow } from "../src/lib/domain/journal";
 import { dashboardNumber, lastSessionText, nextPlannedSession, nextSessionLine } from "../src/lib/domain/sessions";
 import { appError } from "../src/lib/errors/app-error";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { campaignMutation, campaignQuery, gmMutation, gmQuery, keyedGmMutation } from "./lib/functions";
 import { partyLevelUp } from "./lib/partyLevelUp";
 import { campaignRole } from "./lib/permissions";
@@ -13,9 +13,10 @@ import { MAX_SESSIONS } from "./lib/validators/sessions";
 
 /**
  * Wrap-up (D10 S6, plan `.omc/plans/d10-sessions.yaml`, rule B5): the recap (on `sessions`; since Journal JD5 every
- * member writes it and the whole table reads it for live and played sessions, Journal Q4), 'Loot & gold' and 'Countdowns & threads' (on `sessionPrep`, GM-only, Q4) and
- * calls the milestone (Q5: the roster's 'Party levels up', one way, stamped on the session). `dashboard` hands every
- * member the hero line, the next date and the Last Session card (B9) for S7.
+ * member writes it and the whole table reads it for live and played sessions, Journal Q4), 'Loot & gold' (on
+ * `sessionPrep`, GM-only, Q4; stored 'Countdowns & threads' are still read, their writer `setThreads` went with the old
+ * Wrap-up screen, JF3) and calls the milestone (Q5: the roster's 'Party levels up', one way, stamped on the session).
+ * `dashboard` hands every member the hero line, the next date and the Last Session card (B9) for S7.
  */
 
 // ---------------------------------------------------------------- GM: the stage
@@ -93,13 +94,6 @@ export const setLoot = gmMutation({
   handler: (ctx, { sessionId, loot }) => setPrepText(ctx, sessionId, "loot", loot),
 });
 
-/** 'Countdowns & threads' (B5): trimmed, at most 4000 characters; empty clears it. GM-only (Q4). */
-export const setThreads = gmMutation({
-  args: { sessionId: v.string(), threads: v.string() },
-  returns: v.null(),
-  handler: (ctx, { sessionId, threads }) => setPrepText(ctx, sessionId, "threads", threads),
-});
-
 /**
  * 'Milestone reached: the party levels up' (Q5, K5): runs the roster's 'Party levels up' (convex/lib/partyLevelUp.ts:
  * every active character below level 10 is flagged, one public log row each) and stamps `milestoneAt` on the session
@@ -122,7 +116,36 @@ export const callMilestone = keyedGmMutation({
   },
 });
 
-// ---------------------------------------------------------------- GM: after the session (Journal JD5)
+// ---------------------------------------------------------------- every member: after the session (Journal JD5, JF2)
+
+/**
+ * The index range's upper end for one window: none for the open window of a live session (its `to` is the query's own
+ * `Date.now()`, so a bound would leave later rows outside the read range and the query would not re-run on them), `to`
+ * for closed windows. Same rule as `upTo` in `convex/journalLog.ts`.
+ */
+function upTo<Q extends { lte: (field: "at", value: number) => unknown }>(q: Q, w: LiveWindow): Q {
+  return w.open ? q : (q.lte("at", w.to) as Q);
+}
+
+/**
+ * The windows `after` reads (JD5 as changed 2026-11-04, dcm-m6l4): the live windows with the last closed one stretched
+ * to the next session's start, so a level-up taken after End still counts for the session just ended. The next start
+ * is the first `startedAt` after that end (index `by_campaign_started`, one row); with none the window stays open (no
+ * upper bound, so the query re-runs on later level-ups and when a session starts). A live session (open last window)
+ * and a planned one (no windows) are unchanged. A later session restarted since keeps only its latest `startedAt`, so
+ * the stretch may run to that restart rather than its first start.
+ */
+async function withAfterGrace(ctx: QueryCtx & { campaign: Doc<"campaigns"> }, windows: LiveWindow[]): Promise<LiveWindow[]> {
+  const last = windows.at(-1);
+  if (last === undefined || last.open) return windows;
+  const next = await ctx.db
+    .query("sessions")
+    .withIndex("by_campaign_started", (q) => q.eq("campaignId", ctx.campaign._id).gt("startedAt", last.to))
+    .first();
+  const stretched: LiveWindow =
+    next?.startedAt === undefined ? { from: last.from, to: last.to, open: true } : { from: last.from, to: Math.max(last.to, next.startedAt - 1), open: false };
+  return [...windows.slice(0, -1), stretched];
+}
 
 /** One character's level-up during the session: the latest `levelUp` feed row of that character in the live windows. */
 export const afterLevelUpValidator = v.object({
@@ -147,29 +170,40 @@ export const afterValidator = v.object({
 export type SessionAfter = Infer<typeof afterValidator>;
 
 /**
- * 'After the session' (Journal JD5, GM only, Q5): the characters with a `levelUp` feed row (not undone) during the
- * session's live windows (`liveWindows`, so a restarted session counts every window), the milestone stamp and the loot.
+ * 'After the session' (Journal JD5; every member reads it since JF2, dcm-z9rz.32, user 2026-11-06: players read it, only
+ * the GM edits through `setLoot` / `callMilestone`): the characters with a `levelUp` feed row (not undone) during the
+ * session's live windows (`liveWindows`, so a restarted session counts every window) or after its End until the next
+ * session starts (`withAfterGrace`, dcm-m6l4), the milestone stamp and the loot.
  * Each window reads at most MAX_TALLY_ROWS feed rows by `by_campaign_at`. null for an id that is not one of this
  * campaign's sessions (a stale `?s=`), as `get` does. A planned session that never started has no windows: no level-ups.
+ * Access is `permissionFor`'s `view` (the wrapper): a player (or a view-grant caller) reads live and played sessions only,
+ * like the log (`journalLog.list`); a planned one is SESSION_NOT_FOUND to them. Players count only public feed rows.
  */
-export const after = gmQuery({
+export const after = campaignQuery({
+  need: "view",
+  enough: "owner",
   args: { sessionId: v.string() },
   returns: v.union(afterValidator, v.null()),
   handler: async (ctx, { sessionId }) => {
+    const isGm = ctx.permission === "owner";
     const id = ctx.db.normalizeId("sessions", sessionId);
     const session = id === null ? null : await ctx.db.get("sessions", id);
     if (session === null || session.campaignId !== ctx.campaign._id) return null;
-    const [windows, prep] = await Promise.all([liveWindows(ctx, session), sessionPrepOf(ctx, session._id)]);
+    if (!isGm && session.status === "planned") throw appError("SESSION_NOT_FOUND");
+    const [live, prep] = await Promise.all([liveWindows(ctx, session), sessionPrepOf(ctx, session._id)]);
+    const windows = await withAfterGrace(ctx, live);
     const latest = new Map<Id<"characters">, SessionAfter["levelUps"][number]>();
     let truncated = false;
     for (const w of windows) {
       const rows = await ctx.db
         .query("actionLog")
-        .withIndex("by_campaign_at", (q) => q.eq("campaignId", ctx.campaign._id).gte("at", w.from).lte("at", w.to))
+        .withIndex("by_campaign_at", (q) => upTo(q.eq("campaignId", ctx.campaign._id).gte("at", w.from), w))
         .take(MAX_TALLY_ROWS + 1);
       if (rows.length > MAX_TALLY_ROWS) truncated = true;
       for (const row of rows.slice(0, MAX_TALLY_ROWS)) {
-        if (row.kind !== "levelUp" || row.undoneAt !== undefined || row.characterId === undefined || !inWindows(windows, row.at)) continue;
+        // Each window's read range already bounds the row; the open window has no upper bound (see `upTo`).
+        if (row.kind !== "levelUp" || row.undoneAt !== undefined || row.characterId === undefined) continue;
+        if (!isGm && row.visibility !== "public") continue;
         const known = latest.get(row.characterId);
         if (known === undefined || known.at <= row.at) latest.set(row.characterId, { characterId: row.characterId, summary: row.summary, at: row.at });
       }

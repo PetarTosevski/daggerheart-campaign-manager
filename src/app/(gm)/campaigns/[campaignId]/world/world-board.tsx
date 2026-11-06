@@ -5,6 +5,7 @@ import { Eye, EyeOff } from "lucide-react";
 
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { designAsset } from "@/lib/design-assets";
 import {
   METHOD_LABELS,
@@ -15,17 +16,21 @@ import {
   formatDistance,
   formatLeg,
   formatTravelTime,
+  heightKmOf,
   mapScale,
   routeWarning,
   scaleBar,
   trailLeg,
   trailTotal,
   travelHours,
+  widthKmFromInput,
   type Point,
   type TravelMethod,
   type TravelPace,
 } from "@/lib/domain/travel";
 import { hexDistance, hexToPixel, pixelToHex, type Hex } from "@/lib/world/hex";
+import { pickMarker } from "@/lib/world/hex-tokens";
+import { printedHexGrid } from "@/lib/world/printed-grids";
 import { HORIZON_FRAME, SANCTUARY_TYPE, WORLD_MAPS, mapImageSize, playerMapView, travelRules, type MapState, type MapToken, type PlayerMapState } from "@/lib/world/map-state";
 import {
   BRUSHES,
@@ -102,7 +107,8 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
   const [showGrid, setShowGrid] = useState(false);
   const [settingOrigin, setSettingOrigin] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
-  const [scaleDraft, setScaleDraft] = useState<string | null>(null);
+  // The GM's Width / Height fields are linked through the image's aspect ratio; only the width is stored (scaleKm).
+  const [scaleDraft, setScaleDraft] = useState<ScaleDraft>(null);
 
   const viewport = useRef<HTMLDivElement>(null);
   const section = useRef<HTMLElement>(null);
@@ -287,7 +293,9 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
   function onMapClick(p: Point) {
     if (settingOrigin && crawl) {
       setSettingOrigin(false);
-      void actions.setHexGrid({ ...crawl.grid, originX: Math.round((p.x / 100) * image.width * 10) / 10, originY: Math.round((p.y / 100) * image.height * 10) / 10 });
+      const originX = Math.round((p.x / 100) * image.width * 10) / 10;
+      const originY = Math.round((p.y / 100) * image.height * 10) / 10;
+      void actions.calibrateHexGrid({ field: "originX", value: originX }).then((ok) => ok !== undefined && actions.calibrateHexGrid({ field: "originY", value: originY }));
       return;
     }
     if (measuring) {
@@ -425,26 +433,18 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
             {editable ? (
-              <label className="flex items-center gap-1.5 text-[12px] text-[#9fb2b6]">
-                Map width
-                <input
-                  className="fld w-20"
-                  style={{ minHeight: 36, padding: "4px 8px" }}
-                  type="number"
-                  min={10}
-                  step={10}
-                  value={scaleDraft ?? String(state.scaleKm)}
-                  onChange={(e) => setScaleDraft(e.target.value)}
-                  onBlur={() => {
-                    if (scaleDraft !== null) void actions.setOptions({ scaleKm: Math.max(10, Number(scaleDraft) || 400) });
-                    setScaleDraft(null);
-                  }}
-                  aria-label="Map width in kilometres"
-                />
-                km
-              </label>
+              <MapSizeFields
+                widthKm={state.scaleKm}
+                imageWidth={image.width}
+                imageHeight={image.height}
+                draft={scaleDraft}
+                onDraft={setScaleDraft}
+                onCommit={(widthKm) => void actions.setOptions({ scaleKm: widthKm })}
+              />
             ) : (
-              <span className="text-[12px] text-[#9fb2b6]">Map width {state.scaleKm} km</span>
+              <span className="text-[12px] text-[#9fb2b6]">
+                Map {state.scaleKm} × {heightKmOf(state.scaleKm, image.width, image.height)} km
+              </span>
             )}
             {!measuring && !horizon && editable ? (
               <>
@@ -481,49 +481,49 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
               </>
             ) : null}
             {!horizon ? (
-              <button type="button" className="zbtn zw tip" data-tip="Terrain overlay · T" aria-pressed={showTerrain} onClick={() => setShowTerrain((s) => !s)}>
+              <BrandButton variant="tool" className="tip" data-tip="Terrain overlay · T" aria-pressed={showTerrain} onClick={() => setShowTerrain((s) => !s)}>
                 🗺 Terrain
-              </button>
+              </BrandButton>
             ) : (
-              <button type="button" className="zbtn zw tip" data-tip="Show the whole hex grid" aria-pressed={showGrid} onClick={() => setShowGrid((s) => !s)}>
+              <BrandButton variant="tool" className="tip" data-tip="Show the whole hex grid" aria-pressed={showGrid} onClick={() => setShowGrid((s) => !s)}>
                 ⬡ Hex grid
-              </button>
+              </BrandButton>
             )}
             {editable && !horizon ? (
-              <button type="button" className="zbtn zw tip" data-tip="Paint terrain · P" aria-pressed={painting} onClick={togglePaint}>
+              <BrandButton variant="tool" className="tip" data-tip="Paint terrain · P" aria-pressed={painting} onClick={togglePaint}>
                 🖌 Paint
-              </button>
+              </BrandButton>
             ) : null}
             {isGm ? (
-              <button type="button" className="zbtn zw tip" data-tip="Player view · V" aria-pressed={preview} onClick={togglePlayer}>
+              <BrandButton variant="tool" className="tip" data-tip="Player view · V" aria-pressed={preview} onClick={togglePlayer}>
                 {preview ? "✎ GM view" : "👁 Player view"}
-              </button>
+              </BrandButton>
             ) : null}
             {!horizon ? (
-              <button type="button" className="zbtn zw tip" data-tip="Measure / plan a route · M" aria-pressed={measuring} onClick={toggleMeasure}>
+              <BrandButton variant="tool" className="tip" data-tip="Measure / plan a route · M" aria-pressed={measuring} onClick={toggleMeasure}>
                 📏 Measure
-              </button>
+              </BrandButton>
             ) : null}
-            <button type="button" className="zbtn tip" data-tip="Zoom out · −" aria-label="Zoom out" onClick={() => panZoom.zoomAt(panZoom.view.z / 1.25)}>
+            <BrandButton variant="tool" icon className="tip" data-tip="Zoom out · −" aria-label="Zoom out" onClick={() => panZoom.zoomAt(panZoom.view.z / 1.25)}>
               −
-            </button>
+            </BrandButton>
             <span className="min-w-12 text-center text-[13px] text-[#9fb2b6]" aria-label="Zoom level">
               {Math.round(panZoom.view.z * 100)}%
             </span>
-            <button type="button" className="zbtn tip" data-tip="Zoom in · +" aria-label="Zoom in" onClick={() => panZoom.zoomAt(panZoom.view.z * 1.25)}>
+            <BrandButton variant="tool" icon className="tip" data-tip="Zoom in · +" aria-label="Zoom in" onClick={() => panZoom.zoomAt(panZoom.view.z * 1.25)}>
               +
-            </button>
-            <button type="button" className="zbtn zw tip" data-tip="Fit the whole map · 0" aria-label="Fit map" onClick={panZoom.fit}>
+            </BrandButton>
+            <BrandButton variant="tool" className="tip" data-tip="Fit the whole map · 0" aria-label="Fit map" onClick={panZoom.fit}>
               Fit
-            </button>
-            <button type="button" className="zbtn zw tip gap-1.5" data-tip="Hide / show all tokens · H" aria-pressed={hideToks} onClick={() => setHideToks((s) => !s)}>
+            </BrandButton>
+            <BrandButton variant="tool" className="tip" data-tip="Hide / show all tokens · H" aria-pressed={hideToks} onClick={() => setHideToks((s) => !s)}>
               {/* Open eye: tokens are hidden, click to show them; closed eye: click to hide them all. */}
               {hideToks ? <Eye className="size-4" aria-hidden="true" /> : <EyeOff className="size-4" aria-hidden="true" />}
               {hideToks ? "Show tokens" : "Hide all tokens"}
-            </button>
-            <button type="button" className="zbtn zw tip" aria-pressed={fs} aria-label={fs ? "Exit full screen (Esc)" : "Full screen"} data-tip={`${fs ? "Exit full screen (Esc)" : "Full screen"} · F`} onClick={toggleFs}>
+            </BrandButton>
+            <BrandButton variant="tool" className="tip" aria-pressed={fs} aria-label={fs ? "Exit full screen (Esc)" : "Full screen"} data-tip={`${fs ? "Exit full screen (Esc)" : "Full screen"} · F`} onClick={toggleFs}>
               {fs ? "✕ Exit full screen" : "⛶ Full screen"}
-            </button>
+            </BrandButton>
           </div>
         </div>
 
@@ -547,30 +547,31 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
               Brush
             </span>
             {BRUSH_SIZES.map((z) => (
-              <button
+              <BrandButton
                 key={z.size}
-                type="button"
-                className="zbtn tip"
+                variant="tool"
+                size="sm"
+                icon
+                className="tip"
                 aria-pressed={bsize === z.size}
                 aria-label={`Brush size ${z.label}`}
                 data-tip="Brush size · [ smaller  ] bigger"
                 onClick={() => setBsize(z.size)}
-                style={{ width: 36, minWidth: 36, height: 36, fontSize: 13 }}
               >
                 {z.label}
-              </button>
+              </BrandButton>
             ))}
             <span className="flex-1" />
-            <button type="button" className="zbtn zw tip" onClick={undoPaint} disabled={!undoCount} data-tip="Undo last stroke · Ctrl+Z">
+            <BrandButton variant="cancel" className="tip" onClick={undoPaint} disabled={!undoCount} data-tip="Undo last stroke · Ctrl+Z">
               ↶ Undo stroke{undoCount > 1 ? ` (${undoCount})` : ""}
-            </button>
+            </BrandButton>
             <span className="text-[11px] text-[#7f9297]">1–9 terrain · [ ] size · Ctrl+Z undo</span>
-            <button type="button" className="zbtn zw" onClick={resetTerrain}>
+            <BrandButton variant="neutral" onClick={resetTerrain}>
               Reset to suggested
-            </button>
-            <button type="button" className="zbtn zw zgold" onClick={togglePaint}>
+            </BrandButton>
+            <BrandButton variant="cancel" onClick={togglePaint}>
               Done
-            </button>
+            </BrandButton>
           </div>
         ) : null}
 
@@ -585,9 +586,9 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
                   ["free", "Freehand", "Press and drag to draw a path"],
                 ] as const
               ).map(([k, label, tip]) => (
-                <button key={k} type="button" className="mseg tip" aria-pressed={mmode === k} data-tip={tip} onClick={() => (setMmode(k), setMpts([]))}>
+                <BrandButton key={k} variant="neutral" size="sm" className="tip" aria-pressed={mmode === k} data-tip={tip} onClick={() => (setMmode(k), setMpts([]))}>
                   {label}
-                </button>
+                </BrandButton>
               ))}
               <span className="mx-1 h-6 w-px bg-[#2a3a40]" />
               <label className="flex items-center gap-1.5 text-[12px] text-[#9fb2b6]">
@@ -637,29 +638,29 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
                   aria-label="Travel hours per day"
                 />
               </label>
-              <button type="button" className="mseg" disabled={!editable} onClick={() => actions.setOptions({ units: units === "mi" ? "km" : "mi" })} title="Switch units">
+              <BrandButton variant="neutral" size="sm" disabled={!editable} onClick={() => actions.setOptions({ units: units === "mi" ? "km" : "mi" })} title="Switch units">
                 {units === "mi" ? "Miles" : "Kilometres"}
-              </button>
+              </BrandButton>
               {editable ? (
-                <button type="button" className="mseg" aria-haspopup="dialog" onClick={() => setRulesOpen(true)}>
+                <BrandButton variant="neutral" size="sm" aria-haspopup="dialog" onClick={() => setRulesOpen(true)}>
                   Speeds…
-                </button>
+                </BrandButton>
               ) : null}
               <span className="flex-1" />
-              <button type="button" className="mseg" disabled={!mpts.length} onClick={() => setMpts(mmode === "free" ? [] : mpts.slice(0, -1))}>
+              <BrandButton variant="cancel" size="sm" disabled={!mpts.length} onClick={() => setMpts(mmode === "free" ? [] : mpts.slice(0, -1))}>
                 Undo point
-              </button>
-              <button type="button" className="mseg" disabled={!mpts.length} onClick={() => setMpts([])}>
+              </BrandButton>
+              <BrandButton variant="neutral" size="sm" disabled={!mpts.length} onClick={() => setMpts([])}>
                 Clear
-              </button>
+              </BrandButton>
               {editable ? (
-                <button type="button" className="mseg tip" disabled={mpts.length < 2} data-tip="Move the party token along this route" onClick={sendPartyAlongRoute}>
+                <BrandButton variant="confirm" size="sm" className="tip" disabled={mpts.length < 2} data-tip="Move the party token along this route" onClick={sendPartyAlongRoute}>
                   Move party along route
-                </button>
+                </BrandButton>
               ) : null}
-              <button type="button" className="zbtn zw zgold" style={{ height: 34 }} onClick={toggleMeasure}>
+              <BrandButton variant="cancel" size="sm" onClick={toggleMeasure}>
                 Done
-              </button>
+              </BrandButton>
             </div>
             <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2">
               <span role="status" data-testid="route-total" className="font-display text-[18px] font-bold text-[#f4efe6]">
@@ -723,7 +724,13 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
           scaleBar={scaleBar(state.scaleKm)}
           onMapClick={onMapClick}
           onStroke={onStroke}
-          onSelectToken={(id) => editable && (setSelId(id), setSelHex(null))}
+          onPickMarker={(id, at) => {
+            // A hex marker covers its hex: the click selects the hex (Travel here) and the marker together (WH2).
+            const pick = editable ? pickMarker(id, !!crawl) : null;
+            if (!pick) return;
+            setSelHex(pick.hex ? toHex(at) : null);
+            setSelId(pick.token);
+          }}
           onMoveToken={(id, p) => {
             const at = snap(p);
             void actions.updateToken(id, { x: at.x, y: at.y });
@@ -761,6 +768,8 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
                 settingOrigin={settingOrigin}
                 onSettingOrigin={(on) => (setSettingOrigin(on), on && setShowGrid(true))}
                 encounterNote={(h) => unusedEncounters(gmCrawlView, crawl, h)}
+                uploaded={!!state.customMap}
+                printed={state.customMap ? null : printedHexGrid(data.frameId)}
               />
               {gmCrawlView ? (
                 <CrawlRegionsPanel campaignId={campaignId} crawl={crawl} view={gmCrawlView} tokens={state.tokens} selected={selHex} actions={actions} />
@@ -771,5 +780,62 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
       ) : null}
       {editable ? <TravelRulesDialog open={rulesOpen} onClose={() => setRulesOpen(false)} rules={rules} actions={actions} /> : null}
     </main>
+  );
+}
+
+type ScaleDraft = { side: "width" | "height"; text: string } | null;
+
+/** The GM's linked map size: typing either side updates the other from the image's shape; saved on blur. */
+function MapSizeFields({
+  widthKm,
+  imageWidth,
+  imageHeight,
+  draft,
+  onDraft,
+  onCommit,
+}: {
+  widthKm: number;
+  imageWidth: number;
+  imageHeight: number;
+  draft: ScaleDraft;
+  onDraft: (d: ScaleDraft) => void;
+  onCommit: (widthKm: number) => void;
+}) {
+  const typed = draft ? widthKmFromInput(draft.side, Number(draft.text), imageWidth, imageHeight) : null;
+  const shownWidth = typed ?? widthKm;
+  const value = (side: "width" | "height") =>
+    draft?.side === side ? draft.text : String(side === "width" ? shownWidth : heightKmOf(shownWidth, imageWidth, imageHeight));
+  const commit = () => {
+    if (typed !== null && typed !== widthKm) onCommit(typed);
+    onDraft(null);
+  };
+  const field = (side: "width" | "height", label: string) => (
+    <label className="flex items-center gap-1.5 text-[12px] text-[#9fb2b6]">
+      {label}
+      <input
+        className="fld w-20"
+        style={{ minHeight: 36, padding: "4px 8px" }}
+        type="number"
+        min={1}
+        step={10}
+        value={value(side)}
+        onChange={(e) => onDraft({ side, text: e.target.value })}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+        }}
+        aria-label={`Map ${side} in kilometres`}
+      />
+    </label>
+  );
+  return (
+    <span className="flex items-center gap-1.5">
+      {field("width", "Map width")}
+      <span aria-hidden="true" className="text-[12px] text-[#9fb2b6]">
+        ×
+      </span>
+      {field("height", "height")}
+      <span className="text-[12px] text-[#9fb2b6]">km</span>
+    </span>
   );
 }

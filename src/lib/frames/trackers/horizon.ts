@@ -1,6 +1,6 @@
 // Journey to Horizon tracker rules (Hope & Fear pp.177, 186): the Doom Track
 // and the Soul Echoes count. Pure: shared by Convex and the dashboard.
-import { z } from "zod";
+import * as z from "../../zod";
 
 import { RuleError } from "../../errors/app-error";
 import { DOOM_BOXES } from "../doom-track";

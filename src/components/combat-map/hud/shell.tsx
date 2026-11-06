@@ -26,6 +26,7 @@ import { HudAreaPick, HudAreaPickLayer } from "./pick-area";
 import { HudQueue } from "./queue";
 import { HudResolutions } from "./queue/resolutions";
 import { HudResult } from "./result";
+import { HudAllyPicks } from "./ally-picks";
 import { HudScene } from "./scene";
 import { HudSheet } from "./sheet";
 import { HudSpotlight } from "./spotlight";
@@ -225,6 +226,9 @@ function HudFrame({ state, loading, renderLayers, tools }: HudShellProps) {
           </PartBoundary>
           <PartBoundary label="The result">
             <HudResult state={state} />
+          </PartBoundary>
+          <PartBoundary label="The ally picks">
+            <HudAllyPicks state={state} />
           </PartBoundary>
           <PartBoundary label="The hit window">
             <HudHit state={state} />

@@ -13,6 +13,8 @@
 // spotlightStatus(2, spotlightLimit(null));   // { count: 2, limit: 1, over: true, label: "Spotlight 2/1" }
 // ```
 
+import type { ModeOf } from "../../rules/registry";
+
 /** Spotlights per GM turn: 1, X for Relentless (X), or "X" when the block makes X variable. */
 export function spotlightLimit(relentless: number | "X" | null): number | "X" {
   return relentless ?? 1;
@@ -42,7 +44,15 @@ export function turnSpotlights(instances: readonly { spotlights: number; spotlig
  * CB p.153: "You can spend a Fear to make an additional GM move, shifting the spotlight to another adversary." The first
  * spotlight of a GM turn is free; every further one spends 1 Fear (user 2026-10-18: "make each additional spotlight
  * automatically take away fear").
+ *
+ * F3 Manual (plan rule-switches, tracer RDM): never; the spotlight is still counted, and `extraSpotlight` tells the
+ * caller to warn the GM ("Extra spotlight: spend 1 Fear?").
  */
-export function spotlightCostsFear(spotlightsSoFar: number): boolean {
+export function spotlightCostsFear(spotlightsSoFar: number, mode: ModeOf<"extraSpotlightFear"> = "book"): boolean {
+  return mode !== "manual" && extraSpotlight(spotlightsSoFar);
+}
+
+/** Whether this spotlight is an additional one in the GM turn (CB p.153), whatever the F3 mode. */
+export function extraSpotlight(spotlightsSoFar: number): boolean {
   return spotlightsSoFar >= 1;
 }

@@ -123,7 +123,7 @@ test("a player: PCs with arcs and Hope, adversaries without a ring or a number, 
     const board = player.getByRole("region", { name: "Battle map" });
 
     // Your token: gold, arcs, Hope chip.
-    const moss = board.getByRole("button", { name: new RegExp(`^Open Moss’s sheet \\(your character\\), 2 of ${mossRow.hp.max} Hit Points marked`) });
+    const moss = board.getByRole("button", { name: new RegExp(`^Moss \\(your character\\): actions, 2 of ${mossRow.hp.max} Hit Points marked`) });
     await expect(moss).toBeVisible();
     await expect(moss.getByTestId("hud-token-face")).toHaveAttribute("data-tone", "you");
     await expect(moss.locator("svg.tk-arc")).toHaveCount(1);
@@ -150,13 +150,16 @@ test("a player: PCs with arcs and Hope, adversaries without a ring or a number, 
 
     // Live: the GM marks another Hit Point on Moss; the player's ring and name follow.
     await client.mutation(api.characters.adjustResource, { characterId: mossRow.characterId, resource: "hp", delta: 1 });
-    const moss3 = board.getByRole("button", { name: new RegExp(`^Open Moss’s sheet \\(your character\\), 3 of ${mossRow.hp.max} Hit Points marked`) });
+    const moss3 = board.getByRole("button", { name: new RegExp(`^Moss \\(your character\\): actions, 3 of ${mossRow.hp.max} Hit Points marked`) });
     await expect(moss3).toBeVisible();
     await expect(moss3.locator("path.a-hp")).toHaveAttribute("stroke-dasharray", `${Math.round((100 * (mossRow.hp.max - 3)) / mossRow.hp.max)} 100`);
 
     // A click opens the ally's (view-only) sheet; an adversary only selects / targets.
     await brannoc.click();
     await expect(hud).toHaveClass(new RegExp(`sh-${brannocRow.characterId}`));
+    // The map makes room over 350 ms; mid-move the party banners can stand over the Lieutenant, and Playwright's retry
+    // then scrolls the map (and Moss under the hand). Click once the map has settled.
+    await expect.poll(() => board.getByTestId("combat-viewport").evaluate((el) => getComputedStyle(el).transform)).toBe("matrix(0.94, 0, 0, 0.94, -125, 0)");
     await lt.click();
     await expect(hud).toHaveClass(new RegExp(`sh-${brannocRow.characterId}`));
     await expect(board.getByRole("button", { name: `${s.enemies.lieutenant.name}, Enemy, Vulnerable, your target` })).toHaveAttribute("aria-pressed", "true");

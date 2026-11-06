@@ -1,6 +1,6 @@
 // Castle High: each student's skyshard artifact (Hope & Fear p.125, "The Skyshards").
 
-import { z } from "zod";
+import * as z from "../../zod";
 
 export const castleHighStateSchema = z.object({
   skyshard: z.object({ name: z.string().trim().max(80), description: z.string().max(2000) }),

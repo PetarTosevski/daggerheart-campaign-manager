@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import { DEFAULT_TRAVEL_RULES, METHOD_LABELS, SPEED_TERRAINS, SPEED_TERRAIN_CODE, TRAVEL_METHODS, tableSpeed, type SpeedTable, type SpeedTerrain, type TravelMethod, type TravelRules } from "@/lib/domain/travel";
 import { TERRAIN_NAMES } from "@/lib/world/terrain";
@@ -100,12 +101,12 @@ function RulesForm({ rules, actions, onClose }: { rules: TravelRules; actions: M
         </p>
       ) : null}
       <div className="flex flex-wrap justify-end gap-2">
-        <button type="button" className="mseg" onClick={() => setDraft(DEFAULT_TRAVEL_RULES)}>
+        <BrandButton variant="neutral" onClick={() => setDraft(DEFAULT_TRAVEL_RULES)}>
           Restore the board&rsquo;s speeds
-        </button>
-        <button type="submit" className="zbtn zw zgold">
+        </BrandButton>
+        <BrandButton type="submit" variant="confirm">
           Save speeds
-        </button>
+        </BrandButton>
       </div>
     </form>
   );

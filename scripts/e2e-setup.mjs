@@ -85,6 +85,8 @@ if (!/^JWT_PRIVATE_KEY=/m.test(existing) || !/^JWKS=/m.test(existing)) {
 for (const [name, value] of Object.entries(vars)) {
   convex(["env", "set"], [name, value]);
 }
+// The shared test GM keeps every campaign each run creates: lift the campaign caps (AD5a) on this backend only.
+convex(["run"], ["e2e:raiseCampaignCaps"]);
 // The mini-book as the core book (re-running replaces its chunks).
 execFileSync(
   process.execPath,

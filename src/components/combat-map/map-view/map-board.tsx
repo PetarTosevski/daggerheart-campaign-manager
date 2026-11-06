@@ -5,6 +5,7 @@ import "./map-view.css";
 import { useMutation, useQuery } from "convex/react";
 import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { FOG_PAD_SQUARES } from "@/lib/domain/combat-map/vision";
 import { errorMessage } from "@/lib/convex-errors";
 
@@ -20,8 +21,8 @@ import { publishBoard, releaseBoard, useMapControls, zoomLabel } from "./control
 import { imageMapSize, type ImageGrid } from "./grid";
 import { GridControls } from "./grid-controls";
 import { MAP_CELL, MapCanvas } from "./map-canvas";
-import { MeasureLayer } from "./measure";
-import { useMapZoom, ZOOM_STEP } from "./use-map-zoom";
+import { MeasureLayer, useDefinedRanges } from "./measure";
+import { cssScale, useMapZoom, ZOOM_STEP } from "./use-map-zoom";
 
 /**
  * The board's own chrome: `full` (default) draws its toolbar (name, LIVE / Make live, Areas, Names, zoom, Fit) and the
@@ -102,7 +103,8 @@ function EmptyBoard({ player, chrome }: { player: boolean; chrome: MapBoardChrom
   );
 }
 
-type Drag = { kind: "pan" | "grid"; pointerId: number; sx: number; sy: number; left: number; top: number; moved: boolean; button: number };
+/** `scale`: the CSS scale on the viewport at the press (the HUD's make room), so a drag follows the pointer (dcm-bxp.99.32.14). */
+type Drag = { kind: "pan" | "grid"; pointerId: number; sx: number; sy: number; left: number; top: number; moved: boolean; button: number; scale: number };
 
 function LoadedBoard(props: MapBoardChromeProps & { map: CombatMapSummary; layout: CombatMapLayout | undefined }) {
   const { role, mode, map, layout, campaignId, renderLayers, onSelectToken, chrome = "full" } = props;
@@ -116,6 +118,8 @@ function LoadedBoard(props: MapBoardChromeProps & { map: CombatMapSummary; layou
   // Q1: a player's stage is the map padded by FOG_PAD_SQUARES of fog (the pan limits), and Fit frames the squares
   // their character has explored, never the map's real bounds (C8). The GM's Fit frames the map.
   const fitSquares = usePlayerFitArea({ campaignId, role }, map, pad);
+  // Rule switches ODR / ODR2: with Defined Ranges off the measure tool and the area pick's preview circle count nothing.
+  const definedRanges = useDefinedRanges(campaignId);
   const fitArea = fitSquares ? { x: fitSquares.x * MAP_CELL, y: fitSquares.y * MAP_CELL, w: fitSquares.w * MAP_CELL, h: fitSquares.h * MAP_CELL } : null;
   const { zoom, setZoom, fit } = useMapZoom(
     viewportRef,
@@ -192,7 +196,7 @@ function LoadedBoard(props: MapBoardChromeProps & { map: CombatMapSummary; layou
     const vp = viewportRef.current;
     if (!vp) return;
     const kind = editingGrid && shifting && e.button === 0 ? "grid" : "pan";
-    drag.current = { kind, pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, left: vp.scrollLeft, top: vp.scrollTop, moved: false, button: e.button };
+    drag.current = { kind, pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, left: vp.scrollLeft, top: vp.scrollTop, moved: false, button: e.button, scale: cssScale(vp) };
   }
   function onPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
     const d = drag.current;
@@ -208,11 +212,11 @@ function LoadedBoard(props: MapBoardChromeProps & { map: CombatMapSummary; layou
     }
     if (!d.moved) return;
     if (d.kind === "pan") {
-      vp.scrollLeft = d.left - dx;
-      vp.scrollTop = d.top - dy;
+      vp.scrollLeft = d.left - dx / d.scale;
+      vp.scrollTop = d.top - dy / d.scale;
     } else if (grid) {
       // Moving the image under a fixed grid: dragging right moves the image right, so the offset shrinks.
-      setPreview({ ...grid, offsetX: Math.round(grid.offsetX - (dx / step) * grid.cell), offsetY: Math.round(grid.offsetY - (dy / step) * grid.cell) });
+      setPreview({ ...grid, offsetX: Math.round(grid.offsetX - (dx / d.scale / step) * grid.cell), offsetY: Math.round(grid.offsetY - (dy / d.scale / step) * grid.cell) });
     }
   }
   function onPointerUp(e: ReactPointerEvent<HTMLDivElement>) {
@@ -256,38 +260,39 @@ function LoadedBoard(props: MapBoardChromeProps & { map: CombatMapSummary; layou
           <strong className="cm-map-title">{map.name}</strong>
           {map.live && gm ? <span className="cm-live">LIVE</span> : null}
           {gm && !map.live ? (
-            <button
+            <BrandButton
               type="button"
-              className="cm-btn cm-sm"
+              variant="neutral"
+              size="sm"
               onClick={() => {
                 setError(null);
                 setLive({ campaignId, mapId: map._id }).catch((e: unknown) => setError(errorMessage(e)));
               }}
             >
               Make live
-            </button>
+            </BrandButton>
           ) : null}
           <span className="cm-spacer" />
           {gm && mode !== "edit" ? (
-            <button type="button" className="cm-btn cm-sm" aria-pressed={areaTools} onClick={() => setAreaTools(!areaTools)} title="Draw, move, resize or remove effect areas">
+            <BrandButton type="button" variant="tool" size="sm" aria-pressed={areaTools} onClick={() => setAreaTools(!areaTools)} title="Draw, move, resize or remove effect areas">
               Areas
-            </button>
+            </BrandButton>
           ) : null}
-          <button type="button" className="cm-btn cm-sm" aria-pressed={showNames} onClick={() => setShowNames(!showNames)} title="Always show token names (N)">
+          <BrandButton type="button" variant="tool" size="sm" aria-pressed={showNames} onClick={() => setShowNames(!showNames)} title="Always show token names (N)">
             Aa Names
-          </button>
-          <button type="button" className="cm-btn cm-sm" aria-label="Zoom out" onClick={() => setZoom(zoom / ZOOM_STEP)}>
+          </BrandButton>
+          <BrandButton type="button" variant="tool" size="sm" icon aria-label="Zoom out" onClick={() => setZoom(zoom / ZOOM_STEP)}>
             −
-          </button>
+          </BrandButton>
           <span className="cm-muted cm-zoom" aria-live="polite" data-testid="combat-zoom">
             {zoomLabel(zoom)}
           </span>
-          <button type="button" className="cm-btn cm-sm" aria-label="Zoom in" onClick={() => setZoom(zoom * ZOOM_STEP)}>
+          <BrandButton type="button" variant="tool" size="sm" icon aria-label="Zoom in" onClick={() => setZoom(zoom * ZOOM_STEP)}>
             +
-          </button>
-          <button type="button" className="cm-btn cm-sm" onClick={fit}>
+          </BrandButton>
+          <BrandButton type="button" variant="tool" size="sm" onClick={fit}>
             Fit
-          </button>
+          </BrandButton>
         </div>
       ) : null}
       {editingGrid && grid ? (
@@ -317,8 +322,8 @@ function LoadedBoard(props: MapBoardChromeProps & { map: CombatMapSummary; layou
                 <MapCanvas layout={layout} paint={cells.paint} image={image} grid={shownGrid} zoom={zoom} pad={pad} />
                 <AreaOverlay campaignId={campaignId} role={role} mapId={map._id} w={w} h={h} pad={pad} step={step} />
                 {renderLayers({ ...props, map, viewport })}
-                <AreaPickLayer mapId={map._id} viewport={viewport} />
-                {chrome === "none" && tool === "measure" ? <MeasureLayer viewport={viewport} /> : null}
+                <AreaPickLayer mapId={map._id} viewport={viewport} definedRanges={definedRanges} />
+                {chrome === "none" && tool === "measure" ? <MeasureLayer viewport={viewport} definedRanges={definedRanges} /> : null}
               </MapViewContext.Provider>
             ) : (
               <p role="status" className="cm-muted cm-vp-loading">

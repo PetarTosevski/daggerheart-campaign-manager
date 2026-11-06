@@ -6,7 +6,7 @@ import { appError } from "../src/lib/errors/app-error";
 import type { Doc, Id } from "./_generated/dataModel";
 import { readSheet } from "./lib/characterSheet";
 import { campaignMutation, campaignQuery } from "./lib/functions";
-import { assertAction, findPage, notesRole, resolvePage, type NotesCtx, type NotesMutationCtx } from "./lib/notes";
+import { assertAction, findPage, notesRole, ownsGmJournal, readsAsGm, resolvePage, type NotesCtx, type NotesMutationCtx } from "./lib/notes";
 import { cachedDeparted, cachedJournal, pageReadCache, permissionFor } from "./lib/permissions";
 import { MAX_PAGES, pageKindValidator, pageRefValidator, pageVisibilityValidator } from "./lib/validators/notes";
 
@@ -141,6 +141,7 @@ function playerNamer(ctx: NotesCtx): PlayerNames {
  */
 async function eligible(ctx: NotesCtx, ownerId: Id<"users">, userId: Id<"users">): Promise<boolean> {
   if (userId === ownerId) return false;
+  // Identity: the creator has no member row; co-GMs and players are members.
   if (userId === ctx.campaign.ownerId) return true;
   const member = await ctx.db
     .query("campaignMembers")
@@ -184,8 +185,8 @@ export const setVisibility = campaignMutation({
   returns: v.null(),
   handler: async (ctx, { page, visibility }) => {
     const access = await ownPage(ctx, page);
-    // The caller owns the page, so the owner is the GM exactly when the caller is.
-    if (!isAllowedVisibility(access.isGm, visibility)) throw appError("NOTE_VISIBILITY_INVALID");
+    // Identity: the GM's three values only on the creator's journal; a co-GM's page is a member page (all five).
+    if (!isAllowedVisibility(access.ownerIsGm, visibility)) throw appError("NOTE_VISIBILITY_INVALID");
     if (access.page.visibility === visibility) return null;
     if (access.page.visibility === "chosen") {
       for (const row of await recipientRows(ctx, access.page._id)) await ctx.db.delete("journalPageRecipients", row._id);
@@ -255,7 +256,9 @@ export const recipients = campaignQuery({
   handler: async (ctx, { page }): Promise<RecipientRow[]> => {
     const access = await findPage(ctx, page);
     if (access !== null && !access.isOwner) throw appError("NOTE_FORBIDDEN_ACTION");
-    const role = access === null ? await notesRole(ctx) : access.isGm ? "gm" : "player";
+    await notesRole(ctx); // grant-only users have no notes: NOT_FOUND
+    // Identity: the owner (the caller) is the creator, whose page lists the members; any other page lists the GM first.
+    const gmPage = ownsGmJournal(ctx.campaign, ctx.user._id);
     const chosen = new Set<string>();
     if (access !== null && access.page.visibility === "chosen") {
       for (const row of await recipientRows(ctx, access.page._id)) chosen.add(row.userId);
@@ -263,7 +266,7 @@ export const recipients = campaignQuery({
     const players = (await memberRows(ctx)).map((m) => m.userId).filter((id) => id !== ctx.user._id);
     const names = await playerNamer(ctx)(players);
     const rows: RecipientRow[] = [];
-    if (role !== "gm") rows.push({ userId: ctx.campaign.ownerId, name: "GM", isGm: true, chosen: chosen.has(ctx.campaign.ownerId) });
+    if (!gmPage) rows.push({ userId: ctx.campaign.ownerId, name: "GM", isGm: true, chosen: chosen.has(ctx.campaign.ownerId) });
     for (const userId of players) rows.push({ userId, name: names.get(userId) ?? "Player", isGm: false, chosen: chosen.has(userId) });
     return rows;
   },
@@ -283,8 +286,9 @@ export const shared = campaignQuery({
   args: { tab: sharedTabValidator },
   returns: v.array(sharedRowValidator),
   handler: async (ctx, { tab }): Promise<SharedRow[]> => {
-    const role = await notesRole(ctx);
-    const isGm = role === "gm";
+    // Viewer side (Q6 a): a co-GM's Players tab lists the 'gm' pages, like the GM's.
+    const isGm = readsAsGm(await notesRole(ctx));
+    // Identity: the GM tab is the creator's journal.
     const gmId = ctx.campaign.ownerId;
 
     const candidates = new Map<Id<"journalPages">, Doc<"journalPages">>();

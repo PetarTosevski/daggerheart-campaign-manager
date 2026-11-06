@@ -7,9 +7,9 @@ import { expect, test } from "@playwright/test";
 import { api } from "../../../convex/_generated/api";
 import { cardsForDomains, getClass } from "../../../src/lib/srd/index";
 import type { CharacterSheet } from "../../../src/lib/validation/characters";
-import { bardDraft, D10_VIEWPORTS, openSessions, visual } from "./helpers";
+import { bardDraft, D10_VIEWPORTS, endFromJournal, journalReport, openSessions, startFromJournal, visual } from "./helpers";
 
-// Session features F1 visual spec (E2E_VISUAL=1): the live card's Start report (Luckbringer, a Moon Witch's moon die)
+// Session features F1 visual spec (E2E_VISUAL=1): the Journal header's Start report (Luckbringer, a Moon Witch's moon die)
 // and End report (Slayer Dice cleared for Hope, Tide tokens cleared, the moon die ends) at 1440, 1024 and 390, in a
 // Hope & Fear campaign. The party beyond the first PC is appended to the local e2e backend, as in
 // tests/e2e/session-features-boundary.spec.ts. Shots: test-results/visual/SF-F1/{start,end}-<width>.png.
@@ -48,20 +48,17 @@ test("SF-F1 Start and End reports at 1440, 1024 and 390", { tag: "@visual" }, as
     row({ ...base, name: "Mira", ancestry: human, classId: "witch", subclassId: "moon", subclassRank: "mastery" }),
   ]);
 
-  await page.getByRole("button", { name: "+ New session" }).click();
-  await expect(page).toHaveURL(/stage=prep$/);
-  const card = page.getByRole("region", { name: "Live session" });
-  const report = card.getByRole("status").locator("p");
+  // Start and End from the Journal header (JH); the report sits under its actions.
+  const card = page.locator(".jh");
+  const report = journalReport(page).locator("p");
   const { shoot } = visual(page, "SF-F1", D10_VIEWPORTS);
 
-  await card.getByRole("button", { name: "Start session" }).click();
-  await page.getByRole("dialog", { name: "Start the session?" }).getByRole("button", { name: "Start session" }).click();
+  await startFromJournal(page);
   await expect(report.nth(1)).toHaveText("Luckbringer (Pip, Rosa): everyone gains 2 Hope.");
   await expect(report.nth(2)).toHaveText(/^Mira's moon die: [1-6] \((New|Waxing|Full|Waning): .+\)\.$/);
   await shoot(card, "start");
 
-  await card.getByRole("button", { name: "End session" }).click();
-  await page.getByRole("dialog", { name: "End the session?" }).getByRole("button", { name: "End session" }).click();
+  await endFromJournal(page);
   await expect(report.nth(0)).toHaveText("Session ended.");
   await expect(report.nth(1)).toHaveText("Bryn cleared 2 Slayer Dice: +2 Hope.");
   await expect(report.nth(2)).toHaveText("Kai cleared 2 Tide tokens.");

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { gmJoinCode } from "./config/helpers";
 import { signInAsTestGm } from "./fixtures";
 
 const PLAYER = "e2e-player@example.test";
@@ -75,11 +76,7 @@ test("the GM places markers and measures; players see only visible markers", asy
   expect(await view()).toEqual(before);
 
   // A player joins and sees the visible marker only.
-  await page.getByRole("button", { name: "Players", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
-  await dialog.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
 
   const context = await browser.newContext();
   const player = await context.newPage();

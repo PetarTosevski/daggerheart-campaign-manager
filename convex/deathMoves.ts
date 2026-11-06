@@ -7,9 +7,14 @@ import {
   clearAllHpAndStress,
   DEATH_MOVE_LABELS,
   DeathMoveError,
+  deathMovePrompted,
   deathStatus,
   deathSummary,
+  dropUnconscious,
+  manualMoveNote,
+  manualMoveSummary,
   pendingDeathMove,
+  resolvesItself,
   riskItAll,
   splitRiskItAll,
   type AwayReason,
@@ -26,8 +31,10 @@ import { assertOneActive, editable, loadCharacter, readSheet, saveSheet } from "
 import { withoutCondition } from "./lib/conditionMarkers";
 import { rollDie } from "./lib/dice";
 import { keyedUserMutation, userQuery } from "./lib/functions";
+import { fearFor } from "./lib/fearVisibility";
 import { applyRule } from "./lib/mechanics";
 import { atLeast, campaignAccess, permissionFor } from "./lib/permissions";
+import { postRuleNote, ruleMode } from "./lib/ruleModes";
 import { storedCharacterStatusValidator } from "./lib/validators/characters";
 import type { StoredRoll } from "./lib/validators/actionLog";
 
@@ -111,6 +118,14 @@ function notWaiting(): never {
 function dueNow(character: Doc<"characters">, sheet: CharacterSheet): boolean {
   return character.deathMoveSpent !== true && canMakeDeathMove({ status: character.status, hp: sheet.hp, hpMax: sheet.hpMax, conditions: sheet.conditions });
 }
+
+/** X1 Manual (rule switches RX, CB p.106): nobody is asked for a death move; the GM handles it at the table. */
+function promptManual(campaign: Doc<"campaigns">): boolean {
+  return ruleMode(campaign, "deathMovePrompt") === "manual";
+}
+
+/** The groupId prefix of an X2 Manual move made with no group of its own: its GM note joins the move's row. */
+const DEATH_MANUAL_GROUP_PREFIX = "death-manual:";
 
 function lessLethal(campaign: Doc<"campaigns">): boolean {
   return resolveOptions(campaign.frameId, campaign.options).lessLethal;
@@ -200,6 +215,23 @@ async function makeMove(
     return { entryId, status: character.status, pending: { move: "blazeOfGlory" as const }, hopeDie: null, fearDie: null, scarred: false, journeyEnds: false };
   }
 
+  // X2 Manual (rule switches RX, CB p.106): Avoid Death and Risk It All roll nothing; the move is logged, the player
+  // rolls in the dice box and the GM's note says what to roll and what follows. The GM sets scar, death or healing.
+  if (!resolvesItself(move, ruleMode(campaign, "deathMoveResolve"))) {
+    const groupId = opts.groupId ?? `${DEATH_MANUAL_GROUP_PREFIX}${character._id}:${Date.now()}`;
+    if (move === "avoidDeath") {
+      // Avoid Death still drops the character unconscious (no roll decides it), so the move is no longer due.
+      await saveSheet(ctx, character._id, withoutCondition(dropUnconscious(sheet), "cloaked"));
+    } else {
+      // Risk It All changes nothing yet: the move is spent until the last Hit Point is marked again (LL1's flag).
+      await ctx.db.patch("characters", character._id, { deathMoveSpent: true, updatedAt: Date.now() });
+    }
+    const entryId = await logAction(ctx, { ...base, groupId, summary: manualMoveSummary(name, move) });
+    // No characterId: the note must not become the character's latest row (the sheet's Undo reads that row).
+    await postRuleNote(ctx, campaign, { ruleId: "deathMoveResolve", summary: manualMoveNote(name, move, sheet.level, lessLethal(campaign)), groupId, actorId: ctx.user._id });
+    return { entryId, status: character.status, pending: null, hopeDie: null, fearDie: null, scarred: false, journeyEnds: false };
+  }
+
   if (move === "avoidDeath") {
     const hopeDie = rollDie(12);
     const result = avoidDeath(sheet, hopeDie);
@@ -286,6 +318,7 @@ export const choose = keyedUserMutation({
   handler: async (ctx, args) =>
     ctx.once("death_choose", args, async () => {
       const { campaign, character, sheet } = await editable(ctx, ctx.user, args.characterId);
+      if (promptManual(campaign)) rule("This campaign makes death moves at the table (House rules).");
       const { pending, request } = await deathState(ctx, character);
       if (!dueNow(character, sheet)) {
         rule("A death move is made by an active character whose last Hit Point is marked.");
@@ -498,11 +531,13 @@ export const settleAway = keyedUserMutation({
  */
 export const undo = keyedUserMutation({
   args: { entryId: v.id("actionLog") },
-  returns: v.object({ undone: v.array(v.id("actionLog")), fearReverted: v.number(), status: storedCharacterStatusValidator }),
+  /** `fearReverted` is absent for a player while "Players see the GM's Fear" is off (dcm-jh6d.62). */
+  returns: v.object({ undone: v.array(v.id("actionLog")), fearReverted: v.optional(v.number()), status: storedCharacterStatusValidator }),
   handler: async (ctx, { entryId }) =>
     ctx.once("death_undo", { entryId }, async () => {
       const row = await ctx.db.get("actionLog", entryId);
-      if (row === null || (await campaignAccess(ctx, ctx.user, row.campaignId)) === null) throw appError("NOT_FOUND");
+      const access = row === null ? null : await campaignAccess(ctx, ctx.user, row.campaignId, "owner");
+      if (row === null || access === null) throw appError("NOT_FOUND");
       if (row.kind !== "death" || row.characterId === undefined) rule("Only a death move is undone here.");
       const character = await ctx.db.get("characters", row.characterId);
       if (character === null) throw appError("NOT_FOUND");
@@ -512,13 +547,15 @@ export const undo = keyedUserMutation({
       if (character.deathRequest !== undefined && result.undone.includes(character.deathRequest.entryId)) {
         await ctx.db.patch("characters", character._id, { deathRequest: undefined });
       }
+      // RX: an undone death move is due again (X2 Manual's Risk It All marked it spent).
+      if (character.deathMoveSpent === true) await ctx.db.patch("characters", character._id, { deathMoveSpent: undefined });
       const after = await ctx.db.get("characters", character._id);
       // Back in play only while the player has no other active character (X6); the throw rolls the undo back.
       if (after?.status === "active" && character.status !== "active") {
         const campaign = await ctx.db.get("campaigns", character.campaignId);
         if (campaign !== null) await assertOneActive(ctx, campaign, character.ownerId, character._id);
       }
-      return { ...result, status: after?.status ?? character.status };
+      return fearFor(ctx, ctx.user, access.campaign, { ...result, status: after?.status ?? character.status }, "fearReverted", access.permission);
     }),
 });
 
@@ -546,7 +583,8 @@ export const state = userQuery({
     const { campaign, character } = await loadCharacter(ctx, ctx.user, characterId, "view");
     const sheet = readSheet(character.sheet);
     const { latest, pending, request } = await deathState(ctx, character);
-    const due = dueNow(character, sheet);
+    // X1 Manual: nobody is asked (a move under way or waiting for the GM still shows).
+    const due = dueNow(character, sheet) && deathMovePrompted({ status: character.status, hp: sheet.hp, hpMax: sheet.hpMax, conditions: sheet.conditions }, ruleMode(campaign, "deathMovePrompt"));
     const undoable = latest !== null && latest.kind === "death" && (await viewerCanUndo(ctx, latest, ctx.user._id, await isGmOf(ctx, campaign)));
     return {
       awaitingMove: due && pending === null && request === null,

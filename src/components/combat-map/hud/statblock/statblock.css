@@ -445,3 +445,10 @@
 .hud-tg-gm.hud-tg-los .hud-tg-l {
   color: var(--hud-no-sight);
 }
+
+/* dcm-bxp.99.32.1: a condition's stored provenance under its name ("From Vicious Entangle (Moss) - until it breaks free"). */
+.hsb-cd-src {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.85;
+}

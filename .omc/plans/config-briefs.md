@@ -1,14 +1,45 @@
-# Config: tracer briefs (2026-11-03)
+# Config: tracer briefs (2026-11-03, revised 2026-11-05)
 
-Plan: `.omc/plans/config.yaml` (8 waves, 47 tracers; `node scripts/plan-check.mjs .omc/plans/config.yaml` OK, no file
+## Build order for tonight
+
+Buildable without any further answer from the user, in dependency order. **Start only after the Journal plan's JX2 is
+merged** (JX1 / JX2 own `campaign-shell.tsx`, the nav and `src/components/journal/header/**`). At most 5 tracers at
+once; the orchestrator merges each in this order and runs codegen after every Convex change.
+
+1. **Wave 1:** S0, S1
+2. **Wave 2:** G1 (L, start first), S2, P1, P2
+3. **Wave 3:** G2, R1, R2, R3, L1, U1, U2, U3, U4, U5, U6a, U6b, U6c, U6d, U6f, then U6e (needs U6c)
+4. **Wave 4:** S3, JO1, JO2, JO3, then SX last
+
+Not tonight: PR1 and U3p (need the OK for `@convex-dev/presence`, N5), IMP (N3). Until IMP lands, the old browser values
+stay in the browser untouched and the account shows defaults; IMP moves them later, so nothing is lost. All of Part B
+waits for Part A (user's build order).
+
+## Who is waiting on what
+
+| Tracer | Waiting for |
+|---|---|
+| PR1, U3p | N5: OK to add `@convex-dev/presence` (CH11: no new backend library without approval) |
+| IMP | N3: import automatically or by a button |
+| PDF0, AD8 | N5 + N8: OK to add a PDF library, and which one |
+| LB1, AU8 | N5, N6, N7 (and PDF0) |
+| AD12, AU3 | N10 (AU3 also needs AD8) |
+| AD13, AU7, AU1 | N1: what the owner's read-only view shows |
+| AD14, AU9 | N11 and a design for suspend / delete (Q28): confirm before build |
+| AX | everything above except AD14 / AU9 |
+| AU4, AF1 | N2 only changes text; they build on N2's recommended answer |
+
+Part B tracers that need no further answer (after Part A): AD0, AD1, AD2, AD3, AD4, AD5a, AD5b, AD6, AD7, AD9, AD10,
+AD11, AU2, AU4, AU5, AU6, AF1.
+
+Plan: `.omc/plans/config.yaml` (9 waves, 59 tracers; `node scripts/plan-check.mjs .omc/plans/config.yaml` OK, no file
 owned twice in a wave). Designs: `reference/designs/config/Settings.dc.html` (campaign settings = gear, Preferences =
 avatar) and `reference/designs/config/Admin.dc.html` (App admin). Epic: bead dcm-jh6d (children dcm-jh6d.1 co-GM,
 dcm-cd8 creation cap, dcm-bxp.134 rule switches; dcm-bxp.134 is **not** in this plan).
 
-**Status:** every tracer follows the recommended default of the open questions at the end of this file. A tracer with
-`blocked_on: Qn` changes a rule or needs an answer: check the user's answer first and rewrite its acceptance if it
-differs. R4 (clock per scene) does not start before Q4 is answered. AD0 does not start before Q16 is answered (owner
-identity is security-critical).
+**Status (2026-11-05):** Q1-Q32 are answered ("User answers 2026-11-04") and every tracer's acceptance follows the
+answers; "Revision 2026-11-05" below lists what changed. `blocked_on: Nn` points at a new question in "Questions
+2026-11-05"; `needs:` says what still stops a tracer (a dependency OK, a decision or a design). R4 is dropped (Q4 d).
 
 ## User decisions (binding, from the epic notes and the planner brief)
 
@@ -32,26 +63,31 @@ identity is security-critical).
 
 | Wave | Part | Tracers | Start |
 |---|---|---|---|
-| 1 | A | S0, S1 | at once, after the Journal plan is merged |
-| 2 | A | G1, S2, P1, PR1 | when S0 is merged (G1 is L: start it first) |
-| 3 | A | batch A server: G2, R1, R2, R3, L1 (R4 only after Q4) | after G1 / S0 as listed |
-| 3 | A | batch B UI: U1, U2, U3, U4, U5, U6a, U6b, U6c, U6d | when S1 and each one's server tracer are merged |
-| 4 | A | S3, JO1, JO2, JO3, then SX last | JO* need the Journal plan; SX after every Part A tracer |
-| 5 | B | AD0, AD1 | after Part A, and after Q16 |
-| 6 | B | AD2, AD3, AD4, AD5a, AD5b, AD6, AD8, AD9, AD10, AD11 | when AD0 is merged (at most 5 at once; AD10 first: it closes the read-only gap) |
-| 7 | B | AD7, AU1-AU6, AF1 | when their server tracers are merged |
-| 8 | B | AX | everything else merged, full e2e green |
+| 1 | A | S0, S1 | after Journal JX2 is merged |
+| 2 | A | G1, S2, P1, P2, PR1 (PR1 after N5) | when S0 is merged (G1 is L: start it first) |
+| 3 | A | server: G2, R1, R2, R3, L1 | after G1 / S0 / S1 as listed |
+| 3 | A | UI: U1, U2, U3, U4, U5, U6a, U6b, U6c, U6d, U6e, U6f | when S1 and each one's server tracer are merged |
+| 4 | A | S3, JO1, JO2, JO3, U3p (N5), IMP (N3), then SX last | JO* edit Journal files |
+| 5 | B | AD0, AD1, PDF0 (N5, N8) | after Part A |
+| 6 | B | AD2, AD3, AD4, AD5a, AD5b, AD6, AD8, AD9, AD10, AD11 | when AD0 is merged (AD10 first: it closes the read-only gap) |
+| 7 | B | AD7, AD12 (N10), AD13 (N1), LB1 (N6), AU2, AU4, AU5, AU6, AF1 | when their server tracers are merged |
+| 8 | B | AU1, AU3, AU7, AU8, AD14 (design) | after AD12 / AD13 / LB1 |
+| 9 | B | AU9 (design), AX | AX does not wait for AD14 / AU9 |
 
 At most 5 tracers run at once. Only the orchestrator merges, in dependency order, one squashed commit each; codegen after
 every merge that adds or changes a Convex file. Part A never edits `convex/schema.ts`: S0 adds its tables to `campaignTables`
 (already composed). Part B's AD0 adds `convex/tables/admin.ts` and is the only tracer that edits
 `convex/schema.ts`.
 
-**Shared files, owned once per wave:** `convex/lib/functions.ts` (G1 wave 2, AD0 wave 5, AD10 wave 6),
-`convex/campaigns.ts` (S0 1, G1 2, R1 3, S3 4, AD5a 6), `convex/members.ts` (G1 2, AD5b 6),
-`tests/convex/authz/harness.ts` + `world.ts` + `authz-matrix.test.ts` (G1 2, AD0 5), `src/lib/errors/app-error.ts`
-(S0 1, AD0 5), `convex/crons.ts` (AD0 5), `convex/lib/lorekeeper/caps.ts` (AD6 6, AD7 7), `convex/lorekeeperRun.ts`
-(AD6 6, AF1 7), `src/components/party/dice/settings.ts` (U6a 3, AF1 7).
+**Shared files, owned once per wave:** `convex/lib/functions.ts` (G1 wave 2, AD0 5, AD10 6, AD13 7, AD14 8),
+`convex/lib/permissions.ts` (G1 2, AD13 7), `convex/campaigns.ts` (S0 1, G1 2, R1 3, S3 4, AD5a 6, AD13 7),
+`convex/members.ts` (G1 2, AD5b 6), `tests/convex/authz/harness.ts` + `world.ts` + `authz-matrix.test.ts` (G1 2, AD0 5,
+AD13 7), `src/lib/errors/app-error.ts` (S0 1, AD0 5), `convex/crons.ts` (P2 2, AD0 5, AD14 8), `convex/cleanup.ts` (S0 1,
+PR1 2, LB1 7), `tests/convex/schema-guard.test.ts` (S0 1, P2 2, AD0 5, AD14 8), `campaign-shell.tsx` (S1 1, R1 3, SX 4,
+AU7 8), `convex/lib/lorekeeper/caps.ts` (AD6 6, AD7 7), `convex/lorekeeperRun.ts` (AD6 6, AF1 7),
+`src/components/party/dice/settings.ts` (U6a 3, AF1 7), `src/app/(gm)/layout.tsx` (U6b 3, IMP 4, AU5 7).
+`package.json` and the lockfile are never in a tracer: the orchestrator adds `@convex-dev/presence` (before PR1) and the
+PDF library (before PDF0) on `rebuild` once the user says yes (N5).
 
 **Concurrency with other plans:** while Part A runs, keep other lanes off `convex/lib/functions.ts`,
 `convex/lib/permissions.ts`, `convex/campaigns.ts`, `convex/members.ts` and the authz harness. The Journal plan must be
@@ -75,7 +111,7 @@ Legend: **reuse** = exists, wire it; **widen** = optional field on an existing t
 | House rules · rulings ("Pinned from the Lorekeeper · Session N", "Add a house rule") | `lorekeeperRulings` (list / pin / update / unpin; Lorekeeper context already quotes them) | reuse | U2 |
 | House rules · Massive damage, Action tracker rows | Rule switches: **later plan** (dcm-bxp.134). This plan shows today's `CAMPAIGN_OPTIONS` for the frame via `campaigns.setOption` | reuse | U2 |
 | Players · roster with "plays X · Class", Owner badge | `members.roster`, party | reuse; G1 adds `coGm` | U3 |
-| Players · Online / Away | none | **new** `campaignPresence` + `presence.beat` / `presence.list` | S0, PR1, U3 |
+| Players · Online / Away | none | `@convex-dev/presence` component wrapped in `convex/presence.ts` (Q11 b) | PR1, U3p |
 | Players · invite link + Copy | `campaigns.joinCode`, `members.access`, `rotateJoinCode`, email `invite` | reuse | U3 |
 | Players · co-GM (row menu) | none | widen `campaignMembers.role = 'coGm'`; **new** `members.setCoGm`, creator rank | S0, G1, G2, U3 |
 | Lorekeeper · Sources it may search | `lorekeeperLibrary.list` / `setEnabled` | reuse | U4 |
@@ -84,7 +120,7 @@ Legend: **reuse** = exists, wire it; **widen** = optional field on an existing t
 | · Search the internet when the books don't say | per-conversation `webSearch` toggle | widen `tableSettings.lorekeeperWeb` (campaign gate) | S0, L1, U4 |
 | · Who can ask Everyone / GM only | everyone (`lorekeeper.ask` need view) | widen `tableSettings.lorekeeperAsk` | S0, L1, U4 |
 | Sessions · GM Fear at session start | carries over (`sessions.start` doesn't touch Fear) | widen `tableSettings.fearAtStart` | S0, R3, U5 |
-| · Day and night clock per scene / manual | manual (`campaignTime.advance`, `endDay`, `setTimeOfDay`) | widen `tableSettings.clock` | S0, R4 (Q4), U5 |
+| · Day and night clock per scene / manual | manual (`campaignTime.advance`, `endDay`, `setTimeOfDay`) | **dropped** (Q4 d: Manual only, no row) | - |
 | · A new session opens on Journal / Combat Map | Journal JH Start / HUD `pick/session.tsx` | widen `tableSettings.sessionOpensOn` | S0, JO1 (needs Journal), U5 |
 | · Write the session log from the Combat Map | Journal JD2 (`convex/journalLog.ts`) assembles feed lines | widen `tableSettings.autoSessionLog` | S0, JO2 (needs Journal), U5 |
 | · Archive this campaign | none (only delete: `deletedAt`, restore, purge) | widen `campaigns.archivedAt`; **new** archive / unarchive, wrapper write guard | S0, G1, S3 |
@@ -101,7 +137,8 @@ Legend: **reuse** = exists, wire it; **widen** = optional field on an existing t
 | Ping me when I get the spotlight | none | `userPreferences.spotlightPing` | U6d (Q14) |
 | Hide cards (no board row; the hand's fold) | `localStorage dh.combat.handHidden:<campaign>:<character>` | **new** `handFolds` | S0, P1, U6c |
 | HUD key `dcm:combat-hud` | deleted by HUD wave 9 (H8.1) | none: U6a removes the stale key | U6a |
-| Kept local (Q15): Names switch, range circles, catalogue sort, wizard / custom-frame drafts | localStorage | unchanged | - |
+| Names switch, range circles, catalogue sorts, roll-panel folds (Q15 b) | localStorage | **new** `userUiState` | S0, P2, U6e, IMP |
+| Character wizard / custom-frame drafts (Q15 b) | localStorage | **new** `userDrafts` | S0, P2, U6f, IMP |
 | App admin link "only you" | none | `appAdmin.me` | AU6 |
 | Campaign settings link, Sign out | sign-out exists | reuse | S1 |
 
@@ -118,7 +155,7 @@ often and `settings` is read by the title menu (CD10).
 | · Campaigns N of M allowed | campaigns | appConfig caps | AD2 |
 | · Lorekeeper questions / spend this month | **reuse** `lorekeeperUsage` deployment row (questions, costMicros: the existing per-question meter in `convex/lib/lorekeeper/caps.ts`) | reuse | AD2 |
 | · Alerts ("Mira is at 27 of 30 questions today") | user-day usage rows | reuse | AD2 |
-| · Campaigns card (GM, players, live / last played, Open) | campaigns, campaignState, sessions | reuse; Open only where the owner is a member (Q27) | AD2 |
+| · Campaigns card (GM, players, live / last played, Open) | campaigns, campaignState, sessions | reuse; Open on every campaign, read-only where the owner is not a member (Q27 b) | AD2, AD13, AU1, AU7 |
 | · Recent changes (audit) | none | **new** `adminAudit` + 365-day cleanup cron | AD0, AD2 |
 | Accounts · New accounts: Invite link only / Open / Closed | open sign-up (open-signup plan; its "no invite-only switch" answer is superseded by this board) | **new** `appConfig.signUpMode`; enforced in `createOrUpdateUser` | AD3, AD4 (Q18) |
 | · Who can create a campaign / Waiting for you / Make GM | - | **dropped** (user decision) | - |
@@ -144,7 +181,8 @@ often and `settings` is read by the title menu (CD10).
 
 ## New data vs reused
 
-- **New tables:** `userPreferences`, `handFolds`, `campaignPresence` (Part A, in `convex/tables/campaigns.ts`);
+- **New tables:** `userPreferences`, `userUiState`, `userDrafts`, `handFolds` (Part A, in `convex/tables/campaigns.ts`;
+  presence is the component's own storage);
   `appConfig`, `appStatus`, `featureSwitches`, `appTesters`, `adminAudit`, `adminExports` (Part B, new
   `convex/tables/admin.ts`).
 - **Widened:** `campaigns.tableSettings` (typed object of optional fields), `campaigns.archivedAt`,
@@ -153,7 +191,8 @@ often and `settings` is read by the title menu (CD10).
 - **Reused as is:** `playersSeeHands`, `options` / `CAMPAIGN_OPTIONS`, `joinCode` + members functions,
   `lorekeeperRulings`, `lorekeeperLibrary`, `lorekeeperUsage` and the whole reserve / settle meter, `campaignOpens` (last
   seen), the internal book ingest, Resend.
-- **Growing data and cleanup:** `handFolds` and `campaignPresence` are bounded per campaign (members × characters) and
+- **Growing data and cleanup:** `userDrafts` expire after 90 days (P2 cron) and go with their campaign; the presence
+  room is removed on purge (PR1); `handFolds` are bounded per campaign (members × characters) and
   purged with the campaign and with the member (G1); `adminAudit` only grows → `adminRetention.expireAudit` cron (365
   days, batched, self-rescheduling); `adminExports` → hourly expiry with its storage file; `userPreferences` is one row
   per user (no growth). `featureSwitches`, `appTesters`, `appConfig`, `appStatus` are tiny.
@@ -170,7 +209,8 @@ often and `settings` is read by the title menu (CD10).
   UNAUTHENTICATED signed out). Other uses (owner skips the Lorekeeper caps, owner bypasses read-only) call the same
   helper. The client only reads `appAdmin.me` (`{ isOwner }` for the caller) to show the link and the page; that is UX
   (CF22).
-- The owner is **not** a GM of other people's campaigns: no admin path opens or reads another campaign's content (Q27).
+- The owner is **not** a member of other people's campaigns, but (Q27 b) gets a **read-only view** of any campaign
+  through one opt-in path in `permissionFor` that only campaign query wrappers use (AD13, "Revision 2026-11-05").
 - Alternatives are in Q16.
 
 ## Co-GM model (G1)
@@ -202,6 +242,11 @@ often and `settings` is read by the title menu (CD10).
 - Every tracer writes `docs/tasks/TASK-CONFIG-<id>.md` (what changed, decisions, Qn used) and runs `pnpm lint`,
   `pnpm typecheck`, `pnpm test` and its own e2e spec; `pnpm tracer:guard config <id>` before handoff.
 - UI text comes from the boards, except the changed Preferences label and the dropped Admin rows.
+- **Buttons:** new config and admin UI uses the arcane glass buttons, `glassButtonClass()` from
+  `src/components/brand/glass-button.ts` (role `neutral` / `tool` for settings controls, `confirm` / `cancel` in confirm
+  steps, `danger` for Archive, Remove, Suspend, Delete). Not `brandButton`: the glass-buttons plan is re-pointing it, so
+  config would churn twice. If that plan lands first and `brandButton` becomes the glass button, use it instead.
+- **Reads modules:** reads live in `convex/*Reads.ts` (e.g. `charactersReads.partySummary`); tracers name those.
 
 ## Per-tracer briefs
 
@@ -244,13 +289,13 @@ anything is paid). Riders' extra targets are dropped. GM / co-GM acting for a PC
 
 **R3 · Fear at start (Q1).** Inside `sessions.start`'s keyed `once` and its actionLog group; logged like any Fear change.
 
-**R4 · Clock per scene (Q4).** Not started before the answer.
+**R4 · dropped** (Q4 d).
 
 **L1 · Lorekeeper settings.** Enforce in `ask` / `editQuestion` via `ctx.permission`; `available` reports `canAsk` /
 `webAllowed`.
 
 **U1-U5 · Sections.** Each owns only its section folder. Reuse server functions listed in the map; move (don't copy) the
-Players dialog's invite logic into U3. U5's Archive row is a stub for S3; Advance per scene stays disabled until R4.
+Players dialog's invite logic into U3. U5's Archive row is a stub for S3; there is no clock row (Q4 d).
 
 **U6a · Preferences + import + dice.** One-shot import guarded by `legacyImported`; remove migrated keys only after the
 mutation succeeds. Dice settings read the account; signed-out / loading uses today's defaults.
@@ -277,7 +322,7 @@ hand-sharing shortcut; live two-browser spec and axe.
 **AD0 · Admin foundation (Q16).** Owner identity, wrappers, tables, audit helper, retention crons, error module, matrix
 role + class. Defaults keep today's behaviour (env values read as fallback) until the owner saves something.
 
-**AD1 · Admin shell.** `/admin` under `(gm)`; Not found for non-owners; no admin query runs for them.
+**AD1 · Admin shell.** `/admin` under `(gm)`; "Not allowed" for non-owners (Q17 changed); no admin query runs for them.
 
 ### Part B, wave 6
 
@@ -317,7 +362,7 @@ effect (client hook + server checks). **AX** superadmin e2e, docs, close dcm-cd8
 - **Superadmin bypass.** The owner check exists in one helper and three wrappers. An admin function built on a plain
   user wrapper would be open to everyone, so the authz class `appOwner` and its guard make a misfiled function fail
   `pnpm test`. Owner exemptions (Lorekeeper caps, read-only) call `isAppOwner`, never a client flag. The owner is never
-  silently a GM of others' campaigns (Q27). `setOwner` is internal only, and the owner is never chosen by email at
+  silently a GM of others' campaigns: the read-only view (Q27 b, AD13) is query-only and logged. `setOwner` is internal only, and the owner is never chosen by email at
   request time.
 - **Co-GM leaks.** Making a co-GM `owner` grants every GM read, GM-only notes included, so G2's sweep and Q6 must land
   before co-GMs are offered in the UI (U3 depends on G1, and SX depends on U3; G2 should merge before U3 ships to users).
@@ -326,7 +371,7 @@ effect (client hook + server checks). **AX** superadmin e2e, docs, close dcm-cd8
 - **Read-only mode coverage.** The guard lives in the wrappers, so raw `internal*` functions are not covered. Scheduled
   runs keep going (a Lorekeeper answer already started finishes; crons keep cleaning), and that is intended (Q31).
   `httpAction`s (uploads, export) need their own check. Auth sign-in still writes sessions (allowed), while sign-ups are
-  blocked (AD4). `markOpened` and `presence.beat` must be exempt, or every page load fails. An inventory test checks
+  blocked (AD4). `markOpened` and the presence heartbeat must be exempt, or every page load fails. An inventory test checks
   that a sample per wrapper refuses. Every mutation adds one tiny `appStatus` read, kept in its own document so
   config edits never conflict (CD10).
 - **Archived campaigns.** The guard sits in campaign mutation wrappers, so user-level mutations that touch campaign
@@ -336,9 +381,17 @@ effect (client hook + server checks). **AX** superadmin e2e, docs, close dcm-cd8
   and later devices' local values are dropped: accepted, and the task doc says so. Keys are removed only after a
   successful import. Blocked storage means nothing to import. Fold keys for campaigns the user can no longer see are
   skipped. The HUD key is just deleted (wave 9 removed its reader). Signed-out pages keep defaults.
-- **Rule 13 exceptions.** The presence heartbeat and the one-shot legacy import are mutations started from effects.
-  They follow the existing `markOpened` precedent in `campaign-shell.tsx`. The user should confirm the exception
-  (Q11); otherwise presence moves to the `@convex-dev/presence` component and the import moves to a button.
+- **Rule 13 exceptions.** Presence uses the `@convex-dev/presence` component's React hook (Q11 b), so we fire no
+  heartbeat from our own effect. The one-shot import (IMP) is the only remaining effect-started mutation; N3 asks
+  whether it runs on its own (the `markOpened` precedent) or from a button.
+- **Owner read-only view (AD13).** The risk is a write path that accidentally honours the owner. The opt-in sits only
+  in the campaign *query* wrappers; mutations, actions and every direct `permissionFor` call keep today's answer
+  (NOT_FOUND), and the matrix pins the owner's code on every mutation entry so a flip fails `pnpm test`.
+- **PDF uploads (PDF0, AD8, LB1).** The only exceptions to rule 10's image allowlist: `application/pdf` plus the
+  `%PDF` magic bytes, 20 MB and 300 pages, file deleted after parsing whatever happens, never served back. Parsing
+  runs in a Node action; a hostile PDF can at worst fail the action. GM books are searched only by their campaign.
+- **Suspend / delete (AD14).** Irreversible data loss and lock-outs: not built before a design and the user's answer
+  to N11; the owner can't act on themselves; delete has a 30-day undo.
 - **Text size.** The app sizes text in px, so `zoom` is the only cheap global lever. It can break canvas pointer math
   and fixed overlays, and U6b must test the combat map.
 - **Journal coupling.** R3, JO1-JO3 edit Journal files. If the Journal plan slips, they wait (the settings rows show and
@@ -362,7 +415,6 @@ effect (client hook + server checks). **AX** superadmin e2e, docs, close dcm-cd8
 | R1 | Config R1: Players see the GM's Fear (off hides the pool) |
 | R2 | Config R2: Out-of-range Refuse |
 | R3 | Config R3: Fear at session start: reset to number of PCs |
-| R4 | Config R4: Day and night clock per scene (after Q4) |
 | L1 | Config L1: Lorekeeper who can ask + campaign internet switch |
 | U1 | Config U1: Settings / At the table |
 | U2 | Config U2: Settings / House rules |
@@ -377,7 +429,12 @@ effect (client hook + server checks). **AX** superadmin e2e, docs, close dcm-cd8
 | JO1 | Config JO1: a new session opens on Journal / Combat Map (needs Journal) |
 | JO2 | Config JO2: session log from the Combat Map switch (needs Journal) |
 | JO3 | Config JO3: spotlight balance to players (needs Journal) |
-| SX | Config SX: Part A cut-over (Players dialog and Campaign Rules panel removed, live + a11y specs) |
+| SX | Config SX: Part A close (old entry points become shortcuts, live + a11y specs) |
+| P2 | Config P2: account UI state and drafts server (Q15 b) |
+| U3p | Config U3p: Online / Away with @convex-dev/presence |
+| U6e | Config U6e: token names, range circles, sort orders, roll folds on the account |
+| U6f | Config U6f: character wizard and custom frame drafts on the account |
+| IMP | Config IMP: one-time import of browser values into the account |
 | AD0 | Admin AD0: owner identity, appOwner wrappers, admin tables, audit + cleanup cron |
 | AD1 | Admin AD1: /admin shell |
 | AD2 | Admin AD2: Overview server |
@@ -399,8 +456,16 @@ effect (client hook + server checks). **AX** superadmin e2e, docs, close dcm-cd8
 | AU6 | Admin AU6: App admin link in Preferences |
 | AF1 | Admin AF1: feature switches take effect |
 | AX | Admin AX: superadmin e2e, docs, close dcm-cd8 |
+| PDF0 | Admin PDF0: PDF book ingest pipeline (server parser) |
+| AD12 | Admin AD12: Lorekeeper limit requests (GM asks, owner decides) |
+| AD13 | Admin AD13: owner read-only view of any campaign (server, authz) |
+| LB1 | Config LB1: GM campaign books server (PDF, per-campaign) |
+| AU7 | Admin AU7: owner read-only view in the campaign pages |
+| AU8 | Config AU8: GM campaign books in Lorekeeper settings |
+| AD14 | Admin AD14: suspend and delete accounts (needs design + confirmation) |
+| AU9 | Admin AU9: suspend / delete in the account menu (needs design) |
 
-Dependencies between beads mirror `depends_on`. dcm-jh6d.1 closes with G1 + G2 + U3; dcm-cd8 closes with AD5b + AX;
+R4 is dropped (Q4 d): no bead. Dependencies between beads mirror `depends_on`. dcm-jh6d.1 closes with G1 + G2 + U3; dcm-cd8 closes with AD5b + AX;
 dcm-bxp.134 stays open for the rule-switch plan.
 
 ## Open questions for the user
@@ -634,3 +699,143 @@ or read the last backup time.
 - Q30 (a) In-app JSON download, deleted after 1 hour.
 - Q31 (a) Owner + background jobs exempt.
 - Q32 (a) 80% email once a month.
+
+## Revision 2026-11-05 (what the answers changed)
+
+Binding with the answers above. Where this list and an older section of this file disagree, this list wins.
+
+**Since the plan was written**
+- **Combat HUD v2 merged.** The Combat Map has its own app bar. S1 now replaces H9.A's placeholders
+  `CampaignSettingsButton` / `PreferencesButton` in `src/components/app-bar/account.tsx` (same names, so the bar's
+  `index.tsx` is untouched) and puts the same two buttons in the art header (`campaign-shell.tsx`).
+- **Journal replaced Sessions and Notes.** Every Part A tracer starts after Journal JX2 (`after: JX2` on S0 / S1).
+- **Glass buttons:** see Common rules (glassButtonClass now, brandButton only if the glass-buttons plan lands first).
+- **Reads modules:** U3 reads `charactersReads.partySummary`; G2's owns gained `charactersReads.ts`, `combatVision.ts`,
+  `lorekeeperAsks.ts`, `lib/cardHand.ts`, `lib/combatHud.ts`, `lib/combatMovement.ts`, `lib/combatTokenViews.ts` and
+  `src/lib/domain/notes/authors.ts` (a fresh grep of `ownerId` comparisons).
+
+**Per answer**
+- **Q3 (changed) → R1** is now server + client (size M): every player read of the pool drops the number
+  (`campaigns.fear`, the HUD read, feed lines, Journal log lines) and every place that shows it to a player shows "?"
+  with the Fear art kept. The GM-only optimistic Fear updates handle `null`.
+- **Q4 (d) → R4 dropped.** S0 has no `clock` field; U5 has no clock row (one choice is not a setting).
+- **Q8 (b) → G1** also lets the creator invite an email straight in as co-GM (`campaignInvites.role`, S0); accepted in
+  `markOpened`; before acceptance they are an invited player only. U3's invite form gets "Invite as Player / Co-GM"
+  for the creator.
+- **Q10 (b) → SX** removes nothing: the Players button opens Campaign settings at Players (one Players UI), the
+  dashboard Campaign Rules panel and the Combat Map cards switch stay and write the same fields.
+- **Q11 (b) → PR1** wraps `@convex-dev/presence` (identity from `ctx.user`, list GM-only, members only); no
+  `campaignPresence` table. The UI moved from U3 to the new **U3p**. Both wait for the dependency OK (N5).
+- **Q15 (b) → every browser-saved value moves.** New tables `userUiState` (one row per key) and `userDrafts`
+  (schemaVersion'd JSON text, 90-day expiry cron) in S0; new server **P2**; new UI **U6e** (Names, range circles, sort
+  orders, roll-panel folds) and **U6f** (wizard and custom-frame drafts); the import moved out of U6a into **IMP**,
+  which imports everything at once and then removes the keys. Not moved: Convex Auth's own sign-in keys (not
+  preferences) and the level-up draft in sessionStorage (N4).
+- **Q17 (changed) → AD1 / AX:** a signed-in non-owner sees "Not allowed".
+- **Q21 (changed) → AD12 + AU3:** GMs and co-GMs send a request; the owner approves with their own numbers or
+  declines; the numbers live in `lorekeeperCampaignLimits` (AD0) and AD6's `capLimits` applies them. The board's
+  "Let GMs raise limits" switch becomes "Let GMs ask for higher limits" (N10). No GM self-service.
+- **Q23 (b) → PDF0 + AD8:** one server PDF pipeline (Node action) used by the owner's library upload and by GM books.
+- **Q24 (b) → LB1 + AU8:** GMs upload PDFs per campaign, size-capped, counted against the campaign's book allowance
+  (N6), searched only by that campaign's Lorekeeper, purged with the campaign. U4 leaves `books.tsx` and `limits.tsx`
+  stubs for AU8 / AU3.
+- **Q25 (b) → AD9 / AU4 / AF1:** Journal and Share links rows are added; what they do is N2.
+- **Q27 (b) → AD13 + AU7 + AU1:** owner read-only view (below).
+- **Q28 (b) → AD14 + AU9:** planned with safeguards, marked `needs: design`; not built before the user confirms N11.
+
+**Owner read-only view (AD13) and the authz matrix**
+- `permissionFor(ctx, user, campaignId, { ownerView: true })` is the one new branch: only with that option, only when
+  the caller has no member row, grant or invite, and only when `isAppOwner` says so, it returns the N1 permission with
+  `access.ownerView = true`; never `creator`.
+- Only the campaign **query** wrappers pass the option. Every mutation and action wrapper and every direct
+  `permissionFor` call keep the default, so for writes the owner is still an outsider (NOT_FOUND). A mutation that meets
+  an ownerView access anyway throws `OWNER_VIEW_READ_ONLY` (defence in depth).
+- Opening is logged: the Overview's Open calls `appAdmin.openCampaign` (audit `campaign.view`) before navigating.
+  `markOpened` and presence never run for the owner, so they never appear in member lists or "Last seen".
+- Matrix: the world's `appOwner` gets `ok` on campaign query classes and keeps NOT_FOUND / FORBIDDEN on every mutation
+  and action class; a guard pins those mutation rows so none can flip.
+
+## Questions 2026-11-05
+
+Plain choices; the first option is the one we recommend, and the plan is built on it.
+
+**N1. When you open someone else's campaign from App admin (read-only), what do you see?** (AD13, AU7, AU1)
+- (a) **Everything the GM sees (GM-only notes and hidden adversary numbers included), but never a player's private
+  notes or private Lorekeeper chats, and you can't change anything. Every time you open one, it is logged.**
+- (b) Only what a player sees.
+- (c) What the GM sees, but without the GM-only notes.
+
+**N2. The Journal and Share links rows in Feature switches: what does "Off" do?** (AU4, AF1)
+- (a) **Nothing for now. The rows are there and remember your choice. Journal says "Always on for now: the old Sessions
+  and Notes pages are gone"; Share links says "Not built yet" and starts working when share links are built.**
+- (b) Journal Off hides the Journal tab for those people (they lose sessions and notes until it is on again).
+
+**N3. Moving your old browser settings to your account: how?** (IMP)
+- (a) **Automatically, once, the first time you open the app on that browser. Nothing to click.**
+- (b) A button in Preferences: "Bring my settings from this browser".
+
+**N4. A half-done level-up is kept only in the open tab (it is gone when the tab closes). Move it to the account too?**
+- (a) **No, leave it: it is a scratch pad for one sitting, not a setting.**
+- (b) Yes, keep it on the account like the character wizard.
+
+**N5. May we add two new packages?** The project rule says no new backend library without your OK.
+- (a) **Yes to both: `@convex-dev/presence` (Online / Away) and a PDF reader (book uploads).**
+- (b) Only `@convex-dev/presence`. Books stay as .txt uploads for now.
+- (c) Neither for now.
+
+**N6. GM book uploads: how much can one campaign hold?** (LB1, AU8)
+- (a) **Up to 3 books, each up to 20 MB and 300 pages. Questions that use them count like any other question. You can
+  raise a campaign's allowance when its GM asks.**
+- (b) No book limit, only the 20 MB / 300-page size limit per file.
+- (c) Other numbers (tell us).
+
+**N7. Who can upload books for a campaign?** (LB1)
+- (a) **The GM and co-GMs.**
+- (b) Only the GM who made the campaign.
+
+**N8. Which PDF reader, and how are page numbers counted?** (PDF0)
+- (a) **`unpdf` (small, built for servers, uses Mozilla's PDF reader inside). The uploader types the printed page number
+  of the PDF's first page, so the Lorekeeper cites the book's own page numbers.**
+- (b) `pdf-parse`, same page rule.
+- (c) Either library, but use the PDF's own page numbers (no question at upload).
+
+**N9. The header's Players button (kept, Q10): what does it open?** (SX)
+- (a) **Campaign settings, on the Players section (one place to manage players).**
+- (b) Its own small Players window, as today.
+
+**N10. GM requests for higher Lorekeeper limits: details.** (AD12, AU3)
+- (a) **A GM can ask for more questions per day, more internet searches per day, or more book room, with a short
+  reason; one open request per campaign. You see it as an alert on the Overview and in the Lorekeeper tab, approve
+  with the numbers you choose, or decline. The GM sees your answer in their settings. No email. Your switch reads "Let
+  GMs ask for higher limits · You approve each request."**
+- (b) Same, and also email you each request.
+
+**N11. Suspending and deleting accounts.** This needs its own screen design before we build it (AD14, AU9).
+- What suspend does, recommended: **the person is signed out everywhere and can't sign in; nothing of theirs is
+  deleted; their campaigns stay playable for the others; you can lift it any time.** Other choice: their campaigns
+  also become read-only while they are suspended.
+- What delete does with **their own campaigns**:
+  - (a) **Handed to a co-GM if there is one; otherwise deleted (with the usual restore window).**
+  - (b) Always deleted.
+  - (c) Kept, read-only, with no GM.
+- What delete does with **their characters in other people's campaigns**:
+  - (a) **Kept, shown as "former player"; the GM can retire or delete them.**
+  - (b) Deleted.
+- Safety, recommended: **you type their email to confirm and give a reason; delete waits 30 days with Undo; you can't
+  suspend or delete yourself; every step is logged.**
+
+## User answers 2026-11-04 (N questions, binding)
+- N1 (changed): the owner's read-only view shows EVERYTHING, including players' private notes and private Lorekeeper chats; still no changes possible and every visit is logged.
+- N2 (a) Journal / Share links switches do nothing yet.
+- N3 (a) Automatic one-time import on first load.
+- N5 (a) Yes to @convex-dev/presence and a PDF reader.
+- N9 (a) Done in SX: the Players button opens Campaign settings at Players.
+- N4 (b, changed): unconfirmed level-up picks are saved on the account (like the wizard draft), not only in the tab.
+- N6 (b, changed): no book-count limit per campaign; only 20 MB / 300 pages per file.
+- N7 (a) GM and co-GMs upload campaign books.
+- N8 (a) unpdf; the uploader types the printed page number of the PDF's first page; citations use printed pages.
+- N10 (b, changed): limit requests also email the owner for every request.
+- N11 suspend: (rec.) signed out everywhere, can't sign in, nothing deleted, campaigns stay playable, liftable.
+- N11 delete own campaigns: (a) handed to a co-GM if any, else deleted with the restore window.
+- N11 delete characters elsewhere: (a) kept as "former player"; the GM can retire or delete them.
+- N11 safety: not asked; recommended default stands (type email + reason, delete waits 30 days with Undo, no self-target, every step logged).

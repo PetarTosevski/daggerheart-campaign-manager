@@ -7,7 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InstanceView } from "../../../src/components/adversaries/builder/types";
 
 let results: Record<string, unknown> = {};
-const calls = vi.hoisted(() => ({ list: [] as { name: string; args: Record<string, unknown> }[] }));
+const calls = vi.hoisted(() => ({
+  list: [] as { name: string; args: Record<string, unknown> }[],
+  optimistic: {} as Record<string, (store: unknown, args: Record<string, unknown>) => void>,
+}));
 
 vi.mock("convex/react", () => ({
   useQuery: (ref: unknown, args: unknown) => (args === "skip" ? undefined : results[getFunctionName(ref as never)]),
@@ -17,7 +20,12 @@ vi.mock("convex/react", () => ({
       calls.list.push({ name, args });
       return name === "sessionPrep:createSceneEncounter" ? { encounterId: "e9" } : null;
     };
-    return Object.assign(run, { withOptimisticUpdate: () => run });
+    return Object.assign(run, {
+      withOptimisticUpdate: (update: (store: unknown, args: Record<string, unknown>) => void) => {
+        calls.optimistic[name] = update;
+        return run;
+      },
+    });
   },
 }));
 vi.mock("next/link", () => ({
@@ -128,6 +136,49 @@ describe("SceneEncounter, linked", () => {
     unmount();
     const other = render(<SceneEncounter {...ids} sceneId="a" isGm />);
     expect(other.container.innerHTML).toBe("");
+  });
+});
+
+describe("SceneEncounter, party size (dcm-vj4a)", () => {
+  it("shows the party size and steps it with the Adversaries intent (encounters.setBudget, delta)", async () => {
+    render(<SceneEncounter {...ids} isGm />);
+    const group = screen.getByRole("group", { name: "Party size" });
+    expect(within(group).getByTestId("scene-encounter-pcs").textContent).toBe("4");
+    await act(async () => fireEvent.click(within(group).getByRole("button", { name: "More player characters" })));
+    await act(async () => fireEvent.click(within(group).getByRole("button", { name: "Fewer player characters" })));
+    expect(calls.list).toEqual([
+      { name: "encounters:setBudget", args: { campaignId: "c1", encounterId: "e1", change: { kind: "pcs", delta: 1 } } },
+      { name: "encounters:setBudget", args: { campaignId: "c1", encounterId: "e1", change: { kind: "pcs", delta: -1 } } },
+    ]);
+  });
+
+  it("uses small grey glass buttons, disabled at the 1..12 bounds", () => {
+    results["encounters:get"] = { encounter: { ...ENCOUNTER, pcs: 1 }, instances: INSTANCES };
+    const { unmount } = render(<SceneEncounter {...ids} isGm />);
+    const fewer = screen.getByRole("button", { name: "Fewer player characters" }) as HTMLButtonElement;
+    expect(fewer.disabled).toBe(true);
+    expect(fewer.className.split(" ")).toEqual(expect.arrayContaining(["gb", "gb-neutral", "gb-sm", "gb-icon"]));
+    expect((screen.getByRole("button", { name: "More player characters" }) as HTMLButtonElement).disabled).toBe(false);
+    unmount();
+    results["encounters:get"] = { encounter: { ...ENCOUNTER, pcs: 12 }, instances: INSTANCES };
+    render(<SceneEncounter {...ids} isGm />);
+    expect((screen.getByRole("button", { name: "More player characters" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("updates the cached encounter optimistically, clamped", () => {
+    render(<SceneEncounter {...ids} isGm />);
+    const update = calls.optimistic["encounters:setBudget"]!;
+    let cached: unknown = { encounter: { ...ENCOUNTER, pcs: 12 }, instances: [] };
+    const store = { getQuery: () => cached, setQuery: (_ref: unknown, _args: unknown, value: unknown) => (cached = value) };
+    update(store, { campaignId: "c1", encounterId: "e1", change: { kind: "pcs", delta: -1 } });
+    expect((cached as { encounter: { pcs: number } }).encounter.pcs).toBe(11);
+    update(store, { campaignId: "c1", encounterId: "e1", change: { kind: "pcs", delta: 5 } });
+    expect((cached as { encounter: { pcs: number } }).encounter.pcs).toBe(12);
+  });
+
+  it("is not shown to players (the card is GM only)", () => {
+    render(<SceneEncounter {...ids} isGm={false} />);
+    expect(screen.queryByRole("group", { name: "Party size" })).toBeNull();
   });
 });
 

@@ -6,6 +6,7 @@ import { useQuery } from "convex/react";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { frameName } from "@/lib/campaign-display";
 import { factionsFor, regionsFor, type CodexKind } from "@/lib/codex/schema";
 import { groupOf, matchesSearch, previewForPlayers, unknownGroupLabel, type GmEntry, type PlayerEntry } from "@/lib/codex/view";
@@ -170,20 +171,16 @@ function CodexBoard() {
           <span className="text-[15px] text-[#d6dfdc]">{headerLine}</span>
         </div>
         {isGmUser ? (
-          <button
-            type="button"
+          <BrandButton
+            variant="neutral"
             onClick={() => {
               setPreview((p) => !p);
               setLightbox(null);
             }}
             aria-pressed={preview}
-            className={cn(
-              "min-h-12 cursor-pointer rounded-full px-[22px] text-[15px] font-semibold",
-              preview ? "border-none bg-brand text-brand-ink" : "border border-white/30 bg-black/35 text-[#ece6d6]",
-            )}
           >
             {preview ? "← Back to GM view" : "👁 Player view"}
-          </button>
+          </BrandButton>
         ) : null}
       </div>
 
@@ -247,24 +244,18 @@ function CodexBoard() {
 
           {gm ? (
             <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => void addEntry()}
-                disabled={create.pending}
-                className="min-h-11 flex-1 cursor-pointer rounded-[10px] border-none bg-brand px-4 font-display text-[14px] font-bold tracking-[0.06em] text-brand-ink disabled:opacity-60"
-              >
+              <BrandButton variant="confirm" className="flex-1" onClick={() => void addEntry()} disabled={create.pending}>
                 {kind === "location" ? "+ New location" : "+ New character"}
-              </button>
+              </BrandButton>
               {kind === "location" ? (
-                <button
-                  type="button"
-                  className="cx-ghost"
+                <BrandButton
+                  variant="neutral"
                   onClick={() => void fromMap()}
                   disabled={importPins.pending}
                   title="Create entries for map pins that are not in the list yet"
                 >
                   📍 From map
-                </button>
+                </BrandButton>
               ) : null}
             </div>
           ) : null}

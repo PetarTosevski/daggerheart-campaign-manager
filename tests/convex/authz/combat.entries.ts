@@ -390,7 +390,7 @@ const NOT_THEIRS = { otherPlayer: "FORBIDDEN" } as const;
 const attacks: Entry[] = [
   // One target only (CA4b, bead dcm-bxp.99.18): two are COMBAT_TARGET_INVALID after the access check (combat-attack.test.ts).
   { fn: api.combatActions.attack, access: "view", setup: arena, args: (w) => attackArgs(w, w.ids.packToken!), expect: NOT_THEIRS },
-  { fn: api.combatActions.targets, access: "view", setup: arena, args: (w) => ({ characterId: w.characterA, mapId: w.ids.mapId }), expect: NOT_THEIRS },
+  { fn: api.combatActionsReads.targets, access: "view", setup: arena, args: (w) => ({ characterId: w.characterA, mapId: w.ids.mapId }), expect: NOT_THEIRS },
   { fn: api.combatActions.pickMinions, access: "view", setup: attacked, args: (w) => ({ entryId: w.ids.entryId, instanceIds: [w.ids.packId] }), expect: NOT_THEIRS },
   { fn: api.combatRequests.sanction, access: "gm", setup: sanctioned, args: (w) => ({ requestId: w.ids.requestId, approve: false }) },
   { fn: api.combatRequestsReads.mine, access: "view", setup: sanctioned, expect: { otherPlayer: "ok" } },

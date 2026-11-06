@@ -15,9 +15,11 @@ import {
   LURKING_OUTCOMES,
   LURKING_TEXT,
   logLurking,
+  lurkingRestNote,
   removePyre as remove,
   renamePyre as rename,
   resolveLurking,
+  restRollsLurking,
   setAtPyreChoice,
   setPyreLit,
   setVicinity as vicinity,
@@ -32,12 +34,13 @@ import { mapImageSize } from "../../src/lib/world/map-state";
 import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { applyResourceDelta } from "../../src/lib/domain/characters/index";
-import { keepWatchRolls } from "../../src/lib/domain/rest/frame-hooks/index";
+import { chose, KEEP_WATCH_MOVE, keepWatchRolls } from "../../src/lib/domain/rest/frame-hooks/index";
 import { rollDie } from "../lib/dice";
 import { gainFear } from "../lib/fear";
 import { campaignQuery, keyedGmMutation } from "../lib/functions";
 import { playerTokenFilter, readMapTokens, tokenRow } from "../lib/maps";
 import type { RestHook } from "../lib/restHooks";
+import { postRuleNote, ruleMode } from "../lib/ruleModes";
 import { assertTrackerFrame, frameTrackerMutation, loadTracker, TRACKER_SCHEMA_VERSION, writeTracker, type FrameTracker } from "../lib/trackers";
 
 export const umbraTracker: FrameTracker<typeof umbraStateSchema> = {
@@ -303,12 +306,21 @@ export const rollLurkingDarkness = keyedGmMutation({
  * takes the highest), logs it on the tracker (GM-only) and applies Fear
  * through gainFear; on a 12 each resting PC gains a Hope on the rest's sheets
  * (undone with the rest). The tracker log and that Fear keep their own
- * history (plan note 11).
+ * history (plan note 11). W6 Manual (house rule): nothing is rolled; the GM
+ * gets a note to roll from the tracker, naming the PCs who kept watch.
  */
-export const ageOfUmbraRestHook: RestHook = async (ctx, { campaign, choices, sheets, rng }) => {
+export const ageOfUmbraRestHook: RestHook = async (ctx, { campaign, choices, sheets, rng, actorId, groupId }) => {
   if (campaign.frameId !== umbraTracker.frameId) return [];
   const state = await loadTracker(ctx, campaign._id, umbraTracker);
-  if (await atPyreNow(ctx, campaign, state)) return [];
+  const atPyre = await atPyreNow(ctx, campaign, state);
+  const mode = ruleMode(campaign, "umbraLurkingDarkness");
+  if (!restRollsLurking(atPyre, mode)) {
+    if (!atPyre) {
+      const watchers = [...sheets].filter(([id]) => chose(choices, id, KEEP_WATCH_MOVE)).map(([, sheet]) => sheet.name);
+      await postRuleNote(ctx, campaign, { ruleId: "umbraLurkingDarkness", summary: lurkingRestNote(watchers), actorId, ...(groupId !== undefined ? { groupId } : {}) });
+    }
+    return [];
+  }
   const watchers = keepWatchRolls(choices, new Set<string>(sheets.keys()), rng);
   const roll = resolveLurking(rng(12), watchers);
   const fearGained = LURKING_FEAR[roll.outcome];

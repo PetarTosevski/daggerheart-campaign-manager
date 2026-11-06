@@ -54,7 +54,7 @@ test("GM: the design's scenes, states and GM prep; axe at 1440 and 390", async (
   const { gm } = table;
   await gm.setViewportSize(VIEWPORTS[0]);
   await openJournal(gm, table);
-  await expect(plan(gm).getByRole("list", { name: "Planned scenes" }).getByRole("listitem")).toHaveCount(4);
+  await expect(plan(gm).getByRole("listitem", { name: /^Scene \d+$/ })).toHaveCount(4);
   for (const [i, s] of JOURNAL_SCENES.entries()) {
     await expect(scene(gm, i + 1).getByRole("textbox", { name: `Scene ${i + 1} title` })).toHaveValue(s.title);
     await expect(scene(gm, i + 1).getByRole("textbox", { name: `Scene ${i + 1} description` })).toHaveValue(s.text);
@@ -88,10 +88,12 @@ test("GM: the design's scenes, states and GM prep; axe at 1440 and 390", async (
   await expect(scene(gm, 4).getByRole("button", { name: "Play this scene" })).toBeHidden();
 });
 
-test("GM: add a scene, edit it in place, play it, mark it done, remove it", async () => {
+test("GM: add a scene (its type first), edit it in place, play it, mark it done, remove it", async () => {
   const { gm } = table;
   await openJournal(gm, table);
   await plan(gm).getByRole("button", { name: "Add scene" }).click();
+  // dcm-z9rz.30: the type is asked first.
+  await plan(gm).getByRole("group", { name: "Scene type" }).getByRole("button", { name: "Combat" }).click();
   const fifth = scene(gm, 5);
   await expect(fifth.getByRole("button", { name: "Scene 5 options" })).toBeVisible();
 
@@ -123,7 +125,7 @@ test("GM: add a scene, edit it in place, play it, mark it done, remove it", asyn
   await expect(scene(gm, 4).getByText("Next")).toBeVisible();
 
   await pick(gm, 5, "Remove scene");
-  await expect(plan(gm).getByRole("list", { name: "Planned scenes" }).getByRole("listitem")).toHaveCount(4);
+  await expect(plan(gm).getByRole("listitem", { name: /^Scene \d+$/ })).toHaveCount(4);
 
   // A Combat scene plays from the Combat Map: no 'Play this scene' in its menu.
   await pick(gm, 3, "Back to planned");

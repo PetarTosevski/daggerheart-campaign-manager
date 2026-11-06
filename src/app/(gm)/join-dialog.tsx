@@ -56,10 +56,10 @@ export function JoinDialog({ open, onClose }: { open: boolean; onClose: () => vo
           </p>
         ) : null}
         <div className="flex justify-end gap-3">
-          <BrandButton variant="outline" size="lg" onClick={onClose}>
+          <BrandButton variant="cancel" size="lg" onClick={onClose}>
             Cancel
           </BrandButton>
-          <BrandButton type="submit" variant="primary" size="lg" disabled={pending}>
+          <BrandButton type="submit" variant="confirm" size="lg" disabled={pending}>
             {pending ? "Joining…" : "Join"}
           </BrandButton>
         </div>

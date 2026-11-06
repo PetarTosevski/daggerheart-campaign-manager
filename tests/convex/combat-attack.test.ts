@@ -161,7 +161,7 @@ describe("combatActions.attack: hit, damage and the two rows", () => {
     expect((await a.instance(bandit.instanceId)).hp).toBe(1);
     const withHope = r.roll.outcome === "critical" || r.roll.outcome === "successHope";
     expect((await a.sheet()).hope).toBe(hopeBefore + (withHope ? 1 : 0));
-    expect(await a.fear()).toBe(fearBefore + r.fearGained);
+    expect(await a.fear()).toBe(fearBefore + (r.fearGained ?? 0));
     expect(r.fearGained).toBe(withHope ? 0 : 1);
 
     const rows = (await a.rows()).filter((row) => row.kind === "combat");
@@ -318,7 +318,7 @@ describe("combatActions.attack: targets, line of sight and range", () => {
     const near = await a.enemy("Near", 6, 10);
     const far = await a.enemy("Far", 8, 10);
     await a.enemy("Lurker", 1, 10);
-    const hints = await a.player.query(api.combatActions.targets, { campaignId: a.campaignId, characterId: a.w.characterA, mapId: a.mapId });
+    const hints = await a.player.query(api.combatActionsReads.targets, { campaignId: a.campaignId, characterId: a.w.characterA, mapId: a.mapId });
     expect(hints.map((h) => Object.keys(h).sort())).toEqual(hints.map(() => ["band", "cover", "inRange", "lineOfSight", "tokenId"]));
     expect(hints).toEqual(
       expect.arrayContaining([
@@ -515,6 +515,8 @@ describe("the Slayer choice after an attack with Hope (K2, U2)", () => {
     // The server's own dice: attack until a roll with Hope (each roll is one with Hope about half the time).
     let r: { entryId: Id<"actionLog"> } | undefined;
     for (let i = 0; i < 40 && r === undefined; i++) {
+      // S2 (plan rule-switches RS2): a roll with Fear hands the spotlight to the GM; the GM hands it back before the next try.
+      await a.gm.mutation(api.combatSpotlight.handToParty, { campaignId: a.campaignId, idempotencyKey: key() });
       await setSheet({ hope: 0 });
       const next = resolved(await a.attack(a.player, [bandit.tokenId]));
       if (WITH_HOPE.includes(next.roll.outcome)) r = next;
@@ -547,5 +549,19 @@ describe("what a player receives (U1)", () => {
     expectNoStats(page.page);
     // The GM sees both rows.
     expect((await a.feed(a.gm)).page.filter((row) => row.kind === "combat")).toHaveLength(2);
+  });
+});
+
+describe("combatActions.attack: the GM's Fear hidden (dcm-jh6d.62)", () => {
+  allowWorldEmails();
+
+  it("off: a player's resolved attack has no fearGained; the GM's has it", async () => {
+    const a = await arena();
+    await a.gm.mutation(api.campaignSettings.set, { campaignId: a.campaignId, change: { key: "playersSeeFear", value: false } });
+    const bandit = await a.enemy("Bandit", 6, 10);
+    const mine = resolved(await a.attack(a.player, [bandit.tokenId]));
+    expect(mine).not.toHaveProperty("fearGained");
+    expect(JSON.stringify(mine)).not.toMatch(/\d+ Fear\b/);
+    expect(resolved(await a.attack(a.gm, [bandit.tokenId]))).toHaveProperty("fearGained");
   });
 });

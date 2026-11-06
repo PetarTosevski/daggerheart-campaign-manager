@@ -33,13 +33,18 @@ export type AreaAsk = {
   blocksSight?: boolean;
   /** The caster's token: the `within` check and where the keyboard cursor starts. */
   origin?: Footprint | null;
+  /**
+   * Rule switches ODR2: the campaign's Defined Ranges (absent: on). Off: no radius preview, no square is outside
+   * `within` (no amber, no placement problem; the server checks none either) and the summary counts no squares.
+   */
+  definedRanges?: boolean;
 };
 
 const word = (r: Range | undefined) => (r === undefined ? "" : (RANGE_LABEL[r] ?? r));
 
 /** The radius preview in squares (the classic picker's: the band's squares plus half a square), null for none. */
-export function previewRadius(ask: Pick<AreaAsk, "shape" | "radius">): number | null {
-  if (ask.shape !== "circle" || ask.radius === undefined || ask.radius === "veryFar") return null;
+export function previewRadius(ask: Pick<AreaAsk, "shape" | "radius" | "definedRanges">): number | null {
+  if (ask.definedRanges === false || ask.shape !== "circle" || ask.radius === undefined || ask.radius === "veryFar") return null;
   return rangeSquares(ask.radius) + 0.5;
 }
 
@@ -141,13 +146,13 @@ export function summaryText(ask: AreaAsk, points: readonly Square[]): string {
     const length = a && b ? `Length ${wallLength(a, b)} squares` : "A wall between two points";
     return `${length}${ask.within ? ` · within ${word(ask.within)}` : ""}`;
   }
-  const radius = ask.radius === undefined ? "" : ask.radius === "veryFar" ? `Radius: Very Far` : `Radius: ${word(ask.radius)} (${rangeSquares(ask.radius)} squares)`;
+  const radius = ask.radius === undefined ? "" : ask.radius === "veryFar" || ask.definedRanges === false ? `Radius: ${word(ask.radius)}` : `Radius: ${word(ask.radius)} (${rangeSquares(ask.radius)} squares)`;
   return ask.count > 1 ? `${ask.count} areas · ${radius}` : radius;
 }
 
 /** Why a picked square can't be sent (the server's `placeWithin` check), or null. */
 export function placementProblem(ask: AreaAsk, points: readonly Square[]): string | null {
-  if (!ask.within || !ask.origin) return null;
+  if (ask.definedRanges === false || !ask.within || !ask.origin) return null;
   const origin = ask.origin;
   const bad = points.some((p) => !placementHolds({ placeWithin: ask.within }, origin, { x: p.x, y: p.y, size: 1 }));
   return bad ? `${ask.label} must be placed within ${word(ask.within)} range of you.` : null;
@@ -155,7 +160,7 @@ export function placementProblem(ask: AreaAsk, points: readonly Square[]): strin
 
 /** Whether a square is outside `within` (drawn amber). */
 export function outside(ask: AreaAsk, square: Square): boolean {
-  return ask.within !== undefined && ask.origin != null && !placementHolds({ placeWithin: ask.within }, ask.origin, { x: square.x, y: square.y, size: 1 });
+  return ask.definedRanges !== false && ask.within !== undefined && ask.origin != null && !placementHolds({ placeWithin: ask.within }, ask.origin, { x: square.x, y: square.y, size: 1 });
 }
 
 /** Why the confirm can't send yet: points missing, a square out of reach. */
@@ -171,7 +176,7 @@ export function confirmLabel(ask: AreaAsk): string {
 }
 
 /** A chain link's band from the last link (CmpPicking 'Chain links': "each link within Very Close of the last"). */
-export function linkBand(from: Footprint | undefined, to: Footprint | undefined): Range | null {
-  if (!from || !to) return null;
+export function linkBand(from: Footprint | undefined, to: Footprint | undefined, definedRanges = true): Range | null {
+  if (!definedRanges || !from || !to) return null;
   return rangeCheck(from, to, "unlimited").band;
 }

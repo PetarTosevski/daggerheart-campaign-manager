@@ -17,13 +17,16 @@ export const modules = import.meta.glob("../../convex/**/*.ts");
 type ComponentTestHelper = { default: { register: (t: unknown, name?: string) => void } };
 const RATE_LIMITER_TEST = "@convex-dev/rate-limiter/test";
 const MIGRATIONS_TEST = "@convex-dev/migrations/test";
+const PRESENCE_TEST = "@convex-dev/presence/test";
 const rateLimiter = ((await import(/* @vite-ignore */ RATE_LIMITER_TEST)) as ComponentTestHelper).default;
 const migrations = ((await import(/* @vite-ignore */ MIGRATIONS_TEST)) as ComponentTestHelper).default;
+const presence = ((await import(/* @vite-ignore */ PRESENCE_TEST)) as ComponentTestHelper).default;
 
 /** A convex-test instance with every component in convex/convex.config.ts registered. */
 export function makeTest() {
   const t = convexTest(schema, modules);
   rateLimiter.register(t);
   migrations.register(t);
+  presence.register(t);
   return t;
 }

@@ -3,6 +3,7 @@
 import { useMutation, useQuery } from "convex/react";
 import { useId, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import { errorMessage } from "@/lib/convex-errors";
 import { RULINGS_COPY, RULINGS_EMPTY, RULINGS_TITLE, pinnedLabel } from "@/lib/lorekeeper/copy";
@@ -60,12 +61,12 @@ export function RulingsCard({ campaignId, access }: LorekeeperSideProps) {
               <span className="lk-lbl lk-rulingmeta">{ruling.meta}</span>
               {access.isGm ? (
                 <span className="lk-rulingacts">
-                  <button type="button" className="lk-act lk-act-dark" aria-label={`Edit ${ruling.title}`} onClick={() => setEditing(ruling)}>
+                  <BrandButton variant="neutral" size="sm" aria-label={`Edit ${ruling.title}`} onClick={() => setEditing(ruling)}>
                     Edit
-                  </button>
-                  <button type="button" className="lk-act lk-act-dark" aria-label={`Unpin ${ruling.title}`} onClick={() => setUnpinning(ruling)}>
+                  </BrandButton>
+                  <BrandButton variant="danger" size="sm" aria-label={`Unpin ${ruling.title}`} onClick={() => setUnpinning(ruling)}>
                     Unpin
-                  </button>
+                  </BrandButton>
                 </span>
               ) : null}
             </li>
@@ -119,12 +120,12 @@ function AskList({ campaignId, asks, onPin }: { campaignId: Id<"campaigns">; ask
             <span className="lk-askq">{ask.question || "A rules question"}</span>
             {ask.call ? <span className="lk-muted lk-rulingtext">Suggested: {ask.call}</span> : null}
             <span className="lk-rulingacts">
-              <button type="button" className="lk-act lk-act-gold" onClick={() => onPin(ask)}>
+              <BrandButton variant="allow" size="sm" onClick={() => onPin(ask)}>
                 Pin a ruling
-              </button>
-              <button type="button" className="lk-act lk-act-dark" onClick={() => void dismiss(ask)}>
+              </BrandButton>
+              <BrandButton variant="deny" size="sm" onClick={() => void dismiss(ask)}>
                 Dismiss
-              </button>
+              </BrandButton>
             </span>
           </li>
         ))}
@@ -225,12 +226,12 @@ function RulingDialog({
           </p>
         ) : null}
         <div className="lk-formacts">
-          <button type="button" className="lk-act lk-act-dark" onClick={onClose}>
+          <BrandButton variant="cancel" onClick={onClose}>
             Cancel
-          </button>
-          <button type="submit" className="lk-send" disabled={!valid || busy}>
+          </BrandButton>
+          <BrandButton type="submit" variant="confirm" disabled={!valid || busy}>
             {mode.kind === "edit" ? "Save" : "Pin ruling"}
-          </button>
+          </BrandButton>
         </div>
       </form>
     </Modal>
@@ -252,12 +253,11 @@ function UnpinDialog({ campaignId, ruling, onClose }: { campaignId: Id<"campaign
         </p>
       ) : null}
       <div className="lk-formacts">
-        <button type="button" className="lk-act lk-act-dark" onClick={onClose}>
+        <BrandButton variant="cancel" onClick={onClose}>
           Cancel
-        </button>
-        <button
-          type="button"
-          className="lk-act lk-danger"
+        </BrandButton>
+        <BrandButton
+          variant="danger"
           onClick={async () => {
             setError(null);
             try {
@@ -269,7 +269,7 @@ function UnpinDialog({ campaignId, ruling, onClose }: { campaignId: Id<"campaign
           }}
         >
           Unpin
-        </button>
+        </BrandButton>
       </div>
     </Modal>
   );

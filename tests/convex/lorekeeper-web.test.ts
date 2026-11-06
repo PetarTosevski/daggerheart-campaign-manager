@@ -296,7 +296,7 @@ describe("lorekeeper internet pass", () => {
       fetchMock
         .mockResolvedValueOnce(sseResponse(textReply("VERDICT: none\nNothing in the books.")))
         .mockImplementationOnce(() => {
-          // The Opus pass is already reserved; the campaign budget now has no room for the web pass ($0.10).
+          // The Opus pass is already reserved; the campaign budget now has no room for the web pass ($0.37).
           process.env.LOREKEEPER_CAMPAIGN_MONTHLY_USD = "0.05";
           return Promise.resolve(sseResponse(textReply("VERDICT: none\nStill nothing.", "claude-opus-5-5")));
         });

@@ -2,7 +2,7 @@
 // schema sent to Claude, the zod check of its answer, and the fuzzy match of
 // the names it read to SRD ids. Pure: no framework imports, relative imports only.
 
-import { z } from "zod";
+import * as z from "../zod";
 
 import { ANCESTRIES, ARMOR, CLASSES, COMMUNITIES, DOMAIN_CARDS, SUBCLASSES, TRAIT_IDS, WEAPONS, type Source, type TraitId } from "../srd/index";
 import type { ImportDraft, PhotoReadResult, Unmatched } from "./draft";

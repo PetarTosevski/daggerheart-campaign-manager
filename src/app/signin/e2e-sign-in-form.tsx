@@ -4,7 +4,7 @@ import { useAuthActions } from "@convex-dev/auth/react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import { BrandButton } from "@/components/brand/buttons";
 
 /** Test-only sign-in, rendered only in builds with NEXT_PUBLIC_E2E_AUTH=true. */
 export function E2ESignInForm() {
@@ -39,9 +39,9 @@ export function E2ESignInForm() {
         Secret
         <input name="secret" type="password" required className="min-h-11 rounded-md border px-3 py-2" />
       </label>
-      <Button type="submit" variant="outline" className="min-h-11">
+      <BrandButton type="submit" variant="neutral">
         Test sign-in
-      </Button>
+      </BrandButton>
       {error ? (
         <p role="alert" className="text-sm text-destructive">
           {error}

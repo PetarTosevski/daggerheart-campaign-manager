@@ -92,7 +92,9 @@ test("the GM: a stat block makes room, swaps and closes; drag and area picking s
     // An area pick lands on the square under the pointer (viewport.toSquares under the transform).
     await areas.getByRole("button", { name: "Pick on the map" }).click();
     await expect(gm.getByTestId("area-pick-banner")).toContainText("click a square on the map");
-    const target = { x: 17, y: 4 };
+    // Open map, clear of the HUD: the four party banners (238 px tall) cover the top rows down to about row 5 at
+    // 1440, and a click there opens a sheet instead of picking.
+    const target = { x: 17, y: 8 };
     const at = await squareOnScreen(gm);
     await gm.mouse.click(at.x + (target.x + 0.5) * at.px, at.y + (target.y + 0.5) * at.px);
     await expect(gm.getByTestId("area-pick-result")).toHaveText(/drawn\./);

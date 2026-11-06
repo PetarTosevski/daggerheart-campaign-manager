@@ -23,6 +23,9 @@
  *   `featurePrompts.allyRoll`, which writes with `resolveFeatureUse` too (`ResolveExtras`).
  * - U1 / U4: rows as cards (public: roll, own damage, Hit / Miss / Defeated; GM: the full resolution with
  *   `adversaryBefore`); one actionLog group, which `actionLog.undo` reverts.
+ * - Rule switches RFC (docs/tasks/TASK-RULES-RFC.md): the run follows the campaign's damage, sight and condition modes
+ *   (`buildRun`); D8 Manual leaves an adversary at its last HP up (`instanceWrites` with the modes); the Manual notes (D2,
+ *   D4, D8, M1, C1) are GM-only `rule` rows in the use's group, so undoing the use undoes them.
  */
 import { v, type Infer } from "convex/values";
 
@@ -52,17 +55,19 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction, newGroupId } from "./actionLog";
 import { dropDice, MAX_CARD_TARGETS, type CardChoice, type CardRoll, type DiceSlot } from "./cardChoices";
-import { afterUnstoppable, cardPromptValidator, damageRolls, effectEndsOf, endOnSheet, gmLines, instanceWrites, openCardHits, promptsOf, publicTargets, rollText, writeInstances } from "./cardRows";
-import { actorSheetAfter, effectOption, featureIdOfEffect, ownsEffect, tokenKeyOf, writeSheetChanges, type BuiltRun, type Delegated, type UsePick } from "./cardRunner";
+import { afterUnstoppable, cardPromptValidator, damageRolls, effectEndsOf, endOnSheet, gmLines, instanceWrites, lastHpNotes, openCardHits, promptsOf, publicTargets, resistanceNotes, rollText, writeInstances } from "./cardRows";
+import { actorSheetAfter, effectOption, featureIdOfEffect, ownsEffect, planHopePaid, tokenKeyOf, ruleNotesOfUse, writeSheetChanges, type BuiltRun, type Delegated, type UsePick } from "./cardRunner";
+import { postRuleNote, ruleModesOf } from "./ruleModes";
 import { setStance } from "./stanceDrop";
 import type { AdversaryBefore } from "./validators/actionLog";
 import { unshakableText, unshakePlan, type UnshakableRoll } from "./unshakable";
 import type { CompanionNumbers } from "./companion";
-import { partyOf, saveSheet } from "./characterSheet";
+import { noteHopeSpent, partyOf, saveSheet } from "./characterSheet";
 import type { AttackScene } from "./combatActions";
 import { hasServerMove, isMarkOf, isRolledFirst, openAllyRoll, spendTargetCount, withoutRollCosts } from "./featurePrompts";
-import { activeAreasOnMap, areaFactsFor } from "../combatAreas";
+import { activeAreasOnMap, areaFactsFor } from "./combatAreas";
 import { campaignFearState, gainFear, spendFear } from "./fear";
+import { afterPcActionRoll } from "./rollAftermath";
 import { changed } from "./rolls";
 import { rollValidator } from "./validators/actionLog";
 
@@ -78,7 +83,8 @@ export const resolvedFeatureValidator = v.object({
   damage: v.array(rollValidator),
   success: v.boolean(),
   targets: v.array(v.object({ tokenId: v.id("combatTokens"), hit: v.boolean(), defeated: v.boolean() })),
-  fearDelta: v.number(),
+  /** The GM's Fear change; absent for a player while "Players see the GM's Fear" is off (dcm-jh6d.62). */
+  fearDelta: v.optional(v.number()),
   prompts: v.array(cardPromptValidator),
   /** What the use did besides its roll: the delegated D5 features' lines, Favor / Focus, Help dice, areas. */
   notes: v.array(v.string()),
@@ -95,7 +101,7 @@ export function featureRefusal(r: RunRefusal) {
     case "exhausted":
       return appError("FEATURE_EXHAUSTED", r.detail);
     case "cost":
-      return appError("FEATURE_COST_UNPAID", `Short of: ${r.detail}.`);
+      return appError("FEATURE_COST_UNPAID", `Short of: ${r.detail}.`, r.shortfall);
     case "targets":
       return appError("COMBAT_TARGET_INVALID", r.detail);
     case "requirement":
@@ -885,7 +891,8 @@ export async function resolveFeatureUse(
     const fromToken = built.creatures.onMap ? built.creatures.scene.scene.tokens.find((t) => t._id === id) : undefined;
     if (fromToken !== undefined) {
       for (const t of built.creatures.scene.scene.tokens) {
-        if (t._id === id || t.side !== "pc" || t.ref.kind !== "pc" || !rangeCheck(fromToken, t, "close").inRange) continue;
+        // Rule switches ODR: Defined Ranges off, every party member on the map is a candidate (the GM judges by eye).
+        if (t._id === id || t.side !== "pc" || t.ref.kind !== "pc" || !rangeCheck(fromToken, t, "close", built.definedRanges).inRange) continue;
         const holder = t._id === actorToken ? null : await built.creatures.resolve(t._id).catch(() => null);
         const holderSheet = t._id === actorToken ? next : holder?.kind === "pc" ? (others.get(holder.character._id)?.after ?? holder.sheet) : null;
         if (holderSheet === null) continue;
@@ -912,10 +919,15 @@ export async function resolveFeatureUse(
   next = withFeatureCaster(sheet, next, pick.featureId, character._id);
   for (const [id, o] of others) others.set(id, { ...o, after: withFeatureCaster(o.before, o.after, pick.featureId, character._id) });
 
-  const writes = instanceWrites(plan, built.creatures, pick.name);
+  // Rule switches RFC, D8 (CB p.208): Manual leaves an adversary at its last HP up; the GM is told below.
+  const modes = ruleModesOf(campaign);
+  const writes = instanceWrites(plan, built.creatures, pick.name, undefined, modes);
   await writeInstances(ctx, writes);
   const fearDelta = await applyFear(ctx, campaign._id, plan.gmFearDelta);
-  const sheetChanged = changed(sheet, next);
+  // dcm-z9rz.23: the Hope the use paid (its Experiences and its costs, even one the roll's own Hope paid) counts as spent.
+  const hopePaid = Math.max(0, sheet.hope - built.paidSheet.hope) + planHopePaid(plan, actorToken, actorToken);
+  const sheetChanged = changed(sheet, next) || hopePaid > 0;
+  noteHopeSpent(ctx, character._id, hopePaid);
   if (sheetChanged) await saveSheet(ctx, character._id, next);
   const allyRows = [...others.values()].filter((o) => changed(o.before, o.after));
   for (const a of allyRows) await saveSheet(ctx, a.character._id, a.after);
@@ -973,8 +985,19 @@ export async function resolveFeatureUse(
       undoable: true,
     });
   }
+  // Rule switches RFC: the Manual rules' GM notes (D2, D8, then M1, C1, D4) in the use's group.
+  for (const summary of resistanceNotes(plan, built.creatures)) await postRuleNote(ctx, campaign, { ruleId: "resistance", summary, groupId, actorId });
+  for (const summary of lastHpNotes(writes, modes)) await postRuleNote(ctx, campaign, { ruleId: "adversaryDefeated", summary, groupId, actorId });
+  for (const n of ruleNotesOfUse(built, plan)) await postRuleNote(ctx, campaign, { ruleId: n.ruleId, summary: n.summary, groupId, actorId });
   if (plan.roll && countsAsActionRoll(plan.roll.record, { logKind: "roll", undone: false })) {
     await tickArmedCountdowns(ctx, { campaignId: campaign._id, entryId, outcome: plan.roll.record.outcome, actorId });
+  }
+  // Plan rule-switches RA (S1): the use's action roll (an ally's roll for Cannonball, `featurePrompts.allyRoll`, has the ally
+  // as `character`) failing or rolling with Fear hands the spotlight to the GM, or notes it, in the use's group. RA2 (R3):
+  // the run gained the roll's Hope and Fear by the campaign's mode (`hopeFear`, buildRun); in Manual the GM gets the
+  // "gain 1 Fear?" note in the same group (`fearWithheld` unset: one Fear for a with-Fear roll in Manual).
+  if (plan.roll && plan.roll.record.kind === "action" && plan.roll.record.outcome !== "none") {
+    await afterPcActionRoll(ctx, campaign, { characterId: character._id, name: sheet.name, kind: "action", success: plan.success, withFear: plan.roll.withFear, groupId, actorId });
   }
   if (built.creatures.onMap) {
     const hitTokens = await openCardHits(ctx, { plan, built, campaignId: campaign._id, groupId, actorId, attacker: { characterId: character._id, label: sheet.name, cardId: plan.cardId, feature: pick.name } });

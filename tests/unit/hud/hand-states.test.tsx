@@ -1,7 +1,7 @@
 /**
  * The HUD hand (plan combat-hud H2.3; docs/tasks/TASK-HUD-H2.3.md; board CmpCards): the states around the app's own
  * card face (tags, lift and glow, grey wash) as pure functions, and the hand itself with Convex mocked: the fan with the
- * classic face, Hide cards (local, no server call, answer 16a), Roll options, the full card view (More, Use / Close,
+ * classic face, Hide cards (stored on the account, config U6c), Roll options, the full card view (More, Use / Close,
  * Escape), Use opening the picking panel's session (H3.1; the panel itself: tests/unit/hud/card-pick.test.tsx), the vault with its recall labels, the GM's locked hand, another player's hand
  * view only, and a hidden hand.
  */
@@ -12,6 +12,7 @@ import type { HandCard } from "@/components/combat-map/actions/hand/model";
 import { HiddenHand, HudHandBody, type HudHandBodyProps } from "@/components/combat-map/hud/hand/body";
 import { PickProvider, usePick } from "@/components/combat-map/hud/pick";
 import { HudProvider } from "@/components/combat-map/hud/state";
+import { raiseHand } from "@/components/combat-map/hud/hand/raise";
 import { cardLook, experienceShort, hopeNeed, loadoutFullText, recallText, signedEdge, usedText, type LookContext } from "@/components/combat-map/hud/hand/states";
 
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -215,19 +216,25 @@ describe("the HUD hand", () => {
     expect(screen.getByRole("button", { name: "Open vault, 0 cards" })).toBeTruthy();
   });
 
-  it("Hide cards folds the fan on this screen only (no server call) and Show cards brings it back", () => {
+  it("Hide cards asks the account to fold this hand (preferences.setFold, config U6c); a folded hand shows Show cards", () => {
     setHand([CHAOS, ENTANGLE]);
     setCharacter(2);
-    renderHand();
+    queries["preferences:folds"] = [];
+    const first = renderHand();
+    expect(fanCards()).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: "Hide cards" }));
+    expect(calls).toEqual([{ name: "preferences:setFold", args: { campaignId: CAMPAIGN, characterId: MOSS, folded: true } }]);
+    first.unmount();
+    calls.length = 0;
+    // The account says folded (the optimistic update, then the server): the fan folds; Show cards asks to unfold.
+    queries["preferences:folds"] = [MOSS];
+    renderHand();
     expect(screen.queryAllByTestId("hud-hand-card")).toHaveLength(0);
     expect(screen.getByTestId("hud-hand-folded")).toBeTruthy();
-    expect(calls).toEqual([]);
     const show = screen.getByRole("button", { name: "Show cards (2)" });
     expect(show.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(show);
-    expect(fanCards()).toHaveLength(2);
-    expect(calls).toEqual([]);
+    expect(calls).toEqual([{ name: "preferences:setFold", args: { campaignId: CAMPAIGN, characterId: MOSS, folded: false } }]);
   });
 
   it("Roll options: Experiences with their Hope cost (greyed 'Needs 1 Hope' once spoken for), advantage −3..+3, Help; Esc closes", () => {
@@ -313,6 +320,57 @@ describe("the HUD hand", () => {
     const full = within(screen.getByTestId("hud-hand-vault")).getByRole("button", { name: "Loadout full · 5 of 5, Unleash Chaos" }) as HTMLButtonElement;
     expect(full.disabled).toBe(true);
     expect(screen.getByText("Send a card to the vault first")).toBeTruthy();
+  });
+
+  it("raiseHand() (the action ring's Cast; dcm-bxp.99.32.20): a folded hand unfolds, the first playable Use takes focus", async () => {
+    setHand([WALL, ENTANGLE]);
+    setCharacter(0);
+    queries["preferences:folds"] = [MOSS];
+    const { rerender } = renderHand();
+    expect(screen.queryByTestId("hud-hand-fan")).toBeNull();
+    await act(async () => {
+      expect(raiseHand()).toBe(true);
+    });
+    expect(calls).toEqual([{ name: "preferences:setFold", args: { campaignId: CAMPAIGN, characterId: MOSS, folded: false } }]);
+    // The fold list answers; the fan is drawn and Vicious Entangle's Use (Wall Walk needs 1 Hope) takes focus.
+    queries["preferences:folds"] = [];
+    rerender(
+      <HudProvider>
+        <PickProvider>
+          <HudHandBody campaignId={CAMPAIGN} mapId={MAP} characterId={MOSS} name="Moss" mode="own" canPlay creatures={[]} pickedEnemies={[]} />
+        </PickProvider>
+      </HudProvider>,
+    );
+    expect(document.activeElement).toHaveAccessibleName("Use Vicious Entangle");
+    // Already shown: it focuses at once. Another player's hand (view only) registers nothing.
+    (document.activeElement as HTMLElement).blur();
+    act(() => {
+      raiseHand();
+    });
+    expect(document.activeElement).toHaveAccessibleName("Use Vicious Entangle");
+  });
+
+  it("raiseHand() does nothing for a hand that is not yours", () => {
+    setHand([ENTANGLE]);
+    setCharacter(2);
+    renderHand({ mode: "view", canPlay: false });
+    expect(raiseHand()).toBe(false);
+  });
+
+  it("the vault: Recall waits while the GM holds the spotlight (SPOTLIGHT_WITH_GM; dcm-bxp.99.32.38, CB p.27)", async () => {
+    setHand([ENTANGLE], [CHAOS]);
+    setCharacter(2);
+    queries["restsReads:current"] = { open: false };
+    queries["combatSpotlight:state"] = { holder: { kind: "gm" }, since: 1, reason: "gmTook", rollBy: null, reactionsOnly: true, canMove: false };
+    renderHand();
+    fireEvent.click(screen.getByRole("button", { name: "Open vault, 1 card" }));
+    const recall = within(screen.getByTestId("hud-hand-vault")).getByRole("button", { name: "Recall · 1 Stress, Unleash Chaos" });
+    expect(recall).toHaveAttribute("aria-disabled", "true");
+    expect(recall).toHaveAccessibleDescription("The GM has the spotlight · reactions only");
+    await act(async () => {
+      fireEvent.click(recall);
+    });
+    expect(calls).toEqual([]);
   });
 
   it("the GM's hand is locked until Play-for: the lock tag, no Use, no Roll options, no recall", () => {

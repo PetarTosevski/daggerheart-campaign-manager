@@ -55,6 +55,7 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+/* The recap's buttons are ink on paper: brandButton ink (src/components/brand/ink-button.css, Q5 a). */
 .jrr-error {
   margin: 0;
   font-family: var(--font-plex), ui-sans-serif, sans-serif;
@@ -153,9 +154,35 @@
 }
 
 @media (max-width: 1100px), (pointer: coarse) {
-  .jrr-btn,
   .jrr-inline,
   .jrr-input {
     min-height: 44px;
   }
+}
+
+/* 'Milestone' (dcm-z9rz.29): the line, then its action or the Party link, right-aligned like Loot. */
+.jrr-milestone dd {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.jrr-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  font-weight: 400;
+  font-size: 13px;
+}
+.jrr-link {
+  color: var(--jr-acc);
+  font-weight: 600;
+  font-size: 13px;
+}
+.jrr-link:focus-visible {
+  outline: 2px solid var(--jr-acc);
+  outline-offset: 2px;
 }

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
-import { brandButton } from "@/components/brand/buttons";
+import { BrandButton, brandButton } from "@/components/brand/buttons";
 import { useSessionEndedRedirect } from "@/lib/auth/use-session-ended-redirect";
 import { errorMessage } from "@/lib/convex-errors";
 
@@ -44,10 +44,10 @@ export function RouteError({
         <p className="m-0 text-[#c9d2cf]">{errorMessage(error)}</p>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <button type="button" className={brandButton({ variant: "solid", size: "lg" })} onClick={() => retry()}>
+        <BrandButton variant="confirm" size="lg" onClick={() => retry()}>
           Try again
-        </button>
-        <Link href={back.href} className={brandButton({ variant: "outline", size: "lg" })}>
+        </BrandButton>
+        <Link href={back.href} className={brandButton({ variant: "cancel", size: "lg" })}>
           {back.label}
         </Link>
       </div>

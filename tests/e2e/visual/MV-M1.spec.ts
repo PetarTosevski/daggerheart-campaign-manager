@@ -79,18 +79,25 @@ test("MV-M1 difficult hatch, doors, Blocked, the GM's warning and the movement-r
     // ---- The player (Sprites): the hatch only where Ash has looked, "Blocked" at the fence, the card's note.
     await player.goto(url);
     const playerBoard = player.getByRole("region", { name: "Battle map" });
-    const mine = playerBoard.getByRole("button", { name: /^Ash, Party.*your character/ });
+    // HUD tokens are named for the sheet a click opens (plan combat-hud H8.1).
+    const mine = playerBoard.getByRole("button", { name: /^Ash \(your character\): actions/ });
     await expect(mine).toHaveAttribute("data-square", "14,17", { timeout: 30_000 });
     await player.locator("body").click({ position: { x: 2, y: 2 } });
     await player.keyboard.press("d");
     await expect(mine).toHaveAttribute("data-square", "15,17");
     await expect.poll(async () => (await playerClient.query(api.combatTokensReads.party, { campaignId, mapId })).find((t) => t._id === ash._id)?.x).toBe(15);
-    const card = player.getByRole("region", { name: "Selected token" });
-    await expect(card.getByTestId("combat-difficult-note")).toBeVisible();
     await settle(player);
     const playerShots = visual(player, "MV-M1");
     await playerShots.shoot(playerBoard, "player-hatch-seen-only");
+    // The token card lives in the HUD's "Your character" drawer (plan combat-hud H8.1): open it for the card's shot,
+    // then close it so the board shots below stay drawer-free.
+    await player.getByRole("button", { name: "Your character", exact: true }).click();
+    const drawer = player.getByRole("complementary", { name: "Your character" });
+    const card = drawer.getByRole("region", { name: "Selected token" });
+    await expect(card.getByTestId("combat-difficult-note")).toBeVisible();
     await playerShots.shoot(card, "player-card-difficult-note");
+    await drawer.press("Escape");
+    await expect(drawer).toHaveCount(0);
 
     // "Blocked": Ash north of the fence steps into it (re-triggered per viewport: the notice fades after 4 s).
     await client.mutation(api.combatTokens.move, { campaignId, tokenId: ash._id, x: 21, y: 8 });
@@ -100,7 +107,8 @@ test("MV-M1 difficult hatch, doors, Blocked, the GM's warning and the movement-r
       await player.setViewportSize(viewport);
       await player.locator("body").click({ position: { x: 2, y: 2 } });
       await player.keyboard.press("s");
-      await expect(notice).toHaveText("Blocked");
+      // The HUD words the refusal as CmpBlocked does (plan combat-hud H6.2).
+      await expect(notice).toHaveText("Something blocks the way.");
       await mine.scrollIntoViewIfNeeded();
       await playerBoard.screenshot({ path: `test-results/visual/MV-M1/player-blocked-${viewport.width}.png`, animations: "disabled" });
     }
@@ -109,7 +117,7 @@ test("MV-M1 difficult hatch, doors, Blocked, the GM's warning and the movement-r
     // ---- The GM's warning: Ash walked through the room's wall.
     await client.mutation(api.combatTokens.move, { campaignId, tokenId: ash._id, x: 11, y: 3 });
     await page.goto(url);
-    const gmAsh = board.getByRole("button", { name: /^Ash, Party/ });
+    const gmAsh = board.getByRole("button", { name: /^Open Ash’s sheet/ });
     await expect(gmAsh).toHaveAttribute("data-square", "11,3");
     const gmNotice = board.getByTestId("combat-move-notice");
     for (const viewport of VIEWPORTS) {

@@ -136,11 +136,25 @@ export function ownDisadvantage(sources: number | undefined): 0 | 1 {
  * is left, by target id. A single target, or targets that all carry it, leave no residual: the roll is made as before.
  */
 export function splitTargetDisadvantage(extra: readonly { id: string; disadvantage: number }[]): { common: number; residual: Map<string, number> } {
-  const own = extra.map((t) => ({ id: t.id, disadvantage: ownDisadvantage(t.disadvantage) }));
-  const common = own.length === 0 ? 0 : Math.min(...own.map((t) => t.disadvantage));
+  const { disadvantage, residual } = splitTargetEdge(extra);
+  return { common: disadvantage, residual };
+}
+
+/**
+ * Plan rule-switches RFA (user 2026-11-06), C1 Book on the adversary side: CB p.102 "While you are Vulnerable, all rolls
+ * targeting you have advantage", per target like Hidden's disadvantage. Each target's own edge is its own disadvantage
+ * (on or off, `ownDisadvantage`) minus its own advantage (on or off: one advantage source cancels them, DA17), so -1, 0
+ * or 1. What every target shares counts for the whole roll (`advantage` when every target has advantage, `disadvantage`
+ * when every target has disadvantage); `residual` is each target's edge left over, by target id, signed: positive reads
+ * the lower die, negative the higher (`keptDie(first, second, net - residual)`).
+ */
+export function splitTargetEdge(extra: readonly { id: string; disadvantage: number; advantage?: number }[]): { advantage: number; disadvantage: number; residual: Map<string, number> } {
+  const own = extra.map((t) => ({ id: t.id, edge: ownDisadvantage(t.disadvantage) - ((t.advantage ?? 0) > 0 ? 1 : 0) }));
+  const edges = own.map((t) => t.edge);
+  const common = own.length === 0 ? 0 : edges.every((e) => e >= 0) ? Math.min(...edges) : edges.every((e) => e <= 0) ? Math.max(...edges) : 0;
   const residual = new Map<string, number>();
-  for (const t of own) if (t.disadvantage - common > 0) residual.set(t.id, t.disadvantage - common);
-  return { common, residual };
+  for (const t of own) if (t.edge !== common) residual.set(t.id, t.edge - common);
+  return { advantage: common < 0 ? -common : 0, disadvantage: common > 0 ? common : 0, residual };
 }
 
 /**

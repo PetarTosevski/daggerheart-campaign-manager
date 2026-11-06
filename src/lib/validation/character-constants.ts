@@ -21,6 +21,15 @@ export type SubclassRank = (typeof SUBCLASS_RANKS)[number];
 export const EFFECT_UNTIL = ["rest", "longRest", "session", "hit", "scene", "manual"] as const;
 export const HELD_DIE_UNTIL = ["session", "longRest", "manual"] as const;
 /**
+ * dcm-bxp.99.32.1: when a condition with provenance ends, in the card runner's `Duration` words (the steps that give a
+ * condition carry one; src/lib/domain/card-effects/types.ts): `temporary` (CB p.102: until cleared, or the GM spends a
+ * Fear), `rest` / `longRest` / `session` / `scene`, `hit`, `nextRoll`, `manual` (an event the engine does not track,
+ * named by `endsWhen`) and `permanent`.
+ */
+export const CONDITION_UNTIL = ["temporary", "rest", "longRest", "session", "scene", "hit", "nextRoll", "manual", "permanent"] as const;
+/** The longest `endsWhen` text of a condition's provenance ("until they break free"). */
+export const CONDITION_ENDS_WHEN_MAX = 120;
+/**
  * When a used "once per X" feature comes back. `scene` (plan sheet-drawer SD0, Q7, dcm-bxp.117; widened, no version
  * bump): "once per scene" limits, cleared when the scene ends (the GM ends the encounter or presses End scene, or the
  * session ends). `campaign` (plan lanes-2 wave 9, E5.3, dcm-pg8x; widened, no version bump, old rows stay valid): an

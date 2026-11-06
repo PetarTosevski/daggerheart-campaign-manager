@@ -175,9 +175,6 @@
 .cm-pv {
   position: relative;
 }
-.cm-pv-btn {
-  background: rgba(0, 0, 0, 0.35);
-}
 .cm-pv-menu {
   position: absolute;
   right: 0;
@@ -202,6 +199,14 @@
 .cm-pv-item[aria-checked="true"] {
   border-color: var(--cm-acc);
   color: var(--cm-acc-soft);
+}
+/* Glass items (the scene tools' menu, G10): the chosen view takes the switched-on gold, like an aria-pressed glass button. */
+.gb.cm-pv-item {
+  justify-content: flex-start;
+}
+.gb.cm-pv-item[aria-checked="true"] {
+  --text: var(--gb-hope-soft);
+  box-shadow: inset 0 0 0 1px var(--gb-hope);
 }
 
 /* ---------------------------------------------------------------- cards */

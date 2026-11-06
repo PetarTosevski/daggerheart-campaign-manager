@@ -1,13 +1,16 @@
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { v, type Infer } from "convex/values";
 
+import { resolveTableSettings } from "../src/lib/config/campaign-settings";
 import { modelForPass } from "../src/lib/lorekeeper/flow";
 import { appError } from "../src/lib/errors/app-error";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { lorekeeperAvailable, modelFor } from "./lib/claude";
+import { featureOn } from "./lib/features";
 import { campaignMutation, campaignQuery } from "./lib/functions";
+import { ownerViewing, type Permission } from "./lib/permissions";
 import { reserve } from "./lib/lorekeeper/caps";
 import {
   answerPhaseValidator,
@@ -28,9 +31,15 @@ import { deleteConversationBatch, settleReservation, WATCHDOG_MS } from "./lorek
  * `editQuestion` (LK3) rewrites one of the asker's questions, drops everything after it and asks it again.
  *
  * Who reads what (Q3, Q10): a conversation is readable by every campaign member unless its asker made it private;
- * a private one exists only for its asker (anyone else gets LOREKEEPER_NOT_FOUND, the GM included). Only the asker
+ * a private one exists only for its asker (anyone else gets LOREKEEPER_NOT_FOUND, the GM included), and for the app
+ * owner's read-only view (config AD13, N1 changed: `ownerViewing`, queries only). Only the asker
  * asks in, stops, toggles, makes private or deletes their own conversation. No prompt ever holds GM-only data (Q4,
  * `buildContext`), so a public conversation leaks nothing secret.
+ *
+ * Campaign settings (config L1, docs/tasks/TASK-CONFIG-L1.md): `tableSettings.lorekeeperAsk: "gm"` lets only the GM
+ * and co-GMs ask (`ask` / `editQuestion` refuse a player with LOREKEEPER_GM_ONLY before anything is reserved or
+ * stored), and `tableSettings.lorekeeperWeb: false` stores every conversation's internet toggle as false, so the run
+ * never makes its internet pass. `access` tells the composer both.
  */
 
 // ---------------------------------------------------------------- shapes
@@ -111,11 +120,15 @@ function toMessageView(row: Doc<"lorekeeperMessages">): MessageView {
 
 type CampaignCtx = (QueryCtx | MutationCtx) & { user: Doc<"users">; campaign: Doc<"campaigns"> };
 
-/** A conversation of this campaign the caller may read (public, or their own), else LOREKEEPER_NOT_FOUND. */
+/**
+ * A conversation of this campaign the caller may read (public, or their own; any, in the owner's read-only view,
+ * AD13), else LOREKEEPER_NOT_FOUND.
+ */
 async function readableConversation(ctx: CampaignCtx, id: Id<"lorekeeperConversations">) {
   const row = await ctx.db.get("lorekeeperConversations", id);
   if (row === null || row.campaignId !== ctx.campaign._id) throw appError("LOREKEEPER_NOT_FOUND");
-  if (row.userId !== ctx.user._id && row.visibility === "private") throw appError("LOREKEEPER_NOT_FOUND");
+  const hidden = row.userId !== ctx.user._id && row.visibility === "private";
+  if (hidden && !ownerViewing(ctx, ctx.user, ctx.campaign)) throw appError("LOREKEEPER_NOT_FOUND");
   return row;
 }
 
@@ -145,6 +158,20 @@ function titleOf(question: string): string {
   return line.length <= max ? line : `${line.slice(0, max - 1).trimEnd()}…`;
 }
 
+/**
+ * The campaign's Lorekeeper settings for this caller (config L1): may they ask (everyone, or GMs only: decided by the
+ * wrapper's permission, so the GM and every co-GM can), and may a conversation search the internet.
+ */
+function lorekeeperRules(campaign: Doc<"campaigns">, permission: Permission) {
+  const settings = resolveTableSettings(campaign.tableSettings);
+  return { canAsk: settings.lorekeeperAsk === "everyone" || permission === "owner", webAllowed: settings.lorekeeperWeb };
+}
+
+/** LOREKEEPER_GM_ONLY for a player while the GM keeps the Lorekeeper to GMs; first, so a refusal spends nothing. */
+function assertCanAsk(ctx: CampaignCtx & { permission: Permission }) {
+  if (!lorekeeperRules(ctx.campaign, ctx.permission).canAsk) throw appError("LOREKEEPER_GM_ONLY");
+}
+
 // ---------------------------------------------------------------- queries
 
 /** Whether the Lorekeeper can answer on this deployment (a key or the e2e fake model). A boolean only. */
@@ -153,6 +180,19 @@ export const available = campaignQuery({
   args: {},
   returns: v.boolean(),
   handler: async () => lorekeeperAvailable(),
+});
+
+/**
+ * Config L1: what the composer needs from the campaign's settings. `available` as above; `canAsk` false for a player
+ * while only GMs may ask; `webAllowed` false while the GM keeps the internet off (the composer hides its toggle).
+ * Reactive: a settings change reaches every open composer.
+ */
+export const access = campaignQuery({
+  need: "view",
+  enough: "owner",
+  args: {},
+  returns: v.object({ available: v.boolean(), canAsk: v.boolean(), webAllowed: v.boolean() }),
+  handler: async (ctx) => ({ available: lorekeeperAvailable(), ...lorekeeperRules(ctx.campaign, ctx.permission) }),
 });
 
 /**
@@ -176,7 +216,18 @@ export const listConversations = campaignQuery({
       .withIndex("by_campaign_visibility_last", (q) => q.eq("campaignId", ctx.campaign._id).eq("visibility", "campaign"))
       .order("desc")
       .take(60);
-    const shared = publicRows.filter((row) => row.userId !== me).slice(0, 30);
+    // AD13 (N1 changed): the owner's read-only view lists the private ones too, newest first among the rest.
+    const privateRows = ownerViewing(ctx, ctx.user, ctx.campaign)
+      ? await ctx.db
+          .query("lorekeeperConversations")
+          .withIndex("by_campaign_visibility_last", (q) => q.eq("campaignId", ctx.campaign._id).eq("visibility", "private"))
+          .order("desc")
+          .take(30)
+      : [];
+    const shared = [...publicRows, ...privateRows]
+      .filter((row) => row.userId !== me)
+      .sort((a, b) => b.lastAt - a.lastAt)
+      .slice(0, 30);
     return { mine: mine.map((row) => toConversationView(row, me)), shared: shared.map((row) => toConversationView(row, me)) };
   },
 });
@@ -211,10 +262,14 @@ export const listMessages = campaignQuery({
  * Asks a question: in the caller's conversation `conversationId`, or in a new one (public unless `visibility` says
  * private; Q3). Stores the question and a pending answer, books the worst-case cost against the caps (same
  * transaction), and schedules the answer run and its watchdog. `webSearch` is the conversation's 'If the books
- * don’t say' toggle (stored on the conversation).
+ * don’t say' toggle (stored on the conversation; always false while the campaign keeps the internet off, config L1).
+ * A player in a GMs-only campaign is refused with LOREKEEPER_GM_ONLY before anything else (the refused call rolls
+ * back, its rate-limit token included).
  */
 export const ask = campaignMutation({
   need: "view",
+  // ctx.permission must be exact up to "owner": the GMs-only setting branches on it.
+  enough: "owner",
   rateLimit: "lorekeeperAsk",
   args: {
     conversationId: v.optional(v.id("lorekeeperConversations")),
@@ -224,6 +279,8 @@ export const ask = campaignMutation({
   },
   returns: v.object({ conversationId: v.id("lorekeeperConversations"), answerId: v.id("lorekeeperMessages") }),
   handler: async (ctx, args) => {
+    assertCanAsk(ctx);
+    const webSearch = args.webSearch && lorekeeperRules(ctx.campaign, ctx.permission).webAllowed;
     const question = args.question.trim();
     if (question.length === 0 || question.length > LOREKEEPER_LIMITS.question) throw appError("LOREKEEPER_QUESTION_INVALID");
     if (!lorekeeperAvailable()) throw appError("LOREKEEPER_UNAVAILABLE");
@@ -242,14 +299,14 @@ export const ask = campaignMutation({
         userId: ctx.user._id,
         title: titleOf(question),
         visibility: args.visibility ?? "campaign",
-        webSearch: args.webSearch,
+        webSearch,
         messageCount: 2,
         lastAt: now,
         createdAt: now,
       });
     } else {
       conversationId = existing._id;
-      await ctx.db.patch("lorekeeperConversations", existing._id, { webSearch: args.webSearch, messageCount: existing.messageCount + 2, lastAt: now });
+      await ctx.db.patch("lorekeeperConversations", existing._id, { webSearch, messageCount: existing.messageCount + 2, lastAt: now });
     }
     const base = { conversationId, campaignId: ctx.campaign._id, userId: ctx.user._id, createdAt: now, updatedAt: now };
     await ctx.db.insert("lorekeeperMessages", { ...base, role: "question", status: "done", text: question });
@@ -266,13 +323,17 @@ export const ask = campaignMutation({
  * the conversation (and the Ask-the-GM requests on those answers; pinned rulings are their own rows and stay),
  * stores the edited text on the question, and schedules a fresh answer exactly as `ask` does (the same rate limit,
  * one answer in flight, the caps). Only the question's asker may edit it; anyone else gets LOREKEEPER_NOT_FOUND.
+ * Config L1 as in `ask`: LOREKEEPER_GM_ONLY first, and the conversation's internet toggle is turned off while the
+ * campaign keeps the internet off.
  */
 export const editQuestion = campaignMutation({
   need: "view",
+  enough: "owner",
   rateLimit: "lorekeeperAsk",
   args: { questionId: v.id("lorekeeperMessages"), question: v.string() },
   returns: v.object({ conversationId: v.id("lorekeeperConversations"), answerId: v.id("lorekeeperMessages") }),
   handler: async (ctx, args) => {
+    assertCanAsk(ctx);
     const row = await ctx.db.get("lorekeeperMessages", args.questionId);
     if (row === null || row.campaignId !== ctx.campaign._id || row.userId !== ctx.user._id || row.role !== "question") throw appError("LOREKEEPER_NOT_FOUND");
     const conversation = await ownConversation(ctx, row.conversationId);
@@ -308,6 +369,7 @@ export const editQuestion = campaignMutation({
     await ctx.db.patch("lorekeeperConversations", conversation._id, {
       messageCount: Math.max(2, conversation.messageCount - later.length + 1),
       lastAt: now,
+      ...(conversation.webSearch && !lorekeeperRules(ctx.campaign, ctx.permission).webAllowed ? { webSearch: false } : {}),
       // The title is the first question: editing that one renames the conversation.
       ...(earlier === null ? { title: titleOf(question) } : {}),
     });
@@ -349,13 +411,18 @@ export const stop = campaignMutation({
   },
 });
 
-/** Sets the caller's conversation's 'If the books don’t say' toggle (true: 'Search the internet too'). */
+/**
+ * Sets the caller's conversation's 'If the books don’t say' toggle (true: 'Search the internet too'). While the
+ * campaign keeps the internet off (config L1) it stores false whatever is sent.
+ */
 export const setWebSearch = campaignMutation({
   need: "view",
   args: { conversationId: v.id("lorekeeperConversations"), webSearch: v.boolean() },
   returns: v.null(),
-  handler: async (ctx, { conversationId, webSearch }) => {
-    const row = await ownConversation(ctx, conversationId);
+  handler: async (ctx, args) => {
+    // Config AF1: the owner's Lorekeeper internet search switch, off for the caller, keeps the toggle off.
+    const webSearch = args.webSearch && lorekeeperRules(ctx.campaign, ctx.permission).webAllowed && (await featureOn(ctx, ctx.user, "lorekeeperWeb"));
+    const row = await ownConversation(ctx, args.conversationId);
     if (row.webSearch !== webSearch) await ctx.db.patch("lorekeeperConversations", row._id, { webSearch });
     return null;
   },

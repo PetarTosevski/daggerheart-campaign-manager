@@ -17,6 +17,11 @@
  * - R11 / Q1 / Q2 (CB p.103-104): a creature outside the card's range waits for the GM; no line of sight refuses; cover
  *   gives the roll one disadvantage. CA4b: every target, picked, ally and follow-up creature is measured from the origin
  *   the card's wording names (`rangeOrigin`).
+ * - Rule switches RFC (docs/tasks/TASK-RULES-RFC.md), read in `buildRun` through `ruleModesOf`: D2 / D4 / D5 / D8 /
+ *   Massive Damage go to the runner (`RunContext.damageRules`); M1 Manual refuses no unseen or blocked enemy and adds no
+ *   cover disadvantage; C1 gives a card's attack roll the targets' Vulnerable / Hidden dice (Book) or notes them (Manual).
+ *   The Manual notes are `BuiltRun.ruleNotes` plus `ruleNotesOfUse` (D4 from the plan); the caller posts them in the use's
+ *   group.
  * - U1: what a player receives holds hit / miss / defeated, their own dice and their own sheet changes; an enemy's HP,
  *   Stress, thresholds and Difficulty are only on the GM's row.
  *
@@ -27,6 +32,7 @@
  * sheet are `feat:<hash>:<n>` (sheet effect ids hold 40 characters, a feature id up to 53), on an instance
  * `feat:<featureId>:<n>`; its tokens are `cardTokens` under `feat:<featureId>`.
  */
+import { replaying } from "./dice";
 import { type Infer } from "convex/values";
 
 import { pickUse, run, type ActorState, type PlanStep, type ResolvedMod, type RunContext, type RunPlan, type RunRefusal, type WeaponInfo } from "../../src/lib/domain/card-effects/run";
@@ -37,8 +43,10 @@ import { featureEffect } from "../../src/lib/srd/feature-effects/index";
 import type { CardEffect, CardUse, Duration, Mod, Range, Step, TargetSpec } from "../../src/lib/domain/card-effects/types";
 import { featureUseKey, recordUsedOn, usedOnBefore, type CreatureFacts, type PayerState, type StateFacts } from "../../src/lib/domain/card-effects/availability";
 import type { MapCreature, MarkedTracks } from "../../src/lib/domain/combat-actions/numbers";
-import { lastingModsOf } from "../../src/lib/domain/adversary-effects/run";
+import { conditionName, lastingModsOf } from "../../src/lib/domain/adversary-effects/run";
 import { lineOfSight, rangeCheck, rangeFromWeapon, tokenDistance, type Combatant, type SightResult } from "../../src/lib/domain/combat-actions/index";
+import { sightRule, type SightMode } from "../../src/lib/domain/combat-actions/sight";
+import { conditionDiceNotes, rangeAsk, rangeAskNotes, stressOverflowNotes, targetsConditionDice, type UseRuleNote } from "../../src/lib/domain/card-effects/rule-notes";
 import { tokenVisibility } from "../../src/lib/domain/combat-map/index";
 import { derivedDefense, derivedThresholds, withPassiveTraits } from "../../src/lib/domain/characters/derived";
 import { withEffects } from "../../src/lib/domain/characters/effects";
@@ -48,17 +56,17 @@ import { gainSlots, type SlotCounts } from "../../src/lib/domain/characters/slot
 import { minionValue } from "../../src/lib/domain/adversaries/index";
 import { assertTypedModifier, experienceBonus, spendHope, type Rng } from "../../src/lib/domain/dice/index";
 import { appError } from "../../src/lib/errors/app-error";
-import { ADVERSARIES } from "../../src/lib/srd/adversaries";
+import { srdAdversary } from "../../src/lib/srd/adversary-lookup";
 import { alwaysOnResistance } from "../../src/lib/srd/adversary-resistance";
 import { adversaryEffects } from "../../src/lib/srd/adversary-effects/index";
 import { cardEffect, cardUsage } from "../../src/lib/srd/card-effects/index";
 import { getDomainCard, getWeapon } from "../../src/lib/srd/index";
-import type { AdversaryDef, DomainId, TraitId, Weapon } from "../../src/lib/srd/types";
+import type { DomainId, TraitId, Weapon } from "../../src/lib/srd/types";
 import type { CharacterSheet, Effect } from "../../src/lib/validation/characters";
 import { FEATURE_USES_MAX } from "../../src/lib/validation/character-constants";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
-import { activeAreasOnMap, areaFactsFor } from "../combatAreas";
+import { activeAreasOnMap, areaFactsFor, memberConditionsFor, observerConditions } from "./combatAreas";
 import type { AttackScene } from "./combatActions";
 import { preparedFor } from "./areaSight";
 import { DEFAULT_OPTIONALS, MAX_CARD_TARGETS, MAX_CHAIN_LINKS, type CardRoll, type ParsedChoices } from "./cardChoices";
@@ -66,6 +74,7 @@ import type { ChoiceAsks } from "./cardRows";
 import { rangeBandValidator } from "./validators/combatRequests";
 import { readSheet } from "./characterSheet";
 import { rules } from "./rolls";
+import { ruleMode, ruleModesOf } from "./ruleModes";
 import { stanceDropMarker } from "./stanceDrop";
 import {
   cardIdOfEffect,
@@ -99,7 +108,6 @@ export {
 export { endedConditionLine } from "./conditionMarkers";
 import { unshakePlan, type UnshakableRoll } from "./unshakable";
 
-const SRD_BY_ID = new Map<string, AdversaryDef>(ADVERSARIES.map((a) => [a.id, a]));
 
 // ---------------------------------------------------------------- the card and its use
 
@@ -224,7 +232,7 @@ async function blockOf(ctx: QueryCtx, instance: Doc<"encounterAdversaries">): Pr
   const own = instance.resistance;
   const fromInstance = own === undefined ? undefined : own.conditional === undefined || instance.resistanceActive === true ? { physical: own.physical, magic: own.magic } : { physical: "none" as const, magic: "none" as const };
   if (instance.source.kind === "srd") {
-    const def = SRD_BY_ID.get(instance.source.adversaryId);
+    const def = srdAdversary(instance.source.adversaryId);
     const minionX = def ? minionValue(def) : null;
     return { minion: def?.type === "Minion" || minionX !== null, minionX, resistance: fromInstance ?? alwaysOnResistance(instance.source.adversaryId) };
   }
@@ -273,6 +281,8 @@ export type EnemyCreature = {
   minion: boolean;
   combatant: Combatant;
   sight: SightResult;
+  /** Rule switches RFC, M1 Manual: the actor's view doesn't show the token (dark, behind them); let through, the GM is told. */
+  unseen?: true;
 };
 export type PcCreature = { kind: "pc"; tokenId: Id<"combatTokens">; token: Doc<"combatTokens">; character: Doc<"characters">; sheet: CharacterSheet; combatant: Combatant };
 export type SelfCreature = { kind: "self"; tokenId: Id<"combatTokens">; token: Doc<"combatTokens"> };
@@ -296,6 +306,8 @@ async function enemyInstance(ctx: QueryCtx, campaignId: Id<"campaigns">, token: 
  * One token named by the player, as a creature. Enemies must be seen with a clear line (COMBAT_NO_LINE_OF_SIGHT, Q2)
  * and belong to a running encounter's undefeated instance (COMBAT_TARGET_INVALID); PCs are the party's tokens on the map.
  * The actor's own token is `self`. Cached per token so a creature named twice is one combatant.
+ * Rule switches RFC, M1 `lineOfSight` Manual (`sightMode`): an unseen or blocked enemy is let through (`unseen`, the GM
+ * is told); an unseen token that isn't a valid enemy still answers COMBAT_NO_LINE_OF_SIGHT, as in `checkTargets`.
  */
 export class Creatures {
   private readonly byId = new Map<string, Creature>();
@@ -304,6 +316,7 @@ export class Creatures {
     private readonly campaignId: Id<"campaigns">,
     private readonly liveScene: AttackScene | null,
     readonly actorSheet: CharacterSheet,
+    private readonly sightMode: SightMode = "book",
   ) {}
 
   /** The live map (SD3: a feature used without one has none; asking for it is FEATURE_NEEDS_MAP). */
@@ -335,13 +348,14 @@ export class Creatures {
     let creature: Creature;
     if (index === s.viewer.index) creature = { kind: "self", tokenId: token._id, token };
     else if (token.side === "enemy") {
-      if (!seenBy(s, index)) throw appError("COMBAT_NO_LINE_OF_SIGHT");
+      const seen = seenBy(s, index);
+      if (!seen && this.sightMode !== "manual") throw appError("COMBAT_NO_LINE_OF_SIGHT");
       const sight = lineOfSight(s.attacker.ref.kind === "pc" ? preparedFor(s.scene, s.attacker.ref.characterId) : s.scene.prepared, s.attacker, token, s.scene.visionObjects);
-      if (!sight.lineOfSight) throw appError("COMBAT_NO_LINE_OF_SIGHT");
+      if (sightRule("", sight, this.sightMode, seen).refused) throw appError("COMBAT_NO_LINE_OF_SIGHT");
       const linked = await enemyInstance(this.ctx, this.campaignId, token);
-      if (linked === null) throw appError("COMBAT_TARGET_INVALID");
+      if (linked === null) throw appError(seen && sight.lineOfSight ? "COMBAT_TARGET_INVALID" : "COMBAT_NO_LINE_OF_SIGHT");
       const block = await blockOf(this.ctx, linked.instance);
-      creature = { kind: "enemy", tokenId: token._id, token, ...linked, minion: block.minion, combatant: enemyCombatant(token._id, linked.instance, block), sight };
+      creature = { kind: "enemy", tokenId: token._id, token, ...linked, minion: block.minion, combatant: enemyCombatant(token._id, linked.instance, block), sight, ...(seen ? {} : { unseen: true as const }) };
     } else if (token.side === "pc" && token.ref.kind === "pc") {
       const character = await this.ctx.db.get("characters", token.ref.characterId);
       if (character === null || character.campaignId !== this.campaignId) throw appError("COMBAT_TARGET_INVALID");
@@ -352,7 +366,10 @@ export class Creatures {
     return creature;
   }
 
-  /** Every enemy token the actor sees with a clear line that can be attacked (for "all targets" and Minion offers). */
+  /**
+   * Every enemy token the actor sees with a clear line that can be attacked (for "all targets" and Minion offers). M1
+   * Manual lets a named blocked enemy through, but never adds one here: the player names it.
+   */
   async visibleEnemies(): Promise<EnemyCreature[]> {
     const out: EnemyCreature[] = [];
     if (this.liveScene === null) return out;
@@ -360,7 +377,7 @@ export class Creatures {
       if (i === this.scene.viewer.index || token.side !== "enemy" || !seenBy(this.scene, i)) continue;
       try {
         const c = await this.resolve(token._id);
-        if (c.kind === "enemy") out.push(c);
+        if (c.kind === "enemy" && c.unseen !== true && c.sight.lineOfSight) out.push(c);
       } catch {
         // not attackable (no line of sight, no running instance): skipped
       }
@@ -453,6 +470,13 @@ export type BuiltRun = {
   outOfRange: OutOfRange[];
   /** The card's range for Minion offers ("unlimited" without one). */
   range: Range | "unlimited";
+  /**
+   * Rule switches ODR: the campaign's Defined Ranges (CB p.103 optional rule). False: `outOfRange` is always empty, a
+   * point is never out of range and a chain always asks (the GM judges by eye).
+   */
+  definedRanges: boolean;
+  /** Rule switches RFC: the M1 / C1 Manual notes the use's named creatures call for (posted with `ruleNotesOfUse`). */
+  ruleNotes: UseRuleNote[];
 };
 
 const SECOND_WIND_SITUATION = "The attack succeeded with Hope";
@@ -465,6 +489,19 @@ function specOf(use: CardUse): TargetSpec | undefined {
 export function targetMin(spec: TargetSpec | undefined): number | undefined {
   const count = spec?.count;
   return count !== undefined && (count.kind === "upTo" || count.kind === "any") ? count.min : undefined;
+}
+
+/**
+ * The Hope a plan's paid costs took from creature `id` (`actorId`: the plan's actor, whose own `pay` steps name no payer),
+ * for the session tally's exact spend (dcm-z9rz.23, `noteHopeSpent`). Pool costs (held dice, Favor, Focus) are no Hope.
+ */
+export function planHopePaid(plan: Pick<RunPlan, "steps">, id: string, actorId: string): number {
+  let paid = 0;
+  for (const step of plan.steps) {
+    if (step.kind !== "pay" || !step.paid || (step.payerId ?? actorId) !== id) continue;
+    for (const c of step.costs) if (c.resource === "hope" && c.pool === undefined) paid += c.amount;
+  }
+  return paid;
 }
 
 /** Whether a use spends Hope: its own costs or the costs of a step inside it (an optional "spend a Hope to ..."). */
@@ -692,7 +729,9 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
   const { effect, use } = pick;
   // Without a map (SD3) the actor's runner id is its character id; nothing on the map can be named.
   const actorTokenId: string = scene ? scene.attacker._id : req.character._id;
-  const creatures = new Creatures(ctx, req.campaign._id, scene, sheet);
+  // Rule switches RFC: the campaign's modes (M1 in the creatures, C1 on the roll, the damage modes in the runner).
+  const modes = ruleModesOf(req.campaign);
+  const creatures = new Creatures(ctx, req.campaign._id, scene, sheet, modes.lineOfSight);
 
   // Experiences: 1 Hope each, their value added to the roll (CB p.90).
   rules(() => assertTypedModifier(roll.modifier ?? 0));
@@ -718,8 +757,12 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
     targets.push(c);
   }
   // "all targets within Close range" (CB p.104, R9): with none named, every enemy the actor sees in range.
+  // Rule switches ODR2 (user 2026-11-06): with Defined Ranges off nobody is picked by counting squares; the use runs on
+  // no target and the GM is asked who is in range (one GM-only note per use).
+  const rangeNotes: UseRuleNote[] = [];
   if (scene && targets.length === 0 && spec?.count.kind === "all" && (spec.side === "enemy" || spec.side === "any") && (spec.area === undefined || spec.area === "aroundSelf")) {
-    targets = (await creatures.visibleEnemies()).filter((e) => rangeCheck(scene.attacker, e.token, range).inRange);
+    if (modes.definedRanges) targets = (await creatures.visibleEnemies()).filter((e) => rangeCheck(scene.attacker, e.token, range).inRange);
+    else if (range !== "unlimited") rangeNotes.push({ ruleId: "definedRanges", summary: rangeAsk(pick.name, range) });
   }
   if (scene && spec?.side === "self" && targets.length === 0) targets = [{ kind: "self", tokenId: scene.attacker._id, token: scene.attacker }];
   const encounters = new Set(targets.flatMap((t) => (t.kind === "enemy" ? [t.encounter._id] : [])));
@@ -752,8 +795,10 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
   // ---- Q1: what is outside the card's range waits for the GM. An area around a point or a target measures its anchor
   // (the first target) from the actor and the rest from the anchor; the picked / ally / follow-up creatures from the
   // origin their own spec names (a chain from the creature before them).
+  // Rule switches ODR: with Defined Ranges off nothing is out of range (the GM judges by eye), so nothing waits.
   const outOfRange: OutOfRange[] = [];
   const flag = (c: Creature, check: { inRange: boolean; band: Band } | null) => {
+    if (!modes.definedRanges) return;
     if (check !== null && !check.inRange && !outOfRange.some((o) => o.tokenId === c.tokenId)) outOfRange.push({ tokenId: c.tokenId, band: check.band });
   };
   const anchored = spec?.area === "aroundPoint" || spec?.area === "aroundTarget";
@@ -789,9 +834,9 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
   if (points.length > 0 && scene) {
     for (const p of points) {
       if (!Number.isInteger(p.x) || !Number.isInteger(p.y) || p.x < 0 || p.y < 0 || p.x >= scene.map.w || p.y >= scene.map.h) throw appError("COMBAT_TARGET_INVALID", "That point is off the map.");
-      if (!rangeCheck(scene.attacker, { x: p.x, y: p.y, size: 1 }, range).inRange) throw appError("COMBAT_TARGET_INVALID", "That point is out of range.");
+      if (!rangeCheck(scene.attacker, { x: p.x, y: p.y, size: 1 }, range, modes.definedRanges).inRange) throw appError("COMBAT_TARGET_INVALID", "That point is out of range.");
     }
-    if (spec?.area === "aroundPoint" || spec?.origin === "point") {
+    if (modes.definedRanges && (spec?.area === "aroundPoint" || spec?.origin === "point")) {
       const radius = spec.areaRange ?? range;
       for (const t of targets) {
         if (t.kind === "self") continue;
@@ -804,8 +849,40 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
   }
 
   // ---- the roll: cover gives one disadvantage (Q2); an attack roll adds the effects' attack bonus (CB p.96).
-  const cover = targets.some((t) => t.kind === "enemy" && t.sight.cover);
+  // Rule switches RFC, M1 Manual: no cover disadvantage; the GM is told about a target's cover (when the use rolls) and
+  // about every named enemy out of sight.
+  const ruleNotes: UseRuleNote[] = [...rangeNotes];
+  // Rule switches ODR2: a use that counts creatures by range (Hive Mind's "per other Mechanorb within Close") counts no
+  // one with Defined Ranges off (`RunContext.definedRanges`, the runner's `rangeBlind`); the GM is asked instead.
+  if (rangeNotes.length === 0) for (const summary of rangeAskNotes(pick.name, use, modes.definedRanges)) ruleNotes.push({ ruleId: "definedRanges", summary });
+  const cover = targets.some((t) => t.kind === "enemy" && sightRule("", t.sight, modes.lineOfSight, t.unseen !== true).cover);
+  const noted = new Set<string>();
+  for (const c of [...targets, ...picked, ...followUp, ...chain.flat()]) {
+    if (c.kind !== "enemy" || noted.has(c.tokenId)) continue;
+    noted.add(c.tokenId);
+    const blind = c.unseen === true || !c.sight.lineOfSight;
+    const rule = sightRule(c.instance.label, c.sight, modes.lineOfSight, c.unseen !== true);
+    if (rule.note !== null && (blind || (targets.includes(c) && use.roll !== undefined))) ruleNotes.push({ ruleId: "lineOfSight", summary: rule.note });
+  }
   const attackRoll = use.roll !== undefined && (use.roll.kind === "attack" || (use.roll.kind !== "reaction" && use.roll.kind !== "adversaryAttack" && use.roll.difficulty.kind === "target"));
+  // Rule switches RFC, C1 (CB p.102; user 2026-11-06 "yes, like weapons"): a card's attack roll against Vulnerable targets
+  // gets an advantage die, against Hidden / Cloaked ones a disadvantage die (what every target gives, as a weapon attack's
+  // `targetsEdge`); Manual adds none and notes each target's condition. A target's conditions: its own, its tags and the
+  // areas it stands in or behind (as `targetFacts` in convex/lib/combatActions.ts).
+  const rolledAgainst = attackRoll ? targets.filter((t): t is EnemyCreature | PcCreature => t.kind !== "self") : [];
+  const conditionsOf = (t: EnemyCreature | PcCreature): string[] => {
+    const out = new Set<string>(t.kind === "enemy" ? [...t.instance.conditions, ...t.instance.tags] : t.sheet.conditions);
+    if (scene) {
+      for (const m of memberConditionsFor(mapAreas, scene.scene.tokens, t.token)) out.add(conditionName(m.condition));
+      for (const o of observerConditions(mapAreas, scene.scene.tokens, t.token, scene.attacker)) out.add(o.condition);
+    }
+    return [...out];
+  };
+  const targetConditions = rolledAgainst.map(conditionsOf);
+  const conditionEdge = targetsConditionDice(targetConditions, modes.conditionDice);
+  for (const [i, t] of rolledAgainst.entries()) {
+    for (const summary of conditionDiceNotes(t.kind === "enemy" ? t.instance.label : t.sheet.name, targetConditions[i]!, modes.conditionDice)) ruleNotes.push({ ruleId: "conditionDice", summary });
+  }
   const live = withEffects(paidSheet);
 
   // ---- card-specific fixes from the domain tables' "Notes for CA4"
@@ -904,7 +981,7 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
   const nameOfToken = (t: Doc<"combatTokens">): string | undefined => {
     const c = creatures.get(t._id);
     if (c?.kind !== "enemy") return undefined;
-    return c.instance.source.kind === "srd" ? (SRD_BY_ID.get(c.instance.source.adversaryId)?.name ?? c.instance.label) : c.instance.label;
+    return c.instance.source.kind === "srd" ? (srdAdversary(c.instance.source.adversaryId)?.name ?? c.instance.label) : c.instance.label;
   };
 
   const context: Omit<RunContext, "rng"> = {
@@ -913,6 +990,12 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
     // roll"): each chain link rolls its damage again.
     freshLinkDamage: true,
     gmFear: req.gmFear,
+    // Plan rule-switches RA2 (bead dcm-jh6d.67): the campaign's R3 mode; Manual gains no Hope / Fear from the use's rolls.
+    hopeFear: ruleMode(req.campaign, "hopeFearFromRolls"),
+    // Plan rule-switches RFC (bead dcm-jh6d.70): D2 / D4 / D5 / D8 / Massive Damage on every mark the use makes.
+    damageRules: modes,
+    // Plan rule-switches ODR2: Defined Ranges off, nothing the use picks or counts by range applies on its own.
+    ...(modes.definedRanges ? {} : { definedRanges: false }),
     useId: use.id,
     // Off the map a self use targets the actor itself (SD3).
     targets: !scene && spec?.side === "self" ? [actor] : targets.map((t) => combatantOf(t, actor)),
@@ -949,14 +1032,28 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
     roll: {
       ...(roll.trait !== undefined ? { trait: roll.trait } : {}),
       ...(choices.weapon !== undefined ? { weapon: choices.weapon } : {}),
-      advantage: roll.advantage ?? 0,
-      disadvantage: (roll.disadvantage ?? 0) + (cover ? 1 : 0),
+      advantage: (roll.advantage ?? 0) + conditionEdge.advantage,
+      disadvantage: (roll.disadvantage ?? 0) + (cover ? 1 : 0) + conditionEdge.disadvantage,
       help: roll.help ?? 0,
       modifier: (roll.modifier ?? 0) + exp.value + (attackRoll ? live.attackBonus : 0),
       ...(roll.difficulty !== undefined ? { difficulty: roll.difficulty } : {}),
     },
   };
-  return { context, paidSheet, creatures, targets, outOfRange, range };
+  return { context, paidSheet, creatures, targets, outOfRange, range, definedRanges: modes.definedRanges, ruleNotes };
+}
+
+/**
+ * Rule switches RFC: a use's M1 / C1 / D4 Manual notes (D2 and D8 are `resistanceNotes` / `lastHpNotes` in
+ * convex/lib/cardRows.ts). The caller posts each with `postRuleNote` in the use's group.
+ */
+export function ruleNotesOfUse(built: Pick<BuiltRun, "ruleNotes" | "creatures" | "context">, plan: Pick<RunPlan, "steps">): UseRuleNote[] {
+  const nameOf = (id: string): string | null => {
+    if (id === built.context.actor.id) return built.creatures.actorSheet.name;
+    const c = built.creatures.get(id);
+    return c?.kind === "enemy" ? c.instance.label : c?.kind === "pc" ? c.sheet.name : null;
+  };
+  const overflow = stressOverflowNotes(plan.steps, built.context.damageRules?.stressOverflow, nameOf).map((summary): UseRuleNote => ({ ruleId: "stressOverflow", summary }));
+  return [...built.ruleNotes, ...overflow];
 }
 
 // ---------------------------------------------------------------- running
@@ -967,7 +1064,7 @@ export function refusalError(r: RunRefusal) {
     case "exhausted":
       return appError("CARD_EXHAUSTED", r.detail);
     case "cost":
-      return appError("CARD_COST_UNPAID", `Short of: ${r.detail}.`);
+      return appError("CARD_COST_UNPAID", `Short of: ${r.detail}.`, r.shortfall);
     case "targets":
       return appError("COMBAT_TARGET_INVALID", r.detail);
     case "requirement":
@@ -992,13 +1089,7 @@ function recording(base: Rng): { rng: Rng; values: number[] } {
 }
 
 /** Replays recorded dice in order (a value that doesn't fit the die is rolled fresh), then rolls fresh ones. */
-export function replaying(values: readonly number[], base: Rng): Rng {
-  let i = 0;
-  return (sides) => {
-    const n = values[i++];
-    return n !== undefined && n >= 1 && n <= sides ? n : base(sides);
-  };
-}
+export { replaying };
 
 export type RunOutcome = ({ kind: "plan"; plan: RunPlan; picked: readonly Combatant[]; delegated?: Delegated } | { kind: "needsChoice"; asks: ChoiceAsks }) & {
   /** Every die value the use rolled, in order (kept for a choice after the roll, convex/lib/cardChoices.ts). */
@@ -1048,7 +1139,7 @@ export function choiceAsks(built: BuiltRun, plan: RunPlan): ChoiceAsks {
       const chooser = step.chooserId !== undefined ? tokenIdsOf(built, [step.chooserId])[0] : undefined;
       asks.push({ kind: "choose", stepId: step.step.id, label: step.step.label, options: step.step.options.map((o) => ({ id: o.id, label: o.label })), ...(chooser ? { chooserId: chooser } : {}) });
     } else if (step.prompt === "split") {
-      asks.push({ kind: "split", label: step.text, tokenIds: tokenIdsOf(built, step.targetIds) });
+      asks.push({ kind: "split", label: step.text, tokenIds: tokenIdsOf(built, step.targetIds), ...(step.amount !== undefined ? { amount: step.amount } : {}) });
     } else if (step.prompt === "followUp" && chainGoesOn(built, step)) {
       asks.push({ kind: "followUp", label: step.text, link: step.amount ?? 1, tokenIds: tokenIdsOf(built, step.targetIds) });
     }
@@ -1066,6 +1157,8 @@ function chainGoesOn(built: BuiltRun, step: Extract<PlanStep, { kind: "prompt" }
   // A creature out of range waits for the GM first (pending); the next link is asked after.
   if (built.outOfRange.length > 0) return false;
   if (!built.creatures.onMap || spec === undefined || spec.range === "weapon" || spec.range === "unlimited") return true;
+  // Rule switches ODR: Defined Ranges off, the map measures nothing, so the chain asks (the GM judges by eye).
+  if (built.definedRanges === false) return true;
   const range = spec.range;
   const tokens = built.creatures.scene.scene.tokens;
   const last = tokens.filter((t) => tokenIdsOf(built, step.targetIds).includes(t._id));
@@ -1174,7 +1267,7 @@ export function planHandoff(built: BuiltRun, plan: RunPlan): PlanHandoff {
     else if (s.kind === "changeForm") {
       const tokenId = tokenIdsOf(built, [s.targetId])[0];
       if (tokenId !== undefined) out.changeForms.push({ tokenId, adversaryId: s.adversaryId });
-      out.notes.push(`${runnerName(built, s.targetId)} changes form (${SRD_BY_ID.get(s.adversaryId)?.name ?? s.adversaryId})`);
+      out.notes.push(`${runnerName(built, s.targetId)} changes form (${srdAdversary(s.adversaryId)?.name ?? s.adversaryId})`);
     } else if (s.kind === "forcedAttack") {
       out.forcedAttacks.push({ attackerTokenIds: tokenIdsOf(built, s.attackerIds), againstTokenIds: tokenIdsOf(built, s.againstIds) });
       const against = s.againstIds.length > 0 ? s.againstIds.map((id) => runnerName(built, id)).join(", ") : "a creature the GM picks";

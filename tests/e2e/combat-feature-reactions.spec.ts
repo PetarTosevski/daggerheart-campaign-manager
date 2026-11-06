@@ -237,7 +237,7 @@ test("after an Armor Slot a dwarf still gets Increased Fortitude; a warlock's Da
     await fortitude.getByRole("button", { name: "Use Increased Fortitude" }).click();
     await expect.poll(async () => (await sheetOf(gm, mira)).hope).toBe(0);
     // Thick Skin may fit the hit as the slot and the halving left it (Minor): then Done ends Mira's turn.
-    const [owed] = await a.client.query(api.adversaryActions.pending, { campaignId, characterId: mira });
+    const [owed] = await a.client.query(api.adversaryActionsReads.pending, { campaignId, characterId: mira });
     if (owed?.awaiting) {
       await expect(miraPrompt.locator(".ih-dmg")).toHaveText(new RegExp(`^${Math.ceil(before / 2)} damage: `), { timeout: 30_000 });
       await miraPrompt.getByRole("button", { name: "Done" }).click();
@@ -275,7 +275,7 @@ test("after an Armor Slot a dwarf still gets Increased Fortitude; a warlock's Da
     await expect.poll(async () => (await sheetOf(gm, wren)).classState?.favor, { timeout: 30_000 }).toBe(favor - 1);
     // A reaction that still fits a zero-damage hit (a loadout card such as Umbral Veil: "After an attack roll is made
     // against you") stays offered with Done (CB p.107); the hit PC sees their own "0 damage: No damage." (Q14).
-    const [left] = await b.client.query(api.adversaryActions.pending, { campaignId, characterId: wren });
+    const [left] = await b.client.query(api.adversaryActionsReads.pending, { campaignId, characterId: wren });
     if (left?.awaiting) {
       await expect(wrenPrompt.locator(".ih-dmg")).toHaveText("0 damage: No damage.", { timeout: 30_000 });
       await wrenPrompt.getByRole("button", { name: "Done" }).click();
@@ -311,7 +311,7 @@ test("a warlock's Harrowing Invocation answers before the roll: a Favor, disadva
     const held = await attacks(gm, campaignId, instanceId, wren);
     expect(held.held).toBeDefined();
     expect(held.roll).toBeNull();
-    const windows = await gm.query(api.adversaryActions.windows, { campaignId });
+    const windows = await gm.query(api.adversaryActionsReads.windows, { campaignId });
     expect(windows).toEqual([expect.objectContaining({ preRoll: true, attackerLabel: "Cutpurse" })]);
 
     const prompt = a.page.getByRole("region", { name: "Before the roll: Cutpurse attacks Wren" });
@@ -331,8 +331,8 @@ test("a warlock's Harrowing Invocation answers before the roll: a Favor, disadva
     const gmFeed = await gm.query(api.feed.list, { campaignId, paginationOpts: { numItems: 30, cursor: null } });
     expect(JSON.stringify(gmFeed.page)).toContain("Harrowing Invocation");
     const hitPrompt = a.page.getByRole("region", { name: "Incoming hit: Cutpurse hit Wren" });
-    await expect.poll(async () => (await gm.query(api.adversaryActions.windows, { campaignId })).every((w) => !("preRoll" in w) || w.preRoll !== true)).toBe(true);
-    const open = await gm.query(api.adversaryActions.windows, { campaignId });
+    await expect.poll(async () => (await gm.query(api.adversaryActionsReads.windows, { campaignId })).every((w) => !("preRoll" in w) || w.preRoll !== true)).toBe(true);
+    const open = await gm.query(api.adversaryActionsReads.windows, { campaignId });
     if (open.length > 0) await expect(hitPrompt).toBeVisible({ timeout: 30_000 });
     else await expect(hitPrompt).toHaveCount(0);
 

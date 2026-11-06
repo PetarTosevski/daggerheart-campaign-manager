@@ -1,6 +1,6 @@
 // Beast Feast: carried ingredients per PC and the party cookbook (Core Book pp.277–279).
 
-import { z } from "zod";
+import * as z from "../../zod";
 
 import { RuleError } from "../../errors/app-error";
 

@@ -2,6 +2,8 @@
 
 import type { ReactNode } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
+import type { SharedCards } from "@/components/party/level-up/shared-cards";
 import { assetBackground } from "@/lib/design-assets";
 import {
   getAncestry,
@@ -35,6 +37,8 @@ export type StepProps = {
   state: WizardState;
   update: (patch: Partial<WizardState>) => void;
   opts: WizardOptions;
+  /** Shared domain cards (CB p.21, rule-switches OSC): the campaign's mode and who holds which card; undefined while loading. */
+  shared?: SharedCards;
 };
 
 /** Domain icons from the Party board (.dom-* rules). */
@@ -433,13 +437,13 @@ export function TraitsStep({ state, update }: StepProps) {
         </div>
         <span className="flex gap-2">
           {suggestion ? (
-            <button type="button" className="wz-ghost" onClick={() => update({ traits: suggestion })}>
+            <BrandButton variant="neutral" size="sm" onClick={() => update({ traits: suggestion })}>
               Use suggested
-            </button>
+            </BrandButton>
           ) : null}
-          <button type="button" className="wz-ghost" onClick={() => update({ traits: {} })}>
+          <BrandButton variant="neutral" size="sm" onClick={() => update({ traits: {} })}>
             Clear
-          </button>
+          </BrandButton>
         </span>
       </div>
       <div className="wz-traits">
@@ -516,7 +520,7 @@ export function InfoStep({ state, update }: StepProps) {
               role="switch"
               aria-checked={state.pronounsLabel === "pronouns"}
               aria-label="Label as Pronouns"
-              className="wz-hint flex items-center gap-1.5 bg-transparent p-0 text-[13px]"
+              className="wz-hint flex items-center gap-1.5 bg-transparent p-0 text-[13px] max-sm:min-h-11"
               onClick={() => update({ pronounsLabel: state.pronounsLabel === "pronouns" ? "gender" : "pronouns" })}
             >
               <span aria-hidden="true" className={cn("relative inline-block h-4 w-7 rounded-full border border-current transition-colors", state.pronounsLabel === "pronouns" && "bg-current")}>

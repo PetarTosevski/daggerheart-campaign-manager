@@ -3,8 +3,8 @@
 // B1: "Header line: 'N sessions · M played · Next: <date of the first planned session that has one>'."
 // B9: "Dashboard: hero line 'Session N' (the live one, else the last played, else 'No sessions yet') and 'Next session
 // <date>' / 'Next session not scheduled'; the 'Last Session' card shows the last played session's recap, else 'Session N
-// was played, but no recap was written. Add one in the session's Wrap-up.', else 'No sessions played yet. Write a recap
-// in a session's Wrap-up stage and it will appear here.'"
+// was played, but no recap was written. Add one in the Journal's Log & recap.', else 'No sessions played yet. Write a recap
+// in the Journal's Log & recap and it will appear here.'"
 //
 // "First planned" and "last played" follow the board's array order, which is creation order = session number:
 // the planned session with a date and the LOWEST number, the played session with the HIGHEST number.
@@ -72,9 +72,9 @@ export function nextSessionLine(sessions: readonly SessionSummaryInput[], option
 /** The 'Last Session' card's text: the last played session's recap, else the board's two fallbacks (B9). */
 export function lastSessionText(sessions: readonly SessionSummaryInput[]): string {
   const last = lastPlayedSession(sessions);
-  if (!last) return "No sessions played yet. Write a recap in a session's Wrap-up stage and it will appear here.";
+  if (!last) return "No sessions played yet. Write a recap in the Journal's Log & recap and it will appear here.";
   if (last.recap && last.recap.trim()) return last.recap;
-  return `Session ${last.n} was played, but no recap was written. Add one in the session's Wrap-up.`;
+  return `Session ${last.n} was played, but no recap was written. Add one in the Journal's Log & recap.`;
 }
 
 function pick<T extends SessionSummaryInput>(

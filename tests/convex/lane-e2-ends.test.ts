@@ -72,7 +72,7 @@ async function arena() {
   const sheet = (id: Id<"characters">) => t.run(async (ctx) => readSheet((await ctx.db.get("characters", id))!.sheet));
   const respond = (c: Client, requestId: Id<"combatRequests">, characterId: Id<"characters">, choice: Record<string, unknown>) =>
     c.mutation(api.adversaryActions.respond, { campaignId, requestId, characterId, choice: choice as never, idempotencyKey: key() });
-  const pending = (c: Client, characterId: Id<"characters">) => c.query(api.adversaryActions.pending, { campaignId, characterId });
+  const pending = (c: Client, characterId: Id<"characters">) => c.query(api.adversaryActionsReads.pending, { campaignId, characterId });
   /** "Don't mark", then Done if a fitting answer keeps the window open (A1). */
   const noArmor = async (requestId: Id<"combatRequests">, characterId: Id<"characters">) => {
     const r = await respond(player, requestId, characterId, { kind: "noArmor" });

@@ -2,7 +2,7 @@
  * Token views and the lookups `combatTokens.ts` and `combatTokensReads.ts` share (D9 C6, R4). Split out of
  * `convex/combatTokens.ts` by dcm-uh6r so the HUD's token reads load without the movement and area engines.
  */
-import { ADVERSARIES } from "../../src/lib/srd/adversaries";
+import { srdAdversary } from "../../src/lib/srd/adversary-lookup";
 import { CLASSES } from "../../src/lib/srd/classes";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
@@ -12,7 +12,6 @@ import { pcPortrait } from "./pcPortrait";
 import { atLeast, permissionFor, type Permission } from "./permissions";
 import type { TokenView } from "./validators/combatTokens";
 
-const SRD_TYPES = new Map<string, string>(ADVERSARIES.map((a) => [a.id, a.type]));
 const CLASS_NAMES = new Map<string, string>(CLASSES.map((c) => [c.id, c.name]));
 
 /** A campaign's map by id, or null (other campaigns' and malformed ids read as missing). */
@@ -32,7 +31,7 @@ export function runningEncounter(ctx: QueryCtx, campaignId: Id<"campaigns">) {
 
 /** An instance's adversary type (SRD entry or the campaign's custom block), or null. */
 export async function adversaryType(ctx: QueryCtx, campaignId: Id<"campaigns">, instance: Doc<"encounterAdversaries">): Promise<string | null> {
-  if (instance.source.kind === "srd") return SRD_TYPES.get(instance.source.adversaryId) ?? null;
+  if (instance.source.kind === "srd") return srdAdversary(instance.source.adversaryId)?.type ?? null;
   const block = await ctx.db.get("customAdversaries", instance.source.customId);
   return block !== null && block.campaignId === campaignId ? block.type : null;
 }

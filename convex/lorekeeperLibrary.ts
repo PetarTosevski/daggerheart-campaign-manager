@@ -11,6 +11,7 @@ import {
   BOOK_KEY_HOPE_FEAR,
   BOOK_KEY_HOUSE_RULES,
   CHUNK_SCHEMA_VERSION,
+  isCampaignBookKey,
   LOREKEEPER_LIMITS,
 } from "./lib/validators/lorekeeper";
 
@@ -51,10 +52,18 @@ const BOOK_DEFAULTS: Record<string, { title: string; subtitle: string; cover: st
   [BOOK_KEY_HOUSE_RULES]: { title: "House rules (notes)", subtitle: "Your Notes tab", cover: "houseRules" },
 };
 
-/** The defaults for a book key, or null when the key is not one the library knows. */
+/** A GM's campaign book (config LB1); the GM types its title. Its spine reuses the frame book's gradient. */
+const CAMPAIGN_BOOK_DEFAULTS = { title: "Campaign book", subtitle: "Uploaded by the GM", cover: "frame" };
+
+/**
+ * The defaults for a book key, or null when the key is not one the library knows. Config LB1: a campaign book's key
+ * (`campaign:<campaignId>:<n>`) is known too, so PDF0's `ingestBook` call accepts it; `ingestBook` never creates such a
+ * book (only `campaignBooks.add` does, with its `campaignId`).
+ */
 export function bookDefaults(key: string): { title: string; subtitle: string; cover: string } | null {
   const known = BOOK_DEFAULTS[key];
   if (known) return known;
+  if (isCampaignBookKey(key)) return CAMPAIGN_BOOK_DEFAULTS;
   if (!key.startsWith("frame:")) return null;
   const frame = getPublishedFrame(key.slice("frame:".length));
   return frame ? { title: frame.name, subtitle: "Campaign frame", cover: "frame" } : null;
@@ -236,6 +245,9 @@ export const ingestBook = internalMutation({
       await ctx.db.patch("lorekeeperBooks", existing._id, fields);
       return { bookId: existing._id };
     }
+    // Config LB1: a campaign book removed (or purged) while its PDF was read is gone; recreating it here would make
+    // a book without `campaignId`, that is a shared one every campaign sees.
+    if (isCampaignBookKey(bookKey)) throw appError("LOREKEEPER_BOOK_NOT_FOUND");
     return { bookId: await ctx.db.insert("lorekeeperBooks", fields) };
   },
 });

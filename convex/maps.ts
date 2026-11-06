@@ -7,9 +7,11 @@ import { appError } from "../src/lib/errors/app-error";
 import { encounterRoll, travelDays } from "../src/lib/domain/frames/horizon";
 import { enduranceOwnerKey } from "../src/lib/domain/rest/frame-hooks/index";
 import { resolveOptions } from "../src/lib/frames/options";
-import { hexKey, hexToPixel, isAdjacent, type Hex } from "../src/lib/world/hex";
+import { hexKey, hexToPixel, isAdjacent, sameGrid, type Hex, type HexGrid } from "../src/lib/world/hex";
+import { printedHexGrid } from "../src/lib/world/printed-grids";
 import {
   HORIZON_FRAME,
+  hexCrawlSchema,
   MAX_HEXES,
   MAX_TOKENS,
   initialHexCrawl,
@@ -36,6 +38,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { logAction, newGroupId } from "./lib/actionLog";
 import { readSheet, saveSheet } from "./lib/characterSheet";
 import { rollDie } from "./lib/dice";
+import { refuseArchivedWrite } from "./lib/archived";
 import { claimFile, deleteOwnFile, isAllowedImage, isClaimed, ownFileUrl } from "./lib/files";
 import { userMutation, userQuery } from "./lib/functions";
 import {
@@ -59,7 +62,7 @@ import {
   writeToken,
 } from "./lib/maps";
 import { campaignScope, runOnce } from "./lib/operations";
-import { atLeast, liveCampaign, requirePermission, type Permission, type Role } from "./lib/permissions";
+import { atLeast, liveCampaign, requirePermission, type Permission } from "./lib/permissions";
 import { recordHistory } from "./tables/history";
 import {
   attachResultValidator,
@@ -70,6 +73,9 @@ import {
   trailOptionValidator,
   travelRulesValidator,
 } from "./lib/validators/maps";
+
+/** The map viewer: "gm" with edit access (GM, co-GM, edit grantee), else "player" (config G1: not the campaign Role). */
+type Role = "gm" | "player";
 
 export type MapView = { role: Role; frameId: Doc<"campaigns">["frameId"]; state: MapState | PlayerMapState; mapUrl: string | null };
 export type MoveResult = { days: number; weatherRoll?: number; dice: number[]; encounter: boolean; day: number };
@@ -97,6 +103,7 @@ function invalid(message: string): never {
 async function mapAccess(ctx: QueryCtx, user: Doc<"users">, campaignId: Id<"campaigns">, need: Permission) {
   const campaign = await liveCampaign(ctx, campaignId);
   const permission = await requirePermission(ctx, user, { type: "map", campaign }, need, "edit");
+  refuseArchivedWrite(ctx, campaign); // Q9 a (dcm-jh6d.64): map edits refuse an archived campaign; `get` still reads it.
   const role: Role = atLeast(permission, "edit") ? "gm" : "player";
   return { campaign, role };
 }
@@ -430,11 +437,17 @@ export const removeMapImage = userMutation({
   args: campaignArg,
   returns: v.null(),
   handler: async (ctx, { campaignId }) => {
-    const { map, scalars } = await gmMap(ctx, ctx.user, campaignId);
+    const { campaign, map, scalars } = await gmMap(ctx, ctx.user, campaignId);
     if (!scalars.customMap) return null;
     await deleteOwnFile(ctx, "map", campaignId, scalars.customMap.storageId);
     const next = { ...scalars };
     delete next.customMap;
+    // The frame's own art brings back its printed hex grid (the GM's calibration was for the upload).
+    const printed = printedHexGrid(campaign.frameId);
+    if (printed && next.hexCrawl && !sameGrid(next.hexCrawl.grid, printed)) {
+      next.hexCrawl = { ...next.hexCrawl, grid: printed };
+      if (next.hexCrawl.party) next.party = { ...next.party, ...partyAt(campaign.frameId, next, next.hexCrawl, next.hexCrawl.party) };
+    }
     await saveScalars(ctx, campaignId, map, next);
     return null;
   },
@@ -484,6 +497,43 @@ export const setHexGrid = userMutation({
   handler: async (ctx, { campaignId, grid }) => {
     const { map, scalars, crawl } = await gmCrawl(ctx, ctx.user, campaignId);
     await saveScalars(ctx, campaignId, map, { ...scalars, hexCrawl: { ...crawl, grid } });
+    return null;
+  },
+});
+
+/**
+ * One calibration change (an intent, rule CF12): a grid field, or `printed`
+ * to go back to the grid printed on the frame's map. Calibrating is for an
+ * uploaded map: the built-in art keeps its printed grid (dcm-kggd). Changing
+ * the size makes the hexes regular again (drops `sizeY`).
+ */
+export const calibrateHexGrid = userMutation({
+  args: {
+    ...campaignArg,
+    change: v.union(
+      v.object({ field: v.literal("originX"), value: v.number() }),
+      v.object({ field: v.literal("originY"), value: v.number() }),
+      v.object({ field: v.literal("size"), value: v.number() }),
+      v.object({ field: v.literal("orientation"), value: v.union(v.literal("flat"), v.literal("pointy")) }),
+      v.object({ field: v.literal("printed") }),
+    ),
+  },
+  returns: v.null(),
+  handler: async (ctx, { campaignId, change }) => {
+    const { campaign, map, scalars, crawl } = await gmCrawl(ctx, ctx.user, campaignId);
+    const printed = printedHexGrid(campaign.frameId);
+    if (change.field !== "printed" && !scalars.customMap && printed) invalid("The frame's map keeps its printed grid. Upload your own map to calibrate a grid.");
+    let grid: HexGrid;
+    if (change.field === "printed") {
+      if (!printed) invalid("This map has no printed grid.");
+      grid = printed;
+    } else if (change.field === "size") {
+      grid = { ...crawl.grid, size: change.value };
+      delete grid.sizeY;
+    } else grid = { ...crawl.grid, [change.field]: change.value };
+    const next: CrawlScalars = { ...crawl, grid: valid(hexCrawlSchema.shape.grid, grid) };
+    const party = next.party ? { ...scalars.party, ...partyAt(campaign.frameId, scalars, next, next.party) } : scalars.party;
+    await saveScalars(ctx, campaignId, map, { ...scalars, party, hexCrawl: next });
     return null;
   },
 });

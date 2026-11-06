@@ -3,18 +3,22 @@ import {
   ArrowUpCircle,
   BookmarkPlus,
   Compass,
+  Crosshair,
   Dices,
   Download,
   Droplet,
   Flag,
+  HeartCrack,
   Hourglass,
   Leaf,
   Moon,
   PenLine,
   Play,
   Shield,
+  ShieldHalf,
   Skull,
   Sparkles,
+  Speech,
   Square,
   Swords,
   Sword,
@@ -30,9 +34,14 @@ import type { JournalLog, JournalLogIcon, JournalLogLine } from "../../../../con
  * `journalLog.list` for add, remove, hide, unhide and re-word (rule 12: a click with visible latency shows at once).
  */
 
-/** One icon per line kind (design: scene compass, roll, combat, spell, Fear, hit, defeat). */
+/** One icon per line kind and roll type (design: scene compass, roll, combat, spell, Fear, hit, defeat; dcm-z9rz.28). */
 export const LOG_ICONS: Record<JournalLogIcon, { Icon: LucideIcon; label: string }> = {
   roll: { Icon: Dices, label: "Roll" },
+  reactionRoll: { Icon: ShieldHalf, label: "Reaction roll" },
+  damageRoll: { Icon: HeartCrack, label: "Damage roll" },
+  attackRoll: { Icon: Crosshair, label: "Attack roll" },
+  // Journal JF2 (dcm-z9rz.28): lucide has no mouth; Speech (a speaking head) is the closest.
+  socialRoll: { Icon: Speech, label: "Social roll" },
   gmRoll: { Icon: Dices, label: "GM roll" },
   feature: { Icon: Sparkles, label: "Feature or spell" },
   levelUp: { Icon: ArrowUpCircle, label: "Level up" },
@@ -44,6 +53,7 @@ export const LOG_ICONS: Record<JournalLogIcon, { Icon: LucideIcon; label: string
   countdown: { Icon: Hourglass, label: "Countdown" },
   combat: { Icon: Sword, label: "Attack" },
   adversary: { Icon: Shield, label: "Adversary" },
+  rule: { Icon: PenLine, label: "Manual rule note" },
   fear: { Icon: Droplet, label: "Fear" },
   combatBegan: { Icon: Swords, label: "Combat began" },
   combatEnded: { Icon: Flag, label: "Combat ended" },

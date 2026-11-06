@@ -5,6 +5,7 @@ import "./reactions.css";
 import { useMutation, useQuery } from "convex/react";
 import { Component, useState, type CSSProperties, type ReactNode } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import { DOMAINS } from "@/lib/srd/domains";
 
@@ -35,7 +36,7 @@ import {
 
 /**
  * The incoming-hit prompt (plan combat-actions AA4), shared by the Combat Map and the character sheet. One card per
- * open hit on (or near) the character, from `adversaryActions.pending`:
+ * open hit on (or near) the character, from `adversaryActionsReads.pending`:
  * - the hit PC: "14 damage: Major (2 HP). Mark an Armor Slot to make it Minor?" with Mark / Don't (CB p.114), a count
  *   to mark under I Am Your Shield (CB p.341), OK only for direct damage or no free slot (CB p.99); their own
  *   reaction cards (Shrug It Off, Unyielding Armor) with Use before the armor answer;
@@ -101,9 +102,9 @@ export class HitBoundary extends Component<{ children: ReactNode }, { failed: bo
     return (
       <div role="alert" className="ih-alert">
         <span>The incoming hit failed to load.</span>
-        <button type="button" className="ih-btn" onClick={() => this.setState({ failed: false, attempts: 0 })}>
+        <BrandButton variant="neutral" size="sm" onClick={() => this.setState({ failed: false, attempts: 0 })}>
           Try again
-        </button>
+        </BrandButton>
       </div>
     );
   }
@@ -113,9 +114,9 @@ export class HitBoundary extends Component<{ children: ReactNode }, { failed: bo
 function useRespond(campaignId: Id<"campaigns">) {
   const run = useMutation(api.adversaryActions.respond).withOptimisticUpdate((store, args) => {
     const query = { campaignId, characterId: args.characterId };
-    const views = store.getQuery(api.adversaryActions.pending, query);
+    const views = store.getQuery(api.adversaryActionsReads.pending, query);
     if (views === undefined) return;
-    store.setQuery(api.adversaryActions.pending, query, afterAnswer(views, args.requestId, args.choice));
+    store.setQuery(api.adversaryActionsReads.pending, query, afterAnswer(views, args.requestId, args.choice));
   });
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<{ requestId: string; message: string } | null>(null);
@@ -151,7 +152,7 @@ export function PendingHits({
   characterName: string;
   variant: PromptVariant;
 }) {
-  const views = useQuery(api.adversaryActions.pending, { campaignId, characterId });
+  const views = useQuery(api.adversaryActionsReads.pending, { campaignId, characterId });
   const respond = useRespond(campaignId);
   if (views === undefined || views.length === 0) return null;
   const owed = views.filter((v) => v.awaiting);
@@ -236,29 +237,29 @@ function HitCard({
       <div className="ih-actions">
         {mode === "armorOne" ? (
           <>
-            <button type="button" className="ih-btn ih-go" disabled={busy} onClick={() => onAnswer({ kind: "armor", slots: 1 })}>
+            <BrandButton variant="confirm" disabled={busy} onClick={() => onAnswer({ kind: "armor", slots: 1 })}>
               Mark
-            </button>
-            <button type="button" className="ih-btn" disabled={busy} onClick={() => onAnswer({ kind: "noArmor" })}>
+            </BrandButton>
+            <BrandButton variant="cancel" disabled={busy} onClick={() => onAnswer({ kind: "noArmor" })}>
               Don&apos;t
-            </button>
+            </BrandButton>
           </>
         ) : null}
         {mode === "armorMany" ? <ArmorCounts view={view} busy={busy} onAnswer={onAnswer} /> : null}
         {mode === "ok" ? (
-          <button type="button" className="ih-btn ih-go" disabled={busy} onClick={() => onAnswer({ kind: "noArmor" })}>
+          <BrandButton variant="confirm" disabled={busy} onClick={() => onAnswer({ kind: "noArmor" })}>
             OK
-          </button>
+          </BrandButton>
         ) : null}
         {mode === "ally" || mode === "preRoll" ? (
-          <button type="button" className="ih-btn" disabled={busy} onClick={() => onAnswer({ kind: "pass" })}>
+          <BrandButton variant="cancel" disabled={busy} onClick={() => onAnswer({ kind: "pass" })}>
             Pass
-          </button>
+          </BrandButton>
         ) : null}
         {mode === "afterArmor" ? (
-          <button type="button" className="ih-btn ih-go" disabled={busy} onClick={() => onAnswer({ kind: "pass" })}>
+          <BrandButton variant="confirm" disabled={busy} onClick={() => onAnswer({ kind: "pass" })}>
             Done
-          </button>
+          </BrandButton>
         ) : null}
       </div>
       {error ? (
@@ -280,7 +281,7 @@ function ArmorCounts({ view, busy, onAnswer }: { view: HitView; busy: boolean; o
       {counts.map((n) => {
         const step = stepFor(view, n);
         return (
-          <button key={n} type="button" className="ih-btn ih-go"
+          <BrandButton key={n} variant="confirm"
             disabled={busy}
             aria-label={step ? `Mark ${n}: ${stepText(step)}` : `Mark ${n}`}
             onClick={() => onAnswer({ kind: "armor", slots: n })}
@@ -289,12 +290,11 @@ function ArmorCounts({ view, busy, onAnswer }: { view: HitView; busy: boolean; o
               Mark {n}
               {step ? <span className="ih-step"> · {stepText(step)}</span> : null}
             </span>
-          </button>
+          </BrandButton>
         );
       })}
-      <button
-        type="button"
-        className="ih-btn"
+      <BrandButton
+        variant="cancel"
         disabled={busy}
         aria-label={none ? `Don't: ${stepText(none)}` : "Don't"}
         onClick={() => onAnswer({ kind: "noArmor" })}
@@ -303,7 +303,7 @@ function ArmorCounts({ view, busy, onAnswer }: { view: HitView; busy: boolean; o
           Don&apos;t
           {none ? <span className="ih-step"> · {stepText(none)}</span> : null}
         </span>
-      </button>
+      </BrandButton>
     </>
   );
 }
@@ -322,9 +322,9 @@ function GrantItem({ grant, disabled, onUse }: { grant: GrantView; disabled: boo
         <span>How many</span>
         <input type="number" min={1} max={grantMax(grant)} value={amount} onChange={(e) => setAmount(grantAmount(grant, Number(e.target.value)))} />
       </label>
-      <button type="button" className="ih-btn ih-go" disabled={disabled} onClick={() => onUse(grantAmount(grant, amount))} aria-label={`Spend ${amount}: ${grant.label}`}>
+      <BrandButton variant="confirm" disabled={disabled} onClick={() => onUse(grantAmount(grant, amount))} aria-label={`Spend ${amount}: ${grant.label}`}>
         Spend
-      </button>
+      </BrandButton>
     </li>
   );
 }
@@ -341,9 +341,9 @@ function ReactionCardItem({ cardId, disabled, onUse }: { cardId: string; disable
         </span>
       </div>
       {card.text ? <p className="ih-rc-text">{card.text}</p> : null}
-      <button type="button" className="ih-btn ih-go" disabled={disabled} onClick={onUse} aria-label={`Use ${card.name}`}>
+      <BrandButton variant="confirm" disabled={disabled} onClick={onUse} aria-label={`Use ${card.name}`}>
         Use
-      </button>
+      </BrandButton>
     </li>
   );
 }
@@ -396,9 +396,9 @@ function FeatureItem({ feature, disabled, onUse }: { feature: FeatureView; disab
           {text}
         </label>
       ))}
-      <button type="button" className="ih-btn ih-go" disabled={disabled || !ready} onClick={() => onUse(picks)} aria-label={`Use ${feature.name}`}>
+      <BrandButton variant="confirm" disabled={disabled || !ready} onClick={() => onUse(picks)} aria-label={`Use ${feature.name}`}>
         Use
-      </button>
+      </BrandButton>
     </li>
   );
 }

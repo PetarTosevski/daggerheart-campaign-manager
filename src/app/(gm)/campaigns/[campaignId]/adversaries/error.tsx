@@ -2,6 +2,7 @@
 
 import "./adversaries.css";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { useSessionEndedRedirect } from "@/lib/auth/use-session-ended-redirect";
 import { errorMessage } from "@/lib/convex-errors";
 
@@ -18,9 +19,9 @@ export default function AdversariesError({ error, retry }: { error: Error & { di
         ) : (
           <div role="alert" className="adv-alert">
             <span>Adversaries failed to load. {errorMessage(error)}</span>
-            <button type="button" onClick={() => retry()}>
+            <BrandButton variant="neutral" size="sm" onClick={() => retry()}>
               Try again
-            </button>
+            </BrandButton>
           </div>
         )}
       </main>

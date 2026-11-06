@@ -4,7 +4,7 @@ import "../catalogue/catalogue.css";
 import "./environments.css";
 
 import { ChevronDown } from "lucide-react";
-import { useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
   PAGE_FIRST,
@@ -17,6 +17,8 @@ import {
   type CatalogueSort,
   type CatalogueTier,
 } from "@/lib/adversaries/catalogue";
+import { BrandButton } from "@/components/brand/buttons";
+import { useUiState } from "@/lib/use-ui-state";
 import { adversariesFor } from "@/lib/domain/adversaries";
 import {
   NO_ENVIRONMENT_FILTERS,
@@ -31,6 +33,7 @@ import { ADVERSARIES } from "@/lib/srd/adversaries";
 import { environmentArt } from "@/lib/srd/environment-art";
 import { ENVIRONMENTS } from "@/lib/srd/environments";
 import { ENVIRONMENT_TYPES, type EnvironmentDef, type EnvironmentType } from "@/lib/srd/types";
+import { prefersReducedMotion } from "@/lib/use-reduced-motion";
 
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { HopeFearPill } from "../catalogue/stat-block";
@@ -60,34 +63,11 @@ function Thumb({ id }: { id: string }) {
   return <img className="adc-thumb" src={art.src} width={32} height={32} alt="" loading="lazy" decoding="async" />;
 }
 
-const SORT_KEY = "dcm:environment-sort";
-const SORT_EVENT = "dcm-environment-sort";
-/** The last choice, for when storage throws (private windows, blocked site data). */
-let sortFallback: CatalogueSort = "name";
-
-function readSort(): CatalogueSort {
-  try {
-    const stored = window.localStorage.getItem(SORT_KEY);
-    return stored === "book" || stored === "name" ? stored : sortFallback;
-  } catch {
-    return sortFallback;
-  }
-}
-
-function subscribeSort(onChange: () => void): () => void {
-  window.addEventListener(SORT_EVENT, onChange);
-  window.addEventListener("storage", onChange);
-  return () => {
-    window.removeEventListener(SORT_EVENT, onChange);
-    window.removeEventListener("storage", onChange);
-  };
-}
-
 function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: ReactNode }) {
   return (
-    <button type="button" className="adc-chip" aria-pressed={on} onClick={onClick}>
+    <BrandButton variant="neutral" size="sm" className="min-w-11" aria-pressed={on} onClick={onClick}>
       {children}
-    </button>
+    </BrandButton>
   );
 }
 
@@ -144,17 +124,11 @@ export function EnvironmentCatalogue({ campaignId, fear, hopeAndFear, frameId, s
   const [filters, setFilters] = useState<EnvironmentFilters>(NO_ENVIRONMENT_FILTERS);
   const [limit, setLimit] = useState(PAGE_FIRST);
   const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(() => new Set());
-  // A–Z or book order, remembered per device (browser storage is for conveniences only).
-  const sort = useSyncExternalStore(subscribeSort, readSort, () => "name" as CatalogueSort);
+  // A–Z or book order, stored on the account (plan config U6e, Q15 b), so it follows the GM to every device.
+  const [sort, setSort] = useUiState("environmentSort");
   function chooseSort(next: CatalogueSort) {
     setLimit(PAGE_FIRST);
-    try {
-      window.localStorage.setItem(SORT_KEY, next);
-    } catch {
-      // Storage blocked: the order can't be remembered; fall back to the in-page event only.
-    }
-    sortFallback = next;
-    window.dispatchEvent(new Event(SORT_EVENT));
+    setSort(next);
   }
   const detailRef = useRef<HTMLElement>(null);
 
@@ -175,7 +149,7 @@ export function EnvironmentCatalogue({ campaignId, fear, hopeAndFear, frameId, s
     onSelect(id);
     // One column (under 980 px): the stat block sits below the list, so bring it into view.
     if (window.matchMedia("(max-width: 980px)").matches) {
-      const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const smooth = !prefersReducedMotion();
       detailRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
     }
   }
@@ -282,9 +256,9 @@ export function EnvironmentCatalogue({ campaignId, fear, hopeAndFear, frameId, s
               </div>
             ))}
             {more ? (
-              <button type="button" className="adc-more" onClick={() => setLimit((n) => n + PAGE_MORE)}>
+              <BrandButton variant="neutral" className="m-2.5 w-[calc(100%-20px)]" onClick={() => setLimit((n) => n + PAGE_MORE)}>
                 {more}
-              </button>
+              </BrandButton>
             ) : null}
             {matches.length === 0 ? <p className="adc-empty">No environments match these filters. Clear the search or pick another tier or type.</p> : null}
           </div>

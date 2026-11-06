@@ -19,6 +19,7 @@ import { tierForLevel } from "../../src/lib/domain/characters/index";
 import { FEATURE_KEY_PREFIX } from "../../src/lib/domain/feature-effects/ids";
 import type { RollRecord } from "../../src/lib/domain/duality";
 import { SEVERITY_LABEL } from "../../src/lib/domain/encounters/damage";
+import { damageRuleNotes, type DamageRules } from "../../src/lib/domain/combat-actions/damage";
 import { owned } from "../../src/lib/domain/feature-effects/owned";
 import { TRAIT_LABEL } from "../../src/lib/frames/extras/common";
 import { cardEffect } from "../../src/lib/srd/card-effects/index";
@@ -28,7 +29,7 @@ import type { TraitId } from "../../src/lib/srd/types";
 import type { CharacterSheet, Condition, Effect } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
-import { activeAreasOnMap, areaSpecOf, endArea } from "../combatAreas";
+import { activeAreasOnMap, areaSpecOf, endArea } from "./combatAreas";
 import { logAction } from "./actionLog";
 import { cardIdOfEffect, difficultyOf, effectKeyOf, effectOption, endRollOf, featureIdOfEffect, isFeatureUseId, lapsedConditions, tokenIdsOf, type BuiltRun, type Creatures, type EnemyCreature } from "./cardRunner";
 import { readSheet, saveSheet } from "./characterSheet";
@@ -70,10 +71,15 @@ export const resolvedCardValidator = v.object({
   damage: v.array(rollValidator),
   success: v.boolean(),
   targets: v.array(cardTargetValidator),
-  /** The GM's Fear change from this use (the roll with Fear, a card's Fear step). */
-  fearDelta: v.number(),
+  /**
+   * The GM's Fear change from this use (the roll with Fear, a card's Fear step). Absent for a player while "Players see
+   * the GM's Fear" is off (dcm-jh6d.62).
+   */
+  fearDelta: v.optional(v.number()),
   prompts: v.array(cardPromptValidator),
   minionOffer: v.union(v.null(), cardMinionOfferValidator),
+  /** Rule switches RC1, D6 variant (not in the books): the extra Minions the GM picks (`minionOffer` is null). */
+  minionsForGm: v.optional(v.number()),
 });
 export type ResolvedCard = Infer<typeof resolvedCardValidator>;
 
@@ -101,7 +107,17 @@ export const needsChoiceValidator = v.object({
         /** Plan lanes-2 E6 (dcm-sc54): the chooser of a `choose` step with `by` (the client answers `by:<stepId>:<chooserId>`). */
         chooserId: v.optional(v.id("combatTokens")),
       }),
-      v.object({ kind: v.literal("split"), label: v.string(), tokenIds: v.array(v.id("combatTokens")) }),
+      v.object({
+        kind: v.literal("split"),
+        label: v.string(),
+        tokenIds: v.array(v.id("combatTokens")),
+        /**
+         * dcm-bxp.99.32.23 (widened; plan combat-hud H4.1 "Split 14 damage between your targets", "n left"): the total to
+         * share, the actor's own number (its damage total, the Hope, Stress, marks or clears it hands out), never an
+         * adversary's. Absent on an older server: the HUD shows "n shared" and does not block on "left".
+         */
+        amount: v.optional(v.number()),
+      }),
       /** Plan lanes-2 E6 (dcm-sc54): the creatures of the next link of a repeating follow-up (the client answers `chain:<link>`). */
       v.object({ kind: v.literal("followUp"), label: v.string(), link: v.number(), tokenIds: v.array(v.id("combatTokens")) }),
     ),
@@ -250,7 +266,10 @@ function instanceMadeBy(effect: InstanceEffect, of: string, option: string | und
  * `defeat` without an amount takes the whole group, with an amount that many (CB p.201). A card's `effect` on an enemy
  * lands in the instance's `effects` (CA4b).
  */
-export function instanceWrites(plan: RunPlan, creatures: Creatures, cardName: string, lookup: SourceLookup = srdUses): InstanceWrite[] {
+export function instanceWrites(plan: RunPlan, creatures: Creatures, cardName: string, lookup: SourceLookup = srdUses, rules: DamageRules = {}): InstanceWrite[] {
+  // Rule switches RC1, D8 (CB p.208): Manual leaves an adversary up at its last HP (`lastHpNotes` tells the GM). A Minion
+  // group still falls with its last Minion: that is D6, not D8.
+  const downAt = (c: EnemyCreature, hp: number) => c.instance.defeated || (hp >= c.instance.stats.hpMax && (c.minion || rules.adversaryDefeated !== "manual"));
   const { effects, drops } = effectsAfter(plan, creatures, cardName, lookup);
   const writes: InstanceWrite[] = [];
   const withEffects = (c: EnemyCreature, patch: Omit<InstancePatch, "effects">): InstanceWrite => {
@@ -278,13 +297,13 @@ export function instanceWrites(plan: RunPlan, creatures: Creatures, cardName: st
       withEffects(c, {
         hp,
         stress: Math.max(0, Math.min(inst.stats.stressMax, after.stress)),
-        defeated: inst.defeated || hp >= inst.stats.hpMax,
+        defeated: downAt(c, hp),
         conditions: [...new Set(conditions)],
         tags: [...new Set(after.tags ?? [])].slice(0, 20),
       }),
     );
   }
-  const unchanged = (c: EnemyCreature, hp = c.instance.hp): Omit<InstancePatch, "effects"> => ({ hp, stress: c.instance.stress, defeated: c.instance.defeated || hp >= c.instance.stats.hpMax, conditions: c.instance.conditions, tags: c.instance.tags });
+  const unchanged = (c: EnemyCreature, hp = c.instance.hp): Omit<InstancePatch, "effects"> => ({ hp, stress: c.instance.stress, defeated: downAt(c, hp), conditions: c.instance.conditions, tags: c.instance.tags });
   // A Minion group hit by `defeat` with an amount is not in `plan.creatures` (the runner doesn't change it).
   for (const step of plan.steps) {
     if (step.kind !== "defeat" || step.amount === undefined || writes.some((w) => w.creature.tokenId === step.targetId)) continue;
@@ -321,6 +340,32 @@ function endedByDamage(plan: RunPlan, w: InstanceWrite, lookup: SourceLookup): I
   const out = endInstanceEffects({ effects: w.patch.effects ?? inst.effects ?? [], conditions: w.patch.conditions, tags: w.patch.tags }, occ, { only: (e) => earlier.has(e.id), lookup });
   if (out.patch === null) return w;
   return { creature: w.creature, before: adversaryBefore(inst, true), patch: { ...w.patch, ...out.patch } };
+}
+
+/**
+ * Rule switches RC1, D8 Manual: the GM's line for each instance these writes brought to its last HP but left up
+ * ("Bear marked its last HP: defeated?"). Empty in Book and for Minion groups (D6).
+ */
+export function lastHpNotes(writes: readonly InstanceWrite[], rules: DamageRules = {}): string[] {
+  if (rules.adversaryDefeated !== "manual") return [];
+  return writes
+    .filter((w) => !w.creature.minion && !w.patch.defeated && w.patch.hp >= w.creature.instance.stats.hpMax && w.before.hp < w.creature.instance.stats.hpMax)
+    .map((w) => `${w.creature.instance.label} marked its last HP: defeated?`);
+}
+
+/**
+ * Rule switches RC1, D2 Manual: the GM's line for each enemy hit whose resistance or immunity the plan did not apply
+ * (the card engine's `resistanceApplied` false). Empty in Book.
+ */
+export function resistanceNotes(plan: RunPlan, creatures: Creatures): string[] {
+  const out: string[] = [];
+  for (const s of plan.steps) {
+    if (s.kind !== "damage" || s.result.resistanceApplied !== false) continue;
+    const c = creatures.get(s.result.targetId);
+    if (!c || c.kind !== "enemy") continue;
+    for (const n of damageRuleNotes(c.instance.label, { resisted: s.result.resisted, incoming: s.result.incoming, resistanceApplied: false })) out.push(n.summary);
+  }
+  return out;
 }
 
 /** Writes the instances (U4: the GM row's `adversaryBefore` lets undo put them back). */

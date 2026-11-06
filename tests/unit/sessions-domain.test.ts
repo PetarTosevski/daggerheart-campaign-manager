@@ -130,13 +130,13 @@ describe("summary (B1, B9)", () => {
 
   it("falls back to 'Session N was played, but no recap was written' for a blank recap", () => {
     expect(lastSessionText(sessions)).toBe(
-      "Session 2 was played, but no recap was written. Add one in the session's Wrap-up.",
+      "Session 2 was played, but no recap was written. Add one in the Journal's Log & recap.",
     );
   });
 
   it("falls back to 'No sessions played yet' when nothing was played", () => {
     expect(lastSessionText([{ n: 1, status: "live", recap: "In progress" }])).toBe(
-      "No sessions played yet. Write a recap in a session's Wrap-up stage and it will appear here.",
+      "No sessions played yet. Write a recap in the Journal's Log & recap and it will appear here.",
     );
   });
 });

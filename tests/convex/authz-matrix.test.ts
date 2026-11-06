@@ -8,8 +8,8 @@
 import { getFunctionName, makeFunctionReference } from "convex/server";
 import { beforeAll, describe, expect, test } from "vitest";
 
-import { entryProblems, type Access, type Area } from "./authz/harness";
-import { publicFunctions, wrapperOf, type WrapperInfo } from "./authz/inventory";
+import { APP_OWNER_QUERY_ROWS, CAMPAIGN_CLASSES, COGM_KNOWN_GAPS, entryProblems, expectations, NON_OWNER_ROLES, type Access, type Area, type Entry } from "./authz/harness";
+import { publicFunctions, wrapperOf, type FunctionKind, type WrapperInfo } from "./authz/inventory";
 
 declare global {
   interface ImportMeta {
@@ -61,10 +61,23 @@ export function allowedClasses(info: WrapperInfo | null): Access[] {
     case "gmMutation":
     case "keyedGmMutation":
       return ["gm"];
+    // Config G1: the creator-only rank (a co-GM is FORBIDDEN).
+    case "creatorQuery":
+    case "creatorMutation":
+    case "keyedCreatorMutation":
+      return ["creator"];
     case "campaignQuery":
     case "campaignMutation":
     case "keyedCampaignMutation":
-      return info.need === "view" ? ["view"] : info.need === "edit" ? ["edit"] : info.need === "owner" ? ["gm"] : [];
+      return info.need === "view"
+        ? ["view"]
+        : info.need === "edit"
+          ? ["edit"]
+          : info.need === "owner"
+            ? ["gm"]
+            : info.need === "creator"
+              ? ["creator"]
+              : [];
     case "userQuery":
     case "userMutation":
     case "keyedUserMutation":
@@ -72,6 +85,11 @@ export function allowedClasses(info: WrapperInfo | null): Access[] {
       return ["own", "scoped", "user"];
     case "maybeUserQuery":
       return ["maybe"];
+    // Config AD0: the app owner's builders, and only them, are the `appOwner` class (owner-only, never friendlier).
+    case "appOwnerQuery":
+    case "appOwnerMutation":
+    case "appOwnerAction":
+      return ["appOwner"];
   }
 }
 
@@ -96,12 +114,49 @@ export async function classProblems(areas: Area[], wrapperOfName: (name: string)
   return problems;
 }
 
+/**
+ * Config AD13: the owner's read-only view is query-only. For every write (mutation or action) that is not an owner
+ * function, the app owner's row must equal the outsider's and no entry may state one; on a campaign class it must be a
+ * refusal (NOT_FOUND / FORBIDDEN). So no write row can flip to ok for the owner without changing this guard.
+ */
+export function ownerWriteProblems(areas: Area[], kindOf: (name: string) => FunctionKind | undefined): string[] {
+  const problems: string[] = [];
+  for (const entry of areas.flatMap((a) => a.entries) as Entry[]) {
+    const name = getFunctionName(entry.fn);
+    const kind = kindOf(name);
+    if (kind === undefined || kind === "query" || entry.access === "appOwner") continue;
+    const rows = Object.fromEntries(expectations(entry, kind));
+    if (entry.expect?.appOwner !== undefined) problems.push(`${name}: a write may not state an appOwner row`);
+    if (rows.appOwner !== rows.outsider) problems.push(`${name}: appOwner ${rows.appOwner}, outsider ${rows.outsider}`);
+    if (CAMPAIGN_CLASSES.includes(entry.access) && rows.appOwner !== "NOT_FOUND" && rows.appOwner !== "FORBIDDEN") {
+      problems.push(`${name}: the app owner's write on a ${entry.access} function expects ${rows.appOwner}`);
+    }
+  }
+  return problems;
+}
+
 describe("authz matrix guard", () => {
   let inventory: string[] = [];
+  let kinds = new Map<string, FunctionKind>();
   // Loading every convex module takes a few seconds on a busy machine.
   beforeAll(async () => {
-    inventory = (await publicFunctions()).map((f) => f.name);
+    const functions = await publicFunctions();
+    inventory = functions.map((f) => f.name);
+    kinds = new Map(functions.map((f) => [f.name, f.kind]));
   }, 120_000);
+
+  test("the app owner is refused on every campaign write and is an outsider on every other write (config AD13)", () => {
+    expect(ownerWriteProblems(AREAS, (name) => kinds.get(name))).toEqual([]);
+    // The guard covers something: every campaign class has writes in the matrix.
+    const writes = AREAS.flatMap((a) => a.entries).filter((e) => kinds.get(getFunctionName(e.fn)) !== "query" && CAMPAIGN_CLASSES.includes(e.access));
+    expect(writes.length).toBeGreaterThan(100);
+  });
+
+  test("every APP_OWNER_QUERY_ROWS name is a listed query (config AD13)", () => {
+    const listed = listings(AREAS).map((l) => l.name);
+    const bad = Object.keys(APP_OWNER_QUERY_ROWS).filter((name) => !listed.includes(name) || kinds.get(name) !== "query");
+    expect(bad).toEqual([]);
+  });
 
   test("every public function is listed (entry or exempt) and nothing else is", () => {
     const { missing, stale } = coverageProblems(inventory, AREAS);
@@ -112,6 +167,12 @@ describe("authz matrix guard", () => {
 
   test("every knownBug names a bead", () => {
     expect(knownBugProblems(AREAS)).toEqual([]);
+  });
+
+  test("every known co-GM gap names a bead and a listed function", () => {
+    const listed = listings(AREAS).map((l) => l.name);
+    const bad = Object.entries(COGM_KNOWN_GAPS).filter(([name, bead]) => !BEAD_ID.test(bead) || !listed.includes(name));
+    expect(bad).toEqual([]);
   });
 
   test("no name is listed twice across the areas", () => {
@@ -191,6 +252,101 @@ describe("the guard's checks catch what they should", () => {
       "m:view: filed as gm, but campaignQuery need view allows view",
       "m:user: filed as maybe, but userMutation allows own/scoped/user",
     ]);
+  });
+
+  test("a creator function filed as gm, a gm function filed as creator (config G1)", async () => {
+    const wrappers: Record<string, WrapperInfo> = {
+      "m:creator": { wrapper: "creatorMutation" },
+      "m:needCreator": { wrapper: "campaignMutation", need: "creator" },
+      "m:gm": { wrapper: "gmMutation" },
+      "m:ok": { wrapper: "keyedCreatorMutation" },
+    };
+    const problems = await classProblems(
+      [
+        area({
+          entries: [
+            { fn: fakeRef("m:creator"), access: "gm" },
+            { fn: fakeRef("m:needCreator"), access: "gm" },
+            { fn: fakeRef("m:gm"), access: "creator" },
+            { fn: fakeRef("m:ok"), access: "creator" },
+          ],
+        }),
+      ],
+      async (name) => wrappers[name] ?? null,
+    );
+    expect(problems).toEqual([
+      "m:creator: filed as gm, but creatorMutation allows creator",
+      "m:needCreator: filed as gm, but campaignMutation need creator allows creator",
+      "m:gm: filed as creator, but gmMutation allows gm",
+    ]);
+  });
+
+  test("an appOwner function filed as user, a user function filed as appOwner, a loosened appOwner row (config AD0)", async () => {
+    const wrappers: Record<string, WrapperInfo> = {
+      "m:ownerAsUser": { wrapper: "appOwnerMutation" },
+      "m:userAsOwner": { wrapper: "userQuery" },
+      "m:ok": { wrapper: "appOwnerQuery" },
+      "m:loosened": { wrapper: "appOwnerAction" },
+    };
+    const problems = await classProblems(
+      [
+        area({
+          entries: [
+            { fn: fakeRef("m:ownerAsUser"), access: "user" },
+            { fn: fakeRef("m:userAsOwner"), access: "appOwner" },
+            { fn: fakeRef("m:ok"), access: "appOwner" },
+            { fn: fakeRef("m:loosened"), access: "appOwner", expect: { gm: "ok", appOwner: "ok" } },
+          ],
+        }),
+      ],
+      async (name) => wrappers[name] ?? null,
+    );
+    expect(problems).toEqual([
+      "m:ownerAsUser: filed as user, but appOwnerMutation allows appOwner",
+      "m:userAsOwner: filed as appOwner, but userQuery allows own/scoped/user",
+      "m:loosened: appOwner entries keep every non-owner row (overrides gm)",
+    ]);
+  });
+
+  test("an owner write that would flip to ok, and a stated appOwner row on a write (config AD13)", () => {
+    const entries: Entry[] = [
+      { fn: fakeRef("m:gmWrite"), access: "gm" },
+      { fn: fakeRef("m:loosenedOutsider"), access: "view", expect: { outsider: "ok" } },
+      { fn: fakeRef("m:statedOwner"), access: "edit", expect: { appOwner: "ok" } },
+      { fn: fakeRef("m:userWrite"), access: "user" },
+      { fn: fakeRef("m:read"), access: "gm", expect: { appOwner: "NOT_FOUND" } },
+    ];
+    const kinds: Record<string, FunctionKind> = {
+      "m:gmWrite": "mutation",
+      "m:loosenedOutsider": "action",
+      "m:statedOwner": "mutation",
+      "m:userWrite": "mutation",
+      "m:read": "query",
+    };
+    expect(ownerWriteProblems([area({ entries })], (name) => kinds[name])).toEqual([
+      "m:loosenedOutsider: the app owner's write on a view function expects ok",
+      "m:statedOwner: a write may not state an appOwner row",
+    ]);
+    // A stated appOwner row never reaches a write; on a query it does, and the view's classes follow the GM.
+    expect(Object.fromEntries(expectations(entries[2], "mutation")).appOwner).toBe("NOT_FOUND");
+    expect(Object.fromEntries(expectations(entries[0], "query")).appOwner).toBe("ok");
+    expect(Object.fromEntries(expectations({ fn: fakeRef("m:c"), access: "creator" }, "query")).appOwner).toBe("NOT_FOUND");
+    expect(Object.fromEntries(expectations(entries[3], "mutation")).appOwner).toBe("ok");
+  });
+
+  test("the appOwner class refuses every non-owner role (config AD0)", () => {
+    const rows = Object.fromEntries(expectations({ fn: fakeRef("m:owner"), access: "appOwner" }, "mutation"));
+    expect(rows).toEqual({
+      anon: "UNAUTHENTICATED",
+      outsider: "FORBIDDEN",
+      otherPlayer: "FORBIDDEN",
+      player: "FORBIDDEN",
+      grantee: "FORBIDDEN",
+      coGm: "FORBIDDEN",
+      gm: "FORBIDDEN",
+      appOwner: "ok",
+    });
+    expect(NON_OWNER_ROLES.every((role) => rows[role] !== "ok")).toBe(true);
   });
 
   test("a scoped entry missing roles, an access code in okCodes, an exempted wrapped function", async () => {

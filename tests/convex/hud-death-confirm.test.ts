@@ -61,6 +61,8 @@ async function setup(frameId: "witherwild" | "castle-high" = "witherwild") {
   const as = (id: string) => t.withIdentity({ subject: `${id}|s` });
   const [gm, p1, p2, out] = [as(ids.gm), as(ids.p1), as(ids.p2), as(ids.out)];
   const { campaignId } = await gm.mutation(api.campaigns.create, { frameId, name: "Party", idempotencyKey: key() });
+  // New campaigns start with the frame rule off (RD2); these tests run with it on.
+  if (frameId === "castle-high") await gm.mutation(api.campaigns.setOption, { campaignId, option: "lessLethal", enabled: true });
   const code = await gm.mutation(api.members.rotateJoinCode, { campaignId });
   await p1.mutation(api.members.joinByCode, { code });
   await p2.mutation(api.members.joinByCode, { code });

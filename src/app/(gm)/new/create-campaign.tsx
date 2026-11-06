@@ -88,10 +88,10 @@ export function NameCampaignDialog({
           </p>
         ) : null}
         <div className="flex flex-wrap justify-end gap-3">
-          <BrandButton variant="outline" size="lg" onClick={onClose}>
+          <BrandButton variant="cancel" size="lg" onClick={onClose}>
             Cancel
           </BrandButton>
-          <BrandButton type="submit" variant="primary" size="lg" disabled={pending}>
+          <BrandButton type="submit" variant="confirm" size="lg" disabled={pending}>
             {pending ? "Creating…" : "Start campaign"}
           </BrandButton>
         </div>

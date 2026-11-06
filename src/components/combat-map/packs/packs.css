@@ -78,9 +78,6 @@
   align-items: end;
   gap: 10px;
 }
-.cm-pk-packrow .cm-btn {
-  min-height: 40px;
-}
 
 /* ---------------------------------------------------------------- upload */
 
@@ -185,10 +182,6 @@
 }
 .cm-pk-thumb-missing {
   display: inline-block;
-}
-/* Touch targets of at least 44 x 44 px for the move arrows. */
-.cm-pk-move {
-  min-width: 44px;
 }
 .cm-pk-status {
   margin-left: auto;

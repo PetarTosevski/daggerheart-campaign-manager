@@ -3,6 +3,7 @@
 import { useMutation } from "convex/react";
 import { useRef, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { UploadNotice } from "@/components/uploads/upload-notice";
 import { errorMessage } from "@/lib/convex-errors";
 
@@ -95,13 +96,13 @@ export function MapImageControl({ campaignId, hasUpload, isCustom, scaleKm }: { 
           if (file) void upload(file);
         }}
       />
-      <button type="button" className="zbtn zw zgold" disabled={busy} onClick={() => input.current?.click()}>
+      <BrandButton variant="confirm" disabled={busy} onClick={() => input.current?.click()}>
         {busy ? "Uploading…" : hasUpload ? "Replace map image" : "Upload map image"}
-      </button>
+      </BrandButton>
       {hasUpload ? (
-        <button
-          type="button"
-          className="mseg"
+        <BrandButton
+          variant="danger"
+          size="sm"
           disabled={busy}
           onClick={async () => {
             try {
@@ -113,7 +114,7 @@ export function MapImageControl({ campaignId, hasUpload, isCustom, scaleKm }: { 
           }}
         >
           {isCustom ? "Remove map image" : "Use the frame's map"}
-        </button>
+        </BrandButton>
       ) : null}
       <p role="status" aria-live="polite" className="m-0 text-[13px] text-[#f3dfb0]">
         {status}

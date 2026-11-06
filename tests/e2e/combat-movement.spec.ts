@@ -99,8 +99,8 @@ for (const viewport of VIEWPORTS) {
       await place(5, 10);
       await player.goto(url);
       const board = player.getByRole("region", { name: "Battle map" });
-      // Plan combat-hud H8.1: Play is the HUD; the player's own token reads "Open Ash’s sheet (your character), …".
-      const mine = board.getByRole("button", { name: /^Open Ash’s sheet \(your character\)/ });
+      // Plan combat-hud H8.1: Play is the HUD; the player's own token reads "Ash (your character): actions, …".
+      const mine = board.getByRole("button", { name: /^Ash \(your character\): actions/ });
       const notice = board.getByTestId("combat-move-notice");
       await expect(mine).toHaveAttribute("data-square", "5,10");
       await expect(notice).toHaveAttribute("role", "status");

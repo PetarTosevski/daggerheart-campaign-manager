@@ -2,7 +2,7 @@
 // limits every write is checked against. Ported from
 // reference/designs/project/Codex.dc.html. Pure module: bundled into Convex.
 
-import { z } from "zod";
+import * as z from "../zod";
 
 export const CODEX_KINDS = ["character", "location"] as const;
 export type CodexKind = (typeof CODEX_KINDS)[number];

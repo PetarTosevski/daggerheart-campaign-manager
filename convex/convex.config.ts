@@ -1,4 +1,5 @@
 import migrations from "@convex-dev/migrations/convex.config";
+import presence from "@convex-dev/presence/convex.config";
 import rateLimiter from "@convex-dev/rate-limiter/convex.config";
 import { defineApp } from "convex/server";
 import { v } from "convex/values";
@@ -28,6 +29,11 @@ const app = defineApp({
     SEED_ACCOUNTS: v.optional(v.string()),
     ALLOW_SEED_ACCOUNTS: v.optional(v.string()),
     E2E_AUTH_ENABLED: v.optional(v.string()),
+    // Apple Sign In token revocation on account deletion (DEL1): sign a client secret from the .p8 key, or a ready JWT.
+    APPLE_TEAM_ID: v.optional(v.string()),
+    APPLE_KEY_ID: v.optional(v.string()),
+    APPLE_PRIVATE_KEY: v.optional(v.string()),
+    APPLE_CLIENT_SECRET: v.optional(v.string()),
     E2E_AUTH_SECRET: v.optional(v.string()),
     AUTH_RESEND_KEY: v.optional(v.string()),
     MAIL_FROM: v.optional(v.string()),
@@ -44,5 +50,7 @@ const app = defineApp({
 
 app.use(rateLimiter);
 app.use(migrations);
+// Online / Away (config PR1, Q11 b): wrapped in convex/presence.ts; never called from the client directly.
+app.use(presence);
 
 export default app;

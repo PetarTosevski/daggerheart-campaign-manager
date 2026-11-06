@@ -23,7 +23,6 @@ import type { Id } from "../../../../../../convex/_generated/dataModel";
 import type { CountdownView } from "../../../../../../convex/countdowns";
 
 import { operatedView } from "./card";
-import { BTN } from "./shared";
 import { choiceOf, VISIBILITY_OPTIONS, VisibilityForm, VisibilityPicker, visibilityOf } from "./visibility";
 
 // Chase countdowns (CB p.163, countdowns-advanced K3): "set two countdowns: one for the pursuing party and one for the
@@ -174,25 +173,22 @@ function Track({
       <p className="m-0 text-[12px] text-[#9fb2b6]">{sideLine(side)}</p>
       {readOnly || row === undefined || !shown ? null : (
         <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            className={cn(BTN, "min-h-11 border-transparent font-bold text-brand-ink")}
-            style={{ background: zero ? "#5a2a2a" : "var(--brand)" }}
+          <BrandButton
+            variant="confirm"
             aria-label={`Tick ${label} down one`}
             disabled={pending || !canAdvanceCountdown(row.status, value)}
             onClick={() => onAct(row, "advance")}
           >
             Tick −1
-          </button>
-          <button
-            type="button"
-            className={cn(BTN, "min-h-11")}
+          </BrandButton>
+          <BrandButton
+            variant="neutral"
             aria-label={`Borrowed time: add one to ${label}`}
             disabled={pending || !canReverseCountdown(row.status, value, start)}
             onClick={() => onAct(row, "reverse")}
           >
             Borrowed Time
-          </button>
+          </BrandButton>
         </div>
       )}
     </div>
@@ -297,19 +293,17 @@ export function ChaseCard({
         <span className="flex flex-wrap items-center gap-2 text-[12px] tracking-[0.12em] text-[#8fa3a8] uppercase">
           {paused ? <span className="rounded-full border border-[#4a5a60] px-2 py-0.5 text-[#c9d2cf]">Paused</span> : null}
           {readOnly ? null : (
-            <button
-              type="button"
+            <BrandButton
+              variant="neutral"
+              size="sm"
               data-preset={preset}
               aria-label={`Who can see ${title}: ${badge}`}
               onClick={() => setEditingVisibility(true)}
-              className={cn(
-                "flex min-h-7 cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 tracking-[0.08em] normal-case hover:border-brand",
-                preset === "public" ? "border-[#33444a] text-[#9fb2b6]" : "border-[#7a5a2e] text-[#e6c88a]",
-              )}
+              className="normal-case"
             >
               <BadgeIcon className="size-3.5" aria-hidden="true" />
               {badge}
-            </button>
+            </BrandButton>
           )}
         </span>
       </div>
@@ -328,15 +322,14 @@ export function ChaseCard({
               <span className="text-[13px] text-[#f0c4c0]">The book doesn&apos;t say who wins. Your call:</span>
               <div role="group" aria-label="How the chase ends" className="grid w-full grid-cols-2 gap-2 sm:w-auto">
                 {(["caught", "escaped"] as const).map((result) => (
-                  <button
+                  <BrandButton
                     key={result}
-                    type="button"
-                    className={cn(BTN, "min-h-11 border-danger-line font-semibold text-[#ffd9d6]")}
+                    variant="neutral"
                     disabled={decide.pending}
                     onClick={() => void decide.fire({ campaignId, countdownId: anchor._id, result })}
                   >
                     {result === "caught" ? "Caught!" : "Got away!"}
-                  </button>
+                  </BrandButton>
                 ))}
               </div>
             </>
@@ -359,22 +352,22 @@ export function ChaseCard({
       {readOnly ? null : (
         <div className="flex flex-wrap items-center gap-2">
           {canResume && open ? (
-            <button type="button" className={cn(BTN, "min-h-11")} disabled={operate.pending} onClick={() => act(open, "resume")}>
+            <BrandButton variant="neutral" disabled={operate.pending} onClick={() => act(open, "resume")}>
               Resume chase
-            </button>
+            </BrandButton>
           ) : (
-            <button type="button" className={cn(BTN, "min-h-11")} disabled={operate.pending || !canPause || !open} onClick={() => open && act(open, "pause")}>
+            <BrandButton variant="neutral" disabled={operate.pending || !canPause || !open} onClick={() => open && act(open, "pause")}>
               Pause chase
-            </button>
+            </BrandButton>
           )}
           {canArm ? (
-            <button
-              type="button"
+            <BrandButton
+              variant="neutral"
               aria-pressed={armed}
               aria-label={`Armed: ${title} advances on action rolls`}
               title={armed ? "Armed: every PC action roll moves the chase. Click to stop." : "Not armed: only your ticks move it. Click to arm."}
               onClick={() => void arm.fire({ campaignId, countdownId: anchor._id, armed: !armed })}
-              className="ml-auto flex min-h-11 cursor-pointer items-center gap-2 rounded-full px-2 text-[13px] text-[#c9d2cf]"
+              className="ml-auto"
             >
               <span
                 aria-hidden="true"
@@ -383,7 +376,7 @@ export function ChaseCard({
                 <span className={cn("absolute top-0.5 size-3.5 rounded-full transition-[left]", armed ? "left-[18px] bg-brand-ink" : "left-0.5 bg-[#8fa3a8]")} />
               </span>
               Armed
-            </button>
+            </BrandButton>
           ) : null}
         </div>
       )}
@@ -395,22 +388,17 @@ export function ChaseCard({
       {readOnly || rows.every((r) => r.status === "cancelled") ? null : confirmCancel ? (
         <div role="alertdialog" aria-label={`Cancel ${title}`} className="flex flex-wrap items-center gap-2 rounded-[10px] border border-danger-line bg-danger-bg px-3 py-2 text-[14px] text-[#ffd9d6]">
           <span className="flex-1">Cancel this chase? Both countdowns end.</span>
-          <button type="button" className={BTN} onClick={() => setConfirmCancel(false)}>
+          <BrandButton variant="cancel" size="sm" onClick={() => setConfirmCancel(false)}>
             Keep it
-          </button>
-          <button
-            type="button"
-            className="min-h-10 cursor-pointer rounded-[9px] bg-danger-solid px-3 text-[14px] font-semibold text-white disabled:opacity-50"
-            disabled={operate.pending}
-            onClick={() => act(anchor, "cancel")}
-          >
+          </BrandButton>
+          <BrandButton variant="danger" size="sm" disabled={operate.pending} onClick={() => act(anchor, "cancel")}>
             Cancel chase
-          </button>
+          </BrandButton>
         </div>
       ) : (
-        <button type="button" className="min-h-11 self-end text-[13px] text-[#8fa3a8] underline-offset-4 hover:underline" onClick={() => setConfirmCancel(true)}>
+        <BrandButton variant="danger" className="self-end" onClick={() => setConfirmCancel(true)}>
           Cancel chase…
-        </button>
+        </BrandButton>
       )}
 
       {readOnly ? null : (
@@ -599,10 +587,10 @@ export function NewChaseDialog({ campaignId, open, onClose }: { campaignId: Id<"
           </p>
         ) : null}
         <div className="flex justify-end gap-2.5">
-          <button type="button" className={BTN} onClick={close}>
+          <BrandButton variant="cancel" onClick={close}>
             Cancel
-          </button>
-          <BrandButton type="submit" variant="solid" disabled={createChase.pending}>
+          </BrandButton>
+          <BrandButton type="submit" variant="confirm" disabled={createChase.pending}>
             Start chase
           </BrandButton>
         </div>

@@ -5,6 +5,7 @@ import type { FunctionReturnType } from "convex/server";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
+import { useDefinedRanges } from "../../map-view/measure";
 import type { ActionsLayerProps } from "../../slots";
 import { useTokens } from "../../tokens/use-tokens";
 import { useActor, useCombatTargets, type WeaponSlot } from "./state";
@@ -14,12 +15,12 @@ export { ActionsProvider, useCombatTargets, useActor, seenTargets, type Aim, typ
 /**
  * Targets (plan combat-actions CA5): the rings on picked enemy tokens (a map layer of its own, not map-canvas) and the
  * hints the HUD's picking panel shows for each enemy, its Defined Range band and the hint from
- * `combatActions.targets` (Q1: out of range waits for the GM; Q2: line of sight required, cover gives disadvantage).
+ * `combatActionsReads.targets` (Q1: out of range waits for the GM; Q2: line of sight required, cover gives disadvantage).
  * Players only ever get bands and booleans here, never an enemy's numbers (U1). The classic target list went with
  * the cut-over (plan combat-hud H8.1): the HUD's picking panel lists the targets.
  */
 
-export type TargetHint = FunctionReturnType<typeof api.combatActions.targets>[number];
+export type TargetHint = FunctionReturnType<typeof api.combatActionsReads.targets>[number];
 export type RangeBand = TargetHint["band"];
 
 export const BAND_LABEL: Record<RangeBand, string> = {
@@ -43,7 +44,7 @@ export function hintOf(hint: TargetHint | undefined): { tone: HintTone; text: st
 
 /** The character's attackable enemies with hints for the weapon in `slot` (shared subscription; undefined = loading). */
 export function useTargetHints(campaignId: Id<"campaigns">, characterId: Id<"characters"> | null, mapId: Id<"combatMaps">, slot: WeaponSlot) {
-  return useQuery(api.combatActions.targets, characterId ? { campaignId, characterId, mapId, slot } : "skip");
+  return useQuery(api.combatActionsReads.targets, characterId ? { campaignId, characterId, mapId, slot } : "skip");
 }
 
 const RING_COLOUR: Record<HintTone, string> = {
@@ -105,6 +106,8 @@ function PlayerRings(props: ActionsLayerProps) {
   const actor = useActor(props);
   const { targetTokenIds, slot } = useCombatTargets();
   const hints = useTargetHints(campaignId, actor?.characterId ?? null, map._id, slot);
+  // Rule switches ODR2: with Defined Ranges off a ring shows no band (the server's hint says in range for every target).
+  const definedRanges = useDefinedRanges(campaignId);
   if (!actor) return null;
   const seen = new Map<string, { _id: Id<"combatTokens">; x: number; y: number; size: number; side: string }>(
     [...actor.view.pcs, ...actor.view.others].map((t) => [t._id, t]),
@@ -114,7 +117,7 @@ function PlayerRings(props: ActionsLayerProps) {
     if (!t) return [];
     if (t.side !== "enemy") return [{ id, x: t.x, y: t.y, size: t.size, tone: "ally", band: null }];
     const hint = hints?.find((h) => h.tokenId === id);
-    return [{ id, x: t.x, y: t.y, size: t.size, tone: hints === undefined ? "ok" : hintOf(hint).tone, band: hint?.band ?? null }];
+    return [{ id, x: t.x, y: t.y, size: t.size, tone: hints === undefined ? "ok" : hintOf(hint).tone, band: definedRanges ? (hint?.band ?? null) : null }];
   });
   return <Rings rings={rings} viewport={viewport} />;
 }

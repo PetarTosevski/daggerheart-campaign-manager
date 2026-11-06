@@ -196,13 +196,13 @@ describe("E1.4a: the GM's Cloaked prompt (dcm-vx5n)", () => {
     const r = await a.card("hex", { targetTokenIds: [bear.tokenId] });
     if (r.status !== "resolved") throw new Error(r.status);
     expect((await a.sheet()).conditions).toContain("cloaked");
-    const rows = await a.gm.query(api.cloakPrompts.pending, { campaignId: a.campaignId });
+    const rows = await a.gm.query(api.cloakPromptsReads.pending, { campaignId: a.campaignId });
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ label: "Deft Maneuvers", targets: [{ tokenId: bear.tokenId, name: "Bear" }] });
     const out = await a.gm.mutation(api.cloakPrompts.answer, { campaignId: a.campaignId, requestId: rows[0]!.requestId, ends: true, idempotencyKey: key() });
     expect(out.status).toBe("ended");
     expect((await a.sheet()).conditions).not.toContain("cloaked");
-    expect(await a.gm.query(api.cloakPrompts.pending, { campaignId: a.campaignId })).toHaveLength(0);
+    expect(await a.gm.query(api.cloakPromptsReads.pending, { campaignId: a.campaignId })).toHaveLength(0);
     await a.undo(r.entryId);
     expect((await a.sheet()).conditions).toContain("cloaked");
   });
@@ -237,7 +237,7 @@ describe("E1.4a: the GM's Cloaked prompt (dcm-vx5n)", () => {
 
   it("only the GM lists and answers the prompts (a player is FORBIDDEN)", async () => {
     const a = await arena();
-    expect(errorCode(await a.player.query(api.cloakPrompts.pending, { campaignId: a.campaignId }).catch((e: unknown) => e))).toBe("FORBIDDEN");
+    expect(errorCode(await a.player.query(api.cloakPromptsReads.pending, { campaignId: a.campaignId }).catch((e: unknown) => e))).toBe("FORBIDDEN");
   });
 });
 
@@ -322,6 +322,22 @@ describe("E1.4a: adversary uses on a card roll (dcm-m7tm)", () => {
     expect((await a.sheet()).hope).toBe(2);
     const gm = await a.t.run(async (ctx) => (await ctx.db.query("actionLog").withIndex("by_campaign_at", (q) => q.eq("campaignId", a.campaignId)).order("desc").take(30)).filter((x) => x.visibility === "gm"));
     expect(gm.some((x) => x.summary.includes("Ill Omen"))).toBe(true);
+  });
+});
+
+describe("combatFeatures.riders: the riders on a feature's own roll (dcm-bxp.99.32.19)", () => {
+  allowWorldEmails();
+
+  it("lists the riders that fit the feature's attack roll; another player is FORBIDDEN; an unowned feature is refused", async () => {
+    const a = await arena();
+    const options = await a.player.query(api.combatFeatures.riders, { campaignId: a.campaignId, characterId: a.w.characterA, featureId: BITE_ID });
+    expect(options).toEqual(expect.arrayContaining([expect.objectContaining({ source: "feature", id: STEADY_ID, useId: "main", phase: "before", costs: ["1 Hope"] })]));
+    // The GM reads it too.
+    expect(await a.gm.query(api.combatFeatures.riders, { campaignId: a.campaignId, characterId: a.w.characterA, featureId: BITE_ID })).toEqual(options);
+    const other = a.w.as("otherPlayer").query(api.combatFeatures.riders, { campaignId: a.campaignId, characterId: a.w.characterA, featureId: BITE_ID });
+    expect(errorCode(await other.catch((e: unknown) => e))).toBe("FORBIDDEN");
+    const unowned = a.player.query(api.combatFeatures.riders, { campaignId: a.campaignId, characterId: a.w.characterA, featureId: "class:druid:wardens-protection" });
+    expect(errorCode(await unowned.catch((e: unknown) => e))).toBe("FEATURE_NOT_OWNED");
   });
 });
 

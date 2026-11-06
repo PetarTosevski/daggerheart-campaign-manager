@@ -44,6 +44,8 @@ vi.mock("convex/react", () => ({
     };
     return Object.assign(run, { withOptimisticUpdate: () => run });
   },
+  // The feature picker's one-shot riders read (dcm-bxp.99.32.19).
+  useConvex: () => ({ query: async (ref: unknown) => queries[functionName(ref)] ?? [] }),
 }));
 vi.mock("@/components/combat-map/drawer/use", () => ({ FeatureUse: () => <section data-testid="classic-feature-use" /> }));
 vi.mock("@/components/combat-map/drawer/prompts", () => ({ DrawerPrompts: () => <div data-testid="classic-prompts" /> }));
@@ -239,7 +241,7 @@ function seedMap() {
       { _id: SNIPER, name: "Sniper", side: "enemy", x: 9, y: 9, size: 1, face: 0, revealed: false },
     ],
   };
-  queries["combatActions:targets"] = [
+  queries["combatActionsReads:targets"] = [
     { tokenId: LT, band: "close", inRange: true, lineOfSight: true, cover: false },
     { tokenId: BANDIT, band: "close", inRange: true, lineOfSight: true, cover: false },
     { tokenId: SNIPER, band: "close", inRange: true, lineOfSight: true, cover: false },

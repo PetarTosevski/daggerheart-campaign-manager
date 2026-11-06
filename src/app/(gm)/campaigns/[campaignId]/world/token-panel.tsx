@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import type { MapToken } from "@/lib/world/map-state";
 import { tokenType, type TokenType } from "@/lib/world/token-types";
 
@@ -140,24 +141,19 @@ export function TokenPanel({
           ) : null}
           <div className="flex gap-2">
             {onSendParty ? (
-              <button
-                type="button"
-                onClick={() => onSendParty(selected)}
-                className="min-h-10 flex-1 cursor-pointer rounded-[9px] border border-[#e3b45a] bg-transparent text-[13px] text-[#f3cf86]"
-              >
+              <BrandButton variant="confirm" className="flex-1" onClick={() => onSendParty(selected)}>
                 Send party here
-              </button>
+              </BrandButton>
             ) : null}
-            <button
-              type="button"
+            <BrandButton
+              variant="danger"
               onClick={async () => {
                 await actions.removeToken(selected.id);
                 onSelect(null);
               }}
-              className="min-h-10 cursor-pointer rounded-[9px] border border-[#8e2b2b] bg-transparent px-3 text-[13px] text-[#ff9a92]"
             >
               Delete
-            </button>
+            </BrandButton>
           </div>
         </section>
       ) : (
@@ -201,13 +197,9 @@ export function TokenPanel({
         {trailText !== null ? (
           <>
             <div className="text-[13px] text-[#c8b48a]">Party has travelled {trailText}</div>
-            <button
-              type="button"
-              onClick={() => actions.clearTrail()}
-              className="mt-1 min-h-9 cursor-pointer rounded-[9px] border border-[#33444a] bg-transparent text-[13px] text-[#c8d3d0]"
-            >
+            <BrandButton variant="neutral" size="sm" className="mt-1" onClick={() => actions.clearTrail()}>
               Clear party trail
-            </button>
+            </BrandButton>
           </>
         ) : null}
       </section>

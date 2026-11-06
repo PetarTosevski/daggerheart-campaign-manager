@@ -159,7 +159,13 @@ export function effectHash(text: string): string {
   return h.toString(36);
 }
 
-const FEATURE_BY_HASH = new Map(Object.keys(FEATURE_CLASSIFICATION).map((id) => [`feat:${effectHash(id)}`, id]));
+let featureByHash: ReadonlyMap<string, string> | undefined;
+
+/** Feature id by its effect-id prefix (`feat:<hash>`), built on first use (dcm-uh6r: not hashed at every module load). */
+function featureOfHash(key: string): string | undefined {
+  featureByHash ??= new Map(Object.keys(FEATURE_CLASSIFICATION).map((id) => [`feat:${effectHash(id)}`, id]));
+  return featureByHash.get(key);
+}
 const OPTION_PREFIX = "option: ";
 const FLYING_EFFECT_ID = "flying";
 
@@ -172,7 +178,7 @@ export function sheetFacts(sheet: PassiveSheet): StateFacts {
     flying: effects.some((e) => e.id === FLYING_EFFECT_ID),
     featureEffects: effects.flatMap((e) => {
       const m = /^(feat:[a-z0-9]+):\d+$/.exec(e.id);
-      const featureId = m ? FEATURE_BY_HASH.get(m[1]!) : undefined;
+      const featureId = m ? featureOfHash(m[1]!) : undefined;
       const option = e.text.split("; ").find((part) => part.startsWith(OPTION_PREFIX))?.slice(OPTION_PREFIX.length);
       return featureId === undefined ? [] : [{ featureId, ...(option !== undefined ? { option } : {}) }];
     }),

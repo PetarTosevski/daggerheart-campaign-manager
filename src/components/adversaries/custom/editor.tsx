@@ -4,6 +4,7 @@ import { useMutation } from "convex/react";
 import type { FunctionArgs } from "convex/server";
 import { useState, type FormEvent, type ReactNode } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import {
   blank,
@@ -259,9 +260,9 @@ function EditorForm({
           </div>
           <p className="adx-hint">Leave a threshold blank for None. Improvised statistics for Tier {draft.tier} (Core Rulebook p. 208): attack +{improvised.modifier}, damage {improvised.damageRange}, Difficulty {improvised.difficulty}, thresholds {improvised.major}/{improvised.severe}.</p>
           <div>
-            <button type="button" className="adx-btn" onClick={() => setDraft((d) => withImprovisedStats(d, (TIERS.includes(d.tier as CustomTier) ? d.tier : 1) as CustomTier))}>
+            <BrandButton variant="neutral" ink onClick={() => setDraft((d) => withImprovisedStats(d, (TIERS.includes(d.tier as CustomTier) ? d.tier : 1) as CustomTier))}>
               Use Tier {draft.tier} improvised statistics
-            </button>
+            </BrandButton>
           </div>
         </Fieldset>
 
@@ -299,16 +300,16 @@ function EditorForm({
                 max={20}
                 onChange={(v) => set("experiences", draft.experiences.map((e, j) => (j === i ? { ...e, value: v ?? Number.NaN } : e)))}
               />
-              <button type="button" className="adx-btn adx-danger" onClick={() => set("experiences", draft.experiences.filter((_, j) => j !== i))}>
+              <BrandButton variant="danger" ink onClick={() => set("experiences", draft.experiences.filter((_, j) => j !== i))}>
                 Remove
-              </button>
+              </BrandButton>
             </div>
           ))}
           {draft.experiences.length < 6 ? (
             <div>
-              <button type="button" className="adx-btn" onClick={() => set("experiences", [...draft.experiences, { name: "", value: 2 }])}>
+              <BrandButton variant="neutral" ink onClick={() => set("experiences", [...draft.experiences, { name: "", value: 2 }])}>
                 + Add Experience
-              </button>
+              </BrandButton>
             </div>
           ) : null}
         </Fieldset>
@@ -336,29 +337,30 @@ function EditorForm({
                 <textarea className="adx-ta" rows={3} maxLength={2000} value={feature.text} onChange={(e) => setFeature(i, { text: e.target.value })} />
               </label>
               <div className="adx-item-tools">
-                <button type="button" className="adx-btn" disabled={i === 0} onClick={() => moveFeature(i, -1)} aria-label={`Move ${feature.name || "feature"} up`}>
+                <BrandButton variant="neutral" ink icon disabled={i === 0} onClick={() => moveFeature(i, -1)} aria-label={`Move ${feature.name || "feature"} up`}>
                   ↑
-                </button>
-                <button
-                  type="button"
-                  className="adx-btn"
+                </BrandButton>
+                <BrandButton
+                  variant="neutral"
+                  ink
+                  icon
                   disabled={i === draft.features.length - 1}
                   onClick={() => moveFeature(i, 1)}
                   aria-label={`Move ${feature.name || "feature"} down`}
                 >
                   ↓
-                </button>
-                <button type="button" className="adx-btn adx-danger" onClick={() => set("features", draft.features.filter((_, j) => j !== i))}>
+                </BrandButton>
+                <BrandButton variant="danger" ink onClick={() => set("features", draft.features.filter((_, j) => j !== i))}>
                   Remove feature
-                </button>
+                </BrandButton>
               </div>
             </div>
           ))}
           {draft.features.length < 20 ? (
             <div>
-              <button type="button" className="adx-btn" onClick={() => set("features", [...draft.features, { name: "", kind: "passive", text: "" }])}>
+              <BrandButton variant="neutral" ink onClick={() => set("features", [...draft.features, { name: "", kind: "passive", text: "" }])}>
                 + Add feature
-              </button>
+              </BrandButton>
             </div>
           ) : null}
         </Fieldset>
@@ -369,12 +371,12 @@ function EditorForm({
           </p>
         ) : null}
         <div className="adx-actions">
-          <button type="button" className="adx-btn" onClick={onClose}>
+          <BrandButton variant="cancel" ink onClick={onClose}>
             Cancel
-          </button>
-          <button type="submit" className="adx-primary" disabled={create.pending || saving}>
+          </BrandButton>
+          <BrandButton type="submit" variant="confirm" ink disabled={create.pending || saving}>
             Save adversary
-          </button>
+          </BrandButton>
         </div>
       </div>
       <div className="adx-preview">

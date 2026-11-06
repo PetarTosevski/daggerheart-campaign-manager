@@ -4,6 +4,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, expectNoHorizontalScroll } from "./visual/helpers";
+import { gmJoinCode } from "./config/helpers";
 
 // D11 N3: entries (.omc/plans/d11-notes.yaml). The GM writes on their own page: adds (quick keys), completes, stars,
 // edits, moves and deletes entries, and migrates an open task to a new page. A player and the GM both add to the
@@ -27,11 +28,7 @@ async function gmCreatesCampaign(page: Page) {
 }
 
 async function playerJoins(page: Page, browser: Browser, campaignName: string) {
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
-  await dialog.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
   const context = await browser.newContext();
   const player = await context.newPage();
   await signInAsTestGm(player, PLAYER);
@@ -71,7 +68,7 @@ async function write(page: Page, line: string, area: Locator = paper(page)) {
 test("the GM adds, completes, stars, edits, moves and deletes entries and migrates an open task", async ({ page }) => {
   const { campaignId } = await gmCreatesCampaign(page);
   const client = await convexAs(page);
-  await page.goto(`/campaigns/${campaignId}/notes?page=template-0`);
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes&page=template-0`);
   await expect(paper(page).getByText("A fresh page. What happened at the table?")).toBeVisible();
 
   // The chips pick the kind (and focus the input); quick keys pick it otherwise. The first write creates the journal
@@ -152,12 +149,12 @@ test("a player and the GM add to the player's page: the GM's entry ends ' - GM' 
     // Seed the player's journal (its first write) to learn the page id; the behaviour under test goes through the UI.
     const { pageId } = await playerClient.mutation(api.notesEntries.add, { campaignId, page: { template: 0 }, kind: "event", text: "we crossed the river" });
 
-    await player.goto(`/campaigns/${campaignId}/notes?page=${pageId}`);
+    await player.goto(`/campaigns/${campaignId}/journal?tab=notes&page=${pageId}`);
     await write(player, "* ask about the lantern");
     await expect(rowOf(player, "ask about the lantern")).toBeVisible();
 
     // The GM opens the player's page ('gm' visibility, the default) through 'Players’ journals' and adds an entry.
-    await page.goto(`/campaigns/${campaignId}/notes`);
+    await page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
     await openIndex(page);
     await page.getByRole("complementary", { name: "Journal index" }).getByRole("region", { name: "Players’ journals" }).getByRole("button", { name: /^Ash/ }).click();
     await expect(page).toHaveURL(/view=journal&journal=/);
@@ -205,7 +202,7 @@ test("entries fit a phone: one column, no horizontal scroll, 44 px bullets, row 
   const { campaignId } = await gmCreatesCampaign(page);
   const client = await convexAs(page);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`/campaigns/${campaignId}/notes?page=template-0`);
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes&page=template-0`);
   await write(page, "* a long task line that has to wrap on a narrow phone screen without scrolling sideways");
   await expectNoHorizontalScroll(page);
   const row = rowOf(page, "a long task line");

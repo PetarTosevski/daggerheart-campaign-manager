@@ -86,12 +86,82 @@ export const seedForcedAttackForE2e = internalMutation({
       campaignId: character.campaignId,
       encounterId: instance.encounterId,
       mapId: target.mapId,
+      // Identity: the e2e seed's request is raised by the creator.
       createdBy: campaign.ownerId,
       status: "open",
       createdAt: Date.now(),
       responses: [],
       kind: "forcedAttack",
       payload: { schemaVersion: 1, kind: "forcedAttack", characterId, instanceId: instance._id, instanceLabel, feature, targetTokenIds, groupId: `e2e-forced-${Date.now()}` },
+    });
+  },
+});
+
+/**
+ * dcm-bxp.99.32.25 test seeding for the HUD's "Your roll waits" (plan combat-hud H4.1; tests/e2e/hud-result.spec.ts,
+ * tests/e2e/visual/HUD-H4.1.spec.ts): opens an `afterRoll` request, as a held map attack does (convex/lib/combatActions.ts
+ * `resolveAttack`), for the character's primary-weapon attack on one adversary token, with fixed Hope and Fear dice and
+ * the after-roll `options` the HUD offers (feature ids and uses the character holds, e.g. a warlock's Patron's Boon). The
+ * stored dice replay on Use / Pass (`dualityAt` 0: the Hope Die, then the Fear Die), so the held roll and its outcome are
+ * deterministic; damage dice are drawn when it resolves. The total is the two dice plus the weapon's trait. Internal
+ * (admin key only, `convex run`), refused on anything but the local e2e backend.
+ */
+export const seedHeldAttackForE2e = internalMutation({
+  args: {
+    characterId: v.id("characters"),
+    targetTokenId: v.id("combatTokens"),
+    hope: v.number(),
+    fear: v.number(),
+    options: v.array(v.object({ featureId: v.string(), useId: v.string() })),
+  },
+  returns: v.id("combatRequests"),
+  handler: async (ctx, { characterId, targetTokenId, hope, fear, options }) => {
+    if (!isE2EDeployment(env)) throw new Error("seedHeldAttackForE2e runs only on the local e2e backend.");
+    if (![hope, fear].every((d) => Number.isInteger(d) && d >= 1 && d <= 12)) throw new Error("Hope and Fear are d12 faces (1-12).");
+    if (options.length === 0 || options.length > 8) throw new Error("Give 1 to 8 after-roll options.");
+    const character = await ctx.db.get("characters", characterId);
+    const target = await ctx.db.get("combatTokens", targetTokenId);
+    if (character === null || target === null || target.ref.kind !== "adversary" || target.campaignId !== character.campaignId) throw new Error("Seed a character and an adversary token of its campaign.");
+    const instance = await ctx.db.get("encounterAdversaries", target.ref.adversaryId);
+    if (instance === null) throw new Error("No such instance.");
+    const sheet = readSheet(character.sheet);
+    const weapon = equippedWeapon(sheet, "primary");
+    const trait = weapon.trait === "choice" ? "strength" : weapon.trait;
+    const modifier = sheet.traits[trait] ?? 0;
+    const total = hope + fear + modifier;
+    const hit = hope === fear || total >= instance.stats.difficulty;
+    const outcome = hope === fear ? "critical" : hit ? (hope > fear ? "successHope" : "successFear") : hope > fear ? "failHope" : "failFear";
+    return ctx.db.insert("combatRequests", {
+      campaignId: character.campaignId,
+      encounterId: instance.encounterId,
+      mapId: target.mapId,
+      // Identity: the held attack is the character's owner's, as a real one is the attacking player's.
+      createdBy: character.ownerId,
+      status: "open",
+      createdAt: Date.now(),
+      responses: [],
+      kind: "afterRoll",
+      payload: {
+        schemaVersion: 1,
+        kind: "afterRoll",
+        characterId,
+        action: { kind: "attack", slot: "primary", targetTokenIds: [targetTokenId], roll: {} },
+        dice: [hope, fear],
+        dualityAt: 0,
+        roll: {
+          kind: "action",
+          dice: [
+            { sides: 12, value: hope, role: "hope" },
+            { sides: 12, value: fear, role: "fear" },
+          ],
+          modifier,
+          total,
+          outcome,
+          manual: false,
+        },
+        hits: [{ tokenId: targetTokenId, hit }],
+        options,
+      },
     });
   },
 });

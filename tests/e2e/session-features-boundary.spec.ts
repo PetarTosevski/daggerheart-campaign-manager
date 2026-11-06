@@ -2,18 +2,18 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import type { ConvexHttpClient } from "convex/browser";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { cardsForDomains, getClass } from "../../src/lib/srd/index";
-import { bardDraft, openSessions } from "./visual/helpers";
+import { bardDraft, endFromJournal, journalReport, openSessions, startFromJournal } from "./visual/helpers";
 
 // Session features at the session boundaries (plan session-features F1). A party of two Halflings (Pip, Rosa), a Call
 // of the Slayer Warrior holding 2 Slayer Dice (Bryn) and a Seaborne PC holding 2 Tide tokens (Kai): Start gives every
-// active PC 2 Hope, capped at 6 (U1, K6), and the live card's report says so; End clears the Slayer Dice for +2 Hope
+// active PC 2 Hope, capped at 6 (U1, K6), and the Journal header's report says so; End clears the Slayer Dice for +2 Hope
 // and the Tide tokens (U8) and reports both. Pip is created through the API; the others are appended to the
 // `characters` table of the local e2e backend (no public mutation sets held Slayer Dice or Tide tokens before F2).
 
@@ -59,24 +59,19 @@ async function seedParty(client: ConvexHttpClient, campaignId: Id<"campaigns">) 
   return { pip, rosa: idOf("Rosa"), bryn: idOf("Bryn"), kai: idOf("Kai") };
 }
 
-const liveCard = (page: Page) => page.getByRole("region", { name: "Live session" });
 
 test("Start gives the stacked Luckbringer Hope (capped); End clears Slayer Dice for Hope and Tide tokens; both reports list it", async ({ page }) => {
   const { client, campaignId } = await openSessions(page);
   const ids = await seedParty(client, campaignId);
   const sheet = async (id: Id<"characters">) => (await client.query(api.charactersReads.get, { characterId: id }))!.sheet as CharacterSheet;
 
-  await page.getByRole("button", { name: "+ New session" }).click();
-  await expect(page).toHaveURL(/stage=prep$/);
-  await liveCard(page).getByRole("button", { name: "Start session" }).click();
-  await page.getByRole("dialog", { name: "Start the session?" }).getByRole("button", { name: "Start session" }).click();
-  const report = liveCard(page).getByRole("status").locator("p");
+  await startFromJournal(page);
+  const report = journalReport(page).locator("p");
   await expect(report.nth(0)).toHaveText("Session started.");
   await expect(report.nth(1)).toHaveText("Luckbringer (Pip, Rosa): everyone gains 2 Hope.");
   expect(await Promise.all([ids.pip, ids.rosa, ids.bryn, ids.kai].map(async (id) => (await sheet(id)).hope))).toEqual([6, 4, 4, 2]);
 
-  await liveCard(page).getByRole("button", { name: "End session" }).click();
-  await page.getByRole("dialog", { name: "End the session?" }).getByRole("button", { name: "End session" }).click();
+  await endFromJournal(page);
   await expect(report.nth(0)).toHaveText("Session ended.");
   await expect(report.nth(1)).toHaveText("Bryn cleared 2 Slayer Dice: +2 Hope.");
   await expect(report.nth(2)).toHaveText("Kai cleared 2 Tide tokens.");

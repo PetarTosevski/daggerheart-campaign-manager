@@ -246,7 +246,8 @@ describe("PF10: per-row reads of the roster and the combat map list", () => {
     // Before PF10: 10 documents (campaign, caller's membership twice, GM's user row, 3 member rows, 3 user rows).
     expect(roster.documentsRead).toBeLessThanOrEqual(10);
     // Before PF10: 5 documents, 3 index ranges (campaign, the maps range, one file lookup per map with no image).
+    // Config AD14: every wrapper also reads the caller's (empty) `accountStatus` range, one more index range.
     expect(maps.documentsRead).toBeLessThanOrEqual(5);
-    expect(maps.databaseQueries).toBeLessThanOrEqual(3);
+    expect(maps.databaseQueries).toBeLessThanOrEqual(4);
   });
 });

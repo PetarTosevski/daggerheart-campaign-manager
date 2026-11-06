@@ -4,6 +4,7 @@ import { useMutation } from "convex/react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
+import { BrandButton, brandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import { lorekeeperMessages } from "@/lib/errors/lorekeeper";
 import {
@@ -114,9 +115,9 @@ function ErrorCard({ answer, onRetry }: AnswerCardProps) {
         <p>{text}</p>
         {onRetry ? (
           <div className="lk-acts">
-            <button type="button" className="lk-act" onClick={onRetry}>
+            <BrandButton variant="neutral" ink onClick={onRetry}>
               {TRY_AGAIN_LABEL}
-            </button>
+            </BrandButton>
           </div>
         ) : null}
       </div>
@@ -239,28 +240,28 @@ function Actions({ campaignId, answer, question, titles, isGm, mine, sentToGm, o
           switch (action) {
             case "copy":
               return (
-                <button key={action} type="button" className="lk-act" onClick={copy}>
+                <BrandButton key={action} variant="neutral" ink onClick={copy}>
                   {ACTION_LABELS.copy}
-                </button>
+                </BrandButton>
               );
             case "openInBook":
               return (
-                <button key={action} type="button" className="lk-act" onClick={onOpenBook}>
+                <BrandButton key={action} variant="neutral" ink onClick={onOpenBook}>
                   {ACTION_LABELS.openInBook}
-                </button>
+                </BrandButton>
               );
             case "pinRuling":
               return (
-                <button key={action} type="button" className="lk-act" onClick={() => setPinning(true)}>
+                <BrandButton key={action} variant="neutral" ink onClick={() => setPinning(true)}>
                   {ACTION_LABELS.pinRuling}
-                </button>
+                </BrandButton>
               );
             case "askGm":
               return (
-                <button
+                <BrandButton
                   key={action}
-                  type="button"
-                  className="lk-act"
+                  variant="neutral"
+                  ink
                   disabled={sentToGm}
                   onClick={async () => {
                     setError(null);
@@ -272,11 +273,11 @@ function Actions({ campaignId, answer, question, titles, isGm, mine, sentToGm, o
                   }}
                 >
                   {sentToGm ? ASK_GM_SENT : ACTION_LABELS.askGm}
-                </button>
+                </BrandButton>
               );
             case "showOnMap":
               return (
-                <Link key={action} href={`/campaigns/${campaignId}/combat-map`} className="lk-act lk-actlink">
+                <Link key={action} href={`/campaigns/${campaignId}/combat-map`} className={brandButton({ variant: "neutral", ink: true })}>
                   {ACTION_LABELS.showOnMap}
                 </Link>
               );

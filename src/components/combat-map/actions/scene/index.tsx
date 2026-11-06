@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { BrandButton, brandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import { useIntent } from "@/lib/use-intent";
 
@@ -22,11 +23,11 @@ export function sceneReport(result: { ended: number; areas: number }): string {
  * current narrative situation has played out"). Pressing it, after a confirmation, ends the scene for every PC:
  * scene-length effects, once-per-scene feature limits, the Unstoppable Die, the active stance and the scene's map areas
  * (`combatScenes.end`). Ending the running encounter does the same on its own. Mounted in the Encounter tab's top bar
- * (`className` "trk-btn") and meant for the Combat Map's GM column (`className` "cm-btn"; the mount is a one-line change
- * in actions/index.tsx `Resolutions`, outside SD8's files: docs/tasks/TASK-SD-SD8.md). It reads nothing, so it needs no
- * error boundary; the status span is the live region.
+ * (the top bar passes its own `className`). It reads nothing, so it needs no error boundary; the status span is the live
+ * region. Plan glass-buttons G11: the opener is a danger glass button unless the mount passes a `className`; the
+ * confirmation's Cancel is the glass cancel and its End scene the glass danger.
  */
-export function EndSceneButton({ campaignId, className = "cm-btn" }: { campaignId: Id<"campaigns">; className?: string }) {
+export function EndSceneButton({ campaignId, className = brandButton({ variant: "danger" }) }: { campaignId: Id<"campaigns">; className?: string }) {
   const end = useIntent(api.combatScenes.end);
   const [confirm, setConfirm] = useState(false);
   const [report, setReport] = useState<string | null>(null);
@@ -49,12 +50,12 @@ export function EndSceneButton({ campaignId, className = "cm-btn" }: { campaignI
       <Modal open={confirm} onClose={() => setConfirm(false)} title="End the scene?" className="max-w-[480px]">
         <p className="m-0 text-[16px]">Effects and limits that last until the end of the scene end for every character.</p>
         <div className="flex justify-end gap-2.5">
-          <button type="button" className={className} style={{ minHeight: 44 }} onClick={() => setConfirm(false)}>
+          <BrandButton variant="cancel" onClick={() => setConfirm(false)}>
             Cancel
-          </button>
-          <button type="button" className={className} style={{ minHeight: 44 }} onClick={() => void run()}>
+          </BrandButton>
+          <BrandButton variant="danger" onClick={() => void run()}>
             End scene
-          </button>
+          </BrandButton>
         </div>
       </Modal>
     </>

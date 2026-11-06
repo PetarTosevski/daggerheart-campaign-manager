@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
+
 import type { StatBlockAdversary } from "../../catalogue/stat-block";
 import { needsChoices, type Creature, type FeatureAsk } from "./ask";
 import { FeatureChoices, type ChoiceArgs } from "./choices";
@@ -11,10 +13,11 @@ import { ActionResultView } from "./result";
 import type { AdversaryActions, Intent, Resolved } from "./use-adversary-actions";
 
 type Edge = "none" | "advantage" | "disadvantage";
-const EDGES: readonly { id: Edge; label: string }[] = [
-  { id: "none", label: "Normal" },
-  { id: "advantage", label: "Advantage" },
-  { id: "disadvantage", label: "Disadvantage" },
+/** Each option's glass role (the roll toggle: Normal grey, Advantage / Disadvantage in the viewer's colours). */
+const EDGES: readonly { id: Edge; label: string; role: "normal" | "advantage" | "disadvantage" }[] = [
+  { id: "none", label: "Normal", role: "normal" },
+  { id: "advantage", label: "Advantage", role: "advantage" },
+  { id: "disadvantage", label: "Disadvantage", role: "disadvantage" },
 ];
 const KIND_LABEL = { passive: "Passive", action: "Action", reaction: "Reaction", evolution: "Evolution" } as const;
 
@@ -103,15 +106,9 @@ export function ActionPanel({
       ) : (
         <div className="trk-act-targets" role="group" aria-label="Targets">
           {options.map((o) => (
-            <button
-              key={o.characterId}
-              type="button"
-              className="trk-chip trk-chip-parch"
-              aria-pressed={picked.includes(o.characterId)}
-              onClick={() => onTargets(toggled(picked, o.characterId))}
-            >
+            <BrandButton key={o.characterId} variant="neutral" aria-pressed={picked.includes(o.characterId)} onClick={() => onTargets(toggled(picked, o.characterId))}>
               {o.name}
-            </button>
+            </BrandButton>
           ))}
         </div>
       )}
@@ -119,9 +116,9 @@ export function ActionPanel({
       <div className="trk-act-row">
         <div className="trk-seg" role="group" aria-label="Advantage">
           {EDGES.map((e) => (
-            <button key={e.id} type="button" aria-pressed={edge === e.id} onClick={() => setEdge(e.id)}>
+            <BrandButton key={e.id} variant={e.role} aria-pressed={edge === e.id} onClick={() => setEdge(e.id)}>
               {e.label}
-            </button>
+            </BrandButton>
           ))}
         </div>
         {block.experiences.length > 0 ? (
@@ -142,21 +139,20 @@ export function ActionPanel({
         <div className="trk-act-targets" role="group" aria-label="Reactions on this attack">
           <span className="trk-act-sub">Use on this attack:</span>
           {reactionFeatures.map((f) => (
-            <button key={f.name} type="button" className="trk-chip trk-chip-parch" aria-pressed={reactions.includes(f.name)} onClick={() => setReactions(toggled(reactions, f.name))}>
+            <BrandButton key={f.name} variant="neutral" aria-pressed={reactions.includes(f.name)} onClick={() => setReactions(toggled(reactions, f.name))}>
               {f.name}
-            </button>
+            </BrandButton>
           ))}
         </div>
       ) : null}
       <div className="trk-act-row">
-        <button
-          type="button"
-          className="trk-btn trk-btn-attack"
+        <BrandButton
+          variant="confirm"
           disabled={busy || picked.length === 0}
           onClick={() => void fire({ kind: "attack", label: `${actor} attacks`, actor, args: { ...shared, ...(reactions.length ? { reactions } : {}) } })}
         >
           ⚔ Attack{who ? ` ${who}` : ""} with {block.attack.name}
-        </button>
+        </BrandButton>
         {spotNote ? <span className="trk-act-note">{spotNote}</span> : null}
         {picked.length === 0 && options.length > 0 ? <span className="trk-act-note">Pick a target first.</span> : null}
       </div>
@@ -164,12 +160,12 @@ export function ActionPanel({
       {acts.confirm ? (
         <div className="trk-confirm" role="group" aria-label="Spend Fear?">
           <p>{fearPrompt(acts.confirm.fear)}</p>
-          <button type="button" className="trk-btn trk-btn-parch trk-btn-fear" disabled={acts.pending || fear < acts.confirm.fear.fear} onClick={() => void spend()}>
+          <BrandButton variant="confirm" disabled={acts.pending || fear < acts.confirm.fear.fear} onClick={() => void spend()}>
             Spend {acts.confirm.fear.fear} Fear
-          </button>
-          <button type="button" className="trk-btn trk-btn-parch" onClick={acts.cancel}>
+          </BrandButton>
+          <BrandButton variant="cancel" onClick={acts.cancel}>
             Cancel
-          </button>
+          </BrandButton>
           {fear < acts.confirm.fear.fear ? <span className="trk-act-note">You hold only {fear} Fear.</span> : null}
         </div>
       ) : null}
@@ -177,7 +173,7 @@ export function ActionPanel({
         {acts.error}
       </p>
       {acts.result && acts.result.instanceId === instanceId ? (
-        <ActionResultView shown={acts.result} nameOf={nameOf} pending={acts.pending} onFire={(intent) => void fire(intent)} onDismiss={acts.dismiss} />
+        <ActionResultView shown={acts.result} nameOf={nameOf} pending={acts.pending} onFire={(intent) => void fire(intent)} onDismiss={acts.dismiss} glass />
       ) : null}
 
       <div className="trk-act-h">
@@ -197,6 +193,7 @@ export function ActionPanel({
                 fearCost={f.fearCost}
                 disabled={busy}
                 live={!defeated}
+                glass
                 onUse={(ask) => (ask && needsChoices(ask) ? setChoosing(ask) : sendFeature(f.name))}
               />
             ) : (
@@ -216,6 +213,7 @@ export function ActionPanel({
           panelTargets={picked}
           fear={fear}
           pending={acts.pending}
+          glass
           onClose={() => setChoosing(null)}
           onUse={(args) => {
             setChoosing(null);

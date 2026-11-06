@@ -27,7 +27,9 @@
 .adc-search:focus { outline: 2px solid var(--adv-acc); outline-offset: 1px; }
 /* The label sits in its own gutter so a row that wraps (Type) starts its second line under the first chip. */
 .adc-chips { position: relative; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding-left: 56px; }
-.adc-flab { position: absolute; left: 0; top: 0; line-height: 44px; font-size: 12px; color: var(--adv-muted-2); }
+.adc-flab { position: absolute; left: 0; top: 0; line-height: 34px; font-size: 12px; color: var(--adv-muted-2); }
+/* The chips are small glass buttons: 34 px, 44 px on touch (glass-button.css), so the label follows. */
+@media (max-width: 1100px), (pointer: coarse) { .adc-flab { line-height: 44px; } }
 /* Adversary type legend (CB p.194). */
 .adc-legend { margin-left: 56px; font-size: 14px; color: var(--adv-text); }
 .adc-legend summary { cursor: pointer; min-height: 44px; display: inline-flex; align-items: center; color: var(--adv-muted-2); text-decoration: underline; text-underline-offset: 3px; }
@@ -37,23 +39,7 @@
 .adc-legend dd { margin: 0; color: var(--adv-muted, var(--adv-text)); }
 .adc-legend .adc-legend-src { margin: 0; font-size: 12px; color: var(--adv-muted-2); }
 @media (max-width: 480px) { .adc-legend dl { grid-template-columns: 1fr; } .adc-legend dd { margin-bottom: 6px; } }
-.adc-chip {
-  min-height: 44px;
-  min-width: 44px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid var(--adv-border-strong);
-  background: transparent;
-  color: var(--adv-chip-text);
-  font-family: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-.adc-chip:hover { border-color: var(--adv-chip-hover); }
-.adc-chip[aria-pressed="true"] { background: var(--adv-acc); border-color: var(--adv-acc); color: var(--adv-acc-ink); font-weight: 600; }
-.adc-chip:focus-visible,
-.adc-item:focus-visible,
-.adc-more:focus-visible { outline: 2px solid var(--adv-acc); outline-offset: -2px; }
+.adc-item:focus-visible { outline: 2px solid var(--adv-acc); outline-offset: -2px; }
 
 .adc-list {
   max-height: 640px;
@@ -109,20 +95,6 @@
 .adc-type { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: var(--adv-type-bg); color: var(--adv-chip-text); white-space: nowrap; }
 .adc-num { display: flex; gap: 14px; font-size: 12px; color: var(--adv-muted-2); text-align: center; }
 .adc-num strong { display: block; font-family: var(--adv-font-head); font-size: 16px; color: var(--adv-text); }
-.adc-more {
-  display: block;
-  width: calc(100% - 20px);
-  margin: 10px;
-  min-height: 44px;
-  border-radius: 10px;
-  border: 1px dashed #3a4d54;
-  background: transparent;
-  color: #c8d3d0;
-  font-family: inherit;
-  font-size: 14px;
-  cursor: pointer;
-}
-.adc-more:hover { border-color: var(--adv-chip-hover); }
 .adc-empty { margin: 0; padding: 28px; text-align: center; color: var(--adv-muted); font-size: 15px; }
 
 .adc-hf {

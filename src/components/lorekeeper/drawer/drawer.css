@@ -30,8 +30,6 @@
 }
 .lk-root .lk-drawerpanel .lk-chathead { flex: none; }
 .lk-root .lk-drawerpanel .lk-body { min-height: 0; }
-.lk-root .lk-drawerclose { flex: none; min-width: 44px; min-height: 44px; font-size: 16px; }
-.lk-root .lk-drawerclose:focus-visible { outline: 2px solid var(--lk-gold); outline-offset: 2px; }
 .lk-root .lk-drawerfab { position: absolute; right: 466px; bottom: 24px; pointer-events: none; }
 .lk-root .lk-fabmini { width: 30px; height: 30px; }
 

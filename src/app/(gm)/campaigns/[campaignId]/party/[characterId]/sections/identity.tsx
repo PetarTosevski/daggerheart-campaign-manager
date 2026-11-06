@@ -480,7 +480,8 @@ export function PronounsField() {
           role="switch"
           aria-checked={flag === "pronouns"}
           aria-label="Label as Pronouns"
-          className="mt-1 flex items-center gap-1.5 self-start bg-transparent p-0 text-[12px] text-[#6b5a3e]"
+          // 44 px tall on phones (S13's touch-target pass); the switch itself keeps its size.
+          className="mt-1 flex items-center gap-1.5 self-start bg-transparent p-0 text-[12px] text-[#6b5a3e] max-sm:min-h-11"
           onClick={() => void toggle()}
         >
           <span aria-hidden="true" className={cn("relative inline-block h-3.5 w-6 rounded-full border border-current", flag === "pronouns" && "bg-current")}>

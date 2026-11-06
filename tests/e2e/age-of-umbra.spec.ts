@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { openPlayers } from "./config/helpers";
 import { signInAsTestGm } from "./fixtures";
 
 const PLAYER = "e2e-player@example.test";
@@ -66,12 +67,11 @@ test("players see the pyres read-only and no Lurking Darkness roller", async ({ 
   await newCampaign(page);
   await page.getByLabel("Settlement", { exact: true }).fill("Lastlight");
   await page.getByRole("button", { name: "Add pyre" }).click();
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await dialog.getByLabel("Player email").fill(PLAYER);
-  await dialog.getByRole("button", { name: "Invite" }).click();
-  await expect(dialog.getByText(`${PLAYER} · invited`)).toBeVisible();
   const campaignUrl = page.url();
+  const dialog = await openPlayers(page);
+  await dialog.getByLabel("Player email").fill(PLAYER);
+  await dialog.getByRole("button", { name: "Invite", exact: true }).click();
+  await expect(dialog.getByText(`${PLAYER} · invited`)).toBeVisible();
 
   const context = await browser.newContext();
   const player = await context.newPage();

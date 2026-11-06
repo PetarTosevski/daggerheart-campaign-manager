@@ -13,9 +13,7 @@
   --enc-over: #e0715f;
   --enc-exact: #7cc49a;
   --enc-danger: #ffb4a8;
-  --enc-danger-border: #5a3330;
   --enc-start: #40815d;
-  --enc-end: #a2463a;
   --enc-chip-draft-bg: #2d2614;
   --enc-chip-running-bg: #20352b;
   --enc-chip-running: #9fdcb6;
@@ -92,52 +90,8 @@
 .enc-in:focus,
 .enc-ta:focus { outline: 2px solid var(--adv-acc); outline-offset: 1px; }
 
-.enc-ghost {
-  min-height: 44px;
-  padding: 0 14px;
-  border-radius: 8px;
-  border: 1px solid var(--adv-border-strong);
-  background: transparent;
-  color: var(--adv-text);
-  font-size: 14px;
-  cursor: pointer;
-  font-family: inherit;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  box-sizing: border-box;
-}
-.enc-ghost:hover { background: var(--enc-raised); }
-/* On the parchment stat block: the main action, solid wine with cream text (the dark-page ghost style was unreadable there). */
-.enc-ghost.enc-on-paper { background: #5b2b2b; border-color: #5b2b2b; color: #f6ead2; font-weight: 700; }
-.enc-ghost.enc-on-paper:hover { background: #6e3434; border-color: #6e3434; }
-.enc-ghost.enc-on-paper:focus-visible { outline: 2px solid #5b2b2b; outline-offset: 2px; }
-.enc-ghost:disabled { opacity: 0.5; cursor: default; }
-.enc-danger { color: var(--enc-danger); border-color: var(--enc-danger-border); }
-.enc-ghost:focus-visible,
-.enc-pill:focus-visible,
-.enc-step:focus-visible,
-.enc-x:focus-visible,
 .enc-adj:focus-visible,
 .enc-pick:focus-visible { outline: 2px solid var(--adv-acc); outline-offset: 2px; }
-
-.enc-pill {
-  min-height: 46px;
-  padding: 0 22px;
-  border-radius: 999px;
-  border: none;
-  color: #fff;
-  font-family: var(--adv-font-head);
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  cursor: pointer;
-}
-.enc-pill-start { background: var(--enc-start); }
-.enc-pill-end { background: var(--enc-end); }
-.enc-pill-primary { background: var(--adv-acc); color: var(--adv-acc-ink); }
-.enc-pill:disabled { opacity: 0.6; cursor: default; }
 
 .enc-status { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 14px; }
 .enc-status[data-live="true"] { border-color: var(--enc-start); }
@@ -157,25 +111,6 @@
 .enc-cost { font-family: var(--adv-font-head); font-weight: 700; font-size: 14px; color: var(--adv-text); min-width: 44px; text-align: right; }
 .enc-row-actions { display: flex; gap: 4px; flex: none; }
 
-.enc-x,
-.enc-step {
-  width: 44px;
-  height: 44px;
-  flex: none;
-  border-radius: 8px;
-  border: 1px solid var(--adv-border-strong);
-  background: transparent;
-  color: var(--adv-muted);
-  cursor: pointer;
-  font-size: 18px;
-  line-height: 1;
-  font-family: inherit;
-}
-.enc-x:hover { color: var(--enc-danger); border-color: #7a3b33; }
-.enc-x:disabled { opacity: 0.35; cursor: default; }
-.enc-step { background: var(--enc-field); color: var(--adv-text); }
-.enc-step:hover { background: var(--enc-raised); }
-.enc-step:disabled { opacity: 0.4; cursor: default; }
 .enc-num { min-width: 34px; text-align: center; font-family: var(--adv-font-head); font-size: 20px; font-weight: 700; }
 
 /* Battle Points panel */
@@ -255,8 +190,5 @@
   .enc-detail { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* Tier filter in the Add to encounter dialog. */
+/* Tier filter in the Add to encounter dialog (glass chips, aria-pressed). */
 .enc-tiers { display: flex; flex-wrap: wrap; gap: 6px; }
-.enc-tier { min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--adv-border-strong); background: transparent; color: var(--adv-text); font-family: inherit; font-size: 14px; cursor: pointer; }
-.enc-tier[aria-pressed="true"] { background: var(--adv-acc); border-color: var(--adv-acc); color: var(--adv-acc-ink); font-weight: 700; }
-.enc-tier:focus-visible { outline: 2px solid var(--adv-acc); outline-offset: 2px; }

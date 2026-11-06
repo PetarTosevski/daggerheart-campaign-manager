@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "../../src/lib/zod";
 
 import { codexEntryDataSchema, emptyEntry, MAX_CODEX_ENTRIES, MAX_CODEX_IMAGES, type CodexEntryData, type CodexKind } from "../../src/lib/codex/schema";
 import { seedCharacters } from "../../src/lib/codex/seed";

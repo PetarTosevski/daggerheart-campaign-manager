@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import { appError } from "../src/lib/errors/app-error";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { activeAreasOnMap } from "./combatAreas";
+import { activeAreasOnMap } from "./lib/combatAreas";
 import { loadCombatMap } from "./lib/combatMaps";
 import { gmMutation } from "./lib/functions";
 import { AREA_RADII, type AreaRadius } from "./lib/validators/combatMaps";

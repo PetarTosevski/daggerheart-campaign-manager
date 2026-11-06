@@ -88,9 +88,19 @@ export const restFields = {
    * rows (Horizon days passed). Narrow once no row carries it.
    */
   gmOverride: v.optional(v.boolean()),
-  /** The GM's rest Fear roll (1d4, CB 105) and the Fear it gave. */
+  /**
+   * The GM's rest Fear roll (1d4, CB 105; on an Extended downtime rest the sum of its d6s, CB 181) and the Fear it gave.
+   * Neither is written while F2 Fear from rests is Manual (`fearPrompt` instead).
+   */
   fearRoll: v.optional(v.number()),
   fearGained: v.optional(v.number()),
+  /**
+   * Plan rule-switches RR (widened): the GM started this long rest as Extended downtime (several days, CB 181; Q7 a),
+   * allowed only while F2 is set to Extended downtime. Finished, it gains 1d6 Fear per PC. Kept by undo.
+   */
+  extended: v.optional(v.boolean()),
+  /** Plan rule-switches RR (widened): F2 Manual, the Fear the book gives, said not applied ("Gain 1d4 + 4 Fear"). Cleared by undo. */
+  fearPrompt: v.optional(v.string()),
   /** The `actionLog` group of the finished rest, for undo. */
   groupId: v.optional(v.string()),
   /**

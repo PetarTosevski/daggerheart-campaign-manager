@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { capLimits, remaining, reserve, reservePass, settle, usageDay, usageMonth, type UsageScopes } from "../../convex/lib/lorekeeper/caps";
-import { costMicros, PRIMARY_MODEL, reserveMicros, RETRY_MODEL } from "../../src/lib/lorekeeper/pricing";
+import { costMicros, PRIMARY_MODEL, reserveMicros, RETRY_MODEL, webReserveMicros } from "../../src/lib/lorekeeper/pricing";
 import { errorCode, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
@@ -14,8 +14,9 @@ import { makeTest } from "./setup";
 const NOW = new Date("2026-10-21T12:00:00Z").getTime();
 const NEXT_DAY = new Date("2026-10-22T00:00:01Z").getTime();
 const NEXT_MONTH = new Date("2026-11-01T00:00:01Z").getTime();
-const SONNET_RESERVE = reserveMicros(PRIMARY_MODEL); // 70_000
-const OPUS_RESERVE = reserveMicros(RETRY_MODEL); // 140_000
+const SONNET_RESERVE = reserveMicros(PRIMARY_MODEL); // 132_500
+const OPUS_RESERVE = reserveMicros(RETRY_MODEL); // 265_000
+const WEB_RESERVE = webReserveMicros(PRIMARY_MODEL, 3); // 370_000
 const ENV_NAMES = ["LOREKEEPER_DAILY_QUESTIONS", "LOREKEEPER_CAMPAIGN_MONTHLY_USD", "LOREKEEPER_MONTHLY_USD", "LOREKEEPER_MODEL", "ANTHROPIC_MODEL"];
 
 const EMAILS = "gm@example.com,p1@example.com,p2@example.com,out@example.com";
@@ -87,17 +88,28 @@ const mine = (w: World, who: keyof World["callers"], day = usageDay(NOW), month 
   w.callers[who].query(api.lorekeeperUsage.mine, { campaignId: w.campaignId, day, month });
 
 describe("caps limits", () => {
-  it("defaults to 40 questions, $50 per campaign and $150 server-wide", () => {
-    expect(capLimits()).toEqual({ dailyQuestions: 40, campaignMonthlyMicros: 50_000_000, deploymentMonthlyMicros: 150_000_000 });
+  useAllowlist(EMAILS);
+
+  it("defaults to 40 questions, 20 internet searches, $50 per campaign and $150 server-wide, pausing at the limit", async () => {
+    const w = await setup();
+    expect(await w.t.run((ctx) => capLimits(ctx, w.campaignId))).toEqual({
+      dailyQuestions: 40,
+      dailyWebSearches: 20,
+      campaignMonthlyMicros: 50_000_000,
+      deploymentMonthlyMicros: 150_000_000,
+      atLimit: "pause",
+    });
   });
 
-  it("reads the env vars in the call, and ignores values that are not non-negative numbers", () => {
+  it("reads the env vars in the call, and ignores values that are not non-negative numbers", async () => {
+    const w = await setup();
+    const limits = () => w.t.run((ctx) => capLimits(ctx, w.campaignId));
     process.env.LOREKEEPER_DAILY_QUESTIONS = "5";
     process.env.LOREKEEPER_CAMPAIGN_MONTHLY_USD = "12.5";
     process.env.LOREKEEPER_MONTHLY_USD = "-3";
-    expect(capLimits()).toEqual({ dailyQuestions: 5, campaignMonthlyMicros: 12_500_000, deploymentMonthlyMicros: 150_000_000 });
+    expect(await limits()).toMatchObject({ dailyQuestions: 5, campaignMonthlyMicros: 12_500_000, deploymentMonthlyMicros: 150_000_000 });
     process.env.LOREKEEPER_DAILY_QUESTIONS = "lots";
-    expect(capLimits().dailyQuestions).toBe(40);
+    expect((await limits()).dailyQuestions).toBe(40);
   });
 });
 
@@ -185,9 +197,9 @@ describe("caps.reservePass (the Opus retry and the web pass)", () => {
     const booked = await w.t.run((ctx) => reservePass(ctx, w.scopes("p1"), RETRY_MODEL, NOW));
     expect(booked).toBe(OPUS_RESERVE);
     const web = await w.t.run((ctx) => reservePass(ctx, w.scopes("p1"), PRIMARY_MODEL, NOW, { webSearches: 3 }));
-    expect(web).toBe(SONNET_RESERVE + 30_000);
+    expect(web).toBe(WEB_RESERVE);
     for (const kind of ["user", "campaign", "deployment"] as const) {
-      expect(await w.row(kind)).toMatchObject({ questions: 1, costMicros: SONNET_RESERVE + OPUS_RESERVE + SONNET_RESERVE + 30_000 });
+      expect(await w.row(kind)).toMatchObject({ questions: 1, costMicros: SONNET_RESERVE + OPUS_RESERVE + WEB_RESERVE });
     }
   });
 
@@ -261,11 +273,12 @@ describe("lorekeeperUsage.mine", () => {
 
   it("shows the caller's own questions left today and the budgets as booleans", async () => {
     const w = await setup();
-    expect(await mine(w, "p1")).toEqual({ questionsLeft: 40, campaignCapReached: false, deploymentCapReached: false });
+    const fresh = { questionsLeft: 40, webSearchesLeft: 20, campaignCapReached: false, deploymentCapReached: false, shortAnswers: false };
+    expect(await mine(w, "p1")).toEqual(fresh);
     await w.ask("p1");
     await w.ask("p1");
     await w.ask("p2");
-    expect(await mine(w, "p1")).toEqual({ questionsLeft: 38, campaignCapReached: false, deploymentCapReached: false });
+    expect(await mine(w, "p1")).toEqual({ ...fresh, questionsLeft: 38 });
     // Never another user's numbers: p2 and the GM see their own counts.
     expect((await mine(w, "p2")).questionsLeft).toBe(39);
     expect((await mine(w, "gm")).questionsLeft).toBe(40);

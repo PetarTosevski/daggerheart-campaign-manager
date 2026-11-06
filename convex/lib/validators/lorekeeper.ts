@@ -35,12 +35,34 @@ export const LOREKEEPER_LIMITS = {
   rulingsPerCampaign: 50,
 } as const;
 
-/** A book's key: "core", "hopeFear", "frame:<frameId>" or "houseRules" (the Notes pseudo-book, Q7). */
+/**
+ * A book's key: "core", "hopeFear", "frame:<frameId>" or "houseRules" (the Notes pseudo-book, Q7), or a GM's campaign
+ * book "campaign:<campaignId>:<n>" (config LB1, below).
+ */
 export const BOOK_KEY_CORE = "core";
 export const BOOK_KEY_HOPE_FEAR = "hopeFear";
 export const BOOK_KEY_HOUSE_RULES = "houseRules";
 export function frameBookKey(frameId: string): string {
   return `frame:${frameId}`;
+}
+
+/**
+ * A GM's campaign book (config LB1): key `campaign:<campaignId>:<n>`, `n` counting up per campaign. Its
+ * `lorekeeperBooks` row carries `campaignId`, and only that campaign shows and searches it.
+ */
+export const CAMPAIGN_BOOK_KEY_PREFIX = "campaign:";
+const CAMPAIGN_BOOK_KEY_RE = /^campaign:([^:]+):(\d{1,9})$/;
+export function campaignBookKey(campaignId: string, n: number): string {
+  return `${CAMPAIGN_BOOK_KEY_PREFIX}${campaignId}:${n}`;
+}
+/** Whether `key` is a campaign book's key. */
+export function isCampaignBookKey(key: string): boolean {
+  return CAMPAIGN_BOOK_KEY_RE.test(key);
+}
+/** The `n` of a campaign book's key, or 0 for any other key. */
+export function campaignBookNumber(key: string): number {
+  const match = CAMPAIGN_BOOK_KEY_RE.exec(key);
+  return match ? Number(match[2]) : 0;
 }
 
 /** The chunking format `lorekeeperBooks.schemaVersion` records (L1's chunker); a different one means re-ingest. */
@@ -143,6 +165,16 @@ export const usageValidator = v.object({
 export type AnswerUsage = Infer<typeof usageValidator>;
 
 /**
+ * How `caps.reserve` let a question through (config AD6, Q20 a; absent = normally, under the limits):
+ * - `owner`: the app owner, never capped (later passes are booked without a check);
+ * - `gmOnly`: past the monthly spend limit with "GMs only", a GM asking up to the 120% ceiling (later passes too);
+ * - `short`: past the limit with "Shorter answers": Sonnet only, half the length, no stronger-model retry, no
+ *   internet pass.
+ */
+export const reservationModeValidator = v.union(v.literal("owner"), v.literal("gmOnly"), v.literal("short"));
+export type ReservationMode = Infer<typeof reservationModeValidator>;
+
+/**
  * The worst-case cost `caps.reserve` booked for an answer, with the counter periods it went to, so the final patch
  * (or the stale-run sweep) can `caps.settle` the same counters.
  */
@@ -152,6 +184,8 @@ export const reservationValidator = v.object({
   day: v.string(),
   /** UTC month "YYYY-MM" of the campaign and deployment counters. */
   month: v.string(),
+  /** Config AD6: how the question was let through; absent = normally. */
+  mode: v.optional(reservationModeValidator),
 });
 export type Reservation = Infer<typeof reservationValidator>;
 

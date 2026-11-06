@@ -1,4 +1,4 @@
-/* Sprite packs P6: the Classic | Sprites switch in the Combat Map header (cm-seg from combat-map.css). */
+/* Sprite packs P6: the Classic | Sprites switch in the Combat Map header (cm-seg from combat-map.css; glass buttons). */
 
 .cm-style {
   display: flex;
@@ -7,10 +7,6 @@
 }
 .cm-style-seg {
   min-width: 190px;
-}
-.cm-style-seg button {
-  padding: 0 14px;
-  white-space: nowrap;
 }
 .cm-style-error {
   max-width: 260px;

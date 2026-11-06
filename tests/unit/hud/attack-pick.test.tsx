@@ -46,8 +46,8 @@ vi.mock("convex/react", () => ({
     if (args === "skip") return undefined;
     const name = functionName(ref);
     const v = queries[name];
-    // riders per slot: `combatActions:riders` holds { primary, secondary }.
-    if (name === "combatActions:riders" && v && typeof v === "object" && !Array.isArray(v)) return (v as Record<string, unknown>)[(args as { slot: string }).slot] ?? [];
+    // riders per slot: `combatActionsReads:riders` holds { primary, secondary }.
+    if (name === "combatActionsReads:riders" && v && typeof v === "object" && !Array.isArray(v)) return (v as Record<string, unknown>)[(args as { slot: string }).slot] ?? [];
     return v;
   },
   useMutation: (ref: unknown) => {
@@ -136,13 +136,13 @@ function seed() {
       { _id: SNIPER, name: "Sniper", side: "enemy", x: 24, y: 14, size: 1, face: 0, revealed: false },
     ],
   };
-  queries["combatActions:targets"] = [
+  queries["combatActionsReads:targets"] = [
     { tokenId: LT, band: "far", inRange: false, lineOfSight: true, cover: false },
     { tokenId: BANDIT, band: "melee", inRange: true, lineOfSight: true, cover: false },
     { tokenId: SNIPER, band: "veryFar", inRange: false, lineOfSight: true, cover: false },
   ];
   queries["charactersReads:get"] = { sheet: SHEET };
-  queries["combatActions:riders"] = { primary: [RIDER], secondary: [] };
+  queries["combatActionsReads:riders"] = { primary: [RIDER], secondary: [] };
   queries["combatRequestsReads:forcedAttacks"] = [];
   queries["combatRequestsReads:mine"] = [];
 }
@@ -354,7 +354,7 @@ describe("the attack picker in the HUD", () => {
 
   it("Lead by Example: the picked target's benefit is a radio row before the roll", async () => {
     seed();
-    queries["combatActions:targets"] = [
+    queries["combatActionsReads:targets"] = [
       { tokenId: BANDIT, band: "melee", inRange: true, lineOfSight: true, cover: false, benefits: [{ label: "Lead by Example", options: [{ id: "stress", label: "Clear a Stress" }, { id: "hope", label: "Gain a Hope" }] }] },
     ];
     results["combatActions:attack"] = { status: "awaiting", requestId: "held1" };

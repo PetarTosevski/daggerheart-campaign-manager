@@ -15,34 +15,22 @@
 .lk-root .lk-streamwrap { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
 .lk-root .lk-streamwrap .lk-stream { flex: 1; overscroll-behavior: contain; }
 .lk-root .lk-stream > :first-child { margin-top: auto; }
-/* LK2: bottom-right of the message area, a solid card (not see-through over the answer text), a 44 px target. */
-.lk-root .lk-act.lk-jump { position: absolute; right: 14px; bottom: 14px; z-index: 2; min-height: 44px; padding: 0 16px; border-color: var(--lk-gold-deep); background: var(--lk-card); color: var(--lk-text); font-size: 14px; font-weight: 600; box-shadow: 0 6px 18px rgba(0, 0, 0, .5); }
-.lk-root .lk-act.lk-jump:hover { background: var(--lk-line); }
-/* LK3: Edit on the asker's own question; edit mode keeps the bubble's place with Save / Cancel under the text. */
-.lk-root .lk-act.lk-qeditbtn { min-height: 28px; padding: 0 10px; font-size: 12.5px; color: var(--lk-muted); }
-.lk-root .lk-act.lk-qeditbtn:hover { color: var(--lk-text); }
+/* LK2: bottom-right of the message area (a glass button, 44 px), on a solid backing so the answer text does not show
+   through the glass. */
+.lk-root .lk-jump { position: absolute; right: 14px; bottom: 14px; z-index: 2; background-color: var(--lk-card); }
+/* LK3: edit mode keeps the bubble's place with Save / Cancel under the text. */
 .lk-root .lk-q.lk-q-editing { width: min(100%, 560px); align-items: stretch; }
 .lk-root .lk-q-editing .lk-who { align-self: flex-end; }
 .lk-root .lk-qedit { min-height: 84px; padding: 10px 14px; border-radius: 14px; background: #24343a; border: 1px solid var(--lk-gold-deep); color: var(--lk-text); font: inherit; font-size: 15px; line-height: 1.5; resize: vertical; }
 .lk-root .lk-qactions { display: flex; justify-content: flex-end; gap: 8px; }
-.lk-root .lk-act.lk-qsave { border-color: var(--lk-gold-deep); background: var(--lk-gold-deep); color: var(--lk-card); font-weight: 600; }
-.lk-root .lk-act.lk-qsave:hover { background: var(--lk-gold-deep); }
 .lk-root .lk-qedit:focus-visible { outline: 2px solid var(--lk-gold-deep); outline-offset: 2px; }
 .lk-root .lk-loading { margin: auto; }
-.lk-root .lk-earlier { align-self: center; }
 
 /* Answer card details (board inline styles and states) */
 .lk-root .lk-quotebox { display: flex; flex-direction: column; gap: 6px; }
 .lk-root .lk-retried { align-self: flex-start; font-size: 12.5px; font-style: italic; color: #6a5236; }
-.lk-root .lk-chip:focus-visible,
-.lk-root .lk-act:focus-visible,
-.lk-root .lk-sug:focus-visible,
-.lk-root .lk-send:focus-visible,
-.lk-root .lk-toggle button:focus-visible,
-.lk-root .lk-visibility:focus-visible { outline: 2px solid var(--lk-gold); outline-offset: 2px; }
-.lk-root .lk-ab .lk-chip:focus-visible,
-.lk-root .lk-ab .lk-act:focus-visible { outline-color: #8a5a12; }
-.lk-root .lk-actlink { display: inline-flex; align-items: center; text-decoration: none; }
+.lk-root .lk-chip:focus-visible { outline: 2px solid var(--lk-gold); outline-offset: 2px; }
+.lk-root .lk-ab .lk-chip:focus-visible { outline-color: #8a5a12; }
 .lk-root .lk-acts { align-items: center; }
 .lk-root .lk-copied { font-size: 12.5px; color: #2f5a3e; }
 .lk-root .lk-copied:empty { display: none; }
@@ -52,15 +40,12 @@
 /* Composer details */
 .lk-root .lk-togglerow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .lk-root .lk-counter { align-self: flex-end; font-size: 12px; color: var(--lk-muted); }
-.lk-root .lk-visibility { min-height: 28px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--lk-card-border); background: #0f171a; color: var(--lk-muted); font-family: inherit; font-size: 12.5px; cursor: pointer; }
-.lk-root .lk-visibility[aria-pressed="true"] { background: #24343a; color: #f3cf86; }
 .lk-root .lk-vistext { font-size: 12px; color: var(--lk-muted); }
 .lk-root .lk-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 12px; border-radius: 10px; background: #2a2010; border: 1px solid #4a3a1a; color: #f3cf86; font-size: 13.5px; line-height: 1.45; }
 .lk-root .lk-left { color: var(--lk-muted); }
 /* dcm-bxp.82.10: while asking is off the composer sits above the conversation, its notice first, so the reason is on
    the first screen at 1440x900 and 390x844. */
 .lk-root .lk-compose[data-blocked] { order: -1; border-top: none; border-bottom: 1px solid var(--lk-line); }
-.lk-root .lk-sug:disabled { opacity: .55; cursor: default; }
 .lk-root .lk-in:disabled { opacity: .6; }
 
 /* Dialogs (brand Modal inside .lk-root) */
@@ -75,15 +60,11 @@
 .lk-root .lk-field { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--lk-border); background: var(--lk-field); color: var(--lk-text); font-family: var(--lk-serif); font-size: 17px; resize: vertical; }
 .lk-root .lk-field:focus { outline: 2px solid var(--lk-gold); outline-offset: 1px; }
 .lk-root .lk-formacts { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
-.lk-root .lk-formacts .lk-act { min-height: 48px; padding: 0 16px; }
-.lk-root .lk-danger { background: #b8463c; color: #fff4f2; }
 
 /* The Conversations menu (chat header) */
 .lk-root .lk-convos { position: relative; }
-.lk-root .lk-convos-toggle { min-height: 32px; }
 .lk-root .lk-convos-panel { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; width: min(360px, calc(100vw - 32px)); max-height: min(70vh, 520px); overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 12px; border-radius: 12px; background: var(--lk-card); border: 1px solid var(--lk-border); box-shadow: 0 16px 40px rgba(0, 0, 0, .55); }
 .lk-root .lk-convos-panel[hidden] { display: none; }
-.lk-root .lk-convos-new { min-height: 40px; padding: 0 12px; border-radius: 10px; border: 1px dashed var(--lk-gold-deep); background: transparent; color: #f3cf86; font-family: inherit; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer; }
 .lk-root .lk-convos-group { display: flex; flex-direction: column; gap: 6px; }
 .lk-root .lk-convos-group h2 { margin: 0; }
 .lk-root .lk-convos-group ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
@@ -93,26 +74,17 @@
 .lk-root .lk-convos-pick[aria-current="true"] { border-color: var(--lk-gold-deep); }
 .lk-root .lk-convos-title { max-width: 100%; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lk-root .lk-convos-meta { font-size: 12px; color: var(--lk-muted); }
-.lk-root .lk-convos-del { flex: none; width: 44px; border-radius: 8px; border: 1px solid var(--lk-line); background: transparent; color: var(--lk-muted); cursor: pointer; }
-.lk-root .lk-convos-del:hover { color: #ffb4a8; border-color: #7a2e28; }
-.lk-root .lk-convos-pick:focus-visible,
-.lk-root .lk-convos-del:focus-visible,
-.lk-root .lk-convos-new:focus-visible { outline: 2px solid var(--lk-gold); outline-offset: 1px; }
+.lk-root .lk-convos-pick:focus-visible { outline: 2px solid var(--lk-gold); outline-offset: 1px; }
 
 @media (max-width: 760px) {
   .lk-root .lk-chatcol { height: max(420px, calc(100dvh - 170px)); }
   .lk-root .lk-chatcol[data-variant="drawer"] { height: 100%; }
-  .lk-root .lk-visibility,
-  .lk-root .lk-convos-toggle,
-  .lk-root .lk-earlier { min-height: 44px; }
   .lk-root .lk-inrow { flex-wrap: nowrap; }
-  .lk-root .lk-send { padding: 0 16px; min-width: 64px; }
 }
 
 /* Phones: the page is one screen, so the composer keeps to one row of suggestions (scrolls sideways) and the stream gets the rest. */
 @media (max-width: 760px) {
   .lk-root[data-page] .lk-sugs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; }
-  .lk-root[data-page] .lk-sug { flex: none; }
   .lk-root[data-page] .lk-togglerow { flex-wrap: nowrap; overflow-x: auto; }
   .lk-root[data-page] .lk-togglerow > * { flex: none; }
   .lk-root[data-page] .lk-vistext { white-space: nowrap; }

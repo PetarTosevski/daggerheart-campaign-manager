@@ -9,6 +9,7 @@ import { refusalFor } from "@/lib/errors/refusals";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { Pips } from "../ui";
+import { FEAR_HIDDEN_LABEL, fearShown } from "./hidden";
 
 /**
  * The GM's Fear as a purple banner (plan combat-hud H1.2; CmpTokens 'GM Fear · players' / 'GM Fear · GM', the top-right
@@ -29,9 +30,10 @@ export function fearAfterStep(fear: number, direction: "increase" | "decrease"):
 export function useAdjustFear(campaignId: Id<"campaigns">) {
   const mutate = useMutation(api.fear.adjust).withOptimisticUpdate((store, { campaignId: id, direction }) => {
     const scene = store.getQuery(api.combatHud.scene, { campaignId: id });
-    if (scene !== undefined) store.setQuery(api.combatHud.scene, { campaignId: id }, { ...scene, fear: fearAfterStep(scene.fear, direction) });
+    // The GM's reads always hold a number; a null (a hidden pool, R1) has nothing to step.
+    if (scene !== undefined && scene.fear !== null) store.setQuery(api.combatHud.scene, { campaignId: id }, { ...scene, fear: fearAfterStep(scene.fear, direction) });
     const fear = store.getQuery(api.campaigns.fear, { campaignId: id });
-    if (fear !== undefined) store.setQuery(api.campaigns.fear, { campaignId: id }, fearAfterStep(fear, direction));
+    if (fear !== undefined && fear !== null) store.setQuery(api.campaigns.fear, { campaignId: id }, fearAfterStep(fear, direction));
   });
   const [error, setError] = useState<string | null>(null);
   async function step(direction: "increase" | "decrease"): Promise<void> {
@@ -53,24 +55,26 @@ const Flame = () => (
 
 export type FearBannerProps = {
   campaignId: Id<"campaigns">;
-  fear: number;
+  /** null: the GM hides the pool from players (R1): "?" and empty pips, the flame and banner kept. */
+  fear: number | null;
   /** The GM view: − / + (answer 6a: no confirm). */
   gm: boolean;
 };
 
 export function FearBanner({ campaignId, fear, gm }: FearBannerProps) {
+  const hidden = fear === null;
   return (
-    <div className="hud-fb" role="group" aria-label="GM Fear" data-testid="hud-fear">
+    <div className="hud-fb" role="group" aria-label="GM Fear" data-testid="hud-fear" data-hidden={hidden ? "" : undefined}>
       <div className="hud-fb-in">
         <Flame />
         <span className="hud-fb-t" aria-hidden="true">
           GM Fear
         </span>
         <b className="hud-fb-n" aria-hidden="true" data-testid="hud-fear-value">
-          {fear}
+          {fearShown(fear)}
         </b>
-        <Pips kind="fear" on={fear} max={MAX_FEAR} label={`${fear} of ${MAX_FEAR} Fear`} className="hud-fb-p" />
-        {gm ? <FearSteps campaignId={campaignId} fear={fear} /> : null}
+        <Pips kind="fear" on={fear ?? 0} max={MAX_FEAR} label={hidden ? FEAR_HIDDEN_LABEL : `${fear} of ${MAX_FEAR} Fear`} className="hud-fb-p" />
+        {gm && fear !== null ? <FearSteps campaignId={campaignId} fear={fear} /> : null}
       </div>
     </div>
   );

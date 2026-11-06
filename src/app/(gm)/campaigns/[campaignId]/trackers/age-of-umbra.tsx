@@ -5,7 +5,7 @@ import { Flame } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
-import { BrandButton } from "@/components/brand/buttons";
+import { BrandButton, brandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import { MAX_VICINITY_KM, MAX_WATCHERS, MIN_VICINITY_KM, SETTLEMENT_MAX, type Pyre } from "@/lib/frames/trackers/age-of-umbra";
 import { cn } from "@/lib/utils";
@@ -14,7 +14,7 @@ import { useIntent } from "@/lib/use-intent";
 import { api } from "../../../../../../convex/_generated/api";
 import type { CampaignSummary } from "../../../../../../convex/campaigns";
 import type { LurkingResult, PyreMapView, UmbraView } from "../../../../../../convex/trackers/ageOfUmbra";
-import { TRACKER_BTN, TrackerCard } from "./tracker-card";
+import { TrackerCard } from "./tracker-card";
 
 type Props = { campaign: CampaignSummary };
 
@@ -100,9 +100,9 @@ function PyresCard({ campaign, view }: Props & { view: UmbraView }) {
             onChange={(e) => setName(e.target.value)}
             className={cn(INPUT, "min-w-0 flex-1")}
           />
-          <button type="submit" className={TRACKER_BTN} disabled={!name.trim() || addPyre.pending}>
+          <BrandButton type="submit" variant="neutral" size="sm" disabled={!name.trim() || addPyre.pending}>
             Add pyre
-          </button>
+          </BrandButton>
         </form>
       )}
 
@@ -112,27 +112,29 @@ function PyresCard({ campaign, view }: Props & { view: UmbraView }) {
         </span>
         {readOnly ? null : (
           <>
-            <button
-              type="button"
+            <BrandButton
+              variant="neutral"
+              size="sm"
+              icon
               aria-label="Remove a Blessed Branch"
-              className={TRACKER_BTN}
               disabled={view.blessedBranches < 1 || branches.pending}
               onClick={() => void branches.fire({ campaignId, delta: -1 })}
             >
               −
-            </button>
-            <button
-              type="button"
+            </BrandButton>
+            <BrandButton
+              variant="neutral"
+              size="sm"
+              icon
               aria-label="Add a Blessed Branch"
-              className={TRACKER_BTN}
               disabled={branches.pending}
               onClick={() => void branches.fire({ campaignId, delta: 1 })}
             >
               +
-            </button>
-            <button type="button" className={TRACKER_BTN} disabled={view.blessedBranches < 1} onClick={() => setIgniting(true)}>
+            </BrandButton>
+            <BrandButton variant="confirm" size="sm" disabled={view.blessedBranches < 1} onClick={() => setIgniting(true)}>
               Ignite a Blessed Branch
-            </button>
+            </BrandButton>
           </>
         )}
       </div>
@@ -179,9 +181,9 @@ function VicinityControls({ campaignId, readOnly, pyreMap }: { campaignId: Campa
       {readOnly ? null : (
         <div className="flex flex-wrap items-center gap-2">
           {auto ? null : (
-            <button type="button" className={TRACKER_BTN} disabled={atPyre.pending} onClick={() => void atPyre.fire({ campaignId, atPyre: null })}>
+            <BrandButton variant="neutral" size="sm" disabled={atPyre.pending} onClick={() => void atPyre.fire({ campaignId, atPyre: null })}>
               Follow the map
-            </button>
+            </BrandButton>
           )}
           <form
             className="flex items-center gap-2"
@@ -200,9 +202,9 @@ function VicinityControls({ campaignId, readOnly, pyreMap }: { campaignId: Campa
                 className={cn(INPUT, "w-20")}
               />
             </label>
-            <button type="submit" className={TRACKER_BTN} disabled={!valid || setVicinity.pending}>
+            <BrandButton type="submit" variant="confirm" size="sm" disabled={!valid || setVicinity.pending}>
               Save
-            </button>
+            </BrandButton>
           </form>
         </div>
       )}
@@ -267,19 +269,19 @@ function PyreRow({
             onChange={(e) => setEditing(e.target.value)}
             className={cn(INPUT, "min-w-0 flex-1")}
           />
-          <button type="submit" className={TRACKER_BTN} disabled={!editing.trim() || rename.pending}>
+          <BrandButton type="submit" variant="confirm" size="sm" disabled={!editing.trim() || rename.pending}>
             Save
-          </button>
-          <button type="button" className={TRACKER_BTN} onClick={() => setEditing(null)}>
+          </BrandButton>
+          <BrandButton variant="cancel" size="sm" onClick={() => setEditing(null)}>
             Cancel
-          </button>
+          </BrandButton>
         </form>
       ) : (
         <>
           <span className="min-w-0 flex-1 truncate text-[15px] text-[#e6ecea]">{pyre.settlement}</span>
           <span className="text-[12px] tracking-[0.12em] text-[#8fa3a8] uppercase">{pyre.lit ? "Burning" : "Out"}</span>
           {tokenId !== null ? (
-            <Link className={cn(TRACKER_BTN, "inline-flex items-center no-underline")} href={`/campaigns/${campaignId}/world?token=${tokenId}`} aria-label={`Show ${pyre.settlement} on the map`}>
+            <Link className={brandButton({ variant: "neutral", size: "sm", className: "no-underline" })} href={`/campaigns/${campaignId}/world?token=${tokenId}`} aria-label={`Show ${pyre.settlement} on the map`}>
               Show on map
             </Link>
           ) : null}
@@ -300,18 +302,18 @@ function PyreRow({
                   </option>
                 ))}
               </select>
-              <button type="button" className={TRACKER_BTN} aria-label={`Rename ${pyre.settlement}`} onClick={() => setEditing(pyre.settlement)}>
+              <BrandButton variant="neutral" size="sm" aria-label={`Rename ${pyre.settlement}`} onClick={() => setEditing(pyre.settlement)}>
                 Rename
-              </button>
-              <button
-                type="button"
-                className={TRACKER_BTN}
+              </BrandButton>
+              <BrandButton
+                variant="danger"
+                size="sm"
                 aria-label={`Remove ${pyre.settlement}`}
                 disabled={remove.pending}
                 onClick={() => void remove.fire({ campaignId, pyreId: pyre.id })}
               >
                 Remove
-              </button>
+              </BrandButton>
             </>
           )}
         </>
@@ -380,7 +382,7 @@ function IgniteDialog({
         <p aria-live="polite" className="m-0 text-[13px] text-danger empty:hidden">
           {ignite.error}
         </p>
-        <BrandButton type="submit" disabled={!ready || ignite.pending}>
+        <BrandButton type="submit" variant="confirm" disabled={!ready || ignite.pending}>
           Ignite
         </BrandButton>
       </form>
@@ -404,9 +406,9 @@ function LurkingCard({ campaign, view, log }: Props & { view: UmbraView; log: No
       subtitle="Roll after a short or long rest away from a Sacred Pyre."
       gmOnly
       actions={
-        <button type="button" className={TRACKER_BTN} disabled={view.atPyre} onClick={() => setOpen(true)}>
+        <BrandButton variant="confirm" size="sm" disabled={view.atPyre} onClick={() => setOpen(true)}>
           Roll Lurking Darkness
-        </button>
+        </BrandButton>
       }
     >
       {view.atPyre ? <p className="m-0 text-[14px] text-[#9fb2b6]">The party rests at a Sacred Pyre: no roll.</p> : null}
@@ -462,7 +464,9 @@ function LurkingDialog({ open, onClose, campaignId }: { open: boolean; onClose: 
               {result.fear.lost ? ` (${result.fear.lost} lost at the cap)` : ""}.
             </p>
           ) : null}
-          <BrandButton onClick={close}>Done</BrandButton>
+          <BrandButton variant="cancel" onClick={close}>
+            Done
+          </BrandButton>
         </div>
       ) : (
         <form
@@ -488,28 +492,23 @@ function LurkingDialog({ open, onClose, campaignId }: { open: boolean; onClose: 
                   className={cn(INPUT, "w-20")}
                 />
               </label>
-              <button
-                type="button"
-                className={TRACKER_BTN}
+              <BrandButton
+                variant="danger"
+                size="sm"
                 aria-label={`Remove watcher ${i + 1}`}
                 onClick={() => setWatchers(watchers.filter((_, j) => j !== i))}
               >
                 Remove
-              </button>
+              </BrandButton>
             </div>
           ))}
-          <button
-            type="button"
-            className={TRACKER_BTN}
-            disabled={watchers.length >= MAX_WATCHERS}
-            onClick={() => setWatchers([...watchers, ""])}
-          >
+          <BrandButton variant="neutral" size="sm" disabled={watchers.length >= MAX_WATCHERS} onClick={() => setWatchers([...watchers, ""])}>
             + Add watcher
-          </button>
+          </BrandButton>
           <p aria-live="polite" className="m-0 text-[13px] text-danger empty:hidden">
             {roll.error}
           </p>
-          <BrandButton type="submit" disabled={!valid || roll.pending}>
+          <BrandButton type="submit" variant="confirm" disabled={!valid || roll.pending}>
             Roll d12
           </BrandButton>
         </form>

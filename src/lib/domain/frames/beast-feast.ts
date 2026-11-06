@@ -1,6 +1,16 @@
 // Beast Feast cooking rules (Core Book pp.277–278). Pure and deterministic
 // given the injected `roll`, so the dice can be scripted in tests.
 
+import type { ModeOf } from "../../rules/registry";
+
+/**
+ * W4 (CB 278): "players can't choose downtime moves to clear Stress, clear Hit Points, or gain Hope". `forbidden` is
+ * the frame's list (`FEAST_FORBIDDEN`); Manual (house rule): none, so every core move is offered next to Make a Feast.
+ */
+export function feastForbiddenMoves<M>(forbidden: readonly M[], mode: ModeOf<"beastFeastFeast"> = "book"): readonly M[] {
+  return mode === "manual" ? [] : forbidden;
+}
+
 /** Rolls one die with the given number of sides, returning 1..sides. */
 export type Roll = (sides: number) => number;
 

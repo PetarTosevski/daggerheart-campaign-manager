@@ -5,16 +5,17 @@ import "./header.css";
 import { useMutation, useQuery } from "convex/react";
 import { BookOpen, Ellipsis, Spool, X } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 
-import { useOpenTome } from "@/app/(gm)/campaigns/[campaignId]/campaign-shell";
-import { brandButton } from "@/components/brand/buttons";
+import { useCampaign, useOpenTome } from "@/app/(gm)/campaigns/[campaignId]/campaign-shell";
+import { BrandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 // The live helpers stay in the old Sessions folder until JX2 moves them (plan journal.yaml, JH: imported, not copied).
-import { endDialogText, endReportLines, startReportLines, useWitherChoice, WitherChoiceField } from "@/components/sessions/live";
+import { endDialogText, endReportLines, startReportLines, useWitherChoice, WitherChoiceField } from "@/components/journal/end-session";
+import { sessionOpensOnHref } from "@/lib/config/campaign-settings";
 import { errorMessage } from "@/lib/convex-errors";
 import { useIntent } from "@/lib/use-intent";
-import { cn } from "@/lib/utils";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
@@ -28,7 +29,8 @@ import { SlotBoundary } from "../ui";
  * - the live chip 'Session N · live' (green dot). GM: 'End session' (the End dialog with the Wither choice) and a '⋯'
  *   menu with 'Allow extra characters this session' (Q10 default). Players: the chip only, read only.
  * - nothing live: the GM's 'Start session N' (the selected planned session, else the newest planned; without one the
- *   server creates the next). After the Start the page opens that session's Log & recap.
+ *   server creates the next). After the Start the GM goes where the campaign's 'A new session opens on' setting says
+ *   (config JO1, `sessionOpensOn`): the Journal opens that session's Log & recap, or the page moves to the Combat Map.
  * - the round tome button (everyone): opens the campaign Tome.
  * - 'Open threads N' (everyone, Q1): the caller's open threads (`notesThreads.threads`); opens Notes on its threads view.
  * The Start / End report shows in a polite status under the actions.
@@ -46,6 +48,8 @@ export function startTarget(sessions: readonly SessionListItem[], selectedId: Id
 export function startNumber(sessions: readonly SessionListItem[], target: SessionListItem | null): number {
   return target?.n ?? sessions.reduce((max, s) => Math.max(max, s.n), 0) + 1;
 }
+
+export { sessionOpensOnHref } from "@/lib/config/campaign-settings";
 
 /** GM menu on the live chip: the 'Allow extra characters this session' switch (XC1, moved here by Q10). */
 function LiveMenu({ campaignId, extraCharacters }: { campaignId: Id<"campaigns">; extraCharacters: boolean }) {
@@ -81,9 +85,9 @@ function LiveMenu({ campaignId, extraCharacters }: { campaignId: Id<"campaigns">
 
   return (
     <div ref={root} className="jh-menu">
-      <button type="button" className="jh-menu-btn" aria-label="Session options" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen((v) => !v)}>
+      <BrandButton variant="neutral" icon round aria-label="Session options" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen((v) => !v)}>
         <Ellipsis aria-hidden="true" />
-      </button>
+      </BrandButton>
       <div id={panelId} className="jh-menu-panel" hidden={!open}>
         <label className="jh-switch">
           <input type="checkbox" role="switch" checked={extraCharacters} onChange={(e) => toggle(e.target.checked)} />
@@ -114,6 +118,8 @@ function SessionControl({
   const current = useQuery(api.sessions.current, { campaignId });
   const start = useIntent(api.sessions.start);
   const end = useIntent(api.sessions.end);
+  const opensOn = useCampaign().settings.sessionOpensOn;
+  const router = useRouter();
   const wither = useWitherChoice(campaignId);
   const [confirm, setConfirm] = useState<"start" | "end" | null>(null);
 
@@ -141,7 +147,11 @@ function SessionControl({
       const result = await start.fire(target ? { campaignId, sessionId: target._id } : { campaignId });
       if (!result) return;
       onReport({ lines: result.alreadyStarted ? ["The session is already running."] : startReportLines(result) });
-      if (result.sessionId) onOpenSession(result.sessionId, "log");
+      if (!result.sessionId) return;
+      // JO1: navigate here, after the mutation resolved (rule 13: never from an effect).
+      const away = sessionOpensOnHref(campaignId, opensOn);
+      if (away) router.push(away);
+      else onOpenSession(result.sessionId, "log");
     } else if (which === "end") {
       const result = await end.fire({ campaignId, ...wither.args });
       if (!result) return;
@@ -162,9 +172,8 @@ function SessionControl({
           </span>
           {isGm ? (
             <>
-              <button
-                type="button"
-                className="jh-end"
+              <BrandButton
+                variant="danger"
                 disabled={end.pending}
                 onClick={() => {
                   wither.reset();
@@ -172,16 +181,16 @@ function SessionControl({
                 }}
               >
                 End session
-              </button>
+              </BrandButton>
               <LiveMenu campaignId={campaignId} extraCharacters={current.extraCharacters} />
             </>
           ) : null}
         </div>
       ) : (
-        <button type="button" className={cn(brandButton({ variant: "pill", size: "md" }), "jh-start")} disabled={start.pending} onClick={() => setConfirm("start")}>
+        <BrandButton variant="confirm" disabled={start.pending} onClick={() => setConfirm("start")}>
           <span aria-hidden="true" className="jh-dot jh-dot-off" />
           Start session {n}
-        </button>
+        </BrandButton>
       )}
       {error ? (
         <p role="alert" className="jh-error">
@@ -206,16 +215,12 @@ function SessionControl({
               </>
             )}
             <div className="jh-dialog-actions">
-              <button type="button" className={brandButton({ variant: "outline", size: "md" })} onClick={() => setConfirm(null)}>
+              <BrandButton variant="cancel" onClick={() => setConfirm(null)}>
                 Cancel
-              </button>
-              <button
-                type="button"
-                className={brandButton({ variant: confirm === "end" ? "dangerSolid" : "solid", size: "md" })}
-                onClick={() => void run()}
-              >
+              </BrandButton>
+              <BrandButton variant={confirm === "end" ? "danger" : "confirm"} onClick={() => void run()}>
                 {confirm === "end" ? "End session" : "Start session"}
-              </button>
+              </BrandButton>
             </div>
           </div>
         </Modal>
@@ -228,9 +233,9 @@ function SessionControl({
 function TomeButton() {
   const openTome = useOpenTome();
   return (
-    <button type="button" className="jh-tome" aria-label="Open the Campaign Tome" title="Open the Campaign Tome" onClick={() => openTome("overview")}>
+    <BrandButton variant="neutral" icon round aria-label="Open the Campaign Tome" title="Open the Campaign Tome" onClick={() => openTome("overview")}>
       <BookOpen aria-hidden="true" />
-    </button>
+    </BrandButton>
   );
 }
 
@@ -239,9 +244,8 @@ function OpenThreads({ campaignId, onNotesView }: Pick<JournalHeaderActionsProps
   const threads = useQuery(api.notesThreads.threads, { campaignId });
   const count = threads?.length;
   return (
-    <button
-      type="button"
-      className="jh-threads"
+    <BrandButton
+      variant="neutral"
       aria-label={count === undefined ? "Open threads (loading)" : `Open threads: ${count}`}
       onClick={() => onNotesView("threads")}
     >
@@ -250,7 +254,7 @@ function OpenThreads({ campaignId, onNotesView }: Pick<JournalHeaderActionsProps
       <span aria-hidden="true" className="jh-count">
         {count ?? "…"}
       </span>
-    </button>
+    </BrandButton>
   );
 }
 
@@ -288,9 +292,9 @@ export function JournalHeaderActions({ campaignId, isGm, selectedId, onOpenSessi
           ) : null}
         </div>
         {report ? (
-          <button type="button" className="jh-dismiss" aria-label="Dismiss the session report" onClick={() => setReport(null)}>
+          <BrandButton variant="cancel" icon round className="flex-none" aria-label="Dismiss the session report" onClick={() => setReport(null)}>
             <X aria-hidden="true" />
-          </button>
+          </BrandButton>
         ) : null}
       </div>
     </div>

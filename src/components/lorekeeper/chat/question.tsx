@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
+
 import { QUESTION_MAX, sendsOnKey } from "../composer/model";
 
 type Props = {
@@ -66,12 +68,12 @@ export function QuestionBubble({ asker, text, onEdit, waiting }: Props) {
         />
         {waiting !== null ? <p className="lk-qwait lk-muted">{waiting}</p> : null}
         <div className="lk-qactions">
-          <button type="button" className="lk-act lk-act-dark" onClick={() => setDraft(null)}>
+          <BrandButton variant="cancel" size="sm" onClick={() => setDraft(null)}>
             Cancel
-          </button>
-          <button type="button" className="lk-act lk-qsave" disabled={!canSave} onClick={() => void save()}>
+          </BrandButton>
+          <BrandButton variant="confirm" size="sm" disabled={!canSave} onClick={() => void save()}>
             Save
-          </button>
+          </BrandButton>
         </div>
       </div>
     );
@@ -82,9 +84,9 @@ export function QuestionBubble({ asker, text, onEdit, waiting }: Props) {
       <span className="lk-who">{asker}</span>
       <div className="lk-qb">{text}</div>
       {onEdit ? (
-        <button type="button" className="lk-act lk-act-dark lk-qeditbtn" aria-label="Edit question" onClick={() => setDraft(text)}>
+        <BrandButton variant="neutral" size="sm" aria-label="Edit question" onClick={() => setDraft(text)}>
           Edit
-        </button>
+        </BrandButton>
       ) : null}
     </div>
   );

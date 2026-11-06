@@ -6,8 +6,8 @@ import type { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { Drawer, DrawerFeature } from "../list/model";
 
-/** What `featurePrompts.allyRolls` returns: names and bands only (U1). */
-export type AllyRolls = FunctionReturnType<typeof api.featurePrompts.allyRolls>;
+/** What `featurePromptsReads.allyRolls` returns: names and bands only (U1). */
+export type AllyRolls = FunctionReturnType<typeof api.featurePromptsReads.allyRolls>;
 export type AllyAsk = AllyRolls["asks"][number];
 export type AskEnemy = AllyAsk["enemies"][number];
 

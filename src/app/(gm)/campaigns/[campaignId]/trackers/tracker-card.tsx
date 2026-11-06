@@ -42,7 +42,3 @@ export function TrackerCard({
     </section>
   );
 }
-
-/** Small outlined button used inside tracker panels. */
-export const TRACKER_BTN =
-  "min-h-10 cursor-pointer rounded-[9px] border border-[#33444a] bg-transparent px-3 text-[14px] text-[#e6ecea] hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40";

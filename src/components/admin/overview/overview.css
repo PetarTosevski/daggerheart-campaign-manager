@@ -1,0 +1,138 @@
+/*
+ * App admin, Overview tab (config AU1; design reference/designs/config/Admin.dc.html `.s-ov`: `.tiles`, `.tile`,
+ * `.alert`, `.crow`, `.on`, `.log`). Builds on the shared admin classes in ../admin.css. Unlayered, like admin.css.
+ */
+
+.admo-pad {
+  padding: 6px 0 14px;
+}
+
+/* The four tiles (design `.tiles` / `.tile`). */
+.admo-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.admo-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 18px;
+  border: 1px solid var(--adm-line);
+  border-radius: 16px;
+  background: var(--adm-card);
+}
+.admo-tile span {
+  color: var(--adm-muted);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.admo-tile b {
+  color: var(--adm-text);
+  font: 900 32px/1.1 var(--font-cinzel), serif;
+}
+.admo-tile em {
+  color: var(--adm-muted);
+  font-size: 12.5px;
+  font-style: normal;
+}
+
+/* Alerts (design `.alert`). */
+.admo-alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.admo-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  background: var(--adm-acc-bg);
+  color: var(--adm-gold);
+  box-shadow: inset 0 0 0 1px rgb(227 180 90 / 0.5);
+}
+.admo-alert > svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin-top: 3px;
+}
+.admo-alert .adm-row-t span {
+  color: #d8c49a;
+}
+
+/* The campaigns card (design `.crow`, `.on`). */
+.admo-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.admo-list .adm-row:first-child {
+  border-top: 0;
+}
+.admo-on {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  color: var(--adm-ok);
+  font-size: 13px;
+}
+.admo-on.admo-off {
+  color: var(--adm-muted);
+}
+
+/* Recent changes (design `.log`). */
+.admo-log {
+  margin: 0;
+  padding: 0 0 10px;
+  list-style: none;
+}
+.admo-log li {
+  display: flex;
+  gap: 10px;
+  padding: 9px 0;
+  border-top: 1px solid var(--adm-line);
+  color: var(--adm-soft);
+  font-size: 13.5px;
+}
+.admo-log li:first-child {
+  border-top: 0;
+}
+.admo-log time {
+  width: 130px;
+  flex: none;
+  color: #7d8f96;
+  font-size: 12.5px;
+}
+.admo-log b {
+  color: var(--adm-text);
+  font-weight: 600;
+}
+
+.admo-more {
+  padding: 4px 0 14px;
+}
+.admo-err {
+  margin: 0 0 14px;
+  color: #f0d4cf;
+  font-size: 13px;
+}
+
+@media (max-width: 860px) {
+  .admo-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .admo-list .adm-row {
+    flex-wrap: wrap;
+  }
+}

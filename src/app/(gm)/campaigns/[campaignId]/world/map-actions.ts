@@ -37,7 +37,7 @@ export function useMapActions(campaignId: Id<"campaigns">) {
   const setOptions = useMutation(api.maps.setOptions);
   const setTravelRules = useMutation(api.maps.setTravelRules);
   const renameType = useMutation(api.maps.renameType);
-  const setHexGrid = useMutation(api.maps.setHexGrid);
+  const calibrateHexGrid = useMutation(api.maps.calibrateHexGrid);
   const updateHex = useMutation(api.maps.updateHex);
   const placePartyHex = useMutation(api.maps.placePartyHex);
   const setCrawlDay = useMutation(api.maps.setCrawlDay);
@@ -86,7 +86,8 @@ export function useMapActions(campaignId: Id<"campaigns">) {
     setOptions: (opts: Omit<Parameters<typeof setOptions>[0], "campaignId">) => run(setOptions({ ...c, ...opts })),
     setTravelRules: (rules: TravelRulesState | null) => run(setTravelRules({ ...c, rules })),
     renameType: (typeId: string, label: string) => run(renameType({ ...c, typeId, label })),
-    setHexGrid: (grid: Parameters<typeof setHexGrid>[0]["grid"]) => run(setHexGrid({ ...c, grid })),
+    /** One calibration change per call (an intent): a grid field, or back to the printed grid. */
+    calibrateHexGrid: (change: Parameters<typeof calibrateHexGrid>[0]["change"]) => run(calibrateHexGrid({ ...c, change })),
     updateHex: (q: number, r: number, patch: Parameters<typeof updateHex>[0]["patch"]) => run(updateHex({ ...c, q, r, patch })),
     placePartyHex: (q: number, r: number) => run(placePartyHex({ ...c, q, r })),
     setCrawlDay: (day: number) => run(setCrawlDay({ ...c, day })),

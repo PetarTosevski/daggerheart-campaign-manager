@@ -14,13 +14,14 @@ import {
   type HuntPatch,
   type PlayerHunt,
 } from "@/lib/frames/trackers/andaluria";
+import { BrandButton } from "@/components/brand/buttons";
 import { useIntent } from "@/lib/use-intent";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
 import type { CampaignSummary } from "../../../../../../convex/campaigns";
-import { TRACKER_BTN, TrackerCard } from "./tracker-card";
+import { TrackerCard } from "./tracker-card";
 
 const FIELD = "rounded-lg border border-[#33444a] bg-[#0d1417] px-3 text-[15px] text-[#e6ecea]";
 
@@ -131,9 +132,9 @@ function GmHunts({ campaignId, hunts }: { campaignId: Id<"campaigns">; hunts: Ex
           placeholder="Name a new hunt (e.g. The Drowned Bell)"
           className={cn(FIELD, "min-h-10 flex-1")}
         />
-        <button type="submit" className={TRACKER_BTN} disabled={create.pending || !title.trim()}>
+        <BrandButton type="submit" variant="confirm" size="sm" disabled={create.pending || !title.trim()}>
           New hunt
-        </button>
+        </BrandButton>
         <ErrorLine error={create.error} />
       </form>
       {active.length ? (
@@ -280,27 +281,27 @@ function GmHunt({ campaignId, hunt: h, allRevealed }: { campaignId: Id<"campaign
             placeholder="A fact, a sign, or a symptom of the monster’s nature"
             className={cn(FIELD, "min-h-10 flex-1")}
           />
-          <button type="submit" className={TRACKER_BTN} disabled={addClue.pending || !clue.trim()}>
+          <BrandButton type="submit" variant="neutral" size="sm" disabled={addClue.pending || !clue.trim()}>
             Add clue
-          </button>
+          </BrandButton>
         </form>
         <ErrorLine error={addClue.error} />
       </section>
 
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" className={TRACKER_BTN} onClick={() => save({ archived: !h.archived })}>
+        <BrandButton variant="neutral" size="sm" onClick={() => save({ archived: !h.archived })}>
           {h.archived ? "Restore hunt" : "Archive hunt"}
-        </button>
-        <button
-          type="button"
-          className={TRACKER_BTN}
+        </BrandButton>
+        <BrandButton
+          variant="danger"
+          size="sm"
           disabled={remove.pending}
           onClick={() => {
             if (window.confirm(`Delete “${h.title}” and its clues?`)) remove.fire({ campaignId, huntId: h.id });
           }}
         >
           Delete hunt
-        </button>
+        </BrandButton>
         <ErrorLine error={update.error ?? remove.error} />
       </div>
     </li>
@@ -322,13 +323,9 @@ function ClueRow({ campaignId, huntId, clue: c, n }: { campaignId: Id<"campaigns
           />
           {c.revealed ? "Solid" : "Potential"}
         </label>
-        <button
-          type="button"
-          className="ml-auto cursor-pointer text-[12px] text-[#9fb2b6] underline underline-offset-4"
-          onClick={() => remove.fire({ campaignId, huntId, clueId: c.id })}
-        >
+        <BrandButton variant="danger" size="sm" className="ml-auto" onClick={() => remove.fire({ campaignId, huntId, clueId: c.id })}>
           Remove
-        </button>
+        </BrandButton>
       </div>
       <SavedField label={`Clue ${n}`} value={c.text} onSave={(text) => update.fire({ campaignId, huntId, clueId: c.id, patch: { text } })} />
       <SavedField

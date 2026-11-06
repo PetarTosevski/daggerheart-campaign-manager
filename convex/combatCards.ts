@@ -31,24 +31,28 @@ import {
   gmLines,
   isSpell,
   instanceWrites,
+  lastHpNotes,
   needsChoiceValidator,
   openCardHits,
   pendingCardValidator,
   promptsOf,
   publicTargets,
   resolvedCardValidator,
+  resistanceNotes,
   rollText,
+  srdUses,
   writeInstances,
   type InstanceWrite,
   type ResolvedCard,
 } from "./lib/cardRows";
-import { actorSheetAfter, buildRun, conditionMarkerOf, difficultyOf, isFeatureUseId, pickCard, planHandoff, replaying, runCard, writeSheetChanges, type BuiltRun, type CardPick, type HostRoll, type RunOutcome, type UsePick } from "./lib/cardRunner";
-import { assertCanAct, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
+import { actorSheetAfter, buildRun, conditionMarkerOf, difficultyOf, isFeatureUseId, pickCard, planHandoff, planHopePaid, replaying, ruleNotesOfUse, runCard, writeSheetChanges, type BuiltRun, type CardPick, type HostRoll, type RunOutcome, type UsePick } from "./lib/cardRunner";
+import { assertCanAct, loadCharacter, noteHopeSpent, readSheet, saveSheet } from "./lib/characterSheet";
 import {
   attackScene,
   autoRiders,
   changeFear,
   damagePrompts,
+  dealMinions,
   defaultOnRiders,
   emptyFolds,
   endRollFor,
@@ -69,6 +73,7 @@ import {
   type RiderEnv,
   type RiderRun,
 } from "./lib/combatActions";
+import { outOfRangeRefusal, refusesOutOfRange } from "./combatActions";
 import { uncloakAfterAttack } from "./lib/combatMovement";
 import { partyMembers } from "./lib/adversaryHits";
 import { forcedStandardAttack, pcRollAdversaryUses } from "./lib/adversaryActions";
@@ -78,15 +83,21 @@ import { giftsOf, giveTo, stancesOf, type Gift } from "./lib/featureRunner";
 import { setStance } from "./lib/stanceDrop";
 import type { InstanceEffect } from "./lib/validators/encounters";
 import type { AdversaryBefore } from "./lib/validators/actionLog";
-import { closeRequest, encounterRunning, loadOpenRequest, openMinionOffer, openRiderPick } from "./lib/combatRequests";
+import { closeRequest, encounterRunning, loadOpenRequest, openRiderPick } from "./lib/combatRequests";
+import { openRiderAllyPicks, riderHasOwnPicks } from "./lib/allyPicks";
 import { rollDie } from "./lib/dice";
 import { campaignFearState, gainFear, spendFear } from "./lib/fear";
+import { afterPcActionRoll } from "./lib/rollAftermath";
+import { postRuleNote, ruleModesOf } from "./lib/ruleModes";
+import { minionPicker } from "../src/lib/domain/combat-actions/damage";
 import { campaignMutation, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
+import { fearFor } from "./lib/fearVisibility";
+import { assertMayAct, useActKind } from "./lib/spotlight";
 import { changed } from "./lib/rolls";
 import { logUnshakable, unshakePlan, type UnshakableRoll } from "./lib/unshakable";
 import { MAX_RIDERS_PER_ATTACK, riderValidator, type Rider } from "./lib/validators/combatRequests";
 import type { PlanStep, RunPlan } from "../src/lib/domain/card-effects/run";
-import { activeAreasOnMap, MAX_AREA_COUNT, placeAreasFromPlan } from "./combatAreas";
+import { activeAreasOnMap, MAX_AREA_COUNT, placeAreasFromPlan } from "./lib/combatAreas";
 import type { Step } from "../src/lib/domain/card-effects/types";
 import { rangeFromWeapon } from "../src/lib/domain/combat-actions/index";
 
@@ -122,9 +133,10 @@ import { rangeFromWeapon } from "../src/lib/domain/combat-actions/index";
 
 /** The character the caller edits, in this campaign, with its sheet (NOT_FOUND / FORBIDDEN otherwise). */
 async function editableHere(ctx: QueryCtx & { user: Doc<"users">; campaign: Doc<"campaigns"> }, characterId: Id<"characters">) {
-  const { campaign, character } = await loadCharacter(ctx, ctx.user, characterId, "edit", "owner");
+  const { campaign, character, permission } = await loadCharacter(ctx, ctx.user, characterId, "edit", "owner");
   if (campaign._id !== ctx.campaign._id) throw appError("NOT_FOUND");
-  return { campaign, character, sheet: readSheet(character.sheet) };
+  // Config R2: `gm` (the GM or a co-GM acting for a PC) is never refused for range.
+  return { campaign, character, sheet: readSheet(character.sheet), gm: permission === "owner" };
 }
 
 /** How far back the latest action roll is looked for (Second Wind's "The attack succeeded with Hope"). */
@@ -488,7 +500,7 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
   );
 
   // Allies: tracks from the plan's creatures, Hope / effects / conditions from its steps.
-  const allyRows: { character: Doc<"characters">; before: CharacterSheet; after: CharacterSheet }[] = [];
+  const allyRows: { character: Doc<"characters">; tokenId: string; before: CharacterSheet; after: CharacterSheet }[] = [];
   for (const c of built.creatures.all) {
     if (c.kind !== "pc" || c.character._id === character._id) continue;
     const changedTo = plan.creatures.find((x) => x.id === c.tokenId)?.after;
@@ -499,16 +511,25 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
     if (u.roll) unshaken.push({ characterId: c.character._id, name: c.sheet.name, roll: u.roll });
     after = giveTo(u.sheet, gifts.byTarget.get(c.tokenId) ?? []);
     after = stampCaster(c.sheet, after, character._id);
-    if (changed(c.sheet, after)) allyRows.push({ character: c.character, before: c.sheet, after });
+    if (changed(c.sheet, after)) allyRows.push({ character: c.character, tokenId: c.tokenId, before: c.sheet, after });
   }
 
-  const writes = castWrites(instanceWrites(plan, built.creatures, pick.name), plan, built, character._id, pick.name);
+  // Rule switches RC1: D8 (the last HP defeats, or the GM is told) and D6 (who picks the extra Minions) read the modes.
+  const modes = ruleModesOf(campaign);
+  const writes = castWrites(instanceWrites(plan, built.creatures, pick.name, srdUses, modes), plan, built, character._id, pick.name);
   await writeInstances(ctx, writes);
   const casterEnds = endRoll !== null && endRoll.kind === "action" ? await endForCasterOnInstances(ctx, campaign._id, actorToken, { kind: "roll", roll: endRoll }) : { before: [], lines: [] };
   const fearDelta = await applyFear(ctx, campaign._id, plan.gmFearDelta);
-  const sheetChanged = changed(sheet, next);
+  // dcm-z9rz.23: the Hope the use paid (its Experiences and its costs, even one the roll's own Hope paid, R8) counts as
+  // spent whatever it gained back; an ally counts the costs it paid for the use.
+  const hopePaid = Math.max(0, req.sheet.hope - built.paidSheet.hope) + planHopePaid(plan, actorToken, actorToken);
+  const sheetChanged = changed(sheet, next) || hopePaid > 0;
+  noteHopeSpent(ctx, character._id, hopePaid);
   if (sheetChanged) await saveSheet(ctx, character._id, next);
-  for (const a of allyRows) await saveSheet(ctx, a.character._id, a.after);
+  for (const a of allyRows) {
+    noteHopeSpent(ctx, a.character._id, planHopePaid(plan, a.tokenId, actorToken));
+    await saveSheet(ctx, a.character._id, a.after);
+  }
 
   const groupId = newGroupId();
   const damage = damageRolls(plan);
@@ -581,16 +602,28 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
       undoable: true,
     });
   }
+  // Rule switches RC1: the Manual damage rules' GM notes (D2 once the card engine leaves resistance to the GM, D8), in the
+  // use's group.
+  for (const summary of resistanceNotes(plan, built.creatures)) await postRuleNote(ctx, campaign, { ruleId: "resistance", summary, groupId, actorId });
+  for (const summary of lastHpNotes(writes, modes)) await postRuleNote(ctx, campaign, { ruleId: "adversaryDefeated", summary, groupId, actorId });
+  // RFC: line of sight (M1), condition dice (C1) and Stress overflow (D4) Manual notes for the card use.
+  for (const n of ruleNotesOfUse(built, plan)) await postRuleNote(ctx, campaign, { ruleId: n.ruleId, summary: n.summary, groupId, actorId });
 
   // Armed countdowns tick right after an action roll, as for `actionRoll` (countdowns-advanced K1); never a reaction roll.
   if (plan.roll && countsAsActionRoll(plan.roll.record, { logKind: "roll", undone: false })) {
     await tickArmedCountdowns(ctx, { campaignId: campaign._id, entryId, outcome: plan.roll.record.outcome, actorId });
   }
+  // Plan rule-switches RA (S1): the card's action roll failing (no target hit, or under its Difficulty) or rolling with Fear
+  // hands the spotlight to the GM, or notes it, in the use's group. R3: the card engine (src/lib/domain/card-effects/run.ts)
+  // gains the roll's Hope and Fear itself, following the run context's mode (RA2); the R3 note is posted here.
+  if (plan.roll && plan.roll.record.kind === "action" && plan.roll.record.outcome !== "none") {
+    await afterPcActionRoll(ctx, campaign, { characterId: character._id, name: sheet.name, kind: "action", success: plan.success, withFear: plan.roll.withFear, groupId, actorId });
+  }
 
   // AA2b: card damage to another PC opens their incoming hit (armor, ally reactions) instead of a manual prompt.
   const hitTokens = await openCardHits(ctx, { plan, built, campaignId: campaign._id, groupId, actorId, attacker: { characterId: character._id, label: sheet.name, cardId: plan.cardId, feature: pick.name } });
   prompts = prompts.filter((p) => !(p.kind === "pcDamage" && p.tokenIds.every((t) => hitTokens.has(t))));
-  const minionOffer = await offerMinions(ctx, req, built, plan, { groupId, entryId, actorId });
+  const minions = await offerMinions(ctx, req, built, plan, { groupId, entryId, actorId });
   await dropDice(ctx, slotOf(req));
   const result: ResolvedCard = {
     status: "resolved",
@@ -603,47 +636,46 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
     targets: outcomes,
     fearDelta,
     prompts,
-    minionOffer,
+    minionOffer: minions.offer,
+    ...(minions.forGm !== undefined ? { minionsForGm: minions.forGm } : {}),
   };
   return { result, writes };
 }
 
 /**
  * Q6 (CB p.201): the card's damage earned extra Minion defeats. The offer lists the Minions still standing in the same
- * encounter that the actor sees, within the card's range, whose Difficulty the roll beat (or a critical, or no roll).
+ * encounter that the actor sees, within the card's range (any range with Defined Ranges off), whose Difficulty the roll beat (or a critical, or no roll).
  * Picked with `combatActions.pickMinions` (the public row is a `combat` row of the group).
  */
 async function offerMinions(ctx: MutationCtx, req: UseRequest, built: BuiltRun, plan: RunPlan, row: { groupId: string; entryId: Id<"actionLog">; actorId: Id<"users"> }) {
   const extra = plan.steps.reduce((n, s) => n + (s.kind === "minionOffer" ? s.extra : 0), 0);
   const anchor = built.targets.find((t) => t.kind === "enemy");
-  if (extra <= 0 || anchor === undefined || anchor.kind !== "enemy") return null;
+  if (extra <= 0 || anchor === undefined || anchor.kind !== "enemy") return { offer: null };
   const candidates = [];
   for (const e of await built.creatures.visibleEnemies()) {
     if (!e.minion || e.encounter._id !== anchor.encounter._id) continue;
-    if (!rangeCheck(built.creatures.scene.attacker, e.token, built.range).inRange) continue;
+    // Rule switches ODR2: with Defined Ranges off every standing Minion of the encounter is offered (the picker judges range).
+    if (!rangeCheck(built.creatures.scene.attacker, e.token, built.range, built.definedRanges).inRange) continue;
     const instance = await ctx.db.get("encounterAdversaries", e.instance._id);
     if (instance === null || instance.defeated) continue;
     if (plan.roll && !plan.roll.critical && plan.roll.record.total < difficultyOf(instance)) continue;
     const available = Math.min(extra, instance.stats.hpMax - instance.hp);
     if (available > 0) candidates.push({ instanceId: instance._id, tokenId: e.tokenId, name: instance.label, available });
   }
-  if (candidates.length === 0) return null;
-  const requestId = await openMinionOffer(ctx, {
-    campaignId: req.campaign._id,
+  // Rule switches RC1, D6: the attacker's offer (Book), the GM's (variant, not in the books) or a GM note (Manual).
+  return dealMinions(ctx, req.campaign, {
+    picker: minionPicker(ruleModesOf(req.campaign).minions),
     encounterId: anchor.encounter._id,
     mapId: req.scene.map._id,
-    createdBy: row.actorId,
-    payload: {
-      schemaVersion: 1,
-      kind: "minionOffer",
-      characterId: req.character._id,
-      groupId: row.groupId,
-      entryId: row.entryId,
-      extra,
-      candidates: candidates.map(({ instanceId, tokenId, available }) => ({ instanceId, tokenId, available })),
-    },
+    actorId: row.actorId,
+    characterId: req.character._id,
+    attackerName: req.sheet.name,
+    groupId: row.groupId,
+    entryId: row.entryId,
+    extra,
+    damage: damageRolls(plan).reduce((n, d) => n + d.roll.total, 0),
+    candidates,
   });
-  return { requestId, extra, candidates };
 }
 
 // ---------------------------------------------------------------- riders on a card's roll (SD5)
@@ -813,7 +845,10 @@ export async function runWithRiders<P extends UsePick>(ctx: MutationCtx, use: Ri
   const host = use.host;
   // DA2: damage-phase riders (Death Strike) are prompts after the use's damage, never run from a toggle; default-on
   // riders (Rise to the Challenge, CB p.48) join unless turned off.
-  const chosen = pickRiders(use.sheet, use.campaign, host, riders).filter((r) => r.phase !== "damage");
+  const chosenAll = pickRiders(use.sheet, use.campaign, host, riders).filter((r) => r.phase !== "damage");
+  // FH-AP: a rider whose choosers each pick their own option (Rousing Strike) waits for the picks after the use (`post`).
+  const ownPicks = chosenAll.filter(riderHasOwnPicks);
+  const chosen = chosenAll.filter((r) => !ownPicks.includes(r));
   const picked = [...chosen, ...defaultOnRiders(use.sheet, use.campaign, host, riseOff, chosen), ...autoUsesOn(use.sheet, use.campaign, host)];
   const rec = recorder(rollDie);
   const fear = await campaignFearState(ctx, use.campaign._id);
@@ -929,6 +964,9 @@ export async function runWithRiders<P extends UsePick>(ctx: MutationCtx, use: Ri
     // DA2 (HF p.8 Death Strike; user 2026-10-30): a damage-phase rider is a Use / Pass prompt, with a pick of the ONE
     // creature when several took the damage it needs; never applied without it.
     if (groupId !== undefined) {
+      // FH-AP (user 2026-11-05): the riders whose choosers each pick their own option, when their trigger held.
+      const holding = ownPicks.filter((r) => resultHolds(r.trigger, hostRoll) && rollTargetHolds(r.trigger, host, use.scene.attacker, subject) && (rollOnly(r.trigger) || hitIds.length > 0));
+      if (holding.length > 0) await openRiderAllyPicks(ctx, { env, riders: holding, hostRoll, entryId, groupId, ...(encounterOf(built) ? { encounterId: encounterOf(built)! } : {}), createdBy: actorId });
       for (const r of damagePrompts(use.sheet, use.campaign, host)) {
         const severity = r.trigger.kind === "whenTargetMarksHp" || r.trigger.kind === "whenEnemyTakesDamage" ? r.trigger.severity : undefined;
         const candidates: Id<"combatTokens">[] = [];
@@ -952,9 +990,12 @@ export async function runWithRiders<P extends UsePick>(ctx: MutationCtx, use: Ri
     const writes: InstanceWrite[] = [];
     const lines: string[] = [];
     let fearDelta = 0;
+    const modes = ruleModesOf(use.campaign);
     for (const ran of postRuns) {
-      const w = instanceWrites(ran.plan, ran.built.creatures, ran.name);
+      const w = instanceWrites(ran.plan, ran.built.creatures, ran.name, srdUses, modes);
       await writeInstances(ctx, w);
+      // RC1: D8 Manual's note, in the use's group (a note needs a group to be undone with it).
+      if (groupId !== undefined) for (const summary of lastHpNotes(w, modes)) await postRuleNote(ctx, use.campaign, { ruleId: "adversaryDefeated", summary, groupId, actorId });
       writes.push(...w);
       const l = gmLines(ran.plan, ran.built, w);
       if (l.length > 0) lines.push(`${ran.name}: ${l.join("; ")}`);
@@ -1390,11 +1431,15 @@ export const useCard = keyedCampaignMutation({
   args: useArgs,
   returns: v.union(resolvedCardValidator, pendingCardValidator, needsChoiceValidator),
   handler: async (ctx, args) =>
-    ctx.once("combat_card", args, async () => {
-      const { campaign, character, sheet } = await editableHere(ctx, args.characterId);
+    fearFor(ctx, ctx.user, ctx.campaign, await ctx.once("combat_card", args, async () => {
+      const { campaign, character, sheet, gm } = await editableHere(ctx, args.characterId);
+      // Config R2 (Q2 a): a player's card use with a target out of its range is refused when the GM refuses them.
+      const refuse = refusesOutOfRange(campaign, gm);
       assertCanAct(character, sheet);
       const scene = await attackScene(ctx, campaign, character, args.mapId);
       const pick = pickCard(sheet, args.cardId, args.spell);
+      // S2 (plan rule-switches RS2): a card's action waits while the GM holds the spotlight; a reaction card never does.
+      await assertMayAct(ctx, campaign, character, useActKind(pick.use), sheet.name);
       const req: UseRequest = { campaign, character, sheet, scene, pick, targetTokenIds: args.targetTokenIds, choices: args.choices, roll: args.roll ?? {}, ...(args.swapWith !== undefined ? { swapWith: args.swapWith } : {}) };
       const riders = args.riders ?? [];
       const riseOff = args.riseToTheChallenge === false;
@@ -1410,6 +1455,7 @@ export const useCard = keyedCampaignMutation({
           const postRuns = await withRiders.post(result.entryId);
           return afterCardUse(ctx, { result, req: withRiders.req, built: withRiders.built, plan: withRiders.plan, actorId: ctx.user._id, before: sheet, writes, riderRuns: [...withRiders.runs, ...postRuns], gmNotes: withRiders.pcLines, ...squares });
         }
+        if (refuse) throw outOfRangeRefusal(withRiders.built.outOfRange);
         // Q1: wait for the GM; the approval runs the card and its riders again (nothing is kept).
         const encounter = withRiders.built.targets.find((t) => t.kind === "enemy");
         const requestId = await ctx.db.insert("combatRequests", {
@@ -1442,6 +1488,7 @@ export const useCard = keyedCampaignMutation({
         return { status: "pending" as const, requestId, outOfRange: withRiders.built.outOfRange };
       }
       const built = await build(ctx, req);
+      if (refuse && built.outOfRange.length > 0) throw outOfRangeRefusal(built.outOfRange);
       // Refusals (exhausted, cost, condition) and missing choices come first, whether or not the GM must approve.
       const outcome = await runKept(ctx, req, built, ctx.user._id);
       if (outcome.kind === "needsChoice") return { status: "needsChoice" as const, asks: outcome.asks };
@@ -1473,7 +1520,7 @@ export const useCard = keyedCampaignMutation({
         },
       });
       return { status: "pending" as const, requestId, outOfRange: built.outOfRange };
-    }),
+    }), "fearDelta", ctx.permission),
 });
 
 const declined = v.object({ status: v.literal("declined") });

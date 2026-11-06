@@ -28,6 +28,7 @@ import { actionOutcome, type DieRole, type RolledDie, type RollOutcome, type Rol
 import { applyResourceDelta } from "../characters/index";
 import type { CharacterSheet, Experience } from "../../validation/characters";
 import { owned, type OwnedScope, type OwnedSheet } from "../feature-effects/owned";
+import type { ModeOf } from "../../rules/registry";
 
 export type { Rng };
 
@@ -151,9 +152,19 @@ export function rollDuality(input: DualityInput, rng: Rng): DualityRoll {
 
 export type DualityEffects = { hope: number; clearStress: number; fear: number };
 
-/** What a Duality roll changes (CB 94, 99): reaction rolls change nothing. */
-export function dualityEffects(kind: "action" | "reaction", outcome: RollOutcome): DualityEffects {
+/** R3 "Hope and Fear from rolls" (plan rule-switches RA): `book` gains them by themselves, `manual` leaves them to the table. */
+export type HopeFearMode = ModeOf<"hopeFearFromRolls">;
+
+/**
+ * What a Duality roll changes (CB 94, 99): reaction rolls change nothing. `mode` is the campaign's R3 switch (default
+ * Book, so an unwired caller keeps the book's gains). Manual (user answer Q2 b, 2026-11-05): on a roll with Hope or with
+ * Fear neither the roller's Hope nor the GM's Fear rises by itself (the player adds the Hope on the sheet, the GM gets a
+ * note for the Fear). A critical keeps its own Hope and Stress: that is R2 "Matching dice = critical" (CB p.90, a
+ * Book-only rule: "you gain a Hope and clear a Stress"), not R3.
+ */
+export function dualityEffects(kind: "action" | "reaction", outcome: RollOutcome, mode: HopeFearMode = "book"): DualityEffects {
   if (kind === "reaction") return { hope: 0, clearStress: 0, fear: 0 };
+  if (mode === "manual" && outcome !== "critical") return { hope: 0, clearStress: 0, fear: 0 };
   switch (outcome) {
     case "critical":
       return { hope: 1, clearStress: 1, fear: 0 };
@@ -214,7 +225,11 @@ export function experienceBonus(experiences: readonly Experience[], ids: readonl
 
 /** Spends Hope, or refuses (the caller maps it to NOT_ENOUGH_HOPE). */
 export class NotEnoughHopeError extends Error {
-  constructor() {
+  constructor(
+    /** dcm-bxp.99.32.2: the Hope asked for and held, when known (the refusal's `shortfall`). */
+    readonly need?: number,
+    readonly have?: number,
+  ) {
     super("Not enough Hope.");
     this.name = "NotEnoughHopeError";
   }
@@ -222,7 +237,7 @@ export class NotEnoughHopeError extends Error {
 
 export function spendHope(sheet: CharacterSheet, amount: number): CharacterSheet {
   if (amount <= 0) return sheet;
-  if (sheet.hope < amount) throw new NotEnoughHopeError();
+  if (sheet.hope < amount) throw new NotEnoughHopeError(amount, sheet.hope);
   return { ...sheet, hope: sheet.hope - amount };
 }
 

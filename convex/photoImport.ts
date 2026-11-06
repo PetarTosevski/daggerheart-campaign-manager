@@ -11,6 +11,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { logAction } from "./lib/actionLog";
+import { refuseArchived } from "./lib/archived";
 import { apiKey, ClaudeFailure, defaultModel, messagesCreate, SONNET } from "./lib/claude";
 import { storedSheet } from "./lib/characterSheet";
 import { claimFile, deleteOwnFile, isAllowedImage, isClaimed } from "./lib/files";
@@ -167,6 +168,8 @@ export const readContext = internalQuery({
     const access = user === null ? null : await campaignAccess(ctx, user, campaignId, "owner");
     if (access === null) throw appError("NOT_FOUND");
     if (access.permission !== "owner") throw appError("FORBIDDEN");
+    // Q9 a (dcm-jh6d.64): an archived campaign can't take the imported character, so `read` stops before the API call.
+    refuseArchived(access.campaign);
     const rows = await photoRows(ctx, campaignId);
     return {
       hopeAndFear: resolveOptions(access.campaign.frameId, access.campaign.options).hopeAndFear,
@@ -271,6 +274,7 @@ export const read = userAction({
 
 /** The owner of an imported character: the GM, or a player in the campaign. */
 async function ownerFor(ctx: QueryCtx, campaign: Doc<"campaigns">, gm: Id<"users">, ownerId?: Id<"users">): Promise<Id<"users">> {
+  // Identity: the caller (the GM or a co-GM) or the creator, who has no member row; anyone else must be a member.
   if (!ownerId || ownerId === gm || ownerId === campaign.ownerId) return ownerId ?? gm;
   const member = await ctx.db
     .query("campaignMembers")

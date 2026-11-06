@@ -5,7 +5,10 @@
 // CB p.91, "Damage Thresholds": "Severe damage is equal to or above your Severe threshold; you mark 3 HP. Major damage
 //   is equal to or above your Major threshold but below Severe; you mark 2 HP. Minor damage is anything below your Major
 //   threshold; you mark 1 HP. If you ever reduce incoming damage to 0 or less …, you don't mark any HP. When you mark your
-//   last Hit Point, you must make a death move." Massive damage is an optional rule; it is off here.
+//   last Hit Point, you must make a death move."
+// CB p.91, "OPTIONAL RULE: MASSIVE DAMAGE": "your table can implement a Massive threshold. If you ever take damage equal
+//   to double your Severe threshold, you mark 4 Hit Points." On when the campaign turns it on (`rules.massiveDamage`).
+//   Read as a threshold above Severe, so an Armor Slot reduces Massive to Severe (3 HP), the next to Major.
 // CB p.114, "Reducing Damage": "When your character takes damage, you can negate some (or all) of it by marking an
 //   available Armor Slot …, then reducing the severity of the damage by one threshold (Severe to Major, Major to Minor,
 //   Minor to Nothing). Each time your character takes damage, you can only mark 1 Armor Slot." Example: "If an adversary
@@ -16,8 +19,12 @@
 //   steps the severity down once more (`extraSlots`).
 // CB p.92: "If you're ever forced to mark 1 or more Stress but your slots are already full, you must instead mark 1 Hit
 //   Point."
-// CB p.99: resistance halves the damage before the thresholds (rounded down like combat-actions/damage.ts), immunity
-//   takes none.
+// CB p.99: resistance halves the damage before the thresholds (rounded up, CB p.107 "round up unless otherwise
+//   specified", like combat-actions/damage.ts), immunity takes none.
+//
+// Rule switches (plan rule-switches, tracer RDM): every function takes `rules` (the campaign's modes; unset = the
+// Book). D2 Manual: resistance and immunity are not applied (`resistanceApplied` false; tell the GM "halve?"); D4 Manual:
+// Stress past a full track is dropped, no HP (`overflow` true); Massive Damage as above.
 // Plan lanes E2 (dcm-s77): an attacker can make Armor Slots dearer for its hit (`ArmorCost`): Armor Eater (HF p.71: "that
 //   PC must mark an additional Armor Slot to reduce the severity of the damage"), Tormenting Lash (CB p.235: "they must
 //   mark 2 Armor Slots"), Rending Jaws (HF p.81: "must mark 2 Armor Slots to reduce the severity by one threshold") take
@@ -31,19 +38,59 @@
 // ```
 
 import type { DamageType } from "../card-effects/types";
-import { damageSeverity, markStress, type Severity, type Thresholds } from "../characters/index";
+import { damageSeverity, isMassiveDamage, markStress, type PcDamageRules, type Severity, type Thresholds } from "../characters/index";
 import { resistanceAgainst, type ResistanceLevel } from "../combat-actions/damage";
-import { damageTaken } from "../encounters/damage";
+import { damageTaken, type DamageRules } from "../encounters/damage";
+import type { RuleModes } from "../../rules/registry";
+
+/** The damage rule modes a hit on a PC reads (plan rule-switches): D2, D4, D5 and Massive Damage. Unset = the Book. */
+export type PcHitRules = PcDamageRules & Pick<DamageRules, "resistance">;
+
+/**
+ * Everything the reaction window of a hit on a PC reads from the campaign's rule switches (plan rule-switches, RC2): the
+ * damage modes, and A1 `armorSlots` (CB p.114 "negate some (or all) of it by marking an available Armor Slot"; CB p.19
+ * "You can only mark one Armor Slot per attack"). A1 Manual: no Armor Slot is offered to anyone, so the damage lands at
+ * full severity and the player marks armor and fixes HP on the sheet. Forced slots (Shredding Strike, CB p.195) and slot
+ * substitutes (Stable, Celestial Wings) are features, not the prompt, and still apply. Unset = the Book.
+ */
+export type HitRules = PcHitRules & Partial<Pick<RuleModes, "armorSlots">>;
+
+/** Whether the hit offers Armor Slots at all: A1 Book yes, A1 Manual no (see `HitRules`). */
+export function armorOffered(rules: Pick<HitRules, "armorSlots"> = {}): boolean {
+  return rules.armorSlots !== "manual";
+}
 
 export type { Severity as PcSeverity, Thresholds as PcThresholds };
 
 const ORDER: readonly Severity[] = ["none", "minor", "major", "severe"];
 const MARKS: Record<Severity, number> = { none: 0, minor: 1, major: 2, severe: 3 };
+/** HP Massive damage marks (CB p.91). */
+export const MASSIVE_HP = 4;
 
-/** Severity of damage against a PC's thresholds and the HP it marks (AR3, CB p.91). */
-export function pcSeverity(damage: number, thresholds: Thresholds): { severity: Severity; hp: number } {
+/** Whether a Stress mark overflowed: Book, it marked the 1 HP (CB p.92); D4 Manual, the extra Stress was dropped. */
+function overflowed(next: { hp: number; overflow?: true }, hpBefore: number, rules: PcHitRules): boolean {
+  return rules.stressOverflow === "manual" ? next.overflow === true : next.hp > hpBefore;
+}
+
+/** Severity of damage against a PC's thresholds and the HP it marks (AR3, CB p.91; Massive marks 4 when on, `massive: true`). */
+export function pcSeverity(damage: number, thresholds: Thresholds, rules: PcHitRules = {}): { severity: Severity; hp: number; massive?: true } {
   const severity = damageSeverity(damage, thresholds);
-  return { severity, hp: MARKS[severity] };
+  return isMassiveDamage(damage, thresholds, rules) ? { severity, hp: MASSIVE_HP, massive: true } : { severity, hp: MARKS[severity] };
+}
+
+/**
+ * The severity after `steps` threshold steps when the hit may be Massive: Massive is a threshold above Severe (CB p.91),
+ * so the first step takes it to Severe and the rest step down as usual.
+ */
+export function stepDownMassive(severity: Severity, massive: boolean, steps: number): { severity: Severity; massive: boolean } {
+  const n = Math.max(0, Math.trunc(steps));
+  if (!massive) return { severity: stepDown(severity, n), massive: false };
+  return n === 0 ? { severity, massive: true } : { severity: stepDown(severity, n - 1), massive: false };
+}
+
+/** HP a severity marks; 4 for Massive damage. */
+function marksOf(severity: Severity, massive: boolean): number {
+  return massive ? MASSIVE_HP : MARKS[severity];
 }
 
 /** The severity `steps` thresholds lower (Severe to Major, Major to Minor, Minor to nothing; CB p.114). */
@@ -156,29 +203,47 @@ export function armorOptions(pc: PcDefense, hit: PcHit, extraSlots: number | "an
   return { canUseArmor: allowed > 0, maxSlots: allowed, free };
 }
 
-/** Damage after reductions and resistance, and its severity before armor (what the hit PC's prompt shows, Q14). */
-export function damageBeforeArmor(pc: PcDefense, hit: PcHit, reduceDamage = 0): { taken: number; resisted: ResistanceLevel; severity: Severity } {
+/**
+ * Damage after reductions and resistance, and its severity before armor (what the hit PC's prompt shows, Q14).
+ * `massive: true`: Massive damage (CB p.91) with the rule on. D2 Manual: resistance and immunity are not applied
+ * (`resistanceApplied: false`). Both are only set then, so the Book's result is unchanged.
+ */
+export function damageBeforeArmor(
+  pc: PcDefense,
+  hit: PcHit,
+  reduceDamage = 0,
+  rules: PcHitRules = {},
+): { taken: number; resisted: ResistanceLevel; resistanceApplied?: false; severity: Severity; massive?: true } {
   const reduced = Math.max(0, Math.trunc(hit.amount) - Math.max(0, reduceDamage));
   // E2 (dcm-kvx4): the bearer's "any damage … gains a +N bonus", on damage that is still there.
   const incoming = reduced > 0 ? reduced + Math.max(0, Math.trunc(pc.damageTakenBonus ?? 0)) : 0;
   const resisted = resistanceAgainst(pc, hit.type);
-  const taken = resisted === "immune" ? 0 : damageTaken(incoming, resisted === "resistant");
+  const resistanceApplied = resisted === "none" || rules.resistance !== "manual";
+  const taken = resisted === "immune" && resistanceApplied ? 0 : damageTaken(incoming, resisted === "resistant", rules);
   let severity = damageSeverity(taken, pc.thresholds);
   if (pc.noMinorDamage && severity === "minor") severity = "none";
-  return { taken, resisted, severity };
+  const massive = severity === "severe" && isMassiveDamage(taken, pc.thresholds, rules);
+  return { taken, resisted, severity, ...(resistanceApplied ? {} : { resistanceApplied: false as const }), ...(massive ? { massive: true as const } : {}) };
 }
 
 /**
  * The severity and HP for every number of slots the PC may mark (0..maxSlots), for the "mark an Armor Slot?" prompt. E2
  * (dcm-s77): with dearer slots only whole steps are listed (0, 2, 4 for Armor Eater).
  */
-export function armorPreview(pc: PcDefense, hit: PcHit, extraSlots: number | "any" = 0): { slots: number; severity: Severity; hp: number }[] {
-  const { severity } = damageBeforeArmor(pc, hit);
+export function armorPreview(
+  pc: PcDefense,
+  hit: PcHit,
+  extraSlots: number | "any" = 0,
+  rules: PcHitRules = {},
+): { slots: number; severity: Severity; hp: number; massive?: true }[] {
+  const { severity, massive = false } = damageBeforeArmor(pc, hit, 0, rules);
   const { maxSlots } = armorOptions(pc, hit, extraSlots);
   const per = slotsPerStep(hit);
   return Array.from({ length: Math.floor(maxSlots / per) + 1 }, (_, n) => {
-    const s = stepDown(severity, n);
-    return { slots: n * per, severity: s, hp: Math.max(0, MARKS[s] + (MARKS[s] > 0 ? (hit.hpMarkedDelta ?? 0) : 0)) * marksFactor(pc, "hp") };
+    const s = stepDownMassive(severity, massive, n);
+    const m = marksOf(s.severity, s.massive);
+    const hp = Math.max(0, m + (m > 0 ? (hit.hpMarkedDelta ?? 0) : 0)) * marksFactor(pc, "hp");
+    return { slots: n * per, severity: s.severity, hp, ...(s.massive ? { massive: true as const } : {}) };
   });
 }
 
@@ -201,17 +266,23 @@ export interface PcHitResult {
   resisted: ResistanceLevel;
   /** After reductions and resistance. */
   taken: number;
+  /** Set (false) only when D2 is Manual and the PC resists or is immune (the damage was not halved; tell the GM). */
+  resistanceApplied?: false;
   /** Before any Armor Slot. */
   severityBefore: Severity;
+  /** Set (true) only for Massive damage before any Armor Slot (CB p.91, the optional rule on). */
+  massiveBefore?: true;
   /** Slots marked without benefit (CB p.195). */
   forcedArmor: number;
   /** Slots marked to step the severity down (E2, dcm-s77: whole steps of the hit's `slotsPerStep`). */
   armorSlots: number;
   severity: Severity;
+  /** Set (true) only when still Massive after armor: 4 HP (before Chains of Affliction and Unstuck). */
+  massive?: true;
   hpMarked: number;
   stressMarked: number;
   hopeSpent: number;
-  /** A Stress mark past a full track marked 1 HP (CB p.92). */
+  /** A Stress mark went past a full track: 1 HP marked (CB p.92), or none under D4 Manual (tell the GM). */
   overflow: boolean;
   /** The PC marked their last HP: they must make a death move (CB p.91). */
   deathMove: boolean;
@@ -224,18 +295,20 @@ export interface PcHitResult {
  * one step each (none on direct damage); further severity steps; Chains of Affliction's delta; then HP (or Stress / Hope
  * instead), clamped to the tracks. Marking the last HP flags a death move.
  */
-export function applyHitToPc(pc: PcDefense, hit: PcHit, adj: HitAdjustments = {}): PcHitResult {
+export function applyHitToPc(pc: PcDefense, hit: PcHit, adj: HitAdjustments = {}, rules: PcHitRules = {}): PcHitResult {
   const before: PcTracks = { hp: pc.hp, stress: pc.stress, armor: pc.armor, hope: pc.hope ?? 0 };
   const forced = Math.min(Math.max(0, hit.forcedArmor ?? 0), Math.max(0, pc.armorMax - pc.armor));
   const incoming = Math.max(0, Math.trunc(hit.amount));
-  const pre = damageBeforeArmor(pc, hit, adj.reduceDamage ?? 0);
+  const pre = damageBeforeArmor(pc, hit, adj.reduceDamage ?? 0, rules);
   const severityBefore = adj.negate ? "none" : pre.severity;
+  const massiveBefore = !adj.negate && pre.massive === true;
   const { maxSlots } = armorOptions(pc, hit, adj.extraSlots ?? 0, false);
   // E2 (dcm-s77): only whole steps of dearer slots are marked.
   const steps = severityBefore === "none" ? 0 : armorSteps(hit, Math.min(maxSlots, Math.max(0, Math.trunc(adj.armorSlots ?? 0))));
   const armorSlots = steps * slotsPerStep(hit);
-  const severity = stepDown(stepDown(severityBefore, steps), adj.reduceSeverity ?? 0);
-  const base = MARKS[severity];
+  const armored = stepDownMassive(severityBefore, massiveBefore, steps);
+  const { severity, massive } = stepDownMassive(armored.severity, armored.massive, adj.reduceSeverity ?? 0);
+  const base = marksOf(severity, massive);
   const marks = base > 0 ? Math.max(0, base + (hit.hpMarkedDelta ?? 0)) : 0;
 
   let { hp, stress, hope } = before;
@@ -252,9 +325,9 @@ export function applyHitToPc(pc: PcDefense, hit: PcHit, adj: HitAdjustments = {}
     hope -= hopeSpent;
     hpMarks = marks - covered;
   } else if (marks > 0 && adj.convert === "stress") {
-    const next = markStress({ stress, stressMax: pc.stressMax, hp, hpMax: pc.hpMax }, marks * marksFactor(pc, "stress"));
+    const next = markStress({ stress, stressMax: pc.stressMax, hp, hpMax: pc.hpMax }, marks * marksFactor(pc, "stress"), rules);
     stressMarked = next.stress - stress;
-    overflow = next.hp > hp;
+    overflow = overflowed(next, hp, rules);
     stress = next.stress;
     hp = next.hp;
     hpMarks = 0;
@@ -265,9 +338,9 @@ export function applyHitToPc(pc: PcDefense, hit: PcHit, adj: HitAdjustments = {}
   if (also && armorSlots > 0 && also.amount > 0) {
     const n = Math.trunc(also.amount) * armorSlots * marksFactor(pc, also.track);
     if (also.track === "stress") {
-      const next = markStress({ stress, stressMax: pc.stressMax, hp, hpMax: pc.hpMax }, n);
+      const next = markStress({ stress, stressMax: pc.stressMax, hp, hpMax: pc.hpMax }, n, rules);
       stressMarked += next.stress - stress;
-      overflow = overflow || next.hp > hp;
+      overflow = overflow || overflowed(next, hp, rules);
       stress = next.stress;
       hp = next.hp;
     } else hp = Math.min(pc.hpMax, hp + n);
@@ -279,11 +352,14 @@ export function applyHitToPc(pc: PcDefense, hit: PcHit, adj: HitAdjustments = {}
     targetId: pc.id,
     incoming,
     resisted: pre.resisted,
+    ...(pre.resistanceApplied === false ? { resistanceApplied: false as const } : {}),
     taken: adj.negate ? 0 : pre.taken,
     severityBefore,
+    ...(massiveBefore ? { massiveBefore: true as const } : {}),
     forcedArmor: forced,
     armorSlots,
     severity,
+    ...(massive ? { massive: true as const } : {}),
     hpMarked: hp - before.hp,
     stressMarked,
     hopeSpent,

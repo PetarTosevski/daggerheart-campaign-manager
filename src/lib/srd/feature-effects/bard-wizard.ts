@@ -112,7 +112,9 @@ function buildTable(): FeatureEffect[] {
 
     // Maestro (Troubadour specialization, CB p.28): "Your rallying songs steel the courage of those who listen. When you give
     // a Rally Die to an ally, they can gain a Hope or clear a Stress."
-    // Runs once per ally given a die (the trigger's subject); the ally picks (dcm-bz8, per-recipient choice).
+    // Runs once per ally given a die (the trigger's subject); the ally picks (dcm-bz8, per-recipient choice). FH-AP (user
+    // 2026-11-05): the pick is the ally's own (`by` the trigger's subject), so it goes to their screen once the engine fires
+    // `whenYouGiveDie` (Rally does not fire it yet).
     {
       featureId: "subclass:troubadour:maestro",
       source: "subclass",
@@ -128,10 +130,11 @@ function buildTable(): FeatureEffect[] {
             {
               kind: "choose",
               id: "benefit",
-              label: "Your ally gains a Hope or clears a Stress",
+              label: "Gain a Hope or clear a Stress",
+              by: { to: "triggerSubject" },
               options: [
-                { id: "hope", label: "Gain a Hope", steps: [{ kind: "hope", to: "triggerSubject", change: "gain", amount: ONE }] },
-                { id: "stress", label: "Clear a Stress", steps: [{ kind: "clear", to: "triggerSubject", track: "stress", amount: ONE }] },
+                { id: "hope", label: "Gain a Hope", steps: [{ kind: "hope", to: "chooser", change: "gain", amount: ONE }] },
+                { id: "stress", label: "Clear a Stress", steps: [{ kind: "clear", to: "chooser", track: "stress", amount: ONE }] },
               ],
             },
           ],

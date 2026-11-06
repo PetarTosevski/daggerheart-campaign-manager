@@ -2,9 +2,11 @@
 
 import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { ChevronDown, X } from "lucide-react";
-import { useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 
+import { ruleNoteTag } from "@/components/combat-map/hud/feed/model";
 import { errorMessage } from "@/lib/convex-errors";
+import { useUiState } from "@/lib/use-ui-state";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../convex/_generated/api";
@@ -17,49 +19,6 @@ const PAGE = 15;
 /** Most rows one countedRows call asks about (the server's cap). */
 const COUNTED_MAX = 100;
 const BTN = "min-h-10 cursor-pointer rounded-[9px] border border-[#33444a] bg-transparent px-3 text-[14px] text-[#e6ecea] hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40";
-
-/**
- * A per-device on/off choice in browser storage (conveniences only): read and written with try/catch, with an
- * in-memory fallback for when storage throws (private windows, blocked site data). Read with useSyncExternalStore.
- */
-function deviceFlag(key: string) {
-  const event = `dcm-flag:${key}`;
-  let fallback = false;
-  return {
-    read(): boolean {
-      try {
-        return window.localStorage.getItem(key) === "1";
-      } catch {
-        return fallback;
-      }
-    },
-    write(on: boolean): void {
-      fallback = on;
-      try {
-        window.localStorage.setItem(key, on ? "1" : "0");
-      } catch {
-        // Storage blocked: the fallback above keeps the choice for this page.
-      }
-      window.dispatchEvent(new Event(event));
-    },
-    subscribe(onChange: () => void): () => void {
-      window.addEventListener(event, onChange);
-      window.addEventListener("storage", onChange);
-      return () => {
-        window.removeEventListener(event, onChange);
-        window.removeEventListener("storage", onChange);
-      };
-    },
-  };
-}
-
-/** Whether the feed is folded away, remembered per device. */
-const feedCollapsed = deviceFlag("dcm:roll-feed-collapsed");
-/** Whether the GM's secret roll form is folded away, remembered per device (dcm-bxp.34; default open). */
-const gmFormCollapsed = deviceFlag("dcm:gm-roll-form-collapsed");
-/** Whether a player's free roll form is open, remembered per device (user 2026-11-04; default folded). */
-const freeFormOpen = deviceFlag("dcm:free-roll-form-open");
-const serverFalse = () => false;
 
 function time(at: number): string {
   return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -75,11 +34,12 @@ export function GmRollForm({ campaignId, showResult = false }: { campaignId: Id<
 }
 
 /**
- * The GM's secret roll form behind a disclosure button (dcm-bxp.34): open by default, the choice remembered on this
- * device. Folding it hides only the form; the feed list below stays.
+ * The GM's secret roll form behind a disclosure button (dcm-bxp.34): open by default, the choice stored on the
+ * account (plan config U6e), so it follows the GM to every device. Folding it hides only the form; the feed list
+ * below stays.
  */
 function GmRollSection({ campaignId }: { campaignId: Id<"campaigns"> }) {
-  const collapsed = useSyncExternalStore(gmFormCollapsed.subscribe, gmFormCollapsed.read, serverFalse);
+  const [collapsed, setCollapsed] = useUiState("gmRollFormCollapsed");
   return (
     <div className="flex flex-col gap-2">
       <button
@@ -87,7 +47,7 @@ function GmRollSection({ campaignId }: { campaignId: Id<"campaigns"> }) {
         aria-expanded={!collapsed}
         aria-controls="gm-roll-form"
         className="flex min-h-10 cursor-pointer items-center gap-2 self-start border-0 bg-transparent p-0 text-[13px] font-semibold tracking-[0.08em] text-[#c9d2cf] uppercase hover:text-[#e6ecea]"
-        onClick={() => gmFormCollapsed.write(!collapsed)}
+        onClick={() => setCollapsed(!collapsed)}
       >
         <ChevronDown aria-hidden="true" className={`size-4 text-[#8fa3a8] transition-transform ${collapsed ? "-rotate-90" : ""}`} />
         Secret GM roll
@@ -99,10 +59,10 @@ function GmRollSection({ campaignId }: { campaignId: Id<"campaigns"> }) {
 
 /**
  * A player's free roll of mixed dice (user 2026-11-04), public, behind a disclosure button: folded by default, the
- * choice remembered on this device.
+ * choice stored on the account (plan config U6e).
  */
 function FreeRollSection({ campaignId }: { campaignId: Id<"campaigns"> }) {
-  const open = useSyncExternalStore(freeFormOpen.subscribe, freeFormOpen.read, serverFalse);
+  const [open, setOpen] = useUiState("freeRollFormOpen");
   return (
     <div className="flex flex-col gap-2">
       <button
@@ -110,7 +70,7 @@ function FreeRollSection({ campaignId }: { campaignId: Id<"campaigns"> }) {
         aria-expanded={open}
         aria-controls="free-roll-form"
         className="flex min-h-11 cursor-pointer items-center gap-2 self-start border-0 bg-transparent p-0 text-[13px] font-semibold tracking-[0.08em] text-[#c9d2cf] uppercase hover:text-[#e6ecea]"
-        onClick={() => freeFormOpen.write(!open)}
+        onClick={() => setOpen(!open)}
       >
         <ChevronDown aria-hidden="true" className={`size-4 text-[#8fa3a8] transition-transform ${open ? "" : "-rotate-90"}`} />
         Roll dice
@@ -121,13 +81,28 @@ function FreeRollSection({ campaignId }: { campaignId: Id<"campaigns"> }) {
 }
 
 /**
+ * A Manual rule's note (kind `rule`, GM-only; plan rule-switches RU): a 'Manual' tag and the rule's title before the
+ * summary. Nothing for any other row.
+ */
+function RuleNoteTag({ row }: { row: { kind: string; ruleId?: string } }) {
+  const rule = ruleNoteTag(row);
+  if (rule === null) return null;
+  return (
+    <span className="flex items-center gap-1.5 text-[12px] text-[#c9a8ff]">
+      <span className="rounded border border-[#6b5a9a] px-1.5 text-[11px] tracking-[0.1em] uppercase">{rule.tag}</span>
+      {rule.title}
+    </span>
+  );
+}
+
+/**
  * The roll feed on the dashboard: every member sees player rolls live; GM
  * free rolls only reach players once revealed (the server filters them).
  * Undo where `canUndo` allows it (the GM; a player only on their own action that rolled nothing, convex/lib/actionLog.ts
  * `groupRolled`); Reveal for the GM. The GM can also delete a
  * row or clear the feed for everyone (display only: nothing is undone), and
  * apply a counted action roll to countdowns ("Tick countdowns"). Anyone can
- * fold the feed away on their device.
+ * fold the feed away (stored on their account, plan config U6e).
  */
 export function RollFeedPanel({ campaignId, isGm }: { campaignId: Id<"campaigns">; isGm: boolean }) {
   const { results, status, loadMore } = usePaginatedQuery(api.feed.list, { campaignId }, { initialNumItems: PAGE });
@@ -138,7 +113,7 @@ export function RollFeedPanel({ campaignId, isGm }: { campaignId: Id<"campaigns"
   const [clearing, setClearing] = useState(false);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
-  const collapsed = useSyncExternalStore(feedCollapsed.subscribe, feedCollapsed.read, serverFalse);
+  const [collapsed, setCollapsed] = useUiState("rollFeedCollapsed");
   // GM only: which loaded rows are counted action rolls, so they carry "Tick countdowns" (countdowns-advanced K1).
   const candidates = isGm ? results.filter((r) => r.kind === "roll" && r.roll?.kind === "action" && !r.undone).slice(0, COUNTED_MAX).map((r) => r._id) : [];
   const counted = useQuery(api.countdownRolls.countedRows, isGm && candidates.length > 0 ? { campaignId, entryIds: candidates } : "skip");
@@ -153,7 +128,7 @@ export function RollFeedPanel({ campaignId, isGm }: { campaignId: Id<"campaigns"
             aria-expanded={!collapsed}
             aria-controls="feed-body"
             className="flex min-h-10 cursor-pointer items-center gap-2 border-0 bg-transparent p-0 font-[inherit] text-inherit"
-            onClick={() => feedCollapsed.write(!collapsed)}
+            onClick={() => setCollapsed(!collapsed)}
           >
             Roll Feed
             <ChevronDown aria-hidden="true" className={`size-5 text-[#8fa3a8] transition-transform ${collapsed ? "-rotate-90" : ""}`} />
@@ -214,6 +189,7 @@ export function RollFeedPanel({ campaignId, isGm }: { campaignId: Id<"campaigns"
               className={`flex flex-col gap-1.5 rounded-[10px] border border-[#253338] bg-[#10181b] px-3 py-2 ${row.undone ? "opacity-50" : ""}`}
             >
               <div className="flex flex-wrap items-center gap-2 text-[15px] text-[#e6ecea]">
+                <RuleNoteTag row={row} />
                 <span className={row.undone ? "line-through" : ""}>{row.summary}</span>
                 {row.roll?.manual ? <span className="rounded border border-[#5b4a2a] px-1.5 text-[11px] tracking-[0.1em] text-[#f4e3bd] uppercase">manual</span> : null}
                 {/* Fear colours while hidden; Hope colours once revealed (user 2026-11-04). A roll never hidden gets no tag. */}

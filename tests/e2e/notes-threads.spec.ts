@@ -7,7 +7,8 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { convexAs, expectNoHorizontalScroll } from "./visual/helpers";
 
-// D11 N4: open threads, search and 'Download my journal' (.omc/plans/d11-notes.yaml). The threads view lists only open
+// D11 N4: open threads, search and 'Download my journal' (.omc/plans/d11-notes.yaml), since JX1 in the Journal's Notes
+// sub-tab (Open threads is the Journal header's button, Download sits in the index column). The threads view lists only open
 // tasks and unresolved Fears and drops one as soon as it is completed (confirmed on the server through a Convex client
 // before the page is left); a search narrows the index and highlights the matching line; the download saves a .md
 // file of the caller's own pages. Seed entries go through a Convex client; the behaviour under test through the UI.
@@ -40,19 +41,19 @@ async function seed(page: Page, campaignId: Id<"campaigns">) {
 
 const sheet = (page: Page) => page.getByRole("region", { name: "Journal page" });
 const threadsView = (page: Page) => sheet(page).getByRole("article", { name: "Open threads" });
-const threadsButton = (page: Page) => page.getByRole("button", { name: /^🧵 Open threads · / });
+const threadsButton = (page: Page) => page.getByRole("button", { name: /^Open threads: \d+$/ });
 const pagesNav = (page: Page) => page.getByRole("navigation", { name: "Your pages" });
 
 test("the threads view lists only open entries and updates when one is completed", async ({ page }) => {
   const { campaignId } = await gmCreatesCampaign(page);
   const { client, session1 } = await seed(page, campaignId);
-  await page.goto(`/campaigns/${campaignId}/notes`);
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
 
-  await expect(threadsButton(page)).toHaveText("🧵 Open threads · 3");
-  await expect(threadsButton(page)).toHaveAttribute("aria-pressed", "false");
+  // The Journal header's Open threads (JH) opens the view; it is a plain button, not a toggle.
+  await expect(threadsButton(page)).toHaveAccessibleName("Open threads: 3");
   await threadsButton(page).click();
   await expect(page).toHaveURL(/[?&]view=threads/);
-  await expect(threadsButton(page)).toHaveAttribute("aria-pressed", "true");
+  await expect(page).toHaveURL(/[?&]tab=notes(&|$)/);
   const view = threadsView(page);
   await expect(view.getByText("Every unfinished task and every looming Fear, from all pages.")).toBeVisible();
   await expect(view.getByRole("listitem")).toHaveText([/pay the ferryman\s*Session 1 →/, /ambush at the ford\s*Session 1 →/, /ask the miller about the mill\s*Rumors & hooks →/]);
@@ -63,7 +64,7 @@ test("the threads view lists only open entries and updates when one is completed
   // Completing the task drops it at once, and the count follows.
   await view.getByRole("listitem").filter({ hasText: "pay the ferryman" }).getByRole("button", { name: "Task: open. Click to change." }).click();
   await expect(view.getByRole("listitem")).toHaveCount(2);
-  await expect(threadsButton(page)).toHaveText("🧵 Open threads · 2");
+  await expect(threadsButton(page)).toHaveAccessibleName("Open threads: 2");
   await expect.poll(async () => (await client.query(api.notesThreads.threads, { campaignId })).map((r) => r.text)).toEqual([
     "ambush at the ford",
     "ask the miller about the mill",
@@ -82,7 +83,7 @@ test("the threads view lists only open entries and updates when one is completed
 test("a search narrows the index and highlights the line", async ({ page }) => {
   const { campaignId } = await gmCreatesCampaign(page);
   const { session1 } = await seed(page, campaignId);
-  await page.goto(`/campaigns/${campaignId}/notes?page=${session1}`);
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes&page=${session1}`);
   await expect(pagesNav(page).getByRole("button", { name: /Rumors & hooks/ })).toBeVisible();
 
   await page.getByRole("searchbox", { name: "Search the journal" }).fill("dusk");
@@ -108,7 +109,7 @@ test("a search narrows the index and highlights the line", async ({ page }) => {
 test("'Download my journal' saves a .md file containing a page title", async ({ page }) => {
   const { campaignId } = await gmCreatesCampaign(page);
   await seed(page, campaignId);
-  await page.goto(`/campaigns/${campaignId}/notes`);
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
   const button = page.getByRole("button", { name: "Download my journal" });
   await expect(button).toBeEnabled();
   const [download] = await Promise.all([page.waitForEvent("download"), button.click()]);
@@ -125,12 +126,15 @@ test("threads and search fit a phone: one column, no horizontal scroll, 44 px co
   const { campaignId } = await gmCreatesCampaign(page);
   await seed(page, campaignId);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`/campaigns/${campaignId}/notes?view=threads`);
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes&view=threads`);
   await expect(threadsView(page).getByRole("listitem")).toHaveCount(3);
   await expectNoHorizontalScroll(page);
-  for (const control of [threadsButton(page), page.getByRole("button", { name: "Download my journal" })]) {
-    expect((await control.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-  }
+  expect((await threadsButton(page).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  // 'Download my journal' sits at the bottom of the index column (JN), behind the 'Pages' disclosure at 390 px.
+  await page.getByRole("complementary", { name: "Journal index" }).getByRole("button", { name: /^Pages/ }).click();
+  const download = page.getByRole("button", { name: "Download my journal" });
+  await expect(download).toBeVisible();
+  expect((await download.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   const row = threadsView(page).getByRole("listitem").first();
   expect((await row.getByRole("button", { name: /^Task: / }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
   expect((await row.getByRole("button", { name: /→$/ }).boundingBox())!.height).toBeGreaterThanOrEqual(44);

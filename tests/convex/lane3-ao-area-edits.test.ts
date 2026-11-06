@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import { HAND_FEATURE, MAX_LIVE_AREAS } from "../../convex/combatAreaEdits";
-import { activeAreasOnMap, sightBlockers } from "../../convex/combatAreas";
+import { activeAreasOnMap, sightBlockers } from "../../convex/lib/combatAreas";
 import { allowWorldEmails, buildWorld } from "./authz/world";
 import { key } from "./helpers";
 

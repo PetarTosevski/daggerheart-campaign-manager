@@ -37,7 +37,7 @@ import { useHitSpot } from "./spot";
  * The incoming-hit window on the HUD (plan combat-hud H4.2; Main 'You're hit', CmpPromptsPlayer 'Pay something else?',
  * CmpCards 'Reaction · shows in the hit window'), in the pop region beside the hit PC's token. For every character the
  * viewer owns (a player's own; the GM's own PCs on the GM view, as the classic `GmOwnHits`), the oldest open hit from
- * `adversaryActions.pending`: the damage, the threshold tiles with the active one, the armor offer, HP / Armor before →
+ * `adversaryActionsReads.pending`: the damage, the threshold tiles with the active one, the armor offer, HP / Armor before →
  * after ("n of 6 marked", pips show what is left: answer 2), Take n HP / Mark Armor, the reaction cards and features
  * that answer, and "Pay something else?" with the engine's own grants. No Armor Slot left (or direct damage) hides the
  * armor option. An ally's reaction, a before-roll defence and the after-hit offer (Unbreakable) use the same window.
@@ -76,9 +76,9 @@ function OwnHits({ campaignId, mapId, gm }: { campaignId: Id<"campaigns">; mapId
 function useRespond(campaignId: Id<"campaigns">, characterId: Id<"characters">) {
   const run = useMutation(api.adversaryActions.respond).withOptimisticUpdate((store, args) => {
     const query = { campaignId, characterId: args.characterId };
-    const views = store.getQuery(api.adversaryActions.pending, query);
+    const views = store.getQuery(api.adversaryActionsReads.pending, query);
     if (views === undefined) return;
-    store.setQuery(api.adversaryActions.pending, query, afterAnswer(views, args.requestId, args.choice));
+    store.setQuery(api.adversaryActionsReads.pending, query, afterAnswer(views, args.requestId, args.choice));
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ requestId: string; message: string } | null>(null);
@@ -113,7 +113,7 @@ type CharacterHitsProps = {
 
 function CharacterHits(props: CharacterHitsProps) {
   const { campaignId, characterId } = props;
-  const views = useQuery(api.adversaryActions.pending, { campaignId, characterId });
+  const views = useQuery(api.adversaryActionsReads.pending, { campaignId, characterId });
   const respond = useRespond(campaignId, characterId);
   if (views === undefined || views.length === 0) return null;
   const { first, more, waiting } = splitViews(views);

@@ -6,6 +6,7 @@ import { useQuery } from "convex/react";
 import Link from "next/link";
 import { useId, useState } from "react";
 
+import { BrandButton, brandButton } from "@/components/brand/buttons";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../convex/_generated/api";
@@ -24,7 +25,7 @@ import { usePackMutations } from "./use-packs";
 
 export function PacksLink({ campaignId }: PacksLinkProps) {
   return (
-    <Link className="cm-btn" href={packsHref(campaignId)}>
+    <Link className={brandButton({ variant: "neutral", className: "no-underline" })} href={packsHref(campaignId)}>
       Sprite packs
     </Link>
   );
@@ -99,9 +100,9 @@ function NewPack({ campaignId, full }: { campaignId: PacksScreenProps["campaignI
           </label>
           <SettingSelect id={settingId} value={ext} onChange={setExt} />
         </span>
-        <button type="submit" className="cm-btn" disabled={clean === null || create.pending || full}>
+        <BrandButton type="submit" variant="confirm" disabled={clean === null || create.pending || full}>
           {create.pending ? "Creating…" : "Create pack"}
-        </button>
+        </BrandButton>
       </form>
       {full ? <p className="cm-muted cm-m0">This campaign has {MAX_SPRITE_PACKS} packs, the most it can hold. Delete one to make another.</p> : null}
       {create.error ? (

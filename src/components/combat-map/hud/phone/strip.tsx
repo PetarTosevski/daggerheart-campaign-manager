@@ -13,6 +13,7 @@ import { PhoneSpotlight } from "../spotlight/disc";
 import { pcHolds } from "../spotlight/model";
 import { useHud } from "../state";
 import { miniBars } from "./model";
+import { FEAR_HIDDEN_LABEL, fearShown } from "../fear/hidden";
 
 /**
  * The mini banner strip across the top of the phone (plan combat-hud H7.2; PlayerPhone `.mparty`): one small banner per
@@ -49,13 +50,13 @@ export function PhoneStrip({ campaignId, mapId }: { campaignId: Id<"campaigns">;
       )}
       {spotlight === undefined || party === undefined ? null : <PhoneSpotlight state={spotlight} party={party} />}
       {scene === undefined ? null : (
-        <div className="hud-ph-mb hud-ph-fear" role="img" aria-label={`GM Fear ${scene.fear}`} data-testid="hud-phone-fear">
+        <div className="hud-ph-mb hud-ph-fear" role="img" aria-label={scene.fear === null ? `GM Fear: ${FEAR_HIDDEN_LABEL}` : `GM Fear ${scene.fear}`} data-testid="hud-phone-fear">
           <span className="hud-ph-in">
             <svg className="hud-ph-flame" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
               <path d="M8 1c1.5 3 4.5 4.5 4.5 8.2A4.5 4.5 0 0 1 3.5 9.2C3.5 7 5 6 5.5 4.5 6.5 6 7 6.2 7.3 6 7.6 4 8 2.5 8 1z" />
             </svg>
             <b>Fear</b>
-            <em>{scene.fear}</em>
+            <em>{fearShown(scene.fear)}</em>
           </span>
         </div>
       )}

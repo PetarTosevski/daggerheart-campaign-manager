@@ -10,7 +10,7 @@ import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import type { TrackerProps } from "../slots";
 import { TrackerSessionChip } from "@/components/sessions/session-chip";
-import { spotlightCostsFear, turnSpotlights } from "@/lib/domain/encounters/spotlight";
+import { extraSpotlight, spotlightCostsFear, turnSpotlights } from "@/lib/domain/encounters/spotlight";
 
 import { useLiveMap, useTargetData } from "./actions/live";
 import { MapPane } from "./actions/map-pane";
@@ -108,6 +108,9 @@ function LiveMap({ campaignId, onPickToken }: { campaignId: Id<"campaigns">; onP
 function Tracker({ campaignId, view, fear }: { campaignId: Id<"campaigns">; view: TrackerView; fear: number }) {
   const { encounter, instances } = view;
   const actions = useTracker(campaignId, encounter._id);
+  // The campaign's rule modes (plan rule-switches, tracer RDM); the Book until they load.
+  const modes = useQuery(api.ruleSettings.get, { campaignId })?.modes;
+  const turnCount = turnSpotlights(instances, encounter.gmTurn);
   const acts = useAdversaryActions(campaignId);
   const hasCustom = instances.some((i) => i.source.kind === "custom");
   const customs = useQuery(api.encounterTracking.customBlocks, hasCustom ? { campaignId, encounterId: encounter._id } : "skip");
@@ -143,7 +146,9 @@ function Tracker({ campaignId, view, fear }: { campaignId: Id<"campaigns">; view
                   instance={instance}
                   rules={rulesFor(instance.source, customs ?? [])}
                   gmTurn={encounter.gmTurn}
-                  spotlightCostsFear={spotlightCostsFear(turnSpotlights(instances, encounter.gmTurn))}
+                  spotlightCostsFear={spotlightCostsFear(turnCount, modes?.extraSpotlightFear)}
+                  extraSpotlight={modes?.extraSpotlightFear === "manual" && extraSpotlight(turnCount)}
+                  modes={modes}
                   selected={instance._id === selected?._id}
                   onSelect={() => setPicked(instance._id)}
                   actions={actions}

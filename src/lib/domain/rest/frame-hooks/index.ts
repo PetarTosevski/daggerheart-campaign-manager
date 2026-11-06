@@ -8,7 +8,7 @@
 // const marked = corruptionMarked(rng(12));                // Motherboard
 // ```
 
-import { z } from "zod";
+import * as z from "../../../zod";
 
 import { RuleError } from "../../../errors/app-error";
 import type { Rng } from "../../class-features/types";

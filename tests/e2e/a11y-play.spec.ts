@@ -1,7 +1,7 @@
 // D12 H22 (.omc/plans/d12-hardening.yaml): accessibility and tablet pass for the combat map (GM Play and Edit,
 // Classic and Sprites, the vision panel with doors and lights, the token card, the player-view menu; the player's
-// board), sprite packs, sessions (the hub, Prep, Play, the end dialog, Wrap and the milestone confirm; the player's
-// live and read-only views) and Notes. Bar (user answers Q6/Q7, 2026-10-21): zero serious or critical axe findings on
+// board), sprite packs, and the Journal (since JX1, which replaced the Sessions and Notes pages: Sessions with Plan,
+// Log & recap, the end dialog and the recap; the player's live and played views; and the Notes sub-tab). Bar (user answers Q6/Q7, 2026-10-21): zero serious or critical axe findings on
 // every page and dialog, as the GM and as the player where the player can open it; at 768x1024 and 1024x768 no
 // sideways scroll, the campaign menu and the page's main action visible, primary controls at least 44 px. Moderate
 // and minor findings are attached as test annotations and listed in docs/tasks/TASK-D12-H22.md, not fixed.
@@ -21,6 +21,7 @@ import {
   TABLET_VIEWPORTS,
   type A11yOptions,
 } from "./a11y";
+import { createSessionEncounter } from "./journal/helpers";
 import { gmAndPlayer, type LiveTable } from "./live";
 
 test.describe.configure({ timeout: 240_000 });
@@ -178,7 +179,7 @@ test("combat map, player: the board, Your view with carried light, doors and lig
   await expect(board.getByRole("button", { name: "Open door 1" })).toBeVisible();
   await scan(player, "combat board and Your view (player)");
   await yourView.getByRole("group", { name: "Light you carry" }).getByRole("button", { name: "Torch", exact: true }).click();
-  await board.getByRole("button", { name: new RegExp(`^Open ${characterName}’s sheet \\(your character\\)`) }).click();
+  await board.getByRole("button", { name: new RegExp(`^${characterName} \\(your character\\): actions`) }).click();
   await scan(player, "combat torch on, own token selected (player)");
   flush();
 });
@@ -198,69 +199,61 @@ test("sprite packs (GM): empty, a pack, the player is sent back", async () => {
   flush();
 });
 
-test("sessions: the hub, Prep, Play, the end dialog, Wrap and the milestone confirm (GM); live and played (player)", async () => {
+test("sessions in the Journal: no session, Plan, Log & recap live, the end dialog, the recap (GM); live and played (player)", async () => {
+  // JX1: the old Sessions page redirects to the Journal, so this scans the Journal's Sessions sub-tab instead of the
+  // Prep / Play / Wrap-up stages (the milestone confirm and the Play-stage encounter card are gone from the UI).
   const { gm, player, client, campaignId } = table;
   const { scan, flush } = scanner();
-  const url = route("/sessions");
+  const url = route("/journal");
   await gm.goto(url);
-  await expect(gm.getByRole("heading", { level: 1, name: "Sessions" })).toBeVisible();
-  await scan(gm, "sessions hub, no session (GM)");
+  await expect(gm.getByRole("heading", { level: 1, name: "Journal" })).toBeVisible();
+  await expect(gm.getByRole("heading", { name: "No sessions yet" })).toBeVisible();
+  await scan(gm, "journal, no session (GM)");
   await player.goto(url);
-  await expect(player.getByRole("heading", { level: 1, name: "Sessions" })).toBeVisible();
-  await scan(player, "sessions, nothing played (player)");
+  await expect(player.getByRole("heading", { level: 1, name: "Journal" })).toBeVisible();
+  await scan(player, "journal, nothing played (player)");
 
-  // ---- Prep: Session 1 with two scenes, hooks and the session encounter (two Bandits).
-  await gm.getByRole("button", { name: "+ New session" }).click();
-  await expect(gm).toHaveURL(/\?s=[^&]+&stage=prep$/);
-  const sessionId = new URL(gm.url()).searchParams.get("s")!;
+  // ---- Plan: Session 1 with two scenes, hooks and the session encounter (two Bandits).
+  const { sessionId } = await seed(() => client.mutation(api.sessionRecords.create, { campaignId, idempotencyKey: uuid() }));
   await seed(() => client.mutation(api.sessionRecords.setTitle, { campaignId, sessionId, title: "The Ford at Dawn" }));
   await seed(() => client.mutation(api.sessionPrep.addScene, { campaignId, sessionId }));
   await seed(() => client.mutation(api.sessionPrep.addScene, { campaignId, sessionId, type: "social" }));
   await seed(() => client.mutation(api.sessionPrep.setHooks, { campaignId, sessionId, hooks: "The ferryman owes the bandits a toll." }));
-  const { encounterId } = await seed(() => client.mutation(api.sessionPrep.createEncounter, { campaignId, sessionId, idempotencyKey: uuid() }));
+  const encounterId = createSessionEncounter(campaignId, sessionId);
   await seed(() =>
     client.mutation(api.encounters.addAdversary, { campaignId, encounterId, source: { kind: "srd", adversaryId: "jagged-knife-bandit" }, count: 2, summoned: false, idempotencyKey: uuid() }),
   );
-  const prep = gm.getByRole("tabpanel");
-  await expect(prep.getByLabel("Scene 2 type")).toHaveValue("social");
-  await expect(prep.getByRole("list", { name: "Adversaries in this encounter" }).getByRole("listitem")).toHaveCount(2);
-  await scan(gm, "sessions Prep (GM)");
+  await gm.goto(`${url}?s=${sessionId}&sv=plan`);
+  await expect(gm.getByRole("list", { name: "Planned scenes" }).getByRole("listitem")).toHaveCount(2);
+  await scan(gm, "journal Plan (GM)");
 
-  // ---- Play: started, a log line, a spotlight; the Encounter card (the hub) with the linked encounter.
+  // ---- Log & recap while the session is live: a log line in the session log.
   await seed(() => client.mutation(api.sessions.start, { campaignId, sessionId, idempotencyKey: uuid() }));
   await seed(() => client.mutation(api.sessionPlay.addLog, { campaignId, sessionId, text: "Liriel sang at the ford.", idempotencyKey: uuid() }));
-  await gm.goto(`${url}?s=${sessionId}&stage=play`);
-  await expect(gm.getByRole("region", { name: "Live session" })).toContainText("Session in progress");
-  await expect(gm.getByRole("region", { name: "Encounter", exact: true }).getByText("Session 1 encounter")).toBeVisible();
+  await gm.goto(`${url}?s=${sessionId}&sv=log`);
+  const chip = gm.getByTestId("journal-live-chip");
+  await expect(chip).toContainText("Session 1 · live");
   await expect(gm.getByRole("region", { name: "Session log" })).toContainText("Liriel sang at the ford.");
-  await gm.getByRole("region", { name: "Spotlight" }).getByRole("button").first().click();
-  await scan(gm, "sessions Play, live, encounter card (GM)");
-  await player.goto(url);
-  await expect(player.getByRole("heading", { level: 1, name: "Sessions" })).toBeVisible();
-  await scan(player, "sessions while a session is live (player)");
+  await scan(gm, "journal Log & recap, live (GM)");
+  await player.goto(`${url}?s=${sessionId}`);
+  await expect(player.getByTestId("journal-live-chip")).toContainText("Session 1 · live");
+  await scan(player, "journal while a session is live (player)");
 
-  // ---- The end dialog, then Wrap with the milestone confirm.
-  const liveCard = gm.getByRole("region", { name: "Live session" });
-  await liveCard.getByRole("button", { name: "End session" }).click();
+  // ---- The end dialog from the live chip, then the recap.
+  await chip.getByRole("button", { name: "End session" }).click();
   const endDialog = gm.getByRole("dialog", { name: "End the session?" });
   await expect(endDialog).toBeVisible();
-  await scan(gm, "sessions end dialog (GM)");
-  await endDialog.getByRole("button", { name: "End session" }).click();
-  await expect(gm).toHaveURL(/stage=wrap/);
-  const stage = gm.getByRole("region", { name: "Wrap-up stage" });
-  await expect(stage).toBeVisible();
+  await scan(gm, "journal end dialog (GM)");
+  await endDialog.getByRole("button", { name: "End session", exact: true }).click();
+  await expect(endDialog).toBeHidden();
   await seed(() => client.mutation(api.sessionWrap.setRecap, { campaignId, sessionId, recap: "The party held the ford." }));
-  await expect(stage.getByRole("textbox", { name: "Recap" })).toHaveValue("The party held the ford.");
-  await scan(gm, "sessions Wrap (GM)");
-  await stage.getByRole("button", { name: "Milestone reached: the party levels up" }).click();
-  await expect(stage.getByRole("button", { name: "Level up the party" })).toBeVisible();
-  await scan(gm, "sessions Wrap, milestone confirm (GM)");
+  await expect(gm.getByRole("region", { name: "Recap" })).toContainText("The party held the ford.");
+  await scan(gm, "journal Log & recap, played, recap (GM)");
 
-  // ---- The player's read-only view of the played session.
+  // ---- The player's view of the played session.
   await player.goto(`${url}?s=${sessionId}`);
-  const view = player.getByRole("region", { name: "Session detail" }).getByRole("region", { name: "Session", exact: true });
-  await expect(view.getByText("The party held the ford.")).toBeVisible();
-  await scan(player, "sessions, a played session (player)");
+  await expect(player.getByRole("region", { name: "Recap" })).toContainText("The party held the ford.");
+  await scan(player, "journal, a played session (player)");
   flush();
 });
 
@@ -271,12 +264,12 @@ test("notes: the whole page (GM); page view, sharing dialog and a shared page (p
   const { pageId } = await seed(() => client.mutation(api.notesEntries.add, { campaignId, page: { template: 0 }, kind: "note", text: "the toll is two silver" }));
   await seed(() => client.mutation(api.notesSharing.setVisibility, { campaignId, page: pageId, visibility: "everyone" }));
 
-  await gm.goto(route("/notes"));
-  await expect(gm.getByRole("heading", { level: 1, name: "Game Master’s Journal" })).toBeVisible();
+  await gm.goto(route("/journal?tab=notes"));
+  await expect(gm.getByRole("group", { name: "Writing as" }).getByRole("button", { name: "Game Master", pressed: true })).toBeVisible();
   await expect(gm.getByRole("region", { name: "Journal page" }).getByText("the toll is two silver")).toBeVisible();
   await scan(gm, "notes page view, whole page (GM)");
 
-  await player.goto(route("/notes"));
+  await player.goto(route("/journal?tab=notes"));
   const paper = player.getByRole("region", { name: "Journal page" });
   await expect(paper.getByText("we crossed the river")).toBeVisible();
   await scan(player, "notes page view (player)");
@@ -363,29 +356,30 @@ for (const viewport of TABLET_VIEWPORTS) {
       await expect(nav(gm)).toBeVisible();
       await shot(gm, "packs");
 
-      // ---- Sessions: the GM's list and stage tabs, the player's list.
-      await gm.goto(route("/sessions"));
-      await expect(gm.getByRole("heading", { level: 1, name: "Sessions" })).toBeVisible();
-      const list = gm.getByRole("complementary", { name: "Session list" });
+      // ---- Journal Sessions (JX1): the GM's list, the Plan / Log & recap toggle and the sub-tabs; the player's list.
+      await gm.goto(route("/journal"));
+      await expect(gm.getByRole("heading", { level: 1, name: "Journal" })).toBeVisible();
+      const list = gm.getByRole("complementary", { name: "All sessions" });
       await expect(list.getByRole("button").first()).toBeVisible();
       await list.getByRole("button").filter({ hasText: "The Ford at Dawn" }).click();
-      await expect(gm.getByRole("tab", { name: "Play" })).toBeVisible();
+      await expect(gm.getByRole("tab", { name: "Plan" })).toBeVisible();
       await expectFitsViewport(gm);
       await expect(nav(gm)).toBeVisible();
-      await expectInView(gm, gm.getByRole("button", { name: "+ New session" }));
-      await expectTouchTargets(gm.getByRole("button", { name: "+ New session" }));
+      const planNext = gm.getByRole("button", { name: /^Plan session \d+$/ });
+      await expectInView(gm, planNext);
+      await expectTouchTargets(planNext);
       await expectTouchTargets(gm.getByRole("tab"));
-      await expectTouchTargets(list.getByRole("button"));
+      await expectTouchTargets(list.getByRole("list", { name: "Sessions" }).getByRole("button"));
       await shot(gm, "sessions-gm");
-      await gm.getByRole("tab", { name: "Play" }).click();
+      await gm.getByRole("tab", { name: "Log & recap" }).click();
       await expectFitsViewport(gm);
       await shot(gm, "sessions-gm-play");
-      await player.goto(route("/sessions"));
-      const playerList = player.getByRole("complementary", { name: "Session list" });
+      await player.goto(route("/journal"));
+      const playerList = player.getByRole("complementary", { name: "All sessions" });
       await expect(playerList.getByRole("button").first()).toBeVisible();
       await expectFitsViewport(player);
       await expect(nav(player)).toBeVisible();
-      await expectTouchTargets(playerList.getByRole("button"));
+      await expectTouchTargets(playerList.getByRole("list", { name: "Sessions" }).getByRole("button"));
       await shot(player, "sessions-player");
 
       // ---- Notes, GM and player.
@@ -393,7 +387,7 @@ for (const viewport of TABLET_VIEWPORTS) {
         [gm, "gm"],
         [player, "player"],
       ] as const) {
-        await page.goto(route("/notes"));
+        await page.goto(route("/journal?tab=notes"));
         const paper = page.getByRole("region", { name: "Journal page" });
         const entry = paper.getByRole("textbox", { name: "New entry" });
         await expect(entry).toBeVisible();

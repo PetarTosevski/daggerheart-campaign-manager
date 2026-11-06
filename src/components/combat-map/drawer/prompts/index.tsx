@@ -3,6 +3,7 @@
 import { useMutation, useQuery } from "convex/react";
 import { useId, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 
 import { api } from "../../../../../convex/_generated/api";
@@ -40,7 +41,7 @@ export function DrawerPrompts({
   canAct: boolean;
 }) {
   const mapId = map?.live ? map._id : undefined;
-  const view = useQuery(api.featurePrompts.allyRolls, { campaignId, characterId, ...(mapId ? { mapId } : {}) });
+  const view = useQuery(api.featurePromptsReads.allyRolls, { campaignId, characterId, ...(mapId ? { mapId } : {}) });
   const [result, setResult] = useState<string | null>(null);
   const throws = throwFeatures(drawer);
   if (view === undefined) {
@@ -139,9 +140,9 @@ function ThrowStart({
               </option>
             ))}
           </select>
-          <button type="button" className="cm-btn cm-sm" disabled={!canAct || !ready || picked === "" || busy} onClick={() => void ask()}>
+          <BrandButton variant="confirm" size="sm" disabled={!canAct || !ready || picked === "" || busy} onClick={() => void ask()}>
             Ask to throw · 1 Stress
-          </button>
+          </BrandButton>
         </div>
       )}
       {error ? (
@@ -162,9 +163,9 @@ function AskCard({ campaignId, ask, canAct, onResult }: { campaignId: Id<"campai
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const roll = useMutation(api.featurePrompts.allyRoll).withOptimisticUpdate((store, args) => {
-    for (const q of store.getAllQueries(api.featurePrompts.allyRolls)) {
+    for (const q of store.getAllQueries(api.featurePromptsReads.allyRolls)) {
       if (q.value === undefined) continue;
-      store.setQuery(api.featurePrompts.allyRolls, q.args, { ...q.value, asks: q.value.asks.filter((a) => a.requestId !== args.requestId) });
+      store.setQuery(api.featurePromptsReads.allyRolls, q.args, { ...q.value, asks: q.value.asks.filter((a) => a.requestId !== args.requestId) });
     }
   });
   const first = ask.enemies.some((e) => e.tokenId === target && e.inRange) ? (target as Id<"combatTokens">) : null;
@@ -238,9 +239,9 @@ function AskCard({ campaignId, ask, canAct, onResult }: { campaignId: Id<"campai
           ) : null}
         </div>
       ) : null}
-      <button type="button" className="cm-btn" disabled={!canAct || first === null || busy || (useSecond && secondPick === null)} onClick={() => void go()}>
+      <BrandButton variant="confirm" disabled={!canAct || first === null || busy || (useSecond && secondPick === null)} onClick={() => void go()}>
         Roll the throw
-      </button>
+      </BrandButton>
       {error ? (
         <p role="alert" className="sd-error">
           {error}
@@ -253,10 +254,10 @@ function AskCard({ campaignId, ask, canAct, onResult }: { campaignId: Id<"campai
 function GmPending({ campaignId, pending }: { campaignId: Id<"campaigns">; pending: AllyRolls["pending"] }) {
   const [error, setError] = useState<string | null>(null);
   const cancel = useMutation(api.featurePrompts.cancelAllyRoll).withOptimisticUpdate((store, args) => {
-    for (const q of store.getAllQueries(api.featurePrompts.allyRolls)) {
+    for (const q of store.getAllQueries(api.featurePromptsReads.allyRolls)) {
       if (q.value === undefined) continue;
       const keep = <T extends { requestId: Id<"combatRequests"> }>(list: readonly T[]) => list.filter((r) => r.requestId !== args.requestId);
-      store.setQuery(api.featurePrompts.allyRolls, q.args, { ...q.value, asks: keep(q.value.asks), waiting: keep(q.value.waiting), pending: keep(q.value.pending) });
+      store.setQuery(api.featurePromptsReads.allyRolls, q.args, { ...q.value, asks: keep(q.value.asks), waiting: keep(q.value.waiting), pending: keep(q.value.pending) });
     }
   });
   return (
@@ -268,9 +269,9 @@ function GmPending({ campaignId, pending }: { campaignId: Id<"campaigns">; pendi
             <span>
               {p.characterName}&apos;s {p.featureName}: {p.rollerName} rolls
             </span>
-            <button
-              type="button"
-              className="cm-btn cm-sm"
+            <BrandButton
+              variant="cancel"
+              size="sm"
               aria-label={`Cancel ${p.characterName}'s ${p.featureName}`}
               onClick={() => {
                 setError(null);
@@ -278,7 +279,7 @@ function GmPending({ campaignId, pending }: { campaignId: Id<"campaigns">; pendi
               }}
             >
               Cancel
-            </button>
+            </BrandButton>
           </li>
         ))}
       </ul>

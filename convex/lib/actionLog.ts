@@ -11,6 +11,8 @@
  *   not, and (UNDO_EXPIRED) for a player when the action rolled (`groupRolled`).
  * - Pass `fearDelta` = the Fear `gainFear` actually gained (`gained`), never
  *   the requested amount; undo takes it back through `revertFear`.
+ * - A row with `before` takes what the character's `saveSheet` calls in this mutation added to the live session's
+ *   Hope spent / HP marked (`sessionTally`, dcm-z9rz.22); undo takes it back off that session's row (floor 0).
  * - One action touching several characters (rest, tag team, Life Support)
  *   gives every row the same `groupId` (`newGroupId()`); they undo together.
  * - `undoable: false` for rows with their own undo path (level-up).
@@ -36,13 +38,15 @@ import { appError } from "../../src/lib/errors/app-error";
 import type { CharacterSheetInput } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { assertOneActive, readSheet, storedSheet } from "./characterSheet";
+import { refundTokenSpends } from "./actionTokens";
+import { assertOneActive, readSheet, revertSessionTally, storedSheet, takeSessionTally } from "./characterSheet";
 import { closeRequest, declineGroupOffers, openRequests } from "./combatRequests";
 import { revertTicks } from "./countdownTicks";
 import { revertFear } from "./fear";
 import { recordHistory } from "../tables/history";
+import { refuseArchived } from "./archived";
 import { campaignAccess } from "./permissions";
-import type { ActionKind, AdversaryBefore, CampaignTimeSnapshot, StoredRoll, TimeChange, Visibility } from "./validators/actionLog";
+import type { ActionKind, AdversaryBefore, CampaignTimeSnapshot, SpotlightBefore, StoredRoll, TimeChange, Visibility } from "./validators/actionLog";
 
 /** The longest feed line; longer summaries are cut. */
 export const SUMMARY_MAX = 300;
@@ -120,10 +124,13 @@ export function newGroupId(): string {
 export async function logAction(ctx: MutationCtx, entry: LogEntry): Promise<Id<"actionLog">> {
   const { before, summary, ...rest } = entry;
   if (before !== undefined && entry.characterId === undefined) throw new Error("logAction: `before` needs a characterId.");
+  // dcm-z9rz.22: a row that restores the sheet on undo carries what its saves added to the session tally.
+  const sessionTally = before !== undefined && entry.characterId !== undefined ? takeSessionTally(ctx, entry.characterId) : undefined;
   return ctx.db.insert("actionLog", {
     ...rest,
     summary: summary.slice(0, SUMMARY_MAX),
     ...(before !== undefined ? { before: JSON.stringify(storedSheet(before)) } : {}),
+    ...(sessionTally !== undefined ? { sessionTally } : {}),
     at: Date.now(),
   });
 }
@@ -223,11 +230,13 @@ async function adversariesToRestore(ctx: MutationCtx, group: Doc<"actionLog">[])
 
 /**
  * Declines the open `incomingHit` rows of an undone group (AA2b; AA2's open item: "actionLog undo declines open incomingHit
- * rows of the undone group"). Open requests per campaign are few (`openRequests` is bounded).
+ * rows of the undone group"), and its open `gmPrompt` rows (dcm-bxp.99.32.27: an undone adversary feature use takes its
+ * GM prompts with it), and its open `allyPick` rows (FH-AP, user 2026-11-05: undoing the use cancels its outstanding picks).
+ * Open requests per campaign are few (`openRequests` is bounded).
  */
 async function declineGroupHits(ctx: MutationCtx, campaignId: Id<"campaigns">, groupId: string, by: Id<"users">): Promise<void> {
   for (const r of await openRequests(ctx, campaignId)) {
-    if (r.payload.kind === "incomingHit" && r.payload.groupId === groupId) await closeRequest(ctx, r._id, "declined", by);
+    if ((r.payload.kind === "incomingHit" || r.payload.kind === "gmPrompt" || r.payload.kind === "allyPick") && r.payload.groupId === groupId) await closeRequest(ctx, r._id, "declined", by);
   }
 }
 
@@ -268,6 +277,42 @@ async function restoreTime(ctx: MutationCtx, user: Doc<"users">, row: Doc<"actio
   });
 }
 
+/** How many of the GM's rows since the roll's move `restoreSpotlight` reads to see whether the GM acted. */
+const GM_ACTED_SCAN = 50;
+
+/**
+ * The spotlight half of undoing a PC action roll that moved it to the GM (S1, plan rule-switches CU2, bead
+ * dcm-bxp.99.32.10; CB p.100: "until someone fails a roll or rolls with Fear"). The roll's action stored the campaign's
+ * spotlight row as it stood before (`spotlightBefore`, written by convex/lib/rollAftermath.ts). It goes back only while
+ * the GM's hold is still the one the roll began: the GM holds it, since the move (`movedAt`), for a roll's reason, with no
+ * adversary lit, and the GM made no adversary move since (a live `adversary` row outside the undone group). Then the row
+ * before comes back as it was (none: the whole party holds it; a PC no longer in the campaign: the whole party).
+ * Otherwise (the GM handed it on, spotlighted an adversary or acted with one) the spotlight stays where it is: the
+ * GM's turn has begun, and undoing the roll doesn't undo it (the GM hands it back by hand). It is written here, not in
+ * ./spotlight.ts, so this module does not import the spotlight helpers (which import this one); a restore is never a new
+ * spotlight, so it counts no session spotlight.
+ */
+async function restoreSpotlight(ctx: MutationCtx, campaignId: Id<"campaigns">, before: SpotlightBefore, inGroup: Set<string>): Promise<void> {
+  const current = await ctx.db
+    .query("combatSpotlight")
+    .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
+    .first();
+  if (current === null || current.holder.kind !== "gm" || current.since !== before.movedAt) return;
+  if ((current.reason !== "rollWithFear" && current.reason !== "failedRoll") || current.adversaryTokenId !== undefined) return;
+  const gmRows = await ctx.db
+    .query("actionLog")
+    .withIndex("by_campaign_visibility_at", (q) => q.eq("campaignId", campaignId).eq("visibility", "gm").gte("at", before.movedAt))
+    .take(GM_ACTED_SCAN);
+  if (gmRows.some((r) => r.kind === "adversary" && r.undoneAt === undefined && !inGroup.has(r._id))) return;
+  let row = before.row;
+  if (row !== null && row.holder.kind === "pc") {
+    const character = await ctx.db.get("characters", row.holder.characterId);
+    if (character === null || character.campaignId !== campaignId) row = null;
+  }
+  if (row === null) await ctx.db.delete("combatSpotlight", current._id);
+  else await ctx.db.replace("combatSpotlight", current._id, { campaignId, ...row });
+}
+
 /**
  * Undoes a row and the rest of its group. Allowed for the row's actor and the
  * campaign's GM (`permissionFor`); others with access get FORBIDDEN, outsiders
@@ -278,7 +323,9 @@ async function restoreTime(ctx: MutationCtx, user: Doc<"users">, row: Doc<"actio
  * UNDO_USE_REST for a group holding a `refuse` kind (dcm-bxp.31). Restores each `before` sheet, reverts the
  * group's Fear (floor 0), takes back the countdown ticks the group's rows caused
  * where the countdown has not changed since (`revertTicks`, countdowns-advanced
- * D11), and marks every row undone.
+ * D11), takes the group's `sessionTally` back off the session tally (dcm-z9rz.22), gives back the Spotlight Tracker
+ * tokens the group spent (`refundTokenSpends`, plan rule-switches RFB), puts back the spotlight a PC roll of the group
+ * moved to the GM (`restoreSpotlight`, plan rule-switches CU2), and marks every row undone.
  */
 export async function undoEntry(
   ctx: MutationCtx,
@@ -291,6 +338,7 @@ export async function undoEntry(
   if (row === null) throw appError("NOT_FOUND");
   const access = await campaignAccess(ctx, user, row.campaignId, "owner");
   if (access === null) throw appError("NOT_FOUND");
+  refuseArchived(access.campaign); // Q9 a (dcm-jh6d.64): undo writes the campaign.
   const isGm = access.permission === "owner";
   if (!isGm && row.visibility === "gm") throw appError("NOT_FOUND");
   if (!isGm && row.actorId !== user._id) throw appError("FORBIDDEN");
@@ -369,6 +417,13 @@ export async function undoEntry(
   // AA2b: the action's open incoming hits (reaction windows, after-hit offers) close with it.
   if (row.groupId !== undefined) await declineGroupHits(ctx, row.campaignId, row.groupId, user._id);
 
+  // dcm-z9rz.22: the Hope spent / HP marked the group's saves counted come off their session's tally (rows written before
+  // the field carry none, so their undo leaves the tally as it is).
+  await revertSessionTally(
+    ctx,
+    group.flatMap((r) => (r.characterId !== undefined && r.sessionTally !== undefined ? [{ ...r.sessionTally, characterId: r.characterId }] : [])),
+  );
+
   const fear = group.reduce((sum, r) => sum + (r.fearDelta ?? 0), 0);
   const fearReverted = fear === 0 ? 0 : (await revertFear(ctx, row.campaignId, fear)).reverted;
 
@@ -378,7 +433,14 @@ export async function undoEntry(
     user._id,
   );
 
+  // Spotlight Tracker (plan rule-switches RFB, user answer 2026-11-06): the group's spent action tokens come back.
+  await refundTokenSpends(ctx, group);
+
   for (const r of group) await ctx.db.patch("actionLog", r._id, { undoneAt: now, undoneBy: user._id });
+
+  // CU2 (dcm-bxp.99.32.10): a roll that moved the spotlight to the GM puts it back to who held it before.
+  const spotRow = group.find((r) => r.spotlightBefore !== undefined);
+  if (spotRow?.spotlightBefore !== undefined) await restoreSpotlight(ctx, row.campaignId, spotRow.spotlightBefore, inGroup);
 
   // CT2: an End day / day jump moves the calendar back when it is the latest (after marking, so its feed line is newer).
   const timeRow = group.find((r) => r.timeChange !== undefined);

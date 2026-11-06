@@ -2,7 +2,7 @@
 // module sheet p.354 of the PDF). Scrap values and rolls live in
 // src/lib/domain/frames/motherboard.ts.
 
-import { z } from "zod";
+import * as z from "../../zod";
 
 import { RuleError } from "../../errors/app-error";
 

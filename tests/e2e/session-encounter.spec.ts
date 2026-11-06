@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { api } from "../../convex/_generated/api";
 import { D10_VIEWPORTS, bardDraft, openCombatMap, visual } from "./visual/helpers";
 import { openMapTools } from "./hud/helpers";
+import { linkSessionEncounter } from "./journal/helpers";
 
 // D10 S8: the Combat Map's '＋ Session encounter' (bead dcm-bxp.50, B11, Q2). The GM links an encounter with a Solo
 // and two Standards to the planned session, opens a map and clicks '＋ Session encounter': the encounter runs, three
@@ -40,7 +41,7 @@ test("the GM places the planned session's encounter with one click; a second cli
   await expect(button).toBeDisabled();
   await expect(button).toHaveAttribute("title", "No planned session with an encounter");
 
-  await client.mutation(api.sessionPrep.linkEncounter, { campaignId, sessionId, encounterId });
+  linkSessionEncounter(campaignId, sessionId, encounterId);
   await expect(button).toBeEnabled();
   await expect(button).toHaveAttribute("title", "Session 1: 2× Standard, 1× Solo");
 
@@ -67,7 +68,7 @@ test("the GM places the planned session's encounter with one click; a second cli
 
 test("another running encounter is refused with 'End the running encounter first'", async ({ page }) => {
   const { client, campaignId, url, encounterId, sessionId } = await seed(page);
-  await client.mutation(api.sessionPrep.linkEncounter, { campaignId, sessionId, encounterId });
+  linkSessionEncounter(campaignId, sessionId, encounterId);
   const { encounterId: other } = await client.mutation(api.encounters.create, { campaignId, name: "Wolves", idempotencyKey: crypto.randomUUID() });
   await client.mutation(api.encounters.start, { campaignId, encounterId: other });
   await page.goto(url);
@@ -82,8 +83,8 @@ test("another running encounter is refused with 'End the running encounter first
 // D10 S8 visual shots (E2E_VISUAL=1): the Combatants card before and after the click at 1440, 1024 and 390, in
 // test-results/visual/D10-S8/. Board counterpart: Combat.dc.html l.146 (the same button in the Combatants card).
 test("D10 S8 combatants card at 1440, 1024 and 390", { tag: "@visual" }, async ({ page }) => {
-  const { client, campaignId, url, encounterId, sessionId } = await seed(page);
-  await client.mutation(api.sessionPrep.linkEncounter, { campaignId, sessionId, encounterId });
+  const { campaignId, url, encounterId, sessionId } = await seed(page);
+  linkSessionEncounter(campaignId, sessionId, encounterId);
   await page.goto(url);
   await openMapTools(page);
   const combatants = combatantsOf(page);

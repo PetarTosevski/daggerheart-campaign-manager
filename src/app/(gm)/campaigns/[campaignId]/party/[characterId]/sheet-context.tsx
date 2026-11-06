@@ -33,8 +33,8 @@ type SheetContextValue = {
   moveCard: (cardId: string, to: "loadout" | "vault", duringRest: boolean) => Promise<boolean>;
   /** Takes a card from the Domain Deck (loadout while it has room, else vault). */
   takeCard: (cardId: string) => Promise<boolean>;
-  /** Adds or spends handfuls or bags (CB 104: a 10th rolls over into the next category). */
-  adjustGold: (coin: "handfuls" | "bags", delta: number) => Promise<boolean>;
+  /** Adds or spends coins (Gold coins rule, CB p.104), handfuls or bags (CB 104: a 10th rolls over into the next category). */
+  adjustGold: (coin: "coins" | "handfuls" | "bags", delta: number) => Promise<boolean>;
   setStatus: (status: CharacterStatus) => Promise<boolean>;
   error: string | null;
 };

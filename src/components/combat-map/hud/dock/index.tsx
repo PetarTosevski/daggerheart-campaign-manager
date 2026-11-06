@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { useMapControls, zoomLabel } from "../../map-view/controls";
+import { useDefinedRanges } from "../../map-view/measure";
 import type { CombatPageState } from "../../slots";
 import { PreviewPicker, VisionPanel } from "../../vision";
 import { closePanel, openPanel, usePanel, usePanelEscape, type HudPanel } from "../panels";
@@ -143,7 +144,7 @@ export function HudDock({ state }: HudPartProps): ReactNode {
           <MapToolsButton role="gm" variant="dock" />
         </div>
         <div className="hud-dk-g">
-          <PointerButtons />
+          <PointerButtons campaignId={state.campaignId} />
           {map ? (
             <DockButton icon={<AreasIcon />} label="Areas" aria-pressed={panel === "areas"} onClick={(e) => toggle("areas", panel === "areas", e.currentTarget)} />
           ) : null}
@@ -191,13 +192,17 @@ function GmDice({ state }: { state: CombatPageState }) {
   return <HudDice campaignId={state.campaignId} characterId={characterId} gm />;
 }
 
-/** Select (today's pointer, pressed by default) and Measure (drag between squares for the range band; Q9). */
-function PointerButtons() {
+/**
+ * Select (today's pointer, pressed by default) and Measure (drag between squares for the range band; Q9). Rule switches
+ * ODR2: no Measure with Defined Ranges off (the map counts no squares; MeasureLayer draws nothing then either).
+ */
+function PointerButtons({ campaignId }: { campaignId: Id<"campaigns"> }) {
   const { tool, setTool } = useMapControls();
+  const definedRanges = useDefinedRanges(campaignId);
   return (
     <>
-      <DockButton icon={<SelectIcon />} label="Select" aria-pressed={tool === "select"} onClick={() => setTool("select")} />
-      <DockButton icon={<MeasureIcon />} label="Measure" aria-pressed={tool === "measure"} onClick={() => setTool(tool === "measure" ? "select" : "measure")} />
+      <DockButton icon={<SelectIcon />} label="Select" aria-pressed={tool === "select" || (!definedRanges && tool === "measure")} onClick={() => setTool("select")} />
+      {definedRanges ? <DockButton icon={<MeasureIcon />} label="Measure" aria-pressed={tool === "measure"} onClick={() => setTool(tool === "measure" ? "select" : "measure")} /> : null}
     </>
   );
 }
@@ -228,13 +233,15 @@ function ZoomGroup({ className }: { className: string }) {
 
 /**
  * A player's map controls (user answer Q9b: Measure for players too, on their own screen): Measure, Names and the zoom,
- * in the player's title row beside Dice and Sheet. The same store as the GM's dock.
+ * in the player's title row beside Dice and Sheet. The same store as the GM's dock. Rule switches ODR2: no Measure with
+ * Defined Ranges off (`campaignId` given; without it the rule reads as on).
  */
-export function PlayerMapControls(): ReactNode {
+export function PlayerMapControls({ campaignId }: { campaignId?: Id<"campaigns"> } = {}): ReactNode {
   const { tool, setTool } = useMapControls();
+  const definedRanges = useDefinedRanges(campaignId);
   return (
     <div className="hud-pmc" role="toolbar" aria-label="Map controls" data-testid="hud-map-controls">
-      <DockButton icon={<MeasureIcon />} label="Measure" aria-pressed={tool === "measure"} onClick={() => setTool(tool === "measure" ? "select" : "measure")} />
+      {definedRanges ? <DockButton icon={<MeasureIcon />} label="Measure" aria-pressed={tool === "measure"} onClick={() => setTool(tool === "measure" ? "select" : "measure")} /> : null}
       <NamesButton />
       <ZoomGroup className="hud-pmc-z" />
     </div>

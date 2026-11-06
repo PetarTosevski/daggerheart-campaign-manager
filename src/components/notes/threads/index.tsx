@@ -5,6 +5,7 @@ import "./threads.css";
 import { useMutation, useQuery } from "convex/react";
 import type { CSSProperties } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { authorSuffix, BULLETS, bulletTip, glyphFor, isDimmed, isStruck, THREADS_COPY, threadPageLink, threadsButtonLabel } from "@/lib/domain/notes";
 import { threadsCycleUpdate } from "@/lib/optimistic/notes-threads";
 
@@ -27,9 +28,9 @@ export function ThreadsButton({ campaignId, view, onView }: NotesSlotProps) {
   const threads = useThreads(campaignId);
   const on = view === "threads";
   return (
-    <button type="button" className="bj-threads" aria-pressed={on} onClick={() => onView(on ? "page" : "threads")}>
+    <BrandButton variant="neutral" aria-pressed={on} onClick={() => onView(on ? "page" : "threads")}>
       {threads === undefined ? "🧵 Open threads · …" : threadsButtonLabel(threads.length)}
-    </button>
+    </BrandButton>
   );
 }
 

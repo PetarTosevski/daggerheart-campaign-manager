@@ -33,7 +33,7 @@ export type PickSource = {
 /**
  * Who may be picked and how far: the classic Hand model's `TargetAsk` (actions/hand/model.ts `targetAsk(use)` gives it for
  * a card use), plus what the HUD needs. `range` is a Defined Range band, `"weapon"` (the weapon in `slot`, as
- * `combatActions.targets` measures it) or `"unlimited"`.
+ * `combatActionsReads.targets` measures it) or `"unlimited"`.
  */
 export type PickRule = TargetAsk & {
   /** Fewest picks the primary needs (default 1; 0 lets the primary send with none). */
@@ -66,6 +66,11 @@ export type PickRow = {
   reach: PickReach;
   /** Condition names (answer 10a: names only, never a number). */
   conditions: readonly string[];
+  /**
+   * Rule switches RFC, M1 `lineOfSight` Manual: the server's hint says no line of sight, but the campaign leaves sight to
+   * the GM, so the row stays pickable (its reach is "in" / "out") and says so.
+   */
+  noLineOfSight?: true;
 };
 
 /** A picker-supplied row: as `PickRow`, with conditions optional. */
@@ -123,7 +128,7 @@ export type PickPrimary = {
 /** The acting creature: the player's own character by default; the GM always names it. */
 export type PickActor = {
   tokenId: Id<"combatTokens">;
-  /** A PC's character (its line-of-sight hints come from `combatActions.targets`). */
+  /** A PC's character (its line-of-sight hints come from `combatActionsReads.targets`). */
   characterId?: Id<"characters">;
 };
 

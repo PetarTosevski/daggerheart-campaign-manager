@@ -3,6 +3,7 @@
 import { useQuery } from "convex/react";
 import { useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { lastPlayedSession, liveSession } from "@/lib/domain/sessions";
 import { DOOM_TRACK, type DoomBox, type DoomTier } from "@/lib/frames/doom-track";
 import {
@@ -21,7 +22,7 @@ import { cn } from "@/lib/utils";
 import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
 import type { CampaignSummary } from "../../../../../../convex/campaigns";
-import { TRACKER_BTN, TrackerCard } from "./tracker-card";
+import { TrackerCard } from "./tracker-card";
 
 /** Journey to Horizon: Soul Echoes (everyone) and the Doom Track (GM; occurred events shown to players). */
 export function HorizonTracker({ campaign }: { campaign: CampaignSummary }) {
@@ -235,16 +236,17 @@ function BoxItem({ box, ctx }: { box: DoomBox; ctx: BoxCtx }) {
           {entry?.session ? <span className="ml-1.5 text-[12px] text-[#9fb2b6]">(session {entry.session})</span> : null}
         </label>
         {marked ? (
-          <button
-            type="button"
+          <BrandButton
+            variant="neutral"
+            size="sm"
             aria-pressed={entry.occurred}
             aria-label={`Occurred: ${box.text}`}
             disabled={ctx.pending}
             onClick={() => ctx.onOccurred(box.id, !entry.occurred)}
-            className={cn(TRACKER_BTN, "min-h-8 shrink-0 px-2 text-[12px]", entry.occurred && "border-[#e8c66a] text-[#f3dc93]")}
+            className="shrink-0"
           >
             {entry.occurred ? "Occurred" : "Not yet"}
-          </button>
+          </BrandButton>
         ) : null}
       </div>
       {box.children ? <BoxList boxes={box.children} ctx={ctx} nested /> : null}

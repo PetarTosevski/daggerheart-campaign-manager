@@ -1,6 +1,7 @@
 import { ConvexError } from "convex/values";
 
 import { actionLogMessages } from "./errors/actionLog";
+import { adminMessages } from "./errors/admin";
 import { adversaryActionMessages } from "./errors/adversaryActions";
 import { authMessages } from "./errors/auth";
 import { campaignMessages } from "./errors/campaigns";
@@ -11,6 +12,7 @@ import { combatActionMessages } from "./errors/combatActions";
 import { combatFeatureMessages } from "./errors/combatFeatures";
 import { combatMapMessages } from "./errors/combatMap";
 import { commonMessages } from "./errors/common";
+import { configMessages } from "./errors/config";
 import { deathMessages } from "./errors/death";
 import { diceMessages } from "./errors/dice";
 import { encounterMessages } from "./errors/encounters";
@@ -21,6 +23,7 @@ import { noteMessages } from "./errors/notes";
 import { operationMessages } from "./errors/operations";
 import { photoImportMessages } from "./errors/photoImport";
 import { restMessages } from "./errors/rests";
+import { ruleMessages } from "./errors/rules";
 import { sessionMessages } from "./errors/sessions";
 import { spotlightMessages } from "./errors/spotlight";
 import { spritePackMessages } from "./errors/spritePacks";
@@ -66,7 +69,42 @@ const MESSAGES = mergeMessages(
   spotlightMessages,
   noteMessages,
   lorekeeperMessages,
+  configMessages,
+  adminMessages,
+  ruleMessages,
 );
+
+/**
+ * The owner's read-only banner message (config AU5), kept here so a write refused with `READ_ONLY_MODE` explains why
+ * in the words the banner shows. `ReadOnlyBanner` (src/components/read-only-banner.tsx) keeps it in step with
+ * `appStatus.get`; null while the mode is off or the owner wrote no message.
+ */
+let readOnlyBannerMessage: string | null = null;
+
+/** Sets the banner message that `errorMessage` adds to `READ_ONLY_MODE` (null or blank: none). */
+export function setReadOnlyBannerMessage(message: string | null): void {
+  const text = message?.trim() ?? "";
+  readOnlyBannerMessage = text === "" ? null : text;
+}
+
+/**
+ * True while the app owner's read-only view of a campaign is open (config AU7). Writes refuse the owner as an outsider
+ * (NOT_FOUND / FORBIDDEN, AD13), so while the view is open those codes read as `OWNER_VIEW_READ_ONLY`'s text.
+ * `OwnerViewBanner` (src/components/config/owner-view-banner.tsx) keeps it in step with `campaigns.get`.
+ */
+let ownerViewOpen = false;
+const OWNER_VIEW_CODES = new Set(["NOT_FOUND", "FORBIDDEN", "OWNER_VIEW_READ_ONLY"]);
+
+/** Marks the owner's read-only view open or closed (see `ownerViewOpen`). */
+export function setOwnerViewOpen(open: boolean): void {
+  ownerViewOpen = open;
+}
+
+/** The text for a code: `READ_ONLY_MODE` carries the owner's banner message when there is one. */
+function codeMessage(code: string): string {
+  const text = MESSAGES[code] ?? "Something went wrong.";
+  return code === "READ_ONLY_MODE" && readOnlyBannerMessage !== null ? `${text} ${readOnlyBannerMessage}` : text;
+}
 
 /**
  * A message for the GM from an error thrown by a Convex function. Every
@@ -78,8 +116,9 @@ export function errorMessage(error: unknown): string {
     const data: unknown = error.data;
     if (typeof data === "object" && data !== null) {
       const { message, code } = data as { message?: unknown; code?: unknown };
+      if (ownerViewOpen && typeof code === "string" && OWNER_VIEW_CODES.has(code)) return codeMessage("OWNER_VIEW_READ_ONLY");
       if (typeof message === "string" && message) return message;
-      if (typeof code === "string") return MESSAGES[code] ?? "Something went wrong.";
+      if (typeof code === "string") return codeMessage(code);
     }
   }
   return "Something went wrong. Check your connection and try again.";

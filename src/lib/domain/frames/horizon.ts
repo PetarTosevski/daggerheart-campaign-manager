@@ -41,3 +41,23 @@ export function encounterRoll(terrain: number, roll: Roll, sides: 4 | 6 | 8 = 6)
   const dice = Array.from({ length: terrain }, () => roll(sides));
   return { dice, encounter: dice.includes(1) };
 }
+
+/** Encounter-table entries with an optional bonus (HF p.171). */
+export const SETBACK_ENTRY = 4;
+export const GOOD_FORTUNE_ENTRY = 12;
+
+export type EncounterBonus = { kind: "fear"; amount: number } | { kind: "hope" } | null;
+
+/**
+ * The optional bonus of an Encounter-table entry (HF p.171) when the campaign's
+ * "Horizon encounter bonuses" switch is on: 4 "temporary setback … Optional: The
+ * GM gains a Fear for each PC"; 12 "a bit of good fortune … Optional: Each PC
+ * gains a Hope". `on` defaults to off (the switch's default), so an unwired
+ * caller gets no bonus. Other entries never have one.
+ */
+export function encounterBonus(total: number, pcCount: number, on = false): EncounterBonus {
+  if (!on) return null;
+  if (total === SETBACK_ENTRY) return { kind: "fear", amount: Math.max(0, Math.floor(pcCount)) };
+  if (total === GOOD_FORTUNE_ENTRY) return { kind: "hope" };
+  return null;
+}

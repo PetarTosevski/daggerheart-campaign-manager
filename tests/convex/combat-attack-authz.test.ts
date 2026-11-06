@@ -116,7 +116,7 @@ describe("combat attack: access by role", () => {
   });
 
   it("targets: the character's player and the GM", async () => {
-    expect(await rows((w, s, role) => w.as(role).query(api.combatActions.targets, { campaignId: w.campaignId, characterId: w.characterA, mapId: s.mapId }))).toEqual({
+    expect(await rows((w, s, role) => w.as(role).query(api.combatActionsReads.targets, { campaignId: w.campaignId, characterId: w.characterA, mapId: s.mapId }))).toEqual({
       anon: "UNAUTHENTICATED",
       outsider: "NOT_FOUND",
       otherPlayer: "FORBIDDEN",

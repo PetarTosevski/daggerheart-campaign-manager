@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import type { ConvexHttpClient } from "convex/browser";
 
 import { api } from "../../convex/_generated/api";
@@ -77,6 +77,17 @@ async function expectBesideToken(page: Page, tokenId: string) {
   expect(overlaps).toBe(false);
 }
 
+/** Every footer button lies inside the window's box (dcm-bxp.99.32.32: a long primary pushed Take n HP past its edge). */
+async function expectFooterInside(win: Locator) {
+  await expect
+    .poll(async () => {
+      const box = (await win.boundingBox())!;
+      const buttons = await win.locator(".hud-pc-f > button").evaluateAll((els) => els.map((el) => el.getBoundingClientRect()).map((r) => ({ left: r.left, right: r.right })));
+      return buttons.length > 0 && buttons.every((b) => b.left >= box.x - 0.5 && b.right <= box.x + box.width + 0.5);
+    })
+    .toBe(true);
+}
+
 test("You were hit: armor offer, n of 6 marked, no armor when none is left, the GM's own PC; usable while the GM holds the spotlight", async ({ browser }) => {
   test.setTimeout(300_000);
   const s = await hudScene(browser);
@@ -114,6 +125,11 @@ test("You were hit: armor offer, n of 6 marked, no armor when none is left, the 
     await expectNoSeriousA11yViolations(player, { include: "[data-testid=hud-hit-window]" });
     await player.screenshot({ path: `${OUT}/youre-hit-1440.png`, animations: "disabled" });
     await win.screenshot({ path: `${OUT}/youre-hit-window.png`, animations: "disabled" });
+    // dcm-bxp.99.32.32: the footer's buttons stay inside the 320 px card, on desktop and the landscape tablet.
+    await expectFooterInside(win);
+    await player.setViewportSize({ width: 1024, height: 768 });
+    await expectFooterInside(win);
+    await player.setViewportSize({ width: 1440, height: 900 });
 
     await win.getByRole("button", { name: /^Mark Armor · take / }).click();
     await expect(win).toHaveCount(0, { timeout: 30_000 });

@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { api } from "../../convex/_generated/api";
+import { api, internal } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { MAX_ENCOUNTERS } from "../../convex/lib/encounters";
 import { MAX_SCENES } from "../../convex/lib/validators/sessions";
 import { errorCode, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
-// D10 S4: session prep (B3, K6, K10, Q1). The GM plans scenes, writes hooks and creates or links the session's one D8
-// encounter; the summary carries its Battle Points. Players never reach prep (FORBIDDEN).
+// D10 S4: session prep (B3, K6, K10, Q1). The GM plans scenes and writes hooks; the session's one D8 encounter is
+// created or linked by the internal seeding functions (JF3: no UI since the Journal, which links per scene); the
+// summary carries its Battle Points. Players never reach prep (FORBIDDEN).
 
 const EMAILS = "gm@example.com,p1@example.com,out@example.com";
 const BEAR = { kind: "srd" as const, adversaryId: "bear" }; // Bruiser, 4 BP
@@ -31,8 +32,9 @@ async function setup() {
   const addScene = async (sessionId: string, type?: "combat" | "social" | "exploration" | "downtime") =>
     (await gm.mutation(api.sessionPrep.addScene, { campaignId, sessionId, ...(type ? { type } : {}) })).sceneId;
   const createEncounter = async (sessionId: string) =>
-    (await gm.mutation(api.sessionPrep.createEncounter, { campaignId, sessionId, idempotencyKey: key() })).encounterId;
-  return { t, gm, p1, out, ids, campaignId, create, get, addScene, createEncounter };
+    (await t.mutation(internal.sessionPrep.createEncounter, { campaignId, sessionId })).encounterId;
+  const linkEncounter = (sessionId: string, encounterId: string) => t.mutation(internal.sessionPrep.linkEncounter, { campaignId, sessionId, encounterId });
+  return { t, gm, p1, out, ids, campaignId, create, get, addScene, createEncounter, linkEncounter };
 }
 
 async function failure(run: Promise<unknown>): Promise<unknown> {
@@ -144,11 +146,7 @@ describe("session prep", () => {
       await addPcs(env, ["active", "active", "active", "away"]);
       await env.create();
       const sessionId = await env.create(); // Session 2
-      const idempotencyKey = key();
-      const args = { campaignId: env.campaignId, sessionId, idempotencyKey };
-      const { encounterId } = await env.gm.mutation(api.sessionPrep.createEncounter, args);
-      // The key makes a retry a no-op.
-      expect(await env.gm.mutation(api.sessionPrep.createEncounter, args)).toEqual({ encounterId });
+      const encounterId = await env.createEncounter(sessionId);
       const encounter = await env.t.run((ctx) => ctx.db.get("encounters", encounterId));
       expect(encounter).toMatchObject({ name: "Session 2 encounter", status: "draft", pcs: 3, adjustments: [] });
       // 3 PCs: budget 3 × 3 + 2 = 11.
@@ -179,11 +177,9 @@ describe("session prep", () => {
       expect((await env.t.run((ctx) => ctx.db.get("encounters", encounterId)))!.pcs).toBe(4);
       expect(await failure(env.createEncounter(sessionId))).toBe("SESSION_HAS_ENCOUNTER");
       const { encounterId: other } = await env.gm.mutation(api.encounters.create, { campaignId: env.campaignId, name: "Other", idempotencyKey: key() });
-      expect(await failure(env.gm.mutation(api.sessionPrep.linkEncounter, { campaignId: env.campaignId, sessionId, encounterId: other }))).toBe(
-        "SESSION_HAS_ENCOUNTER",
-      );
+      expect(await failure(env.linkEncounter(sessionId, other))).toBe("SESSION_HAS_ENCOUNTER");
       // Re-linking the same one is a no-op.
-      expect(await env.gm.mutation(api.sessionPrep.linkEncounter, { campaignId: env.campaignId, sessionId, encounterId })).toBeNull();
+      expect(await env.linkEncounter(sessionId, encounterId)).toBeNull();
     });
 
     it(`createEncounter refuses past ${MAX_ENCOUNTERS} encounters with ENCOUNTER_LIMIT and links nothing`, async () => {
@@ -198,23 +194,17 @@ describe("session prep", () => {
       expect((await env.get(sessionId)).encounter).toBeNull();
     });
 
-    it("linkEncounter links an existing encounter of the campaign; another campaign's or a bad id is NOT_FOUND; unlink drops the link only", async () => {
+    it("linkEncounter links an existing encounter of the campaign; another campaign's or a bad id is NOT_FOUND", async () => {
       const env = await setup();
       const sessionId = await env.create();
       const { encounterId } = await env.gm.mutation(api.encounters.create, { campaignId: env.campaignId, name: "Bridge fight", idempotencyKey: key() });
       const { campaignId: otherCampaign } = await env.gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "Other", idempotencyKey: key() });
       const { encounterId: foreign } = await env.gm.mutation(api.encounters.create, { campaignId: otherCampaign, name: "Elsewhere", idempotencyKey: key() });
-      const link = (id: string) => env.gm.mutation(api.sessionPrep.linkEncounter, { campaignId: env.campaignId, sessionId, encounterId: id });
+      const link = (id: string) => env.linkEncounter(sessionId, id);
       expect(await failure(link(foreign))).toBe("NOT_FOUND");
       expect(await failure(link("nope"))).toBe("NOT_FOUND");
       await link(encounterId);
       expect((await env.get(sessionId)).encounter).toMatchObject({ _id: encounterId, name: "Bridge fight", status: "draft" });
-      await env.gm.mutation(api.sessionPrep.unlinkEncounter, { campaignId: env.campaignId, sessionId });
-      expect((await env.get(sessionId)).encounter).toBeNull();
-      expect(await env.t.run((ctx) => ctx.db.get("encounters", encounterId))).not.toBeNull();
-      // Unlinking again is a no-op; now another one may be created.
-      expect(await env.gm.mutation(api.sessionPrep.unlinkEncounter, { campaignId: env.campaignId, sessionId })).toBeNull();
-      await env.createEncounter(sessionId);
     });
 
     it("an encounter D8 deleted reads as none, and the session may create a new one", async () => {
@@ -270,16 +260,6 @@ describe("session prep", () => {
       expect(await env.gm.query(api.sessionPrep.get, args)).toEqual({ scenes: [], hooks: "", encounter: null });
     });
 
-    it("createEncounter: anonymous UNAUTHENTICATED, outsider NOT_FOUND, player FORBIDDEN, GM creates", async () => {
-      const env = await setup();
-      const sessionId = await env.create();
-      const args = () => ({ campaignId: env.campaignId, sessionId, idempotencyKey: key() });
-      expect(await failure(env.t.mutation(api.sessionPrep.createEncounter, args()))).toBe("UNAUTHENTICATED");
-      expect(await failure(env.out.mutation(api.sessionPrep.createEncounter, args()))).toBe("NOT_FOUND");
-      expect(await failure(env.p1.mutation(api.sessionPrep.createEncounter, args()))).toBe("FORBIDDEN");
-      expect((await env.gm.mutation(api.sessionPrep.createEncounter, args())).encounterId).toBeTruthy();
-    });
-
     it("addScene: anonymous UNAUTHENTICATED, outsider NOT_FOUND, player FORBIDDEN, GM adds", async () => {
       const env = await setup();
       const sessionId = await env.create();
@@ -294,8 +274,6 @@ describe("session prep", () => {
       ["setScene", (sceneId: string) => ({ sceneId, text: "Scene" })],
       ["removeScene", (sceneId: string) => ({ sceneId })],
       ["setHooks", () => ({ hooks: "Hooks" })],
-      ["linkEncounter", (_: string, encounterId: string) => ({ encounterId })],
-      ["unlinkEncounter", () => ({})],
     ] as const;
 
     for (const [name, extra] of writes) {
@@ -303,9 +281,8 @@ describe("session prep", () => {
         const env = await setup();
         const sessionId = await env.create();
         const sceneId = await env.addScene(sessionId);
-        const { encounterId } = await env.gm.mutation(api.encounters.create, { campaignId: env.campaignId, name: "Fight", idempotencyKey: key() });
         const fn = api.sessionPrep[name] as typeof api.sessionPrep.setHooks;
-        const args = { campaignId: env.campaignId, sessionId, ...extra(sceneId, encounterId) } as never;
+        const args = { campaignId: env.campaignId, sessionId, ...extra(sceneId) } as never;
         expect(await failure(env.t.mutation(fn, args))).toBe("UNAUTHENTICATED");
         expect(await failure(env.out.mutation(fn, args))).toBe("NOT_FOUND");
         expect(await failure(env.p1.mutation(fn, args))).toBe("FORBIDDEN");

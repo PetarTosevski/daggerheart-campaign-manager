@@ -47,7 +47,8 @@ test("HUD H1.3 token rings, Hope chips, badges and side colours at 1440, 1024 an
       }
       // A close-up of the party and the Lieutenant (the board's "Token kinds" row).
       await page.setViewportSize(VIEWPORTS[0]);
-      const mossToken = board.locator(`[data-token="${moss.tokenId}"]`);
+      // The token itself: its spotlight pool (H9.1) carries the same `data-token`.
+      const mossToken = board.locator(`[data-testid="combat-token"][data-token="${moss.tokenId}"]`);
       const box = await mossToken.boundingBox();
       if (box) {
         await page.screenshot({

@@ -3,6 +3,7 @@
 import { useMutation } from "convex/react";
 import { useId, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import { errorMessage } from "@/lib/convex-errors";
 
@@ -68,12 +69,12 @@ export function PinDialog({
           </p>
         ) : null}
         <div className="lk-formacts">
-          <button type="button" className="lk-act lk-act-dark" onClick={onClose}>
+          <BrandButton variant="cancel" onClick={onClose}>
             Cancel
-          </button>
-          <button type="submit" className="lk-send" disabled={!valid || busy}>
+          </BrandButton>
+          <BrandButton type="submit" variant="confirm" disabled={!valid || busy}>
             Pin ruling
-          </button>
+          </BrandButton>
         </div>
       </form>
     </Modal>

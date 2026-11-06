@@ -131,7 +131,7 @@ async function arena(options: { map?: boolean } = {}) {
     gm.mutation(api.adversaryActions.useFeature, { campaignId, instanceId, feature: name, targets, idempotencyKey: key(), ...extra });
   const respond = (c: Client, requestId: Id<"combatRequests">, characterId: Id<"characters">, choice: Record<string, unknown>) =>
     c.mutation(api.adversaryActions.respond, { campaignId, requestId, characterId, choice: choice as never, idempotencyKey: key() });
-  const pending = (c: Client, characterId: Id<"characters">) => c.query(api.adversaryActions.pending, { campaignId, characterId });
+  const pending = (c: Client, characterId: Id<"characters">) => c.query(api.adversaryActionsReads.pending, { campaignId, characterId });
   return { w, t, campaignId, gm, player, other, encounterId, bear, dummy, mapId, edit, sheet, instance, fear, setFear, request, rows, feed, attack, feature, respond, pending };
 }
 
@@ -265,6 +265,27 @@ describe("adversaryActions: spotlight and Fear (Q19)", () => {
     expect(await a.fear()).toBe(1);
     expect(await code(a.feature(a.dummy, "Nonexistent", []))).toBe("ADVERSARY_FEATURE_UNAVAILABLE");
   });
+
+  it("stores a feature use's GM prompts open for the queue; the GM marks one done, undo closes the rest (dcm-bxp.99.32.27)", async () => {
+    const a = await arena();
+    await a.setFear(4);
+    const r = resolved(await a.feature(a.dummy, "Taunt", [a.w.characterA], { spendFear: 1 }));
+    const pending = await a.gm.query(api.adversaryPromptsReads.pending, { campaignId: a.campaignId });
+    expect(pending).toEqual([expect.objectContaining({ instanceId: a.dummy, instanceLabel: "Dummy", feature: "Taunt", prompt: "manual", text: "Taunt: Spend a Fear to taunt a PC.", groupId: r.groupId })]);
+    // A player never reads them (GM only).
+    expect(await code(a.player.query(api.adversaryPromptsReads.pending, { campaignId: a.campaignId }))).toBe("FORBIDDEN");
+
+    const answer = (requestId: Id<"combatRequests">, done: boolean) => a.gm.mutation(api.adversaryPrompts.answer, { campaignId: a.campaignId, requestId, done, idempotencyKey: key() });
+    expect(await answer(pending[0]!.requestId, true)).toEqual({ status: "resolved" });
+    expect(await a.gm.query(api.adversaryPromptsReads.pending, { campaignId: a.campaignId })).toEqual([]);
+    expect(await code(answer(pending[0]!.requestId, false))).toBe("REQUEST_NOT_OPEN");
+
+    // A second use's prompt goes when that use is undone.
+    const second = resolved(await a.feature(a.dummy, "Taunt", [a.w.characterA], { spendFear: 1 }));
+    expect(await a.gm.query(api.adversaryPromptsReads.pending, { campaignId: a.campaignId })).toHaveLength(1);
+    await a.gm.mutation(api.actionLog.undo, { entryId: second.entryId, idempotencyKey: key() });
+    expect(await a.gm.query(api.adversaryPromptsReads.pending, { campaignId: a.campaignId })).toEqual([]);
+  });
 });
 
 describe("adversaryActions.useFeature", () => {
@@ -282,9 +303,24 @@ describe("adversaryActions.useFeature", () => {
     expect(row.payload.kind === "incomingHit" && row.payload.riders).toEqual([{ kind: "condition", condition: "restrained" }]);
     await a.respond(a.player, r.targets[0]!.requestId!, a.w.characterA, { kind: "noArmor" });
     expect((await a.sheet()).conditions).toContain("restrained");
-    // A defeated adversary can't act.
+    // A defeated adversary can't act (dcm-j5ft): ADVERSARY_DEFEATED, and nothing is spent or spotlit.
     await a.t.run((ctx) => ctx.db.patch(a.bear, { defeated: true }));
-    expect(await code(a.feature(a.bear, "Bite", [a.w.characterA]))).toBe("ADVERSARY_FEATURE_UNAVAILABLE");
+    expect(await code(a.feature(a.bear, "Bite", [a.w.characterA]))).toBe("ADVERSARY_DEFEATED");
+  });
+
+  it("a defeated adversary's attack or feature is refused before it is spotlit (dcm-j5ft)", async () => {
+    const a = await arena();
+    const before = await a.instance(a.bear);
+    // Every HP marked counts as defeated, even before the flag is set.
+    await a.t.run((ctx) => ctx.db.patch(a.bear, { hp: before.stats.hpMax }));
+    expect(await code(a.attack(a.bear, [a.w.characterA]))).toBe("ADVERSARY_DEFEATED");
+    expect(await code(a.feature(a.bear, "Bite", [a.w.characterA]))).toBe("ADVERSARY_DEFEATED");
+    const after = await a.instance(a.bear);
+    expect({ spotlights: after.spotlights, spotlightTurn: after.spotlightTurn, stress: after.stress }).toEqual({
+      spotlights: before.spotlights,
+      spotlightTurn: before.spotlightTurn,
+      stress: before.stress,
+    });
   });
 });
 
@@ -342,14 +378,14 @@ describe("adversaryActions: the reaction window", () => {
     const severity = pcSeverity(damage, derivedThresholds(await a.sheet())).severity;
     expect(r).toMatchObject({ status: "resolved", targetId: a.w.characterA, severity, hpMarked: hpForSeverity(severity) });
     expect((await a.sheet()).armorMarked).toBe(0);
-    const windows = await a.gm.query(api.adversaryActions.windows, { campaignId: a.campaignId });
+    const windows = await a.gm.query(api.adversaryActionsReads.windows, { campaignId: a.campaignId });
     expect(windows).toEqual([]);
   });
 
   it("the GM sees open windows and who still has to answer", async () => {
     const a = await arena();
     const { requestId, damage } = await bearHitsAsh(a);
-    const [win] = await a.gm.query(api.adversaryActions.windows, { campaignId: a.campaignId });
+    const [win] = await a.gm.query(api.adversaryActionsReads.windows, { campaignId: a.campaignId });
     expect(win).toMatchObject({ requestId, attackerLabel: "Bear", damage, targetName: "Ash", awaiting: [{ characterId: a.w.characterA, name: "Ash", role: "target" }] });
   });
 });
@@ -581,7 +617,7 @@ describe("AA2b: death move, riders, after-hit cards, scene limits", () => {
     const [view] = await a.pending(a.player, a.w.characterA);
     expect(view).toMatchObject({ requestId, afterHit: true, deathMove: true, cardIds: ["unbreakable"], role: "target", awaiting: true });
     expect(view!.damage).toBeUndefined();
-    const windows = await a.gm.query(api.adversaryActions.windows, { campaignId: a.campaignId });
+    const windows = await a.gm.query(api.adversaryActionsReads.windows, { campaignId: a.campaignId });
     expect(windows[0]).toMatchObject({ requestId, afterHit: true, awaiting: [{ characterId: a.w.characterA, role: "target" }] });
     // Only Ash answers it.
     expect(await code(a.respond(a.other, requestId, a.w.characterB, { kind: "pass" }))).toBe("NOT_A_RESPONDER");

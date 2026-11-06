@@ -2,11 +2,12 @@
 // pins (D7). Ported from reference/designs/project/World.dc.html. Pure module:
 // bundled into Convex.
 
-import { z } from "zod";
+import * as z from "../zod";
 
 import { DEFAULT_TRAVEL_RULES, OPTIONAL_SPEED_TERRAINS, LEGACY_TRAIL_MODES, SPEED_TERRAINS, TRAVEL_METHODS, TRAVEL_PACES, trailMethod, type SpeedTerrain } from "../domain/travel/index";
 import type { PublishedFrameId } from "../frames/index";
 import { MAX_HEX_SIZE, MIN_HEX_SIZE, hexToPixel, pixelToHex, visibleHexKeys, hexKey, type Hex, type HexGrid } from "./hex";
+import { printedHexGrid } from "./printed-grids";
 import { BLANK_TERRAIN, TERRAIN_COLUMNS, TERRAIN_ROWS, WITHERWILD_TERRAIN } from "./terrain";
 
 export { TERRAIN_CODES, TERRAIN_COLUMNS, TERRAIN_ROWS } from "./terrain";
@@ -105,6 +106,8 @@ export const hexCrawlSchema = z.object({
     originX: z.number().min(-100000).max(100000),
     originY: z.number().min(-100000).max(100000),
     size: z.number().min(MIN_HEX_SIZE).max(MAX_HEX_SIZE),
+    /** Widened (dcm-kggd): printed hexes a hair taller or flatter than regular ones. Unset: `size`. */
+    sizeY: z.number().min(MIN_HEX_SIZE).max(MAX_HEX_SIZE).optional(),
     orientation: z.enum(["flat", "pointy"]),
   }),
   hexes: z.array(crawlHexSchema).max(MAX_HEXES),
@@ -199,9 +202,15 @@ export function checkMapState(state: MapState): { ok: true; data: MapState } | {
 
 export const HORIZON_FRAME = "journey-to-horizon";
 
-/** Default calibration: flat hexes of ~24 miles across the Horizon map, to be adjusted by the GM. */
+/** The Horizon map's printed grid (~24 miles a hex). The GM calibrates the grid only over an uploaded map. */
+export function horizonPrintedGrid(): HexGrid {
+  const grid = printedHexGrid(HORIZON_FRAME);
+  if (!grid) throw new Error("The Journey to Horizon map prints a hex grid.");
+  return grid;
+}
+
 export function initialHexCrawl(): HexCrawl {
-  return { grid: { originX: 0, originY: 0, size: 33, orientation: "flat" }, hexes: [], party: null, day: 1, travelMode: "land" };
+  return { grid: horizonPrintedGrid(), hexes: [], party: null, day: 1, travelMode: "land" };
 }
 
 /** Image size and width in km the map is drawn with: an uploaded map, or the frame's published art. */

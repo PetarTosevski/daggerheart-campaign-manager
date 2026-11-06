@@ -1,7 +1,7 @@
 // Shared pieces for per-character extras (D4). Pure module: bundled into
 // Convex, so no framework imports and relative paths only.
 
-import { z } from "zod";
+import * as z from "../../zod";
 
 import type { Range, TraitId } from "../../srd/types";
 

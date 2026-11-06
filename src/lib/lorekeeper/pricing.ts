@@ -6,7 +6,8 @@
 //
 // ```ts
 // costMicros({ input: 9500, cacheRead: 1500, cacheWrite: 0, output: 2000, webSearches: 0 }, "claude-sonnet-5-5"); // 39_300
-// reserveMicros("claude-sonnet-5-5", 2000); // 70_000 ($0.07: 20k input at the cache-write price + 2k output)
+// reserveMicros("claude-sonnet-5-5", 2000); // 132_500 ($0.13: 45k input at the cache-write price + 2k output)
+// webReserveMicros("claude-sonnet-5-5", 3);  // 370_000 ($0.37: 120k input + 4k output + 3 searches)
 // formatUsd(39_300);                         // "$0.04"
 // ```
 
@@ -50,8 +51,26 @@ export const WEB_SEARCH_MICROS = (WEB_SEARCH_USD_PER_1000 / 1000) * 1_000_000;
 
 /** Default answer length cap (analysis 5.1). */
 export const DEFAULT_MAX_TOKENS = 2000;
-/** Worst-case input tokens of one question: system + ~8k excerpts + history + context, with headroom. */
-export const RESERVE_INPUT_TOKENS = 20_000;
+/** "Shorter answers" past the monthly spend limit (config AD6, Q20 a): half the answer length. */
+export const SHORT_MAX_TOKENS = DEFAULT_MAX_TOKENS / 2;
+/**
+ * Worst-case input tokens of one book pass (the first pass, the stronger-model retry): system + ~8k excerpts + history
+ * + context, with headroom. Measured 2026-10-23..29 (docs/lorekeeper.md "Costs and caps"): the same prompt counts about
+ * 15k tokens on Sonnet 5.5 but up to 32k uncached + 8.5k cache write on Opus 5.5, so one value covers either model as
+ * the first pass (LOREKEEPER_MODEL) or the retry (dcm-5n07; was 20k, below the measured Opus input).
+ */
+export const RESERVE_INPUT_TOKENS = 45_000;
+/**
+ * Worst-case input tokens of the internet pass. The web search results come back as input, and the API reports one
+ * request's usage summed over the model's turns around each search; measured with one search each: up to 34k uncached
+ * + 34k cache read + 13k cache write (81k). About 1.5× that (dcm-5n07).
+ */
+export const WEB_RESERVE_INPUT_TOKENS = 120_000;
+/**
+ * Worst-case output tokens of the internet pass. Its max_tokens is DEFAULT_MAX_TOKENS, but the reported output is
+ * summed over the model's turns around each search (measured up to 2.2k), so twice max_tokens is booked (dcm-5n07).
+ */
+export const WEB_RESERVE_OUTPUT_TOKENS = 2 * DEFAULT_MAX_TOKENS;
 
 /** Token usage of one or more requests, normalised. */
 export type TokenUsage = {
@@ -149,6 +168,14 @@ export function reserveMicros(
     },
     model,
   );
+}
+
+/**
+ * The worst-case cost of the internet pass with up to `searches` web searches (its max_uses): WEB_RESERVE_INPUT_TOKENS
+ * at the cache-write price, WEB_RESERVE_OUTPUT_TOKENS of output and every search allowed.
+ */
+export function webReserveMicros(model: string, searches: number): number {
+  return reserveMicros(model, WEB_RESERVE_OUTPUT_TOKENS, { inputTokens: WEB_RESERVE_INPUT_TOKENS, webSearches: searches });
 }
 
 /** "$0.04", "$12.50", "<$0.01" for display. */

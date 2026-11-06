@@ -1,7 +1,7 @@
 import type { GenericValidator } from "convex/values";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { api, internal } from "../../convex/_generated/api";
+import { api, components, internal } from "../../convex/_generated/api";
 import type { Doc, Id, TableNames } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
 import { ACTION_LOG_STRIP_BATCH, BATCH } from "../../convex/cleanup";
@@ -183,6 +183,10 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     await ins("combatSpotlight", { campaignId: c, holder: { kind: "pc", characterId }, since: now, reason: "handedBack" });
     // A token the party saw this scene (spotlight-seen, user 2026-11-03).
     await ins("combatSeen", { campaignId: c, tokenId: pcTokenId, seenAt: now });
+    await ins("actionTokens", { campaignId: c, characterId, used: 1, updatedAt: now });
+    // A folded hand and an unsent character-wizard draft (config S0).
+    await ins("handFolds", { userId, campaignId: c, characterId, updatedAt: now });
+    await ins("userDrafts", { userId, kind: "characterWizard", campaignId: c, schemaVersion: 1, data: "{}", updatedAt: now });
     // A session with its prep (linking the encounter), a log line and a spotlight count (D10).
     const sessionId = await ins("sessions", { campaignId: c, n: 1, title: "The Bridge at Dawn", status: "live", startedAt: now, createdAt: now, updatedAt: now });
     await ins("sessionPrep", { campaignId: c, sessionId, scenes: [{ id: "s1", type: "combat", text: "Ambush" }], hooks: "", encounterId, updatedAt: now });
@@ -227,6 +231,11 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     // switch and the campaign's usage counter (D13). The book itself is per deployment and stays.
     const bookId = await ins("lorekeeperBooks", { key: `core-${now}-${Math.random()}`, title: "Mini Manual", subtitle: "Rules", cover: "core", pages: 12, chunkCount: 0, ingestedAt: now, schemaVersion: 1 });
     await ins("lorekeeperLibrary", { campaignId: c, bookId, enabled: false, updatedAt: now });
+    // Config LB1: the campaign's own book (with a chunk) and its upload's status row go with the campaign.
+    const ownKey = `campaign:${c}:1`;
+    const ownBookId = await ins("lorekeeperBooks", { key: ownKey, title: "Salt Roads", subtitle: "Uploaded by the GM", cover: "frame", pages: 1, chunkCount: 1, ingestedAt: now, schemaVersion: 1, campaignId: c, uploadedBy: userId, sizeBytes: 10 });
+    await ins("lorekeeperChunks", { bookId: ownBookId, page: 1, section: "Roads", text: "Invented road text.", ord: 0 });
+    await ins("lorekeeperIngests", { bookKey: ownKey, bookId: ownBookId, status: "done", startedAt: now, startedBy: userId, firstPrintedPage: 1, title: "Salt Roads", newBook: true, finishedAt: now, campaignId: c });
     const conversationId = await ins("lorekeeperConversations", { campaignId: c, userId, title: "Critical hits?", visibility: "campaign", webSearch: true, messageCount: 2, lastAt: now, createdAt: now });
     const message = { conversationId, campaignId: c, userId, createdAt: now, updatedAt: now };
     await ins("lorekeeperMessages", { ...message, role: "question", status: "done", text: "Critical hits?" });
@@ -243,6 +252,9 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     const rulingId = await ins("lorekeeperRulings", { campaignId: c, title: "Crits", text: "Max damage plus a roll.", sessionId, fromMessageId: answerId, pinnedBy: userId, pinnedAt: now, updatedAt: now });
     await ins("lorekeeperAsks", { campaignId: c, messageId: answerId, askedBy: userId, askedAt: now, resolvedAt: now, resolution: "pinned", rulingId });
     await ins("lorekeeperUsage", { kind: "campaign", campaignId: c, period: "2026-10", questions: 1, costMicros: 10, updatedAt: now });
+    // Config AD0: the owner's per-campaign Lorekeeper numbers and a GM's request.
+    await ins("lorekeeperCampaignLimits", { campaignId: c, dailyQuestions: 60, setBy: userId, updatedAt: now });
+    await ins("lorekeeperLimitRequests", { campaignId: c, requestedBy: userId, wants: { dailyQuestions: 60 }, reason: "Big table", status: "pending", createdAt: now });
     await ins("files", { storageId: blobs.file, campaignId: c, uploadedBy: userId, kind: "map", refId: c, createdAt: now });
     await ins("files", { storageId: blobs.codexImage, campaignId: c, uploadedBy: userId, kind: "codexImage", refId: entryId, createdAt: now });
     await ins("files", { storageId: blobs.portrait, campaignId: c, uploadedBy: userId, kind: "portrait", refId: characterId, createdAt: now });
@@ -274,7 +286,7 @@ function combatRequest(
   instanceId: Id<"encounterAdversaries">,
   o: {
     at: number;
-    status?: "open" | "resolved" | "declined";
+    status?: "open" | "resolved" | "declined" | "withdrawn";
     resolvedAt?: number;
     encounterId?: Id<"encounters">;
     mapId?: Id<"combatMaps">;
@@ -438,6 +450,32 @@ describe("cleanup crons", () => {
     expect(keptBefore[0]!.rows.history).toBe(2);
   });
 
+  it("purges a campaign's hand folds and drafts, and keeps other campaigns' rows and the custom-frame draft (config S0)", async () => {
+    const t = makeTest();
+    const userId = await user(t);
+    const due = await seedCampaign(t, userId, NOW - 31 * DAY);
+    const live = await seedCampaign(t, userId, undefined);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("userDrafts", { userId, kind: "customFrame", schemaVersion: 1, data: "{}", updatedAt: NOW });
+      await ctx.db.insert("userPreferences", { userId, dice3d: false, updatedAt: NOW });
+      await ctx.db.insert("userUiState", { userId, key: "tokenNames", value: true, updatedAt: NOW });
+    });
+    const liveBefore = await leftovers(t, live);
+    expect(liveBefore.rows).toMatchObject({ handFolds: 1, userDrafts: 1 });
+
+    await t.mutation(internal.cleanup.purgeDeletedCampaigns, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await leftovers(t, due)).toEqual({ rows: {}, blobs: [] });
+    expect(await leftovers(t, live)).toEqual(liveBefore);
+    const kept = await t.run(async (ctx) => ({
+      drafts: (await ctx.db.query("userDrafts").collect()).map((row) => row.kind).sort(),
+      preferences: (await ctx.db.query("userPreferences").collect()).length,
+      uiState: (await ctx.db.query("userUiState").collect()).length,
+    }));
+    expect(kept).toEqual({ drafts: ["characterWizard", "customFrame"], preferences: 1, uiState: 1 });
+  });
+
   it("purges a combat map with more children than one batch over several runs (D9)", async () => {
     const t = makeTest();
     const userId = await user(t);
@@ -551,20 +589,22 @@ describe("cleanup crons", () => {
     expect(await leftovers(t, due)).toEqual({ rows: {}, blobs: [] });
     expect(await leftovers(t, live)).toEqual(liveBefore);
     const kept = await t.run(async (ctx) => ({
-      books: (await ctx.db.query("lorekeeperBooks").collect()).length,
+      // The two shared books stay, and so does the live campaign's own book (config LB1); the due one's went.
+      books: (await ctx.db.query("lorekeeperBooks").collect()).map((book) => book.campaignId ?? null),
+      chunks: (await ctx.db.query("lorekeeperChunks").collect()).length,
       kinds: (await ctx.db.query("lorekeeperUsage").collect()).map((row) => row.kind).sort(),
     }));
-    expect(kept).toEqual({ books: 2, kinds: ["campaign", "deployment", "user"] });
+    expect(kept).toEqual({ books: [null, null, live.campaignId], chunks: 1, kinds: ["campaign", "deployment", "user"] });
   });
 
-  it("expires resolved and declined combat requests a day after resolvedAt, in batches, and keeps open or recent ones (AA0)", async () => {
+  it("expires resolved, declined and withdrawn combat requests a day after resolvedAt, in batches, and keeps open or recent ones (AA0)", async () => {
     const t = makeTest();
     const userId = await user(t);
     const s = await seedCampaign(t, userId, undefined);
     const req = (o: Parameters<typeof combatRequest>[4]) => combatRequest(s.campaignId, userId, s.characterId, s.instanceId, o);
     const kept = await t.run(async (ctx) => {
       for (let i = 0; i < BATCH + 30; i++) {
-        const status = i % 2 === 0 ? "resolved" : "declined";
+        const status = (["resolved", "declined", "withdrawn"] as const)[i % 3]!;
         await ctx.db.insert("combatRequests", req({ at: NOW - 3 * DAY, status, resolvedAt: NOW - 2 * DAY + i }));
       }
       return [
@@ -645,6 +685,27 @@ describe("cleanup crons", () => {
     await t.finishAllScheduledFunctions(vi.runAllTimers);
 
     expect(await leftovers(t, s)).toEqual(before);
+  });
+
+  it("removes the purged campaign's presence room and keeps other campaigns' rooms (config PR1)", async () => {
+    const t = makeTest();
+    const userId = await user(t);
+    const gm = t.withIdentity({ subject: `${userId}|s` });
+    const purged = await seedCampaign(t, userId, undefined);
+    const kept = await seedCampaign(t, userId, undefined);
+    for (const { campaignId } of [purged, kept]) {
+      await gm.mutation(api.presence.heartbeat, { roomId: campaignId, userId: "label", sessionId: "tab", interval: 10_000 });
+    }
+    const room = (roomId: Id<"campaigns">) => t.query(components.presence.public.listRoom, { roomId });
+    expect(await room(purged.campaignId)).toHaveLength(1);
+    await t.run((ctx) => ctx.db.patch("campaigns", purged.campaignId, { deletedAt: NOW - 31 * DAY }));
+
+    await t.mutation(internal.cleanup.purgeCampaign, { campaignId: purged.campaignId });
+    await t.finishInProgressScheduledFunctions();
+
+    expect(await room(purged.campaignId)).toEqual([]);
+    expect(await t.run((ctx) => ctx.db.get("campaigns", purged.campaignId))).toBeNull();
+    expect(await room(kept.campaignId)).toEqual([expect.objectContaining({ userId, online: true })]);
   });
 
   it("deletes unclaimed uploads older than 2 hours and keeps claimed or recent ones", async () => {

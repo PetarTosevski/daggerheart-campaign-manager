@@ -13,6 +13,10 @@
  * gives a short rest's benefits); `undo` reverts the latest rest's sheets and
  * Fear through the group and reopens it. Project ticks are not reverted
  * (plan note 11).
+ * Rule switches (plan rule-switches RR; docs/tasks/TASK-RULES-RR.md), read through `ruleModesOf`: F2 Fear from rests
+ * (Book; Extended downtime: the GM may start a long rest as several days, 1d6 Fear per PC, CB 181; Manual: no Fear,
+ * the summary and a GM note say "Gain 1d4 Fear"), T2 Short-rest limit (Manual: a fourth short rest starts, with a GM
+ * note) and T4 Interrupted rest (Manual: Interrupt closes the rest, applies nothing and notes the GM).
  * A finished long rest (not an interrupted one) also ticks each armed, active
  * long-term dashboard countdown set to Automatic once, keyed on the rest's
  * campaign row, and the undo takes those ticks back (countdowns-advanced K4,
@@ -39,12 +43,19 @@ import { v, type Infer } from "convex/values";
 import { applyCountdownAction, CountdownRangeError, CountdownRuleError, MAX_COUNTDOWN_START } from "../src/lib/domain/countdowns/index";
 import {
   allowedMoves,
+  canStartExtended,
+  extendedDowntimeFear,
+  INTERRUPTED_REST_NOTE,
   interruptedMoves,
   MOVE_LABELS,
   mustLongRest,
+  overShortRestLimit,
   restedSheet,
   SHORT_REST_LIMIT_MESSAGE,
+  SHORT_REST_LIMIT_NOTE,
   restFear,
+  restFearPrompt,
+  restFearRule,
   shortRestsSinceLong,
   type RestKind as DomainRestKind,
   type RestMove as DomainRestMove,
@@ -62,6 +73,7 @@ import { rollDie } from "./lib/dice";
 import { gainFear } from "./lib/fear";
 import { keyedGmMutation, keyedUserMutation } from "./lib/functions";
 import { restMovesFor, runRestHooks } from "./lib/restHooks";
+import { postRuleNote, ruleMode, ruleModesOf } from "./lib/ruleModes";
 import { downtimeDieValidator, restChoiceMoveValidator, restKindValidator, type DiceMove, type RestKind, type RestMove } from "./lib/validators/rests";
 import { recordHistory } from "./tables/history";
 import { choicesOf, featuresOf, isProject, oasisPoolOf, partyHasMartialPreparation, recentRests, resting, sheetOrNull } from "./lib/restView";
@@ -80,6 +92,9 @@ type StoredDie = Infer<typeof downtimeDieValidator>;
 
 /** The most resting PCs a rest takes: its undo group holds 50 rows, one of them the campaign's (review M5). */
 const REST_PARTY_MAX = 49;
+
+/** The rows one undo group holds (`GROUP_MAX`, convex/lib/actionLog.ts): a reroll or GM note that would overflow it is refused or skipped. */
+const UNDO_GROUP_MAX = 50;
 
 /** The campaign's resting PCs, or REST_RULE when there are more than an undo group holds. */
 async function restingParty(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<Doc<"characters">[]> {
@@ -108,20 +123,30 @@ async function openRest(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<Doc
 
 /**
  * Starts a party rest. A fourth short rest since the last long rest is refused
- * for everyone (CB 105, HF 176; decision 17 settled by RF2). GM only.
+ * for everyone (CB 105, HF 176; decision 17 settled by RF2) while T2 is Book; in
+ * Manual it starts and the GM gets a note. `extended`: a long rest taken as
+ * Extended downtime (several days, CB 181), only while F2 is set to Extended
+ * downtime (REST_RULE otherwise). GM only.
  */
 export const start = keyedGmMutation({
   args: {
     kind: restKindValidator,
     /** @deprecated Ignored: the GM override is gone (RF2). Kept so older clients still validate; narrow it later. */
     override: v.optional(v.boolean()),
+    /** F2 Extended downtime (Q7 a): this long rest fast-forwards several days and gains 1d6 Fear per PC (CB 181). */
+    extended: v.optional(v.boolean()),
   },
   returns: v.object({ restId: v.id("rests") }),
-  handler: async (ctx, { kind }) =>
-    ctx.once("rest_start", { kind }, async () => {
+  handler: async (ctx, { kind, extended }) =>
+    ctx.once("rest_start", { kind, ...(extended === true ? { extended: true } : {}) },async () => {
       const campaignId = ctx.campaign._id;
+      const modes = ruleModesOf(ctx.campaign);
       if ((await openRest(ctx, campaignId)) !== null) throw restRule("A rest is already under way.");
-      if (mustLongRest(kind, shortRestsSinceLong(await recentRests(ctx, campaignId)))) throw restRule(SHORT_REST_LIMIT_MESSAGE);
+      if (extended === true && !canStartExtended(modes.fearFromRests, kind)) {
+        throw restRule("Extended downtime is a long rest, offered while Fear from rests is set to Extended downtime (CB 181).");
+      }
+      const shortRests = shortRestsSinceLong(await recentRests(ctx, campaignId));
+      if (mustLongRest(kind, shortRests, modes.shortRestLimit)) throw restRule(SHORT_REST_LIMIT_MESSAGE);
       await restingParty(ctx, campaignId);
       // Journey to Horizon: a long rest only in a sanctuary (HF 176), refused before the rest opens.
       if (kind === "long") await assertSanctuaryLongRest(ctx, ctx.campaign);
@@ -131,7 +156,13 @@ export const start = keyedGmMutation({
         status: "open",
         startedBy: ctx.user._id,
         startedAt: Date.now(),
+        ...(extended === true ? { extended: true } : {}),
       });
+      // T2 Manual: the rest starts; the GM hears what the book says. Starting a rest writes no undo group, so the note
+      // has none to join (it is never undoable, like the start itself).
+      if (overShortRestLimit(kind, shortRests)) {
+        await postRuleNote(ctx, ctx.campaign, { ruleId: "shortRestLimit", summary: SHORT_REST_LIMIT_NOTE, actorId: ctx.user._id });
+      }
       return { restId };
     }),
 });
@@ -205,7 +236,9 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
     sheets.set(pc._id, rested);
     cardLines.set(pc._id, lines);
   }
-  const hookLines = await runRestHooks(ctx, { campaign, rest, kind, interrupted, actorId: ctx.user._id, choices: allChoices, sheets, rng: rollDie });
+  // Created before the hooks so their Manual notes join the rest's undo group.
+  const groupId = newGroupId();
+  const hookLines = await runRestHooks(ctx, { campaign, rest, kind, interrupted, actorId: ctx.user._id, choices: allChoices, sheets, rng: rollDie, groupId });
 
   const projectLines: string[] = [];
   for (const work of moved.projects) {
@@ -239,10 +272,25 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
     }
   }
 
-  const fearRoll = rollDie(4);
-  const { gained } = await gainFear(ctx, campaign._id, restFear(kind, fearRoll, pcs.length));
+  // F2 Fear from rests: Book (CB 105), an Extended downtime long rest (1d6 per PC, CB 181) or Manual (no Fear; the
+  // summary and a GM note say what the book gives).
+  const fearRule = restFearRule(kind, rest.extended === true, ruleMode(campaign, "fearFromRests"));
+  let fearRoll: number | undefined;
+  let gained = 0;
+  let fearLine: string;
+  if (fearRule === "manual") {
+    fearLine = restFearPrompt(kind, pcs.length);
+  } else if (fearRule === "extended") {
+    const d6s = pcs.map(() => rollDie(6));
+    fearRoll = extendedDowntimeFear(d6s);
+    gained = (await gainFear(ctx, campaign._id, fearRoll)).gained;
+    fearLine = `GM gains ${gained} Fear (Extended downtime: ${pcs.length}d6 ${d6s.join(" + ")})`;
+  } else {
+    fearRoll = rollDie(4);
+    gained = (await gainFear(ctx, campaign._id, restFear(kind, fearRoll, pcs.length))).gained;
+    fearLine = `GM gains ${gained} Fear (${kind === "long" ? `1d4 ${fearRoll} + ${pcs.length} PCs` : `1d4 ${fearRoll}`})`;
+  }
 
-  const groupId = newGroupId();
   const label = interrupted ? "Interrupted long rest (short-rest benefits)" : rest.kind === "long" ? "Long rest" : "Short rest";
   for (const pc of pcs) {
     const after = sheets.get(pc._id)!;
@@ -260,17 +308,22 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
       undoable: true,
     });
   }
-  const fearText = kind === "long" ? `1d4 ${fearRoll} + ${pcs.length} PCs` : `1d4 ${fearRoll}`;
   const campaignRowId = await logAction(ctx, {
     campaignId: campaign._id,
     actorId: ctx.user._id,
     kind: "rest",
     visibility: "public",
-    summary: [`${label}: GM gains ${gained} Fear (${fearText})`, ...projectLines, ...hookLines].join("; "),
+    summary: [`${label}: ${fearLine}`, ...projectLines, ...hookLines].join("; "),
     groupId,
-    fearDelta: gained,
+    ...(fearRule === "manual" ? {} : { fearDelta: gained }),
     undoable: true,
   });
+  // The rows of the rest's undo group so far (one per resting PC, the campaign row); a group holds GROUP_MAX.
+  let groupRows = pcs.length + 1;
+  if (fearRule === "manual" && groupRows < UNDO_GROUP_MAX) {
+    await postRuleNote(ctx, campaign, { ruleId: "fearFromRests", summary: `${label}: ${fearLine}`, groupId, actorId: ctx.user._id });
+    groupRows += 1;
+  }
 
   // Long-term countdowns (CB p.164 "During a long rest, you should generally tick down a relevant long-term countdown
   // once"; Q3): only a finished long rest, after its own effects. The step text stays out of the public rows above.
@@ -279,7 +332,7 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
     const { lines, reminders } = await tickLongTermOnRest(ctx, campaign._id, campaignRowId, ctx.user._id);
     const notice = [...lines, ...reminders.map((name) => `Reminder: tick ${name}?`)];
     // GM-only and in the rest's group, so the rest's undo marks it undone too; skipped only for a party at the group cap.
-    if (notice.length > 0 && pcs.length < REST_PARTY_MAX) {
+    if (notice.length > 0 && groupRows < UNDO_GROUP_MAX) {
       await logAction(ctx, {
         campaignId: campaign._id,
         actorId: ctx.user._id,
@@ -296,13 +349,17 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
   await ctx.db.patch("rests", rest._id, {
     status: interrupted ? "interrupted" : "finished",
     finishedAt: Date.now(),
-    fearRoll,
-    fearGained: gained,
+    ...(fearRule === "manual" ? { fearPrompt: fearLine } : { fearRoll, fearGained: gained }),
     groupId,
     ...(kind === "short" && moved.dice.length > 0 ? { dice: moved.dice.map(storedDie) } : {}),
     ...(oasisHolders.length > 0 ? { oasisHolders } : {}),
   });
-  return { fearRoll, fearGained: gained, ...(countdownLines !== undefined ? { countdownLines } : {}) };
+  return {
+    fearRoll: fearRoll ?? null,
+    fearGained: gained,
+    ...(fearRule === "manual" ? { fearPrompt: fearLine } : {}),
+    ...(countdownLines !== undefined ? { countdownLines } : {}),
+  };
 }
 
 async function loadOpenRest(ctx: QueryCtx, campaignId: Id<"campaigns">, restId: Id<"rests">): Promise<Doc<"rests">> {
@@ -315,6 +372,8 @@ async function loadOpenRest(ctx: QueryCtx, campaignId: Id<"campaigns">, restId: 
 const endResult = v.object({
   fearRoll: v.union(v.number(), v.null()),
   fearGained: v.number(),
+  /** F2 Manual: the Fear the book gives, said not applied ("Long rest: Gain 1d4 + 4 Fear"); the GM adds it. */
+  fearPrompt: v.optional(v.string()),
   /** GM only (finish is a GM mutation): each long-term countdown the long rest ticked, with its step (K4). */
   countdownLines: v.optional(v.array(v.string())),
 });
@@ -330,13 +389,22 @@ export const finish = keyedGmMutation({
     }),
 });
 
-/** Interrupts the open rest: a short rest gives nothing; a long rest gives a short rest's benefits (CB 105). GM only. */
+/**
+ * Interrupts the open rest: a short rest gives nothing; a long rest gives a short rest's benefits (CB 105). With T4
+ * Interrupted rest on Manual, either rest just closes (no moves, Fear or hooks) and the GM gets a note. GM only.
+ */
 export const interrupt = keyedGmMutation({
   args: { restId: v.id("rests") },
   returns: endResult,
   handler: async (ctx, { restId }) =>
     ctx.once("rest_interrupt", { restId }, async () => {
       const rest = await loadOpenRest(ctx, ctx.campaign._id, restId);
+      if (ruleMode(ctx.campaign, "interruptedRest") === "manual") {
+        await ctx.db.patch("rests", rest._id, { status: "interrupted", finishedAt: Date.now() });
+        // Nothing was applied, so there is no undo group for the note to join (as for an interrupted short rest).
+        await postRuleNote(ctx, ctx.campaign, { ruleId: "interruptedRest", summary: INTERRUPTED_REST_NOTE, actorId: ctx.user._id });
+        return { fearRoll: null, fearGained: 0 };
+      }
       if (rest.kind === "long") return applyRest(ctx, { rest, interrupted: true });
       await ctx.db.patch("rests", rest._id, { status: "interrupted", finishedAt: Date.now() });
       return { fearRoll: null, fearGained: 0 };
@@ -374,6 +442,7 @@ export const undo = keyedGmMutation({
         finishedAt: undefined,
         fearRoll: undefined,
         fearGained: undefined,
+        fearPrompt: undefined,
         groupId: undefined,
         dice: undefined,
         oasisHolders: undefined,
@@ -422,9 +491,6 @@ export const closeOasis = keyedUserMutation({
       return null;
     }),
 });
-
-/** The rows one undo group holds (`GROUP_MAX`, convex/lib/actionLog.ts): a reroll that would overflow it is refused. */
-const UNDO_GROUP_MAX = 50;
 
 /**
  * Oasis (Duneborne, HF p.27): "During a short rest, you or an ally can reroll a die used for a downtime move and take

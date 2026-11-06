@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id, TableNames } from "./_generated/dataModel";
 import { internalMutation, type MutationCtx } from "./_generated/server";
 import { deleteMapChildren } from "./lib/combatMaps";
+import { removeCampaignRoom } from "./presence";
 
 /**
  * Retention for the tables that only grow (CD17, CD18), run by `crons.ts`.
@@ -69,9 +70,9 @@ export const expireOperations = internalMutation({
 });
 
 /**
- * Deletes resolved and declined `combatRequests` rows whose `resolvedAt` is older than `COMBAT_REQUEST_TTL_MS`
+ * Deletes resolved, declined and withdrawn `combatRequests` rows whose `resolvedAt` is older than `COMBAT_REQUEST_TTL_MS`
  * (rule 8; plan combat-actions AA0). Open rows stay until answered or purged with their campaign. `BATCH` rows per
- * run across both statuses, rescheduling itself while a full batch was deleted. A closed row without `resolvedAt`
+ * run across the closed statuses, rescheduling itself while a full batch was deleted. A closed row without `resolvedAt`
  * (never written that way) sorts first in the index and is swept too.
  */
 export const expireCombatRequests = internalMutation({
@@ -80,7 +81,7 @@ export const expireCombatRequests = internalMutation({
   handler: async (ctx) => {
     const cutoff = Date.now() - COMBAT_REQUEST_TTL_MS;
     const budget: Budget = { left: BATCH };
-    for (const status of ["resolved", "declined"] as const) {
+    for (const status of ["resolved", "declined", "withdrawn"] as const) {
       const rows = await ctx.db
         .query("combatRequests")
         .withIndex("by_status_resolved", (q) => q.eq("status", status).lt("resolvedAt", cutoff))
@@ -127,7 +128,7 @@ export const purgeDeletedCampaigns = internalMutation({
     // `deletedAt` is a timestamp, so `gte 0` skips the live campaigns (undefined sorts first).
     const due = await ctx.db
       .query("campaigns")
-      .withIndex("by_deletedAt", (q) => q.gte("deletedAt", 0).lte("deletedAt", cutoff))
+      .withIndex("by_deletedAt_archivedAt", (q) => q.gte("deletedAt", 0).lte("deletedAt", cutoff))
       .first();
     if (due !== null) await ctx.scheduler.runAfter(0, internal.cleanup.purgeCampaign, { campaignId: due._id, sweep: true });
     return null;
@@ -370,7 +371,8 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
   },
   // Lorekeeper (D13): asks and rulings before the messages they reference, messages before their conversations,
   // then the GM's book switches and the campaign's usage counters (per-user and deployment counters have no
-  // campaign; they expire after 13 months, convex/lorekeeperRetention.ts). Books and chunks are per deployment.
+  // campaign; they expire after 13 months, convex/lorekeeperRetention.ts). Shared books and their chunks are per
+  // deployment; the campaign's own books (config LB1) go with it.
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("lorekeeperAsks").withIndex("by_campaign_open", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "lorekeeperAsks", rows);
@@ -393,6 +395,22 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
       .take(budget.left);
     await deleteRows(ctx, budget, "lorekeeperConversations", rows);
   },
+  // Config LB1: the campaign's own books (they carry `campaignId`), each book's chunks before the book; then the
+  // books' upload status rows. The shared books have no `campaignId` and stay.
+  async (ctx, c, budget) => {
+    const books = await ctx.db.query("lorekeeperBooks").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    for (const book of books) {
+      const chunks = await ctx.db.query("lorekeeperChunks").withIndex("by_book_page", (q) => q.eq("bookId", book._id)).take(budget.left);
+      const all = chunks.length < budget.left;
+      await deleteRows(ctx, budget, "lorekeeperChunks", chunks);
+      if (!all || budget.left <= 0) return;
+      await deleteRows(ctx, budget, "lorekeeperBooks", [book]);
+    }
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("lorekeeperIngests").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "lorekeeperIngests", rows);
+  },
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("lorekeeperLibrary").withIndex("by_campaign_book", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "lorekeeperLibrary", rows);
@@ -400,6 +418,15 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("lorekeeperUsage").withIndex("by_campaign_period", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "lorekeeperUsage", rows);
+  },
+  // Config AD0: the owner's Lorekeeper numbers for this campaign and its GMs' requests for higher limits.
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("lorekeeperCampaignLimits").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "lorekeeperCampaignLimits", rows);
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("lorekeeperLimitRequests").withIndex("by_campaign_status", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "lorekeeperLimitRequests", rows);
   },
   // Combat requests (plan combat-actions AA0): GM sanctions and reaction windows; they reference characters,
   // encounters and maps only by id, so their order here does not matter.
@@ -427,6 +454,21 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
     const rows = await ctx.db.query("combatSeen").withIndex("by_campaign_token", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "combatSeen", rows);
   },
+  // Spotlight Tracker action tokens (plan rule-switches RT): one row per character at most, referenced by id only.
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("actionTokens").withIndex("by_campaign_character", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "actionTokens", rows);
+  },
+  // Config S0: folded hands ("Hide cards") and the players' unsent character-wizard drafts of this campaign
+  // (custom-frame drafts have no campaign; P2's cron expires them).
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("handFolds").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "handFolds", rows);
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("userDrafts").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "userDrafts", rows);
+  },
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("operations").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "operations", rows);
@@ -437,7 +479,7 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
  * Deletes a campaign due for purge and everything in it, `BATCH` rows per
  * run: first every indexed step, then a paged scan of `campaignOpens` (it has
  * no campaign index, and players who left keep their rows), then the
- * campaign itself. Stops if the campaign is gone or was restored. Only a purge
+ * campaign's presence room (config PR1) and the campaign itself. Stops if the campaign is gone or was restored. Only a purge
  * started by `purgeDeletedCampaigns` (`sweep`) goes on to the next due campaign;
  * a GM's "Delete permanently" (`campaigns.purge`) purges its campaign alone.
  */
@@ -467,6 +509,8 @@ export const purgeCampaign = internalMutation({
       await ctx.scheduler.runAfter(0, internal.cleanup.purgeCampaign, { campaignId, opensCursor: page.continueCursor, sweep });
       return null;
     }
+    // The campaign's Online / Away room lives in the presence component (config PR1): a few rows per member.
+    await removeCampaignRoom(ctx, campaignId);
     await ctx.db.delete("campaigns", campaignId);
     if (sweep === true) await ctx.scheduler.runAfter(0, internal.cleanup.purgeDeletedCampaigns, {});
     return null;

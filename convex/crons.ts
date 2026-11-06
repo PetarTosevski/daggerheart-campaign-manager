@@ -32,5 +32,14 @@ crons.cron("expire lorekeeper usage", "47 4 * * *", internal.lorekeeperRetention
 crons.cron("end stuck lorekeeper answers", "29 * * * *", internal.lorekeeperRetention.expireStaleRuns, {});
 // Open sign-up (plan open-signup OS5): password accounts whose code was never entered, after 7 days; daily.
 crons.cron("expire unverified sign-ups", "13 4 * * *", internal.cleanup.expireUnverifiedSignups, {});
+// Account drafts (plan config P2, Q15 b): character-wizard and custom-frame drafts not saved for 90 days; daily.
+crons.cron("expire old drafts", "31 4 * * *", internal.draftsRetention.expire, {});
+// App admin (plan config AD0): audit rows after 365 days (Q26 a) and decided Lorekeeper limit requests after 365 days,
+// daily; export files after an hour (Q30 a), hourly, so none outlives its hour by more than another hour.
+crons.cron("expire admin audit", "43 4 * * *", internal.adminRetention.expireAudit, {});
+crons.cron("expire limit requests", "57 4 * * *", internal.adminRetention.expireLimitRequests, {});
+crons.cron("expire admin exports", "3 * * * *", internal.adminRetention.expireExports, {});
+// Deleted accounts (plan config AD14, N11): erased once their 30-day undo window has passed, one after another; daily.
+crons.cron("erase deleted accounts", "27 5 * * *", internal.accountPurge.purgeDueAccounts, {});
 
 export default crons;

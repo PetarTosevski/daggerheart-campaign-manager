@@ -2,7 +2,7 @@
 // relationships, nation sheets (assets and problems) and objective countdowns.
 // Pure logic and data: bundled into Convex, so relative imports only.
 
-import { z } from "zod";
+import * as z from "../../zod";
 
 import { RuleError } from "../../errors/app-error";
 

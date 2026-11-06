@@ -1,0 +1,15 @@
+/* Campaign settings, At the table (plan config U1; design `.s-table`). Shared rows are in ../../config.css. */
+.cfg-lock {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+}
+.cfg-err:empty {
+  display: none;
+}
+.cfg-err {
+  margin-top: 8px;
+  color: #f0a8a0;
+}

@@ -1,6 +1,8 @@
 // dcm-bxp.131 (plan followups-6, tracer G1; journal J1 added the journal segment): the campaign error.tsx files that render their own body instead of
 // RouteError also send an ended session to sign-in and back (B5, src/lib/auth/use-session-ended-redirect.ts). Every
-// other error keeps the page's own alert and 'Try again'.
+// other error keeps the page's own alert and 'Try again'. Journal JX1 dropped the notes and sessions segments: those
+// routes are now route handlers that redirect to the Journal (sessions/route.ts, notes/route.ts), with no page and so
+// no error.tsx; the journal segment covers their content.
 import type { ComponentType } from "react";
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -22,7 +24,6 @@ vi.mock("@convex-dev/auth/react", () => ({
 type ErrorPage = ComponentType<{ error: Error & { digest?: string }; retry: () => void }>;
 
 const PAGES: { segment: string; load: () => Promise<{ default: ErrorPage }>; failed: string }[] = [
-  { segment: "notes", load: () => import("@/app/(gm)/campaigns/[campaignId]/notes/error"), failed: "The notes failed to load." },
   {
     segment: "combat-map",
     load: () => import("@/app/(gm)/campaigns/[campaignId]/combat-map/error"),
@@ -37,11 +38,6 @@ const PAGES: { segment: string; load: () => Promise<{ default: ErrorPage }>; fai
     segment: "lorekeeper",
     load: () => import("@/app/(gm)/campaigns/[campaignId]/lorekeeper/error"),
     failed: "The Lorekeeper failed to load.",
-  },
-  {
-    segment: "sessions",
-    load: () => import("@/app/(gm)/campaigns/[campaignId]/sessions/error"),
-    failed: "The sessions failed to load.",
   },
   {
     segment: "journal",

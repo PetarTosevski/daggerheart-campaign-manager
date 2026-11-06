@@ -1,12 +1,15 @@
 "use client";
 
+import { BrandButton } from "@/components/brand/buttons";
+import { SharedCardNote } from "@/components/party/sheet-ui";
 import { designAsset } from "@/lib/design-assets";
 import { TRAIT_LABEL, traitIdSchema } from "@/lib/frames/extras/common";
 import { IKONIS_RANGES, IKONIS_TRAINING_CLASS_ID, type Ikonis } from "@/lib/frames/extras/motherboard";
 import { DOMAIN_CARD_ART, EXPERIENCE_SUGGESTIONS, getClass, getDomain, getSubclass, getWeapon, type Armor, type Weapon } from "@/lib/srd";
-import { STARTING_EXPERIENCE_VALUE } from "@/lib/domain/characters";
+import { sharedCardNote, STARTING_EXPERIENCE_VALUE } from "@/lib/domain/characters";
 import { PURPOSEFUL_DESIGN_BONUS } from "@/lib/domain/dice";
 import { cn } from "@/lib/utils";
+import { prefersReducedMotion } from "@/lib/use-reduced-motion";
 
 import { Choice, formatModifier, Group, HfMini, traitLabel, type StepProps } from "./steps-1-4";
 import {
@@ -150,22 +153,21 @@ export function EquipmentStep({ state, update, opts }: StepProps) {
           </p>
         )}
         {loadout ? (
-          <button
-            type="button"
-            className="wz-ghost"
+          <BrandButton
+            variant="neutral"
+            size="sm"
             onClick={() => {
               update(opts.ikonis ? { armorId: loadout.armorId } : { primaryWeaponId: loadout.primaryWeaponId, secondaryWeaponId: loadout.secondaryWeaponId, armorId: loadout.armorId });
               // The equipment is set: move on to what is left on this step, the potion (and Next under it).
               requestAnimationFrame(() => {
                 const inventory = document.getElementById("wz-inventory");
-                const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-                inventory?.scrollIntoView?.({ block: "start", behavior: reduce ? "auto" : "smooth" });
+                inventory?.scrollIntoView?.({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" });
                 inventory?.parentElement?.querySelector<HTMLInputElement>('input[name="potion"]')?.focus({ preventScroll: true });
               });
             }}
           >
             Use suggested {opts.ikonis ? "armor" : "loadout"}
-          </button>
+          </BrandButton>
         ) : null}
       </div>
       {opts.ikonis ? <IkonisFields state={state} update={update} /> : null}
@@ -402,7 +404,7 @@ export function ExperiencesStep({ state, update, opts }: StepProps) {
 
 // ---------------------------------------------------------------- Step 8
 
-export function DomainCardsStep({ state, update, opts }: StepProps) {
+export function DomainCardsStep({ state, update, opts, shared }: StepProps) {
   const cls = state.classId ? getClass(state.classId) : undefined;
   const domains = (cls?.domains ?? []).map((d) => getDomain(d)?.name ?? d).join(" & ");
   const picks = state.domainCards;
@@ -421,7 +423,10 @@ export function DomainCardsStep({ state, update, opts }: StepProps) {
         <div className="wz-cards">
           {domainCardOptions(state.classId, opts).map((card) => {
             const on = picks.includes(card.id);
-            const full = !on && picks.length >= 2;
+            // Shared domain cards (CB p.21, rule-switches OSC): Warn notes the card; Refuse also keeps it from being chosen.
+            const note = shared ? sharedCardNote(shared.mode, shared.holders, card.id) : null;
+            const refused = note !== null && shared?.mode === "refuse";
+            const full = !on && (picks.length >= 2 || refused);
             const art = DOMAIN_CARD_ART[card.id];
             const artUrl = art ? designAsset(art) : undefined;
             const domain = getDomain(card.domain);
@@ -438,6 +443,7 @@ export function DomainCardsStep({ state, update, opts }: StepProps) {
                   {domain?.name} · {cap(card.type)} · Recall {card.recallCost}
                 </div>
                 <p className="wz-dk-text">{card.text}</p>
+                <SharedCardNote note={note} refused={refused} />
                 <footer className="wz-dk-foot">
                   <Choice
                     type="checkbox"
@@ -446,7 +452,7 @@ export function DomainCardsStep({ state, update, opts }: StepProps) {
                     disabled={full}
                     onSelect={() => update({ domainCards: toggleCard(picks, card.id) })}
                     className="wz-dk-btn"
-                    label={`Choose ${card.name}`}
+                    label={note ? `Choose ${card.name} (${note})` : `Choose ${card.name}`}
                   >
                     {on ? "Chosen ✓" : "Choose"}
                   </Choice>

@@ -7,6 +7,7 @@ import { refusalFor, refusalForCode, type Refusal } from "@/lib/errors/refusals"
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
+import { AllyPickCard } from "../ally-picks";
 import { RefusalMessage, hudToasts } from "../blocked";
 import { Popup, Stepper, WaitingDots, hudButtonClass, type HudButtonRole } from "../ui";
 import {
@@ -16,6 +17,7 @@ import {
   cloakSub,
   difficultyReason,
   difficultyRoll,
+  gmPromptSub,
   isAlreadyAnswered,
   itemLabel,
   outOfRangeReason,
@@ -75,22 +77,27 @@ export function useQueueAnswers(campaignId: CampaignId) {
     if (rows !== undefined) store.setQuery(api.combatRequestsReads.difficulties, { campaignId }, drop(rows, requestId));
   });
   const resolve = useMutation(api.adversaryActions.resolve).withOptimisticUpdate((store, { requestId }) => {
-    const rows = store.getQuery(api.adversaryActions.windows, { campaignId });
-    if (rows !== undefined) store.setQuery(api.adversaryActions.windows, { campaignId }, drop(rows, requestId));
+    const rows = store.getQuery(api.adversaryActionsReads.windows, { campaignId });
+    if (rows !== undefined) store.setQuery(api.adversaryActionsReads.windows, { campaignId }, drop(rows, requestId));
   });
   const cloak = useMutation(api.cloakPrompts.answer).withOptimisticUpdate((store, { requestId }) => {
-    const rows = store.getQuery(api.cloakPrompts.pending, { campaignId });
-    if (rows !== undefined) store.setQuery(api.cloakPrompts.pending, { campaignId }, drop(rows, requestId));
+    const rows = store.getQuery(api.cloakPromptsReads.pending, { campaignId });
+    if (rows !== undefined) store.setQuery(api.cloakPromptsReads.pending, { campaignId }, drop(rows, requestId));
   });
   const keyword = useMutation(api.hitKeywords.answer).withOptimisticUpdate((store, { requestId }) => {
-    const rows = store.getQuery(api.hitKeywords.asks, { campaignId });
-    if (rows !== undefined) store.setQuery(api.hitKeywords.asks, { campaignId }, drop(rows, requestId));
+    const rows = store.getQuery(api.hitKeywordsReads.asks, { campaignId });
+    if (rows !== undefined) store.setQuery(api.hitKeywordsReads.asks, { campaignId }, drop(rows, requestId));
   });
   const cancelAlly = useMutation(api.featurePrompts.cancelAllyRoll).withOptimisticUpdate((store, { requestId }) => {
-    for (const q of store.getAllQueries(api.featurePrompts.allyRolls)) {
+    for (const q of store.getAllQueries(api.featurePromptsReads.allyRolls)) {
       if (q.value === undefined) continue;
-      store.setQuery(api.featurePrompts.allyRolls, q.args, { ...q.value, asks: drop(q.value.asks, requestId), waiting: drop(q.value.waiting, requestId), pending: drop(q.value.pending, requestId) });
+      store.setQuery(api.featurePromptsReads.allyRolls, q.args, { ...q.value, asks: drop(q.value.asks, requestId), waiting: drop(q.value.waiting, requestId), pending: drop(q.value.pending, requestId) });
     }
+  });
+
+  const gmPrompt = useMutation(api.adversaryPrompts.answer).withOptimisticUpdate((store, { requestId }) => {
+    const rows = store.getQuery(api.adversaryPromptsReads.pending, { campaignId });
+    if (rows !== undefined) store.setQuery(api.adversaryPromptsReads.pending, { campaignId }, drop(rows, requestId));
   });
 
   async function run(item: QueueItem, send: (key: { campaignId: CampaignId; requestId: RequestId; idempotencyKey: string }) => Promise<AnswerOutcome>) {
@@ -117,6 +124,8 @@ export function useQueueAnswers(campaignId: CampaignId) {
   }
 
   return {
+    /** FH-AP: the per-ally pick card answers on its own (`AllyPickCard`); it needs the campaign. */
+    campaignId,
     busy,
     errors,
     result,
@@ -164,6 +173,12 @@ export function useQueueAnswers(campaignId: CampaignId) {
         await cancelAlly(k);
         return { line: `Cancelled: ${item.row.rollerName}’s roll for ${item.row.featureName}.` };
       }),
+    /** dcm-bxp.99.32.27: an adversary feature's GM prompt, applied by hand (Done) or dismissed. */
+    gmPrompt: (item: Extract<QueueItem, { kind: "gmPrompt" }>, done: boolean) =>
+      run(item, async ({ requestId, idempotencyKey }) => {
+        await gmPrompt({ campaignId, requestId, done, idempotencyKey });
+        return { line: `${done ? "Done" : "Dismissed"}: ${item.row.instanceLabel} · ${item.row.feature}.` };
+      }),
   };
 }
 
@@ -196,6 +211,11 @@ const ICON = {
   fire: (
     <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
       <path d="M8 1c1.5 3 4.5 4.5 4.5 8.2A4.5 4.5 0 0 1 3.5 9.2C3.5 7 5 6 5.5 4.5 6.5 6 7 6.2 7.3 6 7.6 4 8 2.5 8 1z" />
+    </svg>
+  ),
+  feature: (
+    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <path d="M2 12h12l-1-7-3 3-2-5-2 5-3-3z" />
     </svg>
   ),
   ally: (
@@ -329,6 +349,24 @@ export function QueueCard({ item, answers }: { item: QueueItem; answers: QueueAn
           <CardError text={error} />
         </Popup>
       );
+    case "gmPrompt":
+      return (
+        <Popup
+          icon={ICON.feature}
+          tone="gm"
+          title={item.row.feature}
+          sub={gmPromptSub(item.row)}
+          testId="hud-queue-gm-prompt"
+          primary={{ label: "Done", ariaLabel: `Done: ${label}`, disabled: busy, onClick: () => void answers.gmPrompt(item, true) }}
+          secondary={no("Dismiss", () => void answers.gmPrompt(item, false), busy, `Dismiss: ${label}`)}
+        >
+          <p>{item.row.text}</p>
+          <CardError text={error} />
+        </Popup>
+      );
+    case "allyPick":
+      // FH-AP (user 2026-11-05): the GM answers a pick its player hasn't (the player's own card, on the GM tone).
+      return <AllyPickCard campaignId={answers.campaignId} pick={item.row} gm />;
   }
 }
 

@@ -14,10 +14,12 @@ import {
 } from "@/lib/domain/combat-actions/shortfall";
 
 import { errorMessage } from "../convex-errors";
+import { adminMessages } from "./admin";
 import { adversaryActionMessages } from "./adversaryActions";
 import { combatActionMessages } from "./combatActions";
 import { combatFeatureMessages } from "./combatFeatures";
 import { combatMapMessages } from "./combatMap";
+import { configMessages } from "./config";
 import { spotlightMessages } from "./spotlight";
 
 /**
@@ -137,7 +139,17 @@ export type CombatRefusalCode =
   | keyof typeof spotlightMessages;
 
 /** Common and other domains' codes the combat surfaces also meet. */
-type SharedCode = "INVALID" | "NOT_FOUND" | "RATE_LIMITED" | "NOT_ENOUGH_HOPE" | "FEAR_EMPTY" | "CHARACTER_UNAVAILABLE" | "ENCOUNTER_NOT_RUNNING";
+type SharedCode =
+  | "INVALID"
+  | "NOT_FOUND"
+  | "RATE_LIMITED"
+  | "NOT_ENOUGH_HOPE"
+  | "FEAR_EMPTY"
+  | "CHARACTER_UNAVAILABLE"
+  | "ENCOUNTER_NOT_RUNNING"
+  | "COMBAT_TARGET_OUT_OF_RANGE"
+  // Config AD0 / AF1: a feature the owner switched off for the caller (sprite tokens, internet search...).
+  | "FEATURE_OFF";
 
 export type RefusalCode = CombatRefusalCode | SharedCode;
 
@@ -289,9 +301,13 @@ export const REFUSALS: Record<RefusalCode, Entry> = {
     hint: null,
     before: ["control-disabled"],
   },
+  ADVERSARY_DEFEATED: plain("—", "GM: defeated", spotlightMessages.ADVERSARY_DEFEATED, { before: ["control-disabled"] }),
 
   // --- the other combat codes (no board row; the domain's own words)
   CARD_NOT_IN_LOADOUT: plain("—", "Not in your loadout", combatActionMessages.CARD_NOT_IN_LOADOUT, { hint: "Swap it in from your vault first.", before: ["card-tag"] }),
+  // Config S0 code, thrown by R2 when the GM refuses out-of-range actions (`tableSettings.outOfRange: "refuse"`).
+  COMBAT_TARGET_OUT_OF_RANGE: plain("—", "Out of range", configMessages.COMBAT_TARGET_OUT_OF_RANGE),
+  FEATURE_OFF: plain("—", "Switched off", adminMessages.FEATURE_OFF, { place: "toast" }),
   COMBAT_NOT_YOUR_CHARACTER: plain("—", "Not your character", combatActionMessages.COMBAT_NOT_YOUR_CHARACTER),
   FEATURE_NOT_OWNED: plain("—", "Not your feature", combatFeatureMessages.FEATURE_NOT_OWNED),
   ADVERSARY_FEATURE_UNAVAILABLE: plain("—", "Can’t use that now", adversaryActionMessages.ADVERSARY_FEATURE_UNAVAILABLE, { before: ["attack-disabled"] }),
@@ -417,7 +433,9 @@ export function refusalFor(error: unknown, ctx: RefusalContext = {}): Refusal {
   if (typeof error === "string") return refusalForCode(error, ctx);
   const data = refusalData(error);
   if (!data) return build("FALLBACK", FALLBACK, ctx, null, []);
-  const structured = readShortfall(data.data);
+  // The server's numbers win over the client's pre-compute (dcm-bxp.99.32.2); a Fear shortfall is always the GM's.
+  const fear = data.code === "NOT_ENOUGH_FEAR" || data.code === "FEAR_EMPTY";
+  const structured = readShortfall(data.data).map((s) => (fear && s.resource === "fear" && !s.payer ? { ...s, payer: "gm" as const } : s));
   const shortfall = structured.length > 0 ? structured : ctx.shortfall?.length ? ctx.shortfall : impliedShortfall(data.code, data.message);
   if (data.code in REFUSALS) return build(data.code, REFUSALS[data.code as RefusalCode], ctx, data.message, shortfall);
   // An app code outside the combat table (UNDO_STALE, DICE_RULE …): its own words; truly unknown → FALLBACK.

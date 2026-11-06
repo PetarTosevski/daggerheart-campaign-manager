@@ -17,11 +17,12 @@ import { effectEndsOf, needsChoiceValidator, pendingCardValidator, type ChoiceAs
 import { actorSheetAfter, buildRun, replaying, runCard, type BuiltRun, type RunOutcome } from "./lib/cardRunner";
 import type { RunPlan } from "../src/lib/domain/card-effects/run";
 import type { CardUse } from "../src/lib/domain/card-effects/types";
-import { MAX_AREA_COUNT } from "./combatAreas";
+import { MAX_AREA_COUNT } from "./lib/combatAreas";
 import { afterUse, foldPcRolls, foldSteps, rerunWith, runWithRiders, autoUsesOn, rollHost, type RiderSheets, type Square } from "./combatCards";
 import { companionFor, companionNumbers } from "./lib/companion";
 import { assertCanAct, loadCharacter, readSheet, saveSheet, storedSheet } from "./lib/characterSheet";
-import { attackScene, defaultOnRiders, type Host, type RiderRun } from "./lib/combatActions";
+import { attackScene, defaultOnRiders, riderOptions, riderOptionValidator, weaponSlotValidator, type Host, type RiderRun } from "./lib/combatActions";
+import { outOfRangeRefusal, refusesOutOfRange } from "./combatActions";
 import { closeRequest, encounterRunning, loadOpenRequest } from "./lib/combatRequests";
 import { rollDie } from "./lib/dice";
 import { FLYING_FEATURES, REFOCUS_KEY } from "./lib/featureDrawer";
@@ -39,7 +40,10 @@ import {
   type ResolvedFeature,
 } from "./lib/featureRunner";
 import { campaignFearState } from "./lib/fear";
-import { keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
+import { assertMayAct, useActKind } from "./lib/spotlight";
+import { campaignQuery, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
+import { traitIdValidator } from "./lib/validators/characters";
+import { fearFor } from "./lib/fearVisibility";
 import { featureScope } from "./lib/featureScope";
 import { riderValidator, type Rider } from "./lib/validators/combatRequests";
 import { changed } from "./lib/rolls";
@@ -64,9 +68,10 @@ import { changed } from "./lib/rolls";
  */
 
 async function editableHere(ctx: QueryCtx & { user: Doc<"users">; campaign: Doc<"campaigns"> }, characterId: Id<"characters">) {
-  const { campaign, character } = await loadCharacter(ctx, ctx.user, characterId, "edit", "owner");
+  const { campaign, character, permission } = await loadCharacter(ctx, ctx.user, characterId, "edit", "owner");
   if (campaign._id !== ctx.campaign._id) throw appError("NOT_FOUND");
-  return { campaign, character, sheet: readSheet(character.sheet) };
+  // Config R2: `gm` (the GM or a co-GM acting for a PC) is never refused for range.
+  return { campaign, character, sheet: readSheet(character.sheet), gm: permission === "owner" };
 }
 
 const LAST_ROLL_SCAN = 20;
@@ -371,6 +376,28 @@ async function openSanction(
 }
 
 /**
+ * dcm-bxp.99.32.19 (plan combat-hud H3.3): the riders that ride on a feature's own action roll, as
+ * `combatActionsReads.riders` gives them for a weapon attack: the same `riderOptions` over the feature's host (`rollHost`
+ * with `fromUse` = the feature and use, upgrades applied by `pickFeature`; `trait` for a use whose roll lets the player
+ * pick it, `weapon` for an attack with either weapon). Empty for a use without an action roll. Access: edit on the
+ * character (its player or the GM; another player FORBIDDEN, U1). FEATURE_NOT_OWNED / FEATURE_NOT_COMBAT / INVALID as
+ * `useFeature` refuses the pick.
+ */
+export const riders = campaignQuery({
+  need: "view",
+  args: { characterId: v.id("characters"), featureId: v.string(), useId: v.optional(v.string()), trait: v.optional(traitIdValidator), weapon: v.optional(weaponSlotValidator) },
+  returns: v.array(riderOptionValidator),
+  handler: async (ctx, { characterId, featureId, useId, trait, weapon }) => {
+    const { campaign, character } = await loadCharacter(ctx, ctx.user, characterId, "edit", "owner");
+    if (campaign._id !== ctx.campaign._id) throw appError("NOT_FOUND");
+    const sheet = readSheet(character.sheet);
+    const pick = pickFeature({ sheet, campaign, featureId, useId, times: 1, rollUsedExperience: false, party: [] });
+    const host = rollHost(sheet, pick.use, trait ? { trait } : {}, weapon, { id: featureId, useId: pick.use.id });
+    return host === null ? [] : riderOptions(sheet, campaign, host);
+  },
+});
+
+/**
  * Uses an owned feature. Refusals: FEATURE_NOT_OWNED, FEATURE_NOT_COMBAT (out of combat, narrative, passive, not yet
  * automated), FEATURE_EXHAUSTED, FEATURE_COST_UNPAID, FEATURE_NEEDS_MAP (targets or riders without a live map), INVALID
  * (an unconfirmed situation, a repeat on a roll, a bad choice, riders on a use without an action roll), COMBAT_* for
@@ -383,21 +410,27 @@ export const useFeature = keyedCampaignMutation({
   args: useArgs,
   returns: v.union(resolvedFeatureValidator, pendingCardValidator, needsChoiceValidator),
   handler: async (ctx, args) =>
-    ctx.once("combat_feature", args, async () => {
-      const { campaign, character, sheet } = await editableHere(ctx, args.characterId);
+    fearFor(ctx, ctx.user, ctx.campaign, await ctx.once("combat_feature", args, async () => {
+      const { campaign, character, sheet, gm } = await editableHere(ctx, args.characterId);
+      // Config R2 (Q2 a): a player's use with a target out of its range is refused when the GM refuses them.
+      const refuse = refusesOutOfRange(campaign, gm);
       if ((args.points?.length ?? 0) > MAX_AREA_COUNT) throw appError("INVALID", `At most ${MAX_AREA_COUNT} squares.`);
       const squares: Squares = { ...(args.point ? { point: args.point } : {}), ...(args.points ? { points: args.points } : {}) };
       const riders = args.riders ?? [];
       const riseOff = args.riseToTheChallenge === false;
       const { req, built } = await prepare(ctx, campaign, character, sheet, args.mapId, args);
+      // S2 (plan rule-switches RS2): a feature's action waits while the GM holds the spotlight; a reaction never does.
+      await assertMayAct(ctx, campaign, character, useActKind(req.pick.use), sheet.name);
       const host = ridesWith(req, riders, riseOff);
       if (host !== null) {
         const withRiders = await featureWithRiders(ctx, req, host, args.mapId, args, riders, ctx.user._id, riseOff);
         if (withRiders.status === "needsChoice") return { status: "needsChoice" as const, asks: withRiders.asks };
         if (withRiders.built.outOfRange.length === 0) return resolveWithRiders(ctx, withRiders, ctx.user._id, squares);
+        if (refuse) throw outOfRangeRefusal(withRiders.built.outOfRange);
         // Q1: wait for the GM; the approval runs the feature and its riders (the sent ones are stored) again.
         return openSanction(ctx, { campaign, character, built: withRiders.built, args, useId: req.pick.use.id, riseOff, riders });
       }
+      if (refuse && built.outOfRange.length > 0) throw outOfRangeRefusal(built.outOfRange);
       const outcome = await runKept(ctx, req, built, ctx.user._id);
       if (outcome.kind === "needsChoice") return { status: "needsChoice" as const, asks: outcome.asks };
       if (built.outOfRange.length === 0) {
@@ -407,7 +440,7 @@ export const useFeature = keyedCampaignMutation({
       }
       await keepDice(ctx, featureSlot(req), outcome.dice, ctx.user._id);
       return openSanction(ctx, { campaign, character, built, args, useId: req.pick.use.id, riseOff: false, riders: [] });
-    }),
+    }), "fearDelta", ctx.permission),
 });
 
 /**
@@ -516,7 +549,7 @@ export const shiftStance = keyedCampaignMutation({
         unshakable = marked.roll;
         paid = marked.sheet;
       } else {
-        if (martial.focus < 1) throw appError("FEATURE_COST_UNPAID");
+        if (martial.focus < 1) throw appError("FEATURE_COST_UNPAID", undefined, { resource: "focus", need: 1, have: martial.focus });
         paid = { ...sheet, classState: { ...sheet.classState, martial: { ...martial, focus: martial.focus - 1 } } };
       }
       // DA10 / lane E6 (HF p.12, dcm-awh): the previous stance drops with what ends with it (Grappling's Restrain,

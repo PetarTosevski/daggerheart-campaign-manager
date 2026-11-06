@@ -47,6 +47,8 @@ function pageRoutes(s: Seed): { app: string[]; campaign: string[] } {
       `${c}/adversaries`,
       `${c}/combat-map`,
       `${c}/combat-map/packs`,
+      `${c}/journal`,
+      // The old Sessions and Notes routes (JX1: server redirects to the Journal; the proxy answers first).
       `${c}/sessions`,
       `${c}/notes`,
       // [section] (a slug with no board of its own).

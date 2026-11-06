@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
+
 import { MIN_GRID_CELL, type ImageGrid } from "./grid";
 
 /**
@@ -41,15 +43,17 @@ export function GridControls({
       </span>
       <div className="cm-row">
         <span className="cm-lbl cm-gridbar-lbl">Square</span>
-        <button
+        <BrandButton
           type="button"
-          className="cm-btn cm-sm"
+          variant="tool"
+          size="sm"
+          icon
           aria-label="Smaller squares"
           disabled={disabled || grid.cell <= MIN_GRID_CELL}
           onClick={() => onGrid({ ...grid, cell: grid.cell - 1 })}
         >
           −
-        </button>
+        </BrandButton>
         <input
           className="cm-in cm-gridbar-in"
           type="text"
@@ -68,31 +72,31 @@ export function GridControls({
             }
           }}
         />
-        <button type="button" className="cm-btn cm-sm" aria-label="Bigger squares" disabled={disabled} onClick={() => onGrid({ ...grid, cell: grid.cell + 1 })}>
+        <BrandButton type="button" variant="tool" size="sm" icon aria-label="Bigger squares" disabled={disabled} onClick={() => onGrid({ ...grid, cell: grid.cell + 1 })}>
           +
-        </button>
+        </BrandButton>
         <span className="cm-muted cm-gridbar-unit">px</span>
       </div>
       <div className="cm-row">
         <span className="cm-lbl cm-gridbar-lbl">Offset</span>
-        <button type="button" className="cm-btn cm-sm" aria-label="Shift grid left" disabled={disabled} onClick={() => nudge(-1, 0)}>
+        <BrandButton type="button" variant="tool" size="sm" icon aria-label="Shift grid left" disabled={disabled} onClick={() => nudge(-1, 0)}>
           ←
-        </button>
-        <button type="button" className="cm-btn cm-sm" aria-label="Shift grid right" disabled={disabled} onClick={() => nudge(1, 0)}>
+        </BrandButton>
+        <BrandButton type="button" variant="tool" size="sm" icon aria-label="Shift grid right" disabled={disabled} onClick={() => nudge(1, 0)}>
           →
-        </button>
-        <button type="button" className="cm-btn cm-sm" aria-label="Shift grid up" disabled={disabled} onClick={() => nudge(0, -1)}>
+        </BrandButton>
+        <BrandButton type="button" variant="tool" size="sm" icon aria-label="Shift grid up" disabled={disabled} onClick={() => nudge(0, -1)}>
           ↑
-        </button>
-        <button type="button" className="cm-btn cm-sm" aria-label="Shift grid down" disabled={disabled} onClick={() => nudge(0, 1)}>
+        </BrandButton>
+        <BrandButton type="button" variant="tool" size="sm" icon aria-label="Shift grid down" disabled={disabled} onClick={() => nudge(0, 1)}>
           ↓
-        </button>
+        </BrandButton>
         <span className="cm-muted cm-gridbar-unit" data-testid="grid-offset">
           {grid.offsetX}, {grid.offsetY}
         </span>
-        <button type="button" className="cm-btn cm-sm" aria-pressed={shifting} disabled={disabled} onClick={() => onShifting(!shifting)}>
+        <BrandButton type="button" variant="tool" size="sm" aria-pressed={shifting} disabled={disabled} onClick={() => onShifting(!shifting)}>
           ✥ Drag to shift
-        </button>
+        </BrandButton>
       </div>
     </div>
   );

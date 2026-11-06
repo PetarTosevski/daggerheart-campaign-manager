@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "convex/react";
 import Link from "next/link";
 import { useRef, useState } from "react";
 
+import { BrandButton, brandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import { ALLEGIANCE_UNKNOWN, factionsFor, regionsFor, type CodexPatch } from "@/lib/codex/schema";
 import { allegianceNote, type GmEntry, type PlayerEntry } from "@/lib/codex/view";
@@ -144,9 +145,9 @@ export function GmDetail({
               <div className="col-span-full flex flex-wrap items-center gap-2.5">
                 <span className="cx-muted flex-1 text-[13px]!">{allegianceNote(entry.allegiance, entry.allegianceShown)}</span>
                 {entry.allegiance && entry.allegianceShown !== entry.allegiance ? (
-                  <button type="button" className="cx-ghost min-h-[34px]! text-[13px]!" onClick={() => void save({ allegianceShown: entry.allegiance })}>
+                  <BrandButton variant="neutral" size="sm" onClick={() => void save({ allegianceShown: entry.allegiance })}>
                     👁 Reveal true allegiance
-                  </button>
+                  </BrandButton>
                 ) : null}
               </div>
             </div>
@@ -178,46 +179,31 @@ export function GmDetail({
           ) : null}
 
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => void save({ known: !entry.known })}
-              aria-pressed={entry.known}
-              className={cn(
-                "min-h-10 cursor-pointer rounded-lg border px-3.5 text-[14px] font-semibold",
-                entry.known ? "border-[#3d7a55] bg-[#20352b] text-[#c8f0d6]" : "border-[#6a3a44] bg-[#2a1f24] text-[#f0c2cc]",
-              )}
-            >
+            <BrandButton variant="neutral" onClick={() => void save({ known: !entry.known })} aria-pressed={entry.known}>
               {entry.known ? "👁 Known to players" : "🔒 Secret from players"}
-            </button>
+            </BrandButton>
             {isLoc ? (
-              <button
-                type="button"
-                className="cx-ghost"
-                onClick={onPickPin}
-                title={hasPins ? undefined : "No pins yet: drop one on the map from the picker"}
-              >
+              <BrandButton variant="neutral" onClick={onPickPin} title={hasPins ? undefined : "No pins yet: drop one on the map from the picker"}>
                 {entry.tokenId !== null ? "📍 Change pin" : "📍 Link to map pin"}
-              </button>
+              </BrandButton>
             ) : null}
             {entry.tokenId !== null ? (
               <>
-                <Link href={mapHref(campaignId, entry.tokenId)} className="cx-ghost">
+                <Link href={mapHref(campaignId, entry.tokenId)} className={brandButton({ variant: "neutral" })}>
                   🗺 Show on map
                 </Link>
-                <button
-                  type="button"
-                  className="cx-ghost text-[#9fb2b6]!"
+                <BrandButton
+                  variant="neutral"
                   onClick={() => void run(() => setPin({ entryId, tokenId: null }))}
                   title="Keep the map pin but stop linking it to this location"
                 >
                   Unlink
-                </button>
+                </BrandButton>
               </>
             ) : null}
             <span className="flex-1" />
-            <button
-              type="button"
-              className="cx-ghost border-[#5a3330]! text-[#ffb4a8]!"
+            <BrandButton
+              variant="danger"
               onClick={() => {
                 if (!confirmDelete) {
                   setConfirmDelete(true);
@@ -230,7 +216,7 @@ export function GmDetail({
               }}
             >
               {confirmDelete ? "Click again to delete" : "Delete"}
-            </button>
+            </BrandButton>
           </div>
           {error ? (
             <div role="alert" className="text-[14px] text-[#ffb4a8]">
@@ -332,7 +318,7 @@ export function PlayerDetail({
           ) : null}
           {pdesc.trim() ? <p className="m-0 font-serif text-[19px] leading-[1.6] whitespace-pre-line">{pdesc}</p> : null}
           {entry.tokenId !== null ? (
-            <Link href={mapHref(campaignId, entry.tokenId)} className="cx-ghost self-start">
+            <Link href={mapHref(campaignId, entry.tokenId)} className={brandButton({ variant: "neutral", className: "self-start" })}>
               📍 Show on map
             </Link>
           ) : null}

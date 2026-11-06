@@ -91,6 +91,19 @@ describe("password sign-up with an emailed code", () => {
     expect(sessions).toEqual([]);
   });
 
+  it("a suspended account's correct password is refused with ACCOUNT_SUSPENDED and gets no new session (AD14)", async () => {
+    const t = makeTest();
+    await signUp(t, "ana@example.com");
+    await verify(t, "ana@example.com", sent[0].code);
+    const before = (await rows(t)).sessions.length;
+    await t.run(async (ctx) => {
+      const user = (await ctx.db.query("users").collect())[0];
+      await ctx.db.insert("accountStatus", { userId: user._id, suspendedAt: Date.now(), updatedAt: Date.now(), reason: "Spam", by: user._id });
+    });
+    expect(errorCode(await caught(signInPw(t, "ana@example.com", GOOD)))).toBe("ACCOUNT_SUSPENDED");
+    expect((await rows(t)).sessions).toHaveLength(before);
+  });
+
   it("signing in before the code issues no session and sends a fresh code", async () => {
     const t = makeTest();
     await signUp(t, "ana@example.com");

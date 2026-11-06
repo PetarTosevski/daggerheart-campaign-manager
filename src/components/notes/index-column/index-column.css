@@ -100,11 +100,3 @@
     min-height: 44px;
   }
 }
-
-/* The board's small '＋' (l.97: 28 px high, 8 px padding) on desktop; tablets and phones keep 44 px (notes.css). */
-@media (min-width: 1101px) and (pointer: fine) {
-  .bj-group-head .bj-plus {
-    min-height: 28px;
-    padding: 0 8px;
-  }
-}

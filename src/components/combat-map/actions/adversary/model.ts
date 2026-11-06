@@ -65,15 +65,17 @@ export function attackBand(range: string): Range | null {
  * The PCs on the live map as seen from the adversary's token: the Defined Range band (CB p.103), line of sight and cover
  * (CB p.104; the server checks it again and refuses a PC out of sight), and whether the band is within the attack's
  * printed range (adversary attacks are not refused for range: the GM decides, analysis B4). `sight` is null while the
- * layout loads.
+ * layout loads. Rule switches ODR2: with Defined Ranges off (`definedRanges` false) every PC is in attack range (no
+ * squares counted; the band is still computed, the caller hides it).
  */
 export function rangeRows(
   self: Footprint,
   pcs: readonly (Footprint & { characterId: string; name: string })[],
   sight: ((from: Footprint, to: Footprint) => SightResult) | null,
   attackRange: string,
+  definedRanges = true,
 ): RangeRow[] {
-  const reach = attackBand(attackRange);
+  const reach = definedRanges ? attackBand(attackRange) : null;
   return pcs.map((pc) => {
     const { band } = rangeCheck(self, pc, "melee");
     const seen = sight ? sight(self, pc) : null;

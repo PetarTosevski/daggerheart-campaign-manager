@@ -8,8 +8,10 @@
  * back to the PCs." CB p.149 "When to Make a Move": "Rolls with Fear on an action roll. / Fails an action roll."
  *
  * - `moveToGm(ctx, campaign, reason, rollBy?)`: the engine's call when a PC's action roll comes up with Fear or fails
- *   (`rollWithFear` / `failedRoll`), or the GM spotlights an adversary (`adversary`). Wired by bead dcm-bxp.99.32.4;
- *   until then only the GM's `combatSpotlight.gmTake` moves it.
+ *   (`rollWithFear` / `failedRoll`), or the GM spotlights an adversary (`adversary`). Wired by bead dcm-bxp.99.32.4
+ *   (convex/lib/rollAftermath.ts). Undoing the roll puts the row before back (plan rule-switches CU2, bead
+ *   dcm-bxp.99.32.10): rollAftermath stores it on the roll's action (`spotlightBefore`) and `undoEntry`
+ *   (convex/lib/actionLog.ts `restoreSpotlight`) restores it while the GM's hold is still the one the roll began.
  * - `spotlightAdversary(ctx, campaign, tokenId)`: the GM spotlights one adversary (`combatSpotlight.gmTake({ tokenId })`,
  *   reason `adversary`); the row names its token (`adversaryTokenId`) so the map can light it (bead dcm-bxp.99.32.35).
  *   A move to the GM from a PC and a hand-back to a PC clear it.
@@ -23,9 +25,10 @@
  * - `takeWithFear(ctx, campaign, user, tokenId?)`: the GM spends 1 Fear to interrupt (`combatSpotlight.gmTake({ pay:
  *   "fear" })`, H9.S, user answer Q7 a; CB p.155). With a token the payment counts as that adversary's spotlight this
  *   GM turn, so its first action costs nothing more. Logged (one undoable group) so the GM's undo gives the Fear back.
- * - `assertMayAct(ctx, campaign, character, kind)`: refuses a player's `action` or token `move` with
- *   SPOTLIGHT_WITH_GM while the GM holds the spotlight; a `reaction` always passes, and so does the GM. Wired by bead
- *   dcm-bxp.99.32.5; until then nothing is refused.
+ * - `assertMayAct(ctx, campaign, character, kind, name?)`: S2 (plan rule-switches RS2, bead dcm-bxp.99.32.5). Book refuses
+ *   a player's `action` or token `move` with SPOTLIGHT_WITH_GM while the GM holds the spotlight; Manual lets it through
+ *   and notes it for the GM. A `reaction` always passes, and so does the GM. Called by combatCards.useCard,
+ *   combatFeatures.useFeature, combatActions.attack, the action rolls in rolls.ts and combatTokens.move.
  *
  * ```ts
  * // in a roll mutation, after the outcome is known (dcm-bxp.99.32.4):
@@ -35,7 +38,9 @@
  * await assertMayAct(ctx, campaign, character, "action"); // or "move"; a reaction passes "reaction"
  * ```
  */
+import { isDefeated } from "../../src/lib/domain/encounters/damage";
 import { applySpotlight, spotlightsThisTurn } from "../../src/lib/domain/encounters/spotlight";
+import type { CardUse } from "../../src/lib/domain/card-effects/types";
 import { appError } from "../../src/lib/errors/app-error";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
@@ -44,6 +49,8 @@ import { logAction, newGroupId } from "./actionLog";
 import { loadCombatToken } from "./combatMaps";
 import { campaignFearState, spendFear } from "./fear";
 import { atLeast, permissionFor } from "./permissions";
+import { readSheet } from "./characterSheet";
+import { postRuleNote, ruleMode } from "./ruleModes";
 import { liveSession } from "./sessions";
 
 /** What a player is about to do: an `action` (a roll, a card, a feature, an attack), a token `move`, or a `reaction`. */
@@ -130,13 +137,30 @@ export async function moveToGm(
 /**
  * The GM spotlights one adversary (CB p.100: "the GM can make a move to spotlight an adversary"): the spotlight goes to
  * the GM with reason `adversary` and the row names the token, which the map lights (bead dcm-bxp.99.32.35).
- * COMBAT_TOKEN_NOT_FOUND for a token of another campaign, INVALID for a token that is not an adversary's. Returns
+ * COMBAT_TOKEN_NOT_FOUND for a token of another campaign, INVALID for a token that is not an adversary's,
+ * ADVERSARY_DEFEATED for a defeated adversary (`adversaryDefeated`; also refused by `takeWithFear`). Returns
  * whether the row changed (false when this adversary is already lit).
  */
 export async function spotlightAdversary(ctx: MutationCtx, campaign: Doc<"campaigns">, tokenId: string): Promise<boolean> {
   const token = await loadCombatToken(ctx, campaign._id, tokenId);
   if (token.ref.kind !== "adversary") throw appError("INVALID", "Only an adversary's token can be spotlighted.");
+  await assertNotDefeated(ctx, campaign._id, token);
   return setHolder(ctx, campaign._id, { kind: "gm" }, "adversary", undefined, token._id);
+}
+
+/**
+ * Whether an adversary instance is defeated (user 2026-11-04: "I shouldn't be allowed to take the spotlight of dead
+ * NPCs"): marked defeated (a Minion group with every Minion gone included), or every HP marked (CB p.208).
+ */
+export function adversaryDefeated(instance: Pick<Doc<"encounterAdversaries">, "defeated" | "hp" | "stats">): boolean {
+  return instance.defeated || isDefeated({ hp: instance.hp, hpMax: instance.stats.hpMax });
+}
+
+/** ADVERSARY_DEFEATED for an adversary token whose instance is defeated; a token without an instance passes. */
+async function assertNotDefeated(ctx: QueryCtx, campaignId: Id<"campaigns">, token: Doc<"combatTokens">): Promise<void> {
+  if (token.ref.kind !== "adversary") return;
+  const instance = await ctx.db.get("encounterAdversaries", token.ref.adversaryId);
+  if (instance !== null && instance.campaignId === campaignId && adversaryDefeated(instance)) throw appError("ADVERSARY_DEFEATED");
 }
 
 /**
@@ -205,7 +229,9 @@ export async function takeWithFear(
 ): Promise<{ moved: boolean; fearSpent: number }> {
   const token = tokenId === undefined ? null : await loadCombatToken(ctx, campaign._id, tokenId);
   if (token !== null && token.ref.kind !== "adversary") throw appError("INVALID", "Only an adversary's token can be spotlighted.");
-  if ((await campaignFearState(ctx, campaign._id)).fear < INTERRUPT_FEAR) throw appError("NOT_ENOUGH_FEAR");
+  if (token !== null) await assertNotDefeated(ctx, campaign._id, token);
+  const fearHeld = (await campaignFearState(ctx, campaign._id)).fear;
+  if (fearHeld < INTERRUPT_FEAR) throw appError("NOT_ENOUGH_FEAR", undefined, { resource: "fear", need: INTERRUPT_FEAR, have: fearHeld });
 
   const moved =
     token === null
@@ -234,20 +260,87 @@ export async function takeWithFear(
 }
 
 /**
- * Refuses a player's non-reaction act while the GM holds the spotlight (answer 1c; user answer 2026-11-01: token
- * moves too). `character` is the PC acting; the GM (owner permission on the campaign, `permissionFor`) is never
- * refused, including while playing for a PC. Call it before any write, from a mutation whose ctx carries the caller.
+ * Whether a card's or feature's use is a reaction for S2: its activation is a reaction (a Use / Pass prompt on its
+ * trigger) or its roll is a reaction roll (CB p.99). Anything else (a Use button, a rider, an automatic use) is an action.
+ */
+export function useActKind(use: Pick<CardUse, "activation" | "roll">): "action" | "reaction" {
+  return use.activation.kind === "reaction" || use.roll?.kind === "reaction" ? "reaction" : "action";
+}
+
+/** What `assertMayAct` decided:`ok` (nothing in the way), `warned` (S2 Manual: the act goes through, the GM got a note). */
+export type MayAct = "ok" | "warned";
+
+/** How many of the GM's newest rows since the GM took the spotlight `assertMayAct` reads to post one note per PC. */
+const NOTE_SCAN = 50;
+
+/** The GM's note for a player who acted (or moved a token) while the GM held the spotlight (S2 Manual, Q4 a). */
+export function playersWaitNote(name: string, kind: Exclude<ActKind, "reaction">): string {
+  return `${name} ${kind === "move" ? "moved" : "acted"} while you held the spotlight`;
+}
+
+/**
+ * S2 "Players wait while the GM has it" (plan rule-switches RS2; bead dcm-bxp.99.32.5; CB p.100: "When play passes to
+ * the GM, the GM can make a move to spotlight an adversary … Once the GM has finished, play passes back to the PCs").
+ * While the GM holds the spotlight in a running encounter (user answer 2026-11-06; `playersWaitNow`: outside one nothing
+ * waits and nothing is noted) a player's `action` or token `move` is refused with SPOTLIGHT_WITH_GM (answer 1c;
+ * user answer 2026-11-01: token moves too). A `reaction` always passes, and so does the GM (owner permission on the
+ * campaign, `permissionFor`; a co-GM too), including while playing for a PC.
+ *
+ * Manual (`playersWait` "manual", user answer Q4 a): nothing is refused; the GM gets one note per PC and kind for this
+ * spotlight ("Mira acted while you held the spotlight", `postRuleNote`, never undoable: the act's own undo leaves it),
+ * and the call returns `warned`. The player's warning is the HUD's ("The GM has the spotlight", worked out from the
+ * spotlight state and the mode). `name` names the PC in the note (read from the sheet when absent).
+ *
+ * Call it before any write, from a mutation whose ctx carries the caller (and inside its keyed `once`, so a retry posts
+ * nothing twice). A refused act throws, so its mutation writes nothing; a note is written only with an act that goes on.
  */
 export async function assertMayAct(
-  ctx: QueryCtx & { user: Doc<"users"> },
+  ctx: MutationCtx & { user: Doc<"users"> },
   campaign: Doc<"campaigns">,
   character: Pick<Doc<"characters">, "_id" | "campaignId">,
   kind: ActKind,
-): Promise<void> {
+  name?: string,
+): Promise<MayAct> {
   if (character.campaignId !== campaign._id) throw new Error("assertMayAct: the character is not in this campaign.");
-  if (kind === "reaction") return;
-  if (!(await gmHoldsSpotlight(ctx, campaign._id))) return;
+  if (kind === "reaction") return "ok";
+  const row = await spotlightOf(ctx, campaign._id);
+  if (row?.holder.kind !== "gm") return "ok";
   const permission = await permissionFor(ctx, ctx.user, { type: "campaign", campaign }, "owner");
-  if (atLeast(permission, "owner")) return;
-  throw appError("SPOTLIGHT_WITH_GM");
+  if (atLeast(permission, "owner")) return "ok";
+  const mode = await playersWaitNow(ctx, campaign);
+  if (mode === null) return "ok";
+  if (mode === "book") throw appError("SPOTLIGHT_WITH_GM");
+
+  const summary = playersWaitNote(name ?? (await characterName(ctx, character._id)), kind);
+  const recent = await ctx.db
+    .query("actionLog")
+    .withIndex("by_campaign_visibility_at", (q) => q.eq("campaignId", campaign._id).eq("visibility", "gm").gte("at", row.since))
+    .order("desc")
+    .take(NOTE_SCAN);
+  if (!recent.some((r) => r.kind === "rule" && r.ruleId === "playersWait" && r.summary === summary)) {
+    await postRuleNote(ctx, campaign, { ruleId: "playersWait", summary, actorId: ctx.user._id });
+  }
+  return "warned";
+}
+
+/**
+ * Whether S2 applies now, and how (user answer 2026-11-06: only while an encounter is running): null outside a running
+ * encounter (nothing waits, no note), else the campaign's `playersWait` mode. One indexed read when it applies.
+ */
+export async function playersWaitNow(ctx: QueryCtx, campaign: Doc<"campaigns">): Promise<"book" | "manual" | null> {
+  const running = await ctx.db
+    .query("encounters")
+    .withIndex("by_campaign_status_updated", (q) => q.eq("campaignId", campaign._id).eq("status", "running"))
+    .first();
+  return running === null ? null : ruleMode(campaign, "playersWait");
+}
+
+/** The PC's name from its sheet ("A character" when it can't be read). */
+async function characterName(ctx: QueryCtx, characterId: Id<"characters">): Promise<string> {
+  const character = await ctx.db.get("characters", characterId);
+  try {
+    return character === null ? "A character" : readSheet(character.sheet).name;
+  } catch {
+    return "A character";
+  }
 }

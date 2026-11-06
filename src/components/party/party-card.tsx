@@ -4,6 +4,7 @@ import { useMutation } from "convex/react";
 import Link from "next/link";
 import { useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import { assetBackground } from "@/lib/design-assets";
 import { cn } from "@/lib/utils";
@@ -18,10 +19,11 @@ import { CharacterPortrait } from "./portrait";
 import type { CardCharacter, CardSlotProps } from "./slots";
 import { WitherCardBadge } from "./wither";
 
-const STEP_BTN =
-  "size-8 cursor-pointer rounded-lg border border-[#33444a] bg-black/25 p-0 text-[17px] text-[#e6ecea] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e3d8ff] disabled:cursor-not-allowed disabled:opacity-35";
-const PILL =
-  "absolute top-[5px] right-[5px] z-[3] min-h-6 cursor-pointer rounded-full px-2 font-display text-[10px] font-bold tracking-[0.08em] opacity-0 transition-opacity group-hover/tile:opacity-100 focus-visible:opacity-100";
+/**
+ * The tile's corner pill (Kill, Scars): a glass button sets its own position, so the placement and the hover reveal
+ * live on this wrapper.
+ */
+const PILL = "absolute top-[5px] right-[5px] z-[3] opacity-0 transition-opacity group-hover/tile:opacity-100 focus-within:opacity-100";
 
 export function SkullIcon() {
   return (
@@ -47,15 +49,11 @@ export function FallenOverlay({ name, canEdit, onRevive, busy }: { name: string;
         <span className="text-[13px] text-[#8a7f78]">{name} has fallen</span>
       </div>
       {canEdit ? (
-        <button
-          type="button"
-          onClick={onRevive}
-          disabled={busy}
-          aria-label={`Revive ${name}`}
-          className="absolute top-2.5 right-2.5 z-20 min-h-[30px] cursor-pointer rounded-full border border-[#e3b45a] bg-[rgb(30_22_6/0.92)] px-3 font-display text-[11px] font-bold tracking-[0.08em] text-[#ffe2a3] opacity-0 shadow-[0_0_12px_rgba(227,180,90,0.5)] transition-opacity group-hover/card:opacity-100 focus-visible:opacity-100"
-        >
-          Revive
-        </button>
+        <span className="absolute top-2.5 right-2.5 z-20 opacity-0 transition-opacity group-hover/card:opacity-100 focus-within:opacity-100">
+          <BrandButton variant="confirm" size="sm" onClick={onRevive} disabled={busy} aria-label={`Revive ${name}`}>
+            Revive
+          </BrandButton>
+        </span>
       ) : null}
     </>
   );
@@ -90,15 +88,16 @@ export function BenchButton({ character, busy, onSet }: { character: CardCharact
   const bring = character.status === "away" && character.benched === true;
   if (character.status !== "active" && !bring) return null;
   return (
-    <button
-      type="button"
+    <BrandButton
+      variant="neutral"
+      size="sm"
+      className="self-start"
       disabled={busy}
       onClick={() => onSet(bring ? "active" : "away")}
       aria-label={bring ? `Bring ${name} back` : `Send ${name} away`}
-      className="inline-flex min-h-9 cursor-pointer items-center self-start rounded-[9px] border border-[#33444a] bg-transparent px-3 text-[13px] text-[#e6ecea] hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
     >
       {bring ? "Bring back" : "Send away"}
-    </button>
+    </BrandButton>
   );
 }
 
@@ -130,33 +129,32 @@ function ResourceTile({
     <div className="flex min-w-0 flex-col gap-1.5">
       <div className="group/tile relative">
         {tile.key === "hp" && canEdit && !dead ? (
-          <button type="button" onClick={onKill} aria-label={`Kill ${name}`} className={cn(PILL, "border border-[#8e2b2b] bg-[rgb(10_2_2/0.8)] text-[#ff9a92]")}>
-            Kill
-          </button>
+          <span className={PILL}>
+            <BrandButton variant="danger" size="sm" onClick={onKill} aria-label={`Kill ${name}`}>
+              Kill
+            </BrandButton>
+          </span>
         ) : null}
         {tile.key === "hope" && canEdit ? (
           <>
-            <button
-              type="button"
-              onClick={() => setScarsOpen((o) => !o)}
-              aria-expanded={scarsOpen}
-              className={cn(PILL, "border bg-[rgb(10_4_4/0.75)] text-[#ffb0a8] aria-expanded:opacity-100", tile.broken ? "border-[#c0261c]" : "border-[#6a2a2a]")}
-            >
-              Scars{tile.broken ? ` · ${tile.broken}` : ""}
-            </button>
+            <span className={cn(PILL, scarsOpen && "opacity-100")}>
+              <BrandButton variant="neutral" size="sm" onClick={() => setScarsOpen((o) => !o)} aria-expanded={scarsOpen}>
+                Scars{tile.broken ? ` · ${tile.broken}` : ""}
+              </BrandButton>
+            </span>
             {scarsOpen ? (
               <div
                 role="group"
                 aria-label={`Scars for ${name}`}
                 className="absolute top-[34px] right-[5px] z-[4] flex items-center gap-1.5 rounded-[10px] border border-[#6a1f1f] bg-[#160909] p-1.5 shadow-[0_6px_16px_rgba(0,0,0,0.6)]"
               >
-                <button type="button" onClick={() => onScar(-1)} disabled={tile.broken === 0} aria-label={`Heal a scar for ${name}`} className="size-7 cursor-pointer rounded-md border border-[#6a2a2a] bg-transparent text-[#e6ecea] disabled:opacity-35">
+                <BrandButton variant="neutral" size="sm" icon onClick={() => onScar(-1)} disabled={tile.broken === 0} aria-label={`Heal a scar for ${name}`}>
                   −
-                </button>
+                </BrandButton>
                 <strong className="min-w-4 text-center text-[16px] text-[#ff8d84]">{tile.broken}</strong>
-                <button type="button" onClick={() => onScar(1)} disabled={tile.broken >= 6} aria-label={`Mark a scar for ${name}`} className="size-7 cursor-pointer rounded-md border border-[#6a2a2a] bg-transparent text-[#e6ecea] disabled:opacity-35">
+                <BrandButton variant="neutral" size="sm" icon onClick={() => onScar(1)} disabled={tile.broken >= 6} aria-label={`Mark a scar for ${name}`}>
                   +
-                </button>
+                </BrandButton>
               </div>
             ) : null}
           </>
@@ -195,13 +193,20 @@ function ResourceTile({
         </div>
       </div>
       <div className="flex items-center justify-between">
-        <button type="button" className={STEP_BTN} disabled={!canEdit || tile.value <= 0} onClick={() => onStep(tile.key, -1)} aria-label={minusLabel}>
+        <BrandButton variant="neutral" size="sm" icon disabled={!canEdit || tile.value <= 0} onClick={() => onStep(tile.key, -1)} aria-label={minusLabel}>
           −
-        </button>
+        </BrandButton>
         <span className="text-center text-[11px] text-[#8fa3a8]">{tile.hint}</span>
-        <button type="button" className={STEP_BTN} disabled={!canEdit || (tile.value >= tile.max && tile.key !== "stress")} onClick={() => onStep(tile.key, 1)} aria-label={plusLabel}>
+        <BrandButton
+          variant="neutral"
+          size="sm"
+          icon
+          disabled={!canEdit || (tile.value >= tile.max && tile.key !== "stress")}
+          onClick={() => onStep(tile.key, 1)}
+          aria-label={plusLabel}
+        >
           +
-        </button>
+        </BrandButton>
       </div>
     </div>
   );

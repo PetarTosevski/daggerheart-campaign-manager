@@ -1,7 +1,9 @@
 /**
  * The world every authz-matrix row runs in (analysis 2.4): one campaign with a GM, two players who each own a character,
- * a player with an edit grant on the campaign, and an outsider. Built through the public API wherever one exists
- * (campaign, join code, joins, characters); users and the grant have no public API and are inserted directly.
+ * a player with an edit grant on the campaign, a co-GM (a member the GM promoted, config G1; no character), an
+ * outsider and the app owner (superadmin, config AD0: named with the internal `adminSetup.setOwner`, a member of no
+ * campaign). Built through the public API wherever one exists (campaign, join code, joins, characters, the co-GM
+ * promotion); users and the grant have no public API and are inserted directly.
  *
  * Area files add their own state (a combat map, an encounter, a session...) in `setup`, register the ids they create
  * with `w.set(name, id)` and, when a table holds several rows, pick the one argument synthesis uses with
@@ -9,7 +11,7 @@
  */
 import type { TestConvex } from "convex-test";
 
-import { api } from "../../../convex/_generated/api";
+import { api, internal } from "../../../convex/_generated/api";
 import type { Id, TableNames } from "../../../convex/_generated/dataModel";
 import type schema from "../../../convex/schema";
 import type { FrameId } from "../../../src/lib/frames/index";
@@ -17,18 +19,27 @@ import { characterDraft } from "../../fixtures/characters";
 import { key } from "../helpers";
 import { makeTest } from "../setup";
 
-/** Who calls: signed out, a stranger, playerA (owns characterA), playerB (owns characterB), the edit-grant player, the GM. */
-export type Role = "anon" | "outsider" | "player" | "otherPlayer" | "grantee" | "gm";
+// RD2 (2026-11-06): the four frame rules start off for new campaigns; these fixtures play them as before.
+const FRAME_RULE = { "castle-high": "lessLethal", "dark-heart-of-andaluria": "transformations", "journey-to-horizon": "enduranceCountdowns", motherboard: "remnantCorruption" } as const;
+
+/**
+ * Who calls: signed out, a stranger, playerA (owns characterA), playerB (owns characterB), the edit-grant player, a
+ * co-GM (member row `role: "coGm"`, owns no character), the GM (the campaign's creator), the app owner (superadmin,
+ * in no campaign; every entry runs it: `appOwnerOutcome` in harness.ts, config AD13).
+ */
+export type Role = "anon" | "outsider" | "player" | "otherPlayer" | "grantee" | "coGm" | "gm" | "appOwner";
 
 /** The order rows run in (a shared query world sees the refused calls first). */
-export const ROLES: readonly Role[] = ["anon", "outsider", "otherPlayer", "player", "grantee", "gm"];
+export const ROLES: readonly Role[] = ["anon", "outsider", "otherPlayer", "player", "grantee", "coGm", "gm", "appOwner"];
 
 export const WORLD_EMAILS = {
   gm: "gm@example.com",
   player: "player-a@example.com",
   otherPlayer: "player-b@example.com",
   grantee: "grantee@example.com",
+  coGm: "co-gm@example.com",
   outsider: "outsider@example.com",
+  appOwner: "app-owner@example.com",
 } as const;
 
 /** Deprecated no-op kept for its callers: sign-up is open, so the world's accounts need no listing. */
@@ -82,16 +93,23 @@ export async function buildWorld(options: WorldOptions = {}): Promise<World> {
       player: await insert(WORLD_EMAILS.player),
       otherPlayer: await insert(WORLD_EMAILS.otherPlayer),
       grantee: await insert(WORLD_EMAILS.grantee),
+      coGm: await insert(WORLD_EMAILS.coGm),
       outsider: await insert(WORLD_EMAILS.outsider),
+      appOwner: await insert(WORLD_EMAILS.appOwner),
     };
   });
+  // Config AD0: the owner is named the only way the app allows, the internal setOwner (deployment admin key).
+  await t.mutation(internal.adminSetup.setOwner, { email: WORLD_EMAILS.appOwner });
   const clients = new Map<Role, Client>([["anon", t]]);
   for (const [role, id] of Object.entries(users)) clients.set(role as Role, t.withIdentity({ subject: `${id}|session` }));
   const as = (role: Role) => clients.get(role)!;
 
   const { campaignId } = await as("gm").mutation(api.campaigns.create, { frameId, name: "Matrix", idempotencyKey: key() });
+  const frameRule = (FRAME_RULE as Record<string, (typeof FRAME_RULE)[keyof typeof FRAME_RULE]>)[frameId];
+  if (frameRule) await as("gm").mutation(api.campaigns.setOption, { campaignId: campaignId, option: frameRule, enabled: true });
   const joinCode = await as("gm").mutation(api.members.rotateJoinCode, { campaignId });
-  for (const role of ["player", "otherPlayer", "grantee"] as const) await as(role).mutation(api.members.joinByCode, { code: joinCode });
+  for (const role of ["player", "otherPlayer", "grantee", "coGm"] as const) await as(role).mutation(api.members.joinByCode, { code: joinCode });
+  await as("gm").mutation(api.members.setCoGm, { campaignId, userId: users.coGm, coGm: true });
 
   const create = async (who: "player" | "otherPlayer", name: string) =>
     (

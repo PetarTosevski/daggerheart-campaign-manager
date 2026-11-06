@@ -4,8 +4,7 @@ import { adversariesFor } from "../src/lib/domain/adversaries/index";
 import { instanceStats, nextLabels, type StatSource } from "../src/lib/domain/encounters/instances";
 import { appError } from "../src/lib/errors/app-error";
 import { resolveOptions } from "../src/lib/frames/options";
-import { ADVERSARIES } from "../src/lib/srd/adversaries";
-import type { AdversaryDef } from "../src/lib/srd/types";
+import { srdAdversary } from "../src/lib/srd/adversary-lookup";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {
@@ -23,6 +22,7 @@ import {
   startEncounter,
 } from "./lib/encounters";
 import { endScene } from "./combatScenes";
+import { refillActionTokens, trackerTokens } from "./lib/actionTokens";
 import { closeEncounterRequests } from "./lib/combatRequests";
 import { gmMutation, gmQuery, keyedGmMutation } from "./lib/functions";
 import {
@@ -51,7 +51,6 @@ const DEFAULT_PCS = 4;
 /** Characters read to count the active ones for the default party size. */
 const MAX_CHARACTERS_READ = 100;
 
-const SRD_BY_ID = new Map<string, AdversaryDef>(ADVERSARIES.map((a) => [a.id, a]));
 
 // ---------------------------------------------------------------- validators
 
@@ -129,7 +128,7 @@ async function resolveSource(
 ): Promise<{ name: string; block: StatSource }> {
   if (source.kind === "srd") {
     const options = resolveOptions(campaign.frameId, campaign.options);
-    const def = SRD_BY_ID.get(source.adversaryId);
+    const def = srdAdversary(source.adversaryId);
     const usable = def && adversariesFor([def], { hopeAndFear: options.hopeAndFear, frameId: campaign.frameId }).length === 1;
     if (!def || !usable) throw appError("ADVERSARY_UNKNOWN");
     return { name: def.name, block: def };
@@ -191,7 +190,7 @@ export const get = gmQuery({
       }
     }
     const instances = rows.map((row) => {
-      const block = row.source.kind === "srd" ? (SRD_BY_ID.get(row.source.adversaryId) ?? null) : (customs.get(row.source.customId) ?? null);
+      const block = row.source.kind === "srd" ? (srdAdversary(row.source.adversaryId) ?? null) : (customs.get(row.source.customId) ?? null);
       return { ...row, name: block?.name ?? null, type: block?.type ?? null, tier: block?.tier ?? null };
     });
     return { encounter, instances };
@@ -274,13 +273,18 @@ export const setBudget = gmMutation({
   },
 });
 
-/** Starts the encounter (a draft or an ended one); ENCOUNTER_RUNNING while another encounter is running. */
+/**
+ * Starts the encounter (a draft or an ended one); ENCOUNTER_RUNNING while another encounter is running. With the
+ * Spotlight Tracker on, every PC's action tokens refill as it starts (CB p.89: "when a battle begins, every player places
+ * action tokens"; plan rule-switches RFB, user answer 2026-11-06).
+ */
 export const start = gmMutation({
   args: { encounterId: v.string() },
   returns: v.null(),
   handler: async (ctx, { encounterId }) => {
     const encounter = await loadEncounter(ctx, ctx.campaign._id, encounterId);
-    await startEncounter(ctx, ctx.campaign._id, encounter);
+    const started = await startEncounter(ctx, ctx.campaign._id, encounter);
+    if (started && trackerTokens(ctx.campaign) !== null) await refillActionTokens(ctx, ctx.campaign._id);
     return null;
   },
 });

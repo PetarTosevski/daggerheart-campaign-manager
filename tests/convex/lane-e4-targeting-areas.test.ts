@@ -17,7 +17,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
-import { activeAreasOnMap, areaFactsFor, placeArea } from "../../convex/combatAreas";
+import { activeAreasOnMap, areaFactsFor, placeArea } from "../../convex/lib/combatAreas";
 import { buildRun, paysHope, rangeOrigin, riderUse, targetMin, type Creature } from "../../convex/lib/cardRunner";
 import { parseChoices } from "../../convex/lib/cardChoices";
 import { attackScene } from "../../convex/lib/combatActions";

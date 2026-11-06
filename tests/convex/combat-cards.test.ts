@@ -91,8 +91,12 @@ async function arena() {
   const fear = () => t.run(async (ctx) => (await campaignFearState(ctx, campaignId)).fear);
   const rows = () => t.run((ctx) => ctx.db.query("actionLog").collect());
   const feed = (c: Client) => c.query(api.feed.list, { campaignId, paginationOpts: { numItems: 50, cursor: null } });
-  const use = (c: Client, cardId: string, targetTokenIds: Id<"combatTokens">[], extra: Record<string, unknown> = {}) =>
-    c.mutation(api.combatCards.useCard, { campaignId, characterId: w.characterA, mapId, cardId, targetTokenIds, choices: [], idempotencyKey: key(), ...extra });
+  const use = async (c: Client, cardId: string, targetTokenIds: Id<"combatTokens">[], extra: Record<string, unknown> = {}) => {
+    // S2 (plan rule-switches RS2): a roll with Fear or a failure hands the spotlight to the GM, and players wait in a running
+    // encounter; the GM hands it back between these acts (waiting itself: rules-spotlight-wait.test.ts).
+    await gm.mutation(api.combatSpotlight.handToParty, { campaignId, idempotencyKey: key() });
+    return c.mutation(api.combatCards.useCard, { campaignId, characterId: w.characterA, mapId, cardId, targetTokenIds, choices: [], idempotencyKey: key(), ...extra });
+  };
   return { w, t, campaignId, mapId, gm, player, ...ids, enemy, instance, sheet, edit, holding, fear, rows, feed, use };
 }
 
@@ -113,6 +117,12 @@ describe("combatCards.useCard: refusals", () => {
     expect(await code(a.use(a.player, "untouchable", []))).toBe("CARD_NOT_COMBAT");
     // Rain of Blades costs a Hope upfront (CB p.90): with none, refused before any roll.
     expect(await code(a.use(a.player, "rain-of-blades", []))).toBe("CARD_COST_UNPAID");
+    // dcm-bxp.99.32.2: the refusal carries the structured shortfall the HUD shows ("costs 1 Hope. You have 0.").
+    const refusal = await a.use(a.player, "rain-of-blades", []).then(
+      () => null,
+      (e: unknown) => (e as { data?: unknown }).data,
+    );
+    expect(refusal).toMatchObject({ code: "CARD_COST_UNPAID", shortfall: { resource: "hope", need: 1, have: 0 } });
     await a.edit((s) => ({ featureUses: [...s.featureUses, { key: "card:hypnotic-shimmer", until: "rest" }] }));
     expect(await code(a.use(a.player, "hypnotic-shimmer", [bandit.tokenId]))).toBe("CARD_EXHAUSTED");
     expect((await a.rows()).filter((r) => r.kind === "combat")).toHaveLength(0);
@@ -143,7 +153,7 @@ describe("combatCards.useCard: resolving", () => {
     const withHope = r.roll!.outcome === "critical" || r.roll!.outcome === "successHope";
     // R8: the roll's own Hope can pay the success cost.
     expect((await a.sheet()).hope).toBe(3 + (withHope ? 1 : 0) - 1);
-    expect(await a.fear()).toBe(fearBefore + r.fearDelta);
+    expect(await a.fear()).toBe(fearBefore + (r.fearDelta ?? 0));
     const inst = await a.instance(bandit.instanceId);
     expect(inst.hp).toBe(1);
     expect(inst.conditions).toContain("vulnerable");
@@ -461,12 +471,12 @@ describe("AA2b: card damage to another PC, Onslaught on card attacks", () => {
     expect(hit!.payload.kind === "incomingHit" && hit!.payload.attacker).toEqual({ kind: "pc", characterId: a.w.characterA, label: "Ash", cardId: "book-of-grynn", feature: "Book of Grynn" });
     expect(hit!.payload.kind === "incomingHit" && hit!.payload.targetCharacterId).toBe(a.w.characterB);
     expect(hit!.status).toBe("open");
-    const windows = await a.gm.query(api.adversaryActions.windows, { campaignId: a.campaignId });
+    const windows = await a.gm.query(api.adversaryActionsReads.windows, { campaignId: a.campaignId });
     expect(windows[0]).toMatchObject({ requestId: hit!._id, attackerCharacterId: a.w.characterA, attackerLabel: "Ash", targetName: "Bryn" });
     expect("instanceId" in windows[0]!).toBe(false);
     // Ash doesn't answer their own card's hit; Bryn sees their own numbers.
-    expect(await a.player.query(api.adversaryActions.pending, { campaignId: a.campaignId, characterId: a.w.characterA })).toEqual([]);
-    const [view] = await other.query(api.adversaryActions.pending, { campaignId: a.campaignId, characterId: a.w.characterB });
+    expect(await a.player.query(api.adversaryActionsReads.pending, { campaignId: a.campaignId, characterId: a.w.characterA })).toEqual([]);
+    const [view] = await other.query(api.adversaryActionsReads.pending, { campaignId: a.campaignId, characterId: a.w.characterB });
     expect(view).toMatchObject({ requestId: hit!._id, role: "target", attackerLabel: "Ash", maxSlots: 1 });
     let answer = await other.mutation(api.adversaryActions.respond, { campaignId: a.campaignId, requestId: hit!._id, characterId: a.w.characterB, choice: { kind: "noArmor" }, idempotencyKey: key() });
     // A1 (dcm-bxp.99.19.55 (3)): "Don't mark" keeps the window open while a reaction still fits (Get Back Up); Done ends it.
@@ -585,5 +595,21 @@ describe("F7-H4 (dcm-bxp.99.24): who reads a hand, roll options on cards", () =>
     const withHope = r.roll!.outcome === "critical" || r.roll!.outcome === "successHope";
     // 1 Hope for the Experience, 1 on a success (Bolt Beacon, Difficulty 1 is always met), +1 when the roll is with Hope.
     expect((await a.sheet()).hope).toBe(hopeAfterPlain - 1 - 1 + (withHope ? 1 : 0));
+  });
+});
+
+describe("combatCards.useCard: the GM's Fear hidden (dcm-jh6d.62)", () => {
+  allowWorldEmails();
+
+  it("off: a player's resolved card use has no fearDelta; the GM's has it", async () => {
+    const a = await arena();
+    await a.gm.mutation(api.campaignSettings.set, { campaignId: a.campaignId, change: { key: "playersSeeFear", value: false } });
+    const bandit = await a.enemy("Bandit", 6, 10);
+    await a.holding(["cinder-grasp"]);
+    const mine = resolved(await a.use(a.player, "cinder-grasp", [bandit.tokenId]));
+    expect(mine).not.toHaveProperty("fearDelta");
+    expect(JSON.stringify(mine)).not.toMatch(/\d+ Fear\b/);
+    await a.holding(["cinder-grasp"]);
+    expect(resolved(await a.use(a.gm, "cinder-grasp", [bandit.tokenId]))).toHaveProperty("fearDelta");
   });
 });

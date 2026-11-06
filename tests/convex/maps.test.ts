@@ -346,6 +346,8 @@ describe("World map rows", () => {
     const gm = t.withIdentity({ subject: `${ids.gm}|s` });
     const player = t.withIdentity({ subject: `${ids.player}|s` });
     const { campaignId } = await gm.mutation(api.campaigns.create, { frameId, name: "Rows", idempotencyKey: key() });
+    // New campaigns start with the frame rule off (RD2); these tests run with it on.
+    if (frameId === "journey-to-horizon") await gm.mutation(api.campaigns.setOption, { campaignId, option: "enduranceCountdowns", enabled: true });
     await gm.mutation(api.members.invite, { campaignId, email: PLAYER });
     return { t, gm, player, campaignId };
   }
@@ -394,10 +396,10 @@ describe("World map rows", () => {
     const { t, gm, campaignId } = await setup();
     expect(await writes(t, () => gm.mutation(api.maps.paintCells, { campaignId, indexes: [0, 1, 500], codes: "##m" }))).toEqual(["mapTerrain"]);
     // A cell in the last tile: one more tile row; the first tile is untouched.
-    expect(await writes(t, () => gm.mutation(api.maps.paintCells, { campaignId, indexes: [128 * 97], codes: "#" }))).toEqual(["mapTerrain"]);
+    expect(await writes(t, () => gm.mutation(api.maps.paintCells, { campaignId, indexes: [128 * 97], codes: "m" }))).toEqual(["mapTerrain"]);
     expect(await t.run(async (ctx) => (await ctx.db.query("mapTerrain").collect()).map((row) => row.tile).sort())).toEqual([0, 6]);
     const terrain = (await gm.query(api.maps.get, { campaignId })).state.terrain;
-    expect([terrain.slice(0, 2), terrain[500], terrain[128 * 97]]).toEqual(["##", "m", "#"]);
+    expect([terrain.slice(0, 2), terrain[500], terrain[128 * 97]]).toEqual(["##", "m", "m"]);
     expect(terrain.slice(2, 500)).toBe(WITHERWILD_TERRAIN.slice(2, 500));
   });
 

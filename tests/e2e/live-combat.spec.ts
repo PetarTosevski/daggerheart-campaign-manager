@@ -73,7 +73,7 @@ test("live combat map: map switch, tokens both ways, explored areas, fog, doors 
     const board = player.getByRole("region", { name: "Battle map" });
     const headline = player.getByTestId("hud-title").getByRole("heading");
     await expect(headline).toHaveText("Old road");
-    const mine = board.getByRole("button", { name: new RegExp(`^Open ${characterName}’s sheet \\(your character\\)`) });
+    const mine = board.getByRole("button", { name: new RegExp(`^${characterName} \\(your character\\): actions`) });
     await expect(mine).toHaveAttribute("data-square", "15,10");
     const gmLiriel = gmBoard.getByRole("button", { name: new RegExp(`^Open ${characterName}’s sheet`) });
     await expect(gmLiriel).toHaveAttribute("data-square", "15,10");

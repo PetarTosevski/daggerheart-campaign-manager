@@ -24,8 +24,11 @@ import {
   featureLimitUntil,
   keyAvailability,
   resolveCosts,
+  shortfalls,
   unaffordable,
   type Availability,
+  type PaidCost,
+  type PayerState,
 } from "../card-effects/availability";
 import { pickUse, run, type ActorState, type HeldDieState, type RunContext, type RunPlan, type RunRefusal } from "../card-effects/run";
 import type { CardEffect, CardUse, Cost, HeldDieKind, NumberSource } from "../card-effects/types";
@@ -39,6 +42,7 @@ import { unstoppableMax } from "../class-features/classes/guardian";
 import { favorOf, patronDie } from "../class-features/classes/warlock";
 import type { Registry } from "../class-features/index";
 import type { OtherSheet } from "../class-features/types";
+import type { Shortfall } from "../../errors/app-error";
 import type { CharacterSheet, FeatureUse } from "../../validation/characters";
 import { createDelegator, delegatedExhaustion, heldDiceState } from "./delegate";
 import { featureKey } from "./ids";
@@ -176,6 +180,17 @@ export function featureAvailability(
  * depend on the move (Hope spent, targets) read as 0 here; `choices` are the player's numbers.
  */
 export function featureCostShort(actor: ActorState, use: CardUse, choices: Readonly<Record<string, number>> = {}, flags?: readonly string[]): string[] {
+  const { costs, state } = featureCostParts(actor, use, choices, flags);
+  return unaffordable(costs, state);
+}
+
+/** dcm-bxp.99.32.2: `featureCostShort`'s numbers, one `Shortfall` per short resource, for a refusal's `shortfall`. */
+export function featureCostShortfalls(actor: ActorState, use: CardUse, choices: Readonly<Record<string, number>> = {}, flags?: readonly string[]): Shortfall[] {
+  const { costs, state } = featureCostParts(actor, use, choices, flags);
+  return shortfalls(costs, state);
+}
+
+function featureCostParts(actor: ActorState, use: CardUse, choices: Readonly<Record<string, number>>, flags?: readonly string[]): { costs: PaidCost[]; state: PayerState } {
   const env: NumberEnv = {
     traits: actor.traits,
     spellcast: actor.spellcast,
@@ -198,7 +213,7 @@ export function featureCostShort(actor: ActorState, use: CardUse, choices: Reado
   const costs = resolveCosts(use.costs ?? [], (c) => resolveNumber(c.amount, env, noDice));
   const held: Partial<Record<HeldDieKind, number>> = {};
   for (const d of actor.heldDice ?? []) held[d.kind] = (held[d.kind] ?? 0) + 1;
-  return unaffordable(costs, {
+  const state: PayerState = {
     hope: actor.hope,
     stress: actor.stress,
     stressMax: actor.stressMax,
@@ -212,7 +227,8 @@ export function featureCostShort(actor: ActorState, use: CardUse, choices: Reado
     heldDice: held,
     // Plan lanes-2 E8.3 (dcm-hgvx): the payer's rules flags (Ravenous `cannotSpendHope`, HF p.94: "a PC can't spend Hope").
     ...(flags && flags.length > 0 ? { flags } : {}),
-  });
+  };
+  return { costs, state };
 }
 
 /**

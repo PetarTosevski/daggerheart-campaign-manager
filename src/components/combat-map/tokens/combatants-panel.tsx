@@ -3,6 +3,7 @@
 import { useMutation, useQuery } from "convex/react";
 import { useEffect, useState, type FormEvent } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 
 import { api } from "../../../../convex/_generated/api";
@@ -112,28 +113,28 @@ export function CombatantsPanel({ campaignId, map }: CombatantsPanelProps) {
         </span>
       </div>
       <div className="cm-row">
-        <button
+        <BrandButton
           type="button"
-          className="cm-btn"
+          variant="neutral"
           disabled={info.partyLeft === 0 || pending}
           onClick={() => void run(() => addParty({ campaignId, mapId, idempotencyKey: idempotencyKey() }))}
         >
           ＋ Party ({info.partyLeft})
-        </button>
+        </BrandButton>
         {/* D10 S8 (B11, Q2): the live (else newest planned) session's encounter; disabled without one. */}
-        <button
+        <BrandButton
           type="button"
-          className="cm-btn"
+          variant="neutral"
           disabled={session.session === null || session.session.adversaries === 0 || pending}
           title={session.title}
           onClick={placeSession}
         >
           ＋ Session encounter
-        </button>
+        </BrandButton>
         {tokens.length > 0 ? (
-          <button
+          <BrandButton
             type="button"
-            className="cm-btn cm-danger"
+            variant="danger"
             disabled={pending}
             onClick={() => {
               if (!confirmClear) return setConfirmClear(true);
@@ -142,7 +143,7 @@ export function CombatantsPanel({ campaignId, map }: CombatantsPanelProps) {
             }}
           >
             {confirmClear ? "Click again to clear" : "Clear tokens"}
-          </button>
+          </BrandButton>
         ) : null}
       </div>
 
@@ -151,26 +152,29 @@ export function CombatantsPanel({ campaignId, map }: CombatantsPanelProps) {
           <span className="cm-lbl cm-queue-lbl">From the Adversaries tab</span>
           <div className="cm-row cm-tight">
             {info.queue.map((q) => (
-              <button
+              <BrandButton
                 key={q.instanceId}
                 type="button"
-                className="cm-chip"
+                variant="neutral"
+                size="sm"
                 disabled={pending}
                 onClick={() => void run(() => place({ campaignId, mapId, instanceIds: [q.instanceId], idempotencyKey: idempotencyKey() }))}
               >
                 ⚔ {q.name}
                 {q.solo ? <span className="cm-muted cm-small"> · 2×2</span> : null}
-              </button>
+              </BrandButton>
             ))}
           </div>
-          <button
+          <BrandButton
             type="button"
-            className="cm-btn cm-sm cm-self-start"
+            variant="neutral"
+            size="sm"
+            className="cm-self-start"
             disabled={pending}
             onClick={() => void run(() => place({ campaignId, mapId, instanceIds: info.queue.map((q) => q.instanceId), idempotencyKey: idempotencyKey() }))}
           >
             Place all
-          </button>
+          </BrandButton>
         </div>
       ) : info.encounter === null ? (
         <p className="cm-muted cm-small cm-m0">Start an encounter on the Adversaries tab to bring its adversaries here.</p>
@@ -185,14 +189,14 @@ export function CombatantsPanel({ campaignId, map }: CombatantsPanelProps) {
           </div>
           <div className="cm-row cm-tight" role="group" aria-label="Side">
             {CUSTOM_SIDES.map((k) => (
-              <button key={k} type="button" className="cm-btn cm-sm" aria-pressed={side === k} onClick={() => setSide(k)}>
+              <BrandButton key={k} type="button" variant="neutral" size="sm" aria-pressed={side === k} onClick={() => setSide(k)}>
                 {SIDES[k].label}
-              </button>
+              </BrandButton>
             ))}
           </div>
-          <button type="submit" className="cm-btn cm-self-start" disabled={pending}>
+          <BrandButton type="submit" variant="confirm" className="cm-self-start" disabled={pending}>
             ＋ Add token
-          </button>
+          </BrandButton>
         </form>
       </details>
       {notice ? (

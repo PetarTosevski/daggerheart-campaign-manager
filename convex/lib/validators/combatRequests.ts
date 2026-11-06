@@ -77,10 +77,17 @@ export const combatRequestKindValidator = v.union(
   v.literal("difficulty"),
   v.literal("cloakPrompt"),
   v.literal("forcedAttack"),
+  v.literal("gmPrompt"),
+  v.literal("allyPick"),
 );
 
-/** `open` until answered; `resolved` (approved / hit applied) or `declined` (the GM refused a sanction). */
-export const combatRequestStatusValidator = v.union(v.literal("open"), v.literal("resolved"), v.literal("declined"));
+/**
+ * `open` until answered; `resolved` (approved / hit applied), `declined` (the GM refused a sanction, or the request was
+ * closed with its encounter or undo) or `withdrawn` (dcm-bxp.99.32.17: the player took back their own sanction or
+ * Charge before the GM answered, `combatWithdraw.withdraw`; older withdrawals were stored `declined`, see
+ * `migrations/combatRequestWithdrawn`).
+ */
+export const combatRequestStatusValidator = v.union(v.literal("open"), v.literal("resolved"), v.literal("declined"), v.literal("withdrawn"));
 
 /** A Defined Range band on the map (CB p.103), as `rangeCheck` reports it (CA1). */
 export const rangeBandValidator = v.union(
@@ -255,6 +262,19 @@ export const pcAttackerValidator = v.object({
 });
 
 /**
+ * A fall or a collision (plan rule-switches OFA, widened; optional rule "Falling and collision damage", CB p.168): the
+ * GM's hazard button hits a PC with no creature behind it. Told apart from the others by `kind`. `hazard` is the height
+ * ("veryClose", "close", "far" = Far or Very Far) or "collision"; `label` names it in the feed ("A fall from Close range").
+ */
+export const hazardAttackerValidator = v.object({
+  kind: v.literal("hazard"),
+  hazard: v.union(v.literal("veryClose"), v.literal("close"), v.literal("far"), v.literal("collision")),
+  label: v.string(),
+  /** Never set (a hazard has no feature); kept so every attacker shape reads `feature` alike. */
+  feature: v.optional(v.string()),
+});
+
+/**
  * What an attack does to whoever takes its hit besides the damage (AA2b; user answer 2026-10-22: "the attack's rider
  * (e.g. Bite's Restrained) MOVES WITH THE DAMAGE to that ally"). Applied when the hit resolves, to the PC who took it,
  * unless the hit was avoided. `fromCondition` marks a card tag's effect (Bold Presence avoids it with the condition).
@@ -315,7 +335,7 @@ export const keywordAnswerValidator = v.object({ keyword: damageKeywordValidator
 export const incomingHitPayloadValidator = v.object({
   schemaVersion: v.literal(1),
   kind: v.literal("incomingHit"),
-  attacker: v.union(adversaryAttackerValidator, pcAttackerValidator),
+  attacker: v.union(adversaryAttackerValidator, pcAttackerValidator, hazardAttackerValidator),
   targetCharacterId: v.id("characters"),
   /** The target's PC token on the live map, when there is one. */
   targetTokenId: v.optional(v.id("combatTokens")),
@@ -370,6 +390,11 @@ export const minionOfferPayloadValidator = v.object({
   /** How many extra Minions the attacker may defeat in all. */
   extra: v.number(),
   candidates: v.array(minionCandidateValidator),
+  /**
+   * Rule switches RC1 (widened), D6 variant "GM picks the extra Minions" (not in the books, Q5 a): the GM picks, not the
+   * attacker (`pickMinions` refuses a player with FORBIDDEN). Absent: the attacker picks (the Book).
+   */
+  picker: v.optional(v.literal("gm")),
 });
 
 /**
@@ -607,6 +632,130 @@ export const forcedAttackPayloadValidator = v.object({
   groupId: v.string(),
 });
 
+/** What a `gmPrompt` asks the GM to do (convex/lib/adversaryFeatures.ts `Prompt`). */
+export const gmPromptKindValidator = v.union(
+  v.literal("manual"),
+  v.literal("move"),
+  v.literal("pcSave"),
+  v.literal("summon"),
+  v.literal("countdown"),
+  v.literal("spotlight"),
+  v.literal("choice"),
+);
+
+/** The most GM prompts one adversary use stores (CD8); a use rarely has more than three. */
+export const MAX_GM_PROMPTS_PER_USE = 12;
+
+/**
+ * `gmPrompt` (dcm-bxp.99.32.27, widened; plan combat-hud H5.1, board CmpPromptsGM "More Where That Came From: Choose for
+ * the feature"): one GM prompt of an adversary feature use (summon, countdown, manual, a PC's save, ...), the step the GM
+ * applies by hand. Stored open so a reload or a second GM tab keeps it and the HUD queue lists it
+ * (`adversaryPromptsReads.pending`); the GM marks it done or dismisses it (`adversaryPrompts.answer`). Closed (declined)
+ * when the use is undone (its `groupId`) or the encounter ends. `instanceLabel` / `feature` name the adversary and the
+ * printed feature; `text` is the prompt as `useFeature` returns it. GM only: never read by a player.
+ */
+export const gmPromptPayloadValidator = v.object({
+  schemaVersion: v.literal(1),
+  kind: v.literal("gmPrompt"),
+  instanceId: v.id("encounterAdversaries"),
+  instanceLabel: v.string(),
+  feature: v.string(),
+  prompt: gmPromptKindValidator,
+  text: v.string(),
+  groupId: v.string(),
+});
+
+/**
+ * `allyPick` (plan finish-hud-lk FH-AP, widened; dcm-bxp.99.32.24, user 2026-11-05): a card, feature or adversary feature
+ * whose `choose` step has each chooser pick their own option (`by`: Rousing Strike, CB p.342; Critical Inspiration,
+ * CB p.341; Locust Swarm, Awesome Size, Elemental Breath's Fire, HF p.92-93). Each chooser answers on their own screen
+ * (`allyPicks.answer`: that character's player, or the GM for anyone, a no-show included); nothing of the use applies
+ * until every chooser answered, then the server runs it with the picks (`source`). Declined when the use's actionLog group
+ * is undone or its encounter ends (as a reaction window). At most `MAX_ALLY_PICK_CHOOSERS` choosers.
+ */
+export const allyPickChooserValidator = v.object({
+  stepId: v.string(),
+  /** The runner's id of the chooser (`by:<stepId>:<chooserId>`): a PC card's token id, an adversary feature's character id. */
+  chooserId: v.string(),
+  /** The chooser's character (its player answers); unset: only the GM answers. */
+  characterId: v.optional(v.id("characters")),
+  name: v.string(),
+  label: v.string(),
+  options: v.array(v.object({ id: v.string(), label: v.string() })),
+});
+
+/** One chooser's answer: the option picked, who sent it (the character's player or the GM) and when. */
+export const allyPickAnswerValidator = v.object({ stepId: v.string(), chooserId: v.string(), options: v.array(v.string()), by: v.id("users"), at: v.number() });
+
+/** A PC's rider (Rousing Strike on a critical attack), held after the attack: it runs whole on the stored roll once all picked. */
+export const allyPickRiderSourceValidator = v.object({
+  kind: v.literal("rider"),
+  characterId: v.id("characters"),
+  rider: v.object({ source: v.union(v.literal("card"), v.literal("feature")), id: v.string(), useId: v.string(), name: v.string() }),
+  /** The rider's own choices as the player sent them with the attack. */
+  choices: v.array(cardChoiceValidator),
+  hostRoll: hostRollValidator,
+  /** The attack's public actionLog row; once it is undone the picks are closed. */
+  entryId: v.id("actionLog"),
+});
+
+/** `adversaryActions.useFeature`'s arguments, kept to run the feature once all picked. */
+export const heldFeatureArgsValidator = v.object({
+  instanceId: v.string(),
+  feature: v.optional(v.string()),
+  useId: v.optional(v.string()),
+  targets: v.array(v.string()),
+  picked: v.optional(v.array(v.string())),
+  allies: v.optional(v.array(v.string())),
+  followUp: v.optional(v.array(v.string())),
+  chain: v.optional(v.array(v.array(v.string()))),
+  raisers: v.optional(v.array(v.string())),
+  trigger: v.optional(v.object({ sourceId: v.optional(v.string()), subjectId: v.optional(v.string()), amount: v.optional(v.number()) })),
+  options: v.optional(v.array(v.object({ id: v.string(), values: v.array(v.string()) }))),
+  optionals: v.optional(v.array(v.string())),
+  situations: v.optional(v.array(v.string())),
+  eitherCosts: v.optional(v.array(v.number())),
+  splits: v.optional(v.array(v.object({ id: v.string(), amount: v.number() }))),
+  advantage: v.optional(v.number()),
+  disadvantage: v.optional(v.number()),
+  experience: v.optional(v.string()),
+  spendFear: v.optional(v.number()),
+  reactions: v.optional(v.array(v.string())),
+  buyOffs: v.optional(v.array(v.string())),
+});
+
+/** An adversary feature use held before anything applied, with the die values its first run rolled (replayed first). */
+export const allyPickAdversarySourceValidator = v.object({
+  kind: v.literal("adversary"),
+  instanceId: v.id("encounterAdversaries"),
+  args: heldFeatureArgsValidator,
+  dice: v.array(v.number()),
+});
+
+export const allyPickPayloadValidator = v.object({
+  schemaVersion: v.literal(1),
+  kind: v.literal("allyPick"),
+  /** The card or feature ("Rousing Strike", "Locust Swarm") and who used it ("Brannoc", "Harbinger"). */
+  name: v.string(),
+  actorName: v.string(),
+  /** The use's actionLog group: the run joins it, and undoing it closes the picks. */
+  groupId: v.string(),
+  source: v.union(allyPickRiderSourceValidator, allyPickAdversarySourceValidator),
+  choosers: v.array(allyPickChooserValidator),
+  answers: v.array(allyPickAnswerValidator),
+  /**
+   * The acting player still reviews the computed allies (plan rule-switches CU2, bead dcm-bxp.99.32.46, user 2026-11-06:
+   * "the acting player can deselect allies from the computed list (can't see/hear) before the picks go out"). Set on a
+   * PC rider's row with allies to review; `allyPicks.send` drops the unticked choosers and clears it. While set, nobody
+   * answers and only the actor (and the GM) sees the row. Widened (rule 7): absent on older rows and adversary uses,
+   * which went out at once.
+   */
+  review: v.optional(v.literal(true)),
+});
+
+/** The most choosers one `allyPick` row holds (a party of 12 and the actor). */
+export const MAX_ALLY_PICK_CHOOSERS = 13;
+
 /** The payload of a `combatRequests` row; `kind` matches the row's `kind`. */
 export const combatRequestPayloadValidator = v.union(
   sanctionPayloadValidator,
@@ -621,6 +770,8 @@ export const combatRequestPayloadValidator = v.union(
   difficultyPayloadValidator,
   cloakPromptPayloadValidator,
   forcedAttackPayloadValidator,
+  gmPromptPayloadValidator,
+  allyPickPayloadValidator,
 );
 
 /**
@@ -679,6 +830,7 @@ export type HitRider = Infer<typeof hitRiderValidator>;
 export type AfterHit = Infer<typeof afterHitValidator>;
 export type AdversaryAttacker = Infer<typeof adversaryAttackerValidator>;
 export type PcAttacker = Infer<typeof pcAttackerValidator>;
+export type HazardAttacker = Infer<typeof hazardAttackerValidator>;
 export type CombatRequestPayload = Infer<typeof combatRequestPayloadValidator>;
 export type HitResponder = Infer<typeof hitResponderValidator>;
 export type HitChoice = Infer<typeof hitChoiceValidator>;
@@ -700,3 +852,6 @@ export type KeywordAsk = Infer<typeof keywordAskValidator>;
 export type KeywordAnswer = Infer<typeof keywordAnswerValidator>;
 export type CloakPromptPayload = Infer<typeof cloakPromptPayloadValidator>;
 export type ForcedAttackPayload = Infer<typeof forcedAttackPayloadValidator>;
+export type AllyPickPayload = Infer<typeof allyPickPayloadValidator>;
+export type AllyPickChooser = Infer<typeof allyPickChooserValidator>;
+export type HeldFeatureArgs = Infer<typeof heldFeatureArgsValidator>;

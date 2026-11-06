@@ -42,8 +42,8 @@ test("D11 N9 notes regions at 1440 and 390", { tag: "@visual" }, async ({ page, 
   const root = page.locator(".bj-root");
 
   // notes:empty - the GM's default pages before the first write.
-  await page.goto(`/campaigns/${campaignId}/notes`);
-  await expect(page.getByRole("heading", { level: 1, name: "Game Master’s Journal" })).toBeVisible();
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
+  await expect(page.getByRole("group", { name: "Writing as" }).getByRole("button", { name: "Game Master", pressed: true })).toBeVisible();
   await shoot(root, "empty");
 
   // 390 only: the 'Pages' disclosure open (the whole index column).
@@ -72,7 +72,7 @@ test("D11 N9 notes regions at 1440 and 390", { tag: "@visual" }, async ({ page, 
   await gm.mutation(api.notesEntries.add, { campaignId, page: rumors, kind: "fear", text: "The Doom countdown" });
 
   // notes:page - every kind and state, a star, a mention.
-  await page.goto(`/campaigns/${campaignId}/notes?page=${session}`);
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes&page=${session}`);
   await expect(paperColumn(page).getByRole("link", { name: "Mira" })).toBeVisible();
   await shoot(paperColumn(page), "page");
   // dcm-bxp.113: one-line entry rows sit 41 px apart, as on the board (40 px rows and the 1 px gap).
@@ -91,10 +91,11 @@ test("D11 N9 notes regions at 1440 and 390", { tag: "@visual" }, async ({ page, 
   await page.getByRole("searchbox", { name: "Search the journal" }).fill("");
 
   // notes:threads.
-  await page.getByRole("button", { name: /Open threads/ }).click();
+  await page.getByRole("button", { name: /^Open threads: \d+$/ }).click();
   await expect(paperColumn(page).getByText("Wither spreading through the Grove")).toBeVisible();
   await shoot(paperColumn(page), "threads");
-  await page.getByRole("button", { name: /Open threads/ }).click();
+  await page.getByRole("group", { name: "Writing as" }).getByRole("button", { name: "Game Master" }).click();
+  await expect(page).not.toHaveURL(/view=threads/);
 
   // notes:tear - a frame mid-rip (about 500 ms in, as the board shot).
   for (const viewport of [
@@ -102,7 +103,7 @@ test("D11 N9 notes regions at 1440 and 390", { tag: "@visual" }, async ({ page, 
     { width: 390, height: 844 },
   ]) {
     await page.setViewportSize(viewport);
-    await page.goto(`/campaigns/${campaignId}/notes?page=${rumors}`);
+    await page.goto(`/campaigns/${campaignId}/journal?tab=notes&page=${rumors}`);
     await expect(paperColumn(page).getByLabel("Page title")).toHaveValue("Rumors & hooks");
     await paperColumn(page).getByRole("button", { name: "Tear out page" }).click();
     await paperColumn(page).getByRole("button", { name: "Click again to tear out" }).click();
@@ -126,8 +127,8 @@ test("D11 N9 notes regions at 1440 and 390", { tag: "@visual" }, async ({ page, 
     await expect(player.getByRole("heading", { level: 1, name })).toBeVisible();
     const client = await convexAs(player);
     await client.mutation(api.characters.create, { campaignId, draft: bardDraft("Liriel"), idempotencyKey: crypto.randomUUID() });
-    await player.goto(`/campaigns/${campaignId}/notes`);
-    await expect(player.getByRole("heading", { level: 1, name: "Liriel’s Journal" })).toBeVisible();
+    await player.goto(`/campaigns/${campaignId}/journal?tab=notes`);
+    await expect(player.getByRole("group", { name: "Writing as" }).getByRole("button", { name: "Liriel", pressed: true })).toBeVisible();
     await visual(player, "D11-N9").shoot(player.locator(".bj-root"), "player");
   } finally {
     await context.close();

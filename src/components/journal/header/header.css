@@ -1,4 +1,7 @@
-/* Journal header actions (JH): live chip, Start, tome, Open threads, the Start / End report. Tokens: ../journal.css. */
+/*
+ * Journal header actions (JH): live chip, Start, tome, Open threads, the Start / End report. Tokens: ../journal.css.
+ * The buttons are glass buttons (BrandButton, plan glass-buttons G12); only layout and the count badge live here.
+ */
 .jh {
   display: flex;
   flex-direction: column;
@@ -43,48 +46,8 @@
   background: #6b7f84;
   box-shadow: none;
 }
-.jh-end,
-.jh-menu-btn {
-  min-height: 44px;
-  border: 1px solid var(--jr-border);
-  border-radius: 999px;
-  background: #121b1f;
-  color: var(--jr-text);
-  font-size: 14px;
-  cursor: pointer;
-}
-.jh-end {
-  padding: 0 16px;
-}
-.jh-end:hover,
-.jh-menu-btn:hover {
-  border-color: var(--jr-acc);
-  background: var(--jr-hover);
-}
-.jh-end:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-.jh-end:focus-visible,
-.jh-menu-btn:focus-visible,
-.jh-tome:focus-visible,
-.jh-threads:focus-visible,
-.jh-dismiss:focus-visible {
-  outline: 2px solid var(--jr-acc);
-  outline-offset: 2px;
-}
 .jh-menu {
   position: relative;
-}
-.jh-menu-btn {
-  display: inline-grid;
-  place-items: center;
-  width: 44px;
-  padding: 0;
-}
-.jh-menu-btn svg {
-  width: 18px;
-  height: 18px;
 }
 .jh-menu-panel {
   position: absolute;
@@ -110,7 +73,7 @@
   cursor: pointer;
 }
 .jh-switch input,
-.jh-dialog .ss-live-wither input {
+.jh-dialog .jr-wither input {
   width: 20px;
   height: 20px;
   flex: none;
@@ -122,48 +85,6 @@
   margin-top: 4px;
   color: var(--jr-muted);
   font-size: 13px;
-}
-.jh-start {
-  min-height: 48px;
-}
-.jh-tome {
-  display: inline-grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  border: 1.5px solid var(--jr-acc);
-  border-radius: 999px;
-  background: #0b1214;
-  color: var(--jr-text);
-  cursor: pointer;
-}
-.jh-tome:hover {
-  background: var(--jr-acc-bg);
-}
-.jh-tome svg {
-  width: 18px;
-  height: 18px;
-}
-.jh-threads {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 48px;
-  padding: 0 8px 0 18px;
-  border: 1px solid #4a3d73;
-  border-radius: 999px;
-  background: #1c1530;
-  color: #e4dcff;
-  font-size: 15px;
-  cursor: pointer;
-}
-.jh-threads:hover {
-  background: #261d42;
-}
-.jh-threads svg {
-  width: 17px;
-  height: 17px;
-  color: #c8b8ff;
 }
 .jh-count {
   display: inline-grid;
@@ -199,25 +120,6 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.jh-dismiss {
-  display: inline-grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  flex: none;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--jr-muted);
-  cursor: pointer;
-}
-.jh-dismiss:hover {
-  background: var(--jr-hover);
-}
-.jh-dismiss svg {
-  width: 16px;
-  height: 16px;
-}
 .jh-error {
   margin: 0;
   color: var(--jr-danger);
@@ -230,7 +132,7 @@
   font-size: 16px;
   color: #c9d2cf;
 }
-.jh-dialog .ss-live-wither {
+.jh-dialog .jr-wither {
   display: flex;
   gap: 10px;
   align-items: flex-start;

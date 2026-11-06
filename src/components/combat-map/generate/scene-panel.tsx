@@ -6,6 +6,7 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { useRef, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import { DEFAULT_SETTING } from "@/lib/sprite-packs/settings";
 import { useIntent } from "@/lib/use-intent";
@@ -187,15 +188,16 @@ export function ScenePanel({ campaignId, map, onMapCreated }: ScenePanelProps) {
       {chips.length > 0 ? (
         <div className="cm-row cm-scene-chips" role="group" aria-label="Suggested scenes">
           {chips.map((chip) => (
-            <button
+            <BrandButton
               key={chip.text}
               type="button"
-              className="cm-btn cm-sm cm-scene-chip"
+              variant="neutral"
+              size="sm"
               title={chip.text}
               onClick={() => setDraft({ mapId, text: chip.text })}
             >
               {chip.label}
-            </button>
+            </BrandButton>
           ))}
         </div>
       ) : null}
@@ -214,46 +216,47 @@ export function ScenePanel({ campaignId, map, onMapCreated }: ScenePanelProps) {
           Size
         </span>
         {SIZES.map((s) => (
-          <button
+          <BrandButton
             key={s.key}
             type="button"
-            className="cm-btn cm-sm"
+            variant="neutral"
+            size="sm"
             aria-pressed={size === s.key}
             title={`${s.w} × ${s.h} squares`}
             onClick={() => setPicked({ mapId, size: s.key })}
           >
             {s.label}
-          </button>
+          </BrandButton>
         ))}
       </div>
       <div className="cm-row cm-scene-actions">
         {fills ? (
-          <button type="button" className="cm-go" disabled={disabled} onClick={() => void run({ target: "current", another: false })}>
+          <BrandButton type="button" variant="confirm" disabled={disabled} onClick={() => void run({ target: "current", another: false })}>
             ✦ Generate map
-          </button>
+          </BrandButton>
         ) : source === "generated" ? (
           <>
-            <button type="button" className="cm-go" disabled={disabled} onClick={() => void run({ target: "current", another: false })}>
+            <BrandButton type="button" variant="confirm" disabled={disabled} onClick={() => void run({ target: "current", another: false })}>
               ✦ Regenerate map
-            </button>
-            <button type="button" className="cm-btn" disabled={disabled} onClick={() => void run({ target: "current", another: true })}>
+            </BrandButton>
+            <BrandButton type="button" variant="neutral" disabled={disabled} onClick={() => void run({ target: "current", another: true })}>
               ↻ Another version
-            </button>
+            </BrandButton>
           </>
         ) : null}
         {!fills ? (
-          <button type="button" className={source === "image" ? "cm-go" : "cm-btn"} disabled={disabled} onClick={() => void run({ target: "new", another: false })}>
+          <BrandButton type="button" variant={source === "image" ? "confirm" : "neutral"} disabled={disabled} onClick={() => void run({ target: "new", another: false })}>
             ＋ Generate new map
-          </button>
+          </BrandButton>
         ) : null}
       </div>
       {busy ? (
         <div role="status" className="cm-muted cm-scene-busy">
           <span className="cm-spin" aria-hidden="true" />
           Drawing the battlefield…
-          <button type="button" className="cm-btn cm-sm" onClick={onStop}>
+          <BrandButton type="button" variant="cancel" size="sm" onClick={onStop}>
             Stop
-          </button>
+          </BrandButton>
         </div>
       ) : null}
       {message ? (

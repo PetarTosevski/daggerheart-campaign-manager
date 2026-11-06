@@ -22,7 +22,7 @@
  */
 import { pickUse, rollTargetCount } from "../../src/lib/domain/card-effects/run";
 import type { CardUse, Cost, Step } from "../../src/lib/domain/card-effects/types";
-import { actorExtras, asCardEffect, featureCostShort } from "../../src/lib/domain/feature-effects/run";
+import { actorExtras, asCardEffect, featureCostShort, featureCostShortfalls } from "../../src/lib/domain/feature-effects/run";
 import { appError } from "../../src/lib/errors/app-error";
 import { featureEffect } from "../../src/lib/srd/feature-effects/index";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
@@ -30,7 +30,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction } from "./actionLog";
 import { cardActor } from "./cardRunner";
-import { saveSheet } from "./characterSheet";
+import { loadCharacter, readSheet, saveSheet } from "./characterSheet";
 import { closeRequest, openRequests } from "./combatRequests";
 import { rollDie } from "./dice";
 import type { AllyRollPayload } from "./validators/combatRequests";
@@ -132,7 +132,7 @@ export async function rollAndStoreCount(
   let payer = input.sheet;
   if (chosen.length > 0) {
     const short = featureCostShort(actor, { ...input.use, costs: rollCosts }, input.choices ?? {});
-    if (short.length > 0) throw appError("FEATURE_COST_UNPAID", `Short of: ${short.join(", ")}.`);
+    if (short.length > 0) throw appError("FEATURE_COST_UNPAID", `Short of: ${short.join(", ")}.`, featureCostShortfalls(actor, { ...input.use, costs: rollCosts }, input.choices ?? {})[0]);
     payer = payRollCosts(input.sheet, rollCosts, input.choices ?? {});
   }
   const count = rollTargetCount(withChosenCount(input.use, input.choices ?? {}), { ...actor, ...actorExtras(payer) }, rollDie);
@@ -402,4 +402,34 @@ export function optionalHope(use: CardUse, optionalId: string): number {
   const step = use.steps.find((s) => s.kind === "optional" && s.id === optionalId);
   if (step?.kind !== "optional") return 0;
   return (step.costs ?? []).reduce((n, c) => n + (c.kind === "hope" && c.amount.kind === "fixed" ? c.amount.value : 0), 0);
+}
+
+// ---------------------------------------------------------------- shared by featurePrompts.ts and featurePromptsReads.ts
+
+/** The character the caller edits (their own; the GM any), in this campaign, with its sheet (NOT_FOUND / FORBIDDEN otherwise). */
+export async function editableHere(ctx: QueryCtx & { user: Doc<"users">; campaign: Doc<"campaigns"> }, characterId: Id<"characters">) {
+  const { campaign, character } = await loadCharacter(ctx, ctx.user, characterId, "edit", "owner");
+  if (campaign._id !== ctx.campaign._id) throw appError("NOT_FOUND");
+  return { campaign, character, sheet: readSheet(character.sheet) };
+}
+
+/** The name a player may see for a token: a PC's name, an adversary instance's label (no numbers, U1). */
+export async function tokenName(ctx: QueryCtx, campaignId: Id<"campaigns">, token: Doc<"combatTokens">): Promise<string> {
+  if (token.ref.kind === "custom") return token.ref.name;
+  if (token.ref.kind === "companion") return "Companion";
+  if (token.ref.kind === "pc") {
+    const c = await ctx.db.get("characters", token.ref.characterId);
+    return c === null || c.campaignId !== campaignId ? "Unknown" : readSheet(c.sheet).name;
+  }
+  const instance = await ctx.db.get("encounterAdversaries", token.ref.adversaryId);
+  return instance !== null && instance.campaignId === campaignId ? instance.label : "Unknown";
+}
+
+export async function characterName(ctx: QueryCtx, campaignId: Id<"campaigns">, id: Id<"characters">): Promise<string> {
+  const c = await ctx.db.get("characters", id);
+  return c === null || c.campaignId !== campaignId ? "Unknown" : readSheet(c.sheet).name;
+}
+
+export function featureName(featureId: string): string {
+  return featureEffect(featureId)?.uses[0]?.name ?? featureId;
 }

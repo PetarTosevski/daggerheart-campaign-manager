@@ -34,7 +34,7 @@ export default function PartyPage() {
         <div className="flex flex-wrap items-center gap-3">
           <PartyLevelUpButton {...slot} />
           <ImportButton {...slot} />
-          <Link href={newHref} className={brandButton({ variant: "primary", size: "xl" })}>
+          <Link href={newHref} className={brandButton({ variant: "confirm", size: "lg" })}>
             + Create character
           </Link>
         </div>

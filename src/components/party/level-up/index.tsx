@@ -95,7 +95,8 @@ export const PartyLevelUpButton: CampaignSlot = ({ campaignId, isGm }) => {
   return (
     <div className="flex flex-col items-end gap-1">
       <BrandButton
-        size="xl"
+        variant="neutral"
+        size="lg"
         disabled={pending}
         onClick={async () => {
           const result = await fire({ campaignId });

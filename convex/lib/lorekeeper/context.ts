@@ -223,6 +223,7 @@ async function houseRulesOf(ctx: QueryCtx, user: Doc<"users">, campaign: Doc<"ca
   if (!(await houseRulesEnabled(ctx, campaign))) return [];
   const journals = await ctx.db
     .query("journals")
+    // Identity: house rules live in the GM journal, the creator's (a co-GM's journal is a member journal).
     .withIndex("by_campaign_user", (q) => q.eq("campaignId", campaign._id).eq("userId", campaign.ownerId))
     .take(5);
   const notesCtx = Object.assign({}, ctx, { user, campaign });

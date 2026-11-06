@@ -80,10 +80,17 @@ export const WRAPPERS = [
   "gmQuery",
   "gmMutation",
   "keyedGmMutation",
+  "creatorQuery",
+  "creatorMutation",
+  "keyedCreatorMutation",
+  // Config AD0: the app owner's (superadmin) builders.
+  "appOwnerQuery",
+  "appOwnerMutation",
+  "appOwnerAction",
 ] as const;
 export type Wrapper = (typeof WRAPPERS)[number];
 
-export type WrapperInfo = { wrapper: Wrapper; need?: "view" | "edit" | "owner" };
+export type WrapperInfo = { wrapper: Wrapper; need?: "view" | "edit" | "owner" | "creator" };
 
 /**
  * The builder that defines `<module>:<export>`, read from the module's raw source: `export const X = <wrapper>({`,
@@ -104,6 +111,6 @@ export async function wrapperOf(name: string): Promise<WrapperInfo | null> {
   const next = rest.search(/\nexport /);
   const body = next === -1 ? rest : rest.slice(0, next);
   const options = body.slice(0, Math.max(0, body.indexOf("handler")) || body.length);
-  const need = /\bneed:\s*"(view|edit|owner)"/.exec(options)?.[1] as WrapperInfo["need"];
+  const need = /\bneed:\s*"(view|edit|owner|creator)"/.exec(options)?.[1] as WrapperInfo["need"];
   return need === undefined ? { wrapper: wrapper as Wrapper } : { wrapper: wrapper as Wrapper, need };
 }

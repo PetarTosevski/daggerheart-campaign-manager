@@ -28,11 +28,16 @@ declare global {
   }
 }
 
-/** Public functions no wrapper defines, so the sweep does not call them: Convex Auth's own entry points. */
+/**
+ * Public functions the sweep does not call: Convex Auth's own entry points (no wrapper defines them), and reads that
+ * answer a signed-out caller on purpose (covered by the authz matrix and their own tests instead).
+ */
 export const EXEMPT: Record<string, string> = {
   "auth:signIn": "Convex Auth: signing in is what a signed-out caller does",
   "auth:signOut": "Convex Auth: signs out the current session, if any",
   "auth:isAuthenticated": "Convex Auth: answers false to a signed-out caller by design",
+  "features:mine":
+    "the caller's own feature on / off; signed out = the Everyone features, never modes or testers (config AD9; tests/convex/features.test.ts)",
 };
 
 /**
@@ -40,12 +45,17 @@ export const EXEMPT: Record<string, string> = {
  * `users:viewer` (maybeUserQuery) returns the caller's own account. Everything else must show a stranger nothing.
  */
 export const STRANGER_OWN: Record<string, string> = {
+  "accountSelfDelete:deleteMyAccount": "deletes the caller's own account (DEL1)",
   "campaigns:list": "the caller's own campaigns (a stranger's is empty)",
   "campaigns:create": "starts a campaign the caller owns",
   "settings:get": "the caller's own settings",
   "settings:update": "the caller's own settings",
   "members:joinByCode": "joins with a code the caller was given (a wrong code is NOT_FOUND)",
   "users:viewer": "the caller's own account",
+  "uiState:get": "the caller's own UI state (defaults for a stranger; config P2)",
+  "preferences:get": "the caller's own preferences (config P1)",
+  "preferences:importLegacy": "moves the caller's own old browser values to their account (config P1)",
+  "appAdmin:me": "whether the caller is the app owner ({ isOwner: false } for a stranger; config AD0)",
 };
 
 const AREAS = Object.values(import.meta.glob("./authz/*.entries.ts", { eager: true, import: "default" }) as Record<string, Area>);
@@ -197,7 +207,7 @@ describe("unauthenticated sweep", () => {
     expect(names.length).toBeGreaterThan(300);
     expect(Object.keys(EXEMPT).filter((n) => !names.includes(n))).toEqual([]);
     expect(Object.keys(STRANGER_OWN).filter((n) => !names.includes(n))).toEqual([]);
-    expect([...MAYBE].sort()).toEqual(["campaigns:get", "users:viewer"]);
+    expect([...MAYBE].sort()).toEqual(["appAdmin:me", "appStatus:get", "campaigns:get", "users:viewer"]);
   });
 
   describe("signed out: refused", () => {

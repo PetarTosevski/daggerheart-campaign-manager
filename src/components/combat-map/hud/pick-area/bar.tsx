@@ -4,6 +4,7 @@ import { useEffect, useEffectEvent, useId, useRef } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { useDefinedRanges } from "../../map-view/measure";
 import type { CombatPageState } from "../../slots";
 import { hudButtonClass } from "../ui";
 import { bannerParts, confirmLabel, confirmProblem, progressText, startCursor, stepCursor, summaryText } from "./model";
@@ -23,7 +24,7 @@ import { cancelAreaPick, confirmAreaPick, dismissPickLine, placeSquare, setCurso
 export function HudAreaPick({ state }: { state: CombatPageState }) {
   const { live, line } = useAreaPickState();
   const map = state.map;
-  if (live && map && live.spec.mapId === map._id) return <Bar live={live} w={map.w} h={map.h} />;
+  if (live && map && live.spec.mapId === map._id) return <Bar live={live} w={map.w} h={map.h} campaignId={state.campaignId} />;
   if (!line) return null;
   return (
     <div className={cn("hud-ap-bar hud-ap-line", line.error && "hud-ap-line-err")} role={line.error ? "alert" : "status"} data-testid="hud-area-line">
@@ -35,8 +36,11 @@ export function HudAreaPick({ state }: { state: CombatPageState }) {
   );
 }
 
-function Bar({ live, w, h }: { live: AreaPickLive; w: number; h: number }) {
-  const { spec, points } = live;
+function Bar({ live, w, h, campaignId }: { live: AreaPickLive; w: number; h: number; campaignId: CombatPageState["campaignId"] }) {
+  // Rule switches ODR2: with Defined Ranges off the summary counts no squares and no square is out of reach.
+  const definedRanges = useDefinedRanges(campaignId);
+  const { points } = live;
+  const spec = { ...live.spec, definedRanges };
   const cursorRef = useRef<HTMLDivElement>(null);
   const problemId = useId();
   const banner = bannerParts(spec, points.length);

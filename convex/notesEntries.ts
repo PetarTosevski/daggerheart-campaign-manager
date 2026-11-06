@@ -19,6 +19,7 @@ import {
   findPage,
   insertPage,
   notesRole,
+  ownsGmJournal,
   resolvePage,
   type NotesCtx,
   type NotesMutationCtx,
@@ -123,7 +124,8 @@ async function authorLabels(ctx: NotesCtx, rows: readonly Doc<"journalEntries">[
   for (const row of rows) {
     const key = `${row.authorId}|${row.authorCharacterId ?? ""}`;
     if (labels.has(key)) continue;
-    const isGm = row.authorId === ctx.campaign.ownerId;
+    // Identity: 'GM' labels the creator's entries; a co-GM's carry their character or account name.
+    const isGm = ownsGmJournal(ctx.campaign, row.authorId);
     const character = isGm || row.authorCharacterId === undefined ? null : await ctx.db.get("characters", row.authorCharacterId);
     const user = isGm ? null : await ctx.db.get("users", row.authorId);
     labels.set(key, authorLabel({ isGm, characterName: characterName(character), accountName: user?.name ?? null }));
@@ -216,8 +218,9 @@ export const entries = campaignQuery({
   handler: async (ctx, { page: ref }): Promise<PageEntries> => {
     const access = await findPage(ctx, ref);
     if (access === null) {
-      const role = await notesRole(ctx);
-      const template = typeof ref === "string" ? undefined : journalTemplate(role === "gm")[ref.template];
+      await notesRole(ctx); // grant-only users have no notes: NOT_FOUND
+      // Identity: the GM template is the creator's journal's (a co-GM's journal is a member journal).
+      const template = typeof ref === "string" ? undefined : journalTemplate(ownsGmJournal(ctx.campaign, ctx.user._id))[ref.template];
       if (template === undefined) throw appError("NOTE_PAGE_NOT_FOUND");
       return { kind: template.kind, canAdd: true, canArrange: true, migrateTarget: null, entries: [] };
     }
@@ -278,7 +281,8 @@ export const add = campaignMutation({
       journalId: access.journal._id,
       pageId: access.page._id,
       authorId: ctx.user._id,
-      ...(access.isGm || character === null ? {} : { authorCharacterId: character._id }),
+      // The creator's current journal has no character; a co-GM's entries carry theirs, like a player's.
+      ...(character === null ? {} : { authorCharacterId: character._id }),
       kind,
       state,
       star: false,
@@ -400,7 +404,7 @@ export const migrateOpen = campaignMutation({
         kind: plan.newPage!.kind,
         title: plan.newPage!.title,
         tape: newPageTape(pages),
-        visibility: defaultVisibility(access.isGm),
+        visibility: defaultVisibility(access.ownerIsGm),
       });
     }
     const target = await freshPage(ctx, targetId);

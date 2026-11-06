@@ -376,10 +376,17 @@ async function arena() {
       await saveSheet(ctx, id, { ...s, ...patch(s) });
     });
   const rows = () => t.run((ctx) => ctx.db.query("actionLog").collect());
-  const attack = (targetTokenIds: Id<"combatTokens">[], extra: Record<string, unknown> = {}) =>
-    player.mutation(api.combatActions.attack, { campaignId, characterId: w.characterA, mapId, targetTokenIds, slot: "primary", modifier: 0, experienceIds: [], advantage: 0, disadvantage: 0, help: 0, options: [], idempotencyKey: key(), ...extra });
-  const manual = (values: number[], roll: Record<string, unknown> = {}) =>
-    player.mutation(api.rolls.manualRoll, { characterId: w.characterA, values, roll: { kind: "action", trait: "agility", modifier: 0, experienceIds: [], advantage: 0, disadvantage: 0, help: 0, attack: false, options: [], ...roll }, idempotencyKey: key() });
+  // S2 (plan rule-switches RS2): a roll with Fear or a failure hands the spotlight to the GM, and players wait in a running
+  // encounter; the GM hands it back before each act here (waiting itself: rules-spotlight-wait.test.ts).
+  const handBack = () => gm.mutation(api.combatSpotlight.handToParty, { campaignId, idempotencyKey: key() });
+  const attack = async (targetTokenIds: Id<"combatTokens">[], extra: Record<string, unknown> = {}) => {
+    await handBack();
+    return player.mutation(api.combatActions.attack, { campaignId, characterId: w.characterA, mapId, targetTokenIds, slot: "primary", modifier: 0, experienceIds: [], advantage: 0, disadvantage: 0, help: 0, options: [], idempotencyKey: key(), ...extra });
+  };
+  const manual = async (values: number[], roll: Record<string, unknown> = {}) => {
+    await handBack();
+    return player.mutation(api.rolls.manualRoll, { characterId: w.characterA, values, roll: { kind: "action", trait: "agility", modifier: 0, experienceIds: [], advantage: 0, disadvantage: 0, help: 0, attack: false, options: [], ...roll }, idempotencyKey: key() });
+  };
   return { w, t, campaignId, mapId, gm, player, ...ids, enemy, instance, sheet, edit, rows, attack, manual };
 }
 

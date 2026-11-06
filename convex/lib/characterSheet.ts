@@ -8,7 +8,8 @@
  * - `loadCharacter(ctx, user, id, need)`: the character, its live campaign and
  *   the user's permission through `permissionFor` (`view`: everyone in the
  *   campaign; `edit`: owner and GM; `owner`: GM). NOT_FOUND without access,
- *   FORBIDDEN with too little.
+ *   FORBIDDEN with too little; in a mutation, CAMPAIGN_ARCHIVED for an archived
+ *   campaign (queries still read it).
  * - `editable(ctx, user, id)`: `loadCharacter(..., "edit")` plus the read sheet.
  * - `assertCanAct(character, sheet)`: CHARACTER_UNAVAILABLE for a dead, away
  *   or unconscious character (decision 9); call it before any roll or feature.
@@ -31,6 +32,7 @@
  * });
  * ```
  */
+import { hopePaid } from "../../src/lib/domain/journal/tally";
 import { appError } from "../../src/lib/errors/app-error";
 import {
   characterSheetSchema,
@@ -42,8 +44,10 @@ import {
 } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { readAppConfig } from "./appConfig";
+import { refuseArchivedWrite } from "./archived";
 import { readVersioned } from "./blobs";
-import { atLeast, permissionFor, type Permission } from "./permissions";
+import { atLeast, campaignRoleOf, permissionFor, rolePermission, type Permission } from "./permissions";
 
 // ---------------------------------------------------------------- the stored sheet
 
@@ -73,7 +77,12 @@ export function readSheet(raw: unknown): CharacterSheet {
 
 /** The stored form of a sheet: validated (a ZodError becomes INVALID), defaults filled, with its `schemaVersion`. */
 export function storedSheet(sheet: CharacterSheetInput) {
-  return { schemaVersion: SHEET_VERSION, ...characterSheetSchema.parse(sheet) };
+  const parsed = characterSheetSchema.parse(sheet);
+  // dcm-bxp.99.32.1: a condition's provenance goes with the condition (cleared by any path, it is no longer "from" anything).
+  const sources = parsed.conditionSources?.filter((s) => parsed.conditions.includes(s.condition));
+  const { conditionSources: _dropped, ...rest } = parsed;
+  void _dropped;
+  return { schemaVersion: SHEET_VERSION, ...rest, ...(sources && sources.length > 0 ? { conditionSources: sources } : {}) };
 }
 
 /**
@@ -83,9 +92,18 @@ export function storedSheet(sheet: CharacterSheetInput) {
  * (`hopeSpent`) and the Hit Points it marks (`hpMarked`; the sheet's `hp` is the marked count) to the PC's
  * `sessionCharacterStats` row for that session, in the same mutation. Every engine path that changes a sheet (cards,
  * attacks, hits, death moves, rests, the manual steppers) saves through here, so every path counts. A save that
- * raises Hope or clears HP (rests, level-ups, healing) never subtracts. Undo restores sheets directly (`undoGroup` in
- * convex/lib/actionLog.ts), not through here, so it neither adds nor subtracts. `current` is the stored character,
- * for a caller that already read it in this mutation; otherwise this reads it (one get).
+ * raises Hope or clears HP (rests, level-ups, healing) never subtracts. `current` is the stored character, for a
+ * caller that already read it in this mutation; otherwise this reads it (one get).
+ *
+ * Exact spend (dcm-z9rz.23, user 2026-11-04 "count the spend"): a path that pays Hope says how much through
+ * `noteHopeSpent` before the save, so a save that pays and gains in one go (an Experience on a roll with Hope, a card
+ * cost paid by the roll's own Hope) still counts what was paid. The save counts the larger of the noted spend and the
+ * net drop; a path that notes nothing counts the net drop. Hope lost because a scar closed its slot is no drop
+ * (`hopePaid`, dcm-z9rz.27: only Hope a player pays counts).
+ *
+ * Undo (dcm-z9rz.22, user 2026-11-04 "undo removes it"): what a save counted waits for the character's next `logAction`
+ * row with a `before` in this mutation, which records it (`sessionTally`); undoing the row takes it back off the same
+ * session's row (`revertSessionTally`, floor 0). Undo itself restores sheets directly, never through here.
  */
 export async function saveSheet(
   ctx: MutationCtx,
@@ -96,23 +114,99 @@ export async function saveSheet(
   const stored = storedSheet(sheet);
   const previous = current ?? (await ctx.db.get("characters", characterId));
   await ctx.db.patch("characters", characterId, { sheet: stored, updatedAt: Date.now(), ...(stored.hp < stored.hpMax ? { deathMoveSpent: undefined } : {}) });
+  const state = tallyStateOf(ctx);
+  const declared = state.declared.get(characterId) ?? 0;
+  state.declared.delete(characterId);
   const before = previous === null ? null : trackedCounts(previous.sheet);
   if (previous === null || before === null) return;
-  const hopeSpent = Math.max(0, before.hope - stored.hope);
+  const hopeSpent = hopePaid(before, stored, declared);
   const hpMarked = Math.max(0, stored.hp - before.hp);
-  if (hopeSpent > 0 || hpMarked > 0) await countLiveSessionStats(ctx, previous.campaignId, characterId, hopeSpent, hpMarked);
+  if (hopeSpent === 0 && hpMarked === 0) return;
+  const sessionId = await countLiveSessionStats(ctx, previous.campaignId, characterId, hopeSpent, hpMarked);
+  if (sessionId === null) return;
+  const waiting = state.pending.get(characterId);
+  state.pending.set(
+    characterId,
+    waiting !== undefined && waiting.sessionId === sessionId
+      ? { sessionId, hopeSpent: waiting.hopeSpent + hopeSpent, hpMarked: waiting.hpMarked + hpMarked }
+      : { sessionId, hopeSpent, hpMarked },
+  );
 }
 
-/** Hope and marked HP of a stored sheet blob (every sheet version stores both as numbers), or null for a blob without them. */
-function trackedCounts(raw: unknown): { hope: number; hp: number } | null {
-  if (typeof raw !== "object" || raw === null) return null;
-  const { hope, hp } = raw as { hope?: unknown; hp?: unknown };
-  return typeof hope === "number" && typeof hp === "number" ? { hope, hp } : null;
+/** What one action added to a PC's `sessionCharacterStats` row (JD3b counters), as an action-log row records it. */
+export type SessionTallyDelta = { sessionId: Id<"sessions">; hopeSpent: number; hpMarked: number };
+
+/**
+ * The tally side state of one mutation, keyed by its `ctx.db` (Convex makes one per function run, so nothing crosses
+ * mutations or OCC retries): `declared` is the Hope a paying path noted for the character's next save (`noteHopeSpent`),
+ * `pending` what the character's saves counted since its last logged row (`takeSessionTally`).
+ */
+type TallyState = { declared: Map<string, number>; pending: Map<string, SessionTallyDelta> };
+const tallyStates = new WeakMap<object, TallyState>();
+
+function tallyStateOf(ctx: MutationCtx): TallyState {
+  let state = tallyStates.get(ctx.db);
+  if (state === undefined) {
+    state = { declared: new Map(), pending: new Map() };
+    tallyStates.set(ctx.db, state);
+  }
+  return state;
 }
 
 /**
- * Adds to the PC's `sessionCharacterStats` row of the campaign's live session (JD3b), creating it on the first drop.
- * No live session: nothing. A session already holding `CHARACTER_READ_BOUND` rows (= `MAX_SESSION_CHARACTER_STATS`)
+ * Says that the character's next `saveSheet` in this mutation pays `amount` Hope (dcm-z9rz.23), whatever it also gains.
+ * Call it just before that save; notes for one character add up. A note no save takes is dropped with the mutation.
+ */
+export function noteHopeSpent(ctx: MutationCtx, characterId: Id<"characters">, amount: number): void {
+  if (!(amount > 0)) return;
+  const state = tallyStateOf(ctx);
+  state.declared.set(characterId, (state.declared.get(characterId) ?? 0) + amount);
+}
+
+/** What the character's saves counted since its last logged row in this mutation, taken (once) by `logAction` (dcm-z9rz.22). */
+export function takeSessionTally(ctx: MutationCtx, characterId: Id<"characters">): SessionTallyDelta | undefined {
+  const state = tallyStates.get(ctx.db);
+  const delta = state?.pending.get(characterId);
+  if (delta !== undefined) state!.pending.delete(characterId);
+  return delta;
+}
+
+/**
+ * Takes counted deltas back off their sessions' rows (undo, dcm-z9rz.22), never below 0. One read per session and
+ * character; a row that is gone (its session purged) is skipped.
+ */
+export async function revertSessionTally(ctx: MutationCtx, deltas: readonly (SessionTallyDelta & { characterId: Id<"characters"> })[]): Promise<void> {
+  const sums = new Map<string, SessionTallyDelta & { characterId: Id<"characters"> }>();
+  for (const d of deltas) {
+    const key = `${d.sessionId}:${d.characterId}`;
+    const seen = sums.get(key);
+    sums.set(key, seen ? { ...seen, hopeSpent: seen.hopeSpent + d.hopeSpent, hpMarked: seen.hpMarked + d.hpMarked } : { ...d });
+  }
+  for (const d of sums.values()) {
+    if (d.hopeSpent === 0 && d.hpMarked === 0) continue;
+    const row = await ctx.db
+      .query("sessionCharacterStats")
+      .withIndex("by_session_character", (q) => q.eq("sessionId", d.sessionId).eq("characterId", d.characterId))
+      .unique();
+    if (row === null) continue;
+    await ctx.db.patch("sessionCharacterStats", row._id, {
+      hopeSpent: Math.max(0, row.hopeSpent - d.hopeSpent),
+      hpMarked: Math.max(0, row.hpMarked - d.hpMarked),
+    });
+  }
+}
+
+/** Hope and marked HP of a stored sheet blob (every sheet version stores both as numbers), or null for a blob without them. */
+function trackedCounts(raw: unknown): { hope: number; hp: number; scars: number; hopeSlotBonus?: number } | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const { hope, hp, scars, hopeSlotBonus } = raw as { hope?: unknown; hp?: unknown; scars?: unknown; hopeSlotBonus?: unknown };
+  if (typeof hope !== "number" || typeof hp !== "number") return null;
+  return { hope, hp, scars: typeof scars === "number" ? scars : 0, ...(typeof hopeSlotBonus === "number" ? { hopeSlotBonus } : {}) };
+}
+
+/**
+ * Adds to the PC's `sessionCharacterStats` row of the campaign's live session (JD3b), creating it on the first drop, and
+ * returns that session's id (null when nothing was counted). No live session: nothing. A session already holding `CHARACTER_READ_BOUND` rows (= `MAX_SESSION_CHARACTER_STATS`)
  * gets no new row, so a save never fails over a counter. The live session is read here (index `by_campaign_status_n`,
  * as `liveSession` in convex/lib/sessions.ts does) because that module imports this one.
  */
@@ -122,33 +216,38 @@ async function countLiveSessionStats(
   characterId: Id<"characters">,
   hopeSpent: number,
   hpMarked: number,
-): Promise<void> {
+): Promise<Id<"sessions"> | null> {
   const session = await ctx.db
     .query("sessions")
     .withIndex("by_campaign_status_n", (q) => q.eq("campaignId", campaignId).eq("status", "live"))
     .first();
-  if (session === null) return;
+  if (session === null) return null;
   const row = await ctx.db
     .query("sessionCharacterStats")
     .withIndex("by_session_character", (q) => q.eq("sessionId", session._id).eq("characterId", characterId))
     .unique();
   if (row !== null) {
     await ctx.db.patch("sessionCharacterStats", row._id, { hopeSpent: row.hopeSpent + hopeSpent, hpMarked: row.hpMarked + hpMarked });
-    return;
+    return session._id;
   }
   const rows = await ctx.db
     .query("sessionCharacterStats")
     .withIndex("by_session_character", (q) => q.eq("sessionId", session._id))
     .take(CHARACTER_READ_BOUND);
-  if (rows.length >= CHARACTER_READ_BOUND) return;
+  if (rows.length >= CHARACTER_READ_BOUND) return null;
   await ctx.db.insert("sessionCharacterStats", { campaignId, sessionId: session._id, characterId, hopeSpent, hpMarked });
+  return session._id;
 }
 
 // ---------------------------------------------------------------- access
 
 export type LoadedCharacter = { campaign: Doc<"campaigns">; permission: Permission; character: Doc<"characters"> };
 
-/** The character, its live campaign and the user's permission on it (exact up to `enough`), or null without access. */
+/**
+ * The character, its live campaign and the user's permission on it (exact up to `enough`), or null without access.
+ * No archived guard here (its callers decide FORBIDDEN themselves): a mutation that writes after `findCharacter` calls
+ * `refuseArchived` after its own permission check, as `rolls.tagTeamApply` does.
+ */
 export async function findCharacter(ctx: QueryCtx, user: Doc<"users">, characterId: Id<"characters">, enough: Permission): Promise<LoadedCharacter | null> {
   const character = await ctx.db.get("characters", characterId);
   if (character === null) return null;
@@ -175,6 +274,9 @@ export async function loadCharacter(
   const found = await findCharacter(ctx, user, characterId, enough);
   if (found === null) throw appError("NOT_FOUND");
   if (!atLeast(found.permission, need)) throw appError("FORBIDDEN");
+  // Q9 a (dcm-jh6d.64): after the access check, a mutation never writes a character of an archived campaign; a query
+  // still reads it. Every character write on `userMutation` / `keyedUserMutation` loads through here.
+  refuseArchivedWrite(ctx, found.campaign);
   return found;
 }
 
@@ -209,8 +311,9 @@ export function assertCanAct(character: Pick<Doc<"characters">, "status">, sheet
 }
 
 /**
- * The creation cap (review M5, dcm-bxp.38): `characters.create` refuses a campaign's next character at this many. Stays
- * 50 while testing; the user lowers it to 10 when testing is over (user 2026-10-30). Never above `CHARACTER_READ_BOUND`.
+ * The creation cap (review M5, dcm-bxp.38): `characters.create` refuses a campaign's next character at this many. It stays
+ * 50 as an abuse bound (config Q19 a); the per-player cap the owner sets in App admin (AD5b) is the everyday limit.
+ * Never above `CHARACTER_READ_BOUND`.
  */
 export const MAX_CHARACTERS_CREATED_PER_CAMPAIGN = 50;
 
@@ -220,6 +323,24 @@ export const MAX_CHARACTERS_CREATED_PER_CAMPAIGN = 50;
  * holds more characters than a lowered cap (made before it dropped) is still read whole.
  */
 export const CHARACTER_READ_BOUND = 50;
+
+/**
+ * The per-player character cap (config AD5b, Q19 a): `characters.create` refuses `owner`'s next character in the
+ * campaign once they hold `caps.charactersPerPlayer` there (retired, dead and away included) with
+ * CAP_CHARACTERS_PER_PLAYER. The GM's and every co-GM's characters are exempt (NPC-owned and secret frame characters),
+ * by the same `permissionFor` role rank as `assertOneActive`. XC1's "Allow extra characters this session" lifts only
+ * the one-active rule, never this cap. The count is one bounded read on `by_owner_campaign` (`take(cap + 1)`); the
+ * campaign-wide `MAX_CHARACTERS_CREATED_PER_CAMPAIGN` stays the abuse bound.
+ */
+export async function assertCharacterCap(ctx: QueryCtx, campaign: Doc<"campaigns">, owner: Id<"users">): Promise<void> {
+  if (atLeast(rolePermission(await campaignRoleOf(ctx, owner, campaign), { type: "campaign", campaign }, owner), "owner")) return;
+  const cap = (await readAppConfig(ctx)).caps.charactersPerPlayer;
+  const held = await ctx.db
+    .query("characters")
+    .withIndex("by_owner_campaign", (q) => q.eq("ownerId", owner).eq("campaignId", campaign._id))
+    .take(cap + 1);
+  if (held.length >= cap) throw appError("CAP_CHARACTERS_PER_PLAYER");
+}
 
 /** The read bound under its old name (dcm-bxp.38): the party reads outside convex/characters.ts import it. */
 export const MAX_CHARACTERS_PER_CAMPAIGN = CHARACTER_READ_BOUND;
@@ -250,7 +371,9 @@ export async function extraCharactersAllowed(ctx: QueryCtx, campaignId: Id<"camp
  * XC1: skipped while the GM allows extra characters for the running session.
  */
 export async function assertOneActive(ctx: QueryCtx, campaign: Doc<"campaigns">, owner: Id<"users">, except?: Id<"characters">) {
-  if (owner === campaign.ownerId) return;
+  // Role (config G2): the GM's and every co-GM's characters are exempt; `owner` is not the caller, so its role is
+  // read (the creator costs nothing). A player, an invitee or a departed owner is held to one active character.
+  if (atLeast(rolePermission(await campaignRoleOf(ctx, owner, campaign), { type: "campaign", campaign }, owner), "owner")) return;
   if (await extraCharactersAllowed(ctx, campaign._id)) return;
   const other = (await partyOf(ctx, campaign._id)).find((c) => c.ownerId === owner && c.status === "active" && c._id !== except);
   if (other === undefined) return;

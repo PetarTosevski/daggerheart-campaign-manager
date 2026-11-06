@@ -92,7 +92,7 @@ export function DeathBadges({ character, canEdit, isGm, showAway, tone }: CardSl
         </span>
       ) : null}
       {returnToPlay ? (
-        <BrandButton size="sm" variant="pill" disabled={back.pending} onClick={() => void back.fire({ characterId: character._id })}>
+        <BrandButton size="sm" variant="neutral" disabled={back.pending} onClick={() => void back.fire({ characterId: character._id })}>
           Return to play
         </BrandButton>
       ) : null}
@@ -154,7 +154,7 @@ function AwayRequest({ character, isGm, tone }: { character: CardSlotProps["char
                 {text}
               </button>
             ) : (
-              <BrandButton key={r} size="sm" variant="pill" disabled={settle.pending} onClick={() => fire(r)}>
+              <BrandButton key={r} size="sm" variant="neutral" disabled={settle.pending} onClick={() => fire(r)}>
                 {text}
               </BrandButton>
             ),

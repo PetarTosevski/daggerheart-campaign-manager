@@ -16,6 +16,7 @@ import {
 } from "../src/lib/domain/combat-map/index";
 import { isDoor } from "../src/lib/domain/combat-map/movement";
 import { anyInMelee } from "../src/lib/domain/combat-map/reach";
+import { ruleMode } from "./lib/ruleModes";
 import { spriteMove } from "../src/lib/sprite-packs/index";
 import { appError } from "../src/lib/errors/app-error";
 import { tokenViewValidator } from "./lib/validators/combatTokens";
@@ -420,7 +421,7 @@ export const toggleLight = campaignMutation({
       const viewers = await ownViewers(ctx, scene);
       if (!lightSeen(scene, viewers, object)) throw appError("COMBAT_LIGHT_NOT_SEEN");
       const vision = scene.visionObjects[scene.objects.findIndex((row) => row._id === object._id)] ?? { ...object, traits };
-      if (!inReach(viewers, vision, (viewer) => viewerSeesLight(scene, viewer, object))) throw appError("COMBAT_OUT_OF_REACH");
+      if (!inReach(viewers, vision, (viewer) => viewerSeesLight(scene, viewer, object), ruleMode(ctx.campaign, "definedRanges"))) throw appError("COMBAT_OUT_OF_REACH");
       await exploreObject(ctx, scene, viewers, vision);
     }
     if ((object.lit !== false) !== lit) await ctx.db.patch("combatMapObjects", object._id, { lit });
@@ -489,10 +490,11 @@ function lightSeen(scene: Scene, viewers: Viewers, object: Doc<"combatMapObjects
  * footprint (plan d12-bugs B4; dcm-bxp.130, user 2026-10-22: "same character", so one character who saw it and another
  * who stands next to it do not add up). CB p.103 "Melee: 1 square"; reach.ts measures Chebyshev from any token square to
  * any footprint square, rotation included. A character with several tokens is one viewer per token, each with the
- * character's view and explored mask, so any of its tokens counts.
+ * character's view and explored mask, so any of its tokens counts. Rule switches ODR2: with Defined Ranges off
+ * (`definedRanges` false) no square is counted, so seeing it is enough (reach.ts `anyInMelee`).
  */
-function inReach(viewers: Viewers, object: VisionObject, seen: (viewer: Viewers[number]) => boolean): boolean {
-  return viewers.some((viewer) => seen(viewer) && anyInMelee([viewer.token], object));
+function inReach(viewers: Viewers, object: VisionObject, seen: (viewer: Viewers[number]) => boolean, definedRanges = true): boolean {
+  return viewers.some((viewer) => seen(viewer) && anyInMelee([viewer.token], object, definedRanges));
 }
 
 // ---------------------------------------------------------------- doors (map-movement M2)
@@ -523,9 +525,9 @@ function doorSeen(scene: Scene, viewers: Viewers, door: VisionObject): boolean {
 }
 
 /** Whether one character both has seen the door (`doorSeen`'s rule) and has a token within Melee of it (dcm-bxp.130). */
-function doorInReach(scene: Scene, viewers: Viewers, door: VisionObject): boolean {
+function doorInReach(scene: Scene, viewers: Viewers, door: VisionObject, definedRanges = true): boolean {
   const box = objectSampleBox(scene.prepared, door);
-  return inReach(viewers, door, ({ view, explored }) => boxSeen(view, box, explored));
+  return inReach(viewers, door, ({ view, explored }) => boxSeen(view, box, explored), definedRanges);
 }
 
 /**
@@ -579,7 +581,7 @@ export const doors = campaignQuery({
     const viewers = await ownViewers(ctx, scene);
     return {
       mapId: map._id,
-      doors: all.filter(({ vision }) => doorSeen(scene, viewers, vision)).map(({ row, vision }) => doorView(row, vision, doorInReach(scene, viewers, vision))),
+      doors: all.filter(({ vision }) => doorSeen(scene, viewers, vision)).map(({ row, vision }) => doorView(row, vision, doorInReach(scene, viewers, vision, ruleMode(ctx.campaign, "definedRanges")))),
     };
   },
 });
@@ -615,7 +617,7 @@ export const toggleDoor = campaignMutation({
       }
       const viewers = await ownViewers(ctx, scene);
       if (!doorSeen(scene, viewers, door.vision)) throw appError("COMBAT_OBJECT_NOT_FOUND");
-      if (!doorInReach(scene, viewers, door.vision)) throw appError("COMBAT_OUT_OF_REACH");
+      if (!doorInReach(scene, viewers, door.vision, ruleMode(ctx.campaign, "definedRanges"))) throw appError("COMBAT_OUT_OF_REACH");
       await exploreObject(ctx, scene, viewers, door.vision);
     }
     if ((object.open === true) !== open) await ctx.db.patch("combatMapObjects", object._id, { open: open ? true : undefined });

@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { api } from "../../../convex/_generated/api";
 import { signInAsTestGm } from "../fixtures";
+import { openMapTools } from "../hud/helpers";
 import { D9_VIEWPORTS, bardDraft, convexAs, openCombatMap, visual } from "./helpers";
 
 // Shots for the C6 task doc (E2E_VISUAL=1): the GM in play (Combatants card, a selected adversary's card, tokens with
@@ -37,6 +38,7 @@ test("C6 tokens, range circles and the token card at 1440, 1024 and 390", { tag:
     await playerClient.mutation(api.characters.create, { campaignId, draft: bardDraft("Ash"), idempotencyKey: crypto.randomUUID() });
 
     await page.goto(url);
+    await openMapTools(page); // Play is the HUD (plan combat-hud H8.1): the classic column is in its "Map tools" drawer.
     const tools = page.getByRole("complementary", { name: "Map tools" });
     const combatants = tools.getByRole("region", { name: "Combatants" });
     await combatants.getByRole("button", { name: /＋ Party/ }).click();
@@ -53,11 +55,17 @@ test("C6 tokens, range circles and the token card at 1440, 1024 and 390", { tag:
     const board = page.getByRole("region", { name: "Battle map" });
     await expect(board.getByTestId("combat-token")).toHaveCount(8);
     // Rings on Liriel and on the selected bear; 2 HP and Vulnerable on the bear.
-    await board.getByRole("button", { name: /^Liriel, Party/ }).click();
+    // HUD tokens are named for the sheet or stat block a click opens; select by keyboard (focus + Enter), as the open
+    // drawer may cover a token on screen.
+    await board.getByRole("button", { name: /^Open Liriel’s sheet/ }).focus();
+    await page.keyboard.press("Enter");
     await page.keyboard.press("r");
-    const bear = board.getByRole("button", { name: /^Bear, Enemy/ });
-    await bear.click();
+    const bear = board.getByRole("button", { name: /^Open the Bear’s stat block/ }).first();
+    await bear.focus();
+    await page.keyboard.press("Enter");
     await page.keyboard.press("r");
+    // Selecting also opened the Bear's stat block on the right: close it so the shot shows the board and the drawer.
+    await page.getByRole("button", { name: /^Close .*stat block$/ }).click();
     const panel = tools.getByRole("region", { name: "Selected token" });
     await panel.getByRole("button", { name: "Hit Point 2", exact: true }).click();
     await panel.getByRole("group", { name: "Conditions" }).getByRole("button", { name: "Vulnerable" }).click();
@@ -71,8 +79,11 @@ test("C6 tokens, range circles and the token card at 1440, 1024 and 390", { tag:
     // The player: their own token selected, with its card.
     await player.goto(url);
     const playerBoard = player.getByRole("region", { name: "Battle map" });
-    await playerBoard.getByRole("button", { name: /^Ash, Party/ }).click();
-    await expect(player.getByRole("region", { name: "Selected token" })).toBeVisible();
+    // A click on the player's own HUD token selects it (and opens its action ring); its card is in the "Your
+    // character" drawer (plan combat-hud H8.1).
+    await playerBoard.getByRole("button", { name: /^Ash \(your character\): actions/ }).click();
+    await player.getByRole("button", { name: "Your character", exact: true }).click();
+    await expect(player.getByRole("complementary", { name: "Your character" }).getByRole("region", { name: "Selected token" })).toBeVisible();
     const { shoot: shootPlayer } = visual(player, "C6", D9_VIEWPORTS);
     await shootPlayer(player.locator(".cm-root"), "player-tokens");
   } finally {

@@ -118,12 +118,15 @@ export function pcTokenFace(token: TokenView, role: "gm" | "player", hope: numbe
       : token.kind === "adversary" && role === "gm"
         ? { kind: "adversary", tokenId: token._id }
         : null;
+  // A player's own token opens the action ring (H3.4: Attack, Cast, Sheet, features), not the sheet (dcm-bxp.99.32.21).
   const head =
-    sheet?.kind === "pc"
-      ? `Open ${token.name}’s sheet${token.mine ? " (your character)" : ""}`
-      : sheet?.kind === "adversary"
-        ? `Open the ${token.name}’s stat block`
-        : `${token.name}, ${SIDE_LABEL[token.side]}`;
+    role === "player" && token.mine && sheet?.kind === "pc"
+      ? `${token.name} (your character): actions`
+      : sheet?.kind === "pc"
+        ? `Open ${token.name}’s sheet${token.mine ? " (your character)" : ""}`
+        : sheet?.kind === "adversary"
+          ? `Open the ${token.name}’s stat block`
+          : `${token.name}, ${SIDE_LABEL[token.side]}`;
   const details: string[] = [];
   if (s && s.hpMax > 0) details.push(markedPhrase(s.hp, s.hpMax, "Hit Points"));
   if (s && s.stressMax > 0) details.push(markedPhrase(s.stress, s.stressMax, "Stress"));

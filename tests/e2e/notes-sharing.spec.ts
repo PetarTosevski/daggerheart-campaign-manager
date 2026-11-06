@@ -5,6 +5,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, expectNoHorizontalScroll } from "./visual/helpers";
+import { gmJoinCode } from "./config/helpers";
 
 // D11 N6: sharing (.omc/plans/d11-notes.yaml). Three browsers: the GM and players A ('Ash') and B ('Bram'). The GM
 // shares a page with A only (A sees it, B does not), then with everyone (B sees it). A writes a page: the GM finds it
@@ -31,11 +32,7 @@ async function gmCreatesCampaign(page: Page) {
 }
 
 async function joinCode(gm: Page) {
-  await gm.getByRole("button", { name: "Players" }).click();
-  const dialog = gm.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
-  await dialog.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(gm);
   return code;
 }
 
@@ -116,7 +113,7 @@ for (const viewport of [
       const B = b.seat;
       try {
         // ---- The GM shares their first page with A only.
-        await gm.page.goto(`/campaigns/${campaignId}/notes`);
+        await gm.page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
         await expect(paper(gm.page).getByRole("button", { name: "Sharing: Private" })).toBeVisible();
         let dialog = await openSharing(gm.page);
         await expect(dialog.getByRole("radio")).toHaveCount(3);
@@ -131,7 +128,7 @@ for (const viewport of [
         await dialog.getByRole("button", { name: "Done" }).click();
         await expect(paper(gm.page).getByRole("button", { name: "Sharing: Chosen players · Ash" })).toBeVisible();
 
-        await A.page.goto(`/campaigns/${campaignId}/notes`);
+        await A.page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
         let panel = await openTab(A.page, "Shared by GM");
         await sharedRow(panel, "Session 1").click();
         await expect(A.page).toHaveURL(/view=shared-gm/);
@@ -139,7 +136,7 @@ for (const viewport of [
         await expect(paper(A.page).getByRole("textbox", { name: "New entry" })).toBeVisible();
         if (viewport.width < 640) await expectNoHorizontalScroll(A.page);
 
-        await B.page.goto(`/campaigns/${campaignId}/notes`);
+        await B.page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
         panel = await openTab(B.page, "Shared by GM");
         await expect(panel).toHaveText("Nothing shared yet.");
 
@@ -154,7 +151,7 @@ for (const viewport of [
         await expect(sharedRow(panel, "Session 1")).toBeVisible();
 
         // ---- Player A writes a page; the GM finds it under 'Shared by players' and adds an entry.
-        await A.page.goto(`/campaigns/${campaignId}/notes`);
+        await A.page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
         await write(A.page, "found a brass key");
         const firstPage = async () => {
           const view = await A.client.query(api.notes.journal, { campaignId });
@@ -166,7 +163,7 @@ for (const viewport of [
           .poll(async () => (await A.client.query(api.notesEntries.entries, { campaignId, page: aPage })).entries.map((e) => e.text))
           .toEqual(["found a brass key"]);
 
-        await gm.page.goto(`/campaigns/${campaignId}/notes`);
+        await gm.page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
         panel = await openTab(gm.page, "Shared by players");
         await sharedRow(panel, "Session 1", "Ash").click();
         await expect(gm.page).toHaveURL(/view=shared-players/);
@@ -211,7 +208,7 @@ for (const viewport of [
 
         // ---- A shares another page ('People we met') with chosen B only: B sees it, the GM loses it.
         await expect(sharedRow(gmPanel, "People we met", "Ash")).toBeVisible();
-        await A.page.goto(`/campaigns/${campaignId}/notes`);
+        await A.page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
         await openIndex(A.page);
         await index(A.page).getByRole("navigation", { name: "Your pages" }).getByRole("button", { name: /People we met/ }).click();
         dialog = await openSharing(A.page);

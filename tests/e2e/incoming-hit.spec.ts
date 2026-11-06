@@ -179,8 +179,8 @@ test("the Bandit hits Mira; Tabby answers with I Am Your Shield, marks two Armor
     await expect.poll(async () => (await sheetOf(gm, tabby)).armorMarked).toBe(tabbyBefore.armorMarked + 2);
     expect((await sheetOf(gm, tabby)).stress).toBe(tabbyBefore.stress + 1);
     expect((await sheetOf(gm, mira)).hp).toBe(miraBefore.hp);
-    expect(await gm.query(api.adversaryActions.pending, { campaignId, characterId: tabby })).toEqual([]);
-    expect(await gm.query(api.adversaryActions.pending, { campaignId, characterId: mira })).toEqual([]);
+    expect(await gm.query(api.adversaryActionsReads.pending, { campaignId, characterId: tabby })).toEqual([]);
+    expect(await gm.query(api.adversaryActionsReads.pending, { campaignId, characterId: mira })).toEqual([]);
     // The original target never shows the window again.
     await expect(a.page.getByTestId("hud-hit-window")).toHaveCount(0);
     await expect(a.page.getByTestId("hud-hit-waiting")).toHaveCount(0);

@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "convex/react";
 import { useId, useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
@@ -9,6 +10,7 @@ import {
   COUNTDOWN_DICE_SIDES,
   DYNAMIC_ADVANCEMENT,
   MAX_COUNTDOWN_DICE,
+  rollsTickCountdowns,
   type CountdownDiceSides,
   type CountdownRepeat,
   type CountdownRestMode,
@@ -20,7 +22,7 @@ import { useIntent } from "@/lib/use-intent";
 import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
 
-import { BTN, CATEGORY_LABEL } from "./shared";
+import { CATEGORY_LABEL } from "./shared";
 import { RestModeSwitch, StepEditor } from "./track";
 import { choiceOf, VisibilityPicker, visibilityOf } from "./visibility";
 
@@ -119,6 +121,9 @@ const SELECT = "min-h-11 rounded-lg border border-[#33444a] bg-[#0d1417] px-3 te
 /** The GM's "New countdown" dialog: details, type, a fixed or rolled start, repeats, armed, who sees it. */
 export function NewCountdownDialog({ campaignId, open, onClose }: { campaignId: Id<"campaigns">; open: boolean; onClose: () => void }) {
   const create = useIntent(api.countdowns.create);
+  // Rule switch K1 (House rules): on Manual, armed countdowns don't tick on rolls; the GM gets a note per roll instead.
+  const rules = useQuery(api.ruleSettings.get, open ? { campaignId } : "skip");
+  const rollsTick = rollsTickCountdowns(rules?.modes.countdownTicks);
   const ids = useId();
   const [start, setStart] = useState(6);
   const [visibility, setVisibility] = useState(NEW_COUNTDOWN_VISIBILITY);
@@ -342,11 +347,15 @@ export function NewCountdownDialog({ campaignId, open, onClose }: { campaignId: 
         <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-[10px] border border-[#33444a] bg-[#141e22] px-3 py-2 text-[14px] text-[#e6ecea]">
           <input type="checkbox" checked={armed} onChange={(e) => setArmed(e.target.checked)} className="mt-0.5 size-4 flex-none accent-[var(--brand)]" />
           <span className="flex flex-col gap-0.5">
-            <span className="font-semibold">{longTerm ? "Tick on every long rest" : "Advance automatically on action rolls"}</span>
+            <span className="font-semibold">
+              {longTerm ? "Tick on every long rest" : rollsTick ? "Advance automatically on action rolls" : "Remind me on action rolls"}
+            </span>
             <span className="text-[12px] text-[#8fa3a8]">
               {longTerm
                 ? "Armed: each finished long rest ticks it once, or reminds you (below). An interrupted rest doesn't count."
-                : "Armed: each PC action roll ticks it as its type says. You can switch it on the card."}
+                : rollsTick
+                  ? "Armed: each PC action roll ticks it as its type says. You can switch it on the card."
+                  : "Armed: after each PC action roll you get a note naming it; you tick it yourself (House rules: countdowns are Manual)."}
             </span>
           </span>
         </label>
@@ -359,10 +368,10 @@ export function NewCountdownDialog({ campaignId, open, onClose }: { campaignId: 
           </p>
         ) : null}
         <div className="flex justify-end gap-2.5">
-          <button type="button" className={BTN} onClick={close}>
+          <BrandButton variant="cancel" onClick={close}>
             Cancel
-          </button>
-          <BrandButton type="submit" variant="solid" disabled={create.pending}>
+          </BrandButton>
+          <BrandButton type="submit" variant="confirm" disabled={create.pending}>
             {rolled && !longTerm ? `Roll ${formula}` : `Start at ${start}`}
           </BrandButton>
         </div>

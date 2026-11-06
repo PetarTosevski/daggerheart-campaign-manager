@@ -22,12 +22,13 @@ test("D11 N2 own journal: hero, index column, empty page and session picker", { 
   const { sessionId } = await client.mutation(api.sessionRecords.create, { campaignId, idempotencyKey: crypto.randomUUID() });
   await client.mutation(api.sessionRecords.setDate, { campaignId, sessionId, date: "2026-10-21" });
 
-  await page.goto(`/campaigns/${campaignId}/notes`);
-  await expect(page.getByRole("heading", { level: 1, name: "Game Master’s Journal" })).toBeVisible();
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
+  await expect(page.getByRole("group", { name: "Writing as" }).getByRole("button", { name: "Game Master", pressed: true })).toBeVisible();
   await expect(page.getByRole("article", { name: "Page" }).getByLabel("Page title")).toHaveValue("Session 1");
   const { shoot } = visual(page, "D11-N2");
   await shoot(page.locator(".bj-root"), "journal");
-  await shoot(page.locator(".bj-hero"), "hero");
+  // JX1: the Notes hero is gone; the Journal header (H1, live chip, Open threads) is its counterpart.
+  await shoot(page.locator(".jr-head"), "hero");
   await shoot(page.getByRole("complementary", { name: "Journal index" }), "index");
   await shoot(page.getByRole("article", { name: "Page" }), "page");
 

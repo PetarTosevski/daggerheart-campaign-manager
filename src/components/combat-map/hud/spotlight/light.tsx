@@ -21,7 +21,7 @@ import { litOf, poolOf, type SpotlightLit } from "./model";
  *   (nobody chosen) every PC gets a smaller, dimmer gold pool and no beam. Drawn in the token layer before the tokens,
  *   so every token, ring, arc and badge paints over it; never takes the pointer. The rest of the map is not dimmed.
  *   Every token the layer draws has a pool element; only the lit ones show (`data-on`), so the light fades out under
- *   the old holder and in under the new one (300 ms; none under prefers-reduced-motion). Only lit pools carry the
+ *   the old holder and in under the new one (300 ms; none under reduced motion). Only lit pools carry the
  *   `hud-spotlight-light` test id.
  * - `TokenFace lit`: a gentle glow on the holder's token itself (`.tk-lit`, hud/token/token.css).
  *

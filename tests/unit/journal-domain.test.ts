@@ -78,9 +78,16 @@ describe("leastSpotlightLine", () => {
     );
   });
 
-  it("is null with no PCs or when every PC has the same count", () => {
+  it("names every PC when all have the same count, all zero too (dcm-nvq4)", () => {
+    expect(leastSpotlightLine([{ name: "Moss", count: 2 }, { name: "Vex", count: 2 }])).toBe("Moss and Vex have had the least spotlight this session.");
+    expect(leastSpotlightLine([{ name: "Moss", count: 0 }, { name: "Oriel", count: 0 }, { name: "Vex", count: 0 }])).toBe(
+      "Moss, Oriel and Vex have had the least spotlight this session.",
+    );
+  });
+
+  it("is null with no PCs or a single PC", () => {
     expect(leastSpotlightLine([])).toBeNull();
-    expect(leastSpotlightLine([{ name: "Moss", count: 2 }, { name: "Vex", count: 2 }])).toBeNull();
+    expect(leastSpotlightLine([{ name: "Vex", count: 0 }])).toBeNull();
   });
 });
 

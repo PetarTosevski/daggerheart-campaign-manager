@@ -2,6 +2,7 @@ import { expect, test, type Browser, type Locator, type Page } from "@playwright
 
 import { signInAsTestGm } from "../fixtures";
 import { expectNoHorizontalScroll, openSheet, openTab, visual } from "./helpers";
+import { gmJoinCode } from "../config/helpers";
 
 // S13: whole-sheet polish. Every page and Domains sub-tab, for the GM and for a player who reads another
 // character's sheet, at 1440 and 390: no horizontal scroll and no control under 44 px at 390, and the player
@@ -71,11 +72,7 @@ async function shootPages(page: Page, sheet: Locator, tracer: string, prefix: st
 /** The player joins the GM's campaign with its join code in a second browser context. */
 async function playerJoins(page: Page, browser: Browser, campaignId: string) {
   await page.goto(`/campaigns/${campaignId}`);
-  await page.getByRole("button", { name: "Players" }).click();
-  const dialog = page.getByRole("dialog", { name: "Players" });
-  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await dialog.getByTestId("join-code").textContent())!;
-  await dialog.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
 
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const player = await context.newPage();
@@ -116,15 +113,18 @@ test("S13 player view: locked fields, no editor controls, every page at 1440 and
 
     for (const { tab } of PAGES) {
       await openTab(player, tab);
-      // No editor-only controls: the only buttons are the page tabs (and the vault deck is a picture), plus the
-      // Domain Deck's view-only controls (filters, More/Less, card backs, Turn over, the hide toggle) and never a
-      // Take button. The Level Up tier boxes show taken advancements as disabled checkboxes, so only enabled ones count.
+      // No editor-only controls: besides the page tabs (the vault deck is a picture) every button is view-only - the
+      // Domain Deck's filters, More/Less, card backs and Turn over, and each hand card's "More about" popup (SC1) - and
+      // never a Take button. The Level Up tier boxes show taken advancements as disabled checkboxes, so only enabled
+      // ones count.
       const deck = sheet.locator("#lu-target-deck");
       const buttons = sheet.getByRole("button").and(sheet.locator(":not([role=tab])"));
-      await expect(buttons).toHaveCount(await deck.getByRole("button").count());
-      const deckNames = await deck.getByRole("button").evaluateAll((els) => els.map((el) => el.getAttribute("aria-label") ?? el.textContent?.trim() ?? ""));
+      const names = await buttons.evaluateAll((els) => els.map((el) => el.getAttribute("aria-label") ?? el.textContent?.trim() ?? ""));
       const viewOnly = /^(All|Grace|Codex|(More|Less) about .+|Face-down level \d+ .+ card\. Turn it over to read it\.|Turn over .+)$/;
-      expect(deckNames.filter((name) => !viewOnly.test(name)), `deck buttons on ${tab}`).toEqual([]);
+      expect(names.filter((name) => !viewOnly.test(name)), `buttons on ${tab}`).toEqual([]);
+      // Outside the deck only the hand cards' "More about" popups.
+      const outside = await buttons.evaluateAll((els) => els.filter((el) => !el.closest("#lu-target-deck")).map((el) => el.getAttribute("aria-label") ?? ""));
+      expect(outside.filter((name) => !/^More about .+$/.test(name)), `buttons outside the deck on ${tab}`).toEqual([]);
       await expect(deck.getByRole("button", { name: /^Take |^No picks left|for level \d+$|at level-up$/ })).toHaveCount(0);
       for (const role of ["textbox", "combobox", "checkbox", "spinbutton", "radio"] as const) {
         const enabled = sheet.getByRole(role, { disabled: false });

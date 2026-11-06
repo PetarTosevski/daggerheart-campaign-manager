@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "convex/react";
 import { useId, useRef, useState } from "react";
 
 import { FREE_DIE_SIDES, FREE_ROLL_LIMITS, formatFreeRoll, freeDiceCount, parseFreeRoll, type FreePool } from "@/lib/domain/dice";
@@ -17,6 +18,9 @@ import { playRollSound } from "./sound";
  * one die per tap, a − / + count per size, a − / + modifier, an optional typed formula ("3d6+1d8+2") and a live preview.
  * Every control works without typing, at 44 px on touch. The server rolls (`rolls.gmRoll` secret, `rolls.freeRoll`
  * public) and checks the limits again (`assertFreeRoll`: d4–d20, at most 20 dice, modifier within ±60).
+ *
+ * With the campaign's optional Fate rolls on (CB p.168; plan rule-switches OFT, user answer Q13 c), the public form
+ * also has "Fate roll": the Hope Die or Fear Die alone for one of the caller's PCs (`fateRolls.roll`), no Hope or Fear.
  */
 
 const BTN = "min-h-11 cursor-pointer rounded-[9px] border border-[#33444a] bg-transparent px-3 text-[14px] text-[#e6ecea] hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40";
@@ -187,7 +191,7 @@ export function FreeRollForm({ campaignId, mode, showResult = false }: { campaig
     if (!shown && settings.sound) playRollSound();
   }
 
-  return (
+  const form = (
     <form
       id={copy.id}
       aria-label={copy.form}
@@ -222,5 +226,80 @@ export function FreeRollForm({ campaignId, mode, showResult = false }: { campaig
       ) : null}
       <div ref={stage} className="w-full empty:hidden" />
     </form>
+  );
+  if (mode !== "public") return form;
+  return form;
+}
+
+/**
+ * Fate roll (CB p.168, optional, off by default): "asking a player to roll only their Hope or Fear Die to decide the
+ * result … nor does the roll result grant Hope or Fear". Shown only while the rule is on and the caller has a PC to roll
+ * for (a player: their own; the GM: every PC). The server rolls one d12 and posts it in the feed; the result shows here
+ * too.
+ */
+export function FateRoll({ campaignId }: { campaignId: Id<"campaigns"> }) {
+  const status = useQuery(api.fateRolls.status, { campaignId });
+  const fate = useIntent(api.fateRolls.roll);
+  const [picked, setPicked] = useState<Id<"characters"> | null>(null);
+  const [note, setNote] = useState("");
+  const [last, setLast] = useState<{ dice: Parameters<typeof DiceFaces>[0]["dice"]; text: string } | null>(null);
+  const [settings] = useDiceSettings();
+  const headingId = useId();
+  if (status === undefined || !status.enabled || status.characters.length === 0) return null;
+  const characters = status.characters;
+  // A PC that left the list (retired, or the GM changed owners) falls back to the first.
+  const pc = characters.find((c) => c._id === picked) ?? characters[0]!;
+
+  async function roll(die: "hope" | "fear") {
+    const result = await fate.fire({ characterId: pc._id, die, ...(note.trim() ? { note: note.trim() } : {}) });
+    if (!result) return;
+    setLast({ dice: result.roll.dice, text: `${pc.name}, ${die === "hope" ? "Hope Die" : "Fear Die"}: ${result.roll.total}` });
+    if (settings.sound) playRollSound();
+  }
+
+  return (
+    <section aria-labelledby={headingId} className="flex flex-col gap-2 border-t border-[#253338] pt-2" data-testid="fate-roll">
+      <h3 id={headingId} className={`m-0 font-semibold ${LBL}`}>
+        Fate roll
+      </h3>
+      <p className="m-0 text-[13px] text-[#8fa3a8]">Roll only the Hope or Fear Die to decide a moment outside the PCs’ control. Gains no Hope or Fear.</p>
+      <div className="flex flex-wrap items-end gap-2">
+        {characters.length > 1 ? (
+          <label className={`flex min-w-32 flex-col gap-1 ${LBL}`}>
+            Character
+            <select className={`${INPUT} normal-case`} value={pc._id} disabled={fate.pending} onChange={(e) => setPicked(e.target.value as Id<"characters">)}>
+              {characters.map((c) => (
+                <option key={c._id} value={c._id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        <label className={`flex min-w-32 flex-1 flex-col gap-1 ${LBL}`}>
+          Decides
+          <input className={`${INPUT} normal-case`} placeholder="On a 4 or lower, the fire spreads" maxLength={80} value={note} disabled={fate.pending} onChange={(e) => setNote(e.target.value)} />
+        </label>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className={BTN} disabled={fate.pending} onClick={() => void roll("hope")}>
+          {characters.length > 1 ? "Roll Hope Die" : `Roll ${pc.name}’s Hope Die`}
+        </button>
+        <button type="button" className={BTN} disabled={fate.pending} onClick={() => void roll("fear")}>
+          {characters.length > 1 ? "Roll Fear Die" : `Roll ${pc.name}’s Fear Die`}
+        </button>
+      </div>
+      <p aria-live="polite" className="m-0 text-[13px] text-danger empty:hidden">
+        {fate.error}
+      </p>
+      <div role="status" className="flex flex-wrap items-center gap-2 text-[14px] text-[#e6ecea] empty:hidden" data-testid="fate-roll-result">
+        {last ? (
+          <>
+            <DiceFaces dice={last.dice} />
+            <b>{last.text}</b>
+          </>
+        ) : null}
+      </div>
+    </section>
   );
 }

@@ -85,7 +85,7 @@ for (const viewport of [
     test.setTimeout(200_000);
     const { gm, player, campaignId, characterName, client, playerClient, close } = await retryOnTimeout(() => gmAndPlayer(browser));
     try {
-      const url = `/campaigns/${campaignId}/notes`;
+      const url = `/campaigns/${campaignId}/journal?tab=notes`;
       for (const page of [gm, player]) await page.setViewportSize(viewport);
       await Promise.all([gm.goto(url), player.goto(url)]);
 

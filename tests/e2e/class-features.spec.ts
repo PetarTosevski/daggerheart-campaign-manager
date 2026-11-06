@@ -5,6 +5,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { cardsForDomains, getClass } from "../../src/lib/srd";
 import { signInAsTestGm } from "./fixtures";
+import { endFromJournal, journalLiveChip, journalReport, startFromJournal } from "./visual/helpers";
 
 const unique = (label: string) => `${label} ${crypto.randomUUID().slice(0, 8)}`;
 
@@ -70,13 +71,10 @@ test("a Bard rallies, a Warrior spends the Rally Die on a roll in the dice box, 
   const { characterId: bardId } = await client.mutation(api.characters.create, { campaignId, draft: bardDraft(bard), idempotencyKey: crypto.randomUUID() });
   const { characterId: warriorId } = await client.mutation(api.characters.create, { campaignId, draft: warriorDraft(warrior), idempotencyKey: crypto.randomUUID() });
 
-  // The GM starts a session on the Sessions tab (D10 S3's live card), so the rally below happens inside it.
-  await page.goto(`/campaigns/${campaignId}/sessions`);
-  await page.getByRole("button", { name: "+ New session" }).click();
-  const liveCard = page.getByRole("region", { name: "Live session" });
-  await liveCard.getByRole("button", { name: "Start session" }).click();
-  await page.getByRole("dialog", { name: "Start the session?" }).getByRole("button", { name: "Start session" }).click();
-  await expect(liveCard.getByRole("button", { name: "End session" })).toBeVisible();
+  // The GM starts a session from the Journal header (JH's 'Start session 1'), so the rally below happens inside it.
+  await page.goto(`/campaigns/${campaignId}/journal`);
+  await startFromJournal(page);
+  await expect(journalLiveChip(page).getByRole("button", { name: "End session" })).toBeVisible();
   const sessionUrl = page.url();
 
   // The Bard rallies: both PCs hold a d6 Rally Die.
@@ -104,9 +102,8 @@ test("a Bard rallies, a Warrior spends the Rally Die on a roll in the dice box, 
 
   // The GM ends the session: the Bard's unspent die clears.
   await page.goto(sessionUrl);
-  await liveCard.getByRole("button", { name: "End session" }).click();
-  await page.getByRole("dialog", { name: "End the session?" }).getByRole("button", { name: "End session" }).click();
-  await expect(liveCard.getByText("Session ended.")).toBeVisible();
+  await endFromJournal(page);
+  await expect(journalReport(page)).toContainText("Session ended.");
   await page.goto(`/campaigns/${campaignId}/party/${bardId}`);
   await expect(page.getByRole("heading", { level: 1, name: bard })).toBeVisible();
   await expect(page.getByRole("region", { name: "Class Features" }).getByRole("button", { name: "Use Rally", exact: true })).toBeEnabled();

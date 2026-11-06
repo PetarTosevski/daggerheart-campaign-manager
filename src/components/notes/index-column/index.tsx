@@ -6,6 +6,7 @@ import { useMutation } from "convex/react";
 import { Eye, Globe, Lock, UserCheck, Users, type LucideIcon } from "lucide-react";
 import { useId, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import { groupEmptyText, matches, PAGE_GROUPS, pageCountLabel, visibilityLabel, type PageKind, type Visibility } from "@/lib/domain/notes";
 
@@ -74,10 +75,10 @@ export function PageGroups(props: NotesSlotProps) {
 
   return (
     <nav className="bj-pages" aria-label="Your pages">
-      <button type="button" className="bj-ghost bj-pages-toggle" aria-expanded={open} aria-controls={listId} onClick={() => setOpen(!open)}>
+      <BrandButton variant="neutral" className="bj-pages-toggle" aria-expanded={open} aria-controls={listId} onClick={() => setOpen(!open)}>
         <span aria-hidden="true">{open ? "▾" : "▸"}</span> Pages
         {current ? <span className="bj-pages-current">· {current.title}</span> : null}
-      </button>
+      </BrandButton>
       <div id={listId} className="bj-pages-list" data-open={open}>
         {PAGE_GROUPS.map((group) => {
           const items = pages.filter((p) => p.kind === group.kind && shown(p));
@@ -85,9 +86,10 @@ export function PageGroups(props: NotesSlotProps) {
             <div key={group.kind} className="bj-group" role="group" aria-label={group.label}>
               <div className="bj-lbl bj-group-head">
                 <span>{group.label}</span>
-                <button
-                  type="button"
-                  className="bj-ghost bj-plus"
+                <BrandButton
+                  variant="confirm"
+                  size="sm"
+                  icon
                   aria-label={group.addLabel}
                   title={group.addLabel}
                   disabled={busy !== null}
@@ -97,7 +99,7 @@ export function PageGroups(props: NotesSlotProps) {
                   }}
                 >
                   ＋
-                </button>
+                </BrandButton>
               </div>
               {items.map((page) => {
                 const Icon = VISIBILITY_ICON[page.visibility];

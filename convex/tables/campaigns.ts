@@ -1,8 +1,16 @@
 import { defineTable } from "convex/server";
 import { v } from "convex/values";
 
-import { customFrameValidator, frameIdValidator, tomeValidator } from "../lib/validators/campaigns";
+import {
+  customFrameValidator,
+  frameIdValidator,
+  memberRoleValidator,
+  storedTableSettingsValidator,
+  tomeValidator,
+} from "../lib/validators/campaigns";
 import { mapStyleValidator } from "../lib/validators/combatMaps";
+import { storedRuleModesValidator } from "../lib/validators/ruleModes";
+import { draftKindValidator, textSizeValidator, uiStateKeyValidator, uiStateValueValidator } from "../lib/validators/preferences";
 
 export { customFrameValidator, frameIdValidator };
 
@@ -44,12 +52,31 @@ export const campaignTables = {
      * Written by `campaigns.setTimeOfDay` only.
      */
     timeOfDay: v.optional(timeOfDayValidator),
+    /**
+     * The Campaign settings' table switches (config S0): a typed object of optional fields; an unset field (or no
+     * object) uses `TABLE_SETTING_DEFAULTS` (`src/lib/config/campaign-settings.ts`). `campaigns.get` resolves it.
+     */
+    tableSettings: v.optional(storedTableSettingsValidator),
+    /** When the creator archived the campaign (config Q9 a): read-only for everyone; cleared by unarchive. */
+    archivedAt: v.optional(v.number()),
+    /**
+     * The House rules' rule switches (plan rule-switches RS0): a typed object of optional fields, one per settable rule
+     * of `src/lib/rules/registry.ts`; an unset field (or no object) is the registry default (Book / optional rule off,
+     * Defined Ranges on). Written only by `ruleSettings.set`, between sessions; read through `ruleModesOf`
+     * (convex/lib/ruleModes.ts). Widen only.
+     */
+    ruleModes: v.optional(storedRuleModesValidator),
   })
     .index("by_owner_deletedAt_lastOpened", ["ownerId", "deletedAt", "lastOpenedAt"])
     .index("by_owner_deletedAt_nameKey", ["ownerId", "deletedAt", "nameKey"])
+    /** Counts a GM's live, non-archived campaigns for the campaigns-per-GM cap (config AD5a). */
+    .index("by_owner_deletedAt_archivedAt", ["ownerId", "deletedAt", "archivedAt"])
     .index("by_joinCode", ["joinCode"])
-    /** Finds campaigns deleted long enough ago to purge (CD18). */
-    .index("by_deletedAt", ["deletedAt"]),
+    /**
+     * Finds campaigns deleted long enough ago to purge (CD18), lists the live ones (admin) and counts the live,
+     * non-archived ones for the app-wide cap (config AD5a). Replaced `by_deletedAt`, its prefix (CD15).
+     */
+    .index("by_deletedAt_archivedAt", ["deletedAt", "archivedAt"]),
 
   /**
    * When a user (GM or player) last opened a campaign. Kept off the campaign
@@ -71,6 +98,8 @@ export const campaignTables = {
     joinedAt: v.number(),
     /** Join time, or the player's last open before `campaignOpens`: the fallback `campaigns.list` sorts by. */
     lastOpenedAt: v.number(),
+    /** `coGm`: a co-GM (config G1, Q8 b); unset = a player. Only the creator sets it. */
+    role: v.optional(memberRoleValidator),
   })
     .index("by_user", ["userId"])
     .index("by_campaign_user", ["campaignId", "userId"]),
@@ -81,6 +110,8 @@ export const campaignTables = {
     email: v.string(),
     invitedBy: v.id("users"),
     createdAt: v.number(),
+    /** `coGm`: the creator invited this email straight in as co-GM (Q8 b); accepted in `markOpened`. Unset = a player. */
+    role: v.optional(memberRoleValidator),
   })
     .index("by_email", ["email"])
     .index("by_campaign_email", ["campaignId", "email"]),
@@ -114,4 +145,69 @@ export const campaignTables = {
     /** dcm-bxp.89: the style new blank maps get (Settings slider); absent = Classic. Existing maps keep theirs (E3). */
     defaultMapStyle: v.optional(mapStyleValidator),
   }).index("by_owner", ["ownerId"]),
+
+  /**
+   * A user's preferences (config S0; the Preferences popover): one row per user, saved to the account (Q15 b). An
+   * unset field uses `PREFERENCE_DEFAULTS` (`src/lib/config/preferences.ts`). Kept off `settings`, which the title menu
+   * reads (CD10).
+   */
+  userPreferences: defineTable({
+    userId: v.id("users"),
+    dice3d: v.optional(v.boolean()),
+    diceSound: v.optional(v.boolean()),
+    /** 0-100. */
+    diceVolume: v.optional(v.number()),
+    reduceMotion: v.optional(v.boolean()),
+    textSize: v.optional(textSizeValidator),
+    spotlightPing: v.optional(v.boolean()),
+    /** When this browser's old saved values were moved here (tracer IMP). */
+    legacyImportedAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]),
+
+  /**
+   * A user's UI state (config S0, Q15 b): one row per key (`UI_STATE_KEYS`), so a flip of the token names or a sort
+   * order never rewrites the preferences row (CD10, rule 6). A missing row is the key's default.
+   */
+  userUiState: defineTable({
+    userId: v.id("users"),
+    key: uiStateKeyValidator,
+    value: uiStateValueValidator,
+    updatedAt: v.number(),
+  }).index("by_user_key", ["userId", "key"]),
+
+  /**
+   * Unsent drafts (config S0, Q15 b): the character wizard (per campaign), the custom frame form (no campaign) and a
+   * guided level-up's picks (config N4 b: per character, with `characterId` and its campaign's `campaignId`).
+   * `data` is JSON text of at most `DRAFT_MAX_BYTES`, parsed with zod on the client, with its `schemaVersion` (rule 7).
+   * Purged with its campaign; drafts expire after 90 days (P2's cron).
+   */
+  userDrafts: defineTable({
+    userId: v.id("users"),
+    kind: draftKindValidator,
+    campaignId: v.optional(v.id("campaigns")),
+    /** A level-up draft's character (config N4 b); unset for the other kinds. Added 2026-11-04 as a widening (rule 7). */
+    characterId: v.optional(v.id("characters")),
+    schemaVersion: v.number(),
+    data: v.string(),
+    updatedAt: v.number(),
+  })
+    .index("by_user_kind_campaign", ["userId", "kind", "campaignId"])
+    .index("by_user_kind_character", ["userId", "kind", "characterId"])
+    .index("by_campaign", ["campaignId"])
+    // The 90-day expiry (config P2, `draftsRetention.expire`).
+    .index("by_updated", ["updatedAt"]),
+
+  /**
+   * A folded hand on the Combat Map ("Hide cards", config S0): a row = folded, per user and character. Bounded per
+   * campaign (members x characters); purged with the campaign.
+   */
+  handFolds: defineTable({
+    userId: v.id("users"),
+    campaignId: v.id("campaigns"),
+    characterId: v.id("characters"),
+    updatedAt: v.number(),
+  })
+    .index("by_user_character", ["userId", "characterId"])
+    .index("by_campaign", ["campaignId"]),
 };

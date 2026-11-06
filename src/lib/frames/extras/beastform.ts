@@ -1,7 +1,7 @@
 // Druid Beastform (Core Book pp.31–35): the active form, if any. Marking the
 // Stress (or spending 3 Hope for Evolution) is applied to the sheet in D5.
 
-import { z } from "zod";
+import * as z from "../../zod";
 
 import { RuleError } from "../../errors/app-error";
 

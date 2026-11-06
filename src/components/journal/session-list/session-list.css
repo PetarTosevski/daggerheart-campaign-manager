@@ -78,13 +78,6 @@
   flex-direction: column;
   gap: 6px;
 }
-.js-plan.js-plan {
-  width: 100%;
-  border-style: dashed;
-  border-radius: 12px;
-  background: transparent;
-  font-size: 14px;
-}
 .js-error {
   margin: 0;
   color: var(--jr-danger);

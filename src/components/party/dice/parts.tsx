@@ -3,7 +3,7 @@
 import type { RolledDie, RollRecord } from "@/lib/domain/duality";
 import { OUTCOME_LABEL } from "@/lib/domain/dice";
 
-import { useDiceSettings } from "./settings";
+import { useDice3dAvailable, useDiceSettings } from "./settings";
 
 const ROLE_LABEL: Record<RolledDie["role"], string> = {
   hope: "Hope",
@@ -51,15 +51,18 @@ export function rollHeadline(roll: RollRecord): string {
   return `${roll.total}${vs}${outcome}`;
 }
 
-/** The per-device 3D and sound toggles (decision 3). */
+/** The per-device 3D and sound toggles (decision 3); no 3D toggle while the 3D dice switch is off for the user (AF1). */
 export function DiceSettingsToggles({ className = "" }: { className?: string }) {
   const [settings, update] = useDiceSettings();
+  const threeDAvailable = useDice3dAvailable();
   return (
     <div className={`flex flex-wrap items-center gap-4 text-[14px] ${className}`}>
-      <label className="flex min-h-10 items-center gap-2">
-        <input type="checkbox" className="size-4" checked={settings.threeD} onChange={(e) => update({ threeD: e.target.checked })} />
-        3D dice
-      </label>
+      {threeDAvailable ? (
+        <label className="flex min-h-10 items-center gap-2">
+          <input type="checkbox" className="size-4" checked={settings.threeD} onChange={(e) => update({ threeD: e.target.checked })} />
+          3D dice
+        </label>
+      ) : null}
       <label className="flex min-h-10 items-center gap-2">
         <input type="checkbox" className="size-4" checked={settings.sound} onChange={(e) => update({ sound: e.target.checked })} />
         Dice sound
@@ -158,12 +161,15 @@ export function DiceTiles({ roll, slayer = 0 }: { roll: RollRecord; slayer?: num
 /** The board's 3D and sound toggles (decision 3): a "3D dice: on" pill and a speaker button, both real checkboxes. */
 export function BoardDiceToggles() {
   const [settings, update] = useDiceSettings();
+  const threeDAvailable = useDice3dAvailable();
   return (
     <>
-      <label className="dc-toggle" title="Throw 3D dice across the screen">
-        <input type="checkbox" checked={settings.threeD} onChange={(e) => update({ threeD: e.target.checked })} />
-        3D dice<span aria-hidden="true">{settings.threeD ? ": on" : ": off"}</span>
-      </label>
+      {threeDAvailable ? (
+        <label className="dc-toggle" title="Throw 3D dice across the screen">
+          <input type="checkbox" checked={settings.threeD} onChange={(e) => update({ threeD: e.target.checked })} />
+          3D dice<span aria-hidden="true">{settings.threeD ? ": on" : ": off"}</span>
+        </label>
+      ) : null}
       <label className="dc-toggle dc-sound" title={settings.sound ? "Dice sounds on" : "Dice sounds off"}>
         <input type="checkbox" aria-label="Dice sound" checked={settings.sound} onChange={(e) => update({ sound: e.target.checked })} />
         <span aria-hidden="true">{settings.sound ? "🔊" : "🔇"}</span>

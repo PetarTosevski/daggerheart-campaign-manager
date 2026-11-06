@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { activeAreasOnMap, areaTokenKey, endAreasOwnerLeft, forcedMove, placeArea } from "../../convex/combatAreas";
+import { activeAreasOnMap, areaTokenKey, endAreasOwnerLeft, forcedMove, placeArea } from "../../convex/lib/combatAreas";
 import { readSheet, saveSheet } from "../../convex/lib/characterSheet";
 import { objectTraits } from "../../convex/lib/spriteSources";
 import { ANCESTRIES, ARMOR, COMMUNITIES, cardsForDomains, getClass, subclassesForClass, WEAPONS } from "../../src/lib/srd/index";

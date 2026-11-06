@@ -13,6 +13,7 @@ import {
   formatUsd,
   priceFor,
   reserveMicros,
+  webReserveMicros,
   usageFromApi,
   usdToMicros,
 } from "../../../src/lib/lorekeeper/pricing";
@@ -65,15 +66,33 @@ describe("costMicros", () => {
 });
 
 describe("reserveMicros", () => {
-  it("is the worst case: 20k input at the cache-write price plus max_tokens output", () => {
-    expect(reserveMicros("claude-sonnet-5-5")).toBe(20_000 * 2.5 + 2000 * 10);
-    expect(reserveMicros("claude-opus-5-5", 2000)).toBe(20_000 * 5 + 2000 * 20);
+  it("is the worst case: 45k input at the cache-write price plus max_tokens output", () => {
+    expect(reserveMicros("claude-sonnet-5-5")).toBe(45_000 * 2.5 + 2000 * 10);
+    expect(reserveMicros("claude-opus-5-5", 2000)).toBe(45_000 * 5 + 2000 * 20);
     expect(reserveMicros("claude-sonnet-5-5", 1000, { inputTokens: 1000, webSearches: 3 })).toBe(2500 + 10_000 + 30_000);
   });
 
   it("is never below the cost of a request within those limits", () => {
     const real = { input: 15_000, cacheRead: 2_000, cacheWrite: 3_000, output: 2000, webSearches: 0 };
     for (const m of Object.keys(MODEL_PRICES)) expect(reserveMicros(m)).toBeGreaterThanOrEqual(costMicros(real, m));
+  });
+
+  // dcm-5n07: the highest numbers measured 2026-10-23..29 (docs/lorekeeper.md "Costs and caps"), each column's
+  // maximum together, so the booking covers any measured pass.
+  it("covers the measured Opus retry", () => {
+    const opus = { input: 32_000, cacheRead: 2_500, cacheWrite: 8_500, output: 2000, webSearches: 0 };
+    expect(reserveMicros("claude-opus-5-5")).toBeGreaterThanOrEqual(costMicros(opus, "claude-opus-5-5"));
+  });
+});
+
+describe("webReserveMicros", () => {
+  it("is 120k input at the cache-write price, 4k output and every search", () => {
+    expect(webReserveMicros("claude-sonnet-5-5", 3)).toBe(120_000 * 2.5 + 4000 * 10 + 3 * 10_000);
+  });
+
+  it("covers the measured internet pass", () => {
+    const web = { input: 34_000, cacheRead: 34_000, cacheWrite: 13_000, output: 2_200, webSearches: 1 };
+    expect(webReserveMicros("claude-sonnet-5-5", 3)).toBeGreaterThanOrEqual(costMicros(web, "claude-sonnet-5-5"));
   });
 });
 

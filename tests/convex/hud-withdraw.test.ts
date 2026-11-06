@@ -66,7 +66,7 @@ describe("combatWithdraw.withdraw", () => {
     expect(await withdraw(w, requestId)).toEqual({ status: "withdrawn", requestId });
 
     const row = await rowOf(w, requestId);
-    expect(row).toMatchObject({ status: "declined", resolvedBy: w.users.player });
+    expect(row).toMatchObject({ status: "withdrawn", resolvedBy: w.users.player });
     expect(row!.resolvedAt).toBeTypeOf("number");
     expect(await w.as("gm").query(api.combatCardsReads.pending, { campaignId: w.campaignId })).toEqual([]);
     expect(await w.as("player").query(api.combatCardsReads.pending, { campaignId: w.campaignId })).toEqual([]);
@@ -115,6 +115,26 @@ describe("combatWithdraw.withdraw", () => {
     await w.as("gm").mutation(api.combatCards.sanction, { campaignId: w.campaignId, idempotencyKey: key(), requestId, approve: false });
     expect(await codeOf(withdraw(w, requestId))).toBe("REQUEST_NOT_OPEN");
     expect((await rowOf(w, requestId))!.resolvedBy).toBe(w.users.gm);
+  });
+
+  it("lists the GM's latest withdrawals for the toast, newest first, with names only (dcm-bxp.99.32.40)", async () => {
+    const w = await buildWorld();
+    const card = await sanction(w, CARD);
+    const feature = await sanction(w, FEATURE);
+    const declined = await sanction(w, ATTACK);
+    expect(await w.as("gm").query(api.combatRequestsReads.withdrawn, { campaignId: w.campaignId })).toEqual([]);
+    await withdraw(w, card);
+    await withdraw(w, feature);
+    // A GM's decline is not a withdrawal.
+    await w.as("gm").mutation(api.combatRequests.sanction, { campaignId: w.campaignId, idempotencyKey: key(), requestId: declined, approve: false });
+
+    const rows = await w.as("gm").query(api.combatRequestsReads.withdrawn, { campaignId: w.campaignId });
+    expect(rows.map((r) => [r.requestId, r.characterName, r.useName])).toEqual([
+      [feature, "Ash", "No Mercy"],
+      [card, "Ash", "Cinder Grasp"],
+    ]);
+    expect(rows[0]!.withdrawnAt).toBeGreaterThanOrEqual(rows[1]!.withdrawnAt);
+    expect(await codeOf(w.as("player").query(api.combatRequestsReads.withdrawn, { campaignId: w.campaignId }))).toBe("FORBIDDEN");
   });
 
   it("lets the edit grantee and the GM withdraw; refuses another player before saying whether it is open", async () => {

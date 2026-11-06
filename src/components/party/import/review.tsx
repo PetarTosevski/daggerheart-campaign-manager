@@ -251,12 +251,12 @@ export function ReviewForm({ initial, unreadable, unmatched, hopeAndFear, owners
                 />
               )}
             </Field>
-            <BrandButton size="sm" onClick={() => set("experiences", draft.experiences.filter((_, j) => j !== i))} aria-label={`Remove Experience ${i + 1}`}>
+            <BrandButton variant="danger" size="sm" onClick={() => set("experiences", draft.experiences.filter((_, j) => j !== i))} aria-label={`Remove Experience ${i + 1}`}>
               Remove
             </BrandButton>
           </div>
         ))}
-        <BrandButton size="sm" className="self-start" disabled={draft.experiences.length >= 12} onClick={() => set("experiences", [...draft.experiences, { name: "", value: 2 }])}>
+        <BrandButton variant="neutral" size="sm" className="self-start" disabled={draft.experiences.length >= 12} onClick={() => set("experiences", [...draft.experiences, { name: "", value: 2 }])}>
           Add Experience
         </BrandButton>
       </fieldset>
@@ -304,7 +304,7 @@ export function ReviewForm({ initial, unreadable, unmatched, hopeAndFear, owners
       <p role="alert" className="m-0 text-[14px] text-danger empty:hidden">
         {error}
       </p>
-      <BrandButton type="submit" variant="primary" size="lg" className="self-start" disabled={problem !== null || saving} aria-describedby={problemId}>
+      <BrandButton type="submit" variant="confirm" size="lg" className="self-start" disabled={problem !== null || saving} aria-describedby={problemId}>
         {saving ? "Saving…" : "Save character"}
       </BrandButton>
     </form>

@@ -5,8 +5,9 @@ import { Check, Map as MapIcon } from "lucide-react";
 import Link from "next/link";
 import { useId, useState } from "react";
 
+import { applyBudgetChange, MAX_PCS, MIN_PCS } from "@/components/adversaries/builder/budget-panel";
 import type { InstanceView } from "@/components/adversaries/builder/types";
-import { brandButton } from "@/components/brand/buttons";
+import { BrandButton, brandButton } from "@/components/brand/buttons";
 import { encounterTrackerHref } from "@/components/sessions/session-chip";
 import { errorMessage } from "@/lib/convex-errors";
 import { BP_COSTS, minionGroups } from "@/lib/domain/encounters/budget";
@@ -45,12 +46,12 @@ export function encounterChips(instances: readonly InstanceView[], pcs: number):
 
 type Ids = { campaignId: Id<"campaigns">; sessionId: Id<"sessions">; sceneId: string };
 
-const LINK = brandButton({ variant: "pill", size: "md", className: "px-3.5 text-sm" });
+const LINK = brandButton({ variant: "neutral", size: "sm" });
 
 /**
  * A Combat scene's encounter card (JP2, contract: ../slots.ts; design reference/designs/journal/journal_views.jpg,
- * Plan, scene 3): 'Encounter · <name>', a chip per stat block with its type and Battle Points, 'On the Combat Map'
- * when any of it has a token on the live map, 'Open map' and 'Edit in Adversaries'. Without one: create a draft for
+ * Plan, scene 3): 'Encounter · <name>', the party-size stepper (dcm-vj4a), a chip per stat block with its type and
+ * Battle Points, 'On the Combat Map' when any of it has a token on the live map, 'Open map' and 'Edit in Adversaries'. Without one: create a draft for
  * the scene or link one of the campaign's encounters (sessionPrep, JD4). Adversaries are added in the Adversaries
  * tab's builder (Q6: reuse, no add dialog here). GM only (players never see the plan, Q5).
  */
@@ -91,6 +92,7 @@ function LinkedEncounter({ campaignId, sessionId, sceneId, encounterId, name, on
       <h3 id={headingId} className="m-0 text-sm font-semibold text-(--jr-combat)">
         Encounter · {view?.encounter.name ?? name}
       </h3>
+      {view ? <PartySize campaignId={campaignId} encounterId={encounterId} pcs={view.encounter.pcs} /> : null}
       {view === undefined ? (
         <p role="status" className="jr-muted jr-m0">
           Loading the adversaries…
@@ -130,9 +132,9 @@ function LinkedEncounter({ campaignId, sessionId, sceneId, encounterId, name, on
         <Link className={LINK} href={encounterTrackerHref(campaignId, encounterId)}>
           Edit in Adversaries
         </Link>
-        <button
-          type="button"
-          className="jr-ghost"
+        <BrandButton
+          variant="neutral"
+          size="sm"
           aria-label={`Unlink ${view?.encounter.name ?? name} from this scene`}
           onClick={() => {
             setError(null);
@@ -140,7 +142,7 @@ function LinkedEncounter({ campaignId, sessionId, sceneId, encounterId, name, on
           }}
         >
           Unlink
-        </button>
+        </BrandButton>
       </div>
       {error ? (
         <p role="alert" className="m-0 text-sm text-(--jr-danger)">
@@ -148,6 +150,50 @@ function LinkedEncounter({ campaignId, sessionId, sceneId, encounterId, name, on
         </p>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * The encounter's party size (JP2 as changed 2026-11-04, dcm-vj4a): small grey glass − / + (glass rules Q7) sending
+ * the Adversaries builder's intent, `encounters.setBudget` with `{ kind: "pcs", delta }`, optimistic on
+ * `encounters.get` (so the Battle Points card moves too). Kept within MIN_PCS..MAX_PCS like the server. The card is
+ * GM only, so is this.
+ */
+export function PartySize({ campaignId, encounterId, pcs }: { campaignId: Id<"campaigns">; encounterId: Id<"encounters">; pcs: number }) {
+  const labelId = useId();
+  const [error, setError] = useState<string | null>(null);
+  const setBudget = useMutation(api.encounters.setBudget).withOptimisticUpdate((store, args) => {
+    const query = { campaignId: args.campaignId, encounterId: args.encounterId };
+    const current = store.getQuery(api.encounters.get, query);
+    if (!current) return;
+    store.setQuery(api.encounters.get, query, { ...current, encounter: applyBudgetChange(current.encounter, args.change) });
+  });
+
+  function step(delta: number) {
+    setError(null);
+    setBudget({ campaignId, encounterId, change: { kind: "pcs", delta } }).catch((e: unknown) => setError(errorMessage(e)));
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm text-(--jr-text)">
+      <span id={labelId}>Party size</span>
+      <span role="group" aria-labelledby={labelId} className="inline-flex items-center gap-2">
+        <BrandButton variant="neutral" size="sm" icon aria-label="Fewer player characters" disabled={pcs <= MIN_PCS} onClick={() => step(-1)}>
+          −
+        </BrandButton>
+        <span className="min-w-6 text-center font-semibold" aria-live="polite" data-testid="scene-encounter-pcs">
+          {pcs}
+        </span>
+        <BrandButton variant="neutral" size="sm" icon aria-label="More player characters" disabled={pcs >= MAX_PCS} onClick={() => step(1)}>
+          +
+        </BrandButton>
+      </span>
+      {error ? (
+        <p role="alert" className="m-0 w-full text-sm text-(--jr-danger)">
+          {error}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -181,9 +227,9 @@ function NoEncounter({ campaignId, sessionId, sceneId }: Ids) {
     <section className={FRAME} aria-label="Encounter" data-testid="scene-encounter">
       <p className="jr-muted jr-m0 text-sm">No encounter yet. Build this fight with real stat blocks and Battle Points; it also appears in the Adversaries tab.</p>
       <div className="flex flex-wrap items-end gap-2">
-        <button type="button" className={brandButton({ variant: "solid", size: "md" })} disabled={create.pending} onClick={() => void create.fire({ campaignId, sessionId, sceneId })}>
+        <BrandButton variant="confirm" disabled={create.pending} onClick={() => void create.fire({ campaignId, sessionId, sceneId })}>
           Create encounter
-        </button>
+        </BrandButton>
         <label htmlFor={selectId} className="sr-only">
           Link an encounter
         </label>
@@ -202,9 +248,9 @@ function NoEncounter({ campaignId, sessionId, sceneId }: Ids) {
             </option>
           ))}
         </select>
-        <button type="button" className={brandButton({ variant: "outline", size: "md" })} disabled={picked === "" || linking} onClick={() => void onLink()}>
+        <BrandButton variant="neutral" disabled={picked === "" || linking} onClick={() => void onLink()}>
           Link
-        </button>
+        </BrandButton>
       </div>
       {(create.error ?? error) ? (
         <p role="alert" className="m-0 text-sm text-(--jr-danger)">

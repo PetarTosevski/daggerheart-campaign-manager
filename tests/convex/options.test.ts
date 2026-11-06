@@ -18,10 +18,16 @@ describe("campaign rule switches", () => {
     return { gm, player, campaignId };
   }
 
-  it("uses frame defaults: Castle High is less lethal and uses Hope & Fear content", async () => {
+  it("uses frame defaults: a new Castle High campaign uses Hope & Fear content and starts with Less Lethal off", async () => {
     const { gm, campaignId } = await setup("castle-high");
     const options = (await gm.query(api.campaigns.get, { campaignId }))!.options;
-    expect(options).toMatchObject({ lessLethal: true, hopeAndFear: true, transformations: false });
+    expect(options).toMatchObject({ lessLethal: false, hopeAndFear: true, transformations: false });
+  });
+
+  it("the GM switches Less Lethal on in a Castle High campaign, and a stored value wins over the default", async () => {
+    const { gm, campaignId } = await setup("castle-high");
+    await gm.mutation(api.campaigns.setOption, { campaignId, option: "lessLethal", enabled: true });
+    expect((await gm.query(api.campaigns.get, { campaignId }))!.options.lessLethal).toBe(true);
   });
 
   it("a Core frame starts without Hope & Fear content; the GM can switch it on", async () => {

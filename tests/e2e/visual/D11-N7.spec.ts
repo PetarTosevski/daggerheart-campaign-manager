@@ -50,7 +50,7 @@ test("D11 N7 bin at 1440 and 390", { tag: "@visual" }, async ({ page }) => {
   // The rip, frozen 600 ms in (the board's notes:tear frame), at each viewport.
   for (const viewport of VIEWPORTS) {
     await page.setViewportSize(viewport);
-    await page.goto(`/campaigns/${campaignId}/notes?page=${pageId}`);
+    await page.goto(`/campaigns/${campaignId}/journal?tab=notes&page=${pageId}`);
     await expect(paper(page).getByRole("listitem")).toHaveCount(lines.length);
     const button = paper(page).getByRole("button", { name: "Tear out page" });
     await button.scrollIntoViewIfNeeded();
@@ -70,7 +70,7 @@ test("D11 N7 bin at 1440 and 390", { tag: "@visual" }, async ({ page }) => {
 
   // The toast and the bin list (two torn-out pages), then a torn-out page read only.
   await page.setViewportSize(VIEWPORTS[0]);
-  await page.goto(`/campaigns/${campaignId}/notes?page=${rumours}`);
+  await page.goto(`/campaigns/${campaignId}/journal?tab=notes&page=${rumours}`);
   await expect(paper(page).getByLabel("Page title")).toHaveValue("Rumors & hooks");
   await client.mutation(api.notesBin.binPage, { campaignId, page: pageId! });
   await paper(page).getByRole("button", { name: "Tear out page" }).click();

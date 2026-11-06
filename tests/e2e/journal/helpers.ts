@@ -5,6 +5,8 @@
 // prep note. Scene titles and states (J0's widened scene) are not seeded yet: `JOURNAL_SCENES` carries them so the
 // tracers that add them (JD4 / JP1) can set them here.
 
+import { execFileSync } from "node:child_process";
+
 import { expect, type Browser, type Page } from "@playwright/test";
 
 import { api } from "../../../convex/_generated/api";
@@ -67,6 +69,29 @@ export const JOURNAL_ENCOUNTER = {
   ],
 } as const;
 
+/**
+ * Runs an internal Convex function on the worktree's local e2e backend (`scripts/convex-e2e.mjs run`, as
+ * tests/e2e/owner.ts does) and returns its result: with stdout not a TTY the CLI prints the result as JSON, and
+ * nothing for a null result.
+ */
+function runInternal<T>(fn: string, args: Record<string, unknown>): T {
+  const out = execFileSync(process.execPath, ["scripts/convex-e2e.mjs", "run", fn, JSON.stringify(args)], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  return (out === "" ? null : JSON.parse(out)) as T;
+}
+
+/**
+ * Creates the session's legacy encounter, 'Session N encounter' (internal `sessionPrep:createEncounter`: no UI creates
+ * it since the Journal, which links encounters per scene; JF3).
+ */
+export function createSessionEncounter(campaignId: Id<"campaigns">, sessionId: Id<"sessions">): Id<"encounters"> {
+  return runInternal<{ encounterId: Id<"encounters"> }>("sessionPrep:createEncounter", { campaignId, sessionId }).encounterId;
+}
+
+/** Links an existing encounter as the session's legacy encounter (internal `sessionPrep:linkEncounter`, JF3). */
+export function linkSessionEncounter(campaignId: Id<"campaigns">, sessionId: Id<"sessions">, encounterId: Id<"encounters">) {
+  runInternal<null>("sessionPrep:linkEncounter", { campaignId, sessionId, encounterId });
+}
+
 export type JournalTable = LiveTable & {
   /** Session ids by number (2-7). */
   sessions: Record<number, Id<"sessions">>;
@@ -115,7 +140,7 @@ export async function seedJournal(browser: Browser): Promise<JournalTable> {
     sceneIds.push(sceneId);
   }
   await client.mutation(api.sessionPrep.setHooks, { campaignId, sessionId: liveSessionId, hooks: JOURNAL_PREP });
-  const { encounterId } = await client.mutation(api.sessionPrep.createEncounter, { campaignId, sessionId: liveSessionId, idempotencyKey: key() });
+  const encounterId = createSessionEncounter(campaignId, liveSessionId);
   await client.mutation(api.encounters.rename, { campaignId, encounterId, name: JOURNAL_ENCOUNTER.name });
   for (const { adversaryId, count } of JOURNAL_ENCOUNTER.adversaries) {
     await client.mutation(api.encounters.addAdversary, {

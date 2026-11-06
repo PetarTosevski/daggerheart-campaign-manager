@@ -20,8 +20,6 @@ import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
 import type { CountdownView } from "../../../../../../convex/countdowns";
 
-import { BTN } from "./shared";
-
 export const VISIBILITY_OPTIONS: { preset: CountdownVisibilityPreset; label: string; badge: string; hint: string }[] = [
   { preset: "private", label: "Private", badge: "Private", hint: "Only you see it." },
   { preset: "partly", label: "Public, details hidden", badge: "Partly hidden", hint: "Players see it without the fields you tick." },
@@ -134,10 +132,10 @@ export function VisibilityForm({ countdown, campaignId, onDone }: { countdown: C
         </p>
       ) : null}
       <div className="flex justify-end gap-2.5">
-        <button type="button" className={BTN} onClick={onDone}>
+        <BrandButton variant="cancel" onClick={onDone}>
           Cancel
-        </button>
-        <BrandButton type="submit" variant="solid" disabled={setVisibility.pending}>
+        </BrandButton>
+        <BrandButton type="submit" variant="confirm" disabled={setVisibility.pending}>
           Save
         </BrandButton>
       </div>

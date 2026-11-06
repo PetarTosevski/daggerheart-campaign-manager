@@ -63,6 +63,11 @@ async function minions(w: World) {
   w.use("encounterAdversaries", instanceIds[0]!);
 }
 
+/** The area's instance defeated (every HP marked), so `reviveInstance` has someone to bring back. */
+async function defeated(w: World) {
+  await w.as("gm").mutation(api.encounterTracking.markHp, { campaignId: w.campaignId, instanceId: w.ids.instanceId!, delta: 30, idempotencyKey: key() });
+}
+
 /** A second custom adversary no encounter uses (`remove` refuses a block an instance comes from), chosen as the custom id. */
 async function unusedCustom(w: World) {
   const { customId } = await w
@@ -105,6 +110,7 @@ const area: Area = {
     gm({ fn: api.encounterTracking.markHp, args: () => ({ delta: 1 }) }),
     gm({ fn: api.encounterTracking.markStress, args: () => ({ delta: 1 }) }),
     gm({ fn: api.encounterTracking.applyDamage, args: () => ({ amount: 5 }) }),
+    gm({ fn: api.encounterTracking.reviveInstance, setup: defeated, args: () => ({ hp: 0, stress: 0 }) }),
     gm({ fn: api.encounterTracking.defeatMinions, setup: minions, args: () => ({ count: 1 }) }),
     gm({ fn: api.encounterTracking.toggleCondition, args: () => ({ condition: "vulnerable" }) }),
     gm({ fn: api.encounterTracking.setTags, args: () => ({ tags: ["cornered"] }) }),

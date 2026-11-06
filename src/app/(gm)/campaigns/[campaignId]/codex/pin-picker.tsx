@@ -3,6 +3,7 @@
 import { useMutation } from "convex/react";
 import { useEffect, useState, type MouseEvent } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import { assetBackground } from "@/lib/design-assets";
 import type { GmEntry } from "@/lib/codex/view";
@@ -78,9 +79,9 @@ export function PinPicker({
       <div className="box-border flex max-h-full w-full max-w-[1100px] flex-col gap-3 overflow-auto rounded-[14px] border border-brand bg-[#141e22] p-[18px]">
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="cx-h flex-1">{title}</h2>
-          <button type="button" className="cx-ghost" onClick={onClose}>
+          <BrandButton variant="cancel" onClick={onClose}>
             Cancel
-          </button>
+          </BrandButton>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <p className="cx-muted m-0 flex-1">

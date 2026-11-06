@@ -13,11 +13,17 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { readSheet } from "./characterSheet";
-import { sourcedCloak } from "./combatMovement";
+import { hiddenEndsManual, sourcedCloak } from "./combatMovement";
+import { postRuleNote } from "./ruleModes";
 import type { CloakPromptPayload } from "./validators/combatRequests";
 
 /** The most enemy tokens one prompt names (the payload's bound). */
 export const MAX_CLOAK_PROMPT_TARGETS = 20;
+
+/** C2 Manual (plan rule-switches RM): the note that replaces the prompt ("Mira used Words of Discord on an enemy while Cloaked: remove Cloaked?"). */
+export function cloakUseNote(name: string, use: string): string {
+  return `${name} used ${use.slice(0, 120)} on an enemy while Cloaked: remove Cloaked?`;
+}
 
 export type CloakPromptInput = {
   campaign: Doc<"campaigns">;
@@ -46,6 +52,11 @@ export async function openCloakPrompt(ctx: MutationCtx, input: CloakPromptInput)
   if (character === null || character.campaignId !== input.campaign._id) return null;
   const sheet = readSheet(character.sheet);
   if (!sheet.conditions.includes("cloaked") || sourcedCloak(sheet)) return null;
+  // C2 Manual (plan rule-switches RM): no prompt; a GM-only note in the use's group asks the same question.
+  if (hiddenEndsManual(input.campaign)) {
+    await postRuleNote(ctx, input.campaign, { ruleId: "hiddenEnds", summary: cloakUseNote(sheet.name, input.label), groupId: input.groupId, actorId: input.createdBy });
+    return null;
+  }
   const payload: CloakPromptPayload = {
     schemaVersion: 1,
     kind: "cloakPrompt",

@@ -60,7 +60,7 @@ test("D11 N8 journals at 1440 and 390", { tag: "@visual" }, async ({ page, brows
     await gm.mutation(api.notesEntries.add, { campaignId, page: session!, kind: "note", text: "The ferryman lies" });
 
     const { shoot } = visual(page, "D11-N8");
-    await page.goto(`/campaigns/${campaignId}/notes`);
+    await page.goto(`/campaigns/${campaignId}/journal?tab=notes`);
     const players = index(page).getByRole("region", { name: "Players’ journals" });
     await expect(players.getByRole("button", { name: /^Ash/ })).toBeVisible();
     await shootInIndex(page, "D11-N8", players, "players-journals");

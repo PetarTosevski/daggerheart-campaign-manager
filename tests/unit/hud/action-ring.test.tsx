@@ -20,7 +20,6 @@ import {
   hopeNeeded,
   moreItem,
   openActionRing,
-  raiseHand,
   reactionLock,
   resetActionRingForTests,
   ringItems,
@@ -36,6 +35,7 @@ import {
   toggleActionRing,
   useActionRing,
 } from "@/components/combat-map/hud/action-ring";
+import { raiseHand, useRaiseHandle } from "@/components/combat-map/hud/hand/raise";
 import { PickProvider } from "@/components/combat-map/hud/pick";
 import type { HudSheetData, HudSheetFeature } from "@/components/combat-map/hud/sheet/model";
 import { HudProvider, useHud } from "@/components/combat-map/hud/state";
@@ -380,29 +380,22 @@ describe("the ring", () => {
     expect(ringButton("Use Beastform")).toHaveAccessibleDescription("Beastform is used up for now. Back after a rest.");
   });
 
-  it("Cast raises the hand: unfolds it and focuses the first playable card's Use", () => {
+  it("Cast raises the hand through hud/hand's raiseHand() (dcm-bxp.99.32.20; the hand's side: hand-states.test.tsx)", () => {
+    const raise = vi.fn();
+    function OwnHand() {
+      useRaiseHandle(true, raise);
+      return null;
+    }
+    const { unmount } = render(<OwnHand />);
     renderRing();
-    const hud = document.createElement("div");
-    hud.dataset.testid = "combat-hud";
-    hud.innerHTML = `<section data-testid="hud-hand" data-mode="own"><ul>
-      <li data-testid="hud-hand-card" tabindex="-1"><button class="cmh-use" disabled>Use</button></li>
-      <li data-testid="hud-hand-card" tabindex="-1"><button class="cmh-use" aria-label="Use Vicious Entangle">Use</button></li>
-    </ul></section>`;
-    document.body.append(hud);
     act(() => openActionRing(MOSS_TOKEN));
     fireEvent.click(ringButton("Cast"));
-    expect(document.activeElement).toHaveAccessibleName("Use Vicious Entangle");
-    hud.remove();
+    expect(raise).toHaveBeenCalledTimes(1);
+    unmount();
   });
 
-  it("raiseHand: a folded hand is shown first; no hand of yours does nothing", () => {
-    const root = document.createElement("div");
-    root.innerHTML = `<div data-testid="combat-hud"><section data-testid="hud-hand" data-mode="own" data-folded="true"><button data-testid="hud-hand-hide">Show cards (1)</button></section></div>`;
-    const show = vi.fn();
-    root.querySelector("button")!.addEventListener("click", show);
-    expect(raiseHand(root, 0)).toBe(true);
-    expect(show).toHaveBeenCalledTimes(1);
-    expect(raiseHand(document.createElement("div"))).toBe(false);
+  it("raiseHand: no hand of yours does nothing", () => {
+    expect(raiseHand()).toBe(false);
   });
 
   it("Cast is locked without cards", () => {
@@ -475,7 +468,7 @@ describe("the ring", () => {
     fireEvent.click(parry);
     expect(featureOpen).not.toHaveBeenCalled();
     // The server offers it for an open hit: it unlocks and takes focus to the hit window's Use.
-    queries["adversaryActions:pending"] = [{ features: [{ featureId: "f:Parry", useId: "u1" }] }];
+    queries["adversaryActionsReads:pending"] = [{ features: [{ featureId: "f:Parry", useId: "u1" }] }];
     const hit = document.createElement("div");
     hit.dataset.testid = "hud-hit-window";
     hit.innerHTML = '<ul><li data-testid="hud-hit-feature" data-feature="f:Parry" data-use="u1"><button type="button" aria-label="Use Parry">Use</button></li></ul>';

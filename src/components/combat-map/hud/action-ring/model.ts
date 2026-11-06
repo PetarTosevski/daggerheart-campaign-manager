@@ -84,7 +84,7 @@ export function ringOutside(features: readonly HudSheetFeature[]): RingOutside[]
 
 /**
  * Why a reaction's button is locked, or null: used up first (as `featureLock`), then "waits for its trigger" until the
- * server offers it for a trigger that applies (`triggered`: it answers an open hit, `adversaryActions.pending`'s
+ * server offers it for a trigger that applies (`triggered`: it answers an open hit, `adversaryActionsReads.pending`'s
  * features).
  */
 export function reactionLock(use: Pick<RingUse, "label" | "ready" | "resetLabel">, triggered: boolean): string | null {

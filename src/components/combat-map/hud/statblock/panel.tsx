@@ -7,8 +7,6 @@ import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { cn } from "@/lib/utils";
-
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { capOf, needsChoices, pickable, type FeatureAsk } from "../../../adversaries/tracker/actions/ask";
@@ -23,8 +21,9 @@ import { conditionName } from "../pick/model";
 import { usePick } from "../pick";
 import { BlockedReason, RefusalMessage, useBlocked, useRefusal, type Blocked } from "../blocked";
 import { adversaryActBlocked, fearBlocked, spotlightFirst } from "../fear/blocked";
-import { CostPill, PartBoundary, Pips, SidePanel, StatTile } from "../ui";
+import { CostPill, PartBoundary, SidePanel, StatTile } from "../ui";
 import type { FearAsk, GmActs } from "./acts";
+import { Track } from "./track";
 import { gmAttackSession, gmFeatureSession } from "./attack";
 import {
   actionSpotlightCost,
@@ -33,7 +32,6 @@ import {
   faceLetter,
   gmAttackRows,
   kindLabel,
-  markedText,
   signed,
   spotlightButtonText,
   spotlightCost,
@@ -189,7 +187,7 @@ function StatBlockBody({
   const ends = useQuery(api.combatEffects.fearEnds, { campaignId, target: { kind: "instance", instanceId: instance._id } });
   const endByFear = useMutation(api.combatEffects.endByFear).withOptimisticUpdate((store, args) => {
     const now = store.getQuery(api.campaigns.fear, { campaignId });
-    if (now !== undefined && now >= args.fear) store.setQuery(api.campaigns.fear, { campaignId }, now - args.fear);
+    if (now !== undefined && now !== null && now >= args.fear) store.setQuery(api.campaigns.fear, { campaignId }, now - args.fear);
   });
   const sight = useLiveSight(campaignId, map?._id ?? null);
   const who = theName(instance.label);
@@ -221,7 +219,7 @@ function StatBlockBody({
         rows: gmAttackRows(self, pcs, sight, block.attack.range),
         characterOf,
         spotlightFear: actionSpot,
-        fear,
+        fear: fear ?? undefined,
         acts,
       }),
     );
@@ -266,7 +264,7 @@ function StatBlockBody({
     return guarded(() => acts.feature({ instanceId: instance._id, feature, ...args }, { label: `${label} uses ${feature}`, actor: who, feature }));
   }
 
-  const chips = conditionChips(instance.conditions, ends ?? []);
+  const chips = conditionChips(instance.conditions, ends ?? [], instance.conditionSources);
   const absent = CONDITIONS.filter((c) => !instance.conditions.includes(c));
   const hpMax = instance.stats.hpMax;
   const stressMax = instance.stats.stressMax;
@@ -318,6 +316,11 @@ function StatBlockBody({
           {chips.map((c) => (
             <li key={c.key} className="hsb-cd">
               {c.label}
+              {c.from ? (
+                <small className="hsb-cd-src" data-testid="hud-statblock-condition-source">
+                  {c.from}
+                </small>
+              ) : null}
               {c.end ? (
                 <EndByFear label={c.label} cost={c.end.fear} why={fearBlocked(c.end.fear, fear)} onEnd={() => void endEffect(c.end!)} />
               ) : c.condition ? (
@@ -502,38 +505,5 @@ function FeatureWhy({ why }: { why: Blocked }) {
     <p className="hsb-af-why" data-testid="hud-statblock-feature-why">
       <BlockedReason>{why.text}</BlockedReason>
     </p>
-  );
-}
-
-function Track({
-  kind,
-  name,
-  noun,
-  marked,
-  max,
-  onStep,
-}: {
-  kind: "hp" | "stress";
-  name: string;
-  noun: [string, string];
-  marked: number;
-  max: number;
-  onStep: (delta: -1 | 1) => void;
-}) {
-  const text = markedText(marked, max);
-  return (
-    <div className={cn("hsb-tr", `hsb-tr-${kind}`)}>
-      <span className="hsb-l">{name}</span>
-      <Pips kind={kind} on={marked} max={max} label={`${marked} of ${max} ${noun[1]} marked`} />
-      <b className="hsb-n">{text}</b>
-      <span className="hsb-step">
-        <button type="button" aria-label={`Clear 1 ${noun[0]}`} disabled={marked <= 0} onClick={() => onStep(-1)}>
-          −
-        </button>
-        <button type="button" aria-label={`Mark 1 ${noun[0]}`} disabled={marked >= max} onClick={() => onStep(1)}>
-          +
-        </button>
-      </span>
-    </div>
   );
 }

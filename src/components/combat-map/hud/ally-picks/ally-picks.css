@@ -1,0 +1,57 @@
+/* Per-ally picks (plan finish-hud-lk FH-AP; board CmpPicking 'After the roll'): the player's pick cards and the actor's
+   waiting line, stacked above the result panel's spot (Main `.res`), on the same left edge. */
+.hud-ap {
+  position: absolute;
+  left: min(var(--hud-pop-res-left, 820px), calc(100% - 440px - var(--hud-edge)));
+  bottom: 250px;
+  z-index: 39;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 440px;
+  max-width: calc(100% - 2 * var(--hud-edge));
+  max-height: calc(100% - 270px);
+  overflow: auto;
+}
+.hud-ap .hud-pc {
+  width: 100%;
+}
+.hud-ap-label {
+  margin: 0 0 8px;
+}
+.hud-ap-wait {
+  margin: 0;
+}
+.hud-ap-on {
+  color: var(--hud-ink-2, inherit);
+}
+.hud-ap-review {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+.hud-ap-review .hud-ap-label {
+  flex-basis: 100%;
+  padding: 0;
+}
+.hud-ap-ally {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+}
+.hud-ap .hud-res-chip {
+  min-height: 44px;
+}
+
+@media (max-width: 760px) {
+  .hud-ap {
+    left: var(--hud-edge);
+    right: var(--hud-edge);
+    bottom: 96px;
+    width: auto;
+  }
+}

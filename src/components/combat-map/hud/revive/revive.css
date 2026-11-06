@@ -1,0 +1,91 @@
+/*
+ * Revive a defeated adversary (bead dcm-6c2o): the hover "Revive" pill on a defeated token or spotlight row, and the box
+ * (the End scene dialog `.hud-em` holding the stat block's parchment HP / Stress rows `.hsb-trk`).
+ */
+
+/* ---------------------------------------------------------------- the box */
+.hud-rv .hud-rv-trk {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f4ead2;
+  color: #2a1f14;
+  box-shadow: inset 0 0 0 1px #c9a35a;
+}
+.hud-rv .hud-em-p b {
+  color: #efeaff;
+}
+
+/* ---------------------------------------------------------------- the pill: shown on hover or keyboard focus */
+.hud-rv-btn {
+  position: absolute;
+  z-index: 40;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hud-rv-btn {
+    transition: none;
+  }
+}
+.hud-rv-btn:hover,
+.hud-rv-btn:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/*
+ * On a map token: just above it, centred (`style` places it at the token's top edge), shown while the token is hovered
+ * or focused. A clear bridge under the pill reaches into the token, so the pointer moving up onto it never drops the
+ * hover; the token's face stays clickable.
+ */
+.cm-tok:hover + .hud-rv-tok,
+.cm-tok:focus-visible + .hud-rv-tok {
+  opacity: 1;
+  pointer-events: auto;
+}
+.hud-rv-tok {
+  /* `translate`, not `transform`: the glass press (`.gb:active`) sets transform, which must not move the pill. */
+  translate: -50% -100%;
+}
+.hud-rv-tok::after {
+  content: "";
+  position: absolute;
+  left: 25%;
+  right: 25%;
+  top: 100%;
+  height: 10px;
+}
+
+/* In the spotlight popover: the defeated row and its pill share a wrapper; the pill sits over the row's "Defeated" tag. */
+.hud-spr-wrap {
+  position: relative;
+}
+.hud-spr-wrap:hover > .hud-rv-row,
+.hud-spr-wrap:focus-within > .hud-rv-row {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* The pill takes the "Defeated" tag's place while it shows (the row's name still says "defeated"). */
+.hud-spr-wrap:hover > .hud-spr .hud-spr-dead,
+.hud-spr-wrap:focus-within > .hud-spr .hud-spr-dead {
+  visibility: hidden;
+}
+.hud-rv-row {
+  right: 10px;
+  top: 50%;
+  translate: 0 -50%;
+}
+
+/* No hover on touch screens: the pill stays on every defeated adversary. */
+@media (hover: none) {
+  .hud-rv-btn {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .hud-spr-wrap:has(> .hud-rv-row) .hud-spr-dead {
+    visibility: hidden;
+  }
+}

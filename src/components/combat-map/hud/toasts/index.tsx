@@ -66,7 +66,8 @@ function ToastItem({ toast }: { toast: HudToast }) {
  * Layer 3 of the blocked-state system (board CmpBlocked "After, elsewhere"): the toasts near the hand for a refusal or
  * result that comes later or from someone else. The live region is always mounted (`role="status"`, polite), so a new
  * toast is announced; they stack (newest nearest the hand, at most `TOAST_MAX`), auto-dismiss, and stop moving under
- * `prefers-reduced-motion`. Senders call `hudToasts.push(...)` / `hudToasts.refusal(...)`, or `useRefusal()` does.
+ * reduced motion (device or account). Senders call `hudToasts.push(...)` / `hudToasts.refusal(...)`, or `useRefusal()`
+ * does.
  */
 export const HudToasts: (props: HudPartProps) => ReactNode = () => {
   const toasts = useHudToasts();

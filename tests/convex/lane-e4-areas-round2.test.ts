@@ -22,7 +22,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { activeAreasOnMap, endAreasOnCasterEvent, observerConditions, placeAreasFromPlan } from "../../convex/combatAreas";
+import { activeAreasOnMap, endAreasOnCasterEvent, observerConditions, placeAreasFromPlan } from "../../convex/lib/combatAreas";
 import { loadScene, preparedFor } from "../../convex/lib/combatVision";
 import { lineOfSight } from "../../src/lib/domain/combat-actions/index";
 import type { PlanStep } from "../../src/lib/domain/card-effects/run";

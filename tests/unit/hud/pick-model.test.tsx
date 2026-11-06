@@ -10,6 +10,7 @@ import { plainAttackSession } from "@/components/combat-map/hud/pick/attack";
 import {
   buildRows,
   canToggle,
+  clearTop,
   GM_APPROVES_LINE,
   keepPicks,
   primaryProblem,
@@ -219,5 +220,18 @@ describe("the plain attack session", () => {
       await expect(s.primary.send(selectionOf(rows, [BANDIT], {}))).resolves.toEqual({ kind: "done" });
       expect(onResult).toHaveBeenCalledWith(word);
     }
+  });
+});
+
+describe("clearTop: the panel stays clear of a player's map controls (dcm-bxp.99.32.22)", () => {
+  const controls = { left: 690, top: 60, right: 980, bottom: 104 };
+  it("a panel under the controls' columns stands below them", () => {
+    expect(clearTop(8, 700, 292, [controls], 8)).toBe(112);
+    expect(clearTop(40, 500, 292, [controls], 8)).toBe(112);
+  });
+  it("a panel beside them, or already below them, keeps its spot", () => {
+    expect(clearTop(8, 300, 292, [controls], 8)).toBe(8);
+    expect(clearTop(300, 700, 292, [controls], 8)).toBe(300);
+    expect(clearTop(-20, 980, 292, [], 8)).toBe(8);
   });
 });

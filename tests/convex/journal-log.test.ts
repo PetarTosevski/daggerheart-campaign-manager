@@ -285,6 +285,87 @@ describe("journalLog", () => {
     expect(await codeOf(p1.mutation(api.journalLog.hide, { campaignId, sessionId, source: "feed", sourceId: env.vexRoll }))).toBe("FORBIDDEN");
   });
 
+  it("dcm-z9rz.28: a feed line's icon follows its roll type; a Manual rule note reaches only the GM, with its own icon", async () => {
+    const env = await setup();
+    env.at(0);
+    await env.start();
+    const row = (ms: number, kind: "roll" | "combat" | "gmRoll" | "rule" | "feature", summary: string, rollKind?: "action" | "reaction" | "damage" | "free") =>
+      env.t.run((ctx) =>
+        ctx.db.insert("actionLog", {
+          campaignId: env.campaignId,
+          actorId: env.ids.gm,
+          kind,
+          visibility: kind === "rule" || kind === "gmRoll" ? "gm" : "public",
+          summary,
+          ...(rollKind !== undefined ? { roll: { ...roll(12, "successHope"), kind: rollKind } } : {}),
+          ...(kind === "rule" ? { ruleId: "adversaryDefeated" } : {}),
+          undoable: false,
+          at: NOW + ms,
+        }),
+      );
+    await row(1 * MIN, "roll", "Vex: Agility roll", "action");
+    await row(2 * MIN, "roll", "Vex: reaction roll", "reaction");
+    await row(3 * MIN, "roll", "Vex: damage roll", "damage");
+    await row(4 * MIN, "combat", "Vex attacks the Bandit", "action");
+    await row(5 * MIN, "combat", "Vex: Bandit takes 7 damage");
+    await row(6 * MIN, "gmRoll", "GM: hidden roll", "free");
+    await row(7 * MIN, "feature", "Vex: Rally");
+    await row(8 * MIN, "rule", "Bandit marked its last HP: defeated?");
+    env.at(10 * MIN);
+    const icons = (lines: { title: string; icon: string; source: string }[]) =>
+      Object.fromEntries(lines.filter((l) => l.source === "feed").map((l) => [l.title, l.icon]));
+    expect(icons((await env.list()).lines)).toEqual({
+      "Session started": "session",
+      "Vex: Agility roll": "roll",
+      "Vex: reaction roll": "reactionRoll",
+      "Vex: damage roll": "damageRoll",
+      "Vex attacks the Bandit": "attackRoll",
+      "Vex: Bandit takes 7 damage": "combat",
+      "GM: hidden roll": "gmRoll",
+      "Vex: Rally": "feature",
+      "Bandit marked its last HP: defeated?": "rule",
+    });
+    const playerTitles = (await env.list(env.p1)).lines.map((l) => l.title);
+    expect(playerTitles).not.toContain("Bandit marked its last HP: defeated?");
+    expect(playerTitles).not.toContain("GM: hidden roll");
+    expect(playerTitles).toContain("Vex: reaction roll");
+  });
+
+  it("JF2 (dcm-z9rz.28): a social roll's line gets the social icon, for the GM and players; other rows keep theirs", async () => {
+    const env = await setup();
+    env.at(0);
+    await env.start();
+    const row = (ms: number, kind: "roll" | "combat", summary: string, rollKind: "action" | "reaction" | "damage", social?: boolean) =>
+      env.t.run((ctx) =>
+        ctx.db.insert("actionLog", {
+          campaignId: env.campaignId,
+          actorId: env.ids.gm,
+          kind,
+          visibility: "public",
+          summary,
+          roll: { ...roll(12, "successHope"), kind: rollKind },
+          ...(social !== undefined ? { social } : {}),
+          undoable: false,
+          at: NOW + ms,
+        }),
+      );
+    await row(1 * MIN, "roll", "Vex: Presence roll", "action", true);
+    await row(2 * MIN, "roll", "Vex: reaction roll", "reaction", true);
+    await row(3 * MIN, "roll", "Vex: Agility roll", "action", false);
+    await row(4 * MIN, "combat", "Vex attacks the Bandit", "action");
+    env.at(10 * MIN);
+    const icons = (lines: { title: string; icon: string; source: string }[]) =>
+      Object.fromEntries(lines.filter((l) => l.source === "feed" && l.title.startsWith("Vex")).map((l) => [l.title, l.icon]));
+    const expected = {
+      "Vex: Presence roll": "socialRoll",
+      "Vex: reaction roll": "socialRoll",
+      "Vex: Agility roll": "roll",
+      "Vex attacks the Bandit": "attackRoll",
+    };
+    expect(icons((await env.list()).lines)).toEqual(expected);
+    expect(icons((await env.list(env.p1)).lines)).toEqual(expected);
+  });
+
   it("each source is read with a bounded take; a cut source marks the result truncated", async () => {
     const env = await setup();
     await env.start();

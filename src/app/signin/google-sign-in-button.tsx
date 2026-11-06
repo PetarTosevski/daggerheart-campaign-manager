@@ -14,7 +14,7 @@ export function GoogleSignInButton() {
 
   return (
     <BrandButton
-      variant="outline"
+      variant="neutral"
       size="lg"
       disabled={pending}
       onClick={() => {

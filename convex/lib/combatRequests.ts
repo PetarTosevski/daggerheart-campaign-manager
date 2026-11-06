@@ -83,7 +83,7 @@ export async function encounterRunning(ctx: QueryCtx, row: Doc<"combatRequests">
 }
 
 /** Closes one request: `resolved` or `declined`, with `resolvedAt` (the retention cron ranges on it). */
-export async function closeRequest(ctx: MutationCtx, id: Id<"combatRequests">, status: "resolved" | "declined", by: Id<"users">): Promise<void> {
+export async function closeRequest(ctx: MutationCtx, id: Id<"combatRequests">, status: "resolved" | "declined" | "withdrawn", by: Id<"users">): Promise<void> {
   await ctx.db.patch("combatRequests", id, { status, resolvedAt: Date.now(), resolvedBy: by });
 }
 

@@ -61,8 +61,8 @@ export function HudResolutions({ campaignId }: { campaignId: Id<"campaigns"> }):
   const rows = page === undefined ? [] : resolutionRows(page.page);
   // Not a landmark (the classic column's "Resolutions" region stays the only one; the heading names this list).
   return (
-    <div className="hud-res" data-testid="hud-resolutions">
-      <h2 className="hud-res-h">Resolutions</h2>
+    <div className="hud-q-res" data-testid="hud-resolutions">
+      <h2 className="hud-q-res-h">Resolutions</h2>
       {page === undefined ? (
         <p role="status" className="hud-q-note">
           Loading resolutions…
@@ -70,20 +70,20 @@ export function HudResolutions({ campaignId }: { campaignId: Id<"campaigns"> }):
       ) : rows.length === 0 ? (
         <p className="hud-q-note">No hits yet. Attacks on the map and rolls with Fear land here, each with Undo.</p>
       ) : (
-        <ul className="hud-res-list" aria-label="Latest resolutions">
+        <ul className="hud-q-res-list" aria-label="Latest resolutions">
           {rows.map((row) => {
             const fearRoll = isFearRoll(row) ? fearRollLine(row) : null;
             const title = fearRoll ? fearRoll.lead : row.summary;
             const detail = fearRoll ? [fearRoll.fear, row.undone ? "undone" : null].filter(Boolean).join(" · ") : feedDetail(row);
             return (
-              <li key={row._id} className={cn(row.undone && "hud-res-undone", fearRoll && "hud-res-fear")} data-testid="hud-resolution" data-kind={fearRoll ? "fear-roll" : row.kind}>
-                <span className="hud-res-i">{fearRoll ? FEAR_ICON : HIT_ICON}</span>
-                <span className="hud-res-t" title={fearRoll ? row.summary : undefined}>
+              <li key={row._id} className={cn(row.undone && "hud-res-undone", fearRoll && "hud-q-res-fear")} data-testid="hud-resolution" data-kind={fearRoll ? "fear-roll" : row.kind}>
+                <span className="hud-q-res-i">{fearRoll ? FEAR_ICON : HIT_ICON}</span>
+                <span className="hud-q-res-t" title={fearRoll ? row.summary : undefined}>
                   <b>{title}</b>
                   {detail ? <span> {fearRoll ? `· ${detail}` : detail}</span> : null}
                 </span>
                 {row.canUndo ? (
-                  <button type="button" className="hud-res-undo" disabled={pending !== null} aria-label={`Undo: ${title}`} onClick={() => void run(row._id)}>
+                  <button type="button" className="hud-q-res-undo" disabled={pending !== null} aria-label={`Undo: ${title}`} onClick={() => void run(row._id)}>
                     Undo
                   </button>
                 ) : null}

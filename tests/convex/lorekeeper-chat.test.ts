@@ -433,8 +433,8 @@ describe("lorekeeper chat", () => {
 
   it("without budget for the re-check the first answer is kept", async () => {
     const s = await setup();
-    // Room for the Sonnet worst case ($0.07) but not for Opus's ($0.14) on top.
-    process.env.LOREKEEPER_CAMPAIGN_MONTHLY_USD = "0.1";
+    // Room for the Sonnet worst case ($0.13) but not for Opus's ($0.27) on top.
+    process.env.LOREKEEPER_CAMPAIGN_MONTHLY_USD = "0.2";
     try {
       fetchMock.mockResolvedValueOnce(sseResponse(textReply("VERDICT: unclear\nThe books don't settle it.\nGM CALL: Your call.")));
       const { answerId } = await s.ask();

@@ -1,0 +1,335 @@
+/*
+ * App admin, Lorekeeper tab (config AU3; design reference/designs/config/Admin.dc.html `.s-lore`: `.mt`, `.mt-b`,
+ * `.stp`, `.seg2`, `.sw`, `.stack`, `.lg`, `.addb`). Builds on the shared admin classes in ../admin.css. The buttons
+ * are arcane glass; these rules only lay them out. Unlayered, like admin.css.
+ */
+
+.admk-pad {
+  padding: 8px 0 14px;
+}
+.admk-err {
+  margin: 0 0 12px;
+  color: #f0d4cf;
+  font-size: 13px;
+}
+.adm-row.admk-col {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+/* ---------------------------------------------------------------- meters (design `.mt`) */
+
+.admk-mt {
+  padding: 10px 0;
+}
+.admk-mt-t {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.admk-mt-t span {
+  color: var(--adm-soft);
+}
+.admk-mt-t b {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.admk-mt-t i {
+  color: var(--adm-muted);
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 400;
+}
+.admk-mt-b {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #1f2b30;
+}
+.admk-mt-b span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--adm-acc);
+}
+
+/* ---------------------------------------------------------------- stepper, segments, switch */
+
+.admk-stp {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 12px;
+  background: #0f171a;
+  box-shadow: inset 0 0 0 1px #253338;
+}
+.admk-stp svg {
+  width: 18px;
+  height: 18px;
+}
+.admk-stp b {
+  min-width: 64px;
+  text-align: center;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.admk-seg {
+  display: flex;
+  max-width: 100%;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: #0f171a;
+  box-shadow: inset 0 0 0 1px #253338;
+}
+.admk-seg-b {
+  flex: 1;
+}
+.admk-sw {
+  position: relative;
+  flex: none;
+  width: 46px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: #33444a;
+  cursor: pointer;
+}
+.admk-sw i {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--adm-text);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .admk-sw i {
+    transition: left 0.18s;
+  }
+}
+.admk-sw[aria-checked="true"] {
+  background: var(--adm-acc);
+}
+.admk-sw[aria-checked="true"] i {
+  left: 23px;
+  background: #1a1408;
+}
+.admk-sw:focus-visible {
+  outline: 2px solid var(--adm-acc);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------- inputs and forms */
+
+.admk-inp {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: #0f171a;
+  color: var(--adm-text);
+  font: inherit;
+  box-shadow: inset 0 0 0 1px #33444a;
+}
+.admk-inp:focus-visible {
+  outline: 2px solid var(--adm-acc);
+  outline-offset: 1px;
+}
+.admk-inp[aria-invalid="true"] {
+  box-shadow: inset 0 0 0 1px #c0605a;
+}
+.admk-inp-n {
+  max-width: 120px;
+}
+.admk-acts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ---------------------------------------------------------------- requests */
+
+.admk-reqs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.admk-req {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 0;
+  border-top: 1px solid var(--adm-line);
+}
+.admk-reqs .admk-req:first-child {
+  border-top: 0;
+}
+.admk-reason {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--adm-acc);
+  border-radius: 4px;
+  background: #0f171a;
+  color: var(--adm-soft);
+  white-space: pre-wrap;
+}
+.admk-req-f {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+.admk-num {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 180px;
+  font-size: 13px;
+}
+.admk-num small {
+  color: var(--adm-muted);
+}
+.admk-req-f .admk-acts {
+  margin-left: auto;
+}
+.admk-req-f .admk-err {
+  flex-basis: 100%;
+}
+.admk-more {
+  margin-bottom: 12px;
+}
+
+/* ---------------------------------------------------------------- use by campaign (design `.stack`, `.lg`) */
+
+.admk-stack {
+  display: flex;
+  height: 12px;
+  overflow: hidden;
+  margin: 6px 0 12px;
+  border-radius: 999px;
+  background: #1f2b30;
+}
+.admk-lg {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+.admk-lg > li {
+  padding: 6px 0;
+  border-top: 1px solid var(--adm-line);
+}
+.admk-lg > li:first-child {
+  border-top: 0;
+}
+.admk-lg-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.admk-lg-row i {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 3px;
+}
+.admk-lg-name {
+  min-width: 0;
+  flex: 1;
+}
+.admk-lg-row b {
+  font-variant-numeric: tabular-nums;
+}
+.admk-climits {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 6px 24px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #0f171a;
+}
+.admk-num-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) 110px minmax(100px, auto) auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------------- book library */
+
+.adm-card-h + .admk-book .adm-row {
+  border-top: 0;
+}
+.admk-ingest {
+  color: var(--adm-gold);
+}
+.admk-ingest.admk-ingest-bad {
+  color: #f0a8a0;
+}
+.admk-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0 14px;
+  border-top: 1px solid var(--adm-line);
+}
+.admk-addb {
+  border-style: dashed;
+}
+.admk-addb svg {
+  width: 16px;
+  height: 16px;
+}
+.admk-up {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border-radius: 12px;
+  background: #0f171a;
+  box-shadow: inset 0 0 0 1px #253338;
+}
+.admk-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.admk-prog {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.admk-prog progress {
+  flex: 1;
+  accent-color: var(--adm-acc);
+}
+
+@media (max-width: 860px) {
+  .adm-row:has(.admk-stp) {
+    flex-wrap: wrap;
+  }
+  .admk-seg {
+    flex-direction: column;
+  }
+  .admk-num-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .admk-climits {
+    margin-left: 0;
+  }
+}

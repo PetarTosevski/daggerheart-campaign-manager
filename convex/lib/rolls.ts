@@ -4,7 +4,8 @@
  * `convex/combatActions.ts` reuses the same Duality and damage steps for weapon attacks on the Combat Map.
  *
  * - `duality(ctx, loaded, args, rng, manual)`: a character's Duality roll, saved and logged (one public row), Fear gained,
- *   armed countdowns ticked, class-feature prompts returned. `resolveDuality` is its first half (pay, roll, apply Hope /
+ *   armed countdowns ticked, the roll's aftermath run (spotlight S1, R3 Manual note: ./rollAftermath), class-feature
+ *   prompts returned. Hope and Fear follow the campaign's R3 switch (`hopeFearModeOf`). `resolveDuality` is its first half (pay, roll, apply Hope /
  *   Stress) without saving or logging, for callers that log their own rows (a combat attack).
  * - `damage(ctx, loaded, args, rng, manual)`: a damage roll, saved and logged. `resolveDamage` is its first half.
  * - Validators of the roll arguments and results (`dualityFields`, `damageFields`, ...), shared by both modules.
@@ -59,8 +60,9 @@ import { motherboardState } from "./motherboardState";
 import { tickArmedCountdowns } from "../countdownRolls";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { logAction } from "./actionLog";
-import { assertCanAct, loadCharacter, readSheet, saveSheet } from "./characterSheet";
+import { logAction, newGroupId } from "./actionLog";
+import { assertCanAct, loadCharacter, noteHopeSpent, readSheet, saveSheet } from "./characterSheet";
+import { applyPcActionRoll, fearWithheldBy, hopeFearModeOf, outcomeSucceeds, outcomeWithFear, planPcActionRoll } from "./rollAftermath";
 import { rollDie } from "./dice";
 import { featureScope } from "./featureScope";
 import { campaignFearState, gainFear } from "./fear";
@@ -69,6 +71,7 @@ import { actorSheetAfter, cardActor, cardIdOfEffect, conditionMarkerOf, endCondi
 import { effectEndsOf, effectSource, endAdversaryConditionsOnRoll, endGrantedBenefit, endOnSheet, endSharedGrants } from "./cardRows";
 import { riderStepsText } from "./adversaryFeatures";
 import { partyMembers } from "./adversaryHits";
+import { liveSession, sessionPrepOf } from "./sessions";
 import { pcRollAdversaryUses } from "./adversaryActions";
 import { rollValidator } from "./validators/actionLog";
 import { traitIdValidator } from "./validators/characters";
@@ -107,6 +110,11 @@ export const dualityFields = {
    * `situation` (Patron's Mantle, HF p.14: "advantage on action rolls to intimidate a target").
    */
   situations: v.optional(v.array(v.string())),
+  /**
+   * Journal JF2 (dcm-z9rz.28, user 2026-11-06): the player ticked 'Social roll' in the dice box. The roll is social with it,
+   * or when the live session's playing scene is a Social scene (`socialScene`); stored as the row's `social` flag.
+   */
+  social: v.optional(v.boolean()),
 };
 
 export const poolValidator = v.array(v.object({ count: v.number(), sides: v.number() }));
@@ -136,7 +144,11 @@ export const promptValidator = v.object({
   choices: v.array(v.object({ key: v.string(), label: v.string() })),
 });
 
-export const dualityResult = v.object({ entryId: v.id("actionLog"), roll: rollValidator, fearGained: v.number(), prompts: v.array(promptValidator) });
+/**
+ * `fearGained` is absent for a player while "Players see the GM's Fear" is off (dcm-jh6d.62): 0 would tell them the pool
+ * is full. Optional since then; the GM and co-GMs always get it.
+ */
+export const dualityResult = v.object({ entryId: v.id("actionLog"), roll: rollValidator, fearGained: v.optional(v.number()), prompts: v.array(promptValidator) });
 export const damageResult = v.object({ entryId: v.id("actionLog"), roll: rollValidator });
 
 export type DualityArgs = {
@@ -155,6 +167,7 @@ export type DualityArgs = {
   slayerDice?: number;
   tideTokens?: number;
   situations?: string[];
+  social?: boolean;
 };
 type DamageSource = { kind: "weapon"; slot: "primary" | "secondary" } | { kind: "override"; key: string } | { kind: "ikonis" } | { kind: "dice"; dice: { count: number; sides: number }[] };
 type DamageArgs = { source: DamageSource; critical: boolean; modifier: number; options: string[]; slayerDice?: number };
@@ -721,10 +734,12 @@ export async function resolveDuality(ctx: QueryCtx, loaded: Loaded, args: Dualit
   swap.arm(undefined);
   const roll: RollRecord = withHopeSides({ ...rolled.roll, manual }, hopeDie.sides);
   const extras = [...prepared, ...hopeDie.labels, ...riders.lines];
-  const effects = dualityEffects(args.kind, roll.outcome);
+  // Plan rule-switches RA: R3 Manual gains neither the roll's Hope nor its Fear (`dualityEffects`).
+  const hopeFear = hopeFearModeOf(campaign);
+  const effects = dualityEffects(args.kind, roll.outcome, hopeFear);
   // A roll with Fear places a Know the Tide token in the same saved sheet and row, so undoing the roll takes it back (U4).
   const next = placeTideToken(applyDualityEffects(paid, effects), roll.outcome, args.kind).sheet;
-  return { scope, paid, next, extras, trait, rolled, roll, effects };
+  return { scope, paid, next, extras, trait, rolled, roll, effects, hopeFear };
 }
 
 /**
@@ -768,11 +783,36 @@ export function grantEndsOnRoll<K>(
   return { sheet: next, labels, party: shared };
 }
 
+/**
+ * Whether the Journal's current scene is a Social scene (Journal JF2, dcm-z9rz.28, user 2026-11-06): the campaign's live
+ * session (at most one) has a scene marked Playing (Q7, `playScene`) whose type is `social`. Outside a live session no
+ * scene is current, so a scene left Playing after End never marks a later roll.
+ */
+export async function socialScene(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<boolean> {
+  const session = await liveSession(ctx, campaignId);
+  if (session === null) return false;
+  const prep = await sessionPrepOf(ctx, session._id);
+  return prep?.scenes.some((s) => s.state === "playing" && s.type === "social") ?? false;
+}
+
+/** A roll is social when the player ticked 'Social roll' or the current scene is Social (`socialScene`). */
+export async function rollIsSocial(ctx: QueryCtx, campaignId: Id<"campaigns">, ticked: boolean | undefined): Promise<boolean> {
+  return ticked === true || (await socialScene(ctx, campaignId));
+}
+
+/**
+ * Stamps a social roll's row (`social`, widened). A patch after `logAction` (whose entry type is not this tracer's) in the
+ * same mutation, so the row is never seen without it.
+ */
+export async function markSocial(ctx: MutationCtx, entryId: Id<"actionLog">, social: boolean): Promise<void> {
+  if (social) await ctx.db.patch("actionLog", entryId, { social: true });
+}
+
 /** Rolls (or reads typed-in dice), applies Hope, Stress and Fear, saves and logs. */
 export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded, args: DualityArgs, rng: Rng, manual: boolean) {
   const { campaign, character, sheet } = loaded;
   const resolved = await resolveDuality(ctx, loaded, args, rng, manual);
-  const { scope, paid, trait, rolled } = resolved;
+  const { scope, paid, trait, rolled, hopeFear } = resolved;
   let { roll, effects } = resolved;
   let rolledNext = resolved.next;
   // E1.4b (dcm-m7tm, roll half): the running encounter's adversary uses on this PC's roll (Ill Omen, HF p.95; Backhanded
@@ -784,7 +824,7 @@ export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded:
   });
   if (advUses.bonuses.length > 0) {
     roll = withDieBonuses(roll, advUses.bonuses);
-    effects = dualityEffects(args.kind, roll.outcome);
+    effects = dualityEffects(args.kind, roll.outcome, hopeFear);
     rolledNext = placeTideToken(applyDualityEffects(paid, effects), roll.outcome, args.kind).sheet;
   }
   // Plan lanes, E1: the automatic uses the roll sets off (Courage), with the server's dice, in the same row (undo reverts them).
@@ -806,8 +846,24 @@ export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded:
   const extras = [...resolved.extras, ...advNames, ...autos.names, ...ends.labels, ...grants.labels];
   const { gained: rolledFear } = effects.fear > 0 ? await gainFear(ctx, campaign._id, effects.fear) : { gained: 0 };
   const gained = rolledFear + (autos.gmFearDelta > 0 ? (await gainFear(ctx, campaign._id, autos.gmFearDelta)).gained : 0);
-  const sheetChanged = changed(sheet, next);
+  // dcm-z9rz.23: the roll's costs (Experiences, options, the bearer's riders) count as spent even when it gains Hope, so a
+  // paid roll saves (and logs its `before`) even when its gain left the sheet as it was.
+  const hopePaid = sheet.hope - paid.hope;
+  const sheetChanged = changed(sheet, next) || hopePaid > 0;
+  noteHopeSpent(ctx, character._id, hopePaid);
   if (sheetChanged) await saveSheet(ctx, character._id, next);
+  // Plan rule-switches RA (S1, R3): what the roll sets off. A plain roll has no group; it gets one only when a GM note joins
+  // it (undoing the roll takes the note back), so a Book roll's row stays as it was.
+  const aftermath = await planPcActionRoll(ctx, campaign, {
+    characterId: character._id,
+    name: sheet.name,
+    kind: args.kind,
+    success: outcomeSucceeds(roll.outcome),
+    withFear: outcomeWithFear(roll.outcome),
+    fearWithheld: fearWithheldBy(hopeFear, args.kind, roll.outcome),
+  });
+  const groupId = aftermath.notes.length > 0 ? newGroupId() : undefined;
+  const social = await rollIsSocial(ctx, campaign._id, args.social);
   const entryId = await logAction(ctx, {
     campaignId: campaign._id,
     characterId: character._id,
@@ -816,12 +872,16 @@ export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded:
     visibility: "public",
     summary: dualitySummary(sheet.name, { kind: args.kind, trait, modifier: args.modifier }, roll, extras, loaded.gm),
     roll,
+    ...(groupId !== undefined ? { groupId } : {}),
     ...(sheetChanged ? { before: sheet } : {}),
     ...(gained !== 0 ? { fearDelta: gained } : {}),
-    // `paid` is the sheet after the roll's costs and before its gains (K2: the Slayer store takes back only a gained Hope).
-    ...(args.kind === "action" && WITH_HOPE.includes(roll.outcome) ? { hopeGained: rollGaveHope(paid, roll.outcome, args.kind) } : {}),
+    // `paid` is the sheet after the roll's costs and before its gains (K2: the Slayer store takes back only a gained Hope;
+    // R3 Manual gains none).
+    ...(args.kind === "action" && WITH_HOPE.includes(roll.outcome) ? { hopeGained: effects.hope > 0 && rollGaveHope(paid, roll.outcome, args.kind) } : {}),
     undoable: true,
   });
+  await markSocial(ctx, entryId, social);
+  await applyPcActionRoll(ctx, campaign, aftermath, { groupId, actorId: ctx.user._id });
   // E1.3b (dcm-79v1): the other sheets whose shared grant ended, each a row with its sheet before (undo puts it back).
   for (const p of grants.party) {
     await saveSheet(ctx, p.key.character._id, p.sheet);

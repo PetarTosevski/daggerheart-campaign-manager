@@ -6,9 +6,8 @@ import { useMutation, useQuery } from "convex/react";
 import { Plus, X } from "lucide-react";
 import { useId, useState, type FormEvent, type KeyboardEvent } from "react";
 
-import { brandButton } from "@/components/brand/buttons";
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
-import { cn } from "@/lib/utils";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
@@ -101,9 +100,9 @@ export function SessionLog({ campaignId, sessionId, isGm }: SessionLogProps) {
         <p className="jr-muted jl-note">The log is too long to show whole: the earliest lines are here, later ones are not.</p>
       ) : null}
       {isGm && hiddenCount > 0 ? (
-        <button type="button" className="jl-show" aria-pressed={showHidden} onClick={() => setShowHidden((v) => !v)}>
+        <BrandButton variant="neutral" size="sm" className="mt-2.5" aria-pressed={showHidden} onClick={() => setShowHidden((v) => !v)}>
           {showHidden ? `Hide ${hiddenCount} hidden` : `Show ${hiddenCount} hidden`}
-        </button>
+        </BrandButton>
       ) : null}
       {error ? (
         <p role="alert" className="jl-error">
@@ -208,13 +207,13 @@ function LogRow({
       </div>
       {isGm ? (
         line.hidden ? (
-          <button type="button" className="jl-unhide" onClick={() => onUnhide(line)} aria-label={`Unhide log line: ${line.title}`}>
+          <BrandButton variant="neutral" size="sm" className="jl-unhide" onClick={() => onUnhide(line)} aria-label={`Unhide log line: ${line.title}`}>
             Unhide
-          </button>
+          </BrandButton>
         ) : (
-          <button type="button" className="jl-x" aria-label={xLabel} disabled={pending} onClick={() => onX(line)}>
+          <BrandButton variant={line.source === "gm" ? "danger" : "neutral"} size="sm" icon aria-label={xLabel} disabled={pending} onClick={() => onX(line)}>
             <X aria-hidden="true" />
-          </button>
+          </BrandButton>
         )
       ) : null}
     </li>
@@ -259,10 +258,10 @@ function AddForm({
         value={text}
         onChange={(e) => setText(e.target.value)}
       />
-      <button type="submit" className={cn(brandButton({ variant: "pill", size: "sm" }), "jl-add-btn")}>
+      <BrandButton type="submit" variant="neutral" className="flex-none">
         <Plus aria-hidden="true" />
         Add
-      </button>
+      </BrandButton>
     </form>
   );
 }

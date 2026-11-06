@@ -1,5 +1,8 @@
 import { v } from "convex/values";
 
+import { resolveTableSettings } from "../src/lib/config/campaign-settings";
+import type { Range } from "../src/lib/domain/card-effects/types";
+import { RANGE_ORDER } from "../src/lib/domain/combat-actions/distance";
 import { appError } from "../src/lib/errors/app-error";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -13,31 +16,32 @@ import {
   attackScene,
   awaitingAttackValidator,
   beforeOf,
-  checkTargets,
+  checkAttackTargets,
+  coverApplies,
   equippedWeapon,
   hostOf,
   pendingAttackValidator,
   pickRiders,
   resolveAttack,
   resolvedAttackValidator,
-  riderOptions,
-  riderOptionValidator,
   rollFromStored,
   setupReach,
-  targetHints,
-  targetHintValidator,
-  weaponIn,
   weaponSlotValidator,
+  withoutTargets,
   type AttackRoll,
 } from "./lib/combatActions";
-import { loadCombatMap } from "./lib/combatMaps";
-import { loadScene, viewOf } from "./lib/combatVision";
 import { closeRequest, encounterRunning, groupOffer, loadOpenRequest, openSanction } from "./lib/combatRequests";
 import { afterRollChoiceValidator, MAX_RIDERS_PER_ATTACK, riderPickChoiceValidator, riderValidator, type ForcedAttackPayload } from "./lib/validators/combatRequests";
 import { featureScope } from "./lib/featureScope";
-import { campaignQuery, keyedCampaignMutation } from "./lib/functions";
-import { prepareDuality, rules, type Loaded } from "./lib/rolls";
-import type { AdversaryBefore } from "./lib/validators/actionLog";
+import { assertMayAct } from "./lib/spotlight";
+import { keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
+import { fearFor } from "./lib/fearVisibility";
+import { duality, editable, prepareDuality, rules, type Loaded } from "./lib/rolls";
+import { rollDie } from "./lib/dice";
+import { outcomeSucceeds } from "./lib/rollAftermath";
+import { ruleModesOf } from "./lib/ruleModes";
+import { traitIdValidator } from "./lib/validators/characters";
+import { rollValidator, type AdversaryBefore } from "./lib/validators/actionLog";
 
 /**
  * Weapon attacks on enemy tokens from the Combat Map (plan combat-actions, tracer CA3; docs/tasks/TASK-CA-CA3.md).
@@ -47,12 +51,34 @@ import type { AdversaryBefore } from "./lib/validators/actionLog";
  * - `attack`: one Duality roll against every target's Difficulty, damage on any hit, HP marked on the encounter
  *   instances, one undoable actionLog group (public: hit / miss; GM: damage, severity, HP). A target out of the
  *   weapon's range turns the attack into a GM sanction (Q1); no line of sight refuses it (Q2).
- * - `targets`: the enemy tokens the character sees, with band, range, line of sight and cover only (U1, CF6).
+ * - `targets` (combatActionsReads.ts, dcm-uh6r): the enemy tokens the character sees, with band, range, line of sight and
+ *   cover only (U1, CF6); `riders` there too.
  * - `pickMinions`: the attacker picks the extra Minions their damage defeats (Q6, CB p.201), once.
+ * - Plan rule-switches OP, optional rule "Conflict between PCs" (CB p.168; off by default): `attack` also takes another
+ *   PC's token (against their Evasion; the damage opens their incoming-hit window), and `contest` is the GM's Contest
+ *   (the instigator's action roll against the target's reaction total). docs/tasks/TASK-RULES-OP.md.
  *
  * What a player receives never holds an enemy's HP, Stress, thresholds or Difficulty (U1): the returns validators
  * below have no such field, and the public row's summary names only Hit / Miss / Defeated.
  */
+
+const BAND_LABEL: Record<Range, string> = { melee: "Melee", veryClose: "Very Close", close: "Close", far: "Far", veryFar: "Very Far" };
+
+/**
+ * Config R2 (Q2 a; CB p.103 "Anything beyond a character's Very Far range is Out of Range and usually can't be
+ * targeted"): whether an out-of-range target refuses this action instead of opening a GM sanction. Only with the table
+ * setting `outOfRange: "refuse"` and only for a player: the GM or a co-GM acting for a PC (`gm`, the caller's
+ * character permission is "owner") keeps today's sanction ("ask").
+ */
+export function refusesOutOfRange(campaign: Doc<"campaigns">, gm: boolean): boolean {
+  return !gm && resolveTableSettings(campaign.tableSettings).outOfRange === "refuse";
+}
+
+/** COMBAT_TARGET_OUT_OF_RANGE naming the farthest band a target is at (thrown before anything is paid or logged). */
+export function outOfRangeRefusal(targets: readonly { band: Range }[]) {
+  const farthest = targets.reduce<Range>((far, t) => (RANGE_ORDER.indexOf(t.band) > RANGE_ORDER.indexOf(far) ? t.band : far), targets[0]?.band ?? "veryFar");
+  return appError("COMBAT_TARGET_OUT_OF_RANGE", `Out of range: the target is at ${BAND_LABEL[farthest]} range, beyond this action's reach. The GM refuses out-of-range actions.`);
+}
 
 /** The character the caller edits, in this campaign, with its sheet (NOT_FOUND / FORBIDDEN otherwise). */
 async function attacker(ctx: QueryCtx & { user: Doc<"users">; campaign: Doc<"campaigns"> }, characterId: Id<"characters">): Promise<Loaded> {
@@ -130,32 +156,58 @@ export const attack = keyedCampaignMutation({
     benefit: v.optional(v.string()),
   },
   returns: v.union(resolvedAttackValidator, pendingAttackValidator, awaitingAttackValidator),
+  // dcm-jh6d.62: a player's result loses `fearGained` while the GM's Fear is hidden.
   handler: async (ctx, args) =>
-    ctx.once("combat_attack", args, async () => {
-      const { characterId, mapId, targetTokenIds, slot, riders = [], forcedRequestId, benefit, ...options } = args;
+    fearFor(ctx, ctx.user, ctx.campaign, await ctx.once("combat_attack", args, async () => {
+      const { characterId, mapId, targetTokenIds, slot, forcedRequestId, benefit, ...options } = args;
+      let riders = args.riders ?? [];
       if (riders.length > MAX_RIDERS_PER_ATTACK) throw appError("INVALID", `At most ${MAX_RIDERS_PER_ATTACK} riders.`);
       const loaded = await attacker(ctx, characterId);
       const forced = forcedRequestId === undefined ? null : await forcedRequest(ctx, forcedRequestId, characterId, targetTokenIds);
+      // S2 (plan rule-switches RS2): the PC's own attack waits while the GM holds the spotlight; an attack the GM forced
+      // (Beguiled) is the GM's move and goes on.
+      if (forced === null) await assertMayAct(ctx, ctx.campaign, loaded.character, "action", loaded.sheet.name);
       const scene = await attackScene(ctx, ctx.campaign, loaded.character, mapId);
       const weapon = equippedWeapon(loaded.sheet, slot);
       const roll = rollOf(options);
-      const picked = pickRiders(loaded.sheet, ctx.campaign, hostOf(weapon, slot, roll.trait), riders);
+      const host = hostOf(weapon, slot, roll.trait);
+      let picked = pickRiders(loaded.sheet, ctx.campaign, host, riders);
+      // Config R2 (Q2 a): when the GM refuses out-of-range actions, a rider's extra targets out of its range are dropped
+      // (a rider left with none is dropped, nothing paid) and the attack goes on without them.
+      const refuse = forced === null && refusesOutOfRange(ctx.campaign, loaded.gm);
+      if (refuse) {
+        const dropped = new Set<string>(addedOutOfRange(scene, weapon, picked).map((a) => a.tokenId));
+        if (dropped.size > 0) {
+          riders = withoutTargets(riders, dropped);
+          picked = pickRiders(loaded.sheet, ctx.campaign, host, riders);
+        }
+      }
       // E1.4b (dcm-lbai): a reach picked with the attack widens its own range check.
-      const targets = await checkTargets(ctx, ctx.campaign, scene, weapon, targetTokenIds, roll, setupReach(picked));
+      // Plan rule-switches OP: with "Conflict between PCs" on (CB p.168), another PC's token is a target too (`pcs`).
+      const { adversaries: targets, pcs } = await checkAttackTargets(ctx, ctx.campaign, scene, weapon, targetTokenIds, roll, setupReach(picked));
+      const pcTargets = pcs.length > 0 ? { pcTargets: pcs } : {};
       if (forced !== null) {
-        const result = await resolveAttack(ctx, { loaded, actorId: ctx.user._id, scene, weapon, slot, targets, roll, riders, groupId: forced.payload.groupId, ...(benefit !== undefined ? { benefit } : {}) });
+        const result = await resolveAttack(ctx, { loaded, actorId: ctx.user._id, scene, weapon, slot, targets, ...pcTargets, roll, riders, groupId: forced.payload.groupId, ...(benefit !== undefined ? { benefit } : {}) });
         await closeRequest(ctx, forced.row._id, "resolved", ctx.user._id);
         return result;
       }
       const outOfRange = targets.filter((t) => !t.check.inRange);
+      // Config R2: the attack's own target out of range is refused (nothing rolled, paid or logged).
+      if (refuse && outOfRange.length > 0) throw outOfRangeRefusal(outOfRange.map((t) => t.check));
       // DA2 (combat-actions Q1, user 2026-10-30): a rider's extra target out of its range waits for the GM too.
       const added = addedOutOfRange(scene, weapon, picked);
-      if (outOfRange.length === 0 && added.length === 0) return resolveAttack(ctx, { loaded, actorId: ctx.user._id, scene, weapon, slot, targets, roll, riders, ...(benefit !== undefined ? { benefit } : {}) });
+      // OP: an attack on a PC never waits for the GM's range sanction (its approval re-checks adversary targets only):
+      // anything out of range is refused instead, as with the GM's "refuse" setting.
+      if (pcs.length > 0) {
+        const far = [...outOfRange.map((t) => t.check), ...pcs.flatMap((p) => (p.check && !p.check.inRange ? [p.check] : [])), ...added];
+        if (far.length > 0) throw outOfRangeRefusal(far);
+      }
+      if (outOfRange.length === 0 && added.length === 0) return resolveAttack(ctx, { loaded, actorId: ctx.user._id, scene, weapon, slot, targets, ...pcTargets, roll, riders, ...(benefit !== undefined ? { benefit } : {}) });
 
       // Q1: wait for the GM. Refuse now what the approval would refuse anyway (a character who can't act, unpaid costs,
       // a rider that doesn't ride on this attack).
       assertCanAct(loaded.character, loaded.sheet);
-      rules(() => prepareDuality(loaded.sheet, attackDuality(weapon, roll, targets.some((t) => t.sight.cover)), featureScope(ctx.campaign), null));
+      rules(() => prepareDuality(loaded.sheet, attackDuality(weapon, roll, coverApplies(ctx.campaign, targets)), featureScope(ctx.campaign), null));
       const bands = [...outOfRange.map((t) => ({ tokenId: t.token._id, band: t.check.band })), ...added.filter((a) => !outOfRange.some((t) => t.token._id === a.tokenId))];
       const requestId = await openSanction(ctx, {
         campaignId: ctx.campaign._id,
@@ -172,44 +224,45 @@ export const attack = keyedCampaignMutation({
         },
       });
       return { status: "pending" as const, requestId, outOfRange: bands };
+    }), "fearGained", ctx.permission),
+});
+
+/** One side of a Contest: the character, the trait it rolls and a modifier the GM types (the roll's other options stay off). */
+const contestSide = v.object({ characterId: v.id("characters"), trait: traitIdValidator, modifier: v.number() });
+const contestRoll = v.object({ entryId: v.id("actionLog"), roll: rollValidator });
+
+/**
+ * Plan rule-switches OP: the GM calls a Contest between two PCs (optional rule "Conflict between PCs", CB p.168: "On any
+ * other kind of action roll, the instigator makes an action roll and the target makes a reaction roll. To succeed, the
+ * instigator must beat a Difficulty equal to the total value of the reaction roll."). The server rolls the target's
+ * reaction roll first, then the instigator's action roll with that total as its Difficulty; both are the characters' own
+ * rolls as the dice box makes them (`duality`: Hope, Stress, the GM's Fear, countdown ticks and the spotlight for the
+ * action roll; a reaction roll gains nothing, CB p.99), each its own undoable public row. The GM and co-GMs only (players
+ * FORBIDDEN); MECHANIC_DISABLED while the rule is off; INVALID for one character on both sides; NOT_FOUND for another
+ * campaign's character; a character who can't act (dead, away, unconscious) is refused by the roll.
+ */
+export const contest = keyedGmMutation({
+  rateLimit: "roll",
+  args: { instigator: contestSide, target: contestSide },
+  returns: v.object({ difficulty: v.number(), success: v.boolean(), reaction: contestRoll, action: contestRoll }),
+  handler: async (ctx, { instigator, target }) =>
+    ctx.once("combat_contest", { instigator, target }, async () => {
+      if (!ruleModesOf(ctx.campaign).pcConflict) throw appError("MECHANIC_DISABLED");
+      if (instigator.characterId === target.characterId) throw appError("INVALID", "A Contest needs two characters.");
+      const by = await editable(ctx, ctx.user, instigator.characterId);
+      const against = await editable(ctx, ctx.user, target.characterId);
+      if (by.campaign._id !== ctx.campaign._id || against.campaign._id !== ctx.campaign._id) throw appError("NOT_FOUND");
+      const plain = { experienceIds: [], advantage: 0, disadvantage: 0, help: 0, attack: false, options: [] };
+      const reaction = await duality(ctx, against, { kind: "reaction", trait: target.trait, modifier: target.modifier, ...plain }, rollDie, false);
+      const difficulty = reaction.roll.total;
+      const action = await duality(ctx, by, { kind: "action", trait: instigator.trait, modifier: instigator.modifier, difficulty, ...plain }, rollDie, false);
+      return {
+        difficulty,
+        success: outcomeSucceeds(action.roll.outcome),
+        reaction: { entryId: reaction.entryId, roll: reaction.roll },
+        action: { entryId: action.entryId, roll: action.roll },
+      };
     }),
-});
-
-/**
- * The enemy tokens the character's token sees on the live map that can be attacked, each with only its Defined Range
- * band, whether it is within the weapon's range (`slot`, default primary), line of sight and cover (U1, CF6). Empty
- * when the map is not live or the character has no token on it.
- */
-export const targets = campaignQuery({
-  need: "view",
-  args: { characterId: v.id("characters"), mapId: v.id("combatMaps"), slot: v.optional(weaponSlotValidator) },
-  returns: v.array(targetHintValidator),
-  handler: async (ctx, { characterId, mapId, slot }) => {
-    const { character, sheet } = await attacker(ctx, characterId);
-    const map = await loadCombatMap(ctx, ctx.campaign._id, mapId);
-    if (!map.live) return [];
-    const scene = await loadScene(ctx, ctx.campaign, map);
-    const viewer = viewOf(scene, character);
-    if (viewer === null) return [];
-    return targetHints(ctx, ctx.campaign, { map, scene, viewer, attacker: scene.tokens[viewer.index]! }, weaponIn(sheet, slot ?? "primary"), { sheet, characterId: character._id });
-  },
-});
-
-/**
- * SD5: the riders that ride on the character's attack with the weapon in `slot` (default primary): every rider use of a
- * loadout card and of a held feature whose trigger fits a weapon attack, with its phase, costs, limit, readiness and the
- * choices it asks (numbers, options, situations to confirm, extra targets). The character's own sheet only (U1, CF6).
- */
-export const riders = campaignQuery({
-  need: "view",
-  args: { characterId: v.id("characters"), slot: v.optional(weaponSlotValidator) },
-  returns: v.array(riderOptionValidator),
-  handler: async (ctx, { characterId, slot }) => {
-    const { sheet } = await attacker(ctx, characterId);
-    const weapon = weaponIn(sheet, slot ?? "primary");
-    if (weapon === undefined) return [];
-    return riderOptions(sheet, ctx.campaign, hostOf(weapon, slot ?? "primary", undefined));
-  },
 });
 
 /**
@@ -225,7 +278,7 @@ export const afterRoll = keyedCampaignMutation({
   args: { requestId: v.id("combatRequests"), choice: afterRollChoiceValidator },
   returns: v.union(resolvedAttackValidator, v.object({ status: v.literal("declined") })),
   handler: async (ctx, { requestId, choice }) =>
-    ctx.once("combat_after_roll", { requestId, choice }, async () => {
+    fearFor(ctx, ctx.user, ctx.campaign, await ctx.once("combat_after_roll", { requestId, choice }, async () => {
       const row = await loadOpenRequest(ctx, ctx.campaign._id, requestId);
       if (row.payload.kind !== "afterRoll") throw appError("NOT_FOUND");
       const p = row.payload;
@@ -238,7 +291,8 @@ export const afterRoll = keyedCampaignMutation({
       const answer = choice.kind === "use" ? { ...choice, useId: choice.useId ?? p.options.find((o) => o.featureId === choice.featureId)!.useId } : choice;
       const scene = await attackScene(ctx, ctx.campaign, loaded.character, row.mapId);
       const weapon = equippedWeapon(loaded.sheet, p.action.slot);
-      const targets = await checkTargets(ctx, ctx.campaign, scene, weapon, p.action.targetTokenIds, rollFromStored(p.action.roll));
+      // Plan rule-switches OP: a held attack on PCs ("Conflict between PCs") checks them again too.
+      const { adversaries: targets, pcs } = await checkAttackTargets(ctx, ctx.campaign, scene, weapon, p.action.targetTokenIds, rollFromStored(p.action.roll));
       const result = await resolveAttack(ctx, {
         loaded,
         actorId: row.createdBy,
@@ -246,6 +300,7 @@ export const afterRoll = keyedCampaignMutation({
         weapon,
         slot: p.action.slot,
         targets,
+        ...(pcs.length > 0 ? { pcTargets: pcs } : {}),
         roll: rollFromStored(p.action.roll),
         riders: p.action.riders ?? [],
         held: { dice: p.dice, answer },
@@ -254,7 +309,7 @@ export const afterRoll = keyedCampaignMutation({
       if (result.status !== "resolved") throw appError("INVALID");
       await closeRequest(ctx, row._id, "resolved", ctx.user._id);
       return result;
-    }),
+    }), "fearGained", ctx.permission),
 });
 
 /**
@@ -307,7 +362,7 @@ export const pickMinions = keyedCampaignMutation({
       const entry = await ctx.db.get("actionLog", entryId);
       if (entry === null || entry.campaignId !== ctx.campaign._id || entry.kind !== "combat" || entry.visibility !== "public") throw appError("NOT_FOUND");
       if (entry.groupId === undefined || entry.characterId === undefined) throw appError("NOT_FOUND");
-      const { character, sheet } = await attacker(ctx, entry.characterId);
+      const { character, sheet, gm } = await attacker(ctx, entry.characterId);
       const offer = await groupOffer(ctx, ctx.campaign._id, entry.groupId);
       if (offer === null || offer.payload.kind !== "minionOffer") throw appError("REQUEST_NOT_OPEN");
       if (!(await encounterRunning(ctx, offer))) {
@@ -315,6 +370,8 @@ export const pickMinions = keyedCampaignMutation({
         return { status: "declined" as const, defeated: 0, targets: [] };
       }
       const payload = offer.payload;
+      // Rule switches RC1, D6 variant "GM picks the extra Minions" (not in the books, Q5 a): only the GM or a co-GM picks.
+      if (payload.picker === "gm" && !gm) throw appError("FORBIDDEN", "The GM picks the extra Minions in this campaign.");
       if (instanceIds.length > payload.extra) throw appError("COMBAT_TARGET_INVALID");
       const counts = new Map<Id<"encounterAdversaries">, number>();
       for (const id of instanceIds) counts.set(id, (counts.get(id) ?? 0) + 1);

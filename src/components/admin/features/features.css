@@ -1,0 +1,93 @@
+/*
+ * App admin, Feature switches (config AU4; design reference/designs/config/Admin.dc.html, `.s-flags`, `.flag`,
+ * `.seg2.sm`, `.tst`). Shared card / row classes live in ../admin.css.
+ */
+
+.afs-pad {
+  padding: 8px 0 14px;
+}
+.adm-row-t .afs-changed {
+  margin-top: 2px;
+  color: #7f9599;
+  font-size: 12px;
+  font-style: normal;
+}
+.adm-row-t .afs-note {
+  color: var(--adm-gold);
+}
+
+/* The four-way choice (design `.seg2.sm`): glass neutral buttons with aria-pressed in a well. */
+.afs-seg {
+  display: flex;
+  flex: none;
+  width: 380px;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: #0f171a;
+  box-shadow: inset 0 0 0 1px #253338;
+}
+.afs-seg > * {
+  flex: 1;
+}
+
+/* Testers: overlapping initials (design `.tst`). */
+.afs-tst {
+  display: flex;
+  flex: none;
+}
+.afs-pf {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  margin-left: -8px;
+  place-items: center;
+  border-radius: 999px;
+  background: #22343a;
+  color: var(--adm-text);
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: 0 0 0 2px var(--adm-card);
+}
+.afs-pf:first-child {
+  margin-left: 0;
+}
+
+.afs-err:empty {
+  display: none;
+}
+.afs-err {
+  padding-bottom: 10px;
+  color: #f0d4cf;
+}
+
+/* The picker over the account table. */
+.afs-pick {
+  display: flex;
+  max-height: 50vh;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.afs-pick-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 0;
+  border-top: 1px solid var(--adm-line, #1f2b30);
+}
+.afs-pick-row:first-child {
+  border-top: 0;
+}
+
+@media (max-width: 860px) {
+  .afs-flag {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .afs-seg {
+    width: auto;
+  }
+}

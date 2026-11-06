@@ -22,7 +22,7 @@ import type { CardEffect } from "../../src/lib/domain/card-effects/types";
 import type { FeatureEffect } from "../../src/lib/domain/feature-effects/types";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { allowWorldEmails, buildWorld } from "./authz/world";
-import { errorCode, key } from "./helpers";
+import { errorCode, handingBack, key } from "./helpers";
 
 const injected = vi.hoisted(() => ({ cards: new Map<string, unknown>(), features: new Map<string, unknown>() }));
 
@@ -148,7 +148,8 @@ async function arena() {
   const w = await buildWorld();
   const { t, campaignId } = w;
   const gm = w.as("gm");
-  const player = w.as("player");
+  // S2 (plan rule-switches RS2): the GM hands the spotlight back before each act (`handingBack`).
+  const player = handingBack(w.as("player"), gm, w.campaignId);
   const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
   const now = Date.now();
   const ids = await t.run(async (ctx) => {

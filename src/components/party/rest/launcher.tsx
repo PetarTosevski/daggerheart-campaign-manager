@@ -3,7 +3,7 @@
 import { useQuery } from "convex/react";
 
 import { BrandButton } from "@/components/brand/buttons";
-import { MAX_SHORT_RESTS, MOVE_LABELS, mustLongRest } from "@/lib/domain/rest/moves";
+import { MAX_SHORT_RESTS, MOVE_LABELS, mustLongRest, overShortRestLimit } from "@/lib/domain/rest/moves";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../convex/_generated/api";
@@ -28,10 +28,14 @@ export function Launcher({ campaignId, isGm }: CampaignSlotProps) {
       </p>
     );
   }
-  const { open, shortRestsSinceLong, last } = state;
+  const { open, shortRestsSinceLong, last, rules } = state;
   if (!isGm && open === null) return null;
   const resting = party.filter((c) => c.status === "active");
-  const blocked = mustLongRest("short", shortRestsSinceLong);
+  // T2 (House rules): Book refuses a fourth short rest; Manual warns and lets it start.
+  const blocked = mustLongRest("short", shortRestsSinceLong, rules.shortRestLimit);
+  const overLimit = overShortRestLimit("short", shortRestsSinceLong);
+  // F2 Extended downtime (CB 181, Q7 a): an extra choice on the GM's long rest.
+  const extendedOffered = rules.fearFromRests === "extendedDowntime";
   const error = start.error ?? finish.error ?? interrupt.error ?? undo.error;
 
   return (
@@ -48,21 +52,43 @@ export function Launcher({ campaignId, isGm }: CampaignSlotProps) {
       {open === null ? (
         <>
           <div className="flex flex-wrap gap-2">
+            {/* Two starts side by side: the short rest is the main one; once it is blocked the long rest takes over. */}
             <BrandButton
+              variant={blocked ? "neutral" : "confirm"}
               size="sm"
               disabled={start.pending || blocked}
-              aria-describedby={blocked ? "short-rest-limit" : undefined}
+              aria-describedby={overLimit ? "short-rest-limit" : undefined}
               onClick={() => void start.fire({ campaignId, kind: "short" })}
             >
               Start short rest
             </BrandButton>
-            <BrandButton size="sm" disabled={start.pending} onClick={() => void start.fire({ campaignId, kind: "long" })}>
+            <BrandButton variant={blocked ? "confirm" : "neutral"} size="sm" disabled={start.pending} onClick={() => void start.fire({ campaignId, kind: "long" })}>
               Start long rest
             </BrandButton>
+            {extendedOffered ? (
+              <BrandButton
+                variant="neutral"
+                size="sm"
+                disabled={start.pending}
+                aria-describedby="extended-downtime-hint"
+                onClick={() => void start.fire({ campaignId, kind: "long", extended: true })}
+              >
+                Extended downtime (several days)
+              </BrandButton>
+            ) : null}
           </div>
+          {extendedOffered ? (
+            <p id="extended-downtime-hint" className="m-0 text-[13px] text-[#9fb0ab]">
+              Extended downtime is a long rest across several days: the GM gains 1d6 Fear per PC (CB 181).
+            </p>
+          ) : null}
           {blocked ? (
             <p id="short-rest-limit" className="m-0 text-[14px] text-[#c9d2cf]">
               Three short rests taken: the next rest must be a long rest (CB 105).
+            </p>
+          ) : overLimit ? (
+            <p id="short-rest-limit" role="note" className="m-0 text-[14px] text-[#c9d2cf]" data-testid="short-rest-warning">
+              Three short rests taken: the book says the next rest must be a long rest (CB 105). House rules leave it to you.
             </p>
           ) : null}
           {last !== null ? (
@@ -70,6 +96,7 @@ export function Launcher({ campaignId, isGm }: CampaignSlotProps) {
               <span>
                 Last: {KIND_LABEL[last.kind]} {last.status === "interrupted" ? "(interrupted)" : ""}
                 {last.fearGained !== null ? ` · GM gained ${last.fearGained} Fear` : ""}
+                {last.fearPrompt !== null ? ` · ${last.fearPrompt} (Manual)` : ""}
               </span>
               {last.undoable ? (
                 <BrandButton size="sm" variant="danger" disabled={undo.pending} onClick={() => void undo.fire({ campaignId, restId: last._id })}>
@@ -110,7 +137,7 @@ export function Launcher({ campaignId, isGm }: CampaignSlotProps) {
       ) : (
         <>
           <p className="m-0 text-[15px] text-[#e6ecea]" data-testid="open-rest">
-            {KIND_LABEL[open.kind]} under way{open.gmOverride ? " (GM override)" : ""}. Each player picks two moves on their sheet.
+            {open.extended ? "Extended downtime (long rest)" : KIND_LABEL[open.kind]} under way{open.gmOverride ? " (GM override)" : ""}. Each player picks two moves on their sheet.
           </p>
           <ul aria-label="Downtime choices" className="m-0 flex list-none flex-col gap-1 p-0 text-[14px] text-[#c9d2cf]">
             {resting.map((c) => {
@@ -129,7 +156,7 @@ export function Launcher({ campaignId, isGm }: CampaignSlotProps) {
           </ul>
           {isGm ? (
             <div className="flex flex-wrap gap-2">
-              <BrandButton size="sm" variant="solid" disabled={finish.pending} onClick={() => void finish.fire({ campaignId, restId: open._id })}>
+              <BrandButton size="sm" variant="confirm" disabled={finish.pending} onClick={() => void finish.fire({ campaignId, restId: open._id })}>
                 Finish rest
               </BrandButton>
               <BrandButton size="sm" variant="danger" disabled={interrupt.pending} onClick={() => void interrupt.fire({ campaignId, restId: open._id })}>

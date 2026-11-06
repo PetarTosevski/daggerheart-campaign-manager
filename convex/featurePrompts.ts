@@ -5,20 +5,20 @@ import { pickUse, type RunPlan } from "../src/lib/domain/card-effects/run";
 import { bandOf, rangeCheck, tokenDistance } from "../src/lib/domain/combat-actions/distance";
 import { actorExtras, asCardEffect } from "../src/lib/domain/feature-effects/run";
 import { featureEffect } from "../src/lib/srd/feature-effects/index";
-import { checkMove } from "../src/lib/domain/combat-map/movement";
+import { checkMove, moveVerdict, type WallsMode } from "../src/lib/domain/combat-map/movement";
 import { appError } from "../src/lib/errors/app-error";
 import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { cardRollValidator, keepDice, keptDice, parseChoices, type CardRoll } from "./lib/cardChoices";
 import { needsChoiceValidator } from "./lib/cardRows";
-import { buildRun, Creatures, extraSpecs, replaying, runCard } from "./lib/cardRunner";
-import { assertCanAct, loadCharacter, readSheet } from "./lib/characterSheet";
+import { buildRun, Creatures, replaying, runCard } from "./lib/cardRunner";
+import { assertCanAct, readSheet } from "./lib/characterSheet";
 import { attackScene, type AttackScene } from "./lib/combatActions";
 import { answerCloakDifficulty, movementGrid, uncloakAfterAttack, uncloakAfterMove } from "./lib/combatMovement";
 import type { MovementGrid } from "../src/lib/domain/combat-map/movement";
 import { closeRequest, encounterRunning, loadOpenRequest, openDifficulty, openServerMove } from "./lib/combatRequests";
-import { allyRollLive, isAllyRollRow, liveAllyRolls, liveTargetCount, optionalHope, rollAndStoreCount, rolledFirstUse, rollerUse, type AllyRollRow } from "./lib/featurePrompts";
+import { allyRollLive, editableHere, featureName, isAllyRollRow, liveTargetCount, optionalHope, rollAndStoreCount, rolledFirstUse, rollerUse, tokenName, type AllyRollRow } from "./lib/featurePrompts";
 import {
   featureRefusal,
   featureSlot,
@@ -32,7 +32,9 @@ import {
 } from "./lib/featureRunner";
 import { rollDie } from "./lib/dice";
 import { campaignFearState } from "./lib/fear";
+import { ruleMode } from "./lib/ruleModes";
 import { campaignQuery, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
+import { fearFor } from "./lib/fearVisibility";
 import { atLeast } from "./lib/permissions";
 
 /**
@@ -52,19 +54,13 @@ import { atLeast } from "./lib/permissions";
  *   the GM's Difficulty (dcm-bxp.99.19.61): `answerDifficulty` (plan lanes B2) runs it, as it runs a Cloaked rogue's
  *   Finesse roll that waits for one (dcm-bxp.99.19.62 (1)).
  *
- * - `allyRolls` / `allyRoll` / `cancelAllyRoll` (DA13): a use another PC rolls. CB p.33 Cannonball: "the ally makes an
+ * - `allyRolls` (featurePromptsReads.ts, dcm-uh6r) / `allyRoll` / `cancelAllyRoll` (DA13): a use another PC rolls. CB p.33 Cannonball: "the ally makes an
  *   attack roll using Agility or Strength (their choice) against a target within Close range." User 2026-10-30
  *   (dcm-bxp.99.19.21): the druid's use (`combatFeatures.useFeature`) pays the Stress and opens the prompt; the throwing
  *   ally rolls from their own drawer with their Proficiency, Hope and critical; the GM can cancel.
  *
  * What a player receives never holds an enemy's HP, Stress, thresholds or Difficulty (U1).
  */
-
-async function editableHere(ctx: QueryCtx & { user: Doc<"users">; campaign: Doc<"campaigns"> }, characterId: Id<"characters">) {
-  const { campaign, character } = await loadCharacter(ctx, ctx.user, characterId, "edit", "owner");
-  if (campaign._id !== ctx.campaign._id) throw appError("NOT_FOUND");
-  return { campaign, character, sheet: readSheet(character.sheet) };
-}
 
 /** The limit keys of a feature are `feat:<featureId>[:<useId>][:<target>]` (convex/lib/featureRunner.ts). */
 function limitUsed(sheet: CharacterSheet, featureId: string): boolean {
@@ -134,7 +130,8 @@ export const targetCount = campaignQuery({
         const scene = await attackScene(ctx, campaign, character, args.mapId);
         for (const t of scene.scene.tokens) {
           if (t._id === scene.attacker._id || t.side !== "pc" || t.ref.kind !== "pc") continue;
-          allies.push({ tokenId: t._id, name: await tokenName(ctx, campaign._id, t), inRange: range === "unlimited" || rangeCheck(scene.attacker, t, range).inRange });
+          // Rule switches ODR2: with Defined Ranges off every ally reads as in range (the player judges by eye).
+          allies.push({ tokenId: t._id, name: await tokenName(ctx, campaign._id, t), inRange: range === "unlimited" || rangeCheck(scene.attacker, t, range, ruleMode(campaign, "definedRanges")).inRange });
         }
       } catch {
         // no live map or no token of this character: no allies to list
@@ -159,9 +156,13 @@ type ChargeArgs = { targetTokenId: Id<"combatTokens">; square: { x: number; y: n
 
 const sizeOf = (t: { size: number }) => Math.max(1, Math.min(3, Math.trunc(t.size) || 1));
 
-/** Whether the target can be charged from where the token stands: an enemy at Far or Very Far range (CB p.59). */
-function chargeable(attacker: Doc<"combatTokens">, target: Doc<"combatTokens">): boolean {
+/**
+ * Whether the target can be charged from where the token stands: an enemy at Far or Very Far range (CB p.59). Rule
+ * switches ODR2: with Defined Ranges off any enemy can be charged (the table judges the range by eye).
+ */
+function chargeable(attacker: Doc<"combatTokens">, target: Doc<"combatTokens">, definedRanges = true): boolean {
   if (target.side !== "enemy") return false;
+  if (!definedRanges) return true;
   const band = bandOf(tokenDistance(attacker, target));
   return band === "far" || band === "veryFar";
 }
@@ -169,7 +170,8 @@ function chargeable(attacker: Doc<"combatTokens">, target: Doc<"combatTokens">):
 /**
  * What is wrong with charging to the square, or null: on the map, free of other tokens, in Melee range of the target, and
  * the straight way there not blocked by a wall or a closed door for a player (the GM may pass; creatures and difficult
- * terrain don't stop it, as built in DA12 and confirmed 2026-10-30, dcm-bxp.99.19.55).
+ * terrain don't stop it, as built in DA12 and confirmed 2026-10-30, dcm-bxp.99.19.55). Rule switches ODR2: with Defined
+ * Ranges off the square need not be next to the target (no squares counted; the player places by eye).
  */
 function squareProblem(
   grid: MovementGrid,
@@ -179,14 +181,17 @@ function squareProblem(
   target: Doc<"combatTokens">,
   square: { x: number; y: number },
   gm: boolean,
+  walls: WallsMode = "book",
+  definedRanges = true,
 ): { code: "INVALID" | "MOVE_BLOCKED"; message?: string } | { next: { x: number; y: number; face: number } } {
   const { x, y } = square;
   const next = moveToken(attacker, x, y, map);
   if (!Number.isInteger(x) || !Number.isInteger(y) || next.x !== x || next.y !== y) return { code: "INVALID", message: "That square isn't on the map." };
   const at = { x, y, size: sizeOf(attacker) };
   if (tokens.some((t) => t._id !== attacker._id && overlaps(at, { x: t.x, y: t.y, size: sizeOf(t) }))) return { code: "MOVE_BLOCKED" };
-  if (tokenDistance(at, target) !== 1) return { code: "INVALID", message: "Pick a square in Melee range of the target." };
-  if (checkMove(grid, attacker, next, at.size).blocked && !gm) return { code: "MOVE_BLOCKED" };
+  if (definedRanges && tokenDistance(at, target) !== 1) return { code: "INVALID", message: "Pick a square in Melee range of the target." };
+  // M2: in Manual a Charge may land past a wall too (rule switches RM).
+  if (moveVerdict(checkMove(grid, attacker, next, at.size), gm, walls).refused) return { code: "MOVE_BLOCKED" };
   return { next };
 }
 
@@ -197,8 +202,9 @@ function squareProblem(
 async function chargeSquare(ctx: QueryCtx & { campaign: Doc<"campaigns"> }, attacker: Doc<"combatTokens">, tokens: readonly Doc<"combatTokens">[], map: Doc<"combatMaps">, args: ChargeArgs, gm: boolean) {
   const target = tokens.find((t) => t._id === args.targetTokenId);
   if (target === undefined || target.side !== "enemy") throw appError("COMBAT_TARGET_INVALID");
-  if (!chargeable(attacker, target)) throw appError("INVALID", "Charge starts from Far or Very Far range of the target.");
-  const out = squareProblem(await movementGrid(ctx, ctx.campaign._id, map), map, attacker, tokens, target, args.square, gm);
+  const ranges = ruleMode(ctx.campaign, "definedRanges");
+  if (!chargeable(attacker, target, ranges)) throw appError("INVALID", "Charge starts from Far or Very Far range of the target.");
+  const out = squareProblem(await movementGrid(ctx, ctx.campaign._id, map), map, attacker, tokens, target, args.square, gm, ruleMode(ctx.campaign, "wallsBlock"), ranges);
   if ("code" in out) throw appError(out.code, out.message);
   return { target, next: out.next };
 }
@@ -228,7 +234,8 @@ function sideOf(at: { x: number; y: number; size: number }, target: { x: number;
 const chargeTarget = v.object({
   tokenId: v.id("combatTokens"),
   name: v.string(),
-  band: v.union(v.literal("far"), v.literal("veryFar")),
+  /** Absent with Defined Ranges off (rule switches ODR2). */
+  band: v.optional(v.union(v.literal("far"), v.literal("veryFar"))),
   /** The free squares in Melee range of the target the token may charge to (blocked ways left out for a player). */
   squares: v.array(v.object({ x: v.number(), y: v.number(), label: v.string() })),
 });
@@ -255,20 +262,22 @@ export const chargeOptions = campaignQuery({
     const grid = await movementGrid(ctx, campaign._id, map);
     const gm = atLeast(ctx.permission, "owner");
     const size = sizeOf(attacker);
+    const ranges = ruleMode(campaign, "definedRanges");
     const out: Infer<typeof chargeTarget>[] = [];
     for (const enemy of await new Creatures(ctx, campaign._id, scene, sheet).visibleEnemies()) {
       const target = enemy.token;
-      if (!chargeable(attacker, target)) continue;
+      if (!chargeable(attacker, target, ranges)) continue;
       const ts = sizeOf(target);
       const squares = [];
       for (let y = target.y - size; y <= target.y + ts; y++) {
         for (let x = target.x - size; x <= target.x + ts; x++) {
-          const ok = squareProblem(grid, map, attacker, tokens, target, { x, y }, gm);
+          const ok = squareProblem(grid, map, attacker, tokens, target, { x, y }, gm, ruleMode(campaign, "wallsBlock"));
           if ("next" in ok) squares.push({ x, y, label: sideOf({ x, y, size }, { x: target.x, y: target.y, size: ts }) });
         }
       }
+      // Rule switches ODR2: no band with Defined Ranges off (no range hints).
       const band = bandOf(tokenDistance(attacker, target));
-      out.push({ tokenId: target._id, name: enemy.instance.label, band: band === "veryFar" ? "veryFar" : "far", squares });
+      out.push({ tokenId: target._id, name: enemy.instance.label, ...(ranges ? { band: band === "veryFar" ? ("veryFar" as const) : ("far" as const) } : {}), squares });
     }
     return out;
   },
@@ -306,8 +315,12 @@ async function runCharge(
   const choices = [{ id: "optional:stress", value: args.stress }];
   const req: FeatureUseRequest = { campaign, character, sheet, scene, pick, targetTokenIds: [], choices, roll: args.roll };
   const fear = await campaignFearState(ctx, campaign._id);
-  // dcm-bxp.99.19.55 (2): every enemy in Melee range of the square, whatever the Firbolg's facing or sight.
-  const built = await buildRun(ctx, { campaign, character, sheet, scene: sightless(scene), pick, targetTokenIds: [], choices: parseChoices(choices), roll: args.roll, gmFear: fear.fear, lastRollWithHope: false });
+  // dcm-bxp.99.19.55 (2): every enemy in Melee range of the square, whatever the Firbolg's facing or sight. Rule switches
+  // ODR2: with Defined Ranges off only the picked target is hit (no squares counted) and the GM is asked who else is in
+  // Melee range (`buildRun` adds the note to `ruleNotes` when it skips the automatic pick; here the target is named).
+  const ranges = ruleMode(campaign, "definedRanges");
+  const built = await buildRun(ctx, { campaign, character, sheet, scene: sightless(scene), pick, targetTokenIds: ranges ? [] : [target._id], choices: parseChoices(choices), roll: args.roll, gmFear: fear.fear, lastRollWithHope: false });
+  if (!ranges) built.ruleNotes.push({ ruleId: "definedRanges", summary: "Charge: who else is within Melee range of the landing square?" });
   // "into Melee range with one or more targets": the picked target is one of them.
   if (!built.targets.some((t) => t.tokenId === target._id) || built.outOfRange.length > 0) throw appError("COMBAT_TARGET_INVALID");
   const kept = await keptDice(ctx, featureSlot(req));
@@ -379,8 +392,8 @@ export const charge = keyedCampaignMutation({
     roll: cardRollValidator,
   },
   returns: v.union(chargedValidator, needsChoiceValidator, v.object({ status: v.literal("requested"), requestId: v.id("combatRequests") })),
-  handler: async (ctx, args) =>
-    ctx.once("feature_charge", args, async () => {
+  handler: async (ctx, args) => {
+    const out = await ctx.once("feature_charge", args, async () => {
       const { campaign, character, sheet } = await editableHere(ctx, args.characterId);
       assertCanAct(character, sheet);
       const gm = atLeast(ctx.permission, "owner");
@@ -404,7 +417,10 @@ export const charge = keyedCampaignMutation({
         payload: { schemaVersion: 1, kind: "difficulty", characterId: character._id, ask: { kind: "charge", targetTokenId: args.targetTokenId, square: args.square, stress: args.stress, roll: args.roll } },
       });
       return { status: "requested" as const, requestId };
-    }),
+    });
+    // dcm-jh6d.62: a player's charged use loses its `fearDelta` while the GM's Fear is hidden.
+    return out.status === "charged" ? { ...out, use: await fearFor(ctx, ctx.user, ctx.campaign, out.use, "fearDelta", ctx.permission) } : out;
+  },
 });
 
 /**
@@ -461,142 +477,6 @@ export const answerDifficulty = keyedGmMutation({
 
 // ---------------------------------------------------------------- a use rolled by an ally (Cannonball, CB p.33)
 
-/** The name a player may see for a token: a PC's name, an adversary instance's label (no numbers, U1). */
-async function tokenName(ctx: QueryCtx, campaignId: Id<"campaigns">, token: Doc<"combatTokens">): Promise<string> {
-  if (token.ref.kind === "custom") return token.ref.name;
-  if (token.ref.kind === "companion") return "Companion";
-  if (token.ref.kind === "pc") {
-    const c = await ctx.db.get("characters", token.ref.characterId);
-    return c === null || c.campaignId !== campaignId ? "Unknown" : readSheet(c.sheet).name;
-  }
-  const instance = await ctx.db.get("encounterAdversaries", token.ref.adversaryId);
-  return instance !== null && instance.campaignId === campaignId ? instance.label : "Unknown";
-}
-
-async function characterName(ctx: QueryCtx, campaignId: Id<"campaigns">, id: Id<"characters">): Promise<string> {
-  const c = await ctx.db.get("characters", id);
-  return c === null || c.campaignId !== campaignId ? "Unknown" : readSheet(c.sheet).name;
-}
-
-function featureName(featureId: string): string {
-  return featureEffect(featureId)?.uses[0]?.name ?? featureId;
-}
-
-const enemyChoice = v.object({
-  tokenId: v.id("combatTokens"),
-  name: v.string(),
-  /** Within the throw's range of the ally (Close for Cannonball). */
-  inRange: v.boolean(),
-  /** The other enemies the second target may be (Very Close of this one, for Cannonball's Hope). */
-  near: v.array(v.id("combatTokens")),
-});
-
-const askView = v.object({
-  requestId: v.id("combatRequests"),
-  /** Who is thrown (the druid) and the feature. */
-  characterName: v.string(),
-  featureName: v.string(),
-  /** The druid's Hope now: the second target spends one of it. */
-  hope: v.number(),
-  /** The optional step that adds the second target, or null. */
-  secondLabel: v.union(v.null(), v.string()),
-  enemies: v.array(enemyChoice),
-});
-
-const allyRollsView = v.object({
-  /** Rolls this character is asked to make (their drawer's prompt). */
-  asks: v.array(askView),
-  /** This character's own throws waiting for an ally. */
-  waiting: v.array(v.object({ requestId: v.id("combatRequests"), rollerName: v.string(), featureName: v.string() })),
-  /** The PCs on the map this character can ask (for the druid's throw); empty without a map or a token. */
-  allies: v.array(v.object({ tokenId: v.id("combatTokens"), name: v.string() })),
-  /** GM: every open ally roll of the campaign (the pending list, with Cancel). Empty for a player. */
-  pending: v.array(v.object({ requestId: v.id("combatRequests"), characterName: v.string(), rollerName: v.string(), featureName: v.string(), createdAt: v.number() })),
-});
-
-/** The enemies the roller sees on the map, with the throw's range and which may be the second target (U1: names only). */
-async function enemyChoices(ctx: QueryCtx, campaign: Doc<"campaigns">, roller: Doc<"characters">, row: AllyRollRow): Promise<Infer<typeof enemyChoice>[]> {
-  if (row.mapId === undefined) return [];
-  const use = pickUse(asCardEffect(featureEffect(row.payload.featureId)!), row.payload.useId);
-  if (use?.rolledBy === undefined) return [];
-  let scene;
-  try {
-    scene = await attackScene(ctx, campaign, roller, row.mapId);
-  } catch {
-    return [];
-  }
-  const enemies = await new Creatures(ctx, campaign._id, scene, readSheet(roller.sheet)).visibleEnemies();
-  const second = extraSpecs(rollerUse(use)).picked;
-  const nearRange = second?.areaRange ?? second?.range ?? "veryClose";
-  return enemies.map((e) => ({
-    tokenId: e.tokenId,
-    name: e.instance.label,
-    inRange: rangeCheck(scene.attacker, e.token, use.rolledBy!.targets.range === "weapon" ? "melee" : use.rolledBy!.targets.range).inRange,
-    near: enemies.filter((o) => o.tokenId !== e.tokenId && rangeCheck(e.token, o.token, nearRange === "weapon" ? "melee" : nearRange).inRange).map((o) => o.tokenId),
-  }));
-}
-
-/**
- * DA13: the ally rolls of a character the caller edits (their own; the GM any): the rolls they are asked to make, their
- * own throws waiting for an ally, the PCs on `mapId` they can ask, and for the GM every open one. Names and bands only
- * (U1): no adversary numbers.
- */
-export const allyRolls = campaignQuery({
-  need: "view",
-  args: { characterId: v.id("characters"), mapId: v.optional(v.id("combatMaps")) },
-  returns: allyRollsView,
-  handler: async (ctx, args) => {
-    const { campaign, character } = await editableHere(ctx, args.characterId);
-    const rows = await liveAllyRolls(ctx, campaign._id);
-    const asks = [];
-    const waiting = [];
-    for (const row of rows) {
-      const p = row.payload;
-      if (p.rollerCharacterId === character._id) {
-        const druid = await ctx.db.get("characters", p.characterId);
-        if (druid === null || druid.campaignId !== campaign._id) continue;
-        const use = pickUse(asCardEffect(featureEffect(p.featureId)!), p.useId);
-        const second = use?.steps.find((s) => s.kind === "optional");
-        const druidSheet = readSheet(druid.sheet);
-        asks.push({
-          requestId: row._id,
-          characterName: druidSheet.name,
-          featureName: featureName(p.featureId),
-          hope: druidSheet.hope,
-          secondLabel: second?.kind === "optional" ? second.label : null,
-          enemies: await enemyChoices(ctx, campaign, character, row),
-        });
-      }
-      if (p.characterId === character._id) waiting.push({ requestId: row._id, rollerName: await characterName(ctx, campaign._id, p.rollerCharacterId), featureName: featureName(p.featureId) });
-    }
-    const allies = [];
-    if (args.mapId !== undefined) {
-      try {
-        const scene = await attackScene(ctx, campaign, character, args.mapId);
-        for (const t of scene.scene.tokens) {
-          if (t._id === scene.attacker._id || t.side !== "pc" || t.ref.kind !== "pc") continue;
-          allies.push({ tokenId: t._id, name: await tokenName(ctx, campaign._id, t) });
-        }
-      } catch {
-        // no live map or no token of this character: nobody to ask
-      }
-    }
-    const pending = [];
-    if (atLeast(ctx.permission, "owner")) {
-      for (const row of rows) {
-        pending.push({
-          requestId: row._id,
-          characterName: await characterName(ctx, campaign._id, row.payload.characterId),
-          rollerName: await characterName(ctx, campaign._id, row.payload.rollerCharacterId),
-          featureName: featureName(row.payload.featureId),
-          createdAt: row.createdAt,
-        });
-      }
-    }
-    return { asks, waiting, allies, pending };
-  },
-});
-
 /** The open ally roll with this id, or NOT_FOUND (another kind, another campaign); REQUEST_NOT_OPEN once answered. */
 async function loadAllyRoll(ctx: QueryCtx & { campaign: Doc<"campaigns"> }, requestId: Id<"combatRequests">): Promise<AllyRollRow> {
   const row = await loadOpenRequest(ctx, ctx.campaign._id, requestId);
@@ -634,7 +514,7 @@ export const allyRoll = keyedCampaignMutation({
   },
   returns: v.union(resolvedFeatureValidator, v.object({ status: v.literal("closed") })),
   handler: async (ctx, args) =>
-    ctx.once("feature_ally_roll", args, async () => {
+    fearFor(ctx, ctx.user, ctx.campaign, await ctx.once("feature_ally_roll", args, async () => {
       const row = await loadAllyRoll(ctx, args.requestId);
       const p = row.payload;
       const { campaign, character: ally, sheet: allySheet } = await editableHere(ctx, p.rollerCharacterId);
@@ -655,7 +535,7 @@ export const allyRoll = keyedCampaignMutation({
       const secondId = second?.kind === "optional" ? second.id : null;
       if (args.secondTokenId !== undefined && secondId === null) throw appError("INVALID", "That use has no second target.");
       const hopeCost = args.secondTokenId !== undefined && secondId !== null ? optionalHope(base, secondId) : 0;
-      if (druidSheet.hope < hopeCost) throw appError("FEATURE_COST_UNPAID", `Short of: ${hopeCost} Hope (${druidSheet.name}).`);
+      if (druidSheet.hope < hopeCost) throw appError("FEATURE_COST_UNPAID", `Short of: ${hopeCost} Hope (${druidSheet.name}).`, { resource: "hope", need: hopeCost, have: druidSheet.hope });
 
       const name = featureName(p.featureId);
       const feature = ownedHere(druidSheet, campaign).find((f) => f.featureId === p.featureId) ?? { featureId: p.featureId, source: entry.source, owner: entry.owner, name, text: "", usage: "combat" as const };
@@ -692,7 +572,7 @@ export const allyRoll = keyedCampaignMutation({
       });
       await closeRequest(ctx, row._id, "resolved", ctx.user._id);
       return use_;
-    }),
+    }), "fearDelta", ctx.permission),
 });
 
 /** The second target's half damage reuses the first target's roll (the runner's cached roll): list that roll once. */

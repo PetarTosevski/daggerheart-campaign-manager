@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "convex/react";
 import { X } from "lucide-react";
 import { Component, type ReactNode } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../convex/_generated/api";
@@ -49,17 +50,19 @@ function Notices({ kind, scope, className }: Props) {
       {notices.map((notice) => (
         <p
           key={notice._id}
-          className="m-0 flex items-start gap-2 rounded-[8px] border border-danger-line bg-danger-bg px-2.5 py-1.5 text-[13px] text-danger"
+          className="m-0 flex items-center gap-2 rounded-[8px] border border-danger-line bg-danger-bg px-2.5 py-1.5 text-[13px] text-danger"
         >
           <span className="flex-1">{UPLOAD_REJECTED}</span>
-          <button
-            type="button"
+          <BrandButton
+            variant="neutral"
+            size="sm"
+            icon
             aria-label="Dismiss"
-            className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded border-0 bg-transparent text-current hover:bg-white/10"
+            className="shrink-0"
             onClick={() => void dismiss({ noticeId: notice._id })}
           >
-            <X className="size-3.5" aria-hidden="true" />
-          </button>
+            <X aria-hidden="true" />
+          </BrandButton>
         </p>
       ))}
     </div>

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Component, useEffect, type ReactNode } from "react";
 
+import { BrandButton, brandButton } from "@/components/brand/buttons";
 import { PacksScreen } from "@/components/combat-map/packs";
 
 import { useCampaign } from "../../campaign-shell";
@@ -36,9 +37,9 @@ class SlotBoundary extends Component<{ children: ReactNode; label: string }, { f
         <span>
           {this.props.label} failed to load{this.state.message ? `: ${this.state.message}` : "."}
         </span>
-        <button type="button" className="cm-btn cm-sm" onClick={() => this.setState({ failed: false, message: "" })}>
+        <BrandButton variant="neutral" size="sm" onClick={() => this.setState({ failed: false, message: "" })}>
           Try again
-        </button>
+        </BrandButton>
       </div>
     );
   }
@@ -79,7 +80,7 @@ export default function SpritePacksPage() {
           <h1 className="cm-title">Sprite packs</h1>
         </div>
         <div className="cm-head-tools">
-          <Link className="cm-btn" href={back}>
+          <Link className={brandButton({ variant: "cancel", className: "no-underline" })} href={back}>
             ← Combat Map
           </Link>
         </div>

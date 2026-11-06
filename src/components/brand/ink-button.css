@@ -1,0 +1,73 @@
+/*
+ * Ink-on-parchment buttons (brandButton({ ink: true }), src/components/brand/buttons.tsx). Dark glass looks out of place
+ * on paper (plan glass-buttons Q5 a), so buttons that sit on a parchment surface use this: an ink outline, the main
+ * action filled ink. It is the session recap's look (it was `jrr-btn` in journal/recap/recap.css), moved here so the
+ * recap, the Lorekeeper answer card, the adversary stat blocks and the custom adversary editor share one style (user
+ * decision 2026-11-04, bead dcm-jrju). The ink passes 4.5:1 on every parchment it sits on (#fbf5e6 to #e8d9b8).
+ *
+ * Unlayered like glass-button.css, so a call site's colour, border or padding utilities have no effect; layout
+ * utilities (w-full, self-start, ml-auto) still apply.
+ */
+.inkb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid rgba(107, 83, 40, 0.6);
+  border-radius: 999px;
+  background: transparent;
+  color: #6b5328;
+  font-family: var(--font-plex), ui-sans-serif, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+.inkb svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.inkb:hover:not(:disabled) {
+  background: rgba(138, 109, 59, 0.14);
+}
+.inkb:focus-visible {
+  outline: 2px solid #6b5328;
+  outline-offset: 2px;
+}
+/* the main action (confirm): filled ink */
+.inkb.inkb-main {
+  border-color: #6b5328;
+  background: #6b5328;
+  color: #fbf5e6;
+}
+.inkb.inkb-main:hover:not(:disabled) {
+  background: #56421f;
+}
+/* removes something: the parchment's wine (the stat block's rule colour, as the editor's Remove was before glass) */
+.inkb.inkb-danger {
+  border-color: #8e2b2b;
+  color: #8e2b2b;
+}
+/* icon only (the editor's ↑ / ↓): a circle */
+.inkb.inkb-icon {
+  justify-content: center;
+  min-width: 36px;
+  padding: 0;
+}
+.inkb:disabled,
+.inkb[aria-disabled="true"] {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* touch: 44 px targets on tablets and phones (the app's touch breakpoint) */
+@media (max-width: 1100px), (pointer: coarse) {
+  .inkb {
+    min-height: 44px;
+  }
+  .inkb.inkb-icon {
+    min-width: 44px;
+  }
+}

@@ -28,7 +28,7 @@ export function useHitSpot(tokenId: Id<"combatTokens"> | null, box: RefObject<HT
       if (!el || !region) return;
       const p = region.getBoundingClientRect();
       const h = el.offsetHeight;
-      const token = tokenId === null ? null : document.querySelector(`.hud-map [data-token="${tokenId}"]`);
+      const token = tokenId === null ? null : document.querySelector(`.hud-map .cm-tok[data-token="${tokenId}"]`);
       let x: number;
       let y: number;
       if (token) {

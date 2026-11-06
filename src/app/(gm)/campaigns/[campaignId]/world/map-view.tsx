@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
+import { useId, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
 
 import type { Point, RouteAnalysis } from "@/lib/domain/travel";
-import { hexesCovering, hexesPath, neighbours, type Hex, type HexGrid } from "@/lib/world/hex";
+import { hexBox, hexesCovering, hexesPath, neighbours, scaleGrid, type Hex, type HexGrid } from "@/lib/world/hex";
+import { hexPoints, layoutHexTokens, type HexTokenItem, type HexTokenPlace } from "@/lib/world/hex-tokens";
 import type { HexCrawl, MapToken } from "@/lib/world/map-state";
 import { TERRAIN_OVERLAY_FILLS } from "@/lib/world/terrain-overlay";
 import { TERRAIN_COLOURS, TERRAIN_COLUMNS, TERRAIN_ROWS, terrainPaths, type TerrainCode } from "@/lib/world/terrain";
@@ -43,7 +44,8 @@ export type MapViewProps = {
   scaleBar: { percent: number; label: string };
   onMapClick: (p: Point) => void;
   onStroke: (phase: StrokePhase, p: Point) => void;
-  onSelectToken: (id: number) => void;
+  /** A click, tap or Enter on a marker (not a drag), with the marker's stored position: the board routes it (`pickMarker`). */
+  onPickMarker: (id: number | "party", at: Point) => void;
   onMoveToken: (id: number, p: Point) => void;
   onMoveParty: (p: Point) => void;
   onDropType: (type: string, p: Point) => void;
@@ -166,6 +168,11 @@ export function MapView(props: MapViewProps) {
     return v === "party" ? "party" : Number(v);
   };
   const canDrag = (id: number | "party") => editable && (id !== "party" || props.partyDraggable);
+  /** A marker was clicked (not dragged): report it with its stored position, so the hex under it can be selected. */
+  const pick = (id: number | "party") => {
+    const at = id === "party" ? props.party : props.tokens.find((t) => t.id === id);
+    if (at) props.onPickMarker(id, { x: at.x, y: at.y });
+  };
 
   function onItemPointerDown(e: PointerEvent<HTMLButtonElement>) {
     if (e.button !== 0) return;
@@ -195,7 +202,7 @@ export function MapView(props: MapViewProps) {
     drag.current = null;
     if (!d || d.id !== dragId(e.currentTarget)) return;
     if (!d.moved) {
-      if (d.id !== "party") props.onSelectToken(d.id);
+      pick(d.id);
       return;
     }
     const p = toPct(e.clientX, e.clientY);
@@ -236,14 +243,31 @@ export function MapView(props: MapViewProps) {
       selected: props.selectedHex ? hexesPath([props.selectedHex], grid) : "",
       poi: hexesPath(
         crawl.hexes.filter((h) => h.poi),
-        { ...grid, size: grid.size * 0.28 },
+        scaleGrid(grid, 0.28),
       ),
       hiddenPoi: hexesPath(
         crawl.hexes.filter((h) => h.poi?.hidden),
-        { ...grid, size: grid.size * 0.28 },
+        scaleGrid(grid, 0.28),
       ),
     };
   }, [props.crawl, props.showGrid, props.selectedHex, image.width, image.height]);
+
+  // Hex grid maps: every marker (the party first, so it keeps the centre) is a hex on the hex holding it.
+  const hexGrid = props.crawl?.grid ?? null;
+  const hexPlaces = useMemo(() => {
+    if (!hexGrid) return null;
+    const items: HexTokenItem[] = [{ key: "party", x: props.party.x, y: props.party.y }, ...props.tokens.map((t) => ({ key: String(t.id), x: t.x, y: t.y }))];
+    return layoutHexTokens(items, hexGrid, { width: image.width, height: image.height });
+  }, [hexGrid, props.party.x, props.party.y, props.tokens, image.width, image.height]);
+  /** A dragged marker follows the pointer as a whole hex. */
+  const dragPlace = (p: Point): HexTokenPlace | null => {
+    if (!hexGrid) return null;
+    const box = hexBox(hexGrid);
+    return { x: p.x, y: p.y, width: (box.width / image.width) * 100, height: (box.height / image.height) * 100, hex: { q: 0, r: 0 }, slot: 0, shared: false, stacked: 0 };
+  };
+  const placeOf = (key: string, id: number | "party"): HexTokenPlace | null => (dragPos?.id === id ? dragPlace(dragPos.p) : (hexPlaces?.get(key) ?? null));
+
+  const partyPlace = placeOf("party", "party");
 
   const party = dragPos?.id === "party" ? { ...props.party, ...dragPos.p } : props.party;
   const trail = [...props.party.trail, { x: party.x, y: party.y }];
@@ -373,27 +397,33 @@ export function MapView(props: MapViewProps) {
               const dim = t.hidden && editable;
               const pyreLit = props.pyres?.get(t.id);
               const pyreLabel = pyreLit === undefined ? "" : pyreLit ? " Sacred Pyre, burning." : " Sacred Pyre, extinguished.";
+              const place = placeOf(String(t.id), t.id);
               return (
                 <button
                   key={t.id}
                   type="button"
-                  className="tok"
+                  className={place ? `tok tok-hex${place.shared ? " tok-shared" : ""}` : "tok"}
                   data-tok-id={t.id}
-                  aria-label={`${t.name || type.label}, ${type.label}${t.hidden ? " (hidden from players)" : ""}.${pyreLabel}${editable ? " Drag or use the arrow keys to move, click to edit." : ""}`}
+                  aria-label={`${t.name || type.label}, ${type.label}${t.hidden ? " (hidden from players)" : ""}.${pyreLabel}${editable ? (place ? " Drag or use the arrow keys to move, click to select its hex and edit it." : " Drag or use the arrow keys to move, click to edit.") : ""}`}
                   aria-pressed={editable ? on : undefined}
-                  style={{ left: `${pos.x}%`, top: `${pos.y}%`, zIndex: on ? 5 : undefined }}
+                  style={place ? hexStyle(place, on ? 5 : undefined) : { left: `${pos.x}%`, top: `${pos.y}%`, zIndex: on ? 5 : undefined }}
                   onKeyDown={(e) => nudge(e, t, (p) => props.onMoveToken(t.id, p))}
                   onClick={(e) => {
                     // Keyboard activation (pointer taps select on pointer up).
-                    if (e.detail === 0) props.onSelectToken(t.id);
+                    if (e.detail === 0) pick(t.id);
                   }}
                   onDoubleClick={() => {
-                    props.onSelectToken(t.id);
+                    pick(t.id);
                     window.setTimeout(() => document.querySelector<HTMLInputElement>("[data-name-field]")?.select(), 40);
                   }}
                   data-drag={t.id}
                   {...itemHandlers}
                 >
+                  {place && hexGrid ? (
+                    <HexFace place={place} image={image} orientation={hexGrid.orientation} fill={type.colour} dashed={dim} dim={dim} selected={on}>
+                      <path d={type.path} fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                    </HexFace>
+                  ) : (
                   <span
                     className="tok-ic"
                     style={{
@@ -407,6 +437,7 @@ export function MapView(props: MapViewProps) {
                       <path d={type.path} />
                     </svg>
                   </span>
+                  )}
                   {pyreLit === undefined ? null : (
                     <span className={pyreLit ? "tok-pyre lit" : "tok-pyre"} data-testid={`pyre-badge-${t.id}`} aria-hidden="true">
                       {pyreLit ? "🔥" : "○"}
@@ -423,18 +454,29 @@ export function MapView(props: MapViewProps) {
         {props.showTokens ? (
           <button
             type="button"
-            className="tok"
-            aria-label={editable && props.partyDraggable ? "Party token. Drag or use the arrow keys to move the party." : "Party token"}
-            style={{ left: `${party.x}%`, top: `${party.y}%`, zIndex: 6 }}
+            className={partyPlace ? `tok tok-hex${partyPlace.shared ? " tok-shared" : ""}` : "tok"}
+            data-party-token="1"
+            aria-label={editable && props.partyDraggable ? "Party token. Drag or use the arrow keys to move the party." : editable && partyPlace ? "Party token. Click to select the party's hex." : "Party token"}
+            style={partyPlace ? hexStyle(partyPlace, 6) : { left: `${party.x}%`, top: `${party.y}%`, zIndex: 6 }}
             onKeyDown={(e) => props.partyDraggable && nudge(e, party, props.onMoveParty)}
+            onClick={(e) => {
+              // Keyboard activation (pointer taps pick on pointer up).
+              if (e.detail === 0) pick("party");
+            }}
             data-drag="party"
             {...itemHandlers}
           >
-            <span className="tok-ic party-ic">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2a1a04" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M5 21V3 M5 4h11l-2.5 3.5L16 11H5" />
-              </svg>
-            </span>
+            {partyPlace && hexGrid ? (
+              <HexFace place={partyPlace} image={image} orientation={hexGrid.orientation} fill="party">
+                <path d="M5 21V3 M5 4h11l-2.5 3.5L16 11H5" fill="none" stroke="#2a1a04" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+              </HexFace>
+            ) : (
+              <span className="tok-ic party-ic">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2a1a04" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M5 21V3 M5 4h11l-2.5 3.5L16 11H5" />
+                </svg>
+              </span>
+            )}
             <span className="tok-lbl" style={{ background: "#2a1a04", color: "#f3cf86" }}>
               The Party
             </span>
@@ -442,6 +484,78 @@ export function MapView(props: MapViewProps) {
         ) : null}
       </div>
     </div>
+  );
+}
+
+/** A hex marker's box: centred on its place, sized in percent of the map so it tracks the zoom. */
+function hexStyle(place: HexTokenPlace, zIndex: number | undefined): CSSProperties {
+  return { left: `${place.x}%`, top: `${place.y}%`, width: `${place.width}%`, height: `${place.height}%`, zIndex };
+}
+
+/**
+ * A marker drawn as a hex of the map's grid: the type's colour (or the party's
+ * gold) clipped to the hex, its icon inside, a hex border instead of a circle
+ * and a hex focus ring (`.tok-hex:focus-visible .tok-focus`).
+ */
+function HexFace({
+  place,
+  image,
+  orientation,
+  fill,
+  dashed = false,
+  dim = false,
+  selected = false,
+  children,
+}: {
+  place: HexTokenPlace;
+  image: { width: number; height: number };
+  orientation: HexGrid["orientation"];
+  /** A colour, or "party" for the party's gold. */
+  fill: string;
+  dashed?: boolean;
+  dim?: boolean;
+  selected?: boolean;
+  /** The icon, in a 24 × 24 box. */
+  children: ReactNode;
+}) {
+  const uid = useId().replace(/:/g, "");
+  // The box in its true proportions (image pixels scaled to 100 wide), so the icon is not stretched.
+  const w = 100;
+  const h = (100 * place.height * image.height) / (place.width * image.width);
+  const pts = hexPoints(orientation, w, h);
+  // A whole hex keeps its name tag inside, along the bottom: the icon sits above it.
+  const icon = Math.min(w, h) * (place.shared ? 0.6 : 0.46);
+  const iconY = place.shared ? (h - icon) / 2 : h * 0.4 - icon / 2;
+  return (
+    <>
+      <svg className="tok-face" viewBox={`0 0 ${w} ${h.toFixed(3)}`} preserveAspectRatio="none" aria-hidden="true" style={dim ? { opacity: 0.5 } : undefined}>
+        <defs>
+          <clipPath id={`hc${uid}`}>
+            <polygon points={pts} />
+          </clipPath>
+          {fill === "party" ? (
+            <radialGradient id={`hg${uid}`} cx="40%" cy="35%" r="70%">
+              <stop offset="0" stopColor="#f3cf86" />
+              <stop offset="1" stopColor="#b07a22" />
+            </radialGradient>
+          ) : null}
+        </defs>
+        <g clipPath={`url(#hc${uid})`}>
+          <polygon className="tok-shape" points={pts} fill={fill === "party" ? `url(#hg${uid})` : fill} />
+          <svg x={(w - icon) / 2} y={iconY} width={icon} height={icon} viewBox="0 0 24 24">
+            {children}
+          </svg>
+        </g>
+        <polygon points={pts} fill="none" stroke="rgba(255, 243, 214, 0.9)" strokeWidth={1.5} strokeDasharray={dashed ? "4 3" : undefined} vectorEffect="non-scaling-stroke" />
+        {selected ? <polygon points={pts} fill="none" stroke="#e3b45a" strokeWidth={4} vectorEffect="non-scaling-stroke" /> : null}
+        <polygon className="tok-focus" points={pts} fill="none" stroke="#e3b45a" strokeWidth={3} vectorEffect="non-scaling-stroke" />
+      </svg>
+      {place.stacked > 0 ? (
+        <span className="tok-more" aria-hidden="true">
+          +{place.stacked}
+        </span>
+      ) : null}
+    </>
   );
 }
 

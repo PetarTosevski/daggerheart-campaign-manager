@@ -2,6 +2,7 @@ import { appError } from "../../src/lib/errors/app-error";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { normalizeEmail } from "./allowlist";
+import { isAppOwner } from "./appOwner";
 import { canReadPage } from "../../src/lib/domain/notes/visibility";
 import { departed } from "./journalState";
 
@@ -9,12 +10,38 @@ import { departed } from "./journalState";
  * The single authorization model (CF2). `permissionFor` decides every access:
  * the campaign wrappers in `lib/functions.ts` call it through `campaignAccess`,
  * and the entry- or character-scoped functions call it directly.
+ *
+ * ## The app owner's read-only view (config AD13, Q27 b, N1 changed 2026-11-04)
+ *
+ * The app owner may read any campaign without being a member: everything the GM sees, players' private notes and
+ * private Lorekeeper conversations included; nothing can be changed. One branch decides it, in `permissionFor`: only
+ * with the option `{ ownerView: true }`, only in a query (in a mutation the option throws OWNER_VIEW_READ_ONLY), only
+ * when the caller has no role (creator, member row, invite) and no grant, and only when `isAppOwner` says so, it
+ * answers `owner` (never `creator`) and `campaignAccess` reports `ownerView: true`.
+ *
+ * Only the campaign query wrappers (`campaignQuery`, `gmQuery`) and `campaigns.get` pass the option. A wrapper that
+ * granted the view marks its ctx (`ctx.ownerView: true` beside `ctx.user` and `ctx.campaign`), and the checks the same
+ * query makes afterwards honour the mark for that user and campaign alone (`ownerViewing`): `permissionFor` on the
+ * campaign's characters, entries and maps answers `owner`, `campaignRole` answers `coGm` (the GM's view without the
+ * creator's identity), and every journal page of the campaign is `view`, private and torn-out ones too. Mutation and
+ * action wrappers never pass the option nor mark a ctx, so for every write the owner stays an outsider (NOT_FOUND),
+ * as the authz matrix pins.
  */
 
 export type Permission = Doc<"grants">["permission"];
 
-/** A user's role in a campaign: its creator is the GM; members and invitees are players. */
-export type Role = "gm" | "player";
+/**
+ * A user's role in a campaign: its creator is the GM; a member row with `role: "coGm"` is a co-GM (config G1); other
+ * members and every invitee (a co-GM invite included, until it is accepted) are players.
+ */
+export type Role = "gm" | "coGm" | "player";
+
+/**
+ * A campaign rank: the stored permissions plus `creator`, above `owner`, which only the campaign's creator
+ * (`campaign.ownerId`) holds (config G1, Q7 a). Never stored in `grants`; only `permissionFor(..., "creator")` and
+ * `campaignAccess(..., "creator")` return it, and only for a campaign resource.
+ */
+export type CampaignPermission = Permission | "creator";
 
 /** Something a permission applies to, with the campaign it lives in. */
 export type Resource =
@@ -32,10 +59,10 @@ export type Resource =
 /** Resources that grants can name (journal pages cannot: their visibility is the rule, analysis 2). */
 type GrantableResource = Exclude<Resource, { type: "journalPage" }>;
 
-const RANK: Record<Permission, number> = { view: 1, edit: 2, owner: 3 };
+const RANK: Record<CampaignPermission, number> = { view: 1, edit: 2, owner: 3, creator: 4 };
 
-/** Whether `permission` includes `need` (owner ⊃ edit ⊃ view). */
-export function atLeast(permission: Permission | null, need: Permission): boolean {
+/** Whether `permission` includes `need` (creator ⊃ owner ⊃ edit ⊃ view). */
+export function atLeast(permission: CampaignPermission | null, need: CampaignPermission): boolean {
   return permission !== null && RANK[permission] >= RANK[need];
 }
 
@@ -54,6 +81,11 @@ export function inviteEmail(user: Doc<"users">): string | null {
   return user.email && user.emailVerificationTime !== undefined ? normalizeEmail(user.email) : null;
 }
 
+/** A member row's role: a co-GM when its `role` says so, else a player. */
+function memberRole(member: Doc<"campaignMembers">): Role {
+  return member.role === "coGm" ? "coGm" : "player";
+}
+
 /**
  * The role half of `permissionFor`: no read for the GM, then at most two point
  * reads (membership, then invite). Call `permissionFor`, which also counts
@@ -61,12 +93,20 @@ export function inviteEmail(user: Doc<"users">): string | null {
  * onto the wrappers.
  */
 export async function campaignRole(ctx: QueryCtx, user: Doc<"users">, campaign: Doc<"campaigns">): Promise<Role | null> {
+  const role = await ownRole(ctx, user, campaign);
+  // AD13: the owner's read-only view reads as a co-GM (the GM's view, never the creator's identity).
+  return role === null && ownerViewing(ctx, user, campaign) ? "coGm" : role;
+}
+
+/** The caller's own role (creator, member row or invite), never the owner's view: `campaignRole` without AD13. */
+async function ownRole(ctx: QueryCtx, user: Doc<"users">, campaign: Doc<"campaigns">): Promise<Role | null> {
   if (campaign.ownerId === user._id) return "gm";
   const member = await ctx.db
     .query("campaignMembers")
     .withIndex("by_campaign_user", (q) => q.eq("campaignId", campaign._id).eq("userId", user._id))
     .unique();
-  if (member !== null) return "player";
+  if (member !== null) return memberRole(member);
+  // An invite, a co-GM one included, is a player until it is accepted (Q8 b): no GM rights before they join.
   const email = inviteEmail(user);
   if (email !== null) {
     const invite = await ctx.db
@@ -88,7 +128,7 @@ export async function campaignRoleOf(ctx: QueryCtx, userId: Id<"users">, campaig
     .query("campaignMembers")
     .withIndex("by_campaign_user", (q) => q.eq("campaignId", campaign._id).eq("userId", userId))
     .unique();
-  if (member !== null) return "player";
+  if (member !== null) return memberRole(member);
   const user = await ctx.db.get("users", userId);
   const email = user === null ? null : inviteEmail(user);
   if (email === null) return null;
@@ -99,12 +139,51 @@ export async function campaignRoleOf(ctx: QueryCtx, userId: Id<"users">, campaig
   return invite === null ? null : "player";
 }
 
+// ---------------------------------------------------------------- the owner's read-only view (AD13)
+
+/** `permissionFor` / `campaignAccess` options. `ownerView`: the app owner's read-only view may answer (queries only). */
+export type PermissionOptions = { ownerView?: boolean };
+
+/** What a campaign query wrapper puts on its ctx; `ownerView` is true only when it granted the owner's view. */
+export type OwnerViewMark = { ownerView?: boolean; user?: Doc<"users">; campaign?: Doc<"campaigns"> };
+
+/** A mutation's ctx has a scheduler, a query's has none: the owner's view never applies to a write. */
+function isMutationCtx(ctx: QueryCtx): boolean {
+  return "scheduler" in ctx;
+}
+
 /**
- * Today's rules: the campaign's GM owns everything in it; a player (member or
- * invitee) views it and edits their own character.
+ * Whether this query runs as the app owner's read-only view of `campaign` for `user`: its campaign query wrapper
+ * granted the view (`ctx.ownerView`, after `isAppOwner` and the no-role, no-grant check) for this very user and
+ * campaign. Never true in a mutation. The later checks of the same query (pages, private Lorekeeper conversations,
+ * characters) read with it as the module doc says.
+ */
+export function ownerViewing(ctx: QueryCtx, user: Doc<"users">, campaign: Doc<"campaigns">): boolean {
+  if (isMutationCtx(ctx)) return false;
+  const mark = ctx as QueryCtx & OwnerViewMark;
+  return mark.ownerView === true && mark.user?._id === user._id && mark.campaign?._id === campaign._id;
+}
+
+/**
+ * The owner's view branch of `permissionFor`, reached only when the caller has no role and no grant: the wrapper's
+ * mark, or the explicit option and `isAppOwner`. The option in a mutation throws OWNER_VIEW_READ_ONLY (defence in
+ * depth: no mutation wrapper passes it).
+ */
+async function ownerViewApplies(ctx: QueryCtx, user: Doc<"users">, campaign: Doc<"campaigns">, options: PermissionOptions | undefined): Promise<boolean> {
+  if (ownerViewing(ctx, user, campaign)) return true;
+  if (options?.ownerView !== true) return false;
+  if (!(await isAppOwner(ctx, user))) return false;
+  if (isMutationCtx(ctx)) throw appError("OWNER_VIEW_READ_ONLY");
+  return true;
+}
+
+/**
+ * Today's rules: the campaign's GM and its co-GMs own everything in it (a co-GM passes every GM check, config G1); a
+ * player (member or invitee) views it and edits their own character. The creator's extra rank is `creator`
+ * (`permissionFor` with `need: "creator"`).
  */
 export function rolePermission(role: Role | null, resource: GrantableResource, userId: Id<"users">): Permission | null {
-  if (role === "gm") return "owner";
+  if (role === "gm" || role === "coGm") return "owner";
   if (role === "player") return resource.type === "character" && resource.character.ownerId === userId ? "edit" : "view";
   return null;
 }
@@ -219,9 +298,65 @@ async function actsFor(ctx: QueryCtx, user: Doc<"users">, principalId: string): 
  * joined (read once per call, at most PRINCIPALS_TAKE of each), so a player's
  * check does not grow with the campaign's grants (PF10).
  */
-export async function permissionFor(ctx: QueryCtx, user: Doc<"users">, resource: Resource, need: Permission = "owner"): Promise<Permission | null> {
-  if (resource.type === "journalPage") return journalPagePermission(ctx, user, resource);
-  let best = rolePermission(await campaignRole(ctx, user, resource.campaign), resource, user._id);
+export async function permissionFor(
+  ctx: QueryCtx,
+  user: Doc<"users">,
+  resource: Resource,
+  need?: Permission,
+  options?: PermissionOptions,
+): Promise<Permission | null>;
+/**
+ * With `need: "creator"` (campaign resources only): `creator` for the campaign's creator, otherwise exactly what
+ * `need: "owner"` returns (a co-GM is `owner`, never `creator`; nor is the owner's read-only view, AD13).
+ */
+export async function permissionFor(
+  ctx: QueryCtx,
+  user: Doc<"users">,
+  resource: Resource,
+  need: CampaignPermission,
+  options?: PermissionOptions,
+): Promise<CampaignPermission | null>;
+export async function permissionFor(
+  ctx: QueryCtx,
+  user: Doc<"users">,
+  resource: Resource,
+  need: CampaignPermission = "owner",
+  options?: PermissionOptions,
+): Promise<CampaignPermission | null> {
+  return (await decide(ctx, user, resource, need, options)).permission;
+}
+
+/** `permissionFor`, also telling whether the answer is the owner's read-only view (AD13). */
+async function decide(
+  ctx: QueryCtx,
+  user: Doc<"users">,
+  resource: Resource,
+  need: CampaignPermission,
+  options: PermissionOptions | undefined,
+): Promise<{ permission: CampaignPermission | null; ownerView: boolean }> {
+  if (need === "creator") {
+    if (resource.type !== "campaign") throw new Error("The creator rank applies to a campaign only.");
+    const decided = await decide(ctx, user, resource, "owner", options);
+    // The one place that names the creator (Q7 a): `campaign.ownerId` only, never a grant, a member row or the owner's view.
+    const creator = decided.permission === "owner" && !decided.ownerView && resource.campaign.ownerId === user._id;
+    return creator ? { permission: "creator", ownerView: false } : decided;
+  }
+  if (resource.type === "journalPage") return { permission: await journalPagePermission(ctx, user, resource), ownerView: false };
+  const role = await ownRole(ctx, user, resource.campaign);
+  const best = await grantedPermission(ctx, user, resource, rolePermission(role, resource, user._id), need);
+  // AD13: the owner's read-only view, only for a caller with no role and no grant at all.
+  if (best === null && role === null && (await ownerViewApplies(ctx, user, resource.campaign, options))) return { permission: "owner", ownerView: true };
+  return { permission: best, ownerView: false };
+}
+
+/** The strongest of `best` (the role's permission) and every grant on the resource or its campaign, exact up to `need`. */
+async function grantedPermission(
+  ctx: QueryCtx,
+  user: Doc<"users">,
+  resource: GrantableResource,
+  best: Permission | null,
+  need: Permission,
+): Promise<Permission | null> {
   if (atLeast(best, need)) return best;
   const targets: { type: GrantableResource["type"]; id: string }[] = [{ type: resource.type, id: resourceId(resource) }];
   if (resource.type !== "campaign") targets.push({ type: "campaign", id: resource.campaign._id });
@@ -349,13 +484,16 @@ async function journalPagePermission(
   { campaign, journal, page, cache }: Extract<Resource, { type: "journalPage" }>,
 ): Promise<Permission | null> {
   if (page.campaignId !== campaign._id || journal.campaignId !== campaign._id || page.journalId !== journal._id) return null;
+  // AD13, N1 changed: the owner's read-only view reads every page, private and torn-out ones too (never `owner`).
+  if (ownerViewing(ctx, user, campaign)) return "view";
   const role = await cachedRole(ctx, user, campaign, cache);
   if (role === null) return null;
   const isOwner = page.ownerId === user._id;
   if (page.binnedAt !== undefined) {
     if (isOwner) return "owner";
     // Q11, N1 actions.canRestore: the GM who tore it out, while they could still read it if it were not torn out.
-    if (role !== "gm" || page.binnedBy !== user._id) return null;
+    // A co-GM tears out a departed page like the GM (config G2), so they restore it too. `role` is never null here.
+    if (role === "player" || page.binnedBy !== user._id) return null;
   } else if (isOwner) return "owner";
   return (await readsJournalPage(ctx, user, role, campaign, journal, page, cache)) ? "view" : null;
 }
@@ -378,7 +516,9 @@ async function readsJournalPage(
   const ownerIsGm = journal.userId === campaign.ownerId;
   const isDeparted = !ownerIsGm && (await cachedDeparted(ctx, campaign, journal, cache));
   const isRecipient = !isDeparted && page.visibility === "chosen" && (await ticks(ctx, user, campaign, page, cache));
-  return canReadPage({ visibility: page.visibility, ownerIsGm, departed: isDeparted, viewer: role, isRecipient });
+  // Q6 a: a co-GM reads Notes as the GM does (GM-only pages and every shared page).
+  const viewer = role === "player" ? "player" : "gm";
+  return canReadPage({ visibility: page.visibility, ownerIsGm, departed: isDeparted, viewer, isRecipient });
 }
 
 /**
@@ -390,12 +530,29 @@ export async function campaignAccess(
   ctx: QueryCtx,
   user: Doc<"users">,
   campaignId: Id<"campaigns">,
-  enough: Permission = "view",
-): Promise<{ campaign: Doc<"campaigns">; permission: Permission } | null> {
+  enough?: Permission,
+  options?: PermissionOptions,
+): Promise<{ campaign: Doc<"campaigns">; permission: Permission; ownerView: boolean } | null>;
+/** With `enough: "creator"`, the permission is `creator` for the campaign's creator (see `permissionFor`). */
+export async function campaignAccess(
+  ctx: QueryCtx,
+  user: Doc<"users">,
+  campaignId: Id<"campaigns">,
+  enough: CampaignPermission,
+  options?: PermissionOptions,
+): Promise<{ campaign: Doc<"campaigns">; permission: CampaignPermission; ownerView: boolean } | null>;
+/** `ownerView` is true when the answer is the app owner's read-only view (AD13; only with `options.ownerView`). */
+export async function campaignAccess(
+  ctx: QueryCtx,
+  user: Doc<"users">,
+  campaignId: Id<"campaigns">,
+  enough: CampaignPermission = "view",
+  options?: PermissionOptions,
+): Promise<{ campaign: Doc<"campaigns">; permission: CampaignPermission; ownerView: boolean } | null> {
   const campaign = await ctx.db.get("campaigns", campaignId);
   if (campaign === null || campaign.deletedAt !== undefined) return null;
-  const permission = await permissionFor(ctx, user, { type: "campaign", campaign }, enough);
-  return permission === null ? null : { campaign, permission };
+  const { permission, ownerView } = await decide(ctx, user, { type: "campaign", campaign }, enough, options);
+  return permission === null ? null : { campaign, permission, ownerView };
 }
 
 /**
@@ -408,6 +565,16 @@ export async function requirePermission(ctx: QueryCtx, user: Doc<"users">, resou
   if (permission === null) throw appError("NOT_FOUND");
   if (!atLeast(permission, need)) throw appError("FORBIDDEN");
   return permission;
+}
+
+/**
+ * What removing `userId` from the campaign needs (config G1, Q7 a): `creator` for a co-GM, `owner` for a player or an
+ * invitee, null for the creator (nobody removes the creator: they have no member row and delete the campaign instead).
+ */
+export async function removalNeed(ctx: QueryCtx, campaign: Doc<"campaigns">, userId: Id<"users">): Promise<CampaignPermission | null> {
+  const role = await campaignRoleOf(ctx, userId, campaign);
+  if (role === "gm") return null;
+  return role === "coGm" ? "creator" : "owner";
 }
 
 /** A live (not deleted) campaign, or NOT_FOUND. Access is checked separately (`requirePermission`). */

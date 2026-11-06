@@ -2,7 +2,7 @@
  * What a client submits to create or edit a character: the creation wizard's draft and a sheet edit. Split out of
  * `./characters` (dcm-uh6r) so the many functions that only read sheets do not build these schemas on every call.
  */
-import { z } from "zod";
+import * as z from "../zod";
 
 import { isValidTraitSpread } from "../domain/characters/index";
 import {

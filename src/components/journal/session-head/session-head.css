@@ -93,31 +93,9 @@
   padding: 8px 0;
 }
 
-/* The GM's '⋯' menu. */
+/* The GM's '⋯' menu (its buttons are glass buttons, plan glass-buttons G12). */
 .js-menu {
   position: relative;
-}
-.js-menu-btn {
-  width: 36px;
-  height: 36px;
-  display: grid;
-  place-items: center;
-  border-radius: 999px;
-  border: 1px solid var(--jr-border);
-  background: transparent;
-  color: var(--jr-text);
-  cursor: pointer;
-}
-.js-menu-btn:hover {
-  background: var(--jr-hover);
-}
-.js-menu-btn:focus-visible {
-  outline: 2px solid var(--jr-acc);
-  outline-offset: 2px;
-}
-.js-menu-btn svg {
-  width: 18px;
-  height: 18px;
 }
 .js-menu-panel {
   position: absolute;
@@ -132,36 +110,10 @@
   box-shadow: 0 16px 32px -12px rgba(0, 0, 0, 0.7);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 6px;
 }
 .js-menu-panel[hidden] {
   display: none;
-}
-.js-menu-item {
-  min-height: 40px;
-  padding: 0 12px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--jr-text);
-  font: inherit;
-  font-size: 14px;
-  text-align: left;
-  cursor: pointer;
-}
-.js-menu-item:hover:not(:disabled) {
-  background: var(--jr-hover);
-}
-.js-menu-item:focus-visible {
-  outline: 2px solid var(--jr-acc);
-  outline-offset: -2px;
-}
-.js-menu-item:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-.js-danger {
-  color: var(--jr-danger);
 }
 .js-menu-note {
   margin: 4px 12px 6px;
@@ -171,11 +123,6 @@
 }
 
 @media (max-width: 1100px), (pointer: coarse) {
-  .js-menu-btn {
-    width: 44px;
-    height: 44px;
-  }
-  .js-menu-item,
   .js-head-edit {
     min-height: 44px;
   }

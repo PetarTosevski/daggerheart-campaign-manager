@@ -10,7 +10,8 @@ import type { HudPartyMember } from "@/components/combat-map/hud/banners/banner"
 import { resetPanels } from "@/components/combat-map/hud/panels";
 import { PhoneSpotlight, SpotlightDisc } from "@/components/combat-map/hud/spotlight";
 import { SpotlightPools } from "@/components/combat-map/hud/spotlight/light";
-import { afterHandToParty, discHolder, discLabel, poolOf, takePay, type SpotlightState } from "@/components/combat-map/hud/spotlight/model";
+import { TokenFace } from "@/components/combat-map/hud/token";
+import { afterHandToParty, discHolder, discLabel, holderArt, isDefeatedRow, livingFirst, poolOf, takePay, type SpotlightState } from "@/components/combat-map/hud/spotlight/model";
 
 import type { Id } from "../../../convex/_generated/dataModel";
 
@@ -43,7 +44,7 @@ const BRANNOC = "brannoc" as Id<"characters">;
 const LT = "tk-lt" as Id<"combatTokens">;
 const BANDIT = "tk-bandit" as Id<"combatTokens">;
 
-const base: SpotlightState = { holder: null, since: null, reason: null, rollBy: null, reactionsOnly: false, canMove: false, adversaryTokenId: null, adversaryName: null };
+const base: SpotlightState = { holder: null, since: null, reason: null, rollBy: null, reactionsOnly: false, canMove: false, adversaryTokenId: null, adversaryName: null, adversaryPortrait: null };
 const mossHolds = (canMove: boolean): SpotlightState => ({ ...base, holder: { kind: "pc", characterId: MOSS, name: "Moss" }, since: 1, reason: "handedBack", canMove });
 const ltHolds = (canMove: boolean, named = true): SpotlightState => ({
   ...base,
@@ -230,6 +231,148 @@ describe("the phone's disc", () => {
     expect(disc).not.toHaveClass("hud-mspot-gm");
     rerender(<PhoneSpotlight state={ltHolds(false)} party={PARTY} />);
     expect(screen.getByRole("img", { name: "Spotlight: Lieutenant" })).toHaveClass("hud-mspot-gm");
+  });
+});
+
+describe("an adversary's portrait on the disc (user 2026-11-04)", () => {
+  const LT_ART = "https://art.example/lieutenant.webp";
+  const withArt = TOKENS.map((t) => (t._id === LT ? { ...t, portrait: { kind: "url", url: LT_ART } } : t));
+  const playerView = (others: { _id: Id<"combatTokens">; portrait?: { kind: "url"; url: string } | null }[]) => ({ state: "ok", others });
+  const art = (root: HTMLElement) => within(root).queryByTestId("hud-spotlight-art");
+
+  it("GM: the disc and the Adversaries rows show the token's portrait; the initial without one", () => {
+    setup(ltHolds(true));
+    queries["combatTokensReads:list"] = withArt;
+    render(<SpotlightDisc campaignId={CAMPAIGN} mapId={MAP} gm fear={3} />);
+    const disc = screen.getByRole("button", { name: /^Spotlight: Lieutenant/ });
+    expect(disc).toHaveClass("hud-spd-gm");
+    expect(art(disc)).toHaveAttribute("src", LT_ART);
+    fireEvent.click(disc);
+    const rows = within(screen.getByRole("tabpanel")).getAllByRole("button", { name: /Lieutenant|Bandit/ });
+    expect(art(rows[0]!)).toHaveAttribute("src", LT_ART);
+    expect(art(rows[1]!)).toBeNull();
+    expect(rows[1]).toHaveTextContent(/^B/);
+  });
+
+  it("falls back to the initial when the image fails to load", () => {
+    setup(ltHolds(true));
+    queries["combatTokensReads:list"] = withArt;
+    render(<SpotlightDisc campaignId={CAMPAIGN} mapId={MAP} gm fear={3} />);
+    const disc = screen.getByRole("button", { name: /^Spotlight: Lieutenant/ });
+    fireEvent.error(art(disc)!);
+    expect(art(disc)).toBeNull();
+    expect(disc.querySelector(".hud-spf-en[data-on='true']")).toHaveTextContent("L");
+  });
+
+  it("player: a seen adversary shows the state's portrait (desktop and phone); 'The GM' never does", () => {
+    const seen: SpotlightState = { ...ltHolds(false), adversaryPortrait: LT_ART };
+    queries["combatSpotlight:state"] = seen;
+    queries["combatHud:party"] = PARTY;
+    const { rerender } = render(<SpotlightDisc campaignId={CAMPAIGN} mapId={MAP} gm={false} fear={3} />);
+    expect(art(screen.getByRole("img", { name: "Spotlight: Lieutenant" }))).toHaveAttribute("src", LT_ART);
+
+    // Not seen this scene: the server sends neither id, name nor portrait, and the disc shows no art.
+    queries["combatSpotlight:state"] = ltHolds(false, false);
+    rerender(<SpotlightDisc campaignId={CAMPAIGN} mapId={MAP} gm={false} fear={3} />);
+    const gmDisc = screen.getByRole("img", { name: "Spotlight: The GM" });
+    expect(art(gmDisc)).toBeNull();
+    expect(gmDisc.querySelector("img")).toBeNull();
+    // Even an id without a name reads "The GM", with no portrait.
+    queries["combatSpotlight:state"] = { ...seen, adversaryName: null };
+    rerender(<SpotlightDisc campaignId={CAMPAIGN} mapId={MAP} gm={false} fear={3} />);
+    expect(screen.getByRole("img", { name: "Spotlight: The GM" }).querySelector("img")).toBeNull();
+
+    rerender(<PhoneSpotlight state={seen} party={PARTY} />);
+    expect(art(screen.getByRole("img", { name: "Spotlight: Lieutenant" }))).toHaveAttribute("src", LT_ART);
+    rerender(<PhoneSpotlight state={ltHolds(false, false)} party={PARTY} />);
+    expect(screen.getByRole("img", { name: "Spotlight: The GM" }).querySelector("img")).toBeNull();
+  });
+
+  it("player: a party-seen adversary without art keeps its initial, whatever this player's map draws (dcm-onze)", () => {
+    queries["combatSpotlight:state"] = ltHolds(false);
+    queries["combatHud:party"] = PARTY;
+    queries["combatVision:playerView"] = playerView([{ _id: LT, portrait: { kind: "url", url: LT_ART } }]);
+    render(<SpotlightDisc campaignId={CAMPAIGN} mapId={MAP} gm={false} fear={3} />);
+    const disc = screen.getByRole("img", { name: "Spotlight: Lieutenant" });
+    expect(art(disc)).toBeNull();
+    expect(disc.querySelector(".hud-spf-en[data-on='true']")).toHaveTextContent("L");
+  });
+
+  it("a long name reads in full, as the map token's name tag reads it (disc, popover row, phone)", () => {
+    const LONG = "Volcanic Dragon: Ashen Tyrant";
+    const tokens = TOKENS.map((t) => (t._id === LT ? { ...t, name: LONG } : t));
+    setup({ ...ltHolds(true), adversaryName: LONG });
+    queries["combatTokensReads:list"] = tokens;
+    const token = render(<TokenFace face={{ tone: "enemy", art: null, arcs: null, hope: null, conditions: [], down: false }} name={tokens[1]!.name} initials="VD" size={48} />);
+    const tokenLabel = token.container.querySelector(".tk-name")!.textContent;
+    token.unmount();
+    expect(tokenLabel).toBe(LONG);
+
+    const { unmount } = render(<SpotlightDisc campaignId={CAMPAIGN} mapId={MAP} gm fear={3} />);
+    expect(screen.getByTestId("hud-spotlight-name").textContent).toBe(tokenLabel);
+    fireEvent.click(screen.getByRole("button", { name: `Spotlight: ${LONG}. Change who has it` }));
+    const row = screen.getByRole("button", { name: `${LONG} has the spotlight` });
+    expect(row.querySelector(".hud-spr-t b")!.textContent).toBe(tokenLabel);
+    unmount();
+
+    render(<PhoneSpotlight state={{ ...ltHolds(false), adversaryName: LONG }} party={PARTY} />);
+    expect(screen.getByRole("img", { name: `Spotlight: ${LONG}` }).querySelector(".hud-ms-l b")!.textContent).toBe(tokenLabel);
+  });
+
+  it("holderArt reads art only for an adversary holder: the GM's map first, else the state's portrait", () => {
+    const lt = { src: LT_ART, position: "center 25%", remote: true };
+    const map = new Map([[LT as string, lt]]);
+    expect(holderArt({ kind: "adversary", tokenId: LT, name: "Lieutenant" }, map, null)).toBe(lt);
+    expect(holderArt({ kind: "gm", name: "The GM" }, map, LT_ART)).toBeNull();
+    expect(holderArt({ kind: "adversary", tokenId: BANDIT, name: "Bandit" }, map, null)).toBeNull();
+    expect(holderArt({ kind: "adversary", tokenId: LT, name: "Lieutenant" }, undefined, null)).toBeNull();
+    expect(holderArt({ kind: "adversary", tokenId: LT, name: "Lieutenant" }, undefined, LT_ART)).toEqual(lt);
+  });
+});
+
+describe("a defeated adversary in the Adversaries tab (user 2026-11-04)", () => {
+  const OGRE = "tk-ogre" as Id<"combatTokens">;
+  const MINIONS = "tk-minions" as Id<"combatTokens">;
+  const tokens = [
+    { _id: OGRE, kind: "adversary", name: "Cave Ogre", sub: "Solo", stats: { hp: 8, hpMax: 8, down: true } },
+    ...TOKENS,
+    // A Minion group with every Minion gone: marked defeated before every HP shows marked.
+    { _id: MINIONS, kind: "adversary", name: "Rotted Zombies", sub: "Minion", stats: { hp: 2, hpMax: 4, down: true } },
+  ];
+
+  it("sits at the bottom, disabled, tagged 'Defeated', with no Take; a click sends nothing", () => {
+    setup(mossHolds(true));
+    queries["combatTokensReads:list"] = tokens;
+    render(<SpotlightDisc campaignId={CAMPAIGN} mapId={MAP} gm fear={3} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Spotlight: Moss/ }));
+    fireEvent.click(screen.getByRole("tab", { name: "Adversaries" }));
+    const rows = within(screen.getByRole("tabpanel")).getAllByRole("button").filter((b) => b.classList.contains("hud-spr"));
+    expect(rows.map((r) => r.getAttribute("aria-label"))).toEqual([
+      "Take the spotlight for Lieutenant",
+      "Take the spotlight for Bandit",
+      "Cave Ogre, defeated: can't take the spotlight",
+      "Rotted Zombies, defeated: can't take the spotlight",
+    ]);
+    for (const dead of rows.slice(2)) {
+      expect(dead).toHaveAttribute("aria-disabled", "true");
+      expect(dead).toHaveTextContent("Defeated");
+      expect(dead).not.toHaveTextContent("Take");
+      fireEvent.click(dead);
+    }
+    expect(calls).toHaveLength(0);
+    expect(screen.getByRole("dialog", { name: "Spotlight" })).toBeInTheDocument();
+    // The living still take it.
+    fireEvent.click(rows[0]!);
+    expect(calls.map((c) => c.name)).toEqual(["combatSpotlight:gmTake"]);
+  });
+
+  it("isDefeatedRow: marked defeated or every HP marked; livingFirst keeps the map's order", () => {
+    expect(isDefeatedRow({ hp: 8, hpMax: 8, down: false })).toBe(true);
+    expect(isDefeatedRow({ hp: 1, hpMax: 4, down: true })).toBe(true);
+    expect(isDefeatedRow({ hp: 7, hpMax: 8, down: false })).toBe(false);
+    expect(isDefeatedRow(null)).toBe(false);
+    const rows = [{ id: 1, defeated: true }, { id: 2, defeated: false }, { id: 3, defeated: true }, { id: 4, defeated: false }];
+    expect(livingFirst(rows).map((r) => r.id)).toEqual([2, 4, 1, 3]);
   });
 });
 

@@ -28,6 +28,11 @@ export function useTracker(campaignId: Id<"campaigns">, encounterId: string) {
   const [error, setError] = useState<string | null>(null);
   const viewArgs = { campaignId, encounterId };
 
+  /** The campaign's damage rule modes for the optimistic updates (the Book until `ruleSettings.get` is loaded). */
+  function rulesIn(store: OptimisticLocalStore) {
+    return store.getQuery(api.ruleSettings.get, { campaignId })?.modes ?? {};
+  }
+
   function patchInstance(store: OptimisticLocalStore, instanceId: string, change: (i: TrackerInstance, view: TrackerView) => TrackerInstance) {
     const view = store.getQuery(api.encounters.get, viewArgs);
     if (!view) return;
@@ -35,10 +40,10 @@ export function useTracker(campaignId: Id<"campaigns">, encounterId: string) {
   }
 
   const markHp = useMutation(api.encounterTracking.markHp).withOptimisticUpdate((store, { instanceId, delta }) =>
-    patchInstance(store, instanceId, (i) => applyMark(i, "hp", delta)),
+    patchInstance(store, instanceId, (i) => applyMark(i, "hp", delta, rulesIn(store))),
   );
   const markStress = useMutation(api.encounterTracking.markStress).withOptimisticUpdate((store, { instanceId, delta }) =>
-    patchInstance(store, instanceId, (i) => applyMark(i, "stress", delta)),
+    patchInstance(store, instanceId, (i) => applyMark(i, "stress", delta, rulesIn(store))),
   );
   const toggleCondition = useMutation(api.encounterTracking.toggleCondition).withOptimisticUpdate((store, { instanceId, condition }) =>
     patchInstance(store, instanceId, (i) => applyCondition(i, condition)),
@@ -53,7 +58,7 @@ export function useTracker(campaignId: Id<"campaigns">, encounterId: string) {
   });
   const spendFear = useMutation(api.encounterTracking.spendFear).withOptimisticUpdate((store, { amount }) => {
     const fear = store.getQuery(api.campaigns.fear, { campaignId });
-    if (fear === undefined || fear < amount) return;
+    if (fear === undefined || fear === null || fear < amount) return;
     store.setQuery(api.campaigns.fear, { campaignId }, fear - amount);
   });
   const applyDamage = useMutation(api.encounterTracking.applyDamage);

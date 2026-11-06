@@ -1,7 +1,7 @@
 import { v, type Infer } from "convex/values";
 
 import { TRAIT_IDS, type TraitId } from "../../../src/lib/srd/types";
-import { ADVANCEMENT_OPTIONS, CONDITIONS, EFFECT_UNTIL, FEATURE_USE_UNTIL, HELD_DIE_KINDS, HELD_DIE_UNTIL, PRONOUNS_LABELS, SUBCLASS_RANKS } from "../../../src/lib/validation/character-constants";
+import { ADVANCEMENT_OPTIONS, CONDITION_UNTIL, CONDITIONS, EFFECT_UNTIL, FEATURE_USE_UNTIL, HELD_DIE_KINDS, HELD_DIE_UNTIL, PRONOUNS_LABELS, SUBCLASS_RANKS } from "../../../src/lib/validation/character-constants";
 
 /**
  * Convex validators for characters (CD19). They describe shapes only; the zod
@@ -21,7 +21,8 @@ export const portraitValidator = v.union(
 /** How the `pronouns` field is labelled (dcm-bxp.35): "gender" (the default when missing) or "pronouns". */
 export const pronounsLabelValidator = v.union(...PRONOUNS_LABELS.map((l) => v.literal(l)));
 
-export const goldValidator = v.object({ handfuls: v.number(), bags: v.number(), chest: v.boolean() });
+/** `coins?` (0–9): the Gold coins optional rule (CB p.104, plan rule-switches OSC); widened, unset reads as 0. */
+export const goldValidator = v.object({ handfuls: v.number(), bags: v.number(), chest: v.boolean(), coins: v.optional(v.number()) });
 
 const ancestryValidator = v.union(
   v.object({ kind: v.literal("single"), id: v.string() }),
@@ -104,6 +105,18 @@ const advancementValidator = v.object({
   at: v.optional(v.number()),
 });
 
+/** When a condition with provenance ends (dcm-bxp.99.32.1; `CONDITION_UNTIL`). */
+export const conditionUntilValidator = literals(CONDITION_UNTIL);
+
+/** A sheet condition's provenance (dcm-bxp.99.32.1; zod `conditionSourceSchema`). */
+export const conditionSourceValidator = v.object({
+  condition: conditionValidator,
+  source: v.string(),
+  casterId: v.optional(v.string()),
+  until: v.optional(conditionUntilValidator),
+  endsWhen: v.optional(v.string()),
+});
+
 export const effectValidator = v.object({
   id: v.string(),
   source: v.string(),
@@ -155,6 +168,8 @@ const d5SheetFields = {
   advancements: v.optional(v.array(advancementValidator)),
   levelUpPending: v.optional(v.boolean()),
   conditions: v.optional(v.array(conditionValidator)),
+  /** dcm-bxp.99.32.1 (widened): where each condition came from and when it ends. */
+  conditionSources: v.optional(v.array(conditionSourceValidator)),
   effects: v.optional(v.array(effectValidator)),
   heldDice: v.optional(v.array(heldDieValidator)),
   /** `until` gained `scene` (plan sheet-drawer SD0, Q7; widened, every stored entry still conforms). */

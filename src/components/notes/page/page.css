@@ -109,29 +109,9 @@
   flex-wrap: wrap;
   gap: 10px;
 }
-.bj-picker-confirm {
-  min-height: 44px;
-  padding: 0 18px;
-  border-radius: 8px;
-  border: none;
-  background: var(--bj-acc, #e3b45a);
-  color: var(--bj-acc-ink, #1a1408);
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.bj-picker-confirm:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-.bj-picker-confirm:focus-visible,
 .bj-picker-option:focus-within {
   outline: 2px solid var(--bj-acc, #e3b45a);
   outline-offset: 2px;
-}
-.bj-picker .bj-ghost {
-  min-height: 44px;
 }
 
 @media (max-width: 720px) {

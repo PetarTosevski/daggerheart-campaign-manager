@@ -3,6 +3,7 @@
 import { useQuery } from "convex/react";
 import { useId, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { mapLightReach } from "@/lib/domain/combat-map/light";
 import { SIGHT_DEFAULTS, SIGHT_LABEL, SIGHT_MODES, sightOf, type SightMode } from "@/lib/domain/combat-map/sight";
 import type { ObjectKind } from "@/lib/domain/combat-map/spec";
@@ -74,21 +75,23 @@ function EditTools({ campaignId, layout }: { campaignId: Id<"campaigns">; layout
     <div className="cm-row cm-ed-brushes" role="group" aria-label="Brush size">
       <span className="cm-lbl">Brush</span>
       {BRUSHES.map((n) => (
-        <button
+        <BrandButton
           key={n}
           type="button"
-          className="cm-btn cm-sm"
+          variant="tool"
+          size="sm"
+          icon
           aria-pressed={editor.brush === n}
           aria-label={`Brush ${n} × ${n} squares`}
           onClick={() => editor.setBrush(n)}
         >
           {n}
-        </button>
+        </BrandButton>
       ))}
       {tool === "terrain" && hasPaint ? (
-        <button type="button" className="cm-btn cm-sm cm-ed-push" onClick={() => edits.clearPaint("terrain")}>
+        <BrandButton type="button" variant="danger" size="sm" className="cm-ed-push" onClick={() => edits.clearPaint("terrain")}>
           Undo all painting
-        </button>
+        </BrandButton>
       ) : null}
     </div>
   );
@@ -96,10 +99,10 @@ function EditTools({ campaignId, layout }: { campaignId: Id<"campaigns">; layout
   const plainTerrains = (labelId: string, pressed: (terrain: string) => boolean) => (
     <div className="cm-ed-terrains" role="group" aria-labelledby={labelId}>
       {PAINT_TERRAINS.map(({ terrain, swatch }) => (
-        <button key={terrain} type="button" className="cm-btn cm-sm cm-ed-terrain" aria-pressed={pressed(terrain)} onClick={() => editor.setTerrain(terrain)}>
+        <BrandButton key={terrain} type="button" variant="tool" size="sm" className="cm-ed-terrain" aria-pressed={pressed(terrain)} onClick={() => editor.setTerrain(terrain)}>
           <span aria-hidden="true" className="cm-ed-swatch" style={{ background: swatch }} />
           {terrain}
-        </button>
+        </BrandButton>
       ))}
     </div>
   );
@@ -108,9 +111,9 @@ function EditTools({ campaignId, layout }: { campaignId: Id<"campaigns">; layout
     <div className="cm-ed">
       <div className="cm-ed-tools" role="group" aria-label="Edit tool">
         {tools.map((t) => (
-          <button key={t.tool} type="button" className="cm-btn cm-sm" aria-pressed={tool === t.tool} onClick={() => editor.setTool(t.tool)}>
+          <BrandButton key={t.tool} type="button" variant="tool" size="sm" aria-pressed={tool === t.tool} onClick={() => editor.setTool(t.tool)}>
             {t.label}
-          </button>
+          </BrandButton>
         ))}
       </div>
 
@@ -142,9 +145,9 @@ function EditTools({ campaignId, layout }: { campaignId: Id<"campaigns">; layout
           </span>
           <div className="cm-ed-kinds" role="group" aria-labelledby="cm-ed-kinds">
             {PLACEABLE_KINDS.map((kind) => (
-              <button key={kind} type="button" className="cm-btn cm-sm" aria-pressed={editor.kind === kind} onClick={() => editor.setKind(kind)}>
+              <BrandButton key={kind} type="button" variant="tool" size="sm" aria-pressed={editor.kind === kind} onClick={() => editor.setKind(kind)}>
                 {PLACEABLE_OBJECTS[kind].label}
-              </button>
+              </BrandButton>
             ))}
           </div>
         </div>
@@ -226,17 +229,19 @@ function SpritePicker({ objects, picked, onPick }: { objects: readonly ObjectIte
             <span className="cm-lbl">{GROUP_LABEL[group]}</span>
             <div className="cm-ed-sprites">
               {items.map((item) => (
-                <button
+                <BrandButton
                   key={item.key}
                   type="button"
-                  className="cm-btn cm-sm cm-ed-sprite"
+                  variant="tool"
+                  size="sm"
+                  className="cm-ed-sprite"
                   aria-pressed={current !== null && sameRef(current, item.ref)}
                   title={`${item.name} · ${item.w} × ${item.h} squares`}
                   onClick={() => onPick(item.ref)}
                 >
                   <Thumb src={item.thumb} />
                   <span className="cm-ed-sprite-name">{item.name}</span>
-                </button>
+                </BrandButton>
               ))}
             </div>
           </div>
@@ -255,17 +260,19 @@ function TexturePicker({ textures, picked, onPick }: { textures: readonly Textur
           <span className="cm-lbl">Textures · {GROUP_LABEL[group]}</span>
           <div className="cm-ed-sprites">
             {items.map((item) => (
-              <button
+              <BrandButton
                 key={item.key}
                 type="button"
-                className="cm-btn cm-sm cm-ed-sprite"
+                variant="tool"
+                size="sm"
+                className="cm-ed-sprite"
                 aria-pressed={picked !== null && sameRef(picked, item.ref)}
                 title={`${item.name} · paints ${item.terrain}`}
                 onClick={() => onPick(item.ref)}
               >
                 <Thumb src={item.thumb} />
                 <span className="cm-ed-sprite-name">{item.name}</span>
-              </button>
+              </BrandButton>
             ))}
           </div>
         </div>
@@ -334,9 +341,9 @@ function ObjectPanel({
       <strong className="cm-ed-obj-name">{label}</strong>
       <div className="cm-ed-row" role="group" aria-label="Sight">
         {SIGHT_MODES.map((mode) => (
-          <button key={mode} type="button" className="cm-btn cm-sm" aria-pressed={effective === mode} onClick={() => edits.setSight(object._id, mode)}>
+          <BrandButton key={mode} type="button" variant="neutral" size="sm" aria-pressed={effective === mode} onClick={() => edits.setSight(object._id, mode)}>
             {SIGHT_LABEL[mode]}
-          </button>
+          </BrandButton>
         ))}
       </div>
       <span className="cm-muted cm-ed-note">
@@ -345,51 +352,52 @@ function ObjectPanel({
         ) : (
           <>
             Set by hand (default: {SIGHT_LABEL[fallback].toLowerCase()}).{" "}
-            <button type="button" className="cm-linkbtn" onClick={() => edits.setSight(object._id, "default")}>
+            <BrandButton type="button" variant="neutral" size="sm" onClick={() => edits.setSight(object._id, "default")}>
               Use the default
-            </button>
+            </BrandButton>
           </>
         )}
       </span>
       {own ? <LightSelect object={object} spriteLight={own.light} onSet={(light) => edits.setLight(object._id, light)} /> : null}
       {reach ? (
         <>
-          <button type="button" className="cm-btn cm-sm cm-ed-start" aria-pressed={lit} onClick={() => edits.update(object._id, { lit: !lit })}>
+          <BrandButton type="button" variant="neutral" size="sm" className="cm-ed-start" aria-pressed={lit} onClick={() => edits.update(object._id, { lit: !lit })}>
             🔥 {lit ? "Lit · click to put out" : "Unlit · click to light"}
-          </button>
+          </BrandButton>
           <span className="cm-muted cm-ed-note">
             At night: clear to {reach[0]} squares, dim to {reach[1]}.
           </span>
         </>
       ) : null}
       <div className="cm-ed-row">
-        <button type="button" className="cm-btn cm-sm" disabled={object.r <= OBJECT_R_MIN} onClick={() => edits.update(object._id, { r: object.r - OBJECT_R_STEP })}>
+        <BrandButton type="button" variant="neutral" size="sm" disabled={object.r <= OBJECT_R_MIN} onClick={() => edits.update(object._id, { r: object.r - OBJECT_R_STEP })}>
           Smaller
-        </button>
-        <button type="button" className="cm-btn cm-sm" disabled={object.r >= OBJECT_R_MAX} onClick={() => edits.update(object._id, { r: object.r + OBJECT_R_STEP })}>
+        </BrandButton>
+        <BrandButton type="button" variant="neutral" size="sm" disabled={object.r >= OBJECT_R_MAX} onClick={() => edits.update(object._id, { r: object.r + OBJECT_R_STEP })}>
           Bigger
-        </button>
-        <button type="button" className="cm-btn cm-sm" aria-label="Rotate left" onClick={() => edits.update(object._id, { rot: object.rot - OBJECT_ROT_STEP })}>
+        </BrandButton>
+        <BrandButton type="button" variant="neutral" size="sm" icon aria-label="Rotate left" onClick={() => edits.update(object._id, { rot: object.rot - OBJECT_ROT_STEP })}>
           ⟲
-        </button>
-        <button type="button" className="cm-btn cm-sm" aria-label="Rotate right" onClick={() => edits.update(object._id, { rot: object.rot + OBJECT_ROT_STEP })}>
+        </BrandButton>
+        <BrandButton type="button" variant="neutral" size="sm" icon aria-label="Rotate right" onClick={() => edits.update(object._id, { rot: object.rot + OBJECT_ROT_STEP })}>
           ⟳
-        </button>
+        </BrandButton>
       </div>
       <div className="cm-ed-row">
-        <button type="button" className="cm-btn cm-sm" onClick={onDone}>
+        <BrandButton type="button" variant="cancel" size="sm" onClick={onDone}>
           Done
-        </button>
-        <button
+        </BrandButton>
+        <BrandButton
           type="button"
-          className="cm-btn cm-sm cm-danger"
+          variant="danger"
+          size="sm"
           onClick={() => {
             edits.remove(object._id);
             onDone();
           }}
         >
           Delete
-        </button>
+        </BrandButton>
       </div>
     </div>
   );

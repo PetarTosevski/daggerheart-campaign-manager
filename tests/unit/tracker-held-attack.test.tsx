@@ -60,7 +60,7 @@ function Windows() {
 
 describe("a held attack in the tracker (SD4 Q2)", () => {
   it("reads 'attacks Mira, before the roll' with no damage line, and waits for the before-roll answer", async () => {
-    queries["adversaryActions:windows"] = [HELD];
+    queries["adversaryActionsReads:windows"] = [HELD];
     render(<Windows />);
     const row = within(screen.getByRole("region", { name: "Reaction windows" })).getByTestId("tracker-window");
     expect(row).toHaveTextContent("Bear attacks Mira, before the roll");
@@ -74,7 +74,7 @@ describe("a held attack in the tracker (SD4 Q2)", () => {
   });
 
   it("names the feature of a held feature attack and every target", () => {
-    queries["adversaryActions:windows"] = [{ ...HELD, feature: "Claws", targetName: "Mira, Tabby" }];
+    queries["adversaryActionsReads:windows"] = [{ ...HELD, feature: "Claws", targetName: "Mira, Tabby" }];
     render(<Windows />);
     expect(screen.getByTestId("tracker-window")).toHaveTextContent("Bear (Claws) attacks Mira, Tabby, before the roll");
   });
@@ -82,7 +82,7 @@ describe("a held attack in the tracker (SD4 Q2)", () => {
   it("a hit's window keeps its damage line", () => {
     const { preRoll: _held, ...hit } = HELD;
     void _held;
-    queries["adversaryActions:windows"] = [{ ...hit, damage: 9 }];
+    queries["adversaryActionsReads:windows"] = [{ ...hit, damage: 9 }];
     render(<Windows />);
     const row = screen.getByTestId("tracker-window");
     expect(row).toHaveTextContent("Bear hit Mira: 9 physical damage");

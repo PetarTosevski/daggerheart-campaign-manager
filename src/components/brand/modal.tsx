@@ -3,11 +3,15 @@
 import { X } from "lucide-react";
 import { useEffect, useId, useRef, type ReactNode } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { cn } from "@/lib/utils";
 
 /**
  * Modal dialog on the native <dialog> element: focus trapping, Escape and the
  * backdrop come from the browser. Styled like the boards' Settings dialog.
+ * The dialog stays in the DOM where it is rendered (the top layer is not a
+ * portal), so inside a campaign it inherits the shell's `data-viewer` and its
+ * glass buttons take the viewer's colours; the close ✕ is a round cancel.
  */
 export function Modal({
   open,
@@ -51,14 +55,9 @@ export function Modal({
             <h2 id={titleId} className="m-0 font-display text-[30px] font-bold tracking-[0.06em]">
               {title}
             </h2>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label={`Close ${title.toLowerCase()}`}
-              className="flex size-11 flex-none cursor-pointer items-center justify-center rounded-full border border-line-2 hover:bg-raised"
-            >
-              <X className="size-[18px]" aria-hidden="true" />
-            </button>
+            <BrandButton variant="cancel" icon round onClick={onClose} aria-label={`Close ${title.toLowerCase()}`} className="flex-none">
+              <X aria-hidden="true" />
+            </BrandButton>
           </div>
           {children}
         </div>

@@ -40,6 +40,7 @@
 // refused while a `cannotSpendHope` flag holds and `clearBlocked` for `cannotClearHp` / `cannotClearStress` (dcm-5kxg);
 // Words of Discord's memory lasts the whole campaign (`USED_ON_EVER`, user answer 2026-10-31, dcm-c75).
 
+import type { Shortfall } from "../../errors/app-error";
 import type { FeatureUse } from "../../validation/characters";
 import { EXPIRING_FEATURE_USES } from "../characters/expiry";
 import { RANGE_SQUARES } from "../combat-map/ranges";
@@ -194,6 +195,12 @@ export interface RequirementState {
   situations: readonly string[];
   /** SD1 (NV7): what the engine knows for `situation.check`; an unknown fact leaves the check to the player. */
   facts?: StateFacts;
+  /**
+   * Plan rule-switches ODR2: the campaign's Defined Ranges (CB p.103; absent: on). Off: nothing is decided by counting
+   * squares: `within`, `allyNear` and `isolated` checks are unknown (the player's confirmation decides, Q13) and
+   * `noEnemyWithin` holds (the GM judges by eye).
+   */
+  definedRanges?: boolean;
 }
 
 /**
@@ -329,6 +336,7 @@ export function stateCheckMet(check: StateCheck, s: RequirementState): boolean |
       return areas?.some((a) => a.featureId === check.featureId && (check.owner !== "self" || a.own));
     }
     case "isolated": {
+      if (s.definedRanges === false) return undefined;
       const away = (n: number | undefined) => (n === undefined ? undefined : n > reach(check.range));
       const self = away(f.isolation?.self);
       if (check.who === "self" || self === false) return self;
@@ -342,10 +350,12 @@ export function stateCheckMet(check: StateCheck, s: RequirementState): boolean |
     case "tokens":
       return between(tokenCount(check, f), check);
     case "within": {
+      if (s.definedRanges === false) return undefined;
       const d = creature(f, check.who)?.distance;
       return d === undefined ? undefined : d <= reach(check.range);
     }
     case "allyNear": {
+      if (s.definedRanges === false) return undefined;
       const d = check.of === "self" ? f.nearestAlly : f.target?.nearestAlly;
       return d === undefined ? undefined : d <= reach(check.range);
     }
@@ -480,7 +490,7 @@ export function requirementMet(req: Requirement, s: RequirementState): boolean {
     case "hopeAtMost":
       return s.hope <= req.value;
     case "noEnemyWithin":
-      return s.nearestEnemy === undefined || s.nearestEnemy > reach(req.range);
+      return s.definedRanges === false || s.nearestEnemy === undefined || s.nearestEnemy > reach(req.range);
     case "effectActive":
       return s.activeCardEffects.includes(req.cardId);
     case "situation": {
@@ -573,6 +583,39 @@ export function unaffordable(costs: readonly PaidCost[], s: PayerState): PaidCos
   const poolRoom = (pool: string): number => (pool === "favor" ? (s.favor ?? 0) : pool === "focus" ? (s.focus ?? 0) : (s.heldDice?.[pool as HeldDieKind] ?? 0));
   const poolShort = [...pooled].some(([pool, n]) => n > poolRoom(pool));
   return poolShort && !short.includes("tokens") ? [...short, "tokens"] : short;
+}
+
+/**
+ * dcm-bxp.99.32.2: the numbers behind `unaffordable`, one `Shortfall` per short resource (same order), for the
+ * refusal's structured `shortfall` (src/lib/errors/app-error.ts). `have` is the room a marked track has left (Stress,
+ * HP, Armor) or the amount held (Hope, tokens, Fear, gold); a Hope cost under `cannotSpendHope` has 0. Pools: Favor and
+ * Focus by name, held dice as `tokens` (the card's own tokens first when both are short).
+ */
+export function shortfalls(costs: readonly PaidCost[], s: PayerState): Shortfall[] {
+  const total = (r: PaidCost["resource"]) => costs.filter((c) => c.resource === r && c.pool === undefined).reduce((n, c) => n + c.amount, 0);
+  const room: Record<PaidCost["resource"], number> = {
+    hope: hopeBlocked(s.flags) ? 0 : s.hope,
+    stress: s.stressMax - s.stress,
+    hp: s.hpMax - s.hp,
+    armor: s.armorMax - s.armor,
+    tokens: s.cardTokens,
+    fear: s.fear ?? 0,
+    gold: s.gold ?? 0,
+  };
+  const out: Shortfall[] = [];
+  for (const r of Object.keys(room) as PaidCost["resource"][]) {
+    const need = total(r);
+    if (need > 0 && need > room[r]) out.push({ resource: r, need, have: Math.max(0, room[r]) });
+  }
+  const pooled = new Map<string, number>();
+  for (const c of costs) if (c.pool !== undefined) pooled.set(c.pool, (pooled.get(c.pool) ?? 0) + c.amount);
+  for (const [pool, need] of pooled) {
+    const have = pool === "favor" ? (s.favor ?? 0) : pool === "focus" ? (s.focus ?? 0) : (s.heldDice?.[pool as HeldDieKind] ?? 0);
+    if (need <= have) continue;
+    const resource: Shortfall["resource"] = pool === "favor" || pool === "focus" ? pool : "tokens";
+    if (!out.some((f) => f.resource === resource)) out.push({ resource, need, have });
+  }
+  return out;
 }
 
 /**

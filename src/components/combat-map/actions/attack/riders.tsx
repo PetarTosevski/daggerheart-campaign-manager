@@ -16,7 +16,7 @@ import type { Id } from "../../../../../convex/_generated/dataModel";
  * and after-roll prompt went with the cut-over (H8.1), and `HeldRoll` is the held roll the HUD's result shows (Q1).
  */
 
-export type RiderOption = FunctionReturnType<typeof api.combatActions.riders>[number];
+export type RiderOption = FunctionReturnType<typeof api.combatActionsReads.riders>[number];
 
 /** What the player set for one rider. */
 export type RiderPick = { on: boolean; numbers: Record<string, number>; options: Record<string, string>; situations: string[]; extra: string[] };

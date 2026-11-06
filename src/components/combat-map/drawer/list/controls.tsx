@@ -3,6 +3,7 @@
 import { useMutation } from "convex/react";
 import { useId, useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import { BEASTFORMS } from "@/lib/srd/beastforms";
 
@@ -44,16 +45,15 @@ export function FlyingToggle({ campaignId, characterId, canAct, flying }: Props 
   });
   return (
     <div className="sd-flying">
-      <button
-        type="button"
-        className="cm-btn"
+      <BrandButton
+        variant="neutral"
         aria-pressed={flying}
         disabled={!canAct}
         data-testid="sheet-drawer-flying"
         onClick={() => run(() => setFlying({ campaignId, idempotencyKey: crypto.randomUUID(), characterId, flying: !flying }))}
       >
         Flying
-      </button>
+      </BrandButton>
       <span className="cm-muted">{flying ? "You are in the air. Features that need flying apply." : "On the ground."}</span>
       {alertOf(error)}
     </div>
@@ -80,14 +80,13 @@ export function StanceControls({ campaignId, characterId, canAct, martial, featu
           <input id={calmId} type="checkbox" checked={calm} onChange={(e) => setCalm(e.target.checked)} />
           <span>It is a moment of calm</span>
         </label>
-        <button
-          type="button"
-          className="cm-btn cm-sm"
+        <BrandButton
+          variant="neutral"
           disabled={!canAct || !martial.refocusReady || !calm}
           onClick={() => run(async () => { await refocus({ campaignId, idempotencyKey: crypto.randomUUID(), characterId, calm }); setCalm(false); })}
         >
           Refocus
-        </button>
+        </BrandButton>
         {!martial.refocusReady ? <span className="cm-muted">Used. Back after a rest.</span> : null}
       </div>
       <ul className="sd-shift-list" aria-label="Shift stance">
@@ -101,25 +100,23 @@ export function StanceControls({ campaignId, characterId, canAct, martial, featu
                 <span className="sd-badge sd-badge-on">Active</span>
               ) : (
                 <span className="sd-shift-buttons">
-                  <button
-                    type="button"
-                    className="cm-btn cm-sm"
+                  <BrandButton
+                    variant="neutral"
                     disabled={!canAct || martial.focus < 1}
                     aria-label={`Shift into ${f.name}, spending 1 Focus`}
                     onClick={() => run(() => shift({ campaignId, idempotencyKey: crypto.randomUUID(), characterId, stance: id, payWith: "focus" }))}
                   >
                     Shift · 1 Focus
-                  </button>
+                  </BrandButton>
                   {flow ? (
-                    <button
-                      type="button"
-                      className="cm-btn cm-sm"
+                    <BrandButton
+                      variant="neutral"
                       disabled={!canAct}
                       aria-label={`Shift into ${f.name}, marking 1 Stress`}
                       onClick={() => run(() => shift({ campaignId, idempotencyKey: crypto.randomUUID(), characterId, stance: id, payWith: "stress" }))}
                     >
                       Shift · 1 Stress
-                    </button>
+                    </BrandButton>
                   ) : null}
                 </span>
               )}
@@ -142,9 +139,8 @@ export function D5Use({ characterId, canAct, featureKey, name }: Omit<Props, "ca
   const use = useMutation(api.classFeatures.use);
   return (
     <div className="sd-d5">
-      <button
-        type="button"
-        className="cm-btn cm-sm"
+      <BrandButton
+        variant="confirm"
         disabled={!canAct}
         aria-label={`Use ${name}`}
         onClick={() =>
@@ -156,7 +152,7 @@ export function D5Use({ characterId, canAct, featureKey, name }: Omit<Props, "ca
         }
       >
         Use
-      </button>
+      </BrandButton>
       <span role="status" className="cm-muted">
         {done}
       </span>
@@ -188,15 +184,14 @@ export function BeastformControl({ campaignId, characterId, canAct, form }: Prop
       <p className="sd-focus">
         <span className="cm-lbl">Beastform</span> {name}
       </p>
-      <button
-        type="button"
-        className="cm-btn cm-sm"
+      <BrandButton
+        variant="neutral"
         disabled={!canAct}
         aria-label={`Drop out of ${name}`}
         onClick={() => run(() => end({ idempotencyKey: crypto.randomUUID(), characterId, effectId: "beastform" }))}
       >
         Drop out
-      </button>
+      </BrandButton>
       {alertOf(error)}
     </div>
   );

@@ -5,6 +5,7 @@ import "./builder.css";
 import { useQuery } from "convex/react";
 import { useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../convex/_generated/api";
@@ -64,9 +65,9 @@ export function EncounterBuilder({ campaignId, activePcs, onOpenEncounter, initi
   return (
     <div className="enc-builder">
       <nav className="enc-aside" aria-label="Encounter list">
-        <button type="button" className="enc-pill enc-pill-primary" disabled={create.pending} onClick={() => void newEncounter()}>
+        <BrandButton variant="confirm" disabled={create.pending} onClick={() => void newEncounter()}>
           + New encounter
-        </button>
+        </BrandButton>
         {create.error ? (
           <p role="alert" className="enc-error">
             {create.error}
@@ -82,9 +83,9 @@ export function EncounterBuilder({ campaignId, activePcs, onOpenEncounter, initi
           <EncounterItem key={e._id} encounter={e} current={e._id === current} onPick={() => setSelected(e._id)} />
         ))}
         {list.moreEnded ? (
-          <button type="button" className="enc-ghost" onClick={() => setEndedLimit((n) => n + ENDED_PAGE)}>
+          <BrandButton variant="neutral" size="sm" onClick={() => setEndedLimit((n) => n + ENDED_PAGE)}>
             Show more ended encounters
-          </button>
+          </BrandButton>
         ) : null}
       </nav>
       <section aria-label="Encounter detail" style={{ minWidth: 0 }}>
@@ -118,9 +119,9 @@ export function AddToEncounter({ campaignId, adversary }: { campaignId: Id<"camp
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button type="button" className="enc-ghost enc-on-paper" onClick={() => setOpen(true)} aria-label={`Add ${adversary.name} to an encounter`}>
+      <BrandButton variant="confirm" ink onClick={() => setOpen(true)} aria-label={`Add ${adversary.name} to an encounter`}>
         + Add to encounter
-      </button>
+      </BrandButton>
       <AddAdversaryDialog campaignId={campaignId} open={open} onClose={() => setOpen(false)} adversaryId={adversary.id} />
     </>
   );

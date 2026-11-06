@@ -52,7 +52,7 @@ async function expectOnTop(target: Locator, owner: Locator) {
 
 async function openRingAttack(page: Page) {
   const ring = page.getByRole("toolbar", { name: "Your actions (Moss)" });
-  const token = page.getByRole("region", { name: "Battle map" }).getByRole("button", { name: /^Open Moss’s sheet \(your character\)/ });
+  const token = page.getByRole("region", { name: "Battle map" }).getByRole("button", { name: /^Moss \(your character\): actions/ });
   const attack = ring.getByRole("button", { name: "Attack" });
   // The token toggles the ring, which may still be open from an earlier pick: toggle until Attack shows.
   await expect(async () => {

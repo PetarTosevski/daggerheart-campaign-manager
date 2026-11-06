@@ -4,6 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
+import { journalReport, startFromJournal } from "./visual/helpers";
 
 const unique = (label: string) => `${label} ${Date.now().toString(36)}`;
 
@@ -81,21 +82,18 @@ test("Witherwild: Severe Withered damage gives a Wither token, and ending the se
   await expect(page.getByTestId("wither-panel-count")).toHaveText(`${count} on sheets · ${20 - count} in pool`);
   await expect(page.getByRole("button", { name: `End Session · convert ${count} to Fear` })).toBeVisible();
 
-  // Start and End live on the Sessions tab (D10 S3's live card).
-  await page.goto(`/campaigns/${campaignId}/sessions`);
-  await page.getByRole("button", { name: "+ New session" }).click();
-  const liveCard = page.getByRole("region", { name: "Live session" });
-  await liveCard.getByRole("button", { name: "Start session" }).click();
-  await page.getByRole("dialog", { name: "Start the session?" }).getByRole("button", { name: "Start session" }).click();
-  await expect(liveCard.getByText("Session started.")).toBeVisible();
+  // Start lives in the Journal header (JH); the session started there ends from the dashboard's Wither panel.
+  await page.goto(`/campaigns/${campaignId}/journal`);
+  await startFromJournal(page);
+  await expect(journalReport(page)).toContainText("Session started.");
 
-  await liveCard.getByRole("button", { name: "End session" }).click();
+  await page.goto(`/campaigns/${campaignId}`);
+  await page.getByRole("button", { name: `End Session · convert ${count} to Fear` }).click();
   // The End dialog offers to keep Wither on the sheets (house rule); the book's conversion is ticked by default.
   const endDialog = page.getByRole("dialog", { name: "End the session?" });
   await expect(endDialog.getByRole("checkbox", { name: /Turn Wither tokens into Fear/ })).toBeChecked();
   await endDialog.getByRole("button", { name: "End session" }).click();
-  await expect(liveCard.getByText(`${count} Wither token${count === 1 ? "" : "s"} → +${count} Fear.`)).toBeVisible();
-  await page.goto(`/campaigns/${campaignId}`);
+  await expect(page.getByRole("status").getByText(`${count} Wither token${count === 1 ? "" : "s"} → +${count} Fear.`)).toBeVisible();
   await expect(page.getByRole("button", { name: `Fear ${count} of 12` })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: `Fear ${count + 1} of 12` })).toHaveAttribute("aria-pressed", "false");
   await expect(page.getByText(`Wither ${count}`)).toBeHidden();

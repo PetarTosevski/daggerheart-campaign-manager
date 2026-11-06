@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "convex/react";
 import type { OptimisticLocalStore } from "convex/browser";
 import { useState } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import { pickSetting } from "@/lib/sprite-packs/pick-setting";
 
@@ -70,12 +71,12 @@ export function StyleSwitch({ campaignId, map }: StyleSwitchProps) {
   return (
     <div className="cm-style">
       <div className="cm-seg cm-style-seg" role="group" aria-label="Map style">
-        <button type="button" aria-pressed={style === "classic"} onClick={() => choose("classic")} title="Draw this map with the painted Classic look">
+        <BrandButton variant="neutral" size="sm" className="flex-1" aria-pressed={style === "classic"} onClick={() => choose("classic")} title="Draw this map with the painted Classic look">
           Classic
-        </button>
-        <button type="button" aria-pressed={style === "sprites"} onClick={() => choose("sprites")} title="Draw this map with sprite packs">
+        </BrandButton>
+        <BrandButton variant="neutral" size="sm" className="flex-1" aria-pressed={style === "sprites"} onClick={() => choose("sprites")} title="Draw this map with sprite packs">
           Sprites
-        </button>
+        </BrandButton>
       </div>
       {error ? (
         <p role="alert" className="cm-alert cm-m0 cm-style-error">

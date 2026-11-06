@@ -1,5 +1,6 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
+import { gmJoinCode } from "./config/helpers";
 import { signInAsTestGm } from "./fixtures";
 
 const PLAYER = "e2e-player@example.test";
@@ -67,11 +68,7 @@ test("the GM runs the Five Banners and a player sees only what is revealed", asy
   await expect(armada.getByRole("listitem", { name: "Acquire airship technology" }).getByTestId("objective-value")).toHaveText("3/4");
 
   // A player joins and sees only the revealed relationship and objective.
-  await page.getByRole("button", { name: "Players", exact: true }).click();
-  const players = page.getByRole("dialog", { name: "Players" });
-  await expect(players.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  const code = (await players.getByTestId("join-code").textContent())!;
-  await players.getByRole("button", { name: "Close players" }).click();
+  const code = await gmJoinCode(page);
 
   const player = await playerJoins(browser, code);
   await expect(player.page.getByRole("heading", { level: 1, name })).toBeVisible();

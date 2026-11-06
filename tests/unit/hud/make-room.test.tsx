@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { HudProvider, hudRootClasses, useHud, type HudSheetTarget } from "@/components/combat-map/hud/state";
 import { stageToSquares } from "@/components/combat-map/map-view/map-board";
+import { anchorAt, anchorScroll, cssScale } from "@/components/combat-map/map-view/use-map-zoom";
 import { screenScale } from "@/components/combat-map/tokens/tokens-layer";
 
 const moss: HudSheetTarget = { kind: "pc", characterId: "moss" as Id<"characters"> };
@@ -122,6 +123,24 @@ describe("pointer maths under the make-room transform", () => {
     expect(Math.round(dx / screenScale(token, 1.2) / 48)).toBe(3);
     // No layer laid out (or none at all): the zoom.
     expect(screenScale(document.createElement("button"), 1.2)).toBe(1.2);
+  });
+
+  it("Ctrl + scroll keeps the point under the cursor under the make-room scale (dcm-bxp.99.32.14)", () => {
+    for (const scale of [1, 0.94, 0.92]) {
+      const vp = laidOut(document.createElement("div"), 1000, { left: 0, top: 0, width: 1000 * scale, height: 700 * scale });
+      expect(cssScale(vp)).toBeCloseTo(scale, 9);
+      // The stage's corner at (100, 40) on screen; the cursor at (500, 300); zoom 1 -> 1.12.
+      const stage = { left: 100, top: 40 };
+      const a = anchorAt(stage, 1, scale, 500, 300);
+      const by = anchorScroll(stage, a, 1.12, scale);
+      // A scroll of `by` layout px moves the stage by `by * scale` client px; the anchored point is back under the cursor.
+      const left = stage.left - by.x * scale;
+      const top = stage.top - by.y * scale;
+      expect(left + a.px * 1.12 * scale).toBeCloseTo(500, 9);
+      expect(top + a.py * 1.12 * scale).toBeCloseTo(300, 9);
+    }
+    // No layout size (jsdom): no scale.
+    expect(cssScale(document.createElement("div"))).toBe(1);
   });
 });
 

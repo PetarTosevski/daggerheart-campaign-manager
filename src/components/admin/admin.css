@@ -1,0 +1,274 @@
+/*
+ * App admin (plan config AD1; design reference/designs/config/Admin.dc.html, `.adm-h`, `.adm`, `.anav`, `.sn`, `.card`).
+ * Shell: the header (`.adm-h*`), the tab list on the left (`.adm-nav`, `.adm-sn`), the tab panel (`.adm-panel`) and the
+ * 'Not allowed' page (`.adm-denied`). Shared classes for the tabs: `.adm-card`, `.adm-card-h`, `.adm-row`,
+ * `.adm-row-t`, `.adm-muted`. A tab keeps its own rules in a colocated .css. Unlayered, like glass-button.css.
+ * Fonts come from the root layout: --font-cinzel (headings), --font-plex (UI).
+ */
+
+.adm-root {
+  --adm-page: #0d1417;
+  --adm-head: #0b1214;
+  --adm-line: #1f2b30;
+  --adm-card: #121b1f;
+  --adm-text: #e6ecea;
+  --adm-soft: #c8d3d0;
+  --adm-muted: #9fb2b6;
+  --adm-gold: #f3cf86;
+  --adm-acc: #e3b45a;
+  --adm-acc-bg: #2d2614;
+  --adm-ok: #7fc29b;
+  min-height: 100vh;
+  overflow-x: hidden;
+  background: var(--adm-page);
+  color: var(--adm-text);
+  font: 14px/1.5 var(--font-plex), ui-sans-serif, system-ui, sans-serif;
+}
+
+.adm-wrap {
+  box-sizing: border-box;
+  max-width: 1344px;
+  margin: 0 auto;
+  padding: 0 48px;
+}
+
+/* ---------------------------------------------------------------- header */
+
+.adm-h {
+  background: var(--adm-head);
+  border-bottom: 1px solid var(--adm-line);
+}
+.adm-h-in {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding-top: 22px;
+  padding-bottom: 26px;
+}
+.adm-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+.adm-brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.adm-wm {
+  font: 900 30px/1 var(--font-cinzel), serif;
+  letter-spacing: 0.1em;
+}
+.adm-own {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  margin-left: auto;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--adm-acc-bg);
+  color: var(--adm-gold);
+  font-size: 12.5px;
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgb(227 180 90 / 0.5);
+}
+.adm-own svg,
+.adm-saved svg,
+.adm-sn svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.adm-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+.adm-kick {
+  color: var(--adm-soft);
+  font-size: 13px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+.adm-title h1 {
+  margin: 4px 0;
+  font: 900 44px/1.05 var(--font-cinzel), serif;
+}
+.adm-title p {
+  margin: 0;
+  color: #d6dfdc;
+  font-size: 15px;
+}
+.adm-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--adm-ok);
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------------- tabs */
+
+.adm-grid {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 32px;
+  padding-top: 28px;
+  padding-bottom: 48px;
+}
+.adm-nav {
+  position: sticky;
+  top: 20px;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.adm-sn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--adm-soft);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.adm-sn:hover {
+  background: #18232a;
+}
+.adm-sn:focus-visible {
+  outline: 2px solid var(--adm-acc);
+  outline-offset: 2px;
+}
+.adm-sn[aria-selected="true"] {
+  background: var(--adm-acc-bg);
+  color: var(--adm-gold);
+  box-shadow: inset 0 0 0 1px var(--adm-acc);
+}
+.adm-panel {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 18px;
+}
+.adm-panel:focus-visible {
+  outline: 2px solid var(--adm-acc);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+.adm-failed {
+  margin: 0;
+  padding: 14px 18px;
+  border-radius: 14px;
+  background: rgb(0 0 0 / 0.35);
+  color: #f0d4cf;
+  box-shadow: inset 0 0 0 1px #6a2a2a;
+}
+
+/* ---------------------------------------------------------------- shared tab classes */
+
+.adm-card {
+  padding: 18px 22px 8px;
+  border: 1px solid var(--adm-line);
+  border-radius: 16px;
+  background: var(--adm-card);
+}
+.adm-card-h {
+  margin-bottom: 6px;
+}
+.adm-card-h h3 {
+  margin: 0;
+  color: var(--adm-gold);
+  font: 700 19px/1.2 var(--font-cinzel), serif;
+}
+.adm-card-h p {
+  margin: 4px 0 0;
+  color: var(--adm-muted);
+  font-size: 13px;
+}
+.adm-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 0;
+  border-top: 1px solid var(--adm-line);
+}
+.adm-card-h + .adm-row {
+  border-top: 0;
+}
+.adm-row-t {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+.adm-row-t b {
+  font-weight: 600;
+}
+.adm-row-t span {
+  color: var(--adm-muted);
+  font-size: 12.5px;
+}
+.adm-muted {
+  margin: 0;
+  color: var(--adm-muted);
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------------- not allowed */
+
+.adm-denied {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 24px;
+  background: #0d1417;
+  color: #ece6d6;
+  text-align: center;
+  font-family: var(--font-plex), ui-sans-serif, system-ui, sans-serif;
+}
+.adm-denied h1 {
+  margin: 0;
+  font: 700 32px/1.2 var(--font-cinzel), serif;
+}
+.adm-denied p {
+  margin: 0;
+  color: #b9c6c3;
+  font-size: 16px;
+}
+
+/* ---------------------------------------------------------------- narrow screens (design: max-width 860px) */
+
+@media (max-width: 860px) {
+  .adm-wrap {
+    padding: 0 16px;
+  }
+  .adm-wm {
+    font-size: 22px;
+  }
+  .adm-title h1 {
+    font-size: 34px;
+  }
+  .adm-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .adm-nav {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}

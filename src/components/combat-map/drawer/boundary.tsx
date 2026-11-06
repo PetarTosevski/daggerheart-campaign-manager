@@ -2,6 +2,8 @@
 
 import { Component, type ReactNode } from "react";
 
+import { BrandButton } from "@/components/brand/buttons";
+
 /** Keeps a failing `useQuery` inside the drawer (a refused or thrown read) from blanking the page (rule 11); "Try again" remounts it. */
 export class DrawerBoundary extends Component<{ children: ReactNode; label: string }, { failed: boolean; message: string }> {
   state: { failed: boolean; message: string } = { failed: false, message: "" };
@@ -21,9 +23,9 @@ export class DrawerBoundary extends Component<{ children: ReactNode; label: stri
         <span>
           {this.props.label} failed to load{this.state.message ? `: ${this.state.message}` : "."}
         </span>
-        <button type="button" className="cm-btn cm-sm" onClick={() => this.setState({ failed: false, message: "" })}>
+        <BrandButton variant="neutral" size="sm" onClick={() => this.setState({ failed: false, message: "" })}>
           Try again
-        </button>
+        </BrandButton>
       </div>
     );
   }

@@ -1,5 +1,7 @@
 "use client";
 
+import { DiceBoundary } from "./boundary";
+import { FateRoll } from "./free-roll";
 import "./dice.css";
 
 import { useQuery } from "convex/react";
@@ -32,6 +34,7 @@ import { situationalDice } from "./situations";
 import { SlayerOffer } from "./slayer";
 import { playRollSound } from "./sound";
 import { TagTeam } from "./tag-team";
+import { FEAR_HIDDEN_LABEL, fearShown } from "@/components/combat-map/hud/fear/hidden";
 
 type Mode = "action" | "reaction" | "damage";
 type AttackWeapon = "primary" | "secondary" | "none";
@@ -90,12 +93,14 @@ function partsText(roll: RollRecord): string {
 }
 
 /** The italic consequence line: what the server applied for Hope, Stress and Fear (CB 95, `dualityEffects`). */
-function consequence(roll: RollRecord, fearGained: number | undefined): string {
+function consequence(roll: RollRecord, fearGained: number | undefined, poolHidden = false): string {
   if (roll.kind === "reaction") return "Reaction rolls don’t generate Hope or Fear.";
   if (roll.kind !== "action") return "";
   const fx = dualityEffects("action", roll.outcome);
   if (fx.clearStress) return "Critical success: you gain a Hope and clear a Stress.";
   if (fx.hope) return "Rolled with Hope: you gain a Hope.";
+  // R1: "already full" would tell a player the hidden pool is 12; the die stays ("Rolled with Fear").
+  if (fx.fear && poolHidden) return "Rolled with Fear.";
   if (fx.fear) return fearGained === 0 ? "Rolled with Fear: the GM’s Fear is already full." : "Rolled with Fear: the GM gains a Fear.";
   return "";
 }
@@ -189,6 +194,8 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
   const [tideSpend, setTideSpend] = useState(0);
   // E1.4b (dcm-hqk1): the situations ticked for this roll ("In conversation", Reliable Backup, CB p.43).
   const [situations, setSituations] = useState<string[]>([]);
+  // Journal JF2 (dcm-z9rz.28): 'Social roll' marks this roll social (a Social scene does it on the server anyway).
+  const [social, setSocial] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
   const [history, setHistory] = useState<Result[]>([]);
   const [rolling, setRolling] = useState(false);
@@ -330,12 +337,14 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
       ...(slayerCount > 0 ? { slayerDice: slayerCount } : {}),
       ...(tideCount > 0 ? { tideTokens: tideCount } : {}),
       ...(ticked.length > 0 ? { situations: ticked } : {}),
+      ...(social ? { social: true } : {}),
     };
     const out = await actionRoll.fire({ characterId: character._id, ...args });
     if (out) {
       setSlayerSpend(0);
       setTideSpend(0);
       setSituations([]);
+      setSocial(false);
       await show(out.entryId, out.roll, out.prompts, label, slayerCount, out.fearGained);
     }
   }
@@ -459,8 +468,8 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
         <div className="dc-end">
           <BoardDiceToggles />
           {fear !== undefined ? (
-            <span className="sh-small dc-fear">
-              GM Fear <strong>{fear}</strong>
+            <span className="sh-small dc-fear" {...(fear === null ? { "aria-label": `GM Fear: ${FEAR_HIDDEN_LABEL}` } : {})}>
+              GM Fear <strong data-testid="dice-fear-value">{fearShown(fear)}</strong>
             </span>
           ) : null}
         </div>
@@ -514,6 +523,13 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
               <CountStepper label="Help dice" value={help} max={ADVANTAGE_LIMIT} onChange={setHelp} />
             </div>
           ) : null}
+          {mode !== "damage" ? (
+            <div className="dc-group">
+              <Chip checked={social} onChange={setSocial}>
+                Social roll
+              </Chip>
+            </div>
+          ) : null}
           {situational.length > 0 ? (
             <div className="dc-group" data-testid="dice-situations">
               {situational.map((o) => (
@@ -559,6 +575,12 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
           <div className="dc-group">
             <TagTeam campaignId={campaignId} character={character} disabled={unavailable} pending={choices?.tagTeam ?? null} />
           </div>
+          {/* Rule switches OFT: Fate rolls (CB p.168, optional) live in every player's dice box. */}
+          <div className="dc-group">
+            <DiceBoundary label="Fate roll">
+              <FateRoll campaignId={campaignId} />
+            </DiceBoundary>
+          </div>
         </div>
       </details>
 
@@ -584,7 +606,7 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
                     {result.label}
                     {partsText(result.roll) ? ` (${partsText(result.roll)})` : ""}
                   </span>
-                  {consequence(result.roll, result.fearGained) ? <span className="sh-small italic">{consequence(result.roll, result.fearGained)}</span> : null}
+                  {consequence(result.roll, result.fearGained, fear === null) ? <span className="sh-small italic">{consequence(result.roll, result.fearGained, fear === null)}</span> : null}
                 </span>
               </div>
             </div>

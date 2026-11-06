@@ -1,0 +1,823 @@
+# Rule switches plan (2026-11-05): per-campaign rule modes in Campaign settings > House rules.
+# Epic: bead dcm-jh6d, part A "homebrew vs automation" (absorbs dcm-bxp.134; folds in dcm-bxp.99.32.4 and .5).
+# Inputs: .omc/plans/rule-registry-list.md (61 rules, 27 switchable), bd show dcm-bxp.134 (optional rules decided
+# 2026-10-30), .omc/plans/overnight-questions.md "ANSWERS 2026-11-05". Briefs and open questions:
+# .omc/plans/rule-switches-briefs.md.
+# Format: docs/workflow.md. Extra keys (plan-check ignores them): title, size (S/M/L), rules (registry ids the tracer
+# builds), needs ('answer Qn': a user answer from the briefs before the tracer starts; 'migration run': the orchestrator
+# has run a migration on dev first).
+#
+# Binding user answers (2026-11-05): all 27 switchable rules + the decided optional rules; Manual = the app stops
+# applying the rule and posts a GM-only feed note (no blocking prompt); variants not printed in the books are allowed
+# where they fit, labelled "not in the books"; Book-only rules are read-only rows with their book page; GM and co-GM
+# edit, players read; every rule switch is locked while a session is live (server refuses with RULES_LOCKED).
+#
+# Rules for every tracer (details: briefs, "Common rules"):
+#   - First step in the worktree: git switch -C <branch> rebuild. Change only `owns`; pnpm tracer:guard rule-switches <id>.
+#   - Engine code reads a mode only through ruleModesOf(campaign) (src/lib/rules) and writes a Manual note only through
+#     postRuleNote (convex/lib/ruleModes.ts). Pure domain functions take the mode as a parameter whose default is the
+#     Book behaviour, so an unwired call site keeps today's behaviour.
+#   - Every public function: user* / campaign / gm wrappers, args + returns validators, no v.any; new public functions get
+#     their own tests/convex/authz/rules-<area>.entries.ts (+ .test.ts); tests assert ConvexError.data.code.
+#   - Host load: vitest with --maxWorkers=2 on the tracer's own test files (plus the files it touched), never the whole
+#     suite in a worktree; the orchestrator runs the full suite after each merge.
+plan: rule-switches
+waves:
+  # ------------------------------------------------------------------ wave 0: foundation
+  - wave: 0
+    tracers:
+      - id: RS0
+        title: "Rule registry, stored modes on the campaign, setter with the live-session lock, read query, Manual feed-note helper, authz"
+        size: L
+        rules: [registry, lock, notes]
+        goal: "Nothing changes at the table yet, but every campaign now has a typed set of rule modes (all Book / optional rules off, Defined Ranges on), a GM or co-GM can change one between sessions (refused with RULES_LOCKED while a session is live), every member can read them, and engine code has one helper to read a mode and one to post a GM-only 'Manual' note in the feed"
+        depends_on: []
+        owns:
+          - src/lib/rules/**
+          - convex/lib/validators/ruleModes.ts
+          - convex/tables/campaigns.ts
+          - convex/campaigns.ts
+          - convex/ruleSettings.ts
+          - convex/lib/ruleModes.ts
+          - convex/lib/validators/actionLog.ts
+          - src/lib/errors/rules.ts
+          - src/lib/errors/app-error.ts
+          - src/lib/convex-errors.ts
+          - tests/unit/rules/registry.test.ts
+          - tests/convex/rule-settings.test.ts
+          - tests/convex/rule-notes.test.ts
+          - tests/convex/authz/rules.entries.ts
+          - tests/convex/authz/rules.test.ts
+          - docs/data-model.md
+          - docs/tasks/TASK-RULES-RS0.md
+        reads:
+          - .omc/plans/rule-registry-list.md
+          - .omc/plans/rule-switches-briefs.md
+          - src/lib/frames/options.ts
+          - src/lib/config/campaign-settings.ts
+          - convex/campaignSettings.ts
+          - convex/lib/sessions.ts
+          - convex/lib/actionLog.ts
+          - convex/feed.ts
+          - convex/lib/functions.ts
+          - convex/lib/permissions.ts
+          - docs/best-practices.md
+        acceptance:
+          - "src/lib/rules/registry.ts (pure, bundled into Convex): RULES, one entry for each of the 61 rules of rule-registry-list.md (id such as 'fearFromRests', code 'F2', area, title, one-line 'what the app does', book refs [{ book: 'CB' | 'HF', page }], kind 'switch' | 'bookOnly' | 'appRule') and one entry for each decided optional rule (massiveDamage CB p.91, spotlightTracker CB p.89, fallingDamage CB p.168, underwater CB p.168, goldCoins CB p.104, fateRolls CB p.168, pcConflict CB p.168, horizonEncounterBonuses HF p.171 (Journey to Horizon only), sharedDomainCards CB p.21, definedRanges CB p.103), kind 'optional'; a switch rule lists its modes in order: 'book', its variants ({ id, label, notInBooks, ref? }), 'manual'; frame rules (W1-W7) name their frame and are hidden elsewhere. Mode sets follow the briefs' table (recommended answers to Q5-Q8 until the user answers)"
+          - "resolveRuleModes(frameId, stored) returns every rule's mode: unset switch = 'book', unset optional = off except definedRanges = on, a rule of another frame = 'book' / off; ruleModesOf(campaign) wraps it; a drift test checks that every registry id has exactly one validator field and vice versa"
+          - "Widen only (rule 7, CD4): campaigns gains ruleModes? = typed v.object of optional fields (convex/lib/validators/ruleModes.ts): each switch rule a v.union of its mode literals, each optional rule v.boolean(), spotlightTrackerTokens v.optional(v.number()) (validated 1-6 in the setter); no record, no JSON blob, no v.any"
+          - "convex/ruleSettings.ts: set = gmMutation { change } where change is a v.union of one { key, value } object per field (rule 12: one field per call); the value must be a mode of that rule and the rule must exist in this campaign's frame (else SETTING_INVALID); a value equal to the resolved one writes nothing; while liveSession(campaign) is not null it throws RULES_LOCKED ('Rule switches change between sessions. End the session first.'); archived campaign refused by the wrapper (CAMPAIGN_ARCHIVED); returns null"
+          - "ruleSettings.get = campaignQuery need 'view' returns { modes (resolved, typed), locked (a session is live), canEdit (gm or co-GM) } with a returns validator; players read it"
+          - "Q17 (recommended a): campaigns.setOption (the frame's campaign options, written by House rules and the dashboard's Campaign Rules panel) refuses with RULES_LOCKED while a session is live too; drop this line if the user answers b"
+          - "convex/lib/ruleModes.ts: ruleMode(campaign, id); postRuleNote(ctx, campaign, { ruleId, summary, characterId?, groupId?, actorId }) writes an actionLog row kind 'rule' (new literal, widened), visibility 'gm', ruleId (new optional field), never undoable on its own, undone with its action when it shares the action's groupId; players never receive it from feed.list (already public-only); co-GMs see it"
+          - "src/lib/errors/rules.ts holds RULES_LOCKED with its message and joins the AppErrorCode union; tests assert codes"
+          - "Authz entries for ruleSettings.get and .set (anonymous, outsider, player, GM, co-GM); docs/data-model.md documents campaigns.ruleModes and the actionLog 'rule' kind; lint, typecheck, vitest (--maxWorkers=2, own files) pass"
+      - id: RD1
+        title: "Migration: pin today's frame-switch values on existing campaigns before the defaults turn off"
+        size: S
+        rules: [lessLethal, transformations, enduranceCountdowns, remnantCorruption]
+        needs: "answer Q1"
+        goal: "Running campaigns in Castle High, Andaluria, Journey to Horizon and Motherboard keep their optional frame rule exactly as it is today (on unless the GM turned it off) when RD2 later makes new campaigns start with it off"
+        depends_on: []
+        owns:
+          - convex/migrations/ruleDefaults.ts
+          - tests/convex/migrations-rule-defaults.test.ts
+          - docs/tasks/TASK-RULES-RD1.md
+        reads:
+          - convex/migrations/run.ts
+          - convex/migrations/handSharing.ts
+          - convex/lib/migrations.ts
+          - src/lib/frames/options.ts
+          - convex/tables/campaigns.ts
+        acceptance:
+          - "@convex-dev/migrations migration migrations/ruleDefaults:pinFrameOptions (CD5: batched, resumable, idempotent): for every campaign (deleted ones too) whose frame offers lessLethal / transformations / enduranceCountdowns / remnantCorruption and whose options lacks that key, writes options[key] = true; keys already set are untouched; other options untouched"
+          - "Migration test: old shape in (no key, key false, key true, other frame), expected options out; second run writes nothing"
+          - "The task doc gives the orchestrator the dry-run and run commands (convex/migrations/run.ts) for dev; prod only when the user deploys; lint, typecheck, vitest (--maxWorkers=2, own files) pass"
+  # ------------------------------------------------------------------ wave 1: engine areas that do not share files
+  - wave: 1
+    tracers:
+      - id: RA
+        title: "PC action-roll aftermath: spotlight to the GM on a failure or Fear (S1) and Fear from rolls (R3)"
+        size: L
+        rules: [S1, R3]
+        needs: "answer Q2"
+        goal: "When a PC fails an action roll or rolls with Fear, the spotlight goes to the GM by itself (Book) or the GM gets a feed note 'Mira rolled with Fear: take the spotlight?' (Manual); in Manual for R3 the GM's Fear no longer rises by itself and the GM gets 'Mira rolled with Fear: gain 1 Fear?' instead"
+        depends_on: [RS0]
+        owns:
+          - convex/lib/rollAftermath.ts
+          - convex/lib/rolls.ts
+          - convex/rolls.ts
+          - convex/lib/combatActions.ts
+          - convex/lib/combatMovement.ts
+          - convex/lib/cardRunner.ts
+          - convex/lib/featureRunner.ts
+          - convex/combatCards.ts
+          - src/lib/domain/dice/index.ts
+          - tests/convex/rules-roll-aftermath.test.ts
+          - tests/unit/rules/roll-aftermath.test.ts
+          - docs/tasks/TASK-RULES-RA.md
+        reads:
+          - convex/lib/spotlight.ts
+          - convex/tables/combatSpotlight.ts
+          - convex/lib/fear.ts
+          - convex/countdownRolls.ts
+          - src/lib/rules/**
+          - convex/lib/ruleModes.ts
+        acceptance:
+          - "convex/lib/rollAftermath.ts afterPcActionRoll(ctx, campaign, { characterId, kind, outcome, groupId }) is called once per PC action roll from every path bead dcm-bxp.99.32.4 lists: rolls.duality, the Tag Team (once, with the chosen roll, CB p.97), card and feature rolls (cardRunner / featureRunner), weapon attacks (lib/combatActions), the movement roll in lib/combatMovement; reaction rolls and GM rolls never call it"
+          - "S1 Book (CB p.100, p.149): a failure or a roll with Fear calls moveToGm(reason 'failedRoll' | 'rollWithFear', characterId); a critical success never moves it. S1 Manual: no move; postRuleNote 'Mira rolled with Fear: take the spotlight?' / 'Mira failed: take the spotlight?' with the roll's groupId"
+          - "R3 Book: unchanged (CB p.154, p.90). R3 Manual (Q2 a): the GM's Fear is not gained on a roll with Fear (no fearDelta on the row) and the note 'Mira rolled with Fear: gain 1 Fear?' is posted; the player's Hope still rises (Q2 a; rewrite if the user picks b or c)"
+          - "Undoing the roll undoes its notes (shared groupId); undo putting the spotlight back stays bead dcm-bxp.99.32.10 (not here)"
+          - "Tests per path for Book and Manual of both rules; existing roll tests pass unchanged with default modes; lint, typecheck, vitest (--maxWorkers=2) pass"
+      - id: RDM
+        title: "Damage rules in the pure damage modules and the encounter tracker: D2, D4, D5, D8, F3, Massive Damage; resistance comment fix"
+        size: L
+        rules: [D2, D4, D5, D8, F3, massiveDamage]
+        goal: "In the encounter tracker the GM's campaign modes apply: resistance halves or the GM is told 'Target resists: halve?', a full Stress track marks 1 HP or the GM is told, a full Stress track makes the adversary Vulnerable or shows only 'Stress full', an adversary at its last HP is defeated or the GM is asked, each extra adversary spotlight takes 1 Fear or only warns, and Massive Damage (when on) marks 4 HP; the pure damage functions take the modes so the map's attack paths can pass them in wave 2"
+        depends_on: [RS0]
+        owns:
+          - src/lib/domain/encounters/**
+          - src/lib/domain/combat-actions/damage.ts
+          - src/lib/domain/adversary-actions/severity.ts
+          - src/lib/domain/characters/index.ts
+          - convex/encounterTracking.ts
+          - src/components/adversaries/tracker/**
+          - tests/unit/rules/damage-modes.test.ts
+          - tests/convex/rules-encounter-tracker.test.ts
+          - docs/tasks/TASK-RULES-RDM.md
+        reads:
+          - src/lib/rules/**
+          - convex/lib/ruleModes.ts
+          - convex/lib/spotlight.ts
+          - convex/lib/fear.ts
+        acceptance:
+          - "Pure functions (damageTaken, markStress, hpForDamage / damageSeverity, isDefeated, vulnerableFromStress, the PC Vulnerable-from-Stress derivation in characters/index.ts, spotlightCostsFear) take a DamageRules / mode argument defaulting to Book, so every caller not yet wired behaves as today"
+          - "D2 Manual: full damage, the result says resisted: true so the caller can note 'Target resists: halve?'; D4 Manual: the extra Stress is dropped and the result says overflow: true; D5 Manual: Stress full shows the 'Stress full' badge, no Vulnerable; D8 Manual: last HP marked, not defeated, result says lastHp: true"
+          - "massiveDamage on (CB p.91, PCs and adversaries): damage at or above twice the Severe threshold marks 4 HP; off = today"
+          - "encounterTracking passes ruleModesOf(campaign) and posts the Manual notes (D2, D4, D8; F3 Manual: the extra spotlight is counted and warned, no Fear spent, note 'Extra spotlight: spend 1 Fear?'); encounterTracking.spotlight also takes the spotlight for the GM (spotlightAdversary) when the adversary has a token on the live map, if not already wired (bead dcm-bxp.99.32.4)"
+          - "Comment fix: src/lib/domain/combat-actions/damage.ts (header line 9 and the 'halve, round down' note near line 104) and src/lib/domain/adversary-actions/severity.ts line 19 say resistance halving rounds UP (CB p.107 'round up unless otherwise specified'), matching Math.ceil in encounters/damage.ts"
+          - "Tracker UI shows 'Stress full' without Vulnerable in D5 Manual; unit tests per rule and mode; lint, typecheck, vitest (--maxWorkers=2) pass"
+      - id: RR
+        title: "Rests: Fear from rests (F2, Extended downtime variant), short-rest limit (T2), interrupted rest (T4)"
+        size: M
+        rules: [F2, T2, T4]
+        needs: "answer Q7"
+        goal: "Finishing a rest gains Fear as the book says, or (Extended downtime) 1d6 Fear per PC, or (Manual) the rest summary and a GM note say 'Gain 1d4 Fear'; a fourth short rest in a row is refused (Book) or warned and allowed (Manual); an interrupted rest follows the book or (Manual) just closes with a note"
+        depends_on: [RS0]
+        owns:
+          - convex/rests.ts
+          - convex/restsReads.ts
+          - convex/lib/validators/rests.ts
+          - src/lib/domain/rest/**
+          - src/components/party/rest/**
+          - tests/convex/rules-rests.test.ts
+          - tests/unit/rules/rest-modes.test.ts
+          - docs/tasks/TASK-RULES-RR.md
+        reads:
+          - src/lib/rules/**
+          - convex/lib/ruleModes.ts
+          - convex/lib/restHooks.ts
+          - convex/lib/fear.ts
+        acceptance:
+          - "F2 Book unchanged (CB p.105: short 1d4, long 1d4 + PCs). Extended downtime (CB p.181 'You gain 1d6 Fear per PC'): per Q7 a, the long-rest launcher offers 'Extended downtime (several days)' when the mode is on, and such a rest gains 1d6 per PC; Manual: no Fear gained, the summary line and a GM note say 'Gain 1d4 Fear' / 'Gain 1d4 + 4 Fear'"
+          - "T2 Book: the fourth short rest is refused as today (MAX_SHORT_RESTS, CB p.105); Manual: allowed, the launcher shows a warning and a GM note 'Fourth short rest in a row: the book says long rest'"
+          - "T4 Book unchanged (CB p.105); Manual: Interrupt closes the rest with no moves applied and a GM note 'Rest interrupted: decide what anyone keeps'"
+          - "Tests for each mode; existing rest tests pass; lint, typecheck, vitest (--maxWorkers=2) pass"
+      - id: RF
+        title: "Frame rest hooks: Horizon sanctuary (W2), Beast Feast (W4), Colossus Siphoning (W5), Age of Umbra Lurking Darkness (W6), Andaluria Lycanthropy (W7)"
+        size: M
+        rules: [W2, W4, W5, W6, W7]
+        goal: "In each frame the rest hook follows the GM's mode: Book as today; Manual: a Horizon long rest outside a sanctuary is allowed with a warning, Beast Feast offers every core downtime move too, and Siphoning / Lurking Darkness / Lycanthropy are not applied but the GM gets a note naming what to mark or roll"
+        depends_on: [RS0]
+        owns:
+          - convex/lib/restHooks.ts
+          - src/lib/domain/frames/beast-feast.ts
+          - src/lib/frames/trackers/colossus.ts
+          - src/lib/frames/trackers/age-of-umbra.ts
+          - src/lib/frames/trackers/andaluria.ts
+          - convex/trackers/colossus.ts
+          - convex/trackers/ageOfUmbra.ts
+          - convex/trackers/andaluria.ts
+          - tests/convex/rules-frame-rests.test.ts
+          - docs/tasks/TASK-RULES-RF.md
+        reads:
+          - src/lib/rules/**
+          - convex/lib/ruleModes.ts
+          - convex/rests.ts
+          - convex/trackers/horizon.ts
+        acceptance:
+          - "W2 Manual (HF p.176): the long rest outside a sanctuary goes through; the rest result carries a warning and a GM note 'Long rest outside a sanctuary'"
+          - "W4 Manual (CB p.278): Clear Stress, Tend to Wounds and Prepare are offered next to Make a Feast"
+          - "W5 Manual (CB p.327): no Siphoning mark; note 'Hunt phase rest: mark Siphoning once / twice'. W6 Manual (CB p.289): no d12 roll; note 'Rest away from a Sacred Pyre: roll on Lurking Darkness'. W7 Manual (HF p.153): no tick; note 'Rest: tick Lycanthropy for <PC> unless they halted it'"
+          - "Book modes unchanged (existing tests pass); tests per frame and mode; lint, typecheck, vitest (--maxWorkers=2) pass"
+      - id: RW
+        title: "Witherwild: Wither tokens on Severe damage from a Withered source (W1)"
+        size: S
+        rules: [W1]
+        goal: "In the Witherwild, Severe damage from a Withered source gains a Wither token and rolls the Fear Die (Book), or (Manual) nothing is added and the GM gets 'Mira took Severe damage from a Withered source: add a Wither token and roll?'"
+        depends_on: [RS0]
+        owns:
+          - convex/wither.ts
+          - convex/characters.ts
+          - src/lib/domain/wither/**
+          - tests/convex/rules-wither.test.ts
+          - docs/tasks/TASK-RULES-RW.md
+        reads:
+          - src/lib/rules/**
+          - convex/lib/ruleModes.ts
+          - convex/lib/validators/wither.ts
+        acceptance:
+          - "W1 Manual (CB p.261): the withered path of characters.ts (and any caller of gainWitherToken that applies it automatically) writes no token and no roll and posts the note; the GM's own Wither panel still adds tokens by hand"
+          - "Book unchanged; tests for both modes; lint, typecheck, vitest (--maxWorkers=2) pass"
+      - id: RK
+        title: "Countdowns tick on action rolls (K1)"
+        size: S
+        rules: [K1]
+        needs: "answer Q3"
+        goal: "Armed countdowns tick after every PC action roll (Book), or in Manual they stay put and the GM gets one note per roll naming them ('Action roll: tick Ambush (3), Collapse (5)?')"
+        depends_on: [RS0]
+        owns:
+          - convex/countdownRolls.ts
+          - convex/countdowns.ts
+          - src/lib/domain/countdowns/**
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/new-dialog.tsx
+          - tests/convex/rules-countdowns.test.ts
+          - docs/tasks/TASK-RULES-RK.md
+        reads:
+          - src/lib/rules/**
+          - convex/lib/ruleModes.ts
+        acceptance:
+          - "K1 Manual (Q3 a; CB p.162 'ticks down every time a player makes an action roll'): tickArmedCountdowns ticks nothing and posts one note per roll listing the armed countdowns (none armed = no note), with the roll's groupId; Tag Team counts once and reaction rolls never, as today"
+          - "Book unchanged; tests for both modes; lint, typecheck, vitest (--maxWorkers=2) pass"
+      - id: RX
+        title: "Death moves: the prompt (X1) and the automatic resolution (X2)"
+        size: M
+        rules: [X1, X2]
+        needs: "answer Q8"
+        goal: "When a PC marks their last HP, the player is asked for a death move (Book) or (Manual) no prompt appears and the GM gets 'Kael marked their last HP'; Avoid Death / Risk It All resolve themselves (Book) or (Manual) the player rolls in the dice box and the GM sets scar, death or healing on the sheet after a note"
+        depends_on: [RS0]
+        owns:
+          - convex/deathMoves.ts
+          - src/lib/domain/death/**
+          - convex/lib/incomingHits.ts
+          - convex/lib/combatHud.ts
+          - src/components/combat-map/hud/death/**
+          - src/components/party/death/**
+          - tests/convex/rules-death.test.ts
+          - tests/unit/rules/death-modes.test.tsx
+          - docs/tasks/TASK-RULES-RX.md
+        reads:
+          - src/lib/rules/**
+          - convex/lib/ruleModes.ts
+          - convex/adversaryActions.ts
+        acceptance:
+          - "Two rows per Q8 a: X1 Manual (CB p.106): combatHud's deathMoveDue is false for players, the HUD and party death prompts don't open, and the resolution path in incomingHits that sets deathMove posts 'Kael marked their last HP'; the GM's HUD still shows the PC at 0 HP"
+          - "X2 Manual (CB p.106): choosing Avoid Death or Risk It All rolls nothing automatically; the move is logged and the GM note says what to roll and what follows ('Avoid Death: roll the Hope Die; scar at or under level 3'); X2's row is read-only 'Needs the death move prompt' while X1 is Manual"
+          - "Book unchanged; less lethal (Castle High) still applies when on; tests for each mode; lint, typecheck, vitest (--maxWorkers=2) pass"
+      - id: RU
+        title: "House rules UI: rule rows (mode picker, optional switches, read-only Book rows with page), the lock, players read-only, Manual notes in the feed"
+        size: L
+        rules: [ui]
+        needs: "answer Q18"
+        goal: "In Campaign settings > House rules the GM and co-GM see every rule grouped by area: switchable rules with a Book / variant / Manual picker (non-book variants tagged 'not in the books'), optional rules as switches with their page, Book-only rules as read-only rows with their page; during a live session every control is disabled with 'Rule switches change between sessions'; players open the same list read-only; Manual notes show in the GM's feed tagged 'Manual'"
+        depends_on: [RS0]
+        owns:
+          - src/components/config/sections/rules/**
+          - src/components/config/prefs/**
+          - src/components/party/dice/roll-feed.tsx
+          - src/components/combat-map/hud/feed/**
+          - tests/unit/config/rule-switches.test.tsx
+          - tests/unit/config/rule-notes-feed.test.tsx
+          - docs/tasks/TASK-RULES-RU.md
+        reads:
+          - reference/designs/config/Settings.dc.html
+          - src/components/config/sections/table/**
+          - src/components/config/slots.ts
+          - src/components/config/shell/**
+          - src/components/brand/glass-button.ts
+          - src/lib/rules/**
+          - convex/ruleSettings.ts
+        acceptance:
+          - "Rows from RULES filtered to the campaign's frame, in the registry's areas as disclosure groups (Optional rules first, then the 13 areas, then today's Campaign options); in each area switchable rows first, Book-only rows after them"
+          - "Switchable row: title, what the app does, page tag ('Core Rulebook p.105' / 'Hope & Fear p.176'), a radio group like the Table section's segmented control (Book / variant label / Manual), variant with notInBooks tagged 'not in the books'; optional row: role=switch with 'Optional rule · Core Rulebook p.91'; spotlightTracker shows a tokens stepper (1-6) when on; Book-only row: text + 'Book · p.N', no control, aria-readonly"
+          - "Writes ruleSettings.set with an optimistic update on ruleSettings.get (rule 12); an error shows errorMessage (RULES_LOCKED's text); when locked every control is disabled and the hint 'Rule switches change between sessions. End the session to change them.' shows; the existing campaign options switches are disabled too (Q17 a)"
+          - "Players (Q18 a): the Preferences popover gets 'House rules' opening the same list read-only (no controls, modes as text); table rulings stay as they are"
+          - "Feed rows with kind 'rule' render with a 'Manual' tag and the rule title in the dice roll feed and the HUD feed"
+          - "Each new subtree inside an error boundary (CL1); unit tests: GM edit, locked, player read-only, not-in-the-books tag, Book-only row; lint, typecheck, vitest (--maxWorkers=2) pass"
+      - id: OH
+        title: "Optional rule: Horizon encounter Hope / Fear bonuses (HF p.171)"
+        size: S
+        rules: [horizonEncounterBonuses]
+        needs: "answer Q15"
+        goal: "In Journey to Horizon with the switch on, the GM's hex-crawl panel offers 'Setback: +1 Fear per PC' and 'Good fortune: each PC +1 Hope' after an encounter roll; off = nothing new"
+        depends_on: [RS0]
+        owns:
+          - convex/horizonEncounters.ts
+          - src/lib/domain/frames/horizon.ts
+          - src/app/(gm)/campaigns/[campaignId]/world/**
+          - tests/convex/rules-horizon-bonuses.test.ts
+          - tests/convex/authz/rules-horizon.entries.ts
+          - tests/convex/authz/rules-horizon.test.ts
+          - docs/tasks/TASK-RULES-OH.md
+        reads:
+          - convex/maps.ts
+          - convex/lib/fear.ts
+          - src/lib/world/hex-crawl.ts
+          - src/lib/rules/**
+        acceptance:
+          - "Per Q15 b: gmMutation horizonEncounters.apply { entry: 4 | 12, idempotencyKey }: 4 gains 1 Fear per PC in the campaign (gainFear, history row), 12 gives each PC 1 Hope (cap respected); refused with MECHANIC_DISABLED when the switch is off or the frame is not Journey to Horizon; logged in the feed"
+          - "The buttons appear in the GM's crawl panel only when on; authz entries; tests; lint, typecheck, vitest (--maxWorkers=2) pass"
+  # ------------------------------------------------------------------ wave 2: attack paths, map movement, tokens, sheet rules
+  - wave: 2
+    tracers:
+      - id: RC1
+        title: "PC attacks and cards on the map: conditions (C1), line of sight and cover (M1), Minions (D6 + variant), damage modes passed in"
+        size: L
+        rules: [C1, M1, D6, D2, D4, D5, D8, massiveDamage]
+        needs: "answer Q5"
+        goal: "A PC's attack or damaging card follows the campaign modes: Vulnerable / Hidden change the dice by themselves or only show badges, unseen targets are refused and cover adds disadvantage or the map only shows them, Minions fall as the book says or the GM picks the extra ones (not in the books) or only the hit Minion falls, and the damage modes from RDM apply with their Manual notes"
+        depends_on: [RA, RDM]
+        owns:
+          - convex/lib/combatActions.ts
+          - convex/combatActions.ts
+          - convex/combatCards.ts
+          - convex/lib/cardRows.ts
+          - convex/lib/combatRequests.ts
+          - convex/lib/validators/combatRequests.ts
+          - src/lib/domain/combat-actions/sight.ts
+          - src/lib/domain/combat-actions/damage.ts
+          - src/components/combat-map/hud/pick-attack/**
+          - tests/convex/rules-pc-attacks.test.ts
+          - docs/tasks/TASK-RULES-RC1.md
+        reads:
+          - src/lib/rules/**
+          - convex/lib/ruleModes.ts
+          - src/lib/domain/encounters/**
+          - convex/lib/rollAftermath.ts
+        acceptance:
+          - "C1 Manual (CB p.102): conditionEdge adds no advantage / disadvantage for the PC's roll; the note 'Target is Vulnerable: add advantage?' / 'Target is Hidden: disadvantage?' is posted with the attack's groupId"
+          - "M1 Manual (CB p.104): no refusal for an unseen target and no cover disadvantage; the map still draws sight and cover; note 'No line of sight to the Bandit' / 'Target behind cover'"
+          - "D6 (CB p.201): Book unchanged (attacker picks); variant 'GM picks the extra Minions' (not in the books) per Q5 a: the pick prompt goes to the GM's HUD instead of the attacker's and the attack waits like an out-of-range request; Manual: only the hit Minion is defeated, note 'X damage: defeat N more Minions?'"
+          - "Every PC damage site here (weapon attack, card damage, cardRows) passes ruleModesOf(campaign) into the RDM functions and posts their Manual notes (D2, D4, D8); massiveDamage applies to adversaries hit by PCs"
+          - "Tests per rule and mode; existing combat-actions tests pass; lint, typecheck, vitest (--maxWorkers=2) pass"
+      - id: RC2
+        title: "Adversary attacks on PCs: Armor Slot prompt (A1), conditions (C1, adversary side), damage modes on PCs, adversary spotlight to the GM"
+        size: L
+        rules: [A1, C1, D2, D4, massiveDamage, S1]
+        goal: "When an adversary hits a PC, the player gets the Armor Slot prompt (Book) or (Manual) the damage lands in full and the GM gets a note; Vulnerable / Hidden PCs change the GM's d20 by themselves or only show badges; Massive Damage and the stress-overflow and resistance modes apply to PCs; spotlighting an adversary through an adversary action gives the GM the spotlight"
+        depends_on: [RX, RDM]
+        owns:
+          - convex/lib/adversaryActions.ts
+          - convex/adversaryActions.ts
+          - convex/lib/incomingHits.ts
+          - convex/lib/adversaryHits.ts
+          - src/lib/domain/adversary-actions/**
+          - src/components/combat-map/hud/hit/**
+          - tests/convex/rules-adversary-attacks.test.ts
+          - docs/tasks/TASK-RULES-RC2.md
+        reads:
+          - src/lib/rules/**
+          - convex/lib/ruleModes.ts
+          - convex/lib/spotlight.ts
+          - src/lib/domain/encounters/**
+        acceptance:
+          - "A1 Manual (CB p.114, p.19): no incoming-hit Armor Slot offer is created; HP is marked at full severity; note 'Mira took Major damage; Armor Slot not offered'; direct damage, Shredding Strike and armor-cost riders unchanged in Book"
+          - "C1 Manual on the adversary side (convex/lib/adversaryActions conditionEdge): no automatic advantage / disadvantage on the d20; note as in RC1"
+          - "PC damage paths pass ruleModesOf(campaign) into severity / damage functions (massiveDamage marks 4 HP at twice the Severe threshold; D4 overflow; D2 for resistant PCs) and post their Manual notes"
+          - "An adversary action that spotlights an adversary token moves the spotlight to the GM (spotlightAdversary), the remaining part of bead dcm-bxp.99.32.4"
+          - "Tests per rule and mode; existing adversary-actions and incoming-hit tests pass; lint, typecheck, vitest (--maxWorkers=2) pass"
+      - id: RM
+        title: "Map movement and light: Hidden / Cloaked end on the map (C2), walls and doors (M2), dim-light badge (M3 Book / Manual)"
+        size: M
+        rules: [C2, M2, M3]
+        goal: "A Hidden or Cloaked PC loses it by itself when seen or attacking (Book) or the GM gets 'Does Mira lose Hidden?' (Manual); tokens stop at walls and closed doors for players (app rule, not in the books) or move freely (Manual); the dim-light badge shows (Book) or not (Manual)"
+        depends_on: [RA]
+        owns:
+          - convex/lib/combatMovement.ts
+          - convex/combatTokens.ts
+          - convex/cloakPrompts.ts
+          - convex/lib/cloakPrompts.ts
+          - src/lib/domain/combat-map/movement.ts
+          - src/lib/domain/combat-map/light.ts
+          - src/components/combat-map/vision/header.tsx
+          - src/components/combat-map/vision/panels.tsx
+          - tests/convex/rules-map-movement.test.ts
+          - docs/tasks/TASK-RULES-RM.md
+        reads:
+          - src/lib/rules/**
+          - convex/lib/ruleModes.ts
+          - convex/lib/combatActions.ts
+        acceptance:
+          - "C2 Manual (CB p.102): no automatic loss of Hidden / Cloaked on a move or attack and no Cloaked roll prompt in dim light; note 'Mira moved into the Bandit's sight: remove Hidden?'"
+          - "M2 'App rule' row is labelled not in the books (CB p.104 only says 'within Close range'); Manual: players' tokens pass walls and closed doors, difficult terrain is not flagged"
+          - "M3 Book: today's 'Dim light: ranged attacks at disadvantage' badge; Manual: no badge (the variant is OE)"
+          - "Tests per rule and mode; existing movement tests pass; lint, typecheck, vitest (--maxWorkers=2) pass"
+      - id: RT
+        title: "Optional rule: Spotlight Tracker (action tokens per PC, CB p.89)"
+        size: M
+        rules: [spotlightTracker]
+        needs: "answer Q9"
+        goal: "With the switch on, each PC shows N action tokens on the Combat Map (GM sets N, default 3); each PC action roll removes one; at 0 the player is warned; when every PC is at 0 all refill; the GM can refill by hand; off = no tokens"
+        depends_on: [RA, RX]
+        owns:
+          - convex/lib/rollAftermath.ts
+          - convex/lib/actionTokens.ts
+          - convex/tables/combatSpotlight.ts
+          - convex/combatSpotlight.ts
+          - convex/lib/combatHud.ts
+          - convex/cleanup.ts
+          - src/components/combat-map/hud/spotlight/**
+          - tests/convex/rules-action-tokens.test.ts
+          - tests/convex/authz/rules-tokens.entries.ts
+          - tests/convex/authz/rules-tokens.test.ts
+          - docs/tasks/TASK-RULES-RT.md
+        reads:
+          - src/lib/rules/**
+          - convex/lib/ruleModes.ts
+          - convex/lib/spotlight.ts
+        acceptance:
+          - "Table actionTokens { campaignId, characterId, used, updatedAt } with by_campaign_character and by_campaign (in convex/tables/combatSpotlight.ts, so schema.ts is untouched); no row = full; cleanup.ts purges it with the campaign (bounded take); schema-guard retention entry noted for the orchestrator"
+          - "Per Q9 a: afterPcActionRoll removes one token when the switch is on; at 0 the roll still goes through and the HUD warns 'No actions left: let another player act'; when every PC with a token on the live map is at 0, all refill; combatSpotlight.refillTokens gmMutation refills by hand"
+          - "combatHud returns tokens { left, of } per PC when on; the spotlight disc shows them; authz entries; tests; lint, typecheck, vitest (--maxWorkers=2) pass"
+      - id: OSC
+        title: "Sheet optional rules: Gold coins (CB p.104) and Shared domain cards (CB p.21)"
+        size: M
+        rules: [goldCoins, sharedDomainCards]
+        needs: "answer Q12, Q16"
+        goal: "With Gold coins on, the sheet's gold has a Coins row (10 coins roll into 1 handful); with Shared domain cards off (default), a player picking a domain card another PC in the campaign already holds sees 'Mira already has this card'; on = no warning"
+        depends_on: [RDM, RW]
+        owns:
+          - convex/characters.ts
+          - convex/lib/validators/characters.ts
+          - src/lib/domain/characters/index.ts
+          - convex/levelUp.ts
+          - src/lib/domain/level-up/card-choices.ts
+          - src/components/party/sheet-ui/**
+          - src/components/party/level-up/**
+          - src/app/(gm)/campaigns/[campaignId]/party/new/**
+          - tests/convex/rules-sheet-options.test.ts
+          - docs/tasks/TASK-RULES-OSC.md
+        reads:
+          - src/lib/rules/**
+          - convex/lib/ruleModes.ts
+          - convex/lib/cardChoices.ts
+        acceptance:
+          - "Gold coins (Q12 a): goldValidator widened with coins? (0-9, rule 7 widen); the gold domain function rolls 10 coins into a handful like handfuls into bags; the sheet shows the Coins row only when on; off = coins hidden and never changed"
+          - "Shared domain cards (Q16 b): off = level-up, the creation wizard and other card pickers show 'Mira already has this card' on cards another PC of the campaign holds (loadout or vault), never refused; on = no warning"
+          - "Tests; existing sheet and level-up tests pass; lint, typecheck, vitest (--maxWorkers=2) pass"
+      - id: OFT
+        title: "Optional rule: Fate rolls (CB p.168)"
+        size: S
+        rules: [fateRolls]
+        needs: "answer Q13"
+        goal: "With the switch on, the GM's roll panel has 'Fate roll': pick a PC and the Hope Die or Fear Die; the app rolls that die alone and posts it in the feed; no Hope or Fear is gained; off = no button"
+        depends_on: [RS0]
+        owns:
+          - convex/fateRolls.ts
+          - src/components/party/dice/free-roll.tsx
+          - tests/convex/rules-fate-rolls.test.ts
+          - tests/convex/authz/rules-fate.entries.ts
+          - tests/convex/authz/rules-fate.test.ts
+          - docs/tasks/TASK-RULES-OFT.md
+        reads:
+          - convex/rolls.ts
+          - convex/lib/actionLog.ts
+          - src/lib/rules/**
+        acceptance:
+          - "Per Q13 a: fateRolls.roll gmMutation { characterId, die: 'hope' | 'fear', note?, idempotencyKey } rolls the PC's Hope Die or Fear Die (d12, or the PC's changed Hope Die), logs a public feed row 'Fate roll for Mira (Fear Die): 4 · <note>', changes no Hope, Fear, countdown or spotlight; MECHANIC_DISABLED when off"
+          - "Authz entries; tests; lint, typecheck, vitest (--maxWorkers=2) pass"
+      - id: RD2
+        title: "The four frame switches start off for new campaigns"
+        size: S
+        rules: [lessLethal, transformations, enduranceCountdowns, remnantCorruption]
+        needs: "answer Q1; migration run (RD1 on dev)"
+        goal: "A new Castle High, Andaluria, Journey to Horizon or Motherboard campaign starts with its optional frame rule off (the GM turns it on in House rules); running campaigns keep theirs (RD1 pinned them)"
+        depends_on: [RD1, RU]
+        owns:
+          - src/lib/frames/options.ts
+          - tests/unit/rules/frame-option-defaults.test.ts
+          - tests/unit/config/rules.test.tsx
+          - tests/convex/options.test.ts
+          - tests/convex/rest-frame-hooks.test.ts
+          - tests/convex/death-moves.test.ts
+          - tests/convex/hud-death-confirm.test.ts
+          - tests/convex/andaluria.test.ts
+          - tests/convex/horizon.test.ts
+          - tests/convex/maps.test.ts
+          - tests/convex/motherboard.test.ts
+          - tests/convex/campaigns.test.ts
+          - tests/e2e/death.spec.ts
+          - tests/e2e/andaluria.spec.ts
+          - docs/tasks/TASK-RULES-RD2.md
+        reads:
+          - docs/decisions-d3-d11.md
+          - convex/migrations/ruleDefaults.ts
+        acceptance:
+          - "defaultFor returns false for lessLethal, transformations, enduranceCountdowns, remnantCorruption (user 2026-10-30, overrides docs/decisions-d3-d11.md); hopeAndFear and witherPersists unchanged"
+          - "Tests that relied on the old default turn the option on in their setup (only the owned files; any other file found is reported, not edited); lint, typecheck, vitest (--maxWorkers=2 on the changed files) pass"
+  # ------------------------------------------------------------------ wave 3
+  - wave: 3
+    tracers:
+      - id: RS2
+        title: "Players wait while the GM holds the spotlight (S2)"
+        size: M
+        rules: [S2]
+        needs: "answer Q4"
+        goal: "While the GM holds the spotlight, a player's non-reaction action, card, feature, roll or token move is refused with SPOTLIGHT_WITH_GM (Book; reactions still work), or (Manual) it goes through with a warning in the HUD and a GM note"
+        depends_on: [RC1, RM]
+        owns:
+          - convex/combatCards.ts
+          - convex/combatFeatures.ts
+          - convex/combatActions.ts
+          - convex/rolls.ts
+          - convex/combatTokens.ts
+          - convex/lib/spotlight.ts
+          - src/components/combat-map/hud/blocked/**
+          - src/components/combat-map/hud/action-ring/**
+          - tests/convex/rules-spotlight-wait.test.ts
+          - docs/tasks/TASK-RULES-RS2.md
+        reads:
+          - src/lib/rules/**
+          - convex/lib/ruleModes.ts
+          - src/lib/errors/spotlight.ts
+        acceptance:
+          - "Book (bead dcm-bxp.99.32.5, CB p.100): assertMayAct is called before any write in combatCards.useCard, combatFeatures.useFeature, combatActions.attack, the non-reaction rolls in rolls.ts and token moves in combatTokens; reactions (incoming-hit answers, reaction cards and features, reaction rolls) pass; the GM and a GM playing for a PC are never refused"
+          - "Manual (Q4 a): assertMayAct returns a warning instead of throwing; the HUD shows 'The GM has the spotlight' (not a refusal) and the GM gets 'Mira acted while you held the spotlight'"
+          - "Tests per entry point and mode; lint, typecheck, vitest (--maxWorkers=2) pass"
+      - id: ODR
+        title: "Optional rule: Defined Ranges (CB p.103), default on; off = no square counting, range hints or range checks"
+        size: L
+        rules: [definedRanges]
+        goal: "With Defined Ranges on (default) the map counts squares as today; off: no range rings, hints or measurements, and no range check refuses or asks: the GM judges by eye; the Table section's Out-of-range row says 'Defined Ranges is off'"
+        depends_on: [RC1, RC2, RM]
+        owns:
+          - convex/lib/combatActions.ts
+          - convex/lib/adversaryActions.ts
+          - convex/lib/cardRunner.ts
+          - convex/lib/featureRunner.ts
+          - convex/lib/combatMovement.ts
+          - src/lib/domain/combat-actions/distance.ts
+          - src/lib/domain/combat-map/reach.ts
+          - src/lib/domain/combat-map/ranges.ts
+          - src/components/combat-map/map-view/measure.tsx
+          - src/components/combat-map/map-view/area-pick.tsx
+          - src/components/combat-map/tokens/tokens-layer.tsx
+          - src/components/config/sections/table/**
+          - tests/convex/rules-defined-ranges.test.ts
+          - docs/tasks/TASK-RULES-ODR.md
+        reads:
+          - src/lib/rules/**
+          - convex/lib/ruleModes.ts
+          - src/lib/config/campaign-settings.ts
+        acceptance:
+          - "Off: PC, card, feature and adversary range checks never refuse or create an out-of-range request; the outOfRange table setting is ignored; movement range checks don't refuse; area templates still place but show no square counts"
+          - "Off: range rings, range hints and the measure tool are hidden for everyone; the Table section's Out-of-range row is disabled with 'Defined Ranges is off'"
+          - "On: unchanged (every existing range test passes); tests for off on each server path; lint, typecheck, vitest (--maxWorkers=2) pass"
+      - id: OFA
+        title: "Optional rule: Falling and collision damage (CB p.168), a GM quick button"
+        size: S
+        rules: [fallingDamage]
+        needs: "answer Q10"
+        goal: "With the switch on, the GM's token menu on the Combat Map has 'Fall / collision': Very Close, Close, Far or Very Far, or Collision; the app rolls the book's damage and hits the PC through the normal hit path; off = no button"
+        depends_on: [RC2]
+        owns:
+          - convex/combatHazards.ts
+          - src/lib/domain/hazards.ts
+          - convex/lib/incomingHits.ts
+          - src/components/combat-map/hud/token/**
+          - tests/convex/rules-falling.test.ts
+          - tests/convex/authz/rules-hazards.entries.ts
+          - tests/convex/authz/rules-hazards.test.ts
+          - docs/tasks/TASK-RULES-OFA.md
+        reads:
+          - src/lib/rules/**
+          - convex/lib/adversaryActions.ts
+        acceptance:
+          - "Per Q10 a: combatHazards.fall gmMutation { tokenId, kind: 'veryClose' | 'close' | 'far' | 'collision', idempotencyKey }: 1d10+3 / 1d20+5 / 1d100+15 physical (CB p.168), collision 1d20+5 direct physical; applied as a hit on the PC (Armor Slot prompt unless direct, A1 mode respected); a Far / Very Far fall's feed row adds 'or death at the GM's discretion'; MECHANIC_DISABLED when off"
+          - "Authz entries; tests; lint, typecheck, vitest (--maxWorkers=2) pass"
+  # ------------------------------------------------------------------ wave 4
+  - wave: 4
+    tracers:
+      - id: OE
+        title: "Environment on attacks: dim-light variant (M3) and the Underwater optional rule (CB p.168)"
+        size: L
+        rules: [M3, underwater]
+        needs: "answer Q6, Q11"
+        goal: "M3's variant applies dim light to PC ranged attacks by itself; with Underwater on, the GM marks a Combat Map scene Underwater: attack rolls get disadvantage (except creatures the GM marks as at home underwater), a breath countdown ticks with each PC action, and once it ends each PC action marks a Stress"
+        depends_on: [ODR, RT, RK]
+        owns:
+          - convex/lib/combatActions.ts
+          - convex/lib/adversaryActions.ts
+          - convex/lib/rollAftermath.ts
+          - src/lib/domain/combat-map/light.ts
+          - convex/combatScenes.ts
+          - convex/tables/combatMaps.ts
+          - src/components/combat-map/hud/scene/**
+          - tests/convex/rules-environment.test.ts
+          - tests/convex/authz/rules-underwater.entries.ts
+          - tests/convex/authz/rules-underwater.test.ts
+          - docs/tasks/TASK-RULES-OE.md
+        reads:
+          - src/lib/rules/**
+          - convex/lib/ruleModes.ts
+          - convex/countdowns.ts
+        acceptance:
+          - "M3 variant(s) per Q6 a (CB p.104 'raising the Difficulty of action rolls or imposing disadvantage'): 'Dim light: disadvantage' adds a disadvantage die to PC ranged attacks in dim light; 'Dim light: +2 Difficulty' (not in the books: the book gives no number) adds 2 to their Difficulty; the badge names the active one"
+          - "Underwater per Q11 a: scene field underwater? (widen) set by combatScenes.setUnderwater gmMutation (MECHANIC_DISABLED when off); PC and adversary attack rolls in that scene get disadvantage unless the creature is marked 'fights underwater'; a breath countdown (start 3, GM may change) ticks once per PC action roll via afterPcActionRoll; on a failure or with Fear the GM gets a note 'Tick breath once more?'; at 0 every PC action roll marks 1 Stress (D4 mode respected)"
+          - "Authz entries; tests; lint, typecheck, vitest (--maxWorkers=2) pass"
+  # ------------------------------------------------------------------ wave 5
+  - wave: 5
+    tracers:
+      - id: OP
+        title: "Optional rule: Conflict between PCs (CB p.168)"
+        size: M
+        rules: [pcConflict]
+        needs: "answer Q14"
+        goal: "With the switch on, a PC may target another PC's token with an attack: the roll is compared with the defender's Evasion and the damage reaches them through the normal hit path; off = PCs can't target PCs (today)"
+        depends_on: [OE, RS2, OFA]
+        owns:
+          - convex/lib/combatActions.ts
+          - convex/combatActions.ts
+          - convex/lib/incomingHits.ts
+          - src/components/combat-map/hud/pick-attack/**
+          - tests/convex/rules-pc-conflict.test.ts
+          - docs/tasks/TASK-RULES-OP.md
+        reads:
+          - src/lib/rules/**
+          - convex/lib/ruleModes.ts
+        acceptance:
+          - "Per Q14 b: on: the attack picker lists other PCs' tokens; the attack roll is a normal PC action roll against the defender's Evasion ('just like an adversary', CB p.168), damage reaches the defender as an incoming hit (Armor Slot prompt per A1); off: unchanged; non-attack conflicts stay at the table"
+          - "Tests; lint, typecheck, vitest (--maxWorkers=2) pass"
+  # ------------------------------------------------------------------ wave 6: close
+  - wave: 6
+    tracers:
+      - id: RZ
+        title: "Close: e2e and a11y specs, rule docs, beads"
+        size: M
+        rules: [close]
+        goal: "Two-browser e2e proves a GM switches a rule between sessions and the table follows it, a live session locks the switches, a player reads the list; axe passes on House rules; the rules docs list every mode"
+        depends_on: [RA, RDM, RR, RF, RW, RK, RX, RU, OH, RC1, RC2, RM, RT, OSC, OFT, RD2, RS2, ODR, OFA, OE, OP]
+        owns:
+          - tests/e2e/rule-switches.spec.ts
+          - tests/e2e/live-rule-switches.spec.ts
+          - tests/e2e/a11y-rule-switches.spec.ts
+          - docs/rules-index.md
+          - docs/game-interpretation.md
+          - docs/open-questions.md
+          - docs/tasks/TASK-RULES-RZ.md
+        reads:
+          - tests/e2e/config/helpers.ts
+          - tests/e2e/a11y.ts
+          - docs/tasks/TASK-RULES-*.md
+        acceptance:
+          - "rule-switches.spec.ts: GM sets T2 to Manual between sessions, a fourth short rest goes through with the warning, the GM's feed shows the Manual note and the player's feed doesn't; GM sets F2 to Manual and the rest summary says 'Gain 1d4 Fear'"
+          - "live-rule-switches.spec.ts (two browsers): with a live session the GM's controls are disabled and a forced call is refused with RULES_LOCKED; the player opens House rules read-only and sees the modes; after End session the GM changes a mode and the player's list updates"
+          - "a11y-rule-switches.spec.ts: axe on House rules (GM, locked, player) at 1440x900 and 1024x768; keyboard-only mode change"
+          - "docs/game-interpretation.md and docs/rules-index.md list every registry rule with its modes and pages from the TASK docs; the full e2e suite passes on rebuild; lint, typecheck, vitest pass"
+  # ------------------------------------------------------------------ follow-up (user answers 2026-11-06)
+  - wave: 10
+    tracers:
+      - id: RA2
+        title: "R3 on card and feature rolls; S1 on every PC action roll"
+        beads: [dcm-jh6d.67]
+        goal: "In R3 Manual, card and feature rolls also gain no Hope / Fear and post the R3 note (the run context carries the mode); a critical keeps its Hope and Stress clear in every mode; S1 (spotlight to the GM on Fear or a failure) fires on every PC action roll, not only in a running encounter"
+        depends_on: [RA]
+        owns:
+          - src/lib/domain/card-effects/**
+          - convex/lib/cardRunner.ts
+          - convex/lib/featureRunner.ts
+          - convex/lib/rollAftermath.ts
+          - src/lib/domain/dice/index.ts
+          - tests/convex/rules-roll-aftermath.test.ts
+          - tests/unit/rules/roll-aftermath.test.ts
+          - tests/unit/card-effects/**
+          - tests/convex/rules-card-rolls.test.ts
+          - docs/tasks/TASK-RULES-RA2.md
+        acceptance:
+          - Convex tests for a card roll and a feature roll in R3 Book and Manual; S1 outside an encounter; crit Hope kept in Manual; lint, typecheck pass
+  # ------------------------------------------------------------------ follow-ups 2 (user answers 2026-11-06, wave 2 questions)
+  - wave: 11
+    tracers:
+      - id: RFA
+        title: "Hidden ends in Book like Cloaked; Vulnerable PCs give adversary attacks advantage; adversary actions always take the spotlight"
+        beads: [dcm-bxp.134]
+        goal: "Book ends a PC's Hidden exactly like Cloaked (clear sight on the PC's move, an adversary moving to where it sees the PC, an attack; dim light asks the Finesse roll); C1 Book gives an adversary attack advantage per Vulnerable target; S1 Manual stops only the PC-roll half: adversary actions always move the spotlight"
+        depends_on: [RC1, RC2, RM]
+        owns:
+          - convex/lib/combatMovement.ts
+          - convex/combatTokens.ts
+          - convex/lib/cloakPrompts.ts
+          - src/lib/domain/combat-map/movement.ts
+          - convex/lib/adversaryActions.ts
+          - src/lib/domain/adversary-actions/**
+          - convex/lib/combatActions.ts
+          - tests/convex/rules-hidden-vulnerable.test.ts
+          - docs/tasks/TASK-RULES-RFA.md
+        acceptance:
+          - Convex tests for each answer in Book and Manual; existing cloaked / adversary-actions / rules-* tests pass
+      - id: RFB
+        title: "Spotlight Tracker answers: refill on encounter start, Tag Team both spend, undo refunds, GM 'spend a token'"
+        beads: [dcm-bxp.134]
+        goal: "With the Spotlight Tracker on, tokens refill when an encounter starts, both PCs of a Tag Team spend one, undoing a roll gives its token back, and the GM can spend a PC's token for a significant action without a roll"
+        depends_on: [RT]
+        owns:
+          - convex/lib/actionTokens.ts
+          - convex/lib/rollAftermath.ts
+          - convex/combatSpotlight.ts
+          - convex/encounters.ts
+          - convex/lib/actionLog.ts
+          - src/components/combat-map/hud/spotlight/**
+          - tests/convex/rules-action-tokens.test.ts
+          - tests/convex/authz/rules-tokens.entries.ts
+          - docs/tasks/TASK-RULES-RFB.md
+        acceptance:
+          - Convex tests per answer; authz entry for any new function; HUD unit test for the spend button
+      - id: RFC
+        title: "Card and feature engine follows the damage, sight, condition and defeat modes"
+        beads: [dcm-jh6d.70]
+        goal: "Card and feature uses honour D2 / D4 / Massive (RunContext.damageRules from buildRun), M1 line of sight and cover in Manual, C1 condition dice on card attack rolls (user 2026-11-06: yes, like weapons), D8 in feature uses and areas; the HUD picker lets a Manual campaign pick no-line-of-sight targets; the player's result says when the GM picks extra Minions"
+        depends_on: [RC1, RA2]
+        owns:
+          - src/lib/domain/card-effects/**
+          - convex/lib/cardRunner.ts
+          - convex/lib/featureRunner.ts
+          - convex/lib/combatAreas.ts
+          - src/components/combat-map/hud/pick/**
+          - src/components/combat-map/hud/result/**
+          - tests/convex/rules-card-modes.test.ts
+          - tests/unit/card-effects/**
+          - docs/tasks/TASK-RULES-RFC.md
+        acceptance:
+          - Convex tests for a card / feature use per rule in Book and Manual; HUD unit tests; existing card / feature / area tests pass
+  # ------------------------------------------------------------------ follow-ups 3 (user answers 2026-11-06)
+  - wave: 12
+    tracers:
+      - id: CU2
+        title: "Combat UI: undo of a roll puts the spotlight back; ally picks 'Neither' and the actor can untick allies"
+        beads: [dcm-bxp.99.32.10, dcm-bxp.99.32.46]
+        goal: "Undoing a PC roll that moved the spotlight to the GM restores the holder from before; per-ally choices (Rousing Strike, Critical Inspiration) offer 'Neither'; the acting player unticks allies who can't see or hear them before the picks go out; with Defined Ranges off, the ally list is every PC and the actor unticks"
+        depends_on: [RS2, RA2]
+        owns:
+          - convex/lib/spotlight.ts
+          - convex/lib/actionLog.ts
+          - convex/lib/rollAftermath.ts
+          - convex/lib/allyPicks.ts
+          - convex/allyPicks.ts
+          - convex/allyPicksReads.ts
+          - convex/lib/validators/combatRequests.ts
+          - src/lib/srd/card-effects/valor.ts
+          - src/components/combat-map/hud/ally-picks/**
+          - tests/convex/ally-picks.test.ts
+          - tests/convex/rules-spotlight-undo.test.ts
+          - tests/unit/hud/ally-picks.test.tsx
+          - docs/tasks/TASK-RULES-CU2.md
+        acceptance:
+          - tests per goal; lint, typecheck pass
+      - id: JF2
+        title: "Journal: social rolls get a mouth icon; players read After the session"
+        beads: [dcm-z9rz.28, dcm-z9rz.32]
+        goal: "A roll counts as social when made while the Journal's current scene is Social or when the player ticks 'social' in the dice box (optional stored flag, widen only); social rolls show a mouth icon in the Journal log; players read After the session (level-ups, milestone, loot) read-only"
+        depends_on: [RS2]
+        owns:
+          - convex/lib/validators/actionLog.ts
+          - convex/rolls.ts
+          - convex/lib/rolls.ts
+          - convex/sessionWrap.ts
+          - src/components/party/dice/**
+          - src/components/journal/**
+          - tests/convex/journal*.test.ts
+          - tests/convex/rolls.test.ts
+          - tests/convex/authz/sessions.entries.ts
+          - tests/unit/journal/**
+          - docs/tasks/TASK-JF2.md
+        acceptance:
+          - tests per goal; lint, typecheck pass
+      - id: ODR2
+        title: "Defined Ranges off: automatic range effects become GM notes; map UI and remaining server checks follow the switch"
+        beads: [dcm-bxp.134]
+        goal: "With Defined Ranges off, effects that pick creatures by range automatically don't apply and post a GM-only note asking who is in range (user 2026-11-06); the measure tool, area previews, range-circle buttons, the dock's Measure buttons, door/light reach and client range marks follow the switch; card Minion offers, feature prompts, area placement / carry / move limits and Blink Beast's duplicate stop counting squares"
+        depends_on: [ODR, RS2]
+        owns:
+          - src/lib/domain/card-effects/**
+          - src/lib/domain/adversary-effects/**
+          - convex/lib/cardRunner.ts
+          - convex/lib/featureRunner.ts
+          - convex/lib/combatAreas.ts
+          - convex/featurePrompts.ts
+          - convex/featurePromptsReads.ts
+          - convex/combatCards.ts
+          - convex/combatTokens.ts
+          - convex/combatVision.ts
+          - src/components/combat-map/map-board.tsx
+          - src/components/combat-map/hud/dock/**
+          - src/components/combat-map/hud/pick-area/**
+          - src/components/combat-map/map-view/area-overlay.tsx
+          - src/components/combat-map/tokens/token-panel.tsx
+          - src/components/combat-map/vision/**
+          - src/components/combat-map/hud/pick/**
+          - src/components/combat-map/actions/**
+          - tests/convex/rules-defined-ranges.test.ts
+          - tests/unit/card-effects/**
+          - docs/tasks/TASK-RULES-ODR2.md
+        acceptance:
+          - tests per goal; lint, typecheck pass

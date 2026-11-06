@@ -3,6 +3,7 @@
 import "@/components/party/dice/dice.css";
 import "./hand.css";
 
+import { BrandButton } from "@/components/brand/buttons";
 import { DiceTiles } from "@/components/party/dice/parts";
 
 import { outcomeLine, targetVerdict } from "../attack";
@@ -90,15 +91,15 @@ export function CardResult({ last, onDone }: { last: LastCard; onDone: (index: n
               <span className="cm-lbl">{PROMPT_WORD[p.kind]}</span>
               <span className="cmh-prompt-text">{p.text}</span>
               {p.kind === "manual" ? (
-                <button type="button" className="cm-btn cm-sm" aria-label={`Done: ${p.text}`} onClick={() => onDone(p.i)}>
+                <BrandButton variant="neutral" size="sm" aria-label={`Done: ${p.text}`} onClick={() => onDone(p.i)}>
                   Done
-                </button>
+                </BrandButton>
               ) : null}
             </li>
           ))}
         </ul>
       ) : null}
-      {result.fearDelta > 0 ? <p className="cm-muted cma-small cma-note">The GM gains {result.fearDelta} Fear.</p> : null}
+      {(result.fearDelta ?? 0) > 0 ? <p className="cm-muted cma-small cma-note">The GM gains {result.fearDelta} Fear.</p> : null}
       {result.minionOffer ? <p className="cm-muted cma-small cma-note">Your damage can defeat more Minions: pick them under Attack.</p> : null}
     </section>
   );

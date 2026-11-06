@@ -11,6 +11,8 @@ import type { SessionListItem } from "../../../convex/sessionRecords";
 let results: Record<string, unknown> = {};
 const calls = vi.hoisted(() => ({ list: [] as { name: string; args: Record<string, unknown> }[], replies: {} as Record<string, unknown> }));
 const tome = vi.hoisted(() => ({ open: vi.fn() }));
+// Config JO1: the campaign's 'A new session opens on' setting and the router the Start moves.
+const shell = vi.hoisted(() => ({ opensOn: "journal" as "journal" | "combatMap", push: vi.fn() }));
 
 vi.mock("convex/react", () => ({
   useQuery: (ref: unknown, args: unknown) => (args === "skip" ? undefined : results[getFunctionName(ref as never)]),
@@ -30,7 +32,11 @@ vi.mock("next/link", () => ({
     </a>
   ),
 }));
-vi.mock("@/app/(gm)/campaigns/[campaignId]/campaign-shell", () => ({ useOpenTome: () => tome.open }));
+vi.mock("@/app/(gm)/campaigns/[campaignId]/campaign-shell", () => ({
+  useOpenTome: () => tome.open,
+  useCampaign: () => ({ settings: { sessionOpensOn: shell.opensOn } }),
+}));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: shell.push }) }));
 // The brand Modal uses <dialog>.showModal, which jsdom lacks: render it inline when open.
 vi.mock("@/components/brand/modal", () => ({
   Modal: ({ open, title, children }: { open: boolean; title: string; children: React.ReactNode }) =>
@@ -69,6 +75,8 @@ afterEach(() => {
   onOpenSession.mockReset();
   onNotesView.mockReset();
   tome.open.mockReset();
+  shell.push.mockReset();
+  shell.opensOn = "journal";
 });
 
 describe("start target", () => {
@@ -132,8 +140,31 @@ describe("GM, nothing live", () => {
     await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Start session" })));
     expect(calls.list.find((c) => c.name === "sessions:start")?.args).toMatchObject({ campaignId: "c1", sessionId: "s7" });
     expect(onOpenSession).toHaveBeenCalledWith("s7", "log");
+    expect(shell.push).not.toHaveBeenCalled();
     const status = screen.getAllByRole("status").find((el) => el.getAttribute("aria-live") === "polite")!;
     expect(status.textContent).toContain("Session started. Ash rolled Prayer Dice: 3, 1.");
+  });
+
+  it("JO1: with 'A new session opens on' Combat Map, the Start moves the GM to the Combat Map", async () => {
+    shell.opensOn = "combatMap";
+    calls.replies["sessions:start"] = { startedAt: 2000, alreadyStarted: false, sessionId: "s7", n: 7 };
+    renderHeader(true, "s7" as Id<"sessions">);
+    fireEvent.click(screen.getByRole("button", { name: "Start session 7" }));
+    const dialog = screen.getByRole("dialog", { name: "Start session 7?" });
+    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Start session" })));
+    expect(shell.push).toHaveBeenCalledWith("/campaigns/c1/combat-map");
+    expect(onOpenSession).not.toHaveBeenCalled();
+  });
+
+  it("JO1: a session already running moves no one", async () => {
+    shell.opensOn = "combatMap";
+    calls.replies["sessions:start"] = { startedAt: 2000, alreadyStarted: true };
+    renderHeader(true, "s7" as Id<"sessions">);
+    fireEvent.click(screen.getByRole("button", { name: "Start session 7" }));
+    const dialog = screen.getByRole("dialog", { name: "Start session 7?" });
+    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Start session" })));
+    expect(shell.push).not.toHaveBeenCalled();
+    expect(onOpenSession).not.toHaveBeenCalled();
   });
 
   it("starts the newest planned session when the selected one was played", () => {

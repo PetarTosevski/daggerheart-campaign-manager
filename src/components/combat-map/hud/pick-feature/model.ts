@@ -1,16 +1,15 @@
 import type { FunctionReturnType } from "convex/server";
 
-import { pickUse, rollMatches } from "@/lib/domain/card-effects/run";
-import type { AreaSpec, CardUse, Cost, Range, RollFilter, RollSpec, Step, TargetSpec, Trigger } from "@/lib/domain/card-effects/types";
+import { pickUse } from "@/lib/domain/card-effects/run";
+import type { AreaSpec, CardUse, Cost, TargetSpec } from "@/lib/domain/card-effects/types";
 import type { Footprint } from "@/lib/domain/combat-actions/distance";
 import { shortfallLabel, shortfallOf } from "@/lib/domain/combat-actions/shortfall";
 import { asCardEffect } from "@/lib/domain/feature-effects/run";
 import { cardEffect } from "@/lib/srd/card-effects";
 import { featureEffect } from "@/lib/srd/feature-effects";
-import type { TraitId } from "@/lib/srd/types";
 
 import type { api } from "../../../../../convex/_generated/api";
-import { costLabel, formFor, RANGE_LABEL, type ChoiceAsk, type HandCard, type UseForm } from "../../actions/hand/model";
+import { costLabel, formFor, RANGE_LABEL, type ChoiceAsk, type UseForm } from "../../actions/hand/model";
 import type { RiderOption } from "../../actions/attack/riders";
 import { MAX_PICKED_SQUARES, pickAreaOf, serverUseOf, type AreaPicks } from "../../drawer/use/model";
 import type { AreaAsk } from "../pick-area/model";
@@ -22,14 +21,10 @@ import type { CostResource } from "../ui";
  * uses and the squares, `formFor` (actions/hand/model.ts) for what a use asks before it runs, `ridersToSend`
  * (actions/attack/riders.tsx) for the riders' arguments.
  *
- * dcm-aiwg: the riders that ride on a feature's own action roll (Fangs + Feed's "Fear Die a d20", HF p.39). The server
- * takes them (`combatFeatures.useFeature({ riders })`, plan lanes-2 E1.3a) but lists rider options only for a weapon
- * attack (`combatActions.riders`). `featureRiderOptions` mirrors the server's `riderOptions` / `riderPhase` for a feature
- * host (convex/lib/combatActions.ts; host = `rollHost` with `fromUse` the feature) from what the client holds: the held
- * features' uses and readiness (`combatFeaturesReads.drawer`) and the loadout's (`combatCardsReads.hand`). Before-roll and
- * after-roll riders only (a damage-phase rider is a prompt after the damage, DA2); default-on riders (Rise to the
- * Challenge) ride on the server's side. The server checks every rider again (`pickRiders`: INVALID for one that does not
- * ride). Follow-up bead: a `combatFeatures.riders` query to replace this mirror.
+ * dcm-aiwg / dcm-bxp.99.32.19: the riders that ride on a feature's own action roll (Fangs + Feed's "Fear Die a d20",
+ * HF p.39) come from the server (`combatFeatures.riders`: `riderOptions` for the feature's `rollHost`, weapon range,
+ * upgrades and requirement checks included); the picker shows them as switches and `useFeature({ riders })` checks
+ * them again.
  */
 
 export type DrawerFeature = FunctionReturnType<typeof api.combatFeaturesReads.drawer>["features"][number];
@@ -134,150 +129,23 @@ export function noPickText(targets: CardUse["targets"]): string {
   return "On yourself";
 }
 
-// ---------------------------------------------------------------- riders (dcm-aiwg)
+// ---------------------------------------------------------------- riders (dcm-aiwg, dcm-bxp.99.32.19)
 
-/** What a feature's own action roll is to riders (the server's `rollHost` with `fromUse` = this feature and use). */
-export type FeatureHost = {
-  spec: RollSpec;
-  trait: TraitId | undefined;
-  weapon: boolean;
-  slot: "primary" | "secondary" | undefined;
-  fromUse: { id: string; useId: string };
-};
-
-export function featureHostOf(featureId: string, use: CardUse, trait: TraitId | undefined): FeatureHost | null {
+/**
+ * Whether a use has an action roll riders can ride on (the server's `rollHost` is null otherwise): the picker then asks
+ * `combatFeatures.riders` for them; a use without one has none and opens at once.
+ */
+export function hasActionRoll(use: CardUse): boolean {
   const spec = use.roll;
-  if (spec === undefined || spec.kind === "adversaryAttack" || spec.kind === "reaction") return null;
-  const slot = spec.kind === "attack" ? (spec.weapon === "either" ? "primary" : spec.weapon) : undefined;
-  const ownTrait = spec.kind === "trait" ? (typeof spec.trait === "string" ? (spec.trait as TraitId) : (trait ?? (spec.trait[0] as TraitId | undefined))) : trait;
-  return { spec, trait: ownTrait, weapon: spec.kind === "attack" || (spec.kind === "trait" && spec.asWeapon === true), slot, fromUse: { id: featureId, useId: use.id } };
-}
-
-function hostMatches(filter: RollFilter, host: FeatureHost): boolean {
-  if (filter === "damage") return false;
-  if ((filter === "attack" || filter === "weaponAttack") && host.weapon) return true;
-  return rollMatches(filter, host.spec) || (host.trait !== undefined && filter === host.trait);
-}
-
-function fromUseHolds(filter: string | undefined, host: FeatureHost): boolean {
-  if (filter === undefined) return true;
-  return filter === host.fromUse.id || filter === `${host.fromUse.id}:${host.fromUse.useId}`;
-}
-
-function changesRoll(steps: readonly Step[]): boolean {
-  return steps.some((s) => s.kind === "modifyRoll" || (s.kind === "choose" && s.options.some((o) => changesRoll(o.steps))) || (s.kind === "optional" && changesRoll(s.steps)));
-}
-
-type Phase = "before" | "after";
-
-/**
- * The server's `riderPhase` for a feature host, before / after phases only. The host has no weapon range (a feature's
- * roll names none), so a trigger with `weaponRange` never rides; `cardDomain` likewise.
- */
-export function featureRiderPhase(trigger: Trigger, host: FeatureHost, use: CardUse): Phase | null {
-  const t = trigger as Trigger & { fromUse?: string; weaponSlot?: string; weaponRange?: Range; weapon?: boolean; roll?: RollFilter; cardDomain?: string; includeSelf?: boolean; byYou?: boolean };
-  switch (trigger.kind) {
-    case "beforeYouRoll":
-      if (!fromUseHolds(t.fromUse, host)) return null;
-      if (t.weaponSlot !== undefined && host.slot !== t.weaponSlot) return null;
-      if (t.weaponRange !== undefined) return null;
-      return t.roll === "damage" || (t.roll !== undefined && hostMatches(t.roll, host)) ? "before" : null;
-    case "whenYouAttack":
-      if (!hostMatches("attack", host) || !fromUseHolds(t.fromUse, host)) return null;
-      if (t.weapon === true && !host.weapon) return null;
-      if (t.weaponSlot !== undefined && host.slot !== t.weaponSlot) return null;
-      if (t.weaponRange !== undefined) return null;
-      return "after";
-    case "afterYouRoll":
-      if (!fromUseHolds(t.fromUse, host) || t.cardDomain !== undefined) return null;
-      return t.roll !== undefined && t.roll !== "damage" && hostMatches(t.roll, host) && !changesRoll(use.steps) ? "after" : null;
-    case "afterAllyRolls":
-      if (t.includeSelf !== true) return null;
-      return hostMatches(t.roll ?? "action", host) && !changesRoll(use.steps) ? "after" : null;
-    case "whenYouDealDamage":
-      return fromUseHolds(t.fromUse, host) ? "after" : null;
-    case "gmWouldGainFear":
-      return t.byYou === true ? "after" : null;
-    default:
-      return null;
-  }
-}
-
-/** The server's `DEFAULT_ON_RIDERS` (convex/lib/combatActions.ts): they ride by themselves; switching off is Attack-bar only. */
-const DEFAULT_ON: ReadonlySet<string> = new Set(["subclass:call-of-the-brave:rise-to-the-challenge"]);
-
-const WHEN: Record<Phase, string> = { before: "Before the roll", after: "After the roll" };
-
-function allSteps(steps: readonly Step[]): Step[] {
-  return steps.flatMap((s) => [
-    s,
-    ...(s.kind === "optional" || s.kind === "followUp" ? allSteps(s.steps) : []),
-    ...(s.kind === "choose" ? s.options.flatMap((o) => allSteps(o.steps)) : []),
-    ...(s.kind === "save" ? [...allSteps(s.onFail), ...allSteps(s.onSuccess)] : []),
-    ...(s.kind === "check" ? [...allSteps(s.then), ...allSteps(s.otherwise)] : []),
-  ]);
-}
-
-function optionOf(source: "card" | "feature", id: string, name: string, use: CardUse, phase: Phase, ready: boolean): RiderOption {
-  const steps = allSteps(use.steps);
-  const add = steps.find((s): s is Extract<Step, { kind: "addTargets" }> => s.kind === "addTargets");
-  return {
-    source,
-    id,
-    useId: use.id,
-    name: use.name === "main" ? name : use.name,
-    phase,
-    when: WHEN[phase],
-    ready,
-    resetLabel: null,
-    costs: (use.costs ?? []).map(costLabel),
-    limit: null,
-    numbers: (use.choices ?? []).map((c) => ({ id: `n:${c.id}`, label: c.label, min: c.min, max: c.max?.kind === "fixed" ? c.max.value : null })),
-    options: steps.flatMap((st) => (st.kind === "choose" ? [{ id: `opt:${st.id}`, label: st.label, options: st.options.map((o) => ({ id: o.id, label: o.label })) }] : [])),
-    situations: (use.requires ?? []).flatMap((r) => (r.kind === "situation" && r.check === undefined ? [r.text] : [])),
-    addTargets: add ? { max: add.count.kind === "fixed" ? add.count.value : null, range: add.targets.range } : null,
-  };
+  return spec !== undefined && spec.kind !== "adversaryAttack" && spec.kind !== "reaction";
 }
 
 /**
- * dcm-aiwg: the rider options of a feature use's action roll: every `rider` use of a held feature (`combatFeaturesReads.drawer`)
- * and of a loadout card (`combatCardsReads.hand`) whose trigger rides on it, ready or not (a used-up one shows disabled).
+ * The switches the panel shows from `combatFeatures.riders`: a default-on rider (Rise to the Challenge) rides by itself
+ * on the server's side, so it gets no switch.
  */
-export function featureRiderOptions(input: {
-  featureId: string;
-  use: CardUse;
-  trait?: TraitId;
-  features: readonly (Pick<DrawerFeature, "featureId" | "name" | "usage"> & { uses: readonly { useId: string; ready: boolean }[] })[] | undefined;
-  cards: readonly (Pick<HandCard, "cardId" | "name" | "usage"> & { uses: readonly { useId: string; ready: boolean }[] })[] | undefined;
-}): RiderOption[] {
-  const host = featureHostOf(input.featureId, input.use, input.trait);
-  if (host === null) return [];
-  const out: RiderOption[] = [];
-  for (const card of input.cards ?? []) {
-    if (card.usage === "outOfCombat") continue;
-    const effect = cardEffect(card.cardId);
-    if (!effect) continue;
-    for (const use of effect.uses) {
-      if (use.activation.kind !== "rider") continue;
-      const phase = featureRiderPhase(use.activation.trigger, host, use);
-      if (phase === null) continue;
-      const ready = card.uses.find((u) => u.useId === use.id)?.ready ?? true;
-      out.push(optionOf("card", card.cardId, card.name, use, phase, ready));
-    }
-  }
-  for (const f of input.features ?? []) {
-    if (f.usage === "outOfCombat" || f.usage === "narrative" || DEFAULT_ON.has(f.featureId)) continue;
-    const entry = featureEffect(f.featureId);
-    if (!entry) continue;
-    for (const use of entry.uses) {
-      if (use.activation.kind !== "rider") continue;
-      const phase = featureRiderPhase(use.activation.trigger, host, use);
-      if (phase === null) continue;
-      const ready = f.uses.find((u) => u.useId === use.id)?.ready ?? true;
-      out.push(optionOf("feature", f.featureId, f.name, use, phase, ready));
-    }
-  }
-  return out;
+export function riderSwitches(options: readonly RiderOption[]): RiderOption[] {
+  return options.filter((o) => o.defaultOn !== true);
 }
 
 /** A rider's cost pill (its first fixed cost), from its entry. */
