@@ -183,6 +183,7 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     await ins("combatSpotlight", { campaignId: c, holder: { kind: "pc", characterId }, since: now, reason: "handedBack" });
     // A token the party saw this scene (spotlight-seen, user 2026-11-03).
     await ins("combatSeen", { campaignId: c, tokenId: pcTokenId, seenAt: now });
+    await ins("actionTokens", { campaignId: c, characterId, used: 1, updatedAt: now });
     // A folded hand and an unsent character-wizard draft (config S0).
     await ins("handFolds", { userId, campaignId: c, characterId, updatedAt: now });
     await ins("userDrafts", { userId, kind: "characterWizard", campaignId: c, schemaVersion: 1, data: "{}", updatedAt: now });

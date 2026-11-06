@@ -143,6 +143,7 @@ const CAMPAIGN_SCOPED = [
   "playFor",
   "combatSpotlight",
   "combatSeen",
+  "actionTokens",
   // Config S0: folded hands, bounded per campaign (members x characters).
   "handFolds",
   // Config S0: unsent drafts, bounded per user (one per kind and campaign); a character-wizard draft goes with its

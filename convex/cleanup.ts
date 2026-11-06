@@ -454,6 +454,11 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
     const rows = await ctx.db.query("combatSeen").withIndex("by_campaign_token", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "combatSeen", rows);
   },
+  // Spotlight Tracker action tokens (plan rule-switches RT): one row per character at most, referenced by id only.
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("actionTokens").withIndex("by_campaign_character", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "actionTokens", rows);
+  },
   // Config S0: folded hands ("Hide cards") and the players' unsent character-wizard drafts of this campaign
   // (custom-frame drafts have no campaign; P2's cron expires them).
   async (ctx, c, budget) => {

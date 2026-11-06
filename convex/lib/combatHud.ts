@@ -11,6 +11,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { readSheet } from "./characterSheet";
 import { featureScope } from "./featureScope";
+import { actionTokensOf } from "./actionTokens";
 import { ruleMode } from "./ruleModes";
 
 /**
@@ -77,6 +78,11 @@ export const hudPartyMemberValidator = v.object({
   down: v.boolean(),
   /** A death move is due (CB p.106): active, every HP marked, not unconscious, not returned to play by the GM, and X1 is Book. */
   deathMoveDue: v.boolean(),
+  /**
+   * Spotlight Tracker action tokens (optional rule, CB p.89, plan rule-switches RT): `left` of `of`. Absent while the
+   * rule is off (widened, rule 7). At 0 the HUD warns "No actions left: let another player act".
+   */
+  tokens: v.optional(v.object({ left: v.number(), of: v.number() })),
 });
 export type HudPartyMember = Infer<typeof hudPartyMemberValidator>;
 
@@ -101,6 +107,7 @@ export async function partyMemberOf(
     return null;
   }
   const defense = derivedDefense(sheet, await installedAugments(ctx, campaign, character._id), featureScope(campaign));
+  const tokens = await actionTokensOf(ctx, campaign, character._id);
   return {
     characterId: character._id,
     tokenId,
@@ -120,6 +127,7 @@ export async function partyMemberOf(
     deathMoveDue:
       character.deathMoveSpent !== true &&
       deathMovePrompted({ status: character.status, hp: sheet.hp, hpMax: sheet.hpMax, conditions: sheet.conditions }, ruleMode(campaign, "deathMovePrompt")),
+    ...(tokens === null ? {} : { tokens }),
   };
 }
 

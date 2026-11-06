@@ -2,6 +2,8 @@ import { v, type Infer } from "convex/values";
 
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
+import { appError } from "../src/lib/errors/app-error";
+import { refillActionTokens, trackerTokens } from "./lib/actionTokens";
 import { readSheet } from "./lib/characterSheet";
 import { campaignQuery, keyedGmMutation } from "./lib/functions";
 import { atLeast } from "./lib/permissions";
@@ -24,6 +26,9 @@ import { spotlightReasonValidator } from "./tables/combatSpotlight";
  *   without Fear are not logged in the action log: its undo restores sheets, adversaries, Fear and time only, so the
  *   GM's undo is the opposite move (docs/tasks/TASK-HUD-H1.S.md). A paid take is logged, and its undo gives the Fear back
  *   (docs/tasks/TASK-HUD-H9.S.md).
+ * - `refillTokens()` (the GM, keyed): Spotlight Tracker (optional rule, CB p.89, plan rule-switches RT): every PC's
+ *   action tokens back to full before everyone is out (the app refills by itself once every PC on the live map is at
+ *   0). MECHANIC_DISABLED while the rule is off. Not logged, like the moves without Fear.
  */
 
 const holderViewValidator = v.union(
@@ -165,4 +170,19 @@ export const handToParty = keyedGmMutation({
   args: {},
   returns: movedValidator,
   handler: async (ctx) => ctx.once("spotlight_hand_to_party", {}, async () => ({ moved: await giveToParty(ctx, ctx.campaign) })),
+});
+
+/**
+ * The GM refills every PC's Spotlight Tracker action tokens by hand (plan rule-switches RT, user answer Q9 a: "GM can
+ * refill early"; CB p.89). `refilled`: how many PCs had spent tokens (0: everyone was full already). MECHANIC_DISABLED
+ * while the optional rule is off.
+ */
+export const refillTokens = keyedGmMutation({
+  args: {},
+  returns: v.object({ refilled: v.number() }),
+  handler: async (ctx) =>
+    ctx.once("spotlight_refill_tokens", {}, async () => {
+      if (trackerTokens(ctx.campaign) === null) throw appError("MECHANIC_DISABLED", "The Spotlight Tracker is off in this campaign.");
+      return { refilled: await refillActionTokens(ctx, ctx.campaign._id) };
+    }),
 });

@@ -20,6 +20,9 @@
  * `characterId`: a note on the character would be its "latest row" for the Slayer choice and the Tag Team checks.
  * Undo does not put the spotlight back (bead dcm-bxp.99.32.10).
  *
+ * Spotlight Tracker (optional rule `spotlightTracker`, CB p.89, plan rule-switches RT): each PC action roll spends one of
+ * the roller's action tokens (convex/lib/actionTokens.ts; a Tag Team: the first PC's). Off: nothing.
+ *
  * ```ts
  * const hopeFear = hopeFearModeOf(campaign);
  * const effects = dualityEffects("action", roll.outcome, hopeFear);
@@ -31,6 +34,7 @@ import type { HopeFearMode } from "../../src/lib/domain/dice/index";
 import type { RollOutcome } from "../../src/lib/domain/duality";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { spendActionToken } from "./actionTokens";
 import { ruleMode, postRuleNote } from "./ruleModes";
 import { gmHoldsSpotlight, moveToGm } from "./spotlight";
 
@@ -71,12 +75,15 @@ export type PcActionRoll = {
 
 type Note = { ruleId: "spotlightToGm" | "hopeFearFromRolls"; summary: string };
 
-/** What the roll sets off: a spotlight move (S1 Book) and the GM notes (S1 and R3 Manual). */
-export type Aftermath = { move: "rollWithFear" | "failedRoll" | null; rollBy: Id<"characters">; notes: Note[] };
+/**
+ * What the roll sets off: a spotlight move (S1 Book), the GM notes (S1 and R3 Manual) and, for an action roll, a
+ * Spotlight Tracker token (`spendToken`; `spendActionToken` does nothing while the optional rule is off, plan RT).
+ */
+export type Aftermath = { move: "rollWithFear" | "failedRoll" | null; rollBy: Id<"characters">; notes: Note[]; spendToken: boolean };
 
 /** Reads what a PC's roll sets off; writes nothing. */
 export async function planPcActionRoll(ctx: QueryCtx, campaign: Doc<"campaigns">, roll: PcActionRoll): Promise<Aftermath> {
-  const out: Aftermath = { move: null, rollBy: roll.characterId, notes: [] };
+  const out: Aftermath = { move: null, rollBy: roll.characterId, notes: [], spendToken: roll.kind === "action" };
   if (roll.kind !== "action") return out;
   const fear = roll.fearWithheld ?? (roll.withFear ? fearWithheldBy(hopeFearModeOf(campaign), roll.kind, "successFear") : 0);
   if (fear > 0) out.notes.push({ ruleId: "hopeFearFromRolls", summary: `${roll.name} rolled with Fear: gain ${fear} Fear?` });
@@ -88,13 +95,17 @@ export async function planPcActionRoll(ctx: QueryCtx, campaign: Doc<"campaigns">
   return out;
 }
 
-/** Applies a planned aftermath: the spotlight move, then the notes in the roll's group (none written without notes). */
+/**
+ * Applies a planned aftermath: the Spotlight Tracker token (optional rule, CB p.89, plan RT: off = nothing), the
+ * spotlight move, then the notes in the roll's group (none written without notes).
+ */
 export async function applyPcActionRoll(
   ctx: MutationCtx,
   campaign: Doc<"campaigns">,
   aftermath: Aftermath,
   row: { groupId: string | undefined; actorId: Id<"users"> },
 ): Promise<void> {
+  if (aftermath.spendToken) await spendActionToken(ctx, campaign, aftermath.rollBy);
   if (aftermath.move !== null) await moveToGm(ctx, campaign, aftermath.move, aftermath.rollBy);
   if (aftermath.notes.length > 0 && row.groupId === undefined) throw new Error("applyPcActionRoll: notes need the roll's groupId.");
   for (const note of aftermath.notes) {

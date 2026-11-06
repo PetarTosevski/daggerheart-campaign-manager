@@ -16,7 +16,25 @@ import { closePanel, togglePanel, usePanelOpen } from "../panels";
 import { canRevive, ReviveBox, ReviveButton, type ReviveTarget } from "../revive";
 import { artOf, type TokenArt } from "../token/model";
 import { hudButtonClass } from "../ui";
-import { afterHandTo, afterHandToParty, afterTake, discHolder, discLabel, holderArt, initialOf, isDefeatedRow, livingFirst, takePay, type DiscHolder, type SpotlightState } from "./model";
+import {
+  afterHandTo,
+  afterHandToParty,
+  afterRefill,
+  afterTake,
+  discHolder,
+  discLabel,
+  holderArt,
+  initialOf,
+  isDefeatedRow,
+  livingFirst,
+  NO_ACTIONS_LEFT,
+  takePay,
+  tokensText,
+  trackerOn,
+  type ActionTokens,
+  type DiscHolder,
+  type SpotlightState,
+} from "./model";
 
 /**
  * The spotlight disc (plan combat-hud H9.1; HANDOFF "App bar and spotlight"; CmpTokens 'Spotlight', GMDesktop, GMTablet,
@@ -32,6 +50,9 @@ import { afterHandTo, afterHandToParty, afterTake, discHolder, discLabel, holder
  * - Players: the same disc, view only (`role="img"`, "Spotlight: <name>"). Which adversary a player sees named is the
  *   server's rule (`combatSpotlight.state`: only one the party saw this scene); otherwise "The GM".
  * - Phone (`PhoneSpotlight`): a 44 px disc under the party strip with a "Spotlight · <name>" pill.
+ * - Spotlight Tracker (optional rule, CB p.89, plan rule-switches RT; only while it is on): a player sees their PC's
+ *   action tokens under the disc and, at 0, "No actions left: let another player act" (warned, not refused, Q9 a); the
+ *   GM's Party rows say "2 of 3 actions left", and the Party tab has "Refill actions" (`combatSpotlight.refillTokens`).
  *
  * Every part calls `useQuery`, so it sits under a `PartBoundary` (the fear region's, the phone region's; CL1).
  */
@@ -50,15 +71,27 @@ type AdversaryRow = {
 };
 
 /** The GM's moves from the disc: intents with optimistic updates (CL3 / CL4); the last refusal in the refusal table's words. */
-function useDiscMoves(campaignId: Id<"campaigns">) {
+function useDiscMoves(campaignId: Id<"campaigns">, mapId: Id<"combatMaps"> | undefined) {
   const [error, setError] = useState<string | null>(null);
   const take = useMutation(api.combatSpotlight.gmTake);
   const hand = useMutation(api.combatSpotlight.handTo);
   const party = useMutation(api.combatSpotlight.handToParty);
+  const refill = useMutation(api.combatSpotlight.refillTokens);
   const fail = (e: unknown) => setError(refusalFor(e, { viewer: "gm" }).text);
   const key = () => crypto.randomUUID();
   return {
     error,
+    refillTokens: () => {
+      setError(null);
+      refill
+        .withOptimisticUpdate((store, args) => {
+          if (mapId === undefined) return;
+          const query = { campaignId: args.campaignId, mapId };
+          const current = store.getQuery(api.combatHud.party, query);
+          if (current !== undefined) store.setQuery(api.combatHud.party, query, afterRefill(current));
+        })({ campaignId, idempotencyKey: key() })
+        .catch(fail);
+    },
     toParty: () => {
       setError(null);
       party
@@ -211,7 +244,7 @@ export function SpotlightDisc({ campaignId, mapId, gm, fear }: SpotlightDiscProp
   const adversaries = useAdversaries(campaignId, mapId, gm);
   const tokenArt = gmTokenArt(gm, adversaries);
   const open = usePanelOpen("spotlight");
-  const moves = useDiscMoves(campaignId);
+  const moves = useDiscMoves(campaignId, mapId);
   const [reviving, setReviving] = useState<ReviveTarget | null>(null);
   const popId = useId();
   if (state === undefined) {
@@ -240,9 +273,12 @@ export function SpotlightDisc({ campaignId, mapId, gm, fear }: SpotlightDiscProp
   );
   if (!gm || !state.canMove) {
     return (
-      <div className={cn("hud-spd hud-spd-ro", `hud-spd-${tone}`)} role="img" aria-label={discLabel(holder, false)} data-testid="hud-spotlight-disc">
-        {body}
-      </div>
+      <>
+        <div className={cn("hud-spd hud-spd-ro", `hud-spd-${tone}`)} role="img" aria-label={discLabel(holder, false)} data-testid="hud-spotlight-disc">
+          {body}
+        </div>
+        <MyActionTokens party={members} className="hud-spd-tok" />
+      </>
     );
   }
   return (
@@ -297,9 +333,50 @@ type PopoverProps = {
   onRevive: (target: ReviveTarget) => void;
 };
 
-/** The PC row's line: "Druid · Hope 1 · HP 2 of 6 marked". */
-export function pcRowLine(member: Pick<HudPartyMember, "className" | "hope" | "hp">): string {
-  return `${member.className} · Hope ${member.hope.value} · HP ${member.hp.marked} of ${member.hp.max} marked`;
+/** The PC row's line: "Druid · Hope 1 · HP 2 of 6 marked" (Spotlight Tracker on: "· 2 of 3 actions left"). */
+export function pcRowLine(member: Pick<HudPartyMember, "className" | "hope" | "hp" | "tokens">): string {
+  const line = `${member.className} · Hope ${member.hope.value} · HP ${member.hp.marked} of ${member.hp.max} marked`;
+  return member.tokens === undefined ? line : `${line} · ${tokensText(member.tokens)}`;
+}
+
+/** A PC's action tokens as pips (filled: left), view only; the words are the caller's. */
+function TokenPips({ tokens }: { tokens: ActionTokens }) {
+  return (
+    <span className="hud-tok-pips" aria-hidden="true">
+      {Array.from({ length: tokens.of }, (_, i) => (
+        <span key={i} className="hud-tok-pip" data-on={i < tokens.left} />
+      ))}
+    </span>
+  );
+}
+
+/**
+ * The caller's own PCs' Spotlight Tracker tokens (plan rule-switches RT): pips and words per PC, and at 0 the warning
+ * "No actions left: let another player act" (Q9 a: the roll still goes through). Nothing while the rule is off or the
+ * caller has no PC on the map. A polite live region, so the warning is announced when a roll spends the last token.
+ */
+function MyActionTokens({ party, className }: { party: readonly HudPartyMember[]; className: string }) {
+  const mine = party.filter((m) => m.mine && m.tokens !== undefined);
+  if (mine.length === 0) return null;
+  return (
+    <div className={className} role="status" data-testid="hud-action-tokens">
+      {mine.map((m) => {
+        const tokens = m.tokens!;
+        return (
+          <p key={m.characterId} className="hud-tok-row">
+            <span className="hud-tok-who">{mine.length > 1 ? `${m.name}: ` : "Actions"}</span>
+            <TokenPips tokens={tokens} />
+            <span className="sr-only">{`${m.name}: ${tokensText(tokens)}.`}</span>
+            {tokens.left === 0 ? (
+              <span className="hud-tok-out" data-testid="hud-no-actions">
+                {NO_ACTIONS_LEFT}
+              </span>
+            ) : null}
+          </p>
+        );
+      })}
+    </div>
+  );
 }
 
 /** The adversary row's line: "Leader · HP 2 of 6 marked" (no kind for a custom token). */
@@ -417,7 +494,7 @@ function SpotlightPopover({ id, state, holder, party, adversaries, fear, moves, 
                   face={<Portrait member={{ ...member, mine: false }} className="hud-spr-portrait" sizes="40px" />}
                   title={member.name}
                   line={pcRowLine(member)}
-                  description={`${member.className}, Hope ${member.hope.value}, ${hpText(member)}`}
+                  description={`${member.className}, Hope ${member.hope.value}, ${hpText(member)}${member.tokens === undefined ? "" : `, ${tokensText(member.tokens)}`}`}
                   go="Give"
                   label={has ? `${member.name} has the spotlight` : `Give the spotlight to ${member.name}`}
                   onClick={() => choose(() => moves.toPc({ characterId: member.characterId, name: member.name }), has)}
@@ -425,6 +502,20 @@ function SpotlightPopover({ id, state, holder, party, adversaries, fear, moves, 
               );
             })
           )}
+          {trackerOn(party) ? (
+            <button
+              type="button"
+              className={cn(hudButtonClass("secondary"), "hud-spp-refill")}
+              data-testid="hud-refill-tokens"
+              onClick={() => {
+                moves.refillTokens();
+                onClose();
+              }}
+            >
+              Refill actions
+              <span className="hud-spp-refill-n">Every PC back to full (the app refills once everyone is out)</span>
+            </button>
+          ) : null}
         </div>
       ) : (
         <div className="hud-spp-pane" role="tabpanel" id={`${tabsId}-adv-panel`} aria-labelledby={`${tabsId}-adv`}>
@@ -564,20 +655,25 @@ function Row({
  * The phone's spotlight (PlayerPhone `.mspot`): a 44 px disc under the party strip, view only, with a "Spotlight ·
  * Moss" pill. Gold for the party or a PC, purple for an adversary or the GM (its portrait as on the map, else its
  * initial). The phone is the players' (`HudPhone`), so the art is the state's `adversaryPortrait` (party knowledge,
- * dcm-onze).
+ * dcm-onze). With the Spotlight Tracker on, the player's action tokens sit beside it (plan rule-switches RT).
  */
 export function PhoneSpotlight({ state, party }: { state: SpotlightState; party: readonly HudPartyMember[] }) {
   const holder = discHolder(state);
   const gm = holder.kind === "adversary" || holder.kind === "gm";
   return (
-    <div className={cn("hud-mspot", gm && "hud-mspot-gm")} role="img" aria-label={discLabel(holder, false)} data-testid="hud-phone-spotlight">
-      <span className="hud-ms-cord" aria-hidden="true" />
-      <span className="hud-ms-disc" aria-hidden="true">
-        <DiscFaces holder={holder} party={party} art={holderArt(holder, undefined, state.adversaryPortrait)} />
-      </span>
-      <span className="hud-ms-l" aria-hidden="true">
-        Spotlight · <b>{holder.name}</b>
-      </span>
-    </div>
+    <>
+      <div className={cn("hud-mspot", gm && "hud-mspot-gm")} role="img" aria-label={discLabel(holder, false)} data-testid="hud-phone-spotlight">
+        <span className="hud-ms-cord" aria-hidden="true" />
+        <span className="hud-ms-disc" aria-hidden="true">
+          <DiscFaces holder={holder} party={party} art={holderArt(holder, undefined, state.adversaryPortrait)} />
+        </span>
+        <span className="hud-ms-l" aria-hidden="true">
+          Spotlight · <b>{holder.name}</b>
+        </span>
+      </div>
+      {/* Spotlight Tracker (plan rule-switches RT): the player's tokens and the at-0 warning, left of the disc. */}
+      <MyActionTokens party={party} className="hud-ms-tok" />
+    </>
   );
 }
+

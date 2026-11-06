@@ -90,6 +90,7 @@ import type * as journalTally from "../journalTally.js";
 import type * as journalThreads from "../journalThreads.js";
 import type * as levelUp from "../levelUp.js";
 import type * as lib_actionLog from "../lib/actionLog.js";
+import type * as lib_actionTokens from "../lib/actionTokens.js";
 import type * as lib_adminAudit from "../lib/adminAudit.js";
 import type * as lib_adversaryActions from "../lib/adversaryActions.js";
 import type * as lib_adversaryFeatures from "../lib/adversaryFeatures.js";
@@ -372,6 +373,7 @@ declare const fullApi: ApiFromModules<{
   journalThreads: typeof journalThreads;
   levelUp: typeof levelUp;
   "lib/actionLog": typeof lib_actionLog;
+  "lib/actionTokens": typeof lib_actionTokens;
   "lib/adminAudit": typeof lib_adminAudit;
   "lib/adversaryActions": typeof lib_adversaryActions;
   "lib/adversaryFeatures": typeof lib_adversaryFeatures;
