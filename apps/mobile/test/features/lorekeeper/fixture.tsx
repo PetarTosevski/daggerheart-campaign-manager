@@ -66,6 +66,9 @@ const messages = [
 export function lorekeeperQueries(role: "gm" | "player", extra: Record<string, unknown> = {}) {
   return {
     "lorekeeper:available": true,
+    // Defaults: the GM asks, web search allowed by the campaign and the admin switch (lorekeeper.access, features.mine).
+    "lorekeeper:access": { available: true, canAsk: true, webAllowed: true },
+    "features:mine": { journal: true, dice3d: true, phoneLayout: true, lorekeeperWeb: true, spriteTokens: true, shareLinks: true },
     "lorekeeper:listConversations": { mine: [conversation], shared: [] },
     "lorekeeper:getConversation": conversation,
     "lorekeeper:listMessages": messages,

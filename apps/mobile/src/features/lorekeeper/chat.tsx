@@ -2,6 +2,7 @@ import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { useRef, useState } from "react";
 import { FlatList, Pressable, Text, View } from "react-native";
 
+import { configMessages } from "../../../../../src/lib/errors/config";
 import { EMPTY_INTRO, NEW_CONVERSATION_LABEL, YOU_LABEL } from "../../../../../src/lib/lorekeeper/copy";
 import type { ConversationView, MessageView } from "../../../../../convex/lorekeeper";
 import type { ConversationVisibility } from "../../../../../convex/lib/validators/lorekeeper";
@@ -27,6 +28,11 @@ type AskFn = (
 export function LorekeeperChat(props: LorekeeperChatProps) {
   const { campaignId, access } = props;
   const available = useQuery(api.lorekeeper.available, { campaignId });
+  // Config L1 / U4 (as on the website): who may ask and whether the internet pass is allowed in this campaign (live).
+  const rules = useQuery(api.lorekeeper.access, { campaignId });
+  // Config AF1: the admin's Lorekeeper internet search switch. On the phone the toggle stays hidden until both the
+  // campaign and the switch say yes (loading counts as off).
+  const flags = useQuery(api.features.mine, {});
   const lists = useQuery(api.lorekeeper.listConversations, { campaignId });
   const library = useQuery(api.lorekeeperLibrary.list, { campaignId });
   const usage = useQuery(api.lorekeeperUsage.mine, { campaignId, ...usagePeriod(new Date()) });
@@ -80,7 +86,9 @@ export function LorekeeperChat(props: LorekeeperChatProps) {
     campaignId,
     isGm: access.isGm,
     available,
-    disabled: disabledReason(available, usage ?? undefined),
+    disabled:
+      available !== false && rules?.canAsk === false ? configMessages.LOREKEEPER_GM_ONLY : disabledReason(available, usage ?? undefined),
+    webAllowed: rules?.webAllowed === true && flags?.lorekeeperWeb === true,
     questionsLeft: usage?.questionsLeft,
     titles,
     sent,
@@ -117,6 +125,7 @@ type PaneProps = {
   isGm: boolean;
   available: boolean | undefined;
   disabled: string | null;
+  webAllowed: boolean;
   questionsLeft: number | undefined;
   titles: BookTitles;
   sent: ReadonlySet<string>;
@@ -156,7 +165,8 @@ function ConversationPane(props: PaneProps) {
       (props.pending.conversationId === conversationId && loading));
 
   const target = mine && conversation ? { conversationId: conversation._id, webSearch: conversation.webSearch, visibility: conversation.visibility } : null;
-  const webSearch = target ? target.webSearch : props.newWeb;
+  // With the internet pass not allowed, asks never request it (the server skips it either way).
+  const webSearch = props.webAllowed && (target ? target.webSearch : props.newWeb);
   const visibility = target ? target.visibility : props.newVisibility;
 
   return (
@@ -195,6 +205,7 @@ function ConversationPane(props: PaneProps) {
             else props.setNewVisibility(next);
           },
         }}
+        webAllowed={props.webAllowed}
         webSearch={webSearch}
       />
     </>

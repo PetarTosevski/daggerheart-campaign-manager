@@ -31,13 +31,15 @@ export type ComposerProps = {
   onStop?: () => void;
   webSearch: boolean;
   onWebSearch: (on: boolean) => void;
+  /** lorekeeper.access's `webAllowed` and the admin `lorekeeperWeb` switch, both on: otherwise the toggle is hidden. */
+  webAllowed: boolean;
   visibility: { value: ConversationVisibility; onChange: (next: ConversationVisibility) => void } | null;
   notice: { text: string; newConversation: boolean } | null;
   onNewConversation: () => void;
 };
 
 export function Composer(props: ComposerProps) {
-  const { disabled, questionsLeft, streaming, sending, onAsk, onStop, webSearch, onWebSearch, visibility, notice, onNewConversation } =
+  const { disabled, questionsLeft, streaming, sending, onAsk, onStop, webSearch, onWebSearch, webAllowed, visibility, notice, onNewConversation } =
     props;
   const [draft, setDraft] = useState("");
   const blocked = disabled !== null || streaming || sending;
@@ -91,14 +93,18 @@ export function Composer(props: ComposerProps) {
           </Button>
         )}
       </View>
-      <Text style={lkStyles.muted}>{WEB_TOGGLE_LABEL}</Text>
-      <View accessibilityLabel={WEB_TOGGLE_GROUP_LABEL} style={lkStyles.acts}>
-        <Button onPress={() => onWebSearch(true)} variant={webSearch ? "primary" : "outline"}>
-          {WEB_TOGGLE_ON}
-        </Button>
-        <Button onPress={() => onWebSearch(false)} variant={!webSearch ? "primary" : "outline"}>
-          {WEB_TOGGLE_OFF}
-        </Button>
+      {webAllowed ? <Text style={lkStyles.muted}>{WEB_TOGGLE_LABEL}</Text> : null}
+      <View style={lkStyles.acts}>
+        {webAllowed ? (
+          <View accessibilityLabel={WEB_TOGGLE_GROUP_LABEL} style={lkStyles.acts}>
+            <Button onPress={() => onWebSearch(true)} variant={webSearch ? "primary" : "outline"}>
+              {WEB_TOGGLE_ON}
+            </Button>
+            <Button onPress={() => onWebSearch(false)} variant={!webSearch ? "primary" : "outline"}>
+              {WEB_TOGGLE_OFF}
+            </Button>
+          </View>
+        ) : null}
         {visibility ? (
           <Button
             onPress={() => visibility.onChange(visibility.value === "private" ? "campaign" : "private")}

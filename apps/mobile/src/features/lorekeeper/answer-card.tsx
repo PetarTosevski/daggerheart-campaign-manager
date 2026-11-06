@@ -1,7 +1,7 @@
 import { useMutation } from "convex/react";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { Linking, Pressable, Text, View } from "react-native";
+import { Linking, Pressable, Share, Text, View } from "react-native";
 
 import { errorMessage } from "../../../../../src/lib/convex-errors";
 import { lorekeeperMessages } from "../../../../../src/lib/errors/lorekeeper";
@@ -19,7 +19,6 @@ import {
 } from "../../../../../src/lib/lorekeeper/copy";
 import type { MessageView } from "../../../../../convex/lorekeeper";
 import { api, type Id } from "../../convex";
-import { copyToClipboard } from "../players/join-link";
 import {
   type AnswerAction,
   type BookTitles,
@@ -40,7 +39,7 @@ import { MiniSigil } from "./sigil";
 import { lkStyles } from "./styles";
 
 export const STOPPED_TEXT = "Stopped.";
-export const COPIED_TEXT = "Copied";
+export const SHARED_TEXT = "Shared";
 
 export type AnswerCardProps = {
   campaignId: Id<"campaigns">;
@@ -182,14 +181,17 @@ function Actions({ campaignId, answer, question, titles, isGm, mine, sentToGm, o
   );
   if (actions.length === 0 || isLocalMessage(answer._id)) return null;
 
+  // React Native has no clipboard API: Copy opens the system share sheet, which offers Copy among its targets.
   const copy = async () => {
+    setError(null);
     try {
-      await copyToClipboard(answerCopyText(answer, titles));
+      const result = await Share.share({ message: answerCopyText(answer, titles) });
+      if (result.action !== Share.sharedAction) return;
       setCopied(true);
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => setCopied(false), 2000);
     } catch {
-      setError("Couldn't copy. Select the text instead.");
+      setError("Couldn't share. Select the text instead.");
     }
   };
 
@@ -246,7 +248,7 @@ function Actions({ campaignId, answer, question, titles, isGm, mine, sentToGm, o
               );
           }
         })}
-        {copied ? <Text style={lkStyles.muted}>{COPIED_TEXT}</Text> : null}
+        {copied ? <Text style={lkStyles.muted}>{SHARED_TEXT}</Text> : null}
       </View>
       {error ? (
         <Text accessibilityRole="alert" style={lkStyles.muted}>
