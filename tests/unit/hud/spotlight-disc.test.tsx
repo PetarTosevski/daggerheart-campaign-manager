@@ -367,7 +367,7 @@ describe("a defeated adversary in the Adversaries tab (user 2026-11-04)", () => 
   });
 
   it("isDefeatedRow: marked defeated or every HP marked; livingFirst keeps the map's order", () => {
-    expect(isDefeatedRow({ hp: 8, hpMax: 8, down: false })).toBe(true);
+    expect(isDefeatedRow({ hp: 8, hpMax: 8, down: false })).toBe(false); // D8 Manual: last HP, not marked defeated
     expect(isDefeatedRow({ hp: 1, hpMax: 4, down: true })).toBe(true);
     expect(isDefeatedRow({ hp: 7, hpMax: 8, down: false })).toBe(false);
     expect(isDefeatedRow(null)).toBe(false);

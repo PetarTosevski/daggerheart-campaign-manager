@@ -305,6 +305,10 @@ const requestViewValidator = v.object({
  * HD4 (answer 15b): the GM's move is made at once (the server rolls every
  * die). A player's move is stored as waiting for the GM (`awaitingGm: true`):
  * one undoable feed row, nothing rolled or applied until `confirm`.
+ *
+ * X1 Manual (rule switches RX; user 2026-11-06 "the GM may still record a death move in the app"): a player's `choose`
+ * is refused with DEATH_MOVE_RULE (the move is made at the table); the GM's and a co-GM's is made as in Book, then
+ * follows X2 (Manual while X1 is Manual: Avoid Death and Risk It All roll nothing, the GM gets the note).
  */
 export const choose = keyedUserMutation({
   rateLimit: "roll",
@@ -318,7 +322,9 @@ export const choose = keyedUserMutation({
   handler: async (ctx, args) =>
     ctx.once("death_choose", args, async () => {
       const { campaign, character, sheet } = await editable(ctx, ctx.user, args.characterId);
-      if (promptManual(campaign)) rule("This campaign makes death moves at the table (House rules).");
+      const gm = await isGmOf(ctx, campaign);
+      // X1 Manual: nobody is asked, but the GM (or a co-GM) may still record the move made at the table (user 2026-11-06).
+      if (promptManual(campaign) && !gm) rule("This campaign makes death moves at the table (House rules).");
       const { pending, request } = await deathState(ctx, character);
       if (!dueNow(character, sheet)) {
         rule("A death move is made by an active character whose last Hit Point is marked.");
@@ -327,7 +333,7 @@ export const choose = keyedUserMutation({
       if (request !== null) rule(`The ${DEATH_MOVE_LABELS[request.move]} is waiting for the GM.`);
       const action = args.move === "blazeOfGlory" ? args.action?.trim().slice(0, ACTION_MAX) || undefined : undefined;
 
-      if (await isGmOf(ctx, campaign)) {
+      if (gm) {
         return { ...(await makeMove(ctx, campaign, character, sheet, args.move, action, args.awayReason)), awaitingGm: false };
       }
 
@@ -578,6 +584,11 @@ export const state = userQuery({
     undoEntryId: v.union(v.id("actionLog"), v.null()),
     lessLethal: v.boolean(),
     awayRequested: v.boolean(),
+    /**
+     * X1 Manual (rule switches DEF): true for the GM or a co-GM while the character's death move is due but nobody is
+     * asked (`awaitingMove` false): the GM may record the move made at the table with `choose`. Absent otherwise.
+     */
+    gmRecord: v.optional(v.literal(true)),
   }),
   handler: async (ctx, { characterId }) => {
     const { campaign, character } = await loadCharacter(ctx, ctx.user, characterId, "view");
@@ -585,7 +596,9 @@ export const state = userQuery({
     const { latest, pending, request } = await deathState(ctx, character);
     // X1 Manual: nobody is asked (a move under way or waiting for the GM still shows).
     const due = dueNow(character, sheet) && deathMovePrompted({ status: character.status, hp: sheet.hp, hpMax: sheet.hpMax, conditions: sheet.conditions }, ruleMode(campaign, "deathMovePrompt"));
-    const undoable = latest !== null && latest.kind === "death" && (await viewerCanUndo(ctx, latest, ctx.user._id, await isGmOf(ctx, campaign)));
+    const gm = await isGmOf(ctx, campaign);
+    const undoable = latest !== null && latest.kind === "death" && (await viewerCanUndo(ctx, latest, ctx.user._id, gm));
+    const gmRecord = gm && promptManual(campaign) && dueNow(character, sheet) && pending === null && request === null;
     return {
       awaitingMove: due && pending === null && request === null,
       pending,
@@ -602,6 +615,7 @@ export const state = userQuery({
       undoEntryId: undoable ? latest._id : null,
       lessLethal: lessLethal(campaign),
       awayRequested: character.status === "away" && character.away?.requested === true,
+      ...(gmRecord ? { gmRecord: true as const } : {}),
     };
   },
 });

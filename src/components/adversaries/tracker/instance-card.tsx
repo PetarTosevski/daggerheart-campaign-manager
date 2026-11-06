@@ -259,7 +259,8 @@ export function InstanceCard({
   const halved = rules?.hordeX && !instance.defeated && hordeHalved(tracks);
   const autoVulnerable = vulnerableFromStress(tracks, modes);
   const fullOnly = !autoVulnerable && stressFull(tracks);
-  const standing = !instance.defeated && modes.adversaryDefeated === "manual" && lastHp(tracks);
+  // D8 Manual (rule switches DEF): at its last HP it stays up until the GM presses Defeated (a Minion group falls by itself).
+  const standing = !instance.defeated && !minions && modes.adversaryDefeated === "manual" && lastHp(tracks);
   const typeLine = instance.type ? `Tier ${instance.tier} ${instance.type}` : "deleted custom adversary";
 
   return (
@@ -272,6 +273,11 @@ export function InstanceCard({
         <span className="trk-type">{typeLine}</span>
         {instance.defeated ? <span className="trk-badge trk-badge-defeated">Defeated</span> : null}
         {standing ? <span className="trk-badge trk-badge-defeated">Last HP</span> : null}
+        {standing ? (
+          <BrandButton variant="danger" aria-label={`Mark ${instance.label} defeated`} onClick={() => void actions.markDefeated(instance._id)}>
+            Defeated
+          </BrandButton>
+        ) : null}
         <span className="trk-diff">
           Difficulty <b>{stats.difficulty}</b>
           <span className="trk-thr" data-testid="thresholds">

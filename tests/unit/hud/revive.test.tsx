@@ -224,7 +224,7 @@ describe("the spotlight popover's defeated row (GM)", () => {
 
 describe("the revive model", () => {
   it("canRevive: an adversary token of a running encounter that is defeated", () => {
-    const t = { kind: "adversary", instanceId: OGRE.instanceId, tracked: true, stats: { hp: 8, hpMax: 8, down: false } };
+    const t = { kind: "adversary", instanceId: OGRE.instanceId, tracked: true, stats: { hp: 8, hpMax: 8, down: true } };
     expect(canRevive(t)).toBe(true);
     expect(canRevive({ ...t, stats: { hp: 2, hpMax: 8, down: true } })).toBe(true);
     expect(canRevive({ ...t, stats: { hp: 2, hpMax: 8, down: false } })).toBe(false);

@@ -207,8 +207,9 @@ export function holderArt(holder: DiscHolder, art: ReadonlyMap<string, TokenArt 
  * `adversaryDefeated` reads it (convex/lib/spotlight.ts, ADVERSARY_DEFEATED).
  */
 export function isDefeatedRow(stats: { hp: number; hpMax: number; down: boolean } | null): boolean {
+  // The server's `down` already follows D8 (Manual: only the GM's Defeated mark), so it alone decides.
   if (stats === null) return false;
-  return stats.down || (stats.hpMax > 0 && stats.hp >= stats.hpMax);
+  return stats.down;
 }
 
 /** The Adversaries tab's order: the living first, the defeated at the bottom, each in the map's order. */
