@@ -243,3 +243,15 @@ export function trackerOn(party: readonly { tokens?: ActionTokens }[] | undefine
 export function afterRefill<T extends { tokens?: ActionTokens }>(party: readonly T[]): T[] {
   return party.map((m) => (m.tokens === undefined ? m : { ...m, tokens: { left: m.tokens.of, of: m.tokens.of } }));
 }
+
+/**
+ * The party right after `combatSpotlight.spendToken` (the GM's optimistic update, plan rule-switches RFB): the PC loses
+ * one token (none at 0), and when every PC is then out, all refill (as the server does, CB p.89).
+ */
+export function afterSpend<T extends { characterId: string; tokens?: ActionTokens }>(party: readonly T[], characterId: string): T[] {
+  const spent = party.map((m) =>
+    m.characterId !== characterId || m.tokens === undefined || m.tokens.left === 0 ? m : { ...m, tokens: { ...m.tokens, left: m.tokens.left - 1 } },
+  );
+  const tracked = spent.filter((m) => m.tokens !== undefined);
+  return tracked.length > 0 && tracked.every((m) => m.tokens!.left === 0) ? afterRefill(spent) : spent;
+}

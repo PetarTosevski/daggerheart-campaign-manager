@@ -20,6 +20,7 @@ import {
   afterHandTo,
   afterHandToParty,
   afterRefill,
+  afterSpend,
   afterTake,
   discHolder,
   discLabel,
@@ -52,7 +53,9 @@ import {
  * - Phone (`PhoneSpotlight`): a 44 px disc under the party strip with a "Spotlight · <name>" pill.
  * - Spotlight Tracker (optional rule, CB p.89, plan rule-switches RT; only while it is on): a player sees their PC's
  *   action tokens under the disc and, at 0, "No actions left: let another player act" (warned, not refused, Q9 a); the
- *   GM's Party rows say "2 of 3 actions left", and the Party tab has "Refill actions" (`combatSpotlight.refillTokens`).
+ *   GM's Party rows say "2 of 3 actions left", and the Party tab has "Refill actions" (`combatSpotlight.refillTokens`)
+ *   and beside it "Spend an action" (plan rule-switches RFB): pick a PC to spend one token for a significant action
+ *   without a roll (`combatSpotlight.spendToken`, optimistic; a PC at 0 is disabled).
  *
  * Every part calls `useQuery`, so it sits under a `PartBoundary` (the fear region's, the phone region's; CL1).
  */
@@ -77,10 +80,22 @@ function useDiscMoves(campaignId: Id<"campaigns">, mapId: Id<"combatMaps"> | und
   const hand = useMutation(api.combatSpotlight.handTo);
   const party = useMutation(api.combatSpotlight.handToParty);
   const refill = useMutation(api.combatSpotlight.refillTokens);
+  const spend = useMutation(api.combatSpotlight.spendToken);
   const fail = (e: unknown) => setError(refusalFor(e, { viewer: "gm" }).text);
   const key = () => crypto.randomUUID();
   return {
     error,
+    spendToken: (characterId: Id<"characters">) => {
+      setError(null);
+      spend
+        .withOptimisticUpdate((store, args) => {
+          if (mapId === undefined) return;
+          const query = { campaignId: args.campaignId, mapId };
+          const current = store.getQuery(api.combatHud.party, query);
+          if (current !== undefined) store.setQuery(api.combatHud.party, query, afterSpend(current, args.characterId));
+        })({ campaignId, characterId, idempotencyKey: key() })
+        .catch(fail);
+    },
     refillTokens: () => {
       setError(null);
       refill
@@ -392,6 +407,8 @@ export function adversaryRowLine(row: Pick<AdversaryRow, "sub" | "hp" | "hpMax">
 function SpotlightPopover({ id, state, holder, party, adversaries, fear, moves, onClose, onRevive }: PopoverProps) {
   const [tab, setTab] = useState<"party" | "adv">(holder.kind === "adversary" || holder.kind === "gm" ? "adv" : "party");
   const [pay, setPay] = useState<Pay>("free");
+  // Spotlight Tracker (plan rule-switches RFB): the "Spend an action" picker is open.
+  const [spending, setSpending] = useState(false);
   const tabsId = useId();
   const partyTab = useRef<HTMLButtonElement>(null);
   const advTab = useRef<HTMLButtonElement>(null);
@@ -503,18 +520,53 @@ function SpotlightPopover({ id, state, holder, party, adversaries, fear, moves, 
             })
           )}
           {trackerOn(party) ? (
-            <button
-              type="button"
-              className={cn(hudButtonClass("secondary"), "hud-spp-refill")}
-              data-testid="hud-refill-tokens"
-              onClick={() => {
-                moves.refillTokens();
-                onClose();
-              }}
-            >
-              Refill actions
-              <span className="hud-spp-refill-n">Every PC back to full (the app refills once everyone is out)</span>
-            </button>
+            <div className="hud-spp-tok-actions">
+              <button
+                type="button"
+                className={cn(hudButtonClass("secondary"), "hud-spp-refill")}
+                data-testid="hud-refill-tokens"
+                onClick={() => {
+                  moves.refillTokens();
+                  onClose();
+                }}
+              >
+                Refill actions
+                <span className="hud-spp-refill-n">Every PC back to full (the app refills once everyone is out)</span>
+              </button>
+              <button
+                type="button"
+                className={cn(hudButtonClass("secondary"), "hud-spp-refill")}
+                data-testid="hud-spend-token"
+                aria-expanded={spending}
+                aria-controls={`${tabsId}-spend`}
+                onClick={() => setSpending((s) => !s)}
+              >
+                Spend an action
+                <span className="hud-spp-refill-n">A significant action without a roll</span>
+              </button>
+            </div>
+          ) : null}
+          {trackerOn(party) && spending ? (
+            <div className="hud-spp-spend" id={`${tabsId}-spend`} role="group" aria-label="Whose action token to spend">
+              {(party ?? [])
+                .filter((m) => m.tokens !== undefined)
+                .map((m) => (
+                  <button
+                    key={m.characterId}
+                    type="button"
+                    className={hudButtonClass()}
+                    disabled={m.tokens!.left === 0}
+                    aria-label={`Spend one of ${m.name}'s action tokens (${tokensText(m.tokens!)})`}
+                    onClick={() => {
+                      moves.spendToken(m.characterId);
+                      setSpending(false);
+                    }}
+                  >
+                    {m.name}
+                    <span className="hud-spp-refill-n">{tokensText(m.tokens!)}</span>
+                  </button>
+                ))}
+            </div>
           ) : null}
         </div>
       ) : (

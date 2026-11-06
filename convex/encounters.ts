@@ -22,6 +22,7 @@ import {
   startEncounter,
 } from "./lib/encounters";
 import { endScene } from "./combatScenes";
+import { refillActionTokens, trackerTokens } from "./lib/actionTokens";
 import { closeEncounterRequests } from "./lib/combatRequests";
 import { gmMutation, gmQuery, keyedGmMutation } from "./lib/functions";
 import {
@@ -272,13 +273,18 @@ export const setBudget = gmMutation({
   },
 });
 
-/** Starts the encounter (a draft or an ended one); ENCOUNTER_RUNNING while another encounter is running. */
+/**
+ * Starts the encounter (a draft or an ended one); ENCOUNTER_RUNNING while another encounter is running. With the
+ * Spotlight Tracker on, every PC's action tokens refill as it starts (CB p.89: "when a battle begins, every player places
+ * action tokens"; plan rule-switches RFB, user answer 2026-11-06).
+ */
 export const start = gmMutation({
   args: { encounterId: v.string() },
   returns: v.null(),
   handler: async (ctx, { encounterId }) => {
     const encounter = await loadEncounter(ctx, ctx.campaign._id, encounterId);
-    await startEncounter(ctx, ctx.campaign._id, encounter);
+    const started = await startEncounter(ctx, ctx.campaign._id, encounter);
+    if (started && trackerTokens(ctx.campaign) !== null) await refillActionTokens(ctx, ctx.campaign._id);
     return null;
   },
 });

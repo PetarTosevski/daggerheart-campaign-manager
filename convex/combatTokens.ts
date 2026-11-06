@@ -24,6 +24,7 @@ import { movementGrid, uncloakAfterMove } from "./lib/combatMovement";
 import { MAX_INSTANCES, startEncounter } from "./lib/encounters";
 import { pcPortrait } from "./lib/pcPortrait";
 import { postRuleNote, ruleMode } from "./lib/ruleModes";
+import { refillActionTokens, trackerTokens } from "./lib/actionTokens";
 import { tokenViewValidator, type TokenView } from "./lib/validators/combatTokens";
 import { campaignMutation, gmMutation, keyedGmMutation } from "./lib/functions";
 import { atLeast, permissionFor } from "./lib/permissions";
@@ -233,6 +234,8 @@ export const placeSessionEncounter = keyedGmMutation({
       if (found === null) throw appError("SESSION_NO_ENCOUNTER");
       const { session, encounter } = found;
       const started = await startEncounter(ctx, campaignId, encounter, "End the running encounter first.");
+      // Spotlight Tracker (user 2026-11-06): every PC refills when an encounter starts.
+      if (started && trackerTokens(ctx.campaign) !== null) await refillActionTokens(ctx, campaignId);
       // Journal JD4 (Q7): the encounter's scene becomes Playing now, "Scene N began" logged while live.
       await playCurrentScene(ctx, found, ctx.user._id);
       const existing = await tokensOnMap(ctx, map._id);
