@@ -45,6 +45,19 @@ jest.mock("react-native-gesture-handler", () => {
   };
 });
 
+// The website's terrain painters draw every cell of a map in the JS Skia shim; on a 30 x 20 map that takes seconds per
+// paint in jest. Screen tests count paints (`paintStats`) and read layout, never pixels, so the painters are no-ops
+// here. Pixel tests (`canvas.test.ts`, `paint-frame`) do not import this file and keep the real painters. On a device
+// the real painters run (docs/phone-client.md has the large-map speed check).
+jest.mock("../../../../../src/lib/combat-map/painter", () => ({
+  ...jest.requireActual<Record<string, unknown>>("../../../../../src/lib/combat-map/painter"),
+  paintMap: () => undefined,
+}));
+jest.mock("../../../../../src/lib/combat-map/sprites/painter", () => ({
+  ...jest.requireActual<Record<string, unknown>>("../../../../../src/lib/combat-map/sprites/painter"),
+  paintMap: () => undefined,
+}));
+
 jest.mock("@shopify/react-native-skia", () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const React = require("react") as typeof import("react");

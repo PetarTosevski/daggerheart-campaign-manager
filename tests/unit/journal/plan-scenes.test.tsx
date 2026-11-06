@@ -196,10 +196,25 @@ describe("PlanView", () => {
     expect(screen.getByRole("button", { name: "Scene 4 options" })).toHaveFocus();
   });
 
-  it("'+ Add scene' adds one; it is off at MAX_SCENES; an empty plan shows the hint", () => {
+  it("'+ Add scene' asks the type first (dcm-z9rz.30), then adds one; it is off at MAX_SCENES; an empty plan shows the hint", () => {
     render(<PlanView campaignId={campaignId} isGm sessionId={sessionId} />);
-    fireEvent.click(screen.getByRole("button", { name: "Add scene" }));
-    expect(calls.list.at(-1)).toEqual({ name: "sessionPrep:addScene", args: { campaignId, sessionId } });
+    const before = calls.list.length;
+    const add = screen.getByRole("button", { name: "Add scene" });
+    fireEvent.click(add);
+    expect(calls.list.length).toBe(before);
+    expect(add).toHaveAttribute("aria-expanded", "true");
+    const group = screen.getByRole("group", { name: "Scene type" });
+    expect(within(group).getAllByRole("button").map((b) => b.textContent)).toEqual(["Exploration", "Social", "Combat", "Downtime", "Cancel"]);
+    expect(within(group).getByRole("button", { name: "Exploration" })).toHaveFocus();
+    // Escape closes it without adding, focus back on the button.
+    fireEvent.keyDown(group, { key: "Escape" });
+    expect(screen.queryByRole("group", { name: "Scene type" })).toBeNull();
+    expect(add).toHaveFocus();
+    expect(calls.list.length).toBe(before);
+    fireEvent.click(add);
+    fireEvent.click(within(screen.getByRole("group", { name: "Scene type" })).getByRole("button", { name: "Social" }));
+    expect(calls.list.at(-1)).toEqual({ name: "sessionPrep:addScene", args: { campaignId, sessionId, type: "social" } });
+    expect(screen.queryByRole("group", { name: "Scene type" })).toBeNull();
     cleanup();
 
     setPrep(Array.from({ length: MAX_SCENES }, (_, i) => sc(`s${i}`, "social", `S${i}`)));

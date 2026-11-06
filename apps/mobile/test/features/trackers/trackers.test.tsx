@@ -9,6 +9,7 @@ import { renderAsGm, renderAsPlayer, type RenderedScreen } from "../../harness";
 import { resetMotionTest } from "../../theme/mock-reanimated";
 import { api, type Id } from "../../../src/convex";
 import { CampaignFramePanels, type TrackerCampaign } from "../../../src/features/trackers";
+import { partySummaryRow } from "../../harness/records";
 
 beforeEach(() => {
   resetMotionTest();
@@ -363,9 +364,9 @@ test("a player reads Wither tokens and cannot end the session", async () => {
   const screen = await renderAsPlayer(<CampaignFramePanels campaign={table("witherwild", "player")} />, {
     queries: {
       "charactersReads:partySummary": [
-        { corrupt: false, sheet: { wither: 3 } },
-        { corrupt: true, sheet: { wither: 9 } },
-        { sheet: { wither: 2 } },
+        partySummaryRow({ _id: "char-1", corrupt: false, sheet: { wither: 3 } }),
+        partySummaryRow({ _id: "char-2", corrupt: true, sheet: { wither: 9 } }),
+        partySummaryRow({ _id: "char-3", sheet: { wither: 2 } }),
       ],
     },
   });
@@ -381,8 +382,8 @@ test("the GM ends a Witherwild session and converts tokens to Fear", async () =>
   const seen: unknown[] = [];
   const screen = await renderAsGm(<CampaignFramePanels campaign={table("witherwild", "gm")} />, {
     queries: {
-      "charactersReads:partySummary": [{ sheet: { wither: 4 } }],
-      "sessions:current": { extraCharacters: true },
+      "charactersReads:partySummary": [partySummaryRow({ sheet: { wither: 4 } })],
+      "sessions:current": { startedAt: 1, extraCharacters: true },
     },
     mutations: {
       "sessions:end": (args) => {
@@ -406,8 +407,8 @@ test("the house rule keeps Wither when the GM ends the session", async () => {
     <CampaignFramePanels campaign={table("witherwild", "gm", { witherPersists: true })} />,
     {
       queries: {
-        "charactersReads:partySummary": [{ sheet: { wither: 1 } }],
-        "sessions:current": { extraCharacters: false },
+        "charactersReads:partySummary": [partySummaryRow({ sheet: { wither: 1 } })],
+        "sessions:current": { startedAt: 1, extraCharacters: false },
       },
       mutations: {
         "sessions:end": (args) => {

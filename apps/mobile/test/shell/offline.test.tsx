@@ -15,7 +15,7 @@ test("offline shows the stale banner and turns write controls off", async () => 
       <WriteButton onPress={onPress}>Spend Fear</WriteButton>
     </OfflineFrame>,
   );
-  expect(screen.getByText("Showing the last update.")).toBeTruthy();
+  expect(screen.getByText("You're offline. Showing the last update.")).toBeTruthy();
   const button = screen.getByRole("button", { name: "Spend Fear" });
   expect(button.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(button);
@@ -29,7 +29,7 @@ test("online hides the banner and leaves write controls on", async () => {
       <WriteButton onPress={onPress}>Spend Fear</WriteButton>
     </OfflineFrame>,
   );
-  expect(screen.queryByText("Showing the last update.")).toBeNull();
+  expect(screen.queryByText("You're offline. Showing the last update.")).toBeNull();
   await fireEvent.press(screen.getByRole("button", { name: "Spend Fear" }));
   expect(onPress).toHaveBeenCalledTimes(1);
 });

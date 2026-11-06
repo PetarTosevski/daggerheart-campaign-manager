@@ -1,0 +1,26 @@
+# Journal follow-ups (epic dcm-z9rz, beads .24-.31), user 2026-11-06. Format: docs/workflow.md. Branch from rebuild.
+plan: journal-followups
+waves:
+  - wave: 1
+    tracers:
+      - id: JF1
+        beads: [dcm-z9rz.25, dcm-z9rz.26, dcm-z9rz.27, dcm-z9rz.28, dcm-z9rz.29, dcm-z9rz.30, dcm-z9rz.31, dcm-z9rz.24]
+        goal: "Players' Log & recap shows the session tally and spotlight counts; the tally counts every adversary defeated in the session and doesn't count Hope lost to a scar as Hope spent; log roll icons by roll type (social rolls a mouth icon); the milestone shows under After the session; '+ Add scene' asks the scene type first; Journal dates always read '2 Nov'; server functions left without a UI after the cut-over get a UI or are removed"
+        depends_on: []
+        owns:
+          - src/components/journal/**
+          - src/app/(gm)/campaigns/[campaignId]/journal/**
+          - convex/journalTally.ts
+          - convex/journalLog.ts
+          - convex/journalThreads.ts
+          - convex/sessions.ts
+          - convex/lib/sessions.ts
+          - convex/lib/validators/sessions.ts
+          - src/lib/domain/journal/**
+          - tests/unit/journal/**
+          - tests/convex/journal*.test.ts
+          - tests/convex/authz/journal*.ts
+          - tests/e2e/journal*.spec.ts
+          - docs/tasks/TASK-JF1.md
+        acceptance:
+          - a test per bead; pnpm lint, pnpm typecheck pass

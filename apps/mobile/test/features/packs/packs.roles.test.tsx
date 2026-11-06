@@ -6,6 +6,14 @@ import PacksRoute from "../../../app/campaign/[campaignId]/(gm)/packs";
 import { renderAsGm, renderAsPlayer } from "../../harness";
 import { campaignId, emptyPacks, gmCampaign, inCampaign, onePack, packId, playerCampaign, spriteA } from "./fixture";
 
+// A player sent off a GM route lands on the dashboard; the dashboard's own queries are its tests' business.
+jest.mock("../../../src/features/dashboard", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { Text } = require("react-native") as typeof import("react-native");
+  return { DashboardScreen: () => <Text accessibilityRole="header">Dashboard</Text> };
+});
+
+
 jest.mock("expo-image-picker", () => ({
   launchImageLibraryAsync: jest.fn(async () => ({ canceled: true })),
 }));

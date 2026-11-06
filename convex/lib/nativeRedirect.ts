@@ -41,5 +41,4 @@ function isRedirectShape(redirectTo: string): boolean {
   return true;
 }
 
-// A line that starts with `export` would register this helper in convex/_generated.
-void 0; export { NATIVE_RETURN_PATH, nativeRedirectTarget };
+export { NATIVE_RETURN_PATH, nativeRedirectTarget };

@@ -6,7 +6,7 @@ import { useQuery } from "convex/react";
 import { Plus } from "lucide-react";
 
 import { BrandButton } from "@/components/brand/buttons";
-import { formatSessionDate, sessionTitle } from "@/lib/domain/sessions";
+import { sessionTitle } from "@/lib/domain/sessions";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../convex/_generated/api";
@@ -14,7 +14,7 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 import type { SessionListItem } from "../../../../convex/sessionRecords";
 import type { CampaignSoFarProps, PlanSessionButtonProps, SessionListProps } from "../slots";
 import { Card, Chip } from "../ui";
-import { nextSessionNumber, shortSessionDate, wholeHours } from "./format";
+import { fullSessionDate, nextSessionNumber, shortSessionDate, wholeHours } from "./format";
 
 /**
  * Session list slot (JS, contract: ../slots.ts; design reference/designs/journal/journal_views.jpg, left column):
@@ -25,7 +25,7 @@ import { nextSessionNumber, shortSessionDate, wholeHours } from "./format";
  *   threads (`notesThreads.threads`, Q1).
  */
 
-export { headingLine, patchListed, shortSessionDate, startTime } from "./format";
+export { dayMonth, fullSessionDate, headingLine, patchListed, shortSessionDate, startTime } from "./format";
 
 /** The campaign's sessions newest first, as this caller may see them (players: live and played); `undefined` loading. */
 export function useSessionList(campaignId: Id<"campaigns">): SessionListItem[] | undefined {
@@ -79,7 +79,7 @@ export function SessionList({ campaignId, isGm, selectedId, onSelect }: SessionL
             <span className="js-n">{s.n}</span>
             <span className="js-text">
               <span className="js-title">{sessionTitle(s.title)}</span>
-              <span className="js-date" title={formatSessionDate(s.date)}>
+              <span className="js-date" title={fullSessionDate(s.date)}>
                 {shortSessionDate(s.date)}
               </span>
             </span>

@@ -11,6 +11,7 @@ import { QueryBoundary } from "../../../src/ui/query-boundary";
 import { fn, renderAsGm, renderAsPlayer } from "../../harness";
 import { campaignRecord, characterRecord, inCampaign, sheetCharacter } from "../party/fixture";
 import { canMarkStress, stepResource, stepTrait } from "../../../src/features/sheet/optimistic";
+import { ruleSettingsRecord } from "../../harness/records";
 
 jest.mock("expo-crypto", () => ({
   randomUUID: () => "00000000-0000-4000-8000-000000000001",
@@ -38,7 +39,7 @@ function sheetQueries(role: "gm" | "player", character: unknown, stressOverflow:
   return {
     [fn(api.campaigns.get)]: campaignRecord(role),
     [fn(api.charactersReads.get)]: character,
-    [fn(api.ruleSettings.get)]: { modes: { stressOverflow, fullStressVulnerable: "book" }, locked: false, canEdit: role === "gm" },
+    [fn(api.ruleSettings.get)]: ruleSettingsRecord({ stressOverflow, fullStressVulnerable: "book" }, { locked: false, canEdit: role === "gm" }),
   };
 }
 
@@ -147,7 +148,7 @@ test("loading, missing, and offline states", async () => {
       },
     },
   });
-  expect(offline.getByText("Showing the last update.")).toBeTruthy();
+  expect(offline.getByText("You're offline. Showing the last update.")).toBeTruthy();
   const hope = offline.getByRole("button", { name: "Increase Hope" });
   expect(hope.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(hope);

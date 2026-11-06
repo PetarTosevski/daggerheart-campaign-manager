@@ -66,7 +66,7 @@ test("the GM confirms Start Session once", async () => {
     mutations: {
       [fn(api.sessions.start)]: (args) => {
         calls.push(args as { campaignId: string; idempotencyKey: string });
-        return { sessionId: "session-9" };
+        return { sessionId: "session-9", startedAt: 1, alreadyStarted: false };
       },
     },
   });
@@ -102,7 +102,7 @@ test("the header covers loading, an empty session line, a failed query, and offl
     </OfflineFrame>,
     { queries: { [fn(api.sessionWrap.dashboard)]: sessions(null) } },
   );
-  expect(offline.getByText("Showing the last update.")).toBeTruthy();
+  expect(offline.getByText("You're offline. Showing the last update.")).toBeTruthy();
   const start = offline.getByRole("button", { name: "Start Session" });
   expect(start.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(start);
@@ -134,7 +134,7 @@ test("the GM sets another day and brings the night from day 7", async () => {
     mutations: {
       [fn(api.campaignTime.setDay)]: (args) => {
         days.push(args as { cycleDay: number });
-        return null;
+        return { week: 1, cycle: "DAY", cycleDay: 2 };
       },
     },
   });
@@ -149,7 +149,7 @@ test("the GM sets another day and brings the night from day 7", async () => {
     mutations: {
       [fn(api.campaignTime.advance)]: (args) => {
         advances.push(args);
-        return null;
+        return { week: 1, cycle: "NIGHT", cycleDay: 1 };
       },
     },
   });

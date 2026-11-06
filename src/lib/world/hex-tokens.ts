@@ -94,3 +94,18 @@ export function hexPoints(orientation: HexGrid["orientation"], width: number, he
       : [30, 90, 150, 210, 270, 330].map((d) => [cx + (rx / (SQRT3 / 2)) * Math.cos((d * Math.PI) / 180), cy + ry * Math.sin((d * Math.PI) / 180)]);
   return pts.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(" ");
 }
+
+/** What a click (or Enter) on a map marker selects: the hex under it and/or the marker for editing. */
+export type MarkerPick = { hex: boolean; token: number | null };
+
+/**
+ * Click routing for World map markers (dcm-kggd, WH2). On a map with a hex
+ * grid a marker covers its whole hex, so a click on it selects the hex (its
+ * panel holds "Travel here") and the marker together, so both stay reachable;
+ * the party's hex selects only the hex. Without a grid a marker click selects
+ * the marker, and a click on the party selects nothing (`null`: no change).
+ */
+export function pickMarker(id: number | "party", onGrid: boolean): MarkerPick | null {
+  if (onGrid) return { hex: true, token: id === "party" ? null : id };
+  return id === "party" ? null : { hex: false, token: id };
+}

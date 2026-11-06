@@ -22,6 +22,7 @@ import { ConvexError } from "convex/values";
 import { pickAdversaryUse, standardAttackEffect, STANDARD_ATTACK_USE, upfrontFear, type AdversaryPlan, type AdversaryPlanStep, type AdversaryRunContext } from "../../src/lib/domain/adversary-effects/run";
 import type { AdversaryFeatureEffect } from "../../src/lib/domain/adversary-effects/types";
 import { adversaryAttack, adversaryDamage, gmControlledWeaponAttack } from "../../src/lib/domain/adversary-actions/attack";
+import { underwaterDisadvantage } from "../../src/lib/domain/combat-map/light";
 import { getWeapon } from "../../src/lib/srd/index";
 import type { TraitId } from "../../src/lib/srd/types";
 import {
@@ -97,9 +98,7 @@ import { saveSheet } from "./characterSheet";
 import { logUnshakable, unshake } from "./unshakable";
 import { closeRequest } from "./combatRequests";
 import { liveCombatMap, tokensOnMap } from "./combatMaps";
-// allyPicks imports featureRunner / cardRunner, which reach this module through rolls; loading it lazily keeps the
-// import graph acyclic at module load (validators would be undefined otherwise).
-const allyPicks = () => import("./allyPicks");
+import { holdForAllyPicks, pickDice } from "./allyPickHold";
 import { loadScene, type Scene } from "./combatVision";
 import { MAX_INSTANCES } from "./encounters";
 import { campaignFearState, gainFear, spendFear } from "./fear";
@@ -150,6 +149,15 @@ async function actionScene(ctx: QueryCtx, campaign: Doc<"campaigns">, instance: 
   const scene = await loadScene(ctx, campaign, live);
   const selfToken = scene.tokens.find((t) => t.ref.kind === "adversary" && t.ref.adversaryId === instance._id);
   return { map: selfToken ? { scene, selfToken } : null, party, bands: await bandsOnMap(ctx, live._id) };
+}
+
+/**
+ * Plan rule-switches OE: the disadvantage Underwater gives an adversary's attack roll (`underwaterDisadvantage`): the rule
+ * on, the adversary's token on the live map, the map marked Underwater, the token not marked "fights underwater".
+ */
+export function underwaterAttackDisadvantage(campaign: Doc<"campaigns">, scene: { map: ActionScene["map"] }): number {
+  if (scene.map === null) return 0;
+  return underwaterDisadvantage(ruleMode(campaign, "underwater") && scene.map.scene.map.underwater === true, scene.map.selfToken.fightsUnderwater === true);
 }
 
 type PcPick = { kind: "pc"; member: PartyMember; token: Doc<"combatTokens"> | null; combatant: Combatant; band?: Range };
@@ -1084,7 +1092,12 @@ export async function adversaryAction(
     : [];
   const { advantage: commonAdvantage, disadvantage: common, residual } = splitTargetEdge(own);
   const advantage = ownAdvantage + commonAdvantage;
-  const disadvantage = (args.disadvantage ?? 0) + (attack && targets.cover ? 1 : 0) + common;
+  // Plan rule-switches OE, Underwater (optional rule, CB p.168: "Attack rolls underwater have disadvantage unless it makes
+  // sense for a character to easily fight underwater, like a Siren or Shark"): the adversary's token on the live map
+  // marked Underwater, unless the GM marked the token "fights underwater".
+  const underwater = attack ? underwaterAttackDisadvantage(campaign, scene) : 0;
+  if (underwater > 0) w.gm.push(`${label} attacks underwater: disadvantage`);
+  const disadvantage = (args.disadvantage ?? 0) + (attack && targets.cover ? 1 : 0) + common + underwater;
   // The whole roll's net advantage as rollD20 counts it (the use's own flags; Goad Them On adds a disadvantage).
   const net = advantage + (use.roll?.advantage ? 1 : 0) - disadvantage - (instanceModifiers(instance).disadvantage ? 1 : 0) - (use.roll?.disadvantage ? 1 : 0);
   // The attack roll's dice, rolled here (a Drained attacker's are d12s, HF p.14); a second die when any reader needs it.
@@ -1164,7 +1177,6 @@ export async function adversaryAction(
     rng: rollDie,
   };
   // FH-AP: a use that is not an attack records its dice, so the run with the PCs' picks replays them.
-  const { holdForAllyPicks, pickDice } = await allyPicks();
   const pickRolls = pickDice(opts?.picks?.dice);
   if (args.options) w.options = context.options;
   // DA1: the runner reads the whole roll's die; a target that keeps a lower one meets its Evasion raised by the difference,

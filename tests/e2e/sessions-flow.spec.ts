@@ -103,12 +103,12 @@ for (const viewport of [
         await expect(head(page).getByRole("heading", { level: 2, name: "The Ford at Dawn" })).toBeVisible();
 
         await plan(page).getByRole("button", { name: "Add scene" }).click();
+        await plan(page).getByRole("group", { name: "Scene type" }).getByRole("button", { name: "Combat" }).click();
         await expect(scene(page, 1).getByText("Combat", { exact: true })).toBeVisible();
         await scene(page, 1).getByRole("textbox", { name: "Scene 1 title" }).fill("Ambush at the ford");
         await scene(page, 1).getByRole("textbox", { name: "Scene 1 title" }).press("Enter");
         await plan(page).getByRole("button", { name: "Add scene" }).click();
-        await scene(page, 2).getByRole("button", { name: "Scene 2 options" }).click();
-        await scene(page, 2).getByRole("button", { name: "Social", exact: true }).click();
+        await plan(page).getByRole("group", { name: "Scene type" }).getByRole("button", { name: "Social" }).click();
         await expect(scene(page, 2).getByText("Social", { exact: true })).toBeVisible();
         await scene(page, 2).getByRole("textbox", { name: "Scene 2 title" }).fill("Bargain with the ferryman");
         await scene(page, 2).getByRole("textbox", { name: "Scene 2 title" }).press("Enter");
@@ -236,7 +236,9 @@ for (const viewport of [
           await expect(player.getByRole("tablist", { name: "Session view" })).toHaveCount(0);
           // The played scene shows in the log (its encounter and "Scene 1 began", Q7); the unplayed one nowhere.
           for (const hidden of [PREP, "Bargain with the ferryman", LOOT]) await expect(player.getByText(hidden)).toHaveCount(0);
-          for (const region of ["Planned scenes", "Session tally", "Spotlight", "After the session"]) await expect(player.getByRole("region", { name: region })).toHaveCount(0);
+          // JF1 (dcm-z9rz.25): players now see the session tally; the spotlight follows the GM setting (off here).
+          await expect(player.getByRole("region", { name: "Session tally" })).toBeVisible();
+          for (const region of ["Planned scenes", "Spotlight", "After the session"]) await expect(player.getByRole("region", { name: region })).toHaveCount(0);
           await expect(player.getByRole("button", { name: /^Start session/ })).toHaveCount(0);
           await expect(logOf(player).getByRole("textbox")).toHaveCount(0);
         }

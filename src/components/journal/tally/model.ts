@@ -8,7 +8,7 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 import type { JournalTally } from "../../../../convex/journalTally";
 
 /** The six tiles in the design's order (two rows of three), each a `journalTally.tally` count. */
-export type TallyKey = keyof Omit<JournalTally, "live" | "truncated">;
+export type TallyKey = keyof Omit<JournalTally, "live" | "truncated" | "fearHidden">;
 
 export const TALLY_TILES: readonly { key: TallyKey; label: string; Icon: LucideIcon }[] = [
   { key: "fearGained", label: "Fear gained", Icon: Droplet },
@@ -18,6 +18,11 @@ export const TALLY_TILES: readonly { key: TallyKey; label: string; Icon: LucideI
   { key: "adversariesDefeated", label: "Adversaries defeated", Icon: Skull },
   { key: "criticals", label: "Critical successes", Icon: Sparkles },
 ];
+
+/** The tiles a reader gets: all six, or without the two Fear tiles while the tally's `fearHidden` (a player, config R1). */
+export function tallyTiles(fearHidden: boolean): typeof TALLY_TILES {
+  return fearHidden ? TALLY_TILES.filter((t) => t.key !== "fearGained" && t.key !== "fearSpent") : TALLY_TILES;
+}
 
 /** A bar's width in percent, scaled to the highest count (the highest fills the track; all zero: empty bars). */
 export function barPercent(count: number, max: number): number {

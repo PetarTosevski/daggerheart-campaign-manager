@@ -64,7 +64,7 @@ test("an adversary attack targets the PC the GM picks, not the first one (dcm-gd
           status: "resolved",
           groupId: "g",
           entryId: "log-1",
-          roll: { kind: "action", dice: [{ role: "d20", sides: 20, value: 17 }], modifier: 2, total: 19, outcome: "none", manual: false },
+          roll: { kind: "action", dice: [{ role: "extra", sides: 20, value: 17 }], modifier: 2, total: 19, outcome: "none", manual: false },
           success: true,
           targets: [{ characterId: "char-2", hit: true, damage: 8, resolved: false, requestId: "req-h" }],
           fearDelta: 0,

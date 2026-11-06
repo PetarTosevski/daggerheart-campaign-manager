@@ -6,16 +6,17 @@ import { CampaignProvider, useCampaign } from "../../src/shell/campaign-provider
 import { MoreSheet } from "../../src/shell/more-sheet";
 import { TabBar } from "../../src/shell/tab-bar";
 import { renderAsGm, renderAsPlayer } from "../harness";
+import { campaignSummary } from "../harness/records";
 
 beforeEach(() => {
   resetMotionTest();
 });
 
-const campaign = {
+const campaign = campaignSummary({
   _id: "campaign-1",
   name: "The Table",
   role: "player" as const,
-};
+});
 
 function SheetFromQuery() {
   const loaded = useCampaign();

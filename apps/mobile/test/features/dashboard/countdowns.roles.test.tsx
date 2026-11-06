@@ -60,7 +60,7 @@ test("a hidden step is shown only when the server sends it, and Advance is one i
     mutations: {
       [fn(api.countdowns.operate)]: (args) => {
         calls.push(args as { countdownId: string; action: string; idempotencyKey: string });
-        return null;
+        return { previousValue: 4, newValue: 3, status: "active" };
       },
     },
   });
@@ -99,7 +99,7 @@ test("countdowns cover loading, empty, error, and offline", async () => {
   expect(broken.getByText(ERROR_TEXT)).toBeTruthy();
 
   const offline = await renderAsGm(ui(true, true), { queries: { [fn(api.countdowns.listByCampaign)]: [gmRow] } });
-  expect(offline.getByText("Showing the last update.")).toBeTruthy();
+  expect(offline.getByText("You're offline. Showing the last update.")).toBeTruthy();
   const advance = offline.getByRole("button", { name: "Advance The Lure" });
   expect(advance.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(advance);

@@ -1,4 +1,4 @@
-void 0; import { constantTimeEqual } from "./allowlist";
+import { constantTimeEqual, isE2EDeployment, type Env } from "./allowlist";
 
 /**
  * Apple identity tokens for the native Sign in with Apple button.
@@ -11,9 +11,20 @@ void 0; import { constantTimeEqual } from "./allowlist";
  */
 const APPLE_ISSUER = "https://appleid.apple.com";
 const APPLE_JWKS_URL = "https://appleid.apple.com/auth/keys";
-const APPLE_AUDIENCES = ["com.dualityheart.mobile", "com.dualityheart.mobile.dev", "com.dualityheart.mobile.preview"] as const;
+/** The bundle ids of the store and preview builds (`apps/mobile/app.config.ts`): accepted on every deployment. */
+const APPLE_AUDIENCES = ["com.dualityheart.mobile", "com.dualityheart.mobile.preview"] as const;
+/**
+ * The development build's bundle id. Anyone can build and sign a dev client under it, so production refuses it: it is
+ * accepted only on a local deployment or where `ALLOW_DEV_APPLE_SIGN_IN` is exactly `"true"` (set on the cloud dev
+ * deployment, never on production), the same rail as `ALLOW_SEED_ACCOUNTS`.
+ */
+const APPLE_DEV_AUDIENCE = "com.dualityheart.mobile.dev";
 
-const AUDIENCES = new Set<string>(APPLE_AUDIENCES);
+/** The audiences this deployment accepts. */
+function appleAudiences(env: Env): ReadonlySet<string> {
+  const devAllowed = isE2EDeployment(env) || env.ALLOW_DEV_APPLE_SIGN_IN === "true";
+  return new Set<string>(devAllowed ? [...APPLE_AUDIENCES, APPLE_DEV_AUDIENCE] : APPLE_AUDIENCES);
+}
 
 type AppleIdentity = {
   subject: string;
@@ -111,6 +122,8 @@ async function verifyAppleIdentityToken(input: {
   nonce: string;
   keys: readonly AppleJwk[];
   now?: number;
+  /** The deployment's environment (default `process.env`): decides whether the dev bundle id is accepted. */
+  env?: Env;
 }): Promise<AppleIdentity> {
   const kid = appleTokenKeyId(input.identityToken);
   const [encodedHeader, encodedPayload, encodedSignature] = input.identityToken.split(".");
@@ -139,7 +152,7 @@ async function verifyAppleIdentityToken(input: {
   const payload = decodeJson(encodedPayload);
   if (!isRecord(payload)) throw new AppleIdentityError("malformed");
   if (payload.iss !== APPLE_ISSUER) throw new AppleIdentityError("issuer");
-  if (!audienceAllowed(payload.aud)) throw new AppleIdentityError("audience");
+  if (!audienceAllowed(payload.aud, appleAudiences(input.env ?? process.env))) throw new AppleIdentityError("audience");
   const now = input.now ?? Date.now();
   if (typeof payload.exp !== "number" || !Number.isFinite(payload.exp) || payload.exp * 1000 <= now) {
     throw new AppleIdentityError("expiry");
@@ -158,9 +171,9 @@ async function verifyAppleIdentityToken(input: {
   };
 }
 
-function audienceAllowed(aud: unknown): boolean {
+function audienceAllowed(aud: unknown, audiences: ReadonlySet<string>): boolean {
   const values = Array.isArray(aud) ? aud : [aud];
-  if (values.length === 0 || values.some((value) => typeof value !== "string" || !AUDIENCES.has(value))) return false;
+  if (values.length === 0 || values.some((value) => typeof value !== "string" || !audiences.has(value))) return false;
   return true;
 }
 
@@ -184,11 +197,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-// A line that starts with `import` or `export` would register this helper in convex/_generated.
-void 0; export {
+export {
   APPLE_ISSUER,
   APPLE_JWKS_URL,
   APPLE_AUDIENCES,
+  APPLE_DEV_AUDIENCE,
+  appleAudiences,
   APPLE_KEYS_MIN_REFETCH_MS,
   APPLE_KEYS_TTL_MS,
   AppleIdentityError,

@@ -84,24 +84,31 @@ test("the feed asks for 15 rows and shows the server dice", async () => {
 
 test("the GM can roll, reveal, delete, undo, and tick only after opening the sheet", async () => {
   const calls: unknown[] = [];
-  const record = (args: unknown) => {
+  const record = (answer: unknown) => (args: unknown) => {
     calls.push(args);
-    return null;
+    return answer;
+  };
+  const gmRollAnswer = {
+    entryId: "row-9",
+    roll: { kind: "free", dice: [{ value: 5, sides: 20, role: "extra" }], modifier: 0, total: 5, outcome: "none", manual: false },
   };
   const screen = await renderAsGm(ui(true), {
     queries: {
       [fn(api.feed.list)]: page,
       [fn(api.countdownRolls.countedRows)]: ["row-1"],
       [fn(api.countdownRolls.preview)]: {
-        countdowns: [{ countdownId: "cd-1", name: "The Lure", amount: 2, ticked: false }],
+        outcome: "successHope",
+        countdowns: [
+          { countdownId: "cd-1", name: "The Lure", mode: "standard", armed: true, currentValue: 4, amount: 2, ticked: false },
+        ],
       },
     },
     mutations: {
-      [fn(api.rolls.gmRoll)]: record,
-      [fn(api.rolls.reveal)]: record,
-      [fn(api.feed.remove)]: record,
-      [fn(api.actionLog.undo)]: record,
-      [fn(api.countdownRolls.applyRoll)]: record,
+      [fn(api.rolls.gmRoll)]: record(gmRollAnswer),
+      [fn(api.rolls.reveal)]: record(null),
+      [fn(api.feed.remove)]: record(null),
+      [fn(api.actionLog.undo)]: record({ undone: ["row-1"] }),
+      [fn(api.countdownRolls.applyRoll)]: record([{ countdownId: "cd-1", currentValue: 2, triggered: false }]),
     },
   });
   expect(screen.client.subscribed).toEqual([fn(api.feed.list), fn(api.countdownRolls.countedRows)]);
@@ -136,7 +143,7 @@ test("the feed covers loading, empty, error, and an offline secret roll", async 
   expect(broken.getByText(ERROR_TEXT)).toBeTruthy();
 
   const offline = await renderAsGm(ui(true, true), { queries: { [fn(api.feed.list)]: [] } });
-  expect(offline.getByText("Showing the last update.")).toBeTruthy();
+  expect(offline.getByText("You're offline. Showing the last update.")).toBeTruthy();
   const secret = offline.getByRole("button", { name: "Roll in secret" });
   expect(secret.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(secret);

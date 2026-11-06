@@ -1,8 +1,19 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useEffect, useState } from "react";
-import { Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { colors } from "../../theme/colors";
+import { type as fonts } from "../../theme/fonts";
 
 import { authErrorText } from "./auth-error";
 import { SocialSignIn } from "./social-sign-in";
@@ -24,10 +35,15 @@ const LABELS: Record<Step, { title: string; submit: string }> = {
 };
 
 const styles = StyleSheet.create({
-  screen: { backgroundColor: colors.ink, flex: 1, gap: 12, padding: 24 },
-  title: { color: colors.parchment, fontSize: 22 },
+  safe: { backgroundColor: colors.ink, flex: 1 },
+  avoid: { flex: 1 },
+  // Centred on a tall phone, scrolls on a short one or with the keyboard up; one readable column on a tablet.
+  scroll: { flexGrow: 1, justifyContent: "center", paddingHorizontal: 24, paddingVertical: 32 },
+  column: { alignSelf: "center", gap: 14, maxWidth: 420, width: "100%" },
+  brand: { ...fonts.displayBold, color: colors.brand, fontSize: 15, letterSpacing: 2, textAlign: "center" },
+  title: { ...fonts.displayMedium, color: colors.parchment, fontSize: 24, marginBottom: 4, textAlign: "center" },
   label: { gap: 6 },
-  field: { color: colors.label, fontSize: 14 },
+  field: { ...fonts.sansMedium, color: colors.label, fontSize: 14 },
   input: {
     backgroundColor: colors.panel,
     borderColor: colors.line,
@@ -39,8 +55,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   hint: { color: colors.subtle, fontSize: 13 },
+  primary: {
+    alignItems: "center",
+    backgroundColor: colors.brand,
+    borderRadius: 8,
+    justifyContent: "center",
+    marginTop: 4,
+    minHeight: 48,
+  },
+  primaryPending: { opacity: 0.6 },
+  primaryText: { ...fonts.sansSemibold, color: colors.brandInk, fontSize: 16 },
   button: { alignItems: "center", justifyContent: "center", minHeight: 44 },
-  buttonText: { color: colors.brand, fontSize: 16 },
+  buttonText: { ...fonts.sans, color: colors.brand, fontSize: 16 },
   error: { color: colors.danger, fontSize: 14 },
   notice: { color: colors.ok, fontSize: 14 },
   help: { color: colors.body, fontSize: 14 },
@@ -171,138 +197,155 @@ export function PasswordForm({ joinCode = null }: { joinCode?: string | null } =
   const submitLabel = pending ? "Please wait…" : LABELS[step].submit;
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <Text accessibilityRole="header" style={styles.title}>{LABELS[step].title}</Text>
-      {step === "signUp" ? (
-        <View style={styles.label}>
-          <Text style={styles.field}>Name</Text>
-          <TextInput
-            accessibilityLabel="Name"
-            autoComplete="name"
-            maxLength={80}
-            onChangeText={setName}
-            style={styles.input}
-            textContentType="name"
-            value={name}
-          />
-        </View>
-      ) : null}
-      {step === "signIn" || step === "signUp" || step === "resetEmail" ? (
-        <View style={styles.label}>
-          <Text style={styles.field}>Email</Text>
-          <TextInput
-            accessibilityLabel="Email"
-            autoCapitalize="none"
-            autoComplete="email"
-            autoCorrect={false}
-            keyboardType="email-address"
-            onChangeText={setEmail}
-            style={styles.input}
-            textContentType="emailAddress"
-            value={email}
-          />
-        </View>
-      ) : null}
-      {step === "signIn" || step === "signUp" ? (
-        <View style={styles.label}>
-          <Text style={styles.field}>Password</Text>
-          <TextInput
-            accessibilityLabel="Password"
-            autoCapitalize="none"
-            autoComplete={step === "signUp" ? "new-password" : "password"}
-            onChangeText={setPassword}
-            secureTextEntry
-            style={styles.input}
-            textContentType={step === "signUp" ? "newPassword" : "password"}
-            value={password}
-          />
-          {step === "signUp" ? <Text style={styles.hint}>At least 8 characters.</Text> : null}
-        </View>
-      ) : null}
-      {codeStep ? (
-        <View style={styles.label}>
-          <Text style={styles.help}>
-            {step === "code"
-              ? `Enter the 6-digit code we emailed to ${email}.`
-              : `If ${email} has an account, we emailed it a 6-digit code. Enter it with a new password.`}
-          </Text>
-          <Text style={styles.field}>6-digit code</Text>
-          <TextInput
-            accessibilityLabel="6-digit code"
-            autoComplete="sms-otp"
-            keyboardType="number-pad"
-            maxLength={6}
-            onChangeText={setCode}
-            style={styles.input}
-            textContentType="oneTimeCode"
-            value={code}
-          />
-        </View>
-      ) : null}
-      {step === "resetCode" ? (
-        <View style={styles.label}>
-          <Text style={styles.field}>New password</Text>
-          <TextInput
-            accessibilityLabel="New password"
-            autoCapitalize="none"
-            autoComplete="new-password"
-            onChangeText={setNewPassword}
-            secureTextEntry
-            style={styles.input}
-            textContentType="newPassword"
-            value={newPassword}
-          />
-          <Text style={styles.hint}>At least 8 characters.</Text>
-        </View>
-      ) : null}
-      <Pressable accessibilityRole="button" disabled={pending} onPress={onSubmit} style={styles.button}>
-        <Text style={styles.buttonText}>{submitLabel}</Text>
-      </Pressable>
-      {step === "signIn" ? <SocialSignIn /> : null}
-      {error ? (
-        <Text accessibilityRole="alert" style={styles.error}>
-          {error}
-        </Text>
-      ) : null}
-      {notice ? (
-        <Text accessibilityLiveRegion="polite" style={styles.notice}>
-          {notice}
-        </Text>
-      ) : null}
-      {codeStep ? (
-        <>
-          <Pressable
-            accessibilityRole="button"
-            disabled={pending || cooldown > 0}
-            onPress={resend}
-            style={styles.button}
-          >
-            <Text style={styles.buttonText}>{cooldown > 0 ? `Resend code in ${cooldown}s` : "Resend code"}</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => go(step === "code" ? (origin?.flow === "signIn" ? "signIn" : "signUp") : "resetEmail")}
-            style={styles.button}
-          >
-            <Text style={styles.buttonText}>Use a different email</Text>
-          </Pressable>
-        </>
-      ) : null}
-      {step === "signIn" ? (
-        <Pressable accessibilityRole="button" onPress={() => go("resetEmail")} style={styles.button}>
-          <Text style={styles.buttonText}>Forgot password?</Text>
-        </Pressable>
-      ) : null}
-      {step === "signIn" || step === "signUp" ? (
-        <Pressable accessibilityRole="button" onPress={() => go(step === "signUp" ? "signIn" : "signUp")} style={styles.button}>
-          <Text style={styles.buttonText}>{step === "signUp" ? "Have an account? Sign in" : "New here? Create an account"}</Text>
-        </Pressable>
-      ) : null}
-      {step === "resetEmail" ? (
-        <Pressable accessibilityRole="button" onPress={() => go("signIn")} style={styles.button}>
-          <Text style={styles.buttonText}>Back to sign in</Text>
-        </Pressable>
-      ) : null}
+    <SafeAreaView edges={["top", "bottom", "left", "right"]} style={styles.safe}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.avoid}>
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
+          testID="sign-in-scroll"
+        >
+          <View style={styles.column}>
+            <Text style={styles.brand}>DUALITY HEART</Text>
+            <Text accessibilityRole="header" style={styles.title}>{LABELS[step].title}</Text>
+            {step === "signUp" ? (
+              <View style={styles.label}>
+                <Text style={styles.field}>Name</Text>
+                <TextInput
+                  accessibilityLabel="Name"
+                  autoComplete="name"
+                  maxLength={80}
+                  onChangeText={setName}
+                  style={styles.input}
+                  textContentType="name"
+                  value={name}
+                />
+              </View>
+            ) : null}
+            {step === "signIn" || step === "signUp" || step === "resetEmail" ? (
+              <View style={styles.label}>
+                <Text style={styles.field}>Email</Text>
+                <TextInput
+                  accessibilityLabel="Email"
+                  autoCapitalize="none"
+                  autoComplete="email"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  onChangeText={setEmail}
+                  style={styles.input}
+                  textContentType="emailAddress"
+                  value={email}
+                />
+              </View>
+            ) : null}
+            {step === "signIn" || step === "signUp" ? (
+              <View style={styles.label}>
+                <Text style={styles.field}>Password</Text>
+                <TextInput
+                  accessibilityLabel="Password"
+                  autoCapitalize="none"
+                  autoComplete={step === "signUp" ? "new-password" : "password"}
+                  onChangeText={setPassword}
+                  secureTextEntry
+                  style={styles.input}
+                  textContentType={step === "signUp" ? "newPassword" : "password"}
+                  value={password}
+                />
+                {step === "signUp" ? <Text style={styles.hint}>At least 8 characters.</Text> : null}
+              </View>
+            ) : null}
+            {codeStep ? (
+              <View style={styles.label}>
+                <Text style={styles.help}>
+                  {step === "code"
+                    ? `Enter the 6-digit code we emailed to ${email}.`
+                    : `If ${email} has an account, we emailed it a 6-digit code. Enter it with a new password.`}
+                </Text>
+                <Text style={styles.field}>6-digit code</Text>
+                <TextInput
+                  accessibilityLabel="6-digit code"
+                  autoComplete="sms-otp"
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  onChangeText={setCode}
+                  style={styles.input}
+                  textContentType="oneTimeCode"
+                  value={code}
+                />
+              </View>
+            ) : null}
+            {step === "resetCode" ? (
+              <View style={styles.label}>
+                <Text style={styles.field}>New password</Text>
+                <TextInput
+                  accessibilityLabel="New password"
+                  autoCapitalize="none"
+                  autoComplete="new-password"
+                  onChangeText={setNewPassword}
+                  secureTextEntry
+                  style={styles.input}
+                  textContentType="newPassword"
+                  value={newPassword}
+                />
+                <Text style={styles.hint}>At least 8 characters.</Text>
+              </View>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              disabled={pending}
+              onPress={onSubmit}
+              style={[styles.primary, pending ? styles.primaryPending : null]}
+            >
+              <Text style={styles.primaryText}>{submitLabel}</Text>
+            </Pressable>
+            {step === "signIn" ? <SocialSignIn /> : null}
+            {error ? (
+              <Text accessibilityRole="alert" style={styles.error}>
+                {error}
+              </Text>
+            ) : null}
+            {notice ? (
+              <Text accessibilityLiveRegion="polite" style={styles.notice}>
+                {notice}
+              </Text>
+            ) : null}
+            {codeStep ? (
+              <>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={pending || cooldown > 0}
+                  onPress={resend}
+                  style={styles.button}
+                >
+                  <Text style={styles.buttonText}>{cooldown > 0 ? `Resend code in ${cooldown}s` : "Resend code"}</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => go(step === "code" ? (origin?.flow === "signIn" ? "signIn" : "signUp") : "resetEmail")}
+                  style={styles.button}
+                >
+                  <Text style={styles.buttonText}>Use a different email</Text>
+                </Pressable>
+              </>
+            ) : null}
+            {step === "signIn" ? (
+              <Pressable accessibilityRole="button" onPress={() => go("resetEmail")} style={styles.button}>
+                <Text style={styles.buttonText}>Forgot password?</Text>
+              </Pressable>
+            ) : null}
+            {step === "signIn" || step === "signUp" ? (
+              <Pressable accessibilityRole="button" onPress={() => go(step === "signUp" ? "signIn" : "signUp")} style={styles.button}>
+                <Text style={styles.buttonText}>{step === "signUp" ? "Have an account? Sign in" : "New here? Create an account"}</Text>
+              </Pressable>
+            ) : null}
+            {step === "resetEmail" ? (
+              <Pressable accessibilityRole="button" onPress={() => go("signIn")} style={styles.button}>
+                <Text style={styles.buttonText}>Back to sign in</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

@@ -90,7 +90,7 @@ async function renderReady(
     "accountSelfDelete:deleteMyAccount": (args: unknown) => {
       book.deletes.push(args);
       if (extra?.deleteThrows) throw new ConvexError({ code: "OWNER_ACCOUNT_UNDELETABLE", message: "The app owner's account can't be deleted." });
-      return null;
+      return { deleteAfter: 1 };
     },
   };
   const screen = await render(<SettingsScreen />, {
@@ -304,7 +304,7 @@ test("offline keeps the backup visible and does not send writes", async () => {
       },
     },
   );
-  expect(screen.getByText("Showing the last update.")).toBeTruthy();
+  expect(screen.getByText("You're offline. Showing the last update.")).toBeTruthy();
   const restore = screen.getByRole("button", { name: "Restore from pasted backup" });
   expect(restore.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(restore);

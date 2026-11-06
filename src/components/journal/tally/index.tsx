@@ -16,21 +16,17 @@ import type { SpotlightEntry } from "../../../../convex/sessionPlay";
 import type { SessionTallyProps, SpotlightProps } from "../slots";
 import { Card } from "../ui";
 
-import { barPercent, resetPending, TALLY_TILES } from "./model";
+import { barPercent, resetPending, tallyTiles } from "./model";
 
 /**
  * Session tally and Spotlight (JT, contract: ../slots.ts; design reference/designs/journal/journal_views.jpg, Log &
- * recap, right column). The tally tiles are GM only (journal Q5); the spotlight bars and least-spotlight line are the
- * GM's and co-GMs', and the players' too when the table setting `spotlightToPlayers` is on (config JO3, Q5 a).
+ * recap, right column). The tally tiles are every member's (dcm-z9rz.25; a player without "Players see the GM's Fear"
+ * gets no Fear tiles); the spotlight bars and least-spotlight line are the GM's and co-GMs', and the players' too when
+ * the table setting `spotlightToPlayers` is on (config JO3, Q5 a).
  */
 
 /** The six tally tiles from `journalTally.tally` ('-' before the session was live; a floor note when truncated). */
-export function SessionTally({ campaignId, sessionId, isGm }: SessionTallyProps) {
-  if (!isGm) return null;
-  return <TallyCard campaignId={campaignId} sessionId={sessionId} />;
-}
-
-function TallyCard({ campaignId, sessionId }: Omit<SessionTallyProps, "isGm">) {
+export function SessionTally({ campaignId, sessionId }: SessionTallyProps) {
   const tally = useQuery(api.journalTally.tally, { campaignId, sessionId });
   return (
     <Card heading="Session tally" kind="label" className="jt-tally">
@@ -41,7 +37,7 @@ function TallyCard({ campaignId, sessionId }: Omit<SessionTallyProps, "isGm">) {
       ) : (
         <>
           <ul className="jt-tiles" aria-label="Session tally counts">
-            {TALLY_TILES.map(({ key, label, Icon }) => {
+            {tallyTiles(tally.fearHidden).map(({ key, label, Icon }) => {
               const value = tally[key];
               return (
                 <li key={key} className="jt-tile" data-tile={key}>
@@ -61,7 +57,7 @@ function TallyCard({ campaignId, sessionId }: Omit<SessionTallyProps, "isGm">) {
               );
             })}
           </ul>
-          {tally.fearGained === null ? <p className="jr-muted jr-m0 jt-note">Counts itself once the session starts.</p> : null}
+          {tally.hopeSpent === null ? <p className="jr-muted jr-m0 jt-note">Counts itself once the session starts.</p> : null}
           {tally.truncated ? <p className="jr-muted jr-m0 jt-note">A very busy session: these are at least the counts shown.</p> : null}
         </>
       )}

@@ -7,6 +7,7 @@ import "../theme/mock-reanimated";
 import CampaignLayout from "../../app/campaign/[campaignId]/_layout";
 import { api } from "../../src/convex";
 import { fn, renderAsGm, renderAsPlayer } from "../harness";
+import { campaignSummary } from "../harness/records";
 
 const mockProtected: { redirectTo?: string; guard?: boolean }[] = [];
 const mockParams = { campaignId: "campaign-1" };
@@ -39,7 +40,7 @@ jest.mock("../../src/shell/tab-bar", () => ({
   CampaignTabBar: () => null,
 }));
 
-const campaign = { _id: "campaign-1", name: "The Table", ownerView: false };
+const campaign = campaignSummary({ _id: "campaign-1", name: "The Table", ownerView: false });
 
 test("opening a campaign records it once with campaigns.markOpened", async () => {
   const calls: unknown[] = [];

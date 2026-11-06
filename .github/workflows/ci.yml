@@ -46,8 +46,19 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # eslint ., tsc --noEmit and jest --ci inside apps/mobile.
-      - run: pnpm --filter @dualityheart/mobile run check
+      # Jest's transform cache and the harness's Convex validator export (apps/mobile/jest.config.js,
+      # test/harness/convex-returns.ts): a warm run skips the Babel transforms of React Native and Expo, most of a
+      # cold run. Keyed per commit, restored from the newest run on the same lockfile.
+      - name: Cache jest transforms and the Convex validator export
+        uses: actions/cache@v4
+        with:
+          path: apps/mobile/node_modules/.cache
+          key: mobile-jest-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            mobile-jest-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+      # eslint ., tsc --noEmit and jest --ci inside apps/mobile (the extra argument reaches jest, the script's last
+      # command): every core of the runner runs tests.
+      - run: pnpm --filter @dualityheart/mobile run check --maxWorkers=100%
 
   e2e:
     name: Playwright e2e (local Convex backend)

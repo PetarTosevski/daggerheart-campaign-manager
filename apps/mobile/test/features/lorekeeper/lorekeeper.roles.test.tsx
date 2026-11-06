@@ -71,6 +71,8 @@ test("a streaming answer renders from listMessages", async () => {
       role: "question" as const,
       text: "Fear?",
       status: "done" as const,
+      createdAt: 3,
+      updatedAt: 3,
     },
     {
       _id: "msg-a2",
@@ -80,6 +82,8 @@ test("a streaming answer renders from listMessages", async () => {
       text: "Fear is",
       status: "streaming" as const,
       phase: "books" as const,
+      createdAt: 4,
+      updatedAt: 4,
     },
   ];
   const screen = await renderAsPlayer(<LorekeeperChat {...playerChat} />, {

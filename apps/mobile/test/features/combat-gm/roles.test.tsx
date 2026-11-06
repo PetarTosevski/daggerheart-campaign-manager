@@ -98,7 +98,7 @@ test("Fear increase sends fear:adjust", async () => {
     mutations: {
       [fn(api.fear.adjust)]: (args) => {
         calls.push(args);
-        return null;
+        return { previousValue: 0, newValue: 1 };
       },
     },
   });

@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Id } from "../../../convex/_generated/dataModel";
 import type { SessionListItem } from "../../../convex/sessionRecords";
-import { headingLine, nextSessionNumber, shortSessionDate, startTime, wholeHours } from "../../../src/components/journal/session-list/format";
+import { dayMonth, fullSessionDate, headingLine, nextSessionNumber, shortSessionDate, startTime, wholeHours } from "../../../src/components/journal/session-list/format";
 
 let results: Record<string, unknown> = {};
 const calls = vi.hoisted(() => ({ list: [] as { name: string; args: Record<string, unknown> }[], fail: null as string | null }));
@@ -49,15 +49,28 @@ afterEach(cleanup);
 
 describe("format helpers", () => {
   it("shortSessionDate: weekday, day and month without the year; fallbacks", () => {
-    expect(shortSessionDate("2025-11-02", "en-GB")).toBe("Sun 2 Nov");
+    expect(shortSessionDate("2025-11-02")).toBe("Sun 2 Nov");
     expect(shortSessionDate(undefined)).toBe("No date set");
     expect(shortSessionDate("someday")).toBe("someday");
   });
 
+  it("dcm-z9rz.31: dates read day then month whatever the browser's locale", () => {
+    const spy = vi.spyOn(Date.prototype, "toLocaleDateString").mockReturnValue("Sun, Nov 2");
+    try {
+      expect(shortSessionDate("2025-11-02")).toBe("Sun 2 Nov");
+      expect(fullSessionDate("2025-11-02")).toBe("Sun 2 Nov 2025");
+      expect(dayMonth(new Date(2025, 10, 2, 9, 5).getTime())).toBe("2 Nov");
+      expect(startTime(new Date(2025, 10, 2, 9, 5).getTime())).toBe("09:05");
+    } finally {
+      spy.mockRestore();
+    }
+    expect(fullSessionDate(null)).toBe("No date set");
+  });
+
   it("headingLine adds the start time only when known", () => {
-    expect(headingLine({ n: 6, date: "2025-11-02" }, "en-GB")).toBe("Session 6 · Sun 2 Nov");
+    expect(headingLine({ n: 6, date: "2025-11-02" })).toBe("Session 6 · Sun 2 Nov");
     const at = new Date(2025, 10, 2, 19, 10).getTime();
-    expect(headingLine({ n: 6, date: "2025-11-02", startedAt: at }, "en-GB")).toBe("Session 6 · Sun 2 Nov · 19:10");
+    expect(headingLine({ n: 6, date: "2025-11-02", startedAt: at })).toBe("Session 6 · Sun 2 Nov · 19:10");
     expect(startTime(undefined)).toBeNull();
   });
 

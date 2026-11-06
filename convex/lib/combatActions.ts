@@ -37,7 +37,8 @@ import { adversaryEffects, allAdversaryEffects } from "../../src/lib/srd/adversa
 import { lineOfSight, RANGE_ORDER, rangeCheck, rangeFromWeapon, resolveHits, applyDamageTo, tokenDistance, type Combatant, type DamageResult, type RangeCheck, type SightResult } from "../../src/lib/domain/combat-actions/index";
 import { damageRuleNotes, minionNote, minionPicker, type DamageRuleNote } from "../../src/lib/domain/combat-actions/damage";
 import { sightRule } from "../../src/lib/domain/combat-actions/sight";
-import type { ModeOf } from "../../src/lib/rules/registry";
+import { darknessEdge, underwaterDisadvantage } from "../../src/lib/domain/combat-map/light";
+import type { ModeOf, RuleModes } from "../../src/lib/rules/registry";
 import { tokenVisibility } from "../../src/lib/domain/combat-map/index";
 import { countsAsActionRoll } from "../../src/lib/domain/countdowns/advanced";
 import { afterDualityRoll, rollOptions } from "../../src/lib/domain/class-features/hooks";
@@ -244,7 +245,45 @@ export const targetHintValidator = v.object({
 
 // ---------------------------------------------------------------- the scene around the attacker
 
-export type AttackScene = { map: Doc<"combatMaps">; scene: Scene; viewer: Viewer; attacker: Doc<"combatTokens"> };
+export type AttackScene = {
+  map: Doc<"combatMaps">;
+  scene: Scene;
+  viewer: Viewer;
+  attacker: Doc<"combatTokens">;
+  /**
+   * Rule switches ODR: the campaign's Defined Ranges (CB p.103 optional rule). False: no range check refuses or waits
+   * for the GM (`rangesOn`). Absent (a scene built without `attackScene`) = on, today's behaviour.
+   */
+  definedRanges?: boolean;
+};
+
+/** Rule switches ODR: whether the scene's range checks count squares (Defined Ranges on; absent = on). */
+export function rangesOn(s: Pick<AttackScene, "definedRanges"> | null | undefined): boolean {
+  return s?.definedRanges !== false;
+}
+
+/**
+ * Plan rule-switches OE: what the environment adds to a PC's weapon attack roll. M3 `darkness` (CB p.104; user answer Q6,
+ * 2026-11-05): in the campaign's dim light a ranged weapon (printed range beyond Melee; Defined Ranges does not change a
+ * weapon's range) gets a disadvantage die ("disadvantage", "both") and / or `darknessDifficulty` added to each target's
+ * Difficulty or Evasion ("difficulty", "both"); Book and Manual add nothing (`darknessEdge`). Underwater (optional rule,
+ * CB p.168): the live map marked Underwater gives one disadvantage unless the attacker's token "fights underwater".
+ * `labels` name what applied, for the roll's public line.
+ */
+export function attackEnvironment(
+  s: Pick<AttackScene, "map" | "attacker"> & { scene: Pick<Scene, "light"> },
+  host: Pick<Host, "weaponRange">,
+  modes: Pick<RuleModes, "darkness" | "darknessDifficulty" | "underwater">,
+): { disadvantage: number; difficulty: number; labels: string[] } {
+  const dark = darknessEdge(s.scene.light, host.weaponRange !== null && host.weaponRange !== "melee", modes.darkness, modes.darknessDifficulty);
+  const water = underwaterDisadvantage(modes.underwater && s.map.underwater === true, s.attacker.fightsUnderwater === true);
+  const labels = [
+    ...(dark.disadvantage > 0 ? ["dim light: disadvantage"] : []),
+    ...(dark.difficulty > 0 ? [`dim light: +${dark.difficulty} Difficulty`] : []),
+    ...(water > 0 ? ["underwater: disadvantage"] : []),
+  ];
+  return { disadvantage: dark.disadvantage + water, difficulty: dark.difficulty, labels };
+}
 
 /**
  * The live map and the character's view on it. COMBAT_MAP_NOT_FOUND for a map that is not this campaign's live map
@@ -256,7 +295,7 @@ export async function attackScene(ctx: QueryCtx, campaign: Doc<"campaigns">, cha
   const scene = await loadScene(ctx, campaign, map);
   const viewer = viewOf(scene, character);
   if (viewer === null) throw appError("COMBAT_TOKEN_NOT_FOUND");
-  return { map, scene, viewer, attacker: scene.tokens[viewer.index]! };
+  return { map, scene, viewer, attacker: scene.tokens[viewer.index]!, definedRanges: ruleModesOf(campaign).definedRanges };
 }
 
 /** An enemy token's encounter instance, when it can be attacked: an enemy-side adversary token of a running encounter, not defeated. */
@@ -292,11 +331,13 @@ export function weaponIn(sheet: CharacterSheet, slot: WeaponSlot): Weapon | unde
 /** `combatActionsReads.targets`: every enemy token the character sees that can be attacked, with its band and hints. */
 export async function targetHints(ctx: QueryCtx, campaign: Doc<"campaigns">, s: AttackScene, weapon: Weapon | undefined, attacker?: { sheet: CharacterSheet; characterId: string }): Promise<Infer<typeof targetHintValidator>[]> {
   const hints: Infer<typeof targetHintValidator>[] = [];
+  // Rule switches ODR: Defined Ranges off marks every target in range (the GM judges by eye).
+  const ranges = ruleModesOf(campaign).definedRanges;
   for (const [i, token] of s.scene.tokens.entries()) {
     if (i === s.viewer.index || token.side !== "enemy" || !seenBy(s, i)) continue;
     const linked = await enemyInstance(ctx, campaign._id, token);
     if (linked === null) continue;
-    const check = rangeCheck(s.attacker, token, weapon ? rangeFromWeapon(weapon.range) : "melee");
+    const check = rangeCheck(s.attacker, token, weapon ? rangeFromWeapon(weapon.range) : "melee", ranges);
     const sight = sightTo(s, token);
     // E1.4b (dcm-kso9): the rider benefits the attacker would get on this target.
     const benefits = attacker ? riderBenefits(instanceAttackedRiders(linked.instance, attacker.sheet, { tokenId: s.attacker._id, characterId: attacker.characterId })) : [];
@@ -368,7 +409,8 @@ export async function checkTargets(ctx: QueryCtx, campaign: Doc<"campaigns">, s:
     if (allowed === null) throw appError("COMBAT_NO_LINE_OF_SIGHT");
     const linked = await enemyInstance(ctx, campaign._id, token);
     if (linked === null) throw appError(seen && sight.lineOfSight ? "COMBAT_TARGET_INVALID" : "COMBAT_NO_LINE_OF_SIGHT");
-    checked.push({ token, ...linked, check: rangeCheck(s.attacker, token, range), sight, ...allowed });
+    // Rule switches ODR: Defined Ranges off, every target is in range (no refusal, no GM sanction for range).
+    checked.push({ token, ...linked, check: rangeCheck(s.attacker, token, range, ruleModesOf(campaign).definedRanges), sight, ...allowed });
   }
   if (new Set(checked.map((c) => c.encounter._id)).size > 1) throw appError("COMBAT_TARGET_INVALID");
   return checked;
@@ -1343,6 +1385,8 @@ export function addRange(spec: TargetSpec, weapon: Weapon, reach = 0): Range {
  */
 export function addedOutOfRange(s: AttackScene, weapon: Weapon, picked: readonly PickedRider[]): { tokenId: Id<"combatTokens">; band: RangeCheck["band"] }[] {
   const out: { tokenId: Id<"combatTokens">; band: RangeCheck["band"] }[] = [];
+  // Rule switches ODR: Defined Ranges off, no extra target is out of range.
+  if (!rangesOn(s)) return out;
   for (const r of picked) {
     if (r.addSpec === undefined) continue;
     const range = addRange(r.addSpec, weapon);
@@ -1414,7 +1458,7 @@ async function addedTargets(
     const sight = sightTo(s, token);
     const allowed = sightAllows(sightMode, seenBy(s, index), sight);
     if (allowed === null) throw appError("COMBAT_NO_LINE_OF_SIGHT");
-    const check = rangeCheck(s.attacker, token, range);
+    const check = rangeCheck(s.attacker, token, range, ruleModesOf(campaign).definedRanges);
     if (!check.inRange && !waived.has(id)) throw appError("COMBAT_TARGET_INVALID", `${add.rider.name}: a target is out of range.`);
     if (anyCreature(add.spec) && token.ref.kind === "pc") {
       const character = await ctx.db.get("characters", token.ref.characterId);
@@ -2265,6 +2309,10 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     sheet = { ...sheet, stress: sheet.stress + 1 };
   }
 
+  // ---- plan rule-switches OE: the environment. M3's variants (CB p.104) on a ranged attack in dim light (a disadvantage
+  // die and / or +N to every target's Difficulty); Underwater (optional rule, CB p.168) gives the roll disadvantage
+  // unless the attacker's token is marked "fights underwater".
+  const environment = attackEnvironment(req.scene, host, modes);
   // ---- the roll (R1, R9); cover gives one disadvantage (Q2), unless M1 is Manual (RC1: the GM is told instead)
   const cover = coverApplies(campaign, allTargets) || pcTargets.some((t) => sightRule(t.sheet.name, t.sight, modes.lineOfSight).cover);
   for (const t of allTargets) {
@@ -2278,7 +2326,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   }
   const args = attackDuality(
     weapon,
-    { ...options, modifier: options.modifier + folds.modifier, advantage: options.advantage + folds.advantage + edge.advantage, disadvantage: options.disadvantage + edge.disadvantage },
+    { ...options, modifier: options.modifier + folds.modifier, advantage: options.advantage + folds.advantage + edge.advantage, disadvantage: options.disadvantage + edge.disadvantage + environment.disadvantage },
     cover,
     traitOverride,
   );
@@ -2313,9 +2361,9 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   };
   readDeltas(roll, allTargets);
   const totalFor = (r: RollRecord, t: CheckedTarget) => r.total + (deltas.get(t.token._id) ?? 0);
-  const hitsOf = (r: RollRecord, list: readonly CheckedTarget[] = allTargets) => list.map((t) => resolveHits(totalFor(r, t), r.outcome === "critical", [{ id: t.token._id, difficulty: difficultyOf(t.instance) }])[0]!);
+  const hitsOf = (r: RollRecord, list: readonly CheckedTarget[] = allTargets) => list.map((t) => resolveHits(totalFor(r, t), r.outcome === "critical", [{ id: t.token._id, difficulty: difficultyOf(t.instance) + environment.difficulty }])[0]!);
   let hits = hitsOf(roll);
-  const pcHitsOf = (r: RollRecord, more: readonly PcTarget[] = pcTargets) => resolveHits(r.total, forced || r.outcome === "critical", more.map((t) => ({ id: t.token._id, difficulty: t.evasion })));
+  const pcHitsOf = (r: RollRecord, more: readonly PcTarget[] = pcTargets) => resolveHits(r.total, forced || r.outcome === "critical", more.map((t) => ({ id: t.token._id, difficulty: t.evasion + environment.difficulty })));
   const hostRollOf = (r: RollRecord, h: readonly { hit: boolean }[]): HostRoll => {
     const critical = r.outcome === "critical";
     return { success: forced || h.some((x) => x.hit) || pcHitsOf(r).some((x) => x.hit), critical, withHope: critical || r.outcome === "successHope" || r.outcome === "failHope", withFear: r.outcome === "successFear" || r.outcome === "failFear" };
@@ -2494,7 +2542,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     if (!hit || damageRecord === null) {
       results.push({ target: t, hit: false, defeated: false, severity: "none", hpMarked: 0, half: false });
       publicParts.push(`${label}: Miss`);
-      gmParts.push(`${label}: miss (${totalFor(roll, t)} vs Difficulty ${difficultyOf(t.instance)})`);
+      gmParts.push(`${label}: miss (${totalFor(roll, t)} vs Difficulty ${difficultyOf(t.instance) + environment.difficulty})`);
       continue;
     }
     snapshots.push(t.instance);
@@ -2558,7 +2606,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     const hit = pcHits[i]!.hit && damageRecord !== null;
     publicParts.push(`${t.sheet.name}: ${hit ? "Hit" : "Miss"}`);
     if (!hit) {
-      gmParts.push(`${t.sheet.name}: miss (${roll.total} vs Evasion ${t.evasion})`);
+      gmParts.push(`${t.sheet.name}: miss (${roll.total} vs Evasion ${t.evasion + environment.difficulty})`);
       continue;
     }
     const amount = t.half ? Math.ceil(damageRecord!.total / 2) : damageRecord!.total;
@@ -2749,7 +2797,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   const riderNames = [...new Set([...(afterRun ? [featureName(afterRun)] : []), ...runs.map((r) => r.name), ...posts.map((r) => r.name), ...(damageOptions.includes(SNEAK_ATTACK) ? ["Sneak Attack"] : []), ...(spirit ? ["Spirit Weapon"] : []), ...(resonance && damageRecord !== null ? ["Sacred Resonance"] : []), ...publicExtras])];
   // E1.4b (dcm-m7tm): the adversary bonuses on the roll's dice, named in the public row ("Ill Omen +3 Fear Die").
   const advBonusNames = advUses.bonuses.map((b) => `${b.feature} ${b.amount >= 0 ? "+" : ""}${b.amount} ${b.die === "hope" ? "Hope" : "Fear"} Die`);
-  const usingList = [...duality.extras, ...riderNames, ...advBonusNames];
+  const usingList = [...duality.extras, ...riderNames, ...advBonusNames, ...environment.labels];
   const using = usingList.length > 0 ? ` (${usingList.join(", ")})` : "";
   // E1.4b (dcm-svux): the per-target totals when the targets' edges differ ("edge d6 4: Shade 15, Brute 7").
   const perTarget = deltas.size > 0 && [...deltas.values()].some((d) => d !== 0) ? ` [edge d6 ${edgeDie ?? "-"}: ${allTargets.map((t) => `${t.instance.label} ${totalFor(roll, t)}`).join(", ")}]` : "";
@@ -2866,7 +2914,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     actorId: req.actorId,
   });
 
-  const minions = extra > 0 ? await offerMinions(ctx, req, { groupId, entryId, extra, total: roll.total, critical, damage: damageRecord?.total ?? 0 }) : { offer: null };
+  const minions = extra > 0 ? await offerMinions(ctx, req, { groupId, entryId, extra, total: roll.total - environment.difficulty, critical, damage: damageRecord?.total ?? 0 }) : { offer: null };
   const minionOffer = minions.offer;
   const riderPicks: Infer<typeof riderPickOfferValidator>[] = [];
   for (const { rider, candidates } of toPrompt) {
@@ -3039,7 +3087,8 @@ async function offerMinions(
     if (linked === null || linked.encounter._id !== encounterId) continue;
     const block = await blockOf(ctx, linked.instance);
     if (!block.minion) continue;
-    if (!rangeCheck(s.attacker, token, range).inRange) continue;
+    // Rule switches ODR: Defined Ranges off, every Minion is offered (the attacker or GM judges the range by eye).
+    if (!rangeCheck(s.attacker, token, range, modes.definedRanges).inRange) continue;
     if (!attack.critical && attack.total < difficultyOf(linked.instance)) continue;
     const available = Math.min(attack.extra, linked.instance.stats.hpMax - linked.instance.hp);
     if (available > 0) candidates.push({ instanceId: linked.instance._id, tokenId: token._id, name: linked.instance.label, available });

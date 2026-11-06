@@ -32,6 +32,7 @@
  * sheet are `feat:<hash>:<n>` (sheet effect ids hold 40 characters, a feature id up to 53), on an instance
  * `feat:<featureId>:<n>`; its tokens are `cardTokens` under `feat:<featureId>`.
  */
+import { replaying } from "./dice";
 import { type Infer } from "convex/values";
 
 import { pickUse, run, type ActorState, type PlanStep, type ResolvedMod, type RunContext, type RunPlan, type RunRefusal, type WeaponInfo } from "../../src/lib/domain/card-effects/run";
@@ -469,6 +470,11 @@ export type BuiltRun = {
   outOfRange: OutOfRange[];
   /** The card's range for Minion offers ("unlimited" without one). */
   range: Range | "unlimited";
+  /**
+   * Rule switches ODR: the campaign's Defined Ranges (CB p.103 optional rule). False: `outOfRange` is always empty, a
+   * point is never out of range and a chain always asks (the GM judges by eye).
+   */
+  definedRanges: boolean;
   /** Rule switches RFC: the M1 / C1 Manual notes the use's named creatures call for (posted with `ruleNotesOfUse`). */
   ruleNotes: UseRuleNote[];
 };
@@ -785,8 +791,10 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
   // ---- Q1: what is outside the card's range waits for the GM. An area around a point or a target measures its anchor
   // (the first target) from the actor and the rest from the anchor; the picked / ally / follow-up creatures from the
   // origin their own spec names (a chain from the creature before them).
+  // Rule switches ODR: with Defined Ranges off nothing is out of range (the GM judges by eye), so nothing waits.
   const outOfRange: OutOfRange[] = [];
   const flag = (c: Creature, check: { inRange: boolean; band: Band } | null) => {
+    if (!modes.definedRanges) return;
     if (check !== null && !check.inRange && !outOfRange.some((o) => o.tokenId === c.tokenId)) outOfRange.push({ tokenId: c.tokenId, band: check.band });
   };
   const anchored = spec?.area === "aroundPoint" || spec?.area === "aroundTarget";
@@ -822,9 +830,9 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
   if (points.length > 0 && scene) {
     for (const p of points) {
       if (!Number.isInteger(p.x) || !Number.isInteger(p.y) || p.x < 0 || p.y < 0 || p.x >= scene.map.w || p.y >= scene.map.h) throw appError("COMBAT_TARGET_INVALID", "That point is off the map.");
-      if (!rangeCheck(scene.attacker, { x: p.x, y: p.y, size: 1 }, range).inRange) throw appError("COMBAT_TARGET_INVALID", "That point is out of range.");
+      if (!rangeCheck(scene.attacker, { x: p.x, y: p.y, size: 1 }, range, modes.definedRanges).inRange) throw appError("COMBAT_TARGET_INVALID", "That point is out of range.");
     }
-    if (spec?.area === "aroundPoint" || spec?.origin === "point") {
+    if (modes.definedRanges && (spec?.area === "aroundPoint" || spec?.origin === "point")) {
       const radius = spec.areaRange ?? range;
       for (const t of targets) {
         if (t.kind === "self") continue;
@@ -1022,7 +1030,7 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
       ...(roll.difficulty !== undefined ? { difficulty: roll.difficulty } : {}),
     },
   };
-  return { context, paidSheet, creatures, targets, outOfRange, range, ruleNotes };
+  return { context, paidSheet, creatures, targets, outOfRange, range, definedRanges: modes.definedRanges, ruleNotes };
 }
 
 /**
@@ -1072,13 +1080,7 @@ function recording(base: Rng): { rng: Rng; values: number[] } {
 }
 
 /** Replays recorded dice in order (a value that doesn't fit the die is rolled fresh), then rolls fresh ones. */
-export function replaying(values: readonly number[], base: Rng): Rng {
-  let i = 0;
-  return (sides) => {
-    const n = values[i++];
-    return n !== undefined && n >= 1 && n <= sides ? n : base(sides);
-  };
-}
+export { replaying };
 
 export type RunOutcome = ({ kind: "plan"; plan: RunPlan; picked: readonly Combatant[]; delegated?: Delegated } | { kind: "needsChoice"; asks: ChoiceAsks }) & {
   /** Every die value the use rolled, in order (kept for a choice after the roll, convex/lib/cardChoices.ts). */
@@ -1146,6 +1148,8 @@ function chainGoesOn(built: BuiltRun, step: Extract<PlanStep, { kind: "prompt" }
   // A creature out of range waits for the GM first (pending); the next link is asked after.
   if (built.outOfRange.length > 0) return false;
   if (!built.creatures.onMap || spec === undefined || spec.range === "weapon" || spec.range === "unlimited") return true;
+  // Rule switches ODR: Defined Ranges off, the map measures nothing, so the chain asks (the GM judges by eye).
+  if (built.definedRanges === false) return true;
   const range = spec.range;
   const tokens = built.creatures.scene.scene.tokens;
   const last = tokens.filter((t) => tokenIdsOf(built, step.targetIds).includes(t._id));

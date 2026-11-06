@@ -63,6 +63,71 @@ export function dimLightBadge(light: LightLevel, mode: DarknessMode = "book"): s
   return DIM_PHASE_BADGE;
 }
 
+/** M3: the Difficulty a darkness variant adds when the GM set no number (registry param `darknessDifficulty`). */
+export const DEFAULT_DARKNESS_DIFFICULTY = 2;
+
+/** What darkness adds to one PC attack roll (M3 variants, plan rule-switches OE). */
+export type DarknessEdge = { readonly disadvantage: number; readonly difficulty: number };
+
+const NO_EDGE: DarknessEdge = { disadvantage: 0, difficulty: 0 };
+
+/**
+ * M3 variants (plan rule-switches OE; user answers Q6 2026-11-05 and 2026-11-05 on dcm-bxp.134; CB p.104: "Darkness can
+ * also make certain actions more challenging. The GM should reflect this by raising the Difficulty of action rolls or
+ * imposing disadvantage on rolls made by the PCs."). What a PC's attack roll gets in the campaign's light: only in dim
+ * light and only a ranged attack (a weapon whose range is beyond Melee; the printed range, so Defined Ranges does not
+ * matter). "disadvantage": one disadvantage die; "difficulty": `raise` added to each target's Difficulty (Evasion for a PC
+ * target); "both" (not in the books): both. Book and Manual add nothing (Book shows the badge, Manual nothing).
+ */
+export function darknessEdge(light: LightLevel, ranged: boolean, mode: DarknessMode = "book", raise: number = DEFAULT_DARKNESS_DIFFICULTY): DarknessEdge {
+  if (light !== "dim" || !ranged) return NO_EDGE;
+  const disadvantage = mode === "disadvantage" || mode === "both" ? 1 : 0;
+  const difficulty = mode === "difficulty" || mode === "both" ? Math.max(1, Math.trunc(raise)) : 0;
+  return disadvantage === 0 && difficulty === 0 ? NO_EDGE : { disadvantage, difficulty };
+}
+
+/**
+ * M3's badge naming the active mode (plan rule-switches OE: "the badge names the active one"): Book `DIM_PHASE_BADGE`
+ * (nothing is added), each variant what the app adds by itself, Manual none. Null outside dim light.
+ */
+export function darknessBadge(light: LightLevel, mode: DarknessMode = "book", raise: number = DEFAULT_DARKNESS_DIFFICULTY): string | null {
+  if (light !== "dim" || mode === "manual") return null;
+  const n = Math.max(1, Math.trunc(raise));
+  if (mode === "disadvantage") return "Dim light: ranged attacks roll with disadvantage";
+  if (mode === "difficulty") return `Dim light: ranged attacks +${n} Difficulty`;
+  if (mode === "both") return `Dim light: ranged attacks roll with disadvantage, +${n} Difficulty`;
+  return DIM_PHASE_BADGE;
+}
+
+// ---------------------------------------------------------------- Underwater (optional rule, CB p.168)
+
+/**
+ * Underwater (optional rule, plan rule-switches OE; user answer Q11 b 2026-11-05). CB p.168, "Moving and Fighting
+ * Underwater": "Attack rolls underwater have disadvantage unless it makes sense for a character to easily fight
+ * underwater … Set the countdown die's starting value to 3 or higher and tick down as follows: Tick down once whenever
+ * any PC takes an action underwater. If an action roll is a failure or with Fear, you can use your move to tick it down
+ * an additional time. (If the roll is both a failure and with Fear, you can tick it twice instead.) Once the countdown
+ * ends, a PC underwater must mark a Stress whenever they take an action."
+ */
+export const BREATH_START = 3;
+/** The book's lowest start ("3 or higher"). */
+export const BREATH_MIN = 3;
+
+/** The disadvantage an attack roll gets in an Underwater scene: one, unless the attacker is marked "fights underwater". */
+export function underwaterDisadvantage(underwater: boolean, fightsUnderwater: boolean): number {
+  return underwater && !fightsUnderwater ? 1 : 0;
+}
+
+/** How far one PC action roll ticks the breath countdown: once, plus once for a failure and once for Fear (Q11 b). */
+export function breathTicks(roll: { readonly success: boolean; readonly withFear: boolean }): number {
+  return 1 + (roll.success ? 0 : 1) + (roll.withFear ? 1 : 0);
+}
+
+/** Whether the breath countdown has ended (at 0, not paused or cancelled): each PC action then marks a Stress. */
+export function breathEnded(countdown: { readonly currentValue: number; readonly status: string }): boolean {
+  return countdown.currentValue <= 0 && (countdown.status === "active" || countdown.status === "completed");
+}
+
 /**
  * R8: the light level for a campaign time phase (dcm-p40), or a light level read as itself (the campaign's time of
  * day outside the Witherwild, dcm-bxp.54). Unknown names count as day.

@@ -58,6 +58,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         backgroundColor: "#1a1408",
       },
     },
-    plugins: ["expo-router", "expo-apple-authentication"],
+    plugins: [
+      "expo-router",
+      "expo-apple-authentication",
+      // The splash the root layout holds until the brand fonts load (src/shell/splash-gate.ts).
+      ["expo-splash-screen", { backgroundColor: ink, image: "./assets/icon.png", imageWidth: 160 }],
+    ],
   };
 };

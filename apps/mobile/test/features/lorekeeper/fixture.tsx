@@ -3,12 +3,13 @@ import type { ReactElement } from "react";
 import { CampaignProvider, CampaignScreen } from "../../../src/shell/campaign-provider";
 import { OfflineFrame } from "../../../src/shell/offline";
 import type { Id } from "../../../src/convex";
+import { campaignSummary } from "../../harness/records";
 
 export const campaignId = "campaign-1" as Id<"campaigns">;
 export const conversationId = "conv-1" as Id<"lorekeeperConversations">;
 
 export function campaignRecord(role: "gm" | "player") {
-  return {
+  return campaignSummary({
     _id: campaignId,
     frameId: "witherwild",
     name: "The Table",
@@ -28,7 +29,7 @@ export function campaignRecord(role: "gm" | "player") {
     createdAt: 1,
     lastOpenedAt: 1,
     players: 2,
-  };
+  });
 }
 
 const conversation = {
@@ -51,6 +52,8 @@ const messages = [
     role: "question" as const,
     text: "How do ranges work?",
     status: "done" as const,
+    createdAt: 1,
+    updatedAt: 1,
   },
   {
     _id: "msg-a1",
@@ -60,6 +63,8 @@ const messages = [
     text: "Melee is adjacent.",
     status: "done" as const,
     parts: { verdict: "rules" as const, quotes: [], web: [] },
+    createdAt: 2,
+    updatedAt: 2,
   },
 ];
 
@@ -72,11 +77,15 @@ export function lorekeeperQueries(role: "gm" | "player", extra: Record<string, u
     "lorekeeper:listConversations": { mine: [conversation], shared: [] },
     "lorekeeper:getConversation": conversation,
     "lorekeeper:listMessages": messages,
-    "lorekeeperLibrary:list": { indexedCount: 1, books: [{ bookId: "core", title: "Core", subtitle: "Rules", cover: "core", enabled: true }] },
-    "lorekeeperUsage:mine": { questionsLeft: 50, campaignCapReached: false, deploymentCapReached: false },
+    "lorekeeperLibrary:list": { indexedCount: 1, books: [{ bookId: "core", key: "core", title: "Core", subtitle: "Rules", cover: "core", pages: 1, chunkCount: 1, enabled: true }] },
+    "lorekeeperUsage:mine": { questionsLeft: 50, webSearchesLeft: 10, campaignCapReached: false, deploymentCapReached: false, shortAnswers: false },
     "lorekeeperAsks:mine": [],
     "lorekeeperRulings:list": [],
-    "members:roster": { gm: { userId: "user-gm", name: "GM" }, players: [{ userId: "user-p1", name: "Ash" }] },
+    "members:roster": {
+      viewer: role,
+      gm: { userId: "user-gm", name: "GM" },
+      players: [{ userId: "user-p1", name: "Ash", joinedAt: 1, coGm: false, ...(role === "gm" ? { email: null } : {}) }],
+    },
     ...(role === "gm" ? { "lorekeeperAsks:listOpen": [] } : {}),
     ...extra,
   };

@@ -5,11 +5,12 @@ import type { SheetCharacter } from "../../../src/features/sheet/types";
 
 import { CampaignProvider, CampaignScreen } from "../../../src/shell/campaign-provider";
 import { OfflineFrame } from "../../../src/shell/offline";
+import { campaignSummary } from "../../harness/records";
 
 export const campaignId = "campaign-1";
 
 export function campaignRecord(role: "gm" | "player") {
-  return {
+  return campaignSummary({
     _id: campaignId,
     frameId: "witherwild",
     name: "The Table",
@@ -29,7 +30,7 @@ export function campaignRecord(role: "gm" | "player") {
     createdAt: 1,
     lastOpenedAt: 1,
     players: 2,
-  };
+  });
 }
 
 export function characterRecord(overrides: { canEdit: boolean; mine?: boolean; status?: string; name?: string }) {
@@ -40,6 +41,7 @@ export function characterRecord(overrides: { canEdit: boolean; mine?: boolean; s
     mine: overrides.mine ?? overrides.canEdit,
     canEdit: overrides.canEdit,
     portraitUrl: null,
+    updatedAt: 1,
     sheet: {
       name: overrides.name ?? "Mira",
       pronouns: "she/her",
@@ -96,7 +98,7 @@ export function asSheetCharacter(record: { sheet: Record<string, unknown> } & Re
 export const tableRecord = {
   viewer: "player",
   gm: { userId: "gm-1", name: "Ash" },
-  players: [{ userId: "player-1", name: "Nikola" }],
+  players: [{ userId: "player-1", name: "Nikola", joinedAt: 1, coGm: false }],
 };
 
 export function inCampaign(role: "gm" | "player", ui: ReactElement, offline = false) {

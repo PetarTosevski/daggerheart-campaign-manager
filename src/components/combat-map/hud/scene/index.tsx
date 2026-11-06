@@ -13,6 +13,7 @@ import type { CombatMapSummary, CombatPageState } from "../../slots";
 import { sameSheet, useHud, type HudPartProps, type HudSheetTarget } from "../state";
 import { PartBoundary, hudButtonClass } from "../ui";
 import { HudDice } from "./dice";
+import { HudEnvironmentLine } from "./environment";
 import { ScenePop } from "./pop";
 
 /** Props of the scene region: the page state plus a player's title-row tools the shell builds (Your character, map controls). */
@@ -73,6 +74,7 @@ function GmTitle({ state }: { state: CombatPageState }) {
         {state.map?.live ? <span className="hud-live-dot" aria-hidden="true" /> : null}
         {line}
       </span>
+      {state.map?.live ? <HudEnvironmentLine campaignId={state.campaignId} /> : null}
     </div>
   );
 }
@@ -87,6 +89,7 @@ function PlayerScene({ state, toolbar }: HudSceneProps) {
       <div className="hud-title" data-testid="hud-title">
         <h2>{state.map?.name ?? "Combat Map"}</h2>
         <span>{sceneLine(state.map)}</span>
+        {state.map?.live ? <HudEnvironmentLine campaignId={state.campaignId} /> : null}
       </div>
       <div className="hud-tr" role="group" aria-label="Your tools">
         {party === undefined && state.map ? null : characterId ? (

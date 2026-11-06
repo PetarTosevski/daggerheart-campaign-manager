@@ -3,8 +3,9 @@ import { Text } from "react-native";
 
 import { CampaignProvider, CampaignScreen, useCampaign } from "../../src/shell/campaign-provider";
 import { renderAsGm, renderAsPlayer } from "../harness";
+import { campaignSummary } from "../harness/records";
 
-const base = {
+const base = campaignSummary({
   _id: "campaign-1",
   frameId: "witherwild",
   name: "The Table",
@@ -23,7 +24,7 @@ const base = {
   createdAt: 1,
   lastOpenedAt: 1,
   players: 2,
-};
+});
 
 function RoleLabel() {
   const campaign = useCampaign();

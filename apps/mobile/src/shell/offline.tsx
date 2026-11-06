@@ -12,6 +12,9 @@ type Writes = { enabled: boolean; reason: string | null };
 
 export const OFFLINE_REASON = "Offline: changes are paused until the connection is back.";
 
+/** The banner over a screen whose connection dropped: what is wrong, and that the data on screen may be old. */
+export const OFFLINE_BANNER = "You're offline. Showing the last update.";
+
 const WritesContext = createContext<Writes>({ enabled: true, reason: null });
 
 /**
@@ -55,7 +58,7 @@ export function OfflineFrame({ offline, children }: { offline: boolean; children
       <View style={styles.frame}>
         {offline ? (
           <View style={styles.banner}>
-            <StaleBanner />
+            <StaleBanner message={OFFLINE_BANNER} />
           </View>
         ) : null}
         {children}

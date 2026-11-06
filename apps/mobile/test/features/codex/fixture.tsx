@@ -2,11 +2,12 @@ import type { ReactElement } from "react";
 
 import { CampaignProvider, CampaignScreen } from "../../../src/shell/campaign-provider";
 import { OfflineFrame } from "../../../src/shell/offline";
+import { campaignSummary } from "../../harness/records";
 
 export const campaignId = "campaign-1";
 
 export function campaignRecord(role: "gm" | "player") {
-  return {
+  return campaignSummary({
     _id: campaignId,
     frameId: "witherwild",
     name: "The Table",
@@ -26,7 +27,7 @@ export function campaignRecord(role: "gm" | "player") {
     createdAt: 1,
     lastOpenedAt: 1,
     players: 2,
-  };
+  });
 }
 
 export function gmCharacter(overrides: Record<string, unknown> = {}) {

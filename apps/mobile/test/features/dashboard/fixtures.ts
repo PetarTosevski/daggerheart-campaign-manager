@@ -1,11 +1,12 @@
 import type { Id } from "../../../src/convex";
 import type { LoadedCampaign } from "../../../src/shell/campaign-provider";
 import type { PartyMember } from "../../../src/features/dashboard/party";
+import { campaignSummary, partySummaryRow } from "../../harness/records";
 
 export const campaignId = "campaign-1" as Id<"campaigns">;
 
 export function campaign(role: "gm" | "player", frameId: LoadedCampaign["frameId"] = "beast-feast"): LoadedCampaign {
-  return {
+  return campaignSummary({
     _id: campaignId,
     name: "The Table",
     frameId,
@@ -14,7 +15,7 @@ export function campaign(role: "gm" | "player", frameId: LoadedCampaign["frameId
     level: 3,
     options: { hopeAndFear: true },
     tome: null,
-  } as LoadedCampaign;
+  }) as unknown as LoadedCampaign;
 }
 
 export function sessions(live: { sessionId: string; n: number } | null = null) {
@@ -29,7 +30,7 @@ export function sessions(live: { sessionId: string; n: number } | null = null) {
 }
 
 export function character(overrides: Record<string, unknown> = {}): PartyMember {
-  return {
+  return partySummaryRow({
     _id: "char-1",
     status: "active",
     canEdit: true,
@@ -45,7 +46,7 @@ export function character(overrides: Record<string, unknown> = {}): PartyMember 
       scars: 0,
     },
     ...overrides,
-  } as unknown as PartyMember;
+  }) as unknown as PartyMember;
 }
 
 export function countdown(overrides: Record<string, unknown> = {}) {
@@ -62,6 +63,15 @@ export function countdown(overrides: Record<string, unknown> = {}) {
     visibility: { mode: "public", hidden: [] },
     restMode: null,
     chaseResult: null,
+    category: null,
+    consequence: null,
+    completedAt: null,
+    mode: null,
+    repeat: null,
+    initialValue: null,
+    startDice: null,
+    triggerCount: null,
+    lastTriggeredAt: null,
     ...overrides,
   };
 }
@@ -70,6 +80,7 @@ export function restState(overrides: Record<string, unknown> = {}) {
   return {
     open: null,
     shortRestsSinceLong: 0,
+    rules: { fearFromRests: "book", shortRestLimit: "book", interruptedRest: "book" },
     last: {
       _id: "rest-1",
       kind: "long",
@@ -77,7 +88,13 @@ export function restState(overrides: Record<string, unknown> = {}) {
       finishedAt: 1,
       fearRoll: 4,
       fearGained: 1,
+      fearPrompt: null,
       undoable: true,
+      dice: [],
+      oasisHolders: [],
+      oasisClosed: [],
+      oasisLeft: 0,
+      resultsOpen: false,
     },
     ...overrides,
   };

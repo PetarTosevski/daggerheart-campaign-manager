@@ -1,4 +1,5 @@
 import { defineTable } from "convex/server";
+import { v } from "convex/values";
 
 import {
   combatCellFields,
@@ -18,7 +19,19 @@ export const combatMapTables = {
    * One row per battle map, several per campaign (R2, at most MAX_COMBAT_MAPS). `by_campaign_updated` lists them
    * newest first; `by_campaign_live` finds the one the players see.
    */
-  combatMaps: defineTable(combatMapFields)
+  combatMaps: defineTable({
+    ...combatMapFields,
+    /**
+     * Underwater (optional rule, CB p.168; plan rule-switches OE): the GM marked this map's scene Underwater
+     * (`combatScenes.setUnderwater`). Widened; absent = not underwater. Written only by that mutation.
+     */
+    underwater: v.optional(v.boolean()),
+    /**
+     * The scene's breath countdown (a dashboard `countdowns` row, unarmed, kind "breath"), set while `underwater`. Its
+     * value lives in the countdown row (it changes on every PC action roll, rule 6), never here.
+     */
+    breathCountdownId: v.optional(v.id("countdowns")),
+  })
     .index("by_campaign_updated", ["campaignId", "updatedAt"])
     .index("by_campaign_live", ["campaignId", "live"]),
 
@@ -29,7 +42,15 @@ export const combatMapTables = {
   combatMapCells: defineTable(combatCellFields).index("by_map_layer_tile", ["mapId", "layer", "tile"]),
 
   /** Tokens on a map (R4), at most MAX_COMBAT_TOKENS per map. A move or turn writes only its row. */
-  combatTokens: defineTable(combatTokenFields).index("by_map", ["mapId"]),
+  combatTokens: defineTable({
+    ...combatTokenFields,
+    /**
+     * Underwater (plan rule-switches OE, CB p.168: "unless it makes sense for a character to easily fight underwater,
+     * like a Siren or Shark"): the GM marked this creature as fighting easily underwater; its attack rolls get no
+     * Underwater disadvantage. Widened; absent = false. Written only by `combatScenes.setFightsUnderwater`.
+     */
+    fightsUnderwater: v.optional(v.boolean()),
+  }).index("by_map", ["mapId"]),
 
   /** Explored squares per (map, character) (R11). Changes on every move, so it stays out of `combatMaps` (CD10). */
   combatExplored: defineTable(combatExploredFields).index("by_map_character", ["mapId", "characterId"]),

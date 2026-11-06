@@ -16,6 +16,7 @@ import type { ReactElement } from "react";
 
 import { CampaignProvider, CampaignScreen } from "../../../src/shell/campaign-provider";
 import { OfflineFrame } from "../../../src/shell/offline";
+import { campaignSummary } from "../../harness/records";
 
 jest.mock("expo-crypto", () => ({
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -164,7 +165,7 @@ test("a warrior on Witherwild does not subscribe to character extras", async () 
     inCampaign(<FeaturesSlot {...slotProps(character)} />),
     {
       queries: {
-        [fn(api.campaigns.get)]: {
+        [fn(api.campaigns.get)]: campaignSummary({
           _id: "campaign-1",
           frameId: "witherwild",
           name: "Table",
@@ -177,7 +178,7 @@ test("a warrior on Witherwild does not subscribe to character extras", async () 
           createdAt: 1,
           lastOpenedAt: 1,
           players: 2,
-        },
+        }),
       },
     },
   );
@@ -192,7 +193,7 @@ test("lunar phases show for a Moon Witch at mastery and bump the moon die", asyn
   const calls: unknown[] = [];
   const screen = await renderAsPlayer(inCampaign(<FeaturesSlot {...slotProps(character)} />), {
     queries: {
-      [fn(api.campaigns.get)]: {
+      [fn(api.campaigns.get)]: campaignSummary({
         _id: "campaign-1",
         frameId: "witherwild",
         name: "Table",
@@ -205,12 +206,12 @@ test("lunar phases show for a Moon Witch at mastery and bump the moon die", asyn
         createdAt: 1,
         lastOpenedAt: 1,
         players: 2,
-      },
+      }),
     },
     mutations: {
       [fn(api.sessionFeatures.bumpMoonDie)]: (args) => {
         calls.push(args);
-        return null;
+        return { from: 1, to: 2, hope: 0 };
       },
     },
   });
@@ -273,7 +274,7 @@ test("session chips show Slayer dice for a Slayer holder", async () => {
   };
   const screen = await renderAsPlayer(inCampaign(<FeaturesSlot {...slotProps(withSlayer)} />), {
     queries: {
-      [fn(api.campaigns.get)]: {
+      [fn(api.campaigns.get)]: campaignSummary({
         _id: "campaign-1",
         frameId: "witherwild",
         name: "Table",
@@ -286,7 +287,7 @@ test("session chips show Slayer dice for a Slayer holder", async () => {
         createdAt: 1,
         lastOpenedAt: 1,
         players: 2,
-      },
+      }),
     },
   });
   expect(screen.getByText("Slayer Dice 2/3")).toBeTruthy();
@@ -334,7 +335,7 @@ test("a druid opens the Beastform sheet from class extras", async () => {
   if (!character) throw new Error("fixture");
   const screen = await renderAsPlayer(inCampaign(<FeaturesSlot {...slotProps(character)} />), {
     queries: {
-      [fn(api.campaigns.get)]: {
+      [fn(api.campaigns.get)]: campaignSummary({
         _id: "campaign-1",
         frameId: "witherwild",
         name: "Table",
@@ -347,7 +348,7 @@ test("a druid opens the Beastform sheet from class extras", async () => {
         createdAt: 1,
         lastOpenedAt: 1,
         players: 2,
-      },
+      }),
       [fn(api.characterExtras.get)]: {
         canEdit: true,
         level: 3,
@@ -372,7 +373,7 @@ test("the GM sees the same features region without GM-only calls", async () => {
   const character = moonCharacter();
   const screen = await renderAsGm(inCampaign(<FeaturesSlot {...slotProps(character)} isGm />), {
     queries: {
-      [fn(api.campaigns.get)]: {
+      [fn(api.campaigns.get)]: campaignSummary({
         _id: "campaign-1",
         frameId: "witherwild",
         name: "Table",
@@ -385,7 +386,7 @@ test("the GM sees the same features region without GM-only calls", async () => {
         createdAt: 1,
         lastOpenedAt: 1,
         players: 2,
-      },
+      }),
     },
   });
   expect(screen.getByLabelText("Lunar Phases")).toBeTruthy();

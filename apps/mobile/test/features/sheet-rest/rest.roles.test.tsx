@@ -75,6 +75,7 @@ const ally = {
   mine: false,
   canEdit: false,
   portraitUrl: null,
+  updatedAt: 1,
   sheet: {
     name: "Ash",
     pronouns: "",

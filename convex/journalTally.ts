@@ -1,20 +1,25 @@
 import { v, type Infer } from "convex/values";
 
 import { resolveTableSettings } from "../src/lib/config/campaign-settings";
-import { inWindows, type LiveWindow } from "../src/lib/domain/journal/windows";
+import { appError } from "../src/lib/errors/app-error";
+import { defeatsInWindows, type InstanceSnapshot, type TallyEncounter } from "../src/lib/domain/journal/tally";
+import type { LiveWindow } from "../src/lib/domain/journal/windows";
 import { addTally, EMPTY_TALLY, spotlight as spotlightEntries, windowTally, type SessionTally } from "../src/lib/domain/sessions";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { MAX_CHARACTERS_PER_CAMPAIGN, partyOf, readSheet } from "./lib/characterSheet";
 import { MAX_ENCOUNTERS, MAX_INSTANCES } from "./lib/encounters";
-import { campaignQuery, gmQuery } from "./lib/functions";
+import { campaignQuery } from "./lib/functions";
 import { atLeast, type CampaignPermission } from "./lib/permissions";
 import { liveWindows, loadSession, MAX_SESSION_CHARACTER_STATS, tallyRows } from "./lib/sessions";
+import { seesFear } from "./campaigns";
 import { spotlightEntryValidator, type SpotlightEntry } from "./sessionPlay";
 
 /**
  * The Journal's session tally (plan `.omc/plans/journal.yaml`, tracer JD3a; board "Log & recap"): the six numbers the
- * design shows. GM only (user Q5: players see the list, heading, recap and log, not the tally). Read-only.
+ * design shows. Every member reads it (dcm-z9rz.25, user 2026-11-05: players' Log & recap shows the tally too); a
+ * player gets live and played sessions only (a planned one is SESSION_NOT_FOUND, as in `journalLog.list`) and no Fear
+ * numbers while "Players see the GM's Fear" is off (`fearHidden`, config R1). Read-only.
  * `spotlight` below (config JO3) is the Journal's spotlight bars: GM and co-GMs always, players with the setting on.
  *
  * Every "during the session" read uses J0's `liveWindows` (a played session can start again, D10 B7):
@@ -24,18 +29,24 @@ import { spotlightEntryValidator, type SpotlightEntry } from "./sessionPlay";
  *   Rests are no longer shown (design) but stay in the stored tally.
  * - Critical successes: `actionLog` rows in the windows whose roll came out `critical`, not undone (a row the GM
  *   removed from the feed still counts: removal is display only).
- * - Adversaries defeated: defeated instances of the encounters started in the windows; a Minion group counts its
- *   defeated Minions (one HP each, CB p.201: its marked HP, the whole group when defeated).
+ * - Adversaries defeated: every adversary defeated during the windows, also in a fight started in an earlier session
+ *   (dcm-z9rz.26, `defeatsInWindows` in src/lib/domain/journal/tally.ts); a Minion group counts its defeated Minions
+ *   (one HP each, CB p.201: its marked HP, the whole group when defeated).
  * - Hope spent / HP marked: the sum of the session's `sessionCharacterStats` rows (JD3b writes them, user Q8).
  */
 
 /** The most action-log rows the criticals read across all windows; more marks the result `truncated`. */
 export const MAX_TALLY_FEED_ROWS = 1000;
+/** The most action-log rows read after a played session's last window, for a fight that ran on past it. */
+export const MAX_TALLY_AFTER_ROWS = 200;
 
 const count = v.union(v.number(), v.null());
 
 export const journalTallyValidator = v.object({
-  /** Each count is null before the session was ever live (the tiles show '-'); all six are null or none is. */
+  /**
+   * Each count is null before the session was ever live (the tiles show '-'); all six are null or none is, except the
+   * two Fear counts, which are also null for a player while `fearHidden`.
+   */
   fearGained: count,
   fearSpent: count,
   hopeSpent: count,
@@ -46,6 +57,8 @@ export const journalTallyValidator = v.object({
   live: v.boolean(),
   /** A read hit its cap (Fear history, rests or the action log): the counts are a floor. */
   truncated: v.boolean(),
+  /** A player while "Players see the GM's Fear" is off (config R1): no Fear counts, the Fear tiles are left out. */
+  fearHidden: v.boolean(),
 });
 export type JournalTally = Infer<typeof journalTallyValidator>;
 
@@ -72,49 +85,81 @@ function upTo<Q extends { lte: (field: "at", value: number) => unknown }>(q: Q, 
   return w.open ? q : (q.lte("at", w.to) as Q);
 }
 
-/** Critical rolls in the windows, not undone; at most MAX_TALLY_FEED_ROWS rows read in all. */
-async function criticalsOf(ctx: QueryCtx, campaignId: Id<"campaigns">, windows: readonly LiveWindow[]) {
+/** The action-log rows in the windows (criticals and adversary snapshots); at most MAX_TALLY_FEED_ROWS rows read in all. */
+async function feedOf(ctx: QueryCtx, campaignId: Id<"campaigns">, windows: readonly LiveWindow[]) {
   let left = MAX_TALLY_FEED_ROWS;
-  let criticals = 0;
+  const rows: Doc<"actionLog">[] = [];
   let truncated = false;
   for (const w of windows) {
     if (left <= 0) {
       truncated = true;
       break;
     }
-    const rows = await ctx.db
+    const got = await ctx.db
       .query("actionLog")
       .withIndex("by_campaign_at", (q) => upTo(q.eq("campaignId", campaignId).gte("at", w.from), w))
       .take(left + 1);
-    if (rows.length > left) truncated = true;
-    for (const row of rows.slice(0, left)) if (row.roll?.outcome === "critical" && row.undoneAt === undefined) criticals += 1;
-    left -= Math.min(rows.length, left);
+    if (got.length > left) truncated = true;
+    rows.push(...got.slice(0, left));
+    left -= Math.min(got.length, left);
   }
-  return { criticals, truncated };
+  return { rows, truncated };
 }
 
-/** Adversaries one instance counts as defeated: a Minion group its defeated Minions, anyone else 1 when defeated. */
-function defeatedIn(instance: Doc<"encounterAdversaries">): number {
-  if (instance.minionCount === undefined) return instance.defeated ? 1 : 0;
-  return instance.defeated ? instance.stats.hpMax : Math.max(0, Math.min(instance.hp, instance.stats.hpMax));
+/** Critical rolls among the rows, not undone (a row the GM removed from the feed still counts: removal is display only). */
+function criticalsIn(rows: readonly Doc<"actionLog">[]): number {
+  return rows.filter((row) => row.roll?.outcome === "critical" && row.undoneAt === undefined).length;
 }
 
-/** Defeated adversaries of the campaign's encounters started in the windows (encounters and instances are capped). */
-async function defeatsOf(ctx: QueryCtx, campaignId: Id<"campaigns">, windows: readonly LiveWindow[]) {
-  const encounters = await ctx.db
+/** Each row's `adversaryBefore` entries as snapshots (an instance's state just before the row's action). */
+function snapshotsIn(rows: readonly Doc<"actionLog">[]): InstanceSnapshot[] {
+  return rows.flatMap((row) => (row.adversaryBefore ?? []).map((b) => ({ instanceId: b.instanceId, hp: b.hp, defeated: b.defeated, at: row.at })));
+}
+
+/**
+ * Adversaries defeated during the windows (dcm-z9rz.26, `defeatsInWindows`): every instance of an encounter that ran in
+ * a window, also one started in an earlier session. A closed window's end state is the first snapshot after it, so
+ * when a fight ran on past the session's last window this reads at most MAX_TALLY_AFTER_ROWS rows after it. The
+ * campaign's encounters and their instances are capped.
+ */
+async function defeatsOf(ctx: QueryCtx, campaignId: Id<"campaigns">, windows: readonly LiveWindow[], feed: readonly Doc<"actionLog">[]) {
+  const all = await ctx.db
     .query("encounters")
     .withIndex("by_campaign_status_updated", (q) => q.eq("campaignId", campaignId))
     .take(MAX_ENCOUNTERS);
-  let defeated = 0;
-  for (const encounter of encounters) {
-    if (encounter.startedAt === undefined || !inWindows(windows, encounter.startedAt)) continue;
+  const first = windows[0]!;
+  const last = windows[windows.length - 1]!;
+  const encounters: TallyEncounter[] = [];
+  for (const encounter of all) {
+    const { startedAt, endedAt } = encounter;
+    if (startedAt === undefined || startedAt > last.to) continue;
+    if (endedAt !== undefined && endedAt >= startedAt && endedAt < first.from) continue;
     const instances = await ctx.db
       .query("encounterAdversaries")
       .withIndex("by_encounter_order", (q) => q.eq("encounterId", encounter._id))
       .take(MAX_INSTANCES);
-    for (const instance of instances) defeated += defeatedIn(instance);
+    encounters.push({
+      startedAt,
+      endedAt,
+      instances: instances.map((i) => ({
+        id: i._id,
+        hp: i.hp,
+        defeated: i.defeated,
+        hpMax: i.stats.hpMax,
+        ...(i.minionCount !== undefined ? { minionCount: i.minionCount } : {}),
+      })),
+    });
   }
-  return defeated;
+  const snapshots = snapshotsIn(feed);
+  const ranOn = (e: TallyEncounter) => e.endedAt === undefined || e.startedAt === undefined || e.endedAt < e.startedAt || e.endedAt > last.to;
+  if (!last.open && encounters.some(ranOn)) {
+    const after = await ctx.db
+      .query("actionLog")
+      .withIndex("by_campaign_at", (q) => q.eq("campaignId", campaignId).gt("at", last.to))
+      .take(MAX_TALLY_AFTER_ROWS);
+    snapshots.push(...snapshotsIn(after));
+  }
+  return defeatsInWindows(encounters, snapshots, windows);
 }
 
 /** The session's per-PC Hope spent and HP marked, summed (one row per PC, so the character cap bounds it). */
@@ -127,29 +172,34 @@ async function characterStatsOf(ctx: QueryCtx, sessionId: Id<"sessions">) {
 }
 
 /** The six tally numbers of one session (JD3a); null counts before the session was ever live. */
-export const tally = gmQuery({
+export const tally = campaignQuery({
+  need: "view",
+  enough: "owner",
   args: { sessionId: v.string() },
   returns: journalTallyValidator,
   handler: async (ctx, { sessionId }): Promise<JournalTally> => {
     const session = await loadSession(ctx, ctx.campaign._id, sessionId);
+    if (ctx.permission !== "owner" && session.status === "planned") throw appError("SESSION_NOT_FOUND");
+    const fearHidden = !seesFear(ctx.campaign, ctx.permission);
     const live = session.status === "live";
     const windows = await liveWindows(ctx, session);
     if (windows.length === 0) {
-      return { fearGained: null, fearSpent: null, hopeSpent: null, hpMarked: null, adversariesDefeated: null, criticals: null, live, truncated: false };
+      return { fearGained: null, fearSpent: null, hopeSpent: null, hpMarked: null, adversariesDefeated: null, criticals: null, live, truncated: false, fearHidden };
     }
     const fear = await fearOf(ctx, ctx.campaign._id, session, windows);
-    const rolls = await criticalsOf(ctx, ctx.campaign._id, windows);
-    const adversariesDefeated = await defeatsOf(ctx, ctx.campaign._id, windows);
+    const feed = await feedOf(ctx, ctx.campaign._id, windows);
+    const adversariesDefeated = await defeatsOf(ctx, ctx.campaign._id, windows, feed.rows);
     const stats = await characterStatsOf(ctx, session._id);
     return {
-      fearGained: fear.fearGained,
-      fearSpent: fear.fearSpent,
+      fearGained: fearHidden ? null : fear.fearGained,
+      fearSpent: fearHidden ? null : fear.fearSpent,
       hopeSpent: stats.hopeSpent,
       hpMarked: stats.hpMarked,
       adversariesDefeated,
-      criticals: rolls.criticals,
+      criticals: criticalsIn(feed.rows),
       live,
-      truncated: fear.truncated || rolls.truncated,
+      truncated: fear.truncated || feed.truncated,
+      fearHidden,
     };
   },
 });
@@ -162,7 +212,7 @@ export type JournalSpotlight = Infer<typeof journalSpotlightValidator>;
 
 /**
  * Whether the caller sees the spotlight balance (config Q5 a): the GM and every co-GM (`owner` permission) always, a
- * player only with the table setting `spotlightToPlayers` on (default off). The tally tiles stay GM-only (`tally`).
+ * player only with the table setting `spotlightToPlayers` on (default off). The tally tiles are every member's (`tally`).
  */
 export function seesSpotlight(campaign: Pick<Doc<"campaigns">, "tableSettings">, permission: CampaignPermission | null): boolean {
   return atLeast(permission, "owner") || resolveTableSettings(campaign.tableSettings).spotlightToPlayers;

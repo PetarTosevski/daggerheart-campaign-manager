@@ -1,6 +1,6 @@
 import type { FunctionReturnType } from "convex/server";
 
-import { isSessionDate, NO_DATE } from "../../../../../src/lib/domain/sessions";
+import { clockTime, shortSessionDate } from "../../../../../src/lib/dates";
 import type { JournalLogIcon } from "../../../../../convex/journalLog";
 import type { JournalTally } from "../../../../../convex/journalTally";
 import type { SessionSceneState, SessionSceneType } from "../../../../../convex/lib/validators/sessions";
@@ -11,8 +11,9 @@ import type { api } from "../../convex";
 /**
  * Pure pieces of the phone Journal. The website keeps these in its Journal component folders
  * (src/components/journal/{session-list/format.ts, header, end-session, log/model.ts, tally/model.ts, plan, recap,
- * ui}), files that import React, lucide-react, `@/` paths or `convex/browser`, which the phone cannot load. Until they
- * move into src/lib (framework-free), the phone states the same rules here; the wording matches the website's.
+ * ui}), files that import React, lucide-react, `@/` paths or `convex/browser`, which the phone cannot load. Dates and
+ * times already come from src/lib/dates.ts; until the rest moves into src/lib (framework-free), the phone states the
+ * same rules here; the wording matches the website's.
  */
 
 export type Prep = FunctionReturnType<typeof api.sessionPrep.get>;
@@ -21,18 +22,11 @@ export type StartResult = FunctionReturnType<typeof api.sessions.start>;
 
 // ---------------------------------------------------------------- sessions
 
-/** 'Sun 2 Nov' (weekday, day, month; UTC so it never shifts a day). Missing: 'No date set'; unparsable: as written. */
-export function shortSessionDate(date: string | null | undefined): string {
-  if (!date) return NO_DATE;
-  if (!isSessionDate(date)) return date;
-  const at = Date.parse(`${date}T12:00:00Z`);
-  return new Date(at).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
-}
+/** 'Sun 2 Nov' (src/lib/dates.ts, the website's Journal helper). */
+export { shortSessionDate } from "../../../../../src/lib/dates";
 
-/** The local clock time 'HH:MM'. */
-export function clock(at: number): string {
-  return new Date(at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
-}
+/** The local clock time 'HH:MM' (24-hour). */
+export const clock = clockTime;
 
 /** 'Session 6 · Sun 2 Nov · 19:10' (the time only when the caller can see when it started). */
 export function sessionLine(session: Pick<SessionListItem, "n" | "date" | "startedAt">): string {
@@ -122,6 +116,9 @@ export function prepNote(text: string): PrepBlock[] {
 
 export const LOG_KIND: Record<JournalLogIcon, string> = {
   roll: "Roll",
+  reactionRoll: "Reaction roll",
+  damageRoll: "Damage roll",
+  attackRoll: "Attack roll",
   gmRoll: "GM roll",
   feature: "Feature or spell",
   levelUp: "Level up",

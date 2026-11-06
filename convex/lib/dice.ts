@@ -11,3 +11,12 @@ export function rollDie(sides: number): number {
 export function rollDice(count: number, sides: number): number[] {
   return Array.from({ length: Math.max(0, count) }, () => rollDie(sides));
 }
+
+/** An Rng that hands out `values` in order (each within the die's sides), then falls back to `base`. */
+export function replaying(values: readonly number[], base: (sides: number) => number): (sides: number) => number {
+  let i = 0;
+  return (sides: number) => {
+    const n = values[i++];
+    return n !== undefined && n >= 1 && n <= sides ? n : base(sides);
+  };
+}

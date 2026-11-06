@@ -11,6 +11,7 @@ import { OfflineFrame } from "../../../src/shell/offline";
 import { api } from "../../../src/convex";
 import { fn, renderAsGm, renderAsPlayer } from "../../harness";
 import { campaignId, campaignRecord, liveLayout, playerViewOk } from "./fixtures";
+import { ruleSettingsRecord } from "../../harness/records";
 
 jest.mock("expo-crypto", () => ({
   randomUUID: () => "00000000-0000-4000-8000-000000000001",
@@ -158,12 +159,12 @@ test("a player's view writes markSeen and markExplored once, like the website (d
 test("the dim-light badge follows M3 Darkness: shown in Book, hidden in Manual", async () => {
   const dim = playerViewOk({ light: "dim" } as never);
   const book = await settle(renderAsPlayer(screenFor(), {
-    queries: { ...playerQueries, [fn(api.combatVision.playerView)]: dim, [fn(api.ruleSettings.get)]: { modes: { darkness: "book" }, locked: false, canEdit: false } },
+    queries: { ...playerQueries, [fn(api.combatVision.playerView)]: dim, [fn(api.ruleSettings.get)]: ruleSettingsRecord({ darkness: "book" }, { locked: false, canEdit: false }) },
   }));
   expect(book.getByText("Dim light: ranged attacks at disadvantage")).toBeTruthy();
   await book.unmount();
   const manual = await settle(renderAsPlayer(screenFor(), {
-    queries: { ...playerQueries, [fn(api.combatVision.playerView)]: dim, [fn(api.ruleSettings.get)]: { modes: { darkness: "manual" }, locked: false, canEdit: false } },
+    queries: { ...playerQueries, [fn(api.combatVision.playerView)]: dim, [fn(api.ruleSettings.get)]: ruleSettingsRecord({ darkness: "manual" }, { locked: false, canEdit: false }) },
   }));
   expect(manual.queryByTestId("combat-light-badge")).toBeNull();
 });

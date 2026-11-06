@@ -39,7 +39,7 @@ test("two taps send two increase intents and show an optimistic +2", async () =>
     mutations: {
       [fn(api.fear.adjust)]: (args) => {
         calls.push(args as FearCall);
-        return null;
+        return { previousValue: 0, newValue: 1 };
       },
     },
   });
@@ -66,7 +66,7 @@ test("a decrease is one intent, and Fear does not pass 0 or 12", async () => {
     mutations: {
       [fn(api.fear.adjust)]: (args) => {
         calls.push(args as FearCall);
-        return null;
+        return { previousValue: 0, newValue: 1 };
       },
     },
   });
@@ -81,7 +81,7 @@ test("a decrease is one intent, and Fear does not pass 0 or 12", async () => {
     mutations: {
       [fn(api.fear.adjust)]: (args) => {
         calls.push(args as FearCall);
-        return null;
+        return { previousValue: 0, newValue: 1 };
       },
     },
   });
@@ -116,11 +116,11 @@ test("offline disables Fear plus and minus", async () => {
     mutations: {
       [fn(api.fear.adjust)]: (args) => {
         calls.push(args);
-        return null;
+        return { previousValue: 0, newValue: 1 };
       },
     },
   });
-  expect(screen.getByText("Showing the last update.")).toBeTruthy();
+  expect(screen.getByText("You're offline. Showing the last update.")).toBeTruthy();
   const plus = screen.getByRole("button", { name: "Increase Fear" });
   expect(plus.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(plus);
@@ -142,7 +142,7 @@ test("a null Fear never offers an edit, even on a GM panel", async () => {
     mutations: {
       [fn(api.fear.adjust)]: (args) => {
         calls.push(args);
-        return null;
+        return { previousValue: 0, newValue: 1 };
       },
     },
   });

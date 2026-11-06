@@ -26,7 +26,9 @@ const damageTypeValidator = v.union(v.literal("physical"), v.literal("magic"), v
 
 /** Who made a hit, for `windows`: the instance, or (AA2b) the PC whose card it was. One shape, both fields optional. */
 function attackerIds(attacker: HitRow["payload"]["attacker"]): { instanceId?: Id<"encounterAdversaries">; attackerCharacterId?: Id<"characters"> } {
-  return isPcAttacker(attacker) ? { attackerCharacterId: attacker.characterId } : { instanceId: attacker.instanceId };
+  if (isPcAttacker(attacker)) return { attackerCharacterId: attacker.characterId };
+  // Plan rule-switches OFA: a fall or a collision has neither.
+  return "instanceId" in attacker ? { instanceId: attacker.instanceId } : {};
 }
 
 /** SD4: open hit and before-roll rows of a running encounter whose action wasn't undone. */

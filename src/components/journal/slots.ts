@@ -23,7 +23,7 @@ import type { SessionListItem } from "../../../convex/sessionRecords";
  * | `plan/battle-points.tsx`  | JP2    | `BattlePointsPanel` (mounted by `PlanAside`)                                  |
  * | `log/`                    | JL     | `SessionLog` (centre, Log & recap, top)                                       |
  * | `recap/`                  | JR     | `Recap` (centre, Log & recap, under the log), `AfterSession` (right, last)    |
- * | `tally/`                  | JT     | `SessionTally`, `Spotlight` (right, Log & recap, GM only)                     |
+ * | `tally/`                  | JT     | `SessionTally`, `Spotlight` (right, Log & recap)                              |
  * | `threads/`                | JTh    | `ThreadsRaised` (right, Log & recap)                                          |
  * | `notes-tab/`              | JN     | `NotesTab` (the whole Notes sub-tab panel)                                    |
  * | `ui/`                     | J1     | shared pieces: `Card`, `Chip`, `Parchment`, `TypeChip`, `SlotBoundary`        |
@@ -37,8 +37,8 @@ import type { SessionListItem } from "../../../convex/sessionRecords";
  * - GM, Log & recap: centre `SessionLog` then `Recap`; right `SessionTally`, `Spotlight`, `ThreadsRaised`,
  *   `AfterSession`.
  * - Player (Q5, user answer 2026-11-03: list, heading, recap and the session log; never the plan, prep or Battle
- *   Points): always Log & recap, no toggle; centre `SessionLog` then `Recap`; right `ThreadsRaised`, `AfterSession`
- *   (no tally, no spotlight).
+ *   Points): always Log & recap, no toggle; centre `SessionLog` then `Recap`; right `SessionTally` (dcm-z9rz.25),
+ *   `Spotlight` (only with "Show spotlight balance to players" on, config JO3), `ThreadsRaised`, `AfterSession`.
  * - No session to show: the page's empty state (`journal-empty`), no toggle.
  * Notes sub-tab: `NotesTab` fills the panel. At <= 720 px every column stacks (list first).
  *
@@ -175,10 +175,10 @@ export type RecapProps = JournalSessionProps;
 /** Log & recap, right, last (JR): 'After the session' (level-ups, loot). */
 export type AfterSessionProps = JournalSessionProps;
 
-/** Log & recap, right (JT, GM only): the six tally tiles. */
+/** Log & recap, right (JT, every member, dcm-z9rz.25): the six tally tiles. */
 export type SessionTallyProps = JournalSessionProps;
 
-/** Log & recap, right (JT, GM only): a spotlight bar per PC, Reset, the least-spotlight line. */
+/** Log & recap, right (JT; players with config JO3's setting on): a spotlight bar per PC, Reset (GM), the least-spotlight line. */
 export type SpotlightProps = JournalSessionProps;
 
 /** Log & recap, right (JTh): the open threads on the caller's Notes pages linked to the session (Q2). */

@@ -120,3 +120,76 @@ test("the other built-in maps print no hex grid: their markers keep today's roun
     await shoot(page, info, `map-${frameId}`);
   }
 });
+
+// dcm-kggd (WH2): a hex marker covers its hex, so clicking it must still give the hex panel's Travel here.
+test("Journey to Horizon: clicking a hex that holds a marker selects the hex (Travel here) and the marker, and the party can move there", async ({ page }, info) => {
+  test.slow();
+  await signInAsTestGm(page);
+  await expect(page).toHaveURL("/");
+  const client = await convexAs(page);
+  const { campaignId } = await client.mutation(api.campaigns.create, { frameId: "journey-to-horizon", name: `Hex click ${Date.now().toString(36)}`, idempotencyKey: crypto.randomUUID() });
+  const id = campaignId as Id<"campaigns">;
+  await client.mutation(api.maps.placePartyHex, { campaignId: id, q: 40, r: 5 });
+  // A dungeon on the hex next to the party, a cave two hexes off.
+  const dungeon = await client.mutation(api.maps.addToken, { campaignId: id, type: "dungeon", ...pct({ q: 41, r: 5 }), idempotencyKey: crypto.randomUUID() });
+  await client.mutation(api.maps.updateToken, { campaignId: id, id: dungeon.id, patch: { name: "Sunken Vault" } });
+  await client.mutation(api.maps.addToken, { campaignId: id, type: "cave", ...pct({ q: 42, r: 6 }), idempotencyKey: crypto.randomUUID() });
+
+  await page.goto(`/campaigns/${id}/world?focus=${dungeon.id}`);
+  const map = page.getByRole("application", { name: /^Map of/ });
+  const vault = map.getByRole("button", { name: /^Sunken Vault, Dungeon/ });
+  const party = map.getByRole("button", { name: /^Party token/ });
+  const editor = page.getByRole("region", { name: "Edit Sunken Vault" });
+  await expect(vault).toBeVisible();
+  await page.waitForTimeout(600);
+  const crawlPanel = page.getByRole("region", { name: "Hex Crawl" });
+  const travel = crawlPanel.getByText("Travel here", { exact: true });
+
+  // Keyboard: Enter on the marker selects its hex and opens the marker's editor.
+  await vault.focus();
+  await page.keyboard.press("Enter");
+  await expect(travel).toBeVisible();
+  await expect(editor).toBeVisible();
+
+  // The party's own hex: a click selects it (no travel: the party is there) and closes the editor.
+  await party.click();
+  await expect(crawlPanel.getByText("0 from the party")).toBeVisible();
+  await expect(travel).toBeHidden();
+  await expect(editor).toBeHidden();
+
+  // A pointer click on the marker: the hex panel with Travel here, and the marker's editor with it.
+  await vault.click();
+  await expect(travel).toBeVisible();
+  await expect(editor).toBeVisible();
+  await shoot(page, info, "horizon-marker-hex-selected");
+  await page.screenshot({ path: info.outputPath("horizon-marker-hex-page.png") });
+  if (process.env.WH1_SHOTS) await page.screenshot({ path: `${process.env.WH1_SHOTS}/horizon-marker-hex-page.png` });
+
+  // Move the party onto the marker's hex: it shares the hex and takes its centre slot.
+  await crawlPanel.getByRole("combobox", { name: "Terrain rating" }).selectOption("1");
+  await crawlPanel.getByRole("button", { name: "Move the party here" }).click();
+  await expect
+    .poll(async () => {
+      const got = (await party.boundingBox())!;
+      const want = await expectedBox(page, { q: 41, r: 5 });
+      return Math.hypot(got.x + got.width / 2 - want.cx, got.y + got.height / 2 - want.cy);
+    })
+    .toBeLessThan(1);
+
+  // Dragging a marker (GM) still moves it, onto the hex it is dropped on.
+  const cave = map.getByRole("button", { name: /^Cave, Cave/ });
+  const from = (await cave.boundingBox())!;
+  const to = await expectedBox(page, { q: 43, r: 6 });
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(from.x + from.width / 2 + 10, from.y + from.height / 2, { steps: 3 });
+  await page.mouse.move(to.cx, to.cy, { steps: 8 });
+  await page.mouse.up();
+  await expect
+    .poll(async () => {
+      const got = (await cave.boundingBox())!;
+      return Math.hypot(got.x + got.width / 2 - to.cx, got.y + got.height / 2 - to.cy);
+    })
+    .toBeLessThan(1);
+  await shoot(page, info, "horizon-marker-hex-moved");
+});

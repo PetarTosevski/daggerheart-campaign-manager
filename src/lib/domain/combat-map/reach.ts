@@ -86,14 +86,19 @@ export function objectSquares(o: ReachObject): Square[] {
   });
 }
 
-/** Whether the token stands within Melee (1 square, Chebyshev; adjacent incl. diagonal, or overlapping) of the object. */
-export function inMelee(token: Footprint, o: ReachObject): boolean {
+/**
+ * Whether the token stands within Melee (1 square, Chebyshev; adjacent incl. diagonal, or overlapping) of the object.
+ * Defined Ranges off (`definedRanges` false, rule switches ODR): always, the GM judges by eye.
+ */
+export function inMelee(token: Footprint, o: ReachObject, definedRanges = true): boolean {
+  if (!definedRanges) return true;
   return objectSquares(o).some((sq) => tokenDistance(token, sq) <= MELEE_SQUARES);
 }
 
-/** Whether any of the tokens stands within Melee of the object. */
-export function anyInMelee(tokens: readonly Footprint[], o: ReachObject): boolean {
+/** Whether any of the tokens stands within Melee of the object. Defined Ranges off (ODR): whenever there is a token. */
+export function anyInMelee(tokens: readonly Footprint[], o: ReachObject, definedRanges = true): boolean {
   if (tokens.length === 0) return false;
+  if (!definedRanges) return true;
   const squares = objectSquares(o);
   return tokens.some((token) => squares.some((sq) => tokenDistance(token, sq) <= MELEE_SQUARES));
 }

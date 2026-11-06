@@ -5,11 +5,12 @@ import { api, type Id } from "../../../src/convex";
 import { CampaignProvider, CampaignScreen } from "../../../src/shell/campaign-provider";
 import { OfflineFrame } from "../../../src/shell/offline";
 import { fn } from "../../harness";
+import { campaignSummary } from "../../harness/records";
 
 export const campaignId = "campaign-1" as Id<"campaigns">;
 
 export function campaignRecord(role: "gm" | "player", settings: Partial<ReturnType<typeof resolveTableSettings>> = {}) {
-  return {
+  return campaignSummary({
     _id: campaignId,
     frameId: "custom",
     name: "The Ford",
@@ -30,7 +31,7 @@ export function campaignRecord(role: "gm" | "player", settings: Partial<ReturnTy
     createdAt: 1,
     lastOpenedAt: 1,
     players: 2,
-  };
+  });
 }
 
 export const planned = { _id: "session-2" as Id<"sessions">, n: 2, title: "The Chapel", date: "2026-03-08", status: "planned" as const };
@@ -55,7 +56,7 @@ const notesJournal = {
   journal: null,
   templates: [
     { template: 0, kind: "log", title: "Session log", tape: 0, visibility: "private" },
-    { template: 1, kind: "people", title: "People", tape: 1, visibility: "private" },
+    { template: 1, kind: "collection", title: "People", tape: 1, visibility: "private" },
   ],
 };
 
@@ -80,7 +81,7 @@ export const logLines = {
   truncated: false,
 };
 
-export const tally = { fearGained: 3, fearSpent: 2, hopeSpent: 4, hpMarked: 5, adversariesDefeated: 1, criticals: 0, live: false, truncated: false };
+export const tally = { fearGained: 3, fearSpent: 2, hopeSpent: 4, hpMarked: 5, adversariesDefeated: 1, criticals: 0, live: false, truncated: false, fearHidden: false };
 
 export const spotlight = [
   { characterId: "c1" as Id<"characters">, name: "Vex", count: 3, due: false },

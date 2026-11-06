@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
-import { MAX_SCENES, SESSION_SCENE_TYPES, SESSION_TEXT_MAX, type SessionSceneState, type SessionStatus } from "../../../../convex/lib/validators/sessions";
+import { MAX_SCENES, SESSION_SCENE_TYPES, SESSION_TEXT_MAX, type SessionSceneState, type SessionSceneType, type SessionStatus } from "../../../../convex/lib/validators/sessions";
 import { SCENE_TYPE_DISPLAY, TypeChip } from "../ui";
 import { SceneEncounter } from "./encounter";
 
@@ -296,9 +296,19 @@ function SceneRow({
   );
 }
 
-/** '+ Add scene' (optimistic: the row shows at once, disabled until the server's id arrives). Refused past MAX_SCENES. */
+/** The order '+ Add scene' offers the types in (dcm-z9rz.30: Exploration / Social / Combat / Downtime). */
+export const ADD_SCENE_TYPES: readonly SessionSceneType[] = ["exploration", "social", "combat", "downtime"];
+
+/**
+ * '+ Add scene' asks the scene's type first (dcm-z9rz.30): the button opens a row of the four types and Cancel
+ * (Escape closes it too); picking one adds the scene (optimistic: the row shows at once, disabled until the server's id
+ * arrives). Refused past MAX_SCENES.
+ */
 export function AddSceneButton({ ids, count }: { ids: PlanIds; count: number }) {
   const { error, run } = useRun();
+  const [picking, setPicking] = useState(false);
+  const groupId = useId();
+  const opener = useRef<HTMLButtonElement>(null);
   const addScene = useMutation(api.sessionPrep.addScene).withOptimisticUpdate((store, args) =>
     patchPrep(store, { campaignId: args.campaignId, sessionId: args.sessionId }, (prep) => ({
       ...prep,
@@ -306,18 +316,64 @@ export function AddSceneButton({ ids, count }: { ids: PlanIds; count: number }) 
     })),
   );
   const full = count >= MAX_SCENES;
+
+  function close() {
+    setPicking(false);
+    opener.current?.focus();
+  }
+
+  function pick(type: SessionSceneType) {
+    close();
+    run(addScene({ ...ids, type }));
+  }
+
   return (
-    <>
-      <BrandButton variant="neutral" size="sm" disabled={full} title={full ? `A session holds at most ${MAX_SCENES} scenes.` : undefined} onClick={() => run(addScene(ids))}>
+    <div className="jp-add">
+      <BrandButton
+        ref={opener}
+        variant="neutral"
+        size="sm"
+        disabled={full}
+        aria-expanded={picking && !full}
+        aria-controls={groupId}
+        title={full ? `A session holds at most ${MAX_SCENES} scenes.` : undefined}
+        onClick={() => setPicking((v) => !v)}
+      >
         <Plus aria-hidden="true" />
         Add scene
       </BrandButton>
+      {picking && !full ? (
+        <div
+          id={groupId}
+          role="group"
+          aria-labelledby={`${groupId}-l`}
+          className="jp-add-types"
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              close();
+            }
+          }}
+        >
+          <span id={`${groupId}-l`} className="jr-lbl">
+            Scene type
+          </span>
+          {ADD_SCENE_TYPES.map((type, i) => (
+            <BrandButton key={type} variant="neutral" size="sm" autoFocus={i === 0} onClick={() => pick(type)}>
+              {SCENE_TYPE_DISPLAY[type].label}
+            </BrandButton>
+          ))}
+          <BrandButton variant="neutral" size="sm" onClick={close}>
+            Cancel
+          </BrandButton>
+        </div>
+      ) : null}
       {error ? (
         <p role="alert" className="jp-error">
           {error}
         </p>
       ) : null}
-    </>
+    </div>
   );
 }
 

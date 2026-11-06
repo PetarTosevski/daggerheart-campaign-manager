@@ -5,16 +5,25 @@ import EncounterRoute from "../../app/campaign/[campaignId]/(gm)/adversaries/[en
 import PacksRoute from "../../app/campaign/[campaignId]/(gm)/packs";
 import { CampaignProvider } from "../../src/shell/campaign-provider";
 import { renderAsGm, renderAsPlayer } from "../harness";
+import { campaignSummary } from "../harness/records";
+
+// A player sent off a GM route lands on the dashboard; the dashboard's own queries are its tests' business.
+jest.mock("../../src/features/dashboard", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { Text } = require("react-native") as typeof import("react-native");
+  return { DashboardScreen: () => <Text accessibilityRole="header">Dashboard</Text> };
+});
+
 
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: jest.fn(), back: jest.fn(), replace: jest.fn() }),
   useLocalSearchParams: () => ({ encounterId: "encounter-1" }),
 }));
 
-const base = {
+const base = campaignSummary({
   _id: "campaign-1",
   name: "The Table",
-};
+});
 
 test("a player who opens packs lands on the dashboard and does not subscribe to a GM function", async () => {
   const screen = await renderAsPlayer(

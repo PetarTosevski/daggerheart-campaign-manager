@@ -24,6 +24,7 @@ import {
 import { api, type Id } from "../../../src/convex";
 import { fn, renderAsGm, renderAsPlayer } from "../../harness";
 import { campaignRecord, inCampaign, queriesFor } from "../party/fixture";
+import { characterRow, ruleSettingsRecord } from "../../harness/records";
 
 const mockReplace = jest.fn();
 const mockBack = jest.fn();
@@ -208,8 +209,8 @@ test("the domain card step notes a held card under Warn and disables it under Re
   const [held] = domainCardOptions("guardian", opts).map((c) => c.id);
   const stored = { ...base, step: 8, domainCards: [] };
   jest.mocked(SecureStore.getItemAsync).mockResolvedValue(JSON.stringify(stored));
-  const mira = { _id: "char-9", ownerId: "player-2", status: "active", mine: false, canEdit: false, sheet: { name: "Mira", domainCards: { owned: [held], loadout: [] } } };
-  const rules = (mode: string) => ({ modes: { sharedDomainCards: mode }, locked: false, canEdit: false });
+  const mira = characterRow({ _id: "char-9", ownerId: "player-2", status: "active", mine: false, canEdit: false, sheet: { name: "Mira", domainCards: { owned: [held], loadout: [] } } });
+  const rules = (mode: string) => (ruleSettingsRecord({ sharedDomainCards: mode }, { locked: false, canEdit: false }));
   const warn = await renderAsPlayer(inCampaign("player", <CharacterWizard />), {
     queries: { ...queriesFor("player", [mira]), [fn(api.ruleSettings.get)]: rules("warn") },
   });

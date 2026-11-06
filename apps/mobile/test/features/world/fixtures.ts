@@ -1,10 +1,11 @@
 import { initialHexCrawl, initialMapState } from "../../../../../src/lib/world/map-state";
 import type { WorldMapData } from "../../../src/features/world/contract";
+import { campaignSummary } from "../../harness/records";
 
 export const campaignId = "campaign-1";
 
 export function campaignRecord(role: "gm" | "player") {
-  return {
+  return campaignSummary({
     _id: campaignId,
     frameId: "witherwild",
     name: "The Table",
@@ -17,7 +18,7 @@ export function campaignRecord(role: "gm" | "player") {
     createdAt: 1,
     lastOpenedAt: 1,
     players: 2,
-  };
+  });
 }
 
 export function mapView(role: "gm" | "player", overrides: Record<string, unknown> = {}): WorldMapData {
