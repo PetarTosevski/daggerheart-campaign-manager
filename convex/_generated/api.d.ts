@@ -76,6 +76,7 @@ import type * as e2e from "../e2e.js";
 import type * as encounterTracking from "../encounterTracking.js";
 import type * as encounters from "../encounters.js";
 import type * as environmentActions from "../environmentActions.js";
+import type * as fateRolls from "../fateRolls.js";
 import type * as fear from "../fear.js";
 import type * as featurePrompts from "../featurePrompts.js";
 import type * as featurePromptsReads from "../featurePromptsReads.js";
@@ -361,6 +362,7 @@ declare const fullApi: ApiFromModules<{
   encounterTracking: typeof encounterTracking;
   encounters: typeof encounters;
   environmentActions: typeof environmentActions;
+  fateRolls: typeof fateRolls;
   fear: typeof fear;
   featurePrompts: typeof featurePrompts;
   featurePromptsReads: typeof featurePromptsReads;
