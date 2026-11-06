@@ -45,6 +45,7 @@ export const EXEMPT: Record<string, string> = {
  * `users:viewer` (maybeUserQuery) returns the caller's own account. Everything else must show a stranger nothing.
  */
 export const STRANGER_OWN: Record<string, string> = {
+  "accountSelfDelete:deleteMyAccount": "deletes the caller's own account (DEL1)",
   "campaigns:list": "the caller's own campaigns (a stranger's is empty)",
   "campaigns:create": "starts a campaign the caller owns",
   "settings:get": "the caller's own settings",

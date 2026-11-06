@@ -44,6 +44,8 @@ export const adminMessages = {
   OWNER_VIEW_READ_ONLY: "You're viewing this campaign read-only.",
   /** A suspended account (AD14, N11). */
   ACCOUNT_SUSPENDED: "This account is suspended.",
+  /** The app owner asked to delete their own account (DEL1): the app would be left without an owner. */
+  OWNER_ACCOUNT_UNDELETABLE: "The app owner's account can't be deleted.",
 } as const satisfies Record<string, string>;
 
 export type AdminErrorCode = keyof typeof adminMessages;

@@ -9,6 +9,7 @@
  */
 
 import type * as accountPurge from "../accountPurge.js";
+import type * as accountSelfDelete from "../accountSelfDelete.js";
 import type * as accounts from "../accounts.js";
 import type * as actionLog from "../actionLog.js";
 import type * as adminAccountActions from "../adminAccountActions.js";
@@ -99,6 +100,7 @@ import type * as lib_allowlist from "../lib/allowlist.js";
 import type * as lib_allyPicks from "../lib/allyPicks.js";
 import type * as lib_appConfig from "../lib/appConfig.js";
 import type * as lib_appOwner from "../lib/appOwner.js";
+import type * as lib_appleRevoke from "../lib/appleRevoke.js";
 import type * as lib_archived from "../lib/archived.js";
 import type * as lib_areaSight from "../lib/areaSight.js";
 import type * as lib_auth from "../lib/auth.js";
@@ -292,6 +294,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   accountPurge: typeof accountPurge;
+  accountSelfDelete: typeof accountSelfDelete;
   accounts: typeof accounts;
   actionLog: typeof actionLog;
   adminAccountActions: typeof adminAccountActions;
@@ -382,6 +385,7 @@ declare const fullApi: ApiFromModules<{
   "lib/allyPicks": typeof lib_allyPicks;
   "lib/appConfig": typeof lib_appConfig;
   "lib/appOwner": typeof lib_appOwner;
+  "lib/appleRevoke": typeof lib_appleRevoke;
   "lib/archived": typeof lib_archived;
   "lib/areaSight": typeof lib_areaSight;
   "lib/auth": typeof lib_auth;

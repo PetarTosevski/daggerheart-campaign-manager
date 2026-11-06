@@ -7,6 +7,7 @@ import { PURGE_REQUESTED_AT } from "./campaigns";
 import { PURGE_AFTER_MS } from "./cleanup";
 import { recordAdminChange } from "./lib/adminAudit";
 import { normalizeEmail } from "./lib/allowlist";
+import { takeAppleTokens } from "./lib/appleRevoke";
 
 /**
  * Erasing deleted accounts (config AD14, Q28 b, N11; rule 8). The owner's Delete account (`adminAccountActions`)
@@ -20,7 +21,11 @@ import { normalizeEmail } from "./lib/allowlist";
  *    window (the campaign purge cron is off, so nothing else would purge it).
  * 3. `rows`: its own rows: memberships, opens, invites to its email, preferences, UI state, drafts, hand folds, upload
  *    notices, Lorekeeper day counters, tester row, GM settings, sharing grants, logins, sessions; then the user and its
- *    `accountStatus` row.
+ *    `accountStatus` row. Before the logins go, any Sign in with Apple token still stored on them is revoked
+ *    (`internal.accountSelfDelete.revokeAppleTokens`; a self-deletion revoked it already, DEL1).
+ *
+ * The account holder can also delete their own account (`accountSelfDelete`, DEL1): the same 30-day wait, and signing
+ * back in within it cancels the deletion.
  *
  * Its characters in other people's campaigns are kept (N11): with no member row the party shows them as "Former
  * player", and that campaign's GM can retire or delete them. Audit rows keep the account's id only (never its email).
@@ -192,6 +197,11 @@ function rowSteps(user: Doc<"users"> | null, userId: Id<"users">): ((ctx: Mutati
           .withIndex("by_principal_type", (q) => q.eq("principalKind", "user").eq("principalId", userId))
           .take(b.left),
       ),
+    // Apple tokens still stored on the logins (the owner's Delete account): revoked before the rows go.
+    async (ctx) => {
+      const tokens = await takeAppleTokens(ctx, userId);
+      if (tokens.length > 0) await ctx.scheduler.runAfter(0, internal.accountSelfDelete.revokeAppleTokens, { tokens });
+    },
     // Logins, each with its verification codes.
     async (ctx, b) => {
       const accounts = await ctx.db.query("authAccounts").withIndex("userIdAndProvider", (q) => q.eq("userId", userId)).take(b.left);

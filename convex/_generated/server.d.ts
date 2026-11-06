@@ -33,6 +33,10 @@ type Env = {
   readonly ALLOW_SEED_ACCOUNTS: string | undefined;
   readonly ANTHROPIC_API_KEY: string | undefined;
   readonly ANTHROPIC_MODEL: string | undefined;
+  readonly APPLE_CLIENT_SECRET: string | undefined;
+  readonly APPLE_KEY_ID: string | undefined;
+  readonly APPLE_PRIVATE_KEY: string | undefined;
+  readonly APPLE_TEAM_ID: string | undefined;
   readonly AUTH_RESEND_KEY: string | undefined;
   readonly E2E_AUTH_ENABLED: string | undefined;
   readonly E2E_AUTH_SECRET: string | undefined;
