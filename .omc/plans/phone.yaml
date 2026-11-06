@@ -256,7 +256,7 @@ waves:
         beads: [dcm-gdzi.14, dcm-gdzi.10, dcm-gdzi.11, dcm-gdzi.12, dcm-gdzi.13, dcm-gdzi.18]
         pr: 9
         goal: "The map paints within budget, the GM sees tokens, image maps have fog and alignment, markExplored/markSeen are written like the web, pinch zoom is stable, and the dock, tokens and touch targets fit a phone; behind a flag"
-        depends_on: [PX9]
+        depends_on: [PX8]   # user 2026-11-06: runs alongside wave 4 (no shared files with PX9-PX13)
         owns:
           - apps/mobile/src/features/combat-map/**
           - apps/mobile/app/campaign/[campaignId]/combat-map.tsx
