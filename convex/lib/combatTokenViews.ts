@@ -2,6 +2,7 @@
  * Token views and the lookups `combatTokens.ts` and `combatTokensReads.ts` share (D9 C6, R4). Split out of
  * `convex/combatTokens.ts` by dcm-uh6r so the HUD's token reads load without the movement and area engines.
  */
+import { isDefeated, type DamageRules } from "../../src/lib/domain/encounters/damage";
 import { srdAdversary } from "../../src/lib/srd/adversary-lookup";
 import { CLASSES } from "../../src/lib/srd/classes";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -10,6 +11,7 @@ import { readSheet } from "./characterSheet";
 import { adversaryArtSrc, MAX_INSTANCES } from "./encounters";
 import { pcPortrait } from "./pcPortrait";
 import { atLeast, permissionFor, type Permission } from "./permissions";
+import { ruleModesOf } from "./ruleModes";
 import type { TokenView } from "./validators/combatTokens";
 
 const CLASS_NAMES = new Map<string, string>(CLASSES.map((c) => [c.id, c.name]));
@@ -50,6 +52,19 @@ export function instancesOf(ctx: QueryCtx, encounterId: Id<"encounters">) {
     .take(MAX_INSTANCES);
 }
 
+/**
+ * Whether an adversary instance is defeated (user 2026-11-04: "I shouldn't be allowed to take the spotlight of dead
+ * NPCs"). Book (CB p.208 "When an adversary marks their last Hit Point, they are defeated"): marked defeated, or every
+ * HP marked. D8 Manual (plan rule-switches DEF, bead dcm-jh6d.68, user 2026-11-06): only the flag, which the GM sets with
+ * the tracker's Defeated button (`encounterTracking.markDefeated`). A Minion group still falls with its last Minion
+ * (that is D6, not D8; as `instanceWrites` in convex/lib/cardRows.ts). The token's grey (`stats.down`), the spotlight
+ * (`adversaryDefeated`, convex/lib/spotlight.ts) and the adversary's own actions (convex/lib/adversaryFeatures.ts) read it.
+ */
+export function adversaryDown(instance: Pick<Doc<"encounterAdversaries">, "defeated" | "hp" | "stats" | "minionCount">, rules: DamageRules = {}): boolean {
+  const d8 = instance.minionCount !== undefined ? {} : rules;
+  return instance.defeated || isDefeated({ hp: instance.hp, hpMax: instance.stats.hpMax }, d8);
+}
+
 /** The ids of the adversary instances already on a map. */
 export function placedInstances(tokens: Doc<"combatTokens">[]): Set<Id<"encounterAdversaries">> {
   return new Set(tokens.flatMap((t) => (t.ref.kind === "adversary" ? [t.ref.adversaryId] : [])));
@@ -63,6 +78,7 @@ export type CampaignCtx<C> = C & { user: Doc<"users">; campaign: Doc<"campaigns"
 
 export async function viewsOf(ctx: CampaignCtx<QueryCtx>, tokens: Doc<"combatTokens">[], gm: boolean): Promise<TokenView[]> {
   const encounters = new Map<Id<"encounters">, Doc<"encounters"> | null>();
+  const modes = ruleModesOf(ctx.campaign);
   const views: TokenView[] = [];
   for (const token of tokens) {
     const base = {
@@ -148,7 +164,8 @@ export async function viewsOf(ctx: CampaignCtx<QueryCtx>, tokens: Doc<"combatTok
           stressMax: instance.stats.stressMax,
           conditions: instance.conditions,
           difficulty: instance.stats.difficulty,
-          down: instance.defeated,
+          // D8 (rule switches DEF): Book, the flag or every HP marked; Manual, only the flag the GM set.
+          down: adversaryDown(instance, modes),
         },
         tracked: encounter?.status === "running",
       });

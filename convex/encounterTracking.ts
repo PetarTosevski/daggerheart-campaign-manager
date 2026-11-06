@@ -7,7 +7,6 @@ import {
   damageTaken,
   defeatedAfter,
   hpForDamage,
-  isDefeated,
   isMassive,
   lastHp,
   MAX_DAMAGE,
@@ -77,12 +76,19 @@ async function minionX(ctx: MutationCtx, instance: Doc<"encounterAdversaries">):
 /** A tracker mutation's context: the GM wrapper's campaign and caller. */
 type TrackerCtx = MutationCtx & { campaign: Doc<"campaigns">; user: Doc<"users"> };
 
+/** D8 applies to one adversary, not a Minion group: a group falls with its last Minion (D6; as `instanceWrites`). */
+function d8Rules(instance: Doc<"encounterAdversaries">, rules: DamageRules): DamageRules {
+  return instance.minionCount !== undefined ? { ...rules, adversaryDefeated: "book" } : rules;
+}
+
 /**
  * Writes the tracks and the defeated flag (`defeatedAfter`: Book, every HP marked; D8 Manual, never by itself). D8
- * Manual: marking the last HP tells the GM "<adversary> marked its last HP: defeated?".
+ * Manual: marking the last HP tells the GM "<adversary> marked its last HP: defeated?"; the GM answers with
+ * `markDefeated`.
  */
-async function patchTracks(ctx: TrackerCtx, instance: Doc<"encounterAdversaries">, hp: number, stress: number, rules: DamageRules = {}) {
+async function patchTracks(ctx: TrackerCtx, instance: Doc<"encounterAdversaries">, hp: number, stress: number, modes: DamageRules = {}) {
   const hpMax = instance.stats.hpMax;
+  const rules = d8Rules(instance, modes);
   const defeated = defeatedAfter(instance.defeated, { hp, hpMax }, rules);
   await ctx.db.patch("encounterAdversaries", instance._id, { hp, stress, defeated, updatedAt: Date.now() });
   const reachedLast = instance.hp < hpMax && lastHp({ hp, hpMax });
@@ -111,7 +117,7 @@ export const markHp = keyedGmMutation({
       const { instance } = await loadRunning(ctx, ctx.campaign._id, instanceId);
       assertWholeInRange(delta, -MAX_MINIONS, MAX_MINIONS, "An HP change");
       const rules = ruleModesOf(ctx.campaign);
-      const next = applyMark(instance, "hp", delta, rules);
+      const next = applyMark(instance, "hp", delta, d8Rules(instance, rules));
       return patchTracks(ctx, instance, next.hp, next.stress, rules);
     }),
 });
@@ -128,7 +134,7 @@ export const markStress = keyedGmMutation({
       const { instance } = await loadRunning(ctx, ctx.campaign._id, instanceId);
       assertWholeInRange(delta, -MAX_MINIONS, MAX_MINIONS, "A Stress change");
       const rules = ruleModesOf(ctx.campaign);
-      const next = applyMark(instance, "stress", delta, rules);
+      const next = applyMark(instance, "stress", delta, d8Rules(instance, rules));
       const overflow = delta > 0 && instance.stress + delta > instance.stats.stressMax;
       if (overflow && rules.stressOverflow === "manual") await note(ctx, "stressOverflow", `${instance.label}: Stress full, mark 1 HP?`);
       return patchTracks(ctx, instance, next.hp, next.stress, rules);
@@ -219,7 +225,7 @@ export const reviveInstance = keyedGmMutation({
   handler: async (ctx, { instanceId, hp, stress }) =>
     ctx.once("encounter_revive", { instanceId, hp, stress }, async () => {
       const { instance } = await loadRunning(ctx, ctx.campaign._id, instanceId);
-      if (!adversaryDefeated(instance)) throw appError("ENCOUNTER_RULE", "Only a defeated adversary can be revived.");
+      if (!adversaryDefeated(ctx.campaign, instance)) throw appError("ENCOUNTER_RULE", "Only a defeated adversary can be revived.");
       const { hpMax, stressMax } = instance.stats;
       const minions = instance.minionCount !== undefined;
       assertWholeInRange(hp, 0, Math.max(0, hpMax - 1), minions ? "Fallen Minions" : "Marked HP");
@@ -239,6 +245,45 @@ export const reviveInstance = keyedGmMutation({
         await logAction(ctx, { ...base, visibility: "public", summary: backOnFeet(instance.label, minions) });
       }
       return { hp, stress, defeated: false };
+    }),
+});
+
+/**
+ * D8 Manual (plan rule-switches DEF, bead dcm-jh6d.68, user 2026-11-06: "D8 Manual gets a Defeated button"): the GM marks
+ * an adversary at its last HP defeated. CB p.208: "When an adversary marks their last Hit Point, they are defeated"; under
+ * Manual the app leaves it up (`defeatedAfter`) and tells the GM "<adversary> marked its last HP: defeated?", and this is
+ * the GM's answer. It sets the instance's `defeated` flag, the one stored field every reader of "defeated" goes by under
+ * Manual (`adversaryDown`: the token's grey, the spotlight's ADVERSARY_DEFEATED, the adversary's own actions, the HUD).
+ *
+ * Refused with ENCOUNTER_RULE in Book (the last HP already defeats it), for a Minion group (it falls with its last
+ * Minion, D6), for an adversary with an HP still unmarked and for one already defeated; ENCOUNTER_NOT_RUNNING unless the
+ * encounter runs. Logged as one undoable GM-only row (kind `adversary`) carrying the instance before
+ * (`adversaryBefore`), as `reviveInstance`: the GM's undo (`actionLog.undo`) stands it back up at its last HP. No public
+ * line: the Book's defeat at the last HP writes none either (players see the token greyed).
+ */
+export const markDefeated = keyedGmMutation({
+  args: { instanceId: v.string() },
+  returns: tracksResult,
+  handler: async (ctx, { instanceId }) =>
+    ctx.once("encounter_mark_defeated", { instanceId }, async () => {
+      const { instance } = await loadRunning(ctx, ctx.campaign._id, instanceId);
+      if (ruleModesOf(ctx.campaign).adversaryDefeated !== "manual") throw appError("ENCOUNTER_RULE", "In this campaign an adversary is defeated when its last Hit Point is marked.");
+      if (instance.minionCount !== undefined) throw appError("ENCOUNTER_RULE", "A Minion group falls with its last Minion.");
+      if (instance.defeated) throw appError("ENCOUNTER_RULE", "That adversary is already defeated.");
+      if (!lastHp({ hp: instance.hp, hpMax: instance.stats.hpMax })) throw appError("ENCOUNTER_RULE", "Mark its last Hit Point first.");
+      const before = { instanceId: instance._id, hp: instance.hp, stress: instance.stress, defeated: instance.defeated };
+      await ctx.db.patch("encounterAdversaries", instance._id, { defeated: true, updatedAt: Date.now() });
+      await logAction(ctx, {
+        campaignId: ctx.campaign._id,
+        actorId: ctx.user._id,
+        kind: "adversary",
+        visibility: "gm",
+        summary: `${instance.label} marked defeated`,
+        groupId: newGroupId(),
+        adversaryBefore: [before],
+        undoable: true,
+      });
+      return { hp: instance.hp, stress: instance.stress, defeated: true };
     }),
 });
 
@@ -321,8 +366,7 @@ export const spotlight = keyedGmMutation({
     ctx.once("encounter_spotlight", { instanceId }, async () => {
       const { instance, encounter } = await loadRunning(ctx, ctx.campaign._id, instanceId);
       const rules = ruleModesOf(ctx.campaign);
-      const down = instance.defeated || isDefeated({ hp: instance.hp, hpMax: instance.stats.hpMax }, rules);
-      if (down) throw appError("ADVERSARY_DEFEATED");
+      if (adversaryDefeated(ctx.campaign, instance)) throw appError("ADVERSARY_DEFEATED");
       // Every spotlight after the first in a GM turn spends 1 Fear (CB p.153); FEAR_EMPTY when the GM has none.
       const all = await ctx.db
         .query("encounterAdversaries")

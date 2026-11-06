@@ -325,7 +325,8 @@ async function restoreSpotlight(ctx: MutationCtx, campaignId: Id<"campaigns">, b
  * where the countdown has not changed since (`revertTicks`, countdowns-advanced
  * D11), takes the group's `sessionTally` back off the session tally (dcm-z9rz.22), gives back the Spotlight Tracker
  * tokens the group spent (`refundTokenSpends`, plan rule-switches RFB), puts back the spotlight a PC roll of the group
- * moved to the GM (`restoreSpotlight`, plan rule-switches CU2), and marks every row undone.
+ * moved to the GM (`restoreSpotlight`, plan rule-switches CU2), clears `deathMoveSpent` of a character whose death row
+ * the group holds (the move is due again, plan rule-switches DEF), and marks every row undone.
  */
 export async function undoEntry(
   ctx: MutationCtx,
@@ -386,6 +387,13 @@ export async function undoEntry(
     const sheet = readSheet(JSON.parse(r.before));
     // As saveSheet does: a Hit Point cleared again makes a death move due the next time the last one is marked (decision 5).
     await ctx.db.patch("characters", r.characterId, { sheet: storedSheet(sheet), updatedAt: now, ...(sheet.hp < sheet.hpMax ? { deathMoveSpent: undefined } : {}) });
+  }
+
+  // RX (plan rule-switches DEF, bead dcm-jh6d.69): an undone death move is due again, as `deathMoves.undo` makes it (X2
+  // Manual's Risk It All marked it spent).
+  for (const characterId of new Set(group.flatMap((r) => (r.kind === "death" && r.characterId !== undefined ? [r.characterId] : [])))) {
+    const character = await ctx.db.get("characters", characterId);
+    if (character?.deathMoveSpent === true) await ctx.db.patch("characters", characterId, { deathMoveSpent: undefined });
   }
 
   for (const id of returning) {

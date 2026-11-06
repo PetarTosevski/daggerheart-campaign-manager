@@ -163,6 +163,20 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+/* D8 Manual (rule switches DEF): the GM's Defeated button beside "Last HP". */
+.hsb-defeated .hsb-act {
+  margin-left: 8px;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid #8e1f16;
+  background: #fff8e6;
+  color: #8e1f16;
+  font: 700 11px/1 var(--hud-font-display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
 .hsb-wpn {
   margin: 4px 20px;
   padding: 10px 12px;

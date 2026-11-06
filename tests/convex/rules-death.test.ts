@@ -211,11 +211,11 @@ describe("RX: X1 Death move prompt", () => {
     expect((await f.notes()).map((n) => n.ruleId)).toEqual(["deathMoveResolve"]);
   });
 
-  it("Manual: choose is refused for the player and the GM", async () => {
+  it("Manual: choose is refused for the player; the GM may still record the move (user 2026-11-06)", async () => {
     const f = await setup({ prompt: "manual" });
     expect(await codeOf(f.p1.mutation(api.deathMoves.choose, { characterId: f.a, move: "avoidDeath", idempotencyKey: key() }))).toBe("DEATH_MOVE_RULE");
-    expect(await codeOf(f.gm.mutation(api.deathMoves.choose, { characterId: f.a, move: "riskItAll", idempotencyKey: key() }))).toBe("DEATH_MOVE_RULE");
-    for (const c of [f.p1, f.gm]) expect((await c.query(api.deathMoves.state, { characterId: f.a })).awaitingMove).toBe(false);
+    expect(await codeOf(f.gm.mutation(api.deathMoves.choose, { characterId: f.a, move: "riskItAll", idempotencyKey: key() }))).toBe("ok");
+    expect((await f.p1.query(api.deathMoves.state, { characterId: f.a })).awaitingMove).toBe(false);
   });
 
   it("the HUD's deathMoveDue follows X1; the PC still shows down at 0 HP", async () => {
