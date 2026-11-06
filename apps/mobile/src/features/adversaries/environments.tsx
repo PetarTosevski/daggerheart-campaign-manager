@@ -14,6 +14,7 @@ import {
   NO_ENVIRONMENT_FILTERS,
   type EnvironmentFilters,
 } from "../../../../../src/lib/domain/environments";
+import { FEAR_HIDDEN_LABEL, fearShown } from "../../../../../src/components/combat-map/hud/fear/hidden";
 import { MAX_FEAR } from "../../../../../src/lib/domain/fear";
 import { ADVERSARIES } from "../../../../../src/lib/srd/adversaries";
 import { ENVIRONMENTS } from "../../../../../src/lib/srd/environments";
@@ -42,7 +43,7 @@ function useEnvironmentActions(campaignId: Id<"campaigns">) {
   const spend = withOptimistic(useMutation(api.environmentActions.spendFear), (store, { environmentId, featureName }) => {
     const fear = store.getQuery(api.campaigns.fear, { campaignId });
     const cost = ENVIRONMENTS.find((e) => e.id === environmentId)?.features.find((f) => f.name === featureName)?.fearCost;
-    if (fear === undefined || cost === undefined || fear < cost) return;
+    if (fear === undefined || fear === null || cost === undefined || fear < cost) return;
     store.setQuery(api.campaigns.fear, { campaignId }, fear - cost);
   });
   const start = useMutation(api.environmentActions.startCountdown);
@@ -84,7 +85,8 @@ function FeatureActions({
 }: {
   environment: EnvironmentDef;
   feature: EnvironmentFeature;
-  fear: number;
+  /** null: the GM's Fear is hidden from this caller; no spend is offered against a pool it cannot see. */
+  fear: number | null;
   actions: EnvironmentActions;
 }) {
   const writes = useWritesEnabled();
@@ -92,11 +94,11 @@ function FeatureActions({
   const countdowns = featureCountdownLabels(feature);
   if (cost === undefined && countdowns.length === 0) return null;
   const busy = actions.pending(environment, feature);
-  const short = cost !== undefined && fear < cost;
+  const short = cost !== undefined && fear !== null && fear < cost;
   return (
     <View style={advStyles.row}>
       {cost !== undefined ? (
-        <Button disabled={!writes || short || busy} onPress={() => void actions.spendFear(environment, feature)} variant="outline">
+        <Button disabled={!writes || fear === null || short || busy} onPress={() => void actions.spendFear(environment, feature)} variant="outline">
           {`Spend ${cost} Fear`}
         </Button>
       ) : null}
@@ -122,7 +124,7 @@ function EnvironmentBlock({
   onOpenAdversary,
 }: {
   environment: EnvironmentDef;
-  fear: number;
+  fear: number | null;
   actions: EnvironmentActions;
   onOpenAdversary: (adversaryId: string) => void;
 }) {
@@ -136,8 +138,8 @@ function EnvironmentBlock({
         {environment.name}
       </Text>
       <Text style={advStyles.label}>{environmentTierLine(environment)}</Text>
-      <Text accessibilityLabel={`GM Fear ${fear} of ${MAX_FEAR}`} style={advStyles.fear}>
-        GM Fear {fear}/{MAX_FEAR}
+      <Text accessibilityLabel={fear === null ? `GM Fear: ${FEAR_HIDDEN_LABEL}` : `GM Fear ${fear} of ${MAX_FEAR}`} style={advStyles.fear}>
+        GM Fear {fearShown(fear)}/{MAX_FEAR}
       </Text>
       <Text style={advStyles.serifItalic}>{environment.description}</Text>
       <Text style={advStyles.stat}>

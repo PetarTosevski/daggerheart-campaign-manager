@@ -50,7 +50,8 @@ function SelectedEncounter({
   campaignId: Id<"campaigns">;
   encounterId: string;
   encounters: EncounterList;
-  fear: number | undefined;
+  /** null: the GM's Fear is hidden from this caller (never shown as 0, never spent from). */
+  fear: number | null | undefined;
   onDeleted: () => void;
 }) {
   const campaign = useCampaign();
@@ -71,6 +72,8 @@ function SelectedEncounter({
       {view.encounter.status === "running" ? (
         fear === undefined ? (
           <Loading label="Loading Fear" />
+        ) : fear === null ? (
+          <Notice title="Encounter tracker">{"The GM's Fear is hidden from you, so the tracker cannot run here."}</Notice>
         ) : (
           <SlotBoundary label="The encounter tracker">
             <Tracker campaignId={campaignId} fear={fear} partyTier={campaign.tier} view={view} />

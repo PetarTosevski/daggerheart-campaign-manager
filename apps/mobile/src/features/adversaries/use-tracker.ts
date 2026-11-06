@@ -56,7 +56,7 @@ export function useTracker(campaignId: Id<"campaigns">, encounterId: string) {
   });
   const spendFear = withOptimistic(useMutation(api.encounterTracking.spendFear), (store, { amount }) => {
     const fear = store.getQuery(api.campaigns.fear, { campaignId });
-    if (fear === undefined || fear < amount) return;
+    if (fear === undefined || fear === null || fear < amount) return;
     store.setQuery(api.campaigns.fear, { campaignId }, fear - amount);
   });
   const applyDamage = useMutation(api.encounterTracking.applyDamage);

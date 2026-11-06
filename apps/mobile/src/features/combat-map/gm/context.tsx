@@ -29,7 +29,8 @@ export function CombatGmProvider({ campaignId, layout, children }: Pick<CombatSl
   const value: CombatGmData = {
     campaignId: cid,
     layout,
-    fear: useQuery(api.campaigns.fear, { campaignId: cid }),
+    // null (Fear hidden from this caller) reads as "not loaded": the GM tools never show it as 0 or adjust from it.
+    fear: useQuery(api.campaigns.fear, { campaignId: cid }) ?? undefined,
     maps: useQuery(api.combatMaps.list, { campaignId: cid }),
     combatants: useQuery(api.combatTokensReads.combatants, { campaignId: cid, mapId }),
     tokens: useQuery(api.combatTokensReads.list, { campaignId: cid, mapId }),

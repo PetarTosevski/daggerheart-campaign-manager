@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { useWritesEnabled } from "../../shell/offline";
@@ -115,8 +115,9 @@ export function Field({
 }
 
 /**
- * Saves when editing ends and the trimmed text differs from the stored value.
- * Pass `key={value}` so a server change remounts the field.
+ * Saves the trimmed text when editing ends, if it differs from the stored value. While the field is focused it shows
+ * the draft, so a remote edit never replaces what the user is typing; otherwise it shows the stored value (or the text
+ * just saved, until the server echoes it). Never `key=` it on the value (rule 13: a remount drops the draft).
  */
 export function SavedField({
   label,
@@ -131,19 +132,33 @@ export function SavedField({
   multiline?: boolean;
   maxLength?: number;
 }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saved, setSaved] = useState<{ from: string; text: string } | null>(null);
+  const stored = saved && saved.from === value ? saved.text : value;
+
+  function finish(text: string) {
+    setDraft(null);
+    const next = text.trim();
+    if (next === value) {
+      setSaved(null);
+      return;
+    }
+    setSaved({ from: value, text: next });
+    onSave(next);
+  }
+
   return (
     <TextInput
       accessibilityLabel={label}
-      defaultValue={value}
       maxLength={maxLength}
       multiline={multiline}
-      onEndEditing={(event) => {
-        const next = event.nativeEvent.text;
-        if (next.trim() !== value) onSave(next);
-      }}
+      onChangeText={setDraft}
+      onEndEditing={(event) => finish(event.nativeEvent.text)}
+      onFocus={() => setDraft(stored)}
       placeholder={label}
       placeholderTextColor={colors.subtle}
       style={[styles.field, multiline ? styles.fieldMulti : null]}
+      value={draft ?? stored}
     />
   );
 }

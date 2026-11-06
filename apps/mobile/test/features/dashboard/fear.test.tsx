@@ -126,3 +126,28 @@ test("offline disables Fear plus and minus", async () => {
   await fireEvent.press(plus);
   expect(calls).toHaveLength(0);
 });
+
+test("Fear hidden from a player shows '?', never 0", async () => {
+  const screen = await renderAsPlayer(fearUi(false), { queries: { [fn(api.campaigns.fear)]: null } });
+  expect(screen.getByText("?")).toBeTruthy();
+  expect(screen.getByLabelText("Fear: Fear hidden by the GM")).toBeTruthy();
+  expect(screen.queryByText("0")).toBeNull();
+  expect(screen.queryByText("null")).toBeNull();
+});
+
+test("a null Fear never offers an edit, even on a GM panel", async () => {
+  const calls: unknown[] = [];
+  const screen = await renderAsGm(fearUi(true), {
+    queries: { [fn(api.campaigns.fear)]: null },
+    mutations: {
+      [fn(api.fear.adjust)]: (args) => {
+        calls.push(args);
+        return null;
+      },
+    },
+  });
+  expect(screen.getByText("?")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Increase Fear" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Decrease Fear" })).toBeNull();
+  expect(calls).toHaveLength(0);
+});

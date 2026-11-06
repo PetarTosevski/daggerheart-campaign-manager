@@ -2,6 +2,7 @@ import { useQuery } from "convex/react";
 import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
+import { FEAR_HIDDEN_LABEL, fearShown } from "../../../../../src/components/combat-map/hud/fear/hidden";
 import { MAX_FEAR, MIN_FEAR } from "../../../../../src/lib/domain/fear";
 import { api, type Id } from "../../convex";
 import { WriteButton } from "../../shell/offline";
@@ -24,7 +25,8 @@ function FearBody({ campaignId, isGm }: { campaignId: Id<"campaigns">; isGm: boo
   return (
     <Panel title="GM Fear">
       <QueryLoading label="Loading Fear" value={loaded} />
-      {loaded === undefined ? null : isGm ? (
+      {/* null: the GM hides Fear from this caller; it shows "?" and never offers an edit based on it. */}
+      {loaded === undefined ? null : isGm && loaded !== null ? (
         <FearControls campaignId={campaignId} loaded={loaded} />
       ) : (
         <FearValue value={loaded} />
@@ -33,10 +35,10 @@ function FearBody({ campaignId, isGm }: { campaignId: Id<"campaigns">; isGm: boo
   );
 }
 
-function FearValue({ value }: { value: number }) {
+function FearValue({ value }: { value: number | null }) {
   return (
-    <Text accessibilityLabel="Fear" style={styles.value}>
-      {String(value)}
+    <Text accessibilityLabel={value === null ? `Fear: ${FEAR_HIDDEN_LABEL}` : "Fear"} style={styles.value}>
+      {fearShown(value)}
     </Text>
   );
 }

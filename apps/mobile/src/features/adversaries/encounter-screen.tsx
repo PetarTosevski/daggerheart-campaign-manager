@@ -56,7 +56,11 @@ export function EncounterView() {
     <ScrollView contentContainerStyle={advStyles.stack} keyboardShouldPersistTaps="handled">
       {back}
       {running ? (
-        <Tracker campaignId={campaignId} fear={fear} partyTier={campaign.tier} view={view} />
+        fear === null ? (
+          <Notice title={view.encounter.name}>{"The GM's Fear is hidden from you, so the tracker cannot run here."}</Notice>
+        ) : (
+          <Tracker campaignId={campaignId} fear={fear} partyTier={campaign.tier} view={view} />
+        )
       ) : (
         <Notice title={view.encounter.name}>
           <Text style={advStyles.body}>

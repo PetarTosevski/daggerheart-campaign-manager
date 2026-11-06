@@ -195,7 +195,6 @@ function GmRevelation({
         ))}
       </View>
       <SavedField
-        key={revelation.text}
         label={`${label} text`}
         maxLength={TEXT_MAX}
         multiline

@@ -171,7 +171,7 @@ function GmHuntCard({ campaignId, hunt }: { campaignId: TrackerCampaign["_id"]; 
       <Text style={styles.huntTitle}>{hunt.title}</Text>
       {hunt.allCluesRevealed ? <Text style={styles.badge}>All clues revealed</Text> : null}
       {hunt.archived ? <Text style={styles.meta}>Archived</Text> : null}
-      <SavedField key={hunt.title} label="Hunt name" maxLength={100} onSave={(title) => void save({ title })} value={hunt.title} />
+      <SavedField label="Hunt name" maxLength={100} onSave={(title) => void save({ title })} value={hunt.title} />
       <View accessibilityLabel={`Beat for ${hunt.title}`} accessibilityRole="radiogroup" style={styles.stack}>
         {HUNT_BEATS.map((beat) => (
           <TrackerButton
@@ -187,7 +187,7 @@ function GmHuntCard({ campaignId, hunt }: { campaignId: TrackerCampaign["_id"]; 
       <Text style={styles.meta}>{BEAT_HINTS[hunt.beat]}</Text>
       <Text style={styles.section}>The monster (GM only)</Text>
       {MONSTER_FIELDS.map(([key, label]) => (
-        <SavedField key={`${hunt.id}-${key}-${hunt[key]}`} label={label} multiline={key !== "monster"} onSave={(next) => void save({ [key]: next })} value={hunt[key]} />
+        <SavedField key={key} label={label} multiline={key !== "monster"} onSave={(next) => void save({ [key]: next })} value={hunt[key]} />
       ))}
       <CheckRow
         checked={hunt.monsterRevealed}
@@ -195,14 +195,12 @@ function GmHuntCard({ campaignId, hunt }: { campaignId: TrackerCampaign["_id"]; 
         onPress={() => void save({ monsterRevealed: !hunt.monsterRevealed })}
       />
       <SavedField
-        key={hunt.underlings.join("\n")}
         label="Underlings (one per line)"
         multiline
         onSave={(next) => void save({ underlings: toLines(next) })}
         value={hunt.underlings.join("\n")}
       />
       <SavedField
-        key={hunt.bystanders.join("\n")}
         label="Bystanders (one per line)"
         multiline
         onSave={(next) => void save({ bystanders: toLines(next) })}
@@ -275,13 +273,11 @@ function ClueRow({
       />
       <Text style={styles.meta}>{clue.revealed ? "Solid" : "Potential"}</Text>
       <SavedField
-        key={clue.text}
         label={`Clue ${n}`}
         onSave={(text) => void update.fire({ campaignId, huntId, clueId: clue.id, patch: { text } })}
         value={clue.text}
       />
       <SavedField
-        key={clue.note}
         label={`Clue ${n} GM note`}
         onSave={(note) => void update.fire({ campaignId, huntId, clueId: clue.id, patch: { note } })}
         value={clue.note}
