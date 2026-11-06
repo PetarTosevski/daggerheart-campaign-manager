@@ -16,6 +16,7 @@ import { usePick } from "../pick";
 import { useAttackPicker } from "../pick-attack";
 import { useAreaPickState } from "../pick-area";
 import { featurePlan, useFeatureUse } from "../pick-feature";
+import { SpotlightWarning } from "../blocked/reason";
 import { useSpotlight } from "../spotlight";
 import { useHud, type HudLayerProps } from "../state";
 import { hudToasts } from "../toasts";
@@ -104,6 +105,8 @@ function ActionRing({ layer, open, characterId, name, centre, size }: { layer: H
   // H6.2: while the GM holds the spotlight every action here waits (answer 1c); its reason is the button's lock.
   const spotlight = useSpotlight(campaignId);
   const spot = spotlightLock(spotlight?.reactionsOnly === true);
+  // S2 Manual (plan rule-switches RS2, user answer Q4 a): nothing locks; the ring says "The GM has the spotlight".
+  const warn = spotlight?.spotlightWarning === true;
   const [tip, setTip] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [classic, setClassic] = useState<Classic | null>(null);
@@ -307,6 +310,11 @@ function ActionRing({ layer, open, characterId, name, centre, size }: { layer: H
       {tipItem && tipAt && !more.some((m) => m.id === tipItem.id) ? (
         <div className="hud-ar-tip" style={{ left: tipAt.x + 30, top: tipAt.y - 14 }} aria-hidden="true" data-testid="hud-ar-tip">
           {tipItem.locked}
+        </div>
+      ) : null}
+      {warn ? (
+        <div className="hud-ar-warn" style={{ top: size / 2 + 8 }}>
+          <SpotlightWarning show />
         </div>
       ) : null}
       {sheet === undefined ? (

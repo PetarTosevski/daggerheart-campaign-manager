@@ -25,6 +25,7 @@ import { MAX_INSTANCES, startEncounter } from "./lib/encounters";
 import { pcPortrait } from "./lib/pcPortrait";
 import { postRuleNote, ruleMode } from "./lib/ruleModes";
 import { refillActionTokens, trackerTokens } from "./lib/actionTokens";
+import { assertMayAct } from "./lib/spotlight";
 import { tokenViewValidator, type TokenView } from "./lib/validators/combatTokens";
 import { campaignMutation, gmMutation, keyedGmMutation } from "./lib/functions";
 import { atLeast, permissionFor } from "./lib/permissions";
@@ -148,7 +149,7 @@ async function moverName(ctx: QueryCtx, token: Doc<"combatTokens">): Promise<str
 async function movableToken(ctx: CampaignCtx<MutationCtx>, tokenId: string) {
   const token = await loadCombatToken(ctx, ctx.campaign._id, tokenId);
   const map = await loadCombatMap(ctx, ctx.campaign._id, token.mapId);
-  if (atLeast(ctx.permission, "owner")) return { token, map };
+  if (atLeast(ctx.permission, "owner")) return { token, map, character: null };
   // Players see only the live map (R2, Q1).
   if (!map.live) throw appError("COMBAT_MAP_NOT_FOUND");
   if (token.ref.kind !== "pc") throw appError("COMBAT_NOT_YOUR_TOKEN");
@@ -156,7 +157,7 @@ async function movableToken(ctx: CampaignCtx<MutationCtx>, tokenId: string) {
   if (character === null || character.campaignId !== ctx.campaign._id) throw appError("COMBAT_NOT_YOUR_TOKEN");
   const permission = await permissionFor(ctx, ctx.user, { type: "character", campaign: ctx.campaign, character }, "edit");
   if (!atLeast(permission, "edit")) throw appError("COMBAT_NOT_YOUR_TOKEN");
-  return { token, map };
+  return { token, map, character };
 }
 
 // ---------------------------------------------------------------- GM: placing tokens
@@ -454,10 +455,13 @@ export const move = campaignMutation({
     carried: v.optional(v.array(v.object({ tokenId: v.id("combatTokens"), x: v.number(), y: v.number() }))),
   }),
   handler: async (ctx, { tokenId, x, y, carry }) => {
-    const { token, map } = await movableToken(ctx, tokenId);
+    const { token, map, character } = await movableToken(ctx, tokenId);
     const byGm = atLeast(ctx.permission, "owner");
     const next = moveToken(token, x, y, map);
     const stays = next.x === token.x && next.y === token.y;
+    // S2 (plan rule-switches RS2; user answer 2026-11-01): a player's token move waits while the GM holds the spotlight
+    // (Manual: it goes through and the GM gets a note). The GM's drags never wait.
+    if (character !== null && !stays) await assertMayAct(ctx, ctx.campaign, character, "move", await moverName(ctx, token));
     // M2 Walls and doors (plan rule-switches RM): the app rule refuses a player's blocked move; Manual lets it through
     // unflagged and notes what a player's move went through for the GM.
     const { refused, blocked, difficult, crossed } = moveVerdict(

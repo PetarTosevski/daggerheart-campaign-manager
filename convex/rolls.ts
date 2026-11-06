@@ -88,6 +88,7 @@ import {
   versus,
 } from "./lib/rolls";
 import { featureScope } from "./lib/featureScope";
+import { assertMayAct } from "./lib/spotlight";
 import { afterPcActionRoll, fearWithheldBy, hopeFearModeOf, outcomeSucceeds, outcomeWithFear } from "./lib/rollAftermath";
 import { rollValidator } from "./lib/validators/actionLog";
 import { traitIdValidator } from "./lib/validators/characters";
@@ -102,6 +103,8 @@ export const actionRoll = keyedUserMutation({
   handler: async (ctx, { characterId, ...args }) =>
     ctx.once("roll_action", { characterId, ...args }, async () => {
       const loaded = await editable(ctx, ctx.user, characterId);
+      // S2 (plan rule-switches RS2): an action roll waits while the GM holds the spotlight; a reaction roll never does.
+      await assertMayAct(ctx, loaded.campaign, loaded.character, args.kind === "reaction" ? "reaction" : "action", loaded.sheet.name);
       return fearFor(ctx, ctx.user, loaded.campaign, await duality(ctx, loaded, args, rollDie, false), "fearGained");
     }),
 });
@@ -131,6 +134,8 @@ export const manualRoll = keyedUserMutation({
   handler: async (ctx, { characterId, values, roll }) =>
     ctx.once("roll_manual", { characterId, values, roll }, async () => {
       const loaded = await editable(ctx, ctx.user, characterId);
+      // S2 (RS2): a typed-in action roll waits like a rolled one; damage (an attack's follow-up) and reaction rolls never do.
+      if (roll.kind === "action") await assertMayAct(ctx, loaded.campaign, loaded.character, "action", loaded.sheet.name);
       const rng = manualRng(values);
       const check = () => rules(() => rng.done());
       if (roll.kind === "damage") {
@@ -173,6 +178,8 @@ export const tagTeam = keyedUserMutation({
         throw appError("DICE_RULE", "Pick another character in this campaign.");
       }
       const partnerSheet = readSheet(partner.character.sheet);
+      // S2 (RS2): a Tag Team Roll is the initiator's action (CB p.97); it waits while the GM holds the spotlight.
+      await assertMayAct(ctx, lead.campaign, lead.character, "action", lead.sheet.name);
       assertCanAct(lead.character, lead.sheet);
       assertCanAct(partner.character, partnerSheet);
       rules(() => [args.initiator, args.partner].forEach((side) => assertTypedModifier(side.modifier)));

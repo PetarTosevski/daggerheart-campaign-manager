@@ -24,6 +24,7 @@ import type { MutationCtx } from "../_generated/server";
 import { logAction } from "./actionLog";
 import { actorSheetAfter, cardActor, cardIdOfEffect, tokenKeyOf } from "./cardRunner";
 import { loadCharacter, readSheet, saveSheet } from "./characterSheet";
+import { assertMayAct } from "./spotlight";
 import { markStressOn, unshakableText, type UnshakableRoll } from "./unshakable";
 import { reductionOf } from "./cardHandView";
 
@@ -87,6 +88,9 @@ export async function moveCardFor(
     next.domainCards = { ...s.domainCards, loadout: s.domainCards.loadout.filter((c) => c !== cardId) };
   } else {
     if (inLoadout) return null;
+    // S2 (plan rule-switches RS2, bead dcm-bxp.99.32.38; CB p.27 Recall Cost): a recall is an action, so it waits while
+    // the GM holds the spotlight in a running encounter (Manual: it goes through with the GM's note).
+    await assertMayAct({ ...ctx, user }, campaign, character, "action", s.name);
     if (s.domainCards.loadout.length >= 5) throw refuse("Your loadout holds at most 5 cards; vault one first.");
     if ((card?.level ?? 99) > s.level) throw refuse("That card is above your level.");
     next.domainCards = { ...s.domainCards, loadout: [...s.domainCards.loadout, cardId] };

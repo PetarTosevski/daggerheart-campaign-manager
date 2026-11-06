@@ -40,6 +40,7 @@ import {
   type ResolvedFeature,
 } from "./lib/featureRunner";
 import { campaignFearState } from "./lib/fear";
+import { assertMayAct, useActKind } from "./lib/spotlight";
 import { campaignQuery, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
 import { traitIdValidator } from "./lib/validators/characters";
 import { fearFor } from "./lib/fearVisibility";
@@ -418,6 +419,8 @@ export const useFeature = keyedCampaignMutation({
       const riders = args.riders ?? [];
       const riseOff = args.riseToTheChallenge === false;
       const { req, built } = await prepare(ctx, campaign, character, sheet, args.mapId, args);
+      // S2 (plan rule-switches RS2): a feature's action waits while the GM holds the spotlight; a reaction never does.
+      await assertMayAct(ctx, campaign, character, useActKind(req.pick.use), sheet.name);
       const host = ridesWith(req, riders, riseOff);
       if (host !== null) {
         const withRiders = await featureWithRiders(ctx, req, host, args.mapId, args, riders, ctx.user._id, riseOff);

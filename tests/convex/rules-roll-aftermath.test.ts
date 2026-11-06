@@ -75,7 +75,7 @@ function dice(...values: number[]) {
   });
 }
 
-type Modes = { spotlightToGm?: "book" | "manual"; hopeFearFromRolls?: "book" | "manual" };
+type Modes = { spotlightToGm?: "book" | "manual"; hopeFearFromRolls?: "book" | "manual"; playersWait?: "book" | "manual" };
 const agility = { kind: "action" as const, trait: "agility" as const, modifier: 0, experienceIds: [], advantage: 0, disadvantage: 0, help: 0, attack: false, options: [] };
 
 /** The world, a medium map with Ash's token at (5, 10), and (unless `encounter: false`) a running encounter. */
@@ -199,10 +199,11 @@ describe("rolls.actionRoll / manualRoll", () => {
   });
 
   it("S1 Manual: no note while the GM already holds the spotlight", async () => {
-    const a = await arena({ spotlightToGm: "manual" });
+    // S2 Manual (RS2) lets the player roll while the GM holds it (its own note is not S1's).
+    const a = await arena({ spotlightToGm: "manual", playersWait: "manual" });
     await a.gm.mutation(api.combatSpotlight.gmTake, { campaignId: a.campaignId, idempotencyKey: key() });
     await a.roll([3, 8]);
-    expect(await a.notes()).toEqual([]);
+    expect((await a.notes()).filter((x) => x.ruleId === "spotlightToGm")).toEqual([]);
   });
 
   it("R3 Book: the Fear and Hope rise as before", async () => {
@@ -210,6 +211,8 @@ describe("rolls.actionRoll / manualRoll", () => {
     await a.edit({ hope: 2 });
     await a.roll([3, 8]);
     expect(await a.fear()).toBe(1);
+    // S2 (RS2): the roll with Fear gave the GM the spotlight; the GM hands it back.
+    await a.gm.mutation(api.combatSpotlight.handToParty, { campaignId: a.campaignId, idempotencyKey: key() });
     await a.roll([8, 3]);
     expect((await a.sheetOf()).hope).toBe(3);
   });
@@ -227,6 +230,8 @@ describe("rolls.actionRoll / manualRoll", () => {
     // S1 stays Book: the spotlight still moves.
     expect(held(await a.spotlight())?.holder).toBe("gm");
 
+    // S2 (RS2): the GM hands the spotlight back before the next roll.
+    await a.gm.mutation(api.combatSpotlight.handToParty, { campaignId: a.campaignId, idempotencyKey: key() });
     const hope = await a.roll([8, 3]);
     expect((await a.sheetOf()).hope).toBe(2);
     expect((await a.t.run((ctx) => ctx.db.get("actionLog", hope.entryId)))?.hopeGained).toBe(false);

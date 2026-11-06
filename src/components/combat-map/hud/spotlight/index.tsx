@@ -111,7 +111,9 @@ export function SpotlightHandBack({ campaignId, characterId, name }: { campaignI
  * ("Jagged Knife Lieutenant has the spotlight", `gmTurnTitle`), whether this player's map draws it or not.
  */
 export function GmTurnNotice({ state }: { state: SpotlightState }): ReactNode {
-  if (!state.reactionsOnly) return null;
+  // S2 (plan rule-switches RS2): the card shows whenever the GM holds it; "Reactions only" only while players wait (Book,
+  // a running encounter). In Manual the card is the warning ("The GM has the spotlight"), not a refusal.
+  if (state.holder?.kind !== "gm" || state.canMove) return null;
   const reason = spotlightReasonLine(state);
   const title = gmTurnTitle(state);
   return (
@@ -125,7 +127,7 @@ export function GmTurnNotice({ state }: { state: SpotlightState }): ReactNode {
           {reason ? <span>{reason}</span> : null}
         </div>
       </div>
-      <p className="hud-spot-note">Reactions only until the spotlight comes back to you</p>
+      {state.reactionsOnly ? <p className="hud-spot-note">Reactions only until the spotlight comes back to you</p> : null}
     </>
   );
 }

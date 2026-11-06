@@ -92,6 +92,7 @@ import { postRuleNote, ruleModesOf } from "./lib/ruleModes";
 import { minionPicker } from "../src/lib/domain/combat-actions/damage";
 import { campaignMutation, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
 import { fearFor } from "./lib/fearVisibility";
+import { assertMayAct, useActKind } from "./lib/spotlight";
 import { changed } from "./lib/rolls";
 import { logUnshakable, unshakePlan, type UnshakableRoll } from "./lib/unshakable";
 import { MAX_RIDERS_PER_ATTACK, riderValidator, type Rider } from "./lib/validators/combatRequests";
@@ -1436,6 +1437,8 @@ export const useCard = keyedCampaignMutation({
       assertCanAct(character, sheet);
       const scene = await attackScene(ctx, campaign, character, args.mapId);
       const pick = pickCard(sheet, args.cardId, args.spell);
+      // S2 (plan rule-switches RS2): a card's action waits while the GM holds the spotlight; a reaction card never does.
+      await assertMayAct(ctx, campaign, character, useActKind(pick.use), sheet.name);
       const req: UseRequest = { campaign, character, sheet, scene, pick, targetTokenIds: args.targetTokenIds, choices: args.choices, roll: args.roll ?? {}, ...(args.swapWith !== undefined ? { swapWith: args.swapWith } : {}) };
       const riders = args.riders ?? [];
       const riseOff = args.riseToTheChallenge === false;

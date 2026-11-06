@@ -171,3 +171,17 @@
     animation: none;
   }
 }
+
+/* S2 Manual (plan rule-switches RS2): "The GM has the spotlight" under the token, a warning, not a lock. */
+.hud-ar-warn {
+  position: absolute;
+  left: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 11.5px;
+  background: #2a1a12;
+  box-shadow: 0 0 0 1px #6b3f22;
+  border-radius: 8px;
+  padding: 4px 9px;
+  pointer-events: none;
+}

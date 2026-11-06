@@ -33,6 +33,7 @@ import {
 import { closeRequest, encounterRunning, groupOffer, loadOpenRequest, openSanction } from "./lib/combatRequests";
 import { afterRollChoiceValidator, MAX_RIDERS_PER_ATTACK, riderPickChoiceValidator, riderValidator, type ForcedAttackPayload } from "./lib/validators/combatRequests";
 import { featureScope } from "./lib/featureScope";
+import { assertMayAct } from "./lib/spotlight";
 import { keyedCampaignMutation } from "./lib/functions";
 import { fearFor } from "./lib/fearVisibility";
 import { prepareDuality, rules, type Loaded } from "./lib/rolls";
@@ -156,6 +157,9 @@ export const attack = keyedCampaignMutation({
       if (riders.length > MAX_RIDERS_PER_ATTACK) throw appError("INVALID", `At most ${MAX_RIDERS_PER_ATTACK} riders.`);
       const loaded = await attacker(ctx, characterId);
       const forced = forcedRequestId === undefined ? null : await forcedRequest(ctx, forcedRequestId, characterId, targetTokenIds);
+      // S2 (plan rule-switches RS2): the PC's own attack waits while the GM holds the spotlight; an attack the GM forced
+      // (Beguiled) is the GM's move and goes on.
+      if (forced === null) await assertMayAct(ctx, ctx.campaign, loaded.character, "action", loaded.sheet.name);
       const scene = await attackScene(ctx, ctx.campaign, loaded.character, mapId);
       const weapon = equippedWeapon(loaded.sheet, slot);
       const roll = rollOf(options);

@@ -25,7 +25,7 @@ import type { CardEffect } from "../../src/lib/domain/card-effects/types";
 import type { FeatureEffect } from "../../src/lib/domain/feature-effects/types";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { allowWorldEmails, buildWorld, type Client } from "./authz/world";
-import { errorCode, key } from "./helpers";
+import { errorCode, handingBack, key } from "./helpers";
 
 const injected = vi.hoisted(() => ({ cards: new Map<string, unknown>(), features: new Map<string, unknown>() }));
 
@@ -129,7 +129,7 @@ async function arena(opts: { definedRanges?: boolean; outOfRange?: "ask" | "refu
   const feature = (c: Client, targetTokenIds: Id<"combatTokens">[]) =>
     c.mutation(api.combatFeatures.useFeature, { campaignId, characterId: w.characterA, mapId, featureId: BITE_ID, targetTokenIds, choices: [], idempotencyKey: key() } as never) as Promise<{ status: string }>;
   await edit({ classId: "warrior", subclassId: "call-of-the-brave", subclassRank: "foundation", hope: 5, domainCards: { owned: [ABILITY], loadout: [ABILITY] } } as Partial<CharacterSheet>);
-  return { w, t, campaignId, mapId, gm, player: w.as("player"), enemy, edit, requests, attack, card, feature };
+  return { w, t, campaignId, mapId, gm, player: handingBack(w.as("player"), gm, w.campaignId), enemy, edit, requests, attack, card, feature };
 }
 
 async function code(p: Promise<unknown>): Promise<unknown> {

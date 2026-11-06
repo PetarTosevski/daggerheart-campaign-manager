@@ -121,6 +121,8 @@ export const WIRED_RULES: ReadonlySet<string> = new Set([
   "fallingDamage",
   // OE (2026-11-06).
   "underwater",
+  // RS2 (2026-11-06).
+  "playersWait",
 ]);
 
 export type RuleGroup = { area: RuleArea; label: string; rules: readonly RuleDef[] };

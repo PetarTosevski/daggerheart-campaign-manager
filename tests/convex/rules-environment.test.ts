@@ -24,7 +24,7 @@ import { breathEnded, breathTicks, darknessBadge, darknessEdge, DIM_PHASE_BADGE,
 import { WEAPONS } from "../../src/lib/srd/index";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { allowWorldEmails, buildWorld } from "./authz/world";
-import { errorCode, key } from "./helpers";
+import { errorCode, handingBack, key } from "./helpers";
 
 allowWorldEmails();
 afterEach(() => vi.restoreAllMocks());
@@ -66,7 +66,8 @@ async function arena(modes: Modes = {}, options: { light?: "day" | "dim" | "nigh
   const w = await buildWorld({ frameId: "beast-feast" });
   const { t, campaignId } = w;
   const gm = w.as("gm");
-  const player = w.as("player");
+  // RS2: players wait while the GM holds the spotlight in a running encounter; these tests are about the environment.
+  const player = handingBack(w.as("player"), gm, campaignId);
   const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
   const now = Date.now();
   const ids = await t.run(async (ctx) => {
