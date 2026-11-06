@@ -5,6 +5,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { campaignRoleLabel, frameName, roman } from "../../../../../src/lib/campaign-display";
 import { errorMessage } from "../../../../../src/lib/convex-errors";
+import { dayMonth } from "../../../../../src/lib/dates";
 import type { CampaignListItem, DeletedCampaign } from "../../../../../convex/campaigns";
 import { api, type Id } from "../../convex";
 import { colors } from "../../theme/colors";
@@ -15,8 +16,6 @@ import { Loading } from "../../ui/loading";
 import { QueryBoundary } from "../../ui/query-boundary";
 import { AccountHeader } from "./chrome";
 import { accountStyles } from "./styles";
-
-const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 
 /** Chronicle board from `src/app/(gm)/campaigns/chronicle.tsx`. */
 export function CampaignListScreen() {
@@ -156,7 +155,7 @@ function CampaignBand({
           </View>
           <Text style={styles.name}>{campaign.name}</Text>
           <Text style={accountStyles.label}>
-            Started {dateFormat.format(campaign.createdAt)} · Last opened {dateFormat.format(campaign.lastOpenedAt)}
+            Started {dayMonth(campaign.createdAt)} · Last opened {dayMonth(campaign.lastOpenedAt)}
           </Text>
         </View>
         <View style={styles.stats}>
@@ -327,7 +326,7 @@ function DeletedRow({
     <View style={accountStyles.card}>
       <Text style={styles.name}>{campaign.name}</Text>
       <Text style={accountStyles.label}>
-        {frameName(campaign.frameId)} · Deleted {dateFormat.format(campaign.deletedAt)}
+        {frameName(campaign.frameId)} · Deleted {dayMonth(campaign.deletedAt)}
       </Text>
       <View style={styles.actions}>
         <Button
