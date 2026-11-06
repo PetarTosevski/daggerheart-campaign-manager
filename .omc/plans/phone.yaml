@@ -191,6 +191,15 @@ waves:
         owns:
           - apps/mobile/src/features/trackers/**
           - apps/mobile/app/campaign/[campaignId]/index.tsx
+          # Fear can be null on rebuild: the files typecheck:mobile filters today (user round 2026-11-06).
+          - apps/mobile/src/features/adversaries/encounter-screen.tsx
+          - apps/mobile/src/features/adversaries/encounters.tsx
+          - apps/mobile/src/features/adversaries/environments.tsx
+          - apps/mobile/src/features/adversaries/use-tracker.ts
+          - apps/mobile/src/features/combat-map/gm/context.tsx
+          - apps/mobile/src/features/combat-map/gm/use-adversary-actions.ts
+          - apps/mobile/src/features/dashboard/fear.tsx
+          - package.json
           - apps/mobile/test/features/trackers/**
           - apps/mobile/test/features/dashboard/**
         acceptance:
@@ -315,3 +324,24 @@ waves:
           - apps/mobile/src/theme/**
         acceptance:
           - a fixture that breaks a validator fails jest; Vercel build installs no Expo packages
+
+  # ------------------------------------------------------------------ follow-ups (2026-11-06)
+  - wave: 8
+    tracers:
+      - id: PXG
+        title: "Join links survive sign-in, markOpened mounted, jest finds one Expo and one Convex copy"
+        beads: [dcm-gdzi.7, dcm-gdzi.28, dcm-gdzi.40, dcm-gdzi.42]
+        pr: 2
+        goal: "A signed-out /join/<code> deep link goes to /sign-in?next=/join/<code> and lands on the join after sign-in; opening a campaign calls campaigns.markOpened (MarkOpened mounted in the campaign layout); jest suites no longer fail with 'Cannot find native module ExpoCrypto' and ConvexError codes map in tests (single-copy moduleNameMapper)"
+        depends_on: [PX7]
+        owns:
+          - apps/mobile/src/shell/session-gate.ts
+          - apps/mobile/app/campaign/[campaignId]/_layout.tsx
+          - apps/mobile/jest.config.js
+          - apps/mobile/jest.setup.ts
+          - pnpm-workspace.yaml
+          - pnpm-lock.yaml
+          - apps/mobile/test/shell/**
+          - apps/mobile/test/auth/**
+        acceptance:
+          - the full apps/mobile jest run has no ExpoCrypto failures; shell tests cover the join next and markOpened
