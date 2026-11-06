@@ -45,7 +45,7 @@ import {
   type InstanceWrite,
   type ResolvedCard,
 } from "./lib/cardRows";
-import { actorSheetAfter, buildRun, conditionMarkerOf, difficultyOf, isFeatureUseId, pickCard, planHandoff, planHopePaid, replaying, runCard, writeSheetChanges, type BuiltRun, type CardPick, type HostRoll, type RunOutcome, type UsePick } from "./lib/cardRunner";
+import { actorSheetAfter, buildRun, conditionMarkerOf, difficultyOf, isFeatureUseId, pickCard, planHandoff, planHopePaid, replaying, ruleNotesOfUse, runCard, writeSheetChanges, type BuiltRun, type CardPick, type HostRoll, type RunOutcome, type UsePick } from "./lib/cardRunner";
 import { assertCanAct, loadCharacter, noteHopeSpent, readSheet, saveSheet } from "./lib/characterSheet";
 import {
   attackScene,
@@ -605,6 +605,8 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
   // use's group.
   for (const summary of resistanceNotes(plan, built.creatures)) await postRuleNote(ctx, campaign, { ruleId: "resistance", summary, groupId, actorId });
   for (const summary of lastHpNotes(writes, modes)) await postRuleNote(ctx, campaign, { ruleId: "adversaryDefeated", summary, groupId, actorId });
+  // RFC: line of sight (M1), condition dice (C1) and Stress overflow (D4) Manual notes for the card use.
+  for (const n of ruleNotesOfUse(built, plan)) await postRuleNote(ctx, campaign, { ruleId: n.ruleId, summary: n.summary, groupId, actorId });
 
   // Armed countdowns tick right after an action roll, as for `actionRoll` (countdowns-advanced K1); never a reaction roll.
   if (plan.roll && countsAsActionRoll(plan.roll.record, { logKind: "roll", undone: false })) {

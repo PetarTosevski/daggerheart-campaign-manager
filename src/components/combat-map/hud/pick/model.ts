@@ -1,5 +1,6 @@
 import { rangeCheck, RANGE_ORDER } from "@/lib/domain/combat-actions/distance";
 import type { Range } from "@/lib/domain/card-effects/types";
+import type { SightMode } from "@/lib/domain/combat-actions/sight";
 
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { fitsSide, outOfRange, RANGE_LABEL, type Creature } from "../../actions/hand/model";
@@ -50,18 +51,24 @@ const REACH_ORDER: Record<PickReach, number> = { in: 0, out: 1, los: 2 };
  * - `out`: a weapon range: the hint's `inRange` is false; a band: the Hand model's `outOfRange` (the card runner's check,
  *   anchored areas included). Out of range stays pickable: the GM approves (Q1).
  * Ordered in reach, then out of range, then out of sight, nearest first in each; the order never changes with a pick.
+ * Rule switches RFC, M1 `lineOfSight` Manual (`sightMode`, from `ruleSettings.get`; Book until loaded): no row is `los`;
+ * a row the hint says is out of sight keeps its range reach and carries `noLineOfSight` (the server accepts it and
+ * tells the GM).
  */
 export function buildRows({
   creatures,
   rule,
   hints,
   picked,
+  sightMode = "book",
 }: {
   creatures: readonly PickCreature[];
   rule: PickRule;
   /** `combatActionsReads.targets` for the actor (enemies it sees); undefined while loading or for no PC actor. */
   hints: readonly TargetHint[] | undefined;
   picked: readonly string[];
+  /** The campaign's M1 mode; default the Book (no line of sight: never picked). */
+  sightMode?: SightMode;
 }): PickRow[] {
   const actor = creatures.find((c) => c.side === "self");
   const byHint = new Map<string, TargetHint>((hints ?? []).map((h) => [h.tokenId, h]));
@@ -71,14 +78,15 @@ export function buildRows({
     const hint = byHint.get(c.tokenId);
     const check = c.side !== "self" && actor?.at !== undefined && c.at !== undefined ? rangeCheck(actor.at, c.at, "unlimited") : null;
     const band: Range | null = hint?.band ?? check?.band ?? (c.side === "self" ? "melee" : null);
+    const blind = hint !== undefined && !hint.lineOfSight;
     let reach: PickReach = "in";
-    if (hint && !hint.lineOfSight) reach = "los";
+    if (blind && sightMode !== "manual") reach = "los";
     else if (rule.range === "weapon") reach = hint && !hint.inRange ? "out" : "in";
     else if (outOfRange(rule, creatures, picked, c)) reach = "out";
-    rows.push({ tokenId: c.tokenId, name: c.side === "self" ? "You" : c.name, side: c.side, band, reach, conditions: c.conditions ?? [], distance: check?.distance ?? 0 });
+    rows.push({ tokenId: c.tokenId, name: c.side === "self" ? "You" : c.name, side: c.side, band, reach, conditions: c.conditions ?? [], distance: check?.distance ?? 0, ...(blind && sightMode === "manual" ? { noLineOfSight: true as const } : {}) });
   }
   rows.sort((a, b) => REACH_ORDER[a.reach] - REACH_ORDER[b.reach] || a.distance - b.distance);
-  return rows.map((r) => ({ tokenId: r.tokenId, name: r.name, side: r.side, band: r.band, reach: r.reach, conditions: r.conditions }));
+  return rows.map((r) => ({ tokenId: r.tokenId, name: r.name, side: r.side, band: r.band, reach: r.reach, conditions: r.conditions, ...(r.noLineOfSight ? { noLineOfSight: true as const } : {}) }));
 }
 
 /** A picker's own rows with the defaults filled in. */
@@ -190,6 +198,7 @@ export function rowLabel(row: PickRow, state: PickState): string {
   if (band && row.side !== "self") parts.push(band);
   if (row.reach === "out") parts.push("out of range: the GM approves");
   if (row.reach === "los") parts.push("no line of sight: can’t be picked");
+  if (row.noLineOfSight) parts.push("no line of sight: the GM decides");
   if (row.conditions.length > 0) parts.push(row.conditions.join(", "));
   if (state === "picked") parts.push("picked");
   return parts.join(", ");

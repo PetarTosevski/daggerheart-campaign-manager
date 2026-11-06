@@ -23,6 +23,9 @@
  *   `featurePrompts.allyRoll`, which writes with `resolveFeatureUse` too (`ResolveExtras`).
  * - U1 / U4: rows as cards (public: roll, own damage, Hit / Miss / Defeated; GM: the full resolution with
  *   `adversaryBefore`); one actionLog group, which `actionLog.undo` reverts.
+ * - Rule switches RFC (docs/tasks/TASK-RULES-RFC.md): the run follows the campaign's damage, sight and condition modes
+ *   (`buildRun`); D8 Manual leaves an adversary at its last HP up (`instanceWrites` with the modes); the Manual notes (D2,
+ *   D4, D8, M1, C1) are GM-only `rule` rows in the use's group, so undoing the use undoes them.
  */
 import { v, type Infer } from "convex/values";
 
@@ -52,8 +55,9 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction, newGroupId } from "./actionLog";
 import { dropDice, MAX_CARD_TARGETS, type CardChoice, type CardRoll, type DiceSlot } from "./cardChoices";
-import { afterUnstoppable, cardPromptValidator, damageRolls, effectEndsOf, endOnSheet, gmLines, instanceWrites, openCardHits, promptsOf, publicTargets, rollText, writeInstances } from "./cardRows";
-import { actorSheetAfter, effectOption, featureIdOfEffect, ownsEffect, planHopePaid, tokenKeyOf, writeSheetChanges, type BuiltRun, type Delegated, type UsePick } from "./cardRunner";
+import { afterUnstoppable, cardPromptValidator, damageRolls, effectEndsOf, endOnSheet, gmLines, instanceWrites, lastHpNotes, openCardHits, promptsOf, publicTargets, resistanceNotes, rollText, writeInstances } from "./cardRows";
+import { actorSheetAfter, effectOption, featureIdOfEffect, ownsEffect, planHopePaid, tokenKeyOf, ruleNotesOfUse, writeSheetChanges, type BuiltRun, type Delegated, type UsePick } from "./cardRunner";
+import { postRuleNote, ruleModesOf } from "./ruleModes";
 import { setStance } from "./stanceDrop";
 import type { AdversaryBefore } from "./validators/actionLog";
 import { unshakableText, unshakePlan, type UnshakableRoll } from "./unshakable";
@@ -914,7 +918,9 @@ export async function resolveFeatureUse(
   next = withFeatureCaster(sheet, next, pick.featureId, character._id);
   for (const [id, o] of others) others.set(id, { ...o, after: withFeatureCaster(o.before, o.after, pick.featureId, character._id) });
 
-  const writes = instanceWrites(plan, built.creatures, pick.name);
+  // Rule switches RFC, D8 (CB p.208): Manual leaves an adversary at its last HP up; the GM is told below.
+  const modes = ruleModesOf(campaign);
+  const writes = instanceWrites(plan, built.creatures, pick.name, undefined, modes);
   await writeInstances(ctx, writes);
   const fearDelta = await applyFear(ctx, campaign._id, plan.gmFearDelta);
   // dcm-z9rz.23: the Hope the use paid (its Experiences and its costs, even one the roll's own Hope paid) counts as spent.
@@ -978,6 +984,10 @@ export async function resolveFeatureUse(
       undoable: true,
     });
   }
+  // Rule switches RFC: the Manual rules' GM notes (D2, D8, then M1, C1, D4) in the use's group.
+  for (const summary of resistanceNotes(plan, built.creatures)) await postRuleNote(ctx, campaign, { ruleId: "resistance", summary, groupId, actorId });
+  for (const summary of lastHpNotes(writes, modes)) await postRuleNote(ctx, campaign, { ruleId: "adversaryDefeated", summary, groupId, actorId });
+  for (const n of ruleNotesOfUse(built, plan)) await postRuleNote(ctx, campaign, { ruleId: n.ruleId, summary: n.summary, groupId, actorId });
   if (plan.roll && countsAsActionRoll(plan.roll.record, { logKind: "roll", undone: false })) {
     await tickArmedCountdowns(ctx, { campaignId: campaign._id, entryId, outcome: plan.roll.record.outcome, actorId });
   }
