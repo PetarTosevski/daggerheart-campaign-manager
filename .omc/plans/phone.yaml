@@ -396,3 +396,31 @@ waves:
           - docs/phone-client.md
         acceptance:
           - full apps/mobile jest passes; pnpm typecheck; known-stale-fixtures.ts shorter
+  - wave: 11
+    tracers:
+      - id: WSM
+        title: "Website uses the shared src/lib models (Lorekeeper, codex, countdowns, wizard, Tome text)"
+        beads: [dcm-gdzi.43, dcm-gdzi.45, dcm-gdzi.47]
+        pr: 2
+        goal: "The website imports the src/lib models PX6 made (Lorekeeper answer / composer / names / selection / clip, codex list model, countdown listItems, hud queue errorCode); the wizard logic and draft schema, the reactions model, level-up / dice roll copy / features panel / lunar helpers and the custom-tome chapter text move into framework-free src/lib modules the website imports; web behaviour unchanged; web tests point at src/lib. Phone switch-over to the new modules happens later (apps/mobile is PXL's)."
+        depends_on: [PX6]
+        owns:
+          - src/lib/**
+          - src/components/lorekeeper/**
+          - src/app/(gm)/campaigns/[campaignId]/codex/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/index.tsx
+          - src/components/combat-map/hud/queue/model.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/new/**
+          - src/components/combat-map/actions/reactions/**
+          - src/components/party/level-up/**
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/level-up-draft.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/level-up-ribbon.tsx
+          - src/components/party/dice/dice-box.tsx
+          - src/components/party/dice/parts.tsx
+          - src/components/party/features/panel.tsx
+          - src/components/party/lunar/section.tsx
+          - src/components/tome/tome-book.tsx
+          - tests/unit/**
+          - docs/tasks/TASK-WSM.md
+        acceptance:
+          - pnpm lint, pnpm typecheck, the web unit tests of every touched area pass; behaviour unchanged
