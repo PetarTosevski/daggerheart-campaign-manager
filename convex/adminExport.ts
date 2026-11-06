@@ -89,6 +89,7 @@ export const EXPORTED_TABLES = [
   "combatRequests",
   "combatSpotlight",
   "combatSeen",
+  "actionTokens",
   "combatMaps",
   "combatMapObjects",
   "combatMapCells",
