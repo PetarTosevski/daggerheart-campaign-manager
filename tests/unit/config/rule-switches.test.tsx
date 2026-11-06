@@ -199,7 +199,7 @@ describe("rule rows: the GM", () => {
 
   it("shows rules the engine doesn't follow yet read-only with 'Coming soon'", () => {
     render(<Section />);
-    const d6 = row("minions");
+    const d6 = row("playersWait");
     expect(within(d6).queryByRole("radio")).toBeNull();
     expect(within(d6).getByText("Book")).toBeInTheDocument();
     expect(within(d6).getByText(RULE_ROWS_TEXT.comingSoon)).toBeInTheDocument();

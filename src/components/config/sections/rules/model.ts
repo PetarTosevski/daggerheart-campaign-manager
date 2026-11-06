@@ -103,6 +103,18 @@ export const WIRED_RULES: ReadonlySet<string> = new Set([
   "deathMovePrompt",
   "deathMoveResolve",
   "horizonEncounterBonuses",
+  // RM, RT, OSC, RC1, RC2 (merged 2026-11-06).
+  "hiddenEnds",
+  "wallsBlock",
+  "darkness",
+  "spotlightTracker",
+  "spotlightTrackerTokens",
+  "goldCoins",
+  "sharedDomainCards",
+  "conditionDice",
+  "lineOfSight",
+  "minions",
+  "armorSlots",
 ]);
 
 export type RuleGroup = { area: RuleArea; label: string; rules: readonly RuleDef[] };
