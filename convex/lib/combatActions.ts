@@ -37,7 +37,7 @@ import { adversaryEffects, allAdversaryEffects } from "../../src/lib/srd/adversa
 import { lineOfSight, RANGE_ORDER, rangeCheck, rangeFromWeapon, resolveHits, applyDamageTo, tokenDistance, type Combatant, type DamageResult, type RangeCheck, type SightResult } from "../../src/lib/domain/combat-actions/index";
 import { damageRuleNotes, minionNote, minionPicker, type DamageRuleNote } from "../../src/lib/domain/combat-actions/damage";
 import { sightRule } from "../../src/lib/domain/combat-actions/sight";
-import { darknessEdge, underwaterDisadvantage } from "../../src/lib/domain/combat-map/light";
+import { darknessEdge, darknessLabels, underwaterDisadvantage } from "../../src/lib/domain/combat-map/light";
 import type { ModeOf, RuleModes } from "../../src/lib/rules/registry";
 import { tokenVisibility } from "../../src/lib/domain/combat-map/index";
 import { countsAsActionRoll } from "../../src/lib/domain/countdowns/advanced";
@@ -263,25 +263,20 @@ export function rangesOn(s: Pick<AttackScene, "definedRanges"> | null | undefine
 }
 
 /**
- * Plan rule-switches OE: what the environment adds to a PC's weapon attack roll. M3 `darkness` (CB p.104; user answer Q6,
- * 2026-11-05): in the campaign's dim light a ranged weapon (printed range beyond Melee; Defined Ranges does not change a
- * weapon's range) gets a disadvantage die ("disadvantage", "both") and / or `darknessDifficulty` added to each target's
- * Difficulty or Evasion ("difficulty", "both"); Book and Manual add nothing (`darknessEdge`). Underwater (optional rule,
- * CB p.168): the live map marked Underwater gives one disadvantage unless the attacker's token "fights underwater".
- * `labels` name what applied, for the roll's public line.
+ * Plan rule-switches OE / OE2: what the environment adds to a PC's weapon attack roll. M3 `darkness` (CB p.104; user
+ * answers Q6, 2026-11-05, and 2026-11-06: "dim-light variants affect EVERY PC action roll with a Difficulty"): in the
+ * campaign's dim light any attack, Melee too, gets a disadvantage die ("disadvantage", "both") and / or
+ * `darknessDifficulty` added to each target's Difficulty or Evasion ("difficulty", "both"); Book and Manual add nothing
+ * (`darknessEdge`). Underwater (optional rule, CB p.168): the live map marked Underwater gives one disadvantage unless the
+ * attacker's token "fights underwater". `labels` name what applied, for the roll's public line.
  */
 export function attackEnvironment(
   s: Pick<AttackScene, "map" | "attacker"> & { scene: Pick<Scene, "light"> },
-  host: Pick<Host, "weaponRange">,
   modes: Pick<RuleModes, "darkness" | "darknessDifficulty" | "underwater">,
 ): { disadvantage: number; difficulty: number; labels: string[] } {
-  const dark = darknessEdge(s.scene.light, host.weaponRange !== null && host.weaponRange !== "melee", modes.darkness, modes.darknessDifficulty);
+  const dark = darknessEdge(s.scene.light, modes.darkness, modes.darknessDifficulty);
   const water = underwaterDisadvantage(modes.underwater && s.map.underwater === true, s.attacker.fightsUnderwater === true);
-  const labels = [
-    ...(dark.disadvantage > 0 ? ["dim light: disadvantage"] : []),
-    ...(dark.difficulty > 0 ? [`dim light: +${dark.difficulty} Difficulty`] : []),
-    ...(water > 0 ? ["underwater: disadvantage"] : []),
-  ];
+  const labels = [...darknessLabels(dark), ...(water > 0 ? ["underwater: disadvantage"] : [])];
   return { disadvantage: dark.disadvantage + water, difficulty: dark.difficulty, labels };
 }
 
@@ -2395,10 +2390,10 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     sheet = { ...sheet, stress: sheet.stress + 1 };
   }
 
-  // ---- plan rule-switches OE: the environment. M3's variants (CB p.104) on a ranged attack in dim light (a disadvantage
+  // ---- plan rule-switches OE / OE2: the environment. M3's variants (CB p.104) on any attack in dim light (a disadvantage
   // die and / or +N to every target's Difficulty); Underwater (optional rule, CB p.168) gives the roll disadvantage
   // unless the attacker's token is marked "fights underwater".
-  const environment = attackEnvironment(req.scene, host, modes);
+  const environment = attackEnvironment(req.scene, modes);
   // ---- the roll (R1, R9); cover gives one disadvantage (Q2), unless M1 is Manual (RC1: the GM is told instead)
   const cover = coverApplies(campaign, allTargets) || pcTargets.some((t) => sightRule(t.sheet.name, t.sight, modes.lineOfSight).cover);
   for (const t of allTargets) {

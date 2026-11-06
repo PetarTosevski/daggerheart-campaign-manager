@@ -34,7 +34,8 @@
  * `applyTick` with the group's first row as its entry, so undoing the roll takes the tick back. Once the countdown has
  * ended (0 before this roll), each roller marks 1 Stress instead (D4 `stressOverflow` respected: Manual drops the
  * overflow and notes the GM); the Stress is a row with the sheet before in the roll's group (undo restores it). A Tag
- * Team ticks once and both PCs mark the Stress. Off, or no Underwater live map: nothing.
+ * Team ticks once and both PCs mark the Stress. Off, or no Underwater live map: nothing. A PC whose token the GM marked
+ * "breathes underwater" (`combatScenes.setBreathesUnderwater`, plan OE2) counts as off the map here: no tick, no Stress.
  *
  * ```ts
  * const hopeFear = hopeFearModeOf(campaign);
@@ -130,7 +131,8 @@ async function planBreath(ctx: QueryCtx, campaign: Doc<"campaigns">, rollers: re
     .query("combatTokens")
     .withIndex("by_map", (q) => q.eq("mapId", scene.map._id))
     .take(MAX_COMBAT_TOKENS);
-  const onMap = new Set(tokens.flatMap((t) => (t.ref.kind === "pc" ? [t.ref.characterId as string] : [])));
+  // Plan OE2 (user 2026-11-06): a PC the GM marked as breathing underwater holds no breath (no tick, no Stress).
+  const onMap = new Set(tokens.flatMap((t) => (t.ref.kind === "pc" && t.breathesUnderwater !== true ? [t.ref.characterId as string] : [])));
   const underwater = rollers.filter((id) => onMap.has(id));
   if (underwater.length === 0) return null;
   const breath = scene.breath;

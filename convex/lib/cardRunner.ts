@@ -48,6 +48,7 @@ import { lineOfSight, rangeCheck, rangeFromWeapon, tokenDistance, type Combatant
 import { sightRule, type SightMode } from "../../src/lib/domain/combat-actions/sight";
 import { conditionDiceNotes, rangeAsk, rangeAskNotes, stressOverflowNotes, targetsConditionDice, type UseRuleNote } from "../../src/lib/domain/card-effects/rule-notes";
 import { tokenVisibility } from "../../src/lib/domain/combat-map/index";
+import { darknessEdge, underwaterDisadvantage } from "../../src/lib/domain/combat-map/light";
 import { derivedDefense, derivedThresholds, withPassiveTraits } from "../../src/lib/domain/characters/derived";
 import { withEffects } from "../../src/lib/domain/characters/effects";
 import { hopeMax, tierForLevel } from "../../src/lib/domain/characters/index";
@@ -67,6 +68,7 @@ import { FEATURE_USES_MAX } from "../../src/lib/validation/character-constants";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { activeAreasOnMap, areaFactsFor, memberConditionsFor, observerConditions } from "./combatAreas";
+import { campaignLight } from "./campaignLight";
 import type { AttackScene } from "./combatActions";
 import { preparedFor } from "./areaSight";
 import { DEFAULT_OPTIONALS, MAX_CARD_TARGETS, MAX_CHAIN_LINKS, type CardRoll, type ParsedChoices } from "./cardChoices";
@@ -884,6 +886,13 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
     for (const summary of conditionDiceNotes(t.kind === "enemy" ? t.instance.label : t.sheet.name, targetConditions[i]!, modes.conditionDice)) ruleNotes.push({ ruleId: "conditionDice", summary });
   }
   const live = withEffects(paidSheet);
+  // Plan rule-switches OE2 (user 2026-11-06 on dcm-bxp.134): the environment on the use's rolls. M3's variant (CB p.104)
+  // goes to the runner (`RunContext.darkness`), which adds it to each action roll that has a Difficulty; off the map the
+  // campaign's light decides. Underwater (optional rule, CB p.168): an attack roll on the Underwater live map gets one
+  // disadvantage unless the actor's token "fights underwater" (as a weapon attack's `attackEnvironment`).
+  const lightLevel = scene ? scene.scene.light : modes.darkness === "book" || modes.darkness === "manual" ? "day" : (await campaignLight(ctx, req.campaign)).light;
+  const darkness = darknessEdge(lightLevel, modes.darkness, modes.darknessDifficulty);
+  const underwater = attackRoll && scene ? underwaterDisadvantage(modes.underwater && scene.map.underwater === true, scene.attacker.fightsUnderwater === true) : 0;
 
   // ---- card-specific fixes from the domain tables' "Notes for CA4"
   const numbers = { ...choices.numbers };
@@ -996,6 +1005,8 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
     damageRules: modes,
     // Plan rule-switches ODR2: Defined Ranges off, nothing the use picks or counts by range applies on its own.
     ...(modes.definedRanges ? {} : { definedRanges: false }),
+    // Plan rule-switches OE2: M3's dim-light variant on the use's action rolls with a Difficulty (the runner applies it).
+    ...(darkness.disadvantage > 0 || darkness.difficulty > 0 ? { darkness } : {}),
     useId: use.id,
     // Off the map a self use targets the actor itself (SD3).
     targets: !scene && spec?.side === "self" ? [actor] : targets.map((t) => combatantOf(t, actor)),
@@ -1033,7 +1044,7 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
       ...(roll.trait !== undefined ? { trait: roll.trait } : {}),
       ...(choices.weapon !== undefined ? { weapon: choices.weapon } : {}),
       advantage: (roll.advantage ?? 0) + conditionEdge.advantage,
-      disadvantage: (roll.disadvantage ?? 0) + (cover ? 1 : 0) + conditionEdge.disadvantage,
+      disadvantage: (roll.disadvantage ?? 0) + (cover ? 1 : 0) + conditionEdge.disadvantage + underwater,
       help: roll.help ?? 0,
       modifier: (roll.modifier ?? 0) + exp.value + (attackRoll ? live.attackBonus : 0),
       ...(roll.difficulty !== undefined ? { difficulty: roll.difficulty } : {}),
