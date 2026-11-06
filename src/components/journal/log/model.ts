@@ -3,16 +3,19 @@ import {
   ArrowUpCircle,
   BookmarkPlus,
   Compass,
+  Crosshair,
   Dices,
   Download,
   Droplet,
   Flag,
+  HeartCrack,
   Hourglass,
   Leaf,
   Moon,
   PenLine,
   Play,
   Shield,
+  ShieldHalf,
   Skull,
   Sparkles,
   Square,
@@ -30,9 +33,12 @@ import type { JournalLog, JournalLogIcon, JournalLogLine } from "../../../../con
  * `journalLog.list` for add, remove, hide, unhide and re-word (rule 12: a click with visible latency shows at once).
  */
 
-/** One icon per line kind (design: scene compass, roll, combat, spell, Fear, hit, defeat). */
+/** One icon per line kind and roll type (design: scene compass, roll, combat, spell, Fear, hit, defeat; dcm-z9rz.28). */
 export const LOG_ICONS: Record<JournalLogIcon, { Icon: LucideIcon; label: string }> = {
   roll: { Icon: Dices, label: "Roll" },
+  reactionRoll: { Icon: ShieldHalf, label: "Reaction roll" },
+  damageRoll: { Icon: HeartCrack, label: "Damage roll" },
+  attackRoll: { Icon: Crosshair, label: "Attack roll" },
   gmRoll: { Icon: Dices, label: "GM roll" },
   feature: { Icon: Sparkles, label: "Feature or spell" },
   levelUp: { Icon: ArrowUpCircle, label: "Level up" },

@@ -17,13 +17,21 @@ vi.mock("convex/react", () => ({
     const run = async (args: Record<string, unknown>) => {
       calls.list.push({ name, args });
       if (calls.fail[name]) throw calls.fail[name];
-      return null;
+      return name === "sessionWrap:callMilestone" ? { flagged: 2, called: true, milestoneAt: 1 } : null;
     };
     return Object.assign(run, { withOptimisticUpdate: () => run });
   },
 }));
 
-const { AfterSession, Recap, levelUpLine } = await import("../../../src/components/journal/recap");
+vi.mock("next/link", () => ({
+  default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
+    <a href={href} {...rest}>
+      {children}
+    </a>
+  ),
+}));
+
+const { AfterSession, Recap, levelUpLine, milestoneLine } = await import("../../../src/components/journal/recap");
 
 const campaignId = "c1" as Id<"campaigns">;
 const sessionId = "s6" as Id<"sessions">;
@@ -155,6 +163,29 @@ describe("After the session", () => {
     fireEvent.keyDown(screen.getByRole("textbox", { name: "Loot" }), { key: "Escape" });
     expect(screen.queryByRole("textbox")).toBeNull();
     expect(saves("sessionWrap:setLoot")).toHaveLength(1);
+  });
+
+  it("dcm-z9rz.29: shows the milestone; 'Call milestone' asks to confirm, then calls it once", async () => {
+    render(<AfterSession campaignId={campaignId} sessionId={sessionId} isGm />);
+    expect(screen.getByText("Milestone")).toBeTruthy();
+    expect(screen.getByText("Not yet")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Call milestone" }));
+    expect(saves("sessionWrap:callMilestone")).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("group", { name: "Confirm the milestone" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Call milestone" }));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Level up the party" })));
+    expect(saves("sessionWrap:callMilestone")).toEqual([{ campaignId, sessionId, idempotencyKey: expect.any(String) }]);
+    expect(screen.getByText("2 characters can level up.")).toBeTruthy();
+    cleanup();
+
+    const reached = new Date(2025, 10, 2, 21, 0).getTime();
+    results["sessionWrap:after"] = { ...(results["sessionWrap:after"] as object), milestoneAt: reached };
+    render(<AfterSession campaignId={campaignId} sessionId={sessionId} isGm />);
+    expect(screen.getByText("Reached 2 Nov")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open Party to level up" })).toHaveAttribute("href", "/campaigns/c1/party");
+    expect(screen.queryByRole("button", { name: "Call milestone" })).toBeNull();
+    expect(milestoneLine(null)).toBe("Not yet");
   });
 
   it("shows None without loot or level-ups, and a note when truncated", () => {

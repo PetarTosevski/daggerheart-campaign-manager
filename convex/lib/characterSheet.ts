@@ -32,6 +32,7 @@
  * });
  * ```
  */
+import { hopePaid } from "../../src/lib/domain/journal/tally";
 import { appError } from "../../src/lib/errors/app-error";
 import {
   characterSheetSchema,
@@ -97,7 +98,8 @@ export function storedSheet(sheet: CharacterSheetInput) {
  * Exact spend (dcm-z9rz.23, user 2026-11-04 "count the spend"): a path that pays Hope says how much through
  * `noteHopeSpent` before the save, so a save that pays and gains in one go (an Experience on a roll with Hope, a card
  * cost paid by the roll's own Hope) still counts what was paid. The save counts the larger of the noted spend and the
- * net drop; a path that notes nothing counts the net drop.
+ * net drop; a path that notes nothing counts the net drop. Hope lost because a scar closed its slot is no drop
+ * (`hopePaid`, dcm-z9rz.27: only Hope a player pays counts).
  *
  * Undo (dcm-z9rz.22, user 2026-11-04 "undo removes it"): what a save counted waits for the character's next `logAction`
  * row with a `before` in this mutation, which records it (`sessionTally`); undoing the row takes it back off the same
@@ -117,7 +119,7 @@ export async function saveSheet(
   state.declared.delete(characterId);
   const before = previous === null ? null : trackedCounts(previous.sheet);
   if (previous === null || before === null) return;
-  const hopeSpent = Math.max(0, declared, before.hope - stored.hope);
+  const hopeSpent = hopePaid(before, stored, declared);
   const hpMarked = Math.max(0, stored.hp - before.hp);
   if (hopeSpent === 0 && hpMarked === 0) return;
   const sessionId = await countLiveSessionStats(ctx, previous.campaignId, characterId, hopeSpent, hpMarked);
@@ -195,10 +197,11 @@ export async function revertSessionTally(ctx: MutationCtx, deltas: readonly (Ses
 }
 
 /** Hope and marked HP of a stored sheet blob (every sheet version stores both as numbers), or null for a blob without them. */
-function trackedCounts(raw: unknown): { hope: number; hp: number } | null {
+function trackedCounts(raw: unknown): { hope: number; hp: number; scars: number; hopeSlotBonus?: number } | null {
   if (typeof raw !== "object" || raw === null) return null;
-  const { hope, hp } = raw as { hope?: unknown; hp?: unknown };
-  return typeof hope === "number" && typeof hp === "number" ? { hope, hp } : null;
+  const { hope, hp, scars, hopeSlotBonus } = raw as { hope?: unknown; hp?: unknown; scars?: unknown; hopeSlotBonus?: unknown };
+  if (typeof hope !== "number" || typeof hp !== "number") return null;
+  return { hope, hp, scars: typeof scars === "number" ? scars : 0, ...(typeof hopeSlotBonus === "number" ? { hopeSlotBonus } : {}) };
 }
 
 /**

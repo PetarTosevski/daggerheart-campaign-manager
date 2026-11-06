@@ -12,3 +12,4 @@ export * from "./windows";
 export * from "./log";
 export * from "./scenes";
 export * from "./summary";
+export * from "./tally";

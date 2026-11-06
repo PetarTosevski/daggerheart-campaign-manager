@@ -1,10 +1,13 @@
 "use client";
 
+import { useQuery } from "convex/react";
 import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 
 import { bandOf, tokenDistance } from "@/lib/domain/combat-actions/distance";
 import { RANGE_BANDS } from "@/lib/domain/combat-map/ranges";
 
+import { api } from "../../../../convex/_generated/api";
+import type { Id } from "../../../../convex/_generated/dataModel";
 import type { CombatMapViewport } from "../slots";
 
 /**
@@ -17,7 +20,18 @@ import type { CombatMapViewport } from "../slots";
  * The layer covers the stage while the tool is on, so a drag measures instead of panning the map or moving a token
  * (it calls `preventDefault`, the map area's pointer contract in ./context.ts). Styles are inline: the layer has no
  * stylesheet of its own.
+ *
+ * Rule switches ODR: with the optional rule Defined Ranges off (CB p.103) the map counts no squares: `definedRanges`
+ * false renders nothing (the GM judges ranges by eye). The board passes `useDefinedRanges(campaignId)`.
  */
+
+/**
+ * Rule switches ODR: the campaign's Defined Ranges (CB p.103 optional rule) from `ruleSettings.get`; on (true) while it
+ * loads or without a campaign, so the map keeps today's range rings, hints and measuring until the answer says off.
+ */
+export function useDefinedRanges(campaignId: Id<"campaigns"> | null | undefined): boolean {
+  return useQuery(api.ruleSettings.get, campaignId ? { campaignId } : "skip")?.modes.definedRanges ?? true;
+}
 
 export type Square = { x: number; y: number };
 
@@ -53,7 +67,7 @@ const LABEL: CSSProperties = {
 };
 const SR_ONLY: CSSProperties = { position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" };
 
-export function MeasureLayer({ viewport }: { viewport: CombatMapViewport }) {
+export function MeasureLayer({ viewport, definedRanges = true }: { viewport: CombatMapViewport; definedRanges?: boolean }) {
   const { cell, zoom, w, h, pad, toSquares } = viewport;
   const [line, setLine] = useState<{ from: Square; to: Square } | null>(null);
   const dragging = useRef<number | null>(null);
@@ -80,6 +94,7 @@ export function MeasureLayer({ viewport }: { viewport: CombatMapViewport }) {
     if (dragging.current === e.pointerId) dragging.current = null;
   }
 
+  if (!definedRanges) return null;
   const text = line ? measureText(line.from, line.to) : null;
   const a = line ? centre(line.from) : null;
   const b = line ? centre(line.to) : null;

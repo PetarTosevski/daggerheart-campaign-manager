@@ -26,9 +26,9 @@ describe("terrain grid", () => {
     expect(upscaleTerrain("abc")).toBe("abc");
   });
 
-  it("ships the board's Witherwild terrain and blank Wilds elsewhere", () => {
+  it("ships the owner's painted Witherwild terrain and blank Wilds elsewhere", () => {
     expect(WITHERWILD_TERRAIN).toHaveLength(TERRAIN_COLUMNS * TERRAIN_ROWS);
-    expect(WITHERWILD_TERRAIN).toMatch(/^[rwdmh.#]+$/);
+    expect(WITHERWILD_TERRAIN).toMatch(/^[rwpdkmh.#]+$/);
     expect(WITHERWILD_TERRAIN).toContain("h");
     expect(suggestedTerrain("witherwild")).toBe(WITHERWILD_TERRAIN);
     expect(suggestedTerrain("motherboard")).toBe(BLANK_TERRAIN);

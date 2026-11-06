@@ -88,10 +88,12 @@ test("GM: the design's scenes, states and GM prep; axe at 1440 and 390", async (
   await expect(scene(gm, 4).getByRole("button", { name: "Play this scene" })).toBeHidden();
 });
 
-test("GM: add a scene, edit it in place, play it, mark it done, remove it", async () => {
+test("GM: add a scene (its type first), edit it in place, play it, mark it done, remove it", async () => {
   const { gm } = table;
   await openJournal(gm, table);
   await plan(gm).getByRole("button", { name: "Add scene" }).click();
+  // dcm-z9rz.30: the type is asked first.
+  await plan(gm).getByRole("group", { name: "Scene type" }).getByRole("button", { name: "Combat" }).click();
   const fifth = scene(gm, 5);
   await expect(fifth.getByRole("button", { name: "Scene 5 options" })).toBeVisible();
 

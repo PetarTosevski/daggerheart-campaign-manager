@@ -166,6 +166,20 @@
 .jp-types .jr-lbl {
   padding: 2px 10px 4px;
 }
+/* '+ Add scene' asks the type first (dcm-z9rz.30): the four types and Cancel, right-aligned under the button. */
+.jp-add {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.jp-add-types {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+}
 .jp-hint {
   margin: 0;
   padding: 6px 10px;

@@ -891,7 +891,8 @@ export async function resolveFeatureUse(
     const fromToken = built.creatures.onMap ? built.creatures.scene.scene.tokens.find((t) => t._id === id) : undefined;
     if (fromToken !== undefined) {
       for (const t of built.creatures.scene.scene.tokens) {
-        if (t._id === id || t.side !== "pc" || t.ref.kind !== "pc" || !rangeCheck(fromToken, t, "close").inRange) continue;
+        // Rule switches ODR: Defined Ranges off, every party member on the map is a candidate (the GM judges by eye).
+        if (t._id === id || t.side !== "pc" || t.ref.kind !== "pc" || !rangeCheck(fromToken, t, "close", built.definedRanges).inRange) continue;
         const holder = t._id === actorToken ? null : await built.creatures.resolve(t._id).catch(() => null);
         const holderSheet = t._id === actorToken ? next : holder?.kind === "pc" ? (others.get(holder.character._id)?.after ?? holder.sheet) : null;
         if (holderSheet === null) continue;

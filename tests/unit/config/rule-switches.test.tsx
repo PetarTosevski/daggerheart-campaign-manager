@@ -203,8 +203,8 @@ describe("rule rows: the GM", () => {
     expect(within(d6).queryByRole("radio")).toBeNull();
     expect(within(d6).getByText("Book")).toBeInTheDocument();
     expect(within(d6).getByText(RULE_ROWS_TEXT.comingSoon)).toBeInTheDocument();
-    expect(within(row("fallingDamage")).queryByRole("switch")).toBeNull();
-    expect(within(row("fallingDamage")).getByText("Off")).toBeInTheDocument();
+    expect(within(row("pcConflict")).queryByRole("switch")).toBeNull();
+    expect(within(row("pcConflict")).getByText("Off")).toBeInTheDocument();
   });
 
   it("makes X2 read-only while X1 is Manual", () => {

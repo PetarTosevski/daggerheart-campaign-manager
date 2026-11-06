@@ -10,8 +10,9 @@ import { toggleActionRing, useActionRing } from "../hud/action-ring/store";
 import { canRevive, ReviveBox, ReviveButton, type ReviveTarget } from "../hud/revive";
 import { isLit } from "../hud/spotlight/model";
 import { SpotlightPools, useSpotlightLit } from "../hud/spotlight/light";
-import { TokenFace, moveNoticeText, pcTokenFace, refuseMove, useHudMoveLock, useHudTokens, useTokenHope } from "../hud/token";
+import { FallBox, FallButton, TokenFace, moveNoticeText, pcTokenFace, refuseMove, useFallingDamage, useHudMoveLock, useHudTokens, useTokenHope, type FallTarget } from "../hud/token";
 import { useMapView } from "../map-view/context";
+import { useDefinedRanges } from "../map-view/measure";
 import { MovementOverlay, useLayoutMovementGrid, type SeenMasks } from "../map-view/movement-overlay";
 import type { MapLayerProps } from "../slots";
 import { okView, useFogMasks, useStoredExplored, useViewing } from "../vision/use-vision";
@@ -93,6 +94,8 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
   const tokens = useTokens(campaignId, role, map._id);
   const actions = useTokenActions(campaignId, map);
   const rings = useRings();
+  // Rule switches ODR: with Defined Ranges off (CB p.103 optional rule) no range circles show and R does nothing.
+  const definedRanges = useDefinedRanges(campaignId);
   const drag = useRef<Drag | null>(null);
   const [preview, setPreview] = useState<{ id: string; dx: number; dy: number } | { id: string; angle: number } | null>(null);
   const [reviving, setReviving] = useState<ReviveTarget | null>(null);
@@ -107,6 +110,9 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
   const hope = useTokenHope(campaignId, map._id, hud !== null);
   // The token in the scene spotlight stands in a stage light (HUD only; bead dcm-bxp.99.32.35).
   const lit = useSpotlightLit(campaignId, hud !== null);
+  // Optional rule "Falling and collision" (plan rule-switches OFA, CB p.168): the GM's Fall pill on PC tokens.
+  const falls = useFallingDamage(campaignId, hud !== null && gm);
+  const [falling, setFalling] = useState<FallTarget | null>(null);
   const ring = useActionRing();
   // H6.2 (HUD only): while the GM holds the spotlight a player's token moves are refused like actions.
   const moveLock = useHudMoveLock(campaignId, role, hud !== null);
@@ -150,7 +156,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
       return;
     }
     if (!selected) return;
-    if (e.key === "r" || e.key === "R") rings.toggle(selected._id);
+    if ((e.key === "r" || e.key === "R") && definedRanges) rings.toggle(selected._id);
     if (gm && !noDelete && (e.key === "Delete" || e.key === "Backspace")) {
       e.preventDefault();
       onSelectToken(null);
@@ -234,7 +240,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
     void actions.turn(d.id, snapTurn(Math.atan2(e.clientY - d.cy, e.clientX - d.cx)));
   }
 
-  const ringed = tokens.filter((t) => rings.on(t._id));
+  const ringed = definedRanges ? tokens.filter((t) => rings.on(t._id)) : [];
   // The announcement sits above the token it is about (stage pixels), or at the stage's corner.
   const noticeToken = notice ? tokens.find((t) => t._id === notice.tokenId) : undefined;
   const noticeAt: CSSProperties | undefined = noticeToken
@@ -389,6 +395,9 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
                 style={{ left: (t.x + t.size / 2) * cell, top: t.y * cell + 4 }}
               />
             ) : null}
+            {hud && gm && falls && t.side === "pc" && t.characterId ? (
+              <FallButton target={{ tokenId: t._id, name: t.name }} onOpen={setFalling} style={{ left: (t.x + t.size / 2) * cell, top: t.y * cell + 4 }} />
+            ) : null}
             </Fragment>
           );
         })}
@@ -406,6 +415,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
       {notice ? (hud ? moveNoticeText(notice) : notice.text) : ""}
     </p>
     {reviving ? <ReviveBox campaignId={campaignId} mapId={map._id} target={reviving} onClose={() => setReviving(null)} /> : null}
+    {falling ? <FallBox campaignId={campaignId} target={falling} onClose={() => setFalling(null)} /> : null}
     {actions.error ? (
       <p role="alert" className="cm-alert cm-tokens-error">
         {actions.error}

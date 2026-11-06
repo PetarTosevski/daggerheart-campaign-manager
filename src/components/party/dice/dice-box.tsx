@@ -1,5 +1,7 @@
 "use client";
 
+import { DiceBoundary } from "./boundary";
+import { FateRoll } from "./free-roll";
 import "./dice.css";
 
 import { useQuery } from "convex/react";
@@ -561,6 +563,12 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
           ) : null}
           <div className="dc-group">
             <TagTeam campaignId={campaignId} character={character} disabled={unavailable} pending={choices?.tagTeam ?? null} />
+          </div>
+          {/* Rule switches OFT: Fate rolls (CB p.168, optional) live in every player's dice box. */}
+          <div className="dc-group">
+            <DiceBoundary label="Fate roll">
+              <FateRoll campaignId={campaignId} />
+            </DiceBoundary>
           </div>
         </div>
       </details>
