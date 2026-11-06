@@ -24,7 +24,13 @@ import { describe, expect, it, vi } from "vitest";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { placeDuplicate } from "../../convex/combatTokens";
+import { pcRollAdversaryUses, rangeGatedUses } from "../../convex/lib/adversaryActions";
 import { readSheet, saveSheet } from "../../convex/lib/characterSheet";
+import { autoPicked, autoPickRange, sneakAttackApplies, sneakAttackAsk } from "../../convex/lib/combatActions";
+import { targetLabel } from "../../src/components/combat-map/drawer/use/model";
+import { chainRows } from "../../src/components/combat-map/hud/pick-area/chain";
+import { bandsFrom, conflictRows, forcedRows } from "../../src/components/combat-map/hud/pick-attack/model";
+import { adversaryEffects } from "../../src/lib/srd/adversary-effects/index";
 import { rangeCheck } from "../../src/lib/domain/combat-actions/distance";
 import { anyInMelee, inMelee } from "../../src/lib/domain/combat-map/reach";
 import type { CardEffect } from "../../src/lib/domain/card-effects/types";
@@ -108,12 +114,12 @@ async function arena(opts: { definedRanges?: boolean; outOfRange?: "ask" | "refu
     return ctx.db.insert("encounters", { campaignId, name: "Ambush", status: "running", pcs: 2, adjustments: [], gmTurn: 1, createdAt: now, updatedAt: now, startedAt: now });
   });
   let order = 0;
-  const enemy = (label: string, x: number, y: number) =>
+  const enemy = (label: string, x: number, y: number, adversaryId = "bear") =>
     t.run(async (ctx) => {
       const instanceId = await ctx.db.insert("encounterAdversaries", {
         campaignId,
         encounterId,
-        source: { kind: "srd", adversaryId: "bear" },
+        source: { kind: "srd", adversaryId },
         label,
         order: order++,
         summoned: false,
@@ -300,5 +306,103 @@ describe("rule switches ODR: Defined Ranges (CB p.103)", () => {
       const out = await code(a.gm.mutation(api.combatTokens.move, { campaignId: a.campaignId, tokenId: a.ash, x: 6, y: 10, carry: [bear.tokenId] }));
       expect(out).toBe(definedRanges ? "COMBAT_TARGET_INVALID" : "ok");
     }
+  });
+});
+
+/**
+ * ODR3 (docs/tasks/TASK-RULES-ODR3.md; user 2026-11-06 on dcm-bxp.134): the last range spots. With the rule off an
+ * adversary's range-gated trigger (Ill Omen, HF p.95: "When a PC within Close range makes an action roll") neither runs
+ * nor is offered and the GM is asked; Sneak Attack's "an ally is within Melee range of your target" (CB p.42) is the
+ * player's tick plus a GM question; an automatic "all ... within" pick (Elemental Incarnation, CB p.30) names no one; the
+ * client rows and labels show no band.
+ */
+describe("rule switches ODR3: the last Defined Ranges spots", () => {
+  allowWorldEmails();
+
+  const illOmenRoll = { kind: "action" as const, hope: 5, fear: 7, total: 12, withHope: false, critical: false };
+
+  it("on: Ill Omen runs on a PC's action roll; off: it doesn't, and one GM-only note in the roll's group asks who is in range", async () => {
+    for (const definedRanges of [true, false]) {
+      const a = await arena({ definedRanges });
+      await a.enemy("Owl Witch", 7, 10, "owl-witch");
+      const campaign = (await a.t.run((ctx) => ctx.db.get("campaigns", a.campaignId)))!;
+      const out = await a.t.run((ctx) => pcRollAdversaryUses(ctx, campaign, { characterId: a.w.characterA, roll: illOmenRoll as never, groupId: "g-odr3", actorId: a.w.users.player }));
+      if (definedRanges) {
+        expect(out.lines.some((l) => l.includes("Ill Omen"))).toBe(true);
+        expect(out.rangeAsks).toBeUndefined();
+        expect(await a.notes()).toEqual([]);
+      } else {
+        expect(out.lines).toEqual([]);
+        expect(out.bonuses).toEqual([]);
+        expect(out.rangeAsks).toEqual(["Ill Omen (Owl Witch): who is within Close range?"]);
+        expect(await a.notes()).toEqual([{ summary: "Ill Omen (Owl Witch): who is within Close range?", visibility: "gm" }]);
+        const note = (await a.t.run((ctx) => ctx.db.query("actionLog").collect())).find((r) => r.kind === "rule")!;
+        expect([note.groupId, note.undoable]).toEqual(["g-odr3", true]);
+      }
+    }
+  });
+
+  it("off: a weapon attack near an Owl Witch posts the Ill Omen question in the attack's group", async () => {
+    const a = await arena({ definedRanges: false });
+    const bear = await a.enemy("Bear", 6, 10);
+    await a.enemy("Owl Witch", 8, 10, "owl-witch");
+    const r = await a.attack(a.player, [bear.tokenId]);
+    if (r.status !== "resolved") throw new Error(`expected resolved, got ${r.status}`);
+    const rows = await a.t.run((ctx) => ctx.db.query("actionLog").collect());
+    const note = rows.find((x) => x.kind === "rule" && x.ruleId === "definedRanges" && x.summary.startsWith("Ill Omen"));
+    expect(note).toMatchObject({ visibility: "gm", groupId: rows.find((x) => x._id === r.entryId)!.groupId });
+  });
+
+  it("off: Sneak Attack is the player's tick; without it the GM is asked (on: the map decides, no question)", async () => {
+    const a = await arena({ definedRanges: false });
+    await a.edit({ classId: "rogue", subclassId: "nightwalker" } as Partial<CharacterSheet>);
+    const bear = await a.enemy("Bear", 6, 10);
+    const plain = await a.attack(a.player, [bear.tokenId]);
+    if (plain.status !== "resolved") throw new Error(`expected resolved, got ${plain.status}`);
+    expect(plain.riders ?? []).not.toContain("Sneak Attack");
+    expect((await a.notes()).map((n) => n.summary)).toContain(sneakAttackAsk("Ash", ["Bear"]));
+    const ticked = await a.attack(a.player, [bear.tokenId], { damageOptions: ["sneakAttack"] });
+    if (ticked.status !== "resolved") throw new Error(`expected resolved, got ${ticked.status}`);
+    expect(ticked.riders).toContain("Sneak Attack");
+    expect((await a.notes()).filter((n) => n.summary.startsWith("Sneak Attack"))).toHaveLength(1);
+  });
+
+  it("pure: rangeGatedUses keeps the ungated uses and asks for the gated ones only while off", () => {
+    const illOmen = adversaryEffects("owl-witch").find((e) => e.feature === "Ill Omen")!;
+    const uses = [{ effect: illOmen, use: illOmen.uses[0]!, mode: "auto" as const }];
+    expect(rangeGatedUses(uses, true, "Owl Witch")).toEqual({ uses, asks: [] });
+    expect(rangeGatedUses(uses, false, "Owl Witch")).toEqual({ uses: [], asks: ["Ill Omen (Owl Witch): who is within Close range?"] });
+  });
+
+  it("pure: autoPicked names no one off (Elemental Incarnation's 'all other adversaries within Very Close'); Sneak Attack's map half is unknown", async () => {
+    const spec = { side: "enemy" as const, range: "veryClose" as const, count: { kind: "all" as const }, excludeSubject: true };
+    const scene = { definedRanges: false, scene: { tokens: [] }, viewer: { index: 0 } } as never;
+    expect(await autoPicked({ scene, host: { weaponRange: "melee" } } as never, spec, undefined)).toEqual([]);
+    expect(autoPickRange({ weaponRange: "melee" }, spec)).toBe("veryClose");
+    expect(autoPickRange({ weaponRange: "far" }, { ...spec, range: "weapon" })).toBe("far");
+    expect(autoPickRange({ weaponRange: null }, { ...spec, range: "unlimited" })).toBeNull();
+    expect(autoPickRange({ weaponRange: null }, { ...spec, count: { kind: "one" } })).toBeNull();
+    const sheet = { conditions: [] } as unknown as CharacterSheet;
+    expect(sneakAttackApplies(sheet, scene, [])).toBeNull();
+    expect(sneakAttackApplies({ conditions: ["cloaked"] } as unknown as CharacterSheet, scene, [])).toBe(true);
+  });
+
+  it("client: no band in chain rows, the Charge label, the attack picker's PC rows, forced rows and Minion bands while off", () => {
+    const creatures = [
+      { tokenId: "a" as Id<"combatTokens">, name: "Imp", side: "enemy" as const, at: { x: 0, y: 0 } },
+      { tokenId: "b" as Id<"combatTokens">, name: "Bat", side: "enemy" as const, at: { x: 9, y: 0 } },
+    ];
+    expect(chainRows(["b"], creatures, ["a"])[0]!.band).toBe("far");
+    expect(chainRows(["b"], creatures, ["a"], false)[0]!.band).toBeNull();
+    expect(targetLabel({ name: "Bear", band: "far" })).toBe("Bear (Far)");
+    expect(targetLabel({ name: "Bear" })).toBe("Bear");
+    const view = { tokenId: "me" as Id<"combatTokens">, pcs: [{ _id: "me" as Id<"combatTokens">, x: 0, y: 0, size: 1, name: "Ash" }, { _id: "p" as Id<"combatTokens">, x: 20, y: 0, size: 1, name: "Bryn" }], others: [] };
+    expect(bandsFrom(view).get("p")!.band).toBe("veryFar");
+    expect(bandsFrom(view, false).get("p")!.band).toBeNull();
+    const hint = { tokenId: "p" as Id<"combatTokens">, band: "veryFar" as const, inRange: false, lineOfSight: true, cover: false };
+    expect(conflictRows(bandsFrom(view), [hint]).map((r) => [r.reach, r.band])).toEqual([["out", "veryFar"]]);
+    expect(conflictRows(bandsFrom(view, false), [hint], "book", false).map((r) => [r.reach, r.band])).toEqual([["in", null]]);
+    const forced = { requestId: "q", instanceLabel: "Gob", feature: "Beguile", targets: [{ tokenId: "p" as Id<"combatTokens">, name: "Bryn" }] } as never;
+    expect(forcedRows(forced, bandsFrom(view, false))[0]!.band).toBeNull();
   });
 });

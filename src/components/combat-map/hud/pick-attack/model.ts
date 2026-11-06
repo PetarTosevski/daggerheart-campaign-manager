@@ -358,21 +358,27 @@ export function attackSession(input: AttackInput, data: AttackData): PickSession
 
 type Placed = { _id: Id<"combatTokens">; x: number; y: number; size: number };
 
-/** The band from the actor to every token it sees (the engine's `rangeCheck`, as H3.0's rows use). */
-export function bandsFrom(view: { tokenId: Id<"combatTokens">; pcs: readonly (Placed & { name: string })[]; others: readonly (Placed & { name: string; side: string })[] }): Map<string, { band: Range; side: PickRow["side"]; name: string }> {
+/**
+ * The band from the actor to every token it sees (the engine's `rangeCheck`, as H3.0's rows use). Rule switches ODR3:
+ * with Defined Ranges off (`definedRanges` false) no band (null): the rows show none.
+ */
+export function bandsFrom(
+  view: { tokenId: Id<"combatTokens">; pcs: readonly (Placed & { name: string })[]; others: readonly (Placed & { name: string; side: string })[] },
+  definedRanges = true,
+): Map<string, { band: Range | null; side: PickRow["side"]; name: string }> {
   const all = [...view.pcs.map((t) => ({ ...t, side: "pc" as const })), ...view.others];
   const self = all.find((t) => t._id === view.tokenId);
-  const out = new Map<string, { band: Range; side: PickRow["side"]; name: string }>();
+  const out = new Map<string, { band: Range | null; side: PickRow["side"]; name: string }>();
   for (const t of all) {
     const side: PickRow["side"] = t._id === view.tokenId ? "self" : t.side === "pc" || t.side === "enemy" || t.side === "ally" ? t.side : "neutral";
-    const band = self ? rangeCheck({ x: self.x, y: self.y, size: self.size }, { x: t.x, y: t.y, size: t.size }, "unlimited").band : "melee";
+    const band = !definedRanges ? null : self ? rangeCheck({ x: self.x, y: self.y, size: self.size }, { x: t.x, y: t.y, size: t.size }, "unlimited").band : "melee";
     out.set(t._id, { band, side, name: t.name });
   }
   return out;
 }
 
 /** A forced attack's locked targets as rows (they may be allies: Beguiled attacks "a target chosen by the Gobstalker"). */
-export function forcedRows(forced: ForcedAttack, bands: ReadonlyMap<string, { band: Range; side: PickRow["side"] }>): PickRowInput[] {
+export function forcedRows(forced: ForcedAttack, bands: ReadonlyMap<string, { band: Range | null; side: PickRow["side"] }>): PickRowInput[] {
   return forced.targets.map((t) => {
     const seen = bands.get(t.tokenId);
     // The GM chose them: no range sanction is asked (combatActions.attack `forcedRequestId`), so every row is in reach.
@@ -386,16 +392,17 @@ const REACH_ORDER: Record<PickRow["reach"], number> = { in: 0, out: 1, los: 2 };
  * Plan rule-switches OP (optional rule "Conflict between PCs", CB p.168; on in `ruleSettings.get`): the attack's rows are
  * the enemies and the other PCs the server lists as targets (`combatActionsReads.targets`, which adds the PCs only while
  * the rule is on), with their reach from the hints: no line of sight is `los` (M1 Manual: pickable, `noLineOfSight`),
- * out of the weapon's range `out` (the server refuses a PC out of range: it never waits for the GM). In reach first.
+ * out of the weapon's range `out` (an attack on one waits for the GM's range sanction, ODR3). In reach first. Rule
+ * switches ODR3: with Defined Ranges off (`definedRanges` false) no row is `out` and none shows a band.
  */
-export function conflictRows(bands: ReadonlyMap<string, { band: Range; side: PickRow["side"]; name: string }>, hints: readonly TargetHint[], sightMode: SightMode = "book"): PickRowInput[] {
+export function conflictRows(bands: ReadonlyMap<string, { band: Range | null; side: PickRow["side"]; name: string }>, hints: readonly TargetHint[], sightMode: SightMode = "book", definedRanges = true): PickRowInput[] {
   const rows: PickRowInput[] = [];
   for (const hint of hints) {
     const seen = bands.get(hint.tokenId);
     if (seen === undefined || (seen.side !== "enemy" && seen.side !== "pc")) continue;
     const blind = !hint.lineOfSight;
-    const reach: PickRow["reach"] = blind && sightMode !== "manual" ? "los" : hint.inRange ? "in" : "out";
-    rows.push({ tokenId: hint.tokenId, name: seen.name, side: seen.side, band: hint.band, reach, ...(blind && sightMode === "manual" ? { noLineOfSight: true as const } : {}) });
+    const reach: PickRow["reach"] = blind && sightMode !== "manual" ? "los" : hint.inRange || !definedRanges ? "in" : "out";
+    rows.push({ tokenId: hint.tokenId, name: seen.name, side: seen.side, band: definedRanges ? hint.band : null, reach, ...(blind && sightMode === "manual" ? { noLineOfSight: true as const } : {}) });
   }
   return rows.sort((a, b) => REACH_ORDER[a.reach] - REACH_ORDER[b.reach]);
 }
@@ -432,7 +439,7 @@ export function minionSession({
   render,
 }: {
   offer: MinionOffer;
-  bands: ReadonlyMap<string, { band: Range }>;
+  bands: ReadonlyMap<string, { band: Range | null }>;
   data: MinionData;
   pick: (instanceIds: Id<"encounterAdversaries">[]) => Promise<void>;
   render: (ctx: PickContext<MinionData>) => ReactNode;

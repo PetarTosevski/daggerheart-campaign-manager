@@ -5,7 +5,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { lineOfSight } from "../../src/lib/domain/combat-actions/index";
 import { createView, tokenVisibility, VISION_BASE_DEG, VISION_MAX_DEG, VISION_STEP_DEG, type VisionToken } from "../../src/lib/domain/combat-map/index";
-import { lightOf } from "../../src/lib/domain/combat-map/light";
+import { darknessLabels, lightOf } from "../../src/lib/domain/combat-map/light";
 import { countsAsActionRoll } from "../../src/lib/domain/countdowns/advanced";
 import { OUTCOME_LABEL } from "../../src/lib/domain/dice/index";
 import { rollGaveHope, WITH_HOPE } from "../../src/lib/domain/session-features/index";
@@ -17,7 +17,7 @@ import { readSheet, saveSheet } from "./characterSheet";
 import { rollDie } from "./dice";
 import { gainFear } from "./fear";
 import { afterPcActionRoll, fearWithheldBy, outcomeWithFear } from "./rollAftermath";
-import { changed, resolveDuality, type DualityArgs, type Loaded } from "./rolls";
+import { changed, darknessOnRoll, resolveDuality, withDarkness, type DualityArgs, type Loaded } from "./rolls";
 import { appError } from "../../src/lib/errors/app-error";
 import { closeRequest, openDifficulty } from "./combatRequests";
 import { postRuleNote, ruleMode } from "./ruleModes";
@@ -547,7 +547,12 @@ async function rollCloak(ctx: MutationCtx, loaded: Loaded, highest: Difficulty, 
   const names = endableHides(sheet);
   const label = hidesLabel(names);
   // R3 Manual (plan rule-switches RA): `resolveDuality` gains neither the Hope nor the Fear; the aftermath notes the Fear.
-  const { paid, next, roll, effects, hopeFear } = await resolveDuality(ctx, loaded, cloakRollArgs(highest.value), rollDie, false);
+  // Plan rule-switches ODR3 (OE2's note): the roll is an action roll with a Difficulty made in dim light, so M3's variant
+  // applies as on the dice box (a disadvantage die and / or +N Difficulty; Book and Manual add nothing).
+  const dark = await darknessOnRoll(ctx, campaign, cloakRollArgs(highest.value));
+  const darkLabels = darknessLabels(dark);
+  const { paid, next, roll, effects, hopeFear } = await resolveDuality(ctx, loaded, withDarkness(cloakRollArgs(highest.value), dark), rollDie, false);
+  const difficulty = highest.value + dark.difficulty;
   const success = roll.outcome === "critical" || roll.outcome === "successHope" || roll.outcome === "successFear";
   // Lane C2: the roll ends the rogue's other sourced conditions it ends (a roll with Fear), as any roll does.
   const after = endConditionsOnRoll(success ? next : withoutHides(next, names), roll).sheet;
@@ -563,7 +568,7 @@ async function rollCloak(ctx: MutationCtx, loaded: Loaded, highest: Difficulty, 
     actorId,
     kind: "roll",
     visibility: "public",
-    summary: `${sheet.name} ${seenHow}: Finesse action roll ${roll.total}, ${OUTCOME_LABEL[roll.outcome]}; ${success ? `stays ${label}` : `no longer ${label}`}`,
+    summary: `${sheet.name} ${seenHow}: Finesse action roll ${roll.total}${darkLabels.length > 0 ? ` (${darkLabels.join(", ")})` : ""}, ${OUTCOME_LABEL[roll.outcome]}; ${success ? `stays ${label}` : `no longer ${label}`}`,
     roll: publicRoll,
     groupId,
     ...(sheetChanged ? { before: sheet } : {}),
@@ -576,7 +581,7 @@ async function rollCloak(ctx: MutationCtx, loaded: Loaded, highest: Difficulty, 
     actorId,
     kind: "combat",
     visibility: "gm",
-    summary: `${sheet.name} · ${label} in dim light → Finesse ${roll.total} vs Difficulty ${highest.value} (${highest.label}): ${success ? `stays ${label}` : `no longer ${label}`}`,
+    summary: `${sheet.name} · ${label} in dim light → Finesse ${roll.total} vs Difficulty ${difficulty} (${highest.label}${dark.difficulty > 0 ? `, +${dark.difficulty} dim light` : ""}): ${success ? `stays ${label}` : `no longer ${label}`}`,
     groupId,
     undoable: true,
   });

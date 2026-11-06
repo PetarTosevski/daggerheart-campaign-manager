@@ -138,8 +138,12 @@ export function validAllies(view: Pick<CountView, "allies">, picked: readonly st
   return picked.filter((id) => ok.has(id)).slice(0, count);
 }
 
-/** "Bear (Far)" for the target select. */
+/**
+ * "Bear (Far)" for the target select. Rule switches ODR3: a target without a band (Defined Ranges off: `chargeOptions`
+ * sends none) is its name only.
+ */
 export function targetLabel(t: Pick<ChargeTarget, "name" | "band">): string {
+  if (t.band === undefined) return t.name;
   return `${t.name} (${t.band === "veryFar" ? "Very Far" : "Far"})`;
 }
 
