@@ -17,6 +17,7 @@ import {
   awaitingAttackValidator,
   beforeOf,
   checkTargets,
+  coverApplies,
   equippedWeapon,
   hostOf,
   pendingAttackValidator,
@@ -187,7 +188,7 @@ export const attack = keyedCampaignMutation({
       // Q1: wait for the GM. Refuse now what the approval would refuse anyway (a character who can't act, unpaid costs,
       // a rider that doesn't ride on this attack).
       assertCanAct(loaded.character, loaded.sheet);
-      rules(() => prepareDuality(loaded.sheet, attackDuality(weapon, roll, targets.some((t) => t.sight.cover)), featureScope(ctx.campaign), null));
+      rules(() => prepareDuality(loaded.sheet, attackDuality(weapon, roll, coverApplies(ctx.campaign, targets)), featureScope(ctx.campaign), null));
       const bands = [...outOfRange.map((t) => ({ tokenId: t.token._id, band: t.check.band })), ...added.filter((a) => !outOfRange.some((t) => t.token._id === a.tokenId))];
       const requestId = await openSanction(ctx, {
         campaignId: ctx.campaign._id,
@@ -302,7 +303,7 @@ export const pickMinions = keyedCampaignMutation({
       const entry = await ctx.db.get("actionLog", entryId);
       if (entry === null || entry.campaignId !== ctx.campaign._id || entry.kind !== "combat" || entry.visibility !== "public") throw appError("NOT_FOUND");
       if (entry.groupId === undefined || entry.characterId === undefined) throw appError("NOT_FOUND");
-      const { character, sheet } = await attacker(ctx, entry.characterId);
+      const { character, sheet, gm } = await attacker(ctx, entry.characterId);
       const offer = await groupOffer(ctx, ctx.campaign._id, entry.groupId);
       if (offer === null || offer.payload.kind !== "minionOffer") throw appError("REQUEST_NOT_OPEN");
       if (!(await encounterRunning(ctx, offer))) {
@@ -310,6 +311,8 @@ export const pickMinions = keyedCampaignMutation({
         return { status: "declined" as const, defeated: 0, targets: [] };
       }
       const payload = offer.payload;
+      // Rule switches RC1, D6 variant "GM picks the extra Minions" (not in the books, Q5 a): only the GM or a co-GM picks.
+      if (payload.picker === "gm" && !gm) throw appError("FORBIDDEN", "The GM picks the extra Minions in this campaign.");
       if (instanceIds.length > payload.extra) throw appError("COMBAT_TARGET_INVALID");
       const counts = new Map<Id<"encounterAdversaries">, number>();
       for (const id of instanceIds) counts.set(id, (counts.get(id) ?? 0) + 1);

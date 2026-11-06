@@ -377,6 +377,11 @@ export const minionOfferPayloadValidator = v.object({
   /** How many extra Minions the attacker may defeat in all. */
   extra: v.number(),
   candidates: v.array(minionCandidateValidator),
+  /**
+   * Rule switches RC1 (widened), D6 variant "GM picks the extra Minions" (not in the books, Q5 a): the GM picks, not the
+   * attacker (`pickMinions` refuses a player with FORBIDDEN). Absent: the attacker picks (the Book).
+   */
+  picker: v.optional(v.literal("gm")),
 });
 
 /**

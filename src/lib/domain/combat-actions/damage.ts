@@ -14,7 +14,9 @@
 // Rule switches (plan rule-switches, tracer RDM): `DamageOptions.rules` carries the campaign's modes (D2 resistance,
 // D4 Stress overflow, D8 defeat at the last HP, Massive Damage); unset = the Book, so unwired callers behave as before.
 // D2 Manual applies the full damage (`resistanceApplied` false); D4 Manual drops the extra Stress (`overflow` true, no
-// HP); D8 Manual leaves an adversary at its last HP up (`lastHp` true, `defeated` false).
+// HP); D8 Manual leaves an adversary at its last HP up (`lastHp` true, `defeated` false). Tracer RC1: `minionPicker` /
+// `minionNote` (D6: Book the attacker picks, `gmPicks` the GM, Manual only the hit Minion falls) and `damageRuleNotes`
+// (the GM's D2 / D8 lines on a PC's hit).
 // CB p.201, "Minion (X)": "This adversary is defeated when they take any damage. For every X damage a PC deals to this
 //   adversary, defeat an additional Minion within range the attack would succeed against."
 // CB p.92, "Marking Stress": "If you're ever forced to mark 1 or more Stress but your slots are already full, you must
@@ -40,6 +42,7 @@ import {
   type DamageSeverity,
   type Thresholds,
 } from "../encounters/damage";
+import type { ModeOf } from "../../rules/registry";
 import type { DamageType, Severity } from "../card-effects/types";
 import type { ResistanceLevel } from "../../srd/adversary-resistance";
 
@@ -209,6 +212,44 @@ export function applyHpTo(target: Combatant, amount: number, damageRules?: Damag
     defeated,
     after: { ...target, hp: next.hp, defeated },
   };
+}
+
+// ---------------------------------------------------------------- rule switches on a PC's damage (plan rule-switches RC1)
+
+/** D6 `minions` (CB p.201): Book (the attacker picks), variant `gmPicks` (not in the books), Manual. */
+export type MinionMode = ModeOf<"minions">;
+
+/**
+ * Who picks the extra Minions a PC's damage defeats (CB p.201: "defeat an additional Minion within range the attack
+ * would succeed against"; the book doesn't say who picks): Book the attacker, `gmPicks` the GM (Q5 a), Manual nobody
+ * (only the hit Minion falls; the GM is told, `minionNote`).
+ */
+export function minionPicker(mode: MinionMode = "book"): "attacker" | "gm" | null {
+  return mode === "manual" ? null : mode === "gmPicks" ? "gm" : "attacker";
+}
+
+/** D6 Manual's note: "Ash's 7 damage: defeat 2 more Minions? (in range: Rats, Wolves)". */
+export function minionNote(attacker: string, damage: number, extra: number, names: readonly string[]): string {
+  return `${attacker}'s ${damage} damage: defeat ${extra} more Minion${extra === 1 ? "" : "s"}?${names.length > 0 ? ` (in range: ${names.join(", ")})` : ""}`;
+}
+
+/** A Manual rule's note on one hit: which rule and the GM's line. */
+export type DamageRuleNote = { ruleId: "resistance" | "adversaryDefeated"; summary: string };
+
+/**
+ * The Manual notes one hit leaves (RDM's words, as the encounter tracker posts them): D2 when the resistance was not
+ * applied (`resistanceApplied` false), D8 when the last HP is marked but the adversary stays up (`lastHp`). Empty in Book.
+ */
+export function damageRuleNotes(label: string, result: Pick<DamageResult, "resisted" | "resistanceApplied" | "incoming" | "lastHp">): DamageRuleNote[] {
+  const notes: DamageRuleNote[] = [];
+  if (result.resistanceApplied === false) {
+    notes.push({
+      ruleId: "resistance",
+      summary: result.resisted === "immune" ? `${label} is immune: no damage? (${result.incoming} taken in full)` : `${label} resists: halve? (${result.incoming} taken in full; halved: ${Math.ceil(result.incoming / 2)})`,
+    });
+  }
+  if (result.lastHp === true) notes.push({ ruleId: "adversaryDefeated", summary: `${label} marked its last HP: defeated?` });
+  return notes;
 }
 
 /** "clear N Hit Points / Stress / Armor Slots" on a creature, kept within the track. */
