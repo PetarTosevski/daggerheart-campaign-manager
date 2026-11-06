@@ -21,6 +21,7 @@ import {
   TABLET_VIEWPORTS,
   type A11yOptions,
 } from "./a11y";
+import { createSessionEncounter } from "./journal/helpers";
 import { gmAndPlayer, type LiveTable } from "./live";
 
 test.describe.configure({ timeout: 240_000 });
@@ -218,7 +219,7 @@ test("sessions in the Journal: no session, Plan, Log & recap live, the end dialo
   await seed(() => client.mutation(api.sessionPrep.addScene, { campaignId, sessionId }));
   await seed(() => client.mutation(api.sessionPrep.addScene, { campaignId, sessionId, type: "social" }));
   await seed(() => client.mutation(api.sessionPrep.setHooks, { campaignId, sessionId, hooks: "The ferryman owes the bandits a toll." }));
-  const { encounterId } = await seed(() => client.mutation(api.sessionPrep.createEncounter, { campaignId, sessionId, idempotencyKey: uuid() }));
+  const encounterId = createSessionEncounter(campaignId, sessionId);
   await seed(() =>
     client.mutation(api.encounters.addAdversary, { campaignId, encounterId, source: { kind: "srd", adversaryId: "jagged-knife-bandit" }, count: 2, summoned: false, idempotencyKey: uuid() }),
   );

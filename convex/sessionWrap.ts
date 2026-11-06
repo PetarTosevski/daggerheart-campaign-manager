@@ -13,9 +13,10 @@ import { MAX_SESSIONS } from "./lib/validators/sessions";
 
 /**
  * Wrap-up (D10 S6, plan `.omc/plans/d10-sessions.yaml`, rule B5): the recap (on `sessions`; since Journal JD5 every
- * member writes it and the whole table reads it for live and played sessions, Journal Q4), 'Loot & gold' and 'Countdowns & threads' (on `sessionPrep`, GM-only, Q4) and
- * calls the milestone (Q5: the roster's 'Party levels up', one way, stamped on the session). `dashboard` hands every
- * member the hero line, the next date and the Last Session card (B9) for S7.
+ * member writes it and the whole table reads it for live and played sessions, Journal Q4), 'Loot & gold' (on
+ * `sessionPrep`, GM-only, Q4; stored 'Countdowns & threads' are still read, their writer `setThreads` went with the old
+ * Wrap-up screen, JF3) and calls the milestone (Q5: the roster's 'Party levels up', one way, stamped on the session).
+ * `dashboard` hands every member the hero line, the next date and the Last Session card (B9) for S7.
  */
 
 // ---------------------------------------------------------------- GM: the stage
@@ -91,13 +92,6 @@ export const setLoot = gmMutation({
   args: { sessionId: v.string(), loot: v.string() },
   returns: v.null(),
   handler: (ctx, { sessionId, loot }) => setPrepText(ctx, sessionId, "loot", loot),
-});
-
-/** 'Countdowns & threads' (B5): trimmed, at most 4000 characters; empty clears it. GM-only (Q4). */
-export const setThreads = gmMutation({
-  args: { sessionId: v.string(), threads: v.string() },
-  returns: v.null(),
-  handler: (ctx, { sessionId, threads }) => setPrepText(ctx, sessionId, "threads", threads),
 });
 
 /**

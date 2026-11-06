@@ -8,7 +8,9 @@ import { freshKey } from "./synth";
  *
  * Every world gets one planned session (`sessionRecords.create`), the row the `sessionId` hint picks. Three reads are
  * for every member (`sessions.current`, `sessionRecords.list`, `sessionWrap.dashboard`); everything else is GM-only
- * (`need: "owner"`), so a player never reads GM prep, the session log, the spotlight counts or the tally. The GM
+ * (`need: "owner"`), so a player never reads GM prep or wrap-up. The old Play-stage reads (`sessionPlay.spotlight`,
+ * `tally`, `log`), `bumpSpotlight`, `sessionPrep.unlinkEncounter` and `sessionWrap.setThreads` were removed (JF3);
+ * `sessionPrep.createEncounter` / `linkEncounter` are internal seeding functions now. The GM
  * entries add a grantee row: a campaign edit grant does not reach the GM's session tools. `sessionRecords.list` runs
  * on the planned session alone, so both players get an empty list (players read only live and played sessions);
  * sessions.test.ts checks the players' view of live and played sessions.
@@ -41,11 +43,6 @@ async function logLine(w: World) {
   w.use("sessionLog", logId);
 }
 
-/** An encounter not linked to any session (the `encounterId` hint picks it). */
-async function encounter(w: World) {
-  await w.as("gm").mutation(api.encounters.create, { campaignId: w.campaignId, name: "Ambush", idempotencyKey: freshKey() });
-}
-
 const gm = (entry: Omit<Entry, "access">): Entry => ({ ...entry, access: "gm", expect: { ...GM_ONLY, ...entry.expect } });
 
 const sessions: Entry[] = [
@@ -72,17 +69,10 @@ const prep: Entry[] = [
   gm({ fn: api.sessionPrep.setScene, setup: scene, args: (w) => ({ sceneId: w.ids.sceneId, text: "Ambush at the ford" }) }),
   gm({ fn: api.sessionPrep.removeScene, setup: scene, args: (w) => ({ sceneId: w.ids.sceneId }) }),
   gm({ fn: api.sessionPrep.setHooks, args: () => ({ hooks: "The bridge is out." }) }),
-  gm({ fn: api.sessionPrep.createEncounter }),
-  gm({ fn: api.sessionPrep.linkEncounter, setup: encounter }),
-  gm({ fn: api.sessionPrep.unlinkEncounter }),
 ];
 
 const play: Entry[] = [
-  gm({ fn: api.sessionPlay.spotlight }),
-  gm({ fn: api.sessionPlay.bumpSpotlight }),
   gm({ fn: api.sessionPlay.resetSpotlight }),
-  gm({ fn: api.sessionPlay.tally }),
-  gm({ fn: api.sessionPlay.log, setup: logLine }),
   gm({ fn: api.sessionPlay.addLog, args: () => ({ text: "The party crossed the river." }) }),
   gm({ fn: api.sessionPlay.removeLog, setup: logLine }),
 ];
@@ -91,7 +81,6 @@ const wrap: Entry[] = [
   gm({ fn: api.sessionWrap.get }),
   // sessionWrap.setRecap is every member's since Journal Q4: journal-recap.entries.ts.
   gm({ fn: api.sessionWrap.setLoot, args: () => ({ loot: "A silver key." }) }),
-  gm({ fn: api.sessionWrap.setThreads, args: () => ({ threads: "Who burned the bridge?" }) }),
   gm({ fn: api.sessionWrap.callMilestone }),
   { fn: api.sessionWrap.dashboard, access: "view" },
 ];

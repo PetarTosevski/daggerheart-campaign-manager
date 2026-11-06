@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { api } from "../../convex/_generated/api";
+import { createSessionEncounter } from "./journal/helpers";
 import { openSessions } from "./visual/helpers";
 
 // Sessions as the hub (TASK-SESSIONS-HUB, user 2026-10-21; Journal JX1 / JX2): a 'Session N' chip on the encounter
@@ -13,7 +14,7 @@ const uuid = () => crypto.randomUUID();
 test("the tracker's and the Combat Map's 'Session N' chips open the session's Log & recap in the Journal", async ({ page }) => {
   const { client, campaignId, url } = await openSessions(page);
   const { sessionId } = await client.mutation(api.sessionRecords.create, { campaignId, idempotencyKey: uuid() });
-  const { encounterId } = await client.mutation(api.sessionPrep.createEncounter, { campaignId, sessionId, idempotencyKey: uuid() });
+  const encounterId = createSessionEncounter(campaignId, sessionId);
   const logUrl = new RegExp(`/journal\\?s=${sessionId}&sv=log$`);
   const logSelected = async () => {
     await expect(page.getByRole("heading", { level: 1, name: "Journal" })).toBeVisible();

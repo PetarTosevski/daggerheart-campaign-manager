@@ -6,7 +6,7 @@ import { appError } from "../src/lib/errors/app-error";
 import { srdAdversary } from "../src/lib/srd/adversary-lookup";
 import type { AdversaryType } from "../src/lib/srd/types";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { internalMutation, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { placedInstances } from "./lib/combatTokenViews";
 import { liveCombatMap, tokensOnMap } from "./lib/combatMaps";
 import { loadEncounter, MAX_ENCOUNTERS, MAX_INSTANCES, MAX_PCS } from "./lib/encounters";
@@ -20,7 +20,8 @@ import { MAX_SCENES, sessionSceneStateValidator, sessionSceneTypeValidator, sess
  * `.omc/plans/journal.yaml`, user answers Q6 and Q7): the GM's planned scenes with their title, state (Planned /
  * Playing now / Done) and, for a Combat scene, its own D8 encounter; 'Hooks & loose threads'; and the session's
  * legacy encounter (`sessionPrep.encounterId`, read as the first Combat scene's, Q6). GM-only on the server (every
- * function is a GM wrapper: a player gets FORBIDDEN, an outsider NOT_FOUND). The prep row is created by the first
+ * public function is a GM wrapper: a player gets FORBIDDEN, an outsider NOT_FOUND; the legacy encounter's create and
+ * link are internal seeding functions since JF3). The prep row is created by the first
  * write (`sessionPrepOf` null = empty prep). Encounters stay D8's (convex/encounters.ts edits them; never copied);
  * this file only creates drafts and keeps the links, which may dangle after D8 deletes an encounter (read as none).
  */
@@ -461,50 +462,40 @@ export const unlinkSceneEncounter = gmMutation({
 // ---------------------------------------------------------------- the legacy session encounter (D10 Q1)
 
 /**
- * 'Create the session encounter': a D8 draft named 'Session N encounter' with the active PCs as its party size, under
- * the same rules as `encounters.create` (ENCOUNTER_LIMIT past MAX_ENCOUNTERS), linked to the session.
- * SESSION_HAS_ENCOUNTER when one is linked already. Retry-safe. (The old Sessions UI; the Journal links per scene.)
+ * Internal (JF3, user 2026-11-06): the old Sessions UI that created and linked the session's legacy encounter is gone
+ * (the Journal links per scene); the e2e and convex-test seeding still use these two, through
+ * `scripts/convex-e2e.mjs run` and `t.mutation(internal...)`. Not client-callable, so no access check.
  */
-export const createEncounter = keyedGmMutation({
-  args: { sessionId: v.string() },
+
+/**
+ * Creates a D8 draft named 'Session N encounter' with the active PCs as its party size, under the same rules as
+ * `encounters.create` (ENCOUNTER_LIMIT past MAX_ENCOUNTERS), and links it to the session. SESSION_HAS_ENCOUNTER when
+ * one is linked already.
+ */
+export const createEncounter = internalMutation({
+  args: { campaignId: v.id("campaigns"), sessionId: v.string() },
   returns: v.object({ encounterId: v.id("encounters") }),
-  handler: async (ctx, { sessionId }) =>
-    ctx.once("session_prep_create_encounter", { sessionId }, async () => {
-      const campaignId = ctx.campaign._id;
-      const session = await loadSession(ctx, campaignId, sessionId);
-      const prep = await ensurePrep(ctx, session);
-      await assertNoEncounter(ctx, campaignId, prep);
-      const encounterId = await insertDraft(ctx, campaignId, `Session ${session.n} encounter`);
-      await ctx.db.patch("sessionPrep", prep._id, { encounterId, updatedAt: Date.now() });
-      return { encounterId };
-    }),
+  handler: async (ctx, { campaignId, sessionId }) => {
+    const session = await loadSession(ctx, campaignId, sessionId);
+    const prep = await ensurePrep(ctx, session);
+    await assertNoEncounter(ctx, campaignId, prep);
+    const encounterId = await insertDraft(ctx, campaignId, `Session ${session.n} encounter`);
+    await ctx.db.patch("sessionPrep", prep._id, { encounterId, updatedAt: Date.now() });
+    return { encounterId };
+  },
 });
 
 /** Links an existing encounter of the campaign (NOT_FOUND otherwise). SESSION_HAS_ENCOUNTER when another is linked. */
-export const linkEncounter = gmMutation({
-  args: { sessionId: v.string(), encounterId: v.string() },
+export const linkEncounter = internalMutation({
+  args: { campaignId: v.id("campaigns"), sessionId: v.string(), encounterId: v.string() },
   returns: v.null(),
-  handler: async (ctx, { sessionId, encounterId }) => {
-    const campaignId = ctx.campaign._id;
+  handler: async (ctx, { campaignId, sessionId, encounterId }) => {
     const session = await loadSession(ctx, campaignId, sessionId);
     const encounter = await loadEncounter(ctx, campaignId, encounterId);
     const prep = await ensurePrep(ctx, session);
     await assertNoEncounter(ctx, campaignId, prep, encounter._id);
     if (prep.encounterId === encounter._id) return null;
     await ctx.db.patch("sessionPrep", prep._id, { encounterId: encounter._id, updatedAt: Date.now() });
-    return null;
-  },
-});
-
-/** Drops the session's link; the encounter itself stays in the Adversaries tab. A session without one is a no-op. */
-export const unlinkEncounter = gmMutation({
-  args: { sessionId: v.string() },
-  returns: v.null(),
-  handler: async (ctx, { sessionId }) => {
-    const session = await loadSession(ctx, ctx.campaign._id, sessionId);
-    const prep = await sessionPrepOf(ctx, session._id);
-    if (prep?.encounterId === undefined) return null;
-    await ctx.db.patch("sessionPrep", prep._id, { encounterId: undefined, updatedAt: Date.now() });
     return null;
   },
 });
