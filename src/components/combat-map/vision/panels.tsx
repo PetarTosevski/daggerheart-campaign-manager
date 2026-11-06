@@ -9,6 +9,7 @@ import { CARRIED_LIGHTS, CARRIED_LIGHT_LABEL, darknessBadge, type CarriedLight, 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { CELL_TILE_ROWS, CELL_UNPAINTED } from "../map-view/cells";
+import { useDefinedRanges } from "../map-view/measure";
 import type { RevealPanelProps, VisionPanelProps } from "../slots";
 import { normalizeAngle, TURN_BUTTON_STEP } from "../tokens/geometry";
 import { useRings } from "../tokens/rings";
@@ -190,8 +191,10 @@ function YourView({ view, props }: { view: ViewOk; props: VisionPanelProps }) {
 }
 
 /** A player's card for a selected non-PC token (C6's panel shows PC tokens only): name, side, range circles. */
-function OtherCard({ token, onDone }: { token: OtherToken; onDone: () => void }) {
+function OtherCard({ token, onDone, campaignId }: { token: OtherToken; onDone: () => void; campaignId: Id<"campaigns"> }) {
   const rings = useRings();
+  // Rule switches ODR2: no range circles (nor their button) with Defined Ranges off.
+  const definedRanges = useDefinedRanges(campaignId);
   const side = SIDES[token.side];
   return (
     <section className="cm-card" aria-label="Selected token" style={{ borderColor: side.colour }}>
@@ -204,9 +207,11 @@ function OtherCard({ token, onDone }: { token: OtherToken; onDone: () => void })
         {token.revealed ? " · revealed to you: it stands in dim light" : ""}
       </span>
       <div className="cm-row cm-vis-tight">
-        <BrandButton type="button" variant="neutral" size="sm" aria-pressed={rings.on(token._id)} onClick={() => rings.toggle(token._id)} title="Range circles (R)">
-          ◎ Range circles
-        </BrandButton>
+        {definedRanges ? (
+          <BrandButton type="button" variant="neutral" size="sm" aria-pressed={rings.on(token._id)} onClick={() => rings.toggle(token._id)} title="Range circles (R)">
+            ◎ Range circles
+          </BrandButton>
+        ) : null}
         <BrandButton type="button" variant="cancel" size="sm" onClick={onDone}>
           Done
         </BrandButton>
@@ -242,7 +247,7 @@ function PlayerPanel(props: VisionPanelProps) {
   return (
     <>
       <YourView view={view} props={props} />
-      {other ? <OtherCard token={other} onDone={() => props.onSelectToken(null)} /> : null}
+      {other ? <OtherCard token={other} campaignId={props.campaignId} onDone={() => props.onSelectToken(null)} /> : null}
       <DoorsCard {...props} />
     </>
   );

@@ -12,7 +12,12 @@
 //   instead mark 1 Hit Point." Manual drops the extra Stress (the engine's `mark` step keeps `overflow` true with no HP);
 //   "Bandit: Stress full, mark 1 HP?" (RDM's words).
 //
+// Defined Ranges `definedRanges` (CB p.103, optional, default on; plan rule-switches ODR2, user 2026-11-06): with the rule
+//   off, effects that pick or count creatures by range on their own don't apply; the GM gets one GM-only note per use
+//   naming the effect and asking who is in range ("Hive Mind: who is within Close range?", `rangeAsk`, `rangeAskNotes`).
+//
 // ```ts
+// rangeAskNotes("Hive Mind", use, false);   // ["Hive Mind: who is within Close range?"] for a creatureCount within Close
 // conditionDice(["vulnerable"]);            // { advantage: 1, disadvantage: 0 }
 // conditionDice(["vulnerable"], "manual");  // { advantage: 0, disadvantage: 0 }
 // conditionDiceNotes("Bandit", ["hidden"], "manual"); // ["Bandit is Hidden: disadvantage?"]
@@ -20,12 +25,51 @@
 
 import type { ModeOf } from "../../rules/registry";
 import type { PlanStep } from "./run";
+import type { Range } from "./types";
 
 export type ConditionDiceMode = ModeOf<"conditionDice">;
 export type StressOverflowMode = ModeOf<"stressOverflow">;
 
 /** A Manual rule's note on a card or feature use: which rule and the GM's line. */
-export type UseRuleNote = { ruleId: "lineOfSight" | "conditionDice" | "stressOverflow"; summary: string };
+export type UseRuleNote = { ruleId: "lineOfSight" | "conditionDice" | "stressOverflow" | "definedRanges"; summary: string };
+
+/** A range as the GM's notes write it. */
+export const RANGE_LABEL: Record<Range, string> = { melee: "Melee", veryClose: "Very Close", close: "Close", far: "Far", veryFar: "Very Far" };
+
+/** Defined Ranges off: the GM's line for an effect that would pick creatures within `range` ("Ill Omen: who is within Close range?"). */
+export function rangeAsk(name: string, range: Range, of?: string): string {
+  return `${name}: who is within ${RANGE_LABEL[range]} range${of ? ` of ${of}` : ""}?`;
+}
+
+/** The ranges a use counts creatures within on its own (`creatureCount` with `within` / `chain`), in order, once each. */
+export function rangeCounts(use: unknown): Range[] {
+  const out: Range[] = [];
+  const walk = (x: unknown): void => {
+    if (Array.isArray(x)) {
+      for (const v of x) walk(v);
+      return;
+    }
+    if (x === null || typeof x !== "object") return;
+    const o = x as Record<string, unknown>;
+    if (o.kind === "creatureCount") {
+      const r = (o.within ?? o.chain) as Range | undefined;
+      if (r !== undefined && !out.includes(r)) out.push(r);
+    }
+    for (const v of Object.values(o)) walk(v);
+  };
+  walk(use);
+  return out;
+}
+
+/**
+ * Defined Ranges off (`definedRanges === false`): one note for a use that counts creatures by range (the count reads 0;
+ * the runner's `rangeBlind`). Empty when the rule is on or the use counts nothing by range.
+ */
+export function rangeAskNotes(name: string, use: unknown, definedRanges: boolean | undefined): string[] {
+  if (definedRanges !== false) return [];
+  const ranges = rangeCounts(use);
+  return ranges.length === 0 ? [] : [rangeAsk(name, ranges[0]!)];
+}
 
 export type Edge = { advantage: number; disadvantage: number };
 

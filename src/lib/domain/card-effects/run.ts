@@ -289,6 +289,14 @@ export interface RunContext {
    * Stress `mark` step with `overflow` true and no HP marked.
    */
   damageRules?: DamageRules;
+  /**
+   * Plan rule-switches ODR2 (dcm-bxp.134; user 2026-11-06): the campaign's Defined Ranges (CB p.103; cardRunner `buildRun`
+   * sets `ruleModesOf(campaign).definedRanges`). Absent: on. Off: nothing this use picks or counts by range applies on
+   * its own: a `creatureCount` with `within` or `chain` counts no one (the map creatures lose their squares), `within` /
+   * `allyNear` / `isolated` checks are left to the player and `noEnemyWithin` holds; the server posts a GM-only note
+   * asking who is in range (`rangeAskNotes`, rule-notes.ts).
+   */
+  definedRanges?: boolean;
   /** An adversary's standard attack damage (AA1 reuse: `damage.roll.kind === "standardAttack"`), e.g. "1d8+2 phy". */
   attackDamage?: string;
   rng: Rng;
@@ -641,6 +649,15 @@ export type RunResult = { ok: true; plan: RunPlan } | RunRefusal;
 
 // ---------------------------------------------------------------- helpers
 
+/**
+ * Plan rule-switches ODR2: the map creatures as `creatureCount` reads them; with Defined Ranges off (`false`) they lose
+ * their squares and footprints, so a count with `within` or `chain` counts no one (numbers.ts) and the rest still count.
+ */
+export function rangeBlind(creatures: readonly MapCreature[], definedRanges: boolean | undefined): readonly MapCreature[] {
+  if (definedRanges !== false) return creatures;
+  return creatures.map((c): MapCreature => ({ id: c.id, side: c.side, pc: c.pc, ...(c.name !== undefined ? { name: c.name } : {}) }));
+}
+
 /** The use a context picks: by id, else the first `action` use, else the first. */
 export function pickUse(effect: CardEffect, useId?: string): CardUse | undefined {
   if (useId !== undefined) return effect.uses.find((u) => u.id === useId);
@@ -784,6 +801,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     nearestEnemy: context.nearestEnemy,
     situations: context.situations ?? [],
     ...(a.facts ? { facts: a.facts } : {}),
+    ...(context.definedRanges === false ? { definedRanges: false } : {}),
   });
   const unmet = unmetRequirements(use.requires, reqState(actor0));
   if (unmet.length > 0) return refuse("requirement", unmet.map((r) => r.kind).join(", "));
@@ -901,7 +919,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     ...(actor.dieSides ? { dieSides: actor.dieSides } : {}),
     // Lanes-2 E3 (dcm-rs1z, dcm-e80y, dcm-4zti): what E5's numbers.ts reads beyond the tracks.
     ...(dualityOf() ? { dualityDice: dualityOf() } : {}),
-    ...((context.creatures ?? context.numbers?.creatures) ? { creatures: context.creatures ?? context.numbers?.creatures } : {}),
+    ...((context.creatures ?? context.numbers?.creatures) ? { creatures: rangeBlind(context.creatures ?? context.numbers?.creatures ?? [], context.definedRanges) } : {}),
     ...(actor.classDice ? { classDice: actor.classDice } : {}),
     ...(actor.tideTokens !== undefined ? { tideTokens: actor.tideTokens } : {}),
   });

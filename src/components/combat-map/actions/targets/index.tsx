@@ -5,6 +5,7 @@ import type { FunctionReturnType } from "convex/server";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
+import { useDefinedRanges } from "../../map-view/measure";
 import type { ActionsLayerProps } from "../../slots";
 import { useTokens } from "../../tokens/use-tokens";
 import { useActor, useCombatTargets, type WeaponSlot } from "./state";
@@ -105,6 +106,8 @@ function PlayerRings(props: ActionsLayerProps) {
   const actor = useActor(props);
   const { targetTokenIds, slot } = useCombatTargets();
   const hints = useTargetHints(campaignId, actor?.characterId ?? null, map._id, slot);
+  // Rule switches ODR2: with Defined Ranges off a ring shows no band (the server's hint says in range for every target).
+  const definedRanges = useDefinedRanges(campaignId);
   if (!actor) return null;
   const seen = new Map<string, { _id: Id<"combatTokens">; x: number; y: number; size: number; side: string }>(
     [...actor.view.pcs, ...actor.view.others].map((t) => [t._id, t]),
@@ -114,7 +117,7 @@ function PlayerRings(props: ActionsLayerProps) {
     if (!t) return [];
     if (t.side !== "enemy") return [{ id, x: t.x, y: t.y, size: t.size, tone: "ally", band: null }];
     const hint = hints?.find((h) => h.tokenId === id);
-    return [{ id, x: t.x, y: t.y, size: t.size, tone: hints === undefined ? "ok" : hintOf(hint).tone, band: hint?.band ?? null }];
+    return [{ id, x: t.x, y: t.y, size: t.size, tone: hints === undefined ? "ok" : hintOf(hint).tone, band: definedRanges ? (hint?.band ?? null) : null }];
   });
   return <Rings rings={rings} viewport={viewport} />;
 }

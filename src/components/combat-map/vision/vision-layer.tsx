@@ -16,6 +16,7 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 import { brushSquares, objectLabel } from "../editor/edit-model";
 import { spriteName } from "../editor/sprite-palette";
 import { useMapView } from "../map-view/context";
+import { useDefinedRanges } from "../map-view/measure";
 import { hasUploadedRefs } from "../map-view/paint-spec";
 import { useCombatTargets } from "../actions/targets/state";
 import { isLit, type SpotlightLit } from "../hud/spotlight/model";
@@ -159,6 +160,8 @@ export function VisionLayer(props: MapLayerProps) {
   useExploredSync(campaignId, viewing, masks, stored.mask, stored.loaded);
   useSeenSync(campaignId, viewing);
   const light = useCampaignLight(campaignId);
+  // Rule switches ODR2: with Defined Ranges off a light is in reach of any of the viewer's tokens (as the server's toggleLight).
+  const definedRanges = useDefinedRanges(campaignId);
   const actions = useVisionActions(campaignId);
   const { fogTool, brush } = useVisionState();
   // The GM's every token (C6's `list`, shared with its layer); players' PC tokens are not needed here.
@@ -257,6 +260,7 @@ export function VisionLayer(props: MapLayerProps) {
     objects: editing ? [] : layout.objects,
     visible: (o) => gm || (masks !== null && (maskAt(masks.seen, masks, o.x, o.y) || maskAt(masks.explored, masks, o.x, o.y))),
     reachFrom: gm ? null : (view?.pcs.filter((t) => t.mine) ?? []),
+    definedRanges,
     step,
     pad,
     onSwitch: (id, lit) => void actions.setLit(id, lit),
@@ -410,6 +414,8 @@ type LightSwitchesProps = {
   visible: (o: LayoutObject) => boolean;
   /** The tokens a player switches from (Melee, B4); null = no limit (the GM). */
   reachFrom: readonly Footprint[] | null;
+  /** Rule switches ODR2: Defined Ranges (off: Melee is not measured). */
+  definedRanges: boolean;
   step: number;
   pad: number;
   onSwitch: (id: Id<"combatMapObjects">, lit: boolean) => void;
@@ -440,7 +446,7 @@ function LightSwitchesWithSources({ campaignId, mapId, ...props }: LightSwitches
  * The Play-mode light switches (R9) over every object that gives light: a Classic light kind, or a sprite whose
  * light trait is not none (sprite packs Q1, D2; uploaded sprites through their rows, as the server's toggleLight).
  */
-function LightSwitches({ objects, visible, reachFrom, step, pad, onSwitch, uploaded }: LightSwitchesProps & { uploaded: UploadedLookup }) {
+function LightSwitches({ objects, visible, reachFrom, definedRanges, step, pad, onSwitch, uploaded }: LightSwitchesProps & { uploaded: UploadedLookup }) {
   const lookup = { uploaded: (id: string) => uploaded.get(id) };
   const traitsOf = (o: LayoutObject) => (o.sprite ? spriteTraits(o.sprite, lookup) : null);
   const lights = objects.filter((o) => givesLight({ kind: o.kind, traits: traitsOf(o) }) && visible(o));
@@ -451,7 +457,7 @@ function LightSwitches({ objects, visible, reachFrom, step, pad, onSwitch, uploa
         const lit = o.lit !== false;
         const label = lightLabel(o, uploaded);
         const size = Math.max(0.9, o.r * 1.6) * step;
-        const reach = reachFrom === null || anyInMelee(reachFrom, { kind: o.kind, x: o.x, y: o.y, r: o.r, rot: o.rot, traits: traitsOf(o) });
+        const reach = reachFrom === null || anyInMelee(reachFrom, { kind: o.kind, x: o.x, y: o.y, r: o.r, rot: o.rot, traits: traitsOf(o) }, definedRanges);
         return (
           <button
             key={o._id}

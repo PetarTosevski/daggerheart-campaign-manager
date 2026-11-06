@@ -54,6 +54,8 @@ const REACH_ORDER: Record<PickReach, number> = { in: 0, out: 1, los: 2 };
  * Rule switches RFC, M1 `lineOfSight` Manual (`sightMode`, from `ruleSettings.get`; Book until loaded): no row is `los`;
  * a row the hint says is out of sight keeps its range reach and carries `noLineOfSight` (the server accepts it and
  * tells the GM).
+ * Rule switches ODR2: with Defined Ranges off (`definedRanges` false, from `ruleSettings.get`; on until loaded) no row is
+ * `out` and no row shows a band (the map counts no squares; rows keep the nearest-first order).
  */
 export function buildRows({
   creatures,
@@ -61,6 +63,7 @@ export function buildRows({
   hints,
   picked,
   sightMode = "book",
+  definedRanges = true,
 }: {
   creatures: readonly PickCreature[];
   rule: PickRule;
@@ -69,6 +72,8 @@ export function buildRows({
   picked: readonly string[];
   /** The campaign's M1 mode; default the Book (no line of sight: never picked). */
   sightMode?: SightMode;
+  /** The campaign's Defined Ranges; default on. */
+  definedRanges?: boolean;
 }): PickRow[] {
   const actor = creatures.find((c) => c.side === "self");
   const byHint = new Map<string, TargetHint>((hints ?? []).map((h) => [h.tokenId, h]));
@@ -77,10 +82,11 @@ export function buildRows({
     if (!fitsSide(c, rule.side)) continue;
     const hint = byHint.get(c.tokenId);
     const check = c.side !== "self" && actor?.at !== undefined && c.at !== undefined ? rangeCheck(actor.at, c.at, "unlimited") : null;
-    const band: Range | null = hint?.band ?? check?.band ?? (c.side === "self" ? "melee" : null);
+    const band: Range | null = !definedRanges ? null : (hint?.band ?? check?.band ?? (c.side === "self" ? "melee" : null));
     const blind = hint !== undefined && !hint.lineOfSight;
     let reach: PickReach = "in";
     if (blind && sightMode !== "manual") reach = "los";
+    else if (!definedRanges) reach = "in";
     else if (rule.range === "weapon") reach = hint && !hint.inRange ? "out" : "in";
     else if (outOfRange(rule, creatures, picked, c)) reach = "out";
     rows.push({ tokenId: c.tokenId, name: c.side === "self" ? "You" : c.name, side: c.side, band, reach, conditions: c.conditions ?? [], distance: check?.distance ?? 0, ...(blind && sightMode === "manual" ? { noLineOfSight: true as const } : {}) });

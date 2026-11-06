@@ -8,6 +8,7 @@ import { isDifficult } from "@/lib/domain/combat-map/movement";
 
 import { api } from "../../../../convex/_generated/api";
 import { decodeCells } from "../map-view/cells";
+import { useDefinedRanges } from "../map-view/measure";
 import { useLayoutMovementGrid } from "../map-view/movement-overlay";
 import type { TokenPanelProps } from "../slots";
 import { normalizeAngle, TURN_BUTTON_STEP } from "./geometry";
@@ -142,6 +143,8 @@ function SelectedToken({ token, tokens, props }: { token: TokenView; tokens: Tok
   const gm = role === "gm";
   const actions = useTokenActions(campaignId, map);
   const rings = useRings();
+  // Rule switches ODR2: with Defined Ranges off no range circles are drawn, so their buttons go too.
+  const definedRanges = useDefinedRanges(campaignId);
   const side = SIDES[token.side];
   const s = token.stats;
   // R4: the GM edits any token's numbers; a player only their own PC's (a player never gets adversary stats).
@@ -204,9 +207,11 @@ function SelectedToken({ token, tokens, props }: { token: TokenView; tokens: Tok
       {trackerClosed && gm ? <span className="cm-muted cm-small">The encounter isn’t running. Start it on the Adversaries tab to mark HP, Stress and conditions.</span> : null}
 
       <div className="cm-row cm-tight">
-        <BrandButton type="button" variant="neutral" size="sm" aria-pressed={rings.on(token._id)} onClick={() => rings.toggle(token._id)} title="Range circles (R)">
-          ◎ Range circles
-        </BrandButton>
+        {definedRanges ? (
+          <BrandButton type="button" variant="neutral" size="sm" aria-pressed={rings.on(token._id)} onClick={() => rings.toggle(token._id)} title="Range circles (R)">
+            ◎ Range circles
+          </BrandButton>
+        ) : null}
         {token.canMove ? (
           <>
             <BrandButton type="button" variant="neutral" size="sm" icon aria-label="Turn left" onClick={() => void actions.turn(token._id, normalizeAngle(token.face - TURN_BUTTON_STEP))}>
@@ -217,7 +222,7 @@ function SelectedToken({ token, tokens, props }: { token: TokenView; tokens: Tok
             </BrandButton>
           </>
         ) : null}
-        <HideAllCircles tokens={tokens} />
+        {definedRanges ? <HideAllCircles tokens={tokens} /> : null}
       </div>
 
       {gm ? (
@@ -293,16 +298,18 @@ function SelectedToken({ token, tokens, props }: { token: TokenView; tokens: Tok
  * and edits them: HP and Stress pips write the character sheet (PC), the encounter tracker (adversary) or the token
  * (custom); conditions, side, size, remove. A player edits only their own PC's pips (R4). Everyone toggles range
  * circles (R3) and turns a token they may move (R5). With nothing selected it shows only "Hide all circles" while
- * any circles are on (C6 renders that button, not the map toolbar).
+ * any circles are on (C6 renders that button, not the map toolbar). Rule switches ODR2: no circle buttons with Defined
+ * Ranges off.
  */
 export function TokenPanel(props: TokenPanelProps) {
   const tokens = useTokens(props.campaignId, props.role, props.map._id);
   const rings = useRings();
+  const definedRanges = useDefinedRanges(props.campaignId);
   if (!tokens) return null;
   const token = tokens.find((t) => t._id === props.selectedTokenId);
   if (token) return <SelectedToken token={token} tokens={tokens} props={props} />;
   const circled = tokens.filter((t) => rings.on(t._id)).length;
-  if (circled === 0) return null;
+  if (circled === 0 || !definedRanges) return null;
   return (
     <section className="cm-card cm-tokcard-rings" aria-label="Range circles">
       <div className="cm-row cm-between">

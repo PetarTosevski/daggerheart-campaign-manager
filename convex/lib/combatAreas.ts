@@ -39,7 +39,9 @@ import { blockOf } from "./adversaryFeatures";
 import { parseChoices } from "./cardChoices";
 import { gmLines, instanceWrites, lastHpNotes, resistanceNotes, writeInstances } from "./cardRows";
 import { actorSheetAfter, buildRun, instanceModsOn, runCard, sheetModsOn, tokenIdsOf, ruleNotesOfUse, type UsePick } from "./cardRunner";
-import { postRuleNote, ruleModesOf } from "./ruleModes";
+import { postRuleNote, ruleMode, ruleModesOf } from "./ruleModes";
+import { cardIdOfEffect } from "./conditionMarkers";
+import { RANGE_LABEL } from "../../src/lib/domain/card-effects/rule-notes";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { FEATURE_KEY_PREFIX } from "../../src/lib/domain/feature-effects/ids";
 import { readSheet, saveSheet } from "./characterSheet";
@@ -203,11 +205,14 @@ export type PlaceInput = {
   keepOld?: boolean;
 };
 
-/** A square on the map, else COMBAT_TARGET_INVALID; `placeWithin` of the caster's token is checked too. */
-function checkSquare(input: Pick<PlaceInput, "map" | "ownerToken" | "spec">, p: { x: number; y: number }): { x: number; y: number } {
+/**
+ * A square on the map, else COMBAT_TARGET_INVALID; `placeWithin` of the caster's token is checked too (not with Defined
+ * Ranges off, rule switches ODR2: the caster places by eye).
+ */
+function checkSquare(input: Pick<PlaceInput, "map" | "ownerToken" | "spec">, p: { x: number; y: number }, definedRanges = true): { x: number; y: number } {
   if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || p.x < 0 || p.y < 0 || p.x >= input.map.w || p.y >= input.map.h) throw appError("COMBAT_TARGET_INVALID", "That square is off the map.");
   const square = { x: Math.trunc(p.x), y: Math.trunc(p.y) };
-  if (input.ownerToken && !placementHolds(input.spec, input.ownerToken, square)) throw appError("COMBAT_TARGET_INVALID", `${input.spec.label} must be placed within ${input.spec.placeWithin} range.`);
+  if (definedRanges && input.ownerToken && !placementHolds(input.spec, input.ownerToken, square)) throw appError("COMBAT_TARGET_INVALID", `${input.spec.label} must be placed within ${input.spec.placeWithin} range.`);
   return square;
 }
 
@@ -221,14 +226,16 @@ export async function placeArea(ctx: MutationCtx, input: PlaceInput): Promise<Id
   const { spec } = input;
   let centre = input.centre;
   let wallRow: { a: number[]; b: number[] } | undefined;
+  const campaign = await ctx.db.get("campaigns", input.campaignId);
+  const ranges = campaign === null || ruleMode(campaign, "definedRanges");
   if (spec.shape === "wall") {
     if (input.wallEnds === undefined) throw appError("INVALID", `Pick the two ends of ${spec.label}.`);
-    const a = checkSquare(input, input.wallEnds.a);
-    const b = checkSquare(input, input.wallEnds.b);
+    const a = checkSquare(input, input.wallEnds.a, ranges);
+    const b = checkSquare(input, input.wallEnds.b, ranges);
     wallRow = { a: [a.x, a.y], b: [b.x, b.y] };
     centre = { kind: "square", x: a.x, y: a.y };
   } else if (centre.kind === "square") {
-    centre = { kind: "square", ...checkSquare(input, centre) };
+    centre = { kind: "square", ...checkSquare(input, centre, ranges) };
   } else if (spec.anchored === true) {
     const tokenId = centre.tokenId;
     const token = input.ownerToken?._id === tokenId ? input.ownerToken : await ctx.db.get("combatTokens", tokenId);
@@ -571,6 +578,10 @@ export async function rangeTriggersAfterMove(
   if (after.side !== "enemy") return [];
   const out: { characterId: Id<"characters">; card: string }[] = [];
   const groupId = newGroupId();
+  // Rule switches ODR2 (user 2026-11-06): with Defined Ranges off no squares are counted, so the use doesn't run on its
+  // own; for each PC whose use could apply now (its `effectActive` requirements hold), the GM gets a GM-only note.
+  const campaign = await ctx.db.get("campaigns", campaignId);
+  const ranges = campaign === null || ruleMode(campaign, "definedRanges");
   for (const token of await tokensOnMap(ctx, mapId)) {
     if (token.ref.kind !== "pc") continue;
     const character = await ctx.db.get("characters", token.ref.characterId);
@@ -583,6 +594,14 @@ export async function rangeTriggersAfterMove(
     }
     for (const cardId of sheet.domainCards.loadout) {
       const effect = cardEffect(cardId);
+      if (!ranges && campaign !== null) {
+        const active = new Set(sheet.effects.flatMap((e) => cardIdOfEffect(e) ?? []));
+        const asks = effect?.uses.find((u) => (u.activation.kind === "reaction" || u.activation.kind === "auto") && u.activation.trigger.kind === "whenEnemyEntersRange" && (u.requires ?? []).every((q) => q.kind !== "effectActive" || active.has(q.cardId)));
+        if (asks !== undefined && (asks.activation.kind === "reaction" || asks.activation.kind === "auto") && asks.activation.trigger.kind === "whenEnemyEntersRange") {
+          await postRuleNote(ctx, campaign, { ruleId: "definedRanges", summary: `${asks.name} (${sheet.name}): did ${await nameOf()} move within ${RANGE_LABEL[asks.activation.trigger.range]} range of ${sheet.name}?`, characterId: character._id, groupId, actorId });
+        }
+        continue;
+      }
       const use = effect?.uses.find((u) => (u.activation.kind === "reaction" || u.activation.kind === "auto") && u.activation.trigger.kind === "whenEnemyEntersRange" && entersRange(before, after, token, u.activation.trigger.range));
       if (effect === undefined || use === undefined) continue;
       await logAction(ctx, { campaignId, characterId: character._id, actorId, kind: "combat", visibility: "public", summary: `${await nameOf()} moves within range of ${sheet.name}: ${use.name}`, groupId, undoable: false });
@@ -823,6 +842,11 @@ export async function moveRules(
 ): Promise<MoveRules> {
   const { before, byGm } = input;
   const moved = { ...before, ...input.after };
+  // Rule switches ODR2: with Defined Ranges off no move is measured: a `maxRange` limit blocks nothing and a PC's move
+  // sets off no range trigger on its own; the GM gets one GM-only note naming what the move might touch.
+  const campaign = await ctx.db.get("campaigns", input.campaignId);
+  const ranges = campaign === null || ruleMode(campaign, "definedRanges");
+  const asks: string[] = [];
   const areas = await activeAreasOnMap(ctx, input.map._id);
   const tokens = await tokensOnMap(ctx, input.map._id);
   const problems = leaveGate(areas, tokens, before, input.after).map((g) => `${g.label}: needs ${g.text}`);
@@ -839,16 +863,49 @@ export async function moveRules(
     if (character !== null && character.campaignId === input.campaignId) limits.push(...lastingMoveLimits(sheetModsOn(readSheet(character.sheet)), "a lasting effect"));
   }
   for (const limit of limits) {
+    if (!ranges && limit.maxRange !== undefined) {
+      asks.push(`${limit.label}: can only move within ${RANGE_LABEL[limit.maxRange]} range`);
+      const broken = moveBreaks({ label: limit.label, ...(limit.direction !== undefined ? { direction: limit.direction } : {}) }, before, moved);
+      if (broken !== null) problems.push(broken);
+      continue;
+    }
     const broken = moveBreaks(limit, before, moved);
     if (broken !== null) problems.push(broken);
   }
   if (problems.length > 0 && !byGm) throw appError("MOVE_BLOCKED", problems[0]);
-  const triggers = before.ref.kind === "pc" && input.map.live ? await pcMoveTriggers(ctx, input.campaignId, tokens, before, moved) : [];
+  if (!ranges && before.ref.kind === "pc" && input.map.live) asks.push(...(await pcMoveAsks(ctx, input.campaignId, tokens, before)));
+  if (asks.length > 0 && campaign !== null) await postRuleNote(ctx, campaign, { ruleId: "definedRanges", summary: `${await input.nameOf()} moves: ${asks.join("; ")}?`, actorId: input.actorId });
+  const triggers = ranges && before.ref.kind === "pc" && input.map.live ? await pcMoveTriggers(ctx, input.campaignId, tokens, before, moved) : [];
   if (triggers.length > 0) {
     const words = triggers.map((t) => `${t.feature} (${t.stage === "would" ? "before the move" : "after the move"})`);
     await logAction(ctx, { campaignId: input.campaignId, actorId: input.actorId, kind: "adversary", visibility: "gm", summary: `${await input.nameOf()} moves: ${words.join(", ")}`, undoable: false });
   }
   return { warnings: problems, triggers };
+}
+
+/**
+ * Rule switches ODR2 (Defined Ranges off): the `pcMoves` features with a range of the enemies on the map, as the GM's
+ * questions ("within Very Close range of Bladed Guard (Shield Wall)"); nothing is measured.
+ */
+async function pcMoveAsks(ctx: QueryCtx, campaignId: Id<"campaigns">, tokens: readonly Doc<"combatTokens">[], before: Doc<"combatTokens">): Promise<string[]> {
+  const out: string[] = [];
+  for (const enemy of tokens) {
+    if (enemy._id === before._id || enemy.side !== "enemy" || enemy.ref.kind !== "adversary") continue;
+    const instance = await liveInstance(ctx, campaignId, enemy);
+    if (instance === null) continue;
+    const block = await blockOf(ctx, instance);
+    for (const effect of block?.effects ?? []) {
+      for (const use of effect.uses) {
+        const a = use.activation;
+        if ((a.kind !== "auto" && a.kind !== "reaction") || a.trigger.kind !== "pcMoves") continue;
+        const range = a.trigger.into ?? a.trigger.outOf;
+        if (range === undefined) continue;
+        const ask = `${a.trigger.into !== undefined ? "into" : "out of"} ${RANGE_LABEL[range]} range of ${instance.label} (${effect.feature})`;
+        if (!out.includes(ask)) out.push(ask);
+      }
+    }
+  }
+  return out;
 }
 
 /** The `pcMoves` features of the enemies on the map that a PC's move sets off (into / out of their ranges). */
@@ -877,12 +934,13 @@ async function pcMoveTriggers(ctx: QueryCtx, campaignId: Id<"campaigns">, tokens
 /**
  * Tokens carried along by a move (`move.mode: "withCaster"`: Wings of Light, CB p.45: "carry another willing creature";
  * Pin, HF p.71: "drags the Restrained target when it moves"; dcm-lvgm, dcm-z5a6): each takes the carrier's step. A carried
- * token must stand within Melee range of the carrier before the move (COMBAT_TARGET_INVALID); a player carries PC tokens
+ * token must stand within Melee range of the carrier before the move (COMBAT_TARGET_INVALID; not with `definedRanges`
+ * false); a player carries PC tokens
  * only (the willing creature), the GM any. At most 4. Returns the carried tokens' new squares.
  */
 export async function carryAlong(
   ctx: MutationCtx,
-  input: { map: Doc<"combatMaps">; carrierBefore: Doc<"combatTokens">; carrierAfter: { x: number; y: number }; carry: readonly string[]; byGm: boolean },
+  input: { map: Doc<"combatMaps">; carrierBefore: Doc<"combatTokens">; carrierAfter: { x: number; y: number }; carry: readonly string[]; byGm: boolean; definedRanges?: boolean },
 ): Promise<{ tokenId: Id<"combatTokens">; x: number; y: number }[]> {
   if (input.carry.length > 4) throw appError("INVALID", "At most 4 creatures can be carried.");
   const out: { tokenId: Id<"combatTokens">; x: number; y: number }[] = [];
@@ -892,7 +950,8 @@ export async function carryAlong(
     const token = id === null ? null : await ctx.db.get("combatTokens", id);
     if (token === null || token.mapId !== input.map._id || token._id === input.carrierBefore._id) throw appError("COMBAT_TARGET_INVALID");
     if (!input.byGm && token.side !== "pc") throw appError("COMBAT_TARGET_INVALID", "Only a willing creature can be carried.");
-    if (tokenDistance(input.carrierBefore, token) > rangeSquares("melee")) throw appError("COMBAT_TARGET_INVALID", "A carried creature must be within Melee range.");
+    // Rule switches ODR2: with Defined Ranges off the carrier needn't stand within Melee (no squares counted).
+    if (input.definedRanges !== false && tokenDistance(input.carrierBefore, token) > rangeSquares("melee")) throw appError("COMBAT_TARGET_INVALID", "A carried creature must be within Melee range.");
     const to = carriedTo(input.carrierBefore, after, token, input.map);
     await ctx.db.patch("combatTokens", token._id, to);
     out.push({ tokenId: token._id, ...to });

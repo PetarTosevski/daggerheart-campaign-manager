@@ -28,15 +28,16 @@ export type ChainCreature = { tokenId: Id<"combatTokens">; name: string; side: P
 
 /**
  * The rows of the next link: the ask's creatures (names only, U1), each with its band from the last link's first
- * creature ("within Very Close of the last"); unknown tokens drop.
+ * creature ("within Very Close of the last"); unknown tokens drop. Rule switches ODR2: with Defined Ranges off
+ * (`definedRanges` false) no band is shown.
  */
-export function chainRows(tokenIds: readonly string[], creatures: readonly ChainCreature[], lastLink: readonly string[]): PickRowInput[] {
+export function chainRows(tokenIds: readonly string[], creatures: readonly ChainCreature[], lastLink: readonly string[], definedRanges = true): PickRowInput[] {
   const byId = new Map(creatures.map((c) => [c.tokenId as string, c]));
   const from = lastLink.map((id) => byId.get(id)?.at).find((a) => a !== undefined);
   return tokenIds.flatMap((id) => {
     const c = byId.get(id);
     if (!c) return [];
-    const band: Range | null = from && c.at ? rangeCheck(from, c.at, "unlimited").band : null;
+    const band: Range | null = definedRanges && from && c.at ? rangeCheck(from, c.at, "unlimited").band : null;
     return [{ tokenId: c.tokenId, name: c.name, side: c.side, band, reach: "in" as const }];
   });
 }

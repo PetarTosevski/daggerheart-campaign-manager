@@ -644,7 +644,7 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
 
 /**
  * Q6 (CB p.201): the card's damage earned extra Minion defeats. The offer lists the Minions still standing in the same
- * encounter that the actor sees, within the card's range, whose Difficulty the roll beat (or a critical, or no roll).
+ * encounter that the actor sees, within the card's range (any range with Defined Ranges off), whose Difficulty the roll beat (or a critical, or no roll).
  * Picked with `combatActions.pickMinions` (the public row is a `combat` row of the group).
  */
 async function offerMinions(ctx: MutationCtx, req: UseRequest, built: BuiltRun, plan: RunPlan, row: { groupId: string; entryId: Id<"actionLog">; actorId: Id<"users"> }) {
@@ -654,7 +654,8 @@ async function offerMinions(ctx: MutationCtx, req: UseRequest, built: BuiltRun, 
   const candidates = [];
   for (const e of await built.creatures.visibleEnemies()) {
     if (!e.minion || e.encounter._id !== anchor.encounter._id) continue;
-    if (!rangeCheck(built.creatures.scene.attacker, e.token, built.range).inRange) continue;
+    // Rule switches ODR2: with Defined Ranges off every standing Minion of the encounter is offered (the picker judges range).
+    if (!rangeCheck(built.creatures.scene.attacker, e.token, built.range, built.definedRanges).inRange) continue;
     const instance = await ctx.db.get("encounterAdversaries", e.instance._id);
     if (instance === null || instance.defeated) continue;
     if (plan.roll && !plan.roll.critical && plan.roll.record.total < difficultyOf(instance)) continue;

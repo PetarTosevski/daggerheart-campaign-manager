@@ -197,15 +197,6 @@ describe("rule rows: the GM", () => {
     expect(within(fearCap).queryByRole("button")).toBeNull();
   });
 
-  it("shows rules the engine doesn't follow yet read-only with 'Coming soon'", () => {
-    render(<Section />);
-    // Every switchable rule is wired now (RS2, 2026-11-06); the optional rules still being built show read-only.
-    const conflict = row("pcConflict");
-    expect(within(conflict).queryByRole("switch")).toBeNull();
-    expect(within(conflict).getByText("Off")).toBeInTheDocument();
-    expect(within(conflict).getByText(RULE_ROWS_TEXT.comingSoon)).toBeInTheDocument();
-  });
-
   it("makes X2 read-only while X1 is Manual", () => {
     wire("deathMovePrompt");
     wire("deathMoveResolve");

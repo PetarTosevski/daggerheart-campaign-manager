@@ -46,7 +46,7 @@ import type { MapCreature, MarkedTracks } from "../../src/lib/domain/combat-acti
 import { conditionName, lastingModsOf } from "../../src/lib/domain/adversary-effects/run";
 import { lineOfSight, rangeCheck, rangeFromWeapon, tokenDistance, type Combatant, type SightResult } from "../../src/lib/domain/combat-actions/index";
 import { sightRule, type SightMode } from "../../src/lib/domain/combat-actions/sight";
-import { conditionDiceNotes, stressOverflowNotes, targetsConditionDice, type UseRuleNote } from "../../src/lib/domain/card-effects/rule-notes";
+import { conditionDiceNotes, rangeAsk, rangeAskNotes, stressOverflowNotes, targetsConditionDice, type UseRuleNote } from "../../src/lib/domain/card-effects/rule-notes";
 import { tokenVisibility } from "../../src/lib/domain/combat-map/index";
 import { derivedDefense, derivedThresholds, withPassiveTraits } from "../../src/lib/domain/characters/derived";
 import { withEffects } from "../../src/lib/domain/characters/effects";
@@ -757,8 +757,12 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
     targets.push(c);
   }
   // "all targets within Close range" (CB p.104, R9): with none named, every enemy the actor sees in range.
+  // Rule switches ODR2 (user 2026-11-06): with Defined Ranges off nobody is picked by counting squares; the use runs on
+  // no target and the GM is asked who is in range (one GM-only note per use).
+  const rangeNotes: UseRuleNote[] = [];
   if (scene && targets.length === 0 && spec?.count.kind === "all" && (spec.side === "enemy" || spec.side === "any") && (spec.area === undefined || spec.area === "aroundSelf")) {
-    targets = (await creatures.visibleEnemies()).filter((e) => rangeCheck(scene.attacker, e.token, range).inRange);
+    if (modes.definedRanges) targets = (await creatures.visibleEnemies()).filter((e) => rangeCheck(scene.attacker, e.token, range).inRange);
+    else if (range !== "unlimited") rangeNotes.push({ ruleId: "definedRanges", summary: rangeAsk(pick.name, range) });
   }
   if (scene && spec?.side === "self" && targets.length === 0) targets = [{ kind: "self", tokenId: scene.attacker._id, token: scene.attacker }];
   const encounters = new Set(targets.flatMap((t) => (t.kind === "enemy" ? [t.encounter._id] : [])));
@@ -847,7 +851,10 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
   // ---- the roll: cover gives one disadvantage (Q2); an attack roll adds the effects' attack bonus (CB p.96).
   // Rule switches RFC, M1 Manual: no cover disadvantage; the GM is told about a target's cover (when the use rolls) and
   // about every named enemy out of sight.
-  const ruleNotes: UseRuleNote[] = [];
+  const ruleNotes: UseRuleNote[] = [...rangeNotes];
+  // Rule switches ODR2: a use that counts creatures by range (Hive Mind's "per other Mechanorb within Close") counts no
+  // one with Defined Ranges off (`RunContext.definedRanges`, the runner's `rangeBlind`); the GM is asked instead.
+  if (rangeNotes.length === 0) for (const summary of rangeAskNotes(pick.name, use, modes.definedRanges)) ruleNotes.push({ ruleId: "definedRanges", summary });
   const cover = targets.some((t) => t.kind === "enemy" && sightRule("", t.sight, modes.lineOfSight, t.unseen !== true).cover);
   const noted = new Set<string>();
   for (const c of [...targets, ...picked, ...followUp, ...chain.flat()]) {
@@ -987,6 +994,8 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
     hopeFear: ruleMode(req.campaign, "hopeFearFromRolls"),
     // Plan rule-switches RFC (bead dcm-jh6d.70): D2 / D4 / D5 / D8 / Massive Damage on every mark the use makes.
     damageRules: modes,
+    // Plan rule-switches ODR2: Defined Ranges off, nothing the use picks or counts by range applies on its own.
+    ...(modes.definedRanges ? {} : { definedRanges: false }),
     useId: use.id,
     // Off the map a self use targets the actor itself (SD3).
     targets: !scene && spec?.side === "self" ? [actor] : targets.map((t) => combatantOf(t, actor)),

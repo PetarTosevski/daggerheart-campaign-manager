@@ -130,7 +130,8 @@ export const targetCount = campaignQuery({
         const scene = await attackScene(ctx, campaign, character, args.mapId);
         for (const t of scene.scene.tokens) {
           if (t._id === scene.attacker._id || t.side !== "pc" || t.ref.kind !== "pc") continue;
-          allies.push({ tokenId: t._id, name: await tokenName(ctx, campaign._id, t), inRange: range === "unlimited" || rangeCheck(scene.attacker, t, range).inRange });
+          // Rule switches ODR2: with Defined Ranges off every ally reads as in range (the player judges by eye).
+          allies.push({ tokenId: t._id, name: await tokenName(ctx, campaign._id, t), inRange: range === "unlimited" || rangeCheck(scene.attacker, t, range, ruleMode(campaign, "definedRanges")).inRange });
         }
       } catch {
         // no live map or no token of this character: no allies to list
@@ -155,9 +156,13 @@ type ChargeArgs = { targetTokenId: Id<"combatTokens">; square: { x: number; y: n
 
 const sizeOf = (t: { size: number }) => Math.max(1, Math.min(3, Math.trunc(t.size) || 1));
 
-/** Whether the target can be charged from where the token stands: an enemy at Far or Very Far range (CB p.59). */
-function chargeable(attacker: Doc<"combatTokens">, target: Doc<"combatTokens">): boolean {
+/**
+ * Whether the target can be charged from where the token stands: an enemy at Far or Very Far range (CB p.59). Rule
+ * switches ODR2: with Defined Ranges off any enemy can be charged (the table judges the range by eye).
+ */
+function chargeable(attacker: Doc<"combatTokens">, target: Doc<"combatTokens">, definedRanges = true): boolean {
   if (target.side !== "enemy") return false;
+  if (!definedRanges) return true;
   const band = bandOf(tokenDistance(attacker, target));
   return band === "far" || band === "veryFar";
 }
@@ -165,7 +170,8 @@ function chargeable(attacker: Doc<"combatTokens">, target: Doc<"combatTokens">):
 /**
  * What is wrong with charging to the square, or null: on the map, free of other tokens, in Melee range of the target, and
  * the straight way there not blocked by a wall or a closed door for a player (the GM may pass; creatures and difficult
- * terrain don't stop it, as built in DA12 and confirmed 2026-10-30, dcm-bxp.99.19.55).
+ * terrain don't stop it, as built in DA12 and confirmed 2026-10-30, dcm-bxp.99.19.55). Rule switches ODR2: with Defined
+ * Ranges off the square need not be next to the target (no squares counted; the player places by eye).
  */
 function squareProblem(
   grid: MovementGrid,
@@ -176,13 +182,14 @@ function squareProblem(
   square: { x: number; y: number },
   gm: boolean,
   walls: WallsMode = "book",
+  definedRanges = true,
 ): { code: "INVALID" | "MOVE_BLOCKED"; message?: string } | { next: { x: number; y: number; face: number } } {
   const { x, y } = square;
   const next = moveToken(attacker, x, y, map);
   if (!Number.isInteger(x) || !Number.isInteger(y) || next.x !== x || next.y !== y) return { code: "INVALID", message: "That square isn't on the map." };
   const at = { x, y, size: sizeOf(attacker) };
   if (tokens.some((t) => t._id !== attacker._id && overlaps(at, { x: t.x, y: t.y, size: sizeOf(t) }))) return { code: "MOVE_BLOCKED" };
-  if (tokenDistance(at, target) !== 1) return { code: "INVALID", message: "Pick a square in Melee range of the target." };
+  if (definedRanges && tokenDistance(at, target) !== 1) return { code: "INVALID", message: "Pick a square in Melee range of the target." };
   // M2: in Manual a Charge may land past a wall too (rule switches RM).
   if (moveVerdict(checkMove(grid, attacker, next, at.size), gm, walls).refused) return { code: "MOVE_BLOCKED" };
   return { next };
@@ -195,8 +202,9 @@ function squareProblem(
 async function chargeSquare(ctx: QueryCtx & { campaign: Doc<"campaigns"> }, attacker: Doc<"combatTokens">, tokens: readonly Doc<"combatTokens">[], map: Doc<"combatMaps">, args: ChargeArgs, gm: boolean) {
   const target = tokens.find((t) => t._id === args.targetTokenId);
   if (target === undefined || target.side !== "enemy") throw appError("COMBAT_TARGET_INVALID");
-  if (!chargeable(attacker, target)) throw appError("INVALID", "Charge starts from Far or Very Far range of the target.");
-  const out = squareProblem(await movementGrid(ctx, ctx.campaign._id, map), map, attacker, tokens, target, args.square, gm, ruleMode(ctx.campaign, "wallsBlock"));
+  const ranges = ruleMode(ctx.campaign, "definedRanges");
+  if (!chargeable(attacker, target, ranges)) throw appError("INVALID", "Charge starts from Far or Very Far range of the target.");
+  const out = squareProblem(await movementGrid(ctx, ctx.campaign._id, map), map, attacker, tokens, target, args.square, gm, ruleMode(ctx.campaign, "wallsBlock"), ranges);
   if ("code" in out) throw appError(out.code, out.message);
   return { target, next: out.next };
 }
@@ -226,7 +234,8 @@ function sideOf(at: { x: number; y: number; size: number }, target: { x: number;
 const chargeTarget = v.object({
   tokenId: v.id("combatTokens"),
   name: v.string(),
-  band: v.union(v.literal("far"), v.literal("veryFar")),
+  /** Absent with Defined Ranges off (rule switches ODR2). */
+  band: v.optional(v.union(v.literal("far"), v.literal("veryFar"))),
   /** The free squares in Melee range of the target the token may charge to (blocked ways left out for a player). */
   squares: v.array(v.object({ x: v.number(), y: v.number(), label: v.string() })),
 });
@@ -253,10 +262,11 @@ export const chargeOptions = campaignQuery({
     const grid = await movementGrid(ctx, campaign._id, map);
     const gm = atLeast(ctx.permission, "owner");
     const size = sizeOf(attacker);
+    const ranges = ruleMode(campaign, "definedRanges");
     const out: Infer<typeof chargeTarget>[] = [];
     for (const enemy of await new Creatures(ctx, campaign._id, scene, sheet).visibleEnemies()) {
       const target = enemy.token;
-      if (!chargeable(attacker, target)) continue;
+      if (!chargeable(attacker, target, ranges)) continue;
       const ts = sizeOf(target);
       const squares = [];
       for (let y = target.y - size; y <= target.y + ts; y++) {
@@ -265,8 +275,9 @@ export const chargeOptions = campaignQuery({
           if ("next" in ok) squares.push({ x, y, label: sideOf({ x, y, size }, { x: target.x, y: target.y, size: ts }) });
         }
       }
+      // Rule switches ODR2: no band with Defined Ranges off (no range hints).
       const band = bandOf(tokenDistance(attacker, target));
-      out.push({ tokenId: target._id, name: enemy.instance.label, band: band === "veryFar" ? "veryFar" : "far", squares });
+      out.push({ tokenId: target._id, name: enemy.instance.label, ...(ranges ? { band: band === "veryFar" ? ("veryFar" as const) : ("far" as const) } : {}), squares });
     }
     return out;
   },
@@ -304,8 +315,12 @@ async function runCharge(
   const choices = [{ id: "optional:stress", value: args.stress }];
   const req: FeatureUseRequest = { campaign, character, sheet, scene, pick, targetTokenIds: [], choices, roll: args.roll };
   const fear = await campaignFearState(ctx, campaign._id);
-  // dcm-bxp.99.19.55 (2): every enemy in Melee range of the square, whatever the Firbolg's facing or sight.
-  const built = await buildRun(ctx, { campaign, character, sheet, scene: sightless(scene), pick, targetTokenIds: [], choices: parseChoices(choices), roll: args.roll, gmFear: fear.fear, lastRollWithHope: false });
+  // dcm-bxp.99.19.55 (2): every enemy in Melee range of the square, whatever the Firbolg's facing or sight. Rule switches
+  // ODR2: with Defined Ranges off only the picked target is hit (no squares counted) and the GM is asked who else is in
+  // Melee range (`buildRun` adds the note to `ruleNotes` when it skips the automatic pick; here the target is named).
+  const ranges = ruleMode(campaign, "definedRanges");
+  const built = await buildRun(ctx, { campaign, character, sheet, scene: sightless(scene), pick, targetTokenIds: ranges ? [] : [target._id], choices: parseChoices(choices), roll: args.roll, gmFear: fear.fear, lastRollWithHope: false });
+  if (!ranges) built.ruleNotes.push({ ruleId: "definedRanges", summary: "Charge: who else is within Melee range of the landing square?" });
   // "into Melee range with one or more targets": the picked target is one of them.
   if (!built.targets.some((t) => t.tokenId === target._id) || built.outOfRange.length > 0) throw appError("COMBAT_TARGET_INVALID");
   const kept = await keptDice(ctx, featureSlot(req));

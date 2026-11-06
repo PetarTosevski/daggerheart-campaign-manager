@@ -21,7 +21,7 @@ import { publishBoard, releaseBoard, useMapControls, zoomLabel } from "./control
 import { imageMapSize, type ImageGrid } from "./grid";
 import { GridControls } from "./grid-controls";
 import { MAP_CELL, MapCanvas } from "./map-canvas";
-import { MeasureLayer } from "./measure";
+import { MeasureLayer, useDefinedRanges } from "./measure";
 import { cssScale, useMapZoom, ZOOM_STEP } from "./use-map-zoom";
 
 /**
@@ -118,6 +118,8 @@ function LoadedBoard(props: MapBoardChromeProps & { map: CombatMapSummary; layou
   // Q1: a player's stage is the map padded by FOG_PAD_SQUARES of fog (the pan limits), and Fit frames the squares
   // their character has explored, never the map's real bounds (C8). The GM's Fit frames the map.
   const fitSquares = usePlayerFitArea({ campaignId, role }, map, pad);
+  // Rule switches ODR / ODR2: with Defined Ranges off the measure tool and the area pick's preview circle count nothing.
+  const definedRanges = useDefinedRanges(campaignId);
   const fitArea = fitSquares ? { x: fitSquares.x * MAP_CELL, y: fitSquares.y * MAP_CELL, w: fitSquares.w * MAP_CELL, h: fitSquares.h * MAP_CELL } : null;
   const { zoom, setZoom, fit } = useMapZoom(
     viewportRef,
@@ -320,8 +322,8 @@ function LoadedBoard(props: MapBoardChromeProps & { map: CombatMapSummary; layou
                 <MapCanvas layout={layout} paint={cells.paint} image={image} grid={shownGrid} zoom={zoom} pad={pad} />
                 <AreaOverlay campaignId={campaignId} role={role} mapId={map._id} w={w} h={h} pad={pad} step={step} />
                 {renderLayers({ ...props, map, viewport })}
-                <AreaPickLayer mapId={map._id} viewport={viewport} />
-                {chrome === "none" && tool === "measure" ? <MeasureLayer viewport={viewport} /> : null}
+                <AreaPickLayer mapId={map._id} viewport={viewport} definedRanges={definedRanges} />
+                {chrome === "none" && tool === "measure" ? <MeasureLayer viewport={viewport} definedRanges={definedRanges} /> : null}
               </MapViewContext.Provider>
             ) : (
               <p role="status" className="cm-muted cm-vp-loading">
