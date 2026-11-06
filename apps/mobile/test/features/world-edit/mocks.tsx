@@ -29,6 +29,7 @@ jest.mock("@shopify/react-native-skia", () => {
   return {
     Canvas: ({ children }: { children: React.ReactNode }) => React.createElement(View, { testID: "skia-canvas" }, children),
     Path: () => React.createElement(View, { testID: "skia-path" }),
+    DashPathEffect: () => null,
     Group: ({ children }: { children: React.ReactNode }) => children,
     Skia: {
       Path: {

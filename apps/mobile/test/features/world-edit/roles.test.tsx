@@ -70,20 +70,17 @@ test("a GM keeps the palette inside closed map tools", async () => {
   expect(screen.queryByText("Place on map")).toBeNull();
 });
 
-test("a GM sees the palette after opening map tools", async () => {
-  const screen = await renderAsGm(
-    <OfflineFrame offline={false}>
-      <CampaignProvider campaignId={campaignId}>
-        <CampaignScreen>
-          <WorldEditSlot enabled data={mapView("gm")} />
-        </CampaignScreen>
-      </CampaignProvider>
-    </OfflineFrame>,
-    { queries: gmQueries },
-  );
+test("a GM sees the palette after opening map tools, and the edit map takes the view map's place", async () => {
+  const screen = await renderAsGm(worldScreen(), { queries: gmQueries });
+  expect(screen.getByTestId("world-map-shell")).toBeTruthy();
   await fireEvent.press(screen.getByText("GM map tools"));
   expect(screen.getByTestId("world-palette")).toBeTruthy();
   expect(screen.getByText("Place on map")).toBeTruthy();
+  expect(screen.getByTestId("world-edit-map")).toBeTruthy();
+  expect(screen.queryByTestId("world-map-shell")).toBeNull();
+  await fireEvent.press(screen.getByText("Close GM map tools"));
+  expect(screen.getByTestId("world-map-shell")).toBeTruthy();
+  expect(screen.queryByTestId("world-palette")).toBeNull();
 });
 
 test("WorldEditSlot renders nothing for players", async () => {

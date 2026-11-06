@@ -1,4 +1,4 @@
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { GestureDetector } from "react-native-gesture-handler";
 import { useRef, useState } from "react";
 import { LayoutChangeEvent, StyleSheet, View } from "react-native";
 
@@ -9,6 +9,7 @@ import { colors } from "../../../theme/colors";
 import type { WorldMapData } from "../contract";
 import { MapCanvas } from "../map-canvas";
 import { resolveMapImageUrl } from "../map-image";
+import { useMapGesture } from "../gestures";
 import { useMapPanZoom } from "../pan-zoom";
 import { touchToPct } from "./coords";
 import type { MapActions } from "./map-actions";
@@ -51,7 +52,6 @@ export function EditMap({
   const onLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
     setViewport({ w: width, h: height });
-    if (width > 0) panZoom.fit();
   };
 
   const displayState = localTerrain !== null ? { ...state, terrain } : state;
@@ -76,7 +76,7 @@ export function EditMap({
   }
 
   function onTap(locationX: number, locationY: number) {
-    const p = touchToPct(locationX, locationY, panZoom.view, aspect);
+    const p = touchToPct(locationX, locationY, panZoom.viewRef.current, aspect);
     if (placing) {
       void actions.addToken(placing, p.x, p.y).then(() => onPlaced());
       return;
@@ -86,40 +86,19 @@ export function EditMap({
     }
   }
 
-  const panStart = useRef({ x: 0, y: 0 });
-  /* eslint-disable react-hooks/refs -- RNGH callbacks run outside React render. */
-  const pan = Gesture.Pan()
-    .onBegin((e) => {
-      panStart.current = { x: panZoom.view.x, y: panZoom.view.y };
-      if (painting) onStroke("start", touchToPct(e.x, e.y, panZoom.view, aspect));
-    })
-    .onUpdate((e) => {
-      if (painting) {
-        onStroke("move", touchToPct(e.x, e.y, panZoom.view, aspect));
-        return;
-      }
-      panZoom.setView({
-        z: panZoom.view.z,
-        x: panStart.current.x + e.translationX,
-        y: panStart.current.y + e.translationY,
-      });
-    })
-    .onEnd((e) => {
-      if (painting) onStroke("end", touchToPct(e.x, e.y, panZoom.view, aspect));
-      else if (!placing && movingId === null && Math.hypot(e.translationX, e.translationY) < 8) {
-        onTap(e.x, e.y);
-      }
-    })
-    .runOnJS(true);
-
-  const pinch = Gesture.Pinch()
-    .onUpdate((e) => {
-      panZoom.zoomAt(panZoom.view.z * e.scale, viewport.w / 2, viewport.h / 2);
-    })
-    .runOnJS(true);
-  /* eslint-enable react-hooks/refs */
-
-  const gesture = Gesture.Simultaneous(pan, pinch);
+  // A drag paints while painting, else pans; a short drag (a tap) places or moves the armed marker.
+  const gesture = useMapGesture(panZoom, {
+    onDragStart: (p) => {
+      if (!painting) return false;
+      onStroke("start", touchToPct(p.x, p.y, panZoom.viewRef.current, aspect));
+      return true;
+    },
+    onDragMove: (p) => onStroke("move", touchToPct(p.x, p.y, panZoom.viewRef.current, aspect)),
+    onDragEnd: (p, moved) => {
+      if (painting) onStroke("end", touchToPct(p.x, p.y, panZoom.viewRef.current, aspect));
+      else if (moved < 8 && (placing || movingId !== null)) onTap(p.x, p.y);
+    },
+  });
 
   return (
     <View style={styles.shell}>
@@ -146,12 +125,14 @@ export function EditMap({
 
 const styles = StyleSheet.create({
   shell: {
+    flex: 1,
+    minHeight: 240,
     borderColor: colors.line2,
     borderRadius: 10,
     borderWidth: 1,
     overflow: "hidden",
   },
   viewport: {
-    minHeight: 280,
+    flex: 1,
   },
 });

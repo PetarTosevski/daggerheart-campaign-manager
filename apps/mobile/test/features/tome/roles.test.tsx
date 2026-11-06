@@ -85,3 +85,26 @@ test("an empty custom chapter tells the player the GM has not written yet", asyn
   });
   expect(screen.getByText("Your GM hasn’t written this chapter yet.")).toBeTruthy();
 });
+
+test("switching chapters while a save is pending never writes one chapter's text into another", async () => {
+  const calls: { chapter: string; text: string }[] = [];
+  const screen = await renderAsGm(inCampaign(customCampaign("gm"), <TomeScreen />), {
+    queries: { "campaigns:get": customCampaign("gm") },
+    mutations: {
+      "campaigns:updateTome": (args) => {
+        calls.push(args as { chapter: string; text: string });
+        return null;
+      },
+    },
+  });
+  await fireEvent.changeText(screen.getByLabelText("Edit Overview"), "Draft overview");
+  await fireEvent.press(screen.getByRole("tab", { name: "The Inciting Incident" }));
+  const incident = screen.getByLabelText("Edit The Inciting Incident");
+  expect(incident.props.value).toBe("");
+  await fireEvent.changeText(incident, "It begins");
+  jest.advanceTimersByTime(650);
+  expect(calls).toEqual([
+    { campaignId: "campaign-1", chapter: "overview", text: "Draft overview" },
+    { campaignId: "campaign-1", chapter: "incident", text: "It begins" },
+  ]);
+});

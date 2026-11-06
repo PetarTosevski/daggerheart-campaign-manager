@@ -8,7 +8,7 @@ import { api } from "../../convex";
 import type { LoadedCampaign } from "../../shell/campaign-provider";
 import { sectionLabel } from "../../shell/sections";
 
-import { CustomChapterBody } from "./custom-body";
+import { CUSTOM_CHAPTERS, CustomChapterBody } from "./custom-body";
 import { PublishedChapterBody } from "./published-body";
 import { tomeStyles as styles } from "./styles";
 
@@ -29,7 +29,7 @@ export function TomeBook({ campaign }: { campaign: LoadedCampaign }) {
     ? `Campaign Frame · ${frame.expansion ? "Hope & Fear" : "Core Rulebook"}`
     : "Custom Campaign Frame";
   const title = frame ? frame.name : campaign.name;
-  const note = frame ? publishedChapterNote(frame.id, chapter) : null;
+  const note = frame ? publishedChapterNote(frame.id, chapter) : CUSTOM_CHAPTERS[chapter].note;
 
   return (
     <View style={styles.stack}>
@@ -66,6 +66,7 @@ export function TomeBook({ campaign }: { campaign: LoadedCampaign }) {
           <PublishedChapterBody chapter={chapter} tome={TOMES[frame.id]} />
         ) : (
           <CustomChapterBody
+            key={chapter}
             chapter={chapter}
             onSave={
               campaign.role === "gm"

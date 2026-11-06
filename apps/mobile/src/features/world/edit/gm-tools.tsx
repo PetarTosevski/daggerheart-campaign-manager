@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { HORIZON_FRAME, type MapState } from "../../../../../../src/lib/world/map-state";
 import { type TerrainCode } from "../../../../../../src/lib/world/terrain";
@@ -44,6 +44,8 @@ export function GmMapTools({
     setMovingId(null);
   };
 
+  // The edit map fills the space; the panels scroll underneath it, never around it (a drag on the map is a pan or
+  // a paint stroke, not a page scroll).
   return (
     <View style={styles.stack}>
       {actions.error ? (
@@ -51,38 +53,6 @@ export function GmMapTools({
           {actions.error}
         </Text>
       ) : null}
-      {!horizon ? (
-        <TerrainToolbar
-          brush={brush}
-          brushSize={brushSize}
-          onBrush={setBrush}
-          onBrushSize={setBrushSize}
-          onReset={() => void actions.resetTerrain()}
-          onTogglePaint={togglePaint}
-          painting={painting}
-        />
-      ) : (
-        <Text style={styles.note}>Hex crawl maps use the hex editor on the website for now. Tokens and map art still work here.</Text>
-      )}
-      <WorldPalette
-        actions={actions}
-        onPick={(id) => {
-          setPlacing(id);
-          setPainting(false);
-          setMovingId(null);
-        }}
-        placing={placing}
-        types={types}
-      />
-      <TokenPanel
-        actions={actions}
-        movingId={movingId}
-        onMovePick={setMovingId}
-        onSelect={setSelectedId}
-        selectedId={selectedId}
-        tokens={state.tokens}
-        types={types}
-      />
       <EditMap
         actions={actions}
         brush={brush}
@@ -94,13 +64,55 @@ export function GmMapTools({
         painting={painting}
         placing={placing}
       />
-      <MapImageControl campaignId={campaignId} hasUpload={Boolean(state.customMap)} isCustom={isCustomFrame} scaleKm={state.scaleKm} />
+      <ScrollView contentContainerStyle={styles.panels} keyboardShouldPersistTaps="handled" style={styles.panelScroll}>
+        {!horizon ? (
+          <TerrainToolbar
+            brush={brush}
+            brushSize={brushSize}
+            onBrush={setBrush}
+            onBrushSize={setBrushSize}
+            onReset={() => void actions.resetTerrain()}
+            onTogglePaint={togglePaint}
+            painting={painting}
+          />
+        ) : (
+          <Text style={styles.note}>Hex crawl maps use the hex editor on the website for now. Tokens and map art still work here.</Text>
+        )}
+        <WorldPalette
+          actions={actions}
+          onPick={(id) => {
+            setPlacing(id);
+            setPainting(false);
+            setMovingId(null);
+          }}
+          placing={placing}
+          types={types}
+        />
+        <TokenPanel
+          actions={actions}
+          movingId={movingId}
+          onMovePick={setMovingId}
+          onSelect={setSelectedId}
+          selectedId={selectedId}
+          tokens={state.tokens}
+          types={types}
+        />
+        <MapImageControl campaignId={campaignId} hasUpload={Boolean(state.customMap)} isCustom={isCustomFrame} scaleKm={state.scaleKm} />
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   stack: {
+    flex: 1,
+    gap: space[3],
+  },
+  panelScroll: {
+    flexGrow: 0,
+    maxHeight: "45%",
+  },
+  panels: {
     gap: space[3],
   },
   note: {

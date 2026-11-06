@@ -8,6 +8,7 @@ export function PublishedChapterBody({ tome, chapter }: { tome: Tome; chapter: T
   if (chapter === "mechanics") {
     return (
       <View style={{ gap: 12 }}>
+        {tome.mechanics.sub ? <Text style={styles.kicker}>{tome.mechanics.sub}</Text> : null}
         {tome.mechanics.rules.map((rule) => (
           <View key={rule.n} style={styles.ruleCard}>
             <Text style={styles.ruleNumber}>{rule.n}</Text>
@@ -37,7 +38,7 @@ export function PublishedChapterBody({ tome, chapter }: { tome: Tome; chapter: T
             {incident.start ? <Text style={styles.body}>Start: {incident.start}</Text> : null}
           </View>
         ) : null}
-        {incident.paragraphs.map((paragraph) => (
+        {incident.paragraphs.filter((paragraph) => paragraph.trim()).map((paragraph) => (
           <Text key={paragraph.slice(0, 32)} style={styles.body}>
             {paragraph}
           </Text>
@@ -45,17 +46,20 @@ export function PublishedChapterBody({ tome, chapter }: { tome: Tome; chapter: T
       </View>
     );
   }
+  // As on the website: the first paragraph, the frame's quote, then the rest.
   const { overview } = tome;
+  const [first, ...rest] = overview.paragraphs.filter((paragraph) => paragraph.trim());
   return (
     <View style={{ gap: 12 }}>
-      {overview.paragraphs.map((paragraph) => (
+      {first ? <Text style={styles.body}>{first}</Text> : null}
+      {overview.quote ? (
+        <Text style={[styles.body, { fontFamily: styles.bookTitle.fontFamily, fontSize: 20 }]}>{overview.quote.text}</Text>
+      ) : null}
+      {rest.map((paragraph) => (
         <Text key={paragraph.slice(0, 32)} style={styles.body}>
           {paragraph}
         </Text>
       ))}
-      {overview.quote ? (
-        <Text style={[styles.body, { fontFamily: styles.bookTitle.fontFamily, fontSize: 20 }]}>{overview.quote.text}</Text>
-      ) : null}
     </View>
   );
 }

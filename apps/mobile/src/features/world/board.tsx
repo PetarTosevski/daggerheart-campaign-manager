@@ -1,5 +1,5 @@
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { useRef, useState } from "react";
+import { GestureDetector } from "react-native-gesture-handler";
+import { useState } from "react";
 import { LayoutChangeEvent, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { trailMethod } from "../../../../../src/lib/domain/travel";
@@ -10,70 +10,64 @@ import { space } from "../../theme/spacing";
 import { Button } from "../../ui/button";
 import type { WorldMapData } from "./contract";
 import { WorldEditSlot } from "./edit";
+import { useMapGesture } from "./gestures";
 import { MapCanvas } from "./map-canvas";
 import { resolveMapImageUrl } from "./map-image";
 import { useMapPanZoom } from "./pan-zoom";
 import { TravelLegend } from "./travel-legend";
 
+/**
+ * The World screen. The map fills the space between a fixed header and a short scrolling info panel: it is never
+ * inside a vertical ScrollView, so a drag on the map always pans it. The GM's map tools replace the view map with
+ * their own edit map while open.
+ */
 export function WorldBoard({ campaignName, data }: { campaignName: string; data: WorldMapData }) {
   const state = data.state as PlayerMapState;
   const isHorizon = data.frameId === HORIZON_FRAME;
   const isGm = data.role === "gm";
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const rules = travelRules(state);
+  const mo = state.options;
+
+  return (
+    <View style={styles.screen}>
+      <Text style={styles.eyebrow}>World</Text>
+      <Text accessibilityRole="header" numberOfLines={1} style={styles.title}>
+        {campaignName}
+      </Text>
+      {toolsOpen ? null : <ViewMap campaignName={campaignName} data={data} isHorizon={isHorizon} />}
+      {toolsOpen || isHorizon ? null : (
+        <ScrollView contentContainerStyle={styles.infoStack} style={styles.info}>
+          <TravelLegend method={trailMethod(mo.trail)} pace={mo.pace} rules={rules} />
+        </ScrollView>
+      )}
+      <WorldEditSlot data={data} enabled={isGm} onToggle={() => setToolsOpen((v) => !v)} open={toolsOpen} />
+    </View>
+  );
+}
+
+function ViewMap({ campaignName, data, isHorizon }: { campaignName: string; data: WorldMapData; isHorizon: boolean }) {
+  const state = data.state as PlayerMapState;
   const image = mapImageSize(data.frameId, state);
   const aspect = image.height / image.width;
   const imageUrl = resolveMapImageUrl(data.frameId, data.mapUrl, state.customMap);
-  const rules = travelRules(state);
-  const mo = state.options;
-  const trail = trailMethod(mo.trail);
 
   const [viewport, setViewport] = useState({ w: 0, h: 0 });
   const [showTerrain, setShowTerrain] = useState(false);
   const [showGrid, setShowGrid] = useState(false);
   const [hideTokens, setHideTokens] = useState(false);
-
   const panZoom = useMapPanZoom(viewport.w, viewport.h, aspect);
+  const gesture = useMapGesture(panZoom);
 
   const onLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
     setViewport({ w: width, h: height });
   };
 
-  const panStart = useRef({ x: 0, y: 0 });
-  /* eslint-disable react-hooks/refs -- RNGH callbacks run outside React render. */
-  const pan = Gesture.Pan()
-    .onBegin(() => {
-      panStart.current = { x: panZoom.view.x, y: panZoom.view.y };
-    })
-    .onUpdate((e) => {
-      panZoom.setView({
-        z: panZoom.view.z,
-        x: panStart.current.x + e.translationX,
-        y: panStart.current.y + e.translationY,
-      });
-    })
-    .runOnJS(true);
-
-  const pinch = Gesture.Pinch()
-    .onUpdate((e) => {
-      panZoom.zoomAt(panZoom.view.z * e.scale, viewport.w / 2, viewport.h / 2);
-    })
-    .runOnJS(true);
-  /* eslint-enable react-hooks/refs */
-
-  const gesture = Gesture.Simultaneous(pan, pinch);
-
-  const hint = isGm
-    ? "Scroll or pinch to zoom, drag to pan."
-    : "Pinch to zoom and drag to pan.";
-
   return (
-    <ScrollView contentContainerStyle={styles.stack}>
-      <Text style={styles.eyebrow}>World</Text>
-      <Text accessibilityRole="header" style={styles.title}>
-        {campaignName}
-      </Text>
-      <Text style={styles.hint}>{hint}</Text>
-      <View style={styles.toolbar}>
+    <>
+      <Text style={styles.hint}>Pinch to zoom and drag to pan.</Text>
+      <ScrollView contentContainerStyle={styles.toolbar} horizontal showsHorizontalScrollIndicator={false} style={styles.toolbarScroll}>
         {!isHorizon ? (
           <Button onPress={() => setShowTerrain((v) => !v)} variant="outline">
             Terrain overlay
@@ -96,8 +90,7 @@ export function WorldBoard({ campaignName, data }: { campaignName: string; data:
         <Button onPress={() => setHideTokens((v) => !v)} variant="outline">
           {hideTokens ? "Show tokens" : "Hide tokens"}
         </Button>
-      </View>
-      {!isHorizon ? <TravelLegend method={trail} pace={mo.pace} rules={rules} /> : null}
+      </ScrollView>
       {!imageUrl ? (
         <Text style={styles.note}>The map image is not available, so this is blank parchment until art loads or the GM uploads one.</Text>
       ) : null}
@@ -120,15 +113,14 @@ export function WorldBoard({ campaignName, data }: { campaignName: string; data:
           )}
         </View>
       </GestureDetector>
-      <WorldEditSlot enabled={isGm} data={data} />
-    </ScrollView>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  stack: {
-    gap: space[3],
-    paddingBottom: space[8],
+  screen: {
+    flex: 1,
+    gap: space[2],
   },
   eyebrow: {
     color: colors.subtle,
@@ -140,7 +132,7 @@ const styles = StyleSheet.create({
   title: {
     color: colors.body,
     fontFamily: type.displayBold.fontFamily,
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: type.displayBold.fontWeight,
   },
   hint: {
@@ -148,10 +140,11 @@ const styles = StyleSheet.create({
     fontFamily: type.sans.fontFamily,
     fontSize: 13,
   },
+  toolbarScroll: {
+    flexGrow: 0,
+  },
   toolbar: {
     alignItems: "center",
-    flexDirection: "row",
-    flexWrap: "wrap",
     gap: space[2],
   },
   zoom: {
@@ -172,13 +165,19 @@ const styles = StyleSheet.create({
     padding: space[3],
   },
   mapShell: {
-    flexGrow: 1,
-    minHeight: 320,
+    flex: 1,
+    minHeight: 240,
   },
   mapPlaceholder: {
     backgroundColor: colors.ink2,
     borderRadius: 10,
     flex: 1,
-    minHeight: 280,
+  },
+  info: {
+    flexGrow: 0,
+    maxHeight: "35%",
+  },
+  infoStack: {
+    gap: space[2],
   },
 });

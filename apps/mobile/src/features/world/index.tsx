@@ -4,7 +4,7 @@ import { api } from "../../convex";
 import { useCampaign } from "../../shell/campaign-provider";
 import { sectionLabel } from "../../shell/sections";
 import { Loading } from "../../ui/loading";
-import { QueryBoundary } from "../sheet/query-boundary";
+import { QueryBoundary } from "../../ui/query-boundary";
 import { WorldBoard } from "./board";
 
 export function WorldScreen() {

@@ -1,7 +1,7 @@
 import { ScrollView } from "react-native";
 
 import { useCampaign } from "../../shell/campaign-provider";
-import { QueryBoundary } from "../sheet/query-boundary";
+import { QueryBoundary } from "../../ui/query-boundary";
 import { TomeBook } from "./book";
 
 export function TomeScreen() {
