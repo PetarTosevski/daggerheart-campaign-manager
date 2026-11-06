@@ -10,8 +10,11 @@
 //   Point"): Manual drops the extra Stress; "Mira: Stress full, mark 1 HP?".
 // C1 (CB p.102 "While Hidden, any rolls against you have disadvantage"; Cloaked, CB p.42): Manual rolls without it;
 //   "Bandit attacks Mira (Hidden): roll with disadvantage?".
-// S1 (CB p.100 "When play passes to the GM, the GM can make a move to spotlight an adversary"): Manual leaves the
-//   spotlight where it is; "Bandit acts: take the spotlight for the GM?".
+//   CB p.102 "While you are Vulnerable, all rolls targeting you have advantage" (tracer RFA, user 2026-11-06): Book gives
+//   the attack advantage against each Vulnerable PC target; Manual rolls without it; "Bandit attacks Mira (Vulnerable):
+//   roll with advantage?".
+// S1 has no note here: adversary actions always move the spotlight to the GM, in every mode (user 2026-11-06, tracer
+//   RFA; S1 Manual stops only the PC-roll half, convex/lib/rollAftermath.ts).
 
 import type { PcHitResult, PcSeverity, HitRules } from "./severity";
 
@@ -50,9 +53,9 @@ export function hiddenTargetNote(attacker: string, target: string, condition: "h
   return `${attacker} attacks ${target} (${condition === "hidden" ? "Hidden" : "Cloaked"}): roll with disadvantage?`;
 }
 
-/** S1 Manual: an adversary's action leaves the spotlight where it is. */
-export function adversarySpotlightNote(attacker: string): string {
-  return `${attacker} acts: take the spotlight for the GM?`;
+/** C1 Manual (CB p.102, tracer RFA): the attack on a Vulnerable PC is rolled without its advantage. */
+export function vulnerableTargetNote(attacker: string, target: string): string {
+  return `${attacker} attacks ${target} (Vulnerable): roll with advantage?`;
 }
 
 /** C1 (CB p.102): the condition of a PC target that gives an attack against them disadvantage, or null. */

@@ -20,7 +20,7 @@ import {
   loadCombatToken,
   tokensOnMap,
 } from "./lib/combatMaps";
-import { movementGrid, uncloakAfterMove } from "./lib/combatMovement";
+import { movementGrid, uncloakAfterMove, unhideAfterEnemyMove } from "./lib/combatMovement";
 import { MAX_INSTANCES, startEncounter } from "./lib/encounters";
 import { pcPortrait } from "./lib/pcPortrait";
 import { postRuleNote, ruleMode } from "./lib/ruleModes";
@@ -430,6 +430,8 @@ export const clear = gmMutation({
  * enemies, and a failure ends it (`uncloakAfterMove`, public undoable feed rows); Vanishing Act's Cloaked stays. A dim
  * time phase counts as dim light. The GM's drag of a conscious rogue (not the GM's own character) is not the rogue's move:
  * no roll, Cloaked stays. An unconscious or dead rogue's token that moves drops Cloaked (dcm-bxp.99.19.62).
+ * C2 Book (plan rule-switches RFA, CB p.102): an ordinary Hidden ends the same way on the PC's own move, and when an enemy
+ * token moves to where it sees the Hidden PC (`unhideAfterEnemyMove`; a Cloaked PC stays unseen, CB p.42).
  */
 export const move = campaignMutation({
   need: "view",
@@ -476,6 +478,8 @@ export const move = campaignMutation({
     // CB p.42 (Rogue, Cloaked): "end a move within line of sight of an adversary" ends it (Q9, plan drawer-answers DA3).
     // A GM's drag is not the rogue's move (dcm-bxp.99.19.62 (2)): `byGm`.
     if (!stays) await uncloakAfterMove(ctx, ctx.campaign, map, { ...token, ...next }, ctx.user._id, { byGm });
+    // C2 (plan rule-switches RFA; CB p.102): "After an adversary moves to where they would see you … you are no longer Hidden."
+    if (!stays) await unhideAfterEnemyMove(ctx, ctx.campaign, map, { ...token, ...next }, ctx.user._id);
     // Plan lanes E4 (dcm-cma, dcm-wuu, dcm-ii4): live areas that react to entering, passing through, crossing or leaving.
     const areas = stays ? [] : await areasAfterMove(ctx, ctx.campaign._id, map._id, token, { ...token, ...next }, ctx.user._id, nameOf);
     // Plan lanes-2 E4.4 (dcm-ii4): a caster carried out of their own circle has exited it too.

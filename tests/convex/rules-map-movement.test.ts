@@ -166,12 +166,12 @@ describe("C2 Hidden / Cloaked end on a move (CB p.102)", () => {
     expect((await a.notes()).map((n) => n.summary)).toEqual([`${(await a.sheet()).name} moved into Bear's sight: remove Hidden?`]);
   });
 
-  it("Book: a Hidden PC's move changes nothing and posts nothing (unchanged)", async () => {
+  it("Book: a Hidden PC who moves into an enemy's clear sight is no longer Hidden (user 2026-11-06, CB p.102)", async () => {
     const a = await arena({}, ["hidden"]);
     await a.setTime(DAY);
     await a.enemy(20, 10);
     await a.move(4, 10);
-    expect((await a.sheet()).conditions).toEqual(["hidden"]);
+    expect((await a.sheet()).conditions).not.toContain("hidden");
     expect(await a.notes()).toHaveLength(0);
   });
 

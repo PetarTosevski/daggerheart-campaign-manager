@@ -283,16 +283,6 @@ describe("RC2: S1 an adversary action gives the GM the spotlight (bead dcm-bxp.9
     expect(await a.fear()).toBe(2);
   });
 
-  it("Manual: the spotlight stays; the GM gets a note in the action's group; none when the GM already holds it there", async () => {
-    const a = await arena({ map: true, rules: [{ key: "spotlightToGm", value: "manual" }] });
-    const r = await a.attack();
-    expect((await a.spotlight()).holder).toBeNull();
-    expect((await a.notes()).map((n) => [n.ruleId, n.summary, n.groupId])).toEqual([["spotlightToGm", "Brute acts: take the spotlight for the GM?", r.groupId]]);
-
-    await a.gm.mutation(api.combatSpotlight.gmTake, { campaignId: a.campaignId, tokenId: a.tokenId!, idempotencyKey: key() });
-    await a.attack();
-    expect(await a.notes()).toHaveLength(1);
-  });
 });
 
 // ---------------------------------------------------------------- pure: the window and the notes

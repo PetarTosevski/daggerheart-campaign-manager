@@ -1534,8 +1534,13 @@ export function endedByAttack(sheet: CharacterSheet, mods: readonly LiveMod[]): 
  * next rest (CB p.42: "You remain Cloaked in this way until you roll with Fear or until your next rest").
  */
 export function uncloakedByAttack(sheet: CharacterSheet): CharacterSheet {
-  if (!sheet.conditions.includes("cloaked") || conditionSources(sheet, "cloaked").length > 0) return sheet;
-  return withoutCondition(sheet, "cloaked");
+  // C2 Book (plan rule-switches RFA, user 2026-11-06; CB p.102 "or you make an attack, you are no longer Hidden"): an
+  // ordinary Hidden (no source of its own) ends too.
+  let out = sheet;
+  for (const c of ["cloaked", "hidden"] as const) {
+    if (out.conditions.includes(c) && conditionSources(out, c).length === 0) out = withoutCondition(out, c);
+  }
+  return out;
 }
 
 // ---- the after-roll step (Q1)
