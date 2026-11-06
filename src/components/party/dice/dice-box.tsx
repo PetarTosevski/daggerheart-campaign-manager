@@ -194,6 +194,8 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
   const [tideSpend, setTideSpend] = useState(0);
   // E1.4b (dcm-hqk1): the situations ticked for this roll ("In conversation", Reliable Backup, CB p.43).
   const [situations, setSituations] = useState<string[]>([]);
+  // Journal JF2 (dcm-z9rz.28): 'Social roll' marks this roll social (a Social scene does it on the server anyway).
+  const [social, setSocial] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
   const [history, setHistory] = useState<Result[]>([]);
   const [rolling, setRolling] = useState(false);
@@ -335,12 +337,14 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
       ...(slayerCount > 0 ? { slayerDice: slayerCount } : {}),
       ...(tideCount > 0 ? { tideTokens: tideCount } : {}),
       ...(ticked.length > 0 ? { situations: ticked } : {}),
+      ...(social ? { social: true } : {}),
     };
     const out = await actionRoll.fire({ characterId: character._id, ...args });
     if (out) {
       setSlayerSpend(0);
       setTideSpend(0);
       setSituations([]);
+      setSocial(false);
       await show(out.entryId, out.roll, out.prompts, label, slayerCount, out.fearGained);
     }
   }
@@ -517,6 +521,13 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
                 </Chip>
               ) : null}
               <CountStepper label="Help dice" value={help} max={ADVANTAGE_LIMIT} onChange={setHelp} />
+            </div>
+          ) : null}
+          {mode !== "damage" ? (
+            <div className="dc-group">
+              <Chip checked={social} onChange={setSocial}>
+                Social roll
+              </Chip>
             </div>
           ) : null}
           {situational.length > 0 ? (

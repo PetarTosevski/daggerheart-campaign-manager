@@ -1,0 +1,8 @@
+# TASK-JF2: social rolls and the players' 'After the session' (beads dcm-z9rz.28, dcm-z9rz.32)
+
+Plan `.omc/plans/rule-switches.yaml`, tracer JF2 (wave 12). User answers 2026-11-06 (bead notes).
+
+| Bead | Result | Where | Test |
+|---|---|---|---|
+| .28 social rolls | A PC's duality roll (action or reaction; rolled, typed in, or a Tag Team's two rolls) is social when the player ticks 'Social roll' in the dice box (`social` arg, action / reaction only) or when the campaign's live session has a playing scene of type Social (`socialScene`; no live session = no current scene, so a scene left Playing after End marks nothing). Stored as the row's optional `social` flag (widened; set by a patch right after `logAction`, `markSocial`). Damage, GM and Combat Map rolls are never social. The Journal log shows `socialRoll` (lucide `Speech`, the closest to a mouth; label 'Social roll') for a social `roll` row, before the reaction / damage icons. | `convex/lib/validators/actionLog.ts`, `convex/lib/rolls.ts`, `convex/rolls.ts`, `convex/journalLog.ts`, `log/model.ts`, `party/dice/dice-box.tsx` | `rolls.test.ts` (social rolls), `journal-log.test.ts` (JF2) |
+| .32 players read After the session | `sessionWrap.after` is a view query (`enough: "owner"`): players and view-grant callers read live and played sessions (planned: SESSION_NOT_FOUND; a stale id still null) and count only public `levelUp` rows. The card renders for players read-only: level-ups, 'Milestone' ('Reached 2 Nov' + 'Open Party to level up', or 'Not yet'), 'Loot' as text; no 'Call milestone', no loot editor. `setLoot` / `callMilestone` stay GM-only. | `convex/sessionWrap.ts`, `recap/index.tsx` | `journal-recap.test.ts`, `recap.test.tsx`, authz entry in `journal-recap.entries.ts` |

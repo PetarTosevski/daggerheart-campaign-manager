@@ -71,6 +71,7 @@ import { actorSheetAfter, cardActor, cardIdOfEffect, conditionMarkerOf, endCondi
 import { effectEndsOf, effectSource, endAdversaryConditionsOnRoll, endGrantedBenefit, endOnSheet, endSharedGrants } from "./cardRows";
 import { riderStepsText } from "./adversaryFeatures";
 import { partyMembers } from "./adversaryHits";
+import { liveSession, sessionPrepOf } from "./sessions";
 import { pcRollAdversaryUses } from "./adversaryActions";
 import { rollValidator } from "./validators/actionLog";
 import { traitIdValidator } from "./validators/characters";
@@ -109,6 +110,11 @@ export const dualityFields = {
    * `situation` (Patron's Mantle, HF p.14: "advantage on action rolls to intimidate a target").
    */
   situations: v.optional(v.array(v.string())),
+  /**
+   * Journal JF2 (dcm-z9rz.28, user 2026-11-06): the player ticked 'Social roll' in the dice box. The roll is social with it,
+   * or when the live session's playing scene is a Social scene (`socialScene`); stored as the row's `social` flag.
+   */
+  social: v.optional(v.boolean()),
 };
 
 export const poolValidator = v.array(v.object({ count: v.number(), sides: v.number() }));
@@ -161,6 +167,7 @@ export type DualityArgs = {
   slayerDice?: number;
   tideTokens?: number;
   situations?: string[];
+  social?: boolean;
 };
 type DamageSource = { kind: "weapon"; slot: "primary" | "secondary" } | { kind: "override"; key: string } | { kind: "ikonis" } | { kind: "dice"; dice: { count: number; sides: number }[] };
 type DamageArgs = { source: DamageSource; critical: boolean; modifier: number; options: string[]; slayerDice?: number };
@@ -776,6 +783,31 @@ export function grantEndsOnRoll<K>(
   return { sheet: next, labels, party: shared };
 }
 
+/**
+ * Whether the Journal's current scene is a Social scene (Journal JF2, dcm-z9rz.28, user 2026-11-06): the campaign's live
+ * session (at most one) has a scene marked Playing (Q7, `playScene`) whose type is `social`. Outside a live session no
+ * scene is current, so a scene left Playing after End never marks a later roll.
+ */
+export async function socialScene(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<boolean> {
+  const session = await liveSession(ctx, campaignId);
+  if (session === null) return false;
+  const prep = await sessionPrepOf(ctx, session._id);
+  return prep?.scenes.some((s) => s.state === "playing" && s.type === "social") ?? false;
+}
+
+/** A roll is social when the player ticked 'Social roll' or the current scene is Social (`socialScene`). */
+export async function rollIsSocial(ctx: QueryCtx, campaignId: Id<"campaigns">, ticked: boolean | undefined): Promise<boolean> {
+  return ticked === true || (await socialScene(ctx, campaignId));
+}
+
+/**
+ * Stamps a social roll's row (`social`, widened). A patch after `logAction` (whose entry type is not this tracer's) in the
+ * same mutation, so the row is never seen without it.
+ */
+export async function markSocial(ctx: MutationCtx, entryId: Id<"actionLog">, social: boolean): Promise<void> {
+  if (social) await ctx.db.patch("actionLog", entryId, { social: true });
+}
+
 /** Rolls (or reads typed-in dice), applies Hope, Stress and Fear, saves and logs. */
 export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded, args: DualityArgs, rng: Rng, manual: boolean) {
   const { campaign, character, sheet } = loaded;
@@ -831,6 +863,7 @@ export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded:
     fearWithheld: fearWithheldBy(hopeFear, args.kind, roll.outcome),
   });
   const groupId = aftermath.notes.length > 0 ? newGroupId() : undefined;
+  const social = await rollIsSocial(ctx, campaign._id, args.social);
   const entryId = await logAction(ctx, {
     campaignId: campaign._id,
     characterId: character._id,
@@ -847,6 +880,7 @@ export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded:
     ...(args.kind === "action" && WITH_HOPE.includes(roll.outcome) ? { hopeGained: effects.hope > 0 && rollGaveHope(paid, roll.outcome, args.kind) } : {}),
     undoable: true,
   });
+  await markSocial(ctx, entryId, social);
   await applyPcActionRoll(ctx, campaign, aftermath, { groupId, actorId: ctx.user._id });
   // E1.3b (dcm-79v1): the other sheets whose shared grant ended, each a row with its sheet before (undo puts it back).
   for (const p of grants.party) {

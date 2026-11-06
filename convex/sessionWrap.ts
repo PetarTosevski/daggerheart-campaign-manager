@@ -122,7 +122,7 @@ export const callMilestone = keyedGmMutation({
   },
 });
 
-// ---------------------------------------------------------------- GM: after the session (Journal JD5)
+// ---------------------------------------------------------------- every member: after the session (Journal JD5, JF2)
 
 /**
  * The index range's upper end for one window: none for the open window of a live session (its `to` is the query's own
@@ -176,19 +176,26 @@ export const afterValidator = v.object({
 export type SessionAfter = Infer<typeof afterValidator>;
 
 /**
- * 'After the session' (Journal JD5, GM only, Q5): the characters with a `levelUp` feed row (not undone) during the
+ * 'After the session' (Journal JD5; every member reads it since JF2, dcm-z9rz.32, user 2026-11-06: players read it, only
+ * the GM edits through `setLoot` / `callMilestone`): the characters with a `levelUp` feed row (not undone) during the
  * session's live windows (`liveWindows`, so a restarted session counts every window) or after its End until the next
  * session starts (`withAfterGrace`, dcm-m6l4), the milestone stamp and the loot.
  * Each window reads at most MAX_TALLY_ROWS feed rows by `by_campaign_at`. null for an id that is not one of this
  * campaign's sessions (a stale `?s=`), as `get` does. A planned session that never started has no windows: no level-ups.
+ * Access is `permissionFor`'s `view` (the wrapper): a player (or a view-grant caller) reads live and played sessions only,
+ * like the log (`journalLog.list`); a planned one is SESSION_NOT_FOUND to them. Players count only public feed rows.
  */
-export const after = gmQuery({
+export const after = campaignQuery({
+  need: "view",
+  enough: "owner",
   args: { sessionId: v.string() },
   returns: v.union(afterValidator, v.null()),
   handler: async (ctx, { sessionId }) => {
+    const isGm = ctx.permission === "owner";
     const id = ctx.db.normalizeId("sessions", sessionId);
     const session = id === null ? null : await ctx.db.get("sessions", id);
     if (session === null || session.campaignId !== ctx.campaign._id) return null;
+    if (!isGm && session.status === "planned") throw appError("SESSION_NOT_FOUND");
     const [live, prep] = await Promise.all([liveWindows(ctx, session), sessionPrepOf(ctx, session._id)]);
     const windows = await withAfterGrace(ctx, live);
     const latest = new Map<Id<"characters">, SessionAfter["levelUps"][number]>();
@@ -202,6 +209,7 @@ export const after = gmQuery({
       for (const row of rows.slice(0, MAX_TALLY_ROWS)) {
         // Each window's read range already bounds the row; the open window has no upper bound (see `upTo`).
         if (row.kind !== "levelUp" || row.undoneAt !== undefined || row.characterId === undefined) continue;
+        if (!isGm && row.visibility !== "public") continue;
         const known = latest.get(row.characterId);
         if (known === undefined || known.at <= row.at) latest.set(row.characterId, { characterId: row.characterId, summary: row.summary, at: row.at });
       }

@@ -82,9 +82,11 @@ import {
   dualityResult,
   editable,
   manualRng,
+  markSocial,
   poolValidator,
   promptValidator,
   rules,
+  socialScene,
   versus,
 } from "./lib/rolls";
 import { featureScope } from "./lib/featureScope";
@@ -188,6 +190,8 @@ export const tagTeam = keyedUserMutation({
       await saveSheet(ctx, lead.character._id, { ...paid, featureUses: [...paid.featureUses, { key: TAG_TEAM_USE, until: "session" }] });
 
       const groupId = newGroupId();
+      // Journal JF2 (dcm-z9rz.28): both rolls are social while the Journal's current scene is a Social scene.
+      const social = await socialScene(ctx, lead.campaign._id);
       const sides = [
         { loaded: lead, sheet: lead.sheet, side: args.initiator, before: lead.sheet },
         { loaded: partner, sheet: partnerSheet, side: args.partner, before: undefined },
@@ -214,6 +218,7 @@ export const tagTeam = keyedUserMutation({
           ...(before ? { before } : {}),
           undoable: true,
         });
+        await markSocial(ctx, entryId, social);
         rolls.push({ characterId: loaded.character._id, entryId, roll });
       }
       return { groupId, rolls };

@@ -57,10 +57,11 @@ test("the GM writes the recap and the player reads it live, then the player edit
   await expect(recapCard(gm).getByText(/Moss kept the axe\.$/)).toBeVisible();
 });
 
-test("After the session: level-ups and loot for the GM, nothing for the player", async () => {
+test("After the session: level-ups and loot for the GM; the player reads it with no edit controls (JF2)", async () => {
   const { gm, player, client, campaignId } = table;
   await expect(afterCard(gm)).toBeVisible();
-  await expect(afterCard(player)).toHaveCount(0);
+  await expect(afterCard(player)).toBeVisible();
+  await expect(afterCard(player).getByRole("button", { name: /^Edit loot|^Call milestone/ })).toHaveCount(0);
   const levelUps = afterCard(gm).locator(".jrr-dl-row").first();
   await expect(levelUps).toContainText("None");
 

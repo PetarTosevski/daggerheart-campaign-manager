@@ -164,6 +164,12 @@ export const actionLogFields = {
    * union of the ids, so a registry change never needs a migration of the log.
    */
   ruleId: v.optional(v.string()),
+  /**
+   * A social roll (Journal JF2, dcm-z9rz.28, user 2026-11-06; widened, older rows have none = not social): a PC's duality
+   * roll made while the live session's playing scene is a Social scene, or with 'Social roll' ticked in the dice box.
+   * Set only by the roll paths (convex/lib/rolls.ts `duality`, `rolls.tagTeam`); the Journal log shows a mouth icon.
+   */
+  social: v.optional(v.boolean()),
   at: v.number(),
 };
 

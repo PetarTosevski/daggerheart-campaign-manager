@@ -1,5 +1,5 @@
 // Journal JR (plan .omc/plans/journal.yaml, docs/tasks/TASK-JOURNAL-JR.md): the recap parchment (Q4: everyone writes
-// it, no share gate) and 'After the session' (GM only, Q5). convex/react returns the results held here; mutations are
+// it, no share gate) and 'After the session' (the GM edits, players read: JF2). convex/react returns the results held here; mutations are
 // recorded.
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
@@ -126,9 +126,21 @@ describe("Recap", () => {
 });
 
 describe("After the session", () => {
-  it("renders nothing for players", () => {
-    const { container } = render(<AfterSession campaignId={campaignId} sessionId={sessionId} isGm={false} />);
-    expect(container.innerHTML).toBe("");
+  it("JF2 (dcm-z9rz.32): players read level-ups, milestone and loot, with no edit controls", () => {
+    render(<AfterSession campaignId={campaignId} sessionId={sessionId} isGm={false} />);
+    expect(screen.getByRole("heading", { name: "After the session" })).toBeTruthy();
+    expect(screen.getByText("Vex")).toBeTruthy();
+    expect(screen.getByText("Not yet")).toBeTruthy();
+    expect(screen.getByText("Tamsin’s axe · 2 handfuls of gold")).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
+    cleanup();
+
+    results["sessionWrap:after"] = { ...(results["sessionWrap:after"] as object), milestoneAt: new Date(2025, 10, 2, 21, 0).getTime(), loot: null };
+    render(<AfterSession campaignId={campaignId} sessionId={sessionId} isGm={false} />);
+    expect(screen.getByText("Reached 2 Nov")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open Party to level up" })).toHaveAttribute("href", "/campaigns/c1/party");
+    expect(screen.getByText("None")).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
   });
 
   it("shows level-up names and the loot", () => {
