@@ -16,10 +16,10 @@ beforeEach(() => {
   resetMotionTest();
 });
 
-const chooser = { stepId: "s1", chooserId: "tok-1", characterId: "char-1", name: "Briar", label: "Rousing Strike: your pick", options: [{ id: "hope", label: "Gain a Hope" }, { id: "stress", label: "Clear a Stress" }] };
+const chooser = { stepId: "s1", chooserId: "tok-1", characterId: "char-1", self: false, name: "Briar", label: "Rousing Strike: your pick", options: [{ id: "hope", label: "Gain a Hope" }, { id: "stress", label: "Clear a Stress" }] };
 
 function row(over: Record<string, unknown> = {}) {
-  return { requestId: "req-p", name: "Rousing Strike", actorName: "Brannoc", actor: false, createdAt: 1, choosers: [{ ...chooser, answered: false, mine: true }], ...over };
+  return { requestId: "req-p", name: "Rousing Strike", actorName: "Brannoc", actor: false, createdAt: 1, review: false, choosers: [{ ...chooser, answered: false, mine: true }], ...over };
 }
 
 test("an ally pick shows on the ally's phone with the actions closed, and answers allyPicks:answer", async () => {

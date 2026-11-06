@@ -120,6 +120,7 @@ export const LOG_KIND: Record<JournalLogIcon, string> = {
   damageRoll: "Damage roll",
   attackRoll: "Attack roll",
   gmRoll: "GM roll",
+  socialRoll: "Social roll",
   feature: "Feature or spell",
   levelUp: "Level up",
   rest: "Rest",
