@@ -11,7 +11,7 @@ void 0; import { constantTimeEqual } from "./allowlist";
  */
 const APPLE_ISSUER = "https://appleid.apple.com";
 const APPLE_JWKS_URL = "https://appleid.apple.com/auth/keys";
-const APPLE_AUDIENCES = ["com.dualityheart.mobile", "com.dualityheart.mobile.dev"] as const;
+const APPLE_AUDIENCES = ["com.dualityheart.mobile", "com.dualityheart.mobile.dev", "com.dualityheart.mobile.preview"] as const;
 
 const AUDIENCES = new Set<string>(APPLE_AUDIENCES);
 

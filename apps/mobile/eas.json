@@ -21,6 +21,9 @@
     "production": {
       "distribution": "store",
       "environment": "production",
+      "env": {
+        "APP_VARIANT": "production"
+      },
       "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"

@@ -5,9 +5,15 @@ import path from "node:path";
  * Same pattern the scan test counts with `rg`. Anchored to the start of the
  * line so a sample inside a comment (convex/lib/functions.ts) is not an export.
  */
-export const GM_EXPORT_PATTERN = String.raw`^export const (\w+) = (gmQuery|gmMutation|keyedGmMutation)\(`;
+export const GM_EXPORT_PATTERN = String.raw`^export const (\w+) = (gmQuery|gmMutation|keyedGmMutation|creatorQuery|creatorMutation|keyedCreatorMutation)\(`;
 
 const GM_EXPORT = new RegExp(GM_EXPORT_PATTERN);
+
+/** A campaign wrapper that can still demand GM access through its options: `campaignQuery({ need: "owner", ...`. */
+const CAMPAIGN_EXPORT = /^export const (\w+) = (campaignQuery|campaignMutation|keyedCampaignMutation)\(/;
+const NEEDS_GM = /\bneed:\s*"(owner|creator)"/;
+/** How far into the options object to look for `need` (it comes first by convention, before `args`). */
+const OPTION_LINES = 8;
 
 /** `convex/` at the repo root, from `apps/mobile/test/harness`. */
 export function convexDir(): string {
@@ -29,19 +35,30 @@ function listSources(dir: string): string[] {
 }
 
 /**
- * Every `gmQuery`, `gmMutation`, and `keyedGmMutation` export under `convexDir`,
- * as `module:export` (`trackers/horizon:get`). Sorted. One entry per export.
+ * Every export under `convexDir` only a GM may touch, as `module:export` (`trackers/horizon:get`):
+ * the `gm*` and `creator*` builders, and a campaign wrapper whose options say `need: "owner"` or
+ * `need: "creator"`. Sorted. One entry per export.
  */
 export function scanGmFunctions(root: string = convexDir()): string[] {
   const names: string[] = [];
   for (const file of listSources(root)) {
     const moduleName = path.relative(root, file).replace(/\.ts$/, "").split(path.sep).join("/");
-    for (const line of fs.readFileSync(file, "utf8").split("\n")) {
-      const match = GM_EXPORT.exec(line);
-      const exportName = match?.[1];
-      if (exportName === undefined) continue;
-      names.push(`${moduleName}:${exportName}`);
-    }
+    const lines = fs.readFileSync(file, "utf8").split("\n");
+    lines.forEach((line, index) => {
+      const gm = GM_EXPORT.exec(line)?.[1];
+      if (gm !== undefined) {
+        names.push(`${moduleName}:${gm}`);
+        return;
+      }
+      const campaign = CAMPAIGN_EXPORT.exec(line)?.[1];
+      if (campaign === undefined) return;
+      const options = [line];
+      for (const next of lines.slice(index + 1, index + 1 + OPTION_LINES)) {
+        if (/^\s*(args|handler|returns)\b/.test(next) || next.startsWith("export ")) break;
+        options.push(next);
+      }
+      if (NEEDS_GM.test(options.join("\n"))) names.push(`${moduleName}:${campaign}`);
+    });
   }
   names.sort();
   return names;

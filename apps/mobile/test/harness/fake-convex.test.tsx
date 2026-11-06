@@ -31,13 +31,13 @@ function FearTwice() {
 
 function MarkOpened() {
   const markOpened = useMutation(api.campaigns.markOpened);
-  markOpened({ campaignId: "c" } as never);
+  void markOpened({ campaignId: "c" } as never);
   return null;
 }
 
 function SetFear() {
   const setFear = useMutation(api.fear.set);
-  setFear({} as never);
+  void setFear({} as never);
   return null;
 }
 
@@ -73,7 +73,7 @@ test("a player render records a query and a mutation, and a GM call fails naming
 });
 
 test("a GM render may subscribe to a GM query", async () => {
-  const screen = await renderAsGm(<GmList />, { queries: { [fn(api.encounters.list)]: [] } });
+  const screen = await renderAsGm(<GmList />, { queries: { [fn(api.encounters.list)]: { active: [], ended: [], moreEnded: false } } });
   expect(screen.client.subscribed).toEqual(["encounters:list"]);
   expect(screen.client.role).toBe("gm");
 });
@@ -88,7 +88,7 @@ function StaleQuery() {
 
 function StaleMutation() {
   const run = useMutation(anyApi.adversaryActions.renamedAway);
-  run({});
+  void run({});
   return null;
 }
 

@@ -20,5 +20,7 @@ export function activeClient(): FakeConvex {
 }
 
 afterEach(() => {
+  const errors = current?.fixtureErrors ?? [];
   current = null;
+  if (errors.length > 0) throw new Error(errors.join("\n"));
 });
