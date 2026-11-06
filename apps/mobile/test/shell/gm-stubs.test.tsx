@@ -6,11 +6,6 @@ import PacksRoute from "../../app/campaign/[campaignId]/(gm)/packs";
 import { CampaignProvider } from "../../src/shell/campaign-provider";
 import { renderAsGm, renderAsPlayer } from "../harness";
 
-// Stand-in until jest.setup stubs the native module (dcm-gdzi.40).
-jest.mock("expo-crypto", () => ({
-  randomUUID: () => "11111111-1111-4111-8111-111111111111",
-}));
-
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: jest.fn(), back: jest.fn(), replace: jest.fn() }),
   useLocalSearchParams: () => ({ encounterId: "encounter-1" }),

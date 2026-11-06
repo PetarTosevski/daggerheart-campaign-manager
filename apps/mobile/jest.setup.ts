@@ -2,8 +2,8 @@
 //
 // While renderAsPlayer or renderAsGm has a client active, convex/react hooks
 // record subscriptions and calls and reject a player touch of a GM function.
-// Otherwise the real hooks are used. fear-proof.test.tsx replaces this mock
-// for its own file (this setup runs first; that file's jest.mock runs next).
+// Otherwise the real hooks are used. A test file may replace this mock with its
+// own jest.mock("convex/react") (this setup runs first; the file's runs next).
 import { jest } from "@jest/globals";
 
 jest.mock("react-native-safe-area-context", () => {

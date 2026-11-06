@@ -49,6 +49,34 @@ test("signed in, sign-in, /auth and the root go home and the bare /campaign goes
   expect(sessionRedirect({ ...signedIn, segments: ["campaigns"] })).toBeNull();
 });
 
+test("signed out, a join link goes to sign-in with the link as next; other paths do not ride along", () => {
+  const join = { ...signedOut, segments: ["join", "[code]"] };
+  expect(sessionRedirect({ ...join, pathname: "/join/ABC123" })).toBe("/sign-in?next=%2Fjoin%2FABC123");
+  expect(sessionRedirect({ ...join, pathname: "/join/ABC123/" })).toBe("/sign-in?next=%2Fjoin%2FABC123%2F");
+  expect(sessionRedirect({ ...signedOut, segments: ["join"], pathname: "/join" })).toBe("/sign-in");
+  expect(sessionRedirect({ ...signedOut, segments: ["campaigns"], pathname: "/campaigns" })).toBe("/sign-in");
+  expect(sessionRedirect({ ...signedOut, segments: ["(auth)", "sign-in"], pathname: "/sign-in" })).toBeNull();
+});
+
+test("signed in, sign-in goes to next when it is a path in this app, home otherwise", () => {
+  const signIn = { ...signedIn, segments: ["(auth)", "sign-in"] };
+  expect(sessionRedirect({ ...signIn, next: "/join/ABC123" })).toBe("/join/ABC123");
+  expect(sessionRedirect({ ...signIn, next: "/campaign/c1/party" })).toBe("/campaign/c1/party");
+  expect(sessionRedirect({ ...signIn, next: null })).toBe("/home");
+  expect(sessionRedirect({ ...signIn, next: "" })).toBe("/home");
+  expect(sessionRedirect({ ...signIn, next: "https://evil.example/join/x" })).toBe("/home");
+  expect(sessionRedirect({ ...signIn, next: "//evil.example/join/x" })).toBe("/home");
+  expect(sessionRedirect({ ...signIn, next: "/\\evil.example" })).toBe("/home");
+  expect(sessionRedirect({ ...signIn, next: "javascript:alert(1)" })).toBe("/home");
+  expect(sessionRedirect({ ...signIn, next: "/sign-in?next=/join/x" })).toBe("/home");
+  expect(sessionRedirect({ ...signIn, next: "/auth" })).toBe("/home");
+  expect(sessionRedirect({ ...signedIn, segments: ["auth"], next: "/join/ABC123" })).toBe("/join/ABC123");
+});
+
+test("signed in, a join link stays put", () => {
+  expect(sessionRedirect({ ...signedIn, segments: ["join", "[code]"], pathname: "/join/ABC123" })).toBeNull();
+});
+
 test("nothing redirects while the session is loading", () => {
   expect(sessionRedirect({ isAuthenticated: false, isLoading: true, segments: ["campaign", "[campaignId]"] })).toBeNull();
 });

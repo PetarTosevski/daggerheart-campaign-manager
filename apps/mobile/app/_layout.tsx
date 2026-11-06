@@ -1,10 +1,10 @@
 import { useConvexAuth } from "@convex-dev/auth/react";
-import { Redirect, Slot, useSegments } from "expo-router";
+import { Redirect, Slot } from "expo-router";
 import { StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { AppAuthProvider } from "../src/auth/provider";
-import { sessionRedirect } from "../src/shell/session-gate";
+import { useSessionRedirect } from "../src/shell/session-gate";
 import { useBrandFonts } from "../src/theme/fonts";
 import { colors } from "../src/theme/colors";
 
@@ -22,13 +22,12 @@ export default function RootLayout() {
 }
 
 /**
- * Slot stays mounted so the navigator exists before a redirect; `sessionRedirect` decides where a visitor may be
+ * Slot stays mounted so the navigator exists before a redirect; `useSessionRedirect` decides where a visitor may be
  * (signed out: only sign-in and `/auth`). `app/campaign/_layout.tsx` also refuses to render a campaign signed out.
  */
 function SessionGate() {
   const { isAuthenticated, isLoading } = useConvexAuth();
-  const segments = useSegments();
-  const href = sessionRedirect({ isAuthenticated, isLoading, segments });
+  const href = useSessionRedirect({ isAuthenticated, isLoading });
   return (
     <>
       <View style={styles.slot}>

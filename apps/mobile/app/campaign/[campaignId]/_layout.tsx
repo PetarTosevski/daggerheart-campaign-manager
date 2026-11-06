@@ -2,9 +2,17 @@ import { Stack, useLocalSearchParams } from "expo-router";
 import { StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { MarkOpened } from "../../../src/features/account/mark-opened";
 import { CampaignProvider, firstParam, useCampaignState } from "../../../src/shell/campaign-provider";
 import { LiveOffline } from "../../../src/shell/offline";
-import { dashboardHref, moreItems, sectionLabel, stackName, tabItems } from "../../../src/shell/sections";
+import {
+  CAMPAIGNS_HREF,
+  dashboardHref,
+  moreItems,
+  sectionLabel,
+  stackName,
+  tabItems,
+} from "../../../src/shell/sections";
 import { CampaignTabBar } from "../../../src/shell/tab-bar";
 import { colors } from "../../../src/theme/colors";
 
@@ -30,6 +38,7 @@ function CampaignShell({ campaignId }: { campaignId: string }) {
 
   return (
     <LiveOffline>
+      <MarkOpened campaign={campaign} />
       <View style={styles.screen}>
         <View style={[styles.body, { paddingTop: insets.top }]}>
           <Stack screenOptions={{ contentStyle: { backgroundColor: colors.ink }, headerShown: false }}>
@@ -47,7 +56,7 @@ function CampaignShell({ campaignId }: { campaignId: string }) {
             <Stack.Screen name="sessions/[sessionId]" options={{ title: sectionLabel("journal") }} />
             <Stack.Protected
               guard={isGm}
-              redirectTo={campaignId.length > 0 ? dashboardHref(campaignId) : "/campaign"}
+              redirectTo={campaignId.length > 0 ? dashboardHref(campaignId) : CAMPAIGNS_HREF}
             >
               <Stack.Screen name="(gm)" options={{ headerShown: false }} />
             </Stack.Protected>
