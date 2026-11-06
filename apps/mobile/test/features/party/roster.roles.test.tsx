@@ -106,7 +106,7 @@ test("loading, empty, and offline states", async () => {
       },
     },
   });
-  expect(offline.getByText("Showing the last update.")).toBeTruthy();
+  expect(offline.getByText("You're offline. Showing the last update.")).toBeTruthy();
   const kill = offline.getByRole("button", { name: "Kill Mira" });
   expect(kill.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(kill);

@@ -150,7 +150,7 @@ test("rests cover loading, an empty party, a failed query, and offline", async (
       [fn(api.countdownTracks.afterRest)]: { restId: "rest-1", lines: [], reminders: [] },
     },
   });
-  expect(offline.getByText("Showing the last update.")).toBeTruthy();
+  expect(offline.getByText("You're offline. Showing the last update.")).toBeTruthy();
   const start = offline.getByRole("button", { name: "Start long rest" });
   expect(start.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(start);

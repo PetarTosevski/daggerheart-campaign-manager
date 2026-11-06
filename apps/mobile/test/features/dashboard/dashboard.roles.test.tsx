@@ -188,7 +188,7 @@ test("an empty dashboard shows the empty copy and hides Rest from a player", asy
 
 test("offline disables a GM Fear change", async () => {
   const offline = await renderAsGm(screenFor(true), { queries: ready("gm") });
-  expect(offline.getByText("Showing the last update.")).toBeTruthy();
+  expect(offline.getByText("You're offline. Showing the last update.")).toBeTruthy();
   expect(offline.getByRole("button", { name: "Increase Fear" }).props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(offline.getByRole("button", { name: "Increase Fear" }));
   expect(offline.client.called).not.toContain(fn(api.fear.adjust));

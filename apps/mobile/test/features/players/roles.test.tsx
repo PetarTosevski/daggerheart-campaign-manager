@@ -126,7 +126,7 @@ test("loading, unreadable roster, and offline GM controls", async () => {
       },
     },
   });
-  expect(offline.getByText("Showing the last update.")).toBeTruthy();
+  expect(offline.getByText("You're offline. Showing the last update.")).toBeTruthy();
   const remove = offline.getByRole("button", { name: "Remove Nikola" });
   expect(remove.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(remove);

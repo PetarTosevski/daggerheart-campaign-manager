@@ -102,7 +102,7 @@ test("the header covers loading, an empty session line, a failed query, and offl
     </OfflineFrame>,
     { queries: { [fn(api.sessionWrap.dashboard)]: sessions(null) } },
   );
-  expect(offline.getByText("Showing the last update.")).toBeTruthy();
+  expect(offline.getByText("You're offline. Showing the last update.")).toBeTruthy();
   const start = offline.getByRole("button", { name: "Start Session" });
   expect(start.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(start);

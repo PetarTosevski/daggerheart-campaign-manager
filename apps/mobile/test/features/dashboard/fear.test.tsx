@@ -120,7 +120,7 @@ test("offline disables Fear plus and minus", async () => {
       },
     },
   });
-  expect(screen.getByText("Showing the last update.")).toBeTruthy();
+  expect(screen.getByText("You're offline. Showing the last update.")).toBeTruthy();
   const plus = screen.getByRole("button", { name: "Increase Fear" });
   expect(plus.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(plus);

@@ -21,6 +21,13 @@ async function renderForm() {
   return render(<PasswordForm />);
 }
 
+test("the form scrolls clear of the keyboard and keeps taps on its buttons", async () => {
+  const screen = await renderForm();
+  const scroll = screen.getByTestId("sign-in-scroll");
+  expect(scroll.props.keyboardShouldPersistTaps).toBe("handled");
+  expect(screen.getByRole("header").props.children).toBe("Sign in with email");
+});
+
 test("signs in with email and password", async () => {
   mockSignIn.mockResolvedValueOnce({ signingIn: true });
   const screen = await renderForm();

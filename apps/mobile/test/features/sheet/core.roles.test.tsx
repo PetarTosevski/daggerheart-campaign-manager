@@ -147,7 +147,7 @@ test("loading, missing, and offline states", async () => {
       },
     },
   });
-  expect(offline.getByText("Showing the last update.")).toBeTruthy();
+  expect(offline.getByText("You're offline. Showing the last update.")).toBeTruthy();
   const hope = offline.getByRole("button", { name: "Increase Hope" });
   expect(hope.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(hope);

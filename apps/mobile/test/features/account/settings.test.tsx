@@ -304,7 +304,7 @@ test("offline keeps the backup visible and does not send writes", async () => {
       },
     },
   );
-  expect(screen.getByText("Showing the last update.")).toBeTruthy();
+  expect(screen.getByText("You're offline. Showing the last update.")).toBeTruthy();
   const restore = screen.getByRole("button", { name: "Restore from pasted backup" });
   expect(restore.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(restore);

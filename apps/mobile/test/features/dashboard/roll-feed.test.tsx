@@ -136,7 +136,7 @@ test("the feed covers loading, empty, error, and an offline secret roll", async 
   expect(broken.getByText(ERROR_TEXT)).toBeTruthy();
 
   const offline = await renderAsGm(ui(true, true), { queries: { [fn(api.feed.list)]: [] } });
-  expect(offline.getByText("Showing the last update.")).toBeTruthy();
+  expect(offline.getByText("You're offline. Showing the last update.")).toBeTruthy();
   const secret = offline.getByRole("button", { name: "Roll in secret" });
   expect(secret.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(secret);

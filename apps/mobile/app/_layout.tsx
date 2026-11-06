@@ -5,13 +5,18 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { AppAuthProvider } from "../src/auth/provider";
 import { useSessionRedirect } from "../src/shell/session-gate";
+import { useSplashUntil } from "../src/shell/splash-gate";
 import { useBrandFonts } from "../src/theme/fonts";
 import { colors } from "../src/theme/colors";
 
 export { RouteErrorBoundary as ErrorBoundary } from "../src/shell/route-error";
 
 export default function RootLayout() {
-  useBrandFonts();
+  const [fontsLoaded, fontError] = useBrandFonts();
+  const ready = fontsLoaded || fontError !== null;
+  useSplashUntil(ready);
+  // The native splash stays up until the fonts are in (src/shell/splash-gate.ts), so nothing paints in the wrong face.
+  if (!ready) return null;
   return (
     <GestureHandlerRootView style={styles.root}>
       <AppAuthProvider>

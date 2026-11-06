@@ -122,6 +122,9 @@ export function prepNote(text: string): PrepBlock[] {
 
 export const LOG_KIND: Record<JournalLogIcon, string> = {
   roll: "Roll",
+  reactionRoll: "Reaction roll",
+  damageRoll: "Damage roll",
+  attackRoll: "Attack roll",
   gmRoll: "GM roll",
   feature: "Feature or spell",
   levelUp: "Level up",
