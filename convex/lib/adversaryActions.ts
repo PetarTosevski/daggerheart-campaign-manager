@@ -97,9 +97,7 @@ import { saveSheet } from "./characterSheet";
 import { logUnshakable, unshake } from "./unshakable";
 import { closeRequest } from "./combatRequests";
 import { liveCombatMap, tokensOnMap } from "./combatMaps";
-// allyPicks imports featureRunner / cardRunner, which reach this module through rolls; loading it lazily keeps the
-// import graph acyclic at module load (validators would be undefined otherwise).
-const allyPicks = () => import("./allyPicks");
+import { holdForAllyPicks, pickDice } from "./allyPickHold";
 import { loadScene, type Scene } from "./combatVision";
 import { MAX_INSTANCES } from "./encounters";
 import { campaignFearState, gainFear, spendFear } from "./fear";
@@ -1164,7 +1162,6 @@ export async function adversaryAction(
     rng: rollDie,
   };
   // FH-AP: a use that is not an attack records its dice, so the run with the PCs' picks replays them.
-  const { holdForAllyPicks, pickDice } = await allyPicks();
   const pickRolls = pickDice(opts?.picks?.dice);
   if (args.options) w.options = context.options;
   // DA1: the runner reads the whole roll's die; a target that keeps a lower one meets its Evasion raised by the difference,

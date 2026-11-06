@@ -32,6 +32,7 @@
  * sheet are `feat:<hash>:<n>` (sheet effect ids hold 40 characters, a feature id up to 53), on an instance
  * `feat:<featureId>:<n>`; its tokens are `cardTokens` under `feat:<featureId>`.
  */
+import { replaying } from "./dice";
 import { type Infer } from "convex/values";
 
 import { pickUse, run, type ActorState, type PlanStep, type ResolvedMod, type RunContext, type RunPlan, type RunRefusal, type WeaponInfo } from "../../src/lib/domain/card-effects/run";
@@ -1079,13 +1080,7 @@ function recording(base: Rng): { rng: Rng; values: number[] } {
 }
 
 /** Replays recorded dice in order (a value that doesn't fit the die is rolled fresh), then rolls fresh ones. */
-export function replaying(values: readonly number[], base: Rng): Rng {
-  let i = 0;
-  return (sides) => {
-    const n = values[i++];
-    return n !== undefined && n >= 1 && n <= sides ? n : base(sides);
-  };
-}
+export { replaying };
 
 export type RunOutcome = ({ kind: "plan"; plan: RunPlan; picked: readonly Combatant[]; delegated?: Delegated } | { kind: "needsChoice"; asks: ChoiceAsks }) & {
   /** Every die value the use rolled, in order (kept for a choice after the roll, convex/lib/cardChoices.ts). */
