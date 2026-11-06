@@ -60,6 +60,8 @@ async function setup(frameId: "motherboard" | "witherwild", classId = "ranger") 
   const as = (id: string) => t.withIdentity({ subject: `${id}|s` });
   const [gm, p1, p2, outsider] = [as(ids.gm), as(ids.p1), as(ids.p2), as(ids.outsider)];
   const { campaignId } = await gm.mutation(api.campaigns.create, { frameId, name: "Party", idempotencyKey: key() });
+  // New campaigns start with the frame rule off (RD2); these tests run with it on.
+  if (frameId === "motherboard") await gm.mutation(api.campaigns.setOption, { campaignId, option: "remnantCorruption", enabled: true });
   const code = await gm.mutation(api.members.rotateJoinCode, { campaignId });
   await p1.mutation(api.members.joinByCode, { code });
   await p2.mutation(api.members.joinByCode, { code });

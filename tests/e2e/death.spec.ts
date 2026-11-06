@@ -47,6 +47,8 @@ async function openBard(page: Page, frameId: FrameId, hp: number) {
   const client = await convexAs(page);
   const name = `Wren ${crypto.randomUUID().slice(0, 8)}`;
   const { campaignId } = await client.mutation(api.campaigns.create, { frameId, name: `Death ${name}`, idempotencyKey: crypto.randomUUID() });
+  // A new Castle High campaign starts with Less Lethal off (RD2); these specs run with it on.
+  if (frameId === "castle-high") await client.mutation(api.campaigns.setOption, { campaignId: campaignId as Id<"campaigns">, option: "lessLethal", enabled: true });
   const { characterId } = await client.mutation(api.characters.create, {
     campaignId: campaignId as Id<"campaigns">,
     draft: bardDraft(name),
@@ -107,6 +109,7 @@ test("Castle High: a player's less-lethal pick is a request; the GM changes it a
   const gm = await convexAs(page);
   const name = `Wren ${crypto.randomUUID().slice(0, 8)}`;
   const { campaignId } = await gm.mutation(api.campaigns.create, { frameId: "castle-high", name: `Death ${name}`, idempotencyKey: crypto.randomUUID() });
+  await gm.mutation(api.campaigns.setOption, { campaignId: campaignId as Id<"campaigns">, option: "lessLethal", enabled: true });
   const code = await gm.mutation(api.members.rotateJoinCode, { campaignId: campaignId as Id<"campaigns"> });
 
   const context = await browser.newContext();

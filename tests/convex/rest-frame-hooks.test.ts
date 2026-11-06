@@ -44,6 +44,14 @@ function draft(name: string) {
   };
 }
 
+/** The optional rule each frame offers; setup turns it on. */
+const FRAME_RULE: Partial<Record<PublishedFrameId, string>> = {
+  "castle-high": "lessLethal",
+  "dark-heart-of-andaluria": "transformations",
+  "journey-to-horizon": "enduranceCountdowns",
+  motherboard: "remnantCorruption",
+};
+
 /** A campaign of `frameId` with a GM and two players who each own a character. */
 async function setup(frameId: PublishedFrameId) {
   const t = makeTest();
@@ -55,6 +63,9 @@ async function setup(frameId: PublishedFrameId) {
   const as = (id: string) => t.withIdentity({ subject: `${id}|s` });
   const [gm, p1, p2] = [as(ids.gm), as(ids.p1), as(ids.p2)];
   const { campaignId } = await gm.mutation(api.campaigns.create, { frameId, name: "Party", idempotencyKey: key() });
+  // New campaigns start with the frame rule off (RD2); these tests run with it on.
+  const frameRule = FRAME_RULE[frameId];
+  if (frameRule) await gm.mutation(api.campaigns.setOption, { campaignId, option: frameRule, enabled: true });
   const code = await gm.mutation(api.members.rotateJoinCode, { campaignId });
   await p1.mutation(api.members.joinByCode, { code });
   await p2.mutation(api.members.joinByCode, { code });

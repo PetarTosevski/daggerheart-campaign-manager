@@ -20,6 +20,9 @@ import { initialHexCrawl, WORLD_MAPS } from "../../src/lib/world/map-state";
 import { errorCode, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
+// RD2 (2026-11-06): the four frame rules start off for new campaigns; these fixtures play them as before.
+const FRAME_RULE = { "castle-high": "lessLethal", "dark-heart-of-andaluria": "transformations", "journey-to-horizon": "enduranceCountdowns", motherboard: "remnantCorruption" } as const;
+
 const EMAILS = "gm@example.com,p1@example.com,p2@example.com";
 
 /** Every server die comes up `face`. */
@@ -63,6 +66,8 @@ async function setup(frameId: PublishedFrameId) {
   const as = (id: string) => t.withIdentity({ subject: `${id}|s` });
   const [gm, p1, p2] = [as(ids.gm), as(ids.p1), as(ids.p2)];
   const { campaignId } = await gm.mutation(api.campaigns.create, { frameId, name: "Party", idempotencyKey: key() });
+  const frameRule = (FRAME_RULE as Record<string, (typeof FRAME_RULE)[keyof typeof FRAME_RULE]>)[frameId];
+  if (frameRule) await gm.mutation(api.campaigns.setOption, { campaignId: campaignId, option: frameRule, enabled: true });
   const code = await gm.mutation(api.members.rotateJoinCode, { campaignId });
   await p1.mutation(api.members.joinByCode, { code });
   await p2.mutation(api.members.joinByCode, { code });

@@ -127,7 +127,8 @@ describe("Campaign settings: House rules", () => {
   it("only offers another frame's own options", () => {
     store.set(GET, { _id: C1, frameId: "castle-high", role: "gm", options: resolveOptions("castle-high", undefined) } as unknown as CampaignSummary);
     render(<Section />);
-    expect(sw("Less lethal (Castle High)")).toHaveAttribute("aria-checked", "true");
+    // A new Castle High campaign starts with Less Lethal off (RD2); the GM turns it on here.
+    expect(sw("Less lethal (Castle High)")).toHaveAttribute("aria-checked", "false");
     expect(screen.queryByRole("switch", { name: "Wither stays across sessions (house rule)" })).toBeNull();
   });
 

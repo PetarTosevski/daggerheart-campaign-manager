@@ -346,6 +346,8 @@ describe("World map rows", () => {
     const gm = t.withIdentity({ subject: `${ids.gm}|s` });
     const player = t.withIdentity({ subject: `${ids.player}|s` });
     const { campaignId } = await gm.mutation(api.campaigns.create, { frameId, name: "Rows", idempotencyKey: key() });
+    // New campaigns start with the frame rule off (RD2); these tests run with it on.
+    if (frameId === "journey-to-horizon") await gm.mutation(api.campaigns.setOption, { campaignId, option: "enduranceCountdowns", enabled: true });
     await gm.mutation(api.members.invite, { campaignId, email: PLAYER });
     return { t, gm, player, campaignId };
   }
