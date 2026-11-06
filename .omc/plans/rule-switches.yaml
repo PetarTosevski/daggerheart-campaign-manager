@@ -821,3 +821,69 @@ waves:
           - docs/tasks/TASK-RULES-ODR2.md
         acceptance:
           - tests per goal; lint, typecheck pass
+  # ------------------------------------------------------------------ follow-ups 4 (after the 2026-11-06 release)
+  - wave: 13
+    tracers:
+      - id: OE2
+        title: "Dim light on every PC action roll; 'breathes underwater' mark; environment on card and feature attacks"
+        beads: [dcm-bxp.134]
+        goal: "The darkness variants (disadvantage / +N / both) apply to every PC action roll with a Difficulty, not only ranged attacks (user 2026-11-06); a per-token 'breathes underwater' mark (GM, HUD Water pop-over and token panel) skips the breath countdown and Stress for that PC; card and feature attack rolls get the dim-light variant and the Underwater disadvantage (attackEnvironment)"
+        depends_on: [OE]
+        owns:
+          - src/lib/domain/combat-map/light.ts
+          - src/lib/domain/dice/index.ts
+          - convex/lib/rolls.ts
+          - convex/rolls.ts
+          - convex/lib/rollAftermath.ts
+          - convex/lib/combatActions.ts
+          - convex/lib/cardRunner.ts
+          - convex/lib/featureRunner.ts
+          - src/lib/domain/card-effects/**
+          - convex/combatScenes.ts
+          - convex/tables/combatMaps.ts
+          - src/components/combat-map/hud/scene/**
+          - src/components/combat-map/tokens/token-panel.tsx
+          - src/components/party/dice/**
+          - tests/convex/rules-environment.test.ts
+          - docs/tasks/TASK-RULES-OE2.md
+        acceptance:
+          - tests per goal; lint, typecheck pass
+      - id: DEF
+        title: "D8 Manual 'Defeated' button; adjustResource follows Stress overflow; small rule leftovers"
+        beads: [dcm-jh6d.68, dcm-jh6d.71, dcm-jh6d.69]
+        goal: "In D8 Manual the GM marks an adversary Defeated from the tracker card (new GM mutation + authz) and the map, HUD, spotlight and adversary actions read that flag instead of 'every HP marked'; characters.adjustResource passes the rule modes so D4 / D5 follow the switch; the jh6d.69 leftovers (undo clears deathMoveSpent, X1 Manual note on other last-HP paths, follow-up rolls post the R3 note and move the spotlight, the GM may record a death move in X1 Manual, buildRun callers post their notes)"
+        depends_on: [CU2, RS2]
+        owns:
+          - convex/encounterTracking.ts
+          - convex/lib/spotlight.ts
+          - convex/lib/combatTokenViews.ts
+          - convex/lib/adversaryFeatures.ts
+          - convex/characters.ts
+          - convex/deathMoves.ts
+          - convex/lib/actionLog.ts
+          - convex/lib/allyPicks.ts
+          - convex/featurePrompts.ts
+          - src/components/adversaries/tracker/**
+          - src/components/combat-map/hud/statblock/**
+          - src/components/combat-map/hud/queue/**
+          - tests/convex/rules-defeated.test.ts
+          - tests/convex/authz/rules-defeated.entries.ts
+          - tests/convex/authz/rules-defeated.test.ts
+          - docs/tasks/TASK-RULES-DEF.md
+        acceptance:
+          - tests per goal; authz entries; lint, typecheck pass
+      - id: OP2
+        title: "PC conflict UI: GM Contest button; classic attack bar lists PCs; out-of-range PC attacks wait for the GM"
+        beads: [dcm-bxp.134]
+        goal: "With Conflict between PCs on, the GM has a Contest button (HUD dock / Party panel) calling combatActions.contest; the classic attack bar lists the PC targets the server returns; the GM's range sanction handles PC targets (checkAttackTargets + pcTargets) and openAfterRoll works without an encounter"
+        depends_on: [OP]
+        owns:
+          - convex/combatRequests.ts
+          - convex/lib/combatRequests.ts
+          - src/components/combat-map/actions/attack/**
+          - src/components/combat-map/hud/dock/**
+          - src/components/combat-map/hud/party/**
+          - tests/convex/rules-pc-conflict.test.ts
+          - docs/tasks/TASK-RULES-OP2.md
+        acceptance:
+          - tests per goal; lint, typecheck pass

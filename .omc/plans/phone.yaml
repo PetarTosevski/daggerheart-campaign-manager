@@ -424,3 +424,15 @@ waves:
           - docs/tasks/TASK-WSM.md
         acceptance:
           - pnpm lint, pnpm typecheck, the web unit tests of every touched area pass; behaviour unchanged
+  - wave: 12
+    tracers:
+      - id: PXS
+        title: "Phone uses the shared src/lib models; wizard drafts on the account"
+        beads: [dcm-gdzi.47]
+        pr: 5
+        goal: "The phone imports WSM's src/lib modules (wizard logic and draft schema, level-up, roll copy, features, lunar, reactions model, custom-tome text) and deletes its copies; KNOWN_COPIES shrinks accordingly; the character wizard draft lives on the account (drafts.get / drafts.save) like the website"
+        depends_on: [WSM, PXL]
+        owns:
+          - apps/mobile/**
+        acceptance:
+          - full apps/mobile jest passes; KNOWN_COPIES shorter; pnpm typecheck
