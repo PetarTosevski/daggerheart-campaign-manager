@@ -12,7 +12,7 @@ import { atLeast } from "./lib/permissions";
  * sees. A player gets the picks waiting on their own characters (`mine`: they answer them on their screen) and the uses
  * they made that wait on others (`actor`: "2 of 3 chose, waiting…"); the GM gets every open pick of the campaign, each
  * outstanding one answerable (`mine`: the queue answers a no-show). Who picked what is not sent, only whether each
- * chooser answered. Picks of an ended encounter are left out. Oldest first. Kept apart from `allyPicks.ts` so the HUD's
+ * chooser answered. A row still under the actor's review (CU2) goes to the actor and the GM only. Picks of an ended encounter are left out. Oldest first. Kept apart from `allyPicks.ts` so the HUD's
  * subscription loads no mutation code.
  */
 
@@ -26,6 +26,8 @@ const chooserView = v.object({
   answered: v.boolean(),
   /** The caller may answer it now (their character's pick, or any outstanding pick for the GM). */
   mine: v.boolean(),
+  /** The actor's own pick (Rousing Strike's "you"): the review can't untick it (CU2). */
+  self: v.boolean(),
 });
 
 const pickView = v.object({
@@ -35,6 +37,11 @@ const pickView = v.object({
   /** The caller made the use (the PC's player, or the GM for an adversary feature): the waiting line is theirs. */
   actor: v.boolean(),
   createdAt: v.number(),
+  /**
+   * The actor still reviews the computed allies (plan rule-switches CU2, user 2026-11-06): only the actor and the GM get
+   * the row, nobody answers yet; the actor unticks who can't see or hear them and sends (`allyPicks.send`).
+   */
+  review: v.boolean(),
   choosers: v.array(chooserView),
 });
 
@@ -59,14 +66,28 @@ export const open = campaignQuery({
       if (!isAllyPickRow(row) || !(await encounterRunning(ctx, row))) continue;
       const p = row.payload;
       const actor = p.source.kind === "rider" ? await canEdit(p.source.characterId) : gm;
+      const review = p.review === true;
+      // CU2: while the actor reviews the list, only the actor and the GM see the row, and nobody answers yet.
+      if (review && !gm && !actor) continue;
+      const self = p.source.kind === "rider" ? p.source.characterId : undefined;
       const choosers = [];
       for (const c of p.choosers) {
         const answered = p.answers.some((a) => a.stepId === c.stepId && a.chooserId === c.chooserId);
-        const mine = !answered && (gm || (c.characterId !== undefined && (await canEdit(c.characterId))));
-        choosers.push({ stepId: c.stepId, chooserId: c.chooserId, ...(c.characterId ? { characterId: c.characterId } : {}), name: c.name, label: c.label, options: c.options, answered, mine });
+        const mine = !review && !answered && (gm || (c.characterId !== undefined && (await canEdit(c.characterId))));
+        choosers.push({
+          stepId: c.stepId,
+          chooserId: c.chooserId,
+          ...(c.characterId ? { characterId: c.characterId } : {}),
+          name: c.name,
+          label: c.label,
+          options: c.options,
+          answered,
+          mine,
+          self: self !== undefined && c.characterId === self,
+        });
       }
       if (!gm && !actor && !choosers.some((c) => c.mine || (c.characterId !== undefined && edits.get(c.characterId) === true))) continue;
-      out.push({ requestId: row._id, name: p.name, actorName: p.actorName, actor, createdAt: row.createdAt, choosers });
+      out.push({ requestId: row._id, name: p.name, actorName: p.actorName, actor, createdAt: row.createdAt, review, choosers });
     }
     return out;
   },

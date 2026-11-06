@@ -743,6 +743,14 @@ export const allyPickPayloadValidator = v.object({
   source: v.union(allyPickRiderSourceValidator, allyPickAdversarySourceValidator),
   choosers: v.array(allyPickChooserValidator),
   answers: v.array(allyPickAnswerValidator),
+  /**
+   * The acting player still reviews the computed allies (plan rule-switches CU2, bead dcm-bxp.99.32.46, user 2026-11-06:
+   * "the acting player can deselect allies from the computed list (can't see/hear) before the picks go out"). Set on a
+   * PC rider's row with allies to review; `allyPicks.send` drops the unticked choosers and clears it. While set, nobody
+   * answers and only the actor (and the GM) sees the row. Widened (rule 7): absent on older rows and adversary uses,
+   * which went out at once.
+   */
+  review: v.optional(v.literal(true)),
 });
 
 /** The most choosers one `allyPick` row holds (a party of 12 and the actor). */

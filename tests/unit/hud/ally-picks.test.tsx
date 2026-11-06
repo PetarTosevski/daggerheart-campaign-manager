@@ -2,13 +2,14 @@
  * Per-ally picks in the HUD (plan finish-hud-lk FH-AP; board CmpPicking 'After the roll': "Rousing Strike · each ally
  * picks their own", "2 of 3 chose", "waiting…"; user 2026-11-05): the pure model, a player's own pick card (chips,
  * Choose, the keyed answer), the actor's waiting line, nothing for the GM on the map (their picks are queue cards) and the
- * GM's queue card for a no-show's pick. Convex is mocked.
+ * GM's queue card for a no-show's pick; CU2 (user 2026-11-06): the actor's review before the picks go out (untick allies
+ * who can't see or hear them), for the player and the GM. Convex is mocked.
  */
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AllyPickCard, HudAllyPicks } from "@/components/combat-map/hud/ally-picks";
-import { choseLine, myPicks, pickSub, waitingOn, waitingRows, withAnswered, type PickRow } from "@/components/combat-map/hud/ally-picks/model";
+import { choseLine, myPicks, pickSub, reviewAllies, reviewRows, waitingOn, waitingRows, withAnswered, withSent, type PickRow } from "@/components/combat-map/hud/ally-picks/model";
 import { arrivalTitle, itemLabel, queueItems } from "@/components/combat-map/hud/queue/model";
 import type { CombatPageState } from "@/components/combat-map/slots";
 
@@ -139,5 +140,56 @@ describe("the GM's queue card", () => {
     fireEvent.click(within(card).getByRole("button", { name: "Choose for Oriel: Rousing Strike" }));
     await screen.findByRole("button", { name: "Choose for Oriel: Rousing Strike" });
     expect(calls[0]!.args).toMatchObject({ chooserId: "t3", options: ["hp"] });
+  });
+});
+
+describe("CU2: the actor's review before the picks go out", () => {
+  /** Brannoc's own Rousing Strike, still under review: his own pick stays, Moss and Oriel can be unticked. */
+  const REVIEW: PickRow = {
+    ...ROW,
+    actor: true,
+    review: true,
+    choosers: [chooser("t1", "Brannoc", { self: true }), chooser("t2", "Moss", { self: false }), chooser("t3", "Oriel", { self: false })],
+  };
+
+  it("the model: review rows, the allies the actor can untick, the optimistic send", () => {
+    expect(reviewRows([ROW, REVIEW])).toEqual([REVIEW]);
+    expect(reviewRows([{ ...REVIEW, actor: false }])).toEqual([]);
+    expect(waitingRows([REVIEW])).toEqual([]);
+    expect(reviewAllies(REVIEW).map((c) => c.name)).toEqual(["Moss", "Oriel"]);
+    const sent = withSent([REVIEW], "r1", ["t3"]);
+    expect(sent[0]!.review).toBe(false);
+    expect(sent[0]!.choosers.map((c) => c.name)).toEqual(["Brannoc", "Moss"]);
+    expect(waitingRows(sent)).toHaveLength(1);
+  });
+
+  it("the player unticks an ally and sends the rest (keyed); no waiting line yet", async () => {
+    queries["allyPicksReads:open"] = [REVIEW];
+    render(<HudAllyPicks state={state("player")} />);
+    const card = screen.getByTestId("hud-ally-review");
+    expect(card.textContent).toContain("Untick allies who can’t see or hear you");
+    const boxes = within(card).getAllByRole("checkbox") as HTMLInputElement[];
+    expect(boxes.map((b) => [b.parentElement?.textContent, b.checked])).toEqual([
+      ["Moss", true],
+      ["Oriel", true],
+    ]);
+    fireEvent.click(within(card).getByRole("checkbox", { name: "Oriel" }));
+    expect((within(card).getByRole("checkbox", { name: "Oriel" }) as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(within(card).getByRole("button", { name: "Send Rousing Strike to the ticked allies" }));
+    await screen.findByRole("button", { name: "Send Rousing Strike to the ticked allies" });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.name).toBe("allyPicks:send");
+    expect(calls[0]!.args).toMatchObject({ campaignId: CAMPAIGN, requestId: "r1", drop: ["t3"] });
+    expect(typeof calls[0]!.args.idempotencyKey).toBe("string");
+    expect(screen.queryByTestId("hud-ally-waiting")).toBeNull();
+  });
+
+  it("the GM gets the review cards only (a player away, or the GM playing for the PC), on the GM tone", () => {
+    queries["allyPicksReads:open"] = [REVIEW, { ...ROW, choosers: ROW.choosers.map((c) => ({ ...c, mine: !c.answered })) }];
+    render(<HudAllyPicks state={state("gm")} />);
+    const card = screen.getByTestId("hud-ally-review");
+    expect(card.className).toContain("hud-pc-gm");
+    expect(card.textContent).toContain("Brannoc’s allies");
+    expect(screen.queryByTestId("hud-ally-pick")).toBeNull();
   });
 });

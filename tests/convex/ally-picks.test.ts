@@ -108,15 +108,20 @@ async function arena() {
     );
   const answer = (c: Client, requestId: Id<"combatRequests">, chooserId: string, option: string, stepId = "rousing") =>
     c.mutation(api.allyPicks.answer, { campaignId, requestId, stepId, chooserId, options: [option], idempotencyKey: key() });
-  return { w, t, campaignId, mapId, gm, ...ids, sheet, edit, requests, criticalAttack, answer };
+  /** The actor's review (CU2): send the picks, `drop` unticked. */
+  const send = (c: Client, requestId: Id<"combatRequests">, drop: string[] = []) => c.mutation(api.allyPicks.send, { campaignId, requestId, drop, idempotencyKey: key() });
+  return { w, t, campaignId, mapId, gm, ...ids, sheet, edit, requests, criticalAttack, answer, send };
 }
 
-async function openPick(a: Awaited<ReturnType<typeof arena>>) {
+/** Ash's critical with Rousing Strike: the row opens in review; unless `review`, Ash sends it with every ally ticked. */
+async function openPick(a: Awaited<ReturnType<typeof arena>>, opts: { review?: boolean } = {}) {
   const r = await a.criticalAttack();
   if (r.status !== "resolved") throw new Error(`expected a resolved attack, got ${r.status}`);
   expect(r.roll.outcome).toBe("critical");
   expect(r.allyPicks).toEqual([expect.objectContaining({ name: "Rousing Strike" })]);
-  return { result: r, requestId: r.allyPicks![0]!.requestId };
+  const requestId = r.allyPicks![0]!.requestId;
+  if (opts.review !== true) expect(await a.send(a.w.as("player"), requestId)).toEqual({ status: "open" });
+  return { result: r, requestId };
 }
 
 describe("FH-AP: Rousing Strike waits for every chooser's own pick (CB p.342)", () => {
@@ -241,5 +246,122 @@ describe("FH-AP: an adversary feature's PC picks go to each PC (Awesome Size, HF
     if (res.status !== "resolved") throw new Error("expected resolved");
     await a.gm.mutation(api.actionLog.undo, { entryId: res.entryId, idempotencyKey: key() });
     expect((await a.requests()).find((r) => r._id === res.picks)?.status).toBe("declined");
+  });
+});
+
+describe("CU2: 'Neither' and the actor's review (bead dcm-bxp.99.32.46, user 2026-11-06)", () => {
+  it("each chooser may pick Neither (Rousing Strike CB p.342: 'can clear'); a Neither changes nothing for that PC", async () => {
+    const a = await arena();
+    const { requestId } = await openPick(a);
+    const view = await a.w.as("otherPlayer").query(api.allyPicksReads.open, { campaignId: a.campaignId });
+    expect(view[0]!.choosers[1]!.options.map((o) => o.id)).toEqual(["hp", "stress", "neither"]);
+    expect(await a.answer(a.w.as("otherPlayer"), requestId, a.bryn, "neither")).toEqual({ status: "open" });
+    expect(await a.answer(a.w.as("player"), requestId, a.ash, "hp")).toEqual({ status: "resolved" });
+    expect((await a.sheet(a.w.characterA)).hp).toBe(2);
+    expect(await a.sheet(a.w.characterB)).toMatchObject({ hp: 3, stress: 0 });
+  });
+
+  it("the picks wait for the actor's review: only the actor and the GM see the row, nobody answers yet", async () => {
+    const a = await arena();
+    const { requestId } = await openPick(a, { review: true });
+    const ashView = await a.w.as("player").query(api.allyPicksReads.open, { campaignId: a.campaignId });
+    expect(ashView).toEqual([expect.objectContaining({ actor: true, review: true })]);
+    expect(ashView[0]!.choosers.map((c) => [c.name, c.self, c.mine])).toEqual([
+      ["Ash", true, false],
+      ["Bryn", false, false],
+    ]);
+    expect(await a.w.as("otherPlayer").query(api.allyPicksReads.open, { campaignId: a.campaignId })).toEqual([]);
+    expect((await a.gm.query(api.allyPicksReads.open, { campaignId: a.campaignId }))[0]).toMatchObject({ review: true });
+    expect(await code(a.answer(a.w.as("player"), requestId, a.ash, "hp"))).toBe("NOT_A_RESPONDER");
+    expect(await code(a.answer(a.gm, requestId, a.bryn, "hp"))).toBe("NOT_A_RESPONDER");
+  });
+
+  it("the actor unticks an ally who can't see or hear them: only the rest pick, and the dropped ally gets nothing", async () => {
+    const a = await arena();
+    const { requestId } = await openPick(a, { review: true });
+    expect(await a.send(a.w.as("player"), requestId, [a.bryn])).toEqual({ status: "open" });
+    expect(await a.w.as("otherPlayer").query(api.allyPicksReads.open, { campaignId: a.campaignId })).toEqual([]);
+    expect(await code(a.answer(a.gm, requestId, a.bryn, "hp"))).toBe("NOT_A_RESPONDER");
+    expect(await a.answer(a.w.as("player"), requestId, a.ash, "hp")).toEqual({ status: "resolved" });
+    expect((await a.sheet(a.w.characterA)).hp).toBe(2);
+    expect((await a.sheet(a.w.characterB)).hp).toBe(3);
+  });
+
+  it("send refusals: another player FORBIDDEN, the actor's own pick or an unknown chooser INVALID, twice NOT_A_RESPONDER; the GM may send", async () => {
+    const a = await arena();
+    const { requestId } = await openPick(a, { review: true });
+    expect(await code(a.send(a.w.as("otherPlayer"), requestId))).toBe("FORBIDDEN");
+    expect(await code(a.send(a.w.as("outsider"), requestId))).toBe("NOT_FOUND");
+    expect(await code(a.send(a.w.as("player"), requestId, [a.ash]))).toBe("INVALID");
+    expect(await code(a.send(a.w.as("player"), requestId, ["nobody"]))).toBe("INVALID");
+    expect(await a.send(a.gm, requestId)).toEqual({ status: "open" });
+    expect(await code(a.send(a.w.as("player"), requestId))).toBe("NOT_A_RESPONDER");
+  });
+
+  it("an adversary's held use goes out at once (no review) and can't be 'sent'", async () => {
+    const a = await arena();
+    const res = await a.gm.mutation(api.adversaryActions.useFeature, { campaignId: a.campaignId, instanceId: a.machine, feature: "Awesome Size", targets: [], picked: [a.w.characterA, a.w.characterB], idempotencyKey: key() });
+    if (res.status !== "resolved") throw new Error("expected resolved");
+    expect((await a.gm.query(api.allyPicksReads.open, { campaignId: a.campaignId }))[0]).toMatchObject({ review: false });
+    expect(await code(a.send(a.gm, res.picks!))).toBe("NOT_A_RESPONDER");
+  });
+
+  describe("Critical Inspiration (CB p.341: 'all allies within Very Close range can clear a Stress or gain a Hope')", () => {
+    /** Ash with Critical Inspiration instead; Bryn moved far away (out of Very Close). */
+    async function inspiration(definedRanges: boolean) {
+      const a = await arena();
+      await a.edit(a.w.characterA, (s) => ({ domainCards: { ...s.domainCards, owned: [...new Set([...s.domainCards.owned, "critical-inspiration"])], loadout: ["critical-inspiration"] } }));
+      await a.edit(a.w.characterB, () => ({ stress: 2 }));
+      await a.t.run(async (ctx) => {
+        await ctx.db.patch("combatTokens", a.bryn, { x: 5, y: 40 });
+        await ctx.db.patch("campaigns", a.campaignId, { ruleModes: { definedRanges } });
+      });
+      const r = await pinnedDice([6, 6], () =>
+        a.w.as("player").mutation(api.combatActions.attack, {
+          campaignId: a.campaignId,
+          characterId: a.w.characterA,
+          mapId: a.mapId,
+          targetTokenIds: [a.bearToken],
+          slot: "primary",
+          modifier: 0,
+          experienceIds: [],
+          advantage: 0,
+          disadvantage: 0,
+          help: 0,
+          options: [],
+          riders: [{ source: "card", id: "critical-inspiration", choices: [] }],
+          idempotencyKey: key(),
+        }),
+      );
+      if (r.status !== "resolved") throw new Error(`expected a resolved attack, got ${r.status}`);
+      return { a, r };
+    }
+
+    it("Defined Ranges on: an ally out of Very Close is not on the list (no pick opens)", async () => {
+      const { a, r } = await inspiration(true);
+      expect(r.allyPicks ?? []).toEqual([]);
+      expect((await a.requests()).filter((x) => x.kind === "allyPick")).toEqual([]);
+    });
+
+    it("Defined Ranges off: every PC is on the list; the actor reviews, the ally picks (Neither offered)", async () => {
+      const { a, r } = await inspiration(false);
+      expect(r.allyPicks).toEqual([expect.objectContaining({ name: "Critical Inspiration" })]);
+      const requestId = r.allyPicks![0]!.requestId;
+      const view = await a.w.as("player").query(api.allyPicksReads.open, { campaignId: a.campaignId });
+      expect(view[0]!.choosers.map((c) => [c.name, c.self])).toEqual([["Bryn", false]]);
+      expect(view[0]!.choosers[0]!.options.map((o) => o.id)).toEqual(["stress", "hope", "neither"]);
+      expect(await a.send(a.w.as("player"), requestId)).toEqual({ status: "open" });
+      expect(await a.answer(a.w.as("otherPlayer"), requestId, a.bryn, "stress", "inspiration")).toEqual({ status: "resolved" });
+      expect((await a.sheet(a.w.characterB)).stress).toBe(1);
+    });
+
+    it("Defined Ranges off: the actor unticks everyone, so the card doesn't happen and stays unspent", async () => {
+      const { a, r } = await inspiration(false);
+      const requestId = r.allyPicks![0]!.requestId;
+      expect(await a.send(a.w.as("player"), requestId, [a.bryn])).toEqual({ status: "declined" });
+      expect((await a.requests()).find((x) => x._id === requestId)?.status).toBe("declined");
+      expect((await a.sheet(a.w.characterB)).stress).toBe(2);
+      expect((await a.sheet(a.w.characterA)).featureUses ?? []).not.toContainEqual(expect.objectContaining({ key: "card:critical-inspiration" }));
+    });
   });
 });

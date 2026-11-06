@@ -8,8 +8,10 @@
  * back to the PCs." CB p.149 "When to Make a Move": "Rolls with Fear on an action roll. / Fails an action roll."
  *
  * - `moveToGm(ctx, campaign, reason, rollBy?)`: the engine's call when a PC's action roll comes up with Fear or fails
- *   (`rollWithFear` / `failedRoll`), or the GM spotlights an adversary (`adversary`). Wired by bead dcm-bxp.99.32.4;
- *   until then only the GM's `combatSpotlight.gmTake` moves it.
+ *   (`rollWithFear` / `failedRoll`), or the GM spotlights an adversary (`adversary`). Wired by bead dcm-bxp.99.32.4
+ *   (convex/lib/rollAftermath.ts). Undoing the roll puts the row before back (plan rule-switches CU2, bead
+ *   dcm-bxp.99.32.10): rollAftermath stores it on the roll's action (`spotlightBefore`) and `undoEntry`
+ *   (convex/lib/actionLog.ts `restoreSpotlight`) restores it while the GM's hold is still the one the roll began.
  * - `spotlightAdversary(ctx, campaign, tokenId)`: the GM spotlights one adversary (`combatSpotlight.gmTake({ tokenId })`,
  *   reason `adversary`); the row names its token (`adversaryTokenId`) so the map can light it (bead dcm-bxp.99.32.35).
  *   A move to the GM from a PC and a hand-back to a PC clear it.

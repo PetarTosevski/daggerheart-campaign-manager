@@ -18,7 +18,8 @@
  * call it. The notes join the roll's `groupId`, so undoing the roll takes them back; a path whose roll row has no group
  * (a plain roll) asks `planPcActionRoll` first and gives the row a group only when a note is due. They carry no
  * `characterId`: a note on the character would be its "latest row" for the Slayer choice and the Tag Team checks.
- * Undo does not put the spotlight back (bead dcm-bxp.99.32.10).
+ * Undo puts the spotlight back (plan rule-switches CU2, bead dcm-bxp.99.32.10): a Book move stores the row before it on
+ * the roll's action (`spotlightBefore`), and `undoEntry` restores it while the GM's hold is still the one the roll began.
  *
  * Spotlight Tracker (optional rule `spotlightTracker`, CB p.89, plan rule-switches RT / RFB): each PC action roll spends
  * one of the roller's action tokens (convex/lib/actionTokens.ts). A Tag Team spends one of EACH PC (user answer
@@ -54,7 +55,7 @@ import { readSheet, saveSheet } from "./characterSheet";
 import { liveCombatMap, MAX_COMBAT_TOKENS } from "./combatMaps";
 import { applyTick } from "./countdownTicks";
 import { ruleMode, ruleModesOf, postRuleNote } from "./ruleModes";
-import { gmHoldsSpotlight, moveToGm } from "./spotlight";
+import { gmHoldsSpotlight, moveToGm, spotlightOf } from "./spotlight";
 
 /** The campaign's R3 mode, for `dualityEffects`. */
 export function hopeFearModeOf(campaign: Pick<Doc<"campaigns">, "frameId" | "ruleModes">): HopeFearMode {
@@ -210,11 +211,53 @@ export async function applyPcActionRoll(
   for (const note of aftermath.notes) {
     if (note.ruleId === "underwater" && row.groupId !== undefined) await applyBreath(ctx, campaign, note.breath, { groupId: row.groupId, actorId: row.actorId });
   }
-  if (aftermath.move !== null) await moveToGm(ctx, campaign, aftermath.move, aftermath.rollBy);
+  if (aftermath.move !== null) {
+    const before = await spotlightOf(ctx, campaign._id);
+    if (await moveToGm(ctx, campaign, aftermath.move, aftermath.rollBy)) await recordSpotlightBefore(ctx, campaign, aftermath.rollBy, row.groupId, before);
+  }
   for (const note of aftermath.notes) {
     if (note.ruleId === "spotlightTracker" || note.ruleId === "underwater") continue;
     await postRuleNote(ctx, campaign, { ruleId: note.ruleId, summary: note.summary, groupId: row.groupId, actorId: row.actorId });
   }
+}
+
+/**
+ * S1 undo (plan rule-switches CU2, bead dcm-bxp.99.32.10): stores the spotlight row as it stood before the roll moved it
+ * (`before`, null: the whole party) and the moved row's `since` on a row of the roll's action, so `undoEntry` puts it back
+ * (convex/lib/actionLog.ts `restoreSpotlight`). The row: the group's first non-note row, or for an ungrouped plain roll
+ * the roller's newest row (the roll row the path just logged; one indexed read). Nothing found: nothing stored.
+ */
+async function recordSpotlightBefore(
+  ctx: MutationCtx,
+  campaign: Doc<"campaigns">,
+  rollBy: Id<"characters">,
+  groupId: string | undefined,
+  before: Doc<"combatSpotlight"> | null,
+): Promise<void> {
+  const moved = await spotlightOf(ctx, campaign._id);
+  if (moved === null) return;
+  let entryId: Id<"actionLog"> | null;
+  if (groupId !== undefined) entryId = await groupEntry(ctx, campaign, groupId);
+  else {
+    const latest = await ctx.db
+      .query("actionLog")
+      .withIndex("by_character_at", (q) => q.eq("characterId", rollBy))
+      .order("desc")
+      .first();
+    entryId = latest !== null && latest.campaignId === campaign._id && latest.kind === "roll" && latest.undoneAt === undefined ? latest._id : null;
+  }
+  if (entryId === null) return;
+  const row =
+    before === null
+      ? null
+      : {
+          holder: before.holder,
+          since: before.since,
+          reason: before.reason,
+          ...(before.rollBy !== undefined ? { rollBy: before.rollBy } : {}),
+          ...(before.adversaryTokenId !== undefined ? { adversaryTokenId: before.adversaryTokenId } : {}),
+        };
+  await ctx.db.patch("actionLog", entryId, { spotlightBefore: { row, movedAt: moved.since } });
 }
 
 /** Plans and applies a PC action roll's aftermath, for a path whose rows already share `groupId`. Returns the plan. */

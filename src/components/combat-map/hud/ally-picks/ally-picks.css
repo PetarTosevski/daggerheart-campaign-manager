@@ -25,6 +25,24 @@
 .hud-ap-on {
   color: var(--hud-ink-2, inherit);
 }
+.hud-ap-review {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+.hud-ap-review .hud-ap-label {
+  flex-basis: 100%;
+  padding: 0;
+}
+.hud-ap-ally {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+}
 .hud-ap .hud-res-chip {
   min-height: 44px;
 }
