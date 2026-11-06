@@ -28,10 +28,11 @@ import { Card, Parchment } from "../ui";
  *   parchment into a textarea; Save, or moving focus out of the editor, saves it (`sessionWrap.setRecap`, one intent,
  *   optimistic); Cancel / Escape drops the draft. The GM reads it from `sessionWrap.get`, a player from their
  *   `sessionRecords.list` row (players see live and played sessions only; the server refuses a planned one).
- * - After the session (GM only, Q5: `sessionWrap.after` is a GM query; a player gets nothing): 'Level-ups' (the
- *   characters' names, else 'None'), 'Milestone' (dcm-z9rz.29: 'Reached 2 Nov' with a link to the Party tab, or 'Not
- *   yet' with 'Call milestone', which asks to confirm and runs `sessionWrap.callMilestone`: one way, every active
- *   character gets a level-up) and 'Loot' (inline edit, `sessionWrap.setLoot`, optimistic).
+ * - After the session (`sessionWrap.after`, every member since JF2, dcm-z9rz.32, user 2026-11-06: players read it, only
+ *   the GM edits): 'Level-ups' (the characters' names, else 'None'), 'Milestone' (dcm-z9rz.29: 'Reached 2 Nov' with a
+ *   link to the Party tab, or 'Not yet'; the GM also gets 'Call milestone', which asks to confirm and runs
+ *   `sessionWrap.callMilestone`: one way, every active character gets a level-up) and 'Loot' (the GM's inline edit,
+ *   `sessionWrap.setLoot`, optimistic; a player reads the text).
  */
 
 /**
@@ -196,13 +197,12 @@ function patchLoot(store: OptimisticLocalStore, campaignId: Id<"campaigns">, ses
   if (after) store.setQuery(api.sessionWrap.after, { campaignId, sessionId }, { ...after, loot });
 }
 
-/** Right column, last: 'After the session' (GM only; players see nothing, Q5). */
+/** Right column, last: 'After the session' (the GM edits it; players read it, JF2). */
 export function AfterSession({ campaignId, sessionId, isGm }: AfterSessionProps) {
-  if (!isGm) return null;
-  return <AfterCard campaignId={campaignId} sessionId={sessionId} />;
+  return <AfterCard campaignId={campaignId} sessionId={sessionId} isGm={isGm} />;
 }
 
-function AfterCard({ campaignId, sessionId }: { campaignId: Id<"campaigns">; sessionId: Id<"sessions"> }) {
+function AfterCard({ campaignId, sessionId, isGm }: { campaignId: Id<"campaigns">; sessionId: Id<"sessions">; isGm: boolean }) {
   const after = useQuery(api.sessionWrap.after, { campaignId, sessionId });
   const party = useQuery(api.charactersReads.partySummary, { campaignId });
   const names = new Map((party ?? []).map((c) => [c._id as string, c.sheet.name]));
@@ -221,8 +221,26 @@ function AfterCard({ campaignId, sessionId }: { campaignId: Id<"campaigns">; ses
               <dt>Level-ups</dt>
               <dd>{levelUpLine(after.levelUps, names)}</dd>
             </div>
-            <Milestone key={`m-${sessionId}`} campaignId={campaignId} sessionId={sessionId} milestoneAt={after.milestoneAt} />
-            <Loot key={sessionId} campaignId={campaignId} sessionId={sessionId} loot={after.loot} />
+            {isGm ? (
+              <>
+                <Milestone key={`m-${sessionId}`} campaignId={campaignId} sessionId={sessionId} milestoneAt={after.milestoneAt} />
+                <Loot key={sessionId} campaignId={campaignId} sessionId={sessionId} loot={after.loot} />
+              </>
+            ) : (
+              <>
+                <div className="jrr-dl-row jrr-milestone">
+                  <dt>Milestone</dt>
+                  <dd>
+                    <span>{milestoneLine(after.milestoneAt)}</span>
+                    {after.milestoneAt !== null ? <PartyLink campaignId={campaignId} /> : null}
+                  </dd>
+                </div>
+                <div className="jrr-dl-row jrr-loot">
+                  <dt>Loot</dt>
+                  <dd>{after.loot ?? "None"}</dd>
+                </div>
+              </>
+            )}
           </dl>
           {after.truncated ? <p className="jr-muted jr-m0 jrr-note">A long session: later level-ups may be missing.</p> : null}
         </>
@@ -234,6 +252,14 @@ function AfterCard({ campaignId, sessionId }: { campaignId: Id<"campaigns">; ses
 /** The milestone line's text: 'Reached 2 Nov', else 'Not yet'. */
 export function milestoneLine(milestoneAt: number | null): string {
   return milestoneAt === null ? "Not yet" : `Reached ${dayMonth(milestoneAt)}`;
+}
+
+function PartyLink({ campaignId }: { campaignId: Id<"campaigns"> }) {
+  return (
+    <Link href={`/campaigns/${campaignId}/party`} className="jrr-link">
+      Open Party to level up
+    </Link>
+  );
 }
 
 /** Optimistic: the milestone shows as reached at once (the server's stamp replaces the time). */
@@ -269,9 +295,7 @@ function Milestone({ campaignId, sessionId, milestoneAt }: { campaignId: Id<"cam
       <dd>
         <span>{milestoneLine(milestoneAt)}</span>
         {milestoneAt !== null ? (
-          <Link href={`/campaigns/${campaignId}/party`} className="jrr-link">
-            Open Party to level up
-          </Link>
+          <PartyLink campaignId={campaignId} />
         ) : confirming ? (
           <span className="jrr-confirm" role="group" aria-label="Confirm the milestone">
             <span className="jr-muted">Every active character gets a level-up. This can&apos;t be undone.</span>

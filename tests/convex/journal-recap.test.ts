@@ -220,7 +220,7 @@ describe("Journal JD5: recap, after the session, campaign so far", () => {
       expect(await names(first)).toEqual(["Vex reached level 2."]);
     });
 
-    it("a planned session has no level-ups; a stale id is null; players are refused", async () => {
+    it("a planned session has no level-ups; a stale id is null; players and grant callers get SESSION_NOT_FOUND for it, outsiders NOT_FOUND", async () => {
       const env = await setup();
       const sessionId = await env.create();
       expect(await env.gm.query(api.sessionWrap.after, { campaignId: env.campaignId, sessionId })).toEqual({
@@ -231,8 +231,40 @@ describe("Journal JD5: recap, after the session, campaign so far", () => {
         truncated: false,
       });
       expect(await env.gm.query(api.sessionWrap.after, { campaignId: env.campaignId, sessionId: "nope" })).toBeNull();
-      expect(await failure(env.p1.query(api.sessionWrap.after, { campaignId: env.campaignId, sessionId }))).toBe("FORBIDDEN");
-      expect(await failure(env.grant.query(api.sessionWrap.after, { campaignId: env.campaignId, sessionId }))).toBe("FORBIDDEN");
+      expect(await failure(env.p1.query(api.sessionWrap.after, { campaignId: env.campaignId, sessionId }))).toBe("SESSION_NOT_FOUND");
+      expect(await failure(env.grant.query(api.sessionWrap.after, { campaignId: env.campaignId, sessionId }))).toBe("SESSION_NOT_FOUND");
+      expect(await failure(env.out.query(api.sessionWrap.after, { campaignId: env.campaignId, sessionId }))).toBe("NOT_FOUND");
+    });
+
+    it("players read a played session's level-ups (public rows only), milestone and loot; they cannot edit (JF2, dcm-z9rz.32)", async () => {
+      const env = await setup();
+      const vex = await env.character("Vex");
+      const sessionId = await env.create();
+      await env.gm.mutation(api.sessions.start, { campaignId: env.campaignId, sessionId, idempotencyKey: key() });
+      const from = (await env.t.run((ctx) => ctx.db.get("sessions", sessionId)))!.startedAt!;
+      const row = (summary: string, visibility: "public" | "gm", at = from) =>
+        env.t.run((ctx) =>
+          ctx.db.insert("actionLog", { campaignId: env.campaignId, characterId: vex, actorId: env.ids.gm, kind: "levelUp", visibility, summary, undoable: false, at }),
+        );
+      await row("Vex reached level 2.", "public");
+      // Live: the player reads it already.
+      expect((await env.p1.query(api.sessionWrap.after, { campaignId: env.campaignId, sessionId }))?.levelUps.map((l) => l.summary)).toEqual(["Vex reached level 2."]);
+      await env.gm.mutation(api.sessions.end, { campaignId: env.campaignId, idempotencyKey: key() });
+      await env.gm.mutation(api.sessionWrap.setLoot, { campaignId: env.campaignId, sessionId, loot: "A silver key." });
+      const { milestoneAt } = await env.gm.mutation(api.sessionWrap.callMilestone, { campaignId: env.campaignId, sessionId, idempotencyKey: key() });
+      // The milestone wrote a public "can level up" row; a later GM-only row is the latest for the GM alone.
+      await row("A GM-only level-up line.", "gm", Date.now() + 60_000);
+
+      const after = await env.p1.query(api.sessionWrap.after, { campaignId: env.campaignId, sessionId });
+      expect(after?.milestoneAt).toBe(milestoneAt);
+      expect(after?.loot).toBe("A silver key.");
+      // The GM-only row is left out for the player; the GM reads it (the latest row of the character).
+      expect(after?.levelUps.map((l) => l.summary)).toEqual(["Vex can level up to 2."]);
+      expect(await env.grant.query(api.sessionWrap.after, { campaignId: env.campaignId, sessionId })).toEqual(after);
+      expect((await env.gm.query(api.sessionWrap.after, { campaignId: env.campaignId, sessionId }))?.levelUps.map((l) => l.summary)).toEqual(["A GM-only level-up line."]);
+
+      expect(await failure(env.p1.mutation(api.sessionWrap.setLoot, { campaignId: env.campaignId, sessionId, loot: "Mine now." }))).toBe("FORBIDDEN");
+      expect(await failure(env.p1.mutation(api.sessionWrap.callMilestone, { campaignId: env.campaignId, sessionId, idempotencyKey: key() }))).toBe("FORBIDDEN");
     });
   });
 });

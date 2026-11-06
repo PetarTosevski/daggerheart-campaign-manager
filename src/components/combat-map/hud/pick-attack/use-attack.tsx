@@ -14,7 +14,7 @@ import { seenTargets, useActor, useCombatTargets, useTargetHints, type WeaponSlo
 import type { CombatPageState } from "../../slots";
 import { usePick } from "../pick";
 import { hudResults, showAttackOutcome } from "../result";
-import { attackSession, attackSessionId, bandsFrom, forcedRows, initialData, weaponOf, type AttackInput, type ForcedAttack } from "./model";
+import { attackSession, attackSessionId, bandsFrom, conflictRows, forcedRows, initialData, weaponOf, type AttackInput, type ForcedAttack } from "./model";
 import { attackReports } from "./report";
 import { AttackRows } from "./rows";
 
@@ -83,6 +83,8 @@ export function useAttackPicker(state: AttackState, playFor: Id<"characters"> | 
   const ridersSecondary = useQuery(api.combatActionsReads.riders, on && hasSecondary ? { campaignId, characterId, slot: "secondary" } : "skip");
   const hints = useTargetHints(campaignId, on ? characterId : null, mapId ?? ("" as Id<"combatMaps">), "primary");
   const forcedAll = useQuery(api.combatRequestsReads.forcedAttacks, on ? { campaignId } : "skip");
+  // Plan rule-switches OP: "Conflict between PCs" (CB p.168) lets the attack take another PC; off until loaded.
+  const ruleModes = useQuery(api.ruleSettings.get, on ? { campaignId } : "skip")?.modes;
   const attack = useMutation(api.combatActions.attack);
   const { targetTokenIds } = useCombatTargets();
 
@@ -139,6 +141,7 @@ export function useAttackPicker(state: AttackState, playFor: Id<"characters"> | 
       hints: hints ?? [],
       forced: f,
       forcedRows: f ? forcedRows(f, bandsFrom(seen.view)) : null,
+      conflictRows: !f && ruleModes?.pcConflict === true ? conflictRows(bandsFrom(seen.view), hints ?? [], ruleModes.lineOfSight) : null,
       picked: seenTargets(targetTokenIds, seen.enemies),
       ...(seen.actor ? { actor: seen.actor, others: { enemies: seen.enemies, allies: seen.allies } } : {}),
       attack: async (args) => {

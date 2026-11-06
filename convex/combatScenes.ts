@@ -153,7 +153,16 @@ export const end = keyedGmMutation({
 // ---------------------------------------------------------------- the environment (plan rule-switches OE)
 
 /** A creature on the live map the GM can mark "fights underwater" (CB p.168: "like a Siren or Shark"). */
-const environmentCreature = v.object({ tokenId: v.id("combatTokens"), name: v.string(), side: v.string(), fightsUnderwater: v.boolean() });
+const environmentCreature = v.object({
+  tokenId: v.id("combatTokens"),
+  name: v.string(),
+  side: v.string(),
+  fightsUnderwater: v.boolean(),
+  /** Plan OE2: whether the token is a PC's (only a PC can be marked as breathing underwater). */
+  pc: v.boolean(),
+  /** Plan OE2: a PC the GM marked as breathing underwater (no breath tick, no Stress); false for every other token. */
+  breathesUnderwater: v.boolean(),
+});
 
 const environmentValidator = v.object({
   /** M3's badge for the campaign's light, naming the active mode (`darknessBadge`); null outside dim light or in Manual. */
@@ -207,7 +216,10 @@ export const environment = campaignQuery({
         .query("combatTokens")
         .withIndex("by_map", (q) => q.eq("mapId", map._id))
         .take(MAX_COMBAT_TOKENS);
-      for (const t of tokens) creatures.push({ tokenId: t._id, name: await creatureName(ctx, campaign._id, t), side: t.side, fightsUnderwater: t.fightsUnderwater === true });
+      for (const t of tokens) {
+        const pc = t.ref.kind === "pc";
+        creatures.push({ tokenId: t._id, name: await creatureName(ctx, campaign._id, t), side: t.side, fightsUnderwater: t.fightsUnderwater === true, pc, breathesUnderwater: pc && t.breathesUnderwater === true });
+      }
     }
     return {
       darkness: darknessBadge(light, modes.darkness, modes.darknessDifficulty),
@@ -324,6 +336,27 @@ export const setFightsUnderwater = keyedGmMutation({
       const token = await loadCombatToken(ctx, ctx.campaign._id, tokenId);
       if ((token.fightsUnderwater === true) !== fightsUnderwater) {
         await ctx.db.patch("combatTokens", token._id, { fightsUnderwater: fightsUnderwater ? true : undefined });
+      }
+      return null;
+    }),
+});
+
+/**
+ * Plan rule-switches OE2 (user 2026-11-06 on dcm-bxp.134; CB p.168: "For any creatures that can't breathe underwater,
+ * you can use a countdown"): the GM marks a PC's token as breathing underwater. Its action rolls then don't tick the
+ * breath countdown and never mark the out-of-breath Stress (`rollAftermath`). MECHANIC_DISABLED while the rule is off;
+ * COMBAT_TOKEN_NOT_FOUND for another campaign's token; INVALID for a token that is not a PC's.
+ */
+export const setBreathesUnderwater = keyedGmMutation({
+  args: { tokenId: v.id("combatTokens"), breathesUnderwater: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, { tokenId, breathesUnderwater }) =>
+    ctx.once("combat_token_breathes_underwater", { tokenId, breathesUnderwater }, async () => {
+      assertUnderwaterOn(ctx.campaign);
+      const token = await loadCombatToken(ctx, ctx.campaign._id, tokenId);
+      if (token.ref.kind !== "pc") throw appError("INVALID", "Only a PC can be marked as breathing underwater.");
+      if ((token.breathesUnderwater === true) !== breathesUnderwater) {
+        await ctx.db.patch("combatTokens", token._id, { breathesUnderwater: breathesUnderwater ? true : undefined });
       }
       return null;
     }),

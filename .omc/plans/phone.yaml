@@ -396,3 +396,56 @@ waves:
           - docs/phone-client.md
         acceptance:
           - full apps/mobile jest passes; pnpm typecheck; known-stale-fixtures.ts shorter
+  - wave: 11
+    tracers:
+      - id: WSM
+        title: "Website uses the shared src/lib models (Lorekeeper, codex, countdowns, wizard, Tome text)"
+        beads: [dcm-gdzi.43, dcm-gdzi.45, dcm-gdzi.47]
+        pr: 2
+        goal: "The website imports the src/lib models PX6 made (Lorekeeper answer / composer / names / selection / clip, codex list model, countdown listItems, hud queue errorCode); the wizard logic and draft schema, the reactions model, level-up / dice roll copy / features panel / lunar helpers and the custom-tome chapter text move into framework-free src/lib modules the website imports; web behaviour unchanged; web tests point at src/lib. Phone switch-over to the new modules happens later (apps/mobile is PXL's)."
+        depends_on: [PX6]
+        owns:
+          - src/lib/**
+          - src/components/lorekeeper/**
+          - src/app/(gm)/campaigns/[campaignId]/codex/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/index.tsx
+          - src/components/combat-map/hud/queue/model.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/new/**
+          - src/components/combat-map/actions/reactions/**
+          - src/components/party/level-up/**
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/level-up-draft.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/level-up-ribbon.tsx
+          - src/components/party/dice/dice-box.tsx
+          - src/components/party/dice/parts.tsx
+          - src/components/party/features/panel.tsx
+          - src/components/party/lunar/section.tsx
+          - src/components/tome/tome-book.tsx
+          - tests/unit/**
+          - docs/tasks/TASK-WSM.md
+        acceptance:
+          - pnpm lint, pnpm typecheck, the web unit tests of every touched area pass; behaviour unchanged
+  - wave: 12
+    tracers:
+      - id: PXS
+        title: "Phone uses the shared src/lib models; wizard drafts on the account"
+        beads: [dcm-gdzi.47]
+        pr: 5
+        goal: "The phone imports WSM's src/lib modules (wizard logic and draft schema, level-up, roll copy, features, lunar, reactions model, custom-tome text) and deletes its copies; KNOWN_COPIES shrinks accordingly; the character wizard draft lives on the account (drafts.get / drafts.save) like the website"
+        depends_on: [WSM, PXL]
+        owns:
+          - apps/mobile/**
+        acceptance:
+          - full apps/mobile jest passes; KNOWN_COPIES shorter; pnpm typecheck
+  - wave: 13
+    tracers:
+      - id: LAND
+        title: "Cut phone/on-rebuild into the nine stacked PR branches (local only)"
+        beads: [dcm-gdzi]
+        goal: "phone/on-rebuild is merged with the latest rebuild and cut into nine local branches stacked in order (1 server/auth, 2 workspace+tooling+shell, 3 account, 4 dashboard+trackers, 5 party+sheet, 6 codex/world/players/tome, 7 journal, 8 lorekeeper, 9 combat), each branched from the previous, each passing pnpm lint, pnpm typecheck, pnpm test and the mobile check on its own; the last one's tree equals phone/on-rebuild; Nikola stays author of his commits where commits are kept; nothing pushed"
+        depends_on: [PXS]
+        owns:
+          - apps/mobile/**
+          - docs/phone-client.md
+          - docs/tasks/TASK-LAND.md
+        acceptance:
+          - nine local branches phone/pr-1 .. phone/pr-9; each green; a PR description per branch in docs/tasks/TASK-LAND.md

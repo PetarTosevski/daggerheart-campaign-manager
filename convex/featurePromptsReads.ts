@@ -12,6 +12,7 @@ import { attackScene } from "./lib/combatActions";
 import { characterName, editableHere, featureName, liveAllyRolls, rollerUse, tokenName, type AllyRollRow } from "./lib/featurePrompts";
 import { campaignQuery } from "./lib/functions";
 import { atLeast } from "./lib/permissions";
+import { ruleMode } from "./lib/ruleModes";
 
 /**
  * The drawer's and the GM queue's read of the uses an ally rolls (plan drawer-answers, DA13; CB p.33 Cannonball; moved
@@ -66,11 +67,13 @@ async function enemyChoices(ctx: QueryCtx, campaign: Doc<"campaigns">, roller: D
   const enemies = await new Creatures(ctx, campaign._id, scene, readSheet(roller.sheet)).visibleEnemies();
   const second = extraSpecs(rollerUse(use)).picked;
   const nearRange = second?.areaRange ?? second?.range ?? "veryClose";
+  // Rule switches ODR2: with Defined Ranges off every enemy is in range and near every other (the roller judges by eye).
+  const ranges = ruleMode(campaign, "definedRanges");
   return enemies.map((e) => ({
     tokenId: e.tokenId,
     name: e.instance.label,
-    inRange: rangeCheck(scene.attacker, e.token, use.rolledBy!.targets.range === "weapon" ? "melee" : use.rolledBy!.targets.range).inRange,
-    near: enemies.filter((o) => o.tokenId !== e.tokenId && rangeCheck(e.token, o.token, nearRange === "weapon" ? "melee" : nearRange).inRange).map((o) => o.tokenId),
+    inRange: rangeCheck(scene.attacker, e.token, use.rolledBy!.targets.range === "weapon" ? "melee" : use.rolledBy!.targets.range, ranges).inRange,
+    near: enemies.filter((o) => o.tokenId !== e.tokenId && rangeCheck(e.token, o.token, nearRange === "weapon" ? "melee" : nearRange, ranges).inRange).map((o) => o.tokenId),
   }));
 }
 

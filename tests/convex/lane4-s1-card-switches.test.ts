@@ -30,7 +30,7 @@ import { bandsOnMap, openIncomingHit, partyMembers } from "../../convex/lib/inco
 import { tokenDistance } from "../../src/lib/domain/combat-actions/distance";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { allowWorldEmails, buildWorld } from "./authz/world";
-import { errorCode, key } from "./helpers";
+import { errorCode, handingBack, key } from "./helpers";
 
 /** The server's dice: each queued value is the next die; the real generator after. */
 function serverDice(...values: number[]) {
@@ -58,8 +58,9 @@ async function arena() {
   const w = await buildWorld();
   const { t, campaignId } = w;
   const gm = w.as("gm");
-  const player = w.as("player");
-  const other = w.as("otherPlayer");
+  // S2 (plan rule-switches RS2): the GM hands the spotlight back before each act (`handingBack`).
+  const player = handingBack(w.as("player"), gm, w.campaignId);
+  const other = handingBack(w.as("otherPlayer"), gm, w.campaignId);
   const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
   const now = Date.now();
   const ids = await t.run(async (ctx) => {

@@ -18,6 +18,7 @@ import {
   ShieldHalf,
   Skull,
   Sparkles,
+  Speech,
   Square,
   Swords,
   Sword,
@@ -39,6 +40,8 @@ export const LOG_ICONS: Record<JournalLogIcon, { Icon: LucideIcon; label: string
   reactionRoll: { Icon: ShieldHalf, label: "Reaction roll" },
   damageRoll: { Icon: HeartCrack, label: "Damage roll" },
   attackRoll: { Icon: Crosshair, label: "Attack roll" },
+  // Journal JF2 (dcm-z9rz.28): lucide has no mouth; Speech (a speaking head) is the closest.
+  socialRoll: { Icon: Speech, label: "Social roll" },
   gmRoll: { Icon: Dices, label: "GM roll" },
   feature: { Icon: Sparkles, label: "Feature or spell" },
   levelUp: { Icon: ArrowUpCircle, label: "Level up" },

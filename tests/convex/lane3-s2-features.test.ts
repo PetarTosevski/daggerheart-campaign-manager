@@ -25,7 +25,7 @@ import { featureEffect } from "../../src/lib/srd/feature-effects/index";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { actorOf, sheetOf } from "../unit/feature-effects/engine/fixtures";
 import { allowWorldEmails, buildWorld } from "./authz/world";
-import { errorCode, key } from "./helpers";
+import { errorCode, handingBack, key } from "./helpers";
 
 const INCARNATION = "subclass:warden-of-the-elements:elemental-incarnation";
 const STANCE_FIGHTER = "subclass:martial-artist:stance-fighter";
@@ -49,7 +49,8 @@ async function arena() {
   const w = await buildWorld();
   const { t, campaignId } = w;
   const gm = w.as("gm");
-  const player = w.as("player");
+  // S2 (plan rule-switches RS2): the GM hands the spotlight back before each act (`handingBack`).
+  const player = handingBack(w.as("player"), gm, w.campaignId);
   await gm.mutation(api.campaigns.setOption, { campaignId, option: "hopeAndFear", enabled: true });
   const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
   const now = Date.now();

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { api } from "../../convex/_generated/api";
+import { api, internal } from "../../convex/_generated/api";
 import { errorCode, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
@@ -26,7 +26,7 @@ async function setup() {
   await p1.mutation(api.members.joinByCode, { code: joinCode });
   const newSession = async () => (await gm.mutation(api.sessionRecords.create, { campaignId, idempotencyKey: key() })).sessionId;
   const linkNew = async (sessionId: string) =>
-    (await gm.mutation(api.sessionPrep.createEncounter, { campaignId, sessionId, idempotencyKey: key() })).encounterId;
+    (await t.mutation(internal.sessionPrep.createEncounter, { campaignId, sessionId })).encounterId;
   const current = () => gm.query(api.sessionPrep.current, { campaignId });
   return { t, gm, p1, out, campaignId, newSession, linkNew, current };
 }

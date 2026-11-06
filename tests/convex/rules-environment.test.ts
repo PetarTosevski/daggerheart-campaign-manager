@@ -20,14 +20,50 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { underwaterAttackDisadvantage } from "../../convex/lib/adversaryActions";
 import { attackEnvironment } from "../../convex/lib/combatActions";
 import { readSheet, saveSheet } from "../../convex/lib/characterSheet";
-import { breathEnded, breathTicks, darknessBadge, darknessEdge, DIM_PHASE_BADGE, underwaterDisadvantage } from "../../src/lib/domain/combat-map/light";
+import { breathEnded, breathTicks, darknessBadge, darknessEdge, darknessLabels, DIM_PHASE_BADGE, underwaterDisadvantage } from "../../src/lib/domain/combat-map/light";
+import type { CardEffect, CardUse } from "../../src/lib/domain/card-effects/types";
+import type { FeatureEffect } from "../../src/lib/domain/feature-effects/types";
 import { WEAPONS } from "../../src/lib/srd/index";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { allowWorldEmails, buildWorld } from "./authz/world";
-import { errorCode, key } from "./helpers";
+import { errorCode, handingBack, key } from "./helpers";
+
+// Plan OE2: a card attack and a subclass feature attack with the same use (Agility against the target's Difficulty, 1d8).
+const injected = vi.hoisted(() => ({ cards: new Map<string, unknown>(), features: new Map<string, unknown>() }));
+vi.mock("../../src/lib/srd/card-effects/index", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../../src/lib/srd/card-effects/index")>();
+  return { ...real, cardEffect: (id: string) => (injected.cards.get(id) as CardEffect | undefined) ?? real.cardEffect(id) };
+});
+vi.mock("../../src/lib/srd/feature-effects/index", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../../src/lib/srd/feature-effects/index")>();
+  return { ...real, featureEffect: (id: string) => (injected.features.get(id) as FeatureEffect | undefined) ?? real.featureEffect(id) };
+});
+const STRIKE: CardUse = {
+  id: "strike",
+  name: "Strike",
+  activation: { kind: "action" as const },
+  roll: { kind: "trait" as const, trait: "agility" as const, difficulty: { kind: "target" as const }, attack: true },
+  targets: { side: "enemy" as const, range: "far" as const, count: { kind: "one" as const } },
+  steps: [{ kind: "damage" as const, to: "targets" as const, when: ["hit" as const], roll: { kind: "dice" as const, dice: { count: { kind: "fixed" as const, value: 1 }, sides: 8 } }, type: "physical" }],
+};
+/** A card action roll against the GM's Difficulty (no target): not an attack. */
+const SEARCH: CardUse = {
+  id: "search",
+  name: "Search",
+  activation: { kind: "action" as const },
+  roll: { kind: "trait" as const, trait: "instinct" as const, difficulty: { kind: "gm" as const } },
+  targets: { side: "self" as const, range: "melee" as const, count: { kind: "one" as const } },
+  steps: [],
+};
+const ABILITY = "deft-maneuvers";
+const FEATURE_ID = "subclass:call-of-the-brave:battle-ritual";
+injected.cards.set(ABILITY, { cardId: ABILITY, uses: [STRIKE, SEARCH] } satisfies CardEffect);
+injected.features.set(FEATURE_ID, { featureId: FEATURE_ID, source: "subclass", owner: "call-of-the-brave", card: "foundation", uses: [STRIKE] } satisfies FeatureEffect);
 
 allowWorldEmails();
 afterEach(() => vi.restoreAllMocks());
+// A card use loads the whole card and feature runner; on a loaded host that takes longer than the default 15 s.
+vi.setConfig({ testTimeout: 60_000 });
 
 /** The server's dice show `values` in turn, then repeat (a value never above its die: callers pick them so). */
 function dice(...values: number[]) {
@@ -61,12 +97,13 @@ type Modes = Partial<{ darkness: "book" | "disadvantage" | "difficulty" | "both"
 const agility = { kind: "action" as const, trait: "agility" as const, modifier: 0, experienceIds: [], advantage: 0, disadvantage: 0, help: 0, attack: false, options: [] };
 
 /** The world, a live medium map with Ash at (5, 10) looking east, a running encounter, the light and the rule modes. */
-async function arena(modes: Modes = {}, options: { light?: "day" | "dim" | "night"; ranged?: boolean } = {}) {
+async function arena(modes: Modes = {}, options: { light?: "day" | "dim" | "night"; ranged?: boolean; cards?: boolean } = {}) {
   // A frame without campaign time: the GM's Day / Dim / Night decides the light (the Witherwild starts at a dim Dawn).
   const w = await buildWorld({ frameId: "beast-feast" });
   const { t, campaignId } = w;
   const gm = w.as("gm");
-  const player = w.as("player");
+  // RS2: players wait while the GM holds the spotlight in a running encounter; these tests are about the environment.
+  const player = handingBack(w.as("player"), gm, campaignId);
   const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
   const now = Date.now();
   const ids = await t.run(async (ctx) => {
@@ -83,6 +120,7 @@ async function arena(modes: Modes = {}, options: { light?: "day" | "dim" | "nigh
       await saveSheet(ctx, w.characterA, { ...s, ...patch });
     });
   if (options.ranged) await edit({ primaryWeaponId: FAR_WEAPON.id });
+  if (options.cards) await edit({ classId: "warrior", subclassId: "call-of-the-brave", subclassRank: "foundation", domainCards: { owned: [ABILITY], loadout: [ABILITY] } } as Partial<CharacterSheet>);
   const enemy = (difficulty: number, x = 6, y = 10) =>
     t.run(async (ctx) => {
       const instanceId = await ctx.db.insert("encounterAdversaries", {
@@ -116,7 +154,21 @@ async function arena(modes: Modes = {}, options: { light?: "day" | "dim" | "nigh
   };
   const rows = () => t.run((ctx) => ctx.db.query("actionLog").withIndex("by_campaign_at", (q) => q.eq("campaignId", campaignId)).collect());
   const undo = (entryId: Id<"actionLog">) => gm.mutation(api.actionLog.undo, { entryId, idempotencyKey: key() });
-  return { w, t, campaignId, mapId, gm, player, ...ids, sheetOf, edit, enemy, attack, roll, setUnderwater, breath, rows, undo };
+  // Plan OE2: a card or feature use (the dice restart: Hope 10, Fear 3, an edge d6 4 when the roll has one, the d8 4).
+  const card = async (spell: "strike" | "search", targetTokenIds: Id<"combatTokens">[], roll: { difficulty?: number } = {}) => {
+    dice(10, 3, 4, 4);
+    const r = await player.mutation(api.combatCards.useCard, { campaignId, characterId: w.characterA, mapId, cardId: ABILITY, spell, targetTokenIds, choices: [], roll, idempotencyKey: key() });
+    if (r.status !== "resolved") throw new Error(`expected a resolved card use, got ${r.status}`);
+    return r;
+  };
+  const feature = async (targetTokenIds: Id<"combatTokens">[]) => {
+    dice(10, 3, 4, 4);
+    const r = await player.mutation(api.combatFeatures.useFeature, { campaignId, characterId: w.characterA, mapId, featureId: FEATURE_ID, useId: "strike", targetTokenIds, choices: [], idempotencyKey: key() });
+    if (r.status !== "resolved") throw new Error(`expected a resolved feature use, got ${r.status}`);
+    return r;
+  };
+  const setBreathes = (tokenId: Id<"combatTokens">, breathesUnderwater: boolean, as = gm) => as.mutation(api.combatScenes.setBreathesUnderwater, { campaignId, tokenId, breathesUnderwater, idempotencyKey: key() });
+  return { w, t, campaignId, mapId, gm, player, ...ids, sheetOf, edit, enemy, attack, roll, setUnderwater, breath, rows, undo, card, feature, setBreathes };
 }
 
 function resolved<T extends { status: string }>(r: T): Extract<T, { status: "resolved" }> {
@@ -127,23 +179,24 @@ function resolved<T extends { status: string }>(r: T): Extract<T, { status: "res
 const edgeDice = (r: { dice: readonly { role: string }[] }) => r.dice.filter((d) => d.role === "disadvantage" || d.role === "advantage").map((d) => d.role);
 
 describe("pure: M3 variants and Underwater", () => {
-  it("darknessEdge: only a ranged attack in dim light; per mode; N from the row (default 2)", () => {
-    expect(darknessEdge("dim", true)).toEqual({ disadvantage: 0, difficulty: 0 });
-    expect(darknessEdge("dim", true, "manual")).toEqual({ disadvantage: 0, difficulty: 0 });
-    expect(darknessEdge("dim", true, "disadvantage")).toEqual({ disadvantage: 1, difficulty: 0 });
-    expect(darknessEdge("dim", true, "difficulty")).toEqual({ disadvantage: 0, difficulty: 2 });
-    expect(darknessEdge("dim", true, "difficulty", 5)).toEqual({ disadvantage: 0, difficulty: 5 });
-    expect(darknessEdge("dim", true, "both", 3)).toEqual({ disadvantage: 1, difficulty: 3 });
-    expect(darknessEdge("dim", false, "both")).toEqual({ disadvantage: 0, difficulty: 0 });
-    expect(darknessEdge("day", true, "both")).toEqual({ disadvantage: 0, difficulty: 0 });
-    expect(darknessEdge("night", true, "both")).toEqual({ disadvantage: 0, difficulty: 0 });
+  it("darknessEdge: only in dim light; per mode; N from the row (default 2)", () => {
+    expect(darknessEdge("dim")).toEqual({ disadvantage: 0, difficulty: 0 });
+    expect(darknessEdge("dim", "manual")).toEqual({ disadvantage: 0, difficulty: 0 });
+    expect(darknessEdge("dim", "disadvantage")).toEqual({ disadvantage: 1, difficulty: 0 });
+    expect(darknessEdge("dim", "difficulty")).toEqual({ disadvantage: 0, difficulty: 2 });
+    expect(darknessEdge("dim", "difficulty", 5)).toEqual({ disadvantage: 0, difficulty: 5 });
+    expect(darknessEdge("dim", "both", 3)).toEqual({ disadvantage: 1, difficulty: 3 });
+    expect(darknessEdge("day", "both")).toEqual({ disadvantage: 0, difficulty: 0 });
+    expect(darknessEdge("night", "both")).toEqual({ disadvantage: 0, difficulty: 0 });
+    expect(darknessLabels({ disadvantage: 1, difficulty: 2 })).toEqual(["dim light: disadvantage", "dim light: +2 Difficulty"]);
+    expect(darknessLabels({ disadvantage: 0, difficulty: 0 })).toEqual([]);
   });
 
-  it("darknessBadge names the active mode; none outside dim light or in Manual", () => {
+  it("darknessBadge names the active mode (every action roll, OE2); none outside dim light or in Manual", () => {
     expect(darknessBadge("dim")).toBe(DIM_PHASE_BADGE);
-    expect(darknessBadge("dim", "disadvantage")).toBe("Dim light: ranged attacks roll with disadvantage");
-    expect(darknessBadge("dim", "difficulty", 3)).toBe("Dim light: ranged attacks +3 Difficulty");
-    expect(darknessBadge("dim", "both")).toBe("Dim light: ranged attacks roll with disadvantage, +2 Difficulty");
+    expect(darknessBadge("dim", "disadvantage")).toBe("Dim light: action rolls with disadvantage");
+    expect(darknessBadge("dim", "difficulty", 3)).toBe("Dim light: action rolls +3 Difficulty");
+    expect(darknessBadge("dim", "both")).toBe("Dim light: action rolls with disadvantage, +2 Difficulty");
     expect(darknessBadge("dim", "manual")).toBeNull();
     expect(darknessBadge("day", "both")).toBeNull();
   });
@@ -164,9 +217,10 @@ describe("pure: M3 variants and Underwater", () => {
   it("attackEnvironment and underwaterAttackDisadvantage read the scene, the token and the modes", () => {
     const scene = (underwater: boolean, fights: boolean, light: "day" | "dim" = "dim") => ({ map: { underwater } as never, attacker: { fightsUnderwater: fights } as never, scene: { light } });
     const modes = { darkness: "both" as const, darknessDifficulty: 2, underwater: true };
-    expect(attackEnvironment(scene(true, false), { weaponRange: "far" }, modes)).toEqual({ disadvantage: 2, difficulty: 2, labels: ["dim light: disadvantage", "dim light: +2 Difficulty", "underwater: disadvantage"] });
-    expect(attackEnvironment(scene(true, true), { weaponRange: "melee" }, modes)).toEqual({ disadvantage: 0, difficulty: 0, labels: [] });
-    expect(attackEnvironment(scene(true, false, "day"), { weaponRange: "far" }, { ...modes, underwater: false })).toEqual({ disadvantage: 0, difficulty: 0, labels: [] });
+    expect(attackEnvironment(scene(true, false), modes)).toEqual({ disadvantage: 2, difficulty: 2, labels: ["dim light: disadvantage", "dim light: +2 Difficulty", "underwater: disadvantage"] });
+    expect(attackEnvironment(scene(true, true), modes)).toEqual({ disadvantage: 1, difficulty: 2, labels: ["dim light: disadvantage", "dim light: +2 Difficulty"] });
+    expect(attackEnvironment(scene(true, true, "day"), modes)).toEqual({ disadvantage: 0, difficulty: 0, labels: [] });
+    expect(attackEnvironment(scene(true, false, "day"), { ...modes, underwater: false })).toEqual({ disadvantage: 0, difficulty: 0, labels: [] });
     const on = { frameId: "core", ruleModes: { underwater: true } } as never;
     const adv = (underwater: boolean, fights: boolean) => ({ map: { scene: { map: { underwater } }, selfToken: { fightsUnderwater: fights } } as never });
     expect(underwaterAttackDisadvantage(on, adv(true, false))).toBe(1);
@@ -187,7 +241,7 @@ describe("M3 darkness on a PC's weapon attack (CB p.104)", () => {
     expect(r.targets[0]!.hit).toBe(true);
   });
 
-  it("disadvantage: a ranged attack in dim light rolls a disadvantage die (and names it); a Melee one does not; day light does not", async () => {
+  it("disadvantage: an attack in dim light rolls a disadvantage die (and names it), a Melee one too (OE2); day light does not", async () => {
     dice(10, 3, 4, 4);
     const a = await arena({ darkness: "disadvantage" }, { light: "dim", ranged: true });
     const bear = await a.enemy(1, 12, 10);
@@ -200,7 +254,7 @@ describe("M3 darkness on a PC's weapon attack (CB p.104)", () => {
     const near = await melee.enemy(1);
     const m = resolved(await melee.attack([near]));
     diceInRange(m.roll);
-    expect(edgeDice(m.roll)).toEqual([]);
+    expect(edgeDice(m.roll)).toEqual(["disadvantage"]);
 
     const day = await arena({ darkness: "both" }, { light: "day", ranged: true });
     const far = await day.enemy(1, 12, 10);
@@ -327,5 +381,138 @@ describe("Underwater (optional rule, CB p.168)", () => {
     await a.roll([10, 3], 5);
     expect((await a.sheetOf()).hp).toBe(hp);
     expect((await a.rows()).filter((r) => r.kind === "rule").map((r) => [r.ruleId, r.summary])).toEqual([["stressOverflow", "Ash: Stress full, mark 1 HP?"]]);
+  });
+});
+
+// ---------------------------------------------------------------- plan rule-switches OE2
+
+describe("OE2: M3 darkness on every PC action roll with a Difficulty (user 2026-11-06)", () => {
+  it("dice box: disadvantage adds a typed-in disadvantage die and names it; no Difficulty, a reaction roll, Book or day light add none", async () => {
+    const a = await arena({ darkness: "disadvantage" }, { light: "dim" });
+    const r = await a.roll([10, 3, 4], 5);
+    diceInRange(r.roll);
+    expect(edgeDice(r.roll)).toEqual(["disadvantage"]);
+    expect(r.roll.difficulty).toBe(5);
+    expect((await a.t.run((ctx) => ctx.db.get("actionLog", r.entryId)))!.summary).toContain("dim light: disadvantage");
+    // No Difficulty: nothing to raise, no die (the manual roll would refuse a value left over).
+    expect(edgeDice((await a.roll([10, 3])).roll)).toEqual([]);
+    const reaction = await a.player.mutation(api.rolls.manualRoll, { characterId: a.w.characterA, values: [10, 3], roll: { ...agility, kind: "reaction", difficulty: 5 }, idempotencyKey: key() });
+    expect(edgeDice(reaction.roll)).toEqual([]);
+
+    const book = await arena({}, { light: "dim" });
+    expect(edgeDice((await book.roll([10, 3], 5)).roll)).toEqual([]);
+    const day = await arena({ darkness: "both" }, { light: "day" });
+    const d = await day.roll([10, 3], 5);
+    expect([edgeDice(d.roll), d.roll.difficulty]).toEqual([[], 5]);
+  });
+
+  it("dice box: difficulty raises the roll's Difficulty by N (a roll that beat 13 fails against 13 + 3); both adds the die too", async () => {
+    const a = await arena({ darkness: "difficulty", darknessDifficulty: 3 }, { light: "dim" });
+    const probe = await (await arena({}, { light: "dim" })).roll([10, 3], 1);
+    const total = probe.roll.total;
+    const r = await a.roll([10, 3], total);
+    diceInRange(r.roll);
+    expect([r.roll.total, r.roll.difficulty, r.roll.outcome]).toEqual([total, total + 3, "failHope"]);
+    expect((await a.t.run((ctx) => ctx.db.get("actionLog", r.entryId)))!.summary).toContain("dim light: +3 Difficulty");
+
+    const both = await arena({ darkness: "both", darknessDifficulty: 1 }, { light: "dim" });
+    const b = await both.roll([10, 3, 4], 5);
+    diceInRange(b.roll);
+    expect([edgeDice(b.roll), b.roll.difficulty]).toEqual([["disadvantage"], 6]);
+  });
+
+  it("Tag Team with a Difficulty: both PCs' rolls get the variant", async () => {
+    const a = await arena({ darkness: "both", darknessDifficulty: 2 }, { light: "dim" });
+    await a.edit({ hope: 3 });
+    dice(10, 3, 4);
+    const out = await a.player.mutation(api.rolls.tagTeam, { characterId: a.w.characterA, partnerId: a.w.characterB, difficulty: 10, initiator: { trait: "agility", modifier: 0 }, partner: { trait: "agility", modifier: 0 }, idempotencyKey: key() });
+    expect(out.rolls).toHaveLength(2);
+    for (const r of out.rolls) {
+      diceInRange(r.roll);
+      expect([edgeDice(r.roll), r.roll.difficulty]).toEqual([["disadvantage"], 12]);
+    }
+  });
+
+  it("card and feature attacks: the disadvantage die in dim light; difficulty raises the target's Difficulty", async () => {
+    const a = await arena({ darkness: "disadvantage" }, { light: "dim", cards: true });
+    const bear = await a.enemy(1);
+    const c = await a.card("strike", [bear]);
+    diceInRange(c.roll!);
+    expect(edgeDice(c.roll!)).toEqual(["disadvantage"]);
+    const f = await a.feature([bear]);
+    diceInRange(f.roll!);
+    expect(edgeDice(f.roll!)).toEqual(["disadvantage"]);
+
+    const book = await arena({}, { light: "dim", cards: true });
+    const probe = await book.card("strike", [await book.enemy(1)]);
+    expect(edgeDice(probe.roll!)).toEqual([]);
+    const total = probe.roll!.total;
+    expect((await book.card("strike", [await book.enemy(total - 1, 6, 11)])).success).toBe(true);
+    const raised = await arena({ darkness: "difficulty", darknessDifficulty: 2 }, { light: "dim", cards: true });
+    const miss = await raised.card("strike", [await raised.enemy(total - 1)]);
+    diceInRange(miss.roll!);
+    expect([miss.roll!.total, miss.success]).toEqual([total, false]);
+    expect((await raised.card("strike", [await raised.enemy(total - 2, 6, 11)])).success).toBe(true);
+  });
+
+  it("a card's action roll against the GM's Difficulty gets it too; without a Difficulty it gets none", async () => {
+    const a = await arena({ darkness: "both", darknessDifficulty: 2 }, { light: "dim", cards: true });
+    const r = await a.card("search", [], { difficulty: 5 });
+    diceInRange(r.roll!);
+    expect([edgeDice(r.roll!), r.roll!.difficulty]).toEqual([["disadvantage"], 7]);
+    const none = await a.card("search", []);
+    expect(edgeDice(none.roll!)).toEqual([]);
+  });
+});
+
+describe("OE2: Underwater on card and feature attacks; 'breathes underwater'", () => {
+  it("a card or feature attack underwater rolls a disadvantage die, unless the actor's token fights underwater", async () => {
+    const a = await arena({ underwater: true }, { cards: true });
+    await a.setUnderwater(true);
+    const bear = await a.enemy(1);
+    const c = await a.card("strike", [bear]);
+    diceInRange(c.roll!);
+    expect(edgeDice(c.roll!)).toEqual(["disadvantage"]);
+    expect(edgeDice((await a.feature([bear])).roll!)).toEqual(["disadvantage"]);
+    // A non-attack card roll gets no Underwater disadvantage.
+    expect(edgeDice((await a.card("search", [], { difficulty: 5 })).roll!)).toEqual([]);
+    await a.gm.mutation(api.combatScenes.setFightsUnderwater, { campaignId: a.campaignId, tokenId: a.ash, fightsUnderwater: true, idempotencyKey: key() });
+    expect(edgeDice((await a.card("strike", [bear])).roll!)).toEqual([]);
+  });
+
+  it("setBreathesUnderwater: MECHANIC_DISABLED while off, FORBIDDEN for a player, INVALID on an adversary's token; the GM's list shows it", async () => {
+    const off = await arena();
+    expect(await code(off.setBreathes(off.ash, true))).toBe("MECHANIC_DISABLED");
+    const a = await arena({ underwater: true });
+    expect(await code(a.setBreathes(a.ash, true, a.player))).toBe("FORBIDDEN");
+    const bear = await a.enemy(1);
+    expect(await code(a.setBreathes(bear, true))).toBe("INVALID");
+    await a.setBreathes(a.ash, true);
+    const env = await a.gm.query(api.combatScenes.environment, { campaignId: a.campaignId });
+    expect(env.creatures.map((c) => [c.name, c.pc, c.breathesUnderwater])).toEqual([
+      ["Ash", true, true],
+      ["Bear", false, false],
+    ]);
+    await a.setBreathes(a.ash, false);
+    expect((await a.t.run((ctx) => ctx.db.get("combatTokens", a.ash)))!.breathesUnderwater).toBeUndefined();
+  });
+
+  it("a PC who breathes underwater ticks no breath and marks no Stress at 0; unmarked, the tick comes back", async () => {
+    const a = await arena({ underwater: true });
+    await a.setUnderwater(true);
+    await a.setBreathes(a.ash, true);
+    await a.edit({ stress: 0 });
+    await a.roll([3, 10], 30); // failure with Fear: would tick 3
+    expect((await a.breath())!.currentValue).toBe(3);
+    await a.t.run(async (ctx) => {
+      const map = (await ctx.db.get("combatMaps", a.mapId))!;
+      await ctx.db.patch("countdowns", map.breathCountdownId!, { currentValue: 0, status: "completed" });
+    });
+    await a.roll([10, 3], 5);
+    expect((await a.sheetOf()).stress).toBe(0);
+    expect((await a.rows()).some((r) => r.summary.includes("out of breath"))).toBe(false);
+    await a.setBreathes(a.ash, false);
+    await a.roll([10, 3], 5);
+    expect((await a.sheetOf()).stress).toBe(1);
   });
 });

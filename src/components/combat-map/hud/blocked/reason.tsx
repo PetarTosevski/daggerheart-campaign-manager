@@ -58,6 +58,22 @@ export function blockedReason(input: BlockedInput): Blocked | null {
   return make(code, { ...input, shortfall });
 }
 
+/** The warning a player sees in S2 Manual while the GM holds the spotlight (user answer Q4 a: a warning, not a refusal). */
+export const SPOTLIGHT_WARNING = "The GM has the spotlight";
+
+/**
+ * The Manual warning line (S2 Manual, plan rule-switches RS2; `combatSpotlight.state.spotlightWarning`, whose
+ * `reactionsOnly` is then false): a status, no lock, the control stays usable. Renders nothing when `show` is false.
+ */
+export function SpotlightWarning({ show, className }: { show: boolean; className?: string }) {
+  if (!show) return null;
+  return (
+    <span role="status" className={cn("hud-why", "hud-spot-warn", className)} data-testid="hud-spotlight-warning">
+      {SPOTLIGHT_WARNING}
+    </span>
+  );
+}
+
 /**
  * The ARIA a blocked control needs: `aria-disabled` (it stays focusable, so the reason can be read and the tip shown)
  * and `aria-describedby` pointing at its reason. Spread `control` on the button and give `reasonId` to `BlockedReason`.

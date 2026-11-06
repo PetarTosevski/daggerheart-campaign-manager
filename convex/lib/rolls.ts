@@ -39,6 +39,7 @@ import {
   type Rng,
 } from "../../src/lib/domain/dice/index";
 import { countsAsActionRoll } from "../../src/lib/domain/countdowns/advanced";
+import { darknessEdge, darknessLabels, NO_DARKNESS_EDGE, type DarknessEdge } from "../../src/lib/domain/combat-map/light";
 import type { RollRecord } from "../../src/lib/domain/duality";
 import type { EndRoll } from "../../src/lib/domain/characters/expiry";
 import { placeTideToken, rerollSlayerOnes, rollGaveHope, SLAYER_DIE_SIDES, spendSlayerDice, spendTideTokens, WITH_HOPE } from "../../src/lib/domain/session-features/index";
@@ -64,13 +65,16 @@ import { logAction, newGroupId } from "./actionLog";
 import { assertCanAct, loadCharacter, noteHopeSpent, readSheet, saveSheet } from "./characterSheet";
 import { applyPcActionRoll, fearWithheldBy, hopeFearModeOf, outcomeSucceeds, outcomeWithFear, planPcActionRoll } from "./rollAftermath";
 import { rollDie } from "./dice";
+import { campaignLight } from "./campaignLight";
 import { featureScope } from "./featureScope";
+import { ruleModesOf } from "./ruleModes";
 import { campaignFearState, gainFear } from "./fear";
 import { applyRule } from "./mechanics";
 import { actorSheetAfter, cardActor, cardIdOfEffect, conditionMarkerOf, endConditionsOnRoll, endRollOf, featureIdOfEffect, tokenKeyOf, type HostRoll } from "./cardRunner";
 import { effectEndsOf, effectSource, endAdversaryConditionsOnRoll, endGrantedBenefit, endOnSheet, endSharedGrants } from "./cardRows";
 import { riderStepsText } from "./adversaryFeatures";
 import { partyMembers } from "./adversaryHits";
+import { liveSession, sessionPrepOf } from "./sessions";
 import { pcRollAdversaryUses } from "./adversaryActions";
 import { rollValidator } from "./validators/actionLog";
 import { traitIdValidator } from "./validators/characters";
@@ -109,6 +113,11 @@ export const dualityFields = {
    * `situation` (Patron's Mantle, HF p.14: "advantage on action rolls to intimidate a target").
    */
   situations: v.optional(v.array(v.string())),
+  /**
+   * Journal JF2 (dcm-z9rz.28, user 2026-11-06): the player ticked 'Social roll' in the dice box. The roll is social with it,
+   * or when the live session's playing scene is a Social scene (`socialScene`); stored as the row's `social` flag.
+   */
+  social: v.optional(v.boolean()),
 };
 
 export const poolValidator = v.array(v.object({ count: v.number(), sides: v.number() }));
@@ -161,6 +170,7 @@ export type DualityArgs = {
   slayerDice?: number;
   tideTokens?: number;
   situations?: string[];
+  social?: boolean;
 };
 type DamageSource = { kind: "weapon"; slot: "primary" | "secondary" } | { kind: "override"; key: string } | { kind: "ikonis" } | { kind: "dice"; dice: { count: number; sides: number }[] };
 type DamageArgs = { source: DamageSource; critical: boolean; modifier: number; options: string[]; slayerDice?: number };
@@ -776,9 +786,58 @@ export function grantEndsOnRoll<K>(
   return { sheet: next, labels, party: shared };
 }
 
+/**
+ * Whether the Journal's current scene is a Social scene (Journal JF2, dcm-z9rz.28, user 2026-11-06): the campaign's live
+ * session (at most one) has a scene marked Playing (Q7, `playScene`) whose type is `social`. Outside a live session no
+ * scene is current, so a scene left Playing after End never marks a later roll.
+ */
+export async function socialScene(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<boolean> {
+  const session = await liveSession(ctx, campaignId);
+  if (session === null) return false;
+  const prep = await sessionPrepOf(ctx, session._id);
+  return prep?.scenes.some((s) => s.state === "playing" && s.type === "social") ?? false;
+}
+
+/** A roll is social when the player ticked 'Social roll' or the current scene is Social (`socialScene`). */
+export async function rollIsSocial(ctx: QueryCtx, campaignId: Id<"campaigns">, ticked: boolean | undefined): Promise<boolean> {
+  return ticked === true || (await socialScene(ctx, campaignId));
+}
+
+/**
+ * Stamps a social roll's row (`social`, widened). A patch after `logAction` (whose entry type is not this tracer's) in the
+ * same mutation, so the row is never seen without it.
+ */
+export async function markSocial(ctx: MutationCtx, entryId: Id<"actionLog">, social: boolean): Promise<void> {
+  if (social) await ctx.db.patch("actionLog", entryId, { social: true });
+}
+
+/**
+ * Plan rule-switches OE2 (user 2026-11-06 on dcm-bxp.134: "dim-light variants affect EVERY PC action roll with a
+ * Difficulty"; CB p.104): what M3's variant adds to a PC's action roll with a Difficulty in the campaign's dim light (a
+ * disadvantage die, +N to the Difficulty, or both; `darknessEdge`). A reaction roll or a roll without a Difficulty gets
+ * nothing; Book and Manual add nothing. Reads the campaign's light (one row in the Witherwild).
+ */
+export async function darknessOnRoll(ctx: QueryCtx, campaign: Doc<"campaigns">, roll: { kind: "action" | "reaction"; difficulty?: number }): Promise<DarknessEdge> {
+  if (roll.kind !== "action" || roll.difficulty === undefined) return NO_DARKNESS_EDGE;
+  const modes = ruleModesOf(campaign);
+  if (modes.darkness === "book" || modes.darkness === "manual") return NO_DARKNESS_EDGE;
+  const { light } = await campaignLight(ctx, campaign);
+  return darknessEdge(light, modes.darkness, modes.darknessDifficulty);
+}
+
+/** A Duality roll's args with a darkness edge added: one more disadvantage die and the raised Difficulty (OE2). */
+export function withDarkness<A extends { disadvantage: number; difficulty?: number }>(args: A, edge: DarknessEdge): A {
+  if (edge.disadvantage === 0 && edge.difficulty === 0) return args;
+  return { ...args, disadvantage: args.disadvantage + edge.disadvantage, ...(args.difficulty !== undefined ? { difficulty: args.difficulty + edge.difficulty } : {}) };
+}
+
 /** Rolls (or reads typed-in dice), applies Hope, Stress and Fear, saves and logs. */
-export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded, args: DualityArgs, rng: Rng, manual: boolean) {
+export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded, rawArgs: DualityArgs, rng: Rng, manual: boolean) {
   const { campaign, character, sheet } = loaded;
+  // Plan rule-switches OE2: M3's variant on an action roll with a Difficulty in dim light (a manual roll types the extra
+  // disadvantage die in too, after the roll's own advantage dice, as with a bearer's disadvantage).
+  const dark = await darknessOnRoll(ctx, campaign, rawArgs);
+  const args = withDarkness(rawArgs, dark);
   const resolved = await resolveDuality(ctx, loaded, args, rng, manual);
   const { scope, paid, trait, rolled, hopeFear } = resolved;
   let { roll, effects } = resolved;
@@ -811,7 +870,7 @@ export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded:
   const grants = grantEndsOnRoll(ends.sheet, usedGrants, ends.ended, others.map((m) => ({ key: m, sheet: m.sheet })));
   const next = grants.sheet;
   const advNames = advUses.bonuses.map((b) => `${b.feature} ${b.amount >= 0 ? "+" : ""}${b.amount} ${b.die === "hope" ? "Hope" : "Fear"} Die`);
-  const extras = [...resolved.extras, ...advNames, ...autos.names, ...ends.labels, ...grants.labels];
+  const extras = [...resolved.extras, ...darknessLabels(dark), ...advNames, ...autos.names, ...ends.labels, ...grants.labels];
   const { gained: rolledFear } = effects.fear > 0 ? await gainFear(ctx, campaign._id, effects.fear) : { gained: 0 };
   const gained = rolledFear + (autos.gmFearDelta > 0 ? (await gainFear(ctx, campaign._id, autos.gmFearDelta)).gained : 0);
   // dcm-z9rz.23: the roll's costs (Experiences, options, the bearer's riders) count as spent even when it gains Hope, so a
@@ -831,6 +890,7 @@ export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded:
     fearWithheld: fearWithheldBy(hopeFear, args.kind, roll.outcome),
   });
   const groupId = aftermath.notes.length > 0 ? newGroupId() : undefined;
+  const social = await rollIsSocial(ctx, campaign._id, args.social);
   const entryId = await logAction(ctx, {
     campaignId: campaign._id,
     characterId: character._id,
@@ -847,6 +907,7 @@ export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded:
     ...(args.kind === "action" && WITH_HOPE.includes(roll.outcome) ? { hopeGained: effects.hope > 0 && rollGaveHope(paid, roll.outcome, args.kind) } : {}),
     undoable: true,
   });
+  await markSocial(ctx, entryId, social);
   await applyPcActionRoll(ctx, campaign, aftermath, { groupId, actorId: ctx.user._id });
   // E1.3b (dcm-79v1): the other sheets whose shared grant ended, each a row with its sheet before (undo puts it back).
   for (const p of grants.party) {

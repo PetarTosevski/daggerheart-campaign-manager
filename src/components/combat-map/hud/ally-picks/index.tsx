@@ -13,7 +13,7 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { HudPartProps } from "../state";
 import { Popup, WaitingDots } from "../ui";
-import { choseLine, myPicks, pickSub, waitingOn, waitingRows, withAnswered, type MyPick } from "./model";
+import { choseLine, myPicks, pickSub, reviewAllies, reviewRows, waitingOn, waitingRows, withAnswered, withSent, type MyPick } from "./model";
 
 /**
  * Per-ally picks (plan finish-hud-lk FH-AP; bead dcm-bxp.99.32.24; board CmpPicking 'After the roll': "Rousing Strike ·
@@ -23,14 +23,31 @@ import { choseLine, myPicks, pickSub, waitingOn, waitingRows, withAnswered, type
  *
  * - each pick of their own character is a card: the option chips and "Choose" (`allyPicks.answer`, keyed, with an
  *   optimistic update that drops the card at once);
- * - a use of theirs still waiting shows "n of m chose · waiting…" with the names it waits on.
+ * - a use of theirs still waiting shows "n of m chose · waiting…" with the names it waits on;
+ * - before that, a use of theirs whose allies were computed shows the list to review (plan rule-switches CU2, bead
+ *   dcm-bxp.99.32.46, user 2026-11-06): every ally ticked, the player unticks who can't see or hear them and sends the
+ *   picks (`allyPicks.send`, keyed, optimistic). With Defined Ranges off the list is every PC on the map.
  *
  * The GM's outstanding picks (a player who doesn't answer) are cards in the GM queue (`hud/queue`, the same
- * `AllyPickCard`), so the GM gets nothing here. One read (`allyPicksReads.open`); the server decides who may answer.
+ * `AllyPickCard`); here the GM gets only the reviews (a player who is away, or the GM playing for the PC). One read
+ * (`allyPicksReads.open`); the server decides who may answer.
  */
 export function HudAllyPicks({ state }: HudPartProps): ReactNode {
-  if (state.role === "gm") return null;
+  if (state.role === "gm") return <GmReviews campaignId={state.campaignId} />;
   return <PlayerPicks campaignId={state.campaignId} />;
+}
+
+function GmReviews({ campaignId }: { campaignId: Id<"campaigns"> }) {
+  const rows = useQuery(api.allyPicksReads.open, { campaignId });
+  const reviews = rows === undefined ? [] : reviewRows(rows);
+  if (reviews.length === 0) return null;
+  return (
+    <div className="hud-ap" data-testid="hud-ally-picks">
+      {reviews.map((row) => (
+        <ReviewCard key={row.requestId} campaignId={campaignId} row={row} gm />
+      ))}
+    </div>
+  );
 }
 
 type OpenRow = FunctionReturnType<typeof api.allyPicksReads.open>[number];
@@ -40,9 +57,13 @@ function PlayerPicks({ campaignId }: { campaignId: Id<"campaigns"> }) {
   if (rows === undefined) return null;
   const picks = myPicks(rows);
   const waiting = waitingRows(rows);
-  if (picks.length === 0 && waiting.length === 0) return null;
+  const reviews = reviewRows(rows);
+  if (picks.length === 0 && waiting.length === 0 && reviews.length === 0) return null;
   return (
     <div className="hud-ap" data-testid="hud-ally-picks">
+      {reviews.map((row) => (
+        <ReviewCard key={row.requestId} campaignId={campaignId} row={row} />
+      ))}
       {picks.map((p) => (
         <AllyPickCard key={p.key} campaignId={campaignId} pick={p} />
       ))}
@@ -117,6 +138,69 @@ function WaitingCard({ row }: { row: OpenRow }) {
         <b data-testid="hud-ally-chose">{choseLine(row)}</b> · waiting
         <WaitingDots /> <span className="hud-ap-on">{waitingOn(row)}</span>
       </p>
+    </Popup>
+  );
+}
+
+/**
+ * The actor's review before the picks go out (CU2; Rousing Strike, CB p.342: "all allies who can see or hear you"): one
+ * checkbox per ally, all ticked; Send drops the unticked ones (`allyPicks.send`). Unticking everyone with no own pick
+ * left calls the card off.
+ */
+function ReviewCard({ campaignId, row, gm = false }: { campaignId: Id<"campaigns">; row: OpenRow; gm?: boolean }) {
+  const allies = reviewAllies(row);
+  const [dropped, setDropped] = useState<ReadonlySet<string>>(new Set());
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const sendPicks = useMutation(api.allyPicks.send).withOptimisticUpdate((store, args) => {
+    const rows = store.getQuery(api.allyPicksReads.open, { campaignId });
+    if (rows !== undefined) store.setQuery(api.allyPicksReads.open, { campaignId }, withSent(rows, args.requestId, args.drop));
+  });
+
+  function toggle(id: string) {
+    setDropped((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function send() {
+    setPending(true);
+    setError(null);
+    try {
+      await sendPicks({ campaignId, requestId: row.requestId, drop: [...dropped], idempotencyKey: crypto.randomUUID() });
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Popup
+      icon={PICK_ICON}
+      tone={gm ? "gm" : "player"}
+      title={row.name}
+      sub={gm ? `${row.actorName}’s allies · untick who can’t see or hear them` : "Untick allies who can’t see or hear you"}
+      testId="hud-ally-review"
+      primary={{ label: pending ? "Sending…" : "Send", ariaLabel: `Send ${row.name} to the ticked allies`, disabled: pending, onClick: () => void send() }}
+    >
+      <fieldset className="hud-ap-review">
+        <legend className="hud-ap-label">Who can pick</legend>
+        {allies.map((c) => (
+          <label key={c.chooserId} className="hud-ap-ally">
+            <input type="checkbox" checked={!dropped.has(c.chooserId)} onChange={() => toggle(c.chooserId)} />
+            {c.name}
+          </label>
+        ))}
+      </fieldset>
+      {error ? (
+        <p role="alert" className="hud-res-err">
+          {error}
+        </p>
+      ) : null}
     </Popup>
   );
 }

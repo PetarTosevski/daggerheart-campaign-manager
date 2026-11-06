@@ -50,6 +50,13 @@ export const combatMapTables = {
      * Underwater disadvantage. Widened; absent = false. Written only by `combatScenes.setFightsUnderwater`.
      */
     fightsUnderwater: v.optional(v.boolean()),
+    /**
+     * Underwater (optional rule, CB p.168: "For any creatures that can't breathe underwater, you can use a countdown"; plan
+     * rule-switches OE2, user 2026-11-06): the GM marked this PC as breathing underwater; its action rolls don't tick the
+     * breath countdown and never mark the out-of-breath Stress. Widened; absent = false. Written only by
+     * `combatScenes.setBreathesUnderwater`.
+     */
+    breathesUnderwater: v.optional(v.boolean()),
   }).index("by_map", ["mapId"]),
 
   /** Explored squares per (map, character) (R11). Changes on every move, so it stays out of `combatMaps` (CD10). */

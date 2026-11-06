@@ -197,16 +197,6 @@ describe("rule rows: the GM", () => {
     expect(within(fearCap).queryByRole("button")).toBeNull();
   });
 
-  it("shows rules the engine doesn't follow yet read-only with 'Coming soon'", () => {
-    render(<Section />);
-    const d6 = row("playersWait");
-    expect(within(d6).queryByRole("radio")).toBeNull();
-    expect(within(d6).getByText("Book")).toBeInTheDocument();
-    expect(within(d6).getByText(RULE_ROWS_TEXT.comingSoon)).toBeInTheDocument();
-    expect(within(row("pcConflict")).queryByRole("switch")).toBeNull();
-    expect(within(row("pcConflict")).getByText("Off")).toBeInTheDocument();
-  });
-
   it("makes X2 read-only while X1 is Manual", () => {
     wire("deathMovePrompt");
     wire("deathMoveResolve");

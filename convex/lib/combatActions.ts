@@ -37,7 +37,7 @@ import { adversaryEffects, allAdversaryEffects } from "../../src/lib/srd/adversa
 import { lineOfSight, RANGE_ORDER, rangeCheck, rangeFromWeapon, resolveHits, applyDamageTo, tokenDistance, type Combatant, type DamageResult, type RangeCheck, type SightResult } from "../../src/lib/domain/combat-actions/index";
 import { damageRuleNotes, minionNote, minionPicker, type DamageRuleNote } from "../../src/lib/domain/combat-actions/damage";
 import { sightRule } from "../../src/lib/domain/combat-actions/sight";
-import { darknessEdge, underwaterDisadvantage } from "../../src/lib/domain/combat-map/light";
+import { darknessEdge, darknessLabels, underwaterDisadvantage } from "../../src/lib/domain/combat-map/light";
 import type { ModeOf, RuleModes } from "../../src/lib/rules/registry";
 import { tokenVisibility } from "../../src/lib/domain/combat-map/index";
 import { countsAsActionRoll } from "../../src/lib/domain/countdowns/advanced";
@@ -116,7 +116,7 @@ import { changed, hopeDieSwitch, liveMods, sheetCarriedMods, prepareDuality, res
 export { hopeDieSwitch, withDieBonus, withDieBonuses, withHopeSides };
 import type { AdversaryBefore } from "./validators/actionLog";
 import { traitIdValidator } from "./validators/characters";
-import { MAX_RIDERS_PER_ATTACK, rangeBandValidator, sanctionRollOptionsValidator, type AfterRollChange, type AfterRollChoice, type Rider, type RiderPickChoice } from "./validators/combatRequests";
+import { MAX_RIDERS_PER_ATTACK, rangeBandValidator, sanctionRollOptionsValidator, type AfterRollChange, type AfterRollChoice, type AfterRollPayload, type Rider, type RiderPickChoice } from "./validators/combatRequests";
 import { rollValidator } from "./validators/actionLog";
 import { rollDie } from "./dice";
 
@@ -263,25 +263,20 @@ export function rangesOn(s: Pick<AttackScene, "definedRanges"> | null | undefine
 }
 
 /**
- * Plan rule-switches OE: what the environment adds to a PC's weapon attack roll. M3 `darkness` (CB p.104; user answer Q6,
- * 2026-11-05): in the campaign's dim light a ranged weapon (printed range beyond Melee; Defined Ranges does not change a
- * weapon's range) gets a disadvantage die ("disadvantage", "both") and / or `darknessDifficulty` added to each target's
- * Difficulty or Evasion ("difficulty", "both"); Book and Manual add nothing (`darknessEdge`). Underwater (optional rule,
- * CB p.168): the live map marked Underwater gives one disadvantage unless the attacker's token "fights underwater".
- * `labels` name what applied, for the roll's public line.
+ * Plan rule-switches OE / OE2: what the environment adds to a PC's weapon attack roll. M3 `darkness` (CB p.104; user
+ * answers Q6, 2026-11-05, and 2026-11-06: "dim-light variants affect EVERY PC action roll with a Difficulty"): in the
+ * campaign's dim light any attack, Melee too, gets a disadvantage die ("disadvantage", "both") and / or
+ * `darknessDifficulty` added to each target's Difficulty or Evasion ("difficulty", "both"); Book and Manual add nothing
+ * (`darknessEdge`). Underwater (optional rule, CB p.168): the live map marked Underwater gives one disadvantage unless the
+ * attacker's token "fights underwater". `labels` name what applied, for the roll's public line.
  */
 export function attackEnvironment(
   s: Pick<AttackScene, "map" | "attacker"> & { scene: Pick<Scene, "light"> },
-  host: Pick<Host, "weaponRange">,
   modes: Pick<RuleModes, "darkness" | "darknessDifficulty" | "underwater">,
 ): { disadvantage: number; difficulty: number; labels: string[] } {
-  const dark = darknessEdge(s.scene.light, host.weaponRange !== null && host.weaponRange !== "melee", modes.darkness, modes.darknessDifficulty);
+  const dark = darknessEdge(s.scene.light, modes.darkness, modes.darknessDifficulty);
   const water = underwaterDisadvantage(modes.underwater && s.map.underwater === true, s.attacker.fightsUnderwater === true);
-  const labels = [
-    ...(dark.disadvantage > 0 ? ["dim light: disadvantage"] : []),
-    ...(dark.difficulty > 0 ? [`dim light: +${dark.difficulty} Difficulty`] : []),
-    ...(water > 0 ? ["underwater: disadvantage"] : []),
-  ];
+  const labels = [...darknessLabels(dark), ...(water > 0 ? ["underwater: disadvantage"] : [])];
   return { disadvantage: dark.disadvantage + water, difficulty: dark.difficulty, labels };
 }
 
@@ -343,7 +338,22 @@ export async function targetHints(ctx: QueryCtx, campaign: Doc<"campaigns">, s: 
     const benefits = attacker ? riderBenefits(instanceAttackedRiders(linked.instance, attacker.sheet, { tokenId: s.attacker._id, characterId: attacker.characterId })) : [];
     hints.push({ tokenId: token._id, band: check.band, inRange: weapon !== undefined && check.inRange, lineOfSight: sight.lineOfSight, cover: sight.cover, ...(benefits.length > 0 ? { benefits } : {}) });
   }
+  // Plan rule-switches OP (optional rule "Conflict between PCs", CB p.168): with the rule on, the other PCs' tokens the
+  // character sees can be attacked too (against their Evasion).
+  if (ruleModesOf(campaign).pcConflict) {
+    for (const [i, token] of s.scene.tokens.entries()) {
+      if (i === s.viewer.index || !isPcToken(token) || !seenBy(s, i)) continue;
+      const check = rangeCheck(s.attacker, token, weapon ? rangeFromWeapon(weapon.range) : "melee", ranges);
+      const sight = sightTo(s, token);
+      hints.push({ tokenId: token._id, band: check.band, inRange: weapon !== undefined && check.inRange, lineOfSight: sight.lineOfSight, cover: sight.cover });
+    }
+  }
   return hints;
+}
+
+/** A PC's own token (side `pc`, linked to a character). */
+function isPcToken(token: Doc<"combatTokens">): token is Doc<"combatTokens"> & { ref: { kind: "pc"; characterId: Id<"characters"> } } {
+  return token.side === "pc" && token.ref.kind === "pc";
 }
 
 // ---------------------------------------------------------------- checking the targets
@@ -389,6 +399,37 @@ export const WEAPON_ATTACK_TARGETS = 1;
  * (a stored sanction holds `targetTokenIds`); several targets would have to share one encounter.
  */
 export async function checkTargets(ctx: QueryCtx, campaign: Doc<"campaigns">, s: AttackScene, weapon: Weapon, tokenIds: readonly Id<"combatTokens">[], roll: Pick<AttackRoll, "spiritWeapon"> = {}, reach = 0): Promise<CheckedTarget[]> {
+  return (await checkAll(ctx, campaign, s, weapon, tokenIds, roll, reach, false)).adversaries;
+}
+
+/**
+ * Plan rule-switches OP (optional rule "Conflict between PCs", CB p.168: "On an attack roll against a PC, the attacker
+ * rolls against the defender's Evasion, just like an adversary"): `checkTargets`, where with the rule on another PC's
+ * token is a target too (`pcs`: seen with a clear line like any target, its Evasion read from the sheet, its range check
+ * kept). Off: exactly `checkTargets` (a PC token is COMBAT_TARGET_INVALID).
+ */
+export async function checkAttackTargets(
+  ctx: QueryCtx,
+  campaign: Doc<"campaigns">,
+  s: AttackScene,
+  weapon: Weapon,
+  tokenIds: readonly Id<"combatTokens">[],
+  roll: Pick<AttackRoll, "spiritWeapon"> = {},
+  reach = 0,
+): Promise<{ adversaries: CheckedTarget[]; pcs: PcTarget[] }> {
+  return checkAll(ctx, campaign, s, weapon, tokenIds, roll, reach, ruleModesOf(campaign).pcConflict);
+}
+
+async function checkAll(
+  ctx: QueryCtx,
+  campaign: Doc<"campaigns">,
+  s: AttackScene,
+  weapon: Weapon,
+  tokenIds: readonly Id<"combatTokens">[],
+  roll: Pick<AttackRoll, "spiritWeapon">,
+  reach: number,
+  pcsAllowed: boolean,
+): Promise<{ adversaries: CheckedTarget[]; pcs: PcTarget[] }> {
   // E1.3b (dcm-xbtw): a ticked Spirit Weapon reaches Close and may take one more target (its Stress is paid in the attack).
   const spirit = roll.spiritWeapon === true && (await spiritWeaponFor(ctx, campaign, s, weapon, roll));
   const most = Math.min(MAX_TARGETS, WEAPON_ATTACK_TARGETS + (spirit ? 1 : 0) + (await extraAttackTargets(ctx, campaign, s)));
@@ -399,6 +440,7 @@ export async function checkTargets(ctx: QueryCtx, campaign: Doc<"campaigns">, s:
   // answers COMBAT_NO_LINE_OF_SIGHT, so an unseen token answers as before whatever it is.
   const sightMode = ruleModesOf(campaign).lineOfSight;
   const checked: CheckedTarget[] = [];
+  const pcs: PcTarget[] = [];
   for (const id of tokenIds) {
     const index = s.scene.tokens.findIndex((t) => t._id === id);
     if (index < 0 || index === s.viewer.index) throw appError("COMBAT_TARGET_INVALID");
@@ -407,13 +449,21 @@ export async function checkTargets(ctx: QueryCtx, campaign: Doc<"campaigns">, s:
     const sight = sightTo(s, token);
     const allowed = sightAllows(sightMode, seen, sight);
     if (allowed === null) throw appError("COMBAT_NO_LINE_OF_SIGHT");
+    // Plan rule-switches OP: another PC's token, with "Conflict between PCs" on (CB p.168).
+    if (pcsAllowed && isPcToken(token)) {
+      const character = await ctx.db.get("characters", token.ref.characterId);
+      if (character === null || character.campaignId !== campaign._id) throw appError("COMBAT_TARGET_INVALID");
+      const sheet = readSheet(character.sheet);
+      pcs.push({ token, character, sheet, evasion: pcCombatant(token._id, sheet).evasion ?? 0, sight, half: false, check: rangeCheck(s.attacker, token, range, ruleModesOf(campaign).definedRanges) });
+      continue;
+    }
     const linked = await enemyInstance(ctx, campaign._id, token);
     if (linked === null) throw appError(seen && sight.lineOfSight ? "COMBAT_TARGET_INVALID" : "COMBAT_NO_LINE_OF_SIGHT");
     // Rule switches ODR: Defined Ranges off, every target is in range (no refusal, no GM sanction for range).
     checked.push({ token, ...linked, check: rangeCheck(s.attacker, token, range, ruleModesOf(campaign).definedRanges), sight, ...allowed });
   }
   if (new Set(checked.map((c) => c.encounter._id)).size > 1) throw appError("COMBAT_TARGET_INVALID");
-  return checked;
+  return { adversaries: checked, pcs };
 }
 
 /**
@@ -591,6 +641,11 @@ export type AttackRequest = {
   weapon: Weapon;
   slot: WeaponSlot;
   targets: CheckedTarget[];
+  /**
+   * Plan rule-switches OP ("Conflict between PCs", CB p.168): the other PCs the attacker named (`checkAttackTargets`), hit
+   * against their Evasion; on a hit the damage opens their incoming-hit window. Absent: none (`targets` holds one or more).
+   */
+  pcTargets?: PcTarget[];
   roll: AttackRoll;
   /** SD5: the riders the player took with the attack. */
   riders?: readonly Rider[];
@@ -1355,8 +1410,12 @@ export function foldInto(folds: Folds, run: RiderRun): void {
   }
 }
 
-/** A PC a rider added to the attack (Surrounded's "additional creatures", allies included: dcm-bxp.99.19.44). */
-export type PcTarget = { token: Doc<"combatTokens">; character: Doc<"characters">; sheet: CharacterSheet; evasion: number; sight: SightResult; rider: PickedRider; half: boolean };
+/**
+ * A PC target of the attack: one a rider added (Surrounded's "additional creatures", allies included: dcm-bxp.99.19.44;
+ * `rider` set), or, plan rule-switches OP, one the attacker named with "Conflict between PCs" on (CB p.168; no `rider`,
+ * `check` the weapon's range check).
+ */
+export type PcTarget = { token: Doc<"combatTokens">; character: Doc<"characters">; sheet: CharacterSheet; evasion: number; sight: SightResult; rider?: PickedRider; half: boolean; check?: RangeCheck };
 
 /** Whether a rider's added targets may be any creature (Surrounded, HF p.10: "additional creatures"), allies included. */
 function anyCreature(spec: TargetSpec): boolean {
@@ -1440,7 +1499,8 @@ async function addedTargets(
   weapon: Weapon,
   add: Folds["addTargets"][number],
   taken: ReadonlySet<string>,
-  encounterId: Id<"encounters">,
+  /** The attack's encounter; undefined when it named only PCs (plan rule-switches OP): any running encounter's adversary. */
+  encounterId: Id<"encounters"> | undefined,
   waived: ReadonlySet<string>,
   reach = 0,
 ): Promise<{ adversaries: CheckedTarget[]; pcs: PcTarget[] }> {
@@ -1468,7 +1528,7 @@ async function addedTargets(
       continue;
     }
     const linked = anyCreature(add.spec) ? await adversaryInstance(ctx, campaign._id, token) : await enemyInstance(ctx, campaign._id, token);
-    if (linked === null || linked.encounter._id !== encounterId) throw appError("COMBAT_TARGET_INVALID");
+    if (linked === null || (encounterId !== undefined && linked.encounter._id !== encounterId)) throw appError("COMBAT_TARGET_INVALID");
     adversaries.push({ token, ...linked, check, sight, ...allowed });
   }
   return { adversaries, pcs };
@@ -1843,6 +1903,17 @@ export function conditionEdge(conditions: Iterable<string>, mode: ModeOf<"condit
   if (mode === "manual") return { advantage: 0, disadvantage: 0 };
   const set = new Set(conditions);
   return { advantage: set.has("vulnerable") ? 1 : 0, disadvantage: set.has("hidden") || set.has("cloaked") ? 1 : 0 };
+}
+
+/**
+ * Plan rule-switches OP ("Conflict between PCs", CB p.168: "just like an adversary"): what the named PCs' conditions add to
+ * the roll (`conditionEdge` per PC). Only when the attack names no adversary (`adversaries` 0) and every PC gives the same
+ * edge: one roll can't carry different edges for a PC and an adversary here (the adversaries' own split is per instance).
+ */
+export function conflictEdge(conditions: readonly (readonly string[])[], adversaries: number, mode: ModeOf<"conditionDice"> = "book"): Edge {
+  const edges = conditions.map((c) => conditionEdge(c, mode));
+  if (adversaries > 0 || edges.length === 0 || !sameEdges(edges)) return { advantage: 0, disadvantage: 0 };
+  return edges[0]!;
 }
 
 /**
@@ -2253,9 +2324,13 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   const folds = emptyFolds();
   const runs: RiderRun[] = [];
   const allTargets: CheckedTarget[] = [...req.targets];
-  const pcTargets: PcTarget[] = [];
+  // Plan rule-switches OP: the PCs the attacker named ("Conflict between PCs"), then any a rider adds.
+  const conflict: readonly PcTarget[] = req.pcTargets ?? [];
+  const pcTargets: PcTarget[] = [...conflict];
   const waived = new Set<string>(req.waived ?? []);
+  /** The first adversary target; undefined when the attack named only PCs (OP). */
   const main = req.targets[0];
+  const encounterId = main?.encounter._id;
   /** Riders whose trigger held: their `post` parts run after the damage. */
   const used: PickedRider[] = [];
   /** Plan lanes-2, E1 (dcm-umti): the creature a rider is about (a `whenYouDealDamage`'s damaged target), for its `post` part. */
@@ -2276,7 +2351,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   }
   const taken = () => new Set<string>([...allTargets.map((t) => t.token._id), ...pcTargets.map((t) => t.token._id)]);
   for (const add of folds.addTargets.splice(0)) {
-    const more = await addedTargets(ctx, campaign, req.scene, weapon, add, taken(), main!.encounter._id, waived, folds.reach);
+    const more = await addedTargets(ctx, campaign, req.scene, weapon, add, taken(), encounterId, waived, folds.reach);
     allTargets.push(...more.adversaries);
     pcTargets.push(...more.pcs);
     for (const t of more.adversaries) halfDamage.set(t.token._id, add.damage === "half");
@@ -2298,9 +2373,15 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   const targetEdges = edgesOf(allTargets);
   const uniformEdge = targetEdges.length === 0 || sameEdges(targetEdges);
   const edge: Edge = uniformEdge ? { ...(targetEdges[0] ?? { advantage: 0, disadvantage: 0 }) } : { advantage: 0, disadvantage: 0 };
+  // Plan rule-switches OP: a named PC's conditions change the roll as an adversary's do (C1, CB p.102: Vulnerable gives
+  // advantage, Hidden / Cloaked disadvantage; Manual: the GM's note below), when the attack names only PCs and they agree.
+  const pcEdge = conflictEdge(conflict.map((t) => t.sheet.conditions), allTargets.length, modes.conditionDice);
+  edge.advantage += pcEdge.advantage;
+  edge.disadvantage += pcEdge.disadvantage;
   // E1.3b (dcm-mm0f): a bearer's disadvantage on attacks from beyond a range (Sandstorm, CB p.339: "Attacks made from beyond
   // Melee range have disadvantage"); the ones without a range are counted in `prepareDuality`.
-  edge.disadvantage += sheetBearerMods(sheet0).filter(({ mod }) => mod.kind === "disadvantage" && mod.beyond !== undefined && mod.unlessTarget === undefined && mod.situation === undefined && hostMatches(mod.on, host) && allTargets.some((t) => !rangeAtMost(t.check.band, mod.beyond!))).length;
+  const bands = [...allTargets.map((t) => t.check.band), ...conflict.flatMap((t) => (t.check ? [t.check.band] : []))];
+  edge.disadvantage += sheetBearerMods(sheet0).filter(({ mod }) => mod.kind === "disadvantage" && mod.beyond !== undefined && mod.unlessTarget === undefined && mod.situation === undefined && hostMatches(mod.on, host) && bands.some((band) => !rangeAtMost(band, mod.beyond!))).length;
   // E1.3b (dcm-xbtw): a ticked Spirit Weapon's extra adversary costs a Stress (CB p.44: "You can mark a Stress to target an
   // additional adversary within range with the same attack roll").
   const spirit = spiritWeaponOn(sheet0, campaign, weapon, options);
@@ -2309,10 +2390,10 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     sheet = { ...sheet, stress: sheet.stress + 1 };
   }
 
-  // ---- plan rule-switches OE: the environment. M3's variants (CB p.104) on a ranged attack in dim light (a disadvantage
+  // ---- plan rule-switches OE / OE2: the environment. M3's variants (CB p.104) on any attack in dim light (a disadvantage
   // die and / or +N to every target's Difficulty); Underwater (optional rule, CB p.168) gives the roll disadvantage
   // unless the attacker's token is marked "fights underwater".
-  const environment = attackEnvironment(req.scene, host, modes);
+  const environment = attackEnvironment(req.scene, modes);
   // ---- the roll (R1, R9); cover gives one disadvantage (Q2), unless M1 is Manual (RC1: the GM is told instead)
   const cover = coverApplies(campaign, allTargets) || pcTargets.some((t) => sightRule(t.sheet.name, t.sight, modes.lineOfSight).cover);
   for (const t of allTargets) {
@@ -2324,6 +2405,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     const note = sightRule(t.sheet.name, t.sight, modes.lineOfSight).note;
     if (note !== null) ruleNotes.push({ ruleId: "lineOfSight", summary: note });
   }
+  for (const t of conflict) for (const summary of conditionNotes(t.sheet.name, t.sheet.conditions, modes.conditionDice)) ruleNotes.push({ ruleId: "conditionDice", summary });
   const args = attackDuality(
     weapon,
     { ...options, modifier: options.modifier + folds.modifier, advantage: options.advantage + folds.advantage + edge.advantage, disadvantage: options.disadvantage + edge.disadvantage + environment.disadvantage },
@@ -2374,31 +2456,34 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   if (req.held === undefined) {
     const offers = afterRollOffers(duality.next, campaign, host, roll, hostRollOf(roll, hits), main, env.rollUsedExperience, req.scene.attacker, req.scene);
     if (offers.length > 0) {
-      const requestId = await openAfterRoll(ctx, {
-        campaignId: campaign._id,
-        encounterId: main!.encounter._id,
-        mapId: req.scene.map._id,
-        createdBy: req.actorId,
-        payload: {
-          schemaVersion: 1,
-          kind: "afterRoll",
-          characterId: character._id,
-          action: {
-            kind: "attack",
-            slot,
-            targetTokenIds: req.targets.map((t) => t.token._id),
-            roll: options,
-            ...(req.riders && req.riders.length > 0 ? { riders: [...req.riders] } : {}),
-            ...(req.waived && req.waived.length > 0 ? { waived: [...req.waived] } : {}),
-          },
-          dice: rec.values.slice(0, MAX_HELD_DICE),
-          dualityAt,
-          roll,
-          hits: allTargets.map((t, i) => ({ tokenId: t.token._id, hit: hits[i]!.hit })),
-          options: offers.map((o) => ({ featureId: o.featureId, useId: o.useId })),
+      // Plan rule-switches OP: the named PCs are held with the adversaries (the replay checks them again).
+      const conflictHits = pcHitsOf(roll, conflict);
+      const heldHits = [...allTargets.map((t, i) => ({ tokenId: t.token._id, hit: hits[i]!.hit })), ...conflict.map((t, i) => ({ tokenId: t.token._id, hit: conflictHits[i]!.hit }))];
+      const payload: AfterRollPayload = {
+        schemaVersion: 1,
+        kind: "afterRoll",
+        characterId: character._id,
+        action: {
+          kind: "attack",
+          slot,
+          targetTokenIds: [...req.targets.map((t) => t.token._id), ...conflict.map((t) => t.token._id)],
+          roll: options,
+          ...(req.riders && req.riders.length > 0 ? { riders: [...req.riders] } : {}),
+          ...(req.waived && req.waived.length > 0 ? { waived: [...req.waived] } : {}),
         },
-      });
-      return { status: "awaiting", requestId, roll, targets: allTargets.map((t, i) => ({ tokenId: t.token._id, hit: hits[i]!.hit })), options: offers };
+        dice: rec.values.slice(0, MAX_HELD_DICE),
+        dualityAt,
+        roll,
+        hits: heldHits,
+        options: offers.map((o) => ({ featureId: o.featureId, useId: o.useId })),
+      };
+      const where = { campaignId: campaign._id, mapId: req.scene.map._id, createdBy: req.actorId, payload };
+      // OP: an attack on PCs only belongs to no encounter (`openAfterRoll` needs one; the row's `encounterId` is optional).
+      const requestId =
+        encounterId !== undefined
+          ? await openAfterRoll(ctx, { ...where, encounterId })
+          : await ctx.db.insert("combatRequests", { ...where, status: "open", createdAt: Date.now(), responses: [], kind: "afterRoll" });
+      return { status: "awaiting", requestId, roll, targets: heldHits, options: offers };
     }
   } else if (req.held.answer.kind === "use") {
     // CB p.90: the Hope this roll gave can pay a Hope feature; the roll is then changed (or rerolled), so its own Hope is
@@ -2481,7 +2566,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     runs.push(run);
   }
   for (const add of folds.addTargets.splice(0)) {
-    const more = await addedTargets(ctx, campaign, req.scene, weapon, add, taken(), main!.encounter._id, waived, folds.reach);
+    const more = await addedTargets(ctx, campaign, req.scene, weapon, add, taken(), encounterId, waived, folds.reach);
     for (const t of more.adversaries) await factsOf(t);
     readDeltas(roll, more.adversaries);
     const moreHits = hitsOf(roll, more.adversaries).map((h) => ({ ...h, hit: h.hit || critical || forced }));
@@ -2780,16 +2865,19 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   }
   const groupId = req.groupId ?? newGroupId();
   for (const { target, amount } of pcHitTotals) {
+    // Plan rule-switches OP: a PC the attacker named takes the weapon's hit with the attack's total (Evasion answers in
+    // their window compare with it, as for an adversary's attack, CB p.168); a rider-added PC keeps the rider's name.
+    const by = target.rider ? { cardId: target.rider.id, feature: target.rider.name } : { cardId: weapon.id, feature: weapon.name };
     await openIncomingHit(ctx, {
       campaignId: campaign._id,
-      encounterId: main!.encounter._id,
+      ...(encounterId !== undefined ? { encounterId } : {}),
       mapId: req.scene.map._id,
       createdBy: req.actorId,
       groupId,
-      attacker: { kind: "pc", characterId: character._id, label: sheet0.name, cardId: target.rider.id, feature: target.rider.name },
+      attacker: { kind: "pc", characterId: character._id, label: sheet0.name, ...by },
       targetCharacterId: target.character._id,
       targetTokenId: target.token._id,
-      hit: { amount, type, direct: false, forcedArmor: 0, critical },
+      hit: { amount, type, direct: false, forcedArmor: 0, critical, ...(target.rider ? {} : { attackTotal: roll.total }) },
       party: await partyMembers(ctx, campaign._id),
       bands: await bandsOnMap(ctx, req.scene.map._id),
     });
@@ -2920,7 +3008,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   for (const { rider, candidates } of toPrompt) {
     const requestId = await openRiderPick(ctx, {
       campaignId: campaign._id,
-      encounterId: main!.encounter._id,
+      ...(encounterId !== undefined ? { encounterId } : {}),
       mapId: req.scene.map._id,
       createdBy: req.actorId,
       payload: { schemaVersion: 1, kind: "riderPick", characterId: character._id, groupId, entryId, rider: { source: rider.source, id: rider.id, useId: rider.useId, name: rider.name }, candidates, hostRoll },
@@ -2934,7 +3022,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     if (!holds) skipped.push(r.name);
     return holds;
   });
-  const allyPicks = holding.length > 0 ? await openRiderAllyPicks(ctx, { env, riders: holding, hostRoll, entryId, groupId, encounterId: main!.encounter._id, createdBy: req.actorId }) : [];
+  const allyPicks = holding.length > 0 ? await openRiderAllyPicks(ctx, { env, riders: holding, hostRoll, entryId, groupId, ...(encounterId !== undefined ? { encounterId } : {}), createdBy: req.actorId }) : [];
   const prompts = afterDualityRoll(finalSheet, { hope: rolled.hope, fear: rolled.fear, roll }, CLASS_FEATURES, duality.scope);
   const outcomes = [
     ...results.map((r) => ({ tokenId: r.target.token._id, hit: r.hit, defeated: r.defeated })),

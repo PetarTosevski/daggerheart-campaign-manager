@@ -308,10 +308,13 @@ export async function openIncomingHit(ctx: MutationCtx, input: OpenHitInput): Pr
  * disadvantage is read from the totals (the action's GM row is written before its hits): a total below the whole roll's
  * means the target kept the lower die for its own disadvantage (Sturdy, Harrowing; one source more than the roll).
  * Two equal dice can't be told apart, so such a target rerolls with the whole roll's advantage / disadvantage.
+ * Plan rule-switches OP ("Conflict between PCs", CB p.168: "just like an adversary"): a PC's weapon attack on another PC
+ * passes its public total; it is stored the same way (Evasion answers compare with it), with no disadvantage to read.
  */
 async function ownAttack(ctx: QueryCtx, input: OpenHitInput): Promise<{ total?: number; disadvantage: number }> {
   const total = input.hit.attackTotal;
-  if (total === undefined || isPcAttacker(input.attacker)) return { disadvantage: 0 };
+  if (total === undefined) return { disadvantage: 0 };
+  if (isPcAttacker(input.attacker)) return { total, disadvantage: 0 };
   const record = await attackRollOf(ctx, { campaignId: input.campaignId, payload: { groupId: input.groupId } });
   return { total, disadvantage: record !== null && total < record.total ? 1 : 0 };
 }
@@ -950,10 +953,12 @@ async function endedEffect(ctx: QueryCtx, row: HitRow, characterId: Id<"characte
 /**
  * E2 (dcm-fyb): the hit came from an adversary's attack roll that succeeded (Rogue's Dodge, CB p.42: "until the next time
  * an attack succeeds against you"): an adversary attacker with an attack total (a feature's reaction-roll damage has
- * none). A PC's card damage on an ally (AA2b) is left to the Got hit button.
+ * none). A PC's card damage on an ally (AA2b) is left to the Got hit button. Plan rule-switches OP: a PC's weapon attack
+ * on another PC ("Conflict between PCs", CB p.168) stored its attack total, so it succeeded like an adversary's.
  */
 export function attackSucceeded(p: HitRow["payload"], attackTotal: number | undefined): boolean {
-  return !isPcAttacker(p.attacker) && attackTotal !== undefined;
+  if (isPcAttacker(p.attacker)) return p.attackTotal !== undefined && attackTotal !== undefined;
+  return attackTotal !== undefined;
 }
 
 /**

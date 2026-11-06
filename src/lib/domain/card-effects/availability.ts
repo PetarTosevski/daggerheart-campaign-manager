@@ -195,6 +195,12 @@ export interface RequirementState {
   situations: readonly string[];
   /** SD1 (NV7): what the engine knows for `situation.check`; an unknown fact leaves the check to the player. */
   facts?: StateFacts;
+  /**
+   * Plan rule-switches ODR2: the campaign's Defined Ranges (CB p.103; absent: on). Off: nothing is decided by counting
+   * squares: `within`, `allyNear` and `isolated` checks are unknown (the player's confirmation decides, Q13) and
+   * `noEnemyWithin` holds (the GM judges by eye).
+   */
+  definedRanges?: boolean;
 }
 
 /**
@@ -330,6 +336,7 @@ export function stateCheckMet(check: StateCheck, s: RequirementState): boolean |
       return areas?.some((a) => a.featureId === check.featureId && (check.owner !== "self" || a.own));
     }
     case "isolated": {
+      if (s.definedRanges === false) return undefined;
       const away = (n: number | undefined) => (n === undefined ? undefined : n > reach(check.range));
       const self = away(f.isolation?.self);
       if (check.who === "self" || self === false) return self;
@@ -343,10 +350,12 @@ export function stateCheckMet(check: StateCheck, s: RequirementState): boolean |
     case "tokens":
       return between(tokenCount(check, f), check);
     case "within": {
+      if (s.definedRanges === false) return undefined;
       const d = creature(f, check.who)?.distance;
       return d === undefined ? undefined : d <= reach(check.range);
     }
     case "allyNear": {
+      if (s.definedRanges === false) return undefined;
       const d = check.of === "self" ? f.nearestAlly : f.target?.nearestAlly;
       return d === undefined ? undefined : d <= reach(check.range);
     }
@@ -481,7 +490,7 @@ export function requirementMet(req: Requirement, s: RequirementState): boolean {
     case "hopeAtMost":
       return s.hope <= req.value;
     case "noEnemyWithin":
-      return s.nearestEnemy === undefined || s.nearestEnemy > reach(req.range);
+      return s.definedRanges === false || s.nearestEnemy === undefined || s.nearestEnemy > reach(req.range);
     case "effectActive":
       return s.activeCardEffects.includes(req.cardId);
     case "situation": {

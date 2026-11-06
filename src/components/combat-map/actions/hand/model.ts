@@ -117,8 +117,9 @@ const isBand = (range: string | undefined): range is Range => range !== undefine
  * the first target from the actor and the others from that first target. The actor itself, a creature whose position
  * is unknown, and "weapon" / "unlimited" ranges are never greyed (the dialog doesn't know the weapon's range).
  */
-export function outOfRange(ask: TargetAsk, creatures: readonly Creature[], picked: readonly string[], c: Creature): boolean {
-  if (c.side === "self" || c.at === undefined) return false;
+export function outOfRange(ask: TargetAsk, creatures: readonly Creature[], picked: readonly string[], c: Creature, definedRanges = true): boolean {
+  // Rule switches ODR / ODR2: with Defined Ranges off nothing is out of range (the server's `buildRun` flags nothing).
+  if (!definedRanges || c.side === "self" || c.at === undefined) return false;
   const anchored = ask.area === "aroundPoint" || ask.area === "aroundTarget";
   const anchorId = picked[0];
   if (anchored && ask.areaRange !== undefined && anchorId !== undefined && anchorId !== c.tokenId) {

@@ -91,8 +91,12 @@ async function arena() {
   const fear = () => t.run(async (ctx) => (await campaignFearState(ctx, campaignId)).fear);
   const rows = () => t.run((ctx) => ctx.db.query("actionLog").collect());
   const feed = (c: Client) => c.query(api.feed.list, { campaignId, paginationOpts: { numItems: 50, cursor: null } });
-  const use = (c: Client, cardId: string, targetTokenIds: Id<"combatTokens">[], extra: Record<string, unknown> = {}) =>
-    c.mutation(api.combatCards.useCard, { campaignId, characterId: w.characterA, mapId, cardId, targetTokenIds, choices: [], idempotencyKey: key(), ...extra });
+  const use = async (c: Client, cardId: string, targetTokenIds: Id<"combatTokens">[], extra: Record<string, unknown> = {}) => {
+    // S2 (plan rule-switches RS2): a roll with Fear or a failure hands the spotlight to the GM, and players wait in a running
+    // encounter; the GM hands it back between these acts (waiting itself: rules-spotlight-wait.test.ts).
+    await gm.mutation(api.combatSpotlight.handToParty, { campaignId, idempotencyKey: key() });
+    return c.mutation(api.combatCards.useCard, { campaignId, characterId: w.characterA, mapId, cardId, targetTokenIds, choices: [], idempotencyKey: key(), ...extra });
+  };
   return { w, t, campaignId, mapId, gm, player, ...ids, enemy, instance, sheet, edit, holding, fear, rows, feed, use };
 }
 

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { rangeCheck } from "@/lib/domain/combat-actions/distance";
 import type { Range } from "@/lib/domain/card-effects/types";
 import { shortfallLabel } from "@/lib/domain/combat-actions/shortfall";
+import type { SightMode } from "@/lib/domain/combat-actions/sight";
 import { beforeText } from "@/lib/errors/refusals";
 import type { TraitId, Weapon } from "@/lib/srd/types";
 
@@ -107,6 +108,11 @@ export type AttackInput = {
   /** Set: this session answers a forced attack (targets locked, `rows` from `forcedRows`). */
   forced: ForcedAttack | null;
   forcedRows: readonly PickRowInput[] | null;
+  /**
+   * Plan rule-switches OP: set while "Conflict between PCs" is on (CB p.168): the enemies and the other PCs the attack may
+   * take (`conflictRows`). Absent or null: the enemies only (the rule's side), as before.
+   */
+  conflictRows?: readonly PickRowInput[] | null;
   /** Enemies picked on the map before (the latest win). */
   picked: readonly Id<"combatTokens">[];
   /** The GM playing for the PC (hud-pre-w9, dcm-bxp.99.32.36): the PC's token and character; a player's own needs none. */
@@ -295,7 +301,8 @@ export function attackRule(input: AttackInput, data: AttackData): PickSessionSpe
     const n = Math.max(1, input.forced.targets.length);
     return { side: "any", max: n, min: n, range: "weapon", slot, locked: true, text: `${input.forced.instanceLabel}’s ${input.forced.feature}: the target is locked` };
   }
-  return { side: "enemy", max: mostTargets(input, data), range: "weapon", slot };
+  // OP: with "Conflict between PCs" on, another PC is a target too (the rows are `conflictRows`).
+  return { side: input.conflictRows ? "any" : "enemy", max: mostTargets(input, data), range: "weapon", slot };
 }
 
 /** The parts of the spec that follow the data (a weapon switch, a chip, a rider): pass to `update` with the new data. */
@@ -340,7 +347,7 @@ export function attackSession(input: AttackInput, data: AttackData): PickSession
     data,
     picked: input.forced ? input.forced.targets.map((t) => t.tokenId) : input.picked.slice(-most),
     ...(input.actor ? { actor: input.actor } : {}),
-    ...(input.forcedRows ? { rows: input.forcedRows } : {}),
+    ...(input.forcedRows ? { rows: input.forcedRows } : input.conflictRows ? { rows: input.conflictRows } : {}),
     // A forced attack answers the GM's move (it comes while the GM holds the spotlight): never held back by it.
     ...(input.forced ? { followUp: true } : {}),
     extra: (ctx) => input.render(ctx, input),
@@ -371,6 +378,26 @@ export function forcedRows(forced: ForcedAttack, bands: ReadonlyMap<string, { ba
     // The GM chose them: no range sanction is asked (combatActions.attack `forcedRequestId`), so every row is in reach.
     return { tokenId: t.tokenId, name: t.name, side: seen?.side === "self" ? "pc" : (seen?.side ?? "enemy"), band: seen?.band ?? null, reach: "in" };
   });
+}
+
+const REACH_ORDER: Record<PickRow["reach"], number> = { in: 0, out: 1, los: 2 };
+
+/**
+ * Plan rule-switches OP (optional rule "Conflict between PCs", CB p.168; on in `ruleSettings.get`): the attack's rows are
+ * the enemies and the other PCs the server lists as targets (`combatActionsReads.targets`, which adds the PCs only while
+ * the rule is on), with their reach from the hints: no line of sight is `los` (M1 Manual: pickable, `noLineOfSight`),
+ * out of the weapon's range `out` (the server refuses a PC out of range: it never waits for the GM). In reach first.
+ */
+export function conflictRows(bands: ReadonlyMap<string, { band: Range; side: PickRow["side"]; name: string }>, hints: readonly TargetHint[], sightMode: SightMode = "book"): PickRowInput[] {
+  const rows: PickRowInput[] = [];
+  for (const hint of hints) {
+    const seen = bands.get(hint.tokenId);
+    if (seen === undefined || (seen.side !== "enemy" && seen.side !== "pc")) continue;
+    const blind = !hint.lineOfSight;
+    const reach: PickRow["reach"] = blind && sightMode !== "manual" ? "los" : hint.inRange ? "in" : "out";
+    rows.push({ tokenId: hint.tokenId, name: seen.name, side: seen.side, band: hint.band, reach, ...(blind && sightMode === "manual" ? { noLineOfSight: true as const } : {}) });
+  }
+  return rows.sort((a, b) => REACH_ORDER[a.reach] - REACH_ORDER[b.reach]);
 }
 
 /** A Minion offer (`combatRequestsReads.mine` kind `minionOffer`, CB p.201). */

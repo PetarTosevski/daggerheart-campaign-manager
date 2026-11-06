@@ -597,3 +597,54 @@ describe("rolls: Weapon Specialist rerolls 1s on Slayer Dice once per long rest 
     expect((await sheetOf(a)).featureUses.some((u) => u.key === "weaponSpecialistReroll")).toBe(false);
   });
 });
+
+describe("rolls: social rolls (Journal JF2, dcm-z9rz.28, user 2026-11-06)", () => {
+  useAllowlist(EMAILS);
+  type Env = Awaited<ReturnType<typeof setup>>;
+
+  /** A session with one scene of `type`, started (live) when `live`, the scene marked Playing. */
+  async function sceneOf({ gm, campaignId }: Env, type: "social" | "exploration", live = true) {
+    const { sessionId } = await gm.mutation(api.sessionRecords.create, { campaignId, idempotencyKey: key() });
+    const { sceneId } = await gm.mutation(api.sessionPrep.addScene, { campaignId, sessionId, type });
+    if (live) await gm.mutation(api.sessions.start, { campaignId, sessionId, idempotencyKey: key() });
+    await gm.mutation(api.sessionPrep.setSceneState, { campaignId, sessionId, sceneId, state: "playing" });
+  }
+  const socialOf = (env: Env, entryId: Id<"actionLog">) => env.t.run(async (ctx) => (await ctx.db.get("actionLog", entryId))!.social === true);
+
+  it("a roll is social when 'Social roll' is ticked (action or reaction); otherwise not, and damage never is", async () => {
+    const env = await setup();
+    const ticked = await env.p1.mutation(api.rolls.actionRoll, { characterId: env.a, ...agility, social: true, idempotencyKey: key() });
+    expect(await socialOf(env, ticked.entryId)).toBe(true);
+    const plain = await env.p1.mutation(api.rolls.actionRoll, { characterId: env.a, ...agility, idempotencyKey: key() });
+    expect(await socialOf(env, plain.entryId)).toBe(false);
+    const reaction = await env.p1.mutation(api.rolls.actionRoll, { characterId: env.a, ...agility, kind: "reaction", social: true, idempotencyKey: key() });
+    expect(await socialOf(env, reaction.entryId)).toBe(true);
+    const dmg = await env.p1.mutation(api.rolls.damageRoll, { characterId: env.a, ...weapon, idempotencyKey: key() });
+    expect(await socialOf(env, dmg.entryId)).toBe(false);
+  });
+
+  it("a roll is social while the live session's playing scene is a Social scene: rolled, typed-in and Tag Team rolls", async () => {
+    const env = await setup();
+    await sceneOf(env, "social");
+    const rolled = await env.p1.mutation(api.rolls.actionRoll, { characterId: env.a, ...agility, idempotencyKey: key() });
+    expect(await socialOf(env, rolled.entryId)).toBe(true);
+    const typed = await env.p1.mutation(api.rolls.manualRoll, { characterId: env.a, values: [5, 3], roll: agility, idempotencyKey: key() });
+    expect(await socialOf(env, typed.entryId)).toBe(true);
+    await env.edit(env.a, { hope: 3 });
+    const side = { trait: "agility" as const, modifier: 0 };
+    const { rolls } = await env.p1.mutation(api.rolls.tagTeam, { characterId: env.a, partnerId: env.b, initiator: side, partner: side, idempotencyKey: key() });
+    for (const r of rolls) expect(await socialOf(env, r.entryId)).toBe(true);
+  });
+
+  it("another scene type, or a Social scene outside a live session, does not make a roll social", async () => {
+    const exploring = await setup();
+    await sceneOf(exploring, "exploration");
+    const a = await exploring.p1.mutation(api.rolls.actionRoll, { characterId: exploring.a, ...agility, idempotencyKey: key() });
+    expect(await socialOf(exploring, a.entryId)).toBe(false);
+
+    const planned = await setup();
+    await sceneOf(planned, "social", false);
+    const b = await planned.p1.mutation(api.rolls.actionRoll, { characterId: planned.a, ...agility, idempotencyKey: key() });
+    expect(await socialOf(planned, b.entryId)).toBe(false);
+  });
+});

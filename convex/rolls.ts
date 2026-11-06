@@ -75,6 +75,7 @@ import {
   changed,
   damage,
   damageFields,
+  darknessOnRoll,
   damageResult,
   duality,
   dualityFields,
@@ -82,12 +83,17 @@ import {
   dualityResult,
   editable,
   manualRng,
+  markSocial,
   poolValidator,
   promptValidator,
   rules,
+  socialScene,
   versus,
+  withDarkness,
 } from "./lib/rolls";
+import { darknessLabels } from "../src/lib/domain/combat-map/light";
 import { featureScope } from "./lib/featureScope";
+import { assertMayAct } from "./lib/spotlight";
 import { afterPcActionRoll, fearWithheldBy, hopeFearModeOf, outcomeSucceeds, outcomeWithFear } from "./lib/rollAftermath";
 import { rollValidator } from "./lib/validators/actionLog";
 import { traitIdValidator } from "./lib/validators/characters";
@@ -102,6 +108,8 @@ export const actionRoll = keyedUserMutation({
   handler: async (ctx, { characterId, ...args }) =>
     ctx.once("roll_action", { characterId, ...args }, async () => {
       const loaded = await editable(ctx, ctx.user, characterId);
+      // S2 (plan rule-switches RS2): an action roll waits while the GM holds the spotlight; a reaction roll never does.
+      await assertMayAct(ctx, loaded.campaign, loaded.character, args.kind === "reaction" ? "reaction" : "action", loaded.sheet.name);
       return fearFor(ctx, ctx.user, loaded.campaign, await duality(ctx, loaded, args, rollDie, false), "fearGained");
     }),
 });
@@ -131,6 +139,8 @@ export const manualRoll = keyedUserMutation({
   handler: async (ctx, { characterId, values, roll }) =>
     ctx.once("roll_manual", { characterId, values, roll }, async () => {
       const loaded = await editable(ctx, ctx.user, characterId);
+      // S2 (RS2): a typed-in action roll waits like a rolled one; damage (an attack's follow-up) and reaction rolls never do.
+      if (roll.kind === "action") await assertMayAct(ctx, loaded.campaign, loaded.character, "action", loaded.sheet.name);
       const rng = manualRng(values);
       const check = () => rules(() => rng.done());
       if (roll.kind === "damage") {
@@ -173,6 +183,8 @@ export const tagTeam = keyedUserMutation({
         throw appError("DICE_RULE", "Pick another character in this campaign.");
       }
       const partnerSheet = readSheet(partner.character.sheet);
+      // S2 (RS2): a Tag Team Roll is the initiator's action (CB p.97); it waits while the GM holds the spotlight.
+      await assertMayAct(ctx, lead.campaign, lead.character, "action", lead.sheet.name);
       assertCanAct(lead.character, lead.sheet);
       assertCanAct(partner.character, partnerSheet);
       rules(() => [args.initiator, args.partner].forEach((side) => assertTypedModifier(side.modifier)));
@@ -181,32 +193,37 @@ export const tagTeam = keyedUserMutation({
       await saveSheet(ctx, lead.character._id, { ...paid, featureUses: [...paid.featureUses, { key: TAG_TEAM_USE, until: "session" }] });
 
       const groupId = newGroupId();
+      // Journal JF2 (dcm-z9rz.28): both rolls are social while the Journal's current scene is a Social scene.
+      const social = await socialScene(ctx, lead.campaign._id);
       const sides = [
         { loaded: lead, sheet: lead.sheet, side: args.initiator, before: lead.sheet },
         { loaded: partner, sheet: partnerSheet, side: args.partner, before: undefined },
       ];
       const rolls = [];
+      // Plan rule-switches OE2: M3's variant on both action rolls when the Tag Team has a Difficulty, in dim light.
+      const dark = await darknessOnRoll(ctx, lead.campaign, { kind: "action", ...(args.difficulty !== undefined ? { difficulty: args.difficulty } : {}) });
+      const darkLabels = darknessLabels(dark);
       for (const { loaded, sheet, side, before } of sides) {
         // DA19 (B1): a Beastform's trait bonus is a passive of the drawer's table, not an effect mod.
         const live = withPassiveTraits(withEffects(sheet), featureScope(lead.campaign));
-        const { roll } = rules(() =>
-          rollDuality(
-            { kind: "action", trait: live.traits[side.trait], modifier: side.modifier, ...(args.difficulty !== undefined ? { difficulty: args.difficulty } : {}), advantage: 0, disadvantage: 0, help: 0 },
-            rollDie,
-          ),
+        const input = withDarkness(
+          { kind: "action" as const, trait: live.traits[side.trait], modifier: side.modifier, ...(args.difficulty !== undefined ? { difficulty: args.difficulty } : {}), advantage: 0, disadvantage: 0, help: 0 },
+          dark,
         );
+        const { roll } = rules(() => rollDuality(input, rollDie));
         const entryId = await logAction(ctx, {
           campaignId: lead.campaign._id,
           characterId: loaded.character._id,
           actorId: ctx.user._id,
           kind: "roll",
           visibility: "public",
-          summary: `${sheet.name}: Tag Team ${TRAIT_LABEL[side.trait]} roll ${roll.total}${typedLabel(side.modifier)}${versus(roll.difficulty, lead.gm)}, ${OUTCOME_LABEL[roll.outcome]} (not applied yet)`,
+          summary: `${sheet.name}: Tag Team ${TRAIT_LABEL[side.trait]} roll ${roll.total}${typedLabel(side.modifier)}${versus(roll.difficulty, lead.gm)}, ${OUTCOME_LABEL[roll.outcome]}${darkLabels.length > 0 ? ` (${darkLabels.join(", ")})` : ""} (not applied yet)`,
           roll,
           groupId,
           ...(before ? { before } : {}),
           undoable: true,
         });
+        await markSocial(ctx, entryId, social);
         rolls.push({ characterId: loaded.character._id, entryId, roll });
       }
       return { groupId, rolls };

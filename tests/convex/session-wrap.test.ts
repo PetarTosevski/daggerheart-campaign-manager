@@ -8,8 +8,9 @@ import { ANCESTRIES, ARMOR, COMMUNITIES, cardsForDomains, getClass, subclassesFo
 import { errorCode, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
-// D10 S6: Wrap-up (B5, B9, Q4, Q5). The GM writes the recap (sessions), loot and threads (sessionPrep, GM-only) and
-// calls the milestone (the roster's 'Party levels up', one way); every member reads the dashboard's session summary.
+// D10 S6: Wrap-up (B5, B9, Q4, Q5). The GM writes the recap (sessions) and loot (sessionPrep, GM-only; threads are
+// read only since JF3) and calls the milestone (the roster's 'Party levels up', one way); every member reads the
+// dashboard's session summary.
 
 const EMAILS = "gm@example.com,p1@example.com,out@example.com";
 
@@ -84,11 +85,10 @@ describe("session wrap-up", () => {
     expect(await prepRows(env, sessionId)).toEqual([]);
   });
 
-  it("setLoot and setThreads create the prep row on the first write, then patch it; caps 2000 / 4000; empty clears", async () => {
+  it("setLoot creates the prep row on the first write, then patches it; caps at 2000; empty clears; get still reads stored threads", async () => {
     const env = await setup();
     const sessionId = await env.create();
     const loot = (text: string) => env.gm.mutation(api.sessionWrap.setLoot, { campaignId: env.campaignId, sessionId, loot: text });
-    const threads = (text: string) => env.gm.mutation(api.sessionWrap.setThreads, { campaignId: env.campaignId, sessionId, threads: text });
     // Clearing an absent field creates nothing.
     await loot("");
     expect(await prepRows(env, sessionId)).toEqual([]);
@@ -96,7 +96,8 @@ describe("session wrap-up", () => {
     let rows = await prepRows(env, sessionId);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ campaignId: env.campaignId, sessionId, scenes: [], loot: "A bag of gold, the Wither Lantern" });
-    await threads("The Blight countdown ticked to 3.");
+    // Threads written before setThreads was removed (JF3) are still read.
+    await env.t.run((ctx) => ctx.db.patch("sessionPrep", rows[0]!._id, { threads: "The Blight countdown ticked to 3." }));
     rows = await prepRows(env, sessionId);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ loot: "A bag of gold, the Wither Lantern", threads: "The Blight countdown ticked to 3." });
@@ -107,8 +108,7 @@ describe("session wrap-up", () => {
       threads: "The Blight countdown ticked to 3.",
     });
     expect(await failure(loot("x".repeat(SESSION_TEXT_MAX.loot + 1)))).toBe("INVALID");
-    expect(await failure(threads("x".repeat(SESSION_TEXT_MAX.threads + 1)))).toBe("INVALID");
-    await threads("x".repeat(SESSION_TEXT_MAX.threads));
+    await loot("x".repeat(SESSION_TEXT_MAX.loot));
     await loot("");
     expect((await wrap(env, sessionId))!.loot).toBeUndefined();
     // A prep row S4 created (scenes, hooks) keeps its fields.
@@ -218,7 +218,6 @@ describe("session wrap-up", () => {
       expect(await env.gm.query(api.sessionWrap.get, { campaignId, sessionId })).toBeNull();
       expect(await failure(env.gm.mutation(api.sessionWrap.setRecap, { campaignId, sessionId, recap: "x" }))).toBe("SESSION_NOT_FOUND");
       expect(await failure(env.gm.mutation(api.sessionWrap.setLoot, { campaignId, sessionId, loot: "x" }))).toBe("SESSION_NOT_FOUND");
-      expect(await failure(env.gm.mutation(api.sessionWrap.setThreads, { campaignId, sessionId, threads: "x" }))).toBe("SESSION_NOT_FOUND");
       expect(await failure(env.gm.mutation(api.sessionWrap.callMilestone, { campaignId, sessionId, idempotencyKey: key() }))).toBe("SESSION_NOT_FOUND");
     }
     expect(await env.t.run((ctx) => ctx.db.get("sessions", foreign))).toMatchObject({ status: "planned" });
@@ -262,7 +261,6 @@ describe("session wrap-up", () => {
 
     const writes = [
       ["setLoot", (sessionId: string) => ({ sessionId, loot: "Loot" })],
-      ["setThreads", (sessionId: string) => ({ sessionId, threads: "Threads" })],
     ] as const;
 
     for (const [name, extra] of writes) {

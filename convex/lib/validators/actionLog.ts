@@ -1,6 +1,7 @@
 import { v, type Infer } from "convex/values";
 
 import type { RollRecord } from "../../../src/lib/domain/duality";
+import { spotlightHolderValidator, spotlightReasonValidator } from "../../tables/combatSpotlight";
 import { encounterConditionValidator, instanceEffectValidator, instanceFeatureUseValidator } from "./encounters";
 
 /**
@@ -114,6 +115,25 @@ export const timeChangeValidator = v.object({
   timeOfDayBefore: v.optional(v.union(v.literal("day"), v.literal("dim"), v.literal("night"))),
 });
 
+/**
+ * The spotlight before a PC's action roll moved it to the GM (S1, plan rule-switches CU2, bead dcm-bxp.99.32.10): the
+ * campaign's `combatSpotlight` row as it stood (`row` null: nobody in particular, the whole party) and the moved row's
+ * `since` (`movedAt`). Undo of the roll puts `row` back while the GM's hold is still the one the roll started.
+ */
+export const spotlightBeforeValidator = v.object({
+  row: v.union(
+    v.null(),
+    v.object({
+      holder: spotlightHolderValidator,
+      since: v.number(),
+      reason: spotlightReasonValidator,
+      rollBy: v.optional(v.id("characters")),
+      adversaryTokenId: v.optional(v.id("combatTokens")),
+    }),
+  ),
+  movedAt: v.number(),
+});
+
 /** A row's counted Hope spent / HP marked and the live session they went to (dcm-z9rz.22). */
 export const sessionTallyValidator = v.object({ sessionId: v.id("sessions"), hopeSpent: v.number(), hpMarked: v.number() });
 
@@ -149,6 +169,8 @@ export const actionLogFields = {
    * their undo leaves the tally as it is). Undo takes it back off that session's row, never below 0.
    */
   sessionTally: v.optional(sessionTallyValidator),
+  /** S1 moved the spotlight to the GM with this row's action (CU2, widened; older rows have none): undo puts it back. */
+  spotlightBefore: v.optional(spotlightBeforeValidator),
   undoable: v.boolean(),
   undoneAt: v.optional(v.number()),
   undoneBy: v.optional(v.id("users")),
@@ -164,6 +186,12 @@ export const actionLogFields = {
    * union of the ids, so a registry change never needs a migration of the log.
    */
   ruleId: v.optional(v.string()),
+  /**
+   * A social roll (Journal JF2, dcm-z9rz.28, user 2026-11-06; widened, older rows have none = not social): a PC's duality
+   * roll made while the live session's playing scene is a Social scene, or with 'Social roll' ticked in the dice box.
+   * Set only by the roll paths (convex/lib/rolls.ts `duality`, `rolls.tagTeam`); the Journal log shows a mouth icon.
+   */
+  social: v.optional(v.boolean()),
   at: v.number(),
 };
 
@@ -176,6 +204,7 @@ export type AdversaryBefore = Infer<typeof adversaryBeforeValidator>;
 export type ActionTarget = Infer<typeof actionTargetValidator>;
 export type CampaignTimeSnapshot = Infer<typeof campaignTimeSnapshotValidator>;
 export type TimeChange = Infer<typeof timeChangeValidator>;
+export type SpotlightBefore = Infer<typeof spotlightBeforeValidator>;
 
 // Drift checks: each type must be assignable to the other.
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;

@@ -22,7 +22,7 @@ import type { CardEffect } from "../../src/lib/domain/card-effects/types";
 import type { FeatureEffect } from "../../src/lib/domain/feature-effects/types";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { allowWorldEmails, buildWorld, type Client } from "./authz/world";
-import { errorCode, key } from "./helpers";
+import { errorCode, handingBack, key } from "./helpers";
 
 const injected = vi.hoisted(() => ({ cards: new Map<string, unknown>(), features: new Map<string, unknown>() }));
 
@@ -137,7 +137,7 @@ async function arena(outOfRange: "ask" | "refuse" = "refuse") {
   const feature = (c: Client, targetTokenIds: Id<"combatTokens">[], extra: Record<string, unknown> = {}) =>
     c.mutation(api.combatFeatures.useFeature, { campaignId, characterId: w.characterA, mapId, featureId: BITE_ID, targetTokenIds, choices: [], idempotencyKey: key(), ...extra } as never);
   await edit({ classId: "warrior", subclassId: "call-of-the-brave", subclassRank: "foundation", hope: 5, domainCards: { owned: [ABILITY], loadout: [ABILITY] } } as Partial<CharacterSheet>);
-  return { w, t, campaignId, mapId, gm, player: w.as("player"), enemy, sheet, edit, instance, trail, attack, card, feature };
+  return { w, t, campaignId, mapId, gm, player: handingBack(w.as("player"), gm, w.campaignId), enemy, sheet, edit, instance, trail, attack, card, feature };
 }
 
 /** The ConvexError's code and message (tests assert the code; the message is checked only for the band's name). */

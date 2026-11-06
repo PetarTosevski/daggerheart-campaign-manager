@@ -39,6 +39,7 @@ import { pickFeature } from "./featureRunner";
 import { campaignFearState } from "./fear";
 import { groupUndone } from "./incomingHits";
 import { changed } from "./rolls";
+import { ruleMode } from "./ruleModes";
 import { MAX_ALLY_PICK_CHOOSERS, type AllyPickChooser, type AllyPickPayload } from "./validators/combatRequests";
 
 export type AllyPickRow = Doc<"combatRequests"> & { payload: AllyPickPayload };
@@ -85,11 +86,14 @@ export function riderHasOwnPicks(r: Pick<PickedRider, "source" | "id" | "useId">
 /**
  * The allies a rider's choosers are (the server names them: "all allies who can see or hear you", "all allies within Very
  * Close range"): every other PC token on the live map within the `by` pick's range of the attacker ("unlimited" or no
- * range: all of them), at most a party.
+ * range: all of them), at most a party. With Defined Ranges off (optional rule `definedRanges`, CB p.103; user 2026-11-06:
+ * automatic range effects don't apply, the actor decides) every other PC on the map. Either way the acting player then
+ * unticks who can't see or hear them before the picks go out (`sendAllyPicks`, the row's `review`).
  */
-function alliesFor(scene: AttackScene, use: CardUse): string[] {
+function alliesFor(campaign: Doc<"campaigns">, scene: AttackScene, use: CardUse): string[] {
   const range = byChooseOf(use.steps)?.by.pick?.range;
-  const measured = range === undefined || range === "unlimited" || range === "weapon" ? null : (range as Parameters<typeof rangeCheck>[2]);
+  const measured =
+    !ruleMode(campaign, "definedRanges") || range === undefined || range === "unlimited" || range === "weapon" ? null : (range as Parameters<typeof rangeCheck>[2]);
   return scene.scene.tokens
     .filter((t) => t._id !== scene.attacker._id && t.side === "pc" && t.ref.kind === "pc" && (measured === null || rangeCheck(scene.attacker, t, measured).inRange))
     .map((t) => t._id)
@@ -148,7 +152,7 @@ export async function openRiderAllyPicks(
     const character = await ctx.db.get("characters", env.character._id);
     if (character === null) continue;
     const sheet = readSheet(character.sheet);
-    const allies = alliesFor(env.scene, use);
+    const allies = alliesFor(env.campaign, env.scene, use);
     let outcome;
     try {
       outcome = await dryRun(env, rider, sheet, input.hostRoll, allies);
@@ -189,6 +193,8 @@ export async function openRiderAllyPicks(
         },
         choosers,
         answers: [],
+        // CU2 (user 2026-11-06): with allies on the list, the actor reviews it first (`sendAllyPicks`).
+        ...(choosers.some((c) => c.chooserId !== env.scene.attacker._id) ? { review: true as const } : {}),
       },
     });
     out.push({ requestId, name: rider.name });
@@ -304,6 +310,7 @@ async function decline(ctx: MutationCtx, row: AllyPickRow, by: Id<"users">, gmLi
 export async function answerAllyPick(ctx: MutationCtx, row: AllyPickRow, pick: { stepId: string; chooserId: string; options: readonly string[] }, by: Id<"users">): Promise<"open" | "resolved" | "declined"> {
   const p = row.payload;
   const chooser = p.choosers.find((c) => c.stepId === pick.stepId && c.chooserId === pick.chooserId);
+  if (p.review === true) throw appError("NOT_A_RESPONDER", "The picks haven't gone out yet.");
   if (chooser === undefined || p.answers.some((a) => a.stepId === pick.stepId && a.chooserId === pick.chooserId)) throw appError("NOT_A_RESPONDER");
   if (pick.options.length !== 1 || !chooser.options.some((o) => o.id === pick.options[0])) throw appError("INVALID", "Pick one of the options.");
   if (!(await encounterRunning(ctx, row)) || (await groupUndone(ctx, row))) return decline(ctx, row, by);
@@ -313,4 +320,34 @@ export async function answerAllyPick(ctx: MutationCtx, row: AllyPickRow, pick: {
   if (!p.choosers.every((c) => answers.some((a) => a.stepId === c.stepId && a.chooserId === c.chooserId))) return "open";
   const full: AllyPickRow = { ...row, payload };
   return p.source.kind === "rider" ? completeRider(ctx, full, by) : completeAdversary(ctx, full, by);
+}
+
+// ---------------------------------------------------------------- the actor's review (CU2)
+
+/**
+ * The acting player's review of the computed allies (plan rule-switches CU2, bead dcm-bxp.99.32.46, user 2026-11-06: "the
+ * acting player can deselect allies from the computed list (can't see/hear) before the picks go out"; Rousing Strike, CB
+ * p.342: "all allies who can see or hear you"). The caller is already checked (the actor's player or the GM). `drop`
+ * names the choosers unticked; the actor's own pick (Rousing Strike's "you") can't be dropped (INVALID), nor a chooser
+ * the row doesn't list (INVALID). NOT_A_RESPONDER once the picks went out. A row whose use was undone or whose encounter
+ * ended is declined. Every chooser dropped: the rider doesn't happen (declined; its use is not spent). Else the picks go
+ * out (`review` cleared) and each chooser answers (`answerAllyPick`).
+ */
+export async function sendAllyPicks(ctx: MutationCtx, row: AllyPickRow, drop: readonly string[], by: Id<"users">): Promise<"open" | "declined"> {
+  const p = row.payload;
+  if (p.review !== true || p.source.kind !== "rider") throw appError("NOT_A_RESPONDER", "The picks already went out.");
+  const actorId = p.source.characterId;
+  const dropped = new Set(drop);
+  for (const id of dropped) {
+    const chooser = p.choosers.find((c) => c.chooserId === id);
+    if (chooser === undefined) throw appError("INVALID", "That character isn't on the list.");
+    if (chooser.characterId === actorId) throw appError("INVALID", "Your own pick stays.");
+  }
+  if (!(await encounterRunning(ctx, row)) || (await groupUndone(ctx, row))) return decline(ctx, row, by);
+  const choosers = p.choosers.filter((c) => !dropped.has(c.chooserId));
+  if (choosers.length === 0) return decline(ctx, row, by);
+  const payload: AllyPickPayload = { ...p, choosers };
+  delete payload.review;
+  await ctx.db.patch("combatRequests", row._id, { payload });
+  return "open";
 }

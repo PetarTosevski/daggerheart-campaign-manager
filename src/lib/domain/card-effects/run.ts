@@ -278,6 +278,13 @@ export interface RunContext {
     difficulty?: number;
   };
   /**
+   * Plan rule-switches OE2 (user 2026-11-06 on dcm-bxp.134; CB p.104): M3's dim-light variant (cardRunner `buildRun`,
+   * `darknessEdge`). Added to every action roll of the use that has a Difficulty (a fixed or GM Difficulty, or the
+   * targets' Difficulty / Evasion): `disadvantage` dice and `difficulty` added to that Difficulty. Reaction rolls and an
+   * adversary's attack roll get none. Absent: nothing (Book, Manual, not dim light).
+   */
+  darkness?: { readonly disadvantage: number; readonly difficulty: number };
+  /**
    * Plan rule-switches RA2 (bead dcm-jh6d.67): the campaign's R3 `hopeFearFromRolls` mode (cardRunner `buildRun`). Absent:
    * Book. Manual: the use's action rolls gain no Hope and give no Fear (`dualityEffects`); a critical still does.
    */
@@ -289,6 +296,14 @@ export interface RunContext {
    * Stress `mark` step with `overflow` true and no HP marked.
    */
   damageRules?: DamageRules;
+  /**
+   * Plan rule-switches ODR2 (dcm-bxp.134; user 2026-11-06): the campaign's Defined Ranges (CB p.103; cardRunner `buildRun`
+   * sets `ruleModesOf(campaign).definedRanges`). Absent: on. Off: nothing this use picks or counts by range applies on
+   * its own: a `creatureCount` with `within` or `chain` counts no one (the map creatures lose their squares), `within` /
+   * `allyNear` / `isolated` checks are left to the player and `noEnemyWithin` holds; the server posts a GM-only note
+   * asking who is in range (`rangeAskNotes`, rule-notes.ts).
+   */
+  definedRanges?: boolean;
   /** An adversary's standard attack damage (AA1 reuse: `damage.roll.kind === "standardAttack"`), e.g. "1d8+2 phy". */
   attackDamage?: string;
   rng: Rng;
@@ -641,6 +656,15 @@ export type RunResult = { ok: true; plan: RunPlan } | RunRefusal;
 
 // ---------------------------------------------------------------- helpers
 
+/**
+ * Plan rule-switches ODR2: the map creatures as `creatureCount` reads them; with Defined Ranges off (`false`) they lose
+ * their squares and footprints, so a count with `within` or `chain` counts no one (numbers.ts) and the rest still count.
+ */
+export function rangeBlind(creatures: readonly MapCreature[], definedRanges: boolean | undefined): readonly MapCreature[] {
+  if (definedRanges !== false) return creatures;
+  return creatures.map((c): MapCreature => ({ id: c.id, side: c.side, pc: c.pc, ...(c.name !== undefined ? { name: c.name } : {}) }));
+}
+
 /** The use a context picks: by id, else the first `action` use, else the first. */
 export function pickUse(effect: CardEffect, useId?: string): CardUse | undefined {
   if (useId !== undefined) return effect.uses.find((u) => u.id === useId);
@@ -784,6 +808,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     nearestEnemy: context.nearestEnemy,
     situations: context.situations ?? [],
     ...(a.facts ? { facts: a.facts } : {}),
+    ...(context.definedRanges === false ? { definedRanges: false } : {}),
   });
   const unmet = unmetRequirements(use.requires, reqState(actor0));
   if (unmet.length > 0) return refuse("requirement", unmet.map((r) => r.kind).join(", "));
@@ -901,7 +926,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     ...(actor.dieSides ? { dieSides: actor.dieSides } : {}),
     // Lanes-2 E3 (dcm-rs1z, dcm-e80y, dcm-4zti): what E5's numbers.ts reads beyond the tracks.
     ...(dualityOf() ? { dualityDice: dualityOf() } : {}),
-    ...((context.creatures ?? context.numbers?.creatures) ? { creatures: context.creatures ?? context.numbers?.creatures } : {}),
+    ...((context.creatures ?? context.numbers?.creatures) ? { creatures: rangeBlind(context.creatures ?? context.numbers?.creatures ?? [], context.definedRanges) } : {}),
     ...(actor.classDice ? { classDice: actor.classDice } : {}),
     ...(actor.tideTokens !== undefined ? { tideTokens: actor.tideTokens } : {}),
   });
@@ -1236,13 +1261,18 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
   }
 
   // ---- the roll (R1, R9)
+  /** OE2: the Difficulty darkness added to each roll this run made (a shared follow-up reads its scope's roll's). */
+  const darkRaise = new Map<RollInfo, number>();
   const rollOnce = (rollSpec: RollSpec, against: readonly Combatant[]): { info: RollInfo; hits: Map<string, boolean> } => {
-    const extraAdv = (rollSpec.advantage ? 1 : 0) + (context.roll?.advantage ?? 0);
-    const extraDis = (rollSpec.disadvantage ? 1 : 0) + (context.roll?.disadvantage ?? 0);
-    const modifier = (rollSpec.modifier ? num(rollSpec.modifier) : 0) + (context.roll?.modifier ?? 0);
     const diff = rollSpec.difficulty;
-    const fixed = diff.kind === "fixed" ? diff.value : diff.kind === "gm" ? context.roll?.difficulty : undefined;
+    const baseFixed = diff.kind === "fixed" ? diff.value : diff.kind === "gm" ? context.roll?.difficulty : undefined;
     const perTarget = diff.kind === "target" || diff.kind === "evasion";
+    // OE2: M3's variant on a PC action roll with a Difficulty (never a reaction roll or an adversary's attack).
+    const dark = context.darkness !== undefined && rollSpec.kind !== "reaction" && rollSpec.kind !== "adversaryAttack" && (perTarget || baseFixed !== undefined) ? context.darkness : { disadvantage: 0, difficulty: 0 };
+    const fixed = baseFixed === undefined ? undefined : baseFixed + dark.difficulty;
+    const extraAdv = (rollSpec.advantage ? 1 : 0) + (context.roll?.advantage ?? 0);
+    const extraDis = (rollSpec.disadvantage ? 1 : 0) + (context.roll?.disadvantage ?? 0) + dark.disadvantage;
+    const modifier = (rollSpec.modifier ? num(rollSpec.modifier) : 0) + (context.roll?.modifier ?? 0);
     let info: RollInfo;
     if (rollSpec.kind === "adversaryAttack") {
       const { record, natural } = rollD20(rng, modifier, extraAdv, extraDis);
@@ -1292,7 +1322,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
       const results = resolveHits(
         info.record.total,
         info.critical,
-        against.map((t) => ({ id: t.id, difficulty: (diff.kind === "evasion" ? t.evasion : t.difficulty) ?? 0 })),
+        against.map((t) => ({ id: t.id, difficulty: ((diff.kind === "evasion" ? t.evasion : t.difficulty) ?? 0) + dark.difficulty })),
       );
       for (const r of results) hits.set(r.id, r.hit);
       const anyHit = results.some((r) => r.hit);
@@ -1305,6 +1335,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
       for (const t of against) hits.set(t.id, info.success);
     }
     info.effects = rollSpec.kind === "adversaryAttack" ? info.effects : dualityEffects(rollSpec.kind === "reaction" ? "reaction" : "action", info.outcome, context.hopeFear);
+    if (dark.difficulty > 0) darkRaise.set(info, dark.difficulty);
     return { info, hits };
   };
 
@@ -1963,7 +1994,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     } else {
       const hits = new Map<string, boolean>();
       const r = scope.roll;
-      if (r) for (const h of resolveHits(r.record.total, r.critical, others.map((t) => ({ id: t.id, difficulty: t.difficulty ?? t.evasion ?? 0 })))) hits.set(h.id, h.hit);
+      if (r) for (const h of resolveHits(r.record.total, r.critical, others.map((t) => ({ id: t.id, difficulty: (t.difficulty ?? t.evasion ?? 0) + (darkRaise.get(r) ?? 0) })))) hits.set(h.id, h.hit);
       if (r) steps.push({ kind: "hits", results: others.map((t) => ({ id: t.id, hit: hits.get(t.id) ?? false })) });
       hitAny = r ? [...hits.values()].some(Boolean) : true;
       runSteps(step.steps, { targets: others.map((c) => c.id), hits: r ? hits : null, roll: r });

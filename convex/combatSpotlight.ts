@@ -8,7 +8,7 @@ import { newGroupId } from "./lib/actionLog";
 import { readSheet } from "./lib/characterSheet";
 import { campaignQuery, keyedGmMutation } from "./lib/functions";
 import { atLeast } from "./lib/permissions";
-import { giveTo, giveToParty, moveToGm, spotlightAdversary, spotlightOf, takeWithFear } from "./lib/spotlight";
+import { giveTo, giveToParty, moveToGm, playersWaitNow, spotlightAdversary, spotlightOf, takeWithFear } from "./lib/spotlight";
 import { adversaryArtSrc } from "./lib/encounters";
 import { seenThisScene } from "./lib/spotlightSeen";
 import { spotlightReasonValidator } from "./tables/combatSpotlight";
@@ -48,8 +48,13 @@ export const spotlightStateValidator = v.object({
   reason: v.union(spotlightReasonValidator, v.null()),
   /** The PC whose roll moved it to the GM, for "Moss rolled with Fear". */
   rollBy: v.union(v.null(), v.object({ characterId: v.id("characters"), name: v.string() })),
-  /** The caller may only react (a player, while the GM holds it): the "Reactions only" note, H6.2's disabled controls. */
+  /**
+   * The caller may only react (a player, while the GM holds it): the "Reactions only" note, H6.2's disabled controls.
+   * S2 (plan rule-switches RS2): only in Book and while an encounter is running (user answer 2026-11-06).
+   */
   reactionsOnly: v.boolean(),
+  /** S2 Manual (Q4 a): a player, while the GM holds it in a running encounter: nothing locks, the HUD warns. Absent otherwise. */
+  spotlightWarning: v.optional(v.literal(true)),
   /** The caller may take the spotlight or hand it back (the GM). */
   canMove: v.boolean(),
   /**
@@ -124,7 +129,9 @@ export const state = campaignQuery({
     const rollBy = row.rollBy === undefined ? null : await namedCharacter(ctx, campaign, row.rollBy);
     if (row.holder.kind === "gm") {
       const adversary = await spotlitAdversary(ctx, campaign, row.adversaryTokenId, canMove);
-      return { holder: { kind: "gm" as const }, since: row.since, reason: row.reason, rollBy, reactionsOnly: !canMove, canMove, ...adversary };
+      // S2 (RS2): players wait only in a running encounter; Manual warns instead of locking.
+      const wait = canMove ? null : await playersWaitNow(ctx, campaign);
+      return { holder: { kind: "gm" as const }, since: row.since, reason: row.reason, rollBy, reactionsOnly: wait === "book", canMove, ...adversary, ...(wait === "manual" ? { spotlightWarning: true as const } : {}) };
     }
     const pc = await namedCharacter(ctx, campaign, row.holder.characterId);
     if (pc === null) return none;

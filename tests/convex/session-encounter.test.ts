@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { api } from "../../convex/_generated/api";
+import { api, internal } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { MAX_COMBAT_TOKENS } from "../../convex/lib/combatMaps";
 import { errorCode, key, useAllowlist } from "./helpers";
@@ -35,7 +35,7 @@ async function setup() {
   const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
   const newSession = async () => (await gm.mutation(api.sessionRecords.create, { campaignId, idempotencyKey: key() })).sessionId;
   const sessionEncounter = async (sessionId: string) =>
-    (await gm.mutation(api.sessionPrep.createEncounter, { campaignId, sessionId, idempotencyKey: key() })).encounterId;
+    (await t.mutation(internal.sessionPrep.createEncounter, { campaignId, sessionId })).encounterId;
   const add = (encounterId: string, source: Source, count: number) =>
     gm.mutation(api.encounters.addAdversary, { campaignId, encounterId, source, count, summoned: false, idempotencyKey: key() });
   const read = (mid: string = mapId) => gm.query(api.combatTokensReads.sessionEncounter, { campaignId, mapId: mid });

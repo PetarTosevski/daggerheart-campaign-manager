@@ -125,6 +125,7 @@ function buildTable(): CardEffect[] {
     // Critical Inspiration (Valor 3, CB p.341): "Once per rest, when you critically succeed on an attack, all allies within
     // Very Close range can clear a Stress or gain a Hope." FH-AP (user 2026-11-05): each ally picks their own option on
     // their own screen (`by`); the server names the allies (every PC within Very Close range) and the card waits for them.
+    // CU2 (user 2026-11-06): each ally may also pick Neither, and the actor unticks allies before the picks go out.
     {
       cardId: "critical-inspiration",
       uses: [
@@ -142,6 +143,8 @@ function buildTable(): CardEffect[] {
               options: [
                 { id: "stress", label: "Clear a Stress", steps: [{ kind: "clear", to: "chooser", track: "stress", amount: fixed(1) }] },
                 { id: "hope", label: "Gain a Hope", steps: [{ kind: "hope", to: "chooser", change: "gain", amount: fixed(1) }] },
+                // CU2 (bead dcm-bxp.99.32.46, user 2026-11-06): "can" clear or gain, so each ally may take neither.
+                { id: "neither", label: "Neither", steps: [] },
               ],
             },
           ],
@@ -253,7 +256,8 @@ function buildTable(): CardEffect[] {
     // Rousing Strike (Valor 5, CB p.342): "Once per rest, when you critically succeed on an attack, you and all allies who
     // can see or hear you can clear a Hit Point or 1d4 Stress." FH-AP (user 2026-11-05): you and each ally pick your own
     // option, each on their own screen (`by`; each rolls their own d4); the server names the allies (every PC on the map)
-    // and the card waits for every pick.
+    // and the card waits for every pick. CU2 (user 2026-11-06): each chooser may also pick Neither, and the actor unticks
+    // allies who can't see or hear them before the picks go out.
     {
       cardId: "rousing-strike",
       uses: [
@@ -271,6 +275,8 @@ function buildTable(): CardEffect[] {
               options: [
                 { id: "hp", label: "Clear a Hit Point", steps: [{ kind: "clear", to: "chooser", track: "hp", amount: fixed(1) }] },
                 { id: "stress", label: "Clear 1d4 Stress", steps: [{ kind: "clear", to: "chooser", track: "stress", amount: dice(1, 4) }] },
+                // CU2 (bead dcm-bxp.99.32.46, user 2026-11-06): "can" clear, so each chooser may take neither.
+                { id: "neither", label: "Neither", steps: [] },
               ],
             },
           ],

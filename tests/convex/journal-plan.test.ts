@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { api } from "../../convex/_generated/api";
+import { api, internal } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { MAX_LOG_ENTRIES } from "../../convex/lib/validators/sessions";
 import { errorCode, key, useAllowlist } from "./helpers";
@@ -166,7 +166,7 @@ describe("journal plan: per-scene encounters (Q6)", () => {
     await f.addScene("social");
     const first = await f.addScene();
     const second = await f.addScene();
-    const legacy = (await f.gm.mutation(api.sessionPrep.createEncounter, { ...f.c, idempotencyKey: key() })).encounterId;
+    const legacy = (await f.t.mutation(internal.sessionPrep.createEncounter, f.c)).encounterId;
     const scenes = (await f.get()).scenes;
     expect(scenes.map((s) => s.encounter?._id ?? null)).toEqual([null, legacy, null]);
     expect(await failure(f.link(first, await f.newEncounter("Other")))).toBe("SESSION_HAS_ENCOUNTER");
@@ -258,7 +258,7 @@ describe("journal plan: the current scene's encounter and the Combat Map (Q6, Q7
   it("a legacy session encounter without Combat scenes is still the current one, and placing it plays no scene", async () => {
     const f = await setup();
     await f.addScene("social");
-    const legacy = (await f.gm.mutation(api.sessionPrep.createEncounter, { ...f.c, idempotencyKey: key() })).encounterId;
+    const legacy = (await f.t.mutation(internal.sessionPrep.createEncounter, f.c)).encounterId;
     await f.add(legacy, BANDIT, 1);
     expect((await f.gm.query(api.sessionPrep.current, { campaignId: f.campaignId }))?.encounterId).toBe(legacy);
     await f.start();

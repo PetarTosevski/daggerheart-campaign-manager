@@ -92,6 +92,7 @@ import { postRuleNote, ruleModesOf } from "./lib/ruleModes";
 import { minionPicker } from "../src/lib/domain/combat-actions/damage";
 import { campaignMutation, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
 import { fearFor } from "./lib/fearVisibility";
+import { assertMayAct, useActKind } from "./lib/spotlight";
 import { changed } from "./lib/rolls";
 import { logUnshakable, unshakePlan, type UnshakableRoll } from "./lib/unshakable";
 import { MAX_RIDERS_PER_ATTACK, riderValidator, type Rider } from "./lib/validators/combatRequests";
@@ -643,7 +644,7 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
 
 /**
  * Q6 (CB p.201): the card's damage earned extra Minion defeats. The offer lists the Minions still standing in the same
- * encounter that the actor sees, within the card's range, whose Difficulty the roll beat (or a critical, or no roll).
+ * encounter that the actor sees, within the card's range (any range with Defined Ranges off), whose Difficulty the roll beat (or a critical, or no roll).
  * Picked with `combatActions.pickMinions` (the public row is a `combat` row of the group).
  */
 async function offerMinions(ctx: MutationCtx, req: UseRequest, built: BuiltRun, plan: RunPlan, row: { groupId: string; entryId: Id<"actionLog">; actorId: Id<"users"> }) {
@@ -653,7 +654,8 @@ async function offerMinions(ctx: MutationCtx, req: UseRequest, built: BuiltRun, 
   const candidates = [];
   for (const e of await built.creatures.visibleEnemies()) {
     if (!e.minion || e.encounter._id !== anchor.encounter._id) continue;
-    if (!rangeCheck(built.creatures.scene.attacker, e.token, built.range).inRange) continue;
+    // Rule switches ODR2: with Defined Ranges off every standing Minion of the encounter is offered (the picker judges range).
+    if (!rangeCheck(built.creatures.scene.attacker, e.token, built.range, built.definedRanges).inRange) continue;
     const instance = await ctx.db.get("encounterAdversaries", e.instance._id);
     if (instance === null || instance.defeated) continue;
     if (plan.roll && !plan.roll.critical && plan.roll.record.total < difficultyOf(instance)) continue;
@@ -1436,6 +1438,8 @@ export const useCard = keyedCampaignMutation({
       assertCanAct(character, sheet);
       const scene = await attackScene(ctx, campaign, character, args.mapId);
       const pick = pickCard(sheet, args.cardId, args.spell);
+      // S2 (plan rule-switches RS2): a card's action waits while the GM holds the spotlight; a reaction card never does.
+      await assertMayAct(ctx, campaign, character, useActKind(pick.use), sheet.name);
       const req: UseRequest = { campaign, character, sheet, scene, pick, targetTokenIds: args.targetTokenIds, choices: args.choices, roll: args.roll ?? {}, ...(args.swapWith !== undefined ? { swapWith: args.swapWith } : {}) };
       const riders = args.riders ?? [];
       const riseOff = args.riseToTheChallenge === false;

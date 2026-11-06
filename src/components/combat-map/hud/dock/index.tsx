@@ -3,13 +3,14 @@
 import "./dock.css";
 
 import { useQuery } from "convex/react";
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { useMapControls, zoomLabel } from "../../map-view/controls";
+import { useDefinedRanges } from "../../map-view/measure";
 import type { CombatPageState } from "../../slots";
 import { PreviewPicker, VisionPanel } from "../../vision";
 import { closePanel, openPanel, usePanel, usePanelEscape, type HudPanel } from "../panels";
@@ -19,12 +20,13 @@ import { ScenePop } from "../scene/pop";
 import type { HudPartProps } from "../state";
 import { MapToolsButton } from "../tools";
 import { PartBoundary } from "../ui";
+import { ContestPanel, useContestAllowed } from "./contest";
 
 /**
  * The GM's bottom dock (plan combat-hud H9.0; GMDesktop / GMTablet `.dock`, HANDOFF "GM view": "the only toolbar"):
  *
  *   Map tools (user answer Q4a) | Select, Measure, Areas, Fog, Names | Zoom out, 91 % (fits the map), Zoom in |
- *   Dice, Player view, Log | End scene
+ *   Dice, Contest (rule switches OP2: only while "Conflict between PCs" is on), Player view, Log | End scene
  *
  * Centred at the bottom; icon over a short label, icons only on a tablet and while a sheet is open (dock.css). Every
  * button is a real `<button>`: Select, Measure, Names, Areas and Log say `aria-pressed`; Map tools, Dice and Fog open a
@@ -94,6 +96,16 @@ const LogIcon = () => (
   </svg>
 );
 
+/** Two figures facing each other: the Contest (rule switches OP2). */
+const ContestIcon = () => (
+  <svg {...ICON} aria-hidden="true">
+    <circle cx="7" cy="6" r="2.2" />
+    <circle cx="17" cy="6" r="2.2" />
+    <path d="M7 9v6l-2 5M7 15l2 5M17 9v6l2 5M17 15l-2 5M7 11l4 1M17 11l-4 1" />
+  </svg>
+);
+const CONTEST_POP_ID = "hud-dock-contest";
+
 /** The dock's pop-overs (Dice, Fog): their element ids and titles. */
 type DockPop = Extract<HudPanel, "dice" | "fog">;
 const POP_TITLE: Readonly<Record<DockPop, string>> = { dice: "Dice", fog: "Vision and fog" };
@@ -125,6 +137,11 @@ export function HudDock({ state }: HudPartProps): ReactNode {
   usePanelEscape();
   const map = state.map;
   const pop: DockPop | null = panel === "dice" || panel === "fog" ? panel : null;
+  // Rule switches OP2: the Contest pop-over (Conflict between PCs). Client state of the dock's own: it gives way to any
+  // HUD panel (opening one hides it; opening it closes the open panel).
+  const contestAllowed = useContestAllowed(state.campaignId);
+  const [contestOpen, setContestOpen] = useState(false);
+  const contestShown = contestAllowed && contestOpen && panel === null && map !== null;
 
   const popButton = (name: DockPop, icon: ReactNode, label: string) => (
     <DockButton
@@ -132,7 +149,10 @@ export function HudDock({ state }: HudPartProps): ReactNode {
       label={label}
       aria-expanded={pop === name}
       aria-controls={dockPopId(name)}
-      onClick={(e) => toggle(name, pop === name, e.currentTarget)}
+      onClick={(e) => {
+        setContestOpen(false);
+        toggle(name, pop === name, e.currentTarget);
+      }}
     />
   );
 
@@ -143,7 +163,7 @@ export function HudDock({ state }: HudPartProps): ReactNode {
           <MapToolsButton role="gm" variant="dock" />
         </div>
         <div className="hud-dk-g">
-          <PointerButtons />
+          <PointerButtons campaignId={state.campaignId} />
           {map ? (
             <DockButton icon={<AreasIcon />} label="Areas" aria-pressed={panel === "areas"} onClick={(e) => toggle("areas", panel === "areas", e.currentTarget)} />
           ) : null}
@@ -153,6 +173,23 @@ export function HudDock({ state }: HudPartProps): ReactNode {
         <ZoomGroup className="hud-dk-g hud-dk-z" />
         <div className="hud-dk-g">
           {popButton("dice", <DiceIcon />, "Dice")}
+          {map && contestAllowed ? (
+            <DockButton
+              icon={<ContestIcon />}
+              label="Contest"
+              aria-expanded={contestShown}
+              aria-controls={CONTEST_POP_ID}
+              data-testid="hud-dock-contest-btn"
+              onClick={() => {
+                if (contestShown) {
+                  setContestOpen(false);
+                  return;
+                }
+                closePanel();
+                setContestOpen(true);
+              }}
+            />
+          ) : null}
           {map ? (
             // The existing "Player view" menu; using it closes any other dock panel (its own menu closes on a press elsewhere).
             <div className="hud-dk-pv" onClickCapture={() => closePanel()}>
@@ -174,6 +211,13 @@ export function HudDock({ state }: HudPartProps): ReactNode {
           </PartBoundary>
         </ScenePop>
       ) : null}
+      {contestShown && map ? (
+        <ScenePop id={CONTEST_POP_ID} title="Contest" onClose={() => setContestOpen(false)} className="hud-dock-pop hud-pop-contest">
+          <PartBoundary label="Contest">
+            <ContestPanel campaignId={state.campaignId} mapId={map._id} />
+          </PartBoundary>
+        </ScenePop>
+      ) : null}
     </>
   );
 }
@@ -191,13 +235,17 @@ function GmDice({ state }: { state: CombatPageState }) {
   return <HudDice campaignId={state.campaignId} characterId={characterId} gm />;
 }
 
-/** Select (today's pointer, pressed by default) and Measure (drag between squares for the range band; Q9). */
-function PointerButtons() {
+/**
+ * Select (today's pointer, pressed by default) and Measure (drag between squares for the range band; Q9). Rule switches
+ * ODR2: no Measure with Defined Ranges off (the map counts no squares; MeasureLayer draws nothing then either).
+ */
+function PointerButtons({ campaignId }: { campaignId: Id<"campaigns"> }) {
   const { tool, setTool } = useMapControls();
+  const definedRanges = useDefinedRanges(campaignId);
   return (
     <>
-      <DockButton icon={<SelectIcon />} label="Select" aria-pressed={tool === "select"} onClick={() => setTool("select")} />
-      <DockButton icon={<MeasureIcon />} label="Measure" aria-pressed={tool === "measure"} onClick={() => setTool(tool === "measure" ? "select" : "measure")} />
+      <DockButton icon={<SelectIcon />} label="Select" aria-pressed={tool === "select" || (!definedRanges && tool === "measure")} onClick={() => setTool("select")} />
+      {definedRanges ? <DockButton icon={<MeasureIcon />} label="Measure" aria-pressed={tool === "measure"} onClick={() => setTool(tool === "measure" ? "select" : "measure")} /> : null}
     </>
   );
 }
@@ -228,13 +276,15 @@ function ZoomGroup({ className }: { className: string }) {
 
 /**
  * A player's map controls (user answer Q9b: Measure for players too, on their own screen): Measure, Names and the zoom,
- * in the player's title row beside Dice and Sheet. The same store as the GM's dock.
+ * in the player's title row beside Dice and Sheet. The same store as the GM's dock. Rule switches ODR2: no Measure with
+ * Defined Ranges off (`campaignId` given; without it the rule reads as on).
  */
-export function PlayerMapControls(): ReactNode {
+export function PlayerMapControls({ campaignId }: { campaignId?: Id<"campaigns"> } = {}): ReactNode {
   const { tool, setTool } = useMapControls();
+  const definedRanges = useDefinedRanges(campaignId);
   return (
     <div className="hud-pmc" role="toolbar" aria-label="Map controls" data-testid="hud-map-controls">
-      <DockButton icon={<MeasureIcon />} label="Measure" aria-pressed={tool === "measure"} onClick={() => setTool(tool === "measure" ? "select" : "measure")} />
+      {definedRanges ? <DockButton icon={<MeasureIcon />} label="Measure" aria-pressed={tool === "measure"} onClick={() => setTool(tool === "measure" ? "select" : "measure")} /> : null}
       <NamesButton />
       <ZoomGroup className="hud-pmc-z" />
     </div>

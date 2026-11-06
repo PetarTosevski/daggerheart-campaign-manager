@@ -10,7 +10,7 @@ import { key } from "./helpers";
 // Journal JD1 (plan .omc/plans/journal.yaml, user answer 2026-11-03 "spotlight per PC per live session"): every real
 // move of the spotlight to a specific PC while a session is live adds 1 to that PC's `sessionSpotlights` row, inside
 // the move's keyed `once`. Moves to the GM, to an adversary (free or for Fear) and to the whole party do not count;
-// neither do moves without a live session. `sessionPlay.spotlight` reads the counts, `resetSpotlight` zeroes them.
+// neither do moves without a live session. `journalTally.spotlight` reads the counts, `resetSpotlight` zeroes them.
 // Access is unchanged (the existing combatSpotlight / sessionPlay entries in the authz matrix).
 
 allowWorldEmails();
@@ -41,14 +41,14 @@ const setFear = (w: World, n: number) =>
   });
 
 describe("spotlight auto-count per live session (JD1)", () => {
-  it("a GM hand-to during a live session counts; sessionPlay.spotlight returns the counts and who is due", async () => {
+  it("a GM hand-to during a live session counts; journalTally.spotlight returns the counts and who is due", async () => {
     const s = await setup();
     const sessionId = await s.start();
     expect(await s.handTo(s.a)).toEqual({ moved: true });
     expect(await s.counts(sessionId)).toEqual({ [s.a]: 1 });
 
-    const view = await s.gm.query(api.sessionPlay.spotlight, { campaignId: s.campaignId, sessionId });
-    expect(view.map((e) => [e.characterId, e.count, e.due])).toEqual([
+    const view = await s.gm.query(api.journalTally.spotlight, { campaignId: s.campaignId, sessionId });
+    expect(view!.map((e) => [e.characterId, e.count, e.due])).toEqual([
       [s.a, 1, false],
       [s.b, 0, true],
     ]);
@@ -119,7 +119,7 @@ describe("spotlight auto-count per live session (JD1)", () => {
     expect(state.holder).toMatchObject({ kind: "pc", characterId: s.b });
   });
 
-  it("the GM's reset zeroes the counts; later moves count from zero; the manual bump still adds", async () => {
+  it("the GM's reset zeroes the counts; later moves count from zero", async () => {
     const s = await setup();
     const sessionId = await s.start();
     await s.handTo(s.a);
@@ -128,7 +128,6 @@ describe("spotlight auto-count per live session (JD1)", () => {
     expect(await s.counts(sessionId)).toEqual({});
 
     await s.handTo(s.a);
-    await s.gm.mutation(api.sessionPlay.bumpSpotlight, { campaignId: s.campaignId, sessionId, characterId: s.a, idempotencyKey: key() });
-    expect(await s.counts(sessionId)).toEqual({ [s.a]: 2 });
+    expect(await s.counts(sessionId)).toEqual({ [s.a]: 1 });
   });
 });

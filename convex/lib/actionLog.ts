@@ -46,7 +46,7 @@ import { revertFear } from "./fear";
 import { recordHistory } from "../tables/history";
 import { refuseArchived } from "./archived";
 import { campaignAccess } from "./permissions";
-import type { ActionKind, AdversaryBefore, CampaignTimeSnapshot, StoredRoll, TimeChange, Visibility } from "./validators/actionLog";
+import type { ActionKind, AdversaryBefore, CampaignTimeSnapshot, SpotlightBefore, StoredRoll, TimeChange, Visibility } from "./validators/actionLog";
 
 /** The longest feed line; longer summaries are cut. */
 export const SUMMARY_MAX = 300;
@@ -277,6 +277,42 @@ async function restoreTime(ctx: MutationCtx, user: Doc<"users">, row: Doc<"actio
   });
 }
 
+/** How many of the GM's rows since the roll's move `restoreSpotlight` reads to see whether the GM acted. */
+const GM_ACTED_SCAN = 50;
+
+/**
+ * The spotlight half of undoing a PC action roll that moved it to the GM (S1, plan rule-switches CU2, bead
+ * dcm-bxp.99.32.10; CB p.100: "until someone fails a roll or rolls with Fear"). The roll's action stored the campaign's
+ * spotlight row as it stood before (`spotlightBefore`, written by convex/lib/rollAftermath.ts). It goes back only while
+ * the GM's hold is still the one the roll began: the GM holds it, since the move (`movedAt`), for a roll's reason, with no
+ * adversary lit, and the GM made no adversary move since (a live `adversary` row outside the undone group). Then the row
+ * before comes back as it was (none: the whole party holds it; a PC no longer in the campaign: the whole party).
+ * Otherwise (the GM handed it on, spotlighted an adversary or acted with one) the spotlight stays where it is: the
+ * GM's turn has begun, and undoing the roll doesn't undo it (the GM hands it back by hand). It is written here, not in
+ * ./spotlight.ts, so this module does not import the spotlight helpers (which import this one); a restore is never a new
+ * spotlight, so it counts no session spotlight.
+ */
+async function restoreSpotlight(ctx: MutationCtx, campaignId: Id<"campaigns">, before: SpotlightBefore, inGroup: Set<string>): Promise<void> {
+  const current = await ctx.db
+    .query("combatSpotlight")
+    .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
+    .first();
+  if (current === null || current.holder.kind !== "gm" || current.since !== before.movedAt) return;
+  if ((current.reason !== "rollWithFear" && current.reason !== "failedRoll") || current.adversaryTokenId !== undefined) return;
+  const gmRows = await ctx.db
+    .query("actionLog")
+    .withIndex("by_campaign_visibility_at", (q) => q.eq("campaignId", campaignId).eq("visibility", "gm").gte("at", before.movedAt))
+    .take(GM_ACTED_SCAN);
+  if (gmRows.some((r) => r.kind === "adversary" && r.undoneAt === undefined && !inGroup.has(r._id))) return;
+  let row = before.row;
+  if (row !== null && row.holder.kind === "pc") {
+    const character = await ctx.db.get("characters", row.holder.characterId);
+    if (character === null || character.campaignId !== campaignId) row = null;
+  }
+  if (row === null) await ctx.db.delete("combatSpotlight", current._id);
+  else await ctx.db.replace("combatSpotlight", current._id, { campaignId, ...row });
+}
+
 /**
  * Undoes a row and the rest of its group. Allowed for the row's actor and the
  * campaign's GM (`permissionFor`); others with access get FORBIDDEN, outsiders
@@ -288,7 +324,8 @@ async function restoreTime(ctx: MutationCtx, user: Doc<"users">, row: Doc<"actio
  * group's Fear (floor 0), takes back the countdown ticks the group's rows caused
  * where the countdown has not changed since (`revertTicks`, countdowns-advanced
  * D11), takes the group's `sessionTally` back off the session tally (dcm-z9rz.22), gives back the Spotlight Tracker
- * tokens the group spent (`refundTokenSpends`, plan rule-switches RFB), and marks every row undone.
+ * tokens the group spent (`refundTokenSpends`, plan rule-switches RFB), puts back the spotlight a PC roll of the group
+ * moved to the GM (`restoreSpotlight`, plan rule-switches CU2), and marks every row undone.
  */
 export async function undoEntry(
   ctx: MutationCtx,
@@ -400,6 +437,10 @@ export async function undoEntry(
   await refundTokenSpends(ctx, group);
 
   for (const r of group) await ctx.db.patch("actionLog", r._id, { undoneAt: now, undoneBy: user._id });
+
+  // CU2 (dcm-bxp.99.32.10): a roll that moved the spotlight to the GM puts it back to who held it before.
+  const spotRow = group.find((r) => r.spotlightBefore !== undefined);
+  if (spotRow?.spotlightBefore !== undefined) await restoreSpotlight(ctx, row.campaignId, spotRow.spotlightBefore, inGroup);
 
   // CT2: an End day / day jump moves the calendar back when it is the latest (after marking, so its feed line is newer).
   const timeRow = group.find((r) => r.timeChange !== undefined);

@@ -61,6 +61,8 @@ export const journalLogIconValidator = v.union(
   v.literal("reactionRoll"),
   v.literal("damageRoll"),
   v.literal("attackRoll"),
+  /** A social roll (the row's `social` flag, Journal JF2): a mouth icon. */
+  v.literal("socialRoll"),
   v.literal("fear"),
   v.literal("combatBegan"),
   v.literal("combatEnded"),
@@ -145,11 +147,13 @@ export function encounterTitle(event: EncounterEvent, name: string): string {
 /**
  * A feed row's icon by its roll type (dcm-z9rz.28): a PC's reaction or damage roll, an attack roll on the Combat Map
  * (a `combat` row's action roll, a weapon or a card), else the row's kind (an action roll stays `roll`, a GM roll
- * `gmRoll`). Rows without a roll keep their kind.
+ * `gmRoll`). Rows without a roll keep their kind. A PC's social roll (the row's `social` flag, Journal JF2: made in a
+ * Social scene or with 'Social roll' ticked) shows the social icon, whatever its roll kind.
  */
-export function feedIcon(row: { kind: ActionKind; roll?: Pick<StoredRoll, "kind"> }): JournalLogIcon {
+export function feedIcon(row: { kind: ActionKind; roll?: Pick<StoredRoll, "kind">; social?: boolean }): JournalLogIcon {
   const roll = row.roll?.kind;
   if (roll === undefined || row.kind === "gmRoll" || row.kind === "adversary") return row.kind;
+  if (row.social === true && row.kind === "roll") return "socialRoll";
   if (roll === "reaction") return "reactionRoll";
   if (roll === "damage") return "damageRoll";
   if (row.kind === "combat" && roll === "action") return "attackRoll";

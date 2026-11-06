@@ -18,8 +18,9 @@ import { ScenePop } from "./pop";
  * The scene's environment in the HUD title (plan rule-switches OE): M3's dim-light badge naming the active mode (Book:
  * "ranged attacks at disadvantage"; a variant: what the app adds by itself), and, with the Underwater optional rule on
  * (CB p.168), an "Underwater · Breath 2 of 3" chip. The GM's Water button opens a pop-over: mark the live map
- * Underwater (with the breath countdown's start, 3 or more), restart the countdown, and mark the creatures that fight
- * easily underwater ("like a Siren or Shark"). Reads `combatScenes.environment`.
+ * Underwater (with the breath countdown's start, 3 or more), restart the countdown, mark the creatures that fight
+ * easily underwater ("like a Siren or Shark") and the PCs who breathe underwater (plan OE2: no breath tick, no Stress).
+ * Reads `combatScenes.environment`.
  */
 
 export type HudEnvironment = FunctionReturnType<typeof api.combatScenes.environment>;
@@ -89,10 +90,13 @@ export function GmUnderwater({ campaignId, env }: { campaignId: Id<"campaigns">;
 function UnderwaterPanel({ campaignId, env, mapId }: { campaignId: Id<"campaigns">; env: HudEnvironment; mapId: Id<"combatMaps"> }) {
   const setUnderwater = useIntent(api.combatScenes.setUnderwater);
   const setFights = useIntent(api.combatScenes.setFightsUnderwater);
+  // Plan OE2 (user 2026-11-06): a PC who breathes underwater skips the breath countdown and its Stress.
+  const setBreathes = useIntent(api.combatScenes.setBreathesUnderwater);
+  const pcs = env.creatures.filter((c) => c.pc);
   const startId = useId();
   const [start, setStart] = useState<number>(env.breath?.start ?? BREATH_START);
   const valid = Number.isInteger(start) && start >= BREATH_MIN && start <= MAX_COUNTDOWN_START;
-  const error = setUnderwater.error ?? setFights.error;
+  const error = setUnderwater.error ?? setFights.error ?? setBreathes.error;
   return (
     <div className="hud-env-pop">
       <p className="hud-env-p">Attack rolls underwater have disadvantage; each PC action ticks the breath countdown (once more on a failure or with Fear). At 0, each action marks a Stress (CB p.168).</p>
@@ -130,6 +134,17 @@ function UnderwaterPanel({ campaignId, env, mapId }: { campaignId: Id<"campaigns
           {env.creatures.map((c) => (
             <label key={c.tokenId} className="hud-env-row">
               <input type="checkbox" checked={c.fightsUnderwater} disabled={setFights.pending} onChange={(e) => void setFights.fire({ campaignId, tokenId: c.tokenId, fightsUnderwater: e.target.checked })} />
+              {c.name}
+            </label>
+          ))}
+        </fieldset>
+      ) : null}
+      {pcs.length > 0 ? (
+        <fieldset className="hud-env-list">
+          <legend>Breathes underwater (no breath countdown, no Stress)</legend>
+          {pcs.map((c) => (
+            <label key={c.tokenId} className="hud-env-row">
+              <input type="checkbox" checked={c.breathesUnderwater} disabled={setBreathes.pending} onChange={(e) => void setBreathes.fire({ campaignId, tokenId: c.tokenId, breathesUnderwater: e.target.checked })} />
               {c.name}
             </label>
           ))}

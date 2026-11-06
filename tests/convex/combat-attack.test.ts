@@ -515,6 +515,8 @@ describe("the Slayer choice after an attack with Hope (K2, U2)", () => {
     // The server's own dice: attack until a roll with Hope (each roll is one with Hope about half the time).
     let r: { entryId: Id<"actionLog"> } | undefined;
     for (let i = 0; i < 40 && r === undefined; i++) {
+      // S2 (plan rule-switches RS2): a roll with Fear hands the spotlight to the GM; the GM hands it back before the next try.
+      await a.gm.mutation(api.combatSpotlight.handToParty, { campaignId: a.campaignId, idempotencyKey: key() });
       await setSheet({ hope: 0 });
       const next = resolved(await a.attack(a.player, [bandit.tokenId]));
       if (WITH_HOPE.includes(next.roll.outcome)) r = next;

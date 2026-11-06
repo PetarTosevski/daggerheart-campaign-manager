@@ -23,6 +23,7 @@ export {
   attackSessionId,
   benefitOptions,
   costOf,
+  conflictRows,
   forcedRows,
   initialData,
   minionPicks,

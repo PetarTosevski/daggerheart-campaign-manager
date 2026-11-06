@@ -35,7 +35,7 @@ import { campaignFearState } from "../../convex/lib/fear";
 import type { CardUse, Step } from "../../src/lib/domain/card-effects/types";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { allowWorldEmails, buildWorld, type Client } from "./authz/world";
-import { errorCode, key } from "./helpers";
+import { errorCode, handingBack, key } from "./helpers";
 
 /** Words and fields a player must never receive about an enemy (U1). */
 const STAT_KEYS = ["hp", "hpMax", "stress", "stressMax", "difficulty", "major", "severe", "thresholds", "adversaryBefore"];
@@ -66,7 +66,8 @@ async function arena(options: { hopeAndFear?: boolean } = {}) {
   const w = await buildWorld();
   const { t, campaignId } = w;
   const gm = w.as("gm");
-  const player = w.as("player");
+  // S2 (plan rule-switches RS2): the GM hands the spotlight back before each act (`handingBack`).
+  const player = handingBack(w.as("player"), gm, w.campaignId);
   if (options.hopeAndFear) await gm.mutation(api.campaigns.setOption, { campaignId, option: "hopeAndFear", enabled: true });
   const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
   const now = Date.now();

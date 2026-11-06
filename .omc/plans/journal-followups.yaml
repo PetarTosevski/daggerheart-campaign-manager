@@ -24,3 +24,22 @@ waves:
           - docs/tasks/TASK-JF1.md
         acceptance:
           - a test per bead; pnpm lint, pnpm typecheck pass
+  - wave: 2
+    tracers:
+      - id: JF3
+        beads: [dcm-z9rz.24]
+        goal: "The session functions with no screen since the Journal cut-over are removed (sessionPlay.spotlight / bumpSpotlight / tally / log, sessionPrep.unlinkEncounter, sessionWrap.setThreads — verify each has no caller); sessionPrep.createEncounter and linkEncounter become internal functions the e2e setup calls through scripts/convex-e2e.mjs; authz entries, convex tests and e2e helpers follow"
+        depends_on: [JF1]
+        owns:
+          - convex/sessionPlay.ts
+          - convex/sessionPrep.ts
+          - convex/sessionWrap.ts
+          - tests/convex/authz/sessions.entries.ts
+          - tests/convex/session*.test.ts
+          - tests/e2e/journal/helpers.ts
+          - tests/e2e/a11y-play.spec.ts
+          - tests/e2e/sessions-hub.spec.ts
+          - tests/e2e/session-encounter.spec.ts
+          - docs/tasks/TASK-JF3.md
+        acceptance:
+          - no removed function has a caller; authz-matrix and unauthenticated sweep pass; touched e2e specs pass

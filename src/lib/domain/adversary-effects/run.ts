@@ -31,7 +31,7 @@ import { parseDamage } from "../adversaries/index";
 import { parseAttackModifier, standardAttackDamage } from "../adversary-actions/attack";
 import { adversaryNumberEnv, unmetAdversaryRequirements, type AdversaryState, type PassiveSummary } from "../adversary-actions/features";
 import { resolveCosts } from "../card-effects/availability";
-import { run as runCard, type ActorState, type PlanStep, type RollInfo, type RunPlan } from "../card-effects/run";
+import { rangeBlind, run as runCard, type ActorState, type PlanStep, type RollInfo, type RunPlan } from "../card-effects/run";
 import type { AttackedRider, CardEffect, CardUse, CheckRow, ConditionRef, Cost, EndEvent, Escape, FeatureOptionRef, Mod, NumberSource, Range as AdversaryRange, RollEnd, RollSpec, Step } from "../card-effects/types";
 import { rangeFromWeapon } from "../combat-actions/distance";
 import type { Combatant } from "../combat-actions/damage";
@@ -152,6 +152,13 @@ export interface AdversaryRunContext {
   creatures?: readonly MapCreature[];
   /** The labels of the lasting effects each creature carries now, by id (`effect.stacking`; dcm-kkx). */
   effectsOn?: Readonly<Record<string, readonly string[]>>;
+  /**
+   * Plan rule-switches ODR2 (user 2026-11-06): the campaign's Defined Ranges (CB p.103; absent: on). Off: nothing is
+   * picked or counted by range on its own: `creatures` lose their squares (a `creatureCount` with `within` counts no one),
+   * `allyWithin` requirements hold (the GM judges, as with no map, Q18) and the card runner gets the flag. The caller
+   * leaves a range-gated trigger (`rangeGate`) unapplied and posts a GM-only note (`rangeAsk`, card-effects/rule-notes.ts).
+   */
+  definedRanges?: boolean;
   rng: Rng;
 }
 
@@ -378,14 +385,26 @@ export function standardAttackEffect(adversaryId: string, attack: Pick<StandardA
 
 const fixed = (value: number): NumberSource => ({ kind: "fixed", value });
 
+/**
+ * Plan rule-switches ODR2: the range a reaction's or automatic use's trigger is gated by ("When a PC within Close range
+ * makes an action roll": Ill Omen, HF p.95), or null. With Defined Ranges off the caller doesn't run such a use on its
+ * own and asks the GM who is in range (`rangeAsk`).
+ */
+export function rangeGate(effect: AdversaryFeatureEffect, useId?: string): AdversaryRange | null {
+  const use = pickAdversaryUse(effect, useId);
+  if (!use || (use.activation.kind !== "reaction" && use.activation.kind !== "auto")) return null;
+  const within = (use.activation.trigger as { within?: AdversaryRange }).within;
+  return within ?? null;
+}
+
 /** Fear an upfront cost list asks for (with the GM's `either` picks), to ask "Spend N Fear?" first (Q19). */
-export function upfrontFear(costs: readonly AdversaryCost[] | undefined, context: Pick<AdversaryRunContext, "eitherCosts" | "self" | "tokens" | "tier" | "gmFear" | "rng"> & Partial<Pick<AdversaryRunContext, "trigger" | "targets" | "creatures">>): number {
+export function upfrontFear(costs: readonly AdversaryCost[] | undefined, context: Pick<AdversaryRunContext, "eitherCosts" | "self" | "tokens" | "tier" | "gmFear" | "rng"> & Partial<Pick<AdversaryRunContext, "trigger" | "targets" | "creatures" | "definedRanges">>): number {
   if (!costs || costs.length === 0) return 0;
   // AA2b (bead dcm-yle): a cost read from the trigger (My Turn: "spend a number of Fear equal to the HP marked") asks first.
   const env = adversaryNumberEnv({ hp: context.self.hp, stress: context.self.stress, tokens: context.tokens ?? 0 }, context.tier, context.gmFear, {
     ...(context.trigger?.amount !== undefined ? { triggerAmount: context.trigger.amount } : {}),
     targetCount: { picked: context.targets?.length ?? 0, hit: 0, failedSave: 0 },
-    ...(context.creatures ? { creatures: context.creatures } : {}),
+    ...(context.creatures ? { creatures: rangeBlind(context.creatures, context.definedRanges) } : {}),
   });
   let i = 0;
   const paid = resolveCosts(costs as readonly Cost[], (c) => resolveNumber(c.amount, env, context.rng), () => context.eitherCosts?.[i++] ?? 0);
@@ -447,7 +466,7 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
     tags: [...new Set([...(self.tags ?? []), ...passiveConditions.flatMap((c) => (c.kind === "tag" ? [c.tag] : []))])],
     tokens,
     situations: context.situations ?? [],
-    ...(context.allyWithin ? { allyWithin: context.allyWithin } : {}),
+    ...(context.allyWithin && context.definedRanges !== false ? { allyWithin: context.allyWithin } : {}),
   };
   const unmet = unmetAdversaryRequirements(use.requires, state);
   if (unmet.length > 0) return refuse("requirement", UNAVAILABLE, unmet.map((r) => r.kind).join(", "));
@@ -616,6 +635,7 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
     // Plan lanes-2, E7.4 (dcm-eg6h): the live map's creatures reach the card runner's numbers (`creatureCount` in a fear
     // gain, damage or Stress step: Hive Mind HF p.65, Pack Fury).
     ...(context.creatures ? { creatures: context.creatures } : {}),
+    ...(context.definedRanges === false ? { definedRanges: false } : {}),
     situations: context.situations ?? [],
     roll: {
       modifier: rollModifier,
@@ -656,7 +676,7 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
       ...(context.trigger?.amount !== undefined ? { triggerAmount: context.trigger.amount } : {}),
       ...(lastRoll !== undefined ? { lastRoll } : {}),
       targetCount,
-      ...(context.creatures ? { creatures: context.creatures } : {}),
+      ...(context.creatures ? { creatures: rangeBlind(context.creatures, context.definedRanges) } : {}),
     });
   const num = (src: NumberSource) => resolveNumber(src, env(), context.rng);
   const outSteps: AdversaryPlanStep[] = plan.steps.map((s): AdversaryPlanStep => {
