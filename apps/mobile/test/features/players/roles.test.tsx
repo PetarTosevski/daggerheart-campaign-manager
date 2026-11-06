@@ -6,7 +6,8 @@ import { resetMotionTest } from "../../theme/mock-reanimated";
 import { PlayersScreen } from "../../../src/features/players";
 import { api } from "../../../src/convex";
 import { fn, renderAsGm, renderAsPlayer } from "../../harness";
-import { accessEmptyCode, gmQueries, inCampaign, playerQueries } from "./fixture";
+import { campaignSummary } from "../../harness/records";
+import { accessEmptyCode, campaignRecord, gmQueries, gmRoster, inCampaign, playerQueries } from "./fixture";
 
 beforeEach(() => {
   resetMotionTest();
@@ -80,6 +81,8 @@ test("the GM can invite, rotate the join code, and remove a player", async () =>
   expect(calls.find((row) => row.name === "revoke")?.args).toEqual({ inviteId: "invite-1" });
 
   await fireEvent.press(screen.getByRole("button", { name: "Remove Nikola" }));
+  expect(calls.find((row) => row.name === "remove")).toBeUndefined();
+  await fireEvent.press(screen.getByRole("button", { name: "Confirm remove Nikola" }));
   expect(calls.find((row) => row.name === "remove")?.args).toEqual({
     campaignId: "campaign-1",
     userId: "player-1",
@@ -131,4 +134,64 @@ test("loading, unreadable roster, and offline GM controls", async () => {
   expect(remove.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(remove);
   expect(calls).toEqual([]);
+});
+
+const coGmRoster = {
+  ...gmRoster,
+  players: [
+    { userId: "player-1", name: "Nikola", email: "nikola@example.test", joinedAt: 1, coGm: false },
+    { userId: "player-2", name: "Vesna", email: "vesna@example.test", joinedAt: 2, coGm: true },
+  ],
+};
+
+test("the creator promotes a member to co-GM and back, and invites as co-GM", async () => {
+  const calls: { name: string; args: unknown }[] = [];
+  const screen = await renderAsGm(inCampaign("gm", <PlayersScreen />), {
+    queries: gmQueries({ [fn(api.members.roster)]: coGmRoster }),
+    mutations: {
+      [fn(api.members.setCoGm)]: (args) => {
+        calls.push({ name: "setCoGm", args });
+        return null;
+      },
+      [fn(api.members.invite)]: (args) => {
+        calls.push({ name: "invite", args });
+        return "invite-3";
+      },
+    },
+  });
+  // Co-GMs first, with the badge; the creator reads as "You".
+  expect(screen.getByText(/^You/)).toBeTruthy();
+  const names = screen.getAllByText(/Nikola|Vesna/).map((node) => String((node.props.children as unknown[])[0]));
+  expect(names).toEqual(["Vesna", "Nikola"]);
+  expect(screen.getByText(/· Co-GM/)).toBeTruthy();
+
+  await fireEvent.press(screen.getByRole("button", { name: "Make co-GM: Nikola" }));
+  await fireEvent.press(screen.getByRole("button", { name: "Remove co-GM: Vesna" }));
+  expect(calls.filter((row) => row.name === "setCoGm").map((row) => row.args)).toEqual([
+    { campaignId: "campaign-1", userId: "player-1", coGm: true },
+    { campaignId: "campaign-1", userId: "player-2", coGm: false },
+  ]);
+
+  await fireEvent.press(screen.getByRole("radio", { name: "Co-GM" }));
+  await fireEvent.changeText(screen.getByLabelText("Player email"), "cogm@example.test");
+  await fireEvent.press(screen.getByRole("button", { name: "Invite player" }));
+  expect(calls.find((row) => row.name === "invite")?.args).toEqual({
+    campaignId: "campaign-1",
+    email: "cogm@example.test",
+    asCoGm: true,
+  });
+});
+
+test("a co-GM removes players but not co-GMs, and cannot promote or invite as co-GM", async () => {
+  const screen = await renderAsGm(inCampaign("gm", <PlayersScreen />), {
+    queries: gmQueries({
+      [fn(api.campaigns.get)]: campaignSummary({ ...campaignRecord("gm"), isCreator: false }),
+      [fn(api.members.roster)]: coGmRoster,
+    }),
+  });
+  expect(screen.getByRole("button", { name: "Remove Nikola" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Remove Vesna" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Make co-GM: Nikola" })).toBeNull();
+  expect(screen.queryByRole("radiogroup", { name: "Invite as" })).toBeNull();
+  expect(screen.getByText(/^Ash/)).toBeTruthy();
 });

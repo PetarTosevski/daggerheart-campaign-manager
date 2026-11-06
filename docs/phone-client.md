@@ -33,8 +33,12 @@ pnpm exec expo start --dev-client
 ```
 
 The development bundle id is `com.dualityheart.mobile.dev` and the scheme is
-`dualityheart-dev`. Production and preview use `com.dualityheart.mobile` and
-`dualityheart`. Store config is `apps/mobile/eas.json`. This branch has not been
+`dualityheart-dev`. Preview builds use `com.dualityheart.mobile.preview` and
+`dualityheart-preview`; production uses `com.dualityheart.mobile` and `dualityheart`
+(`apps/mobile/app.config.ts`, `APP_VARIANT`). Sign in with Apple accepts the dev
+build's bundle id only on a local deployment or where `ALLOW_DEV_APPLE_SIGN_IN=true`
+is set (`npx convex env set`, the cloud dev deployment only, never production); the
+store and preview ids work everywhere (`convex/lib/appleIdentity.ts`). Store config is `apps/mobile/eas.json`. This branch has not been
 submitted to TestFlight or the Play internal track.
 
 `pnpm --filter @dualityheart/mobile run check` runs ESLint, `tsc --noEmit`, and
@@ -121,6 +125,48 @@ Check on a real iPhone and a mid-range Android phone (not done; no simulator in 
 - [ ] The dock scrolls when panels are open and the map keeps at least 240 pt.
 - [ ] Zoom buttons and target chips are easy to hit (44 pt).
 - [ ] Android: no blank map on a GPU with a 4096 px texture limit.
+- [ ] Painter speed on large maps: a 30 x 20 Classic map and a 30 x 20 Sprites map each paint (first open, then
+      after a terrain edit) without a visible freeze; note `paintStats.lastBaseMs` for both. Jest does not measure
+      this: the screen tests replace the shared terrain painters with no-ops
+      (`test/features/combat-view/map-mocks.tsx`) so big maps stay fast there.
+
+## Combat play and GM tools: device checks (PX15)
+
+Covered by jest with the Convex fixtures; still to try on a phone against a real deployment:
+
+- [ ] A self card (no target) plays with one tap; an area card plays without picking targets.
+- [ ] Exhausted cards show greyed out and cannot be played.
+- [ ] An out-of-range attack (Out of range: Ask) waits for the GM's answer; with Refuse it is refused.
+- [ ] Line of sight on Book blocks a target behind a wall; on Manual the attack goes through.
+- [ ] A secondary weapon and a tier-2 weapon attack with their own range and damage.
+- [ ] The Minion picker spreads extra damage over Minions; with Minions on "GM picks" the player waits for the GM.
+- [ ] Rousing Strike shows the ally card and the chosen ally gets the effect.
+- [ ] A GM adversary attack picks a target and the result reaches that player's phone.
+- [ ] The GM's fog brush paints with one finger; a two-finger pinch zooms and paints nothing.
+- [ ] View as PC shows the map as that character sees it, and back.
+- [ ] Doors open and close from the GM tools and block sight when closed.
+- [ ] Per-PC reveal shows an area to one character only.
+- [ ] In the editor, dragging an object moves it (and a drag off every object pans).
+
+## Builds and store identity: device checks (PX16)
+
+- [ ] The status bar text is light on the dark background, with the system in light mode too (iOS and Android).
+- [ ] A preview build installs beside the store app, with its own name "Duality Heart (preview)" and icon label.
+- [ ] A development build is named "Duality Heart (dev)" and installs beside both.
+- [ ] The Vercel build log of the website shows no `expo`, `react-native` or `@shopify/react-native-skia` packages
+      installed (the install is filtered to the web workspace).
+
+## Polish and account: device checks (PXL)
+
+- [ ] The splash stays up until the fonts load; no text flashes in the system font.
+- [ ] Sign-in: the form sits inside the safe area, scrolls clear of the keyboard on a small phone, and the buttons
+      stay tappable with the keyboard up.
+- [ ] Offline (airplane mode in a campaign): the banner reads "You're offline. Showing the last update." and writes
+      are off.
+- [ ] Dates read day then month ("Sun 2 Nov") in the Journal and the campaign list, whatever the phone's region.
+- [ ] Load Campaign lists archived campaigns under "Archived": Open for every member, Restore for the creator.
+- [ ] Players: the creator makes a member co-GM and back, invites by email as Player or Co-GM; a co-GM can remove
+      players but not other co-GMs.
 
 ## Not done
 

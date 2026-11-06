@@ -142,3 +142,37 @@ test("the creator's campaign is badged Game Master and a player's Player", async
   expect(screen.getByText("Game Master")).toBeTruthy();
   expect(screen.getByText("Player")).toBeTruthy();
 });
+
+test("archived campaigns get their own section: Open for every member, Restore for the creator only", async () => {
+  const restored: unknown[] = [];
+  const archivedMine = { ...gmCampaign, _id: "campaign-old", name: "Old Table", archived: true };
+  const archivedTheirs = { ...playerCampaign, _id: "campaign-theirs", name: "Their Table", archived: true };
+  const screen = await renderAsGm(<CampaignListScreen />, {
+    queries: { "campaigns:list": [gmCampaign, archivedMine, archivedTheirs], "campaigns:listDeleted": [] },
+    mutations: {
+      "campaignSettings:unarchive": (args) => {
+        restored.push(args);
+        return null;
+      },
+    },
+  });
+  expect(screen.getByRole("header", { name: "Archived" })).toBeTruthy();
+  // The archived campaigns are not bands: the saved list numbers only the active one.
+  expect(screen.queryByRole("button", { name: /Old Table.*Resume/ })).toBeNull();
+  expect(screen.getByRole("button", { name: "Open Old Table" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Open Their Table" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Restore Their Table from the archive" })).toBeNull();
+
+  await fireEvent.press(screen.getByRole("button", { name: "Open Their Table" }));
+  expect(mockPush).toHaveBeenCalledWith("/campaign/campaign-theirs");
+
+  await fireEvent.press(screen.getByRole("button", { name: "Restore Old Table from the archive" }));
+  expect(restored).toEqual([{ campaignId: "campaign-old" }]);
+});
+
+test("no archived campaigns, no Archived section", async () => {
+  const screen = await renderAsGm(<CampaignListScreen />, {
+    queries: { "campaigns:list": [gmCampaign], "campaigns:listDeleted": [] },
+  });
+  expect(screen.queryByRole("header", { name: "Archived" })).toBeNull();
+});

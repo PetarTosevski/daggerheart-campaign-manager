@@ -1,9 +1,11 @@
 export type RosterSeat = { userId: string; name: string };
-export type RosterPlayer = RosterSeat & { email?: string | null };
+/** A member: a seat, whether they are a co-GM (config G1) and when they joined. */
+export type RosterMember = RosterSeat & { coGm: boolean; joinedAt: number };
+export type RosterPlayer = RosterMember & { email?: string | null };
 
 export type RosterView =
   | { viewer: "gm"; gm: RosterSeat; players: RosterPlayer[] }
-  | { viewer: "player"; gm: RosterSeat; players: RosterSeat[] };
+  | { viewer: "player"; gm: RosterSeat; players: RosterMember[] };
 
 function record(value: unknown): Record<string, unknown> | null {
   if (typeof value !== "object" || value === null) return null;
@@ -17,6 +19,13 @@ function seat(value: unknown): RosterSeat | null {
   return { userId: row.userId, name };
 }
 
+function member(value: unknown): RosterMember | null {
+  const base = seat(value);
+  if (!base) return null;
+  const row = record(value);
+  return { ...base, coGm: row?.coGm === true, joinedAt: typeof row?.joinedAt === "number" ? row.joinedAt : 0 };
+}
+
 /** Parses `members.roster` for the players screen. */
 export function readRoster(value: unknown): RosterView | null | undefined {
   if (value === undefined) return undefined;
@@ -28,27 +37,27 @@ export function readRoster(value: unknown): RosterView | null | undefined {
   if (row.viewer === "gm") {
     const listed: RosterPlayer[] = [];
     for (const player of players) {
-      const member = seat(player);
-      if (!member) continue;
+      const row = member(player);
+      if (!row) continue;
       const email = record(player)?.email;
       listed.push({
-        ...member,
+        ...row,
         email: typeof email === "string" || email === null ? email : null,
       });
     }
     return { viewer: "gm", gm, players: listed };
   }
-  const listed: RosterSeat[] = [];
+  const listed: RosterMember[] = [];
   for (const player of players) {
-    const member = seat(player);
-    if (member) listed.push(member);
+    const row = member(player);
+    if (row) listed.push(row);
   }
   return { viewer: "player", gm, players: listed };
 }
 
 export type AccessView = {
   joinCode: string | null;
-  invites: { _id: string; email: string; createdAt: number }[];
+  invites: { _id: string; email: string; createdAt: number; asCoGm: boolean }[];
 };
 
 export function readAccess(value: unknown): AccessView | null | undefined {
@@ -65,6 +74,7 @@ export function readAccess(value: unknown): AccessView | null | undefined {
       _id: item._id,
       email: item.email,
       createdAt: typeof item.createdAt === "number" ? item.createdAt : 0,
+      asCoGm: item.asCoGm === true,
     });
   }
   return {

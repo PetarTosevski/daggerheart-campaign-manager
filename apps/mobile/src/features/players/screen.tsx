@@ -1,6 +1,8 @@
-import { useMutation, useQuery } from "convex/react";
+import type { OptimisticLocalStore } from "convex/browser";
+import { useMutation, useQuery, type ReactMutation } from "convex/react";
+import type { FunctionArgs, FunctionReference } from "convex/server";
 import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { errorMessage } from "../../../../../src/lib/convex-errors";
 import { api, type Id } from "../../convex";
@@ -14,7 +16,40 @@ import { Button } from "../../ui/button";
 import { Loading } from "../../ui/loading";
 import { joinLinkForCode, shareJoinLink } from "./join-link";
 import { formatJoinCode } from "./format-code";
-import { readAccess, readRoster } from "./roster-data";
+import { readAccess, readRoster, type RosterMember } from "./roster-data";
+
+function withOptimistic<M extends FunctionReference<"mutation">>(
+  mutation: ReactMutation<M>,
+  update: (store: OptimisticLocalStore, args: FunctionArgs<M>) => void,
+): ReactMutation<M> {
+  if (!("withOptimisticUpdate" in mutation)) return mutation;
+  return mutation.withOptimisticUpdate(update);
+}
+
+/** Patches the live roster's members in place (rule 12), as the website's Campaign settings > Players does. */
+function patchRoster(
+  store: OptimisticLocalStore,
+  campaignId: Id<"campaigns">,
+  edit: <T extends { userId: string; coGm: boolean }>(rows: T[]) => T[],
+) {
+  const roster = store.getQuery(api.members.roster, { campaignId });
+  if (!roster) return;
+  if (roster.viewer === "gm") store.setQuery(api.members.roster, { campaignId }, { ...roster, players: edit(roster.players) });
+  else store.setQuery(api.members.roster, { campaignId }, { ...roster, players: edit(roster.players) });
+}
+
+/**
+ * What the viewer may do to a member's row (the website's `rowActions`, src/components/config/sections/players/lib.ts,
+ * Q7 a): the creator makes and unmakes co-GMs and removes anyone; a co-GM removes players only.
+ */
+function rowActions(viewerIsCreator: boolean, member: { coGm: boolean }): { toggleCoGm: boolean; remove: boolean } {
+  return { toggleCoGm: viewerIsCreator, remove: viewerIsCreator || !member.coGm };
+}
+
+/** Co-GMs first, then players; each group in join order (as the website's roster). */
+function membersInOrder<T extends RosterMember>(rows: readonly T[]): T[] {
+  return [...rows].sort((a, b) => Number(b.coGm) - Number(a.coGm) || a.joinedAt - b.joinedAt);
+}
 
 function SectionTitle({ children }: { children: string }) {
   return (
@@ -32,10 +67,19 @@ export function PlayersBody() {
   const rotate = useMutation(api.members.rotateJoinCode);
   const invite = useMutation(api.members.invite);
   const revoke = useMutation(api.members.revokeInvite);
-  const removePlayer = useMutation(api.members.removePlayer);
+  const removePlayer = withOptimistic(useMutation(api.members.removePlayer), (store, args) =>
+    patchRoster(store, args.campaignId, (rows) => rows.filter((r) => r.userId !== args.userId)),
+  );
+  const setCoGm = withOptimistic(useMutation(api.members.setCoGm), (store, args) =>
+    patchRoster(store, args.campaignId, (rows) => rows.map((r) => (r.userId === args.userId ? { ...r, coGm: args.coGm } : r))),
+  );
   const [error, setError] = useState<string | null>(null);
   const [shared, setShared] = useState(false);
   const [email, setEmail] = useState("");
+  // Invite as Player / Co-GM (Q8 b): the creator's choice; the server refuses a co-GM invite from anyone else.
+  const [asCoGm, setAsCoGm] = useState(false);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const viewerIsCreator = campaign.isCreator;
 
   const table = readRoster(roster);
   const invites = isGm ? readAccess(access) : null;
@@ -142,7 +186,9 @@ export function PlayersBody() {
                   const trimmed = email.trim();
                   if (!trimmed) return;
                   run(
-                    Promise.resolve(invite({ campaignId: campaign._id, email: trimmed })).then(() => {
+                    Promise.resolve(
+                      invite({ campaignId: campaign._id, email: trimmed, ...(viewerIsCreator && asCoGm ? { asCoGm: true } : {}) }),
+                    ).then(() => {
                       setEmail("");
                     }),
                   );
@@ -152,9 +198,24 @@ export function PlayersBody() {
                 Invite
               </WriteButton>
             </View>
+            {viewerIsCreator ? (
+              <View accessibilityLabel="Invite as" accessibilityRole="radiogroup" style={styles.segment}>
+                {([false, true] as const).map((coGm) => (
+                  <Pressable
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: asCoGm === coGm }}
+                    key={coGm ? "co-gm" : "player"}
+                    onPress={() => setAsCoGm(coGm)}
+                    style={[styles.segmentItem, asCoGm === coGm && styles.segmentOn]}
+                  >
+                    <Text style={[styles.segmentText, asCoGm === coGm && styles.segmentTextOn]}>{coGm ? "Co-GM" : "Player"}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
             <Text style={styles.hint}>
-              Email invites work for accounts that sign in with Google. Players who use a password should join with the
-              code above.
+              The player gets an email with a sign-in link. The campaign appears once they sign in or sign up with that
+              address, with Google or a verified password account.
             </Text>
             {invites && invites.invites.length > 0 ? (
               <View accessibilityRole="list" style={styles.list}>
@@ -162,6 +223,7 @@ export function PlayersBody() {
                   <View key={row._id} style={styles.listRow}>
                     <Text style={styles.body}>
                       {row.email} <Text style={styles.subtle}>· invited</Text>
+                      {row.asCoGm ? <Text style={styles.brand}> · Co-GM</Text> : null}
                     </Text>
                     <WriteButton
                       accessibilityLabel={`Revoke invite for ${row.email}`}
@@ -182,29 +244,59 @@ export function PlayersBody() {
         <SectionTitle>At the table</SectionTitle>
         <View accessibilityLabel="Players in this campaign" accessibilityRole="list" style={styles.list}>
           <Text style={styles.body}>
-            {table.gm.name} <Text style={styles.brand}>· Game Master</Text>
+            {isGm && viewerIsCreator ? "You" : table.gm.name} <Text style={styles.brand}>· Game Master</Text>
           </Text>
-          {table.players.map((player) => (
-            <View key={player.userId} style={styles.listRow}>
-              <Text style={styles.body}>
-                {player.name}
-                {"email" in player && player.email ? (
-                  <Text style={styles.subtle}> · {player.email}</Text>
+          {membersInOrder<RosterMember & { email?: string | null }>(table.players).map((player) => {
+            const actions = isGm ? rowActions(viewerIsCreator, player) : { toggleCoGm: false, remove: false };
+            const userId = player.userId as Id<"users">;
+            return (
+              <View key={player.userId} style={styles.member}>
+                <View style={styles.listRow}>
+                  <Text style={styles.body}>
+                    {player.name}
+                    {player.coGm ? <Text style={styles.brand}> · Co-GM</Text> : null}
+                    {player.email ? <Text style={styles.subtle}> · {player.email}</Text> : null}
+                  </Text>
+                  <View style={styles.rowActions}>
+                    {actions.toggleCoGm ? (
+                      <WriteButton
+                        accessibilityLabel={`${player.coGm ? "Remove co-GM" : "Make co-GM"}: ${player.name}`}
+                        onPress={() => run(setCoGm({ campaignId: campaign._id, userId, coGm: !player.coGm }))}
+                        variant="outline"
+                      >
+                        {player.coGm ? "Remove co-GM" : "Make co-GM"}
+                      </WriteButton>
+                    ) : null}
+                    {actions.remove ? (
+                      <WriteButton accessibilityLabel={`Remove ${player.name}`} onPress={() => setRemoving(player.userId)} variant="danger">
+                        Remove
+                      </WriteButton>
+                    ) : null}
+                  </View>
+                </View>
+                {removing === player.userId ? (
+                  <View accessibilityLabel={`Remove ${player.name}?`} style={styles.listRow}>
+                    <Text style={styles.body}>Remove {player.name}?</Text>
+                    <View style={styles.rowActions}>
+                      <WriteButton
+                        accessibilityLabel={`Confirm remove ${player.name}`}
+                        onPress={() => {
+                          setRemoving(null);
+                          run(removePlayer({ campaignId: campaign._id, userId }));
+                        }}
+                        variant="danger"
+                      >
+                        Remove
+                      </WriteButton>
+                      <Button onPress={() => setRemoving(null)} variant="outline">
+                        Cancel
+                      </Button>
+                    </View>
+                  </View>
                 ) : null}
-              </Text>
-              {isGm ? (
-                <WriteButton
-                  accessibilityLabel={`Remove ${player.name}`}
-                  onPress={() =>
-                    run(removePlayer({ campaignId: campaign._id, userId: player.userId as Id<"users"> }))
-                  }
-                  variant="danger"
-                >
-                  Remove
-                </WriteButton>
-              ) : null}
-            </View>
-          ))}
+              </View>
+            );
+          })}
           {table.players.length === 0 ? <Text style={styles.subtle}>No players yet.</Text> : null}
         </View>
       </View>
@@ -276,6 +368,40 @@ const styles = StyleSheet.create({
   },
   list: {
     gap: space[2],
+  },
+  member: {
+    gap: space[1],
+  },
+  rowActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: space[2],
+  },
+  segment: {
+    alignSelf: "flex-start",
+    borderColor: colors.line2,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    overflow: "hidden",
+  },
+  segmentItem: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: hit.minHeight,
+    paddingHorizontal: space[4],
+  },
+  segmentOn: {
+    backgroundColor: colors.raised,
+  },
+  segmentText: {
+    color: colors.subtle,
+    fontFamily: type.sansMedium.fontFamily,
+    fontSize: 14,
+    fontWeight: type.sansMedium.fontWeight,
+  },
+  segmentTextOn: {
+    color: colors.parchment,
   },
   listRow: {
     alignItems: "center",

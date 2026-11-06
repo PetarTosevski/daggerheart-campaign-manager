@@ -1,4 +1,6 @@
-import { useMutation, useQuery } from "convex/react";
+import type { OptimisticLocalStore } from "convex/browser";
+import { useMutation, useQuery, type ReactMutation } from "convex/react";
+import type { FunctionArgs, FunctionReference } from "convex/server";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -17,6 +19,14 @@ import { QueryBoundary } from "../../ui/query-boundary";
 import { AccountHeader } from "./chrome";
 import { accountStyles } from "./styles";
 
+function withOptimistic<M extends FunctionReference<"mutation">>(
+  mutation: ReactMutation<M>,
+  update: (store: OptimisticLocalStore, args: FunctionArgs<M>) => void,
+): ReactMutation<M> {
+  if (!("withOptimisticUpdate" in mutation)) return mutation;
+  return mutation.withOptimisticUpdate(update);
+}
+
 /** Chronicle board from `src/app/(gm)/campaigns/chronicle.tsx`. */
 export function CampaignListScreen() {
   return (
@@ -34,11 +44,14 @@ function CampaignListBody() {
   const [deleted, setDeleted] = useState<CampaignListItem | null>(null);
   const [undoError, setUndoError] = useState<string | null>(null);
 
+  // Archived campaigns (S3) leave the bands for their own group, most recently opened first as the server sends them.
+  const active = useMemo(() => campaigns?.filter((c) => !c.archived), [campaigns]);
+  const archived = useMemo(() => campaigns?.filter((c) => c.archived) ?? [], [campaigns]);
   const ordered = useMemo(
-    () => (campaigns === undefined ? undefined : [...campaigns].sort((a, b) => a.createdAt - b.createdAt)),
-    [campaigns],
+    () => (active === undefined ? undefined : [...active].sort((a, b) => a.createdAt - b.createdAt)),
+    [active],
   );
-  const expanded = openId === undefined ? campaigns?.[0]?._id : openId;
+  const expanded = openId === undefined ? active?.[0]?._id : openId;
 
   if (campaigns === undefined) {
     return (
@@ -74,7 +87,7 @@ function CampaignListBody() {
         </View>
       ) : null}
 
-      {campaigns.length === 0 ? (
+      {ordered!.length === 0 ? (
         <View style={styles.empty}>
           <Text style={accountStyles.body}>No saved campaigns.</Text>
           <Button onPress={() => router.push("/new")} size="lg" variant="solid">
@@ -97,6 +110,8 @@ function CampaignListBody() {
           />
         ))
       )}
+
+      <ArchivedCampaigns campaigns={archived} onRestored={(id) => setOpenId(id)} />
 
       <DeletedCampaigns
         onPurged={(id) => {
@@ -267,6 +282,78 @@ function Stat({
       <Text accessibilityLabel={accessibilityLabel} style={styles.statValue}>
         {value}
       </Text>
+    </View>
+  );
+}
+
+/** Archived campaigns (S3, the website's chronicle.tsx), under the saved ones; hidden when there are none. */
+function ArchivedCampaigns({
+  campaigns,
+  onRestored,
+}: {
+  campaigns: CampaignListItem[];
+  onRestored: (id: Id<"campaigns">) => void;
+}) {
+  if (campaigns.length === 0) return null;
+  return (
+    <View style={styles.deletedSection}>
+      <Text accessibilityRole="header" style={accountStyles.eyebrow}>
+        Archived
+      </Text>
+      {campaigns.map((row) => (
+        <ArchivedRow campaign={row} key={row._id} onRestored={() => onRestored(row._id)} />
+      ))}
+    </View>
+  );
+}
+
+/**
+ * One archived campaign (config S3, Q9 a): read-only for everyone, so Open for every member and Restore for its creator
+ * (`campaignSettings.unarchive`). Restoring moves it back into the saved campaigns above at once (optimistic).
+ */
+function ArchivedRow({ campaign, onRestored }: { campaign: CampaignListItem; onRestored: () => void }) {
+  const router = useRouter();
+  const unarchive = withOptimistic(useMutation(api.campaignSettings.unarchive), (store, args) => {
+    const list = store.getQuery(api.campaigns.list, {});
+    if (list === undefined) return;
+    store.setQuery(api.campaigns.list, {}, list.map((c) => (c._id === args.campaignId ? { ...c, archived: false } : c)));
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <View style={accountStyles.card}>
+      <Text style={styles.name}>{campaign.name}</Text>
+      <Text style={accountStyles.label}>
+        {frameName(campaign.frameId)} · {campaignRoleLabel(campaign)} · Last opened {dayMonth(campaign.lastOpenedAt)}
+      </Text>
+      <View style={styles.actions}>
+        <Button accessibilityLabel={`Open ${campaign.name}`} onPress={() => router.push(`/campaign/${campaign._id}`)} variant="outline">
+          Open
+        </Button>
+        {campaign.isCreator ? (
+          <Button
+            accessibilityLabel={`Restore ${campaign.name} from the archive`}
+            disabled={busy}
+            onPress={() => {
+              setError(null);
+              setBusy(true);
+              void Promise.resolve(unarchive({ campaignId: campaign._id })).then(onRestored, (e: unknown) => {
+                setBusy(false);
+                setError(errorMessage(e));
+              });
+            }}
+            variant="solid"
+          >
+            Restore
+          </Button>
+        ) : null}
+      </View>
+      {error ? (
+        <Text accessibilityRole="alert" style={accountStyles.error}>
+          {error}
+        </Text>
+      ) : null}
     </View>
   );
 }
