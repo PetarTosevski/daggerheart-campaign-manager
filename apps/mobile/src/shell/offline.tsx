@@ -7,7 +7,12 @@ import { space } from "../theme/spacing";
 import { Button, type ButtonVariant } from "../ui/button";
 import { StaleBanner } from "../ui/stale-banner";
 
-const WritesContext = createContext(true);
+/** Whether this screen may write, and when it may not, why (shown as the disabled controls' hint). */
+type Writes = { enabled: boolean; reason: string | null };
+
+export const OFFLINE_REASON = "Offline: changes are paused until the connection is back.";
+
+const WritesContext = createContext<Writes>({ enabled: true, reason: null });
 
 /**
  * Offline after a connection has succeeded and dropped, or after a connect
@@ -23,12 +28,30 @@ export function offlineFromConnection(state: {
 }
 
 export function useWritesEnabled(): boolean {
-  return useContext(WritesContext);
+  return useContext(WritesContext).enabled;
 }
+
+/** Why writes are off here (offline, an archived campaign, the owner's view, read-only mode), or null while they are on. */
+export function useWritesOffReason(): string | null {
+  return useContext(WritesContext).reason;
+}
+
+/**
+ * Turns writes off for everything inside while `reason` is set (the shell's read-only frame, `read-only.tsx`). An outer
+ * frame that already turned them off (offline) keeps its reason; writes never turn back on inside.
+ */
+export function WritesOffFrame({ reason, children }: { reason: string | null; children: ReactNode }) {
+  const outer = useContext(WritesContext);
+  const value = !outer.enabled || reason === null ? outer : { enabled: false, reason };
+  return <WritesContext.Provider value={value}>{children}</WritesContext.Provider>;
+}
+
+const ONLINE: Writes = { enabled: true, reason: null };
+const OFFLINE: Writes = { enabled: false, reason: OFFLINE_REASON };
 
 export function OfflineFrame({ offline, children }: { offline: boolean; children: ReactNode }) {
   return (
-    <WritesContext.Provider value={!offline}>
+    <WritesContext.Provider value={offline ? OFFLINE : ONLINE}>
       <View style={styles.frame}>
         {offline ? (
           <View style={styles.banner}>

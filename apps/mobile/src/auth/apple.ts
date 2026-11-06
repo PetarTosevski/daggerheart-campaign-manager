@@ -38,5 +38,7 @@ export async function signInWithApple(signIn: SignIn): Promise<void> {
     identityToken: credential.identityToken,
     nonce,
     ...(name.length > 0 ? { name } : {}),
+    // The one-time code: the server trades it for a refresh token so Delete account can revoke Apple's grant (DEL1).
+    ...(credential.authorizationCode ? { authorizationCode: credential.authorizationCode } : {}),
   });
 }

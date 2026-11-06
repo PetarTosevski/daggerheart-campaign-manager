@@ -51,7 +51,9 @@ function recorded() {
   const restores: unknown[] = [];
   const resets: unknown[] = [];
   const prefChanges: unknown[] = [];
+  const deletes: unknown[] = [];
   return {
+    deletes,
     updates,
     restores,
     resets,
@@ -79,20 +81,28 @@ function recorded() {
 
 async function renderReady(
   role: "player" | "gm",
-  extra?: { updatesThrow?: boolean },
+  extra?: { updatesThrow?: boolean; isOwner?: boolean; deleteThrows?: boolean },
 ): Promise<RenderedScreen & ReturnType<typeof recorded>> {
   const book = recorded();
   const render = role === "player" ? renderAsPlayer : renderAsGm;
+  const mutations: Record<string, (args: unknown) => unknown> = {
+    ...book.mutations,
+    "accountSelfDelete:deleteMyAccount": (args: unknown) => {
+      book.deletes.push(args);
+      if (extra?.deleteThrows) throw new ConvexError({ code: "OWNER_ACCOUNT_UNDELETABLE", message: "The app owner's account can't be deleted." });
+      return null;
+    },
+  };
   const screen = await render(<SettingsScreen />, {
-    queries: { "settings:get": ready, "users:viewer": viewer, "preferences:get": prefs },
+    queries: { "settings:get": ready, "users:viewer": viewer, "preferences:get": prefs, "appAdmin:me": { isOwner: extra?.isOwner ?? false } },
     mutations: extra?.updatesThrow
       ? {
-          ...book.mutations,
+          ...mutations,
           "settings:update": () => {
             throw new ConvexError({ code: "INVALID", message: "Accent refused" });
           },
         }
-      : book.mutations,
+      : mutations,
   });
   return Object.assign(screen, book);
 }
@@ -121,7 +131,7 @@ test("a player sees the website settings controls and no GM function", async () 
   expect(screen.getByRole("button", { name: "Use each frame’s default" })).toBeTruthy();
   expect(screen.getByRole("switch", { name: "Style of new maps" }).props.accessibilityState.checked).toBe(true);
   expect(screen.getByText("ada@example.com")).toBeTruthy();
-  expect(screen.client.subscribed).toEqual(["settings:get", "users:viewer", "preferences:get"]);
+  expect(screen.client.subscribed).toEqual(["settings:get", "users:viewer", "preferences:get", "appAdmin:me"]);
   expect(screen.client.called).toEqual([]);
 });
 
@@ -130,7 +140,7 @@ test("a GM sees the same settings controls", async () => {
   expect(screen.getByRole("header", { name: "Settings" })).toBeTruthy();
   expect(screen.getByLabelText("Table name")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
-  expect(screen.client.subscribed).toEqual(["settings:get", "users:viewer", "preferences:get"]);
+  expect(screen.client.subscribed).toEqual(["settings:get", "users:viewer", "preferences:get", "appAdmin:me"]);
 });
 
 test("an unset Hope & Fear expansion tells the player each frame keeps its default", async () => {
@@ -311,4 +321,31 @@ test("sign out ends the session and returns to the sign-in screen", async () => 
   await fireEvent.press(screen.getByRole("button", { name: "Sign out" }));
   await waitFor(() => expect(mockSignOut).toHaveBeenCalledTimes(1));
   expect(mockReplace).toHaveBeenCalledWith("/sign-in");
+});
+
+test("Delete account asks first, then deletes, signs out and returns to sign-in", async () => {
+  const screen = await renderReady("player");
+  await fireEvent.press(screen.getByRole("button", { name: "Delete account…" }));
+  expect(screen.getByText(/erased after 30 days/)).toBeTruthy();
+  expect(screen.deletes).toEqual([]);
+  await fireEvent.press(screen.getByRole("button", { name: "Delete my account" }));
+  await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/sign-in"));
+  expect(screen.deletes).toEqual([{}]);
+  expect(mockSignOut).toHaveBeenCalledTimes(1);
+});
+
+test("a refused Delete account stays signed in and shows the server's reason", async () => {
+  const screen = await renderReady("gm", { deleteThrows: true });
+  await fireEvent.press(screen.getByRole("button", { name: "Delete account…" }));
+  await fireEvent.press(screen.getByRole("button", { name: "Delete my account" }));
+  expect(await screen.findByText("The app owner's account can't be deleted.")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Delete my account" })).toBeTruthy();
+  expect(mockSignOut).not.toHaveBeenCalled();
+  expect(mockReplace).not.toHaveBeenCalled();
+});
+
+test("the app owner never sees Delete account", async () => {
+  const screen = await renderReady("gm", { isOwner: true });
+  expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Delete account…" })).toBeNull();
 });

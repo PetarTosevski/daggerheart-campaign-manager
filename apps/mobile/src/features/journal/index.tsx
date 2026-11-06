@@ -20,8 +20,15 @@ import { SessionTally, Spotlight } from "./tally";
 import { ThreadsRaised } from "./threads";
 import { Button } from "../../ui/button";
 import { Slot, Tabs } from "./ui";
+import { defaultSessionId } from "../../../../../src/components/journal/slots";
 
 export { JOURNAL_TABS, journalHref, parseJournalTab, type JournalTab } from "./tabs";
+
+/**
+ * `?s=all`: the session list. With no `s` the Journal opens, like the website, on the live session, else the newest the
+ * caller may see (`defaultSessionId`); '‹ All sessions' writes this value so the list stays reachable on a phone.
+ */
+export const ALL_SESSIONS = "all";
 
 /** The Journal's URL params as the route reads them (each first value, or undefined). */
 export type JournalParams = { tab?: string; s?: string; sv?: string; view?: string; page?: string };
@@ -32,8 +39,8 @@ export type JournalNavigate = (next: Partial<Record<keyof JournalParams, string 
 /**
  * The Journal (the website's /journal page, src/app/(gm)/campaigns/[campaignId]/journal/page.tsx, design
  * reference/designs/journal/journal_views.jpg): the header with the live session and Start / End, the Sessions /
- * Notes sub-tabs, and on Sessions the list ('All sessions', '+ Plan session N', 'Campaign so far'); a session opens as
- * its own screen with its heading, the GM's Plan / Log & recap toggle and 'Play on the Combat Map'. On a phone the
+ * Notes sub-tabs, and on Sessions the live session (else the newest; no session at all, or `?s=all`, shows the list:
+ * 'All sessions', '+ Plan session N', 'Campaign so far'); a session opens as its own screen with its heading, the GM's Plan / Log & recap toggle and 'Play on the Combat Map'. On a phone the
  * website's columns stack: Plan is the scenes, the GM prep and the Battle Points; Log & recap is the log, the recap,
  * then the GM's tally, the spotlight (players only when the GM's setting allows; the server decides), Threads raised
  * and the GM's After the session. Players never get the toggle, the plan, the tally or After the session (Q5).
@@ -56,7 +63,10 @@ function JournalBody({ params, onNavigate }: { params: JournalParams; onNavigate
   const { sessions, notesJournal } = useJournalData();
   const tab = parseJournalTab(params.tab);
   const view = parseSessionView(params.sv, isGm);
-  const selectedId = params.s ? (params.s as Id<"sessions">) : null;
+  const urlId = params.s && params.s !== ALL_SESSIONS ? (params.s as Id<"sessions">) : null;
+  const defaultId = params.s === ALL_SESSIONS ? null : defaultSessionId(sessions);
+  // undefined: no `s` and the list is still loading.
+  const selectedId = urlId ?? defaultId;
 
   const openSession = (id: Id<"sessions">, sv?: SessionView) => onNavigate({ tab: "sessions", s: id, ...(sv ? { sv } : {}) });
   const openPage = (pageId: string) => onNavigate({ tab: "notes", view: null, page: pageId });
@@ -68,7 +78,7 @@ function JournalBody({ params, onNavigate }: { params: JournalParams; onNavigate
 
   const top = (
     <View style={{ gap: space[3] }}>
-      <JournalHeader onOpenSession={openSession} onThreads={() => onNavigate({ tab: "notes", view: "threads" })} selectedId={selectedId} />
+      <JournalHeader onOpenSession={openSession} onThreads={() => onNavigate({ tab: "notes", view: "threads" })} selectedId={selectedId ?? null} />
       <Tabs
         label="Journal"
         onSelect={(next) => onNavigate({ tab: next })}
@@ -92,10 +102,12 @@ function JournalBody({ params, onNavigate }: { params: JournalParams; onNavigate
   return (
     <ScrollView contentContainerStyle={[js.scroll, { paddingHorizontal: space[4] }]}>
       {top}
-      {selectedId === null ? (
+      {selectedId === undefined ? (
+        <Text style={js.muted}>Loading the session…</Text>
+      ) : selectedId === null ? (
         <>
           <Slot label="The session list">
-            <SessionList onSelect={(id) => openSession(id)} selectedId={selectedId} />
+            <SessionList onSelect={(id) => openSession(id)} selectedId={null} />
           </Slot>
           {isGm ? (
             <Slot label="Plan session">
@@ -108,7 +120,7 @@ function JournalBody({ params, onNavigate }: { params: JournalParams; onNavigate
         </>
       ) : (
         <SessionScreen
-          onBack={() => onNavigate({ s: null, sv: null })}
+          onBack={() => onNavigate({ s: ALL_SESSIONS, sv: null })}
           onOpenPage={openPage}
           onView={(sv) => onNavigate({ s: selectedId, sv })}
           sessionId={selectedId}

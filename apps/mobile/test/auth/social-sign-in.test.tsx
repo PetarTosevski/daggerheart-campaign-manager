@@ -177,7 +177,7 @@ test("Google opens the system auth session and then exchanges the code", async (
   expect(mockAppleSignIn).not.toHaveBeenCalled();
 });
 
-test("Apple uses the native button and sends the raw nonce with the identity token", async () => {
+test("Apple uses the native button and sends the raw nonce, the identity token and the authorization code", async () => {
   setPlatform("ios");
   mockSignIn.mockResolvedValueOnce({ signingIn: true });
   const screen = await render(<SignInScreen />);
@@ -187,6 +187,7 @@ test("Apple uses the native button and sends the raw nonce with the identity tok
       identityToken: "header.payload.sig",
       nonce: "raw-nonce",
       name: "Ada Lovelace",
+      authorizationCode: "code",
     }),
   );
   expect(mockAppleSignIn).toHaveBeenCalledWith({

@@ -5,7 +5,7 @@ import { fireEvent, waitFor } from "@testing-library/react-native";
 import { resetMotionTest } from "../../theme/mock-reanimated";
 
 import { api } from "../../../src/convex";
-import { JournalScreen, journalHref, parseJournalTab, type JournalNavigate, type JournalParams } from "../../../src/features/journal";
+import { ALL_SESSIONS, JournalScreen, journalHref, parseJournalTab, type JournalNavigate, type JournalParams } from "../../../src/features/journal";
 import { fn, renderAsGm, renderAsPlayer } from "../../harness";
 import { baseQueries, gmLogQueries, gmPlanQueries, inCampaign, live, planned, played, playerLogQueries, spotlight } from "./fixture";
 
@@ -50,7 +50,7 @@ test("the URL helpers: ?tab= picks the sub-tab (Sessions by default) and links c
 // ---------------------------------------------------------------- the session list
 
 test("a player's Sessions list: the sessions they may see, Campaign so far, no Plan or Start", async () => {
-  const screen = await renderAsPlayer(journal({}), { queries: baseQueries("player") });
+  const screen = await renderAsPlayer(journal({ s: ALL_SESSIONS }), { queries: baseQueries("player") });
   expect(screen.getByRole("header", { name: "Journal" })).toBeTruthy();
   expect(screen.getByRole("tab", { name: "Sessions 1" }).props.accessibilityState).toEqual({ selected: true });
   expect(screen.getByRole("tab", { name: "Notes · 2 pages" })).toBeTruthy();
@@ -71,7 +71,7 @@ test("a player's Sessions list: the sessions they may see, Campaign so far, no P
 test("the GM's Sessions list: + Plan session N creates the next session and opens it on Plan", async () => {
   const onNavigate = jest.fn<JournalNavigate>();
   const create = jest.fn((_args: unknown) => Promise.resolve({ sessionId: "session-3" }));
-  const screen = await renderAsGm(journal({}, onNavigate), {
+  const screen = await renderAsGm(journal({ s: ALL_SESSIONS }, onNavigate), {
     queries: baseQueries("gm"),
     mutations: { [fn(api.sessionRecords.create)]: create },
   });
@@ -83,9 +83,29 @@ test("the GM's Sessions list: + Plan session N creates the next session and open
 
 test("tapping a session opens it; All sessions goes back to the list", async () => {
   const onNavigate = jest.fn<JournalNavigate>();
-  const screen = await renderAsPlayer(journal({}, onNavigate), { queries: baseQueries("player") });
+  const screen = await renderAsPlayer(journal({ s: ALL_SESSIONS }, onNavigate), { queries: baseQueries("player") });
   await fireEvent.press(screen.getByRole("button", { name: /^Session 1: The Bridge/ }));
   expect(onNavigate).toHaveBeenCalledWith({ tab: "sessions", s: played._id });
+});
+
+test("with no session in the URL the Journal opens on the newest session; All sessions writes s=all", async () => {
+  const onNavigate = jest.fn<JournalNavigate>();
+  const screen = await renderAsPlayer(journal({}, onNavigate), { queries: playerLogQueries() });
+  expect(screen.getByText("Vex rolled 14 with Hope")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /^Session 1: The Bridge/ })).toBeNull();
+  await fireEvent.press(screen.getByRole("button", { name: "All sessions" }));
+  expect(onNavigate).toHaveBeenCalledWith({ s: ALL_SESSIONS, sv: null });
+});
+
+test("with no session in the URL the GM's Journal opens on the live session, not the newest planned one", async () => {
+  const queries = {
+    ...gmLogQueries(),
+    [fn(api.sessionRecords.list)]: [{ ...planned, _id: "session-3" as typeof planned._id, n: 3 }, { ...played, status: "live" as const, startedAt: 1 }],
+    [fn(api.sessions.current)]: { startedAt: 1, extraCharacters: false, n: 1 },
+  };
+  const screen = await renderAsGm(journal({ sv: "log" }), { queries });
+  expect(screen.getByText("Vex rolled 14 with Hope")).toBeTruthy();
+  expect(screen.client.subscribed).toContain(fn(api.journalLog.list));
 });
 
 // ---------------------------------------------------------------- Start and End
@@ -93,7 +113,7 @@ test("tapping a session opens it; All sessions goes back to the list", async () 
 test("the GM starts the selected planned session and lands on its Log & recap", async () => {
   const onNavigate = jest.fn<JournalNavigate>();
   const start = jest.fn((_args: unknown) => Promise.resolve({ sessionId: "session-2", alreadyStarted: false, notes: [], features: [], reminders: [] }));
-  const screen = await renderAsGm(journal({}, onNavigate), {
+  const screen = await renderAsGm(journal({ s: ALL_SESSIONS }, onNavigate), {
     queries: baseQueries("gm"),
     mutations: { [fn(api.sessions.start)]: start },
   });
@@ -108,7 +128,7 @@ test("the GM starts the selected planned session and lands on its Log & recap", 
 test("with 'A new session opens on' set to the Combat Map, Start goes to the map", async () => {
   const onNavigate = jest.fn<JournalNavigate>();
   const start = jest.fn((_args: unknown) => Promise.resolve({ sessionId: "session-2", alreadyStarted: false }));
-  const screen = await renderAsGm(journal({}, onNavigate), {
+  const screen = await renderAsGm(journal({ s: ALL_SESSIONS }, onNavigate), {
     queries: baseQueries("gm", undefined, { sessionOpensOn: "combatMap" }),
     mutations: { [fn(api.sessions.start)]: start },
   });
@@ -121,7 +141,7 @@ test("with 'A new session opens on' set to the Combat Map, Start goes to the map
 test("the GM ends the live session and reads the report; a player sees the live chip only", async () => {
   const end = jest.fn((_args: unknown) => Promise.resolve({ tokens: 0, fearGained: 0, fearLost: 0, journeyEnds: [] }));
   const queries = { ...baseQueries("gm", [live, played]), [fn(api.sessions.current)]: { startedAt: 1, extraCharacters: false, n: 2 } };
-  const screen = await renderAsGm(journal({}), { queries, mutations: { [fn(api.sessions.end)]: end } });
+  const screen = await renderAsGm(journal({ s: ALL_SESSIONS }), { queries, mutations: { [fn(api.sessions.end)]: end } });
   expect(screen.getByText("Session 2 · live")).toBeTruthy();
   expect(screen.getByRole("switch", { name: "Allow extra characters this session" })).toBeTruthy();
   await fireEvent.press(screen.getByRole("button", { name: "End session" }));
@@ -129,7 +149,7 @@ test("the GM ends the live session and reads the report; a player sees the live 
   await waitFor(() => expect(screen.getByText("Session ended.")).toBeTruthy());
   expect(end).toHaveBeenCalledWith(expect.objectContaining({ campaignId: "campaign-1", idempotencyKey: "uuid-1" }));
 
-  const player = await renderAsPlayer(journal({}), {
+  const player = await renderAsPlayer(journal({ s: ALL_SESSIONS }), {
     queries: { ...baseQueries("player", [{ ...live, startedAt: undefined }]), [fn(api.sessions.current)]: { startedAt: 1, extraCharacters: false, n: 2 } },
   });
   expect(player.getByText("Session 2 · live")).toBeTruthy();
@@ -270,7 +290,7 @@ for (const role of ["player", "gm"] as const) {
 
   test(`a ${role}: Open threads opens Notes on its threads view; the Notes tab hosts the notes`, async () => {
     const onNavigate = jest.fn<JournalNavigate>();
-    const screen = await render(journal({}, onNavigate), { queries: baseQueries(role) });
+    const screen = await render(journal({ s: ALL_SESSIONS }, onNavigate), { queries: baseQueries(role) });
     await fireEvent.press(screen.getByRole("button", { name: "Open threads: 0" }));
     expect(onNavigate).toHaveBeenCalledWith({ tab: "notes", view: "threads" });
 

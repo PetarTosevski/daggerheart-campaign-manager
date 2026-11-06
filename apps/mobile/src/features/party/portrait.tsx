@@ -1,4 +1,5 @@
 import { Image } from "expo-image";
+import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import { useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
@@ -20,6 +21,21 @@ const SITE = process.env.EXPO_PUBLIC_SITE_URL?.replace(/\/+$/, "") ?? "https://d
 const MAX_BYTES = 3 * 1024 * 1024;
 const TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 
+/** Portraits show at 56 px at most; 512 px square keeps them sharp on any screen and far under the server's limit. */
+export const PORTRAIT_SIZE = 512;
+
+/**
+ * Shrinks a picked (already square-cropped) image to `PORTRAIT_SIZE` wide and re-encodes it as JPEG, so a phone photo
+ * uploads in kilobytes, not megabytes. A smaller image is only re-encoded, never enlarged.
+ */
+export async function resizePortrait(asset: { uri: string; width: number }): Promise<{ uri: string; type: string }> {
+  const context = ImageManipulator.manipulate(asset.uri);
+  if (asset.width > PORTRAIT_SIZE) context.resize({ width: PORTRAIT_SIZE });
+  const image = await context.renderAsync();
+  const saved = await image.saveAsync({ compress: 0.8, format: SaveFormat.JPEG });
+  return { uri: saved.uri, type: "image/jpeg" };
+}
+
 /** The picture to show: an uploaded portrait's URL, or a preset's art on the website. */
 export function portraitSource(portraitUrl: string | null, portrait: { kind: string; asset?: string } | undefined): string | null {
   if (portraitUrl) return portraitUrl;
@@ -32,7 +48,8 @@ export function portraitSource(portraitUrl: string | null, portrait: { kind: str
 /**
  * Shows the portrait (dcm-gdzi.26) and changes it: the library image first, checked against the server's size and
  * type allowlist, and only then an upload URL (cancelling the picker spends none). The picker crops square and
- * re-encodes at quality 0.7 (iOS hands HEIC over as JPEG when it re-encodes).
+ * re-encodes at quality 0.7 (iOS hands HEIC over as JPEG when it re-encodes); `resizePortrait` then shrinks it to
+ * 512 px JPEG before the upload.
  */
 export function PortraitControl({
   characterId,
@@ -68,12 +85,12 @@ export function PortraitControl({
       const picked = await picker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsEditing: true, aspect: [1, 1], quality: 0.7 });
       if (picked.canceled || picked.assets[0] === undefined) return;
       const asset = picked.assets[0];
-      const type = asset.mimeType ?? "image/jpeg";
-      if (!TYPES.has(type)) {
+      if (!TYPES.has(asset.mimeType ?? "image/jpeg")) {
         setError("Choose a PNG, JPEG, WebP or GIF image.");
         return;
       }
-      const file = await fetch(asset.uri);
+      const { uri, type } = await resizePortrait(asset);
+      const file = await fetch(uri);
       const body = await file.blob();
       if (body.size > MAX_BYTES) {
         setError("That image is over 3 MB. Choose a smaller one.");

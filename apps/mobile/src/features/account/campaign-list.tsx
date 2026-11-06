@@ -3,7 +3,7 @@ import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { frameName, roman } from "../../../../../src/lib/campaign-display";
+import { campaignRoleLabel, frameName, roman } from "../../../../../src/lib/campaign-display";
 import { errorMessage } from "../../../../../src/lib/convex-errors";
 import type { CampaignListItem, DeletedCampaign } from "../../../../../convex/campaigns";
 import { api, type Id } from "../../convex";
@@ -126,7 +126,8 @@ function CampaignBand({
   onDeleted: (campaign: CampaignListItem) => void;
 }) {
   const router = useRouter();
-  const isGm = campaign.role === "gm";
+  // Delete is the creator's alone; a co-GM (role "gm", not the creator) leaves like a player (dcm-6dtb, as on the web).
+  const canDelete = campaign.isCreator;
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -145,9 +146,14 @@ function CampaignBand({
           {roman(index)}
         </Text>
         <View style={styles.bandMain}>
-          <Text style={accountStyles.eyebrow}>
-            Tier {campaign.tier} · Level {campaign.level} · {frameName(campaign.frameId)} · {isGm ? "Game Master" : "Player"}
-          </Text>
+          <View style={styles.eyebrowRow}>
+            <Text style={accountStyles.eyebrow}>
+              Tier {campaign.tier} · Level {campaign.level} · {frameName(campaign.frameId)}
+            </Text>
+            <Text style={[styles.badge, campaign.role === "gm" ? styles.badgeGm : styles.badgePlayer]}>
+              {campaignRoleLabel(campaign)}
+            </Text>
+          </View>
           <Text style={styles.name}>{campaign.name}</Text>
           <Text style={accountStyles.label}>
             Started {dateFormat.format(campaign.createdAt)} · Last opened {dateFormat.format(campaign.lastOpenedAt)}
@@ -155,7 +161,12 @@ function CampaignBand({
         </View>
         <View style={styles.stats}>
           <Stat label="Players" tone="hope" value={String(campaign.players)} />
-          <Stat label="Fear" tone="fear" value={String(campaign.fear)} />
+          <Stat
+            accessibilityLabel={campaign.fear === null ? "Fear hidden by the GM" : undefined}
+            label="Fear"
+            tone="fear"
+            value={campaign.fear === null ? "?" : String(campaign.fear)}
+          />
         </View>
       </Pressable>
 
@@ -165,12 +176,12 @@ function CampaignBand({
             Resume Campaign
           </Button>
           <Button
-            accessibilityLabel={`${isGm ? "Delete" : "Leave"} ${campaign.name}`}
+            accessibilityLabel={`${canDelete ? "Delete" : "Leave"} ${campaign.name}`}
             onPress={() => setConfirming(true)}
             size="lg"
             variant="danger"
           >
-            {isGm ? "Delete" : "Leave"}
+            {canDelete ? "Delete" : "Leave"}
           </Button>
         </View>
       ) : null}
@@ -178,10 +189,10 @@ function CampaignBand({
       {open && confirming ? (
         <ConfirmLeaveOrDelete
           campaign={campaign}
+          canDelete={canDelete}
           error={error}
-          isGm={isGm}
           onCancel={() => setConfirming(false)}
-          onDone={() => (isGm ? onDeleted(campaign) : undefined)}
+          onDone={() => (canDelete ? onDeleted(campaign) : undefined)}
           onError={setError}
         />
       ) : null}
@@ -191,14 +202,14 @@ function CampaignBand({
 
 function ConfirmLeaveOrDelete({
   campaign,
-  isGm,
+  canDelete,
   onCancel,
   onDone,
   onError,
   error,
 }: {
   campaign: CampaignListItem;
-  isGm: boolean;
+  canDelete: boolean;
   onCancel: () => void;
   onDone: () => void;
   onError: (message: string | null) => void;
@@ -210,8 +221,8 @@ function ConfirmLeaveOrDelete({
   return (
     <View accessibilityRole="alert" style={styles.confirm}>
       <Text style={styles.confirmText}>
-        {isGm ? "Delete" : "Leave"} <Text style={styles.confirmStrong}>{campaign.name}</Text>?{" "}
-        {isGm
+        {canDelete ? "Delete" : "Leave"} <Text style={styles.confirmStrong}>{campaign.name}</Text>?{" "}
+        {canDelete
           ? "It will be removed from your saved campaigns."
           : "You'll need a new invite or join code to come back."}
       </Text>
@@ -222,13 +233,13 @@ function ConfirmLeaveOrDelete({
         <Button
           onPress={() => {
             onError(null);
-            void Promise.resolve(isGm ? remove({ campaignId: campaign._id }) : leave({ campaignId: campaign._id }))
+            void Promise.resolve(canDelete ? remove({ campaignId: campaign._id }) : leave({ campaignId: campaign._id }))
               .then(onDone)
               .catch((e) => onError(errorMessage(e)));
           }}
           variant="dangerSolid"
         >
-          {isGm ? "Delete" : "Leave"}
+          {canDelete ? "Delete" : "Leave"}
         </Button>
       </View>
       {error ? (
@@ -240,11 +251,23 @@ function ConfirmLeaveOrDelete({
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: string; tone: "hope" | "fear" }) {
+function Stat({
+  label,
+  value,
+  tone,
+  accessibilityLabel,
+}: {
+  label: string;
+  value: string;
+  tone: "hope" | "fear";
+  accessibilityLabel?: string;
+}) {
   return (
     <View style={[styles.stat, tone === "hope" ? styles.statHope : styles.statFear]}>
       <Text style={styles.statLabel}>{label}</Text>
-      <Text style={styles.statValue}>{value}</Text>
+      <Text accessibilityLabel={accessibilityLabel} style={styles.statValue}>
+        {value}
+      </Text>
     </View>
   );
 }
@@ -350,6 +373,30 @@ function DeletedRow({
 }
 
 const styles = StyleSheet.create({
+  badge: {
+    ...type.sansSemibold,
+    borderRadius: 999,
+    borderWidth: 1,
+    fontSize: 11,
+    letterSpacing: 1.6,
+    paddingHorizontal: space[2],
+    paddingVertical: 2,
+    textTransform: "uppercase",
+  },
+  badgeGm: {
+    borderColor: colors.brand,
+    color: colors.brand,
+  },
+  badgePlayer: {
+    borderColor: "#5b4a8f",
+    color: colors.fear,
+  },
+  eyebrowRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: space[2],
+  },
   actions: {
     flexDirection: "row",
     flexWrap: "wrap",

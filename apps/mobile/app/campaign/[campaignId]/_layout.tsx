@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MarkOpened } from "../../../src/features/account/mark-opened";
 import { CampaignProvider, firstParam, useCampaignState } from "../../../src/shell/campaign-provider";
 import { LiveOffline } from "../../../src/shell/offline";
+import { CampaignBanners, CampaignReadOnlyFrame } from "../../../src/shell/read-only";
 import {
   CAMPAIGNS_HREF,
   dashboardHref,
@@ -38,32 +39,35 @@ function CampaignShell({ campaignId }: { campaignId: string }) {
 
   return (
     <LiveOffline>
-      <MarkOpened campaign={campaign} />
-      <View style={styles.screen}>
-        <View style={[styles.body, { paddingTop: insets.top }]}>
-          <Stack screenOptions={{ contentStyle: { backgroundColor: colors.ink }, headerShown: false }}>
-            <Stack.Screen name="index" options={{ title: "Dashboard" }} />
-            {tabs.map((tab) => (
-              <Stack.Screen key={tab.slug} name={stackName(tab.slug)} options={{ title: tab.label }} />
-            ))}
-            {more.map((item) => (
-              <Stack.Screen key={item.slug} name={item.slug} options={{ title: item.label }} />
-            ))}
-            <Stack.Screen name="party/new" options={{ title: "New character" }} />
-            <Stack.Screen name="party/[characterId]" options={{ title: "Character" }} />
-            <Stack.Screen name="codex/[entryId]" options={{ title: sectionLabel("codex") }} />
-            <Stack.Screen name="notes/[pageId]" options={{ title: sectionLabel("journal") }} />
-            <Stack.Screen name="sessions/[sessionId]" options={{ title: sectionLabel("journal") }} />
-            <Stack.Protected
-              guard={isGm}
-              redirectTo={campaignId.length > 0 ? dashboardHref(campaignId) : CAMPAIGNS_HREF}
-            >
-              <Stack.Screen name="(gm)" options={{ headerShown: false }} />
-            </Stack.Protected>
-          </Stack>
+      <CampaignReadOnlyFrame>
+        <MarkOpened campaign={campaign} />
+        <View style={styles.screen}>
+          <View style={[styles.body, { paddingTop: insets.top }]}>
+            <CampaignBanners />
+            <Stack screenOptions={{ contentStyle: { backgroundColor: colors.ink }, headerShown: false }}>
+              <Stack.Screen name="index" options={{ title: "Dashboard" }} />
+              {tabs.map((tab) => (
+                <Stack.Screen key={tab.slug} name={stackName(tab.slug)} options={{ title: tab.label }} />
+              ))}
+              {more.map((item) => (
+                <Stack.Screen key={item.slug} name={item.slug} options={{ title: item.label }} />
+              ))}
+              <Stack.Screen name="party/new" options={{ title: "New character" }} />
+              <Stack.Screen name="party/[characterId]" options={{ title: "Character" }} />
+              <Stack.Screen name="codex/[entryId]" options={{ title: sectionLabel("codex") }} />
+              <Stack.Screen name="notes/[pageId]" options={{ title: sectionLabel("journal") }} />
+              <Stack.Screen name="sessions/[sessionId]" options={{ title: sectionLabel("journal") }} />
+              <Stack.Protected
+                guard={isGm}
+                redirectTo={campaignId.length > 0 ? dashboardHref(campaignId) : CAMPAIGNS_HREF}
+              >
+                <Stack.Screen name="(gm)" options={{ headerShown: false }} />
+              </Stack.Protected>
+            </Stack>
+          </View>
+          {campaign ? <CampaignTabBar campaignId={campaign._id} isGm={isGm} /> : null}
         </View>
-        {campaign ? <CampaignTabBar campaignId={campaign._id} isGm={isGm} /> : null}
-      </View>
+      </CampaignReadOnlyFrame>
     </LiveOffline>
   );
 }

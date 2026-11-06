@@ -11,6 +11,7 @@ import { ConvexError, v } from "convex/values";
 
 import { appError } from "../src/lib/errors/app-error";
 import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { env, internalQuery, type ActionCtx, type MutationCtx } from "./_generated/server";
 import { resumeSelfDeletedAccount } from "./accountSelfDelete";
 import { buildE2EProfile, normalizeEmail } from "./lib/allowlist";
@@ -186,6 +187,12 @@ const appleNativeProvider = ConvexCredentials({
       throw appError("INVALID");
     }
     const name = typeof credentials.name === "string" ? credentials.name.trim().slice(0, 80) : "";
+    // The one-time code Apple hands the app with the identity token (optional: older app builds omit it). Traded for a
+    // refresh token after sign-in so a later Delete account can revoke it (DEL1, `rememberAppleSignIn`).
+    const authorizationCode = credentials.authorizationCode;
+    if (authorizationCode !== undefined && (typeof authorizationCode !== "string" || authorizationCode.length === 0 || authorizationCode.length > 2048)) {
+      throw appError("INVALID");
+    }
     // Shape first (no fetch, no token spent), then the flood cap, then Apple's cached keys (dcm-gdzi.6).
     let kid;
     try {
@@ -215,8 +222,18 @@ const appleNativeProvider = ConvexCredentials({
       if (error instanceof Error && error.message === "InvalidAccountId") return null;
       throw error;
     });
+    // The bundle id the verified token was issued to: the client id Apple wants when the code is traded and revoked.
+    const clientId = verifiedAudience(identityToken);
+    const remember = async (userId: Id<"users">) => {
+      if (typeof authorizationCode !== "string" || clientId === null) return;
+      await ctx.scheduler.runAfter(0, internal.accountSelfDelete.rememberAppleSignIn, { userId, clientId, authorizationCode });
+    };
     // Convex Auth finishes an existing account's sign-in without createOrUpdateUser, so check suspension here (AD14).
-    if (existing !== null) return refuseSuspendedSignIn(ctx as unknown as ActionCtx, { userId: existing.user._id });
+    if (existing !== null) {
+      const allowed = await refuseSuspendedSignIn(ctx as unknown as ActionCtx, { userId: existing.user._id });
+      await remember(existing.user._id);
+      return allowed;
+    }
     const { user } = await createAccount(ctx, {
       provider: APPLE_PROVIDER_ID,
       account: { id: identity.subject },
@@ -226,9 +243,26 @@ const appleNativeProvider = ConvexCredentials({
         ...(name ? { name } : {}),
       },
     });
+    await remember(user._id);
     return { userId: user._id };
   },
 });
+
+/**
+ * The `aud` of an identity token `verifyAppleIdentityToken` has already accepted (so it is one of `APPLE_AUDIENCES`):
+ * the app's bundle id. Null when it cannot be read, which only skips remembering the refresh token.
+ */
+function verifiedAudience(identityToken: string): string | null {
+  try {
+    const segment = identityToken.split(".")[1] ?? "";
+    const padded = segment.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (segment.length % 4)) % 4);
+    const payload = JSON.parse(atob(padded)) as { aud?: unknown };
+    const aud = Array.isArray(payload.aud) ? (payload.aud as unknown[])[0] : payload.aud;
+    return typeof aud === "string" && aud.length > 0 ? aud : null;
+  } catch {
+    return null;
+  }
+}
 /** `createOrUpdateUser` behind the self-deletion cancel (DEL1): an OAuth sign-in of an existing account. */
 export async function signInCallback(ctx: MutationCtx, args: SignInArgs) {
   if (args.existingUserId !== null) await resumeSelfDeletedAccount(ctx, args.existingUserId);

@@ -251,3 +251,25 @@ describe("apple-native sign-in", () => {
     expect(await users(t)).toEqual([]);
   });
 });
+
+describe("apple-native remembers the authorization code (PXF)", () => {
+  it("schedules rememberAppleSignIn with the code and the bundle id, new and existing", async () => {
+    const t = makeTest();
+    const nonce = "n1";
+    await t.action(api.auth.signIn, { provider: "apple-native", params: { identityToken: await identityToken(await claims(nonce, { email: "a@x.com", email_verified: true })), nonce, authorizationCode: "code-1" } });
+    let s = await t.run((ctx) => ctx.db.system.query("_scheduled_functions").collect());
+    const u = (await users(t))[0]!._id;
+    expect(s.map((f) => [f.name, f.args[0]])).toEqual([["accountSelfDelete:rememberAppleSignIn", { userId: u, clientId: "com.dualityheart.mobile", authorizationCode: "code-1" }]]);
+    const n2 = "n2";
+    await t.action(api.auth.signIn, { provider: "apple-native", params: { identityToken: await identityToken(await claims(n2, { aud: "com.dualityheart.mobile.dev" })), nonce: n2, authorizationCode: "code-2" } });
+    s = await t.run((ctx) => ctx.db.system.query("_scheduled_functions").collect());
+    expect(s).toHaveLength(2);
+    expect(s[1]!.args[0]).toEqual({ userId: u, clientId: "com.dualityheart.mobile.dev", authorizationCode: "code-2" });
+    const n3 = "n3";
+    await t.action(api.auth.signIn, { provider: "apple-native", params: { identityToken: await identityToken(await claims(n3)), nonce: n3 } });
+    s = await t.run((ctx) => ctx.db.system.query("_scheduled_functions").collect());
+    expect(s).toHaveLength(2);
+    const n4 = "n4";
+    expect(errorCode(await caught(t.action(api.auth.signIn, { provider: "apple-native", params: { identityToken: await identityToken(await claims(n4)), nonce: n4, authorizationCode: 5 } })))).toBe("INVALID");
+  });
+});

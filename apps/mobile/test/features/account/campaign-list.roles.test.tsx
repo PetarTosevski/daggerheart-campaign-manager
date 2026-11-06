@@ -34,9 +34,11 @@ const gmCampaign = {
   fear: 1,
   players: 1,
   role: "gm" as const,
+  isCreator: true,
 };
 
-const playerCampaign = { ...gmCampaign, _id: "campaign-player", name: "Player Table", role: "player" as const };
+const playerCampaign = { ...gmCampaign, _id: "campaign-player", name: "Player Table", role: "player" as const, isCreator: false };
+const coGmCampaign = { ...gmCampaign, _id: "campaign-cogm", name: "Co Table", isCreator: false, fear: null };
 
 beforeEach(() => {
   resetMotionTest();
@@ -110,4 +112,32 @@ test("a player leaves instead of deleting and never calls a GM mutation", async 
   await fireEvent.press(screen.getByRole("button", { name: "Leave" }));
   expect(left).toEqual([{ campaignId: "campaign-player" }]);
   expect(screen.client.called.filter((name) => name.startsWith("campaigns:remove"))).toEqual([]);
+});
+
+test("a co-GM campaign wears the Co-GM badge and offers Leave, never Delete", async () => {
+  const left: unknown[] = [];
+  const screen = await renderAsGm(<CampaignListScreen />, {
+    queries: { "campaigns:list": [coGmCampaign, gmCampaign], "campaigns:listDeleted": [] },
+    mutations: {
+      "members:leave": (args) => {
+        left.push(args);
+        return null;
+      },
+    },
+  });
+  expect(screen.getByText("Co-GM")).toBeTruthy();
+  expect(screen.getByLabelText("Fear hidden by the GM")).toBeTruthy();
+  expect(screen.queryByLabelText("Delete Co Table")).toBeNull();
+  await fireEvent.press(screen.getByLabelText("Leave Co Table"));
+  await fireEvent.press(screen.getByRole("button", { name: "Leave" }));
+  expect(left).toEqual([{ campaignId: "campaign-cogm" }]);
+  expect(screen.client.called).not.toContain("campaigns:remove");
+});
+
+test("the creator's campaign is badged Game Master and a player's Player", async () => {
+  const screen = await renderAsGm(<CampaignListScreen />, {
+    queries: { "campaigns:list": [gmCampaign, playerCampaign], "campaigns:listDeleted": [] },
+  });
+  expect(screen.getByText("Game Master")).toBeTruthy();
+  expect(screen.getByText("Player")).toBeTruthy();
 });

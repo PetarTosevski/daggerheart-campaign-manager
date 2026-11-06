@@ -8,9 +8,7 @@ import { controlStyles } from "./controls";
 
 /**
  * Delete account, the phone side (App Store 5.1.1(v), bead dcm-gdzi.8): a button, a confirm step, then `request`, the
- * server call. Not mounted yet: rebuild has no self-service deletion (only the app owner's
- * `adminAccountActions.scheduleDelete`), and how it should work (the 30-day wait and undo, Apple token revocation) is
- * the user's decision. Once that server function exists, the Account section mounts this with it.
+ * server call. Settings' Account section mounts it on `accountSelfDelete.deleteMyAccount` (docs/tasks/TASK-DEL1.md).
  */
 export function DeleteAccount({
   request,
@@ -33,7 +31,9 @@ export function DeleteAccount({
     if (!writes || busy) return;
     setBusy(true);
     setError(null);
-    request()
+    // A synchronous throw lands in .catch too.
+    Promise.resolve()
+      .then(request)
       .then(() => {
         setConfirming(false);
         onDeleted();

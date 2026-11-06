@@ -1,6 +1,9 @@
 import { beforeEach, expect, jest, test } from "@jest/globals";
 import type { ReactNode } from "react";
 
+// First: it mocks Reanimated before the layout's banners load the Button.
+import "../theme/mock-reanimated";
+
 import CampaignLayout from "../../app/campaign/[campaignId]/_layout";
 import { api } from "../../src/convex";
 import { fn, renderAsGm, renderAsPlayer } from "../harness";
@@ -29,6 +32,7 @@ jest.mock("expo-router", () => {
 
 jest.mock("../../src/shell/offline", () => ({
   LiveOffline: ({ children }: { children: ReactNode }) => children,
+  WritesOffFrame: ({ children }: { children: ReactNode }) => children,
 }));
 
 jest.mock("../../src/shell/tab-bar", () => ({
@@ -69,4 +73,16 @@ test("the GM screens redirect a player to the campaign's dashboard, or to the li
   const missing = await renderAsPlayer(<CampaignLayout />);
   expect(mockProtected.at(-1)).toEqual({ redirectTo: "/campaigns", guard: false });
   expect(missing.client.called).toEqual([]);
+});
+
+test("the layout shows the campaign banners above every page (archived, read-only mode)", async () => {
+  const screen = await renderAsPlayer(<CampaignLayout />, {
+    queries: {
+      "campaigns:get": { ...campaign, role: "player", archived: true, isCreator: false },
+      "appStatus:get": { readOnly: true, message: null },
+      "appAdmin:me": { isOwner: false },
+    },
+  });
+  expect(screen.getByTestId("archived-banner")).toBeTruthy();
+  expect(screen.getByTestId("read-only-banner")).toBeTruthy();
 });

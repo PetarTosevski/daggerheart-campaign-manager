@@ -21,6 +21,7 @@ import { hit, radius, space } from "../../theme/spacing";
 import { Button } from "../../ui/button";
 import { Loading } from "../../ui/loading";
 import { QueryBoundary } from "../../ui/query-boundary";
+import { DeleteAccount } from "./delete-account";
 import { PreferenceRows } from "./preferences";
 
 type SettingsPatch = FunctionArgs<typeof api.settings.update>;
@@ -466,7 +467,41 @@ function Account({ email, onError }: { email: string | null; onError: (message: 
       >
         Sign out
       </Button>
+      <QueryBoundary title="Delete account">
+        <DeleteAccountRow />
+      </QueryBoundary>
     </View>
+  );
+}
+
+/** The website's wording (src/components/config/prefs/delete-account.tsx, DELETE_ACCOUNT_TEXT.body). */
+export const DELETE_ACCOUNT_NOTICE =
+  "You'll be signed out on every device at once. Your account and everything in it are erased after 30 days. " +
+  "Changed your mind? Sign in again within those 30 days and the deletion is cancelled.";
+
+/**
+ * Delete account (DEL1, App Store 5.1.1(v)): `accountSelfDelete.deleteMyAccount` signs the account out everywhere and
+ * schedules the erase in 30 days; this phone then clears its own tokens and goes to sign-in. The app owner can't delete
+ * their account (the server refuses with OWNER_ACCOUNT_UNDELETABLE), so the row is hidden for them, and while
+ * `appAdmin.me` loads.
+ */
+function DeleteAccountRow() {
+  const me = useQuery(api.appAdmin.me);
+  const deleteMyAccount = useMutation(api.accountSelfDelete.deleteMyAccount);
+  const { signOut } = useAuthActions();
+  const router = useRouter();
+  if (me === undefined || me === null || me.isOwner) return null;
+  return (
+    <DeleteAccount
+      notice={DELETE_ACCOUNT_NOTICE}
+      onDeleted={() => {
+        // The server already ended every session; this clears the phone's stored tokens.
+        void signOut()
+          .catch(() => undefined)
+          .finally(() => router.replace("/sign-in"));
+      }}
+      request={() => deleteMyAccount({})}
+    />
   );
 }
 
