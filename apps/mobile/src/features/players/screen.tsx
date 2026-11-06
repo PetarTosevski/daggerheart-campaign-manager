@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "convex/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { errorMessage } from "../../../../../src/lib/convex-errors";
@@ -12,7 +12,7 @@ import { type } from "../../theme/fonts";
 import { hit, radius, space } from "../../theme/spacing";
 import { Button } from "../../ui/button";
 import { Loading } from "../../ui/loading";
-import { copyToClipboard, joinLinkForCode } from "./join-link";
+import { joinLinkForCode, shareJoinLink } from "./join-link";
 import { formatJoinCode } from "./format-code";
 import { readAccess, readRoster } from "./roster-data";
 
@@ -34,24 +34,17 @@ export function PlayersBody() {
   const revoke = useMutation(api.members.revokeInvite);
   const removePlayer = useMutation(api.members.removePlayer);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [shared, setShared] = useState(false);
   const [email, setEmail] = useState("");
-  const seeded = useRef(false);
 
   const table = readRoster(roster);
   const invites = isGm ? readAccess(access) : null;
 
   useEffect(() => {
-    if (!isGm || invites === undefined || invites === null || invites.joinCode || seeded.current) return;
-    seeded.current = true;
-    void Promise.resolve(rotate({ campaignId: campaign._id })).catch((e) => setError(errorMessage(e)));
-  }, [campaign._id, invites, isGm, rotate]);
-
-  useEffect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), 2000);
+    if (!shared) return;
+    const timer = setTimeout(() => setShared(false), 2000);
     return () => clearTimeout(timer);
-  }, [copied]);
+  }, [shared]);
 
   if (table === undefined || (isGm && invites === undefined)) {
     return <Loading label="Loading players" />;
@@ -90,31 +83,38 @@ export function PlayersBody() {
                 {joinCode ? formatJoinCode(joinCode) : "…"}
               </Text>
               {link ? (
-                <WriteButton
-                  accessibilityLabel="Copy join link"
+                <Button
+                  accessibilityLabel="Share join link"
                   onPress={() =>
                     run(
-                      copyToClipboard(link).then(() => {
-                        setCopied(true);
+                      shareJoinLink(link).then((done) => {
+                        setShared(done);
                       }),
                     )
                   }
                   variant="outline"
                 >
-                  {copied ? "Link copied" : "Copy join link"}
+                  {shared ? "Link shared" : "Share join link"}
+                </Button>
+              ) : null}
+              {joinCode ? (
+                <WriteButton
+                  accessibilityLabel="New code"
+                  onPress={() => run(rotate({ campaignId: campaign._id, replace: true }))}
+                  variant="outline"
+                >
+                  New code
                 </WriteButton>
               ) : (
-                <Button accessibilityLabel="Copy join link" disabled onPress={() => undefined} variant="outline">
-                  Copy join link
-                </Button>
+                // No code yet: a tap makes one (rule 13: a click, never an effect), as the website's 'Make a link'.
+                <WriteButton
+                  accessibilityLabel="Make a join code"
+                  onPress={() => run(rotate({ campaignId: campaign._id }))}
+                  variant="outline"
+                >
+                  Make a join code
+                </WriteButton>
               )}
-              <WriteButton
-                accessibilityLabel="New code"
-                onPress={() => run(rotate({ campaignId: campaign._id, replace: true }))}
-                variant="outline"
-              >
-                New code
-              </WriteButton>
             </View>
             <Text style={styles.hint}>
               A new code stops the old one from working. Players who joined stay in.

@@ -46,9 +46,14 @@ const styles = StyleSheet.create({
   help: { color: colors.body, fontSize: 14 },
 });
 
-/** Email + password sign-in, account creation with an emailed code, and password reset by code. */
-export function PasswordForm() {
+/**
+ * Email + password sign-in, account creation with an emailed code, and password reset by code. `joinCode` is the code
+ * of the join link that sent a signed-out visitor here: sign-up sends it, so invite-only mode lets the account in.
+ */
+export function PasswordForm({ joinCode = null }: { joinCode?: string | null } = {}) {
   const { signIn } = useAuthActions();
+  /** The extra sign-up params: the display name and the join link's code (as the website's `signUpParams`). */
+  const signUpParams = (displayName: string) => ({ name: displayName, ...(joinCode ? { joinCode } : {}) });
   const [step, setStep] = useState<Step>("signIn");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -105,7 +110,7 @@ export function PasswordForm() {
             flow,
             email: address,
             password: values.password,
-            ...(flow === "signUp" ? { name: values.name } : {}),
+            ...(flow === "signUp" ? signUpParams(values.name) : {}),
           }).then((result) => {
             if (result.signingIn) done(result);
             else {
@@ -155,7 +160,7 @@ export function PasswordForm() {
           flow: origin.flow,
           email,
           password: origin.password,
-          ...(origin.flow === "signUp" ? { name: origin.name } : {}),
+          ...(origin.flow === "signUp" ? signUpParams(origin.name) : {}),
         });
       }
       setNotice("We sent a new code.");

@@ -29,6 +29,16 @@ const ready = {
 
 const viewer = { email: "ada@example.com", name: "Ada" };
 
+const prefs = {
+  dice3d: true,
+  diceSound: false,
+  diceVolume: 60,
+  reduceMotion: false,
+  textSize: "medium" as const,
+  spotlightPing: true,
+  legacyImported: true,
+};
+
 beforeEach(() => {
   resetMotionTest();
   mockSignOut.mockReset();
@@ -40,10 +50,12 @@ function recorded() {
   const updates: unknown[] = [];
   const restores: unknown[] = [];
   const resets: unknown[] = [];
+  const prefChanges: unknown[] = [];
   return {
     updates,
     restores,
     resets,
+    prefChanges,
     mutations: {
       "settings:update": (args: unknown) => {
         updates.push(args);
@@ -57,6 +69,10 @@ function recorded() {
         resets.push(args);
         return null;
       },
+      "preferences:set": (args: unknown) => {
+        prefChanges.push(args);
+        return null;
+      },
     },
   };
 }
@@ -68,7 +84,7 @@ async function renderReady(
   const book = recorded();
   const render = role === "player" ? renderAsPlayer : renderAsGm;
   const screen = await render(<SettingsScreen />, {
-    queries: { "settings:get": ready, "users:viewer": viewer },
+    queries: { "settings:get": ready, "users:viewer": viewer, "preferences:get": prefs },
     mutations: extra?.updatesThrow
       ? {
           ...book.mutations,
@@ -105,7 +121,7 @@ test("a player sees the website settings controls and no GM function", async () 
   expect(screen.getByRole("button", { name: "Use each frame’s default" })).toBeTruthy();
   expect(screen.getByRole("switch", { name: "Style of new maps" }).props.accessibilityState.checked).toBe(true);
   expect(screen.getByText("ada@example.com")).toBeTruthy();
-  expect(screen.client.subscribed).toEqual(["settings:get", "users:viewer"]);
+  expect(screen.client.subscribed).toEqual(["settings:get", "users:viewer", "preferences:get"]);
   expect(screen.client.called).toEqual([]);
 });
 
@@ -114,7 +130,7 @@ test("a GM sees the same settings controls", async () => {
   expect(screen.getByRole("header", { name: "Settings" })).toBeTruthy();
   expect(screen.getByLabelText("Table name")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
-  expect(screen.client.subscribed).toEqual(["settings:get", "users:viewer"]);
+  expect(screen.client.subscribed).toEqual(["settings:get", "users:viewer", "preferences:get"]);
 });
 
 test("an unset Hope & Fear expansion tells the player each frame keeps its default", async () => {
@@ -143,6 +159,62 @@ test("blurring a changed table name sends that field only", async () => {
   await fireEvent(input, "blur");
   await waitFor(() => expect(screen.updates).toEqual([{ tableName: "Friday Night" }]));
   expect(screen.client.called).toEqual(["settings:update"]);
+});
+
+test("a name field follows edits made elsewhere and never writes back the value it showed at focus", async () => {
+  const live = { ...ready };
+  const updates: unknown[] = [];
+  const screen = await renderAsPlayer(<SettingsScreen />, {
+    queries: { "settings:get": () => live, "users:viewer": viewer, "preferences:get": prefs },
+    mutations: {
+      "settings:update": (args: unknown) => {
+        updates.push(args);
+        return null;
+      },
+    },
+  });
+  // Not focused: a change on the website shows at once.
+  live.tableName = "From the web";
+  await screen.rerender(<SettingsScreen />);
+  expect(screen.getByLabelText("Table name").props.value).toBe("From the web");
+
+  // Focused with no edit while another change lands: blur saves nothing.
+  await fireEvent(screen.getByLabelText("Table name"), "focus");
+  live.tableName = "Newer web edit";
+  await screen.rerender(<SettingsScreen />);
+  await fireEvent(screen.getByLabelText("Table name"), "blur");
+  expect(updates).toEqual([]);
+  expect(screen.getByLabelText("Table name").props.value).toBe("Newer web edit");
+
+  // A real edit saves that one field, trimmed.
+  await fireEvent(screen.getByLabelText("Your name"), "focus");
+  await fireEvent.changeText(screen.getByLabelText("Your name"), "  Bea ");
+  await fireEvent(screen.getByLabelText("Your name"), "blur");
+  await waitFor(() => expect(updates).toEqual([{ gmName: "Bea" }]));
+});
+
+test("preferences save one field per tap", async () => {
+  const screen = await renderReady("player");
+  expect(screen.getByRole("switch", { name: "3D dice" }).props.accessibilityState).toEqual({
+    checked: true,
+    disabled: false,
+  });
+  await fireEvent.press(screen.getByRole("switch", { name: "3D dice" }));
+  await fireEvent.press(screen.getByRole("switch", { name: "Dice sound" }));
+  await fireEvent.press(screen.getByRole("button", { name: "Louder" }));
+  await fireEvent.press(screen.getByRole("radio", { name: "Large" }));
+  await fireEvent.press(screen.getByRole("radio", { name: "Medium" }));
+  await fireEvent.press(screen.getByRole("switch", { name: "Ping me when I get the spotlight" }));
+  await waitFor(() =>
+    expect(screen.prefChanges).toEqual([
+      { change: { key: "dice3d", value: false } },
+      { change: { key: "diceSound", value: true } },
+      { change: { key: "diceVolume", value: 70 } },
+      { change: { key: "textSize", value: "large" } },
+      { change: { key: "spotlightPing", value: false } },
+    ]),
+  );
+  expect(screen.client.called).not.toContain("settings:update");
 });
 
 test("a GM accent tap sends the swatch, and a refused save shows the error", async () => {
@@ -208,8 +280,11 @@ test("offline keeps the backup visible and does not send writes", async () => {
       <SettingsScreen />
     </OfflineFrame>,
     {
-      queries: { "settings:get": ready, "users:viewer": viewer },
+      queries: { "settings:get": ready, "users:viewer": viewer, "preferences:get": prefs },
       mutations: {
+        "preferences:set": () => {
+          throw new Error("offline write");
+        },
         "settings:update": () => {
           throw new Error("offline write");
         },
@@ -224,6 +299,7 @@ test("offline keeps the backup visible and does not send writes", async () => {
   expect(restore.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(restore);
   await fireEvent.press(screen.getByRole("radio", { name: "Violet" }));
+  await fireEvent.press(screen.getByRole("switch", { name: "3D dice" }));
   expect(screen.client.called).toEqual([]);
 
   await fireEvent.press(screen.getByRole("button", { name: "Show backup" }));

@@ -1,5 +1,6 @@
 import { beforeEach, expect, jest, test } from "@jest/globals";
-import { fireEvent } from "@testing-library/react-native";
+import { fireEvent, waitFor } from "@testing-library/react-native";
+import { Share } from "react-native";
 
 import { resetMotionTest } from "../../theme/mock-reanimated";
 import { PlayersScreen } from "../../../src/features/players";
@@ -27,8 +28,9 @@ test("a player sees the table and never subscribes to members.access", async () 
 
 test("the GM can invite, rotate the join code, and remove a player", async () => {
   const calls: { name: string; args: unknown }[] = [];
-  const writeText = jest.fn<(text: string) => Promise<void>>(async () => undefined);
-  Object.assign(globalThis.navigator, { clipboard: { writeText } });
+  const share = jest
+    .spyOn(Share, "share")
+    .mockResolvedValue({ action: Share.sharedAction } as Awaited<ReturnType<typeof Share.share>>);
 
   const screen = await renderAsGm(inCampaign("gm", <PlayersScreen />), {
     queries: gmQueries(),
@@ -56,8 +58,10 @@ test("the GM can invite, rotate the join code, and remove a player", async () =>
   expect(screen.getByText(/friend@example\.test/)).toBeTruthy();
   expect(screen.getByText(/nikola@example\.test/)).toBeTruthy();
 
-  await fireEvent.press(screen.getByRole("button", { name: "Copy join link" }));
-  expect(writeText).toHaveBeenCalledWith("https://dualityheart.com/join/K7QM-3XRP");
+  await fireEvent.press(screen.getByRole("button", { name: "Share join link" }));
+  expect(share).toHaveBeenCalledWith({ message: "https://dualityheart.com/join/K7QM-3XRP" });
+  await waitFor(() => expect(screen.getByText("Link shared")).toBeTruthy());
+  share.mockRestore();
 
   await fireEvent.press(screen.getByRole("button", { name: "New code" }));
   expect(calls.find((row) => row.name === "rotate")?.args).toEqual({
@@ -82,15 +86,23 @@ test("the GM can invite, rotate the join code, and remove a player", async () =>
   });
 });
 
-test("the GM gets a join code on first open when none exists yet", async () => {
+test("with no join code yet, nothing is written until the GM taps Make a join code", async () => {
+  const calls: unknown[] = [];
   const screen = await renderAsGm(inCampaign("gm", <PlayersScreen />), {
     queries: gmQueries({ [fn(api.members.access)]: accessEmptyCode }),
     mutations: {
-      [fn(api.members.rotateJoinCode)]: () => "WXYZ5678",
+      [fn(api.members.rotateJoinCode)]: (args) => {
+        calls.push(args);
+        return "WXYZ5678";
+      },
     },
   });
-  expect(screen.client.called).toContain(fn(api.members.rotateJoinCode));
+  expect(screen.client.called).toEqual([]);
   expect(screen.getByTestId("join-code").props.children).toBe("…");
+  expect(screen.queryByRole("button", { name: "Share join link" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "New code" })).toBeNull();
+  await fireEvent.press(screen.getByRole("button", { name: "Make a join code" }));
+  expect(calls).toEqual([{ campaignId: "campaign-1" }]);
 });
 
 test("loading, unreadable roster, and offline GM controls", async () => {

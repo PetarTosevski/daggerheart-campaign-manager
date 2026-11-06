@@ -9,10 +9,19 @@ import { colors } from "../../theme/colors";
 import { type } from "../../theme/fonts";
 import { space } from "../../theme/spacing";
 import { Loading } from "../../ui/loading";
+import { QueryBoundary } from "../../ui/query-boundary";
 import { accountStyles } from "./styles";
 
 /** Title menu from `src/app/(gm)/title-menu.tsx`. */
 export function HomeScreen() {
+  return (
+    <QueryBoundary>
+      <HomeBody />
+    </QueryBoundary>
+  );
+}
+
+function HomeBody() {
   const campaigns = useQuery(api.campaigns.list);
   const settings = useQuery(api.settings.get);
   const router = useRouter();

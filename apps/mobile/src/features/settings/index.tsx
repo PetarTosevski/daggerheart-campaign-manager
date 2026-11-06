@@ -20,21 +20,30 @@ import { type } from "../../theme/fonts";
 import { hit, radius, space } from "../../theme/spacing";
 import { Button } from "../../ui/button";
 import { Loading } from "../../ui/loading";
+import { QueryBoundary } from "../../ui/query-boundary";
+import { PreferenceRows } from "./preferences";
 
 type SettingsPatch = FunctionArgs<typeof api.settings.update>;
 type MapStyle = "classic" | "sprites";
 type Status = { text: string; ok: boolean };
 
 /**
- * Account settings from `src/app/(gm)/settings-dialog.tsx`. The campaign
- * settings route already renders this screen. Accent is stored here; the
- * website applies it in `accent-sync.tsx`, which the phone shell owns.
+ * Account settings from `src/app/(gm)/settings-dialog.tsx`, plus the account's Preferences (the website's avatar
+ * popover). Accent is stored here; the website applies it in `accent-sync.tsx`, which the phone shell owns. The
+ * campaign route renders `CampaignSettingsScreen` instead.
  */
 export function SettingsScreen() {
+  return (
+    <QueryBoundary>
+      <SettingsBody />
+    </QueryBoundary>
+  );
+}
+
+function SettingsBody() {
   const settings = useQuery(api.settings.get);
   const viewer = useQuery(api.users.viewer);
   const [error, setError] = useState<string | null>(null);
-  const [generation, setGeneration] = useState(0);
 
   if (settings === undefined) {
     return <Loading label="Loading settings" />;
@@ -49,17 +58,14 @@ export function SettingsScreen() {
       <Text accessibilityRole="header" style={styles.title}>
         {sectionLabel("settings")}
       </Text>
-      <TableFields key={generation} onError={setError} settings={settings} />
+      <TableFields onError={setError} settings={settings} />
       <AccentPicker onError={setError} settings={settings} />
       <Expansions onError={setError} settings={settings} />
       <MapStyleSlider onError={setError} style={settings.defaultMapStyle} />
-      <SavedData
-        onReplaced={() => {
-          setError(null);
-          setGeneration((current) => current + 1);
-        }}
-        settings={settings}
-      />
+      <QueryBoundary title="Preferences">
+        <PreferenceRows />
+      </QueryBoundary>
+      <SavedData onReplaced={() => setError(null)} settings={settings} />
       <Account email={viewer?.email ?? null} onError={setError} />
       {error ? (
         <Text accessibilityRole="alert" style={styles.error}>
@@ -156,6 +162,31 @@ function TableFields({
   );
 }
 
+/**
+ * A text field that saves on blur, one field per call (rule 12), without overwriting someone else's edit: while it is
+ * not focused it shows the live value, so an edit made on the website shows at once; on focus it keeps the value it
+ * started from, and on blur it saves only when the text (trimmed) differs from that starting value. Tapping in and out
+ * of a field never writes back a value the field showed before a newer one arrived.
+ */
+export function useBlurField(value: string, onSave: (value: string) => void) {
+  // The text being edited, or null while the field is not focused (it then shows `value`).
+  const [draft, setDraft] = useState<string | null>(null);
+  const atFocus = useRef(value);
+  return {
+    value: draft ?? value,
+    onFocus: () => {
+      atFocus.current = value;
+      setDraft(value);
+    },
+    onChangeText: (next: string) => setDraft(next),
+    onBlur: () => {
+      const next = (draft ?? value).trim();
+      setDraft(null);
+      if (next !== atFocus.current.trim()) onSave(next);
+    },
+  };
+}
+
 function NameField({
   label,
   value,
@@ -170,7 +201,7 @@ function NameField({
   onSave: (value: string) => void;
 }) {
   const writes = useWritesEnabled();
-  const draft = useRef(value);
+  const field = useBlurField(value, onSave);
   return (
     <View style={styles.field}>
       <Text accessible={false} style={styles.label}>
@@ -178,18 +209,15 @@ function NameField({
       </Text>
       <TextInput
         accessibilityLabel={label}
-        defaultValue={value}
         editable={writes}
         maxLength={maxLength}
-        onBlur={() => {
-          if (draft.current.trim() !== value) onSave(draft.current);
-        }}
-        onChangeText={(next) => {
-          draft.current = next;
-        }}
+        onBlur={field.onBlur}
+        onChangeText={field.onChangeText}
+        onFocus={field.onFocus}
         placeholder={placeholder}
         placeholderTextColor={colors.faint}
         style={styles.input}
+        value={field.value}
       />
     </View>
   );

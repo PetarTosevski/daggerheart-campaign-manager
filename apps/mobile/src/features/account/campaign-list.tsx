@@ -12,6 +12,7 @@ import { type } from "../../theme/fonts";
 import { hit, space } from "../../theme/spacing";
 import { Button } from "../../ui/button";
 import { Loading } from "../../ui/loading";
+import { QueryBoundary } from "../../ui/query-boundary";
 import { AccountHeader } from "./chrome";
 import { accountStyles } from "./styles";
 
@@ -19,6 +20,14 @@ const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 
 /** Chronicle board from `src/app/(gm)/campaigns/chronicle.tsx`. */
 export function CampaignListScreen() {
+  return (
+    <QueryBoundary>
+      <CampaignListBody />
+    </QueryBoundary>
+  );
+}
+
+function CampaignListBody() {
   const campaigns = useQuery(api.campaigns.list);
   const restore = useMutation(api.campaigns.restore);
   const router = useRouter();

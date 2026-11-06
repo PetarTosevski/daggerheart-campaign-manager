@@ -1,4 +1,4 @@
-import { QueryBoundary } from "../sheet/query-boundary";
+import { QueryBoundary } from "../../ui/query-boundary";
 import { PlayersBody } from "./screen";
 
 export function PlayersScreen() {

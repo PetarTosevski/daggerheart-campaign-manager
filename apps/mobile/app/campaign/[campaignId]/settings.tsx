@@ -1,4 +1,4 @@
-import { SettingsScreen } from "../../../src/features/settings";
+import { CampaignSettingsScreen } from "../../../src/features/settings/campaign-settings";
 import { CampaignScreen } from "../../../src/shell/campaign-provider";
 
 export { RouteErrorBoundary as ErrorBoundary } from "../../../src/shell/route-error";
@@ -6,7 +6,7 @@ export { RouteErrorBoundary as ErrorBoundary } from "../../../src/shell/route-er
 export default function SettingsRoute() {
   return (
     <CampaignScreen>
-      <SettingsScreen />
+      <CampaignSettingsScreen />
     </CampaignScreen>
   );
 }

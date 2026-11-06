@@ -25,7 +25,7 @@ test("join by code opens the campaign on success", async () => {
       "members:joinByCode": () => ({ ok: true as const, campaignId: "campaign-9" }),
     },
   });
-  fireEvent.changeText(screen.getByLabelText("Join code"), "k7qm-3xrp");
+  await fireEvent.changeText(screen.getByLabelText("Join code"), "k7qm-3xrp");
   const join = screen.getByRole("button", { name: "Join" });
   await waitFor(() => {
     expect(join.props.accessibilityState?.disabled).not.toBe(true);
