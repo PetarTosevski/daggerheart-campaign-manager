@@ -10,6 +10,7 @@ import type { CombatMapLayout, CombatPlayerView } from "./contract";
 import { CombatEditSlot } from "./edit";
 import { EmptyGmMaps } from "./gm/empty-maps";
 import { CombatGmSlot } from "./gm";
+import { GmMapToolsProvider } from "./gm/map-tools";
 import { CombatHudBar } from "./hud-bar";
 import { GmLiveMap, PlayerLiveMap } from "./live-map";
 import { CombatPlaySlot } from "./play";
@@ -46,7 +47,7 @@ export function CombatBoard({
 
   const slotProps = { campaignId: campaign._id, isGm, layout, view };
 
-  return (
+  const screen = (
     <View style={styles.screen}>
       <CombatHudBar campaignId={campaignId} mapId={layout._id} />
       <View style={styles.map}>
@@ -68,6 +69,14 @@ export function CombatBoard({
         <CombatEditSlot {...slotProps} />
       </ScrollView>
     </View>
+  );
+  // The GM's dock and map share the preview and the fog brush (dcm-gdzi.17).
+  return isGm ? (
+    <GmMapToolsProvider campaignId={campaignId} mapId={layout._id}>
+      {screen}
+    </GmMapToolsProvider>
+  ) : (
+    screen
   );
 }
 

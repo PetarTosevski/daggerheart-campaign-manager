@@ -66,6 +66,8 @@ export type CombatMapStageProps = {
   handlers?: MapHandlers;
   /** Drawn over the map (badges). */
   overlay?: ReactNode;
+  /** Skia nodes drawn in map squares over the fog (the GM's night tint and fog marks), under the tokens. */
+  paintOver?: ReactNode;
 };
 
 /**
@@ -73,7 +75,7 @@ export type CombatMapStageProps = {
  * image inside its grid, and the fog image (built once per mask change) under a group transform that follows the
  * shared pan/zoom view; tokens are an RN layer moved by the same shared value. A drag or pinch re-renders nothing.
  */
-export function CombatMapStage({ label, layout, tokens, fog, pad, handlers, overlay }: CombatMapStageProps) {
+export function CombatMapStage({ label, layout, tokens, fog, pad, handlers, overlay, paintOver }: CombatMapStageProps) {
   const map = useMapView({ w: layout.w, h: layout.h, pad }, handlers);
   const base = useBaseImage(layout);
   const fogPicture = useFogPicture(fog, layout.w, layout.h);
@@ -115,6 +117,7 @@ export function CombatMapStage({ label, layout, tokens, fog, pad, handlers, over
                   fit="fill"
                 />
               ) : null}
+              {paintOver}
             </Group>
           </Canvas>
           <CombatTokensLayer h={h} label={label} tokens={tokens} view={map.view} w={w} />

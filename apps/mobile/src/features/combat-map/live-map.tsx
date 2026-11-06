@@ -51,11 +51,8 @@ export function PlayerLiveMap({ campaignId, layout, view }: LiveMapProps & { vie
   );
 }
 
-/** The GM's map: every token on it (`combatTokensReads.list`, dcm-gdzi.10), no fog. */
-export function GmLiveMap({ campaignId, layout }: LiveMapProps) {
-  const tokens = useQuery(api.combatTokensReads.list, { campaignId, mapId: layout._id });
-  return <CombatMapStage fog={null} label={`Battle map ${layout.name}`} layout={layout} pad={0} tokens={tokens ?? NO_TOKENS} />;
-}
+/** The GM's map (every token, the GM's tint and fog marks, the fog brush, a PC preview) lives with the GM tools. */
+export { GmLiveMap } from "./gm/gm-map";
 
 const styles = StyleSheet.create({
   badge: {

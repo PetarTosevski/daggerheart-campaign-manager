@@ -1,5 +1,5 @@
 import { weaponDice } from "../../../../../../src/lib/domain/dice";
-import { WEAPONS } from "../../../../../../src/lib/srd/equipment";
+import { getWeapon } from "../../../../../../src/lib/srd/index";
 import type { Weapon } from "../../../../../../src/lib/srd/types";
 
 export type WeaponSlot = "primary" | "secondary";
@@ -14,17 +14,17 @@ export function damageLabel(weapon: Pick<Weapon, "damage">, proficiency: number)
   }
 }
 
-export function equippedWeapons(sheet: {
-  primaryWeaponId: string | null | undefined;
-  secondaryWeaponId?: string | null;
-}): { slot: WeaponSlot; weapon: Weapon }[] {
-  const out: { slot: WeaponSlot; weapon: Weapon }[] = [];
-  for (const [slot, id] of [
+/**
+ * The weapons the character can attack with, primary first. The server resolves the slot's id with the same SRD
+ * lookup (`weaponIn` in convex/lib/combatActions.ts: `getWeapon`), so an id it doesn't know is no weapon there either.
+ */
+export function attackWeapons(sheet: { primaryWeaponId?: string | null; secondaryWeaponId?: string | null }): { slot: WeaponSlot; weapon: Weapon }[] {
+  const slots: [WeaponSlot, string | null | undefined][] = [
     ["primary", sheet.primaryWeaponId],
     ["secondary", sheet.secondaryWeaponId],
-  ] as const) {
-    const weapon = id ? WEAPONS.find((w) => w.id === id) : undefined;
-    if (weapon) out.push({ slot, weapon });
-  }
-  return out;
+  ];
+  return slots.flatMap(([slot, id]) => {
+    const weapon = id ? getWeapon(id) : undefined;
+    return weapon ? [{ slot, weapon }] : [];
+  });
 }

@@ -227,8 +227,6 @@ const KNOWN_COPIES: readonly string[] = [
   "apps/mobile/src/features/combat-map/fog-paint.ts mix",
   "apps/mobile/src/features/combat-map/fog-paint.ts sampleColour",
   "apps/mobile/src/features/combat-map/fog-paint.ts unionMask",
-  "apps/mobile/src/features/combat-map/play/card-use.ts playableUses",
-  "apps/mobile/src/features/combat-map/play/weapons.ts equippedWeapons",
   "apps/mobile/src/features/packs/uploader.tsx relabel",
 ];
 

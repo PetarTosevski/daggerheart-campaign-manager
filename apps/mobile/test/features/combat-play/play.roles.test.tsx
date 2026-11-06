@@ -50,6 +50,13 @@ test("combat play subscribes to player combat mutations only", async () => {
   expect(screen.getByTestId("combat-play-token")).toBeTruthy();
   expectNoGm(screen);
   expect([...screen.client.subscribed].sort()).toEqual(
-    [fn(api.adversaryActionsReads.pending), fn(api.charactersReads.get), fn(api.combatCardsReads.hand)].sort(),
+    [
+      fn(api.adversaryActionsReads.pending),
+      fn(api.allyPicksReads.open),
+      fn(api.charactersReads.get),
+      fn(api.combatActionsReads.targets),
+      fn(api.combatCardsReads.hand),
+      fn(api.ruleSettings.get),
+    ].sort(),
   );
 });
