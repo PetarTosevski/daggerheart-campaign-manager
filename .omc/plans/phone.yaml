@@ -436,3 +436,16 @@ waves:
           - apps/mobile/**
         acceptance:
           - full apps/mobile jest passes; KNOWN_COPIES shorter; pnpm typecheck
+  - wave: 13
+    tracers:
+      - id: LAND
+        title: "Cut phone/on-rebuild into the nine stacked PR branches (local only)"
+        beads: [dcm-gdzi]
+        goal: "phone/on-rebuild is merged with the latest rebuild and cut into nine local branches stacked in order (1 server/auth, 2 workspace+tooling+shell, 3 account, 4 dashboard+trackers, 5 party+sheet, 6 codex/world/players/tome, 7 journal, 8 lorekeeper, 9 combat), each branched from the previous, each passing pnpm lint, pnpm typecheck, pnpm test and the mobile check on its own; the last one's tree equals phone/on-rebuild; Nikola stays author of his commits where commits are kept; nothing pushed"
+        depends_on: [PXS]
+        owns:
+          - apps/mobile/**
+          - docs/phone-client.md
+          - docs/tasks/TASK-LAND.md
+        acceptance:
+          - nine local branches phone/pr-1 .. phone/pr-9; each green; a PR description per branch in docs/tasks/TASK-LAND.md

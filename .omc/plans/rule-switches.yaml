@@ -887,3 +887,27 @@ waves:
           - docs/tasks/TASK-RULES-OP2.md
         acceptance:
           - tests per goal; lint, typecheck pass
+  - wave: 14
+    tracers:
+      - id: ODR3
+        title: "Last Defined Ranges / PC conflict / dim-light spots"
+        beads: [dcm-bxp.134]
+        goal: "With Defined Ranges off: Ill Omen-style adversary triggers (pcRollAdversaryUses) skip with a GM note, Elemental Incarnation picks none with a note, Cloaked's ally-in-Melee bonus doesn't auto-apply, the remaining combatActions range checks follow the flag, the player's Measure button hides, chain rows / drawer labels show no band; an out-of-range attack on a PC waits for the GM (OP2 notes); card and feature roll lines name dim light / underwater; the Cloaked move roll gets the dim-light variant"
+        depends_on: [ODR2, OP2, OE2]
+        owns:
+          - convex/combatActions.ts
+          - convex/lib/combatActions.ts
+          - convex/lib/adversaryActions.ts
+          - convex/lib/cardRows.ts
+          - convex/lib/combatMovement.ts
+          - src/components/combat-map/hud/shell.tsx
+          - src/components/combat-map/hud/pick-feature/**
+          - src/components/combat-map/hud/pick-card/**
+          - src/components/combat-map/hud/pick-attack/**
+          - src/components/combat-map/drawer/**
+          - tests/convex/rules-defined-ranges.test.ts
+          - tests/convex/rules-pc-conflict.test.ts
+          - tests/convex/rules-environment.test.ts
+          - docs/tasks/TASK-RULES-ODR3.md
+        acceptance:
+          - tests per goal; lint, typecheck pass
