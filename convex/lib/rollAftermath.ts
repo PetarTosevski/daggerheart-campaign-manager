@@ -4,12 +4,14 @@
  * - S1 `spotlightToGm` (CB p.100: "making moves until someone fails a roll or rolls with Fear"; CB p.149: "Rolls with
  *   Fear on an action roll. / Fails an action roll."). Book: a failure or a roll with Fear moves the spotlight to the GM
  *   (`moveToGm`, reason `rollWithFear` first, else `failedRoll`); a critical always succeeds and never moves it. Manual:
- *   nothing moves; the GM gets "Mira rolled with Fear: take the spotlight?" / "Mira failed: take the spotlight?". Only
- *   while an encounter runs (combat-hud H1.S default, overnight answers 2026-11-02), and never when the GM already holds
- *   it (nothing to take).
+ *   nothing moves; the GM gets "Mira rolled with Fear: take the spotlight?" / "Mira failed: take the spotlight?". On every
+ *   PC action roll, in a fight or not (user answer 2026-11-06, plan rule-switches RA2: the spotlight row is the
+ *   campaign's, `combatSpotlight`, and needs no encounter), and never when the GM already holds it (nothing to take).
  * - R3 `hopeFearFromRolls` (CB p.154: "Whenever a PC rolls with Fear, you gain a Fear"; CB p.90). The gains themselves
- *   stop in the roll paths (`dualityEffects(kind, outcome, hopeFearModeOf(campaign))`); here the GM gets
- *   "Mira rolled with Fear: gain 1 Fear?" for the Fear the path withheld (`fearWithheld`, user answer Q2 b).
+ *   stop in the roll paths (`dualityEffects(kind, outcome, hopeFearModeOf(campaign))`; card and feature uses through the
+ *   run context's `hopeFear`, set by cardRunner `buildRun`, RA2); here the GM gets "Mira rolled with Fear: gain 1 Fear?"
+ *   for the Fear the path withheld (`fearWithheld`, user answer Q2 b; unset: one Fear for a with-Fear action roll in
+ *   Manual). A critical keeps its Hope and Stress clear in both modes (user answer 2026-11-06, CB p.90).
  *
  * Callers: every PC action-roll path, once per roll, after its rows are logged (rolls.duality, the Tag Team's apply with
  * the chosen roll, the movement's Cloaked roll, weapon attacks, card and feature uses). Reaction rolls and GM rolls never
@@ -60,7 +62,10 @@ export type PcActionRoll = {
   /** The roll succeeded: against its Difficulty, or (an attack, a card) it hit any target. */
   success: boolean;
   withFear: boolean;
-  /** The Fear the path did not gain because R3 is Manual (`fearWithheldBy`); 0 or unset: no R3 note. */
+  /**
+   * The Fear the path did not gain because R3 is Manual (`fearWithheldBy`); 0: no R3 note. Unset: one Fear for an action
+   * roll with Fear in an R3-Manual campaign (a card or feature use: its run withheld it through `hopeFear`), else none.
+   */
   fearWithheld?: number;
 };
 
@@ -69,23 +74,14 @@ type Note = { ruleId: "spotlightToGm" | "hopeFearFromRolls"; summary: string };
 /** What the roll sets off: a spotlight move (S1 Book) and the GM notes (S1 and R3 Manual). */
 export type Aftermath = { move: "rollWithFear" | "failedRoll" | null; rollBy: Id<"characters">; notes: Note[] };
 
-/** The campaign's running encounter, if any (S1 applies only in a fight). */
-async function encounterRuns(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<boolean> {
-  const running = await ctx.db
-    .query("encounters")
-    .withIndex("by_campaign_status_updated", (q) => q.eq("campaignId", campaignId).eq("status", "running"))
-    .first();
-  return running !== null;
-}
-
 /** Reads what a PC's roll sets off; writes nothing. */
 export async function planPcActionRoll(ctx: QueryCtx, campaign: Doc<"campaigns">, roll: PcActionRoll): Promise<Aftermath> {
   const out: Aftermath = { move: null, rollBy: roll.characterId, notes: [] };
   if (roll.kind !== "action") return out;
-  const fear = roll.fearWithheld ?? 0;
+  const fear = roll.fearWithheld ?? (roll.withFear ? fearWithheldBy(hopeFearModeOf(campaign), roll.kind, "successFear") : 0);
   if (fear > 0) out.notes.push({ ruleId: "hopeFearFromRolls", summary: `${roll.name} rolled with Fear: gain ${fear} Fear?` });
   const reason = roll.withFear ? "rollWithFear" : !roll.success ? "failedRoll" : null;
-  if (reason === null || !(await encounterRuns(ctx, campaign._id)) || (await gmHoldsSpotlight(ctx, campaign._id))) return out;
+  if (reason === null || (await gmHoldsSpotlight(ctx, campaign._id))) return out;
   if (ruleMode(campaign, "spotlightToGm") === "manual") {
     out.notes.unshift({ ruleId: "spotlightToGm", summary: `${roll.name} ${reason === "rollWithFear" ? "rolled with Fear" : "failed"}: take the spotlight?` });
   } else out.move = reason;

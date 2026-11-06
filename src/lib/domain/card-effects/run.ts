@@ -11,6 +11,8 @@
 //   roll that deals damage adds the dice's maximum (CB p.98).
 // - CB p.90: "A critical success counts as a roll with Hope, even if you would've otherwise failed"; a critical clears a
 //   Stress and gains a Hope; rolling with Fear gives the GM a Fear (`dualityEffects`). Reaction rolls change nothing (CB p.99).
+//   Plan rule-switches RA2: `context.hopeFear` is the campaign's R3 switch; Manual gains no Hope or Fear from a roll with
+//   Hope or Fear (a critical keeps its Hope and Stress clear), so a later Hope cost needs Hope the PC already holds.
 // - CB p.90, R8: "When using a Hope Feature, if you rolled with Hope for that action, the Hope you gain from that roll can be
 //   spent on that feature." The roll's Hope is gained before any `pay` step after the roll.
 // - CB p.98, R2: damage = dice (Proficiency or Spellcast many when the card says so) + modifier; a critical starts from
@@ -56,7 +58,7 @@
 // ```
 
 import { MAX_FEAR } from "../fear/index";
-import { dualityEffects, rollDamage, rollDuality, weaponDice, type DicePool, type DualityEffects, type Rng } from "../dice/index";
+import { dualityEffects, rollDamage, rollDuality, weaponDice, type DicePool, type DualityEffects, type HopeFearMode, type Rng } from "../dice/index";
 import type { RollOutcome, RollRecord } from "../duality";
 import { parseDamage } from "../adversaries/index";
 import { applyDamageTo, applyHpTo, applyStressTo, clearTrack, type Combatant, type DamageResult } from "../combat-actions/damage";
@@ -273,6 +275,11 @@ export interface RunContext {
     /** The GM's Difficulty for `difficulty: gm`. */
     difficulty?: number;
   };
+  /**
+   * Plan rule-switches RA2 (bead dcm-jh6d.67): the campaign's R3 `hopeFearFromRolls` mode (cardRunner `buildRun`). Absent:
+   * Book. Manual: the use's action rolls gain no Hope and give no Fear (`dualityEffects`); a critical still does.
+   */
+  hopeFear?: HopeFearMode;
   /** An adversary's standard attack damage (AA1 reuse: `damage.roll.kind === "standardAttack"`), e.g. "1d8+2 phy". */
   attackDamage?: string;
   rng: Rng;
@@ -1288,7 +1295,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     } else {
       for (const t of against) hits.set(t.id, info.success);
     }
-    info.effects = rollSpec.kind === "adversaryAttack" ? info.effects : dualityEffects(rollSpec.kind === "reaction" ? "reaction" : "action", info.outcome);
+    info.effects = rollSpec.kind === "adversaryAttack" ? info.effects : dualityEffects(rollSpec.kind === "reaction" ? "reaction" : "action", info.outcome, context.hopeFear);
     return { info, hits };
   };
 

@@ -4,9 +4,11 @@
  *
  * - S1 `spotlightToGm` (CB p.100: "making moves until someone fails a roll or rolls with Fear"; CB p.149: "Rolls with
  *   Fear on an action roll. / Fails an action roll."). Book: the spotlight goes to the GM; Manual: a GM note
- *   "Ash rolled with Fear: take the spotlight?" / "Ash failed: take the spotlight?". Only while an encounter runs.
+ *   "Ash rolled with Fear: take the spotlight?" / "Ash failed: take the spotlight?". On every PC action roll, in an
+ *   encounter or not (RA2, user answer 2026-11-06).
  * - R3 `hopeFearFromRolls` (CB p.154: "Whenever a PC rolls with Fear, you gain a Fear"; CB p.90). Manual (user answer Q2 b,
- *   2026-11-05): neither the Hope nor the Fear rises by itself; the GM gets "Ash rolled with Fear: gain 1 Fear?".
+ *   2026-11-05): neither the Hope nor the Fear rises by itself; the GM gets "Ash rolled with Fear: gain 1 Fear?". A
+ *   critical keeps its Hope and Stress clear. Card and feature rolls follow it too (RA2, the run context's `hopeFear`).
  *
  * Notes are GM-only `rule` rows in the roll's group: undoing the roll takes them back.
  */
@@ -149,13 +151,33 @@ describe("rolls.actionRoll / manualRoll", () => {
     expect(held(await ok.spotlight())).toEqual({ holder: "gm", reason: "failedRoll", rollBy: ok.w.characterA });
   });
 
-  it("S1: a reaction roll and a roll outside a running encounter never move it", async () => {
+  it("S1: a reaction roll never moves it", async () => {
     const a = await arena();
     await a.roll([3, 8], { kind: "reaction" });
     expect(await a.spotlight()).toBeNull();
+  });
+
+  it("S1 outside an encounter (RA2, user answer 2026-11-06): Book moves it on every PC action roll", async () => {
     const calm = await arena({}, { encounter: false });
     await calm.roll([3, 8]);
+    expect(held(await calm.spotlight())).toEqual({ holder: "gm", reason: "rollWithFear", rollBy: calm.w.characterA });
+
+    // No encounter at all: the spotlight row is the campaign's.
+    const none = await arena({}, { encounter: false });
+    await none.t.run((ctx) => ctx.db.delete("encounters", none.encounterId));
+    await none.roll([5, 2], { difficulty: 15 });
+    expect(held(await none.spotlight())).toEqual({ holder: "gm", reason: "failedRoll", rollBy: none.w.characterA });
+  });
+
+  it("S1 outside an encounter: Manual moves nothing and notes it in the roll's group; undo takes it back", async () => {
+    const calm = await arena({ spotlightToGm: "manual" }, { encounter: false });
+    await calm.t.run((ctx) => ctx.db.delete("encounters", calm.encounterId));
+    const r = await calm.roll([3, 8]);
     expect(await calm.spotlight()).toBeNull();
+    const row = (await calm.t.run((ctx) => ctx.db.get("actionLog", r.entryId)))!;
+    expect((await calm.notes()).map((x) => [x.ruleId, x.summary, x.groupId])).toEqual([["spotlightToGm", "Ash rolled with Fear: take the spotlight?", row.groupId]]);
+    await calm.undo(r.entryId);
+    expect((await calm.notes()).every((x) => x.undoneAt !== undefined)).toBe(true);
   });
 
   it("S1 Manual: nothing moves; the GM gets a note in the roll's group, players never see it; undo takes it back", async () => {
@@ -292,7 +314,7 @@ describe("combatActions.attack (weapon attacks)", () => {
   });
 });
 
-describe("combatCards.useCard and combatFeatures.useFeature (S1; R3 stays Book in the card engine)", () => {
+describe("combatCards.useCard and combatFeatures.useFeature (S1; R3 through the run context, RA2)", () => {
   async function caster(modes: Modes) {
     const a = await arena(modes);
     await a.edit({ classId: "warrior", subclassId: "call-of-the-brave", subclassRank: "foundation", hope: 3, domainCards: { owned: [ABILITY], loadout: [ABILITY] } } as Partial<CharacterSheet>);
@@ -336,6 +358,58 @@ describe("combatCards.useCard and combatFeatures.useFeature (S1; R3 stays Book i
     expect(await manual.a.spotlight()).toBeNull();
     expect((await manual.a.notes()).map((x) => x.summary)).toEqual(["Ash failed: take the spotlight?"]);
   });
+
+  // RA2 (bead dcm-jh6d.67, user answer 2026-11-06): card and feature rolls follow R3 through the run context's `hopeFear`.
+  type Caster = Awaited<ReturnType<typeof caster>>;
+  const useCard = (c: Caster) =>
+    c.a.player.mutation(api.combatCards.useCard, { campaignId: c.a.campaignId, characterId: c.a.w.characterA, mapId: c.a.mapId, cardId: ABILITY, spell: "hex", targetTokenIds: [c.bear], choices: [], idempotencyKey: key() });
+  const useBite = (c: Caster) =>
+    c.a.player.mutation(api.combatFeatures.useFeature, { campaignId: c.a.campaignId, characterId: c.a.w.characterA, mapId: c.a.mapId, featureId: BITE_ID, targetTokenIds: [c.bear], choices: [], idempotencyKey: key() });
+  const uses = [
+    ["card", useCard],
+    ["feature", useBite],
+  ] as const;
+
+  for (const [what, use] of uses) {
+    it(`R3 Book: a ${what}'s roll with Hope gains a Hope, a roll with Fear gives the GM a Fear`, async () => {
+      const c = await caster({});
+      dice(8, 3);
+      await use(c);
+      expect((await c.a.sheetOf()).hope).toBe(4);
+      dice(3, 8);
+      await use(c);
+      expect(await c.a.fear()).toBe(1);
+      expect((await c.a.notes()).filter((x) => x.ruleId === "hopeFearFromRolls")).toEqual([]);
+    });
+
+    it(`R3 Manual: a ${what}'s roll gains no Hope or Fear; the GM gets the note in the use's group; undo takes it back`, async () => {
+      const c = await caster({ hopeFearFromRolls: "manual" });
+      dice(8, 3);
+      await use(c);
+      expect((await c.a.sheetOf()).hope).toBe(3);
+      dice(3, 8);
+      const r = await use(c);
+      if (r.status !== "resolved") throw new Error(r.status);
+      expect(await c.a.fear()).toBe(0);
+      const row = (await c.a.t.run((ctx) => ctx.db.get("actionLog", r.entryId)))!;
+      expect(row.fearDelta).toBeUndefined();
+      expect((await c.a.notes()).filter((x) => x.ruleId === "hopeFearFromRolls").map((x) => [x.visibility, x.summary, x.groupId])).toEqual([["gm", "Ash rolled with Fear: gain 1 Fear?", row.groupId]]);
+      // S1 stays Book: the spotlight still moves.
+      expect(held(await c.a.spotlight())?.reason).toBe("rollWithFear");
+      await c.a.undo(r.entryId);
+      expect((await c.a.notes()).every((x) => x.undoneAt !== undefined)).toBe(true);
+    });
+
+    it(`R3 Manual: a ${what}'s critical keeps its Hope and clears a Stress (CB p.90); no note`, async () => {
+      const c = await caster({ hopeFearFromRolls: "manual" });
+      await c.a.edit({ stress: 2 });
+      dice(6, 6);
+      await use(c);
+      expect(await c.a.sheetOf()).toMatchObject({ hope: 4, stress: 1 });
+      expect(await c.a.fear()).toBe(0);
+      expect(await c.a.notes()).toEqual([]);
+    });
+  }
 });
 
 describe("the movement's Cloaked roll (lib/combatMovement, DA18)", () => {

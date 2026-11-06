@@ -66,6 +66,7 @@ import type { ChoiceAsks } from "./cardRows";
 import { rangeBandValidator } from "./validators/combatRequests";
 import { readSheet } from "./characterSheet";
 import { rules } from "./rolls";
+import { ruleMode } from "./ruleModes";
 import { stanceDropMarker } from "./stanceDrop";
 import {
   cardIdOfEffect,
@@ -925,6 +926,8 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
     // roll"): each chain link rolls its damage again.
     freshLinkDamage: true,
     gmFear: req.gmFear,
+    // Plan rule-switches RA2 (bead dcm-jh6d.67): the campaign's R3 mode; Manual gains no Hope / Fear from the use's rolls.
+    hopeFear: ruleMode(req.campaign, "hopeFearFromRolls"),
     useId: use.id,
     // Off the map a self use targets the actor itself (SD3).
     targets: !scene && spec?.side === "self" ? [actor] : targets.map((t) => combatantOf(t, actor)),
