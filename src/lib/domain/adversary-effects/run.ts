@@ -24,6 +24,7 @@
 // ```
 
 import type { AdversaryActionErrorCode } from "../../errors/adversaryActions";
+import type { Shortfall } from "../../errors/app-error";
 import type { FeatureUse } from "../../validation/characters";
 import type { Range as SrdRange } from "../../srd/types";
 import { parseDamage } from "../adversaries/index";
@@ -96,6 +97,11 @@ export interface AdversaryRunContext {
   trigger?: { amount?: number; source?: Combatant; subject?: Combatant };
   /** `choose` step picks and `optional` steps the GM took (an optional Fear step defaults to No, Q19). */
   options?: Readonly<Record<string, readonly string[]>>;
+  /**
+   * FH-AP (user 2026-11-05): each chooser's own pick of a `choose` step with `by` (Locust Swarm, Awesome Size, the Fire
+   * head), by step id then the chooser's id, answered on each PC's screen; a chooser without one is a choose prompt.
+   */
+  chooserOptions?: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>>;
   optionals?: readonly string[];
   eitherCosts?: readonly number[];
   splits?: Readonly<Record<string, number>>;
@@ -315,6 +321,8 @@ export type AdversaryRunRefusal = {
   reason: "noUse" | "requirement" | "exhausted" | "spotlight" | "confirmFear" | "cost" | "choice" | "targets";
   code: AdversaryActionErrorCode | null;
   detail: string;
+  /** dcm-bxp.99.32.2: on NOT_ENOUGH_FEAR, the Fear the use needs and the GM holds. */
+  shortfall?: Shortfall;
 };
 
 export type AdversaryRunResult = { ok: true; plan: AdversaryPlan } | AdversaryRunRefusal;
@@ -404,11 +412,12 @@ function tableSteps(table: readonly CheckRow[] | undefined): readonly AdversaryS
   return (table ?? []).flatMap((r) => r.steps as readonly AdversaryStep[]);
 }
 
-const refuse = (reason: AdversaryRunRefusal["reason"], code: AdversaryActionErrorCode | null, detail: string): AdversaryRunRefusal => ({
+const refuse = (reason: AdversaryRunRefusal["reason"], code: AdversaryActionErrorCode | null, detail: string, shortfall?: Shortfall): AdversaryRunRefusal => ({
   ok: false,
   reason,
   code,
   detail,
+  ...(shortfall ? { shortfall } : {}),
 });
 
 const UNAVAILABLE: AdversaryActionErrorCode = "ADVERSARY_FEATURE_UNAVAILABLE";
@@ -594,6 +603,7 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
     ...(followUpIn ? { followUp: followUpIn } : {}),
     ...(context.trigger ? { trigger: context.trigger } : {}),
     ...(context.options ? { options: context.options } : {}),
+    ...(context.chooserOptions ? { chooserOptions: context.chooserOptions } : {}),
     ...(context.optionals ? { optionals: context.optionals } : {}),
     ...(context.eitherCosts ? { eitherCosts: context.eitherCosts } : {}),
     ...(context.splits ? { splits: context.splits } : {}),
@@ -618,7 +628,10 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
   });
   if (!result.ok) {
     if (result.reason === "exhausted") return refuse("exhausted", UNAVAILABLE, result.detail);
-    if (result.reason === "cost") return refuse("cost", result.detail.split(", ").includes("fear") ? "NOT_ENOUGH_FEAR" : UNAVAILABLE, result.detail);
+    if (result.reason === "cost") {
+      const fearShort = result.detail.split(", ").includes("fear");
+      return refuse("cost", fearShort ? "NOT_ENOUGH_FEAR" : UNAVAILABLE, result.detail, fearShort && result.shortfall?.resource === "fear" ? result.shortfall : undefined);
+    }
     if (result.reason === "requirement" || result.reason === "noUse") return refuse(result.reason, UNAVAILABLE, result.detail);
     return refuse(result.reason, null, result.detail);
   }

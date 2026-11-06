@@ -12,6 +12,8 @@ import { seenTargets, useActor, useCombatTargets } from "../../actions/targets/s
 import { useHud, type HudPartProps } from "../state";
 import { HiddenHand, HudHandBody } from "./body";
 
+export { raiseHand } from "./raise";
+
 /**
  * The HUD hand region (plan combat-hud H2.3; boards CmpCards, Main): bottom centre with the vault, Roll options and Hide
  * cards beside the fan; the shell's `hand` region places it (H2.2 moves that region while a sheet is open). Whose hand:

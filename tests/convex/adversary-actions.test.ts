@@ -265,6 +265,27 @@ describe("adversaryActions: spotlight and Fear (Q19)", () => {
     expect(await a.fear()).toBe(1);
     expect(await code(a.feature(a.dummy, "Nonexistent", []))).toBe("ADVERSARY_FEATURE_UNAVAILABLE");
   });
+
+  it("stores a feature use's GM prompts open for the queue; the GM marks one done, undo closes the rest (dcm-bxp.99.32.27)", async () => {
+    const a = await arena();
+    await a.setFear(4);
+    const r = resolved(await a.feature(a.dummy, "Taunt", [a.w.characterA], { spendFear: 1 }));
+    const pending = await a.gm.query(api.adversaryPromptsReads.pending, { campaignId: a.campaignId });
+    expect(pending).toEqual([expect.objectContaining({ instanceId: a.dummy, instanceLabel: "Dummy", feature: "Taunt", prompt: "manual", text: "Taunt: Spend a Fear to taunt a PC.", groupId: r.groupId })]);
+    // A player never reads them (GM only).
+    expect(await code(a.player.query(api.adversaryPromptsReads.pending, { campaignId: a.campaignId }))).toBe("FORBIDDEN");
+
+    const answer = (requestId: Id<"combatRequests">, done: boolean) => a.gm.mutation(api.adversaryPrompts.answer, { campaignId: a.campaignId, requestId, done, idempotencyKey: key() });
+    expect(await answer(pending[0]!.requestId, true)).toEqual({ status: "resolved" });
+    expect(await a.gm.query(api.adversaryPromptsReads.pending, { campaignId: a.campaignId })).toEqual([]);
+    expect(await code(answer(pending[0]!.requestId, false))).toBe("REQUEST_NOT_OPEN");
+
+    // A second use's prompt goes when that use is undone.
+    const second = resolved(await a.feature(a.dummy, "Taunt", [a.w.characterA], { spendFear: 1 }));
+    expect(await a.gm.query(api.adversaryPromptsReads.pending, { campaignId: a.campaignId })).toHaveLength(1);
+    await a.gm.mutation(api.actionLog.undo, { entryId: second.entryId, idempotencyKey: key() });
+    expect(await a.gm.query(api.adversaryPromptsReads.pending, { campaignId: a.campaignId })).toEqual([]);
+  });
 });
 
 describe("adversaryActions.useFeature", () => {

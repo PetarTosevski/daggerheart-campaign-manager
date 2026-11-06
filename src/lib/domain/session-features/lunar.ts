@@ -93,7 +93,7 @@ export function endMoon<T extends CharacterSheet>(sheet: T): T {
  */
 export function bumpMoonDie<T extends CharacterSheet>(sheet: T, scope: FeatureScope = EVERYTHING): { sheet: T; from: number; to: number } {
   checkBump(sheet, scope);
-  if (sheet.hope < 1) throw new RuleError("NOT_ENOUGH_HOPE", "Not enough Hope.");
+  if (sheet.hope < 1) throw new RuleError("NOT_ENOUGH_HOPE", "Not enough Hope.", { resource: "hope", need: 1, have: sheet.hope });
   const raised = raiseMoonDie(sheet, scope);
   return { ...raised, sheet: { ...raised.sheet, hope: sheet.hope - 1 } };
 }

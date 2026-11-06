@@ -121,7 +121,7 @@ test("the GM places the party and an encounter, moves, turns and marks an advers
     // ---- The player: their own token moves, another PC's does not, no adversary is sent to them.
     await player.goto(url);
     const playerBoard = player.getByRole("region", { name: "Battle map" });
-    const mine = playerBoard.getByRole("button", { name: /^Open Ash’s sheet \(your character\)/ });
+    const mine = playerBoard.getByRole("button", { name: /^Ash \(your character\): actions/ });
     const theirs = playerBoard.getByRole("button", { name: /^Open Liriel’s sheet/ });
     await expect(mine).toBeVisible();
     await expect(theirs).toBeVisible();

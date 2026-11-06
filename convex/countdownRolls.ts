@@ -22,20 +22,21 @@
  */
 import { v } from "convex/values";
 
-import { chaseTicks, countsAsActionRoll, rollTicks, type ChasePair } from "../src/lib/domain/countdowns/advanced";
+import { chaseTicks, countsAsActionRoll, manualTickNote, rollsTickCountdowns, rollTicks, type ChasePair } from "../src/lib/domain/countdowns/advanced";
 import type { RollOutcome } from "../src/lib/domain/duality";
 import { appError } from "../src/lib/errors/app-error";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { applyTick } from "./lib/countdownTicks";
 import { gmQuery, keyedGmMutation } from "./lib/functions";
+import { postRuleNote, ruleMode } from "./lib/ruleModes";
 import { countdownModeValidator } from "./tables/countdowns";
 import { rollValidator } from "./lib/validators/actionLog";
 
 /** A campaign has few dashboard countdowns; reads stop here. */
 const COUNTDOWN_SCAN = 100;
-/** A Tag Team group holds at most 4 rows (two rolls, two results). */
-const GROUP_SCAN = 5;
+/** A Tag Team group holds at most 4 rows (two rolls, two results), plus any GM-only Manual rule notes posted with it. */
+const GROUP_SCAN = 10;
 /** Most countdowns one apply or rows one countedRows call may name. */
 const MAX_IDS = 100;
 
@@ -44,12 +45,15 @@ const MAX_IDS = 100;
 /** The rows of a roll's group, in log order (as rolls.ts reads a Tag Team group). */
 async function groupOf(ctx: QueryCtx, row: Doc<"actionLog">): Promise<Doc<"actionLog">[]> {
   if (row.groupId === undefined) return [row];
+  // A Manual rule note (kind "rule", plan rule-switches) shares its action's group but is not part of the roll.
   return (
     await ctx.db
       .query("actionLog")
       .withIndex("by_campaign_group", (q) => q.eq("campaignId", row.campaignId).eq("groupId", row.groupId))
       .take(GROUP_SCAN)
-  ).sort((a, b) => a.at - b.at || a._creationTime - b._creationTime);
+  )
+    .filter((r) => r.kind !== "rule")
+    .sort((a, b) => a.at - b.at || a._creationTime - b._creationTime);
 }
 
 /**
@@ -60,6 +64,8 @@ async function countedRow(ctx: QueryCtx, row: Doc<"actionLog">): Promise<boolean
   const undone = row.undoneAt !== undefined;
   if (row.groupId === undefined) return countsAsActionRoll(row.roll, { logKind: row.kind, undone });
   const group = await groupOf(ctx, row);
+  // A plain roll that got a group only for its Manual rule notes (plan rule-switches RA) counts as a plain roll.
+  if (group.length === 1 && group[0]!._id === row._id) return countsAsActionRoll(row.roll, { logKind: row.kind, undone });
   const tagTeam = group.length >= 2 && group.length <= 4 && group.every((r) => r.kind === "roll" && r.roll?.kind === "action");
   if (!tagTeam) return false;
   if (group.length === 4 && group[2]!._id === row._id) return countsAsActionRoll(row.roll, { logKind: row.kind, undone, tagTeam: "result" });
@@ -111,7 +117,8 @@ async function campaignRow(ctx: QueryCtx, campaignId: Id<"campaigns">, entryId: 
 /**
  * Ticks the campaign's armed countdowns for one counted roll (Q1, D4, D6): call it after the roll's Hope, Stress and
  * Fear are applied and its row is logged. `entryId` is the roll row (a Tag Team: its group's first result row).
- * Paused, completed, cancelled, unarmed, long-term and frame-owned countdowns are skipped. Amounts are computed before
+ * Paused, completed, cancelled, unarmed, long-term and frame-owned countdowns are skipped. With rule switch K1
+ * (`countdownTicks`) on Manual nothing ticks and the GM gets one note per roll naming the armed countdowns (none, no note). Amounts are computed before
  * any row moves, so both sides of a chase read the pair as it stood before the roll.
  */
 export async function tickArmedCountdowns(
@@ -127,6 +134,18 @@ export async function tickArmedCountdowns(
   const partners = new Map<string, Doc<"countdowns"> | null>(live.map((c) => [c._id, c]));
   const plan: { id: Id<"countdowns">; amount: number }[] = [];
   for (const c of live) plan.push({ id: c._id, amount: await amountFor(ctx, c, roll.outcome, partners) });
+  // Rule switch K1 (CB p.162; Q3 a): in Manual nothing ticks; the GM gets one note naming what this roll would tick, in
+  // the roll's group when it has one (undoing the roll takes the note too). The feed's "Tick countdowns" still works.
+  const campaign = await ctx.db.get("campaigns", roll.campaignId);
+  if (campaign !== null && !rollsTickCountdowns(ruleMode(campaign, "countdownTicks"))) {
+    const byId = new Map(live.map((c) => [c._id, c]));
+    const summary = manualTickNote(plan.map(({ id, amount }) => ({ name: byId.get(id)!.name, currentValue: byId.get(id)!.currentValue, amount })));
+    if (summary === null) return;
+    const groupId = (await ctx.db.get("actionLog", roll.entryId))?.groupId;
+    // A note in the roll's group is undone with it; a plain roll row has no group, so its note stands alone (no characterId: RS0's guard).
+    await postRuleNote(ctx, campaign, { ruleId: "countdownTicks", summary, ...(groupId !== undefined ? { groupId } : {}), actorId: roll.actorId });
+    return;
+  }
   for (const { id, amount } of plan) {
     if (amount === 0) continue;
     const countdown = await ctx.db.get("countdowns", id);

@@ -57,7 +57,7 @@ test("a player's action ring: Attack, Cast, Sheet, features (Evolution locked wi
     const hud = player.getByTestId("combat-hud");
     await expect(hud).toBeVisible();
     const board = player.getByRole("region", { name: "Battle map" });
-    const token = board.getByRole("button", { name: /^Open Moss’s sheet \(your character\)/ });
+    const token = board.getByRole("button", { name: /^Moss \(your character\): actions/ });
     await expect(token).toHaveAttribute("aria-expanded", "false");
 
     // A click on your token opens the ring (not the sheet).

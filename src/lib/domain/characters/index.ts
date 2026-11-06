@@ -1,6 +1,7 @@
 // Character rules from the Core Book, chapter 1 (creation) and chapter 2
 // (damage thresholds, armor). Pure module: bundled into Convex.
 
+import type { RuleModes } from "../../rules/registry";
 import type { TraitId } from "../../srd/types";
 import type { Condition } from "../../validation/characters";
 
@@ -69,11 +70,36 @@ const MARKS: Record<Severity, number> = { none: 0, minor: 1, major: 2, severe: 3
 const ORDER: Severity[] = ["none", "minor", "major", "severe"];
 
 /**
+ * The PC rule modes these helpers read (plan rule-switches, tracer RDM): D4 `stressOverflow`, D5
+ * `fullStressVulnerable` and the optional `massiveDamage`. A missing field is the Book behaviour (Massive off), so `{}`
+ * is today's rules; `ruleModesOf(campaign)` can be passed as it is.
+ */
+export type PcDamageRules = Partial<Pick<RuleModes, "stressOverflow" | "fullStressVulnerable" | "massiveDamage">>;
+
+/**
+ * Massive damage (CB p.91, "OPTIONAL RULE: MASSIVE DAMAGE": "your table can implement a Massive threshold. If you ever
+ * take damage equal to double your Severe threshold, you mark 4 Hit Points"): with the rule on, damage at or above
+ * twice the Severe threshold.
+ */
+export function isMassiveDamage(damage: number, t: Pick<Thresholds, "severe">, rules: PcDamageRules = {}): boolean {
+  return rules.massiveDamage === true && t.severe > 0 && damage >= 2 * t.severe;
+}
+
+/**
  * Hit Points to mark: Minor 1, Major 2, Severe 3. Marking an Armor Slot
  * reduces the severity by one threshold ("Severe to Major, Major to Minor, or
- * Minor to None"); one slot per attack.
+ * Minor to None"); one slot per attack. With Massive Damage on (CB p.91) damage
+ * at twice the Severe threshold marks 4; the Massive threshold sits above Severe,
+ * so an Armor Slot reduces it to Severe (3). `massive` is set (true) only for
+ * Massive damage, so the Book's result is unchanged.
  */
-export function hitPointsToMark(damage: number, t: Thresholds, useArmorSlot = false): { severity: Severity; marks: number } {
+export function hitPointsToMark(
+  damage: number,
+  t: Thresholds,
+  useArmorSlot = false,
+  rules: PcDamageRules = {},
+): { severity: Severity; marks: number; massive?: true } {
+  if (isMassiveDamage(damage, t, rules)) return { severity: "severe", marks: useArmorSlot ? 3 : 4, massive: true };
   let severity = damageSeverity(damage, t);
   if (useArmorSlot && severity !== "none") severity = ORDER[ORDER.indexOf(severity) - 1];
   return { severity, marks: MARKS[severity] };
@@ -84,20 +110,39 @@ export function hitPointsToMark(damage: number, t: Thresholds, useArmorSlot = fa
  * 1 or more Stress but your slots are already full, you must instead mark 1
  * Hit Point" — one Hit Point in total, however much Stress overflowed. Marking
  * the last Stress slot makes the character Vulnerable until they clear one.
+ *
+ * Rule switches (tracer RDM): D4 Manual drops the extra Stress and marks no HP
+ * (`overflow: true` says it happened); D5 Manual never sets `vulnerable`
+ * (`full: true` says the track is full). Both fields are only set under their
+ * Manual mode, so the Book's result is unchanged.
  */
 export function markStress(
   current: { stress: number; stressMax: number; hp: number; hpMax: number },
   amount: number,
-): { stress: number; hp: number; vulnerable: boolean } {
+  rules: PcDamageRules = {},
+): { stress: number; hp: number; vulnerable: boolean; overflow?: true; full?: true } {
   const free = Math.max(0, current.stressMax - current.stress);
   const toStress = Math.min(free, Math.max(0, amount));
   const overflow = amount - toStress > 0;
   const stress = current.stress + toStress;
+  const full = stress >= current.stressMax;
+  const overflowManual = rules.stressOverflow === "manual";
+  const fullManual = rules.fullStressVulnerable === "manual";
   return {
     stress,
-    hp: overflow ? Math.min(current.hpMax, current.hp + 1) : current.hp,
-    vulnerable: stress >= current.stressMax,
+    hp: overflow && !overflowManual ? Math.min(current.hpMax, current.hp + 1) : current.hp,
+    vulnerable: full && !fullManual,
+    ...(overflow && overflowManual ? { overflow: true as const } : {}),
+    ...(full && fullManual ? { full: true as const } : {}),
   };
+}
+
+/**
+ * The PC's Vulnerable from a full Stress track (CB p.92: "When you mark your last Stress, you become Vulnerable … until
+ * you clear at least 1 Stress"). D5 Manual: never (the GM adds Vulnerable by hand).
+ */
+export function pcVulnerableFromStress(sheet: { stress: number; stressMax: number }, rules: PcDamageRules = {}): boolean {
+  return rules.fullStressVulnerable !== "manual" && sheet.stressMax > 0 && sheet.stress >= sheet.stressMax;
 }
 
 const MODIFIER = /([+\-−]\d+) to (Evasion|Armor Score)(?! while)/g;
@@ -138,7 +183,7 @@ type Tracks = {
  * adjustResource and optimistic UI updates). Hope stops at `hopeMax`;
  * clearing a Hit Point wakes an Unconscious character (CB 106, Avoid Death).
  */
-export function applyResourceDelta<T extends Tracks>(sheet: T, resource: Resource, delta: number): T {
+export function applyResourceDelta<T extends Tracks>(sheet: T, resource: Resource, delta: number, rules: PcDamageRules = {}): T {
   const clamp = (n: number, max: number) => Math.max(0, Math.min(max, n));
   const max = (scars: number) => hopeMax(scars, sheet.hopeSlotBonus ?? 0);
   const next = { ...sheet };
@@ -150,7 +195,7 @@ export function applyResourceDelta<T extends Tracks>(sheet: T, resource: Resourc
   }
   if (resource === "stress") {
     if (delta > 0) {
-      const marked = markStress(sheet, delta);
+      const marked = markStress(sheet, delta, rules);
       next.stress = marked.stress;
       next.hp = marked.hp;
     } else next.stress = clamp(sheet.stress + delta, sheet.stressMax);
@@ -169,23 +214,40 @@ export function applyResourceDelta<T extends Tracks>(sheet: T, resource: Resourc
 /** "10 handfuls to 1 bag, and 10 bags to 1 chest": a category holds at most 9 marks. */
 export const MAX_HANDFULS = 9;
 export const MAX_BAGS = 9;
+/**
+ * Gold coins, an optional rule (CB p.104, plan rule-switches OSC, Q12 a): "you can add coins as your lowest
+ * denomination. Following the established pattern, 10 coins equal 1 handful." So at most 9 coins.
+ */
+export const MAX_COINS = 9;
 
-export type Gold = { handfuls: number; bags: number; chest: boolean };
+/** `coins` exists only once the Gold coins rule has been used (a widened field: unset reads as 0). */
+export type Gold = { handfuls: number; bags: number; chest: boolean; coins?: number };
+export type GoldCoin = "coins" | "handfuls" | "bags";
 
 /**
- * Adds `delta` handfuls or bags (CB 104): "When you have marked all of the slots in a category and you gain another
+ * Adds `delta` coins, handfuls or bags (CB 104): "When you have marked all of the slots in a category and you gain another
  * gold reward in that category, you mark a slot in the following category and clear all the slots in the current one"
- * (9 handfuls + 1 = 1 bag, 9 bags + 1 = 1 chest). "If you ever have more than 1 chest, you'll need to store some of
- * your gold before you can take more": returns null when the gain would need a second chest. Spending stops at 0
- * (the book doesn't break a bag into handfuls). Counts stored above 9 before this rule are clamped first.
+ * (9 handfuls + 1 = 1 bag, 9 bags + 1 = 1 chest; with the Gold coins rule, 9 coins + 1 = 1 handful). "If you ever have
+ * more than 1 chest, you'll need to store some of your gold before you can take more": returns null when the gain would
+ * need a second chest. Spending stops at 0 (the book doesn't break a bag into handfuls, nor a handful into coins).
+ * Counts stored above 9 before this rule are clamped first. A handful or bag change keeps the stored coins as they are
+ * (with the rule off they are never changed); the caller refuses `coins` while the rule is off.
  */
-export function addGold(gold: Gold, coin: "handfuls" | "bags", delta: number): Gold | null {
+export function addGold(gold: Gold, coin: GoldCoin, delta: number): Gold | null {
   let handfuls = Math.min(gold.handfuls, MAX_HANDFULS);
   let bags = Math.min(gold.bags, MAX_BAGS);
   let chest = gold.chest;
+  const keep = gold.coins === undefined ? {} : { coins: Math.min(gold.coins, MAX_COINS) };
+  if (coin === "coins") {
+    const total = (keep.coins ?? 0) + delta;
+    if (total < 0) return { handfuls, bags, chest, coins: 0 };
+    const carry = Math.floor(total / 10);
+    const rest: Gold = { handfuls, bags, chest, coins: total % 10 };
+    return carry === 0 ? rest : addGold(rest, "handfuls", carry);
+  }
   if (coin === "handfuls") {
     const total = handfuls + delta;
-    if (total < 0) return { handfuls: 0, bags, chest };
+    if (total < 0) return { handfuls: 0, bags, chest, ...keep };
     handfuls = total % 10;
     bags += Math.floor(total / 10);
   } else {
@@ -197,5 +259,59 @@ export function addGold(gold: Gold, coin: "handfuls" | "bags", delta: number): G
     chest = true;
     bags %= 10;
   }
-  return { handfuls, bags, chest };
+  return { handfuls, bags, chest, ...keep };
+}
+
+// ---------------------------------------------------------------- shared domain cards (CB p.21)
+
+/**
+ * Shared domain cards, an optional rule (CB p.21, plan rule-switches OSC; Q16 as the user changed it 2026-11-05): "If a
+ * fellow player's class has the same domain as yours, we encourage you to coordinate with them and choose different
+ * cards … However, if the GM and players agree, feel free to make an exception." A three-way setting:
+ * - `allow`: no check;
+ * - `warn` (the default, every campaign): a picker shows "Mira already has this card" and still allows it;
+ * - `refuse` (not in the books): the card can't be taken while another character of the campaign holds it.
+ */
+export type SharedCardsMode = RuleModes["sharedDomainCards"];
+
+/** One character of the campaign: its name and every domain card it holds (loadout or vault). */
+export type CardHolder = { id: string; name: string; cards: readonly string[] };
+
+/** The names of the characters holding each card: every character of the campaign but `exceptId` (the one choosing). */
+export function cardHolders(party: readonly CardHolder[], exceptId?: string): ReadonlyMap<string, readonly string[]> {
+  const out = new Map<string, string[]>();
+  for (const c of party) {
+    if (c.id === exceptId) continue;
+    for (const card of new Set(c.cards)) out.set(card, [...(out.get(card) ?? []), c.name]);
+  }
+  return out;
+}
+
+/** "Mira", "Mira and Brin", "Mira, Brin and Kael". */
+function namesText(names: readonly string[]): string {
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : (names[0] ?? "");
+}
+
+const has = (names: readonly string[]) => (names.length > 1 ? "have" : "has");
+
+/** "Mira already has this card" ("Mira and Brin already have this card") when another character holds it, unless the mode is `allow`. */
+export function sharedCardNote(mode: SharedCardsMode, holders: ReadonlyMap<string, readonly string[]>, cardId: string): string | null {
+  const names = holders.get(cardId);
+  if (mode === "allow" || !names || names.length === 0) return null;
+  return `${namesText(names)} already ${has(names)} this card`;
+}
+
+/** Under `refuse`, why the first of `cardIds` another character holds can't be taken; null otherwise. `nameOf` names a card. */
+export function sharedCardRefusal(
+  mode: SharedCardsMode,
+  holders: ReadonlyMap<string, readonly string[]>,
+  cardIds: readonly string[],
+  nameOf: (cardId: string) => string = (id) => id,
+): string | null {
+  if (mode !== "refuse") return null;
+  for (const id of cardIds) {
+    const names = holders.get(id);
+    if (names && names.length > 0) return `${namesText(names)} already ${has(names)} ${nameOf(id)}, and this campaign doesn't share domain cards.`;
+  }
+  return null;
 }

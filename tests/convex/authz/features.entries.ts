@@ -53,6 +53,14 @@ const entries: Entry[] = [
     expect: NOT_THEIRS,
     okCodes: USE_CODES,
   },
+  // dcm-bxp.99.32.19: the riders on a feature's own action roll read the character's own sheet (edit, U1).
+  {
+    fn: api.combatFeatures.riders,
+    access: "view",
+    args: (w) => ({ characterId: w.characterA, featureId: "hope:warrior" }),
+    expect: NOT_THEIRS,
+    okCodes: ["FEATURE_NOT_COMBAT", "FEATURE_NOT_OWNED", "INVALID"],
+  },
   { fn: api.combatFeaturesReads.pending, access: "view", setup: sanctioned, expect: { otherPlayer: "ok" } },
   { fn: api.combatFeatures.sanction, access: "gm", setup: sanctioned, args: (w) => ({ requestId: w.ids.requestId, approve: false }) },
   { fn: api.combatFeatures.setFlying, access: "view", args: (w) => ({ characterId: w.characterA, flying: true }), expect: NOT_THEIRS, okCodes: ["FEATURE_NOT_OWNED"] },

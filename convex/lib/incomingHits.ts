@@ -46,7 +46,9 @@ import {
   featureUse,
   grantAnswers,
   grantsTaken,
+  hitRuleNotes,
   isComplete,
+  armorOptions,
   marksFactor,
   openWindow,
   optionalSteps,
@@ -75,7 +77,9 @@ import { getDomainCard } from "../../src/lib/srd/index";
 import type { CharacterSheet, Effect } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { lastHpNote } from "../../src/lib/domain/death/index";
 import { logAction } from "./actionLog";
+import { postRuleNote, ruleMode } from "./ruleModes";
 import {
   answeringFeatures,
   armorCostOf,
@@ -93,6 +97,7 @@ import {
   featureActor,
   featureChoices,
   goldForHpOf,
+  hitRulesOf,
   hopeAndFearOf,
   isFeatureId,
   progressAmount,
@@ -250,7 +255,9 @@ export async function openIncomingHit(ctx: MutationCtx, input: OpenHitInput): Pr
   const armorCost = await armorCostOf(ctx, { campaignId: input.campaignId, payload: { attacker: input.attacker } });
   // Plan lanes-2, E2.3 (dcm-5cn5): the attacker's gold-instead-of-HP grant (Money Talks), re-read like the armor cost.
   const gold = await goldForHpOf(ctx, { campaignId: input.campaignId, payload: { attacker: input.attacker } });
-  const state = openWindow({ hit: windowHitOf(input.attacker, input.hit, riders, armorCost, keyword, gold), targetId: input.targetCharacterId, party, ...(attacker ? { attacker } : {}) });
+  // Rule switches RC2: A1 (no Armor Slot offer in Manual), D2, D4, D5 and Massive Damage, as `rebuildWindow`.
+  const rules = await hitRulesOf(ctx, input.campaignId);
+  const state = openWindow({ hit: windowHitOf(input.attacker, input.hit, riders, armorCost, keyword, gold), targetId: input.targetCharacterId, party, rules, ...(attacker ? { attacker } : {}) });
   const responders: HitResponder[] = state.responders.slice(0, MAX_RESPONDERS).map((r) => ({
     characterId: memberId(input.party, r.characterId, input.targetCharacterId),
     role: r.role,
@@ -325,7 +332,7 @@ export function featureRefusal(r: RunRefusal) {
     case "exhausted":
       return appError("FEATURE_EXHAUSTED", r.detail);
     case "cost":
-      return appError("FEATURE_COST_UNPAID", `Short of: ${r.detail}.`);
+      return appError("FEATURE_COST_UNPAID", `Short of: ${r.detail}.`, r.shortfall);
     case "targets":
       return appError("COMBAT_TARGET_INVALID", r.detail);
     case "requirement":
@@ -555,6 +562,9 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
   let afterHit: AfterHit | null = null;
   const autos: string[] = [];
   const kind = isPcAttacker(p.attacker) ? ("combat" as const) : ("adversary" as const);
+  // Rule switches RC2: the modes the window resolved with (A1, D2, D4, D5, Massive Damage).
+  const hitRules = rebuilt.state.rules ?? {};
+  let riderOverflowDropped = false;
 
   if (target && result) {
     const sheet = target.sheet;
@@ -594,8 +604,9 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
       // Plan lanes-2, E2 (dcm-t8c): conditions the PC's effects forbid stay off (Unstoppable, CB p.36, dcm-v17).
       // Plan lanes-2, E2.3 (dcm-nnbl, HF p.75): the Hope the target chose to spend comes off the riders' forced HP.
       const defense = rebuilt.party.find((x) => x.id === target.character._id);
-      const landed = applyRiders(next, riders, res.conditionNegated, res.hpRidersIgnored, refusedConditions(next), { amount: grants.hope, factor: defense ? marksFactor(defense, "hope") : 1 });
+      const landed = applyRiders(next, riders, res.conditionNegated, res.hpRidersIgnored, refusedConditions(next), { amount: grants.hope, factor: defense ? marksFactor(defense, "hope") : 1 }, hitRules);
       next = landed.sheet;
+      riderOverflowDropped = landed.overflowDropped === true;
       ridersApplied = landed.applied;
       gm.push(
         `riders on ${targetName}: ${ridersApplied}${res.conditionNegated ? " (conditions avoided)" : ""}${res.hpRidersIgnored ? " (no Hit Points from them)" : ""}${landed.hopeSpent > 0 ? ` (${landed.hopeSpent} Hope spent for fewer HP)` : ""}`,
@@ -687,6 +698,10 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
     await saveSheet(ctx, target.character._id, next);
     // The sheet's death move is due at once (user answer 2026-10-22; CB p.91): a new last HP clears an earlier "spent".
     if (deathMove) await ctx.db.patch("characters", target.character._id, { deathMoveSpent: undefined });
+    // Rule switches RX, X1 Manual (CB p.106): nobody is asked for the death move; the GM gets a note instead.
+    const campaign = deathMove ? await ctx.db.get("campaigns", row.campaignId) : null;
+    const promptManual = campaign !== null && ruleMode(campaign, "deathMovePrompt") === "manual";
+    const deathWords = !deathMove ? "" : promptManual ? " and marked their last Hit Point" : " and must make a death move";
     await logAction(ctx, {
       campaignId: row.campaignId,
       characterId: target.character._id,
@@ -697,11 +712,21 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
         ? `${targetName} avoided ${p.attacker.label}'s hit`
         : res.negated
           ? `${targetName} took no damage from ${p.attacker.label}'s hit`
-          : `${targetName} took ${p.attacker.label}'s hit${guardWords}${deathMove ? " and must make a death move" : ""}${autos.length > 0 ? ` (${autos.join(", ")})` : ""}${endedWords.length > 0 ? `; ${endedWords.join(", ")}` : ""}`,
+          : `${targetName} took ${p.attacker.label}'s hit${guardWords}${deathWords}${autos.length > 0 ? ` (${autos.join(", ")})` : ""}${endedWords.length > 0 ? `; ${endedWords.join(", ")}` : ""}`,
       groupId: p.groupId,
       before: sheet,
       undoable: true,
     });
+    if (campaign !== null && promptManual) {
+      await postRuleNote(ctx, campaign, { ruleId: "deathMovePrompt", summary: lastHpNote(targetName), characterId: target.character._id, groupId: p.groupId, actorId: row.createdBy });
+    }
+    // Rule switches RC2: the Manual notes of A1 (no Armor Slot offered), D2 (resistance not applied) and D4 (Stress past a
+    // full track dropped), GM-only and in the hit's group (undone with it).
+    const hitPc = rebuilt.party.find((x) => x.id === target.character._id);
+    const armorWouldBeOffered = hitPc !== undefined && armorOptions(hitPc, rebuilt.state.hit).canUseArmor;
+    for (const note of hitRuleNotes(targetName, result, hitRules, { armorWouldBeOffered, riderOverflowDropped })) {
+      await postRuleNote(ctx, { _id: row.campaignId }, { ruleId: note.ruleId, summary: note.summary, characterId: target.character._id, groupId: p.groupId, actorId: row.createdBy });
+    }
     // Plan lanes-2, E2 (dcm-wjv): allies whose effects the hit PC made ended with it (Eye of the Storm on an ally).
     for (const o of hitEnds.others) {
       await saveSheet(ctx, o.character._id, o.sheet);
@@ -718,7 +743,7 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
       ...(shaken.roll ? [unshakableText(shaken.roll)] : []),
     ];
     gm.push(
-      `${targetName}: ${result.incoming} ${TYPE_WORD[p.damageType]}${resisted} → ${SEVERITY_WORD[result.severityBefore]}${armor}${forced} → ${SEVERITY_WORD[result.severity]} → ${marks.join(", ")}${deathMove ? "; death move" : ""}`,
+      `${targetName}: ${result.incoming} ${TYPE_WORD[p.damageType]}${resisted} → ${result.massiveBefore ? "Massive" : SEVERITY_WORD[result.severityBefore]}${armor}${forced} → ${result.massive ? "Massive" : SEVERITY_WORD[result.severity]} → ${marks.join(", ")}${deathMove ? (promptManual ? "; last HP" : "; death move") : ""}`,
     );
   } else if (target) {
     gm.push(`${targetName}: ${res.missed ? "the hit became a miss" : "no damage"}`);

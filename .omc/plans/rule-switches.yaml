@@ -674,3 +674,78 @@ waves:
           - "live-rule-switches.spec.ts (two browsers): with a live session the GM's controls are disabled and a forced call is refused with RULES_LOCKED; the player opens House rules read-only and sees the modes; after End session the GM changes a mode and the player's list updates"
           - "a11y-rule-switches.spec.ts: axe on House rules (GM, locked, player) at 1440x900 and 1024x768; keyboard-only mode change"
           - "docs/game-interpretation.md and docs/rules-index.md list every registry rule with its modes and pages from the TASK docs; the full e2e suite passes on rebuild; lint, typecheck, vitest pass"
+  # ------------------------------------------------------------------ follow-up (user answers 2026-11-06)
+  - wave: 10
+    tracers:
+      - id: RA2
+        title: "R3 on card and feature rolls; S1 on every PC action roll"
+        beads: [dcm-jh6d.67]
+        goal: "In R3 Manual, card and feature rolls also gain no Hope / Fear and post the R3 note (the run context carries the mode); a critical keeps its Hope and Stress clear in every mode; S1 (spotlight to the GM on Fear or a failure) fires on every PC action roll, not only in a running encounter"
+        depends_on: [RA]
+        owns:
+          - src/lib/domain/card-effects/**
+          - convex/lib/cardRunner.ts
+          - convex/lib/featureRunner.ts
+          - convex/lib/rollAftermath.ts
+          - src/lib/domain/dice/index.ts
+          - tests/convex/rules-roll-aftermath.test.ts
+          - tests/unit/rules/roll-aftermath.test.ts
+          - tests/unit/card-effects/**
+          - tests/convex/rules-card-rolls.test.ts
+          - docs/tasks/TASK-RULES-RA2.md
+        acceptance:
+          - Convex tests for a card roll and a feature roll in R3 Book and Manual; S1 outside an encounter; crit Hope kept in Manual; lint, typecheck pass
+  # ------------------------------------------------------------------ follow-ups 2 (user answers 2026-11-06, wave 2 questions)
+  - wave: 11
+    tracers:
+      - id: RFA
+        title: "Hidden ends in Book like Cloaked; Vulnerable PCs give adversary attacks advantage; adversary actions always take the spotlight"
+        beads: [dcm-bxp.134]
+        goal: "Book ends a PC's Hidden exactly like Cloaked (clear sight on the PC's move, an adversary moving to where it sees the PC, an attack; dim light asks the Finesse roll); C1 Book gives an adversary attack advantage per Vulnerable target; S1 Manual stops only the PC-roll half: adversary actions always move the spotlight"
+        depends_on: [RC1, RC2, RM]
+        owns:
+          - convex/lib/combatMovement.ts
+          - convex/combatTokens.ts
+          - convex/lib/cloakPrompts.ts
+          - src/lib/domain/combat-map/movement.ts
+          - convex/lib/adversaryActions.ts
+          - src/lib/domain/adversary-actions/**
+          - convex/lib/combatActions.ts
+          - tests/convex/rules-hidden-vulnerable.test.ts
+          - docs/tasks/TASK-RULES-RFA.md
+        acceptance:
+          - Convex tests for each answer in Book and Manual; existing cloaked / adversary-actions / rules-* tests pass
+      - id: RFB
+        title: "Spotlight Tracker answers: refill on encounter start, Tag Team both spend, undo refunds, GM 'spend a token'"
+        beads: [dcm-bxp.134]
+        goal: "With the Spotlight Tracker on, tokens refill when an encounter starts, both PCs of a Tag Team spend one, undoing a roll gives its token back, and the GM can spend a PC's token for a significant action without a roll"
+        depends_on: [RT]
+        owns:
+          - convex/lib/actionTokens.ts
+          - convex/lib/rollAftermath.ts
+          - convex/combatSpotlight.ts
+          - convex/encounters.ts
+          - convex/lib/actionLog.ts
+          - src/components/combat-map/hud/spotlight/**
+          - tests/convex/rules-action-tokens.test.ts
+          - tests/convex/authz/rules-tokens.entries.ts
+          - docs/tasks/TASK-RULES-RFB.md
+        acceptance:
+          - Convex tests per answer; authz entry for any new function; HUD unit test for the spend button
+      - id: RFC
+        title: "Card and feature engine follows the damage, sight, condition and defeat modes"
+        beads: [dcm-jh6d.70]
+        goal: "Card and feature uses honour D2 / D4 / Massive (RunContext.damageRules from buildRun), M1 line of sight and cover in Manual, C1 condition dice on card attack rolls (user 2026-11-06: yes, like weapons), D8 in feature uses and areas; the HUD picker lets a Manual campaign pick no-line-of-sight targets; the player's result says when the GM picks extra Minions"
+        depends_on: [RC1, RA2]
+        owns:
+          - src/lib/domain/card-effects/**
+          - convex/lib/cardRunner.ts
+          - convex/lib/featureRunner.ts
+          - convex/lib/combatAreas.ts
+          - src/components/combat-map/hud/pick/**
+          - src/components/combat-map/hud/result/**
+          - tests/convex/rules-card-modes.test.ts
+          - tests/unit/card-effects/**
+          - docs/tasks/TASK-RULES-RFC.md
+        acceptance:
+          - Convex tests for a card / feature use per rule in Book and Manual; HUD unit tests; existing card / feature / area tests pass

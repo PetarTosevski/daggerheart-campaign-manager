@@ -23,6 +23,7 @@ import { noteMessages } from "./errors/notes";
 import { operationMessages } from "./errors/operations";
 import { photoImportMessages } from "./errors/photoImport";
 import { restMessages } from "./errors/rests";
+import { ruleMessages } from "./errors/rules";
 import { sessionMessages } from "./errors/sessions";
 import { spotlightMessages } from "./errors/spotlight";
 import { spritePackMessages } from "./errors/spritePacks";
@@ -70,6 +71,7 @@ const MESSAGES = mergeMessages(
   lorekeeperMessages,
   configMessages,
   adminMessages,
+  ruleMessages,
 );
 
 /**

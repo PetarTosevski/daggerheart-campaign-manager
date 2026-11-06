@@ -10,10 +10,12 @@ import {
   INITIAL_COLOSSUS,
   kudamatThresholds,
   markRest as mark,
+  siphonRestNote,
 } from "../../src/lib/frames/trackers/colossus";
 import { rollDice } from "../lib/dice";
 import { campaignQuery, keyedGmMutation } from "../lib/functions";
 import type { RestHook } from "../lib/restHooks";
+import { postRuleNote, ruleMode } from "../lib/ruleModes";
 import { assertTrackerFrame, frameTrackerMutation, loadTracker, TRACKER_SCHEMA_VERSION, writeTracker, type FrameTracker } from "../lib/trackers";
 
 export const colossusTracker: FrameTracker<typeof colossusStateSchema> = {
@@ -94,11 +96,16 @@ export const markRest = keyedGmMutation({
  * the hunt phase, mark the Siphoning Track twice." `kind` is the rest's
  * effect, so an interrupted long rest marks once. The track is GM-only, so
  * the hook adds no line to the public feed; rest undo leaves it (plan note 11).
+ * W5 Manual (house rule): no mark; the GM gets a note naming the marks to make.
  */
-export const colossusRestHook: RestHook = async (ctx, { campaign, kind, rng }) => {
+export const colossusRestHook: RestHook = async (ctx, { campaign, kind, rng, actorId, groupId }) => {
   if (campaign.frameId !== colossusTracker.frameId) return [];
   const state = await loadTracker(ctx, campaign._id, colossusTracker);
   if (state.phase !== "hunt") return [];
+  if (ruleMode(campaign, "colossusSiphoning") === "manual") {
+    await postRuleNote(ctx, campaign, { ruleId: "colossusSiphoning", summary: siphonRestNote(kind), actorId, ...(groupId !== undefined ? { groupId } : {}) });
+    return [];
+  }
   const next = mark(state, kind, (count) => Array.from({ length: count }, () => rng(12)), Date.now());
   await writeTracker(ctx, campaign._id, colossusTracker.key, next.state, TRACKER_SCHEMA_VERSION);
   return [];

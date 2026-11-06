@@ -26,7 +26,7 @@ async function setHope(s: HudScene, characterId: Id<"characters">, hope: number)
 const fanCard = (page: Page, name: string) => page.getByTestId("hud-hand-card").filter({ has: page.getByRole("heading", { name }) });
 const notices = (page: Page) => page.getByRole("status", { name: "Notices" });
 const ringOf = (page: Page) => page.getByRole("toolbar", { name: "Your actions (Moss)" });
-const mossToken = (page: Page) => page.getByRole("region", { name: "Battle map" }).getByRole("button", { name: /^Open Moss’s sheet \(your character\)/ });
+const mossToken = (page: Page) => page.getByRole("region", { name: "Battle map" }).getByRole("button", { name: /^Moss \(your character\): actions/ });
 
 test("Main 'Can't afford' at 1440x900: card tag, toast on a press, ring lock", async ({ browser }) => {
   test.setTimeout(300_000);

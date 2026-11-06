@@ -38,6 +38,7 @@ import { appError } from "../../src/lib/errors/app-error";
 import type { CharacterSheetInput } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { refundTokenSpends } from "./actionTokens";
 import { assertOneActive, readSheet, revertSessionTally, storedSheet, takeSessionTally } from "./characterSheet";
 import { closeRequest, declineGroupOffers, openRequests } from "./combatRequests";
 import { revertTicks } from "./countdownTicks";
@@ -229,11 +230,13 @@ async function adversariesToRestore(ctx: MutationCtx, group: Doc<"actionLog">[])
 
 /**
  * Declines the open `incomingHit` rows of an undone group (AA2b; AA2's open item: "actionLog undo declines open incomingHit
- * rows of the undone group"). Open requests per campaign are few (`openRequests` is bounded).
+ * rows of the undone group"), and its open `gmPrompt` rows (dcm-bxp.99.32.27: an undone adversary feature use takes its
+ * GM prompts with it), and its open `allyPick` rows (FH-AP, user 2026-11-05: undoing the use cancels its outstanding picks).
+ * Open requests per campaign are few (`openRequests` is bounded).
  */
 async function declineGroupHits(ctx: MutationCtx, campaignId: Id<"campaigns">, groupId: string, by: Id<"users">): Promise<void> {
   for (const r of await openRequests(ctx, campaignId)) {
-    if (r.payload.kind === "incomingHit" && r.payload.groupId === groupId) await closeRequest(ctx, r._id, "declined", by);
+    if ((r.payload.kind === "incomingHit" || r.payload.kind === "gmPrompt" || r.payload.kind === "allyPick") && r.payload.groupId === groupId) await closeRequest(ctx, r._id, "declined", by);
   }
 }
 
@@ -284,7 +287,8 @@ async function restoreTime(ctx: MutationCtx, user: Doc<"users">, row: Doc<"actio
  * UNDO_USE_REST for a group holding a `refuse` kind (dcm-bxp.31). Restores each `before` sheet, reverts the
  * group's Fear (floor 0), takes back the countdown ticks the group's rows caused
  * where the countdown has not changed since (`revertTicks`, countdowns-advanced
- * D11), takes the group's `sessionTally` back off the session tally (dcm-z9rz.22), and marks every row undone.
+ * D11), takes the group's `sessionTally` back off the session tally (dcm-z9rz.22), gives back the Spotlight Tracker
+ * tokens the group spent (`refundTokenSpends`, plan rule-switches RFB), and marks every row undone.
  */
 export async function undoEntry(
   ctx: MutationCtx,
@@ -391,6 +395,9 @@ export async function undoEntry(
     group.map((r) => r._id),
     user._id,
   );
+
+  // Spotlight Tracker (plan rule-switches RFB, user answer 2026-11-06): the group's spent action tokens come back.
+  await refundTokenSpends(ctx, group);
 
   for (const r of group) await ctx.db.patch("actionLog", r._id, { undoneAt: now, undoneBy: user._id });
 

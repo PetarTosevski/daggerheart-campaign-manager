@@ -325,6 +325,22 @@ describe("E1.4a: adversary uses on a card roll (dcm-m7tm)", () => {
   });
 });
 
+describe("combatFeatures.riders: the riders on a feature's own roll (dcm-bxp.99.32.19)", () => {
+  allowWorldEmails();
+
+  it("lists the riders that fit the feature's attack roll; another player is FORBIDDEN; an unowned feature is refused", async () => {
+    const a = await arena();
+    const options = await a.player.query(api.combatFeatures.riders, { campaignId: a.campaignId, characterId: a.w.characterA, featureId: BITE_ID });
+    expect(options).toEqual(expect.arrayContaining([expect.objectContaining({ source: "feature", id: STEADY_ID, useId: "main", phase: "before", costs: ["1 Hope"] })]));
+    // The GM reads it too.
+    expect(await a.gm.query(api.combatFeatures.riders, { campaignId: a.campaignId, characterId: a.w.characterA, featureId: BITE_ID })).toEqual(options);
+    const other = a.w.as("otherPlayer").query(api.combatFeatures.riders, { campaignId: a.campaignId, characterId: a.w.characterA, featureId: BITE_ID });
+    expect(errorCode(await other.catch((e: unknown) => e))).toBe("FORBIDDEN");
+    const unowned = a.player.query(api.combatFeatures.riders, { campaignId: a.campaignId, characterId: a.w.characterA, featureId: "class:druid:wardens-protection" });
+    expect(errorCode(await unowned.catch((e: unknown) => e))).toBe("FEATURE_NOT_OWNED");
+  });
+});
+
 describe("E1.4a: the feature sanction keeps its riders (dcm-mcgj)", () => {
   allowWorldEmails();
 

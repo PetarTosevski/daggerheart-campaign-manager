@@ -121,6 +121,8 @@ const resolvedActionValidator = v.object({
   offers: v.array(v.object({ feature: v.string(), useId: v.string(), trigger: v.string() })),
   /** SD4 (Q2): nothing was rolled yet; the attack waits for the PCs' before-roll answers in this request. */
   held: v.optional(v.id("combatRequests")),
+  /** FH-AP (user 2026-11-05): nothing applied yet; the use waits for the PCs' own picks in this `allyPick` request. */
+  picks: v.optional(v.id("combatRequests")),
 });
 
 function whole(n: number | undefined, max: number, what: string) {

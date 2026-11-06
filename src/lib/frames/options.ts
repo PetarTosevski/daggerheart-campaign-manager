@@ -1,6 +1,9 @@
-// Optional rules a GM can switch per campaign. Defaults follow the user's
-// decisions (docs/decisions-d3-d11.md): each frame's optional rules start on in
-// that frame; Hope & Fear content starts on for the four Hope & Fear frames.
+// Optional rules a GM can switch per campaign. Hope & Fear content starts on for
+// the four Hope & Fear frames. The four frame rules (Less Lethal, Transformations,
+// Endurance Countdowns, Remnant Corruption) are optional in the books and start
+// off in a new campaign (user 2026-10-30, overriding docs/decisions-d3-d11.md);
+// campaigns made before that keep the value pinned by
+// migrations/ruleDefaults:pinFrameOptions. A stored key always wins.
 // Pure module: bundled into Convex.
 
 import { getPublishedFrame, type FrameId } from "./index";
@@ -34,28 +37,28 @@ export const CAMPAIGN_OPTIONS: CampaignOption[] = [
     label: "Less lethal (Castle High)",
     description: "A character who would die is sent to the infirmary or home instead.",
     frames: ["castle-high"],
-    defaultFor: (frameId) => frameId === "castle-high",
+    defaultFor: () => false,
   },
   {
     id: "transformations",
     label: "Transformations (Andaluria)",
     description: "Monster hunts can transform characters; each player must consent.",
     frames: ["dark-heart-of-andaluria"],
-    defaultFor: (frameId) => frameId === "dark-heart-of-andaluria",
+    defaultFor: () => false,
   },
   {
     id: "enduranceCountdowns",
     label: "Endurance Countdowns (Horizon)",
     description: "Wilderness travel wears characters down between rests.",
     frames: ["journey-to-horizon"],
-    defaultFor: (frameId) => frameId === "journey-to-horizon",
+    defaultFor: () => false,
   },
   {
     id: "remnantCorruption",
     label: "Remnant Corruption (Motherboard)",
     description: "A Beastbound ranger's remnant companion can be corrupted.",
     frames: ["motherboard"],
-    defaultFor: (frameId) => frameId === "motherboard",
+    defaultFor: () => false,
   },
   {
     // A house rule against the book (CB p.261: session end turns every Wither token into Fear), user 2026-10-20.

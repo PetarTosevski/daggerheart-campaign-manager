@@ -5,12 +5,13 @@ import type { QueryCtx } from "./_generated/server";
 import { findCharacter, readSheet } from "./lib/characterSheet";
 import { atLeast } from "./lib/permissions";
 import { encounterRunning, openRequests } from "./lib/combatRequests";
-import { campaignQuery } from "./lib/functions";
+import { campaignQuery, gmQuery } from "./lib/functions";
 import { featureEffect } from "../src/lib/srd/feature-effects/index";
 import { cardEffect } from "../src/lib/srd/card-effects/index";
 import { costText } from "./lib/badges";
 import { rangeBandValidator } from "./lib/validators/combatRequests";
 import { rollValidator } from "./lib/validators/actionLog";
+import { withdrawalUseName, withdrawable } from "./lib/withdrawals";
 
 /**
  * The Combat HUD's request reads (plan combat-actions; table AA0, CA3; moved out of `combatRequests.ts` by dcm-uh6r so
@@ -23,6 +24,7 @@ import { rollValidator } from "./lib/validators/actionLog";
  *   dimly by enemies without one); the GM answers them with `featurePrompts.answerDifficulty`.
  * - `forcedAttacks` (plan lanes-2 wave 10, E1.4b; dcm-uxsd): the forced PC attacks waiting on the caller's characters
  *   (Beguiled, HF p.75); the player answers one with `combatActions.attack` and its `forcedRequestId`.
+ * - `withdrawn` (dcm-bxp.99.32.40): the GM's latest withdrawn requests, for the "Vex withdrew Bolt Beacon" toast.
  */
 
 const namedToken = v.object({ tokenId: v.id("combatTokens"), name: v.string() });
@@ -270,5 +272,52 @@ export const forcedAttacks = campaignQuery({
       });
     }
     return views;
+  },
+});
+
+/** A withdrawn request as the GM's toast shows it ("Vex withdrew Bolt Beacon"): names only. */
+const withdrawnView = v.object({
+  requestId: v.id("combatRequests"),
+  characterId: v.id("characters"),
+  characterName: v.string(),
+  /** The use's printed name, "a Charge" or "an attack" (as the feed line says it). */
+  useName: v.string(),
+  /** When it was withdrawn (`resolvedAt`). The client toasts only rows newer than when it started listening (CF10). */
+  withdrawnAt: v.number(),
+});
+
+/** The most withdrawn requests `withdrawn` returns. */
+const WITHDRAWN_TAKE = 5;
+
+/**
+ * dcm-bxp.99.32.40 (user 2026-11-02): the campaign's latest withdrawn requests (`combatRequests` status `withdrawn`,
+ * dcm-bxp.99.32.17), newest first, for the GM's short toast besides the feed line. GM only. Rows are swept a day after
+ * they close (`expireCombatRequests`); the HUD remembers which it already toasted.
+ */
+export const withdrawn = gmQuery({
+  args: {},
+  returns: v.array(withdrawnView),
+  handler: async (ctx) => {
+    const rows = await ctx.db
+      .query("combatRequests")
+      .withIndex("by_campaign_status", (q) => q.eq("campaignId", ctx.campaign._id).eq("status", "withdrawn"))
+      .order("desc")
+      .take(WITHDRAWN_TAKE);
+    const views = [];
+    for (const row of rows) {
+      const use = withdrawable(row.payload);
+      if (use === null) continue;
+      const character = await ctx.db.get("characters", use.characterId);
+      let sheet: ReturnType<typeof readSheet> | null = null;
+      if (character !== null && character.campaignId === ctx.campaign._id) {
+        try {
+          sheet = readSheet(character.sheet);
+        } catch {
+          sheet = null;
+        }
+      }
+      views.push({ requestId: row._id, characterId: use.characterId, characterName: sheet?.name ?? "A character", useName: withdrawalUseName(use.action, sheet, ctx.campaign), withdrawnAt: row.resolvedAt ?? row.createdAt });
+    }
+    return views.sort((a, b) => b.withdrawnAt - a.withdrawnAt);
   },
 });

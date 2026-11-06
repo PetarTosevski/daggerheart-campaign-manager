@@ -37,8 +37,9 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction, newGroupId } from "./actionLog";
 import { blockOf } from "./adversaryFeatures";
 import { parseChoices } from "./cardChoices";
-import { gmLines, instanceWrites, writeInstances } from "./cardRows";
-import { actorSheetAfter, buildRun, instanceModsOn, runCard, sheetModsOn, tokenIdsOf, type UsePick } from "./cardRunner";
+import { gmLines, instanceWrites, lastHpNotes, resistanceNotes, writeInstances } from "./cardRows";
+import { actorSheetAfter, buildRun, instanceModsOn, runCard, sheetModsOn, tokenIdsOf, ruleNotesOfUse, type UsePick } from "./cardRunner";
+import { postRuleNote, ruleModesOf } from "./ruleModes";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { FEATURE_KEY_PREFIX } from "../../src/lib/domain/feature-effects/ids";
 import { readSheet, saveSheet } from "./characterSheet";
@@ -643,7 +644,9 @@ export async function runTriggeredUse(
   const pcs = new Set(built.creatures.all.flatMap((c) => (c.kind === "pc" ? [c.tokenId as string] : [])));
   const tableOnly = plan.steps.some((s) => s.kind === "pcDamage" || s.kind === "fold" || s.kind === "delegate" || s.kind === "area" || (s.kind === "prompt" && s.prompt !== "manual" && !(s.prompt === "move" && s.server === true)));
   if (plan.gmFearDelta !== 0 || tableOnly || plan.creatures.some((c) => pcs.has(c.id))) return false;
-  const writes = instanceWrites(plan, built.creatures, input.name);
+  // Rule switches RFC, D8 (CB p.208): Manual leaves an adversary at its last HP up (the GM is told below).
+  const modes = ruleModesOf(campaign);
+  const writes = instanceWrites(plan, built.creatures, input.name, undefined, modes);
   await writeInstances(ctx, writes);
   const sheet = actorSheetAfter(built.paidSheet, plan, built.context.actor.id, input.name);
   await saveSheet(ctx, character._id, sheet);
@@ -664,6 +667,14 @@ export async function runTriggeredUse(
   await logAction(ctx, { campaignId: input.campaignId, characterId: character._id, actorId: input.actorId, kind: "combat", visibility: "public", summary: parts.join("; ").slice(0, 500), groupId: input.groupId, undoable: false });
   const lines = gmLines(plan, built, writes);
   if (lines.length > 0) await logAction(ctx, { campaignId: input.campaignId, characterId: character._id, actorId: input.actorId, kind: "combat", visibility: "gm", summary: `${input.name}: ${lines.join("; ")}`.slice(0, 500), groupId: input.groupId, undoable: false });
+  // Rule switches RFC: the Manual rules' GM notes (D2, D8, D4, M1, C1). The move's rows are never undoable, so the notes
+  // carry no group (a note in it would offer an Undo the group refuses, UNDO_STALE).
+  const notes = [
+    ...resistanceNotes(plan, built.creatures).map((summary) => ({ ruleId: "resistance" as const, summary })),
+    ...lastHpNotes(writes, modes).map((summary) => ({ ruleId: "adversaryDefeated" as const, summary })),
+    ...ruleNotesOfUse(built, plan),
+  ];
+  for (const n of notes) await postRuleNote(ctx, campaign, { ruleId: n.ruleId, summary: n.summary, actorId: input.actorId });
   return true;
 }
 

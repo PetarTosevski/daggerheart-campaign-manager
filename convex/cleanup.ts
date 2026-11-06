@@ -70,9 +70,9 @@ export const expireOperations = internalMutation({
 });
 
 /**
- * Deletes resolved and declined `combatRequests` rows whose `resolvedAt` is older than `COMBAT_REQUEST_TTL_MS`
+ * Deletes resolved, declined and withdrawn `combatRequests` rows whose `resolvedAt` is older than `COMBAT_REQUEST_TTL_MS`
  * (rule 8; plan combat-actions AA0). Open rows stay until answered or purged with their campaign. `BATCH` rows per
- * run across both statuses, rescheduling itself while a full batch was deleted. A closed row without `resolvedAt`
+ * run across the closed statuses, rescheduling itself while a full batch was deleted. A closed row without `resolvedAt`
  * (never written that way) sorts first in the index and is swept too.
  */
 export const expireCombatRequests = internalMutation({
@@ -81,7 +81,7 @@ export const expireCombatRequests = internalMutation({
   handler: async (ctx) => {
     const cutoff = Date.now() - COMBAT_REQUEST_TTL_MS;
     const budget: Budget = { left: BATCH };
-    for (const status of ["resolved", "declined"] as const) {
+    for (const status of ["resolved", "declined", "withdrawn"] as const) {
       const rows = await ctx.db
         .query("combatRequests")
         .withIndex("by_status_resolved", (q) => q.eq("status", status).lt("resolvedAt", cutoff))
@@ -453,6 +453,11 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("combatSeen").withIndex("by_campaign_token", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "combatSeen", rows);
+  },
+  // Spotlight Tracker action tokens (plan rule-switches RT): one row per character at most, referenced by id only.
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("actionTokens").withIndex("by_campaign_character", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "actionTokens", rows);
   },
   // Config S0: folded hands ("Hide cards") and the players' unsent character-wizard drafts of this campaign
   // (custom-frame drafts have no campaign; P2's cron expires them).

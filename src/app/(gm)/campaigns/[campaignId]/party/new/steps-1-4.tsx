@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
+import type { SharedCards } from "@/components/party/level-up/shared-cards";
 import { assetBackground } from "@/lib/design-assets";
 import {
   getAncestry,
@@ -36,6 +37,8 @@ export type StepProps = {
   state: WizardState;
   update: (patch: Partial<WizardState>) => void;
   opts: WizardOptions;
+  /** Shared domain cards (CB p.21, rule-switches OSC): the campaign's mode and who holds which card; undefined while loading. */
+  shared?: SharedCards;
 };
 
 /** Domain icons from the Party board (.dom-* rules). */

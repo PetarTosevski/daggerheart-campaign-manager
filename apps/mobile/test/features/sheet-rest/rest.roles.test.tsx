@@ -46,6 +46,7 @@ function openRest(kind: "short" | "long"): RestSheetState {
       kind,
       startedAt: 1,
       gmOverride: false,
+      extended: false,
       choices: [],
       moves: [
         {
@@ -64,6 +65,7 @@ function openRest(kind: "short" | "long"): RestSheetState {
     },
     shortRestsSinceLong: 0,
     last: null,
+    rules: { fearFromRests: "book", shortRestLimit: "book", interruptedRest: "book" },
   };
 }
 
@@ -122,7 +124,7 @@ test("a player render fails when it calls a GM rest function", async () => {
 });
 
 test("with no open rest the slot stays empty and subscribes to nothing", async () => {
-  const screen = await renderAsPlayer(<RestSlot {...slot(true)} restState={{ open: null, shortRestsSinceLong: 0, last: null }} />);
+  const screen = await renderAsPlayer(<RestSlot {...slot(true)} restState={{ open: null, shortRestsSinceLong: 0, last: null, rules: { fearFromRests: "book", shortRestLimit: "book", interruptedRest: "book" } }} />);
   expect(screen.getByLabelText("Rest slot for Mira")).toBeTruthy();
   expect(screen.queryByText("downtime moves")).toBeNull();
   expect(screen.client.subscribed).toEqual([]);

@@ -22,7 +22,7 @@ import { imageMapSize, type ImageGrid } from "./grid";
 import { GridControls } from "./grid-controls";
 import { MAP_CELL, MapCanvas } from "./map-canvas";
 import { MeasureLayer } from "./measure";
-import { useMapZoom, ZOOM_STEP } from "./use-map-zoom";
+import { cssScale, useMapZoom, ZOOM_STEP } from "./use-map-zoom";
 
 /**
  * The board's own chrome: `full` (default) draws its toolbar (name, LIVE / Make live, Areas, Names, zoom, Fit) and the
@@ -103,7 +103,8 @@ function EmptyBoard({ player, chrome }: { player: boolean; chrome: MapBoardChrom
   );
 }
 
-type Drag = { kind: "pan" | "grid"; pointerId: number; sx: number; sy: number; left: number; top: number; moved: boolean; button: number };
+/** `scale`: the CSS scale on the viewport at the press (the HUD's make room), so a drag follows the pointer (dcm-bxp.99.32.14). */
+type Drag = { kind: "pan" | "grid"; pointerId: number; sx: number; sy: number; left: number; top: number; moved: boolean; button: number; scale: number };
 
 function LoadedBoard(props: MapBoardChromeProps & { map: CombatMapSummary; layout: CombatMapLayout | undefined }) {
   const { role, mode, map, layout, campaignId, renderLayers, onSelectToken, chrome = "full" } = props;
@@ -193,7 +194,7 @@ function LoadedBoard(props: MapBoardChromeProps & { map: CombatMapSummary; layou
     const vp = viewportRef.current;
     if (!vp) return;
     const kind = editingGrid && shifting && e.button === 0 ? "grid" : "pan";
-    drag.current = { kind, pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, left: vp.scrollLeft, top: vp.scrollTop, moved: false, button: e.button };
+    drag.current = { kind, pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, left: vp.scrollLeft, top: vp.scrollTop, moved: false, button: e.button, scale: cssScale(vp) };
   }
   function onPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
     const d = drag.current;
@@ -209,11 +210,11 @@ function LoadedBoard(props: MapBoardChromeProps & { map: CombatMapSummary; layou
     }
     if (!d.moved) return;
     if (d.kind === "pan") {
-      vp.scrollLeft = d.left - dx;
-      vp.scrollTop = d.top - dy;
+      vp.scrollLeft = d.left - dx / d.scale;
+      vp.scrollTop = d.top - dy / d.scale;
     } else if (grid) {
       // Moving the image under a fixed grid: dragging right moves the image right, so the offset shrinks.
-      setPreview({ ...grid, offsetX: Math.round(grid.offsetX - (dx / step) * grid.cell), offsetY: Math.round(grid.offsetY - (dy / step) * grid.cell) });
+      setPreview({ ...grid, offsetX: Math.round(grid.offsetX - (dx / d.scale / step) * grid.cell), offsetY: Math.round(grid.offsetY - (dy / d.scale / step) * grid.cell) });
     }
   }
   function onPointerUp(e: ReactPointerEvent<HTMLDivElement>) {

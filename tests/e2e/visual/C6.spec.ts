@@ -81,7 +81,7 @@ test("C6 tokens, range circles and the token card at 1440, 1024 and 390", { tag:
     const playerBoard = player.getByRole("region", { name: "Battle map" });
     // A click on the player's own HUD token selects it (and opens its action ring); its card is in the "Your
     // character" drawer (plan combat-hud H8.1).
-    await playerBoard.getByRole("button", { name: /^Open Ash’s sheet \(your character\)/ }).click();
+    await playerBoard.getByRole("button", { name: /^Ash \(your character\): actions/ }).click();
     await player.getByRole("button", { name: "Your character", exact: true }).click();
     await expect(player.getByRole("complementary", { name: "Your character" }).getByRole("region", { name: "Selected token" })).toBeVisible();
     const { shoot: shootPlayer } = visual(player, "C6", D9_VIEWPORTS);

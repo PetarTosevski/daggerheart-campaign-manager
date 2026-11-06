@@ -152,6 +152,20 @@ export function Badge({ tone = "dark", className, ...props }: ComponentProps<"sp
   return <span className={cn("sh-badge", tone !== "dark" && tone, className)} {...props} />;
 }
 
+/**
+ * Shared domain cards (CB p.21, plan rule-switches OSC): "Mira already has this card" on a picker's card (`sharedCardNote`
+ * from src/lib/domain/characters). `refused` (the campaign's Refuse mode) adds that the card can't be taken. Renders
+ * nothing without a note. Give the card's choose button `aria-describedby={id}`.
+ */
+export function SharedCardNote({ id, note, refused = false, className }: { id?: string; note: string | null; refused?: boolean; className?: string }) {
+  if (note === null) return null;
+  return (
+    <span id={id} className={cn("sh-shared-note", refused && "refused", className)} data-testid="shared-card-note">
+      {refused ? `${note}; this campaign doesn't share domain cards.` : `${note}.`}
+    </span>
+  );
+}
+
 /** One active effect: dashed gold row with its text, until-when note and an End button. */
 export function EffectRow({
   children,

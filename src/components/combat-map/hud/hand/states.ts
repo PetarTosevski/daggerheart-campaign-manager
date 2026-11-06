@@ -144,6 +144,15 @@ export function recallText(recallCost: number, restOpen: boolean): string {
   return restOpen || recallCost === 0 ? "Recall · free" : `Recall · ${recallCost} Stress`;
 }
 
+/**
+ * Why a vault card's Recall can't start (dcm-bxp.99.32.38; CB p.27 Recall Cost): while the GM holds the spotlight a
+ * recall waits like every other non-reaction action (answer 1c). The GM playing for a PC is never held back
+ * (`reactionsOnly` is false for the GM).
+ */
+export function recallBlocked(card: Pick<HandCard, "name">, spotlightWithGm: boolean): Blocked | null {
+  return blockedReason({ kind: "card", subject: card.name, spotlightWithGm });
+}
+
 /** "Loadout full · 5 of 5" when the loadout holds `max` cards. */
 export function loadoutFullText(count: number, max: number): string | null {
   return count >= max ? `Loadout full · ${count} of ${max}` : null;

@@ -113,6 +113,12 @@ describe("combatCards.useCard: refusals", () => {
     expect(await code(a.use(a.player, "untouchable", []))).toBe("CARD_NOT_COMBAT");
     // Rain of Blades costs a Hope upfront (CB p.90): with none, refused before any roll.
     expect(await code(a.use(a.player, "rain-of-blades", []))).toBe("CARD_COST_UNPAID");
+    // dcm-bxp.99.32.2: the refusal carries the structured shortfall the HUD shows ("costs 1 Hope. You have 0.").
+    const refusal = await a.use(a.player, "rain-of-blades", []).then(
+      () => null,
+      (e: unknown) => (e as { data?: unknown }).data,
+    );
+    expect(refusal).toMatchObject({ code: "CARD_COST_UNPAID", shortfall: { resource: "hope", need: 1, have: 0 } });
     await a.edit((s) => ({ featureUses: [...s.featureUses, { key: "card:hypnotic-shimmer", until: "rest" }] }));
     expect(await code(a.use(a.player, "hypnotic-shimmer", [bandit.tokenId]))).toBe("CARD_EXHAUSTED");
     expect((await a.rows()).filter((r) => r.kind === "combat")).toHaveLength(0);

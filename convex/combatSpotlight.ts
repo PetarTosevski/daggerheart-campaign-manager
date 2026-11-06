@@ -2,6 +2,9 @@ import { v, type Infer } from "convex/values";
 
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
+import { appError } from "../src/lib/errors/app-error";
+import { recordTokenSpends, refillActionTokens, spendActionTokens, trackerTokens } from "./lib/actionTokens";
+import { newGroupId } from "./lib/actionLog";
 import { readSheet } from "./lib/characterSheet";
 import { campaignQuery, keyedGmMutation } from "./lib/functions";
 import { atLeast } from "./lib/permissions";
@@ -24,6 +27,11 @@ import { spotlightReasonValidator } from "./tables/combatSpotlight";
  *   without Fear are not logged in the action log: its undo restores sheets, adversaries, Fear and time only, so the
  *   GM's undo is the opposite move (docs/tasks/TASK-HUD-H1.S.md). A paid take is logged, and its undo gives the Fear back
  *   (docs/tasks/TASK-HUD-H9.S.md).
+ * - `refillTokens()` (the GM, keyed): Spotlight Tracker (optional rule, CB p.89, plan rule-switches RT): every PC's
+ *   action tokens back to full before everyone is out (the app refills by itself once every PC on the live map is at
+ *   0). MECHANIC_DISABLED while the rule is off. Not logged, like the moves without Fear.
+ * - `spendToken({ characterId })` (the GM, keyed): spends a PC's token for a significant action without a roll (plan
+ *   rule-switches RFB); logged GM-only, its Undo gives the token back. MECHANIC_DISABLED while the rule is off.
  */
 
 const holderViewValidator = v.union(
@@ -165,4 +173,47 @@ export const handToParty = keyedGmMutation({
   args: {},
   returns: movedValidator,
   handler: async (ctx) => ctx.once("spotlight_hand_to_party", {}, async () => ({ moved: await giveToParty(ctx, ctx.campaign) })),
+});
+
+/**
+ * The GM refills every PC's Spotlight Tracker action tokens by hand (plan rule-switches RT, user answer Q9 a: "GM can
+ * refill early"; CB p.89). `refilled`: how many PCs had spent tokens (0: everyone was full already). MECHANIC_DISABLED
+ * while the optional rule is off.
+ */
+export const refillTokens = keyedGmMutation({
+  args: {},
+  returns: v.object({ refilled: v.number() }),
+  handler: async (ctx) =>
+    ctx.once("spotlight_refill_tokens", {}, async () => {
+      if (trackerTokens(ctx.campaign) === null) throw appError("MECHANIC_DISABLED", "The Spotlight Tracker is off in this campaign.");
+      return { refilled: await refillActionTokens(ctx, ctx.campaign._id) };
+    }),
+});
+
+/**
+ * The GM (or a co-GM) spends one of a PC's Spotlight Tracker action tokens for a significant action without a roll (CB
+ * p.89: "each time they make an action roll or perform a significant action while in the spotlight, they remove 1
+ * token"; plan rule-switches RFB, user answer 2026-11-06). As a roll's spend: only a PC on the live map with a token
+ * left spends (`spent` false otherwise, nothing written), and when every PC on the map is then out, all refill
+ * (`refilled`). A spend is logged as a GM-only feed line ("Mira: an action token spent for a significant action"),
+ * whose Undo gives the token back. MECHANIC_DISABLED while the optional rule is off; NOT_FOUND for a character of another
+ * campaign.
+ */
+export const spendToken = keyedGmMutation({
+  args: { characterId: v.id("characters") },
+  returns: v.object({ spent: v.boolean(), refilled: v.boolean() }),
+  handler: async (ctx, { characterId }) =>
+    ctx.once("spotlight_spend_token", { characterId }, async () => {
+      if (trackerTokens(ctx.campaign) === null) throw appError("MECHANIC_DISABLED", "The Spotlight Tracker is off in this campaign.");
+      const pc = await namedCharacter(ctx, ctx.campaign, characterId);
+      if (pc === null) throw appError("NOT_FOUND");
+      const { spent, refilled } = await spendActionTokens(ctx, ctx.campaign, [characterId]);
+      await recordTokenSpends(ctx, ctx.campaign, spent, {
+        groupId: newGroupId(),
+        actorId: ctx.user._id,
+        summary: (s) => `${pc.name}: an action token spent for a significant action (${s.left} left${refilled ? "; everyone out, all refilled" : ""})`,
+        shown: true,
+      });
+      return { spent: spent.length > 0, refilled };
+    }),
 });

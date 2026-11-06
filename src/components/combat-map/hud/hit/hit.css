@@ -165,6 +165,21 @@
 .hud-hit-rc > .hud-btn {
   align-self: flex-end;
 }
+
+/*
+ * The footer stays inside the 320 px card (dcm-bxp.99.32.32): with a long primary ("Mark Armor · take no damage") the
+ * two buttons wrap onto two lines, and a label wider than the card wraps its text instead of pushing past the edge.
+ */
+.hud-hit .hud-pc-f > .hud-btn {
+  max-width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 44px;
+  padding-block: 6px;
+  line-height: 1.2;
+  white-space: normal;
+  text-align: center;
+}
 .hud-hit-opts {
   display: flex;
   flex-direction: column;

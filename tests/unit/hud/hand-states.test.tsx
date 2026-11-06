@@ -12,6 +12,7 @@ import type { HandCard } from "@/components/combat-map/actions/hand/model";
 import { HiddenHand, HudHandBody, type HudHandBodyProps } from "@/components/combat-map/hud/hand/body";
 import { PickProvider, usePick } from "@/components/combat-map/hud/pick";
 import { HudProvider } from "@/components/combat-map/hud/state";
+import { raiseHand } from "@/components/combat-map/hud/hand/raise";
 import { cardLook, experienceShort, hopeNeed, loadoutFullText, recallText, signedEdge, usedText, type LookContext } from "@/components/combat-map/hud/hand/states";
 
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -319,6 +320,57 @@ describe("the HUD hand", () => {
     const full = within(screen.getByTestId("hud-hand-vault")).getByRole("button", { name: "Loadout full · 5 of 5, Unleash Chaos" }) as HTMLButtonElement;
     expect(full.disabled).toBe(true);
     expect(screen.getByText("Send a card to the vault first")).toBeTruthy();
+  });
+
+  it("raiseHand() (the action ring's Cast; dcm-bxp.99.32.20): a folded hand unfolds, the first playable Use takes focus", async () => {
+    setHand([WALL, ENTANGLE]);
+    setCharacter(0);
+    queries["preferences:folds"] = [MOSS];
+    const { rerender } = renderHand();
+    expect(screen.queryByTestId("hud-hand-fan")).toBeNull();
+    await act(async () => {
+      expect(raiseHand()).toBe(true);
+    });
+    expect(calls).toEqual([{ name: "preferences:setFold", args: { campaignId: CAMPAIGN, characterId: MOSS, folded: false } }]);
+    // The fold list answers; the fan is drawn and Vicious Entangle's Use (Wall Walk needs 1 Hope) takes focus.
+    queries["preferences:folds"] = [];
+    rerender(
+      <HudProvider>
+        <PickProvider>
+          <HudHandBody campaignId={CAMPAIGN} mapId={MAP} characterId={MOSS} name="Moss" mode="own" canPlay creatures={[]} pickedEnemies={[]} />
+        </PickProvider>
+      </HudProvider>,
+    );
+    expect(document.activeElement).toHaveAccessibleName("Use Vicious Entangle");
+    // Already shown: it focuses at once. Another player's hand (view only) registers nothing.
+    (document.activeElement as HTMLElement).blur();
+    act(() => {
+      raiseHand();
+    });
+    expect(document.activeElement).toHaveAccessibleName("Use Vicious Entangle");
+  });
+
+  it("raiseHand() does nothing for a hand that is not yours", () => {
+    setHand([ENTANGLE]);
+    setCharacter(2);
+    renderHand({ mode: "view", canPlay: false });
+    expect(raiseHand()).toBe(false);
+  });
+
+  it("the vault: Recall waits while the GM holds the spotlight (SPOTLIGHT_WITH_GM; dcm-bxp.99.32.38, CB p.27)", async () => {
+    setHand([ENTANGLE], [CHAOS]);
+    setCharacter(2);
+    queries["restsReads:current"] = { open: false };
+    queries["combatSpotlight:state"] = { holder: { kind: "gm" }, since: 1, reason: "gmTook", rollBy: null, reactionsOnly: true, canMove: false };
+    renderHand();
+    fireEvent.click(screen.getByRole("button", { name: "Open vault, 1 card" }));
+    const recall = within(screen.getByTestId("hud-hand-vault")).getByRole("button", { name: "Recall · 1 Stress, Unleash Chaos" });
+    expect(recall).toHaveAttribute("aria-disabled", "true");
+    expect(recall).toHaveAccessibleDescription("The GM has the spotlight · reactions only");
+    await act(async () => {
+      fireEvent.click(recall);
+    });
+    expect(calls).toEqual([]);
   });
 
   it("the GM's hand is locked until Play-for: the lock tag, no Use, no Roll options, no recall", () => {

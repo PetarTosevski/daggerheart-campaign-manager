@@ -11,6 +11,10 @@
 //   roll that deals damage adds the dice's maximum (CB p.98).
 // - CB p.90: "A critical success counts as a roll with Hope, even if you would've otherwise failed"; a critical clears a
 //   Stress and gains a Hope; rolling with Fear gives the GM a Fear (`dualityEffects`). Reaction rolls change nothing (CB p.99).
+//   Plan rule-switches RA2: `context.hopeFear` is the campaign's R3 switch; Manual gains no Hope or Fear from a roll with
+//   Hope or Fear (a critical keeps its Hope and Stress clear), so a later Hope cost needs Hope the PC already holds.
+//   Plan rule-switches RFC: `context.damageRules` carries the campaign's D2 / D4 / D5 / D8 / Massive Damage modes into
+//   every damage, Stress and HP mark (CB p.99, p.92, p.208, p.91); unset = the Book.
 // - CB p.90, R8: "When using a Hope Feature, if you rolled with Hope for that action, the Hope you gain from that roll can be
 //   spent on that feature." The roll's Hope is gained before any `pay` step after the roll.
 // - CB p.98, R2: damage = dice (Proficiency or Spellcast many when the card says so) + modifier; a critical starts from
@@ -56,10 +60,10 @@
 // ```
 
 import { MAX_FEAR } from "../fear/index";
-import { dualityEffects, rollDamage, rollDuality, weaponDice, type DicePool, type DualityEffects, type Rng } from "../dice/index";
+import { dualityEffects, rollDamage, rollDuality, weaponDice, type DicePool, type DualityEffects, type HopeFearMode, type Rng } from "../dice/index";
 import type { RollOutcome, RollRecord } from "../duality";
 import { parseDamage } from "../adversaries/index";
-import { applyDamageTo, applyHpTo, applyStressTo, clearTrack, type Combatant, type DamageResult } from "../combat-actions/damage";
+import { applyDamageTo, applyHpTo, applyStressTo, clearTrack, type Combatant, type DamageResult, type DamageRules } from "../combat-actions/damage";
 import { resolveHits, type HitResult } from "../combat-actions/hits";
 import { resolveDice, resolveNumber, rollDice, type MapCreature, type MarkedTracks, type NumberEnv } from "../combat-actions/numbers";
 import {
@@ -70,6 +74,7 @@ import {
   limitConsumed,
   limitUntil,
   resolveCosts,
+  shortfalls,
   unaffordable,
   unaffordableBy,
   unmetRequirements,
@@ -115,6 +120,7 @@ import type {
   Track,
   Versus,
 } from "./types";
+import type { Shortfall } from "../../errors/app-error";
 import type { FeatureUse } from "../../validation/characters";
 import { TRAIT_IDS, type DomainId, type TraitId } from "../../srd/types";
 
@@ -271,6 +277,18 @@ export interface RunContext {
     /** The GM's Difficulty for `difficulty: gm`. */
     difficulty?: number;
   };
+  /**
+   * Plan rule-switches RA2 (bead dcm-jh6d.67): the campaign's R3 `hopeFearFromRolls` mode (cardRunner `buildRun`). Absent:
+   * Book. Manual: the use's action rolls gain no Hope and give no Fear (`dualityEffects`); a critical still does.
+   */
+  hopeFear?: HopeFearMode;
+  /**
+   * Plan rule-switches RFC (bead dcm-jh6d.70): the campaign's damage modes (D2 resistance, D4 Stress overflow, D5, D8 and
+   * Massive Damage; cardRunner `buildRun` sets `ruleModesOf(campaign)`), passed to `applyDamageTo` / `applyStressTo` /
+   * `applyHpTo`. Absent: the Book. D2 Manual leaves a `damage` step's `resistanceApplied` false; D4 Manual leaves a
+   * Stress `mark` step with `overflow` true and no HP marked.
+   */
+  damageRules?: DamageRules;
   /** An adversary's standard attack damage (AA1 reuse: `damage.roll.kind === "standardAttack"`), e.g. "1d8+2 phy". */
   attackDamage?: string;
   rng: Rng;
@@ -615,6 +633,8 @@ export type RunRefusal = {
   /** noUse: no such use; requirement: unmet (`unmet`); exhausted: CARD_EXHAUSTED; cost: CARD_COST_UNPAID (`short`); choice / targets: bad input. */
   reason: "noUse" | "requirement" | "exhausted" | "cost" | "choice" | "targets";
   detail: string;
+  /** dcm-bxp.99.32.2: on a `cost` refusal, the first short resource with what the use needs and what the payer has. */
+  shortfall?: Shortfall;
 };
 
 export type RunResult = { ok: true; plan: RunPlan } | RunRefusal;
@@ -627,7 +647,10 @@ export function pickUse(effect: CardEffect, useId?: string): CardUse | undefined
   return effect.uses.find((u) => u.activation.kind === "action") ?? effect.uses[0];
 }
 
-const refuse = (reason: RunRefusal["reason"], detail: string): RunRefusal => ({ ok: false, reason, detail });
+const refuse = (reason: RunRefusal["reason"], detail: string, shortfall?: Shortfall): RunRefusal => ({ ok: false, reason, detail, ...(shortfall ? { shortfall } : {}) });
+
+/** dcm-bxp.99.32.2: a Hope cost refused by a flag (Ravenous): the use's Hope, of which the payer may spend none. */
+const hopeShortfall = (costs: readonly PaidCost[]): Shortfall => ({ resource: "hope", need: costs.filter((c) => c.resource === "hope" && c.pool === undefined).reduce((n, c) => n + c.amount, 0), have: 0 });
 
 const MOVE_GATES = new Set<string>(["success", "failure", "critical", "withHope", "withFear"]);
 
@@ -1152,13 +1175,13 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     steps.push({ kind: "pay", phase, costs: [...costs], paid: true, payerId: c.id });
     for (const x of costs) {
       if (x.resource === "stress") {
-        const res = applyStressTo(get(c.id), x.amount);
+        const res = applyStressTo(get(c.id), x.amount, context.damageRules);
         put(res.after);
         addMarked(c.id, "stress", res.stressMarked);
         addMarked(c.id, "hp", res.hpMarked);
         steps.push({ kind: "mark", targetId: c.id, track: "stress", amount: x.amount, hpMarked: res.hpMarked, overflow: res.overflow });
       } else if (x.resource === "hp") {
-        const res = applyHpTo(get(c.id), x.amount);
+        const res = applyHpTo(get(c.id), x.amount, context.damageRules);
         put(res.after);
         addMarked(c.id, "hp", res.hpMarked);
         steps.push({ kind: "mark", targetId: c.id, track: "hp", amount: x.amount, hpMarked: res.hpMarked, overflow: false });
@@ -1196,13 +1219,17 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
   if (!upfrontPayer) return refuse("cost", `No ${use.paidBy ?? "payer"} to pay.`);
   const upfront = roller ? [] : costsFor(use.costs ?? [], upfrontPayer.id);
   if (upfrontPayer.id !== actor.id) {
-    const described = unaffordableBy(upfront, use.paidBy, payersWithFlags());
-    if ((described !== null && described.length > 0) || hopeBarred(upfrontPayer.id, upfront)) return refuse("cost", (described?.length ? described : ["hope"]).join(", "));
+    const payers = payersWithFlags();
+    const described = unaffordableBy(upfront, use.paidBy, payers);
+    if ((described !== null && described.length > 0) || hopeBarred(upfrontPayer.id, upfront)) {
+      const state = payers[use.paidBy ?? "self"];
+      return refuse("cost", (described?.length ? described : ["hope"]).join(", "), (state ? shortfalls(upfront, state)[0] : undefined) ?? hopeShortfall(upfront));
+    }
     if (!payBy(upfrontPayer, upfront, "upfront", use.paidBy)) return refuse("cost", "hope");
   } else {
     const short = unaffordable(upfront, payer());
-    if (short.length > 0) return refuse("cost", short.join(", "));
-    if (hopeBarred(actor.id, upfront)) return refuse("cost", "hope");
+    if (short.length > 0) return refuse("cost", short.join(", "), shortfalls(upfront, payer())[0]);
+    if (hopeBarred(actor.id, upfront)) return refuse("cost", "hope", hopeShortfall(upfront));
     if (upfront.length > 0) {
       steps.push({ kind: "pay", phase: "upfront", costs: payCosts(upfront), paid: true });
     }
@@ -1277,7 +1304,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     } else {
       for (const t of against) hits.set(t.id, info.success);
     }
-    info.effects = rollSpec.kind === "adversaryAttack" ? info.effects : dualityEffects(rollSpec.kind === "reaction" ? "reaction" : "action", info.outcome);
+    info.effects = rollSpec.kind === "adversaryAttack" ? info.effects : dualityEffects(rollSpec.kind === "reaction" ? "reaction" : "action", info.outcome, context.hopeFear);
     return { info, hits };
   };
 
@@ -1408,7 +1435,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     for (const [id, p] of pending) {
       const target = get(id);
       if (p.replaceWithHp !== undefined) {
-        const r = applyHpTo(target, p.replaceWithHp);
+        const r = applyHpTo(target, p.replaceWithHp, context.damageRules);
         put(r.after);
         addMarked(id, "hp", r.hpMarked);
         steps.push({ kind: "mark", targetId: id, track: "hp", amount: p.replaceWithHp, hpMarked: r.hpMarked, overflow: false });
@@ -1418,7 +1445,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
         steps.push({ kind: "pcDamage", targetId: id, amount: Math.max(0, p.amount), type: p.type, direct: p.direct });
         continue;
       }
-      const result = applyDamageTo(target, p.amount, p.type, p.minimumSeverity ? { minimumSeverity: p.minimumSeverity } : {});
+      const result = applyDamageTo(target, p.amount, p.type, { ...(p.minimumSeverity ? { minimumSeverity: p.minimumSeverity } : {}), ...(context.damageRules ? { rules: context.damageRules } : {}) });
       put(result.after);
       addMarked(id, "hp", result.hpMarked);
       steps.push({ kind: "damage", result });
@@ -2114,7 +2141,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
             const amount = Math.max(0, Math.min(share, step.maxPer ?? Infinity, left));
             left -= amount;
             if (amount === 0) continue;
-            const res = applyHpTo(get(r.id), amount);
+            const res = applyHpTo(get(r.id), amount, context.damageRules);
             put(res.after);
             addMarked(r.id, "hp", res.hpMarked);
             steps.push({ kind: "mark", targetId: r.id, track: "hp", amount, hpMarked: res.hpMarked, overflow: false, ...(step.reduceWith === "hope" ? { reduceWithHope: true } : {}) });
@@ -2127,7 +2154,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
         for (const r of recipients) {
           // Lanes-2 E3 (dcm-fbsr, Unstuck, CB p.237: "they must double the amount spent or marked").
           const amount = amountFor(step.amount, r) * multiplierOf(r.id, "hp");
-          const res = applyHpTo(get(r.id), amount);
+          const res = applyHpTo(get(r.id), amount, context.damageRules);
           put(res.after);
           addMarked(r.id, "hp", res.hpMarked);
           steps.push({ kind: "mark", targetId: r.id, track: "hp", amount, hpMarked: res.hpMarked, overflow: false, ...(step.reduceWith === "hope" ? { reduceWithHope: true } : {}) });
@@ -2137,7 +2164,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
       case "markStress": {
         const markStress = (r: Combatant, base: number) => {
           const amount = base * multiplierOf(r.id, "stress");
-          const res = applyStressTo(get(r.id), amount);
+          const res = applyStressTo(get(r.id), amount, context.damageRules);
           put(res.after);
           addMarked(r.id, "stress", res.stressMarked);
           addMarked(r.id, "hp", res.hpMarked);

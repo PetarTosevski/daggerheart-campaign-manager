@@ -262,7 +262,7 @@ for (const viewport of [
         await expect(torch).toHaveAttribute("aria-pressed", "true");
         await drawer.press("Escape");
         const playerBoard = player.getByRole("region", { name: "Battle map" });
-        const ash = playerBoard.getByRole("button", { name: /^Open Ash’s sheet \(your character\)/ });
+        const ash = playerBoard.getByRole("button", { name: /^Ash \(your character\): actions/ });
         await expect(ash).toHaveAttribute("data-square", "3,10");
         await dragBy(player, ash, await squarePx(player), 0);
         await expect(ash).toHaveAttribute("data-square", "4,10");

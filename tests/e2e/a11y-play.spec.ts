@@ -178,7 +178,7 @@ test("combat map, player: the board, Your view with carried light, doors and lig
   await expect(board.getByRole("button", { name: "Open door 1" })).toBeVisible();
   await scan(player, "combat board and Your view (player)");
   await yourView.getByRole("group", { name: "Light you carry" }).getByRole("button", { name: "Torch", exact: true }).click();
-  await board.getByRole("button", { name: new RegExp(`^Open ${characterName}’s sheet \\(your character\\)`) }).click();
+  await board.getByRole("button", { name: new RegExp(`^${characterName} \\(your character\\): actions`) }).click();
   await scan(player, "combat torch on, own token selected (player)");
   flush();
 });

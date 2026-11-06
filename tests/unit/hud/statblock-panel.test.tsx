@@ -421,5 +421,16 @@ describe("the stat block model", () => {
       ["Restrained", "restrained", null],
       ["Asleep", null, "e2"],
     ]);
+    // dcm-bxp.99.32.1: no stored provenance, no line.
+    expect(chips.map((c) => c.from)).toEqual([null, null, null]);
+  });
+
+  it("dcm-bxp.99.32.1: a stored condition source reads 'From <source> - until <endsWhen or until>'", () => {
+    const chips = conditionChips(["restrained", "vulnerable", "hidden"], [], [
+      { condition: "restrained", source: "Vicious Entangle (Moss)", endsWhen: "it breaks free" },
+      { condition: "vulnerable", source: "Pounce", until: "scene" },
+      { condition: "hidden", source: "Shadow Cloak" },
+    ]);
+    expect(chips.map((c) => c.from)).toEqual(["From Vicious Entangle (Moss) - until it breaks free", "From Pounce - until the end of the scene", "From Shadow Cloak"]);
   });
 });

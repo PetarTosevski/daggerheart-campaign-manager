@@ -220,3 +220,38 @@ export function livingFirst<T extends { defeated: boolean }>(rows: readonly T[])
 export function initialOf(name: string): string {
   return name.trim().charAt(0).toUpperCase() || "?";
 }
+
+// ---------------------------------------------------------------- Spotlight Tracker (plan rule-switches RT)
+
+/** A PC's Spotlight Tracker action tokens (`combatHud.party`'s `tokens`; absent while the optional rule is off). */
+export type ActionTokens = { left: number; of: number };
+
+/** The warning a player at 0 sees (user answer Q9 a: warned, not refused; CB p.89). */
+export const NO_ACTIONS_LEFT = "No actions left: let another player act";
+
+/** "2 of 3 actions left" (the pips' words, the GM's rows). */
+export function tokensText(tokens: ActionTokens): string {
+  return `${tokens.left} of ${tokens.of} ${tokens.of === 1 ? "action" : "actions"} left`;
+}
+
+/** Whether the Spotlight Tracker is on for this party (any row carries tokens). */
+export function trackerOn(party: readonly { tokens?: ActionTokens }[] | undefined): boolean {
+  return party?.some((m) => m.tokens !== undefined) ?? false;
+}
+
+/** The party right after `combatSpotlight.refillTokens` (the GM's optimistic update): every PC's tokens full. */
+export function afterRefill<T extends { tokens?: ActionTokens }>(party: readonly T[]): T[] {
+  return party.map((m) => (m.tokens === undefined ? m : { ...m, tokens: { left: m.tokens.of, of: m.tokens.of } }));
+}
+
+/**
+ * The party right after `combatSpotlight.spendToken` (the GM's optimistic update, plan rule-switches RFB): the PC loses
+ * one token (none at 0), and when every PC is then out, all refill (as the server does, CB p.89).
+ */
+export function afterSpend<T extends { characterId: string; tokens?: ActionTokens }>(party: readonly T[], characterId: string): T[] {
+  const spent = party.map((m) =>
+    m.characterId !== characterId || m.tokens === undefined || m.tokens.left === 0 ? m : { ...m, tokens: { ...m.tokens, left: m.tokens.left - 1 } },
+  );
+  const tracked = spent.filter((m) => m.tokens !== undefined);
+  return tracked.length > 0 && tracked.every((m) => m.tokens!.left === 0) ? afterRefill(spent) : spent;
+}

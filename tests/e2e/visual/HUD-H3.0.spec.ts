@@ -32,7 +32,7 @@ test("HUD-H3.0 the picking panel, target rings and Waiting for the GM", { tag: "
       // The action ring's Attack (H3.4): a click on Moss opens the ring.
       await player
         .getByRole("region", { name: "Battle map" })
-        .getByRole("button", { name: /^Open Moss’s sheet \(your character\)/ })
+        .getByRole("button", { name: /^Moss \(your character\): actions/ })
         .click();
       const attack = player.getByRole("toolbar", { name: "Your actions (Moss)" }).getByRole("button", { name: "Attack" });
       await expect(attack).toBeEnabled({ timeout: 30_000 });

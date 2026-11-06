@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { glassButtonClass } from "@/components/brand/glass-button";
-import { DIM_PHASE_BADGE, LIGHT_LEVELS, LIGHT_LEVEL_LABEL, isLightLevel } from "@/lib/domain/combat-map/light";
+import { LIGHT_LEVELS, LIGHT_LEVEL_LABEL, dimLightBadge, isLightLevel } from "@/lib/domain/combat-map/light";
 
 import { api } from "../../../../convex/_generated/api";
 import type { LightPillProps, PreviewPickerProps } from "../slots";
@@ -19,12 +19,15 @@ const ICON = { day: "☀", dim: "◐", night: "☾" } as const;
  * at disadvantage" in dim light, "Night: light sources matter" at night. In the Witherwild the campaign time phase
  * decides it: read-only, with a link to the dashboard's time arc. Elsewhere it is the campaign's time of day: a
  * Day / Dim / Night dropdown for the GM (edit access; the same value as the dashboard's control), read-only for players.
+ * M3 Darkness (plan rule-switches RM): the dim-light badge shows in Book (and until the campaign's rules load), never in
+ * Manual (`dimLightBadge`).
  */
 export function LightPill({ campaignId }: LightPillProps) {
   const light = useCampaignLight(campaignId);
   const setter = useSetTimeOfDay(campaignId);
+  const darkness = useQuery(api.ruleSettings.get, { campaignId })?.modes.darkness;
   if (!light) return null;
-  const badge = light.light === "dim" ? DIM_PHASE_BADGE : light.light === "night" ? "Night: light sources matter" : "";
+  const badge = (light.light === "night" ? "Night: light sources matter" : dimLightBadge(light.light, darkness)) ?? "";
   const icon = <span aria-hidden="true">{ICON[light.light]}</span>;
   const badgeEl = badge ? <span className="cm-light-badge">· {badge}</span> : null;
   if (light.phase !== null) {

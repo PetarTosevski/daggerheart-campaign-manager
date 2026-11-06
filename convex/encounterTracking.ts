@@ -1,7 +1,20 @@
 import { v } from "convex/values";
 
-import { applyCondition, applyMark, damageSeverity, damageTaken, hpForDamage, isDefeated, MAX_DAMAGE, minionDefeats } from "../src/lib/domain/encounters/damage";
-import { applySpotlight, spotlightCostsFear, turnSpotlights } from "../src/lib/domain/encounters/spotlight";
+import {
+  applyCondition,
+  applyMark,
+  damageSeverity,
+  damageTaken,
+  defeatedAfter,
+  hpForDamage,
+  isDefeated,
+  isMassive,
+  lastHp,
+  MAX_DAMAGE,
+  minionDefeats,
+  type DamageRules,
+} from "../src/lib/domain/encounters/damage";
+import { applySpotlight, extraSpotlight, spotlightCostsFear, turnSpotlights } from "../src/lib/domain/encounters/spotlight";
 import { minionValue } from "../src/lib/domain/adversaries/index";
 import { appError } from "../src/lib/errors/app-error";
 import { srdAdversary } from "../src/lib/srd/adversary-lookup";
@@ -13,6 +26,7 @@ import { logAction, newGroupId } from "./lib/actionLog";
 import { liveCombatMap, tokensOnMap } from "./lib/combatMaps";
 import { FEAR_SPEND_REASONS, spendFear as spendCampaignFear } from "./lib/fear";
 import { gmQuery, keyedGmMutation } from "./lib/functions";
+import { ruleModesOf, postRuleNote } from "./lib/ruleModes";
 import { adversaryDefeated } from "./lib/spotlight";
 import { seenThisScene } from "./lib/spotlightSeen";
 import { customAdversaryFields, encounterConditionValidator } from "./lib/validators/encounters";
@@ -23,6 +37,12 @@ import { customAdversaryFields, encounterConditionValidator } from "./lib/valida
  * outsider NOT_FOUND). Every mutation is keyed (a retried click applies once), sends an intent (a delta, a
  * condition, a count) and refuses with ENCOUNTER_NOT_RUNNING unless the encounter is running. The rules are the pure
  * functions in src/lib/domain/encounters/damage.ts and spotlight.ts, which the tracker's optimistic updates share.
+ *
+ * Rule switches (plan rule-switches, tracer RDM; docs/tasks/TASK-RULES-RDM.md): the campaign's modes
+ * (`ruleModesOf(ctx.campaign)`) go into those functions. A Manual rule posts a GM-only note (`postRuleNote`): D2
+ * "<adversary> resists: halve?", D4 "<adversary>: Stress full, mark 1 HP?", D8 "<adversary> marked its last HP:
+ * defeated?", F3 "Extra spotlight on <adversary>: spend 1 Fear?". The tracker's actions are not in the action log, so
+ * the notes carry no `groupId` and are never undoable. Massive Damage (CB p.91), when on, marks 4 HP.
  */
 
 
@@ -54,15 +74,35 @@ async function minionX(ctx: MutationCtx, instance: Doc<"encounterAdversaries">):
   return null;
 }
 
-async function patchTracks(ctx: MutationCtx, instance: Doc<"encounterAdversaries">, hp: number, stress: number) {
-  const defeated = isDefeated({ hp, hpMax: instance.stats.hpMax });
+/** A tracker mutation's context: the GM wrapper's campaign and caller. */
+type TrackerCtx = MutationCtx & { campaign: Doc<"campaigns">; user: Doc<"users"> };
+
+/**
+ * Writes the tracks and the defeated flag (`defeatedAfter`: Book, every HP marked; D8 Manual, never by itself). D8
+ * Manual: marking the last HP tells the GM "<adversary> marked its last HP: defeated?".
+ */
+async function patchTracks(ctx: TrackerCtx, instance: Doc<"encounterAdversaries">, hp: number, stress: number, rules: DamageRules = {}) {
+  const hpMax = instance.stats.hpMax;
+  const defeated = defeatedAfter(instance.defeated, { hp, hpMax }, rules);
   await ctx.db.patch("encounterAdversaries", instance._id, { hp, stress, defeated, updatedAt: Date.now() });
+  const reachedLast = instance.hp < hpMax && lastHp({ hp, hpMax });
+  if (rules.adversaryDefeated === "manual" && reachedLast && !defeated) {
+    await note(ctx, "adversaryDefeated", `${instance.label} marked its last HP: defeated?`);
+  }
   return { hp, stress, defeated };
+}
+
+/** A Manual rule's GM-only note (no groupId: the tracker's actions are not in the action log, so nothing undoes with it). */
+async function note(ctx: TrackerCtx, ruleId: "resistance" | "stressOverflow" | "adversaryDefeated" | "extraSpotlightFear", summary: string) {
+  await postRuleNote(ctx, ctx.campaign, { ruleId, summary, actorId: ctx.user._id });
 }
 
 const markArgs = { instanceId: v.string(), delta: v.number() };
 
-/** Marks (positive) or clears (negative) HP, kept within the track. Defeated once every HP is marked (CB p.208). */
+/**
+ * Marks (positive) or clears (negative) HP, kept within the track. Defeated once every HP is marked (CB p.208); D8
+ * Manual: not defeated, the GM gets a note.
+ */
 export const markHp = keyedGmMutation({
   args: markArgs,
   returns: tracksResult,
@@ -70,12 +110,16 @@ export const markHp = keyedGmMutation({
     ctx.once("encounter_mark_hp", { instanceId, delta }, async () => {
       const { instance } = await loadRunning(ctx, ctx.campaign._id, instanceId);
       assertWholeInRange(delta, -MAX_MINIONS, MAX_MINIONS, "An HP change");
-      const next = applyMark(instance, "hp", delta);
-      return patchTracks(ctx, instance, next.hp, next.stress);
+      const rules = ruleModesOf(ctx.campaign);
+      const next = applyMark(instance, "hp", delta, rules);
+      return patchTracks(ctx, instance, next.hp, next.stress, rules);
     }),
 });
 
-/** Marks or clears Stress; marking past a full track marks 1 HP instead (CB p.92, open question 2). */
+/**
+ * Marks or clears Stress; marking past a full track marks 1 HP instead (CB p.92, open question 2). D4 Manual: the
+ * extra Stress is dropped and the GM gets "Stress full, mark 1 HP?".
+ */
 export const markStress = keyedGmMutation({
   args: markArgs,
   returns: tracksResult,
@@ -83,15 +127,20 @@ export const markStress = keyedGmMutation({
     ctx.once("encounter_mark_stress", { instanceId, delta }, async () => {
       const { instance } = await loadRunning(ctx, ctx.campaign._id, instanceId);
       assertWholeInRange(delta, -MAX_MINIONS, MAX_MINIONS, "A Stress change");
-      const next = applyMark(instance, "stress", delta);
-      return patchTracks(ctx, instance, next.hp, next.stress);
+      const rules = ruleModesOf(ctx.campaign);
+      const next = applyMark(instance, "stress", delta, rules);
+      const overflow = delta > 0 && instance.stress + delta > instance.stats.stressMax;
+      if (overflow && rules.stressOverflow === "manual") await note(ctx, "stressOverflow", `${instance.label}: Stress full, mark 1 HP?`);
+      return patchTracks(ctx, instance, next.hp, next.stress, rules);
     }),
 });
 
 /**
  * Damage against the instance's thresholds (CB p.91; halved first when `resistant`, CB p.99): marks 1, 2 or 3 HP, or
  * every remaining HP for a block without thresholds. A Minion group marks nothing: the result suggests how many
- * Minions fall (CB p.201) and the GM confirms with `defeatMinions`.
+ * Minions fall (CB p.201) and the GM confirms with `defeatMinions`. Massive Damage on (CB p.91): twice the Severe
+ * threshold marks 4 HP (`massive`). D2 Manual: a resistant hit is not halved (`resistanceApplied` false) and the GM gets
+ * "<adversary> resists: halve?"; D8 Manual: the last HP leaves it up (`lastHp`) with a note.
  */
 export const applyDamage = keyedGmMutation({
   args: { instanceId: v.string(), amount: v.number(), resistant: v.boolean() },
@@ -102,22 +151,33 @@ export const applyDamage = keyedGmMutation({
     suggestedDefeats: v.union(v.number(), v.null()),
     hp: v.number(),
     defeated: v.boolean(),
+    resistanceApplied: v.boolean(),
+    massive: v.boolean(),
+    lastHp: v.boolean(),
   }),
   handler: async (ctx, { instanceId, amount, resistant }) =>
     ctx.once("encounter_damage", { instanceId, amount, resistant }, async () => {
       const { instance } = await loadRunning(ctx, ctx.campaign._id, instanceId);
       assertWholeInRange(amount, 0, MAX_DAMAGE, "Damage");
-      const taken = damageTaken(amount, resistant);
-      const severity = damageSeverity(amount, instance.stats, resistant);
+      const rules = ruleModesOf(ctx.campaign);
+      const taken = damageTaken(amount, resistant, rules);
+      const severity = damageSeverity(amount, instance.stats, resistant, rules);
+      const resistanceApplied = !resistant || rules.resistance !== "manual";
+      if (!resistanceApplied && amount > 0) {
+        await note(ctx, "resistance", `${instance.label} resists: halve? (${amount} taken in full; halved: ${Math.ceil(amount / 2)})`);
+      }
       const remaining = instance.stats.hpMax - instance.hp;
       if (instance.minionCount !== undefined) {
         const suggestedDefeats = minionDefeats(taken, await minionX(ctx, instance), remaining);
-        return { taken, severity, marked: 0, suggestedDefeats, hp: instance.hp, defeated: instance.defeated };
+        const last = lastHp({ hp: instance.hp, hpMax: instance.stats.hpMax });
+        return { taken, severity, marked: 0, suggestedDefeats, hp: instance.hp, defeated: instance.defeated, resistanceApplied, massive: false, lastHp: last };
       }
-      const hp = hpForDamage(amount, instance.stats, resistant);
+      const hp = hpForDamage(amount, instance.stats, resistant, rules);
+      const massive = severity === "severe" && isMassive(taken, instance.stats, rules);
       const marked = hp === "all" ? remaining : Math.min(remaining, hp);
-      const next = await patchTracks(ctx, instance, instance.hp + marked, instance.stress);
-      return { taken, severity, marked, suggestedDefeats: null, hp: next.hp, defeated: next.defeated };
+      const next = await patchTracks(ctx, instance, instance.hp + marked, instance.stress, rules);
+      const last = lastHp({ hp: next.hp, hpMax: instance.stats.hpMax });
+      return { taken, severity, marked, suggestedDefeats: null, hp: next.hp, defeated: next.defeated, resistanceApplied, massive, lastHp: last };
     }),
 });
 
@@ -246,8 +306,13 @@ export const setNote = keyedGmMutation({
 
 /**
  * Counts one spotlight for the encounter's current GM turn (CB p.153, p.195). Past the limit the tracker warns; the
- * server never refuses (open question 5). Fear is not taken here: the GM uses "Spend Fear". A defeated adversary
- * can't be spotlighted (ADVERSARY_DEFEATED, user 2026-11-04).
+ * server never refuses (open question 5). Every spotlight after the first in a GM turn spends 1 Fear (F3 Book); F3
+ * Manual: no Fear, the GM gets "Extra spotlight on <adversary>: spend 1 Fear?". A defeated adversary can't be
+ * spotlighted (ADVERSARY_DEFEATED, user 2026-11-04; D8 Manual: only one the GM marked defeated).
+ *
+ * Not wired yet (bead dcm-bxp.99.32.4): lighting the adversary's token on the live map (`spotlightAdversary`) here
+ * changes `combatSpotlight.gmTake`'s paid take after a tracker spotlight (tests/convex/spotlight-v2.test.ts, "not
+ * counted twice"), so it waits for that decision; see docs/tasks/TASK-RULES-RDM.md.
  */
 export const spotlight = keyedGmMutation({
   args: { instanceId: v.string() },
@@ -255,14 +320,18 @@ export const spotlight = keyedGmMutation({
   handler: async (ctx, { instanceId }) =>
     ctx.once("encounter_spotlight", { instanceId }, async () => {
       const { instance, encounter } = await loadRunning(ctx, ctx.campaign._id, instanceId);
-      if (adversaryDefeated(instance)) throw appError("ADVERSARY_DEFEATED");
+      const rules = ruleModesOf(ctx.campaign);
+      const down = instance.defeated || isDefeated({ hp: instance.hp, hpMax: instance.stats.hpMax }, rules);
+      if (down) throw appError("ADVERSARY_DEFEATED");
       // Every spotlight after the first in a GM turn spends 1 Fear (CB p.153); FEAR_EMPTY when the GM has none.
       const all = await ctx.db
         .query("encounterAdversaries")
         .withIndex("by_encounter_order", (q) => q.eq("encounterId", encounter._id))
         .take(MAX_INSTANCES + 1);
-      const fearSpent = spotlightCostsFear(turnSpotlights(all, encounter.gmTurn));
+      const soFar = turnSpotlights(all, encounter.gmTurn);
+      const fearSpent = spotlightCostsFear(soFar, rules.extraSpotlightFear);
       if (fearSpent) await spendCampaignFear(ctx, ctx.campaign._id, 1, "move");
+      else if (extraSpotlight(soFar)) await note(ctx, "extraSpotlightFear", `Extra spotlight on ${instance.label}: spend 1 Fear?`);
       const { spotlights, spotlightTurn } = applySpotlight(instance, encounter.gmTurn);
       await ctx.db.patch("encounterAdversaries", instance._id, { spotlights, spotlightTurn, updatedAt: Date.now() });
       return { spotlights, gmTurn: spotlightTurn, fearSpent };

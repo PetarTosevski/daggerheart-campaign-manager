@@ -12,12 +12,12 @@ import { ConvexError, v } from "convex/values";
 import { appError } from "../src/lib/errors/app-error";
 import { internal } from "./_generated/api";
 import { env, internalQuery, type ActionCtx, type MutationCtx } from "./_generated/server";
+import { resumeSelfDeletedAccount } from "./accountSelfDelete";
 import { buildE2EProfile, normalizeEmail } from "./lib/allowlist";
 import { AppleKeyCache, appleTokenKeyId, verifyAppleIdentityToken } from "./lib/appleIdentity";
 import { enforceAppleSignInLimit } from "./lib/appleSignInLimit";
 import { resendCodeProvider } from "./lib/authEmail";
 import { enforceAuthLimit } from "./lib/authRateLimit";
-import { isAccountSuspended } from "./lib/functions";
 import { nativeRedirectTarget } from "./lib/nativeRedirect";
 import {
   createOrUpdateUser,
@@ -39,22 +39,14 @@ export const signUpGate = internalQuery({
 });
 
 /**
- * Whether a signed-in account is suspended or waiting for deletion (config AD14). Asked after a password or e2e
- * sign-in of an existing account, which Convex Auth finishes without calling `createOrUpdateUser`.
+ * Refuses a sign-in result whose account is suspended or waiting for the owner's deletion (config AD14), so the person
+ * is turned away at the sign-in screen. Asked after a password, e2e (or phone Apple) sign-in of an existing account,
+ * which Convex Auth finishes without calling `createOrUpdateUser`. A deletion the account asked for itself is cancelled
+ * instead and the sign-in goes on (DEL1, `accountSelfDelete.signInAllowed`).
  */
-export const accountSuspended = internalQuery({
-  args: { userId: v.string() },
-  returns: v.boolean(),
-  handler: async (ctx, { userId }) => {
-    const id = ctx.db.normalizeId("users", userId);
-    return id !== null && (await isAccountSuspended(ctx, id));
-  },
-});
-
-/** Refuses a sign-in result whose account is suspended, so the person is turned away at the sign-in screen. */
 async function refuseSuspendedSignIn<T>(ctx: ActionCtx, result: T): Promise<T> {
   const userId = (result as { userId?: unknown } | null)?.userId;
-  if (typeof userId === "string" && (await ctx.runQuery(internal.auth.accountSuspended, { userId }))) {
+  if (typeof userId === "string" && !(await ctx.runMutation(internal.accountSelfDelete.signInAllowed, { userId }))) {
     throw appError("ACCOUNT_SUSPENDED");
   }
   return result;
@@ -237,6 +229,11 @@ const appleNativeProvider = ConvexCredentials({
     return { userId: user._id };
   },
 });
+/** `createOrUpdateUser` behind the self-deletion cancel (DEL1): an OAuth sign-in of an existing account. */
+export async function signInCallback(ctx: MutationCtx, args: SignInArgs) {
+  if (args.existingUserId !== null) await resumeSelfDeletedAccount(ctx, args.existingUserId);
+  return createOrUpdateUser(ctx, args);
+}
 
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   providers: [
@@ -291,7 +288,8 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
     },
     // The callback's ctx is typed for any data model; this app's schema is
     // the one in convex/schema.ts.
-    createOrUpdateUser: (ctx, args) =>
-      createOrUpdateUser(ctx as unknown as MutationCtx, args as unknown as SignInArgs),
+    // Signing in to an account that asked for its own deletion cancels it first (DEL1), so `createOrUpdateUser`'s
+    // suspension check (AD14) refuses only what the owner set.
+    createOrUpdateUser: (ctx, args) => signInCallback(ctx as unknown as MutationCtx, args as unknown as SignInArgs),
   },
 });

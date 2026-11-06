@@ -24,6 +24,11 @@ export const actionKindValidator = v.union(
   v.literal("combat"),
   /** An adversary's attack or feature against PCs (plan combat-actions, AA2). */
   v.literal("adversary"),
+  /**
+   * A Manual rule's note to the GM (plan rule-switches RS0, widened): GM-only, carries `ruleId`, written only by
+   * `postRuleNote` (convex/lib/ruleModes.ts). Undone with its action when it shares the action's `groupId`.
+   */
+  v.literal("rule"),
 );
 
 /** `public`: every member reads it; `gm`: only the GM (GM free rolls until revealed, decision 2). */
@@ -154,6 +159,11 @@ export const actionLogFields = {
    * "Revealed". Rows revealed before the field have none: unknown, no tag. Never set on a row that was never hidden.
    */
   revealedAt: v.optional(v.number()),
+  /**
+   * A `rule` row's rule (a registry id of `src/lib/rules/registry.ts`; plan rule-switches RS0, widened). A string, not a
+   * union of the ids, so a registry change never needs a migration of the log.
+   */
+  ruleId: v.optional(v.string()),
   at: v.number(),
 };
 

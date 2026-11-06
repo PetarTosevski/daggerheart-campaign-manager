@@ -21,6 +21,18 @@
 .tok-pyre{position:absolute;top:-6px;right:-8px;font-size:11px;line-height:1;padding:1px 2px;border-radius:6px;background:rgba(20,30,34,.9);color:#8fa3a8;pointer-events:none}
 .tok-pyre.lit{background:rgba(58,36,16,.95);color:#ffb060}
 .tok-lbl{max-width:110px;padding:0 4px;border-radius:4px;background:rgba(239,227,200,.9);color:#2a1f14;font-family:var(--font-cinzel),serif;font-size:9px;line-height:1.4;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+/* Hex markers (maps with a hex grid): the box is sized by the grid in % of the map; only the hex itself takes the pointer. */
+.tok.tok-hex{display:block;gap:0;pointer-events:none;outline:none}
+.tok-hex::before{content:"";position:absolute;left:50%;top:50%;width:100%;height:100%;transform:translate(-50%,-50%);pointer-events:none}
+@media (pointer:coarse){.tok-hex::before{min-width:44px;min-height:44px;pointer-events:auto}}
+.tok-face{position:absolute;inset:0;width:100%;height:100%;overflow:visible;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))}
+.tok-face .tok-shape{pointer-events:auto}
+.tok-face .tok-focus{display:none}
+.tok-hex:focus-visible .tok-face .tok-focus{display:inline}
+.tok-hex .tok-lbl{position:absolute;left:50%;bottom:8%;transform:translateX(-50%);max-width:max(92%,72px);pointer-events:auto}
+.tok-shared .tok-lbl{display:none}
+.tok-hex .tok-pyre{top:0;right:0;transform:translate(40%,-40%)}
+.tok-more{position:absolute;right:0;bottom:0;transform:translate(30%,30%);padding:0 3px;border-radius:6px;background:#2a1a04;color:#f3cf86;font-size:9px;font-weight:700;line-height:1.4;pointer-events:none}
 .pal-row{display:flex;gap:4px;align-items:center}
 .chk{display:flex;align-items:center;gap:8px;min-height:36px;font-size:13px;color:#e6ecea;cursor:pointer}
 .chk input{width:18px;height:18px;accent-color:#e3b45a}

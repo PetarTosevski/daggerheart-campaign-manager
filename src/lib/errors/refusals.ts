@@ -433,7 +433,9 @@ export function refusalFor(error: unknown, ctx: RefusalContext = {}): Refusal {
   if (typeof error === "string") return refusalForCode(error, ctx);
   const data = refusalData(error);
   if (!data) return build("FALLBACK", FALLBACK, ctx, null, []);
-  const structured = readShortfall(data.data);
+  // The server's numbers win over the client's pre-compute (dcm-bxp.99.32.2); a Fear shortfall is always the GM's.
+  const fear = data.code === "NOT_ENOUGH_FEAR" || data.code === "FEAR_EMPTY";
+  const structured = readShortfall(data.data).map((s) => (fear && s.resource === "fear" && !s.payer ? { ...s, payer: "gm" as const } : s));
   const shortfall = structured.length > 0 ? structured : ctx.shortfall?.length ? ctx.shortfall : impliedShortfall(data.code, data.message);
   if (data.code in REFUSALS) return build(data.code, REFUSALS[data.code as RefusalCode], ctx, data.message, shortfall);
   // An app code outside the combat table (UNDO_STALE, DICE_RULE …): its own words; truly unknown → FALLBACK.

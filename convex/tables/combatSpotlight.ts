@@ -71,4 +71,22 @@ export const combatSpotlightTables = {
     /** When a player's character first saw it this scene (ms). */
     seenAt: v.number(),
   }).index("by_campaign_token", ["campaignId", "tokenId"]),
+
+  /**
+   * Spotlight Tracker action tokens (optional rule, CB p.89; plan rule-switches RT, docs/tasks/TASK-RULES-RT.md): how
+   * many of a PC's tokens are spent. No row means the PC's tokens are full; a refill deletes the campaign's rows. Written
+   * only through convex/lib/actionTokens.ts. Rule 6: its own table, changed on many rolls, never a field on the
+   * character or the campaign. Bounded: at most one row per character of the campaign; purged with the campaign.
+   *
+   * - `by_campaign_character`: a PC's row (the spend, the HUD); the campaign prefix: the refill and the purge. (No
+   *   separate `by_campaign`: it would be a prefix duplicate, CD15.)
+   */
+  actionTokens: defineTable({
+    campaignId: v.id("campaigns"),
+    characterId: v.id("characters"),
+    /** Tokens spent since the last refill (0 … the campaign's tokens per PC). */
+    used: v.number(),
+    /** Last change (ms). */
+    updatedAt: v.number(),
+  }).index("by_campaign_character", ["campaignId", "characterId"]),
 };

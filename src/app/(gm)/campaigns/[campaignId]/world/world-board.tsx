@@ -27,6 +27,7 @@ import {
   type TravelPace,
 } from "@/lib/domain/travel";
 import { hexDistance, hexToPixel, pixelToHex, type Hex } from "@/lib/world/hex";
+import { printedHexGrid } from "@/lib/world/printed-grids";
 import { HORIZON_FRAME, SANCTUARY_TYPE, WORLD_MAPS, mapImageSize, playerMapView, travelRules, type MapState, type MapToken, type PlayerMapState } from "@/lib/world/map-state";
 import {
   BRUSHES,
@@ -288,7 +289,9 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
   function onMapClick(p: Point) {
     if (settingOrigin && crawl) {
       setSettingOrigin(false);
-      void actions.setHexGrid({ ...crawl.grid, originX: Math.round((p.x / 100) * image.width * 10) / 10, originY: Math.round((p.y / 100) * image.height * 10) / 10 });
+      const originX = Math.round((p.x / 100) * image.width * 10) / 10;
+      const originY = Math.round((p.y / 100) * image.height * 10) / 10;
+      void actions.calibrateHexGrid({ field: "originX", value: originX }).then((ok) => ok !== undefined && actions.calibrateHexGrid({ field: "originY", value: originY }));
       return;
     }
     if (measuring) {
@@ -763,6 +766,8 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
                 settingOrigin={settingOrigin}
                 onSettingOrigin={(on) => (setSettingOrigin(on), on && setShowGrid(true))}
                 encounterNote={(h) => unusedEncounters(gmCrawlView, crawl, h)}
+                uploaded={!!state.customMap}
+                printed={state.customMap ? null : printedHexGrid(data.frameId)}
               />
               {gmCrawlView ? (
                 <CrawlRegionsPanel campaignId={campaignId} crawl={crawl} view={gmCrawlView} tokens={state.tokens} selected={selHex} actions={actions} />

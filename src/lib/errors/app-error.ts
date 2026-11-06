@@ -18,6 +18,7 @@ import { lorekeeperMessages } from "./lorekeeper";
 import { noteMessages } from "./notes";
 import { photoImportMessages } from "./photoImport";
 import { restMessages } from "./rests";
+import { ruleMessages } from "./rules";
 import { sessionMessages } from "./sessions";
 import { spotlightMessages } from "./spotlight";
 import { spritePackMessages } from "./spritePacks";
@@ -52,6 +53,7 @@ export type AppErrorCode =
   | keyof typeof lorekeeperMessages
   | keyof typeof configMessages
   | keyof typeof adminMessages
+  | keyof typeof ruleMessages
   | "IDEMPOTENCY_MISMATCH"
   | "NAME_TAKEN"
   | "OBJECTIVE_LIMIT"
@@ -68,8 +70,21 @@ export type AppErrorCode =
   | "MAP_CORRUPT"
   | "TRACKER_CORRUPT";
 
-/** The one payload shape of every `ConvexError` (CF13). The client shows `message` when present. */
-export type AppError = { code: AppErrorCode; message?: string };
+/**
+ * What a cost refusal was short of (dcm-bxp.99.32.2; board CmpBlocked "Wall Walk costs 1 Hope. You have 0."): the
+ * resource, what the use needs of it and what the payer `have`s to pay with. For a resource a cost marks (Stress, HP,
+ * Armor slots) `have` is the free room on the track; for one it spends (Hope, tokens, Fear, gold, Favor, Focus) it is
+ * the amount held (0 while a flag such as Ravenous forbids spending Hope). Held dice read as `tokens`.
+ */
+export type ShortfallResource = "hope" | "stress" | "hp" | "armor" | "tokens" | "fear" | "gold" | "favor" | "focus";
+export type Shortfall = { resource: ShortfallResource; need: number; have: number };
+
+/**
+ * The one payload shape of every `ConvexError` (CF13). The client shows `message` when present. `shortfall`
+ * (dcm-bxp.99.32.2, widened, optional) rides on CARD_COST_UNPAID, FEATURE_COST_UNPAID, NOT_ENOUGH_FEAR and
+ * NOT_ENOUGH_HOPE when the server knows the numbers; the client computes it itself otherwise.
+ */
+export type AppError = { code: AppErrorCode; message?: string; shortfall?: Shortfall };
 
 /**
  * An expected rule violation (Fear out of range, a countdown already done).
@@ -80,6 +95,8 @@ export class RuleError extends Error {
   constructor(
     readonly code: AppErrorCode,
     message: string,
+    /** dcm-bxp.99.32.2: carried onto the `ConvexError` by the wrappers. */
+    readonly shortfall?: Shortfall,
   ) {
     super(message);
     this.name = "RuleError";
@@ -93,7 +110,7 @@ const STANDARD_MESSAGES = { ...commonMessages, ...authMessages };
  * A `ConvexError<AppError>` to throw. Without a `message`, a common or sign-in
  * code carries its standard text, so the client can show it as is.
  */
-export function appError(code: AppErrorCode, message?: string): ConvexError<AppError> {
+export function appError(code: AppErrorCode, message?: string, shortfall?: Shortfall): ConvexError<AppError> {
   const text = message ?? (STANDARD_MESSAGES as Partial<Record<AppErrorCode, string>>)[code];
-  return new ConvexError<AppError>(text === undefined ? { code } : { code, message: text });
+  return new ConvexError<AppError>({ code, ...(text === undefined ? {} : { message: text }), ...(shortfall === undefined ? {} : { shortfall }) });
 }

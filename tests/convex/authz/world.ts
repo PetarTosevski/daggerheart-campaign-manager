@@ -19,6 +19,9 @@ import { characterDraft } from "../../fixtures/characters";
 import { key } from "../helpers";
 import { makeTest } from "../setup";
 
+// RD2 (2026-11-06): the four frame rules start off for new campaigns; these fixtures play them as before.
+const FRAME_RULE = { "castle-high": "lessLethal", "dark-heart-of-andaluria": "transformations", "journey-to-horizon": "enduranceCountdowns", motherboard: "remnantCorruption" } as const;
+
 /**
  * Who calls: signed out, a stranger, playerA (owns characterA), playerB (owns characterB), the edit-grant player, a
  * co-GM (member row `role: "coGm"`, owns no character), the GM (the campaign's creator), the app owner (superadmin,
@@ -102,6 +105,8 @@ export async function buildWorld(options: WorldOptions = {}): Promise<World> {
   const as = (role: Role) => clients.get(role)!;
 
   const { campaignId } = await as("gm").mutation(api.campaigns.create, { frameId, name: "Matrix", idempotencyKey: key() });
+  const frameRule = (FRAME_RULE as Record<string, (typeof FRAME_RULE)[keyof typeof FRAME_RULE]>)[frameId];
+  if (frameRule) await as("gm").mutation(api.campaigns.setOption, { campaignId: campaignId, option: frameRule, enabled: true });
   const joinCode = await as("gm").mutation(api.members.rotateJoinCode, { campaignId });
   for (const role of ["player", "otherPlayer", "grantee", "coGm"] as const) await as(role).mutation(api.members.joinByCode, { code: joinCode });
   await as("gm").mutation(api.members.setCoGm, { campaignId, userId: users.coGm, coGm: true });

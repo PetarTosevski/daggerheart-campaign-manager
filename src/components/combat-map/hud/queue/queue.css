@@ -137,7 +137,7 @@
 }
 
 /* Log: Resolutions above the dock on the right (the shell's "log" region; dock.css places it). */
-.hud-log .hud-res {
+.hud-log .hud-q-res {
   max-height: calc(100dvh - var(--app-bar-h, 0px) - 80px - 290px);
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -150,13 +150,13 @@
   .hud-root.hud-sh-open .hud-r-log {
     right: calc(var(--hud-sheet-w) + 12px);
   }
-  .hud-log .hud-res {
+  .hud-log .hud-q-res {
     max-height: calc(100dvh - var(--app-bar-h, 0px) - 74px - 236px);
   }
 }
 
 .hud-q,
-.hud-res {
+.hud-q-res {
   padding: 12px 14px;
   border-radius: var(--hud-r-panel);
   background: rgba(13, 20, 23, 0.95);
@@ -172,7 +172,7 @@
   flex: 0 1 auto;
 }
 .hud-q-h,
-.hud-res-h {
+.hud-q-res-h {
   margin: 0 0 10px;
   display: flex;
   align-items: center;
@@ -180,7 +180,7 @@
   font: 700 15px/1 var(--hud-font-display);
   color: var(--hud-fear-text);
 }
-.hud-res-h {
+.hud-q-res-h {
   color: var(--hud-gold-text);
 }
 .hud-q-n {
@@ -199,7 +199,7 @@
   overscroll-behavior: contain;
 }
 .hud-q-list,
-.hud-res-list {
+.hud-q-res-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -244,7 +244,7 @@
   vertical-align: middle;
 }
 
-.hud-res-undo {
+.hud-q-res-undo {
   flex: none;
   height: 26px;
   padding: 0 10px;
@@ -255,11 +255,11 @@
   font-size: 11.5px;
   cursor: pointer;
 }
-.hud-res-undo:focus-visible {
+.hud-q-res-undo:focus-visible {
   outline: 2px solid var(--hud-gold);
   outline-offset: 2px;
 }
-.hud-res-undo:disabled {
+.hud-q-res-undo:disabled {
   opacity: 0.5;
   cursor: default;
 }
@@ -286,47 +286,48 @@
 .hud-q-scroll .hud-q-inl {
   margin-top: 0;
 }
-.hud-res .hud-q-inl {
+.hud-q-res .hud-q-inl {
   margin-top: 8px;
 }
 
 /* Resolutions (GMDesktop `.gr .feed`). */
-.hud-res {
+.hud-q-res {
   flex: none;
 }
-.hud-res-list li {
+.hud-q-res-list li {
   display: flex;
   gap: 9px;
   align-items: center;
   font-size: 12.5px;
   line-height: 1.35;
 }
-.hud-res-i {
+.hud-q-res-i {
   display: flex;
   flex: none;
   color: var(--hud-gold);
 }
 /* A roll with Fear (user answer 2026-11-02): the Fear colour, as the Fear banner. */
-.hud-res-fear .hud-res-i {
+.hud-q-res-fear .hud-q-res-i {
   color: var(--hud-fear-text);
 }
-.hud-res-i svg {
+.hud-q-res-i svg {
   width: 14px;
   height: 14px;
 }
-.hud-res-t {
+.hud-q-res-t {
   flex: 1;
   min-width: 0;
 }
-.hud-res-t b {
+.hud-q-res-t b {
   font-weight: 600;
 }
-.hud-res-t span {
+.hud-q-res-t span {
   color: var(--hud-muted);
 }
-.hud-res-undo {
+.hud-q-res-undo {
   margin-left: auto;
 }
+/* `hud-res-undone` keeps its name: e2e specs outside the HUD (combat-actions-flow) match it; the result panel has no such class. */
 .hud-res-undone b {
   text-decoration: line-through;
   color: var(--hud-muted);

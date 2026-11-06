@@ -8,6 +8,7 @@
 // fearReasons(confirm, "the Lieutenant", ...);  // ["1 to spotlight the Lieutenant", "1 for Local Knowledge"]
 // ```
 
+import { conditionProvenance, provenanceLine, type ConditionSourceEntry } from "@/lib/domain/characters/condition-sources";
 import type { SightResult } from "@/lib/domain/combat-actions/sight";
 import type { Footprint } from "@/lib/domain/combat-actions/distance";
 import { spotlightCostsFear, spotlightsThisTurn, turnSpotlights } from "@/lib/domain/encounters/spotlight";
@@ -202,18 +203,23 @@ export function attackLabel(names: readonly string[]): string {
   return `Attack ${names.length <= 2 ? names.join(" and ") : `${names.length} targets`}`;
 }
 
-/** The condition chips: each condition, with the Fear end that clears it (by name), and Fear ends with no condition. */
+/**
+ * The condition chips: each condition, with the Fear end that clears it (by name), and Fear ends with no condition.
+ * `from` (dcm-bxp.99.32.1): the instance's stored provenance, "From Vicious Entangle (Moss) - until it breaks free", or
+ * null when none is stored (the chip shows the condition alone, as before).
+ */
 export type FearEnd = { effectId: string; label: string; source: string; fear: number };
-export type ConditionChip = { key: string; label: string; condition: string | null; end: FearEnd | null };
+export type ConditionChip = { key: string; label: string; condition: string | null; end: FearEnd | null; from: string | null };
 
-export function conditionChips(conditions: readonly string[], ends: readonly FearEnd[]): ConditionChip[] {
+export function conditionChips(conditions: readonly string[], ends: readonly FearEnd[], sources?: readonly ConditionSourceEntry[]): ConditionChip[] {
   const used = new Set<string>();
   const chips: ConditionChip[] = conditions.map((c) => {
     const label = c.charAt(0).toUpperCase() + c.slice(1);
     const end = ends.find((e) => !used.has(e.effectId) && e.label.toLowerCase() === c.toLowerCase()) ?? null;
     if (end) used.add(end.effectId);
-    return { key: `c:${c}`, label, condition: c, end };
+    const stored = conditionProvenance(sources, c);
+    return { key: `c:${c}`, label, condition: c, end, from: stored ? provenanceLine(stored) : null };
   });
-  for (const e of ends) if (!used.has(e.effectId)) chips.push({ key: `e:${e.effectId}`, label: e.label, condition: null, end: e });
+  for (const e of ends) if (!used.has(e.effectId)) chips.push({ key: `e:${e.effectId}`, label: e.label, condition: null, end: e, from: null });
   return chips;
 }

@@ -35,8 +35,8 @@ export type ResultView = {
   /** Unique per result (the actionLog entry). */
   id: string;
   characterId: string;
-  kind: "card" | "attack";
-  /** "Vicious Entangle", "Shortstaff". */
+  kind: "card" | "attack" | "feature";
+  /** "Vicious Entangle", "Shortstaff", "Fangs". */
   title: string;
   /** "Moss · Spellcast Roll", "Moss · Attack". */
   sub: string;
@@ -163,12 +163,22 @@ type Prompt = { kind: ResultPrompt["kind"]; text: string };
 
 const targetsOf = (targets: readonly Target[], names: Names): ResultTarget[] => targets.map((t) => ({ tokenId: t.tokenId, name: names.get(t.tokenId) ?? "Target", verdict: verdictOf(t) }));
 
+/**
+ * The result's Minion line (CB p.201): the player picks the extra Minions in the prompt (`minionOffer`, Book), or, with
+ * D6 on "GM picks" (rule switches RC1 / RFC), "The GM picks 2 more Minions" (`minionsForGm`). Manual: none.
+ */
+export function minionNotes(result: { minionOffer: unknown; minionsForGm?: number }): string[] {
+  if (result.minionOffer) return ["Your damage can defeat more Minions: pick them in the prompt."];
+  const n = result.minionsForGm ?? 0;
+  return n > 0 ? [`The GM picks ${n} more Minion${n === 1 ? "" : "s"}.`] : [];
+}
+
 /** A resolved card use (`combatCards.useCard`'s `resolved`). */
 export function cardResultView(input: {
   characterId: string;
   actorName: string;
   cardName: string;
-  result: { entryId: string; cardId: string; useId: string; roll: RollRecord | null; damage: readonly RollRecord[]; success: boolean; targets: readonly Target[]; fearDelta?: number; prompts: readonly Prompt[]; minionOffer: unknown };
+  result: { entryId: string; cardId: string; useId: string; roll: RollRecord | null; damage: readonly RollRecord[]; success: boolean; targets: readonly Target[]; fearDelta?: number; prompts: readonly Prompt[]; minionOffer: unknown; minionsForGm?: number };
   names: Names;
   /** The use's own name when it differs from the card's (a grimoire's spell). */
   useName?: string;
@@ -189,7 +199,37 @@ export function cardResultView(input: {
     targets: targetsOf(result.targets, input.names),
     fear: Math.max(0, result.fearDelta ?? 0),
     prompts: result.prompts.map((p) => ({ kind: p.kind, text: p.text })),
-    notes: result.minionOffer ? ["Your damage can defeat more Minions: pick them in the prompt."] : [],
+    notes: minionNotes(result),
+  };
+}
+
+/**
+ * A resolved feature use (`combatFeatures.useFeature`'s `resolved`, convex/lib/featureRunner.ts
+ * `resolvedFeatureValidator`) through the picking panel (dcm-bxp.99.32.26; it used to be one line in the square-picking
+ * bar). No art; the feature's own notes (Favor, Help dice, areas) go under the rows.
+ */
+export function featureResultView(input: {
+  characterId: string;
+  actorName: string;
+  featureName: string;
+  result: { entryId: string; roll: RollRecord | null; damage: readonly RollRecord[]; success: boolean; targets: readonly Target[]; fearDelta?: number; prompts: readonly Prompt[]; notes: readonly string[] };
+  names: Names;
+}): ResultView {
+  const { result } = input;
+  return {
+    id: result.entryId,
+    characterId: input.characterId,
+    kind: "feature",
+    title: input.featureName,
+    sub: [input.actorName, result.roll ? "Roll" : "Feature"].join(" · "),
+    cardId: null,
+    roll: result.roll,
+    success: result.roll ? result.success : null,
+    damage: result.damage.map((d) => lineOf(d, null, result.roll?.outcome === "critical")),
+    targets: targetsOf(result.targets, input.names),
+    fear: Math.max(0, result.fearDelta ?? 0),
+    prompts: result.prompts.map((p) => ({ kind: p.kind, text: p.text })),
+    notes: result.notes.filter((n) => n.length > 0),
   };
 }
 
@@ -207,6 +247,8 @@ export function attackResultView(input: {
     /** Absent for a player while the GM's Fear is hidden (dcm-jh6d.62). */
     fearGained?: number;
     minionOffer: unknown;
+    /** Rule switches RC1, D6 `gmPicks`: how many more Minions the GM picks (instead of `minionOffer`). */
+    minionsForGm?: number;
     riders?: readonly string[];
     skipped?: readonly string[];
     riderPrompts?: readonly Prompt[];
@@ -219,7 +261,7 @@ export function attackResultView(input: {
   const notes: string[] = [];
   if (result.riders && result.riders.length > 0) notes.push(`With ${result.riders.join(", ")}`);
   if (result.skipped && result.skipped.length > 0) notes.push(`Not used (its moment didn’t come): ${result.skipped.join(", ")}`);
-  if (result.minionOffer) notes.push("Your damage can defeat more Minions: pick them in the prompt.");
+  notes.push(...minionNotes(result));
   return {
     id: result.entryId,
     characterId: input.characterId,

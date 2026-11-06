@@ -1,5 +1,7 @@
 import { v, type Infer } from "convex/values";
 
+import { CONDITION_UNTIL } from "../../../src/lib/validation/character-constants";
+
 /**
  * Validators of the adversary and encounter tables (D8, `convex/tables/encounters.ts`), defined once (CD19).
  * All typed, no blob, so no `schemaVersion`. Length and count caps the validators cannot express are checked by
@@ -24,6 +26,16 @@ export type BpAdjustment = (typeof BP_ADJUSTMENTS)[number];
 export const ENCOUNTER_CONDITIONS = ["hidden", "restrained", "vulnerable", "distracted"] as const;
 export const encounterConditionValidator = v.union(...ENCOUNTER_CONDITIONS.map((c) => v.literal(c)));
 export type EncounterCondition = (typeof ENCOUNTER_CONDITIONS)[number];
+
+/** An instance condition's provenance (dcm-bxp.99.32.1; the sheet's is `conditionSourceValidator`). */
+export const instanceConditionSourceValidator = v.object({
+  condition: encounterConditionValidator,
+  source: v.string(),
+  casterId: v.optional(v.string()),
+  until: v.optional(v.union(...CONDITION_UNTIL.map((u) => v.literal(u)))),
+  endsWhen: v.optional(v.string()),
+});
+export type InstanceConditionSource = Infer<typeof instanceConditionSourceValidator>;
 
 /** Adversary types (CB p.194). A Horde's "(N/HP)" is stored apart, as `hordePerHp`. */
 export const ADVERSARY_TYPES = [
@@ -198,6 +210,12 @@ export const encounterAdversaryFields = {
   stress: v.number(),
   defeated: v.boolean(),
   conditions: v.array(encounterConditionValidator),
+  /**
+   * dcm-bxp.99.32.1 (widened, absent = unknown): where each of `conditions` came from and when it ends, for the stat
+   * block's "From Vicious Entangle (Moss) - until it breaks free". One entry per condition; `casterId` is the caster's
+   * id as a plain string (a character's or another instance's). At most one per encounter condition.
+   */
+  conditionSources: v.optional(v.array(instanceConditionSourceValidator)),
   /** The GM's own condition labels (Cursed, Glowing, …). */
   tags: v.array(v.string()),
   /** Times spotlighted in GM turn `spotlightTurn`. */

@@ -21,7 +21,7 @@ import { MAX_AREA_COUNT } from "./lib/combatAreas";
 import { afterUse, foldPcRolls, foldSteps, rerunWith, runWithRiders, autoUsesOn, rollHost, type RiderSheets, type Square } from "./combatCards";
 import { companionFor, companionNumbers } from "./lib/companion";
 import { assertCanAct, loadCharacter, readSheet, saveSheet, storedSheet } from "./lib/characterSheet";
-import { attackScene, defaultOnRiders, type Host, type RiderRun } from "./lib/combatActions";
+import { attackScene, defaultOnRiders, riderOptions, riderOptionValidator, weaponSlotValidator, type Host, type RiderRun } from "./lib/combatActions";
 import { outOfRangeRefusal, refusesOutOfRange } from "./combatActions";
 import { closeRequest, encounterRunning, loadOpenRequest } from "./lib/combatRequests";
 import { rollDie } from "./lib/dice";
@@ -40,7 +40,8 @@ import {
   type ResolvedFeature,
 } from "./lib/featureRunner";
 import { campaignFearState } from "./lib/fear";
-import { keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
+import { campaignQuery, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
+import { traitIdValidator } from "./lib/validators/characters";
 import { fearFor } from "./lib/fearVisibility";
 import { featureScope } from "./lib/featureScope";
 import { riderValidator, type Rider } from "./lib/validators/combatRequests";
@@ -374,6 +375,28 @@ async function openSanction(
 }
 
 /**
+ * dcm-bxp.99.32.19 (plan combat-hud H3.3): the riders that ride on a feature's own action roll, as
+ * `combatActionsReads.riders` gives them for a weapon attack: the same `riderOptions` over the feature's host (`rollHost`
+ * with `fromUse` = the feature and use, upgrades applied by `pickFeature`; `trait` for a use whose roll lets the player
+ * pick it, `weapon` for an attack with either weapon). Empty for a use without an action roll. Access: edit on the
+ * character (its player or the GM; another player FORBIDDEN, U1). FEATURE_NOT_OWNED / FEATURE_NOT_COMBAT / INVALID as
+ * `useFeature` refuses the pick.
+ */
+export const riders = campaignQuery({
+  need: "view",
+  args: { characterId: v.id("characters"), featureId: v.string(), useId: v.optional(v.string()), trait: v.optional(traitIdValidator), weapon: v.optional(weaponSlotValidator) },
+  returns: v.array(riderOptionValidator),
+  handler: async (ctx, { characterId, featureId, useId, trait, weapon }) => {
+    const { campaign, character } = await loadCharacter(ctx, ctx.user, characterId, "edit", "owner");
+    if (campaign._id !== ctx.campaign._id) throw appError("NOT_FOUND");
+    const sheet = readSheet(character.sheet);
+    const pick = pickFeature({ sheet, campaign, featureId, useId, times: 1, rollUsedExperience: false, party: [] });
+    const host = rollHost(sheet, pick.use, trait ? { trait } : {}, weapon, { id: featureId, useId: pick.use.id });
+    return host === null ? [] : riderOptions(sheet, campaign, host);
+  },
+});
+
+/**
  * Uses an owned feature. Refusals: FEATURE_NOT_OWNED, FEATURE_NOT_COMBAT (out of combat, narrative, passive, not yet
  * automated), FEATURE_EXHAUSTED, FEATURE_COST_UNPAID, FEATURE_NEEDS_MAP (targets or riders without a live map), INVALID
  * (an unconfirmed situation, a repeat on a roll, a bad choice, riders on a use without an action roll), COMBAT_* for
@@ -523,7 +546,7 @@ export const shiftStance = keyedCampaignMutation({
         unshakable = marked.roll;
         paid = marked.sheet;
       } else {
-        if (martial.focus < 1) throw appError("FEATURE_COST_UNPAID");
+        if (martial.focus < 1) throw appError("FEATURE_COST_UNPAID", undefined, { resource: "focus", need: 1, have: martial.focus });
         paid = { ...sheet, classState: { ...sheet.classState, martial: { ...martial, focus: martial.focus - 1 } } };
       }
       // DA10 / lane E6 (HF p.12, dcm-awh): the previous stance drops with what ends with it (Grappling's Restrain,

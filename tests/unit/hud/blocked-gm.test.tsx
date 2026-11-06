@@ -324,6 +324,8 @@ function queue() {
   queries["adversaryActionsReads:windows"] = [];
   queries["cloakPromptsReads:pending"] = [];
   queries["hitKeywordsReads:asks"] = [];
+  queries["adversaryPromptsReads:pending"] = [];
+  queries["allyPicksReads:open"] = [];
   queries["charactersReads:listByCampaign"] = [];
   queries["feed:list"] = {
     page: [{ _id: "e1", kind: "combat", visibility: "gm", undone: false, canUndo: true, summary: "Moss hit the Bandit", at: 1, actorName: "Moss" }],

@@ -183,6 +183,7 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     await ins("combatSpotlight", { campaignId: c, holder: { kind: "pc", characterId }, since: now, reason: "handedBack" });
     // A token the party saw this scene (spotlight-seen, user 2026-11-03).
     await ins("combatSeen", { campaignId: c, tokenId: pcTokenId, seenAt: now });
+    await ins("actionTokens", { campaignId: c, characterId, used: 1, updatedAt: now });
     // A folded hand and an unsent character-wizard draft (config S0).
     await ins("handFolds", { userId, campaignId: c, characterId, updatedAt: now });
     await ins("userDrafts", { userId, kind: "characterWizard", campaignId: c, schemaVersion: 1, data: "{}", updatedAt: now });
@@ -285,7 +286,7 @@ function combatRequest(
   instanceId: Id<"encounterAdversaries">,
   o: {
     at: number;
-    status?: "open" | "resolved" | "declined";
+    status?: "open" | "resolved" | "declined" | "withdrawn";
     resolvedAt?: number;
     encounterId?: Id<"encounters">;
     mapId?: Id<"combatMaps">;
@@ -596,14 +597,14 @@ describe("cleanup crons", () => {
     expect(kept).toEqual({ books: [null, null, live.campaignId], chunks: 1, kinds: ["campaign", "deployment", "user"] });
   });
 
-  it("expires resolved and declined combat requests a day after resolvedAt, in batches, and keeps open or recent ones (AA0)", async () => {
+  it("expires resolved, declined and withdrawn combat requests a day after resolvedAt, in batches, and keeps open or recent ones (AA0)", async () => {
     const t = makeTest();
     const userId = await user(t);
     const s = await seedCampaign(t, userId, undefined);
     const req = (o: Parameters<typeof combatRequest>[4]) => combatRequest(s.campaignId, userId, s.characterId, s.instanceId, o);
     const kept = await t.run(async (ctx) => {
       for (let i = 0; i < BATCH + 30; i++) {
-        const status = i % 2 === 0 ? "resolved" : "declined";
+        const status = (["resolved", "declined", "withdrawn"] as const)[i % 3]!;
         await ctx.db.insert("combatRequests", req({ at: NOW - 3 * DAY, status, resolvedAt: NOW - 2 * DAY + i }));
       }
       return [

@@ -5,10 +5,13 @@ import "./prefs.css";
 import { useState, type ReactNode } from "react";
 
 import { glassButtonClass } from "@/components/brand/glass-button";
+import { SlotBoundary } from "@/components/party/session/boundary";
 import { DICE_VOLUME_MAX, DICE_VOLUME_MIN, TEXT_SIZES, clampVolume, type TextSize } from "@/lib/config/preferences";
 import { errorMessage } from "@/lib/convex-errors";
 
 import type { PreferencesSlotProps } from "../slots";
+import { DeleteAccountItem } from "./delete-account";
+import { HouseRulesItem } from "./house-rules";
 import { useSetPreference, usePreferences, type PreferenceChange } from "./use-preferences";
 
 /** The board's text for the Preferences rows (reference/designs/config/Settings.dc.html, `.pm-pop`). */
@@ -28,9 +31,10 @@ const TEXT_SIZE_LABEL: Record<TextSize, string> = { small: "Small", medium: "Med
  * of the account's preferences (`preferences.set`) with an optimistic update (rule 12); the volume slider saves on
  * release (pointer up, key up, blur), not on every move. The dice read the same query (`useDiceSettings`), so they
  * follow at once. What reduce motion, text size and the spotlight ping do is U6b's and U6d's; these rows only save them.
+ * Players also get 'House rules' (./house-rules.tsx, plan rule-switches RU): the campaign's rule switches, read-only.
+ * Everyone but the app owner gets 'Delete account' last (./delete-account.tsx, plan account-deletion DEL1).
  */
 export function PreferenceRows(props: PreferencesSlotProps): ReactNode {
-  void props;
   const prefs = usePreferences();
   const set = useSetPreference();
   const [error, setError] = useState<string | null>(null);
@@ -107,6 +111,10 @@ export function PreferenceRows(props: PreferencesSlotProps): ReactNode {
         <RowText {...PREFS_TEXT.spotlightPing} />
         <Switch label={PREFS_TEXT.spotlightPing.label} checked={prefs.spotlightPing} onChange={(value) => change({ key: "spotlightPing", value })} />
       </div>
+      <HouseRulesItem {...props} />
+      <SlotBoundary fallback={null}>
+        <DeleteAccountItem />
+      </SlotBoundary>
       <p aria-live="polite" className="cfg-muted cfg-prefs-err">
         {error}
       </p>

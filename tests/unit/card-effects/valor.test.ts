@@ -317,7 +317,8 @@ describe("Bold Presence (CB p.341)", () => {
 
 describe("Critical Inspiration (CB p.341)", () => {
   it("once per rest on a critical attack: allies within Very Close each clear a Stress or gain a Hope", () => {
-    const plan = ok("critical-inspiration", ctx([], { picked: [ally("a1", { stress: 2 })], allies: [ally("a2")] }));
+    // FH-AP: each ally picks their own (`by` allies).
+    const plan = ok("critical-inspiration", ctx([], { allies: [ally("a1", { stress: 2 }), ally("a2")], chooserOptions: { inspiration: { a1: ["stress"], a2: ["hope"] } } }));
     expect(ofKind(plan, "clear")).toEqual([{ kind: "clear", targetId: "a1", track: "stress", amount: 1 }]);
     expect(ofKind(plan, "hope")).toEqual([{ kind: "hope", targetId: "a2", delta: 1 }]);
     expect(plan.limit).toEqual({ key: "card:critical-inspiration", until: "rest", consumed: true });
@@ -398,10 +399,11 @@ describe("Armorer (CB p.342)", () => {
 
 describe("Rousing Strike (CB p.342)", () => {
   it("once per rest on a critical attack: you and allies clear a Hit Point or 1d4 Stress", () => {
-    // You: 1d4 Stress (3, only 1 marked); an ally clears a HP; another rolls 1d4 Stress (2).
+    // FH-AP: each picks their own (`by` you and your allies). You: 1d4 Stress (3, only 1 marked); an ally clears a HP;
+    // another rolls 1d4 Stress (2).
     const plan = ok(
       "rousing-strike",
-      ctx([3, 2], { options: { self: ["stress"] }, picked: [ally("a1", { hp: 2 })], allies: [ally("a2", { stress: 3 })] }),
+      ctx([3, 2], { allies: [ally("a1", { hp: 2 }), ally("a2", { stress: 3 })], chooserOptions: { rousing: { pc: ["stress"], a1: ["hp"], a2: ["stress"] } } }),
     );
     expect(ofKind(plan, "clear")).toEqual([
       { kind: "clear", targetId: "pc", track: "stress", amount: 1 },
@@ -410,9 +412,10 @@ describe("Rousing Strike (CB p.342)", () => {
     ]);
     expect(plan.limit).toEqual({ key: "card:rousing-strike", until: "rest", consumed: true });
   });
-  it("you may clear a Hit Point instead", () => {
-    const plan = ok("rousing-strike", ctx([], { actor: actor({ hp: 3 }), options: { self: ["hp"] } }));
+  it("you may clear a Hit Point instead; a chooser without a pick is asked", () => {
+    const plan = ok("rousing-strike", ctx([], { actor: actor({ hp: 3 }), allies: [ally("a1")], chooserOptions: { rousing: { pc: ["hp"] } } }));
     expect(plan.actor.after.hp).toBe(2);
+    expect(ofKind(plan, "prompt").map((p) => [p.prompt, p.chooserId])).toEqual([["choose", "a1"]]);
   });
 });
 

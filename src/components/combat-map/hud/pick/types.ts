@@ -66,6 +66,11 @@ export type PickRow = {
   reach: PickReach;
   /** Condition names (answer 10a: names only, never a number). */
   conditions: readonly string[];
+  /**
+   * Rule switches RFC, M1 `lineOfSight` Manual: the server's hint says no line of sight, but the campaign leaves sight to
+   * the GM, so the row stays pickable (its reach is "in" / "out") and says so.
+   */
+  noLineOfSight?: true;
 };
 
 /** A picker-supplied row: as `PickRow`, with conditions optional. */

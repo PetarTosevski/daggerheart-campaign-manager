@@ -16,6 +16,8 @@ import {
   playerHuntView,
   removeClue,
   removeHunt,
+  restTicksLycanthropy,
+  lycanthropyRestNote,
   type AndaluriaState,
 } from "../../src/lib/frames/trackers/andaluria";
 import { applyCountdownAction } from "../../src/lib/domain/countdowns/index";
@@ -23,6 +25,7 @@ import { chose, HALT_LYCANTHROPY_MOVE, lycanthropyOwnerKey } from "../../src/lib
 import { resolveOptions } from "../../src/lib/frames/options";
 import { campaignQuery, keyedGmMutation } from "../lib/functions";
 import type { RestHook } from "../lib/restHooks";
+import { postRuleNote, ruleMode } from "../lib/ruleModes";
 import { assertTrackerFrame, frameTrackerMutation, loadTracker, type FrameTracker } from "../lib/trackers";
 import { recordHistory } from "../tables/history";
 
@@ -195,13 +198,16 @@ export const deleteClue = keyedGmMutation({
  * resting PC's active Lycanthropy countdown (ownerKey `lycanthropy:<id>`)
  * ticks through the countdown rules and its history; rest undo leaves it
  * (plan note 11). A trigger is announced; the transformation itself is set
- * by hand (player consent, decisions).
+ * by hand (player consent, decisions). W7 Manual (house rule): nothing
+ * ticks; the GM gets one note per bitten PC who did not halt it.
  */
-export const andaluriaRestHook: RestHook = async (ctx, { campaign, choices, sheets, actorId }) => {
+export const andaluriaRestHook: RestHook = async (ctx, { campaign, choices, sheets, actorId, groupId }) => {
   if (campaign.frameId !== andaluriaTracker.frameId || !resolveOptions(campaign.frameId, campaign.options).transformations) return [];
+  const mode = ruleMode(campaign, "andaluriaLycanthropy");
   const lines: string[] = [];
   for (const [id, sheet] of sheets) {
-    if (chose(choices, id, HALT_LYCANTHROPY_MOVE)) continue;
+    const halted = chose(choices, id, HALT_LYCANTHROPY_MOVE);
+    if (halted) continue;
     const ownerKey = lycanthropyOwnerKey(id);
     // At most one row per PC.
     const countdown = await ctx.db
@@ -209,6 +215,12 @@ export const andaluriaRestHook: RestHook = async (ctx, { campaign, choices, shee
       .withIndex("by_campaign_owner", (q) => q.eq("campaignId", campaign._id).eq("ownerKey", ownerKey))
       .first();
     if (countdown === null || countdown.status !== "active") continue;
+    if (!restTicksLycanthropy(halted, mode)) {
+      // The note names the PC; it sits on the character only inside the rest's group (postRuleNote's guard).
+      const about = groupId !== undefined ? { groupId, characterId: id } : {};
+      await postRuleNote(ctx, campaign, { ruleId: "andaluriaLycanthropy", summary: lycanthropyRestNote(sheet.name), actorId, ...about });
+      continue;
+    }
     const next = applyCountdownAction(countdown, "advance");
     await ctx.db.patch("countdowns", countdown._id, {
       currentValue: next.currentValue,

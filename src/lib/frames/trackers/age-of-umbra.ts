@@ -6,6 +6,7 @@ import * as z from "../../zod";
 
 import { distanceKm, type MapScale } from "../../domain/travel/index";
 import { RuleError } from "../../errors/app-error";
+import type { ModeOf } from "../../rules/registry";
 
 export const SETTLEMENT_MAX = 60;
 export const MAX_WATCHERS = 8;
@@ -218,4 +219,18 @@ export function assertCanRollLurking(state: UmbraState, near = false): void {
 
 export function logLurking(state: UmbraState, entry: LurkingRoll): UmbraState {
   return { ...state, log: [entry, ...state.log].slice(0, LURKING_LOG_SIZE) };
+}
+
+/**
+ * W6 (CB 289): whether a finished rest rolls the Lurking Darkness: away from a Sacred Pyre (`atPyre`: the tracker's or
+ * the map's answer). Manual (house rule): never; the GM gets `lurkingRestNote` and rolls from the tracker.
+ */
+export function restRollsLurking(atPyre: boolean, mode: ModeOf<"umbraLurkingDarkness"> = "book"): boolean {
+  return !atPyre && mode === "book";
+}
+
+/** W6 Manual: the GM's note for a rest away from a Sacred Pyre; `watchers` are the PCs who chose Keep Watch. */
+export function lurkingRestNote(watchers: readonly string[]): string {
+  const watch = watchers.length > 0 ? ` (Keep Watch: ${watchers.join(", ")})` : "";
+  return `Rest away from a Sacred Pyre: roll on Lurking Darkness${watch}`;
 }

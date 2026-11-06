@@ -330,10 +330,14 @@ describe("audit and retention", () => {
       await ctx.db.insert("lorekeeperLimitRequests", { ...base, status: "declined", createdAt: old, decidedAt: old, decidedBy: ids.owner });
       await ctx.db.insert("lorekeeperLimitRequests", { ...base, status: "pending", createdAt: old });
       await ctx.db.insert("lorekeeperLimitRequests", { ...base, status: "approved", createdAt: NOW - DAY, decidedAt: NOW, decidedBy: ids.owner });
+      // dcm-bxp.82.14: asked long ago but decided recently, so it is kept (the clock runs from decidedAt).
+      await ctx.db.insert("lorekeeperLimitRequests", { ...base, status: "declined", createdAt: old, decidedAt: NOW - DAY, decidedBy: ids.owner, reason: "Recent" });
+      // A decided row without decidedAt is never taken for an old one (the migration backfills it).
+      await ctx.db.insert("lorekeeperLimitRequests", { ...base, status: "approved", createdAt: old, reason: "Legacy" });
     });
     await t.mutation(internal.adminRetention.expireLimitRequests, {});
     const left = await t.run((ctx) => ctx.db.query("lorekeeperLimitRequests").collect());
-    expect(left.map((row) => row.status).sort()).toEqual(["approved", "pending"]);
+    expect(left.map((row) => `${row.status}:${row.reason}`).sort()).toEqual(["approved:Big table", "approved:Legacy", "declined:Recent", "pending:Big table"]);
   });
 });
 

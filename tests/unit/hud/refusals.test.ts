@@ -130,6 +130,24 @@ describe("CmpBlocked rows", () => {
     expect(refusalFor(refuse("FEATURE_NEEDS_MAP"))).toMatchObject({ title: "No live map", text: "That needs a live map with its targets on it.", hint: "Ask the GM to set a map live.", place: "toast" });
   });
 
+  it("the server's structured shortfall wins over the client pre-compute on all four cost codes (dcm-bxp.99.32.2)", () => {
+    const client = [{ resource: "hope" as const, need: 9, have: 9 }];
+    const cases: [string, Record<string, unknown>, string, string][] = [
+      ["CARD_COST_UNPAID", { resource: "hope", need: 2, have: 1 }, "Wall Walk needs 2 Hope.", "You have 1."],
+      ["FEATURE_COST_UNPAID", { resource: "stress", need: 1, have: 0 }, "Wall Walk needs a Stress.", "Your Stress is full."],
+      ["NOT_ENOUGH_HOPE", { resource: "hope", need: 3, have: 2 }, "Wall Walk needs 3 Hope.", "You have 2."],
+      ["NOT_ENOUGH_FEAR", { resource: "fear", need: 2, have: 0 }, "Wall Walk needs 2 Fear.", "You have 0."],
+    ];
+    for (const [code, shortfall, lead, rest] of cases) {
+      const r = refusalFor(refuse(code, { message: "Short of: hope.", shortfall }), { subject: "Wall Walk", shortfall: client, viewer: "gm" });
+      expect(r, code).toMatchObject({ code, lead, rest });
+    }
+    // Without one, the client's numbers are the fallback.
+    expect(refusalFor(refuse("NOT_ENOUGH_HOPE"), { subject: "Wall Walk", shortfall: [{ resource: "hope", need: 3, have: 1 }] })).toMatchObject({ lead: "Wall Walk needs 3 Hope.", rest: "You have 1." });
+    // A Fear shortfall from the server is the GM's.
+    expect(refusalFor(refuse("NOT_ENOUGH_FEAR", { shortfall: { resource: "fear", need: 2, have: 1 } }), { viewer: "gm" }).shortfall).toEqual([{ resource: "fear", need: 2, have: 1, payer: "gm" }]);
+  });
+
   it("NOT_ENOUGH_FEAR: 'This needs 2 Fear. You have 1.'", () => {
     const r = refusalFor(refuse("NOT_ENOUGH_FEAR"), { viewer: "gm", shortfall: [{ resource: "fear", need: 2, have: 1, payer: "gm" }] });
     expect(r).toMatchObject({ title: "GM: not enough Fear", lead: "This needs 2 Fear.", rest: "You have 1.", before: ["fear-disabled"] });

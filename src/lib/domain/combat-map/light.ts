@@ -14,6 +14,7 @@
  * wall torch [6, 12]; campfire [12, 24].
  */
 
+import type { ModeOf } from "../../rules/registry";
 import type { CampaignPhaseName } from "../campaign-time";
 import { RANGE_SQUARES } from "./ranges";
 import type { LightTrait } from "./traits";
@@ -47,6 +48,20 @@ export const DIM_PHASES: ReadonlySet<string> = new Set<CampaignPhaseName>([
 
 /** Badge text for dim light (brief, section 5). */
 export const DIM_PHASE_BADGE = "Dim light: ranged attacks at disadvantage";
+
+/** M3 Darkness (plan rule-switches RM): Book (the badge), the variants (tracer OE) or Manual. */
+export type DarknessMode = ModeOf<"darkness">;
+
+/**
+ * M3 (plan rule-switches RM; CB p.104: "Darkness can also make certain actions more challenging. The GM should reflect
+ * this by raising the Difficulty of action rolls or imposing disadvantage"). The dim-light badge, or null: Book shows
+ * `DIM_PHASE_BADGE` in dim light (nothing is added to a roll); Manual shows none (the GM rules it at the table). The
+ * variants (disadvantage, +N Difficulty, both) keep the Book badge here until tracer OE gives them their own.
+ */
+export function dimLightBadge(light: LightLevel, mode: DarknessMode = "book"): string | null {
+  if (light !== "dim" || mode === "manual") return null;
+  return DIM_PHASE_BADGE;
+}
 
 /**
  * R8: the light level for a campaign time phase (dcm-p40), or a light level read as itself (the campaign's time of

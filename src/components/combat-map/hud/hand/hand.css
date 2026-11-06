@@ -492,6 +492,10 @@
   .hud-fanside {
     margin-left: 30px;
   }
+  /* Touch targets on tablets (dcm-bxp.99.32.41): Roll options and Hide / Show cards are 44 px tall. */
+  .hud-fs-b {
+    min-height: 44px;
+  }
 }
 @media (max-width: 760px) {
   .hud-hand {

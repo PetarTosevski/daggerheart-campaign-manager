@@ -25,6 +25,7 @@ import {
   runReactionFeature,
   type ArmorCost,
   type Fold,
+  type HitRules,
   type PcDefense,
   type WindowHit,
   type WindowPc,
@@ -51,6 +52,8 @@ import { cardActor, cardIdOfEffect, effectOption, endConditionsOnRoll, endedCond
 import { partyOf, readSheet } from "./characterSheet";
 import { tokensOnMap } from "./combatMaps";
 import { activeAreasOnMap, areaFactsFor } from "./combatAreas";
+import { ruleModesOf } from "./ruleModes";
+import type { RuleModes } from "../../src/lib/rules/registry";
 import type { HitRider, IncomingHitPayload, PcAttacker } from "./validators/combatRequests";
 
 /** One hit before armor, as the runner's `IncomingHitDraft` gives it. */
@@ -181,6 +184,23 @@ export function answeringFeatures(sheet: CharacterSheet, hopeAndFear: boolean): 
 export async function hopeAndFearOf(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<boolean> {
   const campaign = await ctx.db.get("campaigns", campaignId);
   return campaign === null ? true : resolveOptions(campaign.frameId, campaign.options).hopeAndFear;
+}
+
+/** The rule modes a hit on a PC follows (plan rule-switches RC2): A1, D2, D4, D5 and Massive Damage, from `ruleModesOf`. */
+export function hitRulesFrom(modes: RuleModes): HitRules {
+  return {
+    armorSlots: modes.armorSlots,
+    resistance: modes.resistance,
+    stressOverflow: modes.stressOverflow,
+    fullStressVulnerable: modes.fullStressVulnerable,
+    massiveDamage: modes.massiveDamage,
+  };
+}
+
+/** The campaign's hit rules (`hitRulesFrom`); a campaign that is gone reads the Book. */
+export async function hitRulesOf(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<HitRules> {
+  const campaign = await ctx.db.get("campaigns", campaignId);
+  return campaign === null ? {} : hitRulesFrom(ruleModesOf(campaign));
 }
 
 /**
@@ -920,7 +940,9 @@ export async function rebuildWindow(ctx: QueryCtx, row: HitRow, attackTotal?: nu
     return { characterId: r.characterId, role: r.role, cardIds: r.cardIds.filter((id) => !isFeatureId(id)), ...(featureIds.length > 0 ? { featureIds } : {}) };
   });
   // The stored responders stand (no eligibility re-run); only the armor capacity is read from today's party.
-  const opened = openWindow({ hit, targetId: p.targetCharacterId, party: party.map((x) => ({ ...x, features: [], cards: [] })) });
+  // RC2: the campaign's rule modes (A1, D2, D4, D5, Massive) ride on the window.
+  const rules = await hitRulesOf(ctx, row.campaignId);
+  const opened = openWindow({ hit, targetId: p.targetCharacterId, party: party.map((x) => ({ ...x, features: [], cards: [] })), rules });
   let state: WindowState = { ...opened, party, responders, ...(attacker ? { attacker: attacker.combatant } : {}) };
   let damage: { text: string; critical: boolean } | null | undefined;
   for (const [i, answer] of row.responses.entries()) {
@@ -962,7 +984,7 @@ export function cardRefusal(r: RunRefusal) {
     case "exhausted":
       return appError("CARD_EXHAUSTED", r.detail);
     case "cost":
-      return appError("CARD_COST_UNPAID", `Short of: ${r.detail}.`);
+      return appError("CARD_COST_UNPAID", `Short of: ${r.detail}.`, r.shortfall);
     case "targets":
       return appError("COMBAT_TARGET_INVALID", r.detail);
     default:
@@ -1035,7 +1057,10 @@ export function applyRiders(
   ignoreHp = false,
   refused: ReadonlySet<string> = new Set(),
   hope: { amount: number; factor?: number } = { amount: 0 },
-): { sheet: CharacterSheet; applied: number; hopeSpent: number } {
+  /** RC2: D4 (CB p.92) for a Stress rider past a full track; unset = the Book. */
+  rules: Pick<HitRules, "stressOverflow"> = {},
+): { sheet: CharacterSheet; applied: number; hopeSpent: number; overflowDropped?: true } {
+  let overflowDropped = false;
   let next = sheet;
   let applied = 0;
   let hopeLeft = Math.max(0, Math.trunc(hope.amount));
@@ -1058,7 +1083,10 @@ export function applyRiders(
         next = { ...next, hope: Math.max(0, Math.min(hopeMax(next.scars, next.hopeSlotBonus), next.hope + r.delta)) };
         break;
       case "stress": {
-        const marked = applyStressTo(pcCombatant("rider", next), r.amount).after;
+        const res = applyStressTo(pcCombatant("rider", next), r.amount, rules);
+        const marked = res.after;
+        // D4 Manual: the Stress past a full track is dropped, no HP (the caller tells the GM).
+        if (res.overflow === true && rules.stressOverflow === "manual") overflowDropped = true;
         next = { ...next, stress: Math.min(next.stressMax, marked.stress), hp: ignoreHp ? next.hp : Math.min(next.hpMax, marked.hp) };
         break;
       }
@@ -1072,7 +1100,7 @@ export function applyRiders(
       }
     }
   }
-  return { sheet: next, applied, hopeSpent };
+  return { sheet: next, applied, hopeSpent, ...(overflowDropped ? { overflowDropped: true as const } : {}) };
 }
 
 /** Runs one of the hit PC's after-hit card uses with the hit as its trigger (dice seeded from the row: no fishing). */

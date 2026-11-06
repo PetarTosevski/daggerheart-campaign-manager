@@ -224,7 +224,8 @@ export async function takeWithFear(
   const token = tokenId === undefined ? null : await loadCombatToken(ctx, campaign._id, tokenId);
   if (token !== null && token.ref.kind !== "adversary") throw appError("INVALID", "Only an adversary's token can be spotlighted.");
   if (token !== null) await assertNotDefeated(ctx, campaign._id, token);
-  if ((await campaignFearState(ctx, campaign._id)).fear < INTERRUPT_FEAR) throw appError("NOT_ENOUGH_FEAR");
+  const fearHeld = (await campaignFearState(ctx, campaign._id)).fear;
+  if (fearHeld < INTERRUPT_FEAR) throw appError("NOT_ENOUGH_FEAR", undefined, { resource: "fear", need: INTERRUPT_FEAR, have: fearHeld });
 
   const moved =
     token === null

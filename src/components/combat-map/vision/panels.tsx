@@ -4,7 +4,7 @@ import { useQuery } from "convex/react";
 import { useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
-import { CARRIED_LIGHTS, CARRIED_LIGHT_LABEL, DIM_PHASE_BADGE, type CarriedLight, type LightLevel } from "@/lib/domain/combat-map/light";
+import { CARRIED_LIGHTS, CARRIED_LIGHT_LABEL, dimLightBadge, type CarriedLight, type DarknessMode, type LightLevel } from "@/lib/domain/combat-map/light";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
@@ -27,10 +27,13 @@ import {
 } from "./use-vision";
 import { useVisionState, type FogBrush, type FogTool } from "./vision-state";
 
-/** The board's light rule line for the viewer's phase and carried light (R8, R9). */
-export function lightRule(light: LightLevel, carried: CarriedLight): string {
+/**
+ * The board's light rule line for the viewer's phase and carried light (R8, R9). M3 Darkness Manual (plan rule-switches
+ * RM): dim light says nothing about disadvantage (the GM rules it).
+ */
+export function lightRule(light: LightLevel, carried: CarriedLight, darkness: DarknessMode = "book"): string {
   if (light === "day") return "Daylight: you see everything in your cone that isn’t blocked.";
-  if (light === "dim") return "Dim light: you see your whole cone, but ranged attacks are at disadvantage.";
+  if (light === "dim") return darkness === "manual" ? "Dim light: you see your whole cone." : "Dim light: you see your whole cone, but ranged attacks are at disadvantage.";
   const own = {
     none: "without a light you see clearly only in Melee and dimly to Very Close.",
     torch: "your torch lights clearly to Close and dimly to Far.",
@@ -138,8 +141,11 @@ function YourView({ view, props }: { view: ViewOk; props: VisionPanelProps }) {
   const { campaignId, map, onSelectToken } = props;
   const actions = useVisionActions(campaignId);
   const turns = useTokenActions(campaignId, map);
+  // M3 Darkness (plan rule-switches RM): the Book until the campaign's rules load.
+  const darkness = useQuery(api.ruleSettings.get, { campaignId })?.modes.darkness ?? "book";
   const own = view.pcs.find((t) => t._id === view.tokenId);
   if (!own) return null;
+  const badge = dimLightBadge(view.light, darkness);
   return (
     <section className="cm-card cm-card-me" aria-labelledby="cm-me-h">
       <span id="cm-me-h" className="cm-lbl">
@@ -172,9 +178,9 @@ function YourView({ view, props }: { view: ViewOk; props: VisionPanelProps }) {
         </BrandButton>
       </div>
       <LightPicker token={own} actions={actions} label="Light you carry" />
-      {view.light === "dim" ? <span className="cm-vis-dim">◐ {DIM_PHASE_BADGE}</span> : null}
+      {badge !== null ? <span className="cm-vis-dim">◐ {badge}</span> : null}
       <p className="cm-muted cm-m0 cm-vis-small" data-testid="combat-light-rule">
-        {lightRule(view.light, own.light)}
+        {lightRule(view.light, own.light, darkness)}
       </p>
       <ErrorLine actions={actions} />
       <ErrorLine actions={turns} />

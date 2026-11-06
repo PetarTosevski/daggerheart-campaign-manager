@@ -7,7 +7,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 
 import { BrandButton, brandButton } from "@/components/brand/buttons";
+import { useSharedCards } from "@/components/party/level-up/shared-cards";
 import { FRAME_OF } from "@/lib/frames/extras/common";
+import { getDomainCard } from "@/lib/srd";
 import { useIntent } from "@/lib/use-intent";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +26,7 @@ import {
   missingByStep,
   normalizeWizard,
   portraitAsset,
+  sharedCardsMissing,
   STEP_COUNT,
   STEP_TITLES,
   stillNeeded,
@@ -73,7 +76,14 @@ function Wizard({ draft, initial }: { draft: ReturnType<typeof useAccountDraft>;
 
   const [raw, setRaw] = useState<WizardState>(initial);
   const state = useMemo(() => normalizeWizard(raw, opts), [raw, opts]);
-  const missing = useMemo(() => missingByStep(state, opts), [state, opts]);
+  // Shared domain cards (CB p.21, rule-switches OSC): Refuse holds step 8 while a pick is another character's card.
+  const shared = useSharedCards(campaignId);
+  const missing = useMemo(() => {
+    const base = missingByStep(state, opts);
+    if (!shared) return base;
+    const refused = sharedCardsMissing(state.domainCards, shared.mode, shared.holders, (id) => getDomainCard(id)?.name ?? id);
+    return refused.length === 0 ? base : { ...base, 8: [...(base[8] ?? []), ...refused] };
+  }, [state, opts, shared]);
   const step = state.step;
 
   // Saved from the change itself (rule 13): typing waits for a pause, a click saves at once.
@@ -214,7 +224,7 @@ function Wizard({ draft, initial }: { draft: ReturnType<typeof useAccountDraft>;
           </ol>
         </nav>
 
-        <Step state={state} update={update} opts={opts} />
+        <Step state={state} update={update} opts={opts} shared={shared} />
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#cdb88f] pt-4">
           {step > 1 ? (

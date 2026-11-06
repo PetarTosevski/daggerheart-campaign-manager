@@ -76,9 +76,9 @@ describe("token model", () => {
     expect(showsNumbers("player", "custom")).toBe(false);
   });
 
-  it("a PC token opens its sheet and says HP and Stress as marked (answer 2), Hope and conditions", () => {
+  it("your own token names its actions (the ring, dcm-bxp.99.32.21), a PC token opens its sheet; HP and Stress as marked (answer 2), Hope and conditions", () => {
     const face = pcTokenFace(token(), "player", 1);
-    expect(face.label).toBe("Open Moss’s sheet (your character), 2 of 6 Hit Points marked, 3 of 6 Stress marked, 1 Hope, Vulnerable");
+    expect(face.label).toBe("Moss (your character): actions, 2 of 6 Hit Points marked, 3 of 6 Stress marked, 1 Hope, Vulnerable");
     expect(face.sheet).toEqual({ kind: "pc", characterId: "char-moss" });
     expect(face.tone).toBe("you");
     expect(face.arcs).toEqual({ hpLeft: 67, stressMarked: 50 });
@@ -86,6 +86,8 @@ describe("token model", () => {
     expect(face.conditions).toEqual([{ id: "vulnerable", label: "Vulnerable" }]);
     const ally = pcTokenFace(token({ name: "Brannoc", mine: false }), "player", 3);
     expect(ally.label.startsWith("Open Brannoc’s sheet, ")).toBe(true);
+    // The GM's click on Moss opens the sheet (no ring for the GM).
+    expect(pcTokenFace(token({ mine: false }), "gm", 1).label.startsWith("Open Moss’s sheet, ")).toBe(true);
     expect(ally.tone).toBe("ally-pc");
   });
 

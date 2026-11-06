@@ -1,0 +1,27 @@
+# Self-service account deletion (bead dcm-gdzi.8; App Store 5.1.1(v)), user 2026-11-06. Format: docs/workflow.md.
+# Branch from rebuild. The phone UI (apps/mobile DeleteAccount) is mounted later on phone/on-rebuild.
+plan: account-deletion
+waves:
+  - wave: 1
+    tracers:
+      - id: DEL1
+        beads: [dcm-gdzi.8]
+        goal: "A signed-in user can delete their own account: it is suspended and signed out everywhere at once and purged after 30 days (the owner's AD14 flow); signing back in within 30 days cancels the deletion; on delete, an Apple-linked account's Apple tokens are revoked (needs APPLE_CLIENT_SECRET or key + team id in the Convex env); the website's account Preferences has a Delete account item with a confirm step"
+        depends_on: []
+        owns:
+          - convex/accounts.ts
+          - convex/accountSelfDelete.ts
+          - convex/accountPurge.ts
+          - convex/auth.ts
+          - convex/lib/appleRevoke.ts
+          - convex/lib/appleIdentity.ts
+          - convex/tables/users.ts
+          - src/lib/errors/admin.ts
+          - src/components/config/prefs/**
+          - tests/convex/account-self-delete.test.ts
+          - tests/convex/authz/account-self-delete.entries.ts
+          - tests/convex/authz/account-self-delete.test.ts
+          - tests/unit/config/delete-account.test.tsx
+          - docs/tasks/TASK-DEL1.md
+        acceptance:
+          - Convex tests for delete / sign-in cancels / purge after 30 days / Apple revoke called (mocked) / owner account refused; authz entries; pnpm lint, typecheck pass

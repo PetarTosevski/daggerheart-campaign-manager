@@ -1,5 +1,6 @@
 import { v, type Infer } from "convex/values";
 
+import { conditionProvenance } from "../src/lib/domain/characters/condition-sources";
 import { derivedDefense, derivedThresholds } from "../src/lib/domain/characters/derived";
 import { withEffects } from "../src/lib/domain/characters/effects";
 import { expire, SCENE_TOKEN_KEYS } from "../src/lib/domain/characters/expiry";
@@ -290,9 +291,11 @@ export const sheet = userQuery({
         armor: { marked: s.armorMarked, max: defense.armorScore },
       },
       features: drawer.features.map((f) => sheetFeature(f, mode !== "view")),
+      // dcm-bxp.99.32.1: a stored provenance (`conditionSources`) wins; else the marker effect; else the core rule's until.
       conditions: s.conditions.map((id) => {
+        const stored = conditionProvenance(s.conditionSources, id);
         const marker = markers.get(id);
-        return { id, label: conditionLabel(id), source: marker?.source ?? null, until: marker?.until ?? bareConditionUntil(id) };
+        return { id, label: conditionLabel(id), source: stored?.source ?? marker?.source ?? null, until: stored?.until ?? marker?.until ?? bareConditionUntil(id) };
       }),
       effects: lasting.map((e, i) => ({ id: e.id, source: e.source, text: e.text, until: effectUntilLabel(e), ends: e.until, canEnd: canEnd[i]! })),
     };

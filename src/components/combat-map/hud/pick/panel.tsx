@@ -14,7 +14,7 @@ import type { CombatPageState } from "../../slots";
 import { BlockedReason, RefusalMessage } from "../blocked";
 import { useSpotlight } from "../spotlight";
 import { CostPill, Toggle, hudButtonClass } from "../ui";
-import { bandLabel, GM_APPROVES_LINE, keepPicks, pickCount, primaryProblem, rowLabel, ruleText, selectionOf, spotlightBlocks, STATE_WORD, stateOf, togglePick, canToggle } from "./model";
+import { bandLabel, clearTop, GM_APPROVES_LINE, keepPicks, pickCount, primaryProblem, rowLabel, ruleText, selectionOf, spotlightBlocks, STATE_WORD, stateOf, togglePick, canToggle } from "./model";
 import { usePickScene } from "./scene";
 import { usePick, type PickLive } from "./session";
 import type { PickRow, PickSource } from "./types";
@@ -78,7 +78,12 @@ function useSpot(anchorId: Id<"combatTokens"> | null, panel: React.RefObject<HTM
         y = (p.height - h) / 2;
       }
       x = Math.round(Math.max(EDGE, Math.min(x, p.width - PANEL_W - EDGE)));
-      y = Math.round(Math.max(EDGE, Math.min(y, p.height - h - EDGE)));
+      // Clear of a player's map controls (Zoom out; dcm-bxp.99.32.22): a tall panel near the top stands below them.
+      const controls = Array.from(document.querySelectorAll(".hud-pmc"), (c) => {
+        const b = c.getBoundingClientRect();
+        return { left: b.left - p.left, top: b.top - p.top, right: b.right - p.left, bottom: b.bottom - p.top };
+      });
+      y = Math.round(clearTop(Math.min(y, p.height - h - EDGE), x, PANEL_W, controls, EDGE));
       setSpot((s) => (s && s.x === x && s.y === y && s.flipped === flipped ? s : { x, y, flipped }));
     };
     frame = requestAnimationFrame(tick);

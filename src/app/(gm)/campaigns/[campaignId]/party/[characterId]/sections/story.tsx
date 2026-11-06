@@ -2,10 +2,11 @@
 
 import "./story.css";
 
+import { useQuery } from "convex/react";
 import { useState } from "react";
 
 import { Label, PaperInput, PaperTextarea, Pill, SheetBox, Small, paperField } from "@/components/party/sheet-ui";
-import { MAX_BAGS, MAX_HANDFULS } from "@/lib/domain/characters";
+import { MAX_BAGS, MAX_COINS, MAX_HANDFULS } from "@/lib/domain/characters";
 import type { ClassDef } from "@/lib/srd";
 import { cn } from "@/lib/utils";
 import { useIntent } from "@/lib/use-intent";
@@ -81,7 +82,10 @@ export function WealthBox() {
 }
 
 function GoldWealth() {
-  const { sheet, canEdit, update, adjustGold } = useSheet();
+  const { sheet, canEdit, update, adjustGold, slot } = useSheet();
+  // Gold coins (CB p.104, rule-switches OSC): the Coins row shows only while the campaign's rule is on; 10 roll into a handful.
+  const coinsOn = useQuery(api.ruleSettings.get, { campaignId: slot.campaignId })?.modes?.goldCoins === true;
+  const coins = Math.min(sheet.gold.coins ?? 0, MAX_COINS);
   // Counts stored above 9 before the CB 104 cap show as 9 until the next change clamps them.
   const g = { ...sheet.gold, handfuls: Math.min(sheet.gold.handfuls, MAX_HANDFULS), bags: Math.min(sheet.gold.bags, MAX_BAGS) };
   const set = (patch: Partial<typeof g>) => void update({ gold: { ...g, ...patch } });
@@ -89,6 +93,19 @@ function GoldWealth() {
   const bagsFull = g.bags >= MAX_BAGS && g.chest;
   return (
     <SheetBox title="Wealth">
+      {coinsOn ? (
+        <div className="st-wealth-head" data-testid="gold-coins">
+          <Label>Coins</Label>
+          <Stepper
+            label="Coins"
+            value={coins}
+            min={0}
+            max={bagsFull && g.handfuls >= MAX_HANDFULS ? MAX_COINS : MAX_COINS + 1}
+            readOnly={!canEdit}
+            onChange={(next) => void adjustGold("coins", next - coins)}
+          />
+        </div>
+      ) : null}
       <div className="st-wealth-head">
         <Label>Handfuls of coins</Label>
         <Stepper
