@@ -90,6 +90,19 @@ export const WIRED_RULES: ReadonlySet<string> = new Set([
   "colossusSiphoning",
   "umbraLurkingDarkness",
   "andaluriaLycanthropy",
+  // RA, RDM, RK, RX, OH (merged 2026-11-05/06).
+  "hopeFearFromRolls",
+  "spotlightToGm",
+  "resistance",
+  "stressOverflow",
+  "fullStressVulnerable",
+  "adversaryDefeated",
+  "extraSpotlightFear",
+  "massiveDamage",
+  "countdownTicks",
+  "deathMovePrompt",
+  "deathMoveResolve",
+  "horizonEncounterBonuses",
 ]);
 
 export type RuleGroup = { area: RuleArea; label: string; rules: readonly RuleDef[] };

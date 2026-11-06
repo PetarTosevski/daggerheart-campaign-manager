@@ -19,6 +19,7 @@ const SRC = join(ROOT, "src");
 
 /** Path prefixes (a folder) or exact files that may keep their own buttons, with the reason. */
 const ALLOWED: Record<string, string> = {
+  "src/components/config/prefs/house-rules.tsx": "the Preferences popover's House rules disclosure row (a full-width header toggle, not an action button)",
   // The Combat HUD keeps its own button classes (hud-btn, hud-glass-btn, …) on top of glassButtonClass.
   "src/components/combat-map/hud/": "the Combat HUD (out of scope; its buttons are already the design's)",
   // Rendered inside the HUD with the components' `glass` prop off: they keep the look the HUD tuned.

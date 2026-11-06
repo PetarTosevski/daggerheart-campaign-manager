@@ -199,12 +199,12 @@ describe("rule rows: the GM", () => {
 
   it("shows rules the engine doesn't follow yet read-only with 'Coming soon'", () => {
     render(<Section />);
-    const r3 = row("hopeFearFromRolls");
-    expect(within(r3).queryByRole("radio")).toBeNull();
-    expect(within(r3).getByText("Book")).toBeInTheDocument();
-    expect(within(r3).getByText(RULE_ROWS_TEXT.comingSoon)).toBeInTheDocument();
-    expect(within(row("massiveDamage")).queryByRole("switch")).toBeNull();
-    expect(within(row("massiveDamage")).getByText("Off")).toBeInTheDocument();
+    const d6 = row("minions");
+    expect(within(d6).queryByRole("radio")).toBeNull();
+    expect(within(d6).getByText("Book")).toBeInTheDocument();
+    expect(within(d6).getByText(RULE_ROWS_TEXT.comingSoon)).toBeInTheDocument();
+    expect(within(row("fallingDamage")).queryByRole("switch")).toBeNull();
+    expect(within(row("fallingDamage")).getByText("Off")).toBeInTheDocument();
   });
 
   it("makes X2 read-only while X1 is Manual", () => {

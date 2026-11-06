@@ -34,7 +34,10 @@ import type { PartyMember } from "./adversaryHits";
 import { parseChoices, type CardChoice } from "./cardChoices";
 import { bindGates, buildRun, pickCard, replaying, runCard, writeSheetChanges, type HostRoll, type UsePick } from "./cardRunner";
 import { readSheet, saveSheet } from "./characterSheet";
-import { attackScene, riderFacts, runRiderPart, type AttackScene, type PickedRider, type RiderEnv } from "./combatActions";
+// combatActions imports this module (openRiderAllyPicks), and adversaryActions -> rolls -> cardRunner -> cardRows reaches
+// it too, so its helpers load lazily inside the functions below to keep the import graph acyclic at module load.
+import type { AttackScene, PickedRider, RiderEnv } from "./combatActions";
+const combatActions = () => import("./combatActions");
 import { liveCombatMap } from "./combatMaps";
 import { closeRequest, encounterRunning } from "./combatRequests";
 import { rollDie } from "./dice";
@@ -112,7 +115,7 @@ async function dryRun(env: RiderEnv, rider: PickedRider, sheet: CharacterSheet, 
   const transform = (use: CardUse): CardUse => ({ ...use, steps: bindGates(use.steps, hostRoll) });
   let pick: UsePick;
   if (rider.source === "feature") {
-    pick = pickFeature({ sheet, campaign: env.campaign, featureId: rider.id, useId: rider.useId, times: 1, rollUsedExperience: env.rollUsedExperience, party: [], transform, extraFacts: await riderFacts(env, undefined, undefined) });
+    pick = pickFeature({ sheet, campaign: env.campaign, featureId: rider.id, useId: rider.useId, times: 1, rollUsedExperience: env.rollUsedExperience, party: [], transform, extraFacts: await (await combatActions()).riderFacts(env, undefined, undefined) });
   } else {
     const base = pickCard(sheet, rider.id, rider.useId);
     const use = transform(base.use);
@@ -210,6 +213,7 @@ async function completeRider(ctx: MutationCtx, row: AllyPickRow, by: Id<"users">
   const use = riderUseOf({ source: s.rider.source, id: s.rider.id, useId: s.rider.useId });
   if (entry === null || entry.undoneAt !== undefined || row.mapId === undefined || campaign === null || character === null || use === undefined) return decline(ctx, row, by);
   if (use.activation.kind !== "rider" && use.activation.kind !== "auto") return decline(ctx, row, by);
+  const { attackScene, runRiderPart } = await combatActions();
   const scene = await attackScene(ctx, campaign, character, row.mapId);
   const sheet = readSheet(character.sheet);
   const env: RiderEnv = {
