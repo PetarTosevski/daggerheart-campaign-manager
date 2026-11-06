@@ -44,7 +44,8 @@ export type MapViewProps = {
   scaleBar: { percent: number; label: string };
   onMapClick: (p: Point) => void;
   onStroke: (phase: StrokePhase, p: Point) => void;
-  onSelectToken: (id: number) => void;
+  /** A click, tap or Enter on a marker (not a drag), with the marker's stored position: the board routes it (`pickMarker`). */
+  onPickMarker: (id: number | "party", at: Point) => void;
   onMoveToken: (id: number, p: Point) => void;
   onMoveParty: (p: Point) => void;
   onDropType: (type: string, p: Point) => void;
@@ -167,6 +168,11 @@ export function MapView(props: MapViewProps) {
     return v === "party" ? "party" : Number(v);
   };
   const canDrag = (id: number | "party") => editable && (id !== "party" || props.partyDraggable);
+  /** A marker was clicked (not dragged): report it with its stored position, so the hex under it can be selected. */
+  const pick = (id: number | "party") => {
+    const at = id === "party" ? props.party : props.tokens.find((t) => t.id === id);
+    if (at) props.onPickMarker(id, { x: at.x, y: at.y });
+  };
 
   function onItemPointerDown(e: PointerEvent<HTMLButtonElement>) {
     if (e.button !== 0) return;
@@ -196,7 +202,7 @@ export function MapView(props: MapViewProps) {
     drag.current = null;
     if (!d || d.id !== dragId(e.currentTarget)) return;
     if (!d.moved) {
-      if (d.id !== "party") props.onSelectToken(d.id);
+      pick(d.id);
       return;
     }
     const p = toPct(e.clientX, e.clientY);
@@ -398,16 +404,16 @@ export function MapView(props: MapViewProps) {
                   type="button"
                   className={place ? `tok tok-hex${place.shared ? " tok-shared" : ""}` : "tok"}
                   data-tok-id={t.id}
-                  aria-label={`${t.name || type.label}, ${type.label}${t.hidden ? " (hidden from players)" : ""}.${pyreLabel}${editable ? " Drag or use the arrow keys to move, click to edit." : ""}`}
+                  aria-label={`${t.name || type.label}, ${type.label}${t.hidden ? " (hidden from players)" : ""}.${pyreLabel}${editable ? (place ? " Drag or use the arrow keys to move, click to select its hex and edit it." : " Drag or use the arrow keys to move, click to edit.") : ""}`}
                   aria-pressed={editable ? on : undefined}
                   style={place ? hexStyle(place, on ? 5 : undefined) : { left: `${pos.x}%`, top: `${pos.y}%`, zIndex: on ? 5 : undefined }}
                   onKeyDown={(e) => nudge(e, t, (p) => props.onMoveToken(t.id, p))}
                   onClick={(e) => {
                     // Keyboard activation (pointer taps select on pointer up).
-                    if (e.detail === 0) props.onSelectToken(t.id);
+                    if (e.detail === 0) pick(t.id);
                   }}
                   onDoubleClick={() => {
-                    props.onSelectToken(t.id);
+                    pick(t.id);
                     window.setTimeout(() => document.querySelector<HTMLInputElement>("[data-name-field]")?.select(), 40);
                   }}
                   data-drag={t.id}
@@ -450,9 +456,13 @@ export function MapView(props: MapViewProps) {
             type="button"
             className={partyPlace ? `tok tok-hex${partyPlace.shared ? " tok-shared" : ""}` : "tok"}
             data-party-token="1"
-            aria-label={editable && props.partyDraggable ? "Party token. Drag or use the arrow keys to move the party." : "Party token"}
+            aria-label={editable && props.partyDraggable ? "Party token. Drag or use the arrow keys to move the party." : editable && partyPlace ? "Party token. Click to select the party's hex." : "Party token"}
             style={partyPlace ? hexStyle(partyPlace, 6) : { left: `${party.x}%`, top: `${party.y}%`, zIndex: 6 }}
             onKeyDown={(e) => props.partyDraggable && nudge(e, party, props.onMoveParty)}
+            onClick={(e) => {
+              // Keyboard activation (pointer taps pick on pointer up).
+              if (e.detail === 0) pick("party");
+            }}
             data-drag="party"
             {...itemHandlers}
           >

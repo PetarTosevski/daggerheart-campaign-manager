@@ -29,6 +29,7 @@ import {
   type TravelPace,
 } from "@/lib/domain/travel";
 import { hexDistance, hexToPixel, pixelToHex, type Hex } from "@/lib/world/hex";
+import { pickMarker } from "@/lib/world/hex-tokens";
 import { printedHexGrid } from "@/lib/world/printed-grids";
 import { HORIZON_FRAME, SANCTUARY_TYPE, WORLD_MAPS, mapImageSize, playerMapView, travelRules, type MapState, type MapToken, type PlayerMapState } from "@/lib/world/map-state";
 import {
@@ -723,7 +724,13 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
           scaleBar={scaleBar(state.scaleKm)}
           onMapClick={onMapClick}
           onStroke={onStroke}
-          onSelectToken={(id) => editable && (setSelId(id), setSelHex(null))}
+          onPickMarker={(id, at) => {
+            // A hex marker covers its hex: the click selects the hex (Travel here) and the marker together (WH2).
+            const pick = editable ? pickMarker(id, !!crawl) : null;
+            if (!pick) return;
+            setSelHex(pick.hex ? toHex(at) : null);
+            setSelId(pick.token);
+          }}
           onMoveToken={(id, p) => {
             const at = snap(p);
             void actions.updateToken(id, { x: at.x, y: at.y });
