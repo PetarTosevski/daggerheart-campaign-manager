@@ -16,6 +16,8 @@ const ENV: Record<string, string> = {
   JWT_PRIVATE_KEY: sessionKey.export({ type: "pkcs8", format: "pem" }).toString(),
   CONVEX_SITE_URL: "https://apple-native.example.test",
   SITE_URL: "https://app.example.test",
+  // The cloud dev deployment's rail: the dev build's bundle id signs in (production refuses it; tests/unit/apple-identity).
+  ALLOW_DEV_APPLE_SIGN_IN: "true",
 };
 const previous: Record<string, string | undefined> = {};
 

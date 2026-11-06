@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  APPLE_DEV_AUDIENCE,
   APPLE_ISSUER,
   APPLE_KEYS_MIN_REFETCH_MS,
   APPLE_KEYS_TTL_MS,
   AppleIdentityError,
   AppleKeyCache,
+  appleAudiences,
   appleTokenKeyId,
   sha256Hex,
   verifyAppleIdentityToken,
@@ -15,6 +17,8 @@ import {
 const RS256 = { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" } as const;
 const NOW = Date.UTC(2026, 9, 29, 12, 0, 0);
 const RAW_NONCE = "raw-nonce";
+/** A cloud deployment with no dev rail set: what production looks like to the audience check. */
+const PRODUCTION = { CONVEX_CLOUD_URL: "https://prod-example-123.convex.cloud" };
 
 function b64url(bytes: Uint8Array | string): string {
   const data = typeof bytes === "string" ? new TextEncoder().encode(bytes) : bytes;
@@ -62,22 +66,36 @@ async function reason(run: () => Promise<unknown>) {
 }
 
 describe("verifyAppleIdentityToken", () => {
-  it("accepts both app audiences and a string email_verified", async () => {
+  it("accepts the store and preview audiences everywhere, and a string email_verified", async () => {
     const { pair, jwk } = await keyPair();
     const production = await verifyAppleIdentityToken({
       identityToken: await sign(pair.privateKey, await claims()),
       nonce: RAW_NONCE,
       keys: [jwk],
       now: NOW,
+      env: PRODUCTION,
     });
     expect(production).toMatchObject({ subject: "apple-user-1", email: "ada@example.com", emailVerified: true });
-    const development = await verifyAppleIdentityToken({
-      identityToken: await sign(pair.privateKey, await claims({ aud: "com.dualityheart.mobile.dev", email_verified: "true" })),
+    const preview = await verifyAppleIdentityToken({
+      identityToken: await sign(pair.privateKey, await claims({ aud: "com.dualityheart.mobile.preview", email_verified: "true" })),
       nonce: RAW_NONCE,
       keys: [jwk],
       now: NOW,
+      env: PRODUCTION,
     });
-    expect(development.emailVerified).toBe(true);
+    expect(preview.emailVerified).toBe(true);
+  });
+
+  it("refuses the dev build's audience on production, accepts it on the cloud dev and a local deployment", async () => {
+    const { pair, jwk } = await keyPair();
+    const token = await sign(pair.privateKey, await claims({ aud: APPLE_DEV_AUDIENCE }));
+    const verify = (env: Record<string, string | undefined>) =>
+      verifyAppleIdentityToken({ identityToken: token, nonce: RAW_NONCE, keys: [jwk], now: NOW, env });
+    expect(await reason(() => verify(PRODUCTION))).toBe("audience");
+    expect(await reason(() => verify({ ...PRODUCTION, ALLOW_DEV_APPLE_SIGN_IN: "1" }))).toBe("audience");
+    expect((await verify({ ...PRODUCTION, ALLOW_DEV_APPLE_SIGN_IN: "true" })).subject).toBe("apple-user-1");
+    expect((await verify({ CONVEX_CLOUD_URL: "http://127.0.0.1:3210" })).subject).toBe("apple-user-1");
+    expect([...appleAudiences(PRODUCTION)].sort()).toEqual(["com.dualityheart.mobile", "com.dualityheart.mobile.preview"]);
   });
 
   it("accepts a later token that has no email", async () => {
