@@ -3,12 +3,12 @@ import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 
 import { getPublishedFrame } from "../../../../../src/lib/frames";
-import { TOMES, TOME_CHAPTERS, type TomeChapterId } from "../../../../../src/lib/frames/tomes";
+import { CUSTOM_CHAPTERS, TOMES, TOME_CHAPTERS, type TomeChapterId } from "../../../../../src/lib/frames/tomes";
 import { api } from "../../convex";
 import type { LoadedCampaign } from "../../shell/campaign-provider";
 import { sectionLabel } from "../../shell/sections";
 
-import { CUSTOM_CHAPTERS, CustomChapterBody } from "./custom-body";
+import { CustomChapterBody } from "./custom-body";
 import { PublishedChapterBody } from "./published-body";
 import { tomeStyles as styles } from "./styles";
 

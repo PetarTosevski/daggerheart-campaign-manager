@@ -1,8 +1,9 @@
 import { StyleSheet, Text, TextInput, View } from "react-native";
 
-import { ACHIEVEMENT_LEVELS, MARK_CLEAR_LEVELS, type PickChoice } from "../../../../../../src/lib/domain/level-up";
+import { ACHIEVEMENT_LEVELS } from "../../../../../../src/lib/domain/level-up";
+import { achievementText, cardName, OPTION_SHORT, targetNames } from "../../../../../../src/lib/party/level-up";
 import { CLASSES } from "../../../../../../src/lib/srd/classes";
-import { DOMAIN_CARDS, DOMAINS } from "../../../../../../src/lib/srd/domain-cards";
+import { DOMAINS } from "../../../../../../src/lib/srd/domain-cards";
 import { SUBCLASSES } from "../../../../../../src/lib/srd/subclasses";
 import type { CharacterSheet } from "../../../../../../src/lib/validation/characters";
 
@@ -12,22 +13,6 @@ import { radius, space } from "../../../theme/spacing";
 import { Button } from "../../../ui/button";
 
 import { useLevelUpDraft, type LevelUpDraftValue } from "./draft";
-import { OPTION_SHORT, traitLabel } from "./shared";
-
-const cardName = (id: string) => DOMAIN_CARDS.find((c) => c.id === id)?.name ?? id;
-
-export function achievementText(level: number): string {
-  if (!ACHIEVEMENT_LEVELS.includes(level)) return `No achievements at level ${level}. Take two advancements and the level's domain card.`;
-  const clear = MARK_CLEAR_LEVELS.includes(level) ? "; the marks on your traits clear first." : ".";
-  return `Level ${level} achievements: a new Experience at +2 and +1 Proficiency${clear}`;
-}
-
-function targetNames(pick: PickChoice, sheet: CharacterSheet): string {
-  const names = (pick.targets ?? []).map((t) =>
-    pick.option === "traits" ? traitLabel(t) : pick.option === "experiences" ? (sheet.experiences.find((x) => x.id === t)?.name ?? t) : cardName(t),
-  );
-  return names.length > 0 ? `: ${names.join(", ")}` : "";
-}
 
 function Summary({ lu, sheet }: { lu: LevelUpDraftValue; sheet: CharacterSheet }) {
   const { draft, choice, level } = lu;

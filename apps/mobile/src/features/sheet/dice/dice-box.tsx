@@ -10,6 +10,7 @@ import { TYPED_MODIFIER_MAX, weaponDice } from "../../../../../../src/lib/domain
 import { ikonisWeapon } from "../../../../../../src/lib/domain/dice/ikonis";
 import type { RollRecord } from "../../../../../../src/lib/domain/duality";
 import { holdsSlayer, holdsTide, slayerDice, tideTokens } from "../../../../../../src/lib/domain/session-features";
+import { consequence, earlierText, outcomeText, outcomeTone, partsText, poolLabel, signed } from "../../../../../../src/lib/party/roll-copy";
 import { WEAPONS } from "../../../../../../src/lib/srd/equipment";
 import { TRAIT_IDS, type TraitId } from "../../../../../../src/lib/srd/types";
 import { api, type Id } from "../../../convex";
@@ -22,17 +23,7 @@ import { RollResult } from "../../../ui/roll-result";
 import { traitLabel } from "../catalog";
 import type { SheetCharacter } from "../types";
 import { useIntent } from "./intent";
-import {
-  consequence,
-  earlierText,
-  outcomeColor,
-  outcomeText,
-  partsText,
-  poolLabel,
-  signed,
-  slayerResultSuffix,
-  traitRollLabel,
-} from "./roll-copy";
+import { slayerResultSuffix, traitRollLabel } from "./roll-copy";
 import { RollPrompts } from "./roll-prompts";
 import { diceSheet, isUnavailable } from "./sheet-parse";
 import { SlayerOffer } from "./slayer";
@@ -229,7 +220,7 @@ export function DiceBox({
   const modifierTooBig = Math.abs(toInt(modifier) ?? 0) > TYPED_MODIFIER_MAX;
   const canRoll = !(unavailable || pendingRoll || notEnoughHope || modifierTooBig || !writes);
   const earlier = history.slice(1);
-  const tone = result ? outcomeColor(result.roll) : "dmg";
+  const tone = result ? outcomeTone(result.roll) : "dmg";
 
   return (
     <View accessibilityLabel="Dice" accessibilityRole="region" style={styles.box}>
@@ -431,8 +422,8 @@ export function DiceBox({
             {result.label}
             {partsText(result.roll) ? ` (${partsText(result.roll)})` : ""}
           </Text>
-          {consequence(result.roll, result.fearGained) ? (
-            <Text style={styles.consequence}>{consequence(result.roll, result.fearGained)}</Text>
+          {consequence(result.roll, result.fearGained, fear === null) ? (
+            <Text style={styles.consequence}>{consequence(result.roll, result.fearGained, fear === null)}</Text>
           ) : null}
           <RollPrompts characterId={character._id} prompts={result.prompts} />
         </View>

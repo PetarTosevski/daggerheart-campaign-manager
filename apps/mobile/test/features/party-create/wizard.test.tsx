@@ -1,6 +1,5 @@
 import { beforeEach, expect, jest, test } from "@jest/globals";
-import { fireEvent, waitFor } from "@testing-library/react-native";
-import * as SecureStore from "expo-secure-store";
+import { act, fireEvent, waitFor } from "@testing-library/react-native";
 
 import { getClass } from "../../../../../src/lib/srd";
 import { resetMotionTest } from "../../theme/mock-reanimated";
@@ -8,19 +7,19 @@ import { CharacterWizard } from "../../../src/features/party/create/wizard";
 import { CreateCharacterSlot } from "../../../src/features/party/create";
 import { PhotoImportButton } from "../../../src/features/party/create/photo-import";
 import { PartyScreen } from "../../../src/features/party";
-import { createDraftSaver, isTypedPatch } from "../../../src/features/party/create/draft-storage";
+import { DRAFT_DEBOUNCE_MS, isTypedWizardPatch } from "../../../../../src/lib/party/wizard-draft";
 import {
   classItemsFor,
   domainCardOptions,
   emptyWizard,
   gearSummary,
-  hasPurposefulDesign,
+  holdsPurposefulDesignNow,
   missingByStep,
   normalizeWizard,
-  partyCardHolders,
-  refusedCardsMissing,
+  sharedCardsMissing,
   toCharacterDraft,
-} from "../../../src/features/party/create/wizard-logic";
+  type WizardState,
+} from "../../../../../src/lib/party/wizard-logic";
 import { api, type Id } from "../../../src/convex";
 import { fn, renderAsGm, renderAsPlayer } from "../../harness";
 import { campaignRecord, inCampaign, queriesFor } from "../party/fixture";
@@ -33,8 +32,6 @@ jest.mock("expo-router", () => ({
   Link: ({ children }: { children: React.ReactNode }) => children,
   useRouter: () => ({ replace: mockReplace, back: mockBack, push: jest.fn() }),
 }));
-
-jest.mock("expo-secure-store");
 
 jest.mock("expo-crypto", () => ({
   randomUUID: () => "11111111-1111-4111-8111-111111111111",
@@ -67,13 +64,18 @@ function completeGuardian() {
   );
 }
 
+/** The account draft `drafts.get` answers with (schemaVersion 1, the wizard state as JSON text). */
+let storedState: WizardState | null = null;
+
+function draftQuery() {
+  return { [fn(api.drafts.get)]: () => (storedState === null ? null : { schemaVersion: 1, data: JSON.stringify(storedState), updatedAt: 0 }) };
+}
+
 beforeEach(() => {
   resetMotionTest();
   mockReplace.mockReset();
   mockBack.mockReset();
-  jest.mocked(SecureStore.getItemAsync).mockResolvedValue(JSON.stringify(completeGuardian()));
-  jest.mocked(SecureStore.setItemAsync).mockResolvedValue(undefined);
-  jest.mocked(SecureStore.deleteItemAsync).mockResolvedValue(undefined);
+  storedState = completeGuardian();
   if (typeof globalThis.crypto?.randomUUID !== "function") {
     Object.defineProperty(globalThis, "crypto", {
       value: { randomUUID: () => "11111111-1111-4111-8111-111111111111" },
@@ -86,14 +88,20 @@ test("a restored complete draft can call characters.create", async () => {
   const draft = completeGuardian();
   expect(missingByStep(draft, { hopeAndFear: true })[9]).toEqual([]);
   const calls: unknown[] = [];
+  const cleared: unknown[] = [];
   const screen = await renderAsPlayer(inCampaign("player", <CharacterWizard />), {
     queries: {
       ...queriesFor("player", []),
+      ...draftQuery(),
     },
     mutations: {
       [fn(api.characters.create)]: (args) => {
         calls.push(args);
         return { characterId: "char-new" };
+      },
+      [fn(api.drafts.clear)]: (args) => {
+        cleared.push(args);
+        return null;
       },
     },
   });
@@ -109,7 +117,14 @@ test("a restored complete draft can call characters.create", async () => {
     draft: expect.objectContaining({ name: "Brakka Stonefist", classId: "guardian" }),
   });
   expect(mockReplace).toHaveBeenCalledWith("/campaign/campaign-1/party/char-new");
-  expect(screen.client.subscribed).toEqual([fn(api.campaigns.get), fn(api.charactersReads.listByCampaign), fn(api.ruleSettings.get)]);
+  // Finishing deletes the account draft, as on the website.
+  expect(cleared).toEqual([{ kind: "characterWizard", campaignId: "campaign-1" }]);
+  expect(screen.client.subscribed).toEqual([
+    fn(api.campaigns.get),
+    fn(api.drafts.get),
+    fn(api.charactersReads.listByCampaign),
+    fn(api.ruleSettings.get),
+  ]);
 });
 
 test("a player never subscribes to photoImport", async () => {
@@ -158,24 +173,24 @@ function clank() {
 
 test("a Clank picks an Experience for Purposeful Design (CB p.53) and the draft sends it", () => {
   const draft = clank();
-  expect(hasPurposefulDesign(draft, opts)).toBe(true);
+  expect(holdsPurposefulDesignNow(draft, opts)).toBe(true);
   expect(missingByStep(draft, opts)[7]).toEqual(["an Experience for Purposeful Design"]);
   const picked = normalizeWizard({ ...draft, purposefulExperience: 1 }, opts);
   expect(missingByStep(picked, opts)[7]).toEqual([]);
-  expect(toCharacterDraft(picked, null, opts).purposefulExperience).toBe(1);
+  expect(toCharacterDraft(picked, null).purposefulExperience).toBe(1);
 });
 
 test("a non-Clank never keeps or sends a Purposeful Design pick", () => {
   const dwarf = normalizeWizard({ ...completeGuardian(), purposefulExperience: 0 }, opts);
-  expect(hasPurposefulDesign(dwarf, opts)).toBe(false);
+  expect(holdsPurposefulDesignNow(dwarf, opts)).toBe(false);
   expect(dwarf.purposefulExperience).toBeNull();
   expect(missingByStep(dwarf, opts)[7]).toEqual([]);
-  expect(toCharacterDraft(dwarf, null, opts)).not.toHaveProperty("purposefulExperience");
+  expect(toCharacterDraft(dwarf, null)).not.toHaveProperty("purposefulExperience");
 });
 
 test("the Experiences step shows the Clank's +1 on the chosen Experience", async () => {
-  jest.mocked(SecureStore.getItemAsync).mockResolvedValue(JSON.stringify({ ...clank(), step: 7, purposefulExperience: 0 }));
-  const screen = await renderAsPlayer(inCampaign("player", <CharacterWizard />), { queries: queriesFor("player", []) });
+  storedState = { ...clank(), step: 7, purposefulExperience: 0 };
+  const screen = await renderAsPlayer(inCampaign("player", <CharacterWizard />), { queries: { ...queriesFor("player", []), ...draftQuery() } });
   await waitFor(() => {
     expect(screen.getByRole("header", { name: "Experiences" })).toBeTruthy();
   });
@@ -195,53 +210,70 @@ test("the gear summary shows thresholds with the level added (Gambeson 5 / 11 â†
 
 test("shared domain cards: Refuse holds step 8 for a card another character holds; Warn and Allow do not", () => {
   const [first] = completeGuardian().domainCards;
-  const party = [{ _id: "c1", sheet: { name: "Mira", domainCards: { owned: [first], loadout: [] } } }];
+  const holders = new Map([[first, ["Mira"]]]);
   const nameOf = (id: string) => id;
-  expect(refusedCardsMissing([first], "refuse", partyCardHolders("refuse", party), nameOf)).toEqual([
-    `a card nobody else holds instead of ${first}`,
-  ]);
-  expect(refusedCardsMissing([first], "warn", partyCardHolders("warn", party), nameOf)).toEqual([]);
-  expect(partyCardHolders("allow", party).size).toBe(0);
+  expect(sharedCardsMissing([first], "refuse", holders, nameOf)).toEqual([`a card Mira doesn't hold instead of ${first}`]);
+  expect(sharedCardsMissing([first], "warn", holders, nameOf)).toEqual([]);
+  expect(sharedCardsMissing([first], "allow", holders, nameOf)).toEqual([]);
 });
 
 test("the domain card step notes a held card under Warn and disables it under Refuse", async () => {
   const base = completeGuardian();
   const [held] = domainCardOptions("guardian", opts).map((c) => c.id);
   const stored = { ...base, step: 8, domainCards: [] };
-  jest.mocked(SecureStore.getItemAsync).mockResolvedValue(JSON.stringify(stored));
+  storedState = stored;
   const mira = characterRow({ _id: "char-9", ownerId: "player-2", status: "active", mine: false, canEdit: false, sheet: { name: "Mira", domainCards: { owned: [held], loadout: [] } } });
   const rules = (mode: string) => (ruleSettingsRecord({ sharedDomainCards: mode }, { locked: false, canEdit: false }));
   const warn = await renderAsPlayer(inCampaign("player", <CharacterWizard />), {
-    queries: { ...queriesFor("player", [mira]), [fn(api.ruleSettings.get)]: rules("warn") },
+    queries: { ...queriesFor("player", [mira]), ...draftQuery(), [fn(api.ruleSettings.get)]: rules("warn") },
   });
   await waitFor(() => {
     expect(warn.getByText("Mira already has this card.")).toBeTruthy();
   });
   await warn.unmount();
   const refuse = await renderAsPlayer(inCampaign("player", <CharacterWizard />), {
-    queries: { ...queriesFor("player", [mira]), [fn(api.ruleSettings.get)]: rules("refuse") },
+    queries: { ...queriesFor("player", [mira]), ...draftQuery(), [fn(api.ruleSettings.get)]: rules("refuse") },
   });
   await waitFor(() => {
     expect(refuse.getByText("Mira already has this card; this campaign doesn't share domain cards.")).toBeTruthy();
   });
 });
 
-test("typing is saved after a pause, a tap at once, and only the latest state is written", () => {
+test("typing saves the account draft after a pause, a tap at once; Start over deletes it", async () => {
+  expect(isTypedWizardPatch({ name: "B" })).toBe(true);
+  expect(isTypedWizardPatch({ classId: "bard" })).toBe(false);
+  storedState = { ...completeGuardian(), step: 4 };
+  const saved: { data: string }[] = [];
+  const cleared: unknown[] = [];
+  const screen = await renderAsPlayer(inCampaign("player", <CharacterWizard />), {
+    queries: { ...queriesFor("player", []), ...draftQuery() },
+    mutations: {
+      [fn(api.drafts.save)]: (args) => {
+        saved.push(args as { data: string });
+        return null;
+      },
+      [fn(api.drafts.clear)]: (args) => {
+        cleared.push(args);
+        return null;
+      },
+    },
+  });
+  await waitFor(() => {
+    expect(screen.getByRole("header", { name: "Character Info" })).toBeTruthy();
+  });
   jest.useFakeTimers();
   try {
-    const setItem = jest.mocked(SecureStore.setItemAsync);
-    setItem.mockClear();
-    const saver = createDraftSaver("campaign-1");
-    expect(isTypedPatch({ name: "B" })).toBe(true);
-    expect(isTypedPatch({ classId: "bard" })).toBe(false);
-    saver.save({ ...emptyWizard(), name: "B" }, { typed: true });
-    saver.save({ ...emptyWizard(), name: "Br" }, { typed: true });
-    expect(setItem).not.toHaveBeenCalled();
-    jest.advanceTimersByTime(500);
-    expect(setItem).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(String(setItem.mock.calls[0]?.[1])).name).toBe("Br");
-    saver.save({ ...emptyWizard(), classId: "bard" }, { typed: false });
-    expect(setItem).toHaveBeenCalledTimes(2);
+    const name = screen.getByDisplayValue("Brakka Stonefist");
+    await fireEvent.changeText(name, "B");
+    await fireEvent.changeText(name, "Br");
+    expect(saved).toEqual([]);
+    await act(() => jest.advanceTimersByTime(DRAFT_DEBOUNCE_MS));
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ kind: "characterWizard", campaignId: "campaign-1", schemaVersion: 1 });
+    expect(JSON.parse(saved[0]?.data ?? "{}").name).toBe("Br");
+    await fireEvent.press(screen.getByRole("button", { name: "Start over" }));
+    expect(cleared).toEqual([{ kind: "characterWizard", campaignId: "campaign-1" }]);
+    expect(saved).toHaveLength(1);
   } finally {
     jest.useRealTimers();
   }

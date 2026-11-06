@@ -16,7 +16,7 @@ import { Button } from "../../../ui/button";
 import { Section } from "../chrome";
 
 import { useLevelUpDraft } from "./draft";
-import { OPTION_SHORT, OPTION_TEXT, traitLabel } from "./shared";
+import { OPTION_SHORT, OPTION_TEXT, traitLabel } from "../../../../../../src/lib/party/level-up";
 
 const UNLOCK_LEVEL = { 2: 2, 3: 5, 4: 8 } as const;
 

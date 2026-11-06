@@ -182,37 +182,6 @@ function functionBodies(file: string): FunctionBody[] {
  * shrinks: a new copy fails the test, and so does an entry whose copy is gone (delete the entry).
  */
 const KNOWN_COPIES: readonly string[] = [
-  // PX9 (party and sheet on shared web models)
-  "apps/mobile/src/features/party/create/wizard-logic.ts assignTrait",
-  "apps/mobile/src/features/party/create/wizard-logic.ts classItemsFor",
-  "apps/mobile/src/features/party/create/wizard-logic.ts domainCardOptions",
-  // PX9: Purposeful Design (dcm-gdzi.23) made these match the website again; they go with the rest of this file once
-  // src/app/(gm)/campaigns/[campaignId]/party/new/wizard-logic.ts moves into src/lib.
-  "apps/mobile/src/features/party/create/wizard-logic.ts emptyWizard",
-  "apps/mobile/src/features/party/create/wizard-logic.ts portraitAsset",
-  "apps/mobile/src/features/party/create/wizard-logic.ts portraitOptions",
-  "apps/mobile/src/features/party/create/wizard-logic.ts primaryWeaponsFor",
-  "apps/mobile/src/features/party/create/wizard-logic.ts restoreWizard",
-  "apps/mobile/src/features/party/create/wizard-logic.ts secondaryWeaponsFor",
-  "apps/mobile/src/features/party/create/wizard-logic.ts stillNeeded",
-  "apps/mobile/src/features/party/create/wizard-logic.ts suggestedLoadout",
-  "apps/mobile/src/features/party/create/wizard-logic.ts suggestedTraits",
-  "apps/mobile/src/features/party/create/wizard-logic.ts toggleCard",
-  "apps/mobile/src/features/party/create/wizard-logic.ts toggleExperience",
-  "apps/mobile/src/features/party/create/wizard-logic.ts traitsComplete",
-  "apps/mobile/src/features/sheet/dice/roll-copy.ts earlierText",
-  "apps/mobile/src/features/sheet/dice/roll-copy.ts outcomeColor",
-  "apps/mobile/src/features/sheet/dice/roll-copy.ts partsText",
-  "apps/mobile/src/features/sheet/dice/roll-copy.ts rollHeadline",
-  "apps/mobile/src/features/sheet/features/class-features.tsx costLabel",
-  "apps/mobile/src/features/sheet/features/class-features.tsx inputMissing",
-  "apps/mobile/src/features/sheet/features/lunar.tsx bumpBlocked",
-  "apps/mobile/src/features/sheet/level-up/draft.tsx advancementsChosen",
-  "apps/mobile/src/features/sheet/level-up/draft.tsx cardsChosen",
-  "apps/mobile/src/features/sheet/level-up/draft.tsx issueTarget",
-  "apps/mobile/src/features/sheet/level-up/draft.tsx stepIds",
-  "apps/mobile/src/features/sheet/level-up/ribbon.tsx targetNames",
-  "apps/mobile/src/features/sheet/level-up/shared.ts fullSheet",
   // Journal (sessions and notes)
   "apps/mobile/src/features/notes/export-download.ts journalFileName",
   "apps/mobile/src/features/notes/mentions.tsx displayName",

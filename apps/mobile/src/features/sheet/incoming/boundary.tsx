@@ -6,7 +6,7 @@ import { type } from "../../../theme/fonts";
 import { space } from "../../../theme/spacing";
 import { Button } from "../../../ui/button";
 
-import { HIT_RETRY_DELAYS_MS, HIT_RETRY_STABLE_MS } from "./model";
+import { HIT_RETRY_DELAYS_MS, HIT_RETRY_STABLE_MS } from "../../../../../../src/lib/combat-map/reactions";
 
 /** `generation` counts remounts: a retry mounts the children afresh, so `useQuery` subscribes again rather than rethrowing. */
 type State = { failed: boolean; attempts: number; generation: number };

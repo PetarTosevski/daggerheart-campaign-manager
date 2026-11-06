@@ -14,7 +14,7 @@ import { RollResult } from "../../../ui/roll-result";
 import { traitLabel } from "../catalog";
 import type { SheetCharacter } from "../types";
 import { useIntent } from "./intent";
-import { rollHeadline } from "./roll-copy";
+import { rollHeadline } from "../../../../../../src/lib/party/roll-copy";
 
 const COST = 3;
 

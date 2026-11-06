@@ -3,7 +3,7 @@ import { fireEvent } from "@testing-library/react-native";
 
 import { resetMotionTest } from "../../theme/mock-reanimated";
 import { IncomingSlot } from "../../../src/features/sheet/incoming";
-import type { HitView } from "../../../src/features/sheet/incoming/model";
+import type { HitView } from "../../../../../src/lib/combat-map/reactions";
 import type { SheetSlotProps } from "../../../src/features/sheet/contract";
 import { api } from "../../../src/convex";
 import { fn, renderAsGm, renderAsPlayer } from "../../harness";

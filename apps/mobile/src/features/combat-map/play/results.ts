@@ -4,7 +4,7 @@ import type { RollRecord } from "../../../../../../src/lib/domain/duality";
 import { RANGE_BANDS } from "../../../../../../src/lib/domain/combat-map/ranges";
 
 import type { api } from "../../../convex";
-import { earlierText } from "../../sheet/dice/roll-copy";
+import { earlierText } from "../../../../../../src/lib/party/roll-copy";
 
 export type AttackResult = FunctionReturnType<typeof api.combatActions.attack>;
 export type CardResult = FunctionReturnType<typeof api.combatCards.useCard>;

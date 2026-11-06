@@ -11,7 +11,7 @@ import {
   availableCommunities,
   portraitOptions,
   suggestedTraits,
-} from "./wizard-logic";
+} from "../../../../../../src/lib/party/wizard-logic";
 import { Button } from "../../../ui/button";
 import { wizardStyles as s } from "./styles";
 import { Choice, Group, HfMini, HopeFearTag, type StepProps } from "./wizard-ui";

@@ -23,6 +23,7 @@ import {
   tideCapacity,
   tideTokens,
 } from "../../../../../../src/lib/domain/session-features";
+import { costLabel, inputMissing } from "../../../../../../src/lib/party/features";
 import type { CharacterSheet } from "../../../../../../src/lib/validation/characters";
 import { api } from "../../../convex";
 import type { Id } from "../../../convex";
@@ -45,18 +46,6 @@ import {
   FeatureSection,
   FeatureStatus,
 } from "./ui";
-
-/** The label on the Use button; mirrors the website's `costLabel`. */
-function costLabel(feature: FeatureMeta): string | null {
-  const c = feature.cost;
-  if (!c) return null;
-  const parts = [
-    c.hope ? `${c.hope} Hope` : null,
-    c.stress ? `${c.stress} Stress` : null,
-    c.use ? `once per ${c.use.until === "longRest" ? "long rest" : c.use.until}` : null,
-  ];
-  return parts.filter(Boolean).join(", ") || null;
-}
 
 const TRAIT_LABEL = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
@@ -197,28 +186,6 @@ function DamageDicePicker({
       )}
     </View>
   );
-}
-
-/** Whether an input still needs a value before the feature can be used. */
-function inputMissing(
-  input: FeatureInput,
-  values: { choice: string; amount: string; dieIndexes: number[]; target: string },
-): boolean {
-  switch (input.kind) {
-    case "select":
-      return input.required && values.choice === "";
-    case "number": {
-      const n = Number(values.amount);
-      return values.amount === "" || !Number.isInteger(n) || n < input.min || n > input.max;
-    }
-    case "rollDice":
-      return values.dieIndexes.length === 0;
-    case "ally":
-      return input.required && values.target === "";
-    case "text":
-    case "heldDice":
-      return false;
-  }
 }
 
 function FeatureCard({

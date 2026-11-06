@@ -17,18 +17,23 @@ import { api } from "../../../convex";
 import { useIntent } from "../intent";
 import type { SheetSlotProps } from "../contract";
 
-import { canLevelUp, fullSheet } from "./shared";
+import {
+  advancementsChosen,
+  canLevelUp,
+  cardsChosen,
+  EMPTY_LEVEL_UP_DRAFT,
+  fullSheet,
+  issueTarget,
+  PICKS_PER_LEVEL,
+  stepIds,
+  TARGET_COUNT,
+  type LevelUpDraft,
+  type LevelUpState,
+  type LevelUpStepId,
+  type LevelUpTarget,
+} from "../../../../../../src/lib/party/level-up";
 
-export type LevelUpTarget = "experiences" | "advancements" | "deck";
-export type LevelUpStepId = LevelUpTarget | "finish";
-
-export type LevelUpDraft = {
-  picks: PickChoice[];
-  experienceName: string;
-  cardId: string;
-  trade?: { out: string; in: string };
-  multiclass?: MulticlassChoice;
-};
+export type { LevelUpDraft, LevelUpStepId, LevelUpTarget };
 
 export type LevelUpStep = { id: LevelUpStepId; label: string; done: boolean };
 export type LevelUpIssue = { message: string; target: LevelUpTarget };
@@ -59,7 +64,6 @@ export type LevelUpDraftValue = {
   goTo: (step: LevelUpStepId) => void;
 };
 
-const EMPTY_DRAFT: LevelUpDraft = { picks: [], experienceName: "", cardId: "" };
 const NO_STEPS: LevelUpStep[] = [];
 const noop = () => {};
 
@@ -68,7 +72,7 @@ const INACTIVE: LevelUpDraftValue = {
   canStart: false,
   level: 0,
   sheet: null,
-  draft: EMPTY_DRAFT,
+  draft: EMPTY_LEVEL_UP_DRAFT,
   choice: { picks: [], cardId: "" },
   problems: [],
   issues: [],
@@ -88,39 +92,6 @@ const INACTIVE: LevelUpDraftValue = {
   setMulticlass: noop,
   goTo: noop,
 };
-
-const TARGET_COUNT: Partial<Record<AdvancementOption, number>> = { traits: 2, experiences: 2, domainCard: 1 };
-const PICKS_PER_LEVEL = 2;
-
-export function advancementsChosen(draft: LevelUpDraft): boolean {
-  const cost = draft.picks.reduce((sum, p) => sum + OPTION_RULES[p.option].cost, 0);
-  if (cost < PICKS_PER_LEVEL) return false;
-  return draft.picks.every((p) => {
-    if (p.option === "multiclass") return Boolean(draft.multiclass?.classId && draft.multiclass.domainId && draft.multiclass.subclassId);
-    const count = TARGET_COUNT[p.option];
-    return p.option === "domainCard" || !count || (p.targets?.length ?? 0) === count;
-  });
-}
-
-export function cardsChosen(draft: LevelUpDraft): boolean {
-  if (!draft.cardId || (draft.trade && !(draft.trade.out && draft.trade.in))) return false;
-  return draft.picks.every((p) => p.option !== "domainCard" || (p.targets?.length ?? 0) === 1);
-}
-
-const optionLabels = Object.values(OPTION_RULES).map((r) => `${r.label}:`);
-
-export function issueTarget(message: string, sheet: Pick<CharacterSheet, "experiences">): LevelUpTarget {
-  if (optionLabels.some((l) => message.startsWith(l))) return "advancements";
-  if (/domain card|^Trade |deck holds|^You already have |out of reach at this level/i.test(message)) return "deck";
-  if (/Experience/.test(message) || sheet.experiences.some((x) => message.startsWith(`${x.name} is already at`))) return "experiences";
-  return "advancements";
-}
-
-function stepIds(level: number): LevelUpStepId[] {
-  return ACHIEVEMENT_LEVELS.includes(level) ? ["experiences", "advancements", "deck", "finish"] : ["advancements", "deck", "finish"];
-}
-
-type State = { active: boolean; level: number; step: LevelUpStepId; draft: LevelUpDraft };
 
 const LevelUpDraftContext = createContext<LevelUpDraftValue | null>(null);
 
@@ -161,7 +132,7 @@ export function LevelUpDraftProvider({ slot, children }: { slot: SheetSlotProps;
   const sheet = useMemo(() => fullSheet(character), [character]);
   const sheetLevel = sheet?.level ?? character.sheet.level;
   const canStart = canLevelUp(sheet, canEdit, isGm);
-  const [state, setState] = useState<State>(() => ({ active: false, level: sheetLevel, step: "finish", draft: EMPTY_DRAFT }));
+  const [state, setState] = useState<LevelUpState>(() => ({ active: false, level: sheetLevel, step: "finish", draft: EMPTY_LEVEL_UP_DRAFT }));
   const apply = useIntent(api.levelUp.apply);
 
   const active = state.active && state.level === sheetLevel && canStart;
@@ -173,7 +144,7 @@ export function LevelUpDraftProvider({ slot, children }: { slot: SheetSlotProps;
   }, [ids]);
 
   const value = useMemo<LevelUpDraftValue>(() => {
-    const draft = active ? state.draft : EMPTY_DRAFT;
+    const draft = active ? state.draft : EMPTY_LEVEL_UP_DRAFT;
     const achievement = ACHIEVEMENT_LEVELS.includes(level);
     const takesMulticlass = draft.picks.some((p) => p.option === "multiclass");
     const choice: LevelUpChoice = {
@@ -224,17 +195,17 @@ export function LevelUpDraftProvider({ slot, children }: { slot: SheetSlotProps;
         if (!canStart) return;
         apply.clearError();
         const first = ids[0] ?? "finish";
-        setState({ active: true, level: sheetLevel, step: first, draft: EMPTY_DRAFT });
+        setState({ active: true, level: sheetLevel, step: first, draft: EMPTY_LEVEL_UP_DRAFT });
       },
       cancel: () => {
         apply.clearError();
-        setState((s) => ({ ...s, active: false, draft: EMPTY_DRAFT }));
+        setState((s) => ({ ...s, active: false, draft: EMPTY_LEVEL_UP_DRAFT }));
       },
       finish: async () => {
         if (!active || problems.length > 0) return false;
         const result = await apply.fire({ characterId, choice });
         if (!result) return false;
-        setState((s) => ({ ...s, active: false, draft: EMPTY_DRAFT }));
+        setState((s) => ({ ...s, active: false, draft: EMPTY_LEVEL_UP_DRAFT }));
         return true;
       },
       setExperienceName: (name) => edit((d) => ({ ...d, experienceName: name.slice(0, 200) })),
@@ -267,7 +238,7 @@ export function LevelUpDraftProvider({ slot, children }: { slot: SheetSlotProps;
 }
 
 /** Parses a stored draft for tests; production keeps the draft in memory for the session. */
-export function parseStoredDraft(raw: string, level: number): State | null {
+export function parseStoredDraft(raw: string, level: number): LevelUpState | null {
   try {
     const parsed = storedSchema.safeParse(JSON.parse(raw));
     if (!parsed.success || parsed.data.level !== level) return null;

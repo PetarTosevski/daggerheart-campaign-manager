@@ -3,13 +3,13 @@ import { StyleSheet, Text, View } from "react-native";
 
 import type { FeatureScope } from "../../../../../../src/lib/domain/class-features/types";
 import {
-  bumpUsed,
   currentPhase,
   holdsLunarPhases,
   MOON_PHASES,
   moonDie,
   type MoonPhase,
 } from "../../../../../../src/lib/domain/session-features";
+import { bumpBlocked } from "../../../../../../src/lib/party/features";
 import type { CharacterSheet } from "../../../../../../src/lib/validation/characters";
 import { api } from "../../../convex";
 import { useWritesEnabled } from "../../../shell/offline";
@@ -30,13 +30,6 @@ function scopeOf(hopeAndFear: boolean): FeatureScope {
 
 function range(p: MoonPhase): string {
   return p.min === p.max ? `${p.min}` : `${p.min}–${p.max}`;
-}
-
-function bumpBlocked(sheet: CharacterSheet): string | null {
-  if (moonDie(sheet) === undefined) return "No moon die to raise yet.";
-  if (bumpUsed({ featureUses: sheet.featureUses ?? [] })) return "Used this rest; it refreshes after a rest.";
-  if (sheet.hope < 1) return "Needs 1 Hope.";
-  return null;
 }
 
 function LunarBody({

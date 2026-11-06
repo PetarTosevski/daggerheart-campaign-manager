@@ -1,9 +1,25 @@
 import { useQuery } from "convex/react";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { useMemo, useState, type ComponentType } from "react";
 import { ScrollView, Text, View } from "react-native";
 
+import { cardHolders, type SharedCardsMode } from "../../../../../../src/lib/domain/characters";
 import { FRAME_OF } from "../../../../../../src/lib/frames/extras/common";
+import { isTypedWizardPatch, wizardFromDraft } from "../../../../../../src/lib/party/wizard-draft";
+import {
+  canReach,
+  emptyWizard,
+  incompleteSteps,
+  missingByStep,
+  normalizeWizard,
+  portraitAsset,
+  sharedCardsMissing,
+  STEP_COUNT,
+  STEP_TITLES,
+  stillNeeded,
+  toCharacterDraft,
+  type WizardState,
+} from "../../../../../../src/lib/party/wizard-logic";
 import { getDomainCard } from "../../../../../../src/lib/srd";
 import { api } from "../../../convex";
 import type { Id } from "../../../convex";
@@ -12,25 +28,10 @@ import { useWritesEnabled } from "../../../shell/offline";
 import { Button } from "../../../ui/button";
 import { Loading } from "../../../ui/loading";
 import { useIntent } from "../../trackers/intent";
-import { createDraftSaver, isTypedPatch, loadWizardDraft } from "./draft-storage";
+import { useAccountDraft } from "./account-draft";
 import { ClassStep, HeritageStep, InfoStep, TraitsStep } from "./steps-1-4";
 import { BackgroundStep, ConnectionsStep, DomainCardsStep, EquipmentStep, ExperiencesStep } from "./steps-5-9";
 import { wizardStyles as s } from "./styles";
-import {
-  canReach,
-  emptyWizard,
-  incompleteSteps,
-  missingByStep,
-  normalizeWizard,
-  partyCardHolders,
-  portraitAsset,
-  refusedCardsMissing,
-  STEP_COUNT,
-  STEP_TITLES,
-  stillNeeded,
-  toCharacterDraft,
-  type WizardState,
-} from "./wizard-logic";
 import type { SharedCards, StepProps } from "./wizard-ui";
 
 const STEPS: ComponentType<StepProps>[] = [
@@ -45,7 +46,27 @@ const STEPS: ComponentType<StepProps>[] = [
   ConnectionsStep,
 ];
 
+/** Who holds which card, from `charactersReads.listByCampaign` (vault and loadout); empty under `allow`. */
+function partyCardHolders(
+  mode: SharedCardsMode,
+  party: readonly { _id: string; sheet: { name: string; domainCards: { owned: readonly string[]; loadout: readonly string[] } } }[],
+): ReadonlyMap<string, readonly string[]> {
+  if (mode === "allow") return new Map();
+  return cardHolders(party.map((row) => ({ id: row._id, name: row.sheet.name, cards: [...row.sheet.domainCards.owned, ...row.sheet.domainCards.loadout] })));
+}
+
+/**
+ * The 9-step character creation wizard (Core ch. 1). Its unsent draft lives on the account (`useAccountDraft`, config
+ * U6f) like the website's, so the wizard opens once the draft has loaded and starts from it.
+ */
 export function CharacterWizard() {
+  const campaign = useCampaign();
+  const draft = useAccountDraft({ kind: "characterWizard", campaignId: campaign._id });
+  if (draft.stored === undefined) return <Loading label="Loading character creation" />;
+  return <Wizard draft={draft} initial={wizardFromDraft(draft.stored)} />;
+}
+
+function Wizard({ draft, initial }: { draft: ReturnType<typeof useAccountDraft>; initial: WizardState }) {
   const campaign = useCampaign();
   const campaignId = campaign._id;
   const router = useRouter();
@@ -57,22 +78,9 @@ export function CharacterWizard() {
   const party = useQuery(api.charactersReads.listByCampaign, { campaignId });
   const rules = useQuery(api.ruleSettings.get, { campaignId });
   const create = useIntent(api.characters.create);
-  const draft = useMemo(() => createDraftSaver(campaignId), [campaignId]);
 
-  const [raw, setRaw] = useState<WizardState | null>(null);
-  useEffect(() => {
-    let live = true;
-    void loadWizardDraft(campaignId).then((loaded) => {
-      if (live) setRaw(loaded);
-    });
-    return () => {
-      live = false;
-    };
-  }, [campaignId]);
-  // Leaving the screen writes a typed change that is still waiting for its pause.
-  useEffect(() => () => draft.flush(), [draft]);
-
-  const state = useMemo(() => (raw ? normalizeWizard(raw, opts) : null), [raw, opts]);
+  const [raw, setRaw] = useState<WizardState>(initial);
+  const state = useMemo(() => normalizeWizard(raw, opts), [raw, opts]);
   // Shared domain cards (CB p.21, rule-switches OSC): Warn notes a card another character holds, Refuse holds step 8.
   const mode = rules?.modes.sharedDomainCards;
   const shared = useMemo<SharedCards | undefined>(
@@ -80,15 +88,14 @@ export function CharacterWizard() {
     [mode, party],
   );
   const missing = useMemo(() => {
-    if (!state) return {};
     const base = missingByStep(state, opts);
     if (!shared) return base;
-    const refused = refusedCardsMissing(state.domainCards, shared.mode, shared.holders, (id) => getDomainCard(id)?.name ?? id);
+    const refused = sharedCardsMissing(state.domainCards, shared.mode, shared.holders, (id) => getDomainCard(id)?.name ?? id);
     return refused.length === 0 ? base : { ...base, 8: [...(base[8] ?? []), ...refused] };
   }, [state, opts, shared]);
-  const step = state?.step ?? 1;
+  const step = state.step;
 
-  if (raw === null || state === null || party === undefined) {
+  if (party === undefined) {
     return <Loading label="Loading character creation" />;
   }
 
@@ -96,11 +103,16 @@ export function CharacterWizard() {
   const update = (patch: Partial<WizardState>) => {
     const next = { ...normalizeWizard(raw, opts), ...patch };
     setRaw(next);
-    draft.save(next, { typed: isTypedPatch(patch) });
+    draft.save(next, { typed: isTypedWizardPatch(patch) });
   };
   const startOver = () => {
     setRaw(emptyWizard());
-    void draft.clear();
+    draft.clear();
+  };
+  // Cancel keeps the draft (the website's rule): a typed change still waiting for its pause goes out now.
+  const cancel = () => {
+    draft.flush();
+    router.back();
   };
 
   const owners = roster
@@ -118,15 +130,15 @@ export function CharacterWizard() {
   const goTo = (n: number) => update({ step: Math.min(STEP_COUNT, Math.max(1, n)) });
 
   async function submit() {
-    if (!state || !allOk || blocker || create.pending || !writes) return;
+    if (!allOk || blocker || create.pending || !writes) return;
     const result = await create.fire({
       campaignId,
-      draft: toCharacterDraft(state, portraitAsset(state), opts),
+      draft: toCharacterDraft(state, portraitAsset(state)),
       ...(ownerId ? { ownerId } : {}),
       ...(ikonis ? { ikonis: state.ikonis } : {}),
     });
     if (result) {
-      await draft.clear();
+      draft.clear();
       router.replace(`/campaign/${campaignId}/party/${result.characterId}`);
     }
   }
@@ -151,7 +163,7 @@ export function CharacterWizard() {
               Start over
             </Button>
           ) : null}
-          <Button onPress={() => router.back()} variant="outline">
+          <Button onPress={cancel} variant="outline">
             Cancel
           </Button>
         </View>
@@ -214,7 +226,7 @@ export function CharacterWizard() {
               ‹ Back
             </Button>
           ) : (
-            <Button onPress={() => router.back()} variant="outline">
+            <Button onPress={cancel} variant="outline">
               Cancel
             </Button>
           )}

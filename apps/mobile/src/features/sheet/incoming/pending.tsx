@@ -12,26 +12,22 @@ import { Button } from "../../../ui/button";
 import { useIntent } from "../intent";
 
 import {
-  cardDisplay,
-  cardsToPlay,
-  featureAnswer,
-  grantPay,
-  hitDamageText,
-  numberFloor,
-  picksReady,
-  previewAt,
-  promptMode,
-  promptQuestion,
-  promptTitle,
-  severityWords,
-  slotCounts,
-  startingPicks,
+  armorCounts,
+  damageLine,
+  defaultPicks,
+  featureChoice,
+  grantAmount,
+  grantMax,
+  situationsConfirmed,
+  stepFor,
+  stepText,
   type FeaturePicks,
   type FeatureView,
   type GrantView,
-  type HitChoice,
   type HitView,
-} from "./model";
+} from "../../../../../../src/lib/combat-map/reactions";
+
+import { cardDisplay, cardsToPlay, numberFloor, promptMode, promptQuestion, promptTitle, type HitChoice } from "./model";
 
 /**
  * The open hits on (or near) one character, from `adversaryActionsReads.pending`. Every owed hit is a card that asks
@@ -106,7 +102,7 @@ function HitCard({
       {view.originalTargetName !== undefined && view.role === "target" ? (
         <Text style={styles.body}>{`Redirected from ${view.originalTargetName}.`}</Text>
       ) : null}
-      {view.role === "target" && mode !== "preRoll" && mode !== "afterHit" ? <Text style={styles.body}>{hitDamageText(view)}</Text> : null}
+      {view.role === "target" && mode !== "preRoll" && mode !== "afterHit" ? <Text style={styles.body}>{damageLine(view)}</Text> : null}
       {question ? <Text style={styles.body}>{question}</Text> : null}
       {grants.length > 0 ? (
         <View accessibilityLabel="Grants" style={styles.list}>
@@ -118,7 +114,7 @@ function HitCard({
       {features.length > 0 ? (
         <View accessibilityLabel="Reaction features" style={styles.list}>
           {features.map((feature) => (
-            <FeatureItem disabled={busy} feature={feature} key={feature.featureId} onUse={(picks) => send(featureAnswer(feature, picks))} />
+            <FeatureItem disabled={busy} feature={feature} key={feature.featureId} onUse={(picks) => send(featureChoice(feature, picks))} />
           ))}
         </View>
       ) : null}
@@ -156,20 +152,20 @@ function Answers({ mode, view, busy, onAnswer }: { mode: ReturnType<typeof promp
         </>
       );
     case "armorMany": {
-      const none = previewAt(view, 0);
+      const none = stepFor(view, 0);
       return (
         <>
-          {slotCounts(view).map((n) => {
-            const step = previewAt(view, n);
-            const label = step ? `Mark ${n}: ${severityWords(step)}` : `Mark ${n}`;
+          {armorCounts(view).map((n) => {
+            const step = stepFor(view, n);
+            const label = step ? `Mark ${n}: ${stepText(step)}` : `Mark ${n}`;
             return (
               <Button accessibilityLabel={label} disabled={busy} key={n} onPress={() => onAnswer({ kind: "armor", slots: n })} variant="solid">
                 {label}
               </Button>
             );
           })}
-          <Button accessibilityLabel={none ? `Don't: ${severityWords(none)}` : "Don't"} disabled={busy} onPress={() => onAnswer({ kind: "noArmor" })} variant="outline">
-            {none ? `Don't · ${severityWords(none)}` : "Don't"}
+          <Button accessibilityLabel={none ? `Don't: ${stepText(none)}` : "Don't"} disabled={busy} onPress={() => onAnswer({ kind: "noArmor" })} variant="outline">
+            {none ? `Don't · ${stepText(none)}` : "Don't"}
           </Button>
         </>
       );
@@ -215,14 +211,14 @@ function CardItem({ cardId, disabled, onUse }: { cardId: string; disabled: boole
 
 /** A grant the attacker gives the hit PC: how much to pay (1..its amount) and Spend. */
 function GrantItem({ grant, disabled, onSpend }: { grant: GrantView; disabled: boolean; onSpend: (amount: number) => void }) {
-  const [amount, setAmount] = useState(() => grantPay(grant, Number.POSITIVE_INFINITY));
+  const [amount, setAmount] = useState(() => grantMax(grant));
   return (
     <View style={styles.item} testID="incoming-hit-grant">
       <Text style={styles.itemText}>{grant.label}</Text>
       <TextInput
         accessibilityLabel={`How many: ${grant.label}`}
         keyboardType="number-pad"
-        onChangeText={(text) => setAmount(grantPay(grant, Number.parseInt(text, 10)))}
+        onChangeText={(text) => setAmount(grantAmount(grant, Number.parseInt(text, 10)))}
         style={styles.input}
         value={String(amount)}
       />
@@ -235,7 +231,7 @@ function GrantItem({ grant, disabled, onSpend }: { grant: GrantView; disabled: b
 
 /** A feature answer: what its Use asks (counts, a pick, optional steps, situations to confirm), then Use. */
 function FeatureItem({ feature, disabled, onUse }: { feature: FeatureView; disabled: boolean; onUse: (picks: FeaturePicks) => void }) {
-  const [picks, setPicks] = useState<FeaturePicks>(() => startingPicks(feature));
+  const [picks, setPicks] = useState<FeaturePicks>(() => defaultPicks(feature));
   const toggle = (group: "optionals" | "situations", id: string) =>
     setPicks((current) => ({ ...current, [group]: { ...current[group], [id]: current[group][id] !== true } }));
   return (
@@ -275,7 +271,7 @@ function FeatureItem({ feature, disabled, onUse }: { feature: FeatureView; disab
       {feature.situations.map((text) => (
         <Choice checked={picks.situations[text] === true} key={text} label={text} onPress={() => toggle("situations", text)} role="checkbox" />
       ))}
-      <Button accessibilityLabel={`Use ${feature.name}`} disabled={disabled || !picksReady(feature, picks)} onPress={() => onUse(picks)} variant="solid">
+      <Button accessibilityLabel={`Use ${feature.name}`} disabled={disabled || !situationsConfirmed(feature, picks)} onPress={() => onUse(picks)} variant="solid">
         Use
       </Button>
     </View>

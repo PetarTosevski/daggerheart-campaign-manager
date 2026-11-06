@@ -10,9 +10,9 @@ export type SharedCards = {
 };
 
 export type StepProps = {
-  state: import("./wizard-logic").WizardState;
-  update: (patch: Partial<import("./wizard-logic").WizardState>) => void;
-  opts: import("./wizard-logic").WizardOptions;
+  state: import("../../../../../../src/lib/party/wizard-logic").WizardState;
+  update: (patch: Partial<import("../../../../../../src/lib/party/wizard-logic").WizardState>) => void;
+  opts: import("../../../../../../src/lib/party/wizard-logic").WizardOptions;
   /** Undefined while `ruleSettings.get` or the party loads. */
   shared?: SharedCards;
 };

@@ -7,7 +7,7 @@ import { LevelUpDraftProvider } from "./draft";
 import { LevelUpControls } from "./controls";
 import { AdvancementHistory, CorrectLevel } from "./history";
 import { LevelUpRibbon } from "./ribbon";
-import { fullSheet } from "./shared";
+import { fullSheet } from "../../../../../../src/lib/party/level-up";
 
 export function LevelUpSlot(props: SheetSlotProps) {
   const sheet = fullSheet(props.character);

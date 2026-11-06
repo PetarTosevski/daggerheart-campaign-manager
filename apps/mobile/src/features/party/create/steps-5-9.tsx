@@ -11,14 +11,14 @@ import {
   classItemsFor,
   domainCardOptions,
   gearSummary,
-  hasPurposefulDesign,
+  holdsPurposefulDesignNow,
   POTIONS,
   primaryWeaponsFor,
   secondaryWeaponsFor,
   suggestedLoadout,
   toggleCard,
   toggleExperience,
-} from "./wizard-logic";
+} from "../../../../../../src/lib/party/wizard-logic";
 import { Button } from "../../../ui/button";
 import { wizardStyles as s } from "./styles";
 import { traitLabel } from "./steps-1-4";
@@ -289,7 +289,7 @@ export function ExperiencesStep({ state, update, opts }: BaseStepProps) {
   const [a, b] = state.experiences;
   const chosen = [a.trim(), b.trim()];
   // Purposeful Design (Clank, CB p.53, DA11): the chosen Experience shows its permanent +1.
-  const purposeful = hasPurposefulDesign(state, opts);
+  const purposeful = holdsPurposefulDesignNow(state, opts);
   const modifier = (i: 0 | 1) => STARTING_EXPERIENCE_VALUE + (purposeful && state.purposefulExperience === i ? PURPOSEFUL_DESIGN_BONUS : 0);
   return (
     <View style={{ gap: 16 }}>

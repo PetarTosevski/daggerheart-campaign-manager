@@ -5,7 +5,7 @@ import { type Id } from "../../../convex";
 import { useWritesEnabled } from "../../../shell/offline";
 import { Button } from "../../../ui/button";
 import { Panel, QueryLoading } from "../../dashboard/chrome";
-import { earlierText } from "../../sheet/dice/roll-copy";
+import { earlierText } from "../../../../../../src/lib/party/roll-copy";
 
 import { Chip, ChipRow } from "../chip";
 import { useCombatGm } from "./context";

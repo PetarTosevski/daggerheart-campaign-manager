@@ -1,6 +1,12 @@
-import type { FunctionArgs, FunctionReturnType } from "convex/server";
+import type { FunctionArgs } from "convex/server";
 
-import { SEVERITY_LABEL } from "../../../../../../src/lib/domain/encounters/damage";
+import {
+  armorCounts,
+  SEVERITY_LABEL,
+  stepFor,
+  type FeatureView,
+  type HitView,
+} from "../../../../../../src/lib/combat-map/reactions";
 import { cardEffect } from "../../../../../../src/lib/srd/card-effects";
 import { DOMAIN_CARDS } from "../../../../../../src/lib/srd/domain-cards";
 import { DOMAINS } from "../../../../../../src/lib/srd/domains";
@@ -9,21 +15,14 @@ import type { api } from "../../../convex";
 
 /**
  * The phone's incoming-hit prompt (plan combat-actions AA4, sheet-drawer SD4, DA8, lanes-2 E2/E2.3), read only from
- * `adversaryActionsReads.pending` and answered with `adversaryActions.respond`.
- *
- * The website's model (src/components/combat-map/actions/reactions/model.ts) imports `@/lib/...`, which the phone
- * can't resolve; until it moves to src/lib (a website change) the phone keeps this one, built on the shared SRD and
- * damage modules. The modes and answers follow the server (convex/adversaryActions.ts `respond`,
- * convex/lib/incomingHits.ts `hitView`, convex/adversaryActionsReads.ts `preRollView`).
+ * `adversaryActionsReads.pending` and answered with `adversaryActions.respond`. The shared model
+ * (src/lib/combat-map/reactions.ts: armor counts and steps, damage line, feature picks and answers, grants, retry
+ * timing) is the website's; this file keeps only what the phone's card adds on top of it: the after-hit mode and its
+ * words, the card's heading, card colours and the ally-only check through the card effects.
  */
 
-export type HitView = FunctionReturnType<typeof api.adversaryActionsReads.pending>[number];
-export type FeatureView = NonNullable<HitView["features"]>[number];
-export type GrantView = NonNullable<HitView["grants"]>[number];
-export type ArmorStep = NonNullable<HitView["armorPreview"]>[number];
 /** What `respond` takes: the server's `hitChoiceValidator` or a before-roll feature answer. */
 export type HitChoice = FunctionArgs<typeof api.adversaryActions.respond>["choice"];
-type FeatureAnswer = Extract<HitChoice, { kind: "feature" }>;
 
 /**
  * What the card asks of this character now:
@@ -45,36 +44,9 @@ export function promptMode(view: HitView): PromptMode {
   if (view.afterHit === true) return "afterHit";
   if (view.role === "ally") return "ally";
   if (view.armorAnswered === true) return "afterArmor";
-  const counts = slotCounts(view);
+  const counts = armorCounts(view);
   if (view.direct === true || counts.length === 0) return "ok";
   return counts.length === 1 && counts[0] === 1 ? "armorOne" : "armorMany";
-}
-
-/**
- * The Armor Slot counts on offer. The server's preview lists only counts that buy a step (Armor Eater, HF p.71: "must
- * mark an additional Armor Slot" lists 0, 2, 4); without a preview, 1..maxSlots.
- */
-export function slotCounts(view: Pick<HitView, "maxSlots" | "armorPreview">): number[] {
-  const previewed = (view.armorPreview ?? []).flatMap((step) => (step.slots > 0 ? [step.slots] : []));
-  if (previewed.length > 0) return previewed;
-  const max = Math.max(0, view.maxSlots ?? 0);
-  return [...Array(max).keys()].map((n) => n + 1);
-}
-
-export function previewAt(view: Pick<HitView, "armorPreview">, slots: number): ArmorStep | undefined {
-  return (view.armorPreview ?? []).find((step) => step.slots === slots);
-}
-
-/** "Minor (1 HP)", or "No damage". */
-export function severityWords(step: Pick<ArmorStep, "severity" | "hp">): string {
-  if (step.severity === "none") return SEVERITY_LABEL.none;
-  return `${SEVERITY_LABEL[step.severity]} (${step.hp} HP)`;
-}
-
-/** The hit PC's damage line: "14 damage: Major (2 HP)." (their own numbers only, Q14). */
-export function hitDamageText(view: HitView): string {
-  const now = previewAt(view, 0) ?? { severity: view.severity ?? "none", hp: 0 };
-  return `${view.damage ?? 0} damage: ${severityWords(now)}.`;
 }
 
 /** The line under it: what the armor question is, or what is left. */
@@ -88,13 +60,13 @@ export function promptQuestion(view: HitView): string | null {
     case "ok":
       return view.direct === true ? "Direct damage: Armor Slots can't reduce it." : "No Armor Slot to mark.";
     case "armorOne": {
-      const after = previewAt(view, 1);
+      const after = stepFor(view, 1);
       if (after === undefined) return "Mark an Armor Slot?";
       return after.severity === "none" ? "Mark an Armor Slot to take no damage?" : `Mark an Armor Slot to make it ${SEVERITY_LABEL[after.severity]}?`;
     }
     case "armorMany": {
-      const counts = slotCounts(view);
-      const single = counts.length === 1 ? previewAt(view, counts[0]) : undefined;
+      const counts = armorCounts(view);
+      const single = counts.length === 1 ? stepFor(view, counts[0]) : undefined;
       if (single === undefined) return "Mark any number of Armor Slots to reduce it.";
       const what = single.severity === "none" ? "take no damage" : `make it ${SEVERITY_LABEL[single.severity]}`;
       return `Mark ${single.slots} Armor Slots to ${what}?`;
@@ -145,53 +117,5 @@ export function cardsToPlay(view: HitView): string[] {
   return view.role === "target" ? view.cardIds.filter((id) => !answersAllyOnly(id)) : [...view.cardIds];
 }
 
-// ---------------------------------------------------------------- feature answers (SD4)
-
-export type FeaturePicks = {
-  numbers: Record<string, number>;
-  options: Record<string, string>;
-  optionals: Record<string, boolean>;
-  situations: Record<string, boolean>;
-};
-
 /** The smallest count a number control takes (at least 1). */
 export const numberFloor = (n: Pick<FeatureView["numbers"][number], "min">) => Math.max(1, n.min);
-
-/** A feature's controls at rest: smallest counts, first options, `defaultOn` optionals ticked (DA8, Draining Bane). */
-export function startingPicks(feature: FeatureView): FeaturePicks {
-  const picks: FeaturePicks = { numbers: {}, options: {}, optionals: {}, situations: {} };
-  for (const n of feature.numbers) picks.numbers[n.id] = numberFloor(n);
-  for (const o of feature.options) if (o.options.length > 0) picks.options[o.id] = o.options[0].id;
-  for (const o of feature.optionals) if (o.defaultOn === true) picks.optionals[o.id] = true;
-  return picks;
-}
-
-/** Use is ready once the player confirmed every situation the feature names (Q13). */
-export function picksReady(feature: FeatureView, picks: FeaturePicks): boolean {
-  return feature.situations.every((text) => picks.situations[text]);
-}
-
-/** The `respond` answer for a feature (`useFeature`'s ids: `n:`, `opt:`, `optional:`, `situations`). */
-export function featureAnswer(feature: FeatureView, picks: FeaturePicks): FeatureAnswer {
-  const choices: FeatureAnswer["choices"] = [];
-  for (const n of feature.numbers) choices.push({ id: `n:${n.id}`, value: picks.numbers[n.id] ?? numberFloor(n) });
-  for (const o of feature.options) {
-    const picked = picks.options[o.id];
-    if (picked !== undefined) choices.push({ id: `opt:${o.id}`, value: [picked] });
-  }
-  for (const o of feature.optionals) choices.push({ id: `optional:${o.id}`, value: picks.optionals[o.id] === true });
-  if (feature.situations.length > 0) choices.push({ id: "situations", value: feature.situations.filter((text) => picks.situations[text]) });
-  return { kind: "feature", featureId: feature.featureId, useId: feature.useId, choices };
-}
-
-// ---------------------------------------------------------------- grants (lanes-2 E2.3)
-
-/** A grant's amount to pay, from 1 to what it offers (Money Talks, CB p.228; Doom, HF p.75). */
-export function grantPay(grant: Pick<GrantView, "amount">, wanted: number): number {
-  const most = Math.max(1, Math.trunc(grant.amount ?? 1));
-  if (!Number.isFinite(wanted)) return most;
-  return Math.min(most, Math.max(1, Math.trunc(wanted)));
-}
-
-export const HIT_RETRY_DELAYS_MS = [500, 1500, 4000] as const;
-export const HIT_RETRY_STABLE_MS = 10_000;

@@ -11,7 +11,7 @@ import type { SheetSlotProps } from "../contract";
 
 import { useIntent } from "../intent";
 import { useLevelUpDraft } from "./draft";
-import { canLevelUp, fullSheet } from "./shared";
+import { canLevelUp, fullSheet } from "../../../../../../src/lib/party/level-up";
 
 export function LevelUpControls({ slot }: { slot: SheetSlotProps }) {
   const { character, canEdit, isGm } = slot;
