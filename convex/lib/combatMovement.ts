@@ -20,6 +20,7 @@ import { afterPcActionRoll, fearWithheldBy, outcomeWithFear } from "./rollAfterm
 import { changed, resolveDuality, type DualityArgs, type Loaded } from "./rolls";
 import { appError } from "../../src/lib/errors/app-error";
 import { closeRequest, openDifficulty } from "./combatRequests";
+import { postRuleNote, ruleMode } from "./ruleModes";
 import type { DifficultyAsk } from "./validators/combatRequests";
 import { loadScene, type Scene } from "./combatVision";
 import { CELL_TILE_ROWS, MAX_MAP_H, objectsOnMap } from "./combatMaps";
@@ -221,16 +222,55 @@ export function sourcedCloak(sheet: Pick<CharacterSheet, "conditions" | "effects
 /** The sheet without Cloaked (and without any source marker for it). */
 const uncloaked = (s: CharacterSheet): CharacterSheet => withoutCondition(s, "cloaked");
 
+// ---------------------------------------------------------------- C2 Manual (plan rule-switches RM)
+
+/** C2 `hiddenEnds` (CB p.102) is Manual in this campaign: the app ends neither Hidden nor Cloaked and notes it for the GM. */
+export function hiddenEndsManual(campaign: Pick<Doc<"campaigns">, "frameId" | "ruleModes">): boolean {
+  return ruleMode(campaign, "hiddenEnds") === "manual";
+}
+
+/**
+ * C2 Manual: what a note asks the GM to remove: the PC's Hidden and / or ordinary Cloaked ("Hidden", "Cloaked",
+ * "Hidden and Cloaked"), or null. A condition with a source of its own (Vanishing Act's Cloaked, a card's Hidden) ends by
+ * its own endings and is left out.
+ */
+export function hiddenLabel(sheet: Pick<CharacterSheet, "conditions" | "effects">): string | null {
+  const names = (["hidden", "cloaked"] as const).filter((c) => sheet.conditions.includes(c) && conditionSources(sheet, c).length === 0);
+  return names.length === 0 ? null : names.map((c) => (c === "hidden" ? "Hidden" : "Cloaked")).join(" and ");
+}
+
+/** C2 Manual: the note for an attack ("Mira attacks with Charge: remove Cloaked?"). */
+export function hiddenAttackNote(name: string, use: string, label: string): string {
+  return `${name} attacks with ${use}: remove ${label}?`;
+}
+
+/** C2 Manual: the note for a move that ended in an enemy's sight ("Mira moved into the Bandit's sight: remove Hidden?"). */
+export function hiddenMoveNote(name: string, seer: string, label: string, dim: boolean): string {
+  return `${name} moved into ${seer}'s sight${dim ? " in dim light" : ""}: remove ${label}?`;
+}
+
+/** An enemy token's name for a C2 note: a custom token's name, an adversary's label ("the Bandit" reads as written). */
+function seerName(t: Doc<"combatTokens">, difficulty: ReadonlyMap<Id<"combatTokens">, Difficulty>): string {
+  if (t.ref.kind === "custom") return t.ref.name;
+  return difficulty.get(t._id)?.label ?? "an adversary";
+}
+
 /**
  * dcm-bxp.99.19.65 (4) (user 2026-10-30): an attack made outside the attack path (Charge's 1d12 damage, `use` names it)
  * ends the character's ordinary Cloaked (CB p.42: "After you make an attack … you are no longer Cloaked"); Vanishing Act's
  * (`sourcedCloak`) stays. One public, undoable `feature` row in `options.groupId` (or a group of its own). Returns
- * whether Cloaked ended.
+ * whether Cloaked ended. C2 Manual (plan rule-switches RM): nothing ends; a GM-only note in the group asks to remove
+ * the PC's Hidden / Cloaked instead (false).
  */
 export async function uncloakAfterAttack(ctx: MutationCtx, campaign: Doc<"campaigns">, characterId: Id<"characters">, actorId: Id<"users">, use: string, options: { groupId?: string } = {}): Promise<boolean> {
   const character = await ctx.db.get("characters", characterId);
   if (character === null || character.campaignId !== campaign._id) return false;
   const sheet = readSheet(character.sheet);
+  if (hiddenEndsManual(campaign)) {
+    const label = hiddenLabel(sheet);
+    if (label !== null) await postRuleNote(ctx, campaign, { ruleId: "hiddenEnds", summary: hiddenAttackNote(sheet.name, use, label), groupId: options.groupId ?? newGroupId(), actorId });
+    return false;
+  }
   if (!sheet.conditions.includes("cloaked") || sourcedCloak(sheet)) return false;
   await saveSheet(ctx, character._id, uncloaked(sheet));
   await logAction(ctx, {
@@ -272,6 +312,9 @@ export type UncloakOptions = {
  *   - sees it only in dim light (user 2026-10-30, dcm-bxp.99.19.53 (4); a dim time phase counts, `enemySight`): the
  *     rogue makes ONE Finesse action roll (`cloakRoll`); success keeps Cloaked, failure ends it;
  *   - sees it nowhere (darkness): nothing happens.
+ * C2 Manual (plan rule-switches RM, CB p.102): after the unconscious / dead and GM-drag checks, a Hidden or ordinary
+ * Cloaked PC seen in clear or dim light loses nothing and makes no roll; one GM-only note ("Mira moved into the Bandit's
+ * sight: remove Hidden?") joins the move's group.
  * The rows join `options.groupId` when given. Returns whether Cloaked ended. `combatTokens.move` calls it after patching
  * the token; `featurePrompts.charge` after a successful Charge moved it.
  */
@@ -287,15 +330,20 @@ export async function uncloakAfterMove(
   const character = await ctx.db.get("characters", token.ref.characterId);
   if (character === null || character.campaignId !== campaign._id) return false;
   const sheet = readSheet(character.sheet);
-  if (!sheet.conditions.includes("cloaked")) return false;
+  const cloaked = sheet.conditions.includes("cloaked");
+  // C2 Manual (plan rule-switches RM): a Hidden PC's move is checked too, for the note.
+  const manual = hiddenEndsManual(campaign);
+  const label = manual ? hiddenLabel(sheet) : null;
+  if (!cloaked && label === null) return false;
   const groupId = options.groupId ?? newGroupId();
   const drop = async (summary: string): Promise<true> => {
     await saveSheet(ctx, character._id, uncloaked(sheet));
     await logAction(ctx, { campaignId: campaign._id, characterId: character._id, actorId, kind: "feature", visibility: "public", summary, before: sheet, groupId, undoable: true });
     return true;
   };
+  // Not C2 (dcm-bxp.99.19.62 (2)): an unconscious or dead rogue drops Cloaked in every mode.
   if (character.status === "dead" || sheet.conditions.includes("unconscious")) {
-    return drop(`${sheet.name} is ${character.status === "dead" ? "dead" : "unconscious"} and no longer Cloaked`);
+    return cloaked ? drop(`${sheet.name} is ${character.status === "dead" ? "dead" : "unconscious"} and no longer Cloaked`) : false;
   }
   if (options.byGm === true && character.ownerId !== actorId) return false;
   const scene = await loadScene(ctx, campaign, map);
@@ -303,6 +351,14 @@ export async function uncloakAfterMove(
   const enemies = await enemyStates(ctx, campaign._id, scene.tokens);
   const sight = enemySightOf(scene, moved, enemies.hidden);
   if (!sight.clear && sight.dim.length === 0) return false;
+  if (manual) {
+    // No loss and no Finesse roll: one GM-only note in the move's group names the first enemy that sees the PC.
+    if (label === null) return false;
+    const seer = sight.clear ? enemiesInLine(scene, moved, enemies.hidden).find((t) => enemySight(scene, t, moved) === "clear") : sight.dim[0];
+    const name = seer === undefined ? "an adversary" : seerName(seer, enemies.difficulty);
+    await postRuleNote(ctx, campaign, { ruleId: "hiddenEnds", summary: hiddenMoveNote(sheet.name, name, label, !sight.clear), groupId, actorId });
+    return false;
+  }
   if (sourcedCloak(sheet)) return false;
   if (!sight.clear) return cloakRoll(ctx, { campaign, character, sheet, gm: false }, { map, token: moved, seers: sight.dim, difficulties: enemies.difficulty }, actorId, groupId);
   return drop(`${sheet.name} ends a move in sight of an adversary and is no longer Cloaked`);

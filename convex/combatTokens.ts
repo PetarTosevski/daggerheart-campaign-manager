@@ -2,13 +2,14 @@ import { v } from "convex/values";
 
 import { freeSquares, moveToken, snapTurn, startFace, startSide } from "../src/components/combat-map/tokens/geometry";
 import { rasterize, type TerrainId } from "../src/lib/combat-map/raster";
-import { checkMove } from "../src/lib/domain/combat-map/movement";
+import { checkMove, moveVerdict, wallsNote } from "../src/lib/domain/combat-map/movement";
 import { rangeCheck } from "../src/lib/domain/combat-actions/distance";
 import { appError } from "../src/lib/errors/app-error";
 import { applyCondition } from "../src/lib/domain/encounters/damage";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { areasAfterMove, carryAlong, endAreasOnCasterEvent, endAreasOwnerLeft, moveRules, rangeTriggersAfterMove } from "./lib/combatAreas";
+import { newGroupId } from "./lib/actionLog";
 import { partyOf, readSheet } from "./lib/characterSheet";
 import {
   MAX_TOKEN_NAME,
@@ -22,6 +23,7 @@ import {
 import { movementGrid, uncloakAfterMove } from "./lib/combatMovement";
 import { MAX_INSTANCES, startEncounter } from "./lib/encounters";
 import { pcPortrait } from "./lib/pcPortrait";
+import { postRuleNote, ruleMode } from "./lib/ruleModes";
 import { tokenViewValidator, type TokenView } from "./lib/validators/combatTokens";
 import { campaignMutation, gmMutation, keyedGmMutation } from "./lib/functions";
 import { atLeast, permissionFor } from "./lib/permissions";
@@ -415,6 +417,10 @@ export const clear = gmMutation({
  * MOVE_BLOCKED, which carries no position; the GM's move always goes through and returns `blocked: true` so the map can
  * warn. `difficult`: the move crossed or ended on difficult terrain (a movement roll is needed to pass this turn, D5).
  * Players already receive the whole layout (`combatMaps.live`, Q1), so neither answer tells them anything new.
+ * M2 Walls and doors (plan rule-switches RM; the app's own rule, not in the books): in Manual nothing is refused or
+ * flagged (`blocked` and `difficult` false) and a player's move through a wall, a closed door or difficult terrain posts
+ * a GM-only note (`moveVerdict`, `wallsNote`).
+ * C2 Hidden / Cloaked end on the map (CB p.102): Manual changes nothing on the sheet and notes it (`uncloakAfterMove`).
  *
  * Cloaked (DA3, DA18): a PC token that ends a move on the live map where a revealed enemy token sees it in clear light
  * loses Cloaked; in dim light only, the rogue makes one Finesse action roll against the highest Difficulty among those
@@ -447,12 +453,17 @@ export const move = campaignMutation({
     const byGm = atLeast(ctx.permission, "owner");
     const next = moveToken(token, x, y, map);
     const stays = next.x === token.x && next.y === token.y;
-    const { blocked, difficult } = stays
-      ? { blocked: false, difficult: false }
-      : checkMove(await movementGrid(ctx, ctx.campaign._id, map), token, next, token.size);
-    if (blocked && !byGm) throw appError("MOVE_BLOCKED");
+    // M2 Walls and doors (plan rule-switches RM): the app rule refuses a player's blocked move; Manual lets it through
+    // unflagged and notes what a player's move went through for the GM.
+    const { refused, blocked, difficult, crossed } = moveVerdict(
+      stays ? { blocked: false, difficult: false } : checkMove(await movementGrid(ctx, ctx.campaign._id, map), token, next, token.size),
+      byGm,
+      ruleMode(ctx.campaign, "wallsBlock"),
+    );
+    if (refused) throw appError("MOVE_BLOCKED");
     let name: string | null = null;
     const nameOf = async () => (name ??= await moverName(ctx, token));
+    if (crossed !== null) await postRuleNote(ctx, ctx.campaign, { ruleId: "wallsBlock", summary: wallsNote(await nameOf(), crossed), groupId: newGroupId(), actorId: ctx.user._id });
     // Plan lanes-2 E4: an area's hold (Bramble Patch), movement limits (Creeping Fire) and the adversaries' pcMoves features.
     const rules = stays ? { warnings: [], triggers: [] } : await moveRules(ctx, { campaignId: ctx.campaign._id, map, before: token, after: next, byGm, actorId: ctx.user._id, nameOf });
     await ctx.db.patch("combatTokens", token._id, next);

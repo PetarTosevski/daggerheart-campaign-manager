@@ -28,6 +28,7 @@
  */
 
 import { pointInPolygon, rasterize, type PaintArea } from "../../combat-map/raster";
+import type { ModeOf } from "../../rules/registry";
 import type { SightMode } from "./sight";
 import type { ObjectKind, Terrain } from "./spec";
 import type { VisionTraits } from "./traits";
@@ -325,4 +326,37 @@ export function checkMove(grid: MovementGrid, from: Square, to: Square, size: nu
     if (blocked && difficult) break;
   }
   return { blocked, difficult };
+}
+
+/** M2 Walls and doors stop tokens (plan rule-switches RM): the app's own rule ("book", labelled App rule, not in the books) or Manual. */
+export type WallsMode = ModeOf<"wallsBlock">;
+
+/** What a player's Manual move went through, for the GM's note: a wall or closed door, difficult terrain, both, or nothing. */
+export type MoveCrossed = "wall" | "difficult" | "both" | null;
+
+/**
+ * M2 (plan rule-switches RM). CB p.104 only says a PC may move "within Close range as part of that action": walls and
+ * closed doors stopping tokens is the app's own rule. The verdict on one move from `checkMove`'s answer:
+ * - "book" (the app rule, today): a player's move that crosses or ends on a blocking square is `refused` (MOVE_BLOCKED);
+ *   the GM's goes through with `blocked` (the map warns); `difficult` flags difficult terrain (a movement roll, D5).
+ * - "manual": nothing is refused or flagged (`blocked`, `difficult` false); `crossed` names what a player's move went
+ *   through, for the GM's note (null for the GM's own drag).
+ */
+export function moveVerdict(
+  check: { blocked: boolean; difficult: boolean },
+  byGm: boolean,
+  mode: WallsMode = "book",
+): { refused: boolean; blocked: boolean; difficult: boolean; crossed: MoveCrossed } {
+  if (mode === "manual") {
+    const crossed: MoveCrossed = byGm ? null : check.blocked && check.difficult ? "both" : check.blocked ? "wall" : check.difficult ? "difficult" : null;
+    return { refused: false, blocked: false, difficult: false, crossed };
+  }
+  return { refused: check.blocked && !byGm, blocked: check.blocked, difficult: check.difficult, crossed: null };
+}
+
+/** M2 Manual: the GM's note for a player's move that went through something. */
+export function wallsNote(name: string, crossed: Exclude<MoveCrossed, null>): string {
+  if (crossed === "wall") return `${name} moved through a wall or closed door: move the token back?`;
+  if (crossed === "difficult") return `${name} crossed difficult terrain: a movement roll?`;
+  return `${name} moved through a wall or closed door and crossed difficult terrain: move the token back?`;
 }
