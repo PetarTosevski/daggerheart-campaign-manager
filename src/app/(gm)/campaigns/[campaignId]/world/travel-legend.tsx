@@ -14,6 +14,11 @@ import { TERRAIN_COLOURS, TERRAIN_NAMES } from "@/lib/world/terrain";
 export function TravelLegend({ rules, method, pace, onEdit }: { rules: TravelRules; method: TravelMethod; pace: TravelPace; onEdit?: () => void }) {
   const [open, setOpen] = useState(true);
   const listId = useId();
+  // Fastest terrain on the left; terrain the party can't cross goes last. Ties keep the book order.
+  const rows = SPEED_TERRAINS.map((t) => {
+    const code = SPEED_TERRAIN_CODE[t];
+    return { code, speed: canCross(rules, method, code) ? terrainSpeed(rules, method, pace, code) : null };
+  }).sort((a, b) => (b.speed ?? -1) - (a.speed ?? -1));
   const paceText = pace === "normal" ? PACE_LABELS.normal : `${PACE_LABELS[pace]} ×${pace === "slow" ? rules.slow : rules.fast}`;
   return (
     <section aria-label="Travel speeds" className="w-legend">
@@ -35,19 +40,16 @@ export function TravelLegend({ rules, method, pace, onEdit }: { rules: TravelRul
       </div>
       {open ? (
         <ul id={listId} className="w-legend-list">
-          {SPEED_TERRAINS.map((t) => {
-            const code = SPEED_TERRAIN_CODE[t];
-            return (
-              <li key={t}>
-                <span className="w-legend-swatch" style={{ background: TERRAIN_COLOURS[code] }} aria-hidden="true" />
-                <span>{TERRAIN_NAMES[code]}</span>
-                <b>{canCross(rules, method, code) ? `${Math.round(terrainSpeed(rules, method, pace, code))} km/day` : "can’t cross"}</b>
-                {code === "." && swimsWater(method) && canCross(rules, method, code) ? (
-                  <small className="w-legend-note">Swims up to {Math.round(maxSwimKm(rules, method, pace))} km (one day)</small>
-                ) : null}
-              </li>
-            );
-          })}
+          {rows.map(({ code, speed }) => (
+            <li key={code}>
+              <span className="w-legend-swatch" style={{ background: TERRAIN_COLOURS[code] }} aria-hidden="true" />
+              <span>{TERRAIN_NAMES[code]}</span>
+              <b>{speed === null ? "can’t cross" : `${Math.round(speed)} km/day`}</b>
+              {code === "." && swimsWater(method) && speed !== null ? (
+                <small className="w-legend-note">Swims up to {Math.round(maxSwimKm(rules, method, pace))} km (one day)</small>
+              ) : null}
+            </li>
+          ))}
           <li>
             <span className="w-legend-swatch" style={{ background: TERRAIN_COLOURS["#"] }} aria-hidden="true" />
             <span>{TERRAIN_NAMES["#"]}</span>
