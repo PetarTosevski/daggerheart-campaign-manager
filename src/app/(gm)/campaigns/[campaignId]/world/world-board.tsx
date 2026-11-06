@@ -16,12 +16,14 @@ import {
   formatDistance,
   formatLeg,
   formatTravelTime,
+  heightKmOf,
   mapScale,
   routeWarning,
   scaleBar,
   trailLeg,
   trailTotal,
   travelHours,
+  widthKmFromInput,
   type Point,
   type TravelMethod,
   type TravelPace,
@@ -104,7 +106,8 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
   const [showGrid, setShowGrid] = useState(false);
   const [settingOrigin, setSettingOrigin] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
-  const [scaleDraft, setScaleDraft] = useState<string | null>(null);
+  // The GM's Width / Height fields are linked through the image's aspect ratio; only the width is stored (scaleKm).
+  const [scaleDraft, setScaleDraft] = useState<ScaleDraft>(null);
 
   const viewport = useRef<HTMLDivElement>(null);
   const section = useRef<HTMLElement>(null);
@@ -429,26 +432,18 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
             {editable ? (
-              <label className="flex items-center gap-1.5 text-[12px] text-[#9fb2b6]">
-                Map width
-                <input
-                  className="fld w-20"
-                  style={{ minHeight: 36, padding: "4px 8px" }}
-                  type="number"
-                  min={10}
-                  step={10}
-                  value={scaleDraft ?? String(state.scaleKm)}
-                  onChange={(e) => setScaleDraft(e.target.value)}
-                  onBlur={() => {
-                    if (scaleDraft !== null) void actions.setOptions({ scaleKm: Math.max(10, Number(scaleDraft) || 400) });
-                    setScaleDraft(null);
-                  }}
-                  aria-label="Map width in kilometres"
-                />
-                km
-              </label>
+              <MapSizeFields
+                widthKm={state.scaleKm}
+                imageWidth={image.width}
+                imageHeight={image.height}
+                draft={scaleDraft}
+                onDraft={setScaleDraft}
+                onCommit={(widthKm) => void actions.setOptions({ scaleKm: widthKm })}
+              />
             ) : (
-              <span className="text-[12px] text-[#9fb2b6]">Map width {state.scaleKm} km</span>
+              <span className="text-[12px] text-[#9fb2b6]">
+                Map {state.scaleKm} × {heightKmOf(state.scaleKm, image.width, image.height)} km
+              </span>
             )}
             {!measuring && !horizon && editable ? (
               <>
@@ -778,5 +773,62 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
       ) : null}
       {editable ? <TravelRulesDialog open={rulesOpen} onClose={() => setRulesOpen(false)} rules={rules} actions={actions} /> : null}
     </main>
+  );
+}
+
+type ScaleDraft = { side: "width" | "height"; text: string } | null;
+
+/** The GM's linked map size: typing either side updates the other from the image's shape; saved on blur. */
+function MapSizeFields({
+  widthKm,
+  imageWidth,
+  imageHeight,
+  draft,
+  onDraft,
+  onCommit,
+}: {
+  widthKm: number;
+  imageWidth: number;
+  imageHeight: number;
+  draft: ScaleDraft;
+  onDraft: (d: ScaleDraft) => void;
+  onCommit: (widthKm: number) => void;
+}) {
+  const typed = draft ? widthKmFromInput(draft.side, Number(draft.text), imageWidth, imageHeight) : null;
+  const shownWidth = typed ?? widthKm;
+  const value = (side: "width" | "height") =>
+    draft?.side === side ? draft.text : String(side === "width" ? shownWidth : heightKmOf(shownWidth, imageWidth, imageHeight));
+  const commit = () => {
+    if (typed !== null && typed !== widthKm) onCommit(typed);
+    onDraft(null);
+  };
+  const field = (side: "width" | "height", label: string) => (
+    <label className="flex items-center gap-1.5 text-[12px] text-[#9fb2b6]">
+      {label}
+      <input
+        className="fld w-20"
+        style={{ minHeight: 36, padding: "4px 8px" }}
+        type="number"
+        min={1}
+        step={10}
+        value={value(side)}
+        onChange={(e) => onDraft({ side, text: e.target.value })}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+        }}
+        aria-label={`Map ${side} in kilometres`}
+      />
+    </label>
+  );
+  return (
+    <span className="flex items-center gap-1.5">
+      {field("width", "Map width")}
+      <span aria-hidden="true" className="text-[12px] text-[#9fb2b6]">
+        ×
+      </span>
+      {field("height", "height")}
+      <span className="text-[12px] text-[#9fb2b6]">km</span>
+    </span>
   );
 }

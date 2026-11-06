@@ -94,6 +94,24 @@ export function mapScale(widthKm: number, imageWidth: number, imageHeight: numbe
   return { widthKm, heightKm: (widthKm * imageHeight) / imageWidth };
 }
 
+/** The smallest map width the GM may set (km). */
+export const MIN_MAP_WIDTH_KM = 10;
+
+/**
+ * The GM's linked Width / Height fields: the stored width (km) from what was typed in either one. The other side follows
+ * the image's aspect ratio. Rounded to whole km, at least MIN_MAP_WIDTH_KM; null for empty or non-positive input.
+ */
+export function widthKmFromInput(side: "width" | "height", value: number, imageWidth: number, imageHeight: number): number | null {
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const width = side === "width" ? value : (value * imageWidth) / imageHeight;
+  return Math.max(MIN_MAP_WIDTH_KM, Math.round(width));
+}
+
+/** The height (km) shown beside a map width, whole km. */
+export function heightKmOf(widthKm: number, imageWidth: number, imageHeight: number): number {
+  return Math.round(mapScale(widthKm, imageWidth, imageHeight).heightKm);
+}
+
 /** Straight-line km between two map points (the board's `miles`). */
 export function distanceKm(a: Point, b: Point, scale: MapScale): number {
   return Math.hypot(((a.x - b.x) / 100) * scale.widthKm, ((a.y - b.y) / 100) * scale.heightKm);
