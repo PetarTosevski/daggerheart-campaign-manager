@@ -1,7 +1,7 @@
 import { defineTable } from "convex/server";
 import { v } from "convex/values";
 
-import { crawlHexFields, mapTokenFields } from "../lib/validators/maps";
+import { crawlHexFields, mapJourneyFields, mapTokenFields } from "../lib/validators/maps";
 
 export const mapTables = {
   /**
@@ -44,4 +44,14 @@ export const mapTables = {
     tile: v.number(),
     cells: v.string(),
   }).index("by_campaign_tile", ["campaignId", "tile"]),
+
+  /**
+   * The party's trip along a drawn route (plan world-journey MJ1): at most one row per campaign while a trip exists
+   * (moving or stopped). A scheduled internal tick passes a campaign day at each whole travel day; the row is deleted
+   * on arrival or Cancel.
+   */
+  mapJourneys: defineTable({
+    campaignId: v.id("campaigns"),
+    ...mapJourneyFields,
+  }).index("by_campaign", ["campaignId"]),
 };
