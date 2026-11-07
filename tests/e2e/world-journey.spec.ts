@@ -84,6 +84,10 @@ test("the party walks a drawn route on Fast; Stop freezes it, Resume walks on, C
   expect(await partyAt(page)).toBe(frozen);
   expect(await daysPassed(page)).toBe(passed);
   await expect(page.getByTestId("journey-line")).toBeVisible();
+  // The calendar above the map (MC1) moved by exactly the days the trip passed (the campaign began on Week 1 · Day 1).
+  await expect(page.getByTestId("map-calendar").getByTestId("campaign-day-label")).toHaveText(
+    `Week ${1 + Math.floor(passed / 7)} · Day ${1 + (passed % 7)}`,
+  );
 
   // A player sees the stopped trip, its line and the count, without the buttons.
   const context = await browser.newContext();
