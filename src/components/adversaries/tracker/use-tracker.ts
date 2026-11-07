@@ -61,6 +61,10 @@ export function useTracker(campaignId: Id<"campaigns">, encounterId: string) {
     if (fear === undefined || fear === null || fear < amount) return;
     store.setQuery(api.campaigns.fear, { campaignId }, fear - amount);
   });
+  // D8 Manual (rule switches DEF): the GM's Defeated button sets the flag at once.
+  const markDefeated = useMutation(api.encounterTracking.markDefeated).withOptimisticUpdate((store, { instanceId }) =>
+    patchInstance(store, instanceId, (i) => ({ ...i, defeated: true })),
+  );
   const applyDamage = useMutation(api.encounterTracking.applyDamage);
   const defeatMinions = useMutation(api.encounterTracking.defeatMinions);
   const setTags = useMutation(api.encounterTracking.setTags);
@@ -89,6 +93,7 @@ export function useTracker(campaignId: Id<"campaigns">, encounterId: string) {
       run(() => spendFear({ campaignId, encounterId, amount, reason, ...(instanceId ? { instanceId } : {}), idempotencyKey: idempotencyKey() })),
     applyDamage: (instanceId: string, amount: number, resistant: boolean) =>
       run(() => applyDamage({ campaignId, instanceId, amount, resistant, idempotencyKey: idempotencyKey() })),
+    markDefeated: (instanceId: string) => run(() => markDefeated({ campaignId, instanceId, idempotencyKey: idempotencyKey() })),
     defeatMinions: (instanceId: string, count: number) => run(() => defeatMinions({ campaignId, instanceId, count, idempotencyKey: idempotencyKey() })),
     setTags: (instanceId: string, tags: string[]) => run(() => setTags({ campaignId, instanceId, tags, idempotencyKey: idempotencyKey() })),
   };

@@ -84,16 +84,11 @@ async function loadTime(ctx: MutationCtx, campaign: Doc<"campaigns">, anyFrame =
 }
 
 /** Applies `next` and records the change in `history`. */
-async function changeTime(
-  ctx: MutationCtx & { user: Doc<"users"> },
-  row: Doc<"campaignTime">,
-  action: string,
-  next: CampaignTime,
-): Promise<TimeView> {
+async function changeTime(ctx: MutationCtx, actorId: Id<"users">, row: Doc<"campaignTime">, action: string, next: CampaignTime): Promise<TimeView> {
   const before = toView(toDomain(row));
   const after = toView(next);
   await ctx.db.patch("campaignTime", row._id, after);
-  await recordHistory(ctx, ctx.user._id, { campaignId: row.campaignId, kind: "campaignTime", action, before, after });
+  await recordHistory(ctx, actorId, { campaignId: row.campaignId, kind: "campaignTime", action, before, after });
   return after;
 }
 
@@ -114,7 +109,7 @@ export const advance = keyedGmMutation({
   handler: async (ctx): Promise<TimeView> => {
     const row = await loadTime(ctx, ctx.campaign);
     return ctx.once("campaign_time_advance", {}, async () =>
-      changeTime(ctx, row, "advance", getNextCampaignTime(toDomain(row))),
+      changeTime(ctx, ctx.user._id, row, "advance", getNextCampaignTime(toDomain(row))),
     );
   },
 });
@@ -128,7 +123,7 @@ export const setDay = keyedGmMutation({
     return ctx.once("campaign_time_set_day", { cycleDay }, async () => {
       const current = toDomain(row);
       const next = applyRule("TIME_RULE", RangeError, () => withCycleDay(current, cycleDay));
-      const after = await changeTime(ctx, row, "setDay", next);
+      const after = await changeTime(ctx, ctx.user._id, row, "setDay", next);
       // User answer 2026-10-31 (CT Q3): a jump forward by N days counts as N ended days (within the week, so once-per-day
       // uses end; a week only passes through End day on day 7). A jump back ends nothing. CT2: the jump forward is
       // undoable with its uses (its campaign row carries the calendar move).
@@ -293,20 +288,38 @@ export const endDay = keyedGmMutation({
   }),
   handler: async (ctx) => {
     const row = await loadTime(ctx, ctx.campaign, true);
-    return ctx.once("campaign_time_end_day", {}, async () => {
-      const current = toDomain(row);
-      const cycles = frameHasMechanic(ctx.campaign.frameId, "campaignTime");
-      const { next, newWeek } = passDay(current, cycles);
-      const after = await changeTime(ctx, row, "endDay", next);
-      // User answer 2026-10-31 (CT Q2): a new day starts in daylight. In the Witherwild the time phase sets the light.
-      const timeOfDayBefore = ctx.campaign.timeOfDay ?? "day";
-      const resetLight = !cycles && timeOfDayBefore !== "day";
-      if (resetLight) await ctx.db.patch("campaigns", ctx.campaign._id, { timeOfDay: "day" });
-      const label = newWeek ? `Week ${current.currentWeek} ended` : `Day ${current.currentCycleDay} ended`;
-      // CT2 (dcm-jq4b): the group's campaign row always carries the calendar move, so undo can move the day back.
-      const time: TimeChange = { before: toView(current), after, ...(resetLight ? { timeOfDayBefore } : {}) };
-      const { ended, entryId } = await expireParty(ctx, ctx.campaign, ctx.user._id, newWeek ? "week" : "day", label, time);
-      return { week: after.week, day: after.cycleDay, cycle: after.cycle, newWeek, ended, entryId };
-    });
+    return ctx.once("campaign_time_end_day", {}, async () => passCampaignDay(ctx, ctx.campaign, ctx.user._id, { row }));
   },
 });
+
+export type PassedDay = { week: number; day: number; cycle: "DAY" | "NIGHT"; newWeek: boolean; ended: number; entryId: Id<"actionLog"> | null };
+
+/**
+ * End day's effects (shared with the party's walk, convex/mapJourney.ts, plan world-journey D3): the calendar moves one
+ * day (recorded in `history`), a non-Witherwild day starts in daylight, and once-per-day (after day 7 weekly) uses end
+ * in one undoable `actionLog` group whose campaign row carries the calendar move. The caller has checked GM access.
+ * `campaign` may be stale (a loop passing several days): the time of day is re-read. `onTheRoad` labels a travel day.
+ */
+export async function passCampaignDay(
+  ctx: MutationCtx,
+  campaign: Doc<"campaigns">,
+  actorId: Id<"users">,
+  opts: { row?: Doc<"campaignTime">; onTheRoad?: boolean } = {},
+): Promise<PassedDay> {
+  const row = opts.row ?? (await loadTime(ctx, campaign, true));
+  const current = toDomain(row);
+  const cycles = frameHasMechanic(campaign.frameId, "campaignTime");
+  const { next, newWeek } = passDay(current, cycles);
+  const after = await changeTime(ctx, actorId, row, "endDay", next);
+  // User answer 2026-10-31 (CT Q2): a new day starts in daylight. In the Witherwild the time phase sets the light.
+  const fresh = (await ctx.db.get("campaigns", campaign._id)) ?? campaign;
+  const timeOfDayBefore = fresh.timeOfDay ?? "day";
+  const resetLight = !cycles && timeOfDayBefore !== "day";
+  if (resetLight) await ctx.db.patch("campaigns", campaign._id, { timeOfDay: "day" });
+  const ended = newWeek ? `Week ${current.currentWeek} ended` : `Day ${current.currentCycleDay} ended`;
+  const label = opts.onTheRoad ? `${ended} on the road` : ended;
+  // CT2 (dcm-jq4b): the group's campaign row always carries the calendar move, so undo can move the day back.
+  const time: TimeChange = { before: toView(current), after, ...(resetLight ? { timeOfDayBefore } : {}) };
+  const expiry = await expireParty(ctx, campaign, actorId, newWeek ? "week" : "day", label, time);
+  return { week: after.week, day: after.cycleDay, cycle: after.cycle, newWeek, ended: expiry.ended, entryId: expiry.entryId };
+}

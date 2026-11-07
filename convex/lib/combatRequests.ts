@@ -27,12 +27,18 @@ import type { AfterRollPayload, DifficultyPayload, MinionOfferPayload, RiderPick
 export const OPEN_SCAN = 200;
 
 type Where = { campaignId: Id<"campaigns">; encounterId: Id<"encounters">; mapId: Id<"combatMaps">; createdBy: Id<"users"> };
+/**
+ * Plan rule-switches OP2: a request that may belong to no encounter (an attack on PCs only, "Conflict between PCs", CB
+ * p.168, happens anywhere on the live map). The row's `encounterId` is optional; `encounterRunning` counts it as running.
+ */
+type LooseWhere = Omit<Where, "encounterId"> & { encounterId?: Id<"encounters"> };
 
-function open<W extends Where>(where: W) {
+function open<W extends LooseWhere>(where: W) {
   return { ...where, status: "open" as const, createdAt: Date.now(), responses: [] };
 }
 
-export function openSanction(ctx: MutationCtx, where: Where & { payload: SanctionPayload }): Promise<Id<"combatRequests">> {
+/** OP2: an out-of-range attack on PCs only waits for the GM without an encounter. */
+export function openSanction(ctx: MutationCtx, where: LooseWhere & { payload: SanctionPayload }): Promise<Id<"combatRequests">> {
   return ctx.db.insert("combatRequests", { ...open(where), kind: "sanction" });
 }
 
@@ -42,9 +48,10 @@ export function openMinionOffer(ctx: MutationCtx, where: Where & { payload: Mini
 
 /**
  * Q1 (plan sheet-drawer SD5): a player's own attack held after its roll for an after-roll feature; nothing is written
- * until `combatActions.afterRoll` answers it (Use, Pass, or the GM's Resolve now).
+ * until `combatActions.afterRoll` answers it (Use, Pass, or the GM's Resolve now). OP2: a held attack on PCs only has no
+ * encounter.
  */
-export function openAfterRoll(ctx: MutationCtx, where: Where & { payload: AfterRollPayload }): Promise<Id<"combatRequests">> {
+export function openAfterRoll(ctx: MutationCtx, where: LooseWhere & { payload: AfterRollPayload }): Promise<Id<"combatRequests">> {
   return ctx.db.insert("combatRequests", { ...open(where), kind: "afterRoll" });
 }
 
@@ -54,7 +61,7 @@ export function openAfterRoll(ctx: MutationCtx, where: Where & { payload: AfterR
  */
 export function openRiderPick(
   ctx: MutationCtx,
-  where: Omit<Where, "encounterId"> & { encounterId?: Id<"encounters">; payload: RiderPickPayload },
+  where: LooseWhere & { payload: RiderPickPayload },
 ): Promise<Id<"combatRequests">> {
   return ctx.db.insert("combatRequests", { ...where, status: "open" as const, createdAt: Date.now(), responses: [], kind: "riderPick" });
 }
@@ -132,7 +139,7 @@ export async function declineGroupOffers(ctx: MutationCtx, campaignId: Id<"campa
  */
 export async function openServerMove(
   ctx: MutationCtx,
-  where: Omit<Where, "encounterId"> & { encounterId?: Id<"encounters">; payload: ServerMovePayload },
+  where: LooseWhere & { payload: ServerMovePayload },
 ): Promise<Id<"combatRequests">> {
   for (const row of await openRequests(ctx, where.campaignId)) {
     if (row.payload.kind === "serverMove" && row.payload.characterId === where.payload.characterId) await closeRequest(ctx, row._id, "resolved", where.createdBy);
@@ -146,7 +153,7 @@ export async function openServerMove(
  */
 export async function openDifficulty(
   ctx: MutationCtx,
-  where: Omit<Where, "encounterId"> & { encounterId?: Id<"encounters">; payload: DifficultyPayload },
+  where: LooseWhere & { payload: DifficultyPayload },
 ): Promise<Id<"combatRequests">> {
   for (const row of await openRequests(ctx, where.campaignId)) {
     const p = row.payload;

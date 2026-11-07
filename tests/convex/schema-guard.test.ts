@@ -107,6 +107,7 @@ const CAMPAIGN_SCOPED = [
   "mapTokens",
   "mapHexes",
   "mapTerrain",
+  "mapJourneys",
   "codexEntries",
   "codexEntryText",
   "codexCounters",

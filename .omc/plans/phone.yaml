@@ -424,3 +424,28 @@ waves:
           - docs/tasks/TASK-WSM.md
         acceptance:
           - pnpm lint, pnpm typecheck, the web unit tests of every touched area pass; behaviour unchanged
+  - wave: 12
+    tracers:
+      - id: PXS
+        title: "Phone uses the shared src/lib models; wizard drafts on the account"
+        beads: [dcm-gdzi.47]
+        pr: 5
+        goal: "The phone imports WSM's src/lib modules (wizard logic and draft schema, level-up, roll copy, features, lunar, reactions model, custom-tome text) and deletes its copies; KNOWN_COPIES shrinks accordingly; the character wizard draft lives on the account (drafts.get / drafts.save) like the website"
+        depends_on: [WSM, PXL]
+        owns:
+          - apps/mobile/**
+        acceptance:
+          - full apps/mobile jest passes; KNOWN_COPIES shorter; pnpm typecheck
+  - wave: 13
+    tracers:
+      - id: LAND
+        title: "Cut phone/on-rebuild into the nine stacked PR branches (local only)"
+        beads: [dcm-gdzi]
+        goal: "phone/on-rebuild is merged with the latest rebuild and cut into nine local branches stacked in order (1 server/auth, 2 workspace+tooling+shell, 3 account, 4 dashboard+trackers, 5 party+sheet, 6 codex/world/players/tome, 7 journal, 8 lorekeeper, 9 combat), each branched from the previous, each passing pnpm lint, pnpm typecheck, pnpm test and the mobile check on its own; the last one's tree equals phone/on-rebuild; Nikola stays author of his commits where commits are kept; nothing pushed"
+        depends_on: [PXS]
+        owns:
+          - apps/mobile/**
+          - docs/phone-client.md
+          - docs/tasks/TASK-LAND.md
+        acceptance:
+          - nine local branches phone/pr-1 .. phone/pr-9; each green; a PR description per branch in docs/tasks/TASK-LAND.md

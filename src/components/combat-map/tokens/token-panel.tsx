@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
 import { isDifficult } from "@/lib/domain/combat-map/movement";
+import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../convex/_generated/api";
 import { decodeCells } from "../map-view/cells";
@@ -138,6 +139,38 @@ function FearEnds({ campaignId, token }: { campaignId: TokenPanelProps["campaign
   );
 }
 
+/**
+ * Underwater (optional rule, CB p.168; plan rule-switches OE / OE2), GM only: the selected token's "Fights underwater"
+ * (no attack disadvantage) and, for a PC, "Breathes underwater" (no breath countdown tick, no Stress). Shown while the
+ * rule is on and the token is on the live map (the HUD's Water pop-over offers the same marks).
+ */
+function UnderwaterMarks({ campaignId, mapId, tokenId }: { campaignId: TokenPanelProps["campaignId"]; mapId: string; tokenId: string }) {
+  const env = useQuery(api.combatScenes.environment, { campaignId });
+  const setFights = useIntent(api.combatScenes.setFightsUnderwater);
+  const setBreathes = useIntent(api.combatScenes.setBreathesUnderwater);
+  const c = env?.canEdit && env.underwaterRule && env.mapId === mapId ? env.creatures.find((x) => x.tokenId === tokenId) : undefined;
+  if (c === undefined) return null;
+  const error = setFights.error ?? setBreathes.error;
+  return (
+    <div className="cm-row cm-tight" role="group" aria-label="Underwater">
+      <span className="cm-lbl cm-inline-lbl">Underwater</span>
+      <BrandButton type="button" variant="neutral" size="sm" aria-pressed={c.fightsUnderwater} disabled={setFights.pending} onClick={() => void setFights.fire({ campaignId, tokenId: c.tokenId, fightsUnderwater: !c.fightsUnderwater })}>
+        Fights underwater
+      </BrandButton>
+      {c.pc ? (
+        <BrandButton type="button" variant="neutral" size="sm" aria-pressed={c.breathesUnderwater} disabled={setBreathes.pending} onClick={() => void setBreathes.fire({ campaignId, tokenId: c.tokenId, breathesUnderwater: !c.breathesUnderwater })}>
+          Breathes underwater
+        </BrandButton>
+      ) : null}
+      {error ? (
+        <span role="alert" className="cm-alert cm-m0">
+          {error}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 function SelectedToken({ token, tokens, props }: { token: TokenView; tokens: TokenView[]; props: TokenPanelProps }) {
   const { campaignId, role, map, onSelectToken } = props;
   const gm = role === "gm";
@@ -228,6 +261,7 @@ function SelectedToken({ token, tokens, props }: { token: TokenView; tokens: Tok
       {gm ? (
         <div className="cm-tokgm">
           <FearEnds campaignId={campaignId} token={token} />
+          <UnderwaterMarks campaignId={campaignId} mapId={props.map._id} tokenId={token._id} />
           {s && token.kind !== "pc" ? (
             <div className="cm-tokfield">
               <span className="cm-lbl">Conditions</span>

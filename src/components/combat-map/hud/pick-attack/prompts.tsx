@@ -99,7 +99,10 @@ function MinionOffers({ state, characterId }: { state: CombatPageState; characte
   const pick = usePick();
   const actor = useActor(state);
   const rows = useQuery(api.combatRequestsReads.mine, { campaignId });
-  const gmPicks = useQuery(api.ruleSettings.get, { campaignId })?.modes.minions === "gmPicks";
+  const modes = useQuery(api.ruleSettings.get, { campaignId })?.modes;
+  const gmPicks = modes?.minions === "gmPicks";
+  // Rule switches ODR3: Defined Ranges off, the candidate rows show no band.
+  const definedRanges = modes?.definedRanges ?? true;
   const pickMinions = useMutation(api.combatActions.pickMinions).withOptimisticUpdate((store, args) => {
     const mine = store.getQuery(api.combatRequestsReads.mine, { campaignId });
     if (mine !== undefined) store.setQuery(api.combatRequestsReads.mine, { campaignId }, mine.filter((r) => !(r.kind === "minionOffer" && r.entryId === args.entryId)));
@@ -134,7 +137,7 @@ function MinionOffers({ state, characterId }: { state: CombatPageState; characte
   }
 
   function open(offer: MinionOffer) {
-    const bands = actor ? bandsFrom(actor.view) : new Map();
+    const bands = actor ? bandsFrom(actor.view, definedRanges) : new Map();
     const render = (ctx: PickContext<MinionData>) => <MinionCounts ctx={ctx} offer={offer} pick={send(offer)} />;
     pick.open(minionSession({ offer, bands, data: { counts: {} }, pick: send(offer), render }));
   }

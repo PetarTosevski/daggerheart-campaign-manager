@@ -5,9 +5,10 @@ import { freshKey } from "./synth";
 
 /**
  * Authz matrix: the scene's environment and the Underwater optional rule (CB p.168; plan rule-switches OE,
- * docs/tasks/TASK-RULES-OE.md). `combatScenes.environment` is every member's (the HUD title's chips); `setUnderwater`
- * and `setFightsUnderwater` are keyed GM mutations: player, other player and grantee FORBIDDEN; GM and co-GM ok. The
- * setup turns the optional rule on (off, both refuse with MECHANIC_DISABLED) and puts characterA's token on a live map.
+ * docs/tasks/TASK-RULES-OE.md). `combatScenes.environment` is every member's (the HUD title's chips); `setUnderwater`,
+ * `setFightsUnderwater` and `setBreathesUnderwater` (OE2) are keyed GM mutations: player, other player and grantee
+ * FORBIDDEN; GM and co-GM ok. The setup turns the optional rule on (off, they refuse with MECHANIC_DISABLED) and puts
+ * characterA's token on a live map.
  * What they do: tests/convex/rules-environment.test.ts.
  */
 const area: Area = {
@@ -34,6 +35,13 @@ const area: Area = {
       fn: api.combatScenes.setFightsUnderwater,
       access: "gm",
       args: () => ({ fightsUnderwater: true }),
+      expect: { grantee: "FORBIDDEN", otherPlayer: "FORBIDDEN" },
+    },
+    // Plan OE2: a PC's token "breathes underwater" (the setup's token is characterA's PC).
+    {
+      fn: api.combatScenes.setBreathesUnderwater,
+      access: "gm",
+      args: () => ({ breathesUnderwater: true }),
       expect: { grantee: "FORBIDDEN", otherPlayer: "FORBIDDEN" },
     },
   ],

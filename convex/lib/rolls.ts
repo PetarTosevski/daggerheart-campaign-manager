@@ -39,6 +39,7 @@ import {
   type Rng,
 } from "../../src/lib/domain/dice/index";
 import { countsAsActionRoll } from "../../src/lib/domain/countdowns/advanced";
+import { darknessEdge, darknessLabels, NO_DARKNESS_EDGE, type DarknessEdge } from "../../src/lib/domain/combat-map/light";
 import type { RollRecord } from "../../src/lib/domain/duality";
 import type { EndRoll } from "../../src/lib/domain/characters/expiry";
 import { placeTideToken, rerollSlayerOnes, rollGaveHope, SLAYER_DIE_SIDES, spendSlayerDice, spendTideTokens, WITH_HOPE } from "../../src/lib/domain/session-features/index";
@@ -64,7 +65,9 @@ import { logAction, newGroupId } from "./actionLog";
 import { assertCanAct, loadCharacter, noteHopeSpent, readSheet, saveSheet } from "./characterSheet";
 import { applyPcActionRoll, fearWithheldBy, hopeFearModeOf, outcomeSucceeds, outcomeWithFear, planPcActionRoll } from "./rollAftermath";
 import { rollDie } from "./dice";
+import { campaignLight } from "./campaignLight";
 import { featureScope } from "./featureScope";
+import { ruleModesOf } from "./ruleModes";
 import { campaignFearState, gainFear } from "./fear";
 import { applyRule } from "./mechanics";
 import { actorSheetAfter, cardActor, cardIdOfEffect, conditionMarkerOf, endConditionsOnRoll, endRollOf, featureIdOfEffect, tokenKeyOf, type HostRoll } from "./cardRunner";
@@ -808,9 +811,33 @@ export async function markSocial(ctx: MutationCtx, entryId: Id<"actionLog">, soc
   if (social) await ctx.db.patch("actionLog", entryId, { social: true });
 }
 
+/**
+ * Plan rule-switches OE2 (user 2026-11-06 on dcm-bxp.134: "dim-light variants affect EVERY PC action roll with a
+ * Difficulty"; CB p.104): what M3's variant adds to a PC's action roll with a Difficulty in the campaign's dim light (a
+ * disadvantage die, +N to the Difficulty, or both; `darknessEdge`). A reaction roll or a roll without a Difficulty gets
+ * nothing; Book and Manual add nothing. Reads the campaign's light (one row in the Witherwild).
+ */
+export async function darknessOnRoll(ctx: QueryCtx, campaign: Doc<"campaigns">, roll: { kind: "action" | "reaction"; difficulty?: number }): Promise<DarknessEdge> {
+  if (roll.kind !== "action" || roll.difficulty === undefined) return NO_DARKNESS_EDGE;
+  const modes = ruleModesOf(campaign);
+  if (modes.darkness === "book" || modes.darkness === "manual") return NO_DARKNESS_EDGE;
+  const { light } = await campaignLight(ctx, campaign);
+  return darknessEdge(light, modes.darkness, modes.darknessDifficulty);
+}
+
+/** A Duality roll's args with a darkness edge added: one more disadvantage die and the raised Difficulty (OE2). */
+export function withDarkness<A extends { disadvantage: number; difficulty?: number }>(args: A, edge: DarknessEdge): A {
+  if (edge.disadvantage === 0 && edge.difficulty === 0) return args;
+  return { ...args, disadvantage: args.disadvantage + edge.disadvantage, ...(args.difficulty !== undefined ? { difficulty: args.difficulty + edge.difficulty } : {}) };
+}
+
 /** Rolls (or reads typed-in dice), applies Hope, Stress and Fear, saves and logs. */
-export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded, args: DualityArgs, rng: Rng, manual: boolean) {
+export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded, rawArgs: DualityArgs, rng: Rng, manual: boolean) {
   const { campaign, character, sheet } = loaded;
+  // Plan rule-switches OE2: M3's variant on an action roll with a Difficulty in dim light (a manual roll types the extra
+  // disadvantage die in too, after the roll's own advantage dice, as with a bearer's disadvantage).
+  const dark = await darknessOnRoll(ctx, campaign, rawArgs);
+  const args = withDarkness(rawArgs, dark);
   const resolved = await resolveDuality(ctx, loaded, args, rng, manual);
   const { scope, paid, trait, rolled, hopeFear } = resolved;
   let { roll, effects } = resolved;
@@ -843,7 +870,7 @@ export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded:
   const grants = grantEndsOnRoll(ends.sheet, usedGrants, ends.ended, others.map((m) => ({ key: m, sheet: m.sheet })));
   const next = grants.sheet;
   const advNames = advUses.bonuses.map((b) => `${b.feature} ${b.amount >= 0 ? "+" : ""}${b.amount} ${b.die === "hope" ? "Hope" : "Fear"} Die`);
-  const extras = [...resolved.extras, ...advNames, ...autos.names, ...ends.labels, ...grants.labels];
+  const extras = [...resolved.extras, ...darknessLabels(dark), ...advNames, ...autos.names, ...ends.labels, ...grants.labels];
   const { gained: rolledFear } = effects.fear > 0 ? await gainFear(ctx, campaign._id, effects.fear) : { gained: 0 };
   const gained = rolledFear + (autos.gmFearDelta > 0 ? (await gainFear(ctx, campaign._id, autos.gmFearDelta)).gained : 0);
   // dcm-z9rz.23: the roll's costs (Experiences, options, the bearer's riders) count as spent even when it gains Hope, so a

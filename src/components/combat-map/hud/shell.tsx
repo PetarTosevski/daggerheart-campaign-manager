@@ -95,7 +95,8 @@ function HudFrame({ state, loading, renderLayers, tools }: HudShellProps) {
     <>
       <MapToolsButton role={role} />
       <PartBoundary label="Map controls">
-        <PlayerMapControls />
+        {/* Rule switches ODR3: with the campaign, Defined Ranges off hides the player's Measure button. */}
+        <PlayerMapControls campaignId={state.campaignId} />
       </PartBoundary>
     </>
   );

@@ -46,7 +46,7 @@ export const DIM_PHASES: ReadonlySet<string> = new Set<CampaignPhaseName>([
   "Nautical Dawn",
 ]);
 
-/** Badge text for dim light (brief, section 5). */
+/** Badge text for dim light (brief, section 5): M3 Book (nothing is added to a roll). */
 export const DIM_PHASE_BADGE = "Dim light: ranged attacks at disadvantage";
 
 /** M3 Darkness (plan rule-switches RM): Book (the badge), the variants (tracer OE) or Manual. */
@@ -66,36 +66,45 @@ export function dimLightBadge(light: LightLevel, mode: DarknessMode = "book"): s
 /** M3: the Difficulty a darkness variant adds when the GM set no number (registry param `darknessDifficulty`). */
 export const DEFAULT_DARKNESS_DIFFICULTY = 2;
 
-/** What darkness adds to one PC attack roll (M3 variants, plan rule-switches OE). */
+/** What darkness adds to one PC action roll with a Difficulty (M3 variants, plan rule-switches OE / OE2). */
 export type DarknessEdge = { readonly disadvantage: number; readonly difficulty: number };
 
-const NO_EDGE: DarknessEdge = { disadvantage: 0, difficulty: 0 };
+export const NO_DARKNESS_EDGE: DarknessEdge = { disadvantage: 0, difficulty: 0 };
+const NO_EDGE = NO_DARKNESS_EDGE;
 
 /**
- * M3 variants (plan rule-switches OE; user answers Q6 2026-11-05 and 2026-11-05 on dcm-bxp.134; CB p.104: "Darkness can
- * also make certain actions more challenging. The GM should reflect this by raising the Difficulty of action rolls or
- * imposing disadvantage on rolls made by the PCs."). What a PC's attack roll gets in the campaign's light: only in dim
- * light and only a ranged attack (a weapon whose range is beyond Melee; the printed range, so Defined Ranges does not
- * matter). "disadvantage": one disadvantage die; "difficulty": `raise` added to each target's Difficulty (Evasion for a PC
- * target); "both" (not in the books): both. Book and Manual add nothing (Book shows the badge, Manual nothing).
+ * M3 variants (plan rule-switches OE / OE2; user answers Q6 2026-11-05 and 2026-11-06 on dcm-bxp.134: "dim-light variants
+ * affect EVERY PC action roll with a Difficulty"; CB p.104: "Darkness can also make certain actions more challenging. The
+ * GM should reflect this by raising the Difficulty of action rolls or imposing disadvantage on rolls made by the PCs.").
+ * What a PC's action roll with a Difficulty (a dice-box roll with one set, a Tag Team with one, a weapon attack, a card or
+ * feature roll against a Difficulty or its targets) gets in the campaign's dim light: "disadvantage": one disadvantage
+ * die; "difficulty": `raise` added to the Difficulty (each target's Difficulty, Evasion for a PC target); "both" (not in
+ * the books): both. Book and Manual add nothing (Book shows the badge, Manual nothing). The caller decides whether the
+ * roll has a Difficulty; reaction rolls and adversary rolls never get it.
  */
-export function darknessEdge(light: LightLevel, ranged: boolean, mode: DarknessMode = "book", raise: number = DEFAULT_DARKNESS_DIFFICULTY): DarknessEdge {
-  if (light !== "dim" || !ranged) return NO_EDGE;
+export function darknessEdge(light: LightLevel, mode: DarknessMode = "book", raise: number = DEFAULT_DARKNESS_DIFFICULTY): DarknessEdge {
+  if (light !== "dim") return NO_EDGE;
   const disadvantage = mode === "disadvantage" || mode === "both" ? 1 : 0;
   const difficulty = mode === "difficulty" || mode === "both" ? Math.max(1, Math.trunc(raise)) : 0;
   return disadvantage === 0 && difficulty === 0 ? NO_EDGE : { disadvantage, difficulty };
 }
 
+/** The roll line's labels for a darkness edge: "dim light: disadvantage", "dim light: +2 Difficulty" (OE). */
+export function darknessLabels(edge: DarknessEdge): string[] {
+  return [...(edge.disadvantage > 0 ? ["dim light: disadvantage"] : []), ...(edge.difficulty > 0 ? [`dim light: +${edge.difficulty} Difficulty`] : [])];
+}
+
 /**
  * M3's badge naming the active mode (plan rule-switches OE: "the badge names the active one"): Book `DIM_PHASE_BADGE`
- * (nothing is added), each variant what the app adds by itself, Manual none. Null outside dim light.
+ * (nothing is added), each variant what the app adds by itself to every PC action roll with a Difficulty (OE2), Manual
+ * none. Null outside dim light.
  */
 export function darknessBadge(light: LightLevel, mode: DarknessMode = "book", raise: number = DEFAULT_DARKNESS_DIFFICULTY): string | null {
   if (light !== "dim" || mode === "manual") return null;
   const n = Math.max(1, Math.trunc(raise));
-  if (mode === "disadvantage") return "Dim light: ranged attacks roll with disadvantage";
-  if (mode === "difficulty") return `Dim light: ranged attacks +${n} Difficulty`;
-  if (mode === "both") return `Dim light: ranged attacks roll with disadvantage, +${n} Difficulty`;
+  if (mode === "disadvantage") return "Dim light: action rolls with disadvantage";
+  if (mode === "difficulty") return `Dim light: action rolls +${n} Difficulty`;
+  if (mode === "both") return `Dim light: action rolls with disadvantage, +${n} Difficulty`;
   return DIM_PHASE_BADGE;
 }
 

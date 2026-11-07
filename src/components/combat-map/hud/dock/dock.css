@@ -339,3 +339,76 @@
     overflow-x: auto;
   }
 }
+
+/* ---------------------------------------------------------------- Contest (rule switches OP2, Conflict between PCs) */
+.hud-contest {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 14px 14px;
+  overflow-y: auto;
+}
+.hud-contest-side {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 0;
+  padding: 8px 10px 10px;
+  border: 1px solid var(--hud-line-2);
+  border-radius: 10px;
+}
+.hud-contest-side legend {
+  padding: 0 4px;
+  color: var(--hud-muted);
+  font-size: 12px;
+}
+.hud-contest-side label {
+  font-size: 13px;
+}
+.hud-contest-side select,
+.hud-contest-side input {
+  height: 32px;
+  min-width: 0;
+  border-radius: 9px;
+  border: 1px solid var(--hud-line-2);
+  background: #0b1214;
+  color: var(--hud-ink);
+  padding: 0 10px;
+  font: inherit;
+  font-size: 13px;
+}
+.hud-contest-side select:focus-visible,
+.hud-contest-side input:focus-visible,
+.hud-contest-go:focus-visible {
+  outline: 2px solid var(--hud-gold);
+  outline-offset: 2px;
+}
+.hud-contest-go {
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--hud-gold);
+  background: transparent;
+  color: var(--hud-gold);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.hud-contest-go:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.hud-contest-out p {
+  margin: 0 0 4px;
+}
+.hud-contest-win {
+  color: var(--hud-hope);
+}
+.hud-contest-lose {
+  color: var(--hud-danger);
+}
+.hud-contest-rolls {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+}

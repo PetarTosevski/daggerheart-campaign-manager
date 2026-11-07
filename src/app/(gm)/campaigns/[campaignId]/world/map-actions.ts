@@ -4,6 +4,7 @@ import { useMutation } from "convex/react";
 import { useState } from "react";
 
 import { errorMessage } from "@/lib/convex-errors";
+import type { JourneySpeed } from "@/lib/domain/travel/journey";
 import type { TravelRulesState } from "@/lib/world/map-state";
 import { applyTerrainCells } from "@/lib/world/terrain";
 import { useIntent } from "@/lib/use-intent";
@@ -24,6 +25,7 @@ export function useMapActions(campaignId: Id<"campaigns">) {
   const moveParty = useIntent(api.maps.moveParty);
   const addType = useIntent(api.maps.addCustomType);
   const moveHex = useIntent(api.maps.moveToHex);
+  const startJourney = useIntent(api.mapJourney.start);
 
   const updateToken = useMutation(api.maps.updateToken);
   const removeToken = useMutation(api.maps.removeToken);
@@ -60,16 +62,19 @@ export function useMapActions(campaignId: Id<"campaigns">) {
 
   const c = { campaignId };
   return {
-    error: error ?? addToken.error ?? moveParty.error ?? addType.error ?? moveHex.error,
+    error: error ?? addToken.error ?? moveParty.error ?? addType.error ?? moveHex.error ?? startJourney.error,
     clearError: () => {
       setError(null);
       addToken.clearError();
       moveParty.clearError();
       addType.clearError();
       moveHex.clearError();
+      startJourney.clearError();
     },
     addToken: (type: string, x: number, y: number) => keyed(() => addToken.fire({ ...c, type, x, y })),
     moveParty: (x: number, y: number, via?: { x: number; y: number }[]) => keyed(() => moveParty.fire({ ...c, x, y, via })),
+    /** Starts the party walking the route (world journey MJ1); the server works out the days. */
+    startJourney: (points: { x: number; y: number }[], speed: JourneySpeed) => keyed(() => startJourney.fire({ ...c, points, speed })),
     addCustomType: (label: string, icon: string, color: string) => keyed(() => addType.fire({ ...c, label, icon, color })),
     moveToHex: (args: { q: number; r: number; terrain: number; travelMode: "land" | "riverDown" | "riverUp" | "ocean"; encounterDie: 4 | 6 | 8 }) =>
       keyed(() => moveHex.fire({ ...c, ...args })),

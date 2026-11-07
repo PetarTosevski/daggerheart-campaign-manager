@@ -300,6 +300,10 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
     await deleteRows(ctx, budget, "mapTerrain", rows);
   },
   async (ctx, c, budget) => {
+    const rows = await ctx.db.query("mapJourneys").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "mapJourneys", rows);
+  },
+  async (ctx, c, budget) => {
     const rows = await ctx.db.query("codexCounters").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "codexCounters", rows);
   },

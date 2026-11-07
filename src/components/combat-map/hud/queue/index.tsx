@@ -9,6 +9,7 @@ import { createContext, useContext, useEffect, useId, useMemo, useRef, type Reac
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { GmDeathConfirm } from "../death/confirm";
+import { GmDeathRecord } from "./death-record";
 import { closePanel, openPanel, openPanelNow, usePanelOpen } from "../panels";
 import type { HudPartProps } from "../state";
 import { hudToasts } from "../toasts/store";
@@ -34,7 +35,9 @@ import { prefersReducedMotion } from "@/lib/use-reduced-motion";
  *   (`adversaryPrompts.answer`, dcm-bxp.99.32.27);
  * - a per-ally pick nobody answered yet (FH-AP, user 2026-11-05: the GM answers a no-show's pick): `allyPicksReads.open`
  *   — the option chips and Choose (`allyPicks.answer`, the same `AllyPickCard` the player's screen shows);
- * - the death move confirm: `deathMoves.state` per PC — H4.3's `GmDeathConfirm` (Confirm the death move / Send it back).
+ * - the death move confirm: `deathMoves.state` per PC — H4.3's `GmDeathConfirm` (Confirm the death move / Send it back);
+ * - X1 Manual (rule switches DEF): a death move due that nobody is asked for (`deathMoves.state.gmRecord`) —
+ *   `GmDeathRecord` (the three moves, Record the death move: `deathMoves.choose`).
  *
  * Every answer is the existing keyed mutation with an optimistic update that drops the card at once. A request someone
  * else answered first (REQUEST_NOT_OPEN, DEATH_MOVE_NOT_WAITING) toasts "Already answered" (H6.3: the refusal table's
@@ -131,10 +134,16 @@ function useQueue(campaignId: Id<"campaigns">): Queue {
     const request = (s as { request: { at?: number } | null }).request;
     return request === null ? [] : [deathArrival(c._id, c.sheet.name, String(request.at ?? ""))];
   });
-  const count = items.length + dying.length;
+  // X1 Manual (rule switches DEF): a death move due that nobody is asked for waits on the GM to record it.
+  const recording = live.flatMap((c) => {
+    const s: unknown = deaths[c._id];
+    if (typeof s !== "object" || s === null || s instanceof Error || (s as { gmRecord?: true }).gmRecord !== true) return [];
+    return [{ key: `deathRecord:${c._id}`, title: `${c.sheet.name}: death move at the table` }];
+  });
+  const count = items.length + dying.length + recording.length;
   const loading = mine === undefined || cards === undefined || features === undefined || difficulties === undefined || windows === undefined || cloaks === undefined || keywords === undefined || gmPrompts === undefined || allyPicks === undefined;
   const settled = !loading && characters !== undefined && (anyPc === undefined || ally !== undefined) && live.every((c) => deaths[c._id] !== undefined);
-  const arrivals = settled ? [...items.map((item) => ({ key: item.key, title: arrivalTitle(item) })), ...dying] : null;
+  const arrivals = settled ? [...items.map((item) => ({ key: item.key, title: arrivalTitle(item) })), ...dying, ...recording] : null;
   return { items, live, count, loading, arrivals, answers };
 }
 
@@ -249,6 +258,7 @@ function Requests({ queue }: { queue: Queue }) {
         {live.map((c) => (
           <PartBoundary key={`death-${c._id}`} label={`${c.sheet.name}'s death move`}>
             <GmDeathConfirm character={c} />
+            <GmDeathRecord character={c} />
           </PartBoundary>
         ))}
         {items.length > 0 ? (

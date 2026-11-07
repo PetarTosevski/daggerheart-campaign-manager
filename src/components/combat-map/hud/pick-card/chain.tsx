@@ -37,6 +37,8 @@ export type CardChainEnv = {
   creatures: readonly Creature[];
   names: ReadonlyMap<string, string>;
   actor?: PickActor;
+  /** Rule switches ODR3: the campaign's Defined Ranges (`useDefinedRanges`; absent = on). Off: the rows show no band. */
+  definedRanges?: boolean;
   /** Sends the answers (the use again with them); a refusal throws (the panel shows it). */
   answer: (choices: CardChoice[], links: Id<"combatTokens">[][]) => Promise<PickOutcome>;
   onCancel: () => void;
@@ -62,7 +64,7 @@ export function cardChainSession(env: CardChainEnv): PickSessionSpec<CardChainDa
     // A link of a cast already under way: the GM's spotlight (taken by its roll, perhaps) never holds it back.
     followUp: true,
     rule: { side: "any", max: null, range: "unlimited", min: 0, text: askText(env.asks) },
-    rows: chainRows(ask.tokenIds, env.creatures, lastLink),
+    rows: chainRows(ask.tokenIds, env.creatures, lastLink, env.definedRanges ?? true),
     ...(env.actor ? { actor: env.actor } : {}),
     data,
     ...(others.length > 0

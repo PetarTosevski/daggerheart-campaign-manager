@@ -55,7 +55,8 @@ import { type Permission } from "./lib/permissions";
 import { characterDraftValidator, characterStatusValidator, conditionValidator, goldValidator, sheetPatchValidator, traitIdValidator, type CharacterView } from "./lib/validators/characters";
 import { ikonisValidator } from "./lib/validators/characterExtras";
 import { gainWitherToken } from "./wither";
-import { postRuleNote, ruleMode } from "./lib/ruleModes";
+import { postRuleNote, ruleMode, ruleModesOf } from "./lib/ruleModes";
+import { canMakeDeathMove, lastHpNote } from "../src/lib/domain/death/index";
 import { witherOnDamage } from "../src/lib/domain/wither/index";
 import { witherGainValidator } from "./lib/validators/wither";
 import { assertCharacterCap, assertOneActive, MAX_CHARACTERS_CREATED_PER_CAMPAIGN, MAX_CHARACTERS_PER_CAMPAIGN, partyOf } from "./lib/characterSheet";
@@ -357,9 +358,24 @@ export const updateSheet = userMutation({
     next.hp = Math.min(next.hp, next.hpMax);
     next.stress = Math.min(next.stress, next.stressMax);
     await saveSheet(ctx, character._id, next);
+    // A lowered maximum can leave every Hit Point marked.
+    await lastHpNoteIfManual(ctx, campaign, character, sheet, next);
     return null;
   },
 });
+
+/**
+ * X1 Manual (rule switches RX / DEF, bead dcm-jh6d.69; CB p.106): a sheet write that marks the character's last Hit Point
+ * tells the GM "<name> marked their last HP: their death move is made at the table." (the hit path's note,
+ * convex/lib/incomingHits.ts). These writes are not logged (no action group), so the note carries no characterId or
+ * groupId and is never undoable. Book: nothing (the sheet's death-move prompt asks the player).
+ */
+async function lastHpNoteIfManual(ctx: MutationCtx & { user: Doc<"users"> }, campaign: Doc<"campaigns">, character: Doc<"characters">, before: CharacterSheet, after: CharacterSheet): Promise<void> {
+  if (ruleMode(campaign, "deathMovePrompt") !== "manual") return;
+  const due = (sheet: CharacterSheet) => canMakeDeathMove({ status: character.status, hp: sheet.hp, hpMax: sheet.hpMax, conditions: sheet.conditions });
+  if (due(before) || !due(after)) return;
+  await postRuleNote(ctx, campaign, { ruleId: "deathMovePrompt", summary: lastHpNote(after.name), actorId: ctx.user._id });
+}
 
 /** A whole-number change of at most `max` either way. */
 function assertDelta(delta: number, max: number) {
@@ -562,6 +578,11 @@ export const choosePurposefulDesign = keyedUserMutation({
  * Marks or clears Hit Points, Stress, Hope, Armor Slots and scars by a delta,
  * within each track's slots. Extra Stress beyond full marks one Hit Point
  * (Core, "Marking Stress"). Owner or GM.
+ *
+ * Rule switches (bead dcm-jh6d.71): the campaign's modes go into `applyResourceDelta`. D4 Manual (CB p.92): Stress past a
+ * full track is dropped, no Hit Point, and the GM gets "<name>: Stress full, mark 1 HP?"; D5 Manual: a full track doesn't
+ * make the character Vulnerable by itself. X1 Manual: marking the last Hit Point notes it for the GM
+ * (`lastHpNoteIfManual`). The writes are unlogged, so the notes carry no group and are never undoable.
  */
 export const adjustResource = userMutation({
   args: {
@@ -573,16 +594,21 @@ export const adjustResource = userMutation({
   handler: async (ctx, { characterId, resource, delta }) => {
     assertDelta(delta, 12);
     const { campaign, character, sheet: s } = await editable(ctx, ctx.user, characterId);
+    const modes = ruleModesOf(campaign);
     const next: CharacterSheet =
       resource === "armor"
         ? { ...s, armorMarked: Math.max(0, Math.min(derivedDefense(s, await installedAugments(ctx, campaign, character._id)).armorScore, s.armorMarked + delta)) }
-        : applyResourceDelta(s, resource, delta);
+        : applyResourceDelta(s, resource, delta, modes);
     if (resource === "scars") {
       // One scar per Hope slot, a seventh with Light in the Dark (CB 40, 106); `applyResourceDelta` stops at 6.
       next.scars = Math.max(0, Math.min(BASE_HOPE_MAX + s.hopeSlotBonus, s.scars + delta));
       next.hope = Math.min(next.hope, hopeMax(next.scars, s.hopeSlotBonus));
     }
     await saveSheet(ctx, character._id, next);
+    if (resource === "stress" && delta > 0 && s.stress + delta > s.stressMax && modes.stressOverflow === "manual") {
+      await postRuleNote(ctx, campaign, { ruleId: "stressOverflow", summary: `${s.name}: Stress full, mark 1 HP?`, actorId: ctx.user._id });
+    }
+    await lastHpNoteIfManual(ctx, campaign, character, s, next);
     return { hp: next.hp, stress: next.stress, hope: next.hope, armorMarked: next.armorMarked, scars: next.scars };
   },
 });
@@ -663,6 +689,7 @@ export const applyDamage = keyedUserMutation({
       }
       const next: CharacterSheet = { ...armored, hp: Math.min(s.hpMax, s.hp + result.marks) };
       await saveSheet(ctx, character._id, next);
+      await lastHpNoteIfManual(ctx, campaign, character, s, next);
       // W1 (rule switch `witherTokens`, CB 261). Book: the Wither row's `before` is the damaged sheet, so undoing it
       // takes back the token, not the damage. Manual: no token and no roll; the GM gets a note. Plain damage is
       // unlogged (no action group), so the note carries no characterId or groupId and is never undoable.

@@ -29,6 +29,7 @@ import { ConvexError, v, type Infer } from "convex/values";
 
 import { featureUseKey, keyAvailability, requirementMet, stateCheckMet, type CreatureFacts } from "../../src/lib/domain/card-effects/availability";
 import { rollMatches, run as runCardUse, type PlanStep, type RunPlan } from "../../src/lib/domain/card-effects/run";
+import { rangeAsk } from "../../src/lib/domain/card-effects/rule-notes";
 import type { AttackedRider, CardUse, CreatureKey, DamageKeyword, DamageType, Mod, Range, RollFilter, RollResult, RollSpec, Step, TargetSpec, Trigger } from "../../src/lib/domain/card-effects/types";
 import { adversaryNumberEnv, passiveSummary, type PassiveSummary } from "../../src/lib/domain/adversary-actions/index";
 import { conditionName, conditionStepsOf, lastingModsOf } from "../../src/lib/domain/adversary-effects/run";
@@ -37,7 +38,7 @@ import { adversaryEffects, allAdversaryEffects } from "../../src/lib/srd/adversa
 import { lineOfSight, RANGE_ORDER, rangeCheck, rangeFromWeapon, resolveHits, applyDamageTo, tokenDistance, type Combatant, type DamageResult, type RangeCheck, type SightResult } from "../../src/lib/domain/combat-actions/index";
 import { damageRuleNotes, minionNote, minionPicker, type DamageRuleNote } from "../../src/lib/domain/combat-actions/damage";
 import { sightRule } from "../../src/lib/domain/combat-actions/sight";
-import { darknessEdge, underwaterDisadvantage } from "../../src/lib/domain/combat-map/light";
+import { darknessEdge, darknessLabels, underwaterDisadvantage } from "../../src/lib/domain/combat-map/light";
 import type { ModeOf, RuleModes } from "../../src/lib/rules/registry";
 import { tokenVisibility } from "../../src/lib/domain/combat-map/index";
 import { countsAsActionRoll } from "../../src/lib/domain/countdowns/advanced";
@@ -263,25 +264,20 @@ export function rangesOn(s: Pick<AttackScene, "definedRanges"> | null | undefine
 }
 
 /**
- * Plan rule-switches OE: what the environment adds to a PC's weapon attack roll. M3 `darkness` (CB p.104; user answer Q6,
- * 2026-11-05): in the campaign's dim light a ranged weapon (printed range beyond Melee; Defined Ranges does not change a
- * weapon's range) gets a disadvantage die ("disadvantage", "both") and / or `darknessDifficulty` added to each target's
- * Difficulty or Evasion ("difficulty", "both"); Book and Manual add nothing (`darknessEdge`). Underwater (optional rule,
- * CB p.168): the live map marked Underwater gives one disadvantage unless the attacker's token "fights underwater".
- * `labels` name what applied, for the roll's public line.
+ * Plan rule-switches OE / OE2: what the environment adds to a PC's weapon attack roll. M3 `darkness` (CB p.104; user
+ * answers Q6, 2026-11-05, and 2026-11-06: "dim-light variants affect EVERY PC action roll with a Difficulty"): in the
+ * campaign's dim light any attack, Melee too, gets a disadvantage die ("disadvantage", "both") and / or
+ * `darknessDifficulty` added to each target's Difficulty or Evasion ("difficulty", "both"); Book and Manual add nothing
+ * (`darknessEdge`). Underwater (optional rule, CB p.168): the live map marked Underwater gives one disadvantage unless the
+ * attacker's token "fights underwater". `labels` name what applied, for the roll's public line.
  */
 export function attackEnvironment(
   s: Pick<AttackScene, "map" | "attacker"> & { scene: Pick<Scene, "light"> },
-  host: Pick<Host, "weaponRange">,
   modes: Pick<RuleModes, "darkness" | "darknessDifficulty" | "underwater">,
 ): { disadvantage: number; difficulty: number; labels: string[] } {
-  const dark = darknessEdge(s.scene.light, host.weaponRange !== null && host.weaponRange !== "melee", modes.darkness, modes.darknessDifficulty);
+  const dark = darknessEdge(s.scene.light, modes.darkness, modes.darknessDifficulty);
   const water = underwaterDisadvantage(modes.underwater && s.map.underwater === true, s.attacker.fightsUnderwater === true);
-  const labels = [
-    ...(dark.disadvantage > 0 ? ["dim light: disadvantage"] : []),
-    ...(dark.difficulty > 0 ? [`dim light: +${dark.difficulty} Difficulty`] : []),
-    ...(water > 0 ? ["underwater: disadvantage"] : []),
-  ];
+  const labels = [...darknessLabels(dark), ...(water > 0 ? ["underwater: disadvantage"] : [])];
   return { disadvantage: dark.disadvantage + water, difficulty: dark.difficulty, labels };
 }
 
@@ -832,16 +828,17 @@ function creatureKeyHolds(key: CreatureKey, subject: RollSubject): boolean | und
  * roll was against an adversary), `against.within` (that creature within the range of `from`), `against.creature` (the
  * tagged / Hexed one: Twilight Toll's mark, CB p.337); `noDamageRoll` (the move made no damage roll: Twilight Toll). A filter
  * the server can't read (`inArea` of a live area, the other creature keys) is the player's to confirm and holds here
- * (Q13). With no target an `against` filter fails.
+ * (Q13). With no target an `against` filter fails. Plan rule-switches ODR3: Defined Ranges off (`definedRanges` false),
+ * `against.within` holds (the GM judges by eye).
  */
-export function rollTargetHolds(trigger: Trigger, host: Pick<Host, "damage">, from: Doc<"combatTokens"> | undefined, subject: RollSubject | undefined): boolean {
+export function rollTargetHolds(trigger: Trigger, host: Pick<Host, "damage">, from: Doc<"combatTokens"> | undefined, subject: RollSubject | undefined, definedRanges = true): boolean {
   if (trigger.kind !== "afterYouRoll" && trigger.kind !== "afterAllyRolls") return true;
   if (trigger.kind === "afterYouRoll" && trigger.noDamageRoll === true && host.damage === true) return false;
   const against = trigger.against;
   if (against === undefined) return true;
   if (subject === undefined) return false;
   if (against.enemy === true && !subject.enemy) return false;
-  if (against.within !== undefined && (from === undefined || !rangeCheck(from, subject.token, against.within).inRange)) return false;
+  if (against.within !== undefined && definedRanges && (from === undefined || !rangeCheck(from, subject.token, against.within).inRange)) return false;
   if (against.creature !== undefined && creatureKeyHolds(against.creature, subject) === false) return false;
   return true;
 }
@@ -849,14 +846,15 @@ export function rollTargetHolds(trigger: Trigger, host: Pick<Host, "damage">, fr
 /**
  * Plan lanes-2, E1 (dcm-76l5 (1), dcm-ssf, dcm-ofy): `whenYouDealDamage.within` / `.toEnemy` against the damaged creature:
  * it must be within that range of the actor (Elemental Incarnation, Water, CB p.30: "When you deal damage to an adversary
- * within Melee range"; Dark Army, HF p.181: "a target within Very Close range"). Other triggers hold.
+ * within Melee range"; Dark Army, HF p.181: "a target within Very Close range"). Other triggers hold. ODR3: Defined
+ * Ranges off, `within` holds.
  */
-export function dealDamageHolds(trigger: Trigger, from: Doc<"combatTokens">, damaged: RollSubject | undefined): boolean {
+export function dealDamageHolds(trigger: Trigger, from: Doc<"combatTokens">, damaged: RollSubject | undefined, definedRanges = true): boolean {
   if (trigger.kind !== "whenYouDealDamage") return true;
   if (trigger.within === undefined && trigger.toEnemy !== true) return true;
   if (damaged === undefined) return false;
   if (trigger.toEnemy === true && !damaged.enemy) return false;
-  return trigger.within === undefined || rangeCheck(from, damaged.token, trigger.within).inRange;
+  return trigger.within === undefined || rangeCheck(from, damaged.token, trigger.within, definedRanges).inRange;
 }
 
 /** An attack target as a `RollSubject`. */
@@ -1182,10 +1180,14 @@ const MAP_SITUATIONS: Readonly<Record<string, SituationCheck>> = {
   "You make this attack with a Melee weapon": (_s, _t, host) => host.weaponRange === "melee",
 };
 
+/** ODR3: the map situations decided by counting squares; with Defined Ranges off they are the player's to confirm (Q13). */
+const RANGE_SITUATIONS: ReadonlySet<string> = new Set(["The target is within Melee range"]);
+
 /** The situations a rider's run confirms: the player's, with the ones the map decides replaced by the map's answer. */
 function situationsFor(choices: ParsedChoices, s: AttackScene, target: CheckedTarget | undefined, host: Host): string[] {
-  const own = choices.situations.filter((text) => MAP_SITUATIONS[text] === undefined);
-  const decided = Object.entries(MAP_SITUATIONS).flatMap(([text, check]) => (check(s, target, host) ? [text] : []));
+  const decides = (text: string) => MAP_SITUATIONS[text] !== undefined && (rangesOn(s) || !RANGE_SITUATIONS.has(text));
+  const own = choices.situations.filter((text) => !decides(text));
+  const decided = Object.entries(MAP_SITUATIONS).flatMap(([text, check]) => (decides(text) && check(s, target, host) ? [text] : []));
   return [...own, ...decided];
 }
 
@@ -1193,11 +1195,11 @@ function situationsFor(choices: ParsedChoices, s: AttackScene, target: CheckedTa
  * What NV7 checks read about a creature (`hasCondition` on the target: Apex Predator's Focus). Plan lanes-2, E1 (dcm-aeg):
  * with the scene, `distance` (squares from the attacker; Kick / Tusks, "a target within Melee range") and `nearestAlly`
  * (squares from the creature to the nearest PC or ally token other than the attacker; Sneak Attack, CB p.40: "an ally
- * is within Melee range of the target").
+ * is within Melee range of the target"). ODR3: with Defined Ranges off neither is known (the player confirms, Q13).
  */
 export function creatureFacts(instance: Doc<"encounterAdversaries">, s?: AttackScene, token?: Doc<"combatTokens">) {
   const base = { conditions: instance.conditions, tags: instance.tags, hp: instance.hp, hpMax: instance.stats.hpMax };
-  if (s === undefined || token === undefined) return base;
+  if (s === undefined || token === undefined || !rangesOn(s)) return base;
   let nearestAlly: number | undefined;
   for (const [i, t] of s.scene.tokens.entries()) {
     if (i === s.viewer.index || t._id === token._id || (t.side !== "pc" && t.side !== "ally")) continue;
@@ -1221,6 +1223,11 @@ export type RiderEnv = {
    * (Midnight-Touched, CB p.337: "add the result of your Fear Die"). Set by the caller after the roll.
    */
   hostDice?: { hope: number; fear: number };
+  /**
+   * Plan rule-switches ODR3: GM-only questions ("Elemental Incarnation: who is within Very Close range?") for what a rider
+   * would have picked by range with Defined Ranges off; the caller posts them as `definedRanges` notes in its group.
+   */
+  rangeNotes?: string[];
 };
 
 export type RiderRun = { rider: PickedRider; plan: RunPlan; built: BuiltRun; name: string; sheet: CharacterSheet };
@@ -1231,11 +1238,14 @@ export type RiderRun = { rider: PickedRider; plan: RunPlan; built: BuiltRun; nam
  * creature of the spec's side within its range of the actor (`weapon`: the host's weapon range), the trigger's subject
  * left out with `excludeSubject`. Enemies must be seen with a clear line and stand in a running encounter (as a picked
  * creature is checked); allies are the other PCs' tokens. Any other count is the player's to pick: none.
+ * Plan rule-switches ODR3 (user 2026-11-06): with Defined Ranges off a ranged pick (`autoPickRange`) names no one; the
+ * caller asks the GM who is in range.
  */
 export async function autoPicked(env: Pick<RiderEnv, "ctx" | "campaign" | "scene" | "host">, spec: TargetSpec | undefined, subject: string | undefined): Promise<string[]> {
   if (spec === undefined || spec.count.kind !== "all") return [];
   const s = env.scene;
   const range = spec.range === "weapon" ? (env.host.weaponRange ?? "melee") : spec.range;
+  if (range !== "unlimited" && !rangesOn(s)) return [];
   const enemies = spec.side === "enemy" || spec.side === "any";
   const allies = spec.side === "ally" || spec.side === "selfOrAlly" || spec.side === "any";
   const out: string[] = [];
@@ -1249,6 +1259,13 @@ export async function autoPicked(env: Pick<RiderEnv, "ctx" | "campaign" | "scene
     } else if (token.side === "pc" && token.ref.kind === "pc" && allies) out.push(token._id);
   }
   return out;
+}
+
+/** ODR3: the range an automatic `all` pick counts by (null: none, or `unlimited`). */
+export function autoPickRange(host: Pick<Host, "weaponRange">, spec: TargetSpec | undefined): Range | null {
+  if (spec === undefined || spec.count.kind !== "all") return null;
+  const range = spec.range === "weapon" ? (host.weaponRange ?? "melee") : spec.range;
+  return range === "unlimited" ? null : range;
 }
 
 /**
@@ -1306,7 +1323,12 @@ export async function runRiderPart(env: RiderEnv, rider: PickedRider, sheet: Cha
     choices.situations = situationsFor(choices, env.scene, target, env.host);
     // The extra targets of an addTargets rider are checked by the attack itself (`addedTargets`), not as picked creatures.
     // Plan lanes-2, E1 (dcm-umti): an automatic use whose step picks "all" creatures gets them from the map.
-    choices.picked = rider.auto ? await autoPicked(env, extraSpecs(pick.use).picked, subject) : [];
+    const pickSpec = extraSpecs(pick.use).picked;
+    choices.picked = rider.auto ? await autoPicked(env, pickSpec, subject) : [];
+    // ODR3: Defined Ranges off, the automatic pick named no one (Elemental Incarnation's "all other adversaries within
+    // Very Close range"); the GM is asked who is in range.
+    const askRange = rider.auto && !rangesOn(env.scene) ? autoPickRange(env.host, pickSpec) : null;
+    if (askRange !== null) env.rangeNotes?.push(rangeAsk(pick.name, askRange));
     if (subject !== undefined) choices.triggerSubject = subject;
     const built = await buildRun(env.ctx, {
       campaign: env.campaign,
@@ -1553,8 +1575,11 @@ export type AllyRun = { character: Doc<"characters">; before: CharacterSheet; ru
  * costs; `triggerSubject` = the roller) against the targets the roll hit. One that can't run is skipped. A `reaction`
  * (Adjust Reality, Tactician, Forest Sprites) asks another player and is not run here (follow-up).
  */
-export async function allyAutoRuns(ctx: MutationCtx, campaign: Doc<"campaigns">, s: AttackScene, roller: Id<"characters">, host: Host, roll: HostRoll, subject: RollSubject | undefined, hitIds: readonly string[], rng: Rng): Promise<AllyRun[]> {
+export async function allyAutoRuns(ctx: MutationCtx, campaign: Doc<"campaigns">, s: AttackScene, roller: Id<"characters">, host: Host, roll: HostRoll, subject: RollSubject | undefined, hitIds: readonly string[], rng: Rng, rangeNotes?: string[]): Promise<AllyRun[]> {
   const out: AllyRun[] = [];
+  // ODR3 (user 2026-11-06): Defined Ranges off, a use whose trigger needs the roller within its range doesn't run on its
+  // own; the GM is asked ("Eclipse (Mira): who is within Close range?").
+  const ranges = rangesOn(s);
   const gmFear = (await campaignFearState(ctx, campaign._id)).fear;
   for (const token of s.scene.tokens) {
     if (token._id === s.attacker._id || token.side !== "pc" || token.ref.kind !== "pc" || token.ref.characterId === roller) continue;
@@ -1570,8 +1595,13 @@ export async function allyAutoRuns(ctx: MutationCtx, campaign: Doc<"campaigns">,
       const a = use.activation;
       if (a.kind !== "auto" || a.trigger.kind !== "afterAllyRolls") return null;
       const t = a.trigger;
-      if (t.range !== undefined && !rangeCheck(token, s.attacker, t.range).inRange) return null;
-      if (!hostMatches(t.roll ?? "action", host) || !resultHolds(t, roll) || !rollTargetHolds(t, host, token, subject)) return null;
+      if (ranges && t.range !== undefined && !rangeCheck(token, s.attacker, t.range).inRange) return null;
+      if (!hostMatches(t.roll ?? "action", host) || !resultHolds(t, roll) || !rollTargetHolds(t, host, token, subject, ranges)) return null;
+      const gate = ranges ? undefined : (t.range ?? t.against?.within);
+      if (gate !== undefined) {
+        rangeNotes?.push(rangeAsk(`${use.name} (${sheet.name})`, gate));
+        return null;
+      }
       return t;
     };
     const candidates: PickedRider[] = [];
@@ -1594,7 +1624,7 @@ export async function allyAutoRuns(ctx: MutationCtx, campaign: Doc<"campaigns">,
     } catch {
       continue;
     }
-    const env: RiderEnv = { ctx, campaign, character, scene, host, gmFear, rng, rollUsedExperience: false };
+    const env: RiderEnv = { ctx, campaign, character, scene, host, gmFear, rng, rollUsedExperience: false, ...(rangeNotes ? { rangeNotes } : {}) };
     let now = sheet;
     for (const r of candidates) {
       const run = await runRiderPart(env, r, now, "whole", roll, hitIds, undefined, s.attacker._id);
@@ -1612,19 +1642,31 @@ export async function allyAutoRuns(ctx: MutationCtx, campaign: Doc<"campaigns">,
  * Q9 (a), CB p.42: "When you succeed on an attack while Cloaked or while an ally is within Melee range of your target, add a
  * number of d6s equal to your tier to your damage roll." The map decides: the attacker is Cloaked, or another PC's or an
  * ally's token is within Melee range of a target. It adds (not optional), so the player's tick is ignored.
+ * Plan rule-switches ODR3 (user 2026-11-06): with Defined Ranges off the ally-in-Melee half is not decided by the map:
+ * null ("unknown") unless the attacker is Cloaked; the player's tick decides and the GM is asked (`damageOptionsFor`).
  */
-export function sneakAttackApplies(sheet: CharacterSheet, s: AttackScene, targets: readonly CheckedTarget[]): boolean {
+export function sneakAttackApplies(sheet: CharacterSheet, s: AttackScene, targets: readonly CheckedTarget[]): boolean | null {
   if (sheet.conditions.includes("cloaked")) return true;
+  if (!rangesOn(s)) return null;
   return s.scene.tokens.some((t, i) => i !== s.viewer.index && (t.side === "pc" || t.side === "ally") && targets.some((target) => rangeCheck(t, target.token, "melee").inRange));
 }
 
 const SNEAK_ATTACK = "sneakAttack";
 
-/** The damage roll's D5 options with Sneak Attack decided by the map (only where the sheet's class offers it). */
-function damageOptionsFor(sheet: CharacterSheet, campaign: Doc<"campaigns">, chosen: readonly string[], sneak: boolean): string[] {
+/** ODR3: the GM's question when Defined Ranges is off and the player didn't tick Sneak Attack. */
+export function sneakAttackAsk(attacker: string, targets: readonly string[]): string {
+  return `Sneak Attack (${attacker}): is an ally within Melee range of ${targets.join(", ")}? If so, add the tier's d6s to the damage.`;
+}
+
+/**
+ * The damage roll's D5 options with Sneak Attack decided by the map (only where the sheet's class offers it). `sneak`
+ * null (ODR3, Defined Ranges off and not Cloaked): the player's tick stands, and `ask` says the GM should be asked.
+ */
+function damageOptionsFor(sheet: CharacterSheet, campaign: Doc<"campaigns">, chosen: readonly string[], sneak: boolean | null): { options: string[]; ask: boolean } {
   const offered = rollOptions(sheet, "damage", CLASS_FEATURES, featureScope(campaign)).some((o) => o.key === SNEAK_ATTACK);
+  if (sneak === null) return { options: offered ? [...chosen] : chosen.filter((k) => k !== SNEAK_ATTACK), ask: offered && !chosen.includes(SNEAK_ATTACK) };
   const rest = chosen.filter((k) => k !== SNEAK_ATTACK);
-  return offered && sneak ? [...rest, SNEAK_ATTACK] : rest;
+  return { options: offered && sneak ? [...rest, SNEAK_ATTACK] : rest, ask: false };
 }
 
 /**
@@ -1723,7 +1765,7 @@ export function afterRollOffers(sheet: CharacterSheet, campaign: Doc<"campaigns"
     for (const use of upgraded.uses) {
       const a = use.activation;
       if ((a.kind !== "reaction" && a.kind !== "rider") || !ownRollTrigger(a.trigger, host) || !resultHolds(a.trigger, hostRoll)) continue;
-      if (!rollTargetHolds(a.trigger, host, from, target ? subjectOf(target) : undefined)) continue;
+      if (!rollTargetHolds(a.trigger, host, from, target ? subjectOf(target) : undefined, scene === undefined || rangesOn(scene))) continue;
       const change = afterRollChangeOf(use);
       if (change === null) continue;
       if (change.kind === "reroll" && change.hopeAtMost !== undefined && hopeDie > change.hopeAtMost) continue;
@@ -2301,7 +2343,9 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   const sheet0 = loaded.sheet;
   // Rule switches RC1: C1, M1, D6 and the damage modes (D2, D8, Massive Damage); Manual rules leave GM notes in the group.
   const modes = ruleModesOf(campaign);
-  const ruleNotes: { ruleId: "conditionDice" | "lineOfSight" | "minions" | "hiddenEnds" | DamageRuleNote["ruleId"]; summary: string }[] = [];
+  const ruleNotes: { ruleId: "conditionDice" | "lineOfSight" | "minions" | "hiddenEnds" | "definedRanges" | DamageRuleNote["ruleId"]; summary: string }[] = [];
+  /** ODR3: the riders' Defined Ranges questions (`RiderEnv.rangeNotes`), posted with the other notes. */
+  const rangeNotes: string[] = [];
   const rec = recorder(req.held ? replaying(req.held.dice, rollDie) : rollDie);
   // DA2: the Hope Die switch sits outside the recorder, so a held attack replays a d20 Hope Die as drawn.
   const hope = hopeDieSwitch(rec.rng);
@@ -2318,6 +2362,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     gmFear: (await campaignFearState(ctx, campaign._id)).fear,
     rng: hope.rng,
     rollUsedExperience: options.experienceIds.length > 0,
+    rangeNotes,
   };
   // DA2: damage-phase riders (Death Strike) are prompts after the damage (`damagePrompts`), never run from a toggle.
   const pickedAll = pickRiders(sheet0, campaign, host, req.riders ?? []).filter((r) => r.phase !== "damage");
@@ -2385,7 +2430,8 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   edge.disadvantage += pcEdge.disadvantage;
   // E1.3b (dcm-mm0f): a bearer's disadvantage on attacks from beyond a range (Sandstorm, CB p.339: "Attacks made from beyond
   // Melee range have disadvantage"); the ones without a range are counted in `prepareDuality`.
-  const bands = [...allTargets.map((t) => t.check.band), ...conflict.flatMap((t) => (t.check ? [t.check.band] : []))];
+  // ODR3: Defined Ranges off, no band is counted (the GM judges "from beyond Melee range" by eye).
+  const bands = rangesOn(req.scene) ? [...allTargets.map((t) => t.check.band), ...conflict.flatMap((t) => (t.check ? [t.check.band] : []))] : [];
   edge.disadvantage += sheetBearerMods(sheet0).filter(({ mod }) => mod.kind === "disadvantage" && mod.beyond !== undefined && mod.unlessTarget === undefined && mod.situation === undefined && hostMatches(mod.on, host) && bands.some((band) => !rangeAtMost(band, mod.beyond!))).length;
   // E1.3b (dcm-xbtw): a ticked Spirit Weapon's extra adversary costs a Stress (CB p.44: "You can mark a Stress to target an
   // additional adversary within range with the same attack roll").
@@ -2395,10 +2441,10 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     sheet = { ...sheet, stress: sheet.stress + 1 };
   }
 
-  // ---- plan rule-switches OE: the environment. M3's variants (CB p.104) on a ranged attack in dim light (a disadvantage
+  // ---- plan rule-switches OE / OE2: the environment. M3's variants (CB p.104) on any attack in dim light (a disadvantage
   // die and / or +N to every target's Difficulty); Underwater (optional rule, CB p.168) gives the roll disadvantage
   // unless the attacker's token is marked "fights underwater".
-  const environment = attackEnvironment(req.scene, host, modes);
+  const environment = attackEnvironment(req.scene, modes);
   // ---- the roll (R1, R9); cover gives one disadvantage (Q2), unless M1 is Manual (RC1: the GM is told instead)
   const cover = coverApplies(campaign, allTargets) || pcTargets.some((t) => sightRule(t.sheet.name, t.sight, modes.lineOfSight).cover);
   for (const t of allTargets) {
@@ -2483,11 +2529,8 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
         options: offers.map((o) => ({ featureId: o.featureId, useId: o.useId })),
       };
       const where = { campaignId: campaign._id, mapId: req.scene.map._id, createdBy: req.actorId, payload };
-      // OP: an attack on PCs only belongs to no encounter (`openAfterRoll` needs one; the row's `encounterId` is optional).
-      const requestId =
-        encounterId !== undefined
-          ? await openAfterRoll(ctx, { ...where, encounterId })
-          : await ctx.db.insert("combatRequests", { ...where, status: "open", createdAt: Date.now(), responses: [], kind: "afterRoll" });
+      // OP / OP2: an attack on PCs only belongs to no encounter (the row's `encounterId` is optional).
+      const requestId = await openAfterRoll(ctx, { ...where, ...(encounterId !== undefined ? { encounterId } : {}) });
       return { status: "awaiting", requestId, roll, targets: heldHits, options: offers };
     }
   } else if (req.held.answer.kind === "use") {
@@ -2532,7 +2575,11 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   // E1.4b (dcm-m7tm, roll half): the running encounter's adversary uses on a PC's roll (Ill Omen, HF p.95; Backhanded
   // Guidance, HF p.87) once the attack resolves (never on a held one: it writes). Their die bonuses decide Hope vs Fear
   // only (user answer 2026-10-31: no critical, a tie is with Fear; `withDieBonuses`).
+  // The attack's undo group (its rows below); ODR3: a range-gated trigger's GM note joins it.
+  const groupId = req.groupId ?? newGroupId();
   const advUses = await pcRollAdversaryUses(ctx, campaign, {
+    groupId,
+    actorId: req.actorId,
     characterId: character._id,
     roll: { kind: "action", trait: host.trait ?? args.trait, attack: true, weapon: true, ...hostRollOf(roll, hits), total: roll.total },
   });
@@ -2555,8 +2602,8 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   for (const r of [...picked.filter((x) => x.phase === "after"), ...autos.filter((x) => x.phase === "after")]) {
     const ids = hitIds();
     // Plan lanes-2, E1 (dcm-76l5): the creature a `whenYouDealDamage` is about: the first hit target that fits its range.
-    const damaged = r.trigger.kind === "whenYouDealDamage" ? allTargets.find((t, i) => hits[i]!.hit && dealDamageHolds(r.trigger, req.scene.attacker, subjectOf(t))) : undefined;
-    const onTarget = rollTargetHolds(r.trigger, host, req.scene.attacker, main ? subjectOf(main) : undefined) && (r.trigger.kind !== "whenYouDealDamage" || damaged !== undefined);
+    const damaged = r.trigger.kind === "whenYouDealDamage" ? allTargets.find((t, i) => hits[i]!.hit && dealDamageHolds(r.trigger, req.scene.attacker, subjectOf(t), rangesOn(req.scene))) : undefined;
+    const onTarget = rollTargetHolds(r.trigger, host, req.scene.attacker, main ? subjectOf(main) : undefined, rangesOn(req.scene)) &&(r.trigger.kind !== "whenYouDealDamage" || damaged !== undefined);
     if (!resultHolds(r.trigger, hostRoll) || !onTarget || (!rollOnly(r.trigger) && ids.length === 0)) {
       if (!r.auto) skipped.push(r.name);
       continue;
@@ -2586,8 +2633,11 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   const anyHit = hits.some((h) => h.hit) || pcHits.some((h) => h.hit);
 
   // ---- R2: one damage roll after the attack's costs and gains; a critical adds the dice's maximum
-  const sneak = sneakAttackApplies(sheet0, req.scene, allTargets.filter((_, i) => hits[i]!.hit));
-  const damageOptions = damageOptionsFor(sheet0, campaign, options.damageOptions ?? [], sneak);
+  const hitTargets = allTargets.filter((_, i) => hits[i]!.hit);
+  const sneak = sneakAttackApplies(sheet0, req.scene, hitTargets);
+  const { options: damageOptions, ask: askSneak } = damageOptionsFor(sheet0, campaign, options.damageOptions ?? [], sneak);
+  // ODR3: Defined Ranges off, Sneak Attack's "an ally is within Melee range of your target" is the GM's call (CB p.42).
+  if (askSneak && hitTargets.length > 0) ruleNotes.push({ ruleId: "definedRanges", summary: sneakAttackAsk(sheet0.name, hitTargets.map((t) => t.instance.label)) });
   let damageRecord: RollRecord | null = null;
   /** E1.3b (dcm-c09o): the same damage without the critical's added maximum, for a target with `noCritDamage` (No Vital Organs, HF p.69). */
   let noCritRecord: RollRecord | null = null;
@@ -2748,7 +2798,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     posts.push(run);
   }
   // Plan lanes, E1: the allies' automatic uses on this roll (Eclipse for an ally's success with Hope, dcm-0gi).
-  const allyRuns = await allyAutoRuns(ctx, campaign, req.scene, character._id, host, hostRoll, main ? subjectOf(main) : undefined, results.filter((x) => x.hit && standing(x)).map((x) => x.target.token._id), hope.rng);
+  const allyRuns = await allyAutoRuns(ctx, campaign, req.scene, character._id, host, hostRoll, main ? subjectOf(main) : undefined, results.filter((x) => x.hit && standing(x)).map((x) => x.target.token._id), hope.rng, rangeNotes);
   const allySheets = new Map<string, { character: Doc<"characters">; before: CharacterSheet; after: CharacterSheet }>();
   for (const a of allyRuns) {
     const writes = await withoutForcedStress(ctx, instanceWrites(a.run.plan, a.run.built.creatures, a.run.name, srdUses, modes), knownPassives);
@@ -2868,7 +2918,6 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     before.push(b);
     inGroup.add(b.instanceId);
   }
-  const groupId = req.groupId ?? newGroupId();
   for (const { target, amount } of pcHitTotals) {
     // Plan rule-switches OP: a PC the attacker named takes the weapon's hit with the attack's total (Evasion answers in
     // their window compare with it, as for an adversary's attack, CB p.168); a rider-added PC keeps the rider's name.
@@ -2924,6 +2973,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   });
   // Rule switches RC1: the Manual rules' GM notes (C1, M1, D2, D8; D6 below), in the attack's group (undo takes them back).
   for (const summary of lastHpNotes(riderWrites, modes)) ruleNotes.push({ ruleId: "adversaryDefeated", summary });
+  for (const summary of rangeNotes) ruleNotes.push({ ruleId: "definedRanges", summary });
   const posted = new Set<string>();
   for (const n of ruleNotes) {
     if (posted.has(n.summary)) continue;
@@ -3023,7 +3073,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   // FH-AP (user 2026-11-05): the riders whose choosers each pick their own option, when their trigger held (Rousing
   // Strike on a critical): each chooser answers on their own screen and the rider runs once all picked.
   const holding = ownPicks.filter((r) => {
-    const holds = resultHolds(r.trigger, hostRoll) && rollTargetHolds(r.trigger, host, req.scene.attacker, main ? subjectOf(main) : undefined) && (rollOnly(r.trigger) || hitIds().length > 0);
+    const holds = resultHolds(r.trigger, hostRoll) && rollTargetHolds(r.trigger, host, req.scene.attacker, main ? subjectOf(main) : undefined, rangesOn(req.scene)) &&(rollOnly(r.trigger) || hitIds().length > 0);
     if (!holds) skipped.push(r.name);
     return holds;
   });
@@ -3105,7 +3155,7 @@ export async function answerRiderPick(ctx: MutationCtx, loaded: Loaded, row: Doc
   const token = scene.scene.tokens[index];
   const linked = token ? await adversaryInstance(ctx, campaign._id, token) : null;
   if (token === undefined || linked === null) throw appError("COMBAT_TARGET_INVALID");
-  const target: CheckedTarget = { token, ...linked, check: rangeCheck(scene.attacker, token, "melee"), sight: sightTo(scene, token) };
+  const target: CheckedTarget = { token, ...linked, check: rangeCheck(scene.attacker, token, "melee", rangesOn(scene)), sight: sightTo(scene, token) };
   const host: Host = { spec: { kind: "attack", weapon: "primary", difficulty: { kind: "target" } }, trait: undefined, weapon: true, weaponRange: null, damageType: "physical" };
   const env: RiderEnv = { ctx, campaign, character, scene, host, gmFear: (await campaignFearState(ctx, campaign._id)).fear, rng: rollDie, rollUsedExperience: false };
   const rider: PickedRider = { source: p.rider.source, id: p.rider.id, useId: p.rider.useId, name: p.rider.name, trigger: use.activation.trigger, phase: "damage", choices: [], auto: false };

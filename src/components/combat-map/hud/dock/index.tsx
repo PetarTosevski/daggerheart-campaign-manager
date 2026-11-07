@@ -3,7 +3,7 @@
 import "./dock.css";
 
 import { useQuery } from "convex/react";
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -20,12 +20,13 @@ import { ScenePop } from "../scene/pop";
 import type { HudPartProps } from "../state";
 import { MapToolsButton } from "../tools";
 import { PartBoundary } from "../ui";
+import { ContestPanel, useContestAllowed } from "./contest";
 
 /**
  * The GM's bottom dock (plan combat-hud H9.0; GMDesktop / GMTablet `.dock`, HANDOFF "GM view": "the only toolbar"):
  *
  *   Map tools (user answer Q4a) | Select, Measure, Areas, Fog, Names | Zoom out, 91 % (fits the map), Zoom in |
- *   Dice, Player view, Log | End scene
+ *   Dice, Contest (rule switches OP2: only while "Conflict between PCs" is on), Player view, Log | End scene
  *
  * Centred at the bottom; icon over a short label, icons only on a tablet and while a sheet is open (dock.css). Every
  * button is a real `<button>`: Select, Measure, Names, Areas and Log say `aria-pressed`; Map tools, Dice and Fog open a
@@ -95,6 +96,16 @@ const LogIcon = () => (
   </svg>
 );
 
+/** Two figures facing each other: the Contest (rule switches OP2). */
+const ContestIcon = () => (
+  <svg {...ICON} aria-hidden="true">
+    <circle cx="7" cy="6" r="2.2" />
+    <circle cx="17" cy="6" r="2.2" />
+    <path d="M7 9v6l-2 5M7 15l2 5M17 9v6l2 5M17 15l-2 5M7 11l4 1M17 11l-4 1" />
+  </svg>
+);
+const CONTEST_POP_ID = "hud-dock-contest";
+
 /** The dock's pop-overs (Dice, Fog): their element ids and titles. */
 type DockPop = Extract<HudPanel, "dice" | "fog">;
 const POP_TITLE: Readonly<Record<DockPop, string>> = { dice: "Dice", fog: "Vision and fog" };
@@ -126,6 +137,11 @@ export function HudDock({ state }: HudPartProps): ReactNode {
   usePanelEscape();
   const map = state.map;
   const pop: DockPop | null = panel === "dice" || panel === "fog" ? panel : null;
+  // Rule switches OP2: the Contest pop-over (Conflict between PCs). Client state of the dock's own: it gives way to any
+  // HUD panel (opening one hides it; opening it closes the open panel).
+  const contestAllowed = useContestAllowed(state.campaignId);
+  const [contestOpen, setContestOpen] = useState(false);
+  const contestShown = contestAllowed && contestOpen && panel === null && map !== null;
 
   const popButton = (name: DockPop, icon: ReactNode, label: string) => (
     <DockButton
@@ -133,7 +149,10 @@ export function HudDock({ state }: HudPartProps): ReactNode {
       label={label}
       aria-expanded={pop === name}
       aria-controls={dockPopId(name)}
-      onClick={(e) => toggle(name, pop === name, e.currentTarget)}
+      onClick={(e) => {
+        setContestOpen(false);
+        toggle(name, pop === name, e.currentTarget);
+      }}
     />
   );
 
@@ -154,6 +173,23 @@ export function HudDock({ state }: HudPartProps): ReactNode {
         <ZoomGroup className="hud-dk-g hud-dk-z" />
         <div className="hud-dk-g">
           {popButton("dice", <DiceIcon />, "Dice")}
+          {map && contestAllowed ? (
+            <DockButton
+              icon={<ContestIcon />}
+              label="Contest"
+              aria-expanded={contestShown}
+              aria-controls={CONTEST_POP_ID}
+              data-testid="hud-dock-contest-btn"
+              onClick={() => {
+                if (contestShown) {
+                  setContestOpen(false);
+                  return;
+                }
+                closePanel();
+                setContestOpen(true);
+              }}
+            />
+          ) : null}
           {map ? (
             // The existing "Player view" menu; using it closes any other dock panel (its own menu closes on a press elsewhere).
             <div className="hud-dk-pv" onClickCapture={() => closePanel()}>
@@ -172,6 +208,13 @@ export function HudDock({ state }: HudPartProps): ReactNode {
         <ScenePop id={dockPopId(pop)} title={POP_TITLE[pop]} onClose={() => closePanel(pop)} className={`hud-dock-pop hud-pop-${pop}`}>
           <PartBoundary label={POP_TITLE[pop]}>
             <DockPopBody name={pop} state={state} />
+          </PartBoundary>
+        </ScenePop>
+      ) : null}
+      {contestShown && map ? (
+        <ScenePop id={CONTEST_POP_ID} title="Contest" onClose={() => setContestOpen(false)} className="hud-dock-pop hud-pop-contest">
+          <PartBoundary label="Contest">
+            <ContestPanel campaignId={state.campaignId} mapId={map._id} />
           </PartBoundary>
         </ScenePop>
       ) : null}

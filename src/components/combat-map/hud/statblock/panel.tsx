@@ -184,6 +184,7 @@ function StatBlockBody({
   const pick = usePick();
   const tracker = useTracker(campaignId, encounterId);
   const fear = useQuery(api.campaigns.fear, { campaignId });
+  const d8Manual = useQuery(api.ruleSettings.get, { campaignId })?.modes.adversaryDefeated === "manual";
   const ends = useQuery(api.combatEffects.fearEnds, { campaignId, target: { kind: "instance", instanceId: instance._id } });
   const endByFear = useMutation(api.combatEffects.endByFear).withOptimisticUpdate((store, args) => {
     const now = store.getQuery(api.campaigns.fear, { campaignId });
@@ -268,6 +269,8 @@ function StatBlockBody({
   const absent = CONDITIONS.filter((c) => !instance.conditions.includes(c));
   const hpMax = instance.stats.hpMax;
   const stressMax = instance.stats.stressMax;
+  // D8 Manual (rule switches DEF; CB p.208): at its last HP the adversary stays up until the GM presses Defeated.
+  const standing = d8Manual && !instance.defeated && instance.minionCount === undefined && hpMax > 0 && instance.hp >= hpMax;
   const spot = useBlocked(fearBlocked(spotCost, fear));
   const attackWhy = spotlightFirst(who, actionSpot, fear);
   const atk = useBlocked(attackWhy);
@@ -299,6 +302,14 @@ function StatBlockBody({
         ) : null}
       </div>
       {instance.defeated ? <p className="hsb-defeated">Defeated</p> : null}
+      {standing ? (
+        <p className="hsb-defeated" data-testid="hud-statblock-last-hp">
+          Last HP{" "}
+          <button type="button" className="hsb-act" aria-label={`Mark ${label} defeated`} onClick={() => void tracker.markDefeated(instance._id)}>
+            Defeated
+          </button>
+        </p>
+      ) : null}
 
       <div className="hsb-wpn" data-testid="hud-statblock-weapon">
         <b>{block.attack.name}</b>

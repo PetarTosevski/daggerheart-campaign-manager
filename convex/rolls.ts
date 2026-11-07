@@ -75,6 +75,7 @@ import {
   changed,
   damage,
   damageFields,
+  darknessOnRoll,
   damageResult,
   duality,
   dualityFields,
@@ -88,7 +89,9 @@ import {
   rules,
   socialScene,
   versus,
+  withDarkness,
 } from "./lib/rolls";
+import { darknessLabels } from "../src/lib/domain/combat-map/light";
 import { featureScope } from "./lib/featureScope";
 import { assertMayAct } from "./lib/spotlight";
 import { afterPcActionRoll, fearWithheldBy, hopeFearModeOf, outcomeSucceeds, outcomeWithFear } from "./lib/rollAftermath";
@@ -197,22 +200,24 @@ export const tagTeam = keyedUserMutation({
         { loaded: partner, sheet: partnerSheet, side: args.partner, before: undefined },
       ];
       const rolls = [];
+      // Plan rule-switches OE2: M3's variant on both action rolls when the Tag Team has a Difficulty, in dim light.
+      const dark = await darknessOnRoll(ctx, lead.campaign, { kind: "action", ...(args.difficulty !== undefined ? { difficulty: args.difficulty } : {}) });
+      const darkLabels = darknessLabels(dark);
       for (const { loaded, sheet, side, before } of sides) {
         // DA19 (B1): a Beastform's trait bonus is a passive of the drawer's table, not an effect mod.
         const live = withPassiveTraits(withEffects(sheet), featureScope(lead.campaign));
-        const { roll } = rules(() =>
-          rollDuality(
-            { kind: "action", trait: live.traits[side.trait], modifier: side.modifier, ...(args.difficulty !== undefined ? { difficulty: args.difficulty } : {}), advantage: 0, disadvantage: 0, help: 0 },
-            rollDie,
-          ),
+        const input = withDarkness(
+          { kind: "action" as const, trait: live.traits[side.trait], modifier: side.modifier, ...(args.difficulty !== undefined ? { difficulty: args.difficulty } : {}), advantage: 0, disadvantage: 0, help: 0 },
+          dark,
         );
+        const { roll } = rules(() => rollDuality(input, rollDie));
         const entryId = await logAction(ctx, {
           campaignId: lead.campaign._id,
           characterId: loaded.character._id,
           actorId: ctx.user._id,
           kind: "roll",
           visibility: "public",
-          summary: `${sheet.name}: Tag Team ${TRAIT_LABEL[side.trait]} roll ${roll.total}${typedLabel(side.modifier)}${versus(roll.difficulty, lead.gm)}, ${OUTCOME_LABEL[roll.outcome]} (not applied yet)`,
+          summary: `${sheet.name}: Tag Team ${TRAIT_LABEL[side.trait]} roll ${roll.total}${typedLabel(side.modifier)}${versus(roll.difficulty, lead.gm)}, ${OUTCOME_LABEL[roll.outcome]}${darkLabels.length > 0 ? ` (${darkLabels.join(", ")})` : ""} (not applied yet)`,
           roll,
           groupId,
           ...(before ? { before } : {}),

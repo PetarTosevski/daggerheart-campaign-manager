@@ -38,7 +38,6 @@
  * await assertMayAct(ctx, campaign, character, "action"); // or "move"; a reaction passes "reaction"
  * ```
  */
-import { isDefeated } from "../../src/lib/domain/encounters/damage";
 import { applySpotlight, spotlightsThisTurn } from "../../src/lib/domain/encounters/spotlight";
 import type { CardUse } from "../../src/lib/domain/card-effects/types";
 import { appError } from "../../src/lib/errors/app-error";
@@ -47,10 +46,11 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { SpotlightHolder, SpotlightReason } from "../tables/combatSpotlight";
 import { logAction, newGroupId } from "./actionLog";
 import { loadCombatToken } from "./combatMaps";
+import { adversaryDown } from "./combatTokenViews";
 import { campaignFearState, spendFear } from "./fear";
 import { atLeast, permissionFor } from "./permissions";
 import { readSheet } from "./characterSheet";
-import { postRuleNote, ruleMode } from "./ruleModes";
+import { postRuleNote, ruleMode, ruleModesOf } from "./ruleModes";
 import { liveSession } from "./sessions";
 
 /** What a player is about to do: an `action` (a roll, a card, a feature, an attack), a token `move`, or a `reaction`. */
@@ -144,23 +144,27 @@ export async function moveToGm(
 export async function spotlightAdversary(ctx: MutationCtx, campaign: Doc<"campaigns">, tokenId: string): Promise<boolean> {
   const token = await loadCombatToken(ctx, campaign._id, tokenId);
   if (token.ref.kind !== "adversary") throw appError("INVALID", "Only an adversary's token can be spotlighted.");
-  await assertNotDefeated(ctx, campaign._id, token);
+  await assertNotDefeated(ctx, campaign, token);
   return setHolder(ctx, campaign._id, { kind: "gm" }, "adversary", undefined, token._id);
 }
 
 /**
- * Whether an adversary instance is defeated (user 2026-11-04: "I shouldn't be allowed to take the spotlight of dead
- * NPCs"): marked defeated (a Minion group with every Minion gone included), or every HP marked (CB p.208).
+ * Whether an adversary instance is defeated in this campaign (user 2026-11-04: "I shouldn't be allowed to take the
+ * spotlight of dead NPCs"): Book, marked defeated (a Minion group with every Minion gone included) or every HP marked
+ * (CB p.208); D8 Manual (rule switches DEF), only marked defeated (the GM's Defeated button). See `adversaryDown`.
  */
-export function adversaryDefeated(instance: Pick<Doc<"encounterAdversaries">, "defeated" | "hp" | "stats">): boolean {
-  return instance.defeated || isDefeated({ hp: instance.hp, hpMax: instance.stats.hpMax });
+export function adversaryDefeated(
+  campaign: Pick<Doc<"campaigns">, "frameId" | "ruleModes">,
+  instance: Pick<Doc<"encounterAdversaries">, "defeated" | "hp" | "stats" | "minionCount">,
+): boolean {
+  return adversaryDown(instance, ruleModesOf(campaign));
 }
 
 /** ADVERSARY_DEFEATED for an adversary token whose instance is defeated; a token without an instance passes. */
-async function assertNotDefeated(ctx: QueryCtx, campaignId: Id<"campaigns">, token: Doc<"combatTokens">): Promise<void> {
+async function assertNotDefeated(ctx: QueryCtx, campaign: Doc<"campaigns">, token: Doc<"combatTokens">): Promise<void> {
   if (token.ref.kind !== "adversary") return;
   const instance = await ctx.db.get("encounterAdversaries", token.ref.adversaryId);
-  if (instance !== null && instance.campaignId === campaignId && adversaryDefeated(instance)) throw appError("ADVERSARY_DEFEATED");
+  if (instance !== null && instance.campaignId === campaign._id && adversaryDefeated(campaign, instance)) throw appError("ADVERSARY_DEFEATED");
 }
 
 /**
@@ -229,7 +233,7 @@ export async function takeWithFear(
 ): Promise<{ moved: boolean; fearSpent: number }> {
   const token = tokenId === undefined ? null : await loadCombatToken(ctx, campaign._id, tokenId);
   if (token !== null && token.ref.kind !== "adversary") throw appError("INVALID", "Only an adversary's token can be spotlighted.");
-  if (token !== null) await assertNotDefeated(ctx, campaign._id, token);
+  if (token !== null) await assertNotDefeated(ctx, campaign, token);
   const fearHeld = (await campaignFearState(ctx, campaign._id)).fear;
   if (fearHeld < INTERRUPT_FEAR) throw appError("NOT_ENOUGH_FEAR", undefined, { resource: "fear", need: INTERRUPT_FEAR, have: fearHeld });
 

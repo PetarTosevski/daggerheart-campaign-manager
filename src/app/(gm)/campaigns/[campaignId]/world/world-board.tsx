@@ -28,6 +28,7 @@ import {
   type TravelMethod,
   type TravelPace,
 } from "@/lib/domain/travel";
+import type { JourneySpeed } from "@/lib/domain/travel/journey";
 import { hexDistance, hexToPixel, pixelToHex, type Hex } from "@/lib/world/hex";
 import { pickMarker } from "@/lib/world/hex-tokens";
 import { printedHexGrid } from "@/lib/world/printed-grids";
@@ -51,6 +52,7 @@ import type { Id } from "../../../../../../convex/_generated/dataModel";
 import type { MapView as MapViewData } from "../../../../../../convex/maps";
 import { CrawlKnown, CrawlRegionsPanel, unusedEncounters } from "./crawl-regions";
 import { CrawlInfo, HexCrawlPanel } from "./hex-panel";
+import { JourneyBar, SpeedPicker } from "./journey-bar";
 import { useMapActions } from "./map-actions";
 import { MapImageControl } from "./map-image";
 import { MapView, type StrokePhase } from "./map-view";
@@ -58,6 +60,7 @@ import { Palette } from "./palette";
 import { TokenPanel } from "./token-panel";
 import { TravelLegend } from "./travel-legend";
 import { TravelRulesDialog } from "./travel-rules";
+import { useJourney } from "./use-journey";
 import { usePanZoom } from "./use-pan-zoom";
 
 type MeasureMode = "line" | "way" | "free";
@@ -107,6 +110,8 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
   const [showGrid, setShowGrid] = useState(false);
   const [settingOrigin, setSettingOrigin] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [walkSpeed, setWalkSpeed] = useState<JourneySpeed>("normal");
+  const journey = useJourney(campaignId) ?? null;
   // The GM's Width / Height fields are linked through the image's aspect ratio; only the width is stored (scaleKm).
   const [scaleDraft, setScaleDraft] = useState<ScaleDraft>(null);
 
@@ -318,12 +323,11 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
   }
 
   const moveParty = (p: Point, via?: Point[]) => actions.moveParty(p.x, p.y, via);
+  // World journey MJ1: the party walks the whole drawn route on the server's clock; the trip's line replaces the drawing.
+  const routeBlocked = !!mRes?.blocked;
   const sendPartyAlongRoute = async () => {
-    if (mpts.length < 2) return;
-    const step = Math.max(1, Math.floor(mpts.length / 10));
-    const via = mpts.filter((_, i) => i % step === 0).slice(0, -1).slice(-11);
-    await moveParty(mpts[mpts.length - 1], via);
-    setMpts([]);
+    if (mpts.length < 2 || routeBlocked) return;
+    if ((await actions.startJourney(mpts, walkSpeed)) !== undefined) setMpts([]);
   };
 
   // ---- keyboard shortcuts (the board's keys)
@@ -654,9 +658,24 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
                 Clear
               </BrandButton>
               {editable ? (
-                <BrandButton variant="confirm" size="sm" className="tip" disabled={mpts.length < 2} data-tip="Move the party token along this route" onClick={sendPartyAlongRoute}>
-                  Move party along route
-                </BrandButton>
+                <>
+                  <SpeedPicker value={walkSpeed} onPick={setWalkSpeed} />
+                  <BrandButton
+                    variant="confirm"
+                    className="tip"
+                    disabled={mpts.length < 2 || routeBlocked}
+                    aria-describedby={routeBlocked ? "route-blocked-reason" : undefined}
+                    data-tip={routeBlocked ? "The party can't walk a blocked route" : "Walk the party along this route; a day passes per travel day"}
+                    onClick={sendPartyAlongRoute}
+                  >
+                    Move party along route
+                  </BrandButton>
+                  {routeBlocked ? (
+                    <span id="route-blocked-reason" className="text-[12px] text-[#f0a37a]">
+                      Blocked: redraw the route to walk it.
+                    </span>
+                  ) : null}
+                </>
               ) : null}
               <BrandButton variant="cancel" size="sm" onClick={toggleMeasure}>
                 Done
@@ -691,6 +710,7 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
             {actions.error}
           </p>
         ) : null}
+        {journey && !horizon ? <JourneyBar campaignId={campaignId} journey={journey} canControl={editable} /> : null}
         {crawl && !editable ? <CrawlInfo crawl={crawl} /> : null}
         {crawl && !isGm && crawlView?.role === "player" ? <CrawlKnown view={crawlView} /> : null}
 
@@ -716,6 +736,7 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
           brush={brush}
           brushSize={bsize}
           route={measuring && mpts.length ? { points: mpts, analysis: mRes, freehand: mmode === "free", label: routeLabel } : null}
+          journey={horizon ? null : journey}
           crawl={crawl}
           showGrid={showGrid}
           selectedHex={editable ? selHex : null}

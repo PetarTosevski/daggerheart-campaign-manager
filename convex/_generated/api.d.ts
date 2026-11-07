@@ -210,6 +210,7 @@ import type * as lorekeeperRetention from "../lorekeeperRetention.js";
 import type * as lorekeeperRulings from "../lorekeeperRulings.js";
 import type * as lorekeeperRun from "../lorekeeperRun.js";
 import type * as lorekeeperUsage from "../lorekeeperUsage.js";
+import type * as mapJourney from "../mapJourney.js";
 import type * as maps from "../maps.js";
 import type * as members from "../members.js";
 import type * as migrations_characterExtras from "../migrations/characterExtras.js";
@@ -498,6 +499,7 @@ declare const fullApi: ApiFromModules<{
   lorekeeperRulings: typeof lorekeeperRulings;
   lorekeeperRun: typeof lorekeeperRun;
   lorekeeperUsage: typeof lorekeeperUsage;
+  mapJourney: typeof mapJourney;
   maps: typeof maps;
   members: typeof members;
   "migrations/characterExtras": typeof migrations_characterExtras;

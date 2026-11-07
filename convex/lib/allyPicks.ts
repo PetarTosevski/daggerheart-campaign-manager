@@ -30,7 +30,7 @@ import { logAction } from "./actionLog";
 export { holdForAllyPicks, pickDice } from "./allyPickHold";
 import { adversaryAction } from "./adversaryActions";
 import { parseChoices, type CardChoice } from "./cardChoices";
-import { bindGates, buildRun, pickCard, runCard, writeSheetChanges, type HostRoll, type UsePick } from "./cardRunner";
+import { bindGates, buildRun, pickCard, ruleNotesOfUse, runCard, writeSheetChanges, type HostRoll, type UsePick } from "./cardRunner";
 import { readSheet, saveSheet } from "./characterSheet";
 import { attackScene, riderFacts, runRiderPart, type AttackScene, type PickedRider, type RiderEnv } from "./combatActions";
 import { closeRequest, encounterRunning } from "./combatRequests";
@@ -39,7 +39,7 @@ import { pickFeature } from "./featureRunner";
 import { campaignFearState } from "./fear";
 import { groupUndone } from "./incomingHits";
 import { changed } from "./rolls";
-import { ruleMode } from "./ruleModes";
+import { postRuleNote, ruleMode } from "./ruleModes";
 import { MAX_ALLY_PICK_CHOOSERS, type AllyPickChooser, type AllyPickPayload } from "./validators/combatRequests";
 
 export type AllyPickRow = Doc<"combatRequests"> & { payload: AllyPickPayload };
@@ -258,6 +258,13 @@ async function completeRider(ctx: MutationCtx, row: AllyPickRow, by: Id<"users">
     ...(sheetChanged ? { before: sheet } : {}),
     undoable: true,
   });
+  // Rule switches RFC (bead dcm-jh6d.69): the rider ran with the campaign's modes (`buildRun`); its Manual notes (M1, C1,
+  // D4 on an ally's Stress) go to the GM in the attack's group, undone with it. The rider writes no adversary row, so
+  // there is no D2 / D8 note and no `instanceWrites`. A Defined Ranges "who is in range?" note is left out: the actor's
+  // review (`sendAllyPicks`) already settled who the choosers are.
+  for (const n of ruleNotesOfUse(run.built, run.plan)) {
+    if (n.ruleId !== "definedRanges") await postRuleNote(ctx, campaign, { ruleId: n.ruleId, summary: n.summary, groupId: p.groupId, actorId: by });
+  }
   await closeRequest(ctx, row._id, "resolved", by);
   return "resolved";
 }

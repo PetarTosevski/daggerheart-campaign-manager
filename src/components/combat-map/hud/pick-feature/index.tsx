@@ -12,6 +12,7 @@ import type { Id } from "../../../../../convex/_generated/dataModel";
 import { riderKey, ridersToSend, type RiderOption, type RiderPicks } from "../../actions/attack/riders";
 import { answerChoices, choicesOf, fitsSide, type CardChoice, type ChoiceAsk, type FormValues, type UseForm } from "../../actions/hand/model";
 import { useActor } from "../../actions/targets";
+import { useDefinedRanges } from "../../map-view/measure";
 import { areaUseArgs, areaUseLine } from "../../drawer/use/model";
 import type { CombatMapSummary, CombatRole } from "../../slots";
 import { usePick, type PickApi, type PickContext, type PickOption, type PickOutcome, type PickRowInput, type PickSelection, type PickSessionSpec } from "../pick";
@@ -174,6 +175,8 @@ export function useFeatureUse({ campaignId, role, map, characterId, canUse = tru
   const drawer = useQuery(api.combatFeaturesReads.drawer, canUse ? { campaignId, characterId } : "skip");
   const actor = useActor({ campaignId, role, mode: "play", map: live, previewCharacterId: null });
   const gmTokens = useQuery(api.combatTokensReads.list, gm && live && canUse ? { campaignId, mapId: live._id } : "skip");
+  // Rule switches ODR3: Defined Ranges off, the chain rows show no band.
+  const definedRanges = useDefinedRanges(campaignId);
 
   // Who is on the map, for names, chain rows and the actor's square.
   let creatures: Creature[] = [];
@@ -254,7 +257,7 @@ export function useFeatureUse({ campaignId, role, map, characterId, canUse = tru
       function openAsks(args: Parameters<typeof run>[0], asks: readonly ChoiceAsk[], step: number, links: Id<"combatTokens">[][], rows: readonly PickRowInput[]) {
         const chainAsk = asks.find((a): a is Extract<ChoiceAsk, { kind: "followUp" }> => a.kind === "followUp");
         const lastLink = links[links.length - 1] ?? [];
-        const askRows = chainAsk ? chainRows(chainAsk.tokenIds, creatures, lastLink) : rows;
+        const askRows = chainAsk ? chainRows(chainAsk.tokenIds, creatures, lastLink, definedRanges) : rows;
         const data: AskData = { asks, options: {}, splits: {}, chain: { links } };
         const primaryFor = (d: AskData): PickSessionSpec<AskData>["primary"] => ({
           label: (s) => (chainAsk ? (s.targetIds.length > 0 ? "Next link" : "Stop here") : "Confirm"),

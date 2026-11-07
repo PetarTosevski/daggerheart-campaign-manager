@@ -62,6 +62,7 @@ import {
   writeToken,
 } from "./lib/maps";
 import { campaignScope, runOnce } from "./lib/operations";
+import { endJourney } from "./mapJourney";
 import { atLeast, liveCampaign, requirePermission, type Permission } from "./lib/permissions";
 import { recordHistory } from "./tables/history";
 import {
@@ -244,9 +245,12 @@ export const moveParty = userMutation({
   args: { ...campaignArg, x: pct, y: pct, via: v.optional(v.array(point)), idempotencyKey: v.string() },
   returns: v.null(),
   handler: async (ctx, { campaignId, x, y, via = [], idempotencyKey }) => {
-    const { map, scalars } = await gmMap(ctx, ctx.user, campaignId);
+    const loaded = await gmMap(ctx, ctx.user, campaignId);
     if (via.length > 24) invalid("Too many route points.");
     return once(ctx, ctx.user, campaignId, idempotencyKey, "map_move_party", { x, y, via }, async () => {
+      // World journey D5: a manual move ends a trip under way first, as Cancel (the party stops on the route).
+      const map = (await endJourney(ctx, loaded.campaign)) ? await writableMap(ctx, loaded.campaign) : loaded.map;
+      const { scalars } = map;
       const { party } = scalars;
       const trail = [...party.trail, { x: party.x, y: party.y }, ...via.map((p) => ({ x: round2(p.x), y: round2(p.y) }))].slice(-12);
       await saveScalars(ctx, campaignId, map, { ...scalars, party: { x: round2(x), y: round2(y), trail } });
