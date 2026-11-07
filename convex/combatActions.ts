@@ -130,7 +130,8 @@ function rollOf(args: AttackRoll): AttackRoll {
  * (COMBAT_MAP_NOT_FOUND, COMBAT_TOKEN_NOT_FOUND); every target must be seen with a clear line (COMBAT_NO_LINE_OF_SIGHT)
  * and be an enemy token of a running encounter's undefeated instance (COMBAT_TARGET_INVALID). When any target is out of
  * the weapon's range the attack waits for the GM (`pending`, a `combatRequests` sanction): nothing is rolled or paid
- * until `combatRequests.sanction` approves it. Otherwise it resolves now (`resolveAttack`).
+ * until `combatRequests.sanction` approves it. Otherwise it resolves now (`resolveAttack`). With "Conflict between PCs"
+ * on, a PC target out of range waits the same way (ODR3; no encounter needed); the GM's "refuse" setting refuses it.
  */
 export const attack = keyedCampaignMutation({
   need: "view",
@@ -192,26 +193,26 @@ export const attack = keyedCampaignMutation({
         return result;
       }
       const outOfRange = targets.filter((t) => !t.check.inRange);
-      // Config R2: the attack's own target out of range is refused (nothing rolled, paid or logged).
-      if (refuse && outOfRange.length > 0) throw outOfRangeRefusal(outOfRange.map((t) => t.check));
+      // Plan rule-switches ODR3 (OP2's note): a named PC out of range waits for the GM like an adversary target
+      // (`combatRequests.sanction` re-checks the PCs and rolls against their Evasion).
+      const farPcs = pcs.flatMap((p) => (p.check && !p.check.inRange ? [{ tokenId: p.token._id, check: p.check }] : []));
+      // Config R2: the attack's own target out of range is refused (nothing rolled, paid or logged), a PC as an adversary.
+      if (refuse && (outOfRange.length > 0 || farPcs.length > 0)) throw outOfRangeRefusal([...outOfRange.map((t) => t.check), ...farPcs.map((p) => p.check)]);
       // DA2 (combat-actions Q1, user 2026-10-30): a rider's extra target out of its range waits for the GM too.
       const added = addedOutOfRange(scene, weapon, picked);
-      // OP: an attack on a PC never waits for the GM's range sanction (its approval re-checks adversary targets only):
-      // anything out of range is refused instead, as with the GM's "refuse" setting.
-      if (pcs.length > 0) {
-        const far = [...outOfRange.map((t) => t.check), ...pcs.flatMap((p) => (p.check && !p.check.inRange ? [p.check] : [])), ...added];
-        if (far.length > 0) throw outOfRangeRefusal(far);
-      }
-      if (outOfRange.length === 0 && added.length === 0) return resolveAttack(ctx, { loaded, actorId: ctx.user._id, scene, weapon, slot, targets, ...pcTargets, roll, riders, ...(benefit !== undefined ? { benefit } : {}) });
+      if (outOfRange.length === 0 && farPcs.length === 0 && added.length === 0) return resolveAttack(ctx, { loaded, actorId: ctx.user._id, scene, weapon, slot, targets, ...pcTargets, roll, riders, ...(benefit !== undefined ? { benefit } : {}) });
 
       // Q1: wait for the GM. Refuse now what the approval would refuse anyway (a character who can't act, unpaid costs,
       // a rider that doesn't ride on this attack).
       assertCanAct(loaded.character, loaded.sheet);
       rules(() => prepareDuality(loaded.sheet, attackDuality(weapon, roll, coverApplies(ctx.campaign, targets)), featureScope(ctx.campaign), null));
-      const bands = [...outOfRange.map((t) => ({ tokenId: t.token._id, band: t.check.band })), ...added.filter((a) => !outOfRange.some((t) => t.token._id === a.tokenId))];
+      const named = [...outOfRange.map((t) => ({ tokenId: t.token._id, band: t.check.band })), ...farPcs.map((p) => ({ tokenId: p.tokenId, band: p.check.band }))];
+      const bands = [...named, ...added.filter((a) => !named.some((t) => t.tokenId === a.tokenId))];
+      // OP2: an attack on PCs only belongs to no encounter.
+      const encounterId = targets[0]?.encounter._id;
       const requestId = await openSanction(ctx, {
         campaignId: ctx.campaign._id,
-        encounterId: targets[0]!.encounter._id,
+        ...(encounterId !== undefined ? { encounterId } : {}),
         mapId: scene.map._id,
         createdBy: ctx.user._id,
         payload: {

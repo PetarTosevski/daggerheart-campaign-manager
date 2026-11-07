@@ -102,6 +102,7 @@ export const EXPORTED_TABLES = [
   "mapTokens",
   "mapHexes",
   "mapTerrain",
+  "mapJourneys",
   "history",
   "sessions",
   "sessionPrep",

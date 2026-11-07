@@ -20,6 +20,7 @@ import { FEATURE_KEY_PREFIX } from "../../src/lib/domain/feature-effects/ids";
 import type { RollRecord } from "../../src/lib/domain/duality";
 import { SEVERITY_LABEL } from "../../src/lib/domain/encounters/damage";
 import { damageRuleNotes, type DamageRules } from "../../src/lib/domain/combat-actions/damage";
+import { darknessLabels, underwaterDisadvantage } from "../../src/lib/domain/combat-map/light";
 import { owned } from "../../src/lib/domain/feature-effects/owned";
 import { TRAIT_LABEL } from "../../src/lib/frames/extras/common";
 import { cardEffect } from "../../src/lib/srd/card-effects/index";
@@ -388,8 +389,12 @@ function diceList(roll: RollRecord): string {
   return roll.dice.filter((d) => !d.dropped).map((d) => d.value).join(", ");
 }
 
-/** "Spellcast 15 with Hope", "Agility 12 with Fear (vs 13)". The card's printed Difficulty only (never an enemy's). */
-export function rollText(use: CardUse, roll: RollRecord, trait: TraitId | undefined): string {
+/**
+ * "Spellcast 15 with Hope", "Agility 12 with Fear (vs 13)". The card's printed Difficulty only (never an enemy's).
+ * Plan rule-switches ODR3 (OE2's note): `environment` (`rollEnvironment`) names what the environment added, as the dice
+ * box's lines do: "Agility 12 with Fear (dim light: disadvantage, underwater: disadvantage)".
+ */
+export function rollText(use: CardUse, roll: RollRecord, trait: TraitId | undefined, environment: readonly string[] = []): string {
   const spec = use.roll;
   let label = "Roll";
   if (spec?.kind === "spellcast" || (spec?.kind === "reaction" && spec.trait === "spellcast")) label = "Spellcast";
@@ -397,7 +402,30 @@ export function rollText(use: CardUse, roll: RollRecord, trait: TraitId | undefi
   else if (spec?.kind === "trait") label = TRAIT_LABEL[typeof spec.trait === "string" ? spec.trait : trait && spec.trait.includes(trait) ? trait : spec.trait[0]!];
   else if (spec?.kind === "attack") label = "Attack";
   const versus = roll.difficulty !== undefined ? ` vs ${roll.difficulty}` : "";
-  return `${label} ${roll.total}${versus} ${rollWord(roll)}`.trim();
+  const extra = environment.length > 0 ? ` (${environment.join(", ")})` : "";
+  return `${label} ${roll.total}${versus} ${rollWord(roll)}`.trim() + extra;
+}
+
+/**
+ * Plan rule-switches ODR3: the environment labels of a card or feature use's main roll, for `rollText`. M3's variant
+ * (`BuiltRun.context.darkness`, OE2) on an action roll with a Difficulty (a fixed or GM one, or the targets'): "dim light:
+ * disadvantage" / "dim light: +N Difficulty"; never a reaction roll. Underwater (`underwater`: the campaign's rule is on)
+ * on an attack roll (as `buildRun`'s `attackRoll`) on the live map marked Underwater, unless the actor's token fights
+ * underwater: "underwater: disadvantage".
+ */
+export function rollEnvironment(built: Pick<BuiltRun, "context" | "creatures">, use: CardUse, underwater: boolean): string[] {
+  const spec = use.roll;
+  if (spec === undefined || spec.kind === "reaction" || spec.kind === "adversaryAttack") return [];
+  const diff = spec.difficulty;
+  const hasDifficulty = diff.kind === "target" || diff.kind === "evasion" || diff.kind === "fixed" || (diff.kind === "gm" && built.context.roll?.difficulty !== undefined);
+  const dark = built.context.darkness;
+  const labels = hasDifficulty && dark !== undefined ? darknessLabels(dark) : [];
+  const attack = spec.kind === "attack" || diff.kind === "target";
+  if (attack && underwater && built.creatures.onMap) {
+    const scene = built.creatures.scene;
+    if (underwaterDisadvantage(scene.map.underwater === true, scene.attacker.fightsUnderwater === true) > 0) labels.push("underwater: disadvantage");
+  }
+  return labels;
 }
 
 /** The public words per target (U1): Hit, Miss or Defeated, and nothing numeric. */

@@ -18,6 +18,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { underwaterAttackDisadvantage } from "../../convex/lib/adversaryActions";
+import { rollEnvironment, rollText } from "../../convex/lib/cardRows";
 import { attackEnvironment } from "../../convex/lib/combatActions";
 import { readSheet, saveSheet } from "../../convex/lib/characterSheet";
 import { breathEnded, breathTicks, darknessBadge, darknessEdge, darknessLabels, DIM_PHASE_BADGE, underwaterDisadvantage } from "../../src/lib/domain/combat-map/light";
@@ -514,5 +515,100 @@ describe("OE2: Underwater on card and feature attacks; 'breathes underwater'", (
     await a.setBreathes(a.ash, false);
     await a.roll([10, 3], 5);
     expect((await a.sheetOf()).stress).toBe(1);
+  });
+});
+
+/**
+ * ODR3 (OE2's notes 1 and 2): card and feature roll lines name what the environment added, as the dice box's do
+ * (`rollText` with `rollEnvironment`); the Cloaked move's Finesse roll (DA18) gets M3's variant in the campaign's dim
+ * light (CB p.104: "raising the Difficulty of action rolls or imposing disadvantage on rolls made by the PCs").
+ */
+describe("ODR3: roll lines name the environment; the Cloaked roll in dim light", () => {
+  const built = (darkness: { disadvantage: number; difficulty: number } | undefined, map: { underwater?: boolean } | null, fights = false, gmDifficulty?: number) =>
+    ({
+      context: { ...(darkness ? { darkness } : {}), ...(gmDifficulty !== undefined ? { roll: { difficulty: gmDifficulty } } : {}) },
+      creatures: map === null ? { onMap: false } : { onMap: true, scene: { map, attacker: { fightsUnderwater: fights } } },
+    }) as never;
+  const record = { kind: "action" as const, dice: [], modifier: 0, total: 12, outcome: "successFear" as const, manual: false };
+
+  it("rollEnvironment: dim light on a roll with a Difficulty, underwater on an attack (unless fighting underwater); rollText appends them", () => {
+    const dark = { disadvantage: 1, difficulty: 2 };
+    expect(rollEnvironment(built(dark, { underwater: true }), STRIKE, true)).toEqual(["dim light: disadvantage", "dim light: +2 Difficulty", "underwater: disadvantage"]);
+    expect(rollEnvironment(built(dark, { underwater: true }, true), STRIKE, true)).toEqual(["dim light: disadvantage", "dim light: +2 Difficulty"]);
+    expect(rollEnvironment(built(undefined, { underwater: true }), STRIKE, false)).toEqual([]);
+    // A GM-Difficulty roll: dim light only with a Difficulty set; never underwater (not an attack).
+    expect(rollEnvironment(built(dark, { underwater: true }, false, 5), SEARCH, true)).toEqual(["dim light: disadvantage", "dim light: +2 Difficulty"]);
+    expect(rollEnvironment(built(dark, { underwater: true }), SEARCH, true)).toEqual([]);
+    expect(rollEnvironment(built(dark, null), STRIKE, true)).toEqual(["dim light: disadvantage", "dim light: +2 Difficulty"]);
+    expect(rollText(STRIKE, record, undefined)).toBe("Agility 12 with Fear");
+    expect(rollText(STRIKE, record, undefined, ["dim light: disadvantage", "underwater: disadvantage"])).toBe("Agility 12 with Fear (dim light: disadvantage, underwater: disadvantage)");
+  });
+
+  /** A Cloaked rogue (Finesse +1) at (2, 10) in the Witherwild's Nautical Twilight (dim light), a Bear far off in line. */
+  async function cloakArena(modes: Modes) {
+    const w = await buildWorld();
+    const { t, campaignId } = w;
+    const gm = w.as("gm");
+    const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
+    const now = Date.now();
+    const ash = await t.run(async (ctx) => {
+      await ctx.db.patch("campaigns", campaignId, { ruleModes: modes });
+      await ctx.db.patch("combatMaps", mapId, { live: true });
+      const time = await ctx.db
+        .query("campaignTime")
+        .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
+        .unique();
+      if (time === null) await ctx.db.insert("campaignTime", { campaignId, week: 1, cycle: "DAY", cycleDay: 7 });
+      else await ctx.db.patch("campaignTime", time._id, { cycle: "DAY", cycleDay: 7 });
+      const s = readSheet((await ctx.db.get("characters", w.characterA))!.sheet);
+      await saveSheet(ctx, w.characterA, { ...s, classId: "rogue", conditions: ["cloaked"], traits: { ...s.traits, finesse: 1 }, hope: 2, stress: 0 });
+      const encounterId = await ctx.db.insert("encounters", { campaignId, name: "Ambush", status: "running", pcs: 2, adjustments: [], gmTurn: 1, createdAt: now, updatedAt: now, startedAt: now });
+      const instanceId = await ctx.db.insert("encounterAdversaries", {
+        campaignId,
+        encounterId,
+        source: { kind: "srd", adversaryId: "bear" },
+        label: "Bear",
+        order: 0,
+        summoned: false,
+        stats: { difficulty: 10, major: 5, severe: 10, hpMax: 6, stressMax: 2 },
+        hp: 0,
+        stress: 0,
+        defeated: false,
+        conditions: [],
+        tags: [],
+        spotlights: 0,
+        spotlightTurn: 0,
+        updatedAt: now,
+      });
+      await ctx.db.insert("combatTokens", { campaignId, mapId, size: 1, light: "none", revealedTo: [], ref: { kind: "adversary", adversaryId: instanceId }, side: "enemy", x: 20, y: 10, face: Math.PI });
+      return ctx.db.insert("combatTokens", { campaignId, mapId, size: 1, light: "none", revealedTo: [], ref: { kind: "pc", characterId: w.characterA }, side: "pc", x: 2, y: 10, face: 0 });
+    });
+    await w.as("player").mutation(api.combatTokens.move, { campaignId, tokenId: ash, x: 4, y: 10 });
+    const rows = await t.run((ctx) => ctx.db.query("actionLog").collect());
+    const roll = rows.find((r) => r.kind === "roll" && r.summary.includes("Finesse"))!;
+    const gmRow = rows.find((r) => r.visibility === "gm" && r.groupId === roll.groupId && r.summary.includes("Finesse"))!;
+    return { roll, gmRow };
+  }
+
+  it("Book: no die, Difficulty 10; disadvantage: a disadvantage die, named; difficulty: Difficulty 12, named", async () => {
+    dice(5, 2, 3);
+    const book = await cloakArena({});
+    diceInRange(book.roll.roll!);
+    expect(edgeDice(book.roll.roll!)).toEqual([]);
+    expect(book.roll.summary).not.toContain("(dim light");
+    expect(book.gmRow.summary).toContain("Difficulty 10");
+
+    dice(5, 2, 3);
+    const dis = await cloakArena({ darkness: "disadvantage" });
+    diceInRange(dis.roll.roll!);
+    expect(edgeDice(dis.roll.roll!)).toEqual(["disadvantage"]);
+    expect(dis.roll.summary).toContain("(dim light: disadvantage)");
+
+    dice(5, 2, 3);
+    const raised = await cloakArena({ darkness: "difficulty", darknessDifficulty: 2 });
+    expect(edgeDice(raised.roll.roll!)).toEqual([]);
+    expect(raised.roll.summary).toContain("(dim light: +2 Difficulty)");
+    expect(raised.gmRow.summary).toContain("Difficulty 12");
+    expect(raised.roll.roll!.difficulty).toBeUndefined();
   });
 });

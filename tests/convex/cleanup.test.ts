@@ -112,6 +112,22 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     await ins("mapTokens", { campaignId: c, tokenId: 1, type: "pin", x: 0, y: 0, name: "", notes: "", hidden: false, location: false });
     await ins("mapHexes", { campaignId: c, q: 0, r: 0, explored: true });
     await ins("mapTerrain", { campaignId: c, tile: 0, cells: "" });
+    await ins("mapJourneys", {
+      campaignId: c,
+      points: [
+        { x: 0, y: 0 },
+        { x: 1, y: 1 },
+      ],
+      cum: [0, 1],
+      totalDays: 1,
+      speed: "normal",
+      status: "paused",
+      baseDays: 0,
+      startedAt: now,
+      daysPassed: 0,
+      generation: 1,
+      startedBy: userId,
+    });
     await ins("codexEntryText", { campaignId: c, entryId, pdesc: "", gmn: "" });
     await ins("codexCounters", { campaignId: c, entries: 1, seeded: true });
     const customId = await ins("customAdversaries", {

@@ -10,6 +10,7 @@ import { TERRAIN_OVERLAY_FILLS } from "@/lib/world/terrain-overlay";
 import { TERRAIN_COLOURS, TERRAIN_COLUMNS, TERRAIN_ROWS, terrainPaths, type TerrainCode } from "@/lib/world/terrain";
 import { tokenType, type TokenType } from "@/lib/world/token-types";
 
+import { journeyPlace, useJourneyProgress, type JourneyView } from "./use-journey";
 import type { usePanZoom } from "./use-pan-zoom";
 
 export type MapTool = "pan" | "paint" | "draw";
@@ -36,6 +37,8 @@ export type MapViewProps = {
   brush: TerrainCode;
   brushSize: number;
   route: { points: Point[]; analysis: RouteAnalysis | null; freehand: boolean; label: string } | null;
+  /** The party's trip (world journey MJ1): the token walks it and the line still to walk is drawn, for everyone. */
+  journey: JourneyView | null;
   crawl: HexCrawl | null;
   showGrid: boolean;
   selectedHex: Hex | null;
@@ -69,6 +72,8 @@ export function MapView(props: MapViewProps) {
   const drag = useRef<{ id: number | "party"; sx: number; sy: number; moved: boolean } | null>(null);
   const [dragPos, setDragPos] = useState<{ id: number | "party"; p: Point } | null>(null);
   const [hoverCell, setHoverCell] = useState<{ c: number; r: number } | null>(null);
+  const journeyProgress = useJourneyProgress(props.journey);
+  const walk = props.journey && journeyProgress !== null ? journeyPlace(props.journey, journeyProgress) : null;
   const aspect = image.height / image.width;
   const { view } = panZoom;
   const mapW = view.w * view.z;
@@ -269,7 +274,7 @@ export function MapView(props: MapViewProps) {
 
   const partyPlace = placeOf("party", "party");
 
-  const party = dragPos?.id === "party" ? { ...props.party, ...dragPos.p } : props.party;
+  const party = dragPos?.id === "party" ? { ...props.party, ...dragPos.p } : walk ? { ...props.party, ...walk.at } : props.party;
   const trail = [...props.party.trail, { x: party.x, y: party.y }];
   const mapStyle: CSSProperties = {
     width: mapW,
@@ -378,6 +383,7 @@ export function MapView(props: MapViewProps) {
             ))}
           </>
         ) : null}
+        {walk && walk.remaining.length > 1 ? <JourneyLine points={walk.remaining} /> : null}
         {props.route ? <RouteLayer route={props.route} /> : null}
         <div
           aria-hidden="true"
@@ -560,6 +566,25 @@ function HexFace({
 }
 
 const RUN_COLOURS = TERRAIN_COLOURS;
+
+/** The rest of the party's trip: a dashed gold line from the token to the route's end, with an end dot. */
+function JourneyLine({ points }: { points: Point[] }) {
+  const line = points.map((q) => `${q.x.toFixed(2)},${q.y.toFixed(2)}`).join(" ");
+  const end = points[points.length - 1];
+  return (
+    <>
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" width="100%" height="100%" aria-hidden="true" data-testid="journey-line" className="pointer-events-none absolute inset-0 z-[5]">
+        <polyline points={line} fill="none" stroke="rgba(26, 20, 8, 0.75)" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        <polyline points={line} fill="none" stroke="#f3cf86" strokeWidth="3.5" strokeDasharray="1.2 0.8" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      </svg>
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute z-[5] -mt-[7px] -ml-[7px] size-[14px] rounded-full border-2 border-[#1a1408] bg-[#f3cf86] shadow-[0_1px_4px_rgba(0,0,0,0.6)]"
+        style={{ left: `${end.x}%`, top: `${end.y}%` }}
+      />
+    </>
+  );
+}
 
 function RouteLayer({ route }: { route: NonNullable<MapViewProps["route"]> }) {
   const P = (q: Point) => `${q.x.toFixed(2)},${q.y.toFixed(2)}`;

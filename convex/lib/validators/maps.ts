@@ -1,6 +1,7 @@
 import { v, type VFloat64 } from "convex/values";
 
 import { LEGACY_TRAIL_MODES, OPTIONAL_SPEED_TERRAINS, SPEED_TERRAINS, TRAVEL_METHODS, TRAVEL_PACES, type SpeedTerrain, type TravelMethod } from "../../../src/lib/domain/travel/index";
+import { JOURNEY_SPEEDS } from "../../../src/lib/domain/travel/journey";
 import { HORIZON_TRAVEL_MODES } from "../../../src/lib/world/map-state";
 import { frameIdValidator } from "./campaigns";
 
@@ -126,3 +127,35 @@ export const mapLocationValidator = v.object({
 export const moveResultValidator = v.object({ days: v.number(), weatherRoll: v.optional(v.number()), dice: v.array(v.number()), encounter: v.boolean(), day: v.number() });
 
 export const attachResultValidator = v.union(v.object({ ok: v.literal(true) }), v.object({ ok: v.literal(false), message: v.string() }));
+
+/** A trip's walking speed (Slow / Normal / Fast: 6 / 3 / 1 s of real time per travel day). */
+export const journeySpeedValidator = literals(JOURNEY_SPEEDS);
+
+/** What every screen needs to animate a trip (`mapJourney.get`). */
+export const journeyViewFields = {
+  /** The route; `cum[i]` is the travel days walked at `points[i]`. */
+  points: v.array(point),
+  cum: v.array(v.number()),
+  totalDays: v.number(),
+  speed: journeySpeedValidator,
+  status: v.union(v.literal("moving"), v.literal("paused")),
+  /** Travel days walked when it last started moving (or where it stopped). */
+  baseDays: v.number(),
+  /** When (ms) it last started moving. */
+  startedAt: v.number(),
+  /** Campaign days the trip has passed so far. */
+  daysPassed: v.number(),
+  /** Bumped on every start, resume, speed change and stop: a scheduled tick of an older generation does nothing. */
+  generation: v.number(),
+};
+
+export const journeyViewValidator = v.object(journeyViewFields);
+
+/** A stored trip (`mapJourneys`), without its campaign. */
+export const mapJourneyFields = {
+  ...journeyViewFields,
+  /** The next scheduled day tick while moving. */
+  scheduledId: v.optional(v.id("_scheduled_functions")),
+  /** Who started it: the actor of the days it passes. */
+  startedBy: v.id("users"),
+};

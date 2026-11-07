@@ -9,7 +9,8 @@
  * - Off: another PC's token is not a target (COMBAT_TARGET_INVALID) and `combatActionsReads.targets` lists none;
  *   `combatActions.contest` refuses with MECHANIC_DISABLED.
  * - On: a weapon attack may name another PC's token: the roll is compared with their Evasion, a hit's damage opens their
- *   incoming-hit window (armor, reactions) with the attack's total; out of range is refused (never a GM sanction).
+ *   incoming-hit window (armor, reactions) with the attack's total; out of range waits for the GM's sanction (ODR3; the
+ *   table's "refuse" setting refuses it).
  * - Contest: the target's reaction roll first, then the instigator's action roll with that total as its Difficulty.
  *
  * Dice: the server's CSPRNG is stubbed (`dice`); every value stays within its die (Hope / Fear d12, the weapon's die is
@@ -212,11 +213,36 @@ describe("on: an attack against another PC's Evasion (CB p.168)", () => {
     expect(hits.every((h) => h.encounterId === undefined || h.encounterId === a.encounterId)).toBe(true);
   });
 
-  it("the attacker's own token, or a PC out of the weapon's range, is refused before anything is rolled", async () => {
+  it("the attacker's own token is refused before anything is rolled", async () => {
     const a = await arena(true, { x: 15, y: 10 });
     expect(await code(a.attack([a.ash]))).toBe("COMBAT_TARGET_INVALID");
+    expect(await a.rows()).toEqual([]);
+  });
+
+  it("ODR3: a PC out of the weapon's range waits for the GM (no encounter needed); approval rolls against their Evasion", async () => {
+    dice(12, 3, 4);
+    const a = await arena(true, { x: 15, y: 10 });
+    const r = await a.attack([a.bryn]);
+    if (r.status !== "pending") throw new Error(`expected pending, got ${r.status}`);
+    expect(r.outOfRange).toEqual([{ tokenId: a.bryn, band: expect.any(String) }]);
+    expect(await a.rows()).toEqual([]);
+    const request = (await a.t.run((ctx) => ctx.db.get("combatRequests", r.requestId)))!;
+    expect([request.kind, request.status, request.encounterId]).toEqual(["sanction", "open", undefined]);
+    const approved = await a.gm.mutation(api.combatRequests.sanction, { campaignId: a.campaignId, requestId: r.requestId, approve: true, idempotencyKey: key() });
+    if (approved.status !== "resolved") throw new Error(`expected resolved, got ${approved.status}`);
+    expect(approved.targets).toEqual([{ tokenId: a.bryn, hit: true, defeated: false }]);
+    expect((await a.hits())[0]?.payload).toMatchObject({ kind: "incomingHit", targetCharacterId: a.w.characterB });
+  });
+
+  it("ODR3: under the table's 'refuse' setting a PC out of range is refused (COMBAT_TARGET_OUT_OF_RANGE), nothing written", async () => {
+    const a = await arena(true, { x: 15, y: 10 });
+    await a.t.run(async (ctx) => {
+      const c = (await ctx.db.get("campaigns", a.campaignId))!;
+      await ctx.db.patch("campaigns", a.campaignId, { tableSettings: { ...(c.tableSettings ?? {}), outOfRange: "refuse" } });
+    });
     expect(await code(a.attack([a.bryn]))).toBe("COMBAT_TARGET_OUT_OF_RANGE");
     expect(await a.rows()).toEqual([]);
+    expect((await a.t.run((ctx) => ctx.db.query("combatRequests").collect())).filter((x) => x.kind === "sanction")).toEqual([]);
   });
 });
 
@@ -261,8 +287,8 @@ describe("on: the GM's Contest (CB p.168)", () => {
 /**
  * Plan rule-switches OP2: the GM's range sanction (`combatRequests.sanction`) re-checks PC targets with
  * `checkAttackTargets` and resolves them against their Evasion. The request is seeded as `openSanction` writes it, with
- * no encounter (an attack on PCs only belongs to none); `combatActions.attack` still refuses an out-of-range PC itself
- * (outside OP2's files, see docs/tasks/TASK-RULES-OP2.md).
+ * no encounter (an attack on PCs only belongs to none); since ODR3 `combatActions.attack` opens it for an out-of-range PC
+ * (see docs/tasks/TASK-RULES-OP2.md).
  */
 describe("on: the GM's range sanction for an attack on a PC (OP2)", () => {
   type Arena = Awaited<ReturnType<typeof arena>>;

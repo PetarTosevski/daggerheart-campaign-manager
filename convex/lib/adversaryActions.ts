@@ -19,7 +19,7 @@
  */
 import { ConvexError } from "convex/values";
 
-import { pickAdversaryUse, standardAttackEffect, STANDARD_ATTACK_USE, upfrontFear, type AdversaryPlan, type AdversaryPlanStep, type AdversaryRunContext } from "../../src/lib/domain/adversary-effects/run";
+import { pickAdversaryUse, rangeGate, standardAttackEffect, STANDARD_ATTACK_USE, upfrontFear, type AdversaryPlan, type AdversaryPlanStep, type AdversaryRunContext } from "../../src/lib/domain/adversary-effects/run";
 import type { AdversaryFeatureEffect } from "../../src/lib/domain/adversary-effects/types";
 import { adversaryAttack, adversaryDamage, gmControlledWeaponAttack } from "../../src/lib/domain/adversary-actions/attack";
 import { underwaterDisadvantage } from "../../src/lib/domain/combat-map/light";
@@ -38,7 +38,9 @@ import {
   vulnerableTargetNote,
   type AdversaryEvent,
   type RollFacts,
+  type TriggeredUse,
 } from "../../src/lib/domain/adversary-actions/index";
+import { rangeAsk } from "../../src/lib/domain/card-effects/rule-notes";
 import type { ModeOf } from "../../src/lib/rules/registry";
 import { runFeature } from "../../src/lib/domain/feature-effects/run";
 import type { FeatureEffect } from "../../src/lib/domain/feature-effects/types";
@@ -158,6 +160,29 @@ async function actionScene(ctx: QueryCtx, campaign: Doc<"campaigns">, instance: 
 export function underwaterAttackDisadvantage(campaign: Doc<"campaigns">, scene: { map: ActionScene["map"] }): number {
   if (scene.map === null) return 0;
   return underwaterDisadvantage(ruleMode(campaign, "underwater") && scene.map.scene.map.underwater === true, scene.map.selfToken.fightsUnderwater === true);
+}
+
+/**
+ * Plan rule-switches ODR3 (user 2026-11-06; ODR2's `rangeGate`): with Defined Ranges off a triggered use gated by a range
+ * ("When a PC within Close range makes an action roll": Ill Omen, HF p.95) neither runs on its own nor is offered; the
+ * GM is asked who is in range instead (`asks`, one `rangeAsk` per use, headed by the feature and the adversary). On:
+ * every use, no question.
+ */
+export function rangeGatedUses(uses: readonly TriggeredUse[], definedRanges: boolean, label: string): { uses: TriggeredUse[]; asks: string[] } {
+  if (definedRanges) return { uses: [...uses], asks: [] };
+  const kept: TriggeredUse[] = [];
+  const asks: string[] = [];
+  for (const t of uses) {
+    const range = rangeGate(t.effect, t.use.id);
+    if (range === null) kept.push(t);
+    else asks.push(rangeAsk(`${t.effect.feature} (${label})`, range));
+  }
+  return { uses: kept, asks };
+}
+
+/** ODR3: the runner's flag for the campaign's Defined Ranges (absent = on, so only off is spread in). */
+function rangesFlag(campaign: Doc<"campaigns">): { definedRanges?: false } {
+  return ruleMode(campaign, "definedRanges") ? {} : { definedRanges: false };
 }
 
 type PcPick = { kind: "pc"; member: PartyMember; token: Doc<"combatTokens"> | null; combatant: Combatant; band?: Range };
@@ -1174,6 +1199,8 @@ export async function adversaryAction(
     removedOptions: (instance.effects ?? []).flatMap((e) => e.optionsRemoved ?? []),
     // FH-AP: each PC's own pick, once they all answered (convex/lib/allyPicks.ts).
     ...(opts?.picks ? { chooserOptions: opts.picks.chooserOptions } : {}),
+    // ODR3: Defined Ranges off, nothing the use picks or counts by range applies on its own (ODR2's runner flag).
+    ...rangesFlag(campaign),
     rng: rollDie,
   };
   // FH-AP: a use that is not an attack records its dice, so the run with the PCs' picks replays them.
@@ -1249,8 +1276,16 @@ export async function adversaryAction(
 
   // Reactions the GM opted into before the damage (Heavy Hitter, Overload; Q19 default No): their damage folds join the hits.
   const offers: Offer[] = [];
+  // ODR3: Defined Ranges off, range-gated triggers are the GM's call (`rangeGatedUses`); the questions go in the group.
+  const definedRanges = ruleMode(campaign, "definedRanges");
+  const rangeAsks: string[] = [];
+  const gatedUses = (uses: readonly TriggeredUse[]) => {
+    const gated = rangeGatedUses(uses, definedRanges, label);
+    rangeAsks.push(...gated.asks);
+    return gated.uses;
+  };
   if (w.hits.length > 0) {
-    for (const t of triggered(w.block, w.instance, [{ kind: "onAttack", stage: "beforeDamage", attack: attackKind }])) {
+    for (const t of gatedUses(triggered(w.block, w.instance, [{ kind: "onAttack", stage: "beforeDamage", attack: attackKind }]))) {
       if (t.mode === "reaction" && !(args.reactions ?? []).includes(t.effect.feature)) {
         offers.push({ feature: t.effect.feature, useId: t.use.id, trigger: "beforeDamage" });
         continue;
@@ -1282,7 +1317,7 @@ export async function adversaryAction(
     if (p.kind === "pc" && hitIds.has(p.member.character._id)) events.push({ kind: "onHit", attack: attackKind, ...(p.band ? { band: p.band } : {}), target: { conditions: p.combatant.conditions, tags: p.combatant.tags ?? [] } });
   }
   if (plan.roll && hitIds.size === 0) events.push({ kind: "onMiss", attack: attackKind });
-  for (const t of triggered(w.block, w.instance, events)) {
+  for (const t of gatedUses(triggered(w.block, w.instance, events))) {
     if (t.mode === "reaction") {
       offers.push({ feature: t.effect.feature, useId: t.use.id, trigger: events[0]!.kind });
       continue;
@@ -1357,6 +1392,7 @@ export async function adversaryAction(
       if (p.member.sheet.conditions.includes("vulnerable")) await postRuleNote(ctx, campaign, { ruleId: "conditionDice", summary: vulnerableTargetNote(label, p.member.sheet.name), characterId: p.member.character._id, groupId, actorId: user._id });
     }
   }
+  for (const summary of new Set(rangeAsks)) await postRuleNote(ctx, campaign, { ruleId: "definedRanges", summary, groupId, actorId: user._id });
   const result = await finish(ctx, { campaign, user, encounter, w, groupId, spotlight: needsSpotlight && !spotlit, needsSpotlight, spotlightFear: 0, roll, success: plan.success, outcomes, offers, publicText, gmText, ...(args.feature !== undefined ? { attackerFeature: args.feature } : {}) });
   if (forcedPcs.length > 0) {
     const live = await liveCombatMap(ctx, campaign._id);
@@ -1582,7 +1618,10 @@ export async function afterHitTriggers(ctx: MutationCtx, res: HitResolution, act
   const fear = fearState.fear;
   const lines: string[] = [];
   const groupId = res.groupId;
-  for (const t of triggered(w.block, w.instance, events)) {
+  // ODR3: Defined Ranges off, range-gated triggers are the GM's call; the questions join the hit's group.
+  const gated = rangeGatedUses(triggered(w.block, w.instance, events), ruleMode(campaign, "definedRanges"), instance.label);
+  for (const summary of new Set(gated.asks)) await postRuleNote(ctx, campaign, { ruleId: "definedRanges", summary, groupId, actorId });
+  for (const t of gated.uses) {
     if (t.mode === "reaction") {
       lines.push(`Reaction available: ${t.effect.feature}`);
       continue;
@@ -1603,6 +1642,7 @@ export async function afterHitTriggers(ctx: MutationCtx, res: HitResolution, act
       trigger: { amount: res.taken, source: selfCombatant(instance, block), ...(target ? { subject: pcCombatant(target.character._id, target.sheet) } : {}) },
       situations: [],
       attackDiceOnAttacks: true,
+      ...rangesFlag(campaign),
       rng: rollDie,
     });
     w.absorb(plan, t.effect.feature);
@@ -1934,6 +1974,8 @@ export type PcRollUses = {
   lines: string[];
   /** Reactions that matched and were not opted into (the GM's choice, Q19 default No), by instance. */
   offers: { instanceId: Id<"encounterAdversaries">; feature: string; useId: string }[];
+  /** ODR3: the GM's questions for the range-gated uses Defined Ranges off left out (already posted as notes); absent: none. */
+  rangeAsks?: string[];
 };
 
 /**
@@ -1947,13 +1989,19 @@ export type PcRollUses = {
  * The band is read from the live map (no map: no range, Q18). No running encounter: nothing.
  *
  * Callers: the PC roll paths (E1's resolveAttack / card uses / rolls.duality; follow-up bead) pass the roll's facts.
+ *
+ * Plan rule-switches ODR3 (user 2026-11-06): with Defined Ranges off a range-gated use (Ill Omen's "a PC within Close
+ * range") neither runs nor is offered; one GM-only `definedRanges` note per use asks who is in range (`rangeAsks`), in
+ * the roll's group when the caller passes `groupId` (by `actorId`, else the wrapper context's caller). The other uses
+ * run with the runner's `definedRanges: false`.
  */
 export async function pcRollAdversaryUses(
   ctx: MutationCtx,
   campaign: Doc<"campaigns">,
-  input: { characterId: Id<"characters">; roll: RollFacts; reactions?: readonly string[] },
+  input: { characterId: Id<"characters">; roll: RollFacts; reactions?: readonly string[]; groupId?: string; actorId?: Id<"users"> },
 ): Promise<PcRollUses> {
   const out: PcRollUses = { bonuses: [], lines: [], offers: [] };
+  const rangeAsks: string[] = [];
   const encounter = await ctx.db
     .query("encounters")
     .withIndex("by_campaign_status_updated", (q) => q.eq("campaignId", campaign._id).eq("status", "running"))
@@ -1972,6 +2020,7 @@ export async function pcRollAdversaryUses(
   const pcToken = tokens.find((t) => t.ref.kind === "pc" && t.ref.characterId === input.characterId);
   const fearState = await campaignFearState(ctx, campaign._id);
   let fear = fearState.fear;
+  const definedRanges = ruleMode(campaign, "definedRanges");
   for (const instance of instances) {
     if (instance.defeated) continue;
     const block = await blockOf(ctx, instance);
@@ -1979,7 +2028,9 @@ export async function pcRollAdversaryUses(
     const selfToken = tokens.find((t) => t.ref.kind === "adversary" && t.ref.adversaryId === instance._id);
     const band = selfToken && pcToken ? rangeCheck(selfToken, pcToken, "melee").band : undefined;
     const event: AdversaryEvent = { kind: "pcRolls", roll: input.roll, ...(band ? { band } : {}) };
-    for (const t of triggered(block, instance, [event])) {
+    const gated = rangeGatedUses(triggered(block, instance, [event]), definedRanges, instance.label);
+    for (const ask of gated.asks) if (!rangeAsks.includes(ask)) rangeAsks.push(ask);
+    for (const t of gated.uses) {
       if (t.mode === "reaction" && !(input.reactions ?? []).includes(t.effect.feature)) {
         out.offers.push({ instanceId: instance._id, feature: t.effect.feature, useId: t.use.id });
         continue;
@@ -1999,6 +2050,7 @@ export async function pcRollAdversaryUses(
         targets: [subject],
         trigger: { subject, source: self },
         optionals: optionalIds(t.use),
+        ...rangesFlag(campaign),
         rng: rollDie,
       });
       for (const s of plan.steps) {
@@ -2018,6 +2070,13 @@ export async function pcRollAdversaryUses(
       const manual = plan.steps.flatMap((s) => (s.kind === "prompt" ? [s.text] : []));
       out.lines.push(`${instance.label} ${t.effect.feature} (${t.mode === "auto" ? "automatic" : "reaction"}) on ${member.sheet.name}'s roll${manual.length > 0 ? `: ${manual.join("; ")}` : ""}`);
     }
+  }
+  // ODR3: the GM's questions, in the roll's group when the caller has one (else a note that is never undoable).
+  if (rangeAsks.length === 0) return out;
+  out.rangeAsks = rangeAsks;
+  const actorId = input.actorId ?? (ctx as MutationCtx & { user?: Doc<"users"> }).user?._id;
+  if (actorId !== undefined) {
+    for (const summary of rangeAsks) await postRuleNote(ctx, campaign, { ruleId: "definedRanges", summary, ...(input.groupId !== undefined ? { groupId: input.groupId } : {}), actorId });
   }
   return out;
 }
@@ -2066,7 +2125,10 @@ export async function pcEscape(ctx: MutationCtx, campaign: Doc<"campaigns">, use
     const selfToken = mapTokens.find((t) => t.ref.kind === "adversary" && t.ref.adversaryId === instance._id);
     const band = selfToken && pcToken ? rangeCheck(selfToken, pcToken, "melee").band : undefined;
     const event: AdversaryEvent = { kind: "pcEscapes", tokens, name: args.name, ...(band ? { band } : {}) };
-    const fired = triggered(block, instance, [event]);
+    // ODR3: Defined Ranges off, a range-gated use is the GM's call (a note in the escape's group).
+    const gated = rangeGatedUses(triggered(block, instance, [event]), ruleMode(campaign, "definedRanges"), instance.label);
+    for (const summary of gated.asks) await postRuleNote(ctx, campaign, { ruleId: "definedRanges", summary, groupId, actorId: user._id });
+    const fired = gated.uses;
     if (fired.length === 0) continue;
     const w = new Work(instance, block, await partyMembers(ctx, campaign._id), instances, encounter, sessionStartedAt);
     const subject = pcCombatant(member.character._id, cleared);
@@ -2094,6 +2156,7 @@ export async function pcEscape(ctx: MutationCtx, campaign: Doc<"campaigns">, use
         optionals: optionalIds(t.use),
         situations: [],
         attackDiceOnAttacks: true,
+        ...rangesFlag(campaign),
         rng: rollDie,
       });
       w.absorb(plan, t.effect.feature);

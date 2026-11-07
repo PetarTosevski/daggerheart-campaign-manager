@@ -140,8 +140,9 @@ export function useAttackPicker(state: AttackState, playFor: Id<"characters"> | 
       extraTargets: extraTargets(mods),
       hints: hints ?? [],
       forced: f,
-      forcedRows: f ? forcedRows(f, bandsFrom(seen.view)) : null,
-      conflictRows: !f && ruleModes?.pcConflict === true ? conflictRows(bandsFrom(seen.view), hints ?? [], ruleModes.lineOfSight) : null,
+      // Rule switches ODR3: Defined Ranges off, no row is out of range and none shows a band.
+      forcedRows: f ? forcedRows(f, bandsFrom(seen.view, ruleModes?.definedRanges ?? true)) : null,
+      conflictRows: !f && ruleModes?.pcConflict === true ? conflictRows(bandsFrom(seen.view, ruleModes.definedRanges), hints ?? [], ruleModes.lineOfSight, ruleModes.definedRanges) : null,
       picked: seenTargets(targetTokenIds, seen.enemies),
       ...(seen.actor ? { actor: seen.actor, others: { enemies: seen.enemies, allies: seen.allies } } : {}),
       attack: async (args) => {
