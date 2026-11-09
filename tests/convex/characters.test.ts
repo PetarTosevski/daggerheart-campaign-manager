@@ -159,6 +159,22 @@ describe("characters", () => {
     expect(s).toMatchObject({ scars: 2, hope: 4 });
   });
 
+  it("full Stress makes a PC Vulnerable from any write and a cleared Stress ends it (CB p.92); D5 Manual doesn't", async () => {
+    const { t, gm, p1, campaignId } = await setup();
+    const { characterId } = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
+    const conditions = async () => (await p1.query(api.charactersReads.get, { characterId }))!.sheet.conditions;
+    await gm.mutation(api.characters.adjustResource, { characterId, resource: "stress", delta: 6 });
+    expect(await conditions()).toContain("vulnerable");
+    await gm.mutation(api.characters.adjustResource, { characterId, resource: "stress", delta: -1 });
+    expect(await conditions()).not.toContain("vulnerable");
+    await t.run(async (ctx) => {
+      const c = (await ctx.db.get("campaigns", campaignId))!;
+      await ctx.db.patch("campaigns", campaignId, { ruleModes: { ...(c.ruleModes ?? {}), fullStressVulnerable: "manual" } });
+    });
+    await gm.mutation(api.characters.adjustResource, { characterId, resource: "stress", delta: 1 });
+    expect(await conditions()).not.toContain("vulnerable");
+  });
+
   it("vaulted cards cost their Recall Cost in Stress to bring back, except during a rest", async () => {
     const { p1, campaignId } = await setup();
     const { characterId } = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });

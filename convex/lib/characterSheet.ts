@@ -32,7 +32,9 @@
  * });
  * ```
  */
+import { withStressVulnerable } from "../../src/lib/domain/characters/index";
 import { hopePaid } from "../../src/lib/domain/journal/tally";
+import { resolveRuleModes } from "../../src/lib/rules/resolve";
 import { appError } from "../../src/lib/errors/app-error";
 import {
   characterSheetSchema,
@@ -111,8 +113,8 @@ export async function saveSheet(
   sheet: CharacterSheetInput,
   current?: Pick<Doc<"characters">, "campaignId" | "sheet">,
 ): Promise<void> {
-  const stored = storedSheet(sheet);
   const previous = current ?? (await ctx.db.get("characters", characterId));
+  const stored = storedSheet(await stressVulnerable(ctx, previous, sheet));
   await ctx.db.patch("characters", characterId, { sheet: stored, updatedAt: Date.now(), ...(stored.hp < stored.hpMax ? { deathMoveSpent: undefined } : {}) });
   const state = tallyStateOf(ctx);
   const declared = state.declared.get(characterId) ?? 0;
@@ -131,6 +133,26 @@ export async function saveSheet(
       ? { sessionId, hopeSpent: waiting.hopeSpent + hopeSpent, hpMarked: waiting.hpMarked + hpMarked }
       : { sessionId, hopeSpent, hpMarked },
   );
+}
+
+/**
+ * D5 Full Stress = Vulnerable for PCs (CB p.92), at the one place every sheet write passes: `withStressVulnerable` adds
+ * Vulnerable when the track fills and lifts it when a Stress clears. The campaign is read only when the track crosses
+ * full, and its modes come from `resolveRuleModes` directly (`./ruleModes` imports `./sessions`, which imports this file).
+ */
+async function stressVulnerable(ctx: MutationCtx, previous: Pick<Doc<"characters">, "campaignId" | "sheet"> | null, sheet: CharacterSheetInput): Promise<CharacterSheetInput> {
+  const before = previous === null ? null : stressTrack(previous.sheet);
+  const next = withStressVulnerable(before, sheet);
+  if (next === sheet) return sheet;
+  const campaign = previous === null ? null : await ctx.db.get("campaigns", previous.campaignId);
+  if (campaign !== null && resolveRuleModes(campaign.frameId, campaign.ruleModes).fullStressVulnerable === "manual") return sheet;
+  return next;
+}
+
+function stressTrack(raw: unknown): { stress: number; stressMax: number } | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const { stress, stressMax } = raw as { stress?: unknown; stressMax?: unknown };
+  return typeof stress === "number" && typeof stressMax === "number" ? { stress, stressMax } : null;
 }
 
 /** What one action added to a PC's `sessionCharacterStats` row (JD3b counters), as an action-log row records it. */

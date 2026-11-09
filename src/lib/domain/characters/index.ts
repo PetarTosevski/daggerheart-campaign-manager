@@ -145,6 +145,28 @@ export function pcVulnerableFromStress(sheet: { stress: number; stressMax: numbe
   return rules.fullStressVulnerable !== "manual" && sheet.stressMax > 0 && sheet.stress >= sheet.stressMax;
 }
 
+/**
+ * Full Stress makes a PC Vulnerable at the moment the track fills, on every write (the GM's +, a card cost, a feature,
+ * a hit), and clearing a Stress ends it (CB p.92: "When you mark your last Stress, you become Vulnerable … until you
+ * clear at least 1 Stress"). Only the change of state acts, so a GM who removes Vulnerable by hand while the track stays
+ * full isn't overruled, and a Vulnerable a card or feature gave (a sheet effect labelled "vulnerable") outlives the
+ * Stress. D5 Manual never calls this (convex/lib/characterSheet.ts `saveSheet`).
+ */
+export function withStressVulnerable<T extends { stress: number; stressMax: number; conditions?: Condition[]; effects?: readonly { text: string }[] }>(
+  previous: { stress: number; stressMax: number } | null,
+  next: T,
+): T {
+  const full = (t: { stress: number; stressMax: number }) => t.stressMax > 0 && t.stress >= t.stressMax;
+  const was = previous !== null && full(previous);
+  const is = full(next);
+  const conditions = next.conditions ?? [];
+  const has = conditions.includes("vulnerable");
+  if (is && !was && !has) return { ...next, conditions: [...conditions, "vulnerable"] };
+  const sourced = (next.effects ?? []).some((e) => e.text.split("; ")[0] === "vulnerable");
+  if (was && !is && has && !sourced) return { ...next, conditions: conditions.filter((c) => c !== "vulnerable") };
+  return next;
+}
+
 const MODIFIER = /([+\-−]\d+) to (Evasion|Armor Score)(?! while)/g;
 
 /**
