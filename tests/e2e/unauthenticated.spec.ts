@@ -90,6 +90,17 @@ test("signed out, every page route redirects to sign-in and leaks no campaign da
   }
 });
 
+test("signed out, the phone app link files answer 200 JSON with no redirect", async ({ request }) => {
+  // Apple and Android fetch these without a session and refuse a redirect (src/lib/app-links.ts, dcm-gdzi.41).
+  for (const path of ["/.well-known/apple-app-site-association", "/.well-known/assetlinks.json"]) {
+    const response = await request.get(path, { maxRedirects: 0 });
+    expect(response.status(), `${path} status`).toBe(200);
+    expect(response.headers()["content-type"], `${path} content type`).toContain("application/json");
+    const body: unknown = await response.json();
+    expect(typeof body, `${path} is a JSON document`).toBe("object");
+  }
+});
+
 test("a signed-in non-member sees 'Campaign not found' on every campaign route", async ({ page }) => {
   test.setTimeout(300_000);
   await signInAsTestGm(page, E2E_PLAYER_EMAIL);

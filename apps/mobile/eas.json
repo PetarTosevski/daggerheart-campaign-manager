@@ -8,21 +8,24 @@
       "distribution": "internal",
       "environment": "development",
       "env": {
-        "APP_VARIANT": "development"
+        "APP_VARIANT": "development",
+        "EXPO_PUBLIC_SITE_URL": "https://dualityheart.com"
       }
     },
     "preview": {
       "distribution": "internal",
       "environment": "preview",
       "env": {
-        "APP_VARIANT": "preview"
+        "APP_VARIANT": "preview",
+        "EXPO_PUBLIC_SITE_URL": "https://dualityheart.com"
       }
     },
     "production": {
       "distribution": "store",
       "environment": "production",
       "env": {
-        "APP_VARIANT": "production"
+        "APP_VARIANT": "production",
+        "EXPO_PUBLIC_SITE_URL": "https://dualityheart.com"
       },
       "autoIncrement": true,
       "android": {

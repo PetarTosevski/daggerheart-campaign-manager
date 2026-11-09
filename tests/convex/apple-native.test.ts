@@ -240,7 +240,7 @@ describe("apple-native sign-in", () => {
     expect(await users(t)).toEqual([]);
   });
 
-  it("answers a retryable RATE_LIMITED when Apple's keys cannot be fetched", async () => {
+  it("answers a retryable SIGN_IN_UNAVAILABLE when Apple's keys cannot be fetched", async () => {
     vi.resetModules();
     vi.stubGlobal(
       "fetch",
@@ -249,7 +249,7 @@ describe("apple-native sign-in", () => {
     const t = makeTest();
     const nonce = "nonce-outage";
     const token = await identityToken(await claims(nonce, { email: "ada@example.com", email_verified: true }));
-    expect(errorCode(await caught(signIn(t, token, nonce)))).toBe("RATE_LIMITED");
+    expect(errorCode(await caught(signIn(t, token, nonce)))).toBe("SIGN_IN_UNAVAILABLE");
     expect(await users(t)).toEqual([]);
   });
 });

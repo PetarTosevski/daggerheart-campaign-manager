@@ -206,7 +206,7 @@ const appleNativeProvider = ConvexCredentials({
       keys = await appleKeys.keysFor(kid);
     } catch {
       // Apple's keys could not be fetched: an outage, not a forged token, so the person may simply try again.
-      throw appError("RATE_LIMITED", "Sign in with Apple is unavailable right now. Try again in a moment.");
+      throw appError("SIGN_IN_UNAVAILABLE");
     }
     let identity;
     try {

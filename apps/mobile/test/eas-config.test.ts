@@ -86,3 +86,12 @@ test("eas.json keeps remote versions, the internal track, and no review request"
   const productionSubmit = asRecord(submit.production ?? null, "submit.production");
   expect(productionSubmit.ios).toEqual({});
 });
+
+test("every build profile names the https site it signs in through (dcm-gdzi.41)", () => {
+  const eas = asRecord(JSON.parse(fs.readFileSync(easPath, "utf8")) as Json, "eas.json");
+  const build = asRecord(eas.build ?? null, "build");
+  for (const profile of ["development", "preview", "production"]) {
+    const env = asRecord(asRecord(build[profile] ?? null, profile).env ?? null, `${profile}.env`);
+    expect({ profile, site: env.EXPO_PUBLIC_SITE_URL }).toEqual({ profile, site: expect.stringMatching(/^https:\/\/[^/]+$/) });
+  }
+});

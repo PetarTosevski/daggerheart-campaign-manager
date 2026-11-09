@@ -20,16 +20,37 @@ function variantOf(value: string | undefined): Variant {
   throw new Error(`APP_VARIANT must be development, preview or production, not ${value}`);
 }
 
+/**
+ * The website this build signs in through (`EXPO_PUBLIC_SITE_URL`, set per build profile in `eas.json`; the same default
+ * as `src/auth/google.ts`). Google returns to `https://<host>/auth`, which the app claims as an iOS universal link and
+ * an Android verified app link; the site proves the claim with `/.well-known/apple-app-site-association` and
+ * `/.well-known/assetlinks.json` (`src/lib/app-links.ts` in the web app, dcm-gdzi.41).
+ */
+function siteHost(value: string | undefined): string {
+  const site = value === undefined || value.trim() === "" ? "https://dualityheart.com" : value.trim();
+  let url: URL | null = null;
+  try {
+    url = new URL(site);
+  } catch {
+    url = null;
+  }
+  if (url?.protocol !== "https:") throw new Error(`EXPO_PUBLIC_SITE_URL must be an https URL, not ${site}`);
+  return url.host;
+}
+
 /** The app's background (`colors.ink`); also behind the status bar and the splash. */
 const ink = "#0c0b11";
 
 export default ({ config }: ConfigContext): ExpoConfig => {
-  const convexUrl = process.env.EXPO_PUBLIC_CONVEX_URL;
+  // Read through a local so babel-preset-expo does not inline the `EXPO_PUBLIC_*` values when jest loads this file.
+  const env = process.env;
+  const convexUrl = env.EXPO_PUBLIC_CONVEX_URL;
   if (typeof convexUrl !== "string" || convexUrl.trim().length === 0) {
     throw new Error("EXPO_PUBLIC_CONVEX_URL is not set");
   }
 
-  const { bundleId, scheme, name } = variants[variantOf(process.env.APP_VARIANT)];
+  const { bundleId, scheme, name } = variants[variantOf(env.APP_VARIANT)];
+  const host = siteHost(env.EXPO_PUBLIC_SITE_URL);
 
   return {
     ...config,
@@ -47,6 +68,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ios: {
       bundleIdentifier: bundleId,
       usesAppleSignIn: true,
+      associatedDomains: [`applinks:${host}`],
       infoPlist: {
         UIStatusBarStyle: "UIStatusBarStyleLightContent",
       },
@@ -57,6 +79,15 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         foregroundImage: "./assets/adaptive-icon.png",
         backgroundColor: "#1a1408",
       },
+      // Only `/auth` (Google's return): every other link on the site keeps opening in the browser.
+      intentFilters: [
+        {
+          action: "VIEW",
+          autoVerify: true,
+          data: [{ scheme: "https", host, path: "/auth" }],
+          category: ["BROWSABLE", "DEFAULT"],
+        },
+      ],
     },
     plugins: [
       "expo-router",

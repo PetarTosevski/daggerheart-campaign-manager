@@ -2,7 +2,7 @@ import { beforeEach, expect, jest, test } from "@jest/globals";
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 import { ConvexError } from "convex/values";
 
-import { joinCodeFromNext } from "../../../src/features/auth/auth-error";
+import { authErrorText, joinCodeFromNext } from "../../../src/features/auth/auth-error";
 import { PasswordForm } from "../../../src/features/auth/password-form";
 
 const mockSignIn = jest.fn((_provider: string, _params?: Record<string, unknown>) =>
@@ -70,6 +70,11 @@ test("sign-in from a join link never sends the code", async () => {
       password: "long-enough-1",
     }),
   );
+});
+
+test("an Apple key outage reads as unavailable, not as too many tries (dcm-gdzi.41)", () => {
+  const outage = new ConvexError({ code: "SIGN_IN_UNAVAILABLE" });
+  expect(authErrorText(outage, "fallback")).toBe("Sign in with Apple is unavailable right now. Try again in a moment.");
 });
 
 test("joinCodeFromNext reads only a /join/<code> path", () => {
