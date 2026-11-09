@@ -20,6 +20,11 @@ export const darknessModeValidator = v.union(
   v.literal("both"),
   v.literal("manual"),
 );
+// Wave 3 (user answers 2026-11-09).
+export const tagTeamModeValidator = v.union(v.literal("book"), v.literal("noSessionLimit"), v.literal("manual"));
+/** M4: `book` is "Ask the GM" (the old `tableSettings.outOfRange` `ask`), `refuse` the old `refuse`. */
+export const outOfRangeModeValidator = v.union(v.literal("book"), v.literal("refuse"), v.literal("manual"));
+export const doomTrackModeValidator = v.union(v.literal("book"), v.literal("everyNSessions"), v.literal("manual"));
 export const sharedDomainCardsValidator = v.union(v.literal("allow"), v.literal("warn"), v.literal("refuse"));
 
 /** Every field, each in its resolved (required) form. */
@@ -52,6 +57,22 @@ const fields = {
   colossusSiphoning: bookManual,
   umbraLurkingDarkness: bookManual,
   andaluriaLycanthropy: bookManual,
+  // switch rules of wave 3 (user answers 2026-11-09; widened)
+  criticalSuccess: bookManual,
+  experienceCost: bookManual,
+  helpAnAlly: bookManual,
+  criticalDamage: bookManual,
+  adversaryExperienceFear: bookManual,
+  fearFeatures: bookManual,
+  hordes: bookManual,
+  unconscious: bookManual,
+  twoDowntimeMoves: bookManual,
+  downtimeMoveEffects: bookManual,
+  scars: bookManual,
+  domainCardLevels: bookManual,
+  tagTeam: tagTeamModeValidator,
+  outOfRange: outOfRangeModeValidator,
+  doomTrack: doomTrackModeValidator,
   // optional rules
   massiveDamage: v.boolean(),
   spotlightTracker: v.boolean(),
@@ -66,6 +87,7 @@ const fields = {
   // numbers set in a rule's row (range checked by `ruleSettings.set`)
   spotlightTrackerTokens: v.number(),
   darknessDifficulty: v.number(),
+  doomTrackSessions: v.number(),
 };
 
 /** Every rule's mode, resolved (`ruleSettings.get`). */
@@ -117,6 +139,21 @@ export const ruleChangeValidator = v.union(
   change("colossusSiphoning"),
   change("umbraLurkingDarkness"),
   change("andaluriaLycanthropy"),
+  change("criticalSuccess"),
+  change("experienceCost"),
+  change("helpAnAlly"),
+  change("criticalDamage"),
+  change("adversaryExperienceFear"),
+  change("fearFeatures"),
+  change("hordes"),
+  change("unconscious"),
+  change("twoDowntimeMoves"),
+  change("downtimeMoveEffects"),
+  change("scars"),
+  change("domainCardLevels"),
+  change("tagTeam"),
+  change("outOfRange"),
+  change("doomTrack"),
   change("massiveDamage"),
   change("spotlightTracker"),
   change("fallingDamage"),
@@ -129,6 +166,7 @@ export const ruleChangeValidator = v.union(
   change("definedRanges"),
   change("spotlightTrackerTokens"),
   change("darknessDifficulty"),
+  change("doomTrackSessions"),
 );
 
 export type RuleChange = { [K in keyof typeof fields]: { key: K; value: Infer<(typeof fields)[K]> } }[keyof typeof fields];

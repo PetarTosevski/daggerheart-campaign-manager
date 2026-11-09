@@ -18,10 +18,11 @@ function literals(validator: { kind: string; members?: { kind: string; value?: u
 }
 
 describe("the rule registry", () => {
-  it("holds the 61 listed rules (27 with modes, 34 Book-only) and the 10 decided optional rules", () => {
+  it("holds the 61 listed rules (42 with modes, 19 Book-only) and the 10 decided optional rules", () => {
     expect(listed).toHaveLength(61);
-    expect(listed.filter(isSwitchRule)).toHaveLength(27);
-    expect(listed.filter((r) => r.kind === "bookOnly")).toHaveLength(34);
+    expect(listed.filter(isSwitchRule)).toHaveLength(42);
+    // Wave 3 (Q16 a, user 2026-11-09): these 19 stay read-only rows.
+    expect(listed.filter((r) => r.kind === "bookOnly").map((r) => r.code)).toEqual(["R1", "R4", "R5", "R9", "R11", "F1", "D1", "D3", "A2", "A3", "C3", "T5", "S3", "L1", "L2", "K2", "K3", "E1", "W8"]);
     expect(listed.filter((r) => r.kind === "appRule").map((r) => r.code)).toEqual(["M2"]);
     expect(optional.map((r) => r.id).sort()).toEqual(
       ["massiveDamage", "spotlightTracker", "fallingDamage", "underwater", "goldCoins", "fateRolls", "pcConflict", "horizonEncounterBonuses", "sharedDomainCards", "definedRanges"].sort(),
@@ -50,6 +51,28 @@ describe("the rule registry", () => {
     expect(ruleDef("minions")).toMatchObject({ modes: [{ id: "book" }, { id: "gmPicks", notInBooks: true }, { id: "manual" }] });
     expect(ruleDef("fearFromRests")).toMatchObject({ modes: [{ id: "book" }, { id: "extendedDowntime", notInBooks: false, ref: { book: "CB", page: 181 } }, { id: "manual" }] });
     expect(ruleDef("wallsBlock")).toMatchObject({ kind: "appRule", modes: [{ id: "book", label: "App rule", notInBooks: true }, { id: "manual" }] });
+  });
+
+  it("gives the 15 wave-3 rules their answered modes (user answers 2026-11-09)", () => {
+    const modeIds = (id: string) => {
+      const r = ruleDef(id)!;
+      return isSwitchRule(r) ? r.modes.map((m) => m.id) : null;
+    };
+    for (const id of ["criticalSuccess", "experienceCost", "helpAnAlly", "criticalDamage", "adversaryExperienceFear", "fearFeatures", "hordes", "unconscious", "twoDowntimeMoves", "downtimeMoveEffects", "scars", "domainCardLevels"]) {
+      expect(modeIds(id), id).toEqual(["book", "manual"]);
+    }
+    expect(ruleDef("tagTeam")).toMatchObject({ kind: "switch", modes: [{ id: "book" }, { id: "noSessionLimit", label: "No session limit", notInBooks: true }, { id: "manual" }] });
+    // M4 (Q12 a): Ask the GM is the book's "usually"; Refuse is printed too.
+    expect(ruleDef("outOfRange")).toMatchObject({
+      kind: "switch",
+      modes: [{ id: "book", label: "Ask the GM", notInBooks: false }, { id: "refuse", label: "Refuse", notInBooks: false }, { id: "manual", label: "Manual" }],
+    });
+    expect(ruleDef("doomTrack")).toMatchObject({
+      kind: "switch",
+      frames: ["journey-to-horizon"],
+      modes: [{ id: "book" }, { id: "everyNSessions", label: "Every N sessions", notInBooks: true }, { id: "manual" }],
+      param: { key: "doomTrackSessions", min: 1, max: 4, default: 1 },
+    });
   });
 
   it("names the frame of every frame rule and hides it elsewhere", () => {
@@ -93,6 +116,7 @@ describe("resolveRuleModes", () => {
       expect(modes.sharedDomainCards).toBe("warn");
       expect(modes.spotlightTrackerTokens).toBe(3);
       expect(modes.darknessDifficulty).toBe(2);
+      expect(modes.doomTrackSessions).toBe(1);
       expect(Object.keys(modes).sort()).toEqual([...RULE_MODE_FIELDS].sort());
     }
   });
@@ -120,6 +144,13 @@ describe("resolveRuleModes", () => {
     });
     expect(resolveRuleModes("beast-feast", stored).beastFeastFeast).toBe("manual");
     expect(resolveRuleModes("journey-to-horizon", stored).horizonEncounterBonuses).toBe(true);
+  });
+
+  it("resolves the wave-3 modes: W3 and its number only in Journey to Horizon, a number past 4 falls back", () => {
+    const stored = { tagTeam: "noSessionLimit", outOfRange: "refuse", doomTrack: "everyNSessions", doomTrackSessions: 3 } as const;
+    expect(resolveRuleModes("journey-to-horizon", stored)).toMatchObject({ tagTeam: "noSessionLimit", outOfRange: "refuse", doomTrack: "everyNSessions", doomTrackSessions: 3 });
+    expect(resolveRuleModes("witherwild", stored)).toMatchObject({ tagTeam: "noSessionLimit", outOfRange: "refuse", doomTrack: "book", doomTrackSessions: 1 });
+    expect(resolveRuleModes("journey-to-horizon", { doomTrackSessions: 5 }).doomTrackSessions).toBe(1);
   });
 
   it("X2 resolves to Manual and is read-only while X1 is Manual (Q8 a)", () => {

@@ -4,7 +4,7 @@
 // rules the engine doesn't follow yet show their mode read-only with 'Coming soon'; a live session disables every
 // control (the campaign options too, Q17 a) with the lock hint; players read the same rows from the Preferences popover
 // (Q18 a) with the modes as text.
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { ConvexError } from "convex/values";
 import { useSyncExternalStore } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -195,6 +195,21 @@ describe("rule rows: the GM", () => {
     expect(within(fearCap).queryByRole("radio")).toBeNull();
     expect(within(fearCap).queryByRole("switch")).toBeNull();
     expect(within(fearCap).queryByRole("button")).toBeNull();
+  });
+
+  it("shows a rule with modes that isn't wired yet as its mode and Coming soon, with no control (wave 3)", () => {
+    setUp("witherwild", { outOfRange: "refuse" });
+    render(<Section />);
+    for (const id of ["criticalSuccess", "tagTeam", "outOfRange"]) {
+      expect(within(row(id)).queryByRole("radio"), id).toBeNull();
+      expect(within(row(id)).getByText(RULE_ROWS_TEXT.comingSoon), id).toBeInTheDocument();
+    }
+    expect(within(row("outOfRange")).getByText("Refuse")).toBeInTheDocument();
+    wire("outOfRange");
+    cleanup();
+    render(<Section />);
+    expect(within(row("outOfRange")).getByRole("radio", { name: "Ask the GM" })).toBeInTheDocument();
+    expect(within(row("outOfRange")).getByRole("radio", { name: "Refuse" })).toBeChecked();
   });
 
   it("makes X2 read-only while X1 is Manual", () => {
