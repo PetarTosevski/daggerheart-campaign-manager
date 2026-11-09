@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { errorMessage } from "@/lib/convex-errors";
 import { lorekeeperMessages } from "@/lib/errors/lorekeeper";
-import { optionsFor, resolveOptions } from "@/lib/frames/options";
+import { EXPANSION_OPTIONS, optionsFor, resolveOptions } from "@/lib/frames/options";
 
 import type { Id } from "../../../convex/_generated/dataModel";
 import type { CampaignSummary } from "../../../convex/campaigns";
@@ -68,6 +68,7 @@ vi.mock("convex/react", () => ({
 }));
 
 const { HouseRulesSection, RULES_TEXT, rulingOrigin } = await import("@/components/config/sections/rules");
+const { ExpansionsSection, EXPANSIONS_TEXT } = await import("@/components/config/sections/expansions");
 
 const C1 = "c1" as Id<"campaigns">;
 const GET = `campaigns:get:${JSON.stringify({ campaignId: C1 })}`;
@@ -88,6 +89,11 @@ const ruling = (id: string, title: string, extra: Partial<{ sessionN: number | n
 function Section() {
   useVersion();
   return <HouseRulesSection campaign={store.get(GET) as CampaignSummary} />;
+}
+
+function Expansions() {
+  useVersion();
+  return <ExpansionsSection campaign={store.get(GET) as CampaignSummary} />;
 }
 
 const sw = (name: string) => screen.getByRole("switch", { name });
@@ -111,7 +117,9 @@ describe("Campaign settings: House rules", () => {
     render(<Section />);
     expect(screen.getByText("The Lorekeeper quotes these as table rulings before it searches anywhere else.")).toBeInTheDocument();
     const list = screen.getByRole("list", { name: "Campaign options" });
-    const frameOptions = optionsFor("witherwild");
+    // Hope & Fear content moved to Campaign settings > Expansions (user 2026-11-09).
+    const frameOptions = optionsFor("witherwild").filter((o) => !EXPANSION_OPTIONS.includes(o.id));
+    expect(within(list).queryByRole("switch", { name: "Hope & Fear content" })).toBeNull();
     expect(within(list).getAllByRole("switch")).toHaveLength(frameOptions.length);
     for (const o of frameOptions) {
       expect(within(list).getByText(o.label)).toBeInTheDocument();
@@ -147,6 +155,17 @@ describe("Campaign settings: House rules", () => {
     fireEvent.click(sw("Wither stays across sessions (house rule)"));
     await waitFor(() => expect(screen.getByText(errorMessage(refuse))).toBeInTheDocument());
     expect(sw("Wither stays across sessions (house rule)")).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("Expansions holds the Hope & Fear switch (moved out of House rules, user 2026-11-09) and writes campaigns.setOption", async () => {
+    render(<Expansions />);
+    const list = screen.getByRole("list", { name: EXPANSIONS_TEXT.label });
+    expect(within(list).getAllByRole("switch")).toHaveLength(1);
+    expect(within(list).getByText(EXPANSIONS_TEXT.tag)).toBeInTheDocument();
+    const before = options().hopeAndFear;
+    fireEvent.click(sw("Hope & Fear content"));
+    await waitFor(() => expect(sw("Hope & Fear content")).toHaveAttribute("aria-checked", String(!before)));
+    expect(calls).toEqual([{ name: "campaigns:setOption", args: { campaignId: C1, option: "hopeAndFear", enabled: !before } }]);
   });
 
   it("lists the rulings with where they came from", () => {

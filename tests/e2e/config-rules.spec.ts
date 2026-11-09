@@ -41,8 +41,15 @@ test("House rules: campaign options and table rulings, in step with the dashboar
   await expect(rules.getByText("The Lorekeeper quotes these as table rulings before it searches anywhere else.")).toBeVisible();
   const options = rules.getByRole("list", { name: "Campaign options" });
   await expect(options.getByText("Campaign option").first()).toBeVisible();
-  await expect(rules.getByRole("switch", { name: "Massive damage" })).toHaveCount(0);
+  // Hope & Fear content lives under Expansions now (user 2026-11-09), not with the frame's options.
+  await expect(rules.getByRole("switch", { name: "Hope & Fear content" })).toHaveCount(0);
   await expect(rules.getByText("No table rulings yet.", { exact: false })).toBeVisible();
+
+  // Expansions: the Hope & Fear switch, on for a Witherwild campaign by default.
+  await sectionNav(page, "Expansions").click();
+  await expect(page).toHaveURL(/[?&]settings=expansions\b/);
+  await expect(panel.getByTestId("settings-expansions").getByRole("switch", { name: "Hope & Fear content" })).toBeVisible();
+  await sectionNav(page, "House rules").click();
 
   // A campaign option here is the dashboard panel's option.
   const witherSwitch = options.getByRole("switch", { name: wither });

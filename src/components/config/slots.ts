@@ -12,6 +12,7 @@ import type { CampaignSummary } from "../../../convex/campaigns";
  * |-------------------------------------|---------------|--------------------------------------------------------------------|
  * | `sections/table/index.tsx`          | U1            | `TableSection` (settings, Table: under the H3 'At the table')       |
  * | `sections/rules/index.tsx`          | U2            | `HouseRulesSection` (settings, House rules: under 'House rules')    |
+ * | `sections/expansions/index.tsx`     | 2026-11-09    | `ExpansionsSection` (settings, Expansions: Hope & Fear content)     |
  * | `sections/players/index.tsx`        | U3 (U3p)      | `PlayersSection` (settings, Players: under 'Players')               |
  * | `sections/lorekeeper/index.tsx`     | U4 (AU3, AU8) | `LorekeeperSection` (settings, Lorekeeper: under 'Lorekeeper')      |
  * | `sections/sessions/index.tsx`       | U5 (S3)       | `SessionsSection` (settings, Sessions: under 'Sessions')            |
@@ -25,7 +26,7 @@ import type { CampaignSummary } from "../../../convex/campaigns";
  *
  * Settings panel (design `.setp`, 640 px): a native modal `<dialog>` on the right (focus trapped, Escape and the
  * backdrop close it, no slide with reduced motion). Kicker '<campaign name> · GM only', H2 'Campaign settings', the side
- * nav 'Settings sections' (Table / House rules / Players / Lorekeeper / Sessions, the current one `aria-current`), the
+ * nav 'Settings sections' (Table / House rules / Expansions / Players / Lorekeeper / Sessions, the current one `aria-current`), the
  * section (the shell renders the H3 from `SETTINGS_SECTIONS[].title`; the slot renders the rows under it, the board's
  * hint line included) and the footer 'Changes save as you make them and reach every player at once.'. Only the GM
  * (`campaign.role === "gm"`: creator and co-GM) ever gets the panel; a player with `?settings=` in the URL sees nothing.
@@ -35,7 +36,7 @@ import type { CampaignSummary } from "../../../convex/campaigns";
  * `PREFERENCES_SAVED_LABEL`, `PreferenceRows`, `AppAdminLink`, then 'Campaign settings' (GM) and 'Sign out'. Its body
  * renders only while it is open, so the slots' queries run only then.
  *
- * URL state: `?settings=table|rules|players|lorekeeper|sessions` opens the panel at that section (a bad value opens
+ * URL state: `?settings=table|rules|expansions|players|lorekeeper|sessions` opens the panel at that section (a bad value opens
  * Table); closing removes the param, every other param stays. The shell writes it with `history.replaceState`, which
  * Next's router syncs into `useSearchParams` without a server round trip.
  *
@@ -55,11 +56,12 @@ import type { CampaignSummary } from "../../../convex/campaigns";
 // ---------------------------------------------------------------- URL state
 
 /** The settings sections, in nav order. */
-export type SettingsSection = "table" | "rules" | "players" | "lorekeeper" | "sessions";
+export type SettingsSection = "table" | "rules" | "expansions" | "players" | "lorekeeper" | "sessions";
 
 export const SETTINGS_SECTIONS: readonly { id: SettingsSection; label: string; title: string }[] = [
   { id: "table", label: "Table", title: "At the table" },
   { id: "rules", label: "House rules", title: "House rules" },
+  { id: "expansions", label: "Expansions", title: "Expansions" },
   { id: "players", label: "Players", title: "Players" },
   { id: "lorekeeper", label: "Lorekeeper", title: "Lorekeeper" },
   { id: "sessions", label: "Sessions", title: "Sessions" },
