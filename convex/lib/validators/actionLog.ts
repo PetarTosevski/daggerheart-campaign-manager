@@ -137,6 +137,21 @@ export const spotlightBeforeValidator = v.object({
 /** A row's counted Hope spent / HP marked and the live session they went to (dcm-z9rz.22). */
 export const sessionTallyValidator = v.object({ sessionId: v.id("sessions"), hopeSpent: v.number(), hpMarked: v.number() });
 
+/**
+ * What a PC's card use or weapon attack did to one adversary it hit (dcm-uemx, widened; older rows have none): the damage
+ * severity against its thresholds (CB p.90: Minor 1 HP, Major 2, Severe 3; "defeat" for a Minion or a block without
+ * thresholds, "none" when nothing got through), the HP the use marked on it (after resistance, riders and the track's
+ * cap), the resistance that applied and whether it was Massive (CB p.91). Stored only on the use's `visibility: "gm"`
+ * row and read only by the GM (`combatHud.resultDamage`): adversary thresholds never reach a player (U1).
+ */
+export const targetDamageValidator = v.object({
+  tokenId: v.id("combatTokens"),
+  severity: v.union(v.literal("none"), v.literal("minor"), v.literal("major"), v.literal("severe"), v.literal("defeat")),
+  hpMarked: v.number(),
+  resisted: v.optional(v.union(v.literal("resistant"), v.literal("immune"))),
+  massive: v.optional(v.literal(true)),
+});
+
 /** The stored fields of one `actionLog` row (see convex/tables/actionLog.ts). */
 export const actionLogFields = {
   campaignId: v.id("campaigns"),
@@ -171,6 +186,8 @@ export const actionLogFields = {
   sessionTally: v.optional(sessionTallyValidator),
   /** S1 moved the spotlight to the GM with this row's action (CU2, widened; older rows have none): undo puts it back. */
   spotlightBefore: v.optional(spotlightBeforeValidator),
+  /** dcm-uemx: on the GM row of a PC's card use or attack only, severity and HP marked per adversary hit (U1: GM only). */
+  targetDamage: v.optional(v.array(targetDamageValidator)),
   undoable: v.boolean(),
   undoneAt: v.optional(v.number()),
   undoneBy: v.optional(v.id("users")),
@@ -205,6 +222,7 @@ export type ActionTarget = Infer<typeof actionTargetValidator>;
 export type CampaignTimeSnapshot = Infer<typeof campaignTimeSnapshotValidator>;
 export type TimeChange = Infer<typeof timeChangeValidator>;
 export type SpotlightBefore = Infer<typeof spotlightBeforeValidator>;
+export type TargetDamage = Infer<typeof targetDamageValidator>;
 
 // Drift checks: each type must be assignable to the other.
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;

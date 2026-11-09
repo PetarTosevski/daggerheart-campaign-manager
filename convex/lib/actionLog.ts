@@ -46,7 +46,7 @@ import { revertFear } from "./fear";
 import { recordHistory } from "../tables/history";
 import { refuseArchived } from "./archived";
 import { campaignAccess } from "./permissions";
-import type { ActionKind, AdversaryBefore, CampaignTimeSnapshot, SpotlightBefore, StoredRoll, TimeChange, Visibility } from "./validators/actionLog";
+import type { ActionKind, AdversaryBefore, CampaignTimeSnapshot, SpotlightBefore, StoredRoll, TargetDamage, TimeChange, Visibility } from "./validators/actionLog";
 
 /** The longest feed line; longer summaries are cut. */
 export const SUMMARY_MAX = 300;
@@ -112,6 +112,8 @@ export type LogEntry = {
   hopeGained?: boolean;
   /** End day / a day jump forward (CT2): the calendar before and after, on the group's campaign row. */
   timeChange?: TimeChange;
+  /** dcm-uemx: only on the `visibility: "gm"` row of a PC's card use or attack (severity and HP per adversary hit, U1). */
+  targetDamage?: TargetDamage[];
   undoable: boolean;
 };
 
@@ -124,6 +126,8 @@ export function newGroupId(): string {
 export async function logAction(ctx: MutationCtx, entry: LogEntry): Promise<Id<"actionLog">> {
   const { before, summary, ...rest } = entry;
   if (before !== undefined && entry.characterId === undefined) throw new Error("logAction: `before` needs a characterId.");
+  // U1: severity and HP marked are adversary numbers; only a GM row may carry them.
+  if (entry.targetDamage !== undefined && entry.visibility !== "gm") throw new Error("logAction: `targetDamage` goes on a GM row only.");
   // dcm-z9rz.22: a row that restores the sheet on undo carries what its saves added to the session tally.
   const sessionTally = before !== undefined && entry.characterId !== undefined ? takeSessionTally(ctx, entry.characterId) : undefined;
   return ctx.db.insert("actionLog", {

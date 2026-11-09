@@ -41,6 +41,7 @@ import {
   resistanceNotes,
   rollText,
   srdUses,
+  targetDamageOf,
   writeInstances,
   type InstanceWrite,
   type ResolvedCard,
@@ -589,6 +590,8 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
   }
   const lines = [...gmLines(plan, built, writes), ...casterEnds.lines];
   const befores = [...writes.map((w) => w.before), ...casterEnds.before, ...stanceBefore];
+  // dcm-uemx: severity and HP per adversary hit, for the GM's result panel (`combatHud.resultDamage`; U1: GM row only).
+  const targetDamage = targetDamageOf(plan, built, writes);
   if (lines.length > 0 || befores.length > 0) {
     await logAction(ctx, {
       campaignId: campaign._id,
@@ -599,6 +602,7 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
       ...(damage[0] ? { roll: damage[0].roll } : {}),
       groupId,
       ...(befores.length > 0 ? { adversaryBefore: befores } : {}),
+      ...(targetDamage.length > 0 ? { targetDamage } : {}),
       undoable: true,
     });
   }

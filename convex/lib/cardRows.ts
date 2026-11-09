@@ -37,7 +37,7 @@ import { readSheet, saveSheet } from "./characterSheet";
 import { MAX_INSTANCES } from "./encounters";
 import { bandsOnMap, openIncomingHit, partyMembers } from "./incomingHits";
 import { ENCOUNTER_CONDITIONS, type EncounterCondition, type InstanceEffect } from "./validators/encounters";
-import { rollValidator, type AdversaryBefore } from "./validators/actionLog";
+import { rollValidator, type AdversaryBefore, type TargetDamage } from "./validators/actionLog";
 import { rangeBandValidator } from "./validators/combatRequests";
 
 // ---------------------------------------------------------------- what a caller returns
@@ -471,6 +471,25 @@ export function gmLines(plan: RunPlan, built: BuiltRun, writes: readonly Instanc
   for (const id of plan.excluded) lines.push(`${name(id)}: not affected (the card's filter)`);
   for (const w of writes) lines.push(`${w.creature.instance.label} now ${w.patch.hp}/${w.creature.instance.stats.hpMax} HP, ${w.patch.stress}/${w.creature.instance.stats.stressMax} Stress${w.patch.defeated ? ", defeated" : ""}`);
   return lines;
+}
+
+/**
+ * dcm-uemx: severity and HP marked per adversary the use damaged, for the GM row's `targetDamage` (the GM's result
+ * panel). The severity is the damage step's (one per adversary, R2); the HP is what the use's instance write changed
+ * (marks and riders included), the damage step's own count when nothing was written. Never sent to a player (U1).
+ */
+export function targetDamageOf(plan: RunPlan, built: BuiltRun, writes: readonly InstanceWrite[]): TargetDamage[] {
+  const out: TargetDamage[] = [];
+  for (const step of plan.steps) {
+    if (step.kind !== "damage") continue;
+    const r = step.result;
+    const c = built.creatures.get(r.targetId);
+    if (c?.kind !== "enemy" || out.some((o) => o.tokenId === c.tokenId)) continue;
+    const write = writes.find((w) => w.creature.tokenId === c.tokenId);
+    const hpMarked = write ? Math.max(0, write.patch.hp - c.instance.hp) : r.hpMarked;
+    out.push({ tokenId: c.tokenId, severity: r.severity, hpMarked, ...(r.resisted !== "none" && r.resistanceApplied !== false ? { resisted: r.resisted } : {}), ...(r.massive ? { massive: true as const } : {}) });
+  }
+  return out;
 }
 
 /** The damage rolls of the plan, for the player and the public row (Q5). */

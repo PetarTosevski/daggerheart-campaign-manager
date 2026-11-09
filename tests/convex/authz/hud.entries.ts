@@ -15,6 +15,8 @@ import { freshKey } from "./synth";
  * Difficulty, user 2026-11-02); another player is FORBIDDEN.
  * Its content checks are in tests/convex/hud-withdraw.test.ts.
  * `combatHud.sceneEndPreview` (H5.3, `gmQuery`): the GM only; what it lists is checked in tests/convex/hud-scene-end.test.ts.
+ * `combatHud.resultDamage` (dcm-uemx, `gmQuery`): the GM only; what it reads is checked in
+ * tests/convex/card-result-targets.test.ts.
  */
 async function setup(w: World) {
   const campaignId = w.campaignId;
@@ -58,6 +60,17 @@ async function sanctioned(w: World) {
   w.set("requestId", requestId);
 }
 
+/** A card use's public row and its GM row with `targetDamage` (dcm-uemx), characterA's (`entryId`). */
+async function resultRows(w: World) {
+  const entryId = await w.t.run(async (ctx) => {
+    const base = { campaignId: w.campaignId, actorId: w.users.player, kind: "combat" as const, groupId: "authz-result", undoable: true, at: Date.now() };
+    const tokenId = (await ctx.db.query("combatTokens").first())!._id;
+    await ctx.db.insert("actionLog", { ...base, visibility: "gm", summary: "Ash · Rain of Blades → Ogre: 7 → Major → 2 HP", targetDamage: [{ tokenId, severity: "major", hpMarked: 2 }] });
+    return ctx.db.insert("actionLog", { ...base, characterId: w.characterA, visibility: "public", summary: "Ash uses Rain of Blades → Ogre: Hit" });
+  });
+  w.set("entryId", entryId);
+}
+
 const area: Area = {
   area: "hud",
   setup,
@@ -83,6 +96,14 @@ const area: Area = {
     { fn: api.combatRequestsReads.withdrawn, access: "gm", expect: { otherPlayer: "FORBIDDEN", grantee: "FORBIDDEN" } },
     // H5.3: what End scene would end, for its confirm (gmQuery: the GM only; the edit grantee and players FORBIDDEN).
     { fn: api.combatHud.sceneEndPreview, access: "gm", expect: { otherPlayer: "FORBIDDEN", grantee: "FORBIDDEN" } },
+    // dcm-uemx: severity and HP per adversary hit for the GM's result panel (gmQuery; U1: players and the grantee FORBIDDEN).
+    {
+      fn: api.combatHud.resultDamage,
+      access: "gm",
+      setup: resultRows,
+      args: (w) => ({ entryId: w.ids.entryId }),
+      expect: { otherPlayer: "FORBIDDEN", grantee: "FORBIDDEN" },
+    },
   ],
 };
 

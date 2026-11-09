@@ -6,6 +6,7 @@ import { withEffects } from "../src/lib/domain/characters/effects";
 import { expire, SCENE_TOKEN_KEYS } from "../src/lib/domain/characters/expiry";
 import { hopeMax } from "../src/lib/domain/characters/index";
 import { frameHasMechanic } from "../src/lib/frames/index";
+import { appError } from "../src/lib/errors/app-error";
 import { stanceById } from "../src/lib/srd/stances";
 import type { Doc } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
@@ -32,6 +33,7 @@ import { campaignFearState } from "./lib/fear";
 import { campaignQuery, gmQuery, userQuery } from "./lib/functions";
 import { atLeast } from "./lib/permissions";
 import { withoutStance } from "./lib/stanceDrop";
+import { targetDamageValidator } from "./lib/validators/actionLog";
 import { fearValueValidator, seesFear } from "./campaigns";
 
 /**
@@ -299,6 +301,33 @@ export const sheet = userQuery({
       }),
       effects: lasting.map((e, i) => ({ id: e.id, source: e.source, text: e.text, until: effectUntilLabel(e), ends: e.until, canEnd: canEnd[i]! })),
     };
+  },
+});
+
+// ---------------------------------------------------------------- the GM's result panel (dcm-uemx)
+
+/** Rows of one action read for its GM damage (`logAction`'s groups stay far below it; undo refuses more than 50). */
+const RESULT_GROUP_MAX = 60;
+
+/**
+ * The severity and HP marked per adversary hit by one card use or weapon attack (`entryId`: the result's public row),
+ * for the GM's result panel ("Cave Ogre · Hit · 19 magic · Major · 2 HP"). Read from the `targetDamage` of the action's
+ * GM rows (convex/lib/validators/actionLog.ts); [] for an action without them (an older row, an undone action, no hit).
+ * GM only (gmQuery, `need: "owner"`): severities follow from an adversary's thresholds, which players never see (U1).
+ */
+export const resultDamage = gmQuery({
+  args: { entryId: v.id("actionLog") },
+  returns: v.array(targetDamageValidator),
+  handler: async (ctx, { entryId }) => {
+    const entry = await ctx.db.get("actionLog", entryId);
+    if (entry === null || entry.campaignId !== ctx.campaign._id) throw appError("NOT_FOUND");
+    const groupId = entry.groupId;
+    if (groupId === undefined || entry.undoneAt !== undefined) return [];
+    const rows = await ctx.db
+      .query("actionLog")
+      .withIndex("by_campaign_group", (q) => q.eq("campaignId", ctx.campaign._id).eq("groupId", groupId))
+      .take(RESULT_GROUP_MAX);
+    return rows.flatMap((r) => (r.visibility === "gm" && r.undoneAt === undefined ? (r.targetDamage ?? []) : []));
   },
 });
 

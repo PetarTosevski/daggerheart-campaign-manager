@@ -27,6 +27,8 @@ import {
   heldPrimary,
   heldSub,
   outcomeTag,
+  rowSeverity,
+  severityText,
   splitLeft,
   weaponDamageType,
   withAnswers,
@@ -205,6 +207,18 @@ describe("the result panel's model", () => {
     expect(featureResultView({ characterId: CHARACTER, actorName: "Moss", featureName: "Shadow Stepper", result: { ...result, roll: null, targets: [], fearDelta: undefined }, names: NAMES })).toMatchObject({ sub: "Moss · Feature", success: null, fear: 0 });
   });
 
+  it("dcm-uemx: the GM's severity line (Minor / Major / Severe, Massive, resistance, a Minion's defeat); none on a miss", () => {
+    expect(severityText({ severity: "major", hpMarked: 2 })).toBe("Major · 2 HP");
+    expect(severityText({ severity: "minor", hpMarked: 1, resisted: "resistant" })).toBe("Minor · 1 HP (resistant)");
+    expect(severityText({ severity: "severe", hpMarked: 4, massive: true })).toBe("Massive · 4 HP");
+    expect(severityText({ severity: "none", hpMarked: 0, resisted: "immune" })).toBe("No damage · 0 HP (immune)");
+    expect(severityText({ severity: "defeat", hpMarked: 1 })).toBe("1 HP");
+    const damage = new Map([[LT as string, { severity: "severe" as const, hpMarked: 3 }]]);
+    expect(rowSeverity({ tokenId: LT, name: "Lieutenant", verdict: "Hit" }, damage)).toBe("Severe · 3 HP");
+    expect(rowSeverity({ tokenId: LT, name: "Lieutenant", verdict: "Miss" }, damage)).toBeNull();
+    expect(rowSeverity({ tokenId: LT, name: "Lieutenant", verdict: "Hit" }, undefined)).toBeNull();
+  });
+
   it("the held roll's lines; splits with and without a total; ally picks grouped by step; answers merged", () => {
     expect(heldSub("Brannoc", ROLL)).toBe("Brannoc · 15 with Hope · before damage");
     expect(heldPrimary([{ hit: true }])).toBe("Use and roll damage");
@@ -258,6 +272,26 @@ describe("the result panel in the HUD", () => {
     expect(within(panel).queryByTestId("hud-result-prompt")).toBeNull();
     fireEvent.click(within(panel).getByRole("button", { name: "Close the result of Vicious Entangle" }));
     expect(screen.queryByTestId("hud-result")).toBeNull();
+  });
+
+  it("dcm-uemx: the GM's panel adds severity and HP on hit rows from the GM-only query; a player's never asks for it", () => {
+    seedView();
+    queries["combatHud:resultDamage"] = [{ tokenId: LT, severity: "major", hpMarked: 2 }];
+    const show = () => act(() => showCardResult({ characterId: CHARACTER, actorName: "Moss", cardName: "Vicious Entangle", result: cardResolved(), names: NAMES }));
+    // A player: the query is skipped, so even a seeded answer never shows (U1).
+    const player = renderHud();
+    show();
+    expect(screen.queryByTestId("hud-result-row-severity")).toBeNull();
+    expect(screen.getByTestId("hud-result").textContent).not.toMatch(/HP|Major/);
+    player.unmount();
+    hudResults.reset();
+    renderHud(gmState);
+    show();
+    const rows = screen.getAllByTestId("hud-result-row");
+    expect(within(rows[0]!).getByTestId("hud-result-row-severity")).toHaveTextContent("Major · 2 HP");
+    // The missed target keeps its row, without a severity.
+    expect(rows[1]).toHaveTextContent("BanditMiss");
+    expect(within(rows[1]!).queryByTestId("hud-result-row-severity")).toBeNull();
   });
 
   it("an attack's result from the attack picker; nothing while a picking session is open", () => {

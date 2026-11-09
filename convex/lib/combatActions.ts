@@ -115,7 +115,7 @@ import { changed, hopeDieSwitch, liveMods, sheetCarriedMods, prepareDuality, res
 
 // E1.4b: these moved to ./rolls (the plain roll uses them too); re-exported for the existing callers.
 export { hopeDieSwitch, withDieBonus, withDieBonuses, withHopeSides };
-import type { AdversaryBefore } from "./validators/actionLog";
+import type { AdversaryBefore, TargetDamage } from "./validators/actionLog";
 import { traitIdValidator } from "./validators/characters";
 import { MAX_RIDERS_PER_ATTACK, rangeBandValidator, sanctionRollOptionsValidator, type AfterRollChange, type AfterRollChoice, type AfterRollPayload, type Rider, type RiderPickChoice } from "./validators/combatRequests";
 import { rollValidator } from "./validators/actionLog";
@@ -2674,6 +2674,8 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   const results: TargetResult[] = [];
   const publicParts: string[] = [];
   const gmParts: string[] = [];
+  // dcm-uemx: severity and HP per adversary hit, on the GM row for the GM's result panel (U1: never a player's).
+  const targetDamage: TargetDamage[] = [];
   let extra = 0;
   for (const [i, t] of allTargets.entries()) {
     const hit = hits[i]!.hit;
@@ -2712,6 +2714,8 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     let detail: string;
     let severity: TargetResult["severity"] = "none";
     let marked = 0;
+    let gmDamage: Omit<TargetDamage, "tokenId" | "hpMarked">;
+    const resistedOf = (r: { resisted: TargetDamage["resisted"] | "none"; resistanceApplied?: false }) => (r.resisted !== undefined && r.resisted !== "none" && r.resistanceApplied !== false ? { resisted: r.resisted } : {});
     if (block.minion) {
       // D6: a Minion falls to any damage (its own rule, not D8); D2 still applies to it.
       const result = applyDamageTo(oneMinion(t.instance, block), total, type, { rules: modes });
@@ -2719,6 +2723,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
       const fell = result.taken > 0 ? 1 : 0;
       hp = Math.min(t.instance.stats.hpMax, t.instance.hp + fell);
       marked = fell;
+      gmDamage = { severity: fell > 0 ? "defeat" : "none", ...resistedOf(result) };
       extra += fell > 0 ? result.minionExtra : 0;
       detail = `${result.incoming} ${SHORT_TYPE[type]}${result.resisted !== "none" ? ` (${result.resisted}: ${result.taken})` : ""} → ${fell > 0 ? `a Minion falls, +${result.minionExtra} to pick` : "no damage"} (${hp}/${t.instance.stats.hpMax} HP)`;
     } else {
@@ -2728,6 +2733,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
       hp = Math.max(0, Math.min(t.instance.stats.hpMax, result.after.hp + more));
       severity = result.severity;
       marked = hp - t.instance.hp;
+      gmDamage = { severity: result.severity, ...resistedOf(result), ...(result.massive ? { massive: true as const } : {}) };
       // D8 Manual: the last HP leaves it up (a rider's extra HP counts too); the GM gets the note once, when it is reached.
       const lastHpUp = modes.adversaryDefeated === "manual" && !t.instance.defeated && hp >= t.instance.stats.hpMax && t.instance.hp < t.instance.stats.hpMax;
       for (const n of damageRuleNotes(label, { resisted: result.resisted, incoming: result.incoming, ...(result.resistanceApplied === false ? { resistanceApplied: false as const } : {}), ...(lastHpUp ? { lastHp: true as const } : {}) })) ruleNotes.push(n);
@@ -2736,6 +2742,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     const defeated = t.instance.defeated || (hp >= t.instance.stats.hpMax && (block.minion || modes.adversaryDefeated !== "manual"));
     await ctx.db.patch("encounterAdversaries", t.instance._id, { hp, defeated, updatedAt: now });
     results.push({ target: t, hit: true, defeated, severity, hpMarked: marked, half });
+    targetDamage.push({ tokenId: t.token._id, hpMarked: Math.max(0, marked), ...gmDamage });
     publicParts.push(`${label}: ${defeated ? "Defeated" : "Hit"}`);
     gmParts.push(`${label}: ${detail}${notes.length > 0 ? ` [${notes.join("; ")}]` : ""}${defeated ? ", defeated" : ""}`);
   }
@@ -2969,6 +2976,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     ...(damageRecord !== null ? { roll: damageRecord } : {}),
     groupId,
     ...(before.length > 0 ? { adversaryBefore: before } : {}),
+    ...(targetDamage.length > 0 ? { targetDamage } : {}),
     undoable: true,
   });
   // Rule switches RC1: the Manual rules' GM notes (C1, M1, D2, D8; D6 below), in the attack's group (undo takes them back).

@@ -227,6 +227,11 @@
 .hud-res-d b {
   color: var(--hud-ink);
 }
+/* dcm-uemx: the GM's severity and HP marked on a hit row ("Major · 2 HP"). */
+.hud-res-sev {
+  color: var(--hud-ink);
+  font-weight: 600;
+}
 .hud-res-c {
   display: inline-flex;
   align-items: center;

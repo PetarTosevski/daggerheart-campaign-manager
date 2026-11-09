@@ -3,9 +3,10 @@
 import "./result.css";
 
 import { useQuery } from "convex/react";
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 
 import { api } from "../../../../../convex/_generated/api";
+import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { AttackOutcome } from "../../actions/attack";
 import { useActor } from "../../actions/targets";
 import { usePick } from "../pick";
@@ -44,6 +45,10 @@ export function HudResult({ state }: HudPartProps): ReactNode {
   const { campaignId } = state;
   const player = state.role === "player" && state.map !== null && actor !== null;
   const mine = useQuery(api.combatRequestsReads.mine, player ? { campaignId } : "skip");
+  // dcm-uemx: the GM's panel adds severity and HP per adversary hit (a GM-only query; players never ask, U1).
+  const resultId = entry?.kind === "result" && entry.view.kind !== "feature" ? entry.view.id : null;
+  const gmRows = useQuery(api.combatHud.resultDamage, state.role === "gm" && resultId !== null ? { campaignId, entryId: resultId as Id<"actionLog"> } : "skip");
+  const gmDamage = useMemo(() => (gmRows ? new Map(gmRows.map((d) => [d.tokenId as string, d])) : undefined), [gmRows]);
   if (pick.session) return null;
 
   const own = (mine ?? []).filter((r) => r.characterId === actor?.characterId);
@@ -62,6 +67,7 @@ export function HudResult({ state }: HudPartProps): ReactNode {
           view={entry.view}
           done={entry.done}
           conditions={(id) => conditions.get(id) ?? []}
+          gmDamage={gmDamage}
           onDone={(i) => hudResults.markDone(entry.view.id, i)}
           onClose={() => hudResults.clear(entry.view.id)}
         >
