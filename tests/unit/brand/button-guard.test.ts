@@ -32,8 +32,9 @@ const ALLOWED: Record<string, string> = {
   "src/components/party/dice/": "the sheet's dice box and roll feed (Q3 = a)",
   "src/components/party/extras/": "the sheet's class extras (Q3 = a)",
   "src/components/party/features/": "the sheet's features panel (Q3 = a)",
-  // The card face keeps its own buttons (design scope line).
-  "src/app/(gm)/campaigns/[campaignId]/party/new/steps-5-9.tsx": "the wizard's domain card faces (wz-dk-btn, card face)",
+  // The character wizard keeps its parchment buttons (user 2026-11-09: revert the wizard from glass); steps-5-9 also
+  // holds the domain card faces (wz-dk-btn, design scope line).
+  "src/app/(gm)/campaigns/[campaignId]/party/new/": "the character wizard's parchment buttons (wz-primary / wz-outline / wz-ghost / wz-close) and card faces",
   // Q5 = a: buttons on paper keep their ink-on-paper look. (The recap, the Lorekeeper answer card, the stat blocks and
   // the custom adversary editor use the shared ink button, brandButton({ ink: true }), so they need no entry.)
   "src/components/notes/": "the Notes paper (Q5 = a; bj-ghost / bj-paper-btn) and its rows (bj-page-btn, bj-jl-btn)",

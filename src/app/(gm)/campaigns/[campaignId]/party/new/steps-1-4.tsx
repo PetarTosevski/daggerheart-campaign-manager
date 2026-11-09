@@ -2,7 +2,6 @@
 
 import type { ReactNode } from "react";
 
-import { BrandButton } from "@/components/brand/buttons";
 import type { SharedCards } from "@/components/party/level-up/shared-cards";
 import { assetBackground } from "@/lib/design-assets";
 import {
@@ -437,13 +436,13 @@ export function TraitsStep({ state, update }: StepProps) {
         </div>
         <span className="flex gap-2">
           {suggestion ? (
-            <BrandButton variant="neutral" size="sm" onClick={() => update({ traits: suggestion })}>
+            <button type="button" className="wz-ghost" onClick={() => update({ traits: suggestion })}>
               Use suggested
-            </BrandButton>
+            </button>
           ) : null}
-          <BrandButton variant="neutral" size="sm" onClick={() => update({ traits: {} })}>
+          <button type="button" className="wz-ghost" onClick={() => update({ traits: {} })}>
             Clear
-          </BrandButton>
+          </button>
         </span>
       </div>
       <div className="wz-traits">

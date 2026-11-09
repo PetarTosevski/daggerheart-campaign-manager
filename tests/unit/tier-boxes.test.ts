@@ -114,7 +114,7 @@ describe("TierBoxes in the guided level-up", () => {
     noBox(/for level 2/);
   });
 
-  it("makes the open tier's options tickable for the new level; a ticked box is a green draft mark", () => {
+  it("makes the open tier's options tickable for the new level; a ticked box is a pencil tick on a green draft row", () => {
     const { draft } = setup();
     expect(screen.getByText("Level 2: 0 / 2 picks")).toBeTruthy();
     const hp = box("Tier 2: +1 Hit Point slot for level 2");
@@ -126,7 +126,7 @@ describe("TierBoxes in the guided level-up", () => {
     expect(draft().draft.picks).toEqual([{ option: "hp", tier: 2 }]);
     const ticked = box("Tier 2: +1 Hit Point slot for level 2");
     expect((ticked as HTMLInputElement).checked).toBe(true);
-    expect(ticked.classList.contains("draft")).toBe(true);
+    expect(ticked.closest(".adv-item")?.classList.contains("draft")).toBe(true);
     expect(within(ticked.closest("li")!).getByText("level 2")).toBeTruthy();
     // The option's second slot can take the other pick.
     expect((box("Tier 2: +1 Hit Point slot for level 2 (second pick)") as HTMLInputElement).disabled).toBe(false);

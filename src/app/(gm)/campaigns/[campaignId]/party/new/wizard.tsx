@@ -6,7 +6,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 
-import { BrandButton, brandButton } from "@/components/brand/buttons";
 import { useSharedCards } from "@/components/party/level-up/shared-cards";
 import { FRAME_OF } from "@/lib/frames/extras/common";
 import { getDomainCard } from "@/lib/srd";
@@ -167,17 +166,17 @@ function Wizard({ draft, initial }: { draft: ReturnType<typeof useAccountDraft>;
           </div>
           <div className="flex items-center gap-2">
             {hasDraft ? (
-              <BrandButton variant="danger" size="sm" onClick={startOver}>
+              <button type="button" className="wz-ghost" onClick={startOver}>
                 Start over
-              </BrandButton>
+              </button>
             ) : null}
             <Link
               href={`/campaigns/${campaignId}/party`}
-              className={brandButton({ variant: "cancel", icon: true, round: true, className: "flex-none" })}
+              className="wz-close"
               aria-label="Cancel character creation"
               onClick={draft.flush}
             >
-              <X aria-hidden="true" />
+              <X className="size-4" aria-hidden="true" />
             </Link>
           </div>
         </div>
@@ -241,20 +240,20 @@ function Wizard({ draft, initial }: { draft: ReturnType<typeof useAccountDraft>;
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#cdb88f] pt-4">
           {step > 1 ? (
-            <BrandButton variant="cancel" size="lg" onClick={() => goTo(step - 1)}>
+            <button type="button" className="wz-outline" onClick={() => goTo(step - 1)}>
               ‹ Back
-            </BrandButton>
+            </button>
           ) : (
-            <Link href={`/campaigns/${campaignId}/party`} className={brandButton({ variant: "cancel", size: "lg" })} onClick={draft.flush}>
+            <Link href={`/campaigns/${campaignId}/party`} className="wz-outline" onClick={draft.flush}>
               Cancel
             </Link>
           )}
           <span className="flex-1" />
           <div className="flex flex-col items-end gap-1.5">
             {step < STEP_COUNT ? (
-              <BrandButton
-                variant="confirm"
-                size="lg"
+              <button
+                type="button"
+                className="wz-primary"
                 aria-disabled={!stepOk}
                 aria-describedby={nextTip ? "cc-next-missing" : undefined}
                 title={nextTip || undefined}
@@ -263,18 +262,18 @@ function Wizard({ draft, initial }: { draft: ReturnType<typeof useAccountDraft>;
                 }}
               >
                 Next: {STEP_TITLES[step]} ›
-              </BrandButton>
+              </button>
             ) : (
-              <BrandButton
-                variant="confirm"
-                size="lg"
+              <button
+                type="button"
+                className="wz-primary"
                 aria-disabled={!allOk || Boolean(blocker) || create.pending}
                 aria-describedby={blocker ? "cc-blocked" : createTip ? "cc-missing" : undefined}
                 title={createTip || undefined}
                 onClick={() => void submit()}
               >
                 {create.pending ? "Creating…" : "Create character"}
-              </BrandButton>
+              </button>
             )}
             {step < STEP_COUNT && nextTip ? (
               <span id="cc-next-missing" className="wz-req" aria-live="polite">
