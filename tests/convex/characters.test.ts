@@ -123,6 +123,20 @@ describe("characters", () => {
     expect(c!.sheet).toMatchObject({ notes: "GM note", pronouns: "she/her" });
   });
 
+  it("a second create with the wizard's key (double click) returns the first character, mixed ancestry included", async () => {
+    const { gm, campaignId } = await setup();
+    const core = ANCESTRIES.filter((a) => a.source === "core");
+    const mixed = draft({ name: "GDGGGF", ancestry: { kind: "mixed", first: core[0].id, second: core[1].id, name: "" } });
+    const once = key();
+    const [a, b] = await Promise.all([
+      gm.mutation(api.characters.create, { campaignId, draft: mixed, idempotencyKey: once }),
+      gm.mutation(api.characters.create, { campaignId, draft: mixed, idempotencyKey: once }),
+    ]);
+    expect(b.characterId).toBe(a.characterId);
+    const party = await gm.query(api.charactersReads.listByCampaign, { campaignId });
+    expect(party).toHaveLength(1);
+  });
+
   it("the GM creates a character for a player and can hand it over", async () => {
     const { gm, p1, ids, campaignId } = await setup();
     const { characterId } = await gm.mutation(api.characters.create, { campaignId, draft: draft(), ownerId: ids.p1, idempotencyKey: key() });

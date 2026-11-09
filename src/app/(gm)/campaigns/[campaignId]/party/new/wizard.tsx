@@ -121,17 +121,30 @@ function Wizard({ draft, initial }: { draft: ReturnType<typeof useAccountDraft>;
   const playerId = isGm ? (ownerId !== roster?.gm.userId ? ownerId : undefined) : undefined;
   const blocker = party?.find((c) => c.status === "active" && (isGm ? playerId !== undefined && c.ownerId === playerId : c.mine));
 
+  // One character per wizard: `submitting` stops a second click in the same render (before `pending` shows) and
+  // after success until the page changes; the shared key makes any second request return the first character.
+  const submitting = useRef(false);
+  const createKey = useRef<string | null>(null);
   async function submit() {
-    if (!allOk || blocker || create.pending) return;
-    const result = await create.fire({
-      campaignId,
-      draft: toCharacterDraft(state, portraitAsset(state)),
-      ...(ownerId ? { ownerId } : {}),
-      ...(ikonis ? { ikonis: state.ikonis } : {}),
-    });
+    if (!allOk || blocker || create.pending || submitting.current) return;
+    submitting.current = true;
+    createKey.current ??= crypto.randomUUID();
+    const result = await create.fire(
+      {
+        campaignId,
+        draft: toCharacterDraft(state, portraitAsset(state)),
+        ...(ownerId ? { ownerId } : {}),
+        ...(ikonis ? { ikonis: state.ikonis } : {}),
+      },
+      { key: createKey.current },
+    );
     if (result) {
       draft.clear();
       router.push(`/campaigns/${campaignId}/party/${result.characterId}`);
+    } else {
+      // A refused create stored nothing, so the next try may change the draft; give it a fresh key.
+      createKey.current = null;
+      submitting.current = false;
     }
   }
 
