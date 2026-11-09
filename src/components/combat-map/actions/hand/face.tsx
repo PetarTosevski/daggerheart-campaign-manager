@@ -39,7 +39,8 @@ export function cardDisplay(card: Pick<HandCard, "cardId" | "name" | "domain" | 
   };
 }
 
-export function HandCardFace({ card, locked = false, children }: { card: HandCard; locked?: boolean; children?: ReactNode }) {
+/** `scrollText`: the open card's text scrolls, so it is a keyboard stop too (axe scrollable-region-focusable). */
+export function HandCardFace({ card, locked = false, scrollText = false, children }: { card: HandCard; locked?: boolean; scrollText?: boolean; children?: ReactNode }) {
   const display = cardDisplay(card);
   const domain = DOMAINS.find((d) => d.id === card.domain);
   const art = display.art ? designAsset(display.art) : undefined;
@@ -82,7 +83,9 @@ export function HandCardFace({ card, locked = false, children }: { card: HandCar
           ))}
         </ul>
       ) : null}
-      <p className="cmh-text">{display.text}</p>
+      <p className="cmh-text" {...(scrollText ? { tabIndex: 0, "aria-label": `${card.name} text` } : {})}>
+        {display.text}
+      </p>
       <footer className="cmh-acts">
         <CardMore card={display} used={used} className="cmh-more" />
         {children}

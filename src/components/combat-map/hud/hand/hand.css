@@ -119,10 +119,13 @@
 .hud-hc img {
   pointer-events: none;
 }
-/* Raised: under the pointer, after a tap (the slot takes focus) or while the keyboard is on its More or Use. */
+/*
+ * Raised: under the pointer, after a tap (the slot takes focus) or while the keyboard is on its More or Use. While the
+ * pointer is over a card, only that card rises: a focused one sinks back, so two cards are never up at once.
+ */
 .hud-hc:hover,
-.hud-hc:focus,
-.hud-hc:focus-within {
+.hud-fan:not(:has(.hud-hc:hover)) .hud-hc:focus,
+.hud-fan:not(:has(.hud-hc:hover)) .hud-hc:focus-within {
   transform: translateY(calc(var(--hud-hand-sink) * -1 - 14px)) rotate(0deg) scale(1.08);
   z-index: 30 !important;
 }
@@ -431,6 +434,11 @@
 
 /* ---------------------------------------------------------------- the full card view (board "Full card view") */
 .hud-full {
+  /* The hand's wrapper lets the pointer through to the map (pointer-events: none); the dialog inherits it, which left Use,
+     Close and scrolling dead. The open card takes the pointer back. */
+  pointer-events: auto;
+  overflow: auto;
+  overscroll-behavior: contain;
   max-width: calc(100vw - 32px);
   max-height: calc(100dvh - 32px);
   margin: auto;
@@ -454,6 +462,12 @@
   display: flex;
   width: 300px;
   max-width: 100%;
+}
+/* The whole text scrolls on the open card (the fan's face clips it under a fade). */
+.hud-full-card .cmh-text {
+  overflow-y: auto;
+  -webkit-mask-image: none;
+  mask-image: none;
 }
 /* The face's own More would open the same card again: hidden here, Use and Close stay. */
 .hud-full-card .cmh-more {
@@ -520,4 +534,51 @@
   .hud-hc {
     transition: none;
   }
+}
+
+/* ---------------------------------------------------------------- drag a card to play it */
+.hud-hc.is-draggable {
+  cursor: grab;
+  touch-action: none;
+}
+.hud-hc.is-drag,
+.hud-hc.is-drag:hover {
+  transform: translate(var(--dx), calc(var(--dy) + var(--hud-hand-sink) * -1 - 14px)) rotate(0deg) scale(1.08);
+  z-index: 40 !important;
+  transition: none;
+  cursor: grabbing;
+}
+.hud-hc.is-drag > .cmh-face {
+  box-shadow: 0 0 0 2px #c9a35a, 0 18px 34px rgba(0, 0, 0, 0.6);
+}
+/* The middle of the screen while a card is dragged (drag.ts inPlayZone: 20-80% across, 12-68% down). */
+.hud-drop-zone {
+  position: fixed;
+  left: 20vw;
+  right: 20vw;
+  top: 12vh;
+  bottom: 32vh;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed rgba(227, 180, 90, 0.55);
+  border-radius: 24px;
+  background: rgba(10, 20, 22, 0.18);
+  pointer-events: none;
+}
+.hud-drop-zone span {
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(10, 20, 22, 0.85);
+  color: #f3e3bd;
+  font-size: 15px;
+  font-weight: 600;
+}
+.hud-drop-zone.is-over {
+  border-color: #e3b45a;
+  background: rgba(227, 180, 90, 0.16);
+}
+.hud-drop-zone.is-no {
+  border-color: rgba(200, 200, 200, 0.35);
 }

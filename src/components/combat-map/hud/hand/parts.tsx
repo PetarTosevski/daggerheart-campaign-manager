@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useId, useRef, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { deckBacks, fan } from "@/components/cards/fan";
 import { designAsset } from "@/lib/design-assets";
@@ -13,6 +14,7 @@ import { cardDisplay, HandCardFace } from "../../actions/hand/face";
 import type { HandCard } from "../../actions/hand/model";
 import type { Roller, RollValues } from "../../actions/roll-controls";
 import { BlockedReason } from "../blocked";
+import { useDragToPlay } from "./drag";
 import { CostPill, Tag } from "../ui";
 import { EDGE_MAX, EDGE_MIN, experienceShort, HELP_MAX, signedEdge, type CardLook } from "./states";
 
@@ -61,20 +63,42 @@ export function FanCard({
   onBlocked: () => void;
   onMore: (from: HTMLElement) => void;
 }) {
-  const style = fan(index, count, card.state === "exhausted") as CSSProperties;
   const reasonId = useId();
   const blocked = look.blocked !== undefined;
+  // Dropped in the middle of the screen it plays like its Use button (a blocked one shows its refusal instead).
+  const canDrop = look.showUse && (blocked || (look.canUse && !pending));
+  const { drag, handlers, swallow } = useDragToPlay(look.showUse, () => {
+    if (!canDrop) return;
+    if (blocked) onBlocked();
+    else onUse();
+  });
+  const style = { ...fan(index, count, card.state === "exhausted"), ...(drag ? { "--dx": `${drag.dx}px`, "--dy": `${drag.dy}px` } : {}) } as CSSProperties;
   return (
     <li
-      className={cn("hud-hc", look.wash !== "none" && `is-${look.wash}`)}
+      className={cn("hud-hc", look.wash !== "none" && `is-${look.wash}`, look.showUse && "is-draggable", drag && "is-drag")}
       style={style}
       // Not a tab stop: a tap focuses it, which raises it (keyboard users raise it by tabbing to More or Use).
       tabIndex={-1}
       data-testid="hud-hand-card"
       data-card={card.cardId}
       data-wash={look.wash}
-      onClickCapture={(e) => catchMore(e, onMore)}
+      onClickCapture={(e) => {
+        if (!swallow(e)) catchMore(e, onMore);
+      }}
+      // A mouse that leaves the card lowers it: a clicked card doesn't stay raised beside the next one hovered.
+      onPointerLeave={(e) => {
+        if (e.pointerType === "mouse" && !drag && e.currentTarget.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
+      }}
+      {...handlers}
     >
+      {drag
+        ? createPortal(
+            <div className={cn("hud-drop-zone", drag.over && canDrop && "is-over", !canDrop && "is-no")} aria-hidden="true">
+              <span>{canDrop ? `Drop to play ${card.name}` : `${card.name} can't be played now`}</span>
+            </div>,
+            document.body,
+          )
+        : null}
       {look.tag ? (
         <Tag kind={look.tag.kind === "lock" ? "used" : look.tag.kind} className={cn("hud-hc-tag", look.tag.kind === "lock" && "hud-hs-lock")}>
           {look.tag.lock ? <LockIcon /> : null}
@@ -278,7 +302,7 @@ export function FullCard({
       }}
     >
       <div className="hud-full-card">
-        <HandCardFace card={card}>
+        <HandCardFace card={card} scrollText>
           {useLabel !== null ? (
             <button
               type="button"
