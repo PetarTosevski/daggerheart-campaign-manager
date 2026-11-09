@@ -16,7 +16,8 @@ import { freshKey } from "./synth";
  * Its content checks are in tests/convex/hud-withdraw.test.ts.
  * `combatHud.sceneEndPreview` (H5.3, `gmQuery`): the GM only; what it lists is checked in tests/convex/hud-scene-end.test.ts.
  * `combatHud.resultDamage` (dcm-uemx, `gmQuery`): the GM only; what it reads is checked in
- * tests/convex/card-result-targets.test.ts.
+ * tests/convex/card-result-targets.test.ts. `combatHud.playerResults` (dcm-uemx, `gmQuery`): the GM only; its content is
+ * checked there too.
  */
 async function setup(w: World) {
   const campaignId = w.campaignId;
@@ -104,6 +105,8 @@ const area: Area = {
       args: (w) => ({ entryId: w.ids.entryId }),
       expect: { otherPlayer: "FORBIDDEN", grantee: "FORBIDDEN" },
     },
+    // dcm-uemx (user 2026-11-09): the players' results for the GM's HUD (gmQuery; other players' results stay theirs).
+    { fn: api.combatHud.playerResults, access: "gm", expect: { otherPlayer: "FORBIDDEN", grantee: "FORBIDDEN" } },
   ],
 };
 

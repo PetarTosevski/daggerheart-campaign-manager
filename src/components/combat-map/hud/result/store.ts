@@ -35,6 +35,9 @@ export type HeldMeta = { weaponName: string; damageType: DamageType | null; acto
 
 let entry: HudResultEntry | null = null;
 const held = new Map<string, HeldMeta>();
+/** The GM's copy of the players' results (`fromFeed`): the ids already seen (null before the first list) and its campaign. */
+let feedSeen: Set<string> | null = null;
+let feedScope: string | null = null;
 const listeners = new Set<() => void>();
 
 const emit = () => {
@@ -45,7 +48,28 @@ export const hudResults = {
   get: (): HudResultEntry | null => entry,
   /** Shows a result (replacing what was shown). */
   show: (view: ResultView): void => {
+    feedSeen?.add(view.id);
     entry = { kind: "result", view, done: [] };
+    emit();
+  },
+  /**
+   * dcm-uemx (user 2026-11-09): the players' results the GM's HUD receives (`combatHud.playerResults`, newest first). The
+   * first list of a campaign is the baseline (shown before the HUD loaded: never popped up; the server's clock never meets
+   * the browser's); afterwards the newest result not seen yet shows (newest wins, one panel at a time) unless the GM is
+   * answering an after-the-roll ask. Every id is seen once: a closed result never comes back. UI only: nothing is sent.
+   */
+  fromFeed: (scope: string, views: readonly ResultView[]): void => {
+    if (feedSeen === null || feedScope !== scope) {
+      feedScope = scope;
+      feedSeen = new Set(views.map((v) => v.id));
+      return;
+    }
+    const seen = feedSeen;
+    const fresh = views.filter((v) => !seen.has(v.id));
+    for (const v of views) seen.add(v.id);
+    const newest = fresh[0];
+    if (newest === undefined || entry?.kind === "asks") return;
+    entry = { kind: "result", view: newest, done: [] };
     emit();
   },
   /** Asks the after-the-roll answers of a card use. */
@@ -74,6 +98,8 @@ export const hudResults = {
   reset: (): void => {
     entry = null;
     held.clear();
+    feedSeen = null;
+    feedScope = null;
     emit();
   },
   subscribe: (fn: () => void): (() => void) => {

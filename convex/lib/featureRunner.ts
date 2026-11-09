@@ -53,9 +53,9 @@ import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { tickArmedCountdowns } from "../countdownRolls";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { logAction, newGroupId } from "./actionLog";
+import { attachResultPanel, logAction, newGroupId } from "./actionLog";
 import { dropDice, MAX_CARD_TARGETS, type CardChoice, type CardRoll, type DiceSlot } from "./cardChoices";
-import { afterUnstoppable, cardPromptValidator, damageRolls, effectEndsOf, endOnSheet, gmLines, instanceWrites, lastHpNotes, openCardHits, promptsOf, publicTargets, resistanceNotes, rollText, writeInstances } from "./cardRows";
+import { afterUnstoppable, cardPromptValidator, damageRolls, effectEndsOf, endOnSheet, gmLines, instanceWrites, lastHpNotes, openCardHits, promptsOf, publicTargets, resistanceNotes, rollText, targetDamageOf, resultPanelOf, writeInstances } from "./cardRows";
 import { actorSheetAfter, effectOption, featureIdOfEffect, ownsEffect, planHopePaid, tokenKeyOf, ruleNotesOfUse, writeSheetChanges, type BuiltRun, type Delegated, type UsePick } from "./cardRunner";
 import { postRuleNote, ruleModesOf } from "./ruleModes";
 import { setStance } from "./stanceDrop";
@@ -936,7 +936,7 @@ export async function resolveFeatureUse(
 
   const groupId = newGroupId();
   const damage = damageRolls(plan);
-  const { parts, outcomes } = publicTargets(plan, built, writes);
+  const { parts, outcomes, names: targetNames } = publicTargets(plan, built, writes);
   const useName = pick.use.name !== pick.name ? ` (${pick.use.name})` : "";
   const times = pick.times;
   const rollPart = plan.roll ? `: ${rollText(pick.use, plan.roll.record, req.roll.trait)}` : "";
@@ -972,6 +972,7 @@ export async function resolveFeatureUse(
     await logAction(ctx, { campaignId: campaign._id, characterId: character._id, actorId, kind: "feature", visibility: "public", summary: `${sheet.name} used ${pick.name}: ${p.text}`, groupId, undoable: true });
   }
   const lines = gmLines(plan, built, writes);
+  const targetDamage = targetDamageOf(plan, built, writes);
   if (lines.length > 0 || writes.length > 0 || stanceBefore.length > 0) {
     await logAction(ctx, {
       campaignId: campaign._id,
@@ -982,6 +983,8 @@ export async function resolveFeatureUse(
       ...(damage[0] ? { roll: damage[0].roll } : {}),
       groupId,
       ...(writes.length > 0 || stanceBefore.length > 0 ? { adversaryBefore: [...writes.map((w) => w.before), ...stanceBefore] } : {}),
+      // dcm-uemx (user 2026-11-09): severity and HP per adversary hit, for the GM's result panel (U1: GM row only).
+      ...(targetDamage.length > 0 ? { targetDamage } : {}),
       undoable: true,
     });
   }
@@ -1004,6 +1007,14 @@ export async function resolveFeatureUse(
     prompts = prompts.filter((p) => !(p.kind === "pcDamage" && p.tokenIds.every((t) => hitTokens.has(t))));
   }
   await dropDice(ctx, featureSlot(req));
+  // dcm-uemx (user 2026-11-09): a use on the map shows its result panel on the GM's HUD too (`combatHud.playerResults`).
+  if (built.creatures.onMap) {
+    await attachResultPanel(
+      ctx,
+      entryId,
+      resultPanelOf({ kind: "feature", title: pick.name, actorName: sheet.name, roll: plan.roll?.record ?? d5Roll ?? null, damage: damage.map((d) => d.roll), success: plan.success, targets: outcomes, names: targetNames, prompts, notes: notes.filter((n) => n.length > 0) }),
+    );
+  }
   return {
     status: "resolved",
     entryId,

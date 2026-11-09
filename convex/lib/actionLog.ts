@@ -46,7 +46,7 @@ import { revertFear } from "./fear";
 import { recordHistory } from "../tables/history";
 import { refuseArchived } from "./archived";
 import { campaignAccess } from "./permissions";
-import type { ActionKind, AdversaryBefore, CampaignTimeSnapshot, SpotlightBefore, StoredRoll, TargetDamage, TimeChange, Visibility } from "./validators/actionLog";
+import type { ActionKind, AdversaryBefore, CampaignTimeSnapshot, ResultPanel, SpotlightBefore, StoredRoll, TargetDamage, TimeChange, Visibility } from "./validators/actionLog";
 
 /** The longest feed line; longer summaries are cut. */
 export const SUMMARY_MAX = 300;
@@ -137,6 +137,17 @@ export async function logAction(ctx: MutationCtx, entry: LogEntry): Promise<Id<"
     ...(sessionTally !== undefined ? { sessionTally } : {}),
     at: Date.now(),
   });
+}
+
+/**
+ * dcm-uemx: stores what a PC's use showed its player in the result panel on the use's public row (`entryId`), so the GM's
+ * HUD shows the same panel (`combatHud.playerResults`). Written once the use is resolved (its prompts and Minion offer
+ * come after the row). Public rows only: it carries no adversary number (U1).
+ */
+export async function attachResultPanel(ctx: MutationCtx, entryId: Id<"actionLog">, panel: ResultPanel): Promise<void> {
+  const row = await ctx.db.get("actionLog", entryId);
+  if (row === null || row.visibility !== "public") throw new Error("attachResultPanel: a public row only.");
+  await ctx.db.patch("actionLog", entryId, { resultPanel: panel });
 }
 
 /** The character's newest row that is not undone (an undoable or not), or null: any newer action blocks undoing an older one. */

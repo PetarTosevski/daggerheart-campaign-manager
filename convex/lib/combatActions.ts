@@ -66,7 +66,7 @@ import type { EndRoll, EndSeverity } from "../../src/lib/domain/characters/expir
 import { tickArmedCountdowns } from "../countdownRolls";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { logAction, newGroupId } from "./actionLog";
+import { attachResultPanel, logAction, newGroupId } from "./actionLog";
 import { parseChoices, type CardChoice, type ParsedChoices } from "./cardChoices";
 import { adversaryBefore, cardPromptValidator, endAdversaryConditionsForCaster, endAdversaryConditionsOnRoll, endForCasterOnInstances, endForCasterOnSheets, endOnDefeat, endOnInstance, endOnSheet, gmLines, holdsSource, instanceEffectSource, instanceWrites, lastHpNotes, promptsOf, srdUses, writeInstances, type CardPrompt, type InstanceWrite, type SourceLookup } from "./cardRows";
 import { adversaryState, blockOf as adversaryBlockOf, riderStepsText } from "./adversaryFeatures";
@@ -3091,6 +3091,24 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     ...results.map((r) => ({ tokenId: r.target.token._id, hit: r.hit, defeated: r.defeated })),
     ...pcTargets.map((t, i) => ({ tokenId: t.token._id, hit: pcHits[i]!.hit && damageRecord !== null, defeated: false })),
   ];
+  // dcm-uemx (user 2026-11-09): the GM's HUD shows the player's result panel too (`combatHud.playerResults`).
+  const targetNames = new Map<string, string>([...results.map((r) => [r.target.token._id as string, r.target.instance.label] as const), ...pcTargets.map((t) => [t.token._id as string, t.sheet.name] as const)]);
+  await attachResultPanel(ctx, entryId, {
+    kind: "attack",
+    title: weapon.name,
+    actorName: sheet0.name,
+    damageType: damageTypeOf(weapon),
+    roll,
+    damage: damageRecord !== null ? [damageRecord] : [],
+    success: hostRoll.success,
+    targets: outcomes.map((o) => ({ ...o, name: targetNames.get(o.tokenId) ?? "Target" })),
+    prompts: riderPrompts.filter((p) => p.kind !== "fold").map((p) => ({ kind: p.kind, text: p.text })),
+    notes: [],
+    ...(riderNames.length > 0 ? { riders: riderNames } : {}),
+    ...(skipped.length > 0 ? { skipped } : {}),
+    ...(minionOffer !== null ? { minionOffer: true as const } : {}),
+    ...(minions.forGm !== undefined ? { minionsForGm: minions.forGm } : {}),
+  });
   return {
     status: "resolved",
     entryId,

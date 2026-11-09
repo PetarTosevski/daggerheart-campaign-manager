@@ -13,7 +13,7 @@ import type { CharacterSheet, Effect } from "../src/lib/validation/characters";
 import { tickArmedCountdowns } from "./countdownRolls";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { logAction, newGroupId } from "./lib/actionLog";
+import { attachResultPanel, logAction, newGroupId } from "./lib/actionLog";
 import { cardChoicesValidator, cardRollValidator, dropDice, keepDice, keptDice, parseChoices, type CardChoice, type CardRoll, type DiceSlot } from "./lib/cardChoices";
 import { writeHandHidden } from "./lib/cardHand";
 import {
@@ -42,6 +42,7 @@ import {
   rollText,
   srdUses,
   targetDamageOf,
+  resultPanelOf,
   writeInstances,
   type InstanceWrite,
   type ResolvedCard,
@@ -534,7 +535,7 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
 
   const groupId = newGroupId();
   const damage = damageRolls(plan);
-  const { parts, outcomes } = publicTargets(plan, built, writes);
+  const { parts, outcomes, names } = publicTargets(plan, built, writes);
   const useName = pick.use.name !== pick.name ? ` (${pick.use.name})` : "";
   const rollPart = plan.roll ? `: ${rollText(pick.use, plan.roll.record, req.roll.trait)}` : "";
   const damagePart = damage.length > 0 ? `; ${plan.roll?.critical ? "critical " : ""}damage ${damage.map((d) => d.text).join(" + ")}` : "";
@@ -643,6 +644,14 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
     minionOffer: minions.offer,
     ...(minions.forGm !== undefined ? { minionsForGm: minions.forGm } : {}),
   };
+  // dcm-uemx (user 2026-11-09): a use on the map shows its result panel on the GM's HUD too (`combatHud.playerResults`).
+  if (built.creatures.onMap) {
+    await attachResultPanel(
+      ctx,
+      entryId,
+      resultPanelOf({ kind: "card", title: pick.name, actorName: sheet.name, cardId: plan.cardId, useId: plan.useId, roll: result.roll, damage: result.damage, success: plan.success, targets: outcomes, names, prompts, minionOffer: minions.offer, ...(minions.forGm !== undefined ? { minionsForGm: minions.forGm } : {}) }),
+    );
+  }
   return { result, writes };
 }
 

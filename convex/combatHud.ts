@@ -33,7 +33,7 @@ import { campaignFearState } from "./lib/fear";
 import { campaignQuery, gmQuery, userQuery } from "./lib/functions";
 import { atLeast } from "./lib/permissions";
 import { withoutStance } from "./lib/stanceDrop";
-import { targetDamageValidator } from "./lib/validators/actionLog";
+import { resultPanelValidator, targetDamageValidator } from "./lib/validators/actionLog";
 import { fearValueValidator, seesFear } from "./campaigns";
 
 /**
@@ -328,6 +328,38 @@ export const resultDamage = gmQuery({
       .withIndex("by_campaign_group", (q) => q.eq("campaignId", ctx.campaign._id).eq("groupId", groupId))
       .take(RESULT_GROUP_MAX);
     return rows.flatMap((r) => (r.visibility === "gm" && r.undoneAt === undefined ? (r.targetDamage ?? []) : []));
+  },
+});
+
+/** Public rows read for the GM's copy of the players' results (the newest few; the panel shows only the newest new one). */
+const PLAYER_RESULT_SCAN = 40;
+/** At most this many results come back. */
+const PLAYER_RESULT_MAX = 5;
+
+/**
+ * The newest results of the players' card uses, weapon attacks and feature uses on the map (dcm-uemx, user 2026-11-09
+ * "the GM sees every player's result"), newest first: the result panel each player saw (`resultPanel` on the use's public
+ * row), for the GM's HUD to show the same panel. Live rows only (undone and removed rows, and rows from before the GM
+ * cleared the feed, are left out) and none the GM made (their own HUD showed it). The GM's severity and HP marked come
+ * from `resultDamage`, as for the GM's own panel. GM only (gmQuery, `need: "owner"`).
+ */
+export const playerResults = gmQuery({
+  args: {},
+  returns: v.array(v.object({ entryId: v.id("actionLog"), characterId: v.optional(v.id("characters")), fearDelta: v.optional(v.number()), panel: resultPanelValidator })),
+  handler: async (ctx) => {
+    const clearedAt = ctx.campaign.feedClearedAt ?? -1;
+    const rows = await ctx.db
+      .query("actionLog")
+      .withIndex("by_campaign_visibility_at", (q) => q.eq("campaignId", ctx.campaign._id).eq("visibility", "public").gt("at", clearedAt))
+      .order("desc")
+      .take(PLAYER_RESULT_SCAN);
+    const out = [];
+    for (const r of rows) {
+      if (r.resultPanel === undefined || r.undoneAt !== undefined || r.removedAt !== undefined || r.actorId === ctx.user._id) continue;
+      out.push({ entryId: r._id, ...(r.characterId !== undefined ? { characterId: r.characterId } : {}), ...(r.fearDelta !== undefined ? { fearDelta: r.fearDelta } : {}), panel: r.resultPanel });
+      if (out.length >= PLAYER_RESULT_MAX) break;
+    }
+    return out;
   },
 });
 
