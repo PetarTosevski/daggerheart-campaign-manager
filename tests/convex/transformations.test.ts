@@ -88,6 +88,19 @@ describe("GM gives and removes transformations (dcm-psg9)", () => {
     ]);
   });
 
+  it("Reanimated brings a dead PC back as Active (HF p.153, user 2026-11-09); other transformations leave the status", async () => {
+    const h = await setup("dark-heart-of-andaluria");
+    const status = (id: Id<"characters">) => h.t.run(async (ctx) => (await ctx.db.get("characters", id))!.status);
+    await h.t.run((ctx) => ctx.db.patch("characters", h.a, { status: "dead" }));
+    await h.t.run((ctx) => ctx.db.patch("characters", h.b, { status: "dead" }));
+    await h.give(h.gm, h.b, "vampire");
+    expect(await status(h.b)).toBe("dead");
+    await h.give(h.gm, h.a, "reanimated");
+    expect(await status(h.a)).toBe("active");
+    const row = (await h.feed()).find((r) => r.characterId === h.a && r.kind === "feature");
+    expect(row?.summary).toMatch(/^Ash gains the Reanimated transformation and is back as Active/);
+  });
+
   it("players can't, the GM's call needs Hope & Fear content and a known transformation", async () => {
     const h = await setup("dark-heart-of-andaluria");
     expect(await codeOf(h.give(h.p1, h.a, "ghost"))).toBe("FORBIDDEN");

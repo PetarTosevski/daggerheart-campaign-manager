@@ -598,6 +598,13 @@ export const setTransformation = userMutation({
     if (current === transformationId) return { transformationId, loadoutMax: loadoutMax(sheet), vaulted: [] };
     // `transformations` is offered only by the Dark Heart of Andaluria (src/lib/frames/options.ts), so it is HF p.153's switch.
     const { sheet: next, vaulted } = changeTransformation(sheet, transformationId, { andaluriaReanimated: options.transformations });
+    // Reanimated brings a dead PC back (HF p.153, user 2026-11-09): the same step sets them Active, held to one active
+    // character per player like setStatus. Status changes aren't undoable (setStatus isn't either), so undo keeps Active.
+    const revived = transformationId === "reanimated" && character.status === "dead";
+    if (revived) {
+      await assertOneActive(ctx, campaign, character.ownerId, character._id);
+      await ctx.db.patch("characters", character._id, { status: "active", away: undefined, updatedAt: Date.now() });
+    }
     await saveSheet(ctx, character._id, next, character);
     const change =
       transformationId === null
@@ -617,7 +624,7 @@ export const setTransformation = userMutation({
       actorId: ctx.user._id,
       kind: "feature",
       visibility: "public",
-      summary: `${change}${loadout}`,
+      summary: `${change}${revived ? " and is back as Active" : ""}${loadout}`,
       before: sheet,
       undoable: true,
     });
