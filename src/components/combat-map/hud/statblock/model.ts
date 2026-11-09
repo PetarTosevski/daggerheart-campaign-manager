@@ -12,6 +12,7 @@ import { conditionProvenance, provenanceLine, type ConditionSourceEntry } from "
 import type { SightResult } from "@/lib/domain/combat-actions/sight";
 import type { Footprint } from "@/lib/domain/combat-actions/distance";
 import { spotlightCostsFear, spotlightsThisTurn, turnSpotlights } from "@/lib/domain/encounters/spotlight";
+import { areaWords } from "@/lib/domain/adversary-actions/area-targets";
 
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { attackBand, rangeRows } from "../../actions/adversary/model";
@@ -222,4 +223,25 @@ export function conditionChips(conditions: readonly string[], ends: readonly Fea
   });
   for (const e of ends) if (!used.has(e.effectId)) chips.push({ key: `e:${e.effectId}`, label: e.label, condition: null, end: e, from: null });
   return chips;
+}
+
+/**
+ * dcm-y3mf: the purple picker for an "all targets" area the GM names (Hail of Boulders, "all targets in front of the Ogre
+ * within Far range"; Trample, "all targets in the Construct's path"). In front of / in a line / around: everyone in range
+ * starts picked and the GM unpicks who isn't there (the map has no facing to read); a path or "between" starts empty
+ * (where the adversary goes is the GM's). An attack needs one target (the server refuses a roll at nobody).
+ */
+export function areaPick(
+  target: { area: string; range: string },
+  who: string,
+  attack: boolean,
+  rows: readonly Pick<PickRowInput, "tokenId" | "reach">[],
+): { text: string; picked: Id<"combatTokens">[]; min: number } {
+  const where = areaWords(target.area, target.range, who);
+  const empty = target.area === "path" || target.area === "between";
+  return {
+    text: empty ? `Pick everyone ${where}` : `Everyone ${where}: unpick anyone who isn’t`,
+    picked: empty ? [] : rows.filter((r) => r.reach === "in").map((r) => r.tokenId),
+    min: attack ? 1 : 0,
+  };
 }

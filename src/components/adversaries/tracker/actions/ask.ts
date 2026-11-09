@@ -11,6 +11,9 @@
 
 import type { FunctionReturnType } from "convex/server";
 
+import { namedByGm } from "@/lib/domain/adversary-actions/area-targets";
+import type { TargetSpec } from "@/lib/domain/card-effects/types";
+
 import type { api } from "../../../../../convex/_generated/api";
 
 export type FeatureAsk = FunctionReturnType<typeof api.adversaryActions.featureAsk>;
@@ -39,9 +42,17 @@ export type Answers = {
 export const LIST_KEYS: readonly ListKey[] = ["targets", "picked", "allies", "followUp"];
 export const LIST_LABEL: Record<ListKey, string> = { targets: "Targets", picked: "Picked creatures", allies: "Allies", followUp: "Follow-up attack targets" };
 
-/** A list the GM picks from: not "every PC in range" and not a point, object or the adversary itself. */
+/**
+ * A list the GM picks from: not "every PC in range" (the server reads it off the map) and not a point, object or the
+ * adversary itself. dcm-y3mf: "all targets in front of the Ogre" / "in its path" is picked: the GM names who is there.
+ */
 export function pickable(t: TargetAsk | null): t is TargetAsk {
-  return t !== null && t.count !== "all" && !["self", "point", "object"].includes(t.side);
+  return t !== null && (t.count !== "all" || namedByGm({ count: { kind: "all" }, area: t.area as TargetSpec["area"] })) && !["self", "point", "object"].includes(t.side);
+}
+
+/** dcm-y3mf: an "all targets" list in an area the GM names ("in front of", "in the path of"). */
+export function namedArea(t: TargetAsk | null): t is TargetAsk & { area: string } {
+  return t !== null && t.count === "all" && t.area !== undefined && pickable(t);
 }
 
 /** The most picks a list takes (null: no cap). */
@@ -115,6 +126,8 @@ export function missing(ask: FeatureAsk, a: Answers): string[] {
     const t = ask[key];
     if (pickable(t) && t.count === "one" && a[key].length === 0) out.push(`Pick one for ${LIST_LABEL[key].toLowerCase()}`);
   }
+  // dcm-y3mf: an area attack needs someone to roll at (the server refuses it otherwise).
+  if (ask.attack && namedArea(ask.targets) && a.targets.length === 0) out.push("Pick the targets in the area");
   for (const o of ask.options) {
     if (o.count !== null && (a.options[o.id]?.length ?? 0) !== Math.min(o.count, o.options.length)) out.push(`Pick ${o.count} for ${o.label}`);
   }

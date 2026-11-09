@@ -159,6 +159,8 @@ export const attack = keyedGmMutation({
  * adversary Stress, refuses NOT_ENOUGH_FEAR / ADVERSARY_FEATURE_UNAVAILABLE / ADVERSARY_NOT_SPOTLIT, runs the plan
  * (damage to PCs as reaction windows, conditions, Stress, Fear gains); summons, countdowns, movement and PC reaction
  * rolls come back as GM prompts. A feature without an entry (a custom block) is a manual prompt with its Fear paid.
+ * dcm-y3mf: "all targets within <range>" with no `targets` reads them off the live map; an area the map can't measure
+ * ("in front of", "in its path") is named by the GM, and an attack in one with no `targets` is COMBAT_TARGET_INVALID.
  */
 export const useFeature = keyedGmMutation({
   rateLimit: "roll",
@@ -241,7 +243,7 @@ export const pcTokens = gmQuery({
 
 const targetAskValidator = v.union(
   v.null(),
-  v.object({ side: v.string(), range: v.string(), count: v.union(v.literal("one"), v.literal("upTo"), v.literal("all"), v.literal("any")), max: v.union(v.number(), v.null()), sight: v.boolean() }),
+  v.object({ side: v.string(), range: v.string(), count: v.union(v.literal("one"), v.literal("upTo"), v.literal("all"), v.literal("any")), max: v.union(v.number(), v.null()), sight: v.boolean(), area: v.optional(v.string()) }),
 );
 const costAskValidator = { fear: v.number(), stress: v.number(), hp: v.number(), label: v.string() };
 

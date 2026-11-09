@@ -8,3 +8,4 @@ export * from "./severity";
 export * from "./features";
 export * from "./window";
 export * from "./rule-notes";
+export * from "./area-targets";

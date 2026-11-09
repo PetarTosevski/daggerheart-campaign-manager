@@ -533,7 +533,8 @@ function buildTable(): AdversaryFeatureEffect[] {
         needsSpotlight: false,
         targets: { side: "any", range: "close", count: { kind: "all" }, area: "path" },
         steps: [
-          { kind: "move", to: "self", mode: "move", range: "close", relativeTo: "self" },
+          // dcm-y3mf: the GM drags the token; the targets are the creatures the GM named as in its path.
+          { kind: "move", to: "self", mode: "move", range: "close", relativeTo: "self", note: "Move the Ogre to a point within Close range (drag its token)" },
           { kind: "damage", to: "targets", roll: roll(2, 6, 3), type: "physical", direct: true },
         ],
       }),

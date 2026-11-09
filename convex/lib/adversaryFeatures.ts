@@ -394,7 +394,7 @@ export function spotlightFearFor(
 // ---------------------------------------------------------------- featureAsk (AA2c)
 
 /** Who a list argument of `useFeature` names: `side` as the entry reads it (`enemy` = PCs, `ally` = other adversaries). */
-export type TargetAsk = { side: string; range: string; count: "one" | "upTo" | "all" | "any"; max: number | null; sight: boolean };
+export type TargetAsk = { side: string; range: string; count: "one" | "upTo" | "all" | "any"; max: number | null; sight: boolean; /** dcm-y3mf: the shape of an "all targets" list ("front", "path"; the GM names its creatures). */ area?: string };
 
 export type CostAsk = { fear: number; stress: number; hp: number; label: string };
 
@@ -476,7 +476,7 @@ const fixedOf = (n: NumberSource | undefined): number | null => (n?.kind === "fi
 function targetAsk(spec: TargetSpec): TargetAsk {
   const c = spec.count;
   const max = c.kind === "one" ? 1 : c.kind === "upTo" ? fixedOf(c.n) : c.kind === "any" ? fixedOf(c.max) : null;
-  return { side: spec.side, range: spec.range, count: c.kind, max, sight: spec.sight === true };
+  return { side: spec.side, range: spec.range, count: c.kind, max, sight: spec.sight === true, ...(spec.area ? { area: spec.area } : {}) };
 }
 
 const isTriggerTargets = (t: TargetSpec | TriggerTargets): t is TriggerTargets => t.side === "trigger";

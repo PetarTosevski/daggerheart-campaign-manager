@@ -27,7 +27,10 @@ import { getWeapon } from "../../src/lib/srd/index";
 import type { TraitId } from "../../src/lib/srd/types";
 import {
   actorWithSubject,
+  areaWords,
   featureReady,
+  fillsFromMap,
+  namedByGm,
   hiddenCondition,
   hiddenTargetNote,
   keptDie,
@@ -47,7 +50,7 @@ import type { FeatureEffect } from "../../src/lib/domain/feature-effects/types";
 import { resolveOptions } from "../../src/lib/frames/options";
 import { featureFearCost } from "../../src/lib/domain/adversaries/index";
 import type { PlanStep } from "../../src/lib/domain/card-effects/run";
-import type { Cost, Range } from "../../src/lib/domain/card-effects/types";
+import type { Cost, Range, TargetSpec } from "../../src/lib/domain/card-effects/types";
 import { applyDamageTo, applyHpTo, applyStressTo, lineOfSight, rangeCheck, tokenDistance, type Combatant } from "../../src/lib/domain/combat-actions/index";
 import { applySpotlight } from "../../src/lib/domain/encounters/spotlight";
 import type { RollRecord } from "../../src/lib/domain/duality";
@@ -194,6 +197,28 @@ type Pick = PcPick | AdversaryPick;
  * (allies). With `sight`, a PC needs the adversary's line of sight on the map (Q2); `cover` reports whether any is in
  * cover. COMBAT_TARGET_INVALID for anything else (another campaign's, a PC not on the map, a defeated adversary).
  */
+/**
+ * dcm-y3mf: the creatures an "all targets within <range>" use reaches on the live map: PC tokens (and, for `side: "any"`,
+ * the encounter's other standing adversaries) within the range of the adversary's token and in its line of sight. Ids
+ * as `resolveCreatures` reads them (character / instance ids), nearest first.
+ */
+function inRangeOnMap(map: MapScene, spec: { side: TargetSpec["side"]; range: TargetSpec["range"] }, others: readonly Doc<"encounterAdversaries">[], selfId: Id<"encounterAdversaries">): string[] {
+  const range = spec.range === "weapon" ? "melee" : spec.range;
+  const standing = new Set(others.filter((o) => o._id !== selfId && !o.defeated).map((o) => o._id as string));
+  const out: { id: string; d: number }[] = [];
+  for (const token of map.scene.tokens) {
+    const id = token.ref.kind === "pc" ? (token.ref.characterId as string) : token.ref.kind === "adversary" && spec.side === "any" && standing.has(token.ref.adversaryId) ? (token.ref.adversaryId as string) : null;
+    if (id === null || out.some((o) => o.id === id)) continue;
+    if (!rangeCheck(map.selfToken, token, range).inRange) continue;
+    if (!lineOfSight(map.scene.prepared, map.selfToken, token, map.scene.visionObjects).lineOfSight) continue;
+    out.push({ id, d: tokenDistance(map.selfToken, token) });
+  }
+  return out
+    .sort((a, b) => a.d - b.d)
+    .slice(0, MAX_ACTION_TARGETS)
+    .map((o) => o.id);
+}
+
 async function resolveCreatures(
   ctx: QueryCtx,
   base: { encounter: Doc<"encounters">; self: Doc<"encounterAdversaries">; block: Block; scene: ActionScene },
@@ -1052,6 +1077,12 @@ export async function adversaryAction(
   }
   const use = effect ? pickAdversaryUse(effect, args.feature === undefined ? STANDARD_ATTACK_USE : args.useId) : undefined;
   if (effect && (!use || use.activation.kind === "passive")) throw appError("ADVERSARY_FEATURE_UNAVAILABLE");
+  // dcm-y3mf: "all targets in front of the Ogre" (an area the map can't measure) is named by the GM; a roll at nobody is
+  // refused before anything is asked or paid (Hail of Boulders rolled at no one and marked its Stress).
+  const areaSpec = use?.targets && use.targets.side !== "trigger" ? use.targets : undefined;
+  if (areaSpec && namedByGm(areaSpec) && use?.roll !== undefined && args.targets.length === 0) {
+    throw appError("COMBAT_TARGET_INVALID", `Pick the targets ${areaWords(areaSpec.area, areaSpec.range, instance.label)}.`);
+  }
   // Lane E7 round 3 (dcm-f70y): a forced attack (Words of Discord, Beguiled) is made outside its spotlight.
   const needsSpotlight = opts?.forced ? false : use ? use.needsSpotlight : manualFeature!.kind === "action";
 
@@ -1086,7 +1117,17 @@ export async function adversaryAction(
   }
 
   const attack = isAttackUse(use);
-  const targets = await resolveCreatures(ctx, base, args.targets, attack);
+  // dcm-y3mf: "all targets within Close range" with none named: every creature in range the adversary sees on the live
+  // map (as a card's, cardRunner R9). Rule switches ODR2: with Defined Ranges off nobody is counted; the GM is asked.
+  let named = args.targets;
+  if (areaSpec && named.length === 0 && fillsFromMap(areaSpec) && scene.map) {
+    if (ruleMode(campaign, "definedRanges")) named = inRangeOnMap(scene.map, areaSpec, others, instance._id);
+    else if (areaSpec.range !== "unlimited" && areaSpec.range !== "weapon" && !replay) await postRuleNote(ctx, campaign, { ruleId: "definedRanges", summary: rangeAsk(`${featureName} (${label})`, areaSpec.range), groupId, actorId: user._id });
+  }
+  if (areaSpec && named.length === 0 && namedByGm(areaSpec)) {
+    w.prompts.push({ kind: "manual", text: `${featureName}: nobody was named ${areaWords(areaSpec.area, areaSpec.range, label)}. If someone was, apply it to them by hand.` });
+  }
+  const targets = await resolveCreatures(ctx, base, named, attack);
   // SD4 (Q2): PCs holding a ready before-roll defence (Harrowing Invocation, Draining Bane, Keen Defenses) answer first;
   // the attack waits, unrolled, in a `preRoll` request and replays when they answered or the GM resolves it.
   if (attack && !replay && holdable(args) && targets.picks.every((p) => p.kind === "pc")) {

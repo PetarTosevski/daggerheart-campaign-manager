@@ -140,13 +140,23 @@ export function gmFeatureSession(input: {
   characterOf: ReadonlyMap<string, Id<"characters">>;
   useId: string;
   acts: GmActs;
+  /** dcm-y3mf: an area the GM names ("all targets in front of the Ogre within Far"): the rule line, already-picked PCs, fewest picks. */
+  area?: { text: string; picked: readonly Id<"combatTokens">[]; min: number };
 }): PickSessionSpec<null> {
+  const area = input.area;
   return {
     id: `gm-attack:${input.instanceId}:${input.feature}`,
     source: { kind: "adversary", name: input.feature },
-    rule: { side: "enemy", max: input.max, range: "unlimited", text: `${input.label}: pick ${input.max === 1 ? "1 target" : input.max === null ? "any targets" : `up to ${input.max} targets`}` },
+    rule: {
+      side: "enemy",
+      max: input.max,
+      range: "unlimited",
+      text: area ? area.text : `${input.label}: pick ${input.max === 1 ? "1 target" : input.max === null ? "any targets" : `up to ${input.max} targets`}`,
+      ...(area ? { min: area.min } : {}),
+    },
     actor: { tokenId: input.tokenId },
     rows: input.rows,
+    ...(area ? { picked: area.picked } : {}),
     data: null,
     primary: {
       label: (s) => (s.targets.length ? `Use on ${s.targets.map((t) => t.name).join(" and ")}` : `Use ${input.feature}`),

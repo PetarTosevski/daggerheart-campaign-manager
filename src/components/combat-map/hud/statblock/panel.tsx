@@ -9,7 +9,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
-import { capOf, needsChoices, pickable, type FeatureAsk } from "../../../adversaries/tracker/actions/ask";
+import { capOf, namedArea, needsChoices, pickable, type FeatureAsk } from "../../../adversaries/tracker/actions/ask";
 import { FeatureChoices, type ChoiceArgs } from "../../../adversaries/tracker/actions/choices";
 import { FeatureUse } from "../../../adversaries/tracker/actions/feature-use";
 import { ActionResultView } from "../../../adversaries/tracker/actions/result";
@@ -25,8 +25,10 @@ import { CostPill, PartBoundary, SidePanel, StatTile } from "../ui";
 import type { FearAsk, GmActs } from "./acts";
 import { Track } from "./track";
 import { gmAttackSession, gmFeatureSession } from "./attack";
+import { BAND_TEXT } from "../../actions/adversary/model";
 import {
   actionSpotlightCost,
+  areaPick,
   attackLine,
   conditionChips,
   faceLetter,
@@ -243,6 +245,10 @@ function StatBlockBody({
   function startFeature(feature: string, featureAsk: FeatureAsk | null) {
     if (featureAsk && needsChoices(featureAsk)) return setChoosing(featureAsk);
     if (featureAsk && pickable(featureAsk.targets) && featureAsk.targets.side === "enemy" && self) {
+      // dcm-y3mf: "all targets in front of the Ogre within Far" (Hail of Boulders): the rows say who is in range; the
+      // GM unpicks who isn't in front (the map has no facing to read) and sends.
+      const area = namedArea(featureAsk.targets) ? featureAsk.targets : null;
+      const rows = gmAttackRows(self, pcs, sight, area ? (BAND_TEXT[area.range as keyof typeof BAND_TEXT] ?? "unlimited") : "unlimited");
       return pick.open(
         gmFeatureSession({
           instanceId: instance._id,
@@ -251,10 +257,11 @@ function StatBlockBody({
           feature,
           max: capOf(featureAsk.targets),
           // A feature's own range is the server's to check; out of sight stays unpickable (Q2).
-          rows: gmAttackRows(self, pcs, sight, "unlimited"),
+          rows,
           characterOf,
           useId: featureAsk.useId,
           acts,
+          ...(area ? { area: areaPick(area, theName(label), featureAsk.attack, rows) } : {}),
         }),
       );
     }
