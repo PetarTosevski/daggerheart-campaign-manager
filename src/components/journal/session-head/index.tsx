@@ -8,13 +8,15 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
+import { fullSessionDate, shortSessionDate, startTime } from "@/lib/dates";
 import { sessionTitle } from "@/lib/domain/sessions";
+import { patchListed } from "@/lib/journal/sessions";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import type { SessionListItem } from "../../../../convex/sessionRecords";
 import { SESSION_TEXT_MAX } from "../../../../convex/lib/validators/sessions";
-import { fullSessionDate, patchListed, shortSessionDate, startTime, useSessionList } from "../session-list";
+import { useSessionList } from "../session-list";
 import type { SessionHeadingProps } from "../slots";
 import { Chip } from "../ui";
 

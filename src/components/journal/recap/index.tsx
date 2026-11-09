@@ -2,7 +2,6 @@
 
 import "./recap.css";
 
-import type { OptimisticLocalStore } from "convex/browser";
 import { useMutation, useQuery } from "convex/react";
 import { Pencil, Users } from "lucide-react";
 import Link from "next/link";
@@ -10,12 +9,13 @@ import { useId, useState, type FocusEvent, type KeyboardEvent } from "react";
 
 import { brandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
+import { patchLoot, patchRecap, stampMilestone, storedText } from "@/lib/journal/recap";
+import { levelUpLine, milestoneLine } from "@/lib/journal/sessions";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { SESSION_TEXT_MAX } from "../../../../convex/lib/validators/sessions";
-import type { SessionAfter } from "../../../../convex/sessionWrap";
-import { dayMonth, useSessionList } from "../session-list";
+import { useSessionList } from "../session-list";
 import type { AfterSessionProps, RecapProps } from "../slots";
 import { Card, Parchment } from "../ui";
 
@@ -41,18 +41,7 @@ import { Card, Parchment } from "../ui";
  */
 const btn = (main = false) => brandButton({ variant: main ? "confirm" : "neutral", ink: true });
 
-/** The text the server stores for a write: trimmed, empty clears it (as `cleanText`). */
-const stored = (text: string) => text.trim() || undefined;
-
 // ---------------------------------------------------------------- Recap
-
-/** Patches the cached recap: the GM's `sessionWrap.get` and a player's `sessionRecords.list` row. */
-function patchRecap(store: OptimisticLocalStore, campaignId: Id<"campaigns">, sessionId: string, recap: string | undefined) {
-  const wrap = store.getQuery(api.sessionWrap.get, { campaignId, sessionId });
-  if (wrap) store.setQuery(api.sessionWrap.get, { campaignId, sessionId }, { ...wrap, recap });
-  const list = store.getQuery(api.sessionRecords.list, { campaignId });
-  if (list) store.setQuery(api.sessionRecords.list, { campaignId }, list.map((s) => (s._id === sessionId ? { ...s, recap } : s)));
-}
 
 /** The session's recap as this caller reads it: string | null (none), `undefined` loading, `"gone"` for a stale id. */
 function useRecapText(campaignId: Id<"campaigns">, sessionId: Id<"sessions">, isGm: boolean): string | null | undefined | "gone" {
@@ -97,7 +86,7 @@ export function Recap({ campaignId, sessionId, isGm }: RecapProps) {
 
 function RecapBody({ campaignId, sessionId, text }: { campaignId: Id<"campaigns">; sessionId: Id<"sessions">; text: string | null }) {
   const setRecap = useMutation(api.sessionWrap.setRecap).withOptimisticUpdate((store, args) =>
-    patchRecap(store, campaignId, args.sessionId, stored(args.recap)),
+    patchRecap(store, campaignId, args.sessionId, storedText(args.recap)),
   );
   // The text being edited; null: reading.
   const [draft, setDraft] = useState<string | null>(null);
@@ -106,7 +95,7 @@ function RecapBody({ campaignId, sessionId, text }: { campaignId: Id<"campaigns"
 
   function save(value: string) {
     setDraft(null);
-    if ((stored(value) ?? null) === text) return;
+    if ((storedText(value) ?? null) === text) return;
     setError(null);
     setRecap({ campaignId, sessionId, recap: value }).catch((e: unknown) => {
       setError(errorMessage(e));
@@ -186,17 +175,6 @@ function RecapBody({ campaignId, sessionId, text }: { campaignId: Id<"campaigns"
 
 // ---------------------------------------------------------------- After the session
 
-/** 'Level-ups': the characters' names joined with ', ', else 'None'. A character missing from the party shows its feed line. */
-export function levelUpLine(levelUps: SessionAfter["levelUps"], names: ReadonlyMap<string, string>): string {
-  if (levelUps.length === 0) return "None";
-  return levelUps.map((l) => names.get(l.characterId) ?? l.summary).join(", ");
-}
-
-function patchLoot(store: OptimisticLocalStore, campaignId: Id<"campaigns">, sessionId: string, loot: string | null) {
-  const after = store.getQuery(api.sessionWrap.after, { campaignId, sessionId });
-  if (after) store.setQuery(api.sessionWrap.after, { campaignId, sessionId }, { ...after, loot });
-}
-
 /** Right column, last: 'After the session' (the GM edits it; players read it, JF2). */
 export function AfterSession({ campaignId, sessionId, isGm }: AfterSessionProps) {
   return <AfterCard campaignId={campaignId} sessionId={sessionId} isGm={isGm} />;
@@ -249,23 +227,12 @@ function AfterCard({ campaignId, sessionId, isGm }: { campaignId: Id<"campaigns"
   );
 }
 
-/** The milestone line's text: 'Reached 2 Nov', else 'Not yet'. */
-export function milestoneLine(milestoneAt: number | null): string {
-  return milestoneAt === null ? "Not yet" : `Reached ${dayMonth(milestoneAt)}`;
-}
-
 function PartyLink({ campaignId }: { campaignId: Id<"campaigns"> }) {
   return (
     <Link href={`/campaigns/${campaignId}/party`} className="jrr-link">
       Open Party to level up
     </Link>
   );
-}
-
-/** Optimistic: the milestone shows as reached at once (the server's stamp replaces the time). */
-function stampMilestone(store: OptimisticLocalStore, campaignId: Id<"campaigns">, sessionId: string) {
-  const after = store.getQuery(api.sessionWrap.after, { campaignId, sessionId });
-  if (after && after.milestoneAt === null) store.setQuery(api.sessionWrap.after, { campaignId, sessionId }, { ...after, milestoneAt: Date.now() });
 }
 
 /**
@@ -326,7 +293,7 @@ function Milestone({ campaignId, sessionId, milestoneAt }: { campaignId: Id<"cam
 
 function Loot({ campaignId, sessionId, loot }: { campaignId: Id<"campaigns">; sessionId: Id<"sessions">; loot: string | null }) {
   const setLoot = useMutation(api.sessionWrap.setLoot).withOptimisticUpdate((store, args) =>
-    patchLoot(store, campaignId, args.sessionId, stored(args.loot) ?? null),
+    patchLoot(store, campaignId, args.sessionId, storedText(args.loot) ?? null),
   );
   const [draft, setDraft] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -334,7 +301,7 @@ function Loot({ campaignId, sessionId, loot }: { campaignId: Id<"campaigns">; se
 
   function save(value: string) {
     setDraft(null);
-    if ((stored(value) ?? null) === loot) return;
+    if ((storedText(value) ?? null) === loot) return;
     setError(null);
     setLoot({ campaignId, sessionId, loot: value }).catch((e: unknown) => {
       setError(errorMessage(e));

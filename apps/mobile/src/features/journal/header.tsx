@@ -7,22 +7,18 @@ import { Pressable, Switch, Text, View } from "react-native";
 import { frameName } from "../../../../../src/lib/campaign-display";
 import { errorMessage } from "../../../../../src/lib/convex-errors";
 import { frameHasMechanic } from "../../../../../src/lib/frames";
+import { endDialogText, endReportLines, startNumber, startReportLines, startTarget } from "../../../../../src/lib/journal/sessions";
 import { api, type Id } from "../../convex";
 import { useCampaign } from "../../shell/campaign-provider";
 import { CheckRow } from "../trackers/card";
-import { endReportLines, witherEndDialogText } from "../trackers/end-report";
 import { useIntent } from "../dashboard/intent";
 import { useOpenThreads, useSessions } from "./data";
-import { nextNumber, plannedTarget, startLines } from "./model";
 import { patchExtras, useOptimistic } from "./optimistic";
 import { journalColors, js } from "./styles";
 import type { SessionView } from "./tabs";
 import { ActButton, ErrorLine, LoadingLine, Slot } from "./ui";
 
 type Report = { lines: string[]; doomTier?: number };
-
-/** The End dialog's text without Wither (the website's `endDialogText` outside Witherwild). */
-const END_TEXT = "Session effects end, unspent Rally and Prayer Dice are cleared, Slayer Dice turn into Hope, Tide tokens clear and the moon die ends.";
 
 /**
  * The Journal header (website: the page's header and `JournalHeaderActions`, src/components/journal/header): the
@@ -127,8 +123,8 @@ function SessionControl({
   // A session running from before the Sessions board has no live row; it still ends with End.
   const live = liveRow !== undefined || current.startedAt !== null;
   const liveN = liveRow?.n ?? current.n;
-  const target = plannedTarget(sessions, selectedId);
-  const n = target?.n ?? nextNumber(sessions);
+  const target = startTarget(sessions, selectedId);
+  const n = startNumber(sessions, target);
   const witherApplies = frameHasMechanic(campaign.frameId, "witherTokens");
   const convert = convertChoice ?? !(campaign.options.witherPersists ?? false);
 
@@ -143,7 +139,7 @@ function SessionControl({
       if (which === "start") {
         const result = await start.fire(target ? { campaignId, sessionId: target._id } : { campaignId });
         if (!result) return;
-        onReport({ lines: result.alreadyStarted ? ["The session is already running."] : startLines(result, endReportLines) });
+        onReport({ lines: result.alreadyStarted ? ["The session is already running."] : startReportLines(result) });
         if (!result.sessionId) return;
         // After the mutation resolved (rule 13: never from an effect).
         if (campaign.settings.sessionOpensOn === "combatMap") router.push(`/campaign/${campaignId}/combat-map`);
@@ -211,7 +207,7 @@ function SessionControl({
           {confirm === "end" ? (
             <>
               <Text style={js.body}>
-                {witherApplies ? witherEndDialogText(convert) : END_TEXT}
+                {endDialogText({ applies: witherApplies, convert })}
                 {current.extraCharacters ? " Extra characters are no longer allowed; the ones in play stay active." : ""}
               </Text>
               {witherApplies ? (

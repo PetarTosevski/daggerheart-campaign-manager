@@ -2,6 +2,7 @@ import { useQuery } from "convex/react";
 import { Pressable, Text, View } from "react-native";
 
 import { glyphFor } from "../../../../../src/lib/domain/notes";
+import { threadKindLabel } from "../../../../../src/lib/journal/sessions";
 import { api, type Id } from "../../convex";
 import { EntryText } from "../notes/mentions";
 import { journalColors, js } from "./styles";
@@ -32,7 +33,7 @@ export function ThreadsRaised({
         <View style={js.paper}>
           {threads.map((row) => (
           <View key={row.entryId} style={js.row}>
-            <Text accessibilityLabel={row.kind === "fear" ? "Looming Fear" : "Open task"} style={js.paperText}>
+            <Text accessibilityLabel={threadKindLabel(row)} style={js.paperText}>
               {glyphFor(row)}
             </Text>
             <View style={{ flex: 1 }}>

@@ -11,15 +11,14 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useCampaign, useOpenTome } from "@/app/(gm)/campaigns/[campaignId]/campaign-shell";
 import { BrandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
-// The live helpers stay in the old Sessions folder until JX2 moves them (plan journal.yaml, JH: imported, not copied).
-import { endDialogText, endReportLines, startReportLines, useWitherChoice, WitherChoiceField } from "@/components/journal/end-session";
+import { useWitherChoice, WitherChoiceField } from "@/components/journal/end-session";
 import { sessionOpensOnHref } from "@/lib/config/campaign-settings";
 import { errorMessage } from "@/lib/convex-errors";
+import { endDialogText, endReportLines, startNumber, startReportLines, startTarget } from "@/lib/journal/sessions";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
-import type { SessionListItem } from "../../../../convex/sessionRecords";
 import { useSessionList } from "../session-list";
 import type { JournalHeaderActionsProps } from "../slots";
 import { SlotBoundary } from "../ui";
@@ -37,17 +36,6 @@ import { SlotBoundary } from "../ui";
  */
 
 type Report = { lines: string[]; doomTier?: number };
-
-/** Who may start which session: the selected planned one, else the newest planned (the list is newest first). */
-export function startTarget(sessions: readonly SessionListItem[], selectedId: Id<"sessions"> | null): SessionListItem | null {
-  const selected = sessions.find((s) => s._id === selectedId && s.status === "planned");
-  return selected ?? sessions.find((s) => s.status === "planned") ?? null;
-}
-
-/** The number 'Start session N' names: the target's, else the one the server will create (highest + 1). */
-export function startNumber(sessions: readonly SessionListItem[], target: SessionListItem | null): number {
-  return target?.n ?? sessions.reduce((max, s) => Math.max(max, s.n), 0) + 1;
-}
 
 export { sessionOpensOnHref } from "@/lib/config/campaign-settings";
 

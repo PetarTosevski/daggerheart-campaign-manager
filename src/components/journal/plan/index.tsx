@@ -4,28 +4,21 @@ import "./plan.css";
 
 import { useQuery } from "convex/react";
 
+import { asideScene, PENDING } from "@/lib/journal/plan";
+
 import { api } from "../../../../convex/_generated/api";
 import { useSessionList } from "../session-list";
 import type { PlanAsideProps, PlanViewProps } from "../slots";
 import { Card } from "../ui";
 import { BattlePointsPanel } from "./battle-points";
 import { GmPrep } from "./gm-prep";
-import { AddSceneButton, PENDING, SceneList, type PrepScene } from "./scenes";
+import { AddSceneButton, SceneList } from "./scenes";
 
 /**
  * Plan view slot (JP1, contract: ../slots.ts; design reference/designs/journal/journal_views.jpg, Plan). GM only (the
- * page mounts it for the GM; `sessionPrep.get` is a GM query).
+ * page mounts it for the GM; `sessionPrep.get` is a GM query). The right column shows `asideScene`'s Combat scene
+ * (src/lib/journal/plan.ts).
  */
-
-/**
- * The Combat scene whose Battle Points the right column shows: the playing Combat scene, else the first Combat scene;
- * null without one. `number` is 1-based ('Scene N').
- */
-export function asideScene(scenes: readonly Pick<PrepScene, "id" | "type" | "state">[]): { sceneId: string; number: number } | null {
-  let index = scenes.findIndex((s) => s.type === "combat" && s.state === "playing");
-  if (index === -1) index = scenes.findIndex((s) => s.type === "combat");
-  return index === -1 ? null : { sceneId: scenes[index]!.id, number: index + 1 };
-}
 
 /** Centre: the 'Planned scenes' card (scenes, '+ Add scene') with the 'GM prep' parchment at its foot. */
 export function PlanView({ campaignId, sessionId }: PlanViewProps) {

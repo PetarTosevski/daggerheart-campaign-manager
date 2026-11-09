@@ -4,12 +4,12 @@ import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 
 import { errorMessage } from "../../../../../src/lib/convex-errors";
+import { addPending, clock, hiddenPending, isPending, LOG_LABELS, removePending, textPending } from "../../../../../src/lib/journal/log";
 import type { JournalLogLine } from "../../../../../convex/journalLog";
 import { SESSION_TEXT_MAX } from "../../../../../convex/lib/validators/sessions";
 import { api, type Id } from "../../convex";
 import { colors } from "../../theme/colors";
-import { clock, LOG_KIND, PENDING_LINE } from "./model";
-import { logPatches, useOptimistic } from "./optimistic";
+import { useOptimistic } from "./optimistic";
 import { js } from "./styles";
 import { ActButton, Card, ErrorLine, LoadingLine } from "./ui";
 
@@ -27,11 +27,11 @@ export function SessionLog({ ids, isGm }: { ids: Ids; isGm: boolean }) {
   const log = useQuery(api.journalLog.list, ids);
   const [showHidden, setShowHidden] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const add = useOptimistic(api.sessionPlay.addLog, logPatches.add);
-  const remove = useOptimistic(api.sessionPlay.removeLog, logPatches.remove);
-  const hide = useOptimistic(api.journalLog.hide, logPatches.hidden(true));
-  const unhide = useOptimistic(api.journalLog.unhide, logPatches.hidden(false));
-  const reword = useOptimistic(api.journalLog.setText, logPatches.text);
+  const add = useOptimistic(api.sessionPlay.addLog, addPending);
+  const remove = useOptimistic(api.sessionPlay.removeLog, removePending);
+  const hide = useOptimistic(api.journalLog.hide, hiddenPending(true));
+  const unhide = useOptimistic(api.journalLog.unhide, hiddenPending(false));
+  const reword = useOptimistic(api.journalLog.setText, textPending);
   const caption = isGm ? "Written by the Combat Map as you play · edit anything" : "Written by the Combat Map as you play";
 
   if (log === undefined) {
@@ -118,7 +118,7 @@ function LogRow({
   onReword: (line: JournalLogLine, text: string) => void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
-  const pending = line.sourceId.startsWith(PENDING_LINE);
+  const pending = isPending(line);
   const tags = [line.sub, line.edited ? "edited" : null, line.hidden ? "hidden" : null].filter(Boolean).join(" · ");
 
   function save() {
@@ -131,7 +131,7 @@ function LogRow({
     <View style={[js.logRow, line.hidden ? js.dimmed : null]}>
       <Text style={js.logTime}>{clock(line.at)}</Text>
       <View style={js.logBody}>
-        <Text style={js.logKind}>{LOG_KIND[line.icon]}</Text>
+        <Text style={js.logKind}>{LOG_LABELS[line.icon]}</Text>
         {draft !== null ? (
           <TextInput
             accessibilityLabel="Re-word the line"

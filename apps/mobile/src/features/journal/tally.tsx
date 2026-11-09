@@ -4,10 +4,10 @@ import { Text, View } from "react-native";
 
 import { errorMessage } from "../../../../../src/lib/convex-errors";
 import { leastSpotlightLine } from "../../../../../src/lib/domain/journal";
+import { barPercent, resetPending, tallyTiles } from "../../../../../src/lib/journal/tally";
 import type { SpotlightEntry } from "../../../../../convex/sessionPlay";
 import { api, type Id } from "../../convex";
-import { barShare, TALLY } from "./model";
-import { resetSpotlight, useOptimistic } from "./optimistic";
+import { useOptimistic } from "./optimistic";
 import { js } from "./styles";
 import { ActButton, Card, ErrorLine, LoadingLine } from "./ui";
 
@@ -28,7 +28,7 @@ export function SessionTally({ ids }: { ids: Ids }) {
       ) : (
         <>
           <View accessibilityLabel="Session tally counts" style={js.tiles}>
-            {TALLY.map(({ key, label }) => {
+            {tallyTiles(tally.fearHidden).map(({ key, label }) => {
               const value = tally[key];
               return (
                 <View key={key} accessibilityLabel={`${label}: ${value === null ? "none yet" : value}`} accessible style={js.tile}>
@@ -55,7 +55,7 @@ export function Spotlight({ ids, isGm }: { ids: Ids; isGm: boolean }) {
 }
 
 function SpotlightCard({ ids, isGm, entries }: { ids: Ids; isGm: boolean; entries: SpotlightEntry[] | undefined }) {
-  const reset = useOptimistic(api.sessionPlay.resetSpotlight, resetSpotlight);
+  const reset = useOptimistic(api.sessionPlay.resetSpotlight, resetPending);
   const [error, setError] = useState<string | null>(null);
   const max = Math.max(0, ...(entries ?? []).map((e) => e.count));
   const line = entries === undefined ? null : leastSpotlightLine(entries);
@@ -96,7 +96,7 @@ function SpotlightCard({ ids, isGm, entries }: { ids: Ids; isGm: boolean; entrie
                 {e.name}
               </Text>
               <View style={js.track}>
-                <View style={[js.fill, { width: `${Math.round(barShare(e.count, max) * 100)}%` }]} />
+                <View style={[js.fill, { width: `${barPercent(e.count, max)}%` }]} />
               </View>
               <Text style={js.count}>{String(e.count)}</Text>
             </View>

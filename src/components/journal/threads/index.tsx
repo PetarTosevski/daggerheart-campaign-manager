@@ -8,6 +8,7 @@ import { NotebookPen } from "lucide-react";
 import { BrandButton } from "@/components/brand/buttons";
 import { EntryText } from "@/components/notes/mentions";
 import { glyphFor } from "@/lib/domain/notes";
+import { threadKindLabel } from "@/lib/journal/sessions";
 
 import { api } from "../../../../convex/_generated/api";
 import type { RaisedThread } from "../../../../convex/journalThreads";
@@ -29,10 +30,6 @@ export const THREADS_RAISED_COPY = {
   open: "In Notes",
 } as const;
 
-/** What the bullet means, for screen readers (the glyph itself is decorative). */
-export function threadKindLabel(row: Pick<RaisedThread, "kind">): string {
-  return row.kind === "fear" ? "Looming Fear" : "Open task";
-}
 
 function ThreadRow({ campaignId, row, onOpen }: { campaignId: ThreadsRaisedProps["campaignId"]; row: RaisedThread; onOpen: () => void }) {
   return (

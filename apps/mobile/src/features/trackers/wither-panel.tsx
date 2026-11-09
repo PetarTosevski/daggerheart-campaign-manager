@@ -4,6 +4,7 @@ import { StyleSheet, Text, View } from "react-native";
 
 import { WITHER_POOL } from "../../../../../src/lib/domain/wither";
 import { frameHasMechanic, isFrameId } from "../../../../../src/lib/frames";
+import { endDialogText, endReportLines } from "../../../../../src/lib/journal/sessions";
 import { api } from "../../convex";
 import { colors } from "../../theme/colors";
 import { type } from "../../theme/fonts";
@@ -12,7 +13,6 @@ import { Loading } from "../../ui/loading";
 import { Sheet } from "../../ui/sheet";
 import type { TrackerCampaign } from "./campaign";
 import { CheckRow, ErrorText, TrackerButton, TrackerCard } from "./card";
-import { endReportLines, witherEndDialogText } from "./end-report";
 import { useIntent } from "./intent";
 
 /**
@@ -106,7 +106,7 @@ function GmEnd({
       {confirm ? (
         <Sheet onClose={() => setConfirm(false)} open title="End the session?">
           <Text style={styles.rule}>
-            {witherEndDialogText(convert)}
+            {endDialogText({ applies: true, convert })}
             {current?.extraCharacters ? " Extra characters are no longer allowed; the ones in play stay active." : ""}
           </Text>
           <CheckRow

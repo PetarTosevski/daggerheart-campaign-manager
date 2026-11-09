@@ -31,7 +31,8 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-const { AfterSession, Recap, levelUpLine, milestoneLine } = await import("../../../src/components/journal/recap");
+const { AfterSession, Recap } = await import("../../../src/components/journal/recap");
+const { levelUpLine, milestoneLine } = await import("../../../src/lib/journal/sessions");
 
 const campaignId = "c1" as Id<"campaigns">;
 const sessionId = "s6" as Id<"sessions">;

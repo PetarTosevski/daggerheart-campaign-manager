@@ -30,7 +30,8 @@ vi.mock("convex/react", () => ({
 }));
 
 const { SessionTally, Spotlight } = await import("../../../src/components/journal/tally");
-const model = await import("../../../src/components/journal/tally/model");
+// The tiles, bars and Reset live in src/lib/journal/tally.ts (shared with the phone, dcm-gdzi.46).
+const model = await import("../../../src/lib/journal/tally");
 
 const CAMPAIGN = "c1" as Id<"campaigns">;
 const SESSION = "s6" as Id<"sessions">;

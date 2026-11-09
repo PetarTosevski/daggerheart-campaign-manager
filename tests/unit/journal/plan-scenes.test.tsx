@@ -29,9 +29,8 @@ vi.mock("../../../src/components/journal/plan/battle-points", () => ({
   BattlePointsPanel: ({ sceneId, sceneNumber }: { sceneId: string; sceneNumber: number }) => <div data-testid="bp">{`Battle points · Scene ${sceneNumber} (${sceneId})`}</div>,
 }));
 
-const { PlanAside, PlanView, asideScene } = await import("../../../src/components/journal/plan");
-const { applySceneState, sceneBadge } = await import("../../../src/components/journal/plan/scenes");
-const { prepBlocks } = await import("../../../src/components/journal/plan/gm-prep");
+const { PlanAside, PlanView } = await import("../../../src/components/journal/plan");
+const { applySceneState, asideScene, prepBlocks, sceneBadge } = await import("../../../src/lib/journal/plan");
 
 const campaignId = "c1" as Id<"campaigns">;
 const sessionId = "s6" as Id<"sessions">;

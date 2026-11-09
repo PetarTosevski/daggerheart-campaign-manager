@@ -1,12 +1,14 @@
 import { useQuery } from "convex/react";
 import { Pressable, Text, View } from "react-native";
 
+import { shortSessionDate } from "../../../../../src/lib/dates";
 import { sessionTitle } from "../../../../../src/lib/domain/sessions";
+import { nextSessionNumber, wholeHours } from "../../../../../src/lib/journal/sessions";
 import { api, type Id } from "../../convex";
 import { useCampaign } from "../../shell/campaign-provider";
 import { useIntent } from "../dashboard/intent";
 import { useOpenThreads, useSessions } from "./data";
-import { nextNumber, rowLabel, shortSessionDate } from "./model";
+import { rowLabel } from "./model";
 import { js } from "./styles";
 import { ActButton, Card, ErrorLine, LoadingLine, StatusChip } from "./ui";
 
@@ -59,7 +61,7 @@ export function PlanSessionButton({ onCreated }: { onCreated: (id: Id<"sessions"
   const sessions = useSessions();
   const create = useIntent(api.sessionRecords.create);
   if (campaign.role !== "gm" || sessions === undefined) return null;
-  const n = nextNumber(sessions);
+  const n = nextSessionNumber(sessions);
   async function onPress() {
     const result = await create.fire({ campaignId: campaign._id });
     if (result) onCreated(result.sessionId);
@@ -91,7 +93,7 @@ export function CampaignSoFar() {
   return (
     <Card heading="Campaign so far">
       <SoFarRow label="Sessions played" value={summary?.sessionsPlayed} />
-      <SoFarRow label="Hours at the table" value={summary === undefined ? undefined : Math.max(0, Math.round(summary.hoursAtTable))} />
+      <SoFarRow label="Hours at the table" value={summary === undefined ? undefined : wholeHours(summary.hoursAtTable)} />
       <SoFarRow label="Party level" value={summary?.partyLevel} />
       <SoFarRow label="Open threads" value={threads?.length} />
     </Card>

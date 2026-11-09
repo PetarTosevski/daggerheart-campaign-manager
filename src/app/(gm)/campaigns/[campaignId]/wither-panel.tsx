@@ -6,9 +6,10 @@ import { useState } from "react";
 import { BrandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
 import { SlotBoundary } from "@/components/party/session/boundary";
-import { endDialogText, endReportLines, useWitherChoice, WitherChoiceField } from "@/components/journal/end-session";
+import { useWitherChoice, WitherChoiceField } from "@/components/journal/end-session";
 import { WITHER_POOL } from "@/lib/domain/wither";
 import { frameHasMechanic } from "@/lib/frames";
+import { endDialogText, endReportLines } from "@/lib/journal/sessions";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../../convex/_generated/api";

@@ -4,13 +4,13 @@ import { Pressable, Text, TextInput, View } from "react-native";
 
 import { errorMessage } from "../../../../../src/lib/convex-errors";
 import { formatSessionDate, isSessionDate, sessionTitle } from "../../../../../src/lib/domain/sessions";
+import { headingLine, patchListed } from "../../../../../src/lib/journal/sessions";
 import { SESSION_TEXT_MAX } from "../../../../../convex/lib/validators/sessions";
 import type { SessionListItem } from "../../../../../convex/sessionRecords";
 import { api, type Id } from "../../convex";
 import { useCampaign } from "../../shell/campaign-provider";
 import { colors } from "../../theme/colors";
-import { sessionLine } from "./model";
-import { patchSession, useOptimistic } from "./optimistic";
+import { useOptimistic } from "./optimistic";
 import { js } from "./styles";
 import { ActButton, ErrorLine, StatusChip } from "./ui";
 
@@ -30,10 +30,10 @@ export function SessionHeading({ session, onDeleted }: { session: SessionListIte
   const [editing, setEditing] = useState<Editing | null>(null);
   const [error, setError] = useState<string | null>(null);
   const setTitle = useOptimistic(api.sessionRecords.setTitle, (store, args) =>
-    patchSession(store, args.campaignId, args.sessionId, { title: args.title.trim() || undefined }),
+    patchListed(store, args.campaignId, args.sessionId, { title: args.title.trim() || undefined }),
   );
   const setDate = useOptimistic(api.sessionRecords.setDate, (store, args) =>
-    patchSession(store, args.campaignId, args.sessionId, { date: args.date || undefined }),
+    patchListed(store, args.campaignId, args.sessionId, { date: args.date || undefined }),
   );
 
   if (session === undefined) {
@@ -91,15 +91,15 @@ export function SessionHeading({ session, onDeleted }: { session: SessionListIte
       ) : isGm ? (
         <Pressable
           accessibilityHint={`Change the date (${formatSessionDate(s.date)})`}
-          accessibilityLabel={sessionLine(s)}
+          accessibilityLabel={headingLine(s)}
           accessibilityRole="button"
           onPress={() => begin("date")}
           style={js.link}
         >
-          <Text style={js.label}>{sessionLine(s)}</Text>
+          <Text style={js.label}>{headingLine(s)}</Text>
         </Pressable>
       ) : (
-        <Text style={js.label}>{sessionLine(s)}</Text>
+        <Text style={js.label}>{headingLine(s)}</Text>
       )}
       <View style={js.row}>
         {isGm && current?.field === "title" ? (
@@ -151,7 +151,7 @@ function SessionMenu({
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const setPlayed = useOptimistic(api.sessionRecords.setPlayed, (store, args) =>
-    patchSession(store, args.campaignId, args.sessionId, { status: args.played ? "played" : "planned" }),
+    patchListed(store, args.campaignId, args.sessionId, { status: args.played ? "played" : "planned" }),
   );
   const remove = useMutation(api.sessionRecords.remove);
   const live = session.status === "live";

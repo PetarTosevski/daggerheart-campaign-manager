@@ -25,7 +25,8 @@ vi.mock("convex/react", () => ({
 }));
 
 const { SessionLog } = await import("../../../src/components/journal/log");
-const model = await import("../../../src/components/journal/log/model");
+// The pure log helpers live in src/lib/journal/log.ts (shared with the phone, dcm-gdzi.46); the icons stay on the website.
+const model = { ...(await import("../../../src/lib/journal/log")), ...(await import("../../../src/components/journal/log/model")) };
 
 const CAMPAIGN = "c1" as Id<"campaigns">;
 const SESSION = "s6" as Id<"sessions">;

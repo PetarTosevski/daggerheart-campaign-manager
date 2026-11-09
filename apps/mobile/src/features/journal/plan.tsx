@@ -5,6 +5,8 @@ import { Pressable, Text, TextInput, View } from "react-native";
 
 import { errorMessage } from "../../../../../src/lib/convex-errors";
 import { nextSceneId } from "../../../../../src/lib/domain/journal/scenes";
+import { asideScene, PENDING, patchPrep, prepBlocks, prepPatches, type Prep, type PrepScene } from "../../../../../src/lib/journal/plan";
+import { SCENE_TYPE_LABEL } from "../../../../../src/lib/journal/sessions";
 import { MAX_PCS, MIN_PCS } from "../../../../../convex/lib/encounters";
 import {
   MAX_SCENES,
@@ -15,8 +17,7 @@ import {
 import { api, type Id } from "../../convex";
 import { colors } from "../../theme/colors";
 import { useIntent } from "../dashboard/intent";
-import { battleScene, PENDING_SCENE, prepNote, SCENE_TYPE_LABEL, type Prep, type PrepScene } from "./model";
-import { patchPrep, prepPatches, useOptimistic } from "./optimistic";
+import { useOptimistic } from "./optimistic";
 import { journalColors, js } from "./styles";
 import { ActButton, Card, ErrorLine, LoadingLine, Option } from "./ui";
 
@@ -62,17 +63,19 @@ function useFieldDraft(value: string, onSave: (text: string) => void) {
 
 export function PlanView({ ids, status }: { ids: Ids; status: SessionStatus | undefined }) {
   const prep = useQuery(api.sessionPrep.get, ids);
-  const needsList = prep?.scenes.some((s) => s.type === "combat" && !s.encounter && !s.id.startsWith(PENDING_SCENE)) ?? false;
+  const needsList = prep?.scenes.some((s) => s.type === "combat" && !s.encounter && !s.id.startsWith(PENDING)) ?? false;
   const encounters = useEncounterList(ids.campaignId, needsList);
   if (prep === undefined) return <LoadingLine>Loading the plan…</LoadingLine>;
-  const aside = battleScene(prep.scenes);
+  const confirmed = prep.scenes.filter((s) => !s.id.startsWith(PENDING));
+  const aside = asideScene(confirmed);
+  const asideEncounter = aside ? (confirmed[aside.number - 1]?.encounter ?? null) : null;
   return (
     <View style={{ gap: 16 }}>
       <Card actions={<AddScene count={prep.scenes.length} ids={ids} />} heading="Planned scenes">
         <SceneList encounters={encounters} ids={ids} scenes={prep.scenes} status={status} />
         <GmPrep hooks={prep.hooks} ids={ids} />
       </Card>
-      {aside ? <BattlePoints encounter={aside.scene.encounter ?? null} number={aside.number} /> : null}
+      {aside ? <BattlePoints encounter={asideEncounter} number={aside.number} /> : null}
     </View>
   );
 }
@@ -140,7 +143,7 @@ function SceneRow({
 }) {
   const { error, run } = useRun();
   const [open, setOpen] = useState(false);
-  const pending = scene.id.startsWith(PENDING_SCENE);
+  const pending = scene.id.startsWith(PENDING);
   const setScene = useOptimistic(api.sessionPrep.setScene, prepPatches.setScene);
   const setState = useOptimistic(api.sessionPrep.setSceneState, prepPatches.setSceneState);
   const removeScene = useOptimistic(api.sessionPrep.removeScene, prepPatches.removeScene);
@@ -237,7 +240,7 @@ function GmPrep({ ids, hooks }: { ids: Ids; hooks: string }) {
     if (text !== null && text.trim() !== hooks) run(setHooks({ ...ids, hooks: text }));
   }
 
-  const blocks = prepNote(hooks);
+  const blocks = prepBlocks(hooks);
   return (
     <View style={js.paper}>
       <View style={js.between}>

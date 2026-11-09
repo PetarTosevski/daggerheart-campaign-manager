@@ -3,12 +3,13 @@ import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 
 import { errorMessage } from "../../../../../src/lib/convex-errors";
+import { patchLoot, patchRecap, storedText } from "../../../../../src/lib/journal/recap";
+import { levelUpLine } from "../../../../../src/lib/journal/sessions";
 import { SESSION_TEXT_MAX } from "../../../../../convex/lib/validators/sessions";
 import type { SessionListItem } from "../../../../../convex/sessionRecords";
 import { api, type Id } from "../../convex";
 import { colors } from "../../theme/colors";
-import { levelUps } from "./model";
-import { patchLoot, patchRecap, useOptimistic } from "./optimistic";
+import { useOptimistic } from "./optimistic";
 import { journalColors, js } from "./styles";
 import { ActButton, Card, ErrorLine, LoadingLine } from "./ui";
 
@@ -42,7 +43,9 @@ function GmRecap({ ids }: { ids: Ids }) {
 }
 
 function RecapBody({ ids, text }: { ids: Ids; text: string | null }) {
-  const setRecap = useOptimistic(api.sessionWrap.setRecap, patchRecap);
+  const setRecap = useOptimistic(api.sessionWrap.setRecap, (store, args) =>
+    patchRecap(store, args.campaignId, args.sessionId, storedText(args.recap)),
+  );
   // The draft belongs to one session, so a draft typed for one never shows in another (no remount key needed).
   const [draft, setDraft] = useState<{ id: string; text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -116,7 +119,7 @@ export function AfterSession({ ids }: { ids: Ids }) {
         <>
           <View style={{ gap: 2 }}>
             <Text style={js.label}>Level-ups</Text>
-            <Text style={js.body}>{levelUps(after.levelUps, names)}</Text>
+            <Text style={js.body}>{levelUpLine(after.levelUps, names)}</Text>
           </View>
           <Loot ids={ids} loot={after.loot} />
           {after.truncated ? <Text style={js.muted}>A long session: later level-ups may be missing.</Text> : null}
@@ -127,7 +130,9 @@ export function AfterSession({ ids }: { ids: Ids }) {
 }
 
 function Loot({ ids, loot }: { ids: Ids; loot: string | null }) {
-  const setLoot = useOptimistic(api.sessionWrap.setLoot, patchLoot);
+  const setLoot = useOptimistic(api.sessionWrap.setLoot, (store, args) =>
+    patchLoot(store, args.campaignId, args.sessionId, storedText(args.loot) ?? null),
+  );
   const [draft, setDraft] = useState<{ id: string; text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const editing = draft?.id === ids.sessionId ? draft.text : null;
