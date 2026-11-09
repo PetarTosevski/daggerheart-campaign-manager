@@ -18,7 +18,8 @@ export const restStatusValidator = v.union(v.literal("open"), v.literal("finishe
  * `martialPreparation` (Call of the Slayer mastery, CB 48; dcm-bxp.63, widened)
  * is the party's move on either rest while a resting PC holds the mastery card.
  * `locateSoulEchoes` (Journey to Horizon, HF 176; plan lanes-2 E8.3, dcm-dvia, widened only: stored rows still conform)
- * is a frame move on either rest.
+ * is a frame move on either rest. `raiseLoadout` (Dark Heart of Andaluria, Reanimated, HF 153; bead dcm-psg9, widened
+ * only) is a frame move on either rest.
  */
 export const restMoveValidator = v.union(
   v.literal("tendToWounds"),
@@ -36,6 +37,7 @@ export const restMoveValidator = v.union(
   v.literal("haltLycanthropy"),
   v.literal("martialPreparation"),
   v.literal("locateSoulEchoes"),
+  v.literal("raiseLoadout"),
 );
 
 /** One chosen move: an ally target for Tend to Wounds or Repair Armor, a countdown for Work on a Project. */

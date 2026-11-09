@@ -22,6 +22,7 @@ import { applySlotBonuses } from "../src/lib/domain/characters/slots";
 import { negateMinor } from "../src/lib/domain/session-features/index";
 import { spellcastTraitOf } from "../src/lib/domain/characters/spellcast";
 import { addCard, cardTakeProblem, sourcesFor } from "../src/lib/domain/level-up/index";
+import { changeTransformation, loadoutMax, transformationName } from "../src/lib/domain/transformations/index";
 import { holdsPurposefulDesign } from "../src/lib/domain/dice/index";
 import { assertEquipment, assertSource, IKONIS_ONLY } from "../src/lib/equipment-rules";
 import { appError, RuleError } from "../src/lib/errors/app-error";
@@ -575,6 +576,56 @@ export const choosePurposefulDesign = keyedUserMutation({
 });
 
 /**
+ * GM only (bead dcm-psg9, user 2026-11-09): gives the character a Hope & Fear transformation (HF p.34-40), or removes it
+ * with `transformationId: null`. "A PC can have only one transformation" (HF p.34), so a new one replaces the current
+ * one (the UI confirms first). Allowed in any campaign with Hope & Fear content on (MECHANIC_DISABLED otherwise).
+ *
+ * Dark Heart of Andaluria with the transformations option on (HF p.153: "The character gains the Reanimated
+ * transformation and their maximum loadout is reduced to one"): gaining Reanimated stores `loadoutMax: 1` and keeps the
+ * first loadout card, the rest go to the vault; losing Reanimated restores the normal five (`changeTransformation`).
+ * A Shapeshifter ancestry keeps Shapeshifter (INVALID). The same transformation again is a no-op. Each change writes one
+ * public, undoable feed row with the sheet before (as the GM's Purposeful Design move).
+ */
+export const setTransformation = userMutation({
+  args: { characterId: v.id("characters"), transformationId: v.union(v.string(), v.null()) },
+  returns: v.object({ transformationId: v.union(v.string(), v.null()), loadoutMax: v.number(), vaulted: v.array(v.string()) }),
+  handler: async (ctx, { characterId, transformationId }) => {
+    const { campaign, character } = await loadCharacter(ctx, ctx.user, characterId, "owner", "owner");
+    const options = resolveOptions(campaign.frameId, campaign.options);
+    if (!options.hopeAndFear) throw appError("MECHANIC_DISABLED", "Hope & Fear content is off in this campaign.");
+    const sheet = readSheet(character.sheet);
+    const current = sheet.transformationId ?? null;
+    if (current === transformationId) return { transformationId, loadoutMax: loadoutMax(sheet), vaulted: [] };
+    // `transformations` is offered only by the Dark Heart of Andaluria (src/lib/frames/options.ts), so it is HF p.153's switch.
+    const { sheet: next, vaulted } = changeTransformation(sheet, transformationId, { andaluriaReanimated: options.transformations });
+    await saveSheet(ctx, character._id, next, character);
+    const change =
+      transformationId === null
+        ? `${sheet.name} is no longer ${transformationName(current!)}`
+        : current === null
+          ? `${sheet.name} gains the ${transformationName(transformationId)} transformation`
+          : `${sheet.name}'s ${transformationName(current)} transformation becomes ${transformationName(transformationId)}`;
+    const loadout =
+      next.loadoutMax !== undefined && sheet.loadoutMax === undefined
+        ? `; maximum loadout ${next.loadoutMax}${vaulted.length > 0 ? `, ${vaulted.length} ${vaulted.length === 1 ? "card" : "cards"} to the vault` : ""}`
+        : sheet.loadoutMax !== undefined && next.loadoutMax === undefined
+          ? "; maximum loadout back to 5"
+          : "";
+    await logAction(ctx, {
+      campaignId: campaign._id,
+      characterId: character._id,
+      actorId: ctx.user._id,
+      kind: "feature",
+      visibility: "public",
+      summary: `${change}${loadout}`,
+      before: sheet,
+      undoable: true,
+    });
+    return { transformationId, loadoutMax: loadoutMax(next), vaulted };
+  },
+});
+
+/**
  * Marks or clears Hit Points, Stress, Hope, Armor Slots and scars by a delta,
  * within each track's slots. Extra Stress beyond full marks one Hit Point
  * (Core, "Marking Stress"). Owner or GM.
@@ -744,7 +795,7 @@ export const takeCard = userMutation({
     const problem = cardTakeProblem(s, cardId, sources);
     if (problem) invalid(problem.message);
     await assertCardsUnshared(ctx, campaign, [cardId], "INVALID", character._id);
-    await saveSheet(ctx, character._id, { ...s, domainCards: addCard(s.domainCards, cardId) });
+    await saveSheet(ctx, character._id, { ...s, domainCards: addCard(s.domainCards, cardId, loadoutMax(s)) });
     return null;
   },
 });

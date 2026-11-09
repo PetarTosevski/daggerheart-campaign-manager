@@ -3,7 +3,7 @@
 import { MapPin, PenLine, X } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
-import { TOME_CHAPTERS, type Tome, type TomeChapterId } from "@/lib/frames/tomes";
+import { TOME_CHAPTERS, type Tome, type TomeChapterId, type TomeRule } from "@/lib/frames/tomes";
 import { cn } from "@/lib/utils";
 
 // Colours from the Tome* boards.
@@ -32,7 +32,12 @@ const CUSTOM_CHAPTERS: Record<TomeChapterId, { note: string; must: string; place
 };
 
 type Content =
-  | { kind: "published"; tome: Tome }
+  | {
+      kind: "published";
+      tome: Tome;
+      /** A control under a mechanics rule (the GM's "Give to…" on Andaluria's transformations, bead dcm-psg9), or null. */
+      ruleAction?: (rule: TomeRule) => ReactNode;
+    }
   | {
       kind: "custom";
       text: CustomTomeText;
@@ -62,7 +67,7 @@ function Prose({ paragraphs }: { paragraphs: string[] }) {
   );
 }
 
-function PublishedChapter({ tome, chapter }: { tome: Tome; chapter: TomeChapterId }) {
+function PublishedChapter({ tome, chapter, ruleAction }: { tome: Tome; chapter: TomeChapterId; ruleAction?: (rule: TomeRule) => ReactNode }) {
   if (chapter === "mechanics") {
     return (
       <div className="flex flex-col gap-3">
@@ -77,6 +82,7 @@ function PublishedChapter({ tome, chapter }: { tome: Tome; chapter: TomeChapterI
             <div className="flex min-w-0 flex-col gap-1">
               <span className="font-display text-[16px] font-bold">{rule.head}</span>
               <span className="text-[18px] leading-[1.55] whitespace-pre-line">{rule.text}</span>
+              {ruleAction?.(rule)}
             </div>
           </div>
         ))}
@@ -285,7 +291,7 @@ export function TomeBook({
   const sub = content.kind === "published" && chapter === "mechanics" ? content.tome.mechanics.sub : undefined;
 
   let body: ReactNode;
-  if (content.kind === "published") body = <PublishedChapter tome={content.tome} chapter={chapter} />;
+  if (content.kind === "published") body = <PublishedChapter tome={content.tome} chapter={chapter} ruleAction={content.ruleAction} />;
   else body = <CustomChapter key={chapter} chapter={chapter} content={content} />;
 
   return (

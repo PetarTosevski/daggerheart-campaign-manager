@@ -25,6 +25,7 @@ import {
   type CardTakeProblem,
   type Tier,
 } from "@/lib/domain/level-up";
+import { loadoutMax } from "@/lib/domain/transformations";
 import { DOMAIN_CARD_ART, getDomain, type ClassDef, type DomainCard } from "@/lib/srd";
 import { DOMAIN_CARDS } from "@/lib/srd/domain-cards";
 import type { AdvancementOption } from "@/lib/validation/characters";
@@ -247,7 +248,7 @@ export function DomainCardsSection({ cls }: { cls: ClassDef | undefined }) {
       <section className="dk-felt" aria-label="Loadout and vault">
         <div className="dk-felt-head">
           <h3 className="dk-felt-title">Loadout</h3>
-          <span className="dk-felt-sub">{loadout.length} / 5 in hand</span>
+          <span className="dk-felt-sub">{loadout.length} / {loadoutMax(sheet)} in hand</span>
           <span className="flex-1" />
           <span className="dk-felt-sub" aria-hidden="true">
             Vault
@@ -303,7 +304,7 @@ export function DomainCardsSection({ cls }: { cls: ClassDef | undefined }) {
             ) : (
               <div className="dk-spread-list" role="list" aria-label="Vault cards">
                 {vault.map((card, i) => {
-                  const block = recallBlock(card, sheet.level, loadout.length);
+                  const block = recallBlock(card, sheet.level, loadout.length, loadoutMax(sheet));
                   // Free only while the box is ticked and the GM has a rest open, as the server decides.
                   const cost = (duringRest && restOpen) || card.recallCost === 0 ? "free" : `${card.recallCost} Stress`;
                   return (

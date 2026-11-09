@@ -33,6 +33,7 @@ import type { Advancement, AdvancementOption, AdvancementPick, CharacterSheet, S
 import { MAX_LEVEL, tierForLevel } from "../characters/index";
 import { FEATURE_SLOTS, gainSlotBonus, loseSlotBonus, subclassSlotKey } from "../characters/slots";
 import { multiclassSpellcastProblem, resolvedMulticlassSpellcast } from "../characters/spellcast";
+import { loadoutMax } from "../transformations/index";
 
 /** An expected level-up rule violation; Convex turns it into LEVEL_UP_RULE. */
 export class LevelUpRuleError extends Error {
@@ -438,9 +439,12 @@ export function validateLevelUp(sheet: CharacterSheet, choice: LevelUpChoice, ct
 
 // ---------------------------------------------------------------- apply / revert
 
-/** Adds an owned card: into the loadout while it has room (fewer than 5), else into the vault. */
-export function addCard(cards: CharacterSheet["domainCards"], id: string): CharacterSheet["domainCards"] {
-  return { owned: [...cards.owned, id], loadout: cards.loadout.length < MAX.loadout ? [...cards.loadout, id] : cards.loadout };
+/**
+ * Adds an owned card: into the loadout while it has room (fewer than `max`: 5, or a Reanimated PC's lowered maximum,
+ * HF p.153), else into the vault.
+ */
+export function addCard(cards: CharacterSheet["domainCards"], id: string, max: number = MAX.loadout): CharacterSheet["domainCards"] {
+  return { owned: [...cards.owned, id], loadout: cards.loadout.length < Math.min(max, MAX.loadout) ? [...cards.loadout, id] : cards.loadout };
 }
 
 function swapCard(cards: CharacterSheet["domainCards"], from: string, to: string): CharacterSheet["domainCards"] {
@@ -520,7 +524,7 @@ export function applyLevelUp(sheet: CharacterSheet, choice: LevelUpChoice, ctx: 
     }
   }
 
-  for (const id of newCards(choice)) next.domainCards = addCard(next.domainCards, id);
+  for (const id of newCards(choice)) next.domainCards = addCard(next.domainCards, id, loadoutMax(next));
   if (choice.trade) {
     next.domainCards = swapCard(next.domainCards, choice.trade.out, choice.trade.in);
     advancement.tradeOut = choice.trade.out;

@@ -3,6 +3,7 @@
 import { useQuery } from "convex/react";
 import { useEffect, useId, useRef, useState } from "react";
 
+import { loadoutMax } from "@/lib/domain/transformations";
 import { cardEffect } from "@/lib/srd/card-effects";
 import { cn } from "@/lib/utils";
 
@@ -12,7 +13,7 @@ import { useAreaPick } from "../../map-view/area-pick";
 import type { DialogRequest } from "../../actions/hand/dialog";
 import { VaultDeck } from "../../actions/hand/dock";
 import { HandCardFace } from "../../actions/hand/face";
-import { areaPickOf, formFor, LOADOUT_MAX, needsDialog, playableUses, rollOf, usedRollOptions, type AreaPick, type CardChoice, type ChoiceAsk, type Creature, type HandCard, type UseOutcome } from "../../actions/hand/model";
+import { areaPickOf, formFor, needsDialog, playableUses, rollOf, usedRollOptions, type AreaPick, type CardChoice, type ChoiceAsk, type Creature, type HandCard, type UseOutcome } from "../../actions/hand/model";
 import { CardResult, type LastCard } from "../../actions/hand/result";
 import { useRecall } from "../../actions/hand/use-card";
 import { NO_ROLL_OPTIONS, rollProblem, rollSummary, type Roller, type RollValues } from "../../actions/roll-controls";
@@ -121,7 +122,7 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
   const selfToken = creatures.find((c) => c.side === "self")?.tokenId;
   const selfAt = creatures.find((c) => c.side === "self")?.at ?? null;
   const waitingCard = actions.waiting ? loadout.find((c) => c.cardId === actions.waiting?.request.cardId) : undefined;
-  const loadoutFull = loadoutFullText(loadout.length, LOADOUT_MAX);
+  const loadoutFull = loadoutFullText(loadout.length, loadoutMax(character?.sheet ?? {}));
   const recallRiders = restOpen ? [] : (hand?.recallRiders ?? []).filter((r) => r.ready);
   const sentRiders = recallRiders.filter((r) => checkedRiders.includes(r.id)).map((r) => r.id);
 

@@ -26,7 +26,9 @@ export type RestMove =
   | "haltLycanthropy"
   | "martialPreparation"
   /** Journey to Horizon (HF 176): "the players gain access to an additional downtime move: Locate Soul Echoes". */
-  | "locateSoulEchoes";
+  | "locateSoulEchoes"
+  /** Dark Heart of Andaluria, Reanimated (HF 153): "use a downtime move to raise their maximum loadout by one". */
+  | "raiseLoadout";
 
 /** One chosen move, with plain id strings (the Convex caller converts). */
 export type ChosenMove = { move: RestMove; targetId?: string; countdownId?: string };
@@ -62,6 +64,7 @@ export const MOVE_LABELS: Record<RestMove, string> = {
   haltLycanthropy: "Halt lycanthropy",
   martialPreparation: "Martial Preparation",
   locateSoulEchoes: "Locate Soul Echoes",
+  raiseLoadout: "Raise loadout",
 };
 
 /**

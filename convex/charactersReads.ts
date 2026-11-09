@@ -119,7 +119,7 @@ export const listByCampaign = campaignQuery({
 /**
  * The sheet fields the dashboard party card and its badges read: name, class line (class, subclass, ancestry,
  * community, level), portrait, the HP/Stress/Hope tiles (with scars and Light in the Dark), armor, and the D5 badges
- * (level-up pending, conditions for "Unconscious", Wither tokens, journey ends). The optional ones come back only when
+ * (level-up pending, conditions for "Unconscious", Wither tokens, journey ends) and the transformation. The optional ones come back only when
  * they show something, so an HP tick re-sends a few hundred bytes per character instead of the whole sheet. Every
  * field has `CharacterView`'s type, so a full view is also a `PartyMember` (the party card takes either).
  */
@@ -143,6 +143,8 @@ const partySheetValidator = v.object({
   conditions: characterViewValidator.fields.sheet.fields.conditions,
   wither: v.optional(v.number()),
   journeyEnds: v.optional(v.boolean()),
+  /** The tome's "Give to…" picker names each PC's current transformation (bead dcm-psg9). */
+  transformationId: v.optional(v.string()),
 });
 
 /** One dashboard party card: `CharacterView` without `ownerId`, `mine`, `updatedAt` and most of the sheet. */
@@ -187,6 +189,7 @@ function partyMember(view: CharacterView): PartyMember {
       ...(s.conditions?.length ? { conditions: s.conditions } : {}),
       ...(s.wither ? { wither: s.wither } : {}),
       ...(s.journeyEnds ? { journeyEnds: true as const } : {}),
+      ...(s.transformationId === undefined ? {} : { transformationId: s.transformationId }),
     },
     portraitUrl: view.portraitUrl,
     canEdit: view.canEdit,

@@ -22,6 +22,7 @@ import { onRest } from "../class-features/hooks";
 import type { Registry } from "../class-features/index";
 import type { Rng } from "../class-features/types";
 import { gainMartialPreparationDie } from "../session-features/slayer";
+import { raiseLoadout } from "../transformations/index";
 import { ALLY_MOVES, MOVE_LABELS, MOVES_PER_REST, REST_MOVES, type ChosenMove, type RestChoice, type RestKind, type RestMove } from "./moves";
 
 export * from "./moves";
@@ -104,6 +105,8 @@ const SHORT_EQUIVALENT: Partial<Record<RestMove, RestMove>> = {
   repairAllArmor: "repairArmor",
   tribute: "tribute",
   martialPreparation: "martialPreparation",
+  // HF 153: "During a rest" (either rest), so an interrupted long rest keeps it as Tribute does.
+  raiseLoadout: "raiseLoadout",
 };
 
 /** A long rest move with no short rest equal: Tend to All Wounds, Clear All Stress, Repair All Armor, Work on a Project. */
@@ -236,6 +239,13 @@ export function applyMoves(kind: RestKind, input: Readonly<Record<string, Charac
               ? `Martial Preparation: +1 Slayer Die (${gain.held}/${gain.capacity})`
               : `Martial Preparation: Slayer Dice full (${gain.held}/${gain.capacity})`,
           );
+          break;
+        }
+        case "raiseLoadout": {
+          // HF 153 (bead dcm-psg9): the maximum loadout goes up by one, to at most five.
+          const raised = raiseLoadout(sheets[choice.characterId]!);
+          sheets[choice.characterId] = raised.sheet;
+          say(choice.characterId, raised.to > raised.from ? `Raise loadout: maximum loadout ${raised.from} to ${raised.to}` : `Raise loadout: already at ${raised.to}`);
           break;
         }
         case "makeAFeast":

@@ -365,6 +365,12 @@ export const characterSheetSchema = characterSheetV1Schema.extend({
    * "Pronouns" when "pronouns". Label only; the text stays in `pronouns`. Optional (widened, no version bump).
    */
   pronounsLabel: z.enum(PRONOUNS_LABELS).optional(),
+  /**
+   * A lowered maximum loadout, 1-4 (bead dcm-psg9; optional, widened, no version bump): Dark Heart of Andaluria's
+   * Reanimated (HF p.153: "their maximum loadout is reduced to one", raised by one per downtime move "until they reach
+   * the normal maximum loadout of five"). Absent = the normal 5 (CB p.101); `loadoutMax` in src/lib/domain/transformations.
+   */
+  loadoutMax: z.number().int().min(1).max(4).optional(),
 });
 
 export type CharacterSheetV1 = z.infer<typeof characterSheetV1Schema>;

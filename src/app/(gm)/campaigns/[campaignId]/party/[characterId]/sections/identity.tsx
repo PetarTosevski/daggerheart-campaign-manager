@@ -12,11 +12,13 @@ import { assetBackground } from "@/lib/design-assets";
 import { experienceValue, holdsPurposefulDesign } from "@/lib/domain/dice";
 import { ACHIEVEMENT_LEVELS } from "@/lib/domain/level-up";
 import { pronounsFieldLabel, type PronounsLabel } from "@/lib/validation/characters";
-import { getCommunity, getSubclass, getTransformation, portraitFor, TRAIT_IDS, type ClassDef, type TraitId } from "@/lib/srd";
+import { transformationConfirm } from "@/lib/domain/transformations";
+import { getCommunity, getSubclass, getTransformation, portraitFor, TRAIT_IDS, TRANSFORMATIONS, type ClassDef, type TraitId } from "@/lib/srd";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../../../convex/_generated/dataModel";
+import { useCampaign } from "../../../campaign-shell";
 import { TextField } from "../fields";
 import { advancementsChosen, cardsChosen, useLevelUpDraft } from "../level-up-draft";
 import { useSheet } from "../sheet-context";
@@ -404,6 +406,75 @@ function LockedField({ label, value, title = "Set at character creation", tag }:
   );
 }
 
+/**
+ * The Transformation field (bead dcm-psg9). The GM of a campaign with Hope & Fear content picks one of the six
+ * transformations or None (HF p.34: "A PC can have only one transformation"); replacing or removing one, and Andaluria's
+ * Reanimated loadout cut (HF p.153), ask first. The picked value shows while it saves. Everyone else, and a Shapeshifter
+ * ancestry (its form is the Shapeshifter transformation), sees the locked field.
+ */
+function TransformationField() {
+  const { sheet, character, slot, hopeAndFear } = useSheet();
+  const andaluriaReanimated = Boolean(useCampaign().options.transformations);
+  const set = useMutation(api.characters.setTransformation);
+  const [pending, setPending] = useState<string | null | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
+  const formLocked = sheet.ancestry.kind === "shapeshifter";
+  const stored = sheet.transformationId ?? (formLocked ? "shapeshifter" : null);
+  const shown = pending === undefined ? stored : pending;
+  if (!slot.isGm || !hopeAndFear || formLocked) {
+    return (
+      <LockedField
+        label="Transformation"
+        value={shown ? (getTransformation(shown)?.name ?? shown) : "None"}
+        title={formLocked && slot.isGm ? "A Shapeshifter's ancestry is a form of this transformation" : "Gained through the story, not at will"}
+        tag="H&F"
+      />
+    );
+  }
+  const choose = async (next: string | null) => {
+    const question = transformationConfirm(sheet.name, stored, next, andaluriaReanimated);
+    if (question !== null && !window.confirm(question)) return;
+    setError(null);
+    setPending(next);
+    try {
+      await set({ characterId: character._id, transformationId: next });
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setPending(undefined);
+    }
+  };
+  return (
+    <div className="id-field">
+      <label htmlFor={`transformation-${character._id}`} className="sh-lbl">
+        Transformation
+      </label>
+      <div className="flex items-center gap-1">
+        <select
+          id={`transformation-${character._id}`}
+          className={cn(paperField.input, "min-w-0 flex-1")}
+          value={shown ?? ""}
+          disabled={pending !== undefined}
+          onChange={(e) => void choose(e.target.value === "" ? null : e.target.value)}
+        >
+          <option value="">None</option>
+          {TRANSFORMATIONS.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </select>
+        <span className="id-hf">H&amp;F</span>
+      </div>
+      {error ? (
+        <Small role="alert" className="italic">
+          {error}
+        </Small>
+      ) : null}
+    </div>
+  );
+}
+
 /** The board's arched portrait frame (`pt-frame`), with the upload button for editors as its `pt-actions` overlay. */
 function Portrait() {
   const { sheet, character } = useSheet();
@@ -498,8 +569,6 @@ export function PronounsField() {
 export function IdentitySection({ cls }: { cls: ClassDef | undefined }) {
   const { sheet, canEdit, update } = useSheet();
   const subclass = getSubclass(sheet.subclassId);
-  const transformationId = sheet.transformationId ?? (sheet.ancestry.kind === "shapeshifter" ? "shapeshifter" : undefined);
-  const transformation = transformationId ? (getTransformation(transformationId)?.name ?? transformationId) : "None";
   return (
     <div className="cs-top id-top">
       <div className="cs-col id-col">
@@ -518,7 +587,7 @@ export function IdentitySection({ cls }: { cls: ClassDef | undefined }) {
             <LockedField label="Community" value={getCommunity(sheet.communityId)?.name ?? sheet.communityId} />
             <LockedField label="Subclass" value={subclass?.name ?? sheet.subclassId} />
             <LockedField label="Class" value={cls?.name ?? sheet.classId} />
-            <LockedField label="Transformation" value={transformation} title="Gained through the story, not at will" tag="H&F" />
+            <TransformationField />
           </div>
         </div>
         <TraitsGrid />

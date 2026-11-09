@@ -8,6 +8,7 @@ import { useId, useState } from "react";
 import { Label, paperField, Pill, Small } from "@/components/party/sheet-ui";
 import { errorMessage } from "@/lib/convex-errors";
 import { ALLY_MOVES, MOVE_LABELS, MOVES_PER_REST, REST_MOVES, type RestKind, type RestMove } from "@/lib/domain/rest/moves";
+import { loadoutMax } from "@/lib/domain/transformations";
 import { DOMAIN_CARDS } from "@/lib/srd/domain-cards";
 import { useIntent } from "@/lib/use-intent";
 
@@ -402,7 +403,7 @@ function CardSwaps({ character }: { character: CharacterView }) {
           {vault.map((id) => (
             <li key={id}>
               {cardName(id)}
-              <Pill disabled={loadout.length >= 5} onClick={() => run(id, "loadout")}>
+              <Pill disabled={loadout.length >= loadoutMax(character.sheet)} onClick={() => run(id, "loadout")}>
                 To loadout
               </Pill>
             </li>
