@@ -467,6 +467,9 @@ export async function undoEntry(
       ...(b.effects !== undefined ? { effects: b.effects.length > 0 ? b.effects : undefined } : {}),
       // AA2c: a limited feature use the action recorded is given back (an empty list clears the field).
       ...(b.featureUses !== undefined ? { featureUses: b.featureUses.length > 0 ? b.featureUses : undefined } : {}),
+      // dcm-iukg: a spotlight the action counted (a paid take) is taken back; rows without the fields leave it.
+      ...(b.spotlights !== undefined ? { spotlights: b.spotlights } : {}),
+      ...(b.spotlightTurn !== undefined ? { spotlightTurn: b.spotlightTurn } : {}),
       updatedAt: now,
     });
   }

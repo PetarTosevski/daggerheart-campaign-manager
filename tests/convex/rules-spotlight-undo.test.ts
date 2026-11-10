@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
+import { campaignFearState } from "../../convex/lib/fear";
 import { allowWorldEmails, buildWorld } from "./authz/world";
 import { key } from "./helpers";
 
@@ -176,5 +177,75 @@ describe("CU2: undoing a roll that moved the spotlight to the GM puts it back (d
     expect(rows.some((row) => row.spotlightBefore !== undefined)).toBe(false);
     await a.undo(r.entryId);
     expect(held(await a.spotlight())).toEqual({ holder: a.w.characterA, reason: "handedBack" });
+  });
+});
+
+/**
+ * dcm-iukg: the GM's paid take (`combatSpotlight.gmTake` pay fear on an adversary token) spends 1 Fear and counts as that
+ * adversary's spotlight this GM turn. Its undo gives the Fear back and the instance's spotlight count too, so the
+ * adversary's first action asks Fear again as it did before the take.
+ */
+describe("undoing a paid spotlight take (dcm-iukg)", () => {
+  /** The arena plus a Wolf already spotlit this GM turn (so another adversary's spotlight costs 1 Fear) and 3 Fear. */
+  async function paidArena() {
+    const a = await arena();
+    await a.t.run(async (ctx) => {
+      await ctx.db.patch("campaignState", (await campaignFearState(ctx, a.campaignId))._id, { fear: 3 });
+      await ctx.db.insert("encounterAdversaries", {
+        campaignId: a.campaignId,
+        encounterId: a.encounterId,
+        source: { kind: "srd", adversaryId: "bear" },
+        label: "Wolf",
+        order: 1,
+        summoned: false,
+        stats: { difficulty: 1, major: 100, severe: 200, hpMax: 10, stressMax: 4 },
+        hp: 0,
+        stress: 0,
+        defeated: false,
+        conditions: [],
+        tags: [],
+        spotlights: 1,
+        spotlightTurn: 1,
+        updatedAt: Date.now(),
+      });
+      // The Bear's count is from an older GM turn: undo must put exactly this back.
+      await ctx.db.patch("encounterAdversaries", a.bear, { spotlights: 2, spotlightTurn: 0 });
+    });
+    const fear = () => a.t.run(async (ctx) => (await campaignFearState(ctx, a.campaignId)).fear);
+    const bearRow = () => a.t.run(async (ctx) => (await ctx.db.get("encounterAdversaries", a.bear))!);
+    const take = () => a.gm.mutation(api.combatSpotlight.gmTake, { campaignId: a.campaignId, tokenId: a.bearToken, pay: "fear", idempotencyKey: key() });
+    const gmRow = () =>
+      a.t.run(async (ctx) =>
+        (await ctx.db.query("actionLog").withIndex("by_campaign_at", (q) => q.eq("campaignId", a.campaignId)).collect()).find((r) => r.visibility === "gm" && r.fearDelta === -1)!,
+      );
+    const attack = () => a.gm.mutation(api.adversaryActions.attack, { campaignId: a.campaignId, instanceId: a.bear, targets: [a.w.characterA], idempotencyKey: key() });
+    return { ...a, fear, bearRow, take, gmRow, attack };
+  }
+
+  it("undo gives the Fear back and the instance's spotlights / spotlightTurn as before the take", async () => {
+    const a = await paidArena();
+    // Before the take the Bear would be the turn's second spotlight: its action asks Fear.
+    expect(await a.attack()).toMatchObject({ status: "confirmFear" });
+    await a.take();
+    expect(await a.fear()).toBe(2);
+    expect(await a.bearRow()).toMatchObject({ spotlights: 1, spotlightTurn: 1 });
+    expect((await a.gmRow()).adversaryBefore).toEqual([expect.objectContaining({ instanceId: a.bear, spotlights: 2, spotlightTurn: 0 })]);
+
+    await a.undo((await a.gmRow())._id);
+    expect(await a.fear()).toBe(3);
+    expect(await a.bearRow()).toMatchObject({ spotlights: 2, spotlightTurn: 0 });
+    // As before the take: its first action asks Fear again.
+    expect(await a.attack()).toMatchObject({ status: "confirmFear" });
+  });
+
+  it("a row written before the widening (no spotlight fields) undoes as before: the Fear only", async () => {
+    const a = await paidArena();
+    await a.take();
+    const row = await a.gmRow();
+    const old = row.adversaryBefore!.map((b) => ({ instanceId: b.instanceId, hp: b.hp, stress: b.stress, defeated: b.defeated }));
+    await a.t.run((ctx) => ctx.db.patch("actionLog", row._id, { adversaryBefore: old }));
+    await a.undo(row._id);
+    expect(await a.fear()).toBe(3);
+    expect(await a.bearRow()).toMatchObject({ spotlights: 1, spotlightTurn: 1 });
   });
 });

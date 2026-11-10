@@ -45,6 +45,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { SpotlightHolder, SpotlightReason } from "../tables/combatSpotlight";
 import { logAction, newGroupId } from "./actionLog";
+import type { AdversaryBefore } from "./validators/actionLog";
 import { loadCombatToken } from "./combatMaps";
 import { adversaryDown } from "./combatTokenViews";
 import { campaignFearState, spendFear } from "./fear";
@@ -220,8 +221,9 @@ async function runningInstance(ctx: MutationCtx, campaignId: Id<"campaigns">, to
  *   Fear (`spotlightFearFor`). No running encounter: only the Fear is spent.
  * - Logged as one undoable group (kind `adversary`): a GM row naming the adversary with `fearDelta` -1, and a public row
  *   that names no adversary ("The GM spent 1 Fear to interrupt"; players never learn an unseen adversary from it). The
- *   GM's undo (`actionLog.undo`) gives the Fear back; the spotlight stays where it is (moving it is the GM's next move)
- *   and so does the instance's spotlight count (`adversaryBefore` has no spotlight fields; bead dcm-iukg).
+ *   GM's undo (`actionLog.undo`) gives the Fear back and, when the take marked an instance, puts its spotlight count back
+ *   (the GM row's `adversaryBefore` carries `spotlights` / `spotlightTurn`, dcm-iukg), so its first action asks Fear
+ *   again as before the take. The spotlight row stays where it is (moving it is the GM's next move).
  *
  * Returns whether the spotlight moved and the Fear spent (0 or 1).
  */
@@ -245,9 +247,13 @@ export async function takeWithFear(
 
   await spendFear(ctx, campaign._id, INTERRUPT_FEAR, "interrupt");
   const running = token === null ? null : await runningInstance(ctx, campaign._id, token);
+  let adversaryBefore: AdversaryBefore[] | undefined;
   if (running !== null && spotlightsThisTurn(running.instance, running.encounter.gmTurn) === 0) {
-    const { spotlights, spotlightTurn } = applySpotlight(running.instance, running.encounter.gmTurn);
-    await ctx.db.patch("encounterAdversaries", running.instance._id, { spotlights, spotlightTurn, updatedAt: Date.now() });
+    const { instance } = running;
+    // dcm-iukg: the instance before the mark, so the GM's undo takes the counted spotlight back.
+    adversaryBefore = [{ instanceId: instance._id, hp: instance.hp, stress: instance.stress, defeated: instance.defeated, spotlights: instance.spotlights, spotlightTurn: instance.spotlightTurn }];
+    const { spotlights, spotlightTurn } = applySpotlight(instance, running.encounter.gmTurn);
+    await ctx.db.patch("encounterAdversaries", instance._id, { spotlights, spotlightTurn, updatedAt: Date.now() });
   }
 
   const groupId = newGroupId();
@@ -258,6 +264,7 @@ export async function takeWithFear(
     visibility: "gm",
     summary: who === null ? `${INTERRUPT_FEAR} Fear: the GM interrupts` : `${INTERRUPT_FEAR} Fear: the GM interrupts and spotlights ${who}`,
     fearDelta: -INTERRUPT_FEAR,
+    ...(adversaryBefore !== undefined ? { adversaryBefore } : {}),
   });
   await logAction(ctx, { ...base, visibility: "public", summary: `The GM spent ${INTERRUPT_FEAR} Fear to interrupt` });
   return { moved: true, fearSpent: INTERRUPT_FEAR };

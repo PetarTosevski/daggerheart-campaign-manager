@@ -83,6 +83,12 @@ export const adversaryBeforeValidator = v.object({
   effects: v.optional(v.array(instanceEffectValidator)),
   /** The instance's limited feature uses, set when the action recorded one (AA2c, widened): undo gives the use back. */
   featureUses: v.optional(v.array(instanceFeatureUseValidator)),
+  /**
+   * The instance's spotlight count and its GM turn, set when the action marked it spotlit (`spotlight.takeWithFear`,
+   * dcm-iukg; widened, older rows have none and their undo leaves the count as it is). Undo writes both back.
+   */
+  spotlights: v.optional(v.number()),
+  spotlightTurn: v.optional(v.number()),
 });
 
 /**
