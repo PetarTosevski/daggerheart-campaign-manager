@@ -221,6 +221,24 @@ describe("email invites", () => {
     expect(calls["members:invite"]).toEqual([{ campaignId: CAMPAIGN, email: "p@example.com" }]);
   });
 
+  it("a co-GM sees no Revoke on a pending co-GM invite, only on player invites (dcm-0jdy)", () => {
+    render(<PlayersSection campaign={campaign(false)} />);
+    const pending = screen.getByRole("list", { name: "Pending invites" });
+    const luka = within(pending).getByText(/luka@example.com/).closest("li")!;
+    expect(within(luka).getByText("Co-GM")).toBeTruthy();
+    expect(within(luka).queryByRole("button", { name: /Revoke/ })).toBeNull();
+    const iva = within(pending).getByText(/iva@example.com/).closest("li")!;
+    fireEvent.click(within(iva).getByRole("button", { name: "Revoke invite for iva@example.com" }));
+    expect(calls["members:revokeInvite"]).toEqual([{ inviteId: "i1" }]);
+  });
+
+  it("the creator sees Revoke on a pending co-GM invite", () => {
+    render(<PlayersSection campaign={campaign(true)} />);
+    const luka = screen.getByText(/luka@example.com/).closest("li")!;
+    fireEvent.click(within(luka).getByRole("button", { name: "Revoke invite for luka@example.com" }));
+    expect(calls["members:revokeInvite"]).toEqual([{ inviteId: "i2" }]);
+  });
+
   it("standalone (the dialog's import) keeps the dialog's labels", () => {
     render(<EmailInvites campaignId={CAMPAIGN} />);
     expect(screen.getByRole("button", { name: "Invite" })).toBeTruthy();

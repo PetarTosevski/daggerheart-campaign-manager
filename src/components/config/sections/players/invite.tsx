@@ -96,7 +96,8 @@ export function JoinLinkCard({ campaignId }: { campaignId: Id<"campaigns"> }) {
 /**
  * Invite by email (moved here from the Players dialog, which imports it): the address, for the creator 'Invite as'
  * Player / Co-GM (Q8 b), Invite (`members.invite`), then the pending invites with Revoke (`members.revokeInvite`), a
- * co-GM invite marked 'Co-GM'. `canInviteCoGm` is the campaign's `isCreator` (display only; the server checks).
+ * co-GM invite marked 'Co-GM'. `canInviteCoGm` is the campaign's `isCreator` (display only; the server checks): without it
+ * there is no Invite as and no Revoke on a co-GM invite (only the creator manages co-GMs, Q7 a, dcm-0jdy).
  */
 export function EmailInvites({ campaignId, canInviteCoGm = false }: { campaignId: Id<"campaigns">; canInviteCoGm?: boolean }) {
   const access = useQuery(api.members.access, { campaignId });
@@ -152,17 +153,19 @@ export function EmailInvites({ campaignId, canInviteCoGm = false }: { campaignId
                 {i.email} <span className="text-subtle">· invited</span>
                 {i.asCoGm ? <span className="cfg-pl-role cfg-pl-role-co">Co-GM</span> : null}
               </span>
-              <button
-                type="button"
-                className={small("danger")}
-                aria-label={`Revoke invite for ${i.email}`}
-                onClick={() => {
-                  setError(null);
-                  revoke({ inviteId: i._id }).catch((e: unknown) => setError(errorMessage(e)));
-                }}
-              >
-                Revoke
-              </button>
+              {i.asCoGm && !canInviteCoGm ? null : (
+                <button
+                  type="button"
+                  className={small("danger")}
+                  aria-label={`Revoke invite for ${i.email}`}
+                  onClick={() => {
+                    setError(null);
+                    revoke({ inviteId: i._id }).catch((e: unknown) => setError(errorMessage(e)));
+                  }}
+                >
+                  Revoke
+                </button>
+              )}
             </li>
           ))}
         </ul>

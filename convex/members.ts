@@ -191,6 +191,8 @@ export const revokeInvite = userMutation({
     if (access === null) throw appError("NOT_FOUND");
     if (access.permission !== "owner") throw appError("FORBIDDEN");
     refuseArchived(access.campaign); // Q9 a (dcm-jh6d.64): as `invite`, which a campaign wrapper refuses.
+    // A pending co-GM invite is managing co-GMs (Q7 a, dcm-0jdy): the creator only, as `invite` and `removePlayer`.
+    if (invite.role === "coGm" && !(await isCreator(ctx, ctx.user, access.campaign))) throw appError("CO_GM_CREATOR_ONLY");
     await ctx.db.delete("campaignInvites", inviteId);
     return null;
   },

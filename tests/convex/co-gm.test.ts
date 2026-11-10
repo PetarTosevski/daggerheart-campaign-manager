@@ -200,6 +200,21 @@ describe("co-GM by email (config G1, Q8 b)", () => {
     expect(await w.t.run((ctx) => ctx.db.get("campaignInvites", pending))).toBeNull();
   });
 
+  it("only the creator revokes a pending co-GM invite; a co-GM still revokes a player invite (dcm-0jdy)", async () => {
+    const w = await buildWorld();
+    const campaignId = w.campaignId;
+    const coGm = w.as("coGm");
+    const exists = (inviteId: Id<"campaignInvites">) => w.t.run(async (ctx) => (await ctx.db.get("campaignInvites", inviteId)) !== null);
+    const coInvite = await w.as("gm").mutation(api.members.invite, { campaignId, email: "co@example.com", asCoGm: true });
+    expect(await fail(coGm.mutation(api.members.revokeInvite, { inviteId: coInvite }))).toBe("CO_GM_CREATOR_ONLY");
+    expect(await exists(coInvite)).toBe(true);
+    await w.as("gm").mutation(api.members.revokeInvite, { inviteId: coInvite });
+    expect(await exists(coInvite)).toBe(false);
+    const playerInvite = await w.as("gm").mutation(api.members.invite, { campaignId, email: "pl@example.com" });
+    await coGm.mutation(api.members.revokeInvite, { inviteId: playerInvite });
+    expect(await exists(playerInvite)).toBe(false);
+  });
+
   it("nobody invites the creator", async () => {
     const w = await buildWorld();
     expect(await fail(w.as("coGm").mutation(api.members.invite, { campaignId: w.campaignId, email: "gm@example.com" }))).toBe("INVALID");

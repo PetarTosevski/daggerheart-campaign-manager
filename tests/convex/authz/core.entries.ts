@@ -90,13 +90,14 @@ const area: Area = {
     { fn: api.members.roster, access: "view", expect: { otherPlayer: "ok", grantee: "ok" } },
     { fn: api.members.access, access: "gm", expect: { grantee: "FORBIDDEN" } },
     { fn: api.members.invite, access: "gm", args: () => ({ email: "invitee@example.com" }), expect: { grantee: "FORBIDDEN" } },
-    // Takes only the invite id; the invite's campaign decides (owner only).
+    // Takes only the invite id; the invite's campaign decides (owner only). The setup's invite is a player invite, which a
+    // co-GM revokes; a co-GM invite is the creator's only (CO_GM_CREATOR_ONLY, dcm-0jdy: tests/convex/co-gm.test.ts).
     {
       fn: api.members.revokeInvite,
       access: "scoped",
       setup: pendingInvite,
       args: (w) => ({ inviteId: w.ids.inviteId }),
-      expect: { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", otherPlayer: "FORBIDDEN", player: "FORBIDDEN", grantee: "FORBIDDEN", gm: "ok" },
+      expect: { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", otherPlayer: "FORBIDDEN", player: "FORBIDDEN", grantee: "FORBIDDEN", coGm: "ok", gm: "ok" },
     },
     // Anyone signed in may join with the code (that is what the code is for); members and the GM are no-ops.
     {
