@@ -42,8 +42,9 @@ vi.mock("convex/react", () => ({
   },
 }));
 
-const { LevelUpDraftProvider, useLevelUpDraft, issueTarget, advancementsChosen, cardsChosen } = await import("@/app/(gm)/campaigns/[campaignId]/party/[characterId]/level-up-draft");
-const { DRAFT_DEBOUNCE_MS } = await import("@/app/(gm)/campaigns/[campaignId]/party/new/draft");
+const { LevelUpDraftProvider, useLevelUpDraft } = await import("@/app/(gm)/campaigns/[campaignId]/party/[characterId]/level-up-draft");
+const { issueTarget, advancementsChosen, cardsChosen } = await import("@/lib/party/level-up");
+const { DRAFT_DEBOUNCE_MS } = await import("@/lib/party/wizard-draft");
 
 /** The account draft of c1, parsed. */
 const storedDraft = () => JSON.parse(accountDrafts.get("c1")!.data) as Record<string, unknown>;

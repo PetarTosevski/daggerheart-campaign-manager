@@ -21,7 +21,7 @@ import {
   toggleCard,
   toggleExperience,
   type WizardState,
-} from "@/app/(gm)/campaigns/[campaignId]/party/new/wizard-logic";
+} from "@/lib/party/wizard-logic";
 import { getClass, PORTRAITS } from "@/lib/srd";
 import { characterDraftSchema } from "@/lib/validation/character-input";
 

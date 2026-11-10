@@ -52,7 +52,6 @@ import { CHARACTER_READ_BOUND } from "./characterLimits";
 import { refuseArchivedWrite } from "./archived";
 import { readVersioned } from "./blobs";
 import { atLeast, campaignRoleOf, permissionFor, rolePermission, type Permission } from "./permissions";
-import { postRuleNote, ruleMode } from "./ruleModes";
 
 // ---------------------------------------------------------------- the stored sheet
 
@@ -187,7 +186,7 @@ async function keptUnconscious(
   if (before === null || sheet.conditions?.includes("unconscious") === true || (sheet.hp ?? before.hp) >= before.hp) return sheet;
   const campaign = await ctx.db.get("campaigns", previous.campaignId);
   if (campaign === null) return sheet;
-  const kept = keepUnconscious(before, { ...sheet, hp: sheet.hp ?? before.hp, conditions: sheet.conditions ?? [] }, ruleMode(campaign, "unconscious"));
+  const kept = keepUnconscious(before, { ...sheet, hp: sheet.hp ?? before.hp, conditions: sheet.conditions ?? [] }, resolveRuleModes(campaign.frameId, campaign.ruleModes).unconscious);
   if (!kept.woke) return sheet;
   tallyStateOf(ctx).wakeNotes.set(characterId, hpClearedWakeNote(sheet.name ?? "A PC", sheet.pronouns));
   const sources = sheet.conditionSources ?? [];
@@ -200,23 +199,15 @@ async function keptUnconscious(
 }
 
 /**
- * C4 Manual: posts the wake note a save left for this character ("Mira had a Hit Point cleared: wake her?"), once.
- * `logAction` calls it for the character's next row in this mutation, with the row's group (undoing the action removes
- * the note); an unlogged write (`characters.adjustResource`) calls it with no group: the note then names no character
- * and is never undoable, like that write's other notes.
+ * C4 Manual: takes the wake note a save left for this character ("Mira had a Hit Point cleared: wake her?"), once.
+ * `postWakeNote` (./actionLog) posts it. This file reads rule modes through `resolveRuleModes`, never `./ruleModes`:
+ * that module pulls in the auth server, and the phone app's tests load this file for `readSheet`.
  */
-export async function postWakeNote(
-  ctx: MutationCtx,
-  campaignId: Id<"campaigns">,
-  characterId: Id<"characters">,
-  actorId: Id<"users">,
-  groupId?: string,
-): Promise<void> {
+export function takeWakeNote(ctx: MutationCtx, characterId: Id<"characters">): string | undefined {
   const state = tallyStateOf(ctx);
   const summary = state.wakeNotes.get(characterId);
-  if (summary === undefined) return;
-  state.wakeNotes.delete(characterId);
-  await postRuleNote(ctx, { _id: campaignId }, { ruleId: "unconscious", summary, ...(groupId !== undefined ? { characterId, groupId } : {}), actorId });
+  if (summary !== undefined) state.wakeNotes.delete(characterId);
+  return summary;
 }
 
 /** What one action added to a PC's `sessionCharacterStats` row (JD3b counters), as an action-log row records it. */
@@ -397,7 +388,7 @@ export function assertCanAct(
   sheet: Pick<CharacterSheet, "conditions">,
   campaign?: Pick<Doc<"campaigns">, "frameId" | "ruleModes">,
 ): void {
-  const unconscious = unconsciousBlocksActing(sheet, campaign === undefined ? "book" : ruleMode(campaign, "unconscious"));
+  const unconscious = unconsciousBlocksActing(sheet, campaign === undefined ? "book" : resolveRuleModes(campaign.frameId, campaign.ruleModes).unconscious);
   if (character.status === "dead" || character.status === "away" || unconscious) {
     throw appError("CHARACTER_UNAVAILABLE");
   }

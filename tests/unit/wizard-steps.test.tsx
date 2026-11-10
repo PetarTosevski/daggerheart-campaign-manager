@@ -14,7 +14,7 @@ import {
   EquipmentStep,
   ExperiencesStep,
 } from "@/app/(gm)/campaigns/[campaignId]/party/new/steps-5-9";
-import { emptyWizard, type WizardState } from "@/app/(gm)/campaigns/[campaignId]/party/new/wizard-logic";
+import { emptyWizard, type WizardState } from "@/lib/party/wizard-logic";
 
 // Radios are found by their label: getByRole computes the accessible name, and so getComputedStyle up the tree, of
 // every class, subclass and gear radio for each lookup, which is slow in jsdom under the full parallel run (dcm-t30).

@@ -8,16 +8,7 @@ import { useEffect, useMemo, useRef, useState, type ComponentType } from "react"
 
 import { useSharedCards } from "@/components/party/level-up/shared-cards";
 import { FRAME_OF } from "@/lib/frames/extras/common";
-import { getDomainCard } from "@/lib/srd";
-import { useIntent } from "@/lib/use-intent";
-import { cn } from "@/lib/utils";
-
-import { api } from "../../../../../../../convex/_generated/api";
-import type { Id } from "../../../../../../../convex/_generated/dataModel";
-import { useCampaign } from "../../campaign-shell";
-import { isTypedWizardPatch, useAccountDraft, wizardFromDraft } from "./draft";
-import { ClassStep, HeritageStep, InfoStep, TraitsStep, type StepProps } from "./steps-1-4";
-import { BackgroundStep, ConnectionsStep, DomainCardsStep, EquipmentStep, ExperiencesStep } from "./steps-5-9";
+import { isTypedWizardPatch, wizardFromDraft } from "@/lib/party/wizard-draft";
 import {
   canReach,
   emptyWizard,
@@ -31,7 +22,17 @@ import {
   stillNeeded,
   toCharacterDraft,
   type WizardState,
-} from "./wizard-logic";
+} from "@/lib/party/wizard-logic";
+import { getDomainCard } from "@/lib/srd";
+import { useIntent } from "@/lib/use-intent";
+import { cn } from "@/lib/utils";
+
+import { api } from "../../../../../../../convex/_generated/api";
+import type { Id } from "../../../../../../../convex/_generated/dataModel";
+import { useCampaign } from "../../campaign-shell";
+import { useAccountDraft } from "./draft";
+import { ClassStep, HeritageStep, InfoStep, TraitsStep, type StepProps } from "./steps-1-4";
+import { BackgroundStep, ConnectionsStep, DomainCardsStep, EquipmentStep, ExperiencesStep } from "./steps-5-9";
 import "./wizard.css";
 
 const STEPS: ComponentType<StepProps>[] = [

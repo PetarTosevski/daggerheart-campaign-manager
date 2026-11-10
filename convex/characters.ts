@@ -44,11 +44,11 @@ import { characterSheetSchema, type CharacterSheet, type CharacterSheetInput } f
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { installedAugments, seedMotherboard } from "./characterExtras";
-import { logAction } from "./lib/actionLog";
+import { logAction, postWakeNote } from "./lib/actionLog";
 import { moveCardFor, writeHandHidden } from "./lib/cardHand";
 import { withoutCondition } from "./lib/conditionMarkers";
 import { featureScope } from "./sessionFeatures";
-import { editable, loadCharacter, postWakeNote, readSheet, saveSheet, storedSheet } from "./lib/characterSheet";
+import { editable, loadCharacter, readSheet, saveSheet, storedSheet } from "./lib/characterSheet";
 import { claimFile, deleteFilesOf, deleteOwnFile, isAllowedImage, isClaimed } from "./lib/files";
 import { keyedCampaignMutation, keyedUserMutation, userMutation } from "./lib/functions";
 import { assertMechanicEnabled } from "./lib/mechanics";

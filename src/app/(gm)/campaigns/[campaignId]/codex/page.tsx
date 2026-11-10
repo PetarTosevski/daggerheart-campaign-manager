@@ -8,8 +8,9 @@ import { Suspense, useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
 import { frameName } from "@/lib/campaign-display";
-import { factionsFor, regionsFor, type CodexKind } from "@/lib/codex/schema";
-import { groupOf, matchesSearch, previewForPlayers, unknownGroupLabel, type GmEntry, type PlayerEntry } from "@/lib/codex/view";
+import { emptyMessage, filterEntries, headerLine, isGmList, kindLabel, toListRows, visibleEntries } from "@/lib/codex/list-model";
+import type { CodexKind } from "@/lib/codex/schema";
+import type { GmEntry, PlayerEntry } from "@/lib/codex/view";
 import { useIntent } from "@/lib/use-intent";
 import { cn } from "@/lib/utils";
 
@@ -20,8 +21,6 @@ import { GmDetail, PlayerDetail } from "./entry-detail";
 import { EntryList, type ListEntry } from "./entry-list";
 import { Lightbox, type LightboxState } from "./gallery";
 import { PinPicker } from "./pin-picker";
-
-const KIND_LABEL: Record<CodexKind, string> = { character: "Characters", location: "Locations" };
 
 /** Codex (the Codex board): the GM's people and places, and what the party knows of them. */
 export default function CodexPage() {
@@ -52,19 +51,10 @@ function CodexBoard() {
   const isGmUser = campaign.role === "gm";
 
   const frameId = campaign.frameId;
-  const gmData = data?.role === "gm" ? data : null;
-  const gm = gmData !== null && !preview;
-  const pins = gmData?.pins ?? [];
+  const gmData = isGmList(data) ? data : null;
 
   // Entries as the current viewer sees them: the GM's full entries, or the player view (real or previewed).
-  const all: (GmEntry | PlayerEntry)[] =
-    data === undefined
-      ? []
-      : data.role === "gm"
-        ? preview
-          ? data.entries.map((e) => previewForPlayers(frameId, e, pins)).filter((e): e is PlayerEntry => e !== null)
-          : data.entries
-        : data.entries;
+  const { entries: all, pins, gm } = visibleEntries(data, frameId, preview);
 
   // `?entry=<id>` (a Notes mention, D11 N5): once that entry is in the visible list, select it and its kind tab with the
   // full list. Adjusted during render (CL7), once per link; an id the viewer cannot see changes nothing.
@@ -78,55 +68,17 @@ function CodexBoard() {
     setSelected(linked._id);
   }
 
-  const ofKind = all.filter((e) => e.kind === kind);
-  const base = ofKind.filter((e) => matchesSearch({ name: e.name, role: "role" in e ? e.role : undefined }, search));
   const grp = groups[kind];
-  const groupKey = (e: GmEntry | PlayerEntry) =>
-    groupOf({ kind: e.kind, region: e.region, allegiance: "allegiance" in e ? e.allegiance : undefined, allegianceShown: e.allegianceShown }, gm);
-  const shown = base.filter((e) => grp === "all" || groupKey(e) === grp);
-  const regions = regionsFor(frameId);
-  const groupNames = kind === "location" ? regions : factionsFor(frameId);
-  const groupTabs =
-    kind === "character" || regions.length
-      ? [
-          { key: "all", label: "All" },
-          ...groupNames.map((g) => ({ key: g, label: g })),
-          { key: "", label: unknownGroupLabel(kind, gm) },
-        ]
-          .map((t) => ({ ...t, count: t.key === "all" ? base.length : base.filter((e) => groupKey(e) === t.key).length }))
-          .filter((t) => !(t.key === "" && t.count === 0 && grp !== ""))
-      : [];
+  const { shown, groupTabs } = filterEntries(all, kind, grp, search, frameId, gm);
 
   const selectedId = shown.some((e) => e._id === selected) ? selected : (shown[0]?._id ?? null);
   const current = shown.find((e) => e._id === selectedId) ?? null;
 
-  const listEntries: ListEntry[] = shown.map((e) => {
-    const g = groupKey(e);
-    const cover = e.images.find((i) => i.key === e.cover)?.url ?? null;
-    return {
-      _id: e._id,
-      name: e.name || (e.kind === "location" ? "Unnamed location" : "Unnamed character"),
-      subtitle: ("role" in e && e.role) || (e.kind === "location" ? "Location" : "Character"),
-      coverUrl: cover,
-      initial: (e.name || "?").charAt(0).toUpperCase(),
-      group: g,
-      groupText: g || (e.kind === "location" ? "" : unknownGroupLabel(e.kind, gm)),
-      known: "known" in e ? e.known : true,
-      imageText:
-        "known" in e
-          ? e.images.length
-            ? `${e.images.filter((i) => i.shown).length}/${e.images.length} shown`
-            : "No images"
-          : "",
-    };
-  });
+  const listEntries: ListEntry[] = toListRows(shown, gm);
 
   const counts = (k: CodexKind) => all.filter((e) => e.kind === k).length;
   const gmEntries = gmData?.entries ?? [];
-  const knownCount = gmEntries.filter((e) => e.known).length;
-  const headerLine = gm
-    ? `${gmEntries.filter((e) => e.kind === "character").length} characters · ${gmEntries.filter((e) => e.kind === "location").length} locations · ${knownCount} known to the players`
-    : "What your party knows";
+  const header = headerLine(data, gm);
 
   const pickKind = (k: CodexKind) => {
     setKind(k);
@@ -152,13 +104,7 @@ function CodexBoard() {
   const pickEntry = pickFor ? gmEntries.find((e) => e._id === pickFor) : undefined;
   const actionError = create.error ?? importPins.error;
 
-  const emptyText = search.trim()
-    ? "Nothing matches that search."
-    : gm
-      ? kind === "location"
-        ? "No locations yet. Add one, or pull in the pins you placed on the World map."
-        : "No characters yet. Add the people your party meets."
-      : "The party has not met anyone here yet.";
+  const emptyText = emptyMessage(kind, gm, search.trim() !== "");
 
   return (
     <>
@@ -168,7 +114,7 @@ function CodexBoard() {
             {campaign.name} · {frameName(frameId)}
           </span>
           <h1 className="m-0 font-display text-[32px] leading-[1.05] font-black text-parchment sm:text-[44px]">Codex</h1>
-          <span className="text-[15px] text-[#d6dfdc]">{headerLine}</span>
+          <span className="text-[15px] text-[#d6dfdc]">{header}</span>
         </div>
         {isGmUser ? (
           <BrandButton
@@ -205,7 +151,7 @@ function CodexBoard() {
                   kind === k ? "bg-brand text-brand-ink" : "bg-transparent text-[#e6ecea]",
                 )}
               >
-                {KIND_LABEL[k]} · {counts(k)}
+                {kindLabel(k)} · {counts(k)}
               </button>
             ))}
           </div>

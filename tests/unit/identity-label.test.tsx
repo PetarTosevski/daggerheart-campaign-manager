@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PronounsField } from "@/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/identity";
 import { InfoStep } from "@/app/(gm)/campaigns/[campaignId]/party/new/steps-1-4";
-import { emptyWizard, restoreWizard, toCharacterDraft, type WizardState } from "@/app/(gm)/campaigns/[campaignId]/party/new/wizard-logic";
+import { emptyWizard, restoreWizard, toCharacterDraft, type WizardState } from "@/lib/party/wizard-logic";
 import { ReviewForm } from "@/components/party/import/review";
 import { sheetPatchSchema } from "@/lib/validation/character-input";
 import { characterSheetSchema, pronounsFieldLabel, type PronounsLabel } from "@/lib/validation/characters";

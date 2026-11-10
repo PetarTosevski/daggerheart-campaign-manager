@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { emptyWizard, missingByStep, normalizeWizard, restoreWizard, toCharacterDraft } from "@/app/(gm)/campaigns/[campaignId]/party/new/wizard-logic";
+import { emptyWizard, missingByStep, normalizeWizard, restoreWizard, toCharacterDraft } from "@/lib/party/wizard-logic";
 import {
   gatherScrap,
   rollShackStock,

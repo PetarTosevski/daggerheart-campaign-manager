@@ -6,14 +6,15 @@
  * ```ts
  * queueItems({ attacks, cards, features, difficulties, windows, cloaks, keywords, allyRolls, gmPrompts }); // oldest first
  * resolutionRows(feedPage);                                                                     // newest first, 8
- * errorCode(e);                                                                                 // "REQUEST_NOT_OPEN"
+ * isAlreadyAnswered(e);                                                                         // REQUEST_NOT_OPEN etc.
  * ```
+ * (`errorCode` lives in src/lib/lorekeeper/answer-model.ts, shared with the phone app.)
  *
  * Answer 7a: no Momentum prompt (its Fear is automatic, the adversary's row in Resolutions carries it, with Undo).
  * Answer 14a: no Hope split. Every item is a request the engine already stores; nothing here invents one.
  */
 
-import { ConvexError } from "convex/values";
+import { errorCode } from "@/lib/lorekeeper/answer-model";
 
 import { myPicks, type MyPick, type PickRow } from "../ally-picks/model";
 
@@ -290,15 +291,6 @@ export type Withdrawal = { requestId: string; characterName: string; useName: st
 /** The GM's toast for a withdrawal: "Vex withdrew Bolt Beacon" (user 2026-11-02). */
 export function withdrawalArrival(row: Pick<Withdrawal, "requestId" | "characterName" | "useName">): Arrival {
   return { key: `withdrawn:${row.requestId}`, title: `${row.characterName} withdrew ${row.useName}` };
-}
-
-/** The `code` of a `ConvexError<AppError>` (CF13), or undefined for anything else. */
-export function errorCode(error: unknown): string | undefined {
-  if (!(error instanceof ConvexError)) return undefined;
-  const data: unknown = error.data;
-  if (typeof data !== "object" || data === null) return undefined;
-  const code = (data as { code?: unknown }).code;
-  return typeof code === "string" ? code : undefined;
 }
 
 /**

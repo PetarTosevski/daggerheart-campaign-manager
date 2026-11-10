@@ -6,11 +6,12 @@ import { authMessages } from "../../src/lib/errors/auth";
 import { errorMessage } from "../../src/lib/convex-errors";
 
 describe("sign-in errors", () => {
-  it("has the three distinct codes with the agreed texts", () => {
+  it("has the distinct codes with the agreed texts", () => {
     expect(authMessages).toEqual({
       EMAIL_TAKEN: "This email already has an account. Sign in instead.",
       PASSWORD_TOO_SHORT: "The password needs at least 8 characters.",
       CODE_INVALID: "That code is wrong or has expired. Request a new one.",
+      SIGN_IN_UNAVAILABLE: "Sign in with Apple is unavailable right now. Try again in a moment.",
     });
   });
 

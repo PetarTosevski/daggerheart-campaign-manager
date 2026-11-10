@@ -39,7 +39,7 @@ import type { CharacterSheetInput } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { refundTokenSpends } from "./actionTokens";
-import { assertOneActive, postWakeNote, readSheet, revertSessionTally, storedSheet, takeSessionTally } from "./characterSheet";
+import { assertOneActive, readSheet, revertSessionTally, storedSheet, takeSessionTally, takeWakeNote } from "./characterSheet";
 import { closeRequest, declineGroupOffers, openRequests } from "./combatRequests";
 import { revertTicks } from "./countdownTicks";
 import { revertFear } from "./fear";
@@ -50,6 +50,35 @@ import type { ActionKind, AdversaryBefore, CampaignTimeSnapshot, ResultPanel, Sp
 
 /** The longest feed line; longer summaries are cut. */
 export const SUMMARY_MAX = 300;
+
+/**
+ * C4 Manual: posts the wake note a save left for this character ("Mira had a Hit Point cleared: wake her?"), once, as a
+ * GM rule note (the row `postRuleNote` in ./ruleModes writes; written here so ./characterSheet needs no ./ruleModes).
+ * `logAction` calls it for the character's next row in this mutation, with the row's group (undoing the action removes
+ * the note); an unlogged write (`characters.adjustResource`) calls it with no group: the note then names no character
+ * and is never undoable, like that write's other notes.
+ */
+export async function postWakeNote(
+  ctx: MutationCtx,
+  campaignId: Id<"campaigns">,
+  characterId: Id<"characters">,
+  actorId: Id<"users">,
+  groupId?: string,
+): Promise<void> {
+  const summary = takeWakeNote(ctx, characterId);
+  if (summary === undefined) return;
+  await ctx.db.insert("actionLog", {
+    campaignId,
+    ...(groupId !== undefined ? { characterId, groupId } : {}),
+    actorId,
+    kind: "rule",
+    visibility: "gm",
+    summary: summary.slice(0, SUMMARY_MAX),
+    ruleId: "unconscious",
+    undoable: groupId !== undefined,
+    at: Date.now(),
+  });
+}
 /** The most rows one action writes (a party rest: one per PC plus a campaign row). */
 const GROUP_MAX = 50;
 /** How far back undo looks for a character's latest live row. */

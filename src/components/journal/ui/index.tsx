@@ -4,6 +4,7 @@ import { Compass, MessageCircle, Swords, Tent, type LucideIcon } from "lucide-re
 import { Component, useId, type ReactNode } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
+import { SCENE_TYPE_LABEL } from "@/lib/journal/sessions";
 
 import type { SessionSceneType } from "../../../../convex/lib/validators/sessions";
 
@@ -94,12 +95,12 @@ export function Parchment({ label, children, className }: { label?: string; chil
   );
 }
 
-/** A scene type's label and icon (design: Exploration green, Social blue, Combat red, Downtime amber). */
+/** A scene type's label (`SCENE_TYPE_LABEL`, shared with the phone) and icon (design: Exploration green, Social blue, Combat red, Downtime amber). */
 export const SCENE_TYPE_DISPLAY: Record<SessionSceneType, { label: string; Icon: LucideIcon }> = {
-  exploration: { label: "Exploration", Icon: Compass },
-  social: { label: "Social", Icon: MessageCircle },
-  combat: { label: "Combat", Icon: Swords },
-  downtime: { label: "Downtime", Icon: Tent },
+  exploration: { label: SCENE_TYPE_LABEL.exploration, Icon: Compass },
+  social: { label: SCENE_TYPE_LABEL.social, Icon: MessageCircle },
+  combat: { label: SCENE_TYPE_LABEL.combat, Icon: Swords },
+  downtime: { label: SCENE_TYPE_LABEL.downtime, Icon: Tent },
 };
 
 /** The scene type chip: icon and label in the type's colour. */

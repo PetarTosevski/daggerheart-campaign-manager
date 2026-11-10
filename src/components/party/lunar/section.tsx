@@ -8,7 +8,8 @@ import { useRef, useState } from "react";
 import { SheetBox, Small } from "@/components/party/sheet-ui";
 import { errorMessage } from "@/lib/convex-errors";
 import type { FeatureScope } from "@/lib/domain/class-features/types";
-import { bumpMoonDie, bumpUsed, currentPhase, holdsLunarPhases, MOON_PHASES, moonDie, type MoonPhase } from "@/lib/domain/session-features";
+import { bumpMoonDie, currentPhase, holdsLunarPhases, MOON_PHASES, moonDie, type MoonPhase } from "@/lib/domain/session-features";
+import { bumpBlocked } from "@/lib/party/features";
 import type { CharacterSheet } from "@/lib/validation/characters";
 
 import { api } from "../../../../convex/_generated/api";
@@ -38,14 +39,6 @@ function bumped(sheet: Sheet, scope: FeatureScope): Sheet | null {
 
 function range(p: MoonPhase): string {
   return p.min === p.max ? `${p.min}` : `${p.min}–${p.max}`;
-}
-
-/** Why the bump button is off, or null when it can be pressed. */
-function bumpBlocked(sheet: Sheet): string | null {
-  if (moonDie(sheet) === undefined) return "No moon die to raise yet.";
-  if (bumpUsed({ featureUses: sheet.featureUses ?? [] })) return "Used this rest; it refreshes after a rest.";
-  if (sheet.hope < 1) return "Needs 1 Hope.";
-  return null;
 }
 
 /** The Lunar Phases box, or nothing for a sheet without the mastery (or with Hope & Fear off). */

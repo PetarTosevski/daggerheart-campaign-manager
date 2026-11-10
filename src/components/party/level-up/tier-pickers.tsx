@@ -12,7 +12,7 @@ import { SUBCLASSES } from "@/lib/srd/subclasses";
 import { TRAIT_IDS, type TraitId } from "@/lib/srd/types";
 import type { AdvancementOption, CharacterSheet } from "@/lib/validation/characters";
 
-import { sourcesFor, traitLabel } from "./shared";
+import { sourcesFor, traitLabel } from "@/lib/party/level-up";
 
 // Inline choosers under a tier box option ticked for the new level (plan guided-level-up, GL1). The chooser logic
 // comes from the removed modal stepper (cda2114 stepper.tsx); the choices go into the level-up draft.

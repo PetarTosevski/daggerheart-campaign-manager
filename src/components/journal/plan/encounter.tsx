@@ -6,43 +6,15 @@ import Link from "next/link";
 import { useId, useState } from "react";
 
 import { applyBudgetChange, MAX_PCS, MIN_PCS } from "@/components/adversaries/builder/budget-panel";
-import type { InstanceView } from "@/components/adversaries/builder/types";
 import { BrandButton, brandButton } from "@/components/brand/buttons";
 import { encounterTrackerHref } from "@/components/sessions/session-chip";
 import { errorMessage } from "@/lib/convex-errors";
-import { BP_COSTS, minionGroups } from "@/lib/domain/encounters/budget";
+import { encounterChips, prepPatches } from "@/lib/journal/plan";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import type { SceneEncounterProps } from "../slots";
-
-/** One adversary chip: a stat block's instances together ('Bandit ×2', 'Lackey ×4' for a Minion group). */
-export type EncounterChip = { key: string; name: string; count: number; type: string | null; bp: number };
-
-/**
- * The encounter's instances (`encounters.get`) as the board's chips: instances of one stat block (same name, type and
- * summoned flag) share a chip with their count (a Minion group counts its size) and their Battle Points (CB p.197:
- * the type's cost each; Minions per group the size of the party; summoned or unknown = 0). In first-added order.
- */
-export function encounterChips(instances: readonly InstanceView[], pcs: number): EncounterChip[] {
-  const groups = new Map<string, { name: string; type: InstanceView["type"]; items: InstanceView[] }>();
-  for (const i of instances) {
-    const name = i.name ?? i.label;
-    const key = `${name}|${i.type ?? ""}|${i.summoned ? "s" : ""}`;
-    const group = groups.get(key) ?? { name, type: i.type, items: [] };
-    group.items.push(i);
-    groups.set(key, group);
-  }
-  return [...groups.entries()].map(([key, { name, type, items }]) => {
-    const count = items.reduce((n, i) => n + (i.minionCount ?? 1), 0);
-    const counted = items.filter((i) => !i.summoned);
-    let bp = 0;
-    if (type === "Minion") bp = minionGroups(counted, pcs);
-    else if (type !== null) bp = BP_COSTS[type] * counted.length;
-    return { key, name, count, type, bp };
-  });
-}
 
 type Ids = { campaignId: Id<"campaigns">; sessionId: Id<"sessions">; sceneId: string };
 
@@ -79,12 +51,7 @@ function LinkedEncounter({ campaignId, sessionId, sceneId, encounterId, name, on
   const view = useQuery(api.encounters.get, { campaignId, encounterId });
   const headingId = useId();
   const [error, setError] = useState<string | null>(null);
-  const unlink = useMutation(api.sessionPrep.unlinkSceneEncounter).withOptimisticUpdate((store, args) => {
-    const current = store.getQuery(api.sessionPrep.get, { campaignId: args.campaignId, sessionId: args.sessionId });
-    if (!current) return;
-    const scenes = current.scenes.map((s) => (s.id === args.sceneId ? { ...s, encounterId: undefined, encounter: null } : s));
-    store.setQuery(api.sessionPrep.get, { campaignId: args.campaignId, sessionId: args.sessionId }, { ...current, scenes });
-  });
+  const unlink = useMutation(api.sessionPrep.unlinkSceneEncounter).withOptimisticUpdate(prepPatches.unlink);
   const chips = view ? encounterChips(view.instances, view.encounter.pcs) : [];
 
   return (

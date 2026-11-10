@@ -16,7 +16,7 @@ vi.mock("convex/react", () => ({ useQuery: () => null, useMutation: () => async 
 
 const { LevelUpDraftProvider, useLevelUpDraft } = await import("@/app/(gm)/campaigns/[campaignId]/party/[characterId]/level-up-draft");
 const { TierBoxes } = await import("@/components/party/level-up/history");
-const { fullSheet } = await import("@/components/party/level-up/shared");
+const { fullSheet } = await import("@/lib/party/level-up");
 
 type Draft = ReturnType<typeof useLevelUpDraft>;
 

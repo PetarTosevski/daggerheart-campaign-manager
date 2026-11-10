@@ -20,10 +20,8 @@ function localId<T extends "lorekeeperMessages">(label: string): Id<T> {
   return `optimistic-${label}` as Id<T>;
 }
 
-/** True for a message the optimistic update made up (no actions on it). */
-export function isLocalMessage(id: string): boolean {
-  return id.startsWith("optimistic-");
-}
+/** True for a message the optimistic update made up (no actions on it). Lives in the framework-free answer model. */
+export { isLocalMessage } from "../lorekeeper/answer-model";
 
 /**
  * `lorekeeper.ask` in an existing conversation: the question and a pending answer go on top of the newest-first

@@ -7,7 +7,7 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { HitView } from "@/components/combat-map/actions/reactions/model";
+import type { HitView } from "@/lib/combat-map/reactions";
 import { HudHit } from "@/components/combat-map/hud/hit";
 import type { CombatPageState } from "@/components/combat-map/slots";
 

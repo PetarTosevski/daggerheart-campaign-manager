@@ -13,7 +13,7 @@ import { api } from "../../../../convex/_generated/api";
 import type { CampaignSlot, CharacterSlot, SlotProps } from "../slots";
 
 import { CorrectLevel, TierBoxes } from "./history";
-import { canLevelUp, fullSheet } from "./shared";
+import { canLevelUp, fullSheet } from "@/lib/party/level-up";
 
 // D5 level-up (T2); board look from the sheet redesign (S8). Contract: ../slots.ts.
 

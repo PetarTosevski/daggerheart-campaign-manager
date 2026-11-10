@@ -8,6 +8,7 @@ import { useId, useState, type FormEvent, type KeyboardEvent } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
+import { addPending, clock, hiddenPending, isPending, removePending, textPending } from "@/lib/journal/log";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
@@ -16,7 +17,7 @@ import { SESSION_TEXT_MAX } from "../../../../convex/lib/validators/sessions";
 import type { SessionLogProps } from "../slots";
 import { Card } from "../ui";
 
-import { addPending, clock, hiddenPending, isPending, LOG_ICONS, removePending, textPending } from "./model";
+import { LOG_ICONS } from "./model";
 
 /**
  * The session log (JL, contract: ../slots.ts; design reference/designs/journal/journal_views.jpg, Log & recap, centre).

@@ -15,6 +15,7 @@ import { rogue, ROGUES_DODGE_BACK, roguesDodgeActive } from "@/lib/domain/class-
 import { hexDropOptions } from "@/lib/domain/class-features/classes/witch";
 import type { FeatureInput, FeatureMeta } from "@/lib/domain/class-features/types";
 import { currentPhase, holdsSlayer, holdsTide, slayerCapacity, slayerDice, tideCapacity, tideTokens } from "@/lib/domain/session-features";
+import { costLabel, inputMissing } from "@/lib/party/features";
 import { characterSheetSchema } from "@/lib/validation/characters";
 
 import { api } from "../../../../convex/_generated/api";
@@ -47,13 +48,6 @@ function useIntent() {
     }
   }
   return { run, busy, error };
-}
-
-function costLabel(feature: FeatureMeta): string | null {
-  const c = feature.cost;
-  if (!c) return null;
-  const parts = [c.hope ? `${c.hope} Hope` : null, c.stress ? `${c.stress} Stress` : null, c.use ? `once per ${c.use.until === "longRest" ? "long rest" : c.use.until}` : null];
-  return parts.filter(Boolean).join(", ") || null;
 }
 
 const TRAIT_LABEL = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
@@ -127,25 +121,6 @@ function DamageDicePicker({ characterId, value, onChange }: { characterId: Id<"c
       )}
     </fieldset>
   );
-}
-
-/** Whether an input still needs a value before the feature can be used. */
-function inputMissing(input: FeatureInput, values: { choice: string; amount: string; dieIndexes: number[]; target: string }): boolean {
-  switch (input.kind) {
-    case "select":
-      return input.required && values.choice === "";
-    case "number": {
-      const n = Number(values.amount);
-      return values.amount === "" || !Number.isInteger(n) || n < input.min || n > input.max;
-    }
-    case "rollDice":
-      return values.dieIndexes.length === 0;
-    case "ally":
-      return input.required && values.target === "";
-    case "text":
-    case "heldDice":
-      return false;
-  }
 }
 
 /**

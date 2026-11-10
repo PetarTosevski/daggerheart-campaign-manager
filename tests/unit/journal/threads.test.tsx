@@ -18,7 +18,8 @@ vi.mock("convex/react", () => ({
   useMutation: () => Object.assign(async () => null, { withOptimisticUpdate: () => async () => null }),
 }));
 
-const { ThreadsRaised, THREADS_RAISED_COPY, threadKindLabel } = await import("../../../src/components/journal/threads");
+const { ThreadsRaised, THREADS_RAISED_COPY } = await import("../../../src/components/journal/threads");
+const { threadKindLabel } = await import("../../../src/lib/journal/sessions");
 
 const campaignId = "c1" as Id<"campaigns">;
 const sessionId = "s6" as Id<"sessions">;
