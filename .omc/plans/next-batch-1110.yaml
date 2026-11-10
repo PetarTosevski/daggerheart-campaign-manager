@@ -1,0 +1,59 @@
+# Next batch (2026-11-10). Format: docs/workflow.md. Extra keys (plan-check ignores them): title, beads.
+#
+# USER REQUEST (2026-11-10): "start working on any tasks you choose to, ignore the phone for now".
+# Picked: specified beads with no open rule question.
+title: Next batch 2026-11-10
+plan: next-batch-1110
+waves:
+  - wave: 1
+    tracers:
+      - id: NB1
+        beads: [dcm-12kx]
+        goal: pcMods (convex/lib/adversaryHits.ts) reads adversary-applied sheet effects (Reality Quake's Unstuck, Burrowing Leechpoles, Ravenous / Afflicted flags), so pcDamageMods / pcResistance / payer flags include them.
+        depends_on: []
+        owns:
+          - convex/lib/adversaryHits.ts
+          - tests/convex/lane3-s4-adversary-data.test.ts
+          - tests/convex/adversary-sheet-effect-mods.test.ts
+          - docs/tasks/TASK-NB1.md
+        reads:
+          - convex/lib/adversaryFeatures.ts
+          - src/lib/srd/adversary-effects/**
+        acceptance:
+          - pcDamageMods of a sheet carrying Unstuck returns its multiplier; Leechpoles damageTaken and the Ravenous/Afflicted flags read
+          - pnpm lint, pnpm typecheck, the touched vitest files pass
+      - id: NB2
+        beads: [dcm-bxp.134.7]
+        goal: Under F5 fearFeatures Manual, the classic Encounter tab's adversary panel shows no Fear badge or '(N Fear)' Use label (the server asks no Fear); Book unchanged.
+        depends_on: []
+        owns:
+          - src/components/adversaries/tracker/actions/**
+          - tests/unit/adversary-tracker-actions-wf.test.tsx
+          - docs/tasks/TASK-NB2.md
+        reads:
+          - src/components/combat-map/hud/statblock/**
+        acceptance:
+          - a unit test shows Book with the badge and Manual without it
+          - pnpm lint, pnpm typecheck, the touched vitest files pass
+      - id: NB3
+        beads: [dcm-xgbe]
+        goal: Client JS per route shrinks back toward the PF11 numbers (Dashboard, Party / sheet, Combat Map, Adversaries) by moving eagerly loaded modules behind dynamic imports or lighter lookups, with bundle.mjs before/after numbers.
+        depends_on: []
+        owns:
+          - src/components/party/**
+          - src/components/dashboard/**
+          - src/components/combat-map/**
+          - src/app/**
+          - src/lib/srd/art.ts
+          - src/lib/party/**
+          - docs/performance.md
+          - docs/tasks/TASK-NB3.md
+          - tests/unit/hud/**
+          - tests/unit/party/**
+          - tests/unit/dashboard/**
+        reads:
+          - scripts/perf/**
+          - src/lib/domain/**
+        acceptance:
+          - bundle.mjs before/after table in docs/performance.md; Dashboard, Party, Combat Map and Adversaries smaller
+          - pnpm lint, pnpm typecheck, vitest (maxWorkers=2) on touched areas pass
