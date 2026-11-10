@@ -322,6 +322,8 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
   const modifierTooBig = Math.abs(toInt(modifier) ?? 0) > TYPED_MODIFIER_MAX;
   const canRoll = !(unavailable || pending || notEnoughHope || modifierTooBig);
   const earlier = history.slice(1);
+  // R2 / R3 Manual (dcm-bxp.134.6): the line says what the server applied, not the Book's gains.
+  const consequenceLine = result ? consequence(result.roll, result.fearGained, fear === null, ruleModes?.criticalSuccess === "manual", ruleModes?.hopeFearFromRolls === "manual") : "";
 
   const modField = (
     <label className="dc-field dc-narrow">
@@ -584,9 +586,7 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
                     {result.label}
                     {partsText(result.roll) ? ` (${partsText(result.roll)})` : ""}
                   </span>
-                  {consequence(result.roll, result.fearGained, fear === null, ruleModes?.criticalSuccess === "manual") ? (
-                    <span className="sh-small italic">{consequence(result.roll, result.fearGained, fear === null, ruleModes?.criticalSuccess === "manual")}</span>
-                  ) : null}
+                  {consequenceLine ? <span className="sh-small italic">{consequenceLine}</span> : null}
                 </span>
               </div>
             </div>

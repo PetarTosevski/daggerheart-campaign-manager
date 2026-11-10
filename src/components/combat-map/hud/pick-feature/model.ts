@@ -9,6 +9,7 @@ import { cardEffect } from "@/lib/srd/card-effects";
 import { featureEffect } from "@/lib/srd/feature-effects";
 
 import type { api } from "../../../../../convex/_generated/api";
+import type { Id } from "../../../../../convex/_generated/dataModel";
 import { costLabel, formFor, RANGE_LABEL, type ChoiceAsk, type UseForm } from "../../actions/hand/model";
 import type { RiderOption } from "../../actions/attack/riders";
 import { MAX_PICKED_SQUARES, pickAreaOf, serverUseOf, type AreaPicks } from "../../drawer/use/model";
@@ -169,6 +170,27 @@ export function riderNote(o: Pick<RiderOption, "situations" | "ready" | "resetLa
   if (!o.ready) return o.resetLabel ? `Used · ${o.resetLabel}` : "Used";
   const parts = [...o.situations.map((s) => `Confirms: ${s}`), ...o.options.map((x) => `${x.label}: ${x.options[0]?.label ?? ""}`)];
   return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+// ---------------------------------------------------------------- Help an Ally (R7; dcm-bxp.134.5)
+
+/** The panel's Help an Ally state: Book's ticked helpers, Manual's bare counter. */
+export type HelpData = { help: number; helpers: Id<"characters">[] };
+
+export const NO_HELP: HelpData = { help: 0, helpers: [] };
+
+/**
+ * What the use's `roll` carries for Help an Ally (CB p.90; the hand's `rollOf`): R7 Book the ticked helpers (1 Hope each,
+ * paid by the server; the counter it refuses is never sent), R7 Manual the counter (no Hope taken, the GM gets a note).
+ */
+export function helpRoll(data: HelpData, book: boolean): { help?: number; helpers?: Id<"characters">[] } {
+  if (book) return data.helpers.length > 0 ? { helpers: [...data.helpers] } : {};
+  return data.help > 0 ? { help: data.help } : {};
+}
+
+/** A helper chip's tick: on, or off; an untick always works. */
+export function toggleHelper(ticked: readonly Id<"characters">[], id: Id<"characters">): Id<"characters">[] {
+  return ticked.includes(id) ? ticked.filter((x) => x !== id) : [...ticked, id];
 }
 
 // ---------------------------------------------------------------- after the send

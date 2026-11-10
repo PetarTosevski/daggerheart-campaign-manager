@@ -38,14 +38,21 @@ export function partsText(roll: RollRecord): string {
   return terms.map((t, i) => (i === 0 ? String(t) : t < 0 ? `− ${-t}` : `+ ${t}`)).join(" ");
 }
 
-/** The italic consequence line: what the server applied for Hope, Stress and Fear (CB 95, `dualityEffects`). */
-export function consequence(roll: RollRecord, fearGained: number | undefined, poolHidden = false, criticalManual = false): string {
+/**
+ * The italic consequence line: what the server applied for Hope, Stress and Fear (CB 95, `dualityEffects`).
+ * `criticalManual`: R2 Manual. `hopeFearManual`: R3 Manual (user answer Q2 b, 2026-11-05): with Hope the player adds the
+ * Hope on the sheet, with Fear the GM gets "gain 1 Fear?"; a critical keeps its Hope and Stress (user 2026-11-06).
+ */
+export function consequence(roll: RollRecord, fearGained: number | undefined, poolHidden = false, criticalManual = false, hopeFearManual = false): string {
   if (roll.kind === "reaction") return "Reaction rolls don’t generate Hope or Fear.";
   if (roll.kind !== "action") return "";
   // Rule switches WR (R2 Manual): the critical still succeeds; its Hope and Stress are the GM's call.
   if (criticalManual && roll.outcome === "critical") return "Critical success: the GM decides your Hope and Stress.";
   const fx = dualityEffects("action", roll.outcome);
   if (fx.clearStress) return "Critical success: you gain a Hope and clear a Stress.";
+  // R3 Manual (dcm-bxp.134.6): nothing is gained by itself.
+  if (hopeFearManual && fx.hope) return "Rolled with Hope: add 1 Hope on your sheet.";
+  if (hopeFearManual && fx.fear) return "Rolled with Fear: the GM decides the Fear.";
   if (fx.hope) return "Rolled with Hope: you gain a Hope.";
   // R1: "already full" would tell a player the hidden pool is 12; the die stays ("Rolled with Fear").
   if (fx.fear && poolHidden) return "Rolled with Fear.";

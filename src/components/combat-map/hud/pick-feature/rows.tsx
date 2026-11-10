@@ -4,7 +4,10 @@ import { useId } from "react";
 
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { askKey, type ChoiceAsk, type FormValues, type RecipientKey, type UseForm } from "../../actions/hand/model";
-import { Stepper } from "../ui";
+import { HELP_MAX } from "../hand/states";
+import type { HelperCandidate } from "../pick-attack/model";
+import { CostPill, Stepper } from "../ui";
+import { toggleHelper, type HelpData } from "./model";
 
 /**
  * The feature picker's extra rows (plan combat-hud H3.3), between the targets and the switches of the picking panel:
@@ -32,7 +35,7 @@ function Chips<T extends string | number>({ label, items, value, onPick }: { lab
   );
 }
 
-export function FormRows({
+export function FormRows<D extends FormData>({
   form,
   data,
   gm,
@@ -40,10 +43,10 @@ export function FormRows({
   onChange,
 }: {
   form: UseForm;
-  data: FormData;
+  data: D;
   gm: boolean;
   recipients: (side: string) => readonly { tokenId: Id<"combatTokens">; name: string; side: string }[];
-  onChange: (next: FormData) => void;
+  onChange: (next: D) => void;
 }) {
   const diffId = useId();
   return (
@@ -129,6 +132,48 @@ export function FormRows({
         </div>
       ) : null}
     </>
+  );
+}
+
+/**
+ * Help an Ally on the use's action roll (R7, CB p.90; dcm-bxp.134.5), as the hand's roll options (`RollOptionsBody`):
+ * R7 Book (`helpers` given, from `helperCandidates`) ticks the PCs who help, 1 Hope each (a PC without Hope, or past
+ * `HELP_MAX`, can't be ticked); R7 Manual (`helpers` absent) is the bare "Help dice" counter.
+ */
+export function HelpRow({ helpers, value, onChange }: { helpers?: readonly HelperCandidate[]; value: HelpData; onChange: (next: HelpData) => void }) {
+  if (helpers === undefined) {
+    return (
+      <div className="hud-pf-row">
+        <span className="hud-pf-lbl">Help dice</span>
+        <Stepper label="Help dice" value={value.help} min={0} max={HELP_MAX} onStep={(d) => onChange({ ...value, help: value.help + d })} />
+      </div>
+    );
+  }
+  const ticked = value.helpers;
+  return (
+    <fieldset className="hud-pf-group" data-testid="hud-feature-helpers">
+      <legend>Helped by</legend>
+      <div className="hud-pf-chips">
+        {helpers.length === 0 ? <small>No one can help</small> : null}
+        {helpers.map((h) => {
+          const on = ticked.includes(h.characterId);
+          return (
+            <button
+              key={h.characterId}
+              type="button"
+              className="hud-pf-chip"
+              aria-pressed={on}
+              disabled={!on && (h.hope < 1 || ticked.length >= HELP_MAX)}
+              title={h.hope < 1 ? `${h.name} has no Hope` : `${h.name} spends 1 Hope and adds a d6`}
+              onClick={() => onChange({ ...value, helpers: toggleHelper(ticked, h.characterId) })}
+            >
+              {h.name}
+              <CostPill amount={1} resource="hope" />
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }
 

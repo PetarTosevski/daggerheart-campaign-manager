@@ -19,13 +19,16 @@ import { usePick, type PickApi, type PickContext, type PickOption, type PickOutc
 import { chainAnswer, chainRows, startAreaPick, type ChainCreature, type ChainLinks } from "../pick-area";
 import { showFeatureResult } from "../result";
 import { hudToasts } from "../toasts/store";
-import { AskRows, FormRows } from "./rows";
+import { helperCandidates } from "../pick-attack/model";
+import { AskRows, FormRows, HelpRow } from "./rows";
 import {
   areaAskOf,
   askText,
   featurePlan,
   hasActionRoll,
+  helpRoll,
   hopeShortfall,
+  NO_HELP,
   noPickText,
   payLine,
   riderLabel,
@@ -35,6 +38,7 @@ import {
   ruleOf,
   type FeaturePlan,
   type FeatureUseOutcome,
+  type HelpData,
 } from "./model";
 
 /**
@@ -75,8 +79,11 @@ export type FeatureUseOpen = { featureId: string; useId: string; /** Header name
 
 export type FeatureUseApi = { open: (input: FeatureUseOpen) => "picker" | "area" | "classic" };
 
-/** The panel's picker state (`FormValues` without what the selection holds). */
-type FormData = Omit<FormValues, "targets" | "situations" | "optionals">;
+/** The use's form answers (`FormValues` without what the selection holds). */
+type FormFields = Omit<FormValues, "targets" | "situations" | "optionals">;
+
+/** The panel's picker state: the form's answers and Help an Ally (R7, dcm-bxp.134.5). */
+type FormData = FormFields & HelpData;
 
 type AskData = { asks: readonly ChoiceAsk[]; options: Record<string, string[]>; splits: Record<string, number>; chain: ChainLinks };
 
@@ -103,7 +110,7 @@ export function riderPicksOf(riders: readonly RiderOption[], options: Readonly<R
 }
 
 /** The use's `choices` from the panel: its form's answers (`choicesOf`) with the selection's situations and optionals. */
-export function featureChoices(form: UseForm, data: FormData, selection: Pick<PickSelection, "targetIds" | "options">): CardChoice[] {
+export function featureChoices(form: UseForm, data: FormFields, selection: Pick<PickSelection, "targetIds" | "options">): CardChoice[] {
   const values: FormValues = {
     ...data,
     targets: selection.targetIds,
@@ -127,7 +134,7 @@ export function featureOptions(form: UseForm, riders: readonly RiderOption[]): P
 }
 
 /** What still blocks the primary: an unconfirmed situation, a choice not made, Hope short (CmpBlocked layer 1). */
-export function featureBlocked(form: UseForm, data: FormData, selection: Pick<PickSelection, "options">, hopeShort: string | null): string | null {
+export function featureBlocked(form: UseForm, data: FormFields, selection: Pick<PickSelection, "options">, hopeShort: string | null): string | null {
   if (hopeShort) return hopeShort;
   const missing = form.situations.findIndex((_, i) => selection.options[SITUATION(i)] !== true);
   if (missing >= 0) return `Confirm: ${form.situations[missing]}`;
@@ -144,6 +151,7 @@ function initialData(form: UseForm): FormData {
     ...(form.weapon ? { weapon: "primary" as const } : {}),
     ...(form.traits ? { trait: form.traits[0] } : {}),
     options: {},
+    ...NO_HELP,
   };
 }
 
@@ -177,6 +185,10 @@ export function useFeatureUse({ campaignId, role, map, characterId, canUse = tru
   const gmTokens = useQuery(api.combatTokensReads.list, gm && live && canUse ? { campaignId, mapId: live._id } : "skip");
   // Rule switches ODR3: Defined Ranges off, the chain rows show no band.
   const definedRanges = useDefinedRanges(campaignId);
+  // R7 on feature rolls (dcm-bxp.134.5), as the hand's roll options: Book ticks the PCs who help, Manual the counter.
+  const helpBook = useQuery(api.ruleSettings.get, canUse ? { campaignId } : "skip")?.modes.helpAnAlly === "book";
+  const party = useQuery(api.charactersReads.listByCampaign, canUse && helpBook ? { campaignId } : "skip");
+  const helpers = helpBook ? helperCandidates(party ?? [], characterId) : undefined;
 
   // Who is on the map, for names, chain rows and the actor's square.
   let creatures: Creature[] = [];
@@ -239,9 +251,11 @@ export function useFeatureUse({ campaignId, role, map, characterId, canUse = tru
       const options = featureOptions(chosen.form, riders);
       const hopeShort = hopeShortfall(chosen.use.costs, hope);
       const base = { campaignId, characterId, mapId, featureId, useId: chosen.use.id };
+      // dcm-bxp.134.5: an action roll can be helped (R7; nobody helps a reaction roll, CB p.99).
+      const helpable = hasActionRoll(chosen.use);
 
       /** Sends the use; a `needsChoice` opens the panel for the server's asks (chain links on the map). */
-      async function run(args: { targetTokenIds: Id<"combatTokens">[]; choices: CardChoice[]; roll?: { trait?: TraitId; difficulty?: number }; riders: ReturnType<typeof ridersToSend>; point?: { x: number; y: number }; points?: { x: number; y: number }[] }, step: number, links: Id<"combatTokens">[][], rows: readonly PickRowInput[]): Promise<PickOutcome> {
+      async function run(args: { targetTokenIds: Id<"combatTokens">[]; choices: CardChoice[]; roll?: { trait?: TraitId; difficulty?: number; help?: number; helpers?: Id<"characters">[] }; riders: ReturnType<typeof ridersToSend>; point?: { x: number; y: number }; points?: { x: number; y: number }[] }, step: number, links: Id<"combatTokens">[][], rows: readonly PickRowInput[]): Promise<PickOutcome> {
         const { riders: sent, ...rest } = args;
         const out: FeatureUseOutcome = await sendUse({ ...base, idempotencyKey: crypto.randomUUID(), ...rest, ...(sent.length > 0 ? { riders: sent } : {}) });
         if (out.status === "pending") return { kind: "pending", requestId: out.requestId };
@@ -291,7 +305,7 @@ export function useFeatureUse({ campaignId, role, map, characterId, canUse = tru
 
       // ---- squares on the map
       if (chosen.kind === "area") {
-        const startSquares = (choices: CardChoice[], ridersSent: ReturnType<typeof ridersToSend>, roll: { trait?: TraitId } | undefined, n: number) => {
+        const startSquares = (choices: CardChoice[], ridersSent: ReturnType<typeof ridersToSend>, roll: { trait?: TraitId; help?: number; helpers?: Id<"characters">[] } | undefined, n: number) => {
           startAreaPick({
             ...areaAskOf(title, chosen.area, chosen.picks, origin, n),
             id: baseId,
@@ -314,14 +328,15 @@ export function useFeatureUse({ campaignId, role, map, characterId, canUse = tru
             },
           });
         };
-        if (asksNothing(chosen.form, options) && !hopeShort) {
+        if (asksNothing(chosen.form, options) && !hopeShort && !helpable) {
           latest.current.finish();
           startSquares([], [], undefined, 1);
           return;
         }
         openPanel(chosen, async (s, data) => {
           const ridersNow = await ridersFor(data);
-          startSquares(featureChoices(chosen.form, data, s), ridersToSend(ridersNow, riderPicksOf(ridersNow, s.options)), data.trait ? { trait: data.trait } : undefined, data.numbers[chosen.form.numbers[0]?.id ?? ""] ?? 1);
+          const roll = { ...(data.trait ? { trait: data.trait } : {}), ...(helpable ? helpRoll(data, helpBook) : {}) };
+          startSquares(featureChoices(chosen.form, data, s), ridersToSend(ridersNow, riderPicksOf(ridersNow, s.options)), Object.keys(roll).length > 0 ? roll : undefined, data.numbers[chosen.form.numbers[0]?.id ?? ""] ?? 1);
           return { kind: "done" };
         });
         return;
@@ -329,7 +344,11 @@ export function useFeatureUse({ campaignId, role, map, characterId, canUse = tru
 
       openPanel(chosen, async (s, data) => {
         const ridersNow = await ridersFor(data);
-        const roll = { ...(data.trait ? { trait: data.trait } : {}), ...(gm && data.difficulty !== undefined ? { difficulty: data.difficulty } : {}) };
+        const roll = {
+          ...(data.trait ? { trait: data.trait } : {}),
+          ...(gm && data.difficulty !== undefined ? { difficulty: data.difficulty } : {}),
+          ...(helpable ? helpRoll(data, helpBook) : {}),
+        };
         // A use with no target rule shows you as its (locked) row; the server takes no target for it.
         const picks = ruleOf(chosen.form) ? s.targetIds : [];
         const rows: PickRowInput[] = picks.length > 0 ? s.targets.map((t) => ({ tokenId: t.tokenId, name: t.name, side: t.side, band: t.band, reach: t.reach })) : [selfRow];
@@ -364,7 +383,19 @@ export function useFeatureUse({ campaignId, role, map, characterId, canUse = tru
           ...actorSpec,
           options,
           data,
-          ...(asksNothing(p.form, []) ? {} : { extra: (ctx: PickContext<FormData>) => <FormRows form={p.form} data={ctx.data} gm={gm} recipients={recipients} onChange={(next) => ctx.update({ data: next, primary: primaryFor(next) })} /> }),
+          ...(asksNothing(p.form, []) && !helpable
+            ? {}
+            : {
+                extra: (ctx: PickContext<FormData>) => {
+                  const change = (next: FormData) => ctx.update({ data: next, primary: primaryFor(next) });
+                  return (
+                    <>
+                      {asksNothing(p.form, []) ? null : <FormRows form={p.form} data={ctx.data} gm={gm} recipients={recipients} onChange={change} />}
+                      {helpable ? <HelpRow helpers={helpers} value={ctx.data} onChange={(h) => change({ ...ctx.data, ...h })} /> : null}
+                    </>
+                  );
+                },
+              }),
           primary: primaryFor(data),
         });
       }
