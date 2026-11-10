@@ -741,7 +741,7 @@ async function criticalRolled(ctx: QueryCtx, characterId: Id<"characters">): Pro
  */
 export async function resolveDuality(ctx: QueryCtx, loaded: Loaded, args: DualityArgs, rng: Rng, manual: boolean) {
   const { campaign, character, sheet } = loaded;
-  assertCanAct(character, sheet);
+  assertCanAct(character, sheet, campaign);
   const scope = featureScope(campaign);
   const ikonis = args.ikonis ? await loadIkonis(ctx, campaign, character, sheet) : null;
   // E1.4b (dcm-l1er): the bearer's riders on this roll run first, with the server's dice, on the sheet the roll pays from.
@@ -1038,7 +1038,7 @@ function withSlayerDamage(roll: RollRecord, slayer: readonly { sides: number; va
  */
 export async function resolveDamage(ctx: QueryCtx, loaded: Loaded, args: DamageArgs, rng: Rng, manual: boolean) {
   const { campaign, character, sheet } = loaded;
-  assertCanAct(character, sheet);
+  assertCanAct(character, sheet, campaign);
   const ikonis = args.source.kind === "ikonis" ? await loadIkonis(ctx, campaign, character, sheet) : null;
   const prepared = rules(() => prepareDamage(sheet, args, featureScope(campaign), ikonis));
   const { sheet: paid, dice: slayer, labels } = rollSlayerDice(prepared.paid, args.slayerDice ?? 0);

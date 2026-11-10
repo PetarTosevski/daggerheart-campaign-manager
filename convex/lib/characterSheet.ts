@@ -48,6 +48,7 @@ import {
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { readAppConfig } from "./appConfig";
+import { CHARACTER_READ_BOUND } from "./characterLimits";
 import { refuseArchivedWrite } from "./archived";
 import { readVersioned } from "./blobs";
 import { atLeast, campaignRoleOf, permissionFor, rolePermission, type Permission } from "./permissions";
@@ -402,19 +403,8 @@ export function assertCanAct(
   }
 }
 
-/**
- * The creation cap (review M5, dcm-bxp.38): `characters.create` refuses a campaign's next character at this many. It stays
- * 50 as an abuse bound (config Q19 a); the per-player cap the owner sets in App admin (AD5b) is the everyday limit.
- * Never above `CHARACTER_READ_BOUND`.
- */
-export const MAX_CHARACTERS_CREATED_PER_CAMPAIGN = 50;
-
-/**
- * The read bound (dcm-bxp.38): how many of a campaign's characters every bounded party read takes (`partyOf`, rests,
- * sessions, combat scenes, card hands, combat reveals). It stays 50 when the creation cap drops, so a campaign that
- * holds more characters than a lowered cap (made before it dropped) is still read whole.
- */
-export const CHARACTER_READ_BOUND = 50;
+// The character bounds live in ./characterLimits (a leaf module, so ./sessions can read them while it loads).
+export { CHARACTER_READ_BOUND, MAX_CHARACTERS_CREATED_PER_CAMPAIGN, MAX_CHARACTERS_PER_CAMPAIGN } from "./characterLimits";
 
 /**
  * The per-player character cap (config AD5b, Q19 a): `characters.create` refuses `owner`'s next character in the
@@ -434,8 +424,6 @@ export async function assertCharacterCap(ctx: QueryCtx, campaign: Doc<"campaigns
   if (held.length >= cap) throw appError("CAP_CHARACTERS_PER_PLAYER");
 }
 
-/** The read bound under its old name (dcm-bxp.38): the party reads outside convex/characters.ts import it. */
-export const MAX_CHARACTERS_PER_CAMPAIGN = CHARACTER_READ_BOUND;
 
 /** The campaign's characters, bounded by the read bound. */
 export function partyOf(ctx: QueryCtx, campaignId: Id<"campaigns">) {

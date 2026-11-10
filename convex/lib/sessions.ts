@@ -3,7 +3,7 @@ import { logMark, windowsFromMarks, type LiveWindow } from "../../src/lib/domain
 import { appError } from "../../src/lib/errors/app-error";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { MAX_CHARACTERS_PER_CAMPAIGN } from "./characterSheet";
+import { MAX_CHARACTERS_PER_CAMPAIGN } from "./characterLimits";
 import { MAX_LOG_ENTRIES, MAX_LOG_OVERRIDES, MAX_SESSIONS, SESSION_TEXT_MAX, type SessionTextField } from "./validators/sessions";
 
 /**

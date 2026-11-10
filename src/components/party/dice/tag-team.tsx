@@ -3,6 +3,7 @@
 import { useQuery } from "convex/react";
 import { useState } from "react";
 
+import { unconsciousBlocksActing } from "@/lib/domain/characters";
 import type { RollRecord } from "@/lib/domain/duality";
 import { TRAIT_LABEL } from "@/lib/frames/extras/common";
 import { TRAIT_IDS, type TraitId } from "@/lib/srd/types";
@@ -36,10 +37,11 @@ export function TagTeam({ campaignId, character, disabled, pending }: { campaign
   const apply = useIntent(api.rolls.tagTeamApply);
 
   // Rule switches WR, R8: Book takes 3 Hope once per session; "No session limit" drops the limit; Manual takes nothing.
-  const mode = useQuery(api.ruleSettings.get, { campaignId })?.modes.tagTeam ?? "book";
+  const modes = useQuery(api.ruleSettings.get, { campaignId })?.modes;
+  const mode = modes?.tagTeam ?? "book";
   const used = mode === "book" && (character.sheet.featureUses ?? []).some((u) => u.key === "tagTeam");
   const partners = (party ?? []).filter(
-    (c) => c._id !== character._id && c.status === "active" && !(c.sheet.conditions ?? []).includes("unconscious") && !c.corrupt,
+    (c) => c._id !== character._id && c.status === "active" && !unconsciousBlocksActing(c.sheet, modes?.unconscious) && !c.corrupt,
   );
   const partner = partners.find((c) => c._id === partnerId);
 

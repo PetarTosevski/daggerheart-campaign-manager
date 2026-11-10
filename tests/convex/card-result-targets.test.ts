@@ -100,9 +100,13 @@ describe("dcm-uemx: combatHud.resultDamage, the GM's severity and HP per adversa
     if (r.status !== "resolved") throw new Error(r.status);
     expect(keysOf(r).filter((k) => ["targetDamage", "severity", "hpMarked"].includes(k))).toEqual([]);
     // d8+2 with Proficiency 1 is 3..10: at least the Major threshold 3, under Severe 100.
-    expect(await a.gm.query(api.combatHud.resultDamage, { campaignId: a.campaignId, entryId: r.entryId })).toEqual([{ tokenId: ogre.tokenId, severity: "major", hpMarked: 2 }]);
+    // A critical (doubles, about 1 in 12) succeeds against the dragon too (CB p.90), so read the Ogre's row and only
+    // expect the dragon's row to be absent when the roll wasn't a critical.
+    const damage = await a.gm.query(api.combatHud.resultDamage, { campaignId: a.campaignId, entryId: r.entryId });
+    expect(damage.filter((d) => d.tokenId === ogre.tokenId)).toEqual([{ tokenId: ogre.tokenId, severity: "major", hpMarked: 2 }]);
+    const critical = r.roll !== null && r.roll !== undefined && "outcome" in r.roll && r.roll.outcome === "critical";
+    if (!critical) expect(damage.some((d) => d.tokenId === dragon.tokenId)).toBe(false);
     expect((await a.t.run(async (ctx) => (await ctx.db.get("encounterAdversaries", ogre.instanceId))!)).hp).toBe(2);
-    void dragon;
     expect(errorCode(await a.player.query(api.combatHud.resultDamage, { campaignId: a.campaignId, entryId: r.entryId }).then(() => null, (e: unknown) => e))).toBe("FORBIDDEN");
     // Only the GM row carries it.
     const rows = await a.t.run((ctx) => ctx.db.query("actionLog").collect());

@@ -16,6 +16,7 @@ import { CLASS_FEATURES } from "@/lib/domain/class-features/index";
 import type { FeatureScope, RollPrompt } from "@/lib/domain/class-features/types";
 import { dualityEffects, OUTCOME_LABEL, TYPED_MODIFIER_MAX, weaponDice, type DicePool } from "@/lib/domain/dice";
 import { ikonisWeapon } from "@/lib/domain/dice/ikonis";
+import { unconsciousBlocksActing, type UnconsciousMode } from "@/lib/domain/characters";
 import type { RollRecord } from "@/lib/domain/duality";
 import { holdsSlayer, holdsTide, SLAYER_STORE_PROMPT, slayerDice, tideTokens } from "@/lib/domain/session-features";
 import { TRAIT_LABEL } from "@/lib/frames/extras/common";
@@ -63,9 +64,9 @@ function toInt(raw: string): number | undefined {
 
 const signed = (n: number) => (n >= 0 ? `+${n}` : `−${-n}`);
 
-/** Unavailable characters can't roll (decision 9; the server refuses too). */
-function isUnavailable(character: CharacterView): boolean {
-  return character.status === "dead" || character.status === "away" || (character.sheet.conditions ?? []).includes("unconscious");
+/** Unavailable characters can't roll (decision 9; the server refuses too). C4 Manual: an unconscious PC still rolls. */
+function isUnavailable(character: CharacterView, unconscious: UnconsciousMode | undefined): boolean {
+  return character.status === "dead" || character.status === "away" || unconsciousBlocksActing(character.sheet, unconscious);
 }
 
 function poolLabel(pool: DicePool, flat: number): string {
@@ -172,7 +173,9 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
     const parsed = characterSheetSchema.safeParse(view);
     return parsed.success ? parsed.data : null;
   }, [view]);
-  const unavailable = isUnavailable(character);
+  // One subscription with the ruleModes read below (Convex dedupes the same query and args).
+  const unconsciousMode = useQuery(api.ruleSettings.get, { campaignId })?.modes.unconscious;
+  const unavailable = isUnavailable(character, unconsciousMode);
   // dcm-hnbk: the traits with effects and passive bonuses (Beastform, CB p.30/32), as the Attack bar reads them.
   const traits = useMemo(() => (sheet ? derivedTraits(withEffects(sheet)) : view.traits), [sheet, view.traits]);
 

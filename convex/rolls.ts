@@ -191,8 +191,8 @@ export const tagTeam = keyedUserMutation({
       const partnerSheet = readSheet(partner.character.sheet);
       // S2 (RS2): a Tag Team Roll is the initiator's action (CB p.97); it waits while the GM holds the spotlight.
       await assertMayAct(ctx, lead.campaign, lead.character, "action", lead.sheet.name);
-      assertCanAct(lead.character, lead.sheet);
-      assertCanAct(partner.character, partnerSheet);
+      assertCanAct(lead.character, lead.sheet, lead.campaign);
+      assertCanAct(partner.character, partnerSheet, lead.campaign);
       rules(() => [args.initiator, args.partner].forEach((side) => assertTypedModifier(side.modifier)));
       const mode = ruleMode(lead.campaign, "tagTeam");
       const again = lead.sheet.featureUses.some((u) => u.key === TAG_TEAM_USE);
