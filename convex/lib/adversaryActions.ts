@@ -21,7 +21,7 @@ import { ConvexError } from "convex/values";
 
 import { pickAdversaryUse, rangeGate, standardAttackEffect, STANDARD_ATTACK_USE, upfrontFear, type AdversaryPlan, type AdversaryPlanStep, type AdversaryRunContext } from "../../src/lib/domain/adversary-effects/run";
 import type { AdversaryFeatureEffect } from "../../src/lib/domain/adversary-effects/types";
-import { adversaryAttack, adversaryDamage, gmControlledWeaponAttack } from "../../src/lib/domain/adversary-actions/attack";
+import { adversaryAttack, adversaryDamage, criticalBonus, gmControlledWeaponAttack } from "../../src/lib/domain/adversary-actions/attack";
 import { underwaterDisadvantage } from "../../src/lib/domain/combat-map/light";
 import { getWeapon } from "../../src/lib/srd/index";
 import type { TraitId } from "../../src/lib/srd/types";
@@ -122,6 +122,7 @@ import {
   type PartyMember,
 } from "./incomingHits";
 import { rollDie } from "./dice";
+import { criticalDamageNote } from "../../src/lib/domain/dice/index";
 import { postRuleNote, ruleMode } from "./ruleModes";
 import { moveToGm, spotlightAdversary } from "./spotlight";
 import type { ActionTarget, AdversaryBefore, StoredRoll } from "./validators/actionLog";
@@ -183,9 +184,12 @@ export function rangeGatedUses(uses: readonly TriggeredUse[], definedRanges: boo
   return { uses: kept, asks };
 }
 
-/** ODR3: the runner's flag for the campaign's Defined Ranges (absent = on, so only off is spread in). */
-function rangesFlag(campaign: Doc<"campaigns">): { definedRanges?: false } {
-  return ruleMode(campaign, "definedRanges") ? {} : { definedRanges: false };
+/**
+ * ODR3: the runner's flag for the campaign's Defined Ranges (absent = on, so only off is spread in). Plan rule-switches WR:
+ * also R10 `criticalDamage` when Manual (a natural 20's damage rolled like a normal hit; the GM's note: `criticalDamageNote`).
+ */
+function rangesFlag(campaign: Doc<"campaigns">): { definedRanges?: false; criticalDamage?: "manual" } {
+  return { ...(ruleMode(campaign, "definedRanges") ? {} : { definedRanges: false as const }), ...(ruleMode(campaign, "criticalDamage") === "manual" ? { criticalDamage: "manual" as const } : {}) };
 }
 
 type PcPick = { kind: "pc"; member: PartyMember; token: Doc<"combatTokens"> | null; combatant: Combatant; band?: Range };
@@ -1434,6 +1438,8 @@ export async function adversaryAction(
     }
   }
   for (const summary of new Set(rangeAsks)) await postRuleNote(ctx, campaign, { ruleId: "definedRanges", summary, groupId, actorId: user._id });
+  // Plan rule-switches WR (R10 Manual): the critical's maximum the damage left out.
+  if ((plan.criticalDamageWithheld ?? 0) > 0) await postRuleNote(ctx, campaign, { ruleId: "criticalDamage", summary: criticalDamageNote(label, plan.criticalDamageWithheld!), groupId, actorId: user._id });
   const result = await finish(ctx, { campaign, user, encounter, w, groupId, spotlight: needsSpotlight && !spotlit, needsSpotlight, spotlightFear: 0, roll, success: plan.success, outcomes, offers, publicText, gmText, ...(args.feature !== undefined ? { attackerFeature: args.feature } : {}) });
   if (forcedPcs.length > 0) {
     const live = await liveCombatMap(ctx, campaign._id);
@@ -1957,14 +1963,20 @@ export async function gmControlledAttack(ctx: MutationCtx, campaign: Doc<"campai
   const prompts: Prompt[] = [];
   const gmLines = [`${name} (${GM_CONTROLLED}) ${weaponName}: ${words(attack.record)}${attack.critical ? " critical" : ""} vs ${targets.map((t) => `${t.pc?.sheet.name ?? t.instance?.label ?? "?"} ${t.evasion}: ${hitIds.has(t.id) ? "hit" : "miss"}`).join(", ")}`];
   const damages = new Map<string, NonNullable<ReturnType<typeof adversaryDamage>>>();
+  // Plan rule-switches WR (R10 Manual): a natural 20's damage rolled like a normal hit; the GM's note below.
+  const criticalDamage = ruleMode(campaign, "criticalDamage");
+  let criticalWithheld = false;
   for (const t of targets) {
     if (!hitIds.has(t.id)) continue;
-    const dmg = adversaryDamage(rolled.damage, attack.targets.find((x) => x.id === t.id)?.critical ?? false, rollDie);
+    const crit = attack.targets.find((x) => x.id === t.id)?.critical ?? false;
+    if (crit && criticalDamage === "manual") criticalWithheld = true;
+    const dmg = adversaryDamage(rolled.damage, crit, rollDie, criticalDamage);
     if (!dmg) continue;
     damages.set(t.id, dmg);
     if (t.instance) prompts.push({ kind: "manual", text: `${t.instance.label} takes ${dmg.record.total} ${dmg.type} damage from ${name}` });
   }
   const entryId = await logAction(ctx, { ...log, kind: "adversary", visibility: "gm", summary: [...gmLines, ...prompts.map((p) => `${p.kind}: ${p.text}`)].join("; "), roll: attack.record, undoable: true });
+  if (criticalWithheld) await postRuleNote(ctx, campaign, { ruleId: "criticalDamage", summary: criticalDamageNote(name, criticalBonus(rolled.damage)), groupId, actorId: user._id });
   const hitNames = targets.filter((t) => hitIds.has(t.id)).map((t) => t.pc?.sheet.name ?? t.instance?.label ?? "?");
   const missNames = targets.filter((t) => !hitIds.has(t.id)).map((t) => t.pc?.sheet.name ?? t.instance?.label ?? "?");
   await logAction(ctx, { ...log, kind: "adversary", visibility: "public", summary: `${name} (${GM_CONTROLLED}) attacked: ${[hitNames.length ? `hit ${hitNames.join(", ")}` : "", missNames.length ? `missed ${missNames.join(", ")}` : ""].filter(Boolean).join("; ")}`, undoable: true });

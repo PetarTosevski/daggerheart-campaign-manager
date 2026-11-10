@@ -915,11 +915,16 @@ export function resolveRerolls(folds: readonly Fold[], seed: string, attack: Rol
 
 export type Rebuilt = { state: WindowState; party: WindowPc[]; members: PartyMember[]; attacker: Awaited<ReturnType<typeof attackerCombatant>> };
 
-/** The standard attack's damage text of an adversary hit (Not This Time's damage reroll); null for a feature or a PC. */
+/**
+ * The standard attack's damage text of an adversary hit (Not This Time's damage reroll); null for a feature or a PC. Plan
+ * rule-switches WR (R10 Manual): the reroll keeps the hit's critical only while critical damage is Book.
+ */
 export async function standardDamageOf(ctx: QueryCtx, row: HitRow, attacker: Rebuilt["attacker"]): Promise<{ text: string; critical: boolean } | null> {
   if (isPcAttacker(row.payload.attacker) || row.payload.attacker.feature !== undefined || !attacker?.instance) return null;
   const block = await blockOf(ctx, attacker.instance);
-  return block ? { text: block.attack.damage, critical: row.payload.critical } : null;
+  const campaign = row.payload.critical ? await ctx.db.get("campaigns", row.campaignId) : null;
+  const critical = row.payload.critical && (campaign === null || ruleModesOf(campaign).criticalDamage === "book");
+  return block ? { text: block.attack.damage, critical } : null;
 }
 
 /**

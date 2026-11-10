@@ -31,7 +31,7 @@ export type ConditionDiceMode = ModeOf<"conditionDice">;
 export type StressOverflowMode = ModeOf<"stressOverflow">;
 
 /** A Manual rule's note on a card or feature use: which rule and the GM's line. */
-export type UseRuleNote = { ruleId: "lineOfSight" | "conditionDice" | "stressOverflow" | "definedRanges"; summary: string };
+export type UseRuleNote = { ruleId: "lineOfSight" | "conditionDice" | "stressOverflow" | "definedRanges" | "experienceCost" | "criticalDamage"; summary: string };
 
 /** A range as the GM's notes write it. */
 export const RANGE_LABEL: Record<Range, string> = { melee: "Melee", veryClose: "Very Close", close: "Close", far: "Far", veryFar: "Very Far" };

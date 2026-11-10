@@ -115,6 +115,7 @@ function rollOf(args: AttackRoll): AttackRoll {
     advantage: args.advantage,
     disadvantage: args.disadvantage,
     help: args.help,
+    ...(args.helpers !== undefined ? { helpers: args.helpers } : {}),
     options: args.options,
     ...(args.damageOptions !== undefined ? { damageOptions: args.damageOptions } : {}),
     ...(args.slayerDice !== undefined ? { slayerDice: args.slayerDice } : {}),

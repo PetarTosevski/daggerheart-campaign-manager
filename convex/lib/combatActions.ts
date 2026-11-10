@@ -44,7 +44,7 @@ import { tokenVisibility } from "../../src/lib/domain/combat-map/index";
 import { countsAsActionRoll } from "../../src/lib/domain/countdowns/advanced";
 import { afterDualityRoll, rollOptions } from "../../src/lib/domain/class-features/hooks";
 import { CLASS_FEATURES } from "../../src/lib/domain/class-features/index";
-import { advantagePlan, applyDualityEffects, dualityEffects, typedLabel, type Rng } from "../../src/lib/domain/dice/index";
+import { advantagePlan, applyDualityEffects, criticalDamageNote, dualityEffects, typedLabel, type Rng } from "../../src/lib/domain/dice/index";
 import { actionOutcome, type RollRecord } from "../../src/lib/domain/duality";
 import { holdingsFor, owned, type OwnedFeature } from "../../src/lib/domain/feature-effects/owned";
 import { actorExtras, featureAvailability, featureCostShort, flagsOf } from "../../src/lib/domain/feature-effects/run";
@@ -103,6 +103,7 @@ import { factsOf, ownedHere, pickFeature, withCreatureAreas } from "./featureRun
 import { featureScope } from "./featureScope";
 import { campaignFearState, gainFear, spendFear } from "./fear";
 import { afterPcActionRoll, fearWithheldBy } from "./rollAftermath";
+import { helpersField, payHelpers, planHelp } from "./helpAnAlly";
 import { postRuleNote, ruleModesOf } from "./ruleModes";
 import { hiddenAttackNote, hiddenEndsManual, hiddenLabel } from "./combatMovement";
 import { closeRequest, openAfterRoll, openMinionOffer, openRiderPick } from "./combatRequests";
@@ -139,6 +140,8 @@ export const attackRollFields = {
   advantage: v.number(),
   disadvantage: v.number(),
   help: v.number(),
+  /** R7 Book (plan rule-switches WR): the PCs who help; each spends 1 Hope (`planHelp`). Manual uses `help`. */
+  helpers: helpersField,
   /** Chosen `rollOptions` keys of the attack roll. */
   options: v.array(v.string()),
   /** Chosen `rollOptions` keys of the damage roll (Sneak Attack, Combat Training...). */
@@ -165,6 +168,7 @@ export type AttackRoll = {
   advantage: number;
   disadvantage: number;
   help: number;
+  helpers?: Id<"characters">[];
   options: string[];
   damageOptions?: string[];
   slayerDice?: number;
@@ -1159,6 +1163,7 @@ export function rollFromStored(roll: Infer<typeof sanctionRollOptionsValidator>)
     advantage: roll.advantage ?? 0,
     disadvantage: roll.disadvantage ?? 0,
     help: roll.help ?? 0,
+    ...(roll.helpers !== undefined ? { helpers: roll.helpers } : {}),
     options: roll.options ?? [],
     ...(roll.damageOptions !== undefined ? { damageOptions: roll.damageOptions } : {}),
     ...(roll.slayerDice !== undefined ? { slayerDice: roll.slayerDice } : {}),
@@ -2343,7 +2348,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   const sheet0 = loaded.sheet;
   // Rule switches RC1: C1, M1, D6 and the damage modes (D2, D8, Massive Damage); Manual rules leave GM notes in the group.
   const modes = ruleModesOf(campaign);
-  const ruleNotes: { ruleId: "conditionDice" | "lineOfSight" | "minions" | "hiddenEnds" | "definedRanges" | DamageRuleNote["ruleId"]; summary: string }[] = [];
+  const ruleNotes: { ruleId: "conditionDice" | "lineOfSight" | "minions" | "hiddenEnds" | "definedRanges" | "experienceCost" | "criticalDamage" | DamageRuleNote["ruleId"]; summary: string }[] = [];
   /** ODR3: the riders' Defined Ranges questions (`RiderEnv.rangeNotes`), posted with the other notes. */
   const rangeNotes: string[] = [];
   const rec = recorder(req.held ? replaying(req.held.dice, rollDie) : rollDie);
@@ -2457,9 +2462,11 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     if (note !== null) ruleNotes.push({ ruleId: "lineOfSight", summary: note });
   }
   for (const t of conflict) for (const summary of conditionNotes(t.sheet.name, t.sheet.conditions, modes.conditionDice)) ruleNotes.push({ ruleId: "conditionDice", summary });
+  // Plan rule-switches WR (R7): the helpers named (Book: 1 Hope each, paid with the attack's rows) or counted (Manual).
+  const help = await planHelp(ctx, campaign, { characterId: character._id, name: sheet0.name }, { kind: "action", help: options.help, ...(options.helpers !== undefined ? { helpers: options.helpers } : {}) });
   const args = attackDuality(
     weapon,
-    { ...options, modifier: options.modifier + folds.modifier, advantage: options.advantage + folds.advantage + edge.advantage, disadvantage: options.disadvantage + edge.disadvantage + environment.disadvantage },
+    { ...options, help: help.help, modifier: options.modifier + folds.modifier, advantage: options.advantage + folds.advantage + edge.advantage, disadvantage: options.disadvantage + edge.disadvantage + environment.disadvantage },
     cover,
     traitOverride,
   );
@@ -2477,13 +2484,13 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   // Plan lanes, E1: a bonus on one duality die (dcm-3ou, dcm-jog) changes the roll, so its Hope, Stress and Fear follow it.
   if (folds.dieBonus.length > 0) {
     roll = withDieBonuses(roll, folds.dieBonus);
-    effects = dualityEffects("action", roll.outcome, duality.hopeFear);
+    effects = dualityEffects("action", roll.outcome, duality.hopeFear, duality.critical);
     finalSheet = placeTideToken(applyDualityEffects(duality.paid, effects), roll.outcome, "action").sheet;
   }
   let rolled = { ...duality.rolled, roll };
   let forced = false;
   // E1.4b (dcm-svux): per-target totals when the targets' edges differ (one shared d6, `perTargetDeltas`).
-  const ownDice = uniformEdge ? null : rules(() => prepareDuality(sheetBeforeRoll, args, featureScope(campaign), null)).input;
+  const ownDice = uniformEdge ? null : rules(() => prepareDuality(sheetBeforeRoll, args, featureScope(campaign), null, duality.experienceCost)).input;
   const deltas = new Map<string, number>();
   let edgeDie: number | null = null;
   const readDeltas = (r: RollRecord, list: readonly CheckedTarget[]) => {
@@ -2567,7 +2574,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
       forced = changed.forced;
       rolled = { ...rolled, hope: roll.dice.find((d) => d.role === "hope")?.value ?? rolled.hope, roll };
     }
-    effects = dualityEffects("action", roll.outcome, duality.hopeFear);
+    effects = dualityEffects("action", roll.outcome, duality.hopeFear, duality.critical);
     effectsBase = base;
     finalSheet = placeTideToken(applyDualityEffects(base, effects), roll.outcome, "action").sheet;
     hits = forced ? hits.map((h) => ({ ...h, hit: true })) : hitsOf(roll);
@@ -2586,7 +2593,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   if (advUses.bonuses.length > 0) {
     roll = withDieBonuses(roll, advUses.bonuses);
     rolled = { ...rolled, roll };
-    effects = dualityEffects("action", roll.outcome, duality.hopeFear);
+    effects = dualityEffects("action", roll.outcome, duality.hopeFear, duality.critical);
     finalSheet = placeTideToken(applyDualityEffects(effectsBase, effects), roll.outcome, "action").sheet;
     hits = forced ? hits.map((h) => ({ ...h, hit: true })) : hitsOf(roll);
   }
@@ -2653,6 +2660,8 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     const dice = resonance ? sacredResonance(rolledDamage.roll) : rolledDamage.roll;
     damageRecord = foldedDamage(dice, folds);
     damageLabel = rolledDamage.label;
+    // WR (R10 Manual): rolled like a normal hit; the GM is told the maximum left out.
+    if (rolledDamage.criticalWithheld > 0) ruleNotes.push({ ruleId: "criticalDamage", summary: criticalDamageNote(sheet0.name, rolledDamage.criticalWithheld) });
     const noCritHit = allTargets.some((t, i) => hits[i]!.hit && facts.get(t.token._id)?.passives?.flags.includes("noCritDamage") === true);
     if (critical && noCritHit) {
       const plain = await resolveDamage(ctx, { ...loaded, sheet: damageSheet }, { source: { kind: "weapon", slot }, critical: false, modifier: 0, options: damageOptions }, replaying(rolledDamage.roll.dice.map((d) => d.value), rollDie), false);
@@ -2982,6 +2991,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   // Rule switches RC1: the Manual rules' GM notes (C1, M1, D2, D8; D6 below), in the attack's group (undo takes them back).
   for (const summary of lastHpNotes(riderWrites, modes)) ruleNotes.push({ ruleId: "adversaryDefeated", summary });
   for (const summary of rangeNotes) ruleNotes.push({ ruleId: "definedRanges", summary });
+  if (duality.experienceManual !== null) ruleNotes.push({ ruleId: "experienceCost", summary: duality.experienceManual });
   const posted = new Set<string>();
   for (const n of ruleNotes) {
     if (posted.has(n.summary)) continue;
@@ -3061,9 +3071,12 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     success: hostRoll.success,
     withFear: hostRoll.withFear,
     fearWithheld: fearWithheldBy(duality.hopeFear, "action", roll.outcome),
+    critical,
     groupId,
     actorId: req.actorId,
   });
+  // WR (R7): Book takes each helper's Hope (one row each in the group, undo refunds it); Manual posts the GM's note.
+  await payHelpers(ctx, campaign, help, { groupId, actorId: req.actorId, rollerName: sheet0.name });
 
   const minions = extra > 0 ? await offerMinions(ctx, req, { groupId, entryId, extra, total: roll.total - environment.difficulty, critical, damage: damageRecord?.total ?? 0 }) : { offer: null };
   const minionOffer = minions.offer;

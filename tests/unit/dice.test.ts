@@ -5,9 +5,12 @@ import {
   applyDualityEffects,
   applyRollOptions,
   assertTypedModifier,
+  criticalDamageNote,
+  criticalExtra,
   DiceRuleError,
   dualityEffects,
   experienceBonus,
+  experienceNote,
   NotEnoughHopeError,
   queueRng,
   rollAdvantage,
@@ -108,6 +111,44 @@ describe("Duality outcomes (CB 94-95)", () => {
     expect(crit.stress).toBe(1);
     const scarred = applyDualityEffects(sheet({ hope: 5, scars: 1 }), dualityEffects("action", "successHope"));
     expect(scarred.hope).toBe(5); // 6 − 1 scar
+  });
+
+  it("R2 Book: a critical gives +1 Hope and clears 1 Stress in total, never a second Hope (user note on Q1, CB p.90)", () => {
+    expect(dualityEffects("action", "critical", "book", "book")).toEqual({ hope: 1, clearStress: 1, fear: 0 });
+    const crit = applyDualityEffects(sheet({ hope: 2, stress: 3 }), dualityEffects("action", "critical"));
+    expect([crit.hope, crit.stress]).toEqual([3, 2]);
+    // R3 Manual keeps the critical's own gains (they are R2's).
+    expect(dualityEffects("action", "critical", "manual")).toEqual({ hope: 1, clearStress: 1, fear: 0 });
+  });
+
+  it("R2 Manual: a critical gains nothing; other outcomes are unchanged", () => {
+    expect(dualityEffects("action", "critical", "book", "manual")).toEqual({ hope: 0, clearStress: 0, fear: 0 });
+    expect(dualityEffects("action", "successHope", "book", "manual")).toEqual({ hope: 1, clearStress: 0, fear: 0 });
+    expect(dualityEffects("action", "failFear", "book", "manual")).toEqual({ hope: 0, clearStress: 0, fear: 1 });
+  });
+});
+
+describe("rule switches WR: R6 Experiences, R10 critical damage", () => {
+  const exps = [
+    { id: "a", name: "Stealthy", value: 2 },
+    { id: "b", name: "Quick", value: 1 },
+  ];
+
+  it("R6: Book costs 1 Hope each; Manual adds the modifier for no Hope; the GM's line", () => {
+    expect(experienceBonus(exps, ["a", "b"])).toEqual({ value: 3, hope: 2, names: ["Stealthy", "Quick"] });
+    expect(experienceBonus(exps, ["a", "b"], "manual")).toEqual({ value: 3, hope: 0, names: ["Stealthy", "Quick"] });
+    expect(experienceNote("Mira", { names: ["Stealthy"], value: 2 })).toBe("Mira used Stealthy (+2): spend 1 Hope?");
+    expect(experienceNote("Mira", { names: [], value: 0 })).toBeNull();
+  });
+
+  it("R10: Manual rolls a critical like a normal hit; criticalExtra is what Book adds", () => {
+    const input = { dice: [{ count: 2, sides: 8 }], flat: 1, critical: true, bonusDice: [{ count: 1, sides: 6 }] };
+    const ones = () => 1;
+    expect(criticalExtra(input)).toBe(22);
+    expect(rollDamage(input, ones).total).toBe(3 + 1 + 22);
+    expect(rollDamage(input, ones, "manual").total).toBe(3 + 1);
+    expect(criticalExtra({ ...input, critical: false })).toBe(0);
+    expect(criticalDamageNote("Mira", 22)).toBe("Mira: critical, add 22 (the dice's maximum)?");
   });
 });
 

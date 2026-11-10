@@ -129,6 +129,12 @@ export const WIRED_RULES: ReadonlySet<string> = new Set([
   "twoDowntimeMoves",
   "downtimeMoveEffects",
   "unconscious",
+  // WR, wave 3 roll costs (2026-11-09).
+  "criticalSuccess",
+  "experienceCost",
+  "helpAnAlly",
+  "tagTeam",
+  "criticalDamage",
 ]);
 
 export type RuleGroup = { area: RuleArea; label: string; rules: readonly RuleDef[] };

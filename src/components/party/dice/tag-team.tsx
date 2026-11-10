@@ -35,7 +35,9 @@ export function TagTeam({ campaignId, character, disabled, pending }: { campaign
   const start = useIntent(api.rolls.tagTeam);
   const apply = useIntent(api.rolls.tagTeamApply);
 
-  const used = (character.sheet.featureUses ?? []).some((u) => u.key === "tagTeam");
+  // Rule switches WR, R8: Book takes 3 Hope once per session; "No session limit" drops the limit; Manual takes nothing.
+  const mode = useQuery(api.ruleSettings.get, { campaignId })?.modes.tagTeam ?? "book";
+  const used = mode === "book" && (character.sheet.featureUses ?? []).some((u) => u.key === "tagTeam");
   const partners = (party ?? []).filter(
     (c) => c._id !== character._id && c.status === "active" && !(c.sheet.conditions ?? []).includes("unconscious") && !c.corrupt,
   );
@@ -101,7 +103,7 @@ export function TagTeam({ campaignId, character, disabled, pending }: { campaign
   return (
     <section aria-label="Tag Team Roll" className="dc-tag">
       <div className="flex items-center justify-between gap-2">
-        <span className="sh-lbl">Tag Team Roll ({COST} Hope, once per session)</span>
+        <span className="sh-lbl">Tag Team Roll{mode === "book" ? ` (${COST} Hope, once per session)` : mode === "noSessionLimit" ? ` (${COST} Hope)` : ""}</span>
         {pending === null ? (
           <button type="button" className="sh-pill" onClick={() => setOpen(false)}>
             Close
@@ -162,8 +164,8 @@ export function TagTeam({ campaignId, character, disabled, pending }: { campaign
             </select>
           </label>
           <div>
-            <button type="button" className="sh-pill solid" disabled={disabled || used || !partner || character.sheet.hope < COST || start.pending} onClick={() => void begin()}>
-              Roll together ({COST} Hope)
+            <button type="button" className="sh-pill solid" disabled={disabled || used || !partner || (mode !== "manual" && character.sheet.hope < COST) || start.pending} onClick={() => void begin()}>
+              {mode === "manual" ? "Roll together" : `Roll together (${COST} Hope)`}
             </button>
           </div>
         </div>

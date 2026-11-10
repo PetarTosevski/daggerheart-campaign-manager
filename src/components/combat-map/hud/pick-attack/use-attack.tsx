@@ -14,7 +14,7 @@ import { seenTargets, useActor, useCombatTargets, useTargetHints, type WeaponSlo
 import type { CombatPageState } from "../../slots";
 import { usePick } from "../pick";
 import { hudResults, showAttackOutcome } from "../result";
-import { attackSession, attackSessionId, bandsFrom, conflictRows, forcedRows, initialData, weaponOf, type AttackInput, type ForcedAttack } from "./model";
+import { attackSession, attackSessionId, bandsFrom, conflictRows, forcedRows, helperCandidates, initialData, weaponOf, type AttackInput, type ForcedAttack } from "./model";
 import { attackReports } from "./report";
 import { AttackRows } from "./rows";
 
@@ -85,12 +85,22 @@ export function useAttackPicker(state: AttackState, playFor: Id<"characters"> | 
   const forcedAll = useQuery(api.combatRequestsReads.forcedAttacks, on ? { campaignId } : "skip");
   // Plan rule-switches OP: "Conflict between PCs" (CB p.168) lets the attack take another PC; off until loaded.
   const ruleModes = useQuery(api.ruleSettings.get, on ? { campaignId } : "skip")?.modes;
+  // Plan rule-switches WR, R7 Book (CB p.90): the roller ticks the PCs who help, so the party is read.
+  const helpBook = ruleModes?.helpAnAlly === "book";
+  const party = useQuery(api.charactersReads.listByCampaign, on && helpBook ? { campaignId } : "skip");
   const attack = useMutation(api.combatActions.attack);
   const { targetTokenIds } = useCombatTargets();
 
   const forced = (forcedAll ?? []).filter((r) => r.characterId === characterId);
   const loading =
-    on && (character === undefined || ridersPrimary === undefined || (hasSecondary && ridersSecondary === undefined) || hints === undefined || forcedAll === undefined || (gm && gmTokens === undefined));
+    on &&
+    (character === undefined ||
+      ridersPrimary === undefined ||
+      (hasSecondary && ridersSecondary === undefined) ||
+      hints === undefined ||
+      forcedAll === undefined ||
+      (gm && gmTokens === undefined) ||
+      (helpBook && party === undefined));
   const offLive = gm && characterId !== null && state.map !== null && !state.map.live;
   const reason = !on ? (offLive ? "Not on the live map" : null) : loading ? "Loading your weapons…" : character === null || weapons.length === 0 ? "No weapon equipped" : gm && self === null ? "Not on the map" : null;
   const ready = on && reason === null;
@@ -144,6 +154,9 @@ export function useAttackPicker(state: AttackState, playFor: Id<"characters"> | 
       forcedRows: f ? forcedRows(f, bandsFrom(seen.view, ruleModes?.definedRanges ?? true)) : null,
       conflictRows: !f && ruleModes?.pcConflict === true ? conflictRows(bandsFrom(seen.view, ruleModes.definedRanges), hints ?? [], ruleModes.lineOfSight, ruleModes.definedRanges) : null,
       picked: seenTargets(targetTokenIds, seen.enemies),
+      // WR: R7 Book ticks helpers (Manual: the counter); R6 Manual's Experiences cost no Hope.
+      ...(helpBook ? { helpers: helperCandidates(party ?? [], characterId) } : {}),
+      ...(ruleModes?.experienceCost === "manual" ? { experienceFree: true } : {}),
       ...(seen.actor ? { actor: seen.actor, others: { enemies: seen.enemies, allies: seen.allies } } : {}),
       attack: async (args) => {
         const out = await attack({ campaignId, characterId, mapId, ...args, modifier: 0, options: [], idempotencyKey: crypto.randomUUID() });

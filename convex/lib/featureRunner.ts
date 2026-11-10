@@ -1000,7 +1000,7 @@ export async function resolveFeatureUse(
   // the run gained the roll's Hope and Fear by the campaign's mode (`hopeFear`, buildRun); in Manual the GM gets the
   // "gain 1 Fear?" note in the same group (`fearWithheld` unset: one Fear for a with-Fear roll in Manual).
   if (plan.roll && plan.roll.record.kind === "action" && plan.roll.record.outcome !== "none") {
-    await afterPcActionRoll(ctx, campaign, { characterId: character._id, name: sheet.name, kind: "action", success: plan.success, withFear: plan.roll.withFear, groupId, actorId });
+    await afterPcActionRoll(ctx, campaign, { characterId: character._id, name: sheet.name, kind: "action", success: plan.success, withFear: plan.roll.withFear, critical: plan.roll.critical, groupId, actorId });
   }
   if (built.creatures.onMap) {
     const hitTokens = await openCardHits(ctx, { plan, built, campaignId: campaign._id, groupId, actorId, attacker: { characterId: character._id, label: sheet.name, cardId: plan.cardId, feature: pick.name } });

@@ -622,7 +622,7 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
   // hands the spotlight to the GM, or notes it, in the use's group. R3: the card engine (src/lib/domain/card-effects/run.ts)
   // gains the roll's Hope and Fear itself, following the run context's mode (RA2); the R3 note is posted here.
   if (plan.roll && plan.roll.record.kind === "action" && plan.roll.record.outcome !== "none") {
-    await afterPcActionRoll(ctx, campaign, { characterId: character._id, name: sheet.name, kind: "action", success: plan.success, withFear: plan.roll.withFear, groupId, actorId });
+    await afterPcActionRoll(ctx, campaign, { characterId: character._id, name: sheet.name, kind: "action", success: plan.success, withFear: plan.roll.withFear, critical: plan.roll.critical, groupId, actorId });
   }
 
   // AA2b: card damage to another PC opens their incoming hit (armor, ally reactions) instead of a manual prompt.

@@ -94,7 +94,8 @@ import {
 import { darknessLabels } from "../src/lib/domain/combat-map/light";
 import { featureScope } from "./lib/featureScope";
 import { assertMayAct } from "./lib/spotlight";
-import { afterPcActionRoll, fearWithheldBy, hopeFearModeOf, outcomeSucceeds, outcomeWithFear } from "./lib/rollAftermath";
+import { afterPcActionRoll, criticalModeOf, fearWithheldBy, hopeFearModeOf, outcomeSucceeds, outcomeWithFear } from "./lib/rollAftermath";
+import { postRuleNote, ruleMode } from "./lib/ruleModes";
 import { rollValidator } from "./lib/validators/actionLog";
 import { traitIdValidator } from "./lib/validators/characters";
 
@@ -164,6 +165,11 @@ const tagTeamSide = v.object({ trait: traitIdValidator, modifier: v.number() });
  * Starts a Tag Team Roll (CB 97): the initiator spends 3 Hope (once per
  * session, `featureUses` tagTeam), both PCs roll an action roll. The result
  * applies only once the initiator picks one roll (`tagTeamApply`).
+ *
+ * R8 `tagTeam` (plan rule-switches WR, user answer Q4 a): `noSessionLimit` (not in the books) still takes the 3 Hope but
+ * allows more than one Tag Team per session; `manual` takes no Hope and checks no limit, and the GM gets "Mira started a
+ * Tag Team (again this session): spend 3 Hope?" in the Tag Team's group. Every mode marks the `featureUses` entry (the
+ * session's first start), so the limit and the note can tell a second start.
  */
 export const tagTeam = keyedUserMutation({
   rateLimit: "roll",
@@ -188,9 +194,12 @@ export const tagTeam = keyedUserMutation({
       assertCanAct(lead.character, lead.sheet);
       assertCanAct(partner.character, partnerSheet);
       rules(() => [args.initiator, args.partner].forEach((side) => assertTypedModifier(side.modifier)));
-      if (lead.sheet.featureUses.some((u) => u.key === TAG_TEAM_USE)) throw appError("DICE_RULE", "You already started a Tag Team Roll this session.");
-      const paid = rules(() => spendHope(lead.sheet, TAG_TEAM_HOPE));
-      await saveSheet(ctx, lead.character._id, { ...paid, featureUses: [...paid.featureUses, { key: TAG_TEAM_USE, until: "session" }] });
+      const mode = ruleMode(lead.campaign, "tagTeam");
+      const again = lead.sheet.featureUses.some((u) => u.key === TAG_TEAM_USE);
+      if (again && mode === "book") throw appError("DICE_RULE", "You already started a Tag Team Roll this session.");
+      const paid = mode === "manual" ? lead.sheet : rules(() => spendHope(lead.sheet, TAG_TEAM_HOPE));
+      const marked = again ? paid : { ...paid, featureUses: [...paid.featureUses, { key: TAG_TEAM_USE, until: "session" as const }] };
+      if (changed(lead.sheet, marked)) await saveSheet(ctx, lead.character._id, marked);
 
       const groupId = newGroupId();
       // Journal JF2 (dcm-z9rz.28): both rolls are social while the Journal's current scene is a Social scene.
@@ -225,6 +234,11 @@ export const tagTeam = keyedUserMutation({
         });
         await markSocial(ctx, entryId, social);
         rolls.push({ characterId: loaded.character._id, entryId, roll });
+      }
+      // R8 Manual: the 3 Hope (and the once-per-session limit) are the GM's call. No characterId: a rule row on the lead
+      // would be its latest row and hide the pending pick.
+      if (mode === "manual") {
+        await postRuleNote(ctx, lead.campaign, { ruleId: "tagTeam", summary: `${lead.sheet.name} started a Tag Team${again ? " (again this session)" : ""}: spend ${TAG_TEAM_HOPE} Hope?`, groupId, actorId: ctx.user._id });
       }
       return { groupId, rolls };
     }),
@@ -276,8 +290,9 @@ async function slayerRoll(ctx: QueryCtx, characterId: Id<"characters">): Promise
   if (row === null) return null;
   const attack = row.kind === "combat" && row.visibility === "public";
   if ((row.kind !== "roll" && !attack) || row.roll?.kind !== "action" || !WITH_HOPE.includes(row.roll.outcome)) return null;
-  // A grouped plain roll (its group holds only GM rule notes besides it) reads as one row; a Tag Team needs its 4.
-  if (!attack && row.groupId !== undefined && ![1, 4].includes((await tagTeamGroup(ctx, row)).length)) return null;
+  // A grouped plain roll (its group holds only GM rule notes and R7 helpers' rows besides it) reads as one roll; a Tag Team
+  // needs its 4.
+  if (!attack && row.groupId !== undefined && ![1, 4].includes((await tagTeamGroup(ctx, row)).filter((r) => r.kind === "roll").length)) return null;
   return row;
 }
 
@@ -390,7 +405,8 @@ export const tagTeamApply = keyedUserMutation({
 
       // Plan rule-switches RA: R3 Manual gains neither the Hope nor the GM's Fear (the GM gets a note for the Fear below).
       const hopeFear = hopeFearModeOf(lead.campaign);
-      const effects = dualityEffects("action", chosen.outcome, hopeFear);
+      // WR (R2): Manual leaves a critical's Hope and Stress to the GM (the note below, in the aftermath).
+      const effects = dualityEffects("action", chosen.outcome, hopeFear, criticalModeOf(lead.campaign));
       const { gained } = effects.fear > 0 ? await gainFear(ctx, lead.campaign._id, effects.fear * group.length) : { gained: 0 };
       let firstResult: Id<"actionLog"> | null = null;
       const names: string[] = [];
@@ -428,6 +444,8 @@ export const tagTeamApply = keyedUserMutation({
         success: outcomeSucceeds(chosen.outcome),
         withFear: outcomeWithFear(chosen.outcome),
         fearWithheld: fearWithheldBy(hopeFear, "action", chosen.outcome, group.length),
+        critical: chosen.outcome === "critical",
+        pcs: group.length,
         groupId: row.groupId,
         actorId: ctx.user._id,
       });

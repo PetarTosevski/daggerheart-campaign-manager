@@ -60,7 +60,7 @@
 // ```
 
 import { MAX_FEAR } from "../fear/index";
-import { dualityEffects, rollDamage, rollDuality, weaponDice, type DicePool, type DualityEffects, type HopeFearMode, type Rng } from "../dice/index";
+import { criticalExtra, dualityEffects, rollDamage, rollDuality, weaponDice, type CriticalDamageMode, type CriticalMode, type DicePool, type DualityEffects, type HopeFearMode, type Rng } from "../dice/index";
 import type { RollOutcome, RollRecord } from "../duality";
 import { parseDamage } from "../adversaries/index";
 import { applyDamageTo, applyHpTo, applyStressTo, clearTrack, type Combatant, type DamageResult, type DamageRules } from "../combat-actions/damage";
@@ -289,6 +289,18 @@ export interface RunContext {
    * Book. Manual: the use's action rolls gain no Hope and give no Fear (`dualityEffects`); a critical still does.
    */
   hopeFear?: HopeFearMode;
+  /**
+   * Plan rule-switches WR: the campaign's R2 `criticalSuccess` mode (cardRunner `buildRun`). Absent: Book. Manual: a
+   * critical action roll still succeeds with Hope but gains no Hope and clears no Stress (`dualityEffects`); the server's
+   * aftermath notes the GM.
+   */
+  criticalSuccess?: CriticalMode;
+  /**
+   * Plan rule-switches WR: the campaign's R10 `criticalDamage` mode (cardRunner `buildRun`; the adversary runner passes it
+   * too). Absent: Book. Manual: a critical's damage is rolled like a normal hit; the maximum left out is summed in the
+   * plan's `criticalDamageWithheld` for the GM's note.
+   */
+  criticalDamage?: CriticalDamageMode;
   /**
    * Plan rule-switches RFC (bead dcm-jh6d.70): the campaign's damage modes (D2 resistance, D4 Stress overflow, D5, D8 and
    * Massive Damage; cardRunner `buildRun` sets `ruleModesOf(campaign)`), passed to `applyDamageTo` / `applyStressTo` /
@@ -629,6 +641,8 @@ export interface RunPlan {
   holdLimit?: number;
   /** SD1 (NV13, Q4): the companion makes this use (from its own token). */
   actorKind?: "companion";
+  /** Plan rule-switches WR (R10 Manual): what the critical would have added to the use's damage rolls (CB p.98), for the GM's note. */
+  criticalDamageWithheld?: number;
 }
 
 export interface ActorResources {
@@ -1334,7 +1348,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     } else {
       for (const t of against) hits.set(t.id, info.success);
     }
-    info.effects = rollSpec.kind === "adversaryAttack" ? info.effects : dualityEffects(rollSpec.kind === "reaction" ? "reaction" : "action", info.outcome, context.hopeFear);
+    info.effects = rollSpec.kind === "adversaryAttack" ? info.effects : dualityEffects(rollSpec.kind === "reaction" ? "reaction" : "action", info.outcome, context.hopeFear, context.criticalSuccess);
     if (dark.difficulty > 0) darkRaise.set(info, dark.difficulty);
     return { info, hits };
   };
@@ -1448,6 +1462,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
   // ---- damage bookkeeping (R2, R9)
   const pending = new Map<string, Pending>();
   const damageCache = new Map<string, { record: RollRecord; type: DamageType | "both" }>();
+  let criticalDamageWithheld = 0;
   const preDamage: DamageChange[] = [];
   let typeOverride: DamageType | undefined;
   let lastDamageTotal = 0;
@@ -1531,7 +1546,9 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     // NV8: "Your damage die increases by one size" (Mythic Beast, CB p.35) before the dice are rolled.
     const sizeSteps = preDamage.reduce((n, ch) => n + (ch.kind === "dieSize" ? ch.steps : 0), 0);
     if (sizeSteps !== 0) pool = pool.map((p) => ({ ...p, sides: stepDie(p.sides, sizeSteps) }));
-    let record = pool.length > 0 ? rollDamage({ dice: pool, flat, critical }, rng) : ({ kind: "damage", dice: [], modifier: flat, total: Math.max(0, flat), outcome: "none", manual: false } as RollRecord);
+    // WR (R10 Manual): rolled like a normal hit; the maximum left out goes to the GM's note.
+    if (pool.length > 0 && context.criticalDamage === "manual") criticalDamageWithheld += criticalExtra({ dice: pool, critical });
+    let record = pool.length > 0 ? rollDamage({ dice: pool, flat, critical }, rng, context.criticalDamage) : ({ kind: "damage", dice: [], modifier: flat, total: Math.max(0, flat), outcome: "none", manual: false } as RollRecord);
     for (const ch of preDamage) {
       if (ch.kind === "reroll") record = rerollLow(record, ch.atMost, rng);
       if (ch.kind === "maxDice") record = maxLowest(record, ch.count);
@@ -2694,6 +2711,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
       exclusive: use.exclusive === true,
       ...(use.holdLimit ? { holdLimit: num(use.holdLimit) } : {}),
       ...(use.actor === "companion" ? { actorKind: "companion" as const } : {}),
+      ...(criticalDamageWithheld > 0 ? { criticalDamageWithheld } : {}),
     },
   };
 }

@@ -110,6 +110,8 @@ export const sanctionRollOptionsValidator = v.object({
   advantage: v.optional(v.number()),
   disadvantage: v.optional(v.number()),
   help: v.optional(v.number()),
+  /** Plan rule-switches WR (widened; R7 Book, CB p.90): the PCs who help an attack, replayed on approval. Unset: none. */
+  helpers: v.optional(v.array(v.id("characters"))),
   options: v.optional(v.array(v.string())),
   ikonis: v.optional(v.boolean()),
   slayerDice: v.optional(v.number()),

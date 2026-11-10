@@ -37,7 +37,7 @@ import { rangeFromWeapon } from "../combat-actions/distance";
 import type { Combatant } from "../combat-actions/damage";
 import type { HitResult } from "../combat-actions/hits";
 import { resolveNumber, type MapCreature } from "../combat-actions/numbers";
-import type { Rng } from "../dice/index";
+import type { CriticalDamageMode, Rng } from "../dice/index";
 import type {
   AdversaryActivation,
   AdversaryCost,
@@ -159,6 +159,8 @@ export interface AdversaryRunContext {
    * leaves a range-gated trigger (`rangeGate`) unapplied and posts a GM-only note (`rangeAsk`, card-effects/rule-notes.ts).
    */
   definedRanges?: boolean;
+  /** Plan rule-switches WR: R10 `criticalDamage` (absent: Book). Manual: a natural 20's damage is rolled like a normal hit. */
+  criticalDamage?: CriticalDamageMode;
   rng: Rng;
 }
 
@@ -250,6 +252,8 @@ export interface AdversaryPlan {
   /** A passive use's modifiers. */
   modifiers: readonly AdversaryModifier[];
   excluded: string[];
+  /** Plan rule-switches WR (R10 Manual): the critical's maximum the damage left out, for the GM's note. */
+  criticalDamageWithheld?: number;
 }
 
 /** Lane E7 (dcm-iedr): a condition the plan gives with the fields its plan step leaves out (see `AdversaryPlan.conditionDetails`). */
@@ -636,6 +640,7 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
     // gain, damage or Stress step: Hive Mind HF p.65, Pack Fury).
     ...(context.creatures ? { creatures: context.creatures } : {}),
     ...(context.definedRanges === false ? { definedRanges: false } : {}),
+    ...(context.criticalDamage !== undefined ? { criticalDamage: context.criticalDamage } : {}),
     situations: context.situations ?? [],
     roll: {
       modifier: rollModifier,
@@ -887,6 +892,7 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
       group: use.groupAttack ? (context.group ?? []).map((c) => c.id) : [],
       modifiers: use.modifiers ?? [],
       excluded: plan.excluded,
+      ...(plan.criticalDamageWithheld !== undefined ? { criticalDamageWithheld: plan.criticalDamageWithheld } : {}),
     },
   };
 }

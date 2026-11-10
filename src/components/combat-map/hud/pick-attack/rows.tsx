@@ -41,6 +41,7 @@ export function AttackRows({ ctx, input, state }: { ctx: PickContext<AttackData>
   const benefits = benefitOptions(input.hints, selection.targetIds);
   const benefit = chosenBenefit(benefits, data.benefit);
   const { experienceIds, edge, help } = data.roll;
+  const helpers = data.helpers ?? [];
   // The GM playing for a PC has no player view: the hook passes the map's creatures (`input.others`).
   const enemies = (input.others?.enemies ?? actor?.enemies ?? []).filter((e) => !selection.targetIds.includes(e._id));
   const allies = input.others?.allies ?? (actor?.view.others ?? []).filter((t) => t.side === "pc");
@@ -112,7 +113,7 @@ export function AttackRows({ ctx, input, state }: { ctx: PickContext<AttackData>
               onClick={() => set({ ...data, roll: { ...data.roll, experienceIds: on ? experienceIds.filter((x) => x !== e.id) : [...experienceIds, e.id] } })}
             >
               {e.name} {signed(experienceValue(e))}
-              <CostPill amount={1} resource="hope" />
+              {input.experienceFree ? null : <CostPill amount={1} resource="hope" />}
             </button>
           );
         })}
@@ -120,11 +121,36 @@ export function AttackRows({ ctx, input, state }: { ctx: PickContext<AttackData>
           <Stepper label="Advantage" value={edge} min={-ROLL_DICE_LIMIT} max={ROLL_DICE_LIMIT} onStep={(d) => set({ ...data, roll: { ...data.roll, edge: edge + d } })} />
           <small>{edgeLabel(edge)}</small>
         </span>
-        <span className="hud-atk-step">
-          <Stepper label="Help dice" value={help} min={0} max={ROLL_DICE_LIMIT} onStep={(d) => set({ ...data, roll: { ...data.roll, help: help + d } })} />
-          <small>{help === 1 ? "Help die (d6)" : "Help dice (d6)"}</small>
-        </span>
+        {input.helpers === undefined ? (
+          <span className="hud-atk-step">
+            <Stepper label="Help dice" value={help} min={0} max={ROLL_DICE_LIMIT} onStep={(d) => set({ ...data, roll: { ...data.roll, help: help + d } })} />
+            <small>{help === 1 ? "Help die (d6)" : "Help dice (d6)"}</small>
+          </span>
+        ) : null}
       </div>
+
+      {input.helpers !== undefined && input.helpers.length > 0 ? (
+        <div className="hud-atk-chips" role="group" aria-label="Helped by" data-testid="hud-attack-helpers">
+          <span className="hud-atk-l">Helped by</span>
+          {input.helpers.map((h) => {
+            const on = helpers.includes(h.characterId);
+            return (
+              <button
+                key={h.characterId}
+                type="button"
+                className="hud-atk-chip"
+                aria-pressed={on}
+                disabled={!on && h.hope < 1}
+                title={h.hope < 1 ? `${h.name} has no Hope` : `${h.name} spends 1 Hope and adds a d6`}
+                onClick={() => set({ ...data, helpers: on ? helpers.filter((x) => x !== h.characterId) : [...helpers, h.characterId] })}
+              >
+                {h.name}
+                <CostPill amount={1} resource="hope" />
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
 
       {riders.length > 0 ? (
         <section className="hud-atk-sec" aria-labelledby={riderGroup} data-testid="hud-attack-riders">

@@ -28,6 +28,7 @@ import {
   type AttackData,
   type AttackInput,
 } from "@/components/combat-map/hud/pick-attack";
+import { helperCandidates } from "@/components/combat-map/hud/pick-attack/model";
 import { HudProvider } from "@/components/combat-map/hud/state";
 import { HudResult, hudResults } from "@/components/combat-map/hud/result";
 import type { CombatPageState, MapLayerProps } from "@/components/combat-map/slots";
@@ -240,6 +241,25 @@ describe("the attack picker's model", () => {
     expect(args).not.toHaveProperty("trait");
     expect(attackArgs(input({ hints, traitPick: { primary: true } }), { ...d, benefit: "hope" }, { targetIds: [BANDIT] })).toMatchObject({ trait: "agility", benefit: "hope" });
     expect(attackArgs(input({ hints }), d, { targetIds: [LT] })).not.toHaveProperty("benefit");
+  });
+
+  it("rule switches WR: R7 Book sends the ticked helpers and no counter; R6 Manual's Experiences cost nothing", () => {
+    const bryn = "bryn" as Id<"characters">;
+    const party = [
+      { _id: CHARACTER, status: "active", sheet: { name: "Moss", hope: 2 } },
+      { _id: bryn, status: "active", sheet: { name: "Bryn", hope: 1 } },
+      { _id: "dead" as Id<"characters">, status: "dead", sheet: { name: "Old", hope: 3 } },
+      { _id: "out" as Id<"characters">, status: "active", sheet: { name: "Out", hope: 3, conditions: ["unconscious"] } },
+    ];
+    const helpers = helperCandidates(party, CHARACTER);
+    expect(helpers).toEqual([{ characterId: bryn, name: "Bryn", hope: 1 }]);
+    const d = data({ roll: { experienceIds: ["x1"], edge: 0, help: 2 }, helpers: [bryn, "gone" as Id<"characters">] });
+    expect(attackArgs(input({ helpers }), d, { targetIds: [BANDIT] })).toMatchObject({ help: 0, helpers: [bryn] });
+    expect(attackArgs(input(), d, { targetIds: [BANDIT] })).toMatchObject({ help: 2 });
+    expect(attackArgs(input(), d, { targetIds: [BANDIT] })).not.toHaveProperty("helpers");
+    expect(payLine([], d)).toBe("Spends 1 Hope");
+    expect(payLine([], d, true)).toBeNull();
+    expect(attackBlocked(input({ roller: { experiences: [], hope: 0 }, experienceFree: true }), [], d)).toBeNull();
   });
 
   it("takes extra targets (dcm-y3e, Parallela) and Spirit Weapon's one more; a forced attack is locked", () => {

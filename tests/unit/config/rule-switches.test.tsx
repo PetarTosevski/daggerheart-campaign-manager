@@ -200,7 +200,7 @@ describe("rule rows: the GM", () => {
   it("shows a rule with modes that isn't wired yet as its mode and Coming soon, with no control (wave 3)", () => {
     setUp("witherwild", { outOfRange: "refuse" });
     render(<Section />);
-    for (const id of ["criticalSuccess", "tagTeam", "outOfRange"]) {
+    for (const id of ["hordes", "scars", "outOfRange"]) {
       expect(within(row(id)).queryByRole("radio"), id).toBeNull();
       expect(within(row(id)).getByText(RULE_ROWS_TEXT.comingSoon), id).toBeInTheDocument();
     }
@@ -210,6 +210,9 @@ describe("rule rows: the GM", () => {
     render(<Section />);
     expect(within(row("outOfRange")).getByRole("radio", { name: "Ask the GM" })).toBeInTheDocument();
     expect(within(row("outOfRange")).getByRole("radio", { name: "Refuse" })).toBeChecked();
+    // WR (wave 3 roll costs) is wired: R8 shows its three modes, R2 its Manual.
+    expect(within(row("tagTeam")).getByRole("radio", { name: /No session limit/ })).toBeInTheDocument();
+    expect(within(row("criticalSuccess")).getByRole("radio", { name: "Manual" })).toBeInTheDocument();
   });
 
   it("makes X2 read-only while X1 is Manual", () => {

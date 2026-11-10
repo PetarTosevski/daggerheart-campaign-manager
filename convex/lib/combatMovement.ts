@@ -597,6 +597,7 @@ async function rollCloak(ctx: MutationCtx, loaded: Loaded, highest: Difficulty, 
     success,
     withFear: outcomeWithFear(roll.outcome),
     fearWithheld: fearWithheldBy(hopeFear, "action", roll.outcome),
+    critical: roll.outcome === "critical",
     groupId,
     actorId,
   });
