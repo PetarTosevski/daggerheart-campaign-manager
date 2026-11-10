@@ -3,6 +3,7 @@
 import { useQuery } from "convex/react";
 
 import { BrandButton } from "@/components/brand/buttons";
+import { unconsciousBlocksActing } from "@/lib/domain/characters";
 import { MAX_SHORT_RESTS, MOVE_LABELS, mustLongRest, overShortRestLimit } from "@/lib/domain/rest/moves";
 import { useIntent } from "@/lib/use-intent";
 
@@ -137,7 +138,9 @@ export function Launcher({ campaignId, isGm }: CampaignSlotProps) {
       ) : (
         <>
           <p className="m-0 text-[15px] text-[#e6ecea]" data-testid="open-rest">
-            {open.extended ? "Extended downtime (long rest)" : KIND_LABEL[open.kind]} under way{open.gmOverride ? " (GM override)" : ""}. Each player picks two moves on their sheet.
+            {open.extended ? "Extended downtime (long rest)" : KIND_LABEL[open.kind]} under way{open.gmOverride ? " (GM override)" : ""}.{" "}
+            {rules.twoDowntimeMoves === "manual" ? "Each player picks up to four moves on their sheet." : "Each player picks two moves on their sheet."}
+            {rules.downtimeMoveEffects === "manual" ? " The table rolls and applies them by hand (House rules)." : ""}
           </p>
           <ul aria-label="Downtime choices" className="m-0 flex list-none flex-col gap-1 p-0 text-[14px] text-[#c9d2cf]">
             {resting.map((c) => {
@@ -145,7 +148,7 @@ export function Launcher({ campaignId, isGm }: CampaignSlotProps) {
               return (
                 <li key={c._id}>
                   <strong className="text-parchment">{c.sheet.name}</strong>:{" "}
-                  {c.sheet.conditions?.includes("unconscious")
+                  {unconsciousBlocksActing(c.sheet, rules.unconscious)
                     ? "unconscious"
                     : choice
                       ? choice.moves.map((m) => MOVE_LABELS[m.move]).join(", ")

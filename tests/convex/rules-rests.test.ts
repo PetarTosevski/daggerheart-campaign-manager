@@ -84,7 +84,14 @@ describe("rule switches: rests (RR)", () => {
       const { gm, campaignId, start } = await setup();
       expect(await codeOf(start("long", true))).toBe("REST_RULE");
       const state = await gm.query(api.restsReads.current, { campaignId });
-      expect(state.rules).toEqual({ fearFromRests: "book", shortRestLimit: "book", interruptedRest: "book" });
+      expect(state.rules).toEqual({
+        fearFromRests: "book",
+        shortRestLimit: "book",
+        interruptedRest: "book",
+        twoDowntimeMoves: "book",
+        downtimeMoveEffects: "book",
+        unconscious: "book",
+      });
     });
 
     it("Extended downtime: a long rest started as several days gains 1d6 per PC (CB 181); other rests follow the book", async () => {

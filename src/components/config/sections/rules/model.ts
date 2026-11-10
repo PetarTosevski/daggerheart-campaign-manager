@@ -125,6 +125,10 @@ export const WIRED_RULES: ReadonlySet<string> = new Set([
   "playersWait",
   // OP (2026-11-06).
   "pcConflict",
+  // Wave 3 WD: rests & unconscious (T1, T3, C4 sheet side).
+  "twoDowntimeMoves",
+  "downtimeMoveEffects",
+  "unconscious",
 ]);
 
 export type RuleGroup = { area: RuleArea; label: string; rules: readonly RuleDef[] };

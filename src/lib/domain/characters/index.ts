@@ -230,6 +230,56 @@ export function applyResourceDelta<T extends Tracks>(sheet: T, resource: Resourc
   return next;
 }
 
+// ---------------------------------------------------------------- C4 Unconscious (rule switch, plan rule-switches WD)
+
+/**
+ * C4 Unconscious (CB p.106, Avoid Death: "Your character can't move or act while unconscious, they can't be targeted by
+ * an attack, and they return to consciousness when an ally clears 1 or more of their marked Hit Points or when the party
+ * finishes a long rest"). Book: the app refuses acting, wakes on an HP clear and on a long rest. Manual (Q8 a): the
+ * badge only; no refusal, no automatic waking, the GM gets a note.
+ */
+export type UnconsciousMode = RuleModes["unconscious"];
+
+const isUnconscious = (sheet: { conditions?: readonly Condition[] }) => sheet.conditions?.includes("unconscious") === true;
+
+/** Whether the condition stops the character acting (rolls, features, downtime moves): Book only. */
+export function unconsciousBlocksActing(sheet: { conditions?: readonly Condition[] }, mode: UnconsciousMode = "book"): boolean {
+  return mode === "book" && isUnconscious(sheet);
+}
+
+/**
+ * Whether an adversary attack must refuse this PC as a target ("they can't be targeted by an attack", CB p.106): Book
+ * only. The hook for tracer WF (Q8 a), which wires it into the adversary attack paths.
+ */
+export function isUntargetableUnconscious(sheet: { conditions?: readonly Condition[] }, mode: UnconsciousMode = "book"): boolean {
+  return mode === "book" && isUnconscious(sheet);
+}
+
+/**
+ * C4 Manual: undoes an automatic wake-up. When `before` was unconscious, `after` is not and its Hit Points went down (the
+ * wake of `applyResourceDelta`, CB p.106), Manual puts the condition back and says so (`woke: true`, the GM is asked);
+ * Book keeps `after`. Any other change (the GM clearing the condition by hand) is kept in both modes.
+ */
+export function keepUnconscious<T extends { hp: number; conditions: readonly Condition[] }>(
+  before: { hp: number; conditions?: readonly Condition[] },
+  after: T,
+  mode: UnconsciousMode,
+): { sheet: T; woke: boolean } {
+  if (mode !== "manual" || !isUnconscious(before) || isUnconscious(after) || after.hp >= before.hp) return { sheet: after, woke: false };
+  return { sheet: { ...after, conditions: [...after.conditions, "unconscious"] }, woke: true };
+}
+
+/** The object pronoun of a "she/her"-style pronouns field ("her", "him", "them"), or "them" for anything else. */
+export function objectPronoun(pronouns: string | undefined): string {
+  const parts = (pronouns ?? "").split("/").map((p) => p.trim().toLowerCase());
+  const object = parts[1];
+  return parts.length === 2 && object !== undefined && /^[a-z]{2,8}$/.test(object) ? object : "them";
+}
+
+/** C4 Manual: the GM's note when a Hit Point cleared on an unconscious PC (CB p.106: an ally's clear wakes them). */
+export const hpClearedWakeNote = (name: string, pronouns?: string) => `${name} had a Hit Point cleared: wake ${objectPronoun(pronouns)}?`;
+/** C4 Manual: the GM's note for an unconscious PC at the end of a long rest (CB p.106). */
+export const longRestWakeNote = (name: string) => `Long rest: wake ${name}?`;
 
 // ---------------------------------------------------------------- gold (CB 104)
 

@@ -96,7 +96,7 @@ type UseInput = { featureId: string; useId?: string; targetTokenIds: readonly st
  * which Prayer Dice to spend, CB p.44).
  */
 async function prepare(ctx: QueryCtx, campaign: Doc<"campaigns">, character: Doc<"characters">, sheet: CharacterSheet, mapId: Id<"combatMaps"> | undefined, input: UseInput, transform?: (use: CardUse) => CardUse) {
-  assertCanAct(character, sheet);
+  assertCanAct(character, sheet, campaign);
   const { rest, times, dieIndexes, heldDicePicks } = splitFeatureChoices(input.choices);
   const parsed = parseChoices(rest);
   const entry = featureEffect(input.featureId);
@@ -533,7 +533,7 @@ export const shiftStance = keyedCampaignMutation({
   handler: async (ctx, { characterId, stance, payWith }) =>
     ctx.once("combat_feature_stance", { characterId, stance, payWith }, async () => {
       const { campaign, character, sheet } = await editableHere(ctx, characterId);
-      assertCanAct(character, sheet);
+      assertCanAct(character, sheet, campaign);
       const martial = sheet.classState.martial;
       if (martial === undefined) throw appError("FEATURE_STATE_MISSING");
       const held = ownedHere(sheet, campaign);
@@ -584,7 +584,7 @@ export const refocus = keyedCampaignMutation({
   handler: async (ctx, { characterId, calm }) =>
     ctx.once("combat_feature_refocus", { characterId, calm }, async () => {
       const { campaign, character, sheet } = await editableHere(ctx, characterId);
-      assertCanAct(character, sheet);
+      assertCanAct(character, sheet, campaign);
       const martial = sheet.classState.martial;
       if (martial === undefined) throw appError("FEATURE_STATE_MISSING");
       if (sheet.featureUses.some((u) => u.key === REFOCUS_KEY)) throw appError("FEATURE_EXHAUSTED");

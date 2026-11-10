@@ -24,6 +24,8 @@ const movesView = v.object({
   efficient: v.array(restMoveValidator),
   /** Most moves the PC can pick: 2, +1 with Celestial Trance (CB 56), +1 per extra move granted (Eloquent, CB 29). */
   slots: v.number(),
+  /** Fewest moves the PC can pick: 2, or 0 with T1 Two moves per rest on Manual (plan rule-switches WD). */
+  minSlots: v.number(),
   /** The PC holds Celestial Trance (CB 56): one of the extra slots is the trance's. */
   trance: v.boolean(),
   /** Extra downtime moves granted for this rest (Eloquent, CB 29: "an additional downtime move during their next rest"). */
@@ -57,11 +59,14 @@ export const current = campaignQuery({
       v.null(),
     ),
     shortRestsSinceLong: v.number(),
-    /** The rest rule switches the launcher follows (plan rule-switches RR): F2, T2, T4. */
+    /** The rest rule switches the launcher and the picker follow (plan rule-switches RR, WD): F2, T2, T4, T1, T3, C4. */
     rules: v.object({
       fearFromRests: fearFromRestsModeValidator,
       shortRestLimit: v.union(v.literal("book"), v.literal("manual")),
       interruptedRest: v.union(v.literal("book"), v.literal("manual")),
+      twoDowntimeMoves: v.union(v.literal("book"), v.literal("manual")),
+      downtimeMoveEffects: v.union(v.literal("book"), v.literal("manual")),
+      unconscious: v.union(v.literal("book"), v.literal("manual")),
     }),
     last: v.union(
       v.object({
@@ -109,7 +114,14 @@ export const current = campaignQuery({
               moves: await pickableMoves(ctx, ctx.campaign, open.kind),
             },
       shortRestsSinceLong: shortRestsSinceLong(rests),
-      rules: { fearFromRests: modes.fearFromRests, shortRestLimit: modes.shortRestLimit, interruptedRest: modes.interruptedRest },
+      rules: {
+        fearFromRests: modes.fearFromRests,
+        shortRestLimit: modes.shortRestLimit,
+        interruptedRest: modes.interruptedRest,
+        twoDowntimeMoves: modes.twoDowntimeMoves,
+        downtimeMoveEffects: modes.downtimeMoveEffects,
+        unconscious: modes.unconscious,
+      },
       last:
         last === null
           ? null

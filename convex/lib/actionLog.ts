@@ -39,7 +39,7 @@ import type { CharacterSheetInput } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { refundTokenSpends } from "./actionTokens";
-import { assertOneActive, readSheet, revertSessionTally, storedSheet, takeSessionTally } from "./characterSheet";
+import { assertOneActive, postWakeNote, readSheet, revertSessionTally, storedSheet, takeSessionTally } from "./characterSheet";
 import { closeRequest, declineGroupOffers, openRequests } from "./combatRequests";
 import { revertTicks } from "./countdownTicks";
 import { revertFear } from "./fear";
@@ -122,7 +122,11 @@ export function newGroupId(): string {
   return crypto.randomUUID();
 }
 
-/** Appends one row, stamped now. */
+/**
+ * Appends one row, stamped now. C4 Manual (plan rule-switches WD): when a save in this mutation kept the character
+ * unconscious (`saveSheet`), the row is followed by the GM's note "Mira had a Hit Point cleared: wake her?" in the row's
+ * group (undone with it); a row with no group gets a note that names no character and is never undoable.
+ */
 export async function logAction(ctx: MutationCtx, entry: LogEntry): Promise<Id<"actionLog">> {
   const { before, summary, ...rest } = entry;
   if (before !== undefined && entry.characterId === undefined) throw new Error("logAction: `before` needs a characterId.");
@@ -130,13 +134,15 @@ export async function logAction(ctx: MutationCtx, entry: LogEntry): Promise<Id<"
   if (entry.targetDamage !== undefined && entry.visibility !== "gm") throw new Error("logAction: `targetDamage` goes on a GM row only.");
   // dcm-z9rz.22: a row that restores the sheet on undo carries what its saves added to the session tally.
   const sessionTally = before !== undefined && entry.characterId !== undefined ? takeSessionTally(ctx, entry.characterId) : undefined;
-  return ctx.db.insert("actionLog", {
+  const id = await ctx.db.insert("actionLog", {
     ...rest,
     summary: summary.slice(0, SUMMARY_MAX),
     ...(before !== undefined ? { before: JSON.stringify(storedSheet(before)) } : {}),
     ...(sessionTally !== undefined ? { sessionTally } : {}),
     at: Date.now(),
   });
+  if (entry.characterId !== undefined) await postWakeNote(ctx, entry.campaignId, entry.characterId, entry.actorId, entry.groupId);
+  return id;
 }
 
 /**

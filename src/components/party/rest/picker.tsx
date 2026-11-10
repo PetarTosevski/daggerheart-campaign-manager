@@ -7,6 +7,7 @@ import { useId, useState } from "react";
 
 import { Label, paperField, Pill, Small } from "@/components/party/sheet-ui";
 import { errorMessage } from "@/lib/convex-errors";
+import { unconsciousBlocksActing } from "@/lib/domain/characters";
 import { ALLY_MOVES, MOVE_LABELS, MOVES_PER_REST, REST_MOVES, type RestKind, type RestMove } from "@/lib/domain/rest/moves";
 import { loadoutMax } from "@/lib/domain/transformations";
 import { DOMAIN_CARDS } from "@/lib/srd/domain-cards";
@@ -37,8 +38,9 @@ export function Picker({ campaignId, character, canEdit }: SlotProps) {
   const choice = open.choices.find((c) => c.characterId === character._id);
   const mine = open.moves.find((m) => m.characterId === character._id);
   const kindLabel = open.kind === "short" ? "Short rest" : "Long rest";
+  // C4 Unconscious on Manual (House rules, plan rule-switches WD): an unconscious PC still picks moves.
   const unavailable =
-    character.status !== "active" ? character.status : character.sheet.conditions?.includes("unconscious") ? "unconscious" : null;
+    character.status !== "active" ? character.status : unconsciousBlocksActing(character.sheet, state.rules.unconscious) ? "unconscious" : null;
 
   return (
     <section className="rp" aria-label="Downtime moves">
@@ -60,6 +62,8 @@ export function Picker({ campaignId, character, canEdit }: SlotProps) {
             moves={mine?.moves ?? REST_MOVES[open.kind]}
             efficient={mine?.efficient ?? []}
             slots={mine?.slots ?? MOVES_PER_REST}
+            minSlots={mine?.minSlots ?? MOVES_PER_REST}
+            byHand={state.rules.downtimeMoveEffects === "manual"}
             trance={mine?.trance}
             extraMoves={mine?.extraMoves ?? 0}
             oasis={mine?.oasis ?? false}
@@ -159,6 +163,8 @@ function MoveForm({
   moves,
   efficient,
   slots,
+  minSlots,
+  byHand,
   trance,
   extraMoves,
   oasis,
@@ -174,6 +180,10 @@ function MoveForm({
   efficient: readonly RestMove[];
   /** Most moves: 2, +1 with Celestial Trance (CB 56), +1 per extra move granted (Eloquent, CB 29). */
   slots: number;
+  /** Fewest moves: 2, or 0 with T1 Two moves per rest on Manual (any number up to `slots`, plan rule-switches WD). */
+  minSlots: number;
+  /** T3 What each move does on Manual: the table rolls and marks the core moves (plan rule-switches WD). */
+  byHand: boolean;
   /** The PC holds Celestial Trance (CB 56): one optional slot, added with "Drop into a trance" (absent: any slot past the granted ones). */
   trance?: boolean;
   /** Extra moves granted for this rest (Eloquent, CB 29: "an additional downtime move during their next rest"; dcm-bxp.99.19.2). */
@@ -185,8 +195,13 @@ function MoveForm({
   initial: Pick[];
 }) {
   const choose = useIntent(api.rests.choose);
+  // T1 Manual: any number of moves from `minSlots` to `slots`, added and removed one at a time.
+  const free = minSlots < MOVES_PER_REST;
   const [picks, setPicks] = useState<Pick[]>(() =>
-    Array.from({ length: Math.min(slots, Math.max(MOVES_PER_REST + extraMoves, initial.length)) }, (_, i) => initial[i] ?? { move: moves[0] }),
+    Array.from(
+      { length: free && initial.length > 0 ? Math.min(slots, initial.length) : Math.min(slots, Math.max(MOVES_PER_REST + extraMoves, initial.length)) },
+      (_, i) => initial[i] ?? { move: moves[0] },
+    ),
   );
   // Efficient (CB 53): "you can choose a long rest move instead of a short rest move", one per short rest, once the
   // player uses it (a saved choice with a long rest move reopens with it on).
@@ -196,7 +211,7 @@ function MoveForm({
   const projects = useQuery(api.restsReads.projects, shown.includes("workOnProject") ? { characterId: character._id } : "skip");
   // The two moves, then the granted extra moves (shown from the start), then the trance's optional one.
   const base = MOVES_PER_REST + extraMoves;
-  const hasTrance = trance ?? slots > base;
+  const hasTrance = !free && (trance ?? slots > base);
   const tranced = hasTrance && picks.length > base;
   const [saved, setSaved] = useState(initial.length > 0);
   const uid = useId();
@@ -219,7 +234,7 @@ function MoveForm({
         <div key={i} className="rp-slot">
           <div role="group" aria-labelledby={`${uid}-move-${i}`} className="rp-chips">
             <Label id={`${uid}-move-${i}`} className="rp-slot-lbl">
-              {i < MOVES_PER_REST ? `Move ${i + 1}` : i < base ? "Extra move" : "Trance move"}
+              {free || i < MOVES_PER_REST ? `Move ${i + 1}` : i < base ? "Extra move" : "Trance move"}
             </Label>
             {shown.map((m) => (
               <button
@@ -278,6 +293,34 @@ function MoveForm({
           ) : null}
         </div>
       ))}
+      {free ? (
+        <div className="rp-actions">
+          <Pill
+            disabled={picks.length >= slots}
+            onClick={() => {
+              setSaved(false);
+              setPicks((all) => [...all, { move: moves[0] }]);
+            }}
+          >
+            Add a move
+          </Pill>
+          <Pill
+            disabled={picks.length <= minSlots}
+            onClick={() => {
+              setSaved(false);
+              setPicks((all) => all.slice(0, -1));
+            }}
+          >
+            Remove a move
+          </Pill>
+          <Small>
+            House rules: pick {minSlots} to {slots} moves ({picks.length} picked).
+          </Small>
+        </div>
+      ) : null}
+      {byHand ? (
+        <Small as="p">House rules: the app doesn&apos;t roll or apply downtime moves. Roll them in the dice box and mark the sheets.</Small>
+      ) : null}
       {hasTrance ? (
         <div className="rp-actions">
           <Pill

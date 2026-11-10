@@ -32,7 +32,7 @@ export const bumpMoonDie = keyedUserMutation({
     ctx.once("lunar_bump", { characterId }, async () => {
       const { campaign, character, sheet } = await editable(ctx, ctx.user, characterId);
       // As other features: not while dead, away or unconscious.
-      assertCanAct(character, sheet);
+      assertCanAct(character, sheet, campaign);
       const { sheet: next, from, to } = bump(sheet, featureScope(campaign));
       await saveSheet(ctx, character._id, next);
       await logAction(ctx, {

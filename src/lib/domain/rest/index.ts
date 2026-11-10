@@ -15,7 +15,7 @@
 import { RuleError } from "../../errors/app-error";
 import type { ModeOf } from "../../rules/registry";
 import type { CharacterSheet } from "../../validation/characters";
-import { applyResourceDelta, hopeMax, tierForLevel } from "../characters/index";
+import { applyResourceDelta, hopeMax, tierForLevel, type UnconsciousMode } from "../characters/index";
 import { expire } from "../characters/expiry";
 import { favorOf, warlockSpellcast } from "../class-features/classes/warlock";
 import { onRest } from "../class-features/hooks";
@@ -23,7 +23,18 @@ import type { Registry } from "../class-features/index";
 import type { Rng } from "../class-features/types";
 import { gainMartialPreparationDie } from "../session-features/slayer";
 import { raiseLoadout } from "../transformations/index";
-import { ALLY_MOVES, MOVE_LABELS, MOVES_PER_REST, REST_MOVES, type ChosenMove, type RestChoice, type RestKind, type RestMove } from "./moves";
+import {
+  ALLY_MOVES,
+  MANUAL_MOVES_MAX,
+  MOVE_LABELS,
+  MOVES_PER_REST,
+  REST_MOVES,
+  type ChosenMove,
+  type RestChoice,
+  type RestKind,
+  type RestMove,
+  type TwoDowntimeMovesMode,
+} from "./moves";
 
 export * from "./moves";
 
@@ -31,7 +42,7 @@ export * from "./moves";
  * Checks one PC's picks: exactly two moves this rest allows (plus any `extra`
  * frame or class moves, minus the frame's `forbidden` ones), a target only on
  * an ally move and never yourself, a countdown only on Work on a Project.
- * Throws `RuleError("REST_RULE")`.
+ * T1 Manual: from 0 to `MANUAL_MOVES_MAX` moves. Throws `RuleError("REST_RULE")`.
  */
 export function validateChoice(
   kind: RestKind,
@@ -39,11 +50,14 @@ export function validateChoice(
   moves: readonly ChosenMove[],
   extra: readonly RestMove[] = [],
   forbidden: readonly RestMove[] = [],
+  mode: TwoDowntimeMovesMode = "book",
 ): void {
   const fail = (message: string): never => {
     throw new RuleError("REST_RULE", message);
   };
-  if (moves.length !== MOVES_PER_REST) fail(`Choose ${MOVES_PER_REST} downtime moves.`);
+  if (mode === "manual" ? moves.length > MANUAL_MOVES_MAX : moves.length !== MOVES_PER_REST) {
+    fail(mode === "manual" ? `Choose at most ${MANUAL_MOVES_MAX} downtime moves.` : `Choose ${MOVES_PER_REST} downtime moves.`);
+  }
   for (const m of moves) {
     if (forbidden.includes(m.move)) fail(`${MOVE_LABELS[m.move]} can't be chosen in this campaign.`);
     if (!REST_MOVES[kind].includes(m.move) && !extra.includes(m.move)) fail(`${MOVE_LABELS[m.move]} isn't a ${kind} rest move.`);
@@ -51,6 +65,43 @@ export function validateChoice(
     if (m.targetId === characterId) fail("Leave the target empty to use a move on yourself.");
     if (m.countdownId !== undefined && m.move !== "workOnProject") fail("Only Work on a Project takes a countdown.");
   }
+}
+
+/** T1 Manual: the GM's note when a PC's picks are not the book's count ("Mira picked 3 moves"). */
+export function moveCountNote(name: string, count: number): string {
+  return `${name} picked ${count} ${count === 1 ? "move" : "moves"}`;
+}
+
+/** T3 What each move does (rule switch, plan rule-switches WD). */
+export type DowntimeMoveEffectsMode = ModeOf<"downtimeMoveEffects">;
+
+/** The core downtime moves of CB p.105 (either rest): what T3 Manual leaves to the table. */
+export function isCoreMove(move: RestMove): boolean {
+  return REST_MOVES.short.includes(move) || REST_MOVES.long.includes(move);
+}
+
+/**
+ * T3 Manual (Q10 a): the picks split in two. `applied` keeps each choice's moves that are not core moves (the class,
+ * heritage and frame moves: Tribute, Martial Preparation, Raise loadout, Make a Feast…, which their own rules run);
+ * `byHand` keeps every choice's core moves, which the app neither rolls nor applies. Book: everything is applied.
+ */
+export function splitManualMoves(
+  choices: readonly RestChoice[],
+  mode: DowntimeMoveEffectsMode = "book",
+): { applied: RestChoice[]; byHand: RestChoice[] } {
+  if (mode !== "manual") return { applied: [...choices], byHand: [] };
+  return {
+    applied: choices.map((c) => ({ characterId: c.characterId, moves: c.moves.filter((m) => !isCoreMove(m.move)) })),
+    byHand: choices.flatMap((c) => {
+      const moves = c.moves.filter((m) => isCoreMove(m.move));
+      return moves.length > 0 ? [{ characterId: c.characterId, moves }] : [];
+    }),
+  };
+}
+
+/** One PC's picks in words: "Tend to Wounds on Theo, Prepare" (`nameOf` names an ally target). */
+export function picksText(moves: readonly ChosenMove[], nameOf: (id: string) => string): string {
+  return moves.map((m) => `${MOVE_LABELS[m.move]}${m.targetId !== undefined ? ` on ${nameOf(m.targetId)}` : ""}`).join(", ");
 }
 
 /** "On a short rest, they gain 1d4 Fear. On a long rest, … 1d4 + the number of PCs" (CB 105). Away PCs are not counted (HF 127). */
@@ -79,6 +130,15 @@ export function canStartExtended(mode: FearFromRestsMode, kind: RestKind): boole
 export function restFearRule(kind: RestKind, extended = false, mode: FearFromRestsMode = "book"): "book" | "extended" | "manual" {
   if (mode === "manual") return "manual";
   return extended && kind === "long" && mode === "extendedDowntime" ? "extended" : "book";
+}
+
+/**
+ * Journey to Horizon's Doom Track, Tier 1 (HF p.177, "Dark Harbingers"): "After you mark 5 boxes in this tier, when you
+ * gain Fear at the end of a long rest, you roll twice and take the higher result." Applied to the d4 of the book's
+ * long-rest Fear (`restFear`): the kept roll of the two.
+ */
+export function higherOfTwo(first: number, second: number): number {
+  return Math.max(first, second);
 }
 
 /** "If you're fast-forwarding the story across multiple days (or longer) … You gain 1d6 Fear per PC" (CB 181): one d6 per active PC, summed. */
@@ -264,10 +324,11 @@ export function applyMoves(kind: RestKind, input: Readonly<Record<string, Charac
 /**
  * The end of a rest for one PC: `expire` (rest effects and uses; long-rest
  * ones too on a long rest), the class hooks' `onRest`, and on a long rest an
- * Unconscious character wakes (CB 106).
+ * Unconscious character wakes (CB 106). C4 Manual (`unconscious`): nobody
+ * wakes; the caller asks the GM (`longRestWakeNote`).
  */
-export function restedSheet(sheet: CharacterSheet, kind: RestKind, registry?: Registry): CharacterSheet {
+export function restedSheet(sheet: CharacterSheet, kind: RestKind, registry?: Registry, unconscious: UnconsciousMode = "book"): CharacterSheet {
   const expired = expire(sheet, kind === "long" ? "longRest" : "shortRest");
   const hooked = registry === undefined ? onRest(expired, kind) : onRest(expired, kind, registry);
-  return kind === "long" ? { ...hooked, conditions: hooked.conditions.filter((c) => c !== "unconscious") } : hooked;
+  return kind === "long" && unconscious === "book" ? { ...hooked, conditions: hooked.conditions.filter((c) => c !== "unconscious") } : hooked;
 }

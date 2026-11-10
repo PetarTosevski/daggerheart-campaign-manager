@@ -331,7 +331,7 @@ export const respond = keyedCampaignMutation({
     ctx.once("adversary_respond", args, async () => {
       const { campaign, character } = await loadCharacter(ctx, ctx.user, args.characterId, "edit", "owner");
       if (campaign._id !== ctx.campaign._id) throw appError("NOT_FOUND");
-      if (args.choice.kind === "card" || args.choice.kind === "feature") assertCanAct(character, readSheet(character.sheet));
+      if (args.choice.kind === "card" || args.choice.kind === "feature") assertCanAct(character, readSheet(character.sheet), campaign);
       const row = await liveRow(ctx, ctx.campaign._id, args.requestId, ctx.user._id);
       if (row === null) return { status: "declined" as const, requestId: args.requestId };
       if (isPreRollRow(row)) {

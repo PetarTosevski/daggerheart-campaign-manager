@@ -34,7 +34,18 @@ import { owned, type OwnedScope, type OwnedSheet } from "../feature-effects/owne
 import type { FeatureEffect } from "../feature-effects/types";
 import type { Rng } from "../class-features/types";
 import { applyMoves, type MovesResult } from "./index";
-import { ALLY_MOVES, MOVE_LABELS, MOVES_PER_REST, REST_MOVES, type ChosenMove, type RestChoice, type RestKind, type RestMove } from "./moves";
+import {
+  ALLY_MOVES,
+  MANUAL_MOVES_MAX,
+  MOVE_LABELS,
+  MOVES_PER_REST,
+  REST_MOVES,
+  type ChosenMove,
+  type RestChoice,
+  type RestKind,
+  type RestMove,
+  type TwoDowntimeMovesMode,
+} from "./moves";
 
 /** The four rest-time feature ids (the rest-trigger entries of FE-ancestry-core and FE-heritage-hf). */
 export const REST_FEATURE_IDS = {
@@ -147,16 +158,19 @@ export function efficientMoves(kind: RestKind, features: RestFeatures, base: rea
 /**
  * How many moves a PC picks: two, and Celestial Trance can add one more (optional: "you can"); `extra` granted moves
  * (Eloquent, `extraMoveGrants`) add one each, also optional (the player may leave a granted move unused).
+ * T1 Manual (Q9 a): any number from 0 to `MANUAL_MOVES_MAX`, or up to the Book maximum when the features give more.
  */
-export function restMoveSlots(features: RestFeatures, extra = 0): { min: number; max: number } {
-  return { min: MOVES_PER_REST, max: MOVES_PER_REST + (features.trance ? 1 : 0) + Math.max(0, extra) };
+export function restMoveSlots(features: RestFeatures, extra = 0, mode: TwoDowntimeMovesMode = "book"): { min: number; max: number } {
+  const max = MOVES_PER_REST + (features.trance ? 1 : 0) + Math.max(0, extra);
+  return mode === "manual" ? { min: 0, max: Math.max(MANUAL_MOVES_MAX, max) } : { min: MOVES_PER_REST, max };
 }
 
 /**
  * Checks one PC's picks like `validateChoice` (./index.ts) with the feature slots: `min` to `max` moves, each one the
  * rest allows (`allowed` already lists the frame, class and Efficient moves), at most one of the `efficient` moves
  * (Efficient swaps "a long rest move" for a short rest move, CB p.53), a target only on an ally move and never yourself,
- * a countdown only on Work on a Project. Throws `RuleError("REST_RULE")`.
+ * a countdown only on Work on a Project. T1 Manual (`mode`): from 0 moves up to `restMoveSlots`' max. Throws
+ * `RuleError("REST_RULE")`.
  */
 export function validateFeatureChoice(
   characterId: string,
@@ -165,12 +179,14 @@ export function validateFeatureChoice(
   features: RestFeatures,
   efficient: readonly RestMove[] = [],
   extra = 0,
+  mode: TwoDowntimeMovesMode = "book",
 ): void {
   const fail = (message: string): never => {
     throw new RuleError("REST_RULE", message);
   };
-  const { min, max } = restMoveSlots(features, extra);
+  const { min, max } = restMoveSlots(features, extra, mode);
   const why = features.trance && extra > 0 ? "Celestial Trance and your extra moves" : features.trance ? "Celestial Trance" : "your extra moves";
+  if (mode === "manual" && moves.length > max) fail(`Choose at most ${max} downtime moves.`);
   if (moves.length < min || moves.length > max) fail(min === max ? `Choose ${min} downtime moves.` : `Choose ${min} downtime moves, or up to ${max} with ${why}.`);
   if (moves.filter((m) => efficient.includes(m.move)).length > 1) fail("Efficient (CB 53): choose one long rest move instead of a short rest move.");
   for (const m of moves) {

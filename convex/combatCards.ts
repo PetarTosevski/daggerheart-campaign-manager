@@ -1448,7 +1448,7 @@ export const useCard = keyedCampaignMutation({
       const { campaign, character, sheet, gm } = await editableHere(ctx, args.characterId);
       // Config R2 (Q2 a): a player's card use with a target out of its range is refused when the GM refuses them.
       const refuse = refusesOutOfRange(campaign, gm);
-      assertCanAct(character, sheet);
+      assertCanAct(character, sheet, campaign);
       const scene = await attackScene(ctx, campaign, character, args.mapId);
       const pick = pickCard(sheet, args.cardId, args.spell);
       // S2 (plan rule-switches RS2): a card's action waits while the GM holds the spotlight; a reaction card never does.
@@ -1560,7 +1560,7 @@ export const sanction = keyedGmMutation({
       const character = await ctx.db.get("characters", characterId);
       if (character === null || character.campaignId !== ctx.campaign._id || row.mapId === undefined) throw appError("COMBAT_TARGET_INVALID");
       const sheet = readSheet(character.sheet);
-      assertCanAct(character, sheet);
+      assertCanAct(character, sheet, ctx.campaign);
       const scene = await attackScene(ctx, ctx.campaign, character, row.mapId);
       const pick = pickCard(sheet, action.cardId, action.useId);
       // dcm-0x2g: the square the player picked for a point area (the payload keeps `point` only, not `points`).

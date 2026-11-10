@@ -48,7 +48,7 @@ import { logAction } from "./lib/actionLog";
 import { moveCardFor, writeHandHidden } from "./lib/cardHand";
 import { withoutCondition } from "./lib/conditionMarkers";
 import { featureScope } from "./sessionFeatures";
-import { editable, loadCharacter, readSheet, saveSheet, storedSheet } from "./lib/characterSheet";
+import { editable, loadCharacter, postWakeNote, readSheet, saveSheet, storedSheet } from "./lib/characterSheet";
 import { claimFile, deleteFilesOf, deleteOwnFile, isAllowedImage, isClaimed } from "./lib/files";
 import { keyedCampaignMutation, keyedUserMutation, userMutation } from "./lib/functions";
 import { assertMechanicEnabled } from "./lib/mechanics";
@@ -663,6 +663,8 @@ export const adjustResource = userMutation({
       next.hope = Math.min(next.hope, hopeMax(next.scars, s.hopeSlotBonus));
     }
     await saveSheet(ctx, character._id, next);
+    // C4 Manual (plan rule-switches WD): clearing a Hit Point kept an unconscious PC down; the GM is asked.
+    await postWakeNote(ctx, campaign._id, character._id, ctx.user._id);
     if (resource === "stress" && delta > 0 && s.stress + delta > s.stressMax && modes.stressOverflow === "manual") {
       await postRuleNote(ctx, campaign, { ruleId: "stressOverflow", summary: `${s.name}: Stress full, mark 1 HP?`, actorId: ctx.user._id });
     }

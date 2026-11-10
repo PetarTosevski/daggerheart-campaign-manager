@@ -204,7 +204,7 @@ export const attack = keyedCampaignMutation({
 
       // Q1: wait for the GM. Refuse now what the approval would refuse anyway (a character who can't act, unpaid costs,
       // a rider that doesn't ride on this attack).
-      assertCanAct(loaded.character, loaded.sheet);
+      assertCanAct(loaded.character, loaded.sheet, ctx.campaign);
       rules(() => prepareDuality(loaded.sheet, attackDuality(weapon, roll, coverApplies(ctx.campaign, targets)), featureScope(ctx.campaign), null));
       const named = [...outOfRange.map((t) => ({ tokenId: t.token._id, band: t.check.band })), ...farPcs.map((p) => ({ tokenId: p.tokenId, band: p.check.band }))];
       const bands = [...named, ...added.filter((a) => !named.some((t) => t.tokenId === a.tokenId))];

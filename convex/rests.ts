@@ -16,7 +16,12 @@
  * Rule switches (plan rule-switches RR; docs/tasks/TASK-RULES-RR.md), read through `ruleModesOf`: F2 Fear from rests
  * (Book; Extended downtime: the GM may start a long rest as several days, 1d6 Fear per PC, CB 181; Manual: no Fear,
  * the summary and a GM note say "Gain 1d4 Fear"), T2 Short-rest limit (Manual: a fourth short rest starts, with a GM
- * note) and T4 Interrupted rest (Manual: Interrupt closes the rest, applies nothing and notes the GM).
+ * note) and T4 Interrupted rest (Manual: Interrupt closes the rest, applies nothing and notes the GM). Wave 3 (plan
+ * rule-switches WD; docs/tasks/TASK-RULES-WD.md): T1 Two moves per rest (Manual: 0 to 4 picks, GM note "Mira picked 3
+ * moves"), T3 What each move does (Manual: the core moves are listed, never rolled or applied; GM note "Mira: Tend to
+ * Wounds on Theo, Prepare"), C4 Unconscious (Manual: an unconscious PC picks moves and is not woken; GM notes "Long
+ * rest: wake Mira?" / "Mira had a Hit Point cleared: wake her?") and W3 Doom Track Tier 1 (Journey to Horizon, Book:
+ * after 5 Tier 1 boxes the long-rest Fear d4 is rolled twice and the higher kept, HF p.177).
  * A finished long rest (not an interrupted one) also ticks each armed, active
  * long-term dashboard countdown set to Automatic once, keyed on the rest's
  * campaign row, and the undo takes those ticks back (countdowns-advanced K4,
@@ -45,11 +50,14 @@ import {
   allowedMoves,
   canStartExtended,
   extendedDowntimeFear,
+  higherOfTwo,
   INTERRUPTED_REST_NOTE,
   interruptedMoves,
   MOVE_LABELS,
+  moveCountNote,
   mustLongRest,
   overShortRestLimit,
+  picksText,
   restedSheet,
   SHORT_REST_LIMIT_MESSAGE,
   SHORT_REST_LIMIT_NOTE,
@@ -57,10 +65,26 @@ import {
   restFearPrompt,
   restFearRule,
   shortRestsSinceLong,
+  splitManualMoves,
   type RestKind as DomainRestKind,
   type RestMove as DomainRestMove,
 } from "../src/lib/domain/rest/index";
-import { applyDieDelta, applyHardy, applyMovesWithDice, DIE_UNIT, efficientMoves, extraMoveGrants, oasisReroll as rerollDie, validateFeatureChoice, type DiceMove as DomainDiceMove, type DowntimeDie, type RestFeatures } from "../src/lib/domain/rest/feature-moves";
+import {
+  applyDieDelta,
+  applyHardy,
+  applyMovesWithDice,
+  DIE_UNIT,
+  efficientMoves,
+  extraMoveGrants,
+  oasisReroll as rerollDie,
+  restMoveSlots,
+  validateFeatureChoice,
+  type DiceMove as DomainDiceMove,
+  type DowntimeDie,
+  type RestFeatures,
+} from "../src/lib/domain/rest/feature-moves";
+import { hpClearedWakeNote, keepUnconscious, longRestWakeNote, unconsciousBlocksActing } from "../src/lib/domain/characters/index";
+import { tierRuleActive } from "../src/lib/frames/trackers/horizon";
 import { appError } from "../src/lib/errors/app-error";
 import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -73,11 +97,12 @@ import { rollDie } from "./lib/dice";
 import { gainFear } from "./lib/fear";
 import { keyedGmMutation, keyedUserMutation } from "./lib/functions";
 import { restMovesFor, runRestHooks } from "./lib/restHooks";
+import { loadTracker } from "./lib/trackers";
 import { postRuleNote, ruleMode, ruleModesOf } from "./lib/ruleModes";
 import { downtimeDieValidator, restChoiceMoveValidator, restKindValidator, type DiceMove, type RestKind, type RestMove } from "./lib/validators/rests";
 import { recordHistory } from "./tables/history";
 import { choicesOf, featuresOf, isProject, oasisPoolOf, partyHasMartialPreparation, recentRests, resting, sheetOrNull } from "./lib/restView";
-import { assertSanctuaryLongRest } from "./trackers/horizon";
+import { assertSanctuaryLongRest, horizonTracker } from "./trackers/horizon";
 
 // The domain mirrors the stored validators; these fail typecheck if they drift.
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
@@ -177,17 +202,18 @@ type Ending = { rest: Doc<"rests">; interrupted: boolean };
  */
 async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<"campaigns"> }, { rest, interrupted }: Ending) {
   const campaign = ctx.campaign;
+  const modes = ruleModesOf(campaign);
   const kind: RestKind = interrupted ? "short" : rest.kind;
   const pcs = await restingParty(ctx, campaign._id);
   const before = new Map<Id<"characters">, CharacterSheet>(pcs.map((c) => [c._id, readSheet(c.sheet)]));
 
   const features = new Map<Id<"characters">, RestFeatures>(pcs.map((c) => [c._id, featuresOf(campaign, before.get(c._id)!)]));
   const allChoices = await choicesOf(ctx, rest._id);
-  // Moves count only for PCs who can still act (not knocked out since choosing).
+  // Moves count only for PCs who can still act (not knocked out since choosing; C4 Manual: unconscious PCs act).
   const choices = allChoices
     .filter((c) => {
       const sheet = before.get(c.characterId);
-      return sheet !== undefined && !sheet.conditions.includes("unconscious");
+      return sheet !== undefined && !unconsciousBlocksActing(sheet, modes.unconscious);
     })
     .map((c) => {
       const moves = c.moves.map((m) => ({
@@ -202,7 +228,9 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
 
   const input: Record<string, CharacterSheet> = {};
   for (const [id, sheet] of before) input[id] = sheet;
-  const moved = applyMovesWithDice(kind, input, choices, rollDie);
+  // T3 Manual (Q10 a): the core moves are listed for the table, never rolled or applied; the other moves still run.
+  const { applied, byHand } = splitManualMoves(choices, modes.downtimeMoveEffects);
+  const moved = applyMovesWithDice(kind, input, applied, rollDie);
   // The dice's ids are the resting PCs' (the moves' keys): map them back to typed ids without a cast (CD7).
   const pcIds = new Map<string, Id<"characters">>(pcs.map((c) => [c._id, c._id]));
   const storedDie = (d: DowntimeDie): StoredDie => {
@@ -212,17 +240,22 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
   };
   // Oasis (HF 27, "During a short rest"): on a short rest (an interrupted long rest runs as one) the dice and the
   // holders who can still act are stored, and each holder picks a die to reroll afterwards (`oasisReroll`).
+  // T3 Manual rolls no downtime dice, so there is nothing for Oasis to reroll.
   const oasisHolders =
-    kind === "short" ? pcs.filter((c) => features.get(c._id)!.oasis && !before.get(c._id)!.conditions.includes("unconscious")).map((c) => c._id) : [];
+    kind === "short" && modes.downtimeMoveEffects === "book"
+      ? pcs.filter((c) => features.get(c._id)!.oasis && !unconsciousBlocksActing(before.get(c._id)!, modes.unconscious)).map((c) => c._id)
+      : [];
 
   // Card timing uses (CA4b, convex/lib/cardHand.ts): `afterRest` before the rest's expiry (Wild Surge needs its effect
   // active to drop it), `afterLongRest` after a finished long rest's expiry (Inspirational Words' tokens).
   const sheets = new Map<Id<"characters">, CharacterSheet>();
   const cardLines = new Map<Id<"characters">, string[]>();
+  // C4 Manual: the GM's wake-up questions, one per PC still unconscious (CB p.106), asked in the rest's group below.
+  const wakeNotes: { characterId: Id<"characters">; summary: string }[] = [];
   for (const pc of pcs) {
     const sheet = moved.sheets[pc._id] ?? before.get(pc._id)!;
     const timed = runRestTiming(sheet, pc._id, "afterRest", rollDie);
-    let rested = restedSheet(timed.sheet, kind);
+    let rested = restedSheet(timed.sheet, kind, undefined, modes.unconscious);
     const lines = [...timed.lines];
     // Hardy (HF 29): "When you take a rest, you clear a Hit Point." Any rest; an interrupted long rest is a short one.
     const hardy = applyHardy(rested, features.get(pc._id)!);
@@ -232,6 +265,13 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
       const long = runRestTiming(rested, pc._id, "afterLongRest", rollDie);
       rested = long.sheet;
       lines.push(...long.lines);
+    }
+    // C4 Manual: a Hit Point cleared during the rest (a move, Hardy) wakes nobody; neither does the long rest.
+    const kept = keepUnconscious(before.get(pc._id)!, rested, modes.unconscious);
+    rested = kept.sheet;
+    if (modes.unconscious === "manual" && rested.conditions.includes("unconscious")) {
+      if (kind === "long") wakeNotes.push({ characterId: pc._id, summary: longRestWakeNote(rested.name) });
+      else if (kept.woke) wakeNotes.push({ characterId: pc._id, summary: hpClearedWakeNote(rested.name, rested.pronouns) });
     }
     sheets.set(pc._id, rested);
     cardLines.set(pc._id, lines);
@@ -285,6 +325,13 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
     fearRoll = extendedDowntimeFear(d6s);
     gained = (await gainFear(ctx, campaign._id, fearRoll)).gained;
     fearLine = `GM gains ${gained} Fear (Extended downtime: ${pcs.length}d6 ${d6s.join(" + ")})`;
+  } else if (kind === "long" && (await doomTierOneActive(ctx, campaign))) {
+    // W3 Doom Track Tier 1 (HF p.177): "when you gain Fear at the end of a long rest, you roll twice and take the higher result".
+    const first = rollDie(4);
+    const second = rollDie(4);
+    fearRoll = higherOfTwo(first, second);
+    gained = (await gainFear(ctx, campaign._id, restFear(kind, fearRoll, pcs.length))).gained;
+    fearLine = `GM gains ${gained} Fear (1d4 ${fearRoll} + ${pcs.length} PCs; Doom Track Tier 1: rolled ${first} and ${second}, kept the higher)`;
   } else {
     fearRoll = rollDie(4);
     gained = (await gainFear(ctx, campaign._id, restFear(kind, fearRoll, pcs.length))).gained;
@@ -292,10 +339,13 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
   }
 
   const label = interrupted ? "Interrupted long rest (short-rest benefits)" : rest.kind === "long" ? "Long rest" : "Short rest";
+  const nameOf = (id: string) => before.get(pcIds.get(id)!)?.name ?? "an ally";
+  const handText = new Map<Id<"characters">, string>(byHand.map((c) => [pcIds.get(c.characterId)!, picksText(c.moves, nameOf)]));
   for (const pc of pcs) {
     const after = sheets.get(pc._id)!;
     await saveSheet(ctx, pc._id, after);
-    const lines = [...(moved.lines[pc._id] ?? []), ...(cardLines.get(pc._id) ?? [])];
+    const hand = handText.get(pc._id);
+    const lines = [...(hand !== undefined ? [`moves by hand: ${hand}`] : []), ...(moved.lines[pc._id] ?? []), ...(cardLines.get(pc._id) ?? [])];
     await logAction(ctx, {
       campaignId: campaign._id,
       characterId: pc._id,
@@ -322,6 +372,28 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
   let groupRows = pcs.length + 1;
   if (fearRule === "manual" && groupRows < UNDO_GROUP_MAX) {
     await postRuleNote(ctx, campaign, { ruleId: "fearFromRests", summary: `${label}: ${fearLine}`, groupId, actorId: ctx.user._id });
+    groupRows += 1;
+  }
+  // Wave 3 Manual notes (plan rule-switches WD), in the rest's group so its undo removes them; skipped at the group cap.
+  const notes: { ruleId: "twoDowntimeMoves" | "downtimeMoveEffects" | "unconscious"; characterId: Id<"characters">; summary: string }[] = [];
+  if (modes.twoDowntimeMoves === "manual") {
+    // T1 Manual: a PC whose picks are not the book's count (two, plus their features' extra moves).
+    for (const c of allChoices) {
+      const sheet = before.get(c.characterId);
+      if (sheet === undefined || unconsciousBlocksActing(sheet, modes.unconscious)) continue;
+      const { min, max } = restMoveSlots(features.get(c.characterId)!, extraMoveGrants(sheet));
+      const count = c.moves.length;
+      if (count < min || count > max) notes.push({ ruleId: "twoDowntimeMoves", characterId: c.characterId, summary: moveCountNote(sheet.name, count) });
+    }
+  }
+  // T3 Manual: each PC's core picks, for the table to roll and mark ("Mira: Tend to Wounds on Theo, Prepare").
+  for (const [characterId, text] of handText) {
+    notes.push({ ruleId: "downtimeMoveEffects", characterId, summary: `${label}: ${before.get(characterId)!.name}: ${text}` });
+  }
+  for (const w of wakeNotes) notes.push({ ruleId: "unconscious", ...w });
+  for (const note of notes) {
+    if (groupRows >= UNDO_GROUP_MAX) break;
+    await postRuleNote(ctx, campaign, { ...note, groupId, actorId: ctx.user._id });
     groupRows += 1;
   }
 
@@ -360,6 +432,16 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
     ...(fearRule === "manual" ? { fearPrompt: fearLine } : {}),
     ...(countdownLines !== undefined ? { countdownLines } : {}),
   };
+}
+
+/**
+ * W3 Doom Track Tier 1 (HF p.177, Journey to Horizon only, Book mode; plan rule-switches WD, Q14 a): 5 or more Tier 1
+ * boxes are marked, so the long rest's Fear d4 is rolled twice and the higher kept. Every other frame, and the Doom
+ * Track's other modes: false.
+ */
+async function doomTierOneActive(ctx: QueryCtx, campaign: Doc<"campaigns">): Promise<boolean> {
+  if (campaign.frameId !== horizonTracker.frameId || ruleMode(campaign, "doomTrack") !== "book") return false;
+  return tierRuleActive(await loadTracker(ctx, campaign._id, horizonTracker), 1);
 }
 
 async function loadOpenRest(ctx: QueryCtx, campaignId: Id<"campaigns">, restId: Id<"rests">): Promise<Doc<"rests">> {
@@ -561,9 +643,9 @@ export const oasisReroll = keyedUserMutation({
 
 /**
  * Sets a character's two downtime moves for the open rest (CB 105), three with
- * Celestial Trance (CB 56); with `efficient`, a Clank's short rest takes one
+ * Celestial Trance (CB 56); T1 Manual: 0 to 4 moves; with `efficient`, a Clank's short rest takes one
  * long rest move (CB 53; src/lib/domain/rest/feature-moves.ts). The character's owner or the GM; dead, away and unconscious characters can't
- * (CHARACTER_UNAVAILABLE). The moves are the rest's, with the frame and class
+ * (CHARACTER_UNAVAILABLE; unconscious only while C4 is Book). The moves are the rest's, with the frame and class
  * moves and without the frame's forbidden ones (`restMovesFor`: Beast Feast
  * refuses moves that clear Stress, clear HP or gain Hope, CB 278). An ally
  * target must be another resting PC of the campaign; a project countdown must
@@ -582,7 +664,7 @@ export const choose = keyedUserMutation({
     ctx.once("rest_choose", { restId, characterId, moves, efficient: useEfficient ?? false }, async () => {
       const { campaign, character } = await loadCharacter(ctx, ctx.user, characterId, "edit");
       const sheet = readSheet(character.sheet);
-      assertCanAct(character, sheet);
+      assertCanAct(character, sheet, campaign);
       if (character.status !== "active") throw appError("CHARACTER_UNAVAILABLE");
       const rest = await loadOpenRest(ctx, campaign._id, restId);
       const rules = restMovesFor(campaign, sheet, { martialPreparation: await partyHasMartialPreparation(ctx, campaign._id) });
@@ -597,6 +679,7 @@ export const choose = keyedUserMutation({
         features,
         efficient,
         extraMoveGrants(sheet),
+        ruleMode(campaign, "twoDowntimeMoves"),
       );
       for (const m of moves) {
         if (m.targetId !== undefined) {

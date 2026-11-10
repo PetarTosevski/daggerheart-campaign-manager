@@ -7,6 +7,7 @@ import { useId, useMemo, useRef, useState } from "react";
 
 import { EffectRow, Label, paperField, Pill, Small } from "@/components/party/sheet-ui";
 import { errorMessage } from "@/lib/convex-errors";
+import { unconsciousBlocksActing } from "@/lib/domain/characters";
 import { rallyDieStress } from "@/lib/domain/class-features/held-dice";
 import { classActions, hopeFeature } from "@/lib/domain/class-features/hooks";
 import { CLASS_FEATURES, CLASS_STATE_LABELS, classFeaturesAvailable } from "@/lib/domain/class-features/index";
@@ -386,23 +387,29 @@ function sessionChips(sheet: Sheet, hopeAndFear: boolean): { key: string; text: 
   return chips;
 }
 
-function blockedReason(props: SlotProps): string | null {
+/**
+ * Why the character can't use features, or null. C4 Unconscious (House rules, plan rule-switches WD): on Manual an
+ * unconscious character still acts (the server agrees, `assertCanAct`); Book while the modes load.
+ */
+function useBlockedReason(props: SlotProps): string | null {
+  const unconsciousMode = useQuery(api.ruleSettings.get, { campaignId: props.campaignId })?.modes.unconscious ?? "book";
   const { character } = props;
   if (character.status === "dead") return "Dead characters can't use features.";
   if (character.status === "away") return "Away characters can't use features.";
-  if ((character.sheet.conditions ?? []).includes("unconscious")) return "Unconscious: can't use features until an ally clears a Hit Point or the party finishes a long rest.";
+  if (unconsciousBlocksActing(character.sheet, unconsciousMode)) return "Unconscious: can't use features until an ally clears a Hit Point or the party finishes a long rest.";
   return null;
 }
 
 /** The Hope box's hf block: the class Hope feature's pickers, Use pill and status, then the active effects. */
 export function HopeFeatureBlock(props: SlotProps) {
+  const blocked = useBlockedReason(props);
   const sheet = props.character.sheet;
   const hope = classFeaturesAvailable(sheet.classId, props.hopeAndFear) ? hopeFeature(sheet) : undefined;
   const showHope = hope !== undefined && props.canEdit && hope.use !== undefined;
   if (!showHope && (sheet.effects ?? []).length === 0) return null;
   return (
     <div className="hf">
-      {hope ? <FeatureCard feature={hope} props={props} blocked={blockedReason(props)} variant="hope" /> : null}
+      {hope ? <FeatureCard feature={hope} props={props} blocked={blocked} variant="hope" /> : null}
       <Effects props={props} />
     </div>
   );
@@ -410,6 +417,7 @@ export function HopeFeatureBlock(props: SlotProps) {
 
 /** The Class Features box's cf rows: class actions, then held dice and conditions as chips and the class counters. */
 export function FeaturesBox(props: SlotProps) {
+  const blocked = useBlockedReason(props);
   const sheet = props.character.sheet;
   const held = sheet.heldDice ?? [];
   // Class actions of the class and the multiclass, each offered only if its class is (Hope & Fear option);
@@ -423,7 +431,6 @@ export function FeaturesBox(props: SlotProps) {
   const state = stateEntries(sheet);
   const session = sessionChips(sheet, props.hopeAndFear);
   if (actions.length === 0 && conditions.length === 0 && held.length === 0 && session.length === 0 && state.length === 0) return null;
-  const blocked = blockedReason(props);
 
   return (
     <div className="cf">
