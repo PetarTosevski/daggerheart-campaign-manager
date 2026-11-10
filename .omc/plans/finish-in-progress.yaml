@@ -1,0 +1,81 @@
+# Finish the in-progress work (2026-11-10). Format: docs/workflow.md. Extra keys (plan-check ignores them): title, beads.
+#
+# USER REQUEST (2026-11-10): "finish working on everything in progress" (after "swap to master & continue working on master").
+#
+# SCOPE NOTES (orchestrator):
+#   Closed as already merged: dcm-gdzi.46 (f0114173), dcm-y3mf (fcd1b453, 3ecabe73).
+#   Blocked on the user, not in this plan: dcm-gdzi.41 (Vercel env vars + device checks), dcm-bxp.99.19.60 and
+#   dcm-bxp.134.1 (narrow steps need their migrations run on production first), dcm-bxp.99.32 (user designs the
+#   combat UI first). dcm-bxp.36.3 (re-measure) runs on master by the orchestrator while the host is idle.
+#   This plan: the open children of dcm-bxp.134 (rule switches), all P3 follow-ups of wave 3 WF.
+title: Finish in-progress rule switch follow-ups
+plan: finish-in-progress
+waves:
+  - wave: 1
+    tracers:
+      - id: FP1
+        beads: [dcm-bxp.134.3]
+        goal: A path feature's server move (Rampaging Fury, Trample) runs the same move reactions as a dragged token (areas entered, Hidden/Cloaked ends, pcMoves triggers), and undo of the use moves the token back.
+        depends_on: []
+        owns:
+          - convex/lib/adversaryActions.ts
+          - convex/lib/adversaryFeatures.ts
+          - src/lib/domain/adversary-actions/path-targets.ts
+          - tests/convex/path-move-reactions.test.ts
+          - docs/tasks/TASK-FP1.md
+        reads:
+          - convex/adversaryActions.ts
+          - convex/lib/combatMaps.ts
+          - docs/tasks/TASK-RULES-WF.md
+        acceptance:
+          - tests/convex/path-move-reactions.test.ts covers area entry, Cloaked ending, a pcMoves trigger and undo
+          - pnpm lint, pnpm typecheck, the touched vitest files pass
+      - id: FP2
+        beads: [dcm-bxp.134.2]
+        goal: The classic Encounter tab's adversary panels offer Dark-Hearted, F4 Manual wording and the path destination pick, which the server already accepts.
+        depends_on: []
+        owns:
+          - src/components/adversaries/tracker/actions/**
+          - tests/unit/adversary-tracker-actions*.test.ts*
+          - docs/tasks/TASK-FP2.md
+        reads:
+          - src/components/combat-map/hud/statblock/**
+          - convex/adversaryActions.ts
+        acceptance:
+          - a unit test shows the three controls on the classic panel and the args they send
+          - pnpm lint, pnpm typecheck, the touched vitest files pass
+      - id: FP3
+        beads: [dcm-bxp.134.5, dcm-bxp.134.6]
+        goal: The HUD pick-feature panel lets a player tick Help an Ally helpers (roll.helpers, as the hand's roll options do), and the R3 Manual dice-box line no longer says 'you gain a Hope'.
+        depends_on: []
+        owns:
+          - src/components/combat-map/hud/pick-feature/**
+          - src/components/party/dice/**
+          - src/lib/party/roll-copy.ts
+          - tests/unit/pick-feature-helpers*.test.ts*
+          - tests/unit/roll-copy*.test.ts
+          - docs/tasks/TASK-FP3.md
+        reads:
+          - src/components/combat-map/hud/hand/**
+          - src/components/combat-map/hud/pick-card/**
+          - src/lib/domain/dice/index.ts
+        acceptance:
+          - unit tests for the helper control and the R3 Manual copy
+          - pnpm lint, pnpm typecheck, the touched vitest files pass
+  - wave: 2
+    tracers:
+      - id: FP4
+        beads: [dcm-bxp.134.4]
+        goal: Under F5 Manual, a triggered or automatic adversary use with a Fear cost posts the GM's 'Spend N Fear by hand' note, like the GM-clicked uses already do.
+        depends_on: [FP1]
+        owns:
+          - convex/lib/adversaryActions.ts
+          - convex/lib/adversaryFeatures.ts
+          - tests/convex/fear-features-manual-triggered.test.ts
+          - docs/tasks/TASK-FP4.md
+        reads:
+          - convex/environmentActions.ts
+          - convex/lib/ruleModes.ts
+        acceptance:
+          - tests/convex/fear-features-manual-triggered.test.ts covers a triggered and an automatic Fear-cost use in Book and Manual
+          - pnpm lint, pnpm typecheck, the touched vitest files pass
