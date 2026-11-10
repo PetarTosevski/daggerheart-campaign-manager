@@ -53,7 +53,7 @@ function namesOf(ids: readonly string[], options: readonly TargetOption[]): stri
  * (advantage for 1 Fear on the Attack and on features that make an attack roll, once `adversaryActions.darkHearted`),
  * F4 Manual (an Experience asks no Fear: "spend 1 Fear by hand"), and a "path" feature's destination (`pathMove`:
  * Rampaging Fury, Trample) picked on the tab's live map pane, sent as `useFeature` `destination` with everyone the
- * line crosses pre-picked.
+ * line crosses pre-picked. FP6: the Dark-Hearted toggle switches itself off after the roll it was sent with.
  */
 export function ActionPanel({
   instanceId,
@@ -116,13 +116,23 @@ export function ActionPanel({
   };
   const darkArgs = dark ? { darkHearted: true } : {};
 
+  /**
+   * FP6 (user 2026-11-10; HF p.177 "advantage on its next roll"): Dark-Hearted is spent by the one roll it was sent
+   * with. It switches off once the server accepts that use (`done`: resolved, reaction window open or not); a Fear
+   * question still open (null), a cancelled one or a refusal (null) leave it on.
+   */
+  function accepted(intent: Intent, done: Resolved | null) {
+    if (!done) return;
+    if (done.roll) onDice(done.roll.dice);
+    if ("darkHearted" in intent.args && intent.args.darkHearted === true) setDarkPicked(false);
+  }
   async function fire(intent: Intent) {
-    const done = await acts.fire(intent);
-    if (done?.roll) onDice(done.roll.dice);
+    accepted(intent, await acts.fire(intent));
   }
   async function spend() {
+    const intent = acts.confirm?.intent;
     const done = await acts.spend();
-    if (done?.roll) onDice(done.roll.dice);
+    if (intent) accepted(intent, done);
   }
 
   const busy = acts.pending || defeated;

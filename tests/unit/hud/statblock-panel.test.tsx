@@ -45,7 +45,9 @@ vi.mock("convex/react", () => ({
     const name = functionName(ref);
     const run = async (args: Record<string, unknown>) => {
       calls.push({ name, args });
-      return answers[name]?.shift() ?? null;
+      const next = answers[name]?.shift() ?? null;
+      if (next instanceof Error) throw next;
+      return next;
     };
     const withUpdate = (fn: (store: unknown, args: unknown) => void) => {
       updaters[name] = fn;
@@ -371,6 +373,114 @@ describe("the stat block", () => {
     queries["encounters:list"] = { active: [], ended: [], moreEnded: false };
     renderBlock();
     expect(screen.getByText(/No encounter is running/)).toBeTruthy();
+  });
+});
+
+describe("Dark-Hearted switches itself off after one roll (FP6)", () => {
+  const DARK = "dark-hearted";
+  const RESOLVED = { status: "resolved", groupId: "g", entryId: "e", roll: null, success: true, targets: [], fearDelta: 0, prompts: [], offers: [] };
+  const CONFIRM = { status: "confirmFear", fear: 1, spotlight: 0, feature: 0, experience: 0, darkHearted: 1 };
+  const COUP = {
+    feature: "Coup de Grace",
+    useId: "u1",
+    uses: [{ id: "u1", activation: "action" }],
+    attack: true,
+    targets: { side: "enemy", count: "one", max: 1, range: "close" },
+    picked: null,
+    allies: null,
+    followUp: null,
+    options: [],
+    optionals: [],
+    situations: [],
+    splits: [],
+    eitherCosts: [],
+    trigger: null,
+  };
+
+  /** Switches Dark-Hearted on in the open session. */
+  function arm() {
+    act(() => probe.api!.setOption(DARK, true));
+    expect(probe.api!.session!.options[DARK]).toBe(true);
+  }
+  /** Sends the open session at Brannoc through the pick session's own send (as its primary button does). */
+  function sendIt(): Promise<void> {
+    const live = probe.api!.session!;
+    const brannoc = live.spec.rows![0]!;
+    return probe.api!.send({ targets: [{ ...brannoc, conditions: [] }], targetIds: [brannoc.tokenId], outOfRange: false, options: live.options });
+  }
+  const openAttack = () => act(() => fireEvent.click(screen.getByTestId("hud-statblock-attack")));
+
+  it("is off when the Attack picker opens again after an accepted Attack", async () => {
+    seed();
+    queries["adversaryActions:darkHearted"] = true;
+    answers["adversaryActions:attack"] = [RESOLVED];
+    renderBlock();
+    openAttack();
+    arm();
+    await act(() => sendIt());
+    expect(calls.find((c) => c.name === "adversaryActions:attack")!.args).toMatchObject({ darkHearted: true });
+    expect(probe.api!.session).toBeNull();
+    openAttack();
+    expect(probe.api!.session!.spec.options!.some((o) => o.id === DARK)).toBe(true);
+    expect(probe.api!.session!.options[DARK]).toBe(false);
+  });
+
+  it("is still on after the GM says No to the Fear question, and off after the Fear is spent", async () => {
+    seed();
+    queries["adversaryActions:darkHearted"] = true;
+    answers["adversaryActions:attack"] = [CONFIRM];
+    renderBlock();
+    openAttack();
+    let sending: Promise<void> | undefined;
+    arm();
+    await act(async () => {
+      sending = sendIt();
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("fear-confirm").textContent).toContain("1 for Dark-Hearted");
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "No keep" })));
+    await act(() => sending!);
+    expect(probe.api!.session!.options[DARK]).toBe(true);
+    expect(probe.api!.session!.message).toBe("No Fear spent. Nothing was rolled.");
+
+    answers["adversaryActions:attack"] = [CONFIRM, RESOLVED];
+    arm();
+    await act(async () => {
+      sending = sendIt();
+      await Promise.resolve();
+    });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Yes spend" })));
+    await act(() => sending!);
+    expect(calls.filter((c) => c.name === "adversaryActions:attack").at(-1)!.args).toMatchObject({ darkHearted: true, spendFear: 1 });
+    expect(probe.api!.session).toBeNull();
+    openAttack();
+    expect(probe.api!.session!.options[DARK]).toBe(false);
+  });
+
+  it("is still on after the server refuses the Attack", async () => {
+    seed();
+    queries["adversaryActions:darkHearted"] = true;
+    answers["adversaryActions:attack"] = [new Error("refused")];
+    renderBlock();
+    openAttack();
+    arm();
+    await act(() => sendIt());
+    expect(probe.api!.session!.options[DARK]).toBe(true);
+  });
+
+  it("is off when an attack-roll feature's picker opens again after an accepted use", async () => {
+    seed();
+    queries["adversaryActions:darkHearted"] = true;
+    featureAsks["Coup de Grace"] = COUP;
+    answers["adversaryActions:useFeature"] = [RESOLVED];
+    renderBlock();
+    act(() => fireEvent.click(screen.getByRole("button", { name: "Use Coup de Grace" })));
+    arm();
+    await act(() => sendIt());
+    expect(calls.find((c) => c.name === "adversaryActions:useFeature")!.args).toMatchObject({ feature: "Coup de Grace", darkHearted: true });
+    expect(probe.api!.session).toBeNull();
+    act(() => fireEvent.click(screen.getByRole("button", { name: "Use Coup de Grace" })));
+    expect(probe.api!.session!.options[DARK]).toBe(false);
   });
 });
 

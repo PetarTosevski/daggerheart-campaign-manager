@@ -157,7 +157,11 @@ export function fearReasons(c: { spotlight: number; feature: number; experience:
 /** WF, W3 Tier 3 (HF p.177): the pickers' option id for Dark-Hearted ("advantage on its next roll" for 1 Fear). */
 export const DARK_HEARTED_OPTION = "dark-hearted";
 
-/** WF: the Dark-Hearted option, when adversaries have it (`adversaryActions.darkHearted`). */
+/**
+ * WF: the Dark-Hearted option, when adversaries have it (`adversaryActions.darkHearted`). FP6 (user 2026-11-10): it is
+ * good for one roll, so it has no `defaultOn` and is never remembered: an accepted use ends the pick session and the
+ * next one opens with it off; a No to the Fear question or a refusal keeps the session, and the switch, as they were.
+ */
 export function darkHeartedOption(on: boolean): { id: string; label: string; note: string; cost: { amount: number; resource: "fear" } }[] {
   return on ? [{ id: DARK_HEARTED_OPTION, label: "Dark-Hearted: advantage", note: "Costs 1 Fear (Doom Track Tier 3)", cost: { amount: 1, resource: "fear" } }] : [];
 }

@@ -34,7 +34,9 @@ vi.mock("convex/react", () => ({
     const name = functionName(ref);
     const run = async (args: Record<string, unknown>) => {
       calls.push({ name, args });
-      return results[name]?.shift() ?? null;
+      const next = results[name]?.shift() ?? null;
+      if (next instanceof Error) throw next;
+      return next;
     };
     return Object.assign(run, { withOptimisticUpdate: () => run });
   },
@@ -198,6 +200,81 @@ describe("Dark-Hearted (W3 Tier 3)", () => {
     });
     expect(calls[0]?.args).not.toHaveProperty("darkHearted");
     expect(fearPrompt({ fear: 2, spotlight: 1, feature: 0, experience: 0, darkHearted: 1 })).toBe("Spend 2 Fear? 1 for the spotlight, 1 for Dark-Hearted.");
+  });
+});
+
+describe("Dark-Hearted switches itself off after one roll (FP6)", () => {
+  const CONFIRM = { status: "confirmFear", fear: 1, spotlight: 0, feature: 0, experience: 0, darkHearted: 1 };
+  const toggle = () => within(panel()).getByRole("button", { name: "Dark-Hearted: advantage (1 Fear)" });
+  function armed() {
+    queries["adversaryActions:darkHearted"] = true;
+    queries["adversaryActions:featureAsk"] = () => ASK;
+    render(<Harness />);
+    fireEvent.click(toggle());
+    fireEvent.click(within(panel()).getByRole("button", { name: "Mira" }));
+    expect(toggle()).toHaveAttribute("aria-pressed", "true");
+  }
+  const attack = () =>
+    act(async () => {
+      fireEvent.click(within(panel()).getByRole("button", { name: /Attack/ }));
+    });
+
+  it("is off after an Attack the server resolves", async () => {
+    results["adversaryActions:attack"] = [RESOLVED];
+    armed();
+    await attack();
+    expect(calls[0]?.args).toMatchObject({ darkHearted: true });
+    expect(toggle()).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("stays on while the Fear question is open and goes off once the Fear is spent", async () => {
+    results["adversaryActions:attack"] = [CONFIRM, RESOLVED];
+    armed();
+    await attack();
+    expect(toggle()).toHaveAttribute("aria-pressed", "true");
+    await act(async () => {
+      fireEvent.click(within(panel()).getByRole("button", { name: "Spend 1 Fear" }));
+    });
+    expect(calls[1]?.args).toMatchObject({ darkHearted: true, spendFear: 1 });
+    expect(toggle()).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("is still on after the GM cancels the Fear question", async () => {
+    results["adversaryActions:attack"] = [CONFIRM];
+    armed();
+    await attack();
+    fireEvent.click(within(panel()).getByRole("button", { name: "Cancel" }));
+    expect(within(panel()).queryByRole("group", { name: "Spend Fear?" })).toBeNull();
+    expect(toggle()).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("is still on after the server refuses the Attack", async () => {
+    results["adversaryActions:attack"] = [new Error("refused")];
+    armed();
+    await attack();
+    expect(toggle()).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("is off after a feature use with an attack roll", async () => {
+    results["adversaryActions:useFeature"] = [RESOLVED];
+    armed();
+    await act(async () => {
+      fireEvent.click(within(panel()).getByRole("button", { name: "Use Bite" }));
+    });
+    expect(calls[0]).toMatchObject({ name: "adversaryActions:useFeature", args: { feature: "Bite", darkHearted: true } });
+    expect(toggle()).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("stays on after a feature that makes no attack roll (it was not sent)", async () => {
+    queries["adversaryActions:darkHearted"] = true;
+    queries["adversaryActions:featureAsk"] = () => ({ ...ASK, attack: false });
+    results["adversaryActions:useFeature"] = [RESOLVED];
+    render(<Harness />);
+    fireEvent.click(toggle());
+    await act(async () => {
+      fireEvent.click(within(panel()).getByRole("button", { name: "Use Bite" }));
+    });
+    expect(toggle()).toHaveAttribute("aria-pressed", "true");
   });
 });
 
