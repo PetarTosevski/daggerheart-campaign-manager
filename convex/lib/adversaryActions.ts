@@ -101,7 +101,9 @@ import { openForcedAttacks } from "./forcedAttacks";
 import type { EndOccurrence, EndRoll } from "../../src/lib/domain/characters/expiry";
 import { saveSheet } from "./characterSheet";
 import { logUnshakable, unshake } from "./unshakable";
-import { closeRequest } from "./combatRequests";
+import { closeRequest, openServerMove } from "./combatRequests";
+import { areasAfterMove, moveRules, rangeTriggersAfterMove } from "./combatAreas";
+import { unhideAfterEnemyMove } from "./combatMovement";
 import { liveCombatMap, tokensOnMap } from "./combatMaps";
 import { holdForAllyPicks, pickDice } from "./allyPickHold";
 import { loadScene, type Scene } from "./combatVision";
@@ -162,6 +164,44 @@ async function actionScene(ctx: QueryCtx, campaign: Doc<"campaigns">, instance: 
   const scene = await loadScene(ctx, campaign, live);
   const selfToken = scene.tokens.find((t) => t.ref.kind === "adversary" && t.ref.adversaryId === instance._id);
   return { map: selfToken ? { scene, selfToken } : null, party, bands: await bandsOnMap(ctx, live._id) };
+}
+
+/** The feed words of an area event (`areasAfterMove`). */
+const AREA_EVENT_WORDS = { enter: "entered", through: "passed through", cross: "crossed", leave: "left" } as const;
+
+/**
+ * Plan finish-in-progress FP1 (dcm-bxp.134.3): a "path" feature's move (Rampaging Fury, Trample) runs what the GM's drag
+ * of the token runs in `combatTokens.move` (byGm: nothing is refused), from the same helpers: the move rules (an area's
+ * hold, movement limits: GM warnings), the token's new square, Hidden ending for PCs the adversary now sees (CB p.102;
+ * Cloaked stays, CB p.42), the live areas it entered, passed through, crossed or left, and the PCs' Hold the Line range
+ * triggers. The PC-only reactions (`pcMoves` features, Cloaked ending on the mover's own move, a caster's areas) cannot
+ * fire for an adversary token. The move joins the use's undo group as an open `serverMove` row: undoing the use puts the
+ * token back (`declineGroupOffers`). The reactions keep their own feed rows and groups, as after a drag. Returns GM lines.
+ */
+async function pathMove(
+  ctx: MutationCtx,
+  input: { campaign: Doc<"campaigns">; map: Doc<"combatMaps">; token: Doc<"combatTokens">; to: { x: number; y: number; face: number }; encounterId: Id<"encounters">; groupId: string; actorId: Id<"users">; label: string },
+): Promise<string[]> {
+  const { campaign, map, token: before, to, actorId, label } = input;
+  if (to.x === before.x && to.y === before.y) {
+    await ctx.db.patch("combatTokens", before._id, to);
+    return [];
+  }
+  const after = { ...before, ...to };
+  const nameOf = async () => label;
+  const rules = await moveRules(ctx, { campaignId: campaign._id, map, before, after: to, byGm: true, actorId, nameOf });
+  await ctx.db.patch("combatTokens", before._id, to);
+  await openServerMove(ctx, {
+    campaignId: campaign._id,
+    encounterId: input.encounterId,
+    mapId: map._id,
+    createdBy: actorId,
+    payload: { schemaVersion: 1, kind: "serverMove", groupId: input.groupId, tokenId: before._id, from: { x: before.x, y: before.y, face: before.face }, to },
+  });
+  await unhideAfterEnemyMove(ctx, campaign, map, after, actorId);
+  const areas = await areasAfterMove(ctx, campaign._id, map._id, before, after, actorId, nameOf);
+  if (map.live) await rangeTriggersAfterMove(ctx, campaign._id, map._id, before, after, actorId, nameOf);
+  return [...rules.warnings.map((w) => `${label}'s move broke ${w}`), ...areas.map((a) => `${label} ${AREA_EVENT_WORDS[a.event]} ${a.label}${a.ended ? " (it ends)" : ""}`)];
 }
 
 /**
@@ -1525,10 +1565,11 @@ export async function adversaryAction(
   for (const summary of new Set(rangeAsks)) await postRuleNote(ctx, campaign, { ruleId: "definedRanges", summary, groupId, actorId: user._id });
   // Plan rule-switches WR (R10 Manual): the critical's maximum the damage left out.
   if ((plan.criticalDamageWithheld ?? 0) > 0) await postRuleNote(ctx, campaign, { ruleId: "criticalDamage", summary: criticalDamageNote(label, plan.criticalDamageWithheld!), groupId, actorId: user._id });
-  // WF: the "path" feature's move, as the GM's drag would place it (the token faces the way it went).
+  // WF: the "path" feature's move, as the GM's drag would place it (the token faces the way it went). FP1: with the drag's
+  // reactions, and in the use's undo group.
   if (moveTo !== null && scene.map) {
-    await ctx.db.patch("combatTokens", scene.map.selfToken._id, moveTo);
     gmText.push(`${label} moved to (${moveTo.x}, ${moveTo.y})`);
+    gmText.push(...(await pathMove(ctx, { campaign, map: scene.map.scene.map, token: scene.map.selfToken, to: moveTo, encounterId: encounter._id, groupId, actorId: user._id, label })));
   }
   const result = await finish(ctx, { campaign, user, encounter, w, groupId, spotlight: needsSpotlight && !spotlit, needsSpotlight, spotlightFear: 0, roll, success: plan.success, outcomes, offers, publicText, gmText, ...(args.feature !== undefined ? { attackerFeature: args.feature } : {}) });
   if (forcedPcs.length > 0) {

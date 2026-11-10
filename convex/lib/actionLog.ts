@@ -471,7 +471,8 @@ export async function undoEntry(
     });
   }
   // An attack's open Minion offer goes with it.
-  if (row.groupId !== undefined && group.some((r) => r.kind === "combat")) await declineGroupOffers(ctx, row.campaignId, row.groupId, user._id);
+  // FP1: an adversary feature use's group (`adversary` rows) too: its path move (`serverMove`) goes back.
+  if (row.groupId !== undefined && group.some((r) => r.kind === "combat" || r.kind === "adversary")) await declineGroupOffers(ctx, row.campaignId, row.groupId, user._id);
   // AA2b: the action's open incoming hits (reaction windows, after-hit offers) close with it.
   if (row.groupId !== undefined) await declineGroupHits(ctx, row.campaignId, row.groupId, user._id);
 

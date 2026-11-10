@@ -548,7 +548,11 @@ export const tokenSquareValidator = v.object({ x: v.number(), y: v.number(), fac
 export const serverMovePayloadValidator = v.object({
   schemaVersion: v.literal(1),
   kind: v.literal("serverMove"),
-  characterId: v.id("characters"),
+  /**
+   * The character whose use moved its token (Charge). Widened (plan finish-in-progress FP1): absent for an adversary's
+   * path feature (Rampaging Fury, Trample), whose open row is keyed by its token.
+   */
+  characterId: v.optional(v.id("characters")),
   /** The use's actionLog group: undoing it undoes the move. */
   groupId: v.string(),
   tokenId: v.id("combatTokens"),

@@ -135,14 +135,17 @@ export async function declineGroupOffers(ctx: MutationCtx, campaignId: Id<"campa
 /**
  * DA12: records a token the server moved for a feature use (`serverMove`), so undoing the use's group puts it back. The
  * character's older open server moves are resolved first (a newer use of theirs makes the older one's undo stale), so a
- * character holds at most one open row.
+ * character holds at most one open row; an adversary's path move (FP1, no character) does the same per token.
  */
 export async function openServerMove(
   ctx: MutationCtx,
   where: LooseWhere & { payload: ServerMovePayload },
 ): Promise<Id<"combatRequests">> {
   for (const row of await openRequests(ctx, where.campaignId)) {
-    if (row.payload.kind === "serverMove" && row.payload.characterId === where.payload.characterId) await closeRequest(ctx, row._id, "resolved", where.createdBy);
+    if (row.payload.kind !== "serverMove") continue;
+    // FP1: an adversary's path move (no character) supersedes the older open move of the same token.
+    const same = where.payload.characterId !== undefined ? row.payload.characterId === where.payload.characterId : row.payload.characterId === undefined && row.payload.tokenId === where.payload.tokenId;
+    if (same) await closeRequest(ctx, row._id, "resolved", where.createdBy);
   }
   return ctx.db.insert("combatRequests", { ...where, status: "open" as const, createdAt: Date.now(), responses: [], kind: "serverMove" });
 }
