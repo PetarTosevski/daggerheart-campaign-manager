@@ -534,11 +534,6 @@ export const targetCountPayloadValidator = v.object({
   useId: v.string(),
   /** The rolled count: the most targets the use may take. */
   count: v.number(),
-  /**
-   * Retired (dcm-bxp.99.19.60): the count lasts until it is used or the scene ends, so nothing writes or reads this.
-   * Widened to optional; a migration clears it from old rows, then the field is dropped (rule 7).
-   */
-  expiresAt: v.optional(v.number()),
 });
 
 /** A token's square and facing (combatTokens `x`, `y`, `face`). */
