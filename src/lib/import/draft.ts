@@ -6,10 +6,7 @@ import * as z from "../zod";
 
 import { characterSheetSchema, experienceSchema } from "../validation/characters";
 
-/** At most this many photos per import (the front and back of a sheet, twice over). */
-export const MAX_PHOTOS = 4;
-/** Photo types the Messages API reads; GIF is left out on purpose. */
-export const PHOTO_TYPES: readonly string[] = ["image/jpeg", "image/png", "image/webp"];
+export { MAX_PHOTOS, PHOTO_TYPES } from "./photo-types";
 
 /**
  * A reviewed draft: the sheet fields of `characterSheetSchema` a paper sheet

@@ -11,8 +11,7 @@ import { campaignQuery, gmMutation } from "./lib/functions";
 import { cleanText, liveWindows, loadSession } from "./lib/sessions";
 import { actionKindValidator, type ActionKind, type StoredRoll } from "./lib/validators/actionLog";
 import { MAX_LOG_ENTRIES, MAX_LOG_OVERRIDES, sessionLogSourceValidator, type SessionLogSource } from "./lib/validators/sessions";
-import { seesFear } from "./campaigns";
-import { hideFearNumbers } from "./feed";
+import { hideFearNumbers, seesFear } from "./lib/fearVisibility";
 
 /**
  * The Journal's session log (plan `.omc/plans/journal.yaml`, JD2; user answer 'Session log = automatic from the action

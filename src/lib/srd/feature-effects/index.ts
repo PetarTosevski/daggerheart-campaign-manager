@@ -5,13 +5,13 @@ import type { FeatureEffect } from "../../domain/feature-effects/types";
 import { ancestryCoreEffects } from "./ancestry-core";
 import { assassinBrawlerEffects } from "./assassin-brawler";
 import { bardWizardEffects } from "./bard-wizard";
-import { BEASTFORM_EFFECTS } from "./beastforms";
+import { beastformEffects } from "./beastforms";
 import { druidSorcererEffects } from "./druid-sorcerer";
 import { guardianWarriorEffects } from "./guardian-warrior";
 import { heritageHfEffects } from "./heritage-hf";
 import { rangerRogueEffects } from "./ranger-rogue";
 import { seraphWitchEffects } from "./seraph-witch";
-import { STANCE_EFFECTS } from "./stances";
+import { stanceEffects } from "./stances";
 import { transformationEffects } from "./transformations";
 import { warlockEffects } from "./warlock";
 
@@ -35,9 +35,9 @@ export function featureEffectTables(): Readonly<Record<string, readonly FeatureE
     warlock: warlockEffects(),
     "ancestry-core": ancestryCoreEffects(),
     "heritage-hf": heritageHfEffects(),
-    beastforms: BEASTFORM_EFFECTS,
+    beastforms: beastformEffects(),
     transformations: transformationEffects(),
-    stances: STANCE_EFFECTS,
+    stances: stanceEffects(),
   };
   return tables;
 }

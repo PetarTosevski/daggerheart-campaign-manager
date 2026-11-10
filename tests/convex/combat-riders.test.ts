@@ -643,7 +643,7 @@ describe("DA2: Rise to the Challenge on by default (CB p.48, dcm-bxp.99.19.49 (2
     const a = await arena();
     await a.edit(brave(2));
     const bandit = await a.enemy("Bandit", 6, 10);
-    const options = await a.player.query(api.combatActionsReads.riders, { campaignId: a.campaignId, characterId: a.w.characterA });
+    const options = await a.player.query(api.combatRidersReads.riders, { campaignId: a.campaignId, characterId: a.w.characterA });
     expect(options.find((o) => o.name === "Rise to the Challenge")).toMatchObject({ defaultOn: true, ready: true });
     const r = resolved(await a.attack(a.player, [bandit.tokenId]));
     expect(hopeSides(r.roll)).toBe(20);
@@ -663,7 +663,7 @@ describe("DA2: Rise to the Challenge on by default (CB p.48, dcm-bxp.99.19.49 (2
     const a = await arena();
     await a.edit(brave(3));
     const bandit = await a.enemy("Bandit", 6, 10);
-    const options = await a.player.query(api.combatActionsReads.riders, { campaignId: a.campaignId, characterId: a.w.characterA });
+    const options = await a.player.query(api.combatRidersReads.riders, { campaignId: a.campaignId, characterId: a.w.characterA });
     expect(options.some((o) => o.name === "Rise to the Challenge")).toBe(false);
     const r = resolved(await a.attack(a.player, [bandit.tokenId]));
     expect(hopeSides(r.roll)).toBe(12);

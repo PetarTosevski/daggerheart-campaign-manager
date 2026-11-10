@@ -86,7 +86,7 @@ describe("config U1: adversary HP, Stress and Difficulty are always off for play
       "combatHud.sheet": () => player.query(api.combatHud.sheet, { characterId: ash }),
       "combatTokensReads.party": () => player.query(api.combatTokensReads.party, { campaignId, mapId }),
       "combatActionsReads.targets": () => player.query(api.combatActionsReads.targets, { campaignId, characterId: ash, mapId }),
-      "combatActionsReads.riders": () => player.query(api.combatActionsReads.riders, { campaignId, characterId: ash }),
+      "combatRidersReads.riders": () => player.query(api.combatRidersReads.riders, { campaignId, characterId: ash }),
       "combatSpotlight.state": () => player.query(api.combatSpotlight.state, { campaignId }),
       "combatMaps.live": () => player.query(api.combatMaps.live, { campaignId }),
       "combatAreas.list": () => player.query(api.combatAreas.list, { campaignId, mapId }),

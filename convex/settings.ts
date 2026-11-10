@@ -2,18 +2,15 @@ import { v } from "convex/values";
 
 import { DEFAULT_ACCENT, settingsSchema } from "../src/lib/validation/campaigns";
 import { parseSettingsBackup } from "../src/lib/validation/settings-backup";
-import type { Doc } from "./_generated/dataModel";
-import type { QueryCtx } from "./_generated/server";
 import { userMutation, userQuery } from "./lib/functions";
-import { mapStyleValidator, type MapStyle } from "./lib/validators/combatMaps";
+import { DEFAULT_MAP_STYLE, settingsRow } from "./lib/settingsRow";
+import { mapStyleValidator } from "./lib/validators/combatMaps";
+
+// Moved to ./lib/settingsRow (dcm-uh6r: combatMaps and campaigns imported them from this module, which loaded its
+// settings schemas on every call); callers may keep importing them from here.
+export { DEFAULT_MAP_STYLE, defaultMapStyleOf, settingsRow } from "./lib/settingsRow";
 
 const DEFAULTS = { tableName: "", gmName: "", accent: DEFAULT_ACCENT };
-
-/**
- * dcm-bxp.89 added the Settings slider; dcm-bxp.135 (user 2026-10-22) made Sprites the default: a GM who never chose
- * (no stored field) gets Sprites for new maps. Existing maps keep their stored style.
- */
-export const DEFAULT_MAP_STYLE: MapStyle = "sprites";
 
 const expansionsValidator = v.object({ hopeAndFear: v.optional(v.boolean()) });
 
@@ -26,20 +23,6 @@ const settingsView = v.object({
   /** The style new blank maps get (dcm-bxp.89); Sprites unless the GM picked Classic (dcm-bxp.135). */
   defaultMapStyle: mapStyleValidator,
 });
-
-export const settingsRow = (ctx: QueryCtx, user: Doc<"users">) =>
-  ctx.db
-    .query("settings")
-    .withIndex("by_owner", (q) => q.eq("ownerId", user._id))
-    .unique();
-
-/**
- * The style a new blank map of this GM gets (dcm-bxp.89): their Settings slider, else Sprites (dcm-bxp.135). Read by
- * `combatMaps.create` only; existing maps keep their stored style (sprite packs E3).
- */
-export async function defaultMapStyleOf(ctx: QueryCtx, user: Doc<"users">): Promise<MapStyle> {
-  return (await settingsRow(ctx, user))?.defaultMapStyle ?? DEFAULT_MAP_STYLE;
-}
 
 /** The user's app settings (table name, GM name, accent colour, expansion defaults, default map style). */
 export const get = userQuery({

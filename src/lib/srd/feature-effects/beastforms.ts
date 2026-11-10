@@ -286,8 +286,6 @@ export const BEASTFORM_IDS: readonly string[] = [
   "terrible-lizard",
 ];
 
-const ATTACKS: readonly FeatureEffect[] = BEASTFORM_IDS.map(attackEntry);
-
 // ---------------------------------------------------------------- feature entries
 
 // Fragile (CB p.32, Agile Scout, Aquatic Scout, Household Friend, Nimble Grazer): "When you take Major or greater damage,
@@ -395,336 +393,351 @@ const evolvedEntry = (formId: string): FeatureEffect => {
 const hybridEntry = (formId: string): FeatureEffect =>
   entry(formId, "Hybrid Features", [formUse({ id: "main", name: "Hybrid Features", activation: { kind: "passive" }, mods: [], steps: [] })]);
 
-const FEATURES: readonly FeatureEffect[] = [
-  // ---- Tier 1 (CB p.32)
-  // Agile (Agile Scout): "Your movement is silent, and you can spend a Hope to move up to Far range without rolling."
-  entry("agile-scout", "Agile", [
-    formUse({
-      id: "main",
-      name: "Agile",
-      activation: { kind: "action" },
-      costs: [hope(1)],
-      steps: [{ kind: "move", to: "self", mode: "move", range: "far", relativeTo: "self", note: "Move up to Far range without rolling (your movement is silent)" }],
-    }),
-  ]),
-  fragile("agile-scout"),
-  fragile("aquatic-scout"),
-  // Companion (Household Friend): "When you Help an Ally, you can roll a d8 as your advantage die."
-  entry("household-friend", "Companion", [
-    formUse({ id: "main", name: "Companion", activation: { kind: "passive" }, mods: [{ kind: "set", stat: "helpDie", to: fixed(8) }], steps: [] }),
-  ]),
-  fragile("household-friend"),
-  // Elusive Prey (Nimble Grazer): "When an attack roll against you would succeed, you can mark a Stress and roll a d4. Add
-  // the result to your Evasion against this attack."
-  entry("nimble-grazer", "Elusive Prey", [
-    formUse({
-      id: "main",
-      name: "Elusive Prey",
-      activation: { kind: "reaction", trigger: { kind: "whenAttacked", stage: "succeeded" } },
-      costs: [stress(1)],
-      steps: [{ kind: "modifyRoll", to: "self", change: { kind: "evasion", amount: d(4) }, note: "+d4 to your Evasion against this attack" }],
-    }),
-  ]),
-  fragile("nimble-grazer"),
-  // Hobbling Strike (Pack Predator): "When you succeed on an attack against a target within Melee range, you can mark a
-  // Stress to make the target temporarily Vulnerable."
-  entry("pack-predator", "Hobbling Strike", [
-    formUse({ id: "main", name: "Hobbling Strike", activation: { kind: "rider", trigger: onMeleeSuccess }, costs: [stress(1)], steps: [temporarily(VULNERABLE)] }),
-  ]),
-  // Pack Hunting (Pack Predator): "When you succeed on an attack against the same target as an ally who acts immediately
-  // before you, add a d8 to your damage roll." The engine does not track who acted last: the player confirms (Q13).
-  entry("pack-predator", "Pack Hunting", [
-    formUse({
-      id: "main",
-      name: "Pack Hunting",
-      activation: { kind: "rider", trigger: onSuccess },
-      requires: [situation("An ally who acted immediately before you attacked the same target")],
-      steps: [{ kind: "modifyDamage", to: "targets", change: { kind: "add", amount: d(8) }, note: "+d8 to your damage roll" }],
-    }),
-  ]),
-  // Venomous Bite (Stalking Arachnid): "When you succeed on an attack against a target within Melee range, the target
-  // becomes temporarily Poisoned. A Poisoned creature takes 1d10 direct physical damage each time they act."
-  entry("stalking-arachnid", "Venomous Bite", [
-    formUse({
-      id: "main",
-      name: "Venomous Bite",
-      activation: { kind: "auto", trigger: onMeleeSuccess },
-      steps: [poisoned],
-    }),
-  ]),
-  // Webslinger (Stalking Arachnid): "You can create a strong web material useful for both adventuring and battle. The web
-  // is resilient enough to support one creature. You can temporarily Restrain a target within Close range by succeeding
-  // on a Finesse Roll against them." The web's other uses are text.
-  entry("stalking-arachnid", "Webslinger", [
-    formUse({
-      id: "main",
-      name: "Webslinger",
-      activation: { kind: "action" },
-      roll: { kind: "trait", trait: "finesse", difficulty: { kind: "target" } },
-      targets: enemy("close"),
-      steps: [temporarily(RESTRAINED)],
-    }),
-  ]),
+/** The Beastform features (built by `beastformEffects`). */
+function featureEntries(): FeatureEffect[] {
+  return [
+    // ---- Tier 1 (CB p.32)
+    // Agile (Agile Scout): "Your movement is silent, and you can spend a Hope to move up to Far range without rolling."
+    entry("agile-scout", "Agile", [
+      formUse({
+        id: "main",
+        name: "Agile",
+        activation: { kind: "action" },
+        costs: [hope(1)],
+        steps: [{ kind: "move", to: "self", mode: "move", range: "far", relativeTo: "self", note: "Move up to Far range without rolling (your movement is silent)" }],
+      }),
+    ]),
+    fragile("agile-scout"),
+    fragile("aquatic-scout"),
+    // Companion (Household Friend): "When you Help an Ally, you can roll a d8 as your advantage die."
+    entry("household-friend", "Companion", [
+      formUse({ id: "main", name: "Companion", activation: { kind: "passive" }, mods: [{ kind: "set", stat: "helpDie", to: fixed(8) }], steps: [] }),
+    ]),
+    fragile("household-friend"),
+    // Elusive Prey (Nimble Grazer): "When an attack roll against you would succeed, you can mark a Stress and roll a d4. Add
+    // the result to your Evasion against this attack."
+    entry("nimble-grazer", "Elusive Prey", [
+      formUse({
+        id: "main",
+        name: "Elusive Prey",
+        activation: { kind: "reaction", trigger: { kind: "whenAttacked", stage: "succeeded" } },
+        costs: [stress(1)],
+        steps: [{ kind: "modifyRoll", to: "self", change: { kind: "evasion", amount: d(4) }, note: "+d4 to your Evasion against this attack" }],
+      }),
+    ]),
+    fragile("nimble-grazer"),
+    // Hobbling Strike (Pack Predator): "When you succeed on an attack against a target within Melee range, you can mark a
+    // Stress to make the target temporarily Vulnerable."
+    entry("pack-predator", "Hobbling Strike", [
+      formUse({ id: "main", name: "Hobbling Strike", activation: { kind: "rider", trigger: onMeleeSuccess }, costs: [stress(1)], steps: [temporarily(VULNERABLE)] }),
+    ]),
+    // Pack Hunting (Pack Predator): "When you succeed on an attack against the same target as an ally who acts immediately
+    // before you, add a d8 to your damage roll." The engine does not track who acted last: the player confirms (Q13).
+    entry("pack-predator", "Pack Hunting", [
+      formUse({
+        id: "main",
+        name: "Pack Hunting",
+        activation: { kind: "rider", trigger: onSuccess },
+        requires: [situation("An ally who acted immediately before you attacked the same target")],
+        steps: [{ kind: "modifyDamage", to: "targets", change: { kind: "add", amount: d(8) }, note: "+d8 to your damage roll" }],
+      }),
+    ]),
+    // Venomous Bite (Stalking Arachnid): "When you succeed on an attack against a target within Melee range, the target
+    // becomes temporarily Poisoned. A Poisoned creature takes 1d10 direct physical damage each time they act."
+    entry("stalking-arachnid", "Venomous Bite", [
+      formUse({
+        id: "main",
+        name: "Venomous Bite",
+        activation: { kind: "auto", trigger: onMeleeSuccess },
+        steps: [poisoned],
+      }),
+    ]),
+    // Webslinger (Stalking Arachnid): "You can create a strong web material useful for both adventuring and battle. The web
+    // is resilient enough to support one creature. You can temporarily Restrain a target within Close range by succeeding
+    // on a Finesse Roll against them." The web's other uses are text.
+    entry("stalking-arachnid", "Webslinger", [
+      formUse({
+        id: "main",
+        name: "Webslinger",
+        activation: { kind: "action" },
+        roll: { kind: "trait", trait: "finesse", difficulty: { kind: "target" } },
+        targets: enemy("close"),
+        steps: [temporarily(RESTRAINED)],
+      }),
+    ]),
 
-  // ---- Tier 2 (CB p.33)
-  // Armored Shell (Armored Sentry): "Your hardened exterior gives you resistance to physical damage. Additionally, mark an
-  // Armor Slot to retract into your shell. While in your shell, physical damage is reduced by a number equal to your Armor
-  // Score (after applying resistance), but you can't perform other actions without leaving this form."
-  entry("armored-sentry", "Armored Shell", [
-    formUse({ id: "main", name: "Armored Shell", activation: { kind: "passive" }, mods: [{ kind: "resistance", type: "physical", level: "resistant" }], steps: [] }),
-    formUse({
-      id: "retract",
-      name: "Armored Shell (retract)",
-      activation: { kind: "action" },
-      costs: [{ kind: "armor", amount: fixed(1) }],
-      steps: [
-        {
-          kind: "effect",
-          to: "self",
-          label: "In your shell: physical damage reduced by your Armor Score; no other actions without leaving this form",
-          mods: [{ kind: "flag", flag: "cannotAct" }],
-          duration: "manual",
-          endsWhen: "You leave your shell (End)",
-          option: "retracted",
-        },
-      ],
-    }),
-    formUse({
-      id: "shell",
-      name: "Armored Shell (in your shell)",
-      activation: { kind: "auto", trigger: { kind: "whenYouWouldTakeDamage", damageType: "physical" } },
-      requires: [{ kind: "situation", text: "While in your shell", check: { kind: "featureEffect", featureId: "beastform:armored-sentry:armored-shell", option: "retracted" } }],
-      // Lanes-2 wave 10 (S2.4; dcm-i9c1, dcm-bxp.99.19.4): `reduceDamage` by the Armor Score. The incoming-hit window's
-      // feature actor carries the sheet's stats (E2.4 `featureActor` from `sheetNumbers`, with the Beastform's effects),
-      // so the `stat` number reads the real Armor Score. "After applying resistance" is the window's order (CB p.107).
-      steps: [{ kind: "reduceDamage", to: "self", amount: { kind: "stat", stat: "armorScore", who: "self" }, note: "In your shell: physical damage is reduced by your Armor Score (after applying resistance)." }],
-    }),
-  ]),
-  // Cannonball (Armored Sentry), CB p.33: "Mark a Stress to allow an ally to throw or launch you at an adversary. To do so,
-  // the ally makes an attack roll using Agility or Strength (their choice) against a target within Close range. On a
-  // success, the adversary takes d12+2 physical damage using the thrower's Proficiency. You can spend a Hope to target an
-  // additional adversary within Very Close range of the first. The second target takes half the damage dealt to the first
-  // target."
-  // User 2026-10-29 / 2026-10-30 (dcm-bxp.99.19.21, DA13): the druid marks the Stress and is thrown; the THROWING ally gets
-  // a prompt in their drawer and rolls Agility or Strength (their choice) against a target within Close range of them; on
-  // a success d12+2 physical damage with the ally's Proficiency; the roll's Hope / Fear and a critical are the ally's.
-  // `rolledBy` (DA0): the druid's use pays the Stress and sends the roll (convex/featurePrompts.ts `allyRoll` runs it).
-  // The second target's Hope is the druid's ("You can spend a Hope"), ticked in the ally's prompt (TASK-DA-DA13.md Q1);
-  // half damage rounds up (CB p.107).
-  entry("armored-sentry", "Cannonball", [
-    formUse({
-      id: "main",
-      name: "Cannonball",
-      activation: { kind: "action" },
-      costs: [stress(1)],
-      targets: { side: "ally", range: "unlimited", count: { kind: "one" }, excludeSelf: true },
-      roll: { kind: "trait", trait: ["agility", "strength"], difficulty: { kind: "target" }, attack: true },
-      rolledBy: { who: "ally", proficiency: "roller", targets: enemy("close") },
-      steps: [
-        physical(12, 2),
-        {
-          kind: "optional",
-          id: "second",
-          label: "Spend a Hope to target an additional adversary within Very Close range of the first",
-          costs: [hope(1)],
-          steps: [{ ...physical(12, 2), to: "picked", pick: enemy("veryClose", { kind: "one" }, { area: "aroundTarget", areaRange: "veryClose" }), scale: "half" } as Step],
-        },
-      ],
-    }),
-  ]),
-  // Trample (Mighty Strider): "Mark a Stress to move up to Close range in a straight line and make an attack against all
-  // targets within Melee range of the line. Targets you succeed against take d8+1 physical damage using your Proficiency
-  // and are temporarily Vulnerable."
-  entry("mighty-strider", "Trample", [
-    formUse({
-      id: "main",
-      name: "Trample",
-      activation: { kind: "action" },
-      costs: [stress(1)],
-      roll: formRoll("agility"),
-      targets: enemy("close", { kind: "all" }, { area: "path" }),
-      steps: [
-        { kind: "move", to: "self", mode: "move", range: "close", relativeTo: "self", note: "Move up to Close range in a straight line" },
-        physical(8, 1),
-        temporarily(VULNERABLE),
-      ],
-    }),
-  ]),
-  // Fleet (Pouncing Predator): "Spend a Hope to move up to Far range without rolling."
-  entry("pouncing-predator", "Fleet", [
-    formUse({
-      id: "main",
-      name: "Fleet",
-      activation: { kind: "action" },
-      costs: [hope(1)],
-      steps: [{ kind: "move", to: "self", mode: "move", range: "far", relativeTo: "self", note: "Move up to Far range without rolling" }],
-    }),
-  ]),
-  // Takedown (Pouncing Predator): "Mark a Stress to move into Melee range of a target and make an attack roll against
-  // them. On a success, you gain a +2 bonus to your Proficiency for this attack and the target must mark a Stress." The
-  // attack is the form's (Instinct, d8+6, CB p.33; damage on a success, CB p.96); the card prints no range for the target.
-  entry("pouncing-predator", "Takedown", [
-    formUse({
-      id: "main",
-      name: "Takedown",
-      activation: { kind: "action" },
-      costs: [stress(1)],
-      roll: formRoll("instinct"),
-      targets: enemy("unlimited"),
-      steps: [
-        { kind: "move", to: "self", mode: "move", range: "melee", relativeTo: "target", note: "Move into Melee range of the target" },
-        physical(8, 6, 2),
-        { kind: "markStress", to: "targets", when: ["hit"], amount: fixed(1) },
-      ],
-    }),
-  ]),
-  // Rampage (Powerful Beast): "When you roll a 1 on a damage die, you can roll a d10 and add the result to the damage roll.
-  // Additionally, before you make an attack roll, you can mark a Stress to gain a +1 bonus to your Proficiency for that
-  // attack."
-  entry("powerful-beast", "Rampage", [
-    formUse({
-      id: "main",
-      name: "Rampage (a 1 on a damage die)",
-      activation: { kind: "rider", trigger: onSuccess },
-      steps: [{ kind: "modifyDamage", to: "targets", change: { kind: "ones", add: { count: fixed(1), sides: 10 } }, note: "Each damage die that rolls a 1: add a d10" }],
-    }),
-    formUse({
-      id: "proficiency",
-      name: "Rampage (+1 Proficiency)",
-      activation: { kind: "rider", trigger: { kind: "beforeYouRoll", roll: "attack" } },
-      costs: [stress(1)],
-      steps: [{ kind: "modifyDamage", to: "targets", change: { kind: "proficiency", delta: 1 }, note: "+1 Proficiency for this attack" }],
-    }),
-  ]),
-  // Thick Hide (Powerful Beast): "You gain a +2 bonus to your damage thresholds."
-  thresholds("powerful-beast", "Thick Hide", 2),
-  // Venomous Strike (Striking Serpent): "Make an attack against any number of targets within Very Close range. On a
-  // success, a target is temporarily Poisoned. A Poisoned creature takes 1d10 direct physical damage each time they act."
-  // The attack is the form's (Finesse, d8+4, CB p.33; damage on a success, CB p.96).
-  entry("striking-serpent", "Venomous Strike", [
-    formUse({
-      id: "main",
-      name: "Venomous Strike",
-      activation: { kind: "action" },
-      roll: formRoll("finesse"),
-      targets: enemy("veryClose", { kind: "any" }),
-      steps: [physical(8, 4), poisoned],
-    }),
-  ]),
-  // Warning Hiss (Striking Serpent): "Mark a Stress to force any number of targets within Melee range to move back to Very
-  // Close range."
-  entry("striking-serpent", "Warning Hiss", [
-    formUse({
-      id: "main",
-      name: "Warning Hiss",
-      activation: { kind: "action" },
-      costs: [stress(1)],
-      targets: { side: "any", range: "melee", count: { kind: "any" }, excludeSelf: true },
-      steps: [{ kind: "move", to: "targets", mode: "knockBack", range: "veryClose", relativeTo: "self", note: "Move back to Very Close range" }],
-    }),
-  ]),
-  birdsEyeView("winged-beast"),
-  // Hollow Bones (Winged Beast): "You gain a −2 penalty to your damage thresholds."
-  thresholds("winged-beast", "Hollow Bones", -2),
+    // ---- Tier 2 (CB p.33)
+    // Armored Shell (Armored Sentry): "Your hardened exterior gives you resistance to physical damage. Additionally, mark an
+    // Armor Slot to retract into your shell. While in your shell, physical damage is reduced by a number equal to your Armor
+    // Score (after applying resistance), but you can't perform other actions without leaving this form."
+    entry("armored-sentry", "Armored Shell", [
+      formUse({ id: "main", name: "Armored Shell", activation: { kind: "passive" }, mods: [{ kind: "resistance", type: "physical", level: "resistant" }], steps: [] }),
+      formUse({
+        id: "retract",
+        name: "Armored Shell (retract)",
+        activation: { kind: "action" },
+        costs: [{ kind: "armor", amount: fixed(1) }],
+        steps: [
+          {
+            kind: "effect",
+            to: "self",
+            label: "In your shell: physical damage reduced by your Armor Score; no other actions without leaving this form",
+            mods: [{ kind: "flag", flag: "cannotAct" }],
+            duration: "manual",
+            endsWhen: "You leave your shell (End)",
+            option: "retracted",
+          },
+        ],
+      }),
+      formUse({
+        id: "shell",
+        name: "Armored Shell (in your shell)",
+        activation: { kind: "auto", trigger: { kind: "whenYouWouldTakeDamage", damageType: "physical" } },
+        requires: [{ kind: "situation", text: "While in your shell", check: { kind: "featureEffect", featureId: "beastform:armored-sentry:armored-shell", option: "retracted" } }],
+        // Lanes-2 wave 10 (S2.4; dcm-i9c1, dcm-bxp.99.19.4): `reduceDamage` by the Armor Score. The incoming-hit window's
+        // feature actor carries the sheet's stats (E2.4 `featureActor` from `sheetNumbers`, with the Beastform's effects),
+        // so the `stat` number reads the real Armor Score. "After applying resistance" is the window's order (CB p.107).
+        steps: [{ kind: "reduceDamage", to: "self", amount: { kind: "stat", stat: "armorScore", who: "self" }, note: "In your shell: physical damage is reduced by your Armor Score (after applying resistance)." }],
+      }),
+    ]),
+    // Cannonball (Armored Sentry), CB p.33: "Mark a Stress to allow an ally to throw or launch you at an adversary. To do so,
+    // the ally makes an attack roll using Agility or Strength (their choice) against a target within Close range. On a
+    // success, the adversary takes d12+2 physical damage using the thrower's Proficiency. You can spend a Hope to target an
+    // additional adversary within Very Close range of the first. The second target takes half the damage dealt to the first
+    // target."
+    // User 2026-10-29 / 2026-10-30 (dcm-bxp.99.19.21, DA13): the druid marks the Stress and is thrown; the THROWING ally gets
+    // a prompt in their drawer and rolls Agility or Strength (their choice) against a target within Close range of them; on
+    // a success d12+2 physical damage with the ally's Proficiency; the roll's Hope / Fear and a critical are the ally's.
+    // `rolledBy` (DA0): the druid's use pays the Stress and sends the roll (convex/featurePrompts.ts `allyRoll` runs it).
+    // The second target's Hope is the druid's ("You can spend a Hope"), ticked in the ally's prompt (TASK-DA-DA13.md Q1);
+    // half damage rounds up (CB p.107).
+    entry("armored-sentry", "Cannonball", [
+      formUse({
+        id: "main",
+        name: "Cannonball",
+        activation: { kind: "action" },
+        costs: [stress(1)],
+        targets: { side: "ally", range: "unlimited", count: { kind: "one" }, excludeSelf: true },
+        roll: { kind: "trait", trait: ["agility", "strength"], difficulty: { kind: "target" }, attack: true },
+        rolledBy: { who: "ally", proficiency: "roller", targets: enemy("close") },
+        steps: [
+          physical(12, 2),
+          {
+            kind: "optional",
+            id: "second",
+            label: "Spend a Hope to target an additional adversary within Very Close range of the first",
+            costs: [hope(1)],
+            steps: [{ ...physical(12, 2), to: "picked", pick: enemy("veryClose", { kind: "one" }, { area: "aroundTarget", areaRange: "veryClose" }), scale: "half" } as Step],
+          },
+        ],
+      }),
+    ]),
+    // Trample (Mighty Strider): "Mark a Stress to move up to Close range in a straight line and make an attack against all
+    // targets within Melee range of the line. Targets you succeed against take d8+1 physical damage using your Proficiency
+    // and are temporarily Vulnerable."
+    entry("mighty-strider", "Trample", [
+      formUse({
+        id: "main",
+        name: "Trample",
+        activation: { kind: "action" },
+        costs: [stress(1)],
+        roll: formRoll("agility"),
+        targets: enemy("close", { kind: "all" }, { area: "path" }),
+        steps: [
+          { kind: "move", to: "self", mode: "move", range: "close", relativeTo: "self", note: "Move up to Close range in a straight line" },
+          physical(8, 1),
+          temporarily(VULNERABLE),
+        ],
+      }),
+    ]),
+    // Fleet (Pouncing Predator): "Spend a Hope to move up to Far range without rolling."
+    entry("pouncing-predator", "Fleet", [
+      formUse({
+        id: "main",
+        name: "Fleet",
+        activation: { kind: "action" },
+        costs: [hope(1)],
+        steps: [{ kind: "move", to: "self", mode: "move", range: "far", relativeTo: "self", note: "Move up to Far range without rolling" }],
+      }),
+    ]),
+    // Takedown (Pouncing Predator): "Mark a Stress to move into Melee range of a target and make an attack roll against
+    // them. On a success, you gain a +2 bonus to your Proficiency for this attack and the target must mark a Stress." The
+    // attack is the form's (Instinct, d8+6, CB p.33; damage on a success, CB p.96); the card prints no range for the target.
+    entry("pouncing-predator", "Takedown", [
+      formUse({
+        id: "main",
+        name: "Takedown",
+        activation: { kind: "action" },
+        costs: [stress(1)],
+        roll: formRoll("instinct"),
+        targets: enemy("unlimited"),
+        steps: [
+          { kind: "move", to: "self", mode: "move", range: "melee", relativeTo: "target", note: "Move into Melee range of the target" },
+          physical(8, 6, 2),
+          { kind: "markStress", to: "targets", when: ["hit"], amount: fixed(1) },
+        ],
+      }),
+    ]),
+    // Rampage (Powerful Beast): "When you roll a 1 on a damage die, you can roll a d10 and add the result to the damage roll.
+    // Additionally, before you make an attack roll, you can mark a Stress to gain a +1 bonus to your Proficiency for that
+    // attack."
+    entry("powerful-beast", "Rampage", [
+      formUse({
+        id: "main",
+        name: "Rampage (a 1 on a damage die)",
+        activation: { kind: "rider", trigger: onSuccess },
+        steps: [{ kind: "modifyDamage", to: "targets", change: { kind: "ones", add: { count: fixed(1), sides: 10 } }, note: "Each damage die that rolls a 1: add a d10" }],
+      }),
+      formUse({
+        id: "proficiency",
+        name: "Rampage (+1 Proficiency)",
+        activation: { kind: "rider", trigger: { kind: "beforeYouRoll", roll: "attack" } },
+        costs: [stress(1)],
+        steps: [{ kind: "modifyDamage", to: "targets", change: { kind: "proficiency", delta: 1 }, note: "+1 Proficiency for this attack" }],
+      }),
+    ]),
+    // Thick Hide (Powerful Beast): "You gain a +2 bonus to your damage thresholds."
+    thresholds("powerful-beast", "Thick Hide", 2),
+    // Venomous Strike (Striking Serpent): "Make an attack against any number of targets within Very Close range. On a
+    // success, a target is temporarily Poisoned. A Poisoned creature takes 1d10 direct physical damage each time they act."
+    // The attack is the form's (Finesse, d8+4, CB p.33; damage on a success, CB p.96).
+    entry("striking-serpent", "Venomous Strike", [
+      formUse({
+        id: "main",
+        name: "Venomous Strike",
+        activation: { kind: "action" },
+        roll: formRoll("finesse"),
+        targets: enemy("veryClose", { kind: "any" }),
+        steps: [physical(8, 4), poisoned],
+      }),
+    ]),
+    // Warning Hiss (Striking Serpent): "Mark a Stress to force any number of targets within Melee range to move back to Very
+    // Close range."
+    entry("striking-serpent", "Warning Hiss", [
+      formUse({
+        id: "main",
+        name: "Warning Hiss",
+        activation: { kind: "action" },
+        costs: [stress(1)],
+        targets: { side: "any", range: "melee", count: { kind: "any" }, excludeSelf: true },
+        steps: [{ kind: "move", to: "targets", mode: "knockBack", range: "veryClose", relativeTo: "self", note: "Move back to Very Close range" }],
+      }),
+    ]),
+    birdsEyeView("winged-beast"),
+    // Hollow Bones (Winged Beast): "You gain a −2 penalty to your damage thresholds."
+    thresholds("winged-beast", "Hollow Bones", -2),
 
-  // ---- Tier 3 (CB p.34)
-  // Vicious Maul (Aquatic Predator): "When you succeed on an attack against a target, you can spend a Hope to make them
-  // Vulnerable and gain a +1 bonus to your Proficiency for this attack." Temporary, like Great Predator's (user
-  // 2026-10-29, dcm-bxp.99.19.20).
-  viciousMaul("aquatic-predator"),
-  // Vicious Maul (Great Predator): "When you succeed on an attack against a target, you can spend a Hope to make them
-  // temporarily Vulnerable and gain a +1 bonus to your Proficiency for this attack."
-  viciousMaul("great-predator"),
-  birdsEyeView("great-winged-beast"),
-  evolvedEntry("legendary-beast"),
-  hybridEntry("legendary-hybrid"),
-  // Physical Defense (Mighty Lizard): "You gain a +3 bonus to your damage thresholds."
-  thresholds("mighty-lizard", "Physical Defense", 3),
-  // Snapping Strike (Mighty Lizard): "When you succeed on an attack against a target within Melee range, you can spend a
-  // Hope to clamp that opponent in your jaws, making them temporarily Restrained and Vulnerable."
-  entry("mighty-lizard", "Snapping Strike", [
-    formUse({
-      id: "main",
-      name: "Snapping Strike",
-      activation: { kind: "rider", trigger: onMeleeSuccess },
-      costs: [hope(1)],
-      steps: [temporarily(RESTRAINED), temporarily(VULNERABLE)],
-    }),
-  ]),
+    // ---- Tier 3 (CB p.34)
+    // Vicious Maul (Aquatic Predator): "When you succeed on an attack against a target, you can spend a Hope to make them
+    // Vulnerable and gain a +1 bonus to your Proficiency for this attack." Temporary, like Great Predator's (user
+    // 2026-10-29, dcm-bxp.99.19.20).
+    viciousMaul("aquatic-predator"),
+    // Vicious Maul (Great Predator): "When you succeed on an attack against a target, you can spend a Hope to make them
+    // temporarily Vulnerable and gain a +1 bonus to your Proficiency for this attack."
+    viciousMaul("great-predator"),
+    birdsEyeView("great-winged-beast"),
+    evolvedEntry("legendary-beast"),
+    hybridEntry("legendary-hybrid"),
+    // Physical Defense (Mighty Lizard): "You gain a +3 bonus to your damage thresholds."
+    thresholds("mighty-lizard", "Physical Defense", 3),
+    // Snapping Strike (Mighty Lizard): "When you succeed on an attack against a target within Melee range, you can spend a
+    // Hope to clamp that opponent in your jaws, making them temporarily Restrained and Vulnerable."
+    entry("mighty-lizard", "Snapping Strike", [
+      formUse({
+        id: "main",
+        name: "Snapping Strike",
+        activation: { kind: "rider", trigger: onMeleeSuccess },
+        costs: [hope(1)],
+        steps: [temporarily(RESTRAINED), temporarily(VULNERABLE)],
+      }),
+    ]),
 
-  // ---- Tier 4 (CB p.35)
-  // Ocean Master (Epic Aquatic Beast): "You can breathe and move naturally underwater. When you succeed on an attack
-  // against a target within Melee range, you can temporarily Restrain them." Underwater is text.
-  entry("epic-aquatic-beast", "Ocean Master", [
-    formUse({ id: "main", name: "Ocean Master", activation: { kind: "rider", trigger: onMeleeSuccess }, steps: [temporarily(RESTRAINED)] }),
-  ]),
-  // Unyielding (Epic Aquatic Beast): "When you would mark an Armor Slot, roll a d6. On a result of 5 or higher, reduce the
-  // severity by one threshold without marking an Armor Slot." Read as: the slot's reduction stands and, on a 5+, the slot
-  // marked for it is cleared again.
-  entry("epic-aquatic-beast", "Unyielding", [
-    formUse({
-      id: "main",
-      name: "Unyielding",
-      activation: { kind: "auto", trigger: { kind: "whenArmorSlotMarked", who: "self" } },
-      steps: [
-        {
-          kind: "check",
-          dice: { count: fixed(1), sides: 6 },
-          test: { kind: "anyAtLeast", value: 5 },
-          then: [{ kind: "clear", to: "self", track: "armor", amount: fixed(1), note: "5 or higher: the severity drops by one threshold without marking an Armor Slot" }],
-          otherwise: [],
-        },
-      ],
-    }),
-  ]),
-  // Demolish (Massive Behemoth): "Spend a Hope to move up to Far range in a straight line and make an attack against all
-  // targets within Melee range of the line. Targets you succeed against take d8+10 physical damage using your Proficiency
-  // and are temporarily Vulnerable."
-  entry("massive-behemoth", "Demolish", [
-    formUse({
-      id: "main",
-      name: "Demolish",
-      activation: { kind: "action" },
-      costs: [hope(1)],
-      roll: formRoll("strength"),
-      targets: enemy("far", { kind: "all" }, { area: "path" }),
-      steps: [
-        { kind: "move", to: "self", mode: "move", range: "far", relativeTo: "self", note: "Move up to Far range in a straight line" },
-        physical(8, 10),
-        temporarily(VULNERABLE),
-      ],
-    }),
-  ]),
-  // Undaunted (Massive Behemoth): "You gain a +2 bonus to all your damage thresholds."
-  thresholds("massive-behemoth", "Undaunted", 2),
-  // Deadly Raptor (Mythic Aerial Hunter): "You can fly at will and move up to Far range as part of your action. When you
-  // move in a straight line into Melee range of a target from at least Close range and make an attack against that target
-  // in the same action, you can reroll all damage dice that rolled a result lower than your Proficiency."
-  entry("mythic-aerial-hunter", "Deadly Raptor", [
-    formUse({ id: "main", name: "Deadly Raptor (fly; move up to Far as part of your action)", activation: { kind: "passive" }, mods: [], steps: [] }),
-    formUse({
-      id: "reroll",
-      name: "Deadly Raptor (reroll)",
-      activation: { kind: "rider", trigger: onSuccess },
-      requires: [situation("You moved in a straight line into Melee range of this target from at least Close range in this action")],
-      steps: [{ kind: "modifyDamage", to: "targets", change: { kind: "rerollChosen", below: proficiency }, note: "Reroll all damage dice lower than your Proficiency" }],
-    }),
-  ]),
-  evolvedEntry("mythic-beast"),
-  hybridEntry("mythic-hybrid"),
-  // Devastating Strikes (Terrible Lizard): "When you deal Severe damage to a target within Melee range, you can mark a
-  // Stress to force them to mark an additional Hit Point."
-  entry("terrible-lizard", "Devastating Strikes", [
-    formUse({
-      id: "main",
-      name: "Devastating Strikes",
-      activation: { kind: "rider", trigger: { kind: "whenTargetMarksHp", severity: "severe" } },
-      // "A target within Melee range": the `within` check (dcm-9l4); without the distance fact the map decides the words.
-      requires: [{ kind: "situation", text: "The target is within Melee range", check: { kind: "within", range: "melee", who: "target" } }],
-      costs: [stress(1)],
-      steps: [{ kind: "markHp", to: "targets", amount: fixed(1), note: "The target marks an additional Hit Point" }],
-    }),
-  ]),
-];
+    // ---- Tier 4 (CB p.35)
+    // Ocean Master (Epic Aquatic Beast): "You can breathe and move naturally underwater. When you succeed on an attack
+    // against a target within Melee range, you can temporarily Restrain them." Underwater is text.
+    entry("epic-aquatic-beast", "Ocean Master", [
+      formUse({ id: "main", name: "Ocean Master", activation: { kind: "rider", trigger: onMeleeSuccess }, steps: [temporarily(RESTRAINED)] }),
+    ]),
+    // Unyielding (Epic Aquatic Beast): "When you would mark an Armor Slot, roll a d6. On a result of 5 or higher, reduce the
+    // severity by one threshold without marking an Armor Slot." Read as: the slot's reduction stands and, on a 5+, the slot
+    // marked for it is cleared again.
+    entry("epic-aquatic-beast", "Unyielding", [
+      formUse({
+        id: "main",
+        name: "Unyielding",
+        activation: { kind: "auto", trigger: { kind: "whenArmorSlotMarked", who: "self" } },
+        steps: [
+          {
+            kind: "check",
+            dice: { count: fixed(1), sides: 6 },
+            test: { kind: "anyAtLeast", value: 5 },
+            then: [{ kind: "clear", to: "self", track: "armor", amount: fixed(1), note: "5 or higher: the severity drops by one threshold without marking an Armor Slot" }],
+            otherwise: [],
+          },
+        ],
+      }),
+    ]),
+    // Demolish (Massive Behemoth): "Spend a Hope to move up to Far range in a straight line and make an attack against all
+    // targets within Melee range of the line. Targets you succeed against take d8+10 physical damage using your Proficiency
+    // and are temporarily Vulnerable."
+    entry("massive-behemoth", "Demolish", [
+      formUse({
+        id: "main",
+        name: "Demolish",
+        activation: { kind: "action" },
+        costs: [hope(1)],
+        roll: formRoll("strength"),
+        targets: enemy("far", { kind: "all" }, { area: "path" }),
+        steps: [
+          { kind: "move", to: "self", mode: "move", range: "far", relativeTo: "self", note: "Move up to Far range in a straight line" },
+          physical(8, 10),
+          temporarily(VULNERABLE),
+        ],
+      }),
+    ]),
+    // Undaunted (Massive Behemoth): "You gain a +2 bonus to all your damage thresholds."
+    thresholds("massive-behemoth", "Undaunted", 2),
+    // Deadly Raptor (Mythic Aerial Hunter): "You can fly at will and move up to Far range as part of your action. When you
+    // move in a straight line into Melee range of a target from at least Close range and make an attack against that target
+    // in the same action, you can reroll all damage dice that rolled a result lower than your Proficiency."
+    entry("mythic-aerial-hunter", "Deadly Raptor", [
+      formUse({ id: "main", name: "Deadly Raptor (fly; move up to Far as part of your action)", activation: { kind: "passive" }, mods: [], steps: [] }),
+      formUse({
+        id: "reroll",
+        name: "Deadly Raptor (reroll)",
+        activation: { kind: "rider", trigger: onSuccess },
+        requires: [situation("You moved in a straight line into Melee range of this target from at least Close range in this action")],
+        steps: [{ kind: "modifyDamage", to: "targets", change: { kind: "rerollChosen", below: proficiency }, note: "Reroll all damage dice lower than your Proficiency" }],
+      }),
+    ]),
+    evolvedEntry("mythic-beast"),
+    hybridEntry("mythic-hybrid"),
+    // Devastating Strikes (Terrible Lizard): "When you deal Severe damage to a target within Melee range, you can mark a
+    // Stress to force them to mark an additional Hit Point."
+    entry("terrible-lizard", "Devastating Strikes", [
+      formUse({
+        id: "main",
+        name: "Devastating Strikes",
+        activation: { kind: "rider", trigger: { kind: "whenTargetMarksHp", severity: "severe" } },
+        // "A target within Melee range": the `within` check (dcm-9l4); without the distance fact the map decides the words.
+        requires: [{ kind: "situation", text: "The target is within Melee range", check: { kind: "within", range: "melee", who: "target" } }],
+        costs: [stress(1)],
+        steps: [{ kind: "markHp", to: "targets", amount: fixed(1), note: "The target marks an additional Hit Point" }],
+      }),
+    ]),
+  ];
+}
 
-export const BEASTFORM_EFFECTS: readonly FeatureEffect[] = [...ATTACKS, ...FEATURES];
+let effects: readonly FeatureEffect[] | undefined;
+
+/**
+ * Every Beastform feature effect, the attacks then the features, built on the first call (dcm-uh6r): a Convex function
+ * bundle holding this module no longer builds them at load.
+ */
+export function beastformEffects(): readonly FeatureEffect[] {
+  effects ??= [...BEASTFORM_IDS.map(attackEntry), ...featureEntries()];
+  return effects;
+}
+
+/** Every Beastform feature effect (the array `beastformEffects()` returns). Bundles that only call the function drop it. */
+export const BEASTFORM_EFFECTS: readonly FeatureEffect[] = /* @__PURE__ */ beastformEffects();

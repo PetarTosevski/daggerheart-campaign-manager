@@ -13,7 +13,7 @@ import type { CardEffect, DamageKeyword, Mod, Range, Step } from "../../src/lib/
 import type { AdversaryFeatureEffect } from "../../src/lib/domain/adversary-effects/types";
 import { lastingModsOf } from "../../src/lib/domain/adversary-effects/run";
 import { adversaryEffects } from "../../src/lib/srd/adversary-effects/index";
-import { ADVERSARIES } from "../../src/lib/srd/adversaries";
+import { adversaryTable } from "../../src/lib/srd/adversaries";
 import type { AdversaryDef } from "../../src/lib/srd/types";
 import { derivedThresholds } from "../../src/lib/domain/characters/derived";
 import { hopeMax } from "../../src/lib/domain/characters/index";
@@ -587,7 +587,7 @@ let srdById: Map<string, AdversaryDef> | null = null;
  * Evolution's new standard attack (`evolvedBlock`, a different name) carries none. Undefined for a custom block.
  */
 function srdAttack(block: { adversaryId: string; attack: { name: string } }): { keyword?: DamageKeyword } | undefined {
-  srdById ??= new Map(ADVERSARIES.map((a) => [a.id, a]));
+  srdById ??= new Map(adversaryTable().map((a) => [a.id, a]));
   const def = srdById.get(block.adversaryId);
   if (!def) return undefined;
   return def.attack.name === block.attack.name ? def.attack : {};

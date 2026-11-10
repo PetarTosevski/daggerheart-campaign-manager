@@ -34,7 +34,7 @@ import { campaignQuery, gmQuery, userQuery } from "./lib/functions";
 import { atLeast } from "./lib/permissions";
 import { withoutStance } from "./lib/stanceDrop";
 import { resultPanelValidator, targetDamageValidator } from "./lib/validators/actionLog";
-import { fearValueValidator, seesFear } from "./campaigns";
+import { fearValueValidator, seesFear } from "./lib/fearVisibility";
 
 /**
  * Combat HUD reads (plan `.omc/plans/combat-hud.yaml`, tracer HD1; Main, CmpTokens, GMDesktop boards). Each is one

@@ -39,7 +39,8 @@ import { logAction, newGroupId } from "./lib/actionLog";
 import { readSheet, saveSheet } from "./lib/characterSheet";
 import { rollDie } from "./lib/dice";
 import { refuseArchivedWrite } from "./lib/archived";
-import { claimFile, deleteOwnFile, isAllowedImage, isClaimed, ownFileUrl } from "./lib/files";
+import { claimFile, deleteOwnFile, isAllowedImage, isClaimed } from "./lib/fileClaims";
+import { ownFileUrl } from "./lib/ownFiles";
 import { userMutation, userQuery } from "./lib/functions";
 import {
   hexRow,

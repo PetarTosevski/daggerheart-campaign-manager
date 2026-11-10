@@ -20,7 +20,7 @@ import {
   objectsOnMap,
   tokensOnMap,
 } from "./lib/combatMaps";
-import { claimFile, deleteOwnFile, isAllowedImage, isClaimed } from "./lib/files";
+import { claimFile, deleteOwnFile, isAllowedImage, isClaimed } from "./lib/fileClaims";
 import { keywordSetting } from "./lib/spriteSources";
 import { campaignQuery, gmMutation, gmQuery, keyedGmMutation } from "./lib/functions";
 import {
@@ -38,7 +38,7 @@ import {
   spriteRefValidator,
   type CombatGrid,
 } from "./lib/validators/combatMaps";
-import { defaultMapStyleOf } from "./settings";
+import { defaultMapStyleOf } from "./lib/settingsRow";
 
 /**
  * Combat maps (D9 C3, plan `.omc/plans/d9-combat-map.yaml`): the GM's maps of a campaign (list, create blank,

@@ -47,8 +47,8 @@ vi.mock("convex/react", () => ({
     if (args === "skip") return undefined;
     const name = functionName(ref);
     const v = queries[name];
-    // riders per slot: `combatActionsReads:riders` holds { primary, secondary }.
-    if (name === "combatActionsReads:riders" && v && typeof v === "object" && !Array.isArray(v)) return (v as Record<string, unknown>)[(args as { slot: string }).slot] ?? [];
+    // riders per slot: `combatRidersReads:riders` holds { primary, secondary }.
+    if (name === "combatRidersReads:riders" && v && typeof v === "object" && !Array.isArray(v)) return (v as Record<string, unknown>)[(args as { slot: string }).slot] ?? [];
     return v;
   },
   useMutation: (ref: unknown) => {
@@ -143,7 +143,7 @@ function seed() {
     { tokenId: SNIPER, band: "veryFar", inRange: false, lineOfSight: true, cover: false },
   ];
   queries["charactersReads:get"] = { sheet: SHEET };
-  queries["combatActionsReads:riders"] = { primary: [RIDER], secondary: [] };
+  queries["combatRidersReads:riders"] = { primary: [RIDER], secondary: [] };
   queries["combatRequestsReads:forcedAttacks"] = [];
   queries["combatRequestsReads:mine"] = [];
 }

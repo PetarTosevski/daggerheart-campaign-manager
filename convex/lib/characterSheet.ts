@@ -37,14 +37,9 @@ import { hpClearedWakeNote, keepUnconscious, unconsciousBlocksActing, withStress
 import { hopePaid } from "../../src/lib/domain/journal/tally";
 import { resolveRuleModes } from "../../src/lib/rules/resolve";
 import { appError } from "../../src/lib/errors/app-error";
-import {
-  characterSheetSchema,
-  characterSheetV1Schema,
-  SHEET_VERSION,
-  type CharacterSheet,
-  type CharacterSheetInput,
-  type CharacterSheetV1,
-} from "../../src/lib/validation/characters";
+import { SHEET_VERSION } from "../../src/lib/validation/character-constants";
+import { characterSchemas } from "../../src/lib/validation/character-schemas";
+import type { CharacterSheet, CharacterSheetInput, CharacterSheetV1 } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { readAppConfig } from "./appConfig";
@@ -62,6 +57,8 @@ import { atLeast, campaignRoleOf, permissionFor, rolePermission, type Permission
  * from a stored version 2 sheet come back with their defaults.
  */
 export function readSheet(raw: unknown): CharacterSheet {
+  // dcm-uh6r: the schemas are built on the first parse, not when a function bundle loads.
+  const { characterSheetSchema, characterSheetV1Schema } = characterSchemas();
   return readVersioned(
     {
       1: {
@@ -81,7 +78,7 @@ export function readSheet(raw: unknown): CharacterSheet {
 
 /** The stored form of a sheet: validated (a ZodError becomes INVALID), defaults filled, with its `schemaVersion`. */
 export function storedSheet(sheet: CharacterSheetInput) {
-  const parsed = characterSheetSchema.parse(sheet);
+  const parsed = characterSchemas().characterSheetSchema.parse(sheet);
   // dcm-bxp.99.32.1: a condition's provenance goes with the condition (cleared by any path, it is no longer "from" anything).
   const sources = parsed.conditionSources?.filter((s) => parsed.conditions.includes(s.condition));
   const { conditionSources: _dropped, ...rest } = parsed;

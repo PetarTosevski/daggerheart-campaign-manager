@@ -377,7 +377,7 @@ async function openSanction(
 
 /**
  * dcm-bxp.99.32.19 (plan combat-hud H3.3): the riders that ride on a feature's own action roll, as
- * `combatActionsReads.riders` gives them for a weapon attack: the same `riderOptions` over the feature's host (`rollHost`
+ * `combatRidersReads.riders` gives them for a weapon attack: the same `riderOptions` over the feature's host (`rollHost`
  * with `fromUse` = the feature and use, upgrades applied by `pickFeature`; `trait` for a use whose roll lets the player
  * pick it, `weapon` for an attack with either weapon). Empty for a use without an action roll. Access: edit on the
  * character (its player or the GM; another player FORBIDDEN, U1). FEATURE_NOT_OWNED / FEATURE_NOT_COMBAT / INVALID as

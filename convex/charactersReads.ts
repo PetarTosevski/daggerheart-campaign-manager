@@ -5,7 +5,7 @@ import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { findCharacter, loadCharacter, partyOf, readSheet } from "./lib/characterSheet";
-import { ownFileUrl } from "./lib/files";
+import { ownFileUrl } from "./lib/ownFiles";
 import { campaignQuery, userQuery } from "./lib/functions";
 import { atLeast, type Permission } from "./lib/permissions";
 import { characterViewValidator, type CharacterView } from "./lib/validators/characters";

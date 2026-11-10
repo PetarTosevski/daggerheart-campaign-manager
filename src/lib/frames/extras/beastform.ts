@@ -1,13 +1,12 @@
 // Druid Beastform (Core Book pp.31–35): the active form, if any. Marking the
 // Stress (or spending 3 Hope for Evolution) is applied to the sheet in D5.
 
-import * as z from "../../zod";
-
 import { RuleError } from "../../errors/app-error";
 
 import { BEASTFORMS } from "../../srd/beastforms";
 import type { Beastform, Feature, Range, TraitId } from "../../srd/types";
-import { formatDamage, parseDamage, stepDie, traitIdSchema } from "./common";
+import type { BeastformState } from "./beastform-schema";
+import { formatDamage, parseDamage, stepDie } from "./common";
 
 /** "Evolved" upgrade forms (pp.34–35): pick a lower-tier form and gain bonuses. */
 export const EVOLVED: Record<string, { baseTiers: readonly number[]; damage: number; trait: number; evasion: number; dieSteps: number }> = {
@@ -21,23 +20,8 @@ export const HYBRID: Record<string, { maxTier: number; sources: number; advantag
   "mythic-hybrid": { maxTier: 3, sources: 3, advantages: 5, features: 3 },
 };
 
-const id = z.string().min(1).max(60);
-
-export const beastformStateSchema = z.object({
-  formId: id.nullable(),
-  /** The lower-tier form an Evolved form upgrades. */
-  baseFormId: id.optional(),
-  hybrid: z
-    .object({
-      sources: z.array(id).max(3),
-      advantages: z.array(z.string().min(1).max(60)).max(5),
-      features: z.array(z.string().min(1).max(60)).max(3),
-    })
-    .optional(),
-  /** Druid Evolution: "choose one trait to raise by +1 until you drop out of that Beastform". */
-  evolutionTrait: traitIdSchema.optional(),
-});
-export type BeastformState = z.infer<typeof beastformStateSchema>;
+// The state's schema lives in ./beastform-schema (dcm-uh6r: built only in bundles that parse a state).
+export { beastformStateSchema, type BeastformState } from "./beastform-schema";
 
 export const INITIAL_BEASTFORM: BeastformState = { formId: null };
 

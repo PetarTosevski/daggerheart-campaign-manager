@@ -34,9 +34,14 @@ import {
   tomeChapterValidator,
 } from "./lib/validators/campaigns";
 import { refuseAtPlayersCap } from "./members";
-import { settingsRow } from "./settings";
+import { settingsRow } from "./lib/settingsRow";
 import { timeOfDayValidator } from "./tables/campaigns";
 import { campaignLight } from "./lib/campaignLight";
+import { fearValueValidator, seesFear } from "./lib/fearVisibility";
+
+// Moved to ./lib/fearVisibility (dcm-uh6r: importing them from this entry module loaded all of it); callers may keep
+// importing them from here.
+export { fearValueValidator, seesFear };
 
 /**
  * What `get` returns: the campaign summary without GM Fear (PF7). Fear changes on every click, and the whole campaign
@@ -59,18 +64,6 @@ export type CampaignSummary = Infer<typeof summaryValidator>;
 
 /** The summary's `role`: "gm" for the creator and co-GMs (permission owner or better), "player" otherwise. */
 type SummaryRole = CampaignSummary["role"];
-
-/**
- * GM Fear as a member may receive it (config R1, user Q3 changed 2026-11-04): the number, or null when the campaign's
- * "Players see the GM's Fear" is off and the caller is below the GM (the creator and co-GMs always see it). Every read
- * that sends the pool, or a Fear change, to a member asks `seesFear`; the client shows "?" for null.
- */
-export const fearValueValidator = v.union(v.number(), v.null());
-
-/** The caller sees GM Fear numbers: the GM or a co-GM (owner or better), or any member while `playersSeeFear` is on. */
-export function seesFear(campaign: Pick<Doc<"campaigns">, "tableSettings">, permission: CampaignPermission | null): boolean {
-  return atLeast(permission, "owner") || resolveTableSettings(campaign.tableSettings).playersSeeFear;
-}
 
 const listItemValidator = campaignSummaryValidator.omit("fear").extend({ isCreator: v.boolean(), fear: fearValueValidator });
 

@@ -12,7 +12,7 @@ import { MAX_ENCOUNTERS, MAX_INSTANCES } from "./lib/encounters";
 import { campaignQuery } from "./lib/functions";
 import { atLeast, type CampaignPermission } from "./lib/permissions";
 import { liveWindows, loadSession, MAX_SESSION_CHARACTER_STATS, tallyRows } from "./lib/sessions";
-import { seesFear } from "./campaigns";
+import { seesFear } from "./lib/fearVisibility";
 import { spotlightEntryValidator, type SpotlightEntry } from "./sessionPlay";
 
 /**

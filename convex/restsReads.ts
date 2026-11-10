@@ -8,7 +8,7 @@ import { choicesOf, groupUndoable, isProject, oasisPoolOf, oasisWindowOpen, pick
 import { ruleModesOf } from "./lib/ruleModes";
 import { fearFromRestsModeValidator } from "./lib/validators/ruleModes";
 import { downtimeDieValidator, restChoiceMoveValidator, restKindValidator, restMoveValidator, restStatusValidator } from "./lib/validators/rests";
-import { seesFear } from "./campaigns";
+import { seesFear } from "./lib/fearVisibility";
 
 /**
  * The rest reads (CB 104-105): the open rest with each resting PC's pickable moves, and a character's projects. Moved

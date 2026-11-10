@@ -18,7 +18,7 @@ import type { PickActor, PickContext, PickOutcome, PickPatch, PickRow, PickRowIn
  * The HUD's weapon attack picker, pure (plan combat-hud H3.2; boards CmpPicking 'Weapon attack', CmpPromptsPlayer 'With
  * this attack', 'Forced attack', 'Lead by Example', 'Your hit can defeat 2 more Minions'). It builds the pick-session
  * spec (H3.0's `usePick().open`) from what the classic Attack bar already reads: the equipped weapons
- * (`equippedWeapons`), the riders of `combatActionsReads.riders` (`ridersToSend`, `riderProblem`, `riseToSend`), the roll
+ * (`equippedWeapons`), the riders of `combatRidersReads.riders` (`ridersToSend`, `riderProblem`, `riseToSend`), the roll
  * options (Experiences, advantage, Help: `RollValues`), the sheet's trait pick / extra targets / Spirit Weapon
  * (`actions/attack/mods.ts`), a target's rider benefit (Lead by Example: `combatActionsReads.targets` `benefits`) and the
  * forced attacks of `combatRequestsReads.forcedAttacks`. `combatActions.attack` decides; nothing here is a rule of its own.
@@ -98,7 +98,7 @@ export type AttackInput = {
   weapons: readonly AttackWeapon[];
   proficiency: number;
   roller: Roller;
-  /** `combatActionsReads.riders` per equipped weapon slot. */
+  /** `combatRidersReads.riders` per equipped weapon slot. */
   riders: Partial<Record<WeaponSlot, readonly RiderOption[]>>;
   /** The sheet lets the player pick the roll's trait for this slot (dcm-5dg: Versatile Fighter, a "choice" weapon). */
   traitPick: Partial<Record<WeaponSlot, boolean>>;

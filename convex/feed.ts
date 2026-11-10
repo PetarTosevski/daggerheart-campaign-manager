@@ -6,20 +6,10 @@ import type { Doc } from "./_generated/dataModel";
 import { viewerCanUndo } from "./lib/actionLog";
 import { campaignQuery, gmMutation } from "./lib/functions";
 import { actionKindValidator, actionTargetValidator, rollValidator, visibilityValidator } from "./lib/validators/actionLog";
-import { seesFear } from "./campaigns";
+import { hideFearNumbers, seesFear } from "./lib/fearVisibility";
 
-/**
- * A feed summary without its GM Fear numbers (config R1, user Q3 changed): what a player reads while "Players see the
- * GM's Fear" is off. 'Fear 3 → 5' reads 'Fear changed'; 'GM gains 2 Fear (1d4 2)' reads 'GM gains Fear'; 'Spent 1
- * Fear: …', '+2 Fear (1 Fear lost)' lose their numbers. A roll's 'with Fear' and the Fear Die ('Fear 3', 'Fear Die 4')
- * are the dice, not the pool, and stay.
- */
-export function hideFearNumbers(text: string): string {
-  return text
-    .replace(/\bFear \d+ → \d+/g, "Fear changed")
-    .replace(/\bFear \(1d4[^)]*\)/g, "Fear")
-    .replace(/[+\-−]?\d+ Fear\b/g, "Fear");
-}
+// Moved to ./lib/fearVisibility (dcm-uh6r); callers may keep importing it from here.
+export { hideFearNumbers };
 
 /** What every feed row shows. Never the `before` snapshot: it holds the whole sheet, notes included. */
 const common = {

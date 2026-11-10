@@ -4,7 +4,7 @@ import { appError } from "../src/lib/errors/app-error";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { loadCharacter, readSheet } from "./lib/characterSheet";
-import { hostOf, riderOptions, riderOptionValidator, targetHints, targetHintValidator, weaponIn, weaponSlotValidator } from "./lib/combatActions";
+import { targetHints, targetHintValidator, weaponIn, weaponSlotValidator } from "./lib/combatActions";
 import { loadCombatMap } from "./lib/combatMaps";
 import { loadScene, viewOf } from "./lib/combatVision";
 import { campaignQuery } from "./lib/functions";
@@ -16,7 +16,8 @@ import type { Loaded } from "./lib/rolls";
  * as before.
  *
  * - `targets`: the enemy tokens the character sees, with band, range, line of sight and cover only (U1, CF6).
- * - `riders`: the riders that ride on the character's attack (the character's own sheet only).
+ *
+ * `riders` moved on to `combatRidersReads.ts` (dcm-uh6r, speed pass 4), so neither read loads the other's tables.
  *
  * What a player receives never holds an enemy's HP, Stress, thresholds or Difficulty (U1).
  */
@@ -45,22 +46,5 @@ export const targets = campaignQuery({
     const viewer = viewOf(scene, character);
     if (viewer === null) return [];
     return targetHints(ctx, ctx.campaign, { map, scene, viewer, attacker: scene.tokens[viewer.index]! }, weaponIn(sheet, slot ?? "primary"), { sheet, characterId: character._id });
-  },
-});
-
-/**
- * SD5: the riders that ride on the character's attack with the weapon in `slot` (default primary): every rider use of a
- * loadout card and of a held feature whose trigger fits a weapon attack, with its phase, costs, limit, readiness and the
- * choices it asks (numbers, options, situations to confirm, extra targets). The character's own sheet only (U1, CF6).
- */
-export const riders = campaignQuery({
-  need: "view",
-  args: { characterId: v.id("characters"), slot: v.optional(weaponSlotValidator) },
-  returns: v.array(riderOptionValidator),
-  handler: async (ctx, { characterId, slot }) => {
-    const { sheet } = await attacker(ctx, characterId);
-    const weapon = weaponIn(sheet, slot ?? "primary");
-    if (weapon === undefined) return [];
-    return riderOptions(sheet, ctx.campaign, hostOf(weapon, slot ?? "primary", undefined));
   },
 });

@@ -15,7 +15,7 @@
 // ```
 
 import { RuleError } from "../errors/app-error";
-import { ADVERSARIES } from "../srd/adversaries";
+import { adversaryTable } from "../srd/adversaries";
 import type { AdversaryDef, AdversaryFeatureKind, AdversaryType } from "../srd/types";
 
 export type CustomTier = 1 | 2 | 3 | 4;
@@ -177,7 +177,7 @@ function median(values: number[]): number | null {
  * of that tier and type (of the tier when none has that type); a Minion has 1 HP (CB p.201).
  */
 function typicalHpStress(tier: CustomTier, type: AdversaryType): { hp: number; stress: number } {
-  const sameTier = ADVERSARIES.filter((a) => a.tier === tier && a.source === "core");
+  const sameTier = adversaryTable().filter((a) => a.tier === tier && a.source === "core");
   const pool = sameTier.some((a) => a.type === type) ? sameTier.filter((a) => a.type === type) : sameTier;
   const hp = type === "Minion" ? 1 : (median(pool.map((a) => a.hp)) ?? 5);
   return { hp, stress: median(pool.map((a) => a.stress ?? 0)) ?? 1 };

@@ -473,7 +473,10 @@ function checkCore(board, coreText) {
 // ---------------------------------------------------------------- main
 
 function serialize(defs) {
-  const body = JSON.stringify(defs, null, 2).replace(/^(\s*)"([A-Za-z]\w*)":/gm, "$1$2:");
+  // Indented one level: the array is returned from build() (built on first use, dcm-uh6r).
+  const body = JSON.stringify(defs, null, 2)
+    .replace(/^(\s*)"([A-Za-z]\w*)":/gm, "$1$2:")
+    .replace(/\n/g, "\n  ");
   return `// GENERATED FILE, do not edit by hand. Generator: scripts/srd/gen-adversaries.mjs (plan .omc/plans/d8.yaml, A1).
 // Rerun: node scripts/srd/gen-adversaries.mjs --core <core.txt> --hf <hopefear.txt>, with the two books' text
 // extracted locally from .reference-private/ (never committed). Core 129 from the Adversaries board (verbatim Core
@@ -482,7 +485,23 @@ function serialize(defs) {
 
 import type { AdversaryDef } from "./types";
 
-export const ADVERSARIES: readonly AdversaryDef[] = ${body};
+let table: readonly AdversaryDef[] | undefined;
+
+/**
+ * Every SRD adversary, built on the first call (dcm-uh6r). A Convex function bundle that holds this table only
+ * pre-parses the literal below at load; the objects are built when a call first looks an adversary up.
+ */
+export function adversaryTable(): readonly AdversaryDef[] {
+  table ??= build();
+  return table;
+}
+
+/** Every SRD adversary (the array \`adversaryTable()\` returns). Bundles that only call \`adversaryTable()\` drop it. */
+export const ADVERSARIES: readonly AdversaryDef[] = /* @__PURE__ */ adversaryTable();
+
+function build(): readonly AdversaryDef[] {
+  return ${body};
+}
 `;
 }
 

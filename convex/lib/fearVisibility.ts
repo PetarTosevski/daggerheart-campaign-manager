@@ -1,8 +1,37 @@
+import { v } from "convex/values";
+
+import { resolveTableSettings } from "../../src/lib/config/campaign-settings";
 import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
-import { seesFear } from "../campaigns";
-import { hideFearNumbers } from "../feed";
-import { campaignAccess, type CampaignPermission } from "./permissions";
+import { atLeast, campaignAccess, type CampaignPermission } from "./permissions";
+
+// `fearValueValidator` and `seesFear` (from convex/campaigns.ts) and `hideFearNumbers` (from convex/feed.ts) live here
+// since dcm-uh6r: a module that imported them from those entry modules loaded every function of both on each call.
+
+/**
+ * GM Fear as a member may receive it (config R1, user Q3 changed 2026-11-04): the number, or null when the campaign's
+ * "Players see the GM's Fear" is off and the caller is below the GM (the creator and co-GMs always see it). Every read
+ * that sends the pool, or a Fear change, to a member asks `seesFear`; the client shows "?" for null.
+ */
+export const fearValueValidator = v.union(v.number(), v.null());
+
+/** The caller sees GM Fear numbers: the GM or a co-GM (owner or better), or any member while `playersSeeFear` is on. */
+export function seesFear(campaign: Pick<Doc<"campaigns">, "tableSettings">, permission: CampaignPermission | null): boolean {
+  return atLeast(permission, "owner") || resolveTableSettings(campaign.tableSettings).playersSeeFear;
+}
+
+/**
+ * A feed summary without its GM Fear numbers (config R1, user Q3 changed): what a player reads while "Players see the
+ * GM's Fear" is off. 'Fear 3 → 5' reads 'Fear changed'; 'GM gains 2 Fear (1d4 2)' reads 'GM gains Fear'; 'Spent 1
+ * Fear: …', '+2 Fear (1 Fear lost)' lose their numbers. A roll's 'with Fear' and the Fear Die ('Fear 3', 'Fear Die 4')
+ * are the dice, not the pool, and stay.
+ */
+export function hideFearNumbers(text: string): string {
+  return text
+    .replace(/\bFear \d+ → \d+/g, "Fear changed")
+    .replace(/\bFear \(1d4[^)]*\)/g, "Fear")
+    .replace(/[+\-−]?\d+ Fear\b/g, "Fear");
+}
 
 /**
  * Whether the caller of a mutation may receive GM Fear numbers in its result (bead dcm-jh6d.62, the follow-up of config

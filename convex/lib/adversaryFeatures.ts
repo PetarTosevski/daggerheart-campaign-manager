@@ -23,7 +23,7 @@ import { tokenDistance, type Combatant } from "../../src/lib/domain/combat-actio
 import type { MapCreature } from "../../src/lib/domain/combat-actions/numbers";
 import { turnSpotlights } from "../../src/lib/domain/encounters/spotlight";
 import { appError } from "../../src/lib/errors/app-error";
-import { ADVERSARIES } from "../../src/lib/srd/adversaries";
+import { adversaryTable } from "../../src/lib/srd/adversaries";
 import { srdAdversary } from "../../src/lib/srd/adversary-lookup";
 import { adversaryEffects, allAdversaryEffects } from "../../src/lib/srd/adversary-effects/index";
 import { allCardEffects } from "../../src/lib/srd/card-effects/index";
@@ -1164,7 +1164,7 @@ export function gmControlOf(sheet: Pick<CharacterSheet, "effects">): { asAdversa
     for (const m of l.mods) {
       if (m.kind !== "gmControl") continue;
       controlled = true;
-      const def = m.asAdversary === undefined ? undefined : (srdAdversary(m.asAdversary) ?? ADVERSARIES.find((a) => a.name === m.asAdversary));
+      const def = m.asAdversary === undefined ? undefined : (srdAdversary(m.asAdversary) ?? adversaryTable().find((a) => a.name === m.asAdversary));
       if (def) asAdversary = def;
     }
   }
