@@ -95,7 +95,9 @@ function Band({
       {open ? (
         <div className="flex flex-wrap items-center justify-end gap-4 px-6 pb-7 sm:pr-10 sm:pl-[216px]">
           <div className="flex flex-wrap gap-3">
-            <Link href={`/campaigns/${campaign._id}`} className={brandButton({ variant: "confirm", size: "lg" })}>
+            {/* NB3: a full prefetch brings the dashboard's RSC payload and its code while the GM reads the list (the
+                most recent campaign starts expanded), so the click no longer waits on the dashboard's chunks. */}
+            <Link href={`/campaigns/${campaign._id}`} prefetch className={brandButton({ variant: "confirm", size: "lg" })}>
               Resume Campaign
             </Link>
             <BrandButton

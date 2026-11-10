@@ -1,12 +1,12 @@
 "use client";
 
-import { derivedDefense } from "@/lib/domain/characters/derived";
 import { useMutation, useQuery } from "convex/react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useState } from "react";
 
 import { BrandButton, brandButton } from "@/components/brand/buttons";
-import { LevelUpRosterBadge } from "@/components/party/level-up";
+import { LevelUpRosterBadge } from "@/components/party/level-up/badge";
 import { BenchButton, cardLabel, CorruptNotice, FallenOverlay } from "@/components/party/party-card";
 import { domainBanner, DOMAIN_ICONS, heritageLine, ownerLabel, type Table } from "@/components/party/party-display";
 import { CharacterPortrait, PortraitUpload } from "@/components/party/portrait";
@@ -14,14 +14,37 @@ import type { SlotProps } from "@/components/party/slots";
 import { errorMessage } from "@/lib/convex-errors";
 import { hopeMax } from "@/lib/domain/characters";
 import { assetBackground } from "@/lib/design-assets";
-import { FRAME_OF } from "@/lib/frames/extras/common";
-import { getClass, getDomain, getSubclass } from "@/lib/srd";
+import type { PublishedFrameId } from "@/lib/frames";
+import { CLASSES } from "@/lib/srd/classes";
+import { DOMAINS } from "@/lib/srd/domains";
+import { SUBCLASSES } from "@/lib/srd/subclasses";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
 import type { CharacterView } from "../../../../../../convex/characters";
 import { useCampaign } from "../campaign-shell";
+
+// CL9 / NB3: SRD leaf lookups, not the @/lib/srd barrel (it pulls every domain card and the Tier 2-4 equipment).
+const getClass = (id: string) => CLASSES.find((c) => c.id === id);
+const getDomain = (id: string) => DOMAINS.find((d) => d.id === id);
+const getSubclass = (id: string) => SUBCLASSES.find((s) => s.id === id);
+/** Motherboard (CB 301-303), typed against the frame list; @/lib/frames/extras/common's FRAME_OF would bring zod. */
+const MOTHERBOARD: PublishedFrameId = "motherboard";
+
+// NB3: Evasion needs the rules engine (derivedDefense: every feature effect, the domain cards, the Tier 2-4 equipment,
+// about 350 KB), so it loads as its own chunk. The import starts as this module runs, beside the roster's queries,
+// and the cell keeps its size while it loads.
+const loadEvasion = () => import("./roster-evasion").then((m) => m.RosterEvasion);
+// A failed early fetch is retried when the cell renders; that error reaches the page's error boundary.
+if (typeof window !== "undefined") loadEvasion().catch(() => undefined);
+const RosterEvasion = dynamic(loadEvasion, {
+  loading: () => (
+    <span role="status" aria-label="Loading Evasion">
+      …
+    </span>
+  ),
+});
 
 function Stat({ label, children, hope = false }: { label: string; children: React.ReactNode; hope?: boolean }) {
   return (
@@ -63,7 +86,7 @@ export function RosterCard({
   const owner = ownerLabel(character, table);
   const slot: SlotProps = { campaignId, character, canEdit, isGm, hopeAndFear };
   // Motherboard: installed Ikonis augments change Evasion (Block, CB 301-303), as on the server.
-  const motherboard = useCampaign().frameId === FRAME_OF.motherboard && !character.corrupt;
+  const motherboard = useCampaign().frameId === MOTHERBOARD && !character.corrupt;
   const extras = useQuery(api.characterExtras.get, motherboard ? { characterId: character._id } : "skip");
   const augments = motherboard ? (extras?.motherboard?.installed ?? []) : [];
   // XC1: extras made active while the GM allowed them stay active; warn until the player sends some away. Same args as the page's query, so no extra fetch.
@@ -165,7 +188,7 @@ export function RosterCard({
             </span>
           </Stat>
           <Stat label="Evasion">
-            <span data-testid="roster-evasion">{derivedDefense(sheet, augments).evasion}</span>
+            <RosterEvasion sheet={sheet} augments={augments} />
           </Stat>
           <Stat label="Hope" hope>
             {Math.min(sheet.hope, maxHope)}

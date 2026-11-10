@@ -4,7 +4,7 @@ import { useMutation } from "convex/react";
 import { useEffect, useRef, useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
-import { fitWithin } from "@/components/party/party-display";
+import { fitWithin } from "@/components/party/portrait-source";
 import { UploadNotice } from "@/components/uploads/upload-notice";
 import { errorMessage } from "@/lib/convex-errors";
 import { MAX_CODEX_IMAGES } from "@/lib/codex/schema";

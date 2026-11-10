@@ -5,7 +5,7 @@ import Link from "next/link";
 
 import { brandButton } from "@/components/brand/buttons";
 import { ImportButton } from "@/components/party/import";
-import { PartyLevelUpButton } from "@/components/party/level-up";
+import { PartyLevelUpButton } from "@/components/party/level-up/party-button";
 import type { CampaignSlotProps } from "@/components/party/slots";
 import { frameName } from "@/lib/campaign-display";
 

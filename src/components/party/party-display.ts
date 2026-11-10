@@ -4,13 +4,16 @@
 import type { CSSProperties } from "react";
 
 import { hopeMax } from "@/lib/domain/characters";
-import { PORTRAITS } from "@/lib/srd/art";
 import { CLASSES } from "@/lib/srd/classes";
 import { DOMAINS } from "@/lib/srd/domains";
 import { ANCESTRIES, COMMUNITIES } from "@/lib/srd/heritage";
 import { SUBCLASSES } from "@/lib/srd/subclasses";
-import type { DomainId, PortraitArt } from "@/lib/srd/types";
+import type { DomainId } from "@/lib/srd/types";
 import type { CharacterSheet } from "@/lib/validation/characters";
+
+// NB3: the portrait helpers live in ./portrait-source, so the campaign shell's avatar (on every campaign route) loads
+// them without the ancestry, community and subclass lists below. Re-exported here for the existing importers.
+export { fitWithin, portraitAncestryId, portraitSource, type PortraitSource } from "./portrait-source";
 
 // CL9: SRD leaf modules, not the @/lib/srd barrel (its helpers close over every list, domain cards and all tiers).
 const getAncestry = (id: string) => ANCESTRIES.find((a) => a.id === id);
@@ -18,8 +21,6 @@ const getClass = (id: string) => CLASSES.find((c) => c.id === id);
 const getCommunity = (id: string) => COMMUNITIES.find((c) => c.id === id);
 const getDomain = (id: string) => DOMAINS.find((d) => d.id === id);
 const getSubclass = (id: string) => SUBCLASSES.find((s) => s.id === id);
-const portraitFor = (opts: { subclassId?: string | null; ancestryId?: string | null }): PortraitArt | undefined =>
-  (opts.subclassId ? PORTRAITS[`sub-${opts.subclassId}`] : undefined) ?? (opts.ancestryId ? PORTRAITS[`anc-${opts.ancestryId}`] : undefined);
 
 /** Domain emblems from the Party board (`.dom-<domain>` classes), as design asset ids. */
 export const DOMAIN_ICONS: Readonly<Record<string, string>> = {
@@ -58,13 +59,6 @@ export function domainBanner(domains: readonly DomainId[]): string {
 
 type Heritage = Pick<CharacterSheet, "ancestry" | "communityId">;
 
-/** The ancestry whose art stands in for the portrait (a mixed heritage uses the first). */
-export function portraitAncestryId(ancestry: CharacterSheet["ancestry"]): string {
-  if (ancestry.kind === "single") return ancestry.id;
-  if (ancestry.kind === "mixed") return ancestry.first;
-  return ancestry.form;
-}
-
 /**
  * "Elf", "Elf / Orc" (or the mixed heritage's name), "Shapeshifter (Elf form)": the one ancestry label of the cards,
  * the roster and the sheet (dcm-bxp.15; src/app/.../party/[characterId]/sheet-helpers.ts re-exports it).
@@ -92,20 +86,6 @@ export function classLines(sheet: ClassLine): { line: string; sub: string } {
   };
 }
 
-export type PortraitSource =
-  | { kind: "upload"; storageId: string }
-  | { kind: "asset"; asset: string; position: string }
-  | { kind: "initial"; letter: string };
-
-/** Uploaded image → chosen design art → default art by subclass/ancestry → the name's initial. */
-export function portraitSource(sheet: Pick<CharacterSheet, "portrait" | "subclassId" | "ancestry" | "name" | "classId">): PortraitSource {
-  if (sheet.portrait?.kind === "upload") return { kind: "upload", storageId: sheet.portrait.storageId };
-  if (sheet.portrait?.kind === "asset") return { kind: "asset", asset: sheet.portrait.asset, position: "center 30%" };
-  const art = portraitFor({ subclassId: sheet.subclassId, ancestryId: portraitAncestryId(sheet.ancestry) });
-  if (art) return { kind: "asset", asset: art.asset, position: art.position };
-  return { kind: "initial", letter: (sheet.name || getClass(sheet.classId)?.name || "?").charAt(0).toUpperCase() };
-}
-
 export type Owner = { ownerId: string; mine: boolean };
 export type Table = { gm: { userId: string; name: string }; players: readonly { userId: string; name: string }[] };
 
@@ -115,12 +95,6 @@ export function ownerLabel(character: Owner, table: Table | undefined): string {
   if (character.mine) return "Yours";
   const player = table?.players.find((p) => p.userId === character.ownerId);
   return player?.name ?? (table ? "Former player" : "…");
-}
-
-/** Shrinks an image to fit within `max` on its longer side, keeping the aspect ratio. */
-export function fitWithin(width: number, height: number, max: number): { width: number; height: number } {
-  const scale = Math.min(1, max / Math.max(width, height, 1));
-  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
 }
 
 export { applyResourceDelta, type Resource } from "@/lib/domain/characters";

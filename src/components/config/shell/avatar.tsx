@@ -3,7 +3,7 @@
 import { useQuery } from "convex/react";
 import Image from "next/image";
 
-import { portraitSource } from "@/components/party/party-display";
+import { portraitSource } from "@/components/party/portrait-source";
 import { SlotBoundary } from "@/components/party/session/boundary";
 import { designAsset } from "@/lib/design-assets";
 import { cn } from "@/lib/utils";

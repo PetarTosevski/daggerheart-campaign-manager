@@ -2,14 +2,14 @@
 
 import "./combat-map.css";
 
+import dynamic from "next/dynamic";
 import { Component, useState, type ReactNode } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
 import { ActionsProvider, TargetsLayer } from "@/components/combat-map/actions";
 import { HitFlashLayer } from "@/components/combat-map/actions/adversary";
 import { HudShell, ToolsHead } from "@/components/combat-map/hud";
-import { EditorLayer, EditorProvider, EditToolsPanel } from "@/components/combat-map/editor";
-import { ScenePanel } from "@/components/combat-map/generate";
+import { EditorStateProvider as EditorProvider } from "@/components/combat-map/editor/editor-state";
 import { MapBoard, MapHeaderLine, MapsPanel, useCurrentMap } from "@/components/combat-map/maps";
 import { PacksLink } from "@/components/combat-map/packs";
 import { StyleSwitch } from "@/components/combat-map/style";
@@ -34,6 +34,21 @@ import { useCampaign, WithFear } from "../campaign-shell";
  * the GM and every player; there is no switch. The GM's Edit mode (and the GM with no map yet) keeps the two-column
  * layout with its header (answer 12a): the HUD has no Edit mode.
  */
+
+function EditLoading() {
+  return (
+    <p role="status" className="cm-muted">
+      Loading…
+    </p>
+  );
+}
+
+// NB3 (CL8): the GM's Edit mode (the editor layer, its tools and the Scene card) loads when the GM first switches to
+// Edit; players and Play never need it. The provider (editor-state) stays static: Play mounts it too. Each part stays
+// inside its SlotBoundary (CL1), which also catches a chunk that fails to load.
+const EditorLayer = dynamic(() => import("@/components/combat-map/editor").then((m) => m.EditorLayer));
+const EditToolsPanel = dynamic(() => import("@/components/combat-map/editor").then((m) => m.EditToolsPanel), { loading: EditLoading });
+const ScenePanel = dynamic(() => import("@/components/combat-map/generate").then((m) => m.ScenePanel), { loading: EditLoading });
 
 /** Keeps a failing slot (a `useQuery` that throws) from blanking the page (CL1); "Try again" remounts it. */
 class SlotBoundary extends Component<{ children: ReactNode; label: string }, { failed: boolean; message: string }> {

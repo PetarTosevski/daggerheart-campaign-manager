@@ -14,7 +14,7 @@ import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import type { CharacterView } from "../../../convex/characters";
 
-import { fitWithin, portraitSource } from "./party-display";
+import { fitWithin, portraitSource } from "./portrait-source";
 
 const MAX_SIDE = 1024;
 

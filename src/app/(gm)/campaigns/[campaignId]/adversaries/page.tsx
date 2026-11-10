@@ -3,16 +3,14 @@
 import "./adversaries.css";
 
 import { useQuery } from "convex/react";
+import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { Component, Suspense, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { AddToEncounter, EncounterBuilder } from "@/components/adversaries/builder";
 import { Catalogue } from "@/components/adversaries/catalogue";
 import { CustomAdversaries, DuplicateAdversary } from "@/components/adversaries/custom";
-import { EnvironmentCatalogue } from "@/components/adversaries/environments";
-import { OpenedAdversary } from "@/components/adversaries/environments/opened-adversary";
 import type { CatalogueEntryRef } from "@/components/adversaries/slots";
-import { EncounterTracker } from "@/components/adversaries/tracker";
 import { BrandButton } from "@/components/brand/buttons";
 import { countLine } from "@/lib/adversaries/catalogue";
 import { adversariesFor } from "@/lib/domain/adversaries";
@@ -34,6 +32,26 @@ type TabId = (typeof TABS)[number]["id"];
 function parseTab(value: string | null): TabId {
   return TABS.find((t) => t.id === value)?.id ?? "catalogue";
 }
+
+function TabLoading() {
+  return (
+    <p role="status" className="adv-count">
+      Loading…
+    </p>
+  );
+}
+
+// NB3 (CL8): the Encounters tab's tracker (the mini map: sprite packs, map view, tokens, zod) and the Environment tab
+// (the environment list) load when their tab first opens, so the Catalogue tab, the default, does not carry them.
+// The tracker and the environments stay inside their SlotBoundary (CL1), which also catches a chunk that fails to
+// load; the opened adversary has none, as before, so the route's error.tsx catches it.
+const EncounterTracker = dynamic(() => import("@/components/adversaries/tracker").then((m) => m.EncounterTracker), { loading: TabLoading });
+const EnvironmentCatalogue = dynamic(() => import("@/components/adversaries/environments").then((m) => m.EnvironmentCatalogue), {
+  loading: TabLoading,
+});
+const OpenedAdversary = dynamic(() => import("@/components/adversaries/environments/opened-adversary").then((m) => m.OpenedAdversary), {
+  loading: TabLoading,
+});
 
 /** An adversary opened from an environment's Potential Adversaries (EV1), shown at the top of the Catalogue tab. */
 type OpenedFromEnvironment = { adversaryId: string; environmentId: string; environmentName: string };

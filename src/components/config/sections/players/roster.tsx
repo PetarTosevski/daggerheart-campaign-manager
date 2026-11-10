@@ -8,7 +8,7 @@ import Image from "next/image";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { glassButtonClass } from "@/components/brand/glass-button";
-import { portraitSource } from "@/components/party/party-display";
+import { portraitSource } from "@/components/party/portrait-source";
 import { errorMessage } from "@/lib/convex-errors";
 import { designAsset } from "@/lib/design-assets";
 

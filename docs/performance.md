@@ -327,3 +327,72 @@ Not measured here: PF2 (`auth:isAuthenticated` calls in the backend log), PF7 (F
   click.
 - **Explained on the way in.** The one slow click left is Load Campaign → Dashboard. The skeleton shows at 46 ms,
   but the data takes 772 ms, because that click downloads the dashboard's chunks (see above).
+
+## NB3: client JS back down (2026-11-10)
+
+Plan `.omc/plans/next-batch-1110.yaml`, tracer NB3, bead dcm-xgbe. `bundle.mjs` before (master 079970bf) and after,
+back to back in the same worktree; load average 4.4 / 9.1 / 5.2 before, 1.1 / 1.5 / 2.7 after (byte counts do not
+depend on load). Raw / gzip KB of initial JS.
+
+| Route | PF11 | Before | After | Change (raw) |
+|---|---:|---:|---:|---:|
+| `/campaigns/[id]` (dashboard) | 1,153 / 430 | 1,375 / 518 | **1,281 / 491** | −94 |
+| `/campaigns/[id]/party` | 1,336 / 468 | 1,798 / 622 | **1,095 / 427** | −703 |
+| `/campaigns/[id]/party/[characterId]` | 1,479 / 522 | 1,983 / 691 | 1,982 / 690 | −1 |
+| `/campaigns/[id]/party/new` | 1,271 / 436 | 1,626 / 571 | 1,621 / 569 | −5 |
+| `/campaigns/[id]/combat-map` | | 2,588 / 903 | **2,547 / 887** | −41 |
+| `/campaigns/[id]/adversaries` | | 2,223 / 753 | **1,397 / 490** | −826 |
+| `/campaigns/[id]/codex` | 1,138 / 418 | 1,286 / 482 | 1,133 / 436 | −153 |
+| `/campaigns/[id]/world` | | 1,339 / 501 | 1,186 / 455 | −153 |
+| `/campaigns/[id]/journal` | | 1,287 / 494 | 1,134 / 448 | −153 |
+| `/campaigns/[id]/lorekeeper` | | 1,156 / 439 | 1,003 / 393 | −153 |
+| `/campaigns/[id]/[section]` | | 1,146 / 436 | 993 / 390 | −153 |
+| `/campaigns/[id]/combat-map/packs` | | 1,194 / 455 | 1,041 / 409 | −153 |
+| `/`, `/campaigns` | | 771 / 298, 791 / 306 | 770 / 297, 790 / 305 | 0 |
+
+`srd/domain-cards.ts` is now off every campaign route except the sheet, the wizard and the Combat Map, which use the
+cards.
+
+### What moved
+
+- **Campaign shell (every campaign route, −153 KB).** The avatar (`components/config/shell/avatar.tsx`) took
+  `portraitSource` from `party-display.ts`, which reached `srd/art.ts` (its `DOMAIN_CARD_ART` pulls all of
+  `domain-cards.ts`, 94 KB) and the subclass, ancestry and community lists. `PORTRAITS` now lives in
+  `src/lib/party/portraits.ts` (art.ts re-exports it, so Convex and the barrel are unchanged), and the portrait helpers
+  in `components/party/portrait-source.ts` (party-display re-exports them). In this build Turbopack kept every export of
+  an imported module, so a light importer needs a light module.
+- **Party roster (−703 KB).** The roster took `getClass` / `getDomain` / `getSubclass` from the `@/lib/srd` barrel
+  (CL9), `PartyLevelUpButton` from the level-up index (tier history, pickers, sheet schema), `FRAME_OF` from
+  `frames/extras/common` (zod) and `derivedDefense` (the whole rules engine) for one Evasion number. Now: leaf
+  lookups, `level-up/party-button.tsx` and `level-up/badge`, a typed `"motherboard"` constant, and
+  `party/roster-evasion.tsx` behind `next/dynamic`; its import starts when the roster module runs, beside the
+  roster's queries, and the cell shows "…" while it loads.
+- **Adversaries (−826 KB).** The Encounters tab's tracker (its mini map: sprite packs, map view, tokens, zod) and the
+  Environment tab (`srd/environments.ts`, the opened adversary) load with `next/dynamic` when their tab opens, inside
+  their existing `SlotBoundary`. Done in `page.tsx` only; `src/components/adversaries/**` is untouched.
+- **Combat Map (−41 KB).** The GM's Edit mode (editor layer, edit tools, Scene card) loads with `next/dynamic`;
+  the page takes the provider from `editor/editor-state` directly.
+- **Load Campaign → Dashboard.** "Resume Campaign" is a full-prefetch `<Link prefetch>`: the most recent campaign starts
+  expanded, so its dashboard payload and chunks download while the GM reads the list. Not measured here (no e2e run in
+  this tracer); `measure.mjs --profile wan` should show the click without the 13-file chunk download.
+
+### What is left, and why
+
+- **Dashboard 1,281 / 491 (PF11 1,153 / 430).** `lib/domain/dice/index.ts` imports `feature-effects/owned.ts` for one
+  helper (Purposeful Design), so the roll feed's `free-roll.tsx` and `tick-countdowns.tsx` bring
+  `feature-effects/classification.ts`, `feature-effects/beastforms.ts` and `srd/beastforms.ts` (73 KB raw). A leaf
+  module for the free-roll helpers and `OUTCOME_LABEL` would drop them; `src/lib/domain` is outside NB3's owns. The
+  config panel (`components/config/sections/*`, 62 KB, the rules registry 15 KB) mounts with the shell on every route;
+  it could load when the gear opens (outside owns). The party cards' text lines keep `subclasses`, `heritage` and
+  `classes` (75 KB) until `partySummary` sends the display names.
+- **Character sheet 1,982 / 690.** The sheet is the rules engine's page (derived stats, card and feature effects).
+  Its page two and three could load with their tab, but four unit tests outside the owns (`sheet-render`,
+  `experiences-level-up`, `purposeful-design`, `domain-deck-level-up`) render the sheet and click the tabs
+  synchronously; they need `findBy` first.
+- **Combat Map 2,547 / 887.** Most of it is needed in Play: the HUD (314 KB) uses the rules engine through the hand,
+  the reaction prompts, the pickers and the action ring (card effects 135 KB, feature effects 151 KB, domain cards,
+  Tier 2-4 equipment via `derived.ts` → `@/lib/srd`), and the map painter needs the built-in sprite packs (200 KB).
+  Cutting single HUD parts saves 1-27 KB each, since they share the same hooks. The real fix is in `src/lib`: per-class
+  lazy card and feature effect registries, and `derived.ts` off the `@/lib/srd` barrel.
+- **Adversaries 1,397 / 490.** `srd/adversaries.ts` (321 KB) is the default Catalogue tab's data; a lighter list (names,
+  tiers, roles) with stat blocks on open needs `components/adversaries/catalogue` (outside owns).
