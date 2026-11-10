@@ -7,13 +7,14 @@
  * - Fire keywords (dcm-dv6): the hit keyword the server reads from the attacking feature (`hitKeyword`); keywords inside
  *   save branches wait on dcm-5gng.
  * - Reality Quake's Unstuck (CB p.237): the condition's mods are readable from the entry by the sheet label
- *   (`lastingModsOf`); a PC hit doesn't read them yet (dcm-12kx).
+ *   (`lastingModsOf`), and a PC hit reads them from the sheet effect (`pcDamageMods`, dcm-12kx).
  */
 import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import { evolvedBlock, type Block } from "../../convex/lib/adversaryFeatures";
-import { hitKeyword } from "../../convex/lib/adversaryHits";
+import { hitKeyword, pcDamageMods } from "../../convex/lib/adversaryHits";
+import { readSheet } from "../../convex/lib/characterSheet";
 import { lastingModsOf } from "../../src/lib/domain/adversary-effects/run";
 import { adversaryEffects } from "../../src/lib/srd/adversary-effects";
 import { buildWorld } from "./authz/world";
@@ -81,5 +82,14 @@ describe("S4 dcm-fbsr: Unstuck's mods sit on the condition the PC carries", () =
       .filter((e) => e.feature === "Reality Quake")
       .flatMap((e) => e.uses.map((u) => u.steps));
     expect(lastingModsOf(steps, "Unstuck")).toEqual([{ kind: "marksMultiplier", factor: 2, of: ["hope", "armor", "hp", "stress"] }]);
+  });
+
+  it("pcDamageMods of a sheet carrying Unstuck returns the x2 marks multiplier (dcm-12kx)", async () => {
+    const w = await buildWorld();
+    const s = await w.t.run(async (ctx) => readSheet((await ctx.db.get("characters", w.characterA))!.sheet));
+    const unstuck = { id: "card:outer-realms-abomination/Reality Quake:1", source: "Reality Quake", text: "Unstuck", until: "manual" as const };
+    expect(pcDamageMods({ ...s, effects: [unstuck], domainCards: { owned: [], loadout: [] } }, true)).toEqual({
+      marksMultiplier: { factor: 2, of: expect.arrayContaining(["hope", "armor", "hp", "stress"]) },
+    });
   });
 });
