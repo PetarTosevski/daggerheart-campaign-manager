@@ -341,10 +341,79 @@ export function optionalIds(use: AdversaryFeatureUse): string[] {
   return ids;
 }
 
-/** Runs a use; the runner's refusal as its error code (COMBAT_TARGET_INVALID / INVALID without one). */
-export function runOrThrow(effect: AdversaryFeatureEffect, context: AdversaryRunContext): AdversaryPlan {
-  const result = rules(() => run(effect, context));
-  if (result.ok) return result.plan;
+/** FP5: the text of the stand-in step for Fear a `pay` / `optional` step would have spent (`withoutStepFear`). */
+const STEP_FEAR_MARK = "\u0001fearFeatures:";
+
+/** A cost of a fixed number of Fear ("Spend a Fear"), else null (a Fear amount read at run time stays the runner's). */
+function fixedFear(c: AdversaryCost): number | null {
+  return c.kind === "fear" && c.amount.kind === "fixed" ? c.amount.value : null;
+}
+
+/** The stand-in that marks `amount` dropped Fear where the step ran (it reaches the plan as a manual prompt). */
+function fearMark(amount: number, when: unknown): AdversaryStep {
+  return { kind: "manual", to: "self", text: `${STEP_FEAR_MARK}${amount}`, ...(when !== undefined ? { when } : {}) } as AdversaryStep;
+}
+
+/** The nested step lists of one step (an optional's steps, a check's branches, a save's outcomes, a choice's options). */
+const STEP_LISTS = ["steps", "then", "otherwise", "onFail", "onSuccess"] as const;
+
+/**
+ * Plan finish-in-progress FP5 (user 2026-11-10, Q5; F5 `fearFeatures` Manual, CB p.154): the Fear inside a use's steps is
+ * dropped too: a `pay` step's or an `optional` step's fixed Fear cost (the GM's, not a `paidBy` / `by` payer's) costs
+ * nothing, so nothing is refused or skipped for want of Fear. Where the step runs (a `pay` that went through, a taken
+ * `optional`), a stand-in manual step records the amount; `runOrThrow` takes the stand-ins out of the plan and reports
+ * their sum as `stepFear` for the GM's "Spend N Fear by hand" note.
+ */
+function withoutStepFear(steps: readonly AdversaryStep[]): AdversaryStep[] {
+  return steps.flatMap((step): AdversaryStep[] => {
+    let s = step as unknown as Record<string, unknown>;
+    for (const key of STEP_LISTS) if (Array.isArray(s[key])) s = { ...s, [key]: withoutStepFear(s[key] as AdversaryStep[]) };
+    for (const key of ["options", "table"] as const) {
+      const list = s[key];
+      if (!Array.isArray(list)) continue;
+      s = { ...s, [key]: list.map((o: unknown) => (typeof o === "object" && o !== null && Array.isArray((o as { steps?: unknown }).steps) ? { ...o, steps: withoutStepFear((o as { steps: AdversaryStep[] }).steps) } : o)) };
+    }
+    const out = s as unknown as AdversaryStep;
+    if (out.kind === "pay" && (out.paidBy === undefined || out.paidBy === "self")) {
+      const costs = out.costs as readonly AdversaryCost[];
+      const fear = costs.reduce((n, c) => n + (fixedFear(c) ?? 0), 0);
+      if (fear === 0) return [out];
+      const rest = costs.filter((c) => fixedFear(c) === null);
+      return rest.length > 0 ? [{ ...out, costs: rest } as AdversaryStep, fearMark(fear, out.when)] : [fearMark(fear, out.when)];
+    }
+    if (out.kind === "optional" && out.by === undefined && out.costs !== undefined) {
+      const costs = out.costs as readonly AdversaryCost[];
+      const fear = costs.reduce((n, c) => n + (fixedFear(c) ?? 0), 0);
+      if (fear === 0) return [out];
+      const rest = costs.filter((c) => fixedFear(c) === null);
+      const { costs: _costs, ...bare } = out;
+      void _costs;
+      return [{ ...bare, ...(rest.length > 0 ? { costs: rest } : {}), steps: [fearMark(fear, undefined), ...(out.steps as readonly AdversaryStep[])] } as AdversaryStep];
+    }
+    return [out];
+  });
+}
+
+/** FP5: the plan without the stand-ins of `withoutStepFear`, and the Fear they marked. */
+function takeStepFear(plan: AdversaryPlan): AdversaryPlan & { stepFear: number } {
+  let stepFear = 0;
+  const steps = plan.steps.filter((s) => {
+    if (s.kind !== "prompt" || s.prompt !== "manual" || !s.text.startsWith(STEP_FEAR_MARK)) return true;
+    stepFear += Number(s.text.slice(STEP_FEAR_MARK.length)) || 0;
+    return false;
+  });
+  return { ...plan, steps, stepFear };
+}
+
+/**
+ * Runs a use; the runner's refusal as its error code (COMBAT_TARGET_INVALID / INVALID without one). FP5: under F5 Manual
+ * (`context.fearFeatures`) the Fear of its steps is dropped as well (`withoutStepFear`); `stepFear` is that Fear (0 in Book).
+ */
+export function runOrThrow(effect: AdversaryFeatureEffect, context: AdversaryRunContext): AdversaryPlan & { stepFear: number } {
+  const manual = context.fearFeatures === "manual";
+  const ran = manual ? { ...effect, uses: effect.uses.map((u) => ({ ...u, steps: withoutStepFear(u.steps) })) } : effect;
+  const result = rules(() => run(ran, context));
+  if (result.ok) return manual ? takeStepFear(result.plan) : { ...result.plan, stepFear: 0 };
   if (result.code) throw appError(result.code, result.detail, result.shortfall);
   throw appError(result.reason === "targets" ? "COMBAT_TARGET_INVALID" : "INVALID", result.detail);
 }

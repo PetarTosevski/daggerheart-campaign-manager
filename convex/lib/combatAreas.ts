@@ -490,7 +490,9 @@ const EVENT_WORDS: Record<MoveEventKind, string> = { enter: "enters", through: "
  * After a token moved from `before` to `after`: the areas it entered, passed through, crossed or left. An `onEnter` area
  * entered or passed through, or an `onCross` wall crossed, logs one public feed row ("Grim enters Rune Circle"); an area
  * whose `endsOn` holds `ownerLeavesArea` ends when its caster's token leaves it. Areas centred on the moved token move
- * with it and are skipped. Returns the notes for the caller.
+ * with it and are skipped. Returns the notes for the caller. FP5 (user 2026-11-10, Q2): with `options.groupId` (an
+ * adversary's path move) the rows and the steps' writes join that group and are undoable with it (`runTriggeredUse`'s
+ * `undoable`); without it (a GM's or player's drag) they keep a group of their own, never undoable, as before.
  */
 export async function areasAfterMove(
   ctx: MutationCtx,
@@ -500,6 +502,7 @@ export async function areasAfterMove(
   after: Doc<"combatTokens">,
   actorId: Id<"users">,
   nameOf: () => Promise<string>,
+  options: { groupId?: string } = {},
 ): Promise<AreaMoveNote[]> {
   const areas = (await activeAreasOnMap(ctx, mapId)).filter((a) => !(a.centre.kind === "token" && a.centre.tokenId === after._id));
   if (areas.length === 0) return [];
@@ -508,7 +511,8 @@ export async function areasAfterMove(
   const shapes = areas.map((a) => areaShape(a, moved));
   const live = shapes.flatMap((s, i) => (s === null ? [] : [{ shape: s, area: areas[i]! }]));
   const notes: AreaMoveNote[] = [];
-  const groupId = newGroupId();
+  const joined = options.groupId !== undefined;
+  const groupId = options.groupId ?? newGroupId();
   let name: string | null = null;
   const who = async () => (name ??= await nameOf());
   for (const ev of moveEvents(before, after, live.map((l) => l.shape))) {
@@ -517,20 +521,21 @@ export async function areasAfterMove(
     const ownerLeft = ev.kind === "leave" && after.ref.kind === "pc" && after.ref.characterId === area.characterId && (spec?.endsOn ?? []).includes("ownerLeavesArea");
     if (ownerLeft) {
       await endArea(ctx, area);
-      await logAction(ctx, { campaignId, characterId: area.characterId, actorId, kind: "combat", visibility: "public", summary: `${await who()} leaves ${area.label}; it ends`, groupId, undoable: false });
+      // An ended area doesn't come back with an undo: its row keeps a group of its own (only a caster's own move ends it).
+      await logAction(ctx, { campaignId, characterId: area.characterId, actorId, kind: "combat", visibility: "public", summary: `${await who()} leaves ${area.label}; it ends`, groupId: joined ? newGroupId() : groupId, undoable: false });
       notes.push({ label: area.label, event: ev.kind, ended: true });
       continue;
     }
     const steps = ev.kind === "cross" ? spec?.onCross : ev.kind === "enter" || ev.kind === "through" ? spec?.onEnter : undefined;
     if (steps === undefined || steps.length === 0) continue;
-    await logAction(ctx, { campaignId, characterId: area.characterId, actorId, kind: "combat", visibility: "public", summary: `${await who()} ${EVENT_WORDS[ev.kind]} ${area.label}`, groupId, undoable: false });
+    await logAction(ctx, { campaignId, characterId: area.characterId, actorId, kind: "combat", visibility: "public", summary: `${await who()} ${EVENT_WORDS[ev.kind]} ${area.label}`, groupId, undoable: joined });
     notes.push({ label: area.label, event: ev.kind, ended: false });
     // Plan lanes-2 E4.3 (dcm-cma, dcm-wuu): the area's steps run on the creature that set it off (`to: "triggerSubject"`),
     // with the caster as the actor, when the server can write all they change; otherwise the row above is the table's.
     const ownerSelf = after.ref.kind === "pc" && after.ref.characterId === area.characterId;
     if (!ownerSelf) {
       const effect: CardEffect = { cardId: area.featureId, uses: [{ id: `${area.useId ?? "main"}:${ev.kind}`, name: area.label, activation: { kind: "action" }, steps }] };
-      await runTriggeredUse(ctx, { campaignId, mapId, characterId: area.characterId, effect, name: area.label, role: "triggerSubject", tokenId: after._id, actorId, groupId });
+      await runTriggeredUse(ctx, { campaignId, mapId, characterId: area.characterId, effect, name: area.label, role: "triggerSubject", tokenId: after._id, actorId, groupId, undoable: joined });
     }
   }
   return notes;
@@ -564,7 +569,8 @@ export async function endAreasOwnerLeft(ctx: MutationCtx, input: { campaignId: I
  * Plan lanes E4 (dcm-bpr): after an enemy token moved, the PCs it came within range of whose loadout holds a card with a
  * `whenEnemyEntersRange` use (Hold the Line, CB p.342: "If an adversary moves within Very Close range, they're pulled
  * into Melee range and Restrained") get a public feed row naming the card, so the player answers with it. Reads the PC
- * tokens' characters (the party). Feature entries with this trigger are the feature runner's (task doc).
+ * tokens' characters (the party). Feature entries with this trigger are the feature runner's (task doc). FP5 (Q2): with
+ * `options.groupId` (an adversary's path move) the rows and an `auto` use's writes join that group, undoable with it.
  */
 export async function rangeTriggersAfterMove(
   ctx: MutationCtx,
@@ -574,10 +580,12 @@ export async function rangeTriggersAfterMove(
   after: Doc<"combatTokens">,
   actorId: Id<"users">,
   nameOf: () => Promise<string>,
+  options: { groupId?: string } = {},
 ): Promise<{ characterId: Id<"characters">; card: string }[]> {
   if (after.side !== "enemy") return [];
   const out: { characterId: Id<"characters">; card: string }[] = [];
-  const groupId = newGroupId();
+  const joined = options.groupId !== undefined;
+  const groupId = options.groupId ?? newGroupId();
   // Rule switches ODR2 (user 2026-11-06): with Defined Ranges off no squares are counted, so the use doesn't run on its
   // own; for each PC whose use could apply now (its `effectActive` requirements hold), the GM gets a GM-only note.
   const campaign = await ctx.db.get("campaigns", campaignId);
@@ -604,11 +612,11 @@ export async function rangeTriggersAfterMove(
       }
       const use = effect?.uses.find((u) => (u.activation.kind === "reaction" || u.activation.kind === "auto") && u.activation.trigger.kind === "whenEnemyEntersRange" && entersRange(before, after, token, u.activation.trigger.range));
       if (effect === undefined || use === undefined) continue;
-      await logAction(ctx, { campaignId, characterId: character._id, actorId, kind: "combat", visibility: "public", summary: `${await nameOf()} moves within range of ${sheet.name}: ${use.name}`, groupId, undoable: false });
+      await logAction(ctx, { campaignId, characterId: character._id, actorId, kind: "combat", visibility: "public", summary: `${await nameOf()} moves within range of ${sheet.name}: ${use.name}`, groupId, undoable: joined });
       out.push({ characterId: character._id, card: use.name });
       // Plan lanes-2 E4.3 (dcm-bpr, dcm-g90o engine half): an `auto` use runs at once on the creature that came in (its
       // `trigger` source; Hold the Line's pull and Restrained); a reaction stays the player's answer.
-      if (use.activation.kind === "auto") await runTriggeredUse(ctx, { campaignId, mapId, characterId: character._id, effect: { cardId, uses: [use] }, name: use.name, role: "triggerSource", tokenId: after._id, actorId, groupId });
+      if (use.activation.kind === "auto") await runTriggeredUse(ctx, { campaignId, mapId, characterId: character._id, effect: { cardId, uses: [use] }, name: use.name, role: "triggerSource", tokenId: after._id, actorId, groupId, undoable: joined });
     }
   }
   return out;
@@ -637,10 +645,13 @@ async function triggerScene(ctx: QueryCtx, campaign: Doc<"campaigns">, character
  * `instanceWrites`) and server moves (into Melee of the anchor: `pullIntoMelee`, with `forcedMoveReduce`). A use that
  * needs a choice, a roll answer, the GM's Fear or another PC's sheet, or that the runner refuses, runs nothing (the
  * caller's feed row stays the table's). One public row names what happened, one GM row the numbers. Returns whether it ran.
+ * FP5 (Q2): `undoable` (the caller's group is an adversary use's) makes the rows undoable with that group: the public row
+ * carries the actor's sheet and the instances as they were (`before`, `adversaryBefore`), and the Manual rules' notes
+ * join the group. A server move it made (a pull) is put back by the group's own `serverMove` (the mover's path move).
  */
 export async function runTriggeredUse(
   ctx: MutationCtx,
-  input: { campaignId: Id<"campaigns">; mapId: Id<"combatMaps">; characterId: Id<"characters">; effect: CardEffect; name: string; role: "triggerSubject" | "triggerSource"; tokenId: Id<"combatTokens">; actorId: Id<"users">; groupId: string },
+  input: { campaignId: Id<"campaigns">; mapId: Id<"combatMaps">; characterId: Id<"characters">; effect: CardEffect; name: string; role: "triggerSubject" | "triggerSource"; tokenId: Id<"combatTokens">; actorId: Id<"users">; groupId: string; undoable?: boolean },
 ): Promise<boolean> {
   const campaign = await ctx.db.get("campaigns", input.campaignId);
   const character = await ctx.db.get("characters", input.characterId);
@@ -683,9 +694,20 @@ export async function runTriggeredUse(
   }
   const manual = plan.steps.flatMap((s) => (s.kind === "prompt" && s.prompt === "manual" ? [s.text] : []));
   const parts = [`${sheet.name}: ${input.name}`, ...moved, ...manual];
-  await logAction(ctx, { campaignId: input.campaignId, characterId: character._id, actorId: input.actorId, kind: "combat", visibility: "public", summary: parts.join("; ").slice(0, 500), groupId: input.groupId, undoable: false });
+  const undoable = input.undoable === true;
+  await logAction(ctx, {
+    campaignId: input.campaignId,
+    characterId: character._id,
+    actorId: input.actorId,
+    kind: "combat",
+    visibility: "public",
+    summary: parts.join("; ").slice(0, 500),
+    groupId: input.groupId,
+    ...(undoable ? { before: readSheet(character.sheet), ...(writes.length > 0 ? { adversaryBefore: writes.map((w) => w.before) } : {}) } : {}),
+    undoable,
+  });
   const lines = gmLines(plan, built, writes);
-  if (lines.length > 0) await logAction(ctx, { campaignId: input.campaignId, characterId: character._id, actorId: input.actorId, kind: "combat", visibility: "gm", summary: `${input.name}: ${lines.join("; ")}`.slice(0, 500), groupId: input.groupId, undoable: false });
+  if (lines.length > 0) await logAction(ctx, { campaignId: input.campaignId, characterId: character._id, actorId: input.actorId, kind: "combat", visibility: "gm", summary: `${input.name}: ${lines.join("; ")}`.slice(0, 500), groupId: input.groupId, undoable });
   // Rule switches RFC: the Manual rules' GM notes (D2, D8, D4, M1, C1). The move's rows are never undoable, so the notes
   // carry no group (a note in it would offer an Undo the group refuses, UNDO_STALE).
   const notes = [
@@ -693,7 +715,7 @@ export async function runTriggeredUse(
     ...lastHpNotes(writes, modes).map((summary) => ({ ruleId: "adversaryDefeated" as const, summary })),
     ...ruleNotesOfUse(built, plan),
   ];
-  for (const n of notes) await postRuleNote(ctx, campaign, { ruleId: n.ruleId, summary: n.summary, actorId: input.actorId });
+  for (const n of notes) await postRuleNote(ctx, campaign, { ruleId: n.ruleId, summary: n.summary, ...(undoable ? { groupId: input.groupId } : {}), actorId: input.actorId });
   return true;
 }
 

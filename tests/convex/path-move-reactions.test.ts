@@ -10,6 +10,11 @@
  * - Areas: a token entering an `onEnter` area gets the area's feed row (fixture Rune Circle, as lane-e4's test).
  * - Hold the Line (CB p.342: "If an adversary moves within Very Close range"): the enemy-move trigger. A `pcMoves` feature
  *   (Shield Wall) is set off by a PC's move only, so an adversary's path move cannot set one off.
+ *
+ * FP5 (user 2026-11-10): Q3, the path feature moves first (with the reactions), then rolls: Trample (the Construct, "Mark a
+ * Stress to make an attack against all targets in the Construct's path when they move") at a Hidden PC the Construct now
+ * sees is rolled without Hidden's disadvantage. Q2, the reactions join the use's undo group: one undo of the use puts the
+ * token back, brings Hidden back and takes the area and Hold the Line rows with it.
  */
 import { describe, expect, it, vi } from "vitest";
 
@@ -55,7 +60,7 @@ const EASY = { id: "test:easy", source: "Test", text: "Easy to hit", until: "man
  * A running encounter on a live medium map (30 x 20) in daylight: the Ogre at (10, 10), Bryn (characterB) at (12, 10) in
  * its path, Ash (characterA) at `ash` with `conditions`.
  */
-async function arena(opts: { ash?: { x: number; y: number }; conditions?: string[]; cards?: string[] } = {}) {
+async function arena(opts: { ash?: { x: number; y: number }; bryn?: { x: number; y: number }; conditions?: string[]; cards?: string[]; adversaryId?: string } = {}) {
   const w = await buildWorld();
   const { t, campaignId } = w;
   const gm = w.as("gm");
@@ -86,7 +91,7 @@ async function arena(opts: { ash?: { x: number; y: number }; conditions?: string
     const ogre = await ctx.db.insert("encounterAdversaries", {
       campaignId,
       encounterId,
-      source: { kind: "srd", adversaryId: "cave-ogre" },
+      source: { kind: "srd", adversaryId: opts.adversaryId ?? "cave-ogre" },
       label: "Ogre",
       order: 0,
       summoned: false,
@@ -103,7 +108,7 @@ async function arena(opts: { ash?: { x: number; y: number }; conditions?: string
     const token = { campaignId, mapId, size: 1, light: "none" as const, revealedTo: [] };
     const ogreToken = await ctx.db.insert("combatTokens", { ...token, ref: { kind: "adversary", adversaryId: ogre }, side: "enemy", x: 10, y: 10, face: 0 });
     const ashToken = await ctx.db.insert("combatTokens", { ...token, ref: { kind: "pc", characterId: w.characterA }, side: "pc", x: ash.x, y: ash.y, face: Math.PI });
-    await ctx.db.insert("combatTokens", { ...token, ref: { kind: "pc", characterId: w.characterB }, side: "pc", x: 12, y: 10, face: Math.PI });
+    await ctx.db.insert("combatTokens", { ...token, ref: { kind: "pc", characterId: w.characterB }, side: "pc", x: opts.bryn?.x ?? 12, y: opts.bryn?.y ?? 10, face: Math.PI });
     const s = await campaignFearState(ctx, campaignId);
     await ctx.db.patch(s._id, { fear: 5 });
     return { ogre, ogreToken, ashToken };
@@ -111,6 +116,9 @@ async function arena(opts: { ash?: { x: number; y: number }; conditions?: string
   /** Rampaging Fury at Bryn (named, so the line's fill doesn't matter) with the Ogre moving to (x, y). */
   const fury = (x: number, y: number) =>
     gm.mutation(api.adversaryActions.useFeature, { campaignId, instanceId: ids.ogre, feature: "Rampaging Fury", targets: [w.characterB], destination: { x, y }, idempotencyKey: key(), spendFear: 12 });
+  /** FP5: Trample (the Construct's path attack) at Ash (on the path in these tests), the token moving to (x, y). */
+  const trample = (x: number, y: number) =>
+    gm.mutation(api.adversaryActions.useFeature, { campaignId, instanceId: ids.ogre, feature: "Trample", targets: [w.characterA], destination: { x, y }, idempotencyKey: key(), spendFear: 12 });
   const ogreAt = () => t.run(async (ctx) => (await ctx.db.get("combatTokens", ids.ogreToken))!);
   const sheet = () => t.run(async (ctx) => readSheet((await ctx.db.get("characters", w.characterA))!.sheet));
   const rows = () => t.run((ctx) => ctx.db.query("actionLog").collect());
@@ -123,7 +131,7 @@ async function arena(opts: { ash?: { x: number; y: number }; conditions?: string
       return placeArea(ctx, { campaignId, map, characterId: w.characterA, sourceId: RUNE, useId: "main", spec, centre: { kind: "square", x, y }, ownerToken: owner });
     });
   const undo = (entryId: Id<"actionLog">) => gm.mutation(api.actionLog.undo, { entryId, idempotencyKey: key() });
-  return { w, t, campaignId, mapId, gm, ...ids, fury, ogreAt, sheet, rows, serverMoves, rune, undo };
+  return { w, t, campaignId, mapId, gm, ...ids, fury, trample, ogreAt, sheet, rows, serverMoves, rune, undo };
 }
 
 function resolved<T extends { status: string }>(r: T): Extract<T, { status: "resolved" }> {
@@ -207,5 +215,66 @@ describe("FP1: undoing the use moves the token back", () => {
     expect(code).toBe("COMBAT_TARGET_INVALID");
     expect(await a.ogreAt()).toMatchObject({ x: 10, y: 10 });
     expect(await a.serverMoves()).toEqual([]);
+  });
+});
+
+describe("FP5: the path feature moves before it rolls (Q3)", () => {
+  it("Trample at a Hidden PC on its path: Hidden ends on the move, and the attack is rolled without its disadvantage", async () => {
+    const a = await arena({ adversaryId: "construct", ash: { x: 12, y: 10 }, bryn: { x: 25, y: 2 }, conditions: ["hidden"] });
+    const r = resolved(await a.trample(14, 10));
+    expect(r.targets.map((o) => o.characterId)).toEqual([a.w.characterA]);
+    expect((await a.sheet()).conditions).not.toContain("hidden");
+    // One d20: no disadvantage left on the roll (Hidden would have rolled two and kept the lower).
+    expect(r.roll?.dice).toHaveLength(1);
+    const name = (await a.sheet()).name;
+    const all = await a.rows();
+    const unhide = all.find((r) => r.summary === `Ogre moves to where it sees ${name}: no longer Hidden`);
+    const entry = all.find((row) => row._id === r.entryId)!;
+    expect(unhide).toMatchObject({ undoable: true, groupId: entry.groupId });
+    // The unhide row comes before the roll's rows.
+    expect(unhide!.at).toBeLessThanOrEqual(entry.at);
+  });
+
+  it("C1 Manual: no 'attacked while Hidden' note once the move ended Hidden", async () => {
+    const a = await arena({ adversaryId: "construct", ash: { x: 12, y: 10 }, bryn: { x: 25, y: 2 }, conditions: ["hidden"] });
+    await a.t.run((ctx) => ctx.db.patch("campaigns", a.campaignId, { ruleModes: { conditionDice: "manual" } as never }));
+    resolved(await a.trample(14, 10));
+    expect((await a.rows()).some((r) => r.kind === "rule" && r.ruleId === "conditionDice")).toBe(false);
+  });
+});
+
+describe("FP5: the move's reactions join the use's undo group (Q2)", () => {
+  it("one undo of the use restores Hidden and the token", async () => {
+    const a = await arena({ adversaryId: "construct", ash: { x: 12, y: 10 }, bryn: { x: 25, y: 2 }, conditions: ["hidden"] });
+    const before = await a.ogreAt();
+    const r = resolved(await a.trample(14, 10));
+    expect((await a.sheet()).conditions).not.toContain("hidden");
+    await a.undo(r.entryId);
+    expect((await a.sheet()).conditions).toContain("hidden");
+    expect(await a.ogreAt()).toMatchObject({ x: 10, y: 10, face: before.face });
+  });
+
+  it("the area and Hold the Line rows sit in the use's group and go with its undo", async () => {
+    const a = await arena({ ash: { x: 18, y: 10 }, conditions: ["hidden"], cards: ["hold-the-line"] });
+    await a.rune(14, 10);
+    const r = resolved(await a.fury(15, 10));
+    const name = (await a.sheet()).name;
+    const all = await a.rows();
+    const group = all.find((row) => row._id === r.entryId)!.groupId;
+    const reactions = all.filter((row) => row.summary === "Ogre enters Rune Circle" || row.summary === "Ogre moves through Rune Circle" || row.summary === `Ogre moves within range of ${name}: Hold the Line` || row.summary === `Ogre moves to where it sees ${name}: no longer Hidden`);
+    expect(reactions.length).toBeGreaterThanOrEqual(3);
+    expect(reactions.every((row) => row.groupId === group && row.undoable)).toBe(true);
+    await a.undo(r.entryId);
+    const after = await a.rows();
+    expect(after.filter((row) => row.groupId === group).every((row) => row.undoneAt !== undefined)).toBe(true);
+    expect((await a.sheet()).conditions).toContain("hidden");
+    expect(await a.ogreAt()).toMatchObject({ x: 10, y: 10 });
+  });
+
+  it("a GM drag keeps its own groups: its reaction rows are not undoable with anything else", async () => {
+    const a = await arena({ ash: { x: 18, y: 10 }, cards: ["hold-the-line"] });
+    await a.gm.mutation(api.combatTokens.move, { campaignId: a.campaignId, tokenId: a.ogreToken, x: 15, y: 10 });
+    const name = (await a.sheet()).name;
+    expect((await a.rows()).find((r) => r.summary === `Ogre moves within range of ${name}: Hold the Line`)).toMatchObject({ undoable: false });
   });
 });

@@ -406,10 +406,11 @@ export async function uncloakAfterMove(
  * A Cloaked PC is left alone (CB p.42: "while Cloaked you remain unseen if you are stationary when an adversary moves to
  * where they would normally see you"), and so is a Hidden adversary or a defeated one that moves (it sees nothing,
  * `enemyStates`). Manual: nothing ends and no roll; one GM-only note per PC ("Bandit moved to where it sees Mira: remove
- * Hidden?"). All rows of one move share one group. Reads: the map's tokens, one `get` per PC token; the scene only when
- * a PC on the map is Hidden.
+ * Hidden?"). All rows of one move share one group: `options.groupId` when given (FP5, Q2: an adversary's path move joins
+ * the feature use's group, so undoing the use brings Hidden back), else a new one (a GM drag). Reads: the map's tokens,
+ * one `get` per PC token; the scene only when a PC on the map is Hidden.
  */
-export async function unhideAfterEnemyMove(ctx: MutationCtx, campaign: Doc<"campaigns">, map: Doc<"combatMaps">, token: Doc<"combatTokens">, actorId: Id<"users">): Promise<void> {
+export async function unhideAfterEnemyMove(ctx: MutationCtx, campaign: Doc<"campaigns">, map: Doc<"combatMaps">, token: Doc<"combatTokens">, actorId: Id<"users">, options: { groupId?: string } = {}): Promise<void> {
   if (token.side !== "enemy" || !map.live) return;
   const hiddenPcs: { token: Doc<"combatTokens">; character: Doc<"characters">; sheet: CharacterSheet }[] = [];
   for (const t of await tokensOnMap(ctx, map._id)) {
@@ -427,7 +428,7 @@ export async function unhideAfterEnemyMove(ctx: MutationCtx, campaign: Doc<"camp
   if (enemies.hidden.has(enemy._id)) return;
   const manual = hiddenEndsManual(campaign);
   const seer = seerName(enemy, enemies.difficulty);
-  const groupId = newGroupId();
+  const groupId = options.groupId ?? newGroupId();
   for (const pc of hiddenPcs) {
     const at = scene.tokens.find((t) => t._id === pc.token._id) ?? pc.token;
     if (!lineOfSight(scene.prepared, enemy, at, scene.visionObjects).lineOfSight) continue;

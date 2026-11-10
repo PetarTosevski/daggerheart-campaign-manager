@@ -176,7 +176,9 @@ const AREA_EVENT_WORDS = { enter: "entered", through: "passed through", cross: "
  * Cloaked stays, CB p.42), the live areas it entered, passed through, crossed or left, and the PCs' Hold the Line range
  * triggers. The PC-only reactions (`pcMoves` features, Cloaked ending on the mover's own move, a caster's areas) cannot
  * fire for an adversary token. The move joins the use's undo group as an open `serverMove` row: undoing the use puts the
- * token back (`declineGroupOffers`). The reactions keep their own feed rows and groups, as after a drag. Returns GM lines.
+ * token back (`declineGroupOffers`). FP5 (user 2026-11-10, Q2): the reactions' rows (Hidden ending, the areas, Hold the
+ * Line) join the use's group too, so one undo of the use restores the token and everything the move caused. Q3: the
+ * caller runs this before the roll. Returns GM lines.
  */
 async function pathMove(
   ctx: MutationCtx,
@@ -198,9 +200,10 @@ async function pathMove(
     createdBy: actorId,
     payload: { schemaVersion: 1, kind: "serverMove", groupId: input.groupId, tokenId: before._id, from: { x: before.x, y: before.y, face: before.face }, to },
   });
-  await unhideAfterEnemyMove(ctx, campaign, map, after, actorId);
-  const areas = await areasAfterMove(ctx, campaign._id, map._id, before, after, actorId, nameOf);
-  if (map.live) await rangeTriggersAfterMove(ctx, campaign._id, map._id, before, after, actorId, nameOf);
+  const joined = { groupId: input.groupId };
+  await unhideAfterEnemyMove(ctx, campaign, map, after, actorId, joined);
+  const areas = await areasAfterMove(ctx, campaign._id, map._id, before, after, actorId, nameOf, joined);
+  if (map.live) await rangeTriggersAfterMove(ctx, campaign._id, map._id, before, after, actorId, nameOf, joined);
   return [...rules.warnings.map((w) => `${label}'s move broke ${w}`), ...areas.map((a) => `${label} ${AREA_EVENT_WORDS[a.event]} ${a.label}${a.ended ? " (it ends)" : ""}`)];
 }
 
@@ -265,15 +268,17 @@ function fearFeatureNote(label: string, feature: string, amount: number): string
 /**
  * Plan finish-in-progress FP4 (F5 `fearFeatures` Manual, CB p.154): a use that runs without the GM's click (an automatic
  * use, or a reaction run on a trigger) spends none of its Fear cost (`rangesFlag` gives the runner `fearFeatures:
- * "manual"`), so the GM gets the clicked uses' "Spend N Fear by hand" note, never undoable (it changed nothing). Book
- * posts nothing: the runner spends the cost as before. `context` is the run's own (the cost may read the trigger, My Turn).
+ * "manual"`), so the GM gets the clicked uses' "Spend N Fear by hand" note. Book posts nothing: the runner spends the cost
+ * as before. `context` is the run's own (the cost may read the trigger, My Turn). FP5 (user 2026-11-10): the note also
+ * counts the Fear of the use's `pay` / `optional` steps the run dropped (`plan.stepFear`, Q5), and joins `groupId` (the
+ * attack's or roll's group) when the caller has one, so undoing that action takes the note with it (Q6).
  */
-async function noteTriggeredFear(ctx: MutationCtx, campaign: Doc<"campaigns">, t: TriggeredUse, context: AdversaryRunContext, label: string, actorId: Id<"users">): Promise<void> {
+async function noteTriggeredFear(ctx: MutationCtx, campaign: Doc<"campaigns">, t: TriggeredUse, context: AdversaryRunContext, label: string, actorId: Id<"users">, stepFear: number, groupId: string | undefined): Promise<void> {
   if (ruleMode(campaign, "fearFeatures") !== "manual") return;
   const { fearFeatures: _manual, ...book } = context;
   void _manual;
-  const amount = upfrontFear(t.use.costs, { ...book, rng: rollDie });
-  if (amount > 0) await postRuleNote(ctx, campaign, { ruleId: "fearFeatures", summary: fearFeatureNote(label, t.effect.feature, amount), actorId });
+  const amount = upfrontFear(t.use.costs, { ...book, rng: rollDie }) + stepFear;
+  if (amount > 0) await postRuleNote(ctx, campaign, { ruleId: "fearFeatures", summary: fearFeatureNote(label, t.effect.feature, amount), ...(groupId !== undefined ? { groupId } : {}), actorId });
 }
 
 
@@ -1034,7 +1039,7 @@ const buyOffStress = (costs: readonly Cost[]) => costs.reduce((n, c) => n + (c.k
  * A second run's target-only results joined to the first run (DA1): the hits, damage, marks, conditions and prompts of
  * the targets `ids`; the attacker's own changes, costs and Fear stay the first run's (paid once).
  */
-function joinTargets(a: AdversaryPlan, b: AdversaryPlan, ids: ReadonlySet<string>): AdversaryPlan {
+function joinTargets<P extends AdversaryPlan>(a: P, b: AdversaryPlan, ids: ReadonlySet<string>): P {
   const mine = (s: AdversaryPlanStep) => {
     if ("targetId" in s && typeof s.targetId === "string") return ids.has(s.targetId);
     if ("targetIds" in s && Array.isArray(s.targetIds)) return s.targetIds.length > 0 && s.targetIds.every((id: string) => ids.has(id));
@@ -1159,8 +1164,11 @@ export async function adversaryAction(
   /** FH-AP: `picks`, the run of a held use with its PCs' picks, in the held use's group, its first dice replayed. */
   opts?: { forced?: boolean; picks?: { chooserOptions: Record<string, Record<string, string[]>>; dice: readonly number[]; groupId: string } },
 ): Promise<ActionResult | ConfirmFear> {
-  const { instance, encounter, block, others } = await loadActor(ctx, campaign, args.instanceId);
-  const self = selfCombatant(instance, block);
+  const loaded = await loadActor(ctx, campaign, args.instanceId);
+  const { encounter, block, others } = loaded;
+  // FP5: a path move's reactions may change the instance (Hold the Line's Restrained), so both are read again after it.
+  let instance = loaded.instance;
+  let self = selfCombatant(instance, block);
 
   // The use: the standard attack, a feature's effect entry, or (no entry: custom blocks, tables not written yet) manual.
   let effect: AdversaryFeatureEffect | undefined;
@@ -1198,9 +1206,13 @@ export async function adversaryAction(
   const experienceManual = ruleMode(campaign, "adversaryExperienceFear") === "manual";
   const featureFear = fearFeaturesManual ? 0 : bookFeatureFear;
   const experienceFear = experience && !experienceManual ? 1 : 0;
-  const byHand: { ruleId: "fearFeatures" | "adversaryExperienceFear"; summary: string }[] = [];
-  if (fearFeaturesManual && bookFeatureFear > 0) byHand.push({ ruleId: "fearFeatures", summary: fearFeatureNote(instance.label, args.feature ?? block.attack.name, bookFeatureFear) });
-  if (experience && experienceManual) byHand.push({ ruleId: "adversaryExperienceFear", summary: `${instance.label} used ${experience.name} (+${experience.value}): ${fearByHandText(1)}` });
+  // FP5 (Q5): `stepFear`, the Fear of the use's steps the Manual run dropped (`runOrThrow`), joins the upfront cost's note.
+  const byHand = (stepFear: number) => {
+    const notes: { ruleId: "fearFeatures" | "adversaryExperienceFear"; summary: string }[] = [];
+    if (fearFeaturesManual && bookFeatureFear + stepFear > 0) notes.push({ ruleId: "fearFeatures", summary: fearFeatureNote(instance.label, args.feature ?? block.attack.name, bookFeatureFear + stepFear) });
+    if (experience && experienceManual) notes.push({ ruleId: "adversaryExperienceFear", summary: `${instance.label} used ${experience.name} (+${experience.value}): ${fearByHandText(1)}` });
+    return notes;
+  };
   // WF, W3 Tier 3 Dark-Hearted (HF p.177): advantage on this roll for 1 Fear, once the Doom Track's Tier 3 rule is active.
   if (args.darkHearted && !(await darkHeartedActive(ctx, campaign))) throw appError("INVALID", "Dark-Hearted needs the Doom Track's Tier 3 rule (5 boxes marked in Tier 3).");
   const darkFear = args.darkHearted ? 1 : 0;
@@ -1208,10 +1220,10 @@ export async function adversaryAction(
   if (asked > 0 && (args.spendFear ?? 0) < asked) return { status: "confirmFear", fear: asked, spotlight: spotlightFear, feature: featureFear, experience: experienceFear, ...(darkFear > 0 ? { darkHearted: darkFear } : {}) };
   if (asked > fearNow) throw appError("NOT_ENOUGH_FEAR", undefined, { resource: "fear", need: asked, have: fearNow });
 
-  const scene = await actionScene(ctx, campaign, instance);
-  const base = { encounter, self: instance, block, scene };
+  let scene = await actionScene(ctx, campaign, instance);
+  let base = { encounter, self: instance, block, scene };
   const groupId = replay?.groupId ?? opts?.picks?.groupId ?? newGroupId();
-  const w = new Work(instance, block, scene.party, others, encounter, fearState.sessionStartedAt);
+  let w = new Work(instance, block, scene.party, others, encounter, fearState.sessionStartedAt);
   const label = instance.label;
   const featureName = args.feature ?? block.attack.name;
 
@@ -1220,7 +1232,7 @@ export async function adversaryAction(
     const targets = (await resolveCreatures(ctx, base, args.targets, false)).picks;
     w.prompts.push({ kind: "manual", text: `${manualFeature!.name}: ${manualFeature!.text}` });
     w.fearDelta -= featureFear;
-    for (const n of byHand) await postRuleNote(ctx, campaign, { ...n, groupId, actorId: user._id });
+    for (const n of byHand(0)) await postRuleNote(ctx, campaign, { ...n, groupId, actorId: user._id });
     return finish(ctx, { campaign, user, encounter, w, groupId, spotlight: needsSpotlight && !spotlit, needsSpotlight, spotlightFear, roll: null, success: true, outcomes: targets.map((t) => outcomeOf(t, true)), offers: [], publicText: `${label} used ${manualFeature!.name}`, gmText: [`${label} used ${manualFeature!.name} (no automation: the GM applies it)`], attackerFeature: manualFeature!.name });
   }
 
@@ -1264,7 +1276,7 @@ export async function adversaryAction(
   if (areaSpec && named.length === 0 && namedByGm(areaSpec)) {
     w.prompts.push({ kind: "manual", text: `${featureName}: nobody was named ${areaWords(areaSpec.area, areaSpec.range, label)}. If someone was, apply it to them by hand.` });
   }
-  const targets = await resolveCreatures(ctx, base, named, attack);
+  let targets = await resolveCreatures(ctx, base, named, attack);
   if (attack || areaSpec?.side === "enemy") {
     const down = targets.picks.flatMap((p) => (p.kind === "pc" && untargetable.has(p.member.character._id) ? [p.member.sheet.name] : []));
     if (down.length > 0) throw appError("COMBAT_TARGET_INVALID", unconsciousTargetText(down));
@@ -1274,6 +1286,26 @@ export async function adversaryAction(
   if (attack && !replay && holdable(args) && targets.picks.every((p) => p.kind === "pc")) {
     const held = await holdForPreRoll(ctx, { campaign, user, instance, encounter, block, scene, args, picks: targets.picks as PcPick[], groupId, label: instance.label, featureName: args.feature ?? block.attack.name });
     if (held) return held;
+  }
+  // Plan finish-in-progress FP5 (user 2026-11-10, Q3): a "path" feature (Trample: "an attack against all targets in the
+  // Construct's path"; Rampaging Fury: "Move the Ogre ... and deal 2d6+3 direct physical damage to all targets in their
+  // path") moves first, with the drag's reactions (`pathMove`: areas, Hidden ending on sight, Hold the Line), then rolls
+  // the attack or applies the damage. So a PC the adversary now sees is attacked without Hidden's disadvantage. After a
+  // held before-roll defence (the move waits with the roll) and before anything is run; the scene, the instance, the work
+  // and the targets' sheets are read again. The targets stay the ones the path crossed (no new sight check from the new
+  // square; the cover found before stands).
+  const moveLines: string[] = [];
+  if (moveTo !== null && scene.map) {
+    moveLines.push(`${label} moved to (${moveTo.x}, ${moveTo.y})`);
+    moveLines.push(...(await pathMove(ctx, { campaign, map: scene.map.scene.map, token: scene.map.selfToken, to: moveTo, encounterId: encounter._id, groupId, actorId: user._id, label })));
+    instance = (await ctx.db.get("encounterAdversaries", instance._id)) ?? instance;
+    self = selfCombatant(instance, block);
+    scene = await actionScene(ctx, campaign, instance);
+    base = { encounter, self: instance, block, scene };
+    const prompts = w.prompts;
+    w = new Work(instance, block, scene.party, others, encounter, fearState.sessionStartedAt);
+    w.prompts.push(...prompts);
+    targets = { picks: (await resolveCreatures(ctx, base, named, false)).picks, cover: targets.cover };
   }
   // SD4: a held attack replays with its before-roll answers: +Evasion against it for the PC who answered (Keen Defenses).
   if (replay) {
@@ -1406,7 +1438,8 @@ export async function adversaryAction(
   // FH-AP (user 2026-11-05): PCs who each pick their own option (Locust Swarm, Awesome Size, the Fire head) answer on their
   // own screens first; the whole use waits (nothing paid or applied) and runs again with their picks and these dice.
   if (!attack && !replay && opts?.picks === undefined) {
-    const held = await holdForAllyPicks(ctx, { campaign, user, instance, encounter, party: scene.party, args, plan, dice: pickRolls.values, groupId, featureName });
+    // FP5: the path move is made; the held run replays at the targets the path crossed (its args carry no destination).
+    const held = await holdForAllyPicks(ctx, { campaign, user, instance, encounter, party: scene.party, args: moveTo !== null ? { ...args, targets: named } : args, plan, dice: pickRolls.values, groupId, featureName });
     if (held) return held;
   }
   if (lower.length > 0) {
@@ -1474,7 +1507,7 @@ export async function adversaryAction(
       }
       const reactionContext: AdversaryRunContext = { ...context, self: w.selfAfter, useId: t.use.id, gmFear: Math.max(0, fearNow - spotlightFear + w.fearDelta), optionals: optionalIds(t.use), trigger: { source: self, ...(targets.picks[0] ? { subject: targets.picks[0].combatant } : {}) } };
       const r = runOrThrow(t.effect, reactionContext);
-      await noteTriggeredFear(ctx, campaign, t, reactionContext, label, user._id);
+      await noteTriggeredFear(ctx, campaign, t, reactionContext, label, user._id, r.stepFear, groupId);
       w.absorb(r, t.effect.feature);
       for (const s of r.steps) {
         if (s.kind !== "fold" || s.step.kind !== "modifyDamage") continue;
@@ -1511,7 +1544,7 @@ export async function adversaryAction(
     void _experience;
     const autoContext: AdversaryRunContext = { ...plain, self: w.selfAfter, useId: t.use.id, gmFear: Math.max(0, fearNow - spotlightFear + w.fearDelta), trigger: { source: self, ...(firstHit ? { subject: firstHit.combatant } : {}) } };
     const r = runOrThrow(t.effect, autoContext);
-    await noteTriggeredFear(ctx, campaign, t, autoContext, label, user._id);
+    await noteTriggeredFear(ctx, campaign, t, autoContext, label, user._id, r.stepFear, groupId);
     w.absorb(r, t.effect.feature);
     w.gm.push(`${t.effect.feature} (automatic)`);
   }
@@ -1555,7 +1588,7 @@ export async function adversaryAction(
   if (spotlightFear > 0) gmText.push("1 Fear for the spotlight");
   if (darkFear > 0) gmText.push("Dark-Hearted: advantage (1 Fear)");
   if (experience) gmText.push(`Experience ${experience.name} +${experience.value} (${experienceManual ? "spend 1 Fear by hand" : "1 Fear"})`);
-  for (const n of byHand) await postRuleNote(ctx, campaign, { ...n, groupId, actorId: user._id });
+  for (const n of byHand(plan.stepFear)) await postRuleNote(ctx, campaign, { ...n, groupId, actorId: user._id });
   // WF, D7 Manual: the standard attack was rolled with its printed damage.
   if (args.feature === undefined && ruleMode(campaign, "hordes") === "manual") {
     const note = hordeNote(label, block.hordeX ?? passives.horde ?? null, self);
@@ -1588,12 +1621,8 @@ export async function adversaryAction(
   for (const summary of new Set(rangeAsks)) await postRuleNote(ctx, campaign, { ruleId: "definedRanges", summary, groupId, actorId: user._id });
   // Plan rule-switches WR (R10 Manual): the critical's maximum the damage left out.
   if ((plan.criticalDamageWithheld ?? 0) > 0) await postRuleNote(ctx, campaign, { ruleId: "criticalDamage", summary: criticalDamageNote(label, plan.criticalDamageWithheld!), groupId, actorId: user._id });
-  // WF: the "path" feature's move, as the GM's drag would place it (the token faces the way it went). FP1: with the drag's
-  // reactions, and in the use's undo group.
-  if (moveTo !== null && scene.map) {
-    gmText.push(`${label} moved to (${moveTo.x}, ${moveTo.y})`);
-    gmText.push(...(await pathMove(ctx, { campaign, map: scene.map.scene.map, token: scene.map.selfToken, to: moveTo, encounterId: encounter._id, groupId, actorId: user._id, label })));
-  }
+  // WF: the "path" feature's move (made before the roll, FP5), as the GM's drag would place it.
+  gmText.push(...moveLines);
   const result = await finish(ctx, { campaign, user, encounter, w, groupId, spotlight: needsSpotlight && !spotlit, needsSpotlight, spotlightFear: 0, roll, success: plan.success, outcomes, offers, publicText, gmText, ...(args.feature !== undefined ? { attackerFeature: args.feature } : {}) });
   if (forcedPcs.length > 0) {
     const live = await liveCombatMap(ctx, campaign._id);
@@ -1847,7 +1876,7 @@ export async function afterHitTriggers(ctx: MutationCtx, res: HitResolution, act
       rng: rollDie,
     };
     const plan = runOrThrow(t.effect, context);
-    await noteTriggeredFear(ctx, campaign, t, context, instance.label, actorId);
+    await noteTriggeredFear(ctx, campaign, t, context, instance.label, actorId, plan.stepFear, groupId);
     w.absorb(plan, t.effect.feature);
     lines.push(`${t.effect.feature} (automatic)`);
   }
@@ -2267,7 +2296,7 @@ export async function pcRollAdversaryUses(
         rng: rollDie,
       };
       const plan = runOrThrow(t.effect, context);
-      if (noteActor !== undefined) await noteTriggeredFear(ctx, campaign, t, context, instance.label, noteActor);
+      if (noteActor !== undefined) await noteTriggeredFear(ctx, campaign, t, context, instance.label, noteActor, plan.stepFear, input.groupId);
       for (const s of plan.steps) {
         if (s.kind !== "fold" || s.step.kind !== "modifyRoll" || s.step.change.kind !== "dieBonus") continue;
         const die = s.step.change.die === "hopeOrFear" ? "fear" : s.step.change.die;
@@ -2374,7 +2403,7 @@ export async function pcEscape(ctx: MutationCtx, campaign: Doc<"campaigns">, use
         rng: rollDie,
       };
       const plan = runOrThrow(t.effect, context);
-      await noteTriggeredFear(ctx, campaign, t, context, instance.label, user._id);
+      await noteTriggeredFear(ctx, campaign, t, context, instance.label, user._id, plan.stepFear, groupId);
       w.absorb(plan, t.effect.feature);
       lines.push(`${t.effect.feature} (automatic)`);
     }
