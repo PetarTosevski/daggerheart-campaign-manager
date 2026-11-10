@@ -4,6 +4,7 @@ import { useQuery } from "convex/react";
 import { useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
+import { fearByHandText } from "@/lib/domain/adversary-actions/rule-notes";
 import type { Range } from "@/lib/domain/card-effects/types";
 
 import { api } from "../../../../../convex/_generated/api";
@@ -53,7 +54,8 @@ function namesOf(ids: readonly string[], options: readonly TargetOption[]): stri
  * (advantage for 1 Fear on the Attack and on features that make an attack roll, once `adversaryActions.darkHearted`),
  * F4 Manual (an Experience asks no Fear: "spend 1 Fear by hand"), and a "path" feature's destination (`pathMove`:
  * Rampaging Fury, Trample) picked on the tab's live map pane, sent as `useFeature` `destination` with everyone the
- * line crosses pre-picked. FP6: the Dark-Hearted toggle switches itself off after the roll it was sent with.
+ * line crosses pre-picked. FP6: the Dark-Hearted toggle switches itself off after the roll it was sent with. NB2: F5
+ * `fearFeatures` Manual drops a feature's Fear badge and Use label for "Spend N Fear by hand".
  */
 export function ActionPanel({
   instanceId,
@@ -98,6 +100,9 @@ export function ActionPanel({
   const experienceByHand = modes?.adversaryExperienceFear === "manual";
   const skipUnconscious = (modes?.unconscious ?? "book") === "book";
   const definedRanges = modes?.definedRanges ?? true;
+  // NB2: F5 `fearFeatures` Manual (CB p.154): the server asks no Fear for a feature (the GM spends it by hand), so no
+  // "Fear N" badge or "(N Fear)" label; the server's own wording ("Spend N Fear by hand") stands in for the badge.
+  const featureFearByHand = modes?.fearFeatures === "manual";
   const darkHeartedOn = useQuery(api.adversaryActions.darkHearted, { campaignId }) === true;
   const dark = darkPicked && darkHeartedOn;
   // FP2: the live map pane under the tracker (the same queries the tracker reads; Convex shares them).
@@ -279,13 +284,19 @@ export function ActionPanel({
           <li key={`${i}-${f.name}`}>
             <span className="trk-act-fname">{f.name}</span>
             <span className={`adc-kind adc-kind-${f.kind}`}>{KIND_LABEL[f.kind]}</span>
-            {f.fearCost ? <span className="adc-kind adc-kind-fear">Fear {f.fearCost}</span> : null}
+            {f.fearCost ? (
+              featureFearByHand ? (
+                <span className="trk-act-note">{fearByHandText(f.fearCost)}</span>
+              ) : (
+                <span className="adc-kind adc-kind-fear">Fear {f.fearCost}</span>
+              )
+            ) : null}
             {usable(f.kind) ? (
               <FeatureUse
                 campaignId={acts.campaignId}
                 instanceId={instanceId}
                 feature={f.name}
-                fearCost={f.fearCost}
+                fearCost={featureFearByHand ? undefined : f.fearCost}
                 disabled={busy}
                 live={!defeated}
                 glass

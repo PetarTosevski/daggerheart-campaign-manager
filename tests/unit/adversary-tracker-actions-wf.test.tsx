@@ -125,7 +125,7 @@ const TOKENS = [
 
 const RESOLVED = { status: "resolved", groupId: "g1", entryId: "e1", roll: null, success: true, targets: [], fearDelta: 0, prompts: [], offers: [] };
 
-function Harness({ fear = 3, onMap = false }: { fear?: number; onMap?: boolean }) {
+function Harness({ fear = 3, onMap = false, block = OGRE }: { fear?: number; onMap?: boolean; block?: StatBlockAdversary }) {
   const acts = useAdversaryActions(CAMPAIGN);
   const [targets, setTargets] = useState<string[]>([]);
   const { mode, options } = targetOptions({ party: PARTY, tokens: onMap ? TOKENS : null, instanceId: "i1" });
@@ -133,7 +133,7 @@ function Harness({ fear = 3, onMap = false }: { fear?: number; onMap?: boolean }
     <ActionPanel
       instanceId="i1"
       actor="Ogre"
-      block={OGRE}
+      block={block}
       defeated={false}
       fear={fear}
       spotNote={null}
@@ -299,6 +299,45 @@ describe("F4 adversaryExperienceFear", () => {
     });
     expect(calls[0]).toMatchObject({ name: "adversaryActions:attack", args: { experience: "Ambusher" } });
     expect(experienceText({ name: "Ambusher", value: 3 }, true)).toBe("Ambusher +3 (spend 1 Fear by hand)");
+  });
+});
+
+describe("F5 fearFeatures (NB2)", () => {
+  // A Fear feature (CB p.154): Earthquake costs 2 Fear in Book. The server's featureAsk asks no Fear for it in Manual.
+  const QUAKE_OGRE: StatBlockAdversary = { ...OGRE, features: [...OGRE.features, { name: "Earthquake", kind: "action", text: "Spend 2 Fear to shake the ground.", fearCost: 2 }] };
+  const QUAKE: FeatureAsk = { ...ASK, feature: "Earthquake", attack: false, targets: null };
+  const row = () => within(panel()).getByText("Earthquake").closest("li")!;
+
+  it("Book: the 'Fear 2' badge and the '(2 Fear)' Use label", () => {
+    queries["ruleSettings:get"] = { modes: { fearFeatures: "book" }, locked: false, canEdit: true };
+    queries["adversaryActions:featureAsk"] = () => ({ ...QUAKE, fear: { total: 2, spotlight: 0, feature: 2, perTrigger: false, gmFear: 3, enough: true } });
+    render(<Harness block={QUAKE_OGRE} />);
+    expect(within(row()).getByText("Fear 2")).toBeInTheDocument();
+    expect(within(row()).getByRole("button", { name: "Use Earthquake (2 Fear)" })).toBeEnabled();
+    expect(within(row()).queryByText("Spend 2 Fear by hand")).toBeNull();
+  });
+
+  it("Manual: neither badge nor label, the by-hand wording, never off for lack of Fear, and no Fear sent", async () => {
+    queries["ruleSettings:get"] = { modes: { fearFeatures: "manual" }, locked: false, canEdit: true };
+    queries["adversaryActions:featureAsk"] = () => ({ ...QUAKE, fear: { total: 0, spotlight: 0, feature: 0, perTrigger: false, gmFear: 0, enough: true } });
+    results["adversaryActions:useFeature"] = [RESOLVED];
+    render(<Harness fear={0} block={QUAKE_OGRE} />);
+    expect(within(row()).queryByText("Fear 2")).toBeNull();
+    expect(within(row()).getByText("Spend 2 Fear by hand")).toBeInTheDocument();
+    const use = within(row()).getByRole("button", { name: "Use Earthquake" });
+    expect(use).toBeEnabled();
+    await act(async () => {
+      fireEvent.click(use);
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ name: "adversaryActions:useFeature", args: { feature: "Earthquake" } });
+    expect(calls[0]!.args).not.toHaveProperty("spendFear");
+  });
+
+  it("Manual before featureAsk loads: the plain Use carries no Fear label either", () => {
+    queries["ruleSettings:get"] = { modes: { fearFeatures: "manual" }, locked: false, canEdit: true };
+    render(<Harness fear={0} block={QUAKE_OGRE} />);
+    expect(within(row()).getByRole("button", { name: "Use Earthquake" })).toBeEnabled();
   });
 });
 
