@@ -47,7 +47,8 @@ export function spotlightNote(instance: { spotlights: number; spotlightTurn: num
   return spotlightCostsFear(turnSpotlights) ? "Spotlight: 1 Fear" : null;
 }
 
-export type FearConfirm = { fear: number; spotlight: number; feature: number; experience: number };
+/** FP2 (rule switches WF, W3 Tier 3): `darkHearted`, the Fear asked for Dark-Hearted's advantage (HF p.177). */
+export type FearConfirm = { fear: number; spotlight: number; feature: number; experience: number; darkHearted?: number };
 
 /** The server's `confirmFear` as one question (Q19: Fear is spent only on the GM's tap). */
 export function fearPrompt(c: FearConfirm): string {
@@ -55,6 +56,7 @@ export function fearPrompt(c: FearConfirm): string {
     c.spotlight ? `${c.spotlight} for the spotlight` : null,
     c.feature ? `${c.feature} for the feature` : null,
     c.experience ? `${c.experience} for the Experience` : null,
+    c.darkHearted ? `${c.darkHearted} for Dark-Hearted` : null,
   ].filter((p): p is string => p !== null);
   return `Spend ${c.fear} Fear?${parts.length ? ` ${parts.join(", ")}.` : ""}`;
 }
@@ -66,6 +68,14 @@ export function rollText(roll: { dice: readonly RolledDie[]; modifier: number; t
   const dice = roll.dice.map((d) => `d${d.sides} ${d.value}`).join(", ");
   const mod = roll.modifier ? `, ${roll.modifier > 0 ? "+" : ""}${roll.modifier}` : "";
   return `${roll.total} (${dice}${mod})`;
+}
+
+/**
+ * FP2 (rule switches WF, F4 `adversaryExperienceFear`, CB p.154): an Experience option's text. Book: it costs 1 Fear
+ * (asked with the action's other Fear). Manual: no Fear is asked; the GM spends it by hand (the HUD's wording).
+ */
+export function experienceText(x: { name: string; value: number }, byHand: boolean): string {
+  return `${x.name} +${x.value} (${byHand ? "spend 1 Fear by hand" : "1 Fear"})`;
 }
 
 /** Feature kinds as the stat block prints them; passives apply on their own and get no Use button. */

@@ -51,7 +51,10 @@ export function useAdversaryActions(campaignId: Id<"campaigns">) {
       const base = { campaignId, idempotencyKey: crypto.randomUUID(), ...(spendFear ? { spendFear } : {}) };
       const answer = intent.kind === "attack" ? await attack({ ...intent.args, ...base }) : await featureUse({ ...intent.args, ...base });
       if (answer.status === "confirmFear") {
-        setConfirm({ intent, fear: { fear: answer.fear, spotlight: answer.spotlight, feature: answer.feature, experience: answer.experience } });
+        setConfirm({
+          intent,
+          fear: { fear: answer.fear, spotlight: answer.spotlight, feature: answer.feature, experience: answer.experience, ...(answer.darkHearted ? { darkHearted: answer.darkHearted } : {}) },
+        });
         return null;
       }
       setConfirm(null);

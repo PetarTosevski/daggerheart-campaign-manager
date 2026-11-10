@@ -1,16 +1,30 @@
 "use client";
 
+import { useQuery } from "convex/react";
 import { useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
+import type { Range } from "@/lib/domain/card-effects/types";
 
+import { api } from "../../../../../convex/_generated/api";
+import { darkHeartedOption } from "../../../combat-map/hud/statblock/model";
+import { withinText, type Square } from "../../../combat-map/hud/pick-area/model";
+import { startAreaPick, useAreaPick } from "../../../combat-map/map-view/area-pick";
 import type { StatBlockAdversary } from "../../catalogue/stat-block";
 import { needsChoices, type Creature, type FeatureAsk } from "./ask";
 import { FeatureChoices, type ChoiceArgs } from "./choices";
 import { FeatureUse } from "./feature-use";
-import { fearPrompt, toggled, usable, type TargetOption } from "./model";
+import { useLiveMap } from "./live";
+import { experienceText, fearPrompt, toggled, usable, type TargetOption } from "./model";
+import { pathCrossed, pathOutside, type PathToken } from "./path";
 import { ActionResultView } from "./result";
 import type { AdversaryActions, Intent, Resolved } from "./use-adversary-actions";
+
+/** FP2: W3 Tier 3 Dark-Hearted, in the HUD pickers' words ("Dark-Hearted: advantage", "Costs 1 Fear (Doom Track Tier 3)"). */
+const DARK_HEARTED = darkHeartedOption(true)[0]!;
+
+/** FP2: a "path" feature's picked destination and who its line crosses (pre-picked as its targets). */
+type PathPick = { feature: string; ask: FeatureAsk; destination: Square; crossed: string[] };
 
 type Edge = "none" | "advantage" | "disadvantage";
 /** Each option's glass role (the roll toggle: Normal grey, Advantage / Disadvantage in the viewer's colours). */
@@ -34,6 +48,12 @@ function namesOf(ids: readonly string[], options: readonly TargetOption[]): stri
  * Passive features apply on their own and are listed as modifiers. AA3b: a feature that needs the GM's choices (AA2c's
  * `featureAsk`: options, creature lists, splits, situations, cost picks, optional steps) asks them in a dialog before
  * `useFeature`; `adversaries` (the encounter's other instances) feeds its ally lists (without it they list no one).
+ *
+ * Plan finish-in-progress FP2 (rule switches WF, as the Combat Map HUD's stat block does): W3 Tier 3 Dark-Hearted
+ * (advantage for 1 Fear on the Attack and on features that make an attack roll, once `adversaryActions.darkHearted`),
+ * F4 Manual (an Experience asks no Fear: "spend 1 Fear by hand"), and a "path" feature's destination (`pathMove`:
+ * Rampaging Fury, Trample) picked on the tab's live map pane, sent as `useFeature` `destination` with everyone the
+ * line crosses pre-picked.
  */
 export function ActionPanel({
   instanceId,
@@ -69,6 +89,22 @@ export function ActionPanel({
   const [edge, setEdge] = useState<Edge>("none");
   const [experience, setExperience] = useState("");
   const [reactions, setReactions] = useState<string[]>([]);
+  const [darkPicked, setDarkPicked] = useState(false);
+  const [path, setPath] = useState<PathPick | null>(null);
+  const [pathAsking, setPathAsking] = useState(false);
+  const campaignId = acts.campaignId;
+  // FP2: F4 Manual (Experience Fear by hand), C4 Book (unconscious PCs left out of a path's line), Defined Ranges.
+  const modes = useQuery(api.ruleSettings.get, { campaignId })?.modes;
+  const experienceByHand = modes?.adversaryExperienceFear === "manual";
+  const skipUnconscious = (modes?.unconscious ?? "book") === "book";
+  const definedRanges = modes?.definedRanges ?? true;
+  const darkHeartedOn = useQuery(api.adversaryActions.darkHearted, { campaignId }) === true;
+  const dark = darkPicked && darkHeartedOn;
+  // FP2: the live map pane under the tracker (the same queries the tracker reads; Convex shares them).
+  const map = useLiveMap(campaignId);
+  const tokens = useQuery(api.combatTokensReads.list, map ? { campaignId, mapId: map._id } : "skip");
+  const areaPick = useAreaPick();
+  const self = tokens?.find((t) => t.instanceId === instanceId);
   // Only targets still offered count (a PC who left the map or the party drops out of the pick).
   const picked = targets.filter((id) => options.some((o) => o.characterId === id));
   const reactionFeatures = block.features.filter((f) => f.kind === "reaction");
@@ -78,6 +114,7 @@ export function ActionPanel({
     ...(edge === "advantage" ? { advantage: 1 } : edge === "disadvantage" ? { disadvantage: 1 } : {}),
     ...(experience ? { experience } : {}),
   };
+  const darkArgs = dark ? { darkHearted: true } : {};
 
   async function fire(intent: Intent) {
     const done = await acts.fire(intent);
@@ -92,8 +129,50 @@ export function ActionPanel({
   const who = namesOf(picked, options);
   const nameOf = (id: string) => options.find((o) => o.characterId === id)?.name ?? "a target";
   const creatures: Creature[] = [...options.map((o) => ({ id: o.characterId, name: o.name, kind: "pc" as const })), ...adversaries.map((a) => ({ ...a, kind: "adversary" as const }))];
-  const sendFeature = (feature: string, extra: Partial<ChoiceArgs> = {}) =>
-    void fire({ kind: "feature", label: `${actor} uses ${feature}`, actor, args: { ...shared, feature, ...extra } });
+  // Dark-Hearted gives advantage on a roll: only a feature that makes an attack roll (its featureAsk says so) takes it.
+  const sendFeature = (feature: string, ask: FeatureAsk | null, extra: Partial<ChoiceArgs> & { destination?: Square } = {}) =>
+    void fire({ kind: "feature", label: `${actor} uses ${feature}`, actor, args: { ...shared, feature, ...(ask?.attack ? darkArgs : {}), ...extra } });
+
+  /**
+   * FP2 (the HUD's `startPath`): a "path" feature asks for its destination on the live map pane first, within its move's
+   * range of the token; everyone the straight line crosses starts picked. Side "any" or a feature that needs choices
+   * opens the choices dialog with them as targets; otherwise they become the panel's targets and a confirm row sends it.
+   */
+  function startPath(feature: string, ask: FeatureAsk, from: PathToken, mapId: string) {
+    const within = ask.pathMove as Range;
+    const prompt = `Pick ${actor}’s destination for ${feature}${withinText({ within })}`;
+    setPath(null);
+    setPathAsking(true);
+    const request = (text: string) =>
+      startAreaPick({
+        prompt: text,
+        mapId,
+        onPick: async (destination) => {
+          if (pathOutside(from, within, destination, definedRanges)) {
+            request(`That square is out of range. ${prompt}`);
+            return null;
+          }
+          setPathAsking(false);
+          const anySide = ask.targets?.side === "any";
+          const crossed = pathCrossed({ self: from, destination, tokens: tokens ?? [], instanceId, standing: adversaries.map((a) => a.id), anySide, skipUnconscious });
+          setPath({ feature, ask, destination, crossed });
+          if (needsChoices(ask) || anySide) setChoosing(ask);
+          else onTargets(crossed);
+          return null;
+        },
+      });
+    request(prompt);
+  }
+
+  function runFeature(feature: string, ask: FeatureAsk | null) {
+    if (ask?.pathMove && map && self) return startPath(feature, ask, self, map._id);
+    if (ask && needsChoices(ask)) return setChoosing(ask);
+    sendFeature(feature, ask);
+  }
+
+  const choosingPath = choosing && path?.feature === choosing.feature ? path : null;
+  // The pick runs in the map pane's module store: this panel's note shows only while that pick is still open.
+  const pickingPath = pathAsking && map != null && areaPick.request?.mapId === map._id;
 
   return (
     <section className="trk-act" aria-label="Adversary actions">
@@ -127,14 +206,20 @@ export function ActionPanel({
             <select className="trk-in trk-in-parch" value={experience} onChange={(e) => setExperience(e.target.value)}>
               <option value="">None</option>
               {block.experiences.map((x) => (
-                <option key={x.name} value={x.name} disabled={fear < 1}>
-                  {x.name} +{x.value} (1 Fear)
+                <option key={x.name} value={x.name} disabled={!experienceByHand && fear < 1}>
+                  {experienceText(x, experienceByHand)}
                 </option>
               ))}
             </select>
           </label>
         ) : null}
+        {darkHeartedOn ? (
+          <BrandButton variant="advantage" aria-pressed={dark} title={DARK_HEARTED.note} onClick={() => setDarkPicked(!darkPicked)}>
+            {DARK_HEARTED.label} (1 Fear)
+          </BrandButton>
+        ) : null}
       </div>
+      {dark ? <p className="trk-act-note">Dark-Hearted (Doom Track Tier 3): on the Attack and on features that make an attack roll.</p> : null}
       {reactionFeatures.length > 0 ? (
         <div className="trk-act-targets" role="group" aria-label="Reactions on this attack">
           <span className="trk-act-sub">Use on this attack:</span>
@@ -149,7 +234,7 @@ export function ActionPanel({
         <BrandButton
           variant="confirm"
           disabled={busy || picked.length === 0}
-          onClick={() => void fire({ kind: "attack", label: `${actor} attacks`, actor, args: { ...shared, ...(reactions.length ? { reactions } : {}) } })}
+          onClick={() => void fire({ kind: "attack", label: `${actor} attacks`, actor, args: { ...shared, ...darkArgs, ...(reactions.length ? { reactions } : {}) } })}
         >
           ⚔ Attack{who ? ` ${who}` : ""} with {block.attack.name}
         </BrandButton>
@@ -194,7 +279,7 @@ export function ActionPanel({
                 disabled={busy}
                 live={!defeated}
                 glass
-                onUse={(ask) => (ask && needsChoices(ask) ? setChoosing(ask) : sendFeature(f.name))}
+                onUse={(ask) => runFeature(f.name, ask)}
               />
             ) : (
               <span className="trk-act-note">Modifier: applies on its own</span>
@@ -202,6 +287,33 @@ export function ActionPanel({
           </li>
         ))}
       </ul>
+      {pickingPath ? (
+        <p className="trk-act-note" role="status">
+          Click the destination square on the live map below.
+        </p>
+      ) : null}
+      {path && !choosing ? (
+        <div className="trk-confirm" role="group" aria-label={`${path.feature} destination`}>
+          <p>
+            {actor} moves to ({path.destination.x}, {path.destination.y}): everyone in its path is picked. Change the targets above if needed.
+          </p>
+          <BrandButton
+            variant="confirm"
+            disabled={busy}
+            onClick={() => {
+              const { feature, ask, destination } = path;
+              setPath(null);
+              sendFeature(feature, ask, { useId: ask.useId, destination });
+            }}
+          >
+            Use {path.feature}
+            {who ? ` on ${who}` : ""}
+          </BrandButton>
+          <BrandButton variant="cancel" onClick={() => setPath(null)}>
+            Cancel
+          </BrandButton>
+        </div>
+      ) : null}
       {choosing ? (
         <FeatureChoices
           key={choosing.feature}
@@ -210,14 +322,19 @@ export function ActionPanel({
           actor={actor}
           first={choosing}
           creatures={creatures}
-          panelTargets={picked}
+          panelTargets={choosingPath ? choosingPath.crossed : picked}
           fear={fear}
           pending={acts.pending}
           glass
-          onClose={() => setChoosing(null)}
-          onUse={(args) => {
+          onClose={() => {
             setChoosing(null);
-            sendFeature(choosing.feature, args);
+            setPath(null);
+          }}
+          onUse={(args) => {
+            const destination = choosingPath?.destination;
+            setChoosing(null);
+            setPath(null);
+            sendFeature(choosing.feature, choosing, { ...args, ...(destination ? { destination } : {}) });
           }}
         />
       ) : null}
