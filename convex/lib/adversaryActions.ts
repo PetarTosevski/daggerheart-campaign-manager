@@ -257,6 +257,25 @@ function rangesFlag(campaign: Doc<"campaigns">): { definedRanges?: false; critic
   };
 }
 
+/** WF, F5 Manual (CB p.154): the GM's line for a use's Fear cost the app didn't spend ("Rat used Group Attack: Spend 1 Fear by hand"). */
+function fearFeatureNote(label: string, feature: string, amount: number): string {
+  return `${label} used ${feature}: ${fearByHandText(amount)}`;
+}
+
+/**
+ * Plan finish-in-progress FP4 (F5 `fearFeatures` Manual, CB p.154): a use that runs without the GM's click (an automatic
+ * use, or a reaction run on a trigger) spends none of its Fear cost (`rangesFlag` gives the runner `fearFeatures:
+ * "manual"`), so the GM gets the clicked uses' "Spend N Fear by hand" note, never undoable (it changed nothing). Book
+ * posts nothing: the runner spends the cost as before. `context` is the run's own (the cost may read the trigger, My Turn).
+ */
+async function noteTriggeredFear(ctx: MutationCtx, campaign: Doc<"campaigns">, t: TriggeredUse, context: AdversaryRunContext, label: string, actorId: Id<"users">): Promise<void> {
+  if (ruleMode(campaign, "fearFeatures") !== "manual") return;
+  const { fearFeatures: _manual, ...book } = context;
+  void _manual;
+  const amount = upfrontFear(t.use.costs, { ...book, rng: rollDie });
+  if (amount > 0) await postRuleNote(ctx, campaign, { ruleId: "fearFeatures", summary: fearFeatureNote(label, t.effect.feature, amount), actorId });
+}
+
 
 
 type PcPick = { kind: "pc"; member: PartyMember; token: Doc<"combatTokens"> | null; combatant: Combatant; band?: Range };
@@ -1180,7 +1199,7 @@ export async function adversaryAction(
   const featureFear = fearFeaturesManual ? 0 : bookFeatureFear;
   const experienceFear = experience && !experienceManual ? 1 : 0;
   const byHand: { ruleId: "fearFeatures" | "adversaryExperienceFear"; summary: string }[] = [];
-  if (fearFeaturesManual && bookFeatureFear > 0) byHand.push({ ruleId: "fearFeatures", summary: `${instance.label} used ${args.feature ?? block.attack.name}: ${fearByHandText(bookFeatureFear)}` });
+  if (fearFeaturesManual && bookFeatureFear > 0) byHand.push({ ruleId: "fearFeatures", summary: fearFeatureNote(instance.label, args.feature ?? block.attack.name, bookFeatureFear) });
   if (experience && experienceManual) byHand.push({ ruleId: "adversaryExperienceFear", summary: `${instance.label} used ${experience.name} (+${experience.value}): ${fearByHandText(1)}` });
   // WF, W3 Tier 3 Dark-Hearted (HF p.177): advantage on this roll for 1 Fear, once the Doom Track's Tier 3 rule is active.
   if (args.darkHearted && !(await darkHeartedActive(ctx, campaign))) throw appError("INVALID", "Dark-Hearted needs the Doom Track's Tier 3 rule (5 boxes marked in Tier 3).");
@@ -1453,7 +1472,9 @@ export async function adversaryAction(
         offers.push({ feature: t.effect.feature, useId: t.use.id, trigger: "beforeDamage" });
         continue;
       }
-      const r = runOrThrow(t.effect, { ...context, self: w.selfAfter, useId: t.use.id, gmFear: Math.max(0, fearNow - spotlightFear + w.fearDelta), optionals: optionalIds(t.use), trigger: { source: self, ...(targets.picks[0] ? { subject: targets.picks[0].combatant } : {}) } });
+      const reactionContext: AdversaryRunContext = { ...context, self: w.selfAfter, useId: t.use.id, gmFear: Math.max(0, fearNow - spotlightFear + w.fearDelta), optionals: optionalIds(t.use), trigger: { source: self, ...(targets.picks[0] ? { subject: targets.picks[0].combatant } : {}) } };
+      const r = runOrThrow(t.effect, reactionContext);
+      await noteTriggeredFear(ctx, campaign, t, reactionContext, label, user._id);
       w.absorb(r, t.effect.feature);
       for (const s of r.steps) {
         if (s.kind !== "fold" || s.step.kind !== "modifyDamage") continue;
@@ -1488,7 +1509,9 @@ export async function adversaryAction(
     const firstHit = targets.picks.find((p) => hitIds.has(p.kind === "pc" ? p.member.character._id : p.instance._id));
     const { experience: _experience, ...plain } = context;
     void _experience;
-    const r = runOrThrow(t.effect, { ...plain, self: w.selfAfter, useId: t.use.id, gmFear: Math.max(0, fearNow - spotlightFear + w.fearDelta), trigger: { source: self, ...(firstHit ? { subject: firstHit.combatant } : {}) } });
+    const autoContext: AdversaryRunContext = { ...plain, self: w.selfAfter, useId: t.use.id, gmFear: Math.max(0, fearNow - spotlightFear + w.fearDelta), trigger: { source: self, ...(firstHit ? { subject: firstHit.combatant } : {}) } };
+    const r = runOrThrow(t.effect, autoContext);
+    await noteTriggeredFear(ctx, campaign, t, autoContext, label, user._id);
     w.absorb(r, t.effect.feature);
     w.gm.push(`${t.effect.feature} (automatic)`);
   }
@@ -1805,7 +1828,7 @@ export async function afterHitTriggers(ctx: MutationCtx, res: HitResolution, act
       continue;
     }
     const self = w.selfAfter;
-    const plan = runOrThrow(t.effect, {
+    const context: AdversaryRunContext = {
       adversaryId: block.adversaryId,
       self,
       attack: block.attack,
@@ -1822,7 +1845,9 @@ export async function afterHitTriggers(ctx: MutationCtx, res: HitResolution, act
       attackDiceOnAttacks: true,
       ...rangesFlag(campaign),
       rng: rollDie,
-    });
+    };
+    const plan = runOrThrow(t.effect, context);
+    await noteTriggeredFear(ctx, campaign, t, context, instance.label, actorId);
     w.absorb(plan, t.effect.feature);
     lines.push(`${t.effect.feature} (automatic)`);
   }
@@ -2207,6 +2232,8 @@ export async function pcRollAdversaryUses(
   const fearState = await campaignFearState(ctx, campaign._id);
   let fear = fearState.fear;
   const definedRanges = ruleMode(campaign, "definedRanges");
+  // FP4: the F5 Manual note's author (as the range questions below).
+  const noteActor = input.actorId ?? (ctx as MutationCtx & { user?: Doc<"users"> }).user?._id;
   for (const instance of instances) {
     if (instance.defeated) continue;
     const block = await blockOf(ctx, instance);
@@ -2222,7 +2249,7 @@ export async function pcRollAdversaryUses(
         continue;
       }
       const self = selfCombatant(instance, block);
-      const plan = runOrThrow(t.effect, {
+      const context: AdversaryRunContext = {
         adversaryId: block.adversaryId,
         self,
         attack: block.attack,
@@ -2238,7 +2265,9 @@ export async function pcRollAdversaryUses(
         optionals: optionalIds(t.use),
         ...rangesFlag(campaign),
         rng: rollDie,
-      });
+      };
+      const plan = runOrThrow(t.effect, context);
+      if (noteActor !== undefined) await noteTriggeredFear(ctx, campaign, t, context, instance.label, noteActor);
       for (const s of plan.steps) {
         if (s.kind !== "fold" || s.step.kind !== "modifyRoll" || s.step.change.kind !== "dieBonus") continue;
         const die = s.step.change.die === "hopeOrFear" ? "fear" : s.step.change.die;
@@ -2260,9 +2289,8 @@ export async function pcRollAdversaryUses(
   // ODR3: the GM's questions, in the roll's group when the caller has one (else a note that is never undoable).
   if (rangeAsks.length === 0) return out;
   out.rangeAsks = rangeAsks;
-  const actorId = input.actorId ?? (ctx as MutationCtx & { user?: Doc<"users"> }).user?._id;
-  if (actorId !== undefined) {
-    for (const summary of rangeAsks) await postRuleNote(ctx, campaign, { ruleId: "definedRanges", summary, ...(input.groupId !== undefined ? { groupId: input.groupId } : {}), actorId });
+  if (noteActor !== undefined) {
+    for (const summary of rangeAsks) await postRuleNote(ctx, campaign, { ruleId: "definedRanges", summary, ...(input.groupId !== undefined ? { groupId: input.groupId } : {}), actorId: noteActor });
   }
   return out;
 }
@@ -2326,7 +2354,7 @@ export async function pcEscape(ctx: MutationCtx, campaign: Doc<"campaigns">, use
         lines.push(`Reaction available: ${t.effect.feature} (trigger amount ${tokens})`);
         continue;
       }
-      const plan = runOrThrow(t.effect, {
+      const context: AdversaryRunContext = {
         adversaryId: block.adversaryId,
         self: w.selfAfter,
         attack: block.attack,
@@ -2344,7 +2372,9 @@ export async function pcEscape(ctx: MutationCtx, campaign: Doc<"campaigns">, use
         attackDiceOnAttacks: true,
         ...rangesFlag(campaign),
         rng: rollDie,
-      });
+      };
+      const plan = runOrThrow(t.effect, context);
+      await noteTriggeredFear(ctx, campaign, t, context, instance.label, user._id);
       w.absorb(plan, t.effect.feature);
       lines.push(`${t.effect.feature} (automatic)`);
     }
