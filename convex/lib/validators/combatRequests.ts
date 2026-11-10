@@ -110,6 +110,8 @@ export const sanctionRollOptionsValidator = v.object({
   advantage: v.optional(v.number()),
   disadvantage: v.optional(v.number()),
   help: v.optional(v.number()),
+  /** Plan rule-switches WR (widened; R7 Book, CB p.90): the PCs who help an attack, replayed on approval. Unset: none. */
+  helpers: v.optional(v.array(v.id("characters"))),
   options: v.optional(v.array(v.string())),
   ikonis: v.optional(v.boolean()),
   slayerDice: v.optional(v.number()),
@@ -412,6 +414,10 @@ export const heldAttackValidator = v.object({
   experience: v.optional(v.string()),
   spendFear: v.optional(v.number()),
   reactions: v.optional(v.array(v.string())),
+  /** Plan rule-switches WF (widened): W3 Tier 3 Dark-Hearted taken with the attack (advantage for 1 Fear, HF p.177). */
+  darkHearted: v.optional(v.boolean()),
+  /** WF (widened): a "path" feature's destination square, replayed with the attack. */
+  destination: v.optional(v.object({ x: v.number(), y: v.number() })),
 });
 
 /** Who may answer a before-roll prompt: a PC with a ready, affordable before-roll defence (feature ids, SD0 ids). */

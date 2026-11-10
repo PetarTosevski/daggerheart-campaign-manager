@@ -16,6 +16,7 @@ import {
   pendingDeathMove,
   resolvesItself,
   riskItAll,
+  scarNote,
   splitRiskItAll,
   type AwayReason,
   type DeathMove,
@@ -234,15 +235,25 @@ async function makeMove(
 
   if (move === "avoidDeath") {
     const hopeDie = rollDie(12);
-    const result = avoidDeath(sheet, hopeDie);
+    // X3 (rule switches WS, CB p.106): Manual adds no scar; the GM's note asks for it, in the move's group.
+    const scarsManual = ruleMode(campaign, "scars") === "manual";
+    const result = avoidDeath(sheet, hopeDie, scarsManual ? "manual" : "book");
+    const noteGroup = scarsManual && result.scarred ? (opts.groupId ?? `${DEATH_MANUAL_GROUP_PREFIX}${character._id}:${Date.now()}`) : undefined;
     // dcm-bxp.99.19.63 (user 2026-10-30): an unconscious rogue drops Cloaked (any Cloaked), in this same row.
     await saveSheet(ctx, character._id, withoutCondition(result.sheet, "cloaked"));
-    const scar = result.scarred ? `gains a scar${result.journeyEnds ? "; the last Hope slot is gone and their journey ends" : ""}` : "no scar";
+    const scar = !result.scarred
+      ? "no scar"
+      : scarsManual
+        ? "a scar, for the GM to mark"
+        : `gains a scar${result.journeyEnds ? "; the last Hope slot is gone and their journey ends" : ""}`;
     const entryId = await logAction(ctx, {
       ...base,
+      ...(noteGroup === undefined ? {} : { groupId: noteGroup }),
       summary: `${name} avoids death and drops unconscious. Hope Die ${hopeDie} against level ${sheet.level}: ${scar}.`,
       roll: { kind: "free", dice: [{ sides: 12, value: hopeDie, role: "hope" }], modifier: 0, total: hopeDie, outcome: "none", manual: false },
     });
+    // No characterId: the note must not become the character's latest row (the sheet's Undo reads that row).
+    if (noteGroup !== undefined) await postRuleNote(ctx, campaign, { ruleId: "scars", summary: scarNote(name), groupId: noteGroup, actorId: ctx.user._id });
     return { entryId, status: character.status, pending: null, hopeDie, fearDie: null, scarred: result.scarred, journeyEnds: result.journeyEnds };
   }
 

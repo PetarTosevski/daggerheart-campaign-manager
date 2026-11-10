@@ -23,9 +23,12 @@ import {
   applyDualityEffects,
   applyRollOptions,
   assertTypedModifier,
+  criticalDamageNote,
+  criticalExtra,
   DiceRuleError,
   dualityEffects,
   experienceBonus,
+  experienceNote,
   NotEnoughHopeError,
   OUTCOME_LABEL,
   queueRng,
@@ -36,6 +39,7 @@ import {
   weaponDice,
   type DamageInput,
   type DualityInput,
+  type ExperienceCostMode,
   type Rng,
 } from "../../src/lib/domain/dice/index";
 import { countsAsActionRoll } from "../../src/lib/domain/countdowns/advanced";
@@ -63,11 +67,12 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction, newGroupId } from "./actionLog";
 import { assertCanAct, loadCharacter, noteHopeSpent, readSheet, saveSheet } from "./characterSheet";
-import { applyPcActionRoll, fearWithheldBy, hopeFearModeOf, outcomeSucceeds, outcomeWithFear, planPcActionRoll } from "./rollAftermath";
+import { applyPcActionRoll, criticalModeOf, fearWithheldBy, hopeFearModeOf, outcomeSucceeds, outcomeWithFear, planPcActionRoll } from "./rollAftermath";
+import { helpersField, payHelpers, planHelp } from "./helpAnAlly";
 import { rollDie } from "./dice";
 import { campaignLight } from "./campaignLight";
 import { featureScope } from "./featureScope";
-import { ruleModesOf } from "./ruleModes";
+import { postRuleNote, ruleMode, ruleModesOf } from "./ruleModes";
 import { campaignFearState, gainFear } from "./fear";
 import { applyRule } from "./mechanics";
 import { actorSheetAfter, cardActor, cardIdOfEffect, conditionMarkerOf, endConditionsOnRoll, endRollOf, featureIdOfEffect, tokenKeyOf, type HostRoll } from "./cardRunner";
@@ -91,8 +96,10 @@ export const dualityFields = {
   experienceIds: v.array(v.string()),
   advantage: v.number(),
   disadvantage: v.number(),
-  /** Help an Ally dice (each helper spends their own Hope). */
+  /** Help an Ally dice: R7 Manual's counter (no Hope taken, the GM gets a note). Refused above 0 in R7 Book (`helpers`). */
   help: v.number(),
+  /** R7 Book (plan rule-switches WR, Q3 a): the PCs who help; each spends 1 Hope and adds a d6 (`planHelp`). */
+  helpers: helpersField,
   /** An attack roll: effect attack bonuses apply. */
   attack: v.boolean(),
   /**
@@ -163,6 +170,7 @@ export type DualityArgs = {
   advantage: number;
   disadvantage: number;
   help: number;
+  helpers?: Id<"characters">[];
   attack: boolean;
   weapon?: "primary" | "secondary";
   options: string[];
@@ -613,15 +621,24 @@ export function withHopeSides(record: RollRecord, sides: number | undefined): Ro
   return { ...record, dice: record.dice.map((d) => (d.role === "hope" ? { ...d, sides } : d)) };
 }
 
-/** Pays a Duality roll's costs (Experiences, roll options) and builds the resolver's input. */
-export function prepareDuality(sheet: CharacterSheet, args: DualityArgs, scope: FeatureScope, ikonis: IkonisWeapon | null): { paid: CharacterSheet; input: DualityInput; extras: string[] } {
+/**
+ * Pays a Duality roll's costs (Experiences, roll options) and builds the resolver's input. `experienceCost`: the campaign's
+ * R6 mode (Manual: the Experiences add their modifier and cost no Hope; `experience` names them for the GM's note).
+ */
+export function prepareDuality(
+  sheet: CharacterSheet,
+  args: DualityArgs,
+  scope: FeatureScope,
+  ikonis: IkonisWeapon | null,
+  experienceCost: ExperienceCostMode = "book",
+): { paid: CharacterSheet; input: DualityInput; extras: string[]; experience: { names: string[]; value: number } } {
   if (args.options.length > MAX_OPTIONS) throw new DiceRuleError("Too many options.");
   const situational = situationalAdvantage(sheet, args, scope);
   const bearer = bearerRollMods(sheet, args);
   assertTypedModifier(args.modifier);
   // DA19 (B1, dcm-bxp.99.19.19): the passive features' trait bonuses (a Beastform's statistics, CB p.30) on top of effects.
   const live = withPassiveTraits(withEffects(sheet), scope);
-  const exp = experienceBonus(sheet.experiences, args.experienceIds);
+  const exp = experienceBonus(sheet.experiences, args.experienceIds, experienceCost);
   const opts = applyRollOptions(spendHope(sheet, exp.hope), rollOptions(sheet, args.kind, CLASS_FEATURES, scope), args.options);
   const attack = args.attack || ikonis !== null;
   const spent = spendSessionFeatures(opts.sheet, args, attack);
@@ -640,8 +657,10 @@ export function prepareDuality(sheet: CharacterSheet, args: DualityArgs, scope: 
       fixedDice: [...opts.fixedDice, ...spent.slayer],
     },
     extras: [...(ikonis ? [ikonis.label, ...ikonis.augments] : []), ...exp.names, ...opts.labels, ...spent.labels, ...situational.labels, ...bearer.labels, ...bearer.reminders],
+    experience: { names: exp.names, value: exp.value },
   };
 }
+
 
 /**
  * One Slayer d6 each, rolled with the server's rng whatever the roll's own dice come from (U3). Weapon Specialist
@@ -722,12 +741,15 @@ async function criticalRolled(ctx: QueryCtx, characterId: Id<"characters">): Pro
  */
 export async function resolveDuality(ctx: QueryCtx, loaded: Loaded, args: DualityArgs, rng: Rng, manual: boolean) {
   const { campaign, character, sheet } = loaded;
-  assertCanAct(character, sheet);
+  assertCanAct(character, sheet, campaign);
   const scope = featureScope(campaign);
   const ikonis = args.ikonis ? await loadIkonis(ctx, campaign, character, sheet) : null;
   // E1.4b (dcm-l1er): the bearer's riders on this roll run first, with the server's dice, on the sheet the roll pays from.
   const riders = rules(() => bearerRiderRuns(sheet, args, rollDie));
-  const { paid, input, extras: prepared } = rules(() => prepareDuality(riders.sheet, args, scope, ikonis));
+  // Plan rule-switches WR: R6 (the Experiences' Hope) and R2 (the critical's Hope and Stress), read next to R3.
+  const experienceCost = ruleMode(campaign, "experienceCost");
+  const critical = criticalModeOf(campaign);
+  const { paid, input, extras: prepared, experience } = rules(() => prepareDuality(riders.sheet, args, scope, ikonis, experienceCost));
   const trait = ikonis?.trait ?? args.trait;
   // E1.4b (dcm-hqk1): a situational d20 Hope Die the player marked (Reliable Backup); the Hope Die is drawn first.
   const hopeDie = situationalHopeDie(args.situations && args.situations.length > 0 ? liveMods(sheet, scope) : [], args.situations);
@@ -739,10 +761,12 @@ export async function resolveDuality(ctx: QueryCtx, loaded: Loaded, args: Dualit
   const extras = [...prepared, ...hopeDie.labels, ...riders.lines];
   // Plan rule-switches RA: R3 Manual gains neither the roll's Hope nor its Fear (`dualityEffects`).
   const hopeFear = hopeFearModeOf(campaign);
-  const effects = dualityEffects(args.kind, roll.outcome, hopeFear);
+  const effects = dualityEffects(args.kind, roll.outcome, hopeFear, critical);
   // A roll with Fear places a Know the Tide token in the same saved sheet and row, so undoing the roll takes it back (U4).
   const next = placeTideToken(applyDualityEffects(paid, effects), roll.outcome, args.kind).sheet;
-  return { scope, paid, next, extras, trait, rolled, roll, effects, hopeFear };
+  // R6 Manual: the GM's note for the Experiences used without their Hope (null in Book or without one).
+  const experienceManual = experienceCost === "manual" ? experienceNote(sheet.name, experience) : null;
+  return { scope, paid, next, extras, trait, rolled, roll, effects, hopeFear, critical, experienceCost, experienceManual };
 }
 
 /**
@@ -837,9 +861,11 @@ export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded:
   // Plan rule-switches OE2: M3's variant on an action roll with a Difficulty in dim light (a manual roll types the extra
   // disadvantage die in too, after the roll's own advantage dice, as with a bearer's disadvantage).
   const dark = await darknessOnRoll(ctx, campaign, rawArgs);
-  const args = withDarkness(rawArgs, dark);
+  // Plan rule-switches WR (R7): the helpers named (Book) or counted (Manual), checked before anything is written.
+  const help = await planHelp(ctx, campaign, { characterId: character._id, name: sheet.name }, rawArgs);
+  const args = withDarkness({ ...rawArgs, help: help.help }, dark);
   const resolved = await resolveDuality(ctx, loaded, args, rng, manual);
-  const { scope, paid, trait, rolled, hopeFear } = resolved;
+  const { scope, paid, trait, rolled, hopeFear, critical } = resolved;
   let { roll, effects } = resolved;
   let rolledNext = resolved.next;
   // E1.4b (dcm-m7tm, roll half): the running encounter's adversary uses on this PC's roll (Ill Omen, HF p.95; Backhanded
@@ -851,7 +877,7 @@ export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded:
   });
   if (advUses.bonuses.length > 0) {
     roll = withDieBonuses(roll, advUses.bonuses);
-    effects = dualityEffects(args.kind, roll.outcome, hopeFear);
+    effects = dualityEffects(args.kind, roll.outcome, hopeFear, critical);
     rolledNext = placeTideToken(applyDualityEffects(paid, effects), roll.outcome, args.kind).sheet;
   }
   // Plan lanes, E1: the automatic uses the roll sets off (Courage), with the server's dice, in the same row (undo reverts them).
@@ -888,8 +914,10 @@ export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded:
     success: outcomeSucceeds(roll.outcome),
     withFear: outcomeWithFear(roll.outcome),
     fearWithheld: fearWithheldBy(hopeFear, args.kind, roll.outcome),
+    critical: roll.outcome === "critical",
   });
-  const groupId = aftermath.notes.length > 0 ? newGroupId() : undefined;
+  // WR: R6 / R7 Manual notes and R7 Book's helper rows join the roll's group too (undo takes them back).
+  const groupId = aftermath.notes.length > 0 || resolved.experienceManual !== null || help.note !== null || help.helpers.length > 0 ? newGroupId() : undefined;
   const social = await rollIsSocial(ctx, campaign._id, args.social);
   const entryId = await logAction(ctx, {
     campaignId: campaign._id,
@@ -909,6 +937,10 @@ export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded:
   });
   await markSocial(ctx, entryId, social);
   await applyPcActionRoll(ctx, campaign, aftermath, { groupId, actorId: ctx.user._id });
+  if (groupId !== undefined) {
+    if (resolved.experienceManual !== null) await postRuleNote(ctx, campaign, { ruleId: "experienceCost", summary: resolved.experienceManual, groupId, actorId: ctx.user._id });
+    await payHelpers(ctx, campaign, help, { groupId, actorId: ctx.user._id, rollerName: sheet.name });
+  }
   // E1.3b (dcm-79v1): the other sheets whose shared grant ended, each a row with its sheet before (undo puts it back).
   for (const p of grants.party) {
     await saveSheet(ctx, p.key.character._id, p.sheet);
@@ -1006,20 +1038,25 @@ function withSlayerDamage(roll: RollRecord, slayer: readonly { sides: number; va
  */
 export async function resolveDamage(ctx: QueryCtx, loaded: Loaded, args: DamageArgs, rng: Rng, manual: boolean) {
   const { campaign, character, sheet } = loaded;
-  assertCanAct(character, sheet);
+  assertCanAct(character, sheet, campaign);
   const ikonis = args.source.kind === "ikonis" ? await loadIkonis(ctx, campaign, character, sheet) : null;
   const prepared = rules(() => prepareDamage(sheet, args, featureScope(campaign), ikonis));
   const { sheet: paid, dice: slayer, labels } = rollSlayerDice(prepared.paid, args.slayerDice ?? 0);
-  const roll: RollRecord = withSlayerDamage({ ...rules(() => rollDamage(prepared.input, rng)), manual }, slayer);
-  return { paid, roll, label: prepared.label, slayer, slayerLabels: [...slayerLabel(slayer), ...labels] };
+  // Plan rule-switches WR (R10): Manual rolls a critical like a normal hit; `criticalWithheld` is the maximum left out.
+  const criticalDamage = ruleMode(campaign, "criticalDamage");
+  const roll: RollRecord = withSlayerDamage({ ...rules(() => rollDamage(prepared.input, rng, criticalDamage)), manual }, slayer);
+  const criticalWithheld = criticalDamage === "manual" ? criticalExtra(prepared.input) : 0;
+  return { paid, roll, label: prepared.label, slayer, slayerLabels: [...slayerLabel(slayer), ...labels], criticalWithheld };
 }
 
 export async function damage(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded, args: DamageArgs, rng: Rng, manual: boolean) {
   const { campaign, character, sheet } = loaded;
-  const { paid, roll, label, slayerLabels } = await resolveDamage(ctx, loaded, args, rng, manual);
+  const { paid, roll, label, slayerLabels, criticalWithheld } = await resolveDamage(ctx, loaded, args, rng, manual);
   const critical = !args.critical ? "" : (await criticalRolled(ctx, character._id)) ? "critical " : "critical (declared) ";
   const sheetChanged = changed(sheet, paid);
   if (sheetChanged) await saveSheet(ctx, character._id, paid);
+  // R10 Manual: the GM's note joins the roll's group (undo takes it back); a Book roll stays ungrouped.
+  const groupId = criticalWithheld > 0 ? newGroupId() : undefined;
   const entryId = await logAction(ctx, {
     campaignId: campaign._id,
     characterId: character._id,
@@ -1028,9 +1065,11 @@ export async function damage(ctx: MutationCtx & { user: Doc<"users"> }, loaded: 
     visibility: "public",
     summary: `${sheet.name}: ${critical}damage ${roll.total}${typedLabel(args.modifier)} (${[label, ...slayerLabels].join(", ")})${manual ? " [manual]" : ""}`,
     roll,
+    ...(groupId !== undefined ? { groupId } : {}),
     ...(sheetChanged ? { before: sheet } : {}),
     undoable: true,
   });
+  if (groupId !== undefined) await postRuleNote(ctx, campaign, { ruleId: "criticalDamage", summary: criticalDamageNote(sheet.name, criticalWithheld), groupId, actorId: ctx.user._id });
   return { entryId, roll };
 }
 

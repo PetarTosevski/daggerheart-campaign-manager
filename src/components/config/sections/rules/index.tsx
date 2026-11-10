@@ -7,7 +7,7 @@ import { useState, type ReactNode } from "react";
 
 import { SlotBoundary } from "@/components/party/session/boundary";
 import { errorMessage } from "@/lib/convex-errors";
-import { optionsFor, type CampaignOptionId } from "@/lib/frames/options";
+import { EXPANSION_OPTIONS, optionsFor, type CampaignOptionId } from "@/lib/frames/options";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { SettingsSectionProps } from "../../slots";
@@ -37,7 +37,7 @@ export function HouseRulesSection({ campaign }: SettingsSectionProps): ReactNode
         <RuleRows campaignId={campaign._id} frameId={campaign.frameId} editable />
       </SlotBoundary>
       <SlotBoundary fallback={<p role="alert" className="cfg-muted">{RULE_ROWS_TEXT.failed}</p>}>
-        <CampaignOptions campaign={campaign} />
+        <CampaignOptions campaign={campaign} pick={(id) => !EXPANSION_OPTIONS.includes(id)} label={RULES_TEXT.optionsLabel} tag={RULES_TEXT.optionTag} />
       </SlotBoundary>
       <p className="cfg-lbl cfg-rules-gap">{RULES_TEXT.rulingsLabel}</p>
       <p className="cfg-hint">{RULES_TEXT.hint}</p>
@@ -46,10 +46,18 @@ export function HouseRulesSection({ campaign }: SettingsSectionProps): ReactNode
   );
 }
 
-/** Today's campaign options as switches; disabled while a session is live (the server refuses with RULES_LOCKED). */
-function CampaignOptions({ campaign }: SettingsSectionProps): ReactNode {
+/**
+ * Campaign options as switches; disabled while a session is live (the server refuses with RULES_LOCKED). House rules
+ * shows the frame rules, Expansions (../expansions) the expansion content switches: `pick` chooses which.
+ */
+export function CampaignOptions({
+  campaign,
+  pick,
+  label,
+  tag,
+}: SettingsSectionProps & { pick: (id: CampaignOptionId) => boolean; label: string; tag: string }): ReactNode {
   const campaignId = campaign._id;
-  const options = optionsFor(campaign.frameId);
+  const options = optionsFor(campaign.frameId).filter((o) => pick(o.id));
   const locked = useRuleSettings(campaignId)?.locked === true;
   const setOption = useMutation(api.campaigns.setOption).withOptimisticUpdate((store, { option, enabled }) => {
     const current = store.getQuery(api.campaigns.get, { campaignId });
@@ -65,14 +73,14 @@ function CampaignOptions({ campaign }: SettingsSectionProps): ReactNode {
   if (options.length === 0) return null;
   return (
     <>
-      <p className="cfg-lbl cfg-rules-gap">{RULES_TEXT.optionsLabel}</p>
-      <ul className="cfg-rules-list" aria-label={RULES_TEXT.optionsLabel}>
+      <p className="cfg-lbl cfg-rules-gap">{label}</p>
+      <ul className="cfg-rules-list" aria-label={label}>
         {options.map((o) => (
           <li key={o.id} className="cfg-row">
             <div className="cfg-row-t">
               <b>{o.label}</b>
               <span>{o.description}</span>
-              <em>{RULES_TEXT.optionTag}</em>
+              <em>{tag}</em>
             </div>
             <button
               type="button"

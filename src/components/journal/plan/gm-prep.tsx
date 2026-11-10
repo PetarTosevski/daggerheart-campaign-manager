@@ -4,45 +4,23 @@ import { useMutation } from "convex/react";
 import { Pencil } from "lucide-react";
 import { useId, useState } from "react";
 
+import { prepBlocks, prepPatches } from "@/lib/journal/plan";
+
 import { api } from "../../../../convex/_generated/api";
 import { SESSION_TEXT_MAX } from "../../../../convex/lib/validators/sessions";
 import { Parchment } from "../ui";
-import { patchPrep, useRun, type PlanIds } from "./scenes";
+import { useRun, type PlanIds } from "./scenes";
 
 /**
  * 'GM prep' (JP1, design Plan view, the parchment under the scenes): the session's hooks text (`sessionPrep.hooks`,
- * the old 'Hooks & loose threads' field). Read as paper: lines starting '- ' are bullets, other lines paragraphs.
- * 'Edit' turns it into a textarea; leaving it saves (`setHooks`, optimistic) and shows the paper again.
+ * the old 'Hooks & loose threads' field). Read as paper (`prepBlocks`): lines starting '- ' are bullets, other lines
+ * paragraphs. 'Edit' turns it into a textarea; leaving it saves (`setHooks`, optimistic) and shows the paper again.
  */
-
-/** A block of the prep note: a run of '- ' lines (a bullet list) or one plain line. */
-export type PrepBlock = { kind: "list"; items: string[] } | { kind: "line"; text: string };
-
-/** Splits the hooks text into blocks: consecutive '- ' lines form one list; blank lines are dropped. */
-export function prepBlocks(text: string): PrepBlock[] {
-  const blocks: PrepBlock[] = [];
-  for (const raw of text.split("\n")) {
-    const line = raw.trim();
-    if (line === "") continue;
-    if (line.startsWith("- ")) {
-      const item = line.slice(2).trim();
-      const last = blocks.at(-1);
-      if (last?.kind === "list") last.items.push(item);
-      else blocks.push({ kind: "list", items: [item] });
-    } else {
-      blocks.push({ kind: "line", text: line });
-    }
-  }
-  return blocks;
-}
-
 export function GmPrep({ ids, hooks }: { ids: PlanIds; hooks: string }) {
   const [draft, setDraft] = useState<string | null>(null);
   const { error, run } = useRun();
   const fieldId = useId();
-  const setHooks = useMutation(api.sessionPrep.setHooks).withOptimisticUpdate((store, args) =>
-    patchPrep(store, { campaignId: args.campaignId, sessionId: args.sessionId }, (prep) => ({ ...prep, hooks: args.hooks.trim() })),
-  );
+  const setHooks = useMutation(api.sessionPrep.setHooks).withOptimisticUpdate(prepPatches.setHooks);
 
   function save() {
     const text = draft;

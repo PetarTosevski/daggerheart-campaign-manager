@@ -88,7 +88,7 @@ describe("settings URL state", () => {
   });
 
   it("lists the board's five sections in order", () => {
-    expect(slots.SETTINGS_SECTIONS.map((s) => s.label)).toEqual(["Table", "House rules", "Players", "Lorekeeper", "Sessions"]);
+    expect(slots.SETTINGS_SECTIONS.map((s) => s.label)).toEqual(["Table", "House rules", "Expansions", "Players", "Lorekeeper", "Sessions"]);
   });
 });
 
@@ -115,7 +115,7 @@ describe("Campaign settings panel", () => {
     expect(within(dialog).getByRole("heading", { level: 3, name: "At the table" })).toBeInTheDocument();
     expect(within(dialog).getByText("Changes save as you make them and reach every player at once.")).toBeInTheDocument();
     const nav = within(dialog).getByRole("navigation", { name: "Settings sections" });
-    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["Table", "House rules", "Players", "Lorekeeper", "Sessions"]);
+    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["Table", "House rules", "Expansions", "Players", "Lorekeeper", "Sessions"]);
     expect(within(nav).getByRole("button", { name: "Table" })).toHaveAttribute("aria-current", "true");
     expect(within(nav).getByRole("button", { name: "Table" })).toHaveFocus();
   });

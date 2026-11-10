@@ -17,8 +17,9 @@ import { COUNTDOWN_DETAILS_MAX_LENGTH } from "../src/lib/validation/countdowns";
 import type { Doc } from "./_generated/dataModel";
 import { logAction } from "./lib/actionLog";
 import { rollDice } from "./lib/dice";
-import { spendFear as spendCampaignFear } from "./lib/fear";
+import { campaignFearState, spendFear as spendCampaignFear } from "./lib/fear";
 import { keyedGmMutation } from "./lib/functions";
+import { postRuleNote, ruleMode } from "./lib/ruleModes";
 import { recordHistory } from "./tables/history";
 
 /**
@@ -45,7 +46,7 @@ function findFeature(campaign: Doc<"campaigns">, environmentId: string, featureN
 /**
  * Spends the feature's Fear cost ("Spend a Fear to ...", CB p.154 Fear Features) from GM Fear (FEAR_EMPTY when the GM
  * holds less) and logs which environment feature it was in the GM's feed, where Undo gives the Fear back. A feature
- * without a Fear cost is INVALID.
+ * without a Fear cost is INVALID. WF: F5 Manual spends nothing (`spent: 0`) and posts the GM's "Spend N Fear by hand".
  */
 export const spendFear = keyedGmMutation({
   args: featureArgs,
@@ -55,6 +56,12 @@ export const spendFear = keyedGmMutation({
     const cost = feature.fearCost;
     if (cost === undefined) throw appError("INVALID", "That feature doesn't cost Fear.");
     return ctx.once("environment_spend_fear", { environmentId, featureName }, async () => {
+      // Plan rule-switches WF, F5 `fearFeatures` Manual (CB p.154): the feature is used without taking Fear and without
+      // FEAR_EMPTY; the GM gets "Spend N Fear by hand" (a note, never undoable: it changed nothing).
+      if (ruleMode(ctx.campaign, "fearFeatures") === "manual") {
+        const entryId = await postRuleNote(ctx, ctx.campaign, { ruleId: "fearFeatures", summary: `${feature.name} (${environment.name}): Spend ${cost} Fear by hand`, actorId: ctx.user._id });
+        return { fear: (await campaignFearState(ctx, ctx.campaign._id)).fear, spent: 0, entryId };
+      }
       const { newValue } = await spendCampaignFear(ctx, ctx.campaign._id, cost, "feature");
       // Undoable from the feed (user 2026-10-19): `actionLog.undo` gives the spent Fear back (capped at 12).
       const entryId = await logAction(ctx, {

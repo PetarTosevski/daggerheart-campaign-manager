@@ -260,6 +260,7 @@ let mine: Mine = { moves: [...REST_MOVES.short], efficient: [], slots: 2, oasis:
 const fired: unknown[] = [];
 /** The latest ended rest `restsReads.current` answers (the Oasis dice); null while the picker tests run. */
 let lastRest: unknown = null;
+const RULES = { fearFromRests: "book", shortRestLimit: "book", interruptedRest: "book", twoDowntimeMoves: "book", downtimeMoveEffects: "book", unconscious: "book" };
 
 vi.mock("convex/react", async () => {
   const { getFunctionName } = await import("convex/server");
@@ -267,8 +268,8 @@ vi.mock("convex/react", async () => {
     useQuery: (ref: Parameters<typeof getFunctionName>[0]) => {
       const name = getFunctionName(ref);
       if (name === "restsReads:current") {
-        if (lastRest !== null) return { open: null, shortRestsSinceLong: 1, last: lastRest };
-        return { open: { _id: "r1", kind: "short", startedAt: 0, gmOverride: false, choices: [], moves: [{ characterId: "c1", ...mine }] }, shortRestsSinceLong: 0, last: null };
+        if (lastRest !== null) return { open: null, shortRestsSinceLong: 1, rules: RULES, last: lastRest };
+        return { open: { _id: "r1", kind: "short", startedAt: 0, gmOverride: false, choices: [], moves: [{ characterId: "c1", ...mine }] }, shortRestsSinceLong: 0, rules: RULES, last: null };
       }
       if (name === "charactersReads:listByCampaign") return [{ _id: "c1", sheet: { name: "Ael" } }, { _id: "c2", sheet: { name: "Bryn" } }];
       return undefined;

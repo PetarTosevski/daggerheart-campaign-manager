@@ -18,7 +18,7 @@ import {
   type WindowState,
 } from "@/lib/domain/adversary-actions";
 import type { CardEffect } from "@/lib/domain/card-effects/types";
-import { afterAnswer, grantAmount, grantMax, type HitView } from "@/components/combat-map/actions/reactions/model";
+import { afterAnswer, grantAmount, grantMax, type HitView } from "@/lib/combat-map/reactions";
 
 // Plan lanes-2, E2.3 (docs/tasks/TASK-LN3-E2.md): Unstuck's two free slots (dcm-3m5k), the attacker's grants (dcm-nnbl
 // Hope before forced HP, HF p.75; dcm-5cn5 Money Talks' gold, CB p.228) and the payer's flags (dcm-hgvx, Ravenous HF p.94).

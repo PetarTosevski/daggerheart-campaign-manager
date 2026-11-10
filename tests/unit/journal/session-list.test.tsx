@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Id } from "../../../convex/_generated/dataModel";
 import type { SessionListItem } from "../../../convex/sessionRecords";
-import { dayMonth, fullSessionDate, headingLine, nextSessionNumber, shortSessionDate, startTime, wholeHours } from "../../../src/components/journal/session-list/format";
+import { dayMonth, fullSessionDate, shortSessionDate, startTime } from "../../../src/lib/dates";
+import { headingLine, nextSessionNumber, wholeHours } from "../../../src/lib/journal/sessions";
 
 let results: Record<string, unknown> = {};
 const calls = vi.hoisted(() => ({ list: [] as { name: string; args: Record<string, unknown> }[], fail: null as string | null }));

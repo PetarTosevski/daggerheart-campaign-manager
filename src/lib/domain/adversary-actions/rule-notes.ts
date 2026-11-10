@@ -16,6 +16,7 @@
 // S1 has no note here: adversary actions always move the spotlight to the GM, in every mode (user 2026-11-06, tracer
 //   RFA; S1 Manual stops only the PC-roll half, convex/lib/rollAftermath.ts).
 
+import { hordeHalved } from "../encounters/damage";
 import type { PcHitResult, PcSeverity, HitRules } from "./severity";
 
 export type HitRuleNote = { ruleId: "armorSlots" | "resistance" | "stressOverflow"; summary: string };
@@ -61,4 +62,29 @@ export function vulnerableTargetNote(attacker: string, target: string): string {
 /** C1 (CB p.102): the condition of a PC target that gives an attack against them disadvantage, or null. */
 export function hiddenCondition(conditions: readonly string[]): "hidden" | "cloaked" | null {
   return conditions.includes("hidden") ? "hidden" : conditions.includes("cloaked") ? "cloaked" : null;
+}
+
+/** WF, F4 / F5 Manual (CB p.154): the GM's line for Fear the app no longer spends ("Spend 2 Fear by hand"). */
+export function fearByHandText(amount: number): string {
+  return `Spend ${amount} Fear by hand`;
+}
+
+/**
+ * WF, D7 `hordes` Manual (CB p.199 "When the Horde has marked half or more of their HP, their standard attack deals X
+ * damage instead"): the GM's note when a Horde at half HP or more attacked with its printed damage; null when the Horde
+ * damage would not apply.
+ */
+export function hordeNote(label: string, horde: string | null | undefined, tracks: { hp: number; hpMax: number }): string | null {
+  return horde && hordeHalved(tracks) ? `${label}: Horde at half HP: it deals ${horde} instead?` : null;
+}
+
+/** WF, M4 `outOfRange` Manual (CB p.103): "Mira attacked Theo out of range" ("Mira used Fireball on Theo out of range"). */
+export function outOfRangeNote(actor: string, targets: readonly string[], what?: string): string {
+  const names = targets.length > 0 ? targets.join(", ") : "a target";
+  return what ? `${actor} used ${what} on ${names} out of range` : `${actor} attacked ${names} out of range`;
+}
+
+/** WF, C4 `unconscious` Book (CB p.106 "they can't be targeted by an attack"): the refusal's message. */
+export function unconsciousTargetText(names: readonly string[]): string {
+  return `${names.join(", ")} ${names.length === 1 ? "is" : "are"} unconscious and can't be targeted by an attack.`;
 }

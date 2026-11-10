@@ -3,6 +3,7 @@
 import * as z from "../../zod";
 
 import { RuleError } from "../../errors/app-error";
+import type { ModeOf } from "../../rules/registry";
 import { DOOM_BOXES } from "../doom-track";
 
 export const HORIZON_TRACKER_KEY = "horizon";
@@ -54,6 +55,38 @@ export function markedInTier(state: HorizonState, tier: DoomTierNumber): number 
 /** Tiers 1–3: whether the tier's rule is in force (5 or more boxes marked). */
 export function tierRuleActive(state: HorizonState, tier: DoomTierNumber): boolean {
   return tier !== 4 && markedInTier(state, tier) >= TIER_RULE_THRESHOLD;
+}
+
+/**
+ * W3 "Doom Track" (HF p.177; rule switches WS). Book: the session-end reminder every session and the tier rules
+ * automated. `everyNSessions`: the same tier rules (user 2026-11-10), with the reminder every `doomTrackSessions`-th
+ * session. Manual: no reminder, no Tier 4 Fear, no automated tier rule (the GM marks boxes and spends Fear by hand).
+ */
+export type DoomTrackMode = ModeOf<"doomTrack">;
+
+/** Whether the tier rules (Tier 1's long-rest Fear, Tier 2's region d20, Tier 3's Dark-Hearted) are automated. */
+export function doomTierRulesApply(mode: DoomTrackMode): boolean {
+  return mode !== "manual";
+}
+
+/**
+ * Whether the End of session `sessionN` reminds the GM to mark a box: every session in Book; every `every`-th session
+ * (session N, 2N, …) in `everyNSessions`, never when the session's number is unknown; never in Manual.
+ */
+export function doomReminderDue(mode: DoomTrackMode, every: number, sessionN: number | undefined): boolean {
+  if (mode === "manual") return false;
+  if (mode === "book" || every <= 1) return true;
+  return sessionN !== undefined && sessionN % every === 0;
+}
+
+/** W3 Manual: the GM's note for the Fear a Tier 4 mark would give. "Doom Track Tier 4: gain 2 Fear?" */
+export function tierFourFearNote(amount: number): string {
+  return `Doom Track Tier 4: gain ${amount} Fear?`;
+}
+
+/** W3 Manual: the GM's note when a region's first d20 is a 1 while Tier 2's rule is in force. */
+export function tierTwoRegionNote(regionName: string): string {
+  return `Doom Track Tier 2: ${regionName}'s habitat d20 rolled a 1, which counts as two 1s (overtaken). Change it by hand?`;
 }
 
 export type MarkRefusal = "UNKNOWN_BOX" | "ALREADY_MARKED" | "TIER_TOO_HIGH" | "PARENT_UNMARKED";

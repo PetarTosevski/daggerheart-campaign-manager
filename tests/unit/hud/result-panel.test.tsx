@@ -27,10 +27,14 @@ import {
   heldPrimary,
   heldSub,
   outcomeTag,
+  playerResultView,
+  rowSeverity,
+  severityText,
   splitLeft,
   weaponDamageType,
   withAnswers,
   type ChooseAsk,
+  type PlayerResult,
   type SplitAsk,
 } from "@/components/combat-map/hud/result/model";
 import { HudProvider } from "@/components/combat-map/hud/state";
@@ -149,16 +153,45 @@ function PickHandle() {
   );
 }
 
-function renderHud(state: CombatPageState = playerState) {
-  return render(
+function hudTree(state: CombatPageState) {
+  return (
     <HudProvider>
       <PickProvider>
         <PickHandle />
         <div className="hud-map" />
         <HudResult state={state} />
       </PickProvider>
-    </HudProvider>,
+    </HudProvider>
   );
+}
+
+function renderHud(state: CombatPageState = playerState) {
+  return render(hudTree(state));
+}
+
+/** A player's card use as `combatHud.playerResults` lists it (Ash's, against the Lieutenant and the Bandit). */
+function playerCard(entryId: string, title: string): PlayerResult {
+  return {
+    entryId,
+    characterId: "ashc",
+    fearDelta: 1,
+    panel: {
+      kind: "card",
+      title,
+      actorName: "Ash",
+      cardId: "not-a-card",
+      useId: "main",
+      roll: { ...ROLL, outcome: "successFear" },
+      damage: [DAMAGE],
+      success: true,
+      targets: [
+        { tokenId: LT, name: "Lieutenant", hit: true, defeated: false },
+        { tokenId: BANDIT, name: "Bandit", hit: false, defeated: false },
+      ],
+      prompts: [],
+      notes: [],
+    },
+  };
 }
 
 describe("the result panel's model", () => {
@@ -203,6 +236,34 @@ describe("the result panel's model", () => {
     expect(view.targets).toEqual([{ tokenId: LT, name: "Lieutenant", verdict: "Miss" }]);
     // No roll (Shadow Stepper): "Moss · Feature", no outcome.
     expect(featureResultView({ characterId: CHARACTER, actorName: "Moss", featureName: "Shadow Stepper", result: { ...result, roll: null, targets: [], fearDelta: undefined }, names: NAMES })).toMatchObject({ sub: "Moss · Feature", success: null, fear: 0 });
+  });
+
+  it("dcm-uemx: the GM's severity line (Minor / Major / Severe, Massive, resistance, a Minion's defeat); none on a miss", () => {
+    expect(severityText({ severity: "major", hpMarked: 2 })).toBe("Major · 2 HP");
+    expect(severityText({ severity: "minor", hpMarked: 1, resisted: "resistant" })).toBe("Minor · 1 HP (resistant)");
+    expect(severityText({ severity: "severe", hpMarked: 4, massive: true })).toBe("Massive · 4 HP");
+    expect(severityText({ severity: "none", hpMarked: 0, resisted: "immune" })).toBe("No damage · 0 HP (immune)");
+    expect(severityText({ severity: "defeat", hpMarked: 1 })).toBe("1 HP");
+    const damage = new Map([[LT as string, { severity: "severe" as const, hpMarked: 3 }]]);
+    expect(rowSeverity({ tokenId: LT, name: "Lieutenant", verdict: "Hit" }, damage)).toBe("Severe · 3 HP");
+    expect(rowSeverity({ tokenId: LT, name: "Lieutenant", verdict: "Miss" }, damage)).toBeNull();
+    expect(rowSeverity({ tokenId: LT, name: "Lieutenant", verdict: "Hit" }, undefined)).toBeNull();
+  });
+
+  it("dcm-uemx: the GM's copy of a player's card, attack and feature result", () => {
+    const card = playerResultView({ ...playerCard("e9", "Vicious Entangle"), panel: { ...playerCard("e9", "x").panel, title: "Vicious Entangle", minionOffer: true } });
+    expect(card).toMatchObject({ id: "e9", kind: "card", title: "Vicious Entangle", sub: "Ash · Roll", fear: 1, success: true });
+    expect(card.targets).toEqual([
+      { tokenId: LT, name: "Lieutenant", verdict: "Hit" },
+      { tokenId: BANDIT, name: "Bandit", verdict: "Miss" },
+    ]);
+    expect(card.notes).toEqual(["Ash picks the extra Minions."]);
+    const attack = playerResultView({ entryId: "e10", fearDelta: 0, panel: { kind: "attack", title: "Longsword", actorName: "Ash", damageType: "physical", roll: ROLL, damage: [DAMAGE], success: true, targets: [{ tokenId: LT, name: "Lieutenant", hit: true, defeated: true }], prompts: [], notes: [], riders: ["Sneak Attack"], minionsForGm: 2 } });
+    expect(attack).toMatchObject({ kind: "attack", title: "Longsword", sub: "Ash · Attack Roll", success: true, damage: [{ formula: "1d8+1", total: 7, type: "physical" }] });
+    expect(attack.targets[0]!.verdict).toBe("Defeated");
+    expect(attack.notes).toEqual(["With Sneak Attack", "The GM picks 2 more Minions."]);
+    const feature = playerResultView({ entryId: "e11", panel: { kind: "feature", title: "Battle Ritual", actorName: "Ash", roll: null, damage: [], success: true, targets: [], prompts: [{ kind: "manual", text: "Mark a Stress" }], notes: ["Favor 1"] } });
+    expect(feature).toMatchObject({ kind: "feature", title: "Battle Ritual", sub: "Ash · Feature", notes: ["Favor 1"], prompts: [{ kind: "manual", text: "Mark a Stress" }] });
   });
 
   it("the held roll's lines; splits with and without a total; ally picks grouped by step; answers merged", () => {
@@ -257,6 +318,58 @@ describe("the result panel in the HUD", () => {
     fireEvent.click(within(panel).getByRole("button", { name: /^Done: Restrain the Bandit/ }));
     expect(within(panel).queryByTestId("hud-result-prompt")).toBeNull();
     fireEvent.click(within(panel).getByRole("button", { name: "Close the result of Vicious Entangle" }));
+    expect(screen.queryByTestId("hud-result")).toBeNull();
+  });
+
+  it("dcm-uemx: the GM's panel adds severity and HP on hit rows from the GM-only query; a player's never asks for it", () => {
+    seedView();
+    queries["combatHud:resultDamage"] = [{ tokenId: LT, severity: "major", hpMarked: 2 }];
+    const show = () => act(() => showCardResult({ characterId: CHARACTER, actorName: "Moss", cardName: "Vicious Entangle", result: cardResolved(), names: NAMES }));
+    // A player: the query is skipped, so even a seeded answer never shows (U1).
+    const player = renderHud();
+    show();
+    expect(screen.queryByTestId("hud-result-row-severity")).toBeNull();
+    expect(screen.getByTestId("hud-result").textContent).not.toMatch(/HP|Major/);
+    player.unmount();
+    hudResults.reset();
+    renderHud(gmState);
+    show();
+    const rows = screen.getAllByTestId("hud-result-row");
+    expect(within(rows[0]!).getByTestId("hud-result-row-severity")).toHaveTextContent("Major · 2 HP");
+    // The missed target keeps its row, without a severity.
+    expect(rows[1]).toHaveTextContent("BanditMiss");
+    expect(within(rows[1]!).queryByTestId("hud-result-row-severity")).toBeNull();
+  });
+
+  it("dcm-uemx: the GM's HUD shows each player's new result (newest wins), with severity; a closed one never comes back", () => {
+    seedView();
+    queries["combatHud:resultDamage"] = [{ tokenId: LT, severity: "major", hpMarked: 2 }];
+    const old = playerCard("old", "Rain of Blades");
+    queries["combatHud:playerResults"] = [old];
+    const r = renderHud(gmState);
+    // The list the HUD loaded with is the baseline: nothing pops up.
+    expect(screen.queryByTestId("hud-result")).toBeNull();
+    queries["combatHud:playerResults"] = [playerCard("new2", "Vicious Entangle"), playerCard("new1", "Bolt Beacon"), old];
+    r.rerender(hudTree(gmState));
+    const panel = screen.getByTestId("hud-result");
+    expect(within(panel).getByRole("heading", { name: "Vicious Entangle" })).toBeInTheDocument();
+    expect(panel).toHaveTextContent("Ash · Roll");
+    expect(within(panel).getAllByTestId("hud-result-row")[0]).toHaveTextContent("Lieutenant");
+    expect(within(panel).getByTestId("hud-result-row-severity")).toHaveTextContent("Major · 2 HP");
+    fireEvent.click(within(panel).getByRole("button", { name: "Close the result of Vicious Entangle" }));
+    expect(screen.queryByTestId("hud-result")).toBeNull();
+    // The same list again (any re-send): nothing comes back.
+    queries["combatHud:playerResults"] = [playerCard("new2", "Vicious Entangle"), playerCard("new1", "Bolt Beacon"), old];
+    r.rerender(hudTree(gmState));
+    expect(screen.queryByTestId("hud-result")).toBeNull();
+  });
+
+  it("dcm-uemx: a player's HUD never asks for the other players' results", () => {
+    seedView();
+    queries["combatHud:playerResults"] = [];
+    const r = renderHud();
+    queries["combatHud:playerResults"] = [playerCard("new", "Vicious Entangle")];
+    r.rerender(hudTree(playerState));
     expect(screen.queryByTestId("hud-result")).toBeNull();
   });
 

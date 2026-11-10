@@ -20,6 +20,28 @@ export const TOME_CHAPTERS: { id: TomeChapterId; numeral: string; title: string 
   { id: "mechanics", numeral: "III", title: "Campaign Mechanics" }
 ];
 
+/** A custom campaign's tome chapter: the GM note, what the GM must write, and the editor's placeholder. */
+export type CustomTomeChapter = { note: string; must: string; placeholder: string };
+
+/** GM notes and prompts for a custom campaign's tome (TomeCustom board); shared by the website and the phone app. */
+export const CUSTOM_CHAPTERS: Record<TomeChapterId, CustomTomeChapter> = {
+  overview: {
+    note: "Share your overview with your players before they build characters: the world, its history and what makes it different.",
+    must: "This is your own campaign, so there is no book text here. You need to write your own lore and setting text for this chapter.",
+    placeholder: "Write your setting here: the world, its history, its peoples, and the pitch you read to your players…",
+  },
+  incident: {
+    note: "The inciting incident is the event that pulls the party into the story in your first session.",
+    must: "Write your own inciting incident: the event that throws the party together, where the first session starts, and the key figures involved.",
+    placeholder: "What happens at the start of the first session? Where are the characters, who do they meet, and what goes wrong?",
+  },
+  mechanics: {
+    note: "Campaign mechanics are the special rules that apply only to this campaign. They are optional, but they make a frame feel unique.",
+    must: "No mechanics come with a custom campaign. You need to write your own custom mechanics: special resources, countdowns, environment rules or changes to the core rules.",
+    placeholder: "e.g. 1. Corruption: when a PC rolls with Fear in a cursed place, they mark a Corruption token…",
+  },
+};
+
 export const TOMES: Record<PublishedFrameId, Tome> = {
   "witherwild": {
     overview: {

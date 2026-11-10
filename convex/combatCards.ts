@@ -13,7 +13,7 @@ import type { CharacterSheet, Effect } from "../src/lib/validation/characters";
 import { tickArmedCountdowns } from "./countdownRolls";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { logAction, newGroupId } from "./lib/actionLog";
+import { attachResultPanel, logAction, newGroupId } from "./lib/actionLog";
 import { cardChoicesValidator, cardRollValidator, dropDice, keepDice, keptDice, parseChoices, type CardChoice, type CardRoll, type DiceSlot } from "./lib/cardChoices";
 import { writeHandHidden } from "./lib/cardHand";
 import {
@@ -41,6 +41,8 @@ import {
   resistanceNotes,
   rollText,
   srdUses,
+  targetDamageOf,
+  resultPanelOf,
   writeInstances,
   type InstanceWrite,
   type ResolvedCard,
@@ -89,6 +91,7 @@ import { rollDie } from "./lib/dice";
 import { campaignFearState, gainFear, spendFear } from "./lib/fear";
 import { afterPcActionRoll } from "./lib/rollAftermath";
 import { postRuleNote, ruleModesOf } from "./lib/ruleModes";
+import { payHelpers } from "./lib/helpAnAlly";
 import { minionPicker } from "../src/lib/domain/combat-actions/damage";
 import { campaignMutation, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
 import { fearFor } from "./lib/fearVisibility";
@@ -533,7 +536,7 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
 
   const groupId = newGroupId();
   const damage = damageRolls(plan);
-  const { parts, outcomes } = publicTargets(plan, built, writes);
+  const { parts, outcomes, names } = publicTargets(plan, built, writes);
   const useName = pick.use.name !== pick.name ? ` (${pick.use.name})` : "";
   const rollPart = plan.roll ? `: ${rollText(pick.use, plan.roll.record, req.roll.trait)}` : "";
   const damagePart = damage.length > 0 ? `; ${plan.roll?.critical ? "critical " : ""}damage ${damage.map((d) => d.text).join(" + ")}` : "";
@@ -589,6 +592,8 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
   }
   const lines = [...gmLines(plan, built, writes), ...casterEnds.lines];
   const befores = [...writes.map((w) => w.before), ...casterEnds.before, ...stanceBefore];
+  // dcm-uemx: severity and HP per adversary hit, for the GM's result panel (`combatHud.resultDamage`; U1: GM row only).
+  const targetDamage = targetDamageOf(plan, built, writes);
   if (lines.length > 0 || befores.length > 0) {
     await logAction(ctx, {
       campaignId: campaign._id,
@@ -599,6 +604,7 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
       ...(damage[0] ? { roll: damage[0].roll } : {}),
       groupId,
       ...(befores.length > 0 ? { adversaryBefore: befores } : {}),
+      ...(targetDamage.length > 0 ? { targetDamage } : {}),
       undoable: true,
     });
   }
@@ -608,6 +614,8 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
   for (const summary of lastHpNotes(writes, modes)) await postRuleNote(ctx, campaign, { ruleId: "adversaryDefeated", summary, groupId, actorId });
   // RFC: line of sight (M1), condition dice (C1) and Stress overflow (D4) Manual notes for the card use.
   for (const n of ruleNotesOfUse(built, plan)) await postRuleNote(ctx, campaign, { ruleId: n.ruleId, summary: n.summary, groupId, actorId });
+  // Plan rule-switches WF (R7): the helpers pay 1 Hope each in the use's group (undo refunds); Manual: the GM's note.
+  if (built.help) await payHelpers(ctx, campaign, built.help, { groupId, actorId, rollerName: sheet.name });
 
   // Armed countdowns tick right after an action roll, as for `actionRoll` (countdowns-advanced K1); never a reaction roll.
   if (plan.roll && countsAsActionRoll(plan.roll.record, { logKind: "roll", undone: false })) {
@@ -617,7 +625,7 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
   // hands the spotlight to the GM, or notes it, in the use's group. R3: the card engine (src/lib/domain/card-effects/run.ts)
   // gains the roll's Hope and Fear itself, following the run context's mode (RA2); the R3 note is posted here.
   if (plan.roll && plan.roll.record.kind === "action" && plan.roll.record.outcome !== "none") {
-    await afterPcActionRoll(ctx, campaign, { characterId: character._id, name: sheet.name, kind: "action", success: plan.success, withFear: plan.roll.withFear, groupId, actorId });
+    await afterPcActionRoll(ctx, campaign, { characterId: character._id, name: sheet.name, kind: "action", success: plan.success, withFear: plan.roll.withFear, critical: plan.roll.critical, groupId, actorId });
   }
 
   // AA2b: card damage to another PC opens their incoming hit (armor, ally reactions) instead of a manual prompt.
@@ -639,6 +647,14 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
     minionOffer: minions.offer,
     ...(minions.forGm !== undefined ? { minionsForGm: minions.forGm } : {}),
   };
+  // dcm-uemx (user 2026-11-09): a use on the map shows its result panel on the GM's HUD too (`combatHud.playerResults`).
+  if (built.creatures.onMap) {
+    await attachResultPanel(
+      ctx,
+      entryId,
+      resultPanelOf({ kind: "card", title: pick.name, actorName: sheet.name, cardId: plan.cardId, useId: plan.useId, roll: result.roll, damage: result.damage, success: plan.success, targets: outcomes, names, prompts, minionOffer: minions.offer, ...(minions.forGm !== undefined ? { minionsForGm: minions.forGm } : {}) }),
+    );
+  }
   return { result, writes };
 }
 
@@ -1435,7 +1451,7 @@ export const useCard = keyedCampaignMutation({
       const { campaign, character, sheet, gm } = await editableHere(ctx, args.characterId);
       // Config R2 (Q2 a): a player's card use with a target out of its range is refused when the GM refuses them.
       const refuse = refusesOutOfRange(campaign, gm);
-      assertCanAct(character, sheet);
+      assertCanAct(character, sheet, campaign);
       const scene = await attackScene(ctx, campaign, character, args.mapId);
       const pick = pickCard(sheet, args.cardId, args.spell);
       // S2 (plan rule-switches RS2): a card's action waits while the GM holds the spotlight; a reaction card never does.
@@ -1547,7 +1563,7 @@ export const sanction = keyedGmMutation({
       const character = await ctx.db.get("characters", characterId);
       if (character === null || character.campaignId !== ctx.campaign._id || row.mapId === undefined) throw appError("COMBAT_TARGET_INVALID");
       const sheet = readSheet(character.sheet);
-      assertCanAct(character, sheet);
+      assertCanAct(character, sheet, ctx.campaign);
       const scene = await attackScene(ctx, ctx.campaign, character, row.mapId);
       const pick = pickCard(sheet, action.cardId, action.useId);
       // dcm-0x2g: the square the player picked for a point area (the payload keeps `point` only, not `points`).

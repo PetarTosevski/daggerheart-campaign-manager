@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 
 import { MAX_LEVEL } from "../src/lib/domain/characters/index";
-import { applyLevelUp, LevelUpRuleError, revertLevelUp } from "../src/lib/domain/level-up/index";
+import { aboveLevelNote, applyLevelUp, cardsAboveLevel, LevelUpRuleError, revertLevelUp } from "../src/lib/domain/level-up/index";
 import { applyChosenPicks, cardsGained, chosenPicks, revertChosenPicks } from "../src/lib/domain/level-up/on-choose";
 import { onChooseUse, runOnChoose } from "../src/lib/domain/feature-effects/run";
 import { cardEffect } from "../src/lib/srd/card-effects/index";
@@ -19,6 +19,7 @@ import { loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { campaignFearState } from "./lib/fear";
 import { keyedGmMutation, keyedUserMutation, userQuery } from "./lib/functions";
 import { applyRule } from "./lib/mechanics";
+import { postRuleNote, ruleMode } from "./lib/ruleModes";
 import { partyLevelUp as flagParty } from "./lib/partyLevelUp";
 import { atLeast, type Permission } from "./lib/permissions";
 import { traitIdValidator } from "./lib/validators/characters";
@@ -139,9 +140,11 @@ export const apply = keyedUserMutation({
       const sheet = readSheet(character.sheet);
       if (!sheet.levelUpPending && permission !== "owner") throw appError("LEVEL_UP_RULE", "Wait for the GM to call for a level-up.");
       const allowExpansion = resolveOptions(campaign.frameId, campaign.options).hopeAndFear;
+      // L3 (rule switches WS, CB p.111): Manual lets the level take a card above its reach; the GM gets a note per card.
+      const domainCardLevels = ruleMode(campaign, "domainCardLevels");
       const { cardChoices, ...levelChoice } = choice;
       const leveled = applyRule("LEVEL_UP_RULE", LevelUpRuleError, () =>
-        applyLevelUp(sheet, levelChoice, { allowExpansion, newId: () => crypto.randomUUID(), at: Date.now() }),
+        applyLevelUp(sheet, levelChoice, { allowExpansion, domainCardLevels, newId: () => crypto.randomUUID(), at: Date.now() }),
       );
       // dcm-31hq: a gained card's "when you choose this card" picks (Vitality) are written with the level.
       const gained = cardsGained({ cardId: levelChoice.cardId, picks: levelChoice.picks, ...(levelChoice.trade ? { tradeIn: levelChoice.trade.in } : {}) });
@@ -158,6 +161,12 @@ export const apply = keyedUserMutation({
         summary: `${sheet.name} reached level ${next.level}.${lines.length > 0 ? ` ${lines.join(" ")}` : ""}`.slice(0, 1000),
         undoable: false,
       });
+      // The level-up row is not undoable (its own undo path), so the notes carry no group and no character.
+      if (domainCardLevels === "manual") {
+        for (const card of cardsAboveLevel(sheet, levelChoice)) {
+          await postRuleNote(ctx, campaign, { ruleId: "domainCardLevels", summary: aboveLevelNote(sheet.name, card, next.level), actorId: ctx.user._id });
+        }
+      }
       return { level: next.level };
     }),
 });

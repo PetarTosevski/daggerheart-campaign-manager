@@ -125,7 +125,7 @@ export const use = keyedUserMutation({
   handler: async (ctx, { characterId, featureKey, params }) =>
     ctx.once("class_feature_use", { characterId, featureKey, params }, async () => {
       const { campaign, character, sheet } = await editable(ctx, ctx.user, characterId);
-      assertCanAct(character, sheet);
+      assertCanAct(character, sheet, campaign);
       const feature = findFeature(sheet, featureKey);
       const owner = grantingClass(sheet, featureKey);
       if (feature?.use === undefined || owner === undefined) throw appError("CLASS_FEATURE_RULE", "This character has no such feature to use.");

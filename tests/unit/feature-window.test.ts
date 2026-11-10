@@ -25,7 +25,7 @@ import { queueRng } from "@/lib/domain/dice";
 import type { FeatureEffect } from "@/lib/domain/feature-effects/types";
 import { featureEffect } from "@/lib/srd/feature-effects/index";
 import { cardEffect } from "@/lib/srd/card-effects/index";
-import { defaultPicks, featureChoice, type FeatureView } from "@/components/combat-map/actions/reactions/model";
+import { defaultPicks, featureChoice, type FeatureView } from "@/lib/combat-map/reactions";
 
 // Plan sheet-drawer, tracer SD4: features in the adversary hit's reaction window (AA1's pure machine), the before-roll
 // fit (Q2) and the after-hit feature uses. The entries are the FE-* tables' own; the expected numbers come from the books

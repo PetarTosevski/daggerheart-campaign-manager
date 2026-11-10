@@ -36,7 +36,12 @@ export type AttackData = {
   /** The picked rider benefit (Lead by Example's "Clear a Stress"); null: the first one offered. */
   benefit: string | null;
   riders: RiderPicks;
+  /** R7 Book (plan rule-switches WR): the PCs ticked as helping (each spends 1 Hope on the server). Absent: none. */
+  helpers?: readonly Id<"characters">[];
 };
+
+/** A PC who could Help an Ally (R7 Book): another active PC of the campaign, with their Hope (a helper needs 1). */
+export type HelperCandidate = { characterId: Id<"characters">; name: string; hope: number };
 
 export type AttackWeapon = { slot: WeaponSlot; weapon: Weapon };
 
@@ -61,6 +66,8 @@ export type AttackArgs = {
   advantage: number;
   disadvantage: number;
   help: number;
+  /** R7 Book: the helpers' character ids (intents only); the server takes their Hope. */
+  helpers?: Id<"characters">[];
   riders: ReturnType<typeof ridersToSend>;
   riseToTheChallenge?: false;
   forcedRequestId?: Id<"combatRequests">;
@@ -117,6 +124,13 @@ export type AttackInput = {
   picked: readonly Id<"combatTokens">[];
   /** The GM playing for the PC (hud-pre-w9, dcm-bxp.99.32.36): the PC's token and character; a player's own needs none. */
   actor?: PickActor;
+  /**
+   * Plan rule-switches WR, R7 Book (CB p.90): the PCs the roller may tick as helping (`helperCandidates`). Absent: R7
+   * Manual (or not loaded yet), the bare "Help dice" counter.
+   */
+  helpers?: readonly HelperCandidate[];
+  /** WR, R6 Manual: Experiences cost no Hope here (the GM gets a note), so they neither block nor show in the pay line. */
+  experienceFree?: boolean;
   /** With `actor`: the map's enemies and the other PCs, for a rider's extra targets (a player reads their own view). */
   others?: { enemies: readonly { _id: Id<"combatTokens">; name: string }[]; allies: readonly { _id: Id<"combatTokens">; name: string }[] };
   attack: (args: AttackArgs) => Promise<AttackAnswer>;
@@ -141,6 +155,19 @@ export function ridersOf(input: Pick<AttackInput, "riders">, slot: WeaponSlot): 
 export function mostTargets(input: Pick<AttackInput, "forced" | "extraTargets" | "spirit">, data: Pick<AttackData, "slot" | "spirit">): number {
   if (input.forced) return Math.max(1, input.forced.targets.length);
   return 1 + input.extraTargets + (data.spirit && input.spirit[data.slot] ? 1 : 0);
+}
+
+/**
+ * R7 Book (plan rule-switches WR): the PCs who could Help an Ally with `selfId`'s roll: the campaign's other active PCs
+ * that can act (not unconscious, sheet readable), with their Hope (the server refuses a helper without one).
+ */
+export function helperCandidates(
+  party: readonly { _id: Id<"characters">; status: string; corrupt?: boolean; sheet: { name: string; hope: number; conditions?: readonly string[] } }[],
+  selfId: Id<"characters">,
+): HelperCandidate[] {
+  return party
+    .filter((c) => c._id !== selfId && c.status === "active" && c.corrupt !== true && !(c.sheet.conditions ?? []).includes("unconscious"))
+    .map((c) => ({ characterId: c._id, name: c.sheet.name, hope: c.sheet.hope }));
 }
 
 /** The data a session opens with. */
@@ -200,13 +227,13 @@ const COST_ORDER: readonly CostResource[] = ["hope", "stress", "hp", "armor", "f
 const COST_WORD: Record<CostResource, string> = { hope: "Hope", stress: "Stress", hp: "HP", armor: "Armor Slot", fear: "Fear" };
 
 /** What the attack spends before the roll: 1 Hope per Experience (CB p.90) and the toggled riders' costs. */
-export function attackCosts(riders: readonly RiderOption[], data: Pick<AttackData, "roll" | "riders">): { totals: Partial<Record<CostResource, number>>; other: string[] } {
+export function attackCosts(riders: readonly RiderOption[], data: Pick<AttackData, "roll" | "riders">, experienceFree = false): { totals: Partial<Record<CostResource, number>>; other: string[] } {
   const totals: Partial<Record<CostResource, number>> = {};
   const other: string[] = [];
   const add = (resource: CostResource, n: number) => {
     if (n > 0) totals[resource] = (totals[resource] ?? 0) + n;
   };
-  add("hope", data.roll.experienceIds.length);
+  if (!experienceFree) add("hope", data.roll.experienceIds.length);
   for (const o of ridersOn(riders, data.riders)) {
     for (const c of o.costs) {
       const pill = costOf(c);
@@ -218,8 +245,8 @@ export function attackCosts(riders: readonly RiderOption[], data: Pick<AttackDat
 }
 
 /** The footer line: "With 1 rider · Spends 2 Hope, 1 Stress"; null when the attack spends nothing and takes no rider. */
-export function payLine(riders: readonly RiderOption[], data: Pick<AttackData, "roll" | "riders">): string | null {
-  const { totals, other } = attackCosts(riders, data);
+export function payLine(riders: readonly RiderOption[], data: Pick<AttackData, "roll" | "riders">, experienceFree = false): string | null {
+  const { totals, other } = attackCosts(riders, data, experienceFree);
   const n = ridersOn(riders, data.riders).length;
   const spend = [...COST_ORDER.flatMap((r) => (totals[r] ? [`${totals[r]} ${COST_WORD[r]}${r === "armor" && totals[r]! > 1 ? "s" : ""}`] : [])), ...other];
   const parts = [...(n > 0 ? [`With ${n} rider${n === 1 ? "" : "s"}`] : []), ...(spend.length > 0 ? [`Spends ${spend.join(", ")}`] : [])];
@@ -227,9 +254,9 @@ export function payLine(riders: readonly RiderOption[], data: Pick<AttackData, "
 }
 
 /** CmpBlocked layer 1: why the attack can't send yet ("Needs 2 Hope · you have 1"), or null. */
-export function attackBlocked(input: Pick<AttackInput, "weapons" | "roller">, riders: readonly RiderOption[], data: AttackData): string | null {
+export function attackBlocked(input: Pick<AttackInput, "weapons" | "roller" | "experienceFree">, riders: readonly RiderOption[], data: AttackData): string | null {
   if (input.weapons.length === 0) return "No weapon equipped";
-  const hope = attackCosts(riders, data).totals.hope ?? 0;
+  const hope = attackCosts(riders, data, input.experienceFree === true).totals.hope ?? 0;
   if (hope > input.roller.hope) return shortfallLabel({ resource: "hope", need: hope, have: input.roller.hope });
   return riderProblem(riders, data.riders);
 }
@@ -266,7 +293,10 @@ export function attackArgs(input: AttackInput, data: AttackData, selection: Pick
     experienceIds: [...data.roll.experienceIds],
     advantage: Math.max(0, data.roll.edge),
     disadvantage: Math.max(0, -data.roll.edge),
-    help: data.roll.help,
+    // WR (R7): Book sends the ticked helpers (still candidates) and no bare counter; Manual the counter.
+    ...(input.helpers !== undefined
+      ? { help: 0, helpers: (data.helpers ?? []).filter((id) => input.helpers!.some((h) => h.characterId === id)) }
+      : { help: data.roll.help }),
     riders: ridersToSend(riders, picks),
     ...(riseToSend(riders, picks) === false ? { riseToTheChallenge: false as const } : {}),
     ...(input.forced ? { forcedRequestId: input.forced.requestId } : {}),
@@ -316,7 +346,7 @@ export function attackPatch(input: AttackInput, data: AttackData): PickPatch<Att
     rule: attackRule(input, data),
     primary: {
       label: (s) => attackLabel(weaponName, s.targets),
-      pay: () => payLine(riders, data),
+      pay: () => payLine(riders, data, input.experienceFree === true),
       blocked: () => attackBlocked(input, riders, data),
       send: async (s): Promise<PickOutcome> => {
         const names = new Map(s.targets.map((t) => [t.tokenId as string, t.name]));

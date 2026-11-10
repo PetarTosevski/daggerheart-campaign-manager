@@ -12,6 +12,7 @@ import type { QueryCtx } from "../_generated/server";
 import { MAX_CHARACTERS_PER_CAMPAIGN, readSheet } from "./characterSheet";
 import { featureScope } from "./featureScope";
 import { restMovesFor } from "./restMoves";
+import { ruleMode } from "./ruleModes";
 import type { RestKind, RestMove } from "./validators/rests";
 
 /** Rests read back to count short rests; a long rest is never this far back in practice. */
@@ -33,7 +34,7 @@ export async function choicesOf(ctx: QueryCtx, restId: Id<"rests">): Promise<Doc
     .take(MAX_CHARACTERS_PER_CAMPAIGN);
 }
 
-/** A resting PC: active (not dead, retired or away, HF 127). Unconscious PCs rest but pick no moves (decision 9). */
+/** A resting PC: active (not dead, retired or away, HF 127). Unconscious PCs rest but pick no moves (decision 9) while C4 is Book. */
 export const resting = (c: Doc<"characters">) => c.status === "active";
 
 /**
@@ -44,7 +45,9 @@ export async function pickableMoves(
   ctx: QueryCtx,
   campaign: Doc<"campaigns">,
   kind: RestKind,
-): Promise<{ characterId: Id<"characters">; moves: RestMove[]; efficient: RestMove[]; slots: number; trance: boolean; extraMoves: number; oasis: boolean }[]> {
+): Promise<{ characterId: Id<"characters">; moves: RestMove[]; efficient: RestMove[]; slots: number; minSlots: number; trance: boolean; extraMoves: number; oasis: boolean }[]> {
+  // T1 Two moves per rest (plan rule-switches WD): Manual takes 0 to 4 moves.
+  const movesMode = ruleMode(campaign, "twoDowntimeMoves");
   const party = await ctx.db
     .query("characters")
     .withIndex("by_campaign", (q) => q.eq("campaignId", campaign._id))
@@ -61,7 +64,8 @@ export async function pickableMoves(
       characterId: c._id,
       moves: base,
       efficient: efficientMoves(kind, features, base, rules.forbidden),
-      slots: restMoveSlots(features, extraMoves).max,
+      slots: restMoveSlots(features, extraMoves, movesMode).max,
+      minSlots: restMoveSlots(features, extraMoves, movesMode).min,
       trance: features.trance,
       extraMoves,
       oasis: kind === "short" && features.oasis,

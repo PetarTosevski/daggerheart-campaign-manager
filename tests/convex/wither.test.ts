@@ -95,6 +95,26 @@ describe("Wither tokens", () => {
     expect(row?.roll?.dice).toEqual([{ sides: 12, value: 12, role: "fear" }]);
   });
 
+  it("X3 Scars in Manual: a Wither scar clears the tokens but leaves the scar to the GM, with a note (user 2026-11-10)", async () => {
+    const { t, gm, campaignId, a, sheetOf, setTokens } = await setup();
+    await t.run(async (ctx) => {
+      const c = (await ctx.db.get("campaigns", campaignId))!;
+      await ctx.db.patch("campaigns", campaignId, { ruleModes: { ...(c.ruleModes ?? {}), scars: "manual" } });
+    });
+    await setTokens(a, 2);
+    fearDie(1);
+    const result = await gm.mutation(api.wither.gain, { campaignId, characterId: a, idempotencyKey: key() });
+    expect(result).toMatchObject({ scarred: true, fearDie: 1 });
+    const sheet = await sheetOf(a);
+    expect([sheet.wither, sheet.scars]).toEqual([0, 0]);
+    const rows = await t.run((ctx) => ctx.db.query("actionLog").collect());
+    const row = rows.find((r) => r._id === result.entryId)!;
+    expect(row.summary).toContain("a scar for the GM to mark");
+    expect(rows.filter((r) => r.kind === "rule" && r.ruleId === "scars").map((r) => [r.summary, r.groupId === row.groupId, r.visibility])).toEqual([
+      ["Ash gains a scar: cross out a Hope slot?", true, "gm"],
+    ]);
+  });
+
   it("Minor damage from a Withered source adds no token", async () => {
     const { gm, a, sheetOf } = await setup();
     const result = await gm.mutation(api.characters.applyDamage, { characterId: a, damage: 1, useArmorSlot: false, withered: true, idempotencyKey: key() });

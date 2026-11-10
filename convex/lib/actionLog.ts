@@ -39,17 +39,46 @@ import type { CharacterSheetInput } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { refundTokenSpends } from "./actionTokens";
-import { assertOneActive, readSheet, revertSessionTally, storedSheet, takeSessionTally } from "./characterSheet";
+import { assertOneActive, readSheet, revertSessionTally, storedSheet, takeSessionTally, takeWakeNote } from "./characterSheet";
 import { closeRequest, declineGroupOffers, openRequests } from "./combatRequests";
 import { revertTicks } from "./countdownTicks";
 import { revertFear } from "./fear";
 import { recordHistory } from "../tables/history";
 import { refuseArchived } from "./archived";
 import { campaignAccess } from "./permissions";
-import type { ActionKind, AdversaryBefore, CampaignTimeSnapshot, SpotlightBefore, StoredRoll, TimeChange, Visibility } from "./validators/actionLog";
+import type { ActionKind, AdversaryBefore, CampaignTimeSnapshot, ResultPanel, SpotlightBefore, StoredRoll, TargetDamage, TimeChange, Visibility } from "./validators/actionLog";
 
 /** The longest feed line; longer summaries are cut. */
 export const SUMMARY_MAX = 300;
+
+/**
+ * C4 Manual: posts the wake note a save left for this character ("Mira had a Hit Point cleared: wake her?"), once, as a
+ * GM rule note (the row `postRuleNote` in ./ruleModes writes; written here so ./characterSheet needs no ./ruleModes).
+ * `logAction` calls it for the character's next row in this mutation, with the row's group (undoing the action removes
+ * the note); an unlogged write (`characters.adjustResource`) calls it with no group: the note then names no character
+ * and is never undoable, like that write's other notes.
+ */
+export async function postWakeNote(
+  ctx: MutationCtx,
+  campaignId: Id<"campaigns">,
+  characterId: Id<"characters">,
+  actorId: Id<"users">,
+  groupId?: string,
+): Promise<void> {
+  const summary = takeWakeNote(ctx, characterId);
+  if (summary === undefined) return;
+  await ctx.db.insert("actionLog", {
+    campaignId,
+    ...(groupId !== undefined ? { characterId, groupId } : {}),
+    actorId,
+    kind: "rule",
+    visibility: "gm",
+    summary: summary.slice(0, SUMMARY_MAX),
+    ruleId: "unconscious",
+    undoable: groupId !== undefined,
+    at: Date.now(),
+  });
+}
 /** The most rows one action writes (a party rest: one per PC plus a campaign row). */
 const GROUP_MAX = 50;
 /** How far back undo looks for a character's latest live row. */
@@ -112,6 +141,8 @@ export type LogEntry = {
   hopeGained?: boolean;
   /** End day / a day jump forward (CT2): the calendar before and after, on the group's campaign row. */
   timeChange?: TimeChange;
+  /** dcm-uemx: only on the `visibility: "gm"` row of a PC's card use or attack (severity and HP per adversary hit, U1). */
+  targetDamage?: TargetDamage[];
   undoable: boolean;
 };
 
@@ -120,19 +151,38 @@ export function newGroupId(): string {
   return crypto.randomUUID();
 }
 
-/** Appends one row, stamped now. */
+/**
+ * Appends one row, stamped now. C4 Manual (plan rule-switches WD): when a save in this mutation kept the character
+ * unconscious (`saveSheet`), the row is followed by the GM's note "Mira had a Hit Point cleared: wake her?" in the row's
+ * group (undone with it); a row with no group gets a note that names no character and is never undoable.
+ */
 export async function logAction(ctx: MutationCtx, entry: LogEntry): Promise<Id<"actionLog">> {
   const { before, summary, ...rest } = entry;
   if (before !== undefined && entry.characterId === undefined) throw new Error("logAction: `before` needs a characterId.");
+  // U1: severity and HP marked are adversary numbers; only a GM row may carry them.
+  if (entry.targetDamage !== undefined && entry.visibility !== "gm") throw new Error("logAction: `targetDamage` goes on a GM row only.");
   // dcm-z9rz.22: a row that restores the sheet on undo carries what its saves added to the session tally.
   const sessionTally = before !== undefined && entry.characterId !== undefined ? takeSessionTally(ctx, entry.characterId) : undefined;
-  return ctx.db.insert("actionLog", {
+  const id = await ctx.db.insert("actionLog", {
     ...rest,
     summary: summary.slice(0, SUMMARY_MAX),
     ...(before !== undefined ? { before: JSON.stringify(storedSheet(before)) } : {}),
     ...(sessionTally !== undefined ? { sessionTally } : {}),
     at: Date.now(),
   });
+  if (entry.characterId !== undefined) await postWakeNote(ctx, entry.campaignId, entry.characterId, entry.actorId, entry.groupId);
+  return id;
+}
+
+/**
+ * dcm-uemx: stores what a PC's use showed its player in the result panel on the use's public row (`entryId`), so the GM's
+ * HUD shows the same panel (`combatHud.playerResults`). Written once the use is resolved (its prompts and Minion offer
+ * come after the row). Public rows only: it carries no adversary number (U1).
+ */
+export async function attachResultPanel(ctx: MutationCtx, entryId: Id<"actionLog">, panel: ResultPanel): Promise<void> {
+  const row = await ctx.db.get("actionLog", entryId);
+  if (row === null || row.visibility !== "public") throw new Error("attachResultPanel: a public row only.");
+  await ctx.db.patch("actionLog", entryId, { resultPanel: panel });
 }
 
 /** The character's newest row that is not undone (an undoable or not), or null: any newer action blocks undoing an older one. */

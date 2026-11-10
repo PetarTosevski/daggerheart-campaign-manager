@@ -20,11 +20,13 @@ import {
   cardTakeProblem,
   deckDomains,
   DOMAIN_CARD_CAP,
+  isAboveLevel,
   sourcesFor,
   unlockLevel,
   type CardTakeProblem,
   type Tier,
 } from "@/lib/domain/level-up";
+import { loadoutMax } from "@/lib/domain/transformations";
 import { DOMAIN_CARD_ART, getDomain, type ClassDef, type DomainCard } from "@/lib/srd";
 import { DOMAIN_CARDS } from "@/lib/srd/domain-cards";
 import type { AdvancementOption } from "@/lib/validation/characters";
@@ -247,7 +249,7 @@ export function DomainCardsSection({ cls }: { cls: ClassDef | undefined }) {
       <section className="dk-felt" aria-label="Loadout and vault">
         <div className="dk-felt-head">
           <h3 className="dk-felt-title">Loadout</h3>
-          <span className="dk-felt-sub">{loadout.length} / 5 in hand</span>
+          <span className="dk-felt-sub">{loadout.length} / {loadoutMax(sheet)} in hand</span>
           <span className="flex-1" />
           <span className="dk-felt-sub" aria-hidden="true">
             Vault
@@ -303,7 +305,7 @@ export function DomainCardsSection({ cls }: { cls: ClassDef | undefined }) {
             ) : (
               <div className="dk-spread-list" role="list" aria-label="Vault cards">
                 {vault.map((card, i) => {
-                  const block = recallBlock(card, sheet.level, loadout.length);
+                  const block = recallBlock(card, sheet.level, loadout.length, loadoutMax(sheet));
                   // Free only while the box is ticked and the GM has a rest open, as the server decides.
                   const cost = (duringRest && restOpen) || card.recallCost === 0 ? "free" : `${card.recallCost} Stress`;
                   return (
@@ -334,7 +336,8 @@ export function DomainCardsSection({ cls }: { cls: ClassDef | undefined }) {
   );
 }
 
-type DeckEntry = { card: DomainCard; problem: CardTakeProblem | null; locked: boolean };
+/** `above`: L3 Manual, a card of the character's domains above their Book reach (shown face-up, marked "Above level"). */
+type DeckEntry = { card: DomainCard; problem: CardTakeProblem | null; locked: boolean; above: boolean };
 
 /** Where a level-up choice of a card goes: the level's card, an "additional domain card" pick, or the exchange. */
 type Slot = { kind: "card" } | { kind: "pick"; option: AdvancementOption; tier: number } | { kind: "trade"; out: string };
@@ -343,8 +346,10 @@ const cardName = (id: string) => DOMAIN_CARDS.find((c) => c.id === id)?.name ?? 
 
 /** The board's Domain Deck: filter by domain, hide cards above the character's reach, take a card while picks are left. */
 function DomainDeck() {
-  const { sheet, canEdit, hopeAndFear, takeCard } = useSheet();
+  const { sheet, canEdit, hopeAndFear, takeCard, slot: sheetSlot } = useSheet();
   const lu = useLevelUpDraft();
+  // L3 "Domain card levels" (rule switches WS, CB p.111): Manual offers cards above the reach, marked "Above level".
+  const mode = useQuery(api.ruleSettings.get, { campaignId: sheetSlot.campaignId })?.modes.domainCardLevels ?? "book";
   const [filter, setFilter] = useState("all");
   const [hideLocked, setHideLocked] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -355,7 +360,7 @@ function DomainDeck() {
   const { draft, level } = lu;
   const multiclassing = draft.picks.some((p) => p.option === "multiclass");
   const reach = leveling && multiclassing && draft.multiclass ? { ...sheet, multiclass: draft.multiclass } : sheet;
-  const within = (cap: number) => new Set(leveling ? cardsWithin(reach, level, cap, sources).map((c) => c.id) : []);
+  const within = (cap: number) => new Set(leveling ? cardsWithin(reach, level, cap, sources, mode).map((c) => c.id) : []);
   const reachable = within(MAX_LEVEL);
   /** The draft's cards and where each sits. */
   const chosen = new Map<string, Slot>();
@@ -392,9 +397,10 @@ function DomainDeck() {
   const active = doms.includes(filter) ? filter : "all";
   const deck: DeckEntry[] = DOMAIN_CARDS.filter((c) => sources.includes(c.source) && doms.includes(c.domain))
     .map((card) => {
-      const problem = cardTakeProblem(sheet, card.id, sources);
+      const problem = cardTakeProblem(sheet, card.id, sources, mode);
       // In level-up mode a card that comes within reach at the new level shows face-up.
-      return { card, problem, locked: problem?.reason === "locked" && !reachable.has(card.id) };
+      const above = mode === "manual" && (leveling ? isAboveLevel(reach, card, level) : isAboveLevel(sheet, card, sheet.level));
+      return { card, problem, locked: problem?.reason === "locked" && !reachable.has(card.id), above };
     })
     .filter(({ card, locked }) => (active === "all" || card.domain === active) && !(hideLocked && locked))
     .sort((a, b) => a.card.level - b.card.level || doms.indexOf(a.card.domain) - doms.indexOf(b.card.domain) || a.card.name.localeCompare(b.card.name));
@@ -469,12 +475,13 @@ function DomainDeck() {
         <p className="dkd-empty">No cards to show.</p>
       ) : (
         <div className="dk-grid" role="list" aria-label="Domain Deck cards">
-          {deck.map(({ card, problem, locked }) => (
+          {deck.map(({ card, problem, locked, above }) => (
             <div role="listitem" key={card.id} className="dk-grid-item">
               <DeckCard
                 card={card}
                 problem={problem}
                 locked={locked}
+                above={above}
                 chosen={chosen.has(card.id)}
                 canEdit={canEdit}
                 busy={busy}
@@ -497,6 +504,7 @@ function DeckCard({
   card,
   problem,
   locked,
+  above = false,
   chosen,
   canEdit,
   busy,
@@ -506,6 +514,8 @@ function DeckCard({
   card: DomainCard;
   problem: CardTakeProblem | null;
   locked: boolean;
+  /** L3 Manual: above the character's Book reach, takeable anyway. */
+  above?: boolean;
   chosen: boolean;
   canEdit: boolean;
   busy: boolean;
@@ -553,6 +563,7 @@ function DeckCard({
         {/* The fixed-size card shows the start of the text; More opens the whole card in CardDialog (SC1). */}
         <p className="dkc-text">{card.text}</p>
         {locked ? <span className="dkc-lock">{unlocks ? `Unlocks at level ${unlocks}` : "Out of reach"}</span> : null}
+        {above && !locked && !owned ? <span className="dkc-lock">Above level</span> : null}
         <footer className="dkc-foot">
           <CardMore card={card} used={usedLabel(sheet, card.id)} spells={usedSpells(sheet, card)} className="dkc-more" />
           <span className="flex-1" />

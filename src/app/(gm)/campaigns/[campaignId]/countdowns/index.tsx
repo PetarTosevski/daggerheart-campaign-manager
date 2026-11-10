@@ -4,38 +4,14 @@ import { useQuery } from "convex/react";
 import { useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
+import { listItems } from "@/lib/domain/countdowns/items";
 
 import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
-import type { CountdownView } from "../../../../../../convex/countdowns";
 
 import { CountdownCard } from "./card";
 import { ChaseCard, NewChaseDialog } from "./chase";
 import { NewCountdownDialog } from "./new-dialog";
-
-type Item = { kind: "single"; countdown: CountdownView } | { kind: "chase"; party?: CountdownView; rivals?: CountdownView };
-
-/**
- * The list's cards in order: a chase pair (countdowns-advanced D9) becomes ONE item where its first row stands; a row
- * whose partner isn't in the list (a player can't see it) still shows as a chase on its own.
- */
-export function listItems(countdowns: readonly CountdownView[]): Item[] {
-  const byId = new Map(countdowns.map((c) => [c._id, c]));
-  const placed = new Set<Id<"countdowns">>();
-  const items: Item[] = [];
-  for (const c of countdowns) {
-    if (placed.has(c._id)) continue;
-    if (c.chase === null) {
-      items.push({ kind: "single", countdown: c });
-      continue;
-    }
-    const partner = byId.get(c.chase.partnerId);
-    placed.add(c._id);
-    if (partner !== undefined) placed.add(partner._id);
-    items.push(c.chase.side === "party" ? { kind: "chase", party: c, rivals: partner } : { kind: "chase", party: partner, rivals: c });
-  }
-  return items;
-}
 
 /** Countdowns section of the CampaignHub board. Countdowns are core: every frame has them. */
 export function Countdowns({ campaignId, readOnly = false }: { campaignId: Id<"campaigns">; readOnly?: boolean }) {

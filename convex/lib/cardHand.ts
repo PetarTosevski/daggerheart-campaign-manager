@@ -16,6 +16,7 @@ import { runFeature } from "../../src/lib/domain/feature-effects/run";
 import { cardEffect } from "../../src/lib/srd/card-effects/index";
 import { featureEffect } from "../../src/lib/srd/feature-effects/index";
 import { getDomainCard } from "../../src/lib/srd/index";
+import { loadoutMax } from "../../src/lib/domain/transformations/index";
 import { appError } from "../../src/lib/errors/app-error";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { resolveOptions } from "../../src/lib/frames/options";
@@ -57,7 +58,7 @@ export { handSharedWithPlayers, hiddenHands, playersSeeHands, writeHandHidden } 
 // ---------------------------------------------------------------- loadout and vault
 
 /**
- * `characters.moveCard`: moves a domain card between loadout (max 5) and vault. From the vault into the loadout costs
+ * `characters.moveCard`: moves a domain card between loadout (max 5, or a Reanimated PC's lowered maximum, HF p.153) and vault. From the vault into the loadout costs
  * the card's Recall Cost in Stress unless it happens during a rest (CB p.101, p.105: swaps are free "when you start a
  * rest"): `duringRest` counts only while the campaign has an open party rest. The character's player, or the GM for any
  * character of the campaign (CA4b user answer: the GM may play a PC's cards after turning on a switch). A move by the GM
@@ -91,7 +92,8 @@ export async function moveCardFor(
     // S2 (plan rule-switches RS2, bead dcm-bxp.99.32.38; CB p.27 Recall Cost): a recall is an action, so it waits while
     // the GM holds the spotlight in a running encounter (Manual: it goes through with the GM's note).
     await assertMayAct({ ...ctx, user }, campaign, character, "action", s.name);
-    if (s.domainCards.loadout.length >= 5) throw refuse("Your loadout holds at most 5 cards; vault one first.");
+    const max = loadoutMax(s);
+    if (s.domainCards.loadout.length >= max) throw refuse(`Your loadout holds at most ${max} ${max === 1 ? "card" : "cards"}; vault one first.`);
     if ((card?.level ?? 99) > s.level) throw refuse("That card is above your level.");
     next.domainCards = { ...s.domainCards, loadout: [...s.domainCards.loadout, cardId] };
     let recall = card?.recallCost ?? 0;

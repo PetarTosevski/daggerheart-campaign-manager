@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
@@ -25,7 +25,10 @@ type Status = { environmentId: string; text: string; error: boolean; undo?: () =
 export function useEnvironmentActions(campaignId: Id<"campaigns">) {
   const [status, setStatus] = useState<Status | null>(null);
   const [pending, setPending] = useState<string | null>(null);
+  // Plan rule-switches WF, F5 `fearFeatures` Manual: the feature is used for no Fear (the GM spends it by hand).
+  const byHand = useQuery(api.ruleSettings.get, { campaignId })?.modes.fearFeatures === "manual";
   const spend = useMutation(api.environmentActions.spendFear).withOptimisticUpdate((store, { environmentId, featureName }) => {
+    if (store.getQuery(api.ruleSettings.get, { campaignId })?.modes.fearFeatures === "manual") return;
     const fear = store.getQuery(api.campaigns.fear, { campaignId });
     // The same bundled stat block the server reads the cost from.
     const cost = ENVIRONMENTS.find((e) => e.id === environmentId)?.features.find((f) => f.name === featureName)?.fearCost;
@@ -54,12 +57,11 @@ export function useEnvironmentActions(campaignId: Id<"campaigns">) {
     try {
       if (action === "spend") {
         const { spent, entryId } = await spend(args);
-        setStatus({
-          environmentId: environment.id,
-          text: `Spent ${spent} Fear: ${feature.name}`,
-          error: false,
-          undo: () => void undo(environment.id, entryId, feature.name),
-        });
+        setStatus(
+          spent === 0
+            ? { environmentId: environment.id, text: `Used ${feature.name}: spend ${feature.fearCost ?? 0} Fear by hand`, error: false }
+            : { environmentId: environment.id, text: `Spent ${spent} Fear: ${feature.name}`, error: false, undo: () => void undo(environment.id, entryId, feature.name) },
+        );
       } else {
         const { name, startingValue } = await start(label === undefined ? args : { ...args, label });
         setStatus({ environmentId: environment.id, text: `Countdown started on the dashboard: ${name} at ${startingValue} (private)`, error: false });
@@ -75,6 +77,8 @@ export function useEnvironmentActions(campaignId: Id<"campaigns">) {
     /** The status line for this environment (another environment's line is not shown). */
     statusFor: (environmentId: string) => (status?.environmentId === environmentId ? status : null),
     pending: (environment: EnvironmentDef, feature: EnvironmentFeature) => pending === `${environment.id}/${feature.name}`,
+    /** WF: F5 Manual, the Fear button uses the feature and spends nothing. */
+    fearByHand: byHand,
     spendFear: (environment: EnvironmentDef, feature: EnvironmentFeature) => run(environment, feature, "spend"),
     startCountdown: (environment: EnvironmentDef, feature: EnvironmentFeature, label?: string) => run(environment, feature, "start", label),
   };
@@ -133,7 +137,7 @@ export function FeatureActions({
   const countdowns = featureCountdownLabels(feature);
   if (cost === undefined && countdowns.length === 0) return null;
   const busy = actions.pending(environment, feature);
-  const short = cost !== undefined && fear < cost;
+  const short = cost !== undefined && fear < cost && !actions.fearByHand;
   const reasonId = `env-short-${environment.id}-${feature.name.replace(/[^a-z0-9]+/gi, "-")}`;
   return (
     <div className="env-acts">
@@ -145,7 +149,7 @@ export function FeatureActions({
           aria-describedby={short ? reasonId : undefined}
           onClick={() => void actions.spendFear(environment, feature)}
         >
-          Spend {cost} Fear
+          {actions.fearByHand ? `Use (${cost} Fear by hand)` : `Spend ${cost} Fear`}
         </BrandButton>
       ) : null}
       {countdowns.length === 1 ? (

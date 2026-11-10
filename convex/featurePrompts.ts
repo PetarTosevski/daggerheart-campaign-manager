@@ -91,7 +91,7 @@ export const rollCount = keyedCampaignMutation({
   handler: async (ctx, args) =>
     ctx.once("feature_roll_count", args, async () => {
       const { campaign, character, sheet } = await editableHere(ctx, args.characterId);
-      assertCanAct(character, sheet);
+      assertCanAct(character, sheet, campaign);
       // Ownership and a usable (non-passive) use, as `useFeature` checks them.
       const pick = pickFeature({ sheet, campaign, featureId: args.featureId, useId: args.useId, times: 1, rollUsedExperience: false, party: [] });
       const use = rolledFirstUse(args.featureId, pick.use.id);
@@ -395,7 +395,7 @@ export const charge = keyedCampaignMutation({
   handler: async (ctx, args) => {
     const out = await ctx.once("feature_charge", args, async () => {
       const { campaign, character, sheet } = await editableHere(ctx, args.characterId);
-      assertCanAct(character, sheet);
+      assertCanAct(character, sheet, campaign);
       const gm = atLeast(ctx.permission, "owner");
       const difficulty = args.roll.difficulty;
       if (gm) {
@@ -457,7 +457,7 @@ export const answerDifficulty = keyedGmMutation({
       const character = await ctx.db.get("characters", p.characterId);
       if (character === null || character.campaignId !== ctx.campaign._id || row.mapId === undefined) throw appError("COMBAT_TARGET_INVALID");
       const sheet = readSheet(character.sheet);
-      assertCanAct(character, sheet);
+      assertCanAct(character, sheet, ctx.campaign);
       const ask = p.ask;
       const roll: ChargeRun["roll"] = {
         ...(ask.roll.trait === undefined ? {} : { trait: ask.roll.trait }),
@@ -522,7 +522,7 @@ export const allyRoll = keyedCampaignMutation({
         await closeRequest(ctx, row._id, "declined", ctx.user._id);
         return { status: "closed" as const };
       }
-      assertCanAct(ally, allySheet);
+      assertCanAct(ally, allySheet, campaign);
       if (args.secondTokenId !== undefined && args.secondTokenId === args.targetTokenId) throw appError("COMBAT_TARGET_INVALID", "The second target is another adversary.");
       const druid = await ctx.db.get("characters", p.characterId);
       if (druid === null || druid.campaignId !== campaign._id || row.mapId === undefined) throw appError("COMBAT_TARGET_INVALID");

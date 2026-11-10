@@ -21,13 +21,16 @@ import { ConvexError } from "convex/values";
 
 import { pickAdversaryUse, rangeGate, standardAttackEffect, STANDARD_ATTACK_USE, upfrontFear, type AdversaryPlan, type AdversaryPlanStep, type AdversaryRunContext } from "../../src/lib/domain/adversary-effects/run";
 import type { AdversaryFeatureEffect } from "../../src/lib/domain/adversary-effects/types";
-import { adversaryAttack, adversaryDamage, gmControlledWeaponAttack } from "../../src/lib/domain/adversary-actions/attack";
+import { adversaryAttack, adversaryDamage, criticalBonus, gmControlledWeaponAttack } from "../../src/lib/domain/adversary-actions/attack";
 import { underwaterDisadvantage } from "../../src/lib/domain/combat-map/light";
 import { getWeapon } from "../../src/lib/srd/index";
 import type { TraitId } from "../../src/lib/srd/types";
 import {
   actorWithSubject,
+  areaWords,
   featureReady,
+  fillsFromMap,
+  namedByGm,
   hiddenCondition,
   hiddenTargetNote,
   keptDie,
@@ -47,7 +50,7 @@ import type { FeatureEffect } from "../../src/lib/domain/feature-effects/types";
 import { resolveOptions } from "../../src/lib/frames/options";
 import { featureFearCost } from "../../src/lib/domain/adversaries/index";
 import type { PlanStep } from "../../src/lib/domain/card-effects/run";
-import type { Cost, Range } from "../../src/lib/domain/card-effects/types";
+import type { Cost, Range, TargetSpec } from "../../src/lib/domain/card-effects/types";
 import { applyDamageTo, applyHpTo, applyStressTo, lineOfSight, rangeCheck, tokenDistance, type Combatant } from "../../src/lib/domain/combat-actions/index";
 import { applySpotlight } from "../../src/lib/domain/encounters/spotlight";
 import type { RollRecord } from "../../src/lib/domain/duality";
@@ -119,7 +122,15 @@ import {
   type PartyMember,
 } from "./incomingHits";
 import { rollDie } from "./dice";
+import { criticalDamageNote } from "../../src/lib/domain/dice/index";
 import { postRuleNote, ruleMode } from "./ruleModes";
+import { fearByHandText, hordeNote, unconsciousTargetText } from "../../src/lib/domain/adversary-actions/rule-notes";
+import { crossedBy, pathMoveRange } from "../../src/lib/domain/adversary-actions/path-targets";
+import { moveToken } from "../../src/components/combat-map/tokens/geometry";
+import { isUntargetableUnconscious } from "../../src/lib/domain/characters/index";
+import { tierRuleActive } from "../../src/lib/frames/trackers/horizon";
+import { loadTracker } from "./trackers";
+import { horizonTracker } from "../trackers/horizon";
 import { moveToGm, spotlightAdversary } from "./spotlight";
 import type { ActionTarget, AdversaryBefore, StoredRoll } from "./validators/actionLog";
 import { MAX_GM_PROMPTS_PER_USE, type CombatResponse, type HitRider, type PreRollPayload } from "./validators/combatRequests";
@@ -180,10 +191,33 @@ export function rangeGatedUses(uses: readonly TriggeredUse[], definedRanges: boo
   return { uses: kept, asks };
 }
 
-/** ODR3: the runner's flag for the campaign's Defined Ranges (absent = on, so only off is spread in). */
-function rangesFlag(campaign: Doc<"campaigns">): { definedRanges?: false } {
-  return ruleMode(campaign, "definedRanges") ? {} : { definedRanges: false };
+/**
+ * Plan rule-switches WF, W3 Tier 3 Dark-Hearted (Journey to Horizon, HF p.177: "After you mark 5 boxes in this tier,
+ * adversaries gain the following feature: Dark-Hearted - Passive: Spend a Fear to give the adversary advantage on its next
+ * roll"): active in Journey to Horizon with the Doom Track in Book or Every N sessions, once 5 Tier 3 boxes are marked.
+ */
+export async function darkHeartedActive(ctx: QueryCtx, campaign: Doc<"campaigns">): Promise<boolean> {
+  if (campaign.frameId !== horizonTracker.frameId || ruleMode(campaign, "doomTrack") === "manual") return false;
+  return tierRuleActive(await loadTracker(ctx, campaign._id, horizonTracker), 3);
 }
+
+/**
+ * ODR3: the runner's flag for the campaign's Defined Ranges (absent = on, so only off is spread in). Plan rule-switches WR:
+ * also R10 `criticalDamage` when Manual (a natural 20's damage rolled like a normal hit; the GM's note: `criticalDamageNote`).
+ */
+function rangesFlag(campaign: Doc<"campaigns">): { definedRanges?: false; criticalDamage?: "manual"; fearFeatures?: "manual"; experienceFear?: "manual"; hordes?: "manual" } {
+  return {
+    ...(ruleMode(campaign, "definedRanges") ? {} : { definedRanges: false as const }),
+    ...(ruleMode(campaign, "criticalDamage") === "manual" ? { criticalDamage: "manual" as const } : {}),
+    // Plan rule-switches WF: F5 / F4 Manual, the runner takes no Fear for the use's costs or an Experience.
+    ...(ruleMode(campaign, "fearFeatures") === "manual" ? { fearFeatures: "manual" as const } : {}),
+    ...(ruleMode(campaign, "adversaryExperienceFear") === "manual" ? { experienceFear: "manual" as const } : {}),
+    // WF: D7 Manual, the standard attack keeps its printed damage at half HP (`hordeNote`).
+    ...(ruleMode(campaign, "hordes") === "manual" ? { hordes: "manual" as const } : {}),
+  };
+}
+
+
 
 type PcPick = { kind: "pc"; member: PartyMember; token: Doc<"combatTokens"> | null; combatant: Combatant; band?: Range };
 type AdversaryPick = { kind: "adversary"; instance: Doc<"encounterAdversaries">; combatant: Combatant };
@@ -194,6 +228,28 @@ type Pick = PcPick | AdversaryPick;
  * (allies). With `sight`, a PC needs the adversary's line of sight on the map (Q2); `cover` reports whether any is in
  * cover. COMBAT_TARGET_INVALID for anything else (another campaign's, a PC not on the map, a defeated adversary).
  */
+/**
+ * dcm-y3mf: the creatures an "all targets within <range>" use reaches on the live map: PC tokens (and, for `side: "any"`,
+ * the encounter's other standing adversaries) within the range of the adversary's token and in its line of sight. Ids
+ * as `resolveCreatures` reads them (character / instance ids), nearest first.
+ */
+function inRangeOnMap(map: MapScene, spec: { side: TargetSpec["side"]; range: TargetSpec["range"] }, others: readonly Doc<"encounterAdversaries">[], selfId: Id<"encounterAdversaries">, skip: ReadonlySet<string> = new Set()): string[] {
+  const range = spec.range === "weapon" ? "melee" : spec.range;
+  const standing = new Set(others.filter((o) => o._id !== selfId && !o.defeated).map((o) => o._id as string));
+  const out: { id: string; d: number }[] = [];
+  for (const token of map.scene.tokens) {
+    const id = token.ref.kind === "pc" ? (token.ref.characterId as string) : token.ref.kind === "adversary" && spec.side === "any" && standing.has(token.ref.adversaryId) ? (token.ref.adversaryId as string) : null;
+    if (id === null || skip.has(id) || out.some((o) => o.id === id)) continue;
+    if (!rangeCheck(map.selfToken, token, range).inRange) continue;
+    if (!lineOfSight(map.scene.prepared, map.selfToken, token, map.scene.visionObjects).lineOfSight) continue;
+    out.push({ id, d: tokenDistance(map.selfToken, token) });
+  }
+  return out
+    .sort((a, b) => a.d - b.d)
+    .slice(0, MAX_ACTION_TARGETS)
+    .map((o) => o.id);
+}
+
 async function resolveCreatures(
   ctx: QueryCtx,
   base: { encounter: Doc<"encounters">; self: Doc<"encounterAdversaries">; block: Block; scene: ActionScene },
@@ -789,11 +845,15 @@ export type ActionArgs = {
   buyOffs?: string[];
   /** Reactions the GM opted into for this attack (Heavy Hitter, …), by feature name (Q19: default No). */
   reactions?: string[];
+  /** WF, W3 Tier 3 Dark-Hearted: advantage on this roll for 1 Fear (HF p.177). */
+  darkHearted?: boolean;
+  /** WF: a "path" feature's destination square (the token moves there; the line's creatures are its targets). */
+  destination?: { x: number; y: number };
 };
 
 export type TargetOutcome = { characterId?: Id<"characters">; instanceId?: Id<"encounterAdversaries">; hit: boolean; requestId?: Id<"combatRequests">; damage?: number; resolved: boolean; deathMove?: boolean };
 
-export type ConfirmFear = { status: "confirmFear"; fear: number; spotlight: number; feature: number; experience: number };
+export type ConfirmFear = { status: "confirmFear"; fear: number; spotlight: number; feature: number; experience: number; darkHearted?: number };
 export type ActionResult = {
   status: "resolved";
   groupId: string;
@@ -1005,6 +1065,8 @@ async function holdForPreRoll(
         ...(h.args.experience !== undefined ? { experience: h.args.experience } : {}),
         ...(h.args.spendFear !== undefined ? { spendFear: h.args.spendFear } : {}),
         ...(h.args.reactions !== undefined ? { reactions: h.args.reactions.slice(0, 20) } : {}),
+        ...(h.args.darkHearted ? { darkHearted: true } : {}),
+        ...(h.args.destination ? { destination: h.args.destination } : {}),
       },
       groupId: h.groupId,
       responders,
@@ -1052,6 +1114,12 @@ export async function adversaryAction(
   }
   const use = effect ? pickAdversaryUse(effect, args.feature === undefined ? STANDARD_ATTACK_USE : args.useId) : undefined;
   if (effect && (!use || use.activation.kind === "passive")) throw appError("ADVERSARY_FEATURE_UNAVAILABLE");
+  // dcm-y3mf: "all targets in front of the Ogre" (an area the map can't measure) is named by the GM; a roll at nobody is
+  // refused before anything is asked or paid (Hail of Boulders rolled at no one and marked its Stress).
+  const areaSpec = use?.targets && use.targets.side !== "trigger" ? use.targets : undefined;
+  if (areaSpec && namedByGm(areaSpec) && use?.roll !== undefined && args.targets.length === 0) {
+    throw appError("COMBAT_TARGET_INVALID", `Pick the targets ${areaWords(areaSpec.area, areaSpec.range, instance.label)}.`);
+  }
   // Lane E7 round 3 (dcm-f70y): a forced attack (Words of Discord, Beguiled) is made outside its spotlight.
   const needsSpotlight = opts?.forced ? false : use ? use.needsSpotlight : manualFeature!.kind === "action";
 
@@ -1064,10 +1132,21 @@ export async function adversaryAction(
 
   const experience = args.experience === undefined ? undefined : block.experiences.find((e) => e.name === args.experience);
   if (args.experience !== undefined && !experience) throw appError("INVALID", "The adversary has no such Experience.");
-  const featureFear = use ? upfrontFear(use.costs, { self, tokens: instance.tokens ?? 0, tier: block.tier, gmFear: 0, rng: rollDie, ...(args.eitherCosts ? { eitherCosts: args.eitherCosts } : {}), ...(args.trigger?.amount !== undefined ? { trigger: { amount: args.trigger.amount } } : {}) }) : (manualFeature!.fearCost ?? featureFearCost(manualFeature!.text) ?? 0);
-  const experienceFear = experience ? 1 : 0;
-  const asked = spotlightFear + featureFear + experienceFear;
-  if (asked > 0 && (args.spendFear ?? 0) < asked) return { status: "confirmFear", fear: asked, spotlight: spotlightFear, feature: featureFear, experience: experienceFear };
+  const bookFeatureFear = use ? upfrontFear(use.costs, { self, tokens: instance.tokens ?? 0, tier: block.tier, gmFear: 0, rng: rollDie, ...(args.eitherCosts ? { eitherCosts: args.eitherCosts } : {}), ...(args.trigger?.amount !== undefined ? { trigger: { amount: args.trigger.amount } } : {}) }) : (manualFeature!.fearCost ?? featureFearCost(manualFeature!.text) ?? 0);
+  // Plan rule-switches WF (CB p.154): F5 `fearFeatures` / F4 `adversaryExperienceFear` Manual: no Fear asked, refused or
+  // spent for the feature's cost or the Experience; the action's GM note says "Spend N Fear by hand".
+  const fearFeaturesManual = ruleMode(campaign, "fearFeatures") === "manual";
+  const experienceManual = ruleMode(campaign, "adversaryExperienceFear") === "manual";
+  const featureFear = fearFeaturesManual ? 0 : bookFeatureFear;
+  const experienceFear = experience && !experienceManual ? 1 : 0;
+  const byHand: { ruleId: "fearFeatures" | "adversaryExperienceFear"; summary: string }[] = [];
+  if (fearFeaturesManual && bookFeatureFear > 0) byHand.push({ ruleId: "fearFeatures", summary: `${instance.label} used ${args.feature ?? block.attack.name}: ${fearByHandText(bookFeatureFear)}` });
+  if (experience && experienceManual) byHand.push({ ruleId: "adversaryExperienceFear", summary: `${instance.label} used ${experience.name} (+${experience.value}): ${fearByHandText(1)}` });
+  // WF, W3 Tier 3 Dark-Hearted (HF p.177): advantage on this roll for 1 Fear, once the Doom Track's Tier 3 rule is active.
+  if (args.darkHearted && !(await darkHeartedActive(ctx, campaign))) throw appError("INVALID", "Dark-Hearted needs the Doom Track's Tier 3 rule (5 boxes marked in Tier 3).");
+  const darkFear = args.darkHearted ? 1 : 0;
+  const asked = spotlightFear + featureFear + experienceFear + darkFear;
+  if (asked > 0 && (args.spendFear ?? 0) < asked) return { status: "confirmFear", fear: asked, spotlight: spotlightFear, feature: featureFear, experience: experienceFear, ...(darkFear > 0 ? { darkHearted: darkFear } : {}) };
   if (asked > fearNow) throw appError("NOT_ENOUGH_FEAR", undefined, { resource: "fear", need: asked, have: fearNow });
 
   const scene = await actionScene(ctx, campaign, instance);
@@ -1082,11 +1161,55 @@ export async function adversaryAction(
     const targets = (await resolveCreatures(ctx, base, args.targets, false)).picks;
     w.prompts.push({ kind: "manual", text: `${manualFeature!.name}: ${manualFeature!.text}` });
     w.fearDelta -= featureFear;
+    for (const n of byHand) await postRuleNote(ctx, campaign, { ...n, groupId, actorId: user._id });
     return finish(ctx, { campaign, user, encounter, w, groupId, spotlight: needsSpotlight && !spotlit, needsSpotlight, spotlightFear, roll: null, success: true, outcomes: targets.map((t) => outcomeOf(t, true)), offers: [], publicText: `${label} used ${manualFeature!.name}`, gmText: [`${label} used ${manualFeature!.name} (no automation: the GM applies it)`], attackerFeature: manualFeature!.name });
   }
 
   const attack = isAttackUse(use);
-  const targets = await resolveCreatures(ctx, base, args.targets, attack);
+  // Plan rule-switches WF, C4 `unconscious` Book (Q8 a; CB p.106 "they can't be targeted by an attack"): an unconscious
+  // PC is left out of an auto-filled list, and naming one as a target of an attack or of a feature aimed at PCs is
+  // COMBAT_TARGET_INVALID before anything is rolled or paid. Manual lets it through (the GM decides).
+  const unconsciousMode = ruleMode(campaign, "unconscious");
+  const untargetable = new Set<string>(scene.party.filter((m) => isUntargetableUnconscious(m.sheet, unconsciousMode)).map((m) => m.character._id as string));
+  // dcm-y3mf: "all targets within Close range" with none named: every creature in range the adversary sees on the live
+  // map (as a card's, cardRunner R9). Rule switches ODR2: with Defined Ranges off nobody is counted; the GM is asked.
+  let named = args.targets;
+  if (areaSpec && named.length === 0 && fillsFromMap(areaSpec) && scene.map) {
+    if (ruleMode(campaign, "definedRanges")) named = inRangeOnMap(scene.map, areaSpec, others, instance._id, untargetable);
+    else if (areaSpec.range !== "unlimited" && areaSpec.range !== "weapon" && !replay) await postRuleNote(ctx, campaign, { ruleId: "definedRanges", summary: rangeAsk(`${featureName} (${label})`, areaSpec.range), groupId, actorId: user._id });
+  }
+  // Plan rule-switches WF (user 2026-11-10): a "path" feature's destination (Rampaging Fury, Trample): within the move's
+  // range of its token; with no targets named, everyone the straight line crosses (the GM's picker pre-picks the same).
+  const pathRange = pathMoveRange(use);
+  let moveTo: { x: number; y: number; face: number } | null = null;
+  if (args.destination !== undefined) {
+    if (pathRange === null) throw appError("INVALID", `${featureName} has no move to pick a destination for.`);
+    const map = scene.map;
+    if (map === null) throw appError("COMBAT_TARGET_INVALID", "The destination needs the adversary's token on the live map.");
+    const { x, y } = args.destination;
+    const self = map.selfToken;
+    const board = map.scene.map;
+    if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x + self.size > board.w || y + self.size > board.h) throw appError("COMBAT_TARGET_INVALID", "That square is off the map.");
+    if (!rangeCheck(self, { x, y, size: self.size }, pathRange, ruleMode(campaign, "definedRanges")).inRange) throw appError("COMBAT_TARGET_INVALID", `Pick a square within ${pathRange === "veryClose" ? "Very Close" : pathRange === "veryFar" ? "Very Far" : pathRange[0]!.toUpperCase() + pathRange.slice(1)} range.`);
+    moveTo = moveToken(self, x, y, board);
+    if (named.length === 0) {
+      const standing = new Set(others.filter((o) => o._id !== instance._id && !o.defeated).map((o) => o._id as string));
+      const footprints = map.scene.tokens.flatMap((t) => {
+        if (t.ref.kind === "pc") return [{ id: t.ref.characterId as string, x: t.x, y: t.y, size: t.size }];
+        if (t.ref.kind === "adversary" && areaSpec?.side === "any" && standing.has(t.ref.adversaryId)) return [{ id: t.ref.adversaryId as string, x: t.x, y: t.y, size: t.size }];
+        return [];
+      });
+      named = crossedBy(self, args.destination, footprints).filter((id) => !untargetable.has(id)).slice(0, MAX_ACTION_TARGETS);
+    }
+  }
+  if (areaSpec && named.length === 0 && namedByGm(areaSpec)) {
+    w.prompts.push({ kind: "manual", text: `${featureName}: nobody was named ${areaWords(areaSpec.area, areaSpec.range, label)}. If someone was, apply it to them by hand.` });
+  }
+  const targets = await resolveCreatures(ctx, base, named, attack);
+  if (attack || areaSpec?.side === "enemy") {
+    const down = targets.picks.flatMap((p) => (p.kind === "pc" && untargetable.has(p.member.character._id) ? [p.member.sheet.name] : []));
+    if (down.length > 0) throw appError("COMBAT_TARGET_INVALID", unconsciousTargetText(down));
+  }
   // SD4 (Q2): PCs holding a ready before-roll defence (Harrowing Invocation, Draining Bane, Keen Defenses) answer first;
   // the attack waits, unrolled, in a `preRoll` request and replays when they answered or the GM resolves it.
   if (attack && !replay && holdable(args) && targets.picks.every((p) => p.kind === "pc")) {
@@ -1103,7 +1226,7 @@ export async function adversaryAction(
   // SD4: Drained (Draining Bane, HF p.14): "uses a d12 instead of a d20 for attack rolls (including for advantage or
   // disadvantage) until they fail a roll".
   const drained = attack && (instance.tags ?? []).includes(DRAINED);
-  const ownAdvantage = (args.advantage ?? 0) + (attack && (passives.advantage ?? []).some((on) => on === "attack" || on === "any") ? 1 : 0);
+  const ownAdvantage = (args.advantage ?? 0) + darkFear + (attack && (passives.advantage ?? []).some((on) => on === "attack" || on === "any") ? 1 : 0);
   // DA1 (user 2026-10-30): one roll for every target (CB p.161), but a target's own disadvantage (CB p.68 Sturdy; HF p.14
   // Harrowing Invocation for the PCs it protected) counts only against that target. What every target carries counts for
   // the whole roll; the rest (`residual`) is read from the same pair of dice per target. DA17 (user 2026-10-30): several
@@ -1367,9 +1490,16 @@ export async function adversaryAction(
     gmText.push(`${label} ${featureName}: ${words(roll)}${plan.roll.critical ? " critical" : ""} vs ${vs.join(", ")}`);
   } else gmText.push(`${label} used ${featureName}`);
   if (spotlightFear > 0) gmText.push("1 Fear for the spotlight");
-  if (experience) gmText.push(`Experience ${experience.name} +${experience.value} (1 Fear)`);
+  if (darkFear > 0) gmText.push("Dark-Hearted: advantage (1 Fear)");
+  if (experience) gmText.push(`Experience ${experience.name} +${experience.value} (${experienceManual ? "spend 1 Fear by hand" : "1 Fear"})`);
+  for (const n of byHand) await postRuleNote(ctx, campaign, { ...n, groupId, actorId: user._id });
+  // WF, D7 Manual: the standard attack was rolled with its printed damage.
+  if (args.feature === undefined && ruleMode(campaign, "hordes") === "manual") {
+    const note = hordeNote(label, block.hordeX ?? passives.horde ?? null, self);
+    if (note !== null) await postRuleNote(ctx, campaign, { ruleId: "hordes", summary: note, groupId, actorId: user._id });
+  }
   for (const h of w.hits) gmText.push(`${w.nameOf(h.targetId)}: ${h.hit.amount} ${h.hit.type}${h.hit.direct ? " direct" : ""}${h.hit.forcedArmor ? `, ${h.hit.forcedArmor} forced Armor Slot` : ""}${h.riders.length ? `, ${h.riders.length} rider${h.riders.length === 1 ? "" : "s"} with the hit` : ""} (waiting for armor)`);
-  w.fearDelta -= spotlightFear;
+  w.fearDelta -= spotlightFear + darkFear;
   // Lane E7 round 3 (dcm-f70y): a forced attack by a PC is the player's roll. Plan lanes-2 E7.4 (dcm-uxsd): the player
   // gets a `forcedAttack` request (opened after the commit, in this group); the GM row names it.
   const forcedPcs: { characterIds: Id<"characters">[]; againstIds: string[] }[] = [];
@@ -1393,6 +1523,13 @@ export async function adversaryAction(
     }
   }
   for (const summary of new Set(rangeAsks)) await postRuleNote(ctx, campaign, { ruleId: "definedRanges", summary, groupId, actorId: user._id });
+  // Plan rule-switches WR (R10 Manual): the critical's maximum the damage left out.
+  if ((plan.criticalDamageWithheld ?? 0) > 0) await postRuleNote(ctx, campaign, { ruleId: "criticalDamage", summary: criticalDamageNote(label, plan.criticalDamageWithheld!), groupId, actorId: user._id });
+  // WF: the "path" feature's move, as the GM's drag would place it (the token faces the way it went).
+  if (moveTo !== null && scene.map) {
+    await ctx.db.patch("combatTokens", scene.map.selfToken._id, moveTo);
+    gmText.push(`${label} moved to (${moveTo.x}, ${moveTo.y})`);
+  }
   const result = await finish(ctx, { campaign, user, encounter, w, groupId, spotlight: needsSpotlight && !spotlit, needsSpotlight, spotlightFear: 0, roll, success: plan.success, outcomes, offers, publicText, gmText, ...(args.feature !== undefined ? { attackerFeature: args.feature } : {}) });
   if (forcedPcs.length > 0) {
     const live = await liveCombatMap(ctx, campaign._id);
@@ -1826,6 +1963,8 @@ export async function replayHeld(ctx: MutationCtx, row: PreRollRow, by: Id<"user
     ...(a.experience !== undefined ? { experience: a.experience } : {}),
     ...(a.spendFear !== undefined ? { spendFear: a.spendFear } : {}),
     ...(a.reactions !== undefined ? { reactions: [...a.reactions] } : {}),
+    ...(a.darkHearted ? { darkHearted: true } : {}),
+    ...(a.destination ? { destination: a.destination } : {}),
   };
   let result: ActionResult | ConfirmFear;
   try {
@@ -1916,14 +2055,20 @@ export async function gmControlledAttack(ctx: MutationCtx, campaign: Doc<"campai
   const prompts: Prompt[] = [];
   const gmLines = [`${name} (${GM_CONTROLLED}) ${weaponName}: ${words(attack.record)}${attack.critical ? " critical" : ""} vs ${targets.map((t) => `${t.pc?.sheet.name ?? t.instance?.label ?? "?"} ${t.evasion}: ${hitIds.has(t.id) ? "hit" : "miss"}`).join(", ")}`];
   const damages = new Map<string, NonNullable<ReturnType<typeof adversaryDamage>>>();
+  // Plan rule-switches WR (R10 Manual): a natural 20's damage rolled like a normal hit; the GM's note below.
+  const criticalDamage = ruleMode(campaign, "criticalDamage");
+  let criticalWithheld = false;
   for (const t of targets) {
     if (!hitIds.has(t.id)) continue;
-    const dmg = adversaryDamage(rolled.damage, attack.targets.find((x) => x.id === t.id)?.critical ?? false, rollDie);
+    const crit = attack.targets.find((x) => x.id === t.id)?.critical ?? false;
+    if (crit && criticalDamage === "manual") criticalWithheld = true;
+    const dmg = adversaryDamage(rolled.damage, crit, rollDie, criticalDamage);
     if (!dmg) continue;
     damages.set(t.id, dmg);
     if (t.instance) prompts.push({ kind: "manual", text: `${t.instance.label} takes ${dmg.record.total} ${dmg.type} damage from ${name}` });
   }
   const entryId = await logAction(ctx, { ...log, kind: "adversary", visibility: "gm", summary: [...gmLines, ...prompts.map((p) => `${p.kind}: ${p.text}`)].join("; "), roll: attack.record, undoable: true });
+  if (criticalWithheld) await postRuleNote(ctx, campaign, { ruleId: "criticalDamage", summary: criticalDamageNote(name, criticalBonus(rolled.damage)), groupId, actorId: user._id });
   const hitNames = targets.filter((t) => hitIds.has(t.id)).map((t) => t.pc?.sheet.name ?? t.instance?.label ?? "?");
   const missNames = targets.filter((t) => !hitIds.has(t.id)).map((t) => t.pc?.sheet.name ?? t.instance?.label ?? "?");
   await logAction(ctx, { ...log, kind: "adversary", visibility: "public", summary: `${name} (${GM_CONTROLLED}) attacked: ${[hitNames.length ? `hit ${hitNames.join(", ")}` : "", missNames.length ? `missed ${missNames.join(", ")}` : ""].filter(Boolean).join("; ")}`, undoable: true });

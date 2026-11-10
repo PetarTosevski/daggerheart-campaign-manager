@@ -1,0 +1,46 @@
+{
+  "cli": {
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "environment": "development",
+      "env": {
+        "APP_VARIANT": "development",
+        "EXPO_PUBLIC_SITE_URL": "https://dualityheart.com"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "environment": "preview",
+      "env": {
+        "APP_VARIANT": "preview",
+        "EXPO_PUBLIC_SITE_URL": "https://dualityheart.com"
+      }
+    },
+    "production": {
+      "distribution": "store",
+      "environment": "production",
+      "env": {
+        "APP_VARIANT": "production",
+        "EXPO_PUBLIC_SITE_URL": "https://dualityheart.com"
+      },
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "track": "internal",
+        "releaseStatus": "draft",
+        "changesNotSentForReview": true
+      },
+      "ios": {}
+    }
+  }
+}

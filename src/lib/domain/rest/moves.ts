@@ -26,7 +26,9 @@ export type RestMove =
   | "haltLycanthropy"
   | "martialPreparation"
   /** Journey to Horizon (HF 176): "the players gain access to an additional downtime move: Locate Soul Echoes". */
-  | "locateSoulEchoes";
+  | "locateSoulEchoes"
+  /** Dark Heart of Andaluria, Reanimated (HF 153): "use a downtime move to raise their maximum loadout by one". */
+  | "raiseLoadout";
 
 /** One chosen move, with plain id strings (the Convex caller converts). */
 export type ChosenMove = { move: RestMove; targetId?: string; countdownId?: string };
@@ -34,6 +36,10 @@ export type RestChoice = { characterId: string; moves: readonly ChosenMove[] };
 
 /** "Choose two of the following moves (or choose the same move twice)" (CB 105). */
 export const MOVES_PER_REST = 2;
+/** T1 Two moves per rest (rule switch, plan rule-switches WD): Book = the book's two, Manual = any number up to `MANUAL_MOVES_MAX`. */
+export type TwoDowntimeMovesMode = ModeOf<"twoDowntimeMoves">;
+/** T1 Manual (Q9 a): a PC may pick from 0 to this many moves (more only when the PC's features already give more). */
+export const MANUAL_MOVES_MAX = 4;
 /** "A party can take up to three short rests before their next rest must be a long rest" (CB 105). */
 export const MAX_SHORT_RESTS = 3;
 
@@ -62,6 +68,7 @@ export const MOVE_LABELS: Record<RestMove, string> = {
   haltLycanthropy: "Halt lycanthropy",
   martialPreparation: "Martial Preparation",
   locateSoulEchoes: "Locate Soul Echoes",
+  raiseLoadout: "Raise loadout",
 };
 
 /**

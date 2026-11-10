@@ -46,6 +46,7 @@ import type { MapCreature, MarkedTracks } from "../../src/lib/domain/combat-acti
 import { conditionName, lastingModsOf } from "../../src/lib/domain/adversary-effects/run";
 import { lineOfSight, rangeCheck, rangeFromWeapon, tokenDistance, type Combatant, type SightResult } from "../../src/lib/domain/combat-actions/index";
 import { sightRule, type SightMode } from "../../src/lib/domain/combat-actions/sight";
+import { outOfRangeNote } from "../../src/lib/domain/adversary-actions/rule-notes";
 import { conditionDiceNotes, rangeAsk, rangeAskNotes, stressOverflowNotes, targetsConditionDice, type UseRuleNote } from "../../src/lib/domain/card-effects/rule-notes";
 import { tokenVisibility } from "../../src/lib/domain/combat-map/index";
 import { darknessEdge, underwaterDisadvantage } from "../../src/lib/domain/combat-map/light";
@@ -55,7 +56,7 @@ import { hopeMax, tierForLevel } from "../../src/lib/domain/characters/index";
 import { spellcastTraitOf } from "../../src/lib/domain/characters/spellcast";
 import { gainSlots, type SlotCounts } from "../../src/lib/domain/characters/slots";
 import { minionValue } from "../../src/lib/domain/adversaries/index";
-import { assertTypedModifier, experienceBonus, spendHope, type Rng } from "../../src/lib/domain/dice/index";
+import { assertTypedModifier, criticalDamageNote, experienceBonus, experienceNote, spendHope, type Rng } from "../../src/lib/domain/dice/index";
 import { appError } from "../../src/lib/errors/app-error";
 import { srdAdversary } from "../../src/lib/srd/adversary-lookup";
 import { alwaysOnResistance } from "../../src/lib/srd/adversary-resistance";
@@ -75,6 +76,7 @@ import { DEFAULT_OPTIONALS, MAX_CARD_TARGETS, MAX_CHAIN_LINKS, type CardRoll, ty
 import type { ChoiceAsks } from "./cardRows";
 import { rangeBandValidator } from "./validators/combatRequests";
 import { readSheet } from "./characterSheet";
+import { NO_HELP, planHelp, type HelpPlan } from "./helpAnAlly";
 import { rules } from "./rolls";
 import { ruleMode, ruleModesOf } from "./ruleModes";
 import { stanceDropMarker } from "./stanceDrop";
@@ -479,6 +481,11 @@ export type BuiltRun = {
   definedRanges: boolean;
   /** Rule switches RFC: the M1 / C1 Manual notes the use's named creatures call for (posted with `ruleNotesOfUse`). */
   ruleNotes: UseRuleNote[];
+  /**
+   * Plan rule-switches WF (R7 on card and feature rolls, CB p.90): the roll's help as `planHelp` checked it (Book: the
+   * named helpers, paid 1 Hope each with `payHelpers` when the use resolves; Manual: the counter and the GM's note).
+   */
+  help?: HelpPlan;
 };
 
 const SECOND_WIND_SITUATION = "The attack succeeded with Hope";
@@ -735,10 +742,14 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
   const modes = ruleModesOf(req.campaign);
   const creatures = new Creatures(ctx, req.campaign._id, scene, sheet, modes.lineOfSight);
 
-  // Experiences: 1 Hope each, their value added to the roll (CB p.90).
+  // Experiences: 1 Hope each, their value added to the roll (CB p.90). WR (R6 Manual): no Hope, a GM note instead.
   rules(() => assertTypedModifier(roll.modifier ?? 0));
-  const exp = rules(() => experienceBonus(sheet.experiences, roll.experienceIds ?? []));
-  if (exp.hope > 0 && use.roll === undefined) throw invalid("This card makes no roll to add an Experience to.");
+  const exp = rules(() => experienceBonus(sheet.experiences, roll.experienceIds ?? [], modes.experienceCost));
+  if (exp.names.length > 0 && use.roll === undefined) throw invalid("This card makes no roll to add an Experience to.");
+  // WF (R7 on card and feature rolls): Book names the helpers (1 Hope each, refused without; the bare counter refused),
+  // Manual keeps the counter with a GM note. Checked here, before anything is written; paid when the use resolves.
+  if ((roll.helpers?.length ?? 0) > 0 && use.roll === undefined) throw invalid("This card makes no roll to help.");
+  const help = use.roll === undefined && (roll.help ?? 0) === 0 ? NO_HELP : await planHelp(ctx, req.campaign, { characterId: req.character._id, name: sheet.name }, { kind: use.roll?.kind === "reaction" ? "reaction" : "action", help: roll.help ?? 0, ...(roll.helpers !== undefined ? { helpers: roll.helpers } : {}) });
   const paidSheet = rules(() => spendHope(sheet, exp.hope));
   const base = cardActor(actorTokenId, paidSheet, pick.limitKey, roll.trait);
   const own = pick.actor ? pick.actor(base) : base;
@@ -854,9 +865,24 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
   // Rule switches RFC, M1 Manual: no cover disadvantage; the GM is told about a target's cover (when the use rolls) and
   // about every named enemy out of sight.
   const ruleNotes: UseRuleNote[] = [...rangeNotes];
+  const expNote = modes.experienceCost === "manual" && use.roll !== undefined ? experienceNote(sheet.name, exp) : null;
+  if (expNote !== null) ruleNotes.push({ ruleId: "experienceCost", summary: expNote });
   // Rule switches ODR2: a use that counts creatures by range (Hive Mind's "per other Mechanorb within Close") counts no
   // one with Defined Ranges off (`RunContext.definedRanges`, the runner's `rangeBlind`); the GM is asked instead.
   if (rangeNotes.length === 0) for (const summary of rangeAskNotes(pick.name, use, modes.definedRanges)) ruleNotes.push({ ruleId: "definedRanges", summary });
+  // Plan rule-switches WF, M4 `outOfRange` Manual (CB p.103): nothing waits for the GM; the use goes through and the GM
+  // gets "Mira used Fireball on Theo out of range".
+  if (modes.outOfRange === "manual" && outOfRange.length > 0) {
+    const far = new Set<string>(outOfRange.map((o) => o.tokenId));
+    const names: string[] = [];
+    for (const c of [...targets, ...picked, ...allies, ...followUp, ...chain.flat()]) {
+      if (!far.has(c.tokenId)) continue;
+      far.delete(c.tokenId);
+      names.push(c.kind === "enemy" ? c.instance.label : c.kind === "pc" ? c.sheet.name : sheet.name);
+    }
+    ruleNotes.push({ ruleId: "outOfRange", summary: outOfRangeNote(sheet.name, names, pick.name) });
+    outOfRange.length = 0;
+  }
   const cover = targets.some((t) => t.kind === "enemy" && sightRule("", t.sight, modes.lineOfSight, t.unseen !== true).cover);
   const noted = new Set<string>();
   for (const c of [...targets, ...picked, ...followUp, ...chain.flat()]) {
@@ -1001,6 +1027,9 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
     gmFear: req.gmFear,
     // Plan rule-switches RA2 (bead dcm-jh6d.67): the campaign's R3 mode; Manual gains no Hope / Fear from the use's rolls.
     hopeFear: ruleMode(req.campaign, "hopeFearFromRolls"),
+    // Plan rule-switches WR: R2 (a critical's Hope and Stress) and R10 (critical damage) on the use's rolls.
+    criticalSuccess: modes.criticalSuccess,
+    criticalDamage: modes.criticalDamage,
     // Plan rule-switches RFC (bead dcm-jh6d.70): D2 / D4 / D5 / D8 / Massive Damage on every mark the use makes.
     damageRules: modes,
     // Plan rule-switches ODR2: Defined Ranges off, nothing the use picks or counts by range applies on its own.
@@ -1045,26 +1074,28 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
       ...(choices.weapon !== undefined ? { weapon: choices.weapon } : {}),
       advantage: (roll.advantage ?? 0) + conditionEdge.advantage,
       disadvantage: (roll.disadvantage ?? 0) + (cover ? 1 : 0) + conditionEdge.disadvantage + underwater,
-      help: roll.help ?? 0,
+      help: help.help,
       modifier: (roll.modifier ?? 0) + exp.value + (attackRoll ? live.attackBonus : 0),
       ...(roll.difficulty !== undefined ? { difficulty: roll.difficulty } : {}),
     },
   };
-  return { context, paidSheet, creatures, targets, outOfRange, range, definedRanges: modes.definedRanges, ruleNotes };
+  return { context, paidSheet, creatures, targets, outOfRange, range, definedRanges: modes.definedRanges, ruleNotes, help };
 }
 
 /**
  * Rule switches RFC: a use's M1 / C1 / D4 Manual notes (D2 and D8 are `resistanceNotes` / `lastHpNotes` in
  * convex/lib/cardRows.ts). The caller posts each with `postRuleNote` in the use's group.
  */
-export function ruleNotesOfUse(built: Pick<BuiltRun, "ruleNotes" | "creatures" | "context">, plan: Pick<RunPlan, "steps">): UseRuleNote[] {
+export function ruleNotesOfUse(built: Pick<BuiltRun, "ruleNotes" | "creatures" | "context">, plan: Pick<RunPlan, "steps" | "criticalDamageWithheld">): UseRuleNote[] {
   const nameOf = (id: string): string | null => {
     if (id === built.context.actor.id) return built.creatures.actorSheet.name;
     const c = built.creatures.get(id);
     return c?.kind === "enemy" ? c.instance.label : c?.kind === "pc" ? c.sheet.name : null;
   };
   const overflow = stressOverflowNotes(plan.steps, built.context.damageRules?.stressOverflow, nameOf).map((summary): UseRuleNote => ({ ruleId: "stressOverflow", summary }));
-  return [...built.ruleNotes, ...overflow];
+  // WR (R10 Manual): the critical's maximum the use's damage left out.
+  const critical: UseRuleNote[] = (plan.criticalDamageWithheld ?? 0) > 0 ? [{ ruleId: "criticalDamage", summary: criticalDamageNote(built.creatures.actorSheet.name, plan.criticalDamageWithheld!) }] : [];
+  return [...built.ruleNotes, ...overflow, ...critical];
 }
 
 // ---------------------------------------------------------------- running

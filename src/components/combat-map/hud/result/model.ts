@@ -1,5 +1,6 @@
 import type { RollRecord } from "@/lib/domain/duality";
 import type { Step } from "@/lib/domain/card-effects/types";
+import { SEVERITY_LABEL, type DamageSeverity } from "@/lib/domain/encounters/damage";
 import { cardEffect } from "@/lib/srd/card-effects";
 
 import type { ChoiceAsk, CardChoice } from "../../actions/hand/model";
@@ -8,7 +9,8 @@ import type { ChoiceAsk, CardChoice } from "../../actions/hand/model";
  * The result panel's pure model (plan combat-hud H4.1; boards Main 'Card result', CmpPromptsPlayer 'Your roll waits',
  * CmpPicking 'After the roll'). Everything here reads what the server already returned to the actor: their own dice and
  * damage totals and Hit / Miss / Defeated per target (U1, HANDOFF hard rule 2). No adversary number ever reaches it, so
- * none can be shown.
+ * none can be shown. The one exception is the GM's own panel: `GmDamage` (severity, HP marked) comes from the GM-only
+ * `combatHud.resultDamage` and is passed in separately, never stored in the view.
  */
 
 export type Verdict = "Hit" | "Miss" | "Defeated";
@@ -279,10 +281,84 @@ export function attackResultView(input: {
   };
 }
 
+/** A player's result as the GM's HUD receives it (`combatHud.playerResults`, the `resultPanel` of the use's public row). */
+export type PlayerResult = {
+  entryId: string;
+  characterId?: string;
+  fearDelta?: number;
+  panel: {
+    kind: ResultView["kind"];
+    title: string;
+    actorName: string;
+    cardId?: string;
+    useId?: string;
+    damageType?: DamageType;
+    roll: RollRecord | null;
+    damage: readonly RollRecord[];
+    success: boolean;
+    targets: readonly (Target & { name: string })[];
+    prompts: readonly Prompt[];
+    notes: readonly string[];
+    riders?: readonly string[];
+    skipped?: readonly string[];
+    minionOffer?: true;
+    minionsForGm?: number;
+  };
+};
+
+/**
+ * dcm-uemx (user 2026-11-09 "the GM sees every player's result"): the GM's copy of a player's result panel, built by the
+ * same builders as the player's own. The Minion line speaks of the player ("Moss picks the extra Minions").
+ */
+export function playerResultView(row: PlayerResult): ResultView {
+  const p = row.panel;
+  const names: Names = new Map(p.targets.map((t) => [t.tokenId, t.name]));
+  const characterId = row.characterId ?? "";
+  const playerMinions = p.minionOffer ? [`${p.actorName} picks the extra Minions.`] : [];
+  if (p.kind === "attack" && p.roll !== null) {
+    const view = attackResultView({
+      characterId,
+      actorName: p.actorName,
+      weaponName: p.title,
+      damageType: p.damageType ?? null,
+      result: { entryId: row.entryId, roll: p.roll, damage: p.damage[0] ?? null, targets: p.targets, fearGained: Math.max(0, row.fearDelta ?? 0), minionOffer: null, ...(p.minionsForGm !== undefined ? { minionsForGm: p.minionsForGm } : {}), ...(p.riders ? { riders: p.riders } : {}), ...(p.skipped ? { skipped: p.skipped } : {}), riderPrompts: p.prompts },
+      names,
+    });
+    return { ...view, notes: [...view.notes, ...playerMinions] };
+  }
+  const result = { entryId: row.entryId, roll: p.roll, damage: p.damage, success: p.success, targets: p.targets, fearDelta: row.fearDelta ?? 0, prompts: p.prompts };
+  if (p.kind === "card" && p.cardId !== undefined && p.useId !== undefined) {
+    const view = cardResultView({ characterId, actorName: p.actorName, cardName: p.title, result: { ...result, cardId: p.cardId, useId: p.useId, minionOffer: null, ...(p.minionsForGm !== undefined ? { minionsForGm: p.minionsForGm } : {}) }, names });
+    return { ...view, notes: [...view.notes, ...playerMinions] };
+  }
+  return featureResultView({ characterId, actorName: p.actorName, featureName: p.title, result: { ...result, notes: p.notes }, names });
+}
+
 /** The damage a target row shows: the one damage roll on a hit (several rolls are listed under the rows instead). */
 export function rowDamage(view: Pick<ResultView, "damage">, target: ResultTarget): DamageLine | null {
   if (target.verdict === "Miss" || view.damage.length !== 1) return null;
   return view.damage[0]!;
+}
+
+/**
+ * What the GM's result panel adds to a hit row (dcm-uemx): the damage's severity against the adversary's thresholds and
+ * the HP the use marked, as the server applied them (resistance, Minions, Massive Damage). Read from the GM-only
+ * `combatHud.resultDamage` (U1: a player's panel never has it, so it never shows this).
+ */
+export type GmDamage = { severity: DamageSeverity; hpMarked: number; resisted?: "resistant" | "immune"; massive?: true };
+
+/** "Major · 2 HP", "Severe · 3 HP (resistant)", "Massive · 4 HP", "No damage · 0 HP (immune)"; "1 HP" for a defeat-on-any-damage target (a Minion). */
+export function severityText(d: GmDamage): string {
+  const hp = `${d.hpMarked} HP`;
+  const word = d.massive ? "Massive" : d.severity === "defeat" ? null : SEVERITY_LABEL[d.severity];
+  return `${word ? `${word} · ` : ""}${hp}${d.resisted ? ` (${d.resisted})` : ""}`;
+}
+
+/** The GM's severity line for a row: on a Hit or Defeated row only, when the server has it for that token. */
+export function rowSeverity(target: ResultTarget, gmDamage: ReadonlyMap<string, GmDamage> | undefined): string | null {
+  if (target.verdict === "Miss" || gmDamage === undefined) return null;
+  const d = gmDamage.get(target.tokenId);
+  return d ? severityText(d) : null;
 }
 
 /** "1d8+1 → 7 physical". */

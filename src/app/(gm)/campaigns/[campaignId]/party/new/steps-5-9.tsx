@@ -1,6 +1,5 @@
 "use client";
 
-import { BrandButton } from "@/components/brand/buttons";
 import { SharedCardNote } from "@/components/party/sheet-ui";
 import { designAsset } from "@/lib/design-assets";
 import { TRAIT_LABEL, traitIdSchema } from "@/lib/frames/extras/common";
@@ -24,7 +23,7 @@ import {
   suggestedLoadout,
   toggleCard,
   toggleExperience,
-} from "./wizard-logic";
+} from "@/lib/party/wizard-logic";
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const burdenLabel = (b: Weapon["burden"]) => (b === "two-handed" ? "Two-Handed" : b === "one-handed" ? "One-Handed" : "Barehanded");
@@ -153,9 +152,9 @@ export function EquipmentStep({ state, update, opts }: StepProps) {
           </p>
         )}
         {loadout ? (
-          <BrandButton
-            variant="neutral"
-            size="sm"
+          <button
+            type="button"
+            className="wz-ghost"
             onClick={() => {
               update(opts.ikonis ? { armorId: loadout.armorId } : { primaryWeaponId: loadout.primaryWeaponId, secondaryWeaponId: loadout.secondaryWeaponId, armorId: loadout.armorId });
               // The equipment is set: move on to what is left on this step, the potion (and Next under it).
@@ -167,7 +166,7 @@ export function EquipmentStep({ state, update, opts }: StepProps) {
             }}
           >
             Use suggested {opts.ikonis ? "armor" : "loadout"}
-          </BrandButton>
+          </button>
         ) : null}
       </div>
       {opts.ikonis ? <IkonisFields state={state} update={update} /> : null}

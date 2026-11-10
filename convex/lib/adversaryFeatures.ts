@@ -37,6 +37,8 @@ import { assertRunning, loadEncounter, loadInstance, MAX_INSTANCES } from "./enc
 import { campaignFearState } from "./fear";
 import { rules } from "./rolls";
 import { adversaryDefeated } from "./spotlight";
+import { ruleMode } from "./ruleModes";
+import { pathMoveRange } from "../../src/lib/domain/adversary-actions/path-targets";
 import type { AdversaryBefore } from "./validators/actionLog";
 import type { HitRider } from "./validators/combatRequests";
 import { MAX_INSTANCE_FEATURE_USES, type InstanceEffect, type InstanceFeatureUse } from "./validators/encounters";
@@ -394,7 +396,7 @@ export function spotlightFearFor(
 // ---------------------------------------------------------------- featureAsk (AA2c)
 
 /** Who a list argument of `useFeature` names: `side` as the entry reads it (`enemy` = PCs, `ally` = other adversaries). */
-export type TargetAsk = { side: string; range: string; count: "one" | "upTo" | "all" | "any"; max: number | null; sight: boolean };
+export type TargetAsk = { side: string; range: string; count: "one" | "upTo" | "all" | "any"; max: number | null; sight: boolean; /** dcm-y3mf: the shape of an "all targets" list ("front", "path"; the GM names its creatures). */ area?: string };
 
 export type CostAsk = { fear: number; stress: number; hp: number; label: string };
 
@@ -441,6 +443,8 @@ export type FeatureAsk = {
   experiences: { name: string; value: number }[];
   /** `onAttack beforeDamage` reactions the GM may opt into for an attack (`reactions`, Q19 default No). */
   reactions: { feature: string; useId: string }[];
+  /** WF: a "path" feature's move range (`pathMoveRange`); the GM picks the destination square, sent as `destination`. */
+  pathMove?: string;
 };
 
 /** Calls `visit` on every step, nested branches included. */
@@ -476,7 +480,7 @@ const fixedOf = (n: NumberSource | undefined): number | null => (n?.kind === "fi
 function targetAsk(spec: TargetSpec): TargetAsk {
   const c = spec.count;
   const max = c.kind === "one" ? 1 : c.kind === "upTo" ? fixedOf(c.n) : c.kind === "any" ? fixedOf(c.max) : null;
-  return { side: spec.side, range: spec.range, count: c.kind, max, sight: spec.sight === true };
+  return { side: spec.side, range: spec.range, count: c.kind, max, sight: spec.sight === true, ...(spec.area ? { area: spec.area } : {}) };
 }
 
 const isTriggerTargets = (t: TargetSpec | TriggerTargets): t is TriggerTargets => t.side === "trigger";
@@ -537,10 +541,12 @@ export async function featureAsk(ctx: QueryCtx, campaign: Doc<"campaigns">, args
   const needsSpotlight = use ? use.needsSpotlight : manual!.kind === "action";
   const spot = spotlightFearFor(instance, encounter, others, block, passives, needsSpotlight);
   const experiences = block.experiences.map((e) => ({ name: e.name, value: e.value }));
+  const fearFeaturesManual = ruleMode(campaign, "fearFeatures") === "manual";
   const none = { targets: null, picked: null, allies: null, followUp: null, trigger: null, options: [], optionals: [], splits: [], eitherCosts: [], reactions: [] };
 
   if (!effect || !use) {
-    const feature = manual!.fearCost ?? featureFearCost(manual!.text) ?? 0;
+    // Plan rule-switches WF, F5 Manual: the feature's Fear is spent by hand, so the use asks none.
+    const feature = fearFeaturesManual ? 0 : (manual!.fearCost ?? featureFearCost(manual!.text) ?? 0);
     const total = spot.fear + feature;
     return {
       ...none,
@@ -649,7 +655,7 @@ export async function featureAsk(ctx: QueryCtx, campaign: Doc<"campaigns">, args
   }
 
   // Fear (Q19): the spotlight plus the upfront costs with the first option of each `either`.
-  const feature = upfrontFear(use.costs, { self, tokens: instance.tokens ?? 0, tier: block.tier, gmFear: 0, rng: () => 1 });
+  const feature = upfrontFear(use.costs, { self, tokens: instance.tokens ?? 0, tier: block.tier, gmFear: 0, rng: () => 1, ...(fearFeaturesManual ? { fearFeatures: "manual" as const } : {}) });
   ask.fear = { total: spot.fear + feature, spotlight: spot.fear, feature, perTrigger: JSON.stringify(use.costs ?? []).includes('"triggerAmount"'), gmFear: state.fear, enough: spot.fear + feature <= state.fear };
 
   // Available now: requirements the server can check (situations are the GM's to confirm), the limit.
@@ -661,6 +667,8 @@ export async function featureAsk(ctx: QueryCtx, campaign: Doc<"campaigns">, args
     if (used >= (use.limit.times ?? 1)) ask.unavailable.push(`Used up this ${use.limit.period === "gmTurn" ? "GM turn" : use.limit.per === "scene" ? "scene" : use.limit.per === "session" ? "session" : "rest"}`);
   }
   ask.available = ask.unavailable.length === 0;
+  const pathMove = pathMoveRange(use);
+  if (pathMove !== null) ask.pathMove = pathMove;
 
   if (ask.attack) {
     for (const t of triggeredUses(block.effects, { kind: "onAttack", stage: "beforeDamage", attack: "feature" }, adversaryState(instance))) {

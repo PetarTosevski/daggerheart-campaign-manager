@@ -4,7 +4,7 @@
 // rules the engine doesn't follow yet show their mode read-only with 'Coming soon'; a live session disables every
 // control (the campaign options too, Q17 a) with the lock hint; players read the same rows from the Preferences popover
 // (Q18 a) with the modes as text.
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { ConvexError } from "convex/values";
 import { useSyncExternalStore } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -99,12 +99,18 @@ beforeEach(() => {
   refuse = null;
   setUp("witherwild");
 });
+const removed: string[] = [];
 afterEach(() => {
   for (const id of added.splice(0)) (WIRED_RULES as Set<string>).delete(id);
+  for (const id of removed.splice(0)) (WIRED_RULES as Set<string>).add(id);
 });
 function wire(id: string) {
   (WIRED_RULES as Set<string>).add(id);
   added.push(id);
+}
+/** Takes a wired rule out for one test (wave 3 wired every rule with modes, so "Coming soon" needs one unwired). */
+function unwire(id: string) {
+  if ((WIRED_RULES as Set<string>).delete(id)) removed.push(id);
 }
 
 describe("rule rows: model", () => {
@@ -195,6 +201,32 @@ describe("rule rows: the GM", () => {
     expect(within(fearCap).queryByRole("radio")).toBeNull();
     expect(within(fearCap).queryByRole("switch")).toBeNull();
     expect(within(fearCap).queryByRole("button")).toBeNull();
+  });
+
+  it("shows a rule with modes that isn't wired yet as its mode and Coming soon, with no control (wave 3)", () => {
+    unwire("scars");
+    unwire("domainCardLevels");
+    setUp("witherwild", { outOfRange: "refuse", scars: "manual" });
+    render(<Section />);
+    for (const id of ["scars", "domainCardLevels"]) {
+      expect(within(row(id)).queryByRole("radio"), id).toBeNull();
+      expect(within(row(id)).getByText(RULE_ROWS_TEXT.comingSoon), id).toBeInTheDocument();
+    }
+    expect(within(row("scars")).getByText("Manual")).toBeInTheDocument();
+    for (const id of removed.splice(0)) (WIRED_RULES as Set<string>).add(id);
+    cleanup();
+    render(<Section />);
+    expect(within(row("scars")).getByRole("radio", { name: "Manual" })).toBeChecked();
+    // WF is wired: M4 shows Ask the GM / Refuse / Manual; F4, F5 and D7 their Manual.
+    expect(within(row("outOfRange")).getByRole("radio", { name: "Ask the GM" })).toBeInTheDocument();
+    expect(within(row("outOfRange")).getByRole("radio", { name: "Refuse" })).toBeChecked();
+    for (const id of ["adversaryExperienceFear", "fearFeatures", "hordes"]) expect(within(row(id)).getByRole("radio", { name: "Manual" }), id).toBeInTheDocument();
+    // WR (wave 3 roll costs) is wired: R8 shows its three modes, R2 its Manual.
+    expect(within(row("tagTeam")).getByRole("radio", { name: /No session limit/ })).toBeInTheDocument();
+    expect(within(row("criticalSuccess")).getByRole("radio", { name: "Manual" })).toBeInTheDocument();
+    // WS (wave 3 sessions, scars & level-up) is wired: X3 and L3 show Book / Manual.
+    expect(within(row("scars")).getByRole("radio", { name: "Manual" })).toBeInTheDocument();
+    expect(within(row("domainCardLevels")).getByRole("radio", { name: "Manual" })).toBeInTheDocument();
   });
 
   it("makes X2 read-only while X1 is Manual", () => {

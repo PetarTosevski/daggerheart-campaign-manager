@@ -342,6 +342,8 @@ export type RollAnswers = {
   advantage?: number;
   disadvantage?: number;
   help?: number;
+  /** WF (R7 Book): the PCs who help. */
+  helpers?: Id<"characters">[];
 };
 
 /**
@@ -359,6 +361,8 @@ export function rollOf(form: Pick<UseForm, "rolls">, values: Pick<FormValues, "t
     if (rollOptions.edge > 0) roll.advantage = rollOptions.edge;
     if (rollOptions.edge < 0) roll.disadvantage = -rollOptions.edge;
     if (rollOptions.help > 0) roll.help = rollOptions.help;
+    // WF (R7 Book): the named helpers (1 Hope each, paid by the server when the use resolves).
+    if ((rollOptions.helpers?.length ?? 0) > 0) roll.helpers = [...rollOptions.helpers!];
   }
   return Object.keys(roll).length > 0 ? roll : undefined;
 }
@@ -366,7 +370,7 @@ export function rollOf(form: Pick<UseForm, "rolls">, values: Pick<FormValues, "t
 /** Whether a use request carried any of the strip's roll options (so the strip clears once it lands; F8-I1). */
 export function usedRollOptions(request: { roll?: RollAnswers }): boolean {
   const r = request.roll;
-  return r !== undefined && ((r.experienceIds?.length ?? 0) > 0 || (r.advantage ?? 0) > 0 || (r.disadvantage ?? 0) > 0 || (r.help ?? 0) > 0);
+  return r !== undefined && ((r.experienceIds?.length ?? 0) > 0 || (r.advantage ?? 0) > 0 || (r.disadvantage ?? 0) > 0 || (r.help ?? 0) > 0 || (r.helpers?.length ?? 0) > 0);
 }
 
 /**

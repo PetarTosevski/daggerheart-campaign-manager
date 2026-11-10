@@ -105,7 +105,7 @@ async function arena(opts: { definedRanges?: boolean; outOfRange?: "ask" | "refu
   const w = await buildWorld();
   const { t, campaignId } = w;
   const gm = w.as("gm");
-  if (opts.outOfRange === "refuse") await gm.mutation(api.campaignSettings.set, { campaignId, change: { key: "outOfRange", value: "refuse" } });
+  if (opts.outOfRange === "refuse") await gm.mutation(api.ruleSettings.set, { campaignId, change: { key: "outOfRange", value: "refuse" } });
   if (opts.definedRanges === false) await gm.mutation(api.ruleSettings.set, { campaignId, change: { key: "definedRanges", value: false } });
   const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
   const now = Date.now();

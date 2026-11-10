@@ -38,7 +38,7 @@ import {
   verdictClass,
   type AnswerAction,
   type BookTitles,
-} from "./model";
+} from "@/lib/lorekeeper/answer-model";
 import { PinDialog } from "./pin-dialog";
 
 /** Not in copy.ts: the note on an answer the asker stopped (Q11), and the Copy confirmation. */

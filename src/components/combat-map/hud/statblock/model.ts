@@ -12,6 +12,7 @@ import { conditionProvenance, provenanceLine, type ConditionSourceEntry } from "
 import type { SightResult } from "@/lib/domain/combat-actions/sight";
 import type { Footprint } from "@/lib/domain/combat-actions/distance";
 import { spotlightCostsFear, spotlightsThisTurn, turnSpotlights } from "@/lib/domain/encounters/spotlight";
+import { areaWords } from "@/lib/domain/adversary-actions/area-targets";
 
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { attackBand, rangeRows } from "../../actions/adversary/model";
@@ -108,10 +109,25 @@ export function spotlightButtonText(cost: number): string {
 }
 
 /** The picker's footer (board: "Spotlight: 1 Fear · Momentum on a hit"). */
-export function attackFooter({ spotlightFear, experienceFear, momentum }: { spotlightFear: number; experienceFear: number; momentum: boolean }): string | null {
+export function attackFooter({
+  spotlightFear,
+  experienceFear,
+  momentum,
+  darkHearted = false,
+  experienceByHand = false,
+}: {
+  spotlightFear: number;
+  experienceFear: number;
+  momentum: boolean;
+  /** WF, W3 Tier 3: Dark-Hearted picked (1 Fear). */
+  darkHearted?: boolean;
+  /** WF, F4 Manual: an Experience picked, its Fear spent by hand. */
+  experienceByHand?: boolean;
+}): string | null {
   const parts = [
     spotlightFear > 0 ? `Spotlight: ${spotlightFear} Fear` : null,
-    experienceFear > 0 ? `Experience: ${experienceFear} Fear` : null,
+    experienceFear > 0 ? (experienceByHand ? "Experience: spend 1 Fear by hand" : `Experience: ${experienceFear} Fear`) : null,
+    darkHearted ? "Dark-Hearted: 1 Fear" : null,
     momentum ? "Momentum on a hit" : null,
   ].filter((p): p is string => p !== null);
   return parts.length > 0 ? parts.join(" · ") : null;
@@ -128,12 +144,22 @@ export function attackReactions(block: Pick<BlockLike, "features">): string[] {
 }
 
 /** The server's `confirmFear` as FearConfirm's reasons (board: "1 to spotlight the Lieutenant, 1 for Coup de Grace"). */
-export function fearReasons(c: { spotlight: number; feature: number; experience: number }, who: string, feature: string | null, experience: string | null): string[] {
+export function fearReasons(c: { spotlight: number; feature: number; experience: number; darkHearted?: number }, who: string, feature: string | null, experience: string | null): string[] {
   return [
     c.spotlight ? `${c.spotlight} to spotlight ${who}` : null,
     c.feature ? `${c.feature} for ${feature ?? "the feature"}` : null,
     c.experience ? `${c.experience} for ${experience ?? "the Experience"}` : null,
+    // Rule switches WF, W3 Tier 3 (HF p.177).
+    c.darkHearted ? `${c.darkHearted} for Dark-Hearted` : null,
   ].filter((p): p is string => p !== null);
+}
+
+/** WF, W3 Tier 3 (HF p.177): the pickers' option id for Dark-Hearted ("advantage on its next roll" for 1 Fear). */
+export const DARK_HEARTED_OPTION = "dark-hearted";
+
+/** WF: the Dark-Hearted option, when adversaries have it (`adversaryActions.darkHearted`). */
+export function darkHeartedOption(on: boolean): { id: string; label: string; note: string; cost: { amount: number; resource: "fear" } }[] {
+  return on ? [{ id: DARK_HEARTED_OPTION, label: "Dark-Hearted: advantage", note: "Costs 1 Fear (Doom Track Tier 3)", cost: { amount: 1, resource: "fear" } }] : [];
 }
 
 /** A PC token on the map as the GM attack reads it. */
@@ -222,4 +248,27 @@ export function conditionChips(conditions: readonly string[], ends: readonly Fea
   });
   for (const e of ends) if (!used.has(e.effectId)) chips.push({ key: `e:${e.effectId}`, label: e.label, condition: null, end: e, from: null });
   return chips;
+}
+
+/**
+ * dcm-y3mf: the purple picker for an "all targets" area the GM names (Hail of Boulders, "all targets in front of the Ogre
+ * within Far range"; Trample, "all targets in the Construct's path"). In front of / in a line / around: everyone in range
+ * starts picked and the GM unpicks who isn't there (the map has no facing to read); a path or "between" starts empty
+ * (where the adversary goes is the GM's). An attack needs one target (the server refuses a roll at nobody).
+ */
+export function areaPick(
+  target: { area: string; range: string },
+  who: string,
+  attack: boolean,
+  rows: readonly Pick<PickRowInput, "tokenId" | "reach" | "conditions">[],
+  /** Plan rule-switches WF, C4 Book (CB p.106): an unconscious PC can't be targeted, so it starts unpicked. */
+  skipUnconscious = false,
+): { text: string; picked: Id<"combatTokens">[]; min: number } {
+  const where = areaWords(target.area, target.range, who);
+  const empty = target.area === "path" || target.area === "between";
+  return {
+    text: empty ? `Pick everyone ${where}` : `Everyone ${where}: unpick anyone who isn’t`,
+    picked: empty ? [] : rows.filter((r) => r.reach === "in" && !(skipUnconscious && (r.conditions ?? []).some((c) => c.toLowerCase() === "unconscious"))).map((r) => r.tokenId),
+    min: attack ? 1 : 0,
+  };
 }

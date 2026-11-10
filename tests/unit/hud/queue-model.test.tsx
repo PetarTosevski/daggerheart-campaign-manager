@@ -6,7 +6,6 @@ import { ConvexError } from "convex/values";
 import { describe, expect, it } from "vitest";
 
 import {
-  errorCode,
   isAlreadyAnswered,
   itemLabel,
   namesText,
@@ -20,6 +19,7 @@ import {
   windowSub,
   windowWaiting,
 } from "@/components/combat-map/hud/queue/model";
+import { errorCode } from "@/lib/lorekeeper/answer-model";
 
 const sniper = { tokenId: "t-sniper", name: "Sniper" };
 const bandit = { tokenId: "t-bandit", name: "Bandit" };

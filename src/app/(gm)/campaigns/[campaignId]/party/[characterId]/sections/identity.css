@@ -26,7 +26,8 @@
 .id-exp-row{display:flex;gap:6px;align-items:flex-end}
 .id-exp-name{flex:1;min-width:0}
 .id-exp-name .cs-in,.id-exp-name .sh-in{padding-left:10px;padding-right:10px}
-.id-exp-mod{width:50px;flex:none;justify-content:center;text-align:center;padding-left:4px;padding-right:4px}
+/* Two classes beat sheet-ui's .sh-in{width:100%}, whatever order the stylesheets load in (prod loaded .sh-in last). */
+.id-exp-row .id-exp-mod{width:50px;flex:none;justify-content:center;text-align:center;padding-left:4px;padding-right:4px}
 .id-exp-add{align-self:flex-end;min-height:44px}
 
 /* Small paper buttons: trait steppers and Experience remove. */

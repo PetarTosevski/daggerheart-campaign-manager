@@ -2,13 +2,14 @@
 
 import "../config.css";
 
-import { BookOpen, Check, Clock, ScrollText, Table2, Users, X, type LucideIcon } from "lucide-react";
+import { BookOpen, Check, Clock, Library, ScrollText, Table2, Users, X, type LucideIcon } from "lucide-react";
 import { Suspense, useEffect, useId, useRef, type ComponentType } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
 import { SlotBoundary } from "@/components/party/session/boundary";
 
 import type { CampaignSummary } from "../../../../convex/campaigns";
+import { ExpansionsSection } from "../sections/expansions";
 import { LorekeeperSection } from "../sections/lorekeeper";
 import { PlayersSection } from "../sections/players";
 import { HouseRulesSection } from "../sections/rules";
@@ -21,6 +22,7 @@ import { closeSettings, openSettings, useSettingsSection } from "./url";
 const SECTION_ICON: Record<SettingsSection, LucideIcon> = {
   table: Table2,
   rules: ScrollText,
+  expansions: Library,
   players: Users,
   lorekeeper: BookOpen,
   sessions: Clock,
@@ -30,6 +32,7 @@ const SECTION_ICON: Record<SettingsSection, LucideIcon> = {
 const SECTION_SLOT: Record<SettingsSection, ComponentType<SettingsSectionProps>> = {
   table: TableSection,
   rules: HouseRulesSection,
+  expansions: ExpansionsSection,
   players: PlayersSection,
   lorekeeper: LorekeeperSection,
   sessions: SessionsSection,

@@ -37,7 +37,7 @@ import { readSheet, saveSheet } from "./characterSheet";
 import { MAX_INSTANCES } from "./encounters";
 import { bandsOnMap, openIncomingHit, partyMembers } from "./incomingHits";
 import { ENCOUNTER_CONDITIONS, type EncounterCondition, type InstanceEffect } from "./validators/encounters";
-import { rollValidator, type AdversaryBefore } from "./validators/actionLog";
+import { rollValidator, type AdversaryBefore, type ResultPanel, type TargetDamage } from "./validators/actionLog";
 import { rangeBandValidator } from "./validators/combatRequests";
 
 // ---------------------------------------------------------------- what a caller returns
@@ -429,9 +429,11 @@ export function rollEnvironment(built: Pick<BuiltRun, "context" | "creatures">, 
 }
 
 /** The public words per target (U1): Hit, Miss or Defeated, and nothing numeric. */
-export function publicTargets(plan: RunPlan, built: BuiltRun, writes: readonly InstanceWrite[]): { parts: string[]; outcomes: Infer<typeof cardTargetValidator>[] } {
+export function publicTargets(plan: RunPlan, built: BuiltRun, writes: readonly InstanceWrite[]): { parts: string[]; outcomes: Infer<typeof cardTargetValidator>[]; names: Map<string, string> } {
   const parts: string[] = [];
   const outcomes: Infer<typeof cardTargetValidator>[] = [];
+  /** dcm-uemx: each target's name, for the GM's copy of the result panel (`resultPanel`). */
+  const names = new Map<string, string>();
   for (const t of built.targets) {
     if (t.kind === "self") continue;
     const id = t.tokenId as string;
@@ -440,9 +442,47 @@ export function publicTargets(plan: RunPlan, built: BuiltRun, writes: readonly I
     const defeated = t.kind === "enemy" ? (write?.patch.defeated ?? t.instance.defeated) : false;
     const name = t.kind === "enemy" ? t.instance.label : t.sheet.name;
     outcomes.push({ tokenId: t.tokenId, hit, defeated });
+    names.set(id, name);
     parts.push(`${name}: ${defeated ? "Defeated" : hit ? "Hit" : "Miss"}`);
   }
-  return { parts, outcomes };
+  return { parts, outcomes, names };
+}
+
+/**
+ * dcm-uemx: the result panel a card or feature use showed its player, for its public row (`attachResultPanel`; the GM's
+ * HUD shows the same panel). Hit / Miss / Defeated, the player's own dice and damage, the table steps: no adversary number.
+ */
+export function resultPanelOf(input: {
+  kind: "card" | "feature";
+  title: string;
+  actorName: string;
+  cardId?: string;
+  useId?: string;
+  roll: RollRecord | null;
+  damage: readonly RollRecord[];
+  success: boolean;
+  targets: readonly { tokenId: Id<"combatTokens">; hit: boolean; defeated: boolean }[];
+  names: ReadonlyMap<string, string>;
+  prompts: readonly { kind: ResultPanel["prompts"][number]["kind"]; text: string }[];
+  notes?: readonly string[];
+  minionOffer?: unknown;
+  minionsForGm?: number;
+}): ResultPanel {
+  return {
+    kind: input.kind,
+    title: input.title,
+    actorName: input.actorName,
+    ...(input.cardId !== undefined ? { cardId: input.cardId } : {}),
+    ...(input.useId !== undefined ? { useId: input.useId } : {}),
+    roll: input.roll,
+    damage: [...input.damage],
+    success: input.success,
+    targets: input.targets.map((t) => ({ tokenId: t.tokenId, name: input.names.get(t.tokenId) ?? "Target", hit: t.hit, defeated: t.defeated })),
+    prompts: input.prompts.map((p) => ({ kind: p.kind, text: p.text })),
+    notes: [...(input.notes ?? [])],
+    ...(input.minionOffer ? { minionOffer: true as const } : {}),
+    ...(input.minionsForGm !== undefined ? { minionsForGm: input.minionsForGm } : {}),
+  };
 }
 
 /** The GM's words: damage → severity → HP per enemy, marks, conditions, modifiers, saves, misses against the Difficulty. */
@@ -471,6 +511,25 @@ export function gmLines(plan: RunPlan, built: BuiltRun, writes: readonly Instanc
   for (const id of plan.excluded) lines.push(`${name(id)}: not affected (the card's filter)`);
   for (const w of writes) lines.push(`${w.creature.instance.label} now ${w.patch.hp}/${w.creature.instance.stats.hpMax} HP, ${w.patch.stress}/${w.creature.instance.stats.stressMax} Stress${w.patch.defeated ? ", defeated" : ""}`);
   return lines;
+}
+
+/**
+ * dcm-uemx: severity and HP marked per adversary the use damaged, for the GM row's `targetDamage` (the GM's result
+ * panel). The severity is the damage step's (one per adversary, R2); the HP is what the use's instance write changed
+ * (marks and riders included), the damage step's own count when nothing was written. Never sent to a player (U1).
+ */
+export function targetDamageOf(plan: RunPlan, built: BuiltRun, writes: readonly InstanceWrite[]): TargetDamage[] {
+  const out: TargetDamage[] = [];
+  for (const step of plan.steps) {
+    if (step.kind !== "damage") continue;
+    const r = step.result;
+    const c = built.creatures.get(r.targetId);
+    if (c?.kind !== "enemy" || out.some((o) => o.tokenId === c.tokenId)) continue;
+    const write = writes.find((w) => w.creature.tokenId === c.tokenId);
+    const hpMarked = write ? Math.max(0, write.patch.hp - c.instance.hp) : r.hpMarked;
+    out.push({ tokenId: c.tokenId, severity: r.severity, hpMarked, ...(r.resisted !== "none" && r.resistanceApplied !== false ? { resisted: r.resisted } : {}), ...(r.massive ? { massive: true as const } : {}) });
+  }
+  return out;
 }
 
 /** The damage rolls of the plan, for the player and the public row (Q5). */

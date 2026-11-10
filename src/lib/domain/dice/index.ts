@@ -154,6 +154,16 @@ export type DualityEffects = { hope: number; clearStress: number; fear: number }
 
 /** R3 "Hope and Fear from rolls" (plan rule-switches RA): `book` gains them by themselves, `manual` leaves them to the table. */
 export type HopeFearMode = ModeOf<"hopeFearFromRolls">;
+/**
+ * R2 "Matching dice = critical" (CB p.90; plan rule-switches WR, user answer Q1 a). Book: a critical gives +1 Hope and
+ * clears 1 Stress in total (never a second Hope for "with Hope"). Manual: the critical still succeeds and counts as with
+ * Hope, but neither is applied; the GM gets a note.
+ */
+export type CriticalMode = ModeOf<"criticalSuccess">;
+/** R6 "Experiences cost Hope" (CB p.90; WR, Q2 a). Manual: the modifier is added, no Hope is taken, the GM gets a note. */
+export type ExperienceCostMode = ModeOf<"experienceCost">;
+/** R10 "Critical damage" (CB p.98, p.148; WR, Q5 a). Manual: a critical is rolled like a normal hit, the GM gets a note. */
+export type CriticalDamageMode = ModeOf<"criticalDamage">;
 
 /**
  * What a Duality roll changes (CB 94, 99): reaction rolls change nothing. `mode` is the campaign's R3 switch (default
@@ -162,9 +172,11 @@ export type HopeFearMode = ModeOf<"hopeFearFromRolls">;
  * note for the Fear). A critical keeps its own Hope and Stress: that is R2 "Matching dice = critical" (CB p.90, a
  * Book-only rule: "you gain a Hope and clear a Stress"), not R3.
  */
-export function dualityEffects(kind: "action" | "reaction", outcome: RollOutcome, mode: HopeFearMode = "book"): DualityEffects {
+export function dualityEffects(kind: "action" | "reaction", outcome: RollOutcome, mode: HopeFearMode = "book", critical: CriticalMode = "book"): DualityEffects {
   if (kind === "reaction") return { hope: 0, clearStress: 0, fear: 0 };
   if (mode === "manual" && outcome !== "critical") return { hope: 0, clearStress: 0, fear: 0 };
+  // R2 Manual (plan rule-switches WR, user answer Q1 a): the critical still succeeds with Hope; its Hope and Stress are the GM's.
+  if (critical === "manual" && outcome === "critical") return { hope: 0, clearStress: 0, fear: 0 };
   switch (outcome) {
     case "critical":
       return { hope: 1, clearStress: 1, fear: 0 };
@@ -212,15 +224,25 @@ export function holdsPurposefulDesign(ancestry: OwnedSheet["ancestry"], scope: P
 
 // ---------------------------------------------------------------- Hope costs
 
-/** The Experiences used on a roll: their summed modifier (Purposeful Design's +1 included) and Hope cost (1 each, CB 90). */
-export function experienceBonus(experiences: readonly Experience[], ids: readonly string[]): { value: number; hope: number; names: string[] } {
+/**
+ * The Experiences used on a roll: their summed modifier (Purposeful Design's +1 included) and Hope cost (1 each, CB 90).
+ * R6 Manual (`mode`, plan rule-switches WR): the modifier is added and the cost is 0 (the GM gets a note).
+ */
+export function experienceBonus(experiences: readonly Experience[], ids: readonly string[], mode: ExperienceCostMode = "book"): { value: number; hope: number; names: string[] } {
   if (new Set(ids).size !== ids.length) throw new DiceRuleError("Each Experience counts once.");
   const used = ids.map((id) => {
     const found = experiences.find((e) => e.id === id);
     if (!found) throw new DiceRuleError("That Experience isn't on the sheet.");
     return found;
   });
-  return { value: used.reduce((s, e) => s + experienceValue(e), 0), hope: used.length, names: used.map((e) => e.name) };
+  return { value: used.reduce((s, e) => s + experienceValue(e), 0), hope: mode === "manual" ? 0 : used.length, names: used.map((e) => e.name) };
+}
+
+/** R6 Manual's GM line (plan rule-switches WR): "Mira used Stealthy (+2): spend 1 Hope?"; null when no Experience was used. */
+export function experienceNote(name: string, experience: { names: readonly string[]; value: number }): string | null {
+  const n = experience.names.length;
+  if (n === 0) return null;
+  return `${name} used ${experience.names.join(", ")} (${experience.value >= 0 ? "+" : ""}${experience.value}): spend ${n} Hope?`;
 }
 
 /** Spends Hope, or refuses (the caller maps it to NOT_ENOUGH_HOPE). */
@@ -362,15 +384,28 @@ export type DamageInput = {
 };
 
 /**
+ * What a critical adds to a damage roll (CB p.98): the maximum of every damage die (`critBase` standing in for the base
+ * dice), named dice left out; 0 when the roll is not a critical. R10 Manual's GM note names this number.
+ */
+export function criticalExtra(input: Pick<DamageInput, "dice" | "critical" | "critBase" | "bonusDice">): number {
+  return input.critical ? (input.critBase ?? maxRoll(input.dice)) + maxRoll(input.bonusDice ?? []) : 0;
+}
+
+/** R10 Manual's GM line (plan rule-switches WR): "Mira: critical, add 16 (the dice's maximum)?". */
+export function criticalDamageNote(name: string, extra: number): string {
+  return `${name}: critical, add ${extra} (the dice's maximum)?`;
+}
+
+/**
  * A damage roll. A critical starts from the maximum of every damage die (CB 98: "add the highest
  * possible value of the damage dice"), `critBase` standing in for the base dice; folded into `modifier`.
  */
-export function rollDamage(input: DamageInput, rng: Rng): RollRecord {
+export function rollDamage(input: DamageInput, rng: Rng, mode: CriticalDamageMode = "book"): RollRecord {
   assertInt(input.flat, -LIMITS.modifier * 2, LIMITS.modifier * 4, "The modifier");
   const bonus = input.bonusDice ?? [];
   const dice = rollPool([...input.dice, ...bonus, ...(input.namedDice ?? [])], "damage", rng);
-  // A critical maxes every damage die (CB 98), feature damage dice included; named dice roll normally.
-  const crit = input.critical ? (input.critBase ?? maxRoll(input.dice)) + maxRoll(bonus) : 0;
+  // A critical maxes every damage die (CB 98), feature damage dice included; named dice roll normally. R10 Manual: not added.
+  const crit = mode === "book" ? criticalExtra(input) : 0;
   const modifier = input.flat + crit;
   return { kind: "damage", dice, modifier, total: Math.max(0, sum(dice) + modifier), outcome: "none", manual: false };
 }

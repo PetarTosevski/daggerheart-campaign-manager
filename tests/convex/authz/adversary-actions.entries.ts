@@ -90,6 +90,8 @@ const entries: Entry[] = [
   { fn: api.adversaryActionsReads.windows, access: "gm" },
   // AA2c: what a feature use needs (GM only: the stat block's numbers).
   { fn: api.adversaryActions.featureAsk, access: "gm", args: (w) => ({ instanceId: w.ids.bear, feature: "Bite" }) },
+  // Rule switches WF (W3 Tier 3): whether adversaries have Dark-Hearted (GM only).
+  { fn: api.adversaryActions.darkHearted, access: "gm" },
   { fn: api.adversaryActions.startCountdown, access: "gm", args: (w) => ({ instanceId: w.ids.bear, feature: "Bite" }), okCodes: ["INVALID"] },
   // Lanes-2 E7 (dcm-idz): a GM-controlled PC attacks; characterA isn't GM-controlled, so the GM gets INVALID past the check.
   { fn: api.adversaryActions.gmControlledAttack, access: "gm", args: (w) => ({ characterId: w.characterA, targets: [w.ids.bear] }), okCodes: ["INVALID"] },

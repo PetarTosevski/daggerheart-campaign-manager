@@ -223,6 +223,8 @@ The e2e backend's owner is the test account `e2e-owner@example.test`, named by t
 | `NEXT_PUBLIC_CONVEX_URL` | automatic | none | Injected by `convex deploy` at build. |
 | `CONVEX_SITE_URL` | optional | none | `src/proxy.ts` derives it from `NEXT_PUBLIC_CONVEX_URL`; set only if the log says it cannot. |
 | `NEXT_PUBLIC_E2E_AUTH`, `NEXT_DIST_DIR`, `PDFJS_DIR`, `SHARP_DIR`, `CI` | no | none | Test and build tooling; leave unset. |
+| `APPLE_TEAM_ID`, `APPLE_BUNDLE_IDS` | for phone Google sign-in on iOS | USER | Section 5a. Not secret. |
+| `ANDROID_PACKAGE_NAMES`, `ANDROID_SHA256_CERT_FINGERPRINTS` | for phone Google sign-in on Android | USER | Section 5a. Not secret. |
 
 No secret belongs in Vercel except the deploy key.
 
@@ -239,6 +241,60 @@ client for production):
   ("In production") so players outside the test-user list can sign in.
 - Give the agent the client id and secret to set as `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` (step 4), or set them
   yourself with `npx convex env set --prod`.
+
+## 5a. Phone sign-in links (USER)
+
+The phone app's Google sign-in returns to `https://dualityheart.com/auth`. Only the phone app may open that address,
+so the site publishes two files naming the app (`src/lib/app-links.ts`, dcm-gdzi.41):
+
+- `https://dualityheart.com/.well-known/apple-app-site-association` (iOS universal links);
+- `https://dualityheart.com/.well-known/assetlinks.json` (Android verified app links).
+
+Both are built from Vercel env vars, read on each request; no code change is needed, but Vercel applies changed env
+vars to the next deployment, so redeploy once after setting them. Until they are set, both files are valid but empty,
+and phone Google sign-in returns to the sign-in screen instead of signing in. Password, email-code and Sign in with
+Apple are not affected.
+
+**1. Vercel → Project → Settings → Environment Variables (Production):**
+
+| Variable | Value | Where to find it |
+|---|---|---|
+| `APPLE_TEAM_ID` | the 10-character Team ID, e.g. `ABCDE12345` | developer.apple.com → Account → Membership details |
+| `APPLE_BUNDLE_IDS` | `com.dualityheart.mobile,com.dualityheart.mobile.preview` | `apps/mobile/app.config.ts` (add `com.dualityheart.mobile.dev` to test with a dev build) |
+| `ANDROID_PACKAGE_NAMES` | `com.dualityheart.mobile,com.dualityheart.mobile.preview` | the same ids |
+| `ANDROID_SHA256_CERT_FINGERPRINTS` | comma-separated `AA:BB:…` (32 pairs each) | `eas credentials -p android` (each build profile's keystore: the SHA-256 line) **and** Play Console → Test and release → App integrity → App signing key certificate (Play re-signs store builds with its own key) |
+
+List every fingerprint that signs a build you install: the EAS keystore of the preview build and Play's app signing
+key for the store build. Malformed entries are dropped. The files only claim `/auth`; every other link on the site
+still opens in the browser.
+
+**2. `apps/mobile/eas.json`:** each build profile sets `EXPO_PUBLIC_SITE_URL` (now `https://dualityheart.com`). It
+must be an https URL equal to the Convex deployment's `SITE_URL` that build signs in through (Convex refuses any
+other return address, `convex/lib/nativeRedirect.ts`). `app.config.ts` turns it into the iOS associated domain
+`applinks:<host>` and the Android `autoVerify` intent filter for `https://<host>/auth`; a new build is needed after
+changing it.
+
+**3. Check the files:**
+
+```bash
+curl -si https://dualityheart.com/.well-known/apple-app-site-association | head -20   # 200, application/json, appIDs listed
+curl -si https://dualityheart.com/.well-known/assetlinks.json | head -20             # 200, application/json, packages listed
+```
+
+Neither may redirect (for example dualityheart.com → www): Apple and Android refuse a redirect. Apple caches the
+file through its CDN; `https://app-site-association.cdn-apple.com/a/v1/dualityheart.com` shows what Apple has.
+Google's checker: `https://digitalassetlinks.googleapis.com/v1/statements:list?source.web.site=https://dualityheart.com&relation=delegate_permission/common.handle_all_urls`.
+
+**4. Device checks (a fresh install of a preview or store build, after the files are live):**
+
+- [ ] Android: `adb shell pm get-app-links com.dualityheart.mobile` (or `.preview`) shows `dualityheart.com: verified`.
+      If not, `adb shell pm verify-app-links --re-verify <package>` and check again.
+- [ ] Android: Continue with Google opens a Chrome Custom Tab; after choosing the account the tab closes by itself
+      and the app is signed in (the Custom Tab handoff). It must not land on the website's sign-in page.
+- [ ] iOS (17.4 or later): Continue with Google opens the system sheet; after choosing the account the sheet closes
+      and the app is signed in. In Notes, a long press on `https://dualityheart.com/auth` offers "Open in Duality
+      Heart" (the universal link is installed).
+- [ ] Cancelling the Google sheet on either phone returns to the sign-in screen with no error.
 
 ## 6. Data migrations
 

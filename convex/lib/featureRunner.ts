@@ -53,11 +53,12 @@ import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { tickArmedCountdowns } from "../countdownRolls";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { logAction, newGroupId } from "./actionLog";
+import { attachResultPanel, logAction, newGroupId } from "./actionLog";
 import { dropDice, MAX_CARD_TARGETS, type CardChoice, type CardRoll, type DiceSlot } from "./cardChoices";
-import { afterUnstoppable, cardPromptValidator, damageRolls, effectEndsOf, endOnSheet, gmLines, instanceWrites, lastHpNotes, openCardHits, promptsOf, publicTargets, resistanceNotes, rollText, writeInstances } from "./cardRows";
+import { afterUnstoppable, cardPromptValidator, damageRolls, effectEndsOf, endOnSheet, gmLines, instanceWrites, lastHpNotes, openCardHits, promptsOf, publicTargets, resistanceNotes, rollText, targetDamageOf, resultPanelOf, writeInstances } from "./cardRows";
 import { actorSheetAfter, effectOption, featureIdOfEffect, ownsEffect, planHopePaid, tokenKeyOf, ruleNotesOfUse, writeSheetChanges, type BuiltRun, type Delegated, type UsePick } from "./cardRunner";
 import { postRuleNote, ruleModesOf } from "./ruleModes";
+import { payHelpers } from "./helpAnAlly";
 import { setStance } from "./stanceDrop";
 import type { AdversaryBefore } from "./validators/actionLog";
 import { unshakableText, unshakePlan, type UnshakableRoll } from "./unshakable";
@@ -936,7 +937,7 @@ export async function resolveFeatureUse(
 
   const groupId = newGroupId();
   const damage = damageRolls(plan);
-  const { parts, outcomes } = publicTargets(plan, built, writes);
+  const { parts, outcomes, names: targetNames } = publicTargets(plan, built, writes);
   const useName = pick.use.name !== pick.name ? ` (${pick.use.name})` : "";
   const times = pick.times;
   const rollPart = plan.roll ? `: ${rollText(pick.use, plan.roll.record, req.roll.trait)}` : "";
@@ -972,6 +973,7 @@ export async function resolveFeatureUse(
     await logAction(ctx, { campaignId: campaign._id, characterId: character._id, actorId, kind: "feature", visibility: "public", summary: `${sheet.name} used ${pick.name}: ${p.text}`, groupId, undoable: true });
   }
   const lines = gmLines(plan, built, writes);
+  const targetDamage = targetDamageOf(plan, built, writes);
   if (lines.length > 0 || writes.length > 0 || stanceBefore.length > 0) {
     await logAction(ctx, {
       campaignId: campaign._id,
@@ -982,6 +984,8 @@ export async function resolveFeatureUse(
       ...(damage[0] ? { roll: damage[0].roll } : {}),
       groupId,
       ...(writes.length > 0 || stanceBefore.length > 0 ? { adversaryBefore: [...writes.map((w) => w.before), ...stanceBefore] } : {}),
+      // dcm-uemx (user 2026-11-09): severity and HP per adversary hit, for the GM's result panel (U1: GM row only).
+      ...(targetDamage.length > 0 ? { targetDamage } : {}),
       undoable: true,
     });
   }
@@ -989,6 +993,8 @@ export async function resolveFeatureUse(
   for (const summary of resistanceNotes(plan, built.creatures)) await postRuleNote(ctx, campaign, { ruleId: "resistance", summary, groupId, actorId });
   for (const summary of lastHpNotes(writes, modes)) await postRuleNote(ctx, campaign, { ruleId: "adversaryDefeated", summary, groupId, actorId });
   for (const n of ruleNotesOfUse(built, plan)) await postRuleNote(ctx, campaign, { ruleId: n.ruleId, summary: n.summary, groupId, actorId });
+  // Plan rule-switches WF (R7): the helpers pay 1 Hope each in the use's group (undo refunds); Manual: the GM's note.
+  if (built.help) await payHelpers(ctx, campaign, built.help, { groupId, actorId, rollerName: sheet.name });
   if (plan.roll && countsAsActionRoll(plan.roll.record, { logKind: "roll", undone: false })) {
     await tickArmedCountdowns(ctx, { campaignId: campaign._id, entryId, outcome: plan.roll.record.outcome, actorId });
   }
@@ -997,13 +1003,21 @@ export async function resolveFeatureUse(
   // the run gained the roll's Hope and Fear by the campaign's mode (`hopeFear`, buildRun); in Manual the GM gets the
   // "gain 1 Fear?" note in the same group (`fearWithheld` unset: one Fear for a with-Fear roll in Manual).
   if (plan.roll && plan.roll.record.kind === "action" && plan.roll.record.outcome !== "none") {
-    await afterPcActionRoll(ctx, campaign, { characterId: character._id, name: sheet.name, kind: "action", success: plan.success, withFear: plan.roll.withFear, groupId, actorId });
+    await afterPcActionRoll(ctx, campaign, { characterId: character._id, name: sheet.name, kind: "action", success: plan.success, withFear: plan.roll.withFear, critical: plan.roll.critical, groupId, actorId });
   }
   if (built.creatures.onMap) {
     const hitTokens = await openCardHits(ctx, { plan, built, campaignId: campaign._id, groupId, actorId, attacker: { characterId: character._id, label: sheet.name, cardId: plan.cardId, feature: pick.name } });
     prompts = prompts.filter((p) => !(p.kind === "pcDamage" && p.tokenIds.every((t) => hitTokens.has(t))));
   }
   await dropDice(ctx, featureSlot(req));
+  // dcm-uemx (user 2026-11-09): a use on the map shows its result panel on the GM's HUD too (`combatHud.playerResults`).
+  if (built.creatures.onMap) {
+    await attachResultPanel(
+      ctx,
+      entryId,
+      resultPanelOf({ kind: "feature", title: pick.name, actorName: sheet.name, roll: plan.roll?.record ?? d5Roll ?? null, damage: damage.map((d) => d.roll), success: plan.success, targets: outcomes, names: targetNames, prompts, notes: notes.filter((n) => n.length > 0) }),
+    );
+  }
   return {
     status: "resolved",
     entryId,

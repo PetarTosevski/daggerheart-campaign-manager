@@ -70,6 +70,9 @@ export const CAMPAIGN_OPTIONS: CampaignOption[] = [
   },
 ];
 
+/** Options that turn a whole expansion's content on (Campaign settings > Expansions); the rest are frame rules (House rules). */
+export const EXPANSION_OPTIONS: readonly CampaignOptionId[] = ["hopeAndFear"];
+
 export function optionsFor(frameId: FrameId): CampaignOption[] {
   return CAMPAIGN_OPTIONS.filter((o) => !o.frames || o.frames.includes(frameId));
 }

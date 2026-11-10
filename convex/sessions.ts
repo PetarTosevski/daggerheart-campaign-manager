@@ -45,6 +45,7 @@ import { appError } from "../src/lib/errors/app-error";
 import { resolveTableSettings } from "../src/lib/config/campaign-settings";
 import { MAX_FEAR } from "../src/lib/domain/fear/index";
 import { resolveOptions } from "../src/lib/frames/options";
+import { doomReminderDue } from "../src/lib/frames/trackers/horizon";
 import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
@@ -56,6 +57,7 @@ import { rollDie } from "./lib/dice";
 import { featureScope } from "./lib/featureScope";
 import { campaignFearState, gainFear } from "./lib/fear";
 import { campaignQuery, keyedGmMutation } from "./lib/functions";
+import { ruleModesOf } from "./lib/ruleModes";
 import { addSessionPages } from "./lib/notes";
 import { insertSession, liveSession, loadSession, newestPlannedSession, tallyRows } from "./lib/sessions";
 import { MAX_LOG_ENTRIES, SESSION_TEXT_MAX } from "./lib/validators/sessions";
@@ -176,7 +178,7 @@ const endResult = v.object({
   fearGained: v.number(),
   /** Tokens past GM Fear's cap of 12: "N Fear lost". */
   fearLost: v.number(),
-  /** PCs whose last Hope slot is scarred (CB 106): the GM ends their journey. */
+  /** PCs whose last Hope slot is scarred (CB 106): the GM ends their journey. Always empty when X3 `scars` is Manual. */
   journeyEnds: v.array(v.object({ characterId: v.id("characters"), name: v.string() })),
   /** The campaign row of the group (undo it to undo the whole End), or null when nothing changed. */
   entryId: v.union(v.id("actionLog"), v.null()),
@@ -189,7 +191,10 @@ const endResult = v.object({
   reminders: v.optional(v.array(v.string())),
   /** Session features the End did (U8): 'Bryn cleared 2 Slayer Dice: +2 Hope', 'Kai cleared 3 Tide tokens', "Mira's moon die ends". */
   features: v.optional(v.array(v.string())),
-  /** Journey to Horizon (Q6, HF p.177): mark a Doom Track box in this tier or below. */
+  /**
+   * Journey to Horizon (Q6, HF p.177): mark a Doom Track box in this tier or below. W3 (rule switches WS): every End in
+   * Book, every `doomTrackSessions`-th session in Every N sessions, never in Manual.
+   */
   doomTier: v.optional(v.number()),
 });
 type EndResult = Infer<typeof endResult>;
@@ -228,9 +233,16 @@ async function runEnd(ctx: GmCtx, convertWither?: boolean): Promise<EndResult> {
     features.push(...ended.notes);
     return { ...c, next: convert ? { ...ended.sheet, wither: 0 } : ended.sheet };
   });
-  const journeyEnds = members
-    .filter(({ character, sheet }) => sheet.journeyEnds && character.status !== "dead" && character.status !== "retired")
-    .map(({ character, sheet }) => ({ characterId: character._id, name: sheet.name }));
+  const modes = ruleModesOf(ctx.campaign);
+  // X3 Manual (rule switches WS, CB p.106): the GM tracks scars by hand, so the End lists no journeys to end.
+  const journeyEnds =
+    modes.scars === "manual"
+      ? []
+      : members
+          .filter(({ character, sheet }) => sheet.journeyEnds && character.status !== "dead" && character.status !== "retired")
+          .map(({ character, sheet }) => ({ characterId: character._id, name: sheet.name }));
+  const doomTier =
+    ctx.campaign.frameId === "journey-to-horizon" && doomReminderDue(modes.doomTrack, modes.doomTrackSessions, live?.n) ? ctx.campaign.tier : undefined;
 
   // The session end ends the scene too (Q7, CB p.107): the scene's and the session's live map areas close. Areas keep
   // their own history (convex/combatScenes.ts), so this is outside the undo group and a second End closes nothing.
@@ -271,7 +283,7 @@ async function runEnd(ctx: GmCtx, convertWither?: boolean): Promise<EndResult> {
     lostDice,
     reminders: [],
     features,
-    ...(ctx.campaign.frameId === "journey-to-horizon" ? { doomTier: ctx.campaign.tier } : {}),
+    ...(doomTier === undefined ? {} : { doomTier }),
   };
   if (live === null) return report;
 

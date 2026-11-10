@@ -7,11 +7,14 @@ import {
   INITIAL_HORIZON_STATE,
   MAX_ECHOES,
   REFUSAL_MESSAGES,
+  doomTierRulesApply,
   fearForMark,
   horizonStateSchema,
   markRefusal,
   occurredEvents,
+  tierFourFearNote,
   tierRuleActive,
+  tierTwoRegionNote,
   unmarkRefusal,
   withMark,
   withoutMark,
@@ -48,7 +51,7 @@ import { gainFear } from "../lib/fear";
 import { campaignQuery, keyedGmMutation, type Once } from "../lib/functions";
 import { listMapTokens, saveScalars, tokenRow, writableMap } from "../lib/maps";
 import type { RestHook } from "../lib/restHooks";
-import { ruleMode } from "../lib/ruleModes";
+import { postRuleNote, ruleMode } from "../lib/ruleModes";
 import {
   assertTrackerFrame,
   deleteTracker,
@@ -124,6 +127,7 @@ export const get = campaignQuery({
 /**
  * Marks a Doom Track box in the party's tier (campaign.tier) or below, after
  * its parent. A Tier 4 mark gains Fear equal to the marked Tier 4 boxes.
+ * W3 Manual (rule switches WS): no Fear; the GM gets "Doom Track Tier 4: gain N Fear?" (the mark has no undo group).
  */
 export const markBox = keyedGmMutation({
   args: { boxId: v.string(), session: v.optional(v.number()) },
@@ -139,6 +143,10 @@ export const markBox = keyedGmMutation({
       const next = withMark(state, boxId, Date.now(), session);
       const amount = fearForMark(next, boxId);
       if (amount === 0) return { state: next, result: { boxId, fear: null } };
+      if (ruleMode(ctx.campaign, "doomTrack") === "manual") {
+        await postRuleNote(ctx, ctx.campaign, { ruleId: "doomTrack", summary: tierFourFearNote(amount), actorId: ctx.user._id });
+        return { state: next, result: { boxId, fear: null } };
+      }
       const { gained, lost, newValue } = await gainFear(ctx, campaignId, amount);
       return { state: next, result: { boxId, fear: { gained, lost, newValue } } };
     });
@@ -299,7 +307,13 @@ export const generateRegion = keyedGmMutation({
       const doom = await loadTracker(ctx, campaignId, horizonTracker);
       const id = state.nextRegionId;
       const regionName = regionNameSchema.parse(name?.trim() ? name : `Region ${id}`);
-      const region = generate(rollDie, { id, name: regionName, oneIsDouble: tierRuleActive(doom, 2), now: Date.now() });
+      // W3 (rule switches WS): Tier 2 is automated in Book and Every N sessions; Manual rolls plainly and notes a 1.
+      const tierTwo = tierRuleActive(doom, 2);
+      const automated = doomTierRulesApply(ruleMode(ctx.campaign, "doomTrack"));
+      const region = generate(rollDie, { id, name: regionName, oneIsDouble: tierTwo && automated, now: Date.now() });
+      if (tierTwo && !automated && region.habitatRolls[0] === 1 && !region.impassable) {
+        await postRuleNote(ctx, ctx.campaign, { ruleId: "doomTrack", summary: tierTwoRegionNote(regionName), actorId: ctx.user._id });
+      }
       await writeTracker(ctx, campaignId, regionKey(id), region, TRACKER_SCHEMA_VERSION);
       await writeTracker(ctx, campaignId, crawlTracker.key, { ...state, nextRegionId: id + 1, regionCount: state.regionCount + 1 }, TRACKER_SCHEMA_VERSION);
       return region;

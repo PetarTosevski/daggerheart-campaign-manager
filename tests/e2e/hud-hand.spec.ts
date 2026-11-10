@@ -53,7 +53,8 @@ test("the HUD hand: fan states, Hide cards, Roll options, full card, Use, vault 
     await expect(rolls.getByRole("heading", { name: "Roll options" })).toBeVisible();
     await rolls.getByRole("button", { name: "More advantage" }).click();
     await expect(rolls.getByRole("group", { name: "Advantage" }).locator("output")).toHaveText("+1");
-    await expect(rolls.getByRole("group", { name: "Help dice" })).toBeVisible();
+    // R7 Help an Ally in Book (rule switches WF): the helpers are named, 1 Hope each; Manual keeps the Help dice counter.
+    await expect(rolls.getByRole("group", { name: "Helped by" })).toBeVisible();
     await expectNoSeriousA11yViolations(player);
     await player.keyboard.press("Escape");
     await expect(rolls).toBeHidden();

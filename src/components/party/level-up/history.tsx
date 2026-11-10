@@ -2,7 +2,7 @@
 
 import "./history.css";
 
-import { useId, useState } from "react";
+import { type InputHTMLAttributes, useId, useState } from "react";
 
 import { useLevelUpDraft } from "@/app/(gm)/campaigns/[campaignId]/party/[characterId]/level-up-draft";
 import { Label, PaperInput, Pill, SheetBox, Small } from "@/components/party/sheet-ui";
@@ -15,7 +15,7 @@ import type { AdvancementOption, CharacterSheet } from "@/lib/validation/charact
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 
-import { OPTION_SHORT, OPTION_TEXT } from "./shared";
+import { OPTION_SHORT, OPTION_TEXT } from "@/lib/party/level-up";
 import { TierPicker } from "./tier-pickers";
 
 const UNLOCK_LEVEL = { 2: 2, 3: 5, 4: 8 } as const;
@@ -40,6 +40,16 @@ const TIER_TEXT: Record<Tier, { title: string; intro: string; choose: string }> 
 
 const OUTRO =
   "Update your level and adjust your damage thresholds accordingly. Take an additional domain card of your level or lower from a domain you have access to.";
+
+/** One tick box: a transparent native checkbox over its graphite pencil drawing (level-up.css). */
+function TickBox({ joined, ...input }: { joined: boolean } & Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "className">) {
+  return (
+    <span className={cn("adv-mk", joined && "joined")}>
+      <input type="checkbox" className="adv-box" {...input} />
+      <span className="adv-pencil" aria-hidden="true" />
+    </span>
+  );
+}
 
 /**
  * The board's Level Up region (Story & Advancement): budget pill, then the three tier boxes with read-only adv-box
@@ -105,7 +115,7 @@ export function TierBoxes({ sheet, hopeAndFear = false }: { sheet: CharacterShee
                         {Array.from({ length: boxes }, (_, k) => {
                           const pick = taken[k];
                           const name = `Tier ${tier}: ${OPTION_SHORT[option]} ${joined ? "(uses both picks for a level)" : `(${k + 1})`}${pick ? `, taken at level ${pick.level}` : ""}`;
-                          return <input key={k} type="checkbox" className={cn("adv-box adv-chk", joined && "joined")} checked={pick !== undefined} readOnly disabled aria-label={name} title={name} />;
+                          return <TickBox key={k} joined={joined} checked={pick !== undefined} readOnly disabled aria-label={name} title={name} />;
                         })}
                       </span>
                       <Small className={cn(crossed && "adv-crossed")}>
@@ -161,7 +171,6 @@ function DraftRow({
     if (blocked) reason = blocked;
     else if (picksUsed + rule.cost > 2) reason = joined && picksUsed < 2 ? `It takes both picks for level ${level}; untick your other pick first.` : `Both picks for level ${level} are used.`;  }
   const label = `Tier ${tier}: ${OPTION_SHORT[option]} for level ${level}`;
-  const box = cn("adv-box adv-chk", joined && "joined");
 
   return (
     <li className={cn("adv-item", drafted > 0 && "draft")}>
@@ -173,7 +182,7 @@ function DraftRow({
               const name = `Tier ${tier}: ${OPTION_SHORT[option]} ${joined ? "(uses both picks for a level)" : `(${k + 1})`}, taken at level ${pick.level}`;
               return (
                 <span key={k} className="adv-slot">
-                  <input type="checkbox" className={box} checked readOnly disabled aria-label={name} title={name} />
+                  <TickBox joined={joined} checked readOnly disabled aria-label={name} title={name} />
                 </span>
               );
             }
@@ -182,16 +191,15 @@ function DraftRow({
             if (j < drafted) {
               return (
                 <label key={k} className="adv-slot adv-hit" title={name}>
-                  <input type="checkbox" className={cn(box, "draft")} checked aria-label={name} onChange={() => togglePick(option, tier, false, j)} />
+                  <TickBox joined={joined} checked aria-label={name} onChange={() => togglePick(option, tier, false, j)} />
                 </label>
               );
             }
             if (j === drafted) {
               return (
                 <label key={k} className={cn("adv-slot", !reason && "adv-hit")} title={reason ?? name}>
-                  <input
-                    type="checkbox"
-                    className={box}
+                  <TickBox
+                    joined={joined}
                     checked={false}
                     disabled={reason !== null}
                     aria-label={name}
@@ -203,7 +211,7 @@ function DraftRow({
             }
             return (
               <span key={k} className="adv-slot">
-                <input type="checkbox" className={box} checked={false} readOnly disabled aria-label={`Tier ${tier}: ${OPTION_SHORT[option]} (${k + 1})`} />
+                <TickBox joined={joined} checked={false} readOnly disabled aria-label={`Tier ${tier}: ${OPTION_SHORT[option]} (${k + 1})`} />
               </span>
             );
           })}

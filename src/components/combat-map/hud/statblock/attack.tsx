@@ -14,6 +14,8 @@ import {
   attackLine,
   attackReactions,
   attackRuleRange,
+  DARK_HEARTED_OPTION,
+  darkHeartedOption,
   edgeArgs,
   EDGES,
   hasMomentum,
@@ -47,6 +49,10 @@ export type GmAttackInput = {
   /** The GM's Fear when the panel opens (an Experience the GM can't pay opens disabled with the reason); undefined while loading. */
   fear?: number;
   acts: GmActs;
+  /** Plan rule-switches WF, F4 `adversaryExperienceFear` Manual: an Experience costs no Fear here (spent by hand). */
+  experienceFree?: boolean;
+  /** WF, W3 Tier 3: adversaries have Dark-Hearted (advantage for 1 Fear). */
+  darkHearted?: boolean;
 };
 
 /**
@@ -68,7 +74,14 @@ function primaryFor(input: GmAttackInput, edge: Edge): PickPrimary {
   const momentum = hasMomentum(input.block);
   return {
     label: (s) => attackLabel(s.targets.map((t) => t.name)),
-    pay: (s) => attackFooter({ spotlightFear: input.spotlightFear, experienceFear: pickedExperience(s.options) ? 1 : 0, momentum }),
+    pay: (s) =>
+      attackFooter({
+        spotlightFear: input.spotlightFear,
+        experienceFear: pickedExperience(s.options) ? 1 : 0,
+        momentum,
+        darkHearted: s.options[DARK_HEARTED_OPTION] === true,
+        experienceByHand: input.experienceFree === true,
+      }),
     blocked: (s) => {
       // Fear is not checked here: the session keeps the numbers it opened with, so the server's answer (FearConfirm,
       // then NOT_ENOUGH_FEAR under the primary, in the table's words) is the live check. Only the Experience options
@@ -83,7 +96,7 @@ function primaryFor(input: GmAttackInput, edge: Edge): PickPrimary {
       let done;
       try {
         done = await input.acts.attack(
-          { instanceId: input.instanceId, targets, ...edgeArgs(edge), ...(experience ? { experience } : {}), ...(reactions.length ? { reactions } : {}) },
+          { instanceId: input.instanceId, targets, ...edgeArgs(edge), ...(experience ? { experience } : {}), ...(reactions.length ? { reactions } : {}), ...(s.options[DARK_HEARTED_OPTION] === true ? { darkHearted: true } : {}) },
           { label: `${input.label} attacks`, actor: theName(input.label), experience, tokenId: input.tokenId },
         );
       } catch (error) {
@@ -117,11 +130,14 @@ export function gmAttackSession(input: GmAttackInput): PickSessionSpec<Data> {
     rows: input.rows,
     data: { edge: "none" },
     options: [
-      // An Experience costs 1 Fear on top of this action's own spotlight (the server asks for both at once).
+      // An Experience costs 1 Fear on top of this action's own spotlight (the server asks for both at once). WF, F4
+      // Manual: no Fear here; the GM spends it by hand.
       ...block.experiences.map((x) => {
+        if (input.experienceFree) return { id: `xp:${x.name}`, label: `Use ${x.name} ${signed(x.value)}`, note: "Spend 1 Fear by hand" };
         const short = fearShortText(input.spotlightFear + 1, input.fear);
         return { id: `xp:${x.name}`, label: `Use ${x.name} ${signed(x.value)}`, note: short ?? "Costs 1 Fear", cost: { amount: 1, resource: "fear" as const }, ...(short ? { disabled: true } : {}) };
       }),
+      ...darkHeartedOption(input.darkHearted === true),
       ...attackReactions(block).map((name) => ({ id: `rx:${name}`, label: `Use ${name} on this attack` })),
     ],
     extra: ({ data, update }) => <EdgeSeg value={data.edge} onPick={(edge) => update({ data: { edge }, primary: primaryFor(input, edge) })} />,
@@ -140,14 +156,29 @@ export function gmFeatureSession(input: {
   characterOf: ReadonlyMap<string, Id<"characters">>;
   useId: string;
   acts: GmActs;
+  /** dcm-y3mf: an area the GM names ("all targets in front of the Ogre within Far"): the rule line, already-picked PCs, fewest picks. */
+  area?: { text: string; picked: readonly Id<"combatTokens">[]; min: number };
+  /** WF, W3 Tier 3: the use rolls and adversaries have Dark-Hearted (advantage for 1 Fear). */
+  darkHearted?: boolean;
+  /** WF: a "path" feature's destination square (the server moves the token there). */
+  destination?: { x: number; y: number };
 }): PickSessionSpec<null> {
+  const area = input.area;
   return {
     id: `gm-attack:${input.instanceId}:${input.feature}`,
     source: { kind: "adversary", name: input.feature },
-    rule: { side: "enemy", max: input.max, range: "unlimited", text: `${input.label}: pick ${input.max === 1 ? "1 target" : input.max === null ? "any targets" : `up to ${input.max} targets`}` },
+    rule: {
+      side: "enemy",
+      max: input.max,
+      range: "unlimited",
+      text: area ? area.text : `${input.label}: pick ${input.max === 1 ? "1 target" : input.max === null ? "any targets" : `up to ${input.max} targets`}`,
+      ...(area ? { min: area.min } : {}),
+    },
     actor: { tokenId: input.tokenId },
     rows: input.rows,
+    ...(area ? { picked: area.picked } : {}),
     data: null,
+    ...(input.darkHearted ? { options: darkHeartedOption(true) } : {}),
     primary: {
       label: (s) => (s.targets.length ? `Use on ${s.targets.map((t) => t.name).join(" and ")}` : `Use ${input.feature}`),
       send: async (s) => {
@@ -155,7 +186,7 @@ export function gmFeatureSession(input: {
         let done;
         try {
           done = await input.acts.feature(
-            { instanceId: input.instanceId, feature: input.feature, useId: input.useId, targets },
+            { instanceId: input.instanceId, feature: input.feature, useId: input.useId, targets, ...(s.options[DARK_HEARTED_OPTION] === true ? { darkHearted: true } : {}), ...(input.destination ? { destination: input.destination } : {}) },
             { label: `${input.label} uses ${input.feature}`, actor: theName(input.label), feature: input.feature, tokenId: input.tokenId },
           );
         } catch (error) {

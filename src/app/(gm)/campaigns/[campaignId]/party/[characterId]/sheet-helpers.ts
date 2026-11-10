@@ -70,9 +70,10 @@ export function resolveCards(ids: readonly string[]): DomainCard[] {
 }
 
 /** Why a vault card can't move into the loadout right now, or null when it can. */
-export function recallBlock(card: Pick<DomainCard, "level">, level: number, loadoutSize: number): string | null {
+export function recallBlock(card: Pick<DomainCard, "level">, level: number, loadoutSize: number, max = 5): string | null {
   if (card.level > level) return `Level ${card.level} card: above your level.`;
-  if (loadoutSize >= 5) return "Loadout full (5): vault a card first.";
+  // `max`: 5, or a Reanimated PC's lowered maximum (HF p.153, bead dcm-psg9).
+  if (loadoutSize >= max) return `Loadout full (${max}): vault a card first.`;
   return null;
 }
 

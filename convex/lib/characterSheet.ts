@@ -11,8 +11,9 @@
  *   FORBIDDEN with too little; in a mutation, CAMPAIGN_ARCHIVED for an archived
  *   campaign (queries still read it).
  * - `editable(ctx, user, id)`: `loadCharacter(..., "edit")` plus the read sheet.
- * - `assertCanAct(character, sheet)`: CHARACTER_UNAVAILABLE for a dead, away
- *   or unconscious character (decision 9); call it before any roll or feature.
+ * - `assertCanAct(character, sheet, campaign)`: CHARACTER_UNAVAILABLE for a dead,
+ *   away or unconscious character (decision 9; unconscious only while C4 is
+ *   Book); call it before any roll or feature.
  *
  * ```ts
  * export const rollSomething = keyedUserMutation({
@@ -32,7 +33,9 @@
  * });
  * ```
  */
+import { hpClearedWakeNote, keepUnconscious, unconsciousBlocksActing, withStressVulnerable } from "../../src/lib/domain/characters/index";
 import { hopePaid } from "../../src/lib/domain/journal/tally";
+import { resolveRuleModes } from "../../src/lib/rules/resolve";
 import { appError } from "../../src/lib/errors/app-error";
 import {
   characterSheetSchema,
@@ -45,6 +48,7 @@ import {
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { readAppConfig } from "./appConfig";
+import { CHARACTER_READ_BOUND } from "./characterLimits";
 import { refuseArchivedWrite } from "./archived";
 import { readVersioned } from "./blobs";
 import { atLeast, campaignRoleOf, permissionFor, rolePermission, type Permission } from "./permissions";
@@ -104,6 +108,10 @@ export function storedSheet(sheet: CharacterSheetInput) {
  * Undo (dcm-z9rz.22, user 2026-11-04 "undo removes it"): what a save counted waits for the character's next `logAction`
  * row with a `before` in this mutation, which records it (`sessionTally`); undoing the row takes it back off the same
  * session's row (`revertSessionTally`, floor 0). Undo itself restores sheets directly, never through here.
+ *
+ * C4 Unconscious on Manual (plan rule-switches WD, Q8 a): a save that clears Hit Points on an unconscious PC would wake
+ * them (`applyResourceDelta`, CB p.106); here the condition stays and the GM is asked ("Mira had a Hit Point cleared:
+ * wake her?", `postWakeNote`, posted by the character's next `logAction` row in this mutation, in its group).
  */
 export async function saveSheet(
   ctx: MutationCtx,
@@ -111,8 +119,9 @@ export async function saveSheet(
   sheet: CharacterSheetInput,
   current?: Pick<Doc<"characters">, "campaignId" | "sheet">,
 ): Promise<void> {
-  const stored = storedSheet(sheet);
   const previous = current ?? (await ctx.db.get("characters", characterId));
+  const unconsciousKept = previous === null ? sheet : await keptUnconscious(ctx, characterId, previous, sheet);
+  const stored = storedSheet(await stressVulnerable(ctx, previous, unconsciousKept));
   await ctx.db.patch("characters", characterId, { sheet: stored, updatedAt: Date.now(), ...(stored.hp < stored.hpMax ? { deathMoveSpent: undefined } : {}) });
   const state = tallyStateOf(ctx);
   const declared = state.declared.get(characterId) ?? 0;
@@ -133,6 +142,74 @@ export async function saveSheet(
   );
 }
 
+/**
+ * D5 Full Stress = Vulnerable for PCs (CB p.92), at the one place every sheet write passes: `withStressVulnerable` adds
+ * Vulnerable when the track fills and lifts it when a Stress clears. The campaign is read only when the track crosses
+ * full, and its modes come from `resolveRuleModes` directly (read once, only on a crossing).
+ */
+async function stressVulnerable(ctx: MutationCtx, previous: Pick<Doc<"characters">, "campaignId" | "sheet"> | null, sheet: CharacterSheetInput): Promise<CharacterSheetInput> {
+  const before = previous === null ? null : stressTrack(previous.sheet);
+  const next = withStressVulnerable(before, sheet);
+  if (next === sheet) return sheet;
+  const campaign = previous === null ? null : await ctx.db.get("campaigns", previous.campaignId);
+  if (campaign !== null && resolveRuleModes(campaign.frameId, campaign.ruleModes).fullStressVulnerable === "manual") return sheet;
+  return next;
+}
+
+function stressTrack(raw: unknown): { stress: number; stressMax: number } | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const { stress, stressMax } = raw as { stress?: unknown; stressMax?: unknown };
+  return typeof stress === "number" && typeof stressMax === "number" ? { stress, stressMax } : null;
+}
+
+/** The previous stored sheet's unconscious bits: whether it held the condition, its Hit Points and the condition's source. */
+function unconsciousBefore(raw: unknown): { hp: number; conditions: ["unconscious"]; source?: unknown } | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const { hp, conditions, conditionSources } = raw as { hp?: unknown; conditions?: unknown; conditionSources?: unknown };
+  if (typeof hp !== "number" || !Array.isArray(conditions) || !conditions.includes("unconscious")) return null;
+  const source = Array.isArray(conditionSources) ? conditionSources.find((s: { condition?: unknown }) => s?.condition === "unconscious") : undefined;
+  return { hp, conditions: ["unconscious"], ...(source !== undefined ? { source } : {}) };
+}
+
+/**
+ * C4 Manual: the sheet to store when this save woke an unconscious PC by clearing Hit Points (`keepUnconscious`): the
+ * condition (and its source) stays and a wake note waits for the character's next logged row. The campaign is read
+ * only when a save would wake someone. Book, and every other save, store the sheet as given.
+ */
+async function keptUnconscious(
+  ctx: MutationCtx,
+  characterId: Id<"characters">,
+  previous: Pick<Doc<"characters">, "campaignId" | "sheet">,
+  sheet: CharacterSheetInput,
+): Promise<CharacterSheetInput> {
+  const before = unconsciousBefore(previous.sheet);
+  if (before === null || sheet.conditions?.includes("unconscious") === true || (sheet.hp ?? before.hp) >= before.hp) return sheet;
+  const campaign = await ctx.db.get("campaigns", previous.campaignId);
+  if (campaign === null) return sheet;
+  const kept = keepUnconscious(before, { ...sheet, hp: sheet.hp ?? before.hp, conditions: sheet.conditions ?? [] }, resolveRuleModes(campaign.frameId, campaign.ruleModes).unconscious);
+  if (!kept.woke) return sheet;
+  tallyStateOf(ctx).wakeNotes.set(characterId, hpClearedWakeNote(sheet.name ?? "A PC", sheet.pronouns));
+  const sources = sheet.conditionSources ?? [];
+  return {
+    ...kept.sheet,
+    ...(before.source !== undefined && !sources.some((s) => s.condition === "unconscious")
+      ? { conditionSources: [...sources, before.source as (typeof sources)[number]] }
+      : {}),
+  };
+}
+
+/**
+ * C4 Manual: takes the wake note a save left for this character ("Mira had a Hit Point cleared: wake her?"), once.
+ * `postWakeNote` (./actionLog) posts it. This file reads rule modes through `resolveRuleModes`, never `./ruleModes`:
+ * that module pulls in the auth server, and the phone app's tests load this file for `readSheet`.
+ */
+export function takeWakeNote(ctx: MutationCtx, characterId: Id<"characters">): string | undefined {
+  const state = tallyStateOf(ctx);
+  const summary = state.wakeNotes.get(characterId);
+  if (summary !== undefined) state.wakeNotes.delete(characterId);
+  return summary;
+}
+
 /** What one action added to a PC's `sessionCharacterStats` row (JD3b counters), as an action-log row records it. */
 export type SessionTallyDelta = { sessionId: Id<"sessions">; hopeSpent: number; hpMarked: number };
 
@@ -141,13 +218,13 @@ export type SessionTallyDelta = { sessionId: Id<"sessions">; hopeSpent: number; 
  * mutations or OCC retries): `declared` is the Hope a paying path noted for the character's next save (`noteHopeSpent`),
  * `pending` what the character's saves counted since its last logged row (`takeSessionTally`).
  */
-type TallyState = { declared: Map<string, number>; pending: Map<string, SessionTallyDelta> };
+type TallyState = { declared: Map<string, number>; pending: Map<string, SessionTallyDelta>; wakeNotes: Map<string, string> };
 const tallyStates = new WeakMap<object, TallyState>();
 
 function tallyStateOf(ctx: MutationCtx): TallyState {
   let state = tallyStates.get(ctx.db);
   if (state === undefined) {
-    state = { declared: new Map(), pending: new Map() };
+    state = { declared: new Map(), pending: new Map(), wakeNotes: new Map() };
     tallyStates.set(ctx.db, state);
   }
   return state;
@@ -302,27 +379,23 @@ export async function editsCaster(ctx: QueryCtx, user: Doc<"users">, campaignId:
 
 /**
  * Refuses a character who can't roll or use features: dead, away (Castle High)
- * or unconscious (decision 9; CB 106). Throws `CHARACTER_UNAVAILABLE`.
+ * or unconscious (decision 9; CB 106). Throws `CHARACTER_UNAVAILABLE`. C4
+ * Unconscious on Manual (plan rule-switches WD): an unconscious character acts;
+ * pass the character's `campaign` so the mode is read (without it: Book).
  */
-export function assertCanAct(character: Pick<Doc<"characters">, "status">, sheet: Pick<CharacterSheet, "conditions">): void {
-  if (character.status === "dead" || character.status === "away" || sheet.conditions.includes("unconscious")) {
+export function assertCanAct(
+  character: Pick<Doc<"characters">, "status">,
+  sheet: Pick<CharacterSheet, "conditions">,
+  campaign?: Pick<Doc<"campaigns">, "frameId" | "ruleModes">,
+): void {
+  const unconscious = unconsciousBlocksActing(sheet, campaign === undefined ? "book" : resolveRuleModes(campaign.frameId, campaign.ruleModes).unconscious);
+  if (character.status === "dead" || character.status === "away" || unconscious) {
     throw appError("CHARACTER_UNAVAILABLE");
   }
 }
 
-/**
- * The creation cap (review M5, dcm-bxp.38): `characters.create` refuses a campaign's next character at this many. It stays
- * 50 as an abuse bound (config Q19 a); the per-player cap the owner sets in App admin (AD5b) is the everyday limit.
- * Never above `CHARACTER_READ_BOUND`.
- */
-export const MAX_CHARACTERS_CREATED_PER_CAMPAIGN = 50;
-
-/**
- * The read bound (dcm-bxp.38): how many of a campaign's characters every bounded party read takes (`partyOf`, rests,
- * sessions, combat scenes, card hands, combat reveals). It stays 50 when the creation cap drops, so a campaign that
- * holds more characters than a lowered cap (made before it dropped) is still read whole.
- */
-export const CHARACTER_READ_BOUND = 50;
+// The character bounds live in ./characterLimits (a leaf module, so ./sessions can read them while it loads).
+export { CHARACTER_READ_BOUND, MAX_CHARACTERS_CREATED_PER_CAMPAIGN, MAX_CHARACTERS_PER_CAMPAIGN } from "./characterLimits";
 
 /**
  * The per-player character cap (config AD5b, Q19 a): `characters.create` refuses `owner`'s next character in the
@@ -342,8 +415,6 @@ export async function assertCharacterCap(ctx: QueryCtx, campaign: Doc<"campaigns
   if (held.length >= cap) throw appError("CAP_CHARACTERS_PER_PLAYER");
 }
 
-/** The read bound under its old name (dcm-bxp.38): the party reads outside convex/characters.ts import it. */
-export const MAX_CHARACTERS_PER_CAMPAIGN = CHARACTER_READ_BOUND;
 
 /** The campaign's characters, bounded by the read bound. */
 export function partyOf(ctx: QueryCtx, campaignId: Id<"campaigns">) {

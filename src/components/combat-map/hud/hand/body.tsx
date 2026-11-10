@@ -3,6 +3,7 @@
 import { useQuery } from "convex/react";
 import { useEffect, useId, useRef, useState } from "react";
 
+import { loadoutMax } from "@/lib/domain/transformations";
 import { cardEffect } from "@/lib/srd/card-effects";
 import { cn } from "@/lib/utils";
 
@@ -12,7 +13,7 @@ import { useAreaPick } from "../../map-view/area-pick";
 import type { DialogRequest } from "../../actions/hand/dialog";
 import { VaultDeck } from "../../actions/hand/dock";
 import { HandCardFace } from "../../actions/hand/face";
-import { areaPickOf, formFor, LOADOUT_MAX, needsDialog, playableUses, rollOf, usedRollOptions, type AreaPick, type CardChoice, type ChoiceAsk, type Creature, type HandCard, type UseOutcome } from "../../actions/hand/model";
+import { areaPickOf, formFor, needsDialog, playableUses, rollOf, usedRollOptions, type AreaPick, type CardChoice, type ChoiceAsk, type Creature, type HandCard, type UseOutcome } from "../../actions/hand/model";
 import { CardResult, type LastCard } from "../../actions/hand/result";
 import { useRecall } from "../../actions/hand/use-card";
 import { NO_ROLL_OPTIONS, rollProblem, rollSummary, type Roller, type RollValues } from "../../actions/roll-controls";
@@ -39,6 +40,7 @@ import { useRaiseHandle } from "./raise";
 import { useHandFold } from "./use-fold";
 import { CardBacks, catchMore, FanCard, FullCard, RollOptionsBody, SidePop } from "./parts";
 import { cardLook, loadoutFullText, recallBlocked, recallText, type HandMode, type LookContext } from "./states";
+import { helperCandidates } from "../pick-attack/model";
 
 /**
  * The HUD hand (plan combat-hud H2.3; boards CmpCards and Main): the loadout as the domains tab's fan along the bottom
@@ -83,6 +85,10 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
   const hand = useQuery(api.combatCardsReads.hand, { campaignId, characterId });
   const rests = useQuery(api.restsReads.current, own ? { campaignId } : "skip");
   const character = useQuery(api.charactersReads.get, canPlay ? { characterId } : "skip");
+  // Plan rule-switches WF (R7 Book on card and feature rolls, CB p.90): the roll options tick the PCs who help.
+  const helpBook = useQuery(api.ruleSettings.get, canPlay ? { campaignId } : "skip")?.modes.helpAnAlly === "book";
+  const party = useQuery(api.charactersReads.listByCampaign, canPlay && helpBook ? { campaignId } : "skip");
+  const helpers = helpBook && party !== undefined ? helperCandidates(party, characterId) : undefined;
   // H6.2: while the GM holds the spotlight no card starts (answer 1c; reactions come up in the hit window instead).
   const spotlight = useSpotlight(campaignId);
   const actions = useCardPlay({ campaignId, mapId, characterId });
@@ -121,7 +127,7 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
   const selfToken = creatures.find((c) => c.side === "self")?.tokenId;
   const selfAt = creatures.find((c) => c.side === "self")?.at ?? null;
   const waitingCard = actions.waiting ? loadout.find((c) => c.cardId === actions.waiting?.request.cardId) : undefined;
-  const loadoutFull = loadoutFullText(loadout.length, LOADOUT_MAX);
+  const loadoutFull = loadoutFullText(loadout.length, loadoutMax(character?.sheet ?? {}));
   const recallRiders = restOpen ? [] : (hand?.recallRiders ?? []).filter((r) => r.ready);
   const sentRiders = recallRiders.filter((r) => checkedRiders.includes(r.id)).map((r) => r.id);
 
@@ -480,7 +486,7 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
             ) : null}
             {open === "rolls" && canPlay ? (
               <SidePop id={rollsId} title="Roll options" onClose={closePop} testId="hud-hand-rolls">
-                <RollOptionsBody roller={roller} values={rollOptions} problem={rollBlock} onChange={(patch) => changeRollOptions({ ...rollOptions, ...patch })} />
+                <RollOptionsBody roller={roller} values={rollOptions} problem={rollBlock} helpers={helpers} onChange={(patch) => changeRollOptions({ ...rollOptions, ...patch })} />
               </SidePop>
             ) : null}
             <span className="hud-deck" ref={deck}>

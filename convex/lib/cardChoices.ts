@@ -39,6 +39,8 @@ export const cardRollValidator = v.object({
   advantage: v.optional(v.number()),
   disadvantage: v.optional(v.number()),
   help: v.optional(v.number()),
+  /** Plan rule-switches WF (R7 Book on card and feature rolls, CB p.90): the PCs who help; 1 Hope each (`planHelp`). */
+  helpers: v.optional(v.array(v.id("characters"))),
 });
 export type CardRoll = Infer<typeof cardRollValidator>;
 

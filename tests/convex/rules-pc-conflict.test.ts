@@ -234,11 +234,11 @@ describe("on: an attack against another PC's Evasion (CB p.168)", () => {
     expect((await a.hits())[0]?.payload).toMatchObject({ kind: "incomingHit", targetCharacterId: a.w.characterB });
   });
 
-  it("ODR3: under the table's 'refuse' setting a PC out of range is refused (COMBAT_TARGET_OUT_OF_RANGE), nothing written", async () => {
+  it("ODR3: under M4 'refuse' a PC out of range is refused (COMBAT_TARGET_OUT_OF_RANGE), nothing written", async () => {
     const a = await arena(true, { x: 15, y: 10 });
     await a.t.run(async (ctx) => {
       const c = (await ctx.db.get("campaigns", a.campaignId))!;
-      await ctx.db.patch("campaigns", a.campaignId, { tableSettings: { ...(c.tableSettings ?? {}), outOfRange: "refuse" } });
+      await ctx.db.patch("campaigns", a.campaignId, { ruleModes: { ...(c.ruleModes ?? {}), outOfRange: "refuse" } });
     });
     expect(await code(a.attack([a.bryn]))).toBe("COMBAT_TARGET_OUT_OF_RANGE");
     expect(await a.rows()).toEqual([]);

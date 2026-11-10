@@ -2,7 +2,8 @@
  * The rule registry (plan rule-switches RS0, epic dcm-jh6d part A; bead dcm-bxp.134): every general rule the app
  * applies by itself, with its book pages and, where the GM may change it, its modes. Source list:
  * `.omc/plans/rule-registry-list.md` (61 rules) plus the optional rules the user decided on 2026-10-30 (10).
- * User answers that shape it: `.omc/plans/rule-switches-briefs.md` ("User answers 2026-11-05").
+ * User answers that shape it: `.omc/plans/rule-switches-briefs.md` ("User answers 2026-11-05") and, for the 15 rules
+ * wave 3 turned from Book-only into switches, `.omc/plans/rule-switches-wave3-questions.md` ("User answers 2026-11-09").
  *
  * Kinds:
  * - `switch`: the GM picks a mode. Modes in order: `book`, the variants, `manual`. Manual = the app stops applying the
@@ -113,15 +114,26 @@ const BOOK_MANUAL = [BOOK, MANUAL] as const;
 export const RULES = [
   // ------------------------------------------------------------ 1. Rolls & dice
   { id: "rollOutcome", code: "R1", area: "rolls", kind: "bookOnly", title: "Who won the roll", does: "The higher of the Hope and Fear dice decides with Hope or with Fear; the total against the Difficulty decides success.", refs: [CB(90)] },
-  { id: "criticalSuccess", code: "R2", area: "rolls", kind: "bookOnly", title: "Matching dice = critical", does: "Doubles always succeed; the player also gains 1 Hope and clears 1 Stress.", refs: [CB(90)] },
+  { id: "criticalSuccess", code: "R2", area: "rolls", kind: "switch", title: "Matching dice = critical", does: "Doubles always succeed; the player also gains 1 Hope and clears 1 Stress.", refs: [CB(90)], modes: BOOK_MANUAL },
   { id: "hopeFearFromRolls", code: "R3", area: "rolls", kind: "switch", title: "Hope and Fear from rolls", does: "A roll with Hope gives the player 1 Hope; a roll with Fear gives the GM 1 Fear.", refs: [CB(90), CB(154)], modes: BOOK_MANUAL },
   { id: "reactionRolls", code: "R4", area: "rolls", kind: "bookOnly", title: "Reaction rolls give nothing", does: "A reaction roll gives no Hope or Fear, and nobody can help.", refs: [CB(99)] },
   { id: "advantage", code: "R5", area: "rolls", kind: "bookOnly", title: "Advantage and disadvantage", does: "Advantage adds a d6, disadvantage takes one away; they cancel one for one; of the helpers' dice only the highest counts.", refs: [CB(100)] },
-  { id: "experienceCost", code: "R6", area: "rolls", kind: "bookOnly", title: "Experiences cost Hope", does: "Adding an Experience to a roll costs 1 Hope per Experience.", refs: [CB(90)] },
-  { id: "helpAnAlly", code: "R7", area: "rolls", kind: "bookOnly", title: "Help an Ally", does: "A helper spends 1 Hope and adds a d6 to a friend's roll.", refs: [CB(90)] },
-  { id: "tagTeam", code: "R8", area: "rolls", kind: "bookOnly", title: "Tag Team roll", does: "3 Hope, once per session per player; both roll and the starter picks which roll counts for both.", refs: [CB(90), CB(97)] },
+  { id: "experienceCost", code: "R6", area: "rolls", kind: "switch", title: "Experiences cost Hope", does: "Adding an Experience to a roll costs 1 Hope per Experience.", refs: [CB(90)], modes: BOOK_MANUAL },
+  // Q3 a (user 2026-11-09): Book names the helpers and takes their Hope; Manual is the old "Help dice" counter.
+  { id: "helpAnAlly", code: "R7", area: "rolls", kind: "switch", title: "Help an Ally", does: "The roller ticks the PCs who help; each spends 1 Hope and adds a d6, and only the highest die counts.", refs: [CB(90)], modes: BOOK_MANUAL },
+  {
+    id: "tagTeam",
+    code: "R8",
+    area: "rolls",
+    kind: "switch",
+    title: "Tag Team roll",
+    does: "3 Hope, once per session per player; both roll and the starter picks which roll counts for both.",
+    refs: [CB(90), CB(97)],
+    // Q4 a (user 2026-11-09): still 3 Hope, but a player may start more than one Tag Team a session.
+    modes: [BOOK, { id: "noSessionLimit", label: "No session limit", notInBooks: true }, MANUAL],
+  },
   { id: "hopeCap", code: "R9", area: "rolls", kind: "bookOnly", title: "Hope cap", does: "A character holds at most 6 Hope, one less per scar; extra Hope is lost.", refs: [CB(90)] },
-  { id: "criticalDamage", code: "R10", area: "rolls", kind: "bookOnly", title: "Critical damage", does: "A critical attack starts from the dice's maximum and rolls the dice again on top.", refs: [CB(98), CB(148)] },
+  { id: "criticalDamage", code: "R10", area: "rolls", kind: "switch", title: "Critical damage", does: "A critical attack starts from the dice's maximum and rolls the dice again on top.", refs: [CB(98), CB(148)], modes: BOOK_MANUAL },
   { id: "adversaryAttackRoll", code: "R11", area: "rolls", kind: "bookOnly", title: "Adversary attack roll", does: "One d20 plus the attack bonus against Evasion; a natural 20 always hits and crits.", refs: [CB(160), CB(148)] },
 
   // ------------------------------------------------------------ 2. Hope & Fear
@@ -138,8 +150,8 @@ export const RULES = [
     modes: [BOOK, { id: "extendedDowntime", label: "Extended downtime (several days)", notInBooks: false, ref: CB(181) }, MANUAL],
   },
   { id: "extraSpotlightFear", code: "F3", area: "hopeFear", kind: "switch", title: "Extra adversary spotlight costs Fear", does: "In the encounter tracker, each adversary after the first in a GM turn takes 1 Fear.", refs: [CB(153)], modes: BOOK_MANUAL },
-  { id: "adversaryExperienceFear", code: "F4", area: "hopeFear", kind: "bookOnly", title: "Adversary Experience costs Fear", does: "Adding an adversary's Experience to its roll takes 1 Fear.", refs: [CB(154)] },
-  { id: "fearFeatures", code: "F5", area: "hopeFear", kind: "bookOnly", title: "Fear features cost Fear", does: "Using an adversary's or environment's Fear feature takes the Fear from the pool.", refs: [CB(154)] },
+  { id: "adversaryExperienceFear", code: "F4", area: "hopeFear", kind: "switch", title: "Adversary Experience costs Fear", does: "Adding an adversary's Experience to its roll takes 1 Fear.", refs: [CB(154)], modes: BOOK_MANUAL },
+  { id: "fearFeatures", code: "F5", area: "hopeFear", kind: "switch", title: "Fear features cost Fear", does: "Using an adversary's or environment's Fear feature takes the Fear from the pool.", refs: [CB(154)], modes: BOOK_MANUAL },
 
   // ------------------------------------------------------------ 3. Damage & thresholds
   { id: "damageThresholds", code: "D1", area: "damage", kind: "bookOnly", title: "Damage to Hit Points", does: "Damage against the two thresholds marks 1, 2 or 3 HP (PCs and adversaries).", refs: [CB(91)] },
@@ -158,7 +170,7 @@ export const RULES = [
     // Q5 a: the picker opens on the GM's screen and the attack waits (the book doesn't say who picks).
     modes: [BOOK, { id: "gmPicks", label: "GM picks the extra Minions", notInBooks: true }, MANUAL],
   },
-  { id: "hordes", code: "D7", area: "damage", kind: "bookOnly", title: "Hordes", does: "A Horde with half or more of its HP marked deals its lower Horde damage.", refs: [CB(199)] },
+  { id: "hordes", code: "D7", area: "damage", kind: "switch", title: "Hordes", does: "A Horde with half or more of its HP marked deals its lower Horde damage.", refs: [CB(199)], modes: BOOK_MANUAL },
   { id: "adversaryDefeated", code: "D8", area: "damage", kind: "switch", title: "Adversary defeated at last HP", does: "An adversary whose last HP is marked is shown defeated and loses its turn in the tracker.", refs: [CB(208)], modes: BOOK_MANUAL },
 
   // ------------------------------------------------------------ 4. Armor
@@ -170,12 +182,12 @@ export const RULES = [
   { id: "conditionDice", code: "C1", area: "conditions", kind: "switch", title: "Conditions change the dice", does: "Attacking a Vulnerable target gets advantage; attacking a Hidden or Cloaked target gets disadvantage.", refs: [CB(102)], modes: BOOK_MANUAL },
   { id: "hiddenEnds", code: "C2", area: "conditions", kind: "switch", title: "Hidden / Cloaked end on the map", does: "A Hidden or Cloaked PC who attacks, or ends a move in an enemy's sight, loses it.", refs: [CB(102)], modes: BOOK_MANUAL },
   { id: "conditionsDontStack", code: "C3", area: "conditions", kind: "bookOnly", title: "Conditions don't stack", does: "Turning a condition on twice does nothing.", refs: [CB(102)] },
-  { id: "unconscious", code: "C4", area: "conditions", kind: "bookOnly", title: "Unconscious", does: "An unconscious PC can't act or be attacked; they wake when an ally clears their HP or on a long rest.", refs: [CB(106)] },
+  { id: "unconscious", code: "C4", area: "conditions", kind: "switch", title: "Unconscious", does: "An unconscious PC can't act or be attacked; they wake when an ally clears their HP or on a long rest.", refs: [CB(106)], modes: BOOK_MANUAL },
 
   // ------------------------------------------------------------ 6. Rests & downtime
-  { id: "twoDowntimeMoves", code: "T1", area: "rests", kind: "bookOnly", title: "Two moves per rest", does: "Each PC picks two downtime moves (the same one twice is fine).", refs: [CB(105)] },
+  { id: "twoDowntimeMoves", code: "T1", area: "rests", kind: "switch", title: "Two moves per rest", does: "Each PC picks two downtime moves (the same one twice is fine).", refs: [CB(105)], modes: BOOK_MANUAL },
   { id: "shortRestLimit", code: "T2", area: "rests", kind: "switch", title: "Short-rest limit", does: "A fourth short rest in a row is refused; the party must take a long rest.", refs: [CB(105)], modes: BOOK_MANUAL },
-  { id: "downtimeMoveEffects", code: "T3", area: "rests", kind: "bookOnly", title: "What each move does", does: "The app rolls and applies each downtime move.", refs: [CB(105)] },
+  { id: "downtimeMoveEffects", code: "T3", area: "rests", kind: "switch", title: "What each move does", does: "The app rolls and applies each downtime move.", refs: [CB(105)], modes: BOOK_MANUAL },
   { id: "interruptedRest", code: "T4", area: "rests", kind: "switch", title: "Interrupted rest", does: "An interrupted short rest gives nothing; an interrupted long rest gives short-rest moves.", refs: [CB(105)], modes: BOOK_MANUAL },
   { id: "restRefreshes", code: "T5", area: "rests", kind: "bookOnly", title: "Rest refreshes features", does: "Finishing a rest ends 'until your next rest' effects and resets per-rest uses.", refs: [CB(105)] },
 
@@ -193,7 +205,7 @@ export const RULES = [
     // Q8 a: two rows; X2 is read-only ("Needs the death move prompt") while X1 is Manual.
     needs: "deathMovePrompt",
   },
-  { id: "scars", code: "X3", area: "death", kind: "bookOnly", title: "Scars", does: "A scar crosses out a Hope slot; a PC with no Hope slots left is listed at session end.", refs: [CB(106), CB(182)] },
+  { id: "scars", code: "X3", area: "death", kind: "switch", title: "Scars", does: "A scar crosses out a Hope slot; a PC with no Hope slots left is listed at session end.", refs: [CB(106), CB(182)], modes: BOOK_MANUAL },
 
   // ------------------------------------------------------------ 8. Spotlight & turns
   { id: "spotlightToGm", code: "S1", area: "spotlight", kind: "switch", title: "Spotlight goes to the GM on a failure or Fear", does: "A PC's failed roll or roll with Fear hands the spotlight to the GM.", refs: [CB(100), CB(149)], modes: BOOK_MANUAL },
@@ -230,12 +242,23 @@ export const RULES = [
     ],
     param: { key: "darknessDifficulty", label: "Difficulty raised by", min: 1, default: 2 },
   },
-  { id: "outOfRange", code: "M4", area: "map", kind: "bookOnly", title: "Out-of-range targets", does: "A table setting: an out-of-range attack asks the GM or is refused.", refs: [CB(103)] },
+  {
+    id: "outOfRange",
+    code: "M4",
+    area: "map",
+    kind: "switch",
+    title: "Out-of-range targets",
+    does: "A player's out-of-range attack waits for the GM to allow or refuse it.",
+    refs: [CB(103)],
+    // Q12 a (user 2026-11-09): moved here from Campaign settings > At the table (`tableSettings.outOfRange`: `ask` is
+    // `book`, `refuse` is `refuse`; migrations/outOfRange:copyTableSetting). The book says "usually can't be targeted".
+    modes: [{ id: "book", label: "Ask the GM", notInBooks: false }, { id: "refuse", label: "Refuse", notInBooks: false }, MANUAL],
+  },
 
   // ------------------------------------------------------------ 10. Level-up & advancement
   { id: "levelAchievements", code: "L1", area: "levelUp", kind: "bookOnly", title: "Achievements at levels 2, 5, 8", does: "Level-up adds a +2 Experience and +1 Proficiency; at 5 and 8 trait marks clear.", refs: [CB(109)] },
   { id: "levelUpPicks", code: "L2", area: "levelUp", kind: "bookOnly", title: "Two picks per level from the tier list", does: "Each level offers two picks with per-tier slot limits.", refs: [CB(110)] },
-  { id: "domainCardLevels", code: "L3", area: "levelUp", kind: "bookOnly", title: "Domain card levels", does: "New domain cards are limited to the character's level (multiclass domain: half).", refs: [CB(111)] },
+  { id: "domainCardLevels", code: "L3", area: "levelUp", kind: "switch", title: "Domain card levels", does: "New domain cards are limited to the character's level (multiclass domain: half).", refs: [CB(111)], modes: BOOK_MANUAL },
 
   // ------------------------------------------------------------ 11. Countdowns
   { id: "countdownTicks", code: "K1", area: "countdowns", kind: "switch", title: "Countdowns tick on action rolls", does: "An armed countdown ticks down after every PC action roll and fires at 0.", refs: [CB(162), CB(97)], modes: BOOK_MANUAL },
@@ -248,7 +271,19 @@ export const RULES = [
   // ------------------------------------------------------------ 13. Frame-specific
   { id: "witherTokens", code: "W1", area: "frame", kind: "switch", title: "Wither tokens", does: "Severe damage from a Withered enemy gives a Wither token, and the Fear Die roll for a scar.", refs: [CB(261)], frames: ["witherwild"], modes: BOOK_MANUAL },
   { id: "horizonSanctuaryRest", code: "W2", area: "frame", kind: "switch", title: "Long rest only in a sanctuary", does: "A long rest outside a sanctuary is refused.", refs: [HF(176)], frames: ["journey-to-horizon"], modes: BOOK_MANUAL },
-  { id: "doomTrack", code: "W3", area: "frame", kind: "bookOnly", title: "Doom Track", does: "At session end the GM is reminded to mark a Doom Track box.", refs: [HF(177)], frames: ["journey-to-horizon"] },
+  {
+    id: "doomTrack",
+    code: "W3",
+    area: "frame",
+    kind: "switch",
+    title: "Doom Track",
+    does: "At session end the GM is reminded to mark a Doom Track box; each tier's rule applies once it is reached.",
+    refs: [HF(177)],
+    frames: ["journey-to-horizon"],
+    // Q14 a (user 2026-11-09): the HF p.177 tip says to adjust how often it is marked, but gives no number.
+    modes: [BOOK, { id: "everyNSessions", label: "Every N sessions", notInBooks: true }, MANUAL],
+    param: { key: "doomTrackSessions", label: "Sessions per box", min: 1, max: 4, default: 1 },
+  },
   { id: "beastFeastFeast", code: "W4", area: "frame", kind: "switch", title: "Make a Feast", does: "Clear Stress, Tend to Wounds and Prepare are not offered; Make a Feast is.", refs: [CB(278)], frames: ["beast-feast"], modes: BOOK_MANUAL },
   { id: "colossusSiphoning", code: "W5", area: "frame", kind: "switch", title: "Siphoning on rests", does: "In the hunt phase a short rest marks the Siphoning Track once, a long rest twice.", refs: [CB(327)], frames: ["colossus-of-the-drylands"], modes: BOOK_MANUAL },
   { id: "umbraLurkingDarkness", code: "W6", area: "frame", kind: "switch", title: "Lurking Darkness", does: "A rest away from a Sacred Pyre rolls a d12 on the Lurking Darkness list for the GM.", refs: [CB(289)], frames: ["age-of-umbra"], modes: BOOK_MANUAL },

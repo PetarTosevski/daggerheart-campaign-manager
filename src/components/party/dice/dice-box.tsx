@@ -14,11 +14,13 @@ import { withEffects } from "@/lib/domain/characters/effects";
 import { rollOptions, weaponOverrides } from "@/lib/domain/class-features/hooks";
 import { CLASS_FEATURES } from "@/lib/domain/class-features/index";
 import type { FeatureScope, RollPrompt } from "@/lib/domain/class-features/types";
-import { dualityEffects, OUTCOME_LABEL, TYPED_MODIFIER_MAX, weaponDice, type DicePool } from "@/lib/domain/dice";
+import { TYPED_MODIFIER_MAX, weaponDice } from "@/lib/domain/dice";
 import { ikonisWeapon } from "@/lib/domain/dice/ikonis";
+import { unconsciousBlocksActing, type UnconsciousMode } from "@/lib/domain/characters";
 import type { RollRecord } from "@/lib/domain/duality";
 import { holdsSlayer, holdsTide, SLAYER_STORE_PROMPT, slayerDice, tideTokens } from "@/lib/domain/session-features";
 import { TRAIT_LABEL } from "@/lib/frames/extras/common";
+import { consequence, earlierText, outcomeText, outcomeTone, partsText, poolLabel, signed } from "@/lib/party/roll-copy";
 import { WEAPONS } from "@/lib/srd/equipment";
 import { TRAIT_IDS, type TraitId } from "@/lib/srd/types";
 import { useIntent } from "@/lib/use-intent";
@@ -35,6 +37,7 @@ import { SlayerOffer } from "./slayer";
 import { playRollSound } from "./sound";
 import { TagTeam } from "./tag-team";
 import { FEAR_HIDDEN_LABEL, fearShown } from "@/components/combat-map/hud/fear/hidden";
+import { helperCandidates } from "@/components/combat-map/hud/pick-attack/model";
 
 type Mode = "action" | "reaction" | "damage";
 type AttackWeapon = "primary" | "secondary" | "none";
@@ -53,64 +56,14 @@ const MODES = [
   ["damage", "Damage"],
 ] as const;
 
-const KIND_LABEL: Record<RollRecord["kind"], string> = { action: "Action", reaction: "Reaction", damage: "Damage", free: "Roll" };
-
 function toInt(raw: string): number | undefined {
   const n = Number.parseInt(raw, 10);
   return Number.isFinite(n) ? n : undefined;
 }
 
-const signed = (n: number) => (n >= 0 ? `+${n}` : `−${-n}`);
-
-/** Unavailable characters can't roll (decision 9; the server refuses too). */
-function isUnavailable(character: CharacterView): boolean {
-  return character.status === "dead" || character.status === "away" || (character.sheet.conditions ?? []).includes("unconscious");
-}
-
-function poolLabel(pool: DicePool, flat: number): string {
-  return pool.map((d) => `${d.count}d${d.sides}`).join("+") + (flat ? `+${flat}` : "");
-}
-
-/** The coloured outcome line: "Critical success", "Success with Hope", "With Fear" (no Difficulty), "Damage". */
-function outcomeText(roll: RollRecord): string {
-  if (roll.outcome === "none") return KIND_LABEL[roll.kind];
-  const base = roll.outcome !== "critical" && roll.difficulty === undefined ? (roll.outcome.endsWith("Hope") ? "with Hope" : "with Fear") : OUTCOME_LABEL[roll.outcome];
-  return roll.kind === "reaction" ? `${base} · reaction` : base;
-}
-
-function outcomeTone(roll: RollRecord): string {
-  if (roll.outcome === "critical") return "crit";
-  if (roll.outcome === "none") return "dmg";
-  return roll.outcome.endsWith("Hope") ? "hope" : "fear";
-}
-
-/** "8 + 9 + 2" when the counted dice and the modifier add up to the total (a critical's bonus does not). */
-function partsText(roll: RollRecord): string {
-  const terms = roll.dice.filter((d) => !d.dropped).map((d) => (d.role === "disadvantage" ? -d.value : d.value));
-  if (roll.modifier) terms.push(roll.modifier);
-  if (terms.length < 2 || terms.reduce((a, b) => a + b, 0) !== roll.total) return "";
-  return terms.map((t, i) => (i === 0 ? String(t) : t < 0 ? `− ${-t}` : `+ ${t}`)).join(" ");
-}
-
-/** The italic consequence line: what the server applied for Hope, Stress and Fear (CB 95, `dualityEffects`). */
-function consequence(roll: RollRecord, fearGained: number | undefined, poolHidden = false): string {
-  if (roll.kind === "reaction") return "Reaction rolls don’t generate Hope or Fear.";
-  if (roll.kind !== "action") return "";
-  const fx = dualityEffects("action", roll.outcome);
-  if (fx.clearStress) return "Critical success: you gain a Hope and clear a Stress.";
-  if (fx.hope) return "Rolled with Hope: you gain a Hope.";
-  // R1: "already full" would tell a player the hidden pool is 12; the die stays ("Rolled with Fear").
-  if (fx.fear && poolHidden) return "Rolled with Fear.";
-  if (fx.fear) return fearGained === 0 ? "Rolled with Fear: the GM’s Fear is already full." : "Rolled with Fear: the GM gains a Fear.";
-  return "";
-}
-
-/** One line of the "Earlier" list: "Action 17 · with Fear (8/9)", "Damage 9". */
-function earlierText(roll: RollRecord): string {
-  const hope = roll.dice.find((d) => d.role === "hope");
-  const fear = roll.dice.find((d) => d.role === "fear");
-  const outcome = roll.outcome === "none" ? "" : ` · ${outcomeText(roll)}`;
-  return `${KIND_LABEL[roll.kind]} ${roll.total}${outcome}${hope && fear ? ` (${hope.value}/${fear.value})` : ""}${roll.manual ? " · manual" : ""}`;
+/** Unavailable characters can't roll (decision 9; the server refuses too). C4 Manual: an unconscious PC still rolls. */
+function isUnavailable(character: CharacterView, unconscious: UnconsciousMode | undefined): boolean {
+  return character.status === "dead" || character.status === "away" || unconsciousBlocksActing(character.sheet, unconscious);
 }
 
 /** Prompts after a roll (Strange Patterns, Favor): each choice is a button that answers through the feature (`classFeatures.use`). */
@@ -169,7 +122,9 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
     const parsed = characterSheetSchema.safeParse(view);
     return parsed.success ? parsed.data : null;
   }, [view]);
-  const unavailable = isUnavailable(character);
+  // One subscription with the ruleModes read below (Convex dedupes the same query and args).
+  const unconsciousMode = useQuery(api.ruleSettings.get, { campaignId })?.modes.unconscious;
+  const unavailable = isUnavailable(character, unconsciousMode);
   // dcm-hnbk: the traits with effects and passive bonuses (Beastform, CB p.30/32), as the Attack bar reads them.
   const traits = useMemo(() => (sheet ? derivedTraits(withEffects(sheet)) : view.traits), [sheet, view.traits]);
 
@@ -181,6 +136,8 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
   // Net advantage: + advantage dice, − disadvantage dice.
   const [edge, setEdge] = useState(0);
   const [help, setHelp] = useState(0);
+  // Rule switches WR, R7 Book (CB p.90): the PCs ticked as helping (each spends 1 Hope on the server).
+  const [helpers, setHelpers] = useState<Id<"characters">[]>([]);
   const [attack, setAttack] = useState(false);
   const [attackWeaponPick, setAttackWeapon] = useState<AttackWeapon>("primary");
   const [ikonisAttack, setIkonisAttack] = useState(false);
@@ -216,6 +173,13 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
   const extras = useQuery(api.characterExtras.get, { characterId: character._id });
   // The open Slayer choice and a Tag Team Roll waiting for its pick, whoever rolled (U2, U9).
   const choices = useQuery(api.rolls.pendingChoices, { characterId: character._id });
+  // Rule switches WR: R2 / R6 / R7 change what the box offers (Book until loaded).
+  const ruleModes = useQuery(api.ruleSettings.get, { campaignId })?.modes;
+  const helpBook = (ruleModes?.helpAnAlly ?? "book") === "book";
+  const experienceFree = ruleModes?.experienceCost === "manual";
+  const party = useQuery(api.charactersReads.listByCampaign, helpBook && mode === "action" ? { campaignId } : "skip");
+  const helperChoices = helperCandidates(party ?? [], character._id);
+  const pickedHelpers = helpers.filter((id) => helperChoices.some((h) => h.characterId === id));
   const motherboard = extras?.motherboard ?? null;
   const scope: FeatureScope = { hopeAndFear, ikonis: motherboard !== null };
   const ikonis = motherboard && sheet ? ikonisWeapon(motherboard.ikonis, motherboard.installed, sheet.level, sheet.proficiency) : null;
@@ -328,7 +292,9 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
       experienceIds,
       advantage,
       disadvantage,
-      help: mode === "reaction" ? 0 : help,
+      // WR (R7): Book names the helpers (intents only), Manual sends the counter.
+      help: mode === "reaction" || helpBook ? 0 : help,
+      ...(mode === "action" && helpBook && pickedHelpers.length > 0 ? { helpers: pickedHelpers } : {}),
       attack: mode === "action" && (attack || useIkonis),
       // dcm-6qrn (user answer 2026-10-31): an attack roll names its weapon, or none (a non-weapon attack).
       ...(mode === "action" && attack && !useIkonis && weaponSlot !== null ? { weapon: weaponSlot } : {}),
@@ -345,11 +311,13 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
       setTideSpend(0);
       setSituations([]);
       setSocial(false);
+      setHelpers([]);
       await show(out.entryId, out.roll, out.prompts, label, slayerCount, out.fearGained);
     }
   }
 
-  const hopeCost = experienceIds.length;
+  // WR (R6 Manual): Experiences cost no Hope, so they never block the roll.
+  const hopeCost = experienceFree ? 0 : experienceIds.length;
   const notEnoughHope = mode !== "damage" && hopeCost > view.hope;
   const modifierTooBig = Math.abs(toInt(modifier) ?? 0) > TYPED_MODIFIER_MAX;
   const canRoll = !(unavailable || pending || notEnoughHope || modifierTooBig);
@@ -490,7 +458,7 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
         <div className="dc-opts-row">
           {mode !== "damage" && view.experiences.length > 0 ? (
             <fieldset className="dc-group">
-              <legend className="sh-lbl">Experiences (1 Hope each)</legend>
+              <legend className="sh-lbl">{experienceFree ? "Experiences" : "Experiences (1 Hope each)"}</legend>
               {view.experiences.map((e) => (
                 <Chip key={e.id} checked={experienceIds.includes(e.id)} onChange={(on) => setExperienceIds((ids) => (on ? [...ids, e.id] : ids.filter((id) => id !== e.id)))}>
                   {e.name} (+{e.value})
@@ -520,8 +488,18 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
                   {ikonis.advantage ? ", advantage" : ""})
                 </Chip>
               ) : null}
-              <CountStepper label="Help dice" value={help} max={ADVANTAGE_LIMIT} onChange={setHelp} />
+              {helpBook ? null : <CountStepper label="Help dice" value={help} max={ADVANTAGE_LIMIT} onChange={setHelp} />}
             </div>
+          ) : null}
+          {mode === "action" && helpBook && helperChoices.length > 0 ? (
+            <fieldset className="dc-group" data-testid="dice-helpers">
+              <legend className="sh-lbl">Helped by (1 Hope each, +d6)</legend>
+              {helperChoices.map((h) => (
+                <Chip key={h.characterId} checked={pickedHelpers.includes(h.characterId)} onChange={(on) => setHelpers((ids) => (on ? [...ids, h.characterId] : ids.filter((id) => id !== h.characterId)))}>
+                  {h.name} ({h.hope} Hope)
+                </Chip>
+              ))}
+            </fieldset>
           ) : null}
           {mode !== "damage" ? (
             <div className="dc-group">
@@ -606,7 +584,9 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
                     {result.label}
                     {partsText(result.roll) ? ` (${partsText(result.roll)})` : ""}
                   </span>
-                  {consequence(result.roll, result.fearGained, fear === null) ? <span className="sh-small italic">{consequence(result.roll, result.fearGained, fear === null)}</span> : null}
+                  {consequence(result.roll, result.fearGained, fear === null, ruleModes?.criticalSuccess === "manual") ? (
+                    <span className="sh-small italic">{consequence(result.roll, result.fearGained, fear === null, ruleModes?.criticalSuccess === "manual")}</span>
+                  ) : null}
                 </span>
               </div>
             </div>

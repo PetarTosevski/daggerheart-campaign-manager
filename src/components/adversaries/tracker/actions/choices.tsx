@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { brandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
+import { areaWords } from "@/lib/domain/adversary-actions/area-targets";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
@@ -17,6 +18,7 @@ import {
   creaturesFor,
   initialAnswers,
   missing,
+  namedArea,
   pick,
   pickable,
   pickableUses,
@@ -111,7 +113,7 @@ function ChoicesForm({
       {LIST_KEYS.map((key) => {
         const list = ask[key];
         if (list === null) return null;
-        if (list.count === "all") {
+        if (list.count === "all" && !namedArea(list)) {
           return (
             <p key={key} className="trk-ask-note">
               {LIST_LABEL[key]}: every PC within {RANGE_LABEL[list.range] ?? list.range}.
@@ -123,7 +125,11 @@ function ChoicesForm({
         return (
           <CreatureList
             key={key}
-            legend={`${LIST_LABEL[key]} (${countText(cap, list.count)}, ${RANGE_LABEL[list.range] ?? list.range})`}
+            legend={
+              namedArea(list)
+                ? `${LIST_LABEL[key]}: everyone ${areaWords(list.area, list.range, actor)} (pick who is there)`
+                : `${LIST_LABEL[key]} (${countText(cap, list.count)}, ${RANGE_LABEL[list.range] ?? list.range})`
+            }
             creatures={creaturesFor(list, creatures, self)}
             value={a[key]}
             cap={cap}

@@ -10,6 +10,8 @@
 import { BrandButton } from "@/components/brand/buttons";
 import { experienceValue } from "@/lib/domain/dice";
 
+import type { Id } from "../../../../../convex/_generated/dataModel";
+
 /** The most advantage, disadvantage or Help dice the controls offer (the dice box's limit). */
 export const ROLL_DICE_LIMIT = 6;
 
@@ -22,8 +24,11 @@ export const signed = (n: number) => (n >= 0 ? `+${n}` : `−${-n}`);
  */
 export type Roller = { experiences: readonly { id: string; name: string; value: number; purposefulDesign?: true }[]; hope: number };
 
-/** The controls' values: Experiences used, advantage (negative: disadvantage), Help dice. */
-export type RollValues = { experienceIds: readonly string[]; edge: number; help: number };
+/**
+ * The controls' values: Experiences used, advantage (negative: disadvantage), Help dice. Plan rule-switches WF (R7 Book
+ * on card and feature rolls): `helpers`, the PCs ticked as helping (1 Hope each); the counter stays 0 then.
+ */
+export type RollValues = { experienceIds: readonly string[]; edge: number; help: number; helpers?: readonly Id<"characters">[] };
 
 export const NO_ROLL_OPTIONS: RollValues = { experienceIds: [], edge: 0, help: 0 };
 
@@ -43,7 +48,8 @@ export function rollSummary(values: RollValues): string | null {
   if (values.edge !== 0) parts.push(edgeLabel(values.edge));
   const n = values.experienceIds.length;
   if (n > 0) parts.push(`${n} Experience${n === 1 ? "" : "s"}`);
-  if (values.help > 0) parts.push(`${values.help} Help ${values.help === 1 ? "die" : "dice"}`);
+  const help = values.help + (values.helpers?.length ?? 0);
+  if (help > 0) parts.push(`${help} Help ${help === 1 ? "die" : "dice"}`);
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 

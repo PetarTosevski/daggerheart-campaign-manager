@@ -180,6 +180,8 @@ export type RestMoveRules = {
   warlock: boolean;
   /** A resting PC of the party holds Martial Preparation (Call of the Slayer mastery, CB 48). */
   martialPreparation?: boolean;
+  /** The PC is Reanimated with a lowered maximum loadout (HF p.153, `canRaiseLoadout`; bead dcm-psg9). */
+  raiseLoadout?: boolean;
 };
 
 /** CB 48, Martial Preparation: "Your party gains access to the Martial Preparation downtime move." */
@@ -195,6 +197,12 @@ export const MARTIAL_PREPARATION_MOVE: RestMove = "martialPreparation";
 export const LOCATE_ECHOES_MOVE: RestMove = "locateSoulEchoes";
 
 /**
+ * HF 153: "During a rest, they can use a downtime move to raise their maximum loadout by one until they reach the normal
+ * maximum loadout of five." Bead dcm-psg9: offered only to a Reanimated PC whose maximum is below five.
+ */
+export const RAISE_LOADOUT_MOVE: RestMove = "raiseLoadout";
+
+/**
  * The frame and class downtime moves of one PC, on either rest, and the core
  * moves the frame forbids:
  * - Beast Feast (CB 278): Make a Feast; no moves that clear Stress, clear Hit
@@ -204,16 +212,18 @@ export const LOCATE_ECHOES_MOVE: RestMove = "locateSoulEchoes";
  * - Dark Heart of Andaluria with transformations on (HF 153): halt
  *   lycanthropy, offered to every PC (whether a PC carries the countdown is
  *   not checked; see TASK-D5-TI-b questions).
+ *   A Reanimated PC whose maximum loadout is below five (HF 153, bead dcm-psg9): Raise loadout.
  * - A Warlock (HF 14): Tribute.
  * - Every PC while the party has a Slayer at mastery rank (CB 48; user
  *   2026-10-22, dcm-bxp.63): Martial Preparation, on short and long rests.
  */
-export function frameRestMoves({ frameId, transformations, warlock, martialPreparation = false }: RestMoveRules): { extra: RestMove[]; forbidden: readonly RestMove[] } {
+export function frameRestMoves({ frameId, transformations, warlock, martialPreparation = false, raiseLoadout = false }: RestMoveRules): { extra: RestMove[]; forbidden: readonly RestMove[] } {
   const extra: RestMove[] = [];
   if (frameId === FRAME_IDS.beastFeast) extra.push(FEAST_MOVE);
   if (frameId === FRAME_IDS.ageOfUmbra) extra.push(KEEP_WATCH_MOVE);
   if (frameId === FRAME_IDS.horizon) extra.push(LOCATE_ECHOES_MOVE);
   if (frameId === FRAME_IDS.andaluria && transformations) extra.push(HALT_LYCANTHROPY_MOVE);
+  if (frameId === FRAME_IDS.andaluria && transformations && raiseLoadout) extra.push(RAISE_LOADOUT_MOVE);
   if (warlock) extra.push(TRIBUTE_MOVE);
   if (martialPreparation) extra.push(MARTIAL_PREPARATION_MOVE);
   return { extra, forbidden: frameId === FRAME_IDS.beastFeast ? FEAST_FORBIDDEN : [] };

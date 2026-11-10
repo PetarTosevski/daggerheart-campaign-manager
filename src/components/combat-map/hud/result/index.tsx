@@ -3,9 +3,10 @@
 import "./result.css";
 
 import { useQuery } from "convex/react";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, type ReactNode } from "react";
 
 import { api } from "../../../../../convex/_generated/api";
+import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { AttackOutcome } from "../../actions/attack";
 import { useActor } from "../../actions/targets";
 import { usePick } from "../pick";
@@ -14,7 +15,7 @@ import type { HudPartProps } from "../state";
 import { Popup } from "../ui";
 import { AsksPanel } from "./asks";
 import { HeldRoll, RiderAsk, type RiderRow } from "./held";
-import { attackResultView, cardResultView, featureResultView, weaponDamageType } from "./model";
+import { attackResultView, cardResultView, featureResultView, playerResultView, weaponDamageType } from "./model";
 import { ResultPanel } from "./panel";
 import { hudResults, useHudResultEntry, type AsksEntry } from "./store";
 
@@ -29,7 +30,8 @@ import { hudResults, useHudResultEntry, type AsksEntry } from "./store";
  * 2. "After the roll": a card use's after-the-roll asks the HUD hand handed over (`hudResults.ask`): damage split
  *    steppers with "n left", each ally's pick with "n of m chose", plain choices;
  * 3. the result (`hudResults.show`): a card's (the HUD hand) or an attack's (the attack picker, the held roll's answer),
- *    with a damage-phase rider's ask under it (`riderPick`, Death Strike), which also shows on its own.
+ *    with a damage-phase rider's ask under it (`riderPick`, Death Strike), which also shows on its own. The GM's HUD
+ *    also shows each player's result as it lands (`usePlayerResults`, dcm-uemx), with severity and HP per hit.
  *
  * Nothing shows while a picking session is open (the panel there is the one thing to answer). Players see only their
  * own dice and damage, and Hit / Miss / Defeated (HANDOFF hard rule 2): the server sends nothing else.
@@ -44,6 +46,11 @@ export function HudResult({ state }: HudPartProps): ReactNode {
   const { campaignId } = state;
   const player = state.role === "player" && state.map !== null && actor !== null;
   const mine = useQuery(api.combatRequestsReads.mine, player ? { campaignId } : "skip");
+  usePlayerResults(campaignId, state.role === "gm");
+  // dcm-uemx: the GM's panel adds severity and HP per adversary hit (a GM-only query; players never ask, U1).
+  const resultId = entry?.kind === "result" ? entry.view.id : null;
+  const gmRows = useQuery(api.combatHud.resultDamage, state.role === "gm" && resultId !== null ? { campaignId, entryId: resultId as Id<"actionLog"> } : "skip");
+  const gmDamage = useMemo(() => (gmRows ? new Map(gmRows.map((d) => [d.tokenId as string, d])) : undefined), [gmRows]);
   if (pick.session) return null;
 
   const own = (mine ?? []).filter((r) => r.characterId === actor?.characterId);
@@ -62,6 +69,7 @@ export function HudResult({ state }: HudPartProps): ReactNode {
           view={entry.view}
           done={entry.done}
           conditions={(id) => conditions.get(id) ?? []}
+          gmDamage={gmDamage}
           onDone={(i) => hudResults.markDone(entry.view.id, i)}
           onClose={() => hudResults.clear(entry.view.id)}
         >
@@ -80,6 +88,20 @@ export function HudResult({ state }: HudPartProps): ReactNode {
     );
   }
   return null;
+}
+
+/**
+ * dcm-uemx (user 2026-11-09 "the GM sees every player's result"): the GM's HUD shows each player's card use, weapon attack
+ * and feature use result as the same panel (`combatHud.playerResults`, GM only), the newest new one at a time; a closed one
+ * never comes back (`hudResults.fromFeed` keeps the seen ids). Players never ask: other players' results stay theirs.
+ * The effect only hands the list to the client store (no mutation), as the queue's withdrawal toasts do.
+ */
+function usePlayerResults(campaignId: Id<"campaigns">, gm: boolean): void {
+  const rows = useQuery(api.combatHud.playerResults, gm ? { campaignId } : "skip");
+  useEffect(() => {
+    if (rows === undefined) return;
+    hudResults.fromFeed(campaignId, rows.map(playerResultView));
+  }, [rows, campaignId]);
 }
 
 const STAR_ICON = (

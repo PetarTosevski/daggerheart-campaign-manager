@@ -17,10 +17,10 @@ import {
   quoteChip,
   safeUrl,
   verdictClass,
-} from "../../../src/components/lorekeeper/answer/model";
-import { resolveSelection, selectConversation } from "../../../src/components/lorekeeper/chat/selection";
-import { askFailure, counterText, disabledReason, sendsOnKey, usagePeriod } from "../../../src/components/lorekeeper/composer/model";
-import { askerNames } from "../../../src/components/lorekeeper/conversations/names";
+} from "../../../src/lib/lorekeeper/answer-model";
+import { resolveSelection, selectConversation } from "../../../src/lib/lorekeeper/selection";
+import { askFailure, counterText, disabledReason, sendsOnKey, usagePeriod } from "../../../src/lib/lorekeeper/composer-model";
+import { askerNames } from "../../../src/lib/lorekeeper/names";
 import {
   BOOKS_ONLY_MISS,
   CAP_CAMPAIGN_TEXT,

@@ -47,7 +47,8 @@ vi.mock("@/components/brand/modal", () => ({
     ) : null,
 }));
 
-const { JournalHeaderActions, startNumber, startTarget } = await import("../../../src/components/journal/header");
+const { JournalHeaderActions } = await import("../../../src/components/journal/header");
+const { startNumber, startTarget } = await import("../../../src/lib/journal/sessions");
 
 const s = (n: number, status: SessionListItem["status"]): SessionListItem => ({ _id: `s${n}` as Id<"sessions">, n, status });
 const LIVE = [s(7, "planned"), s(6, "live"), s(5, "played")];

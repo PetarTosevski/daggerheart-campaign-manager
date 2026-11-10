@@ -36,7 +36,8 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-const { SceneEncounter, encounterChips } = await import("../../../src/components/journal/plan/encounter");
+const { SceneEncounter } = await import("../../../src/components/journal/plan/encounter");
+const { encounterChips } = await import("../../../src/lib/journal/plan");
 const { BattlePointsPanel } = await import("../../../src/components/journal/plan/battle-points");
 
 const inst = (label: string, name: string | null, type: string | null, extra: Record<string, unknown> = {}) =>

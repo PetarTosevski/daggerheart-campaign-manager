@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
 
-import { QUESTION_MAX, sendsOnKey } from "../composer/model";
+import { QUESTION_MAX, sendsOnKey } from "@/lib/lorekeeper/composer-model";
 
 type Props = {
   /** 'You', or the asker's name. */

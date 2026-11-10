@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useId, useRef, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { deckBacks, fan } from "@/components/cards/fan";
 import { designAsset } from "@/lib/design-assets";
@@ -12,7 +13,9 @@ import { cn } from "@/lib/utils";
 import { cardDisplay, HandCardFace } from "../../actions/hand/face";
 import type { HandCard } from "../../actions/hand/model";
 import type { Roller, RollValues } from "../../actions/roll-controls";
+import type { HelperCandidate } from "../pick-attack/model";
 import { BlockedReason } from "../blocked";
+import { useDragToPlay } from "./drag";
 import { CostPill, Tag } from "../ui";
 import { EDGE_MAX, EDGE_MIN, experienceShort, HELP_MAX, signedEdge, type CardLook } from "./states";
 
@@ -61,20 +64,42 @@ export function FanCard({
   onBlocked: () => void;
   onMore: (from: HTMLElement) => void;
 }) {
-  const style = fan(index, count, card.state === "exhausted") as CSSProperties;
   const reasonId = useId();
   const blocked = look.blocked !== undefined;
+  // Dropped in the middle of the screen it plays like its Use button (a blocked one shows its refusal instead).
+  const canDrop = look.showUse && (blocked || (look.canUse && !pending));
+  const { drag, handlers, swallow } = useDragToPlay(look.showUse, () => {
+    if (!canDrop) return;
+    if (blocked) onBlocked();
+    else onUse();
+  });
+  const style = { ...fan(index, count, card.state === "exhausted"), ...(drag ? { "--dx": `${drag.dx}px`, "--dy": `${drag.dy}px` } : {}) } as CSSProperties;
   return (
     <li
-      className={cn("hud-hc", look.wash !== "none" && `is-${look.wash}`)}
+      className={cn("hud-hc", look.wash !== "none" && `is-${look.wash}`, look.showUse && "is-draggable", drag && "is-drag")}
       style={style}
       // Not a tab stop: a tap focuses it, which raises it (keyboard users raise it by tabbing to More or Use).
       tabIndex={-1}
       data-testid="hud-hand-card"
       data-card={card.cardId}
       data-wash={look.wash}
-      onClickCapture={(e) => catchMore(e, onMore)}
+      onClickCapture={(e) => {
+        if (!swallow(e)) catchMore(e, onMore);
+      }}
+      // A mouse that leaves the card lowers it: a clicked card doesn't stay raised beside the next one hovered.
+      onPointerLeave={(e) => {
+        if (e.pointerType === "mouse" && !drag && e.currentTarget.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
+      }}
+      {...handlers}
     >
+      {drag
+        ? createPortal(
+            <div className={cn("hud-drop-zone", drag.over && canDrop && "is-over", !canDrop && "is-no")} aria-hidden="true">
+              <span>{canDrop ? `Drop to play ${card.name}` : `${card.name} can't be played now`}</span>
+            </div>,
+            document.body,
+          )
+        : null}
       {look.tag ? (
         <Tag kind={look.tag.kind === "lock" ? "used" : look.tag.kind} className={cn("hud-hc-tag", look.tag.kind === "lock" && "hud-hs-lock")}>
           {look.tag.lock ? <LockIcon /> : null}
@@ -171,8 +196,25 @@ export function SidePop({ id, title, sub, children, onClose, testId }: { id: str
  * with "Needs 1 Hope" once the Hope is spoken for), advantage from −3 to +3, and Help dice. They apply to the next card
  * that rolls. The values are the hand's; each control reports a patch.
  */
-export function RollOptionsBody({ roller, values, problem, onChange }: { roller: Roller | null; values: RollValues; problem: string | null; onChange: (patch: Partial<RollValues>) => void }) {
+export function RollOptionsBody({
+  roller,
+  values,
+  problem,
+  onChange,
+  helpers,
+}: {
+  roller: Roller | null;
+  values: RollValues;
+  problem: string | null;
+  onChange: (patch: Partial<RollValues>) => void;
+  /**
+   * Plan rule-switches WF, R7 Book (CB p.90): the PCs who may help (`helperCandidates`), ticked instead of the "Help dice"
+   * counter; each spends 1 Hope when the card resolves. Absent: R7 Manual (or not loaded), the counter.
+   */
+  helpers?: readonly HelperCandidate[];
+}) {
   const { experienceIds, edge, help } = values;
+  const ticked = values.helpers ?? [];
   const hope = roller?.hope ?? null;
   const expId = useId();
   return (
@@ -206,8 +248,31 @@ export function RollOptionsBody({ roller, values, problem, onChange }: { roller:
       <span className="hud-ro-l">Advantage</span>
       <RoStepper label="Advantage" value={edge} min={EDGE_MIN} max={EDGE_MAX} text={signedEdge(edge)} hint="from −3 to +3" onChange={(n) => onChange({ edge: n })} />
       <span className="hud-ro-l">Help</span>
-      <RoStepper label="Help dice" value={help} min={0} max={HELP_MAX} text={String(help)} hint={help === 1 ? "Help die (d6)" : "Help dice (d6)"} onChange={(n) => onChange({ help: n })} />
-      <p className="hud-ro-note">Applies to the next card that rolls. Experiences cost 1 Hope each.</p>
+      {helpers !== undefined ? (
+        <span className="hud-ro-chips" role="group" aria-label="Helped by" data-testid="hud-hand-helpers">
+          {helpers.length === 0 ? <small className="hud-ro-none">No one can help</small> : null}
+          {helpers.map((h) => {
+            const on = ticked.includes(h.characterId);
+            return (
+              <button
+                key={h.characterId}
+                type="button"
+                className="hud-ro-chip"
+                aria-pressed={on}
+                disabled={!on && (h.hope < 1 || ticked.length >= HELP_MAX)}
+                title={h.hope < 1 ? `${h.name} has no Hope` : `${h.name} spends 1 Hope and adds a d6`}
+                onClick={() => onChange({ helpers: on ? ticked.filter((x) => x !== h.characterId) : [...ticked, h.characterId] })}
+              >
+                {h.name}
+                <CostPill amount={1} resource="hope" className="hud-ro-cost" />
+              </button>
+            );
+          })}
+        </span>
+      ) : (
+        <RoStepper label="Help dice" value={help} min={0} max={HELP_MAX} text={String(help)} hint={help === 1 ? "Help die (d6)" : "Help dice (d6)"} onChange={(n) => onChange({ help: n })} />
+      )}
+      <p className="hud-ro-note">Applies to the next card that rolls. Experiences cost 1 Hope each{helpers !== undefined ? "; each helper spends 1 Hope" : ""}.</p>
       {problem ? (
         <p className="hud-ro-err" role="alert">
           {problem}
@@ -278,7 +343,7 @@ export function FullCard({
       }}
     >
       <div className="hud-full-card">
-        <HandCardFace card={card}>
+        <HandCardFace card={card} scrollText>
           {useLabel !== null ? (
             <button
               type="button"

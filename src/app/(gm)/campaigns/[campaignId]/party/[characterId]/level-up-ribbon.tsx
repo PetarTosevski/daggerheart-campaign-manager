@@ -2,30 +2,14 @@
 
 import "./level-up-ribbon.css";
 
-import { OPTION_SHORT, traitLabel } from "@/components/party/level-up/shared";
-import { ACHIEVEMENT_LEVELS, MARK_CLEAR_LEVELS, type PickChoice } from "@/lib/domain/level-up";
+import { ACHIEVEMENT_LEVELS } from "@/lib/domain/level-up";
+import { OPTION_SHORT, achievementText, cardName, targetNames } from "@/lib/party/level-up";
 import { CLASSES } from "@/lib/srd/classes";
-import { DOMAIN_CARDS, DOMAINS } from "@/lib/srd/domain-cards";
+import { DOMAINS } from "@/lib/srd/domain-cards";
 import { SUBCLASSES } from "@/lib/srd/subclasses";
 import type { CharacterSheet } from "@/lib/validation/characters";
 
 import { useLevelUpDraft, type LevelUpDraftValue } from "./level-up-draft";
-
-const cardName = (id: string) => DOMAIN_CARDS.find((c) => c.id === id)?.name ?? id;
-
-/** The tier achievements of the new level (CB 109), as the old stepper said them. */
-export function achievementText(level: number): string {
-  if (!ACHIEVEMENT_LEVELS.includes(level)) return `No achievements at level ${level}. Take two advancements and the level's domain card.`;
-  const clear = MARK_CLEAR_LEVELS.includes(level) ? "; the marks on your traits clear first, so you can raise them again." : ".";
-  return `Level ${level} achievements: a new Experience at +2 and +1 Proficiency${clear}`;
-}
-
-function targetNames(pick: PickChoice, sheet: CharacterSheet): string {
-  const names = (pick.targets ?? []).map((t) =>
-    pick.option === "traits" ? traitLabel(t) : pick.option === "experiences" ? (sheet.experiences.find((x) => x.id === t)?.name ?? t) : cardName(t),
-  );
-  return names.length > 0 ? `: ${names.join(", ")}` : "";
-}
 
 /** Every choice of the draft in words, for the Finish step. */
 function Summary({ lu, sheet }: { lu: LevelUpDraftValue; sheet: CharacterSheet }) {

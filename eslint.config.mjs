@@ -99,6 +99,9 @@ const eslintConfig = defineConfig([
     "coverage/**",
     // Agent git worktrees (each is a full checkout of the repo).
     ".claude/worktrees/**",
+    // The Expo app has its own config (apps/mobile/eslint.config.js);
+    // `pnpm lint` runs it as `pnpm lint:mobile`.
+    "apps/**",
     // Claude Design boards and their one-off scripts: reference only.
     "reference/**",
   ]),

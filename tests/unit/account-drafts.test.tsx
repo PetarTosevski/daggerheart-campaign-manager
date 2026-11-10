@@ -6,15 +6,9 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  DRAFT_DEBOUNCE_MS,
-  isTypedWizardPatch,
-  parseDraft,
-  useAccountDraft,
-  wizardDraftSchema,
-  wizardFromDraft,
-} from "@/app/(gm)/campaigns/[campaignId]/party/new/draft";
-import { emptyWizard } from "@/app/(gm)/campaigns/[campaignId]/party/new/wizard-logic";
+import { useAccountDraft } from "@/app/(gm)/campaigns/[campaignId]/party/new/draft";
+import { DRAFT_DEBOUNCE_MS, isTypedWizardPatch, parseDraft, wizardDraftSchema, wizardFromDraft } from "@/lib/party/wizard-draft";
+import { emptyWizard } from "@/lib/party/wizard-logic";
 import { useCustomDraft } from "@/app/(gm)/new/custom-frame-form";
 
 import type { Id } from "../../convex/_generated/dataModel";

@@ -2,10 +2,11 @@
 
 import { useMutation } from "convex/react";
 
+import { GiveTransformation, transformationOfRule } from "@/components/tome/give-transformation";
 import { TomeBook } from "@/components/tome/tome-book";
 import { campaignArt } from "@/lib/campaign-art";
 import { getPublishedFrame } from "@/lib/frames";
-import { TOMES, type TomeChapterId } from "@/lib/frames/tomes";
+import { TOMES, type TomeChapterId, type TomeRule } from "@/lib/frames/tomes";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { CampaignSummary } from "../../../../../convex/campaigns";
@@ -28,8 +29,17 @@ export function CampaignTomeBook({
   const art = campaignArt(campaign.frameId, campaign.custom?.background);
   const frame = campaign.frameId === "custom" ? null : getPublishedFrame(campaign.frameId)!;
 
+  // Bead dcm-psg9: the GM of an Andaluria campaign with Hope & Fear content gives a rule's transformation to a PC.
+  const gives = frame?.id === "dark-heart-of-andaluria" && campaign.role === "gm" && Boolean(campaign.options.hopeAndFear);
+  const ruleAction = gives
+    ? (rule: TomeRule) => {
+        const id = transformationOfRule(rule);
+        return id === null ? null : <GiveTransformation campaignId={campaign._id} transformationId={id} andaluriaReanimated={Boolean(campaign.options.transformations)} />;
+      }
+    : undefined;
+
   const content = frame
-    ? ({ kind: "published", tome: TOMES[frame.id] } as const)
+    ? ({ kind: "published", tome: TOMES[frame.id], ruleAction } as const)
     : ({
         kind: "custom",
         text: campaign.tome ?? EMPTY_TOME,

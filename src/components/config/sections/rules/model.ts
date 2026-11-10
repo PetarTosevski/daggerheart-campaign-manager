@@ -125,6 +125,25 @@ export const WIRED_RULES: ReadonlySet<string> = new Set([
   "playersWait",
   // OP (2026-11-06).
   "pcConflict",
+  // Wave 3 WD: rests & unconscious (T1, T3, C4 sheet side).
+  "twoDowntimeMoves",
+  "downtimeMoveEffects",
+  "unconscious",
+  // WR, wave 3 roll costs (2026-11-09).
+  "criticalSuccess",
+  "experienceCost",
+  "helpAnAlly",
+  "tagTeam",
+  "criticalDamage",
+  // WS, wave 3 sessions, scars & level-up (X3, W3 with its Sessions per box, L3).
+  "scars",
+  "doomTrack",
+  "domainCardLevels",
+  // WF, wave 3 GM Fear costs, Hordes, out of range (2026-11-10).
+  "adversaryExperienceFear",
+  "fearFeatures",
+  "hordes",
+  "outOfRange",
 ]);
 
 export type RuleGroup = { area: RuleArea; label: string; rules: readonly RuleDef[] };

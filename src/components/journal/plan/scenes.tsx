@@ -1,19 +1,18 @@
 "use client";
 
 import { useMutation } from "convex/react";
-import type { OptimisticLocalStore } from "convex/browser";
-import type { FunctionReturnType } from "convex/server";
 import { Check, Ellipsis, Plus } from "lucide-react";
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
 import { nextSceneId } from "@/lib/domain/journal/scenes";
+import { ADD_SCENE_TYPES, PENDING, prepPatches, sceneBadge, type PrepScene, type SceneBadge } from "@/lib/journal/plan";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
-import { MAX_SCENES, SESSION_SCENE_TYPES, SESSION_TEXT_MAX, type SessionSceneState, type SessionSceneType, type SessionStatus } from "../../../../convex/lib/validators/sessions";
+import { MAX_SCENES, SESSION_SCENE_TYPES, SESSION_TEXT_MAX, type SessionSceneType, type SessionStatus } from "../../../../convex/lib/validators/sessions";
 import { SCENE_TYPE_DISPLAY, TypeChip } from "../ui";
 import { SceneEncounter } from "./encounter";
 
@@ -25,35 +24,7 @@ import { SceneEncounter } from "./encounter";
  * encounter placed with '+ Session encounter'), so its menu has no 'Play this scene'; the GM marks the other scenes.
  */
 
-export type Prep = FunctionReturnType<typeof api.sessionPrep.get>;
-export type PrepScene = Prep["scenes"][number];
 export type PlanIds = { campaignId: Id<"campaigns">; sessionId: Id<"sessions"> };
-
-/** Ids of scenes the server has not confirmed yet (optimistic '+ Add scene'); they wait for the real id. */
-export const PENDING = "pending:";
-
-/** Patches the cached `sessionPrep.get` (the optimistic updates of the plan's intents); never mutates the store's object. */
-export function patchPrep(store: OptimisticLocalStore, args: { campaignId: Id<"campaigns">; sessionId: string }, patch: (prep: Prep) => Prep) {
-  const current = store.getQuery(api.sessionPrep.get, args);
-  if (current !== undefined) store.setQuery(api.sessionPrep.get, args, patch(current));
-}
-
-/** `setSceneState` as the server applies it: 'playing' makes the scene that was playing Done (`playScene`). */
-export function applySceneState(scenes: readonly PrepScene[], sceneId: string, state: SessionSceneState): PrepScene[] {
-  return scenes.map((s) => {
-    if (s.id === sceneId) return { ...s, state: state === "planned" ? undefined : state };
-    return state === "playing" && s.state === "playing" ? { ...s, state: "done" as const } : s;
-  });
-}
-
-/** What a scene's right side shows: its state, or 'Next' (`nextSceneId`), or nothing. */
-export type SceneBadge = "done" | "playing" | "next" | null;
-
-export function sceneBadge(scene: Pick<PrepScene, "id" | "state">, nextId: string | null): SceneBadge {
-  if (scene.state === "done") return "done";
-  if (scene.state === "playing") return "playing";
-  return scene.id === nextId ? "next" : null;
-}
 
 /** Runs an intent and keeps its error for the row's alert. */
 export function useRun() {
@@ -186,24 +157,9 @@ function SceneRow({
   const pending = scene.id.startsWith(PENDING);
   const typeGroup = useId();
 
-  const setScene = useMutation(api.sessionPrep.setScene).withOptimisticUpdate((store, { campaignId, sessionId, sceneId, type, text, title }) =>
-    patchPrep(store, { campaignId, sessionId }, (prep) => ({
-      ...prep,
-      scenes: prep.scenes.map((s) => {
-        if (s.id !== sceneId) return s;
-        if (type !== undefined) return type === "combat" ? { ...s, type } : { ...s, type, encounterId: undefined, encounter: null };
-        if (text !== undefined) return { ...s, text: text.trim() };
-        const clean = (title ?? "").trim();
-        return { ...s, title: clean === "" ? undefined : clean };
-      }),
-    })),
-  );
-  const setState = useMutation(api.sessionPrep.setSceneState).withOptimisticUpdate((store, { campaignId, sessionId, sceneId, state }) =>
-    patchPrep(store, { campaignId, sessionId }, (prep) => ({ ...prep, scenes: applySceneState(prep.scenes, sceneId, state) })),
-  );
-  const removeScene = useMutation(api.sessionPrep.removeScene).withOptimisticUpdate((store, { campaignId, sessionId, sceneId }) =>
-    patchPrep(store, { campaignId, sessionId }, (prep) => ({ ...prep, scenes: prep.scenes.filter((s) => s.id !== sceneId) })),
-  );
+  const setScene = useMutation(api.sessionPrep.setScene).withOptimisticUpdate(prepPatches.setScene);
+  const setState = useMutation(api.sessionPrep.setSceneState).withOptimisticUpdate(prepPatches.setSceneState);
+  const removeScene = useMutation(api.sessionPrep.removeScene).withOptimisticUpdate(prepPatches.removeScene);
 
   const title = useBlurDraft(scene.title ?? "", (text) => run(setScene({ ...ids, sceneId: scene.id, title: text })));
   const text = useBlurDraft(scene.text, (value) => run(setScene({ ...ids, sceneId: scene.id, text: value })));
@@ -296,9 +252,6 @@ function SceneRow({
   );
 }
 
-/** The order '+ Add scene' offers the types in (dcm-z9rz.30: Exploration / Social / Combat / Downtime). */
-export const ADD_SCENE_TYPES: readonly SessionSceneType[] = ["exploration", "social", "combat", "downtime"];
-
 /**
  * '+ Add scene' asks the scene's type first (dcm-z9rz.30): the button opens a row of the four types and Cancel
  * (Escape closes it too); picking one adds the scene (optimistic: the row shows at once, disabled until the server's id
@@ -309,12 +262,7 @@ export function AddSceneButton({ ids, count }: { ids: PlanIds; count: number }) 
   const [picking, setPicking] = useState(false);
   const groupId = useId();
   const opener = useRef<HTMLButtonElement>(null);
-  const addScene = useMutation(api.sessionPrep.addScene).withOptimisticUpdate((store, args) =>
-    patchPrep(store, { campaignId: args.campaignId, sessionId: args.sessionId }, (prep) => ({
-      ...prep,
-      scenes: [...prep.scenes, { id: `${PENDING}${prep.scenes.length}`, type: args.type ?? "combat", text: "", encounter: null }],
-    })),
-  );
+  const addScene = useMutation(api.sessionPrep.addScene).withOptimisticUpdate(prepPatches.addScene);
   const full = count >= MAX_SCENES;
 
   function close() {

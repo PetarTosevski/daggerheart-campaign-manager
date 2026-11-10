@@ -5,7 +5,7 @@ import { useId, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 import { hudButtonClass } from "../ui";
-import { damageText, outcomeTag, rowDamage, type ResultView } from "./model";
+import { damageText, outcomeTag, rowDamage, rowSeverity, type GmDamage, type ResultView } from "./model";
 import { CardArt, DiceLine, VerdictPill } from "./parts";
 
 /**
@@ -13,8 +13,9 @@ import { CardArt, DiceLine, VerdictPill } from "./parts";
  * the outcome tag ("Success with Hope"), the duality dice, modifier and total with "+1 Hope", then one row per target:
  * name, Hit / Miss / Defeated, the actor's own damage on a hit ("1d8+1 → 7 physical") and the condition names the target
  * now carries (answer 10a), and the table steps the use leaves (a manual step gets Done). Players never see an
- * adversary's number: the server sends none (U1). `children` adds the follow-up asks under the rows (a damage-phase
- * rider: "Use Death Strike on the Bandit?").
+ * adversary's number: the server sends none (U1). The GM's panel alone gets `gmDamage` (dcm-uemx, from the GM-only
+ * `combatHud.resultDamage`): each hit row adds the severity and HP marked ("Major · 2 HP"). `children` adds the
+ * follow-up asks under the rows (a damage-phase rider: "Use Death Strike on the Bandit?").
  */
 
 const PROMPT_WORD: Record<ResultView["prompts"][number]["kind"], string> = {
@@ -36,11 +37,14 @@ export function ResultPanel({
   view,
   done,
   conditions,
+  gmDamage,
   onDone,
   onClose,
   children,
 }: {
   view: ResultView;
+  /** The GM's panel only: severity and HP marked per adversary hit, by token id. Players never pass it (U1). */
+  gmDamage?: ReadonlyMap<string, GmDamage>;
   /** Manual steps already marked done. */
   done: readonly number[];
   /** The condition names a target carries now (players: from their view; names only). */
@@ -85,6 +89,7 @@ export function ResultPanel({
         <ul className="hud-res-rows" aria-label="Targets">
           {view.targets.map((t) => {
             const dmg = rowDamage(view, t);
+            const severity = rowSeverity(t, gmDamage);
             const marks = conditions(t.tokenId);
             return (
               <li key={t.tokenId} className="hud-res-row" data-testid="hud-result-row" data-token={t.tokenId}>
@@ -94,6 +99,11 @@ export function ResultPanel({
                   <span className="hud-res-d" data-testid="hud-result-row-damage">
                     {dmg.formula} → <b>{dmg.total}</b>
                     {dmg.type ? ` ${dmg.type}` : ""}
+                  </span>
+                ) : null}
+                {severity ? (
+                  <span className="hud-res-sev" data-testid="hud-result-row-severity">
+                    {severity}
                   </span>
                 ) : null}
                 {marks.length > 0 ? (

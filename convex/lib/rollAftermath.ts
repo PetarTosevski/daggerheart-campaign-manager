@@ -12,6 +12,10 @@
  *   run context's `hopeFear`, set by cardRunner `buildRun`, RA2); here the GM gets "Mira rolled with Fear: gain 1 Fear?"
  *   for the Fear the path withheld (`fearWithheld`, user answer Q2 b; unset: one Fear for a with-Fear action roll in
  *   Manual). A critical keeps its Hope and Stress clear in both modes (user answer 2026-11-06, CB p.90).
+ * - R2 `criticalSuccess` (CB p.90; plan rule-switches WR, user answer Q1 a): the critical's +1 Hope and cleared Stress
+ *   stop in the roll paths (`dualityEffects(..., criticalModeOf(campaign))`; card and feature uses through the run
+ *   context's `criticalSuccess`); here the GM gets "Mira rolled a critical: gain 1 Hope and clear 1 Stress?" for an
+ *   action roll the path marks `critical`. The critical still succeeds and counts as with Hope (S1, countdowns, R10).
  *
  * Callers: every PC action-roll path, once per roll, after its rows are logged (rolls.duality, the Tag Team's apply with
  * the chosen roll, the movement's Cloaked roll, weapon attacks, card and feature uses). Reaction rolls and GM rolls never
@@ -46,7 +50,7 @@
  */
 import { markStress } from "../../src/lib/domain/characters/index";
 import { breathEnded, breathTicks } from "../../src/lib/domain/combat-map/light";
-import type { HopeFearMode } from "../../src/lib/domain/dice/index";
+import type { CriticalMode, HopeFearMode } from "../../src/lib/domain/dice/index";
 import type { RollOutcome } from "../../src/lib/domain/duality";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
@@ -61,6 +65,16 @@ import { gmHoldsSpotlight, moveToGm, spotlightOf } from "./spotlight";
 /** The campaign's R3 mode, for `dualityEffects`. */
 export function hopeFearModeOf(campaign: Pick<Doc<"campaigns">, "frameId" | "ruleModes">): HopeFearMode {
   return ruleMode(campaign, "hopeFearFromRolls");
+}
+
+/** The campaign's R2 mode, for `dualityEffects` (plan rule-switches WR). */
+export function criticalModeOf(campaign: Pick<Doc<"campaigns">, "frameId" | "ruleModes">): CriticalMode {
+  return ruleMode(campaign, "criticalSuccess");
+}
+
+/** R2 Manual's GM line: "Mira rolled a critical: gain 1 Hope and clear 1 Stress?" (`pcs` > 1: a Tag Team, "each gain"). */
+export function criticalNote(name: string, pcs = 1): string {
+  return `${name} rolled a critical: ${pcs > 1 ? "each gain" : "gain"} 1 Hope and clear 1 Stress?`;
 }
 
 /** Whether an outcome is with Fear (a critical never is). */
@@ -91,6 +105,10 @@ export type PcActionRoll = {
    * roll with Fear in an R3-Manual campaign (a card or feature use: its run withheld it through `hopeFear`), else none.
    */
   fearWithheld?: number;
+  /** R2 (plan WR): the action roll was a critical. In R2 Manual the GM gets the "gain 1 Hope and clear 1 Stress?" note. */
+  critical?: boolean;
+  /** The PCs the roll applied to (a Tag Team: 2), for R2's note ("each gain"). Default 1. */
+  pcs?: number;
 };
 
 /**
@@ -98,7 +116,7 @@ export type PcActionRoll = {
  * planned Underwater breath step (`breath`: the countdown to tick and by how much, the PCs who mark a Stress; plan OE).
  */
 type Note =
-  | { ruleId: "spotlightToGm" | "hopeFearFromRolls"; summary: string }
+  | { ruleId: "spotlightToGm" | "hopeFearFromRolls" | "criticalSuccess"; summary: string }
   | { ruleId: "spotlightTracker"; summary: string; tokenOf: Id<"characters"> }
   | { ruleId: "underwater"; summary: string; breath: BreathStep };
 
@@ -181,6 +199,7 @@ export async function planPcActionRoll(ctx: QueryCtx, campaign: Doc<"campaigns">
   if (breath !== null) out.notes.push({ ruleId: "underwater", summary: `${roll.name}: breath`, breath });
   const fear = roll.fearWithheld ?? (roll.withFear ? fearWithheldBy(hopeFearModeOf(campaign), roll.kind, "successFear") : 0);
   if (fear > 0) out.notes.push({ ruleId: "hopeFearFromRolls", summary: `${roll.name} rolled with Fear: gain ${fear} Fear?` });
+  if (roll.critical === true && criticalModeOf(campaign) === "manual") out.notes.push({ ruleId: "criticalSuccess", summary: criticalNote(roll.name, roll.pcs) });
   const reason = roll.withFear ? "rollWithFear" : !roll.success ? "failedRoll" : null;
   if (reason === null || (await gmHoldsSpotlight(ctx, campaign._id))) return out;
   if (ruleMode(campaign, "spotlightToGm") === "manual") {

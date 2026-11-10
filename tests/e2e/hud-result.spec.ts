@@ -59,12 +59,14 @@ test("a cast card's result: art, name, roll, tag, Hope / Fear dice, the targetâ€
     expect(Math.round(box.width)).toBe(440);
     await expectNoSeriousA11yViolations(player);
 
-    // The GM's screen does not show the player's result (it is the player's own panel).
+    // The GM's screen opened after the use shows nothing old (the GM's result feed starts from what it saw first).
     await gm.goto(s.url);
     await expect(gm.getByTestId("combat-hud")).toBeVisible();
     await expect(gm.getByTestId("hud-result")).toHaveCount(0);
 
-    // A new Use clears the last result: Esc on the new pick does not bring it back.
+    // A new Use clears the last result: Esc on the new pick does not bring it back. A roll with Fear handed the GM the
+    // spotlight, and players wait while the GM holds it (rule switch RS2): hand it back first (dcm-mag2).
+    await s.client.mutation(api.combatSpotlight.handToParty, { campaignId: s.campaignId, idempotencyKey: crypto.randomUUID() });
     await fanCard(player, "Unleash Chaos").hover();
     await fanCard(player, "Unleash Chaos").getByRole("button", { name: "Use Unleash Chaos" }).click();
     await expect(pickPanel(player)).toBeVisible();

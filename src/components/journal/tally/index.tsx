@@ -9,6 +9,7 @@ import { BrandButton } from "@/components/brand/buttons";
 import { CharacterPortrait } from "@/components/party/portrait";
 import { errorMessage } from "@/lib/convex-errors";
 import { leastSpotlightLine } from "@/lib/domain/journal";
+import { barPercent, resetPending, tallyTiles } from "@/lib/journal/tally";
 
 import { api } from "../../../../convex/_generated/api";
 import type { PartyMember } from "../../../../convex/charactersReads";
@@ -16,7 +17,7 @@ import type { SpotlightEntry } from "../../../../convex/sessionPlay";
 import type { SessionTallyProps, SpotlightProps } from "../slots";
 import { Card } from "../ui";
 
-import { barPercent, resetPending, tallyTiles } from "./model";
+import { TALLY_ICONS } from "./model";
 
 /**
  * Session tally and Spotlight (JT, contract: ../slots.ts; design reference/designs/journal/journal_views.jpg, Log &
@@ -37,8 +38,9 @@ export function SessionTally({ campaignId, sessionId }: SessionTallyProps) {
       ) : (
         <>
           <ul className="jt-tiles" aria-label="Session tally counts">
-            {tallyTiles(tally.fearHidden).map(({ key, label, Icon }) => {
+            {tallyTiles(tally.fearHidden).map(({ key, label }) => {
               const value = tally[key];
+              const Icon = TALLY_ICONS[key];
               return (
                 <li key={key} className="jt-tile" data-tile={key}>
                   <Icon aria-hidden="true" className="jt-tile-icon" />

@@ -27,7 +27,7 @@ import { maxDamage, parseDamage, type ParsedDamage } from "../adversaries/index"
 import type { Cost, DamageType } from "../card-effects/types";
 import { rollD20 } from "../card-effects/run";
 import { resolveHits, type HitResult } from "../combat-actions/hits";
-import { rollDamage, type Rng } from "../dice/index";
+import { rollDamage, type CriticalDamageMode, type Rng } from "../dice/index";
 import type { RollRecord } from "../duality";
 import { hordeHalved } from "../encounters/damage";
 import { versusMods, type CreatureInfo, type PassiveSheet, type PassiveState } from "../feature-effects/passives";
@@ -223,13 +223,14 @@ export function damageTypeOf(parsed: Pick<ParsedDamage, "type">): DamageType | "
 
 /**
  * Rolls a stat block's damage text ("2d8+2 phy", "2 phy", "40 direct phy"). A critical starts from the dice's maximum
- * (AR2, CB p.148); flat damage is not rolled and gains nothing. Null for unreadable text.
+ * (AR2, CB p.148); flat damage is not rolled and gains nothing. Null for unreadable text. `mode`: R10 `criticalDamage`
+ * (plan rule-switches WR); Manual rolls a critical like a normal hit (`criticalBonus` is what it left out).
  */
-export function adversaryDamage(text: string, critical: boolean, rng: Rng): AdversaryDamageResult | null {
+export function adversaryDamage(text: string, critical: boolean, rng: Rng, mode: CriticalDamageMode = "book"): AdversaryDamageResult | null {
   const parsed = parseDamage(text);
   if (!parsed) return null;
   const record: RollRecord = parsed.dice
-    ? rollDamage({ dice: [parsed.dice], flat: parsed.modifier, critical }, rng)
+    ? rollDamage({ dice: [parsed.dice], flat: parsed.modifier, critical }, rng, mode)
     : { kind: "damage", dice: [], modifier: parsed.modifier, total: Math.max(0, parsed.modifier), outcome: "none", manual: false };
   return { record, type: damageTypeOf(parsed), direct: parsed.direct };
 }

@@ -21,7 +21,8 @@ import { derivedDefense, derivedThresholds } from "../src/lib/domain/characters/
 import { applySlotBonuses } from "../src/lib/domain/characters/slots";
 import { negateMinor } from "../src/lib/domain/session-features/index";
 import { spellcastTraitOf } from "../src/lib/domain/characters/spellcast";
-import { addCard, cardTakeProblem, sourcesFor } from "../src/lib/domain/level-up/index";
+import { aboveLevelNote, addCard, cardTakeProblem, isAboveLevel, sourcesFor } from "../src/lib/domain/level-up/index";
+import { changeTransformation, loadoutMax, transformationName } from "../src/lib/domain/transformations/index";
 import { holdsPurposefulDesign } from "../src/lib/domain/dice/index";
 import { assertEquipment, assertSource, IKONIS_ONLY } from "../src/lib/equipment-rules";
 import { appError, RuleError } from "../src/lib/errors/app-error";
@@ -43,7 +44,7 @@ import { characterSheetSchema, type CharacterSheet, type CharacterSheetInput } f
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { installedAugments, seedMotherboard } from "./characterExtras";
-import { logAction } from "./lib/actionLog";
+import { logAction, postWakeNote } from "./lib/actionLog";
 import { moveCardFor, writeHandHidden } from "./lib/cardHand";
 import { withoutCondition } from "./lib/conditionMarkers";
 import { featureScope } from "./sessionFeatures";
@@ -575,6 +576,63 @@ export const choosePurposefulDesign = keyedUserMutation({
 });
 
 /**
+ * GM only (bead dcm-psg9, user 2026-11-09): gives the character a Hope & Fear transformation (HF p.34-40), or removes it
+ * with `transformationId: null`. "A PC can have only one transformation" (HF p.34), so a new one replaces the current
+ * one (the UI confirms first). Allowed in any campaign with Hope & Fear content on (MECHANIC_DISABLED otherwise).
+ *
+ * Dark Heart of Andaluria with the transformations option on (HF p.153: "The character gains the Reanimated
+ * transformation and their maximum loadout is reduced to one"): gaining Reanimated stores `loadoutMax: 1` and keeps the
+ * first loadout card, the rest go to the vault; losing Reanimated restores the normal five (`changeTransformation`).
+ * A Shapeshifter ancestry keeps Shapeshifter (INVALID). The same transformation again is a no-op. Each change writes one
+ * public, undoable feed row with the sheet before (as the GM's Purposeful Design move).
+ */
+export const setTransformation = userMutation({
+  args: { characterId: v.id("characters"), transformationId: v.union(v.string(), v.null()) },
+  returns: v.object({ transformationId: v.union(v.string(), v.null()), loadoutMax: v.number(), vaulted: v.array(v.string()) }),
+  handler: async (ctx, { characterId, transformationId }) => {
+    const { campaign, character } = await loadCharacter(ctx, ctx.user, characterId, "owner", "owner");
+    const options = resolveOptions(campaign.frameId, campaign.options);
+    if (!options.hopeAndFear) throw appError("MECHANIC_DISABLED", "Hope & Fear content is off in this campaign.");
+    const sheet = readSheet(character.sheet);
+    const current = sheet.transformationId ?? null;
+    if (current === transformationId) return { transformationId, loadoutMax: loadoutMax(sheet), vaulted: [] };
+    // `transformations` is offered only by the Dark Heart of Andaluria (src/lib/frames/options.ts), so it is HF p.153's switch.
+    const { sheet: next, vaulted } = changeTransformation(sheet, transformationId, { andaluriaReanimated: options.transformations });
+    // Reanimated brings a dead PC back (HF p.153, user 2026-11-09): the same step sets them Active, held to one active
+    // character per player like setStatus. Status changes aren't undoable (setStatus isn't either), so undo keeps Active.
+    const revived = transformationId === "reanimated" && character.status === "dead";
+    if (revived) {
+      await assertOneActive(ctx, campaign, character.ownerId, character._id);
+      await ctx.db.patch("characters", character._id, { status: "active", away: undefined, updatedAt: Date.now() });
+    }
+    await saveSheet(ctx, character._id, next, character);
+    const change =
+      transformationId === null
+        ? `${sheet.name} is no longer ${transformationName(current!)}`
+        : current === null
+          ? `${sheet.name} gains the ${transformationName(transformationId)} transformation`
+          : `${sheet.name}'s ${transformationName(current)} transformation becomes ${transformationName(transformationId)}`;
+    const loadout =
+      next.loadoutMax !== undefined && sheet.loadoutMax === undefined
+        ? `; maximum loadout ${next.loadoutMax}${vaulted.length > 0 ? `, ${vaulted.length} ${vaulted.length === 1 ? "card" : "cards"} to the vault` : ""}`
+        : sheet.loadoutMax !== undefined && next.loadoutMax === undefined
+          ? "; maximum loadout back to 5"
+          : "";
+    await logAction(ctx, {
+      campaignId: campaign._id,
+      characterId: character._id,
+      actorId: ctx.user._id,
+      kind: "feature",
+      visibility: "public",
+      summary: `${change}${revived ? " and is back as Active" : ""}${loadout}`,
+      before: sheet,
+      undoable: true,
+    });
+    return { transformationId, loadoutMax: loadoutMax(next), vaulted };
+  },
+});
+
+/**
  * Marks or clears Hit Points, Stress, Hope, Armor Slots and scars by a delta,
  * within each track's slots. Extra Stress beyond full marks one Hit Point
  * (Core, "Marking Stress"). Owner or GM.
@@ -605,6 +663,8 @@ export const adjustResource = userMutation({
       next.hope = Math.min(next.hope, hopeMax(next.scars, s.hopeSlotBonus));
     }
     await saveSheet(ctx, character._id, next);
+    // C4 Manual (plan rule-switches WD): clearing a Hit Point kept an unconscious PC down; the GM is asked.
+    await postWakeNote(ctx, campaign._id, character._id, ctx.user._id);
     if (resource === "stress" && delta > 0 && s.stress + delta > s.stressMax && modes.stressOverflow === "manual") {
       await postRuleNote(ctx, campaign, { ruleId: "stressOverflow", summary: `${s.name}: Stress full, mark 1 HP?`, actorId: ctx.user._id });
     }
@@ -741,10 +801,17 @@ export const takeCard = userMutation({
   handler: async (ctx, { characterId, cardId }) => {
     const { campaign, character, sheet: s } = await editable(ctx, ctx.user, characterId);
     const sources = sourcesFor({ allowExpansion: resolveOptions(campaign.frameId, campaign.options).hopeAndFear });
-    const problem = cardTakeProblem(s, cardId, sources);
+    // L3 (rule switches WS, CB p.111): Manual takes a card above the character's reach and tells the GM.
+    const mode = ruleMode(campaign, "domainCardLevels");
+    const problem = cardTakeProblem(s, cardId, sources, mode);
     if (problem) invalid(problem.message);
     await assertCardsUnshared(ctx, campaign, [cardId], "INVALID", character._id);
-    await saveSheet(ctx, character._id, { ...s, domainCards: addCard(s.domainCards, cardId) });
+    await saveSheet(ctx, character._id, { ...s, domainCards: addCard(s.domainCards, cardId, loadoutMax(s)) });
+    const card = getDomainCard(cardId);
+    if (mode === "manual" && card && isAboveLevel(s, card, s.level)) {
+      // takeCard writes no log row, so the note has no group (never undoable) and no character.
+      await postRuleNote(ctx, campaign, { ruleId: "domainCardLevels", summary: aboveLevelNote(s.name, card, s.level), actorId: ctx.user._id });
+    }
     return null;
   },
 });

@@ -3,7 +3,7 @@
 import { MapPin, PenLine, X } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
-import { TOME_CHAPTERS, type Tome, type TomeChapterId } from "@/lib/frames/tomes";
+import { CUSTOM_CHAPTERS, TOME_CHAPTERS, type Tome, type TomeChapterId, type TomeRule } from "@/lib/frames/tomes";
 import { cn } from "@/lib/utils";
 
 // Colours from the Tome* boards.
@@ -12,27 +12,13 @@ const RUBRIC = "#8e2b2b";
 
 export type CustomTomeText = { overview: string; incident: string; mechanics: string };
 
-/** GM notes and prompts for a custom campaign's tome (TomeCustom board). */
-const CUSTOM_CHAPTERS: Record<TomeChapterId, { note: string; must: string; placeholder: string }> = {
-  overview: {
-    note: "Share your overview with your players before they build characters: the world, its history and what makes it different.",
-    must: "This is your own campaign, so there is no book text here. You need to write your own lore and setting text for this chapter.",
-    placeholder: "Write your setting here: the world, its history, its peoples, and the pitch you read to your players…",
-  },
-  incident: {
-    note: "The inciting incident is the event that pulls the party into the story in your first session.",
-    must: "Write your own inciting incident: the event that throws the party together, where the first session starts, and the key figures involved.",
-    placeholder: "What happens at the start of the first session? Where are the characters, who do they meet, and what goes wrong?",
-  },
-  mechanics: {
-    note: "Campaign mechanics are the special rules that apply only to this campaign. They are optional, but they make a frame feel unique.",
-    must: "No mechanics come with a custom campaign. You need to write your own custom mechanics: special resources, countdowns, environment rules or changes to the core rules.",
-    placeholder: "e.g. 1. Corruption: when a PC rolls with Fear in a cursed place, they mark a Corruption token…",
-  },
-};
-
 type Content =
-  | { kind: "published"; tome: Tome }
+  | {
+      kind: "published";
+      tome: Tome;
+      /** A control under a mechanics rule (the GM's "Give to…" on Andaluria's transformations, bead dcm-psg9), or null. */
+      ruleAction?: (rule: TomeRule) => ReactNode;
+    }
   | {
       kind: "custom";
       text: CustomTomeText;
@@ -62,7 +48,7 @@ function Prose({ paragraphs }: { paragraphs: string[] }) {
   );
 }
 
-function PublishedChapter({ tome, chapter }: { tome: Tome; chapter: TomeChapterId }) {
+function PublishedChapter({ tome, chapter, ruleAction }: { tome: Tome; chapter: TomeChapterId; ruleAction?: (rule: TomeRule) => ReactNode }) {
   if (chapter === "mechanics") {
     return (
       <div className="flex flex-col gap-3">
@@ -77,6 +63,7 @@ function PublishedChapter({ tome, chapter }: { tome: Tome; chapter: TomeChapterI
             <div className="flex min-w-0 flex-col gap-1">
               <span className="font-display text-[16px] font-bold">{rule.head}</span>
               <span className="text-[18px] leading-[1.55] whitespace-pre-line">{rule.text}</span>
+              {ruleAction?.(rule)}
             </div>
           </div>
         ))}
@@ -285,7 +272,7 @@ export function TomeBook({
   const sub = content.kind === "published" && chapter === "mechanics" ? content.tome.mechanics.sub : undefined;
 
   let body: ReactNode;
-  if (content.kind === "published") body = <PublishedChapter tome={content.tome} chapter={chapter} />;
+  if (content.kind === "published") body = <PublishedChapter tome={content.tome} chapter={chapter} ruleAction={content.ruleAction} />;
   else body = <CustomChapter key={chapter} chapter={chapter} content={content} />;
 
   return (

@@ -192,6 +192,8 @@ const d5SheetFields = {
   cardTokens: v.optional(v.array(v.object({ cardId: v.string(), count: v.number() }))),
   /** Named creature tokens on the PC (V4, dcm-wiwi; zod creatureTokens). */
   creatureTokens: v.optional(v.array(v.object({ name: v.string(), count: v.number() }))),
+  /** A lowered maximum loadout (Andaluria's Reanimated, HF p.153; bead dcm-psg9; zod loadoutMax). Absent = 5. */
+  loadoutMax: v.optional(v.number()),
 };
 
 /** The current sheet (`characterSheetSchema`, version 2) as queries return it. Keep in step with the zod schema. */

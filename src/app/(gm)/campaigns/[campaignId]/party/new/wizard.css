@@ -17,6 +17,17 @@
 .wz-tag{align-self:flex-start;padding:2px 10px;border-radius:999px;background:#e3d2ad;font-family:var(--font-display);font-size:12px;font-weight:700;color:#4a3826}
 .wz-lead{margin:0;font-size:17px;line-height:1.5;color:#3a2c1c}
 .wz-note{margin:0;padding:8px 12px;border-radius:8px;background:#efe3c4;font-size:15px;font-style:italic;color:#5a4428}
+/* The wizard's parchment buttons (the pre-glass design, kept on this page by request 2026-11-09). */
+.wz-ghost{min-height:44px;padding:0 16px;border-radius:999px;border:1px solid #3d5e2e;background:transparent;color:#3d5e2e;font-family:var(--font-display);font-size:13px;font-weight:700;cursor:pointer}
+.wz-ghost:hover{background:rgba(61,94,46,.08)}
+.wz-outline{min-height:50px;padding:0 22px;border-radius:999px;border:1px solid #b9a27a;background:transparent;color:#2a1f14;font-family:var(--font-display);font-size:15px;cursor:pointer;display:inline-flex;align-items:center}
+.wz-outline:hover{background:rgba(42,31,20,.06)}
+.wz-primary{min-height:50px;padding:0 26px;border-radius:999px;border:none;font-family:var(--font-display);font-size:15px;font-weight:700;cursor:pointer;background:#3d5e2e;color:#f3f7ee}
+.wz-primary:hover:not([aria-disabled="true"]){background:#34512a}
+.wz-primary[aria-disabled="true"]{cursor:not-allowed;background:#cdbf9f;color:#6a5a40}
+.wz-close{width:44px;height:44px;flex:none;border-radius:50%;border:1px solid #b9a27a;background:transparent;color:#2a1f14;display:flex;align-items:center;justify-content:center}
+.wz-close:hover{background:rgba(42,31,20,.06)}
+.wz-ghost:focus-visible,.wz-outline:focus-visible,.wz-primary:focus-visible,.wz-close:focus-visible{outline:2px solid #3d5e2e;outline-offset:2px}
 /* Native radios and checkboxes stay in the DOM (keyboard + screen readers); the label is the visible control. */
 .wz-choice{position:relative;cursor:pointer}
 .wz-choice>input{position:absolute;top:50%;left:50%;opacity:0;width:1px;height:1px;margin:0}
@@ -94,5 +105,3 @@
 .wz-portrait{width:100%;aspect-ratio:3/4;border-radius:10px;background-color:#2a2416;background-size:cover}
 .wz-select{min-height:44px;padding:0 12px;border-radius:8px;border:1px solid #b9a27a;background:#fbf5e6;color:#2a1f14;font-family:var(--font-serif);font-size:17px}
 .wz-req{font-size:15px;font-style:italic;color:#7a3a1a}
-/* Glass buttons on the parchment: the disabled glass is translucent, which turns muddy grey on paper; make it the dark glass it is on the app's dark pages. */
-.wz-paper .gb:disabled,.wz-paper .gb[aria-disabled="true"]{background:#0d1417}

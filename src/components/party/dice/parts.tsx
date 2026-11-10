@@ -1,7 +1,8 @@
 "use client";
 
 import type { RolledDie, RollRecord } from "@/lib/domain/duality";
-import { OUTCOME_LABEL } from "@/lib/domain/dice";
+// tag-team.tsx imports `rollHeadline` from here; it lives in src/lib/party/roll-copy.ts (shared with the phone app).
+export { rollHeadline } from "@/lib/party/roll-copy";
 
 import { useDice3dAvailable, useDiceSettings } from "./settings";
 
@@ -42,13 +43,6 @@ export function DiceFaces({ dice }: { dice: readonly RolledDie[] }) {
       ))}
     </ul>
   );
-}
-
-/** "17 with Hope · success" style headline of a roll. */
-export function rollHeadline(roll: RollRecord): string {
-  const outcome = roll.outcome === "none" ? "" : ` · ${OUTCOME_LABEL[roll.outcome]}`;
-  const vs = roll.difficulty !== undefined ? ` vs ${roll.difficulty}` : "";
-  return `${roll.total}${vs}${outcome}`;
 }
 
 /** The per-device 3D and sound toggles (decision 3); no 3D toggle while the 3D dice switch is off for the user (AF1). */
