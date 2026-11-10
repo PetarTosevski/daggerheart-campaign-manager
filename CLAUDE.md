@@ -49,12 +49,12 @@ Every build plan is a list of tracer bullets, written and run as
 
 - The plan lives in `.omc/plans/<plan>.yaml`; each tracer has a `goal`,
   `depends_on`, `owns`, `reads` and `acceptance`.
-- Each tracer runs in its own git worktree, branched from `rebuild` (first
-  step, before any edit: `git switch -C <worktree branch> rebuild`).
+- Each tracer runs in its own git worktree, branched from `master` (first
+  step, before any edit: `git switch -C <worktree branch> master`).
 - A tracer changes only the files in its `owns` list
   (`pnpm tracer:guard <plan> <tracer>` checks this), runs lint, typecheck and
   tests, commits once on its branch and never pushes.
-- Only the orchestrator merges tracers into `rebuild`: in dependency order,
+- Only the orchestrator merges tracers into `master`: in dependency order,
   one squashed commit per tracer; then it regenerates `convex/_generated` and
   reruns the checks.
 

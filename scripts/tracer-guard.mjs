@@ -3,7 +3,7 @@
 // base must match one of the tracer's `owns` globs, and no file under
 // convex/_generated/** may be changed.
 //
-//   node scripts/tracer-guard.mjs <plan.yaml> <tracerId> [baseRef=rebuild] [headRef=HEAD]
+//   node scripts/tracer-guard.mjs <plan.yaml> <tracerId> [baseRef=master] [headRef=HEAD]
 //
 // Changed files = `git diff --name-only --no-renames $(git merge-base base head) head`
 // (renames count as a deletion plus an addition, so both paths must be owned).
@@ -40,9 +40,9 @@ export function changedFiles(baseRef, headRef) {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  const [planFile, tracerId, baseRef = "rebuild", headRef = "HEAD"] = process.argv.slice(2);
+  const [planFile, tracerId, baseRef = "master", headRef = "HEAD"] = process.argv.slice(2);
   if (!planFile || !tracerId) {
-    console.error("usage: node scripts/tracer-guard.mjs <plan.yaml> <tracerId> [baseRef=rebuild] [headRef=HEAD]");
+    console.error("usage: node scripts/tracer-guard.mjs <plan.yaml> <tracerId> [baseRef=master] [headRef=HEAD]");
     process.exit(2);
   }
   try {
