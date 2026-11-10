@@ -13,16 +13,18 @@
  */
 import { v } from "convex/values";
 
+import { scarNote } from "../src/lib/domain/death/index";
 import { adjustWither, FEAR_DIE_SIDES, gainWither, WITHER_MAX } from "../src/lib/domain/wither/index";
 import { appError } from "../src/lib/errors/app-error";
 import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
-import { logAction } from "./lib/actionLog";
+import { logAction, newGroupId } from "./lib/actionLog";
 import { loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { rollDie } from "./lib/dice";
 import { keyedGmMutation } from "./lib/functions";
 import { assertMechanicEnabled } from "./lib/mechanics";
+import { postRuleNote, ruleMode } from "./lib/ruleModes";
 import { witherGainValidator } from "./lib/validators/wither";
 
 export { witherGainValidator };
@@ -38,13 +40,22 @@ export async function gainWitherToken(
   { campaignId, characterId, sheet, actorId, source }: { campaignId: Id<"campaigns">; characterId: Id<"characters">; sheet: CharacterSheet; actorId: Id<"users">; source: string },
 ) {
   const fearDie = rollDie(FEAR_DIE_SIDES);
-  const gain = gainWither(sheet, fearDie);
+  // X3 Scars in Manual (user 2026-11-10): a Wither scar is the GM's to mark too; the note joins this row's group.
+  const campaign = await ctx.db.get("campaigns", campaignId);
+  const scarsManual = campaign !== null && ruleMode(campaign, "scars") === "manual";
+  const gain = gainWither(sheet, fearDie, scarsManual);
   await saveSheet(ctx, characterId, gain.sheet);
-  const outcome = gain.scarred ? `scar gained, tokens cleared${gain.sheet.journeyEnds ? "; the last Hope slot is gone" : ""}` : `${gain.tokens} token${gain.tokens === 1 ? "" : "s"}`;
+  const outcome = !gain.scarred
+    ? `${gain.tokens} token${gain.tokens === 1 ? "" : "s"}`
+    : scarsManual
+      ? "tokens cleared, a scar for the GM to mark"
+      : `scar gained, tokens cleared${gain.sheet.journeyEnds ? "; the last Hope slot is gone" : ""}`;
+  const noteGroup = scarsManual && gain.scarred ? newGroupId() : undefined;
   const entryId = await logAction(ctx, {
     campaignId,
     characterId,
     actorId,
+    ...(noteGroup === undefined ? {} : { groupId: noteGroup }),
     kind: "wither",
     visibility: "public",
     summary: `${sheet.name}: Wither token (${source}); Fear Die ${fearDie} vs ${gain.tokens}: ${outcome}`,
@@ -52,6 +63,8 @@ export async function gainWitherToken(
     before: sheet,
     undoable: true,
   });
+  // No characterId: the note must not become the character's latest row (the sheet's Undo reads that row).
+  if (noteGroup !== undefined && campaign !== null) await postRuleNote(ctx, campaign, { ruleId: "scars", summary: scarNote(sheet.name), groupId: noteGroup, actorId });
   return { tokens: gain.tokens, fearDie, scarred: gain.scarred, journeyEnds: gain.sheet.journeyEnds, entryId };
 }
 

@@ -175,19 +175,17 @@ type CardAccess = Pick<CharacterSheet, "classId" | "multiclass">;
 /** L3 "Domain card levels" (CB p.111): Book keeps cards within reach; Manual takes any card of the character's domains. */
 export type DomainCardLevelsMode = ModeOf<"domainCardLevels">;
 
-/** No domain card is above this level, so Manual's reach is every card of a domain in reach. */
-const ANY_CARD_LEVEL = Number.POSITIVE_INFINITY;
-
 /**
  * The highest level of `card` the character may take at `level` under `cap`, or 0 when its domain is out of reach.
- * L3 Manual: any level of a domain in reach (the domains themselves still bound it).
+ * L3 Manual: any level of a domain in reach up to `cap`: the "additional domain card" pick keeps its tier cap (4 in tier
+ * 2, 7 in tier 3; user 2026-11-10), the level's own card and the Domain Deck pass `MAX_LEVEL`.
  */
 function cardLimit(sheet: CardAccess, domain: string, level: number, cap: number, mode: DomainCardLevelsMode = "book"): number {
   const cls = CLASSES.find((c) => c.id === sheet.classId);
   const inClass = cls?.domains.some((d) => d === domain) ?? false;
   const inMulticlass = sheet.multiclass?.domainId === domain;
   if (!inClass && !inMulticlass) return 0;
-  if (mode === "manual") return ANY_CARD_LEVEL;
+  if (mode === "manual") return cap;
   return inClass ? Math.min(level, cap) : Math.min(Math.ceil(level / 2), cap);
 }
 

@@ -48,10 +48,14 @@ export type WitherGain<T> = {
   scarred: boolean;
 };
 
-/** One Wither token, then the Fear Die: at or below the tokens → a scar and the tokens cleared (CB 261). */
-export function gainWither<T extends WitherSheet>(sheet: T, fearDie: number): WitherGain<T> {
+/**
+ * One Wither token, then the Fear Die: at or below the tokens → a scar and the tokens cleared (CB 261). `scarsManual`
+ * (X3 Scars in Manual, user 2026-11-10: Wither scars follow it): the tokens still clear but no scar is crossed out; the
+ * caller tells the GM to mark it.
+ */
+export function gainWither<T extends WitherSheet>(sheet: T, fearDie: number, scarsManual = false): WitherGain<T> {
   const tokens = Math.min(WITHER_MAX, sheet.wither + 1);
-  if (fearDieScars(fearDie, tokens)) return { sheet: addScar({ ...sheet, wither: 0 }), tokens, fearDie, scarred: true };
+  if (fearDieScars(fearDie, tokens)) return { sheet: scarsManual ? { ...sheet, wither: 0 } : addScar({ ...sheet, wither: 0 }), tokens, fearDie, scarred: true };
   return { sheet: { ...sheet, wither: tokens }, tokens, fearDie, scarred: false };
 }
 

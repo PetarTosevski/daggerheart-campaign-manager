@@ -44,6 +44,13 @@ describe("L3 domain card levels", () => {
     expect(cardsWithin(warrior, 2, 10, ["core"], "manual").some((c) => c.id === blade4.id)).toBe(true);
   });
 
+  it("Manual keeps the additional domain card pick's tier cap (user 2026-11-10: 4 in tier 2)", () => {
+    const blade5 = cardsForDomains(["blade"], 5).find((c) => c.level === 5)!;
+    expect(cardsWithin(warrior, 2, 4, ["core"], "manual").some((c) => c.id === blade4.id)).toBe(true);
+    expect(cardsWithin(warrior, 2, 4, ["core"], "manual").some((c) => c.id === blade5.id)).toBe(false);
+    expect(cardsWithin(warrior, 2, 10, ["core"], "manual").some((c) => c.id === blade5.id)).toBe(true);
+  });
+
   it("marks cards above the Book reach and words the GM's note", () => {
     expect(isAboveLevel(warrior, blade4, 2)).toBe(true);
     expect(isAboveLevel(warrior, blade4, 4)).toBe(false);
