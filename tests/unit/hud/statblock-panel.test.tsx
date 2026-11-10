@@ -72,8 +72,9 @@ vi.mock("@/components/combat-map/hud/statblock/fear-confirm", () => ({
 }));
 vi.mock("@/components/combat-map/actions/adversary/sight", () => ({ useLiveSight: () => null }));
 vi.mock("@/components/adversaries/tracker/actions/feature-use", () => ({
-  FeatureUse: ({ feature, onUse, disabled }: { feature: string; onUse: (ask: unknown) => void; disabled: boolean }) => (
-    <button type="button" disabled={disabled} onClick={() => onUse(featureAsks[feature] ?? null)}>
+  FeatureUse: ({ feature, fearCost, onUse, disabled }: { feature: string; fearCost?: number; onUse: (ask: unknown) => void; disabled: boolean }) => (
+    // The real Use's aria-label: "Use Coup de Grace (1 Fear)" when a fearCost is passed.
+    <button type="button" aria-label={`Use ${feature}${fearCost ? ` (${fearCost} Fear)` : ""}`} disabled={disabled} onClick={() => onUse(featureAsks[feature] ?? null)}>
       Use {feature}
     </button>
   ),
@@ -201,7 +202,7 @@ describe("the stat block", () => {
     expect(screen.getByRole("button", { name: "End Vulnerable · 1 Fear" }).textContent).toBe("End · 1 Fear");
     // Features: kind, Fear cost, Use; Momentum is automatic (no Use).
     expect(screen.getByRole("img", { name: "1 Fear" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Use Coup de Grace" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Use Coup de Grace (1 Fear)" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Use Momentum" })).toBeNull();
     expect(screen.getAllByText("Reaction")).toHaveLength(1);
     // First spotlight of the GM turn: free.
@@ -355,7 +356,7 @@ describe("the stat block", () => {
       trigger: null,
     };
     renderBlock();
-    act(() => fireEvent.click(screen.getByRole("button", { name: "Use Coup de Grace" })));
+    act(() => fireEvent.click(screen.getByRole("button", { name: "Use Coup de Grace (1 Fear)" })));
     expect(probe.api!.session!.spec.id).toBe(`gm-attack:${LT_INSTANCE}:Coup de Grace`);
     expect(probe.api!.session!.spec.source).toEqual({ kind: "adversary", name: "Coup de Grace" });
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Use Tactician" })));
@@ -373,6 +374,40 @@ describe("the stat block", () => {
     queries["encounters:list"] = { active: [], ended: [], moreEnded: false };
     renderBlock();
     expect(screen.getByText(/No encounter is running/)).toBeTruthy();
+  });
+});
+
+describe("F5 fearFeatures on the stat block (dcm-n7kb)", () => {
+  const coupRow = () => screen.getByText("Coup de Grace", { selector: "b" }).closest("li")!;
+
+  it("Book: the Fear pill and '(1 Fear)' label; at 0 Fear Use is blocked with the reason", () => {
+    seed({ fear: 0 });
+    queries["ruleSettings:get"] = { modes: { fearFeatures: "book" } };
+    renderBlock();
+    const row = coupRow();
+    expect(row.querySelector(".hsb-af-cost")).not.toBeNull();
+    expect(within(row).queryByTestId("hud-statblock-feature-by-hand")).toBeNull();
+    const use = within(row).getByRole("button", { name: "Use Coup de Grace (1 Fear)" });
+    expect((use as HTMLButtonElement).disabled).toBe(true);
+    expect(within(row).getByTestId("hud-statblock-feature-why").textContent).toBe("This needs 1 Fear. You have 0.");
+  });
+
+  it("Manual: no pill or label, 'Spend 1 Fear by hand', Use enabled at 0 Fear and sent without spendFear", async () => {
+    seed({ fear: 0 });
+    queries["ruleSettings:get"] = { modes: { fearFeatures: "manual" } };
+    renderBlock();
+    const row = coupRow();
+    expect(row.querySelector(".hsb-af-cost")).toBeNull();
+    expect(within(row).getByTestId("hud-statblock-feature-by-hand").textContent).toBe("Spend 1 Fear by hand");
+    expect(within(row).queryByTestId("hud-statblock-feature-why")).toBeNull();
+    const use = within(row).getByRole("button", { name: "Use Coup de Grace" });
+    expect((use as HTMLButtonElement).disabled).toBe(false);
+    await act(async () => fireEvent.click(use));
+    await flush();
+    expect(screen.queryByTestId("fear-confirm")).toBeNull();
+    const sent = calls.find((c) => c.name === "adversaryActions:useFeature")!;
+    expect(sent.args).toMatchObject({ instanceId: LT_INSTANCE, feature: "Coup de Grace", targets: [] });
+    expect(sent.args).not.toHaveProperty("spendFear");
   });
 });
 
@@ -474,12 +509,12 @@ describe("Dark-Hearted switches itself off after one roll (FP6)", () => {
     featureAsks["Coup de Grace"] = COUP;
     answers["adversaryActions:useFeature"] = [RESOLVED];
     renderBlock();
-    act(() => fireEvent.click(screen.getByRole("button", { name: "Use Coup de Grace" })));
+    act(() => fireEvent.click(screen.getByRole("button", { name: "Use Coup de Grace (1 Fear)" })));
     arm();
     await act(() => sendIt());
     expect(calls.find((c) => c.name === "adversaryActions:useFeature")!.args).toMatchObject({ feature: "Coup de Grace", darkHearted: true });
     expect(probe.api!.session).toBeNull();
-    act(() => fireEvent.click(screen.getByRole("button", { name: "Use Coup de Grace" })));
+    act(() => fireEvent.click(screen.getByRole("button", { name: "Use Coup de Grace (1 Fear)" })));
     expect(probe.api!.session!.options[DARK]).toBe(false);
   });
 });

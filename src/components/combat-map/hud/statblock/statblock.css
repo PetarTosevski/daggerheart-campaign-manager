@@ -281,6 +281,11 @@
   background: #5b4a8f;
   color: #fff;
 }
+.hsb-af-note {
+  font-size: 11.5px;
+  font-style: italic;
+  color: #6e5430;
+}
 .hsb-af-use {
   margin-left: auto;
 }

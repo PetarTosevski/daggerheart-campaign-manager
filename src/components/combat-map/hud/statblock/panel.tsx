@@ -8,6 +8,7 @@ import type { FunctionReturnType } from "convex/server";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { crossedBy } from "@/lib/domain/adversary-actions/path-targets";
+import { fearByHandText } from "@/lib/domain/adversary-actions/rule-notes";
 import type { Range } from "@/lib/domain/card-effects/types";
 import { spotlightLimit, spotlightStatus, spotlightsThisTurn } from "@/lib/domain/encounters/spotlight";
 
@@ -199,6 +200,9 @@ function StatBlockBody({
   const d8Manual = modes?.adversaryDefeated === "manual";
   // Plan rule-switches WF: F4 Manual (an Experience's Fear by hand), C4 Book (unconscious PCs not pre-picked), W3 Tier 3.
   const experienceFree = modes?.adversaryExperienceFear === "manual";
+  // dcm-n7kb: F5 `fearFeatures` Manual (CB p.154): the server asks and spends no Fear for a feature (the GM spends it by
+  // hand), so no cost pill or "(N Fear)" label, a "Spend N Fear by hand" note, and Use never blocked for lack of Fear.
+  const featureFearByHand = modes?.fearFeatures === "manual";
   const skipUnconscious = (modes?.unconscious ?? "book") === "book";
   const darkHearted = useQuery(api.adversaryActions.darkHearted, { campaignId }) === true;
   const ends = useQuery(api.combatEffects.fearEnds, { campaignId, target: { kind: "instance", instanceId: instance._id } });
@@ -450,14 +454,23 @@ function StatBlockBody({
         </h3>
         <ul className="hsb-fts">
           {block.features.map((f, i) => {
-            // A Fear feature (CB p.154) or an action needing a spotlight the GM can't pay: disabled with the reason.
-            const featureWhy = featureUsable(f) ? adversaryActBlocked(who, f.fearCost ?? 0, f.kind === "action" ? actionSpot : 0, fear) : null;
+            // A Fear feature (CB p.154; Book only) or an action needing a spotlight the GM can't pay: disabled with the reason.
+            const featureFear = featureFearByHand ? 0 : (f.fearCost ?? 0);
+            const featureWhy = featureUsable(f) ? adversaryActBlocked(who, featureFear, f.kind === "action" ? actionSpot : 0, fear) : null;
             return (
             <li key={`${i}-${f.name}`} className="hsb-af">
               <div className="hsb-af-h">
                 <b>{f.name}</b>
                 <span className="hsb-af-k">{kindLabel(f.kind)}</span>
-                {f.fearCost ? <CostPill amount={f.fearCost} resource="fear" className="hsb-af-cost" /> : null}
+                {f.fearCost ? (
+                  featureFearByHand ? (
+                    <span className="hsb-af-note" data-testid="hud-statblock-feature-by-hand">
+                      {fearByHandText(f.fearCost)}
+                    </span>
+                  ) : (
+                    <CostPill amount={f.fearCost} resource="fear" className="hsb-af-cost" />
+                  )
+                ) : null}
                 {featureUsable(f) ? (
                   <span className="hsb-af-use">
                     <PartBoundary label={`${f.name}’s Use`}>
@@ -465,7 +478,7 @@ function StatBlockBody({
                         campaignId={campaignId}
                         instanceId={instance._id}
                         feature={f.name}
-                        fearCost={f.fearCost}
+                        fearCost={featureFearByHand ? undefined : f.fearCost}
                         disabled={busy || featureWhy !== null}
                         live={!instance.defeated}
                         onUse={(featureAsk) => startFeature(f.name, featureAsk)}
