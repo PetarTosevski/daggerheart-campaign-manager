@@ -186,7 +186,8 @@ export function useFeatureUse({ campaignId, role, map, characterId, canUse = tru
   // Rule switches ODR3: Defined Ranges off, the chain rows show no band.
   const definedRanges = useDefinedRanges(campaignId);
   // R7 on feature rolls (dcm-bxp.134.5), as the hand's roll options: Book ticks the PCs who help, Manual the counter.
-  const helpBook = useQuery(api.ruleSettings.get, canUse ? { campaignId } : "skip")?.modes.helpAnAlly === "book";
+  const helpMode = useQuery(api.ruleSettings.get, canUse ? { campaignId } : "skip")?.modes.helpAnAlly;
+  const helpBook = helpMode === "book";
   const party = useQuery(api.charactersReads.listByCampaign, canUse && helpBook ? { campaignId } : "skip");
   const helpers = helpBook ? helperCandidates(party ?? [], characterId) : undefined;
 
@@ -328,7 +329,9 @@ export function useFeatureUse({ campaignId, role, map, characterId, canUse = tru
             },
           });
         };
-        if (asksNothing(chosen.form, options) && !hopeShort && !helpable) {
+        // Help alone opens the panel only when someone can help (Book: another PC; Manual: the Help dice counter).
+        const helpToAsk = helpable && (helpBook ? (helpers?.length ?? 0) > 0 : helpMode === "manual");
+        if (asksNothing(chosen.form, options) && !hopeShort && !helpToAsk) {
           latest.current.finish();
           startSquares([], [], undefined, 1);
           return;
