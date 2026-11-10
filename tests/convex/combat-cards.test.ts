@@ -584,6 +584,8 @@ describe("F7-H4 (dcm-bxp.99.24): who reads a hand, roll options on cards", () =>
 
   it("roll options on a card: an Experience costs a Hope and adds its value; advantage and Help add their dice", async () => {
     const a = await arena();
+    // Plan rule-switches WF: the bare Help counter on a card is R7 Manual (Book names the helpers, rules-wf / out-of-range tests).
+    await a.gm.mutation(api.ruleSettings.set, { campaignId: a.campaignId, change: { key: "helpAnAlly", value: "manual" } });
     const bandit = await a.enemy("Bandit", 6, 10);
     await a.holding(["bolt-beacon"], { hope: 3 });
     const exp = (await a.sheet()).experiences[0]!;

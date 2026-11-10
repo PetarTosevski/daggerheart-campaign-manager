@@ -8,7 +8,7 @@ import { environmentCountdownCategory } from "../src/lib/domain/environments/ind
 import { appError } from "../src/lib/errors/app-error";
 import { COUNTDOWN_DETAILS_MAX_LENGTH } from "../src/lib/validation/countdowns";
 import type { Id } from "./_generated/dataModel";
-import { adversaryAction, afterHitTriggers, forcedStandardAttack, gmControlledAttack as gmControlledAttackOf, isPreRollRow, pcEscape as pcEscapeOf, replayHeld, respondPreRoll, type ActionArgs, type PreRollRow } from "./lib/adversaryActions";
+import { adversaryAction, afterHitTriggers, darkHeartedActive, forcedStandardAttack, gmControlledAttack as gmControlledAttackOf, isPreRollRow, pcEscape as pcEscapeOf, replayHeld, respondPreRoll, type ActionArgs, type PreRollRow } from "./lib/adversaryActions";
 import { blockOf, countdownTickOn, featureAsk as featureAskOf } from "./lib/adversaryFeatures";
 import { rollDice } from "./lib/dice";
 import { loadInstance } from "./lib/encounters";
@@ -58,6 +58,12 @@ const sharedArgs = {
   /** Reactions on this attack the GM opted into (Heavy Hitter, …; Q19 default No), by feature name. */
   reactions: v.optional(v.array(v.string())),
   /**
+   * Plan rule-switches WF, W3 Tier 3 Dark-Hearted (Journey to Horizon, HF p.177: "Spend a Fear to give the adversary
+   * advantage on its next roll"): this roll gets advantage for 1 Fear (asked with the others). INVALID until the Doom
+   * Track's Tier 3 rule is active (5 boxes, Doom Track in Book or Every N sessions).
+   */
+  darkHearted: v.optional(v.boolean()),
+  /**
    * Lane E7 round 3 (dcm-eut): the PC feature ids whose "unless the attacker marks a Stress" disadvantage the attacker pays
    * off for this attack (Defensive stance, HF p.12); the attacker marks the cost. Unpaid ones come back in the GM feed.
    */
@@ -87,6 +93,13 @@ const featureArgs = {
   situations: v.optional(v.array(v.string())),
   eitherCosts: v.optional(v.array(v.number())),
   splits: v.optional(v.array(v.object({ id: v.string(), amount: v.number() }))),
+  /**
+   * Plan rule-switches WF (user 2026-11-10): a "path" feature's destination square (Rampaging Fury, Trample: a `move` step
+   * and `area: "path"` targets), within the move's range of the adversary's token on the live map. The token moves there
+   * and, with no `targets`, everyone the straight line from start to destination crosses is targeted. INVALID for a feature
+   * without such a move; COMBAT_TARGET_INVALID off the map or out of range.
+   */
+  destination: v.optional(v.object({ x: v.number(), y: v.number() })),
 };
 
 const promptValidator = v.object({
@@ -95,7 +108,15 @@ const promptValidator = v.object({
 });
 
 /** Asked first (Q19): nothing was rolled, paid or written. */
-const confirmFearValidator = v.object({ status: v.literal("confirmFear"), fear: v.number(), spotlight: v.number(), feature: v.number(), experience: v.number() });
+const confirmFearValidator = v.object({
+  status: v.literal("confirmFear"),
+  fear: v.number(),
+  spotlight: v.number(),
+  feature: v.number(),
+  experience: v.number(),
+  /** WF (widened): 1 for Dark-Hearted (W3 Tier 3). */
+  darkHearted: v.optional(v.number()),
+});
 
 /** What the GM receives: the roll, hit / miss and the waiting hit per target, Fear, prompts and reactions to offer. */
 const resolvedActionValidator = v.object({
@@ -275,6 +296,8 @@ const featureAskValidator = v.object({
   stress: v.number(),
   experiences: v.array(v.object({ name: v.string(), value: v.number() })),
   reactions: v.array(v.object({ feature: v.string(), useId: v.string() })),
+  /** Plan rule-switches WF (widened): a "path" feature's move range (Rampaging Fury: Close); the GM picks the destination. */
+  pathMove: v.optional(v.string()),
 });
 
 /**
@@ -283,6 +306,16 @@ const featureAskValidator = v.object({
  * situations to confirm, damage splits, `either` cost picks, the Fear it will ask for, and whether it is available now.
  * Reads only. GM only (it carries the stat block's numbers; players never receive them).
  */
+/**
+ * Plan rule-switches WF, W3 Tier 3 (Journey to Horizon, HF p.177): whether adversaries have Dark-Hearted now (the GM's
+ * attack and feature pickers offer "Dark-Hearted: advantage, 1 Fear"). Reads only. GM only.
+ */
+export const darkHearted = gmQuery({
+  args: {},
+  returns: v.boolean(),
+  handler: async (ctx) => darkHeartedActive(ctx, ctx.campaign),
+});
+
 export const featureAsk = gmQuery({
   args: { instanceId: v.string(), feature: v.string(), use: v.optional(v.string()) },
   returns: featureAskValidator,

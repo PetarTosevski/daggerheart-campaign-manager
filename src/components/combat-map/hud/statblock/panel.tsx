@@ -7,6 +7,10 @@ import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import { crossedBy } from "@/lib/domain/adversary-actions/path-targets";
+import type { Range } from "@/lib/domain/card-effects/types";
+import { spotlightLimit, spotlightStatus, spotlightsThisTurn } from "@/lib/domain/encounters/spotlight";
+
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { capOf, namedArea, needsChoices, pickable, type FeatureAsk } from "../../../adversaries/tracker/actions/ask";
@@ -19,6 +23,7 @@ import { useLiveSight } from "../../actions/adversary/sight";
 import type { CombatPageState } from "../../slots";
 import { conditionName } from "../pick/model";
 import { usePick } from "../pick";
+import { pickArea, type Square } from "../pick-area";
 import { BlockedReason, RefusalMessage, useBlocked, useRefusal, type Blocked } from "../blocked";
 import { adversaryActBlocked, fearBlocked, spotlightFirst } from "../fear/blocked";
 import { CostPill, PartBoundary, SidePanel, StatTile } from "../ui";
@@ -122,6 +127,7 @@ export function StatBlockPanel({ state, tokenId, acts, ask, onClose }: StatBlock
         instances={view.instances}
         instance={instance}
         block={rules.block as BlockLike}
+        relentless={rules.relentless}
         acts={acts}
         ask={ask}
       />
@@ -168,6 +174,7 @@ function StatBlockBody({
   instances,
   instance,
   block,
+  relentless,
   acts,
   ask,
 }: {
@@ -179,6 +186,8 @@ function StatBlockBody({
   instances: readonly TrackerInstance[];
   instance: TrackerInstance;
   block: BlockLike;
+  /** Relentless (X) (CB p.195): spotlights per GM turn; null = 1. */
+  relentless: number | "X" | null;
   acts: GmActs;
   ask: FearAsk;
 }) {
@@ -186,7 +195,12 @@ function StatBlockBody({
   const pick = usePick();
   const tracker = useTracker(campaignId, encounterId);
   const fear = useQuery(api.campaigns.fear, { campaignId });
-  const d8Manual = useQuery(api.ruleSettings.get, { campaignId })?.modes.adversaryDefeated === "manual";
+  const modes = useQuery(api.ruleSettings.get, { campaignId })?.modes;
+  const d8Manual = modes?.adversaryDefeated === "manual";
+  // Plan rule-switches WF: F4 Manual (an Experience's Fear by hand), C4 Book (unconscious PCs not pre-picked), W3 Tier 3.
+  const experienceFree = modes?.adversaryExperienceFear === "manual";
+  const skipUnconscious = (modes?.unconscious ?? "book") === "book";
+  const darkHearted = useQuery(api.adversaryActions.darkHearted, { campaignId }) === true;
   const ends = useQuery(api.combatEffects.fearEnds, { campaignId, target: { kind: "instance", instanceId: instance._id } });
   const endByFear = useMutation(api.combatEffects.endByFear).withOptimisticUpdate((store, args) => {
     const now = store.getQuery(api.campaigns.fear, { campaignId });
@@ -196,6 +210,8 @@ function StatBlockBody({
   const who = theName(instance.label);
   const refusal = useRefusal({ viewer: "gm", adversary: who });
   const [choosing, setChoosing] = useState<FeatureAsk | null>(null);
+  /** WF: a "path" feature's picked destination and the creatures its line crosses (pre-picked in the choices dialog). */
+  const [path, setPath] = useState<{ feature: string; destination: Square; crossed: string[] } | null>(null);
   const label = instance.label;
   const self = tokens.find((t) => t._id === tokenId);
   const pcs: PcToken[] = tokens.flatMap((t) =>
@@ -224,6 +240,8 @@ function StatBlockBody({
         spotlightFear: actionSpot,
         fear: fear ?? undefined,
         acts,
+        experienceFree,
+        darkHearted,
       }),
     );
   }
@@ -242,7 +260,61 @@ function StatBlockBody({
     await guarded(() => endByFear({ campaignId, target: { kind: "instance", instanceId: instance._id }, effectId: end.effectId, fear: end.fear, idempotencyKey: crypto.randomUUID() }));
   }
 
+  /**
+   * Plan rule-switches WF (user 2026-11-10): a "path" feature (Rampaging Fury, Trample) asks for its destination square
+   * first, within its move's range of the token (the HUD square picker); everyone the straight line crosses starts picked.
+   */
+  async function startPath(feature: string, featureAsk: FeatureAsk) {
+    if (!self || !map || !featureAsk.pathMove) return;
+    const squares = await pickArea({
+      id: `path:${instance._id}:${feature}`,
+      mapId: map._id,
+      name: feature,
+      label: `${label}’s destination`,
+      shape: "circle",
+      count: 1,
+      within: featureAsk.pathMove as Range,
+      origin: self,
+    });
+    const destination = squares?.[0];
+    if (!destination) return;
+    const anySide = featureAsk.targets?.side === "any";
+    const footprints = tokens.flatMap((t) =>
+      t.kind === "pc" && t.characterId
+        ? [{ id: t.characterId as string, tokenId: t._id, x: t.x, y: t.y, size: t.size }]
+        : anySide && t.instanceId && t.instanceId !== instance._id && instances.some((i) => i._id === t.instanceId && !i.defeated)
+          ? [{ id: t.instanceId as string, tokenId: t._id, x: t.x, y: t.y, size: t.size }]
+          : [],
+    );
+    const crossedIds = crossedBy(self, destination, footprints);
+    const downIds = new Set(skipUnconscious ? pcs.filter((p) => p.conditions.some((c) => c.toLowerCase() === "unconscious")).map((p) => p.characterId as string) : []);
+    const crossed = crossedIds.filter((id) => !downIds.has(id));
+    if (needsChoices(featureAsk) || anySide) {
+      setPath({ feature, destination, crossed });
+      return setChoosing(featureAsk);
+    }
+    const rows = gmAttackRows(self, pcs, sight, "unlimited");
+    const picked = footprints.filter((f) => crossed.includes(f.id)).map((f) => f.tokenId);
+    pick.open(
+      gmFeatureSession({
+        instanceId: instance._id,
+        tokenId,
+        label,
+        feature,
+        max: featureAsk.targets ? capOf(featureAsk.targets) : null,
+        rows,
+        characterOf,
+        useId: featureAsk.useId,
+        acts,
+        area: { text: `Everyone in ${theName(label)}’s path: change the picks if needed`, picked, min: featureAsk.attack ? 1 : 0 },
+        darkHearted: darkHearted && featureAsk.attack,
+        destination,
+      }),
+    );
+  }
+
   function startFeature(feature: string, featureAsk: FeatureAsk | null) {
+    if (featureAsk?.pathMove && self && map) return void startPath(feature, featureAsk);
     if (featureAsk && needsChoices(featureAsk)) return setChoosing(featureAsk);
     if (featureAsk && pickable(featureAsk.targets) && featureAsk.targets.side === "enemy" && self) {
       // dcm-y3mf: "all targets in front of the Ogre within Far" (Hail of Boulders): the rows say who is in range; the
@@ -261,14 +333,15 @@ function StatBlockBody({
           characterOf,
           useId: featureAsk.useId,
           acts,
-          ...(area ? { area: areaPick(area, theName(label), featureAsk.attack, rows) } : {}),
+          ...(area ? { area: areaPick(area, theName(label), featureAsk.attack, rows, skipUnconscious) } : {}),
+          darkHearted: darkHearted && featureAsk.attack,
         }),
       );
     }
     void sendFeature(feature, { targets: [] });
   }
 
-  function sendFeature(feature: string, args: Partial<ChoiceArgs> & { targets: string[] }) {
+  function sendFeature(feature: string, args: Partial<ChoiceArgs> & { targets: string[]; destination?: Square }) {
     return guarded(() => acts.feature({ instanceId: instance._id, feature, ...args }, { label: `${label} uses ${feature}`, actor: who, feature }));
   }
 
@@ -279,6 +352,7 @@ function StatBlockBody({
   // D8 Manual (rule switches DEF; CB p.208): at its last HP the adversary stays up until the GM presses Defeated.
   const standing = d8Manual && !instance.defeated && instance.minionCount === undefined && hpMax > 0 && instance.hp >= hpMax;
   const spot = useBlocked(fearBlocked(spotCost, fear));
+  const spotCount = spotlightStatus(spotlightsThisTurn(instance, gmTurn), spotlightLimit(relentless));
   const attackWhy = spotlightFirst(who, actionSpot, fear);
   const atk = useBlocked(attackWhy);
 
@@ -419,14 +493,19 @@ function StatBlockBody({
             ...pcs.map((p) => ({ id: p.characterId as string, name: p.name, kind: "pc" as const })),
             ...instances.filter((i) => !i.defeated).map((i) => ({ id: i._id as string, name: i.label, kind: "adversary" as const })),
           ]}
-          panelTargets={[]}
+          panelTargets={path?.feature === choosing.feature ? path.crossed : []}
           fear={fear ?? 0}
           pending={acts.pending}
-          onClose={() => setChoosing(null)}
+          onClose={() => {
+            setChoosing(null);
+            setPath(null);
+          }}
           onUse={(args) => {
             const feature = choosing.feature;
+            const destination = path?.feature === feature ? path.destination : undefined;
             setChoosing(null);
-            void sendFeature(feature, args);
+            setPath(null);
+            void sendFeature(feature, { ...args, ...(destination ? { destination } : {}) });
           }}
         />
       ) : null}
@@ -474,6 +553,13 @@ function StatBlockBody({
           Attack
         </button>
       </div>
+      {spotCount.over ? (
+        // Plan rule-switches WF (S3, Q15 b; CB p.153 "you can't typically spotlight the same adversary more than once
+        // during your turn"): the tracker card's warning, here too. A warning only, never a block.
+        <p className="hsb-why" role="status" data-testid="hud-statblock-spot-over">
+          {spotCount.label}: spotlit again this GM turn
+        </p>
+      ) : null}
       {spot.text ? (
         <p className="hsb-why" data-testid="hud-statblock-spot-why">
           <BlockedReason id={spot.reasonId}>{spot.text}</BlockedReason>

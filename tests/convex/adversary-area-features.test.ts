@@ -175,3 +175,36 @@ describe("dcm-y3mf: Rampaging Fury (move within Close, all targets in the path)"
     expect(r.prompts.some((p) => p.kind === "manual")).toBe(true);
   });
 });
+
+describe("rule switches WF: a path feature's destination (user 2026-11-10)", () => {
+  const ogreToken = (a: Awaited<ReturnType<typeof arena>>) =>
+    a.t.run(async (ctx) => (await ctx.db.query("combatTokens").collect()).find((t) => t.ref.kind === "adversary" && t.ref.adversaryId === a.ogre)!);
+
+  it("featureAsk names the move's range", async () => {
+    const a = await arena();
+    expect((await a.ask(a.ogre, "Rampaging Fury")).pathMove).toBe("close");
+    expect((await a.ask(a.ogre, "Hail of Boulders")).pathMove).toBeUndefined();
+  });
+
+  it("the Ogre moves to the square and everyone the line crosses is targeted", async () => {
+    const a = await arena();
+    const r = resolved(await a.feature(a.ogre, "Rampaging Fury", [], { destination: { x: 14, y: 10 } }));
+    expect(r.targets.map((t) => t.characterId).sort()).toEqual([a.w.characterA, a.w.characterB].sort());
+    expect(await ogreToken(a)).toMatchObject({ x: 14, y: 10 });
+  });
+
+  it("the GM's list wins over the line; the token still moves", async () => {
+    const a = await arena();
+    const r = resolved(await a.feature(a.ogre, "Rampaging Fury", [a.w.characterB], { destination: { x: 14, y: 10 } }));
+    expect(r.targets.map((t) => t.characterId)).toEqual([a.w.characterB]);
+    expect(await ogreToken(a)).toMatchObject({ x: 14, y: 10 });
+  });
+
+  it("refuses a square out of the move's range or off the map (COMBAT_TARGET_INVALID) and a feature with no move (INVALID); nothing moves", async () => {
+    const a = await arena();
+    expect(await code(a.feature(a.ogre, "Rampaging Fury", [], { destination: { x: 25, y: 10 } }))).toBe("COMBAT_TARGET_INVALID");
+    expect(await code(a.feature(a.ogre, "Rampaging Fury", [], { destination: { x: -1, y: 10 } }))).toBe("COMBAT_TARGET_INVALID");
+    expect(await code(a.feature(a.ogre, "Hail of Boulders", [a.w.characterA], { destination: { x: 12, y: 10 } }))).toBe("INVALID");
+    expect(await ogreToken(a)).toMatchObject({ x: 10, y: 10 });
+  });
+});

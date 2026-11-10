@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { cardDisplay, HandCardFace } from "../../actions/hand/face";
 import type { HandCard } from "../../actions/hand/model";
 import type { Roller, RollValues } from "../../actions/roll-controls";
+import type { HelperCandidate } from "../pick-attack/model";
 import { BlockedReason } from "../blocked";
 import { useDragToPlay } from "./drag";
 import { CostPill, Tag } from "../ui";
@@ -195,8 +196,25 @@ export function SidePop({ id, title, sub, children, onClose, testId }: { id: str
  * with "Needs 1 Hope" once the Hope is spoken for), advantage from −3 to +3, and Help dice. They apply to the next card
  * that rolls. The values are the hand's; each control reports a patch.
  */
-export function RollOptionsBody({ roller, values, problem, onChange }: { roller: Roller | null; values: RollValues; problem: string | null; onChange: (patch: Partial<RollValues>) => void }) {
+export function RollOptionsBody({
+  roller,
+  values,
+  problem,
+  onChange,
+  helpers,
+}: {
+  roller: Roller | null;
+  values: RollValues;
+  problem: string | null;
+  onChange: (patch: Partial<RollValues>) => void;
+  /**
+   * Plan rule-switches WF, R7 Book (CB p.90): the PCs who may help (`helperCandidates`), ticked instead of the "Help dice"
+   * counter; each spends 1 Hope when the card resolves. Absent: R7 Manual (or not loaded), the counter.
+   */
+  helpers?: readonly HelperCandidate[];
+}) {
   const { experienceIds, edge, help } = values;
+  const ticked = values.helpers ?? [];
   const hope = roller?.hope ?? null;
   const expId = useId();
   return (
@@ -230,8 +248,31 @@ export function RollOptionsBody({ roller, values, problem, onChange }: { roller:
       <span className="hud-ro-l">Advantage</span>
       <RoStepper label="Advantage" value={edge} min={EDGE_MIN} max={EDGE_MAX} text={signedEdge(edge)} hint="from −3 to +3" onChange={(n) => onChange({ edge: n })} />
       <span className="hud-ro-l">Help</span>
-      <RoStepper label="Help dice" value={help} min={0} max={HELP_MAX} text={String(help)} hint={help === 1 ? "Help die (d6)" : "Help dice (d6)"} onChange={(n) => onChange({ help: n })} />
-      <p className="hud-ro-note">Applies to the next card that rolls. Experiences cost 1 Hope each.</p>
+      {helpers !== undefined ? (
+        <span className="hud-ro-chips" role="group" aria-label="Helped by" data-testid="hud-hand-helpers">
+          {helpers.length === 0 ? <small className="hud-ro-none">No one can help</small> : null}
+          {helpers.map((h) => {
+            const on = ticked.includes(h.characterId);
+            return (
+              <button
+                key={h.characterId}
+                type="button"
+                className="hud-ro-chip"
+                aria-pressed={on}
+                disabled={!on && (h.hope < 1 || ticked.length >= HELP_MAX)}
+                title={h.hope < 1 ? `${h.name} has no Hope` : `${h.name} spends 1 Hope and adds a d6`}
+                onClick={() => onChange({ helpers: on ? ticked.filter((x) => x !== h.characterId) : [...ticked, h.characterId] })}
+              >
+                {h.name}
+                <CostPill amount={1} resource="hope" className="hud-ro-cost" />
+              </button>
+            );
+          })}
+        </span>
+      ) : (
+        <RoStepper label="Help dice" value={help} min={0} max={HELP_MAX} text={String(help)} hint={help === 1 ? "Help die (d6)" : "Help dice (d6)"} onChange={(n) => onChange({ help: n })} />
+      )}
+      <p className="hud-ro-note">Applies to the next card that rolls. Experiences cost 1 Hope each{helpers !== undefined ? "; each helper spends 1 Hope" : ""}.</p>
       {problem ? (
         <p className="hud-ro-err" role="alert">
           {problem}

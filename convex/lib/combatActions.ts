@@ -658,6 +658,11 @@ export type AttackRequest = {
   held?: { dice: readonly number[]; answer: AfterRollChoice };
   /** DA2: rider-added targets out of range that the GM approved (Q1). */
   waived?: readonly Id<"combatTokens">[];
+  /**
+   * Plan rule-switches WF, M4 `outOfRange` Manual (CB p.103): the attack went through with a target out of range; the GM's
+   * note ("Mira attacked Theo out of range"), posted in the attack's group with the other notes.
+   */
+  outOfRangeNote?: string;
   /** E1.4b (dcm-kso9): the option the attacker picked for a target's rider benefit (Lead by Example's Stress or Hope). */
   benefit?: string;
   /**
@@ -2348,7 +2353,8 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   const sheet0 = loaded.sheet;
   // Rule switches RC1: C1, M1, D6 and the damage modes (D2, D8, Massive Damage); Manual rules leave GM notes in the group.
   const modes = ruleModesOf(campaign);
-  const ruleNotes: { ruleId: "conditionDice" | "lineOfSight" | "minions" | "hiddenEnds" | "definedRanges" | "experienceCost" | "criticalDamage" | DamageRuleNote["ruleId"]; summary: string }[] = [];
+  const ruleNotes: { ruleId: "conditionDice" | "lineOfSight" | "minions" | "hiddenEnds" | "definedRanges" | "experienceCost" | "criticalDamage" | "outOfRange" | DamageRuleNote["ruleId"]; summary: string }[] = [];
+  if (req.outOfRangeNote !== undefined) ruleNotes.push({ ruleId: "outOfRange", summary: req.outOfRangeNote });
   /** ODR3: the riders' Defined Ranges questions (`RiderEnv.rangeNotes`), posted with the other notes. */
   const rangeNotes: string[] = [];
   const rec = recorder(req.held ? replaying(req.held.dice, rollDie) : rollDie);

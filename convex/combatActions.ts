@@ -1,6 +1,5 @@
 import { v } from "convex/values";
 
-import { resolveTableSettings } from "../src/lib/config/campaign-settings";
 import type { Range } from "../src/lib/domain/card-effects/types";
 import { RANGE_ORDER } from "../src/lib/domain/combat-actions/distance";
 import { appError } from "../src/lib/errors/app-error";
@@ -39,7 +38,8 @@ import { fearFor } from "./lib/fearVisibility";
 import { duality, editable, prepareDuality, rules, type Loaded } from "./lib/rolls";
 import { rollDie } from "./lib/dice";
 import { outcomeSucceeds } from "./lib/rollAftermath";
-import { ruleModesOf } from "./lib/ruleModes";
+import { ruleMode, ruleModesOf } from "./lib/ruleModes";
+import { outOfRangeNote } from "../src/lib/domain/adversary-actions/rule-notes";
 import { traitIdValidator } from "./lib/validators/characters";
 import { rollValidator, type AdversaryBefore } from "./lib/validators/actionLog";
 
@@ -66,12 +66,20 @@ const BAND_LABEL: Record<Range, string> = { melee: "Melee", veryClose: "Very Clo
 
 /**
  * Config R2 (Q2 a; CB p.103 "Anything beyond a character's Very Far range is Out of Range and usually can't be
- * targeted"): whether an out-of-range target refuses this action instead of opening a GM sanction. Only with the table
- * setting `outOfRange: "refuse"` and only for a player: the GM or a co-GM acting for a PC (`gm`, the caller's
- * character permission is "owner") keeps today's sanction ("ask").
+ * targeted"): whether an out-of-range target refuses this action instead of opening a GM sanction. Plan rule-switches WF
+ * (M4 `outOfRange`, Q12 a; moved from Campaign settings > At the table): only in the mode `refuse` and only for a
+ * player: the GM or a co-GM acting for a PC (`gm`, the caller's character permission is "owner") keeps the sanction.
  */
 export function refusesOutOfRange(campaign: Doc<"campaigns">, gm: boolean): boolean {
-  return !gm && resolveTableSettings(campaign.tableSettings).outOfRange === "refuse";
+  return !gm && ruleMode(campaign, "outOfRange") === "refuse";
+}
+
+/**
+ * WF, M4 Manual: an out-of-range action goes through (no sanction, no refusal) and the GM gets a note
+ * (`outOfRangeNote`). Book ("Ask the GM") and Refuse: false.
+ */
+export function passesOutOfRange(campaign: Doc<"campaigns">): boolean {
+  return ruleMode(campaign, "outOfRange") === "manual";
 }
 
 /** COMBAT_TARGET_OUT_OF_RANGE naming the farthest band a target is at (thrown before anything is paid or logged). */
@@ -201,6 +209,13 @@ export const attack = keyedCampaignMutation({
       if (refuse && (outOfRange.length > 0 || farPcs.length > 0)) throw outOfRangeRefusal([...outOfRange.map((t) => t.check), ...farPcs.map((p) => p.check)]);
       // DA2 (combat-actions Q1, user 2026-10-30): a rider's extra target out of its range waits for the GM too.
       const added = addedOutOfRange(scene, weapon, picked);
+      // WF, M4 Manual: the attack goes through now, its out-of-range targets (a rider's too) waived, with a GM note.
+      if (passesOutOfRange(ctx.campaign) && (outOfRange.length > 0 || farPcs.length > 0 || added.length > 0)) {
+        const far = new Set<string>([...outOfRange.map((t) => t.token._id), ...farPcs.map((p) => p.tokenId), ...added.map((a) => a.tokenId)]);
+        const names = [...targets.filter((t) => far.has(t.token._id)).map((t) => t.instance.label), ...pcs.filter((p) => far.has(p.token._id)).map((p) => p.sheet.name)];
+        const note = outOfRangeNote(loaded.sheet.name, names.length > 0 ? names : ["a rider's target"]);
+        return resolveAttack(ctx, { loaded, actorId: ctx.user._id, scene, weapon, slot, targets, ...pcTargets, roll, riders, waived: added.map((a) => a.tokenId), outOfRangeNote: note, ...(benefit !== undefined ? { benefit } : {}) });
+      }
       if (outOfRange.length === 0 && farPcs.length === 0 && added.length === 0) return resolveAttack(ctx, { loaded, actorId: ctx.user._id, scene, weapon, slot, targets, ...pcTargets, roll, riders, ...(benefit !== undefined ? { benefit } : {}) });
 
       // Q1: wait for the GM. Refuse now what the approval would refuse anyway (a character who can't act, unpaid costs,

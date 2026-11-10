@@ -21,9 +21,9 @@ describe("campaignSettings.set (config S2)", () => {
     const setup = await withPlayer();
     const { gm, player, campaignId } = setup;
     expect(await gm.mutation(api.campaignSettings.set, { campaignId, change: { key: "playersSeeFear", value: false } })).toBeNull();
-    await gm.mutation(api.campaignSettings.set, { campaignId, change: { key: "outOfRange", value: "refuse" } });
-    expect(await stored(setup)).toEqual({ playersSeeFear: false, outOfRange: "refuse" });
-    const expected = { ...TABLE_SETTING_DEFAULTS, playersSeeFear: false, outOfRange: "refuse" };
+    await gm.mutation(api.campaignSettings.set, { campaignId, change: { key: "spotlightToPlayers", value: true } });
+    expect(await stored(setup)).toEqual({ playersSeeFear: false, spotlightToPlayers: true });
+    const expected = { ...TABLE_SETTING_DEFAULTS, playersSeeFear: false, spotlightToPlayers: true };
     expect((await gm.query(api.campaigns.get, { campaignId }))?.settings).toEqual(expected);
     expect((await player.query(api.campaigns.get, { campaignId }))?.settings).toEqual(expected);
   });
@@ -32,7 +32,6 @@ describe("campaignSettings.set (config S2)", () => {
     const setup = await setupWithCampaign();
     const changes = [
       { key: "playersSeeFear", value: false },
-      { key: "outOfRange", value: "refuse" },
       { key: "spotlightToPlayers", value: true },
       { key: "lorekeeperWeb", value: false },
       { key: "lorekeeperAsk", value: "gm" },
@@ -47,7 +46,7 @@ describe("campaignSettings.set (config S2)", () => {
   it("writes nothing for a no-op change (the stored value, or the default when unset)", async () => {
     const setup = await setupWithCampaign();
     const { t, gm, campaignId } = setup;
-    await gm.mutation(api.campaignSettings.set, { campaignId, change: { key: "outOfRange", value: TABLE_SETTING_DEFAULTS.outOfRange } });
+    await gm.mutation(api.campaignSettings.set, { campaignId, change: { key: "playersSeeFear", value: TABLE_SETTING_DEFAULTS.playersSeeFear } });
     expect(await stored(setup)).toBeNull();
     await gm.mutation(api.campaignSettings.set, { campaignId, change: { key: "lorekeeperAsk", value: "gm" } });
     const doc = await t.run((ctx) => ctx.db.get("campaigns", campaignId));
@@ -60,7 +59,8 @@ describe("campaignSettings.set (config S2)", () => {
     const bad = [
       { key: "clock", value: "perScene" },
       { key: "playersSeeFear", value: "yes" },
-      { key: "outOfRange", value: "ignore" },
+      // Plan rule-switches WF (M4, Q12 a): out of range moved to House rules.
+      { key: "outOfRange", value: "refuse" },
       { key: "autoSessionLog" },
       { key: "playersSeeFear", value: true, extra: 1 },
     ];

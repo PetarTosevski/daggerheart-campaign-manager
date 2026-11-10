@@ -414,6 +414,10 @@ export const heldAttackValidator = v.object({
   experience: v.optional(v.string()),
   spendFear: v.optional(v.number()),
   reactions: v.optional(v.array(v.string())),
+  /** Plan rule-switches WF (widened): W3 Tier 3 Dark-Hearted taken with the attack (advantage for 1 Fear, HF p.177). */
+  darkHearted: v.optional(v.boolean()),
+  /** WF (widened): a "path" feature's destination square, replayed with the attack. */
+  destination: v.optional(v.object({ x: v.number(), y: v.number() })),
 });
 
 /** Who may answer a before-roll prompt: a PC with a ready, affordable before-roll defence (feature ids, SD0 ids). */

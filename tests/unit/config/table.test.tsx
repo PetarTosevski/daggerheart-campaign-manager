@@ -3,7 +3,7 @@
 // 12); hand sharing writes campaigns.setPlayersSeeHands and reads combatCardsReads.handSharing (the Combat Map's pair,
 // Q10 b); the other rows write campaignSettings.set and read campaigns.get's settings; errors show inline and roll back;
 // the adversary stats row is a disabled switch with the 'Always off' lock.
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ConvexError } from "convex/values";
 import { useSyncExternalStore } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -91,7 +91,7 @@ beforeEach(() => {
 describe("Campaign settings: At the table", () => {
   it("shows the board's rows with their hints and the current values", () => {
     render(<Section />);
-    for (const row of [TABLE_TEXT.hands, TABLE_TEXT.fear, TABLE_TEXT.outOfRange, TABLE_TEXT.spotlight, TABLE_TEXT.adversary]) {
+    for (const row of [TABLE_TEXT.hands, TABLE_TEXT.fear, TABLE_TEXT.spotlight, TABLE_TEXT.adversary]) {
       expect(screen.getByText(row.label)).toBeInTheDocument();
       expect(screen.getByText(row.hint)).toBeInTheDocument();
     }
@@ -99,9 +99,8 @@ describe("Campaign settings: At the table", () => {
     expect(sw("Players can see each other’s hands")).toHaveAttribute("aria-checked", "true");
     expect(sw("Players see the GM’s Fear")).toHaveAttribute("aria-checked", "true");
     expect(sw("Show spotlight balance to players")).toHaveAttribute("aria-checked", "false");
-    const seg = screen.getByRole("group", { name: "Out-of-range actions" });
-    expect(within(seg).getByRole("button", { name: "Ask me" })).toHaveAttribute("aria-pressed", "true");
-    expect(within(seg).getByRole("button", { name: "Refuse" })).toHaveAttribute("aria-pressed", "false");
+    // Plan rule-switches WF (M4, Q12 a): out of range moved to House rules.
+    expect(screen.queryByRole("group", { name: "Out-of-range actions" })).toBeNull();
   });
 
   it("locks the adversary stats row off with no setting", () => {
@@ -128,21 +127,15 @@ describe("Campaign settings: At the table", () => {
     await waitFor(() => expect(sw("Players see the GM’s Fear")).toHaveAttribute("aria-checked", "false"));
     expect(settings().playersSeeFear).toBe(false);
 
-    fireEvent.click(screen.getByRole("button", { name: "Refuse" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Refuse" })).toHaveAttribute("aria-pressed", "true"));
-    // The current choice again writes nothing.
-    fireEvent.click(screen.getByRole("button", { name: "Refuse" }));
-
     fireEvent.click(sw("Show spotlight balance to players"));
     await waitFor(() => expect(sw("Show spotlight balance to players")).toHaveAttribute("aria-checked", "true"));
 
     expect(calls).toEqual([
       { name: "campaignSettings:set", args: { campaignId: C1, change: { key: "playersSeeFear", value: false } } },
-      { name: "campaignSettings:set", args: { campaignId: C1, change: { key: "outOfRange", value: "refuse" } } },
       { name: "campaignSettings:set", args: { campaignId: C1, change: { key: "spotlightToPlayers", value: true } } },
     ]);
     // Only the changed fields moved.
-    expect(settings()).toEqual({ ...TABLE_SETTING_DEFAULTS, playersSeeFear: false, outOfRange: "refuse", spotlightToPlayers: true });
+    expect(settings()).toEqual({ ...TABLE_SETTING_DEFAULTS, playersSeeFear: false, spotlightToPlayers: true });
   });
 
   it("shows a refused save inline and rolls the switch back", async () => {

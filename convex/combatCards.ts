@@ -91,6 +91,7 @@ import { rollDie } from "./lib/dice";
 import { campaignFearState, gainFear, spendFear } from "./lib/fear";
 import { afterPcActionRoll } from "./lib/rollAftermath";
 import { postRuleNote, ruleModesOf } from "./lib/ruleModes";
+import { payHelpers } from "./lib/helpAnAlly";
 import { minionPicker } from "../src/lib/domain/combat-actions/damage";
 import { campaignMutation, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
 import { fearFor } from "./lib/fearVisibility";
@@ -613,6 +614,8 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
   for (const summary of lastHpNotes(writes, modes)) await postRuleNote(ctx, campaign, { ruleId: "adversaryDefeated", summary, groupId, actorId });
   // RFC: line of sight (M1), condition dice (C1) and Stress overflow (D4) Manual notes for the card use.
   for (const n of ruleNotesOfUse(built, plan)) await postRuleNote(ctx, campaign, { ruleId: n.ruleId, summary: n.summary, groupId, actorId });
+  // Plan rule-switches WF (R7): the helpers pay 1 Hope each in the use's group (undo refunds); Manual: the GM's note.
+  if (built.help) await payHelpers(ctx, campaign, built.help, { groupId, actorId, rollerName: sheet.name });
 
   // Armed countdowns tick right after an action roll, as for `actionRoll` (countdowns-advanced K1); never a reaction roll.
   if (plan.roll && countsAsActionRoll(plan.roll.record, { logKind: "roll", undone: false })) {

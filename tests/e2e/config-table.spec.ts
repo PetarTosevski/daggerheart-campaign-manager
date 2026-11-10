@@ -38,11 +38,11 @@ test("At the table: the GM's switches save at once and reach the player live", a
     const fear = rows.getByRole("switch", { name: "Players see the GM’s Fear" });
     const spotlight = rows.getByRole("switch", { name: "Show spotlight balance to players" });
     const locked = rows.getByRole("switch", { name: "Show adversary HP, Stress and Difficulty to players" });
-    const range = rows.getByRole("group", { name: "Out-of-range actions" });
+    // Plan rule-switches WF (M4, Q12 a): out of range moved to House rules.
+    await expect(rows.getByRole("group", { name: "Out-of-range actions" })).toHaveCount(0);
     await expect(hands).toHaveAttribute("aria-checked", "true");
     await expect(fear).toHaveAttribute("aria-checked", "true");
     await expect(spotlight).toHaveAttribute("aria-checked", "false");
-    await expect(range.getByRole("button", { name: "Ask me" })).toHaveAttribute("aria-pressed", "true");
     await expect(locked).toBeDisabled();
     await expect(rows.getByText("Always off")).toBeVisible();
     await expect(rows.getByText("The bars in the session recap.")).toBeVisible();
@@ -56,16 +56,14 @@ test("At the table: the GM's switches save at once and reach the player live", a
     await expect(hand(player)).toContainText("The GM keeps every player’s cards private.");
     await shot(player, "player-hand-private-1440");
 
-    // Fear off, Refuse, spotlight on: each saves one field, and the player's campaigns.get carries it.
+    // Fear off, spotlight on: each saves one field, and the player's campaigns.get carries it.
     await fear.click();
     await expect(fear).toHaveAttribute("aria-checked", "false");
-    await range.getByRole("button", { name: "Refuse" }).click();
-    await expect(range.getByRole("button", { name: "Refuse" })).toHaveAttribute("aria-pressed", "true");
     await spotlight.click();
     await expect(spotlight).toHaveAttribute("aria-checked", "true");
     await expect
       .poll(async () => (await playerClient.query(api.campaigns.get, { campaignId }))?.settings)
-      .toMatchObject({ playersSeeFear: false, outOfRange: "refuse", spotlightToPlayers: true });
+      .toMatchObject({ playersSeeFear: false, spotlightToPlayers: true });
     await shot(gm, "gm-table-changed-1440");
 
     // The Combat Map's Map tools switch is the same setting (Q10 b): it shows off, and turning it on there shows on here.

@@ -6,8 +6,6 @@ import { useMutation, useQuery } from "convex/react";
 import { Lock } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
-import { glassButtonClass } from "@/components/brand/glass-button";
-import type { OutOfRange } from "@/lib/config/campaign-settings";
 import { errorMessage } from "@/lib/convex-errors";
 
 import { api } from "../../../../../convex/_generated/api";
@@ -18,31 +16,24 @@ import type { SettingsSectionProps } from "../../slots";
 export const TABLE_TEXT = {
   hands: { label: "Players can see each other’s hands", hint: "Each player can still hide their own hand." },
   fear: { label: "Players see the GM’s Fear", hint: "The Fear banner on the Combat Map." },
-  outOfRange: { label: "Out-of-range actions", hint: "When a card or attack targets something beyond its range." },
   spotlight: { label: "Show spotlight balance to players", hint: "The bars in the session recap." },
   adversary: { label: "Show adversary HP, Stress and Difficulty to players", hint: "Players see Hit, Miss or Defeated instead." },
   locked: "Always off",
-  /** Rule switches ODR: the Out-of-range row while the optional rule Defined Ranges (CB p.103) is off. */
-  rangesOff: "Defined Ranges is off",
 } as const;
-
-const OUT_OF_RANGE_LABEL: Record<OutOfRange, string> = { ask: "Ask me", refuse: "Refuse" };
 
 /**
  * Campaign settings, At the table (plan config U1, design `.s-table`). Every switch saves on change with an optimistic
  * update (rule 12), one field per call:
  * - hand sharing writes `campaigns.setPlayersSeeHands` and reads `combatCardsReads.handSharing`, the same pair as the
  *   Combat Map's switch (Q10 b), so the two stay in step;
- * - Fear, out of range and spotlight balance write `campaignSettings.set` and read the live `campaigns.get` settings
- *   (`props.campaign`). The rules they change are R1 / R2 / JO3's, not built here;
+ * - Fear and spotlight balance write `campaignSettings.set` and read the live `campaigns.get` settings
+ *   (`props.campaign`). The rules they change are R1 / JO3's, not built here;
  * - the adversary stats row is locked off (no setting): players never get those numbers;
- * - rule switches ODR: while the optional rule Defined Ranges is off (`ruleSettings.get`; on until it loads) nothing is
- *   out of range, so the Out-of-range row is disabled and says "Defined Ranges is off" (the stored choice is kept).
+ * - plan rule-switches WF (M4, Q12 a): the Out-of-range row moved to House rules (`ruleModes.outOfRange`).
  */
 export function TableSection({ campaign }: SettingsSectionProps): ReactNode {
   const campaignId = campaign._id;
   const sharing = useQuery(api.combatCardsReads.handSharing, { campaignId });
-  const definedRanges = useQuery(api.ruleSettings.get, { campaignId })?.modes.definedRanges ?? true;
   const setHands = useMutation(api.campaigns.setPlayersSeeHands).withOptimisticUpdate((store, { enabled }) => {
     const current = store.getQuery(api.combatCardsReads.handSharing, { campaignId });
     if (current !== undefined) store.setQuery(api.combatCardsReads.handSharing, { campaignId }, { ...current, playersSeeHands: enabled });
@@ -79,31 +70,6 @@ export function TableSection({ campaign }: SettingsSectionProps): ReactNode {
       <div className="cfg-row">
         <RowText {...TABLE_TEXT.fear} />
         <Switch label={TABLE_TEXT.fear.label} checked={settings.playersSeeFear} onChange={(value) => change({ key: "playersSeeFear", value })} />
-      </div>
-      <div className="cfg-row cfg-col">
-        <RowText {...TABLE_TEXT.outOfRange} />
-        {definedRanges ? null : (
-          <span className="cfg-muted cfg-lock" data-testid="settings-table-ranges-off">
-            <Lock size={16} aria-hidden="true" />
-            {TABLE_TEXT.rangesOff}
-          </span>
-        )}
-        <div className="cfg-seg" role="group" aria-label={TABLE_TEXT.outOfRange.label}>
-          {(Object.keys(OUT_OF_RANGE_LABEL) as OutOfRange[]).map((value) => (
-            <button
-              key={value}
-              type="button"
-              className={glassButtonClass({ role: "neutral" })}
-              disabled={!definedRanges}
-              aria-pressed={settings.outOfRange === value}
-              onClick={() => {
-                if (settings.outOfRange !== value) change({ key: "outOfRange", value });
-              }}
-            >
-              {OUT_OF_RANGE_LABEL[value]}
-            </button>
-          ))}
-        </div>
       </div>
       <div className="cfg-row">
         <RowText {...TABLE_TEXT.spotlight} />

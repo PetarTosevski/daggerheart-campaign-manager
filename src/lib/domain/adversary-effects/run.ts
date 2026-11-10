@@ -161,7 +161,28 @@ export interface AdversaryRunContext {
   definedRanges?: boolean;
   /** Plan rule-switches WR: R10 `criticalDamage` (absent: Book). Manual: a natural 20's damage is rolled like a normal hit. */
   criticalDamage?: CriticalDamageMode;
+  /**
+   * Plan rule-switches WF, F5 `fearFeatures` (CB p.154; absent: Book). Manual: the use's upfront Fear costs are dropped
+   * (`withoutFearCosts`): nothing is asked, refused or spent; the caller notes "spend N Fear by hand".
+   */
+  fearFeatures?: "book" | "manual";
+  /**
+   * WF, D7 `hordes` (CB p.199; absent: Book). Manual: the standard attack keeps its printed damage at half HP (no Horde
+   * (X) swap); the caller notes "Horde at half HP: it deals X instead?".
+   */
+  hordes?: "book" | "manual";
+  /** WF, F4 `adversaryExperienceFear` (CB p.154; absent: Book). Manual: the Experience adds its value for no Fear. */
+  experienceFear?: "book" | "manual";
   rng: Rng;
+}
+
+/**
+ * WF (F5 Manual): the costs without their Fear: a `fear` cost is dropped, an `either` keeps its options without their
+ * Fear (an option of Fear alone becomes "pay nothing").
+ */
+export function withoutFearCosts(costs: readonly AdversaryCost[] | undefined): readonly AdversaryCost[] | undefined {
+  if (costs === undefined) return undefined;
+  return costs.flatMap((c): AdversaryCost[] => (c.kind === "fear" ? [] : c.kind === "either" ? [{ ...c, options: c.options.map((o) => withoutFearCosts(o) ?? []) }] : [c]));
 }
 
 // ---------------------------------------------------------------- outputs
@@ -402,8 +423,8 @@ export function rangeGate(effect: AdversaryFeatureEffect, useId?: string): Adver
 }
 
 /** Fear an upfront cost list asks for (with the GM's `either` picks), to ask "Spend N Fear?" first (Q19). */
-export function upfrontFear(costs: readonly AdversaryCost[] | undefined, context: Pick<AdversaryRunContext, "eitherCosts" | "self" | "tokens" | "tier" | "gmFear" | "rng"> & Partial<Pick<AdversaryRunContext, "trigger" | "targets" | "creatures" | "definedRanges">>): number {
-  if (!costs || costs.length === 0) return 0;
+export function upfrontFear(costs: readonly AdversaryCost[] | undefined, context: Pick<AdversaryRunContext, "eitherCosts" | "self" | "tokens" | "tier" | "gmFear" | "rng"> & Partial<Pick<AdversaryRunContext, "trigger" | "targets" | "creatures" | "definedRanges" | "fearFeatures">>): number {
+  if (!costs || costs.length === 0 || context.fearFeatures === "manual") return 0;
   // AA2b (bead dcm-yle): a cost read from the trigger (My Turn: "spend a number of Fear equal to the HP marked") asks first.
   const env = adversaryNumberEnv({ hp: context.self.hp, stress: context.self.stress, tokens: context.tokens ?? 0 }, context.tier, context.gmFear, {
     ...(context.trigger?.amount !== undefined ? { triggerAmount: context.trigger.amount } : {}),
@@ -476,8 +497,10 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
   if (unmet.length > 0) return refuse("requirement", UNAVAILABLE, unmet.map((r) => r.kind).join(", "));
   if (use.needsSpotlight && !context.spotlit) return refuse("spotlight", "ADVERSARY_NOT_SPOTLIT", effect.feature);
 
-  const experienceFear = context.experience ? 1 : 0;
-  const fearAsked = upfrontFear(use.costs, context) + experienceFear;
+  // WF: F4 Manual, the Experience costs no Fear; F5 Manual, the use's upfront Fear costs are dropped.
+  const experienceFear = context.experience && context.experienceFear !== "manual" ? 1 : 0;
+  const useCosts = context.fearFeatures === "manual" ? withoutFearCosts(use.costs) : use.costs;
+  const fearAsked = upfrontFear(useCosts, context) + experienceFear;
   if (fearAsked > 0 && context.fearConfirmed !== true) return refuse("confirmFear", null, String(fearAsked));
 
   // ---- the attack's numbers (CB p.160, p.199, p.99)
@@ -493,7 +516,7 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
     ? atk.flat + bonusDice.reduce((s, n) => s + n, 0) + (context.experience?.value ?? 0) + (passives?.attackBonus ?? 0) + (instance.attack ?? 0)
     : 0;
   const direct = passives?.directAttacks === true || parseDamage(context.attack.damage)?.direct === true;
-  const attackDamage = standardAttackDamage(context.attack.damage, self, context.hordeX ?? passives?.horde ?? null, {
+  const attackDamage = standardAttackDamage(context.attack.damage, self, context.hordes === "manual" ? null : (context.hordeX ?? passives?.horde ?? null), {
     add: passives?.attackDamageAdd ?? 0,
     ...(passives?.attackDamageType ? { type: passives.attackDamageType } : {}),
   });
@@ -581,7 +604,7 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
   if (isAttack && instance.damage) steps.push({ kind: "modifyDamage", to: "targets", when: ["hit"], change: { kind: "add", amount: fixed(instance.damage) } });
   if (isAttack && instance.halfDamage) steps.push({ kind: "modifyDamage", to: "targets", when: ["hit"], change: { kind: "halve" } });
 
-  const costs: Cost[] = [...((use.costs ?? []) as readonly Cost[]), ...(experienceFear ? [{ kind: "fear" as const, amount: fixed(1) }] : [])];
+  const costs: Cost[] = [...((useCosts ?? []) as readonly Cost[]), ...(experienceFear ? [{ kind: "fear" as const, amount: fixed(1) }] : [])];
   const cardUse: CardUse = {
     id: use.id,
     name: effect.feature,

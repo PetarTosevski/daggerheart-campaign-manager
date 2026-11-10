@@ -40,6 +40,7 @@ import { useRaiseHandle } from "./raise";
 import { useHandFold } from "./use-fold";
 import { CardBacks, catchMore, FanCard, FullCard, RollOptionsBody, SidePop } from "./parts";
 import { cardLook, loadoutFullText, recallBlocked, recallText, type HandMode, type LookContext } from "./states";
+import { helperCandidates } from "../pick-attack/model";
 
 /**
  * The HUD hand (plan combat-hud H2.3; boards CmpCards and Main): the loadout as the domains tab's fan along the bottom
@@ -84,6 +85,10 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
   const hand = useQuery(api.combatCardsReads.hand, { campaignId, characterId });
   const rests = useQuery(api.restsReads.current, own ? { campaignId } : "skip");
   const character = useQuery(api.charactersReads.get, canPlay ? { characterId } : "skip");
+  // Plan rule-switches WF (R7 Book on card and feature rolls, CB p.90): the roll options tick the PCs who help.
+  const helpBook = useQuery(api.ruleSettings.get, canPlay ? { campaignId } : "skip")?.modes.helpAnAlly === "book";
+  const party = useQuery(api.charactersReads.listByCampaign, canPlay && helpBook ? { campaignId } : "skip");
+  const helpers = helpBook && party !== undefined ? helperCandidates(party, characterId) : undefined;
   // H6.2: while the GM holds the spotlight no card starts (answer 1c; reactions come up in the hit window instead).
   const spotlight = useSpotlight(campaignId);
   const actions = useCardPlay({ campaignId, mapId, characterId });
@@ -481,7 +486,7 @@ export function HudHandBody({ campaignId, mapId, characterId, name, mode, canPla
             ) : null}
             {open === "rolls" && canPlay ? (
               <SidePop id={rollsId} title="Roll options" onClose={closePop} testId="hud-hand-rolls">
-                <RollOptionsBody roller={roller} values={rollOptions} problem={rollBlock} onChange={(patch) => changeRollOptions({ ...rollOptions, ...patch })} />
+                <RollOptionsBody roller={roller} values={rollOptions} problem={rollBlock} helpers={helpers} onChange={(patch) => changeRollOptions({ ...rollOptions, ...patch })} />
               </SidePop>
             ) : null}
             <span className="hud-deck" ref={deck}>

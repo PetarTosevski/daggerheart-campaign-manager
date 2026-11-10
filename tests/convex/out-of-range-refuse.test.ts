@@ -87,11 +87,11 @@ const holdThemOff = (tokenIds: Id<"combatTokens">[]) => [{ source: "feature" as 
  * The world plus a live map: Ash (characterA, a Call of the Brave warrior holding the card) at (5, 10), a running
  * encounter. `near` is in Melee; `far` is at x = 25 (beyond Far: Very Far).
  */
-async function arena(outOfRange: "ask" | "refuse" = "refuse") {
+async function arena(outOfRange: "ask" | "refuse" | "manual" = "refuse") {
   const w = await buildWorld();
   const { t, campaignId } = w;
   const gm = w.as("gm");
-  if (outOfRange === "refuse") await gm.mutation(api.campaignSettings.set, { campaignId, change: { key: "outOfRange", value: "refuse" } });
+  if (outOfRange !== "ask") await gm.mutation(api.ruleSettings.set, { campaignId, change: { key: "outOfRange", value: outOfRange } });
   const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
   const now = Date.now();
   const encounterId = await t.run(async (ctx) => {
@@ -186,6 +186,27 @@ describe("config R2: Refuse out-of-range actions (Q2 a)", () => {
     const far = await a.enemy("Far", 25, 10);
     const r = await a.attack(a.player, [far.tokenId]);
     expect(r).toMatchObject({ status: "pending", outOfRange: [{ tokenId: far.tokenId, band: "veryFar" }] });
+  });
+
+  it("M4 Manual (WF): a player's out-of-range attack goes through now, with the GM's note in its group", async () => {
+    const a = await arena("manual");
+    const far = await a.enemy("Far", 25, 10);
+    const r = await a.attack(a.player, [far.tokenId]);
+    expect(r.status).toBe("resolved");
+    expect((await a.trail()).requests).toBe(0);
+    const notes = await a.t.run(async (ctx) => (await ctx.db.query("actionLog").collect()).filter((x) => x.kind === "rule" && x.ruleId === "outOfRange"));
+    expect(notes.map((n) => n.summary)).toEqual([`${(await a.sheet()).name} attacked Far out of range`]);
+    expect(notes[0]!.groupId).toBeDefined();
+  });
+
+  it("M4 Manual (WF): a card use out of range resolves now with the GM's note", async () => {
+    const a = await arena("manual");
+    const far = await a.enemy("Far", 25, 10);
+    const r = await a.card(a.player, [far.tokenId]);
+    expect(r.status).toBe("resolved");
+    const notes = await a.t.run(async (ctx) => (await ctx.db.query("actionLog").collect()).filter((x) => x.kind === "rule" && x.ruleId === "outOfRange"));
+    expect(notes).toHaveLength(1);
+    expect(notes[0]!.summary).toContain("on Far out of range");
   });
 
   it("rider: Hold Them Off's out-of-range extra target is dropped and the attack goes on; Hold Them Off isn't paid", async () => {
@@ -290,5 +311,53 @@ describe("config R2: Refuse out-of-range actions (Q2 a)", () => {
     expect((await a.attack(a.player, [near.tokenId])).status).toBe("resolved");
     expect((await a.card(a.player, [near.tokenId])).status).toBe("resolved");
     expect(((await a.feature(a.player, [near.tokenId])) as { status: string }).status).toBe("resolved");
+  });
+});
+
+/** Plan rule-switches WF: R7 Help an Ally on card and feature rolls (CB p.90), the helper picker of the dice box. */
+describe("R7 on card and feature rolls (WF)", () => {
+  allowWorldEmails();
+
+  const hopeOf = (a: Awaited<ReturnType<typeof arena>>, id: Id<"characters">) => a.t.run(async (ctx) => readSheet((await ctx.db.get("characters", id))!.sheet).hope);
+  const setHope = (a: Awaited<ReturnType<typeof arena>>, id: Id<"characters">, hope: number) =>
+    a.t.run(async (ctx) => {
+      const s = readSheet((await ctx.db.get("characters", id))!.sheet);
+      await saveSheet(ctx, id, { ...s, hope });
+    });
+
+  it("Book: a named helper pays 1 Hope with the card's rows; undo refunds it", async () => {
+    const a = await arena("ask");
+    const near = await a.enemy("Near", 6, 10);
+    await setHope(a, a.w.characterB, 2);
+    const r = await a.card(a.player, [near.tokenId], { roll: { helpers: [a.w.characterB] } });
+    expect(r.status).toBe("resolved");
+    expect(await hopeOf(a, a.w.characterB)).toBe(1);
+    const row = await a.t.run(async (ctx) => (await ctx.db.query("actionLog").collect()).find((x) => x.characterId === a.w.characterB && x.summary.includes("helped")));
+    expect(row?.groupId).toBeDefined();
+    await a.gm.mutation(api.actionLog.undo, { entryId: row!._id, idempotencyKey: key() });
+    expect(await hopeOf(a, a.w.characterB)).toBe(2);
+  });
+
+  it("Book refuses the bare counter and a helper with no Hope, before anything is written", async () => {
+    const a = await arena("ask");
+    const near = await a.enemy("Near", 6, 10);
+    const before = await a.trail();
+    expect((await refusal(a.card(a.player, [near.tokenId], { roll: { help: 1 } }))).code).toBe("DICE_RULE");
+    await setHope(a, a.w.characterB, 0);
+    expect((await refusal(a.card(a.player, [near.tokenId], { roll: { helpers: [a.w.characterB] } }))).code).toBe("NOT_ENOUGH_HOPE");
+    expect((await refusal(a.feature(a.player, [near.tokenId], { roll: { helpers: [a.w.characterB] } }))).code).toBe("NOT_ENOUGH_HOPE");
+    expect(await a.trail()).toEqual(before);
+  });
+
+  it("Manual: the counter adds its dice, no Hope taken, the GM's note", async () => {
+    const a = await arena("ask");
+    await a.gm.mutation(api.ruleSettings.set, { campaignId: a.campaignId, change: { key: "helpAnAlly", value: "manual" } });
+    const near = await a.enemy("Near", 6, 10);
+    await setHope(a, a.w.characterB, 2);
+    expect((await a.card(a.player, [near.tokenId], { roll: { help: 2 } })).status).toBe("resolved");
+    expect(await hopeOf(a, a.w.characterB)).toBe(2);
+    const notes = await a.t.run(async (ctx) => (await ctx.db.query("actionLog").collect()).filter((x) => x.kind === "rule" && x.ruleId === "helpAnAlly").map((x) => x.summary));
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toContain("2 PCs helped");
   });
 });

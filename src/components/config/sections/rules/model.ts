@@ -139,6 +139,11 @@ export const WIRED_RULES: ReadonlySet<string> = new Set([
   "scars",
   "doomTrack",
   "domainCardLevels",
+  // WF, wave 3 GM Fear costs, Hordes, out of range (2026-11-10).
+  "adversaryExperienceFear",
+  "fearFeatures",
+  "hordes",
+  "outOfRange",
 ]);
 
 export type RuleGroup = { area: RuleArea; label: string; rules: readonly RuleDef[] };

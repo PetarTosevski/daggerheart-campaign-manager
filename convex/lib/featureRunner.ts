@@ -58,6 +58,7 @@ import { dropDice, MAX_CARD_TARGETS, type CardChoice, type CardRoll, type DiceSl
 import { afterUnstoppable, cardPromptValidator, damageRolls, effectEndsOf, endOnSheet, gmLines, instanceWrites, lastHpNotes, openCardHits, promptsOf, publicTargets, resistanceNotes, rollText, targetDamageOf, resultPanelOf, writeInstances } from "./cardRows";
 import { actorSheetAfter, effectOption, featureIdOfEffect, ownsEffect, planHopePaid, tokenKeyOf, ruleNotesOfUse, writeSheetChanges, type BuiltRun, type Delegated, type UsePick } from "./cardRunner";
 import { postRuleNote, ruleModesOf } from "./ruleModes";
+import { payHelpers } from "./helpAnAlly";
 import { setStance } from "./stanceDrop";
 import type { AdversaryBefore } from "./validators/actionLog";
 import { unshakableText, unshakePlan, type UnshakableRoll } from "./unshakable";
@@ -992,6 +993,8 @@ export async function resolveFeatureUse(
   for (const summary of resistanceNotes(plan, built.creatures)) await postRuleNote(ctx, campaign, { ruleId: "resistance", summary, groupId, actorId });
   for (const summary of lastHpNotes(writes, modes)) await postRuleNote(ctx, campaign, { ruleId: "adversaryDefeated", summary, groupId, actorId });
   for (const n of ruleNotesOfUse(built, plan)) await postRuleNote(ctx, campaign, { ruleId: n.ruleId, summary: n.summary, groupId, actorId });
+  // Plan rule-switches WF (R7): the helpers pay 1 Hope each in the use's group (undo refunds); Manual: the GM's note.
+  if (built.help) await payHelpers(ctx, campaign, built.help, { groupId, actorId, rollerName: sheet.name });
   if (plan.roll && countsAsActionRoll(plan.roll.record, { logKind: "roll", undone: false })) {
     await tickArmedCountdowns(ctx, { campaignId: campaign._id, entryId, outcome: plan.roll.record.outcome, actorId });
   }

@@ -8,7 +8,6 @@ import { liveSession } from "./lib/sessions";
 import {
   fearAtStartValidator,
   lorekeeperAskValidator,
-  outOfRangeValidator,
   sessionOpensOnValidator,
 } from "./lib/validators/campaigns";
 
@@ -19,11 +18,11 @@ import {
 
 /**
  * One table setting and its new value (rule 12: an intent, one field per call). A new setting adds a member here and
- * an optional field to `storedTableSettingsValidator`.
+ * an optional field to `storedTableSettingsValidator`. Plan rule-switches WF (M4, Q12 a): `outOfRange` is no longer set
+ * here (House rules `ruleModes.outOfRange`); the stored field stays until the migration ran on every deployment.
  */
 export const tableSettingChangeValidator = v.union(
   v.object({ key: v.literal("playersSeeFear"), value: v.boolean() }),
-  v.object({ key: v.literal("outOfRange"), value: outOfRangeValidator }),
   v.object({ key: v.literal("spotlightToPlayers"), value: v.boolean() }),
   v.object({ key: v.literal("lorekeeperWeb"), value: v.boolean() }),
   v.object({ key: v.literal("lorekeeperAsk"), value: lorekeeperAskValidator }),
