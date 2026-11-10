@@ -79,3 +79,38 @@ waves:
         acceptance:
           - tests/convex/fear-features-manual-triggered.test.ts covers a triggered and an automatic Fear-cost use in Book and Manual
           - pnpm lint, pnpm typecheck, the touched vitest files pass
+  - wave: 3
+    # USER ANSWERS 2026-11-10 (Q1-Q6, bead dcm-bxp.134 notes). Q4 kept as built.
+    tracers:
+      - id: FP5
+        beads: [dcm-bxp.134]
+        goal: "Server answers: path features move (and run their reactions) before the attack roll; the move's reactions join the use's undo group; F5 Manual drops and notes Fear inside a use's steps; a triggered use's F5 note joins the attack's undo group (Q2, Q3, Q5, Q6)."
+        depends_on: [FP4]
+        owns:
+          - convex/lib/adversaryActions.ts
+          - convex/lib/adversaryFeatures.ts
+          - convex/lib/combatMovement.ts
+          - convex/lib/combatAreas*.ts
+          - tests/convex/path-move-reactions.test.ts
+          - tests/convex/fear-features-manual-triggered.test.ts
+          - docs/tasks/TASK-FP5.md
+        reads:
+          - convex/lib/actionLog.ts
+          - convex/lib/ruleModes.ts
+        acceptance:
+          - tests cover move-before-roll, one undo restoring Hidden, step Fear noted in Manual, the triggered note removed by undo
+          - pnpm lint, pnpm typecheck, the touched vitest files pass
+      - id: FP6
+        beads: [dcm-bxp.134]
+        goal: "The Dark-Hearted toggle switches itself off after one roll, on the HUD stat block and the classic Encounter panel (Q1)."
+        depends_on: [FP2]
+        owns:
+          - src/components/combat-map/hud/statblock/**
+          - src/components/adversaries/tracker/actions/**
+          - tests/unit/adversary-tracker-actions-wf.test.tsx
+          - tests/unit/hud/statblock*.test.tsx
+          - docs/tasks/TASK-FP6.md
+        reads: []
+        acceptance:
+          - unit tests show the toggle off after an Attack and after an attack-roll feature use, on both panels
+          - pnpm lint, pnpm typecheck, the touched vitest files pass
