@@ -201,3 +201,129 @@ held back the dashboard data (2,658 ms at wan).
 - **Not comparable: CPU.** At cpu4 the main-thread task time for Load → Dashboard is 1,097 ms (analysis 1,461 ms) and
   revisit Dashboard is 510 ms (analysis 1,461 ms). The host load differed a lot between the two sessions, so use CPU
   numbers only in back-to-back before/after pairs.
+
+## Re-measure on an idle host (2026-11-10)
+
+Bead dcm-bxp.36.3. Branch `master` at f6340e92; the scripts print 67acfc0c, a commit that only adds a plan file, so
+the app code is the same. Taken on 16 cores in WSL2 with no agents running, default e2e ports (3000 / 3212).
+
+Load average (1 min / 5 min / 15 min) when each command started:
+
+- `measure.mjs --profile wan --runs 3`: 1.30 / 1.61 / 1.75 at start, 0.71 / 1.27 / 1.60 at end.
+- `bundle.mjs`: 0.34 / 1.07 / 1.51.
+
+Every number below was taken under the 5 load-average limit, so these milliseconds count against the targets.
+
+### Navigation (`measure.mjs --profile wan`, median of 3 runs, ms)
+
+The app has changed since the baseline. Sessions and Notes are now one Journal tab, World is called World Map, and the
+Lorekeeper tab is a real page, no longer a placeholder.
+
+| Step | url / firstAdd / lastData (quiet) | baseline wan (a60a1c0) | q | srv | JS on click |
+|---|---|---|---:|---:|---|
+| title menu cold load (DCL / menu data) | 255 / 1,059 | 259 / 1,069 | 4 | 3 | 17 files, 214 KB |
+| title → Load Campaign | 31 / 334 / 497 | 240 / 264 / 353 | 2 | 0 | 1 / 14 KB |
+| Load → **Dashboard** | **46 / 678 / 772** (2,577) | 318 / 324 / 618 (1,520) | 13 | 13 | 48 / 898 KB (see below) |
+| first: Party | 54 / 64 / 259 | 242 / 256 / 350 | 7 | 0 | 0 |
+| first: Codex (Characters & Locations) | 36 / 44 / 234 | 236 / 246 / 435 | 3 | 0 | 0 |
+| first: World Map | 39 / 41 / 235 | 227 / 232 / 330 | 4 | 0 | 0 |
+| first: Combat Map | 53 / 67 / 250 | 333 / 346 / 530 | 7 | 1 | 0 |
+| first: Adversaries | 46 / 78 / 166 | 277 / 314 / 403 | 3 | 0 | 0 |
+| first: Journal (Sessions + Notes) | 43 / 51 / 162 | 289 / 292 / 381 (Sessions) | 5 | 0 | 0 |
+| first: Lorekeeper | 39 / 47 / 238 | 207 / - / - (placeholder) | 9 | 0 | 0 |
+| first: Dashboard | 34 / 40 / 145 | 115 / 126 / 222 | 12 | 0 | 0 |
+| revisit: tabs (range of medians) | **40-52** / 43-59 / 132-246 | 114-133 / 118-148 / 208-317 | same | 0 | 0 |
+| hard load: Dashboard | - / 925 / **1,147** (2,998) | - / 944 / 1,180 (2,180) | 16 | 17 | 63 / 1,098 KB |
+
+Hard load timeline (median): HTML 93, DOMContentLoaded 230, WebSocket open 838, first queries 925, last first result
+1,147 ms. Every run sent 1 `Authenticate` frame and 0 `POST /api/auth` (baseline 2 and 1).
+
+### Client JS per route (`bundle.mjs`, KB)
+
+Raw / gzip initial JS. "PF11" is the last recorded number for a route (`docs/tasks/TASK-PF-PF11.md`, a8a01e2 plus
+PF11).
+
+| Route | Baseline (a60a1c0) | PF11 | 2026-11-10 | async | CSS | Watched modules on initial JS |
+|---|---:|---:|---:|---:|---:|---|
+| `/` (title menu) | 864 / 320 | | 771 / 298 | 98 | 108 | |
+| `/campaigns` (Load Campaign) | 780 / 296 | | 791 / 306 | 0 | 108 | |
+| `/campaigns/[id]` (dashboard) | 1,627 / 571 | 1,153 / 430 | **1,375 / 518** | 1,302 | 173 | domain-cards |
+| `/campaigns/[id]/party` | 1,437 / 502 | 1,336 / 468 | **1,797 / 621** | 154 | 170 | domain-cards, equipment-tiers, zod |
+| `/campaigns/[id]/party/[characterId]` | 1,596 / 560 | 1,479 / 522 | **1,982 / 690** | 725 | 276 | domain-cards, equipment-tiers, zod |
+| `/campaigns/[id]/party/new` | | 1,271 / 436 | 1,626 / 571 | 137 | 162 | domain-cards, equipment-tiers, zod |
+| `/campaigns/[id]/world` | 1,089 / 405 | | 1,339 / 501 | 137 | 153 | domain-cards, zod |
+| `/campaigns/[id]/codex` | 1,359 / 468 | 1,138 / 418 | 1,286 / 482 | 137 | 140 | domain-cards, zod |
+| `/campaigns/[id]/journal` (was sessions, notes) | 1,307 / 444, 986 / 375 | | 1,287 / 494 | 137 | 188 | domain-cards |
+| `/campaigns/[id]/combat-map` | 1,427 / 507 | | **2,586 / 903** | 1,115 | 356 | domain-cards, equipment-tiers, zod |
+| `/campaigns/[id]/adversaries` | 1,482 / 500 | | **2,203 / 745** | 682 | 228 | domain-cards, srd/adversaries, srd/environments, zod |
+| `/campaigns/[id]/lorekeeper` | 935 / 354 | | 1,156 / 439 | 137 | 140 | domain-cards |
+| `/campaigns/[id]/[section]` (new) | | | 1,146 / 436 | 137 | 138 | domain-cards |
+| `/campaigns/[id]/combat-map/packs` (new) | | | 1,194 / 455 | 137 | 147 | domain-cards |
+| `/new` (new campaign) | | | 1,432 / 488 | 0 | 108 | domain-cards, equipment-tiers, zod |
+| `/frames/[frameId]` | | | 1,538 / 529 | 0 | 108 | tomes, domain-cards, equipment-tiers, zod |
+| `/admin`, `/signin`, `/join/[code]`, `/_not-found` | | | 816 / 316, 756 / 292, 754 / 291, 696 / 260 | 0 | 108-123 | |
+
+- **Shared base.** pkg:next is 601 / 230 KB on campaign routes and 571 / 215 KB on `/` (baseline 559 / 208), convex
+  88 / 31 KB.
+- **Dashboard regrowth since PF11** (+222 KB raw). These modules are back on the dashboard's initial JS:
+  - `srd/domain-cards.ts` 94 KB: `page.tsx` → `party-section.tsx` → `party/party-card.tsx` → `party/party-display.ts` →
+    `srd/art.ts` → `srd/domain-cards.ts`. PF11 left this chain in place and proposed a fix outside its owns.
+  - `srd/subclasses.ts` 32 KB: through the same `party-display.ts`.
+  - `srd/feature-effects/classification.ts` 33 KB: `page.tsx` → `party/dice/index.tsx` → `dice/roll-feed.tsx` →
+    `dice/free-roll.tsx` → `lib/domain/dice/index.ts` → `domain/feature-effects/owned.ts`.
+  - `design-assets.generated.json` 30 KB: `party/dice/index.tsx` → `party/sheet-ui/index.tsx` → `lib/design-assets.ts`.
+  - `components/config` 62 KB.
+- **Party routes** (+460 KB raw since PF11): the new rules engine. `srd/card-effects/*` (sage, codex, splendor, arcana,
+  dread, midnight, valor, bone, grace and more, 10-21 KB each), `srd/feature-effects/*`, `rules/registry.ts` and
+  `srd/beastforms.ts` are all static imports.
+- **Combat Map**: `components/combat-map` 548 KB and `lib/sprite-packs` 219 KB on the initial JS. three and cannon-es
+  stay off it.
+- **Adversaries**: `srd/adversaries.ts` 321 KB and `srd/environments.ts` 119 KB are back on the initial JS, plus
+  `lib/sprite-packs` 206 KB and `components/combat-map` 119 KB.
+
+### Targets (`.omc/plans/performance.yaml`), met or not
+
+| Target | Result | |
+|---|---|---|
+| PF1: tab revisit URL change ≤ 40 ms, 0 RSC requests | 40-52 ms; 0 requests | **Missed** (by 0-12 ms) |
+| PF1: first visit URL change ≤ 60 ms, 0 JS on click | 34-54 ms; 0 JS | Met |
+| PF3: hard load 1 `Authenticate`, 0 `POST /api/auth` | 1 and 0 in every run | Met |
+| PF3: wan hard-load dashboard data ≤ 2.0 s | 1,147 ms | Met |
+| PF4: wan Load → Dashboard `lastData` ≤ 600 ms | 772 ms (PF4 measured 498-502) | **Missed** |
+| PF4: hard load, page queries in the same flight as the first | 5 of 16 leave at 925 ms, 11 at about 1,050 ms | **Missed** (as at PF4) |
+| PF5/PF11: dashboard ≤ 1,250 / 450 KB | 1,375 / 518 KB (PF11 measured 1,153 / 430) | **Missed** (regressed) |
+| PF5: tomes off every campaign route; equipment-tiers and zod off the dashboard | yes; yes | Met |
+| PF5: domain-cards off the dashboard | still on it | **Missed** |
+| PF6: zod off `/`; `/` ≤ 730 KB raw | zod off; 771 KB | **Missed** (size) |
+| PF6: srd/adversaries off the Sessions page (now Journal) | off Journal | Met |
+| PF9: dashboard party payload ≤ 1.5 KB, no `characters.listByCampaign` | `charactersReads.partySummary` 1,259 B; not subscribed | Met |
+
+Not measured here: PF2 (`auth:isAuthenticated` calls in the backend log), PF7 (Fear click) and the cpu4 targets.
+
+### Why the misses happen
+
+- **Load → Dashboard, 772 ms.** The URL changes at 46 ms and the loading skeleton shows at once. The first query
+  only leaves at about 670 ms, because the click must first fetch the dashboard's own chunks: 13 files and about
+  225 KB, in 4-5 sequential waves that finish at about 500 ms (a request-timing probe of one run). The Load Campaign
+  page does not prefetch them. Render and hydration then take about 150 ms more. The data arrives one round trip
+  after the queries leave (about 100 ms). The dashboard's 222 KB of regrowth since PF11 lengthens that download. The
+  48 files / 898 KB in the step are mostly the PF1 background prefetch of the other tabs: 35 files / 675 KB load
+  after the queries leave, as the user accepted on 2026-10-22.
+- **Hard-load level gap.** It looks like PF4: `settings.get`, `appStatus.get`, `campaignTime.get`,
+  `sessionWrap.dashboard` and `campaigns.get` leave at 925 ms. The other 11 wait about 125 ms for the page's own JS.
+  The WebSocket opens at 838 ms (PF4: 750) because the hard load now fetches 63 files / 1,098 KB of JS (PF1: 49 /
+  794).
+- **Tab revisit, 40-52 ms.** It has no request and no JS. What is left is the client render of the page from the
+  router cache, slowest on Party (51 ms), World Map (48 ms) and Combat Map (52 ms).
+- **Dashboard and `/` sizes.** See the module chains above. `/` grew only through pkg:next (559 → 571 KB).
+- **title → Load Campaign data, 497 ms** (baseline 353 ms; no target). The page now subscribes to
+  `campaigns.listDeleted` too. `campaigns.list` returns 61 KB for the e2e GM, because test runs have built up many
+  campaigns.
+
+### The slow first click (dcm-bxp.36)
+
+- **Fixed inside a campaign.** Every first visit of a tab after the dashboard changes the URL in 34-54 ms, fetches no
+  JS and shows data in 145-259 ms. The baseline was 207-333 ms for the URL alone, with up to 110 KB of JS on the
+  click.
+- **Explained on the way in.** The one slow click left is Load Campaign → Dashboard. The skeleton shows at 46 ms,
+  but the data takes 772 ms, because that click downloads the dashboard's chunks (see above).
