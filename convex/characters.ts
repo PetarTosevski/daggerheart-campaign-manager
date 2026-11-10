@@ -21,7 +21,7 @@ import { derivedDefense, derivedThresholds } from "../src/lib/domain/characters/
 import { applySlotBonuses } from "../src/lib/domain/characters/slots";
 import { negateMinor } from "../src/lib/domain/session-features/index";
 import { spellcastTraitOf } from "../src/lib/domain/characters/spellcast";
-import { addCard, cardTakeProblem, sourcesFor } from "../src/lib/domain/level-up/index";
+import { aboveLevelNote, addCard, cardTakeProblem, isAboveLevel, sourcesFor } from "../src/lib/domain/level-up/index";
 import { changeTransformation, loadoutMax, transformationName } from "../src/lib/domain/transformations/index";
 import { holdsPurposefulDesign } from "../src/lib/domain/dice/index";
 import { assertEquipment, assertSource, IKONIS_ONLY } from "../src/lib/equipment-rules";
@@ -801,10 +801,17 @@ export const takeCard = userMutation({
   handler: async (ctx, { characterId, cardId }) => {
     const { campaign, character, sheet: s } = await editable(ctx, ctx.user, characterId);
     const sources = sourcesFor({ allowExpansion: resolveOptions(campaign.frameId, campaign.options).hopeAndFear });
-    const problem = cardTakeProblem(s, cardId, sources);
+    // L3 (rule switches WS, CB p.111): Manual takes a card above the character's reach and tells the GM.
+    const mode = ruleMode(campaign, "domainCardLevels");
+    const problem = cardTakeProblem(s, cardId, sources, mode);
     if (problem) invalid(problem.message);
     await assertCardsUnshared(ctx, campaign, [cardId], "INVALID", character._id);
     await saveSheet(ctx, character._id, { ...s, domainCards: addCard(s.domainCards, cardId, loadoutMax(s)) });
+    const card = getDomainCard(cardId);
+    if (mode === "manual" && card && isAboveLevel(s, card, s.level)) {
+      // takeCard writes no log row, so the note has no group (never undoable) and no character.
+      await postRuleNote(ctx, campaign, { ruleId: "domainCardLevels", summary: aboveLevelNote(s.name, card, s.level), actorId: ctx.user._id });
+    }
     return null;
   },
 });

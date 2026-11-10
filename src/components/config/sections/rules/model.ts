@@ -135,6 +135,10 @@ export const WIRED_RULES: ReadonlySet<string> = new Set([
   "helpAnAlly",
   "tagTeam",
   "criticalDamage",
+  // WS, wave 3 sessions, scars & level-up (X3, W3 with its Sessions per box, L3).
+  "scars",
+  "doomTrack",
+  "domainCardLevels",
 ]);
 
 export type RuleGroup = { area: RuleArea; label: string; rules: readonly RuleDef[] };

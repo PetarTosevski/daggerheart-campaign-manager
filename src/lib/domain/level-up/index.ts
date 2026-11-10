@@ -24,10 +24,15 @@
 //   characters/spellcast.ts). Stored on `multiclass.spellcastTrait`.
 // - A multiclass foundation that grants a slot (At Ease, Battlemage) raises
 //   that maximum; undoing the multiclass takes it back (characters/slots.ts).
+// - L3 `domainCardLevels` (rule switches WS; CB p.111): Book refuses a card above the reach above. Manual lets the
+//   level-up and the Domain Deck take any card of the character's domains; the pickers mark the higher ones "Above
+//   level" (`isAboveLevel`) and the server posts the GM's note (`aboveLevelNote`). Character creation keeps level-1
+//   cards in both modes (it doesn't use this module).
 
 import { CLASSES } from "../../srd/classes";
 import { DOMAIN_CARDS } from "../../srd/domain-cards";
 import { SUBCLASSES } from "../../srd/subclasses";
+import type { ModeOf } from "../../rules/registry";
 import { TRAIT_IDS, type DomainCard, type Source, type TraitId } from "../../srd/types";
 import type { Advancement, AdvancementOption, AdvancementPick, CharacterSheet, SubclassRank } from "../../validation/characters";
 import { MAX_LEVEL, tierForLevel } from "../characters/index";
@@ -167,18 +172,49 @@ const cardById = (id: string): DomainCard | undefined => DOMAIN_CARDS.find((c) =
 
 type CardAccess = Pick<CharacterSheet, "classId" | "multiclass">;
 
-/** The highest level of `card` the character may take at `level` under `cap`, or 0 when its domain is out of reach. */
-function cardLimit(sheet: CardAccess, domain: string, level: number, cap: number): number {
+/** L3 "Domain card levels" (CB p.111): Book keeps cards within reach; Manual takes any card of the character's domains. */
+export type DomainCardLevelsMode = ModeOf<"domainCardLevels">;
+
+/** No domain card is above this level, so Manual's reach is every card of a domain in reach. */
+const ANY_CARD_LEVEL = Number.POSITIVE_INFINITY;
+
+/**
+ * The highest level of `card` the character may take at `level` under `cap`, or 0 when its domain is out of reach.
+ * L3 Manual: any level of a domain in reach (the domains themselves still bound it).
+ */
+function cardLimit(sheet: CardAccess, domain: string, level: number, cap: number, mode: DomainCardLevelsMode = "book"): number {
   const cls = CLASSES.find((c) => c.id === sheet.classId);
-  if (cls?.domains.some((d) => d === domain)) return Math.min(level, cap);
-  if (sheet.multiclass?.domainId === domain) return Math.min(Math.ceil(level / 2), cap);
-  return 0;
+  const inClass = cls?.domains.some((d) => d === domain) ?? false;
+  const inMulticlass = sheet.multiclass?.domainId === domain;
+  if (!inClass && !inMulticlass) return 0;
+  if (mode === "manual") return ANY_CARD_LEVEL;
+  return inClass ? Math.min(level, cap) : Math.min(Math.ceil(level / 2), cap);
 }
 
-/** Domain cards the character may take at `level` (cap: the option's tier cap), not already owned. */
-export function cardsWithin(sheet: CardAccess & Pick<CharacterSheet, "domainCards">, level: number, cap: number, sources: readonly Source[]): DomainCard[] {
+/**
+ * Whether `card` is of the character's domains but above the Book reach at `level` under `cap` (CB p.111): what the
+ * pickers mark "Above level" in L3 Manual and what the GM's note names.
+ */
+export function isAboveLevel(sheet: CardAccess, card: Pick<DomainCard, "domain" | "level">, level: number, cap: number = MAX_LEVEL): boolean {
+  const limit = cardLimit(sheet, card.domain, level, cap);
+  return limit > 0 && card.level > limit;
+}
+
+/** L3 Manual: the GM's note for a card taken above the Book reach. "Mira took Blade Dance (level 4) at level 2". */
+export function aboveLevelNote(name: string, card: Pick<DomainCard, "name" | "level">, level: number): string {
+  return `${name} took ${card.name} (level ${card.level}) at level ${level}`;
+}
+
+/** Domain cards the character may take at `level` (cap: the option's tier cap), not already owned. L3 Manual: any level. */
+export function cardsWithin(
+  sheet: CardAccess & Pick<CharacterSheet, "domainCards">,
+  level: number,
+  cap: number,
+  sources: readonly Source[],
+  mode: DomainCardLevelsMode = "book",
+): DomainCard[] {
   return DOMAIN_CARDS.filter(
-    (c) => sources.includes(c.source) && !sheet.domainCards.owned.includes(c.id) && c.level <= cardLimit(sheet, c.domain, level, cap),
+    (c) => sources.includes(c.source) && !sheet.domainCards.owned.includes(c.id) && c.level <= cardLimit(sheet, c.domain, level, cap, mode),
   ).sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
 }
 
@@ -212,20 +248,28 @@ export function cardTakeProblem(
   sheet: CardAccess & Pick<CharacterSheet, "domainCards" | "level"> & { advancements?: readonly Advancement[] },
   id: string,
   sources: readonly Source[],
+  mode: DomainCardLevelsMode = "book",
 ): CardTakeProblem | null {
   const card = cardById(id);
   if (!card || !sources.includes(card.source)) return { reason: "unknown", message: "Unknown domain card." };
   if (sheet.domainCards.owned.includes(id)) return { reason: "owned", message: `You already have ${card.name}.` };
-  if (card.level > cardLimit(sheet, card.domain, sheet.level, MAX_LEVEL)) return { reason: "locked", message: `${card.name} is out of reach at this level.` };
+  if (card.level > cardLimit(sheet, card.domain, sheet.level, MAX_LEVEL, mode)) return { reason: "locked", message: `${card.name} is out of reach at this level.` };
   if (sheet.domainCards.owned.length >= cardsAllowed(sheet)) return { reason: "full", message: "No picks left: you already have every card your level allows." };
   return null;
 }
 
-function cardProblem(sheet: CardAccess & Pick<CharacterSheet, "domainCards">, id: string, level: number, cap: number, sources: readonly Source[]): string | null {
+function cardProblem(
+  sheet: CardAccess & Pick<CharacterSheet, "domainCards">,
+  id: string,
+  level: number,
+  cap: number,
+  sources: readonly Source[],
+  mode: DomainCardLevelsMode = "book",
+): string | null {
   const card = cardById(id);
   if (!card || !sources.includes(card.source)) return "Unknown domain card.";
   if (sheet.domainCards.owned.includes(id)) return `You already have ${card.name}.`;
-  if (card.level > cardLimit(sheet, card.domain, level, cap)) return `${card.name} is out of reach at this level.`;
+  if (card.level > cardLimit(sheet, card.domain, level, cap, mode)) return `${card.name} is out of reach at this level.`;
   return null;
 }
 
@@ -254,7 +298,8 @@ export type LevelUpChoice = {
   cardChoices?: Record<string, Record<string, string[]>>;
 };
 
-export type LevelUpContext = { allowExpansion: boolean };
+/** `domainCardLevels`: L3's mode (unset = Book). */
+export type LevelUpContext = { allowExpansion: boolean; domainCardLevels?: DomainCardLevelsMode };
 
 /** The card sources a campaign uses: the core set, plus Hope & Fear when the campaign enables it. */
 export const sourcesFor = (ctx: LevelUpContext): Source[] => (ctx.allowExpansion ? ["core", "hope-and-fear"] : ["core"]);
@@ -340,7 +385,7 @@ function planPicks(sheet: CharacterSheet, choice: LevelUpChoice, level: number, 
       }
       case "domainCard": {
         const [cardId] = targets;
-        const problem = targets.length === 1 && cardId ? cardProblem(withMulticlass(sheet, choice), cardId, level, DOMAIN_CARD_CAP[p.tier as Tier], sourcesFor(ctx)) : "Choose a domain card.";
+        const problem = targets.length === 1 && cardId ? cardProblem(withMulticlass(sheet, choice), cardId, level, DOMAIN_CARD_CAP[p.tier as Tier], sourcesFor(ctx), ctx.domainCardLevels) : "Choose a domain card.";
         if (problem) problems.push(problem);
         pick.targets = targets;
         break;
@@ -416,7 +461,7 @@ export function validateLevelUp(sheet: CharacterSheet, choice: LevelUpChoice, ct
   }
 
   const reach = withMulticlass(sheet, choice);
-  const cardProblemText = choice.cardId ? cardProblem(reach, choice.cardId, level, MAX_LEVEL, sources) : "Choose the level's domain card.";
+  const cardProblemText = choice.cardId ? cardProblem(reach, choice.cardId, level, MAX_LEVEL, sources, ctx.domainCardLevels) : "Choose the level's domain card.";
   if (cardProblemText) problems.push(cardProblemText);
   const cards = newCards(choice);
   if (new Set(cards).size !== cards.length) problems.push("Choose different domain cards.");
@@ -427,7 +472,7 @@ export function validateLevelUp(sheet: CharacterSheet, choice: LevelUpChoice, ct
     if (!out || !sheet.domainCards.owned.includes(out.id)) problems.push("Trade out a card you have.");
     else if (!into) problems.push("Unknown domain card.");
     else {
-      const problem = cardProblem(reach, into.id, level, MAX_LEVEL, sources);
+      const problem = cardProblem(reach, into.id, level, MAX_LEVEL, sources, ctx.domainCardLevels);
       if (problem) problems.push(problem);
       if (into.level > out.level) problems.push(`Trade ${out.name} for a card of level ${out.level} or lower.`);
       if (cards.includes(into.id)) problems.push("Choose different domain cards.");
@@ -435,6 +480,27 @@ export function validateLevelUp(sheet: CharacterSheet, choice: LevelUpChoice, ct
   }
   if (sheet.domainCards.owned.length + cards.length > MAX.owned) problems.push(`A deck holds at most ${MAX.owned} cards.`);
   return problems;
+}
+
+/**
+ * L3 (CB p.111): the level-up's new cards (the level's card, each "additional domain card" pick under its tier cap, the
+ * trade's card) that are above the Book reach at the new level. Empty in Book (validateLevelUp refuses them there); in
+ * Manual the server posts one `aboveLevelNote` per card.
+ */
+export function cardsAboveLevel(sheet: CharacterSheet, choice: LevelUpChoice): DomainCard[] {
+  const level = sheet.level + 1;
+  const reach = withMulticlass(sheet, choice);
+  const slots: { id: string; cap: number }[] = [
+    { id: choice.cardId, cap: MAX_LEVEL },
+    ...choice.picks.filter((p) => p.option === "domainCard").map((p) => ({ id: p.targets?.[0] ?? "", cap: DOMAIN_CARD_CAP[p.tier as Tier] ?? MAX_LEVEL })),
+    ...(choice.trade ? [{ id: choice.trade.in, cap: MAX_LEVEL }] : []),
+  ];
+  const out: DomainCard[] = [];
+  for (const { id, cap } of slots) {
+    const card = cardById(id);
+    if (card && isAboveLevel(reach, card, level, cap) && !out.includes(card)) out.push(card);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- apply / revert

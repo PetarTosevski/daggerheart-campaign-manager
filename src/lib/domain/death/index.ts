@@ -114,15 +114,24 @@ export function dropUnconscious<T extends Pick<Tracks, "conditions">>(sheet: T):
   return { ...sheet, conditions };
 }
 
+/** X3 "Scars" (CB 106; rule switches WS): Book adds the scar the Hope Die gives; Manual leaves it to the GM. */
+export type ScarsMode = ModeOf<"scars">;
+
+/** X3 Manual: the GM's note when the Hope Die says scar. "Mira gains a scar: cross out a Hope slot?" */
+export function scarNote(name: string): string {
+  return `${name} gains a scar: cross out a Hope slot?`;
+}
+
 /**
  * Avoid Death (CB 106): the character drops unconscious; a Hope Die at or under
  * the level adds a scar. A scar on the last Hope slot sets `journeyEnds`.
+ * X3 Manual: `scarred` still says what the die gave, but the sheet gets no scar and `journeyEnds` is left as it was.
  */
-export function avoidDeath<T extends Tracks>(sheet: T, hopeDie: number): { sheet: T; scarred: boolean; journeyEnds: boolean } {
+export function avoidDeath<T extends Tracks>(sheet: T, hopeDie: number, mode: ScarsMode = "book"): { sheet: T; scarred: boolean; journeyEnds: boolean } {
   let next: T = dropUnconscious(sheet);
   const scarred = hopeDie <= sheet.level;
   let journeyEnds = Boolean(sheet.journeyEnds);
-  if (scarred) {
+  if (scarred && mode === "book") {
     // Scars go up to 6 + hopeSlotBonus (scarsMax); the journey ends when no Hope slot is left.
     journeyEnds = journeyEnds || hopeMax(sheet.scars + 1, sheet.hopeSlotBonus ?? 0) <= 0;
     next = { ...applyResourceDelta(next, "scars", 1), journeyEnds };

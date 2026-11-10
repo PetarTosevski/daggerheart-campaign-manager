@@ -138,6 +138,7 @@ vi.mock("convex/react", () => ({
   useQuery: (ref: unknown) => {
     const name = functionName(ref);
     if (name === "restsReads:current") return { open: null, shortRestsSinceLong: 0, last: null };
+    if (name === "ruleSettings:get") return undefined;
     if (name === "charactersReads:listByCampaign") return current ? [current] : [];
     return current;
   },

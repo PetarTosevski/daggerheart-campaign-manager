@@ -20,6 +20,7 @@ vi.mock("convex/react", () => ({
   useQuery: (ref: unknown, args: unknown) => {
     const name = functionName(ref);
     if (name === "restsReads:current") return restsCurrent;
+    if (name === "ruleSettings:get") return undefined;
     if (name === "charactersReads:listByCampaign") return current ? [current] : [];
     if (name === "drafts:get") return args === "skip" ? undefined : accountDraft === null ? null : { schemaVersion: 1, data: accountDraft, updatedAt: 0 };
     return current;

@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "convex/react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as z from "@/lib/zod";
 
@@ -224,8 +225,10 @@ export function LevelUpDraftProvider({
   navigate?: (page: SheetPage, collection?: SheetCollection) => void;
   children?: ReactNode;
 }) {
-  const { character, canEdit, isGm, hopeAndFear } = slot;
+  const { character, canEdit, isGm, hopeAndFear, campaignId } = slot;
   const characterId = character._id;
+  // L3 "Domain card levels" (rule switches WS): Manual lets the level take a card above its reach, as the server does.
+  const domainCardLevels = useQuery(api.ruleSettings.get, { campaignId })?.modes.domainCardLevels ?? "book";
   const sheet = useMemo(() => fullSheet(character), [character]);
   const sheetLevel = sheet?.level ?? character.sheet.level;
   const canStart = canLevelUp(sheet, canEdit, isGm);
@@ -297,7 +300,7 @@ export function LevelUpDraftProvider({
       ...(takesMulticlass && draft.multiclass ? { multiclass: draft.multiclass } : {}),
       ...(Object.keys(cardChoices).length > 0 ? { cardChoices } : {}),
     };
-    const ruleProblems = active && sheet ? validateLevelUp(sheet, choice, { allowExpansion: hopeAndFear }) : [];
+    const ruleProblems = active && sheet ? validateLevelUp(sheet, choice, { allowExpansion: hopeAndFear, domainCardLevels }) : [];
     const cardProblems = active && sheet ? cardChoiceProblems(cardAsks, cardChoices) : [];
     const problems = [...ruleProblems, ...cardProblems];
     const issues = sheet
@@ -390,7 +393,7 @@ export function LevelUpDraftProvider({
         edit((d) => ({ ...d, cardChoices: { ...d.cardChoices, [cardId]: { ...d.cardChoices?.[cardId], [stepId]: [...new Set(optionIds)].slice(0, 4) } } })),
       goTo,
     };
-  }, [active, apply, canStart, characterId, commit, end, goTo, hopeAndFear, ids, level, navigate, sheet, sheetLevel, state]);
+  }, [active, apply, canStart, characterId, commit, domainCardLevels, end, goTo, hopeAndFear, ids, level, navigate, sheet, sheetLevel, state]);
 
   return (
     <LevelUpDraftContext.Provider value={value}>

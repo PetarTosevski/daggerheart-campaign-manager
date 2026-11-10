@@ -84,7 +84,7 @@ import {
   type RestFeatures,
 } from "../src/lib/domain/rest/feature-moves";
 import { hpClearedWakeNote, keepUnconscious, longRestWakeNote, unconsciousBlocksActing } from "../src/lib/domain/characters/index";
-import { tierRuleActive } from "../src/lib/frames/trackers/horizon";
+import { doomTierRulesApply, tierRuleActive } from "../src/lib/frames/trackers/horizon";
 import { appError } from "../src/lib/errors/app-error";
 import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -435,12 +435,12 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
 }
 
 /**
- * W3 Doom Track Tier 1 (HF p.177, Journey to Horizon only, Book mode; plan rule-switches WD, Q14 a): 5 or more Tier 1
- * boxes are marked, so the long rest's Fear d4 is rolled twice and the higher kept. Every other frame, and the Doom
- * Track's other modes: false.
+ * W3 Doom Track Tier 1 (HF p.177, Journey to Horizon only; plan rule-switches WD, Q14 a): 5 or more Tier 1 boxes are
+ * marked, so the long rest's Fear d4 is rolled twice and the higher kept. Book and Every N sessions (WS, user
+ * 2026-11-10); Manual and every other frame: false.
  */
 async function doomTierOneActive(ctx: QueryCtx, campaign: Doc<"campaigns">): Promise<boolean> {
-  if (campaign.frameId !== horizonTracker.frameId || ruleMode(campaign, "doomTrack") !== "book") return false;
+  if (campaign.frameId !== horizonTracker.frameId || !doomTierRulesApply(ruleMode(campaign, "doomTrack"))) return false;
   return tierRuleActive(await loadTracker(ctx, campaign._id, horizonTracker), 1);
 }
 

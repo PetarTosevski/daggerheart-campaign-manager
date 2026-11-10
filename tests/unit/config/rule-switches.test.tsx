@@ -200,7 +200,7 @@ describe("rule rows: the GM", () => {
   it("shows a rule with modes that isn't wired yet as its mode and Coming soon, with no control (wave 3)", () => {
     setUp("witherwild", { outOfRange: "refuse" });
     render(<Section />);
-    for (const id of ["hordes", "scars", "outOfRange"]) {
+    for (const id of ["hordes", "outOfRange"]) {
       expect(within(row(id)).queryByRole("radio"), id).toBeNull();
       expect(within(row(id)).getByText(RULE_ROWS_TEXT.comingSoon), id).toBeInTheDocument();
     }
@@ -213,6 +213,9 @@ describe("rule rows: the GM", () => {
     // WR (wave 3 roll costs) is wired: R8 shows its three modes, R2 its Manual.
     expect(within(row("tagTeam")).getByRole("radio", { name: /No session limit/ })).toBeInTheDocument();
     expect(within(row("criticalSuccess")).getByRole("radio", { name: "Manual" })).toBeInTheDocument();
+    // WS (wave 3 sessions, scars & level-up) is wired: X3 and L3 show Book / Manual.
+    expect(within(row("scars")).getByRole("radio", { name: "Manual" })).toBeInTheDocument();
+    expect(within(row("domainCardLevels")).getByRole("radio", { name: "Manual" })).toBeInTheDocument();
   });
 
   it("makes X2 read-only while X1 is Manual", () => {
