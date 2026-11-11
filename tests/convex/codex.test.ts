@@ -491,7 +491,8 @@ describe("codex", () => {
     const { gm, campaignId } = await setup();
     const { entryId } = await gm.mutation(api.codex.create, { campaignId, kind: "character", idempotencyKey: key() });
     let code: unknown;
-    for (let i = 0; i < 30 && code === undefined; i++) code = errorCode(await fail(gm.mutation(api.codex.imageUploadUrl, { entryId })));
+    // The burst is 64 URLs; the 65th is refused.
+    for (let i = 0; i < 70 && code === undefined; i++) code = errorCode(await fail(gm.mutation(api.codex.imageUploadUrl, { entryId })));
     expect(code).toBe("RATE_LIMITED");
   });
 });

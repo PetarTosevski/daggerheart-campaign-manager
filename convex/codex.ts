@@ -323,7 +323,7 @@ export const remove = userMutation({
 
 /** GM only: an upload URL for an image of an entry with room for one more. Rate-limited per user. */
 export const imageUploadUrl = userMutation({
-  rateLimit: "uploadUrl",
+  rateLimit: "codexImageUpload",
   args: { entryId: v.id("codexEntries") },
   returns: v.string(),
   handler: async (ctx, { entryId }) => {
