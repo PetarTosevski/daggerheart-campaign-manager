@@ -190,6 +190,7 @@ describe("codex", () => {
       () => p1.mutation(api.codex.importPins, { campaignId, idempotencyKey: key() }),
       () => p1.mutation(api.codex.setImageShown, { entryId, storageId: "x", shown: true }),
       () => p1.mutation(api.codex.setCover, { entryId, storageId: "x" }),
+      () => p1.mutation(api.codex.moveImage, { entryId, storageId: "x", toIndex: 0 }),
       () => p1.mutation(api.codex.removeImage, { entryId, storageId: "x" }),
     ];
     for (const call of forbidden) expect(errorCode(await fail(call()))).toBe("FORBIDDEN");
@@ -396,6 +397,31 @@ describe("codex", () => {
     expect(errorCode(await fail(gm.mutation(api.codex.setCover, { entryId, storageId: "nope" })))).toBe("NOT_FOUND");
   });
 
+  it("images: the GM moves an image to a new place; players see the new order", async () => {
+    const { t, ids, gm, p1, campaignId } = await setup();
+    const { entryId } = await gm.mutation(api.codex.create, { campaignId, kind: "location", idempotencyKey: key() });
+    const [a, b, c] = [await attach(t, entryId, ids.gm, true), await attach(t, entryId, ids.gm, true), await attach(t, entryId, ids.gm, true)];
+    await gm.mutation(api.codex.update, { entryId, patch: { known: true } });
+    const order = async () => (await gm.query(api.codex.list, { campaignId })).entries[0].images.map((g) => g.key);
+    const urls = async (client: typeof gm) => (await client.query(api.codex.list, { campaignId })).entries[0].images.map((g) => g.url);
+
+    await gm.mutation(api.codex.moveImage, { entryId, storageId: c, toIndex: 0 });
+    expect(await order()).toEqual([c, a, b]);
+    await gm.mutation(api.codex.moveImage, { entryId, storageId: c, toIndex: 2 });
+    expect(await order()).toEqual([a, b, c]);
+    await gm.mutation(api.codex.moveImage, { entryId, storageId: a, toIndex: 1 });
+    expect(await order()).toEqual([b, a, c]);
+    // Players get the same order (their keys are positions), and the main picture stays the one picked.
+    expect(await urls(p1)).toEqual(await urls(gm));
+    expect((await gm.query(api.codex.list, { campaignId })).entries[0].cover).toBe(a);
+
+    expect(errorCode(await fail(gm.mutation(api.codex.moveImage, { entryId, storageId: "nope", toIndex: 0 })))).toBe("NOT_FOUND");
+    for (const toIndex of [-1, 3, 0.5]) {
+      expect(errorCode(await fail(gm.mutation(api.codex.moveImage, { entryId, storageId: a, toIndex })))).toBe("INVALID");
+    }
+    expect(await order()).toEqual([b, a, c]);
+  });
+
   it("images: an image another entry's file row claims gets no URL", async () => {
     const { t, ids, gm, campaignId } = await setup();
     const { entryId: a } = await gm.mutation(api.codex.create, { campaignId, kind: "character", idempotencyKey: key() });
@@ -443,15 +469,22 @@ describe("codex", () => {
     expect(await gm.query(api.codex.entryText, { entryId: b })).toBeNull();
   });
 
-  it("images: at most 8 per entry", async () => {
+  it.each([
+    ["character", 16],
+    ["location", 25],
+  ] as const)("images: a %s holds at most %i", async (kind, max) => {
     const { t, ids, gm, campaignId } = await setup();
-    const { entryId } = await gm.mutation(api.codex.create, { campaignId, kind: "character", idempotencyKey: key() });
-    for (let i = 0; i < 8; i++) await attach(t, entryId, ids.gm);
+    const { entryId } = await gm.mutation(api.codex.create, { campaignId, kind, idempotencyKey: key() });
+    for (let i = 0; i < max - 1; i++) await attach(t, entryId, ids.gm);
+    // One below the limit there is still room.
+    expect(await gm.mutation(api.codex.imageUploadUrl, { entryId })).toEqual(expect.any(String));
+    await attach(t, entryId, ids.gm);
     expect(errorCode(await fail(gm.mutation(api.codex.imageUploadUrl, { entryId })))).toBe("INVALID");
     const extra = await t.run((ctx) => ctx.storage.store(imageBlob("image/png")));
     expect(await gm.mutation(api.codex.attachImage, { entryId, storageId: extra })).toEqual({ error: expect.any(String) });
     expect(await t.run((ctx) => ctx.storage.getUrl(extra))).toBeNull();
-    expect(await t.run(async (ctx) => (await ctx.db.query("files").collect()).length)).toBe(8);
+    expect(await t.run(async (ctx) => (await ctx.db.query("files").collect()).length)).toBe(max);
+    expect((await gm.query(api.codex.list, { campaignId })).entries.find((e) => e._id === entryId)!.images).toHaveLength(max);
   });
 
   it("imageUploadUrl is rate-limited per user", async () => {

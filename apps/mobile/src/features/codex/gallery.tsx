@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { errorMessage } from "../../../../../src/lib/convex-errors";
-import { MAX_CODEX_IMAGES } from "../../../../../src/lib/codex/schema";
+import { maxCodexImages } from "../../../../../src/lib/codex/schema";
 import type { GmEntry, PlayerEntry } from "../../../../../src/lib/codex/view";
 import { api } from "../../convex";
 import type { Id } from "../../convex";
@@ -38,7 +38,8 @@ export function Gallery({
   const [confirmKey, setConfirmKey] = useState<string | null>(null);
   const entryId = entry._id as Id<"codexEntries">;
   const images: Img[] = entry.images;
-  const full = images.length >= MAX_CODEX_IMAGES;
+  const max = maxCodexImages(entry.kind);
+  const full = images.length >= max;
   const name = entry.name || "this entry";
 
   async function run(op: () => Promise<unknown>) {
@@ -160,7 +161,7 @@ export function Gallery({
             style={[styles.addTile, full ? styles.addTileFull : null]}
           >
             <Text style={styles.addGlyph}>＋</Text>
-            <Text style={styles.note}>{full ? `At most ${MAX_CODEX_IMAGES} images` : "Add images from the library"}</Text>
+            <Text style={styles.note}>{full ? `At most ${max} images` : "Add images from the library"}</Text>
           </Pressable>
         ) : null}
       </View>

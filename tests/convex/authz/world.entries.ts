@@ -88,6 +88,7 @@ const codex: Entry[] = [
   { fn: api.codex.attachImage, access: "scoped", setup: storedFile, expect: GM_CHANGE },
   { fn: api.codex.setImageShown, access: "scoped", setup: entryImage, args: (w) => ({ storageId: w.ids.storageId, shown: true }), expect: GM_CHANGE },
   { fn: api.codex.setCover, access: "scoped", setup: entryImage, args: (w) => ({ storageId: w.ids.storageId }), expect: GM_CHANGE },
+  { fn: api.codex.moveImage, access: "scoped", setup: entryImage, args: (w) => ({ storageId: w.ids.storageId, toIndex: 0 }), expect: GM_CHANGE },
   { fn: api.codex.removeImage, access: "scoped", setup: entryImage, args: (w) => ({ storageId: w.ids.storageId }), expect: GM_CHANGE },
 ];
 

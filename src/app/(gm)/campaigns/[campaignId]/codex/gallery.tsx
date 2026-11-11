@@ -7,7 +7,7 @@ import { BrandButton } from "@/components/brand/buttons";
 import { fitWithin } from "@/components/party/portrait-source";
 import { UploadNotice } from "@/components/uploads/upload-notice";
 import { errorMessage } from "@/lib/convex-errors";
-import { MAX_CODEX_IMAGES } from "@/lib/codex/schema";
+import { maxCodexImages } from "@/lib/codex/schema";
 import type { GmEntry, PlayerEntry } from "@/lib/codex/view";
 import { cn } from "@/lib/utils";
 
@@ -37,21 +37,38 @@ async function shrinkToJpeg(file: File): Promise<Blob> {
 /** An image by its page key (the GM's key is the storage id; players get an opaque index). */
 type Img = { key: string; url: string | null; shown?: boolean };
 
-/** The Images card: thumbnails (GM: reveal, main picture, delete) and the add-images drop zone. */
+/** `list` with the item `key` moved to position `toIndex`. */
+function moved<T extends { key: string }>(list: T[], key: string, toIndex: number): T[] {
+  const item = list.find((g) => g.key === key);
+  if (!item) return list;
+  const rest = list.filter((g) => g.key !== key);
+  rest.splice(toIndex, 0, item);
+  return rest;
+}
+
+/** The Images card: thumbnails (GM: reveal, main picture, delete, drag to reorder) and the add-images drop zone. */
 export function Gallery({ entry, gm, onOpen }: { entry: GmEntry | PlayerEntry; gm: boolean; onOpen: (key: string) => void }) {
   const uploadUrl = useMutation(api.codex.imageUploadUrl);
   const attach = useMutation(api.codex.attachImage);
   const setShown = useMutation(api.codex.setImageShown);
   const setCover = useMutation(api.codex.setCover);
   const removeImage = useMutation(api.codex.removeImage);
+  const moveImage = useMutation(api.codex.moveImage);
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragOn, setDragOn] = useState(false);
   const [confirmImg, setConfirmImg] = useState<string | null>(null);
   const entryId = entry._id as Id<"codexEntries">;
-  const images: Img[] = entry.images;
-  const full = images.length >= MAX_CODEX_IMAGES;
+  /** The image being dragged to a new place (GM), and the tile it is over. */
+  const [dragKey, setDragKey] = useState<string | null>(null);
+  const [overKey, setOverKey] = useState<string | null>(null);
+  /** A move shown at once, until the server's order arrives. */
+  const [pendingMove, setPendingMove] = useState<{ key: string; toIndex: number } | null>(null);
+  const stored: Img[] = entry.images;
+  const images = pendingMove ? moved(stored, pendingMove.key, pendingMove.toIndex) : stored;
+  const max = maxCodexImages(entry.kind);
+  const full = images.length >= max;
   const name = entry.name || "this entry";
 
   const run = async (op: () => Promise<unknown>) => {
@@ -63,11 +80,22 @@ export function Gallery({ entry, gm, onOpen }: { entry: GmEntry | PlayerEntry; g
     }
   };
 
+  async function dropOn(targetKey: string) {
+    const key = dragKey;
+    setDragKey(null);
+    setOverKey(null);
+    const toIndex = stored.findIndex((g) => g.key === targetKey);
+    if (!key || key === targetKey || toIndex < 0) return;
+    setPendingMove({ key, toIndex });
+    await run(() => moveImage({ entryId, storageId: key, toIndex }));
+    setPendingMove(null);
+  }
+
   async function addImages(files: Iterable<File>) {
     const picked = Array.from(files).filter((f) => f.type.startsWith("image/"));
     if (!picked.length) return;
-    const room = MAX_CODEX_IMAGES - images.length;
-    setError(room < picked.length ? `An entry holds at most ${MAX_CODEX_IMAGES} images.` : null);
+    const room = max - images.length;
+    setError(room < picked.length ? `${entry.kind === "location" ? "A location" : "A character"} holds at most ${max} images.` : null);
     setBusy(true);
     try {
       for (const file of picked.slice(0, Math.max(0, room))) {
@@ -111,7 +139,11 @@ export function Gallery({ entry, gm, onOpen }: { entry: GmEntry | PlayerEntry; g
     <div className="cx-card">
       <div className="flex flex-wrap items-baseline justify-between gap-2.5">
         <h2 className="cx-h">Images</h2>
-        {gm ? <span className="cx-muted">Reveal an image to let the players see it. Revealing one also marks the entry as known.</span> : null}
+        {gm ? (
+          <span className="cx-muted">
+            Reveal an image to let the players see it. Revealing one also marks the entry as known. Drag an image to change the order.
+          </span>
+        ) : null}
       </div>
       {!gm && !images.length ? <p className="cx-muted m-0">Nothing to show yet.</p> : null}
       <div
@@ -119,13 +151,20 @@ export function Gallery({ entry, gm, onOpen }: { entry: GmEntry | PlayerEntry; g
         onDragOver={(e) => {
           if (!gm) return;
           e.preventDefault();
-          setDragOn(true);
+          // Reordering an image is not a file drop: the add tile stays unlit.
+          if (!dragKey) setDragOn(true);
         }}
         onDragLeave={() => setDragOn(false)}
         onDrop={(e) => {
           if (!gm) return;
           e.preventDefault();
           setDragOn(false);
+          if (dragKey) {
+            // Dropped between tiles: nothing moves.
+            setDragKey(null);
+            setOverKey(null);
+            return;
+          }
           void addImages(e.dataTransfer.files);
         }}
       >
@@ -135,7 +174,34 @@ export function Gallery({ entry, gm, onOpen }: { entry: GmEntry | PlayerEntry; g
           return (
             <div
               key={g.key}
-              className={cn("cx-thumb", hidden && "hid")}
+              className={cn(
+                "cx-thumb",
+                hidden && "hid",
+                dragKey === g.key && "opacity-40",
+                dragKey && dragKey !== g.key && overKey === g.key && "outline outline-2 outline-offset-2 outline-[#d9b25f]",
+              )}
+              draggable={gm && images.length > 1 && !pendingMove}
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/plain", name);
+                setDragKey(g.key);
+              }}
+              onDragEnd={() => {
+                setDragKey(null);
+                setOverKey(null);
+              }}
+              onDragOver={(e) => {
+                if (!dragKey) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                if (overKey !== g.key) setOverKey(g.key);
+              }}
+              onDrop={(e) => {
+                if (!dragKey) return;
+                e.preventDefault();
+                e.stopPropagation();
+                void dropOn(g.key);
+              }}
               style={{ ...(g.url ? { backgroundImage: `url(${g.url})` } : {}), borderColor: gm && g.shown ? "#3d7a55" : "#253338" }}
             >
               {/* The open button covers the tile; the GM's tools sit above it as siblings, so no control is nested in another. */}
@@ -196,7 +262,7 @@ export function Gallery({ entry, gm, onOpen }: { entry: GmEntry | PlayerEntry; g
         {gm ? (
           <button type="button" className={cn("cx-drop", dragOn && "over")} disabled={busy || full} onClick={() => input.current?.click()}>
             <span className="text-[28px] leading-none">＋</span>
-            <span>{full ? `At most ${MAX_CODEX_IMAGES} images` : "Add images: click, drop files here, or paste"}</span>
+            <span>{full ? `At most ${max} images` : "Add images: click, drop files here, or paste"}</span>
           </button>
         ) : null}
       </div>

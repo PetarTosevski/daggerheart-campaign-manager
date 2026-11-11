@@ -8,7 +8,11 @@ export const CODEX_KINDS = ["character", "location"] as const;
 export type CodexKind = (typeof CODEX_KINDS)[number];
 
 export const MAX_CODEX_ENTRIES = 500;
-export const MAX_CODEX_IMAGES = 8;
+/** Images one entry holds, by kind: a place has many views, a person a few portraits. */
+export const MAX_CODEX_IMAGES_BY_KIND: Record<CodexKind, number> = { character: 16, location: 25 };
+/** The largest per-kind limit: what stored data and bounded reads allow for. */
+export const MAX_CODEX_IMAGES = Math.max(...Object.values(MAX_CODEX_IMAGES_BY_KIND));
+export const maxCodexImages = (kind: CodexKind): number => MAX_CODEX_IMAGES_BY_KIND[kind];
 export const MAX_CODEX_IMAGE_BYTES = 3 * 1024 * 1024;
 export const MAX_NAME = 120;
 export const MAX_ROLE = 160;

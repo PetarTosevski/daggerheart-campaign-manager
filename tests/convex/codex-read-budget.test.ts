@@ -4,19 +4,20 @@ import { describe, expect, it } from "vitest";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
-import { MAX_CODEX_ENTRIES, MAX_CODEX_IMAGES, MAX_NAME, MAX_ROLE, MAX_TEXT } from "../../src/lib/codex/schema";
+import { MAX_CODEX_ENTRIES, maxCodexImages, MAX_NAME, MAX_ROLE, MAX_TEXT } from "../../src/lib/codex/schema";
 import { MAX_TOKENS } from "../../src/lib/world/map-state";
 import { imageBlob, key, useAllowlist } from "./helpers";
 import { modules } from "./setup";
 
 // TE6: `codex.list` is a hot list query (every codex edit re-runs it for
-// everyone on the page). With a campaign at the entry cap, every entry at its
-// largest (longest name and role, 8 images, 8,000-character texts) and a map
-// at the marker cap, it must stay under this budget.
-// Measured at H15: about 1.9 MiB, 5,000 documents and 6-9 index ranges (500
-// entries, 4,000 image file rows, 500 marker rows); the long text alone
-// would add 500 x 16 KB = 8 MB.
-const BUDGET = { bytesRead: 2.5 * 1024 * 1024, documentsRead: 5_500, databaseQueries: 16 };
+// everyone on the page). With a campaign at the entry cap, every entry a
+// location at its largest (longest name and role, 25 images, 8,000-character
+// texts) and a map at the marker cap, it must stay under this budget, which
+// is itself well under Convex's per-query limits (16 MiB, 32,000 documents).
+// Measured with locations at 25 images: about 4.6 MiB, 13,500 documents and
+// 7-11 index ranges (500 entries, 12,500 image file rows, 500 marker rows);
+// the long text alone would add 500 x 16 KB = 8 MB.
+const BUDGET = { bytesRead: 5.5 * 1024 * 1024, documentsRead: 14_500, databaseQueries: 16 };
 
 // The rate limiter's test helper references vite/client types (see setup.ts).
 type ComponentTestHelper = { default: { register: (t: unknown, name?: string) => void } };
@@ -56,11 +57,13 @@ async function fullCampaign(t: T) {
     await t.run(async (ctx) => {
       for (let i = 0; i < 50; i++) {
         const n = batch * 50 + i;
+        // Every entry a location: the kind that holds the most images.
+        const kind = "location" as const;
         const storageIds: Id<"_storage">[] = [];
-        for (let g = 0; g < MAX_CODEX_IMAGES; g++) storageIds.push(await ctx.storage.store(imageBlob("image/jpeg")));
+        for (let g = 0; g < maxCodexImages(kind); g++) storageIds.push(await ctx.storage.store(imageBlob("image/jpeg")));
         const entryId = await ctx.db.insert("codexEntries", {
           campaignId,
-          kind: n % 2 ? "location" : "character",
+          kind,
           data: {
             schemaVersion: 2,
             name: long(MAX_NAME),

@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 
-import { checkGroups, codexPatchSchema, emptyEntry, MAX_CODEX_IMAGE_BYTES, MAX_CODEX_IMAGES } from "../src/lib/codex/schema";
+import { checkGroups, codexPatchSchema, emptyEntry, MAX_CODEX_IMAGE_BYTES, maxCodexImages } from "../src/lib/codex/schema";
 import { coverOf, regionOf, toPlayerEntry, type GmEntry, type PlayerEntry } from "../src/lib/codex/view";
 import { appError } from "../src/lib/errors/app-error";
 import { HORIZON_FRAME, mapImageSize, MAX_TOKENS, snapToHexCentre } from "../src/lib/world/map-state";
@@ -327,8 +327,9 @@ export const imageUploadUrl = userMutation({
   args: { entryId: v.id("codexEntries") },
   returns: v.string(),
   handler: async (ctx, { entryId }) => {
-    const { summary } = await loadEntryForGm(ctx, ctx.user, entryId);
-    if (summary.images.length >= MAX_CODEX_IMAGES) invalid(`An entry holds at most ${MAX_CODEX_IMAGES} images.`);
+    const { entry, summary } = await loadEntryForGm(ctx, ctx.user, entryId);
+    const max = maxCodexImages(entry.kind);
+    if (summary.images.length >= max) invalid(`${entry.kind === "location" ? "A location" : "A character"} holds at most ${max} images.`);
     return ctx.storage.generateUploadUrl();
   },
 });
@@ -351,9 +352,10 @@ export const attachImage = userMutation({
       await ctx.storage.delete(storageId);
       return { error: "Images must be PNG, JPEG, WebP or GIF files of at most 3 MB." };
     }
-    if (summary.images.length >= MAX_CODEX_IMAGES) {
+    const max = maxCodexImages(entry.kind);
+    if (summary.images.length >= max) {
       await ctx.storage.delete(storageId);
-      return { error: `An entry holds at most ${MAX_CODEX_IMAGES} images.` };
+      return { error: `${entry.kind === "location" ? "A location" : "A character"} holds at most ${max} images.` };
     }
     await claimFile(ctx, { storageId, campaignId: entry.campaignId, uploadedBy: ctx.user._id, kind: "codexImage", refId: entryId });
     await saveSummary(ctx, entry, { ...summary, images: [...summary.images, { storageId, shown: false }], cover: summary.cover ?? storageId });
@@ -389,6 +391,22 @@ export const setCover = userMutation({
     const { entry, summary } = await loadEntryForGm(ctx, ctx.user, entryId);
     requireImage(summary, storageId);
     await saveSummary(ctx, entry, { ...summary, cover: storageId });
+    return null;
+  },
+});
+
+/** GM only: moves an image to position `toIndex` (0 = first) among the entry's images; the others keep their order. */
+export const moveImage = userMutation({
+  args: { entryId: v.id("codexEntries"), storageId: v.string(), toIndex: v.number() },
+  returns: v.null(),
+  handler: async (ctx, { entryId, storageId, toIndex }) => {
+    const { entry, summary } = await loadEntryForGm(ctx, ctx.user, entryId);
+    requireImage(summary, storageId);
+    if (!Number.isInteger(toIndex) || toIndex < 0 || toIndex >= summary.images.length) invalid("That is not a place among this entry's images.");
+    const moved = summary.images.find((g) => g.storageId === storageId)!;
+    const images = summary.images.filter((g) => g.storageId !== storageId);
+    images.splice(toIndex, 0, moved);
+    await saveSummary(ctx, entry, { ...summary, images });
     return null;
   },
 });

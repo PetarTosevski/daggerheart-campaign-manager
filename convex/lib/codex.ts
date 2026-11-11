@@ -103,7 +103,7 @@ export async function campaignEntries(ctx: QueryCtx, campaignId: Id<"campaigns">
   return rows.sort((a, b) => b.createdAt - a.createdAt || a._creationTime - b._creationTime);
 }
 
-/** Every codex image file of the campaign by storage id (at most MAX_CODEX_IMAGES per entry): one index range. */
+/** Every codex image file of the campaign by storage id (at most MAX_CODEX_IMAGES per entry, the largest per-kind limit): one index range. */
 export async function codexImageFiles(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<Map<string, Doc<"files">>> {
   const rows = await ctx.db
     .query("files")

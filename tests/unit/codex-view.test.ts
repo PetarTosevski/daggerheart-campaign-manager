@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { checkGroups, codexEntryDataSchema, codexPatchSchema, emptyEntry, factionsFor, regionsFor } from "@/lib/codex/schema";
+import { checkGroups, codexEntryDataSchema, codexPatchSchema, emptyEntry, factionsFor, maxCodexImages, regionsFor } from "@/lib/codex/schema";
 import { seedCharacters } from "@/lib/codex/seed";
 import {
   allegianceNote,
@@ -22,8 +22,11 @@ describe("codex schema", () => {
     expect(codexEntryDataSchema.parse(emptyEntry())).toEqual(emptyEntry());
     expect(codexEntryDataSchema.safeParse(emptyEntry({ name: "x".repeat(121) })).success).toBe(false);
     expect(codexEntryDataSchema.safeParse(emptyEntry({ pdesc: "x".repeat(8001) })).success).toBe(false);
-    const nine = Array.from({ length: 9 }, (_, i) => ({ storageId: `s${i}`, shown: false }));
-    expect(codexEntryDataSchema.safeParse(emptyEntry({ images: nine })).success).toBe(false);
+    // The stored shape allows the largest per-kind limit (a location's 25); the per-kind limit is checked on write.
+    const images = (n: number) => Array.from({ length: n }, (_, i) => ({ storageId: `s${i}`, shown: false }));
+    expect(codexEntryDataSchema.safeParse(emptyEntry({ images: images(25) })).success).toBe(true);
+    expect(codexEntryDataSchema.safeParse(emptyEntry({ images: images(26) })).success).toBe(false);
+    expect([maxCodexImages("character"), maxCodexImages("location")]).toEqual([16, 25]);
     expect(codexEntryDataSchema.safeParse(emptyEntry({ tokenId: 0 })).success).toBe(false);
   });
 
