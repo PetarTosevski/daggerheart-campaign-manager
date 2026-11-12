@@ -37,6 +37,7 @@ export function IdentitySection({
         name={sheet.name}
         portraitUrl={character.portraitUrl}
         portrait={character.sheet.portrait}
+        portraitFrame={sheet.portraitFrame}
       />
       <Field
         label="Name"

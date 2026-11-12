@@ -9,6 +9,7 @@ import { api } from "../../convex";
 import type { Id } from "../../convex";
 import { errorMessage } from "../../../../../src/lib/convex-errors";
 import { designAsset } from "../../../../../src/lib/design-assets";
+import { clampPortraitFrame, type PortraitFrame } from "../../../../../src/lib/party/portrait-frame";
 import { useWritesEnabled } from "../../shell/offline";
 import { colors } from "../../theme/colors";
 import { type } from "../../theme/fonts";
@@ -46,6 +47,24 @@ export function portraitSource(portraitUrl: string | null, portrait: { kind: str
 }
 
 /**
+ * The saved close-up (plan portrait-frame, PZ3; display only, the phone does not edit it) as expo-image props, drawn
+ * like the website's inner layer: the picture covers the clipped shape aligned at x% y% (expo-image's `contentPosition`
+ * percent works like CSS `background-position`), then scales by `zoom` about that same point (`transformOrigin`
+ * percent, React Native 0.74+). Null without a frame: the picture draws exactly as before.
+ */
+export function portraitImageFrame(frame: PortraitFrame | null | undefined): {
+  contentPosition: { left: `${number}%`; top: `${number}%` };
+  style: { transform: [{ scale: number }]; transformOrigin: string };
+} | null {
+  if (!frame) return null;
+  const { zoom, x, y } = clampPortraitFrame(frame);
+  return {
+    contentPosition: { left: `${x}%`, top: `${y}%` },
+    style: { transform: [{ scale: zoom }], transformOrigin: `${x}% ${y}%` },
+  };
+}
+
+/**
  * Shows the portrait (dcm-gdzi.26) and changes it: the library image first, checked against the server's size and
  * type allowlist, and only then an upload URL (cancelling the picker spends none). The picker crops square and
  * re-encodes at quality 0.7 (iOS hands HEIC over as JPEG when it re-encodes); `resizePortrait` then shrinks it to
@@ -56,6 +75,7 @@ export function PortraitControl({
   name,
   portraitUrl,
   portrait,
+  portraitFrame,
   hasPortrait,
   canEdit,
 }: {
@@ -63,6 +83,8 @@ export function PortraitControl({
   name: string;
   portraitUrl: string | null;
   portrait?: { kind: string; asset?: string };
+  /** The sheet's saved close-up (`sheet.portraitFrame`); absent: today's framing. */
+  portraitFrame?: PortraitFrame;
   hasPortrait: boolean;
   canEdit: boolean;
 }) {
@@ -74,6 +96,7 @@ export function PortraitControl({
   const inFlight = useRef(false);
   const letter = name.trim().charAt(0).toUpperCase() || "?";
   const source = portraitSource(portraitUrl, portrait);
+  const framed = portraitImageFrame(portraitFrame);
 
   async function change() {
     if (inFlight.current) return;
@@ -123,7 +146,19 @@ export function PortraitControl({
     <View style={styles.row}>
       <View accessibilityLabel={source ? `Portrait of ${name}` : `${name} has no portrait`} style={styles.mark}>
         {source ? (
-          <Image accessibilityIgnoresInvertColors contentFit="cover" source={{ uri: source }} style={styles.image} testID="portrait-image" />
+          framed ? (
+            // The round mark clips; the scaled picture drops its own rounding, which would scale off-centre with it.
+            <Image
+              accessibilityIgnoresInvertColors
+              contentFit="cover"
+              contentPosition={framed.contentPosition}
+              source={{ uri: source }}
+              style={[styles.framedImage, framed.style]}
+              testID="portrait-image"
+            />
+          ) : (
+            <Image accessibilityIgnoresInvertColors contentFit="cover" source={{ uri: source }} style={styles.image} testID="portrait-image" />
+          )
         ) : (
           <Text style={styles.letter}>{letter}</Text>
         )}
@@ -167,6 +202,10 @@ const styles = StyleSheet.create({
   },
   image: {
     borderRadius: 28,
+    height: 56,
+    width: 56,
+  },
+  framedImage: {
     height: 56,
     width: 56,
   },

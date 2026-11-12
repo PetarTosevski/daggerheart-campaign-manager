@@ -90,6 +90,7 @@ export function RosterCard({
         name={sheet.name}
         portrait={sheet.portrait}
         portraitUrl={character.portraitUrl}
+        portraitFrame={sheet.portraitFrame}
       />
       {canEdit && !dead ? (
         <Button
