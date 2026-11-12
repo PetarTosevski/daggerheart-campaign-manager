@@ -1,0 +1,187 @@
+# Countdowns tick on rests (bead dcm-674k). User decisions 2026-11-12, final:
+#   - Core feature, every campaign. Every countdown type (standard, progress, consequence, chase, long-term) gets rest
+#     options, separate from "Armed" (= ticks on PC action rolls).
+#   - Two settings: one for FINISHED long rests, one for short rests. Each has its own amount: a fixed number N; the
+#     number of PCs who took part in the rest; a die (d4, d6, d8, d10, d12, d20); a die plus the PCs who rested.
+#   - An interrupted long rest does not count as a long rest; it fires the SHORT-rest setting (user answer Q1, 2026-11-12).
+#   - Each setting is Automatic or Reminder. Reminder: the GM gets "Tick X?" with the amount already rolled; one click
+#     ticks it.
+#   - The roll and the tick in the feed follow the countdown's visibility: Public (no hidden field) -> everyone;
+#     Private or Partly hidden -> GM only.
+#   - Undoing the rest takes the ticks back.
+# Format: docs/workflow.md.
+#
+# Shared decisions (every tracer follows them):
+#   - Stored shape (widen only; every field optional, absent = off, so every existing row reads as today):
+#       countdowns.onLongRest?:  RestTick
+#       countdowns.onShortRest?: RestTick
+#       RestTick       = { amount: RestTickAmount, mode: "auto" | "remind" }      (mode reuses COUNTDOWN_REST_MODES)
+#       RestTickAmount = { kind: "fixed", n }            n integer 1..MAX_COUNTDOWN_START (20)
+#                      | { kind: "pcs" }
+#                      | { kind: "die", sides }          sides in COUNTDOWN_DICE_SIDES (4, 6, 8, 10, 12, 20)
+#                      | { kind: "diePlusPcs", sides }
+#     Validators in convex/tables/countdowns.ts (`countdownRestTickValidator`), zod twin in src/lib/validation/countdowns.ts,
+#     types and pure maths in a new src/lib/domain/countdowns/rest-ticks.ts.
+#   - "PCs who took part" = the rest's resting party (`restingParty` in convex/rests.ts, the same count the long-rest
+#     Fear uses for "+ N PCs"). A computed amount of 0 ticks nothing and writes nothing (applyTick's contract).
+#   - Dice: server-side only, `rollDie` from convex/lib/dice.ts (as the rest's Fear d4). The rest's mutation rolls every
+#     setting once when the rest ends, Automatic and Reminder alike, and stores the result on the rest row (below), so
+#     the Reminder shows the pre-rolled amount and a reload never rerolls.
+#   - Untangling `armed` for long-term: long-term countdowns never tick on rolls (countdownRolls.ts refuses them
+#     today), so on long-term `armed` only ever meant "On long rest". After this plan `armed` means "ticks on PC action
+#     rolls" for every type, it is not offered for long-term in any UI, and long-term rest behaviour lives only in
+#     `onLongRest`. Old long-term rows: `armed: true` + `restMode` (absent = auto) == `onLongRest: { amount: { kind:
+#     "fixed", n: 1 }, mode: restMode ?? "auto" }`; `armed` false/absent == no `onLongRest`.
+#   - Rule 7 (widen -> migrate -> narrow):
+#       widen (RT1): add `onLongRest` / `onShortRest`; keep `restMode` and long-term `armed` in the validator. One reader
+#         `restTicksOf(doc)` (rest-ticks.ts) returns the effective settings: the new fields when set, else the legacy
+#         long-term mapping above. No writer writes `restMode` or long-term `armed` any more: `create` translates a
+#         legacy long-term `armed`/`restMode` into `onLongRest`; `countdownTracks.setRestMode` and `countdowns.setArmed` on
+#         a long-term row stay as compatibility shims for installed phone builds (setRestMode sets onLongRest.mode,
+#         creating a fixed-1 setting if absent; setArmed on long-term sets/clears a fixed-1 onLongRest) and write only
+#         the new field.
+#       migrate (RT1): convex/migrations/countdownRestTicks.ts `moveLongTermRest` (@convex-dev/migrations, batched,
+#         idempotent, dry-run first): each long-term row with legacy state gets the mapped `onLongRest` (unless already
+#         set) and has `armed` and `restMode` unset. The orchestrator runs it on each deployment after RT1 merges.
+#       narrow (NOT in this plan; follow-up bead filed by the orchestrator once the migration ran on prod and phone
+#         builds use RT3): drop `restMode` from the table, the view and `create`, drop the legacy branch of
+#         `restTicksOf`, remove `setRestMode` and the long-term branch of `setArmed`.
+#   - The view (`countdowns.listByCampaign`, player-facing, has `returns`): adds `onLongRest` and `onShortRest`
+#     (GM-only, null for players, like `armed`). During the transition `restMode` and long-term `armed` stay in the view,
+#     derived from the effective `onLongRest`, so installed phone builds keep working.
+#   - One intent mutation `countdowns.setRestTick({ countdownId, rest: "long" | "short", setting: RestTick | null })`
+#     (keyedGmMutation, null = off; refused COUNTDOWN_RULE on a cancelled countdown, NOT_FOUND on frame-owned or another
+#     campaign's). `create` and `createChase` accept optional `onLongRest` / `onShortRest`.
+#   - Chase pairs: the setting is shared by the pair, like `armed` and `visibility`: setRestTick and createChase write
+#     both rows. One roll per pair per rest; both rows move by the same amount, each with its own countdownTicks row on
+#     the same entryId, so undo takes both back. One Reminder per pair ("Tick <rivals' name> chase?") ticks both rows.
+#   - Which rows tick: dashboard countdowns (ownerKey undefined) that are `active` and have the matching effective
+#     setting; read with `by_campaign_owner` (eq campaignId, eq ownerKey undefined) and `.take(100)` (a campaign has few
+#     dashboard countdowns), then filtered in code (no `.filter()` on the query). Paused, completed and cancelled rows
+#     are skipped, as today. The K1 rule switch (`countdownTicks`, rolls only) does not apply to rests (as today).
+#   - Which rests: a finished long rest uses `onLongRest`; a finished short rest uses `onShortRest`; an interrupted
+#     long rest uses `onShortRest` (Q1 answered); an interrupted short rest gives nothing (as today).
+#   - Rolls stored on the rest row: `rests.restTicks?: Array<{ countdownId, mode, amount, pcs?, die?: { sides, rolled } }>`
+#     (bounded by the 100-row scan; cleared by `rests.undo` with the rest's other result fields). `afterRest` and
+#     `tickOnRest` read it; the reminder ticks exactly the stored amount.
+#   - Every rest tick goes through `applyTick` with source "rest" and the rest's campaign row as entryId (unchanged), so
+#     `rests.undo` (undoEntry -> revertTicks) takes Automatic and clicked-Reminder ticks back.
+#   - Feed: Automatic ticks write at most two rows in the rest's undo group (skipped at the group cap, as today): one
+#     public row for Public countdowns ("Long rest: Storm ticks 5 (1d6 3 + 2 PCs)"), one GM-only row for Private / Partly
+#     hidden countdowns plus the long-term step lines and the reminders ("Reminder: tick Storm 4?"). A Reminder's roll
+#     stays GM-only until the GM ticks it (Q2 answered); the click writes the tick row with the roll, public or GM-only by
+#     the countdown's visibility, into the rest's group when it has room (the Oasis reroll pattern). Step text stays
+#     GM-only (D12), never in a public row.
+#   - The API names `countdownTracks.afterRest` / `countdownTracks.tickOnRest` stay (installed phone builds call them);
+#     both widen to every countdown type and to short rests. `afterRest` returns `{ restId, kind: "long" | "short",
+#     lines, reminders }`, each reminder with `amount` and `rollText` added; null when the latest rest is not a finished
+#     rest or nothing applies.
+#
+# User answers (2026-11-12):
+#   Q1: An interrupted long rest (short-rest benefits, CB 105) FIRES the short-rest setting (`onShortRest`).
+#   Q2: For a Public countdown set to Reminder, players do not see the pre-roll before the GM clicks; the roll appears
+#       in the public feed with the tick.
+#   Q3: Long-term countdowns never tick on PC action rolls; Armed stays hidden for them.
+plan: rest-ticks
+waves:
+  - wave: 1
+    tracers:
+      - id: RT1
+        title: Rest tick settings stored, rolled and applied on rests (domain, schema, server, migration)
+        size: L
+        goal: The GM sets "On long rest" and "On short rest" (amount kind + Automatic/Reminder) on any dashboard countdown through the API; finishing a rest rolls and ticks or reminds as set, with feed rows that follow visibility, and undoing the rest takes every tick back; existing long-term countdowns keep ticking once per finished long rest before and after the migration.
+        depends_on: []
+        owns:
+          - src/lib/domain/countdowns/rest-ticks.ts
+          - src/lib/validation/countdowns.ts
+          - convex/tables/countdowns.ts
+          - convex/tables/rests.ts
+          - convex/countdowns.ts
+          - convex/countdownTracks.ts
+          - convex/rests.ts
+          - convex/migrations/countdownRestTicks.ts
+          - tests/unit/countdown-rest-ticks.test.ts
+          - tests/unit/countdown-validation.test.ts
+          - tests/convex/countdowns-rest-ticks.test.ts
+          - tests/convex/countdown-rest-ticks-migration.test.ts
+          - tests/convex/countdowns-long-term.test.ts
+          - tests/convex/countdowns-chase.test.ts
+          - tests/convex/authz/countdowns.entries.ts
+          - docs/tasks/TASK-RT1.md
+          - docs/data-model.md
+        reads:
+          - src/lib/domain/countdowns/advanced.ts
+          - src/lib/domain/countdowns/index.ts
+          - convex/lib/countdownTicks.ts
+          - convex/lib/actionLog.ts
+          - convex/lib/dice.ts
+          - convex/lib/functions.ts
+          - convex/lib/migrations.ts
+          - convex/migrations/mapTrailMode.ts
+          - convex/migrations/run.ts
+          - convex/countdownRolls.ts
+          - tests/convex/maps-migration.test.ts
+          - docs/tasks/TASK-CD-K4.md
+          - docs/best-practices.md
+        acceptance:
+          - "src/lib/domain/countdowns/rest-ticks.ts (pure, unit-tested in tests/unit/countdown-rest-ticks.test.ts): the RestTick / RestTickAmount types; `restTicksOf(row)` returning the effective { long, short } settings, including the legacy long-term mapping (armed + restMode absent/auto/remind -> fixed 1 auto/remind; unarmed -> none); `restTickAmount(amount, pcs, rng)` returning { amount, pcs?, die? } for all four kinds (fixed, pcs, die over every allowed size, die + pcs; 0 PCs -> pcs kinds give 0 / the die alone); `restTickText(...)` for the feed ('5 (1d6 3 + 2 PCs)'); `restTickFeedAudience(visibility)` -> 'public' only for Public, 'gm' for Private and Partly hidden"
+          - "Schema widened only: `onLongRest` / `onShortRest` optional on countdowns (validators exported from convex/tables/countdowns.ts, no v.any()), `restTicks` optional on rests; `restMode` and `armed` unchanged in the validator; zod schema accepts the new fields on every mode (n 1..20, sides in COUNTDOWN_DICE_SIDES) and rejects anything else with INVALID (tests/unit/countdown-validation.test.ts)"
+          - "`countdowns.setRestTick` is a keyedGmMutation with full args validator and `returns`, intent-shaped (one rest kind, one setting or null); a chase row writes its partner too; COUNTDOWN_RULE for a cancelled countdown, NOT_FOUND for frame-owned / other campaign; `create` and `createChase` accept the optional settings; a legacy long-term `armed`/`restMode` on `create` is stored as `onLongRest` only; `setRestMode` and long-term `setArmed` are shims writing only `onLongRest` (comment says they go at the narrow step). New entry for setRestTick in tests/convex/authz/countdowns.entries.ts; existing entries keep passing"
+          - "`listByCampaign` returns `onLongRest` / `onShortRest` to the GM and null to players (its `returns` validator widened); `restMode` and long-term `armed` are derived from the effective setting for old clients"
+          - "convex/rests.ts: a finished long rest applies `onLongRest`, a finished short rest `onShortRest`, an interrupted long rest `onShortRest` (Q1 answered), each active dashboard countdown rolled once (a chase pair once, both rows ticked by the same amount); Automatic ticks via applyTick (source 'rest', campaign row entryId); Reminder only stored; all results stored on `rests.restTicks`; `rests.undo` clears `restTicks` and reverts every tick (including clicked reminders); the feed rows follow visibility as in this plan's header (public row visible to a player, GM row not, asserted through the player's feed query)"
+          - "`countdownTracks.afterRest` (gmQuery, `returns` widened) covers both rest kinds and every countdown type, reminders carrying the stored amount and roll text; `countdownTracks.tickOnRest` ticks exactly the stored amount for any type (both rows of a chase), writes its feed row by visibility into the rest's group when there is room, is COUNTDOWN_RULE for a non-latest rest, a countdown with no stored reminder for that rest, a second click, or a non-active countdown"
+          - "convex/migrations/countdownRestTicks.ts `moveLongTermRest`: batched with @convex-dev/migrations, idempotent; tests/convex/countdown-rest-ticks-migration.test.ts covers armed auto, armed remind, armed with restMode absent, unarmed, already-migrated and non-long-term rows (old shape in, new shape out), and a long rest ticks a long-term countdown identically before and after the migration"
+          - "tests/convex/countdowns-rest-ticks.test.ts covers: each amount kind with a seeded/replayed die, Automatic vs Reminder, long vs short vs interrupted, paused/completed skipped, chase pair (same amount, shared setting, one reminder, undo reverts both), undo of a rest with automatic and clicked-reminder ticks, feed visibility for Public / Partly hidden / Private; tests assert ConvexError.data.code. Existing long-term and chase convex tests updated, not deleted. pnpm lint, typecheck and the tracer's vitest files pass (--maxWorkers=2; no full-suite run). docs/tasks/TASK-RT1.md records the decisions and the migration commands"
+  - wave: 2
+    tracers:
+      - id: RT2
+        title: GM website UI for rest ticks (card, create forms, rest panel)
+        size: M
+        goal: On the countdowns page the GM sets "On long rest" and "On short rest" for any countdown on its card and in the New countdown / New chase forms, long-term no longer shows "Armed", and after a rest the rest panel lists what ticked and "Tick X? (rolled N)" reminders that tick with one click.
+        depends_on: [RT1]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/rest-ticks.tsx
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/card.tsx
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/new-dialog.tsx
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/chase.tsx
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/track.tsx
+          - src/components/party/rest/long-term.tsx
+          - tests/unit/countdown-rest-ticks-ui.test.tsx
+          - tests/e2e/countdowns-rest-ticks.spec.ts
+          - tests/e2e/countdowns-long-term.spec.ts
+          - docs/tasks/TASK-RT2.md
+        reads:
+          - src/lib/domain/countdowns/rest-ticks.ts
+          - src/lib/validation/countdowns.ts
+          - convex/countdowns.ts
+          - convex/countdownTracks.ts
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/visibility.tsx
+          - src/components/party/rest/launcher.tsx
+          - tests/e2e/a11y.ts
+          - docs/best-practices.md
+        acceptance:
+          - "A shared `RestTickControl` (rest-ticks.tsx): Off / On, an amount kind (Fixed N with a number field 1..20, PCs who rested, Die with a d4..d20 picker, Die + PCs) and Automatic / Reminder; labelled, keyboard operable, 44 px touch targets on tablet. Used twice (long rest, short rest) on every card's GM settings (chase: once per pair) and in both create forms (sending onLongRest / onShortRest)"
+          - "Card changes send `countdowns.setRestTick` (one rest kind per call) with an optimistic update of listByCampaign (both rows for a chase); nothing sent from an effect; no props copied into state in effects. The long-term track's old 'On long rest: Automatic / Reminder' switch and the long-term 'Tick on every long rest' armed checkbox are replaced by the control; Armed stays for every other type with its existing copy"
+          - "The rest panel (long-term.tsx) shows the latest rest's lines and reminders for any countdown type and both rest kinds, each reminder as 'Tick <name>? <amount> (<roll text>)' with one button calling tickOnRest optimistically; heading no longer says only long-term"
+          - "tests/unit/countdown-rest-ticks-ui.test.tsx covers the control's states and payloads. tests/e2e/countdowns-rest-ticks.spec.ts: the GM sets a standard countdown to 'On short rest: Die d6, Automatic' and a Partly hidden one to 'On long rest: PCs who rested, Reminder', runs a short rest (the first ticks, a player sees the public feed row) and a long rest (the GM sees 'Tick ...?' with the amount, clicks it, the value drops by that amount), then undoes the rest and the value comes back; axe passes with the control open. tests/e2e/countdowns-long-term.spec.ts updated to the new control. pnpm lint, typecheck and the tracer's unit and e2e tests pass (vitest --maxWorkers=2; no full-suite run)"
+      - id: RT3
+        title: Phone app follows the new rest settings
+        size: S
+        goal: The phone app's GM countdown card edits the long and short rest settings through setRestTick instead of setRestMode, hides Armed for long-term, and its rest panel shows every rest reminder with its pre-rolled amount.
+        depends_on: [RT1]
+        owns:
+          - apps/mobile/src/features/dashboard/countdowns.tsx
+          - apps/mobile/src/features/dashboard/rests.tsx
+          - apps/mobile/test/features/dashboard/countdowns.roles.test.tsx
+          - apps/mobile/test/features/dashboard/rest-launcher.roles.test.tsx
+          - apps/mobile/test/features/dashboard/fixtures.ts
+          - docs/tasks/TASK-RT3.md
+        reads:
+          - src/lib/domain/countdowns/rest-ticks.ts
+          - convex/countdowns.ts
+          - convex/countdownTracks.ts
+          - apps/mobile/src/features/dashboard/gm-panels.tsx
+        acceptance:
+          - "The GM card shows 'On long rest' and 'On short rest' (Off, the four amount kinds with N / die size, Automatic / Reminder) for every type, one chase control per pair, each change one `countdowns.setRestTick` call; no remaining call to `countdownTracks.setRestMode`; Armed is not shown for long-term. The New countdown sheet (gm-panels.tsx) is unchanged (out of scope; say so in the task doc)"
+          - "The rest panel reads the widened `afterRest` and shows 'Tick <name>? <amount> (<roll text>)' for any type and rest kind, ticking with tickOnRest"
+          - "Jest tests cover the control's payloads and the reminder line; pnpm --filter @dualityheart/mobile run check passes"
