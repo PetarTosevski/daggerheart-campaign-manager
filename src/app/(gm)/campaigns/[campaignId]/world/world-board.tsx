@@ -57,6 +57,7 @@ import { useMapActions } from "./map-actions";
 import { MapImageControl } from "./map-image";
 import { MapView, type StrokePhase } from "./map-view";
 import { Palette } from "./palette";
+import { CodexLink, PlayerTokenDetails, PlayerTokenPanel } from "./player-tokens";
 import { TokenPanel } from "./token-panel";
 import { TravelLegend } from "./travel-legend";
 import { TravelRulesDialog } from "./travel-rules";
@@ -133,7 +134,15 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
   }, [focusId]);
 
   const visibleTokens = state.tokens;
-  const sel = editable ? (state.tokens.find((t) => t.id === selId) ?? null) : null;
+  // The GM edits the selected marker; players (and the GM's player preview) see it read-only (dcm-yzxx). `state.tokens`
+  // holds only markers the viewer may see, so a hidden marker can never be selected by a player.
+  const sel = state.tokens.find((t) => t.id === selId) ?? null;
+  /** Players' marker list: select the marker and centre the map on it (scrolled into view when the list is below it). */
+  const showToken = (t: MapToken) => {
+    setSelId(t.id);
+    panZoom.centreOn(t.x, t.y);
+    viewport.current?.scrollIntoView?.({ block: "nearest" });
+  };
 
   // ---- hex helpers (Horizon)
   const toHex = (p: Point): Hex | null => (crawl ? pixelToHex((p.x / 100) * image.width, (p.y / 100) * image.height, crawl.grid) : null);
@@ -357,7 +366,8 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
         return;
       }
     }
-    const zoomBy = (k: number) => () => panZoom.zoomAt(panZoom.viewRef.current.z * k);
+    const zoomIn = () => panZoom.stepZoom(1);
+    const zoomOut = () => panZoom.stepZoom(-1);
     const keys: Record<string, () => void> = {
       f: toggleFs,
       m: toggleMeasure,
@@ -365,15 +375,16 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
       h: () => setHideToks((v) => !v),
       v: togglePlayer,
       p: togglePaint,
-      "+": zoomBy(1.25),
-      "=": zoomBy(1.25),
-      "-": zoomBy(1 / 1.25),
-      _: zoomBy(1 / 1.25),
+      "+": zoomIn,
+      "=": zoomIn,
+      "-": zoomOut,
+      _: zoomOut,
       "0": panZoom.fit,
     };
     if (e.key === "Escape") {
       if (fs) toggleFs();
       else if (placing || measuring || settingOrigin) stopTools();
+      else if (!editable && selId !== null) setSelId(null);
       else return;
       e.preventDefault();
       return;
@@ -401,7 +412,7 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
   const hint = !editable
     ? isGm
       ? "Player view: hidden markers and GM tools are tucked away."
-      : "Scroll or pinch to zoom, drag to pan."
+      : "Scroll or pinch to zoom, drag to pan. Click a marker for its details."
     : settingOrigin
       ? "Click the centre of a hex on the map to set the grid origin."
       : measuring
@@ -422,7 +433,7 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
   const tool = painting ? "paint" : measuring && mmode === "free" ? "draw" : "pan";
 
   return (
-    <main className={`w-main${editable ? " w-gm" : ""}`}>
+    <main className={`w-main${editable ? " w-gm" : " w-view"}`}>
       {editable ? <Palette types={horizon ? types : types.filter((t) => t.id !== SANCTUARY_TYPE)} placing={placing} onPick={(id) => (setPlacing(id), setMeasuring(false), setPainting(false))} actions={actions} /> : null}
 
       <section
@@ -508,13 +519,13 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
                 📏 Measure
               </BrandButton>
             ) : null}
-            <BrandButton variant="tool" icon className="tip" data-tip="Zoom out · −" aria-label="Zoom out" onClick={() => panZoom.zoomAt(panZoom.view.z / 1.25)}>
+            <BrandButton variant="tool" icon className="tip" data-tip="Zoom out · −" aria-label="Zoom out" onClick={() => panZoom.stepZoom(-1)}>
               −
             </BrandButton>
             <span className="min-w-12 text-center text-[13px] text-[#9fb2b6]" aria-label="Zoom level">
               {Math.round(panZoom.view.z * 100)}%
             </span>
-            <BrandButton variant="tool" icon className="tip" data-tip="Zoom in · +" aria-label="Zoom in" onClick={() => panZoom.zoomAt(panZoom.view.z * 1.25)}>
+            <BrandButton variant="tool" icon className="tip" data-tip="Zoom in · +" aria-label="Zoom in" onClick={() => panZoom.stepZoom(1)}>
               +
             </BrandButton>
             <BrandButton variant="tool" className="tip" data-tip="Fit the whole map · 0" aria-label="Fit map" onClick={panZoom.fit}>
@@ -747,7 +758,12 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
           onStroke={onStroke}
           onPickMarker={(id, at) => {
             // A hex marker covers its hex: the click selects the hex (Travel here) and the marker together (WH2).
-            const pick = editable ? pickMarker(id, !!crawl) : null;
+            if (!editable) {
+              // Players (and the player preview) open a visible marker's read-only details; the party has none.
+              if (id !== "party") setSelId(id);
+              return;
+            }
+            const pick = pickMarker(id, !!crawl);
             if (!pick) return;
             setSelHex(pick.hex ? toHex(at) : null);
             setSelId(pick.token);
@@ -763,8 +779,19 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
             void actions.addToken(type, at.x, at.y).then((r) => r && setSelId(r.id));
           }}
         />
+        {!editable && sel ? (
+          <PlayerTokenDetails
+            token={sel}
+            types={types}
+            fromParty={fromParty(sel)}
+            distances={distances(sel)}
+            onClose={() => setSelId(null)}
+            codexLink={<CodexLink campaignId={campaignId} tokenId={sel.id} knownOnly={isGm} />}
+          />
+        ) : null}
       </section>
 
+      {!editable ? <PlayerTokenPanel tokens={state.tokens} types={types} selectedId={sel?.id ?? null} onSelect={showToken} /> : null}
       {editable ? (
         <TokenPanel
           tokens={state.tokens}

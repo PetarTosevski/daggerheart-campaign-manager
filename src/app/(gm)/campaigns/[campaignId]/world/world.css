@@ -11,6 +11,17 @@
   .w-main.w-gm{grid-template-columns:176px minmax(0,1fr) 260px;grid-template-areas:"pal map side"}
   .w-main.w-gm>.w-pal,.w-main.w-gm>.w-side{position:sticky;top:12px}
 }
+/* Players' board (dcm-yzxx): the map, then the marker list (below it on narrow screens, on the right from 1100px). */
+.w-main.w-view{grid-template-areas:"map" "side"}
+.w-main.w-view>.w-map{grid-area:map}
+.w-main.w-view>.w-side{grid-area:side}
+@media (min-width:1100px){
+  .w-main.w-view{grid-template-columns:minmax(0,1fr) 260px;grid-template-areas:"map side"}
+  .w-main.w-view>.w-side{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow-y:auto}
+}
+/* The selected marker's read-only details over the map's bottom-right corner; at phone width it spans the map. */
+.w-tokinfo{position:absolute;right:12px;bottom:12px;z-index:20;box-sizing:border-box;width:min(320px,calc(100% - 24px));max-height:min(60%,420px);overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.6)}
+.tok.tok-view{cursor:pointer}
 .w-pal-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
 @media (min-width:1100px){.w-pal-list{display:flex;flex-direction:column}}
 

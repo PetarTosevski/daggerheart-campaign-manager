@@ -1,5 +1,6 @@
 import { api } from "../../../convex/_generated/api";
 import type { Id, TableNames } from "../../../convex/_generated/dataModel";
+import { emptyEntry } from "../../../src/lib/codex/schema";
 import { imageBlob, key } from "../helpers";
 import type { Area, Entry, Outcome, Role, World } from "./harness";
 
@@ -61,6 +62,13 @@ async function marker(w: World, over: { hidden?: boolean; location?: boolean } =
   );
 }
 
+/** A secret Codex location linked to a hidden marker (id 1). */
+async function secretLinkedLocation(w: World) {
+  await marker(w, { hidden: true, location: true });
+  const campaignId = w.campaignId;
+  await w.t.run((ctx) => ctx.db.insert("codexEntries", { campaignId, kind: "location", data: emptyEntry({ name: "Secret keep", tokenId: 1 }), createdAt: 0, updatedAt: 0 }));
+}
+
 /** The party on hex (0, 0) of a Journey to Horizon crawl. */
 async function partyOnHex(w: World) {
   await w.as("gm").mutation(api.maps.placePartyHex, { campaignId: w.campaignId, q: 0, r: 0 });
@@ -75,6 +83,13 @@ const codex: Entry[] = [
     access: "scoped",
     setup: async (w) => void (await firstEntry(w)),
     expect: { anon: "UNAUTHENTICATED", outsider: "null", otherPlayer: "null", player: "null", grantee: "ok", gm: "ok" },
+  },
+  // dcm-yzxx: a secret location linked to a hidden marker. Players get no link (never its id); the GM gets it.
+  {
+    fn: api.codex.mapLinks,
+    access: "view",
+    setup: secretLinkedLocation,
+    expect: { otherPlayer: "empty", player: "empty", grantee: "ok", gm: "ok" },
   },
   { fn: api.codex.create, access: "edit" },
   { fn: api.codex.seed, access: "edit" },

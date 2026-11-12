@@ -63,3 +63,9 @@ export const codexTextValidator = v.union(
   v.object({ role: v.literal("player"), pdesc: v.string() }),
   v.null(),
 );
+
+/**
+ * One map marker linked to a Codex location (`codex.mapLinks`, dcm-yzxx): the World map's "Open in Codex". `known`
+ * is whether the party knows the entry; a player only ever gets known entries whose marker they can see.
+ */
+export const codexMapLinkValidator = v.object({ tokenId: v.number(), entryId: v.id("codexEntries"), known: v.boolean() });

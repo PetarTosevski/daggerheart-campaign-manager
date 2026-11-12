@@ -10,6 +10,25 @@ export const MAX_ZOOM = 6;
 /** A width change up to this many px is a scrollbar, not a resize: keep the view instead of refitting. */
 export const SCROLLBAR_SLACK = 24;
 
+/** The round zoom levels the zoom buttons and the +/− keys step along (dcm-yzxx); wheel and pinch stay continuous. */
+export const ZOOM_LADDER = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6] as const;
+
+/**
+ * The next zoom along `ZOOM_LADDER` from `z` (for example the fit zoom, 1.02): `dir` 1 goes to the next round value
+ * above the shown whole percent, −1 to the next below, so the label always changes. Clamped to MIN_ZOOM..MAX_ZOOM
+ * (below 30% there is no ladder value left, so − lands on MIN_ZOOM itself).
+ */
+export function zoomStep(z: number, dir: 1 | -1): number {
+  const shown = Math.round(z * 100);
+  const clamp = (n: number) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, n));
+  if (dir > 0) {
+    const next = ZOOM_LADDER.find((s) => Math.round(s * 100) > shown);
+    return clamp(next ?? MAX_ZOOM);
+  }
+  const prev = [...ZOOM_LADDER].reverse().find((s) => Math.round(s * 100) < shown);
+  return clamp(prev ?? MIN_ZOOM);
+}
+
 /** The same zoom and the same map point in view after the viewport width changes from `from` to `to`. */
 export function rescaleView(view: Omit<View, "w">, from: number, to: number): Omit<View, "w"> {
   const r = from > 0 ? to / from : 1;
@@ -69,6 +88,11 @@ export function usePanZoom(viewport: RefObject<HTMLDivElement | null>, aspect: n
     setView({ z, x: px - fx * w * z, y: py - fy * w * z * aspect });
   }
 
+  /** The zoom buttons and +/− keys: one step along `ZOOM_LADDER`, about the viewport's centre. */
+  function stepZoom(dir: 1 | -1) {
+    zoomAt(zoomStep(viewRef.current.z, dir));
+  }
+
   function panBy(dx: number, dy: number) {
     setView({ ...viewRef.current, x: viewRef.current.x + dx, y: viewRef.current.y + dy });
   }
@@ -126,5 +150,5 @@ export function usePanZoom(viewport: RefObject<HTMLDivElement | null>, aspect: n
     };
   }, [viewport]);
 
-  return { view, viewRef, setView, fit, zoomAt, panBy, centreOn };
+  return { view, viewRef, setView, fit, zoomAt, stepZoom, panBy, centreOn };
 }

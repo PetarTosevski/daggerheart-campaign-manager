@@ -30,9 +30,9 @@ import { refuseArchivedWrite } from "./lib/archived";
 import { claimFile, deleteFilesOf, deleteOwnFile, isAllowedImage, isClaimed } from "./lib/files";
 import { lastTokenId, playerTokenFilter, tokenCount, tokenRow, toToken, writableMap, writeToken } from "./lib/maps";
 import { campaignScope, runOnce } from "./lib/operations";
-import { campaignMutation, keyedCampaignMutation, userMutation, userQuery } from "./lib/functions";
+import { campaignMutation, campaignQuery, keyedCampaignMutation, userMutation, userQuery } from "./lib/functions";
 import { atLeast, liveCampaign, permissionFor, requirePermission, type Permission } from "./lib/permissions";
-import { codexKindValidator, codexListValidator, codexPatchValidator, codexTextValidator } from "./lib/validators/codex";
+import { codexKindValidator, codexListValidator, codexMapLinkValidator, codexPatchValidator, codexTextValidator } from "./lib/validators/codex";
 
 function invalid(message: string): never {
   throw appError("INVALID", message);
@@ -101,6 +101,38 @@ export const list = userQuery({
       if (view) entries.push({ ...view, _id: row._id });
     }
     return { role: "player" as const, entries };
+  },
+});
+
+/**
+ * World map markers linked to Codex locations, for the map's "Open in Codex" (dcm-yzxx). Campaign edit (the GM)
+ * gets every linked location with its `known` flag (the GM's player preview keeps the known ones); a player gets
+ * only locations the party knows whose marker they can see on the map, so a secret location or a hidden marker
+ * never reaches them (no names are returned at all). Oldest entry first, so a marker linked twice opens the same
+ * entry every time. Reads the location entries and the marker rows only; never the text, images or map document.
+ */
+export const mapLinks = campaignQuery({
+  need: "view",
+  enough: "edit",
+  args: {},
+  returns: v.array(codexMapLinkValidator),
+  handler: async (ctx) => {
+    const campaign = ctx.campaign;
+    const gm = atLeast(ctx.permission, "edit");
+    const tokens = await pinTokens(ctx, campaign._id);
+    const tokenById = new Map(tokens.map((t) => [t.id, t]));
+    // As in `list`: an unreadable map shows players no pins.
+    const canSee = gm ? () => true : await playerTokenFilter(ctx, campaign).catch(() => () => false);
+    const rows = (await entriesOfKind(ctx, campaign._id, "location")).sort((a, b) => a.createdAt - b.createdAt || a._creationTime - b._creationTime);
+    const links: { tokenId: number; entryId: Id<"codexEntries">; known: boolean }[] = [];
+    for (const row of rows) {
+      const { summary } = storedEntry(row.data);
+      if (summary.tokenId === null || (!gm && !summary.known)) continue;
+      const token = tokenById.get(summary.tokenId);
+      if (!token || !canSee(token)) continue;
+      links.push({ tokenId: token.id, entryId: row._id, known: summary.known });
+    }
+    return links;
   },
 });
 

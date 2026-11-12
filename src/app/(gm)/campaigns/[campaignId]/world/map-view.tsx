@@ -408,10 +408,10 @@ export function MapView(props: MapViewProps) {
                 <button
                   key={t.id}
                   type="button"
-                  className={place ? `tok tok-hex${place.shared ? " tok-shared" : ""}` : "tok"}
+                  className={`${place ? `tok tok-hex${place.shared ? " tok-shared" : ""}` : "tok"}${editable ? "" : " tok-view"}`}
                   data-tok-id={t.id}
-                  aria-label={`${t.name || type.label}, ${type.label}${t.hidden ? " (hidden from players)" : ""}.${pyreLabel}${editable ? (place ? " Drag or use the arrow keys to move, click to select its hex and edit it." : " Drag or use the arrow keys to move, click to edit.") : ""}`}
-                  aria-pressed={editable ? on : undefined}
+                  aria-label={`${t.name || type.label}, ${type.label}${t.hidden ? " (hidden from players)" : ""}.${pyreLabel}${editable ? (place ? " Drag or use the arrow keys to move, click to select its hex and edit it." : " Drag or use the arrow keys to move, click to edit.") : " Click for details."}`}
+                  aria-pressed={on}
                   style={place ? hexStyle(place, on ? 5 : undefined) : { left: `${pos.x}%`, top: `${pos.y}%`, zIndex: on ? 5 : undefined }}
                   onKeyDown={(e) => nudge(e, t, (p) => props.onMoveToken(t.id, p))}
                   onClick={(e) => {
