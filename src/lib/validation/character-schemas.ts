@@ -1,5 +1,7 @@
 import * as z from "../zod";
 
+import { PORTRAIT_ZOOM_MAX, PORTRAIT_ZOOM_MIN } from "../party/portrait-frame";
+
 import { MAX_LEVEL } from "../domain/characters/index";
 import { TRAIT_IDS, type TraitId } from "../srd/types";
 import {
@@ -66,6 +68,16 @@ function build() {
     z.object({ kind: z.literal("asset"), asset: z.string().regex(/^[0-9a-f]{32}$/) }),
     z.object({ kind: z.literal("upload"), storageId: z.string().min(1) }),
   ]);
+
+  /**
+   * The portrait close-up (plan portrait-frame, PZ1): zoom 1..3, the focal point x and y in percent, 0..100. Its own
+   * field, not inside `portrait`, because default art has no `portrait`. Helpers: src/lib/party/portrait-frame.ts.
+   */
+  const portraitFrameSchema = z.object({
+    zoom: z.number().min(PORTRAIT_ZOOM_MIN).max(PORTRAIT_ZOOM_MAX),
+    x: z.number().min(0).max(100),
+    y: z.number().min(0).max(100),
+  });
 
   /** Version 1 of the sheet (stored without `schemaVersion`): plain-string inventory, Experiences without ids. Frozen. */
   const characterSheetV1Schema = z.object({
@@ -345,6 +357,11 @@ function build() {
      * the normal maximum loadout of five"). Absent = the normal 5 (CB p.101); `loadoutMax` in src/lib/domain/transformations.
      */
     loadoutMax: z.number().int().min(1).max(4).optional(),
+    /**
+     * The portrait close-up (plan portrait-frame, PZ1; optional, widened, no version bump): absent = today's framing.
+     * Set only by `characters.setPortraitFrame`; a new upload or another chosen art clears it.
+     */
+    portraitFrame: portraitFrameSchema.optional(),
   });
   return {
     traitsSchema,
@@ -354,6 +371,7 @@ function build() {
     experienceSchema,
     inventoryItemSchema,
     portraitSchema,
+    portraitFrameSchema,
     characterSheetV1Schema,
     advancementPickSchema,
     advancementSchema,

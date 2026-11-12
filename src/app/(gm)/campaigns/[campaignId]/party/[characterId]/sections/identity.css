@@ -19,6 +19,25 @@
 .id-portrait-empty .id-portrait-actions button{background:var(--sheet-green,#3d5e2e);border-color:var(--sheet-green,#3d5e2e)}
 .id-portrait-actions [role="status"]{padding:2px 8px;border-radius:6px;background:#fbf5e6;color:#8e2b2b;font-size:13px;text-align:center}
 .id-portrait-actions [role="status"]:empty{display:none}
+/* Adjust sits beside the upload button (plan portrait-frame, PZ1). */
+.id-portrait-actions{gap:8px;flex-wrap:wrap;align-items:flex-start}
+/* Tablets and phones: 44 px touch targets (the boards' min-height). */
+@media (max-width:1100px),(pointer:coarse){.id-portrait-actions button{min-height:44px}}
+
+/* The Adjust editor (sections/portrait-frame.tsx): an arch-shaped preview that clips the picture layer. */
+.pf-editor{display:flex;flex-direction:column;align-items:center;gap:14px}
+.pf-preview{position:relative;display:block;width:216px;max-width:100%;height:270px;padding:0;box-sizing:border-box;border:4px double #8a6d4a;border-radius:110px 110px 14px 14px;background-color:#f6edd8;overflow:hidden;cursor:grab;touch-action:none;user-select:none}
+.pf-preview:active{cursor:grabbing}
+.pf-preview:focus-visible{outline:2px solid #f3cf86;outline-offset:3px}
+.pf-preview-art{position:absolute;inset:0;background-size:cover;background-repeat:no-repeat;pointer-events:none}
+.pf-hint{margin:0;font-size:14px;text-align:center;color:inherit;opacity:.85}
+.pf-zoom{display:flex;align-items:center;gap:12px;width:100%;max-width:340px}
+.pf-zoom label{font-family:var(--font-cinzel),serif;font-size:14px;font-weight:700}
+.pf-zoom input[type="range"]{flex:1;min-width:0;height:44px;margin:0;accent-color:#f3cf86;cursor:pointer}
+.pf-zoom input[type="range"]:focus-visible{outline:2px solid #f3cf86;outline-offset:2px}
+.pf-zoom-value{min-width:3.5em;text-align:right;font-variant-numeric:tabular-nums}
+.pf-error{margin:0;font-size:14px;color:#f3a3a3}
+.pf-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:10px}
 
 /* Experiences: board rows of a name field and a 50 px "+2" field. */
 .sh-box.id-exp{padding:16px 14px}

@@ -39,6 +39,7 @@ import {
   getSubclass,
   getWeapon,
 } from "../src/lib/srd/index";
+import { clampPortraitFrame, PORTRAIT_ZOOM_MAX, PORTRAIT_ZOOM_MIN } from "../src/lib/party/portrait-frame";
 import { characterDraftSchema, sheetPatchSchema, type CharacterDraft } from "../src/lib/validation/character-input";
 import { characterSheetSchema, type CharacterSheet, type CharacterSheetInput } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -53,7 +54,16 @@ import { claimFile, deleteFilesOf, deleteOwnFile, isAllowedImage, isClaimed } fr
 import { keyedCampaignMutation, keyedUserMutation, userMutation } from "./lib/functions";
 import { assertMechanicEnabled } from "./lib/mechanics";
 import { type Permission } from "./lib/permissions";
-import { characterDraftValidator, characterStatusValidator, conditionValidator, goldValidator, sheetPatchValidator, traitIdValidator, type CharacterView } from "./lib/validators/characters";
+import {
+  characterDraftValidator,
+  characterStatusValidator,
+  conditionValidator,
+  goldValidator,
+  portraitFrameValidator,
+  sheetPatchValidator,
+  traitIdValidator,
+  type CharacterView,
+} from "./lib/validators/characters";
 import { ikonisValidator } from "./lib/validators/characterExtras";
 import { gainWitherToken } from "./wither";
 import { postRuleNote, ruleMode, ruleModesOf } from "./lib/ruleModes";
@@ -356,6 +366,8 @@ export const updateSheet = userMutation({
     } else if ("portrait" in clean && sheet.portrait?.kind === "upload") {
       await deleteOwnFile(ctx, "portrait", character._id, sheet.portrait.storageId);
     }
+    // Another chosen art drops the close-up: it framed the old picture (plan portrait-frame, PZ1).
+    if ("portrait" in clean && !samePortrait(clean.portrait, sheet.portrait)) delete next.portraitFrame;
     next.hp = Math.min(next.hp, next.hpMax);
     next.stress = Math.min(next.stress, next.stressMax);
     await saveSheet(ctx, character._id, next);
@@ -364,6 +376,13 @@ export const updateSheet = userMutation({
     return null;
   },
 });
+
+/** Whether two portrait choices name the same picture. */
+function samePortrait(a: CharacterSheet["portrait"], b: CharacterSheet["portrait"]): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  if (a.kind === "asset") return b.kind === "asset" && a.asset === b.asset;
+  return b.kind === "upload" && a.storageId === b.storageId;
+}
 
 /**
  * X1 Manual (rule switches RX / DEF, bead dcm-jh6d.69; CB p.106): a sheet write that marks the character's last Hit Point
@@ -895,7 +914,10 @@ export const attachPortrait = userMutation({
       return { error: "Portraits must be PNG, JPEG, WebP or GIF images of at most 3 MB." };
     }
     // Validated before the file is claimed, so a rejected sheet leaves no orphan file.
-    const next = characterSheetSchema.safeParse({ ...sheet, portrait: { kind: "upload", storageId } });
+    // A new picture drops the close-up: it framed the old one (plan portrait-frame, PZ1).
+    const { portraitFrame: _oldFrame, ...unframed } = sheet;
+    void _oldFrame;
+    const next = characterSheetSchema.safeParse({ ...unframed, portrait: { kind: "upload", storageId } });
     if (!next.success) {
       await ctx.storage.delete(storageId);
       return { error: next.error.issues[0]?.message ?? "Invalid character." };
@@ -904,5 +926,30 @@ export const attachPortrait = userMutation({
     if (sheet.portrait?.kind === "upload") await deleteOwnFile(ctx, "portrait", characterId, sheet.portrait.storageId);
     await saveSheet(ctx, character._id, next.data);
     return { error: null };
+  },
+});
+
+/**
+ * The portrait close-up (plan portrait-frame, PZ1; user 2026-11-12): the zoom (1..3) and the focal point (x, y in percent,
+ * 0..100) the sheet's Adjust editor saved, or `null` to go back to today's framing. Whoever edits the character (its
+ * owner and the GM; the same check as `attachPortrait`). Values are rounded to the frame's steps (`clampPortraitFrame`);
+ * a value out of range is INVALID.
+ */
+export const setPortraitFrame = userMutation({
+  args: { characterId: v.id("characters"), frame: v.union(portraitFrameValidator, v.null()) },
+  returns: v.null(),
+  handler: async (ctx, { characterId, frame }) => {
+    const { character, sheet } = await editable(ctx, ctx.user, characterId);
+    const { portraitFrame: old, ...unframed } = sheet;
+    if (frame === null) {
+      if (old !== undefined) await saveSheet(ctx, character._id, unframed, character);
+      return null;
+    }
+    const inRange = (n: number, min: number, max: number) => Number.isFinite(n) && n >= min && n <= max;
+    if (!inRange(frame.zoom, PORTRAIT_ZOOM_MIN, PORTRAIT_ZOOM_MAX) || !inRange(frame.x, 0, 100) || !inRange(frame.y, 0, 100)) {
+      invalid(`Zoom from ${PORTRAIT_ZOOM_MIN}x to ${PORTRAIT_ZOOM_MAX}x and a position from 0 to 100%.`);
+    }
+    await saveSheet(ctx, character._id, { ...unframed, portraitFrame: clampPortraitFrame(frame) }, character);
+    return null;
   },
 });

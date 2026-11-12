@@ -131,6 +131,8 @@ const partySheetValidator = v.object({
   ancestry: characterViewValidator.fields.sheet.fields.ancestry,
   communityId: v.string(),
   portrait: characterViewValidator.fields.sheet.fields.portrait,
+  /** The portrait close-up (plan portrait-frame, PZ1), for the party card's portrait (PZ2). */
+  portraitFrame: characterViewValidator.fields.sheet.fields.portraitFrame,
   hp: v.number(),
   hpMax: v.number(),
   stress: v.number(),
@@ -177,6 +179,7 @@ function partyMember(view: CharacterView): PartyMember {
       ancestry: s.ancestry,
       communityId: s.communityId,
       ...(s.portrait === undefined ? {} : { portrait: s.portrait }),
+      ...(s.portraitFrame === undefined ? {} : { portraitFrame: s.portraitFrame }),
       hp: s.hp,
       hpMax: s.hpMax,
       stress: s.stress,

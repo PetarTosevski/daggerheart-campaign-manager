@@ -146,6 +146,12 @@ const area: Area = {
     // ---------------------------------------------------------------- characters: portraits
     { fn: api.characters.portraitUploadUrl, access: "own" },
     { fn: api.characters.attachPortrait, access: "own", setup: uploadedImage },
+    {
+      fn: api.characters.setPortraitFrame,
+      access: "own",
+      args: () => ({ frame: { zoom: 2, x: 40, y: 25 } }),
+      note: "plan portrait-frame PZ1: the portrait close-up; whoever edits the character (editable), as attachPortrait",
+    },
     { fn: api.charactersReads.portraitUrl, access: "own" },
 
     // ---------------------------------------------------------------- characterExtras: reads

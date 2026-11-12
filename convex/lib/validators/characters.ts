@@ -18,6 +18,12 @@ export const portraitValidator = v.union(
   v.object({ kind: v.literal("upload"), storageId: v.string() }),
 );
 
+/**
+ * The portrait close-up (plan portrait-frame, PZ1; zod `portraitFrameSchema`, which keeps the ranges): zoom 1..3, the
+ * focal point x and y in percent, 0..100. Helpers: src/lib/party/portrait-frame.ts.
+ */
+export const portraitFrameValidator = v.object({ zoom: v.number(), x: v.number(), y: v.number() });
+
 /** How the `pronouns` field is labelled (dcm-bxp.35): "gender" (the default when missing) or "pronouns". */
 export const pronounsLabelValidator = v.union(...PRONOUNS_LABELS.map((l) => v.literal(l)));
 
@@ -230,6 +236,8 @@ export const sheetValidator = v.object({
   connections: v.array(v.string()),
   notes: v.string(),
   portrait: v.optional(portraitValidator),
+  /** The portrait close-up (PZ1; widened, optional): absent = today's framing. */
+  portraitFrame: v.optional(portraitFrameValidator),
   ...d5SheetFields,
 });
 

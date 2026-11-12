@@ -8,7 +8,7 @@ import { useState } from "react";
 import { PortraitUpload } from "@/components/party/portrait";
 import { Label, Pill, SheetBox, Small, paperField } from "@/components/party/sheet-ui";
 import { errorMessage } from "@/lib/convex-errors";
-import { assetBackground } from "@/lib/design-assets";
+import { designAsset } from "@/lib/design-assets";
 import { experienceValue, holdsPurposefulDesign } from "@/lib/domain/dice";
 import { ACHIEVEMENT_LEVELS } from "@/lib/domain/level-up";
 import { pronounsFieldLabel, type PronounsLabel } from "@/lib/validation/characters";
@@ -23,6 +23,7 @@ import { TextField } from "../fields";
 import { advancementsChosen, cardsChosen, useLevelUpDraft } from "../level-up-draft";
 import { useSheet } from "../sheet-context";
 import { ancestryArtId, ancestryLabel, signed } from "../sheet-helpers";
+import { PortraitAdjustButton, PortraitFrameDialog, PortraitLayer, usePortraitAdjust } from "./portrait-frame";
 
 // Top of page 1, as on the board (Party.dc.html): portrait arch + Experiences | identity grid + traits.
 
@@ -475,41 +476,54 @@ function TransformationField() {
   );
 }
 
-/** The board's arched portrait frame (`pt-frame`), with the upload button for editors as its `pt-actions` overlay. */
+/**
+ * The board's arched portrait frame (`pt-frame`), with the upload and Adjust buttons for editors as its `pt-actions`
+ * overlay. The arch clips; its picture layer draws the saved close-up (`sheet.portraitFrame`, plan portrait-frame PZ1)
+ * through the shared style helper, or today's position when there is none.
+ */
 function Portrait() {
-  const { sheet, character } = useSheet();
+  const { sheet, character, slot } = useSheet();
   const uploaded = character.portraitUrl;
   const art = portraitFor({ subclassId: sheet.subclassId, ancestryId: ancestryArtId(sheet.ancestry) });
-  const image =
-    sheet.portrait?.kind === "upload"
+  const src =
+    (sheet.portrait?.kind === "upload"
       ? uploaded
-        ? `url(${uploaded})`
-        : "none"
       : sheet.portrait?.kind === "asset"
-        ? assetBackground(sheet.portrait.asset)
+        ? designAsset(sheet.portrait.asset)
         : art
-          ? assetBackground(art.asset)
-          : "none";
-  const empty = image === "none";
+          ? designAsset(art.asset)
+          : null) ?? null;
+  const empty = src === null;
+  const position = sheet.portrait ? "center 30%" : (art?.position ?? "center 30%");
+  const adjust = usePortraitAdjust(src);
   return (
     <div className={cn("id-portrait", empty && "id-portrait-empty")}>
-      <div
-        role="img"
-        aria-label={`Portrait of ${sheet.name}`}
-        className="id-portrait-art"
-        style={{ backgroundImage: image, backgroundPosition: sheet.portrait ? "center 30%" : (art?.position ?? "center 30%") }}
-      >
+      <PortraitLayer role="img" aria-label={`Portrait of ${sheet.name}`} className="id-portrait-art" src={src} frame={sheet.portraitFrame} fallbackPosition={position}>
         {empty ? (
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <circle cx="12" cy="8" r="4" />
             <path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" />
           </svg>
         ) : null}
-      </div>
+      </PortraitLayer>
       {character.canEdit ? (
         <div className="id-portrait-actions">
           <PortraitUpload character={character} />
+          {src !== null ? <PortraitAdjustButton name={sheet.name} onOpen={adjust.openEditor} /> : null}
         </div>
+      ) : null}
+      {character.canEdit && src !== null ? (
+        <PortraitFrameDialog
+          open={adjust.open}
+          onClose={adjust.close}
+          natural={adjust.natural}
+          campaignId={slot.campaignId}
+          characterId={character._id}
+          name={sheet.name}
+          src={src}
+          saved={sheet.portraitFrame}
+          fallbackPosition={position}
+        />
       ) : null}
     </div>
   );
