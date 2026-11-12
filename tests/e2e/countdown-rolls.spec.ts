@@ -4,6 +4,7 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
+import { TOUCH_FLOOR_ON_SCREEN } from "./zoom";
 
 // countdowns-advanced K1: the GM applies a player's action roll to an unarmed countdown from the roll feed
 // ("Tick countdowns"), the row then shows it ticked, and the player's undo takes the tick back (D5, D11, Q1 (c), Q5).
@@ -170,7 +171,7 @@ test("the feed ticks both sides of a chase from one row; the dialog hints 5-10 f
   await tick.screenshot({ path: "test-results/visual/CD-K6/feed-chase-row-1440.png" });
   await page.setViewportSize({ width: 390, height: 844 });
   await tick.screenshot({ path: "test-results/visual/CD-K6/feed-chase-row-390.png" });
-  expect((await chaseRow.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect((await chaseRow.boundingBox())!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
   await page.setViewportSize({ width: 1440, height: 900 });
   await tick.getByRole("button", { name: "Apply" }).click();
   await expect(tick).toBeHidden();

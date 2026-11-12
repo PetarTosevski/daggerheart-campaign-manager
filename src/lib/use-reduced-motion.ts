@@ -8,7 +8,9 @@ import { TEXT_SIZES, type TextSize } from "@/lib/config/preferences";
  * `PrefsSync` (src/app/(gm)/prefs-sync.tsx) writes two attributes on `document.documentElement`:
  * - `data-reduce-motion` (present = the account asks for calmer motion). globals.css applies the same calm as
  *   `@media (prefers-reduced-motion: reduce)` under it.
- * - `data-text-size="small" | "medium" | "large"`: globals.css sets CSS `zoom` 0.9 / 1 / 1.15 on the root.
+ * - `data-text-size="small" | "medium" | "large"`: globals.css sets CSS `zoom` 0.72 / 0.8 / 0.92 on the root of a
+ *   mouse screen, 0.9 / 1 / 1.15 on touch (`TEXT_SIZE_ZOOM`); without the attribute the root keeps the base zoom,
+ *   0.8 or 1 (dcm-1i3z, dcm-jkxa).
  *
  * Q13 a: On = calmer even when the device doesn't ask; Off = follow the device. Nothing here ever forces motion on a
  * device that asks for less, so `prefersReducedMotion()` is device OR account.

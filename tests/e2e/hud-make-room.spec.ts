@@ -3,6 +3,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { api } from "../../convex/_generated/api";
 import { expectNoSeriousA11yViolations } from "./a11y";
 import { HUD_MAP_W, hudScene } from "./hud/helpers";
+import { rootZoom } from "./zoom";
 
 // Plan combat-hud H2.2 (docs/tasks/TASK-HUD-H2.2.md): while a sheet is open the HUD makes room (Main / GMDesktop
 // `.sh-open`; HANDOFF "Layout"; CmpTokensDesign "Motion"): the map's viewport shifts -125 px and scales to 94 % over
@@ -60,7 +61,8 @@ test("the GM: a stat block makes room, swaps and closes; drag and area picking s
     await expect(viewport).toHaveCSS("transform", SHIFTED);
     await expect(gm.locator(".hud-fear")).toHaveCSS("transform", "matrix(1, 0, 0, 1, -400, 0)");
     const fearBox = (await gm.locator(".hud-fb").boundingBox())!;
-    expect(Math.round(1440 - (fearBox.x + fearBox.width))).toBe(424);
+    // 424 CSS px from the right edge: screen px over the root zoom (dcm-1i3z).
+    expect(Math.round((1440 - (fearBox.x + fearBox.width)) / (await rootZoom(gm)))).toBe(424);
     await expect(gm.getByTestId("hud-disc")).toBeHidden();
     await expect(gm.getByTestId("hud-title")).toBeHidden();
     // The dock (H9.0) stays, icons only, beside the sheet.

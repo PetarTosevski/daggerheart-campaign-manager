@@ -49,7 +49,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: min(52vh, 420px);
+  max-height: min(52 * var(--vh), 420px);
   overflow-y: auto;
 }
 .bj-picker-legend {

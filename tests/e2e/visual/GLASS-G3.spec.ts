@@ -4,6 +4,7 @@ import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { expectNoSeriousA11yViolations } from "../a11y";
 import { gmAndPlayer } from "../live";
+import { TOUCH_FLOOR_ON_SCREEN } from "../zoom";
 
 // Shots for docs/tasks/TASK-GLASS-G3.md (E2E_VISUAL=1): the dashboard's Countdowns section (a standard countdown, a
 // long-term track and a chase) as glass buttons in the viewer's colours, as the GM and as a player (read-only: no
@@ -49,7 +50,7 @@ async function expectAtLeast44(buttons: Locator) {
     if (!(await button.isVisible())) continue;
     const box = await button.boundingBox();
     const name = (await button.getAttribute("aria-label")) ?? (await button.textContent()) ?? "";
-    expect(box!.height, name).toBeGreaterThanOrEqual(44);
+    expect(box!.height, name).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
   }
 }
 

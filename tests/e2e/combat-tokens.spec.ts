@@ -3,6 +3,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { api } from "../../convex/_generated/api";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, openCombatMap } from "./visual/helpers";
+import { squarePx } from "./zoom";
 
 // D9 C6: tokens (.omc/plans/d9-combat-map.yaml). The GM adds the party and the running encounter's adversary, drags
 // the adversary (it faces the way it moved), turns it with the knob, marks 2 HP (the tracker shows 2); a player drags
@@ -11,11 +12,6 @@ import { bardDraft, convexAs, openCombatMap } from "./visual/helpers";
 const PLAYER = "e2e-player@example.test";
 
 /** Screen pixels per map square at the current zoom (48 px squares × the zoom shown in the toolbar). */
-async function squarePx(page: Page): Promise<number> {
-  const text = (await page.getByTestId("combat-zoom").textContent()) ?? "100%";
-  return 48 * (Number.parseInt(text, 10) / 100);
-}
-
 async function centre(locator: Locator) {
   const box = (await locator.boundingBox())!;
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };

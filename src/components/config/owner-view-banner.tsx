@@ -28,7 +28,7 @@ export function OwnerViewBanner({ archived = false }: { archived?: boolean }): R
     <div
       role="status"
       data-testid="owner-view-banner"
-      className="fixed top-0 left-1/2 z-[60] flex max-w-[calc(100vw-16px)] -translate-x-1/2 flex-wrap items-center justify-center gap-x-2 gap-y-0.5 rounded-b-xl border border-t-0 border-[#3d5a63] bg-[#0f1c20]/95 px-4 py-1.5 text-center text-[13px] text-[#cfe3ea] shadow-lg"
+      className="fixed top-0 left-1/2 z-[60] flex max-w-[calc(100_*_var(--vw)_-_16px)] -translate-x-1/2 flex-wrap items-center justify-center gap-x-2 gap-y-0.5 rounded-b-xl border border-t-0 border-[#3d5a63] bg-[#0f1c20]/95 px-4 py-1.5 text-center text-[13px] text-[#cfe3ea] shadow-lg"
     >
       <Eye className="size-4 flex-none" strokeWidth={1.8} aria-hidden="true" />
       <p className="m-0">

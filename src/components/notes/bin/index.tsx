@@ -9,6 +9,7 @@ import { createPortal } from "react-dom";
 import { BrandButton } from "@/components/brand/buttons";
 import { ViewerScope } from "@/components/brand/viewer";
 import { errorMessage } from "@/lib/convex-errors";
+import { rootScale } from "@/lib/css-zoom";
 import { binDaysLeft, daysLeftLabel, UNDO_MS } from "@/lib/domain/notes";
 import { binPageLocally, restorePageLocally } from "@/lib/optimistic/notes-bin";
 import { prefersReducedMotion } from "@/lib/use-reduced-motion";
@@ -56,8 +57,10 @@ export function TearOutButton({ campaignId, pageId, view, onPage }: NotesSlotPro
     const paper = button.current?.closest<HTMLElement>(".bj-paper");
     if (paper && !prefersReducedMotion()) {
       playTear(); // inside the click: browsers allow audio after a gesture
+      // The clone is a fixed overlay: client px over the root zoom (dcm-1i3z).
       const r = paper.getBoundingClientRect();
-      startTear(paper.cloneNode(true) as HTMLElement, { top: r.top, left: r.left, width: r.width, height: r.height });
+      const k = rootScale();
+      startTear(paper.cloneNode(true) as HTMLElement, { top: r.top / k, left: r.left / k, width: r.width / k, height: r.height / k });
     }
     const back = view === "journal" ? "journal" : "page";
     binPage({ campaignId, page: ref })

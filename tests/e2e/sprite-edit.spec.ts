@@ -7,6 +7,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, expectNoHorizontalScroll, openCombatMap } from "./visual/helpers";
 import { openMapTools } from "./hud/helpers";
+import { TOUCH_FLOOR_ON_SCREEN } from "./zoom";
 
 // Sprite packs P9 (.omc/plans/sprite-packs.yaml): hand editing in the Sprites style. On a Sprites forest map the GM
 // paints moss (a partial repaint), adds an oak tree and an uploaded sprite, sets a bush sprite to block sight; after
@@ -216,7 +217,7 @@ test("the sprite pickers fit a phone: search, 44 px targets, placing by tap, no 
   await expect(search).toBeVisible();
   await search.fill("pine");
   const pine = card.getByRole("button", { name: "Pine tree" });
-  expect((await pine.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect((await pine.boundingBox())!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
   await pine.focus();
   await page.keyboard.press("Enter");
   await expect(pine).toHaveAttribute("aria-pressed", "true");
@@ -231,6 +232,6 @@ test("the sprite pickers fit a phone: search, 44 px targets, placing by tap, no 
 
   await card.getByRole("group", { name: "Edit tool" }).getByRole("button", { name: /Terrain/ }).click();
   const moss = card.getByRole("group", { name: "Textures · This setting" }).getByRole("button", { name: "Moss", exact: true });
-  expect((await moss.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect((await moss.boundingBox())!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
   await expectNoHorizontalScroll(page);
 });

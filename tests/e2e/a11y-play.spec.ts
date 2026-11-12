@@ -23,6 +23,7 @@ import {
 } from "./a11y";
 import { createSessionEncounter } from "./journal/helpers";
 import { gmAndPlayer, type LiveTable } from "./live";
+import { emulateTouch, touchTwin } from "./zoom";
 
 test.describe.configure({ timeout: 240_000 });
 // The machine runs many tracers at once; live data can take longer than the default 5 s to arrive.
@@ -301,10 +302,14 @@ async function expectInView(page: Page, target: Locator) {
 for (const viewport of TABLET_VIEWPORTS) {
   const size = `${viewport.width}x${viewport.height}`;
   test(`tablet ${size}: combat map (GM and player), packs, sessions and notes`, async () => {
-    const { gm, player } = table;
-    await gm.setViewportSize(viewport);
-    await player.setViewportSize(viewport);
-    const shot = (page: Page, name: string) => page.screenshot({ path: `${SHOTS}/${name}-${size}.png`, fullPage: true });
+    // Tablets are touch screens: zoom 1 and the breakpoints as written (dcm-jkxa). The same accounts in touch contexts.
+    const gm = await touchTwin(table.gm, viewport);
+    const player = await touchTwin(table.player, viewport);
+    // A full-page shot that has to grow the viewport loses Chromium's touch emulation when it restores it: put it back.
+    const shot = async (page: Page, name: string) => {
+      await page.screenshot({ path: `${SHOTS}/${name}-${size}.png`, fullPage: true });
+      await emulateTouch(page);
+    };
     const nav = (page: Page) => page.getByRole("navigation", { name: "Campaign sections" });
 
     try {
@@ -399,8 +404,8 @@ for (const viewport of TABLET_VIEWPORTS) {
         await shot(page, `notes-${who}`);
       }
     } finally {
-      await gm.setViewportSize({ width: 1280, height: 720 });
-      await player.setViewportSize({ width: 1280, height: 720 });
+      await gm.context().close();
+      await player.context().close();
     }
   });
 }

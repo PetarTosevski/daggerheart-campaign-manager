@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { expectNoSeriousA11yViolations, expectTouchTargets } from "./a11y";
 import { hudScene } from "./hud/helpers";
+import { emulateTouch, rootZoom } from "./zoom";
 
 // Plan combat-hud H9.0 (docs/tasks/TASK-HUD-H9.0.md): the GM's bottom dock is the only map toolbar (GMDesktop /
 // GMTablet `.dock`): Map tools (Q4a) | Select, Measure, Areas, Fog, Names | Zoom out, the % (fits the map), Zoom in |
@@ -17,6 +18,8 @@ const TABLET = { width: 1024, height: 768 };
 const BAND = /^\d+ squares? · (Melee|Very Close|Close|Far|Very Far)$/;
 
 async function openHud(page: Page, url: string, size: { width: number; height: number }) {
+  // Tablet and phone sizes are touch screens: zoom 1 and the breakpoints as written (dcm-jkxa).
+  await emulateTouch(page, size.width <= 1180);
   await page.setViewportSize(size);
   await page.goto(url);
   const hud = page.getByTestId("combat-hud");
@@ -27,11 +30,12 @@ async function openHud(page: Page, url: string, size: { width: number; height: n
   return hud;
 }
 
-/** A box relative to the HUD root (the root sits under the campaign header). */
+/** A box relative to the HUD root (the root sits under the campaign header), in CSS px (screen px over the root zoom). */
 async function boxIn(hud: Locator, part: Locator) {
   const root = (await hud.boundingBox())!;
   const b = (await part.boundingBox())!;
-  return { left: b.x - root.x, centre: b.x - root.x + b.width / 2, bottom: root.y + root.height - (b.y + b.height), width: b.width, height: b.height };
+  const z = await rootZoom(hud.page());
+  return { left: (b.x - root.x) / z, centre: (b.x - root.x + b.width / 2) / z, bottom: (root.y + root.height - (b.y + b.height)) / z, width: b.width / z, height: b.height / z };
 }
 
 /** Focuses `button` and presses `key` on it (keyboard only: no pointer). */
@@ -54,7 +58,7 @@ test("the GM's dock: every button from the keyboard, one panel at a time, axe at
     await expect(gm.getByRole("button", { name: "Fit", exact: true })).toHaveCount(0);
     // GMDesktop: centred, bottom 16; icon over a label; 44 px tall buttons.
     const box = await boxIn(hud, dock);
-    expect(Math.abs(box.centre - DESKTOP.width / 2)).toBeLessThanOrEqual(2);
+    expect(Math.abs(box.centre - DESKTOP.width / 2 / (await rootZoom(gm)))).toBeLessThanOrEqual(2);
     expect(Math.round(box.bottom)).toBe(16);
     await expect(dock.getByRole("button", { name: "Select" })).toContainText("Select");
     await expectTouchTargets(dock.getByRole("button"));
@@ -173,7 +177,7 @@ test("Measure: the GM and a player each see the range band on their own screen",
       const layer = page.getByTestId("combat-measure");
       await expect(layer).toBeVisible();
       const zoom = Number.parseInt((await controls.getByTestId("combat-zoom").textContent()) ?? "100", 10) / 100;
-      const px = 48 * zoom;
+      const px = 48 * zoom * (await rootZoom(page));
       const stage = (await page.getByTestId("combat-stage").boundingBox())!;
       // The GM's stage is the map; a player's is padded with fog: measure from the viewport's middle, 7 squares east.
       const vp = (await page.getByTestId("combat-viewport").boundingBox())!;
@@ -235,7 +239,9 @@ test("tablet and sheet open: icons only, dock at left 402 / 640; axe at 1024 x 7
     await expect(hud).toHaveClass(/hud-sh-open/);
     // H9.6: the dock is wider than the 684 px the panel leaves, so it wraps between "Waiting on you" (x = 12-112) and
     // the panel, centred on x = 402 (was 342, where it ran off the left edge and under the panel).
-    await expect.poll(async () => Math.round((await boxIn(hud, dock)).centre)).toBe(402);
+    // In CSS px the screen is 1024 / zoom wide (1280 at 0.8, dcm-1i3z): the centre of x = 120 .. width - 340.
+    const cssWidth = TABLET.width / (await rootZoom(gm));
+    await expect.poll(async () => Math.round((await boxIn(hud, dock)).centre)).toBe(Math.round((120 + cssWidth - 340) / 2));
 
     // A player has no dock: their map controls (Measure, Names, zoom) sit in their title row.
     await openHud(player, s.url, TABLET);

@@ -3,7 +3,7 @@
    viewport; the text never scrolls on its own. The padding sits on the inner card, so clicks on the dialog's own box
    are backdrop clicks (CL12). */
 
-.cd-dialog{--dc:#5b2b2b;box-sizing:border-box;font-family:var(--font-garamond),serif;width:min(560px,calc(100% - 32px));max-width:none;max-height:calc(100dvh - 32px);margin:auto;padding:0;border:none;border-radius:16px;background:transparent;color:#2a1f14;overflow-y:auto;overscroll-behavior:contain}
+.cd-dialog{--dc:#5b2b2b;box-sizing:border-box;font-family:var(--font-garamond),serif;width:min(560px,calc(100% - 32px));max-width:none;max-height:calc(100 * var(--dvh) - 32px);margin:auto;padding:0;border:none;border-radius:16px;background:transparent;color:#2a1f14;overflow-y:auto;overscroll-behavior:contain}
 .cd-dialog::backdrop{background:rgba(12,8,18,.72)}
 .cd-card{display:flex;flex-direction:column;border-radius:16px;overflow:hidden;background:#fffaf0;box-shadow:inset 0 0 0 2px #c9a35a}
 .cd-dialog[data-exhausted="true"] .cd-art{filter:grayscale(.9) brightness(.82)}
@@ -36,7 +36,7 @@
 .cd-more:focus-visible{outline:2px solid var(--sheet-wine,#5b2b2b);outline-offset:2px}
 
 @media (max-width:640px){
-  .cd-dialog{width:calc(100% - 24px);max-height:calc(100dvh - 24px)}
+  .cd-dialog{width:calc(100% - 24px);max-height:calc(100 * var(--dvh) - 24px)}
   .cd-head{padding-left:14px}
   .cd-name{font-size:19px}
   .cd-meta{padding:12px 54px 8px 14px}

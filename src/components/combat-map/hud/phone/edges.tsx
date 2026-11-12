@@ -2,6 +2,7 @@
 
 import { useState, useSyncExternalStore } from "react";
 
+import { cssScale } from "@/lib/css-zoom";
 import { cn } from "@/lib/utils";
 
 import { keepPicks, stateOf, usePick } from "../pick";
@@ -61,7 +62,9 @@ export function panTo(tokenId: string): void {
   const view = root ? visibleMap(root) : null;
   if (!vp || !ring || !view) return;
   const r = ring.getBoundingClientRect();
-  vp.scrollBy({ left: r.left + r.width / 2 - (view.left + view.right) / 2, top: r.top + r.height / 2 - (view.top + view.bottom) / 2 });
+  // Client px over the viewport's scale = its scroll px (root zoom, make room; dcm-1i3z).
+  const k = cssScale(vp);
+  vp.scrollBy({ left: (r.left + r.width / 2 - (view.left + view.right) / 2) / k, top: (r.top + r.height / 2 - (view.top + view.bottom) / 2) / k });
 }
 
 /**
@@ -83,17 +86,20 @@ function measure(root: HTMLElement | null): string {
   const view = visibleMap(root);
   if (!view) return "";
   const top = root.getBoundingClientRect().top;
+  // The geometry is in client px; a chip's `top` is CSS px in the root (client px over its scale; dcm-1i3z).
+  const k = cssScale(root);
+  const chipH = CHIP_H * k;
   const tops = edgeTops(root, view);
   const chips: Chip[] = [];
   for (const ring of root.querySelectorAll<HTMLElement>('.hud-map [data-testid="hud-pick-ring"][data-token]')) {
     const r = ring.getBoundingClientRect();
-    const place = edgePlace({ x: r.left + r.width / 2, y: r.top + r.height / 2 }, view, CHIP_H);
+    const place = edgePlace({ x: r.left + r.width / 2, y: r.top + r.height / 2 }, view, chipH);
     if (place) {
-      const y = Math.min(Math.max(place.y, tops[place.side]), Math.max(tops[place.side], view.bottom - CHIP_H - 4));
-      chips.push({ id: ring.dataset.token!, side: place.side, arrow: place.arrow, y: Math.round(y - top) });
+      const y = Math.min(Math.max(place.y, tops[place.side]), Math.max(tops[place.side], view.bottom - chipH - 4));
+      chips.push({ id: ring.dataset.token!, side: place.side, arrow: place.arrow, y: y - top });
     }
   }
-  return JSON.stringify(stackChips(chips, CHIP_H));
+  return JSON.stringify(stackChips(chips, chipH).map((c) => ({ ...c, y: Math.round(c.y / k) })));
 }
 
 /** A per-instance store: a frame loop while subscribed, notifying only when the chips change. */

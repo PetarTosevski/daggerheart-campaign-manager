@@ -58,7 +58,7 @@ export function RouteError({
     return <main className="mx-auto flex max-w-[1344px] flex-col px-4 pt-7 pb-14 sm:px-12">{body}</main>;
   }
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-[#0d1417] p-6 font-sans text-[#e6ecea]">
+    <main className="flex min-h-page flex-col items-center justify-center bg-[#0d1417] p-6 font-sans text-[#e6ecea]">
       {body}
     </main>
   );

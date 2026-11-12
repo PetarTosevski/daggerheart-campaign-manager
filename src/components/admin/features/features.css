@@ -64,7 +64,7 @@
 /* The picker over the account table. */
 .afs-pick {
   display: flex;
-  max-height: 50vh;
+  max-height: calc(50 * var(--vh));
   flex-direction: column;
   margin: 0;
   padding: 0;

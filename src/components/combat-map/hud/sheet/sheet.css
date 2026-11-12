@@ -10,7 +10,7 @@
  * viewport instead.
  */
 .hud-panel.hsh {
-  max-width: 100vw;
+  max-width: calc(100 * var(--vw));
 }
 
 .hsh .hud-panel-top {

@@ -4,6 +4,7 @@ import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { expectNoSeriousA11yViolations } from "../a11y";
 import { gmAndPlayer } from "../live";
+import { TOUCH_FLOOR_ON_SCREEN } from "../zoom";
 
 // Plan glass-buttons G13 (docs/tasks/TASK-GLASS-G13.md; E2E_VISUAL=1): the Journal's Notes sub-tab as the GM and as a
 // player at 1440 x 900, 1024 x 768 and 390 x 844. The dark frame's buttons are glass (New page = confirm, the session
@@ -71,7 +72,7 @@ test("GLASS-G13 Notes as the GM and as a player", { tag: "@visual" }, async ({ b
         await expect(restore).toHaveClass(/\bgb-neutral\b/);
         if (viewport.width <= 1100) {
           // The touch breakpoint: small glass buttons are 44 px tall.
-          for (const button of [add, restore]) expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+          for (const button of [add, restore]) expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
         }
       }
 

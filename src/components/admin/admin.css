@@ -18,7 +18,7 @@
   --adm-acc: #e3b45a;
   --adm-acc-bg: #2d2614;
   --adm-ok: #7fc29b;
-  min-height: 100vh;
+  min-height: calc(100 * var(--vh));
   overflow-x: hidden;
   background: var(--adm-page);
   color: var(--adm-text);
@@ -229,7 +229,7 @@
 
 .adm-denied {
   display: flex;
-  min-height: 100vh;
+  min-height: calc(100 * var(--vh));
   flex-direction: column;
   align-items: center;
   justify-content: center;

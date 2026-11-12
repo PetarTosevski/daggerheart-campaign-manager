@@ -3,6 +3,7 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 import { signInAsTestGm } from "./fixtures";
 import { expectNoHorizontalScroll, visual } from "./visual/helpers";
 import { gmJoinCode } from "./config/helpers";
+import { TOUCH_FLOOR_ON_SCREEN } from "./zoom";
 
 // D11 N0: the Notes shell (.omc/plans/d11-notes.yaml), since Journal JX1 the Journal's Notes sub-tab. The GM and a
 // player each open the Journal from the nav, pick Notes and get the index column (search, the three page groups, the
@@ -137,8 +138,8 @@ test("the shell fits a phone: one column, no horizontal scroll, 44 px targets at
   const index = await page.getByRole("complementary", { name: "Journal index" }).boundingBox();
   const paper = await page.getByRole("region", { name: "Journal page" }).boundingBox();
   expect(paper!.y).toBeGreaterThan(index!.y + index!.height - 1);
-  for (const tab of await page.getByRole("tab").all()) expect((await tab.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-  expect((await page.getByRole("button", { name: /^Open threads: \d+$/ }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  for (const tab of await page.getByRole("tab").all()) expect((await tab.boundingBox())!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
+  expect((await page.getByRole("button", { name: /^Open threads: \d+$/ }).boundingBox())!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
 });
 
 // Shots for the N0 task doc (E2E_VISUAL=1); board counterparts: `node scripts/board-shots.mjs notes:empty notes:threads`.

@@ -8,6 +8,7 @@ import { decodeExplored, exploredLength, SAMPLES_PER_SQUARE } from "../../src/li
 import { signInAsTestGm } from "./fixtures";
 import { openMapTools } from "./hud/helpers";
 import { bardDraft, convexAs, openCombatMap } from "./visual/helpers";
+import { squarePx } from "./zoom";
 
 // D9 C9: the whole combat map flow in two browsers (.omc/plans/d9-combat-map.yaml), at desktop (1440x900) and
 // tablet (1024x768). The GM generates a map (the e2e backend has no ANTHROPIC_API_KEY, so the keyword fallback draws
@@ -48,11 +49,6 @@ async function squareCentre(stage: Locator, w: number, x: number, y: number) {
 }
 
 /** Screen pixels per map square at the current zoom (48 px squares × the zoom shown in the toolbar). */
-async function squarePx(page: Page): Promise<number> {
-  const text = (await page.getByTestId("combat-zoom").textContent()) ?? "100%";
-  return 48 * (Number.parseInt(text, 10) / 100);
-}
-
 /** Drags from the middle of `locator` by (dx, dy) screen pixels with real pointer moves. */
 async function dragBy(page: Page, locator: Locator, dx: number, dy: number) {
   await locator.scrollIntoViewIfNeeded();

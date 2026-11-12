@@ -2,6 +2,8 @@
 
 import { useLayoutEffect, useState, type RefObject } from "react";
 
+import { cssScale } from "@/lib/css-zoom";
+
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
 /**
@@ -26,16 +28,19 @@ export function useHitSpot(tokenId: Id<"combatTokens"> | null, box: RefObject<HT
       const el = box.current;
       const region = el?.closest<HTMLElement>("[data-hud-region]");
       if (!el || !region) return;
-      const p = region.getBoundingClientRect();
+      // Everything below is in the region's CSS px: client px over its scale (root zoom, make room; dcm-1i3z).
+      const k = cssScale(region);
+      const rb = region.getBoundingClientRect();
+      const p = { left: rb.left, top: rb.top, width: rb.width / k, height: rb.height / k };
       const h = el.offsetHeight;
       const token = tokenId === null ? null : document.querySelector(`.hud-map .cm-tok[data-token="${tokenId}"]`);
       let x: number;
       let y: number;
       if (token) {
         const r = token.getBoundingClientRect();
-        const cx = r.left + r.width / 2 - p.left;
-        const cy = r.top + r.height / 2 - p.top;
-        const gap = Math.max(42, r.width * 0.62 + 12);
+        const cx = (r.left + r.width / 2 - p.left) / k;
+        const cy = (r.top + r.height / 2 - p.top) / k;
+        const gap = Math.max(42, (r.width / k) * 0.62 + 12);
         x = cx + gap;
         if (x + HIT_W > p.width - EDGE) x = cx - gap - HIT_W;
         y = cy - h / 2;

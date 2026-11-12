@@ -5,6 +5,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { expectFitsViewport, expectNoSeriousA11yViolations, expectTouchTargets } from "./a11y";
 import { combatMapUrl, hudScene, type HudScene } from "./hud/helpers";
 import { gmAndPlayer } from "./live";
+import { emulateTouch, rootZoom } from "./zoom";
 
 // Plan combat-hud H7.1, v2 placement H9.6 (docs/tasks/TASK-HUD-H7.1.md, TASK-HUD-H9.6.md): the HUD at tablet width
 // matches PlayerTablet and GMTablet (1024 × 768; the boards' `.tab` rules, HANDOFF "Layout · Tablet"): banners 108 px
@@ -30,6 +31,8 @@ async function setHope(s: HudScene, characterId: Id<"characters">, hope: number)
 }
 
 async function openHud(page: Page, url: string, size = TABLET) {
+  // Tablet and phone sizes are touch screens: zoom 1 and the breakpoints as written (dcm-jkxa).
+  await emulateTouch(page, size.width <= 1180);
   await page.setViewportSize(size);
   await page.goto(url);
   const hud = page.getByTestId("combat-hud");
@@ -43,7 +46,10 @@ async function openHud(page: Page, url: string, size = TABLET) {
 async function boxIn(hud: Locator, part: Locator) {
   const root = (await hud.boundingBox())!;
   const b = (await part.boundingBox())!;
-  return { left: Math.round(b.x - root.x), top: Math.round(b.y - root.y), right: Math.round(root.x + root.width - (b.x + b.width)), bottom: Math.round(root.y + root.height - (b.y + b.height)), width: Math.round(b.width), height: Math.round(b.height) };
+  // CSS px, as the design gives them: screen px over the root zoom (dcm-1i3z).
+  const z = await rootZoom(hud.page());
+  const px = (n: number) => Math.round(n / z);
+  return { left: px(b.x - root.x), top: px(b.y - root.y), right: px(root.x + root.width - (b.x + b.width)), bottom: px(root.y + root.height - (b.y + b.height)), width: px(b.width), height: px(b.height) };
 }
 
 const banner = (page: Page, name: string) => page.getByRole("list", { name: "The party" }).getByRole("button", { name: `Open ${name}'s sheet` });
@@ -258,6 +264,8 @@ test("the day disc's Day / Dim / Night are touch size at tablet and phone width 
   try {
     const { mapId } = await client.mutation(api.combatMaps.create, { campaignId, size: "medium", name: "Crossroads", idempotencyKey: crypto.randomUUID() });
     await client.mutation(api.combatMaps.setLive, { campaignId, mapId });
+    // Tablet and phone: touch screens (zoom 1, the breakpoints as written; dcm-jkxa).
+    await emulateTouch(gm);
     for (const size of [TABLET, { width: 390, height: 844 }]) {
       await gm.setViewportSize(size);
       await gm.goto(combatMapUrl(campaignId));

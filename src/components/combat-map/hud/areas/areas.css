@@ -13,7 +13,7 @@
   flex-direction: column;
   gap: 8px;
   width: 360px;
-  max-width: calc(100vw - 32px);
+  max-width: calc(100 * var(--vw) - 32px);
   /* Clear of the Fear banner and the discs hanging at the top. */
   max-height: calc(100% - 80px - 200px);
   overflow: auto;

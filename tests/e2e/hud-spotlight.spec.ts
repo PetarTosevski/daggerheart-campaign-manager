@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { api } from "../../convex/_generated/api";
 import { expectNoSeriousA11yViolations } from "./a11y";
 import { hudScene } from "./hud/helpers";
+import { TOUCH_FLOOR_ON_SCREEN } from "./zoom";
 
 // Plan combat-hud H9.1 (docs/tasks/TASK-HUD-H9.1.md; CmpTokens 'Spotlight', GMDesktop, GMTablet, Main, PlayerPhone;
 // user answers 2026-11-04 Q7 a, Q8 a, Q11 b). The spotlight disc hangs left of the day disc on every screen. The GM's
@@ -134,7 +135,7 @@ test("the disc's place: left of the day disc, clear of the dock, at 1440, 1024 a
       // The board: the disc's right edge `right` px from the HUD's right edge (the disc is the button's widest part or the label).
       const hud = (await gm.getByTestId("combat-hud").boundingBox())!;
       expect(Math.abs(hud.x + hud.width - (box.x + box.width) - right)).toBeLessThan(40);
-      expect(box.height).toBeGreaterThanOrEqual(44);
+      expect(box.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
       // Clear of the dock (the GM's only map toolbar, H9.0).
       const dock = (await gm.getByRole("toolbar", { name: "Map controls" }).boundingBox())!;
       expect(intersects(box, dock)).toBe(false);
@@ -145,7 +146,7 @@ test("the disc's place: left of the day disc, clear of the dock, at 1440, 1024 a
       expect(pop.x + pop.width).toBeLessThanOrEqual(width);
       expect(intersects(pop, box)).toBe(false);
       // Tablet: 44 px tabs.
-      if (width === 1024) expect((await gm.getByRole("tab", { name: "Party" }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+      if (width === 1024) expect((await gm.getByRole("tab", { name: "Party" }).boundingBox())!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
       await gm.mouse.move(1, 400);
       await shot(gm, `gm-popover-party-${width}`);
       await expectNoSeriousA11yViolations(gm);

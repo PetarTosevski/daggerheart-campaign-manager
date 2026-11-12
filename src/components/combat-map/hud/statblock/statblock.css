@@ -6,7 +6,7 @@
 
 /* H0's panel region has no width: cap by the viewport (as the PC sheet, TASK-HUD-H2.1). */
 .hud-panel.hsb {
-  max-width: 100vw;
+  max-width: calc(100 * var(--vw));
   background: #f4ead2;
   color: #2a1f14;
   box-shadow:

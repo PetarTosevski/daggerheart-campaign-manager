@@ -8,6 +8,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, openCombatMap } from "./visual/helpers";
 import { openMapTools } from "./hud/helpers";
+import { squarePx } from "./zoom";
 
 // Sprite packs P10 (.omc/plans/sprite-packs.yaml): the whole sprite-packs flow in two browsers, at desktop (1440x900)
 // and tablet (1024x768). The GM uploads a pack added to Dungeon (cut and labelled in the browser, P8), switches a new
@@ -54,11 +55,6 @@ async function squareCentre(stage: Locator, x: number, y: number) {
 }
 
 /** Screen pixels per map square at the current zoom (48 px squares × the zoom shown in the toolbar). */
-async function squarePx(page: Page): Promise<number> {
-  const text = (await page.getByTestId("combat-zoom").textContent()) ?? "100%";
-  return 48 * (Number.parseInt(text, 10) / 100);
-}
-
 /** Drags from the middle of `locator` by (dx, dy) screen pixels with real pointer moves. */
 async function dragBy(page: Page, locator: Locator, dx: number, dy: number) {
   await locator.scrollIntoViewIfNeeded();

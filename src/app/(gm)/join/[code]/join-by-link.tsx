@@ -18,7 +18,7 @@ export function JoinByLink({ code }: { code: string }) {
   const [error, setError] = useState<string | null>(null);
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-5 bg-ink p-6 text-center text-parchment">
+    <main className="flex min-h-page flex-col items-center justify-center gap-5 bg-ink p-6 text-center text-parchment">
       <h1 className="font-display text-[30px] font-bold">Join a campaign</h1>
       <p className="max-w-md text-muted-text">
         You were invited with the code <span className="font-display tracking-[0.15em] text-brand">{code.toUpperCase()}</span>.

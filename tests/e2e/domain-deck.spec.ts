@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { api } from "../../convex/_generated/api";
 import { DOMAIN_CARDS } from "../../src/lib/srd/domain-cards";
 import { openSheet, openTab } from "./visual/helpers";
+import { TOUCH_FLOOR_ON_SCREEN } from "./zoom";
 
 // DD1: the Domain Deck on Domains > Domain Cards. The GM's level-1 Bard (Grace & Codex) starts with Deft Deceiver
 // and Book of Ava, so every pick is used; a GM level correction to 2 opens one pick.
@@ -26,7 +27,7 @@ test("Domain Deck: no picks at level 1, take a card at level 2, hide above level
   await expect(domains.getByText("2 of 3 cards chosen")).toBeVisible();
   const take = grid.getByRole("button", { name: `Take ${codex2.name}` });
   await expect(take).toBeEnabled();
-  expect((await take.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect((await take.boundingBox())!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
   await take.click();
   await expect(domains.getByText("3 of 3 cards chosen")).toBeVisible();
   await expect(sheet.getByRole("list", { name: "Loadout cards" }).getByRole("article", { name: codex2.name })).toBeVisible();

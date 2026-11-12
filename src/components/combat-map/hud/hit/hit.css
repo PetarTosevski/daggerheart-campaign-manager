@@ -14,7 +14,7 @@
 
 .hud-hit.hud-pc {
   width: 320px;
-  max-height: calc(100vh - 32px);
+  max-height: calc(100 * var(--vh) - 32px);
   overflow-y: auto;
   box-shadow:
     0 0 0 1px #6b2a22,
@@ -257,7 +257,7 @@
   .hud-hit-spot > .hud-pc {
     position: relative;
     width: 100%;
-    max-height: min(70dvh, calc(100dvh - 112px));
+    max-height: min(70 * var(--dvh), calc(100 * var(--dvh) - 112px));
     padding-top: 18px;
     /* The board's 16 px: the Lorekeeper pill hides on the combat map at phone width (user answer 2026-11-02). */
     padding-bottom: 16px;

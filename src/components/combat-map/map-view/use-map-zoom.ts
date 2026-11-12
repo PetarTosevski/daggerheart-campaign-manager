@@ -2,6 +2,8 @@
 
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type RefObject } from "react";
 
+import { cssScale } from "@/lib/css-zoom";
+
 /** The board's zoom range and step (`setZoom`: 0.15..2.5, buttons x1.2, Ctrl + scroll x1.12). */
 export const MIN_ZOOM = 0.15;
 export const MAX_ZOOM = 2.5;
@@ -11,14 +13,11 @@ const WHEEL_STEP = 1.12;
 const clampZoom = (z: number) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z));
 
 /**
- * The CSS scale on the element's ancestors: its on-screen width over its layout width (1 when it has no size). The
- * Combat HUD scales the map's viewport while a sheet is open (make room, plan combat-hud H2.2: 0.94, tablet 0.92), so
- * client pixels are layout pixels times this (dcm-bxp.99.32.14).
+ * The CSS scale on the element and its ancestors (`cssScale`, src/lib/css-zoom.ts): the root zoom times the Combat
+ * HUD's make-room scale while a sheet is open (plan combat-hud H2.2: 0.94, tablet 0.92), so client pixels are layout
+ * pixels times this (dcm-bxp.99.32.14, dcm-1i3z).
  */
-export function cssScale(el: HTMLElement): number {
-  const width = el.getBoundingClientRect().width;
-  return el.offsetWidth > 0 && width > 0 ? width / el.offsetWidth : 1;
-}
+export { cssScale } from "@/lib/css-zoom";
 
 /**
  * The stage point (unzoomed layout px) under the client point (cx, cy): `s` is the stage's client rect, `scale` the

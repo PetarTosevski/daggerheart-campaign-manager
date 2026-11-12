@@ -3,11 +3,12 @@
 import { useSyncExternalStore } from "react";
 
 import { useFeature } from "@/lib/use-feature";
+import { screenQuery } from "@/lib/zoom-media.mjs";
 
 import { PHONE_QUERY } from "./model";
 
 function subscribe(onChange: () => void) {
-  const list = window.matchMedia(PHONE_QUERY);
+  const list = window.matchMedia(screenQuery(PHONE_QUERY));
   list.addEventListener("change", onChange);
   return () => list.removeEventListener("change", onChange);
 }
@@ -22,7 +23,7 @@ export function usePhoneHud(): boolean {
   const allowed = useFeature("phoneLayout");
   const phoneWidth = useSyncExternalStore(
     subscribe,
-    () => window.matchMedia(PHONE_QUERY).matches,
+    () => window.matchMedia(screenQuery(PHONE_QUERY)).matches,
     () => false,
   );
   return allowed && phoneWidth;

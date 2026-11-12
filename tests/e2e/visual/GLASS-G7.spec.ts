@@ -3,6 +3,7 @@ import { expect as baseExpect, test, type Locator, type Page } from "@playwright
 import { api } from "../../../convex/_generated/api";
 import { expectNoSeriousA11yViolations } from "../a11y";
 import { gmAndPlayer } from "../live";
+import { TOUCH_FLOOR_ON_SCREEN } from "../zoom";
 
 // Plan glass-buttons G7 (docs/tasks/TASK-GLASS-G7.md; E2E_VISUAL=1): the Lorekeeper page as the GM and as a player at
 // 1440 x 900, 1024 x 768 and 390 x 844, plus its dialogs, the Conversations menu and the drawer. Ask = confirm,
@@ -109,7 +110,7 @@ test("GLASS-G7 the Lorekeeper as the GM and as a player", { tag: "@visual" }, as
         if (viewport.width <= 1100) {
           // The touch breakpoint: small glass buttons and ink buttons are 44 px tall.
           for (const button of [suggestion, copy, column(page).getByRole("button", { name: "Conversations" })]) {
-            expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+            expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
           }
         }
       }

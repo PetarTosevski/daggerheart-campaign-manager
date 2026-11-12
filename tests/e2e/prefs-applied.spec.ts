@@ -7,9 +7,10 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs } from "./visual/helpers";
+import { emulateTouch, rootZoom, squarePx } from "./zoom";
 
-// Plan config U6b (docs/tasks/TASK-CONFIG-U6b.md; Q12 a, Q13 a): the account's Text size zooms the app root (Small 0.9,
-// Medium 1, Large 1.15) and Reduce motion calms every animation, on every page and live from another device. At Large
+// Plan config U6b (docs/tasks/TASK-CONFIG-U6b.md; Q12 a, Q13 a): the account's Text size zooms the app root (Small 0.72,
+// Medium 0.8 = the website's base zoom, dcm-1i3z; Large 0.92) and Reduce motion calms every animation, on every page and live from another device. At Large
 // the Combat Map's pointer math stays right (a dragged token lands on the square under the pointer).
 //
 // Each test signs in its own account: preferences are per user, so the shared test GM's must not change under other
@@ -58,13 +59,13 @@ test("Text size zooms the whole app, follows the account live and paints at the 
   await page.goto(dashboard);
   await expect(root(page)).toHaveAttribute("data-text-size", "medium");
   await expect(root(page)).not.toHaveAttribute("data-reduce-motion");
-  await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).zoom)).toBe("1");
+  await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).zoom)).toBe("0.8");
   await shot(page, "dashboard-medium");
 
   // Another device changes it: this page follows without a reload.
   for (const [size, zoom] of [
-    ["small", "0.9"],
-    ["large", "1.15"],
+    ["small", "0.72"],
+    ["large", "0.92"],
   ] as const) {
     await client.mutation(api.preferences.set, { change: { key: "textSize", value: size } });
     await expect(root(page)).toHaveAttribute("data-text-size", size);
@@ -92,6 +93,99 @@ test("Text size zooms the whole app, follows the account live and paints at the 
   expect(hydration, "no hydration mismatch").toEqual([]);
 });
 
+test("Every page on a mouse screen starts at the base zoom 0.8, signed out too, and screen-tall surfaces still fill the screen (dcm-1i3z)", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const zoom = () => page.evaluate(() => getComputedStyle(document.documentElement).zoom);
+
+  // Signed out, outside the (gm) group, with no preference and no script: plain CSS on <html>.
+  await page.goto("/signin");
+  await expect(root(page)).not.toHaveAttribute("data-text-size");
+  expect(await zoom()).toBe("0.8");
+  // min-h-page divides 100vh by the zoom: the page still reaches the bottom of the screen.
+  const main = (await page.locator("main").first().boundingBox())!;
+  expect(main.y + main.height).toBeGreaterThanOrEqual(899);
+  await shot(page, "signin-base");
+
+  // Signed in at Medium: the Preferences popover still opens right under the avatar, right edges aligned (account.tsx
+  // turns the avatar's client rect into the popover's CSS px).
+  const { dashboard } = await freshCampaign(page);
+  await page.goto(dashboard);
+  await expect(root(page)).toHaveAttribute("data-text-size", "medium");
+  expect(await zoom()).toBe("0.8");
+  const avatar = page.getByTestId("app-bar-avatar").filter({ visible: true }).first();
+  await avatar.click();
+  const popover = page.getByTestId("preferences").filter({ visible: true });
+  await expect(popover).toBeVisible();
+  const a = (await avatar.boundingBox())!;
+  const p = (await popover.boundingBox())!;
+  expect(Math.abs(p.x + p.width - (a.x + a.width))).toBeLessThanOrEqual(2);
+  expect(Math.abs(p.y - (a.y + a.height + 10 * 0.8))).toBeLessThanOrEqual(2);
+  await shot(page, "dashboard-preferences");
+});
+
+test("Touch screens keep zoom 1 and the breakpoints as written; mouse screens switch layouts where 80% browser zoom did (dcm-jkxa)", async ({ page }) => {
+  const zoom = () => page.evaluate(() => getComputedStyle(document.documentElement).zoom);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/signin");
+  expect(await zoom()).toBe("0.8");
+  // Every width / height query the browser actually loaded chooses between touch and the rest (postcss-zoom-media.mjs):
+  // none is left on the raw screen width, Tailwind's included.
+  const unscaled = await page.evaluate(() => {
+    const out: string[] = [];
+    let sized = 0;
+    const walk = (rules: CSSRuleList) => {
+      for (const rule of Array.from(rules)) {
+        if (rule instanceof CSSMediaRule) {
+          for (const query of Array.from(rule.media)) {
+            if (!/\b(width|height)\b/.test(query.replace(/aspect-ratio|device-(width|height)/g, ""))) continue;
+            sized += 1;
+            if (!query.includes("pointer")) out.push(query);
+          }
+        }
+        if ("cssRules" in rule) walk((rule as CSSGroupingRule).cssRules);
+      }
+    };
+    for (const sheet of Array.from(document.styleSheets)) walk(sheet.cssRules);
+    return { out, sized };
+  });
+  expect(unscaled.out).toEqual([]);
+  expect(unscaled.sized).toBeGreaterThan(10);
+
+  // A touch screen: zoom 1, and Text size there is 0.9 / 1 / 1.15 as before.
+  await emulateTouch(page);
+  await page.reload();
+  expect(await zoom()).toBe("1");
+  await emulateTouch(page, false);
+  await page.reload();
+  expect(await zoom()).toBe("0.8");
+
+  // The Combat HUD: its tablet layout (108 px banners) is written for 761-1180 px. A 1280 px desktop and a 1024 px one
+  // (1280 CSS px at 0.8, as at 80% browser zoom) get the desktop HUD (146 px); a 1024 px tablet gets the tablet HUD.
+  const { client, campaignId, combatMap } = await freshCampaign(page);
+  await client.mutation(api.combatMaps.create, { campaignId, size: "medium", name: "Ford", idempotencyKey: crypto.randomUUID() });
+  await page.goto(combatMap);
+  await page.getByRole("button", { name: "Map tools" }).click();
+  const tools = page.getByRole("complementary", { name: "Map tools" });
+  await tools.getByRole("region", { name: "Combatants" }).getByRole("button", { name: "＋ Party (1)" }).click();
+  await tools.press("Escape");
+  const bannerWidth = () => page.locator(".hud-r-banners > .hbn-row").first().evaluate((el) => getComputedStyle(el).getPropertyValue("--hbn-w").trim());
+  for (const [width, height, touch, expected] of [
+    [1280, 800, false, "146px"],
+    [1024, 768, false, "146px"],
+    [1024, 768, true, "108px"],
+  ] as const) {
+    await emulateTouch(page, touch);
+    await page.setViewportSize({ width, height });
+    await expect.poll(bannerWidth, { message: `${width} ${touch ? "touch" : "mouse"}` }).toBe(expected);
+    expect(await zoom()).toBe(touch ? "1" : "0.8");
+    await shot(page, `combat-hud-${width}-${touch ? "touch" : "mouse"}`);
+  }
+  await client.mutation(api.preferences.set, { change: { key: "textSize", value: "large" } });
+  await expect.poll(zoom).toBe("1.15");
+  await emulateTouch(page, false);
+  await expect.poll(zoom).toBe("0.92");
+});
+
 test("At Large the Combat Map's pointer math holds: a dragged token lands where it is dropped", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const { client, campaignId, combatMap } = await freshCampaign(page);
@@ -109,7 +203,7 @@ test("At Large the Combat Map's pointer math holds: a dragged token lands where 
     }
     await expect(root(page)).toHaveAttribute("data-text-size", size);
     // The HUD still ends exactly at the bottom of the screen at every size: no dock pushed off the page at Large, no
-    // gap under it at Small (globals.css divides its 100dvh by the zoom).
+    // gap under it at Small (shell.css divides its 100dvh by the zoom: var(--dvh)).
     await expect
       .poll(async () => {
         const hud = await page.locator(".hud-root").first().boundingBox();
@@ -123,8 +217,8 @@ test("At Large the Combat Map's pointer math holds: a dragged token lands where 
   const board = page.getByRole("region", { name: "Battle map" });
   const token = board.getByRole("button", { name: /^Open Liriel’s sheet/ });
   await expect(token).toBeVisible();
-  const zoomText = (await page.getByTestId("combat-zoom").textContent()) ?? "100%";
-  const step = 48 * (Number.parseInt(zoomText, 10) / 100) * 1.15;
+  const step = await squarePx(page);
+  expect(await rootZoom(page)).toBeCloseTo(0.92, 2);
   const [x, y] = (await token.getAttribute("data-square"))!.split(",").map(Number) as [number, number];
   const box = (await token.boundingBox())!;
   const from = { x: box.x + box.width / 2, y: box.y + box.height / 2 };

@@ -1,7 +1,8 @@
 /**
  * Reduce motion and text size applied app-wide (plan config U6b, Q12 a / Q13 a; docs/tasks/TASK-CONFIG-U6b.md).
  * PrefsSync writes data-reduce-motion / data-text-size on <html> from preferences.get (Convex mocked), the display
- * cache and its inline script, useReducedMotion() = device OR account, and globals.css's zoom and calm rules.
+ * cache and its inline script, useReducedMotion() = device OR account, and globals.css's zoom (the base 0.8 on every
+ * page, dcm-1i3z, times Text size) and calm rules.
  */
 import { act, cleanup, render, renderHook } from "@testing-library/react";
 import { readFileSync } from "node:fs";
@@ -21,6 +22,7 @@ import {
   readCachedDisplayPrefs,
   useReducedMotion,
 } from "@/lib/use-reduced-motion";
+import { DESKTOP_ZOOM, TOUCH_QUERY } from "@/lib/zoom-media.mjs";
 
 type Prefs = { reduceMotion: boolean; textSize: "small" | "medium" | "large" } | undefined;
 const mock: { auth: { isLoading: boolean; isAuthenticated: boolean }; prefs: Prefs; lastArgs: unknown } = {
@@ -195,11 +197,31 @@ describe("useReducedMotion (Q13 a: device OR account)", () => {
 describe("globals.css", () => {
   const css = readFileSync(path.join(process.cwd(), "src/app/globals.css"), "utf8");
 
-  it("zooms the root by TEXT_SIZE_ZOOM for Small and Large (Q12 a) and leaves Medium at 1", () => {
-    expect(TEXT_SIZE_ZOOM).toEqual({ small: 0.9, medium: 1, large: 1.15 });
-    expect(css).toMatch(new RegExp(String.raw`html\[data-text-size="small"\]\s*\{\s*zoom:\s*${TEXT_SIZE_ZOOM.small};`));
-    expect(css).toMatch(new RegExp(String.raw`html\[data-text-size="large"\]\s*\{\s*zoom:\s*${TEXT_SIZE_ZOOM.large};`));
+  it("zooms mouse screens by the base 0.8 and touch screens by 1, and Text size multiplies it (dcm-1i3z, dcm-jkxa, Q12 a)", () => {
+    expect(TEXT_SIZE_ZOOM).toEqual({ desktop: { small: 0.72, medium: 0.8, large: 0.92 }, touch: { small: 0.9, medium: 1, large: 1.15 } });
+    // One base for the stylesheet zoom and the breakpoint rewrite (src/lib/zoom-media.mjs).
+    expect(TEXT_SIZE_ZOOM.desktop.medium).toBe(DESKTOP_ZOOM);
+    const touchAt = css.indexOf(`@media ${TOUCH_QUERY} {`);
+    expect(touchAt).toBeGreaterThan(0);
+    const blocks = { desktop: css.slice(0, touchAt), touch: css.slice(touchAt, css.indexOf("\n}\n", touchAt)) };
+    for (const input of ["desktop", "touch"] as const) {
+      const zoom = TEXT_SIZE_ZOOM[input];
+      // The base needs no attribute and no script: signed out, /signin and the first paint are at it too.
+      expect(blocks[input]).toMatch(new RegExp(String.raw`\n\s*html\s*\{\s*zoom:\s*${zoom.medium};\s*--text-zoom:\s*${zoom.medium};`));
+      for (const size of ["small", "large"] as const) {
+        expect(blocks[input]).toMatch(new RegExp(String.raw`html\[data-text-size="${size}"\]\s*\{\s*zoom:\s*${zoom[size]};\s*--text-zoom:\s*${zoom[size]};`));
+      }
+    }
     expect(css).not.toMatch(/data-text-size="medium"/);
+    // Small and Large replace the base rather than stack on it: no other zoom in the stylesheet.
+    expect(css.match(/^\s*zoom:/gm)).toHaveLength(6);
+  });
+
+  it("divides every viewport unit by the zoom, always (not only under data-text-size)", () => {
+    for (const unit of ["vw", "vh", "dvh", "svh"]) {
+      expect(css).toMatch(new RegExp(String.raw`--${unit}:\s*calc\(1${unit} / var\(--text-zoom\)\);`));
+    }
+    expect(css).not.toMatch(/html\[data-text-size\] \./);
   });
 
   it("calms every animation and transition under data-reduce-motion, keeping spinners and the hit flash's fade", () => {

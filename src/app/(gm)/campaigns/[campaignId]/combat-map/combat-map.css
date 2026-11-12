@@ -351,7 +351,7 @@
 .cm-vp {
   position: relative;
   overflow: auto;
-  max-height: calc(100vh - 150px);
+  max-height: calc(100 * var(--vh) - 150px);
   min-height: 440px;
   border-radius: 14px;
   border: 1px solid var(--cm-card-border);
@@ -410,7 +410,7 @@
   }
   .cm-vp {
     min-height: 320px;
-    max-height: 70vh;
+    max-height: calc(70 * var(--vh));
   }
 }
 /* Touch targets of at least 44 px on tablets and phones (D12 H22); desktop keeps the board's sizes. */

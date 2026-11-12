@@ -2,6 +2,7 @@
 
 import { useId, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
 
+import { cssScale } from "@/lib/css-zoom";
 import type { Point, RouteAnalysis } from "@/lib/domain/travel";
 import { hexBox, hexesCovering, hexesPath, neighbours, scaleGrid, type Hex, type HexGrid } from "@/lib/world/hex";
 import { hexPoints, layoutHexTokens, type HexTokenItem, type HexTokenPlace } from "@/lib/world/hex-tokens";
@@ -84,9 +85,11 @@ export function MapView(props: MapViewProps) {
     return { x: clamp(((clientX - r.left) / r.width) * 100), y: clamp(((clientY - r.top) / r.height) * 100) };
   };
 
+  // The view is in the viewport's CSS px: client px over its scale (the root zoom; dcm-1i3z).
   const vpPoint = (clientX: number, clientY: number) => {
     const r = viewport.current!.getBoundingClientRect();
-    return { x: clientX - r.left, y: clientY - r.top };
+    const k = cssScale(viewport.current!);
+    return { x: (clientX - r.left) / k, y: (clientY - r.top) / k };
   };
 
   function onPointerDown(e: PointerEvent<HTMLDivElement>) {
@@ -137,7 +140,8 @@ export function MapView(props: MapViewProps) {
       const dy = e.clientY - g.sy;
       if (!g.moved && Math.hypot(dx, dy) < 4) return;
       g.moved = true;
-      panZoom.setView({ z: panZoom.viewRef.current.z, x: g.vx + dx, y: g.vy + dy });
+      const k = cssScale(viewport.current!);
+      panZoom.setView({ z: panZoom.viewRef.current.z, x: g.vx + dx / k, y: g.vy + dy / k });
     }
   }
 

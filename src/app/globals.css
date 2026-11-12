@@ -167,39 +167,56 @@
   }
 }
 /*
- * Text size (plan config U6b, Q12 a): CSS zoom on the app root, set by PrefsSync as data-text-size on <html>.
- * Small 0.9, Medium 1, Large 1.15 (TEXT_SIZE_ZOOM in src/lib/config/preferences.ts; tests/unit/prefs-sync.test.tsx
- * checks the two agree). Pointer math that divides by getBoundingClientRect / offsetWidth (the Combat Map's) stays
- * correct under zoom.
+ * Website scale (dcm-1i3z, dcm-jkxa) and Text size (plan config U6b, Q12 a): CSS zoom on <html>.
+ * - Mouse and desktop screens render at a base zoom of 0.8 (the user, 2026-11-12: today's 80% browser zoom is the 100%
+ *   view). Touch screens (`(pointer: coarse)`: phones, tablets) keep zoom 1 and look and size exactly as before. It is
+ *   plain CSS on html, so /signin, the landing page and a hard load paint at the right zoom before any script runs.
+ * - Text size multiplies the base: Small 0.72, Medium 0.8 (no rule of its own), Large 0.92; on touch 0.9 / 1 / 1.15.
+ *   PrefsSync sets data-text-size on <html>. TEXT_SIZE_ZOOM in src/lib/config/preferences.ts holds the same numbers;
+ *   tests/unit/prefs-sync.test.tsx checks the two agree. The phone app (apps/mobile) has no such rule.
+ * - Breakpoints: every width / height @media query is rewritten at build time (postcss-zoom-media.mjs,
+ *   src/lib/zoom-media.mjs) to switch at W x 0.8 on mouse screens, as 80% browser zoom did, and at W on touch.
  *
- * Zoom scales viewport units too (100dvh inside a 1.15 root paints 115% of the screen), so the surfaces that are
- * exactly one screen tall divide them by --text-zoom: the Combat HUD under the app bar, the Campaign settings
- * slide-over and the Preferences popover. Other vh / vw uses are min-heights or caps that only grow or shrink a
- * little (TASK-CONFIG-U6b.md lists them).
+ * Zoom scales viewport units too (inside a 0.8 root, 100dvh paints 80% of the screen), unlike browser zoom. So the app
+ * never writes vw / vh / dvh / svh directly (tests/unit/viewport-units.test.ts): it uses these per-unit variables,
+ * which divide by the zoom, e.g. `calc(100 * var(--dvh) - 32px)` is the screen's height less 32 screen-scaled px.
+ *
+ * Script that mixes client pixels (getBoundingClientRect, clientX, innerWidth, scrollY) with CSS pixels (style
+ * left / top, offsetWidth, scrollLeft) divides by cssScale / rootScale (src/lib/css-zoom.ts).
  */
 html {
-  --text-zoom: 1;
+  zoom: 0.8;
+  --text-zoom: 0.8;
+  --vw: calc(1vw / var(--text-zoom));
+  --vh: calc(1vh / var(--text-zoom));
+  --dvh: calc(1dvh / var(--text-zoom));
+  --svh: calc(1svh / var(--text-zoom));
 }
 html[data-text-size="small"] {
-  zoom: 0.9;
-  --text-zoom: 0.9;
+  zoom: 0.72;
+  --text-zoom: 0.72;
 }
 html[data-text-size="large"] {
-  zoom: 1.15;
-  --text-zoom: 1.15;
+  zoom: 0.92;
+  --text-zoom: 0.92;
 }
-html[data-text-size] .hud-root {
-  height: calc(100dvh / var(--text-zoom) - var(--app-bar-h, 0px));
+@media (pointer: coarse) {
+  html {
+    zoom: 1;
+    --text-zoom: 1;
+  }
+  html[data-text-size="small"] {
+    zoom: 0.9;
+    --text-zoom: 0.9;
+  }
+  html[data-text-size="large"] {
+    zoom: 1.15;
+    --text-zoom: 1.15;
+  }
 }
-html[data-text-size] .cfg-setp {
-  width: min(640px, 100vw / var(--text-zoom));
-  max-width: calc(100vw / var(--text-zoom));
-  height: calc(100dvh / var(--text-zoom));
-  max-height: calc(100dvh / var(--text-zoom));
-}
-html[data-text-size] .cfg-pop {
-  max-width: calc(100vw / var(--text-zoom) - 16px);
-  max-height: calc(100dvh / var(--text-zoom) - 88px);
+/* `min-h-screen` that fills the screen under the zoom (100vh would paint 80% of it). */
+@utility min-h-page {
+  min-height: calc(100 * var(--vh));
 }
 
 /*

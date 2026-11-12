@@ -17,7 +17,7 @@
 
 /* The board's viewport: it scrolls (pan = scroll), a fixed height so Fit has room to fit into. */
 .cm-vp.cm-vp-map {
-  height: max(440px, calc(100vh - 230px));
+  height: max(440px, calc(100 * var(--vh) - 230px));
   max-height: none;
   cursor: grab;
   touch-action: pan-x pan-y;
@@ -82,12 +82,12 @@
 
 @media (max-width: 1180px) {
   .cm-vp.cm-vp-map {
-    height: max(400px, calc(100vh - 210px));
+    height: max(400px, calc(100 * var(--vh) - 210px));
   }
 }
 @media (max-width: 760px) {
   .cm-vp.cm-vp-map {
-    height: 70vh;
+    height: calc(70 * var(--vh));
     min-height: 320px;
   }
 }

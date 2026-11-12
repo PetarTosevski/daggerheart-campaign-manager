@@ -5,6 +5,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, expectNoHorizontalScroll } from "./visual/helpers";
 import { gmJoinCode } from "./config/helpers";
+import { TOUCH_FLOOR_ON_SCREEN } from "./zoom";
 
 // D8 A4: the live encounter tracker on the Adversaries page's Encounters tab. Damage through thresholds (CB p.91),
 // Stress, conditions, Spend Fear (the dashboard's GM Fear goes down, CB p.154), spotlights per GM turn (CB p.153) and
@@ -155,7 +156,7 @@ test("at 390 px the tracker stacks without horizontal scroll and its buttons are
   await expectNoHorizontalScroll(page);
   for (const control of await tracker.getByRole("button").all()) {
     const box = await control.boundingBox();
-    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    expect(box?.height ?? 0).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
   }
 });
 

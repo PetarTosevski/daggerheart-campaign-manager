@@ -5,6 +5,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, expectNoHorizontalScroll } from "./visual/helpers";
 import { gmJoinCode } from "./config/helpers";
+import { TOUCH_FLOOR_ON_SCREEN } from "./zoom";
 
 // D11 N2: own journal and pages (.omc/plans/d11-notes.yaml), since JX1 in the Journal's Notes sub-tab. The GM opens
 // Notes and sees the four default pages; with Session 2 live, adds a session log titled 'Session 2' that shows its date;
@@ -154,7 +155,7 @@ test("at 390 px the pages sit behind a 'Pages' disclosure; the session picker fi
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
   const rumors = group(page, "Collections").getByRole("button", { name: /Rumors & hooks/ });
-  expect((await rumors.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect((await rumors.boundingBox())!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
   await rumors.click();
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
   await expect(page.getByRole("article", { name: "Page" }).getByLabel("Page title")).toHaveValue("Rumors & hooks");

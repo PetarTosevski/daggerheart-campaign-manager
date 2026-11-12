@@ -4,6 +4,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs } from "./visual/helpers";
+import { TOUCH_FLOOR_ON_SCREEN } from "./zoom";
 
 // countdowns-advanced K3: chase countdowns (CB p.163). The GM starts a chase from "+ New chase" (d6, decent lead, the
 // PCs pursuing); the player's manual action rolls move the two tracks by the Dynamic Countdown Advancement table; the
@@ -69,7 +70,7 @@ test("the GM starts a chase; the player's rolls move both tracks by R4 until the
   await expect(card).toContainText("Failures and success with Fear move this");
   const armed = card.getByRole("button", { name: /^Armed/ });
   await expect(armed).toHaveAttribute("aria-pressed", "true");
-  expect((await armed.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect((await armed.boundingBox())!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
   // ONE card for the pair.
   await expect(grid.getByRole("article")).toHaveCount(1);
 
@@ -156,7 +157,7 @@ test("both chase sides reach 0 on one roll: the GM decides, the player waits and
   await expect(card.getByTestId("chase-outcome")).toHaveCount(0);
   const caught = deciding.getByRole("button", { name: "Caught!" });
   await expect(deciding.getByRole("button", { name: "Got away!" })).toBeVisible();
-  expect((await caught.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect((await caught.boundingBox())!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
 
   await player.goto(campaignUrl);
   const theirs = player.getByRole("region", { name: "Countdowns" }).getByRole("article", { name: "Chase: The thief" });

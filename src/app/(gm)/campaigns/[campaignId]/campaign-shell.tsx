@@ -303,7 +303,7 @@ function pageContent(summary: CampaignSummary | null): string {
 /** The shell while the campaign summary loads: the header band and the page skeleton. */
 export function CampaignShellLoading() {
   return (
-    <div className="min-h-screen bg-[#0d1417] font-sans text-[#e6ecea]">
+    <div className="min-h-page bg-[#0d1417] font-sans text-[#e6ecea]">
       <div aria-hidden="true" className="h-[92px] border-b border-[#1c272b] bg-[#101a1d]" />
       <CampaignSectionLoading label="Loading campaign" />
     </div>
@@ -351,7 +351,7 @@ function CampaignShellView({ campaign, children }: { campaign: CampaignSummary |
   if (campaign === undefined) return <CampaignShellLoading />;
   if (campaign === null) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-5 bg-[#0d1417] p-6 text-center text-parchment">
+      <main className="flex min-h-page flex-col items-center justify-center gap-5 bg-[#0d1417] p-6 text-center text-parchment">
         <h1 className="font-display text-[32px] font-bold">Campaign not found</h1>
         <p className="text-muted-text">It may have been deleted.</p>
         <Link href="/campaigns" className={brandButton({ variant: "confirm", size: "lg" })}>
@@ -422,7 +422,7 @@ function CampaignShellView({ campaign, children }: { campaign: CampaignSummary |
       <OpenTomeContext.Provider value={setTomeChapter}>
       <ViewerProvider viewer={viewer}>
       {/* The viewer for the glass buttons' colours (GM: confirm in Fear, back out in Hope); dialogs inherit it. */}
-      <div data-viewer={viewer} className="relative min-h-screen overflow-hidden bg-[#0d1417] font-sans text-[#e6ecea]">
+      <div data-viewer={viewer} className="relative min-h-page overflow-hidden bg-[#0d1417] font-sans text-[#e6ecea]">
         {combatMap ? (
           <CombatAppBarFrame campaignId={campaign._id} isGm={isGm} header={header} onPlayers={openPlayers} settings={!ownerView}>
             {page}

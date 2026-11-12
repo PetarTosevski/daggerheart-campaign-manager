@@ -5,6 +5,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, expectNoHorizontalScroll } from "./visual/helpers";
 import { gmJoinCode } from "./config/helpers";
+import { TOUCH_FLOOR_ON_SCREEN } from "./zoom";
 
 // D11 N3: entries (.omc/plans/d11-notes.yaml). The GM writes on their own page: adds (quick keys), completes, stars,
 // edits, moves and deletes entries, and migrates an open task to a new page. A player and the GM both add to the
@@ -206,9 +207,9 @@ test("entries fit a phone: one column, no horizontal scroll, 44 px bullets, row 
   await write(page, "* a long task line that has to wrap on a narrow phone screen without scrolling sideways");
   await expectNoHorizontalScroll(page);
   const row = rowOf(page, "a long task line");
-  expect((await row.getByRole("button", { name: /^Task: / }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect((await row.getByRole("button", { name: /^Task: / }).boundingBox())!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
   await row.hover();
-  expect((await row.getByRole("button", { name: "Delete entry" }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
-  for (const chip of await paper(page).getByRole("radio").all()) expect((await chip.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect((await row.getByRole("button", { name: "Delete entry" }).boundingBox())!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
+  for (const chip of await paper(page).getByRole("radio").all()) expect((await chip.boundingBox())!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
   await expect.poll(async () => (await client.query(api.notesEntries.entries, { campaignId, page: { template: 0 } })).entries.length).toBe(1);
 });

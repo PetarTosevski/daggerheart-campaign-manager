@@ -5,6 +5,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, expectNoHorizontalScroll } from "./visual/helpers";
 import { gmJoinCode } from "./config/helpers";
+import { TOUCH_FLOOR_ON_SCREEN } from "./zoom";
 
 // D11 N5: the @ picker and mention links (.omc/plans/d11-notes.yaml). The GM mentions an NPC the party has not met and
 // a rename shows on the link at once. The player's picker does not offer that NPC until the GM marks it known; the
@@ -143,7 +144,7 @@ test("at 390 px: the picker is usable by touch, 44 px options, no horizontal scr
   await input.pressSequentially("camped at @mabry");
   const option = paper(page).getByRole("option", { name: /Mabry Ford/ });
   await expect(option).toBeVisible();
-  expect((await option.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect((await option.boundingBox())!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
   await expectNoHorizontalScroll(page);
   await option.click();
   await expect(input).toBeFocused();

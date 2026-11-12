@@ -2,6 +2,8 @@
 
 import { useRef, useState, type MouseEvent, type PointerEvent } from "react";
 
+import { rootScale } from "@/lib/css-zoom";
+
 /**
  * Drag a hand card to play it (user 2026-11-09): dropping it in the middle of the screen does what its Use button does.
  * A press only becomes a drag after the pointer moves a few pixels, so a tap still raises the card and clicks still
@@ -45,7 +47,9 @@ export function useDragToPlay(enabled: boolean, onDrop: () => void) {
           p.dragging = true;
           e.currentTarget.setPointerCapture?.(e.pointerId);
         }
-        setDrag({ dx, dy, over: inPlayZone(e.clientX, e.clientY, window.innerWidth, window.innerHeight) });
+        // The card follows in CSS px (--dx / --dy): client px over the root zoom (dcm-1i3z). The zone test stays in client px.
+        const k = rootScale();
+        setDrag({ dx: dx / k, dy: dy / k, over: inPlayZone(e.clientX, e.clientY, window.innerWidth, window.innerHeight) });
       },
       onPointerUp(e: PointerEvent<HTMLElement>) {
         const p = press.current;

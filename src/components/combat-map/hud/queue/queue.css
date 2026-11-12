@@ -91,8 +91,8 @@
   left: 0;
   bottom: 56px;
   width: 330px;
-  max-width: calc(100vw - 32px);
-  max-height: calc(100dvh - var(--app-bar-h, 0px) - 72px - 290px);
+  max-width: calc(100 * var(--vw) - 32px);
+  max-height: calc(100 * var(--dvh) - var(--app-bar-h, 0px) - 72px - 290px);
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -122,7 +122,7 @@
   .hud-root .hud-wait .hud-q-col {
     bottom: 62px;
     width: 300px;
-    max-height: calc(100dvh - var(--app-bar-h, 0px) - 74px - 236px);
+    max-height: calc(100 * var(--dvh) - var(--app-bar-h, 0px) - 74px - 236px);
   }
 }
 
@@ -138,7 +138,7 @@
 
 /* Log: Resolutions above the dock on the right (the shell's "log" region; dock.css places it). */
 .hud-log .hud-q-res {
-  max-height: calc(100dvh - var(--app-bar-h, 0px) - 80px - 290px);
+  max-height: calc(100 * var(--dvh) - var(--app-bar-h, 0px) - 80px - 290px);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -151,7 +151,7 @@
     right: calc(var(--hud-sheet-w) + 12px);
   }
   .hud-log .hud-q-res {
-    max-height: calc(100dvh - var(--app-bar-h, 0px) - 74px - 236px);
+    max-height: calc(100 * var(--dvh) - var(--app-bar-h, 0px) - 74px - 236px);
   }
 }
 

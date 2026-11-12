@@ -307,7 +307,8 @@
 .cm-pips {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  /* 20 px pips 24 screen px apart under the root zoom (WCAG 2.5.8 spacing, axe target-size; dcm-1i3z). */
+  gap: max(4px, 24px / var(--text-zoom) - 20px);
 }
 .cm-pip[disabled] {
   cursor: default;
@@ -348,7 +349,7 @@
   z-index: 60;
   margin: 0;
   transform: translate(-50%, -100%);
-  max-width: min(320px, calc(100vw - 32px));
+  max-width: min(320px, calc(100 * var(--vw) - 32px));
   padding: 4px 10px;
   border-radius: 8px;
   font-size: 13px;

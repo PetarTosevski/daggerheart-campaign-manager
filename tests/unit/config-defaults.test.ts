@@ -59,7 +59,7 @@ describe("table settings (config S0)", () => {
 describe("preferences (config S0)", () => {
   it("defaults", () => {
     expect(PREFERENCE_DEFAULTS).toEqual({ dice3d: true, diceSound: false, diceVolume: 60, reduceMotion: false, textSize: "medium", spotlightPing: true });
-    expect(TEXT_SIZE_ZOOM).toEqual({ small: 0.9, medium: 1, large: 1.15 });
+    expect(TEXT_SIZE_ZOOM).toEqual({ desktop: { small: 0.72, medium: 0.8, large: 0.92 }, touch: { small: 0.9, medium: 1, large: 1.15 } });
   });
 
   it("resolves stored fields over the defaults and clamps the volume", () => {

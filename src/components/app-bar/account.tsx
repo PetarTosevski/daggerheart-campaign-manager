@@ -11,6 +11,7 @@ import { AvatarFace } from "@/components/config/shell/avatar";
 import { PreferencesBody } from "@/components/config/shell/preferences";
 import { closeSettings, openSettings, useSettingsSection } from "@/components/config/shell/url";
 import { SETTINGS_TITLE } from "@/components/config/slots";
+import { rootScale } from "@/lib/css-zoom";
 
 import type { Id } from "../../../convex/_generated/dataModel";
 
@@ -61,8 +62,8 @@ export function CampaignSettingsButton(props: { onPlayers?: () => void }) {
   );
 }
 
-/** The popover's width (config.css `.cfg-pop`: 360 px, at most the viewport less 16 px). */
-const popoverWidth = () => Math.min(360, window.innerWidth - 16);
+/** The popover's width in CSS px (config.css `.cfg-pop`: 360 px, at most the viewport less 16 px). */
+const popoverWidth = (viewportWidth: number) => Math.min(360, viewportWidth - 16);
 
 /**
  * Puts the popover under the avatar, right edges aligned, kept 8 px inside the viewport on both sides (it is in the top
@@ -71,10 +72,13 @@ const popoverWidth = () => Math.min(360, window.innerWidth - 16);
  */
 function placeUnder(popover: HTMLElement | null, button: HTMLElement | null) {
   if (!popover || !button) return;
+  // Client px (the rect, innerWidth) over the root zoom = the popover's CSS px (dcm-1i3z).
+  const scale = rootScale();
   const rect = button.getBoundingClientRect();
-  const right = Math.round(window.innerWidth - rect.right);
-  const maxRight = Math.round(window.innerWidth - popoverWidth() - 8);
-  popover.style.top = `${Math.round(rect.bottom + 10)}px`;
+  const width = window.innerWidth / scale;
+  const right = Math.round(width - rect.right / scale);
+  const maxRight = Math.round(width - popoverWidth(width) - 8);
+  popover.style.top = `${Math.round(rect.bottom / scale + 10)}px`;
   popover.style.right = `${Math.max(8, Math.min(right, maxRight))}px`;
 }
 

@@ -7,7 +7,7 @@
   --sheet-backdrop:radial-gradient(ellipse at 50% 0%,#24343a 0%,#121b1f 55%,#0a1013 100%);
 }
 /* Shell: dark backdrop, paper, header row (banner | tabs | level | close), footer. */
-.cs-backdrop{min-height:100dvh;background:var(--sheet-backdrop);padding:28px 20px;box-sizing:border-box}
+.cs-backdrop{min-height:calc(100 * var(--dvh));background:var(--sheet-backdrop);padding:28px 20px;box-sizing:border-box}
 @media (max-width:640px){.cs-backdrop{padding:16px 8px}}
 .cs-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px}
 .cs-head-end{display:flex;align-items:center;gap:12px;margin-left:auto}

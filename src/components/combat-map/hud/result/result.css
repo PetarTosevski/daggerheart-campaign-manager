@@ -383,7 +383,7 @@
     z-index: 91;
     width: auto;
     max-width: none;
-    max-height: min(70dvh, calc(100dvh - 112px));
+    max-height: min(70 * var(--dvh), calc(100 * var(--dvh) - 112px));
     border-radius: 22px 22px 0 0;
     box-shadow:
       0 -1px 0 #3a4d54,

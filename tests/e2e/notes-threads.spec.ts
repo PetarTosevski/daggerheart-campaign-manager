@@ -6,6 +6,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { convexAs, expectNoHorizontalScroll } from "./visual/helpers";
+import { TOUCH_FLOOR_ON_SCREEN } from "./zoom";
 
 // D11 N4: open threads, search and 'Download my journal' (.omc/plans/d11-notes.yaml), since JX1 in the Journal's Notes
 // sub-tab (Open threads is the Journal header's button, Download sits in the index column). The threads view lists only open
@@ -129,13 +130,13 @@ test("threads and search fit a phone: one column, no horizontal scroll, 44 px co
   await page.goto(`/campaigns/${campaignId}/journal?tab=notes&view=threads`);
   await expect(threadsView(page).getByRole("listitem")).toHaveCount(3);
   await expectNoHorizontalScroll(page);
-  expect((await threadsButton(page).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect((await threadsButton(page).boundingBox())!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
   // 'Download my journal' sits at the bottom of the index column (JN), behind the 'Pages' disclosure at 390 px.
   await page.getByRole("complementary", { name: "Journal index" }).getByRole("button", { name: /^Pages/ }).click();
   const download = page.getByRole("button", { name: "Download my journal" });
   await expect(download).toBeVisible();
-  expect((await download.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect((await download.boundingBox())!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
   const row = threadsView(page).getByRole("listitem").first();
-  expect((await row.getByRole("button", { name: /^Task: / }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
-  expect((await row.getByRole("button", { name: /→$/ }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect((await row.getByRole("button", { name: /^Task: / }).boundingBox())!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
+  expect((await row.getByRole("button", { name: /→$/ }).boundingBox())!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
 });

@@ -278,7 +278,7 @@
 }
 .jr-band {
   background: var(--jr-band);
-  min-height: 60vh;
+  min-height: calc(60 * var(--vh));
 }
 
 /* ---------------------------------------------------------------- Sessions sub-tab */

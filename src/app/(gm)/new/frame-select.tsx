@@ -187,7 +187,7 @@ export function FrameSelect() {
       : "Name your campaign to start";
 
   return (
-    <div className="flex min-h-screen flex-col bg-ink text-parchment">
+    <div className="flex min-h-page flex-col bg-ink text-parchment">
       <PageHeader backHref="/" backLabel="Back to main menu" title="Create New Campaign" actions={<CreateSteps />} />
 
       <main className="mx-auto flex w-full max-w-[1344px] flex-1 flex-col gap-7 px-4 py-10 sm:px-12 lg:px-20">

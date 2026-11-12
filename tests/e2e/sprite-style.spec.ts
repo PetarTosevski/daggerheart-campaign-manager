@@ -4,6 +4,7 @@ import { api } from "../../convex/_generated/api";
 import { signInAsTestGm } from "./fixtures";
 import { convexAs, expectNoHorizontalScroll, openCombatMap } from "./visual/helpers";
 import { openMapTools } from "./hud/helpers";
+import { TOUCH_FLOOR_ON_SCREEN } from "./zoom";
 
 // Sprite packs P6 (.omc/plans/sprite-packs.yaml): the GM flips a generated map between Classic and Sprites with one
 // click in the Combat Map header (optimistic: the canvas changes before the server answers), a player sees the live
@@ -87,7 +88,7 @@ test("the style switch fits a phone: 44 px targets, no horizontal scroll at 390 
   await expect(sprites).toBeVisible();
   for (const button of [sprites, style.getByRole("button", { name: "Classic" })]) {
     const box = (await button.boundingBox())!;
-    expect(box.height).toBeGreaterThanOrEqual(44);
+    expect(box.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
   }
   await sprites.focus();
   await page.keyboard.press("Enter");

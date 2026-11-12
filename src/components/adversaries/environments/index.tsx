@@ -34,6 +34,7 @@ import { environmentArt } from "@/lib/srd/environment-art";
 import { ENVIRONMENTS } from "@/lib/srd/environments";
 import { ENVIRONMENT_TYPES, type EnvironmentDef, type EnvironmentType } from "@/lib/srd/types";
 import { prefersReducedMotion } from "@/lib/use-reduced-motion";
+import { screenQuery } from "@/lib/zoom-media.mjs";
 
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { HopeFearPill } from "../catalogue/stat-block";
@@ -147,8 +148,8 @@ export function EnvironmentCatalogue({ campaignId, fear, hopeAndFear, frameId, s
 
   function pick(id: string) {
     onSelect(id);
-    // One column (under 980 px): the stat block sits below the list, so bring it into view.
-    if (window.matchMedia("(max-width: 980px)").matches) {
+    // One column (under 980 px; screenQuery scales it like the stylesheets, dcm-jkxa): the stat block sits below the list, so bring it into view.
+    if (window.matchMedia(screenQuery("(max-width: 980px)")).matches) {
       const smooth = !prefersReducedMotion();
       detailRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
     }

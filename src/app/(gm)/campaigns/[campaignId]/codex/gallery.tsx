@@ -347,7 +347,7 @@ export function Lightbox({
         <img
           src={current.url}
           alt={title}
-          className="max-h-[calc(100vh-140px)] max-w-full rounded-[10px] object-contain shadow-[0_20px_60px_rgba(0,0,0,0.7)]"
+          className="max-h-[calc(100_*_var(--vh)_-_140px)] max-w-full rounded-[10px] object-contain shadow-[0_20px_60px_rgba(0,0,0,0.7)]"
         />
       ) : null}
       <div className="flex flex-wrap items-center justify-center gap-3.5 text-[#e6ecea]" onClick={(e) => e.stopPropagation()}>

@@ -3,6 +3,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { expectNoSeriousA11yViolations } from "../a11y";
 import { openPlayers } from "../config/helpers";
 import { gmAndPlayer } from "../live";
+import { TOUCH_FLOOR_ON_SCREEN } from "../zoom";
 
 // Shots for docs/tasks/TASK-GLASS-G2.md (E2E_VISUAL=1): the dashboard and the campaign shell's own buttons as glass
 // buttons in the viewer's colours. A Witherwild campaign (time arc, Wither panel, End scene) and a core one (the day
@@ -35,7 +36,7 @@ async function expectAtLeast44(buttons: Locator[]) {
     const box = await button.boundingBox();
     const name = (await button.textContent()) ?? "";
     expect(box, name).not.toBeNull();
-    expect(box!.height, name).toBeGreaterThanOrEqual(44);
+    expect(box!.height, name).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
   }
 }
 

@@ -6,6 +6,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { expectNoSeriousA11yViolations } from "./a11y";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, expectNoHorizontalScroll, openCombatMap } from "./visual/helpers";
+import { TOUCH_FLOOR_ON_SCREEN } from "./zoom";
 
 // Plan combat-actions AA3: the GM's adversary actions on the Encounter tab (Q12, Q16-Q19). The GM picks Mira on the
 // live map and attacks with the Bandit through the server; the result shows the roll, the hit and the damage; the
@@ -251,7 +252,7 @@ test("at 390 px the actions panel, windows and map pane stack without horizontal
     await expectNoHorizontalScroll(page);
     for (const control of await panel.getByRole("button").all()) {
       const box = await control.boundingBox();
-      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
     }
     await expectNoSeriousA11yViolations(page, { include: ".trk" });
   } finally {

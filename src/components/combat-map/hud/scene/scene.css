@@ -98,7 +98,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  max-width: min(520px, calc(100vw - 690px - 280px));
+  max-width: min(520px, calc(100 * var(--vw) - 690px - 280px));
 }
 /* The map controls (Measure, Names, zoom; H9.0) take a row of their own under Dice / Sheet / Your character. */
 .hud-tr .hud-tr-br {
@@ -155,8 +155,8 @@
   display: flex;
   flex-direction: column;
   width: 380px;
-  max-width: calc(100vw - 32px);
-  max-height: calc(100dvh - 260px);
+  max-width: calc(100 * var(--vw) - 32px);
+  max-height: calc(100 * var(--dvh) - 260px);
   min-height: 0;
   border-radius: var(--hud-r-popup);
   background: var(--hud-card);
@@ -291,7 +291,7 @@
     font-size: 10px;
   }
   .hud-tr {
-    max-width: min(520px, calc(100vw - 32px));
+    max-width: min(520px, calc(100 * var(--vw) - 32px));
     justify-content: center;
   }
   /* Tablet: "Your character" is its icon (the text stays its accessible name), so Dice, Sheet and it keep one row
@@ -308,7 +308,7 @@
 /* ---------------------------------------------------------------- "End the scene?" (H5.3; GMDesktop .dm.em) */
 .hud-em {
   width: 460px;
-  max-width: calc(100vw - 32px);
+  max-width: calc(100 * var(--vw) - 32px);
   margin: auto;
   padding: 26px 26px 20px;
   border: 0;

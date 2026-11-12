@@ -6,6 +6,7 @@ import { expectNoSeriousA11yViolations } from "../a11y";
 import { signInAsTestGm } from "../fixtures";
 import { gmAndPlayer } from "../live";
 import { convexAs } from "./helpers";
+import { TOUCH_FLOOR_ON_SCREEN } from "../zoom";
 
 // Plan glass-buttons G6 (docs/tasks/TASK-GLASS-G6.md; E2E_VISUAL=1): the Codex and the World Map as the GM and as a
 // player at 1440 x 900, 1024 x 768 and 390 x 844, plus the Horizon hex-crawl panels (GM). New entry / Send party /
@@ -45,7 +46,7 @@ async function expectAtLeast44(buttons: Locator[]) {
   for (const button of buttons) {
     const box = await button.boundingBox();
     expect(box, (await button.textContent()) ?? "").not.toBeNull();
-    expect(box!.height, (await button.textContent()) ?? "").toBeGreaterThanOrEqual(44);
+    expect(box!.height, (await button.textContent()) ?? "").toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
   }
 }
 

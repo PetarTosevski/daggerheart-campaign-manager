@@ -46,7 +46,7 @@
 }
 /* The page (not the drawer) fills the viewport below the campaign header: page.tsx measures that header into
    --lk-top, so the document is exactly one screen tall and only the message list and the library scroll. */
-.lk-root[data-page] { height: max(calc(100dvh - var(--lk-top, 240px)), 460px); overflow: hidden; }
+.lk-root[data-page] { height: max(calc(100 * var(--dvh) - var(--lk-top, 240px)), 460px); overflow: hidden; }
 .lk-root[data-page] .lk-main { height: 100%; grid-template-rows: minmax(0, 1fr); padding-bottom: 22px; }
 .lk-root[data-page] .lk-side { overflow-y: auto; min-height: 0; overscroll-behavior: contain; }
 .lk-root[data-page] .lk-chat { min-height: 0; height: 100%; }
@@ -72,7 +72,7 @@
 .lk-root .lk-chat {
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - 140px);
+  min-height: calc(100 * var(--vh) - 140px);
   min-width: 0;
   border-radius: 16px;
   border: 1px solid var(--lk-card-border);
@@ -160,7 +160,7 @@
   .lk-root .lk-chathead { padding: 12px; gap: 10px; flex-wrap: wrap; }
   .lk-root .lk-sigil { width: 44px; height: 44px; }
   .lk-root .lk-name { font-size: 19px; }
-  .lk-root .lk-chat { min-height: calc(100vh - 80px); border-radius: 12px; }
+  .lk-root .lk-chat { min-height: calc(100 * var(--vh) - 80px); border-radius: 12px; }
   .lk-root[data-page] .lk-chat { min-height: 0; }
   .lk-root[data-page] .lk-chathead { flex-wrap: nowrap; padding: 8px 12px; }
   .lk-root[data-page] .lk-sigil { width: 32px; height: 32px; }

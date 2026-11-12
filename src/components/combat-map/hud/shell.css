@@ -12,7 +12,7 @@
   position: relative;
   width: 100%;
   /* The combat app bar (H9.A) sets --app-bar-h above the HUD; without it the HUD fills the screen. */
-  height: calc(100dvh - var(--app-bar-h, 0px));
+  height: calc(100 * var(--dvh) - var(--app-bar-h, 0px));
   min-height: 520px;
   overflow: hidden;
   background: var(--hud-page);

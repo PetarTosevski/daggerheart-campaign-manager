@@ -54,7 +54,7 @@
   top: calc(100% + 8px);
   right: 0;
   z-index: 30;
-  width: min(320px, calc(100vw - 32px));
+  width: min(320px, calc(100 * var(--vw) - 32px));
   padding: 12px 14px;
   border: 1px solid var(--jr-border);
   border-radius: 12px;

@@ -3,6 +3,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { api } from "../../../convex/_generated/api";
 import { expectNoSeriousA11yViolations } from "../a11y";
 import { hudScene, HUD_MAP_W } from "../hud/helpers";
+import { TOUCH_FLOOR_ON_SCREEN } from "../zoom";
 
 // Shots for docs/tasks/TASK-GLASS-G10.md (E2E_VISUAL=1): the Combat Map's edit side as glass buttons. The GM's Edit
 // mode (Maps, the Play / Edit switch, Scene, Edit by hand, the selected object, the header tools) at 1440 x 900,
@@ -48,7 +49,7 @@ async function expectAtLeast44(buttons: Locator) {
     if (!(await button.isVisible())) continue;
     const box = await button.boundingBox();
     const name = (await button.getAttribute("aria-label")) ?? (await button.textContent()) ?? "";
-    expect(box!.height, name).toBeGreaterThanOrEqual(44);
+    expect(box!.height, name).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
   }
 }
 

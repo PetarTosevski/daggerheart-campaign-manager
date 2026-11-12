@@ -3,6 +3,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import type { FrameId } from "../../../src/lib/frames";
 import { expectNoSeriousA11yViolations } from "../a11y";
 import { gmAndPlayer } from "../live";
+import { TOUCH_FLOOR_ON_SCREEN } from "../zoom";
 
 // Shots for docs/tasks/TASK-GLASS-G4.md (E2E_VISUAL=1): the six frame trackers on the dashboard with glass buttons in
 // the viewer's colours. For each frame the GM first fills the tracker through the UI (so its row buttons show), then the
@@ -172,7 +173,7 @@ async function expectGlass44(page: Page) {
     if (!(await button.isVisible())) continue;
     const box = await button.boundingBox();
     const name = (await button.getAttribute("aria-label")) ?? (await button.textContent()) ?? "";
-    expect(box!.height, name).toBeGreaterThanOrEqual(44);
+    expect(box!.height, name).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
   }
 }
 

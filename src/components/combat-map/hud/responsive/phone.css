@@ -16,7 +16,7 @@
 
 /* ---------------------------------------------------------------- layout tokens: the sheet is full screen, no make-room */
 .hud-root.hud-ph-on {
-  --hud-sheet-w: 100vw;
+  --hud-sheet-w: calc(100 * var(--vw));
   --hud-map-shift: 0px;
   --hud-map-scale: 1;
   --hud-edge: 8px;
@@ -233,7 +233,7 @@
   z-index: 30;
   display: flex;
   flex-direction: column;
-  max-height: min(66dvh, 560px);
+  max-height: min(66 * var(--dvh), 560px);
   /* The board's 16 px: the Lorekeeper pill hides on the combat map at phone width (user answer 2026-11-02). */
   padding: 0 0 calc(16px + env(safe-area-inset-bottom, 0px));
   border-radius: 22px 22px 0 0;
@@ -568,7 +568,7 @@
 }
 .hud-root.hud-ph-on .hud-panel.hsh {
   left: 0;
-  width: 100vw;
+  width: calc(100 * var(--vw));
   box-shadow: none;
 }
 .hud-root.hud-ph-on .hud-panel .hud-panel-x {
@@ -598,7 +598,7 @@
   z-index: 35;
   display: flex;
   flex-direction: column;
-  max-height: 72dvh;
+  max-height: calc(72 * var(--dvh));
   /* The board's 16 px: the Lorekeeper pill hides on the combat map at phone width. */
   padding: 0 0 calc(16px + env(safe-area-inset-bottom, 0px));
   border-radius: 22px 22px 0 0;
@@ -658,7 +658,7 @@
 @media (max-width: 760px) {
   .hud-root[data-role="gm"] {
     /* The GM's sheet and stat block are full screen too, over the queue sheet. */
-    --hud-sheet-w: 100vw;
+    --hud-sheet-w: calc(100 * var(--vw));
     --hud-map-shift: 0px;
     --hud-map-scale: 1;
     --hud-edge: 8px;
@@ -693,13 +693,13 @@
   .hud-root[data-role="gm"] .hud-spp {
     top: 120px;
     right: 0;
-    width: calc(100vw - 16px);
+    width: calc(100 * var(--vw) - 16px);
     max-width: none;
-    max-height: calc(100dvh - 128px - var(--hud-ph-q-fold));
+    max-height: calc(100 * var(--dvh) - 128px - var(--hud-ph-q-fold));
   }
   .hud-root[data-role="gm"] .hud-sun :is(.hud-pop-time, .hud-pop-day) {
     right: -4px;
-    width: calc(100vw - 16px);
+    width: calc(100 * var(--vw) - 16px);
   }
   /* The scene's name and Live chip under the banners, left of the Fear banner. */
   .hud-root[data-role="gm"] .hud-r-scene {
@@ -737,7 +737,7 @@
     width: auto;
   }
   .hud-root[data-role="gm"] .hud-log .hud-q-res {
-    max-height: calc(100dvh - var(--hud-ph-q-fold) - var(--hud-ph-dock-h) - 140px);
+    max-height: calc(100 * var(--dvh) - var(--hud-ph-q-fold) - var(--hud-ph-dock-h) - 140px);
   }
   .hud-root[data-role="gm"] .hud-areas {
     left: 8px;

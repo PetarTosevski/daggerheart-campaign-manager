@@ -4,6 +4,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { convexAs } from "./visual/helpers";
+import { TOUCH_FLOOR_ON_SCREEN } from "./zoom";
 
 // countdowns-advanced K2: countdown types on the dashboard. The New countdown dialog's Type, Start (number or dice),
 // Repeats and Armed; the card's type badge, Armed switch and "Triggered n times"; a manual tick to 0 triggers and
@@ -46,7 +47,7 @@ test("the GM creates typed countdowns, a manual tick to 0 loops, Armed switches,
   await expect(rockfall.getByTestId("countdown-type")).toContainText("Loop 2");
   const armed = rockfall.getByRole("button", { name: /^Armed/ });
   await expect(armed).toHaveAttribute("aria-pressed", "true");
-  expect((await armed.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect((await armed.boundingBox())!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
 
   // Two manual ticks: the second reaches 0, triggers and the loop is back at 2.
   await rockfall.getByRole("button", { name: "Tick −1" }).click();

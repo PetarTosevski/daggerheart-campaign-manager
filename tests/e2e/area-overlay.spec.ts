@@ -6,6 +6,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { cardsForDomains, getClass } from "../../src/lib/srd";
 import { signInAsTestGm } from "./fixtures";
 import { convexAs, openCombatMap } from "./visual/helpers";
+import { squarePx } from "./zoom";
 
 // Plan lanes-2 wave 9, tracer AO (docs/tasks/TASK-LN3-AO.md; dcm-lqnt, dcm-u2wx client), in two browsers:
 // - The GM's Areas panel (the HUD's) draws a Dark Cloud by hand (Close by default; user answer 2026-10-31,
@@ -63,11 +64,6 @@ async function levelRogue(gm: ConvexHttpClient, characterId: Id<"characters">) {
 }
 
 /** Screen pixels per map square at the current zoom (48 px squares × the zoom shown in the toolbar). */
-async function squarePx(page: Page): Promise<number> {
-  const text = (await page.getByTestId("combat-zoom").textContent()) ?? "100%";
-  return 48 * (Number.parseInt(text, 10) / 100);
-}
-
 /** Clicks the square `dx`, `dy` squares from Ash's (Ash's token is one square, so its centre is its square's). */
 async function clickFromAsh(page: Page, board: Locator, dx: number, dy: number) {
   const token = board.getByRole("button", { name: /^Open Ash’s sheet/ });

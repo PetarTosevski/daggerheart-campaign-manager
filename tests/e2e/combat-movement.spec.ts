@@ -4,6 +4,7 @@ import type { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, openCombatMap } from "./visual/helpers";
+import { squarePx } from "./zoom";
 
 // Map movement M1 (.omc/plans/map-movement.yaml): blocked moves on screen, the GM's warning, difficult terrain and
 // doors, at 1440 and 390. A player can't walk (keys or a drag) through a wall or a cottage, walks through an opened
@@ -27,12 +28,6 @@ function rect(x0: number, y0: number, x1: number, y1: number): number[] {
 }
 
 /** Screen pixels per map square at the current zoom. */
-async function squarePx(page: Page): Promise<number> {
-  // The zoom is in the HUD's dock / map controls since plan combat-hud H9.0 (the map has no toolbar of its own there).
-  const text = (await page.getByTestId("combat-zoom").textContent()) ?? "100%";
-  return 48 * (Number.parseInt(text, 10) / 100);
-}
-
 /** Drags from the middle of `locator` by (dx, dy) screen pixels with real pointer moves. */
 async function dragBy(page: Page, locator: Locator, dx: number, dy: number) {
   await locator.scrollIntoViewIfNeeded();

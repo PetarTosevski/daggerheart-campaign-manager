@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { expectFitsViewport, expectNoSeriousA11yViolations, expectTouchTargets } from "./a11y";
 import { hudScene } from "./hud/helpers";
+import { emulateTouch } from "./zoom";
 
 // Plan combat-hud H7.2 (docs/tasks/TASK-HUD-H7.2.md): at 390 px (board PlayerPhone; HANDOFF "Phone (390)") the player
 // gets the mini banner strip with Fear across the top, the bottom sheet with the resource line, Sheet and the tabs
@@ -16,6 +17,8 @@ const PHONE = { width: 390, height: 844 };
 const sheet = (page: Page) => page.getByTestId("hud-phone-sheet");
 
 async function open(page: Page, url: string) {
+  // A phone is a touch screen: zoom 1 and the breakpoints as written (dcm-jkxa).
+  await emulateTouch(page);
   await page.setViewportSize(PHONE);
   await page.goto(url);
   await expect(page.getByTestId("combat-hud")).toBeVisible();

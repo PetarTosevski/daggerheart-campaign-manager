@@ -84,7 +84,7 @@
   }
   .hud-root .hud-tr {
     /* From x = 484 to the spotlight disc's label (disc right 208, its label about 48 px either side of it). */
-    max-width: calc(100vw - 484px - 256px);
+    max-width: calc(100 * var(--vw) - 484px - 256px);
     justify-content: flex-start;
   }
 
@@ -138,8 +138,8 @@
    * panel. (`html`: dock.css's own `.hud-sh-open` rule loads after this file.)
    */
   html .hud-root.hud-sh-open .hud-r-dock {
-    left: calc((100vw - var(--hud-sheet-w) + 120px) / 2);
-    max-width: calc(100vw - var(--hud-sheet-w) - 132px);
+    left: calc((100 * var(--vw) - var(--hud-sheet-w) + 120px) / 2);
+    max-width: calc(100 * var(--vw) - var(--hud-sheet-w) - 132px);
   }
   .hud-root.hud-sh-open .hud-dock {
     flex-wrap: wrap;
@@ -148,10 +148,10 @@
   }
   /* Fog's pop-over at the screen's left edge (dock.css), x = 12 here, also beside a sheet. */
   .hud-root .hud-dock-pop.hud-pop-fog {
-    left: calc(12px - 50vw + 50%);
+    left: calc(12px - 50 * var(--vw) + 50%);
   }
   html .hud-root.hud-sh-open .hud-dock-pop.hud-pop-fog {
-    left: calc(12px - (100vw - var(--hud-sheet-w) + 120px) / 2 + 50%);
+    left: calc(12px - (100 * var(--vw) - var(--hud-sheet-w) + 120px) / 2 + 50%);
   }
   /* The hand's Roll options and Hide cards stay above the two-row dock (shell.css: 98 px above one row). */
   .hud-root[data-role="gm"].hud-sh-open .hud-fanside {
@@ -236,7 +236,7 @@
  */
 @media (min-width: 1181px) and (max-width: 1599.98px) {
   .hud-root .hud-scene-pl .hud-tr {
-    max-width: calc(100vw - 690px - 400px);
+    max-width: calc(100 * var(--vw) - 690px - 400px);
   }
   .hud-root .hud-scene-pl .hud-tr > [aria-controls="hud-tools"] {
     gap: 0;

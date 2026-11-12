@@ -10,6 +10,8 @@ import { IndexPill, LorekeeperSide } from "@/components/lorekeeper/side";
 import { Sigil } from "@/components/lorekeeper/sigil";
 import type { LorekeeperChatProps, LorekeeperSideProps } from "@/components/lorekeeper/slots";
 
+import { rootScale } from "@/lib/css-zoom";
+
 import { useCampaign } from "../campaign-shell";
 
 /**
@@ -54,7 +56,8 @@ export default function LorekeeperPage() {
   useLayoutEffect(() => {
     const el = root.current;
     if (!el) return;
-    const measure = () => el.style.setProperty("--lk-top", `${Math.round(el.getBoundingClientRect().top + window.scrollY)}px`);
+    // Client px over the root zoom: --lk-top is a CSS length (dcm-1i3z).
+    const measure = () => el.style.setProperty("--lk-top", `${Math.round((el.getBoundingClientRect().top + window.scrollY) / rootScale())}px`);
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(document.body);

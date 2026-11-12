@@ -4,6 +4,21 @@ Plan `.omc/plans/config.yaml`, wave 3, tracer U6b; briefs `.omc/plans/config-bri
 2026-11-04" Q12 a and Q13 a, "Questions 2026-11-05": defaults taken, none touch U6b); bead dcm-jh6d.21. Reads
 P1's `preferences.get` (TASK-CONFIG-P1.md). Mode: add. Client only; no server change, no codegen.
 
+> **Superseded in part by dcm-1i3z (2026-11-12): website base zoom 0.8.** Every page now renders at `zoom: 0.8` on
+> `<html>` (plain CSS, so /signin and a hard load too); Text size multiplies it: Small 0.72, Medium 0.8, Large 0.92
+> (`TEXT_SIZE_ZOOM`). The `html[data-text-size] .hud-root / .cfg-setp / .cfg-pop` overrides are gone: globals.css
+> defines `--vw`, `--vh`, `--dvh`, `--svh` (1 unit over the zoom) and every viewport unit in `src` goes through them
+> (`calc(100 * var(--dvh))`, the `min-h-page` utility); `tests/unit/viewport-units.test.ts` refuses raw ones. Script
+> that turns client px into CSS px divides by `cssScale` / `rootScale` (`src/lib/css-zoom.ts`). The numbers and the
+> viewport-unit list below are the U6b state.
+>
+> **dcm-jkxa (2026-11-12):** the 0.8 base is for mouse and desktop screens only; touch screens (`(pointer: coarse)`)
+> keep zoom 1 and Text size 0.9 / 1 / 1.15 as above (`TEXT_SIZE_ZOOM.desktop` / `.touch`). Breakpoints follow: the
+> PostCSS plugin `postcss-zoom-media.mjs` (after Tailwind; transform in `src/lib/zoom-media.mjs`) rewrites every width /
+> height `@media` query into a touch branch as written and a mouse branch at W x 0.8, where 80% browser zoom switched;
+> `screenQuery()` does the same for `matchMedia`. `tests/unit/zoom-media.test.ts` runs every stylesheet through the
+> pipeline and fails on an unscaled query; e2e specs at tablet and phone sizes call `emulateTouch` (tests/e2e/zoom.ts).
+
 ## What landed
 
 - **`PrefsSync`** (`src/app/(gm)/prefs-sync.tsx`, mounted next to `AccentSync` in the (gm) layout) sets two

@@ -3,6 +3,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { api } from "../../../convex/_generated/api";
 import { expectNoSeriousA11yViolations } from "../a11y";
 import { gmAndPlayer } from "../live";
+import { TOUCH_FLOOR_ON_SCREEN } from "../zoom";
 
 // Shots for docs/tasks/TASK-GLASS-G9.md (E2E_VISUAL=1): the live encounter tracker on the Adversaries page's Encounters
 // tab as glass buttons in the GM's colours (top bar, instance cards, the actions panel inside the stat block, the
@@ -61,7 +62,7 @@ async function expectAtLeast44(buttons: Locator) {
     if (!(await button.isVisible())) continue;
     const box = await button.boundingBox();
     const name = (await button.getAttribute("aria-label")) ?? (await button.textContent()) ?? "";
-    expect(box!.height, name).toBeGreaterThanOrEqual(44);
+    expect(box!.height, name).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
   }
 }
 

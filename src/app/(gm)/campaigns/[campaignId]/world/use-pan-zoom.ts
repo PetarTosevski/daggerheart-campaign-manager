@@ -2,6 +2,8 @@
 
 import { useEffect, useEffectEvent, useRef, useState, type RefObject } from "react";
 
+import { cssScale } from "@/lib/css-zoom";
+
 /** Zoom 1 = the map as wide as the viewport (the board's zoom). `x`, `y`: the map's top-left in viewport pixels. */
 export type View = { z: number; x: number; y: number; /** viewport width the view was computed for */ w: number };
 
@@ -113,8 +115,11 @@ export function usePanZoom(viewport: RefObject<HTMLDivElement | null>, aspect: n
     if (e.deltaY > 0 && viewRef.current.z <= fz + 0.002) return;
     e.preventDefault();
     const d = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
-    const r = viewport.current!.getBoundingClientRect();
-    zoomAt(Math.max(fz, viewRef.current.z * Math.exp(-d * 0.0015)), e.clientX - r.left, e.clientY - r.top);
+    // The view is in the viewport's CSS px: client px over its scale (the root zoom; dcm-1i3z).
+    const el = viewport.current!;
+    const r = el.getBoundingClientRect();
+    const k = cssScale(el);
+    zoomAt(Math.max(fz, viewRef.current.z * Math.exp(-d * 0.0015)), (e.clientX - r.left) / k, (e.clientY - r.top) / k);
   });
 
   // Fit on mount and when the map's aspect changes (a new image).

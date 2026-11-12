@@ -10,8 +10,20 @@
 export const TEXT_SIZES = ["small", "medium", "large"] as const;
 export type TextSize = (typeof TEXT_SIZES)[number];
 
-/** Q12 a: CSS zoom on the app root per text size. */
-export const TEXT_SIZE_ZOOM: Readonly<Record<TextSize, number>> = Object.freeze({ small: 0.9, medium: 1, large: 1.15 });
+/** Mouse and desktop screens (`desktop`), or touch screens (`touch`, `TOUCH_QUERY` in src/lib/zoom-media.mjs). */
+export type ScreenInput = "desktop" | "touch";
+
+/**
+ * CSS zoom on `<html>` per text size (Q12 a), per kind of screen. Mouse and desktop screens sit on the website's base
+ * zoom 0.8 (dcm-1i3z: today's 80% browser zoom is the 100% view); touch screens keep zoom 1 (dcm-jkxa). Medium is the
+ * base itself, the zoom every page has with no preference (signed out, /signin); Small and Large are 0.9 and 1.15 of
+ * it. globals.css spells out the same numbers (CSS can't import this); tests/unit/prefs-sync.test.tsx checks they
+ * agree. The phone app doesn't use it.
+ */
+export const TEXT_SIZE_ZOOM: Readonly<Record<ScreenInput, Readonly<Record<TextSize, number>>>> = Object.freeze({
+  desktop: Object.freeze({ small: 0.72, medium: 0.8, large: 0.92 }),
+  touch: Object.freeze({ small: 0.9, medium: 1, large: 1.15 }),
+});
 
 export const DICE_VOLUME_MIN = 0;
 export const DICE_VOLUME_MAX = 100;

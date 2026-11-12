@@ -8,6 +8,7 @@ import { beforeText } from "@/lib/errors/refusals";
 import { DOMAIN_CARD_ART } from "@/lib/srd/art";
 import { DOMAIN_CARDS } from "@/lib/srd/domain-cards";
 import { cn } from "@/lib/utils";
+import { cssScale } from "@/lib/css-zoom";
 
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { CombatPageState } from "../../slots";
@@ -55,7 +56,10 @@ function useSpot(anchorId: Id<"combatTokens"> | null, panel: React.RefObject<HTM
       // The pop region (the PartBoundary around the panel draws nothing).
       const region = el?.parentElement;
       if (!el || !(region instanceof HTMLElement)) return;
-      const p = region.getBoundingClientRect();
+      // Everything below is in the region's CSS px: client px over its scale (root zoom, make room; dcm-1i3z).
+      const k = cssScale(region);
+      const rb = region.getBoundingClientRect();
+      const p = { left: rb.left, top: rb.top, width: rb.width / k, height: rb.height / k };
       const h = el.offsetHeight;
       const token = anchorId === null ? null : document.querySelector(`.hud-map .cm-tok[data-token="${anchorId}"]`);
       let x: number;
@@ -63,9 +67,9 @@ function useSpot(anchorId: Id<"combatTokens"> | null, panel: React.RefObject<HTM
       let flipped = false;
       if (token) {
         const r = token.getBoundingClientRect();
-        const cx = r.left + r.width / 2 - p.left;
-        const cy = r.top + r.height / 2 - p.top;
-        const gap = Math.max(42, r.width * 0.62 + 12);
+        const cx = (r.left + r.width / 2 - p.left) / k;
+        const cy = (r.top + r.height / 2 - p.top) / k;
+        const gap = Math.max(42, (r.width / k) * 0.62 + 12);
         x = cx + gap;
         if (x + PANEL_W > p.width - EDGE) {
           x = cx - gap - PANEL_W;
@@ -81,7 +85,7 @@ function useSpot(anchorId: Id<"combatTokens"> | null, panel: React.RefObject<HTM
       // Clear of a player's map controls (Zoom out; dcm-bxp.99.32.22): a tall panel near the top stands below them.
       const controls = Array.from(document.querySelectorAll(".hud-pmc"), (c) => {
         const b = c.getBoundingClientRect();
-        return { left: b.left - p.left, top: b.top - p.top, right: b.right - p.left, bottom: b.bottom - p.top };
+        return { left: (b.left - p.left) / k, top: (b.top - p.top) / k, right: (b.right - p.left) / k, bottom: (b.bottom - p.top) / k };
       });
       y = Math.round(clearTop(Math.min(y, p.height - h - EDGE), x, PANEL_W, controls, EDGE));
       setSpot((s) => (s && s.x === x && s.y === y && s.flipped === flipped ? s : { x, y, flipped }));

@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/brand/brand";
  */
 export default function LoadCampaignLoading() {
   return (
-    <div className="flex min-h-screen flex-col bg-ink-2 text-parchment">
+    <div className="flex min-h-page flex-col bg-ink-2 text-parchment">
       <PageHeader backHref="/" backLabel="Back to main menu" title="Load Campaign" />
       <div
         role="status"

@@ -29,7 +29,7 @@ export function FrameIntro({ frameId }: { frameId: PublishedFrameId }) {
 
   return (
     <div
-      className="relative flex min-h-screen flex-col overflow-hidden text-parchment"
+      className="relative flex min-h-page flex-col overflow-hidden text-parchment"
       style={{ background: frame.intro.background }}
     >
       <ArtBackdrop image={art} position={frame.intro.position} dim={frame.intro.dim / 100} contain />

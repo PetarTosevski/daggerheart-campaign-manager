@@ -283,7 +283,7 @@ export function TomeBook({
       onClick={(e) => {
         if (e.target === ref.current) onClose();
       }}
-      className="m-auto h-[min(880px,calc(100dvh-32px))] w-[calc(100%-24px)] max-w-[1240px] overflow-visible bg-transparent p-0 backdrop:bg-[rgb(4_8_10/0.78)]"
+      className="m-auto h-[min(880px,calc(100_*_var(--dvh)_-_32px))] w-[calc(100%-24px)] max-w-[1240px] overflow-visible bg-transparent p-0 backdrop:bg-[rgb(4_8_10/0.78)]"
     >
       {open ? (
         <div className="relative flex h-full rounded-2xl border border-[#5c4430] bg-[#3b2b1d] p-2.5 shadow-[0_30px_80px_rgba(0,0,0,0.6)] sm:p-[18px]">

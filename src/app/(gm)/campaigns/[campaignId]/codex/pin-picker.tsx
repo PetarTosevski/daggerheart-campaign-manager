@@ -105,7 +105,7 @@ export function PinPicker({
           className="relative mx-auto w-full cursor-crosshair overflow-hidden rounded-[10px] bg-[#e6d8b8] bg-no-repeat"
           style={{
             aspectRatio: map ? `${map.width} / ${map.height}` : "4 / 3",
-            maxHeight: "calc(100vh - 260px)",
+            maxHeight: "calc(100 * var(--vh) - 260px)",
             backgroundSize: "100% 100%",
             ...(map ? { backgroundImage: assetBackground(map.asset) } : {}),
           }}

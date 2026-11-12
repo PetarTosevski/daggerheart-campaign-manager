@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { api } from "../../../convex/_generated/api";
 import { expectNoSeriousA11yViolations } from "../a11y";
 import { gmAndPlayer } from "../live";
+import { TOUCH_FLOOR_ON_SCREEN } from "../zoom";
 
 // Shots for docs/tasks/TASK-GLASS-G5.md (E2E_VISUAL=1): the Party page, a roster card's delete confirm, the
 // new-character wizard, the dashboard's rest launcher (idle, under way, after) and party cards, and the sheet (its
@@ -79,7 +80,7 @@ test("GLASS-G5 the Party page, the wizard, the rest launcher and the sheet as th
         // Touch / tablet width: the small glass buttons are 44 px tall.
         for (const name of ["Keep", "Delete character"]) {
           const box = await confirm.getByRole("button", { name }).boundingBox();
-          expect(box!.height).toBeGreaterThanOrEqual(44);
+          expect(box!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
         }
       }
       await card.scrollIntoViewIfNeeded();

@@ -108,16 +108,22 @@ export async function expectFitsViewport(page: Page) {
  */
 export async function expectTouchTargets(locator: Locator, min: number = TOUCH_TARGET_PX) {
   await expect(locator.first()).toBeVisible();
-  const targets = await locator.evaluateAll((elements) =>
-    elements.map((el) => {
+  // CSS pixels: the client box over the website's root zoom (dcm-1i3z, 0.8 by default), as browser zoom would leave a
+  // 44 px floor at 44 CSS px. On screen a 44 px target paints at 44 x the zoom.
+  const targets = await locator.evaluateAll((elements) => {
+    const html = document.documentElement;
+    const rootWidth = html.getBoundingClientRect().width;
+    const zoom = html.offsetWidth > 0 && rootWidth > 0 ? rootWidth / html.offsetWidth : 1;
+    return elements.map((el) => {
       const box = el.getBoundingClientRect();
       const label = (el.getAttribute("aria-label") ?? el.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 60);
-      return { label: `<${el.tagName.toLowerCase()}> "${label}"`, width: box.width, height: box.height };
-    }),
-  );
+      return { label: `<${el.tagName.toLowerCase()}> "${label}"`, width: box.width / zoom, height: box.height / zoom };
+    });
+  });
   const visible = targets.filter((t) => t.width > 0 && t.height > 0);
   expect(visible.length, "visible touch targets").toBeGreaterThan(0);
-  const small = visible.filter((t) => t.width < min || t.height < min);
+  // Half a pixel of slack: zoomed boxes land on fractional client pixels (44 x 0.8 = 35.2).
+  const small = visible.filter((t) => t.width < min - 0.5 || t.height < min - 0.5);
   expect(
     small.map((t) => `${t.label} ${Math.round(t.width)}x${Math.round(t.height)}`),
     `touch targets smaller than ${min}x${min} px`,

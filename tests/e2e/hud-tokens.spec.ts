@@ -3,6 +3,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { api } from "../../convex/_generated/api";
 import { expectNoSeriousA11yViolations } from "./a11y";
 import { hudScene, type HudScene } from "./hud/helpers";
+import { squarePx } from "./zoom";
 
 // Plan combat-hud H1.3 (docs/tasks/TASK-HUD-H1.3.md): with the HUD switch on every token wears the HUD face (CmpTokens
 // "Token anatomy" / "Token kinds"): svg.tk-arc with HP left (left half) and Stress marked (right half), the gold Hope
@@ -11,11 +12,6 @@ import { hudScene, type HudScene } from "./hud/helpers";
 // stay buttons that open a sheet / stat block, drag and keyboard moves keep working.
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-async function squarePx(page: Page): Promise<number> {
-  const text = (await page.getByTestId("combat-zoom").textContent()) ?? "100%";
-  return 48 * (Number.parseInt(text, 10) / 100);
-}
 
 async function dragBy(page: Page, locator: Locator, dx: number, dy: number) {
   const box = (await locator.boundingBox())!;

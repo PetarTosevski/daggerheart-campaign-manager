@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { api } from "../../convex/_generated/api";
 import { signInAsTestGm } from "./fixtures";
 import { expectNoHorizontalScroll, openAdversaries } from "./visual/helpers";
+import { TOUCH_FLOOR_ON_SCREEN } from "./zoom";
 
 // EV1: the Adversaries page's Environment tab: the environment stat blocks of the Core Rulebook and (with the Hope &
 // Fear switch on) Hope & Fear, with search, Order / Tier / Type / Book chips, collapsible tiers and a parchment stat
@@ -144,7 +145,7 @@ test("at 390 px the stat block follows the list, picking a row brings it into vi
     row(page, "Raging River"),
     list(page).getByRole("button", { name: /^Tier 1/ }),
   ]) {
-    expect((await target.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    expect((await target.boundingBox())!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
   }
   await expectNoHorizontalScroll(page);
 });
@@ -175,7 +176,7 @@ test("Spend Fear lowers the GM's Fear; Start countdown puts a private countdown 
   await expect(block.getByRole("img", { name: "GM Fear 1 of 12" })).toBeVisible();
   expect(await client.query(api.campaigns.fear, { campaignId })).toBe(1);
   for (const target of [spend, gain]) {
-    expect((await target.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    expect((await target.boundingBox())!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
   }
   // Undo gives the Fear back, then spend again so the rest of the test starts at 1.
   await block.getByRole("button", { name: "Undo" }).click();

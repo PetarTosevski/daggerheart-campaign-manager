@@ -5,7 +5,7 @@
 .hud-cr {
   display: grid;
   gap: 10px;
-  max-height: 42vh;
+  max-height: calc(42 * var(--vh));
   overflow-y: auto;
 }
 .hud-cr-g {

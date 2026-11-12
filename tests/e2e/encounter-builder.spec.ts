@@ -6,6 +6,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
 import { convexAs, expectNoHorizontalScroll } from "./visual/helpers";
 import { gmJoinCode } from "./config/helpers";
+import { TOUCH_FLOOR_ON_SCREEN } from "./zoom";
 
 // D8 A3: the GM builds an encounter on the Adversaries page's Encounters tab and reads its Battle Points budget
 // (CB p.197); players cannot reach encounters through the API.
@@ -111,6 +112,6 @@ test("at 390 px the builder stacks without horizontal scroll and every control h
   await expectNoHorizontalScroll(page);
   for (const control of await panel.getByRole("button").all()) {
     const box = await control.boundingBox();
-    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    expect(box?.height ?? 0).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
   }
 });

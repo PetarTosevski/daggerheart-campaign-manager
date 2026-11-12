@@ -4,6 +4,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { cardsForDomains, getClass } from "../../src/lib/srd/index";
 import { bardDraft, endFromJournal, expectNoHorizontalScroll, journalLiveChip, journalReport, openSessions } from "./visual/helpers";
+import { TOUCH_FLOOR_ON_SCREEN } from "./zoom";
 
 // D10 S3 in the Journal (JH; old live card removed in Journal JX2): the GM selects Session 1 and starts it from the
 // header ('Start session 1', B2, B10, K3: a Seraph's Prayer Dice appear on the sheet and in the start report), the list
@@ -82,6 +83,6 @@ test("the GM starts and ends a session from the Journal header; the party sync r
   const start = page.getByRole("button", { name: "Start session 2" });
   await expect(start).toBeVisible();
   const box = await start.boundingBox();
-  expect(box!.height).toBeGreaterThanOrEqual(44);
+  expect(box!.height).toBeGreaterThanOrEqual(TOUCH_FLOOR_ON_SCREEN);
   await expectNoHorizontalScroll(page);
 });

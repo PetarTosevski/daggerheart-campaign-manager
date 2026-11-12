@@ -5,6 +5,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { readEmailedCode } from "./fixtures";
 import { expectFitsViewport, expectNoSeriousA11yViolations, expectTouchTargets, TABLET_VIEWPORTS } from "./a11y";
+import { emulateTouch } from "./zoom";
 
 
 function freshEmail() {
@@ -52,6 +53,8 @@ test("every step of create account and forgot password passes axe", async ({ pag
 
 test("forgot password steps pass axe and phone and tablet widths fit", async ({ page }) => {
   const sizes = [{ width: 390, height: 844 }, ...TABLET_VIEWPORTS];
+  // Phones and tablets are touch screens: zoom 1 and the breakpoints as written (dcm-jkxa).
+  await emulateTouch(page);
   await page.goto("/signin");
   await page.getByRole("button", { name: "Forgot password?" }).click();
   const reset = page.getByRole("form", { name: "Reset password" });
