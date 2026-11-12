@@ -1,0 +1,115 @@
+# Portrait close-up. User 2026-11-12: "for the character portraits, let me zoom in if i want a close up shot of my
+# character on the portrait" (screenshot: the sheet's arch, built-in art). Answers the same day (multiple choice):
+#   - Controls: zoom + drag. An "Adjust" button on the sheet's portrait opens a small editor: a zoom slider (1x to 3x)
+#     and a drag on the picture chooses which part shows. Saved on the character.
+#   - Applies to: everywhere a character's portrait shows (sheet arch, Party cards, HUD banners, spotlight disc, map
+#     tokens, the phone app).
+#   - Which art: uploaded images and built-in art (default or chosen).
+# Format: docs/workflow.md.
+#
+# Shared decisions (every tracer follows them):
+#   - Stored on the character sheet as an optional field `portraitFrame: { zoom, x, y }`: zoom 1..3 (step 0.05), x and y
+#     0..100 (the focal point in percent of the picture). Optional = widened, no schemaVersion bump; unset means today's
+#     framing, unchanged everywhere. It is its own field (not inside `portrait`) because default art has no `portrait`.
+#   - Rendering: the picture is an inner layer inside a clipping frame (overflow hidden): background-size cover,
+#     background-position `x% y%`, transform `scale(zoom)` with transform-origin `x% y%`. One pure helper returns these
+#     styles (src/lib/party/portrait-frame.ts, PZ1); no site computes them itself.
+#   - Who may set it: whoever may edit the character (its owner and the GM), through one intent mutation
+#     `characters.setPortraitFrame({ characterId, frame | null })` with an optimistic update. A new upload or another
+#     chosen art resets the frame (the old close-up belongs to the old picture).
+plan: portrait-frame
+waves:
+  - wave: 1
+    tracers:
+      - id: PZ1
+        title: Portrait close-up on the character sheet (store, editor, arch)
+        size: M
+        goal: On the character sheet an editor of the character presses Adjust on the portrait, sets a zoom and drags the picture, saves, and the arch shows that close-up for everyone after a reload.
+        depends_on: []
+        owns:
+          - src/lib/party/portrait-frame.ts
+          - src/lib/validation/character-schemas.ts
+          - convex/characters.ts
+          - convex/charactersReads.ts
+          - convex/lib/validators/characters.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/identity.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/identity.css
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/portrait-frame.tsx
+          - tests/unit/portrait-frame.test.ts
+          - tests/unit/portrait-frame-editor.test.tsx
+          - tests/convex/portrait-frame.test.ts
+          - tests/convex/authz/characters.entries.ts
+          - tests/e2e/portrait-frame.spec.ts
+          - docs/tasks/TASK-PZ1.md
+          - docs/data-model.md
+        reads:
+          - src/components/party/portrait.tsx
+          - src/components/party/portrait-source.ts
+          - convex/lib/functions.ts
+          - convex/lib/characterSheet.ts
+          - docs/best-practices.md
+          - tests/e2e/a11y.ts
+        acceptance:
+          - "`portraitFrame` is an optional sheet field validated as zoom 1..3, x 0..100, y 0..100; sheets without it parse and render exactly as today; `src/lib/party/portrait-frame.ts` exports the type, the default ({ zoom: 1, x: 50, y: 30 }), a clamp, the drag maths and the style helper described in this plan's header, all pure and unit-tested"
+          - "`characters.setPortraitFrame` is a `userMutation` with a full args validator, allowed for whoever may edit the character (same check as `attachPortrait`), refused with a ConvexError code for others; `null` clears the frame; `attachPortrait` and a change of chosen art clear it; it has an entry in tests/convex/authz/characters.entries.ts; convex tests assert `ConvexError.data.code`"
+          - "The sheet's arch draws the frame for everyone who can see the sheet. Editors get an 'Adjust' button beside the upload button: a zoom slider (1x to 3x, keyboard operable, labelled), drag on the picture to move it (pointer and touch; arrow keys move it too), Reset, Cancel and Save. The preview is local state while editing; Save sends one mutation with an optimistic update; nothing is sent from an effect. Touch targets are at least 44 px on tablet; axe passes with the editor open"
+          - "tests/e2e/portrait-frame.spec.ts: the owner zooms and drags, saves, reloads and the arch still shows the close-up (assert the inner layer's transform and position); a player who does not own the character sees the close-up and no Adjust button. pnpm lint, typecheck and the tracer's unit, convex and e2e tests pass (vitest with --maxWorkers=2; no full-suite run)"
+  - wave: 2
+    tracers:
+      - id: PZ2
+        title: The close-up everywhere on the website
+        size: M
+        goal: Every other place the website draws a character's portrait (Party cards and roster banner, Journal tally, Settings avatars, HUD banners, spotlight disc, HUD sheet panel, map tokens and the vision layer's faces) shows the saved close-up.
+        depends_on: [PZ1]
+        owns:
+          - src/components/party/portrait.tsx
+          - src/components/config/shell/avatar.tsx
+          - src/components/config/sections/players/roster.tsx
+          - convex/lib/pcPortrait.ts
+          - src/components/combat-map/hud/spotlight/disc.tsx
+          - src/components/combat-map/hud/spotlight/model.ts
+          - src/components/combat-map/hud/spotlight/spotlight.css
+          - src/components/combat-map/hud/sheet/panel.tsx
+          - src/components/combat-map/hud/sheet/sheet.css
+          - src/components/combat-map/hud/token/face.tsx
+          - src/components/combat-map/hud/token/model.ts
+          - src/components/combat-map/hud/token/token.css
+          - src/components/combat-map/hud/banners/banner.tsx
+          - src/components/combat-map/hud/banners/banners.css
+          - src/components/combat-map/hud/phone/strip.tsx
+          - src/components/combat-map/tokens/tokens-layer.tsx
+          - src/components/combat-map/tokens/tokens.css
+          - src/components/combat-map/vision/vision-layer.tsx
+          - tests/unit/portrait-frame-sites.test.tsx
+          - tests/convex/portrait-frame-tokens.test.ts
+          - tests/e2e/portrait-frame-everywhere.spec.ts
+          - docs/tasks/TASK-PZ2.md
+        reads:
+          - src/lib/party/portrait-frame.ts
+          - src/lib/validation/character-schemas.ts
+          - convex/lib/combatHud.ts
+          - convex/lib/combatTokenViews.ts
+          - convex/lib/combatVision.ts
+          - docs/best-practices.md
+        acceptance:
+          - "`pcPortrait` returns the character's frame with the portrait (validator widened with an optional `frame`), so token, banner, disc and vision queries carry it with no extra query; `CharacterPortrait` (both sizes) and the Settings avatars read it from the sheet they already have"
+          - "Every listed site draws the picture through PZ1's style helper inside a clipping frame; a character without a frame renders pixel-for-pixel as before (existing visual and unit tests unchanged); the round token and disc shapes, rings and badges are not scaled, only the picture"
+          - "Unit tests cover each site with and without a frame; a convex test covers `pcPortrait`; tests/e2e/portrait-frame-everywhere.spec.ts sets a frame through the API and checks the Party card and the map token of that character. pnpm lint, typecheck and the tracer's tests pass (vitest with --maxWorkers=2; no full-suite run)"
+      - id: PZ3
+        title: The close-up in the phone app
+        size: S
+        goal: The phone app's party card and sheet show a character's saved close-up.
+        depends_on: [PZ1]
+        owns:
+          - apps/mobile/src/features/party/portrait.tsx
+          - apps/mobile/src/features/party/card.tsx
+          - apps/mobile/src/features/sheet/identity.tsx
+          - apps/mobile/test/party/portrait-frame.test.tsx
+          - docs/tasks/TASK-PZ3.md
+        reads:
+          - src/lib/party/portrait-frame.ts
+          - src/lib/validation/character-schemas.ts
+          - apps/mobile/src/features/party/index.tsx
+        acceptance:
+          - "The phone's portrait component takes the sheet's `portraitFrame` and draws the same close-up as the website (the picture scaled about the focal point inside the clipped shape, using PZ1's pure helper for the numbers); without a frame it renders as today. Display only: the phone does not edit the frame (say so in the task doc)"
+          - "A jest test covers with and without a frame; pnpm --filter @dualityheart/mobile run check passes"
